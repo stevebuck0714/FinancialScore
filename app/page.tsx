@@ -9063,6 +9063,73 @@ function FinancialScorePage() {
     () => companyProfiles.find((p) => p.companyId === selectedCompanyId) || null,
     [companyProfiles, selectedCompanyId]
   );
+  const aiResearchTextToList = (value: string) => value.split(/\r?\n|,/).map((item) => item.trim()).filter(Boolean);
+  const buildBusinessOverviewResearchProfile = useCallback((): CompanyProfile => {
+    const existing = selectedCompanyProfile || ({} as Partial<CompanyProfile>);
+    return {
+      companyId: selectedCompanyId,
+      legalStructure: existing.legalStructure || '',
+      businessStatus: existing.businessStatus || '',
+      ownership: existing.ownership || '',
+      keyEmployees: Array.isArray(existing.keyEmployees) ? existing.keyEmployees : [],
+      workforce: existing.workforce || '',
+      keyAdvisors: existing.keyAdvisors || '',
+      specialNotes: existing.specialNotes || '',
+      qoeNotes: existing.qoeNotes || '',
+      aiResearchSearchName: existing.aiResearchSearchName || '',
+      aiResearchAliases: Array.isArray(existing.aiResearchAliases) ? existing.aiResearchAliases : [],
+      aiResearchExcludedNames: Array.isArray(existing.aiResearchExcludedNames) ? existing.aiResearchExcludedNames : [],
+      aiResearchIdentityAnchors: Array.isArray(existing.aiResearchIdentityAnchors) ? existing.aiResearchIdentityAnchors : [],
+      disclosures: existing.disclosures || {
+        bankruptcies: 'None',
+        liens: 'None',
+        contracts: 'None',
+        lawsuits: 'None',
+        mostFavoredNation: 'None',
+        equityControl: 'None',
+        rightOfFirstRefusal: 'None',
+        shareholderProtections: 'None',
+        changeInControl: 'None',
+        regulatoryApprovals: 'None',
+        auditedFinancials: 'No',
+      },
+    };
+  }, [selectedCompanyId, selectedCompanyProfile]);
+  const updateBusinessOverviewResearchProfile = useCallback((updates: Partial<CompanyProfile>) => {
+    if (!selectedCompanyId) return;
+    setCompanyProfiles((prev) => {
+      const existing = prev.find((p) => p.companyId === selectedCompanyId);
+      const base: CompanyProfile = {
+        companyId: selectedCompanyId,
+        legalStructure: existing?.legalStructure || '',
+        businessStatus: existing?.businessStatus || '',
+        ownership: existing?.ownership || '',
+        keyEmployees: Array.isArray(existing?.keyEmployees) ? existing.keyEmployees : [],
+        workforce: existing?.workforce || '',
+        keyAdvisors: existing?.keyAdvisors || '',
+        specialNotes: existing?.specialNotes || '',
+        qoeNotes: existing?.qoeNotes || '',
+        aiResearchSearchName: existing?.aiResearchSearchName || '',
+        aiResearchAliases: Array.isArray(existing?.aiResearchAliases) ? existing.aiResearchAliases : [],
+        aiResearchExcludedNames: Array.isArray(existing?.aiResearchExcludedNames) ? existing.aiResearchExcludedNames : [],
+        aiResearchIdentityAnchors: Array.isArray(existing?.aiResearchIdentityAnchors) ? existing.aiResearchIdentityAnchors : [],
+        disclosures: existing?.disclosures || {
+          bankruptcies: 'None',
+          liens: 'None',
+          contracts: 'None',
+          lawsuits: 'None',
+          mostFavoredNation: 'None',
+          equityControl: 'None',
+          rightOfFirstRefusal: 'None',
+          shareholderProtections: 'None',
+          changeInControl: 'None',
+          regulatoryApprovals: 'None',
+          auditedFinancials: 'No',
+        },
+      };
+      return [...prev.filter((p) => p.companyId !== selectedCompanyId), { ...base, ...updates }];
+    });
+  }, [selectedCompanyId]);
   const businessContextSources = useMemo(
     () => researchSourcesText.split(/\r?\n/).map((source) => source.trim()).filter(Boolean),
     [researchSourcesText]
@@ -9071,6 +9138,7 @@ function FinancialScorePage() {
     if (!selectedCompanyId) return;
     setBusinessContextSaveStatus('saving');
     try {
+      await profilesApi.save(selectedCompanyId, buildBusinessOverviewResearchProfile());
       const response = await fetch('/api/company-market-context', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -9105,41 +9173,8 @@ function FinancialScorePage() {
     researchDepth,
     competitorSearchScopes,
     businessContextSources,
+    buildBusinessOverviewResearchProfile,
   ]);
-  const applyBusinessContextTemplate = useCallback(() => {
-    const location = [
-      company?.addressCity || '',
-      company?.addressState || '',
-    ].filter(Boolean).join(', ') || company?.location || 'the company market';
-    const companyLabel = companyName || 'the company';
-
-    setCompanyBackgroundHistory(`Company Background & History
-
-${companyLabel} is located in ${location}. Summarize the company's founding history, ownership or leadership background, operating footprint, major product and service lines, industries served, certifications, and any key milestones that help explain the valuation context.
-
-Key points to verify:
-- Founding year and founder/ownership history
-- Headquarters and operating locations
-- Core products and services
-- Industries and customer segments served
-- Certifications, quality systems, or regulatory credentials
-- Notable growth milestones, acquisitions, or strategic changes`);
-
-    setMarketPositionCompetitiveLandscape(`Market Position & Competitive Landscape
-
-Summarize how ${companyLabel} is positioned against relevant competitors. Separate competitors by the selected search scopes so local alternatives, state/regional firms, and national category competitors are not mixed together.
-
-Competitor search scopes selected: ${competitorSearchScopes.map((scope) => scope.toUpperCase()).join(', ')}
-
-Suggested structure:
-- Local competitors:
-- State competitors:
-- Regional competitors:
-- National competitors:
-- Key differentiators:
-- Competitive risks or threats:
-- Valuation implications:`);
-  }, [company, companyName, competitorSearchScopes]);
   const generateBusinessContextResearch = useCallback(async () => {
     if (!selectedCompanyId || !companyName) return;
     setBusinessContextGenerateStatus('generating');
@@ -17747,37 +17782,69 @@ Suggested structure:
           {valuationMethodTab === 'business-overview' ? (
             <div style={{ display: 'grid', gap: '16px' }}>
               <div style={{ background: 'white', border: '1px solid #dbe5ef', borderRadius: '12px', padding: '18px 20px' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', gap: '16px', alignItems: 'flex-start', marginBottom: '12px' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) 190px', gap: '16px', alignItems: 'start' }}>
                   <div>
-                    {businessContextLastUpdatedAt && (
-                      <div style={{ fontSize: '12px', color: '#64748b' }}>
-                        Last saved: {new Date(businessContextLastUpdatedAt).toLocaleString()}
+                    <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', alignItems: 'center', marginBottom: '8px' }}>
+                      <div style={{ fontSize: '12px', fontWeight: 800, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                        AI research identity
                       </div>
-                    )}
+                      {businessContextLastUpdatedAt && (
+                        <div style={{ fontSize: '12px', color: '#64748b', whiteSpace: 'nowrap' }}>
+                          Last saved: {new Date(businessContextLastUpdatedAt).toLocaleString()}
+                        </div>
+                      )}
+                    </div>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(260px, 1fr))', gap: '8px 12px' }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: '120px 1fr', gap: '8px', alignItems: 'center' }}>
+                      <label style={{ fontSize: '12px', fontWeight: 700, color: '#475569' }}>Search name</label>
+                      <input
+                        type="text"
+                        value={selectedCompanyProfile?.aiResearchSearchName || ''}
+                        onChange={(e) => updateBusinessOverviewResearchProfile({ aiResearchSearchName: e.target.value })}
+                        placeholder="e.g., Atlantic Precision Resource"
+                        style={{ width: '80%', boxSizing: 'border-box', padding: '7px 9px', borderRadius: '7px', border: '1px solid #d8e1eb', fontSize: '12px', background: '#fff' }}
+                      />
+                    </div>
+                    <div style={{ display: 'grid', gridTemplateColumns: '120px 1fr', gap: '8px', alignItems: 'center' }}>
+                      <label style={{ fontSize: '12px', fontWeight: 700, color: '#475569' }}>Known aliases</label>
+                      <input
+                        type="text"
+                        value={(selectedCompanyProfile?.aiResearchAliases || []).join(', ')}
+                        onChange={(e) => updateBusinessOverviewResearchProfile({ aiResearchAliases: aiResearchTextToList(e.target.value) })}
+                        placeholder="Atlantic Precision Resources, APR"
+                        style={{ width: '80%', boxSizing: 'border-box', padding: '7px 9px', borderRadius: '7px', border: '1px solid #d8e1eb', fontSize: '12px', background: '#fff' }}
+                      />
+                    </div>
+                    <div style={{ display: 'grid', gridTemplateColumns: '120px 1fr', gap: '8px', alignItems: 'center' }}>
+                      <label style={{ fontSize: '12px', fontWeight: 700, color: '#475569' }}>Identity anchors</label>
+                      <input
+                        type="text"
+                        value={(selectedCompanyProfile?.aiResearchIdentityAnchors || []).join(', ')}
+                        onChange={(e) => updateBusinessOverviewResearchProfile({ aiResearchIdentityAnchors: aiResearchTextToList(e.target.value) })}
+                        placeholder="atlanticprecision.net, Lynchburg VA"
+                        style={{ width: '80%', boxSizing: 'border-box', padding: '7px 9px', borderRadius: '7px', border: '1px solid #d8e1eb', fontSize: '12px', background: '#fff' }}
+                      />
+                    </div>
+                    <div style={{ display: 'grid', gridTemplateColumns: '120px 1fr', gap: '8px', alignItems: 'center' }}>
+                      <label style={{ fontSize: '12px', fontWeight: 700, color: '#475569' }}>Excluded names</label>
+                      <input
+                        type="text"
+                        value={(selectedCompanyProfile?.aiResearchExcludedNames || []).join(', ')}
+                        onChange={(e) => updateBusinessOverviewResearchProfile({ aiResearchExcludedNames: aiResearchTextToList(e.target.value) })}
+                        placeholder="Atlantic Precision Inc., unrelated companies"
+                        style={{ width: '80%', boxSizing: 'border-box', padding: '7px 9px', borderRadius: '7px', border: '1px solid #d8e1eb', fontSize: '12px', background: '#fff' }}
+                      />
+                    </div>
                   </div>
-                  <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
-                    <button
-                      type="button"
-                      onClick={applyBusinessContextTemplate}
-                      style={{
-                        padding: '8px 12px',
-                        border: '1px solid #cbd5e1',
-                        borderRadius: '8px',
-                        background: '#fff',
-                        color: '#334155',
-                        fontSize: '13px',
-                        fontWeight: 700,
-                        cursor: 'pointer',
-                      }}
-                    >
-                      Insert Manual Draft Template
-                    </button>
+                  </div>
+                  <div style={{ display: 'grid', gap: '8px' }}>
                     <button
                       type="button"
                       onClick={generateBusinessContextResearch}
                       disabled={businessContextGenerateStatus === 'generating' || !companyName}
                       title="Generate a source-backed draft using Perplexity Sonar Pro."
                       style={{
+                        width: '100%',
                         padding: '8px 12px',
                         border: '1px solid #cbd5e1',
                         borderRadius: '8px',
@@ -17795,6 +17862,7 @@ Suggested structure:
                       onClick={() => saveBusinessContext(false)}
                       disabled={businessContextSaveStatus === 'saving'}
                       style={{
+                        width: '100%',
                         padding: '8px 14px',
                         border: businessContextSaveStatus === 'error' ? '1px solid #fecaca' : businessContextSaveStatus === 'saved' ? '1px solid #86efac' : '1px solid #1f70c1',
                         borderRadius: '8px',

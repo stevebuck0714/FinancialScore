@@ -147,9 +147,6 @@ export default function ProfileTab({
     profile.aiResearchIdentityAnchors = [];
   }
 
-  const listToText = (value: string[] | undefined) => (Array.isArray(value) ? value.join('\n') : '');
-  const textToList = (value: string) => value.split(/\r?\n|,/).map((item) => item.trim()).filter(Boolean);
-
   const updateProfile = (updates: Partial<CompanyProfile>) => {
     const updatedProfiles = companyProfiles.filter(p => p.companyId !== selectedCompanyId);
     updatedProfiles.push({ ...profile!, ...updates });
@@ -484,56 +481,6 @@ export default function ProfileTab({
           </div>
         </div>
 
-        {/* AI Research Identity */}
-        <div style={{ marginBottom: '24px', padding: '14px', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '10px' }}>
-          <div style={{ fontSize: '15px', fontWeight: 800, color: '#1e293b', marginBottom: '6px' }}>AI Research Identity</div>
-          <div style={{ fontSize: '12px', color: '#64748b', lineHeight: 1.45, marginBottom: '12px' }}>
-            Used by Valuation research to avoid similarly named companies.
-          </div>
-          <div style={{ display: 'grid', gridTemplateColumns: '220px 1fr', gap: '10px 12px', alignItems: 'start' }}>
-            <label style={{ fontWeight: '600', color: '#475569', fontSize: '13px', paddingTop: '8px' }}>
-              SEARCH NAME
-            </label>
-            <input
-              type="text"
-              value={profile.aiResearchSearchName || ''}
-              onChange={(e) => updateProfile({ aiResearchSearchName: e.target.value })}
-              placeholder="e.g., Atlantic Precision Resource"
-              style={{ width: '100%', padding: '10px 12px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '14px' }}
-            />
-
-            <label style={{ fontWeight: '600', color: '#475569', fontSize: '13px', paddingTop: '8px' }}>
-              KNOWN ALIASES
-            </label>
-            <textarea
-              value={listToText(profile.aiResearchAliases)}
-              onChange={(e) => updateProfile({ aiResearchAliases: textToList(e.target.value) })}
-              placeholder="One per line, e.g.&#10;Atlantic Precision Resources&#10;APR"
-              style={{ width: '100%', minHeight: '76px', padding: '10px 12px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '14px', resize: 'vertical', fontFamily: 'inherit' }}
-            />
-
-            <label style={{ fontWeight: '600', color: '#475569', fontSize: '13px', paddingTop: '8px' }}>
-              IDENTITY ANCHORS
-            </label>
-            <textarea
-              value={listToText(profile.aiResearchIdentityAnchors)}
-              onChange={(e) => updateProfile({ aiResearchIdentityAnchors: textToList(e.target.value) })}
-              placeholder="One per line, e.g.&#10;atlanticprecision.net&#10;3018 Carroll Avenue, Lynchburg, VA"
-              style={{ width: '100%', minHeight: '76px', padding: '10px 12px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '14px', resize: 'vertical', fontFamily: 'inherit' }}
-            />
-
-            <label style={{ fontWeight: '600', color: '#475569', fontSize: '13px', paddingTop: '8px' }}>
-              EXCLUDED NAMES
-            </label>
-            <textarea
-              value={listToText(profile.aiResearchExcludedNames)}
-              onChange={(e) => updateProfile({ aiResearchExcludedNames: textToList(e.target.value) })}
-              placeholder="One per line, e.g.&#10;Atlantic Precision Inc.&#10;Atlantic Precision Manufacturing"
-              style={{ width: '100%', minHeight: '76px', padding: '10px 12px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '14px', resize: 'vertical', fontFamily: 'inherit' }}
-            />
-          </div>
-        </div>
-        
         {/* Business Details Fields */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', marginBottom: '24px' }}>
           {/* Business Status */}
