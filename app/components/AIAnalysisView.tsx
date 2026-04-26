@@ -130,7 +130,7 @@ export default function AIAnalysisView(props: {
   const [webExcludedNames, setWebExcludedNames] = useState('');
   const [webLocation, setWebLocation] = useState('');
   const [webResearchQuestion, setWebResearchQuestion] = useState('');
-  const [webResearchDepth, setWebResearchDepth] = useState<WebResearchDepth>('deep');
+  const [webResearchDepth] = useState<WebResearchDepth>('deep');
   const [webResearchScopes, setWebResearchScopes] = useState<WebResearchScope[]>(['local', 'state', 'regional', 'national']);
   const [webResearchLoading, setWebResearchLoading] = useState(false);
   const [webResearchError, setWebResearchError] = useState<string | null>(null);
@@ -1386,7 +1386,7 @@ export default function AIAnalysisView(props: {
                   </div>
                 </div>
 
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(260px, 1fr))', gap: '10px 14px' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(220px, 1fr))', gap: '10px 14px' }}>
                   <ResearchField label="Search name">
                     <input
                       value={webSearchName}
@@ -1426,16 +1426,6 @@ export default function AIAnalysisView(props: {
                       placeholder="Official website, address, unique identifiers"
                       style={researchInputStyle}
                     />
-                  </ResearchField>
-                  <ResearchField label="Research depth">
-                    <select
-                      value={webResearchDepth}
-                      onChange={(e) => setWebResearchDepth(e.target.value === 'standard' ? 'standard' : 'deep')}
-                      style={researchInputStyle}
-                    >
-                      <option value="standard">Standard - faster / lower cost</option>
-                      <option value="deep">Deep - broader search + Firecrawl when configured</option>
-                    </select>
                   </ResearchField>
                 </div>
 
