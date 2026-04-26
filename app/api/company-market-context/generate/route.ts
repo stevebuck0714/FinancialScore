@@ -281,6 +281,40 @@ ${getKnownCompanyFacts({
     const researchSystem =
       'You are a meticulous business research analyst. Accuracy is more important than completeness. Use current public web sources, name sources in-line, distinguish verified facts from unavailable facts, and reject sources about similarly named but different companies. Do not write generic filler.';
 
+    const competitorScopePrompts = competitorSearchScopes.map((scope) => {
+      const scopeLabel = scope.charAt(0).toUpperCase() + scope.slice(1);
+      const scopeFocus =
+        scope === 'local'
+          ? 'the company city, metro area, and nearby buyer alternatives'
+          : scope === 'state'
+            ? 'the same state and nearby in-state buyer alternatives'
+            : scope === 'regional'
+              ? 'the surrounding multi-state region and practical regional alternatives'
+              : 'national category leaders and U.S. suppliers that compete for similar buyer needs';
+      const targetCount = scope === 'national' ? '6-10' : '4-8';
+
+      return {
+        label: `competitors-${scope}`,
+        prompt: `${companyProfile}
+Run a dedicated ${scopeLabel} competitor search focused on ${scopeFocus}.
+
+Search by company identity, product/category terms, materials/process terms, industry served, and geography. Do not rely only on the subject company's name. Find ${targetCount} relevant named competitors or alternatives when public evidence supports them.
+
+For each competitor, capture:
+- Company name
+- Location/headquarters
+- Scope: ${scopeLabel}
+- Competitor type: direct product competitor, regional alternative, national category leader, or adjacent capability competitor
+- Product/category overlap and why a buyer could consider them instead of ${companyName}
+- Public signals about size, years in business, certifications, capabilities, or industries served when available
+- Estimated revenue and employee count only when source-backed; otherwise say "not publicly available"
+- Threat level: low, medium, or high
+- Source URLs or source names
+
+Return detailed notes with citations. Exclude similarly named but unrelated companies.`,
+      };
+    });
+
     const researchPrompts = [
       {
         label: 'background-history',
@@ -292,29 +326,7 @@ Research the company background and history in detail. First confirm each source
         prompt: `${companyProfile}
 Research products, services, operating model, industries served, certifications, quality systems, sourcing/manufacturing footprint, and any customer/market positioning claims. First confirm each source matches the subject company identity above. Focus on facts that matter for valuation due diligence. Return detailed notes with citations and identify any rejected similarly named companies.`,
       },
-      {
-        label: 'competitive-landscape',
-        prompt: `${companyProfile}
-Research competitors and alternatives using these selected scopes:
-${scopeInstructions}
-
-Find direct product/category competitors, regional alternatives, national category leaders, and adjacent capability competitors. Build a robust competitor set, not just the first companies found locally. For each competitor, identify location, product/service overlap, why it competes with or substitutes for ${companyName}, relative scale/positioning if publicly available, and whether it is a direct competitor, regional alternative, national category competitor, or adjacent capability competitor. Avoid limiting the scan to only the company's city if national category competitors are relevant. Do not treat similarly named companies as competitors unless they are truly relevant suppliers in the same product/category market. Return detailed notes with citations.`,
-      },
-      ...(researchDepth === 'deep' ? [{
-        label: 'competitor-deep-dive',
-        prompt: `${companyProfile}
-Run a second competitive scan focused on depth and omissions. Search for competitors by product/category terms, not only company name. Include suppliers that overlap by material, process, customer type, or OEM component function. For each selected competitor, capture:
-- Company name and location
-- Scope: local, state, regional, or national
-- Competitor type: direct product competitor, regional alternative, national category leader, or adjacent capability competitor
-- Product/category overlap
-- Why a buyer might choose that competitor instead
-- Any public quality/certification, manufacturing footprint, or industry focus signals
-- Threat level to valuation: low, medium, or high
-- Estimated revenue, employee count, and years in business when publicly available. Label estimates as estimates and leave "not publicly available" when unsupported.
-
-Return detailed notes with citations. Exclude sources about similarly named but unrelated companies.`,
-      }] : []),
+      ...competitorScopePrompts,
       {
         label: 'valuation-implications',
         prompt: `${companyProfile}

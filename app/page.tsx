@@ -2593,6 +2593,7 @@ function FinancialScorePage() {
   const [businessContextSaveStatus, setBusinessContextSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
   const [businessContextGenerateStatus, setBusinessContextGenerateStatus] = useState<'idle' | 'generating' | 'generated' | 'error'>('idle');
   const [businessContextGenerateError, setBusinessContextGenerateError] = useState('');
+  const [businessContextGenerateProgress, setBusinessContextGenerateProgress] = useState('');
   const [businessContextLoading, setBusinessContextLoading] = useState(false);
   const [companyBackgroundHistory, setCompanyBackgroundHistory] = useState('');
   const [marketPositionCompetitiveLandscape, setMarketPositionCompetitiveLandscape] = useState('');
@@ -9182,6 +9183,11 @@ function FinancialScorePage() {
     if (!selectedCompanyId || !companyName) return;
     setBusinessContextGenerateStatus('generating');
     setBusinessContextGenerateError('');
+    setBusinessContextGenerateProgress('Searching sources…');
+    const progressTimers = [
+      window.setTimeout(() => setBusinessContextGenerateProgress('Extracting source pages…'), 9000),
+      window.setTimeout(() => setBusinessContextGenerateProgress('Writing draft…'), 22000),
+    ];
     try {
       const location = [
         company?.addressCity || '',
@@ -9212,12 +9218,16 @@ function FinancialScorePage() {
       setMarketPositionCompetitiveLandscape(String(result?.marketPositionCompetitiveLandscape || ''));
       setCompetitorTable(Array.isArray(result?.competitorTable) ? result.competitorTable : []);
       setResearchSourcesText(Array.isArray(result?.researchSources) ? result.researchSources.join('\n') : '');
+      setBusinessContextGenerateProgress('');
       setBusinessContextGenerateStatus('generated');
       setTimeout(() => setBusinessContextGenerateStatus('idle'), 3000);
     } catch (err: any) {
       console.error('Error generating business overview / market position:', err);
       setBusinessContextGenerateError(err?.message || 'Research generation failed.');
+      setBusinessContextGenerateProgress('');
       setBusinessContextGenerateStatus('error');
+    } finally {
+      progressTimers.forEach((timer) => window.clearTimeout(timer));
     }
   }, [selectedCompanyId, companyName, company, selectedCompanyProfile, researchDepth, competitorSearchScopes]);
   const businessOverviewProfileItems = useMemo(() => {
@@ -17850,6 +17860,11 @@ function FinancialScorePage() {
                     >
                       {businessContextGenerateStatus === 'generating' ? 'Generating...' : businessContextGenerateStatus === 'generated' ? 'Draft Generated' : businessContextGenerateStatus === 'error' ? 'Retry Generate' : 'Generate Research'}
                     </button>
+                    {businessContextGenerateStatus === 'generating' && businessContextGenerateProgress && (
+                      <div style={{ fontSize: '12px', color: '#64748b', textAlign: 'center' }}>
+                        {businessContextGenerateProgress}
+                      </div>
+                    )}
                     <button
                       type="button"
                       onClick={() => saveBusinessContext(false)}
