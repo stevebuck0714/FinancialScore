@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import {
   Document as DocxDocument,
   ExternalHyperlink,
@@ -28,32 +28,6 @@ type AskResponse = {
     publishedDate?: string | null;
     snippet?: string;
   }>;
-};
-
-type PeriodReviewResponse = {
-  period: {
-    start: string;
-    end: string;
-    label: string;
-  };
-  executiveSummary: string;
-  performanceVsGoals: string;
-  peerAndMarketContext: string;
-  operationalTrends: {
-    negativeTrendAlerts: Array<{
-      metric: string;
-      signal: string;
-      whyItMatters: string;
-      evidence: string;
-    }>;
-    narrative: string;
-  };
-  driversAndRisks: string;
-  opportunities: string;
-  appendix: {
-    notes: string[];
-    sources: Array<{ url: string; title?: string; publishedDate?: string | null }>;
-  };
 };
 
 type MonthlyDataLike = {
@@ -89,6 +63,15 @@ type AskThreadTurn = {
   response: AskResponse;
 };
 
+type WebResearchScope = 'local' | 'state' | 'regional' | 'national' | 'global';
+type WebResearchDepth = 'standard' | 'deep';
+type WebResearchTurn = {
+  id: string;
+  askedAt: string;
+  question: string;
+  response: AskResponse;
+};
+
 type DocCategory = 'LOAN_DOCUMENTS' | 'FINANCING_DOCUMENTS' | 'LEGAL_AND_REGULATORY' | 'TAX_DOCUMENTS' | 'OTHER';
 type CompanyDocument = {
   id: string;
@@ -113,8 +96,8 @@ export default function AIAnalysisView(props: {
   companyName?: string;
   monthly: MonthlyDataLike[];
 }) {
-  const { selectedCompanyId, companyName, monthly } = props;
-  const [tab, setTab] = useState<'ask' | 'search-documents' | 'period-review'>('ask');
+  const { selectedCompanyId, companyName } = props;
+  const [tab, setTab] = useState<'ask' | 'search-documents' | 'web-research'>('ask');
 
   // Ask
   const [askQuestion, setAskQuestion] = useState('');
@@ -140,16 +123,18 @@ export default function AIAnalysisView(props: {
   const [questionsError, setQuestionsError] = useState<string | null>(null);
   const [newQuestionByCategory, setNewQuestionByCategory] = useState<Record<string, string>>({});
 
-  // Period review
-  const defaultPeriodLabel = useMemo(() => {
-    if (!monthly || monthly.length === 0) return '';
-    return monthly[monthly.length - 1]?.month || '';
-  }, [monthly]);
-
-  const [periodLabel, setPeriodLabel] = useState<string>(defaultPeriodLabel);
-  const [periodLoading, setPeriodLoading] = useState(false);
-  const [periodError, setPeriodError] = useState<string | null>(null);
-  const [periodResponse, setPeriodResponse] = useState<PeriodReviewResponse | null>(null);
+  // Web Research
+  const [webSearchName, setWebSearchName] = useState(companyName || '');
+  const [webAliases, setWebAliases] = useState('');
+  const [webIdentityAnchors, setWebIdentityAnchors] = useState('');
+  const [webExcludedNames, setWebExcludedNames] = useState('');
+  const [webLocation, setWebLocation] = useState('');
+  const [webResearchQuestion, setWebResearchQuestion] = useState('');
+  const [webResearchDepth, setWebResearchDepth] = useState<WebResearchDepth>('deep');
+  const [webResearchScopes, setWebResearchScopes] = useState<WebResearchScope[]>(['local', 'state', 'regional', 'national']);
+  const [webResearchLoading, setWebResearchLoading] = useState(false);
+  const [webResearchError, setWebResearchError] = useState<string | null>(null);
+  const [webResearchTurns, setWebResearchTurns] = useState<WebResearchTurn[]>([]);
 
   const defaultPresetQuestions = useMemo(() => {
     const name = companyName?.trim() || 'the company';
@@ -214,11 +199,6 @@ export default function AIAnalysisView(props: {
     }
   }, [storageKey, defaultPresetQuestions]);
 
-  useEffect(() => {
-    // Keep default period aligned when company changes / data loads
-    if (defaultPeriodLabel && !periodLabel) setPeriodLabel(defaultPeriodLabel);
-  }, [defaultPeriodLabel, periodLabel]);
-
   function addQuestion(category: string) {
     const draft = newQuestionByCategory[category]?.trim();
     if (!draft) return;
@@ -260,9 +240,10 @@ export default function AIAnalysisView(props: {
 
   const askAbortRef = useRef<AbortController | null>(null);
   const docAbortRef = useRef<AbortController | null>(null);
+  const webResearchAbortRef = useRef<AbortController | null>(null);
 
-  function abortInFlight(mode: 'default' | 'document') {
-    const ref = mode === 'document' ? docAbortRef : askAbortRef;
+  function abortInFlight(mode: 'default' | 'document' | 'web-research') {
+    const ref = mode === 'document' ? docAbortRef : mode === 'web-research' ? webResearchAbortRef : askAbortRef;
     try {
       ref.current?.abort();
     } catch {
@@ -304,12 +285,40 @@ export default function AIAnalysisView(props: {
     return { recentTurns, runningSummary };
   }
 
+  function buildWebResearchContext(turns: WebResearchTurn[]): ConversationContextPayload {
+    const recentTurns = turns.slice(-6).map((turn) => ({
+      askedAt: turn.askedAt,
+      question: turn.question,
+      shortAnswer: turn.response.shortAnswer,
+      longAnswer: turn.response.longAnswer,
+      howThisImpactsUs: turn.response.howThisImpactsUs,
+      sources: (turn.response.sources || []).map((s) => ({
+        url: s.url,
+        title: s.title,
+        publishedDate: s.publishedDate ?? null,
+      })),
+    }));
+    const olderTurns = turns.slice(0, Math.max(0, turns.length - recentTurns.length));
+    const runningSummary = olderTurns
+      .slice(-12)
+      .map((turn) => `Q: ${turn.question}\nA: ${turn.response.shortAnswer}\nImpact: ${turn.response.howThisImpactsUs}`)
+      .join('\n\n')
+      .slice(0, 3000);
+    return { recentTurns, runningSummary };
+  }
+
   function startNewAskThread() {
     abortInFlight('default');
     setAskThreadId(`thread-${Date.now()}`);
     setAskThreadTurns([]);
     setAskResponse(null);
     setAskError(null);
+  }
+
+  function startNewWebResearchThread() {
+    abortInFlight('web-research');
+    setWebResearchTurns([]);
+    setWebResearchError(null);
   }
 
   async function exportAskThreadDocx() {
@@ -501,6 +510,71 @@ export default function AIAnalysisView(props: {
     }
   }
 
+  function splitIdentityText(value: string): string[] {
+    return value.split(/\r?\n|,/).map((item) => item.trim()).filter(Boolean);
+  }
+
+  async function runWebResearch() {
+    const trimmed = webResearchQuestion.trim();
+    if (!trimmed) return;
+
+    abortInFlight('web-research');
+    const controller = new AbortController();
+    const timeoutMs = webResearchDepth === 'deep' ? 90000 : 60000;
+    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
+    setWebResearchLoading(true);
+    setWebResearchError(null);
+    webResearchAbortRef.current = controller;
+
+    try {
+      const res = await fetch('/api/ai-analysis/web-research', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          companyId: selectedCompanyId,
+          companyName,
+          question: trimmed,
+          searchName: webSearchName,
+          aliases: splitIdentityText(webAliases),
+          identityAnchors: splitIdentityText(webIdentityAnchors),
+          excludedNames: splitIdentityText(webExcludedNames),
+          location: webLocation,
+          researchDepth: webResearchDepth,
+          scopes: webResearchScopes,
+          conversationContext: buildWebResearchContext(webResearchTurns),
+        }),
+        signal: controller.signal,
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data?.error || 'Failed to run web research');
+      }
+
+      const response = data as AskResponse;
+      setWebResearchTurns((prev) => [
+        ...prev,
+        {
+          id: `web-turn-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+          askedAt: new Date().toISOString(),
+          question: trimmed,
+          response,
+        },
+      ]);
+      setWebResearchQuestion('');
+    } catch (e: any) {
+      const msg =
+        e?.name === 'AbortError'
+          ? 'Request cancelled (took too long). Please try again.'
+          : (e?.message || 'Unknown error');
+      setWebResearchError(msg);
+    } finally {
+      clearTimeout(timeoutId);
+      setWebResearchLoading(false);
+      if (webResearchAbortRef.current === controller) webResearchAbortRef.current = null;
+    }
+  }
+
   async function reloadDocuments() {
     if (!selectedCompanyId) return;
     setDocumentsError(null);
@@ -577,12 +651,52 @@ export default function AIAnalysisView(props: {
     setAskThreadTurns([]);
     setAskResponse(null);
     setAskError(null);
-  }, [selectedCompanyId]);
+    setWebResearchTurns([]);
+    setWebResearchError(null);
+    setWebSearchName(companyName || '');
+    setWebAliases('');
+    setWebIdentityAnchors('');
+    setWebExcludedNames('');
+    setWebLocation('');
+  }, [selectedCompanyId, companyName]);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function loadResearchIdentity() {
+      if (!selectedCompanyId) return;
+      try {
+        const res = await fetch(`/api/profiles?companyId=${encodeURIComponent(selectedCompanyId)}`);
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok || cancelled) return;
+        const profile = data?.profile || {};
+        setWebSearchName(String(profile?.aiResearchSearchName || companyName || '').trim());
+        setWebAliases(Array.isArray(profile?.aiResearchAliases) ? profile.aiResearchAliases.join(', ') : '');
+        setWebIdentityAnchors(Array.isArray(profile?.aiResearchIdentityAnchors) ? profile.aiResearchIdentityAnchors.join(', ') : '');
+        setWebExcludedNames(Array.isArray(profile?.aiResearchExcludedNames) ? profile.aiResearchExcludedNames.join(', ') : '');
+      } catch {
+        // Identity fields are optional; leave local defaults if the profile request fails.
+      }
+    }
+    loadResearchIdentity();
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedCompanyId, companyName]);
 
   useEffect(() => {
     // Avoid a "stuck" feel: cancel in-flight requests when switching tabs.
-    if (tab === 'ask') abortInFlight('document');
-    if (tab === 'search-documents') abortInFlight('default');
+    if (tab === 'ask') {
+      abortInFlight('document');
+      abortInFlight('web-research');
+    }
+    if (tab === 'search-documents') {
+      abortInFlight('default');
+      abortInFlight('web-research');
+    }
+    if (tab === 'web-research') {
+      abortInFlight('default');
+      abortInFlight('document');
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tab]);
 
@@ -605,33 +719,6 @@ export default function AIAnalysisView(props: {
     if (!selectedDocumentId) return null;
     return documents.find((d) => d.id === selectedDocumentId) || null;
   }, [documents, selectedDocumentId]);
-
-  async function runPeriodReview() {
-    if (!periodLabel) return;
-    setPeriodLoading(true);
-    setPeriodError(null);
-    setPeriodResponse(null);
-
-    try {
-      const res = await fetch('/api/ai-analysis/period-review', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          companyId: selectedCompanyId,
-          periodLabel,
-        }),
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        throw new Error(data?.error || 'Failed to run Period Review');
-      }
-      setPeriodResponse(data as PeriodReviewResponse);
-    } catch (e: any) {
-      setPeriodError(e?.message || 'Unknown error');
-    } finally {
-      setPeriodLoading(false);
-    }
-  }
 
   return (
     <div style={{ maxWidth: '1400px', margin: '0 auto', padding: '32px' }}>
@@ -672,19 +759,19 @@ export default function AIAnalysisView(props: {
           Search Documents
         </button>
         <button
-          onClick={() => setTab('period-review')}
+          onClick={() => setTab('web-research')}
           style={{
             padding: '12px 20px',
             background: 'none',
-            color: tab === 'period-review' ? '#2751d0' : '#64748b',
+            color: tab === 'web-research' ? '#2751d0' : '#64748b',
             border: 'none',
-            borderBottom: tab === 'period-review' ? '3px solid #2751d0' : '3px solid transparent',
+            borderBottom: tab === 'web-research' ? '3px solid #2751d0' : '3px solid transparent',
             fontSize: '16px',
             fontWeight: '700',
             cursor: 'pointer',
           }}
         >
-          Period Review
+          Web Research
         </button>
       </div>
 
@@ -1289,113 +1376,240 @@ export default function AIAnalysisView(props: {
             </div>
           )}
 
-          {tab === 'period-review' && (
+          {tab === 'web-research' && (
             <div>
-              <div style={{ display: 'flex', gap: '10px', alignItems: 'flex-end', flexWrap: 'wrap' }}>
-                <div style={{ minWidth: '260px' }}>
-                  <div style={{ fontSize: '12px', fontWeight: '800', color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '6px' }}>
-                    Period (month)
+              <div style={{ display: 'grid', gap: '14px' }}>
+                <div>
+                  <div style={{ fontSize: '14px', fontWeight: 900, color: '#0f172a' }}>Web Research</div>
+                  <div style={{ marginTop: '4px', fontSize: '12px', color: '#64748b', lineHeight: 1.45 }}>
+                    Identity-aware web research with contextual follow-up questions. Use it for market, company, risk, valuation, customer, supplier, industry, or source-verification research.
                   </div>
-                  <select
-                    value={periodLabel}
-                    onChange={(e) => setPeriodLabel(e.target.value)}
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(260px, 1fr))', gap: '10px 14px' }}>
+                  <ResearchField label="Search name">
+                    <input
+                      value={webSearchName}
+                      onChange={(e) => setWebSearchName(e.target.value)}
+                      placeholder={companyName || 'Research subject'}
+                      style={researchInputStyle}
+                    />
+                  </ResearchField>
+                  <ResearchField label="Location / geography">
+                    <input
+                      value={webLocation}
+                      onChange={(e) => setWebLocation(e.target.value)}
+                      placeholder="City, state, region, or market"
+                      style={researchInputStyle}
+                    />
+                  </ResearchField>
+                  <ResearchField label="Known aliases">
+                    <input
+                      value={webAliases}
+                      onChange={(e) => setWebAliases(e.target.value)}
+                      placeholder="Comma-separated aliases"
+                      style={researchInputStyle}
+                    />
+                  </ResearchField>
+                  <ResearchField label="Excluded names">
+                    <input
+                      value={webExcludedNames}
+                      onChange={(e) => setWebExcludedNames(e.target.value)}
+                      placeholder="Wrong companies/entities to reject"
+                      style={researchInputStyle}
+                    />
+                  </ResearchField>
+                  <ResearchField label="Identity anchors">
+                    <input
+                      value={webIdentityAnchors}
+                      onChange={(e) => setWebIdentityAnchors(e.target.value)}
+                      placeholder="Official website, address, unique identifiers"
+                      style={researchInputStyle}
+                    />
+                  </ResearchField>
+                  <ResearchField label="Research depth">
+                    <select
+                      value={webResearchDepth}
+                      onChange={(e) => setWebResearchDepth(e.target.value === 'standard' ? 'standard' : 'deep')}
+                      style={researchInputStyle}
+                    >
+                      <option value="standard">Standard - faster / lower cost</option>
+                      <option value="deep">Deep - broader search + Firecrawl when configured</option>
+                    </select>
+                  </ResearchField>
+                </div>
+
+                <div>
+                  <div style={{ fontSize: '12px', fontWeight: 900, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.09em', marginBottom: '8px' }}>
+                    Research scope
+                  </div>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+                    {(['local', 'state', 'regional', 'national', 'global'] as WebResearchScope[]).map((scope) => {
+                      const checked = webResearchScopes.includes(scope);
+                      return (
+                        <label
+                          key={scope}
+                          style={{
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '7px',
+                            padding: '8px 10px',
+                            borderRadius: '10px',
+                            border: checked ? '1px solid #93c5fd' : '1px solid #e2e8f0',
+                            background: checked ? '#eff6ff' : '#fff',
+                            color: '#0f172a',
+                            fontSize: '12px',
+                            fontWeight: 800,
+                            cursor: 'pointer',
+                            textTransform: 'capitalize',
+                          }}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            onChange={(e) => {
+                              setWebResearchScopes((prev) => {
+                                if (e.target.checked) return prev.includes(scope) ? prev : [...prev, scope];
+                                const next = prev.filter((item) => item !== scope);
+                                return next.length > 0 ? next : prev;
+                              });
+                            }}
+                          />
+                          {scope}
+                        </label>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                <div style={{ display: 'flex', gap: '10px', alignItems: 'stretch' }}>
+                  <input
+                    value={webResearchQuestion}
+                    onChange={(e) => setWebResearchQuestion(e.target.value)}
+                    placeholder={webResearchTurns.length > 0 ? 'Ask a follow-up about this research...' : 'What should we research?'}
                     style={{
-                      width: '100%',
+                      flex: 1,
+                      padding: '12px 14px',
+                      borderRadius: '10px',
+                      border: '1px solid #cbd5e1',
+                      outline: 'none',
+                      fontSize: '15px',
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+                        runWebResearch();
+                      }
+                    }}
+                  />
+                  <button
+                    onClick={runWebResearch}
+                    disabled={webResearchLoading || !webResearchQuestion.trim()}
+                    style={{
+                      padding: '12px 16px',
+                      borderRadius: '10px',
+                      border: 'none',
+                      background: webResearchLoading ? '#94a3b8' : '#0ea5e9',
+                      color: 'white',
+                      fontWeight: '800',
+                      cursor: webResearchLoading ? 'not-allowed' : 'pointer',
+                      whiteSpace: 'nowrap',
+                    }}
+                    title="Run (Ctrl/Cmd+Enter)"
+                  >
+                    {webResearchLoading ? 'Researching...' : webResearchTurns.length > 0 ? 'Ask Follow-Up' : 'Run Research'}
+                  </button>
+                  <button
+                    onClick={startNewWebResearchThread}
+                    disabled={webResearchLoading || webResearchTurns.length === 0}
+                    style={{
                       padding: '12px 12px',
                       borderRadius: '10px',
                       border: '1px solid #cbd5e1',
-                      fontSize: '14px',
+                      background: '#fff',
+                      color: '#1e293b',
+                      fontWeight: '800',
+                      cursor: webResearchLoading || webResearchTurns.length === 0 ? 'not-allowed' : 'pointer',
+                      whiteSpace: 'nowrap',
                     }}
                   >
-                    {monthly.map((m) => (
-                      <option key={m.month} value={m.month}>
-                        {m.month}
-                      </option>
-                    ))}
-                  </select>
+                    New Research
+                  </button>
                 </div>
-
-                <button
-                  onClick={runPeriodReview}
-                  disabled={periodLoading || !periodLabel}
-                  style={{
-                    padding: '12px 16px',
-                    borderRadius: '10px',
-                    border: 'none',
-                    background: periodLoading ? '#94a3b8' : '#667eea',
-                    color: 'white',
-                    fontWeight: '800',
-                    cursor: periodLoading ? 'not-allowed' : 'pointer',
-                    whiteSpace: 'nowrap',
-                    height: '42px',
-                  }}
-                >
-                  {periodLoading ? 'Analyzing…' : 'Run Period Review'}
-                </button>
               </div>
 
-              {periodError && (
+              {webResearchError && (
                 <div style={{ marginTop: '12px', padding: '12px', background: '#fef2f2', border: '1px solid #fecaca', color: '#991b1b', borderRadius: '10px' }}>
-                  {periodError}
+                  {webResearchError}
                 </div>
               )}
 
-              {periodResponse && (
+              {webResearchTurns.length > 0 && (
                 <div style={{ marginTop: '16px', display: 'grid', gap: '14px' }}>
-                  <Section title={`Executive summary — ${periodResponse.period.label}`}>
-                    <div style={{ whiteSpace: 'pre-wrap', lineHeight: '1.7' }}>{periodResponse.executiveSummary}</div>
-                  </Section>
-                  <Section title="Performance vs goals">
-                    <div style={{ whiteSpace: 'pre-wrap', lineHeight: '1.7' }}>{periodResponse.performanceVsGoals}</div>
-                  </Section>
-                  <Section title="Peer & market context (sourced)">
-                    <div style={{ whiteSpace: 'pre-wrap', lineHeight: '1.7' }}>{periodResponse.peerAndMarketContext}</div>
-                  </Section>
-                  <Section title="Operational trends (focus on negative)">
-                    {periodResponse.operationalTrends.negativeTrendAlerts.length > 0 && (
-                      <div style={{ display: 'grid', gap: '10px', marginBottom: '10px' }}>
-                        {periodResponse.operationalTrends.negativeTrendAlerts.map((a, idx) => (
-                          <div key={idx} style={{ padding: '12px', borderRadius: '10px', background: '#fff1f2', border: '1px solid #fecdd3' }}>
-                            <div style={{ fontWeight: '900', color: '#9f1239' }}>{a.metric}</div>
-                            <div style={{ marginTop: '6px', color: '#0f172a' }}><strong>Signal:</strong> {a.signal}</div>
-                            <div style={{ marginTop: '6px', color: '#0f172a' }}><strong>Why it matters:</strong> {a.whyItMatters}</div>
-                            <div style={{ marginTop: '6px', color: '#0f172a' }}><strong>Evidence:</strong> {a.evidence}</div>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                    <div style={{ whiteSpace: 'pre-wrap', lineHeight: '1.7' }}>{periodResponse.operationalTrends.narrative}</div>
-                  </Section>
-                  <Section title="Drivers & risks">
-                    <div style={{ whiteSpace: 'pre-wrap', lineHeight: '1.7' }}>{periodResponse.driversAndRisks}</div>
-                  </Section>
-                  <Section title="Opportunities (extremely successful scenario)">
-                    <div style={{ whiteSpace: 'pre-wrap', lineHeight: '1.7' }}>{periodResponse.opportunities}</div>
-                  </Section>
-                  <Section title="Appendix (sources + run notes)">
-                    {periodResponse.appendix.sources.length > 0 && (
-                      <div style={{ marginBottom: '10px' }}>
-                        <div style={{ fontWeight: '800', marginBottom: '6px' }}>Sources</div>
-                        <div style={{ display: 'grid', gap: '6px' }}>
-                          {periodResponse.appendix.sources.map((s, idx) => (
-                            <a key={idx} href={s.url} target="_blank" rel="noreferrer" style={{ color: '#2563eb', textDecoration: 'none' }}>
-                              {s.title || s.url}
+                  {webResearchTurns.map((turn, turnIdx) => (
+                    <div key={turn.id} style={{ display: 'grid', gap: '10px' }}>
+                      <Section title={`Research turn ${turnIdx + 1} · ${new Date(turn.askedAt).toLocaleString()}`}>
+                        <div style={{ whiteSpace: 'pre-wrap', lineHeight: '1.65', color: '#0f172a' }}>
+                          <strong>Question:</strong> {turn.question}
+                        </div>
+                      </Section>
+                      <Section title="Short answer">
+                        <div style={{ whiteSpace: 'pre-wrap', lineHeight: '1.65', color: '#0f172a' }}>{turn.response.shortAnswer}</div>
+                      </Section>
+                      <Section title="Detailed answer">
+                        <div style={{ whiteSpace: 'pre-wrap', lineHeight: '1.7', color: '#0f172a' }}>{turn.response.longAnswer}</div>
+                      </Section>
+                      <Section title="Sourced findings">
+                        <div style={{ display: 'grid', gap: '10px' }}>
+                          {turn.response.citedBullets.map((b, idx) => (
+                            <div key={`${turn.id}-finding-${idx}`} style={{ padding: '10px 12px', background: '#f8fafc', borderRadius: '10px', border: '1px solid #e2e8f0' }}>
+                              <div style={{ color: '#0f172a', lineHeight: '1.55' }}>• {b.text}</div>
+                              <div style={{ marginTop: '6px', display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+                                {(b.citations || []).map((c, cIdx) => (
+                                  <a
+                                    key={`${turn.id}-finding-${idx}-${cIdx}`}
+                                    href={c.url}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    style={{ fontSize: '12px', color: '#2563eb', textDecoration: 'none' }}
+                                    title={c.title || c.url}
+                                  >
+                                    {c.title ? c.title : new URL(c.url).hostname}
+                                  </a>
+                                ))}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </Section>
+                      <Section title="How this impacts us">
+                        <div style={{ whiteSpace: 'pre-wrap', lineHeight: '1.7', color: '#0f172a' }}>{turn.response.howThisImpactsUs}</div>
+                      </Section>
+                      <Section title="Sources">
+                        <div style={{ display: 'grid', gap: '8px' }}>
+                          {turn.response.sources.map((s, idx) => (
+                            <a
+                              key={`${turn.id}-source-${idx}`}
+                              href={s.url}
+                              target="_blank"
+                              rel="noreferrer"
+                              style={{
+                                padding: '10px 12px',
+                                border: '1px solid #e2e8f0',
+                                borderRadius: '10px',
+                                color: '#0f172a',
+                                textDecoration: 'none',
+                                background: '#fff',
+                              }}
+                            >
+                              <div style={{ fontSize: '14px', fontWeight: '800' }}>{s.title || s.url}</div>
+                              {s.publishedDate && <div style={{ fontSize: '12px', color: '#64748b', marginTop: '2px' }}>{s.publishedDate}</div>}
+                              {s.snippet && <div style={{ fontSize: '13px', color: '#334155', marginTop: '6px', lineHeight: '1.45' }}>{s.snippet}</div>}
                             </a>
                           ))}
                         </div>
-                      </div>
-                    )}
-                    {periodResponse.appendix.notes.length > 0 && (
-                      <div>
-                        <div style={{ fontWeight: '800', marginBottom: '6px' }}>Notes</div>
-                        <ul style={{ margin: 0, paddingLeft: '18px', color: '#0f172a' }}>
-                          {periodResponse.appendix.notes.map((n, idx) => (
-                            <li key={idx} style={{ marginBottom: '4px' }}>{n}</li>
-                          ))}
-                        </ul>
-                      </div>
-                    )}
-                  </Section>
+                      </Section>
+                    </div>
+                  ))}
                 </div>
               )}
             </div>
@@ -1403,6 +1617,27 @@ export default function AIAnalysisView(props: {
         </div>
       </div>
     </div>
+  );
+}
+
+const researchInputStyle: CSSProperties = {
+  width: '100%',
+  padding: '10px 12px',
+  borderRadius: '10px',
+  border: '1px solid #cbd5e1',
+  fontSize: '13px',
+  background: '#fff',
+  boxSizing: 'border-box',
+};
+
+function ResearchField(props: { label: string; children: any }) {
+  return (
+    <label style={{ display: 'grid', gap: '6px' }}>
+      <span style={{ fontSize: '12px', fontWeight: 900, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.08em' }}>
+        {props.label}
+      </span>
+      {props.children}
+    </label>
   );
 }
 
