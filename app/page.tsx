@@ -2593,6 +2593,7 @@ function FinancialScorePage() {
   const [businessContextSaveStatus, setBusinessContextSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
   const [businessContextGenerateStatus, setBusinessContextGenerateStatus] = useState<'idle' | 'generating' | 'generated' | 'error'>('idle');
   const [businessContextGenerateError, setBusinessContextGenerateError] = useState('');
+  const [businessContextGenerateNote, setBusinessContextGenerateNote] = useState('');
   const [businessContextLoading, setBusinessContextLoading] = useState(false);
   const [companyBackgroundHistory, setCompanyBackgroundHistory] = useState('');
   const [marketPositionCompetitiveLandscape, setMarketPositionCompetitiveLandscape] = useState('');
@@ -9143,6 +9144,7 @@ Suggested structure:
     if (!selectedCompanyId || !companyName) return;
     setBusinessContextGenerateStatus('generating');
     setBusinessContextGenerateError('');
+    setBusinessContextGenerateNote('');
     try {
       const location = [
         company?.addressCity || '',
@@ -9173,6 +9175,15 @@ Suggested structure:
       setMarketPositionCompetitiveLandscape(String(result?.marketPositionCompetitiveLandscape || ''));
       setCompetitorTable(Array.isArray(result?.competitorTable) ? result.competitorTable : []);
       setResearchSourcesText(Array.isArray(result?.researchSources) ? result.researchSources.join('\n') : '');
+      if (researchDepth === 'deep') {
+        if (result?.firecrawlUsed) {
+          setBusinessContextGenerateNote(`Deep research used Firecrawl and extracted ${Number(result?.firecrawlDocumentCount || 0)} source page(s).`);
+        } else if (result?.firecrawlConfigured) {
+          setBusinessContextGenerateNote('Deep research ran with Firecrawl configured, but no source pages were successfully extracted.');
+        } else {
+          setBusinessContextGenerateNote('Deep research ran without Firecrawl because FIRECRAWL_API_KEY is not loaded.');
+        }
+      }
       setBusinessContextGenerateStatus('generated');
       setTimeout(() => setBusinessContextGenerateStatus('idle'), 3000);
     } catch (err: any) {
@@ -17804,6 +17815,9 @@ Suggested structure:
                 {businessContextGenerateError && businessContextGenerateStatus === 'error' && (
                   <div style={{ fontSize: '13px', color: '#991b1b', padding: '8px 0' }}>{businessContextGenerateError}</div>
                 )}
+                {businessContextGenerateNote && businessContextGenerateStatus !== 'error' && (
+                  <div style={{ fontSize: '13px', color: '#475569', padding: '8px 0' }}>{businessContextGenerateNote}</div>
+                )}
               </div>
 
               <div style={{ background: 'white', border: '1px solid #dbe5ef', borderRadius: '12px', padding: '18px 20px' }}>
@@ -17853,6 +17867,9 @@ Suggested structure:
                     <option value="standard">Standard - faster / lower cost</option>
                     <option value="deep">Deep - more detailed scan</option>
                   </select>
+                  <div style={{ gridColumn: '2', fontSize: '12px', color: '#64748b', lineHeight: 1.4 }}>
+                    Deep mode also uses Firecrawl page extraction when `FIRECRAWL_API_KEY` is configured.
+                  </div>
                 </div>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '10px', marginBottom: '14px' }}>
                   {COMPETITOR_SEARCH_SCOPE_OPTIONS.map((option) => {

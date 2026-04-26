@@ -77,6 +77,65 @@ function normalizeCompetitorTable(value: unknown): CompetitorTableRow[] {
     .filter((row) => row.name);
 }
 
+function normalizeFirecrawlUrl(value: string): string {
+  const trimmed = String(value || '').trim();
+  if (!trimmed) return '';
+  if (/^https?:\/\//i.test(trimmed)) return trimmed;
+  if (/^[a-z0-9.-]+\.[a-z]{2,}(\/.*)?$/i.test(trimmed)) return `https://${trimmed}`;
+  return '';
+}
+
+function pickFirecrawlUrls(citations: string[], website: string, identityAnchors: string[]): string[] {
+  const urls = uniqueStrings([
+    website,
+    ...identityAnchors,
+    ...citations,
+  ])
+    .map(normalizeFirecrawlUrl)
+    .filter(Boolean);
+
+  const preferred = urls.filter((url) =>
+    /atlanticprecision\.net|about|company|product|service|solution|industr|capabilit|certification|quality|competitor|contact/i.test(url),
+  );
+  return uniqueStrings([...preferred, ...urls]).slice(0, 8);
+}
+
+async function scrapeWithFirecrawl(params: { apiKey: string; url: string }): Promise<{ url: string; title: string; markdown: string } | null> {
+  try {
+    const response = await fetch('https://api.firecrawl.dev/v2/scrape', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${params.apiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        url: params.url,
+        formats: ['markdown'],
+        onlyMainContent: true,
+        maxAge: 1000 * 60 * 60 * 24 * 7,
+      }),
+    });
+    const result = await response.json();
+    if (!response.ok || result?.success === false) {
+      console.warn('Firecrawl scrape failed:', params.url, result?.error || response.status);
+      return null;
+    }
+
+    const data = result?.data || result;
+    const markdown = String(data?.markdown || '').trim();
+    if (!markdown) return null;
+
+    return {
+      url: params.url,
+      title: String(data?.metadata?.title || data?.title || params.url).trim(),
+      markdown: markdown.slice(0, 6000),
+    };
+  } catch (error) {
+    console.warn('Firecrawl scrape error:', params.url, error);
+    return null;
+  }
+}
+
 function getKnownCompanyFacts(params: {
   companyName: string;
   location: string;
@@ -275,9 +334,26 @@ Based on public information, research competitive strengths, vulnerabilities, di
     );
 
     const allCitations = uniqueStrings(researchResults.flatMap((item) => item.citations));
+    const firecrawlApiKey = process.env.FIRECRAWL_API_KEY?.trim();
+    const firecrawlUrls = pickFirecrawlUrls(allCitations, website, aiResearchIdentityAnchors);
+    const firecrawlDocs =
+      researchDepth === 'deep' && firecrawlApiKey
+        ? (
+            await Promise.all(
+              firecrawlUrls.map((url) =>
+                scrapeWithFirecrawl({ apiKey: firecrawlApiKey, url }),
+              ),
+            )
+          ).filter((doc): doc is { url: string; title: string; markdown: string } => Boolean(doc))
+        : [];
     const researchNotes = researchResults
       .map((item) => `## ${item.label}\n${item.content}\nCitations: ${item.citations.join(', ') || 'None returned'}`)
       .join('\n\n');
+    const firecrawlNotes = firecrawlDocs.length > 0
+      ? firecrawlDocs
+          .map((doc) => `## ${doc.title}\nURL: ${doc.url}\n${doc.markdown}`)
+          .join('\n\n')
+      : 'No Firecrawl page extracts were available. Use the live web search notes only.';
 
     const synthesisPrompt = `
 You are preparing a detailed, valuation-ready Business Overview / Market Position section.
@@ -292,6 +368,9 @@ ${scopeInstructions}
 
 Research notes from live web searches:
 ${researchNotes}
+
+Firecrawl page extracts from selected cited/source pages:
+${firecrawlNotes}
 
 Return ONLY valid JSON:
 {
@@ -317,6 +396,7 @@ Return ONLY valid JSON:
 Writing requirements:
 - Be detailed and thorough. This should be substantially better than a quick web summary.
 - Do not compress the output. Preserve useful detail from the research notes.
+- When Firecrawl extracts are available, use them as higher-confidence source text than search summaries.
 - Company Background & History should be roughly ${researchDepth === 'deep' ? '600-1,000' : '350-650'} words when public information supports it.
 - Market Position & Competitive Landscape should be roughly ${researchDepth === 'deep' ? '900-1,500' : '500-900'} words when public information supports it.
 - Use clear subheadings and concise paragraphs/bullets inside each string so the page is easy to edit.
@@ -388,7 +468,7 @@ Writing requirements:
       fallback.citations.forEach((source) => allCitations.push(source));
     }
 
-    const sources = uniqueStrings([...synthesisSources, ...allCitations]);
+    const sources = uniqueStrings([...synthesisSources, ...firecrawlDocs.map((doc) => doc.url), ...allCitations]);
 
     return NextResponse.json({
       companyBackgroundHistory: String(parsed?.companyBackgroundHistory || '').trim(),
@@ -396,6 +476,10 @@ Writing requirements:
       researchSources: sources,
       competitorTable: normalizeCompetitorTable(parsed?.competitorTable),
       researchDepth,
+      firecrawlUsed: firecrawlDocs.length > 0,
+      firecrawlConfigured: Boolean(firecrawlApiKey),
+      firecrawlDocumentCount: firecrawlDocs.length,
+      firecrawlAttemptedUrls: firecrawlUrls,
       rawCitations: allCitations,
     });
   } catch (error) {

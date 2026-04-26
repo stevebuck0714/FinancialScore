@@ -73,6 +73,14 @@ function isLikelyResponsesOnlyModel(model: string): boolean {
   return false;
 }
 
+function isUnsupportedResponseFormatError(error: unknown): boolean {
+  const record = error && typeof error === 'object' ? (error as Record<string, unknown>) : {};
+  const nested = record.error && typeof record.error === 'object' ? (record.error as Record<string, unknown>) : {};
+  const param = String(record.param || nested.param || '').toLowerCase();
+  const message = String(record.message || nested.message || error || '').toLowerCase();
+  return param === 'response_format' || message.includes('response_format');
+}
+
 async function createResponsesTextViaFetch(params: {
   model: string;
   instructions: string;
@@ -324,20 +332,35 @@ export async function createModelText(params: {
   }
 
   const chatProviderOptions = getAiProviderOptions();
-  const completion = await withTimeout(
-    openai.chat.completions.create({
+  const chatRequest = {
       model: resolveModelName(model),
       messages,
       temperature,
       ...(typeof maxTokens === 'number' ? { max_tokens: maxTokens } : {}),
-      // Helps JSON-heavy prompts; models that don't support it will error, but those
-      // should be handled by the Responses path above.
       response_format: { type: 'json_object' } as { type: 'json_object' },
       ...(chatProviderOptions ? ({ providerOptions: chatProviderOptions } as Record<string, unknown>) : {}),
-    } as Parameters<typeof openai.chat.completions.create>[0]),
-    timeoutMs,
-    'OpenAI chat request',
-  );
+  } as Parameters<typeof openai.chat.completions.create>[0];
+
+  let completion: Awaited<ReturnType<typeof openai.chat.completions.create>>;
+  try {
+    completion = await withTimeout(
+      openai.chat.completions.create(chatRequest),
+      timeoutMs,
+      'OpenAI chat request',
+    );
+  } catch (error) {
+    if (!isUnsupportedResponseFormatError(error)) throw error;
+
+    const { response_format: _responseFormat, ...plainJsonPromptRequest } =
+      chatRequest as Parameters<typeof openai.chat.completions.create>[0] & {
+        response_format?: { type: 'json_object' };
+      };
+    completion = await withTimeout(
+      openai.chat.completions.create(plainJsonPromptRequest),
+      timeoutMs,
+      'OpenAI chat request without response_format',
+    );
+  }
 
   const text = completion.choices[0]?.message?.content ?? '';
   if (!text.trim()) throw new Error('Empty model response (chat)');
