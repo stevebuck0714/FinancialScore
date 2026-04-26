@@ -9063,7 +9063,11 @@ function FinancialScorePage() {
     () => companyProfiles.find((p) => p.companyId === selectedCompanyId) || null,
     [companyProfiles, selectedCompanyId]
   );
-  const aiResearchTextToList = (value: string) => value.split(/\r?\n|,/).map((item) => item.trim()).filter(Boolean);
+  const aiResearchTextToList = (value: string) =>
+    value
+      .split(',')
+      .map((item) => item.replace(/^\s+/, ''))
+      .filter((item) => item.trim());
   const buildBusinessOverviewResearchProfile = useCallback((): CompanyProfile => {
     const existing = selectedCompanyProfile || ({} as Partial<CompanyProfile>);
     return {
