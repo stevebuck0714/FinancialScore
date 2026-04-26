@@ -17801,7 +17801,7 @@ function FinancialScorePage() {
                         type="text"
                         value={selectedCompanyProfile?.aiResearchSearchName || ''}
                         onChange={(e) => updateBusinessOverviewResearchProfile({ aiResearchSearchName: e.target.value })}
-                        placeholder="e.g., Atlantic Precision Resource"
+                        placeholder=""
                         style={{ width: '80%', boxSizing: 'border-box', padding: '7px 9px', borderRadius: '7px', border: '1px solid #d8e1eb', fontSize: '12px', background: '#fff' }}
                       />
                     </div>
@@ -17811,7 +17811,7 @@ function FinancialScorePage() {
                         type="text"
                         value={(selectedCompanyProfile?.aiResearchAliases || []).join(', ')}
                         onChange={(e) => updateBusinessOverviewResearchProfile({ aiResearchAliases: aiResearchTextToList(e.target.value) })}
-                        placeholder="Atlantic Precision Resources, APR"
+                        placeholder=""
                         style={{ width: '80%', boxSizing: 'border-box', padding: '7px 9px', borderRadius: '7px', border: '1px solid #d8e1eb', fontSize: '12px', background: '#fff' }}
                       />
                     </div>
@@ -17821,7 +17821,7 @@ function FinancialScorePage() {
                         type="text"
                         value={(selectedCompanyProfile?.aiResearchIdentityAnchors || []).join(', ')}
                         onChange={(e) => updateBusinessOverviewResearchProfile({ aiResearchIdentityAnchors: aiResearchTextToList(e.target.value) })}
-                        placeholder="atlanticprecision.net, Lynchburg VA"
+                        placeholder=""
                         style={{ width: '80%', boxSizing: 'border-box', padding: '7px 9px', borderRadius: '7px', border: '1px solid #d8e1eb', fontSize: '12px', background: '#fff' }}
                       />
                     </div>
@@ -17831,7 +17831,7 @@ function FinancialScorePage() {
                         type="text"
                         value={(selectedCompanyProfile?.aiResearchExcludedNames || []).join(', ')}
                         onChange={(e) => updateBusinessOverviewResearchProfile({ aiResearchExcludedNames: aiResearchTextToList(e.target.value) })}
-                        placeholder="Atlantic Precision Inc., unrelated companies"
+                        placeholder=""
                         style={{ width: '80%', boxSizing: 'border-box', padding: '7px 9px', borderRadius: '7px', border: '1px solid #d8e1eb', fontSize: '12px', background: '#fff' }}
                       />
                     </div>
