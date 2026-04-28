@@ -61,6 +61,7 @@ const STACKED_BAR_COLORS = [
   '#84cc16', '#f97316', '#ec4899', '#0ea5e9', '#22c55e', '#a855f7',
   '#64748b', '#0f766e', '#a16207',
 ];
+const FORECAST_MONTH_COUNT = 60;
 
 function parseMonthDate(row: any): Date | null {
   const dateLike = row?.date ?? row?.monthDate;
@@ -166,10 +167,8 @@ export default function FinancialForecastTab({
   basisMode = 'cash',
 }: FinancialForecastTabProps) {
   const toplineLabel = basisMode === 'accrual' ? 'Sales' : 'Revenue';
-  const isAccrualWeeklyMode = basisMode === 'accrual' && displayMode === 'full';
-  const [accrualSalesInputMode, setAccrualSalesInputMode] = useState<'growth' | 'amount'>(
-    basisMode === 'accrual' ? 'amount' : 'growth'
-  );
+  const isAccrualWeeklyMode = false;
+  const [accrualSalesInputMode] = useState<'growth' | 'amount'>('growth');
   const [accrualOpexInputMode, setAccrualOpexInputMode] = useState<'percent' | 'amount'>(
     basisMode === 'accrual' ? 'amount' : 'percent'
   );
@@ -181,7 +180,7 @@ export default function FinancialForecastTab({
   const [lastSavedAt, setLastSavedAt] = useState<string | null>(null);
   const [isArchivingBudget, setIsArchivingBudget] = useState(false);
   const [lastBudgetArchiveAt, setLastBudgetArchiveAt] = useState<string | null>(null);
-  const [incomeStatementCollapseByYear, setIncomeStatementCollapseByYear] = useState(false);
+  const [incomeStatementViewMode, setIncomeStatementViewMode] = useState<'monthly' | 'quarterly' | 'yearly'>('monthly');
   const [graphGranularity, setGraphGranularity] = useState<'monthly' | 'quarterly'>('monthly');
   const [masterMonthlyData, setMasterMonthlyData] = useState<any[]>([]);
   const monthly = useMemo(
@@ -387,13 +386,11 @@ export default function FinancialForecastTab({
     () => monthActuals.slice(-actualMonthColumnCount),
     [monthActuals, actualMonthColumnCount],
   );
-  const useQuarterlyActualColumns = basisMode === 'accrual' && !isAccrualWeeklyMode;
-  const actualPeriodUnitLabel = useQuarterlyActualColumns ? 'Calendar Qtrs' : 'Months';
-  const currentForecastPeriodLabel = useQuarterlyActualColumns ? 'Current Year Forecast Quarterly' : 'Current Year Forecast Monthly';
-  const currentForecastPeriodPctLabel = useQuarterlyActualColumns
-    ? `Current Year Forecast Quarterly (% of ${toplineLabel})`
-    : `Current Year Forecast Monthly (% of ${toplineLabel})`;
-  const canUseAccrualSalesAmountInput = basisMode === 'accrual' && !useQuarterlyActualColumns && accrualSalesInputMode === 'amount';
+  const useQuarterlyActualColumns = false;
+  const actualPeriodUnitLabel = 'Months';
+  const currentForecastPeriodLabel = '60-Month Forecast Monthly';
+  const currentForecastPeriodPctLabel = `60-Month Forecast Monthly (% of ${toplineLabel})`;
+  const canUseAccrualSalesAmountInput = false;
   const canUseAccrualOpexAmountInput = basisMode === 'accrual' && !useQuarterlyActualColumns && accrualOpexInputMode === 'amount';
   const displayedActualMonths = useMemo(() => {
     const emptyActualColumn = {
@@ -441,41 +438,7 @@ export default function FinancialForecastTab({
     const startYear = latestActualMonth?.year || now.getUTCFullYear();
     const startMonth = latestActualMonth?.month ?? now.getUTCMonth();
     const results: MonthMeta[] = [];
-    if (isAccrualWeeklyMode) {
-      const forecastAnchor = getFridayOfCurrentWeek(new Date());
-      for (let i = 0; i < 13; i++) {
-        const weekDate = new Date(forecastAnchor);
-        weekDate.setDate(weekDate.getDate() + i * 7);
-        results.push({
-          key: `W${i + 1}-${weekDate.getFullYear()}-${String(weekDate.getMonth() + 1).padStart(2, '0')}-${String(weekDate.getDate()).padStart(2, '0')}`,
-          year: weekDate.getFullYear(),
-          month: weekDate.getMonth(),
-          label: weekDate.toLocaleDateString('en-US', {
-            month: 'short',
-            day: 'numeric',
-          }),
-        });
-      }
-      return results;
-    }
-    if (useQuarterlyActualColumns) {
-      const latestQuarter =
-        quarterActuals[quarterActuals.length - 1] ||
-        getQuarterInfo(new Date(Date.UTC(startYear, startMonth, 1)));
-      const firstForecastQuarter = shiftQuarter(latestQuarter.year, latestQuarter.quarter, 1);
-      for (let i = 0; i < 4; i++) {
-        const shifted = shiftQuarter(firstForecastQuarter.year, firstForecastQuarter.quarter, i);
-        const quarterEndMonth = shifted.quarter * 3 - 1;
-        results.push({
-          key: `${shifted.year}-Q${shifted.quarter}`,
-          year: shifted.year,
-          month: quarterEndMonth,
-          label: getQuarterEndLabel(shifted.year, shifted.quarter),
-        });
-      }
-      return results;
-    }
-    for (let i = 1; i <= 12; i++) {
+    for (let i = 1; i <= FORECAST_MONTH_COUNT; i++) {
       const shifted = shiftMonth(startYear, startMonth, i);
       results.push({
         key: `${shifted.year}-${String(shifted.month + 1).padStart(2, '0')}`,
@@ -485,49 +448,9 @@ export default function FinancialForecastTab({
       });
     }
     return results;
-  }, [latestActualMonth, isAccrualWeeklyMode, useQuarterlyActualColumns, quarterActuals]);
+  }, [latestActualMonth]);
 
-  const quarterlyForecastPeriods = useMemo<QuarterMeta[]>(() => {
-    if (isAccrualWeeklyMode) return [];
-    // UTC bucketing — see lib/date-utils.ts
-    const now = new Date();
-    if (useQuarterlyActualColumns) {
-      const startYear = latestActualMonth?.year || now.getUTCFullYear();
-      const startMonth = latestActualMonth?.month ?? now.getUTCMonth();
-      const latestQuarter =
-        quarterActuals[quarterActuals.length - 1] ||
-        getQuarterInfo(new Date(Date.UTC(startYear, startMonth, 1)));
-      const firstFutureQuarter = shiftQuarter(latestQuarter.year, latestQuarter.quarter, 1 + monthlyForecastPeriods.length);
-      const futureQuarterCount = 16; // 4 years beyond the current forecast year
-      const results: QuarterMeta[] = [];
-      for (let i = 0; i < futureQuarterCount; i++) {
-        const shifted = shiftQuarter(firstFutureQuarter.year, firstFutureQuarter.quarter, i);
-        results.push({
-          key: `${shifted.year}-Q${shifted.quarter}`,
-          year: shifted.year,
-          quarter: shifted.quarter,
-          label: getQuarterEndLabel(shifted.year, shifted.quarter),
-        });
-      }
-      return results;
-    }
-    const seedYear = latestActualMonth?.year || now.getUTCFullYear();
-    const seedMonth = latestActualMonth?.month ?? now.getUTCMonth();
-    const afterFirstYear = shiftMonth(seedYear, seedMonth, 12);
-    const quarterSeed = getQuarterInfo(new Date(Date.UTC(afterFirstYear.year, afterFirstYear.month, 1)));
-    const firstQuarter = shiftQuarter(quarterSeed.year, quarterSeed.quarter, 1);
-    const results: QuarterMeta[] = [];
-    for (let i = 0; i < 12; i++) {
-      const shifted = shiftQuarter(firstQuarter.year, firstQuarter.quarter, i);
-      results.push({
-        key: `${shifted.year}-Q${shifted.quarter}`,
-        year: shifted.year,
-        quarter: shifted.quarter,
-        label: getQuarterEndLabel(shifted.year, shifted.quarter),
-      });
-    }
-    return results;
-  }, [latestActualMonth, isAccrualWeeklyMode, useQuarterlyActualColumns, quarterActuals, monthlyForecastPeriods.length]);
+  const quarterlyForecastPeriods = useMemo<QuarterMeta[]>(() => [], []);
 
   const forecastPeriods = useMemo<ForecastPeriodMeta[]>(
     () => [
@@ -1048,22 +971,10 @@ export default function FinancialForecastTab({
     }
   };
 
-  const annualYearColumns = useMemo(() => {
-    const blockCount = Math.floor(quarterlyForecastPeriods.length / 4);
-    return Array.from({ length: blockCount }).map((_, idx) => {
-      const blockStart = idx * 4;
-      const startQuarter = quarterlyForecastPeriods[blockStart];
-      const endQuarter = quarterlyForecastPeriods[blockStart + 3] || startQuarter;
-      return {
-        id: `fy-${idx + 1}`,
-        label: String(endQuarter?.year || startQuarter?.year || new Date().getUTCFullYear()),
-        startIndex: monthlyForecastPeriods.length + blockStart,
-      };
-    });
-  }, [monthlyForecastPeriods.length, quarterlyForecastPeriods]);
+  const annualYearColumns = useMemo(() => [], []);
 
   const quarterlyFutureCount = quarterlyForecastPeriods.length;
-  const futureSectionCount = annualExpanded ? quarterlyFutureCount : annualYearColumns.length;
+  const futureSectionCount = 0;
   const totalInputPeriodCols = actualMonthColumnCount + monthlyForecastCount + futureSectionCount;
 
   const forecastRows = useMemo(() => {
@@ -1245,12 +1156,46 @@ export default function FinancialForecastTab({
   }, [forecastRows, revenueRowKeys, cogsRowKeys]);
 
   const incomeStatementRows = useMemo(() => {
+    if (incomeStatementViewMode === 'monthly') {
+      const actualRows = actualMonths.map((m) => {
+        const totalRevenue = Number(m.revenue) || 0;
+        const totalCogs = Object.values(m.cogsDetails || {}).reduce((sum, v) => sum + (Number(v) || 0), 0);
+        const totalOpex = Object.values(m.opexDetails || {}).reduce((sum, v) => sum + (Number(v) || 0), 0);
+        const grossProfit = totalRevenue - totalCogs;
+        const operatingIncome = grossProfit - totalOpex;
+        const totalIncomeTaxes = Number(m.incomeTaxes) || 0;
+        const netIncome = operatingIncome - totalIncomeTaxes;
+        return {
+          key: `actual-${m.key}`,
+          label: m.label,
+          year: m.year,
+          month: m.month,
+          revenueDetails: m.revenueDetails || {},
+          cogsDetails: m.cogsDetails || {},
+          opexDetails: m.opexDetails || {},
+          totalRevenue,
+          totalCogs,
+          grossProfit,
+          totalOpex,
+          totalIncomeTaxes,
+          operatingIncome,
+          netIncome,
+          isActual: true,
+        };
+      });
+
+      const forecastMonthlyRows = forecastRows
+        .filter((row) => row.kind === 'month')
+        .map((row) => ({ ...row, isActual: false }));
+
+      return [...actualRows, ...forecastMonthlyRows];
+    }
+
     const latestActualQuarter = quarterActuals.length > 0 ? quarterActuals[quarterActuals.length - 1] : null;
-    const priorYear = latestActualQuarter ? latestActualQuarter.year - 1 : null;
     const actualRows = quarterActuals
       .filter((q) => {
-        if (priorYear === null || !latestActualQuarter) return true;
-        return q.year === priorYear || q.year === latestActualQuarter.year;
+        if (!latestActualQuarter) return true;
+        return q.year === latestActualQuarter.year;
       })
       .map((q) => {
         const totalRevenue = Number(q.revenue) || 0;
@@ -1289,7 +1234,7 @@ export default function FinancialForecastTab({
       .map((row) => ({ ...row, isActual: false }));
 
     return [...actualRows, ...forecastRowsAfterActuals];
-  }, [quarterActuals, forecastRowsByQuarter]);
+  }, [actualMonths, forecastRows, incomeStatementViewMode, quarterActuals, forecastRowsByQuarter]);
 
   const incomeStatementColumns = useMemo(() => {
     const base = incomeStatementRows.map((row, idx) => ({
@@ -1299,30 +1244,26 @@ export default function FinancialForecastTab({
       isAnnual: false,
       year: row.year,
     }));
-    if (!incomeStatementCollapseByYear || incomeStatementRows.length === 0) return base;
+    if (incomeStatementViewMode === 'monthly' || incomeStatementRows.length === 0) return base;
+
+    if (incomeStatementViewMode === 'quarterly') {
+      return base;
+    }
 
     const yearToIndices = new Map<number, number[]>();
     incomeStatementRows.forEach((row, idx) => {
       if (!yearToIndices.has(row.year)) yearToIndices.set(row.year, []);
       yearToIndices.get(row.year)!.push(idx);
     });
-
-    const collapsed: Array<{ key: string; label: string; rowIndices: number[]; isAnnual: boolean; year: number }> = [];
-    const addedYears = new Set<number>();
-    incomeStatementRows.forEach((row, idx) => {
-      if (addedYears.has(row.year)) return;
-      addedYears.add(row.year);
-      collapsed.push({
-        key: `yr-${row.year}`,
-        label: String(row.year),
-        rowIndices: yearToIndices.get(row.year) || [idx],
-        isAnnual: true,
-        year: row.year,
-      });
-    });
-
-    return collapsed;
-  }, [incomeStatementRows, incomeStatementCollapseByYear]);
+    return Array.from(yearToIndices.entries()).map(([year, rowIndices]) => ({
+      key: `yr-${year}`,
+      label: String(year),
+      rowIndices,
+      isAnnual: true,
+      year,
+    }));
+  }, [incomeStatementRows, incomeStatementViewMode]);
+  const isYearlyIncomeStatementView = incomeStatementViewMode === 'yearly';
 
   const monthlyRevenueGraphPoints = useMemo(() => {
     const actual = actualMonths.slice(-3).map((m) => ({
@@ -2029,11 +1970,7 @@ export default function FinancialForecastTab({
               >
                 {isSavingInputs ? 'Saving...' : isInputsDirty ? 'Save Inputs' : 'Saved'}
               </button>
-              <button
-                onClick={() => {
-                  if (!isAccrualWeeklyMode) setAnnualExpanded((prev) => !prev);
-                }}
-                disabled={isAccrualWeeklyMode}
+              <div
                 style={{
                   border: '1px solid #cbd5e1',
                   background: '#f8fafc',
@@ -2041,28 +1978,11 @@ export default function FinancialForecastTab({
                   padding: '8px 12px',
                   fontSize: '12px',
                   fontWeight: 600,
-                  cursor: isAccrualWeeklyMode ? 'not-allowed' : 'pointer',
-                  opacity: isAccrualWeeklyMode ? 0.7 : 1,
+                  color: '#334155',
                 }}
               >
-                {isAccrualWeeklyMode ? 'Weekly Horizon (13 Weeks)' : (annualExpanded ? 'Collapse Future Years to Years' : 'Expand Future Years to Quarters')}
-              </button>
-              {basisMode === 'accrual' && !useQuarterlyActualColumns && (
-                <button
-                  onClick={() => setAccrualSalesInputMode((prev) => (prev === 'amount' ? 'growth' : 'amount'))}
-                  style={{
-                    border: '1px solid #cbd5e1',
-                    background: '#f8fafc',
-                    borderRadius: '8px',
-                    padding: '8px 12px',
-                    fontSize: '12px',
-                    fontWeight: 600,
-                    cursor: 'pointer',
-                  }}
-                >
-                  {accrualSalesInputMode === 'amount' ? 'Sales Input: Amount' : 'Sales Input: % Growth'}
-                </button>
-              )}
+                60-Month Monthly Horizon
+              </div>
             </div>
           </div>
 
@@ -2710,20 +2630,30 @@ export default function FinancialForecastTab({
           <div className="ff-print-controls" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
             <h3 style={{ margin: 0, color: '#0f172a' }}>Income Statement</h3>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <button
-                onClick={() => setIncomeStatementCollapseByYear((prev) => !prev)}
-                style={{
-                  border: '1px solid #cbd5e1',
-                  background: '#f8fafc',
-                  borderRadius: '8px',
-                  padding: '8px 12px',
-                  fontSize: '12px',
-                  fontWeight: 600,
-                  cursor: 'pointer',
-                }}
-              >
-                {incomeStatementCollapseByYear ? 'Expand to Quarters' : 'Collapse to Calendar Years'}
-              </button>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                {([
+                  { id: 'monthly', label: 'Monthly' },
+                  { id: 'quarterly', label: 'Quarterly' },
+                  { id: 'yearly', label: 'Yearly' },
+                ] as const).map((option) => (
+                  <button
+                    key={option.id}
+                    onClick={() => setIncomeStatementViewMode(option.id)}
+                    style={{
+                      border: '1px solid #cbd5e1',
+                      background: incomeStatementViewMode === option.id ? '#dbeafe' : '#f8fafc',
+                      color: incomeStatementViewMode === option.id ? '#1d4ed8' : '#334155',
+                      borderRadius: '8px',
+                      padding: '8px 12px',
+                      fontSize: '12px',
+                      fontWeight: 600,
+                      cursor: 'pointer',
+                    }}
+                  >
+                    {option.label}
+                  </button>
+                ))}
+              </div>
               <div style={{ fontSize: '12px', color: '#64748b' }}>
                 {lastBudgetArchiveAt ? `Last budget archive ${new Date(lastBudgetArchiveAt).toLocaleString()}` : 'No budget archive yet'}
               </div>
@@ -2762,12 +2692,39 @@ export default function FinancialForecastTab({
             </div>
           </div>
           <div className="ff-print-table-wrap" style={{ overflowX: 'auto' }}>
-            <table className="forecast-grid forecast-income-table ff-print-table" style={{ width: 'max-content', minWidth: '1500px', borderCollapse: 'collapse', fontSize: '12px' }}>
+            <table
+              className="forecast-grid forecast-income-table ff-print-table"
+              style={{
+                width: isYearlyIncomeStatementView ? '100%' : 'max-content',
+                minWidth: isYearlyIncomeStatementView ? '0' : '1500px',
+                tableLayout: isYearlyIncomeStatementView ? 'fixed' : 'auto',
+                borderCollapse: 'collapse',
+                fontSize: '12px',
+              }}
+            >
               <thead>
                 <tr style={{ background: '#f8fafc' }}>
-                  <th style={{ textAlign: 'left', padding: '8px', borderBottom: '1px solid #e2e8f0' }}>Line Item</th>
+                  <th
+                    style={{
+                      textAlign: 'left',
+                      padding: '8px',
+                      borderBottom: '1px solid #e2e8f0',
+                      width: isYearlyIncomeStatementView ? '220px' : undefined,
+                    }}
+                  >
+                    Line Item
+                  </th>
                   {incomeStatementColumns.map((col) => (
-                    <th key={col.key} style={{ padding: '8px', borderBottom: '1px solid #e2e8f0' }}>{col.label}</th>
+                    <th
+                      key={col.key}
+                      style={{
+                        padding: '8px',
+                        borderBottom: '1px solid #e2e8f0',
+                        width: isYearlyIncomeStatementView ? '96px' : undefined,
+                      }}
+                    >
+                      {col.label}
+                    </th>
                   ))}
                 </tr>
               </thead>
