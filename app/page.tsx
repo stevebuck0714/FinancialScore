@@ -317,6 +317,16 @@ const sanitizeRevenueQualifiersBySector = (
   };
 };
 
+const stripBusinessContextMarkdown = (value: string): string =>
+  String(value || '')
+    .replace(/\r\n/g, '\n')
+    .replace(/^\s{0,3}#{1,6}\s+/gm, '')
+    .replace(/\*\*(.*?)\*\*/g, '$1')
+    .replace(/__(.*?)__/g, '$1')
+    .replace(/^\s*>\s?/gm, '')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+
 const getIndustryGroupMeta = (industryGroupId?: number | null) => {
   const id = Number(industryGroupId || 0);
   if (!Number.isFinite(id) || id <= 0) return null;
@@ -3665,8 +3675,8 @@ function FinancialScorePage() {
               DEFAULT_COMPETITOR_SEARCH_SCOPES.includes(scope as CompetitorSearchScope)
             )
           : DEFAULT_COMPETITOR_SEARCH_SCOPES;
-        setCompanyBackgroundHistory(String(data?.companyBackgroundHistory || ''));
-        setMarketPositionCompetitiveLandscape(String(data?.marketPositionCompetitiveLandscape || ''));
+        setCompanyBackgroundHistory(stripBusinessContextMarkdown(String(data?.companyBackgroundHistory || '')));
+        setMarketPositionCompetitiveLandscape(stripBusinessContextMarkdown(String(data?.marketPositionCompetitiveLandscape || '')));
         setCompetitorTable(Array.isArray(data?.competitorTable) ? data.competitorTable : []);
         setResearchDepth(data?.researchDepth === 'standard' ? 'standard' : 'deep');
         setCompetitorSearchScopes(scopes.length > 0 ? scopes : DEFAULT_COMPETITOR_SEARCH_SCOPES);
@@ -9214,8 +9224,8 @@ function FinancialScorePage() {
       if (!response.ok) {
         throw new Error(result?.error || 'Research generation failed.');
       }
-      setCompanyBackgroundHistory(String(result?.companyBackgroundHistory || ''));
-      setMarketPositionCompetitiveLandscape(String(result?.marketPositionCompetitiveLandscape || ''));
+      setCompanyBackgroundHistory(stripBusinessContextMarkdown(String(result?.companyBackgroundHistory || '')));
+      setMarketPositionCompetitiveLandscape(stripBusinessContextMarkdown(String(result?.marketPositionCompetitiveLandscape || '')));
       setCompetitorTable(Array.isArray(result?.competitorTable) ? result.competitorTable : []);
       setResearchSourcesText(Array.isArray(result?.researchSources) ? result.researchSources.join('\n') : '');
       setBusinessContextGenerateProgress('');
