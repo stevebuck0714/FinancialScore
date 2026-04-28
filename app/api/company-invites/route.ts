@@ -140,7 +140,9 @@ export async function POST(request: NextRequest) {
       data: { userDefinedAllocations: updatedUDA as any },
     });
 
-    const baseUrl = String(process.env.NEXT_PUBLIC_APP_URL || process.env.NEXTAUTH_URL || 'http://localhost:3002').replace(/\/+$/, '');
+    const baseUrl = String(
+      process.env.NEXT_PUBLIC_APP_URL || process.env.NEXTAUTH_URL || request.nextUrl.origin || 'http://localhost:3002'
+    ).replace(/\/+$/, '');
     const inviteLink = `${baseUrl}/accept-invite/${token}`;
     await sendCompanyUserInviteEmail({
       to: email,

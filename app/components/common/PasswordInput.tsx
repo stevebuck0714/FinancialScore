@@ -35,6 +35,8 @@ export default function PasswordInput({
         required={required}
         style={{
           width: '100%',
+          maxWidth: '100%',
+          boxSizing: 'border-box',
           paddingRight: '40px',
           ...style
         }}

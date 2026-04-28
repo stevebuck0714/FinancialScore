@@ -411,9 +411,9 @@ export async function POST(request: NextRequest) {
         (requester?.name && requester.name.trim()) || requester?.email || 'A Corelytics administrator';
 
       const baseUrl = String(
-        process.env.NEXT_PUBLIC_APP_URL || process.env.NEXTAUTH_URL || 'http://localhost:3002'
+        process.env.NEXT_PUBLIC_APP_URL || process.env.NEXTAUTH_URL || request.nextUrl.origin || 'http://localhost:3002'
       ).replace(/\/+$/, '');
-      const loginLink = `${baseUrl}/login`;
+      const loginLink = baseUrl;
 
       const result = await sendWelcomeUserEmail({
         to: user.email,
