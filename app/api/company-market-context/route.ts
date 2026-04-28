@@ -48,6 +48,18 @@ function normalizeSources(value: unknown): string[] {
   return value.map((item) => String(item || '').trim()).filter(Boolean);
 }
 
+function normalizeCompetitorNaics(value: unknown, fallback?: unknown): string {
+  const raw = String(value || '').trim();
+  const matches = raw.match(/\b\d{5,6}\b/g);
+  if (matches && matches.length > 0) return matches[matches.length - 1];
+
+  const fallbackRaw = String(fallback || '').trim();
+  const fallbackMatches = fallbackRaw.match(/\b\d{5,6}\b/g);
+  if (fallbackMatches && fallbackMatches.length > 0) return fallbackMatches[fallbackMatches.length - 1];
+
+  return raw || fallbackRaw;
+}
+
 function normalizeCompetitorTable(value: unknown): Array<Record<string, string>> {
   if (!Array.isArray(value)) return [];
   return value
@@ -55,7 +67,7 @@ function normalizeCompetitorTable(value: unknown): Array<Record<string, string>>
       const row = item && typeof item === 'object' ? (item as Record<string, unknown>) : {};
       return {
         name: String(row.name || '').trim(),
-        sector: String(row.sector || row.industry || row.scope || '').trim(),
+        sector: normalizeCompetitorNaics(row.sector || row.industry, row.scope),
         scope: String(row.scope || '').trim(),
         location: String(row.location || '').trim(),
         competitorType: String(row.competitorType || '').trim(),

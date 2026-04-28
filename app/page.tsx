@@ -153,6 +153,18 @@ type CompetitorTableRow = {
   source: string;
 };
 
+const formatCompetitorNaics = (value: string, fallback?: string): string => {
+  const raw = String(value || '').trim();
+  const matches = raw.match(/\b\d{5,6}\b/g);
+  if (matches && matches.length > 0) return matches[matches.length - 1];
+
+  const fallbackRaw = String(fallback || '').trim();
+  const fallbackMatches = fallbackRaw.match(/\b\d{5,6}\b/g);
+  if (fallbackMatches && fallbackMatches.length > 0) return fallbackMatches[fallbackMatches.length - 1];
+
+  return raw || fallbackRaw;
+};
+
 const COMPETITOR_SEARCH_SCOPE_OPTIONS: Array<{ id: CompetitorSearchScope; label: string; description: string }> = [
   { id: 'local', label: 'Local', description: 'City or metro-area competitors and alternatives.' },
   { id: 'state', label: 'State', description: 'Companies across the same state.' },
@@ -9780,7 +9792,7 @@ function FinancialScorePage() {
         lines.push('');
         lines.push('Competitor Table:');
         competitorTable.forEach((row) => {
-          lines.push(`- ${row.name} (${row.sector || row.scope || 'N/A'}; ${row.location || 'N/A'}): ${row.competitorType || 'N/A'} | Revenue: ${row.revenueEstimate || 'not publicly available'} | Employees: ${row.employeeEstimate || 'not publicly available'} | Years in business: ${row.yearsInBusiness || 'not publicly available'} | Threat: ${row.threatLevel || 'N/A'} | Overlap: ${row.overlap || 'N/A'}`);
+          lines.push(`- ${row.name} (${formatCompetitorNaics(row.sector, row.scope) || 'N/A'}; ${row.location || 'N/A'}): ${row.competitorType || 'N/A'} | Revenue: ${row.revenueEstimate || 'not publicly available'} | Employees: ${row.employeeEstimate || 'not publicly available'} | Years in business: ${row.yearsInBusiness || 'not publicly available'} | Threat: ${row.threatLevel || 'N/A'} | Overlap: ${row.overlap || 'N/A'}`);
         });
       }
       if (businessContextSources.length > 0) {
@@ -9863,7 +9875,7 @@ function FinancialScorePage() {
         <div style="font-size: 14px; font-weight: 800; color: #1e293b; margin-bottom: 8px;">Market Position & Competitive Landscape</div>
         <div style="font-size: 13px; color: #334155; line-height: 1.6;">${textBlockHtml(marketPositionCompetitiveLandscape, 'No market position and competitive landscape narrative has been saved.')}</div>
         <div style="font-size: 12px; color: #64748b; margin-top: 10px;"><strong>Competitor search scopes:</strong> ${esc(competitorSearchScopes.map((scope) => scope.toUpperCase()).join(', '))}</div>
-        ${competitorTable.length > 0 ? `<div style="margin-top: 12px; overflow-x: auto;"><table style="width: 100%; border-collapse: collapse; font-size: 11px; color: #334155;"><thead><tr style="background: #f8fafc;">${['Competitor', 'Sector', 'Location', 'Type', 'Revenue', 'Employees', 'Years', 'Threat'].map((h) => `<th style="text-align:left;padding:6px;border:1px solid #e2e8f0;">${esc(h)}</th>`).join('')}</tr></thead><tbody>${competitorTable.map((row) => `<tr><td style="padding:6px;border:1px solid #e2e8f0;font-weight:700;">${esc(row.name)}</td><td style="padding:6px;border:1px solid #e2e8f0;">${esc(row.sector || row.scope)}</td><td style="padding:6px;border:1px solid #e2e8f0;">${esc(row.location)}</td><td style="padding:6px;border:1px solid #e2e8f0;">${esc(row.competitorType)}</td><td style="padding:6px;border:1px solid #e2e8f0;">${esc(row.revenueEstimate)}</td><td style="padding:6px;border:1px solid #e2e8f0;">${esc(row.employeeEstimate)}</td><td style="padding:6px;border:1px solid #e2e8f0;">${esc(row.yearsInBusiness)}</td><td style="padding:6px;border:1px solid #e2e8f0;">${esc(row.threatLevel)}</td></tr>`).join('')}</tbody></table></div>` : ''}
+        ${competitorTable.length > 0 ? `<div style="margin-top: 12px; overflow-x: auto;"><table style="width: 100%; border-collapse: collapse; font-size: 11px; color: #334155;"><thead><tr style="background: #f8fafc;">${['Competitor', 'NAICS', 'Location', 'Type', 'Revenue', 'Employees', 'Years', 'Threat'].map((h) => `<th style="text-align:left;padding:6px;border:1px solid #e2e8f0;">${esc(h)}</th>`).join('')}</tr></thead><tbody>${competitorTable.map((row) => `<tr><td style="padding:6px;border:1px solid #e2e8f0;font-weight:700;">${esc(row.name)}</td><td style="padding:6px;border:1px solid #e2e8f0;">${esc(formatCompetitorNaics(row.sector, row.scope))}</td><td style="padding:6px;border:1px solid #e2e8f0;">${esc(row.location)}</td><td style="padding:6px;border:1px solid #e2e8f0;">${esc(row.competitorType)}</td><td style="padding:6px;border:1px solid #e2e8f0;">${esc(row.revenueEstimate)}</td><td style="padding:6px;border:1px solid #e2e8f0;">${esc(row.employeeEstimate)}</td><td style="padding:6px;border:1px solid #e2e8f0;">${esc(row.yearsInBusiness)}</td><td style="padding:6px;border:1px solid #e2e8f0;">${esc(row.threatLevel)}</td></tr>`).join('')}</tbody></table></div>` : ''}
         ${sourceListHtml}
       </div>`
       : '';
@@ -17409,7 +17421,7 @@ function FinancialScorePage() {
                           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '11px', color: '#334155' }}>
                             <thead>
                               <tr style={{ background: '#f8fafc' }}>
-                                {['Competitor', 'Sector', 'Location', 'Type', 'Revenue', 'Employees', 'Years', 'Threat'].map((header) => (
+                                {['Competitor', 'NAICS', 'Location', 'Type', 'Revenue', 'Employees', 'Years', 'Threat'].map((header) => (
                                   <th key={header} style={{ textAlign: 'left', padding: '6px', border: '1px solid #e2e8f0' }}>{header}</th>
                                 ))}
                               </tr>
@@ -17418,7 +17430,7 @@ function FinancialScorePage() {
                               {competitorTable.map((row, idx) => (
                                 <tr key={`${row.name}-${idx}`}>
                                   <td style={{ padding: '6px', border: '1px solid #e2e8f0', fontWeight: 700 }}>{row.name}</td>
-                                  <td style={{ padding: '6px', border: '1px solid #e2e8f0' }}>{row.sector || row.scope || 'N/A'}</td>
+                                  <td style={{ padding: '6px', border: '1px solid #e2e8f0' }}>{formatCompetitorNaics(row.sector, row.scope) || 'N/A'}</td>
                                   <td style={{ padding: '6px', border: '1px solid #e2e8f0' }}>{row.location}</td>
                                   <td style={{ padding: '6px', border: '1px solid #e2e8f0' }}>{row.competitorType}</td>
                                   <td style={{ padding: '6px', border: '1px solid #e2e8f0' }}>{row.revenueEstimate}</td>
@@ -18029,7 +18041,7 @@ function FinancialScorePage() {
                       <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px', color: '#334155' }}>
                         <thead>
                           <tr style={{ background: '#f8fafc' }}>
-                            {['Competitor', 'Sector', 'Location', 'Type', 'Revenue', 'Employees', 'Years', 'Threat', 'Overlap'].map((header) => (
+                            {['Competitor', 'NAICS', 'Location', 'Type', 'Revenue', 'Employees', 'Years', 'Threat', 'Overlap'].map((header) => (
                               <th key={header} style={{ textAlign: 'left', padding: '8px', border: '1px solid #e2e8f0', whiteSpace: 'nowrap' }}>{header}</th>
                             ))}
                           </tr>
@@ -18038,7 +18050,7 @@ function FinancialScorePage() {
                           {competitorTable.map((row, idx) => (
                             <tr key={`${row.name}-${idx}`}>
                               <td style={{ padding: '8px', border: '1px solid #e2e8f0', fontWeight: 700, minWidth: '160px' }}>{row.name}</td>
-                              <td style={{ padding: '8px', border: '1px solid #e2e8f0' }}>{row.sector || row.scope || 'N/A'}</td>
+                              <td style={{ padding: '8px', border: '1px solid #e2e8f0' }}>{formatCompetitorNaics(row.sector, row.scope) || 'N/A'}</td>
                               <td style={{ padding: '8px', border: '1px solid #e2e8f0', minWidth: '130px' }}>{row.location || 'N/A'}</td>
                               <td style={{ padding: '8px', border: '1px solid #e2e8f0', minWidth: '160px' }}>{row.competitorType || 'N/A'}</td>
                               <td style={{ padding: '8px', border: '1px solid #e2e8f0', minWidth: '130px' }}>{row.revenueEstimate || 'not publicly available'}</td>

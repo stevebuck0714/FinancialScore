@@ -58,6 +58,18 @@ function uniqueStrings(values: unknown[]): string[] {
   );
 }
 
+function normalizeCompetitorNaics(value: unknown, fallback?: unknown): string {
+  const raw = String(value || '').trim();
+  const matches = raw.match(/\b\d{5,6}\b/g);
+  if (matches && matches.length > 0) return matches[matches.length - 1];
+
+  const fallbackRaw = String(fallback || '').trim();
+  const fallbackMatches = fallbackRaw.match(/\b\d{5,6}\b/g);
+  if (fallbackMatches && fallbackMatches.length > 0) return fallbackMatches[fallbackMatches.length - 1];
+
+  return raw || fallbackRaw;
+}
+
 function normalizeCompetitorTable(value: unknown): CompetitorTableRow[] {
   if (!Array.isArray(value)) return [];
   return value
@@ -65,7 +77,7 @@ function normalizeCompetitorTable(value: unknown): CompetitorTableRow[] {
       const row = item && typeof item === 'object' ? (item as Record<string, unknown>) : {};
       return {
         name: String(row.name || '').trim(),
-        sector: String(row.sector || row.industry || row.scope || '').trim(),
+        sector: normalizeCompetitorNaics(row.sector || row.industry, row.scope),
         scope: String(row.scope || '').trim(),
         location: String(row.location || '').trim(),
         competitorType: String(row.competitorType || '').trim(),
@@ -319,7 +331,7 @@ Search by company identity, core service category, exact operating industry, clo
 
 For each competitor, capture:
 - Company name
-- Competitor operating sector / industry classification
+- Competitor NAICS industry code only, for example "56133" when public evidence supports it; otherwise "not publicly available"
 - Location/headquarters
 - Scope: ${scopeLabel}
 - Competitor type: direct product competitor, regional alternative, national category leader, or adjacent capability competitor
@@ -409,7 +421,7 @@ Return ONLY valid JSON:
   "competitorTable": [
     {
       "name": "competitor name",
-      "sector": "the competitor's own operating sector/industry, matching the subject company's operating industry rather than its customer vertical",
+      "sector": "the competitor's own NAICS industry code only, such as '56133', matching the subject company's operating industry rather than its customer vertical",
       "location": "headquarters or relevant location",
       "competitorType": "Direct product competitor | Regional alternative | National category leader | Adjacent capability competitor",
       "revenueEstimate": "estimate/range with caveat, or not publicly available",
@@ -450,7 +462,7 @@ Writing requirements:
 - Include market position takeaways: where the company is differentiated, where it is vulnerable, what competitors likely pressure, and what this means for valuation.
 - Include competitive risks and valuation implications as a distinct closing subsection.
 - Populate competitorTable with the most relevant regional and national competitors, plus local/state competitors when useful.
-- In competitorTable, sector must identify the competitor's own operating sector/industry, not the end market it serves.
+- In competitorTable, sector must contain only the competitor's NAICS industry code, not a sector/name pair and not the end market it serves.
 - In competitorTable, revenueEstimate and employeeEstimate must be labeled as estimates/ranges unless sourced from the company or reliable filings.
 - Do not invent size metrics. Use "not publicly available" when unsupported.
 - For yearsInBusiness, use a founding year or public history where available; otherwise use "not publicly available."
