@@ -12306,36 +12306,8 @@ function FinancialScorePage() {
 
             {/* Team Assessment - moved to Support page; link there goes to /?view=ma-welcome */}
 
-            {/* Bottom section: Print Packages + User/Consultant - grouped at bottom of sidebar */}
+            {/* Bottom section: User/Consultant - grouped at bottom of sidebar */}
             <div style={{ marginTop: 'auto', display: 'flex', flexDirection: 'column' }}>
-              {/* Print Packages Section - For Consultants and Company Users only */}
-              {(currentUser?.role === 'consultant' || (currentUser?.role === 'user' && currentUser?.userType === 'company')) && (
-                <div style={{ marginBottom: '1px' }}>
-                  <h3 
-                    onClick={() => setCurrentView('custom-print')}
-                    style={{ 
-                      fontSize: '14px', 
-                      fontWeight: '700', 
-                      color: currentView === 'custom-print' ? '#1F70C1' : '#1e293b',
-                      textTransform: 'uppercase', 
-                      letterSpacing: '0.5px',
-                      padding: '1px 24px',
-                      marginBottom: '1px',
-                      cursor: 'pointer',
-                      transition: 'color 0.2s',
-                      borderLeft: currentView === 'custom-print' ? '4px solid #1F70C1' : '4px solid transparent'
-                    }}
-                    onMouseEnter={(e) => {
-                      e.currentTarget.style.color = '#1F70C1';
-                      e.currentTarget.title = 'Print Packages';
-                    }}
-                    onMouseLeave={(e) => e.currentTarget.style.color = currentView === 'custom-print' ? '#1F70C1' : '#1e293b'}
-                  >
-                    Print Packages
-                  </h3>
-                </div>
-              )}
-
               {/* User/Consultant Name Display - Now acts as dashboard link */}
               <div 
                 onClick={() => {
