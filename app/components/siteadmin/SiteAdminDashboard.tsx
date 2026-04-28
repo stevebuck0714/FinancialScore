@@ -746,13 +746,19 @@ export default function SiteAdminDashboard(props: any) {
 
   const getOperationalHubTabCategoryOptions = (company: any): Array<{ key: string; label: string; group: string }> => {
     const sectorModules = getTopLineBucketsForSector(company?.industrySectorCategory || null).map((bucket) => String(bucket.key || '').trim());
-    const moduleSet = Array.from(new Set([...sectorModules, 'cash', 'daily_financials'].filter(Boolean)));
+    const moduleSet = Array.from(new Set(['dashboard', ...sectorModules, 'cash', 'daily_financials'].filter(Boolean)));
     return moduleSet.map((moduleKey) => ({
       key: `tab:${moduleKey}`,
-      label: getModuleLabel(moduleKey) || moduleKey.replace(/_/g, ' '),
+      label:
+        moduleKey === 'dashboard'
+          ? 'Overview'
+          : getModuleLabel(moduleKey) || moduleKey.replace(/_/g, ' '),
       group: 'Tab Categories',
     }));
   };
+
+  const getOperationalHubReportTabOptions = (company: any): Array<{ key: string; label: string; group: string }> =>
+    getOperationalHubTabCategoryOptions(company);
 
   const getSelectedTabCategoryKeys = (company: any, draft?: Record<string, boolean>): Set<string> => {
     const tabOptions = getOperationalHubTabCategoryOptions(company);
@@ -895,7 +901,7 @@ export default function SiteAdminDashboard(props: any) {
   const getNewOperationalHubReportDraft = (company: any): { label: string; tabKey: string; scope: 'company' | 'global' } => {
     const existing = newOperationalHubReportByCompany[company?.id];
     if (existing) return existing;
-    const firstTabKey = getOperationalHubTabCategoryOptions(company)[0]?.key?.replace(/^tab:/, '') || '';
+    const firstTabKey = getOperationalHubReportTabOptions(company)[0]?.key?.replace(/^tab:/, '') || '';
     return { label: '', tabKey: firstTabKey, scope: 'company' };
   };
 
@@ -941,7 +947,7 @@ export default function SiteAdminDashboard(props: any) {
       alert('Select a tab category.');
       return;
     }
-    const dataType = mapModuleToDataType(tabKey);
+    const dataType = mapModuleToDataType(tabKey) || (tabKey === 'dashboard' ? 'dashboard' : '');
     if (!dataType) {
       alert('Selected tab category is not mapped to a report family yet.');
       return;
@@ -1010,7 +1016,7 @@ export default function SiteAdminDashboard(props: any) {
     const draft = getOperationalHubDraft(company);
     const options = getOperationalHubSectionOptionsForCompany(company, draft);
     const newReportDraft = getNewOperationalHubReportDraft(company);
-    const tabOptions = getOperationalHubTabCategoryOptions(company);
+    const tabOptions = getOperationalHubReportTabOptions(company);
     const selectedTabGroups = getSelectedTabCategoryCardGroups(company, draft);
     const groups = Array.from(new Set(['Tab Categories', ...selectedTabGroups, ...options.map((option) => option.group)]));
     return (

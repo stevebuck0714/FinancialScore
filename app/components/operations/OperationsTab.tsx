@@ -465,7 +465,8 @@ export default function OperationsTab({
   };
   const isCustomersTab = mapModuleToDataType(activeTab) === 'customers' || activeTab === 'customers';
   const isTabModuleEnabled = (moduleKey: string): boolean => {
-    const normalized = String(moduleKey || '').trim();
+    const raw = String(moduleKey || '').trim();
+    const normalized = raw === 'overview' ? 'dashboard' : raw;
     if (!normalized) return true;
     const value = operationalHubSections[`tab:${normalized}`];
     return value === undefined ? true : value !== false;
@@ -528,7 +529,13 @@ export default function OperationsTab({
       'working_capital_forecast',
     ])
   ).filter((module) => isTabModuleEnabled(module) && !['working_capital_forecast', 'working-capital-forecast'].includes(module));
-  const availableTabs: OpTab[] = isOverviewOnly ? ['overview'] : ['dashboard', 'forecast', ...availableModuleTabs];
+  const availableTabs: OpTab[] = isOverviewOnly
+    ? ['overview']
+    : [
+        ...(isTabModuleEnabled('dashboard') ? ['dashboard' as OpTab] : []),
+        'forecast',
+        ...availableModuleTabs,
+      ];
   const moduleTitlesByType = Object.fromEntries(
     orderedDashboardDataTypes
       .map((type) => {
@@ -553,7 +560,7 @@ export default function OperationsTab({
 
   useEffect(() => {
     if (!availableTabs.includes(activeTab)) {
-      setActiveTab('dashboard');
+      setActiveTab(availableTabs[0] || 'dashboard');
     }
   }, [activeTab, availableTabs]);
 
