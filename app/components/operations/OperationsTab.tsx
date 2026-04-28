@@ -13700,6 +13700,7 @@ Strategies to Improve the CCC
           industrySectorCategory={industrySectorCategory}
           activeModules={enabledDashboardModules}
           moduleTitlesByType={moduleTitlesByType}
+          operationalHubSections={operationalHubSections}
         />
       )}
       {activeTab !== 'dashboard' && renderModuleTabContent(activeTab)}

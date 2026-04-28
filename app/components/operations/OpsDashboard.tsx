@@ -23,6 +23,7 @@ interface OpsDashboardProps {
   industrySectorCategory?: string | null;
   activeModules?: string[];
   moduleTitlesByType?: Partial<Record<OpsDataType, string>>;
+  operationalHubSections?: Record<string, any>;
 }
 
 const COLORS = ['#0f2b4b', '#1f4e79', '#2e6f9e', '#3e8db5', '#5aa5a7', '#7d8f6a', '#8b6a3d', '#7a4e8a'];
@@ -30,7 +31,14 @@ const AGING_COLORS = ['#3e8db5', '#5aa5a7', '#7d8f6a', '#8b6a3d', '#7a4e8a'];
 const CUSTOMER_CHART_COLOR = COLORS[2];
 const CASH_CHART_COLOR = COLORS[4];
 
-export default function OpsDashboard({ selectedCompanyId, companyName, industrySectorCategory, activeModules, moduleTitlesByType }: OpsDashboardProps) {
+export default function OpsDashboard({
+  selectedCompanyId,
+  companyName,
+  industrySectorCategory,
+  activeModules,
+  moduleTitlesByType,
+  operationalHubSections,
+}: OpsDashboardProps) {
   // Individual frequency state for each widget
   const [customerFreq, setCustomerFreq] = useState<'daily' | 'weekly' | 'monthly'>('daily');
   const [arFreq, setArFreq] = useState<'daily' | 'weekly' | 'monthly'>('daily');
@@ -38,6 +46,7 @@ export default function OpsDashboard({ selectedCompanyId, companyName, industryS
   const [productFreq, setProductFreq] = useState<'daily' | 'weekly' | 'monthly'>('daily');
   const [inventoryFreq, setInventoryFreq] = useState<'daily' | 'weekly' | 'monthly'>('daily');
   const [cashFreq, setCashFreq] = useState<'daily' | 'weekly' | 'monthly'>('daily');
+  const [ebitdaFreq, setEbitdaFreq] = useState<'daily' | 'weekly' | 'monthly'>('daily');
 
   // Data state for each widget
   const [customerData, setCustomerData] = useState<any>(null);
@@ -46,6 +55,7 @@ export default function OpsDashboard({ selectedCompanyId, companyName, industryS
   const [productData, setProductData] = useState<any>(null);
   const [inventoryData, setInventoryData] = useState<any>(null);
   const [cashData, setCashData] = useState<any>(null);
+  const [ebitdaData, setEbitdaData] = useState<any>(null);
 
   // Operational goals state
   const [operationalGoals, setOperationalGoals] = useState<any>({});
@@ -57,6 +67,7 @@ export default function OpsDashboard({ selectedCompanyId, companyName, industryS
   const [loadingProduct, setLoadingProduct] = useState(false);
   const [loadingInventory, setLoadingInventory] = useState(false);
   const [loadingCash, setLoadingCash] = useState(false);
+  const [loadingEbitda, setLoadingEbitda] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saveMessage, setSaveMessage] = useState<string | null>(null);
   const [widgetOrder, setWidgetOrder] = useState<string[]>([]);
@@ -279,6 +290,29 @@ export default function OpsDashboard({ selectedCompanyId, companyName, industryS
     }
   };
 
+  const loadEbitdaData = async () => {
+    setLoadingEbitda(true);
+    try {
+      const { startDate, endDate } = getDateRange(ebitdaFreq);
+      const params = new URLSearchParams({
+        companyId: selectedCompanyId,
+        type: 'daily-financials',
+        frequency: ebitdaFreq,
+        startDate,
+        endDate,
+        ...(industrySectorCategory ? { sectorCategory: industrySectorCategory } : {}),
+      });
+
+      const response = await fetch(`/api/operational-data?${params}`);
+      const data = await response.json();
+      setEbitdaData(data);
+    } catch (error) {
+      console.error('Error loading EBITDA data:', error);
+    } finally {
+      setLoadingEbitda(false);
+    }
+  };
+
   // Load operational goals
   const loadOperationalGoals = async () => {
     try {
@@ -306,6 +340,7 @@ export default function OpsDashboard({ selectedCompanyId, companyName, industryS
           setProductFreq('daily');
           setInventoryFreq('daily');
           setCashFreq('daily');
+          setEbitdaFreq('daily');
           if (Array.isArray(data.preferences.widgetOrder)) {
             setWidgetOrder(data.preferences.widgetOrder.filter((id: unknown) => typeof id === 'string'));
           }
@@ -328,6 +363,7 @@ export default function OpsDashboard({ selectedCompanyId, companyName, industryS
         productFreq,
         inventoryFreq,
         cashFreq,
+        ebitdaFreq,
         widgetOrder
       };
       
@@ -367,6 +403,7 @@ export default function OpsDashboard({ selectedCompanyId, companyName, industryS
   useEffect(() => { loadProductData(); }, [selectedCompanyId, industrySectorCategory, productFreq]);
   useEffect(() => { loadInventoryData(); }, [selectedCompanyId, industrySectorCategory, inventoryFreq]);
   useEffect(() => { loadCashData(); }, [selectedCompanyId, industrySectorCategory, cashFreq]);
+  useEffect(() => { loadEbitdaData(); }, [selectedCompanyId, industrySectorCategory, ebitdaFreq]);
 
   // Frequency selector component
   const FrequencySelector = ({ value, onChange }: { value: string, onChange: (v: any) => void }) => (
@@ -469,6 +506,29 @@ export default function OpsDashboard({ selectedCompanyId, companyName, industryS
     return Object.values(periodTrend);
   };
 
+  const prepareEbitdaChartData = () => {
+    if (!ebitdaData?.records) return [];
+    const records = trimDailyToWeekdayWindow(ebitdaData.records, ebitdaFreq);
+    const periodTrend = records.reduce((acc: any, record: any) => {
+      const period = formatDate(record.snapshotDate, ebitdaFreq);
+      if (!acc[period]) {
+        acc[period] = { period, ebitda: 0 };
+      }
+      const revenue = Number(record.revenue || 0);
+      const cogsTotal = Number(record.cogsTotal || record.cogs || 0);
+      const operatingExpense = Number(record.expense || 0);
+      const depreciationAmortization = Number(record.depreciationAmortization || 0);
+      acc[period].ebitda += revenue - cogsTotal - operatingExpense + depreciationAmortization;
+      return acc;
+    }, {});
+    return Object.values(periodTrend);
+  };
+
+  const isOverviewReportEnabled = (sectionKey: string): boolean => {
+    const value = operationalHubSections?.[sectionKey];
+    return value === undefined ? true : value !== false;
+  };
+
   const configuredModules = (activeModules || [])
     .map((module) => String(module || '').trim())
     .filter((module) => module && module.toLowerCase() !== 'ops-default');
@@ -508,12 +568,13 @@ export default function OpsDashboard({ selectedCompanyId, companyName, industryS
   const inventoryLabels = hasConfiguredModules ? modulesByType.inventory : ['Inventory'];
   const cashLabels = hasConfiguredModules ? modulesByType.cash : ['Cash Balance'];
 
-  const showCustomerWidget = customerLabels.length > 0;
-  const showArWidget = arLabels.length > 0;
-  const showApWidget = apLabels.length > 0;
+  const showCustomerWidget = customerLabels.length > 0 && isOverviewReportEnabled('overviewStdRevenue');
+  const showArWidget = arLabels.length > 0 && isOverviewReportEnabled('overviewStdArAging');
+  const showApWidget = apLabels.length > 0 && isOverviewReportEnabled('overviewStdApAging');
   const showProductWidget = productLabels.length > 0;
-  const showInventoryWidget = inventoryLabels.length > 0;
-  const showCashWidget = cashLabels.length > 0;
+  const showInventoryWidget = inventoryLabels.length > 0 && isOverviewReportEnabled('overviewStdInventory');
+  const showCashWidget = cashLabels.length > 0 && isOverviewReportEnabled('overviewStdCashTrend');
+  const showEbitdaWidget = isOverviewReportEnabled('overviewStdEbitda');
 
   const primaryLabelByType: Record<OpsDataType, string> = {
     customers: customerLabels[0] || 'Customer Sales',
@@ -536,12 +597,12 @@ export default function OpsDashboard({ selectedCompanyId, companyName, industryS
   };
 
   const extraWidgets: Array<{ type: OpsDataType; label: string }> = [
-    ...customerLabels.slice(1).map((label) => ({ type: 'customers' as OpsDataType, label })),
-    ...arLabels.slice(1).map((label) => ({ type: 'ar-aging' as OpsDataType, label })),
-    ...apLabels.slice(1).map((label) => ({ type: 'ap-aging' as OpsDataType, label })),
+    ...(showCustomerWidget ? customerLabels.slice(1).map((label) => ({ type: 'customers' as OpsDataType, label })) : []),
+    ...(showArWidget ? arLabels.slice(1).map((label) => ({ type: 'ar-aging' as OpsDataType, label })) : []),
+    ...(showApWidget ? apLabels.slice(1).map((label) => ({ type: 'ap-aging' as OpsDataType, label })) : []),
     ...productLabels.slice(1).map((label) => ({ type: 'products' as OpsDataType, label })),
-    ...inventoryLabels.slice(1).map((label) => ({ type: 'inventory' as OpsDataType, label })),
-    ...cashLabels.slice(1).map((label) => ({ type: 'cash' as OpsDataType, label })),
+    ...(showInventoryWidget ? inventoryLabels.slice(1).map((label) => ({ type: 'inventory' as OpsDataType, label })) : []),
+    ...(showCashWidget ? cashLabels.slice(1).map((label) => ({ type: 'cash' as OpsDataType, label })) : []),
   ];
   const getExtraWidgetId = (widget: { type: OpsDataType; label: string }) => `extra:${widget.type}:${widget.label}`;
 
@@ -670,6 +731,7 @@ export default function OpsDashboard({ selectedCompanyId, companyName, industryS
     ...(showProductWidget ? ['products'] : []),
     ...(showInventoryWidget ? ['inventory'] : []),
     ...(showCashWidget ? ['cash'] : []),
+    ...(showEbitdaWidget ? ['ebitda'] : []),
     ...extraWidgets.map((widget) => getExtraWidgetId(widget)),
   ];
 
@@ -995,6 +1057,36 @@ export default function OpsDashboard({ selectedCompanyId, companyName, industryS
                     />
                   )}
                   <Bar dataKey="totalCash" fill={CASH_CHART_COLOR} name="Total Cash" />
+                </BarChart>
+              </ResponsiveContainer>
+            )}
+          </div>
+          )}
+
+          {/* EBITDA Widget */}
+          {showEbitdaWidget && (
+          <div
+            {...getDraggableCardProps('ebitda')}
+            style={{ background: 'white', borderRadius: '12px', padding: '20px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', order: getWidgetPosition('ebitda'), cursor: 'grab' }}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+              <h3 style={{ fontSize: '18px', fontWeight: '600', color: '#1e293b' }}>
+                📈 EBITDA
+              </h3>
+              <FrequencySelector value={ebitdaFreq} onChange={setEbitdaFreq} />
+            </div>
+            {loadingEbitda ? (
+              <div style={{ height: '250px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#64748b' }}>
+                Loading...
+              </div>
+            ) : (
+              <ResponsiveContainer width="100%" height={250}>
+                <BarChart data={prepareEbitdaChartData()}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                  <XAxis dataKey="period" stroke="#64748b" style={{ fontSize: '12px' }} />
+                  <YAxis stroke="#64748b" style={{ fontSize: '12px' }} tickFormatter={(value) => `$${(value / 1000).toFixed(0)}k`} />
+                  <Tooltip formatter={(value: any) => [formatCurrency(Number(value || 0)), 'EBITDA']} />
+                  <Bar dataKey="ebitda" fill="#7c3aed" name="EBITDA" />
                 </BarChart>
               </ResponsiveContainer>
             )}

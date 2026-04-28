@@ -141,6 +141,15 @@ const FORECAST_STANDARD_REPORT_OPTIONS: Array<{ key: string; label: string; grou
   { key: 'forecastStdGraphs', label: 'STD. Graphs', group: 'Forecast' },
 ];
 
+const OVERVIEW_STANDARD_REPORT_OPTIONS: Array<{ key: string; label: string; group: string }> = [
+  { key: 'overviewStdArAging', label: 'AR Aging', group: 'Overview' },
+  { key: 'overviewStdApAging', label: 'AP Aging', group: 'Overview' },
+  { key: 'overviewStdCashTrend', label: 'Cash Trend', group: 'Overview' },
+  { key: 'overviewStdInventory', label: 'Inventory', group: 'Overview' },
+  { key: 'overviewStdRevenue', label: 'Revenue', group: 'Overview' },
+  { key: 'overviewStdEbitda', label: 'EBITDA', group: 'Overview' },
+];
+
 type OperationalHubCustomReport = {
   id: string;
   label: string;
@@ -810,6 +819,12 @@ export default function SiteAdminDashboard(props: any) {
     });
     const sectionOptionsBySelectedTab = selectedTabOptions.flatMap((option) => {
       const moduleKey = option.key.startsWith('tab:') ? option.key.slice(4) : option.key;
+      if (moduleKey === 'dashboard') {
+        return OVERVIEW_STANDARD_REPORT_OPTIONS.map((item) => ({
+          ...item,
+          group: option.label,
+        }));
+      }
       if (moduleKey === 'forecast') {
         return FORECAST_STANDARD_REPORT_OPTIONS.map((item) => ({
           ...item,
