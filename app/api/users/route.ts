@@ -22,6 +22,62 @@ const DEFAULT_ALLOWED_SECTIONS = [
   'dataroom',
 ];
 
+async function sendManagedUserWelcomeEmail({
+  request,
+  actorUserId,
+  to,
+  userName,
+  companyName,
+  userType,
+}: {
+  request: NextRequest;
+  actorUserId: string;
+  to: string;
+  userName: string;
+  companyName: string;
+  userType: 'ASSESSMENT' | 'COMPANY';
+}) {
+  let welcomeEmailSent = false;
+  let welcomeEmailError: string | null = null;
+
+  try {
+    const requester = await prisma.user.findUnique({
+      where: { id: actorUserId },
+      select: { name: true, email: true },
+    });
+    const addedByNameOrEmail =
+      (requester?.name && requester.name.trim()) || requester?.email || 'A Corelytics administrator';
+
+    const baseUrl = String(
+      process.env.NEXT_PUBLIC_APP_URL || process.env.NEXTAUTH_URL || request.nextUrl.origin || 'http://localhost:3002'
+    ).replace(/\/+$/, '');
+    const loginLink = baseUrl;
+
+    const result = await sendWelcomeUserEmail({
+      to,
+      userName: userName || to,
+      companyName,
+      addedByNameOrEmail,
+      loginLink,
+      userType,
+    });
+
+    if (result.success) {
+      welcomeEmailSent = true;
+    } else {
+      welcomeEmailError =
+        (result as { reason?: string }).reason ||
+        ((result as { error?: unknown }).error instanceof Error
+          ? ((result as { error: Error }).error.message)
+          : 'Email delivery failed');
+    }
+  } catch (emailErr) {
+    welcomeEmailError = emailErr instanceof Error ? emailErr.message : 'Email delivery failed';
+  }
+
+  return { welcomeEmailSent, welcomeEmailError };
+}
+
 // GET users for a company (or all users if no companyId provided - for site admin)
 export async function GET(request: NextRequest) {
   try {
@@ -261,12 +317,107 @@ export async function POST(request: NextRequest) {
     // Normalize email to lowercase for consistency
     const normalizedEmail = email.toLowerCase().trim();
 
+    const company = await prisma.company.findUnique({
+      where: { id: companyId },
+      select: { consultantId: true, name: true }
+    });
+
     // Check if email already exists
     const existingUser = await prisma.user.findUnique({
       where: { email: normalizedEmail }
     });
 
     if (existingUser) {
+      if (userType === 'ASSESSMENT' && existingUser.userType === 'ASSESSMENT') {
+        if (!password) {
+          return NextResponse.json(
+            { error: 'Password is required when creating a new assessment user' },
+            { status: 400 }
+          );
+        }
+
+        const passwordValidation = validatePassword(password);
+        if (!passwordValidation.isValid) {
+          return NextResponse.json(
+            {
+              error: 'Password does not meet requirements',
+              details: passwordValidation.errors,
+            },
+            { status: 400 }
+          );
+        }
+
+        const passwordHash = await hashPassword(password);
+        const grant = await grantUserCompanyAccess({
+          userId: existingUser.id,
+          companyId,
+          companyRole: undefined,
+        });
+
+        const refreshedAssessmentUser = await prisma.user.update({
+          where: { id: existingUser.id },
+          data: {
+            name,
+            title,
+            phone: null,
+            passwordHash,
+            role: 'USER',
+            userType: 'ASSESSMENT',
+            companyId,
+            consultantId: company?.consultantId || null,
+            companyRole: null,
+            sidebarAccess: null,
+          },
+          select: {
+            id: true,
+            name: true,
+            title: true,
+            phone: true,
+            email: true,
+            userType: true,
+            role: true,
+            companyId: true,
+            consultantId: true,
+            createdAt: true,
+          },
+        });
+
+        if (grant.created) {
+          await auditUserOperation('USER_COMPANY_ACCESS_GRANTED', existingUser.id, {
+            email: existingUser.email,
+            companyId,
+            userType,
+          });
+        } else {
+          await auditUserOperation('USER_UPDATED', existingUser.id, {
+            email: existingUser.email,
+            companyId,
+            userType,
+            reason: 'assessment_invitation_resent',
+          });
+        }
+
+        const { welcomeEmailSent, welcomeEmailError } = await sendManagedUserWelcomeEmail({
+          request,
+          actorUserId: userContext.userId,
+          to: refreshedAssessmentUser.email,
+          userName: refreshedAssessmentUser.name || refreshedAssessmentUser.email,
+          companyName: company?.name || 'your company',
+          userType: 'ASSESSMENT',
+        });
+
+        return NextResponse.json(
+          {
+            user: refreshedAssessmentUser,
+            linkedExistingUser: true,
+            welcomeEmailSent,
+            welcomeEmailError,
+            assessmentInviteResent: true,
+          },
+          { status: 201 }
+        );
+      }
+
       // Preserve existing identity; if it has no display name yet, fill it from input.
       if ((!existingUser.name || !existingUser.name.trim()) && name.trim()) {
         await prisma.user.update({
@@ -354,12 +505,6 @@ export async function POST(request: NextRequest) {
 
     const passwordHash = await hashPassword(password);
 
-    // Get company's consultantId to link the user
-    const company = await prisma.company.findUnique({
-      where: { id: companyId },
-      select: { consultantId: true, name: true }
-    });
-
     const user = await prisma.user.create({
       data: {
         email: normalizedEmail,
@@ -399,44 +544,14 @@ export async function POST(request: NextRequest) {
       companyId: user.companyId,
     });
 
-    // Send welcome email with sign-in link (does not include the password for security).
-    let welcomeEmailSent = false;
-    let welcomeEmailError: string | null = null;
-    try {
-      const requester = await prisma.user.findUnique({
-        where: { id: userContext.userId },
-        select: { name: true, email: true },
-      });
-      const addedByNameOrEmail =
-        (requester?.name && requester.name.trim()) || requester?.email || 'A Corelytics administrator';
-
-      const baseUrl = String(
-        process.env.NEXT_PUBLIC_APP_URL || process.env.NEXTAUTH_URL || request.nextUrl.origin || 'http://localhost:3002'
-      ).replace(/\/+$/, '');
-      const loginLink = baseUrl;
-
-      const result = await sendWelcomeUserEmail({
-        to: user.email,
-        userName: user.name || user.email,
-        companyName: company?.name || 'your company',
-        addedByNameOrEmail,
-        loginLink,
-        userType: (user.userType === 'ASSESSMENT' ? 'ASSESSMENT' : 'COMPANY'),
-      });
-
-      if (result.success) {
-        welcomeEmailSent = true;
-      } else {
-        welcomeEmailError =
-          (result as { reason?: string }).reason ||
-          ((result as { error?: unknown }).error instanceof Error
-            ? ((result as { error: Error }).error.message)
-            : 'Email delivery failed');
-      }
-    } catch (emailErr) {
-      welcomeEmailError = emailErr instanceof Error ? emailErr.message : 'Email delivery failed';
-      console.error('❌ Welcome email send failed for new user:', user.id, emailErr);
-    }
+    const { welcomeEmailSent, welcomeEmailError } = await sendManagedUserWelcomeEmail({
+      request,
+      actorUserId: userContext.userId,
+      to: user.email,
+      userName: user.name || user.email,
+      companyName: company?.name || 'your company',
+      userType: (user.userType === 'ASSESSMENT' ? 'ASSESSMENT' : 'COMPANY'),
+    });
 
     return NextResponse.json({ user, welcomeEmailSent, welcomeEmailError }, { status: 201 });
   } catch (error) {
@@ -510,7 +625,7 @@ export async function DELETE(request: NextRequest) {
     // SECURITY: First, check if user exists and get their companyId
     const targetUser = await prisma.user.findUnique({
       where: { id },
-      select: { id: true, email: true, companyId: true, consultantId: true, role: true }
+      select: { id: true, email: true, companyId: true, consultantId: true, role: true, userType: true }
     });
 
     if (!targetUser) {
@@ -610,9 +725,31 @@ export async function DELETE(request: NextRequest) {
       );
     }
 
-    // In Manage Users, "delete user" means disconnect this user from this company only.
-    // Keep the underlying identity (email/password) so the user can be re-granted later.
+    // Assessment users are disposable invite identities: deleting them should fully remove
+    // the record so the same email can be re-invited as a fresh assessment user later.
+    // Company users keep the existing revoke-access-only behavior.
     if (targetCompanyForAction) {
+      if (targetUser.userType === 'ASSESSMENT') {
+        if (!membershipForActionCompany && targetUser.companyId !== targetCompanyForAction) {
+          return NextResponse.json(
+            { error: 'User is not linked to this company' },
+            { status: 404 }
+          );
+        }
+
+        await prisma.user.delete({
+          where: { id },
+        });
+
+        await auditUserOperation('USER_DELETED', id, {
+          email: targetUser.email,
+          companyId: targetCompanyForAction,
+          userType: 'ASSESSMENT',
+        });
+
+        return NextResponse.json({ success: true, deletedUser: true });
+      }
+
       if (membershipForActionCompany) {
         await prisma.userCompanyAccess.delete({
           where: {

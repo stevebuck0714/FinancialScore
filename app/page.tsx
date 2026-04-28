@@ -1128,7 +1128,7 @@ function FinancialScorePage() {
   const [isManagementAssessmentExpanded, setIsManagementAssessmentExpanded] = useState(false);
   const [isExpertAnalysisExpanded, setIsExpertAnalysisExpanded] = useState(false);
   const [isValuationExpanded, setIsValuationExpanded] = useState(false);
-  const [isReportsExpanded, setIsReportsExpanded] = useState(true);
+  const [isReportsExpanded, setIsReportsExpanded] = useState(false);
   // const [isFinancialHealthExpanded, setIsFinancialHealthExpanded] = useState(false); // Legacy section removed from sidebar
   
   // State - Default Pricing
@@ -7813,8 +7813,16 @@ function FinancialScorePage() {
       };
       console.log('Normalized user:', normalizedUser);
       
-      setUsers([...users, normalizedUser]);
-      console.log('Users after adding:', [...users, normalizedUser]);
+      setUsers((prev) => {
+        const existingIndex = prev.findIndex((u) => u.id === normalizedUser.id);
+        if (existingIndex >= 0) {
+          const next = [...prev];
+          next[existingIndex] = normalizedUser;
+          return next;
+        }
+        return [...prev, normalizedUser];
+      });
+      console.log('Users after adding/updating:', normalizedUser);
       
       // Clear the appropriate fields based on userType
       if (userType === 'company') {
@@ -7831,7 +7839,16 @@ function FinancialScorePage() {
       }
       
       if (linkedExistingUser) {
-        alert(`Access granted to existing user:\n\n${email}\n\nNo password was changed. The user keeps their existing login credentials.`);
+        if (userType === 'assessment') {
+          if (welcomeEmailSent) {
+            alert(`Assessment invitation sent:\n\n${email}\n\nA fresh welcome email with sign-in instructions was sent to this assessment user.`);
+          } else {
+            const reason = welcomeEmailError ? `\n\nReason: ${welcomeEmailError}` : '';
+            alert(`Assessment user updated:\n\n${email}\n\n⚠️ The welcome email could NOT be sent.${reason}`);
+          }
+        } else {
+          alert(`Access granted to existing user:\n\n${email}\n\nNo password was changed. The user keeps their existing login credentials.`);
+        }
       } else {
         const userLabel = userType === 'company' ? 'Company' : 'Assessment';
         if (welcomeEmailSent) {
@@ -12634,7 +12651,7 @@ function FinancialScorePage() {
           )}
 
           {/* Restrict access for assessment users - only show Team Assessment views */}
-          {(!(currentUser?.userType === 'assessment') || currentView === 'ma-questionnaire' || currentView === 'ma-your-results' || currentView === 'ma-scores-summary' || currentView === 'ma-charts' || currentView === 'ma-scoring-guide') && (
+          {(!(currentUser?.userType === 'assessment') || currentView === 'ma-welcome' || currentView === 'ma-questionnaire' || currentView === 'ma-your-results' || currentView === 'ma-scores-summary' || currentView === 'ma-charts' || currentView === 'ma-scoring-guide') && (
           <>
           {/* Site Administration */}
           {currentView === 'siteadmin' && currentUser?.role === 'siteadmin' && (
