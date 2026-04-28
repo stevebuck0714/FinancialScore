@@ -1367,7 +1367,15 @@ export default function SiteAdminDashboard(props: any) {
       });
       const data = await response.json();
       if (!response.ok) {
-        throw new Error(data?.error || 'Failed to save Valuation pricing');
+        const message = data?.message || data?.error || 'Failed to save Valuation pricing';
+        if (response.status === 401) {
+          alert(message);
+          if (typeof window !== 'undefined') {
+            window.location.href = '/?sessionExpired=1';
+          }
+          return;
+        }
+        throw new Error(message);
       }
       setCompanies((prev: any[]) =>
         Array.isArray(prev)
@@ -1400,7 +1408,15 @@ export default function SiteAdminDashboard(props: any) {
       });
       const data = await response.json();
       if (!response.ok) {
-        throw new Error(data?.error || 'Failed to update Valuation setting');
+        const message = data?.message || data?.error || 'Failed to update Valuation setting';
+        if (response.status === 401) {
+          alert(message);
+          if (typeof window !== 'undefined') {
+            window.location.href = '/?sessionExpired=1';
+          }
+          return;
+        }
+        throw new Error(message);
       }
 
       setCompanies((prev: any[]) =>

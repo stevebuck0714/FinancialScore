@@ -1016,6 +1016,67 @@ function FinancialScorePage() {
     
     restoreSession();
   }, [currentUser]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || !currentUser) return;
+
+    let inFlight = false;
+
+    const clearExpiredClientSession = () => {
+      setCurrentUser(null);
+      setIsLoggedIn(false);
+      setCurrentView('login');
+      setSelectedCompanyId('');
+      setSiteAdminViewingAs(null);
+      setSiteAdminSessionUser(null);
+      localStorage.removeItem('fs_currentUser');
+      localStorage.removeItem('fs_siteAdminSessionUser');
+      localStorage.removeItem('fs_selectedCompanyId');
+    };
+
+    const refreshSession = async (redirectOnMissing = false) => {
+      if (inFlight) return;
+      inFlight = true;
+      try {
+        const session = await nextAuthGetSession();
+        if (!session) {
+          clearExpiredClientSession();
+          if (redirectOnMissing) {
+            window.location.href = '/?sessionExpired=1';
+          }
+        }
+      } catch (error) {
+        console.error('Error refreshing NextAuth session:', error);
+      } finally {
+        inFlight = false;
+      }
+    };
+
+    const intervalId = window.setInterval(() => {
+      if (document.visibilityState === 'visible') {
+        void refreshSession(false);
+      }
+    }, 5 * 60 * 1000);
+
+    const handleFocus = () => {
+      void refreshSession(true);
+    };
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        void refreshSession(true);
+      }
+    };
+
+    window.addEventListener('focus', handleFocus);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    return () => {
+      window.clearInterval(intervalId);
+      window.removeEventListener('focus', handleFocus);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [currentUser]);
   
   const [loadingSubscription, setLoadingSubscription] = useState(false);
   const [showUpdatePaymentModal, setShowUpdatePaymentModal] = useState(false);
