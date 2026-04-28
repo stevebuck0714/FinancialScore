@@ -533,7 +533,7 @@ export default function OperationsTab({
     ? ['overview']
     : [
         ...(isTabModuleEnabled('dashboard') ? ['dashboard' as OpTab] : []),
-        'forecast',
+        ...(isTabModuleEnabled('forecast') ? ['forecast' as OpTab] : []),
         ...availableModuleTabs,
       ];
   const moduleTitlesByType = Object.fromEntries(
