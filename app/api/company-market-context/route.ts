@@ -55,6 +55,7 @@ function normalizeCompetitorTable(value: unknown): Array<Record<string, string>>
       const row = item && typeof item === 'object' ? (item as Record<string, unknown>) : {};
       return {
         name: String(row.name || '').trim(),
+        sector: String(row.sector || row.industry || row.scope || '').trim(),
         scope: String(row.scope || '').trim(),
         location: String(row.location || '').trim(),
         competitorType: String(row.competitorType || '').trim(),

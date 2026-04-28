@@ -1,11 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getAiTransport, getOpenAiClient } from '@/lib/ai-gateway';
 import { createModelText } from '@/lib/openai-helpers';
+import { INDUSTRY_SECTORS, SECTOR_CATEGORIES } from '@/data/industrySectors';
 
 type CompetitorSearchScope = 'local' | 'state' | 'regional' | 'national';
 type ResearchDepth = 'standard' | 'deep';
 type CompetitorTableRow = {
   name: string;
+  sector: string;
   scope: string;
   location: string;
   competitorType: string;
@@ -63,6 +65,7 @@ function normalizeCompetitorTable(value: unknown): CompetitorTableRow[] {
       const row = item && typeof item === 'object' ? (item as Record<string, unknown>) : {};
       return {
         name: String(row.name || '').trim(),
+        sector: String(row.sector || row.industry || row.scope || '').trim(),
         scope: String(row.scope || '').trim(),
         location: String(row.location || '').trim(),
         competitorType: String(row.competitorType || '').trim(),
@@ -236,6 +239,8 @@ export async function POST(request: NextRequest) {
     const location = String(body?.location || '').trim();
     const website = String(body?.website || '').trim();
     const industry = String(body?.industry || '').trim();
+    const industrySectorCategory = String(body?.industrySectorCategory || '').trim();
+    const industryGroupId = Number(body?.industryGroupId || 0);
     const aiResearchSearchName = String(body?.aiResearchSearchName || '').trim();
     const aiResearchAliases = Array.isArray(body?.aiResearchAliases)
       ? body.aiResearchAliases.map((item: unknown) => String(item || '').trim()).filter(Boolean)
@@ -248,6 +253,10 @@ export async function POST(request: NextRequest) {
       : [];
     const researchDepth = normalizeResearchDepth(body?.researchDepth);
     const competitorSearchScopes = normalizeScopes(body?.competitorSearchScopes);
+    const sectorCategoryMeta = SECTOR_CATEGORIES.find((item) => String(item.code) === industrySectorCategory) || null;
+    const industryGroupMeta = Number.isFinite(industryGroupId) && industryGroupId > 0
+      ? INDUSTRY_SECTORS.find((item) => item.id === industryGroupId) || null
+      : null;
 
     if (!companyName) {
       return NextResponse.json({ error: 'Company name is required.' }, { status: 400 });
@@ -267,7 +276,11 @@ Company display name: ${companyName}
 AI research search name: ${aiResearchSearchName || companyName}
 Location: ${location || 'Unknown'}
 Website: ${website || 'Unknown'}
-Industry / sector: ${industry || 'Unknown'}
+Reported operating sector code: ${industrySectorCategory || 'Unknown'}
+Reported operating sector: ${sectorCategoryMeta?.name || 'Unknown'}
+Reported operating industry code: ${industryGroupMeta?.id || (industry || 'Unknown')}
+Reported operating industry: ${industryGroupMeta?.name || 'Unknown'}
+Reported operating industry description: ${industryGroupMeta?.description || 'Unknown'}
 ${getKnownCompanyFacts({
   companyName,
   location,
@@ -298,10 +311,15 @@ ${getKnownCompanyFacts({
         prompt: `${companyProfile}
 Run a dedicated ${scopeLabel} competitor search focused on ${scopeFocus}.
 
-Search by company identity, product/category terms, materials/process terms, industry served, and geography. Do not rely only on the subject company's name. Find ${targetCount} relevant named competitors or alternatives when public evidence supports them.
+First anchor the subject company's operating industry. Competitors must operate in the same sector/industry as the subject company, or be a clearly substitutable provider of the same core service. Do not include companies that are merely customers, suppliers, channel partners, or end-market participants in industries served by the subject company.
+
+Treat industries served as customer verticals, not as competitor identity. For example, if the subject company provides employment services to pharmaceutical clients, competitors must still be employment-services, staffing, recruiting, temp, or PEO firms rather than pharma companies.
+
+Search by company identity, core service category, exact operating industry, close same-industry substitutes, and geography. Use customer industries served only as secondary context after confirming the company is in the same operating industry. Do not rely only on the subject company's name. Find ${targetCount} relevant named competitors or alternatives when public evidence supports them.
 
 For each competitor, capture:
 - Company name
+- Competitor operating sector / industry classification
 - Location/headquarters
 - Scope: ${scopeLabel}
 - Competitor type: direct product competitor, regional alternative, national category leader, or adjacent capability competitor
@@ -391,7 +409,7 @@ Return ONLY valid JSON:
   "competitorTable": [
     {
       "name": "competitor name",
-      "scope": "Local | State | Regional | National",
+      "sector": "the competitor's own operating sector/industry, matching the subject company's operating industry rather than its customer vertical",
       "location": "headquarters or relevant location",
       "competitorType": "Direct product competitor | Regional alternative | National category leader | Adjacent capability competitor",
       "revenueEstimate": "estimate/range with caveat, or not publicly available",
@@ -420,6 +438,9 @@ Writing requirements:
 - Do not state revenue/headcount estimates as fact when they conflict with known user-verified facts. If uncertain, say the exact figure is not publicly available.
 - Reject facts from similarly named companies unless the source clearly matches the subject company identity anchors.
 - If a source appears to refer to Atlantic Precision Inc. or another non-Lynchburg entity, exclude it from the final narrative.
+- Include only competitors in the same operating sector/industry as the subject company, or clearly substitutable providers of the same core service.
+- Exclude end customers, suppliers, or companies that only share the same customer base or vertical focus.
+- If the subject company serves pharma, biotech, healthcare, or another vertical as a staffing/employment-services provider, exclude pharma, biotech, healthcare, CRO, or lab operators unless they themselves compete as staffing/employment-services providers.
 - In the competitive section, group competitors by Local, State, Regional, and National when those scopes were selected.
 - Make the competitive section robust enough for valuation diligence. Include a competitor scan with ${researchDepth === 'deep' ? '8-15' : '5-10'} named competitors when public evidence supports that many; if fewer are supportable, explain the limitation.
 - For each meaningful competitor, include scope, location, product/category overlap, competitor type, relevance, and threat level.
@@ -429,6 +450,7 @@ Writing requirements:
 - Include market position takeaways: where the company is differentiated, where it is vulnerable, what competitors likely pressure, and what this means for valuation.
 - Include competitive risks and valuation implications as a distinct closing subsection.
 - Populate competitorTable with the most relevant regional and national competitors, plus local/state competitors when useful.
+- In competitorTable, sector must identify the competitor's own operating sector/industry, not the end market it serves.
 - In competitorTable, revenueEstimate and employeeEstimate must be labeled as estimates/ranges unless sourced from the company or reliable filings.
 - Do not invent size metrics. Use "not publicly available" when unsupported.
 - For yearsInBusiness, use a founding year or public history where available; otherwise use "not publicly available."
