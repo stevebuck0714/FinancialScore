@@ -228,6 +228,9 @@ export default function SiteAdminDashboard(props: any) {
   >({});
   const [savingValuationPricingCompanyId, setSavingValuationPricingCompanyId] = React.useState<string | null>(null);
   const [runningFinancialImportByCompany, setRunningFinancialImportByCompany] = React.useState<Record<string, boolean>>({});
+  const [companyDetailTabByCompany, setCompanyDetailTabByCompany] = React.useState<
+    Record<string, 'accounting' | 'report-customization' | 'service-pricing'>
+  >({});
 
   const getAccountingSystemLabel = (value: unknown): string => {
     const normalized = String(value || '').trim().toUpperCase();
@@ -3334,6 +3337,45 @@ export default function SiteAdminDashboard(props: any) {
                                   const companyUsers = getCompanyUsers(company.id);
                                   const isCompanyExpanded = expandedCompanyIds.includes(company.id);
                                   const editing = editingPricing[company.id];
+                                  const activeCompanyDetailTab = companyDetailTabByCompany[company.id] || 'accounting';
+                                  const expandCompanyPanel = () => {
+                                    setExpandedCompanyIds(prev => {
+                                      const isExpandedNow = prev.includes(company.id);
+                                      if (isExpandedNow) {
+                                        return prev;
+                                      }
+                                      setSelectedCompanyId(company.id);
+                                      if (['INFOR_M3', 'INFOR_CSI'].includes(String(company.accountingSystem || '').toUpperCase())) {
+                                        loadInforM3Credentials?.(company.id);
+                                        loadCompanyPrograms(company.id);
+                                        checkInforM3Status?.(company.id).then((statusData: any) => {
+                                          if (!statusData) return;
+                                          const frequency = String(statusData.syncFrequency || 'daily').toLowerCase();
+                                          const pullTime =
+                                            typeof statusData.autoSyncTime === 'string' ? statusData.autoSyncTime : '08:00';
+                                          if (frequency === 'daily' || frequency === 'weekly' || frequency === 'monthly') {
+                                            setCompanyOperationalSettings(company.id, {
+                                              frequency,
+                                              pullTime,
+                                            });
+                                          }
+                                        });
+                                      } else if (company.accountingSystem === 'QUICKBOOKS_DESKTOP') {
+                                        loadQbDesktopSettings(company.id);
+                                      } else if (company.accountingSystem === 'QUICKBOOKS') {
+                                        loadQboSettings(company.id);
+                                      } else if (company.accountingSystem === 'DYNAMICS' || company.accountingSystem === 'DYNAMICS365') {
+                                        loadDynamicsSettings(company.id);
+                                      } else if (company.accountingSystem === 'ACUMATICA') {
+                                        loadAcumaticaSettings(company.id);
+                                      } else if (company.accountingSystem === 'SAGE_INTACCT' || company.accountingSystem === 'SAGE') {
+                                        loadSageIntacctSettings(company.id);
+                                      } else if (company.accountingSystem === 'ODOO') {
+                                        loadOdooSettings(company.id);
+                                      }
+                                      return [...prev, company.id];
+                                    });
+                                  };
                                   
                                   return (
                                     <div key={company.id} style={{ background: '#f8fafc', borderRadius: '6px', padding: '6px 8px', border: '1px solid #e2e8f0' }}>
@@ -3345,44 +3387,43 @@ export default function SiteAdminDashboard(props: any) {
                                           <div style={{ fontSize: '12px', fontWeight: '700', color: '#667eea' }}>
                                             {companyUsers.length} user{companyUsers.length !== 1 ? 's' : ''}
                                           </div>
+                                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+                                            {([
+                                              { id: 'accounting', label: 'Accounting' },
+                                              { id: 'report-customization', label: 'Report Customization' },
+                                              { id: 'service-pricing', label: 'Service Pricing' },
+                                            ] as const).map((tab) => (
+                                              <button
+                                                key={`${company.id}-${tab.id}`}
+                                                onClick={() => {
+                                                  setCompanyDetailTabByCompany((prev) => ({
+                                                    ...prev,
+                                                    [company.id]: tab.id,
+                                                  }));
+                                                  expandCompanyPanel();
+                                                }}
+                                                style={{
+                                                  padding: '4px 10px',
+                                                  background: activeCompanyDetailTab === tab.id ? '#dbeafe' : 'white',
+                                                  color: activeCompanyDetailTab === tab.id ? '#1d4ed8' : '#475569',
+                                                  border: `1px solid ${activeCompanyDetailTab === tab.id ? '#93c5fd' : '#cbd5e1'}`,
+                                                  borderRadius: '999px',
+                                                  fontSize: '12px',
+                                                  fontWeight: '600',
+                                                  cursor: 'pointer',
+                                                }}
+                                              >
+                                                {tab.label}
+                                              </button>
+                                            ))}
+                                          </div>
                                           <button
                                             onClick={() => {
-                                              setExpandedCompanyIds(prev => {
-                                                const isExpandedNow = prev.includes(company.id);
-                                                if (isExpandedNow) {
-                                                  return prev.filter(id => id !== company.id);
-                                                }
-                                                setSelectedCompanyId(company.id);
-                                                if (['INFOR_M3', 'INFOR_CSI'].includes(String(company.accountingSystem || '').toUpperCase())) {
-                                                  loadInforM3Credentials?.(company.id);
-                                                  loadCompanyPrograms(company.id);
-                                                  checkInforM3Status?.(company.id).then((statusData: any) => {
-                                                    if (!statusData) return;
-                                                    const frequency = String(statusData.syncFrequency || 'daily').toLowerCase();
-                                                    const pullTime =
-                                                      typeof statusData.autoSyncTime === 'string' ? statusData.autoSyncTime : '08:00';
-                                                    if (frequency === 'daily' || frequency === 'weekly' || frequency === 'monthly') {
-                                                      setCompanyOperationalSettings(company.id, {
-                                                        frequency,
-                                                        pullTime,
-                                                      });
-                                                    }
-                                                  });
-                                                } else if (company.accountingSystem === 'QUICKBOOKS_DESKTOP') {
-                                                  loadQbDesktopSettings(company.id);
-                                                } else if (company.accountingSystem === 'QUICKBOOKS') {
-                                                  loadQboSettings(company.id);
-                                                } else if (company.accountingSystem === 'DYNAMICS' || company.accountingSystem === 'DYNAMICS365') {
-                                                  loadDynamicsSettings(company.id);
-                                                } else if (company.accountingSystem === 'ACUMATICA') {
-                                                  loadAcumaticaSettings(company.id);
-                                                } else if (company.accountingSystem === 'SAGE_INTACCT' || company.accountingSystem === 'SAGE') {
-                                                  loadSageIntacctSettings(company.id);
-                                                } else if (company.accountingSystem === 'ODOO') {
-                                                  loadOdooSettings(company.id);
-                                                }
-                                                return [...prev, company.id];
-                                              });
+                                              if (isCompanyExpanded) {
+                                                setExpandedCompanyIds(prev => prev.filter(id => id !== company.id));
+                                                return;
+                                              }
+                                              expandCompanyPanel();
                                             }}
                                             style={{ 
                                               padding: '4px 10px', 
@@ -3403,35 +3444,46 @@ export default function SiteAdminDashboard(props: any) {
                                       {/* Expanded Details */}
                                       {isCompanyExpanded && (
                                         <div style={{ borderTop: '1px solid #cbd5e1', paddingTop: '8px', marginTop: '8px' }}>
-                                          <div style={{ marginBottom: '8px' }}>
-                                            <div style={{ padding: '0 12px 12px 12px', background: 'white', borderRadius: '6px', border: '1px solid #cbd5e1' }}>
-                                              <h4 style={{ fontSize: '14px', fontWeight: '600', color: '#475569', marginBottom: '6px' }}>Company Information</h4>
-                                              <div
-                                                style={{
-                                                  display: 'grid',
-                                                  gridTemplateColumns: 'repeat(5, minmax(0, 1fr))',
-                                                  gap: '6px 14px',
-                                                  fontSize: '13px',
-                                                  color: '#64748b',
-                                                  lineHeight: '1.5',
-                                                }}
-                                              >
-                                                <div style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}><strong>Company Name:</strong> {company?.name || 'Not found'}</div>
-                                                <div style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}><strong>ID:</strong> <span style={{ fontFamily: 'monospace', fontSize: '12px' }}>{company?.id}</span></div>
-                                                <div style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}><strong>Sector:</strong> {company?.industrySectorCategory ? `${company.industrySectorCategory} - ${getSectorNameForCompany(company)}` : 'Not set'}</div>
-                                                <div style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}><strong>Industry:</strong> {company?.industrySector ? `${company.industrySector} - ${INDUSTRY_SECTORS.find(s => s.id === company.industrySector)?.name || 'Unknown'}` : 'Not set'}</div>
-                                                <div style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}><strong>Type:</strong> Consultant Business</div>
-                                                <div style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}><strong>Address Street:</strong> {company?.addressStreet || 'Not provided'}</div>
-                                                <div style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}><strong>Address City:</strong> {company?.addressCity || 'Not provided'}</div>
-                                                <div style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}><strong>Address State:</strong> {company?.addressState || 'Not provided'}</div>
-                                                <div style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}><strong>Address ZIP:</strong> {company?.addressZip || 'Not provided'}</div>
-                                                <div style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}><strong>Address Country:</strong> {company?.addressCountry || 'Not provided'}</div>
+                                          <div
+                                            style={{
+                                              display: activeCompanyDetailTab === 'accounting' ? 'grid' : 'none',
+                                              gap: '8px',
+                                              marginBottom: companyUsers.length > 0 ? '8px' : '0',
+                                              padding: '10px',
+                                              background: '#f8fafc',
+                                              borderRadius: '8px',
+                                              border: '1px solid #cbd5e1',
+                                            }}
+                                          >
+                                            <div style={{ marginBottom: '8px' }}>
+                                                <div style={{ padding: '0 12px 12px 12px', background: 'white', borderRadius: '6px', border: '1px solid #cbd5e1' }}>
+                                                  <h4 style={{ fontSize: '14px', fontWeight: '600', color: '#475569', marginBottom: '6px' }}>Company Information</h4>
+                                                  <div
+                                                    style={{
+                                                      display: 'grid',
+                                                      gridTemplateColumns: 'repeat(5, minmax(0, 1fr))',
+                                                      gap: '6px 14px',
+                                                      fontSize: '13px',
+                                                      color: '#64748b',
+                                                      lineHeight: '1.5',
+                                                    }}
+                                                  >
+                                                    <div style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}><strong>Company Name:</strong> {company?.name || 'Not found'}</div>
+                                                    <div style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}><strong>ID:</strong> <span style={{ fontFamily: 'monospace', fontSize: '12px' }}>{company?.id}</span></div>
+                                                    <div style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}><strong>Sector:</strong> {company?.industrySectorCategory ? `${company.industrySectorCategory} - ${getSectorNameForCompany(company)}` : 'Not set'}</div>
+                                                    <div style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}><strong>Industry:</strong> {company?.industrySector ? `${company.industrySector} - ${INDUSTRY_SECTORS.find(s => s.id === company.industrySector)?.name || 'Unknown'}` : 'Not set'}</div>
+                                                    <div style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}><strong>Type:</strong> Consultant Business</div>
+                                                    <div style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}><strong>Address Street:</strong> {company?.addressStreet || 'Not provided'}</div>
+                                                    <div style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}><strong>Address City:</strong> {company?.addressCity || 'Not provided'}</div>
+                                                    <div style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}><strong>Address State:</strong> {company?.addressState || 'Not provided'}</div>
+                                                    <div style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}><strong>Address ZIP:</strong> {company?.addressZip || 'Not provided'}</div>
+                                                    <div style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}><strong>Address Country:</strong> {company?.addressCountry || 'Not provided'}</div>
+                                                  </div>
+                                                </div>
                                               </div>
-                                            </div>
-                                          </div>
 
                                           {['INFOR_M3', 'INFOR_CSI'].includes(String(company.accountingSystem || '').toUpperCase()) && (
-                                            <div style={{ marginBottom: '8px', padding: '12px', background: 'white', borderRadius: '6px', border: '1px solid #cbd5e1' }}>
+                                                <div style={{ marginBottom: '8px', padding: '12px', background: 'white', borderRadius: '6px', border: '1px solid #cbd5e1' }}>
                                               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px', marginBottom: '10px' }}>
                                                 <div>
                                                   <h4 style={{ fontSize: '14px', fontWeight: '600', color: '#1e293b', marginBottom: '8px' }}>Accounting Integration</h4>
@@ -4812,9 +4864,9 @@ export default function SiteAdminDashboard(props: any) {
                                                     : 'No accounting system selected for this company.'}
                                                 </div>
                                               )}
-                                            </div>
+                                                </div>
 
-                                            <div style={{ padding: '12px', background: 'white', borderRadius: '6px', border: '1px solid #cbd5e1', order: 2 }}>
+                                              <div style={{ padding: '12px', background: 'white', borderRadius: '6px', border: '1px solid #cbd5e1', order: 2 }}>
                                               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
                                                 <h4 style={{ fontSize: '14px', fontWeight: '600', color: '#1e293b', margin: 0 }}>Accounting Programs</h4>
                                                 <div style={{ display: 'flex', gap: '6px' }}>
@@ -5221,12 +5273,38 @@ export default function SiteAdminDashboard(props: any) {
                                                 )}
                                               </div>
                                             </div>
-                                            <div style={{ gridColumn: '1 / -1', order: 3 }}>
+                                            <div style={{ gridColumn: '1 / -1', order: 3, display: 'none' }}>
                                               {renderOperationalHubCustomizationCard(company)}
                                             </div>
                                           </div>
-                                          
-                                          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(240px, 1fr))', gap: '10px', marginBottom: companyUsers.length > 0 ? '8px' : '0' }}>
+                                          </div>
+
+                                          <div
+                                            style={{
+                                              display: activeCompanyDetailTab === 'report-customization' ? 'grid' : 'none',
+                                              gap: '8px',
+                                              marginBottom: companyUsers.length > 0 ? '8px' : '0',
+                                              padding: '10px',
+                                              background: '#f8fafc',
+                                              borderRadius: '8px',
+                                              border: '1px solid #cbd5e1',
+                                            }}
+                                          >
+                                            {renderOperationalHubCustomizationCard(company)}
+                                          </div>
+
+                                          <div
+                                            style={{
+                                              display: activeCompanyDetailTab === 'service-pricing' ? 'grid' : 'none',
+                                              gap: '8px',
+                                              marginBottom: companyUsers.length > 0 ? '8px' : '0',
+                                              padding: '10px',
+                                              background: '#f8fafc',
+                                              borderRadius: '8px',
+                                              border: '1px solid #cbd5e1',
+                                            }}
+                                          >
+                                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(240px, 1fr))', gap: '10px' }}>
                                             {/* Subscription Pricing */}
                                             <div style={{ padding: '4px 10px 10px 10px', background: 'white', borderRadius: '6px', border: '1px solid #cbd5e1' }}>
                                               <h6 style={{ fontSize: '14px', fontWeight: '700', color: '#475569', marginBottom: '8px' }}>Subscription Pricing</h6>
@@ -5579,6 +5657,7 @@ export default function SiteAdminDashboard(props: any) {
                                                 </>
                                               )}
                                             </div>
+                                          </div>
                                           </div>
 
                                           {/* Users */}
