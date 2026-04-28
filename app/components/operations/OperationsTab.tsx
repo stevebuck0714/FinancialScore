@@ -9296,7 +9296,7 @@ Strategies to Improve the CCC
               transition: 'all 0.2s'
             }}
           >
-            Income Statement Forecast
+            Income Statement
           </button>
           <button
             onClick={() => setActiveAccrualBasisForecastTab('graphs')}
