@@ -476,12 +476,16 @@ export default function OpsDashboard({ selectedCompanyId, companyName, industryS
 
   const modulesByType: Record<OpsDataType, string[]> = {
     customers: [],
+    'customers-sites': [],
     'ar-aging': [],
     'ap-aging': [],
     products: [],
+    'labor-scheduling': [],
     inventory: [],
     cash: [],
     'daily-financials': [],
+    'revenue-billables': [],
+    'unit-economics': [],
     'job-cost-control': [],
     'project-portfolio': [],
     'commitments-forecast': [],
@@ -513,12 +517,16 @@ export default function OpsDashboard({ selectedCompanyId, companyName, industryS
 
   const primaryLabelByType: Record<OpsDataType, string> = {
     customers: customerLabels[0] || 'Customer Sales',
+    'customers-sites': 'Customers / Sites',
     'ar-aging': arLabels[0] || 'AR Aging',
     'ap-aging': apLabels[0] || 'AP Aging',
     products: productLabels[0] || 'Product Sales',
+    'labor-scheduling': 'Labor & Scheduling',
     inventory: inventoryLabels[0] || 'Inventory',
     cash: cashLabels[0] || 'Cash Balance',
     'daily-financials': 'Daily Financials',
+    'revenue-billables': 'Revenue & Billables',
+    'unit-economics': 'Unit Economics',
     'job-cost-control': 'Job Cost Control',
     'project-portfolio': 'Project Portfolio',
     'commitments-forecast': 'Commitments & Forecast',

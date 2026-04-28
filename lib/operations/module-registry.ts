@@ -1,11 +1,15 @@
 export type OpsDataType =
   | 'customers'
+  | 'customers-sites'
   | 'ar-aging'
   | 'ap-aging'
   | 'products'
+  | 'labor-scheduling'
   | 'inventory'
   | 'cash'
   | 'daily-financials'
+  | 'revenue-billables'
+  | 'unit-economics'
   // Construction-sector (industrySectorCategory === '23') native modules.
   // Backed by /api/operational-data?type=… mock for M2-M5 and by Vista Cloud
   // snapshot tables in M6+. See docs/CONSTRUCTION_SECTOR_DASHBOARD_DESIGN.md.
@@ -49,7 +53,7 @@ const MODULE_DEFINITIONS: ModuleDefinition[] = [
   { key: 'clients_customers', label: 'Clients / Customers', dataType: 'customers' },
   { key: 'tenants_customers', label: 'Tenants / Customers', dataType: 'customers' },
   { key: 'guests_customers', label: 'Guests / Customers', dataType: 'customers' },
-  { key: 'customers_sites', label: 'Customers / Sites', dataType: 'customers' },
+  { key: 'customers_sites', label: 'Customers / Sites', dataType: 'customers-sites' },
   { key: 'payors_customers', label: 'Payors / Customers', dataType: 'customers' },
   { key: 'products', label: 'Products', dataType: 'products' },
   { key: 'products_skus', label: 'Products / SKUs', dataType: 'products' },
@@ -71,7 +75,7 @@ const MODULE_DEFINITIONS: ModuleDefinition[] = [
   { key: 'risk_losses', label: 'Risk / Losses', dataType: 'products' },
   { key: 'maintenance_work_orders', label: 'Maintenance / Work Orders', dataType: 'products' },
   { key: 'time_utilization', label: 'Time & Utilization', dataType: 'products' },
-  { key: 'labor_scheduling', label: 'Labor & Scheduling', dataType: 'products' },
+  { key: 'labor_scheduling', label: 'Labor & Scheduling', dataType: 'labor-scheduling' },
   { key: 'assets_routes', label: 'Assets & Routes', dataType: 'products' },
   { key: 'staffing', label: 'Staffing', dataType: 'products' },
   { key: 'staffing_providers', label: 'Staffing / Providers', dataType: 'products' },
@@ -88,6 +92,8 @@ const MODULE_DEFINITIONS: ModuleDefinition[] = [
   { key: 'programs_courses', label: 'Programs / Courses', dataType: 'products' },
   { key: 'services_procedures', label: 'Services / Procedures', dataType: 'products' },
   { key: 'rates_revenue', label: 'Rates & Revenue', dataType: 'customers' },
+  { key: 'revenue_billables', label: 'Revenue & Billables', dataType: 'revenue-billables' },
+  { key: 'unit_economics', label: 'Unit Economics', dataType: 'unit-economics' },
   // --- Construction sector ('23') native modules ---
   { key: 'job_cost_control', label: 'Job Cost Control', dataType: 'job-cost-control' },
   { key: 'project_portfolio', label: 'Project Portfolio', dataType: 'project-portfolio' },

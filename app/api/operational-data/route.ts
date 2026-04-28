@@ -11,6 +11,12 @@ import {
   buildConstructionArMock,
   buildConstructionApMock,
 } from '@/lib/operations/construction-mock-data';
+import {
+  buildRevenueBillablesMock,
+  buildUnitEconomicsMock,
+  buildLaborSchedulingMock,
+  buildCustomersSitesMock,
+} from '@/lib/operations/staffing-mock-data';
 import { getInforM3CredentialsWithOptionalEnvFallback } from '@/lib/infor-m3/credentials';
 import { callInforIonApi } from '@/lib/infor-m3/client';
 import { getApBalanceSheetAnchorConfig } from '@/lib/financial/ap-balance-sheet-anchor';
@@ -1509,7 +1515,7 @@ function aggregateApSeriesByFrequency(
  * 
  * Query parameters:
  * - companyId: string (required)
- * - type: 'customers' | 'ar-aging' | 'ap-aging' | 'products' | 'inventory' | 'cash' | 'ap' | 'daily-financials' | 'cash-flow-map'
+ * - type: 'customers' | 'customers-sites' | 'ar-aging' | 'ap-aging' | 'products' | 'labor-scheduling' | 'inventory' | 'cash' | 'ap' | 'daily-financials' | 'cash-flow-map' | 'revenue-billables' | 'unit-economics'
  * - startDate: ISO date string (optional) - defaults to 90 days ago
  * - endDate: ISO date string (optional) - defaults to today
  * - frequency: 'daily' | 'weekly' | 'monthly' (optional) - defaults to 'monthly'
@@ -6543,6 +6549,26 @@ export async function GET(request: NextRequest) {
           summary: payload.summary,
           meta: payload.meta,
         });
+      }
+
+      case 'revenue-billables': {
+        const payload = buildRevenueBillablesMock(companyId);
+        return NextResponse.json(payload);
+      }
+
+      case 'unit-economics': {
+        const payload = buildUnitEconomicsMock(companyId);
+        return NextResponse.json(payload);
+      }
+
+      case 'labor-scheduling': {
+        const payload = buildLaborSchedulingMock(companyId);
+        return NextResponse.json(payload);
+      }
+
+      case 'customers-sites': {
+        const payload = buildCustomersSitesMock(companyId);
+        return NextResponse.json(payload);
       }
 
       case 'construction-ar': {
