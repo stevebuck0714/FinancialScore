@@ -1,8 +1,8 @@
 import type { NextAuthConfig } from 'next-auth';
 import Credentials from 'next-auth/providers/credentials';
 import { verifyPassword } from './lib/auth';
-import prisma from './lib/prisma';
 import { isDemoCompany, isDemoExpired } from './lib/demo-access';
+import { findAuthUserByEmail } from './lib/auth-user-query';
 
 export const authConfig: NextAuthConfig = {
   trustHost: true,
@@ -23,13 +23,7 @@ export const authConfig: NextAuthConfig = {
 
         try {
           const normalizedEmail = String(credentials.email).toLowerCase().trim();
-          const user = await prisma.user.findUnique({
-            where: { email: normalizedEmail },
-            include: {
-              company: true,
-              primaryConsultant: true
-            }
-          });
+          const user = await findAuthUserByEmail(normalizedEmail);
 
           if (!user) {
             return null;

@@ -1829,6 +1829,58 @@ export default function SiteAdminDashboard(props: any) {
   const [qboProgramsByCompany, setQboProgramsByCompany] = React.useState<
     Record<string, Array<{ dataDomain: string; qboEntity: string; enabled: boolean }>>
   >({});
+  const [bambooHrSettingsByCompany, setBambooHrSettingsByCompany] = React.useState<
+    Record<
+      string,
+      {
+        subdomain: string;
+        baseUrl: string;
+        apiKey: string;
+        authType: 'API_KEY' | 'OAUTH' | '';
+        syncFrequency: 'daily' | 'weekly' | 'monthly' | '';
+        syncTime: string;
+        initialSyncStartDate: string;
+        incrementalSync: 'YES' | 'NO' | '';
+      }
+    >
+  >({});
+  const [bambooHrDataDomainsByCompany, setBambooHrDataDomainsByCompany] = React.useState<
+    Record<string, Array<{ dataDomain: string; bambooEntity: string; enabled: boolean }>>
+  >({});
+  const [bambooHrStatusByCompany, setBambooHrStatusByCompany] = React.useState<Record<string, string>>({});
+  const [bambooHrLastSyncByCompany, setBambooHrLastSyncByCompany] = React.useState<Record<string, string | null>>({});
+  const [bambooHrErrorByCompany, setBambooHrErrorByCompany] = React.useState<Record<string, string | null>>({});
+  const [savingBambooHrCompanyId, setSavingBambooHrCompanyId] = React.useState<string | null>(null);
+  const [platosClosetSettingsByCompany, setPlatosClosetSettingsByCompany] = React.useState<
+    Record<
+      string,
+      {
+        templateName: string;
+        acceptedFileType: '.xlsx' | '.csv' | '';
+        uploadFrequency: 'daily' | 'weekly' | 'monthly' | '';
+        syncTime: string;
+        initialSyncStartDate: string;
+        uploadMode: 'REPLACE' | 'APPEND' | '';
+        requiredSheetsText: string;
+        workbookPath: string;
+      }
+    >
+  >({});
+  const [platosClosetDataDomainsByCompany, setPlatosClosetDataDomainsByCompany] = React.useState<
+    Record<string, Array<{ dataDomain: string; workbookSection: string; enabled: boolean }>>
+  >({});
+  const [platosClosetStatusByCompany, setPlatosClosetStatusByCompany] = React.useState<Record<string, string>>({});
+  const [platosClosetLastSyncByCompany, setPlatosClosetLastSyncByCompany] = React.useState<Record<string, string | null>>({});
+  const [platosClosetErrorByCompany, setPlatosClosetErrorByCompany] = React.useState<Record<string, string | null>>({});
+  const [savingPlatosClosetCompanyId, setSavingPlatosClosetCompanyId] = React.useState<string | null>(null);
+  const [availableOperationalSourcesByCompany, setAvailableOperationalSourcesByCompany] = React.useState<
+    Record<string, Array<{ provider: string; sourceCode: string; label: string }>>
+  >({});
+  const [selectedOperationalSourcesByCompany, setSelectedOperationalSourcesByCompany] = React.useState<
+    Record<string, Array<{ provider: string; sourceCode: string; label: string; status?: string; lastSyncAt?: string | null; errorMessage?: string | null }>>
+  >({});
+  const [operationalSourceToAddByCompany, setOperationalSourceToAddByCompany] = React.useState<Record<string, string>>({});
+  const [savingOperationalSourceCompanyId, setSavingOperationalSourceCompanyId] = React.useState<string | null>(null);
   const [dynamicsSettingsByCompany, setDynamicsSettingsByCompany] = React.useState<
     Record<
       string,
@@ -1972,6 +2024,43 @@ export default function SiteAdminDashboard(props: any) {
     { dataDomain: 'AP', qboEntity: 'Bill', enabled: true },
     { dataDomain: 'AP Payments', qboEntity: 'BillPayment', enabled: true },
   ];
+  const defaultBambooHrSettings = {
+    subdomain: '',
+    baseUrl: '',
+    apiKey: '',
+    authType: 'API_KEY' as 'API_KEY' | 'OAUTH' | '',
+    syncFrequency: 'daily' as 'daily' | 'weekly' | 'monthly' | '',
+    syncTime: '08:00',
+    initialSyncStartDate: '',
+    incrementalSync: 'YES' as 'YES' | 'NO' | '',
+  };
+  const defaultBambooHrDataDomains = [
+    { dataDomain: 'Employees', bambooEntity: 'employees/directory', enabled: true },
+    { dataDomain: 'Departments', bambooEntity: 'meta/departments', enabled: true },
+    { dataDomain: 'Locations', bambooEntity: 'meta/locations', enabled: true },
+    { dataDomain: 'Job Information', bambooEntity: 'employees/job-info', enabled: true },
+    { dataDomain: 'Time Off', bambooEntity: 'time_off/requests', enabled: false },
+  ];
+  const defaultPlatosClosetSettings = {
+    templateName: "Spreadsheet - Plato's Closet",
+    acceptedFileType: '.xlsx' as '.xlsx' | '.csv' | '',
+    uploadFrequency: 'monthly' as 'daily' | 'weekly' | 'monthly' | '',
+    syncTime: '08:00',
+    initialSyncStartDate: '',
+    uploadMode: 'REPLACE' as 'REPLACE' | 'APPEND' | '',
+    requiredSheetsText: 'YTD Key Performance Indicators; YTD Key Indicator',
+    workbookPath: 'docs/Store Visit MARCH.xlsx',
+  };
+  const defaultPlatosClosetDataDomains = [
+    { dataDomain: 'Store KPIs', workbookSection: 'YTD Key Performance Indicators', enabled: true },
+    { dataDomain: 'Sales Trends', workbookSection: 'YTD Key Performance Indicators', enabled: true },
+    { dataDomain: 'Buy Trends', workbookSection: 'YTD Key Performance Indicators', enabled: true },
+    { dataDomain: 'Loss Prevention', workbookSection: 'YTD Key Performance Indicators', enabled: true },
+    { dataDomain: 'Marketing', workbookSection: 'YTD Key Performance Indicators', enabled: false },
+    { dataDomain: 'Product Category Performance', workbookSection: 'YTD Key Indicator', enabled: true },
+    { dataDomain: 'Cost Metrics', workbookSection: 'YTD Key Indicator', enabled: true },
+    { dataDomain: 'Order Metrics', workbookSection: 'YTD Key Indicator', enabled: true },
+  ];
   const defaultDynamicsSettings = {
     tenantId: '',
     environmentUrl: '',
@@ -2074,6 +2163,18 @@ export default function SiteAdminDashboard(props: any) {
     qboSettingsByCompany[companyId] || defaultQboSettings;
   const getQboPrograms = (companyId: string) =>
     qboProgramsByCompany[companyId] || defaultQboPrograms;
+  const getBambooHrSettings = (companyId: string) =>
+    bambooHrSettingsByCompany[companyId] || defaultBambooHrSettings;
+  const getBambooHrDataDomains = (companyId: string) =>
+    bambooHrDataDomainsByCompany[companyId] || defaultBambooHrDataDomains;
+  const getPlatosClosetSettings = (companyId: string) =>
+    platosClosetSettingsByCompany[companyId] || defaultPlatosClosetSettings;
+  const getPlatosClosetDataDomains = (companyId: string) =>
+    platosClosetDataDomainsByCompany[companyId] || defaultPlatosClosetDataDomains;
+  const getAvailableOperationalSources = (companyId: string) =>
+    availableOperationalSourcesByCompany[companyId] || [];
+  const getSelectedOperationalSources = (companyId: string) =>
+    selectedOperationalSourcesByCompany[companyId] || [];
   const getDynamicsSettings = (companyId: string) =>
     dynamicsSettingsByCompany[companyId] || defaultDynamicsSettings;
   const getDynamicsPrograms = (companyId: string) =>
@@ -2131,6 +2232,50 @@ export default function SiteAdminDashboard(props: any) {
     setQboProgramsByCompany((prev) => ({
       ...prev,
       [companyId]: programs,
+    }));
+  };
+  const setBambooHrSetting = (
+    companyId: string,
+    field: keyof typeof defaultBambooHrSettings,
+    value: string
+  ) => {
+    setBambooHrSettingsByCompany((prev) => ({
+      ...prev,
+      [companyId]: {
+        ...(prev[companyId] || defaultBambooHrSettings),
+        [field]: value,
+      },
+    }));
+  };
+  const setBambooHrDataDomains = (
+    companyId: string,
+    dataDomains: Array<{ dataDomain: string; bambooEntity: string; enabled: boolean }>
+  ) => {
+    setBambooHrDataDomainsByCompany((prev) => ({
+      ...prev,
+      [companyId]: dataDomains,
+    }));
+  };
+  const setPlatosClosetSetting = (
+    companyId: string,
+    field: keyof typeof defaultPlatosClosetSettings,
+    value: string
+  ) => {
+    setPlatosClosetSettingsByCompany((prev) => ({
+      ...prev,
+      [companyId]: {
+        ...(prev[companyId] || defaultPlatosClosetSettings),
+        [field]: value,
+      },
+    }));
+  };
+  const setPlatosClosetDataDomains = (
+    companyId: string,
+    dataDomains: Array<{ dataDomain: string; workbookSection: string; enabled: boolean }>
+  ) => {
+    setPlatosClosetDataDomainsByCompany((prev) => ({
+      ...prev,
+      [companyId]: dataDomains,
     }));
   };
   const setDynamicsSetting = (
@@ -2239,6 +2384,34 @@ export default function SiteAdminDashboard(props: any) {
     const current = getQboPrograms(companyId);
     setQboPrograms(companyId, [...current, { dataDomain: '', qboEntity: '', enabled: true }]);
   };
+  const updateBambooHrDataDomain = (
+    companyId: string,
+    index: number,
+    field: 'dataDomain' | 'bambooEntity' | 'enabled',
+    value: string | boolean
+  ) => {
+    const current = getBambooHrDataDomains(companyId);
+    const next = current.map((row, i) => (i === index ? { ...row, [field]: value } : row));
+    setBambooHrDataDomains(companyId, next);
+  };
+  const addBambooHrDataDomain = (companyId: string) => {
+    const current = getBambooHrDataDomains(companyId);
+    setBambooHrDataDomains(companyId, [...current, { dataDomain: '', bambooEntity: '', enabled: true }]);
+  };
+  const updatePlatosClosetDataDomain = (
+    companyId: string,
+    index: number,
+    field: 'dataDomain' | 'workbookSection' | 'enabled',
+    value: string | boolean
+  ) => {
+    const current = getPlatosClosetDataDomains(companyId);
+    const next = current.map((row, i) => (i === index ? { ...row, [field]: value } : row));
+    setPlatosClosetDataDomains(companyId, next);
+  };
+  const addPlatosClosetDataDomain = (companyId: string) => {
+    const current = getPlatosClosetDataDomains(companyId);
+    setPlatosClosetDataDomains(companyId, [...current, { dataDomain: '', workbookSection: '', enabled: true }]);
+  };
   const updateDynamicsProgram = (
     companyId: string,
     index: number,
@@ -2326,6 +2499,22 @@ export default function SiteAdminDashboard(props: any) {
     const next = current.filter((_, i) => i !== index);
     setQboPrograms(companyId, next.length > 0 ? next : [{ dataDomain: '', qboEntity: '', enabled: true }]);
   };
+  const deleteBambooHrDataDomain = (companyId: string, index: number) => {
+    const current = getBambooHrDataDomains(companyId);
+    const next = current.filter((_, i) => i !== index);
+    setBambooHrDataDomains(
+      companyId,
+      next.length > 0 ? next : [{ dataDomain: '', bambooEntity: '', enabled: true }]
+    );
+  };
+  const deletePlatosClosetDataDomain = (companyId: string, index: number) => {
+    const current = getPlatosClosetDataDomains(companyId);
+    const next = current.filter((_, i) => i !== index);
+    setPlatosClosetDataDomains(
+      companyId,
+      next.length > 0 ? next : [{ dataDomain: '', workbookSection: '', enabled: true }]
+    );
+  };
 
   const loadQbDesktopSettings = async (companyId: string) => {
     try {
@@ -2361,6 +2550,71 @@ export default function SiteAdminDashboard(props: any) {
       }
     } catch (error) {
       console.error('Failed to load QuickBooks Online settings:', error);
+    }
+  };
+  const loadBambooHrSettings = async (companyId: string) => {
+    try {
+      const response = await fetch(`/api/operational-system-integrations/bamboohr/settings?companyId=${companyId}`);
+      const data = await response.json();
+      if (!response.ok || !data?.ok) return;
+      if (data?.settings && typeof data.settings === 'object') {
+        setBambooHrSettingsByCompany((prev) => ({
+          ...prev,
+          [companyId]: { ...defaultBambooHrSettings, ...data.settings },
+        }));
+      }
+      if (Array.isArray(data?.dataDomains)) {
+        setBambooHrDataDomains(companyId, data.dataDomains);
+      }
+      setBambooHrStatusByCompany((prev) => ({ ...prev, [companyId]: String(data?.status || 'NOT_CONNECTED') }));
+      setBambooHrLastSyncByCompany((prev) => ({ ...prev, [companyId]: data?.lastSyncAt || null }));
+      setBambooHrErrorByCompany((prev) => ({ ...prev, [companyId]: data?.errorMessage || null }));
+    } catch (error) {
+      console.error('Failed to load BambooHR settings:', error);
+    }
+  };
+  const loadPlatosClosetSettings = async (companyId: string) => {
+    try {
+      const response = await fetch(`/api/operational-system-integrations/platos-closet/settings?companyId=${companyId}`);
+      const data = await response.json();
+      if (!response.ok || !data?.ok) return;
+      if (data?.settings && typeof data.settings === 'object') {
+        setPlatosClosetSettingsByCompany((prev) => ({
+          ...prev,
+          [companyId]: { ...defaultPlatosClosetSettings, ...data.settings },
+        }));
+      }
+      if (Array.isArray(data?.dataDomains)) {
+        setPlatosClosetDataDomains(companyId, data.dataDomains);
+      }
+      setPlatosClosetStatusByCompany((prev) => ({ ...prev, [companyId]: String(data?.status || 'NOT_CONNECTED') }));
+      setPlatosClosetLastSyncByCompany((prev) => ({ ...prev, [companyId]: data?.lastSyncAt || null }));
+      setPlatosClosetErrorByCompany((prev) => ({ ...prev, [companyId]: data?.errorMessage || null }));
+    } catch (error) {
+      console.error("Failed to load Plato's Closet spreadsheet settings:", error);
+    }
+  };
+  const loadOperationalSources = async (companyId: string) => {
+    try {
+      const response = await fetch(`/api/operational-system-integrations/sources?companyId=${companyId}`);
+      const data = await response.json();
+      if (!response.ok || !data?.ok) return;
+      const available = Array.isArray(data?.availableSources) ? data.availableSources : [];
+      const selected = Array.isArray(data?.selectedSources) ? data.selectedSources : [];
+      setAvailableOperationalSourcesByCompany((prev) => ({ ...prev, [companyId]: available }));
+      setSelectedOperationalSourcesByCompany((prev) => ({ ...prev, [companyId]: selected }));
+      setOperationalSourceToAddByCompany((prev) => ({
+        ...prev,
+        [companyId]: prev[companyId] || (available[0]?.sourceCode ?? ''),
+      }));
+      if (selected.some((source: any) => String(source?.sourceCode || '') === 'BAMBOOHR_STANDARD')) {
+        loadBambooHrSettings(companyId);
+      }
+      if (selected.some((source: any) => String(source?.sourceCode || '') === 'PLATOS_CLOSET_STORE_VISIT')) {
+        loadPlatosClosetSettings(companyId);
+      }
+    } catch (error) {
+      console.error('Failed to load operational sources:', error);
     }
   };
   // Dynamics 365 / Acumatica / Sage Intacct / Odoo settings are now handled by
@@ -2415,6 +2669,99 @@ export default function SiteAdminDashboard(props: any) {
       alert(`Failed to save QuickBooks Online settings: ${error?.message || 'Unknown error'}`);
     }
   };
+  const saveBambooHrSettings = async (companyId: string) => {
+    try {
+      setSavingBambooHrCompanyId(companyId);
+      const response = await fetch('/api/operational-system-integrations/bamboohr/settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          companyId,
+          settings: getBambooHrSettings(companyId),
+          dataDomains: getBambooHrDataDomains(companyId),
+        }),
+      });
+      const data = await response.json();
+      if (!response.ok || !data?.ok) {
+        throw new Error(data?.details || data?.error || 'Failed to save BambooHR settings');
+      }
+      await loadBambooHrSettings(companyId);
+      await loadOperationalSources(companyId);
+      alert('BambooHR operational system settings saved for this company.');
+    } catch (error: any) {
+      alert(`Failed to save BambooHR settings: ${error?.message || 'Unknown error'}`);
+    } finally {
+      setSavingBambooHrCompanyId((prev) => (prev === companyId ? null : prev));
+    }
+  };
+  const savePlatosClosetSettings = async (companyId: string) => {
+    try {
+      setSavingPlatosClosetCompanyId(companyId);
+      const response = await fetch('/api/operational-system-integrations/platos-closet/settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          companyId,
+          settings: getPlatosClosetSettings(companyId),
+          dataDomains: getPlatosClosetDataDomains(companyId),
+        }),
+      });
+      const data = await response.json();
+      if (!response.ok || !data?.ok) {
+        throw new Error(data?.details || data?.error || "Failed to save Plato's Closet spreadsheet settings");
+      }
+      await loadPlatosClosetSettings(companyId);
+      await loadOperationalSources(companyId);
+      alert("Plato's Closet spreadsheet settings saved for this company.");
+    } catch (error: any) {
+      alert(`Failed to save Plato's Closet spreadsheet settings: ${error?.message || 'Unknown error'}`);
+    } finally {
+      setSavingPlatosClosetCompanyId((prev) => (prev === companyId ? null : prev));
+    }
+  };
+  const addOperationalSource = async (companyId: string) => {
+    const sourceCode = String(operationalSourceToAddByCompany[companyId] || '').trim();
+    if (!sourceCode) {
+      alert('Select an operational source to add.');
+      return;
+    }
+    try {
+      setSavingOperationalSourceCompanyId(companyId);
+      const response = await fetch('/api/operational-system-integrations/sources', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ companyId, sourceCode }),
+      });
+      const data = await response.json();
+      if (!response.ok || !data?.ok) {
+        throw new Error(data?.details || data?.error || 'Failed to add operational source');
+      }
+      await loadOperationalSources(companyId);
+    } catch (error: any) {
+      alert(`Failed to add operational source: ${error?.message || 'Unknown error'}`);
+    } finally {
+      setSavingOperationalSourceCompanyId((prev) => (prev === companyId ? null : prev));
+    }
+  };
+  const removeOperationalSource = async (companyId: string, sourceCode: string) => {
+    try {
+      setSavingOperationalSourceCompanyId(companyId);
+      const response = await fetch('/api/operational-system-integrations/sources', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ companyId, sourceCode }),
+      });
+      const data = await response.json();
+      if (!response.ok || !data?.ok) {
+        throw new Error(data?.details || data?.error || 'Failed to remove operational source');
+      }
+      await loadOperationalSources(companyId);
+    } catch (error: any) {
+      alert(`Failed to remove operational source: ${error?.message || 'Unknown error'}`);
+    } finally {
+      setSavingOperationalSourceCompanyId((prev) => (prev === companyId ? null : prev));
+    }
+  };
   // See note above — these saves are no-ops; the new AccountingSystemPanel
   // owns persistence for all plugin-native systems via the generic route at
   // /api/accounting-systems/[system]/settings.
@@ -2422,6 +2769,538 @@ export default function SiteAdminDashboard(props: any) {
   const saveAcumaticaSettings = async (_companyId: string) => {};
   const saveSageIntacctSettings = async (_companyId: string) => {};
   const saveOdooSettings = async (_companyId: string) => {};
+
+  const isOperationalSourceSelected = (companyId: string, sourceCode: string) =>
+    getSelectedOperationalSources(companyId).some((source) => String(source.sourceCode || '') === sourceCode);
+
+  const getOperationalSourceStatusTheme = (statusValue: string | null | undefined) => {
+    const status = String(statusValue || 'NOT_CONNECTED').toUpperCase();
+    return status === 'ACTIVE'
+      ? { bg: '#d1fae5', border: '#10b981', fg: '#166534', label: 'Connected' }
+      : status === 'ERROR'
+        ? { bg: '#fee2e2', border: '#ef4444', fg: '#991b1b', label: 'Error' }
+        : status === 'EXPIRED'
+          ? { bg: '#fed7aa', border: '#f97316', fg: '#9a3412', label: 'Expired' }
+          : { bg: '#fef3c7', border: '#fbbf24', fg: '#92400e', label: 'Not Connected' };
+  };
+
+  const renderOperationalSourceSelectorCard = (companyId: string) => {
+    const availableSources = getAvailableOperationalSources(companyId);
+    const selectedSources = getSelectedOperationalSources(companyId);
+    const selectedCodes = new Set(selectedSources.map((source) => String(source.sourceCode || '')));
+    const selectableSources = availableSources.filter((source) => !selectedCodes.has(String(source.sourceCode || '')));
+    const currentSelection =
+      selectableSources.find((source) => source.sourceCode === operationalSourceToAddByCompany[companyId])?.sourceCode ||
+      selectableSources[0]?.sourceCode ||
+      '';
+
+    return (
+      <div style={{ padding: '12px', background: '#f8fafc', borderRadius: '6px', border: '1px solid #e2e8f0', gridColumn: '1 / -1', order: 3 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px', marginBottom: '10px' }}>
+          <div>
+            <h4 style={{ fontSize: '14px', fontWeight: '600', color: '#1e293b', marginBottom: '8px' }}>Operational System Integration</h4>
+            <div style={{ fontSize: '12px', color: '#64748b' }}>
+              Select and manage the operational data sources used by this company.
+            </div>
+          </div>
+        </div>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', alignItems: 'center', marginBottom: selectedSources.length > 0 ? '10px' : 0 }}>
+          <select
+            value={currentSelection}
+            onChange={(e) => setOperationalSourceToAddByCompany((prev) => ({ ...prev, [companyId]: e.target.value }))}
+            style={{ minWidth: '240px', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white' }}
+            disabled={savingOperationalSourceCompanyId === companyId || selectableSources.length === 0}
+          >
+            {selectableSources.length === 0 ? (
+              <option value="">No additional operational sources available</option>
+            ) : (
+              selectableSources.map((source) => (
+                <option key={`${companyId}-source-option-${source.sourceCode}`} value={source.sourceCode}>
+                  {source.label}
+                </option>
+              ))
+            )}
+          </select>
+          <button
+            onClick={() => addOperationalSource(companyId)}
+            disabled={savingOperationalSourceCompanyId === companyId || selectableSources.length === 0}
+            style={{ padding: '8px 12px', background: '#0ea5e9', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: 'pointer' }}
+          >
+            {savingOperationalSourceCompanyId === companyId ? 'Working...' : '+ Add Operational Source'}
+          </button>
+        </div>
+        {selectedSources.length > 0 && (
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+            {selectedSources.map((source) => (
+              <div
+                key={`${companyId}-selected-source-${source.sourceCode}`}
+                style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', background: '#fff', border: '1px solid #cbd5e1', borderRadius: '999px', padding: '6px 10px', fontSize: '12px', color: '#334155' }}
+              >
+                <span>{source.label}</span>
+                <button
+                  onClick={() => removeOperationalSource(companyId, source.sourceCode)}
+                  disabled={savingOperationalSourceCompanyId === companyId}
+                  style={{ background: 'none', border: 'none', color: '#b91c1c', cursor: 'pointer', fontSize: '12px', fontWeight: '600', padding: 0 }}
+                >
+                  Remove
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  const renderBambooHrOperationalIntegrationCard = (companyId: string, companyName: string) => {
+    const status = String(bambooHrStatusByCompany[companyId] || 'NOT_CONNECTED').toUpperCase();
+    const lastSyncAt = bambooHrLastSyncByCompany[companyId];
+    const errorMessage = bambooHrErrorByCompany[companyId];
+    const isSaving = savingBambooHrCompanyId === companyId;
+    const statusTheme = getOperationalSourceStatusTheme(status);
+
+    return (
+      <div style={{ padding: '12px', background: '#f8fafc', borderRadius: '6px', border: '1px solid #e2e8f0', gridColumn: '1 / 2', order: 4 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px', marginBottom: '10px' }}>
+          <div>
+            <h4 style={{ fontSize: '14px', fontWeight: '600', color: '#1e293b', marginBottom: '8px' }}>BambooHR</h4>
+            <div style={{ fontSize: '12px', color: '#64748b' }}>
+              BambooHR setup for <strong>{companyName}</strong>
+            </div>
+          </div>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', justifyContent: 'flex-end' }}>
+            <button
+              onClick={() => saveBambooHrSettings(companyId)}
+              style={{ padding: '8px 12px', background: '#334155', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: 'pointer' }}
+            >
+              {isSaving ? 'Saving...' : 'Save'}
+            </button>
+            <button
+              disabled
+              style={{ padding: '8px 12px', background: '#cbd5e1', color: '#334155', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: 'not-allowed' }}
+            >
+              Validate Connection
+            </button>
+            <button
+              disabled
+              style={{ padding: '8px 12px', background: '#cbd5e1', color: '#334155', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: 'not-allowed' }}
+            >
+              Run Sync Now
+            </button>
+          </div>
+        </div>
+
+        <div style={{ marginBottom: '8px', padding: '8px', background: statusTheme.bg, border: `1px solid ${statusTheme.border}`, borderRadius: '6px' }}>
+          <div style={{ fontSize: '12px', fontWeight: '600', color: statusTheme.fg }}>{statusTheme.label}</div>
+          <div style={{ fontSize: '12px', color: statusTheme.fg }}>
+            {lastSyncAt ? `Last sync: ${new Date(lastSyncAt).toLocaleString()}` : 'No BambooHR sync has been run for this company yet.'}
+          </div>
+          {errorMessage ? (
+            <div style={{ fontSize: '12px', color: statusTheme.fg, marginTop: '4px' }}>
+              {errorMessage}
+            </div>
+          ) : null}
+        </div>
+
+        <div style={{ marginBottom: '8px', padding: '8px', background: '#ecfeff', border: '1px solid #a5f3fc', borderRadius: '6px' }}>
+          <div style={{ fontSize: '12px', fontWeight: '600', color: '#155e75' }}>BambooHR operational connection</div>
+          <div style={{ fontSize: '12px', color: '#155e75' }}>
+            Configure the BambooHR connection and sync schedule here. Validation and on-demand sync wiring will use this container in the next phase.
+          </div>
+        </div>
+
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(180px, 1fr))', gap: '8px' }}>
+          <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#334155' }}>
+            <span style={{ fontWeight: 600 }}>Subdomain *</span>
+            <input
+              type="text"
+              value={getBambooHrSettings(companyId).subdomain}
+              onChange={(e) => setBambooHrSetting(companyId, 'subdomain', e.target.value)}
+              placeholder="yourcompany"
+              style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white' }}
+            />
+          </label>
+          <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#334155' }}>
+            <span style={{ fontWeight: 600 }}>Base URL</span>
+            <input
+              type="text"
+              value={getBambooHrSettings(companyId).baseUrl}
+              onChange={(e) => setBambooHrSetting(companyId, 'baseUrl', e.target.value)}
+              placeholder="https://api.bamboohr.com/api/gateway.php/yourcompany/v1"
+              style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white' }}
+            />
+          </label>
+          <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#334155' }}>
+            <span style={{ fontWeight: 600 }}>API Key *</span>
+            <PasswordInput
+              value={getBambooHrSettings(companyId).apiKey}
+              onChange={(value) => setBambooHrSetting(companyId, 'apiKey', value)}
+              placeholder="BambooHR API key"
+              style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white' }}
+            />
+          </label>
+          <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#334155' }}>
+            <span style={{ fontWeight: 600 }}>Auth Type *</span>
+            <select
+              value={getBambooHrSettings(companyId).authType}
+              onChange={(e) => setBambooHrSetting(companyId, 'authType', e.target.value)}
+              style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white' }}
+            >
+              <option value="">Select</option>
+              <option value="API_KEY">API Key</option>
+              <option value="OAUTH">OAuth</option>
+            </select>
+          </label>
+          <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#334155' }}>
+            <span style={{ fontWeight: 600 }}>Sync Frequency *</span>
+            <select
+              value={getBambooHrSettings(companyId).syncFrequency}
+              onChange={(e) => setBambooHrSetting(companyId, 'syncFrequency', e.target.value)}
+              style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white' }}
+            >
+              <option value="">Select</option>
+              <option value="daily">Daily</option>
+              <option value="weekly">Weekly</option>
+              <option value="monthly">Monthly</option>
+            </select>
+          </label>
+          <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#334155' }}>
+            <span style={{ fontWeight: 600 }}>Sync Time (Local)</span>
+            <select
+              value={getBambooHrSettings(companyId).syncTime}
+              onChange={(e) => setBambooHrSetting(companyId, 'syncTime', e.target.value)}
+              style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white' }}
+            >
+              {Array.from({ length: 24 }).map((_, hour) => {
+                const hh = String(hour).padStart(2, '0');
+                const value = `${hh}:00`;
+                return (
+                  <option key={`${companyId}-bamboo-sync-${value}`} value={value}>
+                    {value}
+                  </option>
+                );
+              })}
+            </select>
+          </label>
+          <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#334155' }}>
+            <span style={{ fontWeight: 600 }}>Initial Sync Start Date (YYYY-MM-DD)</span>
+            <input
+              type="text"
+              value={getBambooHrSettings(companyId).initialSyncStartDate}
+              onChange={(e) => setBambooHrSetting(companyId, 'initialSyncStartDate', e.target.value)}
+              placeholder="2024-01-01"
+              style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white' }}
+            />
+          </label>
+          <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#334155' }}>
+            <span style={{ fontWeight: 600 }}>Incremental Sync *</span>
+            <select
+              value={getBambooHrSettings(companyId).incrementalSync}
+              onChange={(e) => setBambooHrSetting(companyId, 'incrementalSync', e.target.value)}
+              style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white' }}
+            >
+              <option value="">Select</option>
+              <option value="YES">Yes</option>
+              <option value="NO">No</option>
+            </select>
+          </label>
+        </div>
+      </div>
+    );
+  };
+
+  const renderBambooHrDataDomainsCard = (companyId: string) => (
+    <div style={{ padding: '12px', background: '#f8fafc', borderRadius: '6px', border: '1px solid #e2e8f0', gridColumn: '2 / 3', order: 5 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+        <h4 style={{ fontSize: '14px', fontWeight: '600', color: '#1e293b', margin: 0 }}>Data Domains</h4>
+        <div style={{ display: 'flex', gap: '6px' }}>
+          <button
+            onClick={() => addBambooHrDataDomain(companyId)}
+            style={{ padding: '6px 10px', background: '#0ea5e9', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: 'pointer' }}
+          >
+            + Add
+          </button>
+          <button
+            onClick={() => saveBambooHrSettings(companyId)}
+            style={{ padding: '6px 10px', background: '#334155', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: 'pointer' }}
+          >
+            {savingBambooHrCompanyId === companyId ? 'Saving...' : 'Save'}
+          </button>
+        </div>
+      </div>
+      <div style={{ fontSize: '12px', color: '#64748b', marginBottom: '8px' }}>
+        BambooHR operational domains available for downstream workforce reporting
+      </div>
+      <div style={{ overflowX: 'auto' }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
+          <thead>
+            <tr style={{ background: '#f1f5f9', borderBottom: '1px solid #e2e8f0' }}>
+              <th style={{ textAlign: 'left', padding: '6px', color: '#475569' }}>Data Domain</th>
+              <th style={{ textAlign: 'left', padding: '6px', color: '#475569' }}>BambooHR Entity</th>
+              <th style={{ textAlign: 'left', padding: '6px', color: '#475569', width: '80px' }}>Enabled</th>
+              <th style={{ textAlign: 'left', padding: '6px', color: '#475569', width: '70px' }}>Action</th>
+            </tr>
+          </thead>
+          <tbody>
+            {getBambooHrDataDomains(companyId).map((row, index) => (
+              <tr key={`${companyId}-bamboo-domain-${index}`} style={{ borderBottom: '1px solid #e2e8f0' }}>
+                <td style={{ padding: '6px' }}>
+                  <input
+                    type="text"
+                    value={row.dataDomain}
+                    onChange={(e) => updateBambooHrDataDomain(companyId, index, 'dataDomain', e.target.value)}
+                    placeholder="Data Domain"
+                    style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '4px', padding: '6px', fontSize: '12px', background: 'white' }}
+                  />
+                </td>
+                <td style={{ padding: '6px' }}>
+                  <input
+                    type="text"
+                    value={row.bambooEntity}
+                    onChange={(e) => updateBambooHrDataDomain(companyId, index, 'bambooEntity', e.target.value)}
+                    placeholder="BambooHR Entity"
+                    style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '4px', padding: '6px', fontSize: '12px', background: 'white' }}
+                  />
+                </td>
+                <td style={{ padding: '6px', textAlign: 'center' }}>
+                  <input
+                    type="checkbox"
+                    checked={Boolean(row.enabled)}
+                    onChange={(e) => updateBambooHrDataDomain(companyId, index, 'enabled', e.target.checked)}
+                  />
+                </td>
+                <td style={{ padding: '6px' }}>
+                  <button
+                    onClick={() => deleteBambooHrDataDomain(companyId, index)}
+                    style={{ padding: '6px 8px', background: '#ef4444', color: 'white', border: 'none', borderRadius: '4px', fontSize: '11px', fontWeight: '600', cursor: 'pointer' }}
+                  >
+                    Delete
+                  </button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+
+  const renderPlatosClosetOperationalIntegrationCard = (companyId: string, companyName: string) => {
+    const status = String(platosClosetStatusByCompany[companyId] || 'NOT_CONNECTED').toUpperCase();
+    const lastSyncAt = platosClosetLastSyncByCompany[companyId];
+    const errorMessage = platosClosetErrorByCompany[companyId];
+    const isSaving = savingPlatosClosetCompanyId === companyId;
+    const statusTheme = getOperationalSourceStatusTheme(status);
+
+    return (
+      <div style={{ padding: '12px', background: '#f8fafc', borderRadius: '6px', border: '1px solid #e2e8f0', gridColumn: '1 / 2', order: 6 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px', marginBottom: '10px' }}>
+          <div>
+            <h4 style={{ fontSize: '14px', fontWeight: '600', color: '#1e293b', marginBottom: '8px' }}>Spreadsheet - Plato&apos;s Closet</h4>
+            <div style={{ fontSize: '12px', color: '#64748b' }}>
+              Retail workbook setup for <strong>{companyName}</strong>
+            </div>
+          </div>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', justifyContent: 'flex-end' }}>
+            <button
+              onClick={() => savePlatosClosetSettings(companyId)}
+              style={{ padding: '8px 12px', background: '#334155', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: 'pointer' }}
+            >
+              {isSaving ? 'Saving...' : 'Save'}
+            </button>
+            <button
+              disabled
+              style={{ padding: '8px 12px', background: '#cbd5e1', color: '#334155', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: 'not-allowed' }}
+            >
+              Upload Workbook
+            </button>
+          </div>
+        </div>
+
+        <div style={{ marginBottom: '8px', padding: '8px', background: statusTheme.bg, border: `1px solid ${statusTheme.border}`, borderRadius: '6px' }}>
+          <div style={{ fontSize: '12px', fontWeight: '600', color: statusTheme.fg }}>{statusTheme.label}</div>
+          <div style={{ fontSize: '12px', color: statusTheme.fg }}>
+            {lastSyncAt ? `Last workbook load: ${new Date(lastSyncAt).toLocaleString()}` : "No Plato's Closet workbook has been loaded for this company yet."}
+          </div>
+          {errorMessage ? <div style={{ fontSize: '12px', color: statusTheme.fg, marginTop: '4px' }}>{errorMessage}</div> : null}
+        </div>
+
+        <div style={{ marginBottom: '8px', padding: '8px', background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: '6px' }}>
+          <div style={{ fontSize: '12px', fontWeight: '600', color: '#1d4ed8' }}>Franchisor-specific retail workbook</div>
+          <div style={{ fontSize: '12px', color: '#1d4ed8' }}>
+            This source is restricted to Retail companies and requires the `YTD Key Performance Indicators` and `YTD Key Indicator` worksheets.
+          </div>
+        </div>
+
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(180px, 1fr))', gap: '8px' }}>
+          <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#334155' }}>
+            <span style={{ fontWeight: 600 }}>Template Name</span>
+            <input
+              type="text"
+              value={getPlatosClosetSettings(companyId).templateName}
+              onChange={(e) => setPlatosClosetSetting(companyId, 'templateName', e.target.value)}
+              style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white' }}
+            />
+          </label>
+          <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#334155' }}>
+            <span style={{ fontWeight: 600 }}>Accepted File Type</span>
+            <select
+              value={getPlatosClosetSettings(companyId).acceptedFileType}
+              onChange={(e) => setPlatosClosetSetting(companyId, 'acceptedFileType', e.target.value)}
+              style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white' }}
+            >
+              <option value=".xlsx">.xlsx</option>
+              <option value=".csv">.csv</option>
+            </select>
+          </label>
+          <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#334155' }}>
+            <span style={{ fontWeight: 600 }}>Upload Frequency</span>
+            <select
+              value={getPlatosClosetSettings(companyId).uploadFrequency}
+              onChange={(e) => setPlatosClosetSetting(companyId, 'uploadFrequency', e.target.value)}
+              style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white' }}
+            >
+              <option value="">Select</option>
+              <option value="daily">Daily</option>
+              <option value="weekly">Weekly</option>
+              <option value="monthly">Monthly</option>
+            </select>
+          </label>
+          <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#334155' }}>
+            <span style={{ fontWeight: 600 }}>Sync Time (Local)</span>
+            <select
+              value={getPlatosClosetSettings(companyId).syncTime}
+              onChange={(e) => setPlatosClosetSetting(companyId, 'syncTime', e.target.value)}
+              style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white' }}
+            >
+              {Array.from({ length: 24 }).map((_, hour) => {
+                const hh = String(hour).padStart(2, '0');
+                const value = `${hh}:00`;
+                return (
+                  <option key={`${companyId}-platos-sync-${value}`} value={value}>
+                    {value}
+                  </option>
+                );
+              })}
+            </select>
+          </label>
+          <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#334155' }}>
+            <span style={{ fontWeight: 600 }}>Initial Sync Start Date (YYYY-MM-DD)</span>
+            <input
+              type="text"
+              value={getPlatosClosetSettings(companyId).initialSyncStartDate}
+              onChange={(e) => setPlatosClosetSetting(companyId, 'initialSyncStartDate', e.target.value)}
+              placeholder="2024-01-01"
+              style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white' }}
+            />
+          </label>
+          <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#334155' }}>
+            <span style={{ fontWeight: 600 }}>Upload Mode</span>
+            <select
+              value={getPlatosClosetSettings(companyId).uploadMode}
+              onChange={(e) => setPlatosClosetSetting(companyId, 'uploadMode', e.target.value)}
+              style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white' }}
+            >
+              <option value="REPLACE">Replace existing workbook snapshot</option>
+              <option value="APPEND">Append to existing workbook history</option>
+            </select>
+          </label>
+          <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#334155' }}>
+            <span style={{ fontWeight: 600 }}>Required Sheets</span>
+            <input
+              type="text"
+              value={getPlatosClosetSettings(companyId).requiredSheetsText}
+              onChange={(e) => setPlatosClosetSetting(companyId, 'requiredSheetsText', e.target.value)}
+              style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white' }}
+            />
+          </label>
+          <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#334155' }}>
+            <span style={{ fontWeight: 600 }}>Sample Workbook Path</span>
+            <input
+              type="text"
+              value={getPlatosClosetSettings(companyId).workbookPath}
+              onChange={(e) => setPlatosClosetSetting(companyId, 'workbookPath', e.target.value)}
+              style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white' }}
+            />
+          </label>
+        </div>
+      </div>
+    );
+  };
+
+  const renderPlatosClosetDataDomainsCard = (companyId: string) => (
+    <div style={{ padding: '12px', background: '#f8fafc', borderRadius: '6px', border: '1px solid #e2e8f0', gridColumn: '2 / 3', order: 7 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+        <h4 style={{ fontSize: '14px', fontWeight: '600', color: '#1e293b', margin: 0 }}>Data Domains</h4>
+        <div style={{ display: 'flex', gap: '6px' }}>
+          <button
+            onClick={() => addPlatosClosetDataDomain(companyId)}
+            style={{ padding: '6px 10px', background: '#0ea5e9', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: 'pointer' }}
+          >
+            + Add
+          </button>
+          <button
+            onClick={() => savePlatosClosetSettings(companyId)}
+            style={{ padding: '6px 10px', background: '#334155', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: 'pointer' }}
+          >
+            {savingPlatosClosetCompanyId === companyId ? 'Saving...' : 'Save'}
+          </button>
+        </div>
+      </div>
+      <div style={{ fontSize: '12px', color: '#64748b', marginBottom: '8px' }}>
+        Plato&apos;s Closet retail workbook domains available for downstream reporting
+      </div>
+      <div style={{ overflowX: 'auto' }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
+          <thead>
+            <tr style={{ background: '#f1f5f9', borderBottom: '1px solid #e2e8f0' }}>
+              <th style={{ textAlign: 'left', padding: '6px', color: '#475569' }}>Data Domain</th>
+              <th style={{ textAlign: 'left', padding: '6px', color: '#475569' }}>Workbook Section</th>
+              <th style={{ textAlign: 'left', padding: '6px', color: '#475569', width: '80px' }}>Enabled</th>
+              <th style={{ textAlign: 'left', padding: '6px', color: '#475569', width: '70px' }}>Action</th>
+            </tr>
+          </thead>
+          <tbody>
+            {getPlatosClosetDataDomains(companyId).map((row, index) => (
+              <tr key={`${companyId}-platos-domain-${index}`} style={{ borderBottom: '1px solid #e2e8f0' }}>
+                <td style={{ padding: '6px' }}>
+                  <input
+                    type="text"
+                    value={row.dataDomain}
+                    onChange={(e) => updatePlatosClosetDataDomain(companyId, index, 'dataDomain', e.target.value)}
+                    style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '4px', padding: '6px', fontSize: '12px', background: 'white' }}
+                  />
+                </td>
+                <td style={{ padding: '6px' }}>
+                  <input
+                    type="text"
+                    value={row.workbookSection}
+                    onChange={(e) => updatePlatosClosetDataDomain(companyId, index, 'workbookSection', e.target.value)}
+                    style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '4px', padding: '6px', fontSize: '12px', background: 'white' }}
+                  />
+                </td>
+                <td style={{ padding: '6px', textAlign: 'center' }}>
+                  <input
+                    type="checkbox"
+                    checked={Boolean(row.enabled)}
+                    onChange={(e) => updatePlatosClosetDataDomain(companyId, index, 'enabled', e.target.checked)}
+                  />
+                </td>
+                <td style={{ padding: '6px' }}>
+                  <button
+                    onClick={() => deletePlatosClosetDataDomain(companyId, index)}
+                    style={{ padding: '6px 8px', background: '#ef4444', color: 'white', border: 'none', borderRadius: '4px', fontSize: '11px', fontWeight: '600', cursor: 'pointer' }}
+                  >
+                    Delete
+                  </button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
 
   // Rehydrate integration/program settings when returning to Site Admin tabs.
   // This prevents stale in-memory state from showing old values until a hard refresh.
@@ -2475,6 +3354,7 @@ export default function SiteAdminDashboard(props: any) {
       }
       if (system === 'QUICKBOOKS') {
         loadQboSettings(companyId);
+        loadOperationalSources(companyId);
         return;
       }
       if (system === 'DYNAMICS' || system === 'DYNAMICS365') {
@@ -3395,6 +4275,7 @@ export default function SiteAdminDashboard(props: any) {
                                         loadQbDesktopSettings(company.id);
                                       } else if (company.accountingSystem === 'QUICKBOOKS') {
                                         loadQboSettings(company.id);
+                                        loadOperationalSources(company.id);
                                       } else if (company.accountingSystem === 'DYNAMICS' || company.accountingSystem === 'DYNAMICS365') {
                                         loadDynamicsSettings(company.id);
                                       } else if (company.accountingSystem === 'ACUMATICA') {
@@ -5304,6 +6185,11 @@ export default function SiteAdminDashboard(props: any) {
                                                 )}
                                               </div>
                                             </div>
+                                            {company.accountingSystem === 'QUICKBOOKS' && renderOperationalSourceSelectorCard(company.id)}
+                                            {company.accountingSystem === 'QUICKBOOKS' && isOperationalSourceSelected(company.id, 'BAMBOOHR_STANDARD') && renderBambooHrOperationalIntegrationCard(company.id, company.name)}
+                                            {company.accountingSystem === 'QUICKBOOKS' && isOperationalSourceSelected(company.id, 'BAMBOOHR_STANDARD') && renderBambooHrDataDomainsCard(company.id)}
+                                            {company.accountingSystem === 'QUICKBOOKS' && isOperationalSourceSelected(company.id, 'PLATOS_CLOSET_STORE_VISIT') && renderPlatosClosetOperationalIntegrationCard(company.id, company.name)}
+                                            {company.accountingSystem === 'QUICKBOOKS' && isOperationalSourceSelected(company.id, 'PLATOS_CLOSET_STORE_VISIT') && renderPlatosClosetDataDomainsCard(company.id)}
                                             <div style={{ gridColumn: '1 / -1', order: 3, display: 'none' }}>
                                               {renderOperationalHubCustomizationCard(company)}
                                             </div>
@@ -5973,6 +6859,7 @@ export default function SiteAdminDashboard(props: any) {
                                           loadQbDesktopSettings(businessCompany.id);
                                         } else if (businessCompany.accountingSystem === 'QUICKBOOKS') {
                                           loadQboSettings(businessCompany.id);
+                                          loadOperationalSources(businessCompany.id);
                                         } else if (businessCompany.accountingSystem === 'DYNAMICS' || businessCompany.accountingSystem === 'DYNAMICS365') {
                                           loadDynamicsSettings(businessCompany.id);
                                         } else if (businessCompany.accountingSystem === 'ACUMATICA') {
@@ -7296,6 +8183,11 @@ export default function SiteAdminDashboard(props: any) {
                                         </table>
                                       </div>
                                     </div>
+                                      {renderOperationalSourceSelectorCard(businessCompany.id)}
+                                      {isOperationalSourceSelected(businessCompany.id, 'BAMBOOHR_STANDARD') && renderBambooHrOperationalIntegrationCard(businessCompany.id, businessCompany.name)}
+                                      {isOperationalSourceSelected(businessCompany.id, 'BAMBOOHR_STANDARD') && renderBambooHrDataDomainsCard(businessCompany.id)}
+                                      {isOperationalSourceSelected(businessCompany.id, 'PLATOS_CLOSET_STORE_VISIT') && renderPlatosClosetOperationalIntegrationCard(businessCompany.id, businessCompany.name)}
+                                      {isOperationalSourceSelected(businessCompany.id, 'PLATOS_CLOSET_STORE_VISIT') && renderPlatosClosetDataDomainsCard(businessCompany.id)}
                                   </div>
                                 ) : businessCompany?.accountingSystem === 'QUICKBOOKS_DESKTOP' ? (
                                   <div style={{ display: 'grid', gridTemplateColumns: '60% 40%', gap: '8px', marginBottom: '8px' }}>

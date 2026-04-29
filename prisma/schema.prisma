@@ -79,6 +79,8 @@ model Company {
   userDefinedAllocations     Json?                  // Array of user defined allocation templates: [{lobName: string, percentage: number}]
   accountMappings            AccountMapping[]
   accountingConnections      AccountingConnection[]
+  operationalSystemConnections OperationalSystemConnection[]
+  platosClosetWorkbookSnapshots PlatosClosetWorkbookSnapshot[]
   apiSyncLogs                ApiSyncLog[]
   inforRawBatches            InforRawBatch[]
   inforRawRecords            InforRawRecord[]
@@ -471,6 +473,60 @@ model AccountingConnection {
   @@index([companyId])
   @@index([status])
   @@index([lastSyncAt])
+}
+
+model OperationalSystemConnection {
+  id                 String                    @id @default(cuid())
+  companyId          String
+  provider           OperationalSystemProvider
+  sourceCode         String
+  status             ConnectionStatus          @default(INACTIVE)
+  authType           String?
+  accessToken        String?
+  refreshToken       String?
+  tokenExpiresAt     DateTime?
+  baseUrl            String?
+  lastSyncAt         DateTime?
+  autoSync           Boolean                   @default(false)
+  syncFrequency      String                    @default("manual")
+  connectionMetadata Json?
+  errorMessage       String?
+  createdAt          DateTime                  @default(now())
+  updatedAt          DateTime                  @updatedAt
+  company            Company                   @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@unique([companyId, provider, sourceCode])
+  @@index([companyId])
+  @@index([status])
+  @@index([lastSyncAt])
+}
+
+model PlatosClosetWorkbookSnapshot {
+  id              String   @id @default(cuid())
+  companyId       String
+  sourceCode      String   @default("PLATOS_CLOSET_STORE_VISIT")
+  frequency       String   @default("monthly")
+  documentId      String?
+  originalFileName String?
+  blobUrl         String?
+  workbookPeriod  String?
+  storeNumber     String?
+  cityState       String?
+  visitDateText   String?
+  openDateText    String?
+  salesTrend      Float?
+  buysTrend       Float?
+  rowCount        Int      @default(0)
+  departmentCount Int      @default(0)
+  categoryCount   Int      @default(0)
+  parsedWorkbook  Json
+  uploadedAt      DateTime @default(now())
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  company         Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@index([companyId, uploadedAt(sort: Desc)])
+  @@index([companyId, sourceCode, uploadedAt(sort: Desc)])
 }
 
 model ApiSyncLog {
@@ -970,6 +1026,11 @@ enum AccountingPlatform {
   DYNAMICS365
   INFOR_M3
   VISTA_CLOUD
+}
+
+enum OperationalSystemProvider {
+  BAMBOOHR
+  SPREADSHEET_UPLOAD
 }
 
 enum ConnectionStatus {

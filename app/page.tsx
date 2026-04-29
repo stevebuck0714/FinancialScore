@@ -3,6 +3,7 @@
 import React, { useState, useMemo, useEffect, useCallback, ChangeEvent, useRef } from 'react';
 import dynamic from 'next/dynamic';
 import * as XLSX from 'xlsx';
+import { upload } from '@vercel/blob/client';
 import { Upload, AlertCircle, TrendingUp, DollarSign, FileSpreadsheet, CreditCard, MapPin, Lock } from 'lucide-react';
 import { INDUSTRY_SECTORS, SECTOR_CATEGORIES } from '../data/industrySectors';
 import { assessmentData } from '../data/assessmentData';
@@ -3224,6 +3225,40 @@ function FinancialScorePage() {
   const [qbLastSync, setQbLastSync] = useState<Date | null>(null);
   const [qbSyncing, setQbSyncing] = useState(false);
   const [qbError, setQbError] = useState<string | null>(null);
+  const operationalWorkbookFileInputRef = useRef<HTMLInputElement | null>(null);
+  const [companyOperationalSources, setCompanyOperationalSources] = useState<
+    Array<{
+      provider: string;
+      sourceCode: string;
+      label: string;
+      status?: string;
+      lastSyncAt?: string | null;
+      errorMessage?: string | null;
+      workbookUpload?: {
+        documentId?: string;
+        originalFileName?: string;
+        blobUrl?: string;
+        uploadedAt?: string;
+        sheetNames?: string[];
+        requiredSheets?: string[];
+      } | null;
+      parsedWorkbook?: {
+        parsedAt?: string;
+        workbookPeriod?: string | null;
+        storeInfo?: Record<string, string | number | null>;
+        salesKpis?: Array<{ metric: string; current: number | null; prior: number | null; delta: number | null }>;
+        categorySummary?: {
+          rowCount?: number;
+          departmentCount?: number;
+          categoryCount?: number;
+          topDepartmentsBySales?: Array<{ department: string; currentSales: number; priorSales: number; grossMarginDollars: number }>;
+        };
+      } | null;
+    }>
+  >([]);
+  const [loadingOperationalSources, setLoadingOperationalSources] = useState(false);
+  const [operationalSourcesError, setOperationalSourcesError] = useState<string | null>(null);
+  const [uploadingOperationalWorkbook, setUploadingOperationalWorkbook] = useState(false);
   
 
   // State - API Loading & Errors
@@ -4998,6 +5033,7 @@ function FinancialScorePage() {
 
         // Check QuickBooks connection status
         await checkQBStatus(selectedCompanyId);
+        await loadCompanyOperationalSources(selectedCompanyId);
         // Check Xero connection status
         await checkXeroStatus(selectedCompanyId);
         // Infor M3 setup/status is restricted to site admins.
@@ -6497,6 +6533,95 @@ function FinancialScorePage() {
     } catch (error) {
       console.error('Failed to check QuickBooks status:', error);
       setQbError('Failed to check connection status');
+    }
+  };
+
+  const loadCompanyOperationalSources = async (companyId: string) => {
+    if (!companyId) return;
+    setLoadingOperationalSources(true);
+    setOperationalSourcesError(null);
+    try {
+      const response = await fetch(`/api/operational-system-integrations/company-sources?companyId=${encodeURIComponent(companyId)}`);
+      const data = await response.json();
+      if (!response.ok || !data?.ok) {
+        throw new Error(data?.error || 'Failed to load operational sources');
+      }
+      setCompanyOperationalSources(Array.isArray(data?.selectedSources) ? data.selectedSources : []);
+    } catch (error: any) {
+      console.error('Failed to load operational sources:', error);
+      setOperationalSourcesError(error?.message || 'Failed to load operational sources');
+      setCompanyOperationalSources([]);
+    } finally {
+      setLoadingOperationalSources(false);
+    }
+  };
+
+  const uploadPlatosClosetWorkbook = async () => {
+    if (!selectedCompanyId) {
+      alert('Please select a company first');
+      return;
+    }
+    const input = operationalWorkbookFileInputRef.current;
+    const file = input?.files?.[0];
+    if (!file) {
+      alert('Choose a workbook first.');
+      return;
+    }
+
+    setUploadingOperationalWorkbook(true);
+    setOperationalSourcesError(null);
+    try {
+      const blob = await upload(file.name, file, {
+        access: 'public',
+        handleUploadUrl: '/api/company-documents/upload',
+        clientPayload: JSON.stringify({
+          companyId: selectedCompanyId,
+          category: 'OTHER',
+          originalFileName: file.name,
+          sizeBytes: file.size,
+        }),
+      });
+
+      const docResponse = await fetch('/api/company-documents', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          companyId: selectedCompanyId,
+          category: 'OTHER',
+          originalFileName: file.name,
+          blob,
+        }),
+      });
+      const docData = await docResponse.json();
+      if (!docResponse.ok || !docData?.document?.id) {
+        throw new Error(docData?.error || 'Failed to register workbook document');
+      }
+
+      const workbookResponse = await fetch('/api/operational-system-integrations/platos-closet/workbook', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          companyId: selectedCompanyId,
+          documentId: docData.document.id,
+          originalFileName: file.name,
+          blob,
+        }),
+      });
+      const workbookData = await workbookResponse.json();
+      if (!workbookResponse.ok || !workbookData?.ok) {
+        throw new Error(workbookData?.error || 'Workbook validation failed');
+      }
+
+      if (input) input.value = '';
+      await loadCompanyOperationalSources(selectedCompanyId);
+      alert("Plato's Closet workbook uploaded successfully.");
+    } catch (error: any) {
+      console.error("Failed to upload Plato's Closet workbook:", error);
+      const message = error?.message || 'Upload failed';
+      setOperationalSourcesError(message);
+      alert(`Failed to upload workbook: ${message}`);
+    } finally {
+      setUploadingOperationalWorkbook(false);
     }
   };
 
@@ -12839,7 +12964,7 @@ function FinancialScorePage() {
                 transition: 'all 0.2s'
               }}
             >
-              Accounting API Connections
+              Accounting / Operational Connections
             </button>
             <button
               onClick={() => handleAdminTabNavigation('company-settings')}
@@ -13338,12 +13463,12 @@ function FinancialScorePage() {
             </div>
           )}
 
-          {/* Accounting API Connections Tab */}
+          {/* Accounting / Operational Connections Tab */}
           {adminDashboardTab === 'api-connections' && selectedCompanyId && (
             <div style={{ background: 'white', borderRadius: '12px', padding: '24px', marginBottom: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
-              <h2 style={{ fontSize: '20px', fontWeight: '600', color: '#1e293b', marginBottom: '16px' }}>Accounting API Connections</h2>
+              <h2 style={{ fontSize: '20px', fontWeight: '600', color: '#1e293b', marginBottom: '16px' }}>Accounting / Operational Connections</h2>
               <p style={{ fontSize: '14px', color: '#64748b', marginBottom: '12px' }}>
-                Connect to accounting platforms to automatically import financial data for {companyName || 'your company'}.
+                Connect to accounting platforms and operational data sources for {companyName || 'your company'}.
               </p>
               <div style={{ marginBottom: '16px', padding: '10px 12px', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px', fontSize: '13px', color: '#475569' }}>
                 Selected Accounting System: <span style={{ fontWeight: '700', color: '#1e293b' }}>{selectedAccountingSystemLabel}</span>
@@ -13385,7 +13510,12 @@ function FinancialScorePage() {
                   </div>
                 )}
 
-              {selectedAccountingSystem === 'QUICKBOOKS' && (
+              {selectedAccountingSystem === 'QUICKBOOKS' && (() => {
+                const bambooSource = companyOperationalSources.find((source) => source.sourceCode === 'BAMBOOHR_STANDARD') || null;
+                const platosSource = companyOperationalSources.find((source) => source.sourceCode === 'PLATOS_CLOSET_STORE_VISIT') || null;
+                const operationalSourceCount = companyOperationalSources.length;
+                return (
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '16px', alignItems: 'start' }}>
               <div style={{ background: '#f8fafc', borderRadius: '12px', padding: '24px', marginBottom: '20px', border: '2px solid #e2e8f0' }}>
               {/* QuickBooks Connection */}
                 <div style={{ display: 'flex', alignItems: 'center', gap: '16px', marginBottom: '16px' }}>
@@ -13491,7 +13621,179 @@ function FinancialScorePage() {
                   )}
                 </div>
               </div>
-              )}
+              <div style={{ background: '#f8fafc', borderRadius: '12px', padding: '24px', marginBottom: '20px', border: '2px solid #e2e8f0' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px', marginBottom: '16px' }}>
+                  <div>
+                    <h3 style={{ fontSize: '18px', fontWeight: '600', color: '#1e293b', marginBottom: '4px' }}>Operational Data Connections</h3>
+                    <p style={{ fontSize: '13px', color: '#64748b', margin: 0 }}>
+                      Operational sources enabled by Site Administration for this QuickBooks company.
+                    </p>
+                  </div>
+                  <div style={{ padding: '6px 10px', borderRadius: '999px', background: '#e0f2fe', color: '#075985', fontSize: '12px', fontWeight: '700' }}>
+                    {operationalSourceCount} enabled
+                  </div>
+                </div>
+
+                {loadingOperationalSources && (
+                  <div style={{ marginBottom: '12px', padding: '12px', background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: '8px', fontSize: '13px', color: '#1d4ed8' }}>
+                    Loading operational source status...
+                  </div>
+                )}
+
+                {operationalSourcesError && (
+                  <div style={{ marginBottom: '12px', padding: '12px', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: '8px', fontSize: '13px', color: '#991b1b' }}>
+                    {operationalSourcesError}
+                  </div>
+                )}
+
+                {operationalSourceCount === 0 && !loadingOperationalSources && (
+                  <div style={{ padding: '12px', background: '#fff7ed', border: '1px solid #fed7aa', borderRadius: '8px', fontSize: '13px', color: '#9a3412' }}>
+                    No operational sources are enabled yet for this company. Ask Site Administration to add one.
+                  </div>
+                )}
+
+                {bambooSource && (
+                  <div style={{ marginBottom: '12px', padding: '14px', background: 'white', border: '1px solid #e2e8f0', borderRadius: '10px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px', marginBottom: '8px' }}>
+                      <div>
+                        <div style={{ fontSize: '14px', fontWeight: '700', color: '#1e293b' }}>{bambooSource.label}</div>
+                        <div style={{ fontSize: '12px', color: '#64748b' }}>Managed in Site Administration</div>
+                      </div>
+                      <div style={{
+                        padding: '4px 8px',
+                        borderRadius: '999px',
+                        fontSize: '11px',
+                        fontWeight: '700',
+                        background: String(bambooSource.status || '').toUpperCase() === 'ACTIVE' ? '#dcfce7' : '#fef3c7',
+                        color: String(bambooSource.status || '').toUpperCase() === 'ACTIVE' ? '#166534' : '#92400e'
+                      }}>
+                        {String(bambooSource.status || 'INACTIVE').toUpperCase() === 'ACTIVE' ? 'Connected' : 'Configured'}
+                      </div>
+                    </div>
+                    <div style={{ fontSize: '12px', color: '#475569' }}>
+                      {bambooSource.lastSyncAt
+                        ? `Last sync: ${new Date(bambooSource.lastSyncAt).toLocaleString()}`
+                        : 'No BambooHR sync has run yet.'}
+                    </div>
+                    {bambooSource.errorMessage ? (
+                      <div style={{ fontSize: '12px', color: '#991b1b', marginTop: '6px' }}>{bambooSource.errorMessage}</div>
+                    ) : null}
+                  </div>
+                )}
+
+                {platosSource && (
+                  <div style={{ padding: '14px', background: 'white', border: '1px solid #e2e8f0', borderRadius: '10px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px', marginBottom: '8px' }}>
+                      <div>
+                        <div style={{ fontSize: '14px', fontWeight: '700', color: '#1e293b' }}>{platosSource.label}</div>
+                        <div style={{ fontSize: '12px', color: '#64748b' }}>Retail workbook upload</div>
+                      </div>
+                      <div style={{
+                        padding: '4px 8px',
+                        borderRadius: '999px',
+                        fontSize: '11px',
+                        fontWeight: '700',
+                        background: platosSource.workbookUpload ? '#dcfce7' : '#fef3c7',
+                        color: platosSource.workbookUpload ? '#166534' : '#92400e'
+                      }}>
+                        {platosSource.workbookUpload ? 'Workbook uploaded' : 'Awaiting workbook'}
+                      </div>
+                    </div>
+
+                    <div style={{ marginBottom: '10px', padding: '10px', background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: '8px', fontSize: '12px', color: '#1d4ed8' }}>
+                      Required worksheets: <strong>YTD Key Performance Indicators</strong> and <strong>YTD Key Indicator</strong>.
+                    </div>
+
+                    <input
+                      ref={operationalWorkbookFileInputRef}
+                      type="file"
+                      accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                      disabled={uploadingOperationalWorkbook}
+                      style={{ marginBottom: '10px', width: '100%' }}
+                    />
+
+                    <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap', marginBottom: '12px' }}>
+                      <button
+                        onClick={uploadPlatosClosetWorkbook}
+                        disabled={uploadingOperationalWorkbook}
+                        style={{
+                          padding: '10px 14px',
+                          borderRadius: '10px',
+                          border: 'none',
+                          background: uploadingOperationalWorkbook ? '#94a3b8' : '#0ea5e9',
+                          color: 'white',
+                          fontWeight: 800,
+                          cursor: uploadingOperationalWorkbook ? 'not-allowed' : 'pointer',
+                        }}
+                      >
+                        {uploadingOperationalWorkbook ? 'Uploading…' : 'Upload Workbook'}
+                      </button>
+                      <button
+                        onClick={() => selectedCompanyId && loadCompanyOperationalSources(selectedCompanyId)}
+                        disabled={loadingOperationalSources || uploadingOperationalWorkbook}
+                        style={{
+                          padding: '10px 14px',
+                          borderRadius: '10px',
+                          border: '1px solid #e2e8f0',
+                          background: 'white',
+                          color: '#0f172a',
+                          fontWeight: 800,
+                          cursor: loadingOperationalSources || uploadingOperationalWorkbook ? 'not-allowed' : 'pointer',
+                        }}
+                      >
+                        Refresh
+                      </button>
+                    </div>
+
+                    {platosSource.workbookUpload ? (
+                      <div style={{ fontSize: '12px', color: '#475569', lineHeight: 1.6 }}>
+                        <div><strong>File:</strong> {platosSource.workbookUpload.originalFileName || 'Workbook upload'}</div>
+                        <div><strong>Uploaded:</strong> {platosSource.workbookUpload.uploadedAt ? new Date(platosSource.workbookUpload.uploadedAt).toLocaleString() : 'Unknown'}</div>
+                        <div><strong>Sheets found:</strong> {Array.isArray(platosSource.workbookUpload.sheetNames) ? platosSource.workbookUpload.sheetNames.join(', ') : 'Unknown'}</div>
+                        {platosSource.workbookUpload.blobUrl ? (
+                          <div>
+                            <a href={platosSource.workbookUpload.blobUrl} target="_blank" rel="noreferrer" style={{ color: '#2563eb', fontWeight: 600 }}>
+                              Open uploaded workbook
+                            </a>
+                          </div>
+                        ) : null}
+                      </div>
+                    ) : (
+                      <div style={{ fontSize: '12px', color: '#64748b' }}>
+                        No workbook uploaded yet.
+                      </div>
+                    )}
+
+                    {platosSource.parsedWorkbook && (
+                      <div style={{ marginTop: '12px', padding: '10px', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px', fontSize: '12px', color: '#334155' }}>
+                        <div style={{ fontWeight: '700', color: '#1e293b', marginBottom: '6px' }}>Parsed workbook summary</div>
+                        <div><strong>Parsed:</strong> {platosSource.parsedWorkbook.parsedAt ? new Date(platosSource.parsedWorkbook.parsedAt).toLocaleString() : 'Unknown'}</div>
+                        <div><strong>Workbook period:</strong> {platosSource.parsedWorkbook.workbookPeriod || 'Unknown'}</div>
+                        <div><strong>Store:</strong> {String(platosSource.parsedWorkbook.storeInfo?.['Store Number'] || 'Unknown')} {platosSource.parsedWorkbook.storeInfo?.['City/State'] ? `- ${String(platosSource.parsedWorkbook.storeInfo?.['City/State'])}` : ''}</div>
+                        <div><strong>Departments parsed:</strong> {platosSource.parsedWorkbook.categorySummary?.departmentCount ?? 0}</div>
+                        <div><strong>Category rows parsed:</strong> {platosSource.parsedWorkbook.categorySummary?.rowCount ?? 0}</div>
+                        {Array.isArray(platosSource.parsedWorkbook.categorySummary?.topDepartmentsBySales) &&
+                        platosSource.parsedWorkbook.categorySummary!.topDepartmentsBySales!.length > 0 ? (
+                          <div style={{ marginTop: '6px' }}>
+                            <strong>Top departments:</strong>{' '}
+                            {platosSource.parsedWorkbook.categorySummary!.topDepartmentsBySales!
+                              .slice(0, 3)
+                              .map((row) => `${row.department} ($${Math.round(row.currentSales).toLocaleString('en-US')})`)
+                              .join(', ')}
+                          </div>
+                        ) : null}
+                      </div>
+                    )}
+
+                    {platosSource.errorMessage ? (
+                      <div style={{ fontSize: '12px', color: '#991b1b', marginTop: '8px' }}>{platosSource.errorMessage}</div>
+                    ) : null}
+                  </div>
+                )}
+              </div>
+              </div>
+                );
+              })()}
 
               {selectedAccountingSystem === 'XERO' && (
               <div style={{ background: '#f8fafc', borderRadius: '12px', padding: '24px', marginBottom: '20px', border: '2px solid #e2e8f0' }}>
