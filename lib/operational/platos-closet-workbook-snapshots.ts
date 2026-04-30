@@ -3,6 +3,7 @@ import prisma from '@/lib/prisma';
 
 type SavePlatosClosetWorkbookSnapshotInput = {
   companyId: string;
+  monthKey: string;
   documentId?: string | null;
   originalFileName?: string | null;
   blobUrl?: string | null;
@@ -25,6 +26,7 @@ export async function savePlatosClosetWorkbookSnapshot(input: SavePlatosClosetWo
       "id",
       "companyId",
       "sourceCode",
+      "monthKey",
       "frequency",
       "documentId",
       "originalFileName",
@@ -48,6 +50,7 @@ export async function savePlatosClosetWorkbookSnapshot(input: SavePlatosClosetWo
       md5(random()::text || clock_timestamp()::text),
       ${input.companyId},
       'PLATOS_CLOSET_STORE_VISIT',
+      ${input.monthKey},
       'monthly',
       ${input.documentId ?? null},
       ${input.originalFileName ?? null},
@@ -67,6 +70,24 @@ export async function savePlatosClosetWorkbookSnapshot(input: SavePlatosClosetWo
       NOW(),
       NOW()
     )
+    ON CONFLICT ("companyId", "sourceCode", "monthKey")
+    DO UPDATE SET
+      "documentId" = EXCLUDED."documentId",
+      "originalFileName" = EXCLUDED."originalFileName",
+      "blobUrl" = EXCLUDED."blobUrl",
+      "workbookPeriod" = EXCLUDED."workbookPeriod",
+      "storeNumber" = EXCLUDED."storeNumber",
+      "cityState" = EXCLUDED."cityState",
+      "visitDateText" = EXCLUDED."visitDateText",
+      "openDateText" = EXCLUDED."openDateText",
+      "salesTrend" = EXCLUDED."salesTrend",
+      "buysTrend" = EXCLUDED."buysTrend",
+      "rowCount" = EXCLUDED."rowCount",
+      "departmentCount" = EXCLUDED."departmentCount",
+      "categoryCount" = EXCLUDED."categoryCount",
+      "parsedWorkbook" = EXCLUDED."parsedWorkbook",
+      "uploadedAt" = NOW(),
+      "updatedAt" = NOW()
   `);
 }
 

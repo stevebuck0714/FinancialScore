@@ -3244,6 +3244,7 @@ function FinancialScorePage() {
       } | null;
       parsedWorkbook?: {
         parsedAt?: string;
+        monthKey?: string | null;
         workbookPeriod?: string | null;
         storeInfo?: Record<string, string | number | null>;
         salesKpis?: Array<{ metric: string; current: number | null; prior: number | null; delta: number | null }>;
@@ -13768,6 +13769,7 @@ function FinancialScorePage() {
                       <div style={{ marginTop: '12px', padding: '10px', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px', fontSize: '12px', color: '#334155' }}>
                         <div style={{ fontWeight: '700', color: '#1e293b', marginBottom: '6px' }}>Parsed workbook summary</div>
                         <div><strong>Parsed:</strong> {platosSource.parsedWorkbook.parsedAt ? new Date(platosSource.parsedWorkbook.parsedAt).toLocaleString() : 'Unknown'}</div>
+                        <div><strong>Month key:</strong> {platosSource.parsedWorkbook.monthKey || 'Unknown'}</div>
                         <div><strong>Workbook period:</strong> {platosSource.parsedWorkbook.workbookPeriod || 'Unknown'}</div>
                         <div><strong>Store:</strong> {String(platosSource.parsedWorkbook.storeInfo?.['Store Number'] || 'Unknown')} {platosSource.parsedWorkbook.storeInfo?.['City/State'] ? `- ${String(platosSource.parsedWorkbook.storeInfo?.['City/State'])}` : ''}</div>
                         <div><strong>Departments parsed:</strong> {platosSource.parsedWorkbook.categorySummary?.departmentCount ?? 0}</div>

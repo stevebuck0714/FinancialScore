@@ -4,6 +4,7 @@ import prisma from '@/lib/prisma';
 import { requireAuth, validateCompanyAccess } from '@/lib/tenant-security';
 import { getOperationalSystemConnection, saveOperationalSystemConnection } from '@/lib/operational/operational-system-connections';
 import { parsePlatosClosetWorkbook } from '@/lib/operational/platos-closet-parser';
+import { savePlatosClosetMonthlyFacts } from '@/lib/operational/platos-closet-monthly-facts';
 import { savePlatosClosetWorkbookSnapshot } from '@/lib/operational/platos-closet-workbook-snapshots';
 
 export const dynamic = 'force-dynamic';
@@ -58,6 +59,15 @@ export async function POST(request: NextRequest) {
     const arrayBuffer = await response.arrayBuffer();
     const workbook = XLSX.read(Buffer.from(arrayBuffer), { type: 'buffer' });
     const parsedWorkbook = parsePlatosClosetWorkbook(workbook);
+    if (!parsedWorkbook.monthKey) {
+      return NextResponse.json(
+        {
+          ok: false,
+          error: 'Unable to determine workbook month from the required worksheet period header.',
+        },
+        { status: 400 }
+      );
+    }
     const sheetNames = parsedWorkbook.sheetNames;
     const missingSheets = REQUIRED_SHEETS.filter((sheet) => !sheetNames.includes(sheet));
     if (missingSheets.length > 0) {
@@ -89,9 +99,11 @@ export async function POST(request: NextRequest) {
       },
       platosClosetParsedWorkbook: {
         parsedAt: new Date().toISOString(),
-        workbookPeriod: parsedWorkbook.storeInfo['Visit Date'] || null,
+        workbookPeriod: parsedWorkbook.currentPeriodLabel || parsedWorkbook.storeInfo['Visit Date'] || null,
+        monthKey: parsedWorkbook.monthKey,
         storeInfo: parsedWorkbook.storeInfo,
         salesKpis: parsedWorkbook.salesKpis,
+        buysKpis: parsedWorkbook.buysKpis,
         lossPreventionKpis: parsedWorkbook.lossPreventionKpis,
         salesHistory: parsedWorkbook.salesHistory,
         buysHistory: parsedWorkbook.buysHistory,
@@ -120,10 +132,11 @@ export async function POST(request: NextRequest) {
 
     await savePlatosClosetWorkbookSnapshot({
       companyId,
+      monthKey: parsedWorkbook.monthKey,
       documentId,
       originalFileName: originalFileName || 'Workbook upload',
       blobUrl: blob.url,
-      workbookPeriod: typeof parsedWorkbook.storeInfo['Visit Date'] === 'string' ? String(parsedWorkbook.storeInfo['Visit Date']) : null,
+      workbookPeriod: parsedWorkbook.currentPeriodLabel || null,
       storeNumber: parsedWorkbook.storeInfo['Store Number'] == null ? null : String(parsedWorkbook.storeInfo['Store Number']),
       cityState: parsedWorkbook.storeInfo['City/State'] == null ? null : String(parsedWorkbook.storeInfo['City/State']),
       visitDateText: parsedWorkbook.storeInfo['Visit Date'] == null ? null : String(parsedWorkbook.storeInfo['Visit Date']),
@@ -140,6 +153,7 @@ export async function POST(request: NextRequest) {
         requiredSheets: parsedWorkbook.requiredSheets,
         storeInfo: parsedWorkbook.storeInfo,
         salesKpis: parsedWorkbook.salesKpis,
+        buysKpis: parsedWorkbook.buysKpis,
         lossPreventionKpis: parsedWorkbook.lossPreventionKpis,
         salesHistory: parsedWorkbook.salesHistory,
         buysHistory: parsedWorkbook.buysHistory,
@@ -147,6 +161,12 @@ export async function POST(request: NextRequest) {
         categorySummary: parsedWorkbook.categorySummary,
         categoryMetrics: parsedWorkbook.categoryMetrics,
       },
+    });
+
+    await savePlatosClosetMonthlyFacts({
+      companyId,
+      monthKey: parsedWorkbook.monthKey,
+      parsedWorkbook,
     });
 
     return NextResponse.json({
@@ -157,6 +177,8 @@ export async function POST(request: NextRequest) {
       requiredSheets: REQUIRED_SHEETS,
       parsedWorkbook: {
         storeInfo: parsedWorkbook.storeInfo,
+        monthKey: parsedWorkbook.monthKey,
+        currentPeriodLabel: parsedWorkbook.currentPeriodLabel,
         salesKpisCount: parsedWorkbook.salesKpis.length,
         categoryRowCount: parsedWorkbook.categorySummary.rowCount,
         departmentCount: parsedWorkbook.categorySummary.departmentCount,

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { Prisma } from '@prisma/client';
 import prisma from '@/lib/prisma';
 import { requireAuth, validateCompanyAccess } from '@/lib/tenant-security';
 import { auditForbiddenAccess } from '@/lib/audit-logger';
@@ -22,6 +23,13 @@ import { callInforIonApi } from '@/lib/infor-m3/client';
 import { getApBalanceSheetAnchorConfig } from '@/lib/financial/ap-balance-sheet-anchor';
 import { getArBalanceSheetAnchorConfig } from '@/lib/financial/ar-balance-sheet-anchor';
 import { computeDsoSeriesFromDaily } from '@/lib/financials/dso-from-daily';
+import {
+  ensurePlatosClosetMonthlyFacts,
+  getPlatosClosetInventoryPayload,
+  getPlatosClosetProductsPayload,
+  getPlatosClosetSalesPageSummary,
+  hasPlatosClosetMonthlyFacts,
+} from '@/lib/operational/platos-closet-monthly-facts';
 
 export const dynamic = 'force-dynamic';
 
@@ -30,6 +38,15 @@ async function companyHasAnyRealOperationalData(companyId: string): Promise<bool
     if (!delegate || typeof delegate.findFirst !== 'function') return null;
     return delegate.findFirst({ where: { companyId }, select: { id: true } });
   };
+
+  const platoFactsPromise = prisma
+    .$queryRaw<Array<{ id: string }>>(Prisma.sql`
+      SELECT "id"
+      FROM "PlatosClosetMonthlyFact"
+      WHERE "companyId" = ${companyId}
+      LIMIT 1
+    `)
+    .catch(() => []);
 
   const [
     customers,
@@ -42,6 +59,7 @@ async function companyHasAnyRealOperationalData(companyId: string): Promise<bool
     arPayments,
     apOpenBills,
     apPayments,
+    platoFacts,
   ] = await Promise.all([
     prisma.customerSalesSnapshot.findFirst({ where: { companyId }, select: { id: true } }),
     prisma.aRAgingSnapshot.findFirst({ where: { companyId }, select: { id: true } }),
@@ -53,6 +71,7 @@ async function companyHasAnyRealOperationalData(companyId: string): Promise<bool
     prisma.aRPaymentFact.findFirst({ where: { companyId }, select: { id: true } }),
     optionalFindFirst((prisma as any).aPOpenBillSnapshot),
     optionalFindFirst((prisma as any).aPPaymentFact),
+    platoFactsPromise,
   ]);
   return Boolean(
     customers ||
@@ -64,7 +83,8 @@ async function companyHasAnyRealOperationalData(companyId: string): Promise<bool
       arOpenInvoices ||
       arPayments ||
       apOpenBills ||
-      apPayments
+      apPayments ||
+      platoFacts.length > 0
   );
 }
 
@@ -1631,6 +1651,33 @@ export async function GET(request: NextRequest) {
             lte: endDate,
           };
 
+    const hasPlatosFacts =
+      (type === 'products' || type === 'inventory') &&
+      ((await hasPlatosClosetMonthlyFacts(companyId)) || (await ensurePlatosClosetMonthlyFacts(companyId)));
+
+    if (type === 'products' && hasPlatosFacts) {
+      const platosPayload = await getPlatosClosetProductsPayload({
+        companyId,
+        startDate,
+        endDate,
+        limit: boundedLimit,
+      });
+      if (platosPayload) {
+        return NextResponse.json(platosPayload);
+      }
+    }
+
+    if (type === 'inventory' && hasPlatosFacts) {
+      const platosPayload = await getPlatosClosetInventoryPayload({
+        companyId,
+        startDate,
+        endDate,
+      });
+      if (platosPayload) {
+        return NextResponse.json(platosPayload);
+      }
+    }
+
     let data;
 
     switch (type) {
@@ -2465,10 +2512,11 @@ export async function GET(request: NextRequest) {
         }
 
         // Run all three tracks in parallel
-        const [salesResult, wipResult, arResult] = await Promise.all([
+        const [salesResult, wipResult, arResult, platosSalesPage] = await Promise.all([
           fetchSalesAndBookings(),
           fetchWip(),
           fetchArOverview(),
+          getPlatosClosetSalesPageSummary({ companyId, startDate, endDate }),
         ]);
 
         data = salesResult.salesData;
@@ -2493,6 +2541,7 @@ export async function GET(request: NextRequest) {
               totals: wipResult.wipTotals,
               topCustomers: wipResult.wipTopCustomers,
             },
+            platosSalesPage,
           },
         });
       }

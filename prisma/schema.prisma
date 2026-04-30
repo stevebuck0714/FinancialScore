@@ -81,6 +81,7 @@ model Company {
   accountingConnections      AccountingConnection[]
   operationalSystemConnections OperationalSystemConnection[]
   platosClosetWorkbookSnapshots PlatosClosetWorkbookSnapshot[]
+  platosClosetMonthlyFacts   PlatosClosetMonthlyFact[]
   apiSyncLogs                ApiSyncLog[]
   inforRawBatches            InforRawBatch[]
   inforRawRecords            InforRawRecord[]
@@ -505,6 +506,7 @@ model PlatosClosetWorkbookSnapshot {
   id              String   @id @default(cuid())
   companyId       String
   sourceCode      String   @default("PLATOS_CLOSET_STORE_VISIT")
+  monthKey        String
   frequency       String   @default("monthly")
   documentId      String?
   originalFileName String?
@@ -527,6 +529,34 @@ model PlatosClosetWorkbookSnapshot {
 
   @@index([companyId, uploadedAt(sort: Desc)])
   @@index([companyId, sourceCode, uploadedAt(sort: Desc)])
+  @@index([companyId, sourceCode, monthKey])
+  @@unique([companyId, sourceCode, monthKey])
+}
+
+model PlatosClosetMonthlyFact {
+  id             String   @id @default(cuid())
+  companyId       String
+  sourceCode      String   @default("PLATOS_CLOSET_STORE_VISIT")
+  monthKey        String
+  monthStart      DateTime
+  factType        String
+  metricName      String
+  dimensionType   String   @default("")
+  dimensionKey    String   @default("")
+  dimensionLabel  String?
+  valueNumber     Float?
+  compareNumber   Float?
+  sharePct        Float?
+  auxNumber       Float?
+  metadata        Json?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  company         Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@unique([companyId, sourceCode, monthKey, factType, metricName, dimensionType, dimensionKey])
+  @@index([companyId, sourceCode, monthStart])
+  @@index([companyId, sourceCode, factType, monthStart])
+  @@index([companyId, sourceCode, monthKey])
 }
 
 model ApiSyncLog {

@@ -27,11 +27,14 @@ type ParsedCategoryMetric = {
   grossMarginDollars: number | null;
 };
 
-type ParsedWorkbookSummary = {
+export type ParsedWorkbookSummary = {
   sheetNames: string[];
   requiredSheets: string[];
+  currentPeriodLabel: string | null;
+  monthKey: string | null;
   storeInfo: Record<string, string | number | null>;
   salesKpis: ParsedMetricRow[];
+  buysKpis: ParsedMetricRow[];
   lossPreventionKpis: ParsedMetricRow[];
   salesHistory: ParsedTrendRow[];
   buysHistory: ParsedTrendRow[];
@@ -108,16 +111,45 @@ function readCell(rows: unknown[][], rowIndex: number, colIndex: number): unknow
   return rows[rowIndex]?.[colIndex] ?? '';
 }
 
-function parseMetricSection(rows: unknown[][], startRow: number, endRow: number): ParsedMetricRow[] {
+function parseMonthKeyFromPeriodLabel(label: string): string | null {
+  const trimmed = asString(label);
+  if (!trimmed) return null;
+  const match = trimmed.match(/^(\d{1,2})\/\d{1,2}-\d{1,2}\/\d{1,2}\/(\d{2}|\d{4})$/);
+  if (!match) return null;
+  const month = String(Number(match[1])).padStart(2, '0');
+  const rawYear = match[2];
+  const year = rawYear.length === 2 ? `20${rawYear}` : rawYear;
+  return `${year}-${month}`;
+}
+
+function detectCurrentPeriodLabel(rows: unknown[][]): string | null {
+  const candidates = [
+    asString(readCell(rows, 8, 5)),
+    asString(readCell(rows, 17, 5)),
+  ];
+  return candidates.find(Boolean) || null;
+}
+
+function parseMetricSection(
+  rows: unknown[][],
+  startRow: number,
+  endRow: number,
+  columns: { label: number; current: number; prior: number; delta: number } = {
+    label: 0,
+    current: 5,
+    prior: 10,
+    delta: 14,
+  },
+): ParsedMetricRow[] {
   const out: ParsedMetricRow[] = [];
   for (let rowIndex = startRow; rowIndex <= endRow; rowIndex += 1) {
-    const metric = asString(readCell(rows, rowIndex, 0));
+    const metric = asString(readCell(rows, rowIndex, columns.label));
     if (!metric) continue;
     out.push({
       metric,
-      current: asNumber(readCell(rows, rowIndex, 5)),
-      prior: asNumber(readCell(rows, rowIndex, 10)),
-      delta: asNumber(readCell(rows, rowIndex, 14)),
+      current: asNumber(readCell(rows, rowIndex, columns.current)),
+      prior: asNumber(readCell(rows, rowIndex, columns.prior)),
+      delta: asNumber(readCell(rows, rowIndex, columns.delta)),
     });
   }
   return out;
@@ -251,8 +283,11 @@ export function parsePlatosClosetWorkbook(workbook: XLSX.WorkBook): ParsedWorkbo
   return {
     sheetNames: workbook.SheetNames.map((name) => String(name)),
     requiredSheets: [...REQUIRED_SHEETS],
+    currentPeriodLabel: detectCurrentPeriodLabel(kpiRows),
+    monthKey: parseMonthKeyFromPeriodLabel(detectCurrentPeriodLabel(kpiRows) || ''),
     storeInfo: parseStoreInfo(kpiRows),
     salesKpis: parseMetricSection(kpiRows, 9, 14),
+    buysKpis: parseMetricSection(kpiRows, 9, 14, { label: 20, current: 26, prior: 31, delta: 34 }),
     lossPreventionKpis: parseMetricSection(kpiRows, 18, 19),
     salesHistory: parseTrendRows(kpiRows, 24, 29),
     buysHistory: parseTrendRows(kpiRows, 32, 37),

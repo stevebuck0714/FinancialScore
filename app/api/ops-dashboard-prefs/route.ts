@@ -45,14 +45,18 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Use raw SQL with proper type casts
-    const preferencesJson = JSON.stringify(preferences);
-    const now = new Date().toISOString();
-
-    // Check if preferences already exist
-    const existing = await prisma.$queryRaw<Array<{ id: string }>>`
-      SELECT id FROM "OpsDashboardPreference" WHERE "companyId" = ${companyId}
+    const existing = await prisma.$queryRaw<Array<{ id: string; preferences: any }>>`
+      SELECT id, preferences FROM "OpsDashboardPreference" WHERE "companyId" = ${companyId}
     `;
+
+    const mergedPreferences =
+      existing.length > 0 && existing[0].preferences && typeof existing[0].preferences === 'object'
+        ? { ...existing[0].preferences, ...(preferences || {}) }
+        : (preferences || {});
+
+    // Use raw SQL with proper type casts
+    const preferencesJson = JSON.stringify(mergedPreferences);
+    const now = new Date().toISOString();
 
     console.log('💾 API: Existing record check:', existing);
 

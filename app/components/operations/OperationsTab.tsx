@@ -400,6 +400,9 @@ export default function OperationsTab({
   const [customerRevenuePeriodMode, setCustomerRevenuePeriodMode] = useState<'year' | 'quarter' | 'month'>('month');
   const [customerRevenuePeriodKey, setCustomerRevenuePeriodKey] = useState<string>('all');
   const [expandedWipCustomers, setExpandedWipCustomers] = useState<Record<string, boolean>>({});
+  const [salesHistoryCategoriesExpanded, setSalesHistoryCategoriesExpanded] = useState(true);
+  const [expandedSalesHistoryCategories, setExpandedSalesHistoryCategories] = useState<Record<string, boolean>>({});
+  const [hiddenCategorySalesSeries, setHiddenCategorySalesSeries] = useState<Record<string, boolean>>({});
   const [opsSectorLayoutConfig, setOpsSectorLayoutConfig] = useState<any | null>(null);
   const [smartCardsLoading, setSmartCardsLoading] = useState(false);
   const [showPriceCostExceptionsOnly, setShowPriceCostExceptionsOnly] = useState(false);
@@ -408,6 +411,8 @@ export default function OperationsTab({
   const [inventorySearchTerm, setInventorySearchTerm] = useState('');
   const [hideZeroQtyInventory, setHideZeroQtyInventory] = useState(false);
   const [inventoryTableExpanded, setInventoryTableExpanded] = useState(true);
+  const [expandedInventoryMovementDepartments, setExpandedInventoryMovementDepartments] = useState<Record<string, boolean>>({});
+  const [hiddenInventoryTrendSeries, setHiddenInventoryTrendSeries] = useState<Record<string, boolean>>({});
   const [inventorySortKey, setInventorySortKey] = useState<
     'itemName' | 'sku' | 'warehouse' | 'bin' | 'lot' | 'qtyOnHand' | 'avgCost' | 'assetValue'
   >('assetValue');
@@ -490,6 +495,7 @@ export default function OperationsTab({
     return maxSelectableEndDate;
   });
   const hasHydratedDateRangeRef = useRef(false);
+  const dateRangeSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => {
     setExpandedWipCustomers({});
   }, [selectedCompanyId, startDate, endDate, frequency]);
@@ -731,32 +737,114 @@ export default function OperationsTab({
   useEffect(() => {
     if (!selectedCompanyId) return;
     hasHydratedDateRangeRef.current = false;
-    const end = new Date();
-    end.setDate(end.getDate() - 1);
-    const start = new Date(end);
-    start.setDate(start.getDate() - 90);
-    setFrequency('daily');
-    setStartDate(toLocalInputDate(start));
-    setEndDate(toLocalInputDate(end));
-    hasHydratedDateRangeRef.current = true;
-  }, [selectedCompanyId]);
+    let cancelled = false;
+
+    const defaultRange = () => {
+      const end = new Date();
+      end.setDate(end.getDate() - 1);
+      const start = new Date(end);
+      start.setDate(start.getDate() - 90);
+      return {
+        frequency: 'daily' as 'daily' | 'weekly' | 'monthly',
+        startDate: toLocalInputDate(start),
+        endDate: toLocalInputDate(end),
+      };
+    };
+
+    const normalizeRange = (value: any) => {
+      const candidate = value && typeof value === 'object' ? value : null;
+      const nextFrequency =
+        candidate?.frequency === 'weekly' || candidate?.frequency === 'monthly' || candidate?.frequency === 'daily'
+          ? candidate.frequency
+          : null;
+      const nextStartDate = /^\d{4}-\d{2}-\d{2}$/.test(String(candidate?.startDate || ''))
+        ? String(candidate.startDate)
+        : null;
+      const nextEndDate = /^\d{4}-\d{2}-\d{2}$/.test(String(candidate?.endDate || ''))
+        ? String(candidate.endDate)
+        : null;
+      if (!nextFrequency || !nextStartDate || !nextEndDate) return null;
+      const cappedEndDate = nextEndDate > maxSelectableEndDate ? maxSelectableEndDate : nextEndDate;
+      return {
+        frequency: nextFrequency,
+        startDate: nextStartDate > cappedEndDate ? cappedEndDate : nextStartDate,
+        endDate: cappedEndDate,
+      };
+    };
+
+    const applyRange = (range: { frequency: 'daily' | 'weekly' | 'monthly'; startDate: string; endDate: string }) => {
+      setFrequency(range.frequency);
+      setStartDate(range.startDate);
+      setEndDate(range.endDate);
+      hasHydratedDateRangeRef.current = true;
+    };
+
+    const loadRange = async () => {
+      let loadedRange: ReturnType<typeof normalizeRange> = null;
+      try {
+        const response = await fetch(`/api/ops-dashboard-prefs?companyId=${encodeURIComponent(selectedCompanyId)}`);
+        if (response.ok) {
+          const data = await response.json();
+          loadedRange = normalizeRange(data?.preferences?.dateRange);
+        }
+      } catch {
+        loadedRange = null;
+      }
+
+      if (!loadedRange) {
+        try {
+          const raw = window.localStorage.getItem(`ops:date-range:${selectedCompanyId}`);
+          loadedRange = normalizeRange(raw ? JSON.parse(raw) : null);
+        } catch {
+          loadedRange = null;
+        }
+      }
+
+      if (!cancelled) applyRange(loadedRange || defaultRange());
+    };
+
+    void loadRange();
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedCompanyId, maxSelectableEndDate]);
 
   useEffect(() => {
     if (!selectedCompanyId || !hasHydratedDateRangeRef.current) return;
+    const payload = {
+      frequency,
+      startDate,
+      endDate,
+      savedAt: new Date().toISOString(),
+    };
     try {
       const storageKey = `ops:date-range:${selectedCompanyId}`;
-      window.localStorage.setItem(
-        storageKey,
-        JSON.stringify({
-          frequency,
-          startDate,
-          endDate,
-          savedAt: new Date().toISOString(),
-        })
-      );
+      window.localStorage.setItem(storageKey, JSON.stringify(payload));
     } catch {
       // Ignore storage failures
     }
+    if (dateRangeSaveTimerRef.current) {
+      clearTimeout(dateRangeSaveTimerRef.current);
+    }
+    dateRangeSaveTimerRef.current = setTimeout(() => {
+      void fetch('/api/ops-dashboard-prefs', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          companyId: selectedCompanyId,
+          preferences: {
+            dateRange: payload,
+          },
+        }),
+      }).catch(() => {
+        // Local storage still preserves the range if the network save fails.
+      });
+    }, 600);
+    return () => {
+      if (dateRangeSaveTimerRef.current) {
+        clearTimeout(dateRangeSaveTimerRef.current);
+      }
+    };
   }, [selectedCompanyId, frequency, startDate, endDate]);
 
   useEffect(() => {
@@ -1799,50 +1887,49 @@ export default function OperationsTab({
         </div>
 
         <div style={{ display: 'flex', gap: '8px', marginLeft: 'auto', alignItems: 'center' }}>
-          {isCustomersTab ? (
-            <>
-              {customerDateRangeSaveStatus && (
-                <span style={{ fontSize: '12px', color: '#16a34a', fontWeight: 600 }}>
-                  {customerDateRangeSaveStatus}
-                </span>
-              )}
-              <button
-                onClick={() => {
-                  try {
-                    const unifiedStorageKey = `ops:date-range:${selectedCompanyId}`;
-                    const legacyStorageKey = `ops:customers:date-range:${selectedCompanyId}`;
-                    const payload = JSON.stringify({
-                      frequency,
-                      startDate,
-                      endDate,
-                      savedAt: new Date().toISOString(),
-                    });
-                    window.localStorage.setItem(
-                      unifiedStorageKey,
-                      payload
-                    );
-                    window.localStorage.setItem(legacyStorageKey, payload);
-                    setCustomerDateRangeSaveStatus('Saved');
-                  } catch {
-                    setCustomerDateRangeSaveStatus('Save failed');
-                  }
-                  window.setTimeout(() => setCustomerDateRangeSaveStatus(null), 2500);
-                }}
-                style={{
-                  padding: '6px 12px',
-                  background: '#2563eb',
-                  border: '1px solid #1d4ed8',
-                  borderRadius: '6px',
-                  fontSize: '13px',
-                  fontWeight: 600,
-                  color: 'white',
-                  cursor: 'pointer'
-                }}
-              >
-                Save
-              </button>
-            </>
-          ) : frequency === 'daily' && (
+          {customerDateRangeSaveStatus && (
+            <span style={{ fontSize: '12px', color: customerDateRangeSaveStatus.includes('failed') ? '#dc2626' : '#16a34a', fontWeight: 600 }}>
+              {customerDateRangeSaveStatus}
+            </span>
+          )}
+          <button
+            onClick={async () => {
+              const payload = {
+                frequency,
+                startDate,
+                endDate,
+                savedAt: new Date().toISOString(),
+              };
+              try {
+                window.localStorage.setItem(`ops:date-range:${selectedCompanyId}`, JSON.stringify(payload));
+                await fetch('/api/ops-dashboard-prefs', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({
+                    companyId: selectedCompanyId,
+                    preferences: { dateRange: payload },
+                  }),
+                });
+                setCustomerDateRangeSaveStatus('Saved');
+              } catch {
+                setCustomerDateRangeSaveStatus('Save failed');
+              }
+              window.setTimeout(() => setCustomerDateRangeSaveStatus(null), 2500);
+            }}
+            style={{
+              padding: '6px 12px',
+              background: '#2563eb',
+              border: '1px solid #1d4ed8',
+              borderRadius: '6px',
+              fontSize: '13px',
+              fontWeight: 600,
+              color: 'white',
+              cursor: 'pointer'
+            }}
+          >
+            Save
+          </button>
+          {!isCustomersTab && frequency === 'daily' && (
             <>
               <button
                 onClick={() => {
@@ -2126,6 +2213,7 @@ export default function OperationsTab({
     }
 
     const { records = [], summary = {} } = customerData ?? {};
+    const platosSalesPage = summary?.platosSalesPage || null;
     const selectedStartForCustomer = parseDateValue(startDate);
     const selectedEndForCustomer = parseDateValue(endDate);
     const selectedStartKey = selectedStartForCustomer ? selectedStartForCustomer.toISOString().slice(0, 10) : null;
@@ -2178,6 +2266,18 @@ export default function OperationsTab({
       customerCoverageStart && customerCoverageEnd
         ? `${formatDateUtcMinus4(customerCoverageStart)} - ${formatDateUtcMinus4(customerCoverageEnd)}`
         : 'N/A';
+    const retailWorkbookCategoryRows = Array.isArray(platosSalesPage?.categoryRevenue?.rows)
+      ? platosSalesPage.categoryRevenue.rows
+          .map((row: any) => ({
+            name: String(row?.name || row?.category || row?.department || 'Unknown Category'),
+            totalRevenue: Number(row?.totalRevenue || 0),
+            totalInvoices:
+              row?.totalInvoices == null || row?.totalInvoices === ''
+                ? null
+                : Number(row.totalInvoices || 0),
+          }))
+          .filter((row: any) => row.totalRevenue > 0)
+      : [];
     const formatSelectedFilterDate = (raw: string): string => {
       return formatDateInputLabel(raw);
     };
@@ -2315,11 +2415,337 @@ export default function OperationsTab({
       revenue: Number(row.revenue || 0),
       avgInvoice: Number(row.invoices || 0) > 0 ? Number(row.revenue || 0) / Number(row.invoices || 1) : 0,
     }));
+    const isRetailSalesLanguage = industrySectorCategory === '45';
+    const retailizeCustomerText = (text: string): string => {
+      if (!isRetailSalesLanguage) return text;
+      return [
+        ['Revenue Distribution by Customer', 'Revenue Distribution by Product Category'],
+        ['Top Customers by Revenue', 'Top Product Categories by Revenue'],
+        ['Customer Concentration Risk', 'Category Revenue Concentration'],
+        ['Revenue Retention Proxy (Top Accounts)', 'Revenue Retention Proxy (Top Categories)'],
+        ['At-Risk Accounts Queue', 'At-Risk Categories Queue'],
+        ['WIP by Customer (Unbilled)', 'WIP by Product Category (Unbilled)'],
+        ['Total Active Customers', 'Total Active Product Categories'],
+        ['New Customers (Last 90 Days)', 'New Product Categories (Last 90 Days)'],
+        ['Customer Concentration (Top 5)', 'Category Concentration (Top 5)'],
+        ['Customers Past Due', 'Categories Past Due'],
+        ['At-Risk Customers', 'At-Risk Categories'],
+        ['Avg Revenue per Customer', 'Avg Revenue per Category'],
+        ['Customers with WIP', 'Categories with WIP'],
+        ['Customer', 'Product Category'],
+        ['Customers', 'Product Categories'],
+        ['customer', 'product category'],
+        ['customers', 'product categories'],
+        ['Accounts', 'Categories'],
+        ['Account', 'Category'],
+        ['accounts', 'categories'],
+        ['account', 'category'],
+      ].reduce((acc, [from, to]) => acc.replaceAll(from, to), text);
+    };
+    const retailizeCustomerBody = (body: string | string[]) =>
+      Array.isArray(body) ? body.map((item) => retailizeCustomerText(item)) : retailizeCustomerText(body);
+    const entityPluralLower = isRetailSalesLanguage ? 'product categories' : 'customers';
+    const formatPct = (value: number | null | undefined) =>
+      value == null || !Number.isFinite(value) ? 'N/A' : `${Number(value).toFixed(1)}%`;
+    const renderWorkbookHistoryTable = (title: string, section: any) => {
+      if (!section || !Array.isArray(section.rows) || section.rows.length === 0) return null;
+      const columns = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec', 'Total', 'MTD'];
+      return (
+        <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '16px' }}>
+          <h3 style={{ margin: '0 0 12px 0', fontSize: '16px', color: '#1e293b' }}>{title}</h3>
+          <div style={{ overflowX: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: '960px' }}>
+              <thead>
+                <tr>
+                  <th style={{ padding: '8px', textAlign: 'left', fontSize: '12px', color: '#475569', borderBottom: '1px solid #e2e8f0' }}>Row</th>
+                  {columns.map((column) => (
+                    <th key={column} style={{ padding: '8px', textAlign: 'right', fontSize: '12px', color: '#475569', borderBottom: '1px solid #e2e8f0' }}>
+                      {column}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {section.rows.map((row: any) => {
+                  const isPctRow = String(row?.label || '').includes('%') || String(row?.label || '').toLowerCase().includes('index');
+                  return (
+                    <tr key={String(row?.label || Math.random())}>
+                      <td style={{ padding: '8px', fontSize: '13px', fontWeight: 600, color: '#0f172a', borderBottom: '1px solid #f1f5f9' }}>
+                        {String(row?.label || 'Unknown')}
+                      </td>
+                      {columns.map((column) => {
+                        const value = row?.values?.[column];
+                        return (
+                          <td key={column} style={{ padding: '8px', textAlign: 'right', fontSize: '13px', color: '#334155', borderBottom: '1px solid #f1f5f9' }}>
+                            {value == null ? '' : isPctRow ? formatPct(Number(value) * 100) : formatCurrency(Number(value))}
+                          </td>
+                        );
+                      })}
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      );
+    };
+    const renderCategorySalesHistoryTable = (title: string, section: any) => {
+      const categoryHistory = section?.categoryHistory;
+      if (
+        !categoryHistory ||
+        !Array.isArray(categoryHistory.months) ||
+        categoryHistory.months.length === 0 ||
+        !Array.isArray(categoryHistory.rows)
+      ) {
+        return renderWorkbookHistoryTable(title, section);
+      }
+      const months = categoryHistory.months;
+      return (
+        <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '16px' }}>
+          <h3 style={{ margin: '0 0 12px 0', fontSize: '16px', color: '#1e293b' }}>{title}</h3>
+          <div style={{ overflowX: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: '960px' }}>
+              <thead>
+                <tr>
+                  <th style={{ padding: '8px', textAlign: 'left', fontSize: '12px', color: '#475569', borderBottom: '1px solid #e2e8f0' }}>Category</th>
+                  {months.map((month: any) => (
+                    <th key={month.monthKey} style={{ padding: '8px', textAlign: 'right', fontSize: '12px', color: '#475569', borderBottom: '1px solid #e2e8f0' }}>
+                      {month.monthLabel || month.monthKey}
+                    </th>
+                  ))}
+                  <th style={{ padding: '8px', textAlign: 'right', fontSize: '12px', color: '#475569', borderBottom: '1px solid #e2e8f0' }}>Total</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr style={{ background: '#f8fafc', borderBottom: '1px solid #cbd5e1' }}>
+                  <td style={{ padding: '8px', fontSize: '13px', fontWeight: 700, color: '#0f172a' }}>
+                    <button
+                      onClick={() => setSalesHistoryCategoriesExpanded((prev) => !prev)}
+                      style={{
+                        border: '1px solid #cbd5e1',
+                        borderRadius: '6px',
+                        background: 'white',
+                        color: '#334155',
+                        cursor: 'pointer',
+                        fontSize: '11px',
+                        fontWeight: 700,
+                        marginRight: '8px',
+                        padding: '2px 7px',
+                      }}
+                    >
+                      {salesHistoryCategoriesExpanded ? '-' : '+'}
+                    </button>
+                    {categoryHistory.totalRow?.label || 'Total Sales'}
+                    <span style={{ marginLeft: '8px', color: '#64748b', fontSize: '12px', fontWeight: 500 }}>
+                      {categoryHistory.rows.length.toLocaleString()} categories
+                    </span>
+                  </td>
+                  {months.map((month: any) => (
+                    <td key={month.monthKey} style={{ padding: '8px', textAlign: 'right', fontSize: '13px', color: '#16a34a', fontWeight: 700 }}>
+                      {formatCurrency(Number(categoryHistory.totalRow?.values?.[month.monthKey] || 0))}
+                    </td>
+                  ))}
+                  <td style={{ padding: '8px', textAlign: 'right', fontSize: '13px', color: '#16a34a', fontWeight: 700 }}>
+                    {formatCurrency(Number(categoryHistory.totalRow?.total || 0))}
+                  </td>
+                </tr>
+                {salesHistoryCategoriesExpanded &&
+                  categoryHistory.rows.map((row: any) => {
+                    const categoryLabel = String(row?.label || 'Unknown');
+                    const items = Array.isArray(row?.items) ? row.items : [];
+                    const isCategoryExpanded = expandedSalesHistoryCategories[categoryLabel] ?? false;
+                    return (
+                      <React.Fragment key={categoryLabel}>
+                        <tr>
+                          <td style={{ padding: '8px 8px 8px 42px', fontSize: '13px', fontWeight: 700, color: '#0f172a', borderBottom: '1px solid #e2e8f0' }}>
+                            {items.length > 0 && (
+                              <button
+                                onClick={() =>
+                                  setExpandedSalesHistoryCategories((prev) => ({
+                                    ...prev,
+                                    [categoryLabel]: !(prev[categoryLabel] ?? false),
+                                  }))
+                                }
+                                style={{
+                                  border: '1px solid #cbd5e1',
+                                  borderRadius: '6px',
+                                  background: 'white',
+                                  color: '#334155',
+                                  cursor: 'pointer',
+                                  fontSize: '11px',
+                                  fontWeight: 700,
+                                  marginRight: '8px',
+                                  padding: '2px 7px',
+                                }}
+                              >
+                                {isCategoryExpanded ? '-' : '+'}
+                              </button>
+                            )}
+                            {categoryLabel}
+                            {items.length > 0 && (
+                              <span style={{ marginLeft: '8px', color: '#64748b', fontSize: '12px', fontWeight: 500 }}>
+                                {items.length.toLocaleString()} items
+                              </span>
+                            )}
+                          </td>
+                          {months.map((month: any) => (
+                            <td key={month.monthKey} style={{ padding: '8px', textAlign: 'right', fontSize: '13px', color: '#334155', borderBottom: '1px solid #e2e8f0', fontWeight: 700 }}>
+                              {formatCurrency(Number(row?.values?.[month.monthKey] || 0))}
+                            </td>
+                          ))}
+                          <td style={{ padding: '8px', textAlign: 'right', fontSize: '13px', color: '#334155', borderBottom: '1px solid #e2e8f0', fontWeight: 700 }}>
+                            {formatCurrency(Number(row?.total || 0))}
+                          </td>
+                        </tr>
+                        {isCategoryExpanded &&
+                          items.map((item: any) => (
+                            <tr key={`${categoryLabel}-${String(item?.label || 'item')}`}>
+                              <td style={{ padding: '8px 8px 8px 76px', fontSize: '13px', fontWeight: 500, color: '#334155', borderBottom: '1px solid #f1f5f9' }}>
+                                {String(item?.label || 'Unknown Item')}
+                              </td>
+                              {months.map((month: any) => (
+                                <td key={month.monthKey} style={{ padding: '8px', textAlign: 'right', fontSize: '13px', color: '#475569', borderBottom: '1px solid #f1f5f9' }}>
+                                  {formatCurrency(Number(item?.values?.[month.monthKey] || 0))}
+                                </td>
+                              ))}
+                              <td style={{ padding: '8px', textAlign: 'right', fontSize: '13px', color: '#475569', borderBottom: '1px solid #f1f5f9', fontWeight: 600 }}>
+                                {formatCurrency(Number(item?.total || 0))}
+                              </td>
+                            </tr>
+                          ))}
+                      </React.Fragment>
+                    );
+                  })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      );
+    };
+    const renderCategorySalesHistoryChart = (section: any) => {
+      const categoryHistory = section?.categoryHistory;
+      const toggleCategorySalesSeries = (entry: any) => {
+        const dataKey = String(entry?.dataKey || '');
+        if (!dataKey) return;
+        setHiddenCategorySalesSeries((prev) => ({
+          ...prev,
+          [dataKey]: !prev[dataKey],
+        }));
+      };
+      if (
+        !categoryHistory ||
+        !Array.isArray(categoryHistory.months) ||
+        categoryHistory.months.length === 0 ||
+        !Array.isArray(categoryHistory.rows) ||
+        categoryHistory.rows.length === 0
+      ) {
+        return (
+          <BarChart data={Array.isArray(section?.chartData) ? section.chartData : []}>
+            <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+            <XAxis dataKey="month" stroke="#64748b" style={{ fontSize: '12px' }} />
+            <YAxis stroke="#64748b" style={{ fontSize: '12px' }} tickFormatter={(value) => `$${(Number(value || 0) / 1000).toFixed(0)}k`} />
+            <Tooltip formatter={(value: any, name: any) => [formatCurrency(Number(value || 0)), String(name)]} />
+            <Legend />
+            {[
+              section?.currentYearLabel,
+              section?.priorYearLabel,
+              Array.isArray(section?.rows)
+                ? section.rows.find((row: any) => /^\d{4}$/.test(String(row?.label || '')) && row?.label !== section?.currentYearLabel && row?.label !== section?.priorYearLabel)?.label
+                : null,
+            ]
+              .filter(Boolean)
+              .map((label: any, index: number) => (
+                <Bar
+                  key={String(label)}
+                  dataKey={String(label)}
+                  name={String(label)}
+                  fill={['#2563eb', '#0f766e', '#94a3b8'][index] || '#64748b'}
+                  radius={0}
+                />
+              ))}
+          </BarChart>
+        );
+      }
+
+      const chartRows = categoryHistory.months.map((month: any) => {
+        const row: Record<string, any> = {
+          month: month.monthLabel || month.monthKey,
+          Total: Number(categoryHistory.totalRow?.values?.[month.monthKey] || 0),
+        };
+        categoryHistory.rows.forEach((category: any) => {
+          const label = String(category?.label || 'Unknown');
+          row[label] = Number(category?.values?.[month.monthKey] || 0);
+        });
+        return row;
+      });
+
+      return (
+        <LineChart data={chartRows}>
+          <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+          <XAxis dataKey="month" stroke="#64748b" style={{ fontSize: '12px' }} />
+          <YAxis stroke="#64748b" style={{ fontSize: '12px' }} tickFormatter={(value) => `$${(Number(value || 0) / 1000).toFixed(0)}k`} />
+          <Tooltip formatter={(value: any, name: any) => [formatCurrency(Number(value || 0)), String(name)]} />
+          <Legend onClick={toggleCategorySalesSeries} wrapperStyle={{ cursor: 'pointer' }} />
+          <Line type="monotone" dataKey="Total" name="Total Sales" stroke="#0f172a" strokeWidth={3} dot={{ r: 3 }} connectNulls />
+          {categoryHistory.rows.map((category: any, index: number) => {
+            const label = String(category?.label || 'Unknown');
+            return (
+              <Line
+                key={label}
+                type="monotone"
+                dataKey={label}
+                name={label}
+                stroke={COLORS[index % COLORS.length]}
+                strokeWidth={2}
+                dot={{ r: 2 }}
+                connectNulls
+                hide={Boolean(hiddenCategorySalesSeries[label])}
+              />
+            );
+          })}
+        </LineChart>
+      );
+    };
+    const renderGrossMarginHistoryTable = (title: string, section: any) => {
+      if (!section || !Array.isArray(section.rows) || section.rows.length === 0) return null;
+      return (
+        <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '16px' }}>
+          <h3 style={{ margin: '0 0 12px 0', fontSize: '16px', color: '#1e293b' }}>{title}</h3>
+          <div style={{ overflowX: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: '560px' }}>
+              <thead>
+                <tr>
+                  <th style={{ padding: '8px', textAlign: 'left', fontSize: '12px', color: '#475569', borderBottom: '1px solid #e2e8f0' }}>Month</th>
+                  <th style={{ padding: '8px', textAlign: 'right', fontSize: '12px', color: '#475569', borderBottom: '1px solid #e2e8f0' }}>Gross Margin $</th>
+                  <th style={{ padding: '8px', textAlign: 'right', fontSize: '12px', color: '#475569', borderBottom: '1px solid #e2e8f0' }}>Gross Margin %</th>
+                </tr>
+              </thead>
+              <tbody>
+                {section.rows.map((row: any) => (
+                  <tr key={String(row?.monthKey || row?.monthLabel || Math.random())}>
+                    <td style={{ padding: '8px', fontSize: '13px', fontWeight: 600, color: '#0f172a', borderBottom: '1px solid #f1f5f9' }}>
+                      {String(row?.monthLabel || row?.monthKey || '')}
+                    </td>
+                    <td style={{ padding: '8px', textAlign: 'right', fontSize: '13px', color: '#334155', borderBottom: '1px solid #f1f5f9' }}>
+                      {row?.gmDollars == null ? '' : formatCurrency(Number(row.gmDollars))}
+                    </td>
+                    <td style={{ padding: '8px', textAlign: 'right', fontSize: '13px', color: '#334155', borderBottom: '1px solid #f1f5f9' }}>
+                      {row?.gmPct == null ? '' : formatPct(Number(row.gmPct))}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      );
+    };
 
     // Plain-language explanations for each analytical panel on the Customers
     // tab. Keyed so a single info modal can serve every panel and so the chart
     // heading, link, and modal title stay in lockstep.
-    const customerChartInfo: Record<
+    const customerChartInfoBase: Record<
       string,
       { title: string; sections: Array<{ heading?: string; body: string | string[] }> }
     > = {
@@ -2470,6 +2896,23 @@ export default function OperationsTab({
         ],
       },
     };
+    const customerChartInfo: Record<
+      string,
+      { title: string; sections: Array<{ heading?: string; body: string | string[] }> }
+    > = isRetailSalesLanguage
+      ? Object.fromEntries(
+          Object.entries(customerChartInfoBase).map(([key, value]) => [
+            key,
+            {
+              title: retailizeCustomerText(value.title),
+              sections: value.sections.map((section) => ({
+                heading: section.heading ? retailizeCustomerText(section.heading) : undefined,
+                body: retailizeCustomerBody(section.body),
+              })),
+            },
+          ])
+        )
+      : customerChartInfoBase;
 
     const renderCustomerChartInfoLink = (key: string) => (
       <button
@@ -2495,17 +2938,135 @@ export default function OperationsTab({
       </button>
     );
 
+    const customerOverviewTop = summary?.customerOverview || {};
+    const activeCustomers365Top = Number(customerOverviewTop?.activeCustomers365 || 0);
+    const newCustomers90Top = Number(customerOverviewTop?.newCustomers90 || 0);
+    const totalBilled30Top = Number(customerOverviewTop?.totalBilled30 || 0);
+    const totalBilled90Top = Number(customerOverviewTop?.totalBilled90 || 0);
+    const concentrationTop5PctTop = Number(customerOverviewTop?.concentrationTop5Pct || 0);
+    const customersPastDuePctTop = Number(customerOverviewTop?.customersPastDuePct || 0);
+    const atRiskCustomersTop = Number(customerOverviewTop?.atRiskCustomers || 0);
+    const avgRevenuePerCustomerTop = Number(customerOverviewTop?.avgRevenuePerCustomer || 0);
+    const newCustomerNames90Top = Array.isArray(customerOverviewTop?.newCustomerNames90)
+      ? customerOverviewTop.newCustomerNames90.map((value: any) => String(value || '').trim()).filter(Boolean)
+      : [];
+    const concentrationTop5CustomerNamesTop = Array.isArray(customerOverviewTop?.concentrationTop5CustomerNames)
+      ? customerOverviewTop.concentrationTop5CustomerNames.map((value: any) => String(value || '').trim()).filter(Boolean)
+      : [];
+    const pastDueCustomerNamesTop = Array.isArray(customerOverviewTop?.pastDueCustomerNames)
+      ? customerOverviewTop.pastDueCustomerNames.map((value: any) => String(value || '').trim()).filter(Boolean)
+      : [];
+    const atRiskCustomerNamesTop = Array.isArray(customerOverviewTop?.atRiskCustomerNames)
+      ? customerOverviewTop.atRiskCustomerNames.map((value: any) => String(value || '').trim()).filter(Boolean)
+      : [];
+    const openCustomerMetricPopupTop = (title: string, names: string[]) => {
+      setCustomerMetricModalTitle(retailizeCustomerText(title));
+      setCustomerMetricModalNames(names);
+      setCustomerMetricModalOpen(true);
+    };
+
     return (
       <div style={{ padding: '8px 32px 32px' }}>
         <h2 style={{ fontSize: '24px', fontWeight: '700', color: '#1e293b', marginBottom: '16px' }}>
-          Customer Sales Analytics
+          {isRetailSalesLanguage ? 'Sales Transactions Analytics' : 'Customer Sales Analytics'}
         </h2>
+
+        {platosSalesPage && (
+          <div style={{ marginBottom: '24px' }}>
+            {isSectionEnabled('customersPlatoSalesMetricCards') && (
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, minmax(0, 1fr))', gap: '12px', marginBottom: '16px' }}>
+              {[
+                {
+                  title: 'Sales MTD',
+                  value: formatCurrency(Number(platosSalesPage.sales?.mtdValue || 0)),
+                  detail: `YoY ${formatPct(Number(platosSalesPage.sales?.mtdCompPct || 0) * 100)}`,
+                },
+                {
+                  title: 'Sales Total',
+                  value: formatCurrency(Number(platosSalesPage.sales?.totalValue || 0)),
+                  detail: `${platosSalesPage.sales?.currentYearLabel || 'Current year'} total | Index ${formatPct(Number(platosSalesPage.sales?.indexPct || 0) * 100)}`,
+                },
+                {
+                  title: 'Gross Margin $',
+                  value: formatCurrency(Number(platosSalesPage.grossMarginHistory?.rows?.slice(-1)?.[0]?.gmDollars || 0)),
+                  detail: 'Current month',
+                },
+                {
+                  title: 'Gross Margin %',
+                  value: formatPct(Number(platosSalesPage.grossMarginHistory?.rows?.slice(-1)?.[0]?.gmPct || 0)),
+                  detail: 'Current month',
+                },
+                {
+                  title: retailizeCustomerText('Avg Revenue per Customer'),
+                  value: formatCurrency(avgRevenuePerCustomerTop),
+                  detail: retailizeCustomerText('Total billed / active customers (365d)'),
+                },
+              ].map((card) => (
+                <div key={card.title} style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '16px' }}>
+                  <div style={{ fontSize: '12px', color: '#64748b', marginBottom: '8px' }}>{card.title}</div>
+                  <div style={{ fontSize: '24px', fontWeight: 700, color: '#0f172a', marginBottom: '6px' }}>{card.value}</div>
+                  <div style={{ fontSize: '12px', color: '#475569' }}>{card.detail}</div>
+                </div>
+              ))}
+              </div>
+            )}
+
+            {isSectionEnabled('customersPlatoSalesHistoryChart') && (
+              <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '16px', marginBottom: '16px' }}>
+                <h3 style={{ margin: '0 0 12px 0', fontSize: '16px', color: '#1e293b' }}>Category Sales by Month</h3>
+                <ResponsiveContainer width="100%" height={300}>
+                  {renderCategorySalesHistoryChart(platosSalesPage.sales)}
+                </ResponsiveContainer>
+              </div>
+            )}
+
+            {isSectionEnabled('customersGrossMarginHistoryChart') && Array.isArray(platosSalesPage.grossMarginHistory?.chartData) && platosSalesPage.grossMarginHistory.chartData.length > 0 && (
+              <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '16px', marginBottom: '16px' }}>
+                <h3 style={{ margin: '0 0 12px 0', fontSize: '16px', color: '#1e293b' }}>Gross Margin $ and % by Month</h3>
+                <ResponsiveContainer width="100%" height={320}>
+                  <ComposedChart data={platosSalesPage.grossMarginHistory.chartData}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                    <XAxis dataKey="month" stroke="#64748b" style={{ fontSize: '12px' }} />
+                    <YAxis yAxisId="left" stroke="#64748b" style={{ fontSize: '12px' }} tickFormatter={(value) => `$${(Number(value || 0) / 1000).toFixed(0)}k`} />
+                    <YAxis yAxisId="right" orientation="right" stroke="#64748b" style={{ fontSize: '12px' }} tickFormatter={(value) => `${Number(value || 0).toFixed(0)}%`} />
+                    <Tooltip
+                      formatter={(value: any, name: any) =>
+                        String(name).includes('%')
+                          ? [`${Number(value || 0).toFixed(1)}%`, String(name)]
+                          : [formatCurrency(Number(value || 0)), String(name)]
+                      }
+                    />
+                    <Legend />
+                    <Bar yAxisId="left" dataKey="gmDollars" name="Gross Margin $" fill="#2563eb" radius={0} />
+                    <Line yAxisId="right" type="monotone" dataKey="gmPct" name="Gross Margin %" stroke="#16a34a" strokeWidth={3} dot={{ r: 3 }} />
+                  </ComposedChart>
+                </ResponsiveContainer>
+              </div>
+            )}
+
+            {isSectionEnabled('customersPlatoSalesHistoryTables') && (
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '16px', marginBottom: '20px' }}>
+                {renderCategorySalesHistoryTable('Sales History', platosSalesPage.sales)}
+                {renderWorkbookHistoryTable('Buys History', platosSalesPage.buys)}
+              </div>
+            )}
+
+            {isSectionEnabled('customersGrossMarginHistoryTable') && (
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '16px', marginBottom: '20px' }}>
+                {renderGrossMarginHistoryTable('Gross Margin by Month', platosSalesPage.grossMarginHistory)}
+              </div>
+            )}
+          </div>
+        )}
 
         {(() => {
           let tableCustomers = rankedCustomersForTableEffective.slice(0, 10).map((customer) => ({
             ...customer,
             totalInvoices: Math.max(0, Number(customer.totalInvoices || 0)),
           }));
+          if (isRetailSalesLanguage && retailWorkbookCategoryRows.length > 0) {
+            tableCustomers = retailWorkbookCategoryRows.slice(0, 10);
+          }
           let chartCustomers = tableCustomers;
           let chartTotal = chartCustomers.reduce((sum: number, c: any) => sum + c.totalRevenue, 0);
           const bookingsSummary = summary?.bookings || {};
@@ -2519,7 +3080,7 @@ export default function OperationsTab({
             .filter((row: any) => row.mtd > 0 || row.qtd > 0 || row.ytd > 0)
             .sort((a: any, b: any) => b.ytd - a.ytd)
             .slice(0, 10);
-          if (tableCustomers.length === 0 && bookingsTopRows.length > 0) {
+          if (!isRetailSalesLanguage && tableCustomers.length === 0 && bookingsTopRows.length > 0) {
             tableCustomers = bookingsTopRows.map((row: any) => ({
               name: row.customerName,
               totalRevenue: Number(row.ytd || 0),
@@ -2624,7 +3185,7 @@ export default function OperationsTab({
             ? customerOverview.atRiskCustomerNames.map((value: any) => String(value || '').trim()).filter(Boolean)
             : [];
           const openCustomerMetricPopup = (title: string, names: string[]) => {
-            setCustomerMetricModalTitle(title);
+            setCustomerMetricModalTitle(retailizeCustomerText(title));
             setCustomerMetricModalNames(names);
             setCustomerMetricModalOpen(true);
           };
@@ -2649,83 +3210,6 @@ export default function OperationsTab({
 
           return (
             <>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(200px, 1fr))', gap: '10px', marginBottom: '20px' }}>
-                <div style={{ background: 'white', padding: '12px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
-                  <div style={{ fontSize: '12px', color: '#64748b' }}>Total Active Customers</div>
-                  <div style={{ fontSize: '22px', fontWeight: 700, color: '#0f172a', marginTop: '4px' }}>{activeCustomers365.toLocaleString()}</div>
-                  <div style={{ fontSize: '11px', color: '#94a3b8', marginTop: '4px' }}>Activity in last 365 days</div>
-                </div>
-                <div style={{ background: 'white', padding: '12px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
-                  <div style={{ fontSize: '12px', color: '#64748b' }}>New Customers (Last 90 Days)</div>
-                  <div style={{ fontSize: '22px', fontWeight: 700, color: '#0f172a', marginTop: '4px' }}>{newCustomers90.toLocaleString()}</div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '4px', gap: '8px' }}>
-                    <div style={{ fontSize: '11px', color: '#94a3b8' }}>First invoice date in period</div>
-                    <button
-                      onClick={() => openCustomerMetricPopup('New Customers (Last 90 Days)', newCustomerNames90)}
-                      style={{ border: '1px solid #cbd5e1', borderRadius: '6px', background: 'white', padding: '2px 8px', fontSize: '11px', color: '#334155', cursor: 'pointer' }}
-                    >
-                      Names
-                    </button>
-                  </div>
-                </div>
-                <div style={{ background: 'white', padding: '12px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
-                  <div style={{ fontSize: '12px', color: '#64748b' }}>Total Billed</div>
-                  <div style={{ display: 'grid', gap: '2px', marginTop: '4px', fontSize: '12px', color: '#334155' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between' }}><span>30d</span><strong>{formatCurrency(totalBilled30)}</strong></div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between' }}><span>90d</span><strong>{formatCurrency(totalBilled90)}</strong></div>
-                  </div>
-                </div>
-                <div style={{ background: 'white', padding: '12px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
-                  <div style={{ fontSize: '12px', color: '#64748b' }}>Customer Concentration (Top 5)</div>
-                  <div style={{ fontSize: '22px', fontWeight: 700, color: concentrationTop5Pct >= 70 ? '#b91c1c' : concentrationTop5Pct >= 55 ? '#92400e' : '#166534', marginTop: '4px' }}>
-                    {concentrationTop5Pct.toFixed(1)}%
-                  </div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '4px', gap: '8px' }}>
-                    <div style={{ fontSize: '11px', color: '#94a3b8' }}>Top 5 billed / total billed (365d)</div>
-                    <button
-                      onClick={() => openCustomerMetricPopup('Customer Concentration (Top 5)', concentrationTop5CustomerNames)}
-                      style={{ border: '1px solid #cbd5e1', borderRadius: '6px', background: 'white', padding: '2px 8px', fontSize: '11px', color: '#334155', cursor: 'pointer' }}
-                    >
-                      Names
-                    </button>
-                  </div>
-                </div>
-                <div style={{ background: 'white', padding: '12px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
-                  <div style={{ fontSize: '12px', color: '#64748b' }}>Customers Past Due</div>
-                  <div style={{ fontSize: '22px', fontWeight: 700, color: customersPastDuePct >= 35 ? '#b91c1c' : customersPastDuePct >= 20 ? '#92400e' : '#166534', marginTop: '4px' }}>
-                    {customersPastDuePct.toFixed(1)}%
-                  </div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '4px', gap: '8px' }}>
-                    <div style={{ fontSize: '11px', color: '#94a3b8' }}>Past due customers / active customers</div>
-                    <button
-                      onClick={() => openCustomerMetricPopup('Customers Past Due (Over 30 Days)', pastDueCustomerNames)}
-                      style={{ border: '1px solid #cbd5e1', borderRadius: '6px', background: 'white', padding: '2px 8px', fontSize: '11px', color: '#334155', cursor: 'pointer' }}
-                    >
-                      Names
-                    </button>
-                  </div>
-                </div>
-                <div style={{ background: 'white', padding: '12px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
-                  <div style={{ fontSize: '12px', color: '#64748b' }}>At-Risk Customers</div>
-                  <div style={{ fontSize: '22px', fontWeight: 700, color: atRiskCustomers > 0 ? '#b45309' : '#166534', marginTop: '4px' }}>
-                    {atRiskCustomers.toLocaleString()}
-                  </div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '4px', gap: '8px' }}>
-                    <div style={{ fontSize: '11px', color: '#94a3b8' }}>No activity 60-90d or past due</div>
-                    <button
-                      onClick={() => openCustomerMetricPopup('At-Risk Customers', atRiskCustomerNames)}
-                      style={{ border: '1px solid #cbd5e1', borderRadius: '6px', background: 'white', padding: '2px 8px', fontSize: '11px', color: '#334155', cursor: 'pointer' }}
-                    >
-                      Names
-                    </button>
-                  </div>
-                </div>
-                <div style={{ background: 'white', padding: '12px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
-                  <div style={{ fontSize: '12px', color: '#64748b' }}>Avg Revenue per Customer</div>
-                  <div style={{ fontSize: '22px', fontWeight: 700, color: '#0f172a', marginTop: '4px' }}>{formatCurrency(avgRevenuePerCustomer)}</div>
-                  <div style={{ fontSize: '11px', color: '#94a3b8', marginTop: '4px' }}>Total billed / active customers (365d)</div>
-                </div>
-              </div>
               {customerMetricModalOpen && (
                 <div
                   onClick={() => setCustomerMetricModalOpen(false)}
@@ -2755,7 +3239,7 @@ export default function OperationsTab({
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '14px 16px', borderBottom: '1px solid #e2e8f0' }}>
                       <div>
                         <div style={{ fontSize: '16px', fontWeight: 700, color: '#0f172a' }}>{customerMetricModalTitle}</div>
-                        <div style={{ fontSize: '12px', color: '#64748b' }}>{customerMetricModalNames.length.toLocaleString()} customers</div>
+                        <div style={{ fontSize: '12px', color: '#64748b' }}>{customerMetricModalNames.length.toLocaleString()} {entityPluralLower}</div>
                       </div>
                       <button
                         onClick={() => setCustomerMetricModalOpen(false)}
@@ -2766,7 +3250,7 @@ export default function OperationsTab({
                     </div>
                     <div style={{ maxHeight: 'calc(80vh - 74px)', overflowY: 'auto', padding: '8px 0' }}>
                       {customerMetricModalNames.length === 0 ? (
-                        <div style={{ padding: '12px 16px', fontSize: '12px', color: '#64748b' }}>No customers found for this metric in the selected period.</div>
+                        <div style={{ padding: '12px 16px', fontSize: '12px', color: '#64748b' }}>{retailizeCustomerText('No customers found for this metric in the selected period.')}</div>
                       ) : (
                         customerMetricModalNames.map((name, index) => (
                           <div key={`${name}-${index}`} style={{ padding: '8px 16px', borderBottom: '1px solid #f1f5f9', fontSize: '13px', color: '#0f172a' }}>
@@ -2778,11 +3262,12 @@ export default function OperationsTab({
                   </div>
                 </div>
               )}
+              {isSectionEnabled('customersWipByCustomer') && (
               <div style={{ background: 'white', padding: '16px 20px 20px', borderRadius: '12px', border: '1px solid #e2e8f0', marginBottom: '24px' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px', gap: '12px', flexWrap: 'wrap' }}>
                   <div style={{ display: 'flex', alignItems: 'center' }}>
                     <h3 style={{ fontSize: '18px', fontWeight: '700', color: '#1e293b', margin: 0 }}>
-                      WIP by Customer (Unbilled)
+                      {retailizeCustomerText('WIP by Customer (Unbilled)')}
                     </h3>
                     {renderCustomerChartInfoLink('customersWipByCustomer')}
                   </div>
@@ -2802,7 +3287,7 @@ export default function OperationsTab({
                     <div style={{ fontSize: '14px', fontWeight: 700, color: '#16a34a' }}>{formatCurrency(wipTotals.totalInvoicedValue)}</div>
                   </div>
                   <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '8px 10px' }}>
-                    <div style={{ fontSize: '11px', color: '#64748b' }}>Customers with WIP</div>
+                    <div style={{ fontSize: '11px', color: '#64748b' }}>{retailizeCustomerText('Customers with WIP')}</div>
                     <div style={{ fontSize: '14px', fontWeight: 700, color: '#1e293b' }}>{wipTotals.customerCount}</div>
                   </div>
                 </div>
@@ -2815,7 +3300,7 @@ export default function OperationsTab({
                         <tr style={{ borderBottom: '2px solid #7c2d12', background: '#9a3412' }}>
                           <th style={{ textAlign: 'center', padding: '6px 10px', fontSize: '13px', fontWeight: 700, color: 'white', width: '42px' }}></th>
                           <th style={{ textAlign: 'left', padding: '6px 10px', fontSize: '13px', fontWeight: 700, color: 'white' }}>Rank</th>
-                          <th style={{ textAlign: 'left', padding: '6px 10px', fontSize: '13px', fontWeight: 700, color: 'white' }}>Customer</th>
+                          <th style={{ textAlign: 'left', padding: '6px 10px', fontSize: '13px', fontWeight: 700, color: 'white' }}>{retailizeCustomerText('Customer')}</th>
                           <th style={{ textAlign: 'right', padding: '6px 10px', fontSize: '13px', fontWeight: 700, color: 'white' }}>WIP</th>
                           <th style={{ textAlign: 'right', padding: '6px 10px', fontSize: '13px', fontWeight: 700, color: 'white' }}>Contract</th>
                           <th style={{ textAlign: 'right', padding: '6px 10px', fontSize: '13px', fontWeight: 700, color: 'white' }}>Invoiced</th>
@@ -2914,13 +3399,23 @@ export default function OperationsTab({
                   </div>
                 )}
               </div>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px', marginBottom: '24px' }}>
-              {/* Top Customers Table */}
+              )}
+            {(isSectionEnabled('customersTopByRevenue') || isSectionEnabled('customersRevenueDistribution')) && (
+            <div
+              style={{
+                display: 'grid',
+                gridTemplateColumns: isSectionEnabled('customersTopByRevenue') && isSectionEnabled('customersRevenueDistribution') ? '1fr 1fr' : '1fr',
+                gap: '24px',
+                marginBottom: '24px',
+              }}
+            >
+              {/* Top revenue table */}
+              {isSectionEnabled('customersTopByRevenue') && (
               <div style={{ background: 'white', padding: '8px 24px 24px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', marginBottom: '8px', flexWrap: 'wrap' }}>
                   <div style={{ display: 'flex', alignItems: 'center' }}>
                     <h3 style={{ fontSize: '18px', fontWeight: '600', color: '#1e293b', margin: 0 }}>
-                      Top Customers by Revenue
+                      {retailizeCustomerText('Top Customers by Revenue')}
                     </h3>
                     {renderCustomerChartInfoLink('customersTopByRevenue')}
                   </div>
@@ -2974,7 +3469,7 @@ export default function OperationsTab({
                     <thead>
                       <tr style={{ borderBottom: '2px solid #e2e8f0' }}>
                         <th style={{ textAlign: 'left', padding: '6px 10px', fontSize: '13px', fontWeight: '600', color: '#475569' }}>Rank</th>
-                        <th style={{ textAlign: 'left', padding: '6px 10px', fontSize: '13px', fontWeight: '600', color: '#475569' }}>Customer</th>
+                        <th style={{ textAlign: 'left', padding: '6px 10px', fontSize: '13px', fontWeight: '600', color: '#475569' }}>{retailizeCustomerText('Customer')}</th>
                         <th style={{ textAlign: 'right', padding: '6px 10px', fontSize: '13px', fontWeight: '600', color: '#475569' }}>Total Revenue</th>
                         <th style={{ textAlign: 'right', padding: '6px 10px', fontSize: '13px', fontWeight: '600', color: '#475569' }}>Invoices</th>
                         <th style={{ textAlign: 'right', padding: '6px 10px', fontSize: '13px', fontWeight: '600', color: '#475569' }}>Avg Invoice</th>
@@ -2984,7 +3479,7 @@ export default function OperationsTab({
                       {tableCustomers.length === 0 ? (
                         <tr>
                           <td colSpan={5} style={{ padding: '10px', fontSize: '12px', color: '#64748b', textAlign: 'center' }}>
-                            No customer revenue records found for the selected date range.
+                            {retailizeCustomerText('No customer revenue records found for the selected date range.')}
                           </td>
                         </tr>
                       ) : (
@@ -2995,9 +3490,13 @@ export default function OperationsTab({
                             <td style={{ padding: '6px 10px', fontSize: '13px', color: '#16a34a', textAlign: 'right', fontWeight: '600' }}>
                               {formatCurrency(customer.totalRevenue)}
                             </td>
-                            <td style={{ padding: '6px 10px', fontSize: '13px', color: '#64748b', textAlign: 'right' }}>{customer.totalInvoices}</td>
                             <td style={{ padding: '6px 10px', fontSize: '13px', color: '#64748b', textAlign: 'right' }}>
-                              {customer.totalInvoices > 0 ? formatCurrency(customer.totalRevenue / customer.totalInvoices) : '-'}
+                              {customer.totalInvoices == null ? '-' : customer.totalInvoices}
+                            </td>
+                            <td style={{ padding: '6px 10px', fontSize: '13px', color: '#64748b', textAlign: 'right' }}>
+                              {customer.totalInvoices != null && customer.totalInvoices > 0
+                                ? formatCurrency(customer.totalRevenue / customer.totalInvoices)
+                                : '-'}
                             </td>
                           </tr>
                         ))
@@ -3006,12 +3505,14 @@ export default function OperationsTab({
                   </table>
                 </div>
               </div>
+              )}
 
-              {/* Customer Revenue Distribution Chart */}
+              {/* Revenue distribution chart */}
+              {isSectionEnabled('customersRevenueDistribution') && (
               <div style={{ background: 'white', padding: '8px 24px 24px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px', gap: '12px' }}>
                   <h3 style={{ fontSize: '18px', fontWeight: '600', color: '#1e293b', margin: 0 }}>
-                    Revenue Distribution by Customer
+                    {retailizeCustomerText('Revenue Distribution by Customer')}
                   </h3>
                   {renderCustomerChartInfoLink('customersRevenueDistribution')}
                 </div>
@@ -3047,7 +3548,9 @@ export default function OperationsTab({
                   </div>
                 </div>
               </div>
+              )}
             </div>
+            )}
 
             {(isSectionEnabled('customersConcentrationRisk') || isSectionEnabled('customersRetentionProxy')) && (
               <div
@@ -3062,7 +3565,7 @@ export default function OperationsTab({
                 <div style={{ background: 'white', padding: '24px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px', gap: '12px' }}>
                   <h3 style={{ fontSize: '18px', fontWeight: '700', color: '#1e293b', margin: 0 }}>
-                    Customer Concentration Risk
+                    {retailizeCustomerText('Customer Concentration Risk')}
                   </h3>
                   {renderCustomerChartInfoLink('customersConcentrationRisk')}
                 </div>
@@ -3100,12 +3603,12 @@ export default function OperationsTab({
                 <div style={{ background: 'white', padding: '24px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px', gap: '12px' }}>
                   <h3 style={{ fontSize: '18px', fontWeight: '700', color: '#1e293b', margin: 0 }}>
-                    Revenue Retention Proxy (Top Accounts)
+                    {retailizeCustomerText('Revenue Retention Proxy (Top Accounts)')}
                   </h3>
                   {renderCustomerChartInfoLink('customersRetentionProxy')}
                 </div>
                 <div style={{ marginBottom: '12px', fontSize: '11px', color: '#64748b' }}>
-                  Date range: {selectedDateRangeLabel} | Current vs baseline-period proxy for top accounts.
+                  Date range: {selectedDateRangeLabel} | {retailizeCustomerText('Current vs baseline-period proxy for top accounts.')}
                 </div>
                 <ResponsiveContainer width="100%" height={260}>
                   <BarChart data={retentionProxyRows} layout="vertical" margin={{ left: 16 }}>
@@ -3161,7 +3664,7 @@ export default function OperationsTab({
                 <div style={{ background: 'white', padding: '8px 24px 24px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px', gap: '12px' }}>
                   <h3 style={{ fontSize: '18px', fontWeight: '700', color: '#1e293b', margin: 0 }}>
-                    At-Risk Accounts Queue
+                    {retailizeCustomerText('At-Risk Accounts Queue')}
                   </h3>
                   {renderCustomerChartInfoLink('customersAtRiskQueue')}
                 </div>
@@ -3170,14 +3673,14 @@ export default function OperationsTab({
                 </div>
                 {atRiskRows.length === 0 ? (
                   <div style={{ height: '220px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#64748b' }}>
-                    No at-risk accounts detected for this window.
+                    {retailizeCustomerText('No at-risk accounts detected for this window.')}
                   </div>
                 ) : (
                   <div style={{ overflowX: 'auto' }}>
                     <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                       <thead>
                         <tr style={{ borderBottom: '2px solid #1d4ed8', background: '#2563eb' }}>
-                          <th style={{ textAlign: 'left', padding: '6px 10px', fontSize: '13px', fontWeight: 700, color: 'white' }}>Customer</th>
+                          <th style={{ textAlign: 'left', padding: '6px 10px', fontSize: '13px', fontWeight: 700, color: 'white' }}>{retailizeCustomerText('Customer')}</th>
                           <th style={{ textAlign: 'right', padding: '6px 10px', fontSize: '13px', fontWeight: 700, color: 'white' }}>YTD Bookings</th>
                           <th style={{ textAlign: 'right', padding: '6px 10px', fontSize: '13px', fontWeight: 700, color: 'white' }}>WIP / Unbilled</th>
                           <th style={{ textAlign: 'right', padding: '6px 10px', fontSize: '13px', fontWeight: 700, color: 'white' }}>WIP Mix %</th>
@@ -5284,14 +5787,45 @@ export default function OperationsTab({
     if (!productData) return null;
 
     const { records, summary } = productData;
+    const platosMetrics = summary?.platosMetrics || null;
+    const usePlatosMonthlyFallback =
+      summary?.source === 'platos-closet-monthly-facts' && frequency === 'monthly';
+    const rawProductRecords = Array.isArray(records) ? records : [];
     const weeklyMarginModel = buildWeeklyProductMarginModel({
-      records: Array.isArray(records) ? records : [],
+      records: rawProductRecords,
       topProducts: Array.isArray(summary?.topProducts) ? summary.topProducts : [],
       rangeStart: startDate,
       rangeEnd: endDate,
     });
+    const latestPlatosMonthRows =
+      usePlatosMonthlyFallback && platosMetrics?.latestMonthKey
+        ? rawProductRecords.filter((row: any) => String(row?.snapshotDate || '').slice(0, 7) === platosMetrics.latestMonthKey)
+        : rawProductRecords;
+    const platosComparisonRows = usePlatosMonthlyFallback
+      ? latestPlatosMonthRows.map((row: any) => ({
+          itemName: String(row?.itemName || 'Unknown'),
+          sku: String(row?.sku || row?.itemId || row?.itemName || 'Unknown'),
+          site: String(row?.site || row?.department || 'Store'),
+          customer: String(row?.customer || 'N/A'),
+          revenueThisWeek: Number(row?.revenue || 0),
+          marginAmountThisWeek: Number(row?.grossMarginDollars || (Number(row?.revenue || 0) - Number(row?.cogs || 0))),
+          priceThisWeek: Number(row?.revenue || 0),
+          pricePriorWeek: Number(row?.priorRevenue || 0),
+          priceDelta: Number(row?.revenue || 0) - Number(row?.priorRevenue || 0),
+          costThisWeek: Number(row?.cogs || 0),
+          costPriorWeek: null,
+          costDelta: null,
+          spreadThisWeek: Number(row?.grossMarginDollars || (Number(row?.revenue || 0) - Number(row?.cogs || 0))),
+          spreadPriorWeek: null,
+          spreadDelta: null,
+          marginPctThisWeek: Number(row?.grossMarginPct || 0),
+          marginPctPriorWeek: null,
+          marginDeltaPts: null,
+          status: 'acceptable' as const,
+        }))
+      : [];
 
-    const comparisonRowsWithSignal = weeklyMarginModel.comparisonRows.filter((row) => {
+    const weeklyComparisonRowsWithSignal = weeklyMarginModel.comparisonRows.filter((row) => {
       const hasSignal =
         row.priceThisWeek != null ||
         row.costThisWeek != null ||
@@ -5303,9 +5837,15 @@ export default function OperationsTab({
         Number(row.marginAmountThisWeek || 0) !== 0;
       return hasSignal;
     });
+    const comparisonRowsWithSignal =
+      usePlatosMonthlyFallback && platosComparisonRows.length > 0
+        ? platosComparisonRows
+        : weeklyComparisonRowsWithSignal;
     const comparisonRowsBase = comparisonRowsWithSignal.length > 0
       ? comparisonRowsWithSignal
-      : weeklyMarginModel.comparisonRows;
+      : usePlatosMonthlyFallback && platosComparisonRows.length > 0
+        ? platosComparisonRows
+        : weeklyMarginModel.comparisonRows;
     const filteredComparisonRows = comparisonRowsBase.filter((row) => {
       const matchesSearch =
         !priceCostSearchTerm.trim() ||
@@ -5342,6 +5882,44 @@ export default function OperationsTab({
     // buildWeeklyProductMarginModel) and sum revenue/margin per item+site so
     // intermittent losers across the period are surfaced.
     const lossMakers = (() => {
+      if (usePlatosMonthlyFallback) {
+        const map = new Map<
+          string,
+          {
+            itemName: string;
+            sku: string;
+            site: string;
+            customer: string;
+            revenueThisWeek: number;
+            marginAmountThisWeek: number;
+            marginPctThisWeek: number | null;
+          }
+        >();
+        for (const row of rawProductRecords as any[]) {
+          const key = `${String(row?.itemName || '')}||${String(row?.sku || row?.itemId || '')}`;
+          const existing = map.get(key) || {
+            itemName: String(row?.itemName || 'Unknown'),
+            sku: String(row?.sku || row?.itemId || row?.itemName || 'Unknown'),
+            site: String(row?.site || row?.department || 'Store'),
+            customer: 'N/A',
+            revenueThisWeek: 0,
+            marginAmountThisWeek: 0,
+            marginPctThisWeek: null as number | null,
+          };
+          existing.revenueThisWeek += Number(row?.revenue || 0);
+          existing.marginAmountThisWeek += Number(row?.grossMarginDollars || (Number(row?.revenue || 0) - Number(row?.cogs || 0)));
+          map.set(key, existing);
+        }
+        return Array.from(map.values())
+          .map((row) => ({
+            ...row,
+            marginPctThisWeek:
+              row.revenueThisWeek === 0 ? null : (row.marginAmountThisWeek / row.revenueThisWeek) * 100,
+          }))
+          .filter((row) => row.marginAmountThisWeek < 0 || (row.marginPctThisWeek ?? 0) < 0)
+          .sort((a, b) => a.marginAmountThisWeek - b.marginAmountThisWeek)
+          .slice(0, 10);
+      }
       const map = new Map<
         string,
         {
@@ -5383,7 +5961,7 @@ export default function OperationsTab({
         .sort((a, b) => a.marginAmountThisWeek - b.marginAmountThisWeek)
         .slice(0, 10);
     })();
-    const productScopeOptions = [...weeklyMarginModel.comparisonRows]
+    const productScopeOptions = [...comparisonRowsBase]
       .sort((a, b) => b.revenueThisWeek - a.revenueThisWeek)
       .map((row) => ({
         sku: row.sku,
@@ -5393,9 +5971,11 @@ export default function OperationsTab({
       selectedScopeSku && productScopeOptions.some((option) => option.sku === selectedScopeSku)
         ? selectedScopeSku
         : (productScopeOptions[0]?.sku || '');
-    const scopedProductSeries = weeklyMarginModel.productWeekly
-      .filter((row) => row.sku === effectiveScopeSku)
-      .sort((a, b) => a.weekStart.localeCompare(b.weekStart));
+    const scopedProductSeries = usePlatosMonthlyFallback
+      ? []
+      : weeklyMarginModel.productWeekly
+          .filter((row) => row.sku === effectiveScopeSku)
+          .sort((a, b) => a.weekStart.localeCompare(b.weekStart));
     const scopedSeriesByWeek = scopedProductSeries.reduce((acc: Record<string, any>, row: any) => {
       acc[row.weekStart] = row;
       return acc;
@@ -5404,7 +5984,44 @@ export default function OperationsTab({
     // (see weekStartIso() in lib/operations/product-margin-weekly.ts).
     // Weekend dates therefore never appear on the x-axis: any Sat/Sun activity
     // is rolled up into the preceding Monday's bucket.
-    const scopedSeries = weeklyMarginModel.weeks.map((row) => {
+    const scopedSeries = usePlatosMonthlyFallback
+      ? (() => {
+          const grouped = new Map<string, any>();
+          for (const row of rawProductRecords as any[]) {
+            if (productScopeMode === 'product' && String(row?.sku || row?.itemId || row?.itemName || '') !== effectiveScopeSku) continue;
+            const key = String(row?.snapshotDate || '').slice(0, 10);
+            if (!key) continue;
+            const existing =
+              grouped.get(key) || {
+                weekStart: key,
+                units: 0,
+                netRevenue: 0,
+                cogs: 0,
+                marginAmount: 0,
+                returns: 0,
+                returnsMagnitude: 0,
+                freightBilled: 0,
+                otherRevenue: 0,
+                price: null as number | null,
+                cost: null as number | null,
+                spread: null as number | null,
+                cogsLooksMissing: false,
+              };
+            existing.netRevenue += Number(row?.revenue || 0);
+            existing.cogs += Number(row?.cogs || 0);
+            existing.marginAmount += Number(row?.grossMarginDollars || (Number(row?.revenue || 0) - Number(row?.cogs || 0)));
+            grouped.set(key, existing);
+          }
+          return Array.from(grouped.values())
+            .sort((a, b) => String(a.weekStart).localeCompare(String(b.weekStart)))
+            .map((row) => ({
+              ...row,
+              price: row.netRevenue !== 0 ? row.netRevenue : null,
+              cost: row.cogs !== 0 ? row.cogs : null,
+              spread: row.marginAmount !== 0 ? row.marginAmount : null,
+            }));
+        })()
+      : weeklyMarginModel.weeks.map((row) => {
       if (productScopeMode === 'total') {
         // Per-unit price / cost / spread are only meaningful when the bucket
         // contains units sold. Returning null for unit-less weeks lets the
@@ -5536,8 +6153,98 @@ export default function OperationsTab({
         ? utcDay.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric', timeZone: 'UTC' })
         : 'N/A';
     };
+    const formatWholeNumber = (value: number) =>
+      new Intl.NumberFormat('en-US', { maximumFractionDigits: 0 }).format(Number(value || 0));
+    const formatSignedPercent = (value: number | null | undefined) =>
+      value == null || !Number.isFinite(value) ? 'N/A' : `${value >= 0 ? '+' : ''}${value.toFixed(1)}%`;
+    const computePctDelta = (current: number, prior: number) =>
+      Number.isFinite(prior) && Math.abs(prior) > 0 ? ((current - prior) / Math.abs(prior)) * 100 : null;
+    const productMetricCards = platosMetrics
+      ? [
+          {
+            title: 'Buys MTD',
+            value: formatCurrency(Number(platosMetrics.totalBuysCost || 0)),
+            detail: `YoY ${formatSignedPercent(computePctDelta(Number(platosMetrics.totalBuysCost || 0), Number(platosMetrics.totalBuysCostPrior || 0)))}`,
+          },
+          {
+            title: 'Buys Total',
+            value: formatCurrency(Number(platosMetrics.totalBuysCost || 0)),
+            detail: `${platosMetrics.latestMonthKey || 'Current month'} total`,
+          },
+          {
+            title: 'Total Buys @ Cost',
+            value: formatCurrency(Number(platosMetrics.totalBuysCost || 0)),
+            detail: `Prior ${formatCurrency(Number(platosMetrics.totalBuysCostPrior || 0))} | ${formatSignedPercent(computePctDelta(Number(platosMetrics.totalBuysCost || 0), Number(platosMetrics.totalBuysCostPrior || 0)))}`,
+          },
+          {
+            title: 'Avg. Items per Buy Transaction',
+            value: Number(platosMetrics.avgItemsPerBuyTransaction || 0).toFixed(2),
+            detail: `Prior ${Number(platosMetrics.avgItemsPerBuyTransactionPrior || 0).toFixed(2)} | ${formatSignedPercent(computePctDelta(Number(platosMetrics.avgItemsPerBuyTransaction || 0), Number(platosMetrics.avgItemsPerBuyTransactionPrior || 0)))}`,
+          },
+          {
+            title: 'Total Buys @ Units',
+            value: formatWholeNumber(Number(platosMetrics.totalBuysUnits || 0)),
+            detail: `Prior ${formatWholeNumber(Number(platosMetrics.totalBuysUnitsPrior || 0))} | ${formatSignedPercent(computePctDelta(Number(platosMetrics.totalBuysUnits || 0), Number(platosMetrics.totalBuysUnitsPrior || 0)))}`,
+          },
+          {
+            title: 'Number of Buys',
+            value: formatWholeNumber(Number(platosMetrics.buyTransactionCount || 0)),
+            detail: `Prior ${formatWholeNumber(Number(platosMetrics.buyTransactionCountPrior || 0))} | ${formatSignedPercent(computePctDelta(Number(platosMetrics.buyTransactionCount || 0), Number(platosMetrics.buyTransactionCountPrior || 0)))}`,
+          },
+          {
+            title: 'Avg. Cost per Unit',
+            value: formatCurrencyWithCents(Number(platosMetrics.avgBuyCostPerUnit || 0)),
+            detail: `Prior ${formatCurrencyWithCents(Number(platosMetrics.avgBuyCostPerUnitPrior || 0))} | ${formatSignedPercent(computePctDelta(Number(platosMetrics.avgBuyCostPerUnit || 0), Number(platosMetrics.avgBuyCostPerUnitPrior || 0)))}`,
+          },
+          {
+            title: 'Avg. Retail per Unit',
+            value: formatCurrencyWithCents(Number(platosMetrics.avgBuyRetailPerUnit || 0)),
+            detail: `Prior ${formatCurrencyWithCents(Number(platosMetrics.avgBuyRetailPerUnitPrior || 0))} | ${formatSignedPercent(computePctDelta(Number(platosMetrics.avgBuyRetailPerUnit || 0), Number(platosMetrics.avgBuyRetailPerUnitPrior || 0)))}`,
+          },
+        ]
+      : [];
     const asOfDateLabel = formatCoverageDate(endDate);
     const coverageLabel = startDate && endDate ? `${formatCoverageDate(startDate)} - ${formatCoverageDate(endDate)} (selected)` : 'N/A';
+    const productCategoryOverview = (() => {
+      const endUtc = parseCoverageUtcDay(endDate) || new Date();
+      const start365 = new Date(Date.UTC(endUtc.getUTCFullYear(), endUtc.getUTCMonth(), endUtc.getUTCDate() - 364));
+      const start90 = new Date(Date.UTC(endUtc.getUTCFullYear(), endUtc.getUTCMonth(), endUtc.getUTCDate() - 89));
+      const byCategory = new Map<string, { label: string; totalRevenue365: number; firstSeen: Date | null }>();
+      for (const row of rawProductRecords as any[]) {
+        const parsed = parseCoverageUtcDay(String(row?.snapshotDate || ''));
+        if (!parsed || parsed.getTime() > endUtc.getTime()) continue;
+        const label = String(row?.itemName || row?.category || row?.sku || 'Unknown').trim();
+        if (!label) continue;
+        const key = String(row?.sku || row?.itemId || label).trim() || label;
+        const bucket = byCategory.get(key) || { label, totalRevenue365: 0, firstSeen: null as Date | null };
+        if (!bucket.firstSeen || parsed.getTime() < bucket.firstSeen.getTime()) bucket.firstSeen = parsed;
+        if (parsed.getTime() >= start365.getTime()) {
+          bucket.totalRevenue365 += Number(row?.revenue || 0);
+        }
+        byCategory.set(key, bucket);
+      }
+      const activeCategories = Array.from(byCategory.values()).filter((row) => row.totalRevenue365 > 0);
+      const paretoTop3Revenue = paretoRows
+        .slice(0, 3)
+        .reduce((sum, row) => sum + Number(row.revenueThisWeek || 0), 0);
+      return {
+        activeCount: activeCategories.length,
+        concentrationTop3Pct: paretoRevenueTotal > 0 ? (paretoTop3Revenue / paretoRevenueTotal) * 100 : 0,
+      };
+    })();
+    const productCategoryMetricCards = [
+      {
+        title: 'Total Active Product Categories',
+        value: productCategoryOverview.activeCount.toLocaleString(),
+        detail: 'Activity in last 365 days',
+      },
+      {
+        title: 'Category Concentration (Top 3)',
+        value: `${productCategoryOverview.concentrationTop3Pct.toFixed(1)}%`,
+        detail: 'Top 3 revenue / Pareto chart revenue',
+      },
+    ];
+    const allProductMetricCards = [...productCategoryMetricCards, ...productMetricCards];
     const renderCoverageMeta = () => (
       <div style={{ marginTop: '4px', marginBottom: '10px', fontSize: '11px', color: '#64748b' }}>
         As of: {asOfDateLabel} | Coverage: {coverageLabel}
@@ -5644,6 +6351,22 @@ export default function OperationsTab({
           },
         ],
       },
+      productsLossPrevention: {
+        title: 'Loss Prevention',
+        sections: [
+          {
+            body:
+              'Tracks loss-prevention indicators from the uploaded workbook over the latest 18 months.',
+          },
+          {
+            heading: 'Series',
+            body: [
+              'Trade % of Buys shows the portion of buys handled as trade.',
+              'Return % of Sales shows returns as a share of sales.',
+            ],
+          },
+        ],
+      },
       productsBottomLossMakers: {
         title: 'Bottom Products (Loss Makers)',
         sections: [
@@ -5722,6 +6445,31 @@ export default function OperationsTab({
         <h2 style={{ fontSize: '24px', fontWeight: '700', color: '#1e293b', marginBottom: '16px' }}>
           Product Sales Performance
         </h2>
+
+        {allProductMetricCards.length > 0 && (
+          <div style={{ marginBottom: '20px' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, minmax(0, 1fr))', gap: '12px' }}>
+              {allProductMetricCards.map((card) => (
+                <div
+                  key={card.title}
+                  style={{
+                    background: 'white',
+                    border: '1px solid #e2e8f0',
+                    borderRadius: '12px',
+                    padding: '16px',
+                    minWidth: 0,
+                  }}
+                >
+                  <div style={{ fontSize: '12px', color: '#64748b', marginBottom: '8px' }}>{card.title}</div>
+                  <div style={{ fontSize: '24px', fontWeight: '700', color: '#0f172a', marginBottom: '6px', lineHeight: 1.2 }}>
+                    {card.value}
+                  </div>
+                  <div style={{ fontSize: '12px', color: '#475569', lineHeight: 1.4 }}>{card.detail}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         {isSectionEnabled('productsPriceCostComparison') && (
           <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '18px', marginBottom: '20px' }}>
@@ -5848,6 +6596,41 @@ export default function OperationsTab({
             </table>
           </div>
         </div>
+        )}
+
+        {isSectionEnabled('productsLossPrevention') && Array.isArray(summary?.lossPrevention?.rows) && summary.lossPrevention.rows.length > 0 && (
+          <div style={{ background: 'white', padding: '18px', borderRadius: '12px', border: '1px solid #e2e8f0', marginBottom: '20px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px', gap: '12px' }}>
+              <h3 style={{ margin: 0, fontSize: '16px', color: '#1e293b' }}>Loss Prevention</h3>
+              {renderChartInfoLink('productsLossPrevention')}
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '12px' }}>
+              <div>
+                <h4 style={{ margin: '0 0 8px 0', fontSize: '13px', color: '#475569' }}>Trade % of Buys</h4>
+                <ResponsiveContainer width="100%" height={260}>
+                  <LineChart data={summary.lossPrevention.rows}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                    <XAxis dataKey="monthLabel" stroke="#64748b" style={{ fontSize: '12px' }} />
+                    <YAxis stroke="#64748b" style={{ fontSize: '12px' }} tickFormatter={(value) => `${Number(value || 0).toFixed(0)}%`} />
+                    <Tooltip formatter={(value: any) => [`${Number(value || 0).toFixed(1)}%`, 'Trade % of Buys']} />
+                    <Line type="monotone" dataKey="tradePctBuys" stroke="#2563eb" strokeWidth={2} dot={{ r: 3 }} connectNulls />
+                  </LineChart>
+                </ResponsiveContainer>
+              </div>
+              <div>
+                <h4 style={{ margin: '0 0 8px 0', fontSize: '13px', color: '#475569' }}>Return % of Sales</h4>
+                <ResponsiveContainer width="100%" height={260}>
+                  <LineChart data={summary.lossPrevention.rows}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                    <XAxis dataKey="monthLabel" stroke="#64748b" style={{ fontSize: '12px' }} />
+                    <YAxis stroke="#64748b" style={{ fontSize: '12px' }} tickFormatter={(value) => `${Number(value || 0).toFixed(0)}%`} />
+                    <Tooltip formatter={(value: any) => [`${Number(value || 0).toFixed(1)}%`, 'Return % of Sales']} />
+                    <Line type="monotone" dataKey="returnPctSales" stroke="#dc2626" strokeWidth={2} dot={{ r: 3 }} connectNulls />
+                  </LineChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+          </div>
         )}
 
         {(isSectionEnabled('productsPareto') || isSectionEnabled('productsScatter')) && (
@@ -6312,7 +7095,7 @@ export default function OperationsTab({
 
     if (!inventoryData) return null;
 
-    const { records, summary, trend, agingReport } = inventoryData;
+    const { records, summary, trend, departmentTrend, agingReport } = inventoryData;
 
     // Inventory API already returns latest snapshot rows (aggregated to unique SKU),
     // but keep a UI-side guard against accidental duplicate SKU variants.
@@ -6561,6 +7344,42 @@ export default function OperationsTab({
     const inventoryTurnoverLabel = Number.isFinite(inventoryTurnoverRaw) && inventoryTurnoverRaw > 0
       ? `${inventoryTurnoverRaw.toFixed(2)}x`
       : 'N/A';
+    const formatInventoryPct = (value: number | null | undefined) =>
+      value == null || !Number.isFinite(Number(value)) ? 'N/A' : `${Number(value).toFixed(1)}%`;
+    const inventoryMovementRows = Array.isArray(summary?.inventoryMovement?.rows)
+      ? summary.inventoryMovement.rows
+      : [];
+    const currentInventoryMovementMonthKey =
+      inventoryMovementRows
+        .map((row: any) => String(row?.monthKey || ''))
+        .filter(Boolean)
+        .sort()
+        .slice(-1)[0] || '';
+    const currentInventoryMovementRows = currentInventoryMovementMonthKey
+      ? inventoryMovementRows.filter((row: any) => String(row?.monthKey || '') === currentInventoryMovementMonthKey)
+      : [];
+    const inventoryMovementDepartments = Array.from(
+      currentInventoryMovementRows.reduce((groups: Map<string, any>, row: any) => {
+        const department = String(row?.department || 'Unassigned').trim() || 'Unassigned';
+        const group = groups.get(department) || {
+          department,
+          rows: [],
+          currentSales: 0,
+          priorSales: 0,
+          deltaDollars: 0,
+          inventoryOnHandDollars: 0,
+          grossMarginDollars: 0,
+        };
+        group.rows.push(row);
+        group.currentSales += Number(row?.currentSales || 0);
+        group.priorSales += Number(row?.priorSales || 0);
+        group.deltaDollars += Number(row?.deltaDollars || 0);
+        group.inventoryOnHandDollars += Number(row?.inventoryOnHandDollars || 0);
+        group.grossMarginDollars += Number(row?.grossMarginDollars || 0);
+        groups.set(department, group);
+        return groups;
+      }, new Map<string, any>()).values(),
+    ).sort((a: any, b: any) => Number(b.inventoryOnHandDollars || 0) - Number(a.inventoryOnHandDollars || 0));
 
     const toIsoDay = (d: Date) =>
       `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`;
@@ -6584,6 +7403,25 @@ export default function OperationsTab({
       })
       .filter((row: any): row is { utcDay: Date; dateKey: string; value: number } => Boolean(row))
       .sort((a: any, b: any) => a.utcDay.getTime() - b.utcDay.getTime());
+    const departmentTrendRows = Array.isArray(departmentTrend) ? departmentTrend : [];
+    const departmentTrendRowsSorted = departmentTrendRows
+      .map((point: any) => {
+        const parsed = parseDateValue(point.snapshotDate);
+        const department = String(point?.department || '').trim();
+        if (!parsed || !department) return null;
+        const utcDay = new Date(Date.UTC(parsed.getUTCFullYear(), parsed.getUTCMonth(), parsed.getUTCDate()));
+        return {
+          utcDay,
+          dateKey: toIsoDay(utcDay),
+          department,
+          dataKey: `department:${department}`,
+          value: Number(point.assetValue || 0),
+        };
+      })
+      .filter(
+        (row: any): row is { utcDay: Date; dateKey: string; department: string; dataKey: string; value: number } => Boolean(row),
+      )
+      .sort((a: any, b: any) => a.utcDay.getTime() - b.utcDay.getTime() || a.department.localeCompare(b.department));
     const periodEndRows =
       frequency === 'daily'
         ? trendRowsSorted
@@ -6621,11 +7459,29 @@ export default function OperationsTab({
               }
               return Array.from(byMonth.values()).sort((a, b) => a.utcDay.getTime() - b.utcDay.getTime());
             })();
-    const trendData: Array<{ dateKey: string; label: string; value: number }> = periodEndRows.map((row: any) => ({
+    const trendData: Array<Record<string, any> & { dateKey: string; label: string; value: number }> = periodEndRows.map((row: any) => ({
       dateKey: row.dateKey,
       label: row.label || formatInventoryDay(row.utcDay),
       value: row.value,
     }));
+    const trendRowByDateKey = new Map<string, (typeof trendData)[number]>(trendData.map((row) => [row.dateKey, row]));
+    for (const row of departmentTrendRowsSorted) {
+      const trendRow = trendRowByDateKey.get(row.dateKey);
+      if (trendRow) trendRow[row.dataKey] = row.value;
+    }
+    const inventoryDepartmentTrendLines = Array.from(
+      departmentTrendRowsSorted.reduce((lines: Map<string, { department: string; dataKey: string; totalValue: number }>, row) => {
+        const existing = lines.get(row.dataKey) || {
+          department: row.department,
+          dataKey: row.dataKey,
+          totalValue: 0,
+        };
+        existing.totalValue += row.value;
+        lines.set(row.dataKey, existing);
+        return lines;
+      }, new Map<string, { department: string; dataKey: string; totalValue: number }>())
+        .values(),
+    ).sort((a, b) => b.totalValue - a.totalValue);
     const trendLabelByKey = new Map<string, string>(trendData.map((row) => [row.dateKey, row.label]));
     const inventoryXAxisInterval =
       frequency === 'daily'
@@ -6633,6 +7489,14 @@ export default function OperationsTab({
         : frequency === 'weekly'
           ? Math.max(Math.ceil(trendData.length / 20) - 1, 0)
           : 0;
+    const toggleInventoryTrendSeries = (entry: any) => {
+      const dataKey = String(entry?.dataKey || '');
+      if (!dataKey) return;
+      setHiddenInventoryTrendSeries((prev) => ({
+        ...prev,
+        [dataKey]: !prev[dataKey],
+      }));
+    };
 
     return (
       <div style={{ padding: '8px 32px 32px' }}>
@@ -6697,11 +7561,145 @@ export default function OperationsTab({
                 formatter={(value: any) => formatCurrency(Number(value || 0))}
                 contentStyle={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '8px' }}
               />
-              <Legend />
-              <Line type="monotone" dataKey="value" stroke="#667eea" strokeWidth={2} dot={{ fill: '#667eea', r: 4 }} name="Value" />
+              <Legend onClick={toggleInventoryTrendSeries} wrapperStyle={{ cursor: 'pointer' }} />
+              <Line
+                type="monotone"
+                dataKey="value"
+                stroke="#0f172a"
+                strokeWidth={3}
+                dot={{ fill: '#0f172a', r: 4 }}
+                name="Total"
+                hide={Boolean(hiddenInventoryTrendSeries.value)}
+              />
+              {inventoryDepartmentTrendLines.map((line, index) => (
+                <Line
+                  key={line.dataKey}
+                  type="monotone"
+                  dataKey={line.dataKey}
+                  stroke={COLORS[index % COLORS.length]}
+                  strokeWidth={2}
+                  dot={{ r: 3 }}
+                  name={line.department}
+                  connectNulls
+                  hide={Boolean(hiddenInventoryTrendSeries[line.dataKey])}
+                />
+              ))}
             </LineChart>
           </ResponsiveContainer>
         </div>
+        )}
+
+        {isSectionEnabled('inventoryMovement') && (
+          <div style={{ background: 'white', padding: '24px', borderRadius: '12px', border: '1px solid #e2e8f0', marginBottom: '24px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', marginBottom: '14px', flexWrap: 'wrap' }}>
+              <div>
+                <h3 style={{ fontSize: '18px', fontWeight: '600', color: '#1e293b', margin: 0 }}>
+                  Inventory Movement
+                </h3>
+                <div style={{ fontSize: '12px', color: '#64748b', marginTop: '4px' }}>
+                  Current inventory period: {currentInventoryMovementMonthKey || 'N/A'} | {currentInventoryMovementRows.length.toLocaleString()} category rows
+                </div>
+              </div>
+            </div>
+            <div style={{ overflowX: 'auto' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: '1120px' }}>
+                <thead>
+                  <tr style={{ borderBottom: '2px solid #e2e8f0' }}>
+                    <th style={{ textAlign: 'left', padding: '10px', fontSize: '12px', fontWeight: 700, color: '#475569' }}>Category</th>
+                    <th style={{ textAlign: 'right', padding: '10px', fontSize: '12px', fontWeight: 700, color: '#475569' }}>Sales</th>
+                    <th style={{ textAlign: 'right', padding: '10px', fontSize: '12px', fontWeight: 700, color: '#475569' }}>Prior Sales</th>
+                    <th style={{ textAlign: 'right', padding: '10px', fontSize: '12px', fontWeight: 700, color: '#475569' }}>Comp %</th>
+                    <th style={{ textAlign: 'right', padding: '10px', fontSize: '12px', fontWeight: 700, color: '#475569' }}>+/- $</th>
+                    <th style={{ textAlign: 'right', padding: '10px', fontSize: '12px', fontWeight: 700, color: '#475569' }}>% Sales</th>
+                    <th style={{ textAlign: 'right', padding: '10px', fontSize: '12px', fontWeight: 700, color: '#475569' }}>% Inv OH</th>
+                    <th style={{ textAlign: 'right', padding: '10px', fontSize: '12px', fontWeight: 700, color: '#475569' }}>$ Inv OH</th>
+                    <th style={{ textAlign: 'right', padding: '10px', fontSize: '12px', fontWeight: 700, color: '#475569' }}>IMU %</th>
+                    <th style={{ textAlign: 'right', padding: '10px', fontSize: '12px', fontWeight: 700, color: '#475569' }}>GM %</th>
+                    <th style={{ textAlign: 'right', padding: '10px', fontSize: '12px', fontWeight: 700, color: '#475569' }}>GM $</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {inventoryMovementDepartments.map((departmentGroup: any) => {
+                    const isDepartmentExpanded = expandedInventoryMovementDepartments[departmentGroup.department] ?? false;
+                    const departmentCompPct =
+                      departmentGroup.priorSales > 0
+                        ? ((departmentGroup.currentSales - departmentGroup.priorSales) / departmentGroup.priorSales) * 100
+                        : 0;
+                    const departmentGmPct =
+                      departmentGroup.currentSales > 0
+                        ? (departmentGroup.grossMarginDollars / departmentGroup.currentSales) * 100
+                        : 0;
+                    return (
+                      <React.Fragment key={departmentGroup.department}>
+                        <tr style={{ borderBottom: '1px solid #cbd5e1', background: '#f8fafc' }}>
+                          <td style={{ padding: '10px', fontSize: '13px', color: '#0f172a', fontWeight: 700 }}>
+                            <button
+                              onClick={() =>
+                                setExpandedInventoryMovementDepartments((prev) => ({
+                                  ...prev,
+                                  [departmentGroup.department]: !(prev[departmentGroup.department] ?? false),
+                                }))
+                              }
+                              style={{
+                                border: '1px solid #cbd5e1',
+                                borderRadius: '6px',
+                                background: 'white',
+                                color: '#334155',
+                                cursor: 'pointer',
+                                fontSize: '11px',
+                                fontWeight: 700,
+                                marginRight: '8px',
+                                padding: '2px 7px',
+                              }}
+                            >
+                              {isDepartmentExpanded ? '-' : '+'}
+                            </button>
+                            {departmentGroup.department}
+                            <span style={{ marginLeft: '8px', color: '#64748b', fontSize: '12px', fontWeight: 500 }}>
+                              {departmentGroup.rows.length.toLocaleString()} categories
+                            </span>
+                          </td>
+                          <td style={{ padding: '10px', fontSize: '13px', color: '#16a34a', textAlign: 'right', fontWeight: 700 }}>{formatCurrency(Number(departmentGroup.currentSales || 0))}</td>
+                          <td style={{ padding: '10px', fontSize: '13px', color: '#475569', textAlign: 'right', fontWeight: 700 }}>{formatCurrency(Number(departmentGroup.priorSales || 0))}</td>
+                          <td style={{ padding: '10px', fontSize: '13px', color: departmentCompPct < 0 ? '#dc2626' : '#166534', textAlign: 'right', fontWeight: 700 }}>{formatInventoryPct(departmentCompPct)}</td>
+                          <td style={{ padding: '10px', fontSize: '13px', color: Number(departmentGroup.deltaDollars || 0) < 0 ? '#dc2626' : '#166534', textAlign: 'right', fontWeight: 700 }}>{formatCurrency(Number(departmentGroup.deltaDollars || 0))}</td>
+                          <td style={{ padding: '10px', fontSize: '13px', color: '#94a3b8', textAlign: 'right' }}>-</td>
+                          <td style={{ padding: '10px', fontSize: '13px', color: '#94a3b8', textAlign: 'right' }}>-</td>
+                          <td style={{ padding: '10px', fontSize: '13px', color: '#0f766e', textAlign: 'right', fontWeight: 700 }}>{formatCurrency(Number(departmentGroup.inventoryOnHandDollars || 0))}</td>
+                          <td style={{ padding: '10px', fontSize: '13px', color: '#94a3b8', textAlign: 'right' }}>-</td>
+                          <td style={{ padding: '10px', fontSize: '13px', color: '#475569', textAlign: 'right', fontWeight: 700 }}>{formatInventoryPct(departmentGmPct)}</td>
+                          <td style={{ padding: '10px', fontSize: '13px', color: '#1d4ed8', textAlign: 'right', fontWeight: 700 }}>{formatCurrency(Number(departmentGroup.grossMarginDollars || 0))}</td>
+                        </tr>
+                        {isDepartmentExpanded &&
+                          departmentGroup.rows.map((row: any, index: number) => (
+                            <tr key={`${departmentGroup.department}-${row.category || row.label || index}-${index}`} style={{ borderBottom: '1px solid #e2e8f0' }}>
+                              <td style={{ padding: '10px 10px 10px 42px', fontSize: '13px', color: '#1e293b', fontWeight: 600 }}>{row.category || row.label || '-'}</td>
+                              <td style={{ padding: '10px', fontSize: '13px', color: '#16a34a', textAlign: 'right', fontWeight: 600 }}>{formatCurrency(Number(row.currentSales || 0))}</td>
+                              <td style={{ padding: '10px', fontSize: '13px', color: '#475569', textAlign: 'right' }}>{formatCurrency(Number(row.priorSales || 0))}</td>
+                              <td style={{ padding: '10px', fontSize: '13px', color: Number(row.compPct || 0) < 0 ? '#dc2626' : '#166534', textAlign: 'right', fontWeight: 600 }}>{formatInventoryPct(Number(row.compPct || 0))}</td>
+                              <td style={{ padding: '10px', fontSize: '13px', color: Number(row.deltaDollars || 0) < 0 ? '#dc2626' : '#166534', textAlign: 'right', fontWeight: 600 }}>{formatCurrency(Number(row.deltaDollars || 0))}</td>
+                              <td style={{ padding: '10px', fontSize: '13px', color: '#475569', textAlign: 'right' }}>{formatInventoryPct(Number(row.salesMixPct || 0))}</td>
+                              <td style={{ padding: '10px', fontSize: '13px', color: '#475569', textAlign: 'right' }}>{formatInventoryPct(Number(row.inventoryMixPct || 0))}</td>
+                              <td style={{ padding: '10px', fontSize: '13px', color: '#0f766e', textAlign: 'right', fontWeight: 600 }}>{formatCurrency(Number(row.inventoryOnHandDollars || 0))}</td>
+                              <td style={{ padding: '10px', fontSize: '13px', color: '#475569', textAlign: 'right' }}>{formatInventoryPct(Number(row.imuPct || 0))}</td>
+                              <td style={{ padding: '10px', fontSize: '13px', color: '#475569', textAlign: 'right' }}>{formatInventoryPct(Number(row.grossMarginPct || 0))}</td>
+                              <td style={{ padding: '10px', fontSize: '13px', color: '#1d4ed8', textAlign: 'right', fontWeight: 600 }}>{formatCurrency(Number(row.grossMarginDollars || 0))}</td>
+                            </tr>
+                          ))}
+                      </React.Fragment>
+                    );
+                  })}
+                  {currentInventoryMovementRows.length === 0 && (
+                    <tr>
+                      <td colSpan={11} style={{ padding: '16px', textAlign: 'center', color: '#64748b', fontSize: '13px' }}>
+                        No inventory movement rows found for the selected date range.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
         )}
 
         {/* Current Inventory Table */}
@@ -11239,9 +12237,9 @@ Strategies to Improve the CCC
                     contentStyle={{ fontSize: 12 }}
                   />
                   <Legend wrapperStyle={{ fontSize: 12 }} />
-                  <Bar dataKey="revenue" name="Revenue" fill="#2563eb" radius={[3, 3, 0, 0]} />
-                  <Bar dataKey="cogs" name="COGS" stackId="cost" fill="#f97316" radius={[0, 0, 0, 0]} />
-                  <Bar dataKey="expenses" name="Expenses" stackId="cost" fill="#fbbf24" radius={[3, 3, 0, 0]} />
+                  <Bar dataKey="revenue" name="Revenue" fill="#2563eb" radius={0} />
+                  <Bar dataKey="cogs" name="COGS" stackId="cost" fill="#f97316" radius={0} />
+                  <Bar dataKey="expenses" name="Expenses" stackId="cost" fill="#fbbf24" radius={0} />
                 </BarChart>
               </ResponsiveContainer>
             )}
@@ -12885,7 +13883,7 @@ Strategies to Improve the CCC
                     <XAxis dataKey="role" angle={-20} textAnchor="end" height={70} tick={chartLabelStyle} interval={0} />
                     <YAxis tick={chartLabelStyle} tickFormatter={(value) => `${Number(value || 0).toFixed(0)}%`} />
                     <Tooltip formatter={(value: any) => [`${Number(value || 0).toFixed(1)}%`, 'Utilization']} />
-                    <Bar dataKey="utilizationPct" fill="#2563eb" radius={[6, 6, 0, 0]} />
+                    <Bar dataKey="utilizationPct" fill="#2563eb" radius={0} />
                   </BarChart>
                 </ResponsiveContainer>
               </div>
@@ -12899,7 +13897,7 @@ Strategies to Improve the CCC
                     <XAxis dataKey="role" angle={-20} textAnchor="end" height={70} tick={chartLabelStyle} interval={0} />
                     <YAxis tick={chartLabelStyle} tickFormatter={(value) => `${Number(value || 0).toFixed(0)}%`} />
                     <Tooltip formatter={(value: any) => [`${Number(value || 0).toFixed(1)}%`, 'Fill Rate']} />
-                    <Bar dataKey="fillRatePct" fill="#0f766e" radius={[6, 6, 0, 0]} />
+                    <Bar dataKey="fillRatePct" fill="#0f766e" radius={0} />
                   </BarChart>
                 </ResponsiveContainer>
               </div>
@@ -12974,7 +13972,7 @@ Strategies to Improve the CCC
                     <XAxis dataKey="employeeName" angle={-20} textAnchor="end" height={70} tick={chartLabelStyle} interval={0} />
                     <YAxis tick={chartLabelStyle} />
                     <Tooltip formatter={(value: any) => [Number(value || 0).toLocaleString('en-US'), 'Overtime Hours']} />
-                    <Bar dataKey="overtimeHours" fill="#dc2626" radius={[6, 6, 0, 0]} />
+                    <Bar dataKey="overtimeHours" fill="#dc2626" radius={0} />
                   </BarChart>
                 </ResponsiveContainer>
               </div>
@@ -13036,7 +14034,7 @@ Strategies to Improve the CCC
                     <XAxis dataKey="clientName" angle={-20} textAnchor="end" height={70} tick={chartLabelStyle} interval={0} />
                     <YAxis tick={chartLabelStyle} tickFormatter={(value) => `$${Math.round(Number(value || 0) / 1000)}k`} />
                     <Tooltip formatter={(value: any) => [formatCurrency(Number(value || 0)), 'Revenue']} />
-                    <Bar dataKey="revenue" fill="#2563eb" radius={[6, 6, 0, 0]} />
+                    <Bar dataKey="revenue" fill="#2563eb" radius={0} />
                   </BarChart>
                 </ResponsiveContainer>
               </div>
@@ -13076,7 +14074,7 @@ Strategies to Improve the CCC
                     <XAxis dataKey="clientName" angle={-20} textAnchor="end" height={70} tick={chartLabelStyle} interval={0} />
                     <YAxis tick={chartLabelStyle} tickFormatter={(value) => `$${Math.round(Number(value || 0) / 1000)}k`} />
                     <Tooltip formatter={(value: any) => [formatCurrency(Number(value || 0)), 'Revenue']} />
-                    <Bar dataKey="revenue" fill="#7c3aed" radius={[6, 6, 0, 0]} />
+                    <Bar dataKey="revenue" fill="#7c3aed" radius={0} />
                   </BarChart>
                 </ResponsiveContainer>
               </div>
@@ -13248,7 +14246,7 @@ Strategies to Improve the CCC
                     <XAxis dataKey="clientName" angle={-20} textAnchor="end" height={70} tick={chartLabelStyle} interval={0} />
                     <YAxis tick={chartLabelStyle} />
                     <Tooltip formatter={(value: any) => [Number(value || 0).toLocaleString('en-US'), 'Billable Hours']} />
-                    <Bar dataKey="billableHours" fill="#2563eb" radius={[6, 6, 0, 0]} />
+                    <Bar dataKey="billableHours" fill="#2563eb" radius={0} />
                   </BarChart>
                 </ResponsiveContainer>
               </div>
@@ -13295,7 +14293,7 @@ Strategies to Improve the CCC
                     <XAxis dataKey="jobType" tick={chartLabelStyle} />
                     <YAxis tick={chartLabelStyle} tickFormatter={(value) => `$${Math.round(Number(value || 0) / 1000)}k`} />
                     <Tooltip formatter={(value: any) => [formatCurrency(Number(value || 0)), 'Revenue']} />
-                    <Bar dataKey="revenue" fill="#0f766e" radius={[6, 6, 0, 0]} />
+                    <Bar dataKey="revenue" fill="#0f766e" radius={0} />
                   </BarChart>
                 </ResponsiveContainer>
               </div>
@@ -13310,7 +14308,7 @@ Strategies to Improve the CCC
                     <XAxis type="number" tick={chartLabelStyle} tickFormatter={(value) => formatUnitCost(Number(value || 0))} />
                     <YAxis type="category" dataKey="role" width={130} tick={chartLabelStyle} />
                     <Tooltip formatter={(value: any) => [formatUnitCost(Number(value || 0)), 'Avg Bill Rate']} />
-                    <Bar dataKey="avgBillRate" fill="#7c3aed" radius={[0, 6, 6, 0]} />
+                    <Bar dataKey="avgBillRate" fill="#7c3aed" radius={0} />
                   </BarChart>
                 </ResponsiveContainer>
               </div>
@@ -13443,7 +14441,7 @@ Strategies to Improve the CCC
                     <XAxis dataKey="clientName" angle={-20} textAnchor="end" height={70} tick={chartLabelStyle} interval={0} />
                     <YAxis tick={chartLabelStyle} tickFormatter={(value) => formatUnitCost(Number(value || 0))} />
                     <Tooltip formatter={(value: any) => [formatUnitCost(Number(value || 0)), 'Spread / Hour']} />
-                    <Bar dataKey="spreadPerHour" fill="#2563eb" radius={[6, 6, 0, 0]} />
+                    <Bar dataKey="spreadPerHour" fill="#2563eb" radius={0} />
                   </BarChart>
                 </ResponsiveContainer>
               </div>
@@ -13458,7 +14456,7 @@ Strategies to Improve the CCC
                     <XAxis dataKey="clientName" angle={-20} textAnchor="end" height={70} tick={chartLabelStyle} interval={0} />
                     <YAxis tick={chartLabelStyle} tickFormatter={(value) => `${Number(value || 0).toFixed(0)}%`} />
                     <Tooltip formatter={(value: any) => [`${Number(value || 0).toFixed(1)}%`, 'Gross Margin %']} />
-                    <Bar dataKey="grossMarginPct" fill="#0f766e" radius={[6, 6, 0, 0]} />
+                    <Bar dataKey="grossMarginPct" fill="#0f766e" radius={0} />
                   </BarChart>
                 </ResponsiveContainer>
               </div>
