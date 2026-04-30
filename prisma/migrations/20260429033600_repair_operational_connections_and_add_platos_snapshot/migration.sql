@@ -5,7 +5,18 @@ BEGIN
   END IF;
 END $$;
 
-ALTER TYPE "OperationalSystemProvider" ADD VALUE IF NOT EXISTS 'SPREADSHEET_UPLOAD';
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1
+    FROM pg_enum e
+    JOIN pg_type t ON t.oid = e.enumtypid
+    WHERE t.typname = 'OperationalSystemProvider'
+      AND e.enumlabel = 'SPREADSHEET_UPLOAD'
+  ) THEN
+    ALTER TYPE "OperationalSystemProvider" ADD VALUE 'SPREADSHEET_UPLOAD';
+  END IF;
+END $$;
 
 CREATE TABLE IF NOT EXISTS "OperationalSystemConnection" (
   "id" TEXT NOT NULL,
