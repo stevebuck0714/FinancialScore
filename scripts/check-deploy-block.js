@@ -28,6 +28,36 @@ function printCommandOutput(result) {
   if (result?.stderr) process.stderr.write(result.stderr);
 }
 
+function isPrismaAdvisoryLockTimeout(outputText) {
+  return /pg_advisory_lock|migrate-advisory-locking|Timed out trying to acquire a postgres advisory lock/i.test(
+    outputText || ''
+  );
+}
+
+function runPrismaCommandWithAdvisoryLockRetry(args, label) {
+  const maxAttempts = Math.max(
+    1,
+    Number.parseInt(process.env.PRISMA_MIGRATE_RESOLVE_RETRIES || process.env.PRISMA_MIGRATE_DEPLOY_RETRIES || '4', 10) || 4
+  );
+  let result = null;
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    if (attempt > 1) {
+      console.log(`🔁 Retrying ${label} (attempt ${attempt}/${maxAttempts})...`);
+    }
+    result = runPrismaCommand(args);
+    printCommandOutput(result);
+    if (result.status === 0) break;
+
+    const combinedOutput = `${result.stdout || ''}\n${result.stderr || ''}`;
+    if (!isPrismaAdvisoryLockTimeout(combinedOutput) || attempt >= maxAttempts) break;
+
+    const waitMs = Math.min(30000, attempt * 5000);
+    console.warn(`⚠️  Advisory lock contention detected, waiting ${waitMs}ms before retry...`);
+    sleepSync(waitMs);
+  }
+  return result;
+}
+
 async function getFailedPrismaMigrations(databaseUrl) {
   const client = new Client({
     connectionString: databaseUrl,
@@ -295,16 +325,18 @@ WHERE m."id" = r."id"
       console.warn('⚠️  Found failed Prisma migrations, resolving as rolled back before deploy:');
       failedMigrations.forEach((name) => console.warn(`   - ${name}`));
       for (const migrationName of failedMigrations) {
-        const resolveResult = runPrismaCommand([
-          'prisma',
-          'migrate',
-          'resolve',
-          '--rolled-back',
-          migrationName,
-          '--schema',
-          'prisma/schema.prisma',
-        ]);
-        printCommandOutput(resolveResult);
+        const resolveResult = runPrismaCommandWithAdvisoryLockRetry(
+          [
+            'prisma',
+            'migrate',
+            'resolve',
+            '--rolled-back',
+            migrationName,
+            '--schema',
+            'prisma/schema.prisma',
+          ],
+          `Prisma migrate resolve --rolled-back ${migrationName}`
+        );
         if (resolveResult.status !== 0) {
           console.error('');
           console.error('🛑 PRISMA MIGRATION RESOLVE FAILED');
@@ -367,16 +399,18 @@ WHERE m."id" = r."id"
         console.warn('⚠️  Detected failed Prisma migration state; attempting automatic resolve and retry...');
       }
       for (const migrationName of failedMigrations) {
-        const resolveRolledBack = runPrismaCommand([
-          'prisma',
-          'migrate',
-          'resolve',
-          '--rolled-back',
-          migrationName,
-          '--schema',
-          'prisma/schema.prisma',
-        ]);
-        printCommandOutput(resolveRolledBack);
+        const resolveRolledBack = runPrismaCommandWithAdvisoryLockRetry(
+          [
+            'prisma',
+            'migrate',
+            'resolve',
+            '--rolled-back',
+            migrationName,
+            '--schema',
+            'prisma/schema.prisma',
+          ],
+          `Prisma migrate resolve --rolled-back ${migrationName}`
+        );
         if (resolveRolledBack.status !== 0) {
           console.error('');
           console.error('🛑 PRISMA MIGRATION RESOLVE FAILED');
@@ -415,16 +449,18 @@ WHERE m."id" = r."id"
         `⚠️  Migration "${orphanMigration}" failed with "already exists"; ` +
           'baselining as applied and retrying deploy.'
       );
-      const resolveApplied = runPrismaCommand([
-        'prisma',
-        'migrate',
-        'resolve',
-        '--applied',
-        orphanMigration,
-        '--schema',
-        'prisma/schema.prisma',
-      ]);
-      printCommandOutput(resolveApplied);
+      const resolveApplied = runPrismaCommandWithAdvisoryLockRetry(
+        [
+          'prisma',
+          'migrate',
+          'resolve',
+          '--applied',
+          orphanMigration,
+          '--schema',
+          'prisma/schema.prisma',
+        ],
+        `Prisma migrate resolve --applied ${orphanMigration}`
+      );
       if (resolveApplied.status !== 0) {
         console.error('');
         console.error('🛑 PRISMA MIGRATION BASELINE FAILED');
