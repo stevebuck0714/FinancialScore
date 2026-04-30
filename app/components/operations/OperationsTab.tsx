@@ -7329,8 +7329,12 @@ export default function OperationsTab({
     const top10InventoryByValue = [...latestRecords]
       .sort((a: any, b: any) => Number(b?.assetValue || 0) - Number(a?.assetValue || 0))
       .slice(0, 10);
-    const top5InventoryValue = Number(summary?.top5InventoryValue || 0);
-    const inventoryMetricDateLabel = String(summary?.latestInventoryMonthLabel || summary?.latestInventoryMonthKey || '').trim();
+    const top5InventoryValue =
+      Number(summary?.top5InventoryValue) ||
+      [...latestRecords]
+        .sort((a: any, b: any) => Number(b?.assetValue || 0) - Number(a?.assetValue || 0))
+        .slice(0, 5)
+        .reduce((sum: number, item: any) => sum + Number(item?.assetValue || 0), 0);
     const totalObsolescenceExposure =
       Number(summary?.totalObsolescenceExposure) ||
       (Array.isArray(rawInventoryAgingRows)
@@ -7513,22 +7517,12 @@ export default function OperationsTab({
             <div style={{ fontSize: '28px', fontWeight: '700', color: '#16a34a' }}>
               {formatCurrency(summary.totalValue)}
             </div>
-            {inventoryMetricDateLabel && (
-              <div style={{ fontSize: '12px', color: '#64748b', marginTop: '4px' }}>
-                Latest workbook: {inventoryMetricDateLabel}
-              </div>
-            )}
           </div>
           <div style={{ background: 'white', padding: '14px', borderRadius: '8px', border: '1px solid #e2e8f0', flex: '1', minWidth: '0' }}>
             <div style={{ fontSize: '12px', color: '#64748b', marginBottom: '6px' }}>Value of Top 5 Inventory Items</div>
             <div style={{ fontSize: '28px', fontWeight: '700', color: '#0f766e' }}>
               {formatCurrency(top5InventoryValue)}
             </div>
-            {inventoryMetricDateLabel && (
-              <div style={{ fontSize: '12px', color: '#64748b', marginTop: '4px' }}>
-                Latest workbook: {inventoryMetricDateLabel}
-              </div>
-            )}
           </div>
           <div style={{ background: 'white', padding: '14px', borderRadius: '8px', border: '1px solid #e2e8f0', flex: '1', minWidth: '0' }}>
             <div style={{ fontSize: '12px', color: '#64748b', marginBottom: '6px' }}>Total Obsolescence Exposure</div>
