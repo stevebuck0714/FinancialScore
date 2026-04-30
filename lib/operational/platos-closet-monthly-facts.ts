@@ -1033,7 +1033,8 @@ export async function getPlatosClosetInventoryPayload(args: {
     .map((row) => ({
       snapshotDate: row.monthStart.toISOString(),
       assetValue: asNumber(row.valueNumber),
-    }));
+    }))
+    .sort((a, b) => String(a.snapshotDate).localeCompare(String(b.snapshotDate)));
   if (!inventorySeries.length || !categoryFacts.length) return null;
 
   const departmentInventoryByMonth = new Map<string, Map<string, { monthStart: Date; department: string; assetValue: number }>>();
@@ -1065,6 +1066,14 @@ export async function getPlatosClosetInventoryPayload(args: {
     .sort((a, b) => String(a.snapshotDate).localeCompare(String(b.snapshotDate)) || String(a.department).localeCompare(String(b.department)));
 
   const latestMonthKey = inventorySeries[inventorySeries.length - 1]?.snapshotDate.slice(0, 7);
+  const latestInventorySummary = summaryFacts
+    .filter((row) => row.metricName === 'inventory_on_hand_total')
+    .sort((a, b) => b.monthStart.getTime() - a.monthStart.getTime())[0];
+  const latestInventoryValue = asNumber(latestInventorySummary?.valueNumber);
+  const latestInventoryMonthKey = latestInventorySummary?.monthKey || latestMonthKey || '';
+  const latestInventoryMonthLabel = latestInventorySummary?.monthStart
+    ? latestInventorySummary.monthStart.toLocaleDateString('en-US', { month: 'short', year: 'numeric', timeZone: 'UTC' })
+    : latestInventoryMonthKey;
   const inventoryMovementRows = categoryFacts
     .filter((row) => row.dimensionType === 'category' || row.dimensionType === 'department')
     .map((row) => {
@@ -1095,7 +1104,8 @@ export async function getPlatosClosetInventoryPayload(args: {
       return Number(b.inventoryOnHandDollars || 0) - Number(a.inventoryOnHandDollars || 0);
     });
   const latestCategoryRows = categoryFacts
-    .filter((row) => row.monthKey === latestMonthKey)
+    .filter((row) => row.monthKey === latestInventoryMonthKey)
+    .filter((row) => row.dimensionType === 'category')
     .map((row) => {
       const metadata = row.metadata || {};
       return {
@@ -1119,7 +1129,6 @@ export async function getPlatosClosetInventoryPayload(args: {
     .filter((row) => row.assetValue > 0)
     .sort((a, b) => b.assetValue - a.assetValue);
 
-  const totalValue = latestCategoryRows.reduce((sum, row) => sum + asNumber(row.assetValue), 0);
   const top5InventoryValue = latestCategoryRows.slice(0, 5).reduce((sum, row) => sum + asNumber(row.assetValue), 0);
 
   const cogsSeries = new Map<string, number>();
@@ -1142,10 +1151,12 @@ export async function getPlatosClosetInventoryPayload(args: {
     unitCostHistory: [],
     agingReport: [],
     summary: {
-      totalValue,
+      totalValue: latestInventoryValue,
       itemCount: latestCategoryRows.length,
       topItems: latestCategoryRows.slice(0, 10),
       top5InventoryValue,
+      latestInventoryMonthKey,
+      latestInventoryMonthLabel,
       totalObsolescenceExposure: 0,
       inventoryTurnover: periodCogs > 0 && avgInventoryValue > 0 ? periodCogs / avgInventoryValue : null,
       inventoryMovement: {

@@ -11,6 +11,32 @@ export const dynamic = 'force-dynamic';
 
 const SOURCE_CODE = 'PLATOS_CLOSET_STORE_VISIT';
 const REQUIRED_SHEETS = ['YTD Key Performance Indicators', 'YTD Key Indicator'];
+const FILE_MONTH_ALIASES: Record<string, string> = {
+  jan: '01',
+  january: '01',
+  feb: '02',
+  february: '02',
+  mar: '03',
+  march: '03',
+  apr: '04',
+  april: '04',
+  may: '05',
+  jun: '06',
+  june: '06',
+  jul: '07',
+  july: '07',
+  aug: '08',
+  august: '08',
+  sep: '09',
+  sept: '09',
+  september: '09',
+  oct: '10',
+  october: '10',
+  nov: '11',
+  november: '11',
+  dec: '12',
+  december: '12',
+};
 
 type BlobLike = {
   url?: string;
@@ -21,6 +47,25 @@ type BlobLike = {
 
 function getMetadataObject(value: unknown): Record<string, unknown> {
   return value && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
+}
+
+function parseWorkbookPeriodFromFileName(fileName: string): { monthKey: string; periodLabel: string } | null {
+  const normalized = fileName.toLowerCase();
+  const yearMatch = normalized.match(/\b(20\d{2})\b/);
+  if (!yearMatch) return null;
+  const monthEntry = Object.entries(FILE_MONTH_ALIASES).find(([label]) =>
+    new RegExp(`(^|[^a-z])${label}([^a-z]|$)`, 'i').test(normalized),
+  );
+  if (!monthEntry) return null;
+  const monthNumber = Number(monthEntry[1]);
+  const year = Number(yearMatch[1]);
+  if (!Number.isFinite(monthNumber) || !Number.isFinite(year)) return null;
+  const lastDay = new Date(Date.UTC(year, monthNumber, 0)).getUTCDate();
+  const shortYear = String(year).slice(-2);
+  return {
+    monthKey: `${year}-${String(monthNumber).padStart(2, '0')}`,
+    periodLabel: `${monthNumber}/1-${monthNumber}/${lastDay}/${shortYear}`,
+  };
 }
 
 export async function POST(request: NextRequest) {
@@ -59,7 +104,15 @@ export async function POST(request: NextRequest) {
     const arrayBuffer = await response.arrayBuffer();
     const workbook = XLSX.read(Buffer.from(arrayBuffer), { type: 'buffer' });
     const parsedWorkbook = parsePlatosClosetWorkbook(workbook);
-    if (!parsedWorkbook.monthKey) {
+    const filePeriod = parseWorkbookPeriodFromFileName(originalFileName);
+    const resolvedWorkbook = filePeriod
+      ? {
+          ...parsedWorkbook,
+          monthKey: filePeriod.monthKey,
+          currentPeriodLabel: filePeriod.periodLabel,
+        }
+      : parsedWorkbook;
+    if (!resolvedWorkbook.monthKey) {
       return NextResponse.json(
         {
           ok: false,
@@ -68,7 +121,8 @@ export async function POST(request: NextRequest) {
         { status: 400 }
       );
     }
-    const sheetNames = parsedWorkbook.sheetNames;
+    const resolvedMonthKey = resolvedWorkbook.monthKey;
+    const sheetNames = resolvedWorkbook.sheetNames;
     const missingSheets = REQUIRED_SHEETS.filter((sheet) => !sheetNames.includes(sheet));
     if (missingSheets.length > 0) {
       return NextResponse.json(
@@ -99,17 +153,17 @@ export async function POST(request: NextRequest) {
       },
       platosClosetParsedWorkbook: {
         parsedAt: new Date().toISOString(),
-        workbookPeriod: parsedWorkbook.currentPeriodLabel || parsedWorkbook.storeInfo['Visit Date'] || null,
-        monthKey: parsedWorkbook.monthKey,
-        storeInfo: parsedWorkbook.storeInfo,
-        salesKpis: parsedWorkbook.salesKpis,
-        buysKpis: parsedWorkbook.buysKpis,
-        lossPreventionKpis: parsedWorkbook.lossPreventionKpis,
-        salesHistory: parsedWorkbook.salesHistory,
-        buysHistory: parsedWorkbook.buysHistory,
-        marketingChannels: parsedWorkbook.marketingChannels,
-        categorySummary: parsedWorkbook.categorySummary,
-        categoryMetrics: parsedWorkbook.categoryMetrics,
+        workbookPeriod: resolvedWorkbook.currentPeriodLabel || resolvedWorkbook.storeInfo['Visit Date'] || null,
+        monthKey: resolvedMonthKey,
+        storeInfo: resolvedWorkbook.storeInfo,
+        salesKpis: resolvedWorkbook.salesKpis,
+        buysKpis: resolvedWorkbook.buysKpis,
+        lossPreventionKpis: resolvedWorkbook.lossPreventionKpis,
+        salesHistory: resolvedWorkbook.salesHistory,
+        buysHistory: resolvedWorkbook.buysHistory,
+        marketingChannels: resolvedWorkbook.marketingChannels,
+        categorySummary: resolvedWorkbook.categorySummary,
+        categoryMetrics: resolvedWorkbook.categoryMetrics,
       },
     };
 
@@ -132,41 +186,41 @@ export async function POST(request: NextRequest) {
 
     await savePlatosClosetWorkbookSnapshot({
       companyId,
-      monthKey: parsedWorkbook.monthKey,
+      monthKey: resolvedMonthKey,
       documentId,
       originalFileName: originalFileName || 'Workbook upload',
       blobUrl: blob.url,
-      workbookPeriod: parsedWorkbook.currentPeriodLabel || null,
-      storeNumber: parsedWorkbook.storeInfo['Store Number'] == null ? null : String(parsedWorkbook.storeInfo['Store Number']),
-      cityState: parsedWorkbook.storeInfo['City/State'] == null ? null : String(parsedWorkbook.storeInfo['City/State']),
-      visitDateText: parsedWorkbook.storeInfo['Visit Date'] == null ? null : String(parsedWorkbook.storeInfo['Visit Date']),
-      openDateText: parsedWorkbook.storeInfo['Open Date'] == null ? null : String(parsedWorkbook.storeInfo['Open Date']),
+      workbookPeriod: resolvedWorkbook.currentPeriodLabel || null,
+      storeNumber: resolvedWorkbook.storeInfo['Store Number'] == null ? null : String(resolvedWorkbook.storeInfo['Store Number']),
+      cityState: resolvedWorkbook.storeInfo['City/State'] == null ? null : String(resolvedWorkbook.storeInfo['City/State']),
+      visitDateText: resolvedWorkbook.storeInfo['Visit Date'] == null ? null : String(resolvedWorkbook.storeInfo['Visit Date']),
+      openDateText: resolvedWorkbook.storeInfo['Open Date'] == null ? null : String(resolvedWorkbook.storeInfo['Open Date']),
       salesTrend:
-        typeof parsedWorkbook.storeInfo['Sales Trend'] === 'number' ? Number(parsedWorkbook.storeInfo['Sales Trend']) : null,
+        typeof resolvedWorkbook.storeInfo['Sales Trend'] === 'number' ? Number(resolvedWorkbook.storeInfo['Sales Trend']) : null,
       buysTrend:
-        typeof parsedWorkbook.storeInfo['Buys Trend'] === 'number' ? Number(parsedWorkbook.storeInfo['Buys Trend']) : null,
-      rowCount: parsedWorkbook.categorySummary.rowCount,
-      departmentCount: parsedWorkbook.categorySummary.departmentCount,
-      categoryCount: parsedWorkbook.categorySummary.categoryCount,
+        typeof resolvedWorkbook.storeInfo['Buys Trend'] === 'number' ? Number(resolvedWorkbook.storeInfo['Buys Trend']) : null,
+      rowCount: resolvedWorkbook.categorySummary.rowCount,
+      departmentCount: resolvedWorkbook.categorySummary.departmentCount,
+      categoryCount: resolvedWorkbook.categorySummary.categoryCount,
       parsedWorkbook: {
-        sheetNames: parsedWorkbook.sheetNames,
-        requiredSheets: parsedWorkbook.requiredSheets,
-        storeInfo: parsedWorkbook.storeInfo,
-        salesKpis: parsedWorkbook.salesKpis,
-        buysKpis: parsedWorkbook.buysKpis,
-        lossPreventionKpis: parsedWorkbook.lossPreventionKpis,
-        salesHistory: parsedWorkbook.salesHistory,
-        buysHistory: parsedWorkbook.buysHistory,
-        marketingChannels: parsedWorkbook.marketingChannels,
-        categorySummary: parsedWorkbook.categorySummary,
-        categoryMetrics: parsedWorkbook.categoryMetrics,
+        sheetNames: resolvedWorkbook.sheetNames,
+        requiredSheets: resolvedWorkbook.requiredSheets,
+        storeInfo: resolvedWorkbook.storeInfo,
+        salesKpis: resolvedWorkbook.salesKpis,
+        buysKpis: resolvedWorkbook.buysKpis,
+        lossPreventionKpis: resolvedWorkbook.lossPreventionKpis,
+        salesHistory: resolvedWorkbook.salesHistory,
+        buysHistory: resolvedWorkbook.buysHistory,
+        marketingChannels: resolvedWorkbook.marketingChannels,
+        categorySummary: resolvedWorkbook.categorySummary,
+        categoryMetrics: resolvedWorkbook.categoryMetrics,
       },
     });
 
     await savePlatosClosetMonthlyFacts({
       companyId,
-      monthKey: parsedWorkbook.monthKey,
-      parsedWorkbook,
+      monthKey: resolvedMonthKey,
+      parsedWorkbook: resolvedWorkbook,
     });
 
     return NextResponse.json({
@@ -176,12 +230,12 @@ export async function POST(request: NextRequest) {
       sheetNames,
       requiredSheets: REQUIRED_SHEETS,
       parsedWorkbook: {
-        storeInfo: parsedWorkbook.storeInfo,
-        monthKey: parsedWorkbook.monthKey,
-        currentPeriodLabel: parsedWorkbook.currentPeriodLabel,
-        salesKpisCount: parsedWorkbook.salesKpis.length,
-        categoryRowCount: parsedWorkbook.categorySummary.rowCount,
-        departmentCount: parsedWorkbook.categorySummary.departmentCount,
+        storeInfo: resolvedWorkbook.storeInfo,
+        monthKey: resolvedMonthKey,
+        currentPeriodLabel: resolvedWorkbook.currentPeriodLabel,
+        salesKpisCount: resolvedWorkbook.salesKpis.length,
+        categoryRowCount: resolvedWorkbook.categorySummary.rowCount,
+        departmentCount: resolvedWorkbook.categorySummary.departmentCount,
       },
     });
   } catch (error: any) {
