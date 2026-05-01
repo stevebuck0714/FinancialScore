@@ -1943,6 +1943,25 @@ function resolveRawSourceRecordId(record: Record<string, unknown>): string | nul
   return null;
 }
 
+function shouldPersistGlobalRawSourceRecordId(miProgram: string | null | undefined): boolean {
+  const programId = String(miProgram || '').trim().toUpperCase();
+  if (!programId) return true;
+  // Current-state/reference IDOs reuse the same source row identity across
+  // sync runs and business dates. The production DB has a global partial
+  // unique index on sourceRecordId, so persisting _ItemId for these programs
+  // makes later business-day slices silently skip raw rows. Let the
+  // per-run/date/sourceRecordHash unique key handle idempotency instead.
+  return ![
+    'SLBANKHDRS',
+    'SLITEMS',
+    'SLITEMLOCS',
+    'SLCUSTOMERS',
+    'SLVENDORS',
+    'SLCHARTACCTS',
+    'SLCHARTS',
+  ].includes(programId);
+}
+
 function buildCsiEndpointPath(row: InforProgramRow): string | null {
   if (row.endpointPath && row.endpointPath.length > 0) {
     const explicitProgramId = String(row.miProgram || inferProgramIdFromEndpointPath(row.endpointPath)).trim().toUpperCase();
@@ -9654,6 +9673,7 @@ export async function syncInforM3OperationalData(
               );
             }
             if (eligibleRecords.length > 0) {
+              const persistSourceRecordId = shouldPersistGlobalRawSourceRecordId(row.miProgram);
               const rawRows = eligibleRecords.map((record) => {
                 const payloadJson = JSON.stringify(record);
                 const sourceRecordHash = createHash('sha256').update(payloadJson).digest('hex');
@@ -9667,7 +9687,7 @@ export async function syncInforM3OperationalData(
                   module: row.module || null,
                   miProgram: row.miProgram || null,
                   transaction: req.transaction || null,
-                  sourceRecordId: resolveRawSourceRecordId(record),
+                  sourceRecordId: persistSourceRecordId ? resolveRawSourceRecordId(record) : null,
                   sourceRecordHash,
                   payload: record as Prisma.InputJsonValue,
                   fetchedAt: new Date(),
