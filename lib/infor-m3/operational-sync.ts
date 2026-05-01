@@ -618,7 +618,7 @@ function parsePrograms(value: unknown): InforProgramRow[] {
   if (!Array.isArray(value)) return [];
   const rows: InforProgramRow[] = [];
   for (const row of value) {
-    const module = typeof row?.module === 'string' ? row.module.trim() : '';
+    const moduleName = typeof row?.module === 'string' ? row.module.trim() : '';
     const miProgramRaw = typeof row?.miProgram === 'string' ? row.miProgram.trim() : '';
     const miProgram = miProgramRaw;
     const transactions = normalizeTransactions(row);
@@ -637,10 +637,10 @@ function parsePrograms(value: unknown): InforProgramRow[] {
       : [];
     const properties = sanitizeProgramProperties(inferredProgramId, rawProperties);
     const enabled = typeof row?.enabled === 'boolean' ? row.enabled : true;
-    if (!enabled || !module) continue;
+    if (!enabled || !moduleName) continue;
     if (!endpointPath && !miProgram) continue;
     rows.push({
-      module,
+      module: moduleName,
       miProgram: miProgram || undefined,
       endpointPath: endpointPath || undefined,
       transactions,
@@ -2656,9 +2656,9 @@ async function saveCash(
   companyId: string,
   snapshotDate: Date,
   frequency: 'daily' | 'weekly' | 'monthly',
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   records: Record<string, unknown>[]
 ): Promise<number> {
+  void records;
   const cashMappings = await prisma.accountMapping.findMany({
     where: {
       companyId,
@@ -9539,7 +9539,7 @@ export async function syncInforM3OperationalData(
       try {
         if (rawIngestEnabled) {
           const ingestedRecords = rawRecordsForIngest.slice(0, rawIngestRecordCap);
-          const batchId = randomUUID();
+          let batchId: string = randomUUID();
           const syncWindowStartIso = syncWindow?.startDate ? syncWindow.startDate.toISOString() : null;
           const persistedEndpointPath =
             isSlVchHdrsProgramLike({ programId, row, endpointPath: effectiveEndpointPath })
@@ -9599,6 +9599,24 @@ export async function syncInforM3OperationalData(
             const code = (rawBatchCreateError as { code?: string })?.code;
             if (code === 'P2002') {
               rawBatchAlreadyPersisted = true;
+              const existingBatch = await (prisma as any).inforRawBatch.findFirst({
+                where: {
+                  companyId,
+                  platform: 'INFOR_M3',
+                  syncRunId,
+                  module: row.module || null,
+                  miProgram: row.miProgram || null,
+                  transaction: req.transaction || null,
+                  businessDate: snapshotDate,
+                  pageNo: pagesFetched,
+                  bookmarkIn: inputBookmark,
+                },
+                select: { id: true },
+              });
+              if (!existingBatch?.id) {
+                throw rawBatchCreateError;
+              }
+              batchId = String(existingBatch.id);
               console.log(
                 JSON.stringify({
                   event: 'sync_raw_batch_already_present',
@@ -9608,13 +9626,14 @@ export async function syncInforM3OperationalData(
                   pageNo: pagesFetched,
                   bookmarkIn: inputBookmark,
                   recordCount: ingestedRecords.length,
+                  existingBatchId: batchId,
                 })
               );
             } else {
               throw rawBatchCreateError;
             }
           }
-          if (!rawBatchAlreadyPersisted && ingestedRecords.length > 0) {
+          if (ingestedRecords.length > 0) {
             // Drop records whose business date precedes our hard ingest floor.
             // See INFOR_RAW_MIN_BUSINESS_DATE_COMPACT. Records without a
             // configured business-date field (reference data) pass through.
@@ -9661,7 +9680,7 @@ export async function syncInforM3OperationalData(
             }
           }
           const sourceKey = resolveRawCompletenessSourceKey(moduleType);
-          if (sourceKey && syncWindowStartIso && !rawBatchAlreadyPersisted) {
+          if (sourceKey && syncWindowStartIso) {
             await prisma.$executeRaw`
               INSERT INTO "InforRawCompleteness"
                 ("id","companyId","platform","syncRunId","businessDate","sourceKey","isComplete","lastBatchId","statusMessage","lastSeenAt","createdAt","updatedAt")
@@ -10036,13 +10055,13 @@ export async function transformInforM3RawRun(options: {
       for (const row of rows) {
         const payload = asRawRecordPayload(row.payload);
         if (!payload) continue;
-        const module = String(row.module || '').trim();
+        const moduleName = String(row.module || '').trim();
         const miProgram = String(row.miProgram || '').trim().toUpperCase();
         const transaction = String(row.transaction || 'CSI_LOAD').trim() || 'CSI_LOAD';
-        const moduleType = classifyModuleFromProgramId(miProgram) ?? classifyModule(module);
+        const moduleType = classifyModuleFromProgramId(miProgram) ?? classifyModule(moduleName);
         const key = `${moduleType}||${miProgram}||${transaction}`;
         if (!rawByModuleProgram.has(key)) {
-          rawByModuleProgram.set(key, { moduleType, module, miProgram, transaction, records: [] });
+          rawByModuleProgram.set(key, { moduleType, module: moduleName, miProgram, transaction, records: [] });
         }
 
         const itemId = String(payload['_ItemId'] || payload['RowPointer'] || payload['rowPointer'] || '').trim();
@@ -10059,7 +10078,7 @@ export async function transformInforM3RawRun(options: {
     for (const [key, itemMap] of Array.from(dedupByProgram.entries())) {
       const group = rawByModuleProgram.get(key);
       if (group) {
-        for (const payload of itemMap.values()) {
+        for (const payload of Array.from(itemMap.values())) {
           group.records.push(payload);
         }
       }
@@ -10092,7 +10111,13 @@ export async function transformInforM3RawRun(options: {
         .filter((item) => item.moduleType === 'cash')
         .flatMap((item) => item.records);
       if (cashRecords.length > 0) {
-        recordsCreated += await saveCash(companyId, snapshotDate, frequency, cashRecords);
+        const cashRowsCreated = await saveCash(companyId, snapshotDate, frequency, cashRecords);
+        recordsCreated += cashRowsCreated;
+        if (cashRowsCreated <= 0) {
+          throw new Error(
+            `Cash raw replay read ${cashRecords.length} records but wrote 0 CashSnapshot rows for ${snapshotDate.toISOString().slice(0, 10)}.`
+          );
+        }
       }
 
       const arCustDrfts = Array.from(rawByModuleProgram.values())
@@ -10194,7 +10219,13 @@ export async function transformInforM3RawRun(options: {
         .filter((item) => item.moduleType === 'inventory')
         .flatMap((item) => item.records);
       if (inventoryRecords.length > 0) {
-        recordsCreated += await saveInventory(companyId, snapshotDate, frequency, inventoryRecords);
+        const inventoryRowsCreated = await saveInventory(companyId, snapshotDate, frequency, inventoryRecords);
+        recordsCreated += inventoryRowsCreated;
+        if (inventoryRowsCreated <= 0) {
+          throw new Error(
+            `Inventory raw replay read ${inventoryRecords.length} records but wrote 0 InventorySnapshot rows for ${snapshotDate.toISOString().slice(0, 10)}.`
+          );
+        }
       }
 
       const salesProgramItems = Array.from(rawByModuleProgram.values()).filter((item) => item.moduleType === 'sales');
