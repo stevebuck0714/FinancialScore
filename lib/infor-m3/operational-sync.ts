@@ -10084,6 +10084,14 @@ export async function transformInforM3RawRun(options: {
       }
     }
 
+    const rawSourceKeys = new Set<NonNullable<ReturnType<typeof resolveRawCompletenessSourceKey>>>();
+    const completedSourceKeys = new Set<NonNullable<ReturnType<typeof resolveRawCompletenessSourceKey>>>();
+    for (const item of Array.from(rawByModuleProgram.values())) {
+      if (item.records.length === 0) continue;
+      const sourceKey = resolveRawCompletenessSourceKey(item.moduleType);
+      if (sourceKey) rawSourceKeys.add(sourceKey);
+    }
+
     const glAccountMasterById = new Map<string, GlAccountMasterEntry>();
     for (const item of Array.from(rawByModuleProgram.values())) {
       if (item.moduleType !== 'gl' || !GL_ACCOUNT_MASTER_PROGRAM_IDS.has(item.miProgram)) continue;
@@ -10118,6 +10126,7 @@ export async function transformInforM3RawRun(options: {
             `Cash raw replay read ${cashRecords.length} records but wrote 0 CashSnapshot rows for ${snapshotDate.toISOString().slice(0, 10)}.`
           );
         }
+        completedSourceKeys.add('cash');
       }
 
       const arCustDrfts = Array.from(rawByModuleProgram.values())
@@ -10141,6 +10150,9 @@ export async function transformInforM3RawRun(options: {
           transaction: 'RAW_REPLAY',
         });
         await upsertArContractSupportTables(companyId, snapshotDate, frequency);
+      }
+      if (arOpenSource.length > 0 || arTrans.length > 0) {
+        completedSourceKeys.add('ar');
       }
 
       const apPayments = Array.from(rawByModuleProgram.values())
@@ -10188,6 +10200,9 @@ export async function transformInforM3RawRun(options: {
           transaction: 'RAW_REPLAY',
         });
       }
+      if (apOpen.length > 0 || apPayments.length > 0) {
+        completedSourceKeys.add('ap');
+      }
 
       const glTrans = Array.from(rawByModuleProgram.values())
         .filter((item) => item.moduleType === 'gl' && item.miProgram === 'SLGLTRANS')
@@ -10226,6 +10241,7 @@ export async function transformInforM3RawRun(options: {
             `Inventory raw replay read ${inventoryRecords.length} records but wrote 0 InventorySnapshot rows for ${snapshotDate.toISOString().slice(0, 10)}.`
           );
         }
+        completedSourceKeys.add('inventory');
       }
 
       const salesProgramItems = Array.from(rawByModuleProgram.values()).filter((item) => item.moduleType === 'sales');
@@ -10311,6 +10327,7 @@ export async function transformInforM3RawRun(options: {
           syncRunId,
         });
         await upsertArContractSupportTables(companyId, snapshotDate, frequency);
+        completedSourceKeys.add('sales');
       }
 
       const vendorRecords = Array.from(rawByModuleProgram.values())
@@ -10333,43 +10350,35 @@ export async function transformInforM3RawRun(options: {
         },
       });
       await upsertDailyFinancialSnapshotFromOperationalTables(companyId, snapshotDate, frequency);
-      await (prisma as any).inforRawCompleteness.updateMany({
+
+      const completenessRows = await (prisma as any).inforRawCompleteness.findMany({
         where: {
           companyId,
           platform: 'INFOR_M3',
           syncRunId,
           businessDate: snapshotDate,
         },
-        data: {
-          isComplete: true,
-          statusMessage: 'transformed',
-          lastSeenAt: new Date(),
-          updatedAt: new Date(),
-        },
+        select: { sourceKey: true },
       });
-      const salesRawInputCount = await (prisma as any).inforRawRecord.count({
-        where: {
-          companyId,
-          platform: 'INFOR_M3',
-          syncRunId,
-          businessDate: snapshotDate,
-          miProgram: {
-            in: ['SLCOITEMS', 'SLCoitems', 'SLINVHDRS', 'SLInvHdrs', 'SLCOS', 'SLCos', 'SLCOHDRS', 'SLCohdrs'],
-          },
-        },
-      });
-      if (salesRawInputCount <= 0) {
+      for (const row of completenessRows) {
+        const sourceKey = String(row.sourceKey || '') as NonNullable<ReturnType<typeof resolveRawCompletenessSourceKey>>;
+        const didComplete = completedSourceKeys.has(sourceKey);
+        const sawRawInput = rawSourceKeys.has(sourceKey);
         await (prisma as any).inforRawCompleteness.updateMany({
           where: {
             companyId,
             platform: 'INFOR_M3',
             syncRunId,
             businessDate: snapshotDate,
-            sourceKey: 'sales',
+            sourceKey,
           },
           data: {
-            isComplete: false,
-            statusMessage: 'raw_missing:sales_inputs',
+            isComplete: didComplete,
+            statusMessage: didComplete
+              ? 'transformed'
+              : sawRawInput
+                ? `transform_failed:${sourceKey}_output_missing`
+                : `raw_missing:${sourceKey}_inputs`,
             lastSeenAt: new Date(),
             updatedAt: new Date(),
           },
