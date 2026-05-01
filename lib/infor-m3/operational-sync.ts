@@ -4,7 +4,8 @@ import { callInforIonApi } from '@/lib/infor-m3/client';
 import { getInforM3CredentialsWithOptionalEnvFallback, type InforM3Credentials } from '@/lib/infor-m3/credentials';
 import { normalizeInforSystem } from '@/lib/infor-m3/system';
 import { createHash, randomUUID } from 'node:crypto';
-import { computeDailyPnlMovementsFromGL, rebuildDailyFinancialSnapshotsFromGL } from '@/lib/financial/daily-bs-from-gl';
+import { computeDailyPnlMovementsFromGL } from '@/lib/financial/daily-bs-from-gl';
+import { syncErpDailyFinancialsFromGL } from '@/lib/financial/sync-erp-daily-financials';
 
 type InforProgramRow = {
   module: string;
@@ -7668,10 +7669,8 @@ export async function upsertDailyFinancialSnapshotFromOperationalTables(
   //
   // We delegate to that path here so the operational sync's nightly + manual
   // finalize step writes the same correct snapshot the admin rebuild endpoint
-  // and the post-mapping-change hook write. `pnlUpdateMode: 'preserve'` keeps
-  // any operationally-written daily P&L values (revenue/COGS sourced from
-  // ProductSalesSnapshot via Math.max(ops, gl)) in place — only the BS columns
-  // are refreshed on existing rows.
+  // and the post-mapping-change hook write. P&L is overwritten from GL truth so
+  // monthly income-statement sums cannot retain stale operational daily values.
   const targetSnapshotDate = toIsoDayOrNull(snapshotDate) || String(snapshotDate);
   const dailySnapshotDelegate = (prisma as any).dailyFinancialSnapshot;
   if (!dailySnapshotDelegate) {
@@ -7686,15 +7685,15 @@ export async function upsertDailyFinancialSnapshotFromOperationalTables(
   const dayStart = startOfUtcDay(snapshotDate);
 
   try {
-    const result = await rebuildDailyFinancialSnapshotsFromGL({
+    const result = await syncErpDailyFinancialsFromGL({
       companyId,
       startDate: dayStart,
       endDate: dayStart,
       frequency,
-      pnlUpdateMode: 'preserve',
+      syncMonthly: false,
     });
     return {
-      written: result.rowsWritten > 0,
+      written: Number(result.rebuilt?.rowsWritten || 0) > 0,
       targetSnapshotDate,
       // sourceDates / staleOrMissingSources are legacy concepts from the
       // operational-table composer; the GL rebuild path always writes a row
@@ -7710,8 +7709,8 @@ export async function upsertDailyFinancialSnapshotFromOperationalTables(
       },
       staleOrMissingSources: [],
       reason:
-        result.unmappedTargetFields.length > 0
-          ? `Daily snapshot rebuilt from GLTransactionFact via mapped accounts. Unmapped target fields ignored: ${result.unmappedTargetFields.join(', ')}.`
+        (result.rebuilt?.unmappedTargetFields || []).length > 0
+          ? `Daily snapshot rebuilt from GLTransactionFact via mapped accounts. Unmapped target fields ignored: ${(result.rebuilt?.unmappedTargetFields || []).join(', ')}.`
           : 'Daily snapshot rebuilt from GLTransactionFact via mapped accounts (anchored when available).',
     };
   } catch (error) {

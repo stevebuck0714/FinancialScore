@@ -1,6 +1,10 @@
 import prisma from '@/lib/prisma';
 import { BS_LAST_DAY_FIELDS, parseMonthInput, PNL_SUM_FIELDS, safeNumber } from '@/lib/financial/month-publish';
 import { monthKey } from '@/lib/date-utils';
+import {
+  buildAccountIdToTargetForMonthlySync,
+  computeMonthlyPnlBreakdownsFromGL,
+} from '@/lib/financial/monthly-pnl-from-gl';
 
 export type PublishMonthParams = {
   companyId: string;
@@ -165,9 +169,29 @@ export async function publishMonthFromDailySnapshots(params: PublishMonthParams)
       };
     }
 
+    const dailyPnlTotals: Record<string, number> = {};
+    for (const field of PNL_SUM_FIELDS) {
+      dailyPnlTotals[field] = snapshots.reduce((sum: number, row) => sum + safeNumber(row[field]), 0);
+    }
+    const accountIdToTarget = await buildAccountIdToTargetForMonthlySync(companyId);
+    const glPnl =
+      accountIdToTarget.size > 0
+        ? await computeMonthlyPnlBreakdownsFromGL(
+            companyId,
+            targetMonthStart,
+            targetMonthEnd,
+            accountIdToTarget,
+          )
+        : null;
+    const hasGlPnl =
+      Boolean(glPnl) &&
+      (Object.keys(glPnl!.scalars).length > 0 ||
+        Object.keys(glPnl!.revenueBreakdown).length > 0 ||
+        Object.keys(glPnl!.cogsBreakdown).length > 0 ||
+        Object.keys(glPnl!.expenseBreakdown).length > 0);
     const pnlTotals: Record<string, number> = {};
     for (const field of PNL_SUM_FIELDS) {
-      pnlTotals[field] = snapshots.reduce((sum: number, row) => sum + safeNumber(row[field]), 0);
+      pnlTotals[field] = hasGlPnl ? safeNumber(glPnl!.scalars[field]) : dailyPnlTotals[field];
     }
     const monthEndSnapshot = snapshots[snapshots.length - 1];
     const balanceValues: Record<string, number> = {};
@@ -213,8 +237,17 @@ export async function publishMonthFromDailySnapshots(params: PublishMonthParams)
       companyId,
       monthDate: targetMonthStart,
       ...pnlTotals,
+      ...(hasGlPnl
+        ? {
+            revenueBreakdown: glPnl!.revenueBreakdown,
+            cogsBreakdown: glPnl!.cogsBreakdown,
+            expenseBreakdown: glPnl!.expenseBreakdown,
+          }
+        : {}),
       ...balanceValues,
     };
+    const incomeStatementPolicy = hasGlPnl ? 'gl_transaction_fact_mapped_month' : 'sum_daily_activity';
+    const sourceBasis = hasGlPnl ? 'gl_transaction_fact_plus_daily_month_end_bs' : 'mapped_daily_snapshots';
 
     let financialRecord = await prisma.financialRecord.findFirst({
       where: { companyId },
@@ -230,10 +263,10 @@ export async function publishMonthFromDailySnapshots(params: PublishMonthParams)
           fileName: `AUTO_MONTH_END_PUBLISH_${targetMonth}`,
           rawData: {
             source: 'DAILY_FINANCIAL_MONTH_END',
-            sourceBasis: 'mapped_daily_snapshots',
+            sourceBasis,
             statementCurrency: 'USD',
             rollupPolicy: {
-              incomeStatement: 'sum_daily_activity',
+              incomeStatement: incomeStatementPolicy,
               balanceSheet: 'month_end_snapshot',
             },
             month: targetMonth,
@@ -275,9 +308,8 @@ export async function publishMonthFromDailySnapshots(params: PublishMonthParams)
       )
     );
 
-    const publishNotes = force
-      ? 'Force publish | basis=mapped_daily_snapshots | currency=USD | IS=sum_daily_activity | BS=month_end_snapshot'
-      : 'basis=mapped_daily_snapshots | currency=USD | IS=sum_daily_activity | BS=month_end_snapshot';
+    const publishBasisNote = `basis=${sourceBasis} | currency=USD | IS=${incomeStatementPolicy} | BS=month_end_snapshot`;
+    const publishNotes = force ? `Force publish | ${publishBasisNote}` : publishBasisNote;
     await publishDelegate.upsert({
       where: { companyId_monthStart: { companyId, monthStart: targetMonthStart } },
       create: {
