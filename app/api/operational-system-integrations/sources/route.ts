@@ -20,6 +20,7 @@ type SourceDefinition = {
 const SOURCE_DEFINITIONS: SourceDefinition[] = [
   { provider: 'BAMBOOHR', sourceCode: 'BAMBOOHR_STANDARD', label: 'BambooHR' },
   { provider: 'SPREADSHEET_UPLOAD', sourceCode: 'PLATOS_CLOSET_STORE_VISIT', label: "Spreadsheet - Plato's Closet", retailOnly: true },
+  { provider: 'SPREADSHEET_UPLOAD', sourceCode: 'PLATOS_INVENTORY', label: "Spreadsheet - Plato's Inventory", retailOnly: true },
 ];
 
 function getSourceDefinition(sourceCode: string): SourceDefinition | null {
@@ -94,7 +95,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ ok: false, error: 'Unknown operational source.' }, { status: 400 });
     }
     if (source.retailOnly && !isRetailSector(company.industrySectorCategory)) {
-      return NextResponse.json({ ok: false, error: "Spreadsheet - Plato's Closet is limited to Retail companies." }, { status: 400 });
+      return NextResponse.json({ ok: false, error: `${source.label} is limited to Retail companies.` }, { status: 400 });
     }
 
     await saveOperationalSystemConnection({

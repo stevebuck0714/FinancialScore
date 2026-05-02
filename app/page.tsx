@@ -3226,6 +3226,7 @@ function FinancialScorePage() {
   const [qbSyncing, setQbSyncing] = useState(false);
   const [qbError, setQbError] = useState<string | null>(null);
   const operationalWorkbookFileInputRef = useRef<HTMLInputElement | null>(null);
+  const platosInventoryWorkbookFileInputRef = useRef<HTMLInputElement | null>(null);
   const [companyOperationalSources, setCompanyOperationalSources] = useState<
     Array<{
       provider: string;
@@ -3246,6 +3247,10 @@ function FinancialScorePage() {
         parsedAt?: string;
         monthKey?: string | null;
         workbookPeriod?: string | null;
+        monthCount?: number;
+        monthKeys?: string[];
+        subcategoryCount?: number;
+        rowCount?: number;
         storeInfo?: Record<string, string | number | null>;
         salesKpis?: Array<{ metric: string; current: number | null; prior: number | null; delta: number | null }>;
         categorySummary?: {
@@ -3260,6 +3265,7 @@ function FinancialScorePage() {
   const [loadingOperationalSources, setLoadingOperationalSources] = useState(false);
   const [operationalSourcesError, setOperationalSourcesError] = useState<string | null>(null);
   const [uploadingOperationalWorkbook, setUploadingOperationalWorkbook] = useState(false);
+  const [uploadingPlatosInventoryWorkbook, setUploadingPlatosInventoryWorkbook] = useState(false);
   
 
   // State - API Loading & Errors
@@ -6623,6 +6629,82 @@ function FinancialScorePage() {
       alert(`Failed to upload workbook: ${message}`);
     } finally {
       setUploadingOperationalWorkbook(false);
+    }
+  };
+
+  const uploadPlatosInventoryWorkbook = async () => {
+    if (!selectedCompanyId) {
+      alert('Please select a company first');
+      return;
+    }
+    const input = platosInventoryWorkbookFileInputRef.current;
+    const file = input?.files?.[0];
+    if (!file) {
+      alert("Choose a Plato's Inventory workbook first.");
+      return;
+    }
+
+    setUploadingPlatosInventoryWorkbook(true);
+    setOperationalSourcesError(null);
+    try {
+      const blob = await upload(file.name, file, {
+        access: 'public',
+        handleUploadUrl: '/api/company-documents/upload',
+        clientPayload: JSON.stringify({
+          companyId: selectedCompanyId,
+          category: 'OTHER',
+          originalFileName: file.name,
+          sizeBytes: file.size,
+        }),
+      });
+
+      const docResponse = await fetch('/api/company-documents', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          companyId: selectedCompanyId,
+          category: 'OTHER',
+          originalFileName: file.name,
+          blob,
+        }),
+      });
+      const docData = await docResponse.json();
+      if (!docResponse.ok || !docData?.document?.id) {
+        throw new Error(docData?.error || 'Failed to register workbook document');
+      }
+
+      const workbookResponse = await fetch('/api/operational-system-integrations/platos-inventory/workbook', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          companyId: selectedCompanyId,
+          documentId: docData.document.id,
+          originalFileName: file.name,
+          blob,
+        }),
+      });
+      const workbookData = await workbookResponse.json();
+      if (!workbookResponse.ok || !workbookData?.ok) {
+        throw new Error(workbookData?.error || "Plato's Inventory workbook validation failed");
+      }
+
+      if (input) input.value = '';
+      await loadCompanyOperationalSources(selectedCompanyId);
+      window.dispatchEvent(new CustomEvent('operational-data-updated', {
+        detail: { companyId: selectedCompanyId, types: ['products', 'inventory'], sourceCode: 'PLATOS_INVENTORY' },
+      }));
+      const beltsSample = workbookData?.accessoriesBeltsSample?.salesUnits;
+      const beltsDetail = Array.isArray(beltsSample) && beltsSample.length
+        ? ` Accessories Belts sales units parsed: ${beltsSample.map((row: any) => `${row.monthKey}: ${row.salesUnits ?? 'N/A'}`).join(', ')}.`
+        : '';
+      alert(`Plato's Inventory workbook uploaded successfully (${workbookData.monthCount || 0} months, ${workbookData.subcategoryCount || 0} subcategories).${beltsDetail}`);
+    } catch (error: any) {
+      console.error("Failed to upload Plato's Inventory workbook:", error);
+      const message = error?.message || 'Upload failed';
+      setOperationalSourcesError(message);
+      alert(`Failed to upload Plato's Inventory workbook: ${message}`);
+    } finally {
+      setUploadingPlatosInventoryWorkbook(false);
     }
   };
 
@@ -13514,6 +13596,7 @@ function FinancialScorePage() {
               {selectedAccountingSystem === 'QUICKBOOKS' && (() => {
                 const bambooSource = companyOperationalSources.find((source) => source.sourceCode === 'BAMBOOHR_STANDARD') || null;
                 const platosSource = companyOperationalSources.find((source) => source.sourceCode === 'PLATOS_CLOSET_STORE_VISIT') || null;
+                const platosInventorySource = companyOperationalSources.find((source) => source.sourceCode === 'PLATOS_INVENTORY') || null;
                 const operationalSourceCount = companyOperationalSources.length;
                 return (
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '16px', alignItems: 'start' }}>
@@ -13789,6 +13872,108 @@ function FinancialScorePage() {
 
                     {platosSource.errorMessage ? (
                       <div style={{ fontSize: '12px', color: '#991b1b', marginTop: '8px' }}>{platosSource.errorMessage}</div>
+                    ) : null}
+                  </div>
+                )}
+
+                {platosInventorySource && (
+                  <div style={{ marginTop: '12px', padding: '14px', background: 'white', border: '1px solid #e2e8f0', borderRadius: '10px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px', marginBottom: '8px' }}>
+                      <div>
+                        <div style={{ fontSize: '14px', fontWeight: '700', color: '#1e293b' }}>{platosInventorySource.label}</div>
+                        <div style={{ fontSize: '12px', color: '#64748b' }}>Rolling 12-month inventory workbook upload</div>
+                      </div>
+                      <div style={{
+                        padding: '4px 8px',
+                        borderRadius: '999px',
+                        fontSize: '11px',
+                        fontWeight: '700',
+                        background: platosInventorySource.workbookUpload ? '#dcfce7' : '#fef3c7',
+                        color: platosInventorySource.workbookUpload ? '#166534' : '#92400e'
+                      }}>
+                        {platosInventorySource.workbookUpload ? 'Inventory uploaded' : 'Awaiting inventory workbook'}
+                      </div>
+                    </div>
+
+                    <div style={{ marginBottom: '10px', padding: '10px', background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: '8px', fontSize: '12px', color: '#1d4ed8' }}>
+                      Expected file: <strong>docs/Platos Inventory.xlsx</strong>. The workbook should contain the latest rolling 12 months with Sub-Category blocks, BOM Units, Sales, Buys, EOM Units, and Sell-Through rows.
+                    </div>
+
+                    <input
+                      ref={platosInventoryWorkbookFileInputRef}
+                      type="file"
+                      accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                      disabled={uploadingPlatosInventoryWorkbook}
+                      style={{ marginBottom: '10px', width: '100%' }}
+                    />
+
+                    <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap', marginBottom: '12px' }}>
+                      <button
+                        onClick={uploadPlatosInventoryWorkbook}
+                        disabled={uploadingPlatosInventoryWorkbook}
+                        style={{
+                          padding: '10px 14px',
+                          borderRadius: '10px',
+                          border: 'none',
+                          background: uploadingPlatosInventoryWorkbook ? '#94a3b8' : '#2563eb',
+                          color: 'white',
+                          fontWeight: 800,
+                          cursor: uploadingPlatosInventoryWorkbook ? 'not-allowed' : 'pointer',
+                        }}
+                      >
+                        {uploadingPlatosInventoryWorkbook ? 'Uploading…' : "Upload Plato's Inventory"}
+                      </button>
+                      <button
+                        onClick={() => selectedCompanyId && loadCompanyOperationalSources(selectedCompanyId)}
+                        disabled={loadingOperationalSources || uploadingPlatosInventoryWorkbook}
+                        style={{
+                          padding: '10px 14px',
+                          borderRadius: '10px',
+                          border: '1px solid #e2e8f0',
+                          background: 'white',
+                          color: '#0f172a',
+                          fontWeight: 800,
+                          cursor: loadingOperationalSources || uploadingPlatosInventoryWorkbook ? 'not-allowed' : 'pointer',
+                        }}
+                      >
+                        Refresh
+                      </button>
+                    </div>
+
+                    {platosInventorySource.workbookUpload ? (
+                      <div style={{ fontSize: '12px', color: '#475569', lineHeight: 1.6 }}>
+                        <div><strong>File:</strong> {platosInventorySource.workbookUpload.originalFileName || "Plato's Inventory workbook"}</div>
+                        <div><strong>Uploaded:</strong> {platosInventorySource.workbookUpload.uploadedAt ? new Date(platosInventorySource.workbookUpload.uploadedAt).toLocaleString() : 'Unknown'}</div>
+                        <div><strong>Sheets found:</strong> {Array.isArray(platosInventorySource.workbookUpload.sheetNames) ? platosInventorySource.workbookUpload.sheetNames.join(', ') : 'Unknown'}</div>
+                        {platosInventorySource.workbookUpload.blobUrl ? (
+                          <div>
+                            <a href={platosInventorySource.workbookUpload.blobUrl} target="_blank" rel="noreferrer" style={{ color: '#2563eb', fontWeight: 600 }}>
+                              Open uploaded inventory workbook
+                            </a>
+                          </div>
+                        ) : null}
+                      </div>
+                    ) : (
+                      <div style={{ fontSize: '12px', color: '#64748b' }}>
+                        No Plato&apos;s Inventory workbook uploaded yet.
+                      </div>
+                    )}
+
+                    {platosInventorySource.parsedWorkbook && (
+                      <div style={{ marginTop: '12px', padding: '10px', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px', fontSize: '12px', color: '#334155' }}>
+                        <div style={{ fontWeight: '700', color: '#1e293b', marginBottom: '6px' }}>Parsed inventory summary</div>
+                        <div><strong>Parsed:</strong> {platosInventorySource.parsedWorkbook.parsedAt ? new Date(platosInventorySource.parsedWorkbook.parsedAt).toLocaleString() : 'Unknown'}</div>
+                        <div><strong>Months parsed:</strong> {platosInventorySource.parsedWorkbook.monthCount ?? 0}</div>
+                        <div><strong>Subcategories parsed:</strong> {platosInventorySource.parsedWorkbook.subcategoryCount ?? 0}</div>
+                        <div><strong>Rows parsed:</strong> {platosInventorySource.parsedWorkbook.rowCount ?? 0}</div>
+                        {Array.isArray(platosInventorySource.parsedWorkbook.monthKeys) && platosInventorySource.parsedWorkbook.monthKeys.length > 0 ? (
+                          <div><strong>Coverage:</strong> {platosInventorySource.parsedWorkbook.monthKeys[0]} - {platosInventorySource.parsedWorkbook.monthKeys[platosInventorySource.parsedWorkbook.monthKeys.length - 1]}</div>
+                        ) : null}
+                      </div>
+                    )}
+
+                    {platosInventorySource.errorMessage ? (
+                      <div style={{ fontSize: '12px', color: '#991b1b', marginTop: '8px' }}>{platosInventorySource.errorMessage}</div>
                     ) : null}
                   </div>
                 )}

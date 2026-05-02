@@ -12,6 +12,7 @@ import AccountingSystemPanel from '@/app/components/accounting-systems/Accountin
 import { isPluginAccountingSystem } from '@/lib/accounting-systems/registry';
 
 const OPERATIONAL_HUB_SECTION_OPTIONS: Array<{ key: string; label: string; group: string }> = [
+  { key: 'productsRetailForecasting', label: "Retail Forecasting / Plato's Inventory", group: 'Products' },
   { key: 'productsPriceCostComparison', label: 'Weekly Price-Cost Comparison', group: 'Products' },
   { key: 'productsPareto', label: 'Top Products Pareto', group: 'Products' },
   { key: 'productsScatter', label: 'Profitability Scatter', group: 'Products' },

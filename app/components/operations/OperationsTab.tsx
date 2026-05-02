@@ -1,7 +1,6 @@
 'use client';
 
 import React, { useState, useEffect, useRef } from 'react';
-import { upload } from '@vercel/blob/client';
 import { TrendingUp, Users, Package, DollarSign, Warehouse, AlertCircle, ArrowUp, ArrowDown } from 'lucide-react';
 import {
   LineChart,
@@ -63,7 +62,7 @@ type RetailSubcategoryForecast = {
   key: string;
   label: string;
   department: string;
-  metricLabel: 'Units' | 'Sales $';
+  metricLabel: 'Units';
   history: RetailForecastPoint[];
   forecast: RetailForecastPoint[];
   chartData: RetailForecastPoint[];
@@ -126,6 +125,19 @@ const firstPositiveNumber = (row: any, keys: string[]): number | null => {
   }
   return null;
 };
+const firstFiniteNumber = (row: any, keys: string[]): number | null => {
+  for (const key of keys) {
+    const value = toFiniteNumber(row?.[key]);
+    if (value != null) return value;
+  }
+  return null;
+};
+const retailForecastSourcePriority = (row: any): number => {
+  const sourceCode = String(row?.sourceCode || row?.source || '').toUpperCase();
+  if (sourceCode === 'PLATOS_INVENTORY') return 2;
+  if (sourceCode === 'RETAIL_SUBCATEGORY_HISTORY') return 1;
+  return 0;
+};
 const buildRetailSubcategoryForecasts = (records: any[]): RetailSubcategoryForecast[] => {
   const buckets = new Map<
     string,
@@ -133,8 +145,7 @@ const buildRetailSubcategoryForecasts = (records: any[]): RetailSubcategoryForec
       key: string;
       label: string;
       department: string;
-      hasUnitSignal: boolean;
-      months: Map<string, { monthKey: string; demand: number; revenue: number; inventoryOnHand: number | null }>;
+      months: Map<string, { monthKey: string; demand: number; revenue: number; inventoryOnHand: number | null; sourcePriority: number }>;
     }
   >();
 
@@ -145,30 +156,36 @@ const buildRetailSubcategoryForecasts = (records: any[]): RetailSubcategoryForec
     const department = String(row?.department || row?.site || '').trim();
     const key = String(row?.sku || row?.itemId || row?.category || label).trim() || label;
     const revenue = toFiniteNumber(row?.revenue) ?? toFiniteNumber(row?.currentSales) ?? toFiniteNumber(row?.netSales) ?? 0;
-    const unitSignal = firstPositiveNumber(row, [
+    const unitSignal = firstFiniteNumber(row, [
       'salesUnits',
       'unitsSold',
       'quantitySold',
       'salesQuantity',
       'soldUnits',
-      'sales',
     ]);
-    const demand = unitSignal ?? revenue;
+    if (unitSignal == null) continue;
     const inventoryOnHand =
       firstPositiveNumber(row, ['currentOnHandUnits', 'onHandUnits', 'eomUnits', 'endingUnits', 'inventoryUnits']) ??
       toFiniteNumber(row?.inventoryOnHandDollars);
+    const sourcePriority = retailForecastSourcePriority(row);
     const bucket = buckets.get(key) || {
       key,
       label,
       department,
-      hasUnitSignal: false,
-      months: new Map<string, { monthKey: string; demand: number; revenue: number; inventoryOnHand: number | null }>(),
+      months: new Map<string, { monthKey: string; demand: number; revenue: number; inventoryOnHand: number | null; sourcePriority: number }>(),
     };
-    bucket.hasUnitSignal = bucket.hasUnitSignal || unitSignal != null;
-    const month = bucket.months.get(monthKey) || { monthKey, demand: 0, revenue: 0, inventoryOnHand: null as number | null };
-    month.demand += demand;
-    month.revenue += revenue;
-    if (inventoryOnHand != null && inventoryOnHand > 0) month.inventoryOnHand = (month.inventoryOnHand || 0) + inventoryOnHand;
+    const existingMonth = bucket.months.get(monthKey);
+    const currentHasUnits = unitSignal > 0;
+    const existingHasUnits = Number(existingMonth?.demand || 0) > 0;
+    const shouldReplaceMonth =
+      !existingMonth ||
+      (currentHasUnits && !existingHasUnits) ||
+      (currentHasUnits === existingHasUnits && sourcePriority > existingMonth.sourcePriority) ||
+      (currentHasUnits === existingHasUnits && sourcePriority === existingMonth.sourcePriority && unitSignal > existingMonth.demand);
+    const month = shouldReplaceMonth
+      ? { monthKey, demand: unitSignal, revenue, inventoryOnHand: null as number | null, sourcePriority }
+      : existingMonth;
+    if (shouldReplaceMonth && inventoryOnHand != null && inventoryOnHand > 0) month.inventoryOnHand = inventoryOnHand;
     bucket.months.set(monthKey, month);
     buckets.set(key, bucket);
   }
@@ -177,7 +194,7 @@ const buildRetailSubcategoryForecasts = (records: any[]): RetailSubcategoryForec
     .map((bucket) => {
       const monthRows = Array.from(bucket.months.values())
         .sort((a, b) => a.monthKey.localeCompare(b.monthKey))
-        .slice(-24);
+        .slice(-36);
       if (!monthRows.length) return null;
       const historyValues = monthRows.map((row) => Number(row.demand || 0));
       const recentValues = historyValues.slice(-3);
@@ -187,7 +204,7 @@ const buildRetailSubcategoryForecasts = (records: any[]): RetailSubcategoryForec
       const priorRecentAvg = averageNumber(priorRecentValues);
       const trailing12 = averageNumber(trailing12Values);
       const coefficientOfVariation = trailing12 > 0 ? stdDevNumber(trailing12Values) / trailing12 : 0.5;
-      const volatility = clampNumber(coefficientOfVariation, 0.15, 0.65);
+      const volatility = clampNumber(coefficientOfVariation, 0.1, 0.35);
       const trendPct = priorRecentAvg > 0 ? clampNumber((recentAvg - priorRecentAvg) / priorRecentAvg, -0.8, 0.8) : 0;
       const trendFactor = clampNumber(1 + trendPct * 0.25, 0.8, 1.25);
       const latestMonthKey = monthRows[monthRows.length - 1].monthKey;
@@ -251,7 +268,7 @@ const buildRetailSubcategoryForecasts = (records: any[]): RetailSubcategoryForec
         key: bucket.key,
         label: bucket.label,
         department: bucket.department,
-        metricLabel: bucket.hasUnitSignal ? 'Units' : 'Sales $',
+        metricLabel: 'Units',
         history,
         forecast,
         chartData: [...history, ...forecast],
@@ -657,7 +674,6 @@ export default function OperationsTab({
   const [customerMetricModalNames, setCustomerMetricModalNames] = useState<string[]>([]);
   const operationalDataCacheRef = useRef<Map<string, { fetchedAt: number; data: any }>>(new Map());
   const operationalDataInflightRef = useRef<Map<string, Promise<any>>>(new Map());
-  const retailSubcategoryHistoryFileInputRef = useRef<HTMLInputElement | null>(null);
   const [inventoryAgingSearchTerm, setInventoryAgingSearchTerm] = useState('');
   const [inventoryAgingTableExpanded, setInventoryAgingTableExpanded] = useState(true);
   const [inventoryAgingSortKey, setInventoryAgingSortKey] = useState<
@@ -678,8 +694,6 @@ export default function OperationsTab({
   const [selectedScopeSku, setSelectedScopeSku] = useState('');
   const [productReportView, setProductReportView] = useState<'performance' | 'retailForecast'>('performance');
   const [selectedRetailForecastSubcategory, setSelectedRetailForecastSubcategory] = useState('');
-  const [retailSubcategoryHistoryUploading, setRetailSubcategoryHistoryUploading] = useState(false);
-  const [retailSubcategoryHistoryUploadStatus, setRetailSubcategoryHistoryUploadStatus] = useState<string | null>(null);
   const [showCccInfoModal, setShowCccInfoModal] = useState(false);
   const operationalHubSections =
     companyOperationalHubConfig &&
@@ -1316,70 +1330,25 @@ export default function OperationsTab({
     return request;
   };
 
-  const uploadRetailSubcategoryHistory = async () => {
-    const input = retailSubcategoryHistoryFileInputRef.current;
-    const file = input?.files?.[0];
-    if (!file) {
-      setRetailSubcategoryHistoryUploadStatus('Choose an .xlsx file first.');
-      return;
-    }
-    setRetailSubcategoryHistoryUploading(true);
-    setRetailSubcategoryHistoryUploadStatus(null);
-    try {
-      const blob = await upload(file.name, file, {
-        access: 'public',
-        handleUploadUrl: '/api/company-documents/upload',
-        clientPayload: JSON.stringify({
-          companyId: selectedCompanyId,
-          category: 'OTHER',
-          originalFileName: file.name,
-          sizeBytes: file.size,
-        }),
-      });
+  useEffect(() => {
+    const handleOperationalDataUpdated = (event: Event) => {
+      const detail = (event as CustomEvent<{ companyId?: string; types?: string[] }>).detail || {};
+      if (detail.companyId && detail.companyId !== selectedCompanyId) return;
+      if (Array.isArray(detail.types) && !detail.types.includes('products')) return;
+      const productCacheKeys = Array.from(operationalDataCacheRef.current.keys()).filter((key) => key.split('|')[1] === 'products');
+      productCacheKeys.forEach((key) => operationalDataCacheRef.current.delete(key));
+      void fetchOperationalTypeWithCache('products', { forceRefresh: true })
+        .then((fresh) => {
+          if (fresh) setProductData(fresh);
+        })
+        .catch((error) => {
+          console.warn('Failed to refresh Products data after operational upload:', error);
+        });
+    };
 
-      const registerRes = await fetch('/api/company-documents', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          companyId: selectedCompanyId,
-          category: 'OTHER',
-          originalFileName: file.name,
-          blob,
-        }),
-      });
-      const registerData = await registerRes.json().catch(() => ({}));
-      if (!registerRes.ok) throw new Error(registerData?.error || 'Failed to register uploaded spreadsheet');
-      const documentId = String(registerData?.document?.id || '');
-      if (!documentId) throw new Error('Missing document ID after upload');
-
-      const importRes = await fetch('/api/operational-system-integrations/retail-subcategory-history/workbook', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          companyId: selectedCompanyId,
-          documentId,
-          originalFileName: file.name,
-          blob,
-        }),
-      });
-      const importData = await importRes.json().catch(() => ({}));
-      if (!importRes.ok || importData?.ok === false) {
-        throw new Error(importData?.error || 'Failed to import retail subcategory history');
-      }
-
-      if (input) input.value = '';
-      const refreshed = await fetchOperationalTypeWithCache('products', { forceRefresh: true });
-      setProductData(refreshed);
-      setProductReportView('retailForecast');
-      setRetailSubcategoryHistoryUploadStatus(
-        `Imported ${Number(importData.subcategoryCount || 0).toLocaleString()} subcategories across ${Number(importData.monthCount || 0).toLocaleString()} months.`,
-      );
-    } catch (error: any) {
-      setRetailSubcategoryHistoryUploadStatus(error?.message || 'Upload failed');
-    } finally {
-      setRetailSubcategoryHistoryUploading(false);
-    }
-  };
+    window.addEventListener('operational-data-updated', handleOperationalDataUpdated);
+    return () => window.removeEventListener('operational-data-updated', handleOperationalDataUpdated);
+  }, [selectedCompanyId, industrySectorCategory, frequency, startDate, endDate]);
 
   const prefetchTabData = (tab: string) => {
     const type = mapModuleToDataType(tab) || null;
@@ -6539,22 +6508,26 @@ export default function OperationsTab({
     ];
     const allProductMetricCards = [...productCategoryMetricCards, ...productMetricCards];
     const retailForecasts = buildRetailSubcategoryForecasts(rawProductRecords);
+    const retailForecastOptions = [...retailForecasts].sort((a, b) =>
+      a.label.localeCompare(b.label, undefined, { sensitivity: 'base', numeric: true }),
+    );
     const isRetailProductSector = industrySectorCategory === '45';
-    const hasRetailForecastView = isRetailProductSector && retailForecasts.length > 0;
+    const isRetailForecastingEnabled = isSectionEnabled('productsRetailForecasting');
+    const hasRetailForecastView = isRetailProductSector && isRetailForecastingEnabled && retailForecasts.length > 0;
     const effectiveRetailForecastKey =
-      selectedRetailForecastSubcategory && retailForecasts.some((row) => row.key === selectedRetailForecastSubcategory)
+      selectedRetailForecastSubcategory && retailForecastOptions.some((row) => row.key === selectedRetailForecastSubcategory)
         ? selectedRetailForecastSubcategory
-        : (retailForecasts[0]?.key || '');
+        : (retailForecastOptions[0]?.key || '');
     const selectedRetailForecast =
       retailForecasts.find((row) => row.key === effectiveRetailForecastKey) || retailForecasts[0] || null;
     const selectedRetailForecastIndex = selectedRetailForecast
-      ? retailForecasts.findIndex((row) => row.key === selectedRetailForecast.key)
+      ? retailForecastOptions.findIndex((row) => row.key === selectedRetailForecast.key)
       : -1;
-    const formatRetailForecastValue = (value: number | null | undefined, metricLabel?: 'Units' | 'Sales $') => {
+    const formatRetailForecastValue = (value: number | null | undefined, _metricLabel?: RetailSubcategoryForecast['metricLabel']) => {
       if (value == null || !Number.isFinite(Number(value))) return 'N/A';
-      return metricLabel === 'Sales $' ? formatCurrency(Math.round(Number(value || 0))) : formatWholeNumber(Number(value || 0));
+      return formatWholeNumber(Number(value || 0));
     };
-    const productViewSwitcher = isRetailProductSector ? (
+    const productViewSwitcher = isRetailProductSector && isRetailForecastingEnabled ? (
       <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '16px' }}>
         <button
           type="button"
@@ -6591,66 +6564,11 @@ export default function OperationsTab({
       </div>
     ) : null;
     const renderRetailForecastingReport = () => {
-      const uploadPanel = (
-        <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '18px', marginBottom: '16px' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
-            <div>
-              <h3 style={{ margin: 0, fontSize: '16px', color: '#0f172a' }}>Import Subcategory History</h3>
-              <div style={{ marginTop: '4px', fontSize: '12px', color: '#64748b' }}>
-                Upload the separate monthly subcategory spreadsheet to populate unit-based low / base / high forecasts.
-              </div>
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-              <input
-                ref={retailSubcategoryHistoryFileInputRef}
-                type="file"
-                accept=".xlsx,.xls"
-                disabled={retailSubcategoryHistoryUploading}
-                style={{ fontSize: '12px' }}
-              />
-              <button
-                type="button"
-                onClick={uploadRetailSubcategoryHistory}
-                disabled={retailSubcategoryHistoryUploading}
-                style={{
-                  border: 'none',
-                  borderRadius: '8px',
-                  padding: '8px 12px',
-                  background: retailSubcategoryHistoryUploading ? '#94a3b8' : '#2563eb',
-                  color: '#fff',
-                  fontWeight: 700,
-                  cursor: retailSubcategoryHistoryUploading ? 'not-allowed' : 'pointer',
-                  fontSize: '12px',
-                }}
-              >
-                {retailSubcategoryHistoryUploading ? 'Importing...' : 'Import Forecast Sheet'}
-              </button>
-            </div>
-          </div>
-          {retailSubcategoryHistoryUploadStatus && (
-            <div
-              style={{
-                marginTop: '10px',
-                padding: '8px 10px',
-                borderRadius: '8px',
-                background: /failed|error|choose|missing/i.test(retailSubcategoryHistoryUploadStatus) ? '#fef2f2' : '#ecfdf5',
-                color: /failed|error|choose|missing/i.test(retailSubcategoryHistoryUploadStatus) ? '#991b1b' : '#166534',
-                fontSize: '12px',
-              }}
-            >
-              {retailSubcategoryHistoryUploadStatus}
-            </div>
-          )}
-        </div>
-      );
       if (!selectedRetailForecast) {
         return (
-          <>
-            {uploadPanel}
-            <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '24px', color: '#64748b' }}>
-              No subcategory monthly history is available yet. Import the separate spreadsheet to create the forecast.
-            </div>
-          </>
+          <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '24px', color: '#64748b' }}>
+            No subcategory monthly history is available yet. Upload spreadsheets from Accounting / Operational Data Connections.
+          </div>
         );
       }
       const riskColor =
@@ -6662,20 +6580,19 @@ export default function OperationsTab({
               ? '#7c3aed'
               : '#166534';
       const nextRetailForecast = (direction: -1 | 1) => {
-        if (!retailForecasts.length || selectedRetailForecastIndex < 0) return;
-        const nextIndex = (selectedRetailForecastIndex + direction + retailForecasts.length) % retailForecasts.length;
-        setSelectedRetailForecastSubcategory(retailForecasts[nextIndex].key);
+        if (!retailForecastOptions.length || selectedRetailForecastIndex < 0) return;
+        const nextIndex = (selectedRetailForecastIndex + direction + retailForecastOptions.length) % retailForecastOptions.length;
+        setSelectedRetailForecastSubcategory(retailForecastOptions[nextIndex].key);
       };
 
       return (
         <>
-          {uploadPanel}
           <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '18px', marginBottom: '16px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
               <div>
-                <h3 style={{ margin: 0, fontSize: '18px', color: '#0f172a' }}>Retail Subcategory Forecast</h3>
+                <h3 style={{ margin: 0, fontSize: '18px', color: '#0f172a' }}>Retail Unit Sales Forecast</h3>
                 <div style={{ marginTop: '4px', fontSize: '12px', color: '#64748b' }}>
-                  Low / base / high monthly forecast from the latest subcategory history in this Products window.
+                  Historical unit sales with low / base / high future unit sales forecast and stock level analysis.
                 </div>
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
@@ -6691,7 +6608,7 @@ export default function OperationsTab({
                   onChange={(event) => setSelectedRetailForecastSubcategory(event.target.value)}
                   style={{ border: '1px solid #cbd5e1', borderRadius: '8px', padding: '8px 10px', fontSize: '12px', minWidth: '280px' }}
                 >
-                  {retailForecasts.map((row) => (
+                  {retailForecastOptions.map((row) => (
                     <option key={row.key} value={row.key}>
                       {row.label}
                     </option>
@@ -6710,8 +6627,8 @@ export default function OperationsTab({
 
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, minmax(0, 1fr))', gap: '12px', marginBottom: '16px' }}>
             {[
-              { title: 'Next 3 Mo Base', value: formatRetailForecastValue(selectedRetailForecast.next3Base, selectedRetailForecast.metricLabel), detail: `${formatRetailForecastValue(selectedRetailForecast.next3Low, selectedRetailForecast.metricLabel)} low / ${formatRetailForecastValue(selectedRetailForecast.next3High, selectedRetailForecast.metricLabel)} high` },
-              { title: 'Recent Avg / Mo', value: formatRetailForecastValue(selectedRetailForecast.recentAvg, selectedRetailForecast.metricLabel), detail: `Trailing 12: ${formatRetailForecastValue(selectedRetailForecast.trailing12, selectedRetailForecast.metricLabel)}` },
+              { title: 'Next 3 Mo Unit Sales', value: formatRetailForecastValue(selectedRetailForecast.next3Base, selectedRetailForecast.metricLabel), detail: `${formatRetailForecastValue(selectedRetailForecast.next3Low, selectedRetailForecast.metricLabel)} low / ${formatRetailForecastValue(selectedRetailForecast.next3High, selectedRetailForecast.metricLabel)} high` },
+              { title: 'Recent Unit Sales / Mo', value: formatRetailForecastValue(selectedRetailForecast.recentAvg, selectedRetailForecast.metricLabel), detail: `Trailing 12: ${formatRetailForecastValue(selectedRetailForecast.trailing12, selectedRetailForecast.metricLabel)}` },
               { title: 'Current On-Hand', value: formatRetailForecastValue(selectedRetailForecast.currentOnHand, selectedRetailForecast.metricLabel), detail: selectedRetailForecast.monthsSupply == null ? 'Months supply unavailable' : `${selectedRetailForecast.monthsSupply.toFixed(1)} months supply` },
               { title: 'Confidence', value: selectedRetailForecast.confidence, detail: `${selectedRetailForecast.history.length} months of history used` },
               { title: 'Risk', value: selectedRetailForecast.risk, detail: selectedRetailForecast.department || 'Subcategory-level forecast' },
@@ -6738,11 +6655,7 @@ export default function OperationsTab({
                   <YAxis
                     stroke="#64748b"
                     style={{ fontSize: '11px' }}
-                    tickFormatter={(value) =>
-                      selectedRetailForecast.metricLabel === 'Sales $'
-                        ? `$${(Number(value || 0) / 1000).toFixed(0)}k`
-                        : formatWholeNumber(Number(value || 0))
-                    }
+                    tickFormatter={(value) => formatWholeNumber(Number(value || 0))}
                   />
                   <Tooltip
                     formatter={(value: any, name: any) => [
@@ -7032,7 +6945,7 @@ export default function OperationsTab({
       </button>
     );
 
-    if (productReportView === 'retailForecast' && isRetailProductSector) {
+    if (productReportView === 'retailForecast' && isRetailProductSector && isRetailForecastingEnabled) {
       return (
         <div style={{ padding: '8px 32px 32px' }}>
           <h2 style={{ fontSize: '24px', fontWeight: '700', color: '#1e293b', marginBottom: '16px' }}>

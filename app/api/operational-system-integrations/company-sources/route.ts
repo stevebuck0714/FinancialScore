@@ -8,6 +8,7 @@ export const dynamic = 'force-dynamic';
 const SOURCE_LABELS: Record<string, string> = {
   BAMBOOHR_STANDARD: 'BambooHR',
   PLATOS_CLOSET_STORE_VISIT: "Spreadsheet - Plato's Closet",
+  PLATOS_INVENTORY: "Spreadsheet - Plato's Inventory",
 };
 
 export async function GET(request: NextRequest) {
@@ -51,10 +52,14 @@ export async function GET(request: NextRequest) {
           workbookUpload:
             source.sourceCode === 'PLATOS_CLOSET_STORE_VISIT'
               ? metadata.platosClosetWorkbookUpload || null
+              : source.sourceCode === 'PLATOS_INVENTORY'
+                ? metadata.platosInventoryWorkbookUpload || null
               : null,
           parsedWorkbook:
             source.sourceCode === 'PLATOS_CLOSET_STORE_VISIT'
               ? metadata.platosClosetParsedWorkbook || null
+              : source.sourceCode === 'PLATOS_INVENTORY'
+                ? metadata.platosInventoryParsedWorkbook || null
               : null,
         };
       }),

@@ -3,8 +3,12 @@ import * as XLSX from 'xlsx';
 import prisma from '@/lib/prisma';
 
 export const RETAIL_SUBCATEGORY_HISTORY_SOURCE_CODE = 'RETAIL_SUBCATEGORY_HISTORY';
+export const PLATOS_INVENTORY_SOURCE_CODE = 'PLATOS_INVENTORY';
+const RETAIL_SUBCATEGORY_PRODUCT_SOURCE_CODES = [
+  PLATOS_INVENTORY_SOURCE_CODE,
+];
 
-type ParsedRetailSubcategory = {
+export type ParsedRetailSubcategory = {
   code: string | null;
   name: string;
   rows: ParsedRetailSubcategoryMonth[];
@@ -18,7 +22,7 @@ type ParsedRetailSubcategory = {
   turnRate: number | null;
 };
 
-type ParsedRetailSubcategoryMonth = {
+export type ParsedRetailSubcategoryMonth = {
   monthKey: string;
   monthLabel: string;
   bomUnits: number | null;
@@ -129,11 +133,50 @@ function extractTrailingValue(row: unknown[], labels: string[]): number | null {
   return null;
 }
 
-export function parseRetailSubcategoryHistoryWorkbook(workbook: XLSX.WorkBook): ParsedRetailSubcategoryHistory {
-  const sheetName = workbook.SheetNames[0];
-  if (!sheetName) throw new Error('Workbook has no worksheets.');
-  const worksheet = workbook.Sheets[sheetName];
-  const rows = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: '', raw: true }) as unknown[][];
+function findMetricCell(row: unknown[]): { label: string; index: number } | null {
+  for (let index = 0; index < row.length; index += 1) {
+    const label = metricName(row[index]);
+    if (['bom units', 'sales', 'buys', 'eom units', 'sell through'].includes(label)) {
+      return { label, index };
+    }
+  }
+  return null;
+}
+
+type MetricRow = {
+  row: unknown[];
+  valueStartIndex: number;
+};
+
+function metricValue(metric: MetricRow | null, offset: number): number | null {
+  return metric ? asNumber(metric.row[metric.valueStartIndex + offset]) : null;
+}
+
+function metricPercentValue(metric: MetricRow | null, offset: number): number | null {
+  return metric ? normalizePercent(metric.row[metric.valueStartIndex + offset]) : null;
+}
+
+function parseSubcategoryRow(row: unknown[]): { code: string | null; name: string } | null {
+  const firstSubcategoryCellIndex = row.findIndex((cell) => /sub-?category\s*:/i.test(asString(cell)));
+  if (firstSubcategoryCellIndex < 0) return null;
+
+  const text = row
+    .slice(firstSubcategoryCellIndex)
+    .map(asString)
+    .filter(Boolean)
+    .join(' ');
+  const match = text.match(/Sub-?Category\s*:\s*(?:\[(.*?)\])?\s*([^:]+?)(?=\s+(?:BOM Units|Sales\*?|Buys|EOM Units|Sell-Through|Units|Avg\.?\s+Stock|Retail|Cost|IMU%|Turn Rate)\b|$)/i);
+  if (!match) return null;
+
+  const name = asString(match[2]).replace(/\s+/g, ' ');
+  if (!name) return null;
+  return {
+    code: match[1] ? asString(match[1]) : null,
+    name,
+  };
+}
+
+function parseRetailSubcategorySheetRows(sheetName: string, rows: unknown[][]): ParsedRetailSubcategoryHistory {
   const monthColumns = findMonthColumns(rows);
   if (monthColumns.length < 3) {
     throw new Error('Unable to find monthly columns like "Apr 2025", "May 2025" in the subcategory spreadsheet.');
@@ -144,21 +187,20 @@ export function parseRetailSubcategoryHistoryWorkbook(workbook: XLSX.WorkBook): 
   const metricsBySubcategory = new Map<
     ParsedRetailSubcategory,
     {
-      bom: unknown[] | null;
-      sales: unknown[] | null;
-      buys: unknown[] | null;
-      eom: unknown[] | null;
-      sellThrough: unknown[] | null;
+      bom: MetricRow | null;
+      sales: MetricRow | null;
+      buys: MetricRow | null;
+      eom: MetricRow | null;
+      sellThrough: MetricRow | null;
     }
   >();
 
   for (const row of rows) {
-    const joined = row.map(asString).filter(Boolean).join(' ');
-    const subcategoryMatch = joined.match(/Sub-Category:\s*(?:\[(.*?)\])?\s*(.+)$/i);
+    const subcategoryMatch = parseSubcategoryRow(row);
     if (subcategoryMatch) {
       current = {
-        code: subcategoryMatch[1] ? asString(subcategoryMatch[1]) : null,
-        name: asString(subcategoryMatch[2]),
+        code: subcategoryMatch.code,
+        name: subcategoryMatch.name,
         rows: [],
         currentOnHandUnits: null,
         avgStockUnits: null,
@@ -174,27 +216,28 @@ export function parseRetailSubcategoryHistoryWorkbook(workbook: XLSX.WorkBook): 
       continue;
     }
     if (!current) continue;
-    const label = row.map(metricName).find((cell) => ['bom units', 'sales', 'buys', 'eom units', 'sell through'].includes(cell));
-    if (!label) continue;
+    const metric = findMetricCell(row);
+    if (!metric) continue;
+    const metricRow = { row, valueStartIndex: metric.index + 1 };
     const bucket = metricsBySubcategory.get(current);
     if (!bucket) continue;
-    if (label === 'bom units') {
-      bucket.bom = row;
+    if (metric.label === 'bom units' && !bucket.bom) {
+      bucket.bom = metricRow;
       current.currentOnHandUnits = extractTrailingValue(row, ['Units']);
       current.avgStockUnits = extractTrailingValue(row, ['Avg. Stock', 'Avg Stock']);
-    } else if (label === 'sales') {
-      bucket.sales = row;
+    } else if (metric.label === 'sales' && !bucket.sales) {
+      bucket.sales = metricRow;
       current.retailDollars = extractTrailingValue(row, ['Retail']);
       current.avgRetail = extractTrailingValue(row, ['Avg. Retail', 'Avg Retail']);
-    } else if (label === 'buys') {
-      bucket.buys = row;
+    } else if (metric.label === 'buys' && !bucket.buys) {
+      bucket.buys = metricRow;
       current.costDollars = extractTrailingValue(row, ['Cost']);
       current.avgCost = extractTrailingValue(row, ['Avg. Cost', 'Avg Cost']);
-    } else if (label === 'eom units') {
-      bucket.eom = row;
+    } else if (metric.label === 'eom units' && !bucket.eom) {
+      bucket.eom = metricRow;
       current.imuPct = normalizePercent(extractTrailingValue(row, ['IMU%', 'IMU']));
-    } else if (label === 'sell through') {
-      bucket.sellThrough = row;
+    } else if (metric.label === 'sell through' && !bucket.sellThrough) {
+      bucket.sellThrough = metricRow;
       current.turnRate = extractTrailingValue(row, ['Turn Rate']);
     }
   }
@@ -202,14 +245,14 @@ export function parseRetailSubcategoryHistoryWorkbook(workbook: XLSX.WorkBook): 
   for (const subcategory of subcategories) {
     const metrics = metricsBySubcategory.get(subcategory);
     if (!metrics) continue;
-    subcategory.rows = monthColumns.map((month) => ({
+    subcategory.rows = monthColumns.map((month, index) => ({
       monthKey: month.monthKey,
       monthLabel: month.monthLabel,
-      bomUnits: metrics.bom ? asNumber(metrics.bom[month.index]) : null,
-      salesUnits: metrics.sales ? asNumber(metrics.sales[month.index]) : null,
-      buysUnits: metrics.buys ? asNumber(metrics.buys[month.index]) : null,
-      eomUnits: metrics.eom ? asNumber(metrics.eom[month.index]) : null,
-      sellThroughPct: metrics.sellThrough ? normalizePercent(metrics.sellThrough[month.index]) : null,
+      bomUnits: metricValue(metrics.bom, index),
+      salesUnits: metricValue(metrics.sales, index),
+      buysUnits: metricValue(metrics.buys, index),
+      eomUnits: metricValue(metrics.eom, index),
+      sellThroughPct: metricPercentValue(metrics.sellThrough, index),
     }));
   }
 
@@ -218,21 +261,33 @@ export function parseRetailSubcategoryHistoryWorkbook(workbook: XLSX.WorkBook): 
       (row) => (row.salesUnits || 0) !== 0 || (row.buysUnits || 0) !== 0 || (row.eomUnits || 0) !== 0 || (row.bomUnits || 0) !== 0,
     ),
   );
-  if (!populated.length) {
-    throw new Error('No subcategory monthly rows were found in the spreadsheet.');
-  }
 
   return {
-    sheetNames: workbook.SheetNames,
+    sheetNames: [sheetName],
     monthKeys: monthColumns.map((month) => month.monthKey),
     subcategories: populated,
   };
 }
 
+export function parseRetailSubcategoryHistoryWorkbook(workbook: XLSX.WorkBook): ParsedRetailSubcategoryHistory {
+  const sheetName = workbook.SheetNames[0];
+  if (!sheetName) throw new Error('Workbook has no worksheets.');
+  const worksheet = workbook.Sheets[sheetName];
+  const rows = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: '', raw: true }) as unknown[][];
+  const parsed = parseRetailSubcategorySheetRows(sheetName, rows);
+  if (!parsed.subcategories.length) {
+    throw new Error('No subcategory monthly rows were found in the spreadsheet.');
+  }
+  return parsed;
+}
+
 export async function saveRetailSubcategoryHistoryFacts(input: {
   companyId: string;
   parsed: ParsedRetailSubcategoryHistory;
+  sourceCode?: string;
+  replaceAllForSource?: boolean;
 }): Promise<void> {
+  const sourceCode = input.sourceCode || RETAIL_SUBCATEGORY_HISTORY_SOURCE_CODE;
   const facts = input.parsed.subcategories.flatMap((subcategory) => {
     const dimensionKey = normalizeDimensionKey(subcategory.code, subcategory.name);
     return subcategory.rows.map((row) => ({
@@ -248,7 +303,8 @@ export async function saveRetailSubcategoryHistoryFacts(input: {
       sharePct: row.sellThroughPct == null ? null : row.sellThroughPct / 100,
       auxNumber: row.eomUnits,
       metadata: {
-        source: RETAIL_SUBCATEGORY_HISTORY_SOURCE_CODE,
+        source: sourceCode,
+        sourceCode,
         subcategoryCode: subcategory.code,
         subcategoryName: subcategory.name,
         bomUnits: row.bomUnits,
@@ -268,12 +324,19 @@ export async function saveRetailSubcategoryHistoryFacts(input: {
     }));
   });
   const serializedFacts = JSON.stringify(facts);
+  const monthKeys = Array.from(new Set(facts.map((fact) => fact.monthKey).filter(Boolean)));
+  if (!monthKeys.length) return;
 
   await prisma.$transaction([
     prisma.$executeRaw(Prisma.sql`
       DELETE FROM "PlatosClosetMonthlyFact"
       WHERE "companyId" = ${input.companyId}
-        AND "sourceCode" = ${RETAIL_SUBCATEGORY_HISTORY_SOURCE_CODE}
+        AND "sourceCode" = ${sourceCode}
+        ${
+          input.replaceAllForSource === true
+            ? Prisma.empty
+            : Prisma.sql`AND "monthKey" IN (${Prisma.join(monthKeys)})`
+        }
     `),
     prisma.$executeRaw(Prisma.sql`
       WITH payload AS (
@@ -315,7 +378,7 @@ export async function saveRetailSubcategoryHistoryFacts(input: {
       SELECT
         md5(random()::text || clock_timestamp()::text),
         ${input.companyId},
-        ${RETAIL_SUBCATEGORY_HISTORY_SOURCE_CODE},
+        ${sourceCode},
         payload."monthKey",
         payload."monthStart"::timestamp,
         payload."factType",
@@ -336,11 +399,12 @@ export async function saveRetailSubcategoryHistoryFacts(input: {
 }
 
 export async function hasRetailSubcategoryHistoryFacts(companyId: string): Promise<boolean> {
+  const sourceCodes = RETAIL_SUBCATEGORY_PRODUCT_SOURCE_CODES;
   const rows = await prisma.$queryRaw<Array<{ count: bigint }>>(Prisma.sql`
     SELECT COUNT(*)::bigint AS count
     FROM "PlatosClosetMonthlyFact"
     WHERE "companyId" = ${companyId}
-      AND "sourceCode" = ${RETAIL_SUBCATEGORY_HISTORY_SOURCE_CODE}
+      AND "sourceCode" IN (${Prisma.join(sourceCodes)})
       AND "factType" = 'category_metric'
   `);
   return Number(rows[0]?.count || 0) > 0;
@@ -355,6 +419,7 @@ export async function getRetailSubcategoryHistoryProductsPayload(args: {
   const effectiveStartDate = args.startDate < historyStartDate ? args.startDate : historyStartDate;
   const rows = await prisma.$queryRaw<Array<any>>(Prisma.sql`
     SELECT
+      "sourceCode",
       "monthKey",
       "monthStart",
       "dimensionKey",
@@ -366,7 +431,7 @@ export async function getRetailSubcategoryHistoryProductsPayload(args: {
       "metadata"
     FROM "PlatosClosetMonthlyFact"
     WHERE "companyId" = ${args.companyId}
-      AND "sourceCode" = ${RETAIL_SUBCATEGORY_HISTORY_SOURCE_CODE}
+      AND "sourceCode" IN (${Prisma.join(RETAIL_SUBCATEGORY_PRODUCT_SOURCE_CODES)})
       AND "factType" = 'category_metric'
       AND "metricName" = 'sales_units'
       AND "monthStart" >= ${effectiveStartDate}
@@ -377,6 +442,9 @@ export async function getRetailSubcategoryHistoryProductsPayload(args: {
 
   const records = rows.map((row) => {
     const metadata = row.metadata && typeof row.metadata === 'object' && !Array.isArray(row.metadata) ? row.metadata : {};
+    const subcategoryName = String(row.dimensionLabel || metadata.subcategoryName || 'Unknown');
+    const subcategoryCode = String(metadata.subcategoryCode || '').trim();
+    const subcategoryKey = normalizeDimensionKey(null, subcategoryName);
     const salesUnits = Number(row.valueNumber || 0);
     const avgRetail = Number(metadata.avgRetail || 0);
     const avgCost = Number(metadata.avgCost || 0);
@@ -384,10 +452,13 @@ export async function getRetailSubcategoryHistoryProductsPayload(args: {
     const cogs = salesUnits * avgCost;
     return {
       snapshotDate: new Date(row.monthStart).toISOString(),
-      itemName: String(row.dimensionLabel || metadata.subcategoryName || 'Unknown'),
-      itemId: String(row.dimensionKey || metadata.subcategoryCode || row.dimensionLabel || 'unknown'),
-      sku: String(metadata.subcategoryCode || row.dimensionKey || row.dimensionLabel || 'unknown'),
-      category: String(row.dimensionLabel || metadata.subcategoryName || 'Unknown'),
+      itemName: subcategoryName,
+      itemId: subcategoryCode || String(row.dimensionKey || subcategoryKey),
+      sku: subcategoryKey,
+      sourceCode: String(row.sourceCode || metadata.sourceCode || metadata.source || ''),
+      source: String(row.sourceCode || metadata.source || metadata.sourceCode || ''),
+      subcategoryCode: subcategoryCode || null,
+      category: subcategoryName,
       department: 'Retail',
       quantitySold: salesUnits,
       salesUnits,
