@@ -12320,33 +12320,6 @@ function FinancialScorePage() {
                   ))}
                 </div>
               )}
-              {hasCompanySectionAccess('mda') && (
-                <h3
-                  onClick={() => handleNavigation('mda')}
-                  style={{
-                    fontSize: '14px',
-                    fontWeight: '700',
-                    color: currentView === 'mda' ? '#1F70C1' : '#334155',
-                    textTransform: 'uppercase',
-                    letterSpacing: '0.5px',
-                    padding: '1px 32px',
-                    margin: '16px 0 0 0',
-                    cursor: 'pointer',
-                    transition: 'color 0.2s',
-                    whiteSpace: 'normal',
-                    lineHeight: '1.25'
-                  }}
-                  onMouseEnter={(e) => {
-                    e.currentTarget.style.color = '#1F70C1';
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.color = currentView === 'mda' ? '#1F70C1' : '#334155';
-                  }}
-                >
-                  {currentView === 'mda' && '› '}MANAGEMENT DISCUSSION AND ANALYSIS
-                </h3>
-              )}
-
               {hasCompanySectionAccess('valuation') && (
                 <>
                   <h3

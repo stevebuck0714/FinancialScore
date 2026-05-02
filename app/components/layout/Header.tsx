@@ -54,6 +54,7 @@ export default function Header({
   // header dropdown.
   const financialReportsViews = [
     { id: 'kpis', label: 'Key Ratios', section: 'financial-reports' },
+    { id: 'mda', label: 'MD&A', section: 'mda' },
     { id: 'trend-analysis', label: 'Performance Trends', section: 'financial-reports' },
     { id: 'goals', label: 'Targets and Goals', section: 'financial-reports' },
     { id: 'projections', label: 'Projections', section: 'financial-reports' },
@@ -264,7 +265,7 @@ export default function Header({
                 aria-haspopup="menu"
                 aria-expanded={showFinancialReportsMenu}
               >
-                <span>REPORTS</span>
+                <span>FINANCIAL REPORTING</span>
                 <span style={{ fontSize: '12px' }}>▾</span>
               </button>
               {showFinancialReportsMenu && (
