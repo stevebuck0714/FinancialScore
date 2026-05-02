@@ -77,6 +77,15 @@ type RetailSubcategoryForecast = {
   confidence: 'High' | 'Medium' | 'Low';
   risk: 'Understock' | 'Healthy' | 'Overstock' | 'Watch';
 };
+type RetailForecastTableSortKey =
+  | 'label'
+  | 'lastActual'
+  | 'next3Low'
+  | 'next3Base'
+  | 'next3High'
+  | 'monthsSupply'
+  | 'risk'
+  | 'confidence';
 
 const clampNumber = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
 const toFiniteNumber = (value: unknown): number | null => {
@@ -694,6 +703,8 @@ export default function OperationsTab({
   const [selectedScopeSku, setSelectedScopeSku] = useState('');
   const [productReportView, setProductReportView] = useState<'performance' | 'retailForecast'>('performance');
   const [selectedRetailForecastSubcategory, setSelectedRetailForecastSubcategory] = useState('');
+  const [retailForecastTableSortKey, setRetailForecastTableSortKey] = useState<RetailForecastTableSortKey>('next3Base');
+  const [retailForecastTableSortDir, setRetailForecastTableSortDir] = useState<'asc' | 'desc'>('desc');
   const [showCccInfoModal, setShowCccInfoModal] = useState(false);
   const operationalHubSections =
     companyOperationalHubConfig &&
@@ -6523,10 +6534,52 @@ export default function OperationsTab({
     const selectedRetailForecastIndex = selectedRetailForecast
       ? retailForecastOptions.findIndex((row) => row.key === selectedRetailForecast.key)
       : -1;
+    const retailForecastSortValue = (row: RetailSubcategoryForecast, key: RetailForecastTableSortKey): string | number => {
+      if (key === 'label') return row.label.toLowerCase();
+      if (key === 'risk') {
+        const riskRank: Record<RetailSubcategoryForecast['risk'], number> = { Understock: 0, Watch: 1, Overstock: 2, Healthy: 3 };
+        return riskRank[row.risk] ?? 99;
+      }
+      if (key === 'confidence') {
+        const confidenceRank: Record<RetailSubcategoryForecast['confidence'], number> = { High: 0, Medium: 1, Low: 2 };
+        return confidenceRank[row.confidence] ?? 99;
+      }
+      if (key === 'monthsSupply') return row.monthsSupply == null ? Number.NEGATIVE_INFINITY : row.monthsSupply;
+      return Number(row[key] || 0);
+    };
+    const sortedRetailForecasts = [...retailForecasts].sort((a, b) => {
+      const left = retailForecastSortValue(a, retailForecastTableSortKey);
+      const right = retailForecastSortValue(b, retailForecastTableSortKey);
+      const direction = retailForecastTableSortDir === 'asc' ? 1 : -1;
+      if (typeof left === 'string' || typeof right === 'string') {
+        return String(left).localeCompare(String(right), undefined, { sensitivity: 'base', numeric: true }) * direction;
+      }
+      return (Number(left) - Number(right)) * direction;
+    });
     const formatRetailForecastValue = (value: number | null | undefined, _metricLabel?: RetailSubcategoryForecast['metricLabel']) => {
       if (value == null || !Number.isFinite(Number(value))) return 'N/A';
       return formatWholeNumber(Number(value || 0));
     };
+    const sortRetailForecastTable = (key: RetailForecastTableSortKey) => {
+      if (retailForecastTableSortKey === key) {
+        setRetailForecastTableSortDir((dir) => (dir === 'asc' ? 'desc' : 'asc'));
+        return;
+      }
+      setRetailForecastTableSortKey(key);
+      setRetailForecastTableSortDir(key === 'label' ? 'asc' : 'desc');
+    };
+    const renderRetailForecastSortHeader = (
+      key: RetailForecastTableSortKey,
+      label: string,
+      align: 'left' | 'right' = 'left',
+    ) => (
+      <th
+        onClick={() => sortRetailForecastTable(key)}
+        style={{ textAlign: align, padding: '8px', fontSize: '12px', color: '#334155', cursor: 'pointer', userSelect: 'none', whiteSpace: 'nowrap' }}
+      >
+        {label}{retailForecastTableSortKey === key ? (retailForecastTableSortDir === 'asc' ? ' ↑' : ' ↓') : ' ↕'}
+      </th>
+    );
     const productViewSwitcher = isRetailProductSector && isRetailForecastingEnabled ? (
       <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '16px' }}>
         <button
@@ -6705,18 +6758,18 @@ export default function OperationsTab({
               <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: '900px' }}>
                 <thead>
                   <tr style={{ borderBottom: '1px solid #e2e8f0', background: '#f8fafc' }}>
-                    <th style={{ textAlign: 'left', padding: '8px', fontSize: '12px', color: '#334155' }}>Subcategory</th>
-                    <th style={{ textAlign: 'right', padding: '8px', fontSize: '12px', color: '#334155' }}>Last Actual</th>
-                    <th style={{ textAlign: 'right', padding: '8px', fontSize: '12px', color: '#334155' }}>Next 3 Mo Low</th>
-                    <th style={{ textAlign: 'right', padding: '8px', fontSize: '12px', color: '#334155' }}>Next 3 Mo Base</th>
-                    <th style={{ textAlign: 'right', padding: '8px', fontSize: '12px', color: '#334155' }}>Next 3 Mo High</th>
-                    <th style={{ textAlign: 'right', padding: '8px', fontSize: '12px', color: '#334155' }}>Months Supply</th>
-                    <th style={{ textAlign: 'left', padding: '8px', fontSize: '12px', color: '#334155' }}>Risk</th>
-                    <th style={{ textAlign: 'left', padding: '8px', fontSize: '12px', color: '#334155' }}>Confidence</th>
+                    {renderRetailForecastSortHeader('label', 'Subcategory')}
+                    {renderRetailForecastSortHeader('lastActual', 'Last Actual', 'right')}
+                    {renderRetailForecastSortHeader('next3Low', 'Next 3 Mo Low', 'right')}
+                    {renderRetailForecastSortHeader('next3Base', 'Next 3 Mo Base', 'right')}
+                    {renderRetailForecastSortHeader('next3High', 'Next 3 Mo High', 'right')}
+                    {renderRetailForecastSortHeader('monthsSupply', 'Months Supply', 'right')}
+                    {renderRetailForecastSortHeader('risk', 'Risk')}
+                    {renderRetailForecastSortHeader('confidence', 'Confidence')}
                   </tr>
                 </thead>
                 <tbody>
-                  {retailForecasts.map((row) => (
+                  {sortedRetailForecasts.map((row) => (
                     <tr
                       key={row.key}
                       onClick={() => setSelectedRetailForecastSubcategory(row.key)}
