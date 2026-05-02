@@ -504,7 +504,8 @@ export async function ensurePlatosClosetMonthlyFacts(companyId: string): Promise
         const response = await fetch(snapshot.blobUrl);
         if (response.ok) {
           const arrayBuffer = await response.arrayBuffer();
-          parsedWorkbook = parsePlatosClosetWorkbook(XLSX.read(Buffer.from(arrayBuffer), { type: 'buffer' }));
+          const reparsedWorkbook = parsePlatosClosetWorkbook(XLSX.read(Buffer.from(arrayBuffer), { type: 'buffer' }));
+          parsedWorkbook = { ...reparsedWorkbook, monthKey: snapshot.monthKey };
         }
       } catch {
         // Keep the stored parsed snapshot if the historical blob is unavailable.
@@ -1268,7 +1269,7 @@ export async function getPlatosClosetInventoryPayload(args: {
   }
   const retailProductAgingChartData = Array.from(retailProductAgingByMonth.values()).sort((a, b) =>
     String(a.monthKey || '').localeCompare(String(b.monthKey || '')),
-  );
+  ).slice(-36);
   const latestRetailProductAging = retailProductAgingChartData[retailProductAgingChartData.length - 1] || null;
 
   const cogsSeries = new Map<string, number>();

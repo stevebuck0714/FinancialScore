@@ -47,6 +47,7 @@ type OpTab = 'dashboard' | 'overview' | string;
 const COLORS = ['#0f2b4b', '#1f4e79', '#2e6f9e', '#3e8db5', '#5aa5a7', '#7d8f6a', '#8b6a3d', '#7a4e8a'];
 const CASH_DISTRIBUTION_COLORS = ['#2563eb', '#dc2626', '#059669', '#d97706', '#7c3aed', '#0891b2', '#be123c', '#65a30d', '#4f46e5', '#ea580c'];
 const AR_TREND_COLORS = ['#3e8db5', '#5aa5a7', '#7d8f6a', '#8b6a3d', '#7a4e8a'];
+const RETAIL_PRODUCT_AGING_COLORS = ['#4f8f7b', '#d8a24a', '#c56f5d', '#7c6f9f'];
 const renderDonutLabel = ({ cx, cy, midAngle, innerRadius, outerRadius, percent }: any) => {
   if (!percent || percent < 0.04) return null;
   const radius = innerRadius + (outerRadius - innerRadius) * 0.5;
@@ -7344,7 +7345,7 @@ export default function OperationsTab({
       value == null || !Number.isFinite(Number(value)) ? 'N/A' : `${Number(value).toFixed(1)}%`;
     const retailProductAging = summary?.retailProductAging || {};
     const retailProductAgingBuckets = Array.isArray(retailProductAging?.buckets) ? retailProductAging.buckets : [];
-    const retailProductAgingChartData = Array.isArray(retailProductAging?.chartData) ? retailProductAging.chartData : [];
+    const retailProductAgingChartData = Array.isArray(retailProductAging?.chartData) ? retailProductAging.chartData.slice(-36) : [];
     const retailProductAgingLabelByKey = new Map(
       retailProductAgingBuckets.map((bucket: any) => [String(bucket.key || ''), String(bucket.label || bucket.key || '')]),
     );
@@ -7759,7 +7760,7 @@ export default function OperationsTab({
                       key={String(bucket.key)}
                       dataKey={String(bucket.key)}
                       stackId="used-aging"
-                      fill={COLORS[index % COLORS.length]}
+                      fill={RETAIL_PRODUCT_AGING_COLORS[index % RETAIL_PRODUCT_AGING_COLORS.length]}
                       name={String(bucket.label || bucket.key)}
                     />
                   ))}

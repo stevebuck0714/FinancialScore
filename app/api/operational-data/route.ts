@@ -1653,7 +1653,7 @@ export async function GET(request: NextRequest) {
 
     const hasPlatosFacts =
       (type === 'products' || type === 'inventory') &&
-      ((await hasPlatosClosetMonthlyFacts(companyId)) || (await ensurePlatosClosetMonthlyFacts(companyId)));
+      ((await ensurePlatosClosetMonthlyFacts(companyId)) || (await hasPlatosClosetMonthlyFacts(companyId)));
 
     if (type === 'products' && hasPlatosFacts) {
       const platosPayload = await getPlatosClosetProductsPayload({
