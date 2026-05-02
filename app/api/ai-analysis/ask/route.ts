@@ -10,6 +10,7 @@ import { retrieveDocumentChunks } from '@/lib/company-documents/retrieve-chunks'
 import { createModelText } from '@/lib/openai-helpers';
 import { searchExternalWeb } from '@/lib/ask-corelytics/externalSearch';
 import { buildExternalQueryPlan } from '@/lib/ask-corelytics/externalQueryBuilder';
+import { getPlatosClosetAiContext } from '@/lib/operational/platos-closet-monthly-facts';
 
 type RatioSnapshot = {
   name: string;
@@ -1102,6 +1103,11 @@ export async function runAskCorelyticsLegacy(request: NextRequest) {
       : [];
     const industryGroupName = benchmarks.find((b) => b.industryName)?.industryName || null;
     const ratioSnapshot = buildRatioSnapshot(latestMonth, benchmarks);
+    const platosClosetWorkbookContext = await getPlatosClosetAiContext({
+      companyId,
+      endDate: now,
+      months: 36,
+    });
 
     const monthlyChanges = latestMonth && prevMonth
       ? {
@@ -1334,11 +1340,17 @@ export async function runAskCorelyticsLegacy(request: NextRequest) {
               benchmarksAvailable: benchmarks.length,
               ratios: ratioSnapshot,
             },
+            operationalWorkbookData: platosClosetWorkbookContext
+              ? {
+                  platosCloset: platosClosetWorkbookContext,
+                }
+              : null,
             notes: [
               'Daily operational trends are computed using the most recent available daily snapshot date as the reference.',
               'If dataPoints are low or change values are null, there may be insufficient daily history to assess trends.',
               'KPI requests should be interpreted as ratio metrics; use kpiDefinitions.ratios when available.',
               'Use monthlyChanges.direction to describe increase/decrease; do not invert directions.',
+              'If operationalWorkbookData.platosCloset is present, use it for Plato spreadsheet-derived sales, inventory, and retail product aging analysis.',
             ],
           };
 

@@ -411,6 +411,126 @@ async function listMonthlyFacts(companyId: string, startDate: Date, endDate: Dat
   }
 }
 
+export async function getPlatosClosetAiContext(args: {
+  companyId: string;
+  endDate?: Date;
+  months?: number;
+}): Promise<Record<string, unknown> | null> {
+  const months = Math.max(1, Math.min(36, Math.floor(Number(args.months || 36))));
+  const endDate = args.endDate || new Date();
+  const startDate = new Date(Date.UTC(endDate.getUTCFullYear(), endDate.getUTCMonth() - months + 1, 1));
+
+  await ensurePlatosClosetMonthlyFacts(args.companyId);
+  const facts = await listMonthlyFacts(args.companyId, startDate, endDate);
+  if (!facts.length) return null;
+
+  const monthKeys = Array.from(new Set(facts.map((row) => row.monthKey))).sort();
+  const summaryRows = facts.filter((row) => row.factType === 'summary_metric');
+  const categoryRows = facts.filter((row) => row.factType === 'category_metric');
+  const agingRows = facts.filter(
+    (row) => row.factType === 'retail_product_aging' && row.metricName === 'used_inventory_age_dollars',
+  );
+
+  const summaryByMonth = new Map<string, Record<string, unknown>>();
+  for (const row of summaryRows) {
+    const month = summaryByMonth.get(row.monthKey) || {
+      monthKey: row.monthKey,
+      monthLabel: row.monthStart.toLocaleDateString('en-US', { month: 'short', year: 'numeric', timeZone: 'UTC' }),
+    };
+    if (
+      [
+        'total_sales',
+        'sales_gm_dollars',
+        'sales_gm_pct',
+        'total_buys_cost',
+        'total_buys_units',
+        'buy_transaction_count',
+        'avg_buy_cost_per_unit',
+        'avg_buy_retail_per_unit',
+        'inventory_on_hand_total',
+      ].includes(row.metricName)
+    ) {
+      month[row.metricName] = asNumber(row.valueNumber);
+    }
+    summaryByMonth.set(row.monthKey, month);
+  }
+
+  const agingByMonth = new Map<string, Record<string, unknown>>();
+  const agingBucketMap = new Map<string, string>();
+  for (const row of agingRows) {
+    const key = row.dimensionKey || normalizeDimensionKey(row.dimensionLabel, 'age_bucket');
+    const label = String(row.dimensionLabel || key);
+    agingBucketMap.set(key, label);
+    const month = agingByMonth.get(row.monthKey) || {
+      monthKey: row.monthKey,
+      monthLabel: row.monthStart.toLocaleDateString('en-US', { month: 'short', year: 'numeric', timeZone: 'UTC' }),
+      totalDollars: 0,
+      totalUnits: 0,
+      buckets: {},
+    };
+    const buckets = (month.buckets || {}) as Record<string, unknown>;
+    const dollars = asNumber(row.valueNumber);
+    const units = asNumber(row.compareNumber);
+    buckets[key] = {
+      label,
+      dollars,
+      units,
+      inventoryPct: asNumber(row.sharePct) * 100,
+    };
+    month.buckets = buckets;
+    month.totalDollars = asNumber(month.totalDollars) + dollars;
+    month.totalUnits = asNumber(month.totalUnits) + units;
+    agingByMonth.set(row.monthKey, month);
+  }
+
+  const latestMonthKey = monthKeys[monthKeys.length - 1] || '';
+  const latestCategoryRows = categoryRows
+    .filter((row) => row.monthKey === latestMonthKey)
+    .filter((row) => row.dimensionType === 'category')
+    .map((row) => {
+      const metadata = row.metadata || {};
+      return {
+        department: String(metadata.department || row.dimensionLabel || ''),
+        category: String(metadata.category || row.dimensionLabel || ''),
+        netSales: asNumber(row.valueNumber),
+        priorSales: asNumber(row.compareNumber),
+        salesMixPct: asNumber(row.sharePct) * 100,
+        inventoryOnHandDollars: asNumber(metadata.inventoryOnHandDollars),
+        inventoryMixPct: asNumber(metadata.inventoryMixPct) * 100,
+        grossMarginPct: asNumber(metadata.grossMarginPct) * 100,
+        grossMarginDollars: asNumber(row.auxNumber),
+      };
+    })
+    .filter((row) => row.inventoryOnHandDollars > 0 || row.netSales > 0)
+    .sort((a, b) => b.inventoryOnHandDollars - a.inventoryOnHandDollars)
+    .slice(0, 12);
+
+  return {
+    source: 'PlatosClosetMonthlyFact',
+    sourceCode: SOURCE_CODE,
+    coverage: {
+      monthsRequested: months,
+      monthsAvailable: monthKeys.length,
+      firstMonth: monthKeys[0] || null,
+      latestMonth: latestMonthKey || null,
+    },
+    monthlyMetrics: Array.from(summaryByMonth.values())
+      .sort((a, b) => String(a.monthKey || '').localeCompare(String(b.monthKey || '')))
+      .slice(-months),
+    retailProductAging: {
+      buckets: Array.from(agingBucketMap.entries()).map(([key, label]) => ({ key, label })),
+      months: Array.from(agingByMonth.values())
+        .sort((a, b) => String(a.monthKey || '').localeCompare(String(b.monthKey || '')))
+        .slice(-months),
+    },
+    latestInventoryCategories: latestCategoryRows,
+    notes: [
+      'Plato workbook metrics are parsed from uploaded store visit spreadsheets and stored as monthly facts.',
+      'Retail Product Aging dollars, units, and inventoryPct are sourced from the USED aging section of each workbook.',
+    ],
+  };
+}
+
 export async function hasPlatosClosetMonthlyFacts(companyId: string): Promise<boolean> {
   try {
     const rows = await prisma.$queryRaw<Array<{ exists: number }>>(Prisma.sql`

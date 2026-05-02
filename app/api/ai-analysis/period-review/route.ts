@@ -5,6 +5,7 @@ import prisma from '@/lib/prisma';
 import { requireAuth, validateCompanyAccess } from '@/lib/tenant-security';
 import { auditForbiddenAccess } from '@/lib/audit-logger';
 import { createModelText } from '@/lib/openai-helpers';
+import { getPlatosClosetAiContext } from '@/lib/operational/platos-closet-monthly-facts';
 
 type Source = { url: string; title?: string; publishedDate?: string | null };
 
@@ -220,6 +221,11 @@ export async function POST(request: NextRequest) {
     // Goals
     const expenseGoals = await loadGoalJson('ExpenseGoal', companyId);
     const operationalGoals = await loadGoalJson('OperationalGoal', companyId);
+    const platosClosetWorkbookContext = await getPlatosClosetAiContext({
+      companyId,
+      endDate: period.end,
+      months: 36,
+    });
 
     // Daily operations snapshots (last 90 days)
     const now = new Date();
@@ -425,6 +431,11 @@ export async function POST(request: NextRequest) {
         apDaily: apDaily.length,
         customersDaily: customersDaily.length,
       },
+      operationalWorkbookData: platosClosetWorkbookContext
+        ? {
+            platosCloset: platosClosetWorkbookContext,
+          }
+        : null,
       negativeTrendAlerts: alerts,
     };
 
