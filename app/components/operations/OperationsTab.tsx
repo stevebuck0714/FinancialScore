@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useRef } from 'react';
+import { upload } from '@vercel/blob/client';
 import { TrendingUp, Users, Package, DollarSign, Warehouse, AlertCircle, ArrowUp, ArrowDown } from 'lucide-react';
 import {
   LineChart,
@@ -48,6 +49,227 @@ const COLORS = ['#0f2b4b', '#1f4e79', '#2e6f9e', '#3e8db5', '#5aa5a7', '#7d8f6a'
 const CASH_DISTRIBUTION_COLORS = ['#2563eb', '#dc2626', '#059669', '#d97706', '#7c3aed', '#0891b2', '#be123c', '#65a30d', '#4f46e5', '#ea580c'];
 const AR_TREND_COLORS = ['#3e8db5', '#5aa5a7', '#7d8f6a', '#8b6a3d', '#7a4e8a'];
 const RETAIL_PRODUCT_AGING_COLORS = ['#4f8f7b', '#d8a24a', '#c56f5d', '#7c6f9f'];
+type RetailForecastPoint = {
+  monthKey: string;
+  monthLabel: string;
+  actual: number | null;
+  low: number | null;
+  base: number | null;
+  high: number | null;
+  revenue: number;
+  inventoryOnHand: number | null;
+};
+type RetailSubcategoryForecast = {
+  key: string;
+  label: string;
+  department: string;
+  metricLabel: 'Units' | 'Sales $';
+  history: RetailForecastPoint[];
+  forecast: RetailForecastPoint[];
+  chartData: RetailForecastPoint[];
+  lastActual: number;
+  next3Base: number;
+  next3Low: number;
+  next3High: number;
+  recentAvg: number;
+  trailing12: number;
+  currentOnHand: number | null;
+  monthsSupply: number | null;
+  confidence: 'High' | 'Medium' | 'Low';
+  risk: 'Understock' | 'Healthy' | 'Overstock' | 'Watch';
+};
+
+const clampNumber = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
+const toFiniteNumber = (value: unknown): number | null => {
+  const num = Number(value);
+  return Number.isFinite(num) ? num : null;
+};
+const monthKeyFromDateValue = (value: unknown): string => {
+  const raw = String(value || '').trim();
+  if (/^\d{4}-\d{2}/.test(raw)) return raw.slice(0, 7);
+  const parsed = new Date(raw);
+  if (Number.isNaN(parsed.getTime())) return '';
+  return `${parsed.getUTCFullYear()}-${String(parsed.getUTCMonth() + 1).padStart(2, '0')}`;
+};
+const addMonthsToMonthKey = (monthKey: string, months: number): string => {
+  const [yearRaw, monthRaw] = monthKey.split('-').map((part) => Number(part));
+  const date = new Date(Date.UTC(yearRaw || 2000, (monthRaw || 1) - 1 + months, 1));
+  return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}`;
+};
+const monthLabelFromKey = (monthKey: string): string => {
+  const [yearRaw, monthRaw] = monthKey.split('-').map((part) => Number(part));
+  if (!yearRaw || !monthRaw) return monthKey;
+  return new Date(Date.UTC(yearRaw, monthRaw - 1, 1)).toLocaleDateString('en-US', {
+    month: 'short',
+    year: 'numeric',
+    timeZone: 'UTC',
+  });
+};
+const monthIndexFromKey = (monthKey: string): number => {
+  const month = Number(monthKey.split('-')[1]);
+  return Number.isFinite(month) ? month - 1 : -1;
+};
+const averageNumber = (values: number[]): number => {
+  const clean = values.filter((value) => Number.isFinite(value));
+  return clean.length ? clean.reduce((sum, value) => sum + value, 0) / clean.length : 0;
+};
+const stdDevNumber = (values: number[]): number => {
+  const avg = averageNumber(values);
+  if (!values.length || avg === 0) return 0;
+  const variance = values.reduce((sum, value) => sum + Math.pow(value - avg, 2), 0) / values.length;
+  return Math.sqrt(variance);
+};
+const firstPositiveNumber = (row: any, keys: string[]): number | null => {
+  for (const key of keys) {
+    const value = toFiniteNumber(row?.[key]);
+    if (value != null && value > 0) return value;
+  }
+  return null;
+};
+const buildRetailSubcategoryForecasts = (records: any[]): RetailSubcategoryForecast[] => {
+  const buckets = new Map<
+    string,
+    {
+      key: string;
+      label: string;
+      department: string;
+      hasUnitSignal: boolean;
+      months: Map<string, { monthKey: string; demand: number; revenue: number; inventoryOnHand: number | null }>;
+    }
+  >();
+
+  for (const row of records || []) {
+    const monthKey = monthKeyFromDateValue(row?.snapshotDate || row?.monthStart || row?.date);
+    if (!monthKey) continue;
+    const label = String(row?.category || row?.itemName || row?.dimensionLabel || 'Unassigned').trim() || 'Unassigned';
+    const department = String(row?.department || row?.site || '').trim();
+    const key = String(row?.sku || row?.itemId || row?.category || label).trim() || label;
+    const revenue = toFiniteNumber(row?.revenue) ?? toFiniteNumber(row?.currentSales) ?? toFiniteNumber(row?.netSales) ?? 0;
+    const unitSignal = firstPositiveNumber(row, [
+      'salesUnits',
+      'unitsSold',
+      'quantitySold',
+      'salesQuantity',
+      'soldUnits',
+      'sales',
+    ]);
+    const demand = unitSignal ?? revenue;
+    const inventoryOnHand =
+      firstPositiveNumber(row, ['currentOnHandUnits', 'onHandUnits', 'eomUnits', 'endingUnits', 'inventoryUnits']) ??
+      toFiniteNumber(row?.inventoryOnHandDollars);
+    const bucket = buckets.get(key) || {
+      key,
+      label,
+      department,
+      hasUnitSignal: false,
+      months: new Map<string, { monthKey: string; demand: number; revenue: number; inventoryOnHand: number | null }>(),
+    };
+    bucket.hasUnitSignal = bucket.hasUnitSignal || unitSignal != null;
+    const month = bucket.months.get(monthKey) || { monthKey, demand: 0, revenue: 0, inventoryOnHand: null as number | null };
+    month.demand += demand;
+    month.revenue += revenue;
+    if (inventoryOnHand != null && inventoryOnHand > 0) month.inventoryOnHand = (month.inventoryOnHand || 0) + inventoryOnHand;
+    bucket.months.set(monthKey, month);
+    buckets.set(key, bucket);
+  }
+
+  return Array.from(buckets.values())
+    .map((bucket) => {
+      const monthRows = Array.from(bucket.months.values())
+        .sort((a, b) => a.monthKey.localeCompare(b.monthKey))
+        .slice(-24);
+      if (!monthRows.length) return null;
+      const historyValues = monthRows.map((row) => Number(row.demand || 0));
+      const recentValues = historyValues.slice(-3);
+      const priorRecentValues = historyValues.slice(-6, -3);
+      const trailing12Values = historyValues.slice(-12);
+      const recentAvg = averageNumber(recentValues);
+      const priorRecentAvg = averageNumber(priorRecentValues);
+      const trailing12 = averageNumber(trailing12Values);
+      const coefficientOfVariation = trailing12 > 0 ? stdDevNumber(trailing12Values) / trailing12 : 0.5;
+      const volatility = clampNumber(coefficientOfVariation, 0.15, 0.65);
+      const trendPct = priorRecentAvg > 0 ? clampNumber((recentAvg - priorRecentAvg) / priorRecentAvg, -0.8, 0.8) : 0;
+      const trendFactor = clampNumber(1 + trendPct * 0.25, 0.8, 1.25);
+      const latestMonthKey = monthRows[monthRows.length - 1].monthKey;
+      const forecast: RetailForecastPoint[] = [];
+
+      for (let offset = 1; offset <= 12; offset += 1) {
+        const futureMonthKey = addMonthsToMonthKey(latestMonthKey, offset);
+        const futureMonthIndex = monthIndexFromKey(futureMonthKey);
+        const sameMonthValues = monthRows
+          .filter((row) => monthIndexFromKey(row.monthKey) === futureMonthIndex)
+          .map((row) => Number(row.demand || 0))
+          .filter((value) => value > 0);
+        const seasonalAvg = averageNumber(sameMonthValues);
+        const unadjustedBase =
+          seasonalAvg > 0
+            ? seasonalAvg * 0.55 + recentAvg * 0.3 + trailing12 * 0.15
+            : recentAvg * 0.65 + trailing12 * 0.35;
+        const base = Math.max(0, unadjustedBase * trendFactor);
+        forecast.push({
+          monthKey: futureMonthKey,
+          monthLabel: monthLabelFromKey(futureMonthKey),
+          actual: null,
+          low: Math.max(0, Math.round(base * (1 - volatility))),
+          base: Math.max(0, Math.round(base)),
+          high: Math.max(0, Math.round(base * (1 + volatility))),
+          revenue: 0,
+          inventoryOnHand: null,
+        });
+      }
+
+      const history = monthRows.map((row) => ({
+        monthKey: row.monthKey,
+        monthLabel: monthLabelFromKey(row.monthKey),
+        actual: Math.round(row.demand || 0),
+        low: null,
+        base: null,
+        high: null,
+        revenue: row.revenue,
+        inventoryOnHand: row.inventoryOnHand,
+      }));
+      const currentOnHand = [...monthRows].reverse().find((row) => row.inventoryOnHand != null)?.inventoryOnHand ?? null;
+      const monthsSupply = currentOnHand != null && recentAvg > 0 ? currentOnHand / recentAvg : null;
+      const confidence: RetailSubcategoryForecast['confidence'] =
+        monthRows.length >= 18 && coefficientOfVariation <= 0.25
+          ? 'High'
+          : monthRows.length >= 12 && coefficientOfVariation <= 0.45
+            ? 'Medium'
+            : 'Low';
+      const risk: RetailSubcategoryForecast['risk'] =
+        monthsSupply == null
+          ? confidence === 'Low'
+            ? 'Watch'
+            : 'Healthy'
+          : monthsSupply < 1.5
+            ? 'Understock'
+            : monthsSupply > 4
+              ? 'Overstock'
+              : 'Healthy';
+
+      return {
+        key: bucket.key,
+        label: bucket.label,
+        department: bucket.department,
+        metricLabel: bucket.hasUnitSignal ? 'Units' : 'Sales $',
+        history,
+        forecast,
+        chartData: [...history, ...forecast],
+        lastActual: history[history.length - 1]?.actual || 0,
+        next3Base: forecast.slice(0, 3).reduce((sum, row) => sum + Number(row.base || 0), 0),
+        next3Low: forecast.slice(0, 3).reduce((sum, row) => sum + Number(row.low || 0), 0),
+        next3High: forecast.slice(0, 3).reduce((sum, row) => sum + Number(row.high || 0), 0),
+        recentAvg,
+        trailing12,
+        currentOnHand,
+        monthsSupply,
+        confidence,
+        risk,
+      };
+    })
+    .filter(Boolean)
+    .sort((a: any, b: any) => Number(b.next3Base || 0) - Number(a.next3Base || 0)) as RetailSubcategoryForecast[];
+};
 const renderDonutLabel = ({ cx, cy, midAngle, innerRadius, outerRadius, percent }: any) => {
   if (!percent || percent < 0.04) return null;
   const radius = innerRadius + (outerRadius - innerRadius) * 0.5;
@@ -435,6 +657,7 @@ export default function OperationsTab({
   const [customerMetricModalNames, setCustomerMetricModalNames] = useState<string[]>([]);
   const operationalDataCacheRef = useRef<Map<string, { fetchedAt: number; data: any }>>(new Map());
   const operationalDataInflightRef = useRef<Map<string, Promise<any>>>(new Map());
+  const retailSubcategoryHistoryFileInputRef = useRef<HTMLInputElement | null>(null);
   const [inventoryAgingSearchTerm, setInventoryAgingSearchTerm] = useState('');
   const [inventoryAgingTableExpanded, setInventoryAgingTableExpanded] = useState(true);
   const [inventoryAgingSortKey, setInventoryAgingSortKey] = useState<
@@ -453,6 +676,10 @@ export default function OperationsTab({
   const [inventoryAgingSortDir, setInventoryAgingSortDir] = useState<'asc' | 'desc'>('desc');
   const [productScopeMode, setProductScopeMode] = useState<'total' | 'product'>('total');
   const [selectedScopeSku, setSelectedScopeSku] = useState('');
+  const [productReportView, setProductReportView] = useState<'performance' | 'retailForecast'>('performance');
+  const [selectedRetailForecastSubcategory, setSelectedRetailForecastSubcategory] = useState('');
+  const [retailSubcategoryHistoryUploading, setRetailSubcategoryHistoryUploading] = useState(false);
+  const [retailSubcategoryHistoryUploadStatus, setRetailSubcategoryHistoryUploadStatus] = useState<string | null>(null);
   const [showCccInfoModal, setShowCccInfoModal] = useState(false);
   const operationalHubSections =
     companyOperationalHubConfig &&
@@ -1087,6 +1314,71 @@ export default function OperationsTab({
       });
     operationalDataInflightRef.current.set(key, request);
     return request;
+  };
+
+  const uploadRetailSubcategoryHistory = async () => {
+    const input = retailSubcategoryHistoryFileInputRef.current;
+    const file = input?.files?.[0];
+    if (!file) {
+      setRetailSubcategoryHistoryUploadStatus('Choose an .xlsx file first.');
+      return;
+    }
+    setRetailSubcategoryHistoryUploading(true);
+    setRetailSubcategoryHistoryUploadStatus(null);
+    try {
+      const blob = await upload(file.name, file, {
+        access: 'public',
+        handleUploadUrl: '/api/company-documents/upload',
+        clientPayload: JSON.stringify({
+          companyId: selectedCompanyId,
+          category: 'OTHER',
+          originalFileName: file.name,
+          sizeBytes: file.size,
+        }),
+      });
+
+      const registerRes = await fetch('/api/company-documents', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          companyId: selectedCompanyId,
+          category: 'OTHER',
+          originalFileName: file.name,
+          blob,
+        }),
+      });
+      const registerData = await registerRes.json().catch(() => ({}));
+      if (!registerRes.ok) throw new Error(registerData?.error || 'Failed to register uploaded spreadsheet');
+      const documentId = String(registerData?.document?.id || '');
+      if (!documentId) throw new Error('Missing document ID after upload');
+
+      const importRes = await fetch('/api/operational-system-integrations/retail-subcategory-history/workbook', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          companyId: selectedCompanyId,
+          documentId,
+          originalFileName: file.name,
+          blob,
+        }),
+      });
+      const importData = await importRes.json().catch(() => ({}));
+      if (!importRes.ok || importData?.ok === false) {
+        throw new Error(importData?.error || 'Failed to import retail subcategory history');
+      }
+
+      if (input) input.value = '';
+      const refreshed = await fetchOperationalTypeWithCache('products', { forceRefresh: true });
+      setProductData(refreshed);
+      setProductReportView('retailForecast');
+      setRetailSubcategoryHistoryUploadStatus(
+        `Imported ${Number(importData.subcategoryCount || 0).toLocaleString()} subcategories across ${Number(importData.monthCount || 0).toLocaleString()} months.`,
+      );
+    } catch (error: any) {
+      setRetailSubcategoryHistoryUploadStatus(error?.message || 'Upload failed');
+    } finally {
+      setRetailSubcategoryHistoryUploading(false);
+    }
   };
 
   const prefetchTabData = (tab: string) => {
@@ -6246,6 +6538,305 @@ export default function OperationsTab({
       },
     ];
     const allProductMetricCards = [...productCategoryMetricCards, ...productMetricCards];
+    const retailForecasts = buildRetailSubcategoryForecasts(rawProductRecords);
+    const isRetailProductSector = industrySectorCategory === '45';
+    const hasRetailForecastView = isRetailProductSector && retailForecasts.length > 0;
+    const effectiveRetailForecastKey =
+      selectedRetailForecastSubcategory && retailForecasts.some((row) => row.key === selectedRetailForecastSubcategory)
+        ? selectedRetailForecastSubcategory
+        : (retailForecasts[0]?.key || '');
+    const selectedRetailForecast =
+      retailForecasts.find((row) => row.key === effectiveRetailForecastKey) || retailForecasts[0] || null;
+    const selectedRetailForecastIndex = selectedRetailForecast
+      ? retailForecasts.findIndex((row) => row.key === selectedRetailForecast.key)
+      : -1;
+    const formatRetailForecastValue = (value: number | null | undefined, metricLabel?: 'Units' | 'Sales $') => {
+      if (value == null || !Number.isFinite(Number(value))) return 'N/A';
+      return metricLabel === 'Sales $' ? formatCurrency(Math.round(Number(value || 0))) : formatWholeNumber(Number(value || 0));
+    };
+    const productViewSwitcher = isRetailProductSector ? (
+      <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '16px' }}>
+        <button
+          type="button"
+          onClick={() => setProductReportView('performance')}
+          style={{
+            border: '1px solid #cbd5e1',
+            borderRadius: '999px',
+            padding: '8px 12px',
+            background: productReportView === 'performance' ? '#e0e7ff' : '#ffffff',
+            color: productReportView === 'performance' ? '#3730a3' : '#334155',
+            fontWeight: 700,
+            cursor: 'pointer',
+            fontSize: '12px',
+          }}
+        >
+          Performance
+        </button>
+        <button
+          type="button"
+          onClick={() => setProductReportView('retailForecast')}
+          style={{
+            border: '1px solid #cbd5e1',
+            borderRadius: '999px',
+            padding: '8px 12px',
+            background: productReportView === 'retailForecast' ? '#e0e7ff' : '#ffffff',
+            color: productReportView === 'retailForecast' ? '#3730a3' : '#334155',
+            fontWeight: 700,
+            cursor: 'pointer',
+            fontSize: '12px',
+          }}
+        >
+          Retail Forecasting
+        </button>
+      </div>
+    ) : null;
+    const renderRetailForecastingReport = () => {
+      const uploadPanel = (
+        <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '18px', marginBottom: '16px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+            <div>
+              <h3 style={{ margin: 0, fontSize: '16px', color: '#0f172a' }}>Import Subcategory History</h3>
+              <div style={{ marginTop: '4px', fontSize: '12px', color: '#64748b' }}>
+                Upload the separate monthly subcategory spreadsheet to populate unit-based low / base / high forecasts.
+              </div>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+              <input
+                ref={retailSubcategoryHistoryFileInputRef}
+                type="file"
+                accept=".xlsx,.xls"
+                disabled={retailSubcategoryHistoryUploading}
+                style={{ fontSize: '12px' }}
+              />
+              <button
+                type="button"
+                onClick={uploadRetailSubcategoryHistory}
+                disabled={retailSubcategoryHistoryUploading}
+                style={{
+                  border: 'none',
+                  borderRadius: '8px',
+                  padding: '8px 12px',
+                  background: retailSubcategoryHistoryUploading ? '#94a3b8' : '#2563eb',
+                  color: '#fff',
+                  fontWeight: 700,
+                  cursor: retailSubcategoryHistoryUploading ? 'not-allowed' : 'pointer',
+                  fontSize: '12px',
+                }}
+              >
+                {retailSubcategoryHistoryUploading ? 'Importing...' : 'Import Forecast Sheet'}
+              </button>
+            </div>
+          </div>
+          {retailSubcategoryHistoryUploadStatus && (
+            <div
+              style={{
+                marginTop: '10px',
+                padding: '8px 10px',
+                borderRadius: '8px',
+                background: /failed|error|choose|missing/i.test(retailSubcategoryHistoryUploadStatus) ? '#fef2f2' : '#ecfdf5',
+                color: /failed|error|choose|missing/i.test(retailSubcategoryHistoryUploadStatus) ? '#991b1b' : '#166534',
+                fontSize: '12px',
+              }}
+            >
+              {retailSubcategoryHistoryUploadStatus}
+            </div>
+          )}
+        </div>
+      );
+      if (!selectedRetailForecast) {
+        return (
+          <>
+            {uploadPanel}
+            <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '24px', color: '#64748b' }}>
+              No subcategory monthly history is available yet. Import the separate spreadsheet to create the forecast.
+            </div>
+          </>
+        );
+      }
+      const riskColor =
+        selectedRetailForecast.risk === 'Understock'
+          ? '#b91c1c'
+          : selectedRetailForecast.risk === 'Overstock'
+            ? '#92400e'
+            : selectedRetailForecast.risk === 'Watch'
+              ? '#7c3aed'
+              : '#166534';
+      const nextRetailForecast = (direction: -1 | 1) => {
+        if (!retailForecasts.length || selectedRetailForecastIndex < 0) return;
+        const nextIndex = (selectedRetailForecastIndex + direction + retailForecasts.length) % retailForecasts.length;
+        setSelectedRetailForecastSubcategory(retailForecasts[nextIndex].key);
+      };
+
+      return (
+        <>
+          {uploadPanel}
+          <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '18px', marginBottom: '16px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+              <div>
+                <h3 style={{ margin: 0, fontSize: '18px', color: '#0f172a' }}>Retail Subcategory Forecast</h3>
+                <div style={{ marginTop: '4px', fontSize: '12px', color: '#64748b' }}>
+                  Low / base / high monthly forecast from the latest subcategory history in this Products window.
+                </div>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                <button
+                  type="button"
+                  onClick={() => nextRetailForecast(-1)}
+                  style={{ border: '1px solid #cbd5e1', borderRadius: '8px', padding: '8px 10px', background: '#fff', color: '#334155', fontSize: '12px', fontWeight: 700, cursor: 'pointer' }}
+                >
+                  Previous
+                </button>
+                <select
+                  value={effectiveRetailForecastKey}
+                  onChange={(event) => setSelectedRetailForecastSubcategory(event.target.value)}
+                  style={{ border: '1px solid #cbd5e1', borderRadius: '8px', padding: '8px 10px', fontSize: '12px', minWidth: '280px' }}
+                >
+                  {retailForecasts.map((row) => (
+                    <option key={row.key} value={row.key}>
+                      {row.label}
+                    </option>
+                  ))}
+                </select>
+                <button
+                  type="button"
+                  onClick={() => nextRetailForecast(1)}
+                  style={{ border: '1px solid #cbd5e1', borderRadius: '8px', padding: '8px 10px', background: '#fff', color: '#334155', fontSize: '12px', fontWeight: 700, cursor: 'pointer' }}
+                >
+                  Next
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, minmax(0, 1fr))', gap: '12px', marginBottom: '16px' }}>
+            {[
+              { title: 'Next 3 Mo Base', value: formatRetailForecastValue(selectedRetailForecast.next3Base, selectedRetailForecast.metricLabel), detail: `${formatRetailForecastValue(selectedRetailForecast.next3Low, selectedRetailForecast.metricLabel)} low / ${formatRetailForecastValue(selectedRetailForecast.next3High, selectedRetailForecast.metricLabel)} high` },
+              { title: 'Recent Avg / Mo', value: formatRetailForecastValue(selectedRetailForecast.recentAvg, selectedRetailForecast.metricLabel), detail: `Trailing 12: ${formatRetailForecastValue(selectedRetailForecast.trailing12, selectedRetailForecast.metricLabel)}` },
+              { title: 'Current On-Hand', value: formatRetailForecastValue(selectedRetailForecast.currentOnHand, selectedRetailForecast.metricLabel), detail: selectedRetailForecast.monthsSupply == null ? 'Months supply unavailable' : `${selectedRetailForecast.monthsSupply.toFixed(1)} months supply` },
+              { title: 'Confidence', value: selectedRetailForecast.confidence, detail: `${selectedRetailForecast.history.length} months of history used` },
+              { title: 'Risk', value: selectedRetailForecast.risk, detail: selectedRetailForecast.department || 'Subcategory-level forecast' },
+            ].map((card) => (
+              <div key={card.title} style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '16px', minWidth: 0 }}>
+                <div style={{ fontSize: '12px', color: '#64748b', marginBottom: '8px' }}>{card.title}</div>
+                <div style={{ fontSize: '22px', fontWeight: '700', color: card.title === 'Risk' ? riskColor : '#0f172a', marginBottom: '6px', lineHeight: 1.2 }}>
+                  {card.value}
+                </div>
+                <div style={{ fontSize: '12px', color: '#475569', lineHeight: 1.4 }}>{card.detail}</div>
+              </div>
+            ))}
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1.4fr) minmax(360px, 0.9fr)', gap: '16px', marginBottom: '16px' }}>
+            <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '18px' }}>
+              <h3 style={{ margin: '0 0 12px 0', fontSize: '16px', color: '#1e293b' }}>
+                {selectedRetailForecast.label} Monthly Forecast
+              </h3>
+              <ResponsiveContainer width="100%" height={340}>
+                <LineChart data={selectedRetailForecast.chartData}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                  <XAxis dataKey="monthLabel" stroke="#64748b" style={{ fontSize: '11px' }} />
+                  <YAxis
+                    stroke="#64748b"
+                    style={{ fontSize: '11px' }}
+                    tickFormatter={(value) =>
+                      selectedRetailForecast.metricLabel === 'Sales $'
+                        ? `$${(Number(value || 0) / 1000).toFixed(0)}k`
+                        : formatWholeNumber(Number(value || 0))
+                    }
+                  />
+                  <Tooltip
+                    formatter={(value: any, name: any) => [
+                      formatRetailForecastValue(Number(value || 0), selectedRetailForecast.metricLabel),
+                      name,
+                    ]}
+                  />
+                  <Legend />
+                  <Line type="monotone" dataKey="actual" stroke="#0f172a" strokeWidth={2} dot={{ r: 3 }} connectNulls name="Actual" />
+                  <Line type="monotone" dataKey="base" stroke="#2563eb" strokeWidth={2} dot={{ r: 3 }} connectNulls name="Base Forecast" />
+                  <Line type="monotone" dataKey="low" stroke="#94a3b8" strokeWidth={2} strokeDasharray="5 5" dot={false} connectNulls name="Low Forecast" />
+                  <Line type="monotone" dataKey="high" stroke="#f97316" strokeWidth={2} strokeDasharray="5 5" dot={false} connectNulls name="High Forecast" />
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
+
+            <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '18px' }}>
+              <h3 style={{ margin: '0 0 12px 0', fontSize: '16px', color: '#1e293b' }}>Next 12 Months</h3>
+              <div style={{ overflowX: 'auto', maxHeight: '340px', overflowY: 'auto' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                  <thead>
+                    <tr style={{ borderBottom: '1px solid #e2e8f0', background: '#f8fafc' }}>
+                      <th style={{ textAlign: 'left', padding: '8px', fontSize: '12px', color: '#334155' }}>Month</th>
+                      <th style={{ textAlign: 'right', padding: '8px', fontSize: '12px', color: '#334155' }}>Low</th>
+                      <th style={{ textAlign: 'right', padding: '8px', fontSize: '12px', color: '#334155' }}>Base</th>
+                      <th style={{ textAlign: 'right', padding: '8px', fontSize: '12px', color: '#334155' }}>High</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {selectedRetailForecast.forecast.map((row) => (
+                      <tr key={row.monthKey} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                        <td style={{ padding: '8px', fontSize: '13px', color: '#0f172a', fontWeight: 600 }}>{row.monthLabel}</td>
+                        <td style={{ padding: '8px', fontSize: '13px', textAlign: 'right', color: '#475569' }}>{formatRetailForecastValue(row.low, selectedRetailForecast.metricLabel)}</td>
+                        <td style={{ padding: '8px', fontSize: '13px', textAlign: 'right', color: '#1d4ed8', fontWeight: 700 }}>{formatRetailForecastValue(row.base, selectedRetailForecast.metricLabel)}</td>
+                        <td style={{ padding: '8px', fontSize: '13px', textAlign: 'right', color: '#9a3412' }}>{formatRetailForecastValue(row.high, selectedRetailForecast.metricLabel)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+
+          <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '18px' }}>
+            <h3 style={{ margin: '0 0 12px 0', fontSize: '16px', color: '#1e293b' }}>All Subcategories</h3>
+            <div style={{ overflowX: 'auto', maxHeight: '420px', overflowY: 'auto' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: '900px' }}>
+                <thead>
+                  <tr style={{ borderBottom: '1px solid #e2e8f0', background: '#f8fafc' }}>
+                    <th style={{ textAlign: 'left', padding: '8px', fontSize: '12px', color: '#334155' }}>Subcategory</th>
+                    <th style={{ textAlign: 'right', padding: '8px', fontSize: '12px', color: '#334155' }}>Last Actual</th>
+                    <th style={{ textAlign: 'right', padding: '8px', fontSize: '12px', color: '#334155' }}>Next 3 Mo Low</th>
+                    <th style={{ textAlign: 'right', padding: '8px', fontSize: '12px', color: '#334155' }}>Next 3 Mo Base</th>
+                    <th style={{ textAlign: 'right', padding: '8px', fontSize: '12px', color: '#334155' }}>Next 3 Mo High</th>
+                    <th style={{ textAlign: 'right', padding: '8px', fontSize: '12px', color: '#334155' }}>Months Supply</th>
+                    <th style={{ textAlign: 'left', padding: '8px', fontSize: '12px', color: '#334155' }}>Risk</th>
+                    <th style={{ textAlign: 'left', padding: '8px', fontSize: '12px', color: '#334155' }}>Confidence</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {retailForecasts.map((row) => (
+                    <tr
+                      key={row.key}
+                      onClick={() => setSelectedRetailForecastSubcategory(row.key)}
+                      style={{
+                        borderBottom: '1px solid #f1f5f9',
+                        cursor: 'pointer',
+                        background: row.key === selectedRetailForecast.key ? '#eff6ff' : '#fff',
+                      }}
+                    >
+                      <td style={{ padding: '8px', fontSize: '13px', color: '#0f172a', fontWeight: 700 }}>{row.label}</td>
+                      <td style={{ padding: '8px', fontSize: '13px', textAlign: 'right' }}>{formatRetailForecastValue(row.lastActual, row.metricLabel)}</td>
+                      <td style={{ padding: '8px', fontSize: '13px', textAlign: 'right' }}>{formatRetailForecastValue(row.next3Low, row.metricLabel)}</td>
+                      <td style={{ padding: '8px', fontSize: '13px', textAlign: 'right', color: '#1d4ed8', fontWeight: 700 }}>{formatRetailForecastValue(row.next3Base, row.metricLabel)}</td>
+                      <td style={{ padding: '8px', fontSize: '13px', textAlign: 'right' }}>{formatRetailForecastValue(row.next3High, row.metricLabel)}</td>
+                      <td style={{ padding: '8px', fontSize: '13px', textAlign: 'right' }}>{row.monthsSupply == null ? 'N/A' : row.monthsSupply.toFixed(1)}</td>
+                      <td style={{ padding: '8px', fontSize: '12px' }}>
+                        <span style={{ borderRadius: '999px', padding: '4px 8px', background: row.risk === 'Healthy' ? '#dcfce7' : '#fef3c7', color: row.risk === 'Healthy' ? '#166534' : '#92400e', fontWeight: 700 }}>
+                          {row.risk}
+                        </span>
+                      </td>
+                      <td style={{ padding: '8px', fontSize: '13px', color: '#475569' }}>{row.confidence}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <div style={{ marginTop: '10px', fontSize: '11px', color: '#64748b', lineHeight: 1.4 }}>
+              Method: seasonal monthly blend plus recent trend, with low/high bands widened by historical volatility. Forecasts use units when the source provides subcategory units; otherwise they use sales dollars.
+            </div>
+          </div>
+        </>
+      );
+    };
     const renderCoverageMeta = () => (
       <div style={{ marginTop: '4px', marginBottom: '10px', fontSize: '11px', color: '#64748b' }}>
         As of: {asOfDateLabel} | Coverage: {coverageLabel}
@@ -6441,11 +7032,24 @@ export default function OperationsTab({
       </button>
     );
 
+    if (productReportView === 'retailForecast' && isRetailProductSector) {
+      return (
+        <div style={{ padding: '8px 32px 32px' }}>
+          <h2 style={{ fontSize: '24px', fontWeight: '700', color: '#1e293b', marginBottom: '16px' }}>
+            Product Sales Performance
+          </h2>
+          {productViewSwitcher}
+          {renderRetailForecastingReport()}
+        </div>
+      );
+    }
+
     return (
       <div style={{ padding: '8px 32px 32px' }}>
         <h2 style={{ fontSize: '24px', fontWeight: '700', color: '#1e293b', marginBottom: '16px' }}>
           Product Sales Performance
         </h2>
+        {productViewSwitcher}
 
         {allProductMetricCards.length > 0 && (
           <div style={{ marginBottom: '20px' }}>

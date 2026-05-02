@@ -30,6 +30,10 @@ import {
   getPlatosClosetSalesPageSummary,
   hasPlatosClosetMonthlyFacts,
 } from '@/lib/operational/platos-closet-monthly-facts';
+import {
+  getRetailSubcategoryHistoryProductsPayload,
+  hasRetailSubcategoryHistoryFacts,
+} from '@/lib/operational/retail-subcategory-history';
 
 export const dynamic = 'force-dynamic';
 
@@ -1654,6 +1658,20 @@ export async function GET(request: NextRequest) {
     const hasPlatosFacts =
       (type === 'products' || type === 'inventory') &&
       ((await ensurePlatosClosetMonthlyFacts(companyId)) || (await hasPlatosClosetMonthlyFacts(companyId)));
+
+    const hasRetailSubcategoryHistory =
+      type === 'products' && (await hasRetailSubcategoryHistoryFacts(companyId));
+
+    if (type === 'products' && hasRetailSubcategoryHistory) {
+      const retailPayload = await getRetailSubcategoryHistoryProductsPayload({
+        companyId,
+        startDate,
+        endDate,
+      });
+      if (retailPayload) {
+        return NextResponse.json(retailPayload);
+      }
+    }
 
     if (type === 'products' && hasPlatosFacts) {
       const platosPayload = await getPlatosClosetProductsPayload({
