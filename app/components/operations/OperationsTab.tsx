@@ -7342,6 +7342,12 @@ export default function OperationsTab({
       : 'N/A';
     const formatInventoryPct = (value: number | null | undefined) =>
       value == null || !Number.isFinite(Number(value)) ? 'N/A' : `${Number(value).toFixed(1)}%`;
+    const retailProductAging = summary?.retailProductAging || {};
+    const retailProductAgingBuckets = Array.isArray(retailProductAging?.buckets) ? retailProductAging.buckets : [];
+    const retailProductAgingChartData = Array.isArray(retailProductAging?.chartData) ? retailProductAging.chartData : [];
+    const retailProductAgingLabelByKey = new Map(
+      retailProductAgingBuckets.map((bucket: any) => [String(bucket.key || ''), String(bucket.label || bucket.key || '')]),
+    );
     const inventoryMovementRows = Array.isArray(summary?.inventoryMovement?.rows)
       ? summary.inventoryMovement.rows
       : [];
@@ -7705,6 +7711,65 @@ export default function OperationsTab({
                 </tbody>
               </table>
             </div>
+          </div>
+        )}
+
+        {isSectionEnabled('inventoryRetailProductAging') && (
+          <div style={{ background: 'white', padding: '24px', borderRadius: '12px', border: '1px solid #e2e8f0', marginBottom: '24px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px', marginBottom: '16px', flexWrap: 'wrap' }}>
+              <div>
+                <h3 style={{ fontSize: '18px', fontWeight: '600', color: '#1e293b', margin: 0 }}>
+                  Retail Product Aging
+                </h3>
+                <div style={{ fontSize: '12px', color: '#64748b', marginTop: '4px' }}>
+                  Used inventory aging by workbook month. Hover a bar segment for units, dollars, and inventory mix.
+                </div>
+              </div>
+              {retailProductAging?.latestMonthLabel && (
+                <div style={{ fontSize: '12px', color: '#64748b', textAlign: 'right' }}>
+                  Latest: {retailProductAging.latestMonthLabel}
+                  <br />
+                  {formatCurrency(Number(retailProductAging.latestTotalDollars || 0))} | {Number(retailProductAging.latestTotalUnits || 0).toLocaleString()} units
+                </div>
+              )}
+            </div>
+            {retailProductAgingChartData.length > 0 && retailProductAgingBuckets.length > 0 ? (
+              <ResponsiveContainer width="100%" height={340}>
+                <BarChart data={retailProductAgingChartData}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                  <XAxis dataKey="monthLabel" stroke="#64748b" style={{ fontSize: '12px' }} />
+                  <YAxis stroke="#64748b" style={{ fontSize: '12px' }} tickFormatter={(value) => `$${(Number(value || 0) / 1000).toFixed(0)}k`} />
+                  <Tooltip
+                    formatter={(value: any, name: string, props: any) => {
+                      const key = String(props?.dataKey || '');
+                      const payload = props?.payload || {};
+                      const units = Number(payload[`${key}Units`] || 0);
+                      const pct = Number(payload[`${key}Pct`] || 0);
+                      return [
+                        `${formatCurrency(Number(value || 0))} | ${units.toLocaleString()} units | ${pct.toFixed(1)}%`,
+                        retailProductAgingLabelByKey.get(key) || name,
+                      ];
+                    }}
+                    labelFormatter={(label: any) => `Month: ${String(label || '')}`}
+                    contentStyle={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '8px' }}
+                  />
+                  <Legend />
+                  {retailProductAgingBuckets.map((bucket: any, index: number) => (
+                    <Bar
+                      key={String(bucket.key)}
+                      dataKey={String(bucket.key)}
+                      stackId="used-aging"
+                      fill={COLORS[index % COLORS.length]}
+                      name={String(bucket.label || bucket.key)}
+                    />
+                  ))}
+                </BarChart>
+              </ResponsiveContainer>
+            ) : (
+              <div style={{ padding: '18px', border: '1px dashed #cbd5e1', borderRadius: '10px', color: '#64748b', fontSize: '13px' }}>
+                No used inventory aging rows found yet. Upload a Plato&apos;s Closet workbook with the AGED INVENTORY section to populate this report.
+              </div>
+            )}
           </div>
         )}
 

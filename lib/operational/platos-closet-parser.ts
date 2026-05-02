@@ -27,6 +27,14 @@ type ParsedCategoryMetric = {
   grossMarginDollars: number | null;
 };
 
+type ParsedRetailProductAgingRow = {
+  productType: string;
+  ageBucket: string;
+  units: number | null;
+  dollars: number | null;
+  inventoryPct: number | null;
+};
+
 export type ParsedWorkbookSummary = {
   sheetNames: string[];
   requiredSheets: string[];
@@ -46,6 +54,7 @@ export type ParsedWorkbookSummary = {
     secondaryMetricValue: string | number | null;
   }>;
   categoryMetrics: ParsedCategoryMetric[];
+  retailProductAging: ParsedRetailProductAgingRow[];
   categorySummary: {
     rowCount: number;
     departmentCount: number;
@@ -219,6 +228,10 @@ function parseCategoryMetrics(rows: unknown[][]): ParsedCategoryMetric[] {
     const departmentLabel = asString(row[1]);
     const categoryLabel = asString(row[2]);
     if (!totalLabel && !departmentLabel && !categoryLabel) continue;
+    const normalizedTotalLabel = totalLabel.trim().toUpperCase();
+    if (normalizedTotalLabel === 'NEW' || normalizedTotalLabel === 'AGED INVENTORY' || normalizedTotalLabel === 'OPEN SKU/USED BULK') {
+      break;
+    }
     if (departmentLabel) currentDepartment = departmentLabel;
     out.push({
       department: departmentLabel || (categoryLabel ? currentDepartment : totalLabel || null),
@@ -235,6 +248,39 @@ function parseCategoryMetrics(rows: unknown[][]): ParsedCategoryMetric[] {
       grossMarginDollars: asNumber(row[19]),
     });
   }
+  return out;
+}
+
+function parseRetailProductAging(rows: unknown[][]): ParsedRetailProductAgingRow[] {
+  const startIndex = rows.findIndex((row) => asString(row?.[0]).toUpperCase() === 'AGED INVENTORY');
+  if (startIndex < 0) return [];
+
+  const headerRow = rows[startIndex + 1] || [];
+  const blocks = [
+    { productType: asString(headerRow[0]), label: 0, units: 3, dollars: 5, pct: 7 },
+    { productType: asString(headerRow[12]), label: 12, units: 15, dollars: 17, pct: 20 },
+  ].filter((block) => block.productType);
+
+  const out: ParsedRetailProductAgingRow[] = [];
+  for (let rowIndex = startIndex + 2; rowIndex < rows.length; rowIndex += 1) {
+    const row = rows[rowIndex] || [];
+    const firstLabel = asString(row[0]);
+    if (!firstLabel) break;
+    if (/^open sku\/used bulk$/i.test(firstLabel)) break;
+
+    for (const block of blocks) {
+      const ageBucket = asString(row[block.label]);
+      if (!ageBucket) continue;
+      out.push({
+        productType: block.productType,
+        ageBucket,
+        units: asNumber(row[block.units]),
+        dollars: asNumber(row[block.dollars]),
+        inventoryPct: asNumber(row[block.pct]),
+      });
+    }
+  }
+
   return out;
 }
 
@@ -279,6 +325,7 @@ export function parsePlatosClosetWorkbook(workbook: XLSX.WorkBook): ParsedWorkbo
   const kpiRows = asSheetRows(workbook, 'YTD Key Performance Indicators');
   const categoryRows = asSheetRows(workbook, 'YTD Key Indicator');
   const categoryMetrics = parseCategoryMetrics(categoryRows);
+  const retailProductAging = parseRetailProductAging(categoryRows);
 
   return {
     sheetNames: workbook.SheetNames.map((name) => String(name)),
@@ -293,6 +340,7 @@ export function parsePlatosClosetWorkbook(workbook: XLSX.WorkBook): ParsedWorkbo
     buysHistory: parseTrendRows(kpiRows, 32, 37),
     marketingChannels: parseMarketingRows(kpiRows),
     categoryMetrics,
+    retailProductAging,
     categorySummary: summarizeCategoryMetrics(categoryMetrics),
   };
 }

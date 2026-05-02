@@ -25,6 +25,8 @@ const OPERATIONAL_HUB_SECTION_OPTIONS: Array<{ key: string; label: string; group
   { key: 'inventoryMovement', label: 'Inventory Movement', group: 'Inventory' },
   { key: 'inventoryCurrentTable', label: 'Current Inventory Table', group: 'Inventory' },
   { key: 'inventoryDistribution', label: 'Value Distribution', group: 'Inventory' },
+  { key: 'inventoryAgingObsolescenceV1', label: 'Inventory Aging & Obsolescence', group: 'Inventory' },
+  { key: 'inventoryRetailProductAging', label: 'Retail Product Aging', group: 'Inventory' },
   { key: 'cashBankAccounts', label: 'Bank Accounts Table', group: 'Cash' },
   { key: 'cashDistributionByAccount', label: 'Distribution by Account', group: 'Cash' },
   { key: 'dailySummaryCards', label: 'Summary KPI Cards', group: 'Daily Financials' },

@@ -110,6 +110,7 @@ export async function POST(request: NextRequest) {
         marketingChannels: parsedWorkbook.marketingChannels,
         categorySummary: parsedWorkbook.categorySummary,
         categoryMetrics: parsedWorkbook.categoryMetrics,
+        retailProductAging: parsedWorkbook.retailProductAging,
       },
     };
 
@@ -160,6 +161,7 @@ export async function POST(request: NextRequest) {
         marketingChannels: parsedWorkbook.marketingChannels,
         categorySummary: parsedWorkbook.categorySummary,
         categoryMetrics: parsedWorkbook.categoryMetrics,
+        retailProductAging: parsedWorkbook.retailProductAging,
       },
     });
 
@@ -182,6 +184,7 @@ export async function POST(request: NextRequest) {
         salesKpisCount: parsedWorkbook.salesKpis.length,
         categoryRowCount: parsedWorkbook.categorySummary.rowCount,
         departmentCount: parsedWorkbook.categorySummary.departmentCount,
+        retailProductAgingRows: parsedWorkbook.retailProductAging.length,
       },
     });
   } catch (error: any) {

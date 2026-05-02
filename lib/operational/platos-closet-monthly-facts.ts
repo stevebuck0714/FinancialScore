@@ -1,6 +1,7 @@
 import { Prisma } from '@prisma/client';
+import * as XLSX from 'xlsx';
 import prisma from '@/lib/prisma';
-import type { ParsedWorkbookSummary } from '@/lib/operational/platos-closet-parser';
+import { parsePlatosClosetWorkbook, type ParsedWorkbookSummary } from '@/lib/operational/platos-closet-parser';
 
 const SOURCE_CODE = 'PLATOS_CLOSET_STORE_VISIT';
 
@@ -73,6 +74,38 @@ function metricSlug(label: string): string {
 
 async function needsPlatosFactRebuild(companyId: string): Promise<boolean> {
   try {
+    const agingSnapshotRows = await prisma.$queryRaw<Array<{ snapshotCount: bigint; factCount: bigint }>>(Prisma.sql`
+      SELECT
+        COUNT(*) FILTER (WHERE "parsedWorkbook" ? 'retailProductAging' OR "blobUrl" IS NOT NULL)::bigint AS "snapshotCount",
+        (
+          SELECT COUNT(*)::bigint
+          FROM "PlatosClosetMonthlyFact" f
+          WHERE f."companyId" = ${companyId}
+            AND f."sourceCode" = ${SOURCE_CODE}
+            AND f."factType" = 'retail_product_aging'
+            AND f."metricName" = 'used_inventory_age_dollars'
+        ) AS "factCount"
+      FROM "PlatosClosetWorkbookSnapshot"
+      WHERE "companyId" = ${companyId}
+        AND "sourceCode" = ${SOURCE_CODE}
+    `);
+    const agingSnapshotCount = Number(agingSnapshotRows[0]?.snapshotCount || 0);
+    const agingFactCount = Number(agingSnapshotRows[0]?.factCount || 0);
+    if (agingSnapshotCount > 0 && agingFactCount === 0) return true;
+
+    const staleCategoryRows = await prisma.$queryRaw<Array<{ staleCount: bigint }>>(Prisma.sql`
+      SELECT COUNT(*)::bigint AS "staleCount"
+      FROM "PlatosClosetMonthlyFact"
+      WHERE "companyId" = ${companyId}
+        AND "sourceCode" = ${SOURCE_CODE}
+        AND "factType" = 'category_metric'
+        AND (
+          "dimensionLabel" IN ('NEW', 'AGED INVENTORY', 'OPEN SKU/USED BULK')
+          OR "metadata"->>'department' IN ('NEW', 'AGED INVENTORY', 'OPEN SKU/USED BULK')
+        )
+    `);
+    if (Number(staleCategoryRows[0]?.staleCount || 0) > 0) return true;
+
     const rows = await prisma.$queryRaw<Array<{ metricName: string; valueNumber: number | null }>>(Prisma.sql`
       SELECT "metricName", "valueNumber"
       FROM "PlatosClosetMonthlyFact"
@@ -115,6 +148,10 @@ function normalizeDimensionKey(value: string | null, fallback: string): string {
     .replace(/[^a-z0-9]+/g, '_')
     .replace(/^_+|_+$/g, '');
   return base || 'unknown';
+}
+
+function isRetailProductAgingTotal(ageBucket: string): boolean {
+  return /^totals?$/i.test(String(ageBucket || '').trim());
 }
 
 function buildFacts(parsedWorkbook: ParsedWorkbookSummary): MonthlyFactRow[] {
@@ -216,6 +253,27 @@ function buildFacts(parsedWorkbook: ParsedWorkbookSummary): MonthlyFactRow[] {
         inventoryOnHandDollars: row.inventoryOnHandDollars,
         imuPct: row.imuPct,
         grossMarginPct: row.grossMarginPct,
+      },
+    });
+  }
+
+  for (const row of parsedWorkbook.retailProductAging || []) {
+    if (String(row.productType || '').trim().toUpperCase() !== 'USED') continue;
+    if (!row.ageBucket || isRetailProductAgingTotal(row.ageBucket)) continue;
+    upsertFact({
+      monthKey: parsedWorkbook.monthKey || '',
+      monthStart,
+      factType: 'retail_product_aging',
+      metricName: 'used_inventory_age_dollars',
+      dimensionType: 'age_bucket',
+      dimensionKey: normalizeDimensionKey(row.ageBucket, 'age_bucket'),
+      dimensionLabel: row.ageBucket,
+      valueNumber: row.dollars,
+      compareNumber: row.units,
+      sharePct: row.inventoryPct,
+      auxNumber: null,
+      metadata: {
+        productType: row.productType,
       },
     });
   }
@@ -380,6 +438,10 @@ function asCategoryMetrics(value: unknown): ParsedWorkbookSummary['categoryMetri
   return Array.isArray(value) ? (value as ParsedWorkbookSummary['categoryMetrics']) : [];
 }
 
+function asRetailProductAging(value: unknown): ParsedWorkbookSummary['retailProductAging'] {
+  return Array.isArray(value) ? (value as ParsedWorkbookSummary['retailProductAging']) : [];
+}
+
 function asMarketingChannels(value: unknown): ParsedWorkbookSummary['marketingChannels'] {
   return Array.isArray(value) ? (value as ParsedWorkbookSummary['marketingChannels']) : [];
 }
@@ -412,6 +474,7 @@ function asParsedWorkbookSummary(value: unknown, monthKey: string): ParsedWorkbo
     buysHistory: asTrendRows(obj.buysHistory),
     marketingChannels: asMarketingChannels(obj.marketingChannels),
     categoryMetrics: asCategoryMetrics(obj.categoryMetrics),
+    retailProductAging: asRetailProductAging(obj.retailProductAging),
     categorySummary: asCategorySummary(obj.categorySummary),
   };
 }
@@ -419,10 +482,10 @@ function asParsedWorkbookSummary(value: unknown, monthKey: string): ParsedWorkbo
 export async function ensurePlatosClosetMonthlyFacts(companyId: string): Promise<boolean> {
   const hasExistingFacts = await hasPlatosClosetMonthlyFacts(companyId);
   if (hasExistingFacts && !(await needsPlatosFactRebuild(companyId))) return true;
-  let snapshots: Array<{ monthKey: string; parsedWorkbook: unknown }> = [];
+  let snapshots: Array<{ monthKey: string; parsedWorkbook: unknown; blobUrl: string | null }> = [];
   try {
-    snapshots = await prisma.$queryRaw<Array<{ monthKey: string; parsedWorkbook: unknown }>>(Prisma.sql`
-      SELECT "monthKey", "parsedWorkbook"
+    snapshots = await prisma.$queryRaw<Array<{ monthKey: string; parsedWorkbook: unknown; blobUrl: string | null }>>(Prisma.sql`
+      SELECT "monthKey", "parsedWorkbook", "blobUrl"
       FROM "PlatosClosetWorkbookSnapshot"
       WHERE "companyId" = ${companyId}
         AND "sourceCode" = ${SOURCE_CODE}
@@ -435,7 +498,18 @@ export async function ensurePlatosClosetMonthlyFacts(companyId: string): Promise
   if (!snapshots.length) return false;
 
   for (const snapshot of snapshots) {
-    const parsedWorkbook = asParsedWorkbookSummary(snapshot.parsedWorkbook, snapshot.monthKey);
+    let parsedWorkbook = asParsedWorkbookSummary(snapshot.parsedWorkbook, snapshot.monthKey);
+    if (parsedWorkbook && snapshot.blobUrl) {
+      try {
+        const response = await fetch(snapshot.blobUrl);
+        if (response.ok) {
+          const arrayBuffer = await response.arrayBuffer();
+          parsedWorkbook = parsePlatosClosetWorkbook(XLSX.read(Buffer.from(arrayBuffer), { type: 'buffer' }));
+        }
+      } catch {
+        // Keep the stored parsed snapshot if the historical blob is unavailable.
+      }
+    }
     if (!parsedWorkbook) continue;
     await savePlatosClosetMonthlyFacts({
       companyId,
@@ -1028,6 +1102,9 @@ export async function getPlatosClosetInventoryPayload(args: {
 
   const summaryFacts = facts.filter((row) => row.factType === 'summary_metric');
   const categoryFacts = facts.filter((row) => row.factType === 'category_metric');
+  const retailProductAgingFacts = facts.filter(
+    (row) => row.factType === 'retail_product_aging' && row.metricName === 'used_inventory_age_dollars',
+  );
   const inventorySeries = summaryFacts
     .filter((row) => row.metricName === 'inventory_on_hand_total')
     .map((row) => ({
@@ -1037,23 +1114,39 @@ export async function getPlatosClosetInventoryPayload(args: {
     .sort((a, b) => String(a.snapshotDate).localeCompare(String(b.snapshotDate)));
   if (!inventorySeries.length || !categoryFacts.length) return null;
 
+  const factsByMonth = categoryFacts.reduce((acc: Map<string, MonthlyFactRow[]>, row) => {
+    const rows = acc.get(row.monthKey) || [];
+    rows.push(row);
+    acc.set(row.monthKey, rows);
+    return acc;
+  }, new Map<string, MonthlyFactRow[]>());
   const departmentInventoryByMonth = new Map<string, Map<string, { monthStart: Date; department: string; assetValue: number }>>();
-  for (const row of categoryFacts) {
-    const metadata = row.metadata || {};
-    const department = String(metadata.department || row.dimensionLabel || '').trim();
-    const category = metadata.category ? String(metadata.category) : null;
-    if (!department || (department.toUpperCase() === 'USED' && !category)) continue;
-    const inventoryOnHandDollars = asNumber(metadata.inventoryOnHandDollars);
-    if (inventoryOnHandDollars <= 0) continue;
-    const monthBucket = departmentInventoryByMonth.get(row.monthKey) || new Map<string, { monthStart: Date; department: string; assetValue: number }>();
-    const departmentBucket = monthBucket.get(department) || {
-      monthStart: row.monthStart,
-      department,
-      assetValue: 0,
-    };
-    departmentBucket.assetValue += inventoryOnHandDollars;
-    monthBucket.set(department, departmentBucket);
-    departmentInventoryByMonth.set(row.monthKey, monthBucket);
+  for (const [monthKey, monthFacts] of factsByMonth.entries()) {
+    const hasCategoryRows = monthFacts.some((row) => {
+      const metadata = row.metadata || {};
+      return row.dimensionType === 'category' && Boolean(metadata.category);
+    });
+    const sourceRows = hasCategoryRows
+      ? monthFacts.filter((row) => row.dimensionType === 'category')
+      : monthFacts.filter((row) => row.dimensionType === 'department');
+
+    for (const row of sourceRows) {
+      const metadata = row.metadata || {};
+      const department = String(metadata.department || row.dimensionLabel || '').trim();
+      const category = metadata.category ? String(metadata.category) : null;
+      if (!department || (department.toUpperCase() === 'USED' && !category)) continue;
+      const inventoryOnHandDollars = asNumber(metadata.inventoryOnHandDollars);
+      if (inventoryOnHandDollars <= 0) continue;
+      const monthBucket = departmentInventoryByMonth.get(row.monthKey) || new Map<string, { monthStart: Date; department: string; assetValue: number }>();
+      const departmentBucket = monthBucket.get(department) || {
+        monthStart: row.monthStart,
+        department,
+        assetValue: 0,
+      };
+      departmentBucket.assetValue += inventoryOnHandDollars;
+      monthBucket.set(department, departmentBucket);
+      departmentInventoryByMonth.set(monthKey, monthBucket);
+    }
   }
   const departmentInventorySeries = Array.from(departmentInventoryByMonth.values())
     .flatMap((monthBucket) =>
@@ -1138,6 +1231,46 @@ export async function getPlatosClosetInventoryPayload(args: {
 
   const top5InventoryValue = latestCategoryRows.slice(0, 5).reduce((sum, row) => sum + asNumber(row.assetValue), 0);
 
+  const agingBucketSortRank = (label: string): number => {
+    const normalized = String(label || '').toLowerCase();
+    if (normalized.includes('0-90')) return 1;
+    if (normalized.includes('91-180')) return 2;
+    if (normalized.includes('181-365')) return 3;
+    if (normalized.includes('366')) return 4;
+    return 99;
+  };
+  const retailProductAgingBuckets = Array.from(
+    retailProductAgingFacts.reduce((bucketMap: Map<string, { key: string; label: string }>, row) => {
+      const key = row.dimensionKey || normalizeDimensionKey(row.dimensionLabel, 'age_bucket');
+      const label = String(row.dimensionLabel || key);
+      bucketMap.set(key, { key, label });
+      return bucketMap;
+    }, new Map<string, { key: string; label: string }>())
+      .values(),
+  ).sort((a, b) => agingBucketSortRank(a.label) - agingBucketSortRank(b.label) || a.label.localeCompare(b.label));
+  const retailProductAgingByMonth = new Map<string, Record<string, unknown>>();
+  for (const row of retailProductAgingFacts) {
+    const monthRow = retailProductAgingByMonth.get(row.monthKey) || {
+      monthKey: row.monthKey,
+      monthLabel: row.monthStart.toLocaleDateString('en-US', { month: 'short', year: 'numeric', timeZone: 'UTC' }),
+      totalDollars: 0,
+      totalUnits: 0,
+    };
+    const key = row.dimensionKey || normalizeDimensionKey(row.dimensionLabel, 'age_bucket');
+    const dollars = asNumber(row.valueNumber);
+    const units = asNumber(row.compareNumber);
+    monthRow[key] = dollars;
+    monthRow[`${key}Units`] = units;
+    monthRow[`${key}Pct`] = asNumber(row.sharePct) * 100;
+    monthRow.totalDollars = asNumber(monthRow.totalDollars) + dollars;
+    monthRow.totalUnits = asNumber(monthRow.totalUnits) + units;
+    retailProductAgingByMonth.set(row.monthKey, monthRow);
+  }
+  const retailProductAgingChartData = Array.from(retailProductAgingByMonth.values()).sort((a, b) =>
+    String(a.monthKey || '').localeCompare(String(b.monthKey || '')),
+  );
+  const latestRetailProductAging = retailProductAgingChartData[retailProductAgingChartData.length - 1] || null;
+
   const cogsSeries = new Map<string, number>();
   for (const row of summaryFacts.filter((fact) => fact.metricName === 'total_sales' || fact.metricName === 'sales_gm_dollars')) {
     const acc = cogsSeries.get(row.monthKey) || 0;
@@ -1170,6 +1303,14 @@ export async function getPlatosClosetInventoryPayload(args: {
         rows: inventoryMovementRows,
         monthCount: new Set(inventoryMovementRows.map((row) => row.monthKey)).size,
         rowCount: inventoryMovementRows.length,
+      },
+      retailProductAging: {
+        buckets: retailProductAgingBuckets,
+        chartData: retailProductAgingChartData,
+        latestMonthKey: latestRetailProductAging?.monthKey || null,
+        latestMonthLabel: latestRetailProductAging?.monthLabel || null,
+        latestTotalDollars: asNumber(latestRetailProductAging?.totalDollars),
+        latestTotalUnits: asNumber(latestRetailProductAging?.totalUnits),
       },
       source: 'platos-closet-monthly-facts',
     },
