@@ -32,6 +32,7 @@ import {
 } from '@/lib/operational/platos-closet-monthly-facts';
 import {
   getRetailSubcategoryHistoryProductsPayload,
+  getRetailSubcategoryTurnsSummary,
   hasRetailSubcategoryHistoryFacts,
 } from '@/lib/operational/retail-subcategory-history';
 
@@ -1660,7 +1661,7 @@ export async function GET(request: NextRequest) {
       ((await ensurePlatosClosetMonthlyFacts(companyId)) || (await hasPlatosClosetMonthlyFacts(companyId)));
 
     const hasRetailSubcategoryHistory =
-      type === 'products' && (await hasRetailSubcategoryHistoryFacts(companyId));
+      (type === 'products' || type === 'inventory') && (await hasRetailSubcategoryHistoryFacts(companyId));
 
     if (type === 'products' && hasRetailSubcategoryHistory) {
       const retailPayload = await getRetailSubcategoryHistoryProductsPayload({
@@ -1692,7 +1693,41 @@ export async function GET(request: NextRequest) {
         endDate,
       });
       if (platosPayload) {
-        return NextResponse.json(platosPayload);
+        const retailTurns = hasRetailSubcategoryHistory
+          ? await getRetailSubcategoryTurnsSummary({ companyId, endDate })
+          : null;
+        return NextResponse.json(
+          retailTurns
+            ? {
+                ...platosPayload,
+                summary: {
+                  ...(platosPayload.summary || {}),
+                  retailTurns,
+                },
+              }
+            : platosPayload,
+        );
+      }
+    }
+
+    if (type === 'inventory' && hasRetailSubcategoryHistory) {
+      const retailTurns = await getRetailSubcategoryTurnsSummary({ companyId, endDate });
+      if (retailTurns) {
+        return NextResponse.json({
+          records: [],
+          trend: [],
+          departmentTrend: [],
+          unitCostHistory: [],
+          agingReport: [],
+          summary: {
+            totalValue: 0,
+            itemCount: 0,
+            topItems: [],
+            totalObsolescenceExposure: 0,
+            retailTurns,
+            source: 'retail-subcategory-history',
+          },
+        });
       }
     }
 

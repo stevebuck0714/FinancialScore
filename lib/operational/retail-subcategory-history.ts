@@ -520,3 +520,173 @@ export async function getRetailSubcategoryHistoryProductsPayload(args: {
     },
   };
 }
+
+export async function getRetailSubcategoryTurnsSummary(args: {
+  companyId: string;
+  endDate: Date;
+}): Promise<any | null> {
+  const historyStartDate = new Date(Date.UTC(args.endDate.getUTCFullYear(), args.endDate.getUTCMonth() - 35, 1));
+  const rows = await prisma.$queryRaw<Array<any>>(Prisma.sql`
+    SELECT
+      "sourceCode",
+      "monthKey",
+      "monthStart",
+      "dimensionKey",
+      "dimensionLabel",
+      "valueNumber",
+      "compareNumber",
+      "sharePct",
+      "auxNumber",
+      "metadata"
+    FROM "PlatosClosetMonthlyFact"
+    WHERE "companyId" = ${args.companyId}
+      AND "sourceCode" IN (${Prisma.join(RETAIL_SUBCATEGORY_PRODUCT_SOURCE_CODES)})
+      AND "factType" = 'category_metric'
+      AND "metricName" = 'sales_units'
+      AND "monthStart" >= ${historyStartDate}
+      AND "monthStart" <= ${args.endDate}
+    ORDER BY "monthStart" ASC, "dimensionLabel" ASC
+  `);
+  if (!rows.length) return null;
+
+  const categoryMapRows = await prisma.$queryRaw<Array<any>>(Prisma.sql`
+    SELECT
+      "dimensionLabel",
+      "metadata"
+    FROM "PlatosClosetMonthlyFact"
+    WHERE "companyId" = ${args.companyId}
+      AND "sourceCode" = 'PLATOS_CLOSET_STORE_VISIT'
+      AND "factType" = 'category_metric'
+      AND "dimensionType" = 'category'
+    ORDER BY "monthStart" DESC
+  `).catch(() => []);
+  const categoryBySubcategory = new Map<string, string>();
+  for (const row of categoryMapRows) {
+    const metadata = row.metadata && typeof row.metadata === 'object' && !Array.isArray(row.metadata) ? row.metadata : {};
+    const subcategory = String(row.dimensionLabel || metadata.category || '').trim();
+    const category = String(metadata.department || '').trim();
+    if (subcategory && category && !categoryBySubcategory.has(subcategory.toLowerCase())) {
+      categoryBySubcategory.set(subcategory.toLowerCase(), category);
+    }
+  }
+
+  const normalizedRows = rows.map((row) => {
+    const metadata = row.metadata && typeof row.metadata === 'object' && !Array.isArray(row.metadata) ? row.metadata : {};
+    const subcategory = String(row.dimensionLabel || metadata.subcategoryName || 'Unknown').trim();
+    const bomUnits = metadata.bomUnits == null ? null : Number(metadata.bomUnits);
+    const eomUnits = row.auxNumber == null ? null : Number(row.auxNumber);
+    const monthAvgStock =
+      Number.isFinite(Number(bomUnits)) && Number.isFinite(Number(eomUnits))
+        ? (Number(bomUnits) + Number(eomUnits)) / 2
+        : metadata.avgStockUnits == null
+          ? null
+          : Number(metadata.avgStockUnits);
+    return {
+      monthKey: String(row.monthKey || ''),
+      monthStart: new Date(row.monthStart),
+      monthLabel: monthLabelFromKey(String(row.monthKey || '')),
+      subcategory,
+      category: categoryBySubcategory.get(subcategory.toLowerCase()) || 'Unmapped',
+      salesUnits: Number(row.valueNumber || 0),
+      buysUnits: Number(row.compareNumber || 0),
+      bomUnits,
+      eomUnits,
+      avgStockUnits: monthAvgStock,
+      sellThroughPct: row.sharePct == null ? null : Number(row.sharePct) * 100,
+      currentOnHandUnits: metadata.currentOnHandUnits == null ? null : Number(metadata.currentOnHandUnits),
+      sourceTurnRate: metadata.turnRate == null ? null : Number(metadata.turnRate),
+    };
+  }).filter((row) => row.monthKey && row.salesUnits > 0);
+
+  const latestMonthKey = normalizedRows.map((row) => row.monthKey).sort().slice(-1)[0] || '';
+  if (!latestMonthKey) return null;
+  const chartMonthKeys = Array.from({ length: 12 }, (_, index) => {
+    const [yearRaw, monthRaw] = latestMonthKey.split('-').map(Number);
+    const date = new Date(Date.UTC(yearRaw || 2000, (monthRaw || 1) - 1 + index - 11, 1));
+    return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}`;
+  });
+  const monthKeys = Array.from({ length: 6 }, (_, index) => {
+    const [yearRaw, monthRaw] = latestMonthKey.split('-').map(Number);
+    const date = new Date(Date.UTC(yearRaw || 2000, (monthRaw || 1) - 1 + index - 5, 1));
+    return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}`;
+  });
+  const monthSet = new Set(monthKeys);
+  const periodRows = normalizedRows.filter((row) => monthSet.has(row.monthKey));
+  const periodLabel = `${monthLabelFromKey(monthKeys[0])} - ${monthLabelFromKey(monthKeys[monthKeys.length - 1])}`;
+  const chartMonthSet = new Set(chartMonthKeys);
+  const chartRows = normalizedRows.filter((row) => chartMonthSet.has(row.monthKey));
+  const chartPeriodLabel = `${monthLabelFromKey(chartMonthKeys[0])} - ${monthLabelFromKey(chartMonthKeys[chartMonthKeys.length - 1])}`;
+
+  const chartData = chartMonthKeys.map((monthKey) => {
+    const monthRows = chartRows.filter((row) => row.monthKey === monthKey);
+    const salesUnits = monthRows.reduce((sum, row) => sum + Number(row.salesUnits || 0), 0);
+    const avgStockUnits = monthRows.reduce((sum, row) => sum + Number(row.avgStockUnits || 0), 0);
+    const sellThroughValues = monthRows.map((row) => Number(row.sellThroughPct)).filter((value) => Number.isFinite(value));
+    return {
+      monthKey,
+      monthLabel: monthLabelFromKey(monthKey),
+      salesUnits,
+      avgStockUnits,
+      turnRate: avgStockUnits > 0 ? salesUnits / avgStockUnits : null,
+      sellThroughPct: sellThroughValues.length
+        ? sellThroughValues.reduce((sum, value) => sum + value, 0) / sellThroughValues.length
+        : null,
+    };
+  });
+
+  const buildSummaryRows = (level: 'category' | 'subcategory') => {
+    const buckets = new Map<string, any>();
+    for (const row of periodRows) {
+      const key = level === 'category' ? row.category : `${row.category}||${row.subcategory}`;
+      const bucket = buckets.get(key) || {
+        key,
+        category: row.category,
+        subcategory: level === 'subcategory' ? row.subcategory : null,
+        label: level === 'category' ? row.category : row.subcategory,
+        salesUnits: 0,
+        buysUnits: 0,
+        avgStockByMonth: new Map<string, number>(),
+        sellThroughValues: [] as number[],
+        latestOnHandUnits: null as number | null,
+      };
+      bucket.salesUnits += Number(row.salesUnits || 0);
+      bucket.buysUnits += Number(row.buysUnits || 0);
+      bucket.avgStockByMonth.set(row.monthKey, (bucket.avgStockByMonth.get(row.monthKey) || 0) + Number(row.avgStockUnits || 0));
+      if (Number.isFinite(Number(row.sellThroughPct))) bucket.sellThroughValues.push(Number(row.sellThroughPct));
+      if (row.monthKey === latestMonthKey && row.currentOnHandUnits != null) {
+        bucket.latestOnHandUnits = (bucket.latestOnHandUnits || 0) + Number(row.currentOnHandUnits || 0);
+      }
+      buckets.set(key, bucket);
+    }
+    return Array.from(buckets.values()).map((bucket) => {
+      const avgStockValues = Array.from((bucket.avgStockByMonth as Map<string, number>).values()).filter((value) => value > 0);
+      const avgStockUnits = avgStockValues.length
+        ? avgStockValues.reduce((sum, value) => sum + value, 0) / avgStockValues.length
+        : 0;
+      return {
+        key: bucket.key,
+        category: bucket.category,
+        subcategory: bucket.subcategory,
+        label: bucket.label,
+        salesUnits: bucket.salesUnits,
+        buysUnits: bucket.buysUnits,
+        avgStockUnits,
+        latestOnHandUnits: bucket.latestOnHandUnits,
+        turnRate: avgStockUnits > 0 ? bucket.salesUnits / avgStockUnits : null,
+        sellThroughPct: bucket.sellThroughValues.length
+          ? bucket.sellThroughValues.reduce((sum: number, value: number) => sum + value, 0) / bucket.sellThroughValues.length
+          : null,
+      };
+    }).sort((a, b) => Number(b.turnRate || 0) - Number(a.turnRate || 0));
+  };
+
+  return {
+    latestMonthKey,
+    latestMonthLabel: monthLabelFromKey(latestMonthKey),
+    periodLabel,
+    chartPeriodLabel,
+    chartData,
+    categoryRows: buildSummaryRows('category'),
+    subcategoryRows: buildSummaryRows('subcategory'),
+  };
+}

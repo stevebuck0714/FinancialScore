@@ -667,6 +667,7 @@ export default function OperationsTab({
   >('assetValue');
   const [inventorySortDir, setInventorySortDir] = useState<'asc' | 'desc'>('desc');
   const [inventoryCostTrendModalOpen, setInventoryCostTrendModalOpen] = useState(false);
+  const [inventoryInfoKey, setInventoryInfoKey] = useState<string | null>(null);
   // Info modal for the six bottom Products charts. A single string identifies
   // the active chart so we share one modal element rather than wiring six.
   const [productChartInfoKey, setProductChartInfoKey] = useState<string | null>(null);
@@ -699,9 +700,13 @@ export default function OperationsTab({
     | 'estimatedObsolescenceExposure'
   >('estimatedObsolescenceExposure');
   const [inventoryAgingSortDir, setInventoryAgingSortDir] = useState<'asc' | 'desc'>('desc');
+  const [retailTurnsSortKey, setRetailTurnsSortKey] = useState<
+    'label' | 'category' | 'salesUnits' | 'buysUnits' | 'avgStockUnits' | 'latestOnHandUnits' | 'sellThroughPct' | 'turnRate'
+  >('turnRate');
+  const [retailTurnsSortDir, setRetailTurnsSortDir] = useState<'asc' | 'desc'>('desc');
   const [productScopeMode, setProductScopeMode] = useState<'total' | 'product'>('total');
   const [selectedScopeSku, setSelectedScopeSku] = useState('');
-  const [productReportView, setProductReportView] = useState<'performance' | 'retailForecast'>('performance');
+  const [productReportView, setProductReportView] = useState<'performance' | 'retailForecast' | 'merchandiseProfitability'>('performance');
   const [selectedRetailForecastSubcategory, setSelectedRetailForecastSubcategory] = useState('');
   const [retailForecastTableSortKey, setRetailForecastTableSortKey] = useState<RetailForecastTableSortKey>('next3Base');
   const [retailForecastTableSortDir, setRetailForecastTableSortDir] = useState<'asc' | 'desc'>('desc');
@@ -6556,6 +6561,197 @@ export default function OperationsTab({
       }
       return (Number(left) - Number(right)) * direction;
     });
+    const merchandiseProfitability = (() => {
+      const retailRows = (rawProductRecords as any[])
+        .map((row) => ({
+          monthKey: monthKeyFromDateValue(row?.snapshotDate || row?.monthStart || row?.date),
+          department: String(row?.department || '').trim() || 'Unassigned',
+          subcategory: String(row?.category || row?.itemName || row?.dimensionLabel || 'Unassigned').trim() || 'Unassigned',
+          sales: Number(row?.revenue || row?.currentSales || row?.netSales || 0),
+          priorSales: Number(row?.priorRevenue || 0),
+          gmDollars: Number(row?.grossMarginDollars || 0),
+          gmPct: Number(row?.grossMarginPct || 0),
+          inventoryOnHand: Number(row?.inventoryOnHandDollars || 0),
+        }))
+        .filter((row) => row.monthKey && row.sales > 0);
+      const latestMonthKey = retailRows
+        .map((row) => row.monthKey)
+        .sort((a, b) => String(a).localeCompare(String(b)))
+        .slice(-1)[0] || '';
+      if (!latestMonthKey) return null;
+
+      const currentPeriodMonthKeys = Array.from({ length: 6 }, (_, index) => addMonthsToMonthKey(latestMonthKey, index - 5));
+      const priorPeriodMonthKeys = currentPeriodMonthKeys.map((monthKey) => addMonthsToMonthKey(monthKey, -12));
+      const currentMonthSet = new Set(currentPeriodMonthKeys);
+      const priorMonthSet = new Set(priorPeriodMonthKeys);
+      const currentRows = retailRows.filter((row) => currentMonthSet.has(row.monthKey));
+      const historyRows = retailRows.filter((row) => priorMonthSet.has(row.monthKey));
+      const totalSales = currentRows.reduce((sum, row) => sum + row.sales, 0);
+      const totalGmDollars = currentRows.reduce((sum, row) => sum + row.gmDollars, 0);
+      const inventoryByMonth = new Map<string, number>();
+      for (const row of currentRows) {
+        inventoryByMonth.set(row.monthKey, (inventoryByMonth.get(row.monthKey) || 0) + row.inventoryOnHand);
+      }
+      const availableInventoryMonths = Array.from(inventoryByMonth.values()).filter((value) => value > 0);
+      const totalInventory = availableInventoryMonths.length
+        ? availableInventoryMonths.reduce((sum, value) => sum + value, 0) / availableInventoryMonths.length
+        : 0;
+      const totalGmPct = totalSales > 0 ? (totalGmDollars / totalSales) * 100 : 0;
+      const totalProductivity = totalInventory > 0 ? totalGmDollars / totalInventory : 0;
+      const currentPeriodLabel = `${monthLabelFromKey(currentPeriodMonthKeys[0])} - ${monthLabelFromKey(currentPeriodMonthKeys[currentPeriodMonthKeys.length - 1])}`;
+      const priorPeriodLabel = `${monthLabelFromKey(priorPeriodMonthKeys[0])} - ${monthLabelFromKey(priorPeriodMonthKeys[priorPeriodMonthKeys.length - 1])}`;
+
+      const buildRows = (level: 'category' | 'subcategory') => {
+        const makeKey = (row: any) => (level === 'category' ? row.department : `${row.department}||${row.subcategory}`);
+        const makeName = (row: any) => (level === 'category' ? row.department : row.subcategory);
+        const makeDepartment = (row: any) => (level === 'category' ? '' : row.department);
+        const priorByKey = new Map<string, { sales: number; gmDollars: number }>();
+        for (const row of historyRows) {
+          const key = makeKey(row);
+          const bucket = priorByKey.get(key) || { sales: 0, gmDollars: 0 };
+          bucket.sales += row.sales;
+          bucket.gmDollars += row.gmDollars;
+          priorByKey.set(key, bucket);
+        }
+        const buckets = new Map<string, any>();
+        for (const row of currentRows) {
+          const key = makeKey(row);
+          const bucket = buckets.get(key) || {
+            key,
+            name: makeName(row),
+            department: makeDepartment(row),
+            sales: 0,
+            fallbackPriorSales: 0,
+            gmDollars: 0,
+            inventoryByMonth: new Map<string, number>(),
+          };
+          bucket.sales += row.sales;
+          bucket.fallbackPriorSales += row.priorSales;
+          bucket.gmDollars += row.gmDollars;
+          bucket.inventoryByMonth.set(row.monthKey, (bucket.inventoryByMonth.get(row.monthKey) || 0) + row.inventoryOnHand);
+          buckets.set(key, bucket);
+        }
+        return Array.from(buckets.values())
+          .map((row) => {
+            const historicalPrior = priorByKey.get(row.key);
+            const priorSales = historicalPrior?.sales || row.fallbackPriorSales || 0;
+            const priorGmDollars = historicalPrior?.gmDollars || null;
+            const rowInventoryValues = Array.from((row.inventoryByMonth as Map<string, number>).values()).filter((value) => value > 0);
+            const inventoryOnHand = rowInventoryValues.length
+              ? rowInventoryValues.reduce((sum, value) => sum + value, 0) / rowInventoryValues.length
+              : 0;
+            const currentGmPct = row.sales > 0 ? row.gmDollars / row.sales : 0;
+            const priorGmPct = historicalPrior && historicalPrior.sales > 0 ? historicalPrior.gmDollars / historicalPrior.sales : null;
+            const estimatedPriorGmDollars = priorGmDollars ?? priorSales * currentGmPct;
+            const gmDelta = row.gmDollars - estimatedPriorGmDollars;
+            const volumeImpact = priorGmPct == null ? (row.sales - priorSales) * currentGmPct : (row.sales - priorSales) * priorGmPct;
+            const rateImpact = priorGmPct == null ? null : row.sales * (currentGmPct - priorGmPct);
+            const residualImpact = rateImpact == null ? 0 : gmDelta - volumeImpact - rateImpact;
+            const driver =
+              rateImpact != null && Math.abs(rateImpact) > Math.abs(volumeImpact)
+                ? 'GM% rate'
+                : 'Sales volume';
+            return {
+              ...row,
+              inventoryByMonth: undefined,
+              inventoryOnHand,
+              priorSales,
+              priorGmDollars,
+              gmPct: currentGmPct * 100,
+              priorGmPct: priorGmPct == null ? null : priorGmPct * 100,
+              gmDelta,
+              volumeImpact,
+              rateImpact,
+              residualImpact,
+              salesMixPct: totalSales > 0 ? (row.sales / totalSales) * 100 : 0,
+              gmMixPct: totalGmDollars > 0 ? (row.gmDollars / totalGmDollars) * 100 : 0,
+              gmPerInventoryDollar: inventoryOnHand > 0 ? row.gmDollars / inventoryOnHand : 0,
+              driver,
+              bridgeConfidence: priorGmPct == null ? 'Sales-only' : 'Rate + volume',
+            };
+          })
+          .sort((a, b) => b.gmDollars - a.gmDollars);
+      };
+
+      const categoryRows = buildRows('category');
+      const subcategoryRows = buildRows('subcategory');
+      const monthlyBridgeRows = currentPeriodMonthKeys.map((monthKey) => {
+        const priorMonthKey = addMonthsToMonthKey(monthKey, -12);
+        const monthRows = retailRows.filter((row) => row.monthKey === monthKey);
+        const priorRows = retailRows.filter((row) => row.monthKey === priorMonthKey);
+        const sales = monthRows.reduce((sum, row) => sum + row.sales, 0);
+        const priorSalesFromHistory = priorRows.reduce((sum, row) => sum + row.sales, 0);
+        const priorSalesFromWorkbook = monthRows.reduce((sum, row) => sum + row.priorSales, 0);
+        const priorSales = priorSalesFromHistory || priorSalesFromWorkbook || 0;
+        const gmDollars = monthRows.reduce((sum, row) => sum + row.gmDollars, 0);
+        const priorGmDollars = priorRows.length
+          ? priorRows.reduce((sum, row) => sum + row.gmDollars, 0)
+          : null;
+        const currentGmPct = sales > 0 ? gmDollars / sales : 0;
+        const priorGmPct = priorGmDollars != null && priorSalesFromHistory > 0 ? priorGmDollars / priorSalesFromHistory : null;
+        const estimatedPriorGmDollars = priorGmDollars ?? priorSales * currentGmPct;
+        const gmDelta = gmDollars - estimatedPriorGmDollars;
+        const volumeImpact = priorGmPct == null ? (sales - priorSales) * currentGmPct : (sales - priorSales) * priorGmPct;
+        const rateImpact = priorGmPct == null ? null : sales * (currentGmPct - priorGmPct);
+        const residualImpact = rateImpact == null ? 0 : gmDelta - volumeImpact - rateImpact;
+        return {
+          monthKey,
+          monthLabel: monthLabelFromKey(monthKey),
+          priorMonthKey,
+          sales,
+          priorSales,
+          gmDollars,
+          priorGmDollars,
+          gmDelta,
+          volumeImpact,
+          rateImpact,
+          residualImpact,
+          bridgeConfidence: priorGmPct == null ? 'Sales-only' : 'Rate + volume',
+        };
+      });
+      const avgSubcategorySales = subcategoryRows.length ? totalSales / subcategoryRows.length : 0;
+      const avgSubcategoryInventory = subcategoryRows.length ? totalInventory / subcategoryRows.length : 0;
+      return {
+        latestMonthKey,
+        currentPeriodMonthKeys,
+        priorPeriodMonthKeys,
+        currentPeriodLabel,
+        priorPeriodLabel,
+        periodMonthCount: currentPeriodMonthKeys.length,
+        totalSales,
+        totalGmDollars,
+        totalGmPct,
+        totalInventory,
+        totalProductivity,
+        categoryRows,
+        subcategoryRows,
+        monthlyBridgeRows,
+        topGmDrivers: subcategoryRows.slice(0, 8),
+        bridgeRows: categoryRows
+          .filter((row) => row.priorSales > 0 || Math.abs(row.gmDelta) > 0)
+          .sort((a, b) => Math.abs(b.gmDelta) - Math.abs(a.gmDelta))
+          .slice(0, 6),
+        highSalesWeakMargin: subcategoryRows
+          .filter((row) => row.sales >= avgSubcategorySales && row.gmPct < totalGmPct)
+          .sort((a, b) => b.sales - a.sales)
+          .slice(0, 8),
+        inventoryDrag: subcategoryRows
+          .filter((row) => row.inventoryOnHand >= avgSubcategoryInventory && row.gmPerInventoryDollar < totalProductivity)
+          .sort((a, b) => b.inventoryOnHand - a.inventoryOnHand)
+          .slice(0, 8),
+        opportunityRows: subcategoryRows
+          .filter((row) => row.sales > 0)
+          .sort((a, b) => b.sales - a.sales)
+          .slice(0, 25),
+      };
+    })();
+    const formatSignedCurrency = (value: number | null | undefined) => {
+      if (value == null || !Number.isFinite(Number(value))) return 'N/A';
+      const numeric = Number(value || 0);
+      return `${numeric >= 0 ? '+' : '-'}${formatCurrency(Math.abs(numeric))}`;
+    };
+    const formatMerchPct = (value: number | null | undefined) =>
+      value == null || !Number.isFinite(Number(value)) ? 'N/A' : `${Number(value).toFixed(1)}%`;
     const formatRetailForecastValue = (value: number | null | undefined, _metricLabel?: RetailSubcategoryForecast['metricLabel']) => {
       if (value == null || !Number.isFinite(Number(value))) return 'N/A';
       return formatWholeNumber(Number(value || 0));
@@ -6580,7 +6776,8 @@ export default function OperationsTab({
         {label}{retailForecastTableSortKey === key ? (retailForecastTableSortDir === 'asc' ? ' ↑' : ' ↓') : ' ↕'}
       </th>
     );
-    const productViewSwitcher = isRetailProductSector && isRetailForecastingEnabled ? (
+    const isMerchandiseProfitabilityEnabled = isSectionEnabled('productsMerchandiseProfitability');
+    const productViewSwitcher = isRetailProductSector && (isRetailForecastingEnabled || isMerchandiseProfitabilityEnabled) ? (
       <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '16px' }}>
         <button
           type="button"
@@ -6598,22 +6795,42 @@ export default function OperationsTab({
         >
           Performance
         </button>
-        <button
-          type="button"
-          onClick={() => setProductReportView('retailForecast')}
-          style={{
-            border: '1px solid #cbd5e1',
-            borderRadius: '999px',
-            padding: '8px 12px',
-            background: productReportView === 'retailForecast' ? '#e0e7ff' : '#ffffff',
-            color: productReportView === 'retailForecast' ? '#3730a3' : '#334155',
-            fontWeight: 700,
-            cursor: 'pointer',
-            fontSize: '12px',
-          }}
-        >
-          Retail Forecasting
-        </button>
+        {isMerchandiseProfitabilityEnabled && (
+          <button
+            type="button"
+            onClick={() => setProductReportView('merchandiseProfitability')}
+            style={{
+              border: '1px solid #cbd5e1',
+              borderRadius: '999px',
+              padding: '8px 12px',
+              background: productReportView === 'merchandiseProfitability' ? '#e0e7ff' : '#ffffff',
+              color: productReportView === 'merchandiseProfitability' ? '#3730a3' : '#334155',
+              fontWeight: 700,
+              cursor: 'pointer',
+              fontSize: '12px',
+            }}
+          >
+            Merchandise Profitability
+          </button>
+        )}
+        {isRetailForecastingEnabled && (
+          <button
+            type="button"
+            onClick={() => setProductReportView('retailForecast')}
+            style={{
+              border: '1px solid #cbd5e1',
+              borderRadius: '999px',
+              padding: '8px 12px',
+              background: productReportView === 'retailForecast' ? '#e0e7ff' : '#ffffff',
+              color: productReportView === 'retailForecast' ? '#3730a3' : '#334155',
+              fontWeight: 700,
+              cursor: 'pointer',
+              fontSize: '12px',
+            }}
+          >
+            Retail Forecasting
+          </button>
+        )}
       </div>
     ) : null;
     const renderRetailForecastingReport = () => {
@@ -6803,6 +7020,213 @@ export default function OperationsTab({
         </>
       );
     };
+    const renderMerchandiseProfitabilityReport = () => {
+      if (!merchandiseProfitability) {
+        return (
+          <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '24px', color: '#64748b' }}>
+            No category profitability rows are available yet. Upload the Plato's Closet store visit workbook to populate sales, GM%, GM$, and inventory productivity.
+          </div>
+        );
+      }
+
+      const renderInsightTable = (
+        title: string,
+        rows: any[],
+        columns: Array<{ key: string; label: string; align?: 'left' | 'right'; render: (row: any) => React.ReactNode }>,
+        note?: string,
+        infoKey?: string,
+      ) => (
+        <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '18px', minWidth: 0 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', marginBottom: '6px' }}>
+            <h3 style={{ margin: 0, fontSize: '16px', color: '#1e293b' }}>{title}</h3>
+            {infoKey && renderChartInfoLink(infoKey)}
+          </div>
+          {note && <div style={{ fontSize: '12px', color: '#64748b', marginBottom: '10px', lineHeight: 1.4 }}>{note}</div>}
+          <div style={{ overflowX: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: '720px' }}>
+              <thead>
+                <tr style={{ borderBottom: '1px solid #e2e8f0', background: '#f8fafc' }}>
+                  {columns.map((column) => (
+                    <th key={column.key} style={{ padding: '8px', fontSize: '12px', color: '#334155', textAlign: column.align || 'left' }}>
+                      {column.label}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((row, index) => (
+                  <tr key={`${title}-${row.key || row.name}-${index}`} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                    {columns.map((column) => (
+                      <td key={column.key} style={{ padding: '8px', fontSize: '13px', color: '#334155', textAlign: column.align || 'left' }}>
+                        {column.render(row)}
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+                {rows.length === 0 && (
+                  <tr>
+                    <td colSpan={columns.length} style={{ padding: '12px', fontSize: '13px', color: '#64748b' }}>
+                      No rows triggered this question for the selected month.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      );
+
+      const nameColumn = {
+        key: 'name',
+        label: 'Subcategory',
+        render: (row: any) => (
+          <div>
+            <div style={{ fontWeight: 700, color: '#0f172a' }}>{row.name}</div>
+            {row.department && <div style={{ fontSize: '11px', color: '#64748b' }}>{row.department}</div>}
+          </div>
+        ),
+      };
+      const moneyColor = (value: number) => (value >= 0 ? '#166534' : '#b91c1c');
+
+      return (
+        <>
+          <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1.1fr) minmax(0, 0.9fr)', gap: '16px', marginBottom: '16px' }}>
+            <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '18px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', marginBottom: '6px' }}>
+                <h3 style={{ margin: 0, fontSize: '16px', color: '#1e293b' }}>Did GM$ Change From Volume or GM%?</h3>
+                {renderChartInfoLink('productsMerchProfitBridge')}
+              </div>
+              <div style={{ fontSize: '12px', color: '#64748b', marginBottom: '12px', lineHeight: 1.4 }}>
+                Past 6 months, shown month-by-month against the same month last year. When prior-period GM% is unavailable, rate is shown as N/A and volume uses current GM% as the directional proxy.
+              </div>
+              <ResponsiveContainer width="100%" height={320}>
+                <BarChart data={merchandiseProfitability.monthlyBridgeRows}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                  <XAxis dataKey="monthLabel" stroke="#64748b" style={{ fontSize: '11px' }} />
+                  <YAxis stroke="#64748b" style={{ fontSize: '11px' }} tickFormatter={(value) => `$${(Number(value || 0) / 1000).toFixed(0)}k`} />
+                  <Tooltip formatter={(value: any, name: any) => [formatSignedCurrency(Number(value || 0)), String(name)]} />
+                  <Legend />
+                  <Bar dataKey="volumeImpact" name="Volume Impact" fill="#2563eb" />
+                  <Bar dataKey="rateImpact" name="GM% Rate Impact" fill="#16a34a" />
+                  <Bar dataKey="residualImpact" name="Mix / Residual" fill="#94a3b8" />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+
+            <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '18px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', marginBottom: '6px' }}>
+                <h3 style={{ margin: 0, fontSize: '16px', color: '#1e293b' }}>Opportunity Matrix</h3>
+                {renderChartInfoLink('productsMerchOpportunityMatrix')}
+              </div>
+              <div style={{ fontSize: '12px', color: '#64748b', marginBottom: '12px', lineHeight: 1.4 }}>
+                X-axis is GM%, Y-axis is sales, bubble size is inventory on hand.
+              </div>
+              <ResponsiveContainer width="100%" height={320}>
+                <ScatterChart>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                  <XAxis type="number" dataKey="gmPct" name="GM %" stroke="#64748b" tickFormatter={(value) => `${Number(value || 0).toFixed(0)}%`} />
+                  <YAxis type="number" dataKey="sales" name="Sales" stroke="#64748b" tickFormatter={(value) => `$${(Number(value || 0) / 1000).toFixed(0)}k`} />
+                  <ZAxis type="number" dataKey="inventoryOnHand" range={[50, 420]} />
+                  <Tooltip
+                    cursor={{ strokeDasharray: '3 3' }}
+                    content={({ active, payload }: any) => {
+                      if (!active || !payload?.length) return null;
+                      const point = payload[0]?.payload || {};
+                      return (
+                        <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '10px', boxShadow: '0 2px 8px rgba(0,0,0,0.08)', fontSize: '12px', color: '#0f172a' }}>
+                          <div style={{ fontWeight: 700 }}>{point.name}</div>
+                          <div style={{ color: '#64748b', marginBottom: '6px' }}>{point.department}</div>
+                          <div>Sales: {formatCurrency(Number(point.sales || 0))}</div>
+                          <div>GM %: {formatMerchPct(Number(point.gmPct || 0))}</div>
+                          <div>GM $: {formatCurrency(Number(point.gmDollars || 0))}</div>
+                          <div>Inventory OH: {formatCurrency(Number(point.inventoryOnHand || 0))}</div>
+                        </div>
+                      );
+                    }}
+                  />
+                  <Scatter data={merchandiseProfitability.opportunityRows} fill="#0ea5e9" name="Subcategories" />
+                </ScatterChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '16px', marginBottom: '16px' }}>
+            {renderInsightTable(
+              'Which Subcategories Drove the Most GM$?',
+              merchandiseProfitability.topGmDrivers,
+              [
+                nameColumn,
+                { key: 'sales', label: 'Sales', align: 'right', render: (row) => formatCurrency(row.sales) },
+                { key: 'gmPct', label: 'GM %', align: 'right', render: (row) => formatMerchPct(row.gmPct) },
+                { key: 'gmDollars', label: 'GM $', align: 'right', render: (row) => <strong>{formatCurrency(row.gmDollars)}</strong> },
+                { key: 'gmMixPct', label: '% GM$', align: 'right', render: (row) => formatMerchPct(row.gmMixPct) },
+              ],
+              undefined,
+              'productsMerchTopGmDrivers',
+            )}
+            {renderInsightTable(
+              'Which Categories Improved From Volume vs GM%?',
+              merchandiseProfitability.bridgeRows,
+              [
+                { key: 'name', label: 'Category', render: (row) => <strong style={{ color: '#0f172a' }}>{row.name}</strong> },
+                { key: 'gmDelta', label: 'GM$ Change', align: 'right', render: (row) => <span style={{ color: moneyColor(row.gmDelta), fontWeight: 700 }}>{formatSignedCurrency(row.gmDelta)}</span> },
+                { key: 'volumeImpact', label: 'Volume', align: 'right', render: (row) => formatSignedCurrency(row.volumeImpact) },
+                { key: 'rateImpact', label: 'GM% Rate', align: 'right', render: (row) => (row.rateImpact == null ? 'N/A' : formatSignedCurrency(row.rateImpact)) },
+                { key: 'driver', label: 'Driver', render: (row) => `${row.driver} (${row.bridgeConfidence})` },
+              ],
+              undefined,
+              'productsMerchDriverTable',
+            )}
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '16px', marginBottom: '16px' }}>
+            {renderInsightTable(
+              'High Sales, Weak Margin Rate',
+              merchandiseProfitability.highSalesWeakMargin,
+              [
+                nameColumn,
+                { key: 'sales', label: 'Sales', align: 'right', render: (row) => formatCurrency(row.sales) },
+                { key: 'salesMixPct', label: '% Sales', align: 'right', render: (row) => formatMerchPct(row.salesMixPct) },
+                { key: 'gmPct', label: 'GM %', align: 'right', render: (row) => <span style={{ color: '#b91c1c', fontWeight: 700 }}>{formatMerchPct(row.gmPct)}</span> },
+                { key: 'gmDollars', label: 'GM $', align: 'right', render: (row) => formatCurrency(row.gmDollars) },
+              ],
+              `Flagged when sales are above average but GM% is below the store rate of ${formatMerchPct(merchandiseProfitability.totalGmPct)}.`,
+              'productsMerchWeakMargin',
+            )}
+            {renderInsightTable(
+              'Inventory Tied Up, Low Profit Output',
+              merchandiseProfitability.inventoryDrag,
+              [
+                nameColumn,
+                { key: 'inventoryOnHand', label: 'Inv OH', align: 'right', render: (row) => formatCurrency(row.inventoryOnHand) },
+                { key: 'gmDollars', label: 'GM $', align: 'right', render: (row) => formatCurrency(row.gmDollars) },
+                { key: 'gmPerInventoryDollar', label: 'GM$ / Inv$', align: 'right', render: (row) => row.gmPerInventoryDollar.toFixed(2) },
+                { key: 'gmPct', label: 'GM %', align: 'right', render: (row) => formatMerchPct(row.gmPct) },
+              ],
+              `Flagged when inventory is above average but GM$ per inventory dollar is below ${merchandiseProfitability.totalProductivity.toFixed(2)}.`,
+              'productsMerchInventoryDrag',
+            )}
+          </div>
+
+          {renderInsightTable(
+            'Category / Subcategory Profitability Drilldown',
+            merchandiseProfitability.subcategoryRows,
+            [
+              nameColumn,
+              { key: 'sales', label: 'Sales', align: 'right', render: (row) => formatCurrency(row.sales) },
+              { key: 'priorSales', label: 'Prior Sales', align: 'right', render: (row) => (row.priorSales > 0 ? formatCurrency(row.priorSales) : 'N/A') },
+              { key: 'gmPct', label: 'GM %', align: 'right', render: (row) => formatMerchPct(row.gmPct) },
+              { key: 'gmDollars', label: 'GM $', align: 'right', render: (row) => formatCurrency(row.gmDollars) },
+              { key: 'inventoryOnHand', label: 'Inventory OH', align: 'right', render: (row) => formatCurrency(row.inventoryOnHand) },
+              { key: 'gmPerInventoryDollar', label: 'GM$ / Inv$', align: 'right', render: (row) => row.gmPerInventoryDollar.toFixed(2) },
+              { key: 'driver', label: 'Driver', render: (row) => row.driver },
+            ],
+            'Sorted by trailing 6-month GM$. Prior GM% is used when comparable prior-year monthly rows exist; otherwise the bridge uses prior sales at current GM% as a directional proxy.',
+            'productsMerchDrilldown',
+          )}
+        </>
+      );
+    };
     const renderCoverageMeta = () => (
       <div style={{ marginTop: '4px', marginBottom: '10px', fontSize: '11px', color: '#64748b' }}>
         As of: {asOfDateLabel} | Coverage: {coverageLabel}
@@ -6817,6 +7241,132 @@ export default function OperationsTab({
       string,
       { title: string; sections: Array<{ heading?: string; body: string | string[] }> }
     > = {
+      productsMerchProfitBridge: {
+        title: 'Did GM$ Change From Volume or GM%?',
+        sections: [
+          {
+            body:
+              'Shows each of the past 6 months separately so you can see whether that month\'s gross margin dollar change came mainly from selling more/less, earning a different gross margin rate, or mix that is not explained by the first two factors.',
+          },
+          {
+            heading: 'How to read it',
+            body: [
+              'Blue bars are Volume Impact: the effect of sales dollars changing while holding the prior-period GM% constant.',
+              'Green bars are GM% Rate Impact: the effect of margin rate changing on current-period sales.',
+              'Gray bars are Mix / Residual: remaining change after volume and rate are accounted for.',
+              'Positive bars improved GM$; negative bars reduced GM$.',
+            ],
+          },
+          {
+            heading: 'Data window',
+            body:
+              'Each bar group is one month from the latest 6 months, compared with the same month one year earlier. If prior GM% is missing, the view uses prior sales at current GM% as a directional proxy.',
+          },
+        ],
+      },
+      productsMerchOpportunityMatrix: {
+        title: 'Opportunity Matrix',
+        sections: [
+          {
+            body:
+              'Plots subcategories by profitability rate and sales scale, with inventory investment shown as bubble size.',
+          },
+          {
+            heading: 'How to read it',
+            body: [
+              'X-axis: GM%. Farther right means stronger gross margin rate.',
+              'Y-axis: sales over the trailing 6 months. Higher means more volume.',
+              'Bubble size: average inventory on hand. Larger bubbles mean more dollars tied up.',
+              'High sales / low GM% points are margin risks. Low sales / high inventory points are inventory productivity risks.',
+            ],
+          },
+        ],
+      },
+      productsMerchTopGmDrivers: {
+        title: 'Which Subcategories Drove the Most GM$?',
+        sections: [
+          {
+            body:
+              'Ranks subcategories by trailing 6-month gross margin dollars so the biggest bottom-line contributors are visible first.',
+          },
+          {
+            heading: 'Columns',
+            body: [
+              'Sales is trailing 6-month sales dollars.',
+              'GM% is gross margin dollars divided by sales.',
+              'GM$ is the profit contribution before operating expenses.',
+              '% GM$ is the subcategory share of total gross margin dollars.',
+            ],
+          },
+        ],
+      },
+      productsMerchDriverTable: {
+        title: 'Which Categories Improved From Volume vs GM%?',
+        sections: [
+          {
+            body:
+              'Turns the bridge chart into a table and names the primary driver for each category.',
+          },
+          {
+            heading: 'How to use it',
+            body: [
+              'Sales volume as the driver means GM$ changed mostly because the category sold more or less.',
+              'GM% rate as the driver means GM$ changed mostly because margin rate improved or compressed.',
+              'Rate + volume rows have enough prior-period margin data for a fuller bridge. Sales-only rows are directional because prior GM% was unavailable.',
+            ],
+          },
+        ],
+      },
+      productsMerchWeakMargin: {
+        title: 'High Sales, Weak Margin Rate',
+        sections: [
+          {
+            body:
+              'Flags subcategories that sell above the average subcategory volume but run below the store-level GM%.',
+          },
+          {
+            heading: 'Why it matters',
+            body:
+              'These categories can look healthy because they move dollars, but weak margin rate means they may be absorbing floor space, labor, and buying attention without enough profit yield.',
+          },
+        ],
+      },
+      productsMerchInventoryDrag: {
+        title: 'Inventory Tied Up, Low Profit Output',
+        sections: [
+          {
+            body:
+              'Flags subcategories with above-average inventory on hand and below-average GM$ per inventory dollar.',
+          },
+          {
+            heading: 'How to read it',
+            body: [
+              'Inventory OH is average on-hand retail value across the trailing 6-month period.',
+              'GM$ / Inv$ compares profit output to inventory investment. Lower values suggest slow or unproductive inventory.',
+              'Use this list for markdown, buying, and floor-space review.',
+            ],
+          },
+        ],
+      },
+      productsMerchDrilldown: {
+        title: 'Category / Subcategory Profitability Drilldown',
+        sections: [
+          {
+            body:
+              'Full supporting table behind the merchandise profitability insights, sorted by trailing 6-month GM$.',
+          },
+          {
+            heading: 'Columns',
+            body: [
+              'Sales, GM%, and GM$ summarize trailing 6-month performance.',
+              'Prior Sales shows the same 6 months one year earlier when available.',
+              'Inventory OH is average on-hand value, not a summed inventory snapshot.',
+              'GM$ / Inv$ measures profit output per inventory dollar.',
+              'Driver identifies whether the GM$ bridge points more to sales volume or margin rate.',
+            ],
+          },
+        ],
+      },
       productsPareto: {
         title: 'Top Products by Revenue (Pareto)',
         sections: [
@@ -6997,6 +7547,103 @@ export default function OperationsTab({
         What is this?
       </button>
     );
+    const renderProductChartInfoModal = () => (
+      productChartInfoKey && productChartInfo[productChartInfoKey] ? (
+        <div
+          onClick={() => setProductChartInfoKey(null)}
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(15, 23, 42, 0.35)',
+            zIndex: 60,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '20px',
+          }}
+        >
+          <div
+            onClick={(event) => event.stopPropagation()}
+            style={{
+              width: 'min(640px, 100%)',
+              maxHeight: '80vh',
+              overflow: 'auto',
+              background: '#fff',
+              border: '1px solid #e2e8f0',
+              borderRadius: '12px',
+              padding: '20px',
+              boxShadow: '0 12px 32px rgba(15,23,42,0.18)',
+            }}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', marginBottom: '12px' }}>
+              <h3 style={{ margin: 0, fontSize: '18px', color: '#0f172a' }}>
+                {productChartInfo[productChartInfoKey].title}
+              </h3>
+              <button
+                type="button"
+                onClick={() => setProductChartInfoKey(null)}
+                style={{
+                  border: '1px solid #cbd5e1',
+                  borderRadius: '8px',
+                  padding: '6px 10px',
+                  background: '#fff',
+                  color: '#334155',
+                  fontSize: '12px',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                }}
+              >
+                Close
+              </button>
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+              {productChartInfo[productChartInfoKey].sections.map((section, sectionIdx) => (
+                <div key={`info-section-${sectionIdx}`}>
+                  {section.heading && (
+                    <div
+                      style={{
+                        fontSize: '12px',
+                        fontWeight: 700,
+                        textTransform: 'uppercase',
+                        letterSpacing: '0.04em',
+                        color: '#475569',
+                        marginBottom: '6px',
+                      }}
+                    >
+                      {section.heading}
+                    </div>
+                  )}
+                  {Array.isArray(section.body) ? (
+                    <ul style={{ margin: 0, paddingLeft: '18px', color: '#0f172a', fontSize: '13px', lineHeight: 1.55 }}>
+                      {section.body.map((item, itemIdx) => (
+                        <li key={`info-section-${sectionIdx}-item-${itemIdx}`} style={{ marginBottom: '4px' }}>
+                          {item}
+                        </li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <div style={{ color: '#0f172a', fontSize: '13px', lineHeight: 1.55 }}>{section.body}</div>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      ) : null
+    );
+
+    if (productReportView === 'merchandiseProfitability' && isRetailProductSector && isMerchandiseProfitabilityEnabled) {
+      return (
+        <div style={{ padding: '8px 32px 32px' }}>
+          <h2 style={{ fontSize: '24px', fontWeight: '700', color: '#1e293b', marginBottom: '16px' }}>
+            Product Sales Performance
+          </h2>
+          {productViewSwitcher}
+          {renderMerchandiseProfitabilityReport()}
+          {renderProductChartInfoModal()}
+        </div>
+      );
+    }
 
     if (productReportView === 'retailForecast' && isRetailProductSector && isRetailForecastingEnabled) {
       return (
@@ -7006,6 +7653,7 @@ export default function OperationsTab({
           </h2>
           {productViewSwitcher}
           {renderRetailForecastingReport()}
+          {renderProductChartInfoModal()}
         </div>
       );
     }
@@ -7913,6 +8561,88 @@ export default function OperationsTab({
       : 'N/A';
     const formatInventoryPct = (value: number | null | undefined) =>
       value == null || !Number.isFinite(Number(value)) ? 'N/A' : `${Number(value).toFixed(1)}%`;
+    const formatInventoryNumber = (value: number | null | undefined) =>
+      value == null || !Number.isFinite(Number(value)) ? 'N/A' : Number(value || 0).toLocaleString();
+    const retailTurns = summary?.retailTurns || null;
+    const retailTurnsChartData = Array.isArray(retailTurns?.chartData) ? retailTurns.chartData : [];
+    const retailTurnsCategoryRows = Array.isArray(retailTurns?.categoryRows) ? retailTurns.categoryRows : [];
+    const retailTurnsSubcategoryRows = Array.isArray(retailTurns?.subcategoryRows) ? retailTurns.subcategoryRows : [];
+    const retailTurnsSortValue = (row: any, key: typeof retailTurnsSortKey): string | number => {
+      if (key === 'label' || key === 'category') return String(row?.[key] || '').toLowerCase();
+      const value = Number(row?.[key]);
+      return Number.isFinite(value) ? value : Number.NEGATIVE_INFINITY;
+    };
+    const sortedRetailTurnsSubcategoryRows = [...retailTurnsSubcategoryRows].sort((a: any, b: any) => {
+      const left = retailTurnsSortValue(a, retailTurnsSortKey);
+      const right = retailTurnsSortValue(b, retailTurnsSortKey);
+      const direction = retailTurnsSortDir === 'asc' ? 1 : -1;
+      if (typeof left === 'string' || typeof right === 'string') {
+        return String(left).localeCompare(String(right), undefined, { sensitivity: 'base', numeric: true }) * direction;
+      }
+      return (Number(left) - Number(right)) * direction;
+    });
+    const topRetailTurnsSubcategoryRows = sortedRetailTurnsSubcategoryRows.slice(0, 25);
+    const sortRetailTurnsTable = (key: typeof retailTurnsSortKey) => {
+      if (retailTurnsSortKey === key) {
+        setRetailTurnsSortDir((dir) => (dir === 'asc' ? 'desc' : 'asc'));
+        return;
+      }
+      setRetailTurnsSortKey(key);
+      setRetailTurnsSortDir(key === 'label' || key === 'category' ? 'asc' : 'desc');
+    };
+    const renderRetailTurnsSortHeader = (
+      key: typeof retailTurnsSortKey,
+      label: string,
+      align: 'left' | 'right' = 'left',
+    ) => (
+      <th
+        onClick={() => sortRetailTurnsTable(key)}
+        style={{
+          textAlign: align,
+          padding: '10px',
+          fontSize: '12px',
+          fontWeight: 700,
+          color: '#475569',
+          cursor: 'pointer',
+          userSelect: 'none',
+          whiteSpace: 'nowrap',
+        }}
+      >
+        {label}{retailTurnsSortKey === key ? (retailTurnsSortDir === 'asc' ? ' ▲' : ' ▼') : ' ↕'}
+      </th>
+    );
+    const inventoryInfoContent: Record<string, { title: string; body: string[] }> = {
+      retailTurnsMonthlyTrend: {
+        title: 'Monthly Unit Sales and Turn Rate',
+        body: [
+          'Shows the last 12 months of retail unit velocity from the Plato\'s inventory workbook.',
+          'Blue bars are Sales Units: units sold in each month across the tracked subcategories.',
+          'Green line is Turn Rate: sales units divided by average stock units for that month.',
+          'Use this to see whether inventory is moving faster or slower over time, independent of sales dollars.',
+        ],
+      },
+    };
+    const renderInventoryInfoLink = (key: string) => (
+      <button
+        type="button"
+        onClick={() => setInventoryInfoKey(key)}
+        style={{
+          marginLeft: '12px',
+          background: 'transparent',
+          border: 'none',
+          padding: '0 2px',
+          color: '#2563eb',
+          fontSize: '12px',
+          fontWeight: 600,
+          cursor: 'pointer',
+          textDecoration: 'underline',
+          textUnderlineOffset: '2px',
+          whiteSpace: 'nowrap',
+        }}
+      >
+        What is this?
+      </button>
+    );
     const retailProductAging = summary?.retailProductAging || {};
     const retailProductAgingBuckets = Array.isArray(retailProductAging?.buckets) ? retailProductAging.buckets : [];
     const retailProductAgingChartData = Array.isArray(retailProductAging?.chartData) ? retailProductAging.chartData.slice(-36) : [];
@@ -8281,6 +9011,185 @@ export default function OperationsTab({
                   )}
                 </tbody>
               </table>
+            </div>
+          </div>
+        )}
+
+        {isSectionEnabled('inventoryRetailTurns') && retailTurns && (
+          <div style={{ background: 'white', padding: '24px', borderRadius: '12px', border: '1px solid #e2e8f0', marginBottom: '24px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px', marginBottom: '16px', flexWrap: 'wrap' }}>
+              <div>
+                <h3 style={{ fontSize: '18px', fontWeight: '600', color: '#1e293b', margin: 0 }}>
+                  Retail Turns / Sell-Through
+                </h3>
+                <div style={{ fontSize: '12px', color: '#64748b', marginTop: '4px' }}>
+                  Operational unit velocity from the Plato's inventory workbook. Period: {retailTurns.periodLabel || 'Latest 6 months'}.
+                </div>
+              </div>
+              <div style={{ fontSize: '12px', color: '#64748b', textAlign: 'right' }}>
+                Latest: {retailTurns.latestMonthLabel || retailTurns.latestMonthKey || 'N/A'}
+                <br />
+                {retailTurnsSubcategoryRows.length.toLocaleString()} subcategories
+              </div>
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1.15fr) minmax(360px, 0.85fr)', gap: '16px', marginBottom: '18px' }}>
+              <div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', marginBottom: '8px' }}>
+                  <div>
+                    <h4 style={{ margin: 0, fontSize: '14px', color: '#334155' }}>Monthly Unit Sales and Turn Rate</h4>
+                    <div style={{ marginTop: '3px', fontSize: '11px', color: '#64748b' }}>
+                      {retailTurns.chartPeriodLabel || 'Latest 12 months'}
+                    </div>
+                  </div>
+                  {renderInventoryInfoLink('retailTurnsMonthlyTrend')}
+                </div>
+                <ResponsiveContainer width="100%" height={300}>
+                  <ComposedChart data={retailTurnsChartData}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                    <XAxis dataKey="monthLabel" stroke="#64748b" style={{ fontSize: '12px' }} />
+                    <YAxis yAxisId="left" stroke="#64748b" style={{ fontSize: '12px' }} tickFormatter={(value) => Number(value || 0).toLocaleString()} />
+                    <YAxis yAxisId="right" orientation="right" stroke="#64748b" style={{ fontSize: '12px' }} tickFormatter={(value) => `${Number(value || 0).toFixed(1)}x`} />
+                    <Tooltip
+                      formatter={(value: any, name: any) => {
+                        if (String(name).includes('Turn')) return [`${Number(value || 0).toFixed(2)}x`, String(name)];
+                        if (String(name).includes('Sell')) return [formatInventoryPct(Number(value || 0)), String(name)];
+                        return [Number(value || 0).toLocaleString(), String(name)];
+                      }}
+                    />
+                    <Legend />
+                    <Bar yAxisId="left" dataKey="salesUnits" name="Sales Units" fill="#2563eb" />
+                    <Line yAxisId="right" type="monotone" dataKey="turnRate" name="Turn Rate" stroke="#16a34a" strokeWidth={3} dot={{ r: 3 }} connectNulls />
+                  </ComposedChart>
+                </ResponsiveContainer>
+              </div>
+
+              <div>
+                <h4 style={{ margin: '0 0 8px 0', fontSize: '14px', color: '#334155' }}>Category Rollup</h4>
+                <div style={{ overflowX: 'auto', maxHeight: '300px', overflowY: 'auto' }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: '520px' }}>
+                    <thead>
+                      <tr style={{ borderBottom: '1px solid #e2e8f0', background: '#f8fafc' }}>
+                        <th style={{ textAlign: 'left', padding: '8px', fontSize: '12px', color: '#334155' }}>Category</th>
+                        <th style={{ textAlign: 'right', padding: '8px', fontSize: '12px', color: '#334155' }}>Sales Units</th>
+                        <th style={{ textAlign: 'right', padding: '8px', fontSize: '12px', color: '#334155' }}>Avg Stock</th>
+                        <th style={{ textAlign: 'right', padding: '8px', fontSize: '12px', color: '#334155' }}>Turn</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {retailTurnsCategoryRows.map((row: any) => (
+                        <tr key={String(row.key || row.label)} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                          <td style={{ padding: '8px', fontSize: '13px', color: '#0f172a', fontWeight: 700 }}>{String(row.label || 'Unmapped')}</td>
+                          <td style={{ padding: '8px', fontSize: '13px', color: '#334155', textAlign: 'right' }}>{formatInventoryNumber(row.salesUnits)}</td>
+                          <td style={{ padding: '8px', fontSize: '13px', color: '#334155', textAlign: 'right' }}>{formatInventoryNumber(row.avgStockUnits)}</td>
+                          <td style={{ padding: '8px', fontSize: '13px', color: '#166534', textAlign: 'right', fontWeight: 700 }}>
+                            {row.turnRate == null ? 'N/A' : `${Number(row.turnRate).toFixed(2)}x`}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+
+            <div style={{ overflowX: 'auto' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: '980px' }}>
+                <thead>
+                  <tr style={{ borderBottom: '2px solid #e2e8f0', background: '#f8fafc' }}>
+                    {renderRetailTurnsSortHeader('label', 'Subcategory')}
+                    {renderRetailTurnsSortHeader('category', 'Category')}
+                    {renderRetailTurnsSortHeader('salesUnits', 'Sales Units', 'right')}
+                    {renderRetailTurnsSortHeader('buysUnits', 'Buys Units', 'right')}
+                    {renderRetailTurnsSortHeader('avgStockUnits', 'Avg Stock', 'right')}
+                    {renderRetailTurnsSortHeader('latestOnHandUnits', 'Current OH', 'right')}
+                    {renderRetailTurnsSortHeader('sellThroughPct', 'Sell-Through', 'right')}
+                    {renderRetailTurnsSortHeader('turnRate', 'Turn Rate', 'right')}
+                  </tr>
+                </thead>
+                <tbody>
+                  {topRetailTurnsSubcategoryRows.map((row: any) => (
+                    <tr key={String(row.key || row.label)} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                      <td style={{ padding: '10px', fontSize: '13px', color: '#0f172a', fontWeight: 700, whiteSpace: 'nowrap' }}>{String(row.label || 'Unknown')}</td>
+                      <td style={{ padding: '10px', fontSize: '13px', color: '#64748b' }}>{String(row.category || 'Unmapped')}</td>
+                      <td style={{ padding: '10px', fontSize: '13px', color: '#334155', textAlign: 'right' }}>{formatInventoryNumber(row.salesUnits)}</td>
+                      <td style={{ padding: '10px', fontSize: '13px', color: '#334155', textAlign: 'right' }}>{formatInventoryNumber(row.buysUnits)}</td>
+                      <td style={{ padding: '10px', fontSize: '13px', color: '#334155', textAlign: 'right' }}>{formatInventoryNumber(row.avgStockUnits)}</td>
+                      <td style={{ padding: '10px', fontSize: '13px', color: '#334155', textAlign: 'right' }}>{formatInventoryNumber(row.latestOnHandUnits)}</td>
+                      <td style={{ padding: '10px', fontSize: '13px', color: '#475569', textAlign: 'right' }}>{formatInventoryPct(row.sellThroughPct)}</td>
+                      <td style={{ padding: '10px', fontSize: '13px', color: '#166534', textAlign: 'right', fontWeight: 700 }}>
+                        {row.turnRate == null ? 'N/A' : `${Number(row.turnRate).toFixed(2)}x`}
+                      </td>
+                    </tr>
+                  ))}
+                  {topRetailTurnsSubcategoryRows.length === 0 && (
+                    <tr>
+                      <td colSpan={8} style={{ padding: '16px', textAlign: 'center', color: '#64748b', fontSize: '13px' }}>
+                        No retail turn rows found for the selected period.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        {inventoryInfoKey && inventoryInfoContent[inventoryInfoKey] && (
+          <div
+            onClick={() => setInventoryInfoKey(null)}
+            style={{
+              position: 'fixed',
+              inset: 0,
+              background: 'rgba(15, 23, 42, 0.35)',
+              zIndex: 60,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              padding: '20px',
+            }}
+          >
+            <div
+              onClick={(event) => event.stopPropagation()}
+              style={{
+                width: 'min(560px, 100%)',
+                maxHeight: '80vh',
+                overflow: 'auto',
+                background: '#fff',
+                border: '1px solid #e2e8f0',
+                borderRadius: '12px',
+                padding: '20px',
+                boxShadow: '0 12px 32px rgba(15,23,42,0.18)',
+              }}
+            >
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', marginBottom: '12px' }}>
+                <h3 style={{ margin: 0, fontSize: '18px', color: '#0f172a' }}>
+                  {inventoryInfoContent[inventoryInfoKey].title}
+                </h3>
+                <button
+                  type="button"
+                  onClick={() => setInventoryInfoKey(null)}
+                  style={{
+                    border: '1px solid #cbd5e1',
+                    borderRadius: '8px',
+                    padding: '6px 10px',
+                    background: '#fff',
+                    color: '#334155',
+                    fontSize: '12px',
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                  }}
+                >
+                  Close
+                </button>
+              </div>
+              <ul style={{ margin: 0, paddingLeft: '18px', color: '#0f172a', fontSize: '13px', lineHeight: 1.55 }}>
+                {inventoryInfoContent[inventoryInfoKey].body.map((item, index) => (
+                  <li key={`inventory-info-${index}`} style={{ marginBottom: '6px' }}>
+                    {item}
+                  </li>
+                ))}
+              </ul>
             </div>
           </div>
         )}

@@ -13,6 +13,7 @@ import { isPluginAccountingSystem } from '@/lib/accounting-systems/registry';
 
 const OPERATIONAL_HUB_SECTION_OPTIONS: Array<{ key: string; label: string; group: string }> = [
   { key: 'productsRetailForecasting', label: "Retail Forecasting / Plato's Inventory", group: 'Products' },
+  { key: 'productsMerchandiseProfitability', label: 'Merchandise Profitability', group: 'Products' },
   { key: 'productsPriceCostComparison', label: 'Weekly Price-Cost Comparison', group: 'Products' },
   { key: 'productsPareto', label: 'Top Products Pareto', group: 'Products' },
   { key: 'productsScatter', label: 'Profitability Scatter', group: 'Products' },
@@ -24,6 +25,7 @@ const OPERATIONAL_HUB_SECTION_OPTIONS: Array<{ key: string; label: string; group
   { key: 'productsFreightOtherTracker', label: 'Freight/Other Tracker', group: 'Products' },
   { key: 'inventoryValueTrend', label: 'Value Trend', group: 'Inventory' },
   { key: 'inventoryMovement', label: 'Inventory Movement', group: 'Inventory' },
+  { key: 'inventoryRetailTurns', label: 'Retail Turns / Sell-Through', group: 'Inventory' },
   { key: 'inventoryCurrentTable', label: 'Current Inventory Table', group: 'Inventory' },
   { key: 'inventoryDistribution', label: 'Value Distribution', group: 'Inventory' },
   { key: 'inventoryAgingObsolescenceV1', label: 'Inventory Aging & Obsolescence', group: 'Inventory' },
