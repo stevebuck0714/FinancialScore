@@ -5297,10 +5297,10 @@ function FinancialScorePage() {
             month: normalizeMonthLabel(m.monthDate, m.month),
             revenue: m.revenue || 0,
             expense: m.expense || 0,
-            // COGS Breakdown - map QB aggregated data to detailed fields for Data Review compatibility
-            cogsPayroll: m.cogsPayroll || m.payroll || 0,  // Map payroll to cogsPayroll
-            cogsOwnerPay: m.cogsOwnerPay || m.ownerBasePay || 0,  // Map owner pay to cogsOwnerPay
-            cogsContractors: m.cogsContractors || m.subcontractors || 0,  // Map subcontractors to contractors
+            // COGS Breakdown - keep COGS-specific fields separate from operating expenses.
+            cogsPayroll: m.cogsPayroll || 0,
+            cogsOwnerPay: m.cogsOwnerPay || 0,
+            cogsContractors: m.cogsContractors || 0,
             cogsMaterials: m.cogsMaterials || 0,
             cogsCommissions: m.cogsCommissions || 0,
             cogsOther: m.cogsOther || 0,
