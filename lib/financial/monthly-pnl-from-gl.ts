@@ -5,7 +5,6 @@ import {
   buildAccountIdToTarget,
   resolveDfsColumnsForTargetField,
   signForDfsColumn,
-  sumGLByAccount,
 } from '@/lib/financial/daily-bs-from-gl';
 
 /**
@@ -66,6 +65,11 @@ const ALLOWED_SCALAR_COLUMNS = new Set<string>([
   ...Array.from(OPEX_SUBCATEGORY_COLUMNS),
 ]);
 
+type GlSumRow = {
+  accountId: string;
+  balance: number | null;
+};
+
 export async function buildAccountIdToTargetForMonthlySync(
   companyId: string,
 ): Promise<Map<string, AccountTarget>> {
@@ -80,6 +84,39 @@ export async function buildAccountIdToTargetForMonthlySync(
     },
   })) as AccountMappingRow[];
   return buildAccountIdToTarget(mappings);
+}
+
+/**
+ * Monthly income statement activity should exclude formal close-to-income-summary
+ * entries. Those rows are valid for retained earnings / balance sheet logic, but
+ * including them in operating P&L makes December reverse the full fiscal year.
+ */
+async function sumMonthlyPnlGLByAccount(
+  companyId: string,
+  accountIds: string[],
+  monthStart: Date,
+  monthEnd: Date,
+): Promise<Map<string, number>> {
+  const out = new Map<string, number>();
+  if (accountIds.length === 0) return out;
+
+  const rows = await prisma.$queryRaw<GlSumRow[]>`
+    SELECT
+      "accountId",
+      SUM("signedAmount")::float AS balance
+    FROM "GLTransactionFact"
+    WHERE "companyId" = ${companyId}
+      AND "accountId" = ANY(${accountIds}::text[])
+      AND "transDate" >= ${monthStart}
+      AND "transDate" <= ${monthEnd}
+      AND LOWER(BTRIM(COALESCE("ref", ''))) <> 'income summary'
+    GROUP BY "accountId"
+  `;
+
+  for (const row of rows) {
+    out.set(row.accountId, Number(row.balance || 0));
+  }
+  return out;
 }
 
 /**
@@ -149,7 +186,7 @@ export async function computeMonthlyPnlBreakdownsFromGL(
     return { scalars, revenueBreakdown, cogsBreakdown, expenseBreakdown };
   }
 
-  const glSums = await sumGLByAccount(companyId, accountIds, monthStart, monthEnd);
+  const glSums = await sumMonthlyPnlGLByAccount(companyId, accountIds, monthStart, monthEnd);
   if (glSums.size === 0) {
     return { scalars, revenueBreakdown, cogsBreakdown, expenseBreakdown };
   }

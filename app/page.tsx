@@ -24926,6 +24926,10 @@ function FinancialScorePage() {
             
             // Multi-period logic (Current Quarter, Last 12 Months, YTD, Last Year, Last 3 Years)
             else if (monthly.length > 0 && statementPeriod !== 'current-month') {
+              const isIncomeStatementReport =
+                statementType === 'income-statement' || statementType === 'income-statement-percent';
+              const isAnnualIncomeStatementReport = isIncomeStatementReport && statementDisplay === 'annual';
+
               // Helper function to get months for the selected period
               const getMonthsForPeriod = () => {
                 // Use UTC year for filtering. monthDate is a UTC instant in
@@ -24951,8 +24955,9 @@ function FinancialScorePage() {
                     return monthly.filter(m => getMonthYearUtc(m.date || m.month) === currentYear - 1);
 
                   case 'last-3-years':
-                    // Last 36 months
-                    return monthly.slice(-36);
+                    // Annual income statements need complete Jan-Dec years; do
+                    // not trim to 36 months before checking completeness.
+                    return isAnnualIncomeStatementReport ? monthly : monthly.slice(-36);
 
                   default:
                     return [];
@@ -25000,6 +25005,16 @@ function FinancialScorePage() {
               const periodLabel = getPeriodLabel();
               const latestMonth = periodMonths[periodMonths.length - 1];
               
+              const hasFullCalendarYear = (months: any[]) => {
+                const monthIndexes = new Set<number>();
+                months.forEach((m) => {
+                  const src = m.date || m.month;
+                  const monthIndex = getMonthIndexUtc(src);
+                  if (monthIndex !== null) monthIndexes.add(monthIndex);
+                });
+                return monthIndexes.size === 12;
+              };
+
               // Helper function to group months by display period (UTC)
               const groupMonthsByDisplay = () => {
                 if (statementDisplay === 'monthly') {
@@ -25038,14 +25053,39 @@ function FinancialScorePage() {
                       years[key].push(m);
                     }
                   });
-                  return Object.entries(years).map(([year, months]) => ({
+                  const yearPeriods = Object.entries(years).map(([year, months]) => ({
                     label: year,
                     months
                   }));
+                  if (!isAnnualIncomeStatementReport) return yearPeriods;
+                  const completeYearPeriods = yearPeriods.filter((period) => hasFullCalendarYear(period.months));
+                  return statementPeriod === 'last-3-years'
+                    ? completeYearPeriods.slice(-3)
+                    : completeYearPeriods;
                 }
               };
               
               const displayPeriods = groupMonthsByDisplay();
+
+              if (isAnnualIncomeStatementReport && displayPeriods.length === 0) {
+                return (
+                  <div style={{ background: 'white', borderRadius: '12px', padding: '48px 32px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', minHeight: '400px', textAlign: 'center' }}>
+                    <div style={{ fontSize: '18px', fontWeight: '600', color: '#64748b', marginBottom: '12px' }}>
+                      📋 No Full Calendar Years Available
+                    </div>
+                    <p style={{ fontSize: '14px', color: '#94a3b8' }}>
+                      Annual income statements require a complete January through December history.
+                    </p>
+                  </div>
+                );
+              }
+
+              const incomeStatementPeriodLabel =
+                isAnnualIncomeStatementReport && displayPeriods.length > 0
+                  ? displayPeriods.length === 1
+                    ? `Fiscal Year ${displayPeriods[0].label}`
+                    : `Calendar Years ${displayPeriods[0].label} - ${displayPeriods[displayPeriods.length - 1].label}`
+                  : periodLabel;
               
               // INCOME STATEMENT - Aggregate across period
               if (statementType === 'income-statement') {
@@ -25122,7 +25162,7 @@ function FinancialScorePage() {
                     <div style={{ background: 'white', borderRadius: '12px', padding: '32px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', overflowX: 'auto', whiteSpace: 'nowrap' }}>
                       <div style={{ marginBottom: '32px', borderBottom: '2px solid #e2e8f0', paddingBottom: '16px' }}>
                         <h2 style={{ fontSize: '24px', fontWeight: '700', color: '#1e293b', marginBottom: '4px' }}>Income Statement</h2>
-                        <div style={{ fontSize: '14px', color: '#64748b' }}>{periodLabel} - {statementDisplay === 'monthly' ? 'Monthly' : statementDisplay === 'quarterly' ? 'Quarterly' : 'Annual'}</div>
+                        <div style={{ fontSize: '14px', color: '#64748b' }}>{incomeStatementPeriodLabel} - {statementDisplay === 'monthly' ? 'Monthly' : statementDisplay === 'quarterly' ? 'Quarterly' : 'Annual'}</div>
                       </div>
                       
                       {/* Table with multiple columns */}
@@ -25329,6 +25369,14 @@ function FinancialScorePage() {
                 }
                 
                 // Single period aggregation (original logic)
+                const statementMonths =
+                  isAnnualIncomeStatementReport && displayPeriods.length === 1
+                    ? displayPeriods[0].months
+                    : periodMonths;
+                const statementPeriodLabel =
+                  isAnnualIncomeStatementReport && displayPeriods.length === 1
+                    ? incomeStatementPeriodLabel
+                    : periodLabel;
                 const {
                   revenue,
                   cogs,
@@ -25336,32 +25384,32 @@ function FinancialScorePage() {
                   cogsDetails,
                   revenueDetailFields,
                   cogsDetailFields,
-                } = buildIncomeStatementDetails(periodMonths);
+                } = buildIncomeStatementDetails(statementMonths);
                 
                 const grossProfit = revenue - cogs;
                 const grossMargin = revenue > 0 ? (grossProfit / revenue) * 100 : 0;
                 
                 const expenses: { [key: string]: number } = {};
                 operatingExpenseFieldDefinitions.forEach(({ key }) => {
-                  expenses[key] = periodMonths.reduce((sum, m) => sum + (Number(m[key]) || 0), 0);
+                  expenses[key] = statementMonths.reduce((sum, m) => sum + (Number(m[key]) || 0), 0);
                 });
                 const totalOpex = Object.values(expenses).reduce((sum, value) => sum + value, 0);
                 
                 const operatingIncome = grossProfit - totalOpex;
                 const operatingMargin = revenue > 0 ? (operatingIncome / revenue) * 100 : 0;
                 
-                const interestExpense = periodMonths.reduce((sum, m) => sum + (m.interestExpense || 0), 0);
-                const nonOperatingIncome = periodMonths.reduce((sum, m) => sum + (m.nonOperatingIncome || 0), 0);
-                const nonOperatingExpense = periodMonths.reduce((sum, m) => sum + (m.nonOperatingExpense || 0), 0);
-                const extraordinaryItems = periodMonths.reduce((sum, m) => sum + (m.extraordinaryItems || 0), 0);
+                const interestExpense = statementMonths.reduce((sum, m) => sum + (m.interestExpense || 0), 0);
+                const nonOperatingIncome = statementMonths.reduce((sum, m) => sum + (m.nonOperatingIncome || 0), 0);
+                const nonOperatingExpense = statementMonths.reduce((sum, m) => sum + (m.nonOperatingExpense || 0), 0);
+                const extraordinaryItems = statementMonths.reduce((sum, m) => sum + (m.extraordinaryItems || 0), 0);
                 const incomeBeforeTax = operatingIncome - interestExpense + nonOperatingIncome - nonOperatingExpense + extraordinaryItems;
-                const stateIncomeTaxes = periodMonths.reduce((sum, m) => {
+                const stateIncomeTaxes = statementMonths.reduce((sum, m) => {
                   const raw = (m as any).stateIncomeTaxes;
                   if (raw === null || raw === undefined) return sum;
                   const parsed = typeof raw === 'number' ? raw : parseFloat(String(raw).replace(/,/g, ''));
                   return sum + (Number.isFinite(parsed) ? parsed : 0);
                 }, 0);
-                const federalIncomeTaxes = periodMonths.reduce((sum, m) => {
+                const federalIncomeTaxes = statementMonths.reduce((sum, m) => {
                   const raw = (m as any).federalIncomeTaxes;
                   if (raw === null || raw === undefined) return sum;
                   const parsed = typeof raw === 'number' ? raw : parseFloat(String(raw).replace(/,/g, ''));
@@ -25374,7 +25422,7 @@ function FinancialScorePage() {
                   <div style={{ background: 'white', borderRadius: '12px', padding: '32px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', whiteSpace: 'nowrap' }}>
                       <div style={{ marginBottom: '32px', borderBottom: '2px solid #e2e8f0', paddingBottom: '16px' }}>
                         <h2 style={{ fontSize: '24px', fontWeight: '700', color: '#1e293b', marginBottom: '4px' }}>Income Statement</h2>
-                        <div style={{ fontSize: '14px', color: '#64748b' }}>For the Period: {periodLabel}</div>
+                        <div style={{ fontSize: '14px', color: '#64748b' }}>For the Period: {statementPeriodLabel}</div>
                       </div>
 
                       {/* Revenue Section */}
@@ -25628,7 +25676,7 @@ function FinancialScorePage() {
                     <div style={{ background: 'white', borderRadius: '12px', padding: '32px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', overflowX: 'auto', whiteSpace: 'nowrap' }}>
                       <div style={{ marginBottom: '12px', borderBottom: '2px solid #e2e8f0', paddingBottom: '16px' }}>
                         <h2 style={{ fontSize: '24px', fontWeight: '700', color: '#1e293b', marginBottom: '4px' }}>Comparative Common Size Income Statement</h2>
-                        <div style={{ fontSize: '14px', color: '#64748b' }}>{periodLabel} - {statementDisplay === 'monthly' ? 'Monthly' : statementDisplay === 'quarterly' ? 'Quarterly' : 'Annual'}</div>
+                        <div style={{ fontSize: '14px', color: '#64748b' }}>{incomeStatementPeriodLabel} - {statementDisplay === 'monthly' ? 'Monthly' : statementDisplay === 'quarterly' ? 'Quarterly' : 'Annual'}</div>
                       </div>
                       <div style={{ minWidth: `${200 + (periodsData.length * 150)}px` }}>
                         <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${periodsData.length}, 90px 60px)`, gap: '4px', padding: '12px 0', borderBottom: '2px solid #1e293b', fontWeight: '600', color: '#1e293b' }}>
@@ -25772,6 +25820,14 @@ function FinancialScorePage() {
                   );
                 }
                 
+                const commonSizeMonths =
+                  isAnnualIncomeStatementReport && displayPeriods.length === 1
+                    ? displayPeriods[0].months
+                    : periodMonths;
+                const commonSizePeriodLabel =
+                  isAnnualIncomeStatementReport && displayPeriods.length === 1
+                    ? incomeStatementPeriodLabel
+                    : periodLabel;
                 const {
                   revenue,
                   cogs,
@@ -25779,7 +25835,7 @@ function FinancialScorePage() {
                   cogsDetails,
                   revenueDetailFields,
                   cogsDetailFields,
-                } = buildIncomeStatementDetails(periodMonths);
+                } = buildIncomeStatementDetails(commonSizeMonths);
                 
                 const grossProfit = revenue - cogs;
 
@@ -25793,7 +25849,7 @@ function FinancialScorePage() {
 
                 const expenses: { [key: string]: number } = {};
                 expenseFields.forEach(field => {
-                  expenses[field] = periodMonths.reduce((sum, m) => sum + (m[field] || 0), 0);
+                  expenses[field] = commonSizeMonths.reduce((sum, m) => sum + (m[field] || 0), 0);
                 });
 
                 // Calculate total operating expenses dynamically
@@ -25801,14 +25857,14 @@ function FinancialScorePage() {
                 
                 const operatingIncome = grossProfit - totalOpex;
                 
-                const interestExpense = periodMonths.reduce((sum, m) => sum + (m.interestExpense || 0), 0);
-                const nonOperatingIncome = periodMonths.reduce((sum, m) => sum + (m.nonOperatingIncome || 0), 0);
-                const nonOperatingExpense = periodMonths.reduce((sum, m) => sum + (m.nonOperatingExpense || 0), 0);
-                const extraordinaryItems = periodMonths.reduce((sum, m) => sum + (m.extraordinaryItems || 0), 0);
+                const interestExpense = commonSizeMonths.reduce((sum, m) => sum + (m.interestExpense || 0), 0);
+                const nonOperatingIncome = commonSizeMonths.reduce((sum, m) => sum + (m.nonOperatingIncome || 0), 0);
+                const nonOperatingExpense = commonSizeMonths.reduce((sum, m) => sum + (m.nonOperatingExpense || 0), 0);
+                const extraordinaryItems = commonSizeMonths.reduce((sum, m) => sum + (m.extraordinaryItems || 0), 0);
                 
                 const incomeBeforeTax = operatingIncome - interestExpense + nonOperatingIncome - nonOperatingExpense + extraordinaryItems;
-                const stateIncomeTaxes = periodMonths.reduce((sum, m) => sum + (m.stateIncomeTaxes || 0), 0);
-                const federalIncomeTaxes = periodMonths.reduce((sum, m) => sum + (m.federalIncomeTaxes || 0), 0);
+                const stateIncomeTaxes = commonSizeMonths.reduce((sum, m) => sum + (m.stateIncomeTaxes || 0), 0);
+                const federalIncomeTaxes = commonSizeMonths.reduce((sum, m) => sum + (m.federalIncomeTaxes || 0), 0);
                 const totalIncomeTaxes = stateIncomeTaxes + federalIncomeTaxes;
                 const netIncome = incomeBeforeTax - totalIncomeTaxes;
                 
@@ -25818,7 +25874,7 @@ function FinancialScorePage() {
                   <div style={{ background: 'white', borderRadius: '12px', padding: '32px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', whiteSpace: 'nowrap' }}>
                       <div style={{ marginBottom: '32px', borderBottom: '2px solid #e2e8f0', paddingBottom: '16px' }}>
                         <h2 style={{ fontSize: '24px', fontWeight: '700', color: '#1e293b', marginBottom: '4px' }}>Common Size Income Statement</h2>
-                        <div style={{ fontSize: '14px', color: '#64748b' }}>For the Period: {periodLabel}</div>
+                        <div style={{ fontSize: '14px', color: '#64748b' }}>For the Period: {commonSizePeriodLabel}</div>
                       </div>
 
                       {/* Header Row */}
