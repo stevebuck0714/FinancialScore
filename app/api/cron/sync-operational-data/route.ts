@@ -169,19 +169,6 @@ export async function GET(request: NextRequest) {
       try {
         console.log(`\n💼 Syncing company: ${connection.companyId} (${connection.platform})`);
 
-        if (connection.platform === 'QUICKBOOKS') {
-          console.log(`   ⏭️ Skipping QBO operational sync (use client QuickBooks sync; rolling 90 / backfill orchestrator).`);
-          results.push({
-            companyId: connection.companyId,
-            companyName: connection.company?.name,
-            platform: connection.platform,
-            success: true,
-            skipped: true,
-            message: 'quickbooks_online_skipped_use_client_sync',
-          });
-          continue;
-        }
-
         const syncResult = await runOperationalSyncForConnection(connection, connection.syncFrequency || 'daily');
         const dailyRecords = extractDailyFinancialRecordsFromMetadata(connection.connectionMetadata);
         const dailyMappedLines = extractDailyFinancialMappedLinesFromMetadata(connection.connectionMetadata);

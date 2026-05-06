@@ -842,6 +842,10 @@ export class QuickBooksAdapter implements AccountingAdapter {
     return { current: 0, days1to30: 0, days31to60: 0, days61to90: 0, days90plus: safeAmount };
   }
 
+  private isCurrentDaySnapshot(asOfDate: Date): boolean {
+    return this.normalizeDay(asOfDate).getTime() === this.normalizeDay(new Date()).getTime();
+  }
+
   private async syncARTransactionFacts(
     startDate: Date,
     asOfDate: Date,
@@ -851,7 +855,10 @@ export class QuickBooksAdapter implements AccountingAdapter {
     const includePayments = options?.includePayments !== false;
     const startStr = this.formatDate(startDate);
     const endStr = this.formatDate(asOfDate);
-    const invoices = await this.runPagedEntityQuery('Invoice', `WHERE TxnDate >= '${startStr}' AND TxnDate <= '${endStr}'`);
+    const invoiceWhere = this.isCurrentDaySnapshot(asOfDate)
+      ? "WHERE Balance > '0'"
+      : `WHERE TxnDate >= '${startStr}' AND TxnDate <= '${endStr}'`;
+    const invoices = await this.runPagedEntityQuery('Invoice', invoiceWhere);
     const openInvoices = invoices.filter((invoice: unknown) => Number(this.asRecord(invoice).Balance || 0) > 0);
 
     await prisma.aROpenInvoiceSnapshot.deleteMany({
@@ -1022,7 +1029,10 @@ export class QuickBooksAdapter implements AccountingAdapter {
     const includePayments = options?.includePayments !== false;
     const startStr = this.formatDate(startDate);
     const endStr = this.formatDate(asOfDate);
-    const bills = await this.runPagedEntityQuery('Bill', `WHERE TxnDate >= '${startStr}' AND TxnDate <= '${endStr}'`);
+    const billWhere = this.isCurrentDaySnapshot(asOfDate)
+      ? "WHERE Balance > '0'"
+      : `WHERE TxnDate >= '${startStr}' AND TxnDate <= '${endStr}'`;
+    const bills = await this.runPagedEntityQuery('Bill', billWhere);
     const openBills = bills.filter((bill: unknown) => Number(this.asRecord(bill).Balance || 0) > 0);
 
     await apOpenBillSnapshot.deleteMany({
