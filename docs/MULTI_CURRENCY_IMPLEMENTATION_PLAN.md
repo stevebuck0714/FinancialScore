@@ -2,8 +2,243 @@
 
 **Owner:** Engineering
 **Status:** Draft / Not Started
-**Last updated:** 2026-04-24
-**Trigger:** First non-USD prospective tenant requesting Corelytics.
+**Last updated:** 2026-04-30
+**Trigger:** Customers need optional alternate-currency reporting while FinancialScore remains USD-canonical.
+
+---
+
+## Current Product Direction
+
+FinancialScore will remain **USD-canonical**. All companies default to USD,
+and existing company data remains stored and reported in USD unless a viewer
+chooses an optional reporting currency.
+
+The near-term multi-currency scope is:
+
+- Every company defaults to USD.
+- Site Admins can configure **one additional reporting currency** per company.
+- Customer-facing pages can switch between USD and the configured alternate
+  currency.
+- The alternate currency is for **display and reporting translation only**,
+  not accounting remeasurement.
+- The app stores **three years of daily EOD FX rates** for each active USD
+  reporting pair and refreshes rates daily going forward.
+- Historical reports use historical FX rates based on the business date,
+  not the current FX rate.
+
+This supersedes the older "tenant home currency" emphasis below for the
+initial implementation. Phase 3 transaction-level multi-currency remains a
+future capability and should not be mixed into the first reporting-currency
+release.
+
+---
+
+## USD Reporting Currency Implementation Plan
+
+### Product Rules
+
+| Rule | Decision |
+|------|----------|
+| Canonical stored currency | USD |
+| Default company behavior | USD only |
+| Additional currency count | One optional reporting currency per company |
+| Who configures it | Site Admin |
+| Where users switch | Customer-facing global currency selector, likely left sidebar |
+| FX history window | Three years of daily EOD rates |
+| Conversion purpose | Display/reporting only |
+| Historical data | Apply historical FX, not today's rate |
+
+### Company Configuration
+
+Add company-level configuration for the optional reporting currency:
+
+- `baseCurrency`: defaults to `USD`
+- `reportingCurrency`: nullable ISO 4217 code such as `CAD`, `EUR`, or `GBP`
+
+If `reportingCurrency` is empty, the customer sees USD only. If it is set,
+the customer can switch between USD and the alternate reporting currency.
+
+The accounting/admin container should expose the setting only to Site Admins.
+Changing the reporting currency should trigger a three-year FX backfill for
+the new USD pair.
+
+### Customer-Facing Currency Selector
+
+Add a global reporting-currency selector in the customer experience, preferably
+in the left sidebar because it affects the whole reporting context.
+
+Selector behavior:
+
+- Hide or disable the selector when no alternate reporting currency is set.
+- Show exactly two options when configured: `USD` and the alternate currency.
+- Persist the user's selected currency as view preference, not company data.
+- Apply the selection consistently to dashboards, reports, charts, exports,
+  AI narratives, and operational pages.
+
+UI copy should make clear that alternate-currency reporting is presentation
+translation:
+
+> Reporting currency conversion is for presentation only. Source financials
+> remain stored in USD.
+
+### FX Rate Storage
+
+Store rates once per currency pair, not per company.
+
+Suggested FX rate fields:
+
+| Field | Purpose |
+|-------|---------|
+| `provider` | Source such as `open_exchange_rates`, `oanda`, or `xe` |
+| `baseCurrency` | `USD` |
+| `quoteCurrency` | Alternate reporting currency |
+| `rateDate` | Historical EOD date |
+| `rate` | USD-to-quote conversion rate |
+| `rateType` | `eod` initially |
+| `retrievedAt` | When the app loaded the rate |
+| `sourceTimestamp` | Provider timestamp, if available |
+| `sourcePayloadHash` | Optional audit/debug trace |
+
+Use a uniqueness constraint on provider, base currency, quote currency, rate
+date, and rate type.
+
+### FX EOD Timing Policy
+
+FX EOD rates are stored by **UTC/GMT rate date**.
+
+Standard convention:
+
+- `rateDate` is a UTC calendar date, such as `2026-04-30`.
+- The EOD period is `2026-04-30T00:00:00Z` through
+  `2026-04-30T23:59:59Z`.
+- The EOD close point is effectively `23:59:59Z`.
+- The daily job loads the prior day's EOD rate after the provider publishes
+  it, typically shortly after `00:05 GMT` the next day for Open Exchange Rates.
+- A record's business date selects the FX rate, not the import timestamp.
+
+Example: an ERP invoice with business date `2026-04-30` uses
+`rateDate = 2026-04-30`, even if FinancialScore imports it on May 1 or May 3.
+
+If no rate exists for the business date due to weekend, holiday, or provider
+gap, use the most recent prior available FX date and mark the conversion as
+using a fallback rate.
+
+### FX Loading Jobs
+
+Build two FX jobs:
+
+1. **Backfill job:** when a Site Admin enables an alternate reporting currency,
+   load three years of daily EOD rates for `USD -> reportingCurrency`.
+2. **Daily refresh job:** load the latest available EOD rate for every active
+   reporting currency pair.
+
+Operational behavior:
+
+- Cache every fetched rate permanently.
+- Load each active pair once, even if many companies use it.
+- Fill weekends and holidays using a deterministic rule, preferably the
+  previous available business-day rate unless the provider already normalizes
+  historical dates.
+- Track missing dates and provider failures in admin diagnostics.
+
+### Historical Conversion Rules
+
+Use historical FX based on the data's business date.
+
+| Reporting area | FX rule |
+|----------------|---------|
+| Daily ERP P&L rollups | Convert each daily value using that day's EOD rate, then sum |
+| Daily operational transactions | Transaction/business-date EOD rate |
+| AR/AP aging snapshots | Snapshot-date EOD rate |
+| Balance sheet | Period-end EOD rate |
+| Monthly-only P&L imports | Monthly average EOD fallback |
+| Cash flow | Daily conversion when daily source exists; monthly fallback otherwise |
+| Percentages and pure ratios | Usually unchanged |
+
+The important distinction for large ERP systems is that P&L is a rollup of
+daily data. For those systems, convert the daily activity first and then
+aggregate the converted values. Monthly average FX is only a fallback when
+the source data exists only at monthly grain.
+
+### Conversion Service
+
+Create one server-side reporting conversion layer and avoid ad hoc conversion
+inside React components.
+
+The service should support:
+
+- Convert a USD amount to the selected reporting currency as of a date.
+- Convert a daily series to the selected reporting currency.
+- Convert period-end balances using period-end FX.
+- Convert daily ERP P&L rows before monthly aggregation.
+- Return rate metadata with the converted value.
+
+Every converted value should be traceable to:
+
+- selected currency
+- FX rate used
+- FX date used
+- provider
+- rate type
+- fallback indicator, if any
+
+### Reporting Rollout Order
+
+Roll out by surface area:
+
+1. Core dashboard KPI cards
+2. P&L and revenue/expense charts
+3. Balance sheet
+4. Cash flow
+5. AR/AP aging and working capital
+6. Operations dashboards
+7. Exports and AI-generated narratives
+
+USD-only companies should behave exactly as they do today throughout rollout.
+
+### Admin and Observability
+
+Expose FX readiness in Site Admin:
+
+- configured reporting currency
+- latest loaded FX rate
+- three-year backfill coverage
+- missing dates
+- provider errors
+- last successful refresh
+- active companies per currency pair
+
+If FX coverage is incomplete for a requested historical period, either block
+alternate-currency display for that period or show a clear warning.
+
+### Testing Plan
+
+Required test cases:
+
+- USD-only companies remain unchanged.
+- A company with `CAD` configured sees only `USD` and `CAD` in the selector.
+- Historical March 2024 reporting uses March 2024 FX, not current FX.
+- Daily ERP P&L converts daily rows and then sums them.
+- Balance sheet uses period-end FX.
+- Weekend and holiday dates resolve consistently.
+- Exports match on-screen selected currency.
+- AI/report narratives label the selected currency correctly.
+
+### Rollout Plan
+
+Ship behind a feature flag:
+
+1. Enable internally with one dev company and one alternate currency.
+2. Validate three-year FX backfill and daily refresh.
+3. Enable Site Admin configuration in staging.
+4. Enable the customer-facing selector for one pilot company.
+5. Expand after dashboards, exports, and narratives show consistent currency
+   behavior.
+
+The guiding principle for this release is:
+
+> Store USD, store FX rates, convert through one shared reporting layer, and
+> keep the selected display currency as view state.
 
 ---
 
