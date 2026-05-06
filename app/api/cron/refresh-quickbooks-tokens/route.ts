@@ -79,7 +79,7 @@ export async function GET(request: NextRequest) {
           expires_in: 3600,
         };
 
-        const refreshResponse = await oauthClient.refresh();
+        const refreshResponse = await oauthClient.refreshUsingToken(refreshToken);
         const newToken = refreshResponse.getJson();
         const nextAccessToken = newToken.access_token || accessToken;
         const nextRefreshToken = newToken.refresh_token || refreshToken;
