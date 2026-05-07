@@ -472,7 +472,7 @@ export default function FinancialForecastTab({
       (sectorFieldOptions.revenue || []).forEach((opt) => keys.add(String(opt.value)));
     }
     return Array.from(keys).sort((a, b) => getFieldDisplayName(a).localeCompare(getFieldDisplayName(b)));
-  }, [monthActuals, sectorFieldOptions.revenue, hasSectorSpecificSchema]);
+  }, [sectorFieldOptions.revenue, hasSectorSpecificSchema]);
 
   const cogsRowKeys = useMemo(() => {
     const keys = new Set<string>();
@@ -481,7 +481,7 @@ export default function FinancialForecastTab({
     }
 
     return Array.from(keys).sort((a, b) => getFieldDisplayName(a).localeCompare(getFieldDisplayName(b)));
-  }, [monthActuals, sectorFieldOptions.cogs, hasSectorSpecificSchema]);
+  }, [sectorFieldOptions.cogs, hasSectorSpecificSchema]);
 
   const computeDefaultPct = (rowKey: string, source: 'cogs' | 'opex'): number => {
     const last = displayedActualMonths[displayedActualMonths.length - 1];
@@ -1175,24 +1175,43 @@ export default function FinancialForecastTab({
     });
   }, [forecastRows, revenueRowKeys, cogsRowKeys]);
 
+  const incomeStatementCurrentYear = useMemo(() => {
+    const nowYear = new Date().getUTCFullYear();
+    const latestActualYear = Number(latestActualMonth?.year);
+    return Number.isFinite(latestActualYear) ? Math.max(nowYear, latestActualYear) : nowYear;
+  }, [latestActualMonth]);
+
   const incomeStatementRows = useMemo(() => {
-    if (incomeStatementViewMode === 'monthly') {
-      const actualRows = actualMonths.map((m) => {
-        const totalRevenue = Number(m.revenue) || 0;
-        const totalCogs = Object.values(m.cogsDetails || {}).reduce((sum, v) => sum + (Number(v) || 0), 0);
-        const totalOpex = Object.values(m.opexDetails || {}).reduce((sum, v) => sum + (Number(v) || 0), 0);
+    const actualByKey = new Map<string, any>();
+    monthActuals.forEach((row) => {
+      actualByKey.set(String(row.key), row);
+    });
+    const forecastByKey = new Map<string, any>();
+    forecastRows
+      .filter((row) => row.kind === 'month')
+      .forEach((row) => {
+        forecastByKey.set(String(row.key), row);
+      });
+
+    const buildMonthRow = (year: number, month: number) => {
+      const key = `${year}-${String(month + 1).padStart(2, '0')}`;
+      const actual = actualByKey.get(key);
+      if (actual) {
+        const totalRevenue = Number(actual.revenue) || 0;
+        const totalCogs = Object.values(actual.cogsDetails || {}).reduce((sum, v) => sum + (Number(v) || 0), 0);
+        const totalOpex = Object.values(actual.opexDetails || {}).reduce((sum, v) => sum + (Number(v) || 0), 0);
         const grossProfit = totalRevenue - totalCogs;
         const operatingIncome = grossProfit - totalOpex;
-        const totalIncomeTaxes = Number(m.incomeTaxes) || 0;
+        const totalIncomeTaxes = Number(actual.incomeTaxes) || 0;
         const netIncome = operatingIncome - totalIncomeTaxes;
         return {
-          key: `actual-${m.key}`,
-          label: m.label,
-          year: m.year,
-          month: m.month,
-          revenueDetails: m.revenueDetails || {},
-          cogsDetails: m.cogsDetails || {},
-          opexDetails: m.opexDetails || {},
+          key: `actual-${key}`,
+          label: getMonthLabel(year, month),
+          year,
+          month,
+          revenueDetails: actual.revenueDetails || {},
+          cogsDetails: actual.cogsDetails || {},
+          opexDetails: actual.opexDetails || {},
           totalRevenue,
           totalCogs,
           grossProfit,
@@ -1202,59 +1221,102 @@ export default function FinancialForecastTab({
           netIncome,
           isActual: true,
         };
+      }
+
+      const forecast = forecastByKey.get(key);
+      if (forecast) {
+        return {
+          ...forecast,
+          key: `forecast-${key}`,
+          label: getMonthLabel(year, month),
+          year,
+          month,
+          isActual: false,
+        };
+      }
+
+      return {
+        key: `empty-${key}`,
+        label: getMonthLabel(year, month),
+        year,
+        month,
+        revenueDetails: {},
+        cogsDetails: {},
+        opexDetails: {},
+        totalRevenue: 0,
+        totalCogs: 0,
+        grossProfit: 0,
+        totalOpex: 0,
+        totalIncomeTaxes: 0,
+        operatingIncome: 0,
+        netIncome: 0,
+        isActual: false,
+      };
+    };
+
+    const buildYearMonths = (year: number) =>
+      Array.from({ length: 12 }, (_, month) => buildMonthRow(year, month));
+
+    const buildQuarterRows = (monthRows: any[]) => {
+      const grouped = new Map<string, any>();
+      monthRows.forEach((row) => {
+        const quarter = (Math.floor((Number(row.month) || 0) / 3) + 1) as 1 | 2 | 3 | 4;
+        const key = `${row.year}-Q${quarter}`;
+        if (!grouped.has(key)) {
+          grouped.set(key, {
+            key,
+            year: row.year,
+            quarter,
+            label: getQuarterEndLabel(row.year, quarter),
+            revenueDetails: {} as Record<string, number>,
+            cogsDetails: {} as Record<string, number>,
+            opexDetails: {} as Record<string, number>,
+            totalRevenue: 0,
+            totalCogs: 0,
+            grossProfit: 0,
+            totalOpex: 0,
+            totalIncomeTaxes: 0,
+            operatingIncome: 0,
+            netIncome: 0,
+            isActual: false,
+          });
+        }
+        const bucket = grouped.get(key);
+        revenueRowKeys.forEach((k) => {
+          bucket.revenueDetails[k] = (Number(bucket.revenueDetails[k]) || 0) + (Number(row.revenueDetails?.[k]) || 0);
+        });
+        cogsRowKeys.forEach((k) => {
+          bucket.cogsDetails[k] = (Number(bucket.cogsDetails[k]) || 0) + (Number(row.cogsDetails?.[k]) || 0);
+        });
+        OPEX_FIELDS.forEach(({ key: k }) => {
+          bucket.opexDetails[k] = (Number(bucket.opexDetails[k]) || 0) + (Number(row.opexDetails?.[k]) || 0);
+        });
+        bucket.totalRevenue += Number(row.totalRevenue) || 0;
+        bucket.totalCogs += Number(row.totalCogs) || 0;
+        bucket.grossProfit += Number(row.grossProfit) || 0;
+        bucket.totalOpex += Number(row.totalOpex) || 0;
+        bucket.totalIncomeTaxes += Number(row.totalIncomeTaxes) || 0;
+        bucket.operatingIncome += Number(row.operatingIncome) || 0;
+        bucket.netIncome += Number(row.netIncome) || 0;
+        bucket.isActual = bucket.isActual || Boolean(row.isActual);
       });
+      return Array.from(grouped.values()).sort((a, b) => {
+        if (a.year !== b.year) return a.year - b.year;
+        return a.quarter - b.quarter;
+      });
+    };
 
-      const forecastMonthlyRows = forecastRows
-        .filter((row) => row.kind === 'month')
-        .map((row) => ({ ...row, isActual: false }));
-
-      return [...actualRows, ...forecastMonthlyRows];
+    if (incomeStatementViewMode === 'monthly') {
+      return buildYearMonths(incomeStatementCurrentYear);
     }
 
-    const latestActualQuarter = quarterActuals.length > 0 ? quarterActuals[quarterActuals.length - 1] : null;
-    const actualRows = quarterActuals
-      .filter((q) => {
-        if (!latestActualQuarter) return true;
-        return q.year === latestActualQuarter.year;
-      })
-      .map((q) => {
-        const totalRevenue = Number(q.revenue) || 0;
-        const totalCogs = Object.values(q.cogsDetails || {}).reduce((sum, v) => sum + (Number(v) || 0), 0);
-        const totalOpex = Object.values(q.opexDetails || {}).reduce((sum, v) => sum + (Number(v) || 0), 0);
-        const grossProfit = totalRevenue - totalCogs;
-        const operatingIncome = grossProfit - totalOpex;
-        const totalIncomeTaxes = Number(q.incomeTaxes) || 0;
-        const netIncome = operatingIncome - totalIncomeTaxes;
-        return {
-          key: `actual-${q.key}`,
-          label: q.label,
-          year: q.year,
-          quarter: q.quarter,
-          revenueDetails: q.revenueDetails || {},
-          cogsDetails: q.cogsDetails || {},
-          opexDetails: q.opexDetails || {},
-          totalRevenue,
-          totalCogs,
-          grossProfit,
-          totalOpex,
-          totalIncomeTaxes,
-          operatingIncome,
-          netIncome,
-          isActual: true,
-        };
-      });
+    if (incomeStatementViewMode === 'quarterly') {
+      return buildQuarterRows(buildYearMonths(incomeStatementCurrentYear));
+    }
 
-    const quarterRank = (year: number, quarter: number) => year * 4 + quarter;
-    const latestActualRank = latestActualQuarter ? quarterRank(latestActualQuarter.year, latestActualQuarter.quarter) : null;
-    const forecastRowsAfterActuals = forecastRowsByQuarter
-      .filter((row) => {
-        if (latestActualRank === null) return true;
-        return quarterRank(Number(row.year), Number(row.quarter)) > latestActualRank;
-      })
-      .map((row) => ({ ...row, isActual: false }));
-
-    return [...actualRows, ...forecastRowsAfterActuals];
-  }, [actualMonths, forecastRows, incomeStatementViewMode, quarterActuals, forecastRowsByQuarter]);
+    return Array.from({ length: 5 }, (_, offset) => incomeStatementCurrentYear + offset)
+      .flatMap((year) => buildYearMonths(year));
+  }, [monthActuals, forecastRows, incomeStatementViewMode, incomeStatementCurrentYear, revenueRowKeys, cogsRowKeys]);
 
   const incomeStatementColumns = useMemo(() => {
     const base = incomeStatementRows.map((row, idx) => ({
@@ -2084,7 +2146,7 @@ export default function FinancialForecastTab({
                             <input
                               type="text"
                               inputMode="decimal"
-                              value={getPercentInputValue(`rev-cur-${rowKey}-${idx}`, Number(revenueGrowthByRow[rowKey]?.[idx] || 0), 1)}
+                              value={getPercentInputValue(`rev-cur-${rowKey}-${idx}`, Number(revenueGrowthByRow[rowKey]?.[idx] || 0), 2)}
                               onChange={(e) => {
                                 const raw = e.target.value.trim();
                                 handlePercentDraftChange(`rev-cur-${rowKey}-${idx}`, raw, (parsed) =>
@@ -2107,8 +2169,8 @@ export default function FinancialForecastTab({
                           const periodIndex = idx + monthlyForecastCount;
                           const monthlyBasePct = Number(revenueGrowthByRow[rowKey]?.[Math.max(0, monthlyForecastCount - 1)]) || 0;
                           const derivedQuarterlyPct = useQuarterlyActualColumns
-                            ? Number(monthlyBasePct.toFixed(1))
-                            : Number(monthlyGrowthToQuarterlyGrowthPct(monthlyBasePct).toFixed(1));
+                            ? Number(monthlyBasePct.toFixed(2))
+                            : Number(monthlyGrowthToQuarterlyGrowthPct(monthlyBasePct).toFixed(2));
                           const enteredQuarterlyPct = Number(revenueGrowthByRow[rowKey]?.[periodIndex]);
                           const displayQuarterlyPct = Number.isFinite(enteredQuarterlyPct) ? enteredQuarterlyPct : derivedQuarterlyPct;
                           return (
@@ -2116,7 +2178,7 @@ export default function FinancialForecastTab({
                               <input
                                 type="text"
                                 inputMode="decimal"
-                                value={getPercentInputValue(`rev-q-${rowKey}-${periodIndex}`, displayQuarterlyPct, 1)}
+                                value={getPercentInputValue(`rev-q-${rowKey}-${periodIndex}`, displayQuarterlyPct, 2)}
                                 onChange={(e) => {
                                   const raw = e.target.value.trim();
                                   handlePercentDraftChange(`rev-q-${rowKey}-${periodIndex}`, raw, (parsed) =>
@@ -2140,15 +2202,15 @@ export default function FinancialForecastTab({
                             if (Number.isFinite(configuredGrowthPct)) return configuredGrowthPct;
                             const monthlyBasePct = Number(revenueGrowthByRow[rowKey]?.[Math.max(0, monthlyForecastCount - 1)]) || 0;
                             return useQuarterlyActualColumns
-                              ? Number(monthlyBasePct.toFixed(1))
-                              : Number(monthlyGrowthToQuarterlyGrowthPct(monthlyBasePct).toFixed(1));
+                              ? Number(monthlyBasePct.toFixed(2))
+                              : Number(monthlyGrowthToQuarterlyGrowthPct(monthlyBasePct).toFixed(2));
                           });
                           const annualGrowthFactor = quarterValues.reduce(
                             (factor, pct) => factor * (1 + Number(pct || 0) / 100),
                             1,
                           );
                           const annualGrowthPct = (annualGrowthFactor - 1) * 100;
-                          const displayValue = annualGrowthPct.toFixed(1);
+                          const displayValue = annualGrowthPct.toFixed(2);
                           return (
                             <td key={`${rowKey}-y-${yearCol.id}`} style={{ padding: '6px 8px', textAlign: 'right', borderBottom: '1px solid #f1f5f9', whiteSpace: 'nowrap' }}>
                               <input
@@ -2238,12 +2300,24 @@ export default function FinancialForecastTab({
                     {monthlyForecastPeriods.map((q, idx) => (
                       <td key={`${rowKey}-cf-${q.key}`} style={{ padding: '6px 8px', textAlign: 'right', borderBottom: '1px solid #f1f5f9', whiteSpace: 'nowrap' }}>
                         <input
-                          type="number"
-                          value={Number((Number(cogsGrowthByRow[rowKey]?.[idx]) || 0).toFixed(2))}
+                          type="text"
+                          inputMode="decimal"
+                          value={getPercentInputValue(
+                            `cogs-cur-${rowKey}-${idx}`,
+                            Number(cogsGrowthByRow[rowKey]?.[idx] || 0),
+                            2,
+                          )}
                           onChange={(e) => {
-                            const parsed = Number((Number(e.target.value) || 0).toFixed(2));
-                            updateForwardFill(setCogsGrowthByRow, rowKey, idx, parsed);
+                            const raw = e.target.value.trim();
+                            handlePercentDraftChange(`cogs-cur-${rowKey}-${idx}`, raw, (parsed) =>
+                              updateForwardFill(setCogsGrowthByRow, rowKey, idx, parsed)
+                            );
                           }}
+                          onBlur={() =>
+                            handlePercentDraftBlur(`cogs-cur-${rowKey}-${idx}`, (parsed) =>
+                              updateForwardFill(setCogsGrowthByRow, rowKey, idx, parsed)
+                            )
+                          }
                           style={{ width: '62px', textAlign: 'right', padding: '4px' }}
                         />%
                       </td>
@@ -2280,9 +2354,20 @@ export default function FinancialForecastTab({
                           return (
                             <td key={`${rowKey}-cy-${yearCol.id}`} style={{ padding: '6px 8px', textAlign: 'right', borderBottom: '1px solid #f1f5f9', whiteSpace: 'nowrap' }}>
                               <input
-                                type="number"
-                                value={Number(avg.toFixed(2))}
-                                onChange={(e) => updateYearBlock(setCogsGrowthByRow, rowKey, yearCol.startIndex, Number(e.target.value) || 0)}
+                                type="text"
+                                inputMode="decimal"
+                                value={getPercentInputValue(`cogs-y-${rowKey}-${yearCol.id}`, avg, 2)}
+                                onChange={(e) => {
+                                  const raw = e.target.value.trim();
+                                  handlePercentDraftChange(`cogs-y-${rowKey}-${yearCol.id}`, raw, (parsed) =>
+                                    updateYearBlock(setCogsGrowthByRow, rowKey, yearCol.startIndex, parsed)
+                                  );
+                                }}
+                                onBlur={() =>
+                                  handlePercentDraftBlur(`cogs-y-${rowKey}-${yearCol.id}`, (parsed) =>
+                                    updateYearBlock(setCogsGrowthByRow, rowKey, yearCol.startIndex, parsed)
+                                  )
+                                }
                                 style={{ width: '62px', textAlign: 'right', padding: '4px' }}
                               />%
                             </td>

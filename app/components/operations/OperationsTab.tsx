@@ -86,6 +86,23 @@ type RetailForecastTableSortKey =
   | 'monthsSupply'
   | 'risk'
   | 'confidence';
+type PriceCostComparisonSortKey =
+  | 'itemName'
+  | 'sku'
+  | 'site'
+  | 'priceThisWeek'
+  | 'pricePriorWeek'
+  | 'priceDelta'
+  | 'costThisWeek'
+  | 'costPriorWeek'
+  | 'costDelta'
+  | 'spreadThisWeek'
+  | 'spreadPriorWeek'
+  | 'spreadDelta'
+  | 'marginPctThisWeek'
+  | 'marginPctPriorWeek'
+  | 'marginDeltaPts'
+  | 'status';
 
 const clampNumber = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
 const toFiniteNumber = (value: unknown): number | null => {
@@ -657,6 +674,8 @@ export default function OperationsTab({
   const [showPriceCostExceptionsOnly, setShowPriceCostExceptionsOnly] = useState(false);
   const [priceCostSearchTerm, setPriceCostSearchTerm] = useState('');
   const [priceCostTableExpanded, setPriceCostTableExpanded] = useState(true);
+  const [priceCostSortKey, setPriceCostSortKey] = useState<PriceCostComparisonSortKey>('spreadDelta');
+  const [priceCostSortDir, setPriceCostSortDir] = useState<'asc' | 'desc'>('asc');
   const [inventorySearchTerm, setInventorySearchTerm] = useState('');
   const [hideZeroQtyInventory, setHideZeroQtyInventory] = useState(false);
   const [inventoryTableExpanded, setInventoryTableExpanded] = useState(true);
@@ -6133,6 +6152,54 @@ export default function OperationsTab({
       const matchesException = !showPriceCostExceptionsOnly || row.status !== 'acceptable';
       return matchesSearch && matchesException;
     });
+    const priceCostTextSortKeys = new Set<PriceCostComparisonSortKey>(['itemName', 'sku', 'site', 'status']);
+    const sortedComparisonRows = [...filteredComparisonRows].sort((a: any, b: any) => {
+      const direction = priceCostSortDir === 'asc' ? 1 : -1;
+      if (priceCostTextSortKeys.has(priceCostSortKey)) {
+        const left = String(a?.[priceCostSortKey] || '').toLowerCase();
+        const right = String(b?.[priceCostSortKey] || '').toLowerCase();
+        return left.localeCompare(right, undefined, { sensitivity: 'base', numeric: true }) * direction;
+      }
+
+      const left = a?.[priceCostSortKey];
+      const right = b?.[priceCostSortKey];
+      const leftMissing = left == null || !Number.isFinite(Number(left));
+      const rightMissing = right == null || !Number.isFinite(Number(right));
+      if (leftMissing && rightMissing) return 0;
+      if (leftMissing) return 1;
+      if (rightMissing) return -1;
+      return (Number(left) - Number(right)) * direction;
+    });
+    const handlePriceCostSort = (key: PriceCostComparisonSortKey) => {
+      if (priceCostSortKey === key) {
+        setPriceCostSortDir((prev) => (prev === 'asc' ? 'desc' : 'asc'));
+        return;
+      }
+      setPriceCostSortKey(key);
+      setPriceCostSortDir(priceCostTextSortKeys.has(key) ? 'asc' : 'desc');
+    };
+    const priceCostSortLabel = (key: PriceCostComparisonSortKey) =>
+      priceCostSortKey === key ? (priceCostSortDir === 'asc' ? ' ▲' : ' ▼') : ' ↕';
+    const renderPriceCostSortHeader = (
+      key: PriceCostComparisonSortKey,
+      label: string,
+      align: 'left' | 'right' = 'left',
+    ) => (
+      <th
+        onClick={() => handlePriceCostSort(key)}
+        style={{
+          textAlign: align,
+          padding: '8px',
+          fontSize: '12px',
+          color: '#334155',
+          cursor: 'pointer',
+          userSelect: 'none',
+          whiteSpace: 'nowrap',
+        }}
+      >
+        {label}{priceCostSortLabel(key)}
+      </th>
+    );
     const paretoRows = [...comparisonRowsWithSignal]
       .sort((a, b) => b.revenueThisWeek - a.revenueThisWeek)
       .slice(0, 10);
@@ -7696,7 +7763,7 @@ export default function OperationsTab({
             <div>
               <h3 style={{ margin: 0, fontSize: '18px', color: '#0f172a' }}>Weekly Price-Cost Comparison</h3>
               <div style={{ marginTop: '4px', fontSize: '12px', color: '#64748b' }}>
-                Sorted by Spread Delta ascending (worst deterioration first).
+                Click any column heading to sort the table.
               </div>
               {renderCoverageMeta()}
             </div>
@@ -7744,27 +7811,27 @@ export default function OperationsTab({
             <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: '1450px' }}>
               <thead>
                 <tr style={{ borderBottom: '1px solid #e2e8f0', background: '#f8fafc' }}>
-                  <th style={{ textAlign: 'left', padding: '8px', fontSize: '12px', color: '#334155' }}>Item</th>
-                  <th style={{ textAlign: 'left', padding: '8px', fontSize: '12px', color: '#334155' }}>SKU</th>
-                  <th style={{ textAlign: 'left', padding: '8px', fontSize: '12px', color: '#334155' }}>Site</th>
-                  <th style={{ textAlign: 'right', padding: '8px', fontSize: '12px', color: '#334155' }}>Price (This)</th>
-                  <th style={{ textAlign: 'right', padding: '8px', fontSize: '12px', color: '#334155' }}>Price (Prior)</th>
-                  <th style={{ textAlign: 'right', padding: '8px', fontSize: '12px', color: '#334155' }}>Price Delta</th>
-                  <th style={{ textAlign: 'right', padding: '8px', fontSize: '12px', color: '#334155' }}>Cost (This)</th>
-                  <th style={{ textAlign: 'right', padding: '8px', fontSize: '12px', color: '#334155' }}>Cost (Prior)</th>
-                  <th style={{ textAlign: 'right', padding: '8px', fontSize: '12px', color: '#334155' }}>Cost Delta</th>
-                  <th style={{ textAlign: 'right', padding: '8px', fontSize: '12px', color: '#334155' }}>Spread (This)</th>
-                  <th style={{ textAlign: 'right', padding: '8px', fontSize: '12px', color: '#334155' }}>Spread (Prior)</th>
-                  <th style={{ textAlign: 'right', padding: '8px', fontSize: '12px', color: '#334155' }}>Spread Delta</th>
-                  <th style={{ textAlign: 'right', padding: '8px', fontSize: '12px', color: '#334155' }}>Margin % (This)</th>
-                  <th style={{ textAlign: 'right', padding: '8px', fontSize: '12px', color: '#334155' }}>Margin % (Prior)</th>
-                  <th style={{ textAlign: 'right', padding: '8px', fontSize: '12px', color: '#334155' }}>Margin Delta pts</th>
-                  <th style={{ textAlign: 'left', padding: '8px', fontSize: '12px', color: '#334155' }}>Status</th>
+                  {renderPriceCostSortHeader('itemName', 'Item')}
+                  {renderPriceCostSortHeader('sku', 'SKU')}
+                  {renderPriceCostSortHeader('site', 'Site')}
+                  {renderPriceCostSortHeader('priceThisWeek', 'Price (This)', 'right')}
+                  {renderPriceCostSortHeader('pricePriorWeek', 'Price (Prior)', 'right')}
+                  {renderPriceCostSortHeader('priceDelta', 'Price Delta', 'right')}
+                  {renderPriceCostSortHeader('costThisWeek', 'Cost (This)', 'right')}
+                  {renderPriceCostSortHeader('costPriorWeek', 'Cost (Prior)', 'right')}
+                  {renderPriceCostSortHeader('costDelta', 'Cost Delta', 'right')}
+                  {renderPriceCostSortHeader('spreadThisWeek', 'Spread (This)', 'right')}
+                  {renderPriceCostSortHeader('spreadPriorWeek', 'Spread (Prior)', 'right')}
+                  {renderPriceCostSortHeader('spreadDelta', 'Spread Delta', 'right')}
+                  {renderPriceCostSortHeader('marginPctThisWeek', 'Margin % (This)', 'right')}
+                  {renderPriceCostSortHeader('marginPctPriorWeek', 'Margin % (Prior)', 'right')}
+                  {renderPriceCostSortHeader('marginDeltaPts', 'Margin Delta pts', 'right')}
+                  {renderPriceCostSortHeader('status', 'Status')}
                 </tr>
               </thead>
               {priceCostTableExpanded && (
                 <tbody>
-                  {filteredComparisonRows.map((row, idx) => (
+                  {sortedComparisonRows.map((row, idx) => (
                     <tr key={`${row.itemName}-${row.sku}-${idx}`} style={{ borderBottom: '1px solid #f1f5f9' }}>
                       <td style={{ padding: '8px', fontSize: '13px', color: '#0f172a', fontWeight: 600 }}>{row.itemName}</td>
                       <td style={{ padding: '8px', fontSize: '13px', color: '#475569' }}>{row.sku}</td>
@@ -7803,7 +7870,7 @@ export default function OperationsTab({
                       </td>
                     </tr>
                   ))}
-                  {filteredComparisonRows.length === 0 && (
+                  {sortedComparisonRows.length === 0 && (
                     <tr>
                       <td colSpan={16} style={{ padding: '12px', fontSize: '13px', color: '#64748b' }}>
                         No rows match current filters.
