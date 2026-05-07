@@ -162,6 +162,7 @@ const SECTOR_SCHEMA_BY_CODE: Record<string, SectorSchema> = {
       'Product Cost',
       'Inbound Logistics',
       'Inventory Adjustments',
+      'Tariffs',
       'Handling & Preparation',
       'Outbound Fulfillment',
       'Contra COGS',
