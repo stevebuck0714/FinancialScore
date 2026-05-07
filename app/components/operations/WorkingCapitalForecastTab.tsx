@@ -1090,12 +1090,10 @@ export default function WorkingCapitalForecastTab({ selectedCompanyId, basisMode
       Math.min(0.99, Math.max(0.01, Number(weeklyDrivers[idx]?.grossMarginPct || 0) / 100))
     );
     let cash = Number(startingBalances.cash || 0);
-    let unleveredCash = Number(startingBalances.cash || 0);
     let ar = Math.max(0, startingBalances.ar);
     let ap = Math.max(0, startingBalances.ap);
     let inventory = Math.max(0, startingBalances.inventory);
     let loc = Math.max(0, startingBalances.loc);
-    const unleveredLoc = Math.max(0, startingBalances.loc);
 
     for (let i = 0; i < weeks; i += 1) {
       const beginningCash = safeNumber(cash, 0);
@@ -1152,12 +1150,7 @@ export default function WorkingCapitalForecastTab({ selectedCompanyId, basisMode
 
       const locInterest = safeNumber(loc * (Math.max(0, inputs.locAprPct) / 100) / 52, 0);
       const baseEndingCash = safeNumber(beginningCash + receipts - apPayments - cashOpex - locInterest, beginningCash);
-      const beginningUnleveredCash = safeNumber(unleveredCash, 0);
-      const unleveredLocInterest = safeNumber(unleveredLoc * (Math.max(0, inputs.locAprPct) / 100) / 52, 0);
-      const unleveredEndingCash = safeNumber(
-        beginningUnleveredCash + receipts - apPayments - cashOpex - unleveredLocInterest,
-        beginningUnleveredCash
-      );
+      const unleveredEndingCash = baseEndingCash;
 
       let locDraw = 0;
       let locRepay = 0;
@@ -1211,7 +1204,6 @@ export default function WorkingCapitalForecastTab({ selectedCompanyId, basisMode
       });
 
       cash = endingCash;
-      unleveredCash = unleveredEndingCash;
       loc = endingLoc;
       ar = endingAr;
       ap = endingAp;
