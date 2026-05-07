@@ -16883,6 +16883,17 @@ function FinancialScorePage() {
                             const loadedRows = Array.isArray(loadedMonthlyData) ? loadedMonthlyData : [];
                             const rows = masterRows.length > 0 ? masterRows : loadedRows;
                             if (rows.length === 0) return null;
+                            const selectedTargetMonth = String(apiFinancialTargetMonth || '').trim();
+                            if (/^\d{4}-\d{2}$/.test(selectedTargetMonth)) {
+                              const targetRow = [...rows].reverse().find((row: any) => {
+                                const raw = String(row?.monthDate || row?.month || row?.date || '').trim();
+                                if (/^\d{4}-\d{2}/.test(raw)) return raw.slice(0, 7) === selectedTargetMonth;
+                                const parsed = raw ? new Date(raw) : null;
+                                if (!parsed || Number.isNaN(parsed.getTime())) return false;
+                                return `${parsed.getUTCFullYear()}-${String(parsed.getUTCMonth() + 1).padStart(2, '0')}` === selectedTargetMonth;
+                              });
+                              if (targetRow) return targetRow as Record<string, unknown>;
+                            }
                             return rows[rows.length - 1] as Record<string, unknown>;
                           })();
 
@@ -17105,6 +17116,9 @@ function FinancialScorePage() {
                               const codeNormalized = codeRaw.toLowerCase().replace(/[^a-z0-9]/g, '');
                               const resolvedNormalized = resolvedQboClassId.toLowerCase().replace(/[^a-z0-9]/g, '');
                               const nameKey = nameRaw.toLowerCase();
+                              const targetLookupKey = normalizeMappingTargetField(mapping?.targetField)
+                                .toLowerCase()
+                                .replace(/[^a-z0-9]/g, '');
                               const byId = idRaw ? mergedValues.get(`id:${idRaw}`) : undefined;
                               const byCode = codeRaw ? mergedValues.get(`id:${codeRaw}`) : undefined;
                               const byResolved = resolvedQboClassId ? mergedValues.get(`id:${resolvedQboClassId}`) : undefined;
@@ -17112,6 +17126,11 @@ function FinancialScorePage() {
                               const byCodeNormalized = codeNormalized ? mergedValues.get(`id:${codeNormalized}`) : undefined;
                               const byResolvedNormalized = resolvedNormalized ? mergedValues.get(`id:${resolvedNormalized}`) : undefined;
                               const byName = nameKey ? mergedValues.get(`name:${nameKey}`) : undefined;
+                              const byTarget = targetLookupKey ? mergedValues.get(`target:${targetLookupKey}`) : undefined;
+                              const byMappedField = getLatestValueByTargetField(
+                                mapping?.targetField,
+                                mapping?.accountClassification || mapping?.sourceStatus
+                              );
                               const latestValue =
                                 byId !== undefined ? byId :
                                 byCode !== undefined ? byCode :
@@ -17120,6 +17139,8 @@ function FinancialScorePage() {
                                 byCodeNormalized !== undefined ? byCodeNormalized :
                                 byResolvedNormalized !== undefined ? byResolvedNormalized :
                                 byName !== undefined ? byName :
+                                byTarget !== undefined ? byTarget :
+                                byMappedField !== undefined ? byMappedField :
                                 null;
                               return (
                               <tr key={`api-${mapping.accountId || mapping.accountName || idx}`} style={{ borderBottom: '1px solid #f1f5f9' }}>
