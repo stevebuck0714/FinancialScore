@@ -833,8 +833,8 @@ function applyMappedAmount(
 ): boolean {
   const normalized = String(targetField || '').trim();
   if (!normalized || normalized.toLowerCase() === 'unmapped') return false;
-  const amountExpense = Math.abs(expenseMovement);
-  const amountRevenue = Math.abs(revenueMovement);
+  const amountExpense = expenseMovement;
+  const amountRevenue = revenueMovement;
   const amountBalance = Math.abs(endingBalance);
   const lower = normalized.toLowerCase();
 
