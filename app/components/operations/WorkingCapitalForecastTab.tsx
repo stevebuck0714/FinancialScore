@@ -76,6 +76,7 @@ type ForecastRow = {
   purchases: number;
   apPayments: number;
   opex: number;
+  cashOpex: number;
   locInterest: number;
   locDraw: number;
   locRepay: number;
@@ -140,7 +141,7 @@ const DEFAULT_WEEKLY_DRIVER: WeeklyDriver = {
   grossMarginPct: 35,
 };
 const DEFAULT_SCHEDULED_EXPENSE_RULES: ScheduledExpenseRule[] = [
-  { key: 'payroll', label: 'Payroll', monthlyAmount: 72000, timing: 'biweekly', weekday: 5, dayOfMonth: 1 },
+  { key: 'payroll', label: 'Payroll', monthlyAmount: 72000, timing: 'semi-monthly', weekday: 5, dayOfMonth: 1 },
   { key: 'rent', label: 'Rent', monthlyAmount: 25000, timing: 'monthly', weekday: 1, dayOfMonth: 1 },
   { key: 'taxes', label: 'Taxes', monthlyAmount: 18000, timing: 'semi-monthly', weekday: 1, dayOfMonth: 15 },
   { key: 'other-opex', label: 'Other Operating Expenses', monthlyAmount: 28000, timing: 'weekly', weekday: 1, dayOfMonth: 1 },
@@ -306,6 +307,51 @@ const applyMonthlyBaseCalendarToWeeklyDrivers = (
     next[idx].grossMarginPct = clampNumber(marginWeighted / 7, 1, 99);
   }
   return next;
+};
+const allocateMonthlyAmountsToWeeks = (
+  monthAmounts: number[],
+  monthRefs: MonthlyBaseRef[],
+  weekStarts: Date[],
+  timing: 'calendar' | 'payroll-semi-monthly' = 'calendar',
+): number[] => {
+  const weekly = Array.from({ length: weekStarts.length }, () => 0);
+  if (!Array.isArray(monthAmounts) || monthAmounts.length === 0 || !weekStarts.length) return weekly;
+  const refs = normalizeMonthRefs(monthRefs, monthAmounts.length);
+  const postEventToWeek = (eventDate: Date, amount: number) => {
+    const event = startOfDay(eventDate).getTime();
+    for (let i = 0; i < weekStarts.length; i += 1) {
+      const weekStart = startOfDay(weekStarts[i]).getTime();
+      const weekEnd = startOfDay(addDays(weekStarts[i], 6)).getTime();
+      if (event >= weekStart && event <= weekEnd) {
+        weekly[i] += Math.max(0, amount);
+        return;
+      }
+    }
+  };
+
+  if (timing === 'payroll-semi-monthly') {
+    refs.forEach((ref, idx) => {
+      const monthlyAmount = Math.max(0, Number(monthAmounts[idx] || 0));
+      if (monthlyAmount <= 0) return;
+      postEventToWeek(new Date(ref.year, ref.month, 1), monthlyAmount / 2);
+      postEventToWeek(new Date(ref.year, ref.month, 15), monthlyAmount / 2);
+    });
+    return weekly.map((value) => Math.max(0, Math.round(value)));
+  }
+
+  for (let idx = 0; idx < weekStarts.length; idx += 1) {
+    const weekStart = weekStarts[idx];
+    let total = 0;
+    for (let dayOffset = 0; dayOffset < 7; dayOffset += 1) {
+      const dayDate = addDays(weekStart, dayOffset);
+      const monthIdx = resolveMonthIndexForDate(dayDate, refs);
+      const ref = refs[monthIdx];
+      const dim = Math.max(1, daysInMonth(ref.year, ref.month));
+      total += (Number(monthAmounts[monthIdx]) || 0) / dim;
+    }
+    weekly[idx] = Math.max(0, Math.round(total));
+  }
+  return weekly;
 };
 const buildWeekMonthLabels = (monthRefs: MonthlyBaseRef[]): string[] => {
   const refs = normalizeMonthRefs(monthRefs, 3);
@@ -496,6 +542,7 @@ export default function WorkingCapitalForecastTab({ selectedCompanyId, basisMode
   const [weeklyDrivers, setWeeklyDrivers] = useState<WeeklyDriver[]>(
     Array.from({ length: FORECAST_WEEKS }, () => ({ ...DEFAULT_WEEKLY_DRIVER }))
   );
+  const [forecastMonthRefs, setForecastMonthRefs] = useState<MonthlyBaseRef[]>([]);
   const [weekMonthLabels, setWeekMonthLabels] = useState<string[]>(Array.from({ length: FORECAST_WEEKS }, () => ''));
   const [startingBalances, setStartingBalances] = useState<StartingBalances>(DEFAULT_STARTING_BALANCES);
   const [locBalanceFromImportedData, setLocBalanceFromImportedData] = useState<boolean>(false);
@@ -875,6 +922,7 @@ export default function WorkingCapitalForecastTab({ selectedCompanyId, basisMode
             monthRefsBase = [];
           }
           setHistoricalSalesByWeek(recentHistoricalSales);
+          setForecastMonthRefs(monthRefsBase);
           setWeekMonthLabels(buildWeekMonthLabels(monthRefsBase));
 
           if (savedSettings) {
@@ -952,6 +1000,7 @@ export default function WorkingCapitalForecastTab({ selectedCompanyId, basisMode
           setLocBalanceFromImportedData(false);
           setStartingArBuckets(DEFAULT_AGING_BUCKETS);
           setStartingApBuckets(DEFAULT_AGING_BUCKETS);
+          setForecastMonthRefs([]);
           setWeekMonthLabels(Array.from({ length: FORECAST_WEEKS }, () => ''));
         }
       } finally {
@@ -1066,12 +1115,21 @@ export default function WorkingCapitalForecastTab({ selectedCompanyId, basisMode
     const opexByWeek: number[] = Array.from({ length: weeks }, (_, idx) => Math.max(0, weeklyDrivers[idx]?.opex || 0));
     const opexPaidInFullByWeek = Array.from({ length: weeks }, () => 0);
     const opexViaApByWeek = Array.from({ length: weeks }, () => 0);
+    const weekStarts = Array.from({ length: weeks }, (_, idx) => addDays(getWeekendAnchorDate(new Date()), idx * 7));
     ACCRUAL_OPEX_LINE_ITEMS.forEach(({ key }) => {
       const treatment = accrualOpexPaymentTreatmentByKey?.[key] === 'ap-schedule' ? 'ap-schedule' : 'paid-in-full';
       const amounts = Array.isArray(accrualOpexAmountByRow[key]) ? accrualOpexAmountByRow[key] : [];
       const pcts = Array.isArray(accrualOpexPctByRow[key]) ? accrualOpexPctByRow[key] : [];
+      const weeklyExplicitAmounts = amounts.some((value) => Number(value || 0) > 0)
+        ? allocateMonthlyAmountsToWeeks(
+            amounts.map((value) => Math.max(0, Number(value || 0))),
+            forecastMonthRefs,
+            weekStarts,
+            key === 'payroll' ? 'payroll-semi-monthly' : 'calendar',
+          )
+        : [];
       for (let i = 0; i < weeks; i += 1) {
-        const explicitAmount = Number(amounts[i] || 0);
+        const explicitAmount = Number(weeklyExplicitAmounts[i] || 0);
         const pct = Number(pcts[i] || 0);
         const pctDerivedAmount = Math.max(0, safeNumber(salesByWeek[i] * (pct / 100), 0));
         const amount = Number.isFinite(explicitAmount) && explicitAmount > 0
@@ -1192,6 +1250,7 @@ export default function WorkingCapitalForecastTab({ selectedCompanyId, basisMode
         purchases,
         apPayments,
         opex,
+        cashOpex,
         locInterest,
         locDraw,
         locRepay,
@@ -1213,7 +1272,7 @@ export default function WorkingCapitalForecastTab({ selectedCompanyId, basisMode
     }
 
     return result;
-  }, [inputs, startingBalances, startingArBuckets, startingApBuckets, weeklyDrivers, flowProfile, basisMode, historicalSalesByWeek, accrualOpexAmountByRow, accrualOpexPctByRow, accrualOpexPaymentTreatmentByKey]);
+  }, [inputs, startingBalances, startingArBuckets, startingApBuckets, weeklyDrivers, flowProfile, basisMode, historicalSalesByWeek, accrualOpexAmountByRow, accrualOpexPctByRow, accrualOpexPaymentTreatmentByKey, forecastMonthRefs]);
 
   const totals = useMemo(() => {
     const minCash = rows.reduce((acc, row) => Math.min(acc, row.endingCash), Number.POSITIVE_INFINITY);
@@ -1316,7 +1375,7 @@ export default function WorkingCapitalForecastTab({ selectedCompanyId, basisMode
     'Beginning Cash',
     'Receipts',
     'AP Payments',
-    ...(basisMode === 'accrual' ? [] : ['Opex']),
+    'Cash Opex',
     'LOC Interest',
     'LOC Draw',
     'LOC Repay',
@@ -1777,9 +1836,7 @@ export default function WorkingCapitalForecastTab({ selectedCompanyId, basisMode
                   <td style={{ padding: '8px', textAlign: 'right', borderBottom: '1px solid #f1f5f9', fontSize: '12px' }}>{formatCurrency(row.beginningCash)}</td>
                   <td style={{ padding: '8px', textAlign: 'right', borderBottom: '1px solid #f1f5f9', fontSize: '12px' }}>{formatCurrency(row.receipts)}</td>
                   <td style={{ padding: '8px', textAlign: 'right', borderBottom: '1px solid #f1f5f9', fontSize: '12px' }}>{formatCurrency(row.apPayments)}</td>
-                  {basisMode !== 'accrual' && (
-                    <td style={{ padding: '8px', textAlign: 'right', borderBottom: '1px solid #f1f5f9', fontSize: '12px' }}>{formatCurrency(row.opex)}</td>
-                  )}
+                  <td style={{ padding: '8px', textAlign: 'right', borderBottom: '1px solid #f1f5f9', fontSize: '12px' }}>{formatCurrency(row.cashOpex)}</td>
                   <td style={{ padding: '8px', textAlign: 'right', borderBottom: '1px solid #f1f5f9', fontSize: '12px' }}>{formatCurrency(row.locInterest)}</td>
                   <td style={{ padding: '8px', textAlign: 'right', borderBottom: '1px solid #f1f5f9', fontSize: '12px', color: row.locDraw > 0 ? '#7c3aed' : '#64748b' }}>{formatCurrency(row.locDraw)}</td>
                   <td style={{ padding: '8px', textAlign: 'right', borderBottom: '1px solid #f1f5f9', fontSize: '12px', color: row.locRepay > 0 ? '#0284c7' : '#64748b' }}>{formatCurrency(row.locRepay)}</td>

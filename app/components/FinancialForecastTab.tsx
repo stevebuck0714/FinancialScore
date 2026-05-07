@@ -14,6 +14,7 @@ interface FinancialForecastTabProps {
 }
 
 type ForecastTab = 'inputs' | 'income-statement' | 'graphs';
+type OpexPaymentTreatment = 'paid-in-full' | 'ap-schedule';
 
 type QuarterMeta = {
   key: string;
@@ -54,6 +55,10 @@ const OPEX_FIELDS: Array<{ key: string; label: string }> = [
   { key: 'subcontractors', label: 'Subcontractors' },
   { key: 'taxLicense', label: 'Tax License' },
 ];
+const DEFAULT_OPEX_PAYMENT_TREATMENT_BY_KEY = OPEX_FIELDS.reduce((acc, item) => {
+  acc[item.key] = 'paid-in-full';
+  return acc;
+}, {} as Record<string, OpexPaymentTreatment>);
 
 const INCOME_TAX_PCT_KEY = 'incomeTaxesTotal';
 const STACKED_BAR_COLORS = [
@@ -503,6 +508,9 @@ export default function FinancialForecastTab({
   const [cogsGrowthByRow, setCogsGrowthByRow] = useState<Record<string, number[]>>({});
   const [opexPctByRow, setOpexPctByRow] = useState<Record<string, number[]>>({});
   const [opexAmountByRow, setOpexAmountByRow] = useState<Record<string, number[]>>({});
+  const [opexPaymentTreatmentByKey, setOpexPaymentTreatmentByKey] = useState<Record<string, OpexPaymentTreatment>>(
+    { ...DEFAULT_OPEX_PAYMENT_TREATMENT_BY_KEY },
+  );
   const [editingPercentDrafts, setEditingPercentDrafts] = useState<Record<string, string>>({});
 
   React.useEffect(() => {
@@ -540,6 +548,17 @@ export default function FinancialForecastTab({
           settings?.opexPctByRow?.__amountByRow && typeof settings.opexPctByRow.__amountByRow === 'object'
             ? settings.opexPctByRow.__amountByRow
             : {},
+        );
+        const paymentTreatmentSource =
+          settings?.opexPctByRow?.__paymentTreatmentByKey &&
+          typeof settings.opexPctByRow.__paymentTreatmentByKey === 'object'
+            ? settings.opexPctByRow.__paymentTreatmentByKey
+            : {};
+        setOpexPaymentTreatmentByKey(
+          OPEX_FIELDS.reduce((acc, item) => {
+            acc[item.key] = paymentTreatmentSource[item.key] === 'ap-schedule' ? 'ap-schedule' : 'paid-in-full';
+            return acc;
+          }, { ...DEFAULT_OPEX_PAYMENT_TREATMENT_BY_KEY }),
         );
         if (basisMode === 'accrual') {
           const storedMode = settings?.opexPctByRow?.__inputMode;
@@ -924,6 +943,7 @@ export default function FinancialForecastTab({
             ...opexPctByRow,
             __amountByRow: opexAmountByRow,
             __inputMode: accrualOpexInputMode,
+            __paymentTreatmentByKey: opexPaymentTreatmentByKey,
           },
         }),
       });
@@ -2323,7 +2343,36 @@ export default function FinancialForecastTab({
               <tbody>
                 {OPEX_FIELDS.map(({ key, label }) => (
                   <tr key={key}>
-                    <td className="name-col" style={{ borderBottom: '1px solid #f1f5f9', color: '#334155' }}>{label}</td>
+                    <td className="name-col" style={{ borderBottom: '1px solid #f1f5f9', color: '#334155' }}>
+                      <div style={{ fontWeight: 600 }}>{label}</div>
+                      {basisMode === 'accrual' && (
+                        <label style={{ display: 'block', marginTop: '6px', fontSize: '10px', color: '#64748b' }}>
+                          Cash treatment
+                          <select
+                            value={opexPaymentTreatmentByKey[key] || 'paid-in-full'}
+                            onChange={(e) => {
+                              const value = e.target.value === 'ap-schedule' ? 'ap-schedule' : 'paid-in-full';
+                              setIsInputsDirty(true);
+                              setOpexPaymentTreatmentByKey((prev) => ({ ...prev, [key]: value }));
+                            }}
+                            style={{
+                              display: 'block',
+                              marginTop: '3px',
+                              width: '100%',
+                              padding: '4px',
+                              border: '1px solid #cbd5e1',
+                              borderRadius: '6px',
+                              background: 'white',
+                              color: '#0f172a',
+                              fontSize: '11px',
+                            }}
+                          >
+                            <option value="paid-in-full">Paid in full</option>
+                            <option value="ap-schedule">AP schedule</option>
+                          </select>
+                        </label>
+                      )}
+                    </td>
                     {displayedActualMonths.map((q) => {
                       const amount = Number(q.opexDetails?.[key]) || 0;
                       const pct = q.revenue > 0 ? ((Number(q.opexDetails?.[key]) || 0) / q.revenue) * 100 : 0;
