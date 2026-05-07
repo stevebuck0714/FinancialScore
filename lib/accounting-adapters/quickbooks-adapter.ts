@@ -121,22 +121,10 @@ export class QuickBooksAdapter implements AccountingAdapter {
         process.env.QUICKBOOKS_REDIRECT_URI || 'http://localhost:3000/api/quickbooks/callback',
     });
 
-    (
-      oauthClient as OAuthClient & {
-        token?: { access_token: string; refresh_token: string; token_type: string; expires_in: number };
-      }
-    ).token = {
-      access_token: this.config.accessToken,
-      refresh_token: this.config.refreshToken,
-      token_type: 'bearer',
-      expires_in: 3600,
-    };
-
     try {
-      // Use SDK refresh() after setting oauthClient.token; this is the same
-      // path used by the scheduled token refresher and avoids refreshToken
-      // method mismatches seen in production.
-      const refreshResponse = await oauthClient.refresh();
+      // `refresh()` expects the SDK's internal Token object. In scheduled jobs
+      // we only have the persisted token string, so use the string-based API.
+      const refreshResponse = await oauthClient.refreshUsingToken(this.config.refreshToken);
       const newToken = refreshResponse.getJson();
       const accessToken = newToken.access_token || this.config.accessToken;
       const refreshToken = newToken.refresh_token || this.config.refreshToken;
