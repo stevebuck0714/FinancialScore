@@ -25,3 +25,8 @@ staging_full.dump
 ~$*
 .vercel
 *.ionapi.txt
+
+# Local scratch, diagnostics, and client-specific docs kept out of the repo
+tmp/
+docs/*.xlsx
+docs/bamboohr-onboarding-cogent-scientific.md
