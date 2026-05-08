@@ -2377,14 +2377,18 @@ function FinancialScorePage() {
   useEffect(() => {
     if (typeof window === 'undefined') return;
     if (currentUser && String(currentUser.role || '').toLowerCase() === 'siteadmin') {
-      setSiteAdminSessionUser(currentUser);
-      localStorage.setItem('fs_siteAdminSessionUser', JSON.stringify(currentUser));
+      const { companyId: _omitCompanyId, ...siteAdminSnapshot } = currentUser as any;
+      setSiteAdminSessionUser(siteAdminSnapshot);
+      localStorage.setItem('fs_siteAdminSessionUser', JSON.stringify(siteAdminSnapshot));
     }
   }, [currentUser]);
 
   const canReturnToSiteAdmin = Boolean(
     siteAdminViewingAs ||
-      (siteAdminSessionUser && String(currentUser?.role || '').toLowerCase() !== 'siteadmin')
+      (siteAdminSessionUser && String(currentUser?.role || '').toLowerCase() !== 'siteadmin') ||
+      (String(currentUser?.role || '').toLowerCase() === 'siteadmin' &&
+        currentView === 'admin' &&
+        Boolean(selectedCompanyId))
   );
 
   const siteAdminReturnUser = siteAdminViewingAs || siteAdminSessionUser;
@@ -6230,6 +6234,7 @@ function FinancialScorePage() {
     }
     setCurrentView('siteadmin');
     setLoadedConsultantId(null);
+    setSelectedCompanyId('');
     safeSetCompanies([]); // Clear companies to prevent cross-account data leakage
   };
 

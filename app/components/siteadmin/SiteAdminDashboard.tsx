@@ -10,6 +10,7 @@ import { getTopLineBucketsForSector } from '@/lib/operations/sector-mock-data';
 import { getModuleLabel, mapModuleToDataType } from '@/lib/operations/module-registry';
 import AccountingSystemPanel from '@/app/components/accounting-systems/AccountingSystemPanel';
 import { isPluginAccountingSystem } from '@/lib/accounting-systems/registry';
+import { companiesApi, consultantsApi, ApiError } from '@/lib/api-client';
 
 const OPERATIONAL_HUB_SECTION_OPTIONS: Array<{ key: string; label: string; group: string }> = [
   { key: 'productsRetailForecasting', label: "Retail Forecasting / Plato's Inventory", group: 'Products' },
@@ -261,6 +262,9 @@ export default function SiteAdminDashboard(props: any) {
   const [companyDetailTabByCompany, setCompanyDetailTabByCompany] = React.useState<
     Record<string, 'accounting' | 'report-customization' | 'service-pricing'>
   >({});
+  const [newStandaloneBusinessName, setNewStandaloneBusinessName] = React.useState('');
+  const [newStandaloneBusinessAffiliate, setNewStandaloneBusinessAffiliate] = React.useState('');
+  const [creatingStandaloneBusiness, setCreatingStandaloneBusiness] = React.useState(false);
 
   const getAccountingSystemLabel = (value: unknown): string => {
     const normalized = String(value || '').trim().toUpperCase();
@@ -609,6 +613,33 @@ export default function SiteAdminDashboard(props: any) {
       alert(error.message || 'Failed to save business info');
     } finally {
       setSavingBusinessInfoCompanyId(null);
+    }
+  };
+
+  const createStandaloneBusiness = async () => {
+    const name = newStandaloneBusinessName.trim();
+    if (!name) {
+      alert('Enter a business (company) name.');
+      return;
+    }
+    setCreatingStandaloneBusiness(true);
+    try {
+      const payload: { name: string; affiliateCode?: string } = { name };
+      const aff = newStandaloneBusinessAffiliate.trim();
+      if (aff) payload.affiliateCode = aff.toUpperCase();
+      const { company } = await companiesApi.create(payload);
+      setCompanies((prev: any[]) =>
+        Array.isArray(prev)
+          ? [...prev, { ...company, consultantId: company?.consultantId ?? null }]
+          : [{ ...company, consultantId: company?.consultantId ?? null }]
+      );
+      setNewStandaloneBusinessName('');
+      setNewStandaloneBusinessAffiliate('');
+      alert('Business created.');
+    } catch (e) {
+      alert(e instanceof ApiError ? e.message : 'Failed to create business');
+    } finally {
+      setCreatingStandaloneBusiness(false);
     }
   };
 
@@ -6628,6 +6659,74 @@ export default function SiteAdminDashboard(props: any) {
               {/* Businesses Tab */}
               {siteAdminTab === 'businesses' && (
                 <div>
+                  <div
+                    style={{
+                      background: 'white',
+                      borderRadius: '8px',
+                      padding: '12px 16px',
+                      marginBottom: '16px',
+                      boxShadow: '0 1px 3px rgba(0,0,0,0.08)',
+                      border: '1px solid #e2e8f0',
+                    }}
+                  >
+                    <h2 style={{ fontSize: '15px', fontWeight: '600', color: '#1e293b', margin: '0 0 8px 0' }}>
+                      Add business (standalone)
+                    </h2>
+                    <p style={{ fontSize: '12px', color: '#64748b', margin: '0 0 10px 0', lineHeight: 1.45 }}>
+                      Creates a company with no consultant. Add users and accounting from this business&apos;s row after it appears in the list.
+                    </p>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', alignItems: 'center' }}>
+                      <input
+                        type="text"
+                        placeholder="Company name *"
+                        value={newStandaloneBusinessName}
+                        onChange={(e) => setNewStandaloneBusinessName(e.target.value)}
+                        onKeyDown={(e) => e.key === 'Enter' && !creatingStandaloneBusiness && createStandaloneBusiness()}
+                        disabled={creatingStandaloneBusiness}
+                        style={{
+                          flex: '1 1 200px',
+                          minWidth: '180px',
+                          padding: '8px 12px',
+                          borderRadius: '6px',
+                          border: '1px solid #cbd5e1',
+                          fontSize: '13px',
+                        }}
+                      />
+                      <input
+                        type="text"
+                        placeholder="Affiliate code (optional)"
+                        value={newStandaloneBusinessAffiliate}
+                        onChange={(e) => setNewStandaloneBusinessAffiliate(e.target.value)}
+                        disabled={creatingStandaloneBusiness}
+                        style={{
+                          flex: '0 1 160px',
+                          minWidth: '140px',
+                          padding: '8px 12px',
+                          borderRadius: '6px',
+                          border: '1px solid #cbd5e1',
+                          fontSize: '13px',
+                        }}
+                      />
+                      <button
+                        type="button"
+                        onClick={createStandaloneBusiness}
+                        disabled={creatingStandaloneBusiness}
+                        style={{
+                          padding: '8px 18px',
+                          background: creatingStandaloneBusiness ? '#94a3b8' : '#10b981',
+                          color: 'white',
+                          border: 'none',
+                          borderRadius: '6px',
+                          fontSize: '13px',
+                          fontWeight: '600',
+                          cursor: creatingStandaloneBusiness ? 'not-allowed' : 'pointer',
+                        }}
+                      >
+                        {creatingStandaloneBusiness ? 'Creating…' : 'Add business'}
+                      </button>
+                    </div>
+                  </div>
+
                   {/* Businesses List */}
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
                     <div style={{ fontSize: '14px', fontWeight: '600', color: '#64748b' }}>
@@ -6709,8 +6808,8 @@ export default function SiteAdminDashboard(props: any) {
                   ) : Array.isArray(companies) && companies.filter(comp => comp.consultantId === null).length === 0 ? (
                     <div style={{ background: 'white', borderRadius: '8px', padding: '40px', textAlign: 'center', boxShadow: '0 1px 3px rgba(0,0,0,0.08)' }}>
                       <div style={{ fontSize: '36px', marginBottom: '12px' }}>🏢</div>
-                      <h3 style={{ fontSize: '16px', fontWeight: '600', color: '#64748b', marginBottom: '6px' }}>No businesses registered yet</h3>
-                      <p style={{ fontSize: '13px', color: '#94a3b8' }}>Businesses will appear here once they register</p>
+                      <h3 style={{ fontSize: '16px', fontWeight: '600', color: '#64748b', marginBottom: '6px' }}>No businesses in the list yet</h3>
+                      <p style={{ fontSize: '13px', color: '#94a3b8' }}>Use the form above to add one, or they will appear here when they self-register.</p>
                     </div>
                   ) : (
                     <div style={{ display: 'grid', gap: '8px' }}>
@@ -6767,62 +6866,42 @@ export default function SiteAdminDashboard(props: any) {
                                           console.error('Error resolving business user from API:', err);
                                         }
                                       }
-                                      if (!resolvedBusinessUser) {
-                                        console.error('User not found for company:', businessCompany.id, 'Available users:', users);
-                                        alert('User not found for this company. Please ensure the business has a registered user.');
-                                        return;
-                                      }
-                                      // Save original site-admin identity once per preview session.
-                                      // Do not overwrite with consultant/user identities while drilling deeper.
-                                      setSiteAdminViewingAs((prev: any) => prev || currentUser);
-                                      // Load the specific company data with all fields from API
-                                      fetch(`/api/companies?companyId=${businessCompany.id}`)
-                                        .then(res => res.json())
-                                        .then(data => {
-                                          if (data.companies && data.companies.length > 0) {
-                                            const fullCompany = data.companies[0];
-                                            setCompanies([fullCompany]);
-                                            setLoadedConsultantId(null);
-                                            // Switch to viewing this business's dashboard
-                                            // Normalize userType to lowercase 'company' to match sidebar checks
-                                            const normalizedUserType = resolvedBusinessUser.userType?.toLowerCase() === 'company' ? 'company' : 'company';
-                                            setCurrentUser({
-                                              ...resolvedBusinessUser,
-                                              role: 'user',
-                                              userType: normalizedUserType,
-                                              companyId: businessCompany.id
-                                            });
-                                            setSelectedCompanyId(businessCompany.id);
-                                            setCurrentView('admin');
-                                          } else {
-                                            // Fallback to using the company from the list
-                                            setCompanies([businessCompany]);
-                                            setLoadedConsultantId(null);
-                                            const normalizedUserType = resolvedBusinessUser.userType?.toLowerCase() === 'company' ? 'company' : 'company';
-                                            setCurrentUser({
-                                              ...resolvedBusinessUser,
-                                              role: 'user',
-                                              userType: normalizedUserType,
-                                              companyId: businessCompany.id
-                                            });
-                                            setSelectedCompanyId(businessCompany.id);
-                                            setCurrentView('admin');
-                                          }
-                                        })
-                                        .catch(err => {
-                                          console.error('Error loading company:', err);
-                                          // Fallback to using the company from the list
-                                          setCompanies([businessCompany]);
-                                          setLoadedConsultantId(null);
+
+                                      const goAdminForCompany = (companyRecord: any) => {
+                                        setCompanies([companyRecord]);
+                                        setLoadedConsultantId(null);
+                                        setSelectedCompanyId(businessCompany.id);
+                                        setCurrentView('admin');
+                                        if (resolvedBusinessUser) {
+                                          setSiteAdminViewingAs((prev: any) => prev || currentUser);
                                           const normalizedUserType = resolvedBusinessUser.userType?.toLowerCase() === 'company' ? 'company' : 'company';
                                           setCurrentUser({
                                             ...resolvedBusinessUser,
                                             role: 'user',
                                             userType: normalizedUserType,
-                                            companyId: businessCompany.id
+                                            companyId: businessCompany.id,
                                           });
-                                          setSelectedCompanyId(businessCompany.id);
-                                          setCurrentView('admin');
+                                        } else {
+                                          setSiteAdminViewingAs(null);
+                                          setCurrentUser((prev: any) => ({
+                                            ...prev,
+                                            companyId: businessCompany.id,
+                                          }));
+                                        }
+                                      };
+
+                                      fetch(`/api/companies?companyId=${businessCompany.id}`)
+                                        .then((res) => res.json())
+                                        .then((data) => {
+                                          if (data.companies && data.companies.length > 0) {
+                                            goAdminForCompany(data.companies[0]);
+                                          } else {
+                                            goAdminForCompany(businessCompany);
+                                          }
+                                        })
+                                        .catch((err) => {
+                                          console.error('Error loading company:', err);
+                                          goAdminForCompany(businessCompany);
                                         });
                                     }}
                                     style={{ 

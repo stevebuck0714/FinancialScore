@@ -2876,6 +2876,15 @@ async function saveGLTransactionFacts(
   }
   const rows = Array.from(dedupedRows.values());
   if (rows.length === 0) return 0;
+  const rowDates = rows
+    .map((row) => (row.transDate instanceof Date ? startOfUtcDay(row.transDate) : parseMaybeDate(String(row.transDate || ''))))
+    .filter((date): date is Date => Boolean(date && !Number.isNaN(date.getTime())));
+  const cleanupStartDate =
+    rowDates.length > 0 ? new Date(Math.min(...rowDates.map((date) => date.getTime()))) : null;
+  const cleanupEndDate =
+    rowDates.length > 0
+      ? new Date(Math.max(...rowDates.map((date) => date.getTime())) + 24 * 60 * 60 * 1000)
+      : null;
   // Runtime safety fallback: some Prisma client builds in this environment do not
   // expose the GLTransactionFact delegate. Insert via SQL so SLGLTRANS ingestion
   // still persists raw ledger facts.
@@ -3007,7 +3016,44 @@ async function saveGLTransactionFacts(
     `,
     JSON.stringify(sqlRows)
   );
+  if (cleanupStartDate && cleanupEndDate) {
+    await dedupeGLTransactionFactsForDateRange(companyId, cleanupStartDate, cleanupEndDate);
+  }
   return rows.length;
+}
+
+async function dedupeGLTransactionFactsForDateRange(companyId: string, startDate: Date, endDate: Date): Promise<number> {
+  const result = await prisma.$executeRaw`
+    WITH ranked AS (
+      SELECT
+        "id",
+        ROW_NUMBER() OVER (
+          PARTITION BY
+            "companyId",
+            DATE_TRUNC('day', "transDate"),
+            "accountId",
+            COALESCE("transNum", ''),
+            COALESCE("ref", ''),
+            ROUND("signedAmount"::numeric, 2)
+          ORDER BY
+            CASE WHEN "sourceProgram" = 'SLLedgers' THEN 0 ELSE 1 END,
+            CASE WHEN "sourceTransaction" = 'CSI_LOAD' THEN 0 ELSE 1 END,
+            CASE WHEN "controlYear" IS NOT NULL AND "controlPeriod" IS NOT NULL THEN 0 ELSE 1 END,
+            CASE WHEN "transDate" = DATE_TRUNC('day', "transDate") THEN 0 ELSE 1 END,
+            "createdAt" ASC,
+            "id" ASC
+        ) AS rn
+      FROM "GLTransactionFact"
+      WHERE "companyId" = ${companyId}
+        AND "transDate" >= ${startDate}
+        AND "transDate" < ${endDate}
+    )
+    DELETE FROM "GLTransactionFact" gl
+    USING ranked
+    WHERE gl."id" = ranked."id"
+      AND ranked.rn > 1
+  `;
+  return Number(result || 0);
 }
 
 async function saveBalanceMovementsFromGl(

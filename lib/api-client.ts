@@ -89,7 +89,7 @@ export const companiesApi = {
 
   async create(data: {
     name: string;
-    consultantId: string;
+    consultantId?: string | null;
     location?: string;
     industrySector?: number;
     affiliateCode?: string;

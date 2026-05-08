@@ -289,9 +289,17 @@ export async function POST(request: NextRequest) {
       tier1SupportContactEmail,
     } = requestBody;
 
+    const nameTrimmed = typeof name === "string" ? name.trim() : "";
+    const rawConsultantId =
+      consultantId === null || consultantId === undefined || consultantId === ""
+        ? ""
+        : String(consultantId).trim();
+    const isStandaloneBusiness = !rawConsultantId;
+
     console.log("🔍 Received data:", {
-      name,
-      consultantId,
+      name: nameTrimmed,
+      consultantId: rawConsultantId || null,
+      isStandaloneBusiness,
       addressStreet,
       addressCity,
       addressState,
@@ -300,14 +308,15 @@ export async function POST(request: NextRequest) {
       affiliateCode,
     });
 
-    if (!name || !consultantId) {
-      console.error("❌ Missing required fields:", {
-        name: !!name,
-        consultantId: !!consultantId,
-      });
+    if (!nameTrimmed) {
+      console.error("❌ Missing company name");
+      return NextResponse.json({ error: "Company name required" }, { status: 400 });
+    }
+
+    if (isStandaloneBusiness && context.role !== "SITEADMIN") {
       return NextResponse.json(
-        { error: "Company name and consultant ID required" },
-        { status: 400 },
+        { error: "Forbidden: Only site administrators can create a business without a consultant" },
+        { status: 403 },
       );
     }
 
@@ -317,62 +326,56 @@ export async function POST(request: NextRequest) {
     console.log("🔍 Creating company in database");
     console.log("🔍 Environment:", process.env.NODE_ENV);
 
-    // STAGING/DEV: Full pricing logic
-    // Get consultant to check their type
-    console.log("🔍 Looking up consultant with ID:", consultantId);
-    const consultant = await prisma.consultant.findUnique({
-      where: { id: consultantId },
-      select: { type: true, id: true, userId: true },
-    });
-    console.log("🔍 Consultant lookup result:", consultant);
+    // STAGING/DEV: Full pricing logic — resolve consultant when this company belongs to one
+    let consultant: { type: string; id: string; userId: string } | null = null;
+    if (!isStandaloneBusiness) {
+      console.log("🔍 Looking up consultant with ID:", rawConsultantId);
+      consultant = await prisma.consultant.findUnique({
+        where: { id: rawConsultantId },
+        select: { type: true, id: true, userId: true },
+      });
+      console.log("🔍 Consultant lookup result:", consultant);
 
-    if (!consultant) {
-      console.error("❌ Consultant not found:", consultantId);
-      return NextResponse.json(
-        { error: "Consultant not found" },
-        { status: 404 },
-      );
-    }
+      if (!consultant) {
+        console.error("❌ Consultant not found:", rawConsultantId);
+        return NextResponse.json({ error: "Consultant not found" }, { status: 404 });
+      }
 
-    // SECURITY: Validate consultant access - ensure user can create companies for this consultant
-    console.log("🔍 Validating consultant access:");
-    console.log("   User role:", context.role);
-    console.log("   User consultantId:", context.consultantId);
-    console.log("   Target consultantId:", consultantId);
-    
-    // Site admins can create companies for any consultant
-    if (context.role === 'SITEADMIN') {
-      console.log("✅ Site admin access - validation passed");
-    } 
-    // Consultants can only create companies for themselves
-    else if (context.role === 'CONSULTANT') {
-      if (context.consultantId !== consultantId) {
-        console.error("❌ Consultant trying to create company for different consultant");
-        console.error("   User consultantId:", context.consultantId);
-        console.error("   Requested consultantId:", consultantId);
-        await auditForbiddenAccess('Company', consultantId, 'CREATE_FOR_CONSULTANT');
+      // SECURITY: Validate consultant access - ensure user can create companies for this consultant
+      console.log("🔍 Validating consultant access:");
+      console.log("   User role:", context.role);
+      console.log("   User consultantId:", context.consultantId);
+      console.log("   Target consultantId:", rawConsultantId);
+
+      if (context.role === "SITEADMIN") {
+        console.log("✅ Site admin access - validation passed");
+      } else if (context.role === "CONSULTANT") {
+        if (context.consultantId !== rawConsultantId) {
+          console.error("❌ Consultant trying to create company for different consultant");
+          await auditForbiddenAccess("Company", rawConsultantId, "CREATE_FOR_CONSULTANT");
+          return NextResponse.json(
+            {
+              error: "Forbidden: You can only create companies for yourself",
+              debug: {
+                userRole: context.role,
+                userConsultantId: context.consultantId,
+                targetConsultantId: rawConsultantId,
+              },
+            },
+            { status: 403 },
+          );
+        }
+        console.log("✅ Consultant access validated - creating company for self");
+      } else {
+        console.error("❌ User role cannot create companies:", context.role);
+        await auditForbiddenAccess("Company", rawConsultantId, "CREATE_FOR_CONSULTANT");
         return NextResponse.json(
-          { 
-            error: 'Forbidden: You can only create companies for yourself',
-            debug: {
-              userRole: context.role,
-              userConsultantId: context.consultantId,
-              targetConsultantId: consultantId
-            }
-          },
-          { status: 403 }
+          { error: "Forbidden: Only consultants and site admins can create companies" },
+          { status: 403 },
         );
       }
-      console.log("✅ Consultant access validated - creating company for self");
-    } 
-    // Other roles cannot create companies
-    else {
-      console.error("❌ User role cannot create companies:", context.role);
-      await auditForbiddenAccess('Company', consultantId, 'CREATE_FOR_CONSULTANT');
-      return NextResponse.json(
-        { error: 'Forbidden: Only consultants and site admins can create companies' },
-        { status: 403 }
-      );
+    } else {
+      console.log("✅ Standalone business — site admin only (validated above)");
     }
 
     let monthlyPrice: number;
@@ -589,8 +592,8 @@ export async function POST(request: NextRequest) {
 
         // Use appropriate default pricing based on user type
         if (defaultPricing) {
-          // Individual businesses get business pricing, consultants get consultant pricing
-          const isBusinessUser = consultant?.type === "business";
+          // Standalone + business-type consultants use business pricing; consulting firms use consultant pricing
+          const isBusinessUser = !consultant || consultant.type === "business";
           monthlyPrice = isBusinessUser
             ? (defaultPricing.businessMonthlyPrice ?? 195)
             : (defaultPricing.consultantMonthlyPrice ?? 195);
@@ -649,7 +652,7 @@ export async function POST(request: NextRequest) {
           },
         });
       }
-      const isBusinessUser = consultant?.type === "business";
+      const isBusinessUser = !consultant || consultant.type === "business";
       dataRoomMonthlyPrice = Number(isBusinessUser ? (defaultDataRoomPricing.businessMonthlyPrice ?? 195) : (defaultDataRoomPricing.consultantMonthlyPrice ?? 195));
       dataRoomQuarterlyPrice = Number(isBusinessUser ? (defaultDataRoomPricing.businessQuarterlyPrice ?? 500) : (defaultDataRoomPricing.consultantQuarterlyPrice ?? 500));
       dataRoomAnnualPrice = Number(isBusinessUser ? (defaultDataRoomPricing.businessAnnualPrice ?? 1750) : (defaultDataRoomPricing.consultantAnnualPrice ?? 1750));
@@ -658,8 +661,8 @@ export async function POST(request: NextRequest) {
     }
 
     console.log("🔍 About to create company with final data:", {
-      name,
-      consultantId,
+      name: nameTrimmed,
+      consultantId: rawConsultantId || null,
       addressStreet,
       addressCity,
       addressState,
@@ -693,10 +696,10 @@ export async function POST(request: NextRequest) {
 
     // Consultant-originated company defaults to consultant-owned Tier 1.
     const finalTier1SupportOwner =
-      normalizedTier1SupportOwner || (consultantId ? "CONSULTANT" : "CORELYTICS");
+      normalizedTier1SupportOwner || (rawConsultantId ? "CONSULTANT" : "CORELYTICS");
     const finalTier1SupportConsultantId =
       finalTier1SupportOwner === "CONSULTANT"
-        ? (typeof tier1SupportConsultantId === "string" && tier1SupportConsultantId.trim()) || consultantId
+        ? (typeof tier1SupportConsultantId === "string" && tier1SupportConsultantId.trim()) || rawConsultantId || null
         : null;
     const finalTier1SupportContactEmail =
       finalTier1SupportOwner === "CONSULTANT" && typeof tier1SupportContactEmail === "string"
@@ -743,10 +746,14 @@ export async function POST(request: NextRequest) {
         : {};
       const company = await prisma.company.create({
         data: {
-          name,
-          consultant: {
-            connect: { id: consultantId },
-          },
+          name: nameTrimmed,
+          ...(rawConsultantId
+            ? {
+                consultant: {
+                  connect: { id: rawConsultantId },
+                },
+              }
+            : {}),
           addressStreet,
           addressCity,
           addressState,
@@ -824,7 +831,7 @@ export async function POST(request: NextRequest) {
       // Transform the response to include consultantId (pricing is now stored in DB)
       const transformedCompany = {
         ...company,
-        consultantId: company.consultant?.id,
+        consultantId: company.consultant?.id ?? null,
         // Pricing is now stored permanently in database fields
       };
 
