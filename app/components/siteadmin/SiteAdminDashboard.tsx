@@ -2757,6 +2757,45 @@ export default function SiteAdminDashboard(props: any) {
       alert(`Failed to save QuickBooks Online settings: ${error?.message || 'Unknown error'}`);
     }
   };
+
+  const validateQuickBooksOnlineConnection = async (companyId: string) => {
+    try {
+      const response = await fetch(`/api/quickbooks/test-token?companyId=${encodeURIComponent(companyId)}`);
+      const data = await response.json().catch(() => ({}));
+
+      if (data?.tokenWorksWithAPI) {
+        const refreshedNote = data?.refreshed ? '\nAccess token was refreshed during validation.\n' : '';
+        alert(
+          `QuickBooks connection OK.\n${refreshedNote}\nRealm: ${data?.realmId || '—'}\nEnvironment (server): ${data?.environment || '—'}`
+        );
+        return;
+      }
+
+      const parts: string[] = [];
+      if (typeof data?.error === 'string' && data.error.trim()) parts.push(data.error.trim());
+      if (typeof data?.apiErrorPreview === 'string' && data.apiErrorPreview.trim()) {
+        parts.push(`QuickBooks API response (truncated):\n${data.apiErrorPreview.trim()}`);
+      }
+      if (typeof data?.apiResponseStatus === 'number') {
+        parts.push(`HTTP status from QuickBooks API: ${data.apiResponseStatus}`);
+      }
+      if (typeof data?.hint === 'string' && data.hint.trim()) parts.push(data.hint.trim());
+      if (data?.refreshFailed) parts.push('OAuth token refresh failed.');
+      if (typeof data?.details === 'string' && data.details.trim()) parts.push(data.details.trim());
+      if (parts.length === 0) {
+        parts.push(response.ok ? 'Unknown validation failure.' : `Request failed (HTTP ${response.status}).`);
+      }
+      if (data?.tokenExpired) parts.push('Access token was past its stored expiry time.');
+      const reconnect =
+        data?.needsReconnect || /reconnect/i.test(parts.join(' '))
+          ? '\n\nReconnect QuickBooks from the company API Connections tab.'
+          : '';
+      alert(`QuickBooks validation did not succeed.\n\n${parts.join('\n\n')}${reconnect}`);
+    } catch (error: any) {
+      alert(`QuickBooks validation request failed: ${error?.message || 'Unknown error'}`);
+    }
+  };
+
   const saveBambooHrSettings = async (companyId: string) => {
     try {
       setSavingBambooHrCompanyId(companyId);
@@ -4944,8 +4983,9 @@ export default function SiteAdminDashboard(props: any) {
                                                       Save
                                                     </button>
                                                     <button
-                                                      disabled
-                                                      style={{ padding: '8px 12px', background: '#cbd5e1', color: '#334155', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: 'not-allowed' }}
+                                                      type="button"
+                                                      onClick={() => validateQuickBooksOnlineConnection(company.id)}
+                                                      style={{ padding: '8px 12px', background: '#f8fafc', color: '#1e293b', border: '1px solid #cbd5e1', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: 'pointer' }}
                                                     >
                                                       Validate Connection
                                                     </button>
@@ -8113,8 +8153,9 @@ export default function SiteAdminDashboard(props: any) {
                                             Save
                                           </button>
                                           <button
-                                            disabled
-                                            style={{ padding: '8px 12px', background: '#cbd5e1', color: '#334155', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: 'not-allowed' }}
+                                            type="button"
+                                            onClick={() => validateQuickBooksOnlineConnection(businessCompany.id)}
+                                            style={{ padding: '8px 12px', background: '#f8fafc', color: '#1e293b', border: '1px solid #cbd5e1', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: 'pointer' }}
                                           >
                                             Validate Connection
                                           </button>
