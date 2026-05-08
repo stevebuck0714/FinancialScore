@@ -303,6 +303,48 @@ export default function SiteAdminDashboard(props: any) {
     });
   };
 
+  const SITE_ADMIN_COMPANY_DETAIL_TABS = [
+    { id: 'accounting' as const, label: 'Accounting' },
+    { id: 'report-customization' as const, label: 'Report Customization' },
+    { id: 'service-pricing' as const, label: 'Service Pricing' },
+  ];
+
+  const hydrateSiteAdminCompanyIntegrations = (company: any) => {
+    const id = company?.id;
+    if (!id) return;
+    setSelectedCompanyId(id);
+    if (['INFOR_M3', 'INFOR_CSI'].includes(String(company.accountingSystem || '').toUpperCase())) {
+      loadInforM3Credentials?.(id);
+      loadCompanyPrograms(id);
+      checkInforM3Status?.(id).then((statusData: any) => {
+        if (!statusData) return;
+        const frequency = String(statusData.syncFrequency || 'daily').toLowerCase();
+        const pullTime = typeof statusData.autoSyncTime === 'string' ? statusData.autoSyncTime : '08:00';
+        const autoSyncWindowDays = Math.max(1, Number.parseInt(String(statusData.autoSyncWindowDays || ''), 10) || 3);
+        if (frequency === 'daily' || frequency === 'weekly' || frequency === 'monthly') {
+          setCompanyOperationalSettings(id, {
+            frequency,
+            pullTime,
+            autoSyncWindowDays,
+          });
+        }
+      });
+    } else if (company.accountingSystem === 'QUICKBOOKS_DESKTOP') {
+      loadQbDesktopSettings(id);
+    } else if (company.accountingSystem === 'QUICKBOOKS') {
+      loadQboSettings(id);
+      loadOperationalSources(id);
+    } else if (company.accountingSystem === 'DYNAMICS' || company.accountingSystem === 'DYNAMICS365') {
+      loadDynamicsSettings(id);
+    } else if (company.accountingSystem === 'ACUMATICA') {
+      loadAcumaticaSettings(id);
+    } else if (company.accountingSystem === 'SAGE_INTACCT' || company.accountingSystem === 'SAGE') {
+      loadSageIntacctSettings(id);
+    } else if (company.accountingSystem === 'ODOO') {
+      loadOdooSettings(id);
+    }
+  };
+
   const renderInforSyncStatusPanel = (companyId: string) => {
     const status = inforOperationalSyncStatus;
     if (!status || status.companyId !== companyId) {
@@ -4301,36 +4343,7 @@ export default function SiteAdminDashboard(props: any) {
                                       if (isExpandedNow) {
                                         return prev;
                                       }
-                                      setSelectedCompanyId(company.id);
-                                      if (['INFOR_M3', 'INFOR_CSI'].includes(String(company.accountingSystem || '').toUpperCase())) {
-                                        loadInforM3Credentials?.(company.id);
-                                        loadCompanyPrograms(company.id);
-                                        checkInforM3Status?.(company.id).then((statusData: any) => {
-                                          if (!statusData) return;
-                                          const frequency = String(statusData.syncFrequency || 'daily').toLowerCase();
-                                          const pullTime =
-                                            typeof statusData.autoSyncTime === 'string' ? statusData.autoSyncTime : '08:00';
-                                          if (frequency === 'daily' || frequency === 'weekly' || frequency === 'monthly') {
-                                            setCompanyOperationalSettings(company.id, {
-                                              frequency,
-                                              pullTime,
-                                            });
-                                          }
-                                        });
-                                      } else if (company.accountingSystem === 'QUICKBOOKS_DESKTOP') {
-                                        loadQbDesktopSettings(company.id);
-                                      } else if (company.accountingSystem === 'QUICKBOOKS') {
-                                        loadQboSettings(company.id);
-                                        loadOperationalSources(company.id);
-                                      } else if (company.accountingSystem === 'DYNAMICS' || company.accountingSystem === 'DYNAMICS365') {
-                                        loadDynamicsSettings(company.id);
-                                      } else if (company.accountingSystem === 'ACUMATICA') {
-                                        loadAcumaticaSettings(company.id);
-                                      } else if (company.accountingSystem === 'SAGE_INTACCT' || company.accountingSystem === 'SAGE') {
-                                        loadSageIntacctSettings(company.id);
-                                      } else if (company.accountingSystem === 'ODOO') {
-                                        loadOdooSettings(company.id);
-                                      }
+                                      hydrateSiteAdminCompanyIntegrations(company);
                                       return [...prev, company.id];
                                     });
                                   };
@@ -4346,11 +4359,7 @@ export default function SiteAdminDashboard(props: any) {
                                             {companyUsers.length} user{companyUsers.length !== 1 ? 's' : ''}
                                           </div>
                                           <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
-                                            {([
-                                              { id: 'accounting', label: 'Accounting' },
-                                              { id: 'report-customization', label: 'Report Customization' },
-                                              { id: 'service-pricing', label: 'Service Pricing' },
-                                            ] as const).map((tab) => (
+                                            {SITE_ADMIN_COMPANY_DETAIL_TABS.map((tab) => (
                                               <button
                                                 key={`${company.id}-${tab.id}`}
                                                 onClick={() => {
@@ -6845,15 +6854,16 @@ export default function SiteAdminDashboard(props: any) {
                         const currentSupportConsultant = supportConsultants.find(
                           (consultant: any) => consultant.id === effectiveTier1Routing.consultantId
                         );
+                        const businessCompanyUsers = getCompanyUsers(businessCompany.id);
+                        const activeBusinessCompanyDetailTab =
+                          companyDetailTabByCompany[businessCompany.id] || 'accounting';
                         
                         return (
-                          <div key={businessCompany.id} style={{ background: 'white', borderRadius: '8px', padding: '10px 12px', boxShadow: '0 1px 3px rgba(0,0,0,0.08)', border: '1px solid #e2e8f0' }}>
-                            {/* Business Header */}
-                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <div key={businessCompany.id} style={{ background: '#f8fafc', borderRadius: '6px', padding: '6px 8px', border: '1px solid #e2e8f0' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: isExpanded ? '6px' : '0' }}>
                               <div style={{ flex: 1 }}>
-                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                  <h3 
-                                    onClick={async () => {
+                                <h5
+                                  onClick={async () => {
                                       let resolvedBusinessUser = businessUser;
                                       if (!resolvedBusinessUser) {
                                         try {
@@ -6904,80 +6914,93 @@ export default function SiteAdminDashboard(props: any) {
                                           goAdminForCompany(businessCompany);
                                         });
                                     }}
-                                    style={{ 
-                                      fontSize: '16px', 
-                                      fontWeight: '600', 
-                                      color: '#667eea', 
-                                      margin: 0,
-                                      cursor: 'pointer',
-                                      textDecoration: 'underline'
-                                    }}
-                                    onMouseEnter={(e) => e.currentTarget.style.color = '#5568d3'}
-                                    onMouseLeave={(e) => e.currentTarget.style.color = '#667eea'}
-                                  >
-                                    {businessCompany.name}
-                                  </h3>
-                                </div>
+                                  style={{
+                                    fontSize: '14px',
+                                    fontWeight: '700',
+                                    color: '#667eea',
+                                    margin: 0,
+                                    lineHeight: '1.2',
+                                    cursor: 'pointer',
+                                    textDecoration: 'underline',
+                                  }}
+                                  onMouseEnter={(e) => { e.currentTarget.style.color = '#5568d3'; }}
+                                  onMouseLeave={(e) => { e.currentTarget.style.color = '#667eea'; }}
+                                >
+                                  {businessCompany.name}
+                                </h5>
                               </div>
-                              <div style={{ display: 'flex', gap: '8px' }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+                                <div style={{ fontSize: '12px', fontWeight: '700', color: '#667eea' }}>
+                                  {businessCompanyUsers.length} user{businessCompanyUsers.length !== 1 ? 's' : ''}
+                                </div>
+                                {SITE_ADMIN_COMPANY_DETAIL_TABS.map((tab) => (
+                                  <button
+                                    key={`${businessCompany.id}-biz-${tab.id}`}
+                                    type="button"
+                                    onClick={() => {
+                                      setCompanyDetailTabByCompany((prev) => ({
+                                        ...prev,
+                                        [businessCompany.id]: tab.id,
+                                      }));
+                                      setExpandedBusinessIds((prev) => {
+                                        if (prev.has(businessCompany.id)) return prev;
+                                        const next = new Set(prev);
+                                        next.add(businessCompany.id);
+                                        hydrateSiteAdminCompanyIntegrations(businessCompany);
+                                        return next;
+                                      });
+                                    }}
+                                    style={{
+                                      padding: '4px 10px',
+                                      background: activeBusinessCompanyDetailTab === tab.id ? '#dbeafe' : 'white',
+                                      color: activeBusinessCompanyDetailTab === tab.id ? '#1d4ed8' : '#475569',
+                                      border: `1px solid ${activeBusinessCompanyDetailTab === tab.id ? '#93c5fd' : '#cbd5e1'}`,
+                                      borderRadius: '999px',
+                                      fontSize: '12px',
+                                      fontWeight: '600',
+                                      cursor: 'pointer',
+                                    }}
+                                  >
+                                    {tab.label}
+                                  </button>
+                                ))}
                                 <button
+                                  type="button"
                                   onClick={() => {
-                                    setExpandedBusinessIds(prev => {
-                                      const newSet = new Set(prev);
-                                      if (newSet.has(businessCompany.id)) {
-                                        newSet.delete(businessCompany.id);
-                                      } else {
-                                        newSet.add(businessCompany.id);
-                                        setSelectedCompanyId(businessCompany.id);
-                                        if (['INFOR_M3', 'INFOR_CSI'].includes(String(businessCompany.accountingSystem || '').toUpperCase())) {
-                                          loadInforM3Credentials?.(businessCompany.id);
-                                          loadCompanyPrograms(businessCompany.id);
-                                          checkInforM3Status?.(businessCompany.id).then((statusData: any) => {
-                                            if (!statusData) return;
-                                            const frequency = String(statusData.syncFrequency || 'daily').toLowerCase();
-                                            const pullTime =
-                                              typeof statusData.autoSyncTime === 'string' ? statusData.autoSyncTime : '08:00';
-                                            const autoSyncWindowDays = Math.max(
-                                              1,
-                                              Number.parseInt(String(statusData.autoSyncWindowDays || ''), 10) || 3
-                                            );
-                                            if (frequency === 'daily' || frequency === 'weekly' || frequency === 'monthly') {
-                                              setCompanyOperationalSettings(businessCompany.id, {
-                                                frequency,
-                                                pullTime,
-                                                autoSyncWindowDays,
-                                              });
-                                            }
-                                          });
-                                        } else if (businessCompany.accountingSystem === 'QUICKBOOKS_DESKTOP') {
-                                          loadQbDesktopSettings(businessCompany.id);
-                                        } else if (businessCompany.accountingSystem === 'QUICKBOOKS') {
-                                          loadQboSettings(businessCompany.id);
-                                          loadOperationalSources(businessCompany.id);
-                                        } else if (businessCompany.accountingSystem === 'DYNAMICS' || businessCompany.accountingSystem === 'DYNAMICS365') {
-                                          loadDynamicsSettings(businessCompany.id);
-                                        } else if (businessCompany.accountingSystem === 'ACUMATICA') {
-                                          loadAcumaticaSettings(businessCompany.id);
-                                        } else if (businessCompany.accountingSystem === 'SAGE_INTACCT' || businessCompany.accountingSystem === 'SAGE') {
-                                          loadSageIntacctSettings(businessCompany.id);
-                                        } else if (businessCompany.accountingSystem === 'ODOO') {
-                                          loadOdooSettings(businessCompany.id);
-                                        }
-                                      }
-                                      return newSet;
+                                    if (isExpanded) {
+                                      setExpandedBusinessIds((prev) => {
+                                        const next = new Set(prev);
+                                        next.delete(businessCompany.id);
+                                        return next;
+                                      });
+                                      return;
+                                    }
+                                    setExpandedBusinessIds((prev) => {
+                                      const next = new Set(prev);
+                                      next.add(businessCompany.id);
+                                      hydrateSiteAdminCompanyIntegrations(businessCompany);
+                                      return next;
                                     });
                                   }}
-                                  style={{ padding: '6px 10px', background: '#667eea', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: 'pointer' }}
+                                  style={{
+                                    padding: '4px 10px',
+                                    background: isExpanded ? '#f1f5f9' : '#667eea',
+                                    color: isExpanded ? '#475569' : 'white',
+                                    border: 'none',
+                                    borderRadius: '4px',
+                                    fontSize: '12px',
+                                    fontWeight: '600',
+                                    cursor: 'pointer',
+                                  }}
                                 >
                                   {isExpanded ? 'Collapse' : 'Expand'}
                                 </button>
                                 <button
+                                  type="button"
                                   onClick={(e) => {
                                     e.preventDefault();
                                     e.stopPropagation();
-                                    console.log('Delete button clicked', { businessCompany });
                                     if (businessCompany) {
-                                      console.log('Setting company to delete:', businessCompany.name);
                                       setCompanyToDelete({
                                         companyId: businessCompany.id,
                                         businessId: null,
@@ -6985,7 +7008,6 @@ export default function SiteAdminDashboard(props: any) {
                                       });
                                       setShowDeleteConfirmation(true);
                                     } else {
-                                      console.log('No company found - showing alert');
                                       alert('No company found for this business');
                                     }
                                   }}
@@ -7000,8 +7022,8 @@ export default function SiteAdminDashboard(props: any) {
                                     cursor: 'pointer',
                                     transition: 'background 0.2s'
                                   }}
-                                  onMouseEnter={(e) => e.currentTarget.style.background = '#dc2626'}
-                                  onMouseLeave={(e) => e.currentTarget.style.background = '#ef4444'}
+                                  onMouseEnter={(e) => { e.currentTarget.style.background = '#dc2626'; }}
+                                  onMouseLeave={(e) => { e.currentTarget.style.background = '#ef4444'; }}
                                 >
                                   Delete
                                 </button>
@@ -7011,6 +7033,7 @@ export default function SiteAdminDashboard(props: any) {
                             {/* Expanded Details */}
                             {isExpanded && (
                               <div style={{ borderTop: '1px solid #e2e8f0', marginTop: '8px', paddingTop: '8px' }}>
+                                <div style={{ display: activeBusinessCompanyDetailTab === 'accounting' ? 'block' : 'none' }}>
                                 {/* Business Information */}
                                 {(() => {
                                   const biDraft = getBusinessInfoDraft(businessCompany, businessUser);
@@ -9261,7 +9284,33 @@ export default function SiteAdminDashboard(props: any) {
                                     </div>
                                   </div>
                                 ) : null}
+                                </div>
 
+                                <div
+                                  style={{
+                                    display: activeBusinessCompanyDetailTab === 'report-customization' ? 'grid' : 'none',
+                                    gap: '8px',
+                                    marginBottom: '8px',
+                                    padding: '10px',
+                                    background: '#f8fafc',
+                                    borderRadius: '8px',
+                                    border: '1px solid #cbd5e1',
+                                  }}
+                                >
+                                  {renderOperationalHubCustomizationCard(businessCompany)}
+                                </div>
+
+                                <div
+                                  style={{
+                                    display: activeBusinessCompanyDetailTab === 'service-pricing' ? 'grid' : 'none',
+                                    gap: '8px',
+                                    marginBottom: '8px',
+                                    padding: '10px',
+                                    background: '#f8fafc',
+                                    borderRadius: '8px',
+                                    border: '1px solid #cbd5e1',
+                                  }}
+                                >
                                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(240px, 1fr))', gap: '10px' }}>
                                   {/* Subscription Pricing */}
                                   <div style={{ padding: '4px 12px 12px 12px', background: '#fef3c7', borderRadius: '6px' }}>
@@ -9616,6 +9665,7 @@ export default function SiteAdminDashboard(props: any) {
                                     )}
                                   </div>
                                 </div>
+                              </div>
                               </div>
                             )}
                           </div>

@@ -12081,6 +12081,10 @@ function FinancialScorePage() {
   const demoBannerHeight = showDemoBanner ? 44 : 0;
   const contentTopOffset = showDemoBanner ? 0 : headerHeight;
   const contentHeightOffset = headerHeight + demoBannerHeight;
+  const siteAdminCompanyWorkspace =
+    String(currentUser?.role || '').toLowerCase() === 'siteadmin' &&
+    currentView === 'admin' &&
+    Boolean(selectedCompanyId);
   const formattedDemoExpiry =
     demoAccessState.expiresAtIso && Number.isFinite(Date.parse(demoAccessState.expiresAtIso))
       ? new Date(demoAccessState.expiresAtIso).toLocaleDateString('en-US')
@@ -12139,6 +12143,7 @@ function FinancialScorePage() {
           currentUser={currentUser}
           companyName={companyName || (currentUser?.userType === 'company' ? (Array.isArray(companies) && companies.find(c => c.id === currentUser?.companyId)?.name) || '' : '')}
           previewAdminName={siteAdminViewingAs?.name || null}
+          selectedCompanyId={selectedCompanyId}
           currentView={currentView}
           setCurrentView={setCurrentView as any}
           handleLogout={handleLogout}
@@ -12218,8 +12223,8 @@ function FinancialScorePage() {
           height: `calc(100vh - ${contentHeightOffset}px)`,
         }}
       >
-        {/* Left Navigation Sidebar - Not for Site Admin */}
-        {currentUser?.role !== 'siteadmin' && !(currentUser?.userType === 'assessment') && (
+        {/* Left Navigation Sidebar - hidden for Site Admin except when in a company workspace */}
+        {(currentUser?.role !== 'siteadmin' || siteAdminCompanyWorkspace) && !(currentUser?.userType === 'assessment') && (
         <aside className="app-left-sidebar" style={{ 
           width: '280px', 
           background: 'white', 

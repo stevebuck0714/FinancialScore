@@ -15,6 +15,8 @@ interface HeaderProps {
   currentView: string;
   companyName?: string;
   previewAdminName?: string | null;
+  /** When set, site admins in company admin workspace get full nav chrome (sidebar/header parity). */
+  selectedCompanyId?: string;
   // currentView is a large union in app/page.tsx; keep this flexible for reuse.
   setCurrentView: (view: any) => void;
   handleLogout: () => void;
@@ -26,6 +28,7 @@ export default function Header({
   currentView,
   companyName,
   previewAdminName,
+  selectedCompanyId = '',
   setCurrentView,
   handleLogout,
   handleNavigation
@@ -72,8 +75,13 @@ export default function Header({
 
   if (!currentUser) return null;
 
-  // Site Admin Header
-  if (currentUser.role === 'siteadmin') {
+  const siteAdminCompanyWorkspace =
+    currentUser.role === 'siteadmin' &&
+    currentView === 'admin' &&
+    Boolean(String(selectedCompanyId || '').trim());
+
+  // Site Admin Header (full company nav when previewing / opening a company workspace)
+  if (currentUser.role === 'siteadmin' && !siteAdminCompanyWorkspace) {
     return (
       <header style={{ background: 'white', borderBottom: '2px solid #e2e8f0', padding: '16px 32px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', boxShadow: '0 2px 8px rgba(0,0,0,0.05)', position: 'fixed', top: 0, left: 0, right: 0, zIndex: 1000 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '80px' }}>
