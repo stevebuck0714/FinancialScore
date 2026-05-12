@@ -2635,11 +2635,6 @@ export default function DailyAlertsView({ companyId, companyName, onNavigate }: 
                   <span style={{ fontSize: '12px', color: '#475569', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '999px', padding: '4px 9px' }}>
                     Generated {formatDateTime(execBriefing.generatedAt)}
                   </span>
-                  {execBriefing.model && (
-                    <span style={{ fontSize: '12px', color: '#64748b', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '999px', padding: '4px 9px' }}>
-                      Model: {execBriefing.model}
-                    </span>
-                  )}
                 </div>
 
                 <div style={{ marginTop: '16px', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '12px' }}>

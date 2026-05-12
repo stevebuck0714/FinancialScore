@@ -50,8 +50,100 @@ function last<T>(rows: T[]): T | null {
   return rows.length ? rows[rows.length - 1] : null;
 }
 
+function currentMonthStart(): Date {
+  const now = new Date();
+  return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
+}
+
+function isCompleteMonthlyPeriod(row: { monthDate?: Date }): boolean {
+  if (!row.monthDate) return false;
+  return row.monthDate.getTime() < currentMonthStart().getTime();
+}
+
+function periodLabel(rows: Array<{ monthDate?: Date; snapshotDate?: Date }>): string | null {
+  const dates = rows
+    .map((row) => row.monthDate || row.snapshotDate)
+    .filter((date): date is Date => Boolean(date))
+    .sort((a, b) => a.getTime() - b.getTime());
+  if (!dates.length) return null;
+  const start = dates[0].toISOString().slice(0, 10);
+  const end = dates[dates.length - 1].toISOString().slice(0, 10);
+  return start === end ? start : `${start} to ${end}`;
+}
+
+function addUtcDays(date: Date, days: number): Date {
+  const next = new Date(date);
+  next.setUTCDate(next.getUTCDate() + days);
+  return next;
+}
+
+function addUtcMonths(date: Date, months: number): Date {
+  return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth() + months, date.getUTCDate()));
+}
+
 function ebitda(row: any): number {
   return asNumber(row?.revenue) - asNumber(row?.cogsTotal) - asNumber(row?.expense) + asNumber(row?.depreciationAmortization);
+}
+
+function summarizeFinancialRows(rows: any[]) {
+  const revenue = rows.reduce((sum, row) => sum + asNumber(row.revenue), 0);
+  const cogs = rows.reduce((sum, row) => sum + asNumber(row.cogsTotal), 0);
+  const expense = rows.reduce((sum, row) => sum + asNumber(row.expense), 0);
+  const grossProfit = revenue - cogs;
+  const ebitdaValue = rows.reduce((sum, row) => sum + ebitda(row), 0);
+  return {
+    rowCount: rows.length,
+    revenue,
+    cogs,
+    expense,
+    grossProfit,
+    grossMarginPct: pct(grossProfit, revenue),
+    ebitda: ebitdaValue,
+    ebitdaMargin: pct(ebitdaValue, revenue),
+  };
+}
+
+function buildFinancialComparison(params: {
+  key: string;
+  label: string;
+  cadence: 'daily' | 'monthly';
+  currentRows: any[];
+  priorRows: any[];
+  note?: string;
+}) {
+  const current = summarizeFinancialRows(params.currentRows);
+  const prior = summarizeFinancialRows(params.priorRows);
+  const comparable = current.rowCount > 0 && current.rowCount === prior.rowCount;
+  return {
+    key: params.key,
+    label: params.label,
+    cadence: params.cadence,
+    comparable,
+    note: params.note || null,
+    currentPeriod: periodLabel(params.currentRows),
+    priorPeriod: periodLabel(params.priorRows),
+    current,
+    prior,
+    deltas: {
+      revenue: current.revenue - prior.revenue,
+      revenuePct: pct(current.revenue - prior.revenue, prior.revenue),
+      grossProfit: current.grossProfit - prior.grossProfit,
+      grossProfitPct: pct(current.grossProfit - prior.grossProfit, prior.grossProfit),
+      grossMarginPct: current.grossMarginPct != null && prior.grossMarginPct != null ? current.grossMarginPct - prior.grossMarginPct : null,
+      ebitda: current.ebitda - prior.ebitda,
+      ebitdaPct: pct(current.ebitda - prior.ebitda, prior.ebitda),
+      ebitdaMargin: current.ebitdaMargin != null && prior.ebitdaMargin != null ? current.ebitdaMargin - prior.ebitdaMargin : null,
+      expense: current.expense - prior.expense,
+      expensePct: pct(current.expense - prior.expense, prior.expense),
+    },
+    materiality: {
+      revenueMoveIsMaterial: isMaterialPct(pct(current.revenue - prior.revenue, prior.revenue)),
+      grossProfitMoveIsMaterial: isMaterialAmount(current.grossProfit - prior.grossProfit, prior.grossProfit),
+      grossMarginMoveIsMaterial: isMaterialPct(current.grossMarginPct != null && prior.grossMarginPct != null ? current.grossMarginPct - prior.grossMarginPct : null),
+      ebitdaMoveIsMaterial: isMaterialAmount(current.ebitda - prior.ebitda, prior.ebitda),
+      expenseMoveIsMaterial: isMaterialAmount(current.expense - prior.expense, prior.expense),
+    },
+  };
 }
 
 function buildPeriodSets(rows: Array<{ snapshotDate: Date }>): { recentDates: Set<string>; priorDates: Set<string> } {
@@ -178,6 +270,10 @@ function hasSpecificEvidence(text: string): boolean {
   return /(\$[\d,.]+|\d+(?:\.\d+)?%|\d+(?:\.\d+)?\s*(?:days?|weeks?|months?|pts?|points?|bps|x)\b|threshold|headroom|margin|gross profit|revenue|cash|AR|AP|DSO|LOC|EBITDA|customer|product|covenant)/i.test(text);
 }
 
+function hasUnsupportedMarketingLanguage(text: string): boolean {
+  return /\b(marketing|paid search|referrals?|email campaigns?|events?|social media|channel ROI|CAC|LTV|CPA|customer acquisition cost|lifetime value|cost per acquisition|pilot budget|campaigns?|ad spend|advertising)\b/i.test(text);
+}
+
 function isMaterialAmount(value: number | null | undefined, baseline?: number | null): boolean {
   if (value == null || !Number.isFinite(value)) return false;
   if (Math.abs(value) >= MATERIAL_AMOUNT * 10) return true;
@@ -191,7 +287,7 @@ function isMaterialPct(value: number | null | undefined, threshold = MATERIAL_FI
   return value != null && Number.isFinite(value) && Math.abs(value) >= threshold;
 }
 
-function normalizeSections(value: any): BriefingSection[] {
+function normalizeSections(value: any, options?: { allowMarketingLanguage?: boolean }): BriefingSection[] {
   const sections = Array.isArray(value?.sections) ? value.sections : [];
   return sections
     .map((section: any) => {
@@ -199,11 +295,19 @@ function normalizeSections(value: any): BriefingSection[] {
       const bullets = Array.isArray(section?.bullets)
         ? section.bullets.map((bullet: any) => String(bullet || '').trim()).filter(Boolean)
         : [];
-      const filtered = /recommended actions?/i.test(title) ? bullets.filter(hasSpecificEvidence) : bullets;
+      const evidenceFiltered = /recommended actions?/i.test(title) ? bullets.filter(hasSpecificEvidence) : bullets;
+      const filtered = options?.allowMarketingLanguage
+        ? evidenceFiltered
+        : evidenceFiltered.filter((bullet) => !hasUnsupportedMarketingLanguage(`${title} ${bullet}`));
       return { title, bullets: filtered.slice(0, 6) };
     })
     .filter((section) => section.title && section.bullets.length > 0)
     .slice(0, 8);
+}
+
+function sourceNote(label: string, count: number): string {
+  if (count <= 0) return '';
+  return `${label} available`;
 }
 
 export async function GET(request: NextRequest) {
@@ -294,10 +398,62 @@ export async function GET(request: NextRequest) {
     ]);
 
     const monthlyFinancials = sortByDate(dfsMonthly ? dfsMonthly.rows : monthlyFinancialsRaw);
-    const recentFinancials = monthlyFinancials.slice(-3);
-    const priorFinancials = monthlyFinancials.slice(-6, -3);
-    const latestFinancial = last(monthlyFinancials);
-    const latestDailyFinancial = last(sortByDate(dailyFinancials));
+    const completeMonthlyFinancials = monthlyFinancials.filter(isCompleteMonthlyPeriod);
+    const comparisonMonthlyFinancials = completeMonthlyFinancials.length >= 6 ? completeMonthlyFinancials : monthlyFinancials;
+    const recentFinancials = comparisonMonthlyFinancials.slice(-3);
+    const priorFinancials = comparisonMonthlyFinancials.slice(-6, -3);
+    const latestFinancial = last(completeMonthlyFinancials) || last(monthlyFinancials);
+    const sortedDailyFinancials = sortByDate(dailyFinancials);
+    const latestDailyFinancial = last(sortedDailyFinancials);
+    const latestDailyDate = latestDailyFinancial?.snapshotDate || null;
+    const currentMtdStart = latestDailyDate
+      ? new Date(Date.UTC(latestDailyDate.getUTCFullYear(), latestDailyDate.getUTCMonth(), 1))
+      : null;
+    const currentMtdEnd = latestDailyDate;
+    const priorMtdStart = currentMtdStart ? addUtcMonths(currentMtdStart, -1) : null;
+    const priorMtdEnd = priorMtdStart && latestDailyDate ? addUtcDays(priorMtdStart, latestDailyDate.getUTCDate() - 1) : null;
+    const currentMtdRows =
+      currentMtdStart && currentMtdEnd
+        ? sortedDailyFinancials.filter((row) => row.snapshotDate >= currentMtdStart && row.snapshotDate <= currentMtdEnd)
+        : [];
+    const priorMtdRows =
+      priorMtdStart && priorMtdEnd
+        ? sortedDailyFinancials.filter((row) => row.snapshotDate >= priorMtdStart && row.snapshotDate <= priorMtdEnd)
+        : [];
+    const financialComparisons = [
+      buildFinancialComparison({
+        key: 'current_mtd_vs_same_elapsed_prior_month',
+        label: 'Current month-to-date vs same elapsed days last month',
+        cadence: 'daily',
+        currentRows: currentMtdRows,
+        priorRows: priorMtdRows,
+        note: 'Use for in-month deterioration or acceleration. Same elapsed calendar days only.',
+      }),
+      buildFinancialComparison({
+        key: 'latest_completed_month_vs_prior_month',
+        label: 'Latest completed month vs prior completed month',
+        cadence: 'monthly',
+        currentRows: completeMonthlyFinancials.slice(-1),
+        priorRows: completeMonthlyFinancials.slice(-2, -1),
+        note: 'Use for month-over-month changes after month close.',
+      }),
+      buildFinancialComparison({
+        key: 'rolling_3_months_vs_prior_3_months',
+        label: 'Rolling 3 completed months vs prior 3 completed months',
+        cadence: 'monthly',
+        currentRows: comparisonMonthlyFinancials.slice(-3),
+        priorRows: comparisonMonthlyFinancials.slice(-6, -3),
+        note: 'Use for quarter-like trend changes and smoothing one-month noise.',
+      }),
+      buildFinancialComparison({
+        key: 'rolling_6_months_vs_prior_6_months',
+        label: 'Rolling 6 completed months vs prior 6 completed months',
+        cadence: 'monthly',
+        currentRows: completeMonthlyFinancials.slice(-6),
+        priorRows: completeMonthlyFinancials.slice(-12, -6),
+        note: 'Use for longer-cycle structural trends when enough completed months exist.',
+      }),
+    ].filter((comparison) => comparison.comparable);
     const latestCashSnapshot = last(sortByDate(cashSnapshots));
     const latestArSnapshot = last(sortByDate(arSnapshots));
     const latestApSnapshot = last(sortByDate(apSnapshots));
@@ -335,6 +491,15 @@ export async function GET(request: NextRequest) {
       .sort((a, b) => Math.abs(b.grossProfitDelta) - Math.abs(a.grossProfitDelta))
       .slice(0, 6)
       .map((row) => ({ ...row, likelyDriver: likelyMarginDriver(row) }));
+    const rawGoalText = JSON.stringify({
+      expense: expenseGoals[0]?.goals || {},
+      operational: operationalGoals[0]?.goals || {},
+    }).toLowerCase();
+    const rawFindingText = JSON.stringify(findings || []).toLowerCase();
+    const allowMarketingLanguage =
+      /marketing|campaign|paid search|ad spend|advertising|customer acquisition|cost per acquisition|channel roi|social media|email campaign/.test(
+        `${rawGoalText} ${rawFindingText}`
+      );
 
     const covenantWatchlist = (loans as any[])
       .flatMap((loan: any) =>
@@ -369,6 +534,8 @@ export async function GET(request: NextRequest) {
       company: { name: company?.name || 'Company', industryGroupId, industryName: benchmarks[0]?.industryName || null, industrySectorCategory: company?.industrySectorCategory || null },
       financials: {
         monthsLoaded: monthlyFinancials.length,
+        completeMonthsLoaded: completeMonthlyFinancials.length,
+        comparisons: financialComparisons,
         revenueTrend: recentRevenue >= priorRevenue ? 'increasing' : 'declining',
         recentRevenue,
         priorRevenue,
@@ -408,22 +575,36 @@ export async function GET(request: NextRequest) {
       products: { topMarginWatch },
       benchmarks: { loaded: benchmarks.length, comparisons: benchmarkComparisons, sample: benchmarks.slice(0, 25) },
       goals: { expense: expenseGoals[0]?.goals || {}, operational: operationalGoals[0]?.goals || {} },
+      unsupportedTopicRules: {
+        marketingChannelsAllowed: allowMarketingLanguage,
+        marketingRule:
+          'Do not mention Marketing, paid search, referrals, email campaigns, events, social media, channel return, customer acquisition cost, lifetime value, cost per acquisition, pilot budgets, campaigns, or advertising unless marketingChannelsAllowed is true and the exact supporting data is present in the facts.',
+      },
       siteTrackedIssues: { pulseAlerts: (pulseAlerts || []).slice(0, 20), performanceFindings: (findings || []).slice(0, 50) },
-      dataCoverage: { monthlyFinancialPeriods: monthlyFinancials.length, dailyFinancialRows: dailyFinancials.length, cashRows: cashSnapshots.length, arRows: arSnapshots.length, apRows: apSnapshots.length, customerRows: customerSnapshots.length, productRows: productSnapshots.length, inventoryRows: inventorySnapshots.length, benchmarkRows: benchmarks.length },
+      dataCoverage: {
+        financialStatementsAvailable: monthlyFinancials.length > 0 || dailyFinancials.length > 0,
+        cashDataAvailable: cashSnapshots.length > 0,
+        arAgingAvailable: arSnapshots.length > 0,
+        apAgingAvailable: apSnapshots.length > 0,
+        customerSalesAvailable: customerSnapshots.length > 0,
+        productServiceSalesAvailable: productSnapshots.length > 0,
+        inventoryDataAvailable: inventorySnapshots.length > 0,
+        benchmarkDataAvailable: benchmarks.length > 0,
+      },
       alerts: (pulseAlerts || []).slice(0, 12),
       findings: (findings || []).slice(0, 20),
     };
 
     const sourceNotes = [
-      monthlyFinancials.length > 0 ? `${monthlyFinancials.length} monthly financial period(s) analyzed` : '',
-      dailyFinancials.length > 0 ? `${dailyFinancials.length} daily financial row(s) analyzed` : '',
-      arSnapshots.length > 0 ? `${arSnapshots.length} AR aging row(s) analyzed` : '',
-      apSnapshots.length > 0 ? `${apSnapshots.length} AP aging row(s) analyzed` : '',
-      customerSnapshots.length > 0 ? `${customerSnapshots.length} customer snapshot row(s) analyzed` : '',
-      productSnapshots.length > 0 ? `${productSnapshots.length} product/service snapshot row(s) analyzed` : '',
-      inventorySnapshots.length > 0 ? `${inventorySnapshots.length} inventory snapshot row(s) analyzed` : '',
-      benchmarks.length > 0 ? `${benchmarks.length} industry benchmark row(s) available` : '',
-      covenantWatchlist.length > 0 ? `${covenantWatchlist.length} covenant row(s) included in watchlist` : '',
+      sourceNote('Financial statement data', monthlyFinancials.length + dailyFinancials.length),
+      sourceNote('Cash data', cashSnapshots.length),
+      sourceNote('Accounts receivable aging data', arSnapshots.length),
+      sourceNote('Accounts payable aging data', apSnapshots.length),
+      sourceNote('Customer sales data', customerSnapshots.length),
+      sourceNote('Product/service sales data', productSnapshots.length),
+      sourceNote('Inventory data', inventorySnapshots.length),
+      sourceNote('Industry benchmark data', benchmarks.length),
+      sourceNote('Covenant data', covenantWatchlist.length),
     ].filter(Boolean);
 
     if (getAiTransport() === 'unconfigured') {
@@ -438,11 +619,19 @@ export async function GET(request: NextRequest) {
 
 Write like a practical CFO/operator briefing the leadership team. Use concise bullet narrative, not technical jargon. Be forward-looking and action-oriented.
 
-Use only the facts below. If the company does not use, track, or report a topic, do not mention that topic. Do not include "no data" bullets. Only mention a data gap when the site has an active alert/finding saying the data gap itself is a leadership issue.
+Use plain language. Avoid consultant, investor, or SaaS jargon such as "logos", "motion", "levers", "runway" without explanation, "unlock", "optimize", "right-size", "deep dive", or "synergy". Say "customers", "new customers", "cash remaining", "actions", "reduce", "increase", or "analyze" instead.
+
+Use only the facts below. Never invent facts, channels, activity, owners, budgets, customer behavior, causes, or recommendations. If the company does not use, track, or report a topic, do not mention that topic. Do not include "no data" bullets. Only mention a data gap when the site has an active alert/finding saying the data gap itself is a leadership issue.
+
+Do not describe internal record counts or database rows to leadership. Do not say things like "1,200 inventory rows." Say "inventory data" or mention a specific inventory metric only when the actual metric is provided and material.
+
+Do not invent go-to-market, sales, or marketing activity. Do not mention Marketing, paid search, referrals, email campaigns, events, social media, channel return, customer acquisition cost, lifetime value, cost per acquisition, pilot budgets, campaigns, ad spend, or advertising unless those exact data elements are present in the facts and unsupportedTopicRules.marketingChannelsAllowed is true.
 
 This is an exception-based leadership briefing. Only include analysis if it matters. Do not report normal, expected, immaterial, or stable trends just because data exists. Do not mention revenue, gross profit, margin, customers, products, covenants, accounts, or risks where the measured movement/exposure is zero, immaterial, normal, or not decision-useful.
 
 Analyze the full company picture: financial performance, gross profit dollars, margin rate, liquidity, working capital, AR, AP, inventory, LOC/debt, covenants, customer concentration, product/service margin quality, expense drivers, benchmarks, Pulse alerts, performance findings, goals/watchlists, and data coverage.
+
+Only compare like-for-like periods. Do not compare days to weeks, weeks to months, or a partial current month to completed months. Use financials.comparisons as candidate windows, then choose the window that is most decision-useful for the issue: current month-to-date vs the same elapsed days last month for in-month changes, latest completed month vs prior month for close-to-close changes, rolling 3 months for quarter-like trends, and rolling 6 months for structural trends. State the window used when a financial movement is material. If no comparable window supports an issue, do not draw a trend conclusion.
 
 When revenue and margin rate move in different directions, explicitly state the end result to gross profit dollars only if the movement is material or decision-useful. Example: if revenue is declining but gross margin rate is improving, say whether gross profit dollars increased or decreased and by how much; if both are normal/immaterial, omit the topic entirely.
 
@@ -476,7 +665,7 @@ ${JSON.stringify(facts, null, 2)}`;
         { role: 'user', content: prompt },
       ],
     });
-    const sections = normalizeSections(safeJsonParse(ai.text));
+    const sections = normalizeSections(safeJsonParse(ai.text), { allowMarketingLanguage });
 
     if (!sections.length) {
       return NextResponse.json(
