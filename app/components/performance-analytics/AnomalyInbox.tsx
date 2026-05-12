@@ -123,6 +123,7 @@ export default function AnomalyInbox({ companyId }: AnomalyInboxProps) {
   const [severityFilter, setSeverityFilter] = useState<string>('all');
   const [runStatus, setRunStatus] = useState<'idle' | 'running' | 'done' | 'error'>('idle');
   const [runMessage, setRunMessage] = useState<string | null>(null);
+  const [showFocusHelp, setShowFocusHelp] = useState(false);
 
   useEffect(() => {
     let isMounted = true;
@@ -265,8 +266,35 @@ export default function AnomalyInbox({ companyId }: AnomalyInboxProps) {
     <div style={{ maxWidth: '1400px', margin: '0 auto', padding: '32px' }}>
       <h1 style={{ fontSize: '32px', fontWeight: '700', color: '#1e293b', margin: 0 }}>Anomalies</h1>
       <p style={{ marginTop: '12px', fontSize: '15px', color: '#475569' }}>
-        Ranked triage across anomalies, trends, and focus signals (grouped into initiatives), with severity-first ordering.
+        Ranked triage across anomalies, trends, and focus signals (grouped into initiatives), with severity-first ordering.{' '}
+        <button
+          type="button"
+          onClick={() => setShowFocusHelp((value) => !value)}
+          aria-expanded={showFocusHelp}
+          style={{
+            border: 'none',
+            background: 'transparent',
+            color: '#2751d0',
+            cursor: 'pointer',
+            fontSize: '15px',
+            fontWeight: 600,
+            padding: 0,
+            textDecoration: 'underline',
+          }}
+        >
+          What are focus signals?
+        </button>
       </p>
+      {showFocusHelp && (
+        <div style={{ marginTop: '10px', padding: '12px 14px', borderRadius: '12px', background: '#f8fafc', border: '1px solid #e2e8f0', fontSize: '13px', color: '#475569' }}>
+          <div>
+            <strong>Focus signals</strong> are non-emergency findings that point to business areas worth prioritizing, such as a peer gap, plan variance, accelerating trend, or material performance shift.
+          </div>
+          <div style={{ marginTop: '6px' }}>
+            <strong>Focus score</strong> is a 0-100 priority score that combines revenue materiality, peer or plan deviation, trend acceleration, and data confidence. Higher scores mean the gap is larger, better supported by data, and more actionable.
+          </div>
+        </div>
+      )}
 
       <div style={{ marginTop: '16px', display: 'flex', gap: '12px', alignItems: 'center' }}>
         <label style={{ fontSize: '12px', fontWeight: '600', color: '#475569' }}>Severity</label>

@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   PULSE_POLICY_DEFINITIONS,
   PULSE_POLICY_OVERRIDE_KEY,
@@ -105,6 +105,19 @@ type PreviewSpec = {
   direction: 'higher-worse' | 'lower-worse' | 'neutral';
 };
 
+type ExecBriefingSection = {
+  title: string;
+  bullets: string[];
+};
+
+type ExecBriefing = {
+  generatedAt: string;
+  model?: string;
+  aiGenerated: boolean;
+  sections: ExecBriefingSection[];
+  sourceNotes?: string[];
+};
+
 const DAILY_ALERTS_FETCH_TIMEOUT_MS = 20000;
 
 async function fetchWithTimeout(
@@ -128,7 +141,7 @@ async function fetchWithTimeout(
 const RESOLVED_STATUSES = new Set(['resolved', 'realized', 'closed', 'done', 'complete', 'completed']);
 const OPERATIONAL_FOCUS_KEY = '__focusWatchlist';
 const AR_TOP_CUSTOMER_MATERIALITY_LIMIT = 5;
-type PulseTab = 'alerts' | 'policy';
+type PulseTab = 'alerts' | 'briefing' | 'policy';
 
 type PolicyExplainer = {
   what: string;
@@ -322,6 +335,9 @@ export default function DailyAlertsView({ companyId, companyName, onNavigate }: 
   const [previewTrend, setPreviewTrend] = useState<TrendPoint[]>([]);
   const [previewLoading, setPreviewLoading] = useState(false);
   const [previewError, setPreviewError] = useState<string | null>(null);
+  const [execBriefing, setExecBriefing] = useState<ExecBriefing | null>(null);
+  const [execBriefingLoading, setExecBriefingLoading] = useState(false);
+  const [execBriefingError, setExecBriefingError] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -1689,6 +1705,48 @@ export default function DailyAlertsView({ companyId, companyName, onNavigate }: 
     };
   }, [companyId]);
 
+  const loadExecBriefing = useCallback(async (force = false) => {
+    if (!companyId) return;
+    if (execBriefingLoading) return;
+    if (!force && execBriefing) return;
+    setExecBriefingLoading(true);
+    setExecBriefingError(null);
+    try {
+      const params = new URLSearchParams({ companyId });
+      const response = await fetchWithTimeout(`/api/pulse/exec-briefing?${params}`, undefined, 45000);
+      if (!response.ok) {
+        let message = 'Failed to load executive briefing';
+        try {
+          const payload = await response.json();
+          if (payload?.error) {
+            message = payload.error;
+            if (payload.details) message += ` (${payload.details})`;
+          }
+        } catch {
+          // ignore parse errors
+        }
+        throw new Error(message);
+      }
+      const data = await response.json();
+      setExecBriefing(data);
+    } catch (err: any) {
+      setExecBriefingError(err?.message || 'Failed to load executive briefing');
+    } finally {
+      setExecBriefingLoading(false);
+    }
+  }, [companyId, execBriefing, execBriefingLoading]);
+
+  useEffect(() => {
+    setExecBriefing(null);
+    setExecBriefingError(null);
+  }, [companyId]);
+
+  useEffect(() => {
+    if (activeTab === 'briefing') {
+      loadExecBriefing();
+    }
+  }, [activeTab, companyId, loadExecBriefing]);
+
   const activeAlerts = useMemo(
     () => alerts.filter((a) => a.status !== 'resolved' && a.isActive !== false),
     [alerts]
@@ -2318,6 +2376,22 @@ export default function DailyAlertsView({ companyId, companyName, onNavigate }: 
           Alerts
         </button>
         <button
+          onClick={() => setActiveTab('briefing')}
+          style={{
+            fontSize: '17px',
+            fontWeight: 600,
+            padding: '10px 0',
+            border: 'none',
+            background: 'none',
+            color: activeTab === 'briefing' ? '#2751d0' : '#64748b',
+            cursor: 'pointer',
+            borderBottom: activeTab === 'briefing' ? '3px solid #2751d0' : '3px solid transparent',
+            transition: 'all 0.2s',
+          }}
+        >
+          Daily Exec Briefing
+        </button>
+        <button
           onClick={() => setActiveTab('policy')}
           style={{
             fontSize: '17px',
@@ -2516,6 +2590,91 @@ export default function DailyAlertsView({ companyId, companyName, onNavigate }: 
             )}
           </div>
         </>
+      )}
+
+      {activeTab === 'briefing' && (
+        <div style={{ marginTop: '14px', display: 'grid', gap: '14px' }}>
+          <div style={{ border: '1px solid #e2e8f0', borderRadius: '12px', background: 'white', padding: '16px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px', flexWrap: 'wrap' }}>
+              <div>
+                <div style={{ fontSize: '20px', fontWeight: 800, color: '#0f172a' }}>Daily Exec Briefing</div>
+              </div>
+              <button
+                onClick={() => loadExecBriefing(true)}
+                disabled={execBriefingLoading}
+                style={{
+                  fontSize: '12px',
+                  fontWeight: 700,
+                  color: 'white',
+                  background: execBriefingLoading ? '#94a3b8' : '#2751d0',
+                  border: '1px solid #2751d0',
+                  borderRadius: '8px',
+                  padding: '7px 11px',
+                  cursor: execBriefingLoading ? 'not-allowed' : 'pointer',
+                }}
+              >
+                {execBriefingLoading ? 'Generating...' : 'Refresh Briefing'}
+              </button>
+            </div>
+
+            {execBriefingLoading && !execBriefing && (
+              <div style={{ marginTop: '16px', fontSize: '13px', color: '#475569' }}>
+                Generating a plain-English executive briefing from the latest operating data...
+              </div>
+            )}
+
+            {execBriefingError && (
+              <div style={{ marginTop: '16px', border: '1px solid #fecaca', borderRadius: '10px', background: '#fff7f7', padding: '10px', fontSize: '13px', color: '#991b1b' }}>
+                {execBriefingError}
+              </div>
+            )}
+
+            {execBriefing && (
+              <>
+                <div style={{ marginTop: '12px', display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
+                  <span style={{ fontSize: '12px', color: '#475569', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '999px', padding: '4px 9px' }}>
+                    Generated {formatDateTime(execBriefing.generatedAt)}
+                  </span>
+                  {execBriefing.model && (
+                    <span style={{ fontSize: '12px', color: '#64748b', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '999px', padding: '4px 9px' }}>
+                      Model: {execBriefing.model}
+                    </span>
+                  )}
+                </div>
+
+                <div style={{ marginTop: '16px', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '12px' }}>
+                  {execBriefing.sections.map((section) => (
+                    <div key={section.title} style={{ border: '1px solid #e2e8f0', borderRadius: '12px', background: '#ffffff', padding: '14px' }}>
+                      <div style={{ fontSize: '14px', fontWeight: 800, color: '#1e293b', marginBottom: '8px' }}>
+                        {section.title}
+                      </div>
+                      <ul style={{ margin: 0, paddingLeft: '18px', display: 'grid', gap: '7px' }}>
+                        {section.bullets.map((bullet, idx) => (
+                          <li key={`${section.title}-${idx}`} style={{ fontSize: '13px', lineHeight: 1.45, color: '#334155' }}>
+                            {bullet}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  ))}
+                </div>
+
+                {Array.isArray(execBriefing.sourceNotes) && execBriefing.sourceNotes.length > 0 && (
+                  <div style={{ marginTop: '14px', border: '1px solid #e2e8f0', borderRadius: '10px', background: '#f8fafc', padding: '10px' }}>
+                    <div style={{ fontSize: '12px', fontWeight: 700, color: '#475569', textTransform: 'uppercase' }}>Sources Used</div>
+                    <div style={{ marginTop: '6px', display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                      {execBriefing.sourceNotes.map((note) => (
+                        <span key={note} style={{ fontSize: '12px', color: '#64748b', background: 'white', border: '1px solid #e2e8f0', borderRadius: '999px', padding: '3px 8px' }}>
+                          {note}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+        </div>
       )}
 
       {activeTab === 'policy' && (
