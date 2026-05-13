@@ -17,6 +17,7 @@ type BriefingResponse = {
   sourceNotes: string[];
 };
 
+const dailyBriefingCache = new Map<string, BriefingResponse>();
 const MS_IN_DAY = 24 * 60 * 60 * 1000;
 const MATERIAL_AMOUNT = 1000;
 const MATERIAL_PCT = 0.01;
@@ -28,6 +29,12 @@ function asNumber(value: unknown): number {
   return Number.isFinite(n) ? n : 0;
 }
 
+function asNullableNumber(value: unknown): number | null {
+  if (value == null || value === '') return null;
+  const n = Number(value);
+  return Number.isFinite(n) ? n : null;
+}
+
 function pct(numerator: number, denominator: number): number | null {
   if (!Number.isFinite(denominator) || Math.abs(denominator) < 0.000001) return null;
   return numerator / denominator;
@@ -37,6 +44,10 @@ function dateKey(value: unknown): string {
   const d = value instanceof Date ? value : new Date(String(value || ''));
   if (Number.isNaN(d.getTime())) return '';
   return d.toISOString().slice(0, 10);
+}
+
+function todayCacheKey(companyId: string): string {
+  return `${companyId}:${new Date().toISOString().slice(0, 10)}`;
 }
 
 function sortByDate<T extends { snapshotDate?: Date; monthDate?: Date }>(rows: T[]): T[] {
@@ -311,17 +322,29 @@ function sourceNote(label: string, count: number): string {
   return `${label} available`;
 }
 
+function isStoredArApAlert(alert: any): boolean {
+  const text = `${alert?.source || ''} ${alert?.bucket || ''} ${alert?.title || ''} ${alert?.detail || ''}`;
+  return /\b(AR|AP|accounts receivable|accounts payable|receivable|payable)\b/i.test(text);
+}
+
 export async function GET(request: NextRequest) {
   try {
     await requireAuth();
 
     const companyId = request.nextUrl.searchParams.get('companyId') || '';
     if (!companyId) return NextResponse.json({ error: 'Company ID is required' }, { status: 400 });
+    const forceRefresh = request.nextUrl.searchParams.get('force') === 'true';
 
     const hasAccess = await validateCompanyAccess(companyId);
     if (!hasAccess) {
       await auditForbiddenAccess('Company', companyId, 'PULSE_EXEC_BRIEFING_READ');
       return NextResponse.json({ error: 'Forbidden: Access to this company denied' }, { status: 403 });
+    }
+
+    const cacheKey = todayCacheKey(companyId);
+    if (!forceRefresh) {
+      const cached = dailyBriefingCache.get(cacheKey);
+      if (cached) return NextResponse.json(cached);
     }
 
     const endDate = new Date();
@@ -461,6 +484,10 @@ export async function GET(request: NextRequest) {
     const latestEbitdaMargin = pct(ebitda(latestFinancial), latestRevenue);
     const latestCash = asNumber(latestDailyFinancial?.cash || latestFinancial?.cash || latestCashSnapshot?.cashBalance);
     const latestLoc = asNumber(latestDailyFinancial?.loc || latestFinancial?.loc);
+    const latestBalanceSheetAR = asNullableNumber(latestDailyFinancial?.ar ?? latestFinancial?.ar);
+    const latestBalanceSheetAP = asNullableNumber(latestDailyFinancial?.ap ?? latestFinancial?.ap);
+    const latestARAging = agingSummary(latestArSnapshot, 'totalAR');
+    const latestAPAging = agingSummary(latestApSnapshot, 'totalAP');
 
     const productAgg = aggregateSales(productSnapshots, 'itemName').sort((a, b) => b.recentRevenue - a.recentRevenue);
     const customerAgg = aggregateSales(customerSnapshots, 'customerName').sort((a, b) => b.recentRevenue - a.recentRevenue);
@@ -520,6 +547,7 @@ export async function GET(request: NextRequest) {
       ebitdaBenchmark && latestEbitdaMargin != null ? { metric: ebitdaBenchmark.metricName, actual: latestEbitdaMargin, benchmark: asNumber(ebitdaBenchmark.fiveYearValue), variance: latestEbitdaMargin - asNumber(ebitdaBenchmark.fiveYearValue) } : null,
       dsoBenchmark && latestArSnapshot ? { metric: dsoBenchmark.metricName, actual: asNumber((latestArSnapshot as any).dso), benchmark: asNumber(dsoBenchmark.fiveYearValue), variance: asNumber((latestArSnapshot as any).dso) - asNumber(dsoBenchmark.fiveYearValue) } : null,
     ].filter(Boolean);
+    const briefingPulseAlerts = (pulseAlerts || []).filter((alert: any) => !isStoredArApAlert(alert));
 
     const facts = {
       company: { name: company?.name || 'Company', industryGroupId, industryName: benchmarks[0]?.industryName || null, industrySectorCategory: company?.industrySectorCategory || null },
@@ -544,8 +572,10 @@ export async function GET(request: NextRequest) {
         ebitdaDelta: recentEbitda - priorEbitda,
         latestCash,
         latestLoc,
-        latestAR: agingSummary(latestArSnapshot, 'totalAR'),
-        latestAP: agingSummary(latestApSnapshot, 'totalAP'),
+        balanceSheetAR: latestBalanceSheetAR,
+        balanceSheetAP: latestBalanceSheetAP,
+        arAging: latestARAging,
+        apAging: latestAPAging,
         materiality: {
           revenueMoveIsMaterial: isMaterialPct(pct(recentRevenue - priorRevenue, priorRevenue)),
           grossProfitMoveIsMaterial: isMaterialAmount(recentGrossProfit - priorGrossProfit, priorGrossProfit),
@@ -560,7 +590,14 @@ export async function GET(request: NextRequest) {
           },
         },
       },
-      workingCapital: { latestCash, latestAR: agingSummary(latestArSnapshot, 'totalAR'), latestAP: agingSummary(latestApSnapshot, 'totalAP'), inventoryRows: inventorySnapshots.length },
+      workingCapital: {
+        latestCash,
+        balanceSheetAR: latestBalanceSheetAR,
+        balanceSheetAP: latestBalanceSheetAP,
+        arAging: latestARAging,
+        apAging: latestAPAging,
+        inventoryDataAvailable: inventorySnapshots.length > 0,
+      },
       covenants: { activeLoans: (loans as any[]).length, watchlist: covenantWatchlist },
       customers: { totalRecentRevenue: totalRecentCustomerRevenue, top3Share, topCustomers },
       products: { topMarginWatch },
@@ -571,7 +608,7 @@ export async function GET(request: NextRequest) {
         marketingRule:
           'Do not mention Marketing, paid search, referrals, email campaigns, events, social media, channel return, customer acquisition cost, lifetime value, cost per acquisition, pilot budgets, campaigns, or advertising unless marketingChannelsAllowed is true and the exact supporting data is present in the facts.',
       },
-      siteTrackedIssues: { pulseAlerts: (pulseAlerts || []).slice(0, 20), performanceFindings: (findings || []).slice(0, 50) },
+      siteTrackedIssues: { pulseAlerts: briefingPulseAlerts.slice(0, 20), performanceFindings: (findings || []).slice(0, 50) },
       dataCoverage: {
         financialStatementsAvailable: monthlyFinancials.length > 0 || dailyFinancials.length > 0,
         cashDataAvailable: cashSnapshots.length > 0,
@@ -582,7 +619,7 @@ export async function GET(request: NextRequest) {
         inventoryDataAvailable: inventorySnapshots.length > 0,
         benchmarkDataAvailable: benchmarks.length > 0,
       },
-      alerts: (pulseAlerts || []).slice(0, 12),
+      alerts: briefingPulseAlerts.slice(0, 12),
       findings: (findings || []).slice(0, 20),
     };
 
@@ -620,7 +657,11 @@ Do not invent go-to-market, sales, or marketing activity. Do not mention Marketi
 
 This is an exception-based leadership briefing. Only include analysis if it matters. Do not report normal, expected, immaterial, or stable trends just because data exists. Do not mention revenue, gross profit, margin, customers, products, covenants, accounts, or risks where the measured movement/exposure is zero, immaterial, normal, or not decision-useful.
 
+Do not turn a normal or favorable metric into commentary. For example, do not mention low accounts receivable or no overdue balances unless there is a material related issue in cash, revenue, collections, or a Pulse alert. Do not infer future cash inflow from the accounts receivable balance alone.
+
 Analyze the full company picture: financial performance, gross profit dollars, margin rate, liquidity, working capital, AR, AP, inventory, LOC/debt, covenants, customer concentration, product/service margin quality, expense drivers, benchmarks, Pulse alerts, performance findings, goals/watchlists, and data coverage.
+
+For total accounts receivable and total accounts payable balances, use financials.balanceSheetAR and financials.balanceSheetAP. Do not use financials.arAging.total, financials.apAging.total, workingCapital.arAging.total, or workingCapital.apAging.total as the company's total balance sheet AR/AP if those differ; aging snapshots are only for aging mix, overdue percentages, and days sales outstanding.
 
 Only compare like-for-like periods. Do not compare days to weeks, weeks to months, or a partial current month to completed months. This is a daily briefing, so use current month-to-date vs the same elapsed days last month only when each period has at least ${MIN_MTD_COMPARISON_DAYS} days of daily ERP financial data; otherwise use latest completed month vs prior completed month. Do not use 3-month or 6-month trend analysis for this daily briefing. State the window used when a financial movement is material. If no comparable window supports an issue, do not draw a trend conclusion.
 
@@ -665,13 +706,15 @@ ${JSON.stringify(facts, null, 2)}`;
       );
     }
 
-    return NextResponse.json({
+    const response = {
       generatedAt: new Date().toISOString(),
       model,
       aiGenerated: true,
       sections,
       sourceNotes,
-    } satisfies BriefingResponse);
+    } satisfies BriefingResponse;
+    dailyBriefingCache.set(cacheKey, response);
+    return NextResponse.json(response);
   } catch (error: any) {
     console.error('Pulse exec briefing error:', error);
     return NextResponse.json({ error: 'Failed to generate executive briefing', details: String(error?.message || error) }, { status: 500 });

@@ -278,8 +278,8 @@ export async function POST(request: NextRequest) {
     if (arDaily.length >= 2) {
       const latest = arDaily[arDaily.length - 1];
       const prior = arDaily[Math.max(0, arDaily.length - 8)];
-      const latestOver30 = latest.totalAR > 0 ? ((latest.days1to30 + latest.days31to60 + latest.days61to90 + latest.days90plus) / latest.totalAR) * 100 : 0;
-      const priorOver30 = prior.totalAR > 0 ? ((prior.days1to30 + prior.days31to60 + prior.days61to90 + prior.days90plus) / prior.totalAR) * 100 : 0;
+      const latestOver30 = latest.totalAR > 0 ? ((latest.days31to60 + latest.days61to90 + latest.days90plus) / latest.totalAR) * 100 : 0;
+      const priorOver30 = prior.totalAR > 0 ? ((prior.days31to60 + prior.days61to90 + prior.days90plus) / prior.totalAR) * 100 : 0;
       const delta = latestOver30 - priorOver30;
       if (latestOver30 > 25 && delta > 3) {
         alerts.push({

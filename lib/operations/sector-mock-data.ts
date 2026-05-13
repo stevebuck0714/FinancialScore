@@ -433,7 +433,7 @@ function buildArResponse(req: MockRequest, profile: SectorProfile) {
     summary: {
       totalAR: latest.totalAR,
       currentPct: (latest.current / latest.totalAR) * 100,
-      over30Pct: ((latest.days1to30 + latest.days31to60 + latest.days61to90 + latest.days90plus) / latest.totalAR) * 100,
+      over30Pct: ((latest.days31to60 + latest.days61to90 + latest.days90plus) / latest.totalAR) * 100,
       over90Pct: (latest.days90plus / latest.totalAR) * 100,
       dso: 42 + Math.round(profile.scale * 3),
       unpaidByCustomer: detail.unpaidByCustomer,
@@ -473,7 +473,7 @@ function buildApResponse(req: MockRequest, profile: SectorProfile) {
     summary: {
       totalAP: latest.totalAP,
       currentPct: (latest.current / latest.totalAP) * 100,
-      over30Pct: ((latest.days1to30 + latest.days31to60 + latest.days61to90 + latest.days90plus) / latest.totalAP) * 100,
+      over30Pct: ((latest.days31to60 + latest.days61to90 + latest.days90plus) / latest.totalAP) * 100,
       over90Pct: (latest.days90plus / latest.totalAP) * 100,
       dpo: 31 + Math.round(profile.scale * 2),
       unpaidByVendor: detail.unpaidByVendor,

@@ -1046,8 +1046,8 @@ async function buildDailyApSeriesByAgingRule(
     const days61to90 = Number(r.d_61_90 || 0);
     const days90plus = Number(r.d_90_plus || 0);
     const purchases90d = Number(r.purchases_90d || 0);
-    const pastDue = days1to30 + days31to60 + days61to90 + days90plus;
-    const over30Pct = apBalance > 0 ? (pastDue / apBalance) * 100 : 0;
+    const over30 = days31to60 + days61to90 + days90plus;
+    const over30Pct = apBalance > 0 ? (over30 / apBalance) * 100 : 0;
     const over90Pct = apBalance > 0 ? (days90plus / apBalance) * 100 : 0;
     const dpo = apBalance > 0 && purchases90d > 0 ? (apBalance * 90) / purchases90d : 0;
     metricsByKey.set(k, {
@@ -4105,7 +4105,7 @@ export async function GET(request: NextRequest) {
               currentPct: latestAP.totalAP > 0 ? (latestAP.current / latestAP.totalAP) * 100 : 0,
               over30Pct:
                 latestAP.totalAP > 0
-                  ? ((latestAP.days1to30 + latestAP.days31to60 + latestAP.days61to90 + latestAP.days90plus) /
+                  ? ((latestAP.days31to60 + latestAP.days61to90 + latestAP.days90plus) /
                       latestAP.totalAP) *
                     100
                   : 0,
@@ -4785,8 +4785,7 @@ export async function GET(request: NextRequest) {
                   : 0,
               over30Pct:
                 computedApFromOpen.totalAP > 0
-                  ? ((Number(computedApFromOpen.days1to30 || 0) +
-                      Number(computedApFromOpen.days31to60 || 0) +
+                  ? ((Number(computedApFromOpen.days31to60 || 0) +
                       Number(computedApFromOpen.days61to90 || 0) +
                       Number(computedApFromOpen.days90plus || 0)) /
                       Number(computedApFromOpen.totalAP || 0)) *

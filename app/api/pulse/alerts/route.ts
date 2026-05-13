@@ -133,7 +133,10 @@ export async function POST(request: NextRequest) {
       seenFingerprints.add(alert.fingerprint);
 
       const existing = await prisma.$queryRawUnsafe<PulseAlertRow[]>(
-        `SELECT * FROM "PulseAlert" WHERE "companyId" = $1 AND "fingerprint" = $2 LIMIT 1`,
+        `SELECT * FROM "PulseAlert"
+         WHERE "companyId" = $1 AND "fingerprint" = $2
+         ORDER BY "isActive" DESC, "modifiedAt" DESC
+         LIMIT 1`,
         companyId,
         alert.fingerprint
       );
@@ -175,6 +178,19 @@ export async function POST(request: NextRequest) {
         });
         continue;
       }
+
+      await prisma.$executeRawUnsafe(
+        `UPDATE "PulseAlert"
+         SET "isActive" = FALSE, "modifiedAt" = $1::timestamp
+         WHERE "companyId" = $2
+           AND "fingerprint" = $3
+           AND "id" <> $4
+           AND "status" <> 'resolved'`,
+        nowIso,
+        companyId,
+        alert.fingerprint,
+        current.id
+      );
 
       let nextStatus: PulseAlertStatus = normalizeStatus(current.status);
       let resolvedAtIso: string | null = current.resolvedAt ? new Date(current.resolvedAt).toISOString() : null;

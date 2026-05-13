@@ -118,7 +118,16 @@ type ExecBriefing = {
   sourceNotes?: string[];
 };
 
+type DailyAlertsCache = {
+  alerts: AlertItem[];
+  readinessItems: ReadinessItem[];
+  goalsSnapshot: Record<string, any>;
+  policyOverrides: Partial<PulsePolicyValues>;
+  industrySectorCategory: string | null;
+};
+
 const DAILY_ALERTS_FETCH_TIMEOUT_MS = 20000;
+const DAILY_CACHE_VERSION = 'v2';
 
 async function fetchWithTimeout(
   input: RequestInfo | URL,
@@ -141,6 +150,7 @@ async function fetchWithTimeout(
 const RESOLVED_STATUSES = new Set(['resolved', 'realized', 'closed', 'done', 'complete', 'completed']);
 const OPERATIONAL_FOCUS_KEY = '__focusWatchlist';
 const AR_TOP_CUSTOMER_MATERIALITY_LIMIT = 5;
+const AP_TOP_VENDOR_MATERIALITY_LIMIT = 5;
 type PulseTab = 'alerts' | 'briefing' | 'policy';
 
 type PolicyExplainer = {
@@ -160,6 +170,26 @@ function asNumber(value: unknown): number {
 function dayOverDayPct(current: number, previous: number): number {
   if (!previous) return 0;
   return ((current - previous) / previous) * 100;
+}
+
+function dedupeAlertItems(rows: AlertItem[]): AlertItem[] {
+  const seen = new Set<string>();
+  return rows.filter((alert) => {
+    const key = String(alert.fingerprint || `${alert.source}:${alert.title}:${alert.detail}`).trim();
+    if (!key) return true;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function hasRealPartyName(value: unknown): boolean {
+  const text = String(value || '').trim();
+  return Boolean(text) && !/^(unknown|unknown customer|unknown vendor|n\/a|na|-|none)$/i.test(text);
+}
+
+function isFocusScoreAlert(alert: AlertItem): boolean {
+  return /\bfocus score\b/i.test(`${alert.title || ''} ${alert.detail || ''}`);
 }
 
 function extractLargestPercent(detail: string): number {
@@ -233,6 +263,45 @@ function formatDateTime(value?: string | null): string {
   const t = new Date(value);
   if (!Number.isFinite(t.getTime())) return 'n/a';
   return t.toLocaleString();
+}
+
+function formatReportDate(value?: string | null): string {
+  if (!value) return 'unknown date';
+  const t = new Date(value);
+  if (!Number.isFinite(t.getTime())) return 'unknown date';
+  return t.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
+}
+
+function dailyCacheKey(kind: 'alerts' | 'exec-briefing', companyId: string): string {
+  return `company-pulse:${kind}:${DAILY_CACHE_VERSION}:${companyId}:${toLocalInputDate(new Date())}`;
+}
+
+function readDailyCache<T>(key: string): T | null {
+  if (typeof window === 'undefined') return null;
+  try {
+    const raw = window.localStorage.getItem(key);
+    return raw ? (JSON.parse(raw) as T) : null;
+  } catch {
+    return null;
+  }
+}
+
+function writeDailyCache<T>(key: string, value: T): void {
+  if (typeof window === 'undefined') return;
+  try {
+    window.localStorage.setItem(key, JSON.stringify(value));
+  } catch {
+    // Ignore storage quota/private mode failures; live fetch still works.
+  }
+}
+
+function clearDailyCache(kind: 'alerts' | 'exec-briefing', companyId: string): void {
+  if (typeof window === 'undefined' || !companyId) return;
+  try {
+    window.localStorage.removeItem(dailyCacheKey(kind, companyId));
+  } catch {
+    // Ignore storage failures.
+  }
 }
 
 function readinessColor(status: ReadinessStatus) {
@@ -329,6 +398,7 @@ export default function DailyAlertsView({ companyId, companyName, onNavigate }: 
   const [alertEvents, setAlertEvents] = useState<AlertEvent[]>([]);
   const [eventsLoading, setEventsLoading] = useState(false);
   const [explainabilityAlert, setExplainabilityAlert] = useState<AlertItem | null>(null);
+  const [focusScoreHelpAlertId, setFocusScoreHelpAlertId] = useState<string | null>(null);
   const [policyDetailKey, setPolicyDetailKey] = useState<PulsePolicyKey | null>(null);
   const [previewAlert, setPreviewAlert] = useState<AlertItem | null>(null);
   const [previewSpec, setPreviewSpec] = useState<PreviewSpec | null>(null);
@@ -351,6 +421,17 @@ export default function DailyAlertsView({ companyId, companyName, onNavigate }: 
         start.setDate(start.getDate() - 120);
         const startDate = toLocalInputDate(start);
         const endDate = toLocalInputDate(end);
+        const alertsCacheKey = dailyCacheKey('alerts', companyId);
+        const cachedAlerts = readDailyCache<DailyAlertsCache>(alertsCacheKey);
+        if (cachedAlerts) {
+          setGoalsSnapshot(cachedAlerts.goalsSnapshot || {});
+          setPolicyOverrides(cachedAlerts.policyOverrides || {});
+          setIndustrySectorCategory(cachedAlerts.industrySectorCategory || null);
+          setReadinessItems(Array.isArray(cachedAlerts.readinessItems) ? cachedAlerts.readinessItems : []);
+          setAlerts(dedupeAlertItems(Array.isArray(cachedAlerts.alerts) ? cachedAlerts.alerts : []));
+          setLoading(false);
+          return;
+        }
 
         const fetchOps = async (
           type: 'ar-aging' | 'ap-aging' | 'cash' | 'customers' | 'products' | 'inventory' | 'daily-financials',
@@ -507,17 +588,18 @@ export default function DailyAlertsView({ companyId, companyName, onNavigate }: 
         if (arRecords.length >= 2) {
           const latest = arRecords[0];
           const prev = arRecords[1];
-          const latestOver30 = ((asNumber(latest.days1to30) + asNumber(latest.days31to60) + asNumber(latest.days61to90) + asNumber(latest.days90plus)) / Math.max(asNumber(latest.totalAR), 1)) * 100;
-          const prevOver30 = ((asNumber(prev.days1to30) + asNumber(prev.days31to60) + asNumber(prev.days61to90) + asNumber(prev.days90plus)) / Math.max(asNumber(prev.totalAR), 1)) * 100;
+          const latestOver30 = ((asNumber(latest.days31to60) + asNumber(latest.days61to90) + asNumber(latest.days90plus)) / Math.max(asNumber(latest.totalAR), 1)) * 100;
+          const prevOver30 = ((asNumber(prev.days31to60) + asNumber(prev.days61to90) + asNumber(prev.days90plus)) / Math.max(asNumber(prev.totalAR), 1)) * 100;
           const deltaPts = latestOver30 - prevOver30;
           const materialOverdueThreshold = asNumber(
             pulsePolicy['ar_daily_change.min_top_customer_overdue_amount']
           );
           const rankedCustomers = (Array.isArray(arData?.summary?.unpaidByCustomer) ? arData.summary.unpaidByCustomer : [])
             .map((row: any) => ({
-              customerName: row.customerName,
+              customerName: String(row.customerName || '').trim(),
               overdue: asNumber(row.days31to60) + asNumber(row.days61to90) + asNumber(row.days90plus),
             }))
+            .filter((customer: any) => hasRealPartyName(customer.customerName) && customer.overdue > 0)
             .sort((a: any, b: any) => b.overdue - a.overdue);
           const scannedTopCustomers = rankedCustomers.slice(0, AR_TOP_CUSTOMER_MATERIALITY_LIMIT);
           const materialTopCustomers = scannedTopCustomers.filter(
@@ -547,7 +629,7 @@ export default function DailyAlertsView({ companyId, companyName, onNavigate }: 
               itemLabel: topMaterialCustomer?.customerName || topCustomer?.customerName || undefined,
               explainability: {
                 triggerName: 'AR Deteriorated Today',
-                formula: 'AR >30d % = (days1to30 + days31to60 + days61to90 + days90plus) / totalAR * 100; delta = latest - previous; materiality requires any customer in top-N overdue list to exceed minimum overdue threshold',
+                formula: 'AR >30d % = (days31to60 + days61to90 + days90plus) / totalAR * 100; delta = latest - previous; materiality requires any customer in top-N overdue list to exceed minimum overdue threshold',
                 threshold: `latestOver30 >= ${pulsePolicy['ar_daily_change.min_over30_pct']} AND deltaPts >= ${pulsePolicy['ar_daily_change.min_delta_pts']} AND any(top${AR_TOP_CUSTOMER_MATERIALITY_LIMIT}.overdue >= ${materialOverdueThreshold})`,
                 reasonNow: `Latest ${latestOver30.toFixed(1)}%; delta ${deltaPts.toFixed(1)} pts; material customer(s): ${materialCustomerNames.join(', ') || 'n/a'}`,
                 policySource: `Company Pulse policy (company override + sector default fallback)`,
@@ -562,19 +644,33 @@ export default function DailyAlertsView({ companyId, companyName, onNavigate }: 
         if (apRecords.length >= 2) {
           const latest = apRecords[0];
           const prev = apRecords[1];
-          const latestOver30 = ((asNumber(latest.days1to30) + asNumber(latest.days31to60) + asNumber(latest.days61to90) + asNumber(latest.days90plus)) / Math.max(asNumber(latest.totalAP), 1)) * 100;
-          const prevOver30 = ((asNumber(prev.days1to30) + asNumber(prev.days31to60) + asNumber(prev.days61to90) + asNumber(prev.days90plus)) / Math.max(asNumber(prev.totalAP), 1)) * 100;
+          const latestOver30 = ((asNumber(latest.days31to60) + asNumber(latest.days61to90) + asNumber(latest.days90plus)) / Math.max(asNumber(latest.totalAP), 1)) * 100;
+          const prevOver30 = ((asNumber(prev.days31to60) + asNumber(prev.days61to90) + asNumber(prev.days90plus)) / Math.max(asNumber(prev.totalAP), 1)) * 100;
           const deltaPts = latestOver30 - prevOver30;
-          const topVendor = (Array.isArray(apData?.summary?.unpaidByVendor) ? apData.summary.unpaidByVendor : [])
+          const materialOverdueThreshold = asNumber(
+            pulsePolicy['ap_daily_change.min_top_vendor_overdue_amount']
+          );
+          const rankedVendors = (Array.isArray(apData?.summary?.unpaidByVendor) ? apData.summary.unpaidByVendor : [])
             .map((row: any) => ({
-              vendorName: row.vendorName,
+              vendorName: String(row.vendorName || '').trim(),
               overdue: asNumber(row.days31to60) + asNumber(row.days61to90) + asNumber(row.days90plus),
             }))
-            .sort((a: any, b: any) => b.overdue - a.overdue)[0];
+            .filter((vendor: any) => hasRealPartyName(vendor.vendorName) && vendor.overdue > 0)
+            .sort((a: any, b: any) => b.overdue - a.overdue);
+          const scannedTopVendors = rankedVendors.slice(0, AP_TOP_VENDOR_MATERIALITY_LIMIT);
+          const materialTopVendors = scannedTopVendors.filter(
+            (vendor: any) => vendor.overdue >= materialOverdueThreshold
+          );
           if (
             latestOver30 >= pulsePolicy['ap_daily_change.min_over30_pct'] &&
-            deltaPts >= pulsePolicy['ap_daily_change.min_delta_pts']
+            deltaPts >= pulsePolicy['ap_daily_change.min_delta_pts'] &&
+            materialTopVendors.length > 0
           ) {
+            const topMaterialVendor = materialTopVendors[0];
+            const materialVendorNames = materialTopVendors
+              .slice(0, 3)
+              .map((vendor: any) => vendor.vendorName)
+              .filter(Boolean);
             built.push({
               id: `daily-ap-${latest.snapshotDate}`,
               fingerprint: `daily-ap-${latest.snapshotDate}`,
@@ -585,12 +681,12 @@ export default function DailyAlertsView({ companyId, companyName, onNavigate }: 
               drillView: 'pa-critical-issues',
               deltaText: `DoD ${deltaPts >= 0 ? '+' : ''}${deltaPts.toFixed(1)} pts`,
               updatedAt: latest.snapshotDate,
-              itemLabel: topVendor?.vendorName || undefined,
+              itemLabel: topMaterialVendor.vendorName,
               explainability: {
                 triggerName: 'AP Pressure Increased Today',
-                formula: 'AP >30d % = (days1to30 + days31to60 + days61to90 + days90plus) / totalAP * 100; delta = latest - previous',
-                threshold: `latestOver30 >= ${pulsePolicy['ap_daily_change.min_over30_pct']} AND deltaPts >= ${pulsePolicy['ap_daily_change.min_delta_pts']}`,
-                reasonNow: `Latest ${latestOver30.toFixed(1)}%; delta ${deltaPts.toFixed(1)} pts`,
+                formula: 'AP >30d % = (days31to60 + days61to90 + days90plus) / totalAP * 100; delta = latest - previous; materiality requires any vendor in top-N overdue list to exceed minimum overdue threshold',
+                threshold: `latestOver30 >= ${pulsePolicy['ap_daily_change.min_over30_pct']} AND deltaPts >= ${pulsePolicy['ap_daily_change.min_delta_pts']} AND any(top${AP_TOP_VENDOR_MATERIALITY_LIMIT}.overdue >= ${materialOverdueThreshold})`,
+                reasonNow: `Latest ${latestOver30.toFixed(1)}%; delta ${deltaPts.toFixed(1)} pts; material vendor(s): ${materialVendorNames.join(', ') || 'n/a'}`,
                 policySource: `Company Pulse policy (company override + sector default fallback)`,
                 dataRefs: ['AP aging daily snapshots', 'AP summary unpaid by vendor'],
                 sourceTimestamp: latest.snapshotDate,
@@ -1296,16 +1392,20 @@ export default function DailyAlertsView({ companyId, companyName, onNavigate }: 
           const debtToEquityPct = debtToEquityRatio * 100;
           const isCriticalLeverage = debtToEquityRatio >= 1;
           const isHighLeverage = debtToEquityRatio >= 0.5;
+          const leverageSourceDate = String(latestMonthlyFinancial?.monthDate || endDate);
+          const leverageSourceLabel = latestMonthlyFinancial?.monthDate
+            ? `latest reported month-end ${formatReportDate(leverageSourceDate)}`
+            : `current Pulse run date ${formatReportDate(leverageSourceDate)}`;
           if (isHighLeverage) {
             built.push({
-              id: `debt-to-equity-${String(latestMonthlyFinancial?.monthDate || endDate)}`,
+              id: `debt-to-equity-${leverageSourceDate}`,
               fingerprint: 'debt-to-equity-leverage',
               source: isCriticalLeverage ? 'open-critical' : 'unresolved',
               title: isCriticalLeverage ? 'Outstanding Critical: Leverage Risk' : 'Leverage Signal: Debt-to-Equity Elevated',
-              detail: `Debt-to-Equity is ${debtToEquityPct.toFixed(1)}% (L ${latestLiabilities.toFixed(0)} / E ${latestEquity.toFixed(0)})`,
+              detail: `As of ${leverageSourceLabel}, Debt-to-Equity is ${debtToEquityPct.toFixed(1)}% (L ${latestLiabilities.toFixed(0)} / E ${latestEquity.toFixed(0)})`,
               owner: 'Controller',
               drillView: 'pa-overview',
-              updatedAt: String(latestMonthlyFinancial?.monthDate || endDate),
+              updatedAt: leverageSourceDate,
               explainability: {
                 triggerName: isCriticalLeverage
                   ? 'Outstanding Critical: Leverage Risk'
@@ -1314,10 +1414,10 @@ export default function DailyAlertsView({ companyId, companyName, onNavigate }: 
                 threshold: isCriticalLeverage
                   ? 'Debt-to-Equity >= 100%'
                   : 'Debt-to-Equity >= 50%',
-                reasonNow: `Debt-to-Equity ${debtToEquityPct.toFixed(1)}%`,
+                reasonNow: `As of ${leverageSourceLabel}, Debt-to-Equity ${debtToEquityPct.toFixed(1)}%`,
                 policySource: 'Financial structure watch rule (monthly context)',
                 dataRefs: ['/api/performance-analytics/context monthlyFinancials'],
-                sourceTimestamp: String(latestMonthlyFinancial?.monthDate || endDate),
+                sourceTimestamp: leverageSourceDate,
               },
             });
           }
@@ -1583,7 +1683,7 @@ export default function DailyAlertsView({ companyId, companyName, onNavigate }: 
           return new Date(b.updatedAt || 0).getTime() - new Date(a.updatedAt || 0).getTime();
         });
 
-        let persistedAlerts: AlertItem[] = visibleScored;
+        let persistedAlerts: AlertItem[] = dedupeAlertItems(visibleScored);
         try {
           const syncResponse = await fetchWithTimeout('/api/pulse/alerts', {
             method: 'POST',
@@ -1610,7 +1710,7 @@ export default function DailyAlertsView({ companyId, companyName, onNavigate }: 
           if (syncResponse.ok) {
             const syncData = await syncResponse.json();
             if (Array.isArray(syncData?.alerts)) {
-              persistedAlerts = syncData.alerts.map((row: any) => ({
+              persistedAlerts = dedupeAlertItems(syncData.alerts.map((row: any) => ({
                 id: String(row.id),
                 fingerprint: String(row.fingerprint || ''),
                 source: row.source as AlertItem['source'],
@@ -1642,7 +1742,7 @@ export default function DailyAlertsView({ companyId, companyName, onNavigate }: 
                         dataRefs: [row?.source || 'pulse-source'],
                         sourceTimestamp: row?.updatedAt || undefined,
                       },
-              }));
+              })));
             }
           }
         } catch {
@@ -1655,6 +1755,13 @@ export default function DailyAlertsView({ companyId, companyName, onNavigate }: 
           setIndustrySectorCategory(companySectorCategory);
           setReadinessItems(readinessSnapshot);
           setAlerts(persistedAlerts);
+          writeDailyCache<DailyAlertsCache>(alertsCacheKey, {
+            alerts: persistedAlerts,
+            readinessItems: readinessSnapshot,
+            goalsSnapshot: goals,
+            policyOverrides: pulseOverrides,
+            industrySectorCategory: companySectorCategory,
+          });
         }
       } catch (err: any) {
         if (!cancelled) {
@@ -1709,10 +1816,22 @@ export default function DailyAlertsView({ companyId, companyName, onNavigate }: 
     if (!companyId) return;
     if (execBriefingLoading) return;
     if (!force && execBriefing) return;
+    const briefingCacheKey = dailyCacheKey('exec-briefing', companyId);
+    if (!force) {
+      const cachedBriefing = readDailyCache<ExecBriefing>(briefingCacheKey);
+      if (cachedBriefing) {
+        setExecBriefing(cachedBriefing);
+        setExecBriefingError(null);
+        return;
+      }
+    } else {
+      clearDailyCache('exec-briefing', companyId);
+    }
     setExecBriefingLoading(true);
     setExecBriefingError(null);
     try {
       const params = new URLSearchParams({ companyId });
+      if (force) params.set('force', 'true');
       const response = await fetchWithTimeout(`/api/pulse/exec-briefing?${params}`, undefined, 45000);
       if (!response.ok) {
         let message = 'Failed to load executive briefing';
@@ -1729,6 +1848,7 @@ export default function DailyAlertsView({ companyId, companyName, onNavigate }: 
       }
       const data = await response.json();
       setExecBriefing(data);
+      writeDailyCache<ExecBriefing>(briefingCacheKey, data);
     } catch (err: any) {
       setExecBriefingError(err?.message || 'Failed to load executive briefing');
     } finally {
@@ -1866,6 +1986,7 @@ export default function DailyAlertsView({ companyId, companyName, onNavigate }: 
       }
       setGoalsSnapshot(nextGoals);
       setPolicyOverrides(cleanedOverrides);
+      clearDailyCache('alerts', companyId);
       setPolicyStatus('Policy settings saved. Company overrides are now active.');
     } catch (err: any) {
       setPolicyStatus(err?.message || 'Failed to save policy settings');
@@ -1876,8 +1997,8 @@ export default function DailyAlertsView({ companyId, companyName, onNavigate }: 
 
   const mergeUpdatedAlert = (updated: any) => {
     if (!updated?.id) return;
-    setAlerts((prev) =>
-      prev.map((alert) =>
+    setAlerts((prev) => {
+      const next = prev.map((alert) =>
         alert.id === updated.id
           ? {
               ...alert,
@@ -1890,8 +2011,16 @@ export default function DailyAlertsView({ companyId, companyName, onNavigate }: 
               modifiedAt: updated.modifiedAt || alert.modifiedAt,
             }
           : alert
-      )
-    );
+      );
+      writeDailyCache<DailyAlertsCache>(dailyCacheKey('alerts', companyId), {
+        alerts: next,
+        readinessItems,
+        goalsSnapshot,
+        policyOverrides,
+        industrySectorCategory,
+      });
+      return next;
+    });
   };
 
   const runAlertAction = async (alert: AlertItem, payload: Record<string, unknown>) => {
@@ -1956,7 +2085,7 @@ export default function DailyAlertsView({ companyId, companyName, onNavigate }: 
       return acc;
     }, {});
     return Object.entries(map)
-      .map(([date, value]) => ({ date, value }))
+      .map(([date, value]) => ({ date, value: asNumber(value) }))
       .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
   };
 
@@ -1967,7 +2096,6 @@ export default function DailyAlertsView({ companyId, companyName, onNavigate }: 
         .map((row: any) => {
           const totalAR = asNumber(row.totalAR);
           const over30Amt =
-            asNumber(row.days1to30) +
             asNumber(row.days31to60) +
             asNumber(row.days61to90) +
             asNumber(row.days90plus);
@@ -1996,7 +2124,6 @@ export default function DailyAlertsView({ companyId, companyName, onNavigate }: 
         .map((row: any) => {
           const totalAP = asNumber(row.totalAP);
           const over30Amt =
-            asNumber(row.days1to30) +
             asNumber(row.days31to60) +
             asNumber(row.days61to90) +
             asNumber(row.days90plus);
@@ -2327,6 +2454,37 @@ export default function DailyAlertsView({ companyId, companyName, onNavigate }: 
     return `$${value.toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
   };
 
+  const renderFocusScoreHelp = (alert: AlertItem) => {
+    if (!isFocusScoreAlert(alert)) return null;
+    const expanded = focusScoreHelpAlertId === alert.id;
+    return (
+      <>
+        <button
+          type="button"
+          onClick={() => setFocusScoreHelpAlertId(expanded ? null : alert.id)}
+          aria-expanded={expanded}
+          style={{
+            fontSize: '12px',
+            fontWeight: 700,
+            color: '#2751d0',
+            background: 'transparent',
+            border: 'none',
+            padding: 0,
+            cursor: 'pointer',
+            textDecoration: 'underline',
+          }}
+        >
+          What is focus score?
+        </button>
+        {expanded && (
+          <div style={{ flexBasis: '100%', marginTop: '4px', padding: '10px 12px', borderRadius: '10px', background: '#f8fafc', border: '1px solid #e2e8f0', fontSize: '12px', color: '#475569', lineHeight: 1.45 }}>
+            <strong>Focus score</strong> is a 0-100 priority score that combines revenue materiality, peer or plan deviation, recent trend acceleration, and data confidence. Higher scores mean the gap is larger, better supported by data, and more actionable.
+          </div>
+        )}
+      </>
+    );
+  };
+
   const previewNarrative = useMemo(() => {
     if (!previewSpec || previewTrend.length < 2) return null;
     const latest = previewTrend[previewTrend.length - 1];
@@ -2489,6 +2647,7 @@ export default function DailyAlertsView({ companyId, companyName, onNavigate }: 
                           {spec.label} Trend
                         </button>
                       ))}
+                      {renderFocusScoreHelp(alert)}
                     </div>
                   </div>
                   <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr)', gap: '8px', alignItems: 'center' }}>
@@ -2552,6 +2711,7 @@ export default function DailyAlertsView({ companyId, companyName, onNavigate }: 
                           {spec.label} Trend
                         </button>
                       ))}
+                      {renderFocusScoreHelp(alert)}
                     </div>
                   </div>
                   <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr)', gap: '8px', alignItems: 'center' }}>
