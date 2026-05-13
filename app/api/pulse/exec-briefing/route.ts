@@ -21,6 +21,7 @@ const MS_IN_DAY = 24 * 60 * 60 * 1000;
 const MATERIAL_AMOUNT = 1000;
 const MATERIAL_PCT = 0.01;
 const MATERIAL_FINANCIAL_PCT = 0.03;
+const MIN_MTD_COMPARISON_DAYS = 10;
 
 function asNumber(value: unknown): number {
   const n = Number(value ?? 0);
@@ -425,9 +426,15 @@ export async function GET(request: NextRequest) {
         key: 'current_mtd_vs_same_elapsed_prior_month',
         label: 'Current month-to-date vs same elapsed days last month',
         cadence: 'daily',
-        currentRows: currentMtdRows,
-        priorRows: priorMtdRows,
-        note: 'Use for in-month deterioration or acceleration. Same elapsed calendar days only.',
+        currentRows:
+          currentMtdRows.length >= MIN_MTD_COMPARISON_DAYS && priorMtdRows.length >= MIN_MTD_COMPARISON_DAYS
+            ? currentMtdRows
+            : [],
+        priorRows:
+          currentMtdRows.length >= MIN_MTD_COMPARISON_DAYS && priorMtdRows.length >= MIN_MTD_COMPARISON_DAYS
+            ? priorMtdRows
+            : [],
+        note: `Use for in-month deterioration or acceleration. Same elapsed calendar days only; requires at least ${MIN_MTD_COMPARISON_DAYS} days in each period.`,
       }),
       buildFinancialComparison({
         key: 'latest_completed_month_vs_prior_month',
@@ -436,22 +443,6 @@ export async function GET(request: NextRequest) {
         currentRows: completeMonthlyFinancials.slice(-1),
         priorRows: completeMonthlyFinancials.slice(-2, -1),
         note: 'Use for month-over-month changes after month close.',
-      }),
-      buildFinancialComparison({
-        key: 'rolling_3_months_vs_prior_3_months',
-        label: 'Rolling 3 completed months vs prior 3 completed months',
-        cadence: 'monthly',
-        currentRows: comparisonMonthlyFinancials.slice(-3),
-        priorRows: comparisonMonthlyFinancials.slice(-6, -3),
-        note: 'Use for quarter-like trend changes and smoothing one-month noise.',
-      }),
-      buildFinancialComparison({
-        key: 'rolling_6_months_vs_prior_6_months',
-        label: 'Rolling 6 completed months vs prior 6 completed months',
-        cadence: 'monthly',
-        currentRows: completeMonthlyFinancials.slice(-6),
-        priorRows: completeMonthlyFinancials.slice(-12, -6),
-        note: 'Use for longer-cycle structural trends when enough completed months exist.',
       }),
     ].filter((comparison) => comparison.comparable);
     const latestCashSnapshot = last(sortByDate(cashSnapshots));
@@ -631,7 +622,7 @@ This is an exception-based leadership briefing. Only include analysis if it matt
 
 Analyze the full company picture: financial performance, gross profit dollars, margin rate, liquidity, working capital, AR, AP, inventory, LOC/debt, covenants, customer concentration, product/service margin quality, expense drivers, benchmarks, Pulse alerts, performance findings, goals/watchlists, and data coverage.
 
-Only compare like-for-like periods. Do not compare days to weeks, weeks to months, or a partial current month to completed months. Use financials.comparisons as candidate windows, then choose the window that is most decision-useful for the issue: current month-to-date vs the same elapsed days last month for in-month changes, latest completed month vs prior month for close-to-close changes, rolling 3 months for quarter-like trends, and rolling 6 months for structural trends. State the window used when a financial movement is material. If no comparable window supports an issue, do not draw a trend conclusion.
+Only compare like-for-like periods. Do not compare days to weeks, weeks to months, or a partial current month to completed months. This is a daily briefing, so use current month-to-date vs the same elapsed days last month only when each period has at least ${MIN_MTD_COMPARISON_DAYS} days of daily ERP financial data; otherwise use latest completed month vs prior completed month. Do not use 3-month or 6-month trend analysis for this daily briefing. State the window used when a financial movement is material. If no comparable window supports an issue, do not draw a trend conclusion.
 
 When revenue and margin rate move in different directions, explicitly state the end result to gross profit dollars only if the movement is material or decision-useful. Example: if revenue is declining but gross margin rate is improving, say whether gross profit dollars increased or decreased and by how much; if both are normal/immaterial, omit the topic entirely.
 

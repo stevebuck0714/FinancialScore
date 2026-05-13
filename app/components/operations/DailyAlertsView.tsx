@@ -2617,12 +2617,6 @@ export default function DailyAlertsView({ companyId, companyName, onNavigate }: 
               </button>
             </div>
 
-            {execBriefingLoading && !execBriefing && (
-              <div style={{ marginTop: '16px', fontSize: '13px', color: '#475569' }}>
-                Generating a plain-English executive briefing from the latest operating data...
-              </div>
-            )}
-
             {execBriefingError && (
               <div style={{ marginTop: '16px', border: '1px solid #fecaca', borderRadius: '10px', background: '#fff7f7', padding: '10px', fontSize: '13px', color: '#991b1b' }}>
                 {execBriefingError}
