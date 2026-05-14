@@ -4,6 +4,34 @@ import { requireCompanyAccess } from '@/lib/tenant-security';
 import { auditFinancialAccess, auditForbiddenAccess } from '@/lib/audit-logger';
 import { financialQuerySchema, validateInput } from '@/lib/validation-schemas';
 import { withPrismaReconnectRetry } from '@/lib/prisma-retry';
+import { hashCacheParts, readDerivedApiCache, writeDerivedApiCache } from '@/lib/derived-api-cache';
+import { privateCacheHeaders } from '@/lib/http-cache';
+
+const FINANCIALS_CACHE_TTL_SECONDS = 120;
+
+async function buildFinancialsDataVersion(companyId: string): Promise<string> {
+  const [financialRows, monthlyRows, publishRows] = await Promise.all([
+    prisma.$queryRawUnsafe<Array<Record<string, unknown>>>(
+      `SELECT COUNT(*)::text AS count, MAX("updatedAt") AS "maxUpdatedAt", MAX("createdAt") AS "maxCreatedAt"
+       FROM "FinancialRecord"
+       WHERE "companyId" = $1`,
+      companyId
+    ).catch((error: any) => [{ unavailable: true, error: String(error?.message || error).slice(0, 120) }]),
+    prisma.$queryRawUnsafe<Array<Record<string, unknown>>>(
+      `SELECT COUNT(*)::text AS count, MAX("createdAt") AS "maxCreatedAt", MAX("monthDate") AS "maxMonthDate"
+       FROM "MonthlyFinancial"
+       WHERE "companyId" = $1`,
+      companyId
+    ).catch((error: any) => [{ unavailable: true, error: String(error?.message || error).slice(0, 120) }]),
+    prisma.$queryRawUnsafe<Array<Record<string, unknown>>>(
+      `SELECT COUNT(*)::text AS count, MAX("updatedAt") AS "maxUpdatedAt", MAX("monthStart") AS "maxMonthStart"
+       FROM "FinancialMonthPublish"
+       WHERE "companyId" = $1`,
+      companyId
+    ).catch((error: any) => [{ unavailable: true, error: String(error?.message || error).slice(0, 120) }]),
+  ]);
+  return hashCacheParts([financialRows, monthlyRows, publishRows]);
+}
 
 // GET financial records for a company
 export async function GET(request: NextRequest) {
@@ -30,6 +58,25 @@ export async function GET(request: NextRequest) {
         { error: 'Forbidden: Access to this company denied' },
         { status: 403 }
       );
+    }
+
+    const cacheableRequest = !includeRawData;
+    const cacheContext = cacheableRequest
+      ? {
+          namespace: 'financials',
+          cacheKey: hashCacheParts([companyId, includeAllRecords]),
+          dataVersion: await buildFinancialsDataVersion(companyId),
+        }
+      : null;
+
+    if (cacheContext) {
+      const cachedPayload = await readDerivedApiCache<{ records: any[] }>(cacheContext);
+      if (cachedPayload) {
+        if (cachedPayload.records?.length > 0) {
+          await auditFinancialAccess('FINANCIAL_RECORD_VIEWED', cachedPayload.records[0].id, companyId);
+        }
+        return NextResponse.json(cachedPayload, { headers: privateCacheHeaders(FINANCIALS_CACHE_TTL_SECONDS, 300) });
+      }
     }
 
     // Fetch records (user has validated access)
@@ -62,7 +109,18 @@ export async function GET(request: NextRequest) {
       await auditFinancialAccess('FINANCIAL_RECORD_VIEWED', records[0].id, companyId);
     }
 
-    return NextResponse.json({ records });
+    const payload = { records };
+    if (cacheContext) {
+      await writeDerivedApiCache({
+        ...cacheContext,
+        payload,
+        ttlSeconds: FINANCIALS_CACHE_TTL_SECONDS,
+      }).catch((error) => {
+        console.warn('Financials cache write failed:', error);
+      });
+    }
+
+    return NextResponse.json(payload, { headers: privateCacheHeaders(FINANCIALS_CACHE_TTL_SECONDS, 300) });
   } catch (error) {
     console.error('Error fetching financial records:', error);
     return NextResponse.json(

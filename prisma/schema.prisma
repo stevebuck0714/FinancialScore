@@ -610,6 +610,21 @@ model PulseDailySummary {
   @@index([expiresAt])
 }
 
+model DerivedApiCache {
+  id          String   @id
+  namespace   String
+  cacheKey    String
+  dataVersion String
+  payload     Json
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @default(now())
+  expiresAt   DateTime
+
+  @@unique([namespace, cacheKey])
+  @@index([namespace, cacheKey, dataVersion])
+  @@index([expiresAt])
+}
+
 model InforSyncRun {
   id             String   @id
   companyId      String

@@ -35,8 +35,23 @@ import {
   getRetailSubcategoryTurnsSummary,
   hasRetailSubcategoryHistoryFacts,
 } from '@/lib/operational/retail-subcategory-history';
+import { hashCacheParts, readDerivedApiCache, writeDerivedApiCache } from '@/lib/derived-api-cache';
+import { privateCacheHeaders } from '@/lib/http-cache';
 
 export const dynamic = 'force-dynamic';
+
+const OPERATIONAL_DATA_CACHE_TTL_SECONDS = 120;
+const OPERATIONAL_CACHEABLE_TYPES = new Set([
+  'customers',
+  'ar-aging',
+  'ap-aging',
+  'products',
+  'inventory',
+  'cash',
+  'ap',
+  'daily-financials',
+  'summary',
+]);
 
 async function companyHasAnyRealOperationalData(companyId: string): Promise<boolean> {
   const optionalFindFirst = async (delegate: any): Promise<{ id: string } | null> => {
@@ -104,6 +119,108 @@ async function activateRealOperationalData(companyId: string): Promise<void> {
       realDataActivatedAt: new Date(),
     },
   });
+}
+
+async function safeOperationalVersionPart(label: string, sql: string, ...params: unknown[]) {
+  try {
+    const rows = await prisma.$queryRawUnsafe<Array<Record<string, unknown>>>(sql, ...params);
+    return { label, rows };
+  } catch (error: any) {
+    return { label, unavailable: true, error: String(error?.message || error).slice(0, 120) };
+  }
+}
+
+async function buildOperationalDataVersion(companyId: string, type: string | null, startDate: Date, endDate: Date): Promise<string> {
+  const includeAll = type === 'summary';
+  const parts = await Promise.all([
+    (includeAll || type === 'customers')
+      ? safeOperationalVersionPart(
+          'CustomerSalesSnapshot',
+          `SELECT COUNT(*)::text AS count, MAX("createdAt") AS "maxCreatedAt", MAX("snapshotDate") AS "maxSnapshotDate"
+           FROM "CustomerSalesSnapshot"
+           WHERE "companyId" = $1 AND "snapshotDate" >= $2 AND "snapshotDate" <= $3`,
+          companyId,
+          startDate,
+          endDate
+        )
+      : Promise.resolve({ label: 'CustomerSalesSnapshot', skipped: true }),
+    (includeAll || type === 'ar-aging')
+      ? safeOperationalVersionPart(
+          'ARAgingSnapshot',
+          `SELECT COUNT(*)::text AS count, MAX("createdAt") AS "maxCreatedAt", MAX("snapshotDate") AS "maxSnapshotDate"
+           FROM "ARAgingSnapshot"
+           WHERE "companyId" = $1 AND "snapshotDate" >= $2 AND "snapshotDate" <= $3`,
+          companyId,
+          startDate,
+          endDate
+        )
+      : Promise.resolve({ label: 'ARAgingSnapshot', skipped: true }),
+    (includeAll || type === 'ap-aging' || type === 'ap')
+      ? safeOperationalVersionPart(
+          'APAgingSnapshot',
+          `SELECT COUNT(*)::text AS count, MAX("createdAt") AS "maxCreatedAt", MAX("snapshotDate") AS "maxSnapshotDate"
+           FROM "APAgingSnapshot"
+           WHERE "companyId" = $1 AND "snapshotDate" >= $2 AND "snapshotDate" <= $3`,
+          companyId,
+          startDate,
+          endDate
+        )
+      : Promise.resolve({ label: 'APAgingSnapshot', skipped: true }),
+    (includeAll || type === 'products')
+      ? safeOperationalVersionPart(
+          'ProductSalesSnapshot',
+          `SELECT COUNT(*)::text AS count, MAX("createdAt") AS "maxCreatedAt", MAX("snapshotDate") AS "maxSnapshotDate"
+           FROM "ProductSalesSnapshot"
+           WHERE "companyId" = $1 AND "snapshotDate" >= $2 AND "snapshotDate" <= $3`,
+          companyId,
+          startDate,
+          endDate
+        )
+      : Promise.resolve({ label: 'ProductSalesSnapshot', skipped: true }),
+    (includeAll || type === 'inventory')
+      ? safeOperationalVersionPart(
+          'InventorySnapshot',
+          `SELECT COUNT(*)::text AS count, MAX("createdAt") AS "maxCreatedAt", MAX("snapshotDate") AS "maxSnapshotDate"
+           FROM "InventorySnapshot"
+           WHERE "companyId" = $1 AND "snapshotDate" >= $2 AND "snapshotDate" <= $3`,
+          companyId,
+          startDate,
+          endDate
+        )
+      : Promise.resolve({ label: 'InventorySnapshot', skipped: true }),
+    (includeAll || type === 'cash')
+      ? safeOperationalVersionPart(
+          'CashSnapshot',
+          `SELECT COUNT(*)::text AS count, MAX("createdAt") AS "maxCreatedAt", MAX("snapshotDate") AS "maxSnapshotDate"
+           FROM "CashSnapshot"
+           WHERE "companyId" = $1 AND "snapshotDate" >= $2 AND "snapshotDate" <= $3`,
+          companyId,
+          startDate,
+          endDate
+        )
+      : Promise.resolve({ label: 'CashSnapshot', skipped: true }),
+    (includeAll || type === 'daily-financials')
+      ? safeOperationalVersionPart(
+          'DailyFinancialSnapshot',
+          `SELECT COUNT(*)::text AS count, MAX("updatedAt") AS "maxUpdatedAt", MAX("snapshotDate") AS "maxSnapshotDate"
+           FROM "DailyFinancialSnapshot"
+           WHERE "companyId" = $1 AND "snapshotDate" >= $2 AND "snapshotDate" <= $3`,
+          companyId,
+          startDate,
+          endDate
+        )
+      : Promise.resolve({ label: 'DailyFinancialSnapshot', skipped: true }),
+    (includeAll || type === 'products' || type === 'inventory')
+      ? safeOperationalVersionPart(
+          'PlatosClosetMonthlyFact',
+          `SELECT COUNT(*)::text AS count, MAX("updatedAt") AS "maxUpdatedAt", MAX("monthStart") AS "maxMonthStart"
+           FROM "PlatosClosetMonthlyFact"
+           WHERE "companyId" = $1`,
+          companyId
+        )
+      : Promise.resolve({ label: 'PlatosClosetMonthlyFact', skipped: true }),
+  ]);
+  return hashCacheParts(parts);
 }
 
 function startOfMonth(date: Date): Date {
@@ -1656,6 +1773,48 @@ export async function GET(request: NextRequest) {
             lte: endDate,
           };
 
+    const cacheType = String(type || '').trim();
+    const cacheableRequest = OPERATIONAL_CACHEABLE_TYPES.has(cacheType) && !skuParam && !includeCostHistory;
+    const operationalCache =
+      cacheableRequest
+        ? {
+            namespace: 'operational-data',
+            cacheKey: hashCacheParts([
+              companyId,
+              cacheType,
+              frequency,
+              startDate.toISOString(),
+              endDate.toISOString(),
+              sectorCategory,
+              statementCurrency,
+              statementRollup,
+              boundedLimit,
+              shouldApplyHydratedDateFilter ? hydratedInforDates : null,
+            ]),
+            dataVersion: await buildOperationalDataVersion(companyId, cacheType, startDate, endDate),
+          }
+        : null;
+
+    if (operationalCache) {
+      const cachedPayload = await readDerivedApiCache<any>(operationalCache);
+      if (cachedPayload) {
+        return NextResponse.json(cachedPayload, { headers: privateCacheHeaders(OPERATIONAL_DATA_CACHE_TTL_SECONDS, 300) });
+      }
+    }
+
+    const cacheOperationalPayload = async (payload: unknown) => {
+      if (operationalCache) {
+        await writeDerivedApiCache({
+          ...operationalCache,
+          payload,
+          ttlSeconds: OPERATIONAL_DATA_CACHE_TTL_SECONDS,
+        }).catch((error) => {
+          console.warn('Operational data cache write failed:', error);
+        });
+      }
+      return NextResponse.json(payload, { headers: privateCacheHeaders(OPERATIONAL_DATA_CACHE_TTL_SECONDS, 300) });
+    };
+
     const hasPlatosFacts =
       (type === 'products' || type === 'inventory') &&
       ((await ensurePlatosClosetMonthlyFacts(companyId)) || (await hasPlatosClosetMonthlyFacts(companyId)));
@@ -2574,7 +2733,7 @@ export async function GET(request: NextRequest) {
 
         data = salesResult.salesData;
 
-        return NextResponse.json({
+        return cacheOperationalPayload({
           records: data,
           summary: {
             topCustomers: salesResult.topCustomersSummary,
@@ -4000,7 +4159,7 @@ export async function GET(request: NextRequest) {
             ? dsoSummaryFromDaily
             : Number(dso || 0);
 
-        return NextResponse.json({
+        return cacheOperationalPayload({
           records: dataWithDso,
           summary: {
             totalAR: Number(summaryTotals.totalAR || 0),
@@ -4799,7 +4958,7 @@ export async function GET(request: NextRequest) {
             }
           : apMetrics;
 
-        return NextResponse.json({
+        return cacheOperationalPayload({
           records: data,
           summary: effectiveApMetrics
             ? {
@@ -5343,7 +5502,7 @@ export async function GET(request: NextRequest) {
           );
         }
 
-        return NextResponse.json({
+        return cacheOperationalPayload({
           records: data,
           summary: {
             topProducts: topProductsSummary,
@@ -6008,7 +6167,7 @@ export async function GET(request: NextRequest) {
         // Real-data only for inventory: do not return mock payloads.
         // If no inventory snapshots exist yet, return an empty real response.
         if (!latestInventoryBySku.length) {
-          return NextResponse.json({
+          return cacheOperationalPayload({
             records: [],
             trend: [],
             unitCostHistory,
@@ -6023,7 +6182,7 @@ export async function GET(request: NextRequest) {
           });
         }
 
-        return NextResponse.json({
+        return cacheOperationalPayload({
           records: latestInventoryBySku,
           trend: inventoryTrendDaily,
           unitCostHistory,
@@ -6196,7 +6355,7 @@ export async function GET(request: NextRequest) {
           );
         }
 
-        return NextResponse.json({
+        return cacheOperationalPayload({
           records: data,
           summary: cashMetrics,
         });
@@ -6302,7 +6461,7 @@ export async function GET(request: NextRequest) {
           );
         }
 
-        return NextResponse.json({
+        return cacheOperationalPayload({
           records: apData,
           summary: apMetrics,
         });
@@ -6319,7 +6478,7 @@ export async function GET(request: NextRequest) {
           );
         }
         if (!dailySnapshotDelegate) {
-          return NextResponse.json({
+          return cacheOperationalPayload({
             records: [],
             statementRecords: [],
             summary: {
@@ -6391,7 +6550,7 @@ export async function GET(request: NextRequest) {
         }
 
         if (!data.length && !dailyDataForAggregator.length) {
-          return NextResponse.json({
+          return cacheOperationalPayload({
             records: [],
             statementRecords: [],
             summary: {
@@ -6444,7 +6603,7 @@ export async function GET(request: NextRequest) {
           statementRollup
         );
 
-        return NextResponse.json({
+        return cacheOperationalPayload({
           records: data,
           mappedLines,
           statementRecords,
@@ -6733,7 +6892,7 @@ export async function GET(request: NextRequest) {
           });
         }
 
-        return NextResponse.json({
+        return cacheOperationalPayload({
           summary: {
             ...summary,
           },

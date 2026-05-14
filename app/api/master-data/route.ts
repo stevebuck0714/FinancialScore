@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import { privateCacheHeaders } from '@/lib/http-cache';
+import { hashCacheParts, readDerivedApiCache, writeDerivedApiCache } from '@/lib/derived-api-cache';
+
+const MASTER_DATA_CACHE_TTL_SECONDS = 120;
 
 const toNumber = (value: unknown): number => {
   const numeric = Number(value);
@@ -29,6 +32,32 @@ const collectPrefixedValues = (
   return collected;
 };
 
+async function buildMasterDataVersion(companyId: string, scope: 'published' | 'all'): Promise<string> {
+  const [financialRows, monthlyRows, publishRows] = await Promise.all([
+    prisma.$queryRawUnsafe<Array<Record<string, unknown>>>(
+      `SELECT COUNT(*)::text AS count, MAX("updatedAt") AS "maxUpdatedAt", MAX("createdAt") AS "maxCreatedAt"
+       FROM "FinancialRecord"
+       WHERE "companyId" = $1`,
+      companyId
+    ).catch((error: any) => [{ unavailable: true, error: String(error?.message || error).slice(0, 120) }]),
+    prisma.$queryRawUnsafe<Array<Record<string, unknown>>>(
+      `SELECT COUNT(*)::text AS count, MAX("createdAt") AS "maxCreatedAt", MAX("monthDate") AS "maxMonthDate"
+       FROM "MonthlyFinancial"
+       WHERE "companyId" = $1`,
+      companyId
+    ).catch((error: any) => [{ unavailable: true, error: String(error?.message || error).slice(0, 120) }]),
+    scope === 'published'
+      ? prisma.$queryRawUnsafe<Array<Record<string, unknown>>>(
+          `SELECT COUNT(*)::text AS count, MAX("updatedAt") AS "maxUpdatedAt", MAX("monthStart") AS "maxMonthStart"
+           FROM "FinancialMonthPublish"
+           WHERE "companyId" = $1`,
+          companyId
+        ).catch((error: any) => [{ unavailable: true, error: String(error?.message || error).slice(0, 120) }])
+      : Promise.resolve([{ skipped: true }]),
+  ]);
+  return hashCacheParts([financialRows, monthlyRows, publishRows]);
+}
+
 // GET - Load Master data for a company from database
 //
 // Query params:
@@ -53,6 +82,16 @@ export async function GET(request: NextRequest) {
       );
     }
 
+    const cacheContext = {
+      namespace: 'master-data',
+      cacheKey: hashCacheParts([companyId, scope]),
+      dataVersion: await buildMasterDataVersion(companyId, scope),
+    };
+    const cachedPayload = await readDerivedApiCache<any>(cacheContext);
+    if (cachedPayload) {
+      return NextResponse.json(cachedPayload, { headers: privateCacheHeaders(scope === 'published' ? 120 : 30, 300) });
+    }
+
     // Fetch the latest financial record for this company
     const latestRecord = await prisma.financialRecord.findFirst({
       where: { companyId },
@@ -68,14 +107,22 @@ export async function GET(request: NextRequest) {
       // For ERP COA mapping-first workflows (for example CSI), it is valid to have
       // account mappings loaded before monthly financial snapshots exist.
       // Return an empty successful payload so the UI can keep operating.
-      return NextResponse.json({
+      const emptyPayload = {
         success: true,
         monthlyData: [],
         expenseCategories: [],
         _source: 'database',
         _scope: scope,
         months: 0,
-      }, { headers: privateCacheHeaders(60, 300) });
+      };
+      await writeDerivedApiCache({
+        ...cacheContext,
+        payload: emptyPayload,
+        ttlSeconds: MASTER_DATA_CACHE_TTL_SECONDS,
+      }).catch((error) => {
+        console.warn('Master data cache write failed:', error);
+      });
+      return NextResponse.json(emptyPayload, { headers: privateCacheHeaders(60, 300) });
     }
 
     // Apply the publish gate when scope === 'published'.
@@ -260,14 +307,22 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    return NextResponse.json({
+    const payload = {
       success: true,
       monthlyData,
       expenseCategories: [],
       _source: 'database',
       _scope: scope,
       months: monthlyData.length
-    }, { headers: privateCacheHeaders(scope === 'published' ? 120 : 30, 300) });
+    };
+    await writeDerivedApiCache({
+      ...cacheContext,
+      payload,
+      ttlSeconds: MASTER_DATA_CACHE_TTL_SECONDS,
+    }).catch((cacheError) => {
+      console.warn('Master data cache write failed:', cacheError);
+    });
+    return NextResponse.json(payload, { headers: privateCacheHeaders(scope === 'published' ? 120 : 30, 300) });
   } catch (error: any) {
     console.error('Error loading master data:', error);
     return NextResponse.json(
