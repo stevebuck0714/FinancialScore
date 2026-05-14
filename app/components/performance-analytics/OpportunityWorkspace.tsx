@@ -62,9 +62,7 @@ const evidenceLevel = (confidence?: number | null) => {
        setLoading(true);
        setError(null);
        try {
-        const response = await fetch(`/api/performance-analytics/findings?companyId=${companyId}&type=opportunity`, {
-          cache: 'no-store',
-        });
+        const response = await fetch(`/api/performance-analytics/findings?companyId=${companyId}&type=opportunity`);
          if (!response.ok) {
            let message = 'Failed to load opportunities';
            try {
@@ -106,9 +104,7 @@ const evidenceLevel = (confidence?: number | null) => {
     setLoading(true);
     setError(null);
     try {
-      const response = await fetch(`/api/performance-analytics/findings?companyId=${companyId}&type=opportunity`, {
-        cache: 'no-store',
-      });
+      const response = await fetch(`/api/performance-analytics/findings?companyId=${companyId}&type=opportunity`);
       if (!response.ok) {
         let message = 'Failed to load opportunities';
         try {

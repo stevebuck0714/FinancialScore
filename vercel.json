@@ -17,6 +17,10 @@
     "app/api/cron/sync-operational-data/route.ts": {
       "memory": 3008,
       "maxDuration": 300
+    },
+    "app/api/cron/process-company-documents/route.ts": {
+      "memory": 3008,
+      "maxDuration": 300
     }
   },
   "crons": [
@@ -43,6 +47,10 @@
     {
       "path": "/api/cron/process-qbo-operational-backfill",
       "schedule": "*/5 * * * *"
+    },
+    {
+      "path": "/api/cron/process-company-documents",
+      "schedule": "*/10 * * * *"
     },
     {
       "path": "/api/cron/cleanup-devices",

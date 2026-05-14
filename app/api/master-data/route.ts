@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
+import { privateCacheHeaders } from '@/lib/http-cache';
 
 const toNumber = (value: unknown): number => {
   const numeric = Number(value);
@@ -74,7 +75,7 @@ export async function GET(request: NextRequest) {
         _source: 'database',
         _scope: scope,
         months: 0,
-      });
+      }, { headers: privateCacheHeaders(60, 300) });
     }
 
     // Apply the publish gate when scope === 'published'.
@@ -266,7 +267,7 @@ export async function GET(request: NextRequest) {
       _source: 'database',
       _scope: scope,
       months: monthlyData.length
-    });
+    }, { headers: privateCacheHeaders(scope === 'published' ? 120 : 30, 300) });
   } catch (error: any) {
     console.error('Error loading master data:', error);
     return NextResponse.json(

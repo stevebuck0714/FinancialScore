@@ -1,8 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import { requireAuth, validateCompanyAccess } from '@/lib/tenant-security';
-import { extractTextFromArrayBuffer, sanitizeTextForPostgres } from '@/lib/company-documents/extract-text';
-import { indexCompanyDocument } from '@/lib/company-documents/index-document';
+import { sanitizeTextForPostgres } from '@/lib/company-documents/extract-text';
 import { validateDataRoomFilePolicy } from '@/lib/dataroom/file-policy';
 import { ensureCompanyWithinDataRoomQuota } from '@/lib/dataroom/quota';
 
@@ -174,68 +173,6 @@ export async function POST(req: NextRequest) {
         createdAt: true,
       },
     });
-
-    // Extract text immediately (MVP). If this becomes slow, move to background later.
-    const existing = await prisma.companyDocument.findUnique({
-      where: { id: doc.id },
-      select: { extractedText: true, extractionStatus: true },
-    });
-
-    if (!existing?.extractedText && existing?.extractionStatus !== 'DONE') {
-      try {
-        const res = await fetch(blobUrl);
-        if (!res.ok) throw new Error(`Failed to fetch blob for extraction (${res.status})`);
-        const arrayBuffer = await res.arrayBuffer();
-        const extracted = await extractTextFromArrayBuffer({
-          arrayBuffer,
-          contentType,
-          fileName: originalFileName,
-        });
-
-        if (extracted.status === 'DONE' || extracted.status === 'NO_TEXT') {
-          await prisma.companyDocument.update({
-            where: { id: doc.id },
-            data: {
-              extractedText: extracted.text || null,
-              extractionStatus: extracted.status,
-              extractionError: null,
-              indexStatus: extracted.status === 'DONE' ? 'PENDING' : 'FAILED',
-              indexedAt: null,
-              indexError: extracted.status === 'DONE' ? null : 'No text extracted to index',
-            },
-          });
-        } else {
-          await prisma.companyDocument.update({
-            where: { id: doc.id },
-            data: {
-              extractedText: null,
-              extractionStatus: 'FAILED',
-              extractionError: sanitizeTextForPostgres(extracted.error),
-              indexStatus: 'FAILED',
-              indexedAt: null,
-              indexError: sanitizeTextForPostgres(extracted.error || 'Extraction failed (not indexed)'),
-            },
-          });
-        }
-
-        // Index embeddings/chunks for robust document search (best-effort).
-        if (extracted.status === 'DONE') {
-          await indexCompanyDocument({ documentId: doc.id });
-        }
-      } catch (err: any) {
-        await prisma.companyDocument.update({
-          where: { id: doc.id },
-          data: {
-            extractedText: null,
-            extractionStatus: 'FAILED',
-            extractionError: sanitizeTextForPostgres(err?.message || 'Extraction failed'),
-            indexStatus: 'FAILED',
-            indexedAt: null,
-            indexError: sanitizeTextForPostgres(err?.message || 'Extraction failed (not indexed)'),
-          },
-        });
-      }
-    }
 
     const refreshed = await prisma.companyDocument.findUnique({
       where: { id: doc.id },

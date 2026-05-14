@@ -1467,14 +1467,14 @@ function FinancialScorePage() {
       }
 
       if (currentUser.userType === 'company' && currentUser.companyId) {
-        const response = await fetch(`/api/companies?companyId=${currentUser.companyId}`, { cache: 'no-store' });
+        const response = await fetch(`/api/companies?companyId=${currentUser.companyId}`);
         const data = await response.json();
         safeSetCompanies(data.companies || []);
         return;
       }
 
       if (currentUser.role === 'siteadmin') {
-        const response = await fetch('/api/companies', { cache: 'no-store' });
+        const response = await fetch('/api/companies');
         const data = await response.json();
         safeSetCompanies(data.companies || []);
       }
@@ -2919,9 +2919,14 @@ function FinancialScorePage() {
   useEffect(() => {
     const currentStatus = inforOperationalSyncStatus;
     if (!currentStatus?.companyId || !currentStatus?.syncRunId) return;
-    const shouldPoll = inforBusy || currentStatus.state === 'running' || currentStatus.recentlyActive;
+    const shouldPoll = currentStatus.state === 'running';
     if (!shouldPoll) return;
     let cancelled = false;
+    const lastProgressMs = currentStatus.lastChunkAt ? new Date(currentStatus.lastChunkAt).getTime() : NaN;
+    const secondsSinceProgress = Number.isFinite(lastProgressMs)
+      ? Math.max(0, Math.floor((Date.now() - lastProgressMs) / 1000))
+      : null;
+    const pollIntervalMs = secondsSinceProgress != null && secondsSinceProgress > 120 ? 30000 : 10000;
     const registerPollingFailure = (reason: string) => {
       inforSyncPollFailureCountRef.current += 1;
       if (inforSyncPollFailureCountRef.current < 6) return;
@@ -2945,6 +2950,7 @@ function FinancialScorePage() {
       }
     };
     const poll = async () => {
+      if (document.visibilityState !== 'visible') return;
       try {
         const response = await fetch(
           `/api/infor-m3/operational-sync-status?companyId=${encodeURIComponent(currentStatus.companyId)}&syncRunId=${encodeURIComponent(currentStatus.syncRunId)}`
@@ -3147,7 +3153,7 @@ function FinancialScorePage() {
     void poll();
     const intervalId = window.setInterval(() => {
       void poll();
-    }, 10000);
+    }, pollIntervalMs);
     return () => {
       cancelled = true;
       window.clearInterval(intervalId);
@@ -5250,7 +5256,7 @@ function FinancialScorePage() {
         
         // Always load full company records so consultant cards have complete fields
         // (e.g., accountingSystem) required by Site Admin integration containers.
-        const companiesRes = await fetch('/api/companies', { cache: 'no-store' });
+        const companiesRes = await fetch('/api/companies');
         if (companiesRes.ok) {
           const companiesData = await companiesRes.json();
           if (Array.isArray(companiesData?.companies)) {
@@ -5280,8 +5286,7 @@ function FinancialScorePage() {
         // excluded automatically — every report wired through `monthly`
         // (MDA, Valuation, ratios, etc.) will only see closed-month data.
         const response = await fetch(
-          `/api/master-data?companyId=${selectedCompanyId}&scope=published&_ts=${Date.now()}`,
-          { cache: 'no-store' },
+          `/api/master-data?companyId=${selectedCompanyId}&scope=published`,
         );
 
         if (!response.ok) {

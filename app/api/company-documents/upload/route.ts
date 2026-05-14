@@ -2,8 +2,7 @@ import { NextResponse } from 'next/server';
 import { handleUpload, type HandleUploadBody } from '@vercel/blob/client';
 import prisma from '@/lib/prisma';
 import { requireAuth, validateCompanyAccess } from '@/lib/tenant-security';
-import { extractTextFromArrayBuffer, sanitizeTextForPostgres } from '@/lib/company-documents/extract-text';
-import { indexCompanyDocument } from '@/lib/company-documents/index-document';
+import { sanitizeTextForPostgres } from '@/lib/company-documents/extract-text';
 import { DATAROOM_ALLOWED_CONTENT_TYPES } from '@/lib/dataroom/constants';
 import { validateDataRoomFilePolicy } from '@/lib/dataroom/file-policy';
 import { ensureCompanyWithinDataRoomQuota } from '@/lib/dataroom/quota';
@@ -144,36 +143,12 @@ export async function POST(request: Request): Promise<Response> {
             select: { id: true },
           });
 
-          // Extract text now (best-effort).
-          const res = await fetch(blob.url);
-          if (!res.ok) throw new Error(`Failed to fetch blob for extraction (${res.status})`);
-          const arrayBuffer = await res.arrayBuffer();
-          const extracted = await extractTextFromArrayBuffer({
-            arrayBuffer,
-            contentType: blob.contentType,
-            fileName: originalFileName,
+          // Heavy extraction and embedding indexing run through
+          // /api/company-documents/process-pending so upload callbacks stay fast.
+          await prisma.companyDocument.update({
+            where: { id: doc.id },
+            data: { extractionStatus: 'PENDING', extractionError: null, indexStatus: 'PENDING', indexedAt: null, indexError: null },
           });
-
-          if (extracted.status === 'DONE' || extracted.status === 'NO_TEXT') {
-            await prisma.companyDocument.update({
-              where: { id: doc.id },
-              data: { extractedText: extracted.text || null, extractionStatus: extracted.status, extractionError: null },
-            });
-          } else {
-            await prisma.companyDocument.update({
-              where: { id: doc.id },
-              data: { extractedText: null, extractionStatus: 'FAILED', extractionError: sanitizeTextForPostgres(extracted.error) },
-            });
-          }
-
-          if (extracted.status === 'DONE') {
-            await indexCompanyDocument({ documentId: doc.id });
-          } else if (extracted.status === 'NO_TEXT') {
-            await prisma.companyDocument.update({
-              where: { id: doc.id },
-              data: { indexStatus: 'FAILED', indexedAt: null, indexError: 'No text extracted to index' },
-            });
-          }
         } catch (e) {
           console.warn('onUploadCompleted failed (ignored):', e);
         }

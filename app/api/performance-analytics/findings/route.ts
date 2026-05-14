@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import { requireAuth, validateCompanyAccess } from '@/lib/tenant-security';
 import { auditForbiddenAccess } from '@/lib/audit-logger';
+import { privateCacheHeaders } from '@/lib/http-cache';
 
 type FindingType = 'trend' | 'anomaly' | 'driver' | 'focus' | 'opportunity';
 
@@ -74,7 +75,7 @@ export async function GET(request: NextRequest) {
     `;
 
     const findings = await prisma.$queryRawUnsafe(query, ...values);
-    return NextResponse.json({ findings });
+    return NextResponse.json({ findings }, { headers: privateCacheHeaders(30, 120) });
   } catch (error) {
     console.error('Performance analytics findings error:', error);
     return NextResponse.json(

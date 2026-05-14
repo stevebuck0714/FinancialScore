@@ -131,9 +131,7 @@ export default function AnomalyInbox({ companyId }: AnomalyInboxProps) {
       setLoading(true);
       setError(null);
       try {
-        const response = await fetch(`/api/performance-analytics/findings?companyId=${companyId}&limit=250`, {
-          cache: 'no-store',
-        });
+        const response = await fetch(`/api/performance-analytics/findings?companyId=${companyId}&limit=250`);
         if (!response.ok) {
           let message = 'Failed to load anomalies';
           try {
@@ -172,9 +170,7 @@ export default function AnomalyInbox({ companyId }: AnomalyInboxProps) {
     setLoading(true);
     setError(null);
     try {
-      const response = await fetch(`/api/performance-analytics/findings?companyId=${companyId}&limit=250`, {
-        cache: 'no-store',
-      });
+      const response = await fetch(`/api/performance-analytics/findings?companyId=${companyId}&limit=250`);
       if (!response.ok) {
         let message = 'Failed to load anomalies';
         try {

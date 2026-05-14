@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { createHash } from 'crypto';
 import prisma from '@/lib/prisma';
 import { auditForbiddenAccess } from '@/lib/audit-logger';
 import { getAiTransport, getOpenAiClient } from '@/lib/ai-gateway';
@@ -23,6 +24,12 @@ const MATERIAL_AMOUNT = 1000;
 const MATERIAL_PCT = 0.01;
 const MATERIAL_FINANCIAL_PCT = 0.03;
 const MIN_MTD_COMPARISON_DAYS = 10;
+const PERSISTED_CACHE_TTL_DAYS = 2;
+const PRIVATE_DAILY_CACHE_HEADERS = {
+  'Cache-Control': 'private, max-age=300, stale-while-revalidate=1800',
+};
+
+let pulseCacheTablesPromise: Promise<void> | null = null;
 
 function asNumber(value: unknown): number {
   const n = Number(value ?? 0);
@@ -327,6 +334,253 @@ function isStoredArApAlert(alert: any): boolean {
   return /\b(AR|AP|accounts receivable|accounts payable|receivable|payable)\b/i.test(text);
 }
 
+function jsonStable(value: unknown): string {
+  return JSON.stringify(value, (_key, v) => {
+    if (typeof v === 'bigint') return v.toString();
+    if (v instanceof Date) return v.toISOString();
+    return v;
+  });
+}
+
+function cacheExpiryDate(): Date {
+  return addUtcDays(new Date(), PERSISTED_CACHE_TTL_DAYS);
+}
+
+async function ensurePulseCacheTables(): Promise<void> {
+  if (!pulseCacheTablesPromise) {
+    pulseCacheTablesPromise = (async () => {
+      await prisma.$executeRawUnsafe(`
+        CREATE TABLE IF NOT EXISTS "PulseExecBriefingCache" (
+          "id" TEXT NOT NULL PRIMARY KEY,
+          "companyId" TEXT NOT NULL,
+          "cacheDate" TEXT NOT NULL,
+          "dataVersion" TEXT NOT NULL,
+          "response" JSONB NOT NULL,
+          "createdAt" TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          "updatedAt" TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          "expiresAt" TIMESTAMP NOT NULL,
+          CONSTRAINT "PulseExecBriefingCache_company_date_key" UNIQUE ("companyId", "cacheDate")
+        )
+      `);
+      await prisma.$executeRawUnsafe(`
+        CREATE INDEX IF NOT EXISTS "PulseExecBriefingCache_company_version_idx"
+        ON "PulseExecBriefingCache"("companyId", "cacheDate", "dataVersion")
+      `);
+      await prisma.$executeRawUnsafe(`
+        CREATE INDEX IF NOT EXISTS "PulseExecBriefingCache_expires_idx"
+        ON "PulseExecBriefingCache"("expiresAt")
+      `);
+      await prisma.$executeRawUnsafe(`
+        CREATE TABLE IF NOT EXISTS "PulseDailySummary" (
+          "id" TEXT NOT NULL PRIMARY KEY,
+          "companyId" TEXT NOT NULL,
+          "summaryDate" TEXT NOT NULL,
+          "dataVersion" TEXT NOT NULL,
+          "facts" JSONB NOT NULL,
+          "sourceNotes" JSONB NOT NULL,
+          "createdAt" TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          "updatedAt" TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          "expiresAt" TIMESTAMP NOT NULL,
+          CONSTRAINT "PulseDailySummary_company_date_key" UNIQUE ("companyId", "summaryDate")
+        )
+      `);
+      await prisma.$executeRawUnsafe(`
+        CREATE INDEX IF NOT EXISTS "PulseDailySummary_company_version_idx"
+        ON "PulseDailySummary"("companyId", "summaryDate", "dataVersion")
+      `);
+      await prisma.$executeRawUnsafe(`
+        CREATE INDEX IF NOT EXISTS "PulseDailySummary_expires_idx"
+        ON "PulseDailySummary"("expiresAt")
+      `);
+    })().catch((error) => {
+      pulseCacheTablesPromise = null;
+      throw error;
+    });
+  }
+  await pulseCacheTablesPromise;
+}
+
+async function safeVersionPart(label: string, sql: string, ...params: unknown[]) {
+  try {
+    const rows = await prisma.$queryRawUnsafe<Array<Record<string, unknown>>>(sql, ...params);
+    return { label, rows };
+  } catch (error: any) {
+    return { label, unavailable: true, error: String(error?.message || error).slice(0, 120) };
+  }
+}
+
+async function buildPulseDataVersion(companyId: string, startDate: Date, monthlyStartDate: Date): Promise<string> {
+  const parts = await Promise.all([
+    safeVersionPart(
+      'company',
+      `SELECT "updatedAt" FROM "Company" WHERE "id" = $1`,
+      companyId
+    ),
+    safeVersionPart(
+      'monthlyFinancial',
+      `SELECT COUNT(*)::text AS count, MAX("createdAt") AS "maxCreatedAt", MAX("monthDate") AS "maxMonthDate"
+       FROM "MonthlyFinancial"
+       WHERE "companyId" = $1 AND "monthDate" >= $2`,
+      companyId,
+      monthlyStartDate
+    ),
+    safeVersionPart(
+      'dailyFinancialSnapshot',
+      `SELECT COUNT(*)::text AS count, MAX("updatedAt") AS "maxUpdatedAt", MAX("snapshotDate") AS "maxSnapshotDate"
+       FROM "DailyFinancialSnapshot"
+       WHERE "companyId" = $1 AND "snapshotDate" >= $2`,
+      companyId,
+      startDate
+    ),
+    safeVersionPart(
+      'cashSnapshot',
+      `SELECT COUNT(*)::text AS count, MAX("createdAt") AS "maxCreatedAt", MAX("snapshotDate") AS "maxSnapshotDate"
+       FROM "CashSnapshot"
+       WHERE "companyId" = $1 AND "snapshotDate" >= $2`,
+      companyId,
+      startDate
+    ),
+    safeVersionPart(
+      'arAgingSnapshot',
+      `SELECT COUNT(*)::text AS count, MAX("createdAt") AS "maxCreatedAt", MAX("snapshotDate") AS "maxSnapshotDate"
+       FROM "ARAgingSnapshot"
+       WHERE "companyId" = $1 AND "snapshotDate" >= $2`,
+      companyId,
+      startDate
+    ),
+    safeVersionPart(
+      'apAgingSnapshot',
+      `SELECT COUNT(*)::text AS count, MAX("createdAt") AS "maxCreatedAt", MAX("snapshotDate") AS "maxSnapshotDate"
+       FROM "APAgingSnapshot"
+       WHERE "companyId" = $1 AND "snapshotDate" >= $2`,
+      companyId,
+      startDate
+    ),
+    safeVersionPart(
+      'customerSalesSnapshot',
+      `SELECT COUNT(*)::text AS count, MAX("createdAt") AS "maxCreatedAt", MAX("snapshotDate") AS "maxSnapshotDate"
+       FROM "CustomerSalesSnapshot"
+       WHERE "companyId" = $1 AND "snapshotDate" >= $2`,
+      companyId,
+      startDate
+    ),
+    safeVersionPart(
+      'productSalesSnapshot',
+      `SELECT COUNT(*)::text AS count, MAX("createdAt") AS "maxCreatedAt", MAX("snapshotDate") AS "maxSnapshotDate"
+       FROM "ProductSalesSnapshot"
+       WHERE "companyId" = $1 AND "snapshotDate" >= $2`,
+      companyId,
+      startDate
+    ),
+    safeVersionPart(
+      'inventorySnapshot',
+      `SELECT COUNT(*)::text AS count, MAX("createdAt") AS "maxCreatedAt", MAX("snapshotDate") AS "maxSnapshotDate"
+       FROM "InventorySnapshot"
+       WHERE "companyId" = $1 AND "snapshotDate" >= $2`,
+      companyId,
+      startDate
+    ),
+    safeVersionPart(
+      'loan',
+      `SELECT COUNT(*)::text AS count, MAX("updatedAt") AS "maxUpdatedAt"
+       FROM "Loan"
+       WHERE "companyId" = $1 AND "status" IN ('ACTIVE', 'MATURING')`,
+      companyId
+    ),
+    safeVersionPart(
+      'performanceFinding',
+      `SELECT COUNT(*)::text AS count, MAX("updatedAt") AS "maxUpdatedAt"
+       FROM "PerformanceFinding"
+       WHERE "companyId" = $1`,
+      companyId
+    ),
+    safeVersionPart(
+      'pulseAlert',
+      `SELECT COUNT(*)::text AS count, MAX("modifiedAt") AS "maxModifiedAt"
+       FROM "PulseAlert"
+       WHERE "companyId" = $1 AND "isActive" = TRUE AND "status" <> 'resolved'`,
+      companyId
+    ),
+  ]);
+  return createHash('sha256').update(jsonStable(parts)).digest('hex');
+}
+
+async function readBriefingCache(companyId: string, cacheDate: string, dataVersion: string): Promise<BriefingResponse | null> {
+  const rows = await prisma.$queryRawUnsafe<Array<{ response: BriefingResponse }>>(
+    `SELECT "response"
+     FROM "PulseExecBriefingCache"
+     WHERE "companyId" = $1
+       AND "cacheDate" = $2
+       AND "dataVersion" = $3
+       AND "expiresAt" > CURRENT_TIMESTAMP
+     LIMIT 1`,
+    companyId,
+    cacheDate,
+    dataVersion
+  );
+  return rows[0]?.response || null;
+}
+
+async function writeBriefingCache(companyId: string, cacheDate: string, dataVersion: string, response: BriefingResponse): Promise<void> {
+  await prisma.$executeRawUnsafe(
+    `INSERT INTO "PulseExecBriefingCache" ("id", "companyId", "cacheDate", "dataVersion", "response", "updatedAt", "expiresAt")
+     VALUES ($1, $2, $3, $4, $5::jsonb, CURRENT_TIMESTAMP, $6)
+     ON CONFLICT ("companyId", "cacheDate")
+     DO UPDATE SET
+       "dataVersion" = EXCLUDED."dataVersion",
+       "response" = EXCLUDED."response",
+       "updatedAt" = CURRENT_TIMESTAMP,
+       "expiresAt" = EXCLUDED."expiresAt"`,
+    `peb_${companyId}_${cacheDate}`,
+    companyId,
+    cacheDate,
+    dataVersion,
+    JSON.stringify(response),
+    cacheExpiryDate()
+  );
+}
+
+async function readDailySummary(companyId: string, summaryDate: string, dataVersion: string): Promise<{ facts: any; sourceNotes: string[] } | null> {
+  const rows = await prisma.$queryRawUnsafe<Array<{ facts: any; sourceNotes: unknown }>>(
+    `SELECT "facts", "sourceNotes"
+     FROM "PulseDailySummary"
+     WHERE "companyId" = $1
+       AND "summaryDate" = $2
+       AND "dataVersion" = $3
+       AND "expiresAt" > CURRENT_TIMESTAMP
+     LIMIT 1`,
+    companyId,
+    summaryDate,
+    dataVersion
+  );
+  if (!rows[0]) return null;
+  return {
+    facts: rows[0].facts,
+    sourceNotes: Array.isArray(rows[0].sourceNotes) ? rows[0].sourceNotes.map(String) : [],
+  };
+}
+
+async function writeDailySummary(companyId: string, summaryDate: string, dataVersion: string, facts: any, sourceNotes: string[]): Promise<void> {
+  await prisma.$executeRawUnsafe(
+    `INSERT INTO "PulseDailySummary" ("id", "companyId", "summaryDate", "dataVersion", "facts", "sourceNotes", "updatedAt", "expiresAt")
+     VALUES ($1, $2, $3, $4, $5::jsonb, $6::jsonb, CURRENT_TIMESTAMP, $7)
+     ON CONFLICT ("companyId", "summaryDate")
+     DO UPDATE SET
+       "dataVersion" = EXCLUDED."dataVersion",
+       "facts" = EXCLUDED."facts",
+       "sourceNotes" = EXCLUDED."sourceNotes",
+       "updatedAt" = CURRENT_TIMESTAMP,
+       "expiresAt" = EXCLUDED."expiresAt"`,
+    `pds_${companyId}_${summaryDate}`,
+    companyId,
+    summaryDate,
+    dataVersion,
+    JSON.stringify(facts),
+    JSON.stringify(sourceNotes),
+    cacheExpiryDate()
+  );
+}
+
 export async function GET(request: NextRequest) {
   try {
     await requireAuth();
@@ -341,16 +595,32 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Forbidden: Access to this company denied' }, { status: 403 });
     }
 
-    const cacheKey = todayCacheKey(companyId);
-    if (!forceRefresh) {
-      const cached = dailyBriefingCache.get(cacheKey);
-      if (cached) return NextResponse.json(cached);
-    }
-
     const endDate = new Date();
     const startDate = new Date(endDate.getTime() - 180 * MS_IN_DAY);
     const monthlyStartDate = new Date();
     monthlyStartDate.setMonth(monthlyStartDate.getMonth() - 18);
+    const cacheKey = todayCacheKey(companyId);
+    const cacheDate = cacheKey.split(':').pop() || new Date().toISOString().slice(0, 10);
+    await ensurePulseCacheTables();
+    const dataVersion = await buildPulseDataVersion(companyId, startDate, monthlyStartDate);
+
+    if (!forceRefresh) {
+      const cached = dailyBriefingCache.get(cacheKey);
+      if (cached) return NextResponse.json(cached, { headers: PRIVATE_DAILY_CACHE_HEADERS });
+      const persistedCached = await readBriefingCache(companyId, cacheDate, dataVersion);
+      if (persistedCached) {
+        dailyBriefingCache.set(cacheKey, persistedCached);
+        return NextResponse.json(persistedCached, { headers: PRIVATE_DAILY_CACHE_HEADERS });
+      }
+    }
+
+    let facts: any;
+    let sourceNotes: string[];
+    const cachedSummary = !forceRefresh ? await readDailySummary(companyId, cacheDate, dataVersion) : null;
+    if (cachedSummary) {
+      facts = cachedSummary.facts;
+      sourceNotes = cachedSummary.sourceNotes;
+    } else {
 
     const company = await prisma.company.findUnique({
       where: { id: companyId },
@@ -549,7 +819,7 @@ export async function GET(request: NextRequest) {
     ].filter(Boolean);
     const briefingPulseAlerts = (pulseAlerts || []).filter((alert: any) => !isStoredArApAlert(alert));
 
-    const facts = {
+    facts = {
       company: { name: company?.name || 'Company', industryGroupId, industryName: benchmarks[0]?.industryName || null, industrySectorCategory: company?.industrySectorCategory || null },
       financials: {
         monthsLoaded: monthlyFinancials.length,
@@ -623,7 +893,7 @@ export async function GET(request: NextRequest) {
       findings: (findings || []).slice(0, 20),
     };
 
-    const sourceNotes = [
+    sourceNotes = [
       sourceNote('Financial statement data', monthlyFinancials.length + dailyFinancials.length),
       sourceNote('Cash data', cashSnapshots.length),
       sourceNote('Accounts receivable aging data', arSnapshots.length),
@@ -634,6 +904,10 @@ export async function GET(request: NextRequest) {
       sourceNote('Industry benchmark data', benchmarks.length),
       sourceNote('Covenant data', covenantWatchlist.length),
     ].filter(Boolean);
+    await writeDailySummary(companyId, cacheDate, dataVersion, facts, sourceNotes).catch((summaryError) => {
+      console.warn('Pulse daily summary cache write failed:', summaryError);
+    });
+    }
 
     if (getAiTransport() === 'unconfigured') {
       return NextResponse.json(
@@ -697,7 +971,9 @@ ${JSON.stringify(facts, null, 2)}`;
         { role: 'user', content: prompt },
       ],
     });
-    const sections = normalizeSections(safeJsonParse(ai.text), { allowMarketingLanguage });
+    const sections = normalizeSections(safeJsonParse(ai.text), {
+      allowMarketingLanguage: Boolean(facts?.unsupportedTopicRules?.marketingChannelsAllowed),
+    });
 
     if (!sections.length) {
       return NextResponse.json(
@@ -714,7 +990,10 @@ ${JSON.stringify(facts, null, 2)}`;
       sourceNotes,
     } satisfies BriefingResponse;
     dailyBriefingCache.set(cacheKey, response);
-    return NextResponse.json(response);
+    await writeBriefingCache(companyId, cacheDate, dataVersion, response).catch((cacheError) => {
+      console.warn('Pulse exec briefing cache write failed:', cacheError);
+    });
+    return NextResponse.json(response, { headers: PRIVATE_DAILY_CACHE_HEADERS });
   } catch (error: any) {
     console.error('Pulse exec briefing error:', error);
     return NextResponse.json({ error: 'Failed to generate executive briefing', details: String(error?.message || error) }, { status: 500 });

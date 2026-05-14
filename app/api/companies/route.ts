@@ -5,6 +5,7 @@ import { auditCompanyOperation, auditForbiddenAccess } from "@/lib/audit-logger"
 import { sendAccountingSystemSelectionNotification } from "@/lib/email";
 import { listAccessibleCompaniesForUser } from "@/lib/user-company-access";
 import { DATAROOM_DEFAULT_FOLDERS } from "@/lib/dataroom/constants";
+import { privateCacheHeaders } from "@/lib/http-cache";
 
 async function hasCompanyColumn(columnName: string): Promise<boolean> {
   // Guard against generated Prisma client drift:
@@ -229,7 +230,7 @@ export async function GET(request: NextRequest) {
       await auditCompanyOperation('COMPANY_VIEWED', companyId);
     }
 
-    return NextResponse.json({ companies });
+    return NextResponse.json({ companies }, { headers: privateCacheHeaders(companyId ? 30 : 60, 180) });
   } catch (error: any) {
     console.error("Error fetching companies:", error);
     return NextResponse.json(
