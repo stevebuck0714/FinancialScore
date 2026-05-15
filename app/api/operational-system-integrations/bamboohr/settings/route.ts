@@ -6,98 +6,16 @@ import {
   isQuickBooksAccountingSystem,
   saveOperationalSystemConnection,
 } from '@/lib/operational/operational-system-connections';
+import {
+  BAMBOOHR_SOURCE_CODE,
+  defaultBambooHrDataDomains,
+  defaultBambooHrSettings,
+  sanitizeBambooHrDataDomains,
+  sanitizeBambooHrSettings,
+} from '@/lib/bamboohr';
 
 export const dynamic = 'force-dynamic';
-const SOURCE_CODE = 'BAMBOOHR_STANDARD';
-
-type BambooHrSettings = {
-  subdomain: string;
-  baseUrl: string;
-  apiKey: string;
-  authType: 'API_KEY' | 'OAUTH' | '';
-  syncFrequency: 'daily' | 'weekly' | 'monthly' | '';
-  syncTime: string;
-  initialSyncStartDate: string;
-  incrementalSync: 'YES' | 'NO' | '';
-};
-
-type BambooHrDataDomain = {
-  dataDomain: string;
-  bambooEntity: string;
-  enabled: boolean;
-};
-
-const defaultSettings: BambooHrSettings = {
-  subdomain: '',
-  baseUrl: '',
-  apiKey: '',
-  authType: 'API_KEY',
-  syncFrequency: 'daily',
-  syncTime: '08:00',
-  initialSyncStartDate: '',
-  incrementalSync: 'YES',
-};
-
-const defaultDataDomains: BambooHrDataDomain[] = [
-  { dataDomain: 'Employees', bambooEntity: 'employees/directory', enabled: true },
-  { dataDomain: 'Departments', bambooEntity: 'meta/departments', enabled: true },
-  { dataDomain: 'Locations', bambooEntity: 'meta/locations', enabled: true },
-  { dataDomain: 'Job Information', bambooEntity: 'employees/job-info', enabled: true },
-  { dataDomain: 'Time Off', bambooEntity: 'time_off/requests', enabled: false },
-];
-
-function asString(value: unknown): string {
-  return typeof value === 'string' ? value.trim() : '';
-}
-
-function normalizeBaseUrl(subdomain: string, baseUrl: string): string {
-  const trimmedBaseUrl = asString(baseUrl);
-  if (trimmedBaseUrl) return trimmedBaseUrl;
-  const trimmedSubdomain = asString(subdomain);
-  if (!trimmedSubdomain) return '';
-  return `https://api.bamboohr.com/api/gateway.php/${trimmedSubdomain}/v1`;
-}
-
-function sanitizeSettings(value: unknown, existingApiKey = ''): BambooHrSettings {
-  const src = value && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
-  const syncFrequency = asString(src.syncFrequency).toLowerCase();
-  const authType = asString(src.authType).toUpperCase();
-  const yesNo = (input: unknown): 'YES' | 'NO' | '' => {
-    const normalized = asString(input).toUpperCase();
-    if (normalized === 'YES') return 'YES';
-    if (normalized === 'NO') return 'NO';
-    return '';
-  };
-  const subdomain = asString(src.subdomain);
-  const apiKey = asString(src.apiKey) || existingApiKey;
-
-  return {
-    subdomain,
-    baseUrl: normalizeBaseUrl(subdomain, asString(src.baseUrl)),
-    apiKey,
-    authType: authType === 'OAUTH' ? 'OAUTH' : authType === 'API_KEY' ? 'API_KEY' : 'API_KEY',
-    syncFrequency:
-      syncFrequency === 'daily' || syncFrequency === 'weekly' || syncFrequency === 'monthly' ? syncFrequency : '',
-    syncTime: asString(src.syncTime) || '08:00',
-    initialSyncStartDate: asString(src.initialSyncStartDate),
-    incrementalSync: yesNo(src.incrementalSync),
-  };
-}
-
-function sanitizeDataDomains(value: unknown): BambooHrDataDomain[] {
-  if (!Array.isArray(value)) return defaultDataDomains;
-  const cleaned = value
-    .map((row) => {
-      const src = row && typeof row === 'object' && !Array.isArray(row) ? (row as Record<string, unknown>) : {};
-      return {
-        dataDomain: asString(src.dataDomain),
-        bambooEntity: asString(src.bambooEntity),
-        enabled: typeof src.enabled === 'boolean' ? src.enabled : true,
-      };
-    })
-    .filter((row) => row.dataDomain || row.bambooEntity);
-  return cleaned.length > 0 ? cleaned : defaultDataDomains;
-}
+const SOURCE_CODE = BAMBOOHR_SOURCE_CODE;
 
 export async function GET(request: NextRequest) {
   try {
@@ -128,17 +46,17 @@ export async function GET(request: NextRequest) {
         ? (metadata.bambooHrSettings as Record<string, unknown>)
         : {};
 
-    const settings = sanitizeSettings(
+    const settings = sanitizeBambooHrSettings(
       {
-        syncFrequency: typeof connection?.syncFrequency === 'string' ? connection.syncFrequency : defaultSettings.syncFrequency,
-        authType: connection?.authType || defaultSettings.authType,
+        syncFrequency: typeof connection?.syncFrequency === 'string' ? connection.syncFrequency : defaultBambooHrSettings.syncFrequency,
+        authType: connection?.authType || defaultBambooHrSettings.authType,
         baseUrl: connection?.baseUrl || '',
         apiKey: connection?.accessToken || '',
         ...platformSettings,
       },
       connection?.accessToken || ''
     );
-    const dataDomains = sanitizeDataDomains(metadata.bambooHrDataDomains || defaultDataDomains);
+    const dataDomains = sanitizeBambooHrDataDomains(metadata.bambooHrDataDomains || defaultBambooHrDataDomains);
 
     return NextResponse.json({
       ok: true,
@@ -178,8 +96,8 @@ export async function POST(request: NextRequest) {
 
     const existing = await getOperationalSystemConnection(companyId, 'BAMBOOHR', SOURCE_CODE);
 
-    const settings = sanitizeSettings(body.settings || defaultSettings, existing?.accessToken || '');
-    const dataDomains = sanitizeDataDomains(body.dataDomains || defaultDataDomains);
+    const settings = sanitizeBambooHrSettings(body.settings || defaultBambooHrSettings, existing?.accessToken || '');
+    const dataDomains = sanitizeBambooHrDataDomains(body.dataDomains || defaultBambooHrDataDomains);
     const existingMetadata =
       existing?.connectionMetadata && typeof existing.connectionMetadata === 'object' && !Array.isArray(existing.connectionMetadata)
         ? (existing.connectionMetadata as Record<string, unknown>)

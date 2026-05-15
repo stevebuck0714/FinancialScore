@@ -18,6 +18,12 @@ import {
   buildLaborSchedulingMock,
   buildCustomersSitesMock,
 } from '@/lib/operations/staffing-mock-data';
+import {
+  getBambooHrLaborSchedulingPayload,
+  getBambooHrRevenueBillablesPayload,
+  getBambooHrUnitEconomicsPayload,
+  readBambooHrWorkforceReportSnapshot,
+} from '@/lib/operations/bamboohr-workforce-reports';
 import { getInforM3CredentialsWithOptionalEnvFallback } from '@/lib/infor-m3/credentials';
 import { callInforIonApi } from '@/lib/infor-m3/client';
 import { getApBalanceSheetAnchorConfig } from '@/lib/financial/ap-balance-sheet-anchor';
@@ -50,6 +56,9 @@ const OPERATIONAL_CACHEABLE_TYPES = new Set([
   'cash',
   'ap',
   'daily-financials',
+  'labor-scheduling',
+  'revenue-billables',
+  'unit-economics',
   'summary',
 ]);
 
@@ -6812,16 +6821,28 @@ export async function GET(request: NextRequest) {
       }
 
       case 'revenue-billables': {
+        const bambooSnapshot = await readBambooHrWorkforceReportSnapshot(companyId);
+        if (bambooSnapshot) {
+          return NextResponse.json(getBambooHrRevenueBillablesPayload(bambooSnapshot));
+        }
         const payload = buildRevenueBillablesMock(companyId);
         return NextResponse.json(payload);
       }
 
       case 'unit-economics': {
+        const bambooSnapshot = await readBambooHrWorkforceReportSnapshot(companyId);
+        if (bambooSnapshot) {
+          return NextResponse.json(getBambooHrUnitEconomicsPayload(bambooSnapshot));
+        }
         const payload = buildUnitEconomicsMock(companyId);
         return NextResponse.json(payload);
       }
 
       case 'labor-scheduling': {
+        const bambooSnapshot = await readBambooHrWorkforceReportSnapshot(companyId);
+        if (bambooSnapshot) {
+          return NextResponse.json(getBambooHrLaborSchedulingPayload(bambooSnapshot));
+        }
         const payload = buildLaborSchedulingMock(companyId);
         return NextResponse.json(payload);
       }

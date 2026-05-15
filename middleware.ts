@@ -161,6 +161,11 @@ export async function middleware(request: NextRequest) {
     !!cronSecret &&
     !!adminCronHeader &&
     adminCronHeader === cronSecret
+  const isDevBambooHrPayloadProbe =
+    process.env.NODE_ENV === 'development' &&
+    (pathname === '/api/operational-system-integrations/bamboohr/payload-sample' ||
+      pathname === '/api/operational-system-integrations/bamboohr/sync-workforce-reports') &&
+    request.headers.get('x-dev-bamboohr-probe') === '1'
   
   // Get client identifier for rate limiting
   const clientIp = request.headers.get('x-forwarded-for')?.split(',')[0] || 
@@ -266,6 +271,7 @@ export async function middleware(request: NextRequest) {
     !isPublicRoute &&
     !isTrustedInternalSyncWorker &&
     !isTrustedAdminCronCall &&
+    !isDevBambooHrPayloadProbe &&
     !DISABLE_AUTH_SIGNIN
   ) {
     if (tokenDemoExpired) {

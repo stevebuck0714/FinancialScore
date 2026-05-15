@@ -73,6 +73,13 @@ const OPERATIONAL_HUB_SECTION_OPTIONS: Array<{ key: string; label: string; group
   { key: 'lsAssignmentDuration', label: 'Assignment Duration', group: 'Labor & Scheduling' },
   { key: 'lsIdleWorkforceCost', label: 'Idle Workforce Cost', group: 'Labor & Scheduling' },
   { key: 'lsOvertimeAnalysis', label: 'Overtime Analysis', group: 'Labor & Scheduling' },
+  { key: 'lsWorkforceSummary', label: 'Workforce Summary', group: 'Labor & Scheduling' },
+  { key: 'lsCompensationByRole', label: 'Compensation by Role', group: 'Labor & Scheduling' },
+  { key: 'lsEmployeeCompensationRoster', label: 'Employee Compensation Roster', group: 'Labor & Scheduling' },
+  { key: 'lsHeadcountByRole', label: 'Headcount by Role', group: 'Labor & Scheduling' },
+  { key: 'lsHeadcountByDepartment', label: 'Headcount by Department', group: 'Labor & Scheduling' },
+  { key: 'lsLocationPayTypeMix', label: 'Location / Pay Type Mix', group: 'Labor & Scheduling' },
+  { key: 'lsBillRateLevelCoverage', label: 'Bill Rate Level Coverage', group: 'Labor & Scheduling' },
   { key: 'csRevenueByClient', label: 'Revenue by Client', group: 'Customers / Sites' },
   { key: 'csClientProfitability', label: 'Client Profitability', group: 'Customers / Sites' },
   { key: 'csRevenueConcentration', label: 'Revenue Concentration (Top 5 / Top 10)', group: 'Customers / Sites' },
@@ -85,12 +92,21 @@ const OPERATIONAL_HUB_SECTION_OPTIONS: Array<{ key: string; label: string; group
   { key: 'rbRevenueByJobType', label: 'Revenue by Job Type', group: 'Revenue & Billables' },
   { key: 'rbAverageBillRateByRole', label: 'Average Bill Rate by Role', group: 'Revenue & Billables' },
   { key: 'rbRevenuePerEmployee', label: 'Revenue per Employee', group: 'Revenue & Billables' },
+  { key: 'rbBillRateLevelSummary', label: 'Bill Rate Level Summary', group: 'Revenue & Billables' },
+  { key: 'rbBillRateLevelByRole', label: 'Bill Rate Level by Role', group: 'Revenue & Billables' },
+  { key: 'rbEmployeesByBillRateLevel', label: 'Employees by Bill Rate Level', group: 'Revenue & Billables' },
+  { key: 'rbUnavailableRateInputs', label: 'Missing Rate Card / Hours Inputs', group: 'Revenue & Billables' },
   { key: 'ueSpreadPerHour', label: 'Spread per Hour', group: 'Unit Economics' },
   { key: 'ueGrossMarginByClient', label: 'Gross Margin % by Client', group: 'Unit Economics' },
   { key: 'uePayVsBillRate', label: 'Pay Rate vs Bill Rate Analysis', group: 'Unit Economics' },
   { key: 'ueBurdenCostPerHour', label: 'Burden Cost per Hour', group: 'Unit Economics' },
   { key: 'ueContributionMarginByAssignment', label: 'Contribution Margin by Assignment', group: 'Unit Economics' },
   { key: 'ueMarginCompressionAlerts', label: 'Margin Compression Alerts', group: 'Unit Economics' },
+  { key: 'ueUnitEconomicsInputs', label: 'Unit Economics Inputs', group: 'Unit Economics' },
+  { key: 'ueCostByBillRateLevel', label: 'Pay by Bill Rate Level', group: 'Unit Economics' },
+  { key: 'ueCostByRole', label: 'Total Pay by Role', group: 'Unit Economics' },
+  { key: 'ueCostByLocation', label: 'Pay by Location', group: 'Unit Economics' },
+  { key: 'ueMissingBillRateLevel', label: 'Missing Bill Rate Level / Next Inputs', group: 'Unit Economics' },
   // ── Construction sector ('23') tab sub-sections ──────────────────────────
   // Project Portfolio
   { key: 'ppPortfolioSummary', label: 'Portfolio Summary', group: 'Project Portfolio' },
@@ -1939,6 +1955,10 @@ export default function SiteAdminDashboard(props: any) {
   const [bambooHrLastSyncByCompany, setBambooHrLastSyncByCompany] = React.useState<Record<string, string | null>>({});
   const [bambooHrErrorByCompany, setBambooHrErrorByCompany] = React.useState<Record<string, string | null>>({});
   const [savingBambooHrCompanyId, setSavingBambooHrCompanyId] = React.useState<string | null>(null);
+  const [validatingBambooHrCompanyId, setValidatingBambooHrCompanyId] = React.useState<string | null>(null);
+  const [syncTestingBambooHrCompanyId, setSyncTestingBambooHrCompanyId] = React.useState<string | null>(null);
+  const [probingBambooHrCompanyId, setProbingBambooHrCompanyId] = React.useState<string | null>(null);
+  const [bambooHrProbeResultsByCompany, setBambooHrProbeResultsByCompany] = React.useState<Record<string, string>>({});
   const [platosClosetSettingsByCompany, setPlatosClosetSettingsByCompany] = React.useState<
     Record<
       string,
@@ -2821,6 +2841,112 @@ export default function SiteAdminDashboard(props: any) {
       setSavingBambooHrCompanyId((prev) => (prev === companyId ? null : prev));
     }
   };
+  const validateBambooHrConnection = async (companyId: string) => {
+    try {
+      setValidatingBambooHrCompanyId(companyId);
+      const response = await fetch('/api/operational-system-integrations/bamboohr/validate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          companyId,
+          settings: getBambooHrSettings(companyId),
+          dataDomains: getBambooHrDataDomains(companyId),
+        }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok || !data?.ok) {
+        throw new Error(data?.details || data?.error || 'Failed to validate BambooHR connection');
+      }
+      await loadBambooHrSettings(companyId);
+      await loadOperationalSources(companyId);
+      alert(
+        `BambooHR connection OK.\n\nEndpoint: ${data?.endpoint || 'employees/directory'}\nEmployees visible: ${data?.employeeCount ?? '—'}`
+      );
+    } catch (error: any) {
+      alert(`BambooHR validation failed: ${error?.message || 'Unknown error'}`);
+      await loadBambooHrSettings(companyId);
+      await loadOperationalSources(companyId);
+    } finally {
+      setValidatingBambooHrCompanyId((prev) => (prev === companyId ? null : prev));
+    }
+  };
+  const runBambooHrSyncTest = async (companyId: string) => {
+    try {
+      setSyncTestingBambooHrCompanyId(companyId);
+      const response = await fetch('/api/operational-system-integrations/bamboohr/sync-test', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          companyId,
+          settings: getBambooHrSettings(companyId),
+          dataDomains: getBambooHrDataDomains(companyId),
+        }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok || !data?.ok) {
+        const failures = Array.isArray(data?.results)
+          ? data.results
+              .filter((result: any) => !result?.ok)
+              .map((result: any) => `${result?.dataDomain || result?.bambooEntity || 'Domain'}: ${result?.error || 'failed'}`)
+              .join('\n')
+          : '';
+        throw new Error(failures || data?.details || data?.error || 'Failed to run BambooHR sync test');
+      }
+      await loadBambooHrSettings(companyId);
+      await loadOperationalSources(companyId);
+      const resultLines = Array.isArray(data?.results)
+        ? data.results
+            .map((result: any) => {
+              const note = result?.note ? ` (${result.note})` : '';
+              return `${result?.dataDomain || result?.bambooEntity || 'Domain'}: ${result?.count ?? 0} records${note}`;
+            })
+            .join('\n')
+        : '';
+      alert(`BambooHR sync test completed.\n\nTotal records read: ${data?.totalRecordsRead ?? 0}${resultLines ? `\n\n${resultLines}` : ''}`);
+    } catch (error: any) {
+      alert(`BambooHR sync test failed:\n\n${error?.message || 'Unknown error'}`);
+      await loadBambooHrSettings(companyId);
+      await loadOperationalSources(companyId);
+    } finally {
+      setSyncTestingBambooHrCompanyId((prev) => (prev === companyId ? null : prev));
+    }
+  };
+  const probeBambooHrDomains = async (companyId: string) => {
+    try {
+      setProbingBambooHrCompanyId(companyId);
+      const response = await fetch('/api/operational-system-integrations/bamboohr/available-domains', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          companyId,
+          settings: getBambooHrSettings(companyId),
+        }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok || !data?.ok) {
+        throw new Error(data?.details || data?.error || 'Failed to query BambooHR domains');
+      }
+      const available = Array.isArray(data?.available) ? data.available : [];
+      const unavailable = Array.isArray(data?.unavailable) ? data.unavailable : [];
+      const availableLines = available.length
+        ? available.map((result: any) => `OK ${result?.label || result?.endpoint}: ${result?.summary || result?.endpoint}`).join('\n')
+        : 'None found';
+      const unavailableLines = unavailable.length
+        ? unavailable.map((result: any) => `NO ${result?.label || result?.endpoint}: ${result?.endpoint}`).join('\n')
+        : 'None';
+      setBambooHrProbeResultsByCompany((prev) => ({
+        ...prev,
+        [companyId]: `BambooHR domain probe complete.\n\nAvailable:\n${availableLines}\n\nUnavailable:\n${unavailableLines}`,
+      }));
+    } catch (error: any) {
+      setBambooHrProbeResultsByCompany((prev) => ({
+        ...prev,
+        [companyId]: `BambooHR domain probe failed:\n\n${error?.message || 'Unknown error'}`,
+      }));
+    } finally {
+      setProbingBambooHrCompanyId((prev) => (prev === companyId ? null : prev));
+    }
+  };
   const savePlatosClosetSettings = async (companyId: string) => {
     try {
       setSavingPlatosClosetCompanyId(companyId);
@@ -2984,6 +3110,11 @@ export default function SiteAdminDashboard(props: any) {
     const lastSyncAt = bambooHrLastSyncByCompany[companyId];
     const errorMessage = bambooHrErrorByCompany[companyId];
     const isSaving = savingBambooHrCompanyId === companyId;
+    const isValidating = validatingBambooHrCompanyId === companyId;
+    const isSyncTesting = syncTestingBambooHrCompanyId === companyId;
+    const isProbing = probingBambooHrCompanyId === companyId;
+    const isBusy = isSaving || isValidating || isSyncTesting || isProbing;
+    const probeResults = bambooHrProbeResultsByCompany[companyId] || '';
     const statusTheme = getOperationalSourceStatusTheme(status);
 
     return (
@@ -2998,21 +3129,31 @@ export default function SiteAdminDashboard(props: any) {
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', justifyContent: 'flex-end' }}>
             <button
               onClick={() => saveBambooHrSettings(companyId)}
+              disabled={isBusy}
               style={{ padding: '8px 12px', background: '#334155', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: 'pointer' }}
             >
               {isSaving ? 'Saving...' : 'Save'}
             </button>
             <button
-              disabled
-              style={{ padding: '8px 12px', background: '#cbd5e1', color: '#334155', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: 'not-allowed' }}
+              onClick={() => validateBambooHrConnection(companyId)}
+              disabled={isBusy}
+              style={{ padding: '8px 12px', background: isBusy ? '#cbd5e1' : '#0ea5e9', color: isBusy ? '#334155' : 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: isBusy ? 'not-allowed' : 'pointer' }}
             >
-              Validate Connection
+              {isValidating ? 'Validating...' : 'Validate Connection'}
             </button>
             <button
-              disabled
-              style={{ padding: '8px 12px', background: '#cbd5e1', color: '#334155', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: 'not-allowed' }}
+              onClick={() => runBambooHrSyncTest(companyId)}
+              disabled={isBusy}
+              style={{ padding: '8px 12px', background: isBusy ? '#cbd5e1' : '#16a34a', color: isBusy ? '#334155' : 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: isBusy ? 'not-allowed' : 'pointer' }}
             >
-              Run Sync Now
+              {isSyncTesting ? 'Testing...' : 'Run Sync Test'}
+            </button>
+            <button
+              onClick={() => probeBambooHrDomains(companyId)}
+              disabled={isBusy}
+              style={{ padding: '8px 12px', background: isBusy ? '#cbd5e1' : '#7c3aed', color: isBusy ? '#334155' : 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: isBusy ? 'not-allowed' : 'pointer' }}
+            >
+              {isProbing ? 'Probing...' : 'Probe Domains'}
             </button>
           </div>
         </div>
@@ -3032,9 +3173,28 @@ export default function SiteAdminDashboard(props: any) {
         <div style={{ marginBottom: '8px', padding: '8px', background: '#ecfeff', border: '1px solid #a5f3fc', borderRadius: '6px' }}>
           <div style={{ fontSize: '12px', fontWeight: '600', color: '#155e75' }}>BambooHR operational connection</div>
           <div style={{ fontSize: '12px', color: '#155e75' }}>
-            Configure the BambooHR connection and sync schedule here. Validation and on-demand sync wiring will use this container in the next phase.
+            Configure the BambooHR connection and sync schedule here. Validate checks the employee directory; sync test reads enabled domains and reports counts without importing employee records.
           </div>
         </div>
+
+        {probeResults ? (
+          <div style={{ marginBottom: '8px', padding: '8px', background: '#faf5ff', border: '1px solid #d8b4fe', borderRadius: '6px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
+              <div style={{ fontSize: '12px', fontWeight: '600', color: '#581c87' }}>BambooHR domain probe results</div>
+              <button
+                onClick={() => navigator.clipboard?.writeText(probeResults)}
+                style={{ padding: '4px 8px', background: '#7c3aed', color: 'white', border: 'none', borderRadius: '6px', fontSize: '11px', fontWeight: '600', cursor: 'pointer' }}
+              >
+                Copy
+              </button>
+            </div>
+            <textarea
+              readOnly
+              value={probeResults}
+              style={{ width: '100%', minHeight: '180px', border: '1px solid #d8b4fe', borderRadius: '6px', padding: '8px', fontSize: '12px', color: '#3b0764', background: 'white', fontFamily: 'monospace', whiteSpace: 'pre' }}
+            />
+          </div>
+        ) : null}
 
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(180px, 1fr))', gap: '8px' }}>
           <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#334155' }}>

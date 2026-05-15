@@ -626,6 +626,9 @@ export default function OperationsTab({
   const [customersSitesData, setCustomersSitesData] = useState<any>(null);
   const [revenueBillablesData, setRevenueBillablesData] = useState<any>(null);
   const [unitEconomicsData, setUnitEconomicsData] = useState<any>(null);
+  const [selectedOperationalClient, setSelectedOperationalClient] = useState<string>('__ALL__');
+  const [expandedUnitBillRateLevels, setExpandedUnitBillRateLevels] = useState<Record<string, boolean>>({});
+  const [expandedUnitLocations, setExpandedUnitLocations] = useState<Record<string, boolean>>({});
   // Construction AR (M5b) — view + filter state
   const [constructionArData, setConstructionArData] = useState<any>(null);
   const [caArView, setCaArView] = useState<'customer' | 'project' | 'invoice'>('customer');
@@ -752,6 +755,37 @@ export default function OperationsTab({
     if (!normalized) return true;
     const value = operationalHubSections[`tab:${normalized}`];
     return value === undefined ? true : value !== false;
+  };
+  const renderOperationalClientSelector = () => {
+    const clientOptions = [
+      { value: '__ALL__', label: 'Total All Clients' },
+      { value: 'Eli Lilly', label: 'Eli Lilly' },
+    ];
+    return (
+      <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: '8px' }}>
+        <label style={{ fontSize: '12px', fontWeight: 700, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+          Client
+        </label>
+        <select
+          value={selectedOperationalClient}
+          onChange={(event) => setSelectedOperationalClient(event.target.value)}
+          style={{
+            minWidth: '180px',
+            border: '1px solid #cbd5e1',
+            borderRadius: '8px',
+            padding: '8px 10px',
+            fontSize: '13px',
+            fontWeight: 600,
+            color: '#0f172a',
+            background: '#fff',
+          }}
+        >
+          {clientOptions.map((client) => (
+            <option key={client.value} value={client.value}>{client.label}</option>
+          ))}
+        </select>
+      </div>
+    );
   };
   
   // Date range and frequency filters
@@ -15468,9 +15502,169 @@ Strategies to Improve the CCC
     const thStyle: React.CSSProperties = { textAlign: 'left', padding: '8px 10px', fontSize: '11px', fontWeight: 700, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.04em', borderBottom: '1px solid #e2e8f0', background: '#f8fafc' };
     const tdStyle: React.CSSProperties = { padding: '8px 10px', fontSize: '13px', color: '#0f172a', borderBottom: '1px solid #f1f5f9' };
     const chartLabelStyle = { fontSize: '12px', fill: '#64748b' };
+    const isBambooHrWorkforce = laborSchedulingData?.meta?.source === 'BAMBOOHR_WORKFORCE';
+
+    if (isBambooHrWorkforce) {
+      const headcountByRole: any[] = Array.isArray(laborSchedulingData.headcountByRole) ? laborSchedulingData.headcountByRole : [];
+      const headcountByDepartment: any[] = Array.isArray(laborSchedulingData.headcountByDepartment) ? laborSchedulingData.headcountByDepartment : [];
+      const headcountByLocation: any[] = Array.isArray(laborSchedulingData.headcountByLocation) ? laborSchedulingData.headcountByLocation : [];
+      const payTypeMix: any[] = Array.isArray(laborSchedulingData.payTypeMix) ? laborSchedulingData.payTypeMix : [];
+      const billRateLevelCoverage: any[] = Array.isArray(laborSchedulingData.billRateLevelCoverage) ? laborSchedulingData.billRateLevelCoverage : [];
+      const missingBillRateLevel: any[] = Array.isArray(laborSchedulingData.missingBillRateLevel) ? laborSchedulingData.missingBillRateLevel : [];
+      const employeeCompensationRoster: any[] = Array.isArray(laborSchedulingData.employeeCompensationRoster) ? laborSchedulingData.employeeCompensationRoster : [];
+      const sourceNote = String(laborSchedulingData?.meta?.note || summary.note || '');
+
+      return (
+        <div style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+          {renderOperationalClientSelector()}
+          {isSectionEnabled('lsWorkforceSummary') && (
+            <div style={cardStyle}>
+              <div style={{ ...cardTitleStyle, marginBottom: '14px' }}>Workforce Summary</div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, minmax(0, 1fr))', gap: '12px' }}>
+                {[
+                  { label: 'Headcount', value: Number(summary.headcount || 0).toLocaleString('en-US'), color: '#1d4ed8' },
+                  { label: 'Total Annual Pay', value: summary.totalAnnualCost == null ? '—' : formatCurrency(summary.totalAnnualCost), color: '#0f766e' },
+                  { label: 'Avg Annual Pay', value: summary.avgAnnualCost == null ? '—' : formatCurrency(summary.avgAnnualCost), color: '#0f172a' },
+                  { label: 'Avg Monthly Pay', value: summary.avgMonthlyCost == null ? '—' : formatCurrency(summary.avgMonthlyCost), color: '#b45309' },
+                  { label: 'Bill Rate Level Coverage', value: `${Number(summary.billRateLevelCoveragePct || 0).toFixed(1)}%`, color: '#7c3aed' },
+                ].map((kpi) => (
+                  <div key={kpi.label} style={{ padding: '12px', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px' }}>
+                    <div style={{ fontSize: '11px', color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: '4px' }}>{kpi.label}</div>
+                    <div style={{ fontSize: '18px', fontWeight: 700, color: kpi.color }}>{kpi.value}</div>
+                  </div>
+                ))}
+              </div>
+              {sourceNote ? <div style={{ marginTop: '10px', fontSize: '12px', color: '#64748b' }}>{sourceNote}</div> : null}
+            </div>
+          )}
+
+          {isSectionEnabled('lsCompensationByRole') && (
+            <div style={cardStyle}>
+              <div style={cardTitleStyle}>Compensation by Role</div>
+              <div style={{ overflowX: 'auto', maxHeight: '420px', overflowY: 'auto' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                  <thead><tr><th style={thStyle}>Role</th><th style={{ ...thStyle, textAlign: 'right' }}>Headcount</th><th style={{ ...thStyle, textAlign: 'right' }}>Total Annual Pay</th><th style={{ ...thStyle, textAlign: 'right' }}>Avg Annual Pay</th><th style={{ ...thStyle, textAlign: 'right' }}>Avg Monthly Pay</th><th style={{ ...thStyle, textAlign: 'right' }}>Min / Max Annual</th><th style={{ ...thStyle, textAlign: 'right' }}>Rate Level Coverage</th></tr></thead>
+                  <tbody>{headcountByRole.slice(0, 24).map((row) => (
+                    <tr key={row.key}>
+                      <td style={{ ...tdStyle, fontWeight: 600 }}>{row.key}</td>
+                      <td style={{ ...tdStyle, textAlign: 'right' }}>{Number(row.headcount || 0).toLocaleString('en-US')}</td>
+                      <td style={{ ...tdStyle, textAlign: 'right', fontWeight: 700 }}>{row.totalAnnualCost == null ? '—' : formatCurrency(row.totalAnnualCost)}</td>
+                      <td style={{ ...tdStyle, textAlign: 'right' }}>{row.avgAnnualCost == null ? '—' : formatCurrency(row.avgAnnualCost)}</td>
+                      <td style={{ ...tdStyle, textAlign: 'right' }}>{row.avgMonthlyCost == null ? '—' : formatCurrency(row.avgMonthlyCost)}</td>
+                      <td style={{ ...tdStyle, textAlign: 'right' }}>{row.minAnnualCost == null || row.maxAnnualCost == null ? '—' : `${formatCurrency(row.minAnnualCost)} / ${formatCurrency(row.maxAnnualCost)}`}</td>
+                      <td style={{ ...tdStyle, textAlign: 'right' }}>{Number(row.billRateLevelCoveragePct || 0).toFixed(1)}%</td>
+                    </tr>
+                  ))}</tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {isSectionEnabled('lsEmployeeCompensationRoster') && (
+            <div style={cardStyle}>
+              <div style={cardTitleStyle}>Employee Compensation Roster</div>
+              <div style={{ overflowX: 'auto', maxHeight: '520px', overflowY: 'auto' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                  <thead><tr><th style={thStyle}>Employee</th><th style={thStyle}>Role</th><th style={thStyle}>Department</th><th style={thStyle}>Location</th><th style={thStyle}>Status</th><th style={thStyle}>Pay Type</th><th style={{ ...thStyle, textAlign: 'right' }}>Annual Pay</th><th style={{ ...thStyle, textAlign: 'right' }}>Monthly Pay</th><th style={thStyle}>Bill Rate Level</th></tr></thead>
+                  <tbody>{employeeCompensationRoster.map((row) => (
+                    <tr key={row.employeeId}>
+                      <td style={{ ...tdStyle, fontWeight: 600 }}>{row.employeeName || row.employeeId}</td>
+                      <td style={tdStyle}>{row.role}</td>
+                      <td style={tdStyle}>{row.department}</td>
+                      <td style={tdStyle}>{row.location}</td>
+                      <td style={tdStyle}>{row.employmentStatus}</td>
+                      <td style={tdStyle}>{row.payType || row.paidPer || '—'}</td>
+                      <td style={{ ...tdStyle, textAlign: 'right' }}>{row.annualCost == null ? '—' : formatCurrency(row.annualCost)}</td>
+                      <td style={{ ...tdStyle, textAlign: 'right' }}>{row.monthlyCost == null ? '—' : formatCurrency(row.monthlyCost)}</td>
+                      <td style={tdStyle}>{row.billRateLevel}</td>
+                    </tr>
+                  ))}</tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)', gap: '16px' }}>
+            {isSectionEnabled('lsHeadcountByRole') && <div style={cardStyle}>
+              <div style={cardTitleStyle}>Headcount by Role</div>
+              <ResponsiveContainer width="100%" height={320}>
+                <BarChart data={headcountByRole.slice(0, 12)} margin={{ top: 8, right: 8, left: 8, bottom: 70 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                  <XAxis dataKey="key" angle={-30} textAnchor="end" height={95} tick={chartLabelStyle} interval={0} />
+                  <YAxis tick={chartLabelStyle} />
+                  <Tooltip formatter={(value: any) => [Number(value || 0).toLocaleString('en-US'), 'Headcount']} />
+                  <Bar dataKey="headcount" fill="#2563eb" radius={0} />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>}
+            {isSectionEnabled('lsHeadcountByDepartment') && <div style={cardStyle}>
+              <div style={cardTitleStyle}>Headcount by Department</div>
+              <ResponsiveContainer width="100%" height={320}>
+                <BarChart data={headcountByDepartment.slice(0, 12)} margin={{ top: 8, right: 8, left: 8, bottom: 70 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                  <XAxis dataKey="key" angle={-30} textAnchor="end" height={95} tick={chartLabelStyle} interval={0} />
+                  <YAxis tick={chartLabelStyle} />
+                  <Tooltip formatter={(value: any) => [Number(value || 0).toLocaleString('en-US'), 'Headcount']} />
+                  <Bar dataKey="headcount" fill="#0f766e" radius={0} />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>}
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)', gap: '16px' }}>
+            {isSectionEnabled('lsLocationPayTypeMix') && <div style={cardStyle}>
+              <div style={cardTitleStyle}>Location / Pay Type Mix</div>
+              <div style={{ overflowX: 'auto', maxHeight: '360px', overflowY: 'auto' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                  <thead><tr><th style={thStyle}>Location</th><th style={{ ...thStyle, textAlign: 'right' }}>Headcount</th><th style={{ ...thStyle, textAlign: 'right' }}>Total Annual Pay</th><th style={{ ...thStyle, textAlign: 'right' }}>Avg Annual Pay</th><th style={{ ...thStyle, textAlign: 'right' }}>Avg Monthly Pay</th></tr></thead>
+                  <tbody>{headcountByLocation.slice(0, 14).map((row) => (
+                    <tr key={row.key}>
+                      <td style={{ ...tdStyle, fontWeight: 600 }}>{row.key}</td>
+                      <td style={{ ...tdStyle, textAlign: 'right' }}>{Number(row.headcount || 0).toLocaleString('en-US')}</td>
+                      <td style={{ ...tdStyle, textAlign: 'right', fontWeight: 700 }}>{row.totalAnnualCost == null ? '—' : formatCurrency(row.totalAnnualCost)}</td>
+                      <td style={{ ...tdStyle, textAlign: 'right' }}>{row.avgAnnualCost == null ? '—' : formatCurrency(row.avgAnnualCost)}</td>
+                      <td style={{ ...tdStyle, textAlign: 'right' }}>{row.avgMonthlyCost == null ? '—' : formatCurrency(row.avgMonthlyCost)}</td>
+                    </tr>
+                  ))}</tbody>
+                </table>
+              </div>
+              <div style={{ marginTop: '10px', fontSize: '12px', color: '#64748b' }}>
+                Pay type mix: {payTypeMix.map((row) => `${row.label}: ${row.count}`).join(' · ') || '—'}
+              </div>
+            </div>}
+            {isSectionEnabled('lsBillRateLevelCoverage') && <div style={cardStyle}>
+              <div style={cardTitleStyle}>Bill Rate Level Coverage</div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '12px', marginBottom: '12px' }}>
+                {billRateLevelCoverage.map((row) => (
+                  <div key={row.label} style={{ padding: '12px', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px' }}>
+                    <div style={{ fontSize: '11px', color: '#64748b', marginBottom: '4px' }}>{row.label}</div>
+                    <div style={{ fontSize: '20px', fontWeight: 700 }}>{Number(row.count || 0).toLocaleString('en-US')}</div>
+                    <div style={{ fontSize: '12px', color: '#64748b' }}>{Number(row.pct || 0).toFixed(1)}%</div>
+                  </div>
+                ))}
+              </div>
+              <div style={{ overflowX: 'auto', maxHeight: '250px', overflowY: 'auto' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                  <thead><tr><th style={thStyle}>Employee ID</th><th style={thStyle}>Role</th><th style={thStyle}>Department</th><th style={thStyle}>Location</th></tr></thead>
+                  <tbody>{missingBillRateLevel.slice(0, 10).map((row) => (
+                    <tr key={row.employeeId}>
+                      <td style={{ ...tdStyle, fontWeight: 600 }}>{row.employeeId}</td>
+                      <td style={tdStyle}>{row.role}</td>
+                      <td style={tdStyle}>{row.department}</td>
+                      <td style={tdStyle}>{row.location}</td>
+                    </tr>
+                  ))}</tbody>
+                </table>
+              </div>
+            </div>}
+          </div>
+        </div>
+      );
+    }
 
     return (
       <div style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+        {renderOperationalClientSelector()}
         <div style={cardStyle}>
           <div style={{ ...cardTitleStyle, marginBottom: '14px' }}>Labor &amp; Scheduling Summary</div>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, minmax(0, 1fr))', gap: '12px' }}>
@@ -15828,9 +16022,82 @@ Strategies to Improve the CCC
       borderBottom: '1px solid #f1f5f9',
     };
     const chartLabelStyle = { fontSize: '12px', fill: '#64748b' };
+    const isBambooHrWorkforce = revenueBillablesData?.meta?.source === 'BAMBOOHR_WORKFORCE';
+
+    if (isBambooHrWorkforce) {
+      const billRateLevelByRole: any[] = Array.isArray(revenueBillablesData.billRateLevelByRole) ? revenueBillablesData.billRateLevelByRole : [];
+      const billRateLevelRows: any[] = Array.isArray(revenueBillablesData.billRateLevelRows) ? revenueBillablesData.billRateLevelRows : [];
+      const unavailableReports: string[] = Array.isArray(revenueBillablesData.unavailableReports) ? revenueBillablesData.unavailableReports : [];
+      const sourceNote = String(revenueBillablesData?.meta?.note || summary.note || '');
+
+      return (
+        <div style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+          {renderOperationalClientSelector()}
+          {isSectionEnabled('rbBillRateLevelSummary') && (
+            <div style={{ ...cardStyle, paddingBottom: '16px' }}>
+              <div style={{ ...cardTitleStyle, marginBottom: '14px' }}>Bill Rate Level Coverage</div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: '12px' }}>
+                {[
+                  { label: 'Employees', value: Number(summary.employeeCount || 0).toLocaleString('en-US'), color: '#1d4ed8' },
+                  { label: 'Bill Rate Level Coverage', value: `${Number(summary.billRateLevelCoveragePct || 0).toFixed(1)}%`, color: '#7c3aed' },
+                  { label: 'Distinct Levels', value: Number(summary.distinctBillRateLevels || 0).toLocaleString('en-US'), color: '#0f766e' },
+                  { label: 'Client Rate Card', value: summary.numericBillRatesAvailable ? 'Available' : 'Needed', color: '#b45309' },
+                ].map((kpi) => (
+                  <div key={kpi.label} style={{ padding: '12px', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px' }}>
+                    <div style={{ fontSize: '11px', color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: '4px' }}>{kpi.label}</div>
+                    <div style={{ fontSize: '18px', fontWeight: 700, color: kpi.color }}>{kpi.value}</div>
+                  </div>
+                ))}
+              </div>
+              {sourceNote ? <div style={{ marginTop: '10px', fontSize: '12px', color: '#64748b' }}>{sourceNote}</div> : null}
+            </div>
+          )}
+
+          <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)', gap: '16px' }}>
+            {isSectionEnabled('rbBillRateLevelByRole') && <div style={cardStyle}>
+              <div style={cardTitleStyle}>Bill Rate Level Coverage by Role</div>
+              <div style={{ overflowX: 'auto', maxHeight: '420px', overflowY: 'auto' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                  <thead><tr><th style={thStyle}>Role</th><th style={{ ...thStyle, textAlign: 'right' }}>Headcount</th><th style={{ ...thStyle, textAlign: 'right' }}>Covered</th><th style={{ ...thStyle, textAlign: 'right' }}>Coverage</th><th style={thStyle}>Top Levels</th></tr></thead>
+                  <tbody>{billRateLevelByRole.slice(0, 18).map((row) => (
+                    <tr key={row.role}>
+                      <td style={{ ...tdStyle, fontWeight: 600 }}>{row.role}</td>
+                      <td style={{ ...tdStyle, textAlign: 'right' }}>{Number(row.headcount || 0).toLocaleString('en-US')}</td>
+                      <td style={{ ...tdStyle, textAlign: 'right' }}>{Number(row.covered || 0).toLocaleString('en-US')}</td>
+                      <td style={{ ...tdStyle, textAlign: 'right' }}>{Number(row.coveragePct || 0).toFixed(1)}%</td>
+                      <td style={tdStyle}>{Array.isArray(row.topLevels) ? row.topLevels.join(', ') : '—'}</td>
+                    </tr>
+                  ))}</tbody>
+                </table>
+              </div>
+            </div>}
+            {isSectionEnabled('rbEmployeesByBillRateLevel') && <div style={cardStyle}>
+              <div style={cardTitleStyle}>Employees by Bill Rate Level</div>
+              <ResponsiveContainer width="100%" height={360}>
+                <BarChart data={billRateLevelRows.slice(0, 14)} margin={{ top: 8, right: 8, left: 8, bottom: 90 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                  <XAxis dataKey="key" angle={-30} textAnchor="end" height={110} tick={chartLabelStyle} interval={0} />
+                  <YAxis tick={chartLabelStyle} />
+                  <Tooltip formatter={(value: any) => [Number(value || 0).toLocaleString('en-US'), 'Employees']} />
+                  <Bar dataKey="headcount" fill="#7c3aed" radius={0} />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>}
+          </div>
+
+          {isSectionEnabled('rbUnavailableRateInputs') && <div style={cardStyle}>
+            <div style={cardTitleStyle}>Reports Awaiting Client Rate Card</div>
+            <ul style={{ margin: 0, paddingLeft: '18px', color: '#475569', fontSize: '13px', lineHeight: 1.6 }}>
+              {unavailableReports.map((item) => <li key={item}>{item}</li>)}
+            </ul>
+          </div>}
+        </div>
+      );
+    }
 
     return (
       <div style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+        {renderOperationalClientSelector()}
         <div style={{ ...cardStyle, paddingBottom: '16px' }}>
           <div style={{ ...cardTitleStyle, marginBottom: '14px' }}>Revenue &amp; Billables Summary</div>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: '12px' }}>
@@ -16022,9 +16289,195 @@ Strategies to Improve the CCC
       borderBottom: '1px solid #f1f5f9',
     };
     const chartLabelStyle = { fontSize: '12px', fill: '#64748b' };
+    const isBambooHrWorkforce = unitEconomicsData?.meta?.source === 'BAMBOOHR_WORKFORCE';
+
+    if (isBambooHrWorkforce) {
+      const payCostByBillRateLevel: any[] = Array.isArray(unitEconomicsData.payCostByBillRateLevel) ? unitEconomicsData.payCostByBillRateLevel : [];
+      const payCostByRole: any[] = Array.isArray(unitEconomicsData.payCostByRole) ? unitEconomicsData.payCostByRole : [];
+      const payCostByLocation: any[] = Array.isArray(unitEconomicsData.payCostByLocation) ? unitEconomicsData.payCostByLocation : [];
+      const employeeCompensationRoster: any[] = Array.isArray(unitEconomicsData.employeeCompensationRoster) ? unitEconomicsData.employeeCompensationRoster : [];
+      const missingBillRateLevel: any[] = Array.isArray(unitEconomicsData.missingBillRateLevel) ? unitEconomicsData.missingBillRateLevel : [];
+      const unavailableReports: string[] = Array.isArray(unitEconomicsData.unavailableReports) ? unitEconomicsData.unavailableReports : [];
+      const sourceNote = String(unitEconomicsData?.meta?.note || summary.note || '');
+      const employeesForBillRateLevel = (level: string) =>
+        employeeCompensationRoster
+          .filter((employee) => String(employee.billRateLevel || '') === String(level || ''))
+          .sort((a, b) => String(a.role || '').localeCompare(String(b.role || '')) || String(a.employeeName || '').localeCompare(String(b.employeeName || '')));
+      const employeesForLocation = (location: string) =>
+        employeeCompensationRoster
+          .filter((employee) => String(employee.location || '') === String(location || ''))
+          .sort((a, b) => String(a.role || '').localeCompare(String(b.role || '')) || String(a.employeeName || '').localeCompare(String(b.employeeName || '')));
+
+      return (
+        <div style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+          {renderOperationalClientSelector()}
+          {isSectionEnabled('ueUnitEconomicsInputs') && (
+            <div style={{ ...cardStyle, paddingBottom: '16px' }}>
+              <div style={{ ...cardTitleStyle, marginBottom: '14px' }}>Unit Economics Inputs</div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: '12px' }}>
+                {[
+                  { label: 'Total Annual Pay', value: summary.totalAnnualCost == null ? '—' : formatCurrency(summary.totalAnnualCost), color: '#1d4ed8' },
+                  { label: 'Avg Annual Compensation', value: summary.avgAnnualCost == null ? '—' : formatCurrency(summary.avgAnnualCost), color: '#0f766e' },
+                  { label: 'Avg Monthly Pay', value: summary.avgMonthlyCost == null ? '—' : formatCurrency(summary.avgMonthlyCost), color: '#b45309' },
+                  { label: 'Employees with Compensation', value: Number(summary.employeesWithPayRate || 0).toLocaleString('en-US'), color: '#0f172a' },
+                ].map((kpi) => (
+                  <div key={kpi.label} style={{ padding: '12px', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px' }}>
+                    <div style={{ fontSize: '11px', color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: '4px' }}>{kpi.label}</div>
+                    <div style={{ fontSize: '18px', fontWeight: 700, color: kpi.color }}>{kpi.value}</div>
+                  </div>
+                ))}
+              </div>
+              {sourceNote ? <div style={{ marginTop: '10px', fontSize: '12px', color: '#64748b' }}>{sourceNote}</div> : null}
+            </div>
+          )}
+
+          <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)', gap: '16px' }}>
+            {isSectionEnabled('ueCostByBillRateLevel') && <div style={cardStyle}>
+              <div style={cardTitleStyle}>Cost by Bill Rate Level</div>
+              <div style={{ overflowX: 'auto', maxHeight: '420px', overflowY: 'auto' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                  <thead><tr><th style={thStyle}>Bill Rate Level</th><th style={{ ...thStyle, textAlign: 'right' }}>Headcount</th><th style={{ ...thStyle, textAlign: 'right' }}>Total Annual Pay</th><th style={{ ...thStyle, textAlign: 'right' }}>Avg Annual Pay</th><th style={{ ...thStyle, textAlign: 'right' }}>Avg Monthly Pay</th></tr></thead>
+                  <tbody>{payCostByBillRateLevel.slice(0, 18).map((row) => {
+                    const levelKey = String(row.key || 'Unassigned');
+                    const isExpanded = Boolean(expandedUnitBillRateLevels[levelKey]);
+                    const employees = employeesForBillRateLevel(levelKey);
+                    return (
+                      <React.Fragment key={levelKey}>
+                        <tr>
+                          <td style={{ ...tdStyle, fontWeight: 600 }}>
+                            <button
+                              type="button"
+                              onClick={() => setExpandedUnitBillRateLevels((prev) => ({ ...prev, [levelKey]: !prev[levelKey] }))}
+                              style={{ border: 'none', background: 'transparent', padding: 0, marginRight: '8px', color: '#2563eb', cursor: 'pointer', fontWeight: 700 }}
+                              aria-label={`${isExpanded ? 'Collapse' : 'Expand'} ${levelKey}`}
+                            >
+                              {isExpanded ? '-' : '+'}
+                            </button>
+                            {levelKey}
+                          </td>
+                          <td style={{ ...tdStyle, textAlign: 'right' }}>{Number(row.headcount || 0).toLocaleString('en-US')}</td>
+                          <td style={{ ...tdStyle, textAlign: 'right', fontWeight: 700 }}>{row.totalAnnualCost == null ? '—' : formatCurrency(row.totalAnnualCost)}</td>
+                          <td style={{ ...tdStyle, textAlign: 'right' }}>{row.avgAnnualCost == null ? '—' : formatCurrency(row.avgAnnualCost)}</td>
+                          <td style={{ ...tdStyle, textAlign: 'right' }}>{row.avgMonthlyCost == null ? '—' : formatCurrency(row.avgMonthlyCost)}</td>
+                        </tr>
+                        {isExpanded && (
+                          <tr>
+                            <td colSpan={5} style={{ ...tdStyle, padding: '0 10px 12px 34px', background: '#f8fafc' }}>
+                              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                                <thead><tr><th style={thStyle}>Role</th><th style={thStyle}>Employee</th><th style={thStyle}>Department</th><th style={thStyle}>Location</th><th style={{ ...thStyle, textAlign: 'right' }}>Annual Pay</th><th style={{ ...thStyle, textAlign: 'right' }}>Monthly Pay</th></tr></thead>
+                                <tbody>{employees.map((employee) => (
+                                  <tr key={`${levelKey}-${employee.employeeId}`}>
+                                    <td style={tdStyle}>{employee.role}</td>
+                                    <td style={{ ...tdStyle, fontWeight: 600 }}>{employee.employeeName || employee.employeeId}</td>
+                                    <td style={tdStyle}>{employee.department}</td>
+                                    <td style={tdStyle}>{employee.location}</td>
+                                    <td style={{ ...tdStyle, textAlign: 'right' }}>{employee.annualCost == null ? '—' : formatCurrency(employee.annualCost)}</td>
+                                    <td style={{ ...tdStyle, textAlign: 'right' }}>{employee.monthlyCost == null ? '—' : formatCurrency(employee.monthlyCost)}</td>
+                                  </tr>
+                                ))}</tbody>
+                              </table>
+                            </td>
+                          </tr>
+                        )}
+                      </React.Fragment>
+                    );
+                  })}</tbody>
+                </table>
+              </div>
+            </div>}
+            {isSectionEnabled('ueCostByRole') && <div style={cardStyle}>
+              <div style={cardTitleStyle}>Total Pay by Role</div>
+              <ResponsiveContainer width="100%" height={360}>
+                <BarChart data={payCostByRole.slice(0, 12)} margin={{ top: 8, right: 8, left: 8, bottom: 90 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                  <XAxis dataKey="key" angle={-30} textAnchor="end" height={110} tick={chartLabelStyle} interval={0} />
+                  <YAxis tick={chartLabelStyle} tickFormatter={(value) => `$${Math.round(Number(value || 0) / 1000)}k`} />
+                  <Tooltip formatter={(value: any) => [formatCurrency(Number(value || 0)), 'Total Annual Pay']} />
+                  <Bar dataKey="totalAnnualCost" fill="#2563eb" radius={0} />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>}
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)', gap: '16px' }}>
+            {isSectionEnabled('ueCostByLocation') && <div style={cardStyle}>
+              <div style={cardTitleStyle}>Pay by Location</div>
+              <div style={{ overflowX: 'auto', maxHeight: '360px', overflowY: 'auto' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                  <thead><tr><th style={thStyle}>Location</th><th style={{ ...thStyle, textAlign: 'right' }}>Headcount</th><th style={{ ...thStyle, textAlign: 'right' }}>Total Monthly Pay</th><th style={{ ...thStyle, textAlign: 'right' }}>Total Annual Pay</th></tr></thead>
+                  <tbody>{payCostByLocation.slice(0, 14).map((row) => {
+                    const locationKey = String(row.key || 'Unassigned');
+                    const isExpanded = Boolean(expandedUnitLocations[locationKey]);
+                    const employees = employeesForLocation(locationKey);
+                    return (
+                      <React.Fragment key={locationKey}>
+                        <tr>
+                          <td style={{ ...tdStyle, fontWeight: 600 }}>
+                            <button
+                              type="button"
+                              onClick={() => setExpandedUnitLocations((prev) => ({ ...prev, [locationKey]: !prev[locationKey] }))}
+                              style={{ border: 'none', background: 'transparent', padding: 0, marginRight: '8px', color: '#2563eb', cursor: 'pointer', fontWeight: 700 }}
+                              aria-label={`${isExpanded ? 'Collapse' : 'Expand'} ${locationKey}`}
+                            >
+                              {isExpanded ? '-' : '+'}
+                            </button>
+                            {locationKey}
+                          </td>
+                          <td style={{ ...tdStyle, textAlign: 'right' }}>{Number(row.headcount || 0).toLocaleString('en-US')}</td>
+                          <td style={{ ...tdStyle, textAlign: 'right', fontWeight: 700 }}>{row.totalAnnualCost == null ? '—' : formatCurrency(row.totalAnnualCost / 12)}</td>
+                          <td style={{ ...tdStyle, textAlign: 'right', fontWeight: 700 }}>{row.totalAnnualCost == null ? '—' : formatCurrency(row.totalAnnualCost)}</td>
+                        </tr>
+                        {isExpanded && (
+                          <tr>
+                            <td colSpan={4} style={{ ...tdStyle, padding: '0 10px 12px 34px', background: '#f8fafc' }}>
+                              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                                <thead><tr><th style={thStyle}>Role</th><th style={thStyle}>Employee</th><th style={thStyle}>Department</th><th style={thStyle}>Bill Rate Level</th><th style={{ ...thStyle, textAlign: 'right' }}>Annual Pay</th><th style={{ ...thStyle, textAlign: 'right' }}>Monthly Pay</th></tr></thead>
+                                <tbody>{employees.map((employee) => (
+                                  <tr key={`${locationKey}-${employee.employeeId}`}>
+                                    <td style={tdStyle}>{employee.role}</td>
+                                    <td style={{ ...tdStyle, fontWeight: 600 }}>{employee.employeeName || employee.employeeId}</td>
+                                    <td style={tdStyle}>{employee.department}</td>
+                                    <td style={tdStyle}>{employee.billRateLevel}</td>
+                                    <td style={{ ...tdStyle, textAlign: 'right' }}>{employee.annualCost == null ? '—' : formatCurrency(employee.annualCost)}</td>
+                                    <td style={{ ...tdStyle, textAlign: 'right' }}>{employee.monthlyCost == null ? '—' : formatCurrency(employee.monthlyCost)}</td>
+                                  </tr>
+                                ))}</tbody>
+                              </table>
+                            </td>
+                          </tr>
+                        )}
+                      </React.Fragment>
+                    );
+                  })}</tbody>
+                </table>
+              </div>
+            </div>}
+            {isSectionEnabled('ueMissingBillRateLevel') && <div style={cardStyle}>
+              <div style={cardTitleStyle}>Missing Bill Rate Level / Next Inputs</div>
+              <div style={{ overflowX: 'auto', maxHeight: '220px', overflowY: 'auto', marginBottom: '12px' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                  <thead><tr><th style={thStyle}>Employee ID</th><th style={thStyle}>Role</th><th style={thStyle}>Department</th></tr></thead>
+                  <tbody>{missingBillRateLevel.slice(0, 8).map((row) => (
+                    <tr key={row.employeeId}>
+                      <td style={{ ...tdStyle, fontWeight: 600 }}>{row.employeeId}</td>
+                      <td style={tdStyle}>{row.role}</td>
+                      <td style={tdStyle}>{row.department}</td>
+                    </tr>
+                  ))}</tbody>
+                </table>
+              </div>
+              <ul style={{ margin: 0, paddingLeft: '18px', color: '#475569', fontSize: '13px', lineHeight: 1.6 }}>
+                {unavailableReports.map((item) => <li key={item}>{item}</li>)}
+              </ul>
+            </div>}
+          </div>
+        </div>
+      );
+    }
 
     return (
       <div style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+        {renderOperationalClientSelector()}
         <div style={{ ...cardStyle, paddingBottom: '16px' }}>
           <div style={{ ...cardTitleStyle, marginBottom: '14px' }}>Unit Economics Summary</div>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, minmax(0, 1fr))', gap: '12px' }}>

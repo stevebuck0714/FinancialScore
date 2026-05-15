@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
-import OAuthClient from 'intuit-oauth';
 import prisma from '@/lib/prisma';
-import { decryptOAuthToken, encryptOAuthToken } from '@/lib/encryption';
+import { decryptOAuthToken } from '@/lib/encryption';
+import { getValidQuickBooksToken } from '@/lib/quickbooks-online/token-manager';
 
 export const dynamic = 'force-dynamic';
 
@@ -104,44 +104,17 @@ export async function GET(request: NextRequest) {
     if (!testResponse.ok && (testResponse.status === 401 || testResponse.status === 403)) {
       console.warn(`⚠️ CompanyInfo returned ${testResponse.status}; attempting token refresh...`);
       try {
-        const oauthClient = new OAuthClient({
-          clientId: process.env.QUICKBOOKS_CLIENT_ID || '',
-          clientSecret: process.env.QUICKBOOKS_CLIENT_SECRET || '',
-          environment: process.env.QUICKBOOKS_ENVIRONMENT || 'sandbox',
-          redirectUri: process.env.QUICKBOOKS_REDIRECT_URI || 'http://localhost:3000/api/quickbooks/callback',
+        const token = await getValidQuickBooksToken(connection.id, {
+          forceRefresh: true,
+          reason: `CompanyInfo returned ${testResponse.status}`,
         });
-        const refreshResponse = await oauthClient.refreshUsingToken(refreshToken);
-        const newToken = refreshResponse.getJson();
-        const newAccess = newToken.access_token as string;
-        const newRefresh = (newToken.refresh_token as string) || refreshToken;
-        const expiresIn = (newToken.expires_in as number) || 3600;
-
-        await prisma.accountingConnection.update({
-          where: {
-            companyId_platform: { companyId, platform: 'QUICKBOOKS' },
-          },
-          data: {
-            accessToken: encryptOAuthToken(newAccess),
-            refreshToken: encryptOAuthToken(newRefresh),
-            tokenExpiresAt: new Date(Date.now() + expiresIn * 1000),
-            status: 'ACTIVE',
-            errorMessage: null,
-          },
-        });
-        accessToken = newAccess;
-        refreshToken = newRefresh;
+        accessToken = token.accessToken;
+        refreshToken = token.refreshToken;
         refreshed = true;
         testResponse = await callCompanyInfo(accessToken);
         console.log('✅ Token refresh succeeded; retried CompanyInfo:', testResponse.status);
       } catch (refreshErr) {
         console.error('❌ Token refresh failed:', refreshErr);
-        await prisma.accountingConnection.updateMany({
-          where: { companyId, platform: 'QUICKBOOKS' },
-          data: {
-            status: 'EXPIRED',
-            errorMessage: 'Token refresh failed during connection validation — reconnect QuickBooks',
-          },
-        });
         const errorBody = await testResponse.text().catch(() => '');
         return NextResponse.json({
           connected: true,

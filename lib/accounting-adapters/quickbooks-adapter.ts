@@ -11,8 +11,7 @@ import {
 } from './types';
 import prisma from '@/lib/prisma';
 import { Prisma } from '@prisma/client';
-import OAuthClient from 'intuit-oauth';
-import { encryptOAuthToken } from '@/lib/encryption';
+import { getValidQuickBooksToken } from '@/lib/quickbooks-online/token-manager';
 
 /**
  * QuickBooks Adapter
@@ -102,9 +101,9 @@ export class QuickBooksAdapter implements AccountingAdapter {
 
   private tokenExpiresSoon(): boolean {
     const expiresAtRaw = this.config.tokenExpiresAt;
-    if (!expiresAtRaw) return false;
+    if (!expiresAtRaw) return true;
     const expiresAt = expiresAtRaw instanceof Date ? expiresAtRaw : new Date(expiresAtRaw);
-    if (Number.isNaN(expiresAt.getTime())) return false;
+    if (Number.isNaN(expiresAt.getTime())) return true;
     return expiresAt.getTime() - Date.now() <= QuickBooksAdapter.TOKEN_REFRESH_BUFFER_MS;
   }
 
@@ -113,45 +112,15 @@ export class QuickBooksAdapter implements AccountingAdapter {
       throw new Error(`QuickBooks refresh token is missing (${reason}).`);
     }
 
-    const oauthClient = new OAuthClient({
-      clientId: process.env.QUICKBOOKS_CLIENT_ID || '',
-      clientSecret: process.env.QUICKBOOKS_CLIENT_SECRET || '',
-      environment: process.env.QUICKBOOKS_ENVIRONMENT || 'sandbox',
-      redirectUri:
-        process.env.QUICKBOOKS_REDIRECT_URI || 'http://localhost:3000/api/quickbooks/callback',
-    });
-
     try {
-      // `refresh()` expects the SDK's internal Token object. In scheduled jobs
-      // we only have the persisted token string, so use the string-based API.
-      const refreshResponse = await oauthClient.refreshUsingToken(this.config.refreshToken);
-      const newToken = refreshResponse.getJson();
-      const accessToken = newToken.access_token || this.config.accessToken;
-      const refreshToken = newToken.refresh_token || this.config.refreshToken;
-      const tokenExpiresAt = new Date(Date.now() + (newToken.expires_in || 3600) * 1000);
-
-      this.config.accessToken = accessToken;
-      this.config.refreshToken = refreshToken;
-      this.config.tokenExpiresAt = tokenExpiresAt;
-
-      await prisma.accountingConnection.update({
-        where: { id: this.config.connectionId },
-        data: {
-          accessToken: encryptOAuthToken(accessToken),
-          refreshToken: encryptOAuthToken(refreshToken),
-          tokenExpiresAt,
-          status: 'ACTIVE',
-          errorMessage: null,
-        },
+      const token = await getValidQuickBooksToken(String(this.config.connectionId), {
+        forceRefresh: reason.startsWith('received '),
+        reason,
       });
+      this.config.accessToken = token.accessToken;
+      this.config.refreshToken = token.refreshToken;
+      this.config.tokenExpiresAt = token.tokenExpiresAt;
     } catch (error: unknown) {
-      await prisma.accountingConnection.update({
-        where: { id: this.config.connectionId },
-        data: {
-          status: 'EXPIRED',
-          errorMessage: `Token refresh failed: ${this.errorMessage(error)}`.slice(0, 900),
-        },
-      });
       throw new Error(`QuickBooks token refresh failed: ${this.errorMessage(error)}`);
     }
   }
