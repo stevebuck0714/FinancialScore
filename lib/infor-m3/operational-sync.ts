@@ -3871,6 +3871,7 @@ async function saveAROpenInvoicesNoFullPullsFromCustDrfts(params: {
  */
 const AR_SNAPSHOT_GUARD_MIN_EXISTING_ROWS = 1000;     // Don't bother guarding tiny snapshots.
 const AR_SNAPSHOT_GUARD_MAX_SHRINK_RATIO = 0.5;        // Reject writes < 50% of existing.
+const AR_SNAPSHOT_GUARD_TOTAL_EPSILON = 0.01;          // Currency rounding tolerance.
 
 async function saveAROpenInvoices(
   companyId: string,
@@ -4223,7 +4224,7 @@ async function saveAROpenInvoices(
       proposedRowCount < existingRowCount * AR_SNAPSHOT_GUARD_MAX_SHRINK_RATIO;
     const wouldShrinkTotal =
       existingTotal >= 100_000 &&
-      proposedTotal < existingTotal * AR_SNAPSHOT_GUARD_MAX_SHRINK_RATIO;
+      proposedTotal < existingTotal * AR_SNAPSHOT_GUARD_MAX_SHRINK_RATIO - AR_SNAPSHOT_GUARD_TOTAL_EPSILON;
     if (wouldShrinkRows || wouldShrinkTotal) {
       const warning = JSON.stringify({
         event: 'ar_snapshot_guard_skipped_unsafe_rewrite',
