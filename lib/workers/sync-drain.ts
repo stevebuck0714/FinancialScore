@@ -21,12 +21,17 @@ const IDLE_BACKOFF_MS = Number(process.env.WORKER_IDLE_BACKOFF_MS || 5000);
 const HEARTBEAT_INTERVAL_MS = Number(
   process.env.WORKER_HEARTBEAT_INTERVAL_MS || 60_000
 );
+const MEMORY_LOG_INTERVAL_MS = Number(
+  process.env.WORKER_MEMORY_LOG_INTERVAL_MS || 60_000
+);
+const MEMORY_EXIT_RSS_MB = Number(process.env.WORKER_MEMORY_EXIT_RSS_MB || 0);
 
 const WORKER_BASE_URL = String(process.env.WORKER_BASE_URL || '').trim();
 const WORKER_SECRET = String(process.env.CRON_SECRET || '').trim();
 
 let shuttingDown = false;
 let lastHeartbeatLogAt = 0;
+let lastMemoryLogAt = 0;
 let totalTicks = 0;
 let totalLeased = 0;
 
@@ -44,6 +49,27 @@ function logError(...args: unknown[]): void {
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function memorySnapshot(): { rssMb: number; heapUsedMb: number; heapTotalMb: number; externalMb: number } {
+  const m = process.memoryUsage();
+  const toMb = (bytes: number) => Math.round((bytes / 1024 / 1024) * 10) / 10;
+  return {
+    rssMb: toMb(m.rss),
+    heapUsedMb: toMb(m.heapUsed),
+    heapTotalMb: toMb(m.heapTotal),
+    externalMb: toMb(m.external),
+  };
+}
+
+function maybeLogMemory(force = false): void {
+  const now = Date.now();
+  if (!force && now - lastMemoryLogAt < MEMORY_LOG_INTERVAL_MS) return;
+  const mem = memorySnapshot();
+  log(
+    `memory: rssMb=${mem.rssMb} heapUsedMb=${mem.heapUsedMb} heapTotalMb=${mem.heapTotalMb} externalMb=${mem.externalMb}`
+  );
+  lastMemoryLogAt = now;
 }
 
 function registerSignals(): void {
@@ -116,6 +142,12 @@ async function main(): Promise<void> {
           `tick: leased=${r.leased} reclaimed=${r.reclaimed} promoted=${r.promoted} timedOut=${r.timedOut} elapsedMs=${Date.now() - startedAt}`
         );
       }
+      maybeLogMemory(hadActivity);
+      if (MEMORY_EXIT_RSS_MB > 0 && memorySnapshot().rssMb >= MEMORY_EXIT_RSS_MB) {
+        logError(`rss memory exceeded configured restart threshold (${MEMORY_EXIT_RSS_MB} MB); exiting for clean restart`);
+        shuttingDown = true;
+        break;
+      }
 
       // Periodic heartbeat so we can confirm the worker is alive even when idle.
       const now = Date.now();
@@ -123,6 +155,7 @@ async function main(): Promise<void> {
         log(
           `heartbeat: totalTicks=${totalTicks} totalLeased=${totalLeased} idle=${!hadActivity}`
         );
+        maybeLogMemory(true);
         lastHeartbeatLogAt = now;
       }
 

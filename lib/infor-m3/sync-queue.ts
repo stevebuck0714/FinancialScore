@@ -17,10 +17,11 @@ const MAX_LEASE_ROUNDS_PER_TICK = 12;
 const TICK_TIME_BUDGET_MS = 55_000;
 const DEFAULT_DAILY_OVERLAP_PROGRAM_BATCH_SIZE = 2;
 const DEFAULT_BACKFILL_PROGRAM_BATCH_SIZE = 4;
-const DEFAULT_TICK_CONCURRENCY = 5;
-const DEFAULT_MAX_TASKS_PER_TICK = 48;
-const MAX_TASKS_PER_TICK_LIMIT = 200;
-const DEFAULT_MAX_INFLIGHT_PER_SCOPE = 5;
+const DEFAULT_TICK_CONCURRENCY = 2;
+const DEFAULT_MAX_TASKS_PER_TICK = 12;
+const MAX_TASKS_PER_TICK_LIMIT = 50;
+const DEFAULT_MAX_INFLIGHT_PER_SCOPE = 2;
+const MAX_RETAINED_TICK_RESULTS = 25;
 const DEFAULT_RUN_STALE_MINUTES = 30;
 const DEFAULT_RUN_MAX_AGE_HOURS = 8;
 const DEFAULT_TASK_FETCH_TIMEOUT_MS = 240_000;
@@ -94,6 +95,31 @@ function describeTaskPayload(payload: Record<string, unknown>): string {
   const requestOffset = Math.max(0, Math.floor(Number(payload.requestOffset || 0)));
   return `mode=${mode} businessDate=${businessDateIso} programOffset=${programOffset}` +
     `${programEndOffset !== null ? `..${programEndOffset}` : ''} requestOffset=${requestOffset}`;
+}
+
+function compactTaskResponse(value: Record<string, unknown>): Record<string, unknown> {
+  const errors = Array.isArray(value.errors)
+    ? value.errors.map((entry) => String(entry || '').slice(0, 500)).slice(0, 10)
+    : undefined;
+  return {
+    ok: value.ok === true,
+    hasMore: value.hasMore === true,
+    cursor: value.cursor || null,
+    recordsCreated: Number(value.recordsCreated || 0),
+    errors,
+    error: typeof value.error === 'string' ? value.error.slice(0, 1200) : undefined,
+    details: typeof value.details === 'string' ? value.details.slice(0, 1200) : undefined,
+    warningOnly: value.warningOnly === true,
+    credentialSource: typeof value.credentialSource === 'string' ? value.credentialSource : undefined,
+    noForwardProgressCount: value.noForwardProgressCount,
+    glMaxBefore: value.glMaxBefore,
+    glMaxAfter: value.glMaxAfter,
+  };
+}
+
+function responseSnippetFromData(value: Record<string, unknown>, status: number): string {
+  const compact = compactTaskResponse(value);
+  return `HTTP ${status}: ${JSON.stringify(compact)}`.replace(/\s+/g, ' ').trim().slice(0, 280);
 }
 
 async function getGlRawMaxBusinessDate(companyId: string): Promise<Date | null> {
@@ -969,7 +995,7 @@ async function processTask(
         const result = await runOperationalSyncRequest(taskPayload, task.companyId);
         responseStatus = result.status;
         data = result.body;
-        rawText = JSON.stringify(data);
+        rawText = responseSnippetFromData(data, responseStatus);
       } catch (error) {
         const message =
           error instanceof Error ? error.message : 'In-process worker failed';
@@ -1044,18 +1070,19 @@ async function processTask(
       details: qbResult.errors.join(' | '),
       operationalKind: op.kind,
     };
-    rawText = JSON.stringify(data);
     responseStatus = qbResult.success ? 200 : 500;
+    rawText = responseSnippetFromData(data, responseStatus);
   } else {
+    responseStatus = 400;
     data = {
       ok: false,
       error: `Unsupported queue platform: ${String(task.run.platform || 'unknown')}`,
     };
-    rawText = JSON.stringify(data);
-    responseStatus = 400;
+    rawText = responseSnippetFromData(data, responseStatus);
   }
   const now = new Date();
   const durationMs = Date.now() - start;
+  const compactResponse = compactTaskResponse(data);
   const textSnippet = String(rawText || '').replace(/\s+/g, ' ').trim().slice(0, 280);
   const details =
     Array.isArray(data?.errors) && data.errors.length > 0
@@ -1112,7 +1139,7 @@ async function processTask(
             finishedAt: now,
             updatedAt: now,
             lastError: String(details).slice(0, 1200),
-            lastResponse: data,
+            lastResponse: compactResponse,
             leaseOwner: null,
             leaseExpiresAt: null,
           },
@@ -1149,7 +1176,7 @@ async function processTask(
             finishedAt: now,
             updatedAt: now,
             lastError: String(details).slice(0, 1200),
-            lastResponse: data,
+            lastResponse: compactResponse,
             leaseOwner: null,
             leaseExpiresAt: null,
           },
@@ -1175,7 +1202,7 @@ async function processTask(
           availableAt: new Date(Date.now() + backoffMs),
           updatedAt: now,
           lastError: String(details).slice(0, 1200),
-          lastResponse: data,
+          lastResponse: compactResponse,
           leaseOwner: null,
           leaseExpiresAt: null,
         },
@@ -1234,7 +1261,7 @@ async function processTask(
           updatedAt: now,
           lastError: details,
           lastResponse: {
-            ...data,
+            ...compactResponse,
             noForwardProgressCount: nextNoProgressCount,
             glMaxBefore: glMaxBefore ? glMaxBefore.toISOString() : null,
             glMaxAfter: glMaxAfter ? glMaxAfter.toISOString() : null,
@@ -1289,7 +1316,7 @@ async function processTask(
         finishedAt: now,
         updatedAt: now,
         lastError: null,
-        lastResponse: data,
+        lastResponse: compactResponse,
         leaseOwner: null,
         leaseExpiresAt: null,
       },
@@ -1432,7 +1459,7 @@ async function processTask(
           const pendingOrLeased = Number(row?.pendingOrLeased || 0);
           const failed = Number(row?.failed || 0);
           if (pendingOrLeased === 0 && failed === 0) {
-            const pending = await processPendingInforRawTransforms({ companyId: task.companyId, maxDaysPerTick: 2 });
+            const pending = await processPendingInforRawTransforms({ companyId: task.companyId, maxDaysPerTick: 1 });
             if (pending.failedDays > 0) {
               const details = joinErrorDetails(
                 pending.results.flatMap((result) => result.errors),
@@ -1452,7 +1479,7 @@ async function processTask(
       // Ingest finished this chunk but no single businessDateIso on the task (e.g. multi-day window).
       // Drain pending transform rows for this company so snapshots still materialize without manual replay.
       try {
-        const pending = await processPendingInforRawTransforms({ companyId: task.companyId, maxDaysPerTick: 10 });
+        const pending = await processPendingInforRawTransforms({ companyId: task.companyId, maxDaysPerTick: 2 });
         if (pending.failedDays > 0) {
           const details = joinErrorDetails(
             pending.results.flatMap((result) => result.errors),
@@ -1523,7 +1550,7 @@ async function processTask(
     taskPayload.deferDailySnapshotHydration === true
   ) {
     try {
-      const pending = await processPendingInforRawTransforms({ companyId: task.companyId, maxDaysPerTick: 25 });
+      const pending = await processPendingInforRawTransforms({ companyId: task.companyId, maxDaysPerTick: 3 });
       if (pending.failedDays > 0) {
         const details = joinErrorDetails(
           pending.results.flatMap((result) => result.errors),
@@ -1630,6 +1657,21 @@ export async function processQueueTick(requestUrl: string, workerSecret: string)
   let activeTickConcurrency = tickConcurrency;
   let cleanBatchStreak = 0;
   const results: Array<Record<string, unknown>> = [];
+  const resultStatusCounts = new Map<string, number>();
+
+  const recordResult = (result: { runId: string; taskId: string; status: string; details?: string }): void => {
+    const status = String(result.status || 'unknown');
+    resultStatusCounts.set(status, (resultStatusCounts.get(status) || 0) + 1);
+    if (results.length < MAX_RETAINED_TICK_RESULTS || status !== 'success') {
+      results.push({
+        runId: result.runId,
+        taskId: result.taskId,
+        status,
+        details: result.details ? String(result.details).slice(0, 500) : undefined,
+      });
+    }
+    while (results.length > MAX_RETAINED_TICK_RESULTS) results.shift();
+  };
 
   const failTimedOutRuns = async (): Promise<number> => {
     const staleMs = resolveRunStaleMinutes() * 60 * 1000;
@@ -1756,7 +1798,7 @@ export async function processQueueTick(requestUrl: string, workerSecret: string)
         const settledResult = settled[resultIndex];
         const task = batch[resultIndex];
         if (settledResult.status === 'fulfilled') {
-          results.push(settledResult.value);
+          recordResult(settledResult.value);
           if (
             settledResult.value.status === 'retry' ||
             settledResult.value.status === 'failed' ||
@@ -1769,7 +1811,7 @@ export async function processQueueTick(requestUrl: string, workerSecret: string)
             settledResult.reason instanceof Error
               ? settledResult.reason.message
               : 'Unknown queue task error';
-          results.push(await markTaskExecutionFailure(task, message));
+          recordResult(await markTaskExecutionFailure(task, message));
           pressureSignals += 1;
         }
       }
@@ -1797,6 +1839,7 @@ export async function processQueueTick(requestUrl: string, workerSecret: string)
     maxTasksPerTick,
     activeTickConcurrency,
     elapsedMs: Date.now() - tickStartedAt,
+    resultStatusCounts: Object.fromEntries(resultStatusCounts.entries()),
     results,
   };
 }
