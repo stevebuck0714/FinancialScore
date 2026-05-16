@@ -9760,6 +9760,16 @@ export default function OperationsTab({
       cashCoverageStart && cashCoverageEnd
         ? `${formatDateUtcMinus4(cashCoverageStart)} - ${formatDateUtcMinus4(cashCoverageEnd)}`
         : 'N/A';
+    const cashAccountAsOfDate = parseDateValue(summary.accountAsOfDate) || cashCoverageEnd;
+    const cashAccountCoverageStart = parseDateValue(summary.accountCoverageStart) || cashCoverageStart;
+    const cashAccountCoverageEnd = parseDateValue(summary.accountCoverageEnd) || cashCoverageEnd;
+    const cashAccountAsOfLabel = cashAccountAsOfDate
+      ? cashAccountAsOfDate.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })
+      : 'N/A';
+    const cashAccountCoverageLabel =
+      cashAccountCoverageStart && cashAccountCoverageEnd
+        ? `${formatDateUtcMinus4(cashAccountCoverageStart)} - ${formatDateUtcMinus4(cashAccountCoverageEnd)}`
+        : 'N/A';
     const startOfWeek = (date: Date): Date => {
       const d = new Date(date);
       const day = d.getDay(); // 0=Sun ... 6=Sat
@@ -10017,7 +10027,7 @@ export default function OperationsTab({
                 Bank Accounts
               </h3>
               <div style={{ marginBottom: '10px', fontSize: '11px', color: '#64748b' }}>
-                As of: {cashAsOfLabel} | Input Range (Current/Avg/Min/Max): {cashCoverageLabel}
+                As of: {cashAccountAsOfLabel} | Input Range (Current/Avg/Min/Max): {cashAccountCoverageLabel}
               </div>
               <div style={{ overflowX: 'auto' }}>
                 <table style={{ width: '100%', borderCollapse: 'collapse' }}>

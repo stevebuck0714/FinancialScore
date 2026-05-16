@@ -362,6 +362,74 @@ async function notifyQueueRunFailure(
   }
 }
 
+function errorToMessage(error: unknown, fallback: string): string {
+  return error instanceof Error && error.message ? error.message : fallback;
+}
+
+function joinErrorDetails(errors: unknown, fallback: string): string {
+  if (Array.isArray(errors) && errors.length > 0) {
+    return errors.map((entry) => String(entry || '').trim()).filter(Boolean).join(' | ') || fallback;
+  }
+  return fallback;
+}
+
+async function markRunPostProcessingFailure(
+  task: QueueTaskRecord & { run: QueueRunRecord },
+  stage: string,
+  details: string
+): Promise<void> {
+  const now = new Date();
+  const message = `Post-sync ${stage} failed: ${String(details || 'Unknown failure').slice(0, 1000)}`;
+  const truncated = message.slice(0, 1200);
+  const platform = String(task.run.platform || 'INFOR_M3') as AccountingPlatform;
+  const updated = await db().$transaction(async (tx) => {
+    const runUpdated = await tx.inforSyncRun.updateMany({
+      where: {
+        id: task.runId,
+        status: { in: ['running', 'done'] },
+      },
+      data: {
+        status: 'failed',
+        updatedAt: now,
+        finishedAt: now,
+        lastError: truncated,
+        message: 'Background sync post-processing failed.',
+      },
+    });
+    await tx.inforSyncTask.updateMany({
+      where: {
+        runId: task.runId,
+        status: { in: ['pending', 'leased'] },
+      },
+      data: {
+        status: 'cancelled',
+        finishedAt: now,
+        updatedAt: now,
+        lastError: truncated,
+        leaseOwner: null,
+        leaseExpiresAt: null,
+      },
+    });
+    await tx.inforSyncTask.updateMany({
+      where: { id: task.id },
+      data: {
+        lastError: truncated,
+        updatedAt: now,
+      },
+    });
+    return Number(runUpdated?.count || 0) > 0;
+  });
+
+  if (updated) {
+    await notifyQueueRunFailure(
+      task.companyId,
+      platform,
+      `Infor async queue post-processing failed: ${stage}`,
+      truncated
+    );
+  }
+}
+
 export function mapQueueRunToLegacy(run: QueueRunRecord): InforOperationalAsyncRun {
   return {
     syncRunId: run.id,
@@ -1336,13 +1404,21 @@ async function processTask(
           const pendingOrLeased = Number(row?.pendingOrLeased || 0);
           const failed = Number(row?.failed || 0);
           if (pendingOrLeased === 0 && failed === 0) {
-            await transformInforM3RawRun({
+            const transformed = await transformInforM3RawRun({
               companyId: task.companyId,
               syncRunId: task.runId,
               frequency: resolveTransformFrequency(task.run),
               businessDateIso,
               maxBusinessDates: 1,
             });
+            if (!transformed.success) {
+              const details = joinErrorDetails(
+                transformed.errors,
+                `Transform failed for business date ${businessDateIso}`
+              );
+              await markRunPostProcessingFailure(task, `snapshot hydration ${businessDateIso}`, details);
+              return { runId: task.runId, taskId: task.id, status: 'failed', details };
+            }
           }
         } else {
           const runStatusRows = await db().$queryRaw<Array<{ pendingOrLeased: bigint; failed: bigint }>>`
@@ -1356,19 +1432,39 @@ async function processTask(
           const pendingOrLeased = Number(row?.pendingOrLeased || 0);
           const failed = Number(row?.failed || 0);
           if (pendingOrLeased === 0 && failed === 0) {
-            await processPendingInforRawTransforms({ maxDaysPerTick: 2 });
+            const pending = await processPendingInforRawTransforms({ companyId: task.companyId, maxDaysPerTick: 2 });
+            if (pending.failedDays > 0) {
+              const details = joinErrorDetails(
+                pending.results.flatMap((result) => result.errors),
+                `Pending raw transform failed for ${pending.failedDays} day(s)`
+              );
+              await markRunPostProcessingFailure(task, 'pending snapshot hydration', details);
+              return { runId: task.runId, taskId: task.id, status: 'failed', details };
+            }
           }
         }
-      } catch {
-        // Snapshot hydration is best-effort; queue progress should not regress on hydration failures.
+      } catch (error) {
+        const details = errorToMessage(error, 'Snapshot hydration failed');
+        await markRunPostProcessingFailure(task, `snapshot hydration ${businessDateIso}`, details);
+        return { runId: task.runId, taskId: task.id, status: 'failed', details };
       }
     } else {
       // Ingest finished this chunk but no single businessDateIso on the task (e.g. multi-day window).
       // Drain pending transform rows for this company so snapshots still materialize without manual replay.
       try {
-        await processPendingInforRawTransforms({ companyId: task.companyId, maxDaysPerTick: 10 });
-      } catch {
-        // best-effort
+        const pending = await processPendingInforRawTransforms({ companyId: task.companyId, maxDaysPerTick: 10 });
+        if (pending.failedDays > 0) {
+          const details = joinErrorDetails(
+            pending.results.flatMap((result) => result.errors),
+            `Pending raw transform failed for ${pending.failedDays} day(s)`
+          );
+          await markRunPostProcessingFailure(task, 'pending snapshot hydration', details);
+          return { runId: task.runId, taskId: task.id, status: 'failed', details };
+        }
+      } catch (error) {
+        const details = errorToMessage(error, 'Pending snapshot hydration failed');
+        await markRunPostProcessingFailure(task, 'pending snapshot hydration', details);
+        return { runId: task.runId, taskId: task.id, status: 'failed', details };
       }
     }
   }
@@ -1396,16 +1492,26 @@ async function processTask(
       const tf = resolveTransformFrequency(task.run);
       for (const row of incompleteRows) {
         const businessDateIso = new Date(row.businessDate).toISOString().slice(0, 10);
-        await transformInforM3RawRun({
+        const transformed = await transformInforM3RawRun({
           companyId: task.companyId,
           syncRunId: task.runId,
           frequency: tf,
           businessDateIso,
           maxBusinessDates: 1,
         });
+        if (!transformed.success) {
+          const details = joinErrorDetails(
+            transformed.errors,
+            `Completion hydration failed for business date ${businessDateIso}`
+          );
+          await markRunPostProcessingFailure(task, `completion hydration ${businessDateIso}`, details);
+          return { runId: task.runId, taskId: task.id, status: 'failed', details };
+        }
       }
-    } catch {
-      // Completion hydration is best-effort and must not regress queue health.
+    } catch (error) {
+      const details = errorToMessage(error, 'Completion hydration failed');
+      await markRunPostProcessingFailure(task, 'completion hydration', details);
+      return { runId: task.runId, taskId: task.id, status: 'failed', details };
     }
   }
 
@@ -1417,29 +1523,48 @@ async function processTask(
     taskPayload.deferDailySnapshotHydration === true
   ) {
     try {
-      await processPendingInforRawTransforms({ companyId: task.companyId, maxDaysPerTick: 25 });
-    } catch {
-      // best-effort
+      const pending = await processPendingInforRawTransforms({ companyId: task.companyId, maxDaysPerTick: 25 });
+      if (pending.failedDays > 0) {
+        const details = joinErrorDetails(
+          pending.results.flatMap((result) => result.errors),
+          `Catch-all pending raw transform failed for ${pending.failedDays} day(s)`
+        );
+        await markRunPostProcessingFailure(task, 'catch-all snapshot hydration', details);
+        return { runId: task.runId, taskId: task.id, status: 'failed', details };
+      }
+    } catch (error) {
+      const details = errorToMessage(error, 'Catch-all snapshot hydration failed');
+      await markRunPostProcessingFailure(task, 'catch-all snapshot hydration', details);
+      return { runId: task.runId, taskId: task.id, status: 'failed', details };
     }
   }
 
   // Phase 2 sync: after any completed INFOR_M3 run, propagate the freshly-built
   // DailyFinancialSnapshot end-of-month rows into MonthlyFinancial.bs* columns
-  // and re-derive MonthlyFinancial P&L from GL truth. This keeps Data Review
-  // aligned with Daily Financials/Ops by construction, including after mapping
-  // changes. Best-effort: must never regress queue health.
+  // and re-derive MonthlyFinancial P&L from GL truth. This is part of sync
+  // completion; failures must surface instead of leaving reports stale.
   if (
     runCompletedInThisTask &&
     String(task.run.platform || '') === 'INFOR_M3'
   ) {
     try {
-      await syncErpDailyFinancialsFromGL({
+      const finalizer = await syncErpDailyFinancialsFromGL({
         companyId: task.companyId,
         rebuildDailySnapshots: false,
         syncMonthly: true,
       });
-    } catch {
-      // best-effort
+      if (!finalizer.ok) {
+        const details = JSON.stringify({
+          bsSync: finalizer.bsSync || null,
+          pnlSync: finalizer.pnlSync || null,
+        });
+        await markRunPostProcessingFailure(task, 'monthly financial report sync', details);
+        return { runId: task.runId, taskId: task.id, status: 'failed', details };
+      }
+    } catch (error) {
+      const details = errorToMessage(error, 'Monthly financial report sync failed');
+      await markRunPostProcessingFailure(task, 'monthly financial report sync', details);
+      return { runId: task.runId, taskId: task.id, status: 'failed', details };
     }
   }
 

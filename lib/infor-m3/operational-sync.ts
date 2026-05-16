@@ -2683,7 +2683,6 @@ async function saveCash(
     where: {
       companyId,
       targetField: { in: ['cash', 'otherCA'] },
-      accountClassification: { in: ['A', 'Asset', 'ASSET', 'asset'] },
     },
     select: {
       accountName: true,
@@ -9902,6 +9901,11 @@ export async function syncInforM3OperationalData(
               } as unknown as Prisma.InputJsonValue,
             },
           });
+          if (!dailySnapshotOutcome.written) {
+            errors.push(
+              `daily-financial-snapshot: ${message} ${dailySnapshotOutcome.reason || 'No DailyFinancialSnapshot row written.'}`
+            );
+          }
         }
       } catch (dailyPersistError) {
         const message =
@@ -10151,6 +10155,7 @@ export async function transformInforM3RawRun(options: {
 
     const rawSourceKeys = new Set<NonNullable<ReturnType<typeof resolveRawCompletenessSourceKey>>>();
     const completedSourceKeys = new Set<NonNullable<ReturnType<typeof resolveRawCompletenessSourceKey>>>();
+    const sourceErrorMessages = new Map<NonNullable<ReturnType<typeof resolveRawCompletenessSourceKey>>, string>();
     for (const item of Array.from(rawByModuleProgram.values())) {
       if (item.records.length === 0) continue;
       const sourceKey = resolveRawCompletenessSourceKey(item.moduleType);
@@ -10201,23 +10206,29 @@ export async function transformInforM3RawRun(options: {
         .filter((item) => item.moduleType === 'ar' && item.miProgram === 'SLARTRANS')
         .flatMap((item) => item.records);
       const arOpenSource = arCustDrfts.length > 0 ? arCustDrfts : arTrans;
-      if (arOpenSource.length > 0) {
-        recordsCreated += await saveAROpenInvoices(companyId, snapshotDate, frequency, arOpenSource, {
-          miProgram: arCustDrfts.length > 0 ? 'SLCUSTDRFTS' : 'SLARTRANS',
-          transaction: 'RAW_REPLAY',
-          resetSnapshot: true,
-        });
-        recordsCreated += await saveARAging(companyId, snapshotDate, frequency, arOpenSource);
-      }
-      if (arTrans.length > 0) {
-        recordsCreated += await saveARPayments(companyId, arTrans, {
-          miProgram: 'SLARTRANS',
-          transaction: 'RAW_REPLAY',
-        });
-        await upsertArContractSupportTables(companyId, snapshotDate, frequency);
-      }
-      if (arOpenSource.length > 0 || arTrans.length > 0) {
-        completedSourceKeys.add('ar');
+      try {
+        if (arOpenSource.length > 0) {
+          recordsCreated += await saveAROpenInvoices(companyId, snapshotDate, frequency, arOpenSource, {
+            miProgram: arCustDrfts.length > 0 ? 'SLCUSTDRFTS' : 'SLARTRANS',
+            transaction: 'RAW_REPLAY',
+            resetSnapshot: true,
+          });
+          recordsCreated += await saveARAging(companyId, snapshotDate, frequency, arOpenSource);
+        }
+        if (arTrans.length > 0) {
+          recordsCreated += await saveARPayments(companyId, arTrans, {
+            miProgram: 'SLARTRANS',
+            transaction: 'RAW_REPLAY',
+          });
+          await upsertArContractSupportTables(companyId, snapshotDate, frequency);
+        }
+        if (arOpenSource.length > 0 || arTrans.length > 0) {
+          completedSourceKeys.add('ar');
+        }
+      } catch (arError) {
+        const message = arError instanceof Error ? arError.message : 'AR raw replay failed';
+        sourceErrorMessages.set('ar', message);
+        errors.push(`${snapshotDate.toISOString().slice(0, 10)} ar: ${message}`);
       }
 
       const apPayments = Array.from(rawByModuleProgram.values())
@@ -10314,7 +10325,7 @@ export async function transformInforM3RawRun(options: {
         .filter((item) => String(item.miProgram || '').toUpperCase() === 'SLINVHDRS')
         .flatMap((item) => item.records);
       if (salesInvoiceHeaderRecords.length > 0) {
-        recordsCreated += await saveSalesInvoiceHeaders(
+        const invoiceHeaderRowsCreated = await saveSalesInvoiceHeaders(
           companyId,
           snapshotDate,
           frequency,
@@ -10325,6 +10336,10 @@ export async function transformInforM3RawRun(options: {
             resetSnapshot: true,
           }
         );
+        recordsCreated += invoiceHeaderRowsCreated;
+        if (invoiceHeaderRowsCreated > 0) {
+          completedSourceKeys.add('sales');
+        }
       }
       const slcoitemsRecords = salesProgramItems
         .filter((item) => String(item.miProgram || '').toUpperCase() === 'SLCOITEMS')
@@ -10378,20 +10393,31 @@ export async function transformInforM3RawRun(options: {
           const msg = psError instanceof Error ? psError.message : 'saveProductSales failed';
           errors.push(`transform/saveProductSales: ${msg}`);
         }
-        const contractPersistResult = await saveCustomerOrderLines(companyId, snapshotDate, frequency, slcoitemsRecords, {
-          miProgram: 'SLCOITEMS',
-          transaction: 'RAW_REPLAY',
-          resetSnapshot: true,
-          orderCustomerLookup,
-        });
-        recordsCreated += Number(contractPersistResult?.persisted || 0);
-        recordsCreated += await enrichCustomerOrderLineItemsFromRaw({
-          companyId,
-          snapshotDate,
-          frequency,
-          syncRunId,
-        });
-        await upsertArContractSupportTables(companyId, snapshotDate, frequency);
+        try {
+          const contractPersistResult = await saveCustomerOrderLines(companyId, snapshotDate, frequency, slcoitemsRecords, {
+            miProgram: 'SLCOITEMS',
+            transaction: 'RAW_REPLAY',
+            resetSnapshot: true,
+            orderCustomerLookup,
+          });
+          recordsCreated += Number(contractPersistResult?.persisted || 0);
+          recordsCreated += await enrichCustomerOrderLineItemsFromRaw({
+            companyId,
+            snapshotDate,
+            frequency,
+            syncRunId,
+          });
+          await upsertArContractSupportTables(companyId, snapshotDate, frequency);
+          completedSourceKeys.add('sales');
+        } catch (salesError) {
+          const msg = salesError instanceof Error ? salesError.message : 'saveCustomerOrderLines failed';
+          sourceErrorMessages.set('sales', msg);
+          errors.push(`${snapshotDate.toISOString().slice(0, 10)} sales: ${msg}`);
+        }
+      } else if (salesProgramItems.length > 0) {
+        // SLCos/SLCoHdrs can be lookup-only context for later SLCoitems pages.
+        // If a day has sales raw but no output-producing sales IDO, do not mark
+        // it as a transform failure.
         completedSourceKeys.add('sales');
       }
 
@@ -10429,6 +10455,7 @@ export async function transformInforM3RawRun(options: {
         const sourceKey = String(row.sourceKey || '') as NonNullable<ReturnType<typeof resolveRawCompletenessSourceKey>>;
         const didComplete = completedSourceKeys.has(sourceKey);
         const sawRawInput = rawSourceKeys.has(sourceKey);
+        const sourceError = sourceErrorMessages.get(sourceKey);
         await (prisma as any).inforRawCompleteness.updateMany({
           where: {
             companyId,
@@ -10441,6 +10468,8 @@ export async function transformInforM3RawRun(options: {
             isComplete: didComplete,
             statusMessage: didComplete
               ? 'transformed'
+              : sourceError
+                ? `transform_failed:${String(sourceError).slice(0, 220)}`
               : sawRawInput
                 ? `transform_failed:${sourceKey}_output_missing`
                 : `raw_missing:${sourceKey}_inputs`,

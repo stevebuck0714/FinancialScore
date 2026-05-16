@@ -6216,13 +6216,17 @@ export async function GET(request: NextRequest) {
         //
         // The Daily Financials tab already renders this same value; this
         // change unifies the two surfaces so they never disagree.
+        const cashDateFilter = {
+          gte: startDate,
+          lte: endDate,
+        };
         const cashSnapshotDelegate = (prisma as any).dailyFinancialSnapshot;
         const dailyCashRows = cashSnapshotDelegate
           ? await cashSnapshotDelegate.findMany({
               where: {
                 companyId,
                 frequency: 'daily',
-                snapshotDate: dateFilter,
+                snapshotDate: cashDateFilter,
               },
               orderBy: { snapshotDate: 'asc' },
               select: {
@@ -6268,11 +6272,9 @@ export async function GET(request: NextRequest) {
 
         // Emit one synthetic "Total Cash" row per period. The trend chart
         // sums `cashBalance` per snapshotDate, so a single row per date
-        // produces the correct total. The per-account breakdown collapses
-        // to a single entry — acceptable since the underlying GL-derived
-        // total already nets across every cash-mapped account and we no
-        // longer pretend to publish per-bank-account daily values from a
-        // source that wasn't reliable for them.
+        // produces the correct total. Bank-account rows are sourced
+        // separately from CashSnapshot below so the table can still show the
+        // per-account breakdown.
         data = Array.from(periodLatest.values())
           .sort((a, b) => a.snapshotDate.getTime() - b.snapshotDate.getTime())
           .map((entry) => ({
@@ -6282,6 +6284,56 @@ export async function GET(request: NextRequest) {
             accountId: null as string | null,
             accountNumber: null as string | null,
           }));
+
+        const rawAccountCashRows = await prisma.cashSnapshot.findMany({
+          where: {
+            companyId,
+            frequency: 'daily',
+            snapshotDate: cashDateFilter,
+          },
+          orderBy: [{ snapshotDate: 'asc' }, { accountName: 'asc' }],
+          select: {
+            snapshotDate: true,
+            accountName: true,
+            cashBalance: true,
+            accountId: true,
+            accountNumber: true,
+          },
+          take: Math.max(limit * 100, 10000),
+        });
+        const accountPeriodLatest = new Map<
+          string,
+          {
+            snapshotDate: Date;
+            accountName: string;
+            cashBalance: number;
+            accountId: string | null;
+            accountNumber: string | null;
+          }
+        >();
+        for (const row of rawAccountCashRows) {
+          const snapshotDate = new Date(row.snapshotDate);
+          const accountKey =
+            accountKeyFromParts(row.accountId, row.accountNumber, row.accountName) ||
+            `name:${normalizeAccountNameForKey(String(row.accountName || 'Cash Account'))}`;
+          if (!accountKey) continue;
+          const key = `${toCashPeriodKey(snapshotDate)}||${accountKey}`;
+          const existing = accountPeriodLatest.get(key);
+          if (!existing || existing.snapshotDate.getTime() <= snapshotDate.getTime()) {
+            accountPeriodLatest.set(key, {
+              snapshotDate,
+              accountName: String(row.accountName || row.accountNumber || row.accountId || 'Cash Account'),
+              cashBalance: Number(row.cashBalance || 0),
+              accountId: row.accountId || null,
+              accountNumber: row.accountNumber || row.accountId || null,
+            });
+          }
+        }
+        const accountCashRows = Array.from(accountPeriodLatest.values()).sort(
+          (a, b) =>
+            a.snapshotDate.getTime() - b.snapshotDate.getTime() ||
+            a.accountName.localeCompare(b.accountName)
+        );
 
         console.log(`💰 Cash API - frequency: ${frequency}, records returned: ${data.length}`);
 
@@ -6318,16 +6370,40 @@ export async function GET(request: NextRequest) {
               ? 999
               : null;
 
-        const balancesByAccount: Record<string, number[]> = {};
-        for (const record of cashRows) {
-          const key = record.accountName;
-          if (!balancesByAccount[key]) balancesByAccount[key] = [];
-          balancesByAccount[key].push(record.cashBalance);
+        const latestAccountTs =
+          accountCashRows.length > 0
+            ? Math.max(...accountCashRows.map((record) => record.snapshotDate.getTime()))
+            : null;
+        const latestAccountRows = accountCashRows.filter(
+          (record) => latestAccountTs != null && record.snapshotDate.getTime() === latestAccountTs
+        );
+        const accountCoverageDates = Array.from(
+          new Set(accountCashRows.map((record) => record.snapshotDate.getTime()))
+        ).sort((a, b) => a - b);
+        const balancesByAccount: Record<string, { name: string; balances: number[]; currentBalance: number }> = {};
+        for (const record of accountCashRows) {
+          const key =
+            accountKeyFromParts(record.accountId, record.accountNumber, record.accountName) ||
+            `name:${normalizeAccountNameForKey(record.accountName)}`;
+          if (!balancesByAccount[key]) {
+            balancesByAccount[key] = {
+              name: record.accountName,
+              balances: [],
+              currentBalance: 0,
+            };
+          }
+          balancesByAccount[key].balances.push(record.cashBalance);
         }
-        const accountSummaries = Object.entries(balancesByAccount)
-          .map(([name, balances]) => ({
+        for (const record of latestAccountRows) {
+          const key =
+            accountKeyFromParts(record.accountId, record.accountNumber, record.accountName) ||
+            `name:${normalizeAccountNameForKey(record.accountName)}`;
+          if (balancesByAccount[key]) balancesByAccount[key].currentBalance = record.cashBalance;
+        }
+        const accountSummaries = Object.values(balancesByAccount)
+          .map(({ name, balances, currentBalance }) => ({
             accountName: name,
-            currentBalance: latestCash.find((r) => r.accountName === name)?.cashBalance || 0,
+            currentBalance,
             avgBalance: balances.length
               ? balances.reduce((sum, b) => sum + b, 0) / balances.length
               : 0,
@@ -6342,8 +6418,15 @@ export async function GET(request: NextRequest) {
           changePercent,
           runwayWeeks: estimatedRunwayWeeks,
           runwaySource: estimatedRunwayWeeks !== null ? 'derived_from_cash_change' : 'unavailable',
-          accountCount: latestCash.length,
+          accountCount: latestAccountRows.length,
           accounts: accountSummaries,
+          accountAsOfDate: latestAccountTs ? new Date(latestAccountTs).toISOString() : null,
+          accountCoverageStart:
+            accountCoverageDates.length > 0 ? new Date(accountCoverageDates[0]).toISOString() : null,
+          accountCoverageEnd:
+            accountCoverageDates.length > 0
+              ? new Date(accountCoverageDates[accountCoverageDates.length - 1]).toISOString()
+              : null,
           avgTotalCash:
             data.length > 0 ? data.reduce((sum, r) => sum + r.cashBalance, 0) / data.length : 0,
           dailyTotalCash:
