@@ -876,7 +876,7 @@ function buildSectorAwareFallback(params: {
       cleanBullets.map((b) => `- ${b.text}`).join('\n'),
     citedBullets: cleanBullets,
     howThisImpactsUs:
-      profile.promptRules.sectorGuidance || 'Use the sector-specific operating modules to prioritize follow-up actions and avoid unrelated operating topics.',
+      'These items can affect project margin, cash timing, collections, and forecast accuracy. Prioritize the named actions before the next project review.',
     sources,
   };
 }
@@ -1086,6 +1086,7 @@ async function generateAskJson(params: {
         'Do not analyze operating topics that are not appropriate for the company sector unless explicit facts are present in sectorOperationalContext.',
         'When sectorOperationalContext.issueSummaries are present, use them as grounded evidence to infer the practical answer. Do not merely describe that sector data exists.',
         'For questions asking whether there are issues, problems, risks, or things to watch, answer directly with the specific issues and recommended actions. Do not lead with source provenance, module names, or instructions to review other pages.',
+        'Never quote internal sector guidance, allowed/blocked topic rules, or module-selection instructions in the user-facing answer.',
         'When describing month-over-month changes, use internalSummary.monthlyChanges.direction and values.',
         'If the user asks for a list of N items, provide N items directly (no referrals to other sites).',
         'Use conversation context for follow-up questions (for example: "that", "it", "compare this to last answer").',
@@ -1185,6 +1186,7 @@ async function generateAskJson(params: {
         '- Use internal summary for company-specific metrics when applicable.',
         '- For sector-specific operating questions, infer the answer from sectorOperationalContext and issueSummaries. Lead with the actual issue/action, not where the data came from.',
         '- If the question names a specific operating entity, prioritize issueSummaries and matching entitySearchHints for that entity.',
+        '- Do not include internal sector guidance text, allowed/blocked topic rules, or module-selection instructions in shortAnswer, longAnswer, citedBullets, or howThisImpactsUs.',
         '- For peer/market questions, explicitly reference the company industry in the answer.',
         '- Avoid generic statements; cite specific peer commentary from sources when available.',
         '- If the query is marked as externalQuery and no external sources are available, say so clearly and avoid speculation.',
