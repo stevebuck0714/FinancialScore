@@ -152,6 +152,9 @@ export default function AccountMappingTable({
     const normalizedAccountName = (accountName || '').trim().toLowerCase();
     const compact = normalized.replace(/[\s_-]+/g, '');
     const compactAccountName = normalizedAccountName.replace(/[\s_-]+/g, '');
+    if (normalized.includes('non-operating') || normalized.includes('non operating') || compact.includes('nonoperating')) {
+      return 'nonOperating';
+    }
     const isLineOfCreditAccount =
       normalizedAccountName.includes('line of credit') ||
       normalizedAccountName.includes('credit line') ||
