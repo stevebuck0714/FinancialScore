@@ -1964,6 +1964,8 @@ function FinancialScorePage() {
     if (compact === 'O') return 'Other';
     if (compact === 'Q') return 'Equity';
     if (compact === 'EQUITY') return 'Equity';
+    if (compact === 'ASSET' || compact === 'ASSETS') return 'Asset';
+    if (compact === 'LIABILITY' || compact === 'LIABILITIES') return 'Liability';
     if (compact.includes('NON-OPERATING') || compact.includes('NON OPERATING')) return 'Non-Operating Income & Expense';
     if (compact === 'INCOME') return 'Revenue';
     return raw;
@@ -1977,46 +1979,20 @@ function FinancialScorePage() {
     if (compact === 'R' || compact === 'INCOME' || compact === 'REVENUE') return 'Revenue';
     if (compact === 'C' || compact.includes('COST OF GOODS') || compact.includes('COST OF SALES') || compact === 'COGS') return 'Cost of Goods Sold';
     if (compact === 'E' || compact === 'EXPENSE') return 'Expense';
-    if (compact === 'A' || compact === 'ASSET') return 'Asset';
-    if (compact === 'L' || compact === 'LIABILITY') return 'Liability';
+    if (compact === 'A' || compact === 'ASSET' || compact === 'ASSETS') return 'Asset';
+    if (compact === 'L' || compact === 'LIABILITY' || compact === 'LIABILITIES') return 'Liability';
     if (compact === 'Q' || compact === 'EQUITY') return 'Equity';
     return 'Other';
   };
 
-  const getAccountReviewClassificationOptionValue = (mappingOrAccount: any, fallback?: unknown): string => {
-    const rawName = String(mappingOrAccount?.accountName || mappingOrAccount?.description || mappingOrAccount?.name || '').toLowerCase();
-    const compactName = rawName.replace(/[\s_-]+/g, '');
-    if (
-      rawName.includes('line of credit') ||
-      rawName.includes('credit line') ||
-      rawName.includes('revolver') ||
-      compactName.includes('lineofcredit') ||
-      compactName.includes('creditline')
-    ) {
-      return 'Liability';
-    }
+  const getAccountReviewClassificationOptionValue = (_mappingOrAccount: any, fallback?: unknown): string => {
     return getClassificationOptionValue(fallback);
   };
 
   const normalizeAccountMappingForSave = (mapping: any) => {
-    const rawName = String(mapping?.accountName || mapping?.description || mapping?.name || '').toLowerCase();
-    const compactName = rawName.replace(/[\s_-]+/g, '');
-    const isLineOfCredit =
-      rawName.includes('line of credit') ||
-      rawName.includes('credit line') ||
-      rawName.includes('revolver') ||
-      compactName.includes('lineofcredit') ||
-      compactName.includes('creditline');
-    if (!isLineOfCredit) {
-      return {
-        ...mapping,
-        targetField: normalizeMappingTargetField(mapping?.targetField),
-      };
-    }
     return {
       ...mapping,
-      accountClassification: encodeManualClassification('Liability'),
-      targetField: 'loc',
+      targetField: normalizeMappingTargetField(mapping?.targetField),
     };
   };
 
@@ -17336,9 +17312,9 @@ function FinancialScorePage() {
                                 };
                               })
                               .sort((a: any, b: any) => compareAccountReviewRows(a.sortRow, b.sortRow))
-                              .map(({ mapping, originalIndex, latestValue, displayAccountCode, resolvedQboClassId, selectedTypeOption, typeOverrideValues }: any, idx: number) => {
+                              .map(({ mapping, originalIndex, latestValue, displayAccountCode, resolvedQboClassId, selectedTypeOption, typeOverrideValues }: any) => {
                               return (
-                              <tr key={`api-${mapping.accountId || mapping.accountName || idx}`} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                              <tr key={`api-${originalIndex}-${mapping.accountId || mapping.accountCode || mapping.accountName || 'account'}`} style={{ borderBottom: '1px solid #f1f5f9' }}>
                                 <td style={{ padding: '6px 8px', color: '#64748b', fontSize: '11px' }}>
                                   <select
                                     value={selectedTypeOption}
