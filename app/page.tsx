@@ -1981,6 +1981,55 @@ function FinancialScorePage() {
     return 'Other';
   };
 
+  const getAccountReviewClassificationOptionValue = (mappingOrAccount: any, fallback?: unknown): string => {
+    const rawName = String(mappingOrAccount?.accountName || mappingOrAccount?.description || mappingOrAccount?.name || '').toLowerCase();
+    const compactName = rawName.replace(/[\s_-]+/g, '');
+    if (
+      rawName.includes('line of credit') ||
+      rawName.includes('credit line') ||
+      rawName.includes('revolver') ||
+      compactName.includes('lineofcredit') ||
+      compactName.includes('creditline')
+    ) {
+      return 'Liability';
+    }
+    return getClassificationOptionValue(fallback);
+  };
+
+  const normalizeAccountMappingForSave = (mapping: any) => {
+    const rawName = String(mapping?.accountName || mapping?.description || mapping?.name || '').toLowerCase();
+    const compactName = rawName.replace(/[\s_-]+/g, '');
+    const isLineOfCredit =
+      rawName.includes('line of credit') ||
+      rawName.includes('credit line') ||
+      rawName.includes('revolver') ||
+      compactName.includes('lineofcredit') ||
+      compactName.includes('creditline');
+    if (!isLineOfCredit) {
+      return {
+        ...mapping,
+        targetField: normalizeMappingTargetField(mapping?.targetField),
+      };
+    }
+    return {
+      ...mapping,
+      accountClassification: encodeManualClassification('Liability'),
+      targetField: 'loc',
+    };
+  };
+
+  const toggleAccountReviewSort = (key: 'type' | 'account' | 'description' | 'value') => {
+    setAccountReviewSort((prev) => ({
+      key,
+      direction: prev.key === key && prev.direction === 'asc' ? 'desc' : 'asc',
+    }));
+  };
+
+  const accountReviewSortLabel = (key: 'type' | 'account' | 'description' | 'value') => {
+    if (accountReviewSort.key !== key) return '↕';
+    return accountReviewSort.direction === 'asc' ? '↑' : '↓';
+  };
+
   const normalizeMappingsForUi = (mappings: any[]): any[] =>
     (Array.isArray(mappings) ? mappings : []).map((m: any) => {
       const normalizedId = String(m?.accountId || '').trim();
@@ -2247,10 +2296,7 @@ function FinancialScorePage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           companyId: currentCompany.id,
-          mappings: aiMappings.map((m: any) => ({
-            ...m,
-            targetField: normalizeMappingTargetField(m?.targetField),
-          })),
+          mappings: aiMappings.map((m: any) => normalizeAccountMappingForSave(m)),
           linesOfBusiness: linesOfBusiness
         })
       });
@@ -2786,6 +2832,10 @@ function FinancialScorePage() {
   const [qbRawData, setQbRawData] = useState<any>(null);
   const [accountReviewRawData, setAccountReviewRawData] = useState<any>(null);
   const [accountReviewApiValues, setAccountReviewApiValues] = useState<Record<string, number>>({});
+  const [accountReviewSort, setAccountReviewSort] = useState<{ key: 'type' | 'account' | 'description' | 'value'; direction: 'asc' | 'desc' }>({
+    key: 'account',
+    direction: 'asc',
+  });
   const companyLoadRequestRef = useRef(0);
   const sdeRecommendationsRequestRef = useRef(0);
   const performanceAutoRunInFlightRef = useRef<Set<string>>(new Set());
@@ -16606,11 +16656,11 @@ function FinancialScorePage() {
                     <table style={{ width: '100%', fontSize: '12px', borderCollapse: 'collapse' }}>
                       <thead style={{ position: 'sticky', top: 0, background: '#f8fafc', zIndex: 1 }}>
                         <tr style={{ borderBottom: '2px solid #e2e8f0' }}>
-                          <th style={{ textAlign: 'left', padding: '8px', fontWeight: '600', color: '#475569', minWidth: '80px' }}>Type</th>
-                          <th style={{ textAlign: 'left', padding: '8px', fontWeight: '600', color: '#475569', minWidth: '60px' }}>Acct #</th>
-                          <th style={{ textAlign: 'left', padding: '8px', fontWeight: '600', color: '#475569', minWidth: '200px' }}>Description</th>
-                          <th style={{ textAlign: 'right', padding: '8px', fontWeight: '600', color: '#475569', minWidth: '130px' }}>
-                            {latestAccountReviewMonthLabel ? `Latest Value (${latestAccountReviewMonthLabel})` : 'Latest Value'}
+                          <th onClick={() => toggleAccountReviewSort('type')} style={{ textAlign: 'left', padding: '8px', fontWeight: '600', color: '#475569', minWidth: '80px', cursor: 'pointer', userSelect: 'none' }}>Type {accountReviewSortLabel('type')}</th>
+                          <th onClick={() => toggleAccountReviewSort('account')} style={{ textAlign: 'left', padding: '8px', fontWeight: '600', color: '#475569', minWidth: '60px', cursor: 'pointer', userSelect: 'none' }}>Acct # {accountReviewSortLabel('account')}</th>
+                          <th onClick={() => toggleAccountReviewSort('description')} style={{ textAlign: 'left', padding: '8px', fontWeight: '600', color: '#475569', minWidth: '200px', cursor: 'pointer', userSelect: 'none' }}>Description {accountReviewSortLabel('description')}</th>
+                          <th onClick={() => toggleAccountReviewSort('value')} style={{ textAlign: 'right', padding: '8px', fontWeight: '600', color: '#475569', minWidth: '130px', cursor: 'pointer', userSelect: 'none' }}>
+                            {latestAccountReviewMonthLabel ? `Latest Value (${latestAccountReviewMonthLabel})` : 'Latest Value'} {accountReviewSortLabel('value')}
                           </th>
                         </tr>
                       </thead>
@@ -16638,6 +16688,33 @@ function FinancialScorePage() {
                             const idCompare = a.raw.localeCompare(b.raw, undefined, { numeric: true, sensitivity: 'base' });
                             if (idCompare !== 0) return idCompare;
                             return String(aName || '').localeCompare(String(bName || ''), undefined, { sensitivity: 'base' });
+                          };
+                          const compareText = (a: unknown, b: unknown): number =>
+                            String(a || '').localeCompare(String(b || ''), undefined, { numeric: true, sensitivity: 'base' });
+                          const compareNullableNumber = (a: unknown, b: unknown): number => {
+                            const aNum = typeof a === 'number' && Number.isFinite(a) ? a : null;
+                            const bNum = typeof b === 'number' && Number.isFinite(b) ? b : null;
+                            if (aNum === null && bNum === null) return 0;
+                            if (aNum === null) return 1;
+                            if (bNum === null) return -1;
+                            return aNum - bNum;
+                          };
+                          const compareAccountReviewRows = (
+                            a: { type: string; account: string; description: string; value: number | null },
+                            b: { type: string; account: string; description: string; value: number | null }
+                          ): number => {
+                            const direction = accountReviewSort.direction === 'desc' ? -1 : 1;
+                            let result = 0;
+                            if (accountReviewSort.key === 'type') {
+                              result = compareText(a.type, b.type) || compareByIdThenName(a.account, b.account, a.description, b.description);
+                            } else if (accountReviewSort.key === 'account') {
+                              result = compareByIdThenName(a.account, b.account, a.description, b.description);
+                            } else if (accountReviewSort.key === 'description') {
+                              result = compareText(a.description, b.description) || compareByIdThenName(a.account, b.account, a.description, b.description);
+                            } else {
+                              result = compareNullableNumber(a.value, b.value) || compareByIdThenName(a.account, b.account, a.description, b.description);
+                            }
+                            return result * direction;
                           };
                           const parseAmount = (raw: unknown): number => {
                             if (typeof raw === 'number') return Number.isFinite(raw) ? raw : 0;
@@ -16997,10 +17074,7 @@ function FinancialScorePage() {
                                 });
                               }
                               return [...(csvTrialBalanceData.accounts || [])]
-                                .sort((a: any, b: any) =>
-                                  compareByIdThenName(a?.acctId, b?.acctId, a?.description, b?.description)
-                                )
-                                .map((account: any, idx: number) => {
+                                .map((account: any, originalRowIndex: number) => {
                                 const validDates = csvTrialBalanceData.dates?.filter((d: string) => d && d.trim() !== '') || [];
                                 const latestDate = validDates[validDates.length - 1];
                                 let latestValue = 0;
@@ -17057,14 +17131,33 @@ function FinancialScorePage() {
                                   account.description,
                                 );
                                 const selectedTypeOption = matchedMapping
-                                  ? getClassificationOptionValue(
+                                  ? getAccountReviewClassificationOptionValue(
+                                      matchedMapping,
                                       matchedMapping.accountClassification ||
                                         matchedMapping.sourceStatus ||
                                         csvAcctTypeRaw
                                     )
-                                  : getClassificationOptionValue(csvAcctTypeRaw);
+                                  : getAccountReviewClassificationOptionValue(account, csvAcctTypeRaw);
+                                return {
+                                  account,
+                                  originalRowIndex,
+                                  latestValue,
+                                  matchedMappingIndex,
+                                  csvAcctTypeRaw,
+                                  idColumnDisplay,
+                                  selectedTypeOption,
+                                  sortRow: {
+                                    type: selectedTypeOption,
+                                    account: idColumnDisplay || csvAcctId || '',
+                                    description: String(account.description || ''),
+                                    value: latestValue,
+                                  },
+                                };
+                              })
+                                .sort((a: any, b: any) => compareAccountReviewRows(a.sortRow, b.sortRow))
+                                .map(({ account, originalRowIndex, latestValue, matchedMappingIndex, csvAcctTypeRaw, idColumnDisplay, selectedTypeOption }: any) => {
                                 return (
-                                  <tr key={`csv-${idx}`} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                                  <tr key={`csv-${originalRowIndex}`} style={{ borderBottom: '1px solid #f1f5f9' }}>
                                     <td style={{ padding: '6px 8px', color: '#64748b', fontSize: '11px' }}>
                                       {matchedMappingIndex >= 0 ? (
                                         <select
@@ -17116,58 +17209,67 @@ function FinancialScorePage() {
                               });
                             })()
                           : aiMappings
-                              .map((mapping: any, originalIndex: number) => ({ mapping, originalIndex }))
-                              .sort((a, b) =>
-                                compareByIdThenName(
-                                  getDisplayAccountCode(a.mapping),
-                                  getDisplayAccountCode(b.mapping),
-                                  a.mapping?.accountName,
-                                  b.mapping?.accountName
-                                )
-                              )
-                              .map(({ mapping, originalIndex }, idx: number) => {
-                              const idRaw = String(mapping.accountId || '').trim();
-                              const codeRaw = String(mapping.accountCode || '').trim();
-                              const nameRaw = String(mapping.accountName || '').trim();
-                              const displayAccountCode = getDisplayAccountCode(mapping);
-                              const resolvedQboClassId =
-                                idRaw ||
-                                (isQboCompany ? String(qboAccountIdsByName.get(nameRaw.toLowerCase()) || '').trim() : '');
-                              const idNormalized = idRaw.toLowerCase().replace(/[^a-z0-9]/g, '');
-                              const codeNormalized = codeRaw.toLowerCase().replace(/[^a-z0-9]/g, '');
-                              const resolvedNormalized = resolvedQboClassId.toLowerCase().replace(/[^a-z0-9]/g, '');
-                              const nameKey = nameRaw.toLowerCase();
-                              const targetLookupKey = normalizeMappingTargetField(mapping?.targetField)
-                                .toLowerCase()
-                                .replace(/[^a-z0-9]/g, '');
-                              const byId = idRaw ? mergedValues.get(`id:${idRaw}`) : undefined;
-                              const byCode = codeRaw ? mergedValues.get(`id:${codeRaw}`) : undefined;
-                              const byResolved = resolvedQboClassId ? mergedValues.get(`id:${resolvedQboClassId}`) : undefined;
-                              const byIdNormalized = idNormalized ? mergedValues.get(`id:${idNormalized}`) : undefined;
-                              const byCodeNormalized = codeNormalized ? mergedValues.get(`id:${codeNormalized}`) : undefined;
-                              const byResolvedNormalized = resolvedNormalized ? mergedValues.get(`id:${resolvedNormalized}`) : undefined;
-                              const byName = nameKey ? mergedValues.get(`name:${nameKey}`) : undefined;
-                              const byTarget = targetLookupKey ? mergedValues.get(`target:${targetLookupKey}`) : undefined;
-                              const byMappedField = getLatestValueByTargetField(
-                                mapping?.targetField,
-                                mapping?.accountClassification || mapping?.sourceStatus
-                              );
-                              const latestValue =
-                                byId !== undefined ? byId :
-                                byCode !== undefined ? byCode :
-                                byResolved !== undefined ? byResolved :
-                                byIdNormalized !== undefined ? byIdNormalized :
-                                byCodeNormalized !== undefined ? byCodeNormalized :
-                                byResolvedNormalized !== undefined ? byResolvedNormalized :
-                                byName !== undefined ? byName :
-                                byTarget !== undefined ? byTarget :
-                                byMappedField !== undefined ? byMappedField :
-                                null;
+                              .map((mapping: any, originalIndex: number) => {
+                                const idRaw = String(mapping.accountId || '').trim();
+                                const codeRaw = String(mapping.accountCode || '').trim();
+                                const nameRaw = String(mapping.accountName || '').trim();
+                                const displayAccountCode = getDisplayAccountCode(mapping);
+                                const resolvedQboClassId =
+                                  idRaw ||
+                                  (isQboCompany ? String(qboAccountIdsByName.get(nameRaw.toLowerCase()) || '').trim() : '');
+                                const idNormalized = idRaw.toLowerCase().replace(/[^a-z0-9]/g, '');
+                                const codeNormalized = codeRaw.toLowerCase().replace(/[^a-z0-9]/g, '');
+                                const resolvedNormalized = resolvedQboClassId.toLowerCase().replace(/[^a-z0-9]/g, '');
+                                const nameKey = nameRaw.toLowerCase();
+                                const targetLookupKey = normalizeMappingTargetField(mapping?.targetField)
+                                  .toLowerCase()
+                                  .replace(/[^a-z0-9]/g, '');
+                                const byId = idRaw ? mergedValues.get(`id:${idRaw}`) : undefined;
+                                const byCode = codeRaw ? mergedValues.get(`id:${codeRaw}`) : undefined;
+                                const byResolved = resolvedQboClassId ? mergedValues.get(`id:${resolvedQboClassId}`) : undefined;
+                                const byIdNormalized = idNormalized ? mergedValues.get(`id:${idNormalized}`) : undefined;
+                                const byCodeNormalized = codeNormalized ? mergedValues.get(`id:${codeNormalized}`) : undefined;
+                                const byResolvedNormalized = resolvedNormalized ? mergedValues.get(`id:${resolvedNormalized}`) : undefined;
+                                const byName = nameKey ? mergedValues.get(`name:${nameKey}`) : undefined;
+                                const byTarget = targetLookupKey ? mergedValues.get(`target:${targetLookupKey}`) : undefined;
+                                const byMappedField = getLatestValueByTargetField(
+                                  mapping?.targetField,
+                                  mapping?.accountClassification || mapping?.sourceStatus
+                                );
+                                const latestValue =
+                                  byId !== undefined ? byId :
+                                  byCode !== undefined ? byCode :
+                                  byResolved !== undefined ? byResolved :
+                                  byIdNormalized !== undefined ? byIdNormalized :
+                                  byCodeNormalized !== undefined ? byCodeNormalized :
+                                  byResolvedNormalized !== undefined ? byResolvedNormalized :
+                                  byName !== undefined ? byName :
+                                  byTarget !== undefined ? byTarget :
+                                  byMappedField !== undefined ? byMappedField :
+                                  null;
+                                const selectedTypeOption = getAccountReviewClassificationOptionValue(mapping, mapping.accountClassification || mapping.sourceStatus || '');
+                                return {
+                                  mapping,
+                                  originalIndex,
+                                  latestValue,
+                                  displayAccountCode,
+                                  resolvedQboClassId,
+                                  selectedTypeOption,
+                                  sortRow: {
+                                    type: selectedTypeOption,
+                                    account: displayAccountCode || '',
+                                    description: String(mapping.accountName || ''),
+                                    value: latestValue,
+                                  },
+                                };
+                              })
+                              .sort((a: any, b: any) => compareAccountReviewRows(a.sortRow, b.sortRow))
+                              .map(({ mapping, originalIndex, latestValue, displayAccountCode, resolvedQboClassId, selectedTypeOption }: any, idx: number) => {
                               return (
                               <tr key={`api-${mapping.accountId || mapping.accountName || idx}`} style={{ borderBottom: '1px solid #f1f5f9' }}>
                                 <td style={{ padding: '6px 8px', color: '#64748b', fontSize: '11px' }}>
                                   <select
-                                    value={getClassificationOptionValue(mapping.accountClassification || mapping.sourceStatus || '')}
+                                    value={selectedTypeOption}
                                     onChange={(e) => {
                                       const selected = e.target.value;
                                       setAiMappings((prev) => {

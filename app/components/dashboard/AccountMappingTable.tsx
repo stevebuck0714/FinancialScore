@@ -60,7 +60,8 @@ export default function AccountMappingTable({
     nonOperating: false,
     asset: false,
     liability: false,
-    equity: false
+    equity: false,
+    other: false
   });
 
   const [openTargetFieldDropdown, setOpenTargetFieldDropdown] = useState<number | null>(null);
@@ -151,6 +152,13 @@ export default function AccountMappingTable({
     const normalizedAccountName = (accountName || '').trim().toLowerCase();
     const compact = normalized.replace(/[\s_-]+/g, '');
     const compactAccountName = normalizedAccountName.replace(/[\s_-]+/g, '');
+    const isLineOfCreditAccount =
+      normalizedAccountName.includes('line of credit') ||
+      normalizedAccountName.includes('credit line') ||
+      normalizedAccountName.includes('revolver') ||
+      compactAccountName.includes('lineofcredit') ||
+      compactAccountName.includes('creditline');
+    if (isLineOfCreditAccount) return 'liability';
     // Support compact accounting-system codes used by some connectors.
     if (normalized === 'r') return 'revenue';
     if (normalized === 'e') return 'expense';
@@ -339,7 +347,8 @@ export default function AccountMappingTable({
     nonOperating: sortMappingsByClassId(mappings.filter(m => getGroupingClassification(m) === 'nonOperating' && isActionable(m))),
     asset: sortMappingsByClassId(mappings.filter(m => getGroupingClassification(m) === 'asset' && isActionable(m))),
     liability: sortMappingsByClassId(mappings.filter(m => getGroupingClassification(m) === 'liability' && isActionable(m))),
-    equity: sortMappingsByClassId(mappings.filter(m => getGroupingClassification(m) === 'equity' && isActionable(m)))
+    equity: sortMappingsByClassId(mappings.filter(m => getGroupingClassification(m) === 'equity' && isActionable(m))),
+    other: sortMappingsByClassId(mappings.filter(m => getGroupingClassification(m) === 'other' && isActionable(m)))
   };
 
   const sections = [
@@ -349,7 +358,8 @@ export default function AccountMappingTable({
     { key: 'nonOperating', title: 'Non-Operating Income & Expense', icon: '🏷️', color: '#7c3aed', bgColor: '#f5f3ff', statementType: 'income' },
     { key: 'asset', title: 'Assets', icon: '🏦', color: '#3b82f6', bgColor: '#eff6ff', statementType: 'balance' },
     { key: 'liability', title: 'Liabilities', icon: '📊', color: '#8b5cf6', bgColor: '#faf5ff', statementType: 'balance' },
-    { key: 'equity', title: 'Equity', icon: '💎', color: '#6366f1', bgColor: '#eef2ff', statementType: 'balance' }
+    { key: 'equity', title: 'Equity', icon: '💎', color: '#6366f1', bgColor: '#eef2ff', statementType: 'balance' },
+    { key: 'other', title: 'Other / Needs Review', icon: '⚠️', color: '#64748b', bgColor: '#f8fafc', statementType: 'balance' }
   ];
 
   const toggleSection = (key: string) => {
