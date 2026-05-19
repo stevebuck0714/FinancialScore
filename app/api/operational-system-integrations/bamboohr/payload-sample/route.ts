@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import {
   getOperationalSystemConnection,
-  isQuickBooksAccountingSystem,
 } from '@/lib/operational/operational-system-connections';
 import {
   BAMBOOHR_SOURCE_CODE,
@@ -316,13 +315,6 @@ export async function POST(request: NextRequest) {
     if (!company) {
       return NextResponse.json({ ok: false, error: 'Company not found' }, { status: 404 });
     }
-    if (!isQuickBooksAccountingSystem(company.accountingSystem)) {
-      return NextResponse.json(
-        { ok: false, error: 'BambooHR payload sampling is only available for QUICKBOOKS companies.' },
-        { status: 400 }
-      );
-    }
-
     const connection = await getOperationalSystemConnection(companyId, 'BAMBOOHR', BAMBOOHR_SOURCE_CODE);
     const metadata = asRecord(connection?.connectionMetadata);
     const existingSettings = asRecord(metadata.bambooHrSettings);

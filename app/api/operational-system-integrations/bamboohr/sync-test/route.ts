@@ -3,7 +3,6 @@ import prisma from '@/lib/prisma';
 import { requireSiteAdminAuthorizedInforCompany } from '@/lib/infor-m3/route-guards';
 import {
   getOperationalSystemConnection,
-  isQuickBooksAccountingSystem,
   saveOperationalSystemConnection,
 } from '@/lib/operational/operational-system-connections';
 import {
@@ -29,9 +28,6 @@ async function loadValidatedCompany(companyId: string) {
   });
   if (!company) {
     return { error: 'Company not found', status: 404 as const };
-  }
-  if (!isQuickBooksAccountingSystem(company.accountingSystem)) {
-    return { error: 'BambooHR settings are only available for QUICKBOOKS companies.', status: 400 as const };
   }
   return { company };
 }

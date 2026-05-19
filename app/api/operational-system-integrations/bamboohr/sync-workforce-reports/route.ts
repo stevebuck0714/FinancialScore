@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import { requireSiteAdminAuthorizedInforCompany } from '@/lib/infor-m3/route-guards';
-import { isQuickBooksAccountingSystem } from '@/lib/operational/operational-system-connections';
 import { buildAndSaveBambooHrWorkforceReportSnapshot } from '@/lib/operations/bamboohr-workforce-reports';
 
 export const dynamic = 'force-dynamic';
@@ -28,19 +27,13 @@ export async function POST(request: NextRequest) {
     if (!company) {
       return NextResponse.json({ ok: false, error: 'Company not found' }, { status: 404 });
     }
-    if (!isQuickBooksAccountingSystem(company.accountingSystem)) {
-      return NextResponse.json(
-        { ok: false, error: 'BambooHR workforce reports are only available for QUICKBOOKS companies.' },
-        { status: 400 }
-      );
-    }
-
     const snapshot = await buildAndSaveBambooHrWorkforceReportSnapshot(companyId);
     return NextResponse.json({
       ok: true,
       companyId,
       companyName: company.name,
       generatedAt: snapshot.generatedAt,
+      employeesSampled: snapshot.employeesSampled,
       summary: snapshot.summary,
     });
   } catch (error) {

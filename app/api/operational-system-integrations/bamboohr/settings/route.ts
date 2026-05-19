@@ -3,7 +3,6 @@ import prisma from '@/lib/prisma';
 import { requireSiteAdminAuthorizedInforCompany } from '@/lib/infor-m3/route-guards';
 import {
   getOperationalSystemConnection,
-  isQuickBooksAccountingSystem,
   saveOperationalSystemConnection,
 } from '@/lib/operational/operational-system-connections';
 import {
@@ -28,13 +27,6 @@ export async function GET(request: NextRequest) {
     if (!company) {
       return NextResponse.json({ ok: false, error: 'Company not found' }, { status: 404 });
     }
-    if (!isQuickBooksAccountingSystem(company.accountingSystem)) {
-      return NextResponse.json(
-        { ok: false, error: 'BambooHR settings are only available for QUICKBOOKS companies.' },
-        { status: 400 }
-      );
-    }
-
     const connection = await getOperationalSystemConnection(companyId, 'BAMBOOHR', SOURCE_CODE);
 
     const metadata =
@@ -87,13 +79,6 @@ export async function POST(request: NextRequest) {
     if (!company) {
       return NextResponse.json({ ok: false, error: 'Company not found' }, { status: 404 });
     }
-    if (!isQuickBooksAccountingSystem(company.accountingSystem)) {
-      return NextResponse.json(
-        { ok: false, error: 'BambooHR settings are only available for QUICKBOOKS companies.' },
-        { status: 400 }
-      );
-    }
-
     const existing = await getOperationalSystemConnection(companyId, 'BAMBOOHR', SOURCE_CODE);
 
     const settings = sanitizeBambooHrSettings(body.settings || defaultBambooHrSettings, existing?.accessToken || '');

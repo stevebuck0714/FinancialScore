@@ -2011,6 +2011,7 @@ export default function SiteAdminDashboard(props: any) {
   const [savingBambooHrCompanyId, setSavingBambooHrCompanyId] = React.useState<string | null>(null);
   const [validatingBambooHrCompanyId, setValidatingBambooHrCompanyId] = React.useState<string | null>(null);
   const [syncTestingBambooHrCompanyId, setSyncTestingBambooHrCompanyId] = React.useState<string | null>(null);
+  const [syncingBambooHrCompanyId, setSyncingBambooHrCompanyId] = React.useState<string | null>(null);
   const [probingBambooHrCompanyId, setProbingBambooHrCompanyId] = React.useState<string | null>(null);
   const [bambooHrProbeResultsByCompany, setBambooHrProbeResultsByCompany] = React.useState<Record<string, string>>({});
   const [platosClosetSettingsByCompany, setPlatosClosetSettingsByCompany] = React.useState<
@@ -2965,6 +2966,32 @@ export default function SiteAdminDashboard(props: any) {
       setSyncTestingBambooHrCompanyId((prev) => (prev === companyId ? null : prev));
     }
   };
+  const runBambooHrWorkforceSync = async (companyId: string) => {
+    try {
+      setSyncingBambooHrCompanyId(companyId);
+      const response = await fetch('/api/operational-system-integrations/bamboohr/sync-workforce-reports', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ companyId }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok || !data?.ok) {
+        throw new Error(data?.details || data?.error || 'Failed to sync BambooHR workforce reports');
+      }
+      await loadBambooHrSettings(companyId);
+      await loadOperationalSources(companyId);
+      const summary = data?.summary && typeof data.summary === 'object' ? data.summary : {};
+      alert(
+        `BambooHR workforce sync completed.\n\nEmployees sampled: ${data?.employeesSampled ?? summary?.employeesSampled ?? '—'}\nGenerated: ${data?.generatedAt ? new Date(data.generatedAt).toLocaleString() : 'now'}`
+      );
+    } catch (error: any) {
+      alert(`BambooHR workforce sync failed:\n\n${error?.message || 'Unknown error'}`);
+      await loadBambooHrSettings(companyId);
+      await loadOperationalSources(companyId);
+    } finally {
+      setSyncingBambooHrCompanyId((prev) => (prev === companyId ? null : prev));
+    }
+  };
   const probeBambooHrDomains = async (companyId: string) => {
     try {
       setProbingBambooHrCompanyId(companyId);
@@ -3166,8 +3193,9 @@ export default function SiteAdminDashboard(props: any) {
     const isSaving = savingBambooHrCompanyId === companyId;
     const isValidating = validatingBambooHrCompanyId === companyId;
     const isSyncTesting = syncTestingBambooHrCompanyId === companyId;
+    const isSyncing = syncingBambooHrCompanyId === companyId;
     const isProbing = probingBambooHrCompanyId === companyId;
-    const isBusy = isSaving || isValidating || isSyncTesting || isProbing;
+    const isBusy = isSaving || isValidating || isSyncTesting || isSyncing || isProbing;
     const probeResults = bambooHrProbeResultsByCompany[companyId] || '';
     const statusTheme = getOperationalSourceStatusTheme(status);
 
@@ -3201,6 +3229,13 @@ export default function SiteAdminDashboard(props: any) {
               style={{ padding: '8px 12px', background: isBusy ? '#cbd5e1' : '#16a34a', color: isBusy ? '#334155' : 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: isBusy ? 'not-allowed' : 'pointer' }}
             >
               {isSyncTesting ? 'Testing...' : 'Run Sync Test'}
+            </button>
+            <button
+              onClick={() => runBambooHrWorkforceSync(companyId)}
+              disabled={isBusy}
+              style={{ padding: '8px 12px', background: isBusy ? '#cbd5e1' : '#0f766e', color: isBusy ? '#334155' : 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: isBusy ? 'not-allowed' : 'pointer' }}
+            >
+              {isSyncing ? 'Syncing...' : 'Sync BambooHR Now'}
             </button>
             <button
               onClick={() => probeBambooHrDomains(companyId)}
@@ -6494,9 +6529,9 @@ export default function SiteAdminDashboard(props: any) {
                                                 )}
                                               </div>
                                             </div>
-                                            {company.accountingSystem === 'QUICKBOOKS' && renderOperationalSourceSelectorCard(company.id)}
-                                            {company.accountingSystem === 'QUICKBOOKS' && isOperationalSourceSelected(company.id, 'BAMBOOHR_STANDARD') && renderBambooHrOperationalIntegrationCard(company.id, company.name)}
-                                            {company.accountingSystem === 'QUICKBOOKS' && isOperationalSourceSelected(company.id, 'BAMBOOHR_STANDARD') && renderBambooHrDataDomainsCard(company.id)}
+                                            {renderOperationalSourceSelectorCard(company.id)}
+                                            {isOperationalSourceSelected(company.id, 'BAMBOOHR_STANDARD') && renderBambooHrOperationalIntegrationCard(company.id, company.name)}
+                                            {isOperationalSourceSelected(company.id, 'BAMBOOHR_STANDARD') && renderBambooHrDataDomainsCard(company.id)}
                                             {company.accountingSystem === 'QUICKBOOKS' && isOperationalSourceSelected(company.id, 'PLATOS_CLOSET_STORE_VISIT') && renderPlatosClosetOperationalIntegrationCard(company.id, company.name)}
                                             {company.accountingSystem === 'QUICKBOOKS' && isOperationalSourceSelected(company.id, 'PLATOS_CLOSET_STORE_VISIT') && renderPlatosClosetDataDomainsCard(company.id)}
                                             <div style={{ gridColumn: '1 / -1', order: 3, display: 'none' }}>
@@ -8556,9 +8591,6 @@ export default function SiteAdminDashboard(props: any) {
                                         </table>
                                       </div>
                                     </div>
-                                      {renderOperationalSourceSelectorCard(businessCompany.id)}
-                                      {isOperationalSourceSelected(businessCompany.id, 'BAMBOOHR_STANDARD') && renderBambooHrOperationalIntegrationCard(businessCompany.id, businessCompany.name)}
-                                      {isOperationalSourceSelected(businessCompany.id, 'BAMBOOHR_STANDARD') && renderBambooHrDataDomainsCard(businessCompany.id)}
                                       {isOperationalSourceSelected(businessCompany.id, 'PLATOS_CLOSET_STORE_VISIT') && renderPlatosClosetOperationalIntegrationCard(businessCompany.id, businessCompany.name)}
                                       {isOperationalSourceSelected(businessCompany.id, 'PLATOS_CLOSET_STORE_VISIT') && renderPlatosClosetDataDomainsCard(businessCompany.id)}
                                   </div>
@@ -9540,6 +9572,12 @@ export default function SiteAdminDashboard(props: any) {
                                     </div>
                                   </div>
                                 ) : null}
+                                </div>
+
+                                <div style={{ display: activeBusinessCompanyDetailTab === 'accounting' ? 'grid' : 'none', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '8px', marginBottom: '8px' }}>
+                                  {renderOperationalSourceSelectorCard(businessCompany.id)}
+                                  {isOperationalSourceSelected(businessCompany.id, 'BAMBOOHR_STANDARD') && renderBambooHrOperationalIntegrationCard(businessCompany.id, businessCompany.name)}
+                                  {isOperationalSourceSelected(businessCompany.id, 'BAMBOOHR_STANDARD') && renderBambooHrDataDomainsCard(businessCompany.id)}
                                 </div>
 
                                 <div
