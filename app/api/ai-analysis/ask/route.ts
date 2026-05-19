@@ -230,6 +230,13 @@ type SectorOperationalContext = {
   profile: ReturnType<typeof getExecBriefingModuleProfile>;
   genericOperationalData: Record<string, unknown>;
   constructionOperations?: ReturnType<typeof buildConstructionBriefingFacts> | null;
+  issueSummaries: Array<{
+    entityName: string;
+    entityId?: string;
+    issue: string;
+    action: string;
+    severity: 'watch' | 'medium' | 'high';
+  }>;
   entitySearchHints: string[];
   notes: string[];
 };
@@ -677,6 +684,98 @@ function includesQuestionEntity(question: string, values: unknown[]): boolean {
   });
 }
 
+function buildConstructionIssueSummaries(construction: ReturnType<typeof buildConstructionBriefingFacts> | null) {
+  if (!construction) return [];
+  const summaries: SectorOperationalContext['issueSummaries'] = [];
+  const byKey = new Map<string, any>();
+  const keyFor = (row: any) => String(row?.jobId || row?.jobName || '').trim();
+  const merge = (row: any, patch: Record<string, unknown>) => {
+    const key = keyFor(row);
+    if (!key) return;
+    byKey.set(key, { ...(byKey.get(key) || {}), jobId: row?.jobId, jobName: row?.jobName, ...patch });
+  };
+
+  for (const row of construction.jobCostControl?.marginWatch || []) {
+    merge(row, {
+      projectedProfit: row.projectedProfit,
+      marginPct: row.marginPct,
+      costToDate: row.costToDate,
+      eac: row.eac,
+    });
+  }
+  for (const row of construction.commitmentsForecast?.changeOrders || []) {
+    merge(row, {
+      pendingCOs: row.pendingCOs,
+      pendingCount: row.pendingCount,
+      approvedCOs: row.approvedCOs,
+      revisedContractValue: row.revisedContractValue,
+    });
+  }
+  for (const row of construction.billingCash?.billingCash || []) {
+    merge(row, {
+      costToDate: row.costToDate,
+      billedToDate: row.billedToDate,
+      billingPctOfCost: row.billingPctOfCost,
+      netCashPosition: row.netCashPosition,
+    });
+  }
+  for (const row of (construction.billingCash as any)?.arByJob || []) {
+    merge(row, {
+      billingTotalAR: row.totalAR,
+      billingBucket90Plus: row.bucket90Plus,
+      billingPctOver60: row.pctOver60,
+    });
+  }
+  for (const row of construction.constructionAr?.byProject || []) {
+    merge(row, {
+      projectTotalAR: row.totalAr,
+      projectD90Plus: row.d90Plus,
+    });
+  }
+
+  for (const row of byKey.values()) {
+    const pendingCOs = Number(row.pendingCOs || 0);
+    const pendingCount = Number(row.pendingCount || 0);
+    const projectedProfit = Number(row.projectedProfit);
+    const marginPct = Number(row.marginPct);
+    if (pendingCOs > 0) {
+      summaries.push({
+        entityName: row.jobName,
+        entityId: row.jobId,
+        severity: pendingCOs >= 25000 ? 'high' : 'medium',
+        issue: `${row.jobName} (${row.jobId}) has ${formatMoneyBrief(pendingCOs)} pending COs${pendingCount ? ` across ${pendingCount} item${pendingCount === 1 ? '' : 's'}` : ''}; projected profit is ${formatMoneyBrief(projectedProfit)} at ${formatPctBrief(marginPct)} margin.`,
+        action: `Confirm which pending COs will be approved and update the forecasted profit/margin for ${row.jobName}.`,
+      });
+    }
+
+    const costToDate = Number(row.costToDate || 0);
+    const billedToDate = Number(row.billedToDate || 0);
+    const billingPct = Number(row.billingPctOfCost);
+    const ar = Number(row.billingTotalAR || row.projectTotalAR || 0);
+    const ar90 = Number(row.billingBucket90Plus || row.projectD90Plus || 0);
+    const underBilled = Math.max(0, costToDate - billedToDate);
+    if (costToDate > 0 && underBilled > 0 && billingPct < 95) {
+      summaries.push({
+        entityName: row.jobName,
+        entityId: row.jobId,
+        severity: ar90 > 0 || underBilled >= 50000 ? 'high' : 'medium',
+        issue: `${row.jobName} (${row.jobId}) is billed at ${formatPctBrief(billingPct)} of ${formatMoneyBrief(costToDate)} cost (${formatMoneyBrief(underBilled)} underbilled)${ar ? `, with ${formatMoneyBrief(ar)} AR` : ''}${ar90 ? ` and ${formatMoneyBrief(ar90)} in 90+ AR` : ''}.`,
+        action: `Review billing status and collection plan for ${row.jobName}; prioritize catch-up billing and 90+ AR follow-up.`,
+      });
+    } else if (ar90 > 0) {
+      summaries.push({
+        entityName: row.jobName,
+        entityId: row.jobId,
+        severity: 'high',
+        issue: `${row.jobName} (${row.jobId}) has ${formatMoneyBrief(ar90)} in 90+ AR${ar ? ` out of ${formatMoneyBrief(ar)} total AR` : ''}.`,
+        action: `Escalate collection follow-up for the 90+ balance on ${row.jobName}.`,
+      });
+    }
+  }
+
+  return summaries.slice(0, 20);
+}
+
 function buildSectorAwareFallback(params: {
   sources: Array<{ url: string; title?: string; publishedDate?: string | null; snippet?: string }>;
   question: string;
@@ -692,8 +791,18 @@ function buildSectorAwareFallback(params: {
   const bullets: Array<{ text: string; citations: Array<{ url: string; title?: string; publishedDate?: string | null }> }> = [];
   const profile = sectorContext.profile;
   const construction = sectorContext.constructionOperations;
+  const matchedIssues = (sectorContext.issueSummaries || []).filter((issue) =>
+    includesQuestionEntity(question, [issue.entityName, issue.entityId])
+  );
+  const selectedIssues = (matchedIssues.length ? matchedIssues : sectorContext.issueSummaries || []).slice(0, 6);
+  for (const issue of selectedIssues) {
+    bullets.push({
+      text: `${issue.issue} Action: ${issue.action}`,
+      citations: [citation],
+    });
+  }
 
-  if (construction) {
+  if (construction && bullets.length === 0) {
     const constructionRows = [
       ...(construction.jobCostControl?.marginWatch || []).map((row: any) => ({
         kind: 'Job cost',
@@ -705,7 +814,7 @@ function buildSectorAwareFallback(params: {
         kind: 'Change order',
         name: row.jobName,
         id: row.jobId,
-        text: `${row.jobName || row.jobId} has pending/change-order exposure of ${formatMoneyBrief(row.amount || row.pendingAmount)} that can move forecast margin.`,
+        text: `${row.jobName || row.jobId} has pending/change-order exposure of ${formatMoneyBrief(row.pendingCOs || row.approvedCOs)} that can move forecast margin.`,
       })),
       ...(construction.billingCash?.billingCash || []).map((row: any) => ({
         kind: 'Billing/cash',
@@ -760,10 +869,11 @@ function buildSectorAwareFallback(params: {
   if (cleanBullets.length === 0) return null;
 
   return {
-    shortAnswer: `I found sector-specific operating signals in the configured module set: ${profile.moduleLabels.join(', ')}.`,
+    shortAnswer: cleanBullets.length === 1
+      ? cleanBullets[0].text
+      : `Yes. I found ${cleanBullets.length} sector-specific issue${cleanBullets.length === 1 ? '' : 's'} to watch.`,
     longAnswer:
-      `Ask Corelytics has sector-aware operating context for this company. For this question, the most relevant modules are ${profile.moduleLabels.join(', ')}. ` +
-      `The issues below are grounded in the available sector operating context; use the Operations page for the full detail.`,
+      cleanBullets.map((b) => `- ${b.text}`).join('\n'),
     citedBullets: cleanBullets,
     howThisImpactsUs:
       profile.promptRules.sectorGuidance || 'Use the sector-specific operating modules to prioritize follow-up actions and avoid unrelated operating topics.',
@@ -974,6 +1084,8 @@ async function generateAskJson(params: {
         'Use internalSummary.sectorOperationalContext for sector-specific operating questions. Respect its allowedOperationalTopics and blockedOperationalTopics.',
         'If the user asks about a named job, project, customer, product, site, unit, account, route, program, or other operating entity, search sectorOperationalContext before saying data is insufficient.',
         'Do not analyze operating topics that are not appropriate for the company sector unless explicit facts are present in sectorOperationalContext.',
+        'When sectorOperationalContext.issueSummaries are present, use them as grounded evidence to infer the practical answer. Do not merely describe that sector data exists.',
+        'For questions asking whether there are issues, problems, risks, or things to watch, answer directly with the specific issues and recommended actions. Do not lead with source provenance, module names, or instructions to review other pages.',
         'When describing month-over-month changes, use internalSummary.monthlyChanges.direction and values.',
         'If the user asks for a list of N items, provide N items directly (no referrals to other sites).',
         'Use conversation context for follow-up questions (for example: "that", "it", "compare this to last answer").',
@@ -1071,6 +1183,8 @@ async function generateAskJson(params: {
         ...requirements.map((r) => `- ${r}`),
         '- Be concise and action-oriented. Avoid generic filler or high-level fluff.',
         '- Use internal summary for company-specific metrics when applicable.',
+        '- For sector-specific operating questions, infer the answer from sectorOperationalContext and issueSummaries. Lead with the actual issue/action, not where the data came from.',
+        '- If the question names a specific operating entity, prioritize issueSummaries and matching entitySearchHints for that entity.',
         '- For peer/market questions, explicitly reference the company industry in the answer.',
         '- Avoid generic statements; cite specific peer commentary from sources when available.',
         '- If the query is marked as externalQuery and no external sources are available, say so clearly and avoid speculation.',
@@ -1346,6 +1460,7 @@ export async function runAskCorelyticsLegacy(request: NextRequest) {
       profile: moduleProfile,
       genericOperationalData,
       constructionOperations,
+      issueSummaries: buildConstructionIssueSummaries(constructionOperations),
       entitySearchHints: [
         ...Object.values(genericOperationalData).flatMap((summary: any) => [
           ...(summary?.topCustomers || []).map((row: any) => row.name || row.customerName),

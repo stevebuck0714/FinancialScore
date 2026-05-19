@@ -149,12 +149,16 @@ export function buildConstructionBriefingFacts(companyId: string) {
       summary: commitments.summary,
       eacForecast: takeWorst(commitments.eacForecast, (row: any) => Math.abs(Number(row.forecastVariance || row.variance || 0)), 8),
       commitmentExposure: takeWorst(commitments.commitmentExposure, (row: any) => Number(row.exposure || row.openAmount || row.remainingCommitted || 0), 8),
-      changeOrders: takeWorst(commitments.changeOrders, (row: any) => Number(row.amount || row.pendingAmount || 0), 8),
+      changeOrders: takeWorst(commitments.changeOrders, (row: any) => Number(row.pendingCOs || row.approvedCOs || 0), 8),
     },
     billingCash: {
       summary: billingCash.summary,
       priority: billingCash.priority?.slice?.(0, 8) || [],
-      billingCash: takeWorst(billingCash.billingCash, (row: any) => Math.abs(Number(row.netCashExposure || row.underOverBilled || row.arBalance || 0)), 8),
+      billingCash: takeWorst(billingCash.billingCash, (row: any) => {
+        const underBilled = Math.max(0, Number(row.costToDate || 0) - Number(row.billedToDate || 0));
+        return Math.max(Math.abs(Number(row.netCashPosition || 0)), underBilled);
+      }, 8),
+      arByJob: takeWorst(billingCash.arByJob, (row: any) => Number(row.bucket90Plus || 0) + Number(row.totalAR || 0), 8),
     },
     constructionAr: {
       summary: constructionAr.summary,
