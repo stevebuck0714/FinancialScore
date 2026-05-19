@@ -11,6 +11,11 @@ import { createModelText } from '@/lib/openai-helpers';
 import { searchExternalWeb } from '@/lib/ask-corelytics/externalSearch';
 import { buildExternalQueryPlan } from '@/lib/ask-corelytics/externalQueryBuilder';
 import { getPlatosClosetAiContext } from '@/lib/operational/platos-closet-monthly-facts';
+import {
+  buildConstructionBriefingFacts,
+  getExecBriefingModuleProfile,
+} from '@/lib/pulse/exec-briefing-modules';
+import { buildOperationalMockResponse } from '@/lib/operations/sector-mock-data';
 
 type RatioSnapshot = {
   name: string;
@@ -219,6 +224,14 @@ type ConversationTurn = {
 type ConversationContext = {
   recentTurns: ConversationTurn[];
   runningSummary: string;
+};
+
+type SectorOperationalContext = {
+  profile: ReturnType<typeof getExecBriefingModuleProfile>;
+  genericOperationalData: Record<string, unknown>;
+  constructionOperations?: ReturnType<typeof buildConstructionBriefingFacts> | null;
+  entitySearchHints: string[];
+  notes: string[];
 };
 
 const REFERRAL_BLOCKLIST = ['yelp', "angi", "angie's list", 'homeadvisor', 'yellow pages'];
@@ -568,6 +581,11 @@ function buildFallbackFromSources(params: {
     };
   }
 
+  if (!isCompetitorQuestion(question)) {
+    const sectorFallback = buildSectorAwareFallback({ sources, question, internalSummary });
+    if (sectorFallback) return sectorFallback;
+  }
+
   if (isMarginQuestion && latest && previous) {
     const latestRevenue = latest.revenue || 0;
     const prevRevenue = previous.revenue || 0;
@@ -637,6 +655,198 @@ function buildFallbackFromSources(params: {
         : 'No sourced competitor list was available; broaden the query or add a location qualifier.',
     sources,
   };
+}
+
+function formatMoneyBrief(value: unknown): string {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return '';
+  return `$${Math.abs(n).toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
+}
+
+function formatPctBrief(value: unknown): string {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return '';
+  return `${n.toFixed(1)}%`;
+}
+
+function includesQuestionEntity(question: string, values: unknown[]): boolean {
+  const q = question.toLowerCase();
+  return values.some((value) => {
+    const text = String(value || '').trim().toLowerCase();
+    return text.length >= 3 && q.includes(text);
+  });
+}
+
+function buildSectorAwareFallback(params: {
+  sources: Array<{ url: string; title?: string; publishedDate?: string | null; snippet?: string }>;
+  question: string;
+  internalSummary?: Record<string, any>;
+}): AskOutput | null {
+  const { sources, question, internalSummary } = params;
+  const sectorContext = internalSummary?.sectorOperationalContext as SectorOperationalContext | undefined;
+  if (!sectorContext) return null;
+
+  const operationsSource = sources.find((s) => String(s.title || '').toLowerCase().includes('operations')) || sources[0];
+  if (!operationsSource) return null;
+  const citation = { url: operationsSource.url, title: operationsSource.title, publishedDate: operationsSource.publishedDate };
+  const bullets: Array<{ text: string; citations: Array<{ url: string; title?: string; publishedDate?: string | null }> }> = [];
+  const profile = sectorContext.profile;
+  const construction = sectorContext.constructionOperations;
+
+  if (construction) {
+    const constructionRows = [
+      ...(construction.jobCostControl?.marginWatch || []).map((row: any) => ({
+        kind: 'Job cost',
+        name: row.jobName,
+        id: row.jobId,
+        text: `${row.jobName} (${row.jobId}) has projected profit ${formatMoneyBrief(row.projectedProfit)} at ${formatPctBrief(row.marginPct)} margin, with cost-to-date ${formatMoneyBrief(row.costToDate)} and EAC ${formatMoneyBrief(row.eac)}.`,
+      })),
+      ...(construction.commitmentsForecast?.changeOrders || []).map((row: any) => ({
+        kind: 'Change order',
+        name: row.jobName,
+        id: row.jobId,
+        text: `${row.jobName || row.jobId} has pending/change-order exposure of ${formatMoneyBrief(row.amount || row.pendingAmount)} that can move forecast margin.`,
+      })),
+      ...(construction.billingCash?.billingCash || []).map((row: any) => ({
+        kind: 'Billing/cash',
+        name: row.jobName,
+        id: row.jobId,
+        text: `${row.jobName || row.jobId} shows billing/cash exposure of ${formatMoneyBrief(row.netCashExposure || row.underOverBilled || row.arBalance)}.`,
+      })),
+      ...(construction.constructionAr?.byProject || []).map((row: any) => ({
+        kind: 'Project AR',
+        name: row.jobName,
+        id: row.jobId,
+        text: `${row.jobName || row.jobId} has project AR of ${formatMoneyBrief(row.totalAr || row.arBalance)} with 90+ exposure ${formatMoneyBrief(row.d90Plus || row.days90plus)}.`,
+      })),
+    ];
+
+    const matches = constructionRows.filter((row) => includesQuestionEntity(question, [row.name, row.id]));
+    const selected = (matches.length ? matches : constructionRows).slice(0, 6);
+    for (const row of selected) {
+      if (!row.text || !row.text.includes('$')) continue;
+      bullets.push({ text: `${row.kind}: ${row.text}`, citations: [citation] });
+    }
+  }
+
+  const generic = sectorContext.genericOperationalData || {};
+  if (bullets.length === 0 && generic.customers) {
+    const rows = (generic.customers as any)?.topCustomers || [];
+    for (const row of rows.slice(0, 3)) {
+      bullets.push({
+        text: `Customer/account module signal: ${row.name || row.customerName} generated ${formatMoneyBrief(row.totalRevenue || row.revenue)} revenue in the sector-appropriate customer/account module.`,
+        citations: [citation],
+      });
+    }
+  }
+  if (bullets.length === 0 && generic.products) {
+    const rows = (generic.products as any)?.topProducts || [];
+    for (const row of rows.slice(0, 3)) {
+      bullets.push({
+        text: `Product/service module signal: ${row.name || row.itemName} generated ${formatMoneyBrief(row.totalRevenue || row.revenue)} revenue at ${formatPctBrief(row.grossMarginPct)} gross margin.`,
+        citations: [citation],
+      });
+    }
+  }
+  if (bullets.length === 0 && generic.inventory) {
+    const summary = generic.inventory as any;
+    bullets.push({
+      text: `Inventory module signal: sector inventory value is ${formatMoneyBrief(summary.totalValue)} across ${summary.itemCount || 0} tracked items.`,
+      citations: [citation],
+    });
+  }
+
+  const cleanBullets = bullets.filter((b) => b.text && !/undefined|null/.test(b.text)).slice(0, 8);
+  if (cleanBullets.length === 0) return null;
+
+  return {
+    shortAnswer: `I found sector-specific operating signals in the configured module set: ${profile.moduleLabels.join(', ')}.`,
+    longAnswer:
+      `Ask Corelytics has sector-aware operating context for this company. For this question, the most relevant modules are ${profile.moduleLabels.join(', ')}. ` +
+      `The issues below are grounded in the available sector operating context; use the Operations page for the full detail.`,
+    citedBullets: cleanBullets,
+    howThisImpactsUs:
+      profile.promptRules.sectorGuidance || 'Use the sector-specific operating modules to prioritize follow-up actions and avoid unrelated operating topics.',
+    sources,
+  };
+}
+
+function summarizeProductRows(rows: any[]): { topProducts: any[] } | null {
+  if (!Array.isArray(rows) || rows.length === 0) return null;
+  const byName = new Map<string, { name: string; sku?: string; totalRevenue: number; totalCogs: number; totalQuantity: number }>();
+  for (const row of rows) {
+    const name = String(row?.itemName || row?.name || row?.sku || '').trim();
+    if (!name) continue;
+    const current = byName.get(name) || { name, sku: row?.sku || undefined, totalRevenue: 0, totalCogs: 0, totalQuantity: 0 };
+    current.totalRevenue += Number(row?.revenue || 0);
+    current.totalCogs += Number(row?.cogs || 0);
+    current.totalQuantity += Number(row?.quantitySold || 0);
+    byName.set(name, current);
+  }
+  return {
+    topProducts: Array.from(byName.values())
+      .map((row) => ({
+        ...row,
+        grossMargin: row.totalRevenue - row.totalCogs,
+        grossMarginPct: row.totalRevenue > 0 ? ((row.totalRevenue - row.totalCogs) / row.totalRevenue) * 100 : 0,
+      }))
+      .sort((a, b) => b.totalRevenue - a.totalRevenue)
+      .slice(0, 8),
+  };
+}
+
+function summarizeInventoryRows(rows: any[]): { totalValue: number; itemCount: number; topItems: any[] } | null {
+  if (!Array.isArray(rows) || rows.length === 0) return null;
+  const latestDate = rows
+    .map((row) => new Date(row?.snapshotDate || 0).getTime())
+    .filter((time) => Number.isFinite(time))
+    .sort((a, b) => b - a)[0];
+  const latestRows = Number.isFinite(latestDate)
+    ? rows.filter((row) => new Date(row?.snapshotDate || 0).getTime() === latestDate)
+    : rows;
+  return {
+    totalValue: latestRows.reduce((sum, row) => sum + Number(row?.assetValue || 0), 0),
+    itemCount: latestRows.length,
+    topItems: latestRows
+      .map((row) => ({
+        itemName: row?.itemName,
+        sku: row?.sku,
+        qtyOnHand: Number(row?.qtyOnHand || 0),
+        assetValue: Number(row?.assetValue || 0),
+      }))
+      .sort((a, b) => b.assetValue - a.assetValue)
+      .slice(0, 8),
+  };
+}
+
+function summarizeCustomerRows(rows: any[]): { topCustomers: any[] } | null {
+  if (!Array.isArray(rows) || rows.length === 0) return null;
+  const byName = new Map<string, { name: string; totalRevenue: number; totalInvoices: number }>();
+  for (const row of rows) {
+    const name = String(row?.customerName || row?.name || '').trim();
+    if (!name) continue;
+    const current = byName.get(name) || { name, totalRevenue: 0, totalInvoices: 0 };
+    current.totalRevenue += Number(row?.revenue || 0);
+    current.totalInvoices += Number(row?.invoiceCount || 0);
+    byName.set(name, current);
+  }
+  return {
+    topCustomers: Array.from(byName.values()).sort((a, b) => b.totalRevenue - a.totalRevenue).slice(0, 8),
+  };
+}
+
+function buildMockSummary(type: 'customers' | 'products' | 'inventory', companyId: string, sectorCategory?: string | null): any {
+  const endDate = new Date();
+  const startDate = new Date(endDate.getTime() - 35 * DAY_MS);
+  return buildOperationalMockResponse({
+    type,
+    companyId,
+    sectorCategory,
+    frequency: 'daily',
+    startDate,
+    endDate,
+    limit: 500,
+  } as any).summary;
 }
 
 function toDayKey(d: Date): number {
@@ -761,6 +971,9 @@ async function generateAskJson(params: {
         'Do NOT reference internal Payments tab data or subscription/billing plan terms.',
         'Do NOT invent metrics or KPIs that are not present in the internal summary.',
         'In this app, KPIs are the same as ratio metrics shown in the Ratios view. Treat KPI questions as ratio questions.',
+        'Use internalSummary.sectorOperationalContext for sector-specific operating questions. Respect its allowedOperationalTopics and blockedOperationalTopics.',
+        'If the user asks about a named job, project, customer, product, site, unit, account, route, program, or other operating entity, search sectorOperationalContext before saying data is insufficient.',
+        'Do not analyze operating topics that are not appropriate for the company sector unless explicit facts are present in sectorOperationalContext.',
         'When describing month-over-month changes, use internalSummary.monthlyChanges.direction and values.',
         'If the user asks for a list of N items, provide N items directly (no referrals to other sites).',
         'Use conversation context for follow-up questions (for example: "that", "it", "compare this to last answer").',
@@ -1093,6 +1306,62 @@ export async function runAskCorelyticsLegacy(request: NextRequest) {
       where: { id: companyId },
       select: { industrySector: true, industrySectorCategory: true, name: true },
     });
+    const moduleProfile = getExecBriefingModuleProfile(company?.industrySectorCategory);
+    const [productDaily, inventoryDaily] = await Promise.all([
+      moduleProfile.genericSnapshots.products
+        ? prisma.productSalesSnapshot.findMany({
+            where: { companyId, frequency: 'daily', snapshotDate: { gte: start35 } },
+            orderBy: { snapshotDate: 'asc' },
+            take: 500,
+          })
+        : Promise.resolve([]),
+      moduleProfile.genericSnapshots.inventory
+        ? prisma.inventorySnapshot.findMany({
+            where: { companyId, frequency: 'daily', snapshotDate: { gte: start35 } },
+            orderBy: { snapshotDate: 'asc' },
+            take: 500,
+          })
+        : Promise.resolve([]),
+    ]);
+    const genericOperationalData: Record<string, unknown> = {};
+    if (moduleProfile.genericSnapshots.customers) {
+      genericOperationalData.customers =
+        summarizeCustomerRows(customersDaily) ||
+        buildMockSummary('customers', companyId, company?.industrySectorCategory);
+    }
+    if (moduleProfile.genericSnapshots.products) {
+      genericOperationalData.products =
+        summarizeProductRows(productDaily) ||
+        buildMockSummary('products', companyId, company?.industrySectorCategory);
+    }
+    if (moduleProfile.genericSnapshots.inventory) {
+      genericOperationalData.inventory =
+        summarizeInventoryRows(inventoryDaily) ||
+        buildMockSummary('inventory', companyId, company?.industrySectorCategory);
+    }
+    const constructionOperations = moduleProfile.hasConstructionNativeModules
+      ? buildConstructionBriefingFacts(companyId)
+      : null;
+    const sectorOperationalContext: SectorOperationalContext = {
+      profile: moduleProfile,
+      genericOperationalData,
+      constructionOperations,
+      entitySearchHints: [
+        ...Object.values(genericOperationalData).flatMap((summary: any) => [
+          ...(summary?.topCustomers || []).map((row: any) => row.name || row.customerName),
+          ...(summary?.topProducts || []).map((row: any) => row.name || row.itemName || row.sku),
+          ...(summary?.topItems || []).map((row: any) => row.itemName || row.sku),
+        ]),
+        ...(constructionOperations?.jobCostControl?.marginWatch || []).map((row: any) => `${row.jobName} ${row.jobId}`),
+        ...(constructionOperations?.billingCash?.billingCash || []).map((row: any) => `${row.jobName || ''} ${row.jobId || ''}`),
+        ...(constructionOperations?.constructionAr?.byProject || []).map((row: any) => `${row.jobName || ''} ${row.jobId || ''}`),
+      ].filter(Boolean).slice(0, 40),
+      notes: [
+        'Use only modules listed in profile.promptRules.allowedOperationalTopics for sector-specific operating answers.',
+        'Do not answer with blocked operational topics unless the user asks a generic financial question and the data is explicitly present.',
+        'If the user names an entity/job/customer/product/location, match it against entitySearchHints and the relevant sector context before falling back.',
+      ],
+    };
     const industryGroupId = company?.industrySector ? String(company.industrySector) : null;
     const benchmarks = industryGroupId
       ? await prisma.industryBenchmark.findMany({
@@ -1195,7 +1464,14 @@ export async function runAskCorelyticsLegacy(request: NextRequest) {
       uiMode === 'document'
         ? {
             generatedAt: now.toISOString(),
-            company: { id: companyId, name: companyName || null, industryGroupId, industryGroupName },
+            company: {
+              id: companyId,
+              name: companyName || null,
+              industryGroupId,
+              industryGroupName,
+              industrySectorCategory: moduleProfile.sectorCategory,
+            },
+            sectorOperationalContext,
             documentContext: docContext
               ? {
                   id: docContext.id,
@@ -1229,7 +1505,14 @@ export async function runAskCorelyticsLegacy(request: NextRequest) {
           }
         : {
             generatedAt: now.toISOString(),
-            company: { id: companyId, name: companyName || null, industryGroupId, industryGroupName },
+            company: {
+              id: companyId,
+              name: companyName || null,
+              industryGroupId,
+              industryGroupName,
+              industrySectorCategory: moduleProfile.sectorCategory,
+            },
+            sectorOperationalContext,
             threadContext: {
               threadId: threadId || null,
             },
@@ -1252,6 +1535,8 @@ export async function runAskCorelyticsLegacy(request: NextRequest) {
               arDaily: arTotalByDay.size,
               apDaily: apTotalByDay.size,
               customersDaily: customerTotalByDay.size,
+              productSalesDaily: productDaily.length,
+              inventoryDaily: inventoryDaily.length,
             },
             operationalTrends: {
               windowDays: { short: 14, long: 30 },
