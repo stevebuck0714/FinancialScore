@@ -516,7 +516,7 @@ export async function POST(request: NextRequest) {
 
     // Parse monthly financial records with LOB allocations.
     const parsedRecords = createMonthlyRecords(plData, bsData, accountMappings as any, companyLOBs);
-    const canonicalRecords = parsedRecords.map((row) =>
+    let canonicalRecords = parsedRecords.map((row) =>
       toCanonicalMonthlyFinancial({
         ...row,
         monthDate: row.monthDate,
@@ -545,9 +545,16 @@ export async function POST(request: NextRequest) {
       ? `${latestMonth.getFullYear()}-${String(latestMonth.getMonth() + 1).padStart(2, '0')}`
       : null;
 
-    let blockingFailures: typeof validationFailures = [];
     let latestMonthWarnings: typeof validationFailures = [];
     let nonBlockingHistoricalWarnings: typeof validationFailures = [];
+    let repairedRevenueWarnings: Array<{
+      month: string;
+      revenueBefore: number;
+      repairedRevenue: number;
+      invoiceCount: number;
+      salesReceiptCount: number;
+      source: string;
+    }> = [];
 
     if (validationFailures.length > 0) {
       const uniqueMonths = Array.from(new Set(validationFailures.map((f) => f.month)));
@@ -555,17 +562,49 @@ export async function POST(request: NextRequest) {
       const salesEvidence = await Promise.all(monthDates.map((monthDate) => fetchSalesEvidenceForMonth(monthDate)));
       const evidenceByMonth = new Map(salesEvidence.map((entry) => [entry.month, entry]));
 
-      latestMonthWarnings = validationFailures.filter((f) => f.month === latestMonthKey);
-      const historicalCandidates = validationFailures.filter((f) => f.month !== latestMonthKey);
-      blockingFailures = historicalCandidates.filter((f) => {
+      const evidenceBackedFailures = validationFailures.filter((f) => {
         const evidence = evidenceByMonth.get(f.month);
         return Number(evidence?.combinedTotal || 0) > 0;
       });
+
+      repairedRevenueWarnings = evidenceBackedFailures.map((failure) => {
+        const evidence = evidenceByMonth.get(failure.month);
+        const repairedRevenue = Number(evidence?.combinedTotal || 0);
+        const record = canonicalRecords.find((row) => {
+          const month = `${row.monthDate.getUTCFullYear()}-${String(row.monthDate.getUTCMonth() + 1).padStart(2, '0')}`;
+          return month === failure.month;
+        });
+        if (record && record.revenue === 0 && repairedRevenue > 0) {
+          record.revenue = repairedRevenue;
+          record.revenueBreakdown = {
+            ...(record.revenueBreakdown || {}),
+            qboTransactionEvidenceRevenue: repairedRevenue,
+          };
+        }
+        return {
+          month: failure.month,
+          revenueBefore: failure.revenue,
+          repairedRevenue,
+          invoiceCount: Number(evidence?.invoiceCount || 0),
+          salesReceiptCount: Number(evidence?.salesReceiptCount || 0),
+          source: 'QBO Invoice/SalesReceipt evidence',
+        };
+      });
+
+      latestMonthWarnings = validationFailures.filter((f) => f.month === latestMonthKey && !evidenceBackedFailures.some((r) => r.month === f.month));
+      const historicalCandidates = validationFailures.filter((f) => f.month !== latestMonthKey);
       nonBlockingHistoricalWarnings = historicalCandidates.filter((f) => {
         const evidence = evidenceByMonth.get(f.month);
         return Number(evidence?.combinedTotal || 0) <= 0;
       });
 
+      if (repairedRevenueWarnings.length > 0) {
+        console.warn('⚠️ QBO sync repaired zero revenue from transaction evidence:', {
+          traceId: syncTraceId,
+          repairedRevenueWarnings,
+          salesEvidence: salesEvidence.filter((s) => evidenceBackedFailures.some((w) => w.month === s.month)),
+        });
+      }
       if (latestMonthWarnings.length > 0) {
         console.warn('⚠️ QBO sync validation warning on latest month (allowed):', {
           traceId: syncTraceId,
@@ -582,81 +621,6 @@ export async function POST(request: NextRequest) {
             nonBlockingHistoricalWarnings.some((w) => w.month === s.month)
           ),
         });
-      }
-
-      if (blockingFailures.length > 0) {
-        const blockingMonths = Array.from(new Set(blockingFailures.map((f) => f.month)));
-        const validationMessage = `Validation failed: income is zero with non-zero COGS/Expenses for month(s): ${blockingMonths.join(', ')}`;
-        console.error('❌ QBO sync validation failed', {
-          traceId: syncTraceId,
-          blockingFailures,
-          latestMonthWarnings,
-          nonBlockingHistoricalWarnings,
-          salesEvidence,
-        });
-
-        await prisma.accountingConnection.update({
-          where: {
-            companyId_platform: {
-              companyId,
-              platform: 'QUICKBOOKS',
-            },
-          },
-          data: {
-            status: 'ACTIVE',
-            lastSyncAt: new Date(),
-            errorMessage: validationMessage,
-          },
-        });
-
-        await prisma.apiSyncLog.create({
-          data: {
-            companyId,
-            platform: 'QUICKBOOKS',
-            syncType: 'manual',
-            status: 'error',
-            recordsImported: 0,
-            errorCount: 1,
-            errorDetails: {
-              type: 'VALIDATION_FAILED',
-              traceId: syncTraceId,
-              blockingFailures,
-              latestMonthWarnings,
-              nonBlockingHistoricalWarnings,
-              salesEvidence,
-              diagnostics: traceSnapshotBase,
-            } as any,
-            intuitTid: intuitTid,
-            duration: Date.now() - syncStartTime,
-          },
-        });
-        await notifyAdminsOfSyncFailure({
-          companyId,
-          platform: 'QUICKBOOKS',
-          syncType: 'manual',
-          errorSummary: validationMessage,
-          errorDetails: `Trace: ${syncTraceId || 'n/a'}`,
-        });
-
-        emitSyncStatus(companyId, {
-          status: 'error',
-          message: validationMessage,
-          error: validationMessage,
-          intuitTid,
-          traceId: syncTraceId,
-        });
-
-        return NextResponse.json({
-          error: 'QuickBooks sync validation failed',
-          details: validationMessage,
-          validationFailed: true,
-          failedMonths: blockingMonths,
-          latestMonthWarnings,
-          nonBlockingHistoricalWarnings,
-          salesEvidence,
-          intuitTid,
-          traceId: syncTraceId,
-        }, { status: 422 });
       }
     }
 
@@ -678,6 +642,7 @@ export async function POST(request: NextRequest) {
             financialRecordId: 'PENDING',
             validationWarnings: latestMonthWarnings,
             nonBlockingHistoricalWarnings,
+            repairedRevenueWarnings,
           },
         },
         columnMapping: {
@@ -700,6 +665,7 @@ export async function POST(request: NextRequest) {
             financialRecordId: financialRecord.id,
             validationWarnings: latestMonthWarnings,
             nonBlockingHistoricalWarnings,
+            repairedRevenueWarnings,
           },
         } as any,
       },
@@ -736,6 +702,7 @@ export async function POST(request: NextRequest) {
             intuitTid: intuitTid,
             recordsProcessed: recordsImported,
             syncTraceId,
+            repairedRevenueWarnings,
           }
         };
 
