@@ -2027,22 +2027,27 @@ function FinancialScorePage() {
     }));
   };
 
-  const accountReviewSortLabel = (key: 'type' | 'account' | 'description' | 'value') => {
-    if (accountReviewSort.key !== key) return 'Sort';
-    return accountReviewSort.direction === 'asc' ? 'Ascending' : 'Descending';
-  };
+  const getAccountReviewTypeOverrideKeys = (...values: unknown[]): string[] =>
+    Array.from(new Set(values.map((value) => String(value || '').trim().toLowerCase()).filter(Boolean)));
 
-  const accountReviewSortSymbol = (key: 'type' | 'account' | 'description' | 'value') => {
-    if (accountReviewSort.key !== key) return '↕';
-    return accountReviewSort.direction === 'asc' ? '↑' : '↓';
-  };
-
-  const getAccountReviewTypeOverrideKey = (...values: unknown[]): string => {
-    for (const value of values) {
-      const key = String(value || '').trim().toLowerCase();
-      if (key) return key;
+  const getAccountReviewTypeOverrideValue = (...values: unknown[]): string | undefined => {
+    for (const key of getAccountReviewTypeOverrideKeys(...values)) {
+      const value = accountReviewTypeOverrides[key];
+      if (value) return value;
     }
-    return '';
+    return undefined;
+  };
+
+  const setAccountReviewTypeOverrideValues = (selected: string, ...values: unknown[]) => {
+    const keys = getAccountReviewTypeOverrideKeys(...values);
+    if (keys.length === 0) return;
+    setAccountReviewTypeOverrides((prev) => {
+      const next = { ...prev };
+      keys.forEach((key) => {
+        next[key] = selected;
+      });
+      return next;
+    });
   };
 
   const normalizeMappingsForUi = (mappings: any[]): any[] =>
@@ -16672,25 +16677,11 @@ function FinancialScorePage() {
                     <table style={{ width: '100%', fontSize: '12px', borderCollapse: 'collapse' }}>
                       <thead style={{ position: 'sticky', top: 0, background: '#f8fafc', zIndex: 1 }}>
                         <tr style={{ borderBottom: '2px solid #e2e8f0' }}>
-                          <th style={{ textAlign: 'left', padding: '8px', fontWeight: '600', color: '#475569', minWidth: '80px' }}>
-                            <button type="button" aria-label={`Sort Type column. Current: ${accountReviewSortLabel('type')}`} onClick={() => toggleAccountReviewSort('type')} style={{ all: 'unset', cursor: 'pointer', userSelect: 'none', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
-                              Type <span aria-hidden="true">{accountReviewSortSymbol('type')}</span>
-                            </button>
-                          </th>
-                          <th style={{ textAlign: 'left', padding: '8px', fontWeight: '600', color: '#475569', minWidth: '60px' }}>
-                            <button type="button" aria-label={`Sort Acct # column. Current: ${accountReviewSortLabel('account')}`} onClick={() => toggleAccountReviewSort('account')} style={{ all: 'unset', cursor: 'pointer', userSelect: 'none', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
-                              Acct # <span aria-hidden="true">{accountReviewSortSymbol('account')}</span>
-                            </button>
-                          </th>
-                          <th style={{ textAlign: 'left', padding: '8px', fontWeight: '600', color: '#475569', minWidth: '200px' }}>
-                            <button type="button" aria-label={`Sort Description column. Current: ${accountReviewSortLabel('description')}`} onClick={() => toggleAccountReviewSort('description')} style={{ all: 'unset', cursor: 'pointer', userSelect: 'none', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
-                              Description <span aria-hidden="true">{accountReviewSortSymbol('description')}</span>
-                            </button>
-                          </th>
-                          <th style={{ textAlign: 'right', padding: '8px', fontWeight: '600', color: '#475569', minWidth: '130px' }}>
-                            <button type="button" aria-label={`Sort Latest Value column. Current: ${accountReviewSortLabel('value')}`} onClick={() => toggleAccountReviewSort('value')} style={{ all: 'unset', cursor: 'pointer', userSelect: 'none', display: 'inline-flex', alignItems: 'center', gap: '4px', justifyContent: 'flex-end', width: '100%' }}>
-                              {latestAccountReviewMonthLabel ? `Latest Value (${latestAccountReviewMonthLabel})` : 'Latest Value'} <span aria-hidden="true">{accountReviewSortSymbol('value')}</span>
-                            </button>
+                          <th onClick={() => toggleAccountReviewSort('type')} style={{ textAlign: 'left', padding: '8px', fontWeight: '600', color: '#475569', minWidth: '80px', cursor: 'pointer', userSelect: 'none' }}>Type</th>
+                          <th onClick={() => toggleAccountReviewSort('account')} style={{ textAlign: 'left', padding: '8px', fontWeight: '600', color: '#475569', minWidth: '60px', cursor: 'pointer', userSelect: 'none' }}>Acct #</th>
+                          <th onClick={() => toggleAccountReviewSort('description')} style={{ textAlign: 'left', padding: '8px', fontWeight: '600', color: '#475569', minWidth: '200px', cursor: 'pointer', userSelect: 'none' }}>Description</th>
+                          <th onClick={() => toggleAccountReviewSort('value')} style={{ textAlign: 'right', padding: '8px', fontWeight: '600', color: '#475569', minWidth: '130px', cursor: 'pointer', userSelect: 'none' }}>
+                            {latestAccountReviewMonthLabel ? `Latest Value (${latestAccountReviewMonthLabel})` : 'Latest Value'}
                           </th>
                         </tr>
                       </thead>
@@ -17160,15 +17151,15 @@ function FinancialScorePage() {
                                   csvAcctId,
                                   account.description,
                                 );
-                                const typeOverrideKey = getAccountReviewTypeOverrideKey(
+                                const typeOverrideValues = [
                                   matchedMapping?.accountId,
                                   matchedMapping?.accountCode,
                                   matchedMapping?.accountName,
                                   csvAcctId,
                                   idColumnDisplay,
                                   account.description,
-                                );
-                                const selectedTypeOption = accountReviewTypeOverrides[typeOverrideKey] || (
+                                ];
+                                const selectedTypeOption = getAccountReviewTypeOverrideValue(...typeOverrideValues) || (
                                   matchedMapping
                                     ? getAccountReviewClassificationOptionValue(
                                         matchedMapping,
@@ -17186,7 +17177,7 @@ function FinancialScorePage() {
                                   csvAcctTypeRaw,
                                   idColumnDisplay,
                                   selectedTypeOption,
-                                  typeOverrideKey,
+                                  typeOverrideValues,
                                   sortRow: {
                                     type: selectedTypeOption,
                                     account: idColumnDisplay || csvAcctId || '',
@@ -17197,7 +17188,7 @@ function FinancialScorePage() {
                                 };
                               })
                                 .sort((a: any, b: any) => compareAccountReviewRows(a.sortRow, b.sortRow))
-                                .map(({ account, originalRowIndex, latestValue, matchedMappingIndex, csvAcctTypeRaw, idColumnDisplay, selectedTypeOption, typeOverrideKey }: any) => {
+                                .map(({ account, originalRowIndex, latestValue, matchedMappingIndex, csvAcctTypeRaw, idColumnDisplay, selectedTypeOption, typeOverrideValues }: any) => {
                                 return (
                                   <tr key={`csv-${originalRowIndex}`} style={{ borderBottom: '1px solid #f1f5f9' }}>
                                     <td style={{ padding: '6px 8px', color: '#64748b', fontSize: '11px' }}>
@@ -17205,12 +17196,23 @@ function FinancialScorePage() {
                                         value={selectedTypeOption}
                                         onChange={(e) => {
                                           const selected = e.target.value;
-                                          if (typeOverrideKey) {
-                                            setAccountReviewTypeOverrides((prev) => ({
-                                              ...prev,
-                                              [typeOverrideKey]: selected,
-                                            }));
-                                          }
+                                          setAccountReviewTypeOverrideValues(selected, ...(typeOverrideValues || []));
+                                          setCsvTrialBalanceData((prev: any) => {
+                                            if (!prev || !Array.isArray(prev.accounts)) return prev;
+                                            const updatedAccounts = prev.accounts.map((row: any, rowIndex: number) => {
+                                              const rowKeys = getAccountReviewTypeOverrideKeys(
+                                                row?.acctId,
+                                                row?.accountId,
+                                                row?.accountCode,
+                                                row?.description,
+                                              );
+                                              const shouldUpdate =
+                                                rowIndex === originalRowIndex ||
+                                                rowKeys.some((key) => getAccountReviewTypeOverrideKeys(...(typeOverrideValues || [])).includes(key));
+                                              return shouldUpdate ? { ...row, acctType: selected } : row;
+                                            });
+                                            return { ...prev, accounts: updatedAccounts };
+                                          });
                                           setAiMappings((prev) => {
                                             const updated = [...(Array.isArray(prev) ? prev : [])];
                                             const currentIndex = matchedMappingIndex >= 0
@@ -17308,13 +17310,13 @@ function FinancialScorePage() {
                                   byTarget !== undefined ? byTarget :
                                   byMappedField !== undefined ? byMappedField :
                                   null;
-                                const typeOverrideKey = getAccountReviewTypeOverrideKey(
+                                const typeOverrideValues = [
                                   mapping?.accountId,
                                   mapping?.accountCode,
                                   mapping?.accountName,
                                   displayAccountCode,
-                                );
-                                const selectedTypeOption = accountReviewTypeOverrides[typeOverrideKey] ||
+                                ];
+                                const selectedTypeOption = getAccountReviewTypeOverrideValue(...typeOverrideValues) ||
                                   getAccountReviewClassificationOptionValue(mapping, mapping.accountClassification || mapping.sourceStatus || '');
                                 return {
                                   mapping,
@@ -17323,7 +17325,7 @@ function FinancialScorePage() {
                                   displayAccountCode,
                                   resolvedQboClassId,
                                   selectedTypeOption,
-                                  typeOverrideKey,
+                                  typeOverrideValues,
                                   sortRow: {
                                     type: selectedTypeOption,
                                     account: displayAccountCode || '',
@@ -17334,7 +17336,7 @@ function FinancialScorePage() {
                                 };
                               })
                               .sort((a: any, b: any) => compareAccountReviewRows(a.sortRow, b.sortRow))
-                              .map(({ mapping, originalIndex, latestValue, displayAccountCode, resolvedQboClassId, selectedTypeOption, typeOverrideKey }: any, idx: number) => {
+                              .map(({ mapping, originalIndex, latestValue, displayAccountCode, resolvedQboClassId, selectedTypeOption, typeOverrideValues }: any, idx: number) => {
                               return (
                               <tr key={`api-${mapping.accountId || mapping.accountName || idx}`} style={{ borderBottom: '1px solid #f1f5f9' }}>
                                 <td style={{ padding: '6px 8px', color: '#64748b', fontSize: '11px' }}>
@@ -17342,12 +17344,7 @@ function FinancialScorePage() {
                                     value={selectedTypeOption}
                                     onChange={(e) => {
                                       const selected = e.target.value;
-                                      if (typeOverrideKey) {
-                                        setAccountReviewTypeOverrides((prev) => ({
-                                          ...prev,
-                                          [typeOverrideKey]: selected,
-                                        }));
-                                      }
+                                      setAccountReviewTypeOverrideValues(selected, ...(typeOverrideValues || []));
                                       setAiMappings((prev) => {
                                         const updated = [...(Array.isArray(prev) ? prev : [])];
                                         if (!updated[originalIndex]) return prev;
