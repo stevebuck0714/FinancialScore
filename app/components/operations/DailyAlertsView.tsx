@@ -127,7 +127,7 @@ type DailyAlertsCache = {
 };
 
 const DAILY_ALERTS_FETCH_TIMEOUT_MS = 20000;
-const DAILY_CACHE_VERSION = 'v2';
+const DAILY_CACHE_VERSION = 'v3';
 
 async function fetchWithTimeout(
   input: RequestInfo | URL,

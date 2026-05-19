@@ -9,6 +9,7 @@
 - [ ] 7) Confirm customer revenue by period is sourced from Customers + Sales invoice data (`SLInvHdrs`/`SLCoitems`)
 - [ ] 8) Confirm product analysis is sourced from item master + sales detail and fill any missing fields
 - [ ] 9) Migrate AI calls from raw `openai` SDK to Vercel AI Gateway with per-request ZDR (`zeroDataRetention: true`)
+- [ ] 10) Recheck legacy `// @ts-nocheck` files and gradually restore TypeScript coverage
 
 ## Task 9 — Vercel AI Gateway + ZDR migration
 
@@ -55,3 +56,16 @@
 - [ ] Validate customer/product chart data pipelines (`7`, `8`)
 - [ ] Close final COA + financial validation (`1`)
 - [ ] Vercel AI Gateway + ZDR migration (`9`) — independent of the data-pipeline work; can be done in parallel by a separate engineer or during a pause in pipeline work
+- [ ] Legacy `// @ts-nocheck` cleanup (`10`) — start with active UI pages and live integrations, then remove suppressions in smaller batches with `npx tsc --noEmit`
+
+## Task 10 — Legacy TypeScript Coverage Cleanup
+
+**Why:** Several large legacy UI and integration files were temporarily marked with `// @ts-nocheck` so the app type gate could pass after the Daily Exec Briefing sector-awareness work. This is not a runtime/performance issue, but it reduces compile-time protection in those files.
+
+**Suggested order:**
+
+- [ ] Review active app surfaces first: `app/page.tsx`, dashboard tabs, operations tab, covenant UI
+- [ ] Review live integration/parser surfaces next: QuickBooks, Infor queue/sync, trial balance parsing
+- [ ] Leave unused integrations like Xero for last unless they become active again
+- [ ] Remove `// @ts-nocheck` one file or small bucket at a time
+- [ ] Run `npx tsc --noEmit --pretty false` after each bucket

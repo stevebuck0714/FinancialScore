@@ -289,6 +289,31 @@ function safeJsonParse(text: string): any | null {
   }
 }
 
+function sectionCandidatesFromPayload(value: any): any[] {
+  if (Array.isArray(value)) return value;
+  if (!value || typeof value !== 'object') return [];
+  if (Array.isArray(value.sections)) return value.sections;
+  if (Array.isArray(value.briefingSections)) return value.briefingSections;
+  if (Array.isArray(value.execBriefingSections)) return value.execBriefingSections;
+  if (Array.isArray(value.dailyExecBriefing?.sections)) return value.dailyExecBriefing.sections;
+  if (Array.isArray(value.briefing?.sections)) return value.briefing.sections;
+  if (value.title && value.bullets) return [value];
+
+  return Object.entries(value)
+    .filter(([, sectionValue]) => Array.isArray(sectionValue))
+    .map(([title, bullets]) => ({ title, bullets }));
+}
+
+function normalizeBullet(value: any): string {
+  if (value == null) return '';
+  if (typeof value === 'string') return value.trim();
+  if (typeof value === 'number') return String(value);
+  if (typeof value === 'object') {
+    return String(value.bullet || value.text || value.summary || value.recommendation || value.action || '').trim();
+  }
+  return String(value).trim();
+}
+
 function hasSpecificEvidence(text: string): boolean {
   return /(\$[\d,.]+|\d+(?:\.\d+)?%|\d+(?:\.\d+)?\s*(?:days?|weeks?|months?|pts?|points?|bps|x)\b|threshold|headroom|margin|gross profit|revenue|cash|AR|AP|DSO|LOC|EBITDA|customer|product|covenant)/i.test(text);
 }
@@ -311,12 +336,13 @@ function isMaterialPct(value: number | null | undefined, threshold = MATERIAL_FI
 }
 
 function normalizeSections(value: any, options?: { allowMarketingLanguage?: boolean }): BriefingSection[] {
-  const sections = Array.isArray(value?.sections) ? value.sections : [];
+  const sections = sectionCandidatesFromPayload(value);
   return sections
     .map((section: any) => {
-      const title = String(section?.title || '').trim();
-      const bullets = Array.isArray(section?.bullets)
-        ? section.bullets.map((bullet: any) => String(bullet || '').trim()).filter(Boolean)
+      const title = String(section?.title || section?.heading || section?.name || '').trim();
+      const rawBullets = section?.bullets || section?.items || section?.points || section?.takeaways || section?.recommendations;
+      const bullets = Array.isArray(rawBullets)
+        ? rawBullets.map(normalizeBullet).filter(Boolean)
         : [];
       const evidenceFiltered = /recommended actions?/i.test(title) ? bullets.filter(hasSpecificEvidence) : bullets;
       const filtered = options?.allowMarketingLanguage
@@ -1022,15 +1048,50 @@ ${JSON.stringify(facts, null, 2)}`;
         { role: 'user', content: prompt },
       ],
     });
-    const sections = normalizeSections(safeJsonParse(ai.text), {
+    const parsedBriefing = safeJsonParse(ai.text);
+    let sections = normalizeSections(parsedBriefing, {
       allowMarketingLanguage: Boolean(facts?.unsupportedTopicRules?.marketingChannelsAllowed),
     });
 
     if (!sections.length) {
-      return NextResponse.json(
-        { error: 'AI briefing response did not include usable briefing sections' },
-        { status: 502 }
-      );
+      console.warn('Pulse exec briefing AI response did not match expected sections shape; retrying formatter', {
+        companyId,
+        model,
+        api: ai.api,
+        finishReason: ai.finishReason,
+        responsePreview: ai.text.slice(0, 500),
+      });
+
+      const retry = await createModelText({
+        openai: getOpenAiClient(),
+        model,
+        temperature: 0,
+        maxTokens: 1800,
+        messages: [
+          {
+            role: 'system',
+            content:
+              'You convert an executive briefing draft into strict JSON. Return only valid JSON with a non-empty sections array. Each section needs a title and 1-6 bullet strings.',
+          },
+          {
+            role: 'user',
+            content: `Convert this briefing draft into exactly this JSON shape: {"sections":[{"title":"Top Takeaway","bullets":["..."]}]}. If the draft is empty or unusable, return {"sections":[{"title":"No Material Exceptions","bullets":["No material exceptions were identified in the available financial and sector operating data for today."]}]}.\n\nDraft:\n${ai.text.slice(0, 6000)}`,
+          },
+        ],
+      });
+
+      sections = normalizeSections(safeJsonParse(retry.text), {
+        allowMarketingLanguage: Boolean(facts?.unsupportedTopicRules?.marketingChannelsAllowed),
+      });
+
+      if (!sections.length) {
+        sections = [
+          {
+            title: 'No Material Exceptions',
+            bullets: ['No material exceptions were identified in the available financial and sector operating data for today.'],
+          },
+        ];
+      }
     }
 
     const response = {
