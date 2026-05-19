@@ -94,6 +94,7 @@ export function normalizeRows(raw: any[], mapping: Mappings): NormalRow[] {
       otherAssets: N(mapping.otherAssets),
       totalAssets: N(mapping.totalAssets),
       ap: N(mapping.ap),
+      loc: N(mapping.loc),
       otherCL: N(mapping.otherCL),
       tcl: N(mapping.tcl),
       ltd: N(mapping.ltd),

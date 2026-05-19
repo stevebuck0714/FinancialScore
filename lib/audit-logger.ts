@@ -34,6 +34,7 @@ export type AuditAction =
   | 'COMPANY_VIEWED'
   | 'COMPANY_UPDATED'
   | 'COMPANY_DELETED'
+  | 'COMPANY_PRICING_UPDATED'
   
   // User Management
   | 'USER_CREATED'
@@ -41,6 +42,8 @@ export type AuditAction =
   | 'USER_UPDATED'
   | 'USER_DELETED'
   | 'USER_ROLE_CHANGED'
+  | 'USER_COMPANY_ACCESS_GRANTED'
+  | 'USER_COMPANY_ACCESS_REVOKED'
   
   // Payments
   | 'PAYMENT_PROCESSED'
@@ -191,7 +194,7 @@ export async function auditForbiddenAccess(
  * Log company operations
  */
 export async function auditCompanyOperation(
-  action: 'COMPANY_CREATED' | 'COMPANY_VIEWED' | 'COMPANY_UPDATED' | 'COMPANY_DELETED',
+  action: 'COMPANY_CREATED' | 'COMPANY_VIEWED' | 'COMPANY_UPDATED' | 'COMPANY_DELETED' | 'COMPANY_PRICING_UPDATED',
   companyId: string,
   changes?: Record<string, any>
 ): Promise<void> {
@@ -208,7 +211,14 @@ export async function auditCompanyOperation(
  * Log user management operations
  */
 export async function auditUserOperation(
-  action: 'USER_CREATED' | 'USER_VIEWED' | 'USER_UPDATED' | 'USER_DELETED' | 'USER_ROLE_CHANGED',
+  action:
+    | 'USER_CREATED'
+    | 'USER_VIEWED'
+    | 'USER_UPDATED'
+    | 'USER_DELETED'
+    | 'USER_ROLE_CHANGED'
+    | 'USER_COMPANY_ACCESS_GRANTED'
+    | 'USER_COMPANY_ACCESS_REVOKED',
   userId: string,
   changes?: Record<string, any>
 ): Promise<void> {

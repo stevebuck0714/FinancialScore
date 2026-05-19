@@ -140,7 +140,7 @@ export async function POST(request: NextRequest) {
     const safeCompanyName = companyName.replace(/[^a-zA-Z0-9 \-_.]/g, '').trim() || 'Company';
     const fileName = `MDA - ${safeCompanyName}.docx`;
 
-    return new NextResponse(buffer, {
+    return new NextResponse(new Uint8Array(buffer), {
       status: 200,
       headers: {
         'Content-Type':

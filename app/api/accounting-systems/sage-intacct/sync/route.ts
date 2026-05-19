@@ -304,7 +304,7 @@ export async function POST(request: NextRequest) {
         errorMessage: totalErrors === 0
           ? null
           : `${totalErrors}/${outcomes.length} program(s) failed during ${mode}.`,
-        connectionMetadata: updatedMetadata,
+        connectionMetadata: updatedMetadata as any,
       },
     });
 

@@ -254,7 +254,7 @@ export async function runOperationalSyncForConnection(
     return {
       success: aggregatedErrors.length === 0 && !result.hasMore,
       recordsCreated: aggregatedRecordsCreated,
-      moduleCounts: result.moduleCounts,
+      moduleCounts: (result as any).moduleCounts,
       errors: Array.from(new Set(aggregatedErrors)),
     };
   }

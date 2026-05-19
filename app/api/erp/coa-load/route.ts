@@ -697,7 +697,7 @@ export async function POST(request: NextRequest) {
             },
           };
         }
-        syntheticMonthlyBuild = built.stats;
+        syntheticMonthlyBuild = built.stats as any;
       }
     }
     if (

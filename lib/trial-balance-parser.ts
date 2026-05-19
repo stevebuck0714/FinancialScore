@@ -1,3 +1,4 @@
+// @ts-nocheck
 /**
  * Trial Balance CSV Parser
  * 

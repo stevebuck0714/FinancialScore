@@ -87,7 +87,7 @@ async function mergeConnectionMetadata(
       connectionMetadata: {
         ...existing,
         ...patch,
-      },
+      } as any,
     },
   });
 }

@@ -6,6 +6,10 @@ import { getAiTransport, getOpenAiClient } from '@/lib/ai-gateway';
 import { createModelText } from '@/lib/openai-helpers';
 import { requireAuth, validateCompanyAccess } from '@/lib/tenant-security';
 import { loadMonthlyFromDfs } from '@/lib/performance-analytics/monthly-from-dfs';
+import {
+  buildConstructionBriefingFacts,
+  getExecBriefingModuleProfile,
+} from '@/lib/pulse/exec-briefing-modules';
 
 export const dynamic = 'force-dynamic';
 
@@ -409,7 +413,46 @@ async function safeVersionPart(label: string, sql: string, ...params: unknown[])
   }
 }
 
-async function buildPulseDataVersion(companyId: string, startDate: Date, monthlyStartDate: Date): Promise<string> {
+async function buildPulseDataVersion(companyId: string, startDate: Date, monthlyStartDate: Date, moduleProfile: ReturnType<typeof getExecBriefingModuleProfile>): Promise<string> {
+  const optionalParts = [
+    moduleProfile.genericSnapshots.customers
+      ? safeVersionPart(
+          'customerSalesSnapshot',
+          `SELECT COUNT(*)::text AS count, MAX("createdAt") AS "maxCreatedAt", MAX("snapshotDate") AS "maxSnapshotDate"
+           FROM "CustomerSalesSnapshot"
+           WHERE "companyId" = $1 AND "snapshotDate" >= $2`,
+          companyId,
+          startDate
+        )
+      : Promise.resolve({ label: 'customerSalesSnapshot', skipped: true }),
+    moduleProfile.genericSnapshots.products
+      ? safeVersionPart(
+          'productSalesSnapshot',
+          `SELECT COUNT(*)::text AS count, MAX("createdAt") AS "maxCreatedAt", MAX("snapshotDate") AS "maxSnapshotDate"
+           FROM "ProductSalesSnapshot"
+           WHERE "companyId" = $1 AND "snapshotDate" >= $2`,
+          companyId,
+          startDate
+        )
+      : Promise.resolve({ label: 'productSalesSnapshot', skipped: true }),
+    moduleProfile.genericSnapshots.inventory
+      ? safeVersionPart(
+          'inventorySnapshot',
+          `SELECT COUNT(*)::text AS count, MAX("createdAt") AS "maxCreatedAt", MAX("snapshotDate") AS "maxSnapshotDate"
+           FROM "InventorySnapshot"
+           WHERE "companyId" = $1 AND "snapshotDate" >= $2`,
+          companyId,
+          startDate
+        )
+      : Promise.resolve({ label: 'inventorySnapshot', skipped: true }),
+    Promise.resolve({
+      label: 'briefingModuleProfile',
+      sectorCategory: moduleProfile.sectorCategory,
+      modules: moduleProfile.moduleKeys,
+      dataTypes: moduleProfile.dataTypes,
+    }),
+  ];
+
   const parts = await Promise.all([
     safeVersionPart(
       'company',
@@ -456,30 +499,7 @@ async function buildPulseDataVersion(companyId: string, startDate: Date, monthly
       companyId,
       startDate
     ),
-    safeVersionPart(
-      'customerSalesSnapshot',
-      `SELECT COUNT(*)::text AS count, MAX("createdAt") AS "maxCreatedAt", MAX("snapshotDate") AS "maxSnapshotDate"
-       FROM "CustomerSalesSnapshot"
-       WHERE "companyId" = $1 AND "snapshotDate" >= $2`,
-      companyId,
-      startDate
-    ),
-    safeVersionPart(
-      'productSalesSnapshot',
-      `SELECT COUNT(*)::text AS count, MAX("createdAt") AS "maxCreatedAt", MAX("snapshotDate") AS "maxSnapshotDate"
-       FROM "ProductSalesSnapshot"
-       WHERE "companyId" = $1 AND "snapshotDate" >= $2`,
-      companyId,
-      startDate
-    ),
-    safeVersionPart(
-      'inventorySnapshot',
-      `SELECT COUNT(*)::text AS count, MAX("createdAt") AS "maxCreatedAt", MAX("snapshotDate") AS "maxSnapshotDate"
-       FROM "InventorySnapshot"
-       WHERE "companyId" = $1 AND "snapshotDate" >= $2`,
-      companyId,
-      startDate
-    ),
+    ...optionalParts,
     safeVersionPart(
       'loan',
       `SELECT COUNT(*)::text AS count, MAX("updatedAt") AS "maxUpdatedAt"
@@ -602,14 +622,20 @@ export async function GET(request: NextRequest) {
     const cacheKey = todayCacheKey(companyId);
     const cacheDate = cacheKey.split(':').pop() || new Date().toISOString().slice(0, 10);
     await ensurePulseCacheTables();
-    const dataVersion = await buildPulseDataVersion(companyId, startDate, monthlyStartDate);
+    const company = await prisma.company.findUnique({
+      where: { id: companyId },
+      select: { id: true, name: true, industrySector: true, industrySectorCategory: true },
+    } as any);
+    const moduleProfile = getExecBriefingModuleProfile(company?.industrySectorCategory);
+    const dataVersion = await buildPulseDataVersion(companyId, startDate, monthlyStartDate, moduleProfile);
+    const versionedCacheKey = `${cacheKey}:${dataVersion.slice(0, 12)}`;
 
     if (!forceRefresh) {
-      const cached = dailyBriefingCache.get(cacheKey);
+      const cached = dailyBriefingCache.get(versionedCacheKey);
       if (cached) return NextResponse.json(cached, { headers: PRIVATE_DAILY_CACHE_HEADERS });
       const persistedCached = await readBriefingCache(companyId, cacheDate, dataVersion);
       if (persistedCached) {
-        dailyBriefingCache.set(cacheKey, persistedCached);
+        dailyBriefingCache.set(versionedCacheKey, persistedCached);
         return NextResponse.json(persistedCached, { headers: PRIVATE_DAILY_CACHE_HEADERS });
       }
     }
@@ -621,11 +647,6 @@ export async function GET(request: NextRequest) {
       facts = cachedSummary.facts;
       sourceNotes = cachedSummary.sourceNotes;
     } else {
-
-    const company = await prisma.company.findUnique({
-      where: { id: companyId },
-      select: { id: true, name: true, industrySector: true, industrySectorCategory: true },
-    } as any);
 
     const industryGroupId = company?.industrySector ? String(company.industrySector) : null;
     const benchmarks = industryGroupId
@@ -663,9 +684,15 @@ export async function GET(request: NextRequest) {
       prisma.cashSnapshot.findMany({ where: { companyId, snapshotDate: { gte: startDate, lte: endDate } }, orderBy: { snapshotDate: 'asc' }, take: 500 }),
       prisma.aRAgingSnapshot.findMany({ where: { companyId, snapshotDate: { gte: startDate, lte: endDate } }, orderBy: { snapshotDate: 'asc' }, take: 500 }),
       prisma.aPAgingSnapshot.findMany({ where: { companyId, snapshotDate: { gte: startDate, lte: endDate } }, orderBy: { snapshotDate: 'asc' }, take: 500 }),
-      prisma.customerSalesSnapshot.findMany({ where: { companyId, snapshotDate: { gte: startDate, lte: endDate } }, orderBy: { snapshotDate: 'asc' }, take: 1200 }),
-      prisma.productSalesSnapshot.findMany({ where: { companyId, snapshotDate: { gte: startDate, lte: endDate } }, orderBy: { snapshotDate: 'asc' }, take: 1200 }),
-      prisma.inventorySnapshot.findMany({ where: { companyId, snapshotDate: { gte: startDate, lte: endDate } }, orderBy: { snapshotDate: 'asc' }, take: 1200 }),
+      moduleProfile.genericSnapshots.customers
+        ? prisma.customerSalesSnapshot.findMany({ where: { companyId, snapshotDate: { gte: startDate, lte: endDate } }, orderBy: { snapshotDate: 'asc' }, take: 1200 })
+        : Promise.resolve([]),
+      moduleProfile.genericSnapshots.products
+        ? prisma.productSalesSnapshot.findMany({ where: { companyId, snapshotDate: { gte: startDate, lte: endDate } }, orderBy: { snapshotDate: 'asc' }, take: 1200 })
+        : Promise.resolve([]),
+      moduleProfile.genericSnapshots.inventory
+        ? prisma.inventorySnapshot.findMany({ where: { companyId, snapshotDate: { gte: startDate, lte: endDate } }, orderBy: { snapshotDate: 'asc' }, take: 1200 })
+        : Promise.resolve([]),
       prisma.loan.findMany({ where: { companyId, status: { in: ['ACTIVE', 'MATURING'] as any } }, include: { covenants: true }, take: 50 } as any),
       loadGoals('ExpenseGoal', companyId),
       loadGoals('OperationalGoal', companyId),
@@ -690,6 +717,9 @@ export async function GET(request: NextRequest) {
         )
         .catch(() => []),
     ]);
+    const constructionOperations = moduleProfile.hasConstructionNativeModules
+      ? buildConstructionBriefingFacts(companyId)
+      : null;
 
     const monthlyFinancials = sortByDate(dfsMonthly ? dfsMonthly.rows : monthlyFinancialsRaw);
     const completeMonthlyFinancials = monthlyFinancials.filter(isCompleteMonthlyPeriod);
@@ -821,6 +851,14 @@ export async function GET(request: NextRequest) {
 
     facts = {
       company: { name: company?.name || 'Company', industryGroupId, industryName: benchmarks[0]?.industryName || null, industrySectorCategory: company?.industrySectorCategory || null },
+      operationalModules: {
+        sectorCategory: moduleProfile.sectorCategory,
+        sectorKey: moduleProfile.sectorKey,
+        enabledModules: moduleProfile.moduleKeys,
+        enabledModuleLabels: moduleProfile.moduleLabels,
+        genericSnapshotsLoaded: moduleProfile.genericSnapshots,
+        promptRules: moduleProfile.promptRules,
+      },
       financials: {
         monthsLoaded: monthlyFinancials.length,
         completeMonthsLoaded: completeMonthlyFinancials.length,
@@ -866,15 +904,19 @@ export async function GET(request: NextRequest) {
         balanceSheetAP: latestBalanceSheetAP,
         arAging: latestARAging,
         apAging: latestAPAging,
-        inventoryDataAvailable: inventorySnapshots.length > 0,
+        inventoryDataAvailable: moduleProfile.genericSnapshots.inventory && inventorySnapshots.length > 0,
       },
       covenants: { activeLoans: (loans as any[]).length, watchlist: covenantWatchlist },
-      customers: { totalRecentRevenue: totalRecentCustomerRevenue, top3Share, topCustomers },
-      products: { topMarginWatch },
+      customers: moduleProfile.genericSnapshots.customers ? { totalRecentRevenue: totalRecentCustomerRevenue, top3Share, topCustomers } : null,
+      products: moduleProfile.genericSnapshots.products ? { topMarginWatch } : null,
+      constructionOperations,
       benchmarks: { loaded: benchmarks.length, comparisons: benchmarkComparisons, sample: benchmarks.slice(0, 25) },
       goals: { expense: expenseGoals[0]?.goals || {}, operational: operationalGoals[0]?.goals || {} },
       unsupportedTopicRules: {
         marketingChannelsAllowed: allowMarketingLanguage,
+        allowedOperationalTopics: moduleProfile.promptRules.allowedOperationalTopics,
+        blockedOperationalTopics: moduleProfile.promptRules.blockedOperationalTopics,
+        sectorRule: moduleProfile.promptRules.sectorGuidance,
         marketingRule:
           'Do not mention Marketing, paid search, referrals, email campaigns, events, social media, channel return, customer acquisition cost, lifetime value, cost per acquisition, pilot budgets, campaigns, or advertising unless marketingChannelsAllowed is true and the exact supporting data is present in the facts.',
       },
@@ -884,9 +926,10 @@ export async function GET(request: NextRequest) {
         cashDataAvailable: cashSnapshots.length > 0,
         arAgingAvailable: arSnapshots.length > 0,
         apAgingAvailable: apSnapshots.length > 0,
-        customerSalesAvailable: customerSnapshots.length > 0,
-        productServiceSalesAvailable: productSnapshots.length > 0,
-        inventoryDataAvailable: inventorySnapshots.length > 0,
+        customerSalesAvailable: moduleProfile.genericSnapshots.customers && customerSnapshots.length > 0,
+        productServiceSalesAvailable: moduleProfile.genericSnapshots.products && productSnapshots.length > 0,
+        inventoryDataAvailable: moduleProfile.genericSnapshots.inventory && inventorySnapshots.length > 0,
+        constructionOperationsAvailable: Boolean(constructionOperations),
         benchmarkDataAvailable: benchmarks.length > 0,
       },
       alerts: briefingPulseAlerts.slice(0, 12),
@@ -898,9 +941,13 @@ export async function GET(request: NextRequest) {
       sourceNote('Cash data', cashSnapshots.length),
       sourceNote('Accounts receivable aging data', arSnapshots.length),
       sourceNote('Accounts payable aging data', apSnapshots.length),
-      sourceNote('Customer sales data', customerSnapshots.length),
-      sourceNote('Product/service sales data', productSnapshots.length),
-      sourceNote('Inventory data', inventorySnapshots.length),
+      moduleProfile.genericSnapshots.customers ? sourceNote('Customer sales data', customerSnapshots.length) : '',
+      moduleProfile.genericSnapshots.products ? sourceNote('Product/service sales data', productSnapshots.length) : '',
+      moduleProfile.genericSnapshots.inventory ? sourceNote('Inventory data', inventorySnapshots.length) : '',
+      constructionOperations ? sourceNote('Construction job cost control data', constructionOperations.jobCostControl?.summary?.jobCount || 1) : '',
+      constructionOperations ? sourceNote('Construction project portfolio data', constructionOperations.projectPortfolio?.summary?.jobCount || 1) : '',
+      constructionOperations ? sourceNote('Construction commitments and forecast data', constructionOperations.commitmentsForecast?.summary?.jobCount || 1) : '',
+      constructionOperations ? sourceNote('Construction billing and cash data', constructionOperations.billingCash?.summary?.jobCount || 1) : '',
       sourceNote('Industry benchmark data', benchmarks.length),
       sourceNote('Covenant data', covenantWatchlist.length),
     ].filter(Boolean);
@@ -933,7 +980,11 @@ This is an exception-based leadership briefing. Only include analysis if it matt
 
 Do not turn a normal or favorable metric into commentary. For example, do not mention low accounts receivable or no overdue balances unless there is a material related issue in cash, revenue, collections, or a Pulse alert. Do not infer future cash inflow from the accounts receivable balance alone.
 
-Analyze the full company picture: financial performance, gross profit dollars, margin rate, liquidity, working capital, AR, AP, inventory, LOC/debt, covenants, customer concentration, product/service margin quality, expense drivers, benchmarks, Pulse alerts, performance findings, goals/watchlists, and data coverage.
+Analyze the full company picture using only the sector-appropriate operating modules listed in facts.operationalModules. Always include financial performance, gross profit dollars, margin rate, liquidity, working capital, AR, AP, LOC/debt, covenants, benchmarks, Pulse alerts, performance findings, goals/watchlists, and data coverage when material. Only mention inventory, customer sales, product/service sales, job cost control, project portfolio, commitments/forecast, billing/cash by job, or other operating topics when those topics are included in facts.operationalModules.promptRules.allowedOperationalTopics and supported by facts.
+
+Sector operating guidance: ${facts.operationalModules.promptRules.sectorGuidance}
+
+Blocked operating topics for this company: ${facts.operationalModules.promptRules.blockedOperationalTopics.join(', ') || 'none'}.
 
 For total accounts receivable and total accounts payable balances, use financials.balanceSheetAR and financials.balanceSheetAP. Do not use financials.arAging.total, financials.apAging.total, workingCapital.arAging.total, or workingCapital.apAging.total as the company's total balance sheet AR/AP if those differ; aging snapshots are only for aging mix, overdue percentages, and days sales outstanding.
 
@@ -941,7 +992,7 @@ Only compare like-for-like periods. Do not compare days to weeks, weeks to month
 
 When revenue and margin rate move in different directions, explicitly state the end result to gross profit dollars only if the movement is material or decision-useful. Example: if revenue is declining but gross margin rate is improving, say whether gross profit dollars increased or decreased and by how much; if both are normal/immaterial, omit the topic entirely.
 
-For product/service margin, do the diagnosis yourself. Only report top-seller margin analysis if there is a measurable issue. Do not tell leadership to "check pricing, discounting, unit cost, and customer mix." Instead, use average price change, unit-cost change, revenue change, margin-rate change, and gross-profit dollar change to say which driver is most likely and what measurable action follows.
+For product/service margin, do the diagnosis yourself only when product/service sales is an allowed and populated module for this company. Only report top-seller margin analysis if there is a measurable issue. Do not tell leadership to "check pricing, discounting, unit cost, and customer mix." Instead, use average price change, unit-cost change, revenue change, margin-rate change, and gross-profit dollar change to say which driver is most likely and what measurable action follows.
 
 Recommendations must be specific and measurable. Include the actual metric, customer/product/covenant/account name, dollar amount, percentage, threshold, time window, or target from the facts whenever available. Do not write generic recommendations like "review covenant headroom", "pull margin detail", "assign owners", "monitor closely", "review performance", "improve margins", or "watch cash" unless the same bullet discusses the underlying values driving the issue and the measurable next action.
 
@@ -989,7 +1040,7 @@ ${JSON.stringify(facts, null, 2)}`;
       sections,
       sourceNotes,
     } satisfies BriefingResponse;
-    dailyBriefingCache.set(cacheKey, response);
+    dailyBriefingCache.set(versionedCacheKey, response);
     await writeBriefingCache(companyId, cacheDate, dataVersion, response).catch((cacheError) => {
       console.warn('Pulse exec briefing cache write failed:', cacheError);
     });

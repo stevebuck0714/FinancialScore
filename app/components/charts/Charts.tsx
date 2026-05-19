@@ -693,7 +693,7 @@ export function ProjectionChart({ title, historicalData, projectedData, valueKey
               <tr style={{ background: '#f1f5f9', borderBottom: '2px solid #cbd5e1' }}>
                 <td style={{ padding: '6px 8px', fontWeight: '700', color: '#1e293b', position: 'sticky', left: 0, background: '#f1f5f9', zIndex: 1, minWidth: '50px' }}>Month</td>
                 {hist.map((d, i) => (
-                  <td key={`month-hist-${i}`} style={{ padding: '6px 4px', textAnchor: 'center', fontWeight: '600', color: '#64748b', background: 'white', minWidth: '60px' }}>
+                  <td key={`month-hist-${i}`} style={{ padding: '6px 4px', textAlign: 'center', fontWeight: '600', color: '#64748b', background: 'white', minWidth: '60px' }}>
                     {d.month}
                   </td>
                 ))}

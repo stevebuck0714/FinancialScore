@@ -439,7 +439,7 @@ function shouldRejectTargetFieldForClassification(classification: string, target
   return false;
 }
 
-type TargetFieldCandidate = { value: string; label?: string };
+type TargetFieldCandidate = { value: string; label: string };
 
 function normalizeTargetFieldCandidates(raw: any): TargetFieldCandidate[] {
   if (!Array.isArray(raw)) return [];
@@ -452,7 +452,7 @@ function normalizeTargetFieldCandidates(raw: any): TargetFieldCandidate[] {
       }
       return null;
     })
-    .filter((item): item is TargetFieldCandidate => Boolean(item));
+    .filter((item): item is TargetFieldCandidate => item !== null);
 }
 
 function pickBestSectorTargetField(

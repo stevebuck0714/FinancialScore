@@ -238,8 +238,14 @@ export const consultantsApi = {
 // ============= Financial Data =============
 
 export const financialsApi = {
-  async getByCompany(companyId: string) {
-    return fetchApi(`/api/financials?companyId=${companyId}`);
+  async getByCompany(
+    companyId: string,
+    options?: { includeRawData?: boolean; includeAllRecords?: boolean }
+  ) {
+    const params = new URLSearchParams({ companyId });
+    if (options?.includeRawData) params.set('includeRawData', 'true');
+    if (options?.includeAllRecords) params.set('includeAllRecords', 'true');
+    return fetchApi(`/api/financials?${params.toString()}`);
   },
 
   async upload(data: {

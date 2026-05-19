@@ -26,14 +26,14 @@ export default function MAYourResultsView({
     <div style={{ maxWidth: '1400px', margin: '0 auto', padding: '32px' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '32px' }}>
         <h1 style={{ fontSize: '32px', fontWeight: '700', color: '#1e293b', margin: 0 }}>
-          {currentUser?.role === 'consultant' ? 'Assessment Results - All Participants' : 'Your Assessment Results'}
+          {(currentUser as any)?.role === 'consultant' ? 'Assessment Results - All Participants' : 'Your Assessment Results'}
         </h1>
       </div>
       
-      {currentUser?.role === 'consultant' ? (
+      {(currentUser as any)?.role === 'consultant' ? (
         // Show all participants' results for consultants
         <>
-          {assessmentRecords.filter(r => r.companyId === selectedCompanyId).length === 0 ? (
+          {assessmentRecords.filter(r => String(r.companyId) === String(selectedCompanyId)).length === 0 ? (
             <div style={{ background: 'white', borderRadius: '12px', padding: '60px', textAlign: 'center', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
               <div style={{ fontSize: '48px', marginBottom: '16px' }}>📋</div>
               <h3 style={{ fontSize: '20px', fontWeight: '600', color: '#64748b', marginBottom: '8px' }}>No Assessments Yet</h3>
@@ -41,7 +41,7 @@ export default function MAYourResultsView({
             </div>
           ) : (
             <div style={{ display: 'grid', gap: '24px' }}>
-              {assessmentRecords.filter(r => r.companyId === selectedCompanyId).map((record) => (
+              {assessmentRecords.filter(r => String(r.companyId) === String(selectedCompanyId)).map((record) => (
                 <div key={record.id} style={{ background: 'white', borderRadius: '12px', padding: '24px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', borderBottom: '2px solid #e2e8f0', paddingBottom: '16px' }}>
                     <div>

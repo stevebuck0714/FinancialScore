@@ -45,7 +45,7 @@ export async function GET(request: NextRequest) {
 
     loans.forEach((loan) => {
       (loan.covenants || []).forEach((covenant) => {
-        const applicable = covenant.isApplicable ?? covenant.applicable ?? true;
+        const applicable = covenant.isApplicable ?? true;
         if (!applicable) return;
         const status = String(covenant.status || '').toUpperCase();
         if (status === 'WARNING' || status === 'BREACHED' || status === 'CRITICAL') {

@@ -145,7 +145,7 @@ export function resolveStoredMFASecret(encryptedSecret: string): ParsedMFASecret
 export function verifyTOTP(
   token: string,
   encryptedSecret: string,
-  options?: { expectedAppScope?: string; allowLegacyScope?: boolean }
+  options?: { expectedAppScope?: string; acceptedAppScopes?: string[]; allowLegacyScope?: boolean }
 ): boolean {
   return verifyTOTPWithDetails(token, encryptedSecret, options).isValid;
 }
@@ -153,7 +153,7 @@ export function verifyTOTP(
 export function verifyTOTPWithDetails(
   token: string,
   encryptedSecret: string,
-  options?: { expectedAppScope?: string; allowLegacyScope?: boolean }
+  options?: { expectedAppScope?: string; acceptedAppScopes?: string[]; allowLegacyScope?: boolean }
 ): TOTPVerificationResult {
   try {
     const normalizedToken = String(token || '').replace(/\s+/g, '');
@@ -166,6 +166,9 @@ export function verifyTOTPWithDetails(
     const parsed = resolveStoredMFASecret(encryptedSecret);
 
     const expectedAppScope = options?.expectedAppScope?.trim().toLowerCase();
+    const acceptedAppScopes = (options?.acceptedAppScopes || [])
+      .map((scope) => String(scope || '').trim().toLowerCase())
+      .filter(Boolean);
     const allowLegacyScope = options?.allowLegacyScope ?? true;
 
     if (expectedAppScope) {
@@ -173,7 +176,7 @@ export function verifyTOTPWithDetails(
         console.log('❌ MFA scope missing for strict app-scoped verification');
         return { isValid: false, reason: 'SCOPE_MISSING' };
       }
-      if (parsed.appScope && parsed.appScope !== expectedAppScope) {
+      if (parsed.appScope && parsed.appScope !== expectedAppScope && !acceptedAppScopes.includes(parsed.appScope)) {
         console.log('❌ MFA scope mismatch', {
           expectedAppScope,
           storedAppScope: parsed.appScope,

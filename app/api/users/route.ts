@@ -268,7 +268,7 @@ export async function POST(request: NextRequest) {
     const validation = validateInput(createUserSchema, body);
     if (!validation.success) {
       return NextResponse.json(
-        { error: 'Validation failed', details: validation.errors },
+        { error: 'Validation failed', details: (validation as any).errors },
         { status: 400 }
       );
     }

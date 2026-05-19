@@ -78,7 +78,7 @@ export async function POST(request: Request) {
       data: {
         name: `${firstName} ${lastName}`,
         email: normalizedEmail,
-        password: hashedPassword,
+        passwordHash: hashedPassword,
         role: 'SITEADMIN',
       },
       select: {

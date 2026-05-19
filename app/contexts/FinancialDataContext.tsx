@@ -124,7 +124,8 @@ export function FinancialDataProvider({ children }: FinancialDataProviderProps) 
     try {
       console.log(`📂 LOADING FINANCIAL DATA FOR: "${companyNameParam}" (ID: ${companyId})`);
 
-      const { records } = await financialsApi.getByCompany(companyId);
+      const { records: rawRecords } = await financialsApi.getByCompany(companyId);
+      const records = Array.isArray(rawRecords) ? rawRecords : [];
       console.log(`📂 Found ${records.length} financial records for company "${companyNameParam}"`);
 
       if (!records || records.length === 0) {

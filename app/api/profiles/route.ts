@@ -117,7 +117,7 @@ export async function POST(request: NextRequest) {
     await ensureAiResearchProfileColumns();
     const { baseProfileData, aiResearch } = splitAiResearchFields(profileData);
 
-    const profile = await prisma.companyProfile.upsert({
+    const profile = await (prisma.companyProfile as any).upsert({
       where: { companyId },
       update: baseProfileData,
       create: {

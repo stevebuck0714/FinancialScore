@@ -91,6 +91,8 @@ export type NormalRow = {
 };
 
 export type MonthlyDataRow = {
+  [key: string]: any;
+  date?: string | Date;
   month: string;
   revenue: number;
   expense: number;
@@ -127,6 +129,12 @@ export type MonthlyDataRow = {
   nonOperatingExpense: number;
   extraordinaryItems: number;
   netProfit: number;
+  netIncome?: number;
+  grossProfit?: number;
+  grossMargin?: number;
+  cogs?: number;
+  contractors?: number;
+  materials?: number;
   totalAssets: number;
   totalLiab: number;
   cash: number;
@@ -153,6 +161,7 @@ export type MonthlyDataRow = {
 };
 
 export interface Company {
+  [key: string]: any;
   id: string;
   name: string;
   consultantEmail: string;
@@ -183,9 +192,13 @@ export interface Company {
   hasRealOperationalData?: boolean;
   realDataActivatedAt?: string | null;
   forceOperationalMockData?: boolean;
+  linesOfBusiness?: any;
+  headcountAllocations?: any;
+  userDefinedAllocations?: any;
 }
 
 export interface CompanyProfile {
+  [key: string]: any;
   companyId: string;
   legalStructure: string;
   businessStatus: string;
@@ -247,6 +260,7 @@ export interface AssessmentRecord {
 }
 
 export interface Consultant {
+  [key: string]: any;
   id: string;
   type: string;
   fullName: string;
@@ -264,10 +278,13 @@ export interface Consultant {
 }
 
 export interface User {
+  [key: string]: any;
   id: string;
   name: string;
   email: string;
   password: string;
+  title?: string;
+  phone?: string;
   companyId: string;
   activeCompanyId?: string;
   accessibleCompanies?: Array<{

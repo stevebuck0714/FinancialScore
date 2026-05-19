@@ -183,9 +183,9 @@ function parseMarketingRows(rows: unknown[][]): ParsedWorkbookSummary['marketing
     out.push({
       channel,
       primaryMetricLabel: asString(readCell(rows, rowIndex, 8)) || null,
-      primaryMetricValue: readCell(rows, rowIndex + 1, 8) || null,
+      primaryMetricValue: maybeExcelDate(readCell(rows, rowIndex + 1, 8)),
       secondaryMetricLabel: asString(readCell(rows, rowIndex, 19)) || null,
-      secondaryMetricValue: readCell(rows, rowIndex + 1, 19) || null,
+      secondaryMetricValue: maybeExcelDate(readCell(rows, rowIndex + 1, 19)),
     });
   }
   return out;

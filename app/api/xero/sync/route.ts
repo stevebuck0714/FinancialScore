@@ -346,6 +346,7 @@ export async function POST(request: NextRequest) {
 
     function initMonthData() {
       return {
+        monthDate: new Date(),
         revenue: 0, cogsPayroll: 0, cogsOwnerPay: 0, cogsContractors: 0, cogsMaterials: 0,
         cogsCommissions: 0, cogsOther: 0, cogsTotal: 0, payroll: 0, ownerBasePay: 0,
         benefits: 0, insurance: 0, professionalFees: 0, subcontractors: 0, rent: 0,

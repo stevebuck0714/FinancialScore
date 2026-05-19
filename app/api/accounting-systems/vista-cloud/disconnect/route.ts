@@ -41,7 +41,7 @@ export async function POST(request: NextRequest) {
       data: {
         status: 'INACTIVE',
         errorMessage: null,
-        connectionMetadata: metadata,
+        connectionMetadata: metadata as any,
       },
     });
 

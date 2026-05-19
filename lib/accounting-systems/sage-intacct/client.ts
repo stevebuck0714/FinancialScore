@@ -132,7 +132,7 @@ export type SageIntacctSession = {
 };
 
 export type SageIntacctConnectResult =
-  | { ok: true; session: SageIntacctSession }
+  | { ok: true; session: SageIntacctSession; status?: number; error?: string; details?: IntacctErrorInfo }
   | { ok: false; status: number; error: string; details?: IntacctErrorInfo };
 
 /**
@@ -176,7 +176,7 @@ export async function getAPISession(creds: SageIntacctSettings): Promise<SageInt
 
   const resp = await postXml(endpoint, xml);
   if (!resp.ok) {
-    return { ok: false, status: resp.status, error: resp.error };
+    return { ok: false, status: resp.status, error: (resp as any).error };
   }
 
   const body = resp.body;
@@ -264,7 +264,7 @@ export async function readByQuery(params: ReadByQueryParams): Promise<ReadByQuer
 
   const resp = await postXml(session.endpoint, xml);
   if (!resp.ok) {
-    return { ok: false, status: resp.status, rows: [], error: resp.error };
+    return { ok: false, status: resp.status, rows: [], error: (resp as any).error };
   }
   const body = resp.body;
   const err = extractError(body);

@@ -282,9 +282,10 @@ export async function POST(request: NextRequest) {
       selectedSource.type === 'endpoint'
         ? selectedSource.value
         : `/${credentials.tenantId}/M3/m3api-rest/execute/${selectedSource.value}`;
+    const selectedMongooseConfig = (selectedSource as any).mongooseConfig;
     const headers =
-      selectedSource.mongooseConfig
-        ? { 'X-Infor-MongooseConfig': selectedSource.mongooseConfig }
+      selectedMongooseConfig
+        ? { 'X-Infor-MongooseConfig': selectedMongooseConfig }
         : undefined;
     const result = await callInforIonApi(credentials, endpointPath, { timeoutMs: 20000, headers });
 
@@ -376,7 +377,7 @@ export async function POST(request: NextRequest) {
         status: statusText,
         recordsImported: imported,
         errorCount: effectiveOk ? 0 : 1,
-        errorDetails: effectiveOk
+        errorDetails: (effectiveOk
           ? {
               pulledByEmail: context.email,
               program: selectedSource.type === 'mi' ? selectedSource.value : null,
@@ -392,7 +393,7 @@ export async function POST(request: NextRequest) {
               sourceModule: selectedSource.sourceModule,
               endpointPath,
               response: result.body,
-            },
+            }) as any,
       },
     });
     if (seedWarning) {

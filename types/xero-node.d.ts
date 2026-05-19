@@ -64,7 +64,7 @@ declare module 'xero-node' {
     getReportTrialBalance(
       xeroTenantId: string,
       date?: string,
-      paymentsOnly?: boolean
+      paymentsOnly?: boolean | number
     ): Promise<{ body: ReportWithRows }>;
 
     getReportProfitAndLoss(
@@ -116,10 +116,11 @@ declare module 'xero-node' {
       contactIDs?: string[],
       statuses?: string[],
       page?: number,
-      includeArchived?: boolean,
-      createdByMyApp?: boolean,
+      includeArchived?: boolean | number,
+      createdByMyApp?: boolean | number,
       unitdp?: number,
-      summaryOnly?: boolean
+      summaryOnly?: boolean | number,
+      extra?: any
     ): Promise<{ body: { invoices: Invoice[] } }>;
 
     // Contact methods
@@ -147,6 +148,9 @@ declare module 'xero-node' {
       order?: string,
       unitdp?: number
     ): Promise<{ body: { items: Item[] } }>;
+
+    getBankTransactions(...args: any[]): Promise<{ body: { bankTransactions: any[] } }>;
+    getManualJournals(...args: any[]): Promise<{ body: { manualJournals: any[] } }>;
   }
 
   export interface Account {
@@ -201,6 +205,7 @@ declare module 'xero-node' {
   export interface Invoice {
     invoiceID?: string;
     invoiceNumber?: string;
+    reference?: string;
     type?: string;
     contact?: Contact;
     date?: string;
@@ -240,6 +245,7 @@ declare module 'xero-node' {
     unitAmount?: number;
     itemCode?: string;
     accountCode?: string;
+    accountName?: string;
     taxType?: string;
     taxAmount?: number;
     lineAmount?: number;

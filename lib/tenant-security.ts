@@ -15,6 +15,7 @@ export interface UserContext {
   role: 'SITEADMIN' | 'CONSULTANT' | 'USER'
   companyId: string | null
   consultantId: string | null
+  companyRole?: string | null
 }
 
 const DEV_AUTH_BYPASS_ENABLED =

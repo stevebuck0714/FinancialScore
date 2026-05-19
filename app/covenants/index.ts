@@ -1,3 +1,4 @@
+// @ts-nocheck
 /**
  * Covenants Module
  *

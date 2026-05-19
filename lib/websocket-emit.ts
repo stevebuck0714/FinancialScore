@@ -15,12 +15,13 @@ function getSocketEmitter(): SocketEmitter | null {
 }
 
 export function emitSyncStatus(companyId: string, data: {
-  status: 'started' | 'progress' | 'completed' | 'error';
+  status: 'started' | 'progress' | 'in_progress' | 'completed' | 'error';
   message: string;
   progress?: number;
   recordsImported?: number;
   error?: string;
   intuitTid?: string | null;
+  traceId?: string | null;
 }) {
   try {
     const io = getSocketEmitter();

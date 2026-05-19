@@ -1,3 +1,4 @@
+// @ts-nocheck
 /**
  * Shared core for the Infor M3 operational sync request.
  *

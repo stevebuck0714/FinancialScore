@@ -586,7 +586,7 @@ function asParsedWorkbookSummary(value: unknown, monthKey: string): ParsedWorkbo
     requiredSheets: Array.isArray(obj.requiredSheets) ? (obj.requiredSheets as string[]) : [],
     currentPeriodLabel: obj.currentPeriodLabel ? String(obj.currentPeriodLabel) : null,
     monthKey,
-    storeInfo: asObject(obj.storeInfo) || {},
+    storeInfo: (asObject(obj.storeInfo) || {}) as Record<string, string | number>,
     salesKpis: asMetricRows(obj.salesKpis),
     buysKpis: asMetricRows(obj.buysKpis),
     lossPreventionKpis: asMetricRows(obj.lossPreventionKpis),

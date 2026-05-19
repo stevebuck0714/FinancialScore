@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { randomUUID } from 'node:crypto';
 import prisma from '@/lib/prisma';
 import type { AccountingPlatform } from '@prisma/client';

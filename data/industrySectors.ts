@@ -1,9 +1,9 @@
 // Industry Sectors from IBIS
 export interface IndustrySector {
-  id: number;
+  id: number | string;
   name: string;
   description: string;
-  sectorCode: number;
+  sectorCode: number | string;
   sectorName: string;
 }
 

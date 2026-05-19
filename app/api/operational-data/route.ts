@@ -1912,7 +1912,7 @@ export async function GET(request: NextRequest) {
 
         // --- Track 1: Sales snapshots + bookings aggregation ---
         const fetchSalesAndBookings = async () => {
-          let salesData = await prisma.customerSalesSnapshot.findMany({
+          let salesData: any[] = await prisma.customerSalesSnapshot.findMany({
             where: {
               companyId,
               frequency: customerFrequencyForQuery,
@@ -2026,7 +2026,7 @@ export async function GET(request: NextRequest) {
             acc[key].totalInvoices += Number(record?.invoiceCount || 0);
             return acc;
           }, {} as Record<string, { name: string; totalRevenue: number; totalInvoices: number }>);
-          const topCustomersSummary = Object.values(customerTotals)
+          const topCustomersSummary = (Object.values(customerTotals) as Array<{ name: string; totalRevenue: number; totalInvoices: number }>)
             .sort((a, b) => b.totalRevenue - a.totalRevenue)
             .slice(0, 10);
 

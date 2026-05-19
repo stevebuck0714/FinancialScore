@@ -694,7 +694,7 @@ export async function POST(request: NextRequest) {
         select: { id: true },
         orderBy: { createdAt: 'desc' },
       }) as any
-    );
+    ) as { id: string } | null;
 
     const monthlyFinancialWhere: any = {
       companyId,

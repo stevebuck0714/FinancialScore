@@ -151,7 +151,7 @@ export async function POST(request: NextRequest) {
         if (String(i?.id || '') !== String(invite.id)) return i;
         return {
           ...i,
-          status: 'accepted',
+          status: 'accepted' as const,
           acceptedAt: nowIso,
           acceptedByUserId: userId,
         };

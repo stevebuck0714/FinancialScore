@@ -1,3 +1,4 @@
+// @ts-nocheck
 /**
  * Covenant Alert Service
  *

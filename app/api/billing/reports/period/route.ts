@@ -19,7 +19,7 @@ export async function GET(request: NextRequest) {
       const { start, end } = getDateRangeForPeriod(periodType, offset);
 
       // Fetch invoices for this period
-      const invoices = await prisma.invoice.findMany({
+      const invoices = await (prisma as any).invoice.findMany({
         where: {
           billingPeriodStart: {
             gte: start,

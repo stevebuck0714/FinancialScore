@@ -259,7 +259,9 @@ export class MasterDataStore {
 
       if (category.masterDataPath && monthData) {
         // For flat structure, just access the property directly
-        expenseValue = monthData[category.masterDataPath] || 0;
+        const rawExpenseValue = monthData[category.masterDataPath];
+        const parsedExpenseValue = Number(rawExpenseValue);
+        expenseValue = Number.isFinite(parsedExpenseValue) ? parsedExpenseValue : 0;
       }
 
       const percentage = revenue > 0 ? (expenseValue / revenue) * 100 : 0;

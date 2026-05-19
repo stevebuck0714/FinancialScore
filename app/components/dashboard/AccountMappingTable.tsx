@@ -19,6 +19,7 @@ interface AccountMapping {
 interface LOBData {
   name: string;
   headcountPercentage: number;
+  customPercentage?: number;
 }
 
 interface AccountMappingTableProps {

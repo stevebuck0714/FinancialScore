@@ -17,6 +17,10 @@ export type InforTokenResult =
       tokenType?: string;
       expiresIn?: number;
       scope?: string;
+      status?: number;
+      error?: string;
+      errorDescription?: string;
+      raw?: string;
     }
   | {
       ok: false;

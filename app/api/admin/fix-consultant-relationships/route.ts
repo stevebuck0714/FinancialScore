@@ -11,14 +11,10 @@ export async function POST(request: NextRequest) {
     // For now, just run the fix - in production you'd want proper authentication
     console.log('🔧 Starting consultant relationship fix...');
 
-    // Find all users with role 'consultant'
+    // Find all users with consultant role
     const consultantUsers = await prisma.user.findMany({
       where: {
-        role: 'consultant'
-      },
-      include: {
-        primaryConsultant: true,
-        consultantFirm: true
+        role: 'CONSULTANT'
       }
     });
 
@@ -57,7 +53,8 @@ export async function POST(request: NextRequest) {
       }
 
       // Check if relationships are set up
-      if (!user.primaryConsultant && !user.consultantFirm && consultantId) {
+      const hadConsultantId = Boolean(user.consultantId);
+      if (!hadConsultantId && consultantId) {
         console.log(`  Setting up consultant relationship...`);
 
         try {
@@ -65,10 +62,7 @@ export async function POST(request: NextRequest) {
           await prisma.user.update({
             where: { id: user.id },
             data: {
-              consultantId: consultantId,
-              primaryConsultant: {
-                connect: { id: consultantId }
-              }
+              consultantId: consultantId
             }
           });
 
@@ -110,7 +104,7 @@ export async function POST(request: NextRequest) {
         },
         consultantId: consultantId,
         companyCount: companyCount,
-        wasFixed: needsUpdate || (!user.primaryConsultant && !user.consultantFirm && consultantId)
+        wasFixed: needsUpdate || (!hadConsultantId && Boolean(consultantId))
       });
     }
 

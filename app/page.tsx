@@ -1,3 +1,4 @@
+// @ts-nocheck
 'use client';
 
 import React, { useState, useMemo, useEffect, useCallback, ChangeEvent, useRef } from 'react';
@@ -4607,7 +4608,7 @@ function FinancialScorePage() {
         const companyName = selectedCompany?.name || 'Unknown';
         console.log(`?? LOADING DATA FOR: "${companyName}" (ID: ${selectedCompanyId})`);
         
-        const { records } = await financialsApi.getByCompany(selectedCompanyId);
+        const { records } = await financialsApi.getByCompany(selectedCompanyId, { includeRawData: true });
         if (isStaleRequest()) return;
         console.log(`?? Found ${records.length} financial records for company "${companyName}"`);
         

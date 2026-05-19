@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
-import { requireAuth, validateCompanyAccess, validateUserAccess } from '@/lib/tenant-security';
+import { requireAuth, requireCompanyAccess, validateCompanyAccess, validateUserAccess } from '@/lib/tenant-security';
 import { auditAssessmentOperation, auditForbiddenAccess } from '@/lib/audit-logger';
 
 // GET assessment records for a company or user

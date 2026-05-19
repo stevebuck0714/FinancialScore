@@ -196,7 +196,7 @@ export async function POST(request: NextRequest) {
         results.push({ name, ok: true });
       } catch (error: any) {
         console.warn('Failed to insert covenant', { name, error });
-        results.push({ name, ok: false, error: String(error?.message || error) });
+        results.push({ name, ok: false, error: String(error?.message || error) } as any);
       }
     }
 

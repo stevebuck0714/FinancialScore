@@ -102,7 +102,7 @@ export async function POST(request: NextRequest) {
           autoSync: false,
           syncFrequency: 'manual',
           errorMessage: detail.slice(0, 500),
-          connectionMetadata: metadata,
+          connectionMetadata: metadata as any,
         },
       });
       const status = /401|403/.test(detail) ? 401 : 502;
@@ -127,7 +127,7 @@ export async function POST(request: NextRequest) {
       update: {
         status: 'ACTIVE',
         errorMessage: null,
-        connectionMetadata: mergedMetadata,
+        connectionMetadata: mergedMetadata as any,
         platformVersion: platformVersionTag,
       },
       create: {
@@ -137,7 +137,7 @@ export async function POST(request: NextRequest) {
         autoSync: true,
         syncFrequency: 'manual',
         platformVersion: platformVersionTag,
-        connectionMetadata: mergedMetadata,
+        connectionMetadata: mergedMetadata as any,
       },
       select: { status: true, lastSyncAt: true },
     });

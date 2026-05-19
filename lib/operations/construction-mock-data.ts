@@ -282,7 +282,7 @@ export function buildJobCostControlMock(
   const jobs: JccJob[] = [];
 
   for (let i = 0; i < jobCount; i += 1) {
-    let baseName = rng.pick(JOB_PREFIXES);
+    let baseName: string = rng.pick(JOB_PREFIXES);
     let attempt = 0;
     while (usedNames.has(baseName) && attempt < 10) {
       baseName = `${rng.pick(JOB_PREFIXES)} – ${rng.pick(JOB_PHASES)}`;
@@ -557,6 +557,12 @@ export type ProjectPortfolioPayload = {
     avgMarginPct: number;
     jobCount: number;
     asOfDate: string;
+    mtdProjectRevenue?: number;
+    mtdProjectCost?: number;
+    monthlyProjectProfit?: number;
+    monthlyProjectProfitMarginPct?: number;
+    newJobsThisMonth?: number;
+    totalActiveJobs?: number;
   };
   jobProfitability: PpJobProfitabilityRow[];
   riskFlags: PpRiskFlagRow[];

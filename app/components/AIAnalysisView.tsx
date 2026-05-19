@@ -162,7 +162,7 @@ export default function AIAnalysisView(props: {
         `If ${name} is extremely successful, what acquisition archetypes would best accelerate growth in our markets and why?`,
         `Give example capital deployment plans (M&A, reinvestment, debt paydown, distributions) and the outcomes they could drive for ${name}.`,
       ],
-    } as const;
+    } as QuestionsByCategory;
   }, [companyName]);
 
   const storageKey = useMemo(() => {

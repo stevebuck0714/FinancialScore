@@ -34,7 +34,7 @@ export async function GET(request: NextRequest) {
       status: connection.status,
       lastSyncAt: connection.lastSyncAt,
       errorMessage: connection.errorMessage,
-      tenantName: connection.connectionMetadata?.tenantName || null,
+      tenantName: (connection.connectionMetadata as any)?.tenantName || null,
       autoSync: connection.autoSync,
       syncFrequency: connection.syncFrequency,
     });

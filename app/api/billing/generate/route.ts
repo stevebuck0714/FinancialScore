@@ -80,7 +80,7 @@ export async function POST(request: NextRequest) {
         const { start, end } = calculateBillingPeriod(startDate, plan);
         const dueDate = calculateDueDate(now);
 
-        const invoice = await prisma.invoice.create({
+        const invoice = await (prisma as any).invoice.create({
           data: {
             invoiceNumber,
             companyId: company.id,

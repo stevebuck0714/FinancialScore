@@ -23,7 +23,7 @@ export default function MAScoresSummaryView({
         
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '16px' }}>
           {assessmentData.map((category) => {
-            const companyRecords = assessmentRecords.filter(r => r.companyId === selectedCompanyId);
+            const companyRecords = assessmentRecords.filter(r => String(r.companyId) === String(selectedCompanyId));
             const allCategoryScores = companyRecords.map(record => {
               const categoryQuestions = category.questions.map(q => q.id);
               const categoryResponses = categoryQuestions.map(qId => record.responses[qId]).filter(r => r !== undefined);
