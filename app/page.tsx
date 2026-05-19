@@ -12089,8 +12089,8 @@ function FinancialScorePage() {
   const contentHeightOffset = headerHeight + demoBannerHeight;
   const siteAdminCompanyWorkspace =
     String(currentUser?.role || '').toLowerCase() === 'siteadmin' &&
-    currentView === 'admin' &&
-    Boolean(selectedCompanyId);
+    Boolean(selectedCompanyId) &&
+    (currentView === 'admin' || Boolean(viewToCompanySection(currentView)));
   const formattedDemoExpiry =
     demoAccessState.expiresAtIso && Number.isFinite(Date.parse(demoAccessState.expiresAtIso))
       ? new Date(demoAccessState.expiresAtIso).toLocaleDateString('en-US')

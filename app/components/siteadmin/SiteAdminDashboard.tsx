@@ -822,6 +822,59 @@ export default function SiteAdminDashboard(props: any) {
     }
   };
 
+  const renderOperationalDataModeCard = (company: any) => (
+    <div style={{ padding: '10px', borderRadius: '6px', border: '1px solid #cbd5e1', background: 'white' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px', flexWrap: 'wrap' }}>
+        <div style={{ minWidth: '260px', flex: 1 }}>
+          <div style={{ fontSize: '12px', fontWeight: '700', color: '#334155', marginBottom: '4px' }}>
+            Operational Data Mode
+          </div>
+          <div style={{ fontSize: '12px', color: '#64748b' }}>
+            {company.forceOperationalMockData
+              ? 'Demo mode is ON. Mock data is being served.'
+              : company.hasRealOperationalData
+                ? `Real data mode is ON${company.realDataActivatedAt ? ` (activated ${new Date(company.realDataActivatedAt).toLocaleString()})` : ''}.`
+                : 'Demo mode is active until real operational data is detected.'}
+          </div>
+        </div>
+        <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+          <button
+            onClick={() => saveOperationalDataMode(company.id, true)}
+            disabled={savingOperationalDataModeCompanyId === company.id || company.forceOperationalMockData}
+            style={{
+              padding: '6px 10px',
+              background: company.forceOperationalMockData ? '#0f766e' : 'white',
+              color: company.forceOperationalMockData ? 'white' : '#0f766e',
+              border: '1px solid #0f766e',
+              borderRadius: '6px',
+              fontSize: '12px',
+              fontWeight: '600',
+              cursor: savingOperationalDataModeCompanyId === company.id || company.forceOperationalMockData ? 'not-allowed' : 'pointer',
+            }}
+          >
+            Force Demo Mode
+          </button>
+          <button
+            onClick={() => saveOperationalDataMode(company.id, false)}
+            disabled={savingOperationalDataModeCompanyId === company.id || !company.forceOperationalMockData}
+            style={{
+              padding: '6px 10px',
+              background: !company.forceOperationalMockData ? '#1d4ed8' : 'white',
+              color: !company.forceOperationalMockData ? 'white' : '#1d4ed8',
+              border: '1px solid #1d4ed8',
+              borderRadius: '6px',
+              fontSize: '12px',
+              fontWeight: '600',
+              cursor: savingOperationalDataModeCompanyId === company.id || !company.forceOperationalMockData ? 'not-allowed' : 'pointer',
+            }}
+          >
+            Use Real Data
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+
   const getOperationalHubSettings = (company: any): Record<string, any> => {
     const uda =
       company?.userDefinedAllocations &&
@@ -6463,6 +6516,7 @@ export default function SiteAdminDashboard(props: any) {
                                               border: '1px solid #cbd5e1',
                                             }}
                                           >
+                                            {renderOperationalDataModeCard(company)}
                                             {renderOperationalHubCustomizationCard(company)}
                                           </div>
 
@@ -9499,6 +9553,7 @@ export default function SiteAdminDashboard(props: any) {
                                     border: '1px solid #cbd5e1',
                                   }}
                                 >
+                                  {renderOperationalDataModeCard(businessCompany)}
                                   {renderOperationalHubCustomizationCard(businessCompany)}
                                 </div>
 
