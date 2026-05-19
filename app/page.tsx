@@ -1984,7 +1984,7 @@ function FinancialScorePage() {
   const normalizeMappingsForUi = (mappings: any[]): any[] =>
     (Array.isArray(mappings) ? mappings : []).map((m: any) => {
       const normalizedId = String(m?.accountId || '').trim();
-      const normalizedCode = String(m?.accountCode || normalizedId || '').trim();
+      const normalizedCode = String(m?.accountCode || '').trim();
       return {
         ...m,
         accountId: normalizedId || undefined,
@@ -2063,18 +2063,19 @@ function FinancialScorePage() {
   };
 
   const getDisplayAccountCode = (mapping: any): string => {
-    const preferred = [mapping?.accountCode, mapping?.accountId];
+    const embeddedCode = normalizeAccountCodeForMatch(mapping?.accountName);
+    const preferred = [mapping?.accountCode, embeddedCode];
     for (const value of preferred) {
       const raw = String(value || '').trim();
       if (raw) return raw;
     }
-    return 'N/A';
+    return String(mapping?.accountId || '').trim() || 'N/A';
   };
 
   const getMappingMatchKey = (mapping: any): string => {
     const code =
       normalizeAccountCodeForMatch(mapping?.accountCode) ||
-      normalizeAccountCodeForMatch(mapping?.accountId);
+      normalizeAccountCodeForMatch(mapping?.accountName);
     if (code) return `code:${code}`;
     const name = String(mapping?.accountName || '').trim().toLowerCase();
     if (name) return `name:${name}`;
@@ -2094,7 +2095,9 @@ function FinancialScorePage() {
       const prior = key ? existingByKey.get(key) : null;
       const mergedIdentity = {
         accountId: String(row?.accountId || prior?.accountId || '').trim() || undefined,
-        accountCode: String(row?.accountCode || prior?.accountCode || '').trim() || undefined,
+        accountCode:
+          String(row?.accountCode || prior?.accountCode || normalizeAccountCodeForMatch(row?.accountName) || normalizeAccountCodeForMatch(prior?.accountName) || '').trim() ||
+          undefined,
       };
       const priorTarget = normalizeMappingTargetField(prior?.targetField);
       const hasPriorExplicitMapping = !!priorTarget && priorTarget !== 'unmapped';
@@ -4166,7 +4169,7 @@ function FinancialScorePage() {
       const accountName = String((row as any).Name || '').trim().toLowerCase();
       if (!accountName || chartByName.has(accountName)) continue;
       const accountId = String((row as any).Id || '').trim();
-      const accountCode = String((row as any).AcctNum || accountId || '').trim();
+      const accountCode = String((row as any).AcctNum || '').trim();
       chartByName.set(accountName, { id: accountId, code: accountCode });
     }
 
@@ -4193,7 +4196,7 @@ function FinancialScorePage() {
             const reportAccountId = (row.ColData[0]?.id || row.ColData[1]?.id || '').toString().trim();
             const chartMatch = chartByName.get(accountName.toLowerCase());
             const accountId = (reportAccountId || chartMatch?.id || '').toString().trim();
-            const accountCode = (chartMatch?.code || accountId || '').toString().trim();
+            const accountCode = (chartMatch?.code || '').toString().trim();
             const classification = classifyAccount(statementType, sectionName);
             const dedupeKey = accountId
               ? `${statementType}:id:${accountId}`
@@ -4228,7 +4231,7 @@ function FinancialScorePage() {
         const accountName = String((row as any).Name || '').trim();
         if (!accountName) continue;
         const accountId = String((row as any).Id || '').trim();
-        const accountCode = String((row as any).AcctNum || accountId || '').trim();
+        const accountCode = String((row as any).AcctNum || '').trim();
         const classification = String((row as any).AccountType || (row as any).Classification || 'Other').trim() || 'Other';
         collected.push({
           accountName: accountName,
@@ -15610,6 +15613,7 @@ function FinancialScorePage() {
                             const qbAccountsWithClass = csvAccountsForMapping.map(acc => ({
                               name: acc.name,
                               classification: acc.classification,
+                              accountId: acc.accountId || acc.id || '',
                               accountCode: acc.acctId,  // Include account code for better AI mapping
                               accountType: acc.acctType,
                             }));
@@ -15717,6 +15721,7 @@ function FinancialScorePage() {
                             const qbAccountsWithClass = aiMappings.map(acc => ({
                               name: acc.accountName,
                               classification: acc.accountClassification,
+                              accountId: acc.accountId,
                               accountCode: acc.accountCode,
                             }));
                             const currentSectorCategory = companies.find(c => c.id === selectedCompanyId)?.industrySectorCategory || '01';
@@ -16602,7 +16607,7 @@ function FinancialScorePage() {
                       <thead style={{ position: 'sticky', top: 0, background: '#f8fafc', zIndex: 1 }}>
                         <tr style={{ borderBottom: '2px solid #e2e8f0' }}>
                           <th style={{ textAlign: 'left', padding: '8px', fontWeight: '600', color: '#475569', minWidth: '80px' }}>Type</th>
-                          <th style={{ textAlign: 'left', padding: '8px', fontWeight: '600', color: '#475569', minWidth: '60px' }}>ID</th>
+                          <th style={{ textAlign: 'left', padding: '8px', fontWeight: '600', color: '#475569', minWidth: '60px' }}>Acct #</th>
                           <th style={{ textAlign: 'left', padding: '8px', fontWeight: '600', color: '#475569', minWidth: '200px' }}>Description</th>
                           <th style={{ textAlign: 'right', padding: '8px', fontWeight: '600', color: '#475569', minWidth: '130px' }}>
                             {latestAccountReviewMonthLabel ? `Latest Value (${latestAccountReviewMonthLabel})` : 'Latest Value'}
@@ -17124,8 +17129,8 @@ function FinancialScorePage() {
                               const idRaw = String(mapping.accountId || '').trim();
                               const codeRaw = String(mapping.accountCode || '').trim();
                               const nameRaw = String(mapping.accountName || '').trim();
+                              const displayAccountCode = getDisplayAccountCode(mapping);
                               const resolvedQboClassId =
-                                codeRaw ||
                                 idRaw ||
                                 (isQboCompany ? String(qboAccountIdsByName.get(nameRaw.toLowerCase()) || '').trim() : '');
                               const idNormalized = idRaw.toLowerCase().replace(/[^a-z0-9]/g, '');
@@ -17195,7 +17200,9 @@ function FinancialScorePage() {
                                   </select>
                                 </td>
                                 <td style={{ padding: '6px 8px', color: '#64748b', fontSize: '11px', fontFamily: 'monospace' }}>
-                                  {resolvedQboClassId || getDisplayAccountCode(mapping)}
+                                  <span title={resolvedQboClassId && resolvedQboClassId !== displayAccountCode ? `QBO internal ID: ${resolvedQboClassId}` : undefined}>
+                                    {displayAccountCode}
+                                  </span>
                                 </td>
                                 <td style={{ padding: '6px 8px', color: '#1e293b', fontSize: '11px' }}>{mapping.accountName || 'Unnamed account'}</td>
                                 <td style={{ padding: '6px 8px', textAlign: 'right', color: latestValue == null ? '#64748b' : latestValue >= 0 ? '#10b981' : '#ef4444', fontWeight: '600', fontSize: '11px', fontFamily: 'monospace' }}>

@@ -67,7 +67,8 @@ const mappingRules = [
 
   // Balance Sheet - Liabilities
   { keywords: ['accounts payable', 'payable', 'a/p', 'ap'], targetField: 'ap', confidence: 'high' },
-  { keywords: ['credit card', 'line of credit', 'other current liability', 'current liability', 'accrued'], targetField: 'otherCL', confidence: 'medium' },
+  { keywords: ['line of credit', 'credit line', 'revolver'], targetField: 'loc', confidence: 'high' },
+  { keywords: ['credit card', 'other current liability', 'current liability', 'accrued'], targetField: 'otherCL', confidence: 'medium' },
   { keywords: ['total current liab', 'tcl'], targetField: 'tcl', confidence: 'high' },
   { keywords: ['long term debt', 'long-term debt', 'mortgage', 'loan', 'note payable', 'ltd'], targetField: 'ltd', confidence: 'high' },
   { keywords: ['total liab', 'total liabilities'], targetField: 'totalLiab', confidence: 'high' },
@@ -235,6 +236,68 @@ function forceNonOperatingOverride(
       targetField: hasIncomeSignal && !hasExpenseSignal ? 'nonOperatingIncome' : 'nonOperatingExpense',
       confidence: 'high',
       reasoning: 'Forced mapping from explicit non-operating keyword signal',
+    };
+  }
+
+  return null;
+}
+
+function forceLiabilityOverride(
+  accountName: string,
+  classification: string,
+  accountCodeOrName: string,
+): { targetField: string; confidence: string; reasoning: string } | null {
+  const name = (accountName || '').toLowerCase();
+  const cls = (classification || '').toLowerCase();
+  const rawCode = (accountCodeOrName || '').trim();
+  const code = extractNumericCode(rawCode || accountName || '');
+  const isLiabilityClass = cls.includes('liabil') || cls === 'l';
+
+  if (name.includes('line of credit') || name.includes('credit line') || name.includes('revolver')) {
+    return {
+      targetField: 'loc',
+      confidence: 'high',
+      reasoning: 'Forced mapping: line of credit account is a liability regardless of inconsistent account numbering',
+    };
+  }
+
+  if (name.includes('accounts payable') || name.includes('a/p')) {
+    return {
+      targetField: 'ap',
+      confidence: 'high',
+      reasoning: 'Forced mapping: payable account is Accounts Payable',
+    };
+  }
+
+  if (name.includes('credit card') || name.includes('accrued') || name.includes('current liability')) {
+    return {
+      targetField: 'otherCL',
+      confidence: 'high',
+      reasoning: 'Forced mapping: current liability account is Other Current Liabilities',
+    };
+  }
+
+  if (name.includes('long term') || name.includes('long-term') || name.includes('note payable') || name.includes('loan payable')) {
+    return {
+      targetField: 'ltd',
+      confidence: 'high',
+      reasoning: 'Forced mapping: debt account is Long Term Debt',
+    };
+  }
+
+  if (isLiabilityClass && Number.isFinite(code) && (code as number) >= 2000 && (code as number) < 2500) {
+    return {
+      targetField: 'otherCL',
+      confidence: 'medium',
+      reasoning: `Forced mapping: liability account code ${code} in current liability range`,
+    };
+  }
+
+  if (isLiabilityClass && Number.isFinite(code) && (code as number) >= 2500 && (code as number) < 3000) {
+    return {
+      targetField: 'ltd',
+      confidence: 'medium',
+      reasoning: `Forced mapping: liability account code ${code} in long-term debt range`,
     };
   }
 
@@ -580,6 +643,8 @@ export async function POST(request: NextRequest) {
 
     const mappings: Array<{
       accountName: string;
+      accountId?: string;
+      accountCode?: string;
       accountClassification: string;
       targetField: string;
       confidence: string;
@@ -590,6 +655,7 @@ export async function POST(request: NextRequest) {
     // Process each account
     for (const account of qbAccountsWithClass) {
       const accountName = typeof account === 'string' ? account : account.name;
+      const accountId = typeof account === 'string' ? '' : (account.accountId || '');
       const sourceClassification = typeof account === 'string' ? '' : (account.classification || '');
       const accountCode = typeof account === 'string' ? '' : (account.accountCode || '');
       const accountType = typeof account === 'string' ? '' : (account.accountType || '');
@@ -609,6 +675,13 @@ export async function POST(request: NextRequest) {
         source = 'accountCode';
         hardLocked = true;
       } else {
+        const forcedLiability = forceLiabilityOverride(accountName, classification, codeSource);
+        if (forcedLiability) {
+          bestMapping = forcedLiability;
+          bestConfidence = 100;
+          source = 'accountCode';
+          hardLocked = true;
+        } else {
         const forcedCogs = forceCogsOverride(accountName, codeSource);
         if (forcedCogs) {
           bestMapping = forcedCogs;
@@ -623,6 +696,7 @@ export async function POST(request: NextRequest) {
             source = 'accountCode';
             hardLocked = true;
           }
+        }
         }
       }
 
@@ -695,6 +769,8 @@ export async function POST(request: NextRequest) {
         if (rejectForClassification) {
           mappings.push({
             accountName: accountName,
+            accountId: accountId || undefined,
+            accountCode: accountCode || undefined,
             accountClassification: classification,
             targetField: 'unmapped',
             confidence: 'low',
@@ -705,6 +781,8 @@ export async function POST(request: NextRequest) {
         }
         mappings.push({
           accountName: accountName,
+          accountId: accountId || undefined,
+          accountCode: accountCode || undefined,
           accountClassification: classification,
           targetField: remappedTargetField,
           confidence: bestMapping.confidence,
@@ -715,6 +793,8 @@ export async function POST(request: NextRequest) {
         // No match found - mark as unmapped
         mappings.push({
           accountName: accountName,
+          accountId: accountId || undefined,
+          accountCode: accountCode || undefined,
           accountClassification: classification,
           targetField: 'unmapped',
           confidence: 'low',

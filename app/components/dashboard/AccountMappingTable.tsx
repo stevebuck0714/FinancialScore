@@ -307,11 +307,12 @@ export default function AccountMappingTable({
     };
     return extractNumericCode(
       mapping.accountCode,
-      mapping.accountId,
+      mapping.accountName,
       rawMapping.accountCode,
+      rawMapping.accountName,
+      mapping.accountId,
       rawMapping.accountId,
       rawMapping.acctId,
-      mapping.accountName,
     );
   };
 
@@ -371,6 +372,13 @@ export default function AccountMappingTable({
     return optionsWithNonOperatingDefaults.filter((opt, idx, arr) => arr.findIndex(o => o.value === opt.value) === idx);
   };
 
+  const getAllTargetFieldOptions = () => {
+    const orderedSections = ['revenue', 'cogs', 'expense', 'nonOperating', 'asset', 'liability', 'equity'];
+    return orderedSections
+      .flatMap((sectionKey) => getTargetFieldOptionsForSection(sectionKey))
+      .filter((opt, idx, arr) => arr.findIndex(o => o.value === opt.value) === idx);
+  };
+
   const getFieldLabel = (value: string): string => {
     const canonicalValue = canonicalizeTargetField(value);
     if (canonicalValue === 'nonOperatingIncome') return 'Non-Operating Income';
@@ -380,7 +388,7 @@ export default function AccountMappingTable({
     return option ? option.label : canonicalValue;
   };
 
-  const renderMappingRow = (mapping: AccountMapping, sectionKey: string) => {
+  const renderMappingRow = (mapping: AccountMapping, _sectionKey: string) => {
     const globalIdx = mappings.indexOf(mapping);
     const lobAllocations = mapping.lobAllocations || {};
     const total = Math.round(Object.values(lobAllocations).reduce((sum: number, val: any) => sum + (val || 0), 0));
@@ -473,7 +481,7 @@ export default function AccountMappingTable({
                   <div style={{ padding: '12px 16px', borderBottom: '1px solid #e2e8f0', fontWeight: '600', color: '#374151' }}>
                     Select Target Field
                   </div>
-                  {getTargetFieldOptionsForSection(sectionKey).map(opt => (
+                  {getAllTargetFieldOptions().map(opt => (
                     <div
                       key={opt.value}
                       onClick={() => {
