@@ -177,6 +177,11 @@ function inferJobFilterFromText(value: string): { field: string; operator: strin
   return { field: 'jobName', operator: 'contains', value: cleaned };
 }
 
+function wantsDatedTransactionDetail(value: string): boolean {
+  const normalized = normalizeFilterText(value);
+  return /\b(dates?|daily|days?|transactions?|detail|line items?)\b/.test(normalized);
+}
+
 function mergeInferredFilters(existingFilters: any[], inferredFilters: any[]) {
   const merged = [...existingFilters];
   inferredFilters.filter(Boolean).forEach((filter) => {
@@ -275,10 +280,15 @@ function enhancePreviewConfig(config: any, fieldCatalog: ReportFieldCatalogItem[
   const hasField = (field: string) => fieldCatalog.some((item) => item.field === field);
   const fields = getRequestedFields(config, fieldCatalog);
   const hasJobCostField = fields.some((field) => field.startsWith('op.job-cost-control.'));
+  const alreadyDailyJobCost = fields.includes('op.job-cost-control.dailyCost');
   const wantsDatedJobCost = (
     hasJobCostField &&
     hasField('op.job-cost-control.dailyCost') &&
-    /\b(date|daily|day|trend|line|bar|chart|graph)\b/.test(normalizedContext) &&
+    (
+      alreadyDailyJobCost ||
+      wantsDatedTransactionDetail(context) ||
+      /\b(trend|line|bar|chart|graph)\b/.test(normalizedContext)
+    ) &&
     /\b(cost|labor|materials?|subcontract(or|ors|ing)?|equipment)\b/.test(normalizedContext)
   );
   const inferredCostType = inferCostTypeFilterFromText(context);

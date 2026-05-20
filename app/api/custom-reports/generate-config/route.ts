@@ -212,11 +212,16 @@ function mergeFilters(existingFilters: any[], inferredFilters: any[]) {
   return merged.slice(0, 8);
 }
 
+function wantsDatedTransactionDetail(prompt: string): boolean {
+  const lower = normalizePromptText(prompt).toLowerCase();
+  return /\b(dates?|daily|days?|transactions?|detail|line items?)\b/.test(lower);
+}
+
 function enhanceConfigFromPrompt(config: ReturnType<typeof validateReportConfig>, prompt: string, fieldCatalog: ReportFieldCatalogItem[]) {
   const lowerPrompt = normalizePromptText(prompt).toLowerCase();
   const hasField = (field: string) => fieldCatalog.some((item) => item.field === field);
   const wantsDatedJobCost = (
-    /\b(date|daily|day|trend|line|bar|chart|graph)\b/.test(lowerPrompt) &&
+    (wantsDatedTransactionDetail(prompt) || /\b(trend|line|bar|chart|graph)\b/.test(lowerPrompt)) &&
     /\b(cost|labor|materials?|subcontract(or|ors|ing)?|equipment)\b/.test(lowerPrompt) &&
     hasField('op.job-cost-control.dailyCost')
   );
@@ -496,6 +501,7 @@ export async function POST(request: NextRequest) {
               'Supported chartType values: line, multi_line, bar, grouped_bar, stacked_bar, combo, table, pie.',
               'For combo charts, each series can use chartType line or bar and can use left/right axis.',
               'For stacked_bar charts, use multiple bar series with the same stackGroup.',
+              'If the user asks for dates, transactions, transaction detail, daily detail, or line items for job/project costs, use op.job-cost-control.dailyCost with timeGrain day and xAxis field date.',
             ].join('\n'),
           },
           {
@@ -518,8 +524,8 @@ export async function POST(request: NextRequest) {
                 },
                 chartType: 'line | multi_line | bar | grouped_bar | stacked_bar | combo | table | pie',
                 dataSource: 'monthlyFinancial | operational',
-                timeGrain: 'month',
-                xAxis: { field: 'monthDate', label: 'Month' },
+                timeGrain: 'month | day',
+                xAxis: { field: 'monthDate | date', label: 'Month | Date' },
                 yAxes: { left: 'Dollars', right: 'Percent' },
                 series: [
                   {
