@@ -144,6 +144,11 @@ function normalizePromptText(value: string): string {
     .trim();
 }
 
+type ReportScope = {
+  entityType: 'total_company' | 'customer' | 'project' | 'product' | 'product_category' | 'vendor' | 'location' | 'division' | 'account' | 'unknown';
+  entityName: string | null;
+};
+
 function inferCostTypeFilter(prompt: string): { field: string; operator: string; value: string } | null {
   const lower = normalizePromptText(prompt).toLowerCase();
   if (/\blabor\b/.test(lower)) return { field: 'costType', operator: 'contains', value: 'Labor' };
@@ -153,15 +158,46 @@ function inferCostTypeFilter(prompt: string): { field: string; operator: string;
   return null;
 }
 
-function inferJobFilter(prompt: string): { field: string; operator: string; value: string } | null {
+function inferReportScope(prompt: string): ReportScope {
+  const lower = normalizePromptText(prompt).toLowerCase();
+  if (/\b(total company|company wide|entire company|overall|all company)\b/.test(lower)) {
+    return { entityType: 'total_company', entityName: null };
+  }
   const cleaned = normalizePromptText(prompt)
-    .replace(/\b(line|bar|stacked|grouped|combo|pie|table|chart|graph|report|trend|monthly|daily|date|period|by)\b/gi, ' ')
+    .replace(/\b(line|bar|stacked|grouped|combo|pie|table|chart|graph|report|trend|monthly|daily|date|period|by|category|categories|and|vs|versus)\b/gi, ' ')
+    .replace(/\b(revenue|sales|cogs|cost of goods sold|gross profit|gross margin|margin|ebitda|net income|cash|accounts receivable|accounts payable|ar|ap|inventory|expense|expenses)\b/gi, ' ')
     .replace(/\b(actual|budget|committed|commitment|variance|costs?|labor|materials?|subcontractors?|subcontracting|equipment|other)\b/gi, ' ')
     .replace(/\s+/g, ' ')
     .trim();
-  const genericOnly = /^(job|project|jobs|projects|control|portfolio|forecast|billing|cash)$/i.test(cleaned);
-  if (!cleaned || genericOnly || cleaned.length < 4) return null;
-  return { field: 'jobName', operator: 'contains', value: cleaned };
+  const genericOnly = /^(job|project|jobs|projects|customer|customers|client|clients|product|products|category|categories|vendor|vendors|supplier|suppliers|location|locations|division|divisions|control|portfolio|forecast|billing|cash)$/i.test(cleaned);
+  if (!cleaned || genericOnly || cleaned.length < 4) {
+    return { entityType: 'total_company', entityName: null };
+  }
+
+  if (/\b(customer|client)\b/.test(lower)) return { entityType: 'customer', entityName: cleaned };
+  if (/\b(product category|category)\b/.test(lower) && !/\bcost categor/.test(lower)) return { entityType: 'product_category', entityName: cleaned };
+  if (/\b(product|item|sku)\b/.test(lower)) return { entityType: 'product', entityName: cleaned };
+  if (/\b(vendor|supplier)\b/.test(lower)) return { entityType: 'vendor', entityName: cleaned };
+  if (/\b(location|site|branch)\b/.test(lower)) return { entityType: 'location', entityName: cleaned };
+  if (/\b(division|department)\b/.test(lower)) return { entityType: 'division', entityName: cleaned };
+  if (/\b(project|job|cost)\b/.test(lower)) return { entityType: 'project', entityName: cleaned };
+  return { entityType: 'unknown', entityName: cleaned };
+}
+
+function scopeToFilter(scope: ReportScope): { field: string; operator: string; value: string; entityType: string } | null {
+  if (!scope.entityName || scope.entityType === 'total_company' || scope.entityType === 'unknown') return null;
+  const fieldByEntity: Record<string, string> = {
+    customer: 'customerName',
+    project: 'jobName',
+    product: 'productName',
+    product_category: 'productCategory',
+    vendor: 'vendorName',
+    location: 'locationName',
+    division: 'division',
+    account: 'accountName',
+  };
+  const field = fieldByEntity[scope.entityType] || 'jobName';
+  return { field, operator: 'contains', value: scope.entityName, entityType: scope.entityType };
 }
 
 function mergeFilters(existingFilters: any[], inferredFilters: any[]) {
@@ -205,11 +241,13 @@ function enhanceConfigFromPrompt(config: ReturnType<typeof validateReportConfig>
       : [datedJobCostSeries]
     : config.series;
 
-  const inferredFilters = [inferJobFilter(prompt), inferredCostType].filter(Boolean);
+  const scope = inferReportScope(prompt);
+  const inferredFilters = [scopeToFilter(scope), inferredCostType].filter(Boolean);
   const filters = mergeFilters(config.filters || [], inferredFilters);
 
   return {
     ...config,
+    scope,
     description: wantsDatedJobCost
       ? `${inferredCostType?.value || 'Job'} cost by date for the requested project or job.`
       : config.description,
@@ -450,6 +488,9 @@ export async function POST(request: NextRequest) {
               'You are a senior financial reporting product analyst.',
               'Return only JSON for a validated custom report configuration.',
               'Do not invent database tables or fields. Use only fields from the provided field catalog.',
+              'Always identify the report universe/entity first, before choosing metrics.',
+              'The report universe can be total_company, customer, project, product, product_category, vendor, location, division, or account.',
+              'If the user names a specific entity such as a project, customer, product, vendor, or location, include it in scope and as a filter before applying metrics.',
               'Operational fields are prefixed with op.<module>.<metric>; use them when the user asks for sector, project, customer, product, inventory, cash, AR, AP, or other operational reporting.',
               'When a prompt names an operational slice such as job, project, customer, product, vendor, cost type, or location, express it as a filter instead of inventing a field.',
               'Supported chartType values: line, multi_line, bar, grouped_bar, stacked_bar, combo, table, pie.',
@@ -471,7 +512,11 @@ export async function POST(request: NextRequest) {
               requiredJsonShape: {
                 title: 'short report title',
                 description: 'one sentence explaining the report',
-              chartType: 'line | multi_line | bar | grouped_bar | stacked_bar | combo | table | pie',
+                scope: {
+                  entityType: 'total_company | customer | project | product | product_category | vendor | location | division | account',
+                  entityName: 'specific named entity or null for total_company',
+                },
+                chartType: 'line | multi_line | bar | grouped_bar | stacked_bar | combo | table | pie',
                 dataSource: 'monthlyFinancial | operational',
                 timeGrain: 'month',
                 xAxis: { field: 'monthDate', label: 'Month' },
