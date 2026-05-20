@@ -17,6 +17,7 @@ interface HeaderProps {
   previewAdminName?: string | null;
   /** When set, site admins in company admin workspace get full nav chrome (sidebar/header parity). */
   selectedCompanyId?: string;
+  dataRoomEnabledByAdmin?: boolean;
   customReportsEnabledByAdmin?: boolean;
   // currentView is a large union in app/page.tsx; keep this flexible for reuse.
   setCurrentView: (view: any) => void;
@@ -30,6 +31,7 @@ export default function Header({
   companyName,
   previewAdminName,
   selectedCompanyId = '',
+  dataRoomEnabledByAdmin = false,
   customReportsEnabledByAdmin = false,
   setCurrentView,
   handleLogout,
@@ -308,25 +310,27 @@ export default function Header({
                 </div>
               )}
             </div>
-            <button
-              onClick={() => canAccess('dataroom') && handleNavigation('dataroom')}
-              title={!canAccess('dataroom') ? 'Access restricted' : undefined}
-              style={{
-                background: currentView === 'dataroom' ? '#eef2ff' : 'none',
-                border: 'none',
-                fontSize: '16px',
-                fontWeight: '600',
-                color: '#000',
-                cursor: canAccess('dataroom') ? 'pointer' : 'not-allowed',
-                padding: '8px 12px',
-                borderRadius: '6px',
-                borderBottom: currentView === 'dataroom' ? '3px solid #000' : '3px solid transparent',
-                whiteSpace: 'nowrap',
-                opacity: canAccess('dataroom') ? 1 : 0.4
-              }}
-            >
-              DATA ROOM
-            </button>
+            {dataRoomEnabledByAdmin && (
+              <button
+                onClick={() => canAccess('dataroom') && handleNavigation('dataroom')}
+                title={!canAccess('dataroom') ? 'Access restricted' : undefined}
+                style={{
+                  background: currentView === 'dataroom' ? '#eef2ff' : 'none',
+                  border: 'none',
+                  fontSize: '16px',
+                  fontWeight: '600',
+                  color: '#000',
+                  cursor: canAccess('dataroom') ? 'pointer' : 'not-allowed',
+                  padding: '8px 12px',
+                  borderRadius: '6px',
+                  borderBottom: currentView === 'dataroom' ? '3px solid #000' : '3px solid transparent',
+                  whiteSpace: 'nowrap',
+                  opacity: canAccess('dataroom') ? 1 : 0.4
+                }}
+              >
+                DATA ROOM
+              </button>
+            )}
             {customReportsEnabledByAdmin && (
               <button
                 onClick={() => canAccess('custom-reports') && handleNavigation('custom-reports')}

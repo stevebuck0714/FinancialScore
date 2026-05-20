@@ -12268,6 +12268,7 @@ function FinancialScorePage() {
           previewAdminName={siteAdminViewingAs?.name || null}
           selectedCompanyId={selectedCompanyId}
           currentView={currentView}
+          dataRoomEnabledByAdmin={isDataRoomEnabledByAdmin}
           customReportsEnabledByAdmin={isCustomReportsEnabledByAdmin}
           setCurrentView={setCurrentView as any}
           handleLogout={handleLogout}

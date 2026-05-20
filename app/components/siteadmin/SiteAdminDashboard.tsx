@@ -876,39 +876,6 @@ export default function SiteAdminDashboard(props: any) {
     </div>
   );
 
-  const renderCustomReportsAccessCard = (company: any) => (
-    <div style={{ padding: '10px', borderRadius: '6px', border: '1px solid #a5f3fc', background: '#ecfeff' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px', flexWrap: 'wrap' }}>
-        <div style={{ minWidth: '260px', flex: 1 }}>
-          <div style={{ fontSize: '12px', fontWeight: '700', color: '#155e75', marginBottom: '4px' }}>
-            Custom Reports
-          </div>
-          <div style={{ fontSize: '12px', color: '#0e7490' }}>
-            {getCustomReportsEnabledByAdmin(company)
-              ? 'Custom Reports is visible for this company.'
-              : 'Custom Reports is hidden for this company.'}
-          </div>
-        </div>
-        <button
-          onClick={() => saveCustomReportsEnabledByAdmin(company.id, !getCustomReportsEnabledByAdmin(company))}
-          disabled={savingCustomReportsCompanyId === company.id}
-          style={{
-            padding: '6px 10px',
-            background: getCustomReportsEnabledByAdmin(company) ? '#dc2626' : '#2563eb',
-            color: 'white',
-            border: 'none',
-            borderRadius: '6px',
-            fontSize: '12px',
-            fontWeight: '600',
-            cursor: savingCustomReportsCompanyId === company.id ? 'not-allowed' : 'pointer',
-          }}
-        >
-          {getCustomReportsEnabledByAdmin(company) ? 'Disable Custom Reports' : 'Enable Custom Reports'}
-        </button>
-      </div>
-    </div>
-  );
-
   const getOperationalHubSettings = (company: any): Record<string, any> => {
     const uda =
       company?.userDefinedAllocations &&
@@ -6633,7 +6600,6 @@ export default function SiteAdminDashboard(props: any) {
                                             }}
                                           >
                                             {renderOperationalDataModeCard(company)}
-                                            {renderCustomReportsAccessCard(company)}
                                             {renderOperationalHubCustomizationCard(company)}
                                           </div>
 
@@ -6648,7 +6614,7 @@ export default function SiteAdminDashboard(props: any) {
                                               border: '1px solid #cbd5e1',
                                             }}
                                           >
-                                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(240px, 1fr))', gap: '10px' }}>
+                                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(220px, 1fr))', gap: '10px' }}>
                                             {/* Subscription Pricing */}
                                             <div style={{ padding: '4px 10px 10px 10px', background: 'white', borderRadius: '6px', border: '1px solid #cbd5e1' }}>
                                               <h6 style={{ fontSize: '14px', fontWeight: '700', color: '#475569', marginBottom: '8px' }}>Subscription Pricing</h6>
@@ -9696,7 +9662,6 @@ export default function SiteAdminDashboard(props: any) {
                                   }}
                                 >
                                   {renderOperationalDataModeCard(businessCompany)}
-                                  {renderCustomReportsAccessCard(businessCompany)}
                                   {renderOperationalHubCustomizationCard(businessCompany)}
                                 </div>
 
@@ -9711,7 +9676,7 @@ export default function SiteAdminDashboard(props: any) {
                                     border: '1px solid #cbd5e1',
                                   }}
                                 >
-                                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(240px, 1fr))', gap: '10px' }}>
+                                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(220px, 1fr))', gap: '10px' }}>
                                   {/* Subscription Pricing */}
                                   <div style={{ padding: '4px 12px 12px 12px', background: '#fef3c7', borderRadius: '6px' }}>
                                     <h4 style={{ fontSize: '14px', fontWeight: '600', color: '#475569', marginBottom: '8px' }}>Subscription Pricing</h4>
