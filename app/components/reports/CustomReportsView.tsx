@@ -116,10 +116,10 @@ function formatTooltipValue(value: unknown, name: unknown, props: any, series: a
   return [formatValue(Number(value || 0), meta?.format), meta?.label || String(name || field)];
 }
 
-function CustomReportPreview({ config, rows }: { config: any; rows: any[] }) {
+function CustomReportPreview({ config, rows, tableRows = [], tableColumns = [] }: { config: any; rows: any[]; tableRows?: any[]; tableColumns?: any[] }) {
   const series = Array.isArray(config?.series) ? config.series : [];
   const chartType = String(config?.chartType || 'line');
-  const hasRows = rows.length > 0 && series.length > 0;
+  const hasRows = (chartType === 'table' && tableRows.length > 0) || (rows.length > 0 && series.length > 0);
 
   if (!hasRows) {
     return (
@@ -130,6 +130,39 @@ function CustomReportPreview({ config, rows }: { config: any; rows: any[] }) {
   }
 
   if (chartType === 'table') {
+    if (tableRows.length > 0 && tableColumns.length > 0) {
+      return (
+        <div style={{ marginTop: '18px', overflowX: 'auto', border: '1px solid #e2e8f0', borderRadius: '12px' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
+            <thead>
+              <tr style={{ background: '#f8fafc' }}>
+                {tableColumns.map((column: any) => (
+                  <th key={column.key} style={{ textAlign: column.type === 'metric' ? 'right' : 'left', padding: '10px', borderBottom: '1px solid #e2e8f0' }}>
+                    {column.label || column.key}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {tableRows.map((row: any, rowIndex: number) => (
+                <tr key={`${row.jobId || row.jobName || row.date || 'row'}-${rowIndex}`}>
+                  {tableColumns.map((column: any) => {
+                    const rawValue = column.type === 'metric' ? row?.values?.[column.key] : row?.[column.key];
+                    const value = column.type === 'metric' ? formatValue(Number(rawValue || 0), column.format) : String(rawValue || '');
+                    return (
+                      <td key={column.key} style={{ padding: '9px 10px', borderBottom: '1px solid #f1f5f9', textAlign: column.type === 'metric' ? 'right' : 'left', color: '#334155', fontWeight: column.key === 'jobName' ? 700 : 400 }}>
+                        {value || '—'}
+                      </td>
+                    );
+                  })}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      );
+    }
+
     return (
       <div style={{ marginTop: '18px', overflowX: 'auto', border: '1px solid #e2e8f0', borderRadius: '12px' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
@@ -250,6 +283,8 @@ export default function CustomReportsView({ selectedCompanyId }: CustomReportsVi
   const [generationError, setGenerationError] = useState('');
   const [generatedConfig, setGeneratedConfig] = useState<any | null>(null);
   const [previewRows, setPreviewRows] = useState<any[]>([]);
+  const [previewTableRows, setPreviewTableRows] = useState<any[]>([]);
+  const [previewTableColumns, setPreviewTableColumns] = useState<any[]>([]);
   const [previewError, setPreviewError] = useState('');
   const [savedReports, setSavedReports] = useState<SavedCustomReport[]>([]);
   const [savedReportsError, setSavedReportsError] = useState('');
@@ -284,6 +319,8 @@ export default function CustomReportsView({ selectedCompanyId }: CustomReportsVi
   useEffect(() => {
     setGeneratedConfig(null);
     setPreviewRows([]);
+    setPreviewTableRows([]);
+    setPreviewTableColumns([]);
     setPreviewError('');
     setSelectedSavedReportId(null);
     void loadSavedReports();
@@ -292,6 +329,8 @@ export default function CustomReportsView({ selectedCompanyId }: CustomReportsVi
   const loadPreview = async (reportConfig: any) => {
     setPreviewError('');
     setPreviewRows([]);
+    setPreviewTableRows([]);
+    setPreviewTableColumns([]);
     try {
       const response = await fetch('/api/custom-reports/preview', {
         method: 'POST',
@@ -306,6 +345,8 @@ export default function CustomReportsView({ selectedCompanyId }: CustomReportsVi
         throw new Error(data?.error || 'Failed to build report preview');
       }
       setPreviewRows(Array.isArray(data?.rows) ? data.rows : []);
+      setPreviewTableRows(Array.isArray(data?.tableRows) ? data.tableRows : []);
+      setPreviewTableColumns(Array.isArray(data?.tableColumns) ? data.tableColumns : []);
     } catch (error: any) {
       setPreviewError(error?.message || 'Failed to build report preview');
     }
@@ -418,6 +459,20 @@ export default function CustomReportsView({ selectedCompanyId }: CustomReportsVi
 
   const exportReportCsv = () => {
     if (!generatedConfig) return;
+    if (String(generatedConfig.chartType || '').toLowerCase() === 'table' && previewTableRows.length > 0 && previewTableColumns.length > 0) {
+      const lines = [
+        previewTableColumns.map((column: any) => column.label || column.key),
+        ...previewTableRows.map((row: any) => previewTableColumns.map((column: any) => (
+          column.type === 'metric' ? row?.values?.[column.key] : row?.[column.key]
+        ) ?? '')),
+      ];
+      const csv = lines
+        .map((line) => line.map((value) => `"${String(value ?? '').replace(/"/g, '""')}"`).join(','))
+        .join('\n');
+      downloadBlob(new Blob([csv], { type: 'text/csv;charset=utf-8' }), `${slugify(generatedConfig.title)}.csv`);
+      return;
+    }
+
     const series = Array.isArray(generatedConfig?.series) ? generatedConfig.series : [];
     const headers = ['Month', ...series.map((item: any) => item.label || item.field)];
     const lines = [
@@ -515,6 +570,8 @@ export default function CustomReportsView({ selectedCompanyId }: CustomReportsVi
         setSelectedSavedReportId(null);
         setGeneratedConfig(null);
         setPreviewRows([]);
+        setPreviewTableRows([]);
+        setPreviewTableColumns([]);
       }
       await loadSavedReports();
     } catch (error: any) {
@@ -708,7 +765,7 @@ export default function CustomReportsView({ selectedCompanyId }: CustomReportsVi
                       </div>
                     )}
                     {!previewError && (
-                      <CustomReportPreview config={generatedConfig} rows={previewRows} />
+                      <CustomReportPreview config={generatedConfig} rows={previewRows} tableRows={previewTableRows} tableColumns={previewTableColumns} />
                     )}
                   </div>
                 </div>
@@ -862,7 +919,7 @@ export default function CustomReportsView({ selectedCompanyId }: CustomReportsVi
                   </div>
                 )}
                 {!previewError && (
-                  <CustomReportPreview config={generatedConfig} rows={previewRows} />
+                  <CustomReportPreview config={generatedConfig} rows={previewRows} tableRows={previewTableRows} tableColumns={previewTableColumns} />
                 )}
               </div>
 

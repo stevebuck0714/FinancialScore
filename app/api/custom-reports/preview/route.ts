@@ -96,10 +96,51 @@ function getRecordDate(row: any): string {
   return row?.monthDate || row?.snapshotDate || row?.date || row?.asOfDate || new Date().toISOString();
 }
 
+function getRecordKey(row: any): string {
+  return [
+    row?.jobName || row?.projectName || row?.customerName || row?.vendorName || row?.itemName || row?.accountName || row?.jobId || '',
+    row?.costType || row?.subType || row?.vendorType || row?.status || '',
+    row?.date || row?.snapshotDate || row?.monthDate || '',
+  ].join('|');
+}
+
+function enrichOperationalRecord(record: any, payload: any): any {
+  const jobId = String(record?.jobId || '').trim();
+  if (!jobId || record?.jobName) return record;
+  const job = Array.isArray(payload?.jobs) ? payload.jobs.find((item: any) => String(item?.jobId || '') === jobId) : null;
+  if (!job) return record;
+  return {
+    ...record,
+    jobName: job.jobName,
+    projectName: job.jobName,
+    customerName: record.customerName || job.customerName,
+    pmName: record.pmName || job.pmName,
+    division: record.division || job.division,
+  };
+}
+
+function normalizeFilterText(value: unknown): string {
+  return String(value || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ');
+}
+
+function filterTerms(value: unknown): string[] {
+  const normalized = normalizeFilterText(value);
+  const terms = [normalized];
+  if (/\bsubcontract(or|ors|ing)?\b/.test(normalized)) {
+    terms.push('subcontract', 'subcontractor', 'subcontractors');
+  }
+  if (/\bproject\b/.test(normalized)) terms.push(normalized.replace(/\bproject\b/g, 'job'));
+  if (/\bjob\b/.test(normalized)) terms.push(normalized.replace(/\bjob\b/g, 'project'));
+  return Array.from(new Set(terms.filter(Boolean)));
+}
+
 function passesFilters(row: any, filters: any[], fieldMeta: ReportFieldCatalogItem): boolean {
   return filters.every((filter) => {
-    const value = String(filter?.value || '').trim().toLowerCase();
-    if (!value) return true;
+    const terms = filterTerms(filter?.value);
+    if (terms.length === 0) return true;
     const field = String(filter?.field || '').trim();
     const candidateKeys = [
       field,
@@ -114,9 +155,90 @@ function passesFilters(row: any, filters: any[], fieldMeta: ReportFieldCatalogIt
       'accountName',
       'costType',
       'subType',
+      'vendorType',
     ].filter(Boolean) as string[];
-    return candidateKeys.some((key) => String(row?.[key] || '').toLowerCase().includes(value));
+    return candidateKeys.some((key) => {
+      const candidate = normalizeFilterText(row?.[key]);
+      return terms.some((term) => candidate.includes(term) || term.includes(candidate));
+    });
   });
+}
+
+function recordsForField(payload: any, field: ReportFieldCatalogItem): any[] {
+  const recordSet = field.recordSet || 'records';
+  const records = Array.isArray(payload?.[recordSet])
+    ? payload[recordSet]
+    : Array.isArray(payload?.records)
+      ? payload.records
+      : [];
+  return records.map((record: any) => enrichOperationalRecord(record, payload));
+}
+
+function buildOperationalTablePreview(
+  companyId: string,
+  sectorCategory: string | null,
+  fields: string[],
+  fieldCatalog: ReportFieldCatalogItem[],
+  filters: any[]
+) {
+  const operationalFields = fields
+    .map((field) => fieldCatalog.find((item) => item.field === field))
+    .filter((field): field is ReportFieldCatalogItem => Boolean(field?.dataType && field?.valueKey));
+  if (operationalFields.length === 0) return { columns: [], rows: [] };
+
+  const rowsByKey = new Map<string, Record<string, unknown>>();
+  const payloadsByType = new Map<string, any>();
+
+  operationalFields.forEach((field) => {
+    const dataType = String(field.dataType || '');
+    if (!dataType) return;
+    if (!payloadsByType.has(dataType)) {
+      payloadsByType.set(dataType, getOperationalPayload(companyId, sectorCategory, dataType));
+    }
+    const payload = payloadsByType.get(dataType);
+    recordsForField(payload, field)
+      .filter((record: any) => passesFilters(record, filters, field))
+      .forEach((record: any) => {
+        const key = `${dataType}|${field.recordSet || 'records'}|${getRecordKey(record)}`;
+        const existing = rowsByKey.get(key) || {
+          date: record.date || record.snapshotDate || record.monthDate || null,
+          jobName: record.jobName || record.projectName || null,
+          projectName: record.projectName || record.jobName || null,
+          jobId: record.jobId || null,
+          costType: record.costType || null,
+          subType: record.subType || null,
+          customerName: record.customerName || record.customer || null,
+          vendorName: record.vendorName || record.vendor || null,
+          itemName: record.itemName || record.productName || null,
+          accountName: record.accountName || null,
+          values: {},
+        };
+        (existing.values as Record<string, number>)[field.field] = toNumber(record?.[field.valueKey || '']);
+        rowsByKey.set(key, existing);
+      });
+  });
+
+  const dimensionColumns = [
+    { key: 'date', label: 'Date', type: 'text' },
+    { key: 'jobName', label: 'Job / Project', type: 'text' },
+    { key: 'costType', label: 'Cost Type', type: 'text' },
+    { key: 'subType', label: 'Subtype', type: 'text' },
+    { key: 'customerName', label: 'Customer', type: 'text' },
+    { key: 'vendorName', label: 'Vendor', type: 'text' },
+  ].filter((column) => Array.from(rowsByKey.values()).some((row) => row[column.key]));
+
+  const metricColumns = operationalFields.map((field) => ({
+    key: field.field,
+    label: field.label,
+    type: 'metric',
+    format: field.format,
+  }));
+
+  const rows = Array.from(rowsByKey.values()).slice(0, 250);
+  return {
+    columns: [...dimensionColumns, ...metricColumns],
+    rows,
+  };
 }
 
 function buildOperationalPreviewRows(
@@ -136,13 +258,7 @@ function buildOperationalPreviewRows(
     const payload = getOperationalPayload(companyId, sectorCategory, dataType);
     const fieldsForType = operationalFields.filter((field) => field.dataType === dataType);
     fieldsForType.forEach((field) => {
-      const records = Array.isArray((payload as any)?.[field.recordSet || 'records'])
-        ? (payload as any)[field.recordSet || 'records']
-        : Array.isArray((payload as any)?.records)
-          ? (payload as any).records
-          : [];
-
-      records
+      recordsForField(payload, field)
         .filter((record: any) => passesFilters(record, filters, field))
         .forEach((record: any) => {
           const rawDate = getRecordDate(record);
@@ -250,9 +366,20 @@ export async function POST(request: NextRequest) {
     });
 
     const previewRows = Array.from(previewRowsByMonth.values()).sort((a, b) => a.monthDate.localeCompare(b.monthDate));
+    const tablePreview = String(config?.chartType || '').toLowerCase() === 'table'
+      ? buildOperationalTablePreview(
+          companyId,
+          company?.industrySectorCategory || null,
+          fields,
+          fieldCatalog,
+          Array.isArray(config?.filters) ? config.filters : []
+        )
+      : { columns: [], rows: [] };
 
     return NextResponse.json({
       rows: previewRows,
+      tableColumns: tablePreview.columns,
+      tableRows: tablePreview.rows,
       fields,
       fieldCatalog: fieldCatalog.filter((field) => fields.includes(field.field)),
     });
