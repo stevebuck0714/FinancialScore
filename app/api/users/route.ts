@@ -20,6 +20,7 @@ const DEFAULT_ALLOWED_SECTIONS = [
   'mda',
   'management-assessment',
   'dataroom',
+  'custom-reports',
 ];
 
 async function sendManagedUserWelcomeEmail({

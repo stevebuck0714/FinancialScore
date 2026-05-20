@@ -1,0 +1,672 @@
+'use client';
+
+import React, { useCallback, useEffect, useState } from 'react';
+import {
+  Bar,
+  CartesianGrid,
+  Cell,
+  ComposedChart,
+  Legend,
+  Line,
+  Pie,
+  PieChart,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from 'recharts';
+
+type ReportType = 'line' | 'multi_line' | 'bar' | 'grouped_bar' | 'stacked_bar' | 'combo' | 'table' | 'pie';
+
+interface CustomReportsViewProps {
+  selectedCompanyId: string;
+  companyName?: string;
+  industrySectorCategory?: string | null;
+}
+
+type SavedCustomReport = {
+  id: string;
+  title: string;
+  description?: string | null;
+  chartType?: string | null;
+  dataSource?: string | null;
+  config: any;
+  createdAt?: string;
+  updatedAt?: string;
+  createdBy?: {
+    name?: string | null;
+    email?: string | null;
+  } | null;
+};
+
+const reportTypes: Array<{ id: ReportType; label: string; description: string }> = [
+  { id: 'line', label: 'Line Chart', description: 'Trend metrics over time.' },
+  { id: 'multi_line', label: 'Multi-Line Chart', description: 'Compare two or more trends on one chart.' },
+  { id: 'bar', label: 'Bar Chart', description: 'Compare categories, periods, or accounts.' },
+  { id: 'grouped_bar', label: 'Grouped Bar', description: 'Show side-by-side bars by period.' },
+  { id: 'stacked_bar', label: 'Stacked Bar', description: 'Show multiple components stacked by period.' },
+  { id: 'combo', label: 'Combo Chart', description: 'Mix bars and lines with optional dual axes.' },
+  { id: 'table', label: 'Table', description: 'Detailed rows for review and export.' },
+  { id: 'pie', label: 'Pie Chart', description: 'Show proportional mix for one period.' },
+];
+
+const seriesColors = ['#1F70C1', '#16a34a', '#f97316', '#7c3aed', '#dc2626', '#0891b2'];
+
+function formatValue(value: number, format?: string) {
+  if (format === 'percent') return `${(value * 100).toFixed(1)}%`;
+  if (format === 'currency') {
+    const abs = Math.abs(value);
+    const suffix = abs >= 1_000_000 ? 'M' : abs >= 1_000 ? 'K' : '';
+    const divisor = suffix === 'M' ? 1_000_000 : suffix === 'K' ? 1_000 : 1;
+    return `${value < 0 ? '-' : ''}$${(abs / divisor).toFixed(suffix ? 1 : 0)}${suffix}`;
+  }
+  return Number(value || 0).toLocaleString(undefined, { maximumFractionDigits: 1 });
+}
+
+function formatDate(value?: string) {
+  if (!value) return 'Not available';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return 'Not available';
+  return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+}
+
+function createdByLabel(report: SavedCustomReport) {
+  return report.createdBy?.name || report.createdBy?.email || 'Unknown';
+}
+
+function getSeriesValue(row: any, field: string) {
+  return Number(row?.values?.[field] ?? 0);
+}
+
+function buildChartRows(rows: any[], series: any[]) {
+  return rows.map((row) => {
+    const chartRow: Record<string, any> = {
+      month: row.month,
+      monthDate: row.monthDate,
+    };
+    series.forEach((item: any) => {
+      chartRow[item.field] = getSeriesValue(row, item.field);
+    });
+    return chartRow;
+  });
+}
+
+function formatTooltipValue(value: unknown, name: unknown, props: any, series: any[]) {
+  const field = props?.dataKey ? String(props.dataKey) : '';
+  const meta = series.find((item: any) => item.field === field);
+  return [formatValue(Number(value || 0), meta?.format), meta?.label || String(name || field)];
+}
+
+function CustomReportPreview({ config, rows }: { config: any; rows: any[] }) {
+  const series = Array.isArray(config?.series) ? config.series : [];
+  const chartType = String(config?.chartType || 'line');
+  const hasRows = rows.length > 0 && series.length > 0;
+
+  if (!hasRows) {
+    return (
+      <div style={{ marginTop: '18px', padding: '18px', border: '1px dashed #cbd5e1', borderRadius: '12px', color: '#64748b', fontSize: '13px' }}>
+        No preview data is available for this report yet.
+      </div>
+    );
+  }
+
+  if (chartType === 'table') {
+    return (
+      <div style={{ marginTop: '18px', overflowX: 'auto', border: '1px solid #e2e8f0', borderRadius: '12px' }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
+          <thead>
+            <tr style={{ background: '#f8fafc' }}>
+              <th style={{ textAlign: 'left', padding: '10px', borderBottom: '1px solid #e2e8f0' }}>Month</th>
+              {series.map((item: any) => (
+                <th key={item.field} style={{ textAlign: 'right', padding: '10px', borderBottom: '1px solid #e2e8f0' }}>{item.label || item.field}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((row) => (
+              <tr key={row.monthDate}>
+                <td style={{ padding: '9px 10px', borderBottom: '1px solid #f1f5f9', color: '#334155', fontWeight: 700 }}>{row.month}</td>
+                {series.map((item: any) => (
+                  <td key={item.field} style={{ padding: '9px 10px', borderBottom: '1px solid #f1f5f9', textAlign: 'right', color: '#334155' }}>
+                    {formatValue(getSeriesValue(row, item.field), item.format)}
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    );
+  }
+
+  if (chartType === 'pie') {
+    const latest = rows[rows.length - 1];
+    const values = series.map((item: any, index: number) => ({
+      ...item,
+      name: item.label || item.field,
+      value: Math.max(0, getSeriesValue(latest, item.field)),
+      color: seriesColors[index % seriesColors.length],
+    }));
+
+    return (
+      <div style={{ marginTop: '18px', height: '340px', padding: '12px', border: '1px solid #e2e8f0', borderRadius: '12px', background: '#fff' }}>
+        <ResponsiveContainer width="100%" height="100%">
+          <PieChart>
+            <Tooltip formatter={(value: any, name: any, props: any) => formatTooltipValue(value, name, props, values)} />
+            <Legend />
+            <Pie data={values} dataKey="value" nameKey="name" outerRadius={110} label={(entry: any) => `${entry.name}`}>
+              {values.map((item: any) => (
+                <Cell key={item.field} fill={item.color} />
+              ))}
+            </Pie>
+          </PieChart>
+        </ResponsiveContainer>
+      </div>
+    );
+  }
+
+  const chartRows = buildChartRows(rows, series);
+  const rightSeries = series.filter((item: any) => item.axis === 'right');
+  const barSeries = series.filter((item: any) => chartType === 'bar' || chartType === 'grouped_bar' || chartType === 'stacked_bar' || item.chartType === 'bar');
+  const lineSeries = series.filter((item: any) => chartType === 'line' || chartType === 'multi_line' || item.chartType === 'line');
+  const leftAxisFormat = (series.find((item: any) => item.axis !== 'right') || series[0])?.format;
+  const rightAxisFormat = rightSeries[0]?.format;
+
+  return (
+    <div style={{ marginTop: '18px', height: '380px', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '14px', background: '#fff' }}>
+      <ResponsiveContainer width="100%" height="100%">
+        <ComposedChart data={chartRows} margin={{ top: 16, right: rightSeries.length ? 54 : 24, bottom: 18, left: 22 }}>
+          <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+          <XAxis dataKey="month" tick={{ fontSize: 12, fill: '#64748b' }} />
+          <YAxis
+            yAxisId="left"
+            tick={{ fontSize: 12, fill: '#64748b' }}
+            tickFormatter={(value) => formatValue(Number(value || 0), leftAxisFormat)}
+          />
+          {rightSeries.length > 0 && (
+            <YAxis
+              yAxisId="right"
+              orientation="right"
+              tick={{ fontSize: 12, fill: '#64748b' }}
+              tickFormatter={(value) => formatValue(Number(value || 0), rightAxisFormat)}
+            />
+          )}
+          <Tooltip formatter={(value: any, name: any, props: any) => formatTooltipValue(value, name, props, series)} labelStyle={{ color: '#0f172a', fontWeight: 700 }} />
+          <Legend />
+          {barSeries.map((item: any, index: number) => (
+            <Bar
+              key={item.field}
+              dataKey={item.field}
+              name={item.label || item.field}
+              yAxisId={item.axis === 'right' ? 'right' : 'left'}
+              fill={seriesColors[index % seriesColors.length]}
+              stackId={chartType === 'stacked_bar' ? (item.stackGroup || 'stack') : undefined}
+              radius={[4, 4, 0, 0]}
+            />
+          ))}
+          {lineSeries.map((item: any, index: number) => (
+            <Line
+              key={item.field}
+              type="monotone"
+              dataKey={item.field}
+              name={item.label || item.field}
+              yAxisId={item.axis === 'right' ? 'right' : 'left'}
+              stroke={seriesColors[(barSeries.length + index) % seriesColors.length]}
+              strokeWidth={3}
+              dot={{ r: 3 }}
+              activeDot={{ r: 6 }}
+            />
+          ))}
+        </ComposedChart>
+      </ResponsiveContainer>
+    </div>
+  );
+}
+
+export default function CustomReportsView({ selectedCompanyId }: CustomReportsViewProps) {
+  const [selectedReportType, setSelectedReportType] = useState<ReportType>('line');
+  const [prompt, setPrompt] = useState('');
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [generationError, setGenerationError] = useState('');
+  const [generatedConfig, setGeneratedConfig] = useState<any | null>(null);
+  const [previewRows, setPreviewRows] = useState<any[]>([]);
+  const [previewError, setPreviewError] = useState('');
+  const [savedReports, setSavedReports] = useState<SavedCustomReport[]>([]);
+  const [savedReportsError, setSavedReportsError] = useState('');
+  const [isLoadingSavedReports, setIsLoadingSavedReports] = useState(false);
+  const [isSavingReport, setIsSavingReport] = useState(false);
+  const [selectedSavedReportId, setSelectedSavedReportId] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<'builder' | 'saved'>('builder');
+
+  const loadSavedReports = useCallback(async () => {
+    if (!selectedCompanyId) return;
+    setSavedReportsError('');
+    setIsLoadingSavedReports(true);
+    try {
+      const response = await fetch(`/api/custom-reports?companyId=${encodeURIComponent(selectedCompanyId)}`, {
+        cache: 'no-store',
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data?.error || 'Failed to load saved reports');
+      }
+      setSavedReports(Array.isArray(data?.reports) ? data.reports : []);
+    } catch (error: any) {
+      setSavedReportsError(error?.message || 'Failed to load saved reports');
+    } finally {
+      setIsLoadingSavedReports(false);
+    }
+  }, [selectedCompanyId]);
+
+  useEffect(() => {
+    setGeneratedConfig(null);
+    setPreviewRows([]);
+    setPreviewError('');
+    setSelectedSavedReportId(null);
+    void loadSavedReports();
+  }, [loadSavedReports, selectedCompanyId]);
+
+  const loadPreview = async (reportConfig: any) => {
+    setPreviewError('');
+    setPreviewRows([]);
+    try {
+      const response = await fetch('/api/custom-reports/preview', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          companyId: selectedCompanyId,
+          reportConfig,
+        }),
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data?.error || 'Failed to build report preview');
+      }
+      setPreviewRows(Array.isArray(data?.rows) ? data.rows : []);
+    } catch (error: any) {
+      setPreviewError(error?.message || 'Failed to build report preview');
+    }
+  };
+
+  const generateReportConfig = async () => {
+    const trimmedPrompt = prompt.trim();
+    if (!trimmedPrompt) {
+      setGenerationError('Describe the report you want to create first.');
+      return;
+    }
+
+    setIsGenerating(true);
+    setGenerationError('');
+    try {
+      const response = await fetch('/api/custom-reports/generate-config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          companyId: selectedCompanyId,
+          reportType: selectedReportType,
+          prompt: trimmedPrompt,
+        }),
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data?.error || 'Failed to generate report config');
+      }
+      const reportConfig = data?.reportConfig || null;
+      setGeneratedConfig(reportConfig);
+      setSelectedSavedReportId(null);
+      if (reportConfig) {
+        await loadPreview(reportConfig);
+      }
+    } catch (error: any) {
+      setGenerationError(error?.message || 'Failed to generate report config');
+    } finally {
+      setIsGenerating(false);
+    }
+  };
+
+  const saveGeneratedReport = async () => {
+    if (!generatedConfig) return;
+    setIsSavingReport(true);
+    setGenerationError('');
+    try {
+      const method = selectedSavedReportId ? 'PATCH' : 'POST';
+      const response = await fetch('/api/custom-reports', {
+        method,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          companyId: selectedCompanyId,
+          reportId: selectedSavedReportId || undefined,
+          reportConfig: generatedConfig,
+        }),
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data?.error || 'Failed to save report');
+      }
+      setSelectedSavedReportId(data?.report?.id || selectedSavedReportId || null);
+      await loadSavedReports();
+      setActiveTab('saved');
+    } catch (error: any) {
+      setGenerationError(error?.message || 'Failed to save report');
+    } finally {
+      setIsSavingReport(false);
+    }
+  };
+
+  const openSavedReport = async (report: SavedCustomReport) => {
+    const config = report.config || {};
+    setGeneratedConfig(config);
+    setSelectedSavedReportId(report.id);
+    setActiveTab('builder');
+    const chartType = String(config?.chartType || report.chartType || '').replace('-', '_') as ReportType;
+    if (reportTypes.some((type) => type.id === chartType)) {
+      setSelectedReportType(chartType);
+    }
+    await loadPreview(config);
+  };
+
+  const renameSavedReport = async (report: SavedCustomReport) => {
+    const nextTitle = window.prompt('Rename report', report.title || 'Custom Report');
+    if (!nextTitle || nextTitle.trim() === report.title) return;
+    setSavedReportsError('');
+    try {
+      const response = await fetch('/api/custom-reports', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          companyId: selectedCompanyId,
+          reportId: report.id,
+          title: nextTitle.trim(),
+        }),
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data?.error || 'Failed to rename report');
+      }
+      if (selectedSavedReportId === report.id && generatedConfig) {
+        setGeneratedConfig({ ...generatedConfig, title: data?.report?.title || nextTitle.trim() });
+      }
+      await loadSavedReports();
+    } catch (error: any) {
+      setSavedReportsError(error?.message || 'Failed to rename report');
+    }
+  };
+
+  const deleteSavedReport = async (report: SavedCustomReport) => {
+    if (!window.confirm(`Delete "${report.title || 'this report'}"?`)) return;
+    setSavedReportsError('');
+    try {
+      const response = await fetch(`/api/custom-reports?companyId=${encodeURIComponent(selectedCompanyId)}&reportId=${encodeURIComponent(report.id)}`, {
+        method: 'DELETE',
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data?.error || 'Failed to delete report');
+      }
+      if (selectedSavedReportId === report.id) {
+        setSelectedSavedReportId(null);
+        setGeneratedConfig(null);
+        setPreviewRows([]);
+      }
+      await loadSavedReports();
+    } catch (error: any) {
+      setSavedReportsError(error?.message || 'Failed to delete report');
+    }
+  };
+
+  return (
+    <div style={{ maxWidth: '1400px', margin: '0 auto', padding: '24px 32px 48px' }}>
+      <div style={{ marginBottom: '20px' }}>
+        <div style={{ fontSize: '18px', fontWeight: 800, color: '#1F70C1', textTransform: 'uppercase', letterSpacing: '0.08em', whiteSpace: 'nowrap' }}>
+          Custom Reports
+        </div>
+        <p style={{ fontSize: '16px', fontWeight: 700, color: '#475569', margin: '8px 0 0', lineHeight: 1.45 }}>
+          Create reusable charts and tables from financial and operational data.
+        </p>
+      </div>
+
+      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1.65fr) minmax(180px, 0.42fr)', gap: '18px' }}>
+        <section style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '14px', padding: '20px', boxShadow: '0 2px 8px rgba(15, 23, 42, 0.04)' }}>
+          <div style={{ display: 'flex', gap: '8px', marginBottom: '16px', borderBottom: '1px solid #e2e8f0' }}>
+            <button
+              type="button"
+              onClick={() => setActiveTab('builder')}
+              style={{
+                padding: '0 4px 10px',
+                border: 'none',
+                borderBottom: activeTab === 'builder' ? '3px solid #1F70C1' : '3px solid transparent',
+                background: 'transparent',
+                color: activeTab === 'builder' ? '#1F70C1' : '#64748b',
+                fontSize: '15px',
+                fontWeight: 800,
+                cursor: 'pointer',
+              }}
+            >
+              Report Builder
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveTab('saved')}
+              style={{
+                padding: '0 4px 10px',
+                border: 'none',
+                borderBottom: activeTab === 'saved' ? '3px solid #1F70C1' : '3px solid transparent',
+                background: 'transparent',
+                color: activeTab === 'saved' ? '#1F70C1' : '#64748b',
+                fontSize: '15px',
+                fontWeight: 800,
+                cursor: 'pointer',
+              }}
+            >
+              Saved Reports
+            </button>
+          </div>
+
+          {activeTab === 'builder' && (
+            <>
+              <label style={{ display: 'block', fontSize: '13px', fontWeight: 700, color: '#334155', marginBottom: '6px' }}>
+                AI report request
+              </label>
+              <textarea
+                value={prompt}
+                onChange={(event) => setPrompt(event.target.value)}
+                placeholder="Example: Build a line chart for revenue, gross profit, and cash over the last 12 months."
+                rows={3}
+                style={{
+                  width: '100%',
+                  boxSizing: 'border-box',
+                  border: '1px solid #cbd5e1',
+                  borderRadius: '10px',
+                  padding: '12px',
+                  fontSize: '13px',
+                  color: '#1e293b',
+                  minHeight: '82px',
+                  resize: 'vertical',
+                }}
+              />
+              <div style={{ display: 'flex', gap: '10px', marginTop: '12px', flexWrap: 'wrap' }}>
+                <button
+                  type="button"
+                  onClick={generateReportConfig}
+                  disabled={isGenerating}
+                  style={{
+                    padding: '10px 14px',
+                    border: 'none',
+                    borderRadius: '8px',
+                    background: isGenerating ? '#94a3b8' : '#1F70C1',
+                    color: 'white',
+                    fontSize: '13px',
+                    fontWeight: 700,
+                    cursor: isGenerating ? 'not-allowed' : 'pointer',
+                  }}
+                >
+                  {isGenerating ? 'Generating...' : 'Generate Report Config'}
+                </button>
+                <span style={{ alignSelf: 'center', fontSize: '12px', color: '#64748b' }}>
+                  AI generation will create a validated report config before data is queried.
+                </span>
+              </div>
+              {generationError && (
+                <div style={{ marginTop: '12px', padding: '10px 12px', borderRadius: '8px', background: '#fef2f2', border: '1px solid #fecaca', color: '#991b1b', fontSize: '13px', fontWeight: 700 }}>
+                  {generationError}
+                </div>
+              )}
+              {generatedConfig && (
+                <div style={{ marginTop: '18px', border: '1px solid #cbd5e1', borderRadius: '12px', overflow: 'hidden' }}>
+                  <div style={{ padding: '12px 14px', background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px', flexWrap: 'wrap' }}>
+                      <div>
+                        <div style={{ fontSize: '15px', fontWeight: 800, color: '#1e293b' }}>{generatedConfig.title || 'Generated Report'}</div>
+                        <div style={{ fontSize: '12px', color: '#64748b', marginTop: '4px' }}>
+                          Type: {String(generatedConfig.chartType || '').replace('_', ' ')} | Source: {generatedConfig.dataSource || 'monthlyFinancial'}
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={saveGeneratedReport}
+                        disabled={isSavingReport}
+                        style={{
+                          padding: '8px 12px',
+                          borderRadius: '8px',
+                          border: '1px solid #1F70C1',
+                          background: isSavingReport ? '#dbeafe' : '#eff6ff',
+                          color: '#1F70C1',
+                          fontSize: '12px',
+                          fontWeight: 800,
+                          cursor: isSavingReport ? 'not-allowed' : 'pointer',
+                        }}
+                      >
+                        {isSavingReport ? 'Saving...' : selectedSavedReportId ? 'Update Saved Report' : 'Save Report'}
+                      </button>
+                    </div>
+                  </div>
+                  <div style={{ padding: '14px' }}>
+                    <div style={{ fontSize: '13px', color: '#475569', marginBottom: '12px' }}>{generatedConfig.description}</div>
+                    {Array.isArray(generatedConfig.notes) && generatedConfig.notes.length > 0 && (
+                      <div style={{ marginTop: '12px', fontSize: '12px', color: '#64748b' }}>
+                        {generatedConfig.notes.join(' ')}
+                      </div>
+                    )}
+                    {previewError && (
+                      <div style={{ marginTop: '12px', padding: '10px 12px', borderRadius: '8px', background: '#fff7ed', border: '1px solid #fed7aa', color: '#9a3412', fontSize: '13px', fontWeight: 700 }}>
+                        {previewError}
+                      </div>
+                    )}
+                    {!previewError && (
+                      <CustomReportPreview config={generatedConfig} rows={previewRows} />
+                    )}
+                  </div>
+                </div>
+              )}
+            </>
+          )}
+
+          {activeTab === 'saved' && (
+            <div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', marginBottom: '14px' }}>
+                <div>
+                  <h2 style={{ fontSize: '18px', margin: 0, color: '#1e293b' }}>Saved Reports</h2>
+                  <div style={{ fontSize: '12px', color: '#64748b', marginTop: '4px' }}>Open a saved report to refresh it with current data.</div>
+                </div>
+                <button
+                  type="button"
+                  onClick={loadSavedReports}
+                  disabled={isLoadingSavedReports}
+                  style={{
+                    border: '1px solid #cbd5e1',
+                    borderRadius: '8px',
+                    background: '#fff',
+                    color: '#475569',
+                    padding: '7px 10px',
+                    fontSize: '12px',
+                    fontWeight: 700,
+                    cursor: isLoadingSavedReports ? 'not-allowed' : 'pointer',
+                  }}
+                >
+                  Refresh
+                </button>
+              </div>
+              {savedReportsError && (
+                <div style={{ marginBottom: '10px', padding: '8px 10px', borderRadius: '8px', background: '#fef2f2', color: '#991b1b', fontSize: '12px', fontWeight: 700 }}>
+                  {savedReportsError}
+                </div>
+              )}
+              {isLoadingSavedReports && savedReports.length === 0 && (
+                <div style={{ color: '#64748b', fontSize: '13px' }}>Loading saved reports...</div>
+              )}
+              {!isLoadingSavedReports && savedReports.length === 0 && !savedReportsError && (
+                <div style={{ color: '#64748b', fontSize: '13px', lineHeight: 1.4, padding: '18px', border: '1px dashed #cbd5e1', borderRadius: '12px', background: '#f8fafc' }}>
+                  No saved reports yet. Generate a report, then save it here.
+                </div>
+              )}
+              {savedReports.length > 0 && (
+                <div style={{ border: '1px solid #e2e8f0', borderRadius: '12px', overflow: 'hidden' }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'minmax(220px, 1.5fr) 120px 130px 150px 170px', gap: '12px', padding: '10px 12px', background: '#f8fafc', borderBottom: '1px solid #e2e8f0', color: '#64748b', fontSize: '11px', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                    <div>Report</div>
+                    <div>Type</div>
+                    <div>Date Created</div>
+                    <div>Created By</div>
+                    <div>Actions</div>
+                  </div>
+                  {savedReports.map((report) => (
+                    <div key={report.id} style={{ display: 'grid', gridTemplateColumns: 'minmax(220px, 1.5fr) 120px 130px 150px 170px', gap: '12px', alignItems: 'center', padding: '12px', borderBottom: '1px solid #e2e8f0', background: selectedSavedReportId === report.id ? '#eff6ff' : '#fff' }}>
+                      <div>
+                        <div style={{ fontSize: '13px', fontWeight: 800, color: '#1e293b' }}>{report.title || 'Custom Report'}</div>
+                        <div style={{ fontSize: '11px', color: '#64748b', marginTop: '3px' }}>{report.dataSource || 'monthlyFinancial'}</div>
+                      </div>
+                      <div style={{ fontSize: '12px', color: '#334155', textTransform: 'capitalize' }}>{String(report.chartType || 'report').replace('_', ' ')}</div>
+                      <div style={{ fontSize: '12px', color: '#334155' }}>{formatDate(report.createdAt)}</div>
+                      <div style={{ fontSize: '12px', color: '#334155', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{createdByLabel(report)}</div>
+                      <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                        <button type="button" onClick={() => openSavedReport(report)} style={{ border: '1px solid #1F70C1', borderRadius: '7px', background: '#eff6ff', color: '#1F70C1', padding: '5px 8px', fontSize: '11px', fontWeight: 700, cursor: 'pointer' }}>
+                          Open
+                        </button>
+                        <button type="button" onClick={() => renameSavedReport(report)} style={{ border: '1px solid #cbd5e1', borderRadius: '7px', background: '#fff', color: '#475569', padding: '5px 8px', fontSize: '11px', fontWeight: 700, cursor: 'pointer' }}>
+                          Rename
+                        </button>
+                        <button type="button" onClick={() => deleteSavedReport(report)} style={{ border: '1px solid #fecaca', borderRadius: '7px', background: '#fff', color: '#b91c1c', padding: '5px 8px', fontSize: '11px', fontWeight: 700, cursor: 'pointer' }}>
+                          Delete
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+        </section>
+
+        <aside style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+          <section style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '14px', padding: '18px', boxShadow: '0 2px 8px rgba(15, 23, 42, 0.04)' }}>
+            <h2 style={{ fontSize: '16px', margin: '0 0 10px', color: '#1e293b' }}>Report Types</h2>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              {reportTypes.map((type) => {
+                const active = selectedReportType === type.id;
+                return (
+                  <button
+                    key={type.id}
+                    type="button"
+                    onClick={() => setSelectedReportType(type.id)}
+                    style={{
+                      textAlign: 'left',
+                      padding: '10px',
+                      borderRadius: '10px',
+                      border: active ? '2px solid #1F70C1' : '1px solid #e2e8f0',
+                      background: active ? '#eff6ff' : '#f8fafc',
+                      color: '#1e293b',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    <div style={{ fontSize: '13px', fontWeight: 800, marginBottom: '3px' }}>{type.label}</div>
+                    <div style={{ fontSize: '11px', color: '#64748b', lineHeight: 1.35 }}>{type.description}</div>
+                  </button>
+                );
+              })}
+            </div>
+          </section>
+
+        </aside>
+      </div>
+    </div>
+  );
+}

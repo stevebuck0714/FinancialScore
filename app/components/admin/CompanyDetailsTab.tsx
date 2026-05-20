@@ -157,6 +157,7 @@ export default function CompanyDetailsTab({
     { id: "mda", label: "MD&A" },
     { id: "management-assessment", label: "Team Assessment" },
     { id: "dataroom", label: "Corelytics DataRoom" },
+    { id: "custom-reports", label: "Custom Reports" },
   ];
   const DATAROOM_CAPABILITIES: Array<{
     id: "view" | "download" | "upload" | "share" | "manage";

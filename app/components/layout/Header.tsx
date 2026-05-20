@@ -17,6 +17,7 @@ interface HeaderProps {
   previewAdminName?: string | null;
   /** When set, site admins in company admin workspace get full nav chrome (sidebar/header parity). */
   selectedCompanyId?: string;
+  customReportsEnabledByAdmin?: boolean;
   // currentView is a large union in app/page.tsx; keep this flexible for reuse.
   setCurrentView: (view: any) => void;
   handleLogout: () => void;
@@ -29,6 +30,7 @@ export default function Header({
   companyName,
   previewAdminName,
   selectedCompanyId = '',
+  customReportsEnabledByAdmin = false,
   setCurrentView,
   handleLogout,
   handleNavigation
@@ -56,6 +58,7 @@ export default function Header({
   // they remain reachable from the left sidebar but should not appear in the
   // header dropdown.
   const financialReportsViews = [
+    { id: 'dashboard', label: "Financial KPI's", section: 'company-dashboard' },
     { id: 'kpis', label: 'Key Ratios', section: 'financial-reports' },
     { id: 'mda', label: 'MD&A', section: 'mda' },
     { id: 'trend-analysis', label: 'Performance Trends', section: 'financial-reports' },
@@ -77,7 +80,6 @@ export default function Header({
 
   const siteAdminCompanyWorkspace =
     currentUser.role === 'siteadmin' &&
-    currentView === 'admin' &&
     Boolean(String(selectedCompanyId || '').trim());
 
   // Site Admin Header (full company nav when previewing / opening a company workspace)
@@ -229,26 +231,6 @@ export default function Header({
               >
                 OPERATIONAL PERFORMANCE
               </button>
-              <button
-                onClick={() => canAccess('company-dashboard') && handleNavigation('dashboard')}
-                title={!canAccess('company-dashboard') ? 'Access restricted' : undefined}
-                style={{
-                  background: currentView === 'dashboard' ? '#eef2ff' : 'none',
-                  border: 'none',
-                  fontSize: '16px',
-                  fontWeight: '600',
-                  color: '#000',
-                  cursor: canAccess('company-dashboard') ? 'pointer' : 'not-allowed',
-                  padding: '8px 12px',
-                  borderRadius: '6px',
-                  borderBottom: currentView === 'dashboard' ? '3px solid #000' : '3px solid transparent',
-                  lineHeight: '1.1',
-                  textAlign: 'center',
-                  opacity: canAccess('company-dashboard') ? 1 : 0.4
-                }}
-              >
-                <span style={{ whiteSpace: 'normal', lineHeight: '1.1' }}>FINANCIAL KPI'S</span>
-              </button>
             </div>
             <div style={{ display: 'flex', gap: '24px', alignItems: 'center' }}>
             <div style={{ position: 'relative' }}>
@@ -345,6 +327,27 @@ export default function Header({
             >
               DATA ROOM
             </button>
+            {customReportsEnabledByAdmin && (
+              <button
+                onClick={() => canAccess('custom-reports') && handleNavigation('custom-reports')}
+                title={!canAccess('custom-reports') ? 'Access restricted' : undefined}
+                style={{
+                  background: currentView === 'custom-reports' ? '#eef2ff' : 'none',
+                  border: 'none',
+                  fontSize: '16px',
+                  fontWeight: '600',
+                  color: '#000',
+                  cursor: canAccess('custom-reports') ? 'pointer' : 'not-allowed',
+                  padding: '8px 12px',
+                  borderRadius: '6px',
+                  borderBottom: currentView === 'custom-reports' ? '3px solid #000' : '3px solid transparent',
+                  whiteSpace: 'nowrap',
+                  opacity: canAccess('custom-reports') ? 1 : 0.4
+                }}
+              >
+                CUSTOM REPORTS
+              </button>
+            )}
             </div>
           </nav>
         </div>

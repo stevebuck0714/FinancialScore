@@ -1319,6 +1319,44 @@ export async function PATCH(request: NextRequest) {
       };
     }
 
+    // Custom Reports settings (stored in userDefinedAllocations.customReports)
+    const hasCustomReportsSettingsUpdate = updateFields.customReportsEnabledByAdmin !== undefined;
+    if (hasCustomReportsSettingsUpdate) {
+      if (context.role !== 'SITEADMIN') {
+        return NextResponse.json(
+          { error: "Only site admins can update Custom Reports settings" },
+          { status: 403 },
+        );
+      }
+
+      const currentUDA =
+        updateData.userDefinedAllocations &&
+        typeof updateData.userDefinedAllocations === 'object' &&
+        !Array.isArray(updateData.userDefinedAllocations)
+          ? (updateData.userDefinedAllocations as Record<string, any>)
+          : (
+              existingCompany?.userDefinedAllocations &&
+              typeof existingCompany.userDefinedAllocations === 'object' &&
+              !Array.isArray(existingCompany.userDefinedAllocations)
+                ? (existingCompany.userDefinedAllocations as Record<string, any>)
+                : {}
+            );
+      const currentCustomReports =
+        currentUDA.customReports &&
+        typeof currentUDA.customReports === 'object' &&
+        !Array.isArray(currentUDA.customReports)
+          ? (currentUDA.customReports as Record<string, any>)
+          : {};
+
+      updateData.userDefinedAllocations = {
+        ...currentUDA,
+        customReports: {
+          ...currentCustomReports,
+          enabledByAdmin: Boolean(updateFields.customReportsEnabledByAdmin),
+        },
+      };
+    }
+
     const hasOperationalHubConfigUpdate = updateFields.operationalHubConfig !== undefined;
     if (hasOperationalHubConfigUpdate) {
       if (context.role !== 'SITEADMIN') {

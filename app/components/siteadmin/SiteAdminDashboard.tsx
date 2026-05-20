@@ -266,6 +266,7 @@ export default function SiteAdminDashboard(props: any) {
     Record<string, { label: string; tabKey: string; scope: 'company' | 'global' }>
   >({});
   const [savingDataRoomCompanyId, setSavingDataRoomCompanyId] = React.useState<string | null>(null);
+  const [savingCustomReportsCompanyId, setSavingCustomReportsCompanyId] = React.useState<string | null>(null);
   const [editingDataRoomPricingByCompany, setEditingDataRoomPricingByCompany] = React.useState<
     Record<string, { monthly: number; quarterly: number; annual: number }>
   >({});
@@ -871,6 +872,39 @@ export default function SiteAdminDashboard(props: any) {
             Use Real Data
           </button>
         </div>
+      </div>
+    </div>
+  );
+
+  const renderCustomReportsAccessCard = (company: any) => (
+    <div style={{ padding: '10px', borderRadius: '6px', border: '1px solid #a5f3fc', background: '#ecfeff' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px', flexWrap: 'wrap' }}>
+        <div style={{ minWidth: '260px', flex: 1 }}>
+          <div style={{ fontSize: '12px', fontWeight: '700', color: '#155e75', marginBottom: '4px' }}>
+            Custom Reports
+          </div>
+          <div style={{ fontSize: '12px', color: '#0e7490' }}>
+            {getCustomReportsEnabledByAdmin(company)
+              ? 'Custom Reports is visible for this company.'
+              : 'Custom Reports is hidden for this company.'}
+          </div>
+        </div>
+        <button
+          onClick={() => saveCustomReportsEnabledByAdmin(company.id, !getCustomReportsEnabledByAdmin(company))}
+          disabled={savingCustomReportsCompanyId === company.id}
+          style={{
+            padding: '6px 10px',
+            background: getCustomReportsEnabledByAdmin(company) ? '#dc2626' : '#2563eb',
+            color: 'white',
+            border: 'none',
+            borderRadius: '6px',
+            fontSize: '12px',
+            fontWeight: '600',
+            cursor: savingCustomReportsCompanyId === company.id ? 'not-allowed' : 'pointer',
+          }}
+        >
+          {getCustomReportsEnabledByAdmin(company) ? 'Disable Custom Reports' : 'Enable Custom Reports'}
+        </button>
       </div>
     </div>
   );
@@ -1489,6 +1523,53 @@ export default function SiteAdminDashboard(props: any) {
       setSavingDataRoomCompanyId(null);
     }
   };
+
+  const getCustomReportsEnabledByAdmin = (company: any) => {
+    const uda =
+      company?.userDefinedAllocations &&
+      typeof company.userDefinedAllocations === 'object' &&
+      !Array.isArray(company.userDefinedAllocations)
+        ? company.userDefinedAllocations
+        : {};
+    const customReports =
+      uda?.customReports &&
+      typeof uda.customReports === 'object' &&
+      !Array.isArray(uda.customReports)
+        ? uda.customReports
+        : {};
+    return customReports.enabledByAdmin === true;
+  };
+
+  const saveCustomReportsEnabledByAdmin = async (companyId: string, enabled: boolean) => {
+    setSavingCustomReportsCompanyId(companyId);
+    try {
+      const response = await fetch('/api/companies', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: companyId,
+          customReportsEnabledByAdmin: enabled,
+        }),
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data?.error || 'Failed to update Custom Reports setting');
+      }
+
+      setCompanies((prev: any[]) =>
+        Array.isArray(prev)
+          ? prev.map((c: any) => (c.id === companyId ? { ...c, ...(data?.company || {}) } : c))
+          : prev
+      );
+
+      alert(enabled ? 'Custom Reports enabled for this company.' : 'Custom Reports disabled for this company.');
+    } catch (error: any) {
+      alert(error?.message || 'Failed to update Custom Reports setting');
+    } finally {
+      setSavingCustomReportsCompanyId(null);
+    }
+  };
+
   const getValuationEnabledByAdmin = (company: any) => {
     const uda =
       company?.userDefinedAllocations &&
@@ -6552,6 +6633,7 @@ export default function SiteAdminDashboard(props: any) {
                                             }}
                                           >
                                             {renderOperationalDataModeCard(company)}
+                                            {renderCustomReportsAccessCard(company)}
                                             {renderOperationalHubCustomizationCard(company)}
                                           </div>
 
@@ -6796,6 +6878,28 @@ export default function SiteAdminDashboard(props: any) {
                                                   </div>
                                                 </>
                                               )}
+                                            </div>
+                                            <div style={{ padding: '4px 10px 10px 10px', background: '#ecfeff', borderRadius: '6px', border: '1px solid #a5f3fc' }}>
+                                              <h6 style={{ fontSize: '14px', fontWeight: '700', color: '#155e75', marginBottom: '8px' }}>Custom Reports</h6>
+                                              <div style={{ fontSize: '11px', color: '#475569', marginBottom: '8px' }}>
+                                                Status: {getCustomReportsEnabledByAdmin(company) ? 'Enabled' : 'Disabled'}
+                                              </div>
+                                              <button
+                                                onClick={() => saveCustomReportsEnabledByAdmin(company.id, !getCustomReportsEnabledByAdmin(company))}
+                                                disabled={savingCustomReportsCompanyId === company.id}
+                                                style={{
+                                                  padding: '6px 12px',
+                                                  background: getCustomReportsEnabledByAdmin(company) ? '#dc2626' : '#2563eb',
+                                                  color: 'white',
+                                                  border: 'none',
+                                                  borderRadius: '4px',
+                                                  fontSize: '12px',
+                                                  fontWeight: '700',
+                                                  cursor: savingCustomReportsCompanyId === company.id ? 'not-allowed' : 'pointer',
+                                                }}
+                                              >
+                                                {getCustomReportsEnabledByAdmin(company) ? 'Disable Custom Reports' : 'Enable Custom Reports'}
+                                              </button>
                                             </div>
                                             <div style={{ padding: '4px 10px 10px 10px', background: '#f5f3ff', borderRadius: '6px', border: '1px solid #ddd6fe' }}>
                                               <h6 style={{ fontSize: '14px', fontWeight: '700', color: '#5b21b6', marginBottom: '8px' }}>Valuation Pricing</h6>
@@ -9592,6 +9696,7 @@ export default function SiteAdminDashboard(props: any) {
                                   }}
                                 >
                                   {renderOperationalDataModeCard(businessCompany)}
+                                  {renderCustomReportsAccessCard(businessCompany)}
                                   {renderOperationalHubCustomizationCard(businessCompany)}
                                 </div>
 
@@ -9836,6 +9941,28 @@ export default function SiteAdminDashboard(props: any) {
                                         </div>
                                       </>
                                     )}
+                                  </div>
+                                  <div style={{ padding: '4px 12px 12px 12px', background: '#ecfeff', borderRadius: '6px', border: '1px solid #a5f3fc' }}>
+                                    <h4 style={{ fontSize: '14px', fontWeight: '600', color: '#155e75', marginBottom: '8px' }}>Custom Reports</h4>
+                                    <div style={{ fontSize: '11px', color: '#475569', marginBottom: '8px' }}>
+                                      Status: {getCustomReportsEnabledByAdmin(businessCompany) ? 'Enabled' : 'Disabled'}
+                                    </div>
+                                    <button
+                                      onClick={() => saveCustomReportsEnabledByAdmin(businessCompany.id, !getCustomReportsEnabledByAdmin(businessCompany))}
+                                      disabled={savingCustomReportsCompanyId === businessCompany.id}
+                                      style={{
+                                        padding: '6px 12px',
+                                        background: getCustomReportsEnabledByAdmin(businessCompany) ? '#dc2626' : '#2563eb',
+                                        color: 'white',
+                                        border: 'none',
+                                        borderRadius: '4px',
+                                        fontSize: '12px',
+                                        fontWeight: '600',
+                                        cursor: savingCustomReportsCompanyId === businessCompany.id ? 'not-allowed' : 'pointer',
+                                      }}
+                                    >
+                                      {getCustomReportsEnabledByAdmin(businessCompany) ? 'Disable Custom Reports' : 'Enable Custom Reports'}
+                                    </button>
                                   </div>
                                   <div style={{ padding: '4px 12px 12px 12px', background: '#f5f3ff', borderRadius: '6px', border: '1px solid #ddd6fe' }}>
                                     <h4 style={{ fontSize: '14px', fontWeight: '600', color: '#5b21b6', marginBottom: '8px' }}>Valuation Pricing</h4>

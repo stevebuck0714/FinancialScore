@@ -102,6 +102,7 @@ model Company {
   xeroTransactions           XeroTransaction[]
   financialForecastInputSettings FinancialForecastInputSettings?
   financialForecastBudgetArchives FinancialForecastBudgetArchive[]
+  customReports              CustomReport[]
   // expenseGoals              ExpenseGoal[]  // Doesn't exist in production DB
   // valuationSettings         ValuationSettings?  // Doesn't exist in production DB
 
@@ -163,11 +164,31 @@ model User {
   companyAccess        UserCompanyAccess[]
   trustedDevices       TrustedDevice[]
   uploadedDocuments    CompanyDocument[]  @relation("CompanyDocumentUploadedBy")
+  customReportsCreated CustomReport[]     @relation("CustomReportCreatedBy")
 
   @@index([email])
   @@index([companyId])
   @@index([consultantId])
   @@index([passwordResetToken])
+}
+
+model CustomReport {
+  id              String   @id @default(cuid())
+  companyId       String
+  createdByUserId String?
+  title           String
+  description     String?
+  chartType       String
+  dataSource      String?
+  config          Json
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  company         Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  createdBy       User?    @relation("CustomReportCreatedBy", fields: [createdByUserId], references: [id], onDelete: SetNull)
+
+  @@index([companyId, updatedAt(sort: Desc)])
+  @@index([createdByUserId])
 }
 
 model UserCompanyAccess {

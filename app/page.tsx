@@ -45,6 +45,7 @@ const CovenantsTab = dynamic(() => import('./covenants/components/CovenantsTab')
 const OperationsTab = dynamic(() => import('./components/operations/OperationsTab'), { ssr: false });
 const DailyAlertsView = dynamic(() => import('./components/operations/DailyAlertsView'), { ssr: false });
 const DataRoomView = dynamic(() => import('./components/dataroom/DataRoomView'), { ssr: false });
+const CustomReportsView = dynamic(() => import('./components/reports/CustomReportsView'), { ssr: false });
 
 const Header = dynamic(() => import('./components/layout/Header'), { ssr: false });
 import SiteAdminDashboard from './components/siteadmin/SiteAdminDashboard';
@@ -224,6 +225,7 @@ const NAVIGABLE_VIEWS = new Set([
   'pa-anomaly-inbox',
   'pa-opportunity-workspace',
   'dataroom',
+  'custom-reports',
 ]);
 
 type InforOperationalSyncStatus = {
@@ -895,6 +897,7 @@ function FinancialScorePage() {
   };
   const [users, setUsers] = useState<User[]>([]);
   const [selectedCompanyId, setSelectedCompanyId] = useState('');
+  const [customReportsEnabledByCompany, setCustomReportsEnabledByCompany] = useState<Record<string, boolean>>({});
   const selectedCompany = useMemo(
     () => (Array.isArray(companies) ? companies.find((c: any) => c.id === selectedCompanyId) : undefined),
     [companies, selectedCompanyId]
@@ -1169,7 +1172,7 @@ function FinancialScorePage() {
   const [error, setError] = useState<string | null>(null);
   const [isFreshUpload, setIsFreshUpload] = useState<boolean>(false);
   const [loadedMonthlyData, setLoadedMonthlyData] = useState<MonthlyDataRow[]>([]);
-  const [currentView, setCurrentView] = useState<'login' | 'admin' | 'consultant-dashboard' | 'siteadmin' | 'upload' | 'results' | 'kpis' | 'mda' | 'ai-analysis' | 'daily-alerts' | 'financial-forecast' | 'projections' | 'working-capital' | 'valuation-reports' | 'valuation' | 'cash-flow' | 'financial-statements' | 'trend-analysis' | 'profile' | 'goals' | 'fs-intro' | 'fs-score' | 'ma-welcome' | 'ma-questionnaire' | 'ma-your-results' | 'ma-scores-summary' | 'ma-scoring-guide' | 'ma-charts' | 'custom-print' | 'dashboard' | 'covenants' | 'operations' | 'pa-overview' | 'pa-critical-issues' | 'pa-focus-board' | 'pa-trend-explorer' | 'pa-anomaly-inbox' | 'pa-opportunity-workspace' | 'dataroom'>('login');
+  const [currentView, setCurrentView] = useState<'login' | 'admin' | 'consultant-dashboard' | 'siteadmin' | 'upload' | 'results' | 'kpis' | 'mda' | 'ai-analysis' | 'daily-alerts' | 'financial-forecast' | 'projections' | 'working-capital' | 'valuation-reports' | 'valuation' | 'cash-flow' | 'financial-statements' | 'trend-analysis' | 'profile' | 'goals' | 'fs-intro' | 'fs-score' | 'ma-welcome' | 'ma-questionnaire' | 'ma-your-results' | 'ma-scores-summary' | 'ma-scoring-guide' | 'ma-charts' | 'custom-print' | 'dashboard' | 'covenants' | 'operations' | 'pa-overview' | 'pa-critical-issues' | 'pa-focus-board' | 'pa-trend-explorer' | 'pa-anomaly-inbox' | 'pa-opportunity-workspace' | 'dataroom' | 'custom-reports'>('login');
   const [valuationBuilderSelections, setValuationBuilderSelections] = useState<Record<string, boolean>>({
     es_enterpriseValueRange: true,
     es_primaryValuationMethod: true,
@@ -1384,6 +1387,7 @@ function FinancialScorePage() {
     'mda',
     'management-assessment',
     'dataroom',
+    'custom-reports',
   ] as const;
   const isCompanyUser = currentUser?.role === 'user' && currentUser?.userType === 'company';
   const isCompanyAdmin = isCompanyUser && (currentUser as any)?.companyRole === 'admin';
@@ -1413,6 +1417,7 @@ function FinancialScorePage() {
     if (view.startsWith('pa-')) return 'expert-analysis';
     if (view === 'mda') return 'mda';
     if (view === 'dataroom') return 'dataroom';
+    if (view === 'custom-reports') return 'custom-reports';
     if (view.startsWith('ma-')) return 'management-assessment';
     return null;
   };
@@ -1512,6 +1517,16 @@ function FinancialScorePage() {
     }
     return true;
   }, [companies, selectedCompanyId]);
+  const isCustomReportsEnabledByAdmin = useMemo(() => {
+    if (!selectedCompanyId) return false;
+    if (typeof customReportsEnabledByCompany[selectedCompanyId] === 'boolean') {
+      return customReportsEnabledByCompany[selectedCompanyId];
+    }
+    if (!Array.isArray(companies)) return false;
+    const selectedCompany = companies.find((c) => c.id === selectedCompanyId) as any;
+    const customReports = selectedCompany?.userDefinedAllocations?.customReports || {};
+    return customReports?.enabledByAdmin === true;
+  }, [companies, customReportsEnabledByCompany, selectedCompanyId]);
   const dataRoomSubscriptionStatus = dataRoomState.subscriptionStatus;
   const isDataRoomActive = dataRoomSubscriptionStatus === 'active';
   const dataRoomPricing = useMemo(() => {
@@ -1547,6 +1562,49 @@ function FinancialScorePage() {
     defaultDataRoomConsultantAnnualPrice,
   ]);
   const isDataRoomPaymentRequired = (dataRoomPricing.monthly > 0) || (dataRoomPricing.quarterly > 0) || (dataRoomPricing.annual > 0);
+
+  useEffect(() => {
+    if (!selectedCompanyId || !selectedCompany) return;
+    const enabled = (selectedCompany as any)?.userDefinedAllocations?.customReports?.enabledByAdmin;
+    if (typeof enabled !== 'boolean') return;
+    setCustomReportsEnabledByCompany((prev) => (
+      prev[selectedCompanyId] === enabled ? prev : { ...prev, [selectedCompanyId]: enabled }
+    ));
+  }, [selectedCompany, selectedCompanyId]);
+
+  useEffect(() => {
+    if (!selectedCompanyId || !isLoggedIn) return;
+    let cancelled = false;
+
+    const refreshCustomReportsFlag = async () => {
+      try {
+        const response = await fetch(`/api/companies?companyId=${encodeURIComponent(selectedCompanyId)}`, {
+          cache: 'no-store',
+        });
+        const data = await response.json();
+        const freshCompany = Array.isArray(data?.companies) ? data.companies[0] : null;
+        if (!response.ok || !freshCompany || cancelled) return;
+
+        const enabled = freshCompany?.userDefinedAllocations?.customReports?.enabledByAdmin === true;
+        setCustomReportsEnabledByCompany((prev) => ({ ...prev, [selectedCompanyId]: enabled }));
+        setCompanies((prevCompanies: any) => {
+          if (!Array.isArray(prevCompanies)) return [freshCompany];
+          const exists = prevCompanies.some((company: any) => company.id === selectedCompanyId);
+          return exists
+            ? prevCompanies.map((company: any) => (company.id === selectedCompanyId ? { ...company, ...freshCompany } : company))
+            : [...prevCompanies, freshCompany];
+        });
+      } catch (error) {
+        console.warn('Failed to refresh Custom Reports setting:', error);
+      }
+    };
+
+    void refreshCustomReportsFlag();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [isLoggedIn, selectedCompanyId]);
 
   const handleToggleDataRoomEnabledByAdmin = async (enabled: boolean) => {
     if (!selectedCompanyId) {
@@ -1660,6 +1718,15 @@ function FinancialScorePage() {
     }
     if (view === 'valuation-reports' && !isValuationReportsEnabledByAdmin) {
       alert('Valuation Reports are disabled for this company.');
+      return;
+    }
+
+    if (view === 'custom-reports' && !selectedCompanyId) {
+      alert('Please select a company first.');
+      return;
+    }
+    if (view === 'custom-reports' && !isCustomReportsEnabledByAdmin) {
+      alert('Custom Reports are disabled for this company.');
       return;
     }
 
@@ -12201,6 +12268,7 @@ function FinancialScorePage() {
           previewAdminName={siteAdminViewingAs?.name || null}
           selectedCompanyId={selectedCompanyId}
           currentView={currentView}
+          customReportsEnabledByAdmin={isCustomReportsEnabledByAdmin}
           setCurrentView={setCurrentView as any}
           handleLogout={handleLogout}
           handleNavigation={handleNavigation}
@@ -14550,6 +14618,26 @@ function FinancialScorePage() {
         <div style={{ maxWidth: '1400px', margin: '0 auto', padding: '64px 32px', textAlign: 'center' }}>
           <h2 style={{ fontSize: '28px', fontWeight: '600', color: '#1e293b', marginBottom: '16px' }}>No Company Selected</h2>
           <p style={{ fontSize: '16px', color: '#64748b', marginBottom: '12px' }}>Please select a company to access DataRoom.</p>
+        </div>
+      )}
+
+      {currentView === 'custom-reports' && selectedCompanyId && isCustomReportsEnabledByAdmin && (
+        <CustomReportsView
+          selectedCompanyId={selectedCompanyId}
+          companyName={companyName || ''}
+          industrySectorCategory={company?.industrySectorCategory || null}
+        />
+      )}
+      {currentView === 'custom-reports' && selectedCompanyId && !isCustomReportsEnabledByAdmin && (
+        <div style={{ maxWidth: '1400px', margin: '0 auto', padding: '64px 32px', textAlign: 'center' }}>
+          <h2 style={{ fontSize: '28px', fontWeight: '600', color: '#1e293b', marginBottom: '16px' }}>Custom Reports Disabled</h2>
+          <p style={{ fontSize: '16px', color: '#64748b', marginBottom: '12px' }}>Custom Reports are not enabled for this company.</p>
+        </div>
+      )}
+      {currentView === 'custom-reports' && !selectedCompanyId && (
+        <div style={{ maxWidth: '1400px', margin: '0 auto', padding: '64px 32px', textAlign: 'center' }}>
+          <h2 style={{ fontSize: '28px', fontWeight: '600', color: '#1e293b', marginBottom: '16px' }}>No Company Selected</h2>
+          <p style={{ fontSize: '16px', color: '#64748b', marginBottom: '12px' }}>Please select a company to build custom reports.</p>
         </div>
       )}
 
