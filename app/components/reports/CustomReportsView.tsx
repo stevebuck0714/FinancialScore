@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Bar,
   CartesianGrid,
@@ -72,6 +72,25 @@ function formatDate(value?: string) {
 
 function createdByLabel(report: SavedCustomReport) {
   return report.createdBy?.name || report.createdBy?.email || 'Unknown';
+}
+
+function downloadBlob(blob: Blob, filename: string) {
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(url);
+}
+
+function slugify(value: string) {
+  return String(value || 'custom-report')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 80) || 'custom-report';
 }
 
 function getSeriesValue(row: any, field: string) {
@@ -224,6 +243,7 @@ function CustomReportPreview({ config, rows }: { config: any; rows: any[] }) {
 }
 
 export default function CustomReportsView({ selectedCompanyId }: CustomReportsViewProps) {
+  const reportOutputRef = useRef<HTMLDivElement | null>(null);
   const [selectedReportType, setSelectedReportType] = useState<ReportType>('line');
   const [prompt, setPrompt] = useState('');
   const [isGenerating, setIsGenerating] = useState(false);
@@ -236,7 +256,10 @@ export default function CustomReportsView({ selectedCompanyId }: CustomReportsVi
   const [isLoadingSavedReports, setIsLoadingSavedReports] = useState(false);
   const [isSavingReport, setIsSavingReport] = useState(false);
   const [selectedSavedReportId, setSelectedSavedReportId] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<'builder' | 'saved'>('builder');
+  const [activeTab, setActiveTab] = useState<'builder' | 'saved' | 'view'>('builder');
+  const selectedSavedReport = selectedSavedReportId
+    ? savedReports.find((report) => report.id === selectedSavedReportId) || null
+    : null;
 
   const loadSavedReports = useCallback(async () => {
     if (!selectedCompanyId) return;
@@ -357,12 +380,97 @@ export default function CustomReportsView({ selectedCompanyId }: CustomReportsVi
     const config = report.config || {};
     setGeneratedConfig(config);
     setSelectedSavedReportId(report.id);
-    setActiveTab('builder');
+    setActiveTab('view');
     const chartType = String(config?.chartType || report.chartType || '').replace('-', '_') as ReportType;
     if (reportTypes.some((type) => type.id === chartType)) {
       setSelectedReportType(chartType);
     }
     await loadPreview(config);
+  };
+
+  const duplicateSavedReport = async (report: SavedCustomReport) => {
+    const config = {
+      ...(report.config || {}),
+      title: `Copy of ${report.title || report.config?.title || 'Custom Report'}`.slice(0, 120),
+    };
+    setSavedReportsError('');
+    try {
+      const response = await fetch('/api/custom-reports', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          companyId: selectedCompanyId,
+          reportConfig: config,
+        }),
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data?.error || 'Failed to duplicate report');
+      }
+      await loadSavedReports();
+      if (data?.report) {
+        await openSavedReport(data.report);
+      }
+    } catch (error: any) {
+      setSavedReportsError(error?.message || 'Failed to duplicate report');
+    }
+  };
+
+  const exportReportCsv = () => {
+    if (!generatedConfig) return;
+    const series = Array.isArray(generatedConfig?.series) ? generatedConfig.series : [];
+    const headers = ['Month', ...series.map((item: any) => item.label || item.field)];
+    const lines = [
+      headers,
+      ...previewRows.map((row) => [
+        row.month || row.monthDate || '',
+        ...series.map((item: any) => String(row?.values?.[item.field] ?? '')),
+      ]),
+    ];
+    const csv = lines
+      .map((line) => line.map((value) => `"${String(value).replace(/"/g, '""')}"`).join(','))
+      .join('\n');
+    downloadBlob(new Blob([csv], { type: 'text/csv;charset=utf-8' }), `${slugify(generatedConfig.title)}.csv`);
+  };
+
+  const exportReportPng = async () => {
+    const svg = reportOutputRef.current?.querySelector('svg');
+    if (!svg || !generatedConfig) {
+      window.alert('PNG export is available for chart reports. Use CSV export for table reports.');
+      return;
+    }
+
+    const serializer = new XMLSerializer();
+    const svgText = serializer.serializeToString(svg);
+    const svgBlob = new Blob([svgText], { type: 'image/svg+xml;charset=utf-8' });
+    const url = URL.createObjectURL(svgBlob);
+    const image = new Image();
+    image.onload = () => {
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.max(1200, image.width || 1200);
+      canvas.height = Math.max(700, image.height || 700);
+      const context = canvas.getContext('2d');
+      if (!context) {
+        URL.revokeObjectURL(url);
+        return;
+      }
+      context.fillStyle = '#ffffff';
+      context.fillRect(0, 0, canvas.width, canvas.height);
+      context.drawImage(image, 0, 0, canvas.width, canvas.height);
+      canvas.toBlob((blob) => {
+        URL.revokeObjectURL(url);
+        if (blob) downloadBlob(blob, `${slugify(generatedConfig.title)}.png`);
+      }, 'image/png');
+    };
+    image.onerror = () => {
+      URL.revokeObjectURL(url);
+      window.alert('PNG export failed for this chart.');
+    };
+    image.src = url;
+  };
+
+  const exportReportPdf = () => {
+    window.print();
   };
 
   const renameSavedReport = async (report: SavedCustomReport) => {
@@ -425,8 +533,8 @@ export default function CustomReportsView({ selectedCompanyId }: CustomReportsVi
         </p>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1.65fr) minmax(180px, 0.42fr)', gap: '18px' }}>
-        <section style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '14px', padding: '20px', boxShadow: '0 2px 8px rgba(15, 23, 42, 0.04)' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(180px, 0.42fr) minmax(0, 1.65fr)', gap: '18px' }}>
+        <section style={{ gridColumn: 2, background: 'white', border: '1px solid #e2e8f0', borderRadius: '14px', padding: '20px', boxShadow: '0 2px 8px rgba(15, 23, 42, 0.04)' }}>
           <div style={{ display: 'flex', gap: '8px', marginBottom: '16px', borderBottom: '1px solid #e2e8f0' }}>
             <button
               type="button"
@@ -460,6 +568,24 @@ export default function CustomReportsView({ selectedCompanyId }: CustomReportsVi
             >
               Saved Reports
             </button>
+            {generatedConfig && (
+              <button
+                type="button"
+                onClick={() => setActiveTab('view')}
+                style={{
+                  padding: '0 4px 10px',
+                  border: 'none',
+                  borderBottom: activeTab === 'view' ? '3px solid #1F70C1' : '3px solid transparent',
+                  background: 'transparent',
+                  color: activeTab === 'view' ? '#1F70C1' : '#64748b',
+                  fontSize: '15px',
+                  fontWeight: 800,
+                  cursor: 'pointer',
+                }}
+              >
+                View Report
+              </button>
+            )}
           </div>
 
           {activeTab === 'builder' && (
@@ -634,9 +760,96 @@ export default function CustomReportsView({ selectedCompanyId }: CustomReportsVi
               )}
             </div>
           )}
+
+          {activeTab === 'view' && generatedConfig && (
+            <div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', gap: '14px', alignItems: 'flex-start', flexWrap: 'wrap', marginBottom: '16px' }}>
+                <div>
+                  <div style={{ fontSize: '12px', color: '#64748b', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '6px' }}>
+                    Custom Report
+                  </div>
+                  <h2 style={{ fontSize: '24px', color: '#0f172a', margin: '0 0 6px', lineHeight: 1.2 }}>
+                    {generatedConfig.title || 'Generated Report'}
+                  </h2>
+                  <div style={{ fontSize: '13px', color: '#64748b', lineHeight: 1.5 }}>
+                    {generatedConfig.description || 'Saved custom report.'}
+                  </div>
+                </div>
+                <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                  <button type="button" onClick={() => setActiveTab('builder')} style={{ border: '1px solid #cbd5e1', borderRadius: '8px', background: '#fff', color: '#475569', padding: '8px 10px', fontSize: '12px', fontWeight: 800, cursor: 'pointer' }}>
+                    Edit
+                  </button>
+                  {selectedSavedReport && (
+                    <button type="button" onClick={() => duplicateSavedReport(selectedSavedReport)} style={{ border: '1px solid #cbd5e1', borderRadius: '8px', background: '#fff', color: '#475569', padding: '8px 10px', fontSize: '12px', fontWeight: 800, cursor: 'pointer' }}>
+                      Duplicate
+                    </button>
+                  )}
+                  <button type="button" onClick={exportReportPdf} style={{ border: '1px solid #1F70C1', borderRadius: '8px', background: '#eff6ff', color: '#1F70C1', padding: '8px 10px', fontSize: '12px', fontWeight: 800, cursor: 'pointer' }}>
+                    Export PDF
+                  </button>
+                  <button type="button" onClick={exportReportPng} style={{ border: '1px solid #1F70C1', borderRadius: '8px', background: '#eff6ff', color: '#1F70C1', padding: '8px 10px', fontSize: '12px', fontWeight: 800, cursor: 'pointer' }}>
+                    Export PNG
+                  </button>
+                  <button type="button" onClick={exportReportCsv} style={{ border: '1px solid #1F70C1', borderRadius: '8px', background: '#eff6ff', color: '#1F70C1', padding: '8px 10px', fontSize: '12px', fontWeight: 800, cursor: 'pointer' }}>
+                    Export CSV
+                  </button>
+                  {selectedSavedReport && (
+                    <button type="button" onClick={() => deleteSavedReport(selectedSavedReport)} style={{ border: '1px solid #fecaca', borderRadius: '8px', background: '#fff', color: '#b91c1c', padding: '8px 10px', fontSize: '12px', fontWeight: 800, cursor: 'pointer' }}>
+                      Delete
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: '10px', marginBottom: '16px' }}>
+                <div style={{ padding: '10px 12px', borderRadius: '10px', background: '#f8fafc', border: '1px solid #e2e8f0' }}>
+                  <div style={{ fontSize: '11px', color: '#64748b', fontWeight: 800, textTransform: 'uppercase' }}>Date Range</div>
+                  <div style={{ fontSize: '13px', color: '#1e293b', fontWeight: 700, marginTop: '4px' }}>
+                    {previewRows.length > 0 ? `${previewRows[0]?.month || 'Start'} - ${previewRows[previewRows.length - 1]?.month || 'End'}` : 'No data'}
+                  </div>
+                </div>
+                <div style={{ padding: '10px 12px', borderRadius: '10px', background: '#f8fafc', border: '1px solid #e2e8f0' }}>
+                  <div style={{ fontSize: '11px', color: '#64748b', fontWeight: 800, textTransform: 'uppercase' }}>Generated</div>
+                  <div style={{ fontSize: '13px', color: '#1e293b', fontWeight: 700, marginTop: '4px' }}>
+                    {formatDate(selectedSavedReport?.createdAt || new Date().toISOString())}
+                  </div>
+                </div>
+                <div style={{ padding: '10px 12px', borderRadius: '10px', background: '#f8fafc', border: '1px solid #e2e8f0' }}>
+                  <div style={{ fontSize: '11px', color: '#64748b', fontWeight: 800, textTransform: 'uppercase' }}>Data Source</div>
+                  <div style={{ fontSize: '13px', color: '#1e293b', fontWeight: 700, marginTop: '4px', textTransform: 'capitalize' }}>
+                    {String(generatedConfig.dataSource || selectedSavedReport?.dataSource || 'monthlyFinancial').replace(/([a-z])([A-Z])/g, '$1 $2')}
+                  </div>
+                </div>
+                <div style={{ padding: '10px 12px', borderRadius: '10px', background: '#f8fafc', border: '1px solid #e2e8f0' }}>
+                  <div style={{ fontSize: '11px', color: '#64748b', fontWeight: 800, textTransform: 'uppercase' }}>Report Type</div>
+                  <div style={{ fontSize: '13px', color: '#1e293b', fontWeight: 700, marginTop: '4px', textTransform: 'capitalize' }}>
+                    {String(generatedConfig.chartType || 'report').replace('_', ' ')}
+                  </div>
+                </div>
+              </div>
+
+              <div ref={reportOutputRef} style={{ border: '1px solid #e2e8f0', borderRadius: '14px', padding: '16px', background: '#fff' }}>
+                {previewError && (
+                  <div style={{ padding: '10px 12px', borderRadius: '8px', background: '#fff7ed', border: '1px solid #fed7aa', color: '#9a3412', fontSize: '13px', fontWeight: 700 }}>
+                    {previewError}
+                  </div>
+                )}
+                {!previewError && (
+                  <CustomReportPreview config={generatedConfig} rows={previewRows} />
+                )}
+              </div>
+
+              {Array.isArray(generatedConfig.notes) && generatedConfig.notes.length > 0 && (
+                <div style={{ marginTop: '14px', padding: '12px 14px', borderRadius: '10px', background: '#f8fafc', color: '#475569', fontSize: '12px', lineHeight: 1.5 }}>
+                  <strong style={{ color: '#334155' }}>Notes: </strong>
+                  {generatedConfig.notes.join(' ')}
+                </div>
+              )}
+            </div>
+          )}
         </section>
 
-        <aside style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+        <aside style={{ gridColumn: 1, gridRow: 1, display: 'flex', flexDirection: 'column', gap: '14px' }}>
           <section style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '14px', padding: '18px', boxShadow: '0 2px 8px rgba(15, 23, 42, 0.04)' }}>
             <h2 style={{ fontSize: '16px', margin: '0 0 10px', color: '#1e293b' }}>Report Types</h2>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
