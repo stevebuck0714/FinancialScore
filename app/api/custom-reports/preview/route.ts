@@ -334,6 +334,7 @@ function passesFilters(row: any, filters: any[], fieldMeta: ReportFieldCatalogIt
     ].filter(Boolean) as string[];
     return candidateKeys.some((key) => {
       const candidate = normalizeFilterText(row?.[key]);
+      if (!candidate) return false;
       return terms.some((term) => candidate.includes(term) || term.includes(candidate));
     });
   });
