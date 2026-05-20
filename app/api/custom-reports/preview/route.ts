@@ -24,6 +24,13 @@ function monthLabel(value: Date): string {
   return `${month}/${year}`;
 }
 
+function dayLabel(value: Date): string {
+  const month = value.getUTCMonth() + 1;
+  const day = value.getUTCDate();
+  const year = String(value.getUTCFullYear()).slice(-2);
+  return `${month}/${day}/${year}`;
+}
+
 function getRequestedFields(config: any, fieldCatalog: ReportFieldCatalogItem[]): string[] {
   const allowedFields = new Set(fieldCatalog.map((item) => item.field));
   const series = Array.isArray(config?.series) ? config.series : [];
@@ -37,6 +44,12 @@ function monthKey(value: string | Date): string {
   const date = value instanceof Date ? value : new Date(value);
   if (Number.isNaN(date.getTime())) return 'unknown';
   return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}`;
+}
+
+function dayKey(value: string | Date): string {
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return 'unknown';
+  return date.toISOString().slice(0, 10);
 }
 
 function buildValues(row: any) {
@@ -135,6 +148,82 @@ function filterTerms(value: unknown): string[] {
   if (/\bproject\b/.test(normalized)) terms.push(normalized.replace(/\bproject\b/g, 'job'));
   if (/\bjob\b/.test(normalized)) terms.push(normalized.replace(/\bjob\b/g, 'project'));
   return Array.from(new Set(terms.filter(Boolean)));
+}
+
+function inferCostTypeFilterFromText(value: string): { field: string; operator: string; value: string } | null {
+  const normalized = normalizeFilterText(value);
+  if (/\blabor\b/.test(normalized)) return { field: 'costType', operator: 'contains', value: 'Labor' };
+  if (/\bmaterials?\b/.test(normalized)) return { field: 'costType', operator: 'contains', value: 'Materials' };
+  if (/\bsubcontract(or|ors|ing)?\b/.test(normalized)) return { field: 'costType', operator: 'contains', value: 'Subcontract' };
+  if (/\bequipment\b/.test(normalized)) return { field: 'costType', operator: 'contains', value: 'Equipment' };
+  return null;
+}
+
+function inferJobFilterFromText(value: string): { field: string; operator: string; value: string } | null {
+  const cleaned = String(value || '')
+    .split(/\bby\b/i)[0]
+    .replace(/[–—]/g, ' ')
+    .replace(/[^a-zA-Z0-9]+/g, ' ')
+    .replace(/\b(line|bar|stacked|grouped|combo|pie|table|chart|graph|report|trend|monthly|daily|date|period|type|source|operational)\b/gi, ' ')
+    .replace(/\b(actual|budget|committed|commitment|variance|costs?|labor|materials?|subcontractors?|subcontracting|equipment|other|for)\b/gi, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  const genericOnly = /^(job|project|jobs|projects|control|portfolio|forecast|billing|cash)$/i.test(cleaned);
+  if (!cleaned || genericOnly || cleaned.length < 4) return null;
+  return { field: 'jobName', operator: 'contains', value: cleaned };
+}
+
+function mergeInferredFilters(existingFilters: any[], inferredFilters: any[]) {
+  const merged = [...existingFilters];
+  inferredFilters.filter(Boolean).forEach((filter) => {
+    const exists = merged.some((item) => (
+      String(item?.field || '').toLowerCase() === filter.field.toLowerCase() &&
+      String(item?.value || '').toLowerCase() === filter.value.toLowerCase()
+    ));
+    if (!exists) merged.push(filter);
+  });
+  return merged.slice(0, 8);
+}
+
+function enhancePreviewConfig(config: any, fieldCatalog: ReportFieldCatalogItem[]) {
+  const context = [
+    config?.title,
+    config?.description,
+    ...(Array.isArray(config?.notes) ? config.notes : []),
+  ].map((item) => String(item || '')).join(' ');
+  const normalizedContext = normalizeFilterText(context);
+  const hasField = (field: string) => fieldCatalog.some((item) => item.field === field);
+  const fields = getRequestedFields(config, fieldCatalog);
+  const hasJobCostField = fields.some((field) => field.startsWith('op.job-cost-control.'));
+  const wantsDatedJobCost = (
+    hasJobCostField &&
+    hasField('op.job-cost-control.dailyCost') &&
+    /\b(date|daily|day|trend|line|bar|chart|graph)\b/.test(normalizedContext) &&
+    /\b(cost|labor|materials?|subcontract(or|ors|ing)?|equipment)\b/.test(normalizedContext)
+  );
+  const inferredCostType = inferCostTypeFilterFromText(context);
+  const series = wantsDatedJobCost
+    ? (Array.isArray(config?.series) ? config.series : []).map((item: any) => (
+        String(item?.field || '').startsWith('op.job-cost-control.')
+          ? {
+              ...item,
+              field: 'op.job-cost-control.dailyCost',
+              label: inferredCostType?.value ? `${inferredCostType.value} Cost` : item?.label || 'Daily Job Cost',
+              format: 'currency',
+            }
+          : item
+      ))
+    : config?.series;
+
+  return {
+    ...config,
+    series,
+    filters: mergeInferredFilters(
+      Array.isArray(config?.filters) ? config.filters : [],
+      [inferJobFilterFromText(context), inferredCostType]
+    ),
+    timeGrain: wantsDatedJobCost ? 'day' : config?.timeGrain,
+  };
 }
 
 function passesFilters(row: any, filters: any[], fieldMeta: ReportFieldCatalogItem): boolean {
@@ -246,7 +335,8 @@ function buildOperationalPreviewRows(
   sectorCategory: string | null,
   fields: string[],
   fieldCatalog: ReportFieldCatalogItem[],
-  filters: any[]
+  filters: any[],
+  timeGrain: string
 ): Map<string, { month: string; monthDate: string; values: Record<string, number> }> {
   const rowsByMonth = new Map<string, { month: string; monthDate: string; values: Record<string, number> }>();
   const operationalFields = fields
@@ -262,10 +352,11 @@ function buildOperationalPreviewRows(
         .filter((record: any) => passesFilters(record, filters, field))
         .forEach((record: any) => {
           const rawDate = getRecordDate(record);
-          const key = monthKey(rawDate);
-          const monthDate = `${key}-01T00:00:00.000Z`;
+          const key = timeGrain === 'day' ? dayKey(rawDate) : monthKey(rawDate);
+          const monthDate = timeGrain === 'day' ? `${key}T00:00:00.000Z` : `${key}-01T00:00:00.000Z`;
+          const labelDate = new Date(monthDate);
           const existing = rowsByMonth.get(key) || {
-            month: monthLabel(new Date(monthDate)),
+            month: timeGrain === 'day' ? dayLabel(labelDate) : monthLabel(labelDate),
             monthDate,
             values: {},
           };
@@ -303,7 +394,8 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Custom Reports are disabled for this company.' }, { status: 403 });
     }
     const fieldCatalog = getReportDataCatalog(company?.industrySectorCategory || null);
-    const fields = getRequestedFields(config, fieldCatalog);
+    const previewConfig = enhancePreviewConfig(config, fieldCatalog);
+    const fields = getRequestedFields(previewConfig, fieldCatalog);
     if (fields.length === 0) return NextResponse.json({ error: 'Report config has no supported series fields.' }, { status: 400 });
 
     const rows = await prisma.monthlyFinancial.findMany({
@@ -329,30 +421,34 @@ export async function POST(request: NextRequest) {
     });
 
     const previewRowsByMonth = new Map<string, { month: string; monthDate: string; values: Record<string, number> }>();
+    const financialFields = fields.filter((field) => !field.startsWith('op.'));
 
-    rows
-      .slice()
-      .reverse()
-      .forEach((row) => {
-        const values = buildValues(row);
-        previewRowsByMonth.set(monthKey(row.monthDate), {
-          month: monthLabel(row.monthDate),
-          monthDate: row.monthDate.toISOString(),
-          values: fields.reduce<Record<string, number>>((acc, field) => {
-            if ((values as Record<string, number>)[field] !== undefined) {
-              acc[field] = toNumber((values as Record<string, number>)[field]);
-            }
-            return acc;
-          }, {}),
+    if (financialFields.length > 0) {
+      rows
+        .slice()
+        .reverse()
+        .forEach((row) => {
+          const values = buildValues(row);
+          previewRowsByMonth.set(monthKey(row.monthDate), {
+            month: monthLabel(row.monthDate),
+            monthDate: row.monthDate.toISOString(),
+            values: financialFields.reduce<Record<string, number>>((acc, field) => {
+              if ((values as Record<string, number>)[field] !== undefined) {
+                acc[field] = toNumber((values as Record<string, number>)[field]);
+              }
+              return acc;
+            }, {}),
+          });
         });
-      });
+    }
 
     const operationalRows = buildOperationalPreviewRows(
       companyId,
       company?.industrySectorCategory || null,
       fields,
       fieldCatalog,
-      Array.isArray(config?.filters) ? config.filters : []
+      Array.isArray(previewConfig?.filters) ? previewConfig.filters : [],
+      String(previewConfig?.timeGrain || 'month')
     );
     operationalRows.forEach((row, key) => {
       const existing = previewRowsByMonth.get(key) || row;
@@ -366,13 +462,13 @@ export async function POST(request: NextRequest) {
     });
 
     const previewRows = Array.from(previewRowsByMonth.values()).sort((a, b) => a.monthDate.localeCompare(b.monthDate));
-    const tablePreview = String(config?.chartType || '').toLowerCase() === 'table'
+    const tablePreview = String(previewConfig?.chartType || '').toLowerCase() === 'table'
       ? buildOperationalTablePreview(
           companyId,
           company?.industrySectorCategory || null,
           fields,
           fieldCatalog,
-          Array.isArray(config?.filters) ? config.filters : []
+          Array.isArray(previewConfig?.filters) ? previewConfig.filters : []
         )
       : { columns: [], rows: [] };
 

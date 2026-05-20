@@ -136,6 +136,91 @@ function inferDataSource(series: ReturnType<typeof normalizeSeries>, rawDataSour
   return String(rawDataSource || 'monthlyFinancial');
 }
 
+function normalizePromptText(value: string): string {
+  return String(value || '')
+    .replace(/[–—]/g, ' ')
+    .replace(/[^a-zA-Z0-9]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function inferCostTypeFilter(prompt: string): { field: string; operator: string; value: string } | null {
+  const lower = normalizePromptText(prompt).toLowerCase();
+  if (/\blabor\b/.test(lower)) return { field: 'costType', operator: 'contains', value: 'Labor' };
+  if (/\bmaterials?\b/.test(lower)) return { field: 'costType', operator: 'contains', value: 'Materials' };
+  if (/\bsubcontract(or|ors|ing)?\b/.test(lower)) return { field: 'costType', operator: 'contains', value: 'Subcontract' };
+  if (/\bequipment\b/.test(lower)) return { field: 'costType', operator: 'contains', value: 'Equipment' };
+  return null;
+}
+
+function inferJobFilter(prompt: string): { field: string; operator: string; value: string } | null {
+  const cleaned = normalizePromptText(prompt)
+    .replace(/\b(line|bar|stacked|grouped|combo|pie|table|chart|graph|report|trend|monthly|daily|date|period|by)\b/gi, ' ')
+    .replace(/\b(actual|budget|committed|commitment|variance|costs?|labor|materials?|subcontractors?|subcontracting|equipment|other)\b/gi, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  const genericOnly = /^(job|project|jobs|projects|control|portfolio|forecast|billing|cash)$/i.test(cleaned);
+  if (!cleaned || genericOnly || cleaned.length < 4) return null;
+  return { field: 'jobName', operator: 'contains', value: cleaned };
+}
+
+function mergeFilters(existingFilters: any[], inferredFilters: any[]) {
+  const merged = [...existingFilters];
+  inferredFilters.forEach((filter) => {
+    const exists = merged.some((item) => (
+      String(item?.field || '').toLowerCase() === filter.field.toLowerCase() &&
+      String(item?.value || '').toLowerCase() === filter.value.toLowerCase()
+    ));
+    if (!exists) merged.push(filter);
+  });
+  return merged.slice(0, 8);
+}
+
+function enhanceConfigFromPrompt(config: ReturnType<typeof validateReportConfig>, prompt: string, fieldCatalog: ReportFieldCatalogItem[]) {
+  const lowerPrompt = normalizePromptText(prompt).toLowerCase();
+  const hasField = (field: string) => fieldCatalog.some((item) => item.field === field);
+  const wantsDatedJobCost = (
+    /\b(date|daily|day|trend|line|bar|chart|graph)\b/.test(lowerPrompt) &&
+    /\b(cost|labor|materials?|subcontract(or|ors|ing)?|equipment)\b/.test(lowerPrompt) &&
+    hasField('op.job-cost-control.dailyCost')
+  );
+
+  const inferredCostType = inferCostTypeFilter(prompt);
+  const datedJobCostSeries = {
+    field: 'op.job-cost-control.dailyCost',
+    label: inferredCostType?.value ? `${inferredCostType.value} Cost` : 'Daily Job Cost',
+    chartType: config.chartType === 'table' ? 'table' : config.chartType === 'combo' ? 'bar' : config.chartType,
+    axis: 'left',
+    aggregation: 'sum',
+    format: 'currency',
+  };
+  const hasOperationalJobCostSeries = config.series.some((item: any) => String(item?.field || '').startsWith('op.job-cost-control.'));
+  const series = wantsDatedJobCost
+    ? hasOperationalJobCostSeries
+      ? config.series.map((item: any) => (
+          String(item?.field || '').startsWith('op.job-cost-control.')
+            ? { ...item, ...datedJobCostSeries, chartType: item.chartType || datedJobCostSeries.chartType }
+            : item
+        ))
+      : [datedJobCostSeries]
+    : config.series;
+
+  const inferredFilters = [inferJobFilter(prompt), inferredCostType].filter(Boolean);
+  const filters = mergeFilters(config.filters || [], inferredFilters);
+
+  return {
+    ...config,
+    description: wantsDatedJobCost
+      ? `${inferredCostType?.value || 'Job'} cost by date for the requested project or job.`
+      : config.description,
+    dataSource: inferDataSource(series, config.dataSource),
+    timeGrain: wantsDatedJobCost ? 'day' : config.timeGrain,
+    xAxis: wantsDatedJobCost ? { field: 'date', label: 'Date' } : config.xAxis,
+    series,
+    filters,
+  };
+}
+
 function validateReportConfig(rawConfig: any, requestedType: ReportChartType, fieldCatalog: ReportFieldCatalogItem[]) {
   const chartType = normalizeChartType(rawConfig?.chartType, requestedType);
   const series = normalizeSeries(rawConfig, chartType, fieldCatalog);
@@ -428,6 +513,7 @@ export async function POST(request: NextRequest) {
         reason: 'AI credentials are not configured for local development.',
       };
     }
+    reportConfig = enhanceConfigFromPrompt(reportConfig, prompt, fieldCatalog);
 
     return NextResponse.json({
       reportConfig,
