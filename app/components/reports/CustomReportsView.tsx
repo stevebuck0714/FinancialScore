@@ -524,6 +524,35 @@ export default function CustomReportsView({ selectedCompanyId }: CustomReportsVi
 
   return (
     <div style={{ maxWidth: '1400px', margin: '0 auto', padding: '24px 32px 48px' }}>
+      <style jsx global>{`
+        @media print {
+          body * {
+            visibility: hidden !important;
+          }
+
+          .custom-report-print-area,
+          .custom-report-print-area * {
+            visibility: visible !important;
+          }
+
+          .custom-report-print-area {
+            position: absolute !important;
+            left: 0 !important;
+            top: 0 !important;
+            width: 100% !important;
+            max-width: none !important;
+            margin: 0 !important;
+            padding: 0.25in !important;
+            border: none !important;
+            box-shadow: none !important;
+            background: #fff !important;
+          }
+
+          .custom-report-no-print {
+            display: none !important;
+          }
+        }
+      `}</style>
       <div style={{ marginBottom: '20px' }}>
         <div style={{ fontSize: '18px', fontWeight: 800, color: '#1F70C1', textTransform: 'uppercase', letterSpacing: '0.08em', whiteSpace: 'nowrap' }}>
           Custom Reports
@@ -535,7 +564,7 @@ export default function CustomReportsView({ selectedCompanyId }: CustomReportsVi
 
       <div style={{ display: 'grid', gridTemplateColumns: 'minmax(180px, 0.42fr) minmax(0, 1.65fr)', gap: '18px' }}>
         <section style={{ gridColumn: 2, background: 'white', border: '1px solid #e2e8f0', borderRadius: '14px', padding: '20px', boxShadow: '0 2px 8px rgba(15, 23, 42, 0.04)' }}>
-          <div style={{ display: 'flex', gap: '8px', marginBottom: '16px', borderBottom: '1px solid #e2e8f0' }}>
+          <div className="custom-report-no-print" style={{ display: 'flex', gap: '8px', marginBottom: '16px', borderBottom: '1px solid #e2e8f0' }}>
             <button
               type="button"
               onClick={() => setActiveTab('builder')}
@@ -762,7 +791,32 @@ export default function CustomReportsView({ selectedCompanyId }: CustomReportsVi
           )}
 
           {activeTab === 'view' && generatedConfig && (
-            <div>
+            <>
+              <div className="custom-report-no-print" style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', justifyContent: 'flex-end', marginBottom: '14px' }}>
+                <button type="button" onClick={() => setActiveTab('builder')} style={{ border: '1px solid #cbd5e1', borderRadius: '8px', background: '#fff', color: '#475569', padding: '8px 10px', fontSize: '12px', fontWeight: 800, cursor: 'pointer' }}>
+                  Edit
+                </button>
+                {selectedSavedReport && (
+                  <button type="button" onClick={() => duplicateSavedReport(selectedSavedReport)} style={{ border: '1px solid #cbd5e1', borderRadius: '8px', background: '#fff', color: '#475569', padding: '8px 10px', fontSize: '12px', fontWeight: 800, cursor: 'pointer' }}>
+                    Duplicate
+                  </button>
+                )}
+                <button type="button" onClick={exportReportPdf} style={{ border: '1px solid #1F70C1', borderRadius: '8px', background: '#eff6ff', color: '#1F70C1', padding: '8px 10px', fontSize: '12px', fontWeight: 800, cursor: 'pointer' }}>
+                  Export PDF
+                </button>
+                <button type="button" onClick={exportReportPng} style={{ border: '1px solid #1F70C1', borderRadius: '8px', background: '#eff6ff', color: '#1F70C1', padding: '8px 10px', fontSize: '12px', fontWeight: 800, cursor: 'pointer' }}>
+                  Export PNG
+                </button>
+                <button type="button" onClick={exportReportCsv} style={{ border: '1px solid #1F70C1', borderRadius: '8px', background: '#eff6ff', color: '#1F70C1', padding: '8px 10px', fontSize: '12px', fontWeight: 800, cursor: 'pointer' }}>
+                  Export CSV
+                </button>
+                {selectedSavedReport && (
+                  <button type="button" onClick={() => deleteSavedReport(selectedSavedReport)} style={{ border: '1px solid #fecaca', borderRadius: '8px', background: '#fff', color: '#b91c1c', padding: '8px 10px', fontSize: '12px', fontWeight: 800, cursor: 'pointer' }}>
+                    Delete
+                  </button>
+                )}
+              </div>
+              <div ref={reportOutputRef} className="custom-report-print-area">
               <div style={{ display: 'flex', justifyContent: 'space-between', gap: '14px', alignItems: 'flex-start', flexWrap: 'wrap', marginBottom: '16px' }}>
                 <div>
                   <div style={{ fontSize: '12px', color: '#64748b', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '6px' }}>
@@ -771,33 +825,6 @@ export default function CustomReportsView({ selectedCompanyId }: CustomReportsVi
                   <h2 style={{ fontSize: '24px', color: '#0f172a', margin: '0 0 6px', lineHeight: 1.2 }}>
                     {generatedConfig.title || 'Generated Report'}
                   </h2>
-                  <div style={{ fontSize: '13px', color: '#64748b', lineHeight: 1.5 }}>
-                    {generatedConfig.description || 'Saved custom report.'}
-                  </div>
-                </div>
-                <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
-                  <button type="button" onClick={() => setActiveTab('builder')} style={{ border: '1px solid #cbd5e1', borderRadius: '8px', background: '#fff', color: '#475569', padding: '8px 10px', fontSize: '12px', fontWeight: 800, cursor: 'pointer' }}>
-                    Edit
-                  </button>
-                  {selectedSavedReport && (
-                    <button type="button" onClick={() => duplicateSavedReport(selectedSavedReport)} style={{ border: '1px solid #cbd5e1', borderRadius: '8px', background: '#fff', color: '#475569', padding: '8px 10px', fontSize: '12px', fontWeight: 800, cursor: 'pointer' }}>
-                      Duplicate
-                    </button>
-                  )}
-                  <button type="button" onClick={exportReportPdf} style={{ border: '1px solid #1F70C1', borderRadius: '8px', background: '#eff6ff', color: '#1F70C1', padding: '8px 10px', fontSize: '12px', fontWeight: 800, cursor: 'pointer' }}>
-                    Export PDF
-                  </button>
-                  <button type="button" onClick={exportReportPng} style={{ border: '1px solid #1F70C1', borderRadius: '8px', background: '#eff6ff', color: '#1F70C1', padding: '8px 10px', fontSize: '12px', fontWeight: 800, cursor: 'pointer' }}>
-                    Export PNG
-                  </button>
-                  <button type="button" onClick={exportReportCsv} style={{ border: '1px solid #1F70C1', borderRadius: '8px', background: '#eff6ff', color: '#1F70C1', padding: '8px 10px', fontSize: '12px', fontWeight: 800, cursor: 'pointer' }}>
-                    Export CSV
-                  </button>
-                  {selectedSavedReport && (
-                    <button type="button" onClick={() => deleteSavedReport(selectedSavedReport)} style={{ border: '1px solid #fecaca', borderRadius: '8px', background: '#fff', color: '#b91c1c', padding: '8px 10px', fontSize: '12px', fontWeight: 800, cursor: 'pointer' }}>
-                      Delete
-                    </button>
-                  )}
                 </div>
               </div>
 
@@ -828,7 +855,7 @@ export default function CustomReportsView({ selectedCompanyId }: CustomReportsVi
                 </div>
               </div>
 
-              <div ref={reportOutputRef} style={{ border: '1px solid #e2e8f0', borderRadius: '14px', padding: '16px', background: '#fff' }}>
+              <div style={{ border: '1px solid #e2e8f0', borderRadius: '14px', padding: '16px', background: '#fff' }}>
                 {previewError && (
                   <div style={{ padding: '10px 12px', borderRadius: '8px', background: '#fff7ed', border: '1px solid #fed7aa', color: '#9a3412', fontSize: '13px', fontWeight: 700 }}>
                     {previewError}
@@ -845,11 +872,12 @@ export default function CustomReportsView({ selectedCompanyId }: CustomReportsVi
                   {generatedConfig.notes.join(' ')}
                 </div>
               )}
-            </div>
+              </div>
+            </>
           )}
         </section>
 
-        <aside style={{ gridColumn: 1, gridRow: 1, display: 'flex', flexDirection: 'column', gap: '14px' }}>
+        <aside className="custom-report-no-print" style={{ gridColumn: 1, gridRow: 1, display: 'flex', flexDirection: 'column', gap: '14px' }}>
           <section style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '14px', padding: '18px', boxShadow: '0 2px 8px rgba(15, 23, 42, 0.04)' }}>
             <h2 style={{ fontSize: '16px', margin: '0 0 10px', color: '#1e293b' }}>Report Types</h2>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
