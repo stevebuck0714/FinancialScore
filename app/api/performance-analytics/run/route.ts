@@ -633,10 +633,14 @@ export async function POST(request: NextRequest) {
       select: {
         id: true,
         name: true,
+        accountingSystem: true,
         industrySector: true,
         companySizeCategory: true,
       },
     });
+    const isQuickBooksCompany = ['QUICKBOOKS', 'QUICKBOOKS_DESKTOP'].includes(
+      String(company?.accountingSystem || '').trim().toUpperCase()
+    );
 
     let industrySectorCategory: string | null = null;
     try {
@@ -795,6 +799,39 @@ export async function POST(request: NextRequest) {
     const { frequency: customerFrequency, rows: customerSnapshots } = selectBestOpsSeries(rawCustomerSnapshots, preferredOpsFrequency);
     const { frequency: productFrequency, rows: productSnapshots } = selectBestOpsSeries(rawProductSnapshots, preferredOpsFrequency);
     const { frequency: inventoryFrequency, rows: inventorySnapshots } = selectBestOpsSeries(rawInventorySnapshots, preferredOpsFrequency);
+
+    const hasProcessedFinancialMasterData = monthlyFinancials.length > 0;
+    const hasCoreLiveFinancialData = isQuickBooksCompany
+      ? hasProcessedFinancialMasterData
+      : (
+          monthlyFinancials.length > 0 ||
+          cashSnapshots.length > 0 ||
+          arSnapshots.length > 0 ||
+          apSnapshots.length > 0
+        );
+
+    if (!hasCoreLiveFinancialData) {
+      if (replace) {
+        await prisma.$executeRawUnsafe(`DELETE FROM "PerformanceFinding" WHERE "companyId" = $1`, companyId);
+      }
+      return NextResponse.json({
+        success: true,
+        skipped: true,
+        reason: isQuickBooksCompany
+          ? 'QuickBooks data has not been processed into the financial master yet. Performance analytics findings were not generated.'
+          : 'No live financial data is available for this company. Performance analytics findings were not generated.',
+        counts: {
+          monthlyFinancials: monthlyFinancials.length,
+          cashSnapshots: cashSnapshots.length,
+          arSnapshots: arSnapshots.length,
+          apSnapshots: apSnapshots.length,
+          customerSnapshots: customerSnapshots.length,
+          productSnapshots: productSnapshots.length,
+          inventorySnapshots: inventorySnapshots.length,
+        },
+        findings: [],
+      });
+    }
 
     const selectedFrequencyCounts = [
       { frequency: cashFrequency, count: cashSnapshots.length },

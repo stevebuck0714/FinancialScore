@@ -260,6 +260,15 @@ export async function POST(request: NextRequest) {
         companyId,
         Array.from(seenFingerprints)
       );
+    } else {
+      await prisma.$executeRawUnsafe(
+        `UPDATE "PulseAlert"
+         SET "isActive" = FALSE, "modifiedAt" = $1::timestamp
+         WHERE "companyId" = $2
+           AND "status" <> 'resolved'`,
+        nowIso,
+        companyId
+      );
     }
 
     const rows = await prisma.$queryRawUnsafe<PulseAlertRow[]>(

@@ -650,8 +650,30 @@ export async function GET(request: NextRequest) {
     await ensurePulseCacheTables();
     const company = await prisma.company.findUnique({
       where: { id: companyId },
-      select: { id: true, name: true, industrySector: true, industrySectorCategory: true },
+      select: { id: true, name: true, accountingSystem: true, industrySector: true, industrySectorCategory: true },
     } as any);
+    const isQuickBooksCompany = ['QUICKBOOKS', 'QUICKBOOKS_DESKTOP'].includes(
+      String(company?.accountingSystem || '').trim().toUpperCase()
+    );
+    if (isQuickBooksCompany) {
+      const processedRows = await prisma.monthlyFinancial.count({ where: { companyId } });
+      if (processedRows === 0) {
+        await prisma.$executeRawUnsafe(`DELETE FROM "PulseDailySummary" WHERE "companyId" = $1`, companyId).catch(() => {});
+        await prisma.$executeRawUnsafe(`DELETE FROM "PulseExecBriefingCache" WHERE "companyId" = $1`, companyId).catch(() => {});
+        const response = {
+          generatedAt: new Date().toISOString(),
+          aiGenerated: false,
+          sections: [
+            {
+              title: 'Financial Master Not Processed',
+              bullets: ['QuickBooks data has been loaded, but it has not been processed into the financial master yet. Daily Exec Briefing is paused until processed financial data is available.'],
+            },
+          ],
+          sourceNotes: ['QuickBooks loaded data is not used for briefing until MonthlyFinancial master rows exist.'],
+        } satisfies BriefingResponse;
+        return NextResponse.json(response, { headers: PRIVATE_DAILY_CACHE_HEADERS });
+      }
+    }
     const moduleProfile = getExecBriefingModuleProfile(company?.industrySectorCategory);
     const dataVersion = await buildPulseDataVersion(companyId, startDate, monthlyStartDate, moduleProfile);
     const versionedCacheKey = `${cacheKey}:${dataVersion.slice(0, 12)}`;

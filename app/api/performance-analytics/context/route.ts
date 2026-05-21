@@ -107,9 +107,13 @@ export async function GET(request: NextRequest) {
       select: {
         id: true,
         name: true,
+        accountingSystem: true,
         industrySector: true,
       },
     });
+    const isQuickBooksCompany = ['QUICKBOOKS', 'QUICKBOOKS_DESKTOP'].includes(
+      String(company?.accountingSystem || '').trim().toUpperCase()
+    );
 
     let industrySectorCategory: string | null = null;
     try {
@@ -137,7 +141,7 @@ export async function GET(request: NextRequest) {
     // requested window (avoids the legacy MonthlyFinancial duplication issue
     // and shows the latest ingest immediately). Fall back to MonthlyFinancial
     // pinned to the latest FinancialRecord when DFS is empty.
-    const dfsMonthly = await loadMonthlyFromDfs(companyId, startDate, endDate);
+    const dfsMonthly = isQuickBooksCompany ? null : await loadMonthlyFromDfs(companyId, startDate, endDate);
 
     const latestFinancialRecord = dfsMonthly
       ? null

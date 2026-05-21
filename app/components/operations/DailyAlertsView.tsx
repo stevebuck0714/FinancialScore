@@ -127,7 +127,7 @@ type DailyAlertsCache = {
 };
 
 const DAILY_ALERTS_FETCH_TIMEOUT_MS = 20000;
-const DAILY_CACHE_VERSION = 'v3';
+const DAILY_CACHE_VERSION = 'v4-no-fallback';
 
 async function fetchWithTimeout(
   input: RequestInfo | URL,
@@ -577,10 +577,60 @@ export default function DailyAlertsView({ companyId, companyName, onNavigate }: 
         const goals = (operationalGoalsData?.goals && typeof operationalGoalsData.goals === 'object')
           ? operationalGoalsData.goals
           : {};
-        const companySectorCategory = String(companyMetaData?.companies?.[0]?.industrySectorCategory || '').trim() || null;
+        const companyRecord = Array.isArray(companyMetaData?.companies) ? companyMetaData.companies[0] : null;
+        const companySectorCategory = String(companyRecord?.industrySectorCategory || '').trim() || null;
         const pulseOverrides = sanitizePulsePolicyOverrides(goals[PULSE_POLICY_OVERRIDE_KEY]);
         const pulsePolicy = getResolvedPulsePolicyValues(pulseOverrides, companySectorCategory);
         const priorityFocusTerms = extractPriorityFocusTerms(goals);
+        const isQuickBooksCompany = ['QUICKBOOKS', 'QUICKBOOKS_DESKTOP'].includes(
+          String(companyRecord?.accountingSystem || '').trim().toUpperCase()
+        );
+        const processedMasterRows = Array.isArray(performanceContextData?.data?.monthlyFinancials)
+          ? performanceContextData.data.monthlyFinancials.length
+          : 0;
+        const hasCoreLiveFinancialData =
+          isQuickBooksCompany
+            ? processedMasterRows > 0
+            : (
+                (Array.isArray(dailyFinancialData?.records) && dailyFinancialData.records.length > 0) ||
+                (Array.isArray(cashData?.records) && cashData.records.length > 0) ||
+                (Array.isArray(arData?.records) && arData.records.length > 0) ||
+                (Array.isArray(apData?.records) && apData.records.length > 0)
+              );
+
+        if (!hasCoreLiveFinancialData) {
+          const readinessSnapshot: ReadinessItem[] = [
+            {
+              key: 'processed-financial-master',
+              label: 'Processed financial master',
+              status: 'missing',
+              reason: isQuickBooksCompany
+                ? 'QuickBooks data has been loaded but not processed into the financial master yet.'
+                : 'No live financial source rows are available for Pulse.',
+              lastUpdated: endDate,
+            },
+          ];
+          await withFallback('clear pulse alerts', fetchWithTimeout('/api/pulse/alerts', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ companyId, alerts: [] }),
+          }), null);
+          if (!cancelled) {
+            setGoalsSnapshot(goals);
+            setPolicyOverrides(pulseOverrides);
+            setIndustrySectorCategory(companySectorCategory);
+            setReadinessItems(readinessSnapshot);
+            setAlerts([]);
+            writeDailyCache<DailyAlertsCache>(alertsCacheKey, {
+              alerts: [],
+              readinessItems: readinessSnapshot,
+              goalsSnapshot: goals,
+              policyOverrides: pulseOverrides,
+              industrySectorCategory: companySectorCategory,
+            });
+          }
+          return;
+        }
 
         const built: AlertItem[] = [];
 
@@ -1293,7 +1343,7 @@ export default function DailyAlertsView({ companyId, companyName, onNavigate }: 
           });
         }
 
-        const findings = Array.isArray(findingsData?.findings) ? findingsData.findings : [];
+        const findings = hasCoreLiveFinancialData && Array.isArray(findingsData?.findings) ? findingsData.findings : [];
         findings
           .filter((finding: any) => {
             const status = String(finding?.payload?.status || '').trim().toLowerCase();
@@ -1323,7 +1373,7 @@ export default function DailyAlertsView({ companyId, companyName, onNavigate }: 
           });
 
         const criticalFindingIds = new Set(findings.map((finding: any) => String(finding?.id || '')));
-        const expertFindings = Array.isArray(expertFindingsData?.findings) ? expertFindingsData.findings : [];
+        const expertFindings = hasCoreLiveFinancialData && Array.isArray(expertFindingsData?.findings) ? expertFindingsData.findings : [];
         expertFindings
           .filter((finding: any) => {
             const id = String(finding?.id || '');
