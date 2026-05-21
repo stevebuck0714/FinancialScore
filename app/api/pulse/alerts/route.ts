@@ -11,6 +11,11 @@ import {
   createPulseId,
 } from '@/lib/pulse-alerts';
 
+const PULSE_ALERTS_API_ENABLED = false;
+const PULSE_ALERTS_DISABLED_RESPONSE = {
+  error: 'Company Pulse alerts are disabled. Use Daily Briefing instead.',
+};
+
 function normalizeStatus(value: unknown): PulseAlertStatus {
   const raw = String(value || '').trim().toLowerCase();
   if (raw === 'acknowledged' || raw === 'snoozed' || raw === 'resolved') return raw;
@@ -62,6 +67,9 @@ function normalizeAlertInput(alert: any): PulseAlertInput | null {
 }
 
 export async function GET(request: NextRequest) {
+  if (!PULSE_ALERTS_API_ENABLED) {
+    return NextResponse.json(PULSE_ALERTS_DISABLED_RESPONSE, { status: 410 });
+  }
   try {
     await requireAuth();
     await ensurePulseAlertTables();
@@ -106,6 +114,9 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
+  if (!PULSE_ALERTS_API_ENABLED) {
+    return NextResponse.json(PULSE_ALERTS_DISABLED_RESPONSE, { status: 410 });
+  }
   try {
     const context = await requireAuth();
     await ensurePulseAlertTables();

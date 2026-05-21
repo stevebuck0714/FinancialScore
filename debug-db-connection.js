@@ -1,7 +1,7 @@
 // Debug which database the app is actually connecting to
 console.log('=== DATABASE CONNECTION DEBUG ===');
 console.log('Current working directory:', process.cwd());
-console.log('DATABASE_URL env var:', process.env.DATABASE_URL);
+console.log('DATABASE_URL configured:', Boolean(process.env.DATABASE_URL));
 
 // Try to connect to the database and see what users exist
 const { PrismaClient } = require('@prisma/client');

@@ -213,7 +213,7 @@ export default function Header({
                   textAlign: 'center'
                 }}
               >
-                COMPANY PULSE
+                DAILY BRIEFING
               </button>
               <button
                 onClick={() => handleNavigation('operations')}

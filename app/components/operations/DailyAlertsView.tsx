@@ -151,6 +151,7 @@ const RESOLVED_STATUSES = new Set(['resolved', 'realized', 'closed', 'done', 'co
 const OPERATIONAL_FOCUS_KEY = '__focusWatchlist';
 const AR_TOP_CUSTOMER_MATERIALITY_LIMIT = 5;
 const AP_TOP_VENDOR_MATERIALITY_LIMIT = 5;
+const COMPANY_PULSE_ALERTS_ENABLED = false;
 type PulseTab = 'alerts' | 'briefing' | 'policy';
 
 type PolicyExplainer = {
@@ -381,7 +382,7 @@ function buildPolicyExplainer(def: (typeof PULSE_POLICY_DEFINITIONS)[number]): P
 }
 
 export default function DailyAlertsView({ companyId, companyName, onNavigate }: DailyAlertsViewProps) {
-  const [activeTab, setActiveTab] = useState<PulseTab>('alerts');
+  const activeTab: PulseTab = 'briefing';
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [alerts, setAlerts] = useState<AlertItem[]>([]);
@@ -414,11 +415,20 @@ export default function DailyAlertsView({ companyId, companyName, onNavigate }: 
     const load = async () => {
       setLoading(true);
       setError(null);
+      if (!COMPANY_PULSE_ALERTS_ENABLED) {
+        setAlerts([]);
+        setReadinessItems([]);
+        setGoalsSnapshot({});
+        setPolicyOverrides({});
+        setIndustrySectorCategory(null);
+        setLoading(false);
+        return;
+      }
       try {
         const end = new Date();
         const start = new Date();
-        // Use a wider lookback so monthly/weekly operational snapshots remain visible in Pulse.
-        start.setDate(start.getDate() - 120);
+        // Pulse is a recent operating view; deeper history belongs in reports/briefings.
+        start.setDate(start.getDate() - 90);
         const startDate = toLocalInputDate(start);
         const endDate = toLocalInputDate(end);
         const alertsCacheKey = dailyCacheKey('alerts', companyId);
@@ -449,32 +459,23 @@ export default function DailyAlertsView({ companyId, companyName, onNavigate }: 
           return response.json();
         };
 
-        const fetchOpsWithCadenceFallback = async (
+        const fetchOpsForPulse = async (
           type: 'ar-aging' | 'ap-aging' | 'cash' | 'customers' | 'products' | 'inventory' | 'daily-financials',
           emptyShape: any
         ) => {
-          const cadenceOrder: Array<'daily' | 'weekly' | 'monthly'> = ['daily', 'weekly', 'monthly'];
-          let bestPayload: any = emptyShape;
-          let bestCount = 0;
-          for (const cadence of cadenceOrder) {
-            try {
-              const payload = await fetchOps(type, cadence);
-              const records = Array.isArray(payload?.records) ? payload.records : [];
-              if (records.length > bestCount) {
-                bestPayload = payload;
-                bestCount = records.length;
-              }
-            } catch (error) {
-              console.warn(`Daily alerts: ${type} ${cadence} fetch failed, trying next cadence.`, error);
-            }
+          const cadence: 'daily' | 'weekly' | 'monthly' = type === 'daily-financials' ? 'daily' : 'monthly';
+          try {
+            return await fetchOps(type, cadence);
+          } catch (error) {
+            console.warn(`Daily alerts: ${type} ${cadence} fetch failed, using fallback.`, error);
+            return emptyShape;
           }
-          return bestPayload;
         };
 
         const fetchFindings = async () => {
           const params = new URLSearchParams({
             companyId,
-            limit: '1000',
+            limit: '250',
           });
           const response = await fetchWithTimeout(`/api/performance-analytics/findings?${params}`);
           if (!response.ok) throw new Error('Failed to load findings');
@@ -484,20 +485,10 @@ export default function DailyAlertsView({ companyId, companyName, onNavigate }: 
         const fetchExpertFindings = async () => {
           const params = new URLSearchParams({
             companyId,
-            limit: '1000',
+            limit: '250',
           });
           const response = await fetchWithTimeout(`/api/performance-analytics/findings?${params}`);
           if (!response.ok) return { findings: [] };
-          return response.json();
-        };
-
-        const triggerPerformanceRun = async () => {
-          const response = await fetchWithTimeout('/api/performance-analytics/run', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ companyId, replace: true, frequency: 'daily' }),
-          }, 30000);
-          if (!response.ok) throw new Error('Failed to run performance analytics');
           return response.json();
         };
 
@@ -505,8 +496,8 @@ export default function DailyAlertsView({ companyId, companyName, onNavigate }: 
           const params = new URLSearchParams({
             companyId,
             frequency: 'monthly',
-            months: '18',
-            limit: '300',
+            months: '6',
+            limit: '120',
           });
           const response = await fetchWithTimeout(`/api/performance-analytics/context?${params}`);
           if (!response.ok) return {};
@@ -543,8 +534,6 @@ export default function DailyAlertsView({ companyId, companyName, onNavigate }: 
           }
         };
 
-        await withFallback('performance run', triggerPerformanceRun(), null);
-
         const [
           arData,
           apData,
@@ -560,13 +549,13 @@ export default function DailyAlertsView({ companyId, companyName, onNavigate }: 
           operationalGoalsData,
           companyMetaData,
         ] = await Promise.all([
-          withFallback('AR', fetchOpsWithCadenceFallback('ar-aging', { records: [], summary: {} }), { records: [], summary: {} }),
-          withFallback('AP', fetchOpsWithCadenceFallback('ap-aging', { records: [], summary: {} }), { records: [], summary: {} }),
-          withFallback('cash', fetchOpsWithCadenceFallback('cash', { records: [], summary: {} }), { records: [], summary: {} }),
-          withFallback('customers', fetchOpsWithCadenceFallback('customers', { records: [], summary: {} }), { records: [], summary: {} }),
-          withFallback('products', fetchOpsWithCadenceFallback('products', { records: [], summary: {} }), { records: [], summary: {} }),
-          withFallback('inventory', fetchOpsWithCadenceFallback('inventory', { records: [], trend: [], summary: {} }), { records: [], trend: [], summary: {} }),
-          withFallback('daily-financials', fetchOpsWithCadenceFallback('daily-financials', { records: [], summary: {} }), { records: [], summary: {} }),
+          withFallback('AR', fetchOpsForPulse('ar-aging', { records: [], summary: {} }), { records: [], summary: {} }),
+          withFallback('AP', fetchOpsForPulse('ap-aging', { records: [], summary: {} }), { records: [], summary: {} }),
+          withFallback('cash', fetchOpsForPulse('cash', { records: [], summary: {} }), { records: [], summary: {} }),
+          withFallback('customers', fetchOpsForPulse('customers', { records: [], summary: {} }), { records: [], summary: {} }),
+          withFallback('products', fetchOpsForPulse('products', { records: [], summary: {} }), { records: [], summary: {} }),
+          withFallback('inventory', fetchOpsForPulse('inventory', { records: [], trend: [], summary: {} }), { records: [], trend: [], summary: {} }),
+          withFallback('daily-financials', fetchOpsForPulse('daily-financials', { records: [], summary: {} }), { records: [], summary: {} }),
           withFallback('critical findings', fetchFindings(), { findings: [] }),
           withFallback('expert findings', fetchExpertFindings(), { findings: [] }),
           withFallback('performance context', fetchPerformanceContext(), { data: { monthlyFinancials: [] } }),
@@ -1836,6 +1825,10 @@ export default function DailyAlertsView({ companyId, companyName, onNavigate }: 
         setAssignableUsers([]);
         return;
       }
+      if (!COMPANY_PULSE_ALERTS_ENABLED) {
+        setAssignableUsers([]);
+        return;
+      }
       try {
         const params = new URLSearchParams({ companyId });
         const response = await fetch(`/api/users?${params}`, { cache: 'no-store' });
@@ -1912,10 +1905,8 @@ export default function DailyAlertsView({ companyId, companyName, onNavigate }: 
   }, [companyId]);
 
   useEffect(() => {
-    if (activeTab === 'briefing') {
-      loadExecBriefing();
-    }
-  }, [activeTab, companyId, loadExecBriefing]);
+    loadExecBriefing();
+  }, [companyId, loadExecBriefing]);
 
   const activeAlerts = useMemo(
     () => alerts.filter((a) => a.status !== 'resolved' && a.isActive !== false),
@@ -2015,6 +2006,7 @@ export default function DailyAlertsView({ companyId, companyName, onNavigate }: 
   };
 
   const savePolicyOverrides = async () => {
+    if (!COMPANY_PULSE_ALERTS_ENABLED) return;
     setPolicySaving(true);
     setPolicyStatus(null);
     try {
@@ -2074,6 +2066,7 @@ export default function DailyAlertsView({ companyId, companyName, onNavigate }: 
   };
 
   const runAlertAction = async (alert: AlertItem, payload: Record<string, unknown>) => {
+    if (!COMPANY_PULSE_ALERTS_ENABLED) return;
     setTransitionLoadingId(alert.id);
     try {
       const response = await fetch(`/api/pulse/alerts/${encodeURIComponent(alert.id)}`, {
@@ -2092,6 +2085,7 @@ export default function DailyAlertsView({ companyId, companyName, onNavigate }: 
   };
 
   const loadAlertEvents = async (alert: AlertItem) => {
+    if (!COMPANY_PULSE_ALERTS_ENABLED) return;
     setEventModalAlert(alert);
     setEventsLoading(true);
     setAlertEvents([]);
@@ -2111,6 +2105,7 @@ export default function DailyAlertsView({ companyId, companyName, onNavigate }: 
   };
 
   const fetchOpsRecords = async (type: 'ar-aging' | 'ap-aging' | 'cash') => {
+    if (!COMPANY_PULSE_ALERTS_ENABLED) return [];
     const end = new Date();
     const start = new Date();
     start.setDate(start.getDate() - 90);
@@ -2553,71 +2548,18 @@ export default function DailyAlertsView({ companyId, companyName, onNavigate }: 
     };
   }, [previewSpec, previewTrend]);
 
-  if (loading) return <div style={{ padding: '32px', color: '#475569' }}>Loading daily alerts…</div>;
+  if (loading) return <div style={{ padding: '32px', color: '#475569' }}>Loading daily briefing...</div>;
   if (error) return <div style={{ padding: '32px', color: '#b91c1c' }}>{error}</div>;
 
   return (
     <div style={{ maxWidth: '1400px', margin: '0 auto', padding: '32px' }}>
-      <div
-        style={{
-          marginTop: '4px',
-          borderBottom: '1px solid #e2e8f0',
-          display: 'flex',
-          gap: '20px',
-          alignItems: 'center',
-        }}
-      >
-        <button
-          onClick={() => setActiveTab('alerts')}
-          style={{
-            fontSize: '17px',
-            fontWeight: 600,
-            padding: '10px 0',
-            border: 'none',
-            background: 'none',
-            color: activeTab === 'alerts' ? '#2751d0' : '#64748b',
-            cursor: 'pointer',
-            borderBottom: activeTab === 'alerts' ? '3px solid #2751d0' : '3px solid transparent',
-            transition: 'all 0.2s',
-          }}
-        >
-          Alerts
-        </button>
-        <button
-          onClick={() => setActiveTab('briefing')}
-          style={{
-            fontSize: '17px',
-            fontWeight: 600,
-            padding: '10px 0',
-            border: 'none',
-            background: 'none',
-            color: activeTab === 'briefing' ? '#2751d0' : '#64748b',
-            cursor: 'pointer',
-            borderBottom: activeTab === 'briefing' ? '3px solid #2751d0' : '3px solid transparent',
-            transition: 'all 0.2s',
-          }}
-        >
-          Daily Exec Briefing
-        </button>
-        <button
-          onClick={() => setActiveTab('policy')}
-          style={{
-            fontSize: '17px',
-            fontWeight: 600,
-            padding: '10px 0',
-            border: 'none',
-            background: 'none',
-            color: activeTab === 'policy' ? '#2751d0' : '#64748b',
-            cursor: 'pointer',
-            borderBottom: activeTab === 'policy' ? '3px solid #2751d0' : '3px solid transparent',
-            transition: 'all 0.2s',
-          }}
-        >
-          Policy Settings
-        </button>
+      <div style={{ marginTop: '4px', borderBottom: '1px solid #e2e8f0', paddingBottom: '10px' }}>
+        <div style={{ fontSize: '17px', fontWeight: 700, color: '#2751d0' }}>
+          Daily Briefing
+        </div>
       </div>
 
-      {activeTab === 'alerts' && (
+      {COMPANY_PULSE_ALERTS_ENABLED && (
         <>
           <div style={{ marginTop: '12px', display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
             <span style={{ fontSize: '12px', color: '#7f1d1d', fontWeight: 700, background: '#fee2e2', border: '1px solid #fecaca', borderRadius: '999px', padding: '4px 10px' }}>
@@ -2876,7 +2818,7 @@ export default function DailyAlertsView({ companyId, companyName, onNavigate }: 
         </div>
       )}
 
-      {activeTab === 'policy' && (
+      {COMPANY_PULSE_ALERTS_ENABLED && (
         <div style={{ marginTop: '14px', border: '1px solid #e2e8f0', borderRadius: '12px', background: 'white', padding: '14px' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
             <div style={{ fontSize: '13px', color: '#334155' }}>

@@ -4,6 +4,11 @@ import { auditForbiddenAccess } from '@/lib/audit-logger';
 import { requireAuth, validateCompanyAccess } from '@/lib/tenant-security';
 import { ensurePulseAlertTables, insertPulseEvent, type PulseAlertRow, type PulseAlertStatus } from '@/lib/pulse-alerts';
 
+const PULSE_ALERTS_API_ENABLED = false;
+const PULSE_ALERTS_DISABLED_RESPONSE = {
+  error: 'Company Pulse alerts are disabled. Use Daily Briefing instead.',
+};
+
 function normalizeStatus(raw: unknown): PulseAlertStatus | null {
   const value = String(raw || '').trim().toLowerCase();
   if (value === 'new' || value === 'acknowledged' || value === 'snoozed' || value === 'resolved') return value;
@@ -11,6 +16,9 @@ function normalizeStatus(raw: unknown): PulseAlertStatus | null {
 }
 
 export async function PATCH(request: NextRequest, { params }: { params: { id: string } }) {
+  if (!PULSE_ALERTS_API_ENABLED) {
+    return NextResponse.json(PULSE_ALERTS_DISABLED_RESPONSE, { status: 410 });
+  }
   try {
     const context = await requireAuth();
     await ensurePulseAlertTables();

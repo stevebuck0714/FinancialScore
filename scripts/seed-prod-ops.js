@@ -1,7 +1,8 @@
 // Seed production operational data
 const { PrismaClient } = require('@prisma/client');
+const { requireDatabaseUrl } = require('./require-database-url');
 
-const PROD_DB_URL = 'postgresql://neondb_owner:npg_F3ow2VZjNQXi@ep-orange-poetry-aejcxvms-pooler.c-2.us-east-2.aws.neon.tech/neondb?sslmode=require&channel_binding=require';
+const PROD_DB_URL = requireDatabaseUrl();
 
 const prisma = new PrismaClient({
   datasources: {

@@ -4,7 +4,7 @@ import prisma from '@/lib/prisma';
 export async function GET(request: NextRequest) {
   try {
     console.log('=== API DEBUG ===');
-    console.log('DATABASE_URL:', process.env.DATABASE_URL);
+    console.log('DATABASE_URL configured:', Boolean(process.env.DATABASE_URL));
 
     // Try to query the database
     const userCount = await prisma.user.count();
@@ -15,7 +15,7 @@ export async function GET(request: NextRequest) {
     });
 
     return NextResponse.json({
-      databaseUrl: process.env.DATABASE_URL,
+      databaseUrlConfigured: Boolean(process.env.DATABASE_URL),
       userCount,
       users: users.map(u => ({ email: u.email, role: u.role }))
     });
@@ -25,7 +25,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({
       error: 'Database connection failed',
       details: error instanceof Error ? error.message : 'Unknown error',
-      databaseUrl: process.env.DATABASE_URL
+      databaseUrlConfigured: Boolean(process.env.DATABASE_URL)
     }, { status: 500 });
   }
 }

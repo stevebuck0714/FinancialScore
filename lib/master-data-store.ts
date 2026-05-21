@@ -48,10 +48,25 @@ const MasterDataResponseSchema = z.object({
   months: z.number(),
 });
 
+type MasterDataFetchResult = {
+  success: boolean;
+  data?: MasterDataResponse;
+  error?: string;
+};
+
+type MasterDataCacheEntry = {
+  expiresAt: number;
+  result: MasterDataFetchResult;
+};
+
 export class MasterDataStore {
   private static instance: MasterDataStore;
-  // REMOVED CACHING - Financial data must always be fresh
-  // Caching was causing stale data issues where income taxes and other fields weren't updating
+  private readonly cache = new Map<string, MasterDataCacheEntry>();
+  private readonly inFlight = new Map<string, Promise<MasterDataFetchResult>>();
+  private readonly ttlByScope: Record<'published' | 'all', number> = {
+    published: 120_000,
+    all: 30_000,
+  };
 
   private constructor() {}
 
@@ -65,21 +80,37 @@ export class MasterDataStore {
   async fetchMasterData(
     companyId: string,
     scope: 'published' | 'all' = 'published',
-  ): Promise<{
-    success: boolean;
-    data?: MasterDataResponse;
-    error?: string;
-  }> {
+  ): Promise<MasterDataFetchResult> {
+    const cacheKey = `${companyId}:${scope}`;
+    const cached = this.cache.get(cacheKey);
+    if (cached && cached.expiresAt > Date.now()) {
+      console.log(`🎯 Master data cache hit for company: ${companyId} (scope=${scope})`);
+      return cached.result;
+    }
+
+    const pending = this.inFlight.get(cacheKey);
+    if (pending) return pending;
+
+    const requestPromise = this.fetchMasterDataFresh(companyId, scope, cacheKey);
+    this.inFlight.set(cacheKey, requestPromise);
+    requestPromise.finally(() => this.inFlight.delete(cacheKey));
+    return requestPromise;
+  }
+
+  private async fetchMasterDataFresh(
+    companyId: string,
+    scope: 'published' | 'all',
+    cacheKey: string,
+  ): Promise<MasterDataFetchResult> {
     try {
-      // Always fetch fresh data - no caching for financial data
-      console.log(`🎯 Fetching fresh master data for company: ${companyId} (scope=${scope})`);
+      console.log(`🎯 Fetching master data for company: ${companyId} (scope=${scope})`);
       const controller = new AbortController();
       const timeoutMs = 20000;
       const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
       const response = await fetch(
-        `/api/master-data?companyId=${companyId}&scope=${scope}&_ts=${Date.now()}`,
+        `/api/master-data?companyId=${companyId}&scope=${scope}`,
         {
-          cache: 'no-store',
+          cache: 'default',
           signal: controller.signal,
         },
       ).finally(() => clearTimeout(timeoutId));
@@ -97,8 +128,13 @@ export class MasterDataStore {
       // Validate the data structure
       const validatedData = MasterDataResponseSchema.parse(rawData);
 
-      console.log(`✅ Master data loaded (fresh): ${validatedData.months} months`);
-      return { success: true, data: validatedData };
+      console.log(`✅ Master data loaded: ${validatedData.months} months`);
+      const result = { success: true, data: validatedData };
+      this.cache.set(cacheKey, {
+        expiresAt: Date.now() + this.ttlByScope[scope],
+        result,
+      });
+      return result;
 
     } catch (error) {
       console.error('❌ Master data fetch error:', error);
@@ -282,19 +318,24 @@ export class MasterDataStore {
   }
 
   clearCache(): void {
-    // No-op: Caching removed - always fetches fresh data
-    console.log('🔄 Cache clear requested (caching disabled - always fresh)');
+    this.cache.clear();
+    this.inFlight.clear();
+    console.log('🔄 Master data cache cleared');
   }
 
   // Clear cache on category extraction changes
   clearAllCaches(): void {
-    // No-op: Caching removed - always fetches fresh data
-    console.log('🔄 Cache clear requested (caching disabled - always fresh)');
+    this.clearCache();
   }
 
   clearCompanyCache(companyId: string): void {
-    // No-op: Caching removed - always fetches fresh data
-    console.log(`🔄 Cache clear requested for company: ${companyId} (caching disabled - always fresh)`);
+    for (const key of Array.from(this.cache.keys())) {
+      if (key.startsWith(`${companyId}:`)) this.cache.delete(key);
+    }
+    for (const key of Array.from(this.inFlight.keys())) {
+      if (key.startsWith(`${companyId}:`)) this.inFlight.delete(key);
+    }
+    console.log(`🔄 Master data cache cleared for company: ${companyId}`);
   }
 }
 

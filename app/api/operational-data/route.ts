@@ -1705,6 +1705,9 @@ export async function GET(request: NextRequest) {
     const frequency = (searchParams.get('frequency') || 'monthly') as 'daily' | 'weekly' | 'monthly';
     const limit = parseInt(searchParams.get('limit') || '1000');
     const boundedLimit = Number.isFinite(limit) ? Math.min(Math.max(limit, 100), 5000) : 1000;
+    const dashboardRowCap = Math.min(Math.max(boundedLimit * 5, 5000), 25000);
+    const factRowCap = Math.min(Math.max(boundedLimit * 10, 5000), 25000);
+    const rawPayloadRowCap = Math.min(Math.max(boundedLimit * 10, 10000), 50000);
     const sectorCategoryParam = searchParams.get('sectorCategory');
 
     if (!companyId) {
@@ -2127,7 +2130,7 @@ export async function GET(request: NextRequest) {
                 remainingAmount: true,
               },
               orderBy: [{ contractValue: 'desc' }],
-              take: 300000,
+              take: dashboardRowCap,
             });
             const orderIdsForRawLookup = Array.from(
               new Set(
@@ -2252,7 +2255,7 @@ export async function GET(request: NextRequest) {
                 select: {
                   payload: true,
                 },
-                take: 200000,
+                take: rawPayloadRowCap,
               });
               for (const row of rawRows as any[]) {
                 const payload =
@@ -2554,7 +2557,7 @@ export async function GET(request: NextRequest) {
                 invoiceDate: true,
                 invoiceAmount: true,
               },
-              take: 500000,
+              take: dashboardRowCap,
             });
             const customerByKey = new Map<
               string,
@@ -2657,7 +2660,7 @@ export async function GET(request: NextRequest) {
                     days61to90: true,
                     days90plus: true,
                   },
-                  take: 500000,
+                  take: dashboardRowCap,
                 });
                 for (const row of openRows as any[]) {
                   const customerId = String(row?.customerId || '').trim();
@@ -3615,7 +3618,7 @@ export async function GET(request: NextRequest) {
             },
           },
           orderBy: [{ paymentDate: 'desc' }],
-          take: Math.max(limit * 20, 50000),
+          take: factRowCap,
         });
 
         if (paymentRows.length) {
@@ -4996,7 +4999,7 @@ export async function GET(request: NextRequest) {
           normalizedAccountingSystem === 'INFOR_M3' || normalizedAccountingSystem === 'INFOR_CSI';
         const productFrequencyForQuery: 'daily' | 'weekly' | 'monthly' =
           isInforForProducts && frequency !== 'daily' ? 'daily' : frequency;
-        const productRowCap = Math.max(Math.min(boundedLimit * 30, 30000), 8000);
+        const productRowCap = Math.max(Math.min(boundedLimit * 10, 12000), 3000);
         data = await prisma.productSalesSnapshot.findMany({
           where: {
             companyId,
@@ -5809,7 +5812,7 @@ export async function GET(request: NextRequest) {
               payload: true,
             },
             orderBy: [{ businessDate: 'asc' }],
-            take: 500000,
+            take: rawPayloadRowCap,
           });
           for (const row of inventoryTrendRowsRaw) {
             const aliases = Array.from(
@@ -6032,7 +6035,7 @@ export async function GET(request: NextRequest) {
             payload: true,
           },
           orderBy: [{ businessDate: 'asc' }],
-          take: 400000,
+          take: rawPayloadRowCap,
         });
         const movementBySku = new Map<
           string,
@@ -6242,7 +6245,7 @@ export async function GET(request: NextRequest) {
                 snapshotDate: true,
                 cash: true,
               },
-              take: Math.max(limit * 50, 5000),
+              take: factRowCap,
             })
           : [];
 
@@ -6308,7 +6311,7 @@ export async function GET(request: NextRequest) {
             accountId: true,
             accountNumber: true,
           },
-          take: Math.max(limit * 100, 10000),
+          take: factRowCap,
         });
         const accountPeriodLatest = new Map<
           string,
@@ -6684,7 +6687,7 @@ export async function GET(request: NextRequest) {
                 snapshotDate: dailyFinancialsDateFilter,
               },
               orderBy: [{ snapshotDate: 'desc' }, { sourceAccountName: 'asc' }],
-              take: Math.max(limit * 200, 3000),
+              take: factRowCap,
             })
           : [];
         if (financialFrequencyForQuery === 'daily' && mappedLines.length) {

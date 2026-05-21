@@ -1,9 +1,10 @@
 // Verify the password hash in production
 const { Client } = require('pg');
 const bcrypt = require('bcryptjs');
+const { requireDatabaseUrl } = require('./require-database-url');
 
 const client = new Client({
-  connectionString: 'postgresql://neondb_owner:npg_F3ow2VZjNQXi@ep-orange-poetry-aejcxvms-pooler.c-2.us-east-2.aws.neon.tech/neondb?sslmode=require',
+  connectionString: requireDatabaseUrl(),
 });
 
 async function verifyPassword() {

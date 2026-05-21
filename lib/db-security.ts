@@ -178,7 +178,7 @@ export function enforceDatabaseSecurity(): void {
         `   Local/dev/preview must NEVER connect to production databases.`,
     );
     console.error(error.message);
-    console.error('🚨 DATABASE_URL:', process.env.DATABASE_URL?.substring(0, 80) + '...');
+    console.error('🚨 DATABASE_URL host:', getDatabaseHost(process.env.DATABASE_URL || ''));
     throw error;
   }
 
@@ -190,7 +190,7 @@ export function enforceDatabaseSecurity(): void {
         `   Aborting to prevent data corruption.`,
     );
     console.error(error.message);
-    console.error('🚨 DATABASE_URL:', process.env.DATABASE_URL?.substring(0, 80) + '...');
+    console.error('🚨 DATABASE_URL host:', getDatabaseHost(process.env.DATABASE_URL || ''));
     throw error;
   }
 

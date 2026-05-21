@@ -62,7 +62,7 @@ const isVercelProductionRuntime = process.env.VERCEL === '1' && process.env.VERC
 // CRITICAL: Block production database everywhere except Vercel production runtime
 if (isProductionDatabase && !isVercelProductionRuntime) {
   console.error('🚨 SECURITY ERROR: Staging/Dev environment is trying to connect to a PRODUCTION database!');
-  console.error('🚨 DATABASE_URL:', process.env.DATABASE_URL?.substring(0, 80) + '...');
+  console.error('🚨 DATABASE_URL host:', process.env.DATABASE_URL ? new URL(process.env.DATABASE_URL).host : '(not set)');
   console.error(`🚨 VERCEL_ENV: ${process.env.VERCEL_ENV}  VERCEL: ${process.env.VERCEL}  NODE_ENV: ${process.env.NODE_ENV}`);
   console.error('🚨 This is a critical security violation. Local/dev/preview must never connect to production databases.');
   console.error('🚨 Aborting startup.');

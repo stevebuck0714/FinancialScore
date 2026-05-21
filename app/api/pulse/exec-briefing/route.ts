@@ -29,6 +29,12 @@ const MATERIAL_PCT = 0.01;
 const MATERIAL_FINANCIAL_PCT = 0.03;
 const MIN_MTD_COMPARISON_DAYS = 10;
 const PERSISTED_CACHE_TTL_DAYS = 2;
+const DAILY_BRIEFING_LOOKBACK_DAYS = 90;
+const MONTHLY_BRIEFING_LOOKBACK_MONTHS = 12;
+const MONTHLY_FINANCIAL_ROW_CAP = 12;
+const DAILY_FINANCIAL_ROW_CAP = 100;
+const CORE_SNAPSHOT_ROW_CAP = 150;
+const DETAIL_SNAPSHOT_ROW_CAP = 300;
 const PRIVATE_DAILY_CACHE_HEADERS = {
   'Cache-Control': 'private, max-age=300, stale-while-revalidate=1800',
 };
@@ -540,13 +546,7 @@ async function buildPulseDataVersion(companyId: string, startDate: Date, monthly
        WHERE "companyId" = $1`,
       companyId
     ),
-    safeVersionPart(
-      'pulseAlert',
-      `SELECT COUNT(*)::text AS count, MAX("modifiedAt") AS "maxModifiedAt"
-       FROM "PulseAlert"
-       WHERE "companyId" = $1 AND "isActive" = TRUE AND "status" <> 'resolved'`,
-      companyId
-    ),
+    Promise.resolve({ label: 'pulseAlert', skipped: true }),
   ]);
   return createHash('sha256').update(jsonStable(parts)).digest('hex');
 }
@@ -642,9 +642,9 @@ export async function GET(request: NextRequest) {
     }
 
     const endDate = new Date();
-    const startDate = new Date(endDate.getTime() - 180 * MS_IN_DAY);
+    const startDate = new Date(endDate.getTime() - DAILY_BRIEFING_LOOKBACK_DAYS * MS_IN_DAY);
     const monthlyStartDate = new Date();
-    monthlyStartDate.setMonth(monthlyStartDate.getMonth() - 18);
+    monthlyStartDate.setMonth(monthlyStartDate.getMonth() - MONTHLY_BRIEFING_LOOKBACK_MONTHS);
     const cacheKey = todayCacheKey(companyId);
     const cacheDate = cacheKey.split(':').pop() || new Date().toISOString().slice(0, 10);
     await ensurePulseCacheTables();
@@ -705,7 +705,7 @@ export async function GET(request: NextRequest) {
         })
       : [];
 
-    const dfsMonthly = await loadMonthlyFromDfs(companyId, monthlyStartDate, endDate);
+    const dfsMonthly = await loadMonthlyFromDfs(companyId, startDate, endDate);
     const latestFinancialRecord = dfsMonthly
       ? null
       : await prisma.financialRecord.findFirst({ where: { companyId }, select: { id: true }, orderBy: { createdAt: 'desc' } });
@@ -727,19 +727,19 @@ export async function GET(request: NextRequest) {
       findings,
       pulseAlerts,
     ] = await Promise.all([
-      dfsMonthly ? Promise.resolve([]) : prisma.monthlyFinancial.findMany({ where: monthlyWhere, orderBy: { monthDate: 'asc' }, take: 36 }),
-      prisma.dailyFinancialSnapshot.findMany({ where: { companyId, frequency: 'daily', snapshotDate: { gte: startDate, lte: endDate } }, orderBy: { snapshotDate: 'asc' }, take: 220 }),
-      prisma.cashSnapshot.findMany({ where: { companyId, snapshotDate: { gte: startDate, lte: endDate } }, orderBy: { snapshotDate: 'asc' }, take: 500 }),
-      prisma.aRAgingSnapshot.findMany({ where: { companyId, snapshotDate: { gte: startDate, lte: endDate } }, orderBy: { snapshotDate: 'asc' }, take: 500 }),
-      prisma.aPAgingSnapshot.findMany({ where: { companyId, snapshotDate: { gte: startDate, lte: endDate } }, orderBy: { snapshotDate: 'asc' }, take: 500 }),
+      dfsMonthly ? Promise.resolve([]) : prisma.monthlyFinancial.findMany({ where: monthlyWhere, orderBy: { monthDate: 'asc' }, take: MONTHLY_FINANCIAL_ROW_CAP }),
+      prisma.dailyFinancialSnapshot.findMany({ where: { companyId, frequency: 'daily', snapshotDate: { gte: startDate, lte: endDate } }, orderBy: { snapshotDate: 'asc' }, take: DAILY_FINANCIAL_ROW_CAP }),
+      prisma.cashSnapshot.findMany({ where: { companyId, snapshotDate: { gte: startDate, lte: endDate } }, orderBy: { snapshotDate: 'asc' }, take: CORE_SNAPSHOT_ROW_CAP }),
+      prisma.aRAgingSnapshot.findMany({ where: { companyId, snapshotDate: { gte: startDate, lte: endDate } }, orderBy: { snapshotDate: 'asc' }, take: CORE_SNAPSHOT_ROW_CAP }),
+      prisma.aPAgingSnapshot.findMany({ where: { companyId, snapshotDate: { gte: startDate, lte: endDate } }, orderBy: { snapshotDate: 'asc' }, take: CORE_SNAPSHOT_ROW_CAP }),
       moduleProfile.genericSnapshots.customers
-        ? prisma.customerSalesSnapshot.findMany({ where: { companyId, snapshotDate: { gte: startDate, lte: endDate } }, orderBy: { snapshotDate: 'asc' }, take: 1200 })
+        ? prisma.customerSalesSnapshot.findMany({ where: { companyId, snapshotDate: { gte: startDate, lte: endDate } }, orderBy: { snapshotDate: 'asc' }, take: DETAIL_SNAPSHOT_ROW_CAP })
         : Promise.resolve([]),
       moduleProfile.genericSnapshots.products
-        ? prisma.productSalesSnapshot.findMany({ where: { companyId, snapshotDate: { gte: startDate, lte: endDate } }, orderBy: { snapshotDate: 'asc' }, take: 1200 })
+        ? prisma.productSalesSnapshot.findMany({ where: { companyId, snapshotDate: { gte: startDate, lte: endDate } }, orderBy: { snapshotDate: 'asc' }, take: DETAIL_SNAPSHOT_ROW_CAP })
         : Promise.resolve([]),
       moduleProfile.genericSnapshots.inventory
-        ? prisma.inventorySnapshot.findMany({ where: { companyId, snapshotDate: { gte: startDate, lte: endDate } }, orderBy: { snapshotDate: 'asc' }, take: 1200 })
+        ? prisma.inventorySnapshot.findMany({ where: { companyId, snapshotDate: { gte: startDate, lte: endDate } }, orderBy: { snapshotDate: 'asc' }, take: DETAIL_SNAPSHOT_ROW_CAP })
         : Promise.resolve([]),
       prisma.loan.findMany({ where: { companyId, status: { in: ['ACTIVE', 'MATURING'] as any } }, include: { covenants: true }, take: 50 } as any),
       loadGoals('ExpenseGoal', companyId),
@@ -754,16 +754,7 @@ export async function GET(request: NextRequest) {
           companyId
         )
         .catch(() => []),
-      prisma
-        .$queryRawUnsafe<any[]>(
-          `SELECT "source", "title", "detail", "priorityScore", "bucket", "status", "modifiedAt"
-           FROM "PulseAlert"
-           WHERE "companyId" = $1 AND "isActive" = TRUE AND "status" <> 'resolved'
-           ORDER BY COALESCE("priorityScore", 0) DESC, "modifiedAt" DESC
-           LIMIT 20`,
-          companyId
-        )
-        .catch(() => []),
+      Promise.resolve([]),
     ]);
     const constructionOperations = moduleProfile.hasConstructionNativeModules
       ? buildConstructionBriefingFacts(companyId)

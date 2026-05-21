@@ -820,8 +820,8 @@ export default function SiteAdminDashboard(props: any) {
 
       alert(
         forceOperationalMockData
-          ? 'Demo mode enabled for this company. Company Pulse and Operations will use mock data.'
-          : 'Demo mode disabled. Company Pulse and Operations will use real data when available.',
+          ? 'Demo mode enabled for this company. Daily Briefing and Operations will use mock data.'
+          : 'Demo mode disabled. Daily Briefing and Operations will use real data when available.',
       );
     } catch (error: any) {
       alert(error?.message || 'Failed to update operational data mode');
