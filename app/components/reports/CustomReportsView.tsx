@@ -93,6 +93,26 @@ function slugify(value: string) {
     .slice(0, 80) || 'custom-report';
 }
 
+function getReportRequest(config: any): string {
+  return String(
+    config?.sourcePrompt ||
+    config?.aiReportRequest ||
+    config?.userPrompt ||
+    config?.prompt ||
+    ''
+  ).trim();
+}
+
+function withReportRequest(config: any, request: string) {
+  const trimmedRequest = request.trim();
+  if (!config || !trimmedRequest) return config;
+  return {
+    ...config,
+    sourcePrompt: trimmedRequest,
+    aiReportRequest: trimmedRequest,
+  };
+}
+
 function getSeriesValue(row: any, field: string) {
   return Number(row?.values?.[field] ?? 0);
 }
@@ -318,6 +338,7 @@ export default function CustomReportsView({ selectedCompanyId }: CustomReportsVi
 
   useEffect(() => {
     setGeneratedConfig(null);
+    setPrompt('');
     setPreviewRows([]);
     setPreviewTableRows([]);
     setPreviewTableColumns([]);
@@ -375,7 +396,9 @@ export default function CustomReportsView({ selectedCompanyId }: CustomReportsVi
       if (!response.ok) {
         throw new Error(data?.error || 'Failed to generate report config');
       }
-      const reportConfig = data?.reportConfig || null;
+      const reportConfig = data?.reportConfig
+        ? withReportRequest(data.reportConfig, trimmedPrompt)
+        : null;
       setGeneratedConfig(reportConfig);
       setSelectedSavedReportId(null);
       if (reportConfig) {
@@ -390,6 +413,7 @@ export default function CustomReportsView({ selectedCompanyId }: CustomReportsVi
 
   const saveGeneratedReport = async () => {
     if (!generatedConfig) return;
+    const reportConfigToSave = withReportRequest(generatedConfig, prompt);
     setIsSavingReport(true);
     setGenerationError('');
     try {
@@ -400,13 +424,14 @@ export default function CustomReportsView({ selectedCompanyId }: CustomReportsVi
         body: JSON.stringify({
           companyId: selectedCompanyId,
           reportId: selectedSavedReportId || undefined,
-          reportConfig: generatedConfig,
+          reportConfig: reportConfigToSave,
         }),
       });
       const data = await response.json();
       if (!response.ok) {
         throw new Error(data?.error || 'Failed to save report');
       }
+      setGeneratedConfig(data?.report?.config || reportConfigToSave);
       setSelectedSavedReportId(data?.report?.id || selectedSavedReportId || null);
       await loadSavedReports();
       setActiveTab('saved');
@@ -420,6 +445,7 @@ export default function CustomReportsView({ selectedCompanyId }: CustomReportsVi
   const openSavedReport = async (report: SavedCustomReport) => {
     const config = report.config || {};
     setGeneratedConfig(config);
+    setPrompt(getReportRequest(config));
     setSelectedSavedReportId(report.id);
     setActiveTab('view');
     const chartType = String(config?.chartType || report.chartType || '').replace('-', '_') as ReportType;
@@ -850,7 +876,14 @@ export default function CustomReportsView({ selectedCompanyId }: CustomReportsVi
           {activeTab === 'view' && generatedConfig && (
             <>
               <div className="custom-report-no-print" style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', justifyContent: 'flex-end', marginBottom: '14px' }}>
-                <button type="button" onClick={() => setActiveTab('builder')} style={{ border: '1px solid #cbd5e1', borderRadius: '8px', background: '#fff', color: '#475569', padding: '8px 10px', fontSize: '12px', fontWeight: 800, cursor: 'pointer' }}>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setPrompt(getReportRequest(generatedConfig));
+                    setActiveTab('builder');
+                  }}
+                  style={{ border: '1px solid #cbd5e1', borderRadius: '8px', background: '#fff', color: '#475569', padding: '8px 10px', fontSize: '12px', fontWeight: 800, cursor: 'pointer' }}
+                >
                   Edit
                 </button>
                 {selectedSavedReport && (
