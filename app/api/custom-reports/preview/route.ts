@@ -90,6 +90,9 @@ function getOperationalPayload(companyId: string, sectorCategory: string | null,
   if (dataType === 'billing-cash') return buildBillingCashMock(companyId);
   if (dataType === 'construction-ar') return buildConstructionArMock(companyId);
   if (dataType === 'construction-ap') return buildConstructionApMock(companyId);
+  if (dataType === 'hiring') {
+    throw new Error('Hiring custom report preview requires live BambooHR data; mock fallback is disabled.');
+  }
 
   const now = new Date();
   const startDate = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 11, 1));
@@ -111,7 +114,7 @@ function getRecordDate(row: any): string {
 
 function getRecordKey(row: any): string {
   return [
-    row?.jobName || row?.projectName || row?.customerName || row?.vendorName || row?.itemName || row?.accountName || row?.jobId || '',
+    row?.jobName || row?.projectName || row?.title || row?.jobTitle || row?.customerName || row?.vendorName || row?.itemName || row?.accountName || row?.jobId || row?.id || '',
     row?.costType || row?.subType || row?.vendorType || row?.status || '',
     row?.date || row?.snapshotDate || row?.monthDate || '',
   ].join('|');
@@ -395,6 +398,8 @@ function buildOperationalTablePreview(
           date: record.date || record.snapshotDate || record.monthDate || null,
           jobName: record.jobName || record.projectName || null,
           projectName: record.projectName || record.jobName || null,
+          title: record.title || record.jobTitle || null,
+          status: record.status || null,
           jobId: record.jobId || null,
           costType: record.costType || null,
           subType: record.subType || null,
@@ -411,6 +416,8 @@ function buildOperationalTablePreview(
 
   const dimensionColumns = [
     { key: 'date', label: 'Date', type: 'text' },
+    { key: 'title', label: 'Title', type: 'text' },
+    { key: 'status', label: 'Status', type: 'text' },
     { key: 'jobName', label: 'Job / Project', type: 'text' },
     { key: 'costType', label: 'Cost Type', type: 'text' },
     { key: 'subType', label: 'Subtype', type: 'text' },
@@ -494,7 +501,7 @@ export async function POST(request: NextRequest) {
 
     const company = await prisma.company.findUnique({
       where: { id: companyId },
-      select: { industrySectorCategory: true, userDefinedAllocations: true },
+      select: { industrySectorCategory: true, userDefinedAllocations: true, forceOperationalMockData: true },
     });
     const customReports = (company?.userDefinedAllocations as any)?.customReports || {};
     if (customReports.enabledByAdmin !== true) {
@@ -510,6 +517,16 @@ export async function POST(request: NextRequest) {
     ].map((item) => String(item || '')).join(' ');
     const fields = getRequestedFields(previewConfig, fieldCatalog);
     if (fields.length === 0) return NextResponse.json({ error: 'Report config has no supported series fields.' }, { status: 400 });
+    const hasOperationalFields = fields.some((field) => field.startsWith('op.'));
+    if (hasOperationalFields && company?.forceOperationalMockData !== true) {
+      return NextResponse.json(
+        {
+          error: 'Operational custom report preview requires live operational data for this company. Mock data is disabled.',
+          code: 'MOCK_DATA_DISABLED',
+        },
+        { status: 409 }
+      );
+    }
 
     const rows = await prisma.monthlyFinancial.findMany({
       where: { companyId },

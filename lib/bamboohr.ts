@@ -52,6 +52,8 @@ export const defaultBambooHrDataDomains: BambooHrDataDomain[] = [
   { dataDomain: 'Departments', bambooEntity: 'meta/departments', enabled: true },
   { dataDomain: 'Locations', bambooEntity: 'meta/locations', enabled: true },
   { dataDomain: 'Job Information', bambooEntity: 'employees/job-info', enabled: true },
+  { dataDomain: 'Hiring Jobs', bambooEntity: 'applicant_tracking/jobs', enabled: false },
+  { dataDomain: 'Hiring Applications', bambooEntity: 'applicant_tracking/applications', enabled: false },
   { dataDomain: 'Time Off', bambooEntity: 'time_off/requests', enabled: false },
 ];
 
@@ -118,7 +120,13 @@ export function sanitizeBambooHrDataDomains(value: unknown): BambooHrDataDomain[
       };
     })
     .filter((row) => row.dataDomain || row.bambooEntity);
-  return cleaned.length > 0 ? cleaned : defaultBambooHrDataDomains;
+  if (cleaned.length === 0) return defaultBambooHrDataDomains;
+
+  const existingKeys = new Set(cleaned.map((row) => `${row.dataDomain.toLowerCase()}|${row.bambooEntity.toLowerCase()}`));
+  const missingDefaults = defaultBambooHrDataDomains.filter((row) => (
+    !existingKeys.has(`${row.dataDomain.toLowerCase()}|${row.bambooEntity.toLowerCase()}`)
+  ));
+  return [...cleaned, ...missingDefaults];
 }
 
 export function assertBambooHrSettingsReady(settings: BambooHrSettings): void {
@@ -199,7 +207,7 @@ function countBambooHrRecords(json: unknown): number {
   if (Array.isArray(json)) return json.length;
   if (!json || typeof json !== 'object') return 0;
   const record = json as Record<string, unknown>;
-  for (const key of ['employees', 'requests', 'departments', 'locations']) {
+  for (const key of ['employees', 'requests', 'departments', 'locations', 'jobs', 'applications']) {
     if (Array.isArray(record[key])) return record[key].length;
   }
   return Object.keys(record).length;
@@ -302,6 +310,14 @@ function resolveDomainEndpoint(
     };
   }
 
+  if (entity === 'applicant_tracking/jobs' || label.includes('hiring jobs')) {
+    return { endpoint: 'applicant_tracking/jobs' };
+  }
+
+  if (entity === 'applicant_tracking/applications' || label.includes('hiring applications')) {
+    return { endpoint: 'applicant_tracking/applications', query: { page: '1' } };
+  }
+
   return { endpoint: entity || 'employees/directory' };
 }
 
@@ -347,6 +363,9 @@ export async function probeBambooHrEndpoints(settings: BambooHrSettings): Promis
     { label: 'Time off requests', endpoint: 'time_off/requests', query: { start, end: today } },
     { label: 'Departments metadata', endpoint: 'meta/departments' },
     { label: 'Locations metadata', endpoint: 'meta/locations' },
+    { label: 'Hiring jobs', endpoint: 'applicant_tracking/jobs' },
+    { label: 'Hiring applications', endpoint: 'applicant_tracking/applications' },
+    { label: 'Hiring applications page 1', endpoint: 'applicant_tracking/applications', query: { page: '1' } },
   ];
 
   const results: BambooHrEndpointProbeResult[] = [];

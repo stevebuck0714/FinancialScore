@@ -94,6 +94,31 @@ function sampleArray(json: unknown): unknown[] {
   return Array.isArray(json) ? json.slice(0, SAMPLE_LIMIT) : [];
 }
 
+function sampleCollection(json: unknown, keys: string[]): unknown[] {
+  if (Array.isArray(json)) return json.slice(0, SAMPLE_LIMIT);
+  const record = asRecord(json);
+  for (const key of keys) {
+    const value = record[key];
+    if (Array.isArray(value)) return value.slice(0, SAMPLE_LIMIT);
+  }
+  return [];
+}
+
+function redactedHiringRow(row: unknown): Record<string, unknown> {
+  const record = asRecord(row);
+  return {
+    id: record.id ?? record.applicationId ?? record.jobId ?? null,
+    status: record.status ?? null,
+    jobTitle: record.jobTitle ?? record.title ?? null,
+    createdDate: record.createdDate ?? record.created_date ?? record.createdAt ?? null,
+    lastUpdated: record.lastUpdated ?? record.last_updated ?? record.updatedAt ?? null,
+    applicantNamePresent: Boolean(record.firstName || record.lastName || record.applicantName || record.name),
+    emailPresent: Boolean(record.email || record.emailAddress),
+    phonePresent: Boolean(record.phone || record.phoneNumber),
+    keys: Object.keys(record).sort(),
+  };
+}
+
 function redactedTimeOffRequest(request: unknown): Record<string, unknown> {
   const row = asRecord(request);
   return {
@@ -339,6 +364,8 @@ export async function POST(request: NextRequest) {
     const today = new Date().toISOString().slice(0, 10);
     const start = settings.initialSyncStartDate || new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10);
     const timeOffRequests = await fetchBambooHrJson(settings, 'time_off/requests', { start, end: today }).catch((error) => ({ error }));
+    const hiringJobs = await fetchBambooHrJson(settings, 'applicant_tracking/jobs').catch((error) => ({ error }));
+    const hiringApplications = await fetchBambooHrJson(settings, 'applicant_tracking/applications', { page: '1' }).catch((error) => ({ error }));
     const employeeTables = {
       jobInfo: await sampleEmployeeTable(settings, employees, 'jobInfo', limit),
       employmentStatus: await sampleEmployeeTable(settings, employees, 'employmentStatus', limit),
@@ -428,6 +455,30 @@ export async function POST(request: NextRequest) {
                 timeOffRequests.error instanceof Error
                   ? timeOffRequests.error.message
                   : 'Failed to fetch time off requests',
+            },
+      hiringJobs:
+        'json' in hiringJobs
+          ? {
+              summary: summarizeBambooHrJson(hiringJobs.json),
+              sample: sampleCollection(hiringJobs.json, ['jobs']).map(redactedHiringRow),
+            }
+          : {
+              error:
+                hiringJobs.error instanceof Error
+                  ? hiringJobs.error.message
+                  : 'Failed to fetch hiring jobs',
+            },
+      hiringApplications:
+        'json' in hiringApplications
+          ? {
+              summary: summarizeBambooHrJson(hiringApplications.json),
+              sample: sampleCollection(hiringApplications.json, ['applications']).map(redactedHiringRow),
+            }
+          : {
+              error:
+                hiringApplications.error instanceof Error
+                  ? hiringApplications.error.message
+                  : 'Failed to fetch hiring applications',
             },
       employeeTables,
       employeeDetailFields,

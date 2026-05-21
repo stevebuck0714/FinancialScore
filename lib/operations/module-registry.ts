@@ -5,6 +5,7 @@ export type OpsDataType =
   | 'ap-aging'
   | 'products'
   | 'labor-scheduling'
+  | 'hiring'
   | 'inventory'
   | 'cash'
   | 'daily-financials'
@@ -76,6 +77,7 @@ const MODULE_DEFINITIONS: ModuleDefinition[] = [
   { key: 'maintenance_work_orders', label: 'Maintenance / Work Orders', dataType: 'products' },
   { key: 'time_utilization', label: 'Time & Utilization', dataType: 'products' },
   { key: 'labor_scheduling', label: 'Labor & Scheduling', dataType: 'labor-scheduling' },
+  { key: 'hiring', label: 'Hiring', dataType: 'hiring' },
   { key: 'assets_routes', label: 'Assets & Routes', dataType: 'products' },
   { key: 'staffing', label: 'Staffing', dataType: 'products' },
   { key: 'staffing_providers', label: 'Staffing / Providers', dataType: 'products' },

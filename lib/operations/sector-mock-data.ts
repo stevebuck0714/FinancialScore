@@ -136,6 +136,7 @@ const TOP_LINE_BUCKETS_BY_SECTOR: Record<string, Bucket[]> = {
     { key: 'ap', label: 'AP' },
     { key: 'work_orders_service_delivery', label: 'Work Orders / Service Delivery' },
     { key: 'labor_scheduling', label: 'Labor & Scheduling (staffing, productivity)' },
+    { key: 'hiring', label: 'Hiring' },
     { key: 'revenue_billables', label: 'Revenue & Billables' },
     { key: 'unit_economics', label: 'Unit Economics' },
     { key: 'assets_routes', label: 'Assets & Routes (vehicles/equipment, route efficiency)' },

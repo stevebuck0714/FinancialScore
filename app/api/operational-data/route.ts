@@ -19,6 +19,7 @@ import {
   buildCustomersSitesMock,
 } from '@/lib/operations/staffing-mock-data';
 import {
+  getBambooHrHiringPayload,
   getBambooHrLaborSchedulingPayload,
   getBambooHrRevenueBillablesPayload,
   getBambooHrUnitEconomicsPayload,
@@ -57,6 +58,7 @@ const OPERATIONAL_CACHEABLE_TYPES = new Set([
   'ap',
   'daily-financials',
   'labor-scheduling',
+  'hiring',
   'revenue-billables',
   'unit-economics',
   'summary',
@@ -1823,6 +1825,13 @@ export async function GET(request: NextRequest) {
       }
       return NextResponse.json(payload, { headers: privateCacheHeaders(OPERATIONAL_DATA_CACHE_TTL_SECONDS, 300) });
     };
+    const mockDataDisabledResponse = (dataType: string) => NextResponse.json(
+      {
+        error: `${dataType} requires live operational data for this company. Mock data is disabled.`,
+        code: 'MOCK_DATA_DISABLED',
+      },
+      { status: 409 }
+    );
 
     const hasPlatosFacts =
       (type === 'products' || type === 'inventory') &&
@@ -6837,6 +6846,7 @@ export async function GET(request: NextRequest) {
       // See docs/CONSTRUCTION_SECTOR_DASHBOARD_DESIGN.md.
       // ──────────────────────────────────────────────────────────────────
       case 'job-cost-control': {
+        if (!shouldUseMockData) return mockDataDisabledResponse('Job Cost Control');
         // M2: Mock-driven Job Cost Control. Vista-backed snapshot read lands
         // in M6 once a live customer is connected.
         const payload = buildJobCostControlMock(companyId);
@@ -6853,6 +6863,7 @@ export async function GET(request: NextRequest) {
       }
 
       case 'project-portfolio': {
+        if (!shouldUseMockData) return mockDataDisabledResponse('Project Portfolio');
         // M3: Mock-driven Project Portfolio. Reuses the same job set as Job
         // Cost Control so both tabs present a consistent view of the same
         // underlying portfolio. Vista-backed ingestion lands in M6.
@@ -6872,6 +6883,7 @@ export async function GET(request: NextRequest) {
       }
 
       case 'commitments-forecast': {
+        if (!shouldUseMockData) return mockDataDisabledResponse('Commitments & Forecast');
         // M4: Mock-driven Commitments & Forecast. Reuses the JCC job set so
         // the same companyId presents a consistent portfolio across all four
         // construction tabs. Vista-backed ingestion lands in M6.
@@ -6888,6 +6900,7 @@ export async function GET(request: NextRequest) {
       }
 
       case 'billing-cash': {
+        if (!shouldUseMockData) return mockDataDisabledResponse('Billing & Cash');
         // M5: Mock-driven Billing & Cash. Reuses JCC + CF data so vendors,
         // customers, and AP/AR figures stay consistent across all four
         // construction tabs. Vista-backed ingestion lands in M6.
@@ -6908,6 +6921,7 @@ export async function GET(request: NextRequest) {
         if (bambooSnapshot) {
           return NextResponse.json(getBambooHrRevenueBillablesPayload(bambooSnapshot));
         }
+        if (!shouldUseMockData) return mockDataDisabledResponse('Revenue & Billables');
         const payload = buildRevenueBillablesMock(companyId);
         return NextResponse.json(payload);
       }
@@ -6917,6 +6931,7 @@ export async function GET(request: NextRequest) {
         if (bambooSnapshot) {
           return NextResponse.json(getBambooHrUnitEconomicsPayload(bambooSnapshot));
         }
+        if (!shouldUseMockData) return mockDataDisabledResponse('Unit Economics');
         const payload = buildUnitEconomicsMock(companyId);
         return NextResponse.json(payload);
       }
@@ -6926,16 +6941,23 @@ export async function GET(request: NextRequest) {
         if (bambooSnapshot) {
           return NextResponse.json(getBambooHrLaborSchedulingPayload(bambooSnapshot));
         }
+        if (!shouldUseMockData) return mockDataDisabledResponse('Labor & Scheduling');
         const payload = buildLaborSchedulingMock(companyId);
         return NextResponse.json(payload);
       }
 
+      case 'hiring': {
+        return NextResponse.json(await getBambooHrHiringPayload(companyId));
+      }
+
       case 'customers-sites': {
+        if (!shouldUseMockData) return mockDataDisabledResponse('Customers / Sites');
         const payload = buildCustomersSitesMock(companyId);
         return NextResponse.json(payload);
       }
 
       case 'construction-ar': {
+        if (!shouldUseMockData) return mockDataDisabledResponse('Construction AR');
         // M5b: Project-aware AR for construction. Customers/jobs/PMs/divisions
         // come straight from the JCC job set so all construction tabs roll up
         // consistently against the same portfolio.
@@ -6953,6 +6975,7 @@ export async function GET(request: NextRequest) {
       }
 
       case 'construction-ap': {
+        if (!shouldUseMockData) return mockDataDisabledResponse('Construction AP');
         // M5b: Project-aware AP for construction (subs + suppliers).
         const payload = buildConstructionApMock(companyId);
         return NextResponse.json({

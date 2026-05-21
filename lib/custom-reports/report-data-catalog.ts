@@ -69,6 +69,13 @@ const operationalTemplates: Record<string, Omit<ReportFieldCatalogItem, 'moduleK
     { field: 'op.job-cost-control.dailyCost', label: 'Daily Job Cost', source: 'operational', format: 'currency', recordSet: 'dailyCost', valueKey: 'dailyCost', categoryKey: 'costType' },
     { field: 'op.job-cost-control.dailyBudget', label: 'Daily Job Budget', source: 'operational', format: 'currency', recordSet: 'dailyCost', valueKey: 'dailyBudget', categoryKey: 'costType' },
   ],
+  hiring: [
+    { field: 'op.hiring.openJobs', label: 'Open Jobs', source: 'operational', format: 'number', recordSet: 'jobs', valueKey: 'openJobs' },
+    { field: 'op.hiring.totalApplicants', label: 'Total Applicants', source: 'operational', format: 'number', recordSet: 'jobs', valueKey: 'totalApplicantsCount' },
+    { field: 'op.hiring.activeApplicants', label: 'Active Applicants', source: 'operational', format: 'number', recordSet: 'jobs', valueKey: 'activeApplicantsCount' },
+    { field: 'op.hiring.newApplicants', label: 'New Applicants', source: 'operational', format: 'number', recordSet: 'jobs', valueKey: 'newApplicantsCount' },
+    { field: 'op.hiring.applications', label: 'Applications', source: 'operational', format: 'number', recordSet: 'applications', valueKey: 'applicationCount', categoryKey: 'status' },
+  ],
   'project-portfolio': [
     { field: 'op.project-portfolio.marginPct', label: 'Project Margin %', source: 'operational', format: 'percent', recordSet: 'jobs', valueKey: 'marginPct' },
     { field: 'op.project-portfolio.projectedProfit', label: 'Projected Profit', source: 'operational', format: 'currency', recordSet: 'jobs', valueKey: 'projectedProfit' },

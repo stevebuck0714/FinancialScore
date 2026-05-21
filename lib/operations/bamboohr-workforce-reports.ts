@@ -14,6 +14,39 @@ import {
 type EmployeeRow = Record<string, unknown>;
 type TableRow = Record<string, unknown>;
 
+type HiringJobRow = {
+  id: string;
+  title: string;
+  status: string;
+  openJobs: number;
+  department: string;
+  location: string;
+  postedDate: string | null;
+  activeApplicantsCount: number;
+  newApplicantsCount: number;
+  totalApplicantsCount: number;
+  postingUrl: string | null;
+};
+
+type HiringApplicationRow = {
+  id: string;
+  jobId: string;
+  jobTitle: string;
+  applicantName: string;
+  email: string | null;
+  phone: string | null;
+  status: string;
+  applicationCount: number;
+  appliedDate: string | null;
+  hiredDate: string | null;
+  lastUpdated: string | null;
+  source: string | null;
+  location: string | null;
+  rating: number | null;
+};
+
+const HIRING_APPLICATION_PAGE_LIMIT = 10;
+
 type CurrentEmployee = {
   id: string;
   name: string;
@@ -136,6 +169,7 @@ function asRecord(value: unknown): Record<string, unknown> {
 }
 
 function asString(value: unknown): string {
+  if (typeof value === 'number' && Number.isFinite(value)) return String(value);
   return typeof value === 'string' ? value.trim() : '';
 }
 
@@ -175,6 +209,20 @@ function readTableRows(json: unknown): TableRow[] {
   }
   const record = asRecord(json);
   for (const key of ['rows', 'table', 'data']) {
+    const value = record[key];
+    if (Array.isArray(value)) {
+      return value.filter((row): row is TableRow => Boolean(row) && typeof row === 'object' && !Array.isArray(row));
+    }
+  }
+  return [];
+}
+
+function readCollection(json: unknown, keys: string[]): TableRow[] {
+  if (Array.isArray(json)) {
+    return json.filter((row): row is TableRow => Boolean(row) && typeof row === 'object' && !Array.isArray(row));
+  }
+  const record = asRecord(json);
+  for (const key of keys) {
     const value = record[key];
     if (Array.isArray(value)) {
       return value.filter((row): row is TableRow => Boolean(row) && typeof row === 'object' && !Array.isArray(row));
@@ -358,6 +406,135 @@ function buildBillRateLevelByRole(employees: CurrentEmployee[]) {
       topLevels: levelCounts,
     };
   });
+}
+
+function labelValue(value: unknown): string {
+  const record = asRecord(value);
+  return asString(record.label) || asString(record.name) || asString(record.title) || asString(value);
+}
+
+function idValue(value: unknown): string {
+  const record = asRecord(value);
+  return asString(record.id) || asString(value);
+}
+
+function normalizeHiringJob(row: TableRow): HiringJobRow {
+  const titleRecord = asRecord(row.title);
+  const status = labelValue(row.status) || 'Unknown';
+  return {
+    id: asString(row.id) || idValue(row.job) || asString(titleRecord.id),
+    title: labelValue(row.title) || asString(row.jobTitle) || 'Untitled Job',
+    status,
+    openJobs: status.toLowerCase() === 'open' ? 1 : 0,
+    department: labelValue(row.department) || 'Unassigned',
+    location: labelValue(row.location) || 'Unassigned',
+    postedDate: asString(row.postedDate) || asString(row.createdDate) || null,
+    activeApplicantsCount: asNumber(row.activeApplicantsCount) || 0,
+    newApplicantsCount: asNumber(row.newApplicantsCount) || 0,
+    totalApplicantsCount: asNumber(row.totalApplicantsCount) || 0,
+    postingUrl: asString(row.postingUrl) || null,
+  };
+}
+
+function normalizeHiringApplication(row: TableRow, jobsById: Map<string, HiringJobRow> = new Map()): HiringApplicationRow {
+  const job = asRecord(row.job);
+  const jobId = (
+    idValue(row.job) ||
+    asString(row.jobId) ||
+    asString(row.job_id) ||
+    asString(row.requisitionId) ||
+    asString(row.requisition_id)
+  );
+  const matchedJob = jobId ? jobsById.get(jobId) : null;
+  const applicant = asRecord(row.applicant);
+  const firstName = asString(row.firstName) || asString(applicant.firstName);
+  const lastName = asString(row.lastName) || asString(applicant.lastName);
+  const applicantName = (
+    asString(row.applicantName) ||
+    asString(row.name) ||
+    asString(applicant.name) ||
+    [firstName, lastName].filter(Boolean).join(' ')
+  ).trim();
+  return {
+    id: asString(row.id),
+    jobId,
+    jobTitle: labelValue(row.job) || asString(job.title) || asString(row.jobTitle) || matchedJob?.title || 'Unassigned Job',
+    applicantName: applicantName || 'Applicant',
+    email: asString(row.email) || asString(row.emailAddress) || asString(applicant.email) || null,
+    phone: asString(row.phone) || asString(row.phoneNumber) || asString(applicant.phone) || null,
+    status: labelValue(row.status) || 'Unknown',
+    applicationCount: 1,
+    appliedDate: asString(row.appliedDate) || asString(row.createdDate) || null,
+    hiredDate: asString(row.hiredDate) || asString(row.hireDate) || asString(row.startDate) || null,
+    lastUpdated: asString(row.lastUpdated) || asString(row.updatedDate) || asString(row.updatedAt) || null,
+    source: labelValue(row.source) || asString(row.referralSource) || asString(row.applicationSource) || asString(row.sourceName) || null,
+    location: labelValue(row.location) || labelValue(job.location) || matchedJob?.location || null,
+    rating: asNumber(row.rating),
+  };
+}
+
+function countRows<T extends Record<string, unknown>>(rows: T[], key: keyof T, labelKey: string) {
+  const counts = new Map<string, number>();
+  rows.forEach((row) => {
+    const label = asString(row[key]) || 'Unknown';
+    counts.set(label, (counts.get(label) || 0) + 1);
+  });
+  return Array.from(counts.entries())
+    .map(([label, count]) => ({ [labelKey]: label, count }))
+    .sort((a, b) => Number(b.count || 0) - Number(a.count || 0));
+}
+
+async function fetchBambooHrHiringApplications(settings: BambooHrSettings): Promise<TableRow[]> {
+  const rows: TableRow[] = [];
+  for (let page = 1; page <= HIRING_APPLICATION_PAGE_LIMIT; page += 1) {
+    const response = await fetchBambooHrJson(settings, 'applicant_tracking/applications', { page: String(page) });
+    const pageRows = readCollection(response.json, ['applications']);
+    if (pageRows.length === 0) break;
+    rows.push(...pageRows);
+  }
+  return rows;
+}
+
+export async function getBambooHrHiringPayload(companyId: string) {
+  const { settings } = await readBambooHrSettings(companyId);
+  const [jobsResponse, applicationRows] = await Promise.all([
+    fetchBambooHrJson(settings, 'applicant_tracking/jobs'),
+    fetchBambooHrHiringApplications(settings),
+  ]);
+  const jobs = readCollection(jobsResponse.json, ['jobs']).map(normalizeHiringJob);
+  const jobsById = new Map(jobs.map((job) => [job.id, job]));
+  const applications = applicationRows.map((row) => normalizeHiringApplication(row, jobsById));
+  const applicationsByStatus = countRows(applications, 'status', 'status');
+  const applicantsByJob = jobs
+    .map((job) => ({
+      jobId: job.id,
+      title: job.title,
+      status: job.status,
+      activeApplicantsCount: job.activeApplicantsCount,
+      newApplicantsCount: job.newApplicantsCount,
+      totalApplicantsCount: job.totalApplicantsCount,
+    }))
+    .sort((a, b) => b.activeApplicantsCount - a.activeApplicantsCount);
+
+  return {
+    meta: { source: 'BAMBOOHR_HIRING', generatedAt: new Date().toISOString(), applicationsPageLimit: HIRING_APPLICATION_PAGE_LIMIT },
+    summary: {
+      asOfDate: todayIso(),
+      openJobs: jobs.filter((job) => job.status.toLowerCase() === 'open').length,
+      totalJobs: jobs.length,
+      totalApplicants: jobs.reduce((sum, job) => sum + job.totalApplicantsCount, 0),
+      activeApplicants: jobs.reduce((sum, job) => sum + job.activeApplicantsCount, 0),
+      newApplicants: jobs.reduce((sum, job) => sum + job.newApplicantsCount, 0),
+      applicationsSampled: applications.length,
+    },
+    jobs,
+    applications,
+    applicationsByStatus,
+    applicantsByJob,
+    newApplicantsByJob: applicantsByJob.filter((row) => row.newApplicantsCount > 0),
+    postingPerformance: applicantsByJob,
+    records: jobs,
+  };
 }
 
 function buildPayload(companyId: string, employees: CurrentEmployee[], generatedAt: string): BambooHrWorkforceReportSnapshot {

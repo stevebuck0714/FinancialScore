@@ -624,6 +624,13 @@ export default function OperationsTab({
   const [billingCashData, setBillingCashData] = useState<any>(null);
   const [bcPriorityFilter, setBcPriorityFilter] = useState<'all' | 'collect' | 'pay'>('all');
   const [laborSchedulingData, setLaborSchedulingData] = useState<any>(null);
+  const [selectedLaborRosterDepartment, setSelectedLaborRosterDepartment] = useState<string>('');
+  const [hiringData, setHiringData] = useState<any>(null);
+  const [expandedHiringJobs, setExpandedHiringJobs] = useState<Record<string, boolean>>({});
+  const [hiringStatusDetailExpanded, setHiringStatusDetailExpanded] = useState<boolean>(true);
+  const [hiringApplicantsByJobExpanded, setHiringApplicantsByJobExpanded] = useState<boolean>(true);
+  const [hiringApplicantsSortKey, setHiringApplicantsSortKey] = useState<'title' | 'status' | 'activeApplicantsCount' | 'newApplicantsCount' | 'totalApplicantsCount'>('totalApplicantsCount');
+  const [hiringApplicantsSortDir, setHiringApplicantsSortDir] = useState<'asc' | 'desc'>('desc');
   const [customersSitesData, setCustomersSitesData] = useState<any>(null);
   const [revenueBillablesData, setRevenueBillablesData] = useState<any>(null);
   const [unitEconomicsData, setUnitEconomicsData] = useState<any>(null);
@@ -1336,6 +1343,9 @@ export default function OperationsTab({
         break;
       case 'labor-scheduling':
         setLaborSchedulingData(data);
+        break;
+      case 'hiring':
+        setHiringData(data);
         break;
       case 'inventory':
         setInventoryData(data);
@@ -2135,6 +2145,7 @@ export default function OperationsTab({
       activeTab === 'overview' ||
       activeTab === 'dashboard' ||
       activeTab === 'forecast' ||
+      mapModuleToDataType(activeTab) === 'hiring' ||
       activeTab === 'working_capital_forecast' ||
       activeTab === 'working-capital-forecast'
     ) {
@@ -15508,7 +15519,7 @@ Strategies to Improve the CCC
     const assignmentDuration: any[] = Array.isArray(laborSchedulingData.assignmentDuration) ? laborSchedulingData.assignmentDuration : [];
     const idleWorkforceCost: any[] = Array.isArray(laborSchedulingData.idleWorkforceCost) ? laborSchedulingData.idleWorkforceCost : [];
     const overtimeAnalysis: any[] = Array.isArray(laborSchedulingData.overtimeAnalysis) ? laborSchedulingData.overtimeAnalysis : [];
-    const cardStyle: React.CSSProperties = { background: '#fff', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '20px' };
+    const cardStyle: React.CSSProperties = { background: '#fff', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '20px', minWidth: 0 };
     const cardTitleStyle: React.CSSProperties = { margin: '0 0 12px 0', fontSize: '13px', fontWeight: 700, color: '#0f172a', textTransform: 'uppercase', letterSpacing: '0.04em' };
     const thStyle: React.CSSProperties = { textAlign: 'left', padding: '8px 10px', fontSize: '11px', fontWeight: 700, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.04em', borderBottom: '1px solid #e2e8f0', background: '#f8fafc' };
     const tdStyle: React.CSSProperties = { padding: '8px 10px', fontSize: '13px', color: '#0f172a', borderBottom: '1px solid #f1f5f9' };
@@ -15523,6 +15534,20 @@ Strategies to Improve the CCC
       const billRateLevelCoverage: any[] = Array.isArray(laborSchedulingData.billRateLevelCoverage) ? laborSchedulingData.billRateLevelCoverage : [];
       const missingBillRateLevel: any[] = Array.isArray(laborSchedulingData.missingBillRateLevel) ? laborSchedulingData.missingBillRateLevel : [];
       const employeeCompensationRoster: any[] = Array.isArray(laborSchedulingData.employeeCompensationRoster) ? laborSchedulingData.employeeCompensationRoster : [];
+      const normalizeRosterDepartment = (value: any) => String(value || 'Unassigned').trim() || 'Unassigned';
+      const rosterDepartments = Array.from(new Set(
+        employeeCompensationRoster
+          .map((row) => normalizeRosterDepartment(row.department))
+      )).sort((a, b) => a.localeCompare(b));
+      const effectiveRosterDepartment =
+        selectedLaborRosterDepartment && rosterDepartments.includes(selectedLaborRosterDepartment)
+          ? selectedLaborRosterDepartment
+          : (rosterDepartments[0] || '');
+      const departmentCompensationRoster = effectiveRosterDepartment
+        ? employeeCompensationRoster
+            .filter((row) => normalizeRosterDepartment(row.department) === effectiveRosterDepartment)
+            .sort((a, b) => String(a.role || '').localeCompare(String(b.role || '')) || String(a.employeeName || '').localeCompare(String(b.employeeName || '')))
+        : [];
       const sourceNote = String(laborSchedulingData?.meta?.note || summary.note || '');
 
       return (
@@ -15573,11 +15598,29 @@ Strategies to Improve the CCC
 
           {isSectionEnabled('lsEmployeeCompensationRoster') && (
             <div style={cardStyle}>
-              <div style={cardTitleStyle}>Employee Compensation Roster</div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', alignItems: 'center', marginBottom: '12px', flexWrap: 'wrap' }}>
+                <div style={{ ...cardTitleStyle, marginBottom: 0 }}>Employee Compensation Roster by Department</div>
+                <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
+                  <span style={{ fontSize: '12px', color: '#64748b', fontWeight: 600 }}>
+                    {Number(departmentCompensationRoster.length || 0).toLocaleString('en-US')} employees
+                  </span>
+                  <label htmlFor="labor-roster-department" style={{ fontSize: '12px', color: '#64748b', fontWeight: 600 }}>Department</label>
+                  <select
+                    id="labor-roster-department"
+                    value={effectiveRosterDepartment}
+                    onChange={(event) => setSelectedLaborRosterDepartment(event.target.value)}
+                    style={{ border: '1px solid #cbd5e1', borderRadius: '8px', padding: '6px 28px 6px 10px', fontSize: '13px', color: '#0f172a', background: '#fff', minWidth: '220px' }}
+                  >
+                    {rosterDepartments.map((department) => (
+                      <option key={department} value={department}>{department}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
               <div style={{ overflowX: 'auto', maxHeight: '520px', overflowY: 'auto' }}>
                 <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                   <thead><tr><th style={thStyle}>Employee</th><th style={thStyle}>Role</th><th style={thStyle}>Department</th><th style={thStyle}>Location</th><th style={thStyle}>Status</th><th style={thStyle}>Pay Type</th><th style={{ ...thStyle, textAlign: 'right' }}>Annual Pay</th><th style={{ ...thStyle, textAlign: 'right' }}>Monthly Pay</th><th style={thStyle}>Bill Rate Level</th></tr></thead>
-                  <tbody>{employeeCompensationRoster.map((row) => (
+                  <tbody>{departmentCompensationRoster.map((row) => (
                     <tr key={row.employeeId}>
                       <td style={{ ...tdStyle, fontWeight: 600 }}>{row.employeeName || row.employeeId}</td>
                       <td style={tdStyle}>{row.role}</td>
@@ -15800,6 +15843,431 @@ Strategies to Improve the CCC
                 </ResponsiveContainer>
               </div>
             )}
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  const renderHiring = () => {
+    if (!hiringData) {
+      return <div style={{ padding: '40px', color: '#64748b', fontSize: '14px' }}>Loading Hiring…</div>;
+    }
+
+    const summary = hiringData.summary || {};
+    const jobs: any[] = Array.isArray(hiringData.jobs) ? hiringData.jobs : [];
+    const applications: any[] = Array.isArray(hiringData.applications) ? hiringData.applications : [];
+    const applicationsByStatus: any[] = Array.isArray(hiringData.applicationsByStatus) ? hiringData.applicationsByStatus : [];
+    const applicantsByJob: any[] = Array.isArray(hiringData.applicantsByJob) ? hiringData.applicantsByJob : [];
+    const newApplicantsByJob: any[] = Array.isArray(hiringData.newApplicantsByJob) ? hiringData.newApplicantsByJob : [];
+    const postingPerformance: any[] = Array.isArray(hiringData.postingPerformance) ? hiringData.postingPerformance : applicantsByJob;
+    const cardStyle: React.CSSProperties = { background: '#fff', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '20px' };
+    const cardTitleStyle: React.CSSProperties = { margin: '0 0 12px 0', fontSize: '13px', fontWeight: 700, color: '#0f172a', textTransform: 'uppercase', letterSpacing: '0.04em' };
+    const thStyle: React.CSSProperties = { textAlign: 'left', padding: '8px 10px', fontSize: '11px', fontWeight: 700, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.04em', borderBottom: '1px solid #e2e8f0', background: '#f8fafc' };
+    const tdStyle: React.CSSProperties = { padding: '8px 10px', fontSize: '13px', color: '#0f172a', borderBottom: '1px solid #f1f5f9' };
+    const chartLabelStyle = { fontSize: '12px', fill: '#64748b' };
+    const applicantRowsByJobId = applications.reduce((map: Record<string, any[]>, application) => {
+      const key = String(application.jobId || application.jobTitle || 'Unassigned Job');
+      if (!map[key]) map[key] = [];
+      map[key].push(application);
+      return map;
+    }, {});
+    const applicantRowsForJob = (row: any) => {
+      const directKey = String(row.jobId || '');
+      if (directKey && applicantRowsByJobId[directKey]) return applicantRowsByJobId[directKey];
+      return applications.filter((application) => String(application.jobTitle || '') === String(row.title || ''));
+    };
+    const normalizeHiringStatus = (value: any) => String(value || 'Unknown').trim() || 'Unknown';
+    const statusRank = (status: string) => {
+      const normalized = status.toLowerCase().replace(/[_-]+/g, ' ');
+      if (normalized === 'new' || normalized.includes('new applicant')) return 0;
+      if (normalized.includes('review')) return 1;
+      if (normalized.includes('schedule') && normalized.includes('phone')) return 2;
+      if (normalized.includes('phone screen')) return 3;
+      if (normalized.includes('interview')) return 4;
+      if (normalized.includes('offer')) return 5;
+      if (normalized.includes('hire')) return 6;
+      if (normalized.includes('reject') || normalized.includes('decline')) return 98;
+      return 50;
+    };
+    const applicationsByDetailedStatus = Object.entries(
+      applications.reduce((map: Record<string, any[]>, application) => {
+        const status = normalizeHiringStatus(application.status);
+        if (!map[status]) map[status] = [];
+        map[status].push(application);
+        return map;
+      }, {})
+    ).sort(([statusA], [statusB]) => {
+      const rankDelta = statusRank(statusA) - statusRank(statusB);
+      return rankDelta || statusA.localeCompare(statusB);
+    });
+    const applicantsSortValue = (row: any) => {
+      if (hiringApplicantsSortKey === 'title') return String(row.title || '').toLowerCase();
+      if (hiringApplicantsSortKey === 'status') return String(row.status || '').toLowerCase();
+      return Number(row[hiringApplicantsSortKey] || 0);
+    };
+    const applicantsSortTieBreaker = (a: any, b: any) => (
+      String(a.title || '').localeCompare(String(b.title || '')) ||
+      String(a.jobId || '').localeCompare(String(b.jobId || ''))
+    );
+    const sortedApplicantsByJob = [...applicantsByJob].sort((a, b) => {
+      const aValue = applicantsSortValue(a);
+      const bValue = applicantsSortValue(b);
+      const direction = hiringApplicantsSortDir === 'asc' ? 1 : -1;
+      let comparison = 0;
+      if (typeof aValue === 'number' && typeof bValue === 'number') {
+        comparison = aValue - bValue;
+      } else {
+        comparison = String(aValue).localeCompare(String(bValue));
+      }
+      if (comparison === 0) comparison = applicantsSortTieBreaker(a, b);
+      return comparison * direction;
+    });
+    const applicantsSortOptions: Array<{ key: typeof hiringApplicantsSortKey; label: string }> = [
+      { key: 'title', label: 'Job' },
+      { key: 'status', label: 'Status' },
+      { key: 'activeApplicantsCount', label: 'Active Applications' },
+      { key: 'newApplicantsCount', label: 'New Applications' },
+      { key: 'totalApplicantsCount', label: 'Total Applications' },
+    ];
+    const formatHiringDate = (value: any) => {
+      const raw = String(value || '').trim();
+      if (!raw) return '—';
+      const match = raw.match(/^(\d{4})-(\d{2})-(\d{2})/);
+      return match ? `${match[2]}/${match[3]}/${match[1]}` : raw;
+    };
+    const renderApplicantExpansionRow = (row: any, colSpan: number) => {
+      const jobKey = String(row.jobId || row.title || 'job');
+      const isExpanded = expandedHiringJobs[jobKey] === true;
+      const applicantRows = applicantRowsForJob(row);
+      if (!isExpanded) return null;
+      return (
+        <tr>
+          <td colSpan={colSpan} style={{ padding: '0 10px 14px 10px', borderBottom: '1px solid #e2e8f0', background: '#f8fafc' }}>
+            {applicantRows.length ? (
+              <div style={{ marginTop: '10px', border: '1px solid #e2e8f0', borderRadius: '8px', overflow: 'hidden', background: '#fff' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                  <thead>
+                    <tr>
+                      <th style={thStyle}>Applicant / Hire</th>
+                      <th style={thStyle}>Status</th>
+                      <th style={thStyle}>Applied</th>
+                      <th style={thStyle}>Hired / Start</th>
+                      <th style={thStyle}>Email</th>
+                      <th style={thStyle}>Phone</th>
+                      <th style={{ ...thStyle, textAlign: 'right' }}>Rating</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {applicantRows.map((application) => (
+                      <tr key={application.id || `${jobKey}-${application.applicantName}-${application.appliedDate}`}>
+                        <td style={{ ...tdStyle, fontWeight: 600 }}>{application.applicantName || 'Applicant'}</td>
+                        <td style={tdStyle}>{application.status || '—'}</td>
+                        <td style={tdStyle}>{formatHiringDate(application.appliedDate)}</td>
+                        <td style={tdStyle}>{formatHiringDate(application.hiredDate)}</td>
+                        <td style={tdStyle}>{application.email || '—'}</td>
+                        <td style={tdStyle}>{application.phone || '—'}</td>
+                        <td style={{ ...tdStyle, textAlign: 'right' }}>{application.rating == null ? '—' : Number(application.rating).toLocaleString('en-US')}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <div style={{ marginTop: '10px', color: '#64748b', fontSize: '13px' }}>No applicant or hire details returned for this job.</div>
+            )}
+          </td>
+        </tr>
+      );
+    };
+    const renderApplicationStatusDetail = () => (
+      <div style={cardStyle}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', alignItems: 'center', marginBottom: hiringStatusDetailExpanded ? '12px' : 0 }}>
+          <div style={{ ...cardTitleStyle, marginBottom: 0 }}>Application Detail by Status</div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <div style={{ fontSize: '12px', color: '#64748b', whiteSpace: 'nowrap' }}>
+              {Number(applications.length || 0).toLocaleString('en-US')} applications
+            </div>
+            <button
+              type="button"
+              onClick={() => setHiringStatusDetailExpanded((current) => !current)}
+              style={{
+                border: '1px solid #cbd5e1',
+                background: hiringStatusDetailExpanded ? '#eff6ff' : '#fff',
+                color: '#1d4ed8',
+                borderRadius: '999px',
+                padding: '4px 10px',
+                fontSize: '12px',
+                fontWeight: 700,
+                cursor: 'pointer',
+                whiteSpace: 'nowrap',
+              }}
+            >
+              {hiringStatusDetailExpanded ? 'Collapse' : 'Expand'}
+            </button>
+          </div>
+        </div>
+        {hiringStatusDetailExpanded && <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+          {applicationsByDetailedStatus.length ? applicationsByDetailedStatus.map(([status, rows]) => (
+            <div key={status} style={{ border: '1px solid #e2e8f0', borderRadius: '10px', overflow: 'hidden' }}>
+              <div style={{ padding: '10px 12px', background: '#f8fafc', borderBottom: '1px solid #e2e8f0', display: 'flex', justifyContent: 'space-between', gap: '12px', alignItems: 'center' }}>
+                <div style={{ fontSize: '13px', fontWeight: 700, color: '#0f172a' }}>{status}</div>
+                <div style={{ fontSize: '12px', color: '#64748b' }}>{Number(rows.length || 0).toLocaleString('en-US')} applications</div>
+              </div>
+              <div style={{ overflowX: 'auto', maxHeight: '320px', overflowY: 'auto' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                  <thead>
+                    <tr>
+                      <th style={thStyle}>Applicant / Hire</th>
+                      <th style={thStyle}>Job</th>
+                      <th style={thStyle}>Applied</th>
+                      <th style={thStyle}>Updated</th>
+                      <th style={thStyle}>Hired / Start</th>
+                      <th style={thStyle}>Email</th>
+                      <th style={thStyle}>Phone</th>
+                      <th style={thStyle}>Source</th>
+                      <th style={thStyle}>Location</th>
+                      <th style={{ ...thStyle, textAlign: 'right' }}>Rating</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {rows.map((application) => (
+                      <tr key={application.id || `${status}-${application.jobTitle}-${application.applicantName}-${application.appliedDate}`}>
+                        <td style={{ ...tdStyle, fontWeight: 600 }}>{application.applicantName || 'Applicant'}</td>
+                        <td style={tdStyle}>{application.jobTitle || '—'}</td>
+                        <td style={tdStyle}>{formatHiringDate(application.appliedDate)}</td>
+                        <td style={tdStyle}>{formatHiringDate(application.lastUpdated)}</td>
+                        <td style={tdStyle}>{formatHiringDate(application.hiredDate)}</td>
+                        <td style={tdStyle}>{application.email || '—'}</td>
+                        <td style={tdStyle}>{application.phone || '—'}</td>
+                        <td style={tdStyle}>{application.source || '—'}</td>
+                        <td style={tdStyle}>{application.location || '—'}</td>
+                        <td style={{ ...tdStyle, textAlign: 'right' }}>{application.rating == null ? '—' : Number(application.rating).toLocaleString('en-US')}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )) : (
+            <div style={{ padding: '12px', border: '1px solid #e2e8f0', borderRadius: '8px', color: '#64748b', fontSize: '13px' }}>
+              No application detail rows returned from BambooHR.
+            </div>
+          )}
+        </div>}
+      </div>
+    );
+
+    return (
+      <div style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+        {isSectionEnabled('hiringOpenJobs') && (
+          <div style={cardStyle}>
+            <div style={{ ...cardTitleStyle, marginBottom: '14px' }}>Hiring Summary</div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '12px' }}>
+              {[
+                { label: 'Open Jobs', value: Number(summary.openJobs || 0).toLocaleString('en-US'), color: '#1d4ed8' },
+                { label: 'Total Jobs', value: Number(summary.totalJobs || jobs.length || 0).toLocaleString('en-US'), color: '#0f172a' },
+                { label: 'Active Applications', value: Number(summary.activeApplicants || 0).toLocaleString('en-US'), color: '#0f766e' },
+                { label: 'New Applications', value: Number(summary.newApplicants || 0).toLocaleString('en-US'), color: '#7c3aed' },
+                { label: 'Applications Sampled', value: Number(summary.applicationsSampled || applications.length || 0).toLocaleString('en-US'), color: '#b45309' },
+              ].map((kpi) => (
+                <div key={kpi.label} style={{ padding: '12px', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px' }}>
+                  <div style={{ fontSize: '11px', color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: '4px' }}>{kpi.label}</div>
+                  <div style={{ fontSize: '18px', fontWeight: 700, color: kpi.color }}>{kpi.value}</div>
+                </div>
+              ))}
+            </div>
+            <div style={{ marginTop: '10px', fontSize: '12px', color: '#64748b' }}>
+              Source: {String(hiringData?.meta?.source || 'operational').replace(/_/g, ' ')} · As of {summary.asOfDate || '—'}
+            </div>
+          </div>
+        )}
+
+        {(isSectionEnabled('hiringApplicantPipeline') || isSectionEnabled('hiringApplicationsByStatus')) && (
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(360px, 1fr))', gap: '16px' }}>
+            {isSectionEnabled('hiringApplicantPipeline') && (
+              <div style={cardStyle}>
+                <div style={cardTitleStyle}>Applicant Pipeline by Job</div>
+                <ResponsiveContainer width="100%" height={340}>
+                  <BarChart data={applicantsByJob.slice(0, 12)} margin={{ top: 8, right: 8, left: 8, bottom: 80 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                    <XAxis dataKey="title" angle={-30} textAnchor="end" height={100} tick={chartLabelStyle} interval={0} />
+                    <YAxis tick={chartLabelStyle} />
+                    <Tooltip formatter={(value: any, name: any) => [Number(value || 0).toLocaleString('en-US'), name]} />
+                    <Bar dataKey="activeApplicantsCount" name="Active Applications" fill="#2563eb" radius={0} />
+                    <Bar dataKey="newApplicantsCount" name="New Applications" fill="#7c3aed" radius={0} />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            )}
+            {isSectionEnabled('hiringApplicationsByStatus') && (
+              <div style={cardStyle}>
+                <div style={cardTitleStyle}>Applications by Status</div>
+                <ResponsiveContainer width="100%" height={340}>
+                  <BarChart data={applicationsByStatus} margin={{ top: 8, right: 8, left: 8, bottom: 40 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                    <XAxis dataKey="status" angle={-20} textAnchor="end" height={70} tick={chartLabelStyle} interval={0} />
+                    <YAxis tick={chartLabelStyle} />
+                    <Tooltip formatter={(value: any) => [Number(value || 0).toLocaleString('en-US'), 'Applications']} />
+                    <Bar dataKey="count" fill="#0f766e" radius={0} />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            )}
+          </div>
+        )}
+
+        {isSectionEnabled('hiringApplicationsByStatus') && renderApplicationStatusDetail()}
+
+        {isSectionEnabled('hiringApplicantsByJob') && (
+          <div style={cardStyle}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', alignItems: 'center', marginBottom: hiringApplicantsByJobExpanded ? '12px' : 0, flexWrap: 'wrap' }}>
+              <div style={{ ...cardTitleStyle, marginBottom: 0 }}>Applicants by Job</div>
+              <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
+                <span style={{ fontSize: '12px', color: '#64748b', fontWeight: 600 }}>
+                  {Number(sortedApplicantsByJob.length || 0).toLocaleString('en-US')} jobs
+                </span>
+                {hiringApplicantsByJobExpanded && (
+                  <>
+                    <label style={{ fontSize: '12px', color: '#64748b', fontWeight: 600 }} htmlFor="hiring-applicants-sort-key">Sort by</label>
+                    <select
+                      id="hiring-applicants-sort-key"
+                      value={hiringApplicantsSortKey}
+                      onChange={(event) => {
+                        const nextKey = event.target.value as typeof hiringApplicantsSortKey;
+                        setHiringApplicantsSortKey(nextKey);
+                        setHiringApplicantsSortDir(['title', 'status'].includes(nextKey) ? 'asc' : 'desc');
+                      }}
+                      style={{ border: '1px solid #cbd5e1', borderRadius: '8px', padding: '6px 28px 6px 10px', fontSize: '13px', color: '#0f172a', background: '#fff' }}
+                    >
+                      {applicantsSortOptions.map((option) => (
+                        <option key={option.key} value={option.key}>{option.label}</option>
+                      ))}
+                    </select>
+                    <select
+                      value={hiringApplicantsSortDir}
+                      onChange={(event) => setHiringApplicantsSortDir(event.target.value as 'asc' | 'desc')}
+                      aria-label="Applicants by Job sort direction"
+                      style={{ border: '1px solid #cbd5e1', borderRadius: '8px', padding: '6px 28px 6px 10px', fontSize: '13px', color: '#0f172a', background: '#fff' }}
+                    >
+                      <option value="asc">Ascending</option>
+                      <option value="desc">Descending</option>
+                    </select>
+                  </>
+                )}
+                <button
+                  type="button"
+                  onClick={() => setHiringApplicantsByJobExpanded((current) => !current)}
+                  style={{ border: '1px solid #cbd5e1', background: hiringApplicantsByJobExpanded ? '#eff6ff' : '#fff', color: '#1d4ed8', borderRadius: '999px', padding: '4px 10px', fontSize: '12px', fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap' }}
+                >
+                  {hiringApplicantsByJobExpanded ? 'Collapse' : 'Expand'}
+                </button>
+              </div>
+            </div>
+            {hiringApplicantsByJobExpanded && <div style={{ overflowX: 'auto', maxHeight: '460px', overflowY: 'auto' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                <thead>
+                  <tr>
+                    <th style={thStyle}>Job</th>
+                    <th style={thStyle}>Status</th>
+                    <th style={{ ...thStyle, textAlign: 'right' }}>Active</th>
+                    <th style={{ ...thStyle, textAlign: 'right' }}>New</th>
+                    <th style={{ ...thStyle, textAlign: 'right' }}>Total</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {sortedApplicantsByJob.map((row) => {
+                    const jobKey = String(row.jobId || row.title || 'job');
+                    const isExpanded = expandedHiringJobs[jobKey] === true;
+                    return (
+                      <React.Fragment key={jobKey}>
+                        <tr style={{ background: isExpanded ? '#f8fafc' : '#fff' }}>
+                          <td style={{ ...tdStyle, fontWeight: 600 }}>
+                            <button
+                              type="button"
+                              onClick={() => setExpandedHiringJobs((current) => ({ ...current, [jobKey]: !current[jobKey] }))}
+                              aria-label={isExpanded ? 'Collapse applicant details' : 'Expand applicant details'}
+                              style={{
+                                border: 0,
+                                background: 'transparent',
+                                color: '#1d4ed8',
+                                cursor: 'pointer',
+                                fontSize: '14px',
+                                fontWeight: 800,
+                                marginRight: '8px',
+                                padding: '0 2px',
+                                lineHeight: 1,
+                              }}
+                            >
+                              {isExpanded ? 'v' : '>'}
+                            </button>
+                            {row.title}
+                          </td>
+                          <td style={tdStyle}>{row.status || '—'}</td>
+                          <td style={{ ...tdStyle, textAlign: 'right' }}>{Number(row.activeApplicantsCount || 0).toLocaleString('en-US')}</td>
+                          <td style={{ ...tdStyle, textAlign: 'right' }}>{Number(row.newApplicantsCount || 0).toLocaleString('en-US')}</td>
+                          <td style={{ ...tdStyle, textAlign: 'right', fontWeight: 700 }}>{Number(row.totalApplicantsCount || 0).toLocaleString('en-US')}</td>
+                        </tr>
+                        {renderApplicantExpansionRow(row, 5)}
+                      </React.Fragment>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>}
+          </div>
+        )}
+
+        {isSectionEnabled('hiringNewApplicants') && (
+          <div style={cardStyle}>
+            <div style={cardTitleStyle}>New Applications</div>
+            <div style={{ overflowX: 'auto', maxHeight: '520px', overflowY: 'auto' }}>
+              <table style={{ width: '100%', minWidth: '980px', borderCollapse: 'collapse' }}>
+                <thead><tr><th style={thStyle}>Job</th><th style={{ ...thStyle, textAlign: 'right' }}>New Applications</th><th style={{ ...thStyle, textAlign: 'right' }}>Active Applications</th><th style={{ ...thStyle, textAlign: 'right' }}>Applicant / Hire Details</th></tr></thead>
+                <tbody>{newApplicantsByJob.slice(0, 15).map((row) => {
+                  const jobKey = String(row.jobId || row.title || 'job');
+                  const isExpanded = expandedHiringJobs[jobKey] === true;
+                  const applicantCount = applicantRowsForJob(row).length;
+                  return (
+                    <React.Fragment key={jobKey}>
+                      <tr style={{ background: isExpanded ? '#f8fafc' : '#fff' }}>
+                        <td style={{ ...tdStyle, fontWeight: 600 }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                            <button
+                              type="button"
+                              onClick={() => setExpandedHiringJobs((current) => ({ ...current, [jobKey]: !current[jobKey] }))}
+                              style={{ border: '1px solid #cbd5e1', background: isExpanded ? '#eff6ff' : '#fff', color: '#1d4ed8', borderRadius: '999px', padding: '4px 10px', fontSize: '12px', fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap' }}
+                            >
+                              {isExpanded ? 'Hide' : 'Show'}
+                            </button>
+                            <span>{row.title}</span>
+                          </div>
+                        </td>
+                        <td style={{ ...tdStyle, textAlign: 'right', color: '#7c3aed', fontWeight: 700 }}>{Number(row.newApplicantsCount || 0).toLocaleString('en-US')}</td>
+                        <td style={{ ...tdStyle, textAlign: 'right' }}>{Number(row.activeApplicantsCount || 0).toLocaleString('en-US')}</td>
+                        <td style={{ ...tdStyle, textAlign: 'right', fontWeight: 700, color: applicantCount > 0 ? '#0f172a' : '#94a3b8' }}>{Number(applicantCount || 0).toLocaleString('en-US')}</td>
+                      </tr>
+                      {renderApplicantExpansionRow(row, 4)}
+                    </React.Fragment>
+                  );
+                })}</tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        {isSectionEnabled('hiringPostingPerformance') && (
+          <div style={cardStyle}>
+            <div style={cardTitleStyle}>Posting Performance</div>
+            <ResponsiveContainer width="100%" height={340}>
+              <BarChart data={postingPerformance.slice(0, 10)} layout="vertical" margin={{ top: 8, right: 8, left: 120, bottom: 8 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                <XAxis type="number" tick={chartLabelStyle} />
+                <YAxis type="category" dataKey="title" width={260} tick={{ ...chartLabelStyle, width: 260 }} interval={0} />
+                <Tooltip formatter={(value: any) => [Number(value || 0).toLocaleString('en-US'), 'Total Applications']} />
+                <Bar dataKey="totalApplicantsCount" fill="#b45309" radius={0} />
+              </BarChart>
+            </ResponsiveContainer>
           </div>
         )}
       </div>
@@ -16686,6 +17154,7 @@ Strategies to Improve the CCC
     if (dataType === 'ap-aging') return renderAPaging();
     if (dataType === 'products') return renderProducts();
     if (dataType === 'labor-scheduling') return renderLaborScheduling();
+    if (dataType === 'hiring') return renderHiring();
     if (dataType === 'inventory') return renderInventory();
     if (dataType === 'cash') return renderCash();
     if (dataType === 'daily-financials') return renderDailyFinancials();
