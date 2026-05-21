@@ -567,6 +567,21 @@ async function readBriefingCache(companyId: string, cacheDate: string, dataVersi
   return rows[0]?.response || null;
 }
 
+async function readLatestBriefingCache(companyId: string, cacheDate: string): Promise<BriefingResponse | null> {
+  const rows = await prisma.$queryRawUnsafe<Array<{ response: BriefingResponse }>>(
+    `SELECT "response"
+     FROM "PulseExecBriefingCache"
+     WHERE "companyId" = $1
+       AND "cacheDate" = $2
+       AND "expiresAt" > CURRENT_TIMESTAMP
+     ORDER BY "updatedAt" DESC
+     LIMIT 1`,
+    companyId,
+    cacheDate
+  );
+  return rows[0]?.response || null;
+}
+
 async function writeBriefingCache(companyId: string, cacheDate: string, dataVersion: string, response: BriefingResponse): Promise<void> {
   await prisma.$executeRawUnsafe(
     `INSERT INTO "PulseExecBriefingCache" ("id", "companyId", "cacheDate", "dataVersion", "response", "updatedAt", "expiresAt")
@@ -648,6 +663,16 @@ export async function GET(request: NextRequest) {
     const cacheKey = todayCacheKey(companyId);
     const cacheDate = cacheKey.split(':').pop() || new Date().toISOString().slice(0, 10);
     await ensurePulseCacheTables();
+    const latestCacheKey = `${cacheKey}:latest`;
+    if (!forceRefresh) {
+      const cached = dailyBriefingCache.get(latestCacheKey);
+      if (cached) return NextResponse.json(cached, { headers: PRIVATE_DAILY_CACHE_HEADERS });
+      const persistedLatest = await readLatestBriefingCache(companyId, cacheDate);
+      if (persistedLatest) {
+        dailyBriefingCache.set(latestCacheKey, persistedLatest);
+        return NextResponse.json(persistedLatest, { headers: PRIVATE_DAILY_CACHE_HEADERS });
+      }
+    }
     const company = await prisma.company.findUnique({
       where: { id: companyId },
       select: { id: true, name: true, accountingSystem: true, industrySector: true, industrySectorCategory: true },
@@ -1114,6 +1139,7 @@ ${JSON.stringify(facts, null, 2)}`;
       sections,
       sourceNotes,
     } satisfies BriefingResponse;
+    dailyBriefingCache.set(`${cacheKey}:latest`, response);
     dailyBriefingCache.set(versionedCacheKey, response);
     await writeBriefingCache(companyId, cacheDate, dataVersion, response).catch((cacheError) => {
       console.warn('Pulse exec briefing cache write failed:', cacheError);

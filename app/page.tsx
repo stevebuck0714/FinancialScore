@@ -184,6 +184,7 @@ type AccountReviewApiValueCacheEntry = {
 
 const ACCOUNT_REVIEW_VALUES_CACHE_TTL_MS = 2 * 60 * 1000;
 const accountReviewValuesCache = new Map<string, AccountReviewApiValueCacheEntry>();
+const PERFORMANCE_AUTO_RUN_ENABLED = false;
 const PERFORMANCE_AUTO_RUN_INTERVAL_MS = 60 * 60 * 1000;
 const NAVIGABLE_VIEWS = new Set([
   'login',
@@ -4064,7 +4065,12 @@ function FinancialScorePage() {
 
   // Load customer-level operational sales for Customer Quality tab
   useEffect(() => {
-    if (!selectedCompanyId) {
+    const shouldLoadCustomerQuality =
+      currentView === 'valuation' &&
+      valuationMethodTab === 'sde' &&
+      sdeModuleTab === 'customer-quality';
+
+    if (!selectedCompanyId || !shouldLoadCustomerQuality) {
       setCustomerQualityRecords([]);
       setCustomerQualityError(null);
       setCustomerQualityLoading(false);
@@ -4079,7 +4085,7 @@ function FinancialScorePage() {
     setCustomerQualityError(null);
 
     fetch(
-      `/api/operational-data?companyId=${selectedCompanyId}&type=customers&frequency=monthly&limit=5000&startDate=${encodeURIComponent(startDate.toISOString())}&endDate=${encodeURIComponent(endDate.toISOString())}`,
+      `/api/operational-data?companyId=${selectedCompanyId}&type=customers&frequency=monthly&limit=1000&startDate=${encodeURIComponent(startDate.toISOString())}&endDate=${encodeURIComponent(endDate.toISOString())}`,
     )
       .then(async (res) => {
         const data = await res.json();
@@ -4098,7 +4104,7 @@ function FinancialScorePage() {
       .finally(() => {
         setCustomerQualityLoading(false);
       });
-  }, [selectedCompanyId]);
+  }, [selectedCompanyId, currentView, valuationMethodTab, sdeModuleTab]);
 
   // Load dashboard widgets from database (with localStorage fallback) when company changes
   useEffect(() => {
@@ -5251,6 +5257,7 @@ function FinancialScorePage() {
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
+    if (!PERFORMANCE_AUTO_RUN_ENABLED) return;
     if (!isLoggedIn || !currentUser || !selectedCompanyId) return;
 
     const inFlightKey = `${selectedCompanyId}`;
