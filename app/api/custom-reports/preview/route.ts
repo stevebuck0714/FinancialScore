@@ -12,6 +12,7 @@ import {
   normalizeDatasetSort,
   type ReportDataset,
   type ReportDatasetColumn,
+  type ReportDatasetFilterConfig,
 } from '@/lib/custom-reports/report-datasets';
 import { buildOperationalMockResponse } from '@/lib/operations/sector-mock-data';
 import {
@@ -505,17 +506,33 @@ function normalizeDatasetFilters(dataset: ReportDataset, rawFilters: any[]) {
   return (Array.isArray(rawFilters) ? rawFilters : [])
     .map((filter: any) => {
       const field = getDatasetColumn(dataset, filter?.field || filter?.key);
+      const entityType = String(filter?.entityType || '').trim();
+      const siblingFields = entityType
+        ? (dataset.entityFilters || [])
+            .filter((item) => item.entityType === entityType)
+            .map((item) => item.field)
+            .filter((key) => getDatasetColumn(dataset, key))
+        : [];
+      const rawFields = Array.isArray(filter?.fields) ? filter.fields : [];
+      const fields = Array.from(
+        new Set(
+          [...rawFields, ...siblingFields]
+            .map((key) => getDatasetColumn(dataset, key)?.key)
+            .filter(Boolean) as string[]
+        )
+      );
       const value = String(filter?.value ?? '').trim();
       if (!field || !value) return null;
       const operator = String(filter?.operator || 'contains').toLowerCase();
       return {
         field: field.key,
-        operator: ['equals', 'gte', 'lte'].includes(operator) ? operator : 'contains',
+        fields: fields.length > 1 ? fields : undefined,
+        operator: ['equals', 'gte', 'lte', 'containsany'].includes(operator) ? operator : 'contains',
         value,
       };
     })
     .filter(Boolean)
-    .slice(0, 8) as Array<{ field: string; operator: string; value: string }>;
+    .slice(0, 8) as ReportDatasetFilterConfig[];
 }
 
 function datasetColumnToTableColumn(column: ReportDatasetColumn) {
@@ -549,7 +566,13 @@ async function buildDatasetTablePreview(config: any) {
     const column = getDatasetColumn(dataset, filter.field);
     if (!column) return;
     const field = datasetColumnSql(column);
-    if (filter.operator === 'equals') {
+    if (filter.operator === 'containsany' && Array.isArray(filter.fields) && filter.fields.length > 0) {
+      const orClauses = filter.fields
+        .map((fieldKey) => getDatasetColumn(dataset, fieldKey))
+        .filter((item): item is ReportDatasetColumn => Boolean(item))
+        .map((item) => Prisma.sql`${datasetColumnSql(item)}::text ILIKE ${`%${filter.value}%`}`);
+      if (orClauses.length > 0) whereClauses.push(Prisma.sql`(${Prisma.join(orClauses, ' OR ')})`);
+    } else if (filter.operator === 'equals') {
       whereClauses.push(Prisma.sql`${field}::text = ${filter.value}`);
     } else if (filter.operator === 'gte') {
       whereClauses.push(Prisma.sql`${field} >= ${filter.value}::timestamp`);

@@ -24,6 +24,14 @@ export type ReportDataset = {
   columns: ReportDatasetColumn[];
 };
 
+export type ReportDatasetFilterConfig = {
+  field: string;
+  fields?: string[];
+  operator: string;
+  value: string;
+  entityType?: string;
+};
+
 export type ReportDatasetCatalogItem = {
   id: string;
   label: string;
@@ -750,9 +758,17 @@ export function inferDatasetFiltersFromPrompt(dataset: ReportDataset, prompt: st
     dataset.entityFilters.find((filter) => filter.entityType === 'customer') ||
     dataset.entityFilters[0];
 
-  return filterMeta
-    ? [{ field: filterMeta.field, operator: 'contains', value: entityName, entityType: filterMeta.entityType }]
-    : [];
+  if (!filterMeta) return [];
+  const siblingFields = dataset.entityFilters
+    .filter((filter) => filter.entityType === filterMeta.entityType)
+    .map((filter) => filter.field);
+  return [{
+    field: filterMeta.field,
+    fields: siblingFields.length > 1 ? siblingFields : undefined,
+    operator: siblingFields.length > 1 ? 'containsAny' : 'contains',
+    value: entityName,
+    entityType: filterMeta.entityType,
+  }];
 }
 
 export function normalizeDatasetLimit(dataset: ReportDataset, rawLimit: unknown): number {

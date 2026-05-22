@@ -136,7 +136,7 @@ function normalizeDatasetConfig(rawConfig: any, prompt: string, chartType: Repor
   const rawColumns = Array.isArray(rawConfig?.columns) ? rawConfig.columns : [];
   const columns = normalizeDatasetColumns(dataset, rawColumns.length > 0 ? rawColumns : promptColumns.map((column) => column.key));
   const inferredFilters = inferDatasetFiltersFromPrompt(dataset, prompt);
-  const filters = mergeFilters(Array.isArray(rawConfig?.filters) ? rawConfig.filters : [], inferredFilters);
+  const filters = mergeFilters(inferredFilters, Array.isArray(rawConfig?.filters) ? rawConfig.filters : []);
 
   return {
     dataset: dataset.id,
