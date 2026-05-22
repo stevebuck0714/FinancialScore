@@ -10,6 +10,7 @@ import {
   getReportDataset,
   getReportDatasetCatalog,
   inferColumnsFromPrompt,
+  inferDatasetDateRangeFromPrompt,
   inferDatasetFiltersFromPrompt,
   inferDatasetFromPrompt,
   normalizeDatasetColumns,
@@ -137,6 +138,7 @@ function normalizeDatasetConfig(rawConfig: any, prompt: string, chartType: Repor
   const columns = normalizeDatasetColumns(dataset, rawColumns.length > 0 ? rawColumns : promptColumns.map((column) => column.key));
   const inferredFilters = inferDatasetFiltersFromPrompt(dataset, prompt);
   const filters = mergeFilters(inferredFilters, Array.isArray(rawConfig?.filters) ? rawConfig.filters : []);
+  const dateRange = inferDatasetDateRangeFromPrompt(dataset, prompt) || rawConfig?.dateRange || null;
 
   return {
     dataset: dataset.id,
@@ -147,6 +149,7 @@ function normalizeDatasetConfig(rawConfig: any, prompt: string, chartType: Repor
       format: column.type === 'currency' ? 'currency' : column.type === 'percent' ? 'percent' : column.type === 'number' ? 'number' : undefined,
     })),
     filters,
+    dateRange,
     sort: normalizeDatasetSort(dataset, rawConfig?.sort),
     limit: normalizeDatasetLimit(dataset, rawConfig?.limit),
   };
@@ -201,6 +204,7 @@ function buildDatasetReportConfig(prompt: string, requestedType: ReportChartType
           format: datasetColumnFormat(column),
         })),
     filters: datasetConfig.filters,
+    dateRange: datasetConfig.dateRange,
     dataset: datasetConfig.dataset,
     columns: datasetConfig.columns,
     sort: datasetConfig.sort,

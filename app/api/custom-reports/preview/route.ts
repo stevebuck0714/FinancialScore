@@ -12,6 +12,7 @@ import {
   normalizeDatasetSort,
   type ReportDataset,
   type ReportDatasetColumn,
+  type ReportDatasetDateRangeConfig,
   type ReportDatasetFilterConfig,
 } from '@/lib/custom-reports/report-datasets';
 import { buildOperationalMockResponse } from '@/lib/operations/sector-mock-data';
@@ -535,6 +536,65 @@ function normalizeDatasetFilters(dataset: ReportDataset, rawFilters: any[]) {
     .slice(0, 8) as ReportDatasetFilterConfig[];
 }
 
+function normalizeDatasetDateRange(dataset: ReportDataset, rawDateRange: any): ReportDatasetDateRangeConfig | null {
+  const field = getDatasetColumn(dataset, rawDateRange?.field)?.key || dataset.dateField;
+  const amount = Number(rawDateRange?.amount);
+  const unit = String(rawDateRange?.unit || '').replace(/s$/, '') as ReportDatasetDateRangeConfig['unit'];
+  if (!field || !Number.isFinite(amount) || amount <= 0) return null;
+  if (!['day', 'week', 'month', 'quarter', 'year'].includes(unit)) return null;
+  return {
+    field,
+    preset: 'last',
+    amount: Math.min(Math.floor(amount), 120),
+    unit,
+  };
+}
+
+function startOfUtcMonth(date: Date): Date {
+  return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), 1, 0, 0, 0, 0));
+}
+
+function resolveDatasetDateRange(dateRange: ReportDatasetDateRangeConfig): { start: Date; end: Date } {
+  const now = new Date();
+  const end = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 23, 59, 59, 999));
+  if (dateRange.unit === 'month') {
+    const currentMonth = startOfUtcMonth(now);
+    return {
+      start: new Date(Date.UTC(currentMonth.getUTCFullYear(), currentMonth.getUTCMonth() - (dateRange.amount - 1), 1)),
+      end,
+    };
+  }
+  if (dateRange.unit === 'quarter') {
+    const quarterStartMonth = Math.floor(now.getUTCMonth() / 3) * 3;
+    return {
+      start: new Date(Date.UTC(now.getUTCFullYear(), quarterStartMonth - ((dateRange.amount - 1) * 3), 1)),
+      end,
+    };
+  }
+  if (dateRange.unit === 'year') {
+    return {
+      start: new Date(Date.UTC(now.getUTCFullYear() - (dateRange.amount - 1), 0, 1)),
+      end,
+    };
+  }
+  const days = dateRange.unit === 'week' ? dateRange.amount * 7 : dateRange.amount;
+  return {
+    start: new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - (days - 1))),
+    end,
+  };
+}
+
+function addDatasetDateRangeClause(dataset: ReportDataset, rawDateRange: any, whereClauses: Prisma.Sql[]) {
+  const dateRange = normalizeDatasetDateRange(dataset, rawDateRange);
+  if (!dateRange) return;
+  const column = getDatasetColumn(dataset, dateRange.field);
+  if (!column) return;
+  const { start, end } = resolveDatasetDateRange(dateRange);
+  const field = datasetColumnSql(column);
+  whereClauses.push(Prisma.sql`${field} >= ${start}`);
+  whereClauses.push(Prisma.sql`${field} <= ${end}`);
+}
+
 function datasetColumnToTableColumn(column: ReportDatasetColumn) {
   const isMetric = column.type === 'number' || column.type === 'currency' || column.type === 'percent';
   const isUnitCurrency = ['unitPrice', 'unitCost', 'avgCost'].includes(column.key);
@@ -570,6 +630,7 @@ async function buildDatasetTablePreview(config: any) {
 
   const selectFields = columns.map((column) => Prisma.sql`${datasetColumnSql(column)} AS ${datasetIdentifier(column.key)}`);
   const whereClauses: Prisma.Sql[] = [Prisma.sql`"companyId" = ${String(config.companyId)}`];
+  addDatasetDateRangeClause(dataset, config?.dateRange, whereClauses);
 
   filters.forEach((filter) => {
     const column = getDatasetColumn(dataset, filter.field);
@@ -674,6 +735,7 @@ async function buildDatasetChartPreview(config: any) {
 
   const filters = normalizeDatasetFilters(dataset, Array.isArray(config?.filters) ? config.filters : []);
   const whereClauses: Prisma.Sql[] = [Prisma.sql`"companyId" = ${String(config.companyId)}`];
+  addDatasetDateRangeClause(dataset, config?.dateRange, whereClauses);
   filters.forEach((filter) => {
     const column = getDatasetColumn(dataset, filter.field);
     if (!column) return;

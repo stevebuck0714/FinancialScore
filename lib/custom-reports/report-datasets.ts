@@ -32,6 +32,13 @@ export type ReportDatasetFilterConfig = {
   entityType?: string;
 };
 
+export type ReportDatasetDateRangeConfig = {
+  field: string;
+  preset: 'last';
+  amount: number;
+  unit: 'day' | 'week' | 'month' | 'quarter' | 'year';
+};
+
 export type ReportDatasetCatalogItem = {
   id: string;
   label: string;
@@ -696,6 +703,8 @@ export function inferColumnsFromPrompt(dataset: ReportDataset, prompt: string): 
 export function extractEntityNameFromPrompt(prompt: string): string | null {
   const cleaned = String(prompt || '').replace(/\s+/g, ' ').trim();
   const patterns = [
+    /\b(?:by|per|each)\s+(?:month|week|quarter|year|period)\s+(?:for|of)\s+(.+?)(?:\s+with\b|\s+where\b|\s+showing\b|\s+return\b|\s+including\b|\s+sorted?\b|$)/i,
+    /\bfor\s+(?:each\s+)?(?:month|week|quarter|year|period)\s+(?:for|of)\s+(.+?)(?:\s+with\b|\s+where\b|\s+showing\b|\s+return\b|\s+including\b|\s+sorted?\b|$)/i,
     /\bfor\s+(.+?)(?:\s+with\b|\s+where\b|\s+showing\b|\s+return\b|\s+including\b|\s+sorted?\b|$)/i,
     /\bcustomer\s+(.+?)(?:\s+with\b|\s+where\b|\s+showing\b|\s+return\b|\s+including\b|\s+orders?\b|$)/i,
     /\bvendor\s+(.+?)(?:\s+with\b|\s+where\b|\s+showing\b|\s+return\b|\s+including\b|\s+bills?\b|$)/i,
@@ -704,6 +713,8 @@ export function extractEntityNameFromPrompt(prompt: string): string | null {
     const match = cleaned.match(pattern);
     const candidate = String(match?.[1] || '')
       .replace(/^(customer|client|vendor|supplier|product|item)\s+/i, '')
+      .replace(/^(each\s+)?(month|week|quarter|year|period)\s+(for|of)\s+/i, '')
+      .replace(/\s+(for|over|during|in)\s+(the\s+)?(last|past|previous)\s+\d+\s+(days?|weeks?|months?|quarters?|years?)\s*$/i, '')
       .replace(/\b(all|the|their|its)\b/gi, ' ')
       .replace(/\s+/g, ' ')
       .trim();
@@ -779,6 +790,23 @@ export function inferDatasetFiltersFromPrompt(dataset: ReportDataset, prompt: st
     value: entityName,
     entityType: filterMeta.entityType,
   }];
+}
+
+export function inferDatasetDateRangeFromPrompt(dataset: ReportDataset, prompt: string): ReportDatasetDateRangeConfig | null {
+  const normalizedPrompt = normalizeReportText(prompt);
+  const match = normalizedPrompt.match(/\b(?:last|past|previous)\s+(\d{1,3})\s+(day|days|week|weeks|month|months|quarter|quarters|year|years)\b/);
+  if (!match) return null;
+  const amount = Number(match[1]);
+  if (!Number.isFinite(amount) || amount <= 0) return null;
+  const unitRaw = match[2].replace(/s$/, '') as ReportDatasetDateRangeConfig['unit'];
+  const field = dataset.dateField || dataset.columns.find((column) => column.type === 'date')?.key;
+  if (!field) return null;
+  return {
+    field,
+    preset: 'last',
+    amount: Math.min(Math.floor(amount), 120),
+    unit: unitRaw,
+  };
 }
 
 export function normalizeDatasetLimit(dataset: ReportDataset, rawLimit: unknown): number {

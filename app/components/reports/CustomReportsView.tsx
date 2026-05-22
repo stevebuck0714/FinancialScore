@@ -294,7 +294,7 @@ function CustomReportPreview({ config, rows, tableRows = [], tableColumns = [] }
           {lineSeries.map((item: any, index: number) => (
             <Line
               key={item.field}
-              type="monotone"
+              type="linear"
               dataKey={item.field}
               name={item.label || item.field}
               yAxisId={item.axis === 'right' ? 'right' : 'left'}
