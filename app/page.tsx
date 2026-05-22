@@ -12427,11 +12427,11 @@ function FinancialScorePage() {
         {/* Left Navigation Sidebar - hidden for Site Admin except when in a company workspace */}
         {(currentUser?.role !== 'siteadmin' || siteAdminCompanyWorkspace) && !(currentUser?.userType === 'assessment') && (
         <aside className="app-left-sidebar" style={{ 
-          width: isSidebarCollapsed ? '72px' : '280px', 
+          width: isSidebarCollapsed ? '28px' : '240px', 
           background: 'white', 
           borderRight: '2px solid #e2e8f0', 
-          padding: isSidebarCollapsed ? '16px 0' : '32px 0 24px 0',
-          overflowY: 'auto',
+          padding: isSidebarCollapsed ? '0' : '32px 0 24px 0',
+          overflowY: isSidebarCollapsed ? 'visible' : 'auto',
           flexShrink: 0,
           boxShadow: '2px 0 8px rgba(0,0,0,0.03)',
           display: 'flex',
@@ -12440,7 +12440,7 @@ function FinancialScorePage() {
           position: 'relative'
         }}>
           {isSidebarCollapsed ? (
-          <nav style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px', paddingTop: '6px' }}>
+          <nav style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
             <button
               type="button"
               title="Expand sidebar"
@@ -12448,10 +12448,10 @@ function FinancialScorePage() {
               onClick={() => setIsSidebarCollapsed(false)}
               style={{
                 position: 'absolute',
-                top: '8px',
-                right: '-11px',
-                width: '22px',
-                height: '44px',
+                top: '10px',
+                right: '4px',
+                width: '20px',
+                height: '36px',
                 borderRadius: '999px',
                 border: '1px solid #cbd5e1',
                 background: '#ffffff',
@@ -12460,7 +12460,7 @@ function FinancialScorePage() {
                 lineHeight: 1,
                 fontWeight: 900,
                 cursor: 'pointer',
-                boxShadow: '0 2px 8px rgba(15, 23, 42, 0.12)',
+                boxShadow: '0 1px 4px rgba(15, 23, 42, 0.10)',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
@@ -12469,92 +12469,6 @@ function FinancialScorePage() {
             >
               ›
             </button>
-            {[
-              { id: 'ai-analysis', label: 'AI', title: 'Ask Corelytics', show: true },
-              { id: 'pa-overview', label: 'EA', title: 'Expert Analysis', show: hasCompanySectionAccess('expert-analysis') },
-              { id: 'valuation', label: 'VAL', title: 'Valuation', show: hasCompanySectionAccess('valuation') },
-              { id: 'custom-print', label: 'PRT', title: 'Standard Reports', show: hasCompanySectionAccess('financial-reports') || hasCompanySectionAccess('valuation') },
-            ]
-              .filter((item) => item.show)
-              .map((item) => {
-                const isActive =
-                  currentView === item.id ||
-                  (item.id === 'pa-overview' && currentView.startsWith('pa-'));
-                return (
-                  <button
-                    key={item.id}
-                    type="button"
-                    title={item.title}
-                    aria-label={item.title}
-                    onClick={() => {
-                      if (item.id === 'custom-print') setIsReportsExpanded(true);
-                      handleNavigation(item.id as any);
-                    }}
-                    style={{
-                      width: '48px',
-                      minHeight: '38px',
-                      border: 'none',
-                      borderRadius: '10px',
-                      background: isActive ? '#e0f2fe' : 'transparent',
-                      color: isActive ? '#1F70C1' : '#475569',
-                      fontSize: '11px',
-                      fontWeight: 800,
-                      cursor: 'pointer',
-                    }}
-                  >
-                    {item.label}
-                  </button>
-                );
-              })}
-            <div style={{ marginTop: 'auto', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px', paddingBottom: '8px' }}>
-              <button
-                type="button"
-                title="User dashboard"
-                aria-label="User dashboard"
-                onClick={() => {
-                  if (currentUser?.role === 'consultant') {
-                    setCurrentView('consultant-dashboard');
-                  } else if (currentUser?.userType === 'company') {
-                    setCurrentView('admin');
-                  }
-                }}
-                style={{
-                  width: '48px',
-                  minHeight: '38px',
-                  border: 'none',
-                  borderRadius: '10px',
-                  background: (currentView === 'admin' || currentView === 'consultant-dashboard') ? '#e0f2fe' : 'transparent',
-                  color: (currentView === 'admin' || currentView === 'consultant-dashboard') ? '#1F70C1' : '#475569',
-                  fontSize: '11px',
-                  fontWeight: 800,
-                  cursor: 'pointer',
-                }}
-              >
-                ME
-              </button>
-              <a
-                href="/support"
-                target="_blank"
-                rel="noopener noreferrer"
-                title="Support"
-                aria-label="Support"
-                style={{
-                  width: '48px',
-                  minHeight: '38px',
-                  borderRadius: '10px',
-                  color: '#1F70C1',
-                  background: 'transparent',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  textDecoration: 'none',
-                  fontSize: '11px',
-                  fontWeight: 800,
-                }}
-              >
-                SUP
-              </a>
-            </div>
           </nav>
           ) : (
           <nav style={{ flex: 1, display: 'flex', flexDirection: 'column', paddingTop: '12px' }}>
@@ -12566,9 +12480,9 @@ function FinancialScorePage() {
               style={{
                 position: 'absolute',
                 top: '8px',
-                right: '-11px',
-                width: '22px',
-                height: '44px',
+                right: '6px',
+                width: '18px',
+                height: '36px',
                 borderRadius: '999px',
                 border: '1px solid #cbd5e1',
                 background: '#ffffff',
@@ -12577,7 +12491,7 @@ function FinancialScorePage() {
                 lineHeight: 1,
                 fontWeight: 900,
                 cursor: 'pointer',
-                boxShadow: '0 2px 8px rgba(15, 23, 42, 0.12)',
+                boxShadow: '0 1px 4px rgba(15, 23, 42, 0.10)',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
