@@ -6214,8 +6214,10 @@ export default function OperationsTab({
       summary?.source === 'platos-closet-monthly-facts' && frequency === 'monthly';
     const rawProductRecords = Array.isArray(records) ? records : [];
     const wholesaleProductRecords =
-      isWholesaleProductSector && Array.isArray(wholesaleProductsData?.records)
-        ? wholesaleProductsData.records
+      isWholesaleProductSector && Array.isArray(wholesaleProductsData?.summary?.wholesaleOrderLines) && wholesaleProductsData.summary.wholesaleOrderLines.length > 0
+        ? wholesaleProductsData.summary.wholesaleOrderLines
+        : isWholesaleProductSector
+        ? []
         : rawProductRecords;
     const weeklyMarginModel = buildWeeklyProductMarginModel({
       records: rawProductRecords,
@@ -6745,14 +6747,16 @@ export default function OperationsTab({
         const qty = Math.max(0, Number(row?.quantitySold || row?.qtySold || 0));
         const aprPartNumber = String(row?.sku || row?.itemId || row?.itemName || 'N/A').trim() || 'N/A';
         const customerName = String(row?.customer || row?.customerName || 'N/A').trim() || 'N/A';
-        const customerGroup = String(row?.customerGroup || row?.customerType || row?.customerSegment || row?.site || 'Unassigned').trim() || 'Unassigned';
-        const customerPartNumber = String(row?.customerPartNumber || row?.customerPn || row?.customerPN || row?.customerItem || row?.customerSku || '').trim();
+        const customerId = String(row?.customerId || row?.customerNumber || row?.custNum || '').trim();
+        const customerGroup = String(row?.customerGroup || '').trim();
+        const customerPartNumber = String(row?.customerPartNumber || row?.customerPn || row?.customerPN || row?.customerItem || row?.customerSku || row?.custItem || row?.CustItem || '').trim();
         const item = String(row?.itemName || aprPartNumber).trim() || aprPartNumber;
-        const key = [customerGroup, customerName, aprPartNumber, customerPartNumber, item].join('||');
+        const key = [customerGroup, customerId, customerName, aprPartNumber, customerPartNumber, item].join('||');
         const bucket = buckets.get(key) || {
           key,
           customerKey: `${customerGroup}||${customerName}`,
           aprPartNumber,
+          customerId,
           customerGroup,
           customerName,
           customerPartNumber,
@@ -6821,6 +6825,7 @@ export default function OperationsTab({
         const group = groups.get(row.customerKey) || {
           key: row.customerKey,
           customerGroup: row.customerGroup,
+          customerId: row.customerId,
           customerName: row.customerName,
           rows: [],
           quantity: 0,
@@ -6831,6 +6836,7 @@ export default function OperationsTab({
           freight: 0,
           operatingExpenses: 0,
         };
+        group.customerId = group.customerId || row.customerId;
         group.rows.push(row);
         group.quantity += Number(row.quantity || 0);
         group.revenue += Number(row.revenue || 0);
@@ -6889,7 +6895,8 @@ export default function OperationsTab({
           (qty !== 0 && Number.isFinite(revenue) ? Math.abs(revenue / qty) : 0);
         const customerName = String(row?.customer || row?.customerName || 'N/A').trim() || 'N/A';
         const customerId = String(row?.customerId || row?.customerNumber || row?.custNum || '').trim();
-        const customerGroup = String(row?.customerGroup || row?.customerType || row?.customerSegment || row?.site || 'Unassigned').trim() || 'Unassigned';
+        const customerGroup = String(row?.customerGroup || '').trim();
+        const customerPartNumber = String(row?.customerPartNumber || row?.customerPn || row?.customerPN || row?.customerItem || row?.customerSku || row?.custItem || row?.CustItem || '').trim();
         return {
           key: `${index}-${isoDate}-${String(row?.sku || row?.itemId || row?.itemName || '')}-${String(row?.orderId || row?.sourceTransaction || '')}`,
           item: String(row?.sku || row?.itemId || row?.itemName || 'N/A').trim() || 'N/A',
@@ -6897,6 +6904,7 @@ export default function OperationsTab({
           quarter,
           customerName,
           customerId,
+          customerPartNumber,
           isoDate,
           monthLabel,
           qty,
@@ -6907,7 +6915,7 @@ export default function OperationsTab({
           year,
           customerGroup,
           revenue: Number.isFinite(revenue) && revenue !== 0 ? revenue : Math.abs(qty * unitPrice),
-          team: String(row?.team || row?.salesTeam || row?.customerTeam || customerGroup || '').trim(),
+          team: String(row?.team || '').trim(),
         };
       })
       .filter((row) => row.isoDate);
@@ -7314,10 +7322,10 @@ export default function OperationsTab({
         </td>
       );
 
-      if (wholesaleProductsLoading && !Array.isArray(wholesaleProductsData?.records)) {
+      if (wholesaleProductsLoading && !Array.isArray(wholesaleProductsData?.summary?.wholesaleOrderLines)) {
         return <div style={{ padding: '40px', textAlign: 'center', color: '#64748b' }}>Loading wholesale product margin data...</div>;
       }
-      if (wholesaleProductsError && !Array.isArray(wholesaleProductsData?.records)) {
+      if (wholesaleProductsError && !Array.isArray(wholesaleProductsData?.summary?.wholesaleOrderLines)) {
         return (
           <div style={{ background: 'white', border: '1px solid #fecaca', borderRadius: '12px', padding: '24px', color: '#991b1b' }}>
             {wholesaleProductsError}
@@ -7381,24 +7389,27 @@ export default function OperationsTab({
               <thead>
                 <tr style={{ borderBottom: '1px solid #e2e8f0', background: '#f8fafc', position: 'sticky', top: 0, zIndex: 1 }}>
                   {[
-                    'APR P/N',
-                    'Customer Group',
-                    'Customer Name',
-                    'Customer P/N',
-                    'Item',
-                    'Current Price ($)',
-                    'Current Cost of Material ($)',
-                    'Current Impact of Tariff per Piece',
-                    'Current Impact of Duties per Piece ($)',
-                    'Cost of Freight per Piece ($)',
-                    'Current Cost of Sales ($)',
-                    'Current Operating Expenses ($)',
-                    'Current Fully Loaded Cost ($)',
-                    'Current Net Profit ($)',
-                    'Current Net Profit (%)',
-                  ].map((label, index) => (
-                    <th key={label} style={{ padding: '8px', fontSize: '12px', color: '#334155', textAlign: index >= 5 ? 'right' : 'left', whiteSpace: 'nowrap' }}>
-                      {label}
+                    { label: 'APR P/N' },
+                    { label: 'Customer ID' },
+                    { label: 'Customer Group' },
+                    { label: 'Customer Name' },
+                    { label: 'Customer P/N' },
+                    { label: 'Item' },
+                    { label: ['Current Price', '($)'], compact: true },
+                    { label: ['Current Cost', 'of Material', '($)'], compact: true },
+                    { label: ['Current Tariff', 'Impact per', 'Piece'], compact: true },
+                    { label: ['Current Duties', 'Impact per', 'Piece ($)'], compact: true },
+                    { label: ['Freight Cost', 'per Piece', '($)'], compact: true },
+                    { label: ['Current Cost', 'of Sales', '($)'], compact: true },
+                    { label: ['Current Operating', 'Expenses', '($)'], compact: true },
+                    { label: ['Current Fully', 'Loaded Cost', '($)'], compact: true },
+                    { label: ['Current Net', 'Profit', '($)'], compact: true },
+                    { label: ['Current Net', 'Profit', '(%)'], compact: true },
+                  ].map((column, index) => (
+                    <th key={Array.isArray(column.label) ? column.label.join(' ') : column.label} style={{ padding: '8px', fontSize: '12px', color: '#334155', textAlign: index >= 6 ? 'right' : 'left', whiteSpace: column.compact ? 'normal' : 'nowrap', lineHeight: 1.2, minWidth: column.compact ? '84px' : undefined, maxWidth: column.compact ? '96px' : undefined }}>
+                      {Array.isArray(column.label)
+                        ? column.label.map((line) => <React.Fragment key={line}>{line}<br /></React.Fragment>)
+                        : column.label}
                     </th>
                   ))}
                 </tr>
@@ -7418,6 +7429,7 @@ export default function OperationsTab({
                             {expanded ? '▼' : '▶'} Summary
                           </button>
                         </td>
+                        <td style={{ padding: '8px', fontSize: '12px', color: '#475569', fontWeight: 700 }}>{group.customerId || 'N/A'}</td>
                         <td style={{ padding: '8px', fontSize: '12px', color: '#334155', fontWeight: 700 }}>{group.customerGroup}</td>
                         <td style={{ padding: '8px', fontSize: '12px', color: '#0f172a', fontWeight: 800 }}>{group.customerName}</td>
                         <td style={{ padding: '8px', fontSize: '12px', color: '#64748b' }}>{group.rows.length.toLocaleString()} items</td>
@@ -7436,6 +7448,7 @@ export default function OperationsTab({
                       {expanded && group.rows.map((row: any) => (
                         <tr key={row.key} style={{ borderBottom: '1px solid #f1f5f9' }}>
                           <td style={{ padding: '8px', fontSize: '12px', color: '#0f172a', fontWeight: 700, whiteSpace: 'nowrap' }}>{row.aprPartNumber}</td>
+                          <td style={{ padding: '8px', fontSize: '12px', color: '#475569' }}>{row.customerId || 'N/A'}</td>
                           <td style={{ padding: '8px', fontSize: '12px', color: '#475569' }}>{row.customerGroup}</td>
                           <td style={{ padding: '8px', fontSize: '12px', color: '#334155' }}>{row.customerName}</td>
                           <td style={{ padding: '8px', fontSize: '12px', color: '#475569', whiteSpace: 'nowrap' }}>{row.customerPartNumber || 'N/A'}</td>
@@ -7472,26 +7485,25 @@ export default function OperationsTab({
       const rawColumns: Array<{ key: string; label: string; align?: 'left' | 'right'; render: (row: any) => React.ReactNode }> = [
         { key: 'item', label: 'Item', render: (row) => row.item || 'N/A' },
         { key: 'order', label: 'Order', render: (row) => row.order || 'N/A' },
-        { key: 'quarter', label: 'QUARTER', align: 'right', render: (row) => row.quarter || 'N/A' },
-        { key: 'customerName', label: 'Customer', render: (row) => row.customerName || 'N/A' },
-        { key: 'customerId', label: 'Customer', render: (row) => row.customerId || 'N/A' },
+        { key: 'quarter', label: 'QTR', align: 'right', render: (row) => row.quarter || 'N/A' },
+        { key: 'customerName', label: 'Customer Name', render: (row) => row.customerName || 'N/A' },
+        { key: 'customerId', label: 'Customer ID', render: (row) => row.customerId || 'N/A' },
         { key: 'date', label: 'Date', render: (row) => formatRawDate(row.isoDate) },
         { key: 'monthLabel', label: 'MONTH', render: (row) => row.monthLabel || 'N/A' },
         { key: 'qty', label: 'Qty', align: 'right', render: (row) => formatRawQty(row.qty) },
         { key: 'unitPrice', label: 'Unit Price', align: 'right', render: (row) => formatCurrencyWithCents(row.unitPrice) },
-        { key: 'reasonDescription', label: 'Reason Description', render: (row) => row.reasonDescription || '' },
-        { key: 'code', label: 'Code', render: (row) => row.code || '' },
         { key: 'transaction', label: 'Transaction', render: (row) => row.transaction || 'N/A' },
         { key: 'year', label: 'YEAR', align: 'right', render: (row) => row.year || 'N/A' },
-        { key: 'customerGroup', label: 'Customer Group', render: (row) => row.customerGroup || 'Unassigned' },
+        { key: 'customerGroup', label: 'Customer Group', render: (row) => row.customerGroup || 'N/A' },
+        { key: 'customerPartNumber', label: 'Customer P/N', render: (row) => row.customerPartNumber || 'N/A' },
         { key: 'revenue', label: 'Revenue', align: 'right', render: (row) => formatCurrencyWithCents(row.revenue) },
         { key: 'team', label: 'TEAM', render: (row) => row.team || 'N/A' },
       ];
 
-      if (wholesaleProductsLoading && !Array.isArray(wholesaleProductsData?.records)) {
+      if (wholesaleProductsLoading && !Array.isArray(wholesaleProductsData?.summary?.wholesaleOrderLines)) {
         return <div style={{ padding: '40px', textAlign: 'center', color: '#64748b' }}>Loading wholesale raw product data...</div>;
       }
-      if (wholesaleProductsError && !Array.isArray(wholesaleProductsData?.records)) {
+      if (wholesaleProductsError && !Array.isArray(wholesaleProductsData?.summary?.wholesaleOrderLines)) {
         return (
           <div style={{ background: 'white', border: '1px solid #fecaca', borderRadius: '12px', padding: '24px', color: '#991b1b' }}>
             {wholesaleProductsError}

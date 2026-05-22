@@ -5509,6 +5509,60 @@ export async function GET(request: NextRequest) {
               .sort((a: any, b: any) => b.totalRevenue - a.totalRevenue)
               .slice(0, 10);
 
+        const wholesaleOrderLines =
+          String(sectorCategory || '').trim() === '42' && productOrderLineDelegate?.findMany
+            ? await (async () => {
+                const orderRows = await productOrderLineDelegate.findMany({
+                  where: {
+                    companyId,
+                    frequency: productFrequencyForQuery,
+                    snapshotDate: dateFilter,
+                  },
+                  select: {
+                    snapshotDate: true,
+                    customerId: true,
+                    customerName: true,
+                    orderId: true,
+                    lineId: true,
+                    orderDate: true,
+                    itemId: true,
+                    itemName: true,
+                    sku: true,
+                    qtyOrdered: true,
+                    qtyInvoiced: true,
+                    unitPrice: true,
+                    contractValue: true,
+                    invoicedAmount: true,
+                    sourceTransaction: true,
+                  },
+                  orderBy: [{ snapshotDate: 'desc' }, { customerName: 'asc' }, { orderId: 'asc' }],
+                  take: Math.min(rawPayloadRowCap, 50000),
+                });
+                return (orderRows as any[]).map((row) => ({
+                  source: 'customer-order-line',
+                  snapshotDate: row.snapshotDate,
+                  date: row.orderDate || row.snapshotDate,
+                  customerId: row.customerId || null,
+                  customerName: row.customerName || null,
+                  customer: row.customerName || null,
+                  orderId: row.orderId || null,
+                  lineId: row.lineId || null,
+                  itemId: row.itemId || row.sku || row.itemName || null,
+                  sku: row.sku || row.itemId || row.itemName || null,
+                  itemName: row.itemName || row.itemId || row.sku || null,
+                  quantitySold: Number(row.qtyInvoiced || row.qtyOrdered || 0),
+                  qtyOrdered: Number(row.qtyOrdered || 0),
+                  qtyInvoiced: Number(row.qtyInvoiced || 0),
+                  unitPrice: Number(row.unitPrice || 0),
+                  revenue: Number(row.invoicedAmount || row.contractValue || 0),
+                  contractValue: Number(row.contractValue || 0),
+                  invoicedAmount: Number(row.invoicedAmount || 0),
+                  transaction: row.sourceTransaction || null,
+                  sourceTransaction: row.sourceTransaction || null,
+                }));
+              })()
+            : [];
+
         if (shouldUseMockData) {
           return NextResponse.json(
             buildOperationalMockResponse({
@@ -5527,6 +5581,7 @@ export async function GET(request: NextRequest) {
           records: data,
           summary: {
             topProducts: topProductsSummary,
+            wholesaleOrderLines,
           },
         });
 

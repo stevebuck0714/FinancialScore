@@ -1235,6 +1235,14 @@ function applyCsiSourceWindowAndSort(
   const ido = String(row.miProgram || '').trim().toUpperCase();
   const [path, queryString = ''] = endpointPath.split('?');
   const params = new URLSearchParams(queryString);
+  if (ido === 'SLITEMVENDS' || ido === 'SLITEMVENDPRICES') {
+    const filter = buildCsiRecordDateWindowFilter({ window, field: 'RecordDate', includeSitePredicate: false });
+    if (filter) params.set('filter', filter);
+    if (!params.get('orderby') && !params.get('orderBy')) params.set('orderby', 'RecordDate desc');
+    if (!params.get('recordCap')) params.set('recordCap', '1000');
+    const next = params.toString();
+    return { endpointPath: next ? `${path}?${next}` : path, applied: true, allowRetryWithoutSourceWindow: !filter };
+  }
   if (moduleType === 'sales' && ido === 'SLCOITEMS') {
     if (noFullPulls && window) {
       const filter = buildCsiRecordDateWindowFilter({ window, field: 'RecordDate', includeSitePredicate: false });
