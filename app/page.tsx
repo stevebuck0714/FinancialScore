@@ -4216,33 +4216,12 @@ function FinancialScorePage() {
         .then(data => {
           if (data.invalidMappingsCount > 0) {
             const invalidRows: any[] = Array.isArray(data.invalidMappings) ? data.invalidMappings : [];
-            const previewLines = invalidRows.slice(0, 8).map((row: any) => {
-              const name = String(row?.accountName || 'Unnamed').trim();
-              const field = String(row?.invalidTargetField || '').trim();
-              const cls = String(row?.accountClassification || '').trim();
-              const reasonBits: string[] = [];
-              if (field) reasonBits.push(`previously mapped to "${field}"`);
-              if (cls) reasonBits.push(`classification "${cls}"`);
-              const reason = reasonBits.length ? ` — ${reasonBits.join(', ')}` : '';
-              return `  • ${name}${reason}`;
-            });
-            const more =
-              invalidRows.length > previewLines.length
-                ? `\n  …and ${invalidRows.length - previewLines.length} more`
-                : '';
-            const summary =
-              `${data.invalidMappingsCount} saved mapping(s) were flagged as invalid for this company's selected sector ` +
-              `(or have a target field that doesn't match their account classification). ` +
-              `Those rows have been cleared to Unmapped.\n\n` +
-              `Affected accounts:\n${previewLines.join('\n')}${more}\n\n` +
-              `Review and remap them in the Account Mappings table, then click Save Account Mappings.`;
             console.warn('?? Invalid mappings flagged on load', {
               companyId: selectedCompanyId,
               count: data.invalidMappingsCount,
               invalidMappings: invalidRows,
               industrySectorCategory: data.industrySectorCategory,
             });
-            alert(summary);
           }
           if (data.mappings && data.mappings.length > 0) {
             console.log(`? Loaded ${data.mappings.length} saved account mappings`);
