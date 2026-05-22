@@ -105,7 +105,7 @@ type PriceCostComparisonSortKey =
   | 'marginPctPriorWeek'
   | 'marginDeltaPts'
   | 'status';
-type ProductReportView = 'productMarginAnalysis' | 'wholesaleRawData' | 'performance' | 'retailForecast' | 'merchandiseProfitability';
+type ProductReportView = 'productMarginAnalysis' | 'wholesaleRawData' | 'vendorPricing' | 'performance' | 'retailForecast' | 'merchandiseProfitability';
 
 const clampNumber = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
 const toFiniteNumber = (value: unknown): number | null => {
@@ -753,6 +753,8 @@ export default function OperationsTab({
   const [wholesaleRawYear, setWholesaleRawYear] = useState('');
   const [wholesaleRawStartDate, setWholesaleRawStartDate] = useState('');
   const [wholesaleRawEndDate, setWholesaleRawEndDate] = useState('');
+  const [vendorPricingVendorFilter, setVendorPricingVendorFilter] = useState('all');
+  const [vendorPricingSearchTerm, setVendorPricingSearchTerm] = useState('');
   const [selectedRetailForecastSubcategory, setSelectedRetailForecastSubcategory] = useState('');
   const [retailForecastTableSortKey, setRetailForecastTableSortKey] = useState<RetailForecastTableSortKey>('next3Base');
   const [retailForecastTableSortDir, setRetailForecastTableSortDir] = useState<'asc' | 'desc'>('desc');
@@ -6727,8 +6729,38 @@ export default function OperationsTab({
     );
     const isProductMarginAnalysisEnabled = isWholesaleProductSector && isSectionEnabled('productsProductMarginAnalysis');
     const isWholesaleRawDataEnabled = isWholesaleProductSector && isSectionEnabled('productsWholesaleRawData');
+    const isVendorPricingEnabled = isWholesaleProductSector && isSectionEnabled('productsVendorPricing');
     const isRetailForecastingEnabled = isSectionEnabled('productsRetailForecasting');
     const hasRetailForecastView = isRetailProductSector && isRetailForecastingEnabled && retailForecasts.length > 0;
+    const vendorPricingRows = Array.isArray(wholesaleProductsData?.summary?.wholesaleVendorPricingRows)
+      ? wholesaleProductsData.summary.wholesaleVendorPricingRows
+      : [];
+    const vendorPricingVendorOptions = Array.from(
+      new Map(
+        vendorPricingRows
+          .map((row: any) => {
+            const vendorId = String(row?.vendorId || '').trim();
+            const vendorName = String(row?.vendorName || '').trim();
+            const key = `${vendorId}||${vendorName}`;
+            return key.trim() ? [key, { key, label: `${vendorName || 'Unknown Vendor'}${vendorId ? ` (${vendorId})` : ''}` }] : null;
+          })
+          .filter(Boolean) as Array<[string, { key: string; label: string }]>
+      ).values()
+    ).sort((a, b) => a.label.localeCompare(b.label, undefined, { sensitivity: 'base', numeric: true }));
+    const vendorPricingFilteredRows = vendorPricingRows.filter((row: any) => {
+      const vendorKey = `${String(row?.vendorId || '').trim()}||${String(row?.vendorName || '').trim()}`;
+      if (vendorPricingVendorFilter !== 'all' && vendorKey !== vendorPricingVendorFilter) return false;
+      const search = vendorPricingSearchTerm.trim().toLowerCase();
+      if (!search) return true;
+      return [
+        row?.item,
+        row?.vendorId,
+        row?.vendorName,
+        row?.vendorItem,
+        row?.effectiveDate,
+      ].some((value) => String(value || '').toLowerCase().includes(search));
+    });
+    const vendorPricingVisibleRows = vendorPricingFilteredRows.slice(0, 1000);
     const productMarginLatestDate = wholesaleProductRecords
       .map((row: any) => String(row?.snapshotDate || '').slice(0, 10))
       .filter(Boolean)
@@ -7204,8 +7236,10 @@ export default function OperationsTab({
         ? 'performance'
         : productReportView === 'wholesaleRawData' && !isWholesaleRawDataEnabled
         ? 'performance'
+        : productReportView === 'vendorPricing' && !isVendorPricingEnabled
+        ? 'performance'
         : productReportView;
-    const productViewSwitcher = isProductMarginAnalysisEnabled || isWholesaleRawDataEnabled || (isRetailProductSector && (isRetailForecastingEnabled || isMerchandiseProfitabilityEnabled)) ? (
+    const productViewSwitcher = isProductMarginAnalysisEnabled || isWholesaleRawDataEnabled || isVendorPricingEnabled || (isRetailProductSector && (isRetailForecastingEnabled || isMerchandiseProfitabilityEnabled)) ? (
       <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '16px' }}>
         {isProductMarginAnalysisEnabled && (
           <button
@@ -7241,6 +7275,24 @@ export default function OperationsTab({
             }}
           >
             Raw Data
+          </button>
+        )}
+        {isVendorPricingEnabled && (
+          <button
+            type="button"
+            onClick={() => setProductReportView('vendorPricing')}
+            style={{
+              border: '1px solid #cbd5e1',
+              borderRadius: '999px',
+              padding: '8px 12px',
+              background: effectiveProductReportView === 'vendorPricing' ? '#e0e7ff' : '#ffffff',
+              color: effectiveProductReportView === 'vendorPricing' ? '#3730a3' : '#334155',
+              fontWeight: 700,
+              cursor: 'pointer',
+              fontSize: '12px',
+            }}
+          >
+            Vendor Pricing
           </button>
         )}
         <button
@@ -7613,6 +7665,123 @@ export default function OperationsTab({
                   <tr>
                     <td colSpan={rawColumns.length} style={{ padding: '14px', fontSize: '13px', color: '#64748b' }}>
                       No raw data rows match the selected filters.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      );
+    };
+    const renderVendorPricingReport = () => {
+      const formatVendorNumber = (value: number | null | undefined, fractionDigits = 4) =>
+        value == null || !Number.isFinite(Number(value))
+          ? 'N/A'
+          : Number(value).toLocaleString('en-US', {
+              minimumFractionDigits: fractionDigits,
+              maximumFractionDigits: fractionDigits,
+            });
+      const formatVendorDate = (value: string | null | undefined) => {
+        const raw = String(value || '').trim();
+        if (!raw) return 'N/A';
+        const parsed = new Date(`${raw.slice(0, 10)}T00:00:00.000Z`);
+        return Number.isNaN(parsed.getTime()) ? raw : parsed.toLocaleDateString('en-US', { timeZone: 'UTC' });
+      };
+      const columns: Array<{ key: string; label: string; align?: 'left' | 'right'; render: (row: any) => React.ReactNode }> = [
+        { key: 'item', label: 'Item', render: (row) => row.item || 'N/A' },
+        { key: 'vendorId', label: 'Vendor', render: (row) => row.vendorId || 'N/A' },
+        { key: 'vendorName', label: 'Name', render: (row) => row.vendorName || 'N/A' },
+        { key: 'rank', label: 'Rank', align: 'right', render: (row) => row.rank ?? 'N/A' },
+        { key: 'effectiveDate', label: 'Effective Date', render: (row) => formatVendorDate(row.effectiveDate) },
+        { key: 'breakQty1', label: 'Break Qty 1', align: 'right', render: (row) => formatVendorNumber(row.breakQty1, 0) },
+        { key: 'actualNoAdj', label: 'ACTUAL NO ADJ', align: 'right', render: (row) => formatVendorNumber(row.actualNoAdj) },
+        { key: 'formalContracts', label: 'FORMAL CONTRACTS', align: 'right', render: (row) => formatVendorNumber(row.formalContracts) },
+        { key: 'vendorPricingSheet', label: 'Vendor Pricing Sheet', align: 'right', render: (row) => formatVendorNumber(row.vendorPricingSheet) },
+        { key: 'difference', label: 'Difference', align: 'right', render: (row) => formatVendorNumber(row.difference) },
+        { key: 'updatedDiff', label: 'UPDATED DIFF', align: 'right', render: (row) => formatVendorNumber(row.updatedDiff) },
+        { key: 'vendorItem', label: 'Vendor Item', render: (row) => row.vendorItem || 'N/A' },
+      ];
+
+      if (wholesaleProductsLoading && !Array.isArray(wholesaleProductsData?.summary?.wholesaleVendorPricingRows)) {
+        return <div style={{ padding: '40px', textAlign: 'center', color: '#64748b' }}>Loading vendor pricing data...</div>;
+      }
+      if (wholesaleProductsError && !Array.isArray(wholesaleProductsData?.summary?.wholesaleVendorPricingRows)) {
+        return (
+          <div style={{ background: 'white', border: '1px solid #fecaca', borderRadius: '12px', padding: '24px', color: '#991b1b' }}>
+            {wholesaleProductsError}
+          </div>
+        );
+      }
+
+      return (
+        <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '18px', marginBottom: '20px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px', marginBottom: '14px', flexWrap: 'wrap' }}>
+            <div>
+              <h3 style={{ margin: 0, fontSize: '18px', color: '#0f172a' }}>Vendor Pricing</h3>
+              <div style={{ marginTop: '4px', fontSize: '12px', color: '#64748b', lineHeight: 1.4 }}>
+                Normalized from CSI SLItemVends and SLItemVendPrices raw snapshots. The table displays the first 1,000 matching rows.
+              </div>
+            </div>
+            <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
+              <select
+                value={vendorPricingVendorFilter}
+                onChange={(event) => setVendorPricingVendorFilter(event.target.value)}
+                style={{ border: '1px solid #cbd5e1', borderRadius: '8px', padding: '8px 10px', fontSize: '12px', minWidth: '280px', background: 'white' }}
+              >
+                <option value="all">All vendors ({vendorPricingVendorOptions.length})</option>
+                {vendorPricingVendorOptions.map((vendor) => (
+                  <option key={vendor.key} value={vendor.key}>
+                    {vendor.label}
+                  </option>
+                ))}
+              </select>
+              <input
+                type="search"
+                value={vendorPricingSearchTerm}
+                onChange={(event) => setVendorPricingSearchTerm(event.target.value)}
+                placeholder="Search item, vendor, date..."
+                style={{ border: '1px solid #cbd5e1', borderRadius: '8px', padding: '8px 10px', fontSize: '12px', minWidth: '220px' }}
+              />
+            </div>
+          </div>
+
+          <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', marginBottom: '12px', fontSize: '12px', color: '#475569' }}>
+            <span><strong>Loaded rows:</strong> {vendorPricingRows.length.toLocaleString()}</span>
+            <span><strong>Filtered rows:</strong> {vendorPricingFilteredRows.length.toLocaleString()}</span>
+            <span><strong>Displayed:</strong> {vendorPricingVisibleRows.length.toLocaleString()}</span>
+          </div>
+          {vendorPricingFilteredRows.length > vendorPricingVisibleRows.length && (
+            <div style={{ marginBottom: '12px', padding: '10px', borderRadius: '8px', background: '#fff7ed', border: '1px solid #fed7aa', color: '#9a3412', fontSize: '12px' }}>
+              This filter returns {vendorPricingFilteredRows.length.toLocaleString()} rows. Narrow the vendor or search term to see more targeted detail.
+            </div>
+          )}
+
+          <div style={{ overflowX: 'auto', maxHeight: '620px', overflowY: 'auto' }}>
+            <table style={{ width: '100%', minWidth: '1500px', borderCollapse: 'collapse' }}>
+              <thead>
+                <tr style={{ borderBottom: '1px solid #e2e8f0', background: '#f8fafc', position: 'sticky', top: 0, zIndex: 1 }}>
+                  {columns.map((column) => (
+                    <th key={column.key} style={{ padding: '8px', fontSize: '12px', color: '#334155', textAlign: column.align || 'left', whiteSpace: 'nowrap' }}>
+                      {column.label}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {vendorPricingVisibleRows.map((row: any, index: number) => (
+                  <tr key={`${row.source}-${row.item}-${row.vendorId}-${row.effectiveDateRaw || row.effectiveDate}-${index}`} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                    {columns.map((column) => (
+                      <td key={column.key} style={{ padding: '8px', fontSize: '12px', color: '#334155', textAlign: column.align || 'left', whiteSpace: 'nowrap' }}>
+                        {column.render(row)}
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+                {vendorPricingVisibleRows.length === 0 && (
+                  <tr>
+                    <td colSpan={columns.length} style={{ padding: '14px', fontSize: '13px', color: '#64748b' }}>
+                      No vendor pricing rows match the selected filters.
                     </td>
                   </tr>
                 )}
@@ -8442,6 +8611,19 @@ export default function OperationsTab({
           </h2>
           {productViewSwitcher}
           {renderWholesaleRawDataReport()}
+          {renderProductChartInfoModal()}
+        </div>
+      );
+    }
+
+    if (effectiveProductReportView === 'vendorPricing' && isVendorPricingEnabled) {
+      return (
+        <div style={{ padding: '8px 32px 32px' }}>
+          <h2 style={{ fontSize: '24px', fontWeight: '700', color: '#1e293b', marginBottom: '16px' }}>
+            Product Sales Performance
+          </h2>
+          {productViewSwitcher}
+          {renderVendorPricingReport()}
           {renderProductChartInfoModal()}
         </div>
       );

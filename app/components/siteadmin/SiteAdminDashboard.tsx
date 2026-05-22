@@ -16,6 +16,7 @@ import { companiesApi, consultantsApi, ApiError } from '@/lib/api-client';
 const OPERATIONAL_HUB_SECTION_OPTIONS: Array<{ key: string; label: string; group: string }> = [
   { key: 'productsProductMarginAnalysis', label: 'Product Margin Analysis', group: 'Products' },
   { key: 'productsWholesaleRawData', label: 'Raw Data', group: 'Products' },
+  { key: 'productsVendorPricing', label: 'Vendor Pricing', group: 'Products' },
   { key: 'productsRetailForecasting', label: 'Retail Forecasting / Monthly Inventory Report', group: 'Products' },
   { key: 'productsMerchandiseProfitability', label: 'Merchandise Profitability', group: 'Products' },
   { key: 'productsPriceCostComparison', label: 'Weekly Price-Cost Comparison', group: 'Products' },
@@ -1006,7 +1007,7 @@ export default function SiteAdminDashboard(props: any) {
       const companySectorCategory = String(company?.industrySectorCategory || '').trim();
       return OPERATIONAL_HUB_SECTION_OPTIONS
         .filter((item) => item.group === sourceGroup)
-        .filter((item) => !['productsProductMarginAnalysis', 'productsWholesaleRawData'].includes(item.key) || companySectorCategory === '42')
+        .filter((item) => !['productsProductMarginAnalysis', 'productsWholesaleRawData', 'productsVendorPricing'].includes(item.key) || companySectorCategory === '42')
         .map((item) => ({
           ...item,
           group: option.label,

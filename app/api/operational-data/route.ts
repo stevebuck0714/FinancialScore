@@ -5563,6 +5563,99 @@ export async function GET(request: NextRequest) {
               })()
             : [];
 
+        const wholesaleVendorPricingRows =
+          String(sectorCategory || '').trim() === '42'
+            ? await (async () => {
+                const rawRows = await prisma.inforRawRecord.findMany({
+                  where: {
+                    companyId,
+                    miProgram: { in: ['SLItemVends', 'SLItemVendPrices'] },
+                  },
+                  select: {
+                    miProgram: true,
+                    businessDate: true,
+                    payload: true,
+                    fetchedAt: true,
+                  },
+                  orderBy: [{ fetchedAt: 'desc' }, { createdAt: 'desc' }],
+                  take: Math.min(rawPayloadRowCap, 50000),
+                });
+                const latestByKey = new Map<string, any>();
+                const read = (payload: any, keys: string[]) => {
+                  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return '';
+                  for (const key of keys) {
+                    const value = payload[key];
+                    if (value !== undefined && value !== null && String(value).trim()) return String(value).trim();
+                  }
+                  return '';
+                };
+                const asNumber = (value: string) => {
+                  const normalized = String(value || '').replace(/,/g, '').trim();
+                  const parsed = Number(normalized);
+                  return Number.isFinite(parsed) ? parsed : null;
+                };
+                const asIsoDate = (value: string) => {
+                  const raw = String(value || '').trim();
+                  if (!raw) return null;
+                  const compact = raw.match(/^(\d{4})(\d{2})(\d{2})/);
+                  if (compact) return `${compact[1]}-${compact[2]}-${compact[3]}`;
+                  const parsed = new Date(raw);
+                  return Number.isNaN(parsed.getTime()) ? raw : parsed.toISOString().slice(0, 10);
+                };
+                for (const rawRow of rawRows as any[]) {
+                  const payload = rawRow?.payload;
+                  const miProgram = String(rawRow?.miProgram || '').trim();
+                  const item = read(payload, ['Item', 'DerItem']);
+                  const vendorId = read(payload, ['VendNum']);
+                  if (!item || !vendorId) continue;
+                  const effectiveDateRaw = read(payload, ['EffectDate']);
+                  const breakQty1 = asNumber(read(payload, ['BrkQty_1']));
+                  const breakCost1 = asNumber(read(payload, ['BrkCost_1']));
+                  const breakCostConv1 = asNumber(read(payload, ['BrkCostConv_1']));
+                  const vendorPricingSheet = breakCostConv1 ?? breakCost1;
+                  const difference = breakCost1 != null && vendorPricingSheet != null ? breakCost1 - vendorPricingSheet : null;
+                  const key = [
+                    miProgram,
+                    item,
+                    vendorId,
+                    effectiveDateRaw || read(payload, ['RecordDate']),
+                    read(payload, ['BrkQty_1']),
+                    read(payload, ['BrkCost_1']),
+                  ].join('||');
+                  if (latestByKey.has(key)) continue;
+                  latestByKey.set(key, {
+                    source: miProgram,
+                    snapshotDate: rawRow.businessDate || null,
+                    fetchedAt: rawRow.fetchedAt || null,
+                    item,
+                    vendorId,
+                    vendorName: read(payload, ['VendAddrName', 'VendaddrName']) || `Vendor ${vendorId}`,
+                    rank: asNumber(read(payload, ['ItemvendRank', 'Rank', 'NewRank'])),
+                    effectiveDate: asIsoDate(effectiveDateRaw),
+                    effectiveDateRaw,
+                    breakQty1,
+                    actualNoAdj: breakCost1,
+                    formalContracts: breakCostConv1,
+                    vendorPricingSheet,
+                    difference,
+                    updatedDiff: difference,
+                    vendorItem: read(payload, ['ItemVendVendItem', 'VendItem']),
+                    masterBuyAgreement: read(payload, ['ItemVendMasterBuyAgreement', 'MasterBuyAgreement']),
+                    status: read(payload, ['Stat', 'ItemStat']),
+                    recordDate: asIsoDate(read(payload, ['RecordDate'])),
+                    unitDutyCost: asNumber(read(payload, ['UnitDutyCost'])),
+                    unitFreightCost: asNumber(read(payload, ['UnitFreightCost'])),
+                    unitInsuranceCost: asNumber(read(payload, ['UnitInsuranceCost'])),
+                  });
+                }
+                return Array.from(latestByKey.values()).sort((a, b) =>
+                  String(a.vendorName || '').localeCompare(String(b.vendorName || ''), undefined, { sensitivity: 'base', numeric: true }) ||
+                  String(a.item || '').localeCompare(String(b.item || ''), undefined, { sensitivity: 'base', numeric: true }) ||
+                  String(b.effectiveDate || '').localeCompare(String(a.effectiveDate || ''))
+                );
+              })()
+            : [];
+
         if (shouldUseMockData) {
           return NextResponse.json(
             buildOperationalMockResponse({
@@ -5582,6 +5675,7 @@ export async function GET(request: NextRequest) {
           summary: {
             topProducts: topProductsSummary,
             wholesaleOrderLines,
+            wholesaleVendorPricingRows,
           },
         });
 
