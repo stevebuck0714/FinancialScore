@@ -1,8 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { Prisma } from '@prisma/client';
 import prisma from '@/lib/prisma';
 import { auditForbiddenAccess } from '@/lib/audit-logger';
 import { requireAuth, validateCompanyAccess } from '@/lib/tenant-security';
 import { getReportDataCatalog, type ReportFieldCatalogItem } from '@/lib/custom-reports/report-data-catalog';
+import {
+  getDatasetColumn,
+  getReportDataset,
+  normalizeDatasetColumns,
+  normalizeDatasetLimit,
+  normalizeDatasetSort,
+  type ReportDataset,
+  type ReportDatasetColumn,
+} from '@/lib/custom-reports/report-datasets';
 import { buildOperationalMockResponse } from '@/lib/operations/sector-mock-data';
 import {
   buildBillingCashMock,
@@ -483,6 +493,134 @@ function buildOperationalPreviewRows(
   return rowsByMonth;
 }
 
+function datasetIdentifier(value: string): Prisma.Sql {
+  return Prisma.raw(`"${value.replace(/"/g, '""')}"`);
+}
+
+function datasetColumnSql(column: ReportDatasetColumn): Prisma.Sql {
+  return column.sqlExpression ? Prisma.raw(`(${column.sqlExpression})`) : datasetIdentifier(column.key);
+}
+
+function normalizeDatasetFilters(dataset: ReportDataset, rawFilters: any[]) {
+  return (Array.isArray(rawFilters) ? rawFilters : [])
+    .map((filter: any) => {
+      const field = getDatasetColumn(dataset, filter?.field || filter?.key);
+      const value = String(filter?.value ?? '').trim();
+      if (!field || !value) return null;
+      const operator = String(filter?.operator || 'contains').toLowerCase();
+      return {
+        field: field.key,
+        operator: ['equals', 'gte', 'lte'].includes(operator) ? operator : 'contains',
+        value,
+      };
+    })
+    .filter(Boolean)
+    .slice(0, 8) as Array<{ field: string; operator: string; value: string }>;
+}
+
+function datasetColumnToTableColumn(column: ReportDatasetColumn) {
+  const isMetric = column.type === 'number' || column.type === 'currency' || column.type === 'percent';
+  return {
+    key: column.key,
+    label: column.label,
+    type: isMetric ? 'metric' : 'text',
+    format: column.type === 'currency' ? 'currency' : column.type === 'percent' ? 'percent' : column.type === 'number' ? 'number' : undefined,
+  };
+}
+
+function serializeDatasetTableValue(value: unknown) {
+  if (value instanceof Date) return value.toISOString();
+  return value;
+}
+
+async function buildDatasetTablePreview(config: any) {
+  const dataset = getReportDataset(config?.dataset || config?.datasetId);
+  if (!dataset) return null;
+
+  const columns = normalizeDatasetColumns(dataset, Array.isArray(config?.columns) ? config.columns : []);
+  const filters = normalizeDatasetFilters(dataset, Array.isArray(config?.filters) ? config.filters : []);
+  const sort = normalizeDatasetSort(dataset, Array.isArray(config?.sort) ? config.sort : []);
+  const limit = normalizeDatasetLimit(dataset, config?.limit);
+
+  const selectFields = columns.map((column) => Prisma.sql`${datasetColumnSql(column)} AS ${datasetIdentifier(column.key)}`);
+  const whereClauses: Prisma.Sql[] = [Prisma.sql`"companyId" = ${String(config.companyId)}`];
+
+  filters.forEach((filter) => {
+    const column = getDatasetColumn(dataset, filter.field);
+    if (!column) return;
+    const field = datasetColumnSql(column);
+    if (filter.operator === 'equals') {
+      whereClauses.push(Prisma.sql`${field}::text = ${filter.value}`);
+    } else if (filter.operator === 'gte') {
+      whereClauses.push(Prisma.sql`${field} >= ${filter.value}::timestamp`);
+    } else if (filter.operator === 'lte') {
+      whereClauses.push(Prisma.sql`${field} <= ${filter.value}::timestamp`);
+    } else {
+      whereClauses.push(Prisma.sql`${field}::text ILIKE ${`%${filter.value}%`}`);
+    }
+  });
+
+  const orderBy = sort
+    .map((item) => {
+      const column = getDatasetColumn(dataset, item.field);
+      return column
+        ? Prisma.sql`${datasetColumnSql(column)} ${Prisma.raw(item.direction === 'asc' ? 'ASC' : 'DESC')}`
+        : null;
+    })
+    .filter(Boolean) as Prisma.Sql[];
+
+  const rows = await prisma.$queryRaw<Array<Record<string, unknown>>>(Prisma.sql`
+    SELECT ${Prisma.join(selectFields, ', ')}
+    FROM ${datasetIdentifier(dataset.tableName)}
+    WHERE ${Prisma.join(whereClauses, ' AND ')}
+    ${orderBy.length > 0 ? Prisma.sql`ORDER BY ${Prisma.join(orderBy, ', ')}` : Prisma.empty}
+    LIMIT ${limit}
+  `);
+
+  const tableRows = rows.map((row) => {
+    const output: Record<string, unknown> = { values: {} };
+    columns.forEach((column) => {
+      const value = serializeDatasetTableValue(row[column.key]);
+      if (column.type === 'number' || column.type === 'currency' || column.type === 'percent') {
+        (output.values as Record<string, number>)[column.key] = toNumber(value);
+      } else {
+        output[column.key] = value;
+      }
+    });
+    return output;
+  });
+
+  const dateColumn = columns.find((column) => column.key === dataset.dateField) || columns.find((column) => column.type === 'date');
+  const previewRows = dateColumn
+    ? rows
+        .map((row) => {
+          const rawDate = row[dateColumn.key];
+          const date = rawDate instanceof Date ? rawDate : new Date(String(rawDate || ''));
+          if (Number.isNaN(date.getTime())) return null;
+          return {
+            month: monthLabel(date),
+            monthDate: date.toISOString(),
+            values: {},
+          };
+        })
+        .filter(Boolean) as Array<{ month: string; monthDate: string; values: Record<string, number> }>
+    : [];
+
+  return {
+    rows: previewRows,
+    tableColumns: columns.map(datasetColumnToTableColumn),
+    tableRows,
+    fields: [],
+    fieldCatalog: [],
+    dataset: {
+      id: dataset.id,
+      label: dataset.label,
+      tableName: dataset.tableName,
+      limit,
+    },
+  };
+}
+
 export async function POST(request: NextRequest) {
   try {
     await requireAuth();
@@ -515,6 +653,11 @@ export async function POST(request: NextRequest) {
       previewConfig?.description,
       ...(Array.isArray(previewConfig?.notes) ? previewConfig.notes : []),
     ].map((item) => String(item || '')).join(' ');
+    if (String(previewConfig?.chartType || '').toLowerCase() === 'table' && previewConfig?.dataset) {
+      const datasetPreview = await buildDatasetTablePreview({ ...previewConfig, companyId });
+      if (datasetPreview) return NextResponse.json(datasetPreview);
+    }
+
     const fields = getRequestedFields(previewConfig, fieldCatalog);
     if (fields.length === 0) return NextResponse.json({ error: 'Report config has no supported series fields.' }, { status: 400 });
     const hasOperationalFields = fields.some((field) => field.startsWith('op.'));

@@ -5,6 +5,18 @@ import { createModelText } from '@/lib/openai-helpers';
 import { auditForbiddenAccess } from '@/lib/audit-logger';
 import { requireAuth, validateCompanyAccess } from '@/lib/tenant-security';
 import { getReportDataCatalog, type ReportFieldCatalogItem } from '@/lib/custom-reports/report-data-catalog';
+import {
+  extractEntityNameFromPrompt,
+  getReportDataset,
+  getReportDatasetCatalog,
+  inferColumnsFromPrompt,
+  inferDatasetFiltersFromPrompt,
+  inferDatasetFromPrompt,
+  normalizeDatasetColumns,
+  normalizeDatasetLimit,
+  normalizeDatasetSort,
+  type ReportDataset,
+} from '@/lib/custom-reports/report-datasets';
 
 type ReportChartType = 'line' | 'multi_line' | 'bar' | 'grouped_bar' | 'stacked_bar' | 'combo' | 'table' | 'pie';
 
@@ -112,6 +124,64 @@ function normalizeSeries(config: any, chartType: ReportChartType, fieldCatalog: 
       format: 'currency',
     },
   ];
+}
+
+function normalizeDatasetConfig(rawConfig: any, prompt: string, chartType: ReportChartType) {
+  const explicitDataset = getReportDataset(rawConfig?.dataset || rawConfig?.dataSet || rawConfig?.datasetId);
+  const inferredDataset = chartType === 'table' ? inferDatasetFromPrompt(prompt) : null;
+  const dataset = explicitDataset || inferredDataset;
+  if (!dataset) return null;
+
+  const promptColumns = inferColumnsFromPrompt(dataset, prompt);
+  const rawColumns = Array.isArray(rawConfig?.columns) ? rawConfig.columns : [];
+  const columns = normalizeDatasetColumns(dataset, rawColumns.length > 0 ? rawColumns : promptColumns.map((column) => column.key));
+  const inferredFilters = inferDatasetFiltersFromPrompt(dataset, prompt);
+  const filters = mergeFilters(Array.isArray(rawConfig?.filters) ? rawConfig.filters : [], inferredFilters);
+
+  return {
+    dataset: dataset.id,
+    columns: columns.map((column) => ({
+      key: column.key,
+      label: column.label,
+      type: column.type,
+      format: column.type === 'currency' ? 'currency' : column.type === 'percent' ? 'percent' : column.type === 'number' ? 'number' : undefined,
+    })),
+    filters,
+    sort: normalizeDatasetSort(dataset, rawConfig?.sort),
+    limit: normalizeDatasetLimit(dataset, rawConfig?.limit),
+  };
+}
+
+function buildDatasetTableConfig(prompt: string, requestedType: ReportChartType, rawConfig: any = {}) {
+  const chartType = normalizeChartType(rawConfig?.chartType, requestedType);
+  const datasetConfig = normalizeDatasetConfig(rawConfig, prompt, chartType);
+  if (!datasetConfig) return null;
+  const dataset = getReportDataset(datasetConfig.dataset) as ReportDataset;
+  const entityName = extractEntityNameFromPrompt(prompt);
+  return {
+    title: String(rawConfig?.title || (entityName ? `${entityName} ${dataset.label}` : dataset.label)).slice(0, 120),
+    description: String(rawConfig?.description || `${dataset.description} Filtered and bounded by the report request.`).slice(0, 500),
+    chartType: 'table' as ReportChartType,
+    dataSource: 'operational',
+    timeGrain: String(rawConfig?.timeGrain || 'detail'),
+    xAxis: {
+      field: dataset.dateField || 'snapshotDate',
+      label: 'Date',
+    },
+    yAxes: {
+      left: 'Value',
+      right: 'Percent',
+    },
+    series: [],
+    filters: datasetConfig.filters,
+    dataset: datasetConfig.dataset,
+    columns: datasetConfig.columns,
+    sort: datasetConfig.sort,
+    limit: datasetConfig.limit,
+    notes: [
+      'This table uses the validated custom-report dataset registry; SQL is built server-side from allowlisted fields.',
+    ],
+  };
 }
 
 function titleFromPrompt(prompt: string, fallback: string): string {
@@ -264,14 +334,15 @@ function enhanceConfigFromPrompt(config: ReturnType<typeof validateReportConfig>
   };
 }
 
-function validateReportConfig(rawConfig: any, requestedType: ReportChartType, fieldCatalog: ReportFieldCatalogItem[]) {
+function validateReportConfig(rawConfig: any, requestedType: ReportChartType, fieldCatalog: ReportFieldCatalogItem[], prompt = '') {
   const chartType = normalizeChartType(rawConfig?.chartType, requestedType);
-  const series = normalizeSeries(rawConfig, chartType, fieldCatalog);
+  const datasetConfig = normalizeDatasetConfig(rawConfig, prompt, chartType);
+  const series = datasetConfig ? [] : normalizeSeries(rawConfig, chartType, fieldCatalog);
   return {
     title: String(rawConfig?.title || 'Custom Report').slice(0, 120),
     description: String(rawConfig?.description || 'AI-generated custom report configuration.').slice(0, 500),
     chartType,
-    dataSource: inferDataSource(series, rawConfig?.dataSource),
+    dataSource: datasetConfig ? 'operational' : inferDataSource(series, rawConfig?.dataSource),
     timeGrain: String(rawConfig?.timeGrain || 'month'),
     xAxis: {
       field: 'monthDate',
@@ -282,7 +353,8 @@ function validateReportConfig(rawConfig: any, requestedType: ReportChartType, fi
       right: String(rawConfig?.yAxes?.right || 'Percent'),
     },
     series,
-    filters: Array.isArray(rawConfig?.filters) ? rawConfig.filters.slice(0, 8) : [],
+    filters: datasetConfig?.filters || (Array.isArray(rawConfig?.filters) ? rawConfig.filters.slice(0, 8) : []),
+    ...(datasetConfig || {}),
     notes: Array.isArray(rawConfig?.notes) ? rawConfig.notes.slice(0, 6).map((note: any) => String(note)) : [],
   };
 }
@@ -453,6 +525,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Custom Reports are disabled for this company.' }, { status: 403 });
     }
     const fieldCatalog = getReportDataCatalog(company.industrySectorCategory || null);
+    const datasetCatalog = getReportDatasetCatalog();
 
     const recentRows = await prisma.monthlyFinancial.findMany({
       where: { companyId },
@@ -497,6 +570,9 @@ export async function POST(request: NextRequest) {
               'The report universe can be total_company, customer, project, product, product_category, vendor, location, division, or account.',
               'If the user names a specific entity such as a project, customer, product, vendor, or location, include it in scope and as a filter before applying metrics.',
               'Operational fields are prefixed with op.<module>.<metric>; use them when the user asks for sector, project, customer, product, inventory, cash, AR, AP, or other operational reporting.',
+              'For detail/table requests, prefer a reportDataset over metric series. Pick the best dataset from the provided reportDatasetCatalog and return dataset, columns, filters, sort, and limit.',
+              'Users do not know database or snapshot table names. Infer datasets from business language such as orders, invoices, payments, inventory, products, vendors, cash, AR, AP, and financials.',
+              'Never return SQL. Only return dataset ids, column keys, filters, sort fields, and metric series from the provided catalogs.',
               'When a prompt names an operational slice such as job, project, customer, product, vendor, cost type, or location, express it as a filter instead of inventing a field.',
               'Supported chartType values: line, multi_line, bar, grouped_bar, stacked_bar, combo, table, pie.',
               'For combo charts, each series can use chartType line or bar and can use left/right axis.',
@@ -514,6 +590,7 @@ export async function POST(request: NextRequest) {
               requestedChartType: requestedType,
               userPrompt: prompt,
               fieldCatalog,
+              reportDatasetCatalog: datasetCatalog,
               recentMonthlyRowsSample: recentRows.slice().reverse(),
               requiredJsonShape: {
                 title: 'short report title',
@@ -538,7 +615,16 @@ export async function POST(request: NextRequest) {
                     format: 'currency | percent | number',
                   },
                 ],
+                dataset: 'optional reportDatasetCatalog id for detail/table reports',
+                columns: [
+                  {
+                    key: 'optional allowlisted dataset column key',
+                    label: 'optional display label',
+                  },
+                ],
                 filters: [],
+                sort: [{ field: 'optional allowlisted dataset column key', direction: 'asc | desc' }],
+                limit: 250,
                 notes: ['short implementation or interpretation notes'],
               },
             }),
@@ -547,7 +633,7 @@ export async function POST(request: NextRequest) {
       });
 
       const parsed = safeJsonParse(aiResult.text);
-      reportConfig = validateReportConfig(parsed, requestedType, fieldCatalog);
+      reportConfig = buildDatasetTableConfig(prompt, requestedType, parsed) || validateReportConfig(parsed, requestedType, fieldCatalog, prompt);
       generatedBy = {
         model,
         api: aiResult.api,
@@ -564,7 +650,7 @@ export async function POST(request: NextRequest) {
         reason: 'AI credentials are not configured for local development.',
       };
     }
-    reportConfig = enhanceConfigFromPrompt(reportConfig, prompt, fieldCatalog);
+    reportConfig = buildDatasetTableConfig(prompt, requestedType, reportConfig) || enhanceConfigFromPrompt(reportConfig, prompt, fieldCatalog);
 
     return NextResponse.json({
       reportConfig,
