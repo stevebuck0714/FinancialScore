@@ -6892,7 +6892,8 @@ export async function GET(request: NextRequest) {
         // construction tabs. Vista-backed ingestion lands in M6.
         const payload = buildCommitmentsForecastMock(companyId);
         return NextResponse.json({
-          records: payload.eacForecast,
+          records: payload.wipReport,
+          wipReport: payload.wipReport,
           eacForecast: payload.eacForecast,
           commitmentExposure: payload.commitmentExposure,
           changeOrders: payload.changeOrders,

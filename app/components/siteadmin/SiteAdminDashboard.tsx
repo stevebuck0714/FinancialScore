@@ -134,6 +134,7 @@ const OPERATIONAL_HUB_SECTION_OPTIONS: Array<{ key: string; label: string; group
   { key: 'jccJobSpecificAr', label: 'Job-Specific AR (drill)', group: 'Job Cost Control' },
   { key: 'jccJobSpecificAp', label: 'Job-Specific AP (drill)', group: 'Job Cost Control' },
   // Commitments & Forecast
+  { key: 'cfWipReport', label: 'WIP Report', group: 'Commitments & Forecast' },
   { key: 'cfEacSummary', label: 'EAC Summary', group: 'Commitments & Forecast' },
   { key: 'cfCommitmentExposure', label: 'Commitment Exposure', group: 'Commitments & Forecast' },
   { key: 'cfChangeOrderImpact', label: 'Change Order Impact', group: 'Commitments & Forecast' },

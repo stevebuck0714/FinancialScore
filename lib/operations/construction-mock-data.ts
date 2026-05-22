@@ -910,6 +910,28 @@ export type CfOpenCommitmentRow = {
   status: 'open' | 'past_due' | 'closing_soon';
 };
 
+export type CfWipReportRow = {
+  jobId: string;
+  jobName: string;
+  customer: string;
+  pmName: string;
+  status: JccJob['status'];
+  originalContract: number;
+  approvedCOs: number;
+  revisedContractValue: number;
+  costToDate: number;
+  estimatedCostToComplete: number;
+  estimatedCostAtCompletion: number;
+  pctComplete: number;
+  earnedRevenueToDate: number;
+  billingsToDate: number;
+  overUnderBilling: number;
+  projectedGrossProfit: number;
+  projectedGrossMarginPct: number;
+  backlog: number;
+  riskFlag: string;
+};
+
 export type CommitmentsForecastPayload = {
   summary: {
     totalRevisedContract: number;
@@ -925,6 +947,7 @@ export type CommitmentsForecastPayload = {
     asOfDate: string;
     jobCount: number;
   };
+  wipReport: CfWipReportRow[];
   eacForecast: CfEacForecastRow[];
   commitmentExposure: CfCommitmentExposureRow[];
   changeOrders: CfChangeOrderRow[];
@@ -1032,6 +1055,49 @@ export function buildCommitmentsForecastMock(
     });
   }
 
+  // ── Standard WIP report (one row per active project) ─────────────────────
+  const changeOrdersByJob = new Map(changeOrders.map((row) => [row.jobId, row]));
+  const wipReport: CfWipReportRow[] = jcc.jobs.map((j) => {
+    const co = changeOrdersByJob.get(j.jobId);
+    const originalContract = co?.originalContract ?? j.revisedContractValue;
+    const approvedCOs = co?.approvedCOs ?? 0;
+    const pctComplete = j.eac > 0 ? round2((j.costToDate / j.eac) * 100) : 0;
+    const earnedRevenueToDate = round0(j.revisedContractValue * (pctComplete / 100));
+    const billingFactor = Math.max(0.82, Math.min(1.18, rng.norm(1.01, 0.10)));
+    const billingsToDate = round0(earnedRevenueToDate * billingFactor);
+    const overUnderBilling = billingsToDate - earnedRevenueToDate;
+    const backlog = Math.max(0, j.revisedContractValue - earnedRevenueToDate);
+    const estimatedCostToComplete = Math.max(0, j.eac - j.costToDate);
+    let riskFlag = 'On Track';
+    if (j.marginPct < 0) riskFlag = 'Negative Margin';
+    else if (j.marginPct < 5) riskFlag = 'Thin Margin';
+    else if (overUnderBilling < -(j.revisedContractValue * 0.05)) riskFlag = 'Underbilled';
+    else if (overUnderBilling > j.revisedContractValue * 0.08) riskFlag = 'Overbilled';
+    else if (pctComplete > 85 && backlog > j.revisedContractValue * 0.2) riskFlag = 'Backlog Risk';
+
+    return {
+      jobId: j.jobId,
+      jobName: j.jobName,
+      customer: j.customerName,
+      pmName: j.pmName,
+      status: j.status,
+      originalContract,
+      approvedCOs,
+      revisedContractValue: j.revisedContractValue,
+      costToDate: j.costToDate,
+      estimatedCostToComplete,
+      estimatedCostAtCompletion: j.eac,
+      pctComplete,
+      earnedRevenueToDate,
+      billingsToDate,
+      overUnderBilling,
+      projectedGrossProfit: j.projectedProfit,
+      projectedGrossMarginPct: j.marginPct,
+      backlog,
+      riskFlag,
+    };
+  });
+
   // ── Open commitments (POs and Subcontracts across the active jobs) ──────
   const openCommitments: CfOpenCommitmentRow[] = [];
   let poCounter = 1000;
@@ -1102,6 +1168,7 @@ export function buildCommitmentsForecastMock(
       asOfDate: ymd(asOf),
       jobCount: jcc.jobs.length,
     },
+    wipReport,
     eacForecast,
     commitmentExposure,
     changeOrders,

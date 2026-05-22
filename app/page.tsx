@@ -1135,6 +1135,7 @@ function FinancialScorePage() {
   const [isExpertAnalysisExpanded, setIsExpertAnalysisExpanded] = useState(false);
   const [isValuationExpanded, setIsValuationExpanded] = useState(false);
   const [isReportsExpanded, setIsReportsExpanded] = useState(false);
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   // const [isFinancialHealthExpanded, setIsFinancialHealthExpanded] = useState(false); // Legacy section removed from sidebar
   
   // State - Default Pricing
@@ -1450,6 +1451,22 @@ function FinancialScorePage() {
       setIsReportsExpanded(true);
     }
   }, [currentView]);
+
+  useEffect(() => {
+    try {
+      setIsSidebarCollapsed(localStorage.getItem('fs_sidebarCollapsed') === 'true');
+    } catch {
+      // Ignore storage access issues.
+    }
+  }, []);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('fs_sidebarCollapsed', isSidebarCollapsed ? 'true' : 'false');
+    } catch {
+      // Ignore storage access issues.
+    }
+  }, [isSidebarCollapsed]);
 
   const handleExpertAnalysisClick = () => {
     const shouldCollapse = currentView === 'pa-overview' && isExpertAnalysisExpanded;
@@ -3428,6 +3445,10 @@ function FinancialScorePage() {
     opsAPAging: false,
     opsProducts: false,
     opsInventory: false,
+    opsJobCostControl: false,
+    opsProjectPortfolio: false,
+    opsWipReport: false,
+    opsBillingCash: false,
     opsDailyFinancials: false
   };
   const [printPackageSelections, setPrintPackageSelections] = useState(defaultPrintPackageSelections);
@@ -3456,6 +3477,10 @@ function FinancialScorePage() {
     opsAPAging: 'landscape',
     opsProducts: 'landscape',
     opsInventory: 'landscape',
+    opsJobCostControl: 'landscape',
+    opsProjectPortfolio: 'landscape',
+    opsWipReport: 'landscape',
+    opsBillingCash: 'landscape',
     opsDailyFinancials: 'landscape'
   } as const;
   type PrintPackageKey = keyof typeof defaultPrintPackageSelections;
@@ -3466,6 +3491,7 @@ function FinancialScorePage() {
     tab: string;
     forecastBasisTab?: 'cash-basis' | 'accrual-basis';
     forecastSubTab?: 'income-statement-forecast' | 'cash-forecast' | 'graphs';
+    sectionKey?: string;
   } | null>(null);
   const [printOrientation, setPrintOrientation] = useState<'portrait' | 'landscape'>('portrait');
   const [isPrintingPackage, setIsPrintingPackage] = useState(false);
@@ -9503,6 +9529,8 @@ function FinancialScorePage() {
   // Main Logged-In View with Header
   const company = getCurrentCompany();
   const companyName = company ? company.name : '';
+  const printOperationsSectorCategory = String(company?.industrySectorCategory || industrySectorCategory || '01');
+  const isConstructionPrintSector = printOperationsSectorCategory === '23';
   const selectedCompanyProfile = useMemo(
     () => companyProfiles.find((p) => p.companyId === selectedCompanyId) || null,
     [companyProfiles, selectedCompanyId]
@@ -12034,16 +12062,44 @@ function FinancialScorePage() {
       printQueue.push({ view: 'operations', opsTab: 'customers', title: 'Operations - Customers', orientation: printPackageOrientations.opsCustomers });
     }
     if (printPackageSelections.opsARAging) {
-      printQueue.push({ view: 'operations', opsTab: 'ar', title: 'Operations - AR Aging', orientation: printPackageOrientations.opsARAging });
+      printQueue.push({
+        view: 'operations',
+        opsTab: isConstructionPrintSector ? 'construction_ar' : 'ar',
+        title: isConstructionPrintSector ? 'Operations - Construction AR' : 'Operations - AR Aging',
+        orientation: printPackageOrientations.opsARAging
+      });
     }
     if (printPackageSelections.opsAPAging) {
-      printQueue.push({ view: 'operations', opsTab: 'ap', title: 'Operations - AP Aging', orientation: printPackageOrientations.opsAPAging });
+      printQueue.push({
+        view: 'operations',
+        opsTab: isConstructionPrintSector ? 'construction_ap' : 'ap',
+        title: isConstructionPrintSector ? 'Operations - Construction AP' : 'Operations - AP Aging',
+        orientation: printPackageOrientations.opsAPAging
+      });
     }
     if (printPackageSelections.opsProducts) {
       printQueue.push({ view: 'operations', opsTab: 'products', title: 'Operations - Products', orientation: printPackageOrientations.opsProducts });
     }
     if (printPackageSelections.opsInventory) {
       printQueue.push({ view: 'operations', opsTab: 'inventory', title: 'Operations - Inventory', orientation: printPackageOrientations.opsInventory });
+    }
+    if (isConstructionPrintSector && printPackageSelections.opsJobCostControl) {
+      printQueue.push({ view: 'operations', opsTab: 'job_cost_control', title: 'Operations - Job Cost Control', orientation: printPackageOrientations.opsJobCostControl });
+    }
+    if (isConstructionPrintSector && printPackageSelections.opsProjectPortfolio) {
+      printQueue.push({ view: 'operations', opsTab: 'project_portfolio', title: 'Operations - Project Portfolio', orientation: printPackageOrientations.opsProjectPortfolio });
+    }
+    if (isConstructionPrintSector && printPackageSelections.opsWipReport) {
+      printQueue.push({
+        view: 'operations',
+        opsTab: 'commitments_forecast',
+        opsSectionKey: 'cfWipReport',
+        title: 'Operations - WIP Report',
+        orientation: printPackageOrientations.opsWipReport
+      });
+    }
+    if (isConstructionPrintSector && printPackageSelections.opsBillingCash) {
+      printQueue.push({ view: 'operations', opsTab: 'billing_cash', title: 'Operations - Billing & Cash', orientation: printPackageOrientations.opsBillingCash });
     }
     if (printPackageSelections.opsDailyFinancials) {
       printQueue.push({ view: 'operations', opsTab: 'daily_financials', title: 'Operations - Daily Financials', orientation: printPackageOrientations.opsDailyFinancials });
@@ -12069,9 +12125,10 @@ function FinancialScorePage() {
         report.view === 'dashboard' ? 1500 : report.view === 'operations' ? 1800 : 1000;
       await sleep(baseDelayMs);
 
-      // Forecast pages can still be loading after initial render; wait until loading text clears.
-      const isOpsForecast = report.view === 'operations' && report.opsTab === 'forecast';
-      if (!isOpsForecast) return;
+      // Operations pages fetch their tab data after the view switches. Wait for
+      // loading placeholders to clear so print packages do not capture spinners.
+      const isOpsReport = report.view === 'operations';
+      if (!isOpsReport) return;
 
       const maxWaitMs = 15000;
       const pollMs = 250;
@@ -12082,9 +12139,20 @@ function FinancialScorePage() {
         const hasLoadingText =
           text.includes('loading...') ||
           text.includes('loading…') ||
+          text.includes('loading commitments & forecast') ||
+          text.includes('loading commitments & forecast…') ||
+          text.includes('loading billing & cash') ||
+          text.includes('loading job cost control') ||
+          text.includes('loading project portfolio') ||
+          text.includes('loading ar') ||
+          text.includes('loading ap') ||
           text.includes('beginning cash (last imported)\nloading');
+        const targetReady =
+          report.opsSectionKey === 'cfWipReport'
+            ? text.includes('wip report') && !text.includes('loading commitments & forecast')
+            : true;
 
-        if (!hasLoadingText) return;
+        if (!hasLoadingText && targetReady) return;
         await sleep(pollMs);
       }
     };
@@ -12112,7 +12180,8 @@ function FinancialScorePage() {
         setOperationsPrintConfig({
           tab: report.opsTab as string,
           forecastBasisTab: report.opsForecastBasisTab as 'cash-basis' | 'accrual-basis' | undefined,
-          forecastSubTab: report.opsForecastSubTab as 'income-statement-forecast' | 'cash-forecast' | 'graphs' | undefined
+          forecastSubTab: report.opsForecastSubTab as 'income-statement-forecast' | 'cash-forecast' | 'graphs' | undefined,
+          sectionKey: report.opsSectionKey as string | undefined
         });
         setCurrentView('operations');
       } else if (report.view === 'cash-flow') {
@@ -12358,17 +12427,165 @@ function FinancialScorePage() {
         {/* Left Navigation Sidebar - hidden for Site Admin except when in a company workspace */}
         {(currentUser?.role !== 'siteadmin' || siteAdminCompanyWorkspace) && !(currentUser?.userType === 'assessment') && (
         <aside className="app-left-sidebar" style={{ 
-          width: '280px', 
+          width: isSidebarCollapsed ? '72px' : '280px', 
           background: 'white', 
           borderRight: '2px solid #e2e8f0', 
-          padding: '32px 0 24px 0',
+          padding: isSidebarCollapsed ? '16px 0' : '32px 0 24px 0',
           overflowY: 'auto',
           flexShrink: 0,
           boxShadow: '2px 0 8px rgba(0,0,0,0.03)',
           display: 'flex',
-          flexDirection: 'column'
+          flexDirection: 'column',
+          transition: 'width 0.2s ease',
+          position: 'relative'
         }}>
+          {isSidebarCollapsed ? (
+          <nav style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px', paddingTop: '6px' }}>
+            <button
+              type="button"
+              title="Expand sidebar"
+              aria-label="Expand sidebar"
+              onClick={() => setIsSidebarCollapsed(false)}
+              style={{
+                position: 'absolute',
+                top: '8px',
+                right: '-11px',
+                width: '22px',
+                height: '44px',
+                borderRadius: '999px',
+                border: '1px solid #cbd5e1',
+                background: '#ffffff',
+                color: '#1F70C1',
+                fontSize: '15px',
+                lineHeight: 1,
+                fontWeight: 900,
+                cursor: 'pointer',
+                boxShadow: '0 2px 8px rgba(15, 23, 42, 0.12)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                zIndex: 5,
+              }}
+            >
+              ›
+            </button>
+            {[
+              { id: 'ai-analysis', label: 'AI', title: 'Ask Corelytics', show: true },
+              { id: 'pa-overview', label: 'EA', title: 'Expert Analysis', show: hasCompanySectionAccess('expert-analysis') },
+              { id: 'valuation', label: 'VAL', title: 'Valuation', show: hasCompanySectionAccess('valuation') },
+              { id: 'custom-print', label: 'PRT', title: 'Standard Reports', show: hasCompanySectionAccess('financial-reports') || hasCompanySectionAccess('valuation') },
+            ]
+              .filter((item) => item.show)
+              .map((item) => {
+                const isActive =
+                  currentView === item.id ||
+                  (item.id === 'pa-overview' && currentView.startsWith('pa-'));
+                return (
+                  <button
+                    key={item.id}
+                    type="button"
+                    title={item.title}
+                    aria-label={item.title}
+                    onClick={() => {
+                      if (item.id === 'custom-print') setIsReportsExpanded(true);
+                      handleNavigation(item.id as any);
+                    }}
+                    style={{
+                      width: '48px',
+                      minHeight: '38px',
+                      border: 'none',
+                      borderRadius: '10px',
+                      background: isActive ? '#e0f2fe' : 'transparent',
+                      color: isActive ? '#1F70C1' : '#475569',
+                      fontSize: '11px',
+                      fontWeight: 800,
+                      cursor: 'pointer',
+                    }}
+                  >
+                    {item.label}
+                  </button>
+                );
+              })}
+            <div style={{ marginTop: 'auto', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px', paddingBottom: '8px' }}>
+              <button
+                type="button"
+                title="User dashboard"
+                aria-label="User dashboard"
+                onClick={() => {
+                  if (currentUser?.role === 'consultant') {
+                    setCurrentView('consultant-dashboard');
+                  } else if (currentUser?.userType === 'company') {
+                    setCurrentView('admin');
+                  }
+                }}
+                style={{
+                  width: '48px',
+                  minHeight: '38px',
+                  border: 'none',
+                  borderRadius: '10px',
+                  background: (currentView === 'admin' || currentView === 'consultant-dashboard') ? '#e0f2fe' : 'transparent',
+                  color: (currentView === 'admin' || currentView === 'consultant-dashboard') ? '#1F70C1' : '#475569',
+                  fontSize: '11px',
+                  fontWeight: 800,
+                  cursor: 'pointer',
+                }}
+              >
+                ME
+              </button>
+              <a
+                href="/support"
+                target="_blank"
+                rel="noopener noreferrer"
+                title="Support"
+                aria-label="Support"
+                style={{
+                  width: '48px',
+                  minHeight: '38px',
+                  borderRadius: '10px',
+                  color: '#1F70C1',
+                  background: 'transparent',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  textDecoration: 'none',
+                  fontSize: '11px',
+                  fontWeight: 800,
+                }}
+              >
+                SUP
+              </a>
+            </div>
+          </nav>
+          ) : (
           <nav style={{ flex: 1, display: 'flex', flexDirection: 'column', paddingTop: '12px' }}>
+            <button
+              type="button"
+              title="Collapse sidebar"
+              aria-label="Collapse sidebar"
+              onClick={() => setIsSidebarCollapsed(true)}
+              style={{
+                position: 'absolute',
+                top: '8px',
+                right: '-11px',
+                width: '22px',
+                height: '44px',
+                borderRadius: '999px',
+                border: '1px solid #cbd5e1',
+                background: '#ffffff',
+                color: '#1F70C1',
+                fontSize: '15px',
+                lineHeight: 1,
+                fontWeight: 900,
+                cursor: 'pointer',
+                boxShadow: '0 2px 8px rgba(15, 23, 42, 0.12)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                zIndex: 5,
+              }}
+            >
+              ‹
+            </button>
             {currentUser?.userType !== 'assessment' && null}
 
             <div style={{ marginBottom: '16px' }}>
@@ -12738,6 +12955,7 @@ function FinancialScorePage() {
               </div>
             </div>
           </nav>
+          )}
         </aside>
         )}
 
@@ -14593,6 +14811,7 @@ function FinancialScorePage() {
           initialTab={operationsPrintConfig?.tab}
           initialForecastBasisTab={operationsPrintConfig?.forecastBasisTab}
           initialForecastSubTab={operationsPrintConfig?.forecastSubTab}
+          initialPrintSectionKey={operationsPrintConfig?.sectionKey}
         />
       )}
 
@@ -27425,6 +27644,51 @@ function FinancialScorePage() {
                       <option value="landscape">Landscape</option>
                     </select>
                   </div>
+                  {isConstructionPrintSector && (
+                  <>
+                  <div style={{ marginTop: '2px', fontSize: '13px', fontWeight: '600', color: '#1e293b' }}>Construction Reports</div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px' }}>
+                    <label style={{ display: 'flex', alignItems: 'center', cursor: 'pointer', fontSize: '14px', color: '#475569' }}>
+                      <input type="checkbox" checked={printPackageSelections.opsJobCostControl} onChange={(e) => updatePrintSelection('opsJobCostControl', e.target.checked)} style={{ width: '16px', height: '16px', marginRight: '8px', cursor: 'pointer' }} />
+                      Job Cost Control
+                    </label>
+                    <select value={printPackageOrientations.opsJobCostControl} onChange={(e) => updatePrintOrientation('opsJobCostControl', e.target.value as 'portrait' | 'landscape')} style={{ padding: '5px 8px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '12px', background: 'white', cursor: 'pointer' }}>
+                      <option value="portrait">Portrait</option>
+                      <option value="landscape">Landscape</option>
+                    </select>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px' }}>
+                    <label style={{ display: 'flex', alignItems: 'center', cursor: 'pointer', fontSize: '14px', color: '#475569' }}>
+                      <input type="checkbox" checked={printPackageSelections.opsProjectPortfolio} onChange={(e) => updatePrintSelection('opsProjectPortfolio', e.target.checked)} style={{ width: '16px', height: '16px', marginRight: '8px', cursor: 'pointer' }} />
+                      Project Portfolio
+                    </label>
+                    <select value={printPackageOrientations.opsProjectPortfolio} onChange={(e) => updatePrintOrientation('opsProjectPortfolio', e.target.value as 'portrait' | 'landscape')} style={{ padding: '5px 8px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '12px', background: 'white', cursor: 'pointer' }}>
+                      <option value="portrait">Portrait</option>
+                      <option value="landscape">Landscape</option>
+                    </select>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px' }}>
+                    <label style={{ display: 'flex', alignItems: 'center', cursor: 'pointer', fontSize: '14px', color: '#475569' }}>
+                      <input type="checkbox" checked={printPackageSelections.opsWipReport} onChange={(e) => updatePrintSelection('opsWipReport', e.target.checked)} style={{ width: '16px', height: '16px', marginRight: '8px', cursor: 'pointer' }} />
+                      WIP Report
+                    </label>
+                    <select value={printPackageOrientations.opsWipReport} onChange={(e) => updatePrintOrientation('opsWipReport', e.target.value as 'portrait' | 'landscape')} style={{ padding: '5px 8px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '12px', background: 'white', cursor: 'pointer' }}>
+                      <option value="portrait">Portrait</option>
+                      <option value="landscape">Landscape</option>
+                    </select>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px' }}>
+                    <label style={{ display: 'flex', alignItems: 'center', cursor: 'pointer', fontSize: '14px', color: '#475569' }}>
+                      <input type="checkbox" checked={printPackageSelections.opsBillingCash} onChange={(e) => updatePrintSelection('opsBillingCash', e.target.checked)} style={{ width: '16px', height: '16px', marginRight: '8px', cursor: 'pointer' }} />
+                      Billing &amp; Cash
+                    </label>
+                    <select value={printPackageOrientations.opsBillingCash} onChange={(e) => updatePrintOrientation('opsBillingCash', e.target.value as 'portrait' | 'landscape')} style={{ padding: '5px 8px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '12px', background: 'white', cursor: 'pointer' }}>
+                      <option value="portrait">Portrait</option>
+                      <option value="landscape">Landscape</option>
+                    </select>
+                  </div>
+                  </>
+                  )}
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px' }}>
                     <label style={{ display: 'flex', alignItems: 'center', cursor: 'pointer', fontSize: '14px', color: '#475569' }}>
                       <input type="checkbox" checked={printPackageSelections.opsDailyFinancials} onChange={(e) => updatePrintSelection('opsDailyFinancials', e.target.checked)} style={{ width: '16px', height: '16px', marginRight: '8px', cursor: 'pointer' }} />

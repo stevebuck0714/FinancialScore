@@ -41,6 +41,7 @@ interface OperationsTabProps {
   initialTab?: string;
   initialForecastBasisTab?: 'cash-basis' | 'accrual-basis';
   initialForecastSubTab?: 'income-statement-forecast' | 'cash-forecast' | 'graphs';
+  initialPrintSectionKey?: string;
 }
 
 type OpTab = 'dashboard' | 'overview' | string;
@@ -589,9 +590,11 @@ export default function OperationsTab({
   viewMode = 'full',
   initialTab,
   initialForecastBasisTab,
-  initialForecastSubTab
+  initialForecastSubTab,
+  initialPrintSectionKey
 }: OperationsTabProps) {
   const isOverviewOnly = viewMode === 'overview-only';
+  const isWipPrintRequest = initialPrintSectionKey === 'cfWipReport';
   const [activeTab, setActiveTab] = useState<OpTab>(() => {
     if (initialTab) return initialTab as OpTab;
     return isOverviewOnly ? 'overview' : 'dashboard';
@@ -620,6 +623,8 @@ export default function OperationsTab({
   >('marginPct');
   const [ppJobProfitabilitySortDir, setPpJobProfitabilitySortDir] = useState<'asc' | 'desc'>('asc');
   const [commitmentsForecastData, setCommitmentsForecastData] = useState<any>(null);
+  const [cfWipSortKey, setCfWipSortKey] = useState<string>('overUnderBilling');
+  const [cfWipSortDir, setCfWipSortDir] = useState<'asc' | 'desc'>('desc');
   const [cfOpenCommitmentsFilter, setCfOpenCommitmentsFilter] = useState<'all' | 'past_due' | 'closing_soon' | 'po' | 'sub'>('all');
   const [billingCashData, setBillingCashData] = useState<any>(null);
   const [bcPriorityFilter, setBcPriorityFilter] = useState<'all' | 'collect' | 'pay'>('all');
@@ -14457,6 +14462,42 @@ Strategies to Improve the CCC
     const commitmentExposure: any[] = Array.isArray(data.commitmentExposure) ? data.commitmentExposure : [];
     const changeOrders: any[] = Array.isArray(data.changeOrders) ? data.changeOrders : [];
     const openCommitments: any[] = Array.isArray(data.openCommitments) ? data.openCommitments : [];
+    const changeOrdersByJob = new Map(changeOrders.map((row) => [row.jobId, row]));
+    const wipReport: any[] = Array.isArray(data.wipReport) && data.wipReport.length > 0
+      ? data.wipReport
+      : eacForecast.map((job) => {
+          const co = changeOrdersByJob.get(job.jobId) || {};
+          const pctComplete = job.eac > 0 ? (Number(job.costToDate || 0) / Number(job.eac || 1)) * 100 : 0;
+          const earnedRevenueToDate = Number(job.revisedContractValue || 0) * (pctComplete / 100);
+          const billingsToDate = earnedRevenueToDate;
+          const overUnderBilling = billingsToDate - earnedRevenueToDate;
+          const projectedGrossProfit = Number(job.projectedProfit || 0);
+          const projectedGrossMarginPct = Number(job.marginPct || 0);
+          let riskFlag = 'On Track';
+          if (projectedGrossMarginPct < 0) riskFlag = 'Negative Margin';
+          else if (projectedGrossMarginPct < 5) riskFlag = 'Thin Margin';
+          return {
+            jobId: job.jobId,
+            jobName: job.jobName,
+            customer: job.customer || job.customerName || '—',
+            pmName: job.pmName,
+            status: job.status || 'in_progress',
+            originalContract: co.originalContract ?? job.revisedContractValue,
+            approvedCOs: co.approvedCOs ?? 0,
+            revisedContractValue: job.revisedContractValue,
+            costToDate: job.costToDate,
+            estimatedCostToComplete: Math.max(0, Number(job.eac || 0) - Number(job.costToDate || 0)),
+            estimatedCostAtCompletion: job.eac,
+            pctComplete,
+            earnedRevenueToDate,
+            billingsToDate,
+            overUnderBilling,
+            projectedGrossProfit,
+            projectedGrossMarginPct,
+            backlog: Math.max(0, Number(job.revisedContractValue || 0) - earnedRevenueToDate),
+            riskFlag,
+          };
+        });
 
     const cardStyle: React.CSSProperties = {
       background: '#fff',
@@ -14493,6 +14534,62 @@ Strategies to Improve the CCC
       m < 0 ? '#b91c1c' : m < 5 ? '#b45309' : m < 10 ? '#0f172a' : '#15803d';
     const exposureColor = (pct: number): string =>
       pct >= 100 ? '#b91c1c' : pct >= 90 ? '#b45309' : pct >= 75 ? '#0f172a' : '#15803d';
+    const wipColor = (amount: number): string =>
+      amount < 0 ? '#b91c1c' : amount > 0 ? '#15803d' : '#475569';
+    const wipTdStyle: React.CSSProperties = {
+      ...tdStyle,
+      padding: isWipPrintRequest ? '5px 6px' : tdStyle.padding,
+      fontSize: isWipPrintRequest ? '10px' : '11px',
+      whiteSpace: 'nowrap',
+    };
+    const wipThStyle: React.CSSProperties = {
+      ...thStyle,
+      padding: isWipPrintRequest ? '5px 4px' : thStyle.padding,
+      fontSize: isWipPrintRequest ? '9px' : thStyle.fontSize,
+      textAlign: 'center',
+      whiteSpace: 'normal',
+      lineHeight: isWipPrintRequest ? 1.1 : 1.2,
+      verticalAlign: 'middle',
+    };
+    const wipTableWrapperStyle: React.CSSProperties & { zoom?: number } = {
+      overflowX: isWipPrintRequest ? 'visible' : 'auto',
+      maxHeight: isWipPrintRequest ? 'none' : '520px',
+      overflowY: isWipPrintRequest ? 'visible' : 'auto',
+      zoom: isWipPrintRequest ? 0.58 : undefined,
+    };
+    const wipTableStyle: React.CSSProperties = {
+      width: '100%',
+      borderCollapse: 'collapse',
+      minWidth: isWipPrintRequest ? '1700px' : '1500px',
+    };
+    const statusLabel = (status: string): string => {
+      if (status === 'in_progress') return 'In Progress';
+      if (status === 'closing_out') return 'Closing Out';
+      if (status === 'just_started') return 'Just Started';
+      return status || 'Unknown';
+    };
+    const riskPillStyle = (flag: string): React.CSSProperties => {
+      if (flag === 'Negative Margin' || flag === 'Underbilled') return { background: '#fee2e2', color: '#7f1d1d' };
+      if (flag === 'Thin Margin' || flag === 'Backlog Risk' || flag === 'Overbilled') return { background: '#fef3c7', color: '#92400e' };
+      return { background: '#dcfce7', color: '#166534' };
+    };
+    const wipSortIndicator = (key: string) =>
+      cfWipSortKey === key ? (cfWipSortDir === 'asc' ? ' ▲' : ' ▼') : '';
+    const handleWipSort = (key: string) => {
+      if (cfWipSortKey === key) {
+        setCfWipSortDir((dir) => (dir === 'asc' ? 'desc' : 'asc'));
+      } else {
+        setCfWipSortKey(key);
+        setCfWipSortDir('desc');
+      }
+    };
+    const sortedWipReport = [...wipReport].sort((a, b) => {
+      const dir = cfWipSortDir === 'asc' ? 1 : -1;
+      const av = a?.[cfWipSortKey];
+      const bv = b?.[cfWipSortKey];
+      if (typeof av === 'number' && typeof bv === 'number') return (av - bv) * dir;
+      return String(av || '').localeCompare(String(bv || '')) * dir;
+    });
     const commitmentStatusPill = (status: string): React.CSSProperties => {
       if (status === 'past_due') return { background: '#fee2e2', color: '#7f1d1d' };
       if (status === 'closing_soon') return { background: '#fef3c7', color: '#92400e' };
@@ -14538,6 +14635,117 @@ Strategies to Improve the CCC
           </div>
         )}
 
+        {/* Standard WIP report */}
+        {isSectionEnabled('cfWipReport') && (
+        <div style={cardStyle}>
+          <div
+            style={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              marginBottom: '12px',
+            }}
+          >
+            <div style={{ ...cardTitleStyle, marginBottom: 0 }}>WIP Report</div>
+            <div style={{ fontSize: '12px', color: '#64748b' }}>
+              {wipReport.length} projects · As of {summary.asOfDate || '—'}
+            </div>
+          </div>
+          {wipReport.length === 0 ? (
+            <div style={{ padding: '12px', color: '#64748b', fontSize: '13px' }}>No WIP rows available.</div>
+          ) : (
+            <div style={wipTableWrapperStyle}>
+              <table style={wipTableStyle}>
+                <thead>
+                  <tr>
+                    <th style={{ ...wipThStyle, cursor: 'pointer' }} onClick={() => handleWipSort('jobId')}>Job{wipSortIndicator('jobId')}</th>
+                    <th style={{ ...wipThStyle, cursor: 'pointer' }} onClick={() => handleWipSort('jobName')}>Project{wipSortIndicator('jobName')}</th>
+                    <th style={{ ...wipThStyle, cursor: 'pointer' }} onClick={() => handleWipSort('pmName')}>PM{wipSortIndicator('pmName')}</th>
+                    <th style={{ ...wipThStyle, cursor: 'pointer' }} onClick={() => handleWipSort('status')}>Status{wipSortIndicator('status')}</th>
+                    <th style={{ ...wipThStyle, cursor: 'pointer' }} onClick={() => handleWipSort('originalContract')}>Original Contract{wipSortIndicator('originalContract')}</th>
+                    <th style={{ ...wipThStyle, cursor: 'pointer' }} onClick={() => handleWipSort('approvedCOs')}>Approved COs{wipSortIndicator('approvedCOs')}</th>
+                    <th style={{ ...wipThStyle, cursor: 'pointer' }} onClick={() => handleWipSort('revisedContractValue')}>Revised Contract{wipSortIndicator('revisedContractValue')}</th>
+                    <th style={{ ...wipThStyle, cursor: 'pointer' }} onClick={() => handleWipSort('costToDate')}>Costs To Date{wipSortIndicator('costToDate')}</th>
+                    <th style={{ ...wipThStyle, cursor: 'pointer' }} onClick={() => handleWipSort('estimatedCostToComplete')}>Est. Cost To Complete{wipSortIndicator('estimatedCostToComplete')}</th>
+                    <th style={{ ...wipThStyle, cursor: 'pointer' }} onClick={() => handleWipSort('estimatedCostAtCompletion')}>Est. Cost At Completion{wipSortIndicator('estimatedCostAtCompletion')}</th>
+                    <th style={{ ...wipThStyle, cursor: 'pointer' }} onClick={() => handleWipSort('pctComplete')}>% Complete{wipSortIndicator('pctComplete')}</th>
+                    <th style={{ ...wipThStyle, cursor: 'pointer' }} onClick={() => handleWipSort('earnedRevenueToDate')}>Earned Revenue To Date{wipSortIndicator('earnedRevenueToDate')}</th>
+                    <th style={{ ...wipThStyle, cursor: 'pointer' }} onClick={() => handleWipSort('billingsToDate')}>Billings To Date{wipSortIndicator('billingsToDate')}</th>
+                    <th style={{ ...wipThStyle, cursor: 'pointer' }} onClick={() => handleWipSort('overUnderBilling')}>Over / Under Billing{wipSortIndicator('overUnderBilling')}</th>
+                    <th style={{ ...wipThStyle, cursor: 'pointer' }} onClick={() => handleWipSort('projectedGrossProfit')}>Projected Gross Profit{wipSortIndicator('projectedGrossProfit')}</th>
+                    <th style={{ ...wipThStyle, cursor: 'pointer' }} onClick={() => handleWipSort('projectedGrossMarginPct')}>Projected GM %{wipSortIndicator('projectedGrossMarginPct')}</th>
+                    <th style={{ ...wipThStyle, cursor: 'pointer' }} onClick={() => handleWipSort('backlog')}>Backlog{wipSortIndicator('backlog')}</th>
+                    <th style={{ ...wipThStyle, cursor: 'pointer' }} onClick={() => handleWipSort('riskFlag')}>Risk Flag{wipSortIndicator('riskFlag')}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {sortedWipReport.map((row) => (
+                      <tr key={row.jobId}>
+                        <td style={{ ...wipTdStyle, fontWeight: 600 }}>{row.jobId}</td>
+                        <td style={wipTdStyle}>
+                          {row.jobName}
+                        </td>
+                        <td style={wipTdStyle}>{row.pmName}</td>
+                        <td style={wipTdStyle}>{statusLabel(row.status)}</td>
+                        <td style={{ ...wipTdStyle, textAlign: 'right' }}>{formatCurrency(row.originalContract)}</td>
+                        <td
+                          style={{
+                            ...wipTdStyle,
+                            textAlign: 'right',
+                            color: row.approvedCOs < 0 ? '#b91c1c' : row.approvedCOs > 0 ? '#15803d' : '#475569',
+                          }}
+                        >
+                          {row.approvedCOs > 0 ? '+' : ''}
+                          {formatCurrency(row.approvedCOs)}
+                        </td>
+                        <td style={{ ...wipTdStyle, textAlign: 'right', fontWeight: 600 }}>{formatCurrency(row.revisedContractValue)}</td>
+                        <td style={{ ...wipTdStyle, textAlign: 'right' }}>{formatCurrency(row.costToDate)}</td>
+                        <td style={{ ...wipTdStyle, textAlign: 'right' }}>{formatCurrency(row.estimatedCostToComplete)}</td>
+                        <td style={{ ...wipTdStyle, textAlign: 'right' }}>{formatCurrency(row.estimatedCostAtCompletion)}</td>
+                        <td style={{ ...wipTdStyle, textAlign: 'right' }}>{(row.pctComplete || 0).toFixed(1)}%</td>
+                        <td style={{ ...wipTdStyle, textAlign: 'right' }}>{formatCurrency(row.earnedRevenueToDate)}</td>
+                        <td style={{ ...wipTdStyle, textAlign: 'right' }}>{formatCurrency(row.billingsToDate)}</td>
+                        <td style={{ ...wipTdStyle, textAlign: 'right', color: wipColor(row.overUnderBilling), fontWeight: 600 }}>
+                          {formatCurrency(row.overUnderBilling)}
+                        </td>
+                        <td
+                          style={{
+                            ...wipTdStyle,
+                            textAlign: 'right',
+                            color: row.projectedGrossProfit < 0 ? '#b91c1c' : '#0f172a',
+                            fontWeight: 600,
+                          }}
+                        >
+                          {formatCurrency(row.projectedGrossProfit)}
+                        </td>
+                        <td style={{ ...wipTdStyle, textAlign: 'right', color: marginColor(row.projectedGrossMarginPct), fontWeight: 600 }}>
+                          {(row.projectedGrossMarginPct || 0).toFixed(1)}%
+                        </td>
+                        <td style={{ ...wipTdStyle, textAlign: 'right' }}>{formatCurrency(row.backlog)}</td>
+                        <td style={wipTdStyle}>
+                          <span
+                            style={{
+                              padding: '2px 8px',
+                              borderRadius: '999px',
+                              fontSize: '10px',
+                              fontWeight: 600,
+                              ...riskPillStyle(row.riskFlag),
+                            }}
+                          >
+                            {row.riskFlag}
+                          </span>
+                        </td>
+                      </tr>
+                    ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+        )}
+
+        {!isWipPrintRequest && (
+        <>
         {/* Top: Forecast / EAC summary KPI strip */}
         <div style={cardStyle}>
           <div
@@ -14999,6 +15207,8 @@ Strategies to Improve the CCC
             </div>
           )}
         </div>
+        </>
+        )}
       </div>
     );
   };
