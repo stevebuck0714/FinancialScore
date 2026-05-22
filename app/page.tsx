@@ -2199,7 +2199,7 @@ function FinancialScorePage() {
       const raw = String(value || '').trim();
       if (raw) return raw;
     }
-    return String(mapping?.accountId || '').trim() || 'N/A';
+    return 'N/A';
   };
 
   const getMappingMatchKey = (mapping: any): string => {
@@ -4309,14 +4309,20 @@ function FinancialScorePage() {
     const chartRows = Array.isArray(qbRawData?.chartOfAccounts?.QueryResponse?.Account)
       ? qbRawData.chartOfAccounts.QueryResponse.Account
       : [];
-    const chartByName = new Map<string, { id: string; code: string }>();
+    const chartByName = new Map<string, { id: string; code: string; name: string }>();
+    const chartById = new Map<string, { id: string; code: string; name: string }>();
+    const stripLeadingAccountCode = (value: unknown): string =>
+      String(value || '').trim().replace(/^\s*\d+(?:\.\d+)?\s+/, '').trim();
     for (const row of chartRows) {
       if (!row || typeof row !== 'object') continue;
-      const accountName = String((row as any).Name || '').trim().toLowerCase();
+      const cleanAccountName = String((row as any).FullyQualifiedName || (row as any).Name || '').trim();
+      const accountName = cleanAccountName.toLowerCase();
       if (!accountName || chartByName.has(accountName)) continue;
       const accountId = String((row as any).Id || '').trim();
       const accountCode = String((row as any).AcctNum || '').trim();
-      chartByName.set(accountName, { id: accountId, code: accountCode });
+      const snapshot = { id: accountId, code: accountCode && accountCode !== accountId ? accountCode : '', name: cleanAccountName };
+      chartByName.set(accountName, snapshot);
+      if (accountId) chartById.set(accountId, snapshot);
     }
 
     const collectAccounts = (statementData: any, statementType: 'profitAndLoss' | 'balanceSheet') => {
@@ -4335,12 +4341,16 @@ function FinancialScorePage() {
           }
 
           if (row?.type === 'Data' && Array.isArray(row?.ColData)) {
-            const accountName = (row.ColData[0]?.value || '').trim();
-            if (!accountName || accountName.toLowerCase().includes('total')) continue;
+            const reportAccountName = (row.ColData[0]?.value || '').trim();
+            if (!reportAccountName || reportAccountName.toLowerCase().includes('total')) continue;
 
             // QBO report rows carry account id on the first (name) column.
             const reportAccountId = (row.ColData[0]?.id || row.ColData[1]?.id || '').toString().trim();
-            const chartMatch = chartByName.get(accountName.toLowerCase());
+            const chartMatch =
+              (reportAccountId ? chartById.get(reportAccountId) : undefined) ||
+              chartByName.get(reportAccountName.toLowerCase()) ||
+              chartByName.get(stripLeadingAccountCode(reportAccountName).toLowerCase());
+            const accountName = chartMatch?.name || stripLeadingAccountCode(reportAccountName) || reportAccountName;
             const accountId = (reportAccountId || chartMatch?.id || '').toString().trim();
             const accountCode = (chartMatch?.code || '').toString().trim();
             const classification = classifyAccount(statementType, sectionName);

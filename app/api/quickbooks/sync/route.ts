@@ -38,6 +38,12 @@ function normalizeAccountNameForMatch(value: unknown): string {
     .replace(/[^a-z0-9]+/g, '');
 }
 
+function hasDistinctQboAccountCode(account: Record<string, unknown>): boolean {
+  const acctNum = String(account.AcctNum || '').trim();
+  const id = String(account.Id || '').trim();
+  return !!acctNum && acctNum !== id;
+}
+
 export async function POST(request: NextRequest) {
   const syncStartTime = Date.now();
   let recordsImported = 0;
@@ -464,31 +470,39 @@ export async function POST(request: NextRequest) {
 
     if (accountsData?.QueryResponse?.Account && Array.isArray(accountsData.QueryResponse.Account) && accountMappings.length > 0) {
       const accountsByName = new Map<string, { id: string; code: string }>();
+      const accountsById = new Map<string, { id: string; code: string }>();
       for (const row of accountsData.QueryResponse.Account) {
         if (!row || typeof row !== 'object') continue;
-        const accountName = normalizeAccountNameForMatch((row as any).Name);
+        const accountName = normalizeAccountNameForMatch((row as any).FullyQualifiedName || (row as any).Name);
         const accountId = String((row as any).Id || '').trim();
-        if (!accountName || !accountId || accountsByName.has(accountName)) continue;
-        const accountCode = String((row as any).AcctNum || accountId).trim();
-        accountsByName.set(accountName, { id: accountId, code: accountCode || accountId });
+        if (!accountName || !accountId) continue;
+        const accountCode = hasDistinctQboAccountCode(row as Record<string, unknown>)
+          ? String((row as any).AcctNum || '').trim()
+          : '';
+        const snapshot = { id: accountId, code: accountCode };
+        if (!accountsByName.has(accountName)) accountsByName.set(accountName, snapshot);
+        accountsById.set(accountId, snapshot);
       }
 
       let updatedIdentityCount = 0;
       for (const mapping of accountMappings) {
         const existingId = String(mapping.accountId || '').trim();
         const existingCode = String(mapping.accountCode || '').trim();
-        if (existingId && existingCode) continue;
-        const match = accountsByName.get(normalizeAccountNameForMatch(mapping.accountName));
+        if (existingId && existingCode && existingCode !== existingId) continue;
+        const match =
+          (existingId ? accountsById.get(existingId) : undefined) ||
+          accountsByName.get(normalizeAccountNameForMatch(mapping.accountName));
         if (!match) continue;
+        const nextAccountCode = existingCode && existingCode !== existingId ? existingCode : match.code;
         await prisma.accountMapping.update({
           where: { id: mapping.id },
           data: {
             accountId: existingId || match.id,
-            accountCode: existingCode || match.code || match.id,
+            accountCode: nextAccountCode || null,
           },
         });
         mapping.accountId = existingId || match.id;
-        (mapping as any).accountCode = existingCode || match.code || match.id;
+        (mapping as any).accountCode = nextAccountCode || null;
         updatedIdentityCount += 1;
       }
 

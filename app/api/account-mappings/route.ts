@@ -378,9 +378,10 @@ function parseQuickBooksSnapshotFromRawData(rawData: unknown): AccountSnapshotRo
       if (!row || typeof row !== "object" || Array.isArray(row)) return null;
       const account = row as Record<string, unknown>;
       const accountId = String(account.Id || "").trim();
-      const accountName = String(account.Name || "").trim();
+      const accountName = String(account.FullyQualifiedName || account.Name || "").trim();
       if (!accountId || !accountName) return null;
-      const accountCode = String(account.AcctNum || accountId).trim();
+      const rawAccountCode = String(account.AcctNum || "").trim();
+      const accountCode = rawAccountCode && rawAccountCode !== accountId ? rawAccountCode : null;
       const classification = String(account.AccountType || account.Classification || "").trim() || null;
       return {
         accountId,
@@ -537,19 +538,31 @@ export async function GET(request: NextRequest) {
       if (isUnmapped) statusCounts.unmapped += 1;
 
       if (!effectiveTargetField || effectiveTargetField === "unmapped" || allowedTargetFields.has(effectiveTargetField)) {
+        const sourceCode =
+          sourceMatch?.accountCode && sourceMatch.accountCode !== sourceMatch.accountId
+            ? sourceMatch.accountCode
+            : null;
+        const storedCode = m.accountCode && m.accountCode !== m.accountId ? m.accountCode : null;
         return {
           ...m,
           accountId: m.accountId || sourceMatch?.accountId || null,
-          accountCode: m.accountCode || sourceMatch?.accountCode || sourceMatch?.accountId || null,
+          accountName: sourceMatch?.accountName || m.accountName,
+          accountCode: sourceCode || storedCode || null,
           accountClassification: effectiveClassification,
           targetField: effectiveTargetField,
           sourceStatus,
         };
       }
+      const sourceCode =
+        sourceMatch?.accountCode && sourceMatch.accountCode !== sourceMatch.accountId
+          ? sourceMatch.accountCode
+          : null;
+      const storedCode = m.accountCode && m.accountCode !== m.accountId ? m.accountCode : null;
       return {
         ...m,
         accountId: m.accountId || sourceMatch?.accountId || null,
-        accountCode: m.accountCode || sourceMatch?.accountCode || sourceMatch?.accountId || null,
+        accountName: sourceMatch?.accountName || m.accountName,
+        accountCode: sourceCode || storedCode || null,
         accountClassification: effectiveClassification,
         invalidTargetField: m.targetField,
         targetField: "",
@@ -639,6 +652,9 @@ export async function POST(request: NextRequest) {
         : [];
     const quickBooksByName = new Map(
       quickBooksSnapshot.map((row) => [normalize(row.accountName), row]),
+    );
+    const quickBooksById = new Map(
+      quickBooksSnapshot.map((row) => [normalize(row.accountId), row]),
     );
 
     const seenIdentity = new Set<string>();
@@ -744,13 +760,22 @@ export async function POST(request: NextRequest) {
       const matchedExisting = existing || nameFallbackExisting || null;
       const existingAccountId = String(matchedExisting?.accountId || "").trim() || null;
       const existingAccountCode = String(matchedExisting?.accountCode || "").trim() || null;
-      const sourceMatch = quickBooksByName.get(normalize(m.accountName));
+      const sourceMatch =
+        quickBooksById.get(normalize(m.accountId)) ||
+        quickBooksByName.get(normalize(m.accountName));
       const sourceAccountId = sourceMatch?.accountId ? String(sourceMatch.accountId).trim() : null;
-      const sourceAccountCode = sourceMatch?.accountCode ? String(sourceMatch.accountCode).trim() : null;
+      const sourceAccountCode =
+        sourceMatch?.accountCode && sourceMatch.accountCode !== sourceMatch.accountId
+          ? String(sourceMatch.accountCode).trim()
+          : null;
+      const existingUsableCode =
+        existingAccountCode && existingAccountCode !== existingAccountId ? existingAccountCode : null;
+      const incomingUsableCode =
+        incomingAccountCode && incomingAccountCode !== incomingAccountId ? incomingAccountCode : null;
+      const resolvedAccountName = sourceMatch?.accountName || incomingAccountName;
       const baseMappingData = {
         accountId: incomingAccountId || existingAccountId || sourceAccountId,
-        accountCode:
-          incomingAccountCode || existingAccountCode || sourceAccountCode || incomingAccountId || existingAccountId || sourceAccountId,
+        accountCode: sourceAccountCode || incomingUsableCode || existingUsableCode,
         accountClassification:
           m.accountClassification || matchedExisting?.accountClassification || null,
         targetField,
@@ -774,7 +799,7 @@ export async function POST(request: NextRequest) {
           await prisma.accountMapping.create({
             data: {
               companyId,
-              accountName: m.accountName,
+              accountName: resolvedAccountName,
               ...extendedMappingData,
             },
           });
@@ -793,7 +818,7 @@ export async function POST(request: NextRequest) {
           await prisma.accountMapping.create({
             data: {
               companyId,
-              accountName: m.accountName,
+              accountName: resolvedAccountName,
               ...baseMappingData,
             },
           });
@@ -803,7 +828,10 @@ export async function POST(request: NextRequest) {
         try {
           await prisma.accountMapping.update({
             where: { id: matchedExisting.id },
-            data: extendedMappingData,
+            data: {
+              accountName: resolvedAccountName,
+              ...extendedMappingData,
+            },
           });
         } catch (updateError: any) {
           const message = String(updateError?.message || "");
@@ -819,7 +847,10 @@ export async function POST(request: NextRequest) {
           );
           await prisma.accountMapping.update({
             where: { id: matchedExisting.id },
-            data: baseMappingData,
+            data: {
+              accountName: resolvedAccountName,
+              ...baseMappingData,
+            },
           });
         }
         updated += 1;
