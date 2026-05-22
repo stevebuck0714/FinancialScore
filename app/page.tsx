@@ -2384,6 +2384,7 @@ function FinancialScorePage() {
       });
 
       if (response.ok) {
+        masterDataStore.clearCompanyCache(currentCompany.id);
         invalidateAccountReviewValuesCache(currentCompany.id);
         if (/^\d{4}-\d{2}$/.test(String(apiFinancialTargetMonth || '').trim())) {
           await refreshAccountReviewLatestValues(currentCompany.id, apiFinancialTargetMonth, {
@@ -16753,6 +16754,7 @@ function FinancialScorePage() {
                                   }
 
                                   if (response.ok && result.success) {
+                                    masterDataStore.clearCompanyCache(selectedCompanyId);
                                     invalidateAccountReviewValuesCache(selectedCompanyId);
                                     await refreshAccountReviewLatestValues(selectedCompanyId, apiFinancialTargetMonth, {
                                       forceRefresh: true,

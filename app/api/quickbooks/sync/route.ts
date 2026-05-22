@@ -13,6 +13,7 @@ import { emitSyncStatus } from '@/lib/websocket-emit';
 import { orchestrateQuickBooksOnlineOperationalSync } from '@/lib/quickbooks-online/operational-orchestrator';
 import { decryptOAuthToken } from '@/lib/encryption';
 import { getValidQuickBooksToken } from '@/lib/quickbooks-online/token-manager';
+import { publishMonthsFromMonthlyFinancialDirect } from '@/lib/financial/publish-month-service';
 
 type FinancialImportMode = 'through' | 'only';
 
@@ -700,6 +701,17 @@ export async function POST(request: NextRequest) {
         data: monthlyRecords,
       });
       recordsImported = monthlyRecords.length;
+
+      const publishResult = await publishMonthsFromMonthlyFinancialDirect({
+        companyId,
+        months: monthlyRecords.map((record) => {
+          const monthDate = new Date(record.monthDate);
+          return `${monthDate.getUTCFullYear()}-${String(monthDate.getUTCMonth() + 1).padStart(2, '0')}`;
+        }),
+      });
+      if (!publishResult.success) {
+        console.warn('QBO sync rebuilt monthly financials but did not publish any months:', publishResult);
+      }
 
       // NEW: Save to Master Data API for unified reporting
       console.log('💾 Saving processed data to Master Data API...');

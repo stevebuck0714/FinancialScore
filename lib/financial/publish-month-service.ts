@@ -486,9 +486,9 @@ export async function publishMonthFromDailySnapshots(params: PublishMonthParams)
 // PUBLISHED in the FinancialMonthPublish table so the master-data API
 // (scope=published) returns them.
 //
-// This helper is the CSV-lane equivalent of publishMonthFromDailySnapshots.
+// This helper is the MonthlyFinancial-direct equivalent of publishMonthFromDailySnapshots.
 // It does NOT recompute aggregates — it trusts the MonthlyFinancial rows the
-// CSV processor already wrote — it only writes the publish gate row.
+// upstream lightweight/CSV processor already wrote — it only writes the publish gate row.
 
 export type PublishMonthsFromMonthlyParams = {
   companyId: string;
@@ -622,8 +622,8 @@ export async function publishMonthsFromMonthlyFinancialDirect(
     }
 
     const notes = force
-      ? 'Force publish | basis=csv_monthly_financial | currency=USD | IS=monthly_activity | BS=month_end_balance'
-      : 'basis=csv_monthly_financial | currency=USD | IS=monthly_activity | BS=month_end_balance';
+      ? 'Force publish | basis=monthly_financial_direct | currency=USD | IS=monthly_activity | BS=month_end_balance'
+      : 'basis=monthly_financial_direct | currency=USD | IS=monthly_activity | BS=month_end_balance';
     try {
       await publishDelegate.upsert({
         where: { companyId_monthStart: { companyId, monthStart } },

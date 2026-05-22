@@ -4,6 +4,7 @@ import { getAllowedTargetFieldSet, getTargetFieldOptions } from "@/lib/constants
 import { rebuildDailyFinancialSnapshotsFromGL } from "@/lib/financial/daily-bs-from-gl";
 import { syncMonthlyFinancialBsFromDailySnapshot } from "@/lib/financials/sync-monthly-bs-from-daily";
 import { syncMonthlyFinancialPnlFromDailySnapshot } from "@/lib/financials/sync-monthly-pnl-from-daily";
+import { publishMonthsFromMonthlyFinancialDirect } from "@/lib/financial/publish-month-service";
 
 export const dynamic = "force-dynamic";
 // Mapping save can trigger a downstream DFS rebuild (Infor tenants only)
@@ -521,6 +522,7 @@ export async function GET(request: NextRequest) {
     };
     const sanitizedMappings = mappings.map((m: any) => {
       const sourceMatch = findSourceMatch(m);
+      const hasManualClassification = isManualClassification(m.accountClassification);
       const effectiveClassification = isManualClassification(m.accountClassification)
         ? m.accountClassification
         : (sourceMatch?.classification || m.accountClassification);
@@ -545,6 +547,7 @@ export async function GET(request: NextRequest) {
       } else if (sourceMatch) {
         const nameChanged = normalize(sourceMatch.accountName) !== normalize(m.accountName);
         const classChanged =
+          !hasManualClassification &&
           normalize(sourceMatch.classification || "") !== normalize(m.accountClassification || "");
         if (nameChanged || classChanged) sourceStatus = "changed";
       }
@@ -901,6 +904,12 @@ export async function POST(request: NextRequest) {
           rebuilt?: { datesProcessed: number; rowsWritten: number; mappedAccountCount: number };
           bsSync?: { monthsUpdated: number; monthsSkippedNoDfs: number; errors: number };
           pnlSync?: { monthsUpdated: number; monthsSkipped: number; errors: number };
+          published?: {
+            publishedMonths: string[];
+            skippedMonths: string[];
+            lockedMonths: string[];
+            missingMonths: string[];
+          };
           error?: string;
           skipped?: string;
         }
@@ -961,6 +970,22 @@ export async function POST(request: NextRequest) {
         } else {
           propagation = { ok: false, skipped: "no_monthly_bounds" };
         }
+      } catch (err: any) {
+        propagation = { ok: false, error: String(err?.message || err) };
+      }
+    } else if (accountingSystem === "QUICKBOOKS") {
+      try {
+        const publishResult = await publishMonthsFromMonthlyFinancialDirect({ companyId });
+        propagation = {
+          ok: publishResult.success,
+          published: {
+            publishedMonths: publishResult.publishedMonths,
+            skippedMonths: publishResult.skippedMonths,
+            lockedMonths: publishResult.lockedMonths,
+            missingMonths: publishResult.missingMonths,
+          },
+          ...(publishResult.success ? {} : { error: publishResult.error || "No QuickBooks months were published" }),
+        };
       } catch (err: any) {
         propagation = { ok: false, error: String(err?.message || err) };
       }

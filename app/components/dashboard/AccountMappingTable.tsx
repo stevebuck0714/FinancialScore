@@ -289,6 +289,10 @@ export default function AccountMappingTable({
   };
 
   const getGroupingClassification = (mapping: AccountMapping) => {
+    const hasManualClassification = String(mapping.accountClassification || '')
+      .trim()
+      .toLowerCase()
+      .startsWith('manual:');
     // Always group by source account type first so sections reflect the native
     // accounting classification (Revenue/COGS/Expense/Asset/Liability/Equity),
     // even when target fields are temporarily mis-mapped.
@@ -298,6 +302,7 @@ export default function AccountMappingTable({
       undefined,
       String(mapping.accountCode || mapping.accountId || ''),
     );
+    if (hasManualClassification) return sourceClassification;
     if (sourceClassification !== 'other') return sourceClassification;
 
     // Fallback to target field classification only when source is unknown.
