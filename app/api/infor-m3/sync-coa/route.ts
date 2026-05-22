@@ -51,9 +51,9 @@ function selectAccountsSource(
 ): { type: 'endpoint' | 'mi'; value: string; sourceModule: string; mongooseConfig?: string } | null {
   // Preferred for CSI: explicit Accounts endpoint path.
   const accountsEndpoint = programRows.find((row) => {
-    const module = String(row.module || '').toLowerCase();
+    const sourceModule = String(row.module || '').toLowerCase();
     const endpoint = String(row.endpointPath || '').trim();
-    return endpoint.length > 0 && (module === 'accounts' || module.includes('account'));
+    return endpoint.length > 0 && (sourceModule === 'accounts' || sourceModule.includes('account'));
   });
   if (accountsEndpoint?.endpointPath) {
     return {
@@ -66,8 +66,8 @@ function selectAccountsSource(
 
   // Legacy path: Accounts MI program.
   const accountsMi = programRows.find((row) => {
-    const module = String(row.module || '').toLowerCase();
-    return row.miProgram.length > 0 && (module === 'accounts' || module.includes('account'));
+    const sourceModule = String(row.module || '').toLowerCase();
+    return row.miProgram.length > 0 && (sourceModule === 'accounts' || sourceModule.includes('account'));
   });
   if (accountsMi) {
     const programs = accountsMi.miProgram
@@ -86,10 +86,10 @@ function selectAccountsSource(
 
   // CSI fallback: use GL endpoint row that points at SLCharts.
   const glChartsEndpoint = programRows.find((row) => {
-    const module = String(row.module || '').toLowerCase();
+    const sourceModule = String(row.module || '').toLowerCase();
     const endpoint = String(row.endpointPath || '').toLowerCase();
     if (endpoint.includes('/slcharts')) return true;
-    if (module === 'gl' && endpoint.length > 0) return false;
+    if (sourceModule === 'gl' && endpoint.length > 0) return false;
     return false;
   });
   if (glChartsEndpoint?.endpointPath) {

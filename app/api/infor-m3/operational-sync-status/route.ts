@@ -156,10 +156,10 @@ async function buildRunDiagnostics(companyId: string, syncRunId: string) {
     new Set(
       failedRows
         .map((row) => {
-          const module = String(row.module || '').trim();
+          const sourceModule = String(row.module || '').trim();
           const program = String(row.miProgram || '').trim();
           const tx = String(row.transaction || '').trim();
-          const descriptor = `${module}/${program || tx}`.replace(/^\/|\/$/g, '');
+          const descriptor = `${sourceModule}/${program || tx}`.replace(/^\/|\/$/g, '');
           return descriptor || null;
         })
         .filter(Boolean) as string[]

@@ -14,10 +14,6 @@ interface InactivityLogoutProps {
 }
 
 export default function InactivityLogout({ isLoggedIn, userEmail, onLogout }: InactivityLogoutProps) {
-  if (DISABLE_INACTIVITY_TIMEOUT) {
-    return null;
-  }
-
   const timeoutRef = useRef<NodeJS.Timeout | null>(null);
   const lastActivityRef = useRef<number>(Date.now());
   const onLogoutRef = useRef(onLogout);
@@ -29,6 +25,10 @@ export default function InactivityLogout({ isLoggedIn, userEmail, onLogout }: In
   }, [onLogout]);
 
   useEffect(() => {
+    if (DISABLE_INACTIVITY_TIMEOUT) {
+      return;
+    }
+
     console.log('[InactivityLogout] Auth status:', isLoggedIn ? 'logged in' : 'logged out', 'User:', userEmail);
     
     // Only run if user is logged in

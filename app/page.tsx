@@ -767,10 +767,6 @@ type InactivityLogoutProps = {
 };
 
 function InactivityLogout({ isLoggedIn, userEmail, onLogout }: InactivityLogoutProps) {
-  if (process.env.NEXT_PUBLIC_DISABLE_INACTIVITY_TIMEOUT === '1') {
-    return null;
-  }
-
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastActivityRef = useRef<number>(Date.now());
   const onLogoutRef = useRef(onLogout);
@@ -781,6 +777,10 @@ function InactivityLogout({ isLoggedIn, userEmail, onLogout }: InactivityLogoutP
   }, [onLogout]);
 
   useEffect(() => {
+    if (process.env.NEXT_PUBLIC_DISABLE_INACTIVITY_TIMEOUT === '1') {
+      return;
+    }
+
     if (!isLoggedIn) {
       isInitializedRef.current = false;
       return;
@@ -3284,7 +3284,7 @@ function FinancialScorePage() {
   const [inforLastCaoPullAt, setInforLastCaoPullAt] = useState<Date | null>(null);
   const [inforLastCaoPulledBy, setInforLastCaoPulledBy] = useState<string | null>(null);
   // State - Financial Statements
-  const [statementType, setStatementType] = useState<'income-statement' | 'balance-sheet' | 'income-statement-percent'>('income-statement');
+  const [statementType, setStatementType] = useState<'income-statement' | 'balance-sheet' | 'income-statement-percent' | 'cash-flow-statement'>('income-statement');
   const [statementPeriod, setStatementPeriod] = useState<'current-month' | 'current-quarter' | 'last-12-months' | 'ytd' | 'last-year' | 'last-3-years'>('current-month');
   const [financialStatementsTab, setFinancialStatementsTab] = useState<'aggregated' | 'line-of-business'>('aggregated');
   const [selectedLineOfBusiness, setSelectedLineOfBusiness] = useState<string>('all');
@@ -24185,7 +24185,12 @@ function FinancialScorePage() {
               Aggregated Financials
             </button>
             <button
-              onClick={() => setFinancialStatementsTab('line-of-business')}
+              onClick={() => {
+                setFinancialStatementsTab('line-of-business');
+                if (statementType === 'cash-flow-statement') {
+                  setStatementType('income-statement');
+                }
+              }}
               style={{
                 padding: '12px 24px',
                 background: financialStatementsTab === 'line-of-business' ? '#667eea' : 'transparent',
@@ -24231,6 +24236,7 @@ function FinancialScorePage() {
                   <option value="income-statement">Income Statement</option>
                   <option value="income-statement-percent">Income Stmt as % of Revenue</option>
                   <option value="balance-sheet">Balance Sheet</option>
+                  <option value="cash-flow-statement">Cash Flow Statements</option>
                 </select>
               </div>
 
@@ -24413,6 +24419,19 @@ function FinancialScorePage() {
               { key: 'otherExpense', label: 'Other Expenses' },
             ] as const;
             
+            if (statementType === 'cash-flow-statement') {
+              return (
+                <CashFlowTab
+                  selectedCompanyId={selectedCompanyId}
+                  companyName={companyName || ''}
+                  initialDisplay={statementDisplay}
+                  statementPeriod={statementPeriod}
+                  prefetchedMonthlyData={monthly}
+                  embeddedInStatements
+                />
+              );
+            }
+
             if (statementType === 'income-statement' && statementPeriod === 'current-month') {
               // Sort by date to ensure we get the most recent month (in case data isn't sorted)
               const sortedMonthly = [...monthly].sort((a, b) => {

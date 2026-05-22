@@ -117,7 +117,7 @@ function sanitizePrograms(
   const cleaned: AccountingProgram[] = [];
   const seen = new Set<string>();
   for (const row of value) {
-    const module = typeof row?.module === 'string' ? row.module.trim() : '';
+    const sourceModule = typeof row?.module === 'string' ? row.module.trim() : '';
     const miProgram = typeof row?.miProgram === 'string' ? row.miProgram.trim() : '';
     const transactions = normalizeTransactions(row).filter((tx) => !isLegacyTransactionPlaceholder(tx));
     let endpointPath = typeof row?.endpointPath === 'string' ? row.endpointPath.trim() : '';
@@ -146,8 +146,8 @@ function sanitizePrograms(
     const divi = normalizeLegacyProgramField(typeof row?.divi === 'string' ? row.divi : '', 'divi');
     const requestedEnabled = normalizeEnabledValue(row?.enabled);
     let enabled = requestedEnabled;
-    if (!module && !miProgram && !endpointPath && transactions.length === 0 && !cono && !divi) continue;
-    if (!module || (!miProgram && !endpointPath)) {
+    if (!sourceModule && !miProgram && !endpointPath && transactions.length === 0 && !cono && !divi) continue;
+    if (!sourceModule || (!miProgram && !endpointPath)) {
       throw new Error('Each accounting program row must include module plus MI program or endpoint path.');
     }
     endpointPath = enforceSlCoitemsSafeEndpoint(endpointPath, miProgram);
@@ -158,15 +158,15 @@ function sanitizePrograms(
         enabled = false;
       }
     }
-    const dedupeKey = `${module}::${miProgram || ''}::${endpointPath || ''}::${site || ''}::${transactions.join('|')}::${cono || ''}::${divi || ''}`;
+    const dedupeKey = `${sourceModule}::${miProgram || ''}::${endpointPath || ''}::${site || ''}::${transactions.join('|')}::${cono || ''}::${divi || ''}`;
     if (seen.has(dedupeKey)) {
       throw new Error(
-        `Duplicate accounting program row detected for ${module} / ${miProgram || endpointPath}.`
+        `Duplicate accounting program row detected for ${sourceModule} / ${miProgram || endpointPath}.`
       );
     }
     seen.add(dedupeKey);
     cleaned.push({
-      module,
+      module: sourceModule,
       miProgram: miProgram || undefined,
       endpointPath: endpointPath || undefined,
       transactions: transactions.length ? transactions : undefined,

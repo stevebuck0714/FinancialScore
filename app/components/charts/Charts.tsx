@@ -73,6 +73,8 @@ export function LineChart({ title, data, valueKey, color, yMax, showTable, compa
     .filter((d) => d.month && parseMonthToDate(String(d.month)) !== null && d.value !== null && Number.isFinite(d.value))
     .slice(-MAX_MONTHS)
     .map((d, idx) => ({ ...d, _idx: idx }));
+  const [hoveredPoint, setHoveredPoint] = useState<number | null>(null);
+
   if (visibleData.length === 0) return null;
 
   const values = visibleData.map(d => d.value as number);
@@ -118,8 +120,6 @@ export function LineChart({ title, data, valueKey, color, yMax, showTable, compa
   const dataStartPoint = points.length > 0 ? points[0] : null;
 
   const pathD = points.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ');
-  const [hoveredPoint, setHoveredPoint] = useState<number | null>(null);
-
   const trendPathD = (() => {
     if (!showTrendLine || visibleData.length < 2) return null;
     const n = visibleData.length;

@@ -22,9 +22,6 @@ interface Loan {
   notes?: string;
 }
 
-// Feature flag for covenants module
-const COVENANTS_ENABLED = process.env.NEXT_PUBLIC_COVENANTS_ENABLED === 'true' || true;
-
 const DEFAULT_COVENANT_THRESHOLDS: Record<string, number> = {
   '1': 4.0, '2': 3.5, '3': 2.0, '4': 3.0, '5': 1.5, '6': 1.5, '7': 1.0, '8': 250000, '9': 2000000,
   '10': 4.0, '11': 1.5, '12': 4000000, '16': 1000000, '24': 3.5, '25': 3.0
@@ -539,20 +536,6 @@ export default function CovenantsTab({
   companyName
 }: CovenantsTabProps) {
   console.log('🏢 CovenantsTab RENDER - props:', { selectedCompanyId, companyName, monthlyLength: monthly?.length });
-  // Feature flag check
-  if (!COVENANTS_ENABLED) {
-    return (
-      <div style={{ padding: '24px', background: 'white', borderRadius: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
-        <h2 style={{ fontSize: '24px', fontWeight: 'bold', color: '#1e293b', marginBottom: '16px' }}>
-          Loan Covenants
-        </h2>
-        <div style={{ color: '#64748b' }}>
-          ⚠️ Covenants module is currently disabled.
-        </div>
-      </div>
-    );
-  }
-
   const [activeTab, setActiveTab] = useState<'overview' | 'details' | 'alerts' | 'settings' | 'add-loan'>('overview');
   const [selectedLoan, setSelectedLoan] = useState<Loan | null>(null);
   const [loans, setLoans] = useState<Loan[]>([]);

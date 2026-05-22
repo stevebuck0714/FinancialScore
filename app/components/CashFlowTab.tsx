@@ -1,4 +1,5 @@
 // @ts-nocheck
+/* eslint-disable react/no-unescaped-entities */
 'use client';
 
 import React, { useState } from 'react';
@@ -9,14 +10,18 @@ interface CashFlowTabProps {
   selectedCompanyId: string;
   companyName: string;
   initialDisplay?: 'monthly' | 'quarterly' | 'annual';
+  statementPeriod?: 'current-month' | 'current-quarter' | 'last-12-months' | 'ytd' | 'last-year' | 'last-3-years';
   prefetchedMonthlyData?: MonthlyDataRow[];
+  embeddedInStatements?: boolean;
 }
 
 export default function CashFlowTab({
   selectedCompanyId,
   companyName,
   initialDisplay = 'monthly',
+  statementPeriod,
   prefetchedMonthlyData,
+  embeddedInStatements = false,
 }: CashFlowTabProps) {
   const { monthlyData, loading, error } = useMasterData(selectedCompanyId);
   const hasPrefetchedData = Array.isArray(prefetchedMonthlyData) && prefetchedMonthlyData.length > 0;
@@ -76,12 +81,58 @@ export default function CashFlowTab({
     return `${month}-${year}`;
   };
 
-  // Calculate cash flow data based on view
-  const dataMonths = cashFlowDisplay === 'quarterly' ? 12 : (cashFlowDisplay === 'annual' ? 36 : 12);
-  const dataSet = monthly.slice(-dataMonths);
+  const getMonthDate = (row: any): Date | null => {
+    const source = row?.date || row?.monthDate || row?.month;
+    const date = source instanceof Date ? source : new Date(source);
+    return Number.isNaN(date.getTime()) ? null : date;
+  };
+
+  const sortedMonthly = [...monthly].sort((a, b) => {
+    const aTime = getMonthDate(a)?.getTime() || 0;
+    const bTime = getMonthDate(b)?.getTime() || 0;
+    return aTime - bTime;
+  });
+
+  const latestDate = getMonthDate(sortedMonthly[sortedMonthly.length - 1]);
+  const latestYear = latestDate?.getUTCFullYear();
+
+  const getPeriodMonthly = () => {
+    if (!embeddedInStatements || !statementPeriod) {
+      const dataMonths = cashFlowDisplay === 'quarterly' ? 12 : (cashFlowDisplay === 'annual' ? 36 : 12);
+      return sortedMonthly.slice(-dataMonths);
+    }
+
+    switch (statementPeriod) {
+      case 'current-month':
+        return sortedMonthly.slice(-1);
+      case 'current-quarter':
+        return sortedMonthly.slice(-3);
+      case 'last-12-months':
+        return sortedMonthly.slice(-12);
+      case 'ytd':
+        return sortedMonthly.filter((m) => {
+          const date = getMonthDate(m);
+          return latestYear !== undefined && date?.getUTCFullYear() === latestYear;
+        });
+      case 'last-year':
+        return sortedMonthly.filter((m) => {
+          const date = getMonthDate(m);
+          return latestYear !== undefined && date?.getUTCFullYear() === latestYear - 1;
+        });
+      case 'last-3-years':
+        return sortedMonthly.slice(-36);
+      default:
+        return sortedMonthly.slice(-12);
+    }
+  };
+
+  const dataSet = getPeriodMonthly();
+  const dataSetStartIndex = sortedMonthly.findIndex((row) => row === dataSet[0]);
   
   const cashFlowData = dataSet.map((curr, idx) => {
-    const prev = idx === 0 && monthly.length > dataMonths ? monthly[monthly.length - dataMonths - 1] : (idx > 0 ? dataSet[idx - 1] : curr);
+    const prev = idx > 0
+      ? dataSet[idx - 1]
+      : (dataSetStartIndex > 0 ? sortedMonthly[dataSetStartIndex - 1] : curr);
     
     // Operating Activities
     const netIncome = (curr.revenue || 0) - (curr.cogsTotal || 0) - (curr.expense || 0);
@@ -156,96 +207,50 @@ export default function CashFlowTab({
     };
   });
 
-  // Aggregate data based on display selection
+  const aggregateCashFlowRows = (rows: typeof cashFlowData, label: string) => ({
+    month: label,
+    netIncome: rows.reduce((sum, d) => sum + d.netIncome, 0),
+    depreciation: rows.reduce((sum, d) => sum + d.depreciation, 0),
+    changeInWorkingCapital: rows.reduce((sum, d) => sum + d.changeInWorkingCapital, 0),
+    operatingCashFlow: rows.reduce((sum, d) => sum + d.operatingCashFlow, 0),
+    capitalExpenditures: rows.reduce((sum, d) => sum + d.capitalExpenditures, 0),
+    investingCashFlow: rows.reduce((sum, d) => sum + d.investingCashFlow, 0),
+    changeInDebt: rows.reduce((sum, d) => sum + d.changeInDebt, 0),
+    changeInLOC: rows.reduce((sum, d) => sum + d.changeInLOC, 0),
+    changeInEquity: rows.reduce((sum, d) => sum + d.changeInEquity, 0),
+    financingCashFlow: rows.reduce((sum, d) => sum + d.financingCashFlow, 0),
+    netCashChange: rows.reduce((sum, d) => sum + d.netCashChange, 0),
+    freeCashFlow: rows.reduce((sum, d) => sum + d.freeCashFlow, 0),
+    cashFlowMargin: rows.length > 0 ? rows.reduce((sum, d) => sum + d.cashFlowMargin, 0) / rows.length : 0,
+    daysCashOnHand: rows[rows.length - 1]?.daysCashOnHand || 0,
+    endingCash: rows[rows.length - 1]?.endingCash || 0,
+    DIO: rows[rows.length - 1]?.DIO || 0,
+    DSO: rows[rows.length - 1]?.DSO || 0,
+    DPO: rows[rows.length - 1]?.DPO || 0,
+    CCC: rows[rows.length - 1]?.CCC || 0
+  });
+
+  // Aggregate selected period data based on display selection.
   let displayData = cashFlowData;
   if (cashFlowDisplay === 'quarterly') {
-    // Aggregate into quarters (3 months each)
-    displayData = [];
-    for (let i = 0; i < cashFlowData.length; i += 3) {
-      const quarter = cashFlowData.slice(i, i + 3);
-      const quarterEndMonth = quarter[quarter.length - 1].month;
-      // Format quarter label (e.g., "Q1 2024" or "03-2024")
-      let quarterLabel = quarterEndMonth;
-      const monthMatch = quarterEndMonth.match(/^(\d{2})-(\d{4})$/);
-      if (monthMatch) {
-        const monthNum = parseInt(monthMatch[1]);
-        const year = monthMatch[2];
-        const quarterNum = Math.ceil(monthNum / 3);
-        quarterLabel = `Q${quarterNum} ${year}`;
-      }
-      const aggregated = {
-        month: quarterLabel,
-        netIncome: quarter.reduce((sum, d) => sum + d.netIncome, 0),
-        depreciation: quarter.reduce((sum, d) => sum + d.depreciation, 0),
-        changeInWorkingCapital: quarter.reduce((sum, d) => sum + d.changeInWorkingCapital, 0),
-        operatingCashFlow: quarter.reduce((sum, d) => sum + d.operatingCashFlow, 0),
-        capitalExpenditures: quarter.reduce((sum, d) => sum + d.capitalExpenditures, 0),
-        investingCashFlow: quarter.reduce((sum, d) => sum + d.investingCashFlow, 0),
-        changeInDebt: quarter.reduce((sum, d) => sum + d.changeInDebt, 0),
-        changeInLOC: quarter.reduce((sum, d) => sum + d.changeInLOC, 0),
-        changeInEquity: quarter.reduce((sum, d) => sum + d.changeInEquity, 0),
-        financingCashFlow: quarter.reduce((sum, d) => sum + d.financingCashFlow, 0),
-        netCashChange: quarter.reduce((sum, d) => sum + d.netCashChange, 0),
-        freeCashFlow: quarter.reduce((sum, d) => sum + d.freeCashFlow, 0),
-        cashFlowMargin: quarter.reduce((sum, d) => sum + d.cashFlowMargin, 0) / quarter.length,
-        daysCashOnHand: quarter[quarter.length - 1].daysCashOnHand,
-        endingCash: quarter[quarter.length - 1].endingCash,
-        DIO: quarter[quarter.length - 1].DIO,
-        DSO: quarter[quarter.length - 1].DSO,
-        DPO: quarter[quarter.length - 1].DPO,
-        CCC: quarter[quarter.length - 1].CCC
-      };
-      displayData.push(aggregated);
-    }
+    const quarters: Record<string, typeof cashFlowData> = {};
+    cashFlowData.forEach((row) => {
+      const [monthPart, year] = String(row.month || '').split('-');
+      const monthNum = Number(monthPart);
+      const quarterNum = monthNum >= 1 && monthNum <= 12 ? Math.ceil(monthNum / 3) : null;
+      const label = quarterNum && year ? `Q${quarterNum} ${year}` : row.month;
+      if (!quarters[label]) quarters[label] = [];
+      quarters[label].push(row);
+    });
+    displayData = Object.entries(quarters).map(([label, rows]) => aggregateCashFlowRows(rows, label));
   } else if (cashFlowDisplay === 'annual') {
-    // Aggregate into 3 annual periods (12 months each)
-    displayData = [];
-    const totalMonths = cashFlowData.length;
-    const yearsToShow = Math.min(3, Math.floor(totalMonths / 12));
-    
-    for (let i = 0; i < yearsToShow; i++) {
-      const yearStart = totalMonths - (yearsToShow - i) * 12;
-      const yearEnd = yearStart + 12;
-      const yearData = cashFlowData.slice(yearStart, yearEnd);
-      
-      if (yearData.length > 0) {
-        const yearEndMonth = yearData[yearData.length - 1].month;
-        // Format year label (e.g., "2024" or extract year from "MM-YYYY")
-        let yearLabel = yearEndMonth;
-        const yearMatch = yearEndMonth.match(/-(\d{4})$/);
-        if (yearMatch) {
-          yearLabel = yearMatch[1];
-        } else {
-          // Try to extract year from date string
-          const date = new Date(yearEndMonth);
-          if (!isNaN(date.getTime())) {
-            yearLabel = String(date.getUTCFullYear());
-          }
-        }
-        displayData.push({
-          month: yearLabel,
-          netIncome: yearData.reduce((sum, d) => sum + d.netIncome, 0),
-          depreciation: yearData.reduce((sum, d) => sum + d.depreciation, 0),
-          changeInWorkingCapital: yearData.reduce((sum, d) => sum + d.changeInWorkingCapital, 0),
-          operatingCashFlow: yearData.reduce((sum, d) => sum + d.operatingCashFlow, 0),
-          capitalExpenditures: yearData.reduce((sum, d) => sum + d.capitalExpenditures, 0),
-          investingCashFlow: yearData.reduce((sum, d) => sum + d.investingCashFlow, 0),
-          changeInDebt: yearData.reduce((sum, d) => sum + d.changeInDebt, 0),
-          changeInLOC: yearData.reduce((sum, d) => sum + d.changeInLOC, 0),
-          changeInEquity: yearData.reduce((sum, d) => sum + d.changeInEquity, 0),
-          financingCashFlow: yearData.reduce((sum, d) => sum + d.financingCashFlow, 0),
-          netCashChange: yearData.reduce((sum, d) => sum + d.netCashChange, 0),
-          freeCashFlow: yearData.reduce((sum, d) => sum + d.freeCashFlow, 0),
-          cashFlowMargin: yearData.reduce((sum, d) => sum + d.cashFlowMargin, 0) / yearData.length,
-          daysCashOnHand: yearData[yearData.length - 1].daysCashOnHand,
-          endingCash: yearData[yearData.length - 1].endingCash,
-          DIO: yearData[yearData.length - 1].DIO,
-          DSO: yearData[yearData.length - 1].DSO,
-          DPO: yearData[yearData.length - 1].DPO,
-          CCC: yearData[yearData.length - 1].CCC
-        });
-      }
-    }
+    const years: Record<string, typeof cashFlowData> = {};
+    cashFlowData.forEach((row) => {
+      const year = String(row.month || '').match(/-(\d{4})$/)?.[1] || row.month;
+      if (!years[year]) years[year] = [];
+      years[year].push(row);
+    });
+    displayData = Object.entries(years).map(([label, rows]) => aggregateCashFlowRows(rows, label));
   }
 
   // Summary metrics - always use last 12 months for consistency
@@ -275,13 +280,15 @@ export default function CashFlowTab({
   const totalFinancingCF = last12MonthsData.reduce((sum, d) => sum + d.financingCashFlow, 0);
   const totalFreeCF = last12MonthsData.reduce((sum, d) => sum + d.freeCashFlow, 0);
   const avgCashFlowMargin = last12MonthsData.reduce((sum, d) => sum + d.cashFlowMargin, 0) / last12MonthsData.length;
+  const statementRowBackground = (color: string) => embeddedInStatements ? 'transparent' : color;
+  const statementTextColor = (color: string) => embeddedInStatements ? '#000000' : color;
 
   return (
-    <div style={{ maxWidth: '1400px', margin: '0 auto', padding: '32px' }}>
+    <div style={embeddedInStatements ? { maxWidth: '100%', margin: '0 auto', padding: 0 } : { maxWidth: '1400px', margin: '0 auto', padding: '32px' }}>
       <style>{`
         @media print {
           @page {
-            size: ${printOrientation};
+            ${embeddedInStatements ? '' : `size: ${printOrientation};`}
             margin: 0.3in;
           }
           
@@ -349,6 +356,8 @@ export default function CashFlowTab({
         }
       `}</style>
       
+      {!embeddedInStatements && (
+      <>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
         <h1 style={{ fontSize: '32px', fontWeight: '700', color: '#1e293b', margin: 0 }}>Cash Flow Analysis</h1>
         <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
@@ -424,8 +433,11 @@ export default function CashFlowTab({
           Last 3 Years
         </button>
       </div>
+      </>
+      )}
 
       {/* Educational Resources - Side by Side */}
+      {!embeddedInStatements && (
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '24px' }}>
         {/* Cash Flow Metrics Definitions */}
         <div style={{ background: '#f8fafc', borderRadius: '12px', padding: '12px 24px', border: '1px solid #e2e8f0' }}>
@@ -703,8 +715,10 @@ export default function CashFlowTab({
           </details>
         </div>
       </div>
+      )}
 
       {/* Summary Cards */}
+      {!embeddedInStatements && (
       <div className="cf-summary-cards" style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '16px', marginBottom: '32px' }}>
         <div style={{ background: 'white', borderRadius: '12px', padding: '20px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', border: '2px solid #10b981' }}>
           <div style={{ fontSize: '12px', fontWeight: '600', color: '#64748b', marginBottom: '4px' }}>Operating Cash Flow (12mo)</div>
@@ -746,6 +760,7 @@ export default function CashFlowTab({
           <div style={{ fontSize: '11px', color: '#64748b', marginTop: '4px' }}>OCF / Revenue</div>
         </div>
       </div>
+      )}
 
       {/* Cash Flow Statement Table */}
       <div className="cf-table-container" style={{ background: 'white', borderRadius: '12px', padding: '32px', marginBottom: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
@@ -755,9 +770,9 @@ export default function CashFlowTab({
           <table style={{ width: '100%', fontSize: '12px', borderCollapse: 'collapse' }}>
             <thead>
               <tr style={{ borderBottom: '2px solid #e2e8f0' }}>
-                <th style={{ textAlign: 'left', padding: '10px', fontSize: '13px', fontWeight: '600', color: '#64748b', position: 'sticky', left: 0, background: 'white', minWidth: '200px' }}>Cash Flow Item</th>
+                <th style={{ textAlign: 'left', padding: '10px', fontSize: '13px', fontWeight: '600', color: statementTextColor('#64748b'), position: 'sticky', left: 0, background: 'white', minWidth: '200px' }}>Cash Flow Item</th>
                 {displayData.map((cf, i) => (
-                  <th key={i} style={{ textAlign: 'right', padding: '10px', fontSize: '11px', fontWeight: '600', color: '#64748b', minWidth: '90px' }}>
+                  <th key={i} style={{ textAlign: 'right', padding: '10px', fontSize: '11px', fontWeight: '600', color: statementTextColor('#64748b'), minWidth: '90px' }}>
                     {cf.month}
                   </th>
                 ))}
@@ -765,127 +780,127 @@ export default function CashFlowTab({
             </thead>
             <tbody>
               {/* Operating Activities */}
-              <tr style={{ background: '#f0fdf4' }}>
-                <td colSpan={displayData.length + 1} style={{ padding: '12px 10px', fontSize: '14px', fontWeight: '700', color: '#065f46' }}>
+              <tr style={{ background: statementRowBackground('#f0fdf4') }}>
+                <td colSpan={displayData.length + 1} style={{ padding: '12px 10px', fontSize: '14px', fontWeight: '700', color: statementTextColor('#065f46') }}>
                   OPERATING ACTIVITIES
                 </td>
               </tr>
               <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
-                <td style={{ padding: '8px 10px', fontSize: '12px', color: '#475569', paddingLeft: '24px' }}>Net Income</td>
+                <td style={{ padding: '8px 10px', fontSize: '12px', color: statementTextColor('#475569'), paddingLeft: '24px' }}>Net Income</td>
                 {displayData.map((cf, i) => (
-                  <td key={i} style={{ padding: '8px 10px', fontSize: '12px', color: '#1e293b', textAlign: 'right' }}>
+                  <td key={i} style={{ padding: '8px 10px', fontSize: '12px', color: statementTextColor('#1e293b'), textAlign: 'right' }}>
                     ${Math.round(cf.netIncome).toLocaleString()}
                   </td>
                 ))}
               </tr>
               <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
-                <td style={{ padding: '8px 10px', fontSize: '12px', color: '#475569', paddingLeft: '24px' }}>+ Depreciation</td>
+                <td style={{ padding: '8px 10px', fontSize: '12px', color: statementTextColor('#475569'), paddingLeft: '24px' }}>+ Depreciation</td>
                 {displayData.map((cf, i) => (
-                  <td key={i} style={{ padding: '8px 10px', fontSize: '12px', color: '#1e293b', textAlign: 'right' }}>
+                  <td key={i} style={{ padding: '8px 10px', fontSize: '12px', color: statementTextColor('#1e293b'), textAlign: 'right' }}>
                     ${Math.round(cf.depreciation).toLocaleString()}
                   </td>
                 ))}
               </tr>
               <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
-                <td style={{ padding: '8px 10px', fontSize: '12px', color: '#475569', paddingLeft: '24px' }}>+ Change in Working Capital</td>
+                <td style={{ padding: '8px 10px', fontSize: '12px', color: statementTextColor('#475569'), paddingLeft: '24px' }}>+ Change in Working Capital</td>
                 {displayData.map((cf, i) => (
-                  <td key={i} style={{ padding: '8px 10px', fontSize: '12px', color: cf.changeInWorkingCapital >= 0 ? '#10b981' : '#ef4444', textAlign: 'right' }}>
+                  <td key={i} style={{ padding: '8px 10px', fontSize: '12px', color: statementTextColor(cf.changeInWorkingCapital >= 0 ? '#10b981' : '#ef4444'), textAlign: 'right' }}>
                     ${Math.round(cf.changeInWorkingCapital).toLocaleString()}
                   </td>
                 ))}
               </tr>
-              <tr style={{ borderBottom: '2px solid #10b981', background: '#f0fdf4' }}>
-                <td style={{ padding: '10px', fontSize: '13px', fontWeight: '700', color: '#065f46' }}>Operating Cash Flow</td>
+              <tr style={{ borderBottom: '2px solid #10b981', background: statementRowBackground('#f0fdf4') }}>
+                <td style={{ padding: '10px', fontSize: '13px', fontWeight: '700', color: statementTextColor('#065f46') }}>Operating Cash Flow</td>
                 {displayData.map((cf, i) => (
-                  <td key={i} style={{ padding: '10px', fontSize: '13px', fontWeight: '700', color: '#065f46', textAlign: 'right' }}>
+                  <td key={i} style={{ padding: '10px', fontSize: '13px', fontWeight: '700', color: statementTextColor('#065f46'), textAlign: 'right' }}>
                     ${Math.round(cf.operatingCashFlow).toLocaleString()}
                   </td>
                 ))}
               </tr>
               
               {/* Investing Activities */}
-              <tr style={{ background: '#fef2f2' }}>
-                <td colSpan={displayData.length + 1} style={{ padding: '12px 10px', fontSize: '14px', fontWeight: '700', color: '#991b1b' }}>
+              <tr style={{ background: statementRowBackground('#fef2f2') }}>
+                <td colSpan={displayData.length + 1} style={{ padding: '12px 10px', fontSize: '14px', fontWeight: '700', color: statementTextColor('#991b1b') }}>
                   INVESTING ACTIVITIES
                 </td>
               </tr>
               <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
-                <td style={{ padding: '8px 10px', fontSize: '12px', color: '#475569', paddingLeft: '24px' }}>Capital Expenditures</td>
+                <td style={{ padding: '8px 10px', fontSize: '12px', color: statementTextColor('#475569'), paddingLeft: '24px' }}>Capital Expenditures</td>
                 {displayData.map((cf, i) => (
-                  <td key={i} style={{ padding: '8px 10px', fontSize: '12px', color: '#ef4444', textAlign: 'right' }}>
+                  <td key={i} style={{ padding: '8px 10px', fontSize: '12px', color: statementTextColor('#ef4444'), textAlign: 'right' }}>
                     (${Math.round(cf.capitalExpenditures).toLocaleString()})
                   </td>
                 ))}
               </tr>
-              <tr style={{ borderBottom: '2px solid #ef4444', background: '#fef2f2' }}>
-                <td style={{ padding: '10px', fontSize: '13px', fontWeight: '700', color: '#991b1b' }}>Investing Cash Flow</td>
+              <tr style={{ borderBottom: '2px solid #ef4444', background: statementRowBackground('#fef2f2') }}>
+                <td style={{ padding: '10px', fontSize: '13px', fontWeight: '700', color: statementTextColor('#991b1b') }}>Investing Cash Flow</td>
                 {displayData.map((cf, i) => (
-                  <td key={i} style={{ padding: '10px', fontSize: '13px', fontWeight: '700', color: '#991b1b', textAlign: 'right' }}>
+                  <td key={i} style={{ padding: '10px', fontSize: '13px', fontWeight: '700', color: statementTextColor('#991b1b'), textAlign: 'right' }}>
                     ${Math.round(cf.investingCashFlow).toLocaleString()}
                   </td>
                 ))}
               </tr>
               
               {/* Financing Activities */}
-              <tr style={{ background: '#eff6ff' }}>
-                <td colSpan={displayData.length + 1} style={{ padding: '12px 10px', fontSize: '14px', fontWeight: '700', color: '#1e40af' }}>
+              <tr style={{ background: statementRowBackground('#eff6ff') }}>
+                <td colSpan={displayData.length + 1} style={{ padding: '12px 10px', fontSize: '14px', fontWeight: '700', color: statementTextColor('#1e40af') }}>
                   FINANCING ACTIVITIES
                 </td>
               </tr>
               <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
-                <td style={{ padding: '8px 10px', fontSize: '12px', color: '#475569', paddingLeft: '24px' }}>Change in Long-Term Debt</td>
+                <td style={{ padding: '8px 10px', fontSize: '12px', color: statementTextColor('#475569'), paddingLeft: '24px' }}>Change in Long-Term Debt</td>
                 {displayData.map((cf, i) => (
-                  <td key={i} style={{ padding: '8px 10px', fontSize: '12px', color: cf.changeInDebt >= 0 ? '#10b981' : '#ef4444', textAlign: 'right' }}>
+                  <td key={i} style={{ padding: '8px 10px', fontSize: '12px', color: statementTextColor(cf.changeInDebt >= 0 ? '#10b981' : '#ef4444'), textAlign: 'right' }}>
                     ${Math.round(cf.changeInDebt).toLocaleString()}
                   </td>
                 ))}
               </tr>
               <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
-                <td style={{ padding: '8px 10px', fontSize: '12px', color: '#475569', paddingLeft: '24px' }}>Change in Line of Credit</td>
+                <td style={{ padding: '8px 10px', fontSize: '12px', color: statementTextColor('#475569'), paddingLeft: '24px' }}>Change in Line of Credit</td>
                 {displayData.map((cf, i) => (
-                  <td key={i} style={{ padding: '8px 10px', fontSize: '12px', color: cf.changeInLOC >= 0 ? '#10b981' : '#ef4444', textAlign: 'right' }}>
+                  <td key={i} style={{ padding: '8px 10px', fontSize: '12px', color: statementTextColor(cf.changeInLOC >= 0 ? '#10b981' : '#ef4444'), textAlign: 'right' }}>
                     ${Math.round(cf.changeInLOC).toLocaleString()}
                   </td>
                 ))}
               </tr>
               <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
-                <td style={{ padding: '8px 10px', fontSize: '12px', color: '#475569', paddingLeft: '24px' }}>Change in Equity</td>
+                <td style={{ padding: '8px 10px', fontSize: '12px', color: statementTextColor('#475569'), paddingLeft: '24px' }}>Change in Equity</td>
                 {displayData.map((cf, i) => (
-                  <td key={i} style={{ padding: '8px 10px', fontSize: '12px', color: cf.changeInEquity >= 0 ? '#10b981' : '#ef4444', textAlign: 'right' }}>
+                  <td key={i} style={{ padding: '8px 10px', fontSize: '12px', color: statementTextColor(cf.changeInEquity >= 0 ? '#10b981' : '#ef4444'), textAlign: 'right' }}>
                     ${Math.round(cf.changeInEquity).toLocaleString()}
                   </td>
                 ))}
               </tr>
-              <tr style={{ borderBottom: '2px solid #3b82f6', background: '#eff6ff' }}>
-                <td style={{ padding: '10px', fontSize: '13px', fontWeight: '700', color: '#1e40af' }}>Financing Cash Flow</td>
+              <tr style={{ borderBottom: '2px solid #3b82f6', background: statementRowBackground('#eff6ff') }}>
+                <td style={{ padding: '10px', fontSize: '13px', fontWeight: '700', color: statementTextColor('#1e40af') }}>Financing Cash Flow</td>
                 {displayData.map((cf, i) => (
-                  <td key={i} style={{ padding: '10px', fontSize: '13px', fontWeight: '700', color: '#1e40af', textAlign: 'right' }}>
+                  <td key={i} style={{ padding: '10px', fontSize: '13px', fontWeight: '700', color: statementTextColor('#1e40af'), textAlign: 'right' }}>
                     ${Math.round(cf.financingCashFlow).toLocaleString()}
                   </td>
                 ))}
               </tr>
               
               {/* Net Change */}
-              <tr style={{ borderBottom: '3px double #1e293b', background: '#f8fafc' }}>
-                <td style={{ padding: '12px 10px', fontSize: '14px', fontWeight: '700', color: '#1e293b' }}>Net Change in Cash</td>
+              <tr style={{ borderBottom: '3px double #1e293b', background: statementRowBackground('#f8fafc') }}>
+                <td style={{ padding: '12px 10px', fontSize: '14px', fontWeight: '700', color: statementTextColor('#1e293b') }}>Net Change in Cash</td>
                 {displayData.map((cf, i) => (
-                  <td key={i} style={{ padding: '12px 10px', fontSize: '14px', fontWeight: '700', color: cf.netCashChange >= 0 ? '#10b981' : '#ef4444', textAlign: 'right' }}>
+                  <td key={i} style={{ padding: '12px 10px', fontSize: '14px', fontWeight: '700', color: statementTextColor(cf.netCashChange >= 0 ? '#10b981' : '#ef4444'), textAlign: 'right' }}>
                     ${Math.round(cf.netCashChange).toLocaleString()}
                   </td>
                 ))}
               </tr>
-              <tr style={{ background: '#fef3c7' }}>
-                <td style={{ padding: '10px', fontSize: '13px', fontWeight: '700', color: '#92400e' }}>Free Cash Flow</td>
+              <tr style={{ background: statementRowBackground('#fef3c7') }}>
+                <td style={{ padding: '10px', fontSize: '13px', fontWeight: '700', color: statementTextColor('#92400e') }}>Free Cash Flow</td>
                 {displayData.map((cf, i) => (
-                  <td key={i} style={{ padding: '10px', fontSize: '13px', fontWeight: '700', color: cf.freeCashFlow >= 0 ? '#065f46' : '#991b1b', textAlign: 'right' }}>
+                  <td key={i} style={{ padding: '10px', fontSize: '13px', fontWeight: '700', color: statementTextColor(cf.freeCashFlow >= 0 ? '#065f46' : '#991b1b'), textAlign: 'right' }}>
                     ${Math.round(cf.freeCashFlow).toLocaleString()}
                   </td>
                 ))}
               </tr>
               <tr style={{ borderBottom: '2px solid #e2e8f0' }}>
-                <td style={{ padding: '10px', fontSize: '13px', fontWeight: '600', color: '#475569' }}>Ending Cash Balance</td>
+                <td style={{ padding: '10px', fontSize: '13px', fontWeight: '600', color: statementTextColor('#475569') }}>Ending Cash Balance</td>
                 {displayData.map((cf, i) => (
-                  <td key={i} style={{ padding: '10px', fontSize: '13px', fontWeight: '600', color: '#1e293b', textAlign: 'right' }}>
+                  <td key={i} style={{ padding: '10px', fontSize: '13px', fontWeight: '600', color: statementTextColor('#1e293b'), textAlign: 'right' }}>
                     ${Math.round(cf.endingCash).toLocaleString()}
                   </td>
                 ))}
