@@ -6756,7 +6756,6 @@ export default function OperationsTab({
         row?.item,
         row?.vendorId,
         row?.vendorName,
-        row?.vendorItem,
         row?.effectiveDate,
       ].some((value) => String(value || '').toLowerCase().includes(search));
     });
@@ -6767,9 +6766,26 @@ export default function OperationsTab({
       .sort((a, b) => a.localeCompare(b))
       .slice(-1)[0] || '';
     const productMarginRows = (() => {
-      const rows = productMarginLatestDate
-        ? (wholesaleProductRecords as any[]).filter((row) => String(row?.snapshotDate || '').slice(0, 10) === productMarginLatestDate && !row?.isPlaceholderRow)
-        : [];
+      const latestRowsByItem = new Map<string, { latestMs: number; rows: any[] }>();
+      for (const row of wholesaleProductRecords as any[]) {
+        if (row?.isPlaceholderRow) continue;
+        const aprPartNumber = String(row?.sku || row?.itemId || row?.itemName || 'N/A').trim() || 'N/A';
+        const customerName = String(row?.customer || row?.customerName || 'N/A').trim() || 'N/A';
+        const customerId = String(row?.customerId || row?.customerNumber || row?.custNum || '').trim();
+        const customerGroup = String(row?.customerGroup || '').trim();
+        const customerPartNumber = String(row?.customerPartNumber || row?.customerPn || row?.customerPN || row?.customerItem || row?.customerSku || row?.custItem || row?.CustItem || '').trim();
+        const item = String(row?.itemName || aprPartNumber).trim() || aprPartNumber;
+        const key = [customerGroup, customerId, customerName, aprPartNumber, customerPartNumber, item].join('||');
+        const parsedDate = parseCoverageUtcDay(String(row?.snapshotDate || row?.date || row?.orderDate || ''));
+        const rowMs = parsedDate ? parsedDate.getTime() : 0;
+        const current = latestRowsByItem.get(key);
+        if (!current || rowMs > current.latestMs) {
+          latestRowsByItem.set(key, { latestMs: rowMs, rows: [row] });
+        } else if (rowMs === current.latestMs) {
+          current.rows.push(row);
+        }
+      }
+      const rows = Array.from(latestRowsByItem.values()).flatMap((entry) => entry.rows);
       const buckets = new Map<string, any>();
       const addPerPieceValue = (total: number, perPiece: unknown, qty: number) => {
         const numeric = Number(perPiece || 0);
@@ -7690,8 +7706,8 @@ export default function OperationsTab({
       };
       const columns: Array<{ key: string; label: string; align?: 'left' | 'right'; render: (row: any) => React.ReactNode }> = [
         { key: 'item', label: 'Item', render: (row) => row.item || 'N/A' },
-        { key: 'vendorId', label: 'Vendor', render: (row) => row.vendorId || 'N/A' },
-        { key: 'vendorName', label: 'Name', render: (row) => row.vendorName || 'N/A' },
+        { key: 'vendorId', label: 'Vendor id', render: (row) => row.vendorId || 'N/A' },
+        { key: 'vendorName', label: 'Vendor Name', render: (row) => row.vendorName || 'N/A' },
         { key: 'rank', label: 'Rank', align: 'right', render: (row) => row.rank ?? 'N/A' },
         { key: 'effectiveDate', label: 'Effective Date', render: (row) => formatVendorDate(row.effectiveDate) },
         { key: 'breakQty1', label: 'Break Qty 1', align: 'right', render: (row) => formatVendorNumber(row.breakQty1, 0) },
@@ -7700,7 +7716,6 @@ export default function OperationsTab({
         { key: 'vendorPricingSheet', label: 'Vendor Pricing Sheet', align: 'right', render: (row) => formatVendorNumber(row.vendorPricingSheet) },
         { key: 'difference', label: 'Difference', align: 'right', render: (row) => formatVendorNumber(row.difference) },
         { key: 'updatedDiff', label: 'UPDATED DIFF', align: 'right', render: (row) => formatVendorNumber(row.updatedDiff) },
-        { key: 'vendorItem', label: 'Vendor Item', render: (row) => row.vendorItem || 'N/A' },
       ];
 
       if (wholesaleProductsLoading && !Array.isArray(wholesaleProductsData?.summary?.wholesaleVendorPricingRows)) {
@@ -7758,7 +7773,7 @@ export default function OperationsTab({
           )}
 
           <div style={{ overflowX: 'auto', maxHeight: '620px', overflowY: 'auto' }}>
-            <table style={{ width: '100%', minWidth: '1500px', borderCollapse: 'collapse' }}>
+            <table style={{ width: '100%', minWidth: '1350px', borderCollapse: 'collapse' }}>
               <thead>
                 <tr style={{ borderBottom: '1px solid #e2e8f0', background: '#f8fafc', position: 'sticky', top: 0, zIndex: 1 }}>
                   {columns.map((column) => (
