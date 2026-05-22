@@ -744,14 +744,24 @@ export function inferDatasetFiltersFromPrompt(dataset: ReportDataset, prompt: st
   const normalizedPrompt = normalizeReportText(prompt);
   if (!dataset.entityFilters?.length) return [];
 
-  const preferredEntityType = normalizedPrompt.includes('vendor') || normalizedPrompt.includes('supplier')
+  const explicitProductName = extractEntityNameByType(prompt, 'product');
+  const explicitVendorName = extractEntityNameByType(prompt, 'vendor');
+  const explicitCustomerName = extractEntityNameByType(prompt, 'customer');
+  const hasProductFilterCue = /\b(for|of|where|with)\s+(item|sku|product|part)\b/.test(normalizedPrompt);
+  const preferredEntityType = explicitVendorName || normalizedPrompt.includes('vendor') || normalizedPrompt.includes('supplier')
     ? 'vendor'
-    : normalizedPrompt.includes('item') || normalizedPrompt.includes('sku') || normalizedPrompt.includes('product')
+    : explicitProductName && hasProductFilterCue
       ? 'product'
-      : 'customer';
-  const entityName =
-    extractEntityNameByType(prompt, preferredEntityType) ||
-    extractEntityNameFromPrompt(prompt);
+      : explicitCustomerName || dataset.entityFilters.some((filter) => filter.entityType === 'customer')
+        ? 'customer'
+        : explicitProductName
+          ? 'product'
+          : 'customer';
+  const entityName = preferredEntityType === 'product'
+    ? explicitProductName || extractEntityNameFromPrompt(prompt)
+    : preferredEntityType === 'vendor'
+      ? explicitVendorName || extractEntityNameFromPrompt(prompt)
+      : explicitCustomerName || extractEntityNameFromPrompt(prompt);
   if (!entityName) return [];
   const filterMeta =
     dataset.entityFilters.find((filter) => filter.entityType === preferredEntityType) ||
