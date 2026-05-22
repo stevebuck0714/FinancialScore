@@ -105,6 +105,7 @@ type PriceCostComparisonSortKey =
   | 'marginPctPriorWeek'
   | 'marginDeltaPts'
   | 'status';
+type ProductReportView = 'productMarginAnalysis' | 'wholesaleRawData' | 'performance' | 'retailForecast' | 'merchandiseProfitability';
 
 const clampNumber = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
 const toFiniteNumber = (value: unknown): number | null => {
@@ -610,6 +611,9 @@ export default function OperationsTab({
   const [arData, setArData] = useState<any>(null);
   const [apData, setApData] = useState<any>(null);
   const [productData, setProductData] = useState<any>(null);
+  const [wholesaleProductsData, setWholesaleProductsData] = useState<any>(null);
+  const [wholesaleProductsLoading, setWholesaleProductsLoading] = useState(false);
+  const [wholesaleProductsError, setWholesaleProductsError] = useState<string | null>(null);
   const [inventoryData, setInventoryData] = useState<any>(null);
   const [cashData, setCashData] = useState<any>(null);
   const [selectedCashTrendAccount, setSelectedCashTrendAccount] = useState<string>('__TOTAL__');
@@ -741,7 +745,14 @@ export default function OperationsTab({
   const [retailTurnsSortDir, setRetailTurnsSortDir] = useState<'asc' | 'desc'>('desc');
   const [productScopeMode, setProductScopeMode] = useState<'total' | 'product'>('total');
   const [selectedScopeSku, setSelectedScopeSku] = useState('');
-  const [productReportView, setProductReportView] = useState<'performance' | 'retailForecast' | 'merchandiseProfitability'>('performance');
+  const [productReportView, setProductReportView] = useState<ProductReportView>('productMarginAnalysis');
+  const [productMarginCustomerFilter, setProductMarginCustomerFilter] = useState('all');
+  const [expandedProductMarginCustomers, setExpandedProductMarginCustomers] = useState<Record<string, boolean>>({});
+  const [wholesaleRawCustomerFilter, setWholesaleRawCustomerFilter] = useState('all');
+  const [wholesaleRawTimeframe, setWholesaleRawTimeframe] = useState<'currentMonth' | 'currentYear' | 'year' | 'custom' | 'allLoaded'>('currentYear');
+  const [wholesaleRawYear, setWholesaleRawYear] = useState('');
+  const [wholesaleRawStartDate, setWholesaleRawStartDate] = useState('');
+  const [wholesaleRawEndDate, setWholesaleRawEndDate] = useState('');
   const [selectedRetailForecastSubcategory, setSelectedRetailForecastSubcategory] = useState('');
   const [retailForecastTableSortKey, setRetailForecastTableSortKey] = useState<RetailForecastTableSortKey>('next3Base');
   const [retailForecastTableSortDir, setRetailForecastTableSortDir] = useState<'asc' | 'desc'>('desc');
@@ -760,6 +771,9 @@ export default function OperationsTab({
   };
   const toggleWipCustomerExpanded = (key: string) => {
     setExpandedWipCustomers((prev) => ({ ...prev, [key]: !prev[key] }));
+  };
+  const toggleProductMarginCustomerExpanded = (key: string) => {
+    setExpandedProductMarginCustomers((prev) => ({ ...prev, [key]: !prev[key] }));
   };
   const isCustomersTab = mapModuleToDataType(activeTab) === 'customers' || activeTab === 'customers';
   const isTabModuleEnabled = (moduleKey: string): boolean => {
@@ -1299,6 +1313,25 @@ export default function OperationsTab({
     }
   };
 
+  const fetchWholesaleProductsReportData = async () => {
+    const params = new URLSearchParams({
+      companyId: selectedCompanyId,
+      type: 'products',
+      frequency: 'daily',
+      startDate: '2020-01-01',
+      endDate: maxSelectableEndDate,
+      limit: '5000',
+      sectorCategory: '42',
+    });
+    const response = await fetch(`/api/operational-data?${params}`, {
+      cache: 'no-store',
+    });
+    if (!response.ok) {
+      throw new Error('Failed to load wholesale product report data');
+    }
+    return response.json();
+  };
+
   const buildOperationalDataCacheKey = (type: OpsDataType): string => {
     const requestFrequency = type === 'daily-financials' ? 'daily' : frequency;
     const rollupToken = type === 'daily-financials' ? dailyFinancialStatementRollup : 'n/a';
@@ -1429,11 +1462,50 @@ export default function OperationsTab({
         .catch((error) => {
           console.warn('Failed to refresh Products data after operational upload:', error);
         });
+      if (industrySectorCategory === '42') {
+        void fetchWholesaleProductsReportData()
+          .then((fresh) => {
+            if (fresh) setWholesaleProductsData(fresh);
+          })
+          .catch((error) => {
+            console.warn('Failed to refresh wholesale Products report data after operational upload:', error);
+          });
+      }
     };
 
     window.addEventListener('operational-data-updated', handleOperationalDataUpdated);
     return () => window.removeEventListener('operational-data-updated', handleOperationalDataUpdated);
   }, [selectedCompanyId, industrySectorCategory, frequency, startDate, endDate]);
+
+  useEffect(() => {
+    if (!selectedCompanyId || industrySectorCategory !== '42') {
+      setWholesaleProductsData(null);
+      setWholesaleProductsError(null);
+      setWholesaleProductsLoading(false);
+      return;
+    }
+
+    let cancelled = false;
+    setWholesaleProductsLoading(true);
+    setWholesaleProductsError(null);
+    void fetchWholesaleProductsReportData()
+      .then((data) => {
+        if (!cancelled) setWholesaleProductsData(data);
+      })
+      .catch((error: any) => {
+        if (!cancelled) {
+          setWholesaleProductsError(error?.message || 'Failed to load wholesale product report data');
+          setWholesaleProductsData(null);
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setWholesaleProductsLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedCompanyId, industrySectorCategory, maxSelectableEndDate]);
 
   const prefetchTabData = (tab: string) => {
     const type = mapModuleToDataType(tab) || null;
@@ -6135,10 +6207,16 @@ export default function OperationsTab({
     if (!productData) return null;
 
     const { records, summary } = productData;
+    const isRetailProductSector = industrySectorCategory === '45';
+    const isWholesaleProductSector = industrySectorCategory === '42';
     const platosMetrics = summary?.platosMetrics || null;
     const usePlatosMonthlyFallback =
       summary?.source === 'platos-closet-monthly-facts' && frequency === 'monthly';
     const rawProductRecords = Array.isArray(records) ? records : [];
+    const wholesaleProductRecords =
+      isWholesaleProductSector && Array.isArray(wholesaleProductsData?.records)
+        ? wholesaleProductsData.records
+        : rawProductRecords;
     const weeklyMarginModel = buildWeeklyProductMarginModel({
       records: rawProductRecords,
       topProducts: Array.isArray(summary?.topProducts) ? summary.topProducts : [],
@@ -6645,9 +6723,227 @@ export default function OperationsTab({
     const retailForecastOptions = [...retailForecasts].sort((a, b) =>
       a.label.localeCompare(b.label, undefined, { sensitivity: 'base', numeric: true }),
     );
-    const isRetailProductSector = industrySectorCategory === '45';
+    const isProductMarginAnalysisEnabled = isWholesaleProductSector && isSectionEnabled('productsProductMarginAnalysis');
+    const isWholesaleRawDataEnabled = isWholesaleProductSector && isSectionEnabled('productsWholesaleRawData');
     const isRetailForecastingEnabled = isSectionEnabled('productsRetailForecasting');
     const hasRetailForecastView = isRetailProductSector && isRetailForecastingEnabled && retailForecasts.length > 0;
+    const productMarginLatestDate = wholesaleProductRecords
+      .map((row: any) => String(row?.snapshotDate || '').slice(0, 10))
+      .filter(Boolean)
+      .sort((a, b) => a.localeCompare(b))
+      .slice(-1)[0] || '';
+    const productMarginRows = (() => {
+      const rows = productMarginLatestDate
+        ? (wholesaleProductRecords as any[]).filter((row) => String(row?.snapshotDate || '').slice(0, 10) === productMarginLatestDate && !row?.isPlaceholderRow)
+        : [];
+      const buckets = new Map<string, any>();
+      const addPerPieceValue = (total: number, perPiece: unknown, qty: number) => {
+        const numeric = Number(perPiece || 0);
+        return Number.isFinite(numeric) && numeric !== 0 ? total + numeric * Math.max(1, qty) : total;
+      };
+      for (const row of rows) {
+        const qty = Math.max(0, Number(row?.quantitySold || row?.qtySold || 0));
+        const aprPartNumber = String(row?.sku || row?.itemId || row?.itemName || 'N/A').trim() || 'N/A';
+        const customerName = String(row?.customer || row?.customerName || 'N/A').trim() || 'N/A';
+        const customerGroup = String(row?.customerGroup || row?.customerType || row?.customerSegment || row?.site || 'Unassigned').trim() || 'Unassigned';
+        const customerPartNumber = String(row?.customerPartNumber || row?.customerPn || row?.customerPN || row?.customerItem || row?.customerSku || '').trim();
+        const item = String(row?.itemName || aprPartNumber).trim() || aprPartNumber;
+        const key = [customerGroup, customerName, aprPartNumber, customerPartNumber, item].join('||');
+        const bucket = buckets.get(key) || {
+          key,
+          customerKey: `${customerGroup}||${customerName}`,
+          aprPartNumber,
+          customerGroup,
+          customerName,
+          customerPartNumber,
+          item,
+          quantity: 0,
+          revenue: 0,
+          materialCost: 0,
+          tariff: 0,
+          duties: 0,
+          freight: 0,
+          operatingExpenses: 0,
+        };
+        bucket.quantity += qty;
+        bucket.revenue += Number(row?.revenue || row?.currentPriceTotal || 0);
+        bucket.materialCost += Number(row?.cogs || row?.materialCost || row?.currentCostOfMaterial || 0);
+        bucket.tariff += Number(row?.tariffTotal || row?.tariffAllocated || 0);
+        bucket.tariff = addPerPieceValue(bucket.tariff, row?.currentImpactOfTariffPerPiece ?? row?.tariffPerPiece, qty);
+        bucket.duties += Number(row?.dutiesTotal || row?.dutyTotal || row?.dutiesAllocated || 0);
+        bucket.duties = addPerPieceValue(bucket.duties, row?.currentImpactOfDutiesPerPiece ?? row?.dutiesPerPiece ?? row?.dutyPerPiece, qty);
+        bucket.freight += Number(row?.freightAllocated || row?.freightTotal || 0);
+        bucket.freight = addPerPieceValue(bucket.freight, row?.costOfFreightPerPiece ?? row?.freightPerPiece, qty);
+        bucket.operatingExpenses += Number(row?.operatingExpensesAllocated || row?.operatingExpensesTotal || 0);
+        bucket.operatingExpenses = addPerPieceValue(bucket.operatingExpenses, row?.currentOperatingExpenses ?? row?.operatingExpensesPerPiece, qty);
+        buckets.set(key, bucket);
+      }
+      const toPerPiece = (total: number, qty: number) => (qty > 0 ? total / qty : null);
+      return Array.from(buckets.values())
+        .map((row) => {
+          const currentPrice = toPerPiece(row.revenue, row.quantity);
+          const materialCost = toPerPiece(row.materialCost, row.quantity);
+          const tariffPerPiece = toPerPiece(row.tariff, row.quantity);
+          const dutiesPerPiece = toPerPiece(row.duties, row.quantity);
+          const freightPerPiece = toPerPiece(row.freight, row.quantity);
+          const operatingExpensesPerPiece = toPerPiece(row.operatingExpenses, row.quantity);
+          const currentCostOfSales =
+            (materialCost || 0) + (tariffPerPiece || 0) + (dutiesPerPiece || 0) + (freightPerPiece || 0);
+          const fullyLoadedCost = currentCostOfSales + (operatingExpensesPerPiece || 0);
+          const netProfit = currentPrice == null ? null : currentPrice - fullyLoadedCost;
+          return {
+            ...row,
+            materialCostTotal: row.materialCost,
+            tariffTotal: row.tariff,
+            dutiesTotal: row.duties,
+            freightTotal: row.freight,
+            operatingExpensesTotal: row.operatingExpenses,
+            currentPrice,
+            materialCost,
+            tariffPerPiece,
+            dutiesPerPiece,
+            freightPerPiece,
+            currentCostOfSales,
+            operatingExpensesPerPiece,
+            fullyLoadedCost,
+            netProfit,
+            netProfitPct: currentPrice && currentPrice !== 0 && netProfit != null ? (netProfit / currentPrice) * 100 : null,
+          };
+        })
+        .sort((a, b) =>
+          String(a.customerName).localeCompare(String(b.customerName), undefined, { sensitivity: 'base', numeric: true }) ||
+          String(a.aprPartNumber).localeCompare(String(b.aprPartNumber), undefined, { sensitivity: 'base', numeric: true })
+        );
+    })();
+    const productMarginCustomerGroups = (() => {
+      const groups = new Map<string, any>();
+      for (const row of productMarginRows) {
+        const group = groups.get(row.customerKey) || {
+          key: row.customerKey,
+          customerGroup: row.customerGroup,
+          customerName: row.customerName,
+          rows: [],
+          quantity: 0,
+          revenue: 0,
+          materialCost: 0,
+          tariff: 0,
+          duties: 0,
+          freight: 0,
+          operatingExpenses: 0,
+        };
+        group.rows.push(row);
+        group.quantity += Number(row.quantity || 0);
+        group.revenue += Number(row.revenue || 0);
+        group.materialCost += Number(row.materialCostTotal || 0);
+        group.tariff += Number(row.tariffTotal || 0);
+        group.duties += Number(row.dutiesTotal || 0);
+        group.freight += Number(row.freightTotal || 0);
+        group.operatingExpenses += Number(row.operatingExpensesTotal || 0);
+        groups.set(row.customerKey, group);
+      }
+      const toPerPiece = (total: number, qty: number) => (qty > 0 ? total / qty : null);
+      return Array.from(groups.values())
+        .map((group) => {
+          const currentPrice = toPerPiece(group.revenue, group.quantity);
+          const materialCost = toPerPiece(group.materialCost, group.quantity);
+          const tariffPerPiece = toPerPiece(group.tariff, group.quantity);
+          const dutiesPerPiece = toPerPiece(group.duties, group.quantity);
+          const freightPerPiece = toPerPiece(group.freight, group.quantity);
+          const operatingExpensesPerPiece = toPerPiece(group.operatingExpenses, group.quantity);
+          const currentCostOfSales =
+            (materialCost || 0) + (tariffPerPiece || 0) + (dutiesPerPiece || 0) + (freightPerPiece || 0);
+          const fullyLoadedCost = currentCostOfSales + (operatingExpensesPerPiece || 0);
+          const netProfit = currentPrice == null ? null : currentPrice - fullyLoadedCost;
+          return {
+            ...group,
+            currentPrice,
+            materialCost,
+            tariffPerPiece,
+            dutiesPerPiece,
+            freightPerPiece,
+            currentCostOfSales,
+            operatingExpensesPerPiece,
+            fullyLoadedCost,
+            netProfit,
+            netProfitPct: currentPrice && currentPrice !== 0 && netProfit != null ? (netProfit / currentPrice) * 100 : null,
+          };
+        })
+        .sort((a, b) => String(a.customerName).localeCompare(String(b.customerName), undefined, { sensitivity: 'base', numeric: true }));
+    })();
+    const visibleProductMarginCustomerGroups =
+      productMarginCustomerFilter === 'all'
+        ? productMarginCustomerGroups
+        : productMarginCustomerGroups.filter((group) => group.key === productMarginCustomerFilter);
+    const wholesaleRawBaseRows = (wholesaleProductRecords as any[])
+      .filter((row) => !row?.isPlaceholderRow)
+      .map((row, index) => {
+        const parsedDate = parseCoverageUtcDay(String(row?.snapshotDate || row?.date || row?.orderDate || ''));
+        const isoDate = parsedDate ? parsedDate.toISOString().slice(0, 10) : '';
+        const monthLabel = parsedDate ? parsedDate.toLocaleDateString('en-US', { month: 'long', timeZone: 'UTC' }).toUpperCase() : '';
+        const year = parsedDate ? String(parsedDate.getUTCFullYear()) : '';
+        const quarter = parsedDate ? Math.floor(parsedDate.getUTCMonth() / 3) + 1 : null;
+        const qty = Number(row?.qty ?? row?.quantity ?? row?.quantitySold ?? row?.qtyInvoiced ?? 0);
+        const revenue = Number(row?.revenue ?? row?.invoicedAmount ?? row?.contractValue ?? 0);
+        const unitPrice =
+          Number(row?.unitPrice ?? row?.price ?? 0) ||
+          (qty !== 0 && Number.isFinite(revenue) ? Math.abs(revenue / qty) : 0);
+        const customerName = String(row?.customer || row?.customerName || 'N/A').trim() || 'N/A';
+        const customerId = String(row?.customerId || row?.customerNumber || row?.custNum || '').trim();
+        const customerGroup = String(row?.customerGroup || row?.customerType || row?.customerSegment || row?.site || 'Unassigned').trim() || 'Unassigned';
+        return {
+          key: `${index}-${isoDate}-${String(row?.sku || row?.itemId || row?.itemName || '')}-${String(row?.orderId || row?.sourceTransaction || '')}`,
+          item: String(row?.sku || row?.itemId || row?.itemName || 'N/A').trim() || 'N/A',
+          order: String(row?.orderId || row?.orderNo || row?.coNum || row?.sourceTransaction || '').trim(),
+          quarter,
+          customerName,
+          customerId,
+          isoDate,
+          monthLabel,
+          qty,
+          unitPrice,
+          reasonDescription: String(row?.reasonDescription || row?.reason || row?.status || '').trim(),
+          code: String(row?.reasonCode || row?.code || row?.itemCode || '').trim(),
+          transaction: String(row?.transaction || row?.transactionId || row?.invoiceNo || row?.sourceTransaction || '').trim(),
+          year,
+          customerGroup,
+          revenue: Number.isFinite(revenue) && revenue !== 0 ? revenue : Math.abs(qty * unitPrice),
+          team: String(row?.team || row?.salesTeam || row?.customerTeam || customerGroup || '').trim(),
+        };
+      })
+      .filter((row) => row.isoDate);
+    const wholesaleRawLatestDate = wholesaleRawBaseRows
+      .map((row) => row.isoDate)
+      .sort((a, b) => a.localeCompare(b))
+      .slice(-1)[0] || '';
+    const wholesaleRawLatestYear = wholesaleRawLatestDate.slice(0, 4);
+    const wholesaleRawLatestMonth = wholesaleRawLatestDate.slice(0, 7);
+    const wholesaleRawYears = Array.from(new Set(wholesaleRawBaseRows.map((row) => row.year).filter(Boolean))).sort((a, b) => b.localeCompare(a));
+    const effectiveWholesaleRawYear =
+      wholesaleRawYear && wholesaleRawYears.includes(wholesaleRawYear)
+        ? wholesaleRawYear
+        : (wholesaleRawYears[0] || wholesaleRawLatestYear);
+    const wholesaleRawCustomerOptions = Array.from(
+      new Map(
+        wholesaleRawBaseRows
+          .map((row) => [row.customerName, { key: row.customerName, label: row.customerName }])
+      ).values()
+    ).sort((a, b) => a.label.localeCompare(b.label, undefined, { sensitivity: 'base', numeric: true }));
+    const wholesaleRawFilteredRows = wholesaleRawBaseRows
+      .filter((row) => wholesaleRawCustomerFilter === 'all' || row.customerName === wholesaleRawCustomerFilter)
+      .filter((row) => {
+        if (wholesaleRawTimeframe === 'currentMonth') return row.isoDate.slice(0, 7) === wholesaleRawLatestMonth;
+        if (wholesaleRawTimeframe === 'currentYear') return row.year === wholesaleRawLatestYear;
+        if (wholesaleRawTimeframe === 'year') return row.year === effectiveWholesaleRawYear;
+        if (wholesaleRawTimeframe === 'custom') {
+          const afterStart = !wholesaleRawStartDate || row.isoDate >= wholesaleRawStartDate;
+          const beforeEnd = !wholesaleRawEndDate || row.isoDate <= wholesaleRawEndDate;
+          return afterStart && beforeEnd;
+        }
+        return true;
+      })
+      .sort((a, b) => b.isoDate.localeCompare(a.isoDate) || a.customerName.localeCompare(b.customerName, undefined, { sensitivity: 'base', numeric: true }));
+    const wholesaleRawVisibleRowLimit = 500;
+    const wholesaleRawVisibleRows = wholesaleRawFilteredRows.slice(0, wholesaleRawVisibleRowLimit);
     const effectiveRetailForecastKey =
       selectedRetailForecastSubcategory && retailForecastOptions.some((row) => row.key === selectedRetailForecastSubcategory)
         ? selectedRetailForecastSubcategory
@@ -6895,8 +7191,50 @@ export default function OperationsTab({
       </th>
     );
     const isMerchandiseProfitabilityEnabled = isSectionEnabled('productsMerchandiseProfitability');
-    const productViewSwitcher = isRetailProductSector && (isRetailForecastingEnabled || isMerchandiseProfitabilityEnabled) ? (
+    const effectiveProductReportView =
+      productReportView === 'productMarginAnalysis' && !isProductMarginAnalysisEnabled
+        ? 'performance'
+        : productReportView === 'wholesaleRawData' && !isWholesaleRawDataEnabled
+        ? 'performance'
+        : productReportView;
+    const productViewSwitcher = isProductMarginAnalysisEnabled || isWholesaleRawDataEnabled || (isRetailProductSector && (isRetailForecastingEnabled || isMerchandiseProfitabilityEnabled)) ? (
       <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '16px' }}>
+        {isProductMarginAnalysisEnabled && (
+          <button
+            type="button"
+            onClick={() => setProductReportView('productMarginAnalysis')}
+            style={{
+              border: '1px solid #cbd5e1',
+              borderRadius: '999px',
+              padding: '8px 12px',
+              background: effectiveProductReportView === 'productMarginAnalysis' ? '#e0e7ff' : '#ffffff',
+              color: effectiveProductReportView === 'productMarginAnalysis' ? '#3730a3' : '#334155',
+              fontWeight: 700,
+              cursor: 'pointer',
+              fontSize: '12px',
+            }}
+          >
+            Product Margin Analysis
+          </button>
+        )}
+        {isWholesaleRawDataEnabled && (
+          <button
+            type="button"
+            onClick={() => setProductReportView('wholesaleRawData')}
+            style={{
+              border: '1px solid #cbd5e1',
+              borderRadius: '999px',
+              padding: '8px 12px',
+              background: effectiveProductReportView === 'wholesaleRawData' ? '#e0e7ff' : '#ffffff',
+              color: effectiveProductReportView === 'wholesaleRawData' ? '#3730a3' : '#334155',
+              fontWeight: 700,
+              cursor: 'pointer',
+              fontSize: '12px',
+            }}
+          >
+            Raw Data
+          </button>
+        )}
         <button
           type="button"
           onClick={() => setProductReportView('performance')}
@@ -6904,8 +7242,8 @@ export default function OperationsTab({
             border: '1px solid #cbd5e1',
             borderRadius: '999px',
             padding: '8px 12px',
-            background: productReportView === 'performance' ? '#e0e7ff' : '#ffffff',
-            color: productReportView === 'performance' ? '#3730a3' : '#334155',
+            background: effectiveProductReportView === 'performance' ? '#e0e7ff' : '#ffffff',
+            color: effectiveProductReportView === 'performance' ? '#3730a3' : '#334155',
             fontWeight: 700,
             cursor: 'pointer',
             fontSize: '12px',
@@ -6921,8 +7259,8 @@ export default function OperationsTab({
               border: '1px solid #cbd5e1',
               borderRadius: '999px',
               padding: '8px 12px',
-              background: productReportView === 'merchandiseProfitability' ? '#e0e7ff' : '#ffffff',
-              color: productReportView === 'merchandiseProfitability' ? '#3730a3' : '#334155',
+              background: effectiveProductReportView === 'merchandiseProfitability' ? '#e0e7ff' : '#ffffff',
+              color: effectiveProductReportView === 'merchandiseProfitability' ? '#3730a3' : '#334155',
               fontWeight: 700,
               cursor: 'pointer',
               fontSize: '12px',
@@ -6939,8 +7277,8 @@ export default function OperationsTab({
               border: '1px solid #cbd5e1',
               borderRadius: '999px',
               padding: '8px 12px',
-              background: productReportView === 'retailForecast' ? '#e0e7ff' : '#ffffff',
-              color: productReportView === 'retailForecast' ? '#3730a3' : '#334155',
+              background: effectiveProductReportView === 'retailForecast' ? '#e0e7ff' : '#ffffff',
+              color: effectiveProductReportView === 'retailForecast' ? '#3730a3' : '#334155',
               fontWeight: 700,
               cursor: 'pointer',
               fontSize: '12px',
@@ -6951,6 +7289,327 @@ export default function OperationsTab({
         )}
       </div>
     ) : null;
+    const renderProductMarginAnalysisReport = () => {
+      const formatMarginCurrency = (value: number | null | undefined) =>
+        value == null || !Number.isFinite(Number(value)) ? 'N/A' : formatCurrencyWithCents(Number(value));
+      const formatMarginPct = (value: number | null | undefined) =>
+        value == null || !Number.isFinite(Number(value)) ? 'N/A' : `${Number(value).toFixed(1)}%`;
+      const setVisibleCustomersExpanded = (expanded: boolean) => {
+        setExpandedProductMarginCustomers((prev) => {
+          const next = { ...prev };
+          visibleProductMarginCustomerGroups.forEach((group) => {
+            next[group.key] = expanded;
+          });
+          return next;
+        });
+      };
+      const renderMoneyCell = (value: number | null | undefined, emphasize = false) => (
+        <td style={{ padding: '8px', fontSize: '12px', color: Number(value || 0) < 0 ? '#b91c1c' : '#334155', textAlign: 'right', fontWeight: emphasize ? 700 : 500, whiteSpace: 'nowrap' }}>
+          {formatMarginCurrency(value)}
+        </td>
+      );
+      const renderPctCell = (value: number | null | undefined) => (
+        <td style={{ padding: '8px', fontSize: '12px', color: Number(value || 0) < 0 ? '#b91c1c' : '#334155', textAlign: 'right', fontWeight: 700, whiteSpace: 'nowrap' }}>
+          {formatMarginPct(value)}
+        </td>
+      );
+
+      if (wholesaleProductsLoading && !Array.isArray(wholesaleProductsData?.records)) {
+        return <div style={{ padding: '40px', textAlign: 'center', color: '#64748b' }}>Loading wholesale product margin data...</div>;
+      }
+      if (wholesaleProductsError && !Array.isArray(wholesaleProductsData?.records)) {
+        return (
+          <div style={{ background: 'white', border: '1px solid #fecaca', borderRadius: '12px', padding: '24px', color: '#991b1b' }}>
+            {wholesaleProductsError}
+          </div>
+        );
+      }
+      if (!productMarginRows.length) {
+        return (
+          <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '24px', color: '#64748b' }}>
+            No product margin rows are available for the selected date range.
+          </div>
+        );
+      }
+
+      return (
+        <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '18px', marginBottom: '20px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px', marginBottom: '14px', flexWrap: 'wrap' }}>
+            <div>
+              <h3 style={{ margin: 0, fontSize: '18px', color: '#0f172a' }}>Product Margin Analysis</h3>
+              <div style={{ marginTop: '4px', fontSize: '12px', color: '#64748b', lineHeight: 1.4 }}>
+                Customer-level margin table with expandable item detail. Current tariff, duties, customer P/N, and operating expense fields display when those source fields are present.
+              </div>
+              {productMarginLatestDate && (
+                <div style={{ marginTop: '4px', fontSize: '11px', color: '#64748b' }}>
+                  Latest snapshot: {formatCoverageDate(productMarginLatestDate)}
+                </div>
+              )}
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+              <select
+                value={productMarginCustomerFilter}
+                onChange={(event) => setProductMarginCustomerFilter(event.target.value)}
+                style={{ border: '1px solid #cbd5e1', borderRadius: '8px', padding: '8px 10px', fontSize: '12px', minWidth: '260px', background: 'white' }}
+              >
+                <option value="all">All customers ({productMarginCustomerGroups.length})</option>
+                {productMarginCustomerGroups.map((group) => (
+                  <option key={group.key} value={group.key}>
+                    {group.customerName} ({group.rows.length} items)
+                  </option>
+                ))}
+              </select>
+              <button
+                type="button"
+                onClick={() => setVisibleCustomersExpanded(true)}
+                style={{ border: '1px solid #cbd5e1', borderRadius: '8px', padding: '8px 10px', background: '#fff', color: '#334155', fontSize: '12px', fontWeight: 700, cursor: 'pointer' }}
+              >
+                Expand Visible
+              </button>
+              <button
+                type="button"
+                onClick={() => setVisibleCustomersExpanded(false)}
+                style={{ border: '1px solid #cbd5e1', borderRadius: '8px', padding: '8px 10px', background: '#fff', color: '#334155', fontSize: '12px', fontWeight: 700, cursor: 'pointer' }}
+              >
+                Collapse Visible
+              </button>
+            </div>
+          </div>
+
+          <div style={{ overflowX: 'auto', maxHeight: '620px', overflowY: 'auto' }}>
+            <table style={{ width: '100%', minWidth: '1850px', borderCollapse: 'collapse' }}>
+              <thead>
+                <tr style={{ borderBottom: '1px solid #e2e8f0', background: '#f8fafc', position: 'sticky', top: 0, zIndex: 1 }}>
+                  {[
+                    'APR P/N',
+                    'Customer Group',
+                    'Customer Name',
+                    'Customer P/N',
+                    'Item',
+                    'Current Price ($)',
+                    'Current Cost of Material ($)',
+                    'Current Impact of Tariff per Piece',
+                    'Current Impact of Duties per Piece ($)',
+                    'Cost of Freight per Piece ($)',
+                    'Current Cost of Sales ($)',
+                    'Current Operating Expenses ($)',
+                    'Current Fully Loaded Cost ($)',
+                    'Current Net Profit ($)',
+                    'Current Net Profit (%)',
+                  ].map((label, index) => (
+                    <th key={label} style={{ padding: '8px', fontSize: '12px', color: '#334155', textAlign: index >= 5 ? 'right' : 'left', whiteSpace: 'nowrap' }}>
+                      {label}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {visibleProductMarginCustomerGroups.map((group) => {
+                  const expanded = productMarginCustomerFilter !== 'all' || expandedProductMarginCustomers[group.key] === true;
+                  return (
+                    <React.Fragment key={group.key}>
+                      <tr style={{ borderBottom: '1px solid #e2e8f0', background: '#f8fafc' }}>
+                        <td style={{ padding: '8px', fontSize: '12px', color: '#0f172a', fontWeight: 800, whiteSpace: 'nowrap' }}>
+                          <button
+                            type="button"
+                            onClick={() => toggleProductMarginCustomerExpanded(group.key)}
+                            style={{ border: 'none', background: 'transparent', color: '#2563eb', cursor: 'pointer', fontSize: '12px', fontWeight: 800, padding: 0 }}
+                          >
+                            {expanded ? '▼' : '▶'} Summary
+                          </button>
+                        </td>
+                        <td style={{ padding: '8px', fontSize: '12px', color: '#334155', fontWeight: 700 }}>{group.customerGroup}</td>
+                        <td style={{ padding: '8px', fontSize: '12px', color: '#0f172a', fontWeight: 800 }}>{group.customerName}</td>
+                        <td style={{ padding: '8px', fontSize: '12px', color: '#64748b' }}>{group.rows.length.toLocaleString()} items</td>
+                        <td style={{ padding: '8px', fontSize: '12px', color: '#64748b' }}>Customer subtotal</td>
+                        {renderMoneyCell(group.currentPrice)}
+                        {renderMoneyCell(group.materialCost)}
+                        {renderMoneyCell(group.tariffPerPiece)}
+                        {renderMoneyCell(group.dutiesPerPiece)}
+                        {renderMoneyCell(group.freightPerPiece)}
+                        {renderMoneyCell(group.currentCostOfSales)}
+                        {renderMoneyCell(group.operatingExpensesPerPiece)}
+                        {renderMoneyCell(group.fullyLoadedCost)}
+                        {renderMoneyCell(group.netProfit, true)}
+                        {renderPctCell(group.netProfitPct)}
+                      </tr>
+                      {expanded && group.rows.map((row: any) => (
+                        <tr key={row.key} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                          <td style={{ padding: '8px', fontSize: '12px', color: '#0f172a', fontWeight: 700, whiteSpace: 'nowrap' }}>{row.aprPartNumber}</td>
+                          <td style={{ padding: '8px', fontSize: '12px', color: '#475569' }}>{row.customerGroup}</td>
+                          <td style={{ padding: '8px', fontSize: '12px', color: '#334155' }}>{row.customerName}</td>
+                          <td style={{ padding: '8px', fontSize: '12px', color: '#475569', whiteSpace: 'nowrap' }}>{row.customerPartNumber || 'N/A'}</td>
+                          <td style={{ padding: '8px', fontSize: '12px', color: '#334155', minWidth: '180px' }}>{row.item}</td>
+                          {renderMoneyCell(row.currentPrice)}
+                          {renderMoneyCell(row.materialCost)}
+                          {renderMoneyCell(row.tariffPerPiece)}
+                          {renderMoneyCell(row.dutiesPerPiece)}
+                          {renderMoneyCell(row.freightPerPiece)}
+                          {renderMoneyCell(row.currentCostOfSales)}
+                          {renderMoneyCell(row.operatingExpensesPerPiece)}
+                          {renderMoneyCell(row.fullyLoadedCost)}
+                          {renderMoneyCell(row.netProfit, true)}
+                          {renderPctCell(row.netProfitPct)}
+                        </tr>
+                      ))}
+                    </React.Fragment>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      );
+    };
+    const renderWholesaleRawDataReport = () => {
+      const formatRawDate = (isoDate: string) => {
+        if (!isoDate) return 'N/A';
+        const parsed = new Date(`${isoDate}T00:00:00.000Z`);
+        return parsed.toLocaleDateString('en-US', { timeZone: 'UTC' });
+      };
+      const formatRawQty = (value: number) =>
+        new Intl.NumberFormat('en-US', { maximumFractionDigits: 2 }).format(Number(value || 0));
+      const rawColumns: Array<{ key: string; label: string; align?: 'left' | 'right'; render: (row: any) => React.ReactNode }> = [
+        { key: 'item', label: 'Item', render: (row) => row.item || 'N/A' },
+        { key: 'order', label: 'Order', render: (row) => row.order || 'N/A' },
+        { key: 'quarter', label: 'QUARTER', align: 'right', render: (row) => row.quarter || 'N/A' },
+        { key: 'customerName', label: 'Customer', render: (row) => row.customerName || 'N/A' },
+        { key: 'customerId', label: 'Customer', render: (row) => row.customerId || 'N/A' },
+        { key: 'date', label: 'Date', render: (row) => formatRawDate(row.isoDate) },
+        { key: 'monthLabel', label: 'MONTH', render: (row) => row.monthLabel || 'N/A' },
+        { key: 'qty', label: 'Qty', align: 'right', render: (row) => formatRawQty(row.qty) },
+        { key: 'unitPrice', label: 'Unit Price', align: 'right', render: (row) => formatCurrencyWithCents(row.unitPrice) },
+        { key: 'reasonDescription', label: 'Reason Description', render: (row) => row.reasonDescription || '' },
+        { key: 'code', label: 'Code', render: (row) => row.code || '' },
+        { key: 'transaction', label: 'Transaction', render: (row) => row.transaction || 'N/A' },
+        { key: 'year', label: 'YEAR', align: 'right', render: (row) => row.year || 'N/A' },
+        { key: 'customerGroup', label: 'Customer Group', render: (row) => row.customerGroup || 'Unassigned' },
+        { key: 'revenue', label: 'Revenue', align: 'right', render: (row) => formatCurrencyWithCents(row.revenue) },
+        { key: 'team', label: 'TEAM', render: (row) => row.team || 'N/A' },
+      ];
+
+      if (wholesaleProductsLoading && !Array.isArray(wholesaleProductsData?.records)) {
+        return <div style={{ padding: '40px', textAlign: 'center', color: '#64748b' }}>Loading wholesale raw product data...</div>;
+      }
+      if (wholesaleProductsError && !Array.isArray(wholesaleProductsData?.records)) {
+        return (
+          <div style={{ background: 'white', border: '1px solid #fecaca', borderRadius: '12px', padding: '24px', color: '#991b1b' }}>
+            {wholesaleProductsError}
+          </div>
+        );
+      }
+
+      return (
+        <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '18px', marginBottom: '20px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px', marginBottom: '14px', flexWrap: 'wrap' }}>
+            <div>
+              <h3 style={{ margin: 0, fontSize: '18px', color: '#0f172a' }}>Raw Data</h3>
+              <div style={{ marginTop: '4px', fontSize: '12px', color: '#64748b', lineHeight: 1.4 }}>
+                Filter by customer and timeframe before reviewing the transaction-level table. The view displays the first {wholesaleRawVisibleRowLimit.toLocaleString()} matching rows.
+              </div>
+            </div>
+            <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
+              <select
+                value={wholesaleRawCustomerFilter}
+                onChange={(event) => setWholesaleRawCustomerFilter(event.target.value)}
+                style={{ border: '1px solid #cbd5e1', borderRadius: '8px', padding: '8px 10px', fontSize: '12px', minWidth: '260px', background: 'white' }}
+              >
+                <option value="all">All customers ({wholesaleRawCustomerOptions.length})</option>
+                {wholesaleRawCustomerOptions.map((customer) => (
+                  <option key={customer.key} value={customer.key}>
+                    {customer.label}
+                  </option>
+                ))}
+              </select>
+              <select
+                value={wholesaleRawTimeframe}
+                onChange={(event) => setWholesaleRawTimeframe(event.target.value as any)}
+                style={{ border: '1px solid #cbd5e1', borderRadius: '8px', padding: '8px 10px', fontSize: '12px', background: 'white' }}
+              >
+                <option value="currentMonth">Current month in loaded data</option>
+                <option value="currentYear">Current year in loaded data</option>
+                <option value="year">Previous / selected year</option>
+                <option value="custom">Custom date range</option>
+                <option value="allLoaded">All loaded dates</option>
+              </select>
+              {wholesaleRawTimeframe === 'year' && (
+                <select
+                  value={effectiveWholesaleRawYear}
+                  onChange={(event) => setWholesaleRawYear(event.target.value)}
+                  style={{ border: '1px solid #cbd5e1', borderRadius: '8px', padding: '8px 10px', fontSize: '12px', background: 'white' }}
+                >
+                  {wholesaleRawYears.map((year) => (
+                    <option key={year} value={year}>
+                      {year}
+                    </option>
+                  ))}
+                </select>
+              )}
+              {wholesaleRawTimeframe === 'custom' && (
+                <>
+                  <input
+                    type="date"
+                    value={wholesaleRawStartDate}
+                    onChange={(event) => setWholesaleRawStartDate(event.target.value)}
+                    style={{ border: '1px solid #cbd5e1', borderRadius: '8px', padding: '7px 10px', fontSize: '12px' }}
+                  />
+                  <input
+                    type="date"
+                    value={wholesaleRawEndDate}
+                    onChange={(event) => setWholesaleRawEndDate(event.target.value)}
+                    style={{ border: '1px solid #cbd5e1', borderRadius: '8px', padding: '7px 10px', fontSize: '12px' }}
+                  />
+                </>
+              )}
+            </div>
+          </div>
+
+          <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', marginBottom: '12px', fontSize: '12px', color: '#475569' }}>
+            <span><strong>Loaded rows:</strong> {wholesaleRawBaseRows.length.toLocaleString()}</span>
+            <span><strong>Filtered rows:</strong> {wholesaleRawFilteredRows.length.toLocaleString()}</span>
+            <span><strong>Displayed:</strong> {wholesaleRawVisibleRows.length.toLocaleString()}</span>
+            {wholesaleRawLatestDate && <span><strong>Latest loaded date:</strong> {formatRawDate(wholesaleRawLatestDate)}</span>}
+          </div>
+          {wholesaleRawFilteredRows.length > wholesaleRawVisibleRowLimit && (
+            <div style={{ marginBottom: '12px', padding: '10px', borderRadius: '8px', background: '#fff7ed', border: '1px solid #fed7aa', color: '#9a3412', fontSize: '12px' }}>
+              This filter returns {wholesaleRawFilteredRows.length.toLocaleString()} rows. Narrow the customer or timeframe to see more targeted detail.
+            </div>
+          )}
+
+          <div style={{ overflowX: 'auto', maxHeight: '620px', overflowY: 'auto' }}>
+            <table style={{ width: '100%', minWidth: '1700px', borderCollapse: 'collapse' }}>
+              <thead>
+                <tr style={{ borderBottom: '1px solid #e2e8f0', background: '#f8fafc', position: 'sticky', top: 0, zIndex: 1 }}>
+                  {rawColumns.map((column) => (
+                    <th key={column.key} style={{ padding: '8px', fontSize: '12px', color: '#334155', textAlign: column.align || 'left', whiteSpace: 'nowrap' }}>
+                      {column.label}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {wholesaleRawVisibleRows.map((row) => (
+                  <tr key={row.key} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                    {rawColumns.map((column) => (
+                      <td key={column.key} style={{ padding: '8px', fontSize: '12px', color: '#334155', textAlign: column.align || 'left', whiteSpace: 'nowrap' }}>
+                        {column.render(row)}
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+                {wholesaleRawVisibleRows.length === 0 && (
+                  <tr>
+                    <td colSpan={rawColumns.length} style={{ padding: '14px', fontSize: '13px', color: '#64748b' }}>
+                      No raw data rows match the selected filters.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      );
+    };
     const renderRetailForecastingReport = () => {
       if (!selectedRetailForecast) {
         return (
@@ -7750,7 +8409,33 @@ export default function OperationsTab({
       ) : null
     );
 
-    if (productReportView === 'merchandiseProfitability' && isRetailProductSector && isMerchandiseProfitabilityEnabled) {
+    if (effectiveProductReportView === 'productMarginAnalysis' && isProductMarginAnalysisEnabled) {
+      return (
+        <div style={{ padding: '8px 32px 32px' }}>
+          <h2 style={{ fontSize: '24px', fontWeight: '700', color: '#1e293b', marginBottom: '16px' }}>
+            Product Sales Performance
+          </h2>
+          {productViewSwitcher}
+          {renderProductMarginAnalysisReport()}
+          {renderProductChartInfoModal()}
+        </div>
+      );
+    }
+
+    if (effectiveProductReportView === 'wholesaleRawData' && isWholesaleRawDataEnabled) {
+      return (
+        <div style={{ padding: '8px 32px 32px' }}>
+          <h2 style={{ fontSize: '24px', fontWeight: '700', color: '#1e293b', marginBottom: '16px' }}>
+            Product Sales Performance
+          </h2>
+          {productViewSwitcher}
+          {renderWholesaleRawDataReport()}
+          {renderProductChartInfoModal()}
+        </div>
+      );
+    }
+
+    if (effectiveProductReportView === 'merchandiseProfitability' && isRetailProductSector && isMerchandiseProfitabilityEnabled) {
       return (
         <div style={{ padding: '8px 32px 32px' }}>
           <h2 style={{ fontSize: '24px', fontWeight: '700', color: '#1e293b', marginBottom: '16px' }}>
@@ -7763,7 +8448,7 @@ export default function OperationsTab({
       );
     }
 
-    if (productReportView === 'retailForecast' && isRetailProductSector && isRetailForecastingEnabled) {
+    if (effectiveProductReportView === 'retailForecast' && isRetailProductSector && isRetailForecastingEnabled) {
       return (
         <div style={{ padding: '8px 32px 32px' }}>
           <h2 style={{ fontSize: '24px', fontWeight: '700', color: '#1e293b', marginBottom: '16px' }}>
