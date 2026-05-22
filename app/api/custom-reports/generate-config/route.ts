@@ -178,9 +178,7 @@ function buildDatasetTableConfig(prompt: string, requestedType: ReportChartType,
     columns: datasetConfig.columns,
     sort: datasetConfig.sort,
     limit: datasetConfig.limit,
-    notes: [
-      'This table uses the validated custom-report dataset registry; SQL is built server-side from allowlisted fields.',
-    ],
+    notes: [],
   };
 }
 

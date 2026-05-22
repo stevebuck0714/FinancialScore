@@ -54,6 +54,14 @@ const seriesColors = ['#1F70C1', '#16a34a', '#f97316', '#7c3aed', '#dc2626', '#0
 
 function formatValue(value: number, format?: string) {
   if (format === 'percent') return `${(value * 100).toFixed(1)}%`;
+  if (format === 'unitCurrency') {
+    return Number(value || 0).toLocaleString(undefined, {
+      style: 'currency',
+      currency: 'USD',
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    });
+  }
   if (format === 'currency') {
     const abs = Math.abs(value);
     const suffix = abs >= 1_000_000 ? 'M' : abs >= 1_000 ? 'K' : '';
@@ -67,7 +75,10 @@ function formatDate(value?: string) {
   if (!value) return 'Not available';
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return 'Not available';
-  return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+  const month = String(date.getUTCMonth() + 1).padStart(2, '0');
+  const day = String(date.getUTCDate()).padStart(2, '0');
+  const year = date.getUTCFullYear();
+  return `${month}/${day}/${year}`;
 }
 
 function createdByLabel(report: SavedCustomReport) {
@@ -168,7 +179,11 @@ function CustomReportPreview({ config, rows, tableRows = [], tableColumns = [] }
                 <tr key={`${row.jobId || row.jobName || row.date || 'row'}-${rowIndex}`}>
                   {tableColumns.map((column: any) => {
                     const rawValue = column.type === 'metric' ? row?.values?.[column.key] : row?.[column.key];
-                    const value = column.type === 'metric' ? formatValue(Number(rawValue || 0), column.format) : String(rawValue || '');
+                    const value = column.type === 'metric'
+                      ? formatValue(Number(rawValue || 0), column.format)
+                      : column.type === 'date'
+                        ? formatDate(String(rawValue || ''))
+                        : String(rawValue || '');
                     return (
                       <td key={column.key} style={{ padding: '9px 10px', borderBottom: '1px solid #f1f5f9', textAlign: column.type === 'metric' ? 'right' : 'left', color: '#334155', fontWeight: column.key === 'jobName' ? 700 : 400 }}>
                         {value || '—'}

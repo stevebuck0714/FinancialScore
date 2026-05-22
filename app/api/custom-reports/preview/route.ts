@@ -537,11 +537,20 @@ function normalizeDatasetFilters(dataset: ReportDataset, rawFilters: any[]) {
 
 function datasetColumnToTableColumn(column: ReportDatasetColumn) {
   const isMetric = column.type === 'number' || column.type === 'currency' || column.type === 'percent';
+  const isUnitCurrency = ['unitPrice', 'unitCost', 'avgCost'].includes(column.key);
   return {
     key: column.key,
     label: column.label,
-    type: isMetric ? 'metric' : 'text',
-    format: column.type === 'currency' ? 'currency' : column.type === 'percent' ? 'percent' : column.type === 'number' ? 'number' : undefined,
+    type: isMetric ? 'metric' : column.type === 'date' ? 'date' : 'text',
+    format: isUnitCurrency
+      ? 'unitCurrency'
+      : column.type === 'currency'
+        ? 'currency'
+        : column.type === 'percent'
+          ? 'percent'
+          : column.type === 'number'
+            ? 'number'
+            : undefined,
   };
 }
 
