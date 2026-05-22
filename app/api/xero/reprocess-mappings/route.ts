@@ -23,7 +23,7 @@ function parseTargetMonth(value: unknown): Date | null {
 }
 
 function applyMappedValue(details: Record<string, any>, targetField: string | null | undefined, amount: number): boolean {
-  if (!targetField || targetField === 'unmapped') return false;
+  if (!targetField || targetField === 'unmapped' || targetField === 'ignored') return false;
   if (targetField.startsWith('rev_')) {
     if (!details.revenueBreakdown || typeof details.revenueBreakdown !== 'object') details.revenueBreakdown = {};
     details.revenueBreakdown[targetField] = (Number(details.revenueBreakdown[targetField]) || 0) + Math.abs(amount);

@@ -210,7 +210,10 @@ export const EbitdaAdjustmentsProvider: React.FC<{
       for (const b of api?.buckets || []) for (const a of b.accounts) assignedIds.add(a.mappingId);
       const unassigned = all
         .filter((m) => m && !assignedIds.has(m.id) && !(bucketEdits[m.id] && bucketEdits[m.id] !== null))
-        .filter((m) => String(m.targetField || '').toLowerCase() !== 'unmapped' && String(m.targetField || '').trim() !== '')
+        .filter((m) => {
+          const target = String(m.targetField || '').toLowerCase().trim();
+          return target !== '' && target !== 'unmapped' && target !== 'ignored';
+        })
         .map((m) => ({
           id: m.id,
           accountName: m.accountName || m.name || '',

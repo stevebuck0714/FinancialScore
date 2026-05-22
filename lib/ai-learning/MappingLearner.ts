@@ -74,7 +74,7 @@ export class MappingLearner {
           mode: 'insensitive'
         },
         targetField: {
-          not: 'unmapped'
+          notIn: ['unmapped', 'ignored']
         }
       },
       _count: {
@@ -117,7 +117,7 @@ export class MappingLearner {
       by: ['accountName', 'accountClassification', 'targetField'],
       where: {
         targetField: {
-          not: 'unmapped'
+          notIn: ['unmapped', 'ignored']
         }
       },
       _count: {

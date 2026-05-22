@@ -26,7 +26,7 @@ function parseTargetMonth(value: unknown): Date | null {
 }
 
 function applyMappedValue(data: Record<string, any>, targetField: string | null | undefined, amount: number): boolean {
-  if (!targetField || targetField === 'unmapped') return false;
+  if (!targetField || targetField === 'unmapped' || targetField === 'ignored') return false;
   if (targetField.startsWith('rev_')) {
     if (!data.revenueBreakdown || typeof data.revenueBreakdown !== 'object') data.revenueBreakdown = {};
     data.revenueBreakdown[targetField] = (Number(data.revenueBreakdown[targetField]) || 0) + amount;
@@ -384,7 +384,7 @@ export async function POST(request: NextRequest) {
                            mappingLookup.get(description);
           
           // Priority 2: Automatic mapping from Xero account type
-          if (!targetField || targetField === 'unmapped') {
+          if (!targetField || targetField === 'unmapped' || targetField === 'ignored') {
             const xeroAccountType = accountTypeByCode.get(accountCode) || accountTypeByName.get(accountName);
             if (xeroAccountType) {
               targetField = getTargetFieldFromAccountType(xeroAccountType);
@@ -432,7 +432,7 @@ export async function POST(request: NextRequest) {
                            mappingLookup.get(description);
           
           // Priority 2: Automatic mapping from Xero account type
-          if (!targetField || targetField === 'unmapped') {
+          if (!targetField || targetField === 'unmapped' || targetField === 'ignored') {
             const xeroAccountType = accountTypeByCode.get(accountCode) || accountTypeByName.get(accountName);
             if (xeroAccountType) {
               targetField = getTargetFieldFromAccountType(xeroAccountType);

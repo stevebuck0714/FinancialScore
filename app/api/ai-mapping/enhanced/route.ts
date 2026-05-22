@@ -416,7 +416,7 @@ function resolveClassificationFromAccountType(classification: string, accountTyp
 
 function classifyTargetFieldFamily(targetField: string): 'revenue' | 'cogs' | 'expense' | 'asset' | 'liability' | 'equity' | 'other' {
   const normalized = String(targetField || '').trim().toLowerCase();
-  if (!normalized || normalized === 'unmapped') return 'other';
+  if (!normalized || normalized === 'unmapped' || normalized === 'ignored') return 'other';
   if (
     normalized === 'revenue' ||
     normalized === 'nonoperatingincome' ||
@@ -742,6 +742,7 @@ export async function POST(request: NextRequest) {
           if (mlSuggestion &&
               mlSuggestion.targetField &&
               mlSuggestion.targetField !== 'unmapped' &&
+              mlSuggestion.targetField !== 'ignored' &&
               mlSuggestion.targetField !== '' &&
               mlSuggestion.confidence > bestConfidence) {
             bestMapping = {

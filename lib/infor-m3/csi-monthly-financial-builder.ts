@@ -832,7 +832,7 @@ function applyMappedAmount(
   endingBalance: number,
 ): boolean {
   const normalized = String(targetField || '').trim();
-  if (!normalized || normalized.toLowerCase() === 'unmapped') return false;
+  if (!normalized || normalized.toLowerCase() === 'unmapped' || normalized.toLowerCase() === 'ignored') return false;
   const amountExpense = expenseMovement;
   const amountRevenue = revenueMovement;
   const amountBalance = Math.abs(endingBalance);
@@ -939,7 +939,7 @@ export function buildCsiMonthlyDataFromGlResponses(params: {
   const mappingByCode = new Map<string, string>();
   for (const row of Array.isArray(params.accountMappings) ? params.accountMappings : []) {
     const targetField = String(row?.targetField || '').trim();
-    if (!targetField || targetField.toLowerCase() === 'unmapped') continue;
+    if (!targetField || targetField.toLowerCase() === 'unmapped' || targetField.toLowerCase() === 'ignored') continue;
     const byName = normalizeMappingKey(row?.accountName);
     if (byName && !mappingByName.has(byName)) mappingByName.set(byName, targetField);
     const byCodeCandidates = extractAccountCodeCandidates(

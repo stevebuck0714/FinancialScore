@@ -147,7 +147,7 @@ function classifyAccount(mapping: Pick<AccountMappingRow, 'accountClassification
   // match above and is mapped to a non-empty target field is treated as
   // Expense (the largest mapped category by far). Truly empty stays Other.
   if (tf.startsWith('cogs')) return 'Expense';
-  if (tf && tf !== 'unmapped') return 'Expense';
+  if (tf && tf !== 'unmapped' && tf !== 'ignored') return 'Expense';
   return 'Other';
 }
 

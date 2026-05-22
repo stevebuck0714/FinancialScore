@@ -45,6 +45,7 @@ export default function AccountMappingTable({
     const normalized = raw.toLowerCase();
     if (normalized === 'nonopertingincome') return 'nonOperatingIncome';
     if (normalized === 'nonopertingexpense') return 'nonOperatingExpense';
+    if (normalized === 'ignored' || normalized === 'ignore' || normalized === 'do not process') return 'ignored';
     return raw;
   };
 
@@ -52,6 +53,11 @@ export default function AccountMappingTable({
     { value: 'nonOperatingIncome', label: 'Non-Operating Income' },
     { value: 'nonOperatingExpense', label: 'Non-Operating Expense' },
   ];
+  const ignoredOption = { value: 'ignored', label: 'Ignore / Do Not Process' };
+  const isExcludedTargetField = (value?: string): boolean => {
+    const normalized = canonicalizeTargetField(value).toLowerCase();
+    return !normalized || normalized === 'unmapped' || normalized === 'ignored';
+  };
 
   const [collapsedSections, setCollapsedSections] = useState<{[key: string]: boolean}>({
     revenue: false,
@@ -94,7 +100,7 @@ export default function AccountMappingTable({
     const isLikelyCogsCode = codeCandidates.some((n) => n >= 5000 && n < 6000);
     const isLikelyEquityCode = codeCandidates.some((n) => n >= 3000 && n < 4000);
     const normalizedTarget = (targetField || '').trim().toLowerCase();
-    if (normalizedTarget && normalizedTarget !== 'unmapped') {
+    if (normalizedTarget && normalizedTarget !== 'unmapped' && normalizedTarget !== 'ignored') {
       if (normalizedTarget === 'nonoperatingincome' || normalizedTarget === 'nonoperatingexpense') return 'nonOperating';
       if (normalizedTarget === 'revenue' || normalizedTarget === 'otherrevenue' || normalizedTarget.startsWith('rev_')) return 'revenue';
       if (
@@ -277,9 +283,9 @@ export default function AccountMappingTable({
 
   const isActionable = (mapping: AccountMapping): boolean => {
     if (!showOnlyActionable) return true;
-    const target = (mapping.targetField || '').trim().toLowerCase();
-    const isUnmapped = !target || target === 'unmapped';
-    return isUnmapped || mapping.sourceStatus === 'new' || mapping.sourceStatus === 'changed';
+    if (canonicalizeTargetField(mapping.targetField) === 'ignored') return false;
+    const needsMapping = isExcludedTargetField(mapping.targetField) && canonicalizeTargetField(mapping.targetField) !== 'ignored';
+    return needsMapping || mapping.sourceStatus === 'new' || mapping.sourceStatus === 'changed';
   };
 
   const getGroupingClassification = (mapping: AccountMapping) => {
@@ -374,18 +380,19 @@ export default function AccountMappingTable({
   const getTargetFieldOptionsForSection = (sectionKey: string) => {
     const options = targetFieldOptions[sectionKey as keyof typeof targetFieldOptions] || [];
     if (sectionKey === 'nonOperating') {
-      return [...options, ...nonOperatingDefaults].filter((opt, idx, arr) => arr.findIndex(o => o.value === opt.value) === idx);
+      return [...options, ...nonOperatingDefaults, ignoredOption].filter((opt, idx, arr) => arr.findIndex(o => o.value === opt.value) === idx);
     }
     if (sectionKey === 'other') {
-      return [];
+      return [ignoredOption];
     }
-    return options.filter((opt, idx, arr) => arr.findIndex(o => o.value === opt.value) === idx);
+    return [...options, ignoredOption].filter((opt, idx, arr) => arr.findIndex(o => o.value === opt.value) === idx);
   };
 
   const getFieldLabel = (value: string): string => {
     const canonicalValue = canonicalizeTargetField(value);
     if (canonicalValue === 'nonOperatingIncome') return 'Non-Operating Income';
     if (canonicalValue === 'nonOperatingExpense') return 'Non-Operating Expense';
+    if (canonicalValue === 'ignored') return ignoredOption.label;
     const allOptions = Object.values(targetFieldOptions).flat();
     const option = allOptions.find(opt => opt.value === canonicalValue);
     return option ? option.label : canonicalValue;
@@ -445,7 +452,9 @@ export default function AccountMappingTable({
                 border: '1px solid #cbd5e1',
                 borderRadius: '4px',
                 fontSize: '13px',
-                background: canonicalizeTargetField(mapping.targetField) ? '#f0fdf4' : '#fef2f2',
+                background: canonicalizeTargetField(mapping.targetField) === 'ignored'
+                  ? '#f8fafc'
+                  : canonicalizeTargetField(mapping.targetField) ? '#f0fdf4' : '#fef2f2',
                 cursor: 'pointer',
                 textAlign: 'left',
                 display: 'flex',

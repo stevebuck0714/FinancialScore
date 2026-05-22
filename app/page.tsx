@@ -2019,6 +2019,7 @@ function FinancialScorePage() {
     const normalized = raw.toLowerCase();
     if (normalized === 'nonopertingincome') return 'nonOperatingIncome';
     if (normalized === 'nonopertingexpense') return 'nonOperatingExpense';
+    if (normalized === 'ignored' || normalized === 'ignore' || normalized === 'do not process') return 'ignored';
     return raw;
   };
 
@@ -3325,6 +3326,7 @@ function FinancialScorePage() {
     changed: number;
     inactive: number;
     unmapped: number;
+    ignored?: number;
     lastSeedAt: string | null;
   } | null>(null);
   
@@ -16143,6 +16145,7 @@ function FinancialScorePage() {
                       <span><strong>Changed:</strong> {mappingSourceSummary?.changed ?? 0}</span>
                       <span><strong>Inactive:</strong> {mappingSourceSummary?.inactive ?? 0}</span>
                       <span><strong>Unmapped:</strong> {mappingSourceSummary?.unmapped ?? 0}</span>
+                      <span><strong>Ignored:</strong> {mappingSourceSummary?.ignored ?? 0}</span>
                       {mappingSourceSummary?.lastSeedAt && (
                         <span><strong>Last Seed:</strong> {new Date(mappingSourceSummary.lastSeedAt).toLocaleString()}</span>
                       )}
@@ -17246,7 +17249,7 @@ function FinancialScorePage() {
                               return undefined;
                             };
 
-                            if (normalizedTarget && normalizedTarget !== 'unmapped') {
+                            if (normalizedTarget && normalizedTarget !== 'unmapped' && normalizedTarget !== 'ignored') {
                               const direct = tryGetNumeric(normalizedTarget);
                               if (direct !== undefined) return direct;
 

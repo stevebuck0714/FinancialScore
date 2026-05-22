@@ -97,11 +97,11 @@ export function applyLOBAllocations(
       continue;
     }
 
-    const targetField = mapping.targetField;
+    const targetField = String(mapping.targetField || '').trim();
     const amount = accountValue.value;
 
     // Skip if no target field or amount is zero
-    if (!targetField || amount === 0) {
+    if (!targetField || targetField.toLowerCase() === 'unmapped' || targetField.toLowerCase() === 'ignored' || amount === 0) {
       continue;
     }
 

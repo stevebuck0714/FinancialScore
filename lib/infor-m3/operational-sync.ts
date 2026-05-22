@@ -3082,7 +3082,7 @@ async function saveBalanceMovementsFromGl(
     const rawMappings = await prisma.accountMapping.findMany({
       where: {
         companyId,
-        targetField: { notIn: ['', 'unmapped', 'UNMAPPED'] },
+        targetField: { notIn: ['', 'unmapped', 'UNMAPPED', 'ignored', 'IGNORED'] },
       },
       select: {
         accountName: true,

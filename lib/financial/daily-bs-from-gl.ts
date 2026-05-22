@@ -372,8 +372,11 @@ export function buildAccountIdToTarget(
 ): Map<string, AccountTarget> {
   const out = new Map<string, AccountTarget>();
   for (const m of mappings) {
+    const rawTargetField = String(m.targetField || '').trim();
+    const normalizedTargetField = rawTargetField.toLowerCase();
+    if (!rawTargetField || normalizedTargetField === 'unmapped' || normalizedTargetField === 'ignored') continue;
     const target: AccountTarget = {
-      targetField: m.targetField,
+      targetField: rawTargetField,
       classification: m.accountClassification,
       accountName: m.accountName,
     };
@@ -1074,7 +1077,7 @@ export async function rebuildDailyFinancialSnapshotsFromGL(
   const mappings = await prisma.accountMapping.findMany({
     where: {
       companyId,
-      targetField: { notIn: ['', 'unmapped', 'UNMAPPED'] },
+      targetField: { notIn: ['', 'unmapped', 'UNMAPPED', 'ignored', 'IGNORED'] },
     },
     select: {
       accountName: true,

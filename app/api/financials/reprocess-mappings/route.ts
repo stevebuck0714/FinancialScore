@@ -374,7 +374,7 @@ function extractCsiLedgerRowsFromGlResponses(glResponses: unknown[]): Record<str
 
 function getTargetFamily(value: unknown): 'revenue' | 'cogs' | 'expense' | 'other' {
   const target = String(value || '').trim().toLowerCase();
-  if (!target || target === 'unmapped') return 'other';
+  if (!target || target === 'unmapped' || target === 'ignored') return 'other';
   if (target === 'revenue' || target.startsWith('rev_')) return 'revenue';
   if (target === 'cogstotal' || target === 'costofgoodssold' || target.startsWith('cogs')) return 'cogs';
   const expenseTargets = new Set([

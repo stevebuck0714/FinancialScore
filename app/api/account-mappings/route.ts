@@ -22,6 +22,9 @@ function normalizeTargetFieldValue(value: unknown, industrySectorCategory?: stri
   if (!raw) return "";
   const normalized = raw.toLowerCase();
   const compact = normalized.replace(/[^a-z0-9]/g, "");
+  if (compact === "ignored" || compact === "ignore" || compact === "donotprocess") {
+    return "ignored";
+  }
   if (
     compact === "nonoperatingincome" ||
     compact === "nonopertingincome" ||
@@ -51,6 +54,15 @@ function normalizeTargetFieldValue(value: unknown, industrySectorCategory?: stri
   if (byLabelComparable) return byLabelComparable.value;
 
   return raw;
+}
+
+function isIgnoredTargetField(value: unknown): boolean {
+  return String(value || "").trim().toLowerCase() === "ignored";
+}
+
+function isExcludedTargetField(value: unknown): boolean {
+  const normalized = String(value || "").trim().toLowerCase();
+  return !normalized || normalized === "unmapped" || normalized === "ignored";
 }
 
 type AccountSnapshotRow = {
@@ -166,7 +178,7 @@ function isRevenueTargetField(targetField: string): boolean {
 
 function getTargetFieldFamily(targetField: string): "revenue" | "cogs" | "expense" | "asset" | "liability" | "equity" | "other" {
   const normalized = String(targetField || "").trim().toLowerCase();
-  if (!normalized || normalized === "unmapped") return "other";
+  if (isExcludedTargetField(normalized)) return "other";
   if (normalized === "revenue" || normalized.startsWith("rev_")) return "revenue";
   if (normalized === "nonoperatingincome") return "revenue";
   if (
@@ -486,6 +498,7 @@ export async function GET(request: NextRequest) {
         : (sourceMatch?.classification || m.accountClassification);
       const normalizedTargetField = normalizeTargetFieldValue(m.targetField, sectorCategory);
       if (!normalizedTargetField) return false;
+      if (isIgnoredTargetField(normalizedTargetField)) return false;
       const invalidForSector = !allowedTargetFields.has(normalizedTargetField);
       const semanticallyInvalid =
         (isLikelyEquityMapping({ ...m, accountClassification: effectiveClassification }) &&
@@ -504,6 +517,7 @@ export async function GET(request: NextRequest) {
       changed: 0,
       inactive: 0,
       unmapped: 0,
+      ignored: 0,
     };
     const sanitizedMappings = mappings.map((m: any) => {
       const sourceMatch = findSourceMatch(m);
@@ -511,15 +525,17 @@ export async function GET(request: NextRequest) {
         ? m.accountClassification
         : (sourceMatch?.classification || m.accountClassification);
       const normalizedTargetField = normalizeTargetFieldValue(m.targetField, sectorCategory);
+      const isIgnored = isIgnoredTargetField(normalizedTargetField);
       const semanticallyInvalid =
-        (isLikelyEquityMapping({ ...m, accountClassification: effectiveClassification }) &&
+        !isIgnored &&
+        ((isLikelyEquityMapping({ ...m, accountClassification: effectiveClassification }) &&
           isRevenueTargetField(normalizedTargetField)) ||
-        isTargetFieldIncompatibleWithClassification(
-          normalizedTargetField,
-          effectiveClassification,
-          m.accountName,
-          m.accountCode || m.accountId,
-        );
+          isTargetFieldIncompatibleWithClassification(
+            normalizedTargetField,
+            effectiveClassification,
+            m.accountName,
+            m.accountCode || m.accountId,
+          ));
       const effectiveTargetField = normalizedTargetField;
       const isUnmapped =
         !effectiveTargetField || effectiveTargetField === "unmapped";
@@ -536,8 +552,9 @@ export async function GET(request: NextRequest) {
       if (sourceStatus === "changed") statusCounts.changed += 1;
       if (sourceStatus === "inactive") statusCounts.inactive += 1;
       if (isUnmapped) statusCounts.unmapped += 1;
+      if (isIgnored) statusCounts.ignored += 1;
 
-      if (!effectiveTargetField || effectiveTargetField === "unmapped" || allowedTargetFields.has(effectiveTargetField)) {
+      if (isExcludedTargetField(effectiveTargetField) || allowedTargetFields.has(effectiveTargetField)) {
         const sourceCode =
           sourceMatch?.accountCode && sourceMatch.accountCode !== sourceMatch.accountId
             ? sourceMatch.accountCode
@@ -667,15 +684,17 @@ export async function POST(request: NextRequest) {
     });
     const sanitizedUniqueMappings = uniqueMappings.map((m: any) => {
       const normalizedTargetField = normalizeTargetFieldValue(m.targetField, sectorCategory);
+      const isIgnored = isIgnoredTargetField(normalizedTargetField);
       const semanticallyInvalid =
-        (isLikelyEquityMapping(m) && isRevenueTargetField(normalizedTargetField)) ||
-        isTargetFieldIncompatibleWithClassification(
-          normalizedTargetField,
-          m.accountClassification,
-          m.accountName,
-          m.accountCode || m.accountId,
-        );
-      const isExplicitlyMapped = normalizedTargetField && normalizedTargetField !== "unmapped";
+        !isIgnored &&
+        ((isLikelyEquityMapping(m) && isRevenueTargetField(normalizedTargetField)) ||
+          isTargetFieldIncompatibleWithClassification(
+            normalizedTargetField,
+            m.accountClassification,
+            m.accountName,
+            m.accountCode || m.accountId,
+          ));
+      const isExplicitlyMapped = normalizedTargetField && !isExcludedTargetField(normalizedTargetField);
       if (isExplicitlyMapped && !allowedTargetFields.has(normalizedTargetField)) {
         return {
           ...m,
@@ -691,7 +710,7 @@ export async function POST(request: NextRequest) {
       };
     });
     const mappedRows = sanitizedUniqueMappings.filter(
-      (m: any) => m.targetField && m.targetField !== "unmapped",
+      (m: any) => !isExcludedTargetField(m.targetField),
     );
     const invalidMappings = sanitizedUniqueMappings.filter((m: any) => m.invalidTargetField);
     console.log(

@@ -592,7 +592,7 @@ async function collectAllMappedValuesFromMonthlyFinancial(
       prisma.accountMapping.findMany({
         where: {
           companyId,
-          targetField: { notIn: ['', 'unmapped', 'UNMAPPED'] },
+          targetField: { notIn: ['', 'unmapped', 'UNMAPPED', 'ignored', 'IGNORED'] },
         },
         select: {
           accountName: true,
@@ -685,7 +685,7 @@ export async function GET(request: NextRequest) {
         prisma.accountMapping.findMany({
           where: {
             companyId,
-            targetField: { notIn: ['', 'unmapped', 'UNMAPPED'] },
+            targetField: { notIn: ['', 'unmapped', 'UNMAPPED', 'ignored', 'IGNORED'] },
           },
           select: {
             accountId: true,
