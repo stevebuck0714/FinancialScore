@@ -49,7 +49,7 @@ export async function POST(request: NextRequest) {
 
     const connection = await getOperationalSystemConnection(companyId, 'SPREADSHEET_UPLOAD', SOURCE_CODE);
     if (!connection) {
-      return NextResponse.json({ ok: false, error: "Spreadsheet - Plato's Closet is not enabled for this company." }, { status: 400 });
+      return NextResponse.json({ ok: false, error: 'MONTHLY STORE VISIT REPORT is not enabled for this company.' }, { status: 400 });
     }
 
     const response = await fetch(blob.url);
@@ -188,6 +188,6 @@ export async function POST(request: NextRequest) {
       },
     });
   } catch (error: any) {
-    return NextResponse.json({ ok: false, error: error?.message || "Failed to register Plato's Closet workbook" }, { status: 500 });
+    return NextResponse.json({ ok: false, error: error?.message || 'Failed to register MONTHLY STORE VISIT REPORT workbook' }, { status: 500 });
   }
 }

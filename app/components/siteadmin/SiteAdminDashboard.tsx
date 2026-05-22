@@ -14,7 +14,7 @@ import { isPluginAccountingSystem } from '@/lib/accounting-systems/registry';
 import { companiesApi, consultantsApi, ApiError } from '@/lib/api-client';
 
 const OPERATIONAL_HUB_SECTION_OPTIONS: Array<{ key: string; label: string; group: string }> = [
-  { key: 'productsRetailForecasting', label: "Retail Forecasting / Plato's Inventory", group: 'Products' },
+  { key: 'productsRetailForecasting', label: 'Retail Forecasting / Monthly Inventory Report', group: 'Products' },
   { key: 'productsMerchandiseProfitability', label: 'Merchandise Profitability', group: 'Products' },
   { key: 'productsPriceCostComparison', label: 'Weekly Price-Cost Comparison', group: 'Products' },
   { key: 'productsPareto', label: 'Top Products Pareto', group: 'Products' },
@@ -2261,7 +2261,7 @@ export default function SiteAdminDashboard(props: any) {
     { dataDomain: 'Time Off', bambooEntity: 'time_off/requests', enabled: false },
   ];
   const defaultPlatosClosetSettings = {
-    templateName: "Spreadsheet - Plato's Closet",
+    templateName: 'MONTHLY STORE VISIT REPORT',
     acceptedFileType: '.xlsx' as '.xlsx' | '.csv' | '',
     uploadFrequency: 'monthly' as 'daily' | 'weekly' | 'monthly' | '',
     syncTime: '08:00',
@@ -2810,7 +2810,7 @@ export default function SiteAdminDashboard(props: any) {
       setPlatosClosetLastSyncByCompany((prev) => ({ ...prev, [companyId]: data?.lastSyncAt || null }));
       setPlatosClosetErrorByCompany((prev) => ({ ...prev, [companyId]: data?.errorMessage || null }));
     } catch (error) {
-      console.error("Failed to load Plato's Closet spreadsheet settings:", error);
+      console.error('Failed to load MONTHLY STORE VISIT REPORT settings:', error);
     }
   };
   const loadOperationalSources = async (companyId: string) => {
@@ -3098,13 +3098,13 @@ export default function SiteAdminDashboard(props: any) {
       });
       const data = await response.json();
       if (!response.ok || !data?.ok) {
-        throw new Error(data?.details || data?.error || "Failed to save Plato's Closet spreadsheet settings");
+        throw new Error(data?.details || data?.error || 'Failed to save MONTHLY STORE VISIT REPORT settings');
       }
       await loadPlatosClosetSettings(companyId);
       await loadOperationalSources(companyId);
-      alert("Plato's Closet spreadsheet settings saved for this company.");
+      alert('MONTHLY STORE VISIT REPORT settings saved for this company.');
     } catch (error: any) {
-      alert(`Failed to save Plato's Closet spreadsheet settings: ${error?.message || 'Unknown error'}`);
+      alert(`Failed to save MONTHLY STORE VISIT REPORT settings: ${error?.message || 'Unknown error'}`);
     } finally {
       setSavingPlatosClosetCompanyId((prev) => (prev === companyId ? null : prev));
     }
@@ -3528,7 +3528,7 @@ export default function SiteAdminDashboard(props: any) {
       <div style={{ padding: '12px', background: '#f8fafc', borderRadius: '6px', border: '1px solid #e2e8f0', gridColumn: '1 / 2', order: 6 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px', marginBottom: '10px' }}>
           <div>
-            <h4 style={{ fontSize: '14px', fontWeight: '600', color: '#1e293b', marginBottom: '8px' }}>Spreadsheet - Plato&apos;s Closet</h4>
+            <h4 style={{ fontSize: '14px', fontWeight: '600', color: '#1e293b', marginBottom: '8px' }}>MONTHLY STORE VISIT REPORT</h4>
             <div style={{ fontSize: '12px', color: '#64748b' }}>
               Retail workbook setup for <strong>{companyName}</strong>
             </div>
@@ -3552,7 +3552,7 @@ export default function SiteAdminDashboard(props: any) {
         <div style={{ marginBottom: '8px', padding: '8px', background: statusTheme.bg, border: `1px solid ${statusTheme.border}`, borderRadius: '6px' }}>
           <div style={{ fontSize: '12px', fontWeight: '600', color: statusTheme.fg }}>{statusTheme.label}</div>
           <div style={{ fontSize: '12px', color: statusTheme.fg }}>
-            {lastSyncAt ? `Last workbook load: ${new Date(lastSyncAt).toLocaleString()}` : "No Plato's Closet workbook has been loaded for this company yet."}
+            {lastSyncAt ? `Last workbook load: ${new Date(lastSyncAt).toLocaleString()}` : 'No MONTHLY STORE VISIT REPORT workbook has been loaded for this company yet.'}
           </div>
           {errorMessage ? <div style={{ fontSize: '12px', color: statusTheme.fg, marginTop: '4px' }}>{errorMessage}</div> : null}
         </div>
@@ -3680,7 +3680,7 @@ export default function SiteAdminDashboard(props: any) {
         </div>
       </div>
       <div style={{ fontSize: '12px', color: '#64748b', marginBottom: '8px' }}>
-        Plato&apos;s Closet retail workbook domains available for downstream reporting
+        MONTHLY STORE VISIT REPORT workbook domains available for downstream reporting
       </div>
       <div style={{ overflowX: 'auto' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>

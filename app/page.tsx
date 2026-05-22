@@ -6774,9 +6774,9 @@ function FinancialScorePage() {
 
       if (input) input.value = '';
       await loadCompanyOperationalSources(selectedCompanyId);
-      alert("Plato's Closet workbook uploaded successfully.");
+      alert('MONTHLY STORE VISIT REPORT workbook uploaded successfully.');
     } catch (error: any) {
-      console.error("Failed to upload Plato's Closet workbook:", error);
+      console.error('Failed to upload MONTHLY STORE VISIT REPORT workbook:', error);
       const message = error?.message || 'Upload failed';
       setOperationalSourcesError(message);
       alert(`Failed to upload workbook: ${message}`);
@@ -6793,7 +6793,7 @@ function FinancialScorePage() {
     const input = platosInventoryWorkbookFileInputRef.current;
     const file = input?.files?.[0];
     if (!file) {
-      alert("Choose a Plato's Inventory workbook first.");
+      alert('Choose a Monthly Inventory Report workbook first.');
       return;
     }
 
@@ -6838,7 +6838,7 @@ function FinancialScorePage() {
       });
       const workbookData = await workbookResponse.json();
       if (!workbookResponse.ok || !workbookData?.ok) {
-        throw new Error(workbookData?.error || "Plato's Inventory workbook validation failed");
+        throw new Error(workbookData?.error || 'Monthly Inventory Report workbook validation failed');
       }
 
       if (input) input.value = '';
@@ -6850,12 +6850,12 @@ function FinancialScorePage() {
       const beltsDetail = Array.isArray(beltsSample) && beltsSample.length
         ? ` Accessories Belts sales units parsed: ${beltsSample.map((row: any) => `${row.monthKey}: ${row.salesUnits ?? 'N/A'}`).join(', ')}.`
         : '';
-      alert(`Plato's Inventory workbook uploaded successfully (${workbookData.monthCount || 0} months, ${workbookData.subcategoryCount || 0} subcategories).${beltsDetail}`);
+      alert(`Monthly Inventory Report workbook uploaded successfully (${workbookData.monthCount || 0} months, ${workbookData.subcategoryCount || 0} subcategories).${beltsDetail}`);
     } catch (error: any) {
-      console.error("Failed to upload Plato's Inventory workbook:", error);
+      console.error('Failed to upload Monthly Inventory Report workbook:', error);
       const message = error?.message || 'Upload failed';
       setOperationalSourcesError(message);
-      alert(`Failed to upload Plato's Inventory workbook: ${message}`);
+      alert(`Failed to upload Monthly Inventory Report workbook: ${message}`);
     } finally {
       setUploadingPlatosInventoryWorkbook(false);
     }
@@ -14135,7 +14135,7 @@ function FinancialScorePage() {
                     </div>
 
                     <div style={{ marginBottom: '10px', padding: '10px', background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: '8px', fontSize: '12px', color: '#1d4ed8' }}>
-                      Expected file: <strong>docs/Platos Inventory.xlsx</strong>. The workbook should contain the latest rolling 12 months with Sub-Category blocks, BOM Units, Sales, Buys, EOM Units, and Sell-Through rows.
+                      Expected file: <strong>Monthly Inventory Report workbook</strong>. The workbook should contain the latest rolling 12 months with Sub-Category blocks, BOM Units, Sales, Buys, EOM Units, and Sell-Through rows.
                     </div>
 
                     <input
@@ -14160,7 +14160,7 @@ function FinancialScorePage() {
                           cursor: uploadingPlatosInventoryWorkbook ? 'not-allowed' : 'pointer',
                         }}
                       >
-                        {uploadingPlatosInventoryWorkbook ? 'Uploading…' : "Upload Plato's Inventory"}
+                        {uploadingPlatosInventoryWorkbook ? 'Uploading…' : 'Upload Monthly Inventory Report'}
                       </button>
                       <button
                         onClick={() => selectedCompanyId && loadCompanyOperationalSources(selectedCompanyId)}
@@ -14181,7 +14181,7 @@ function FinancialScorePage() {
 
                     {platosInventorySource.workbookUpload ? (
                       <div style={{ fontSize: '12px', color: '#475569', lineHeight: 1.6 }}>
-                        <div><strong>File:</strong> {platosInventorySource.workbookUpload.originalFileName || "Plato's Inventory workbook"}</div>
+                        <div><strong>File:</strong> {platosInventorySource.workbookUpload.originalFileName || 'Monthly Inventory Report workbook'}</div>
                         <div><strong>Uploaded:</strong> {platosInventorySource.workbookUpload.uploadedAt ? new Date(platosInventorySource.workbookUpload.uploadedAt).toLocaleString() : 'Unknown'}</div>
                         <div><strong>Sheets found:</strong> {Array.isArray(platosInventorySource.workbookUpload.sheetNames) ? platosInventorySource.workbookUpload.sheetNames.join(', ') : 'Unknown'}</div>
                         {platosInventorySource.workbookUpload.blobUrl ? (
@@ -14194,7 +14194,7 @@ function FinancialScorePage() {
                       </div>
                     ) : (
                       <div style={{ fontSize: '12px', color: '#64748b' }}>
-                        No Plato&apos;s Inventory workbook uploaded yet.
+                        No Monthly Inventory Report workbook uploaded yet.
                       </div>
                     )}
 

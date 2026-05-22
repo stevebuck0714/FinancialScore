@@ -81,7 +81,7 @@ export async function POST(request: NextRequest) {
 
     const connection = await getOperationalSystemConnection(companyId, 'SPREADSHEET_UPLOAD', PLATOS_INVENTORY_SOURCE_CODE);
     if (!connection) {
-      return NextResponse.json({ ok: false, error: "Spreadsheet - Plato's Inventory is not enabled for this company." }, { status: 400 });
+      return NextResponse.json({ ok: false, error: 'Monthly Inventory Report is not enabled for this company.' }, { status: 400 });
     }
 
     const response = await fetch(blob.url);
@@ -121,7 +121,7 @@ export async function POST(request: NextRequest) {
         ...metadata,
         platosInventoryWorkbookUpload: {
           documentId,
-          originalFileName: originalFileName || "Plato's Inventory workbook",
+          originalFileName: originalFileName || 'Monthly Inventory Report workbook',
           blobUrl: blob.url,
           blobPathname: blob.pathname || null,
           contentType: blob.contentType || null,
@@ -146,7 +146,7 @@ export async function POST(request: NextRequest) {
       ok: true,
       companyId,
       documentId,
-      originalFileName: originalFileName || "Plato's Inventory workbook",
+      originalFileName: originalFileName || 'Monthly Inventory Report workbook',
       sheetNames: parsed.sheetNames,
       monthCount: parsed.monthKeys.length,
       monthKeys: parsed.monthKeys,
@@ -156,7 +156,7 @@ export async function POST(request: NextRequest) {
     });
   } catch (error: any) {
     return NextResponse.json(
-      { ok: false, error: error?.message || "Failed to import Plato's Inventory workbook" },
+      { ok: false, error: error?.message || 'Failed to import Monthly Inventory Report workbook' },
       { status: 500 },
     );
   }

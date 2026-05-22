@@ -30,7 +30,7 @@ type PlatosClosetDataDomain = {
 };
 
 const defaultSettings: PlatosClosetSettings = {
-  templateName: "Spreadsheet - Plato's Closet",
+  templateName: 'MONTHLY STORE VISIT REPORT',
   acceptedFileType: '.xlsx',
   uploadFrequency: 'monthly',
   syncTime: '08:00',
@@ -98,10 +98,10 @@ async function getValidatedCompany(companyId: string) {
     throw new Error('Company not found');
   }
   if (!isQuickBooksAccountingSystem(company.accountingSystem)) {
-    throw new Error("Plato's Closet spreadsheet settings are only available for QUICKBOOKS companies.");
+    throw new Error('MONTHLY STORE VISIT REPORT settings are only available for QUICKBOOKS companies.');
   }
   if (String(company.industrySectorCategory || '').trim() !== RETAIL_SECTOR_CODE) {
-    throw new Error("Spreadsheet - Plato's Closet is limited to Retail companies.");
+    throw new Error('MONTHLY STORE VISIT REPORT is limited to Retail companies.');
   }
   return company;
 }
@@ -139,7 +139,7 @@ export async function GET(request: NextRequest) {
       dataDomains,
     });
   } catch (error: any) {
-    const message = error?.message || "Failed to load Plato's Closet spreadsheet settings";
+    const message = error?.message || 'Failed to load MONTHLY STORE VISIT REPORT settings';
     const status = message.includes('Company not found') ? 404 : message.includes('Unauthorized') ? 401 : message.includes('Forbidden') ? 403 : 400;
     return NextResponse.json({ ok: false, error: message }, { status });
   }
@@ -186,7 +186,7 @@ export async function POST(request: NextRequest) {
       dataDomains,
     });
   } catch (error: any) {
-    const message = error?.message || "Failed to save Plato's Closet spreadsheet settings";
+    const message = error?.message || 'Failed to save MONTHLY STORE VISIT REPORT settings';
     const status = message.includes('Company not found') ? 404 : message.includes('Unauthorized') ? 401 : message.includes('Forbidden') ? 403 : 400;
     return NextResponse.json({ ok: false, error: message }, { status });
   }

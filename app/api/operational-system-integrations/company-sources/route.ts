@@ -7,8 +7,8 @@ export const dynamic = 'force-dynamic';
 
 const SOURCE_LABELS: Record<string, string> = {
   BAMBOOHR_STANDARD: 'BambooHR',
-  PLATOS_CLOSET_STORE_VISIT: "Spreadsheet - Plato's Closet",
-  PLATOS_INVENTORY: "Spreadsheet - Plato's Inventory",
+  PLATOS_CLOSET_STORE_VISIT: 'MONTHLY STORE VISIT REPORT',
+  PLATOS_INVENTORY: 'Monthly Inventory Report',
 };
 
 export async function GET(request: NextRequest) {

@@ -329,7 +329,7 @@ The operational data model is designed for long-horizon reporting, with retentio
 
 ### Human Resources and Sector Data
 
-The platform includes operational system connection models and provider support for systems such as BambooHR and spreadsheet upload workflows. It also includes sector-specific operational structures and workbook snapshot models, including support for Plato's Closet-style workbook facts.
+The platform includes operational system connection models and provider support for systems such as BambooHR and spreadsheet upload workflows. It also includes sector-specific operational structures and workbook snapshot models, including support for MONTHLY STORE VISIT REPORT workbook facts.
 
 ### Documents and AI Retrieval
 

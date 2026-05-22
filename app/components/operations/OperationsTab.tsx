@@ -7142,7 +7142,7 @@ export default function OperationsTab({
       if (!merchandiseProfitability) {
         return (
           <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '24px', color: '#64748b' }}>
-            No category profitability rows are available yet. Upload the Plato's Closet store visit workbook to populate sales, GM%, GM$, and inventory productivity.
+            No category profitability rows are available yet. Upload the MONTHLY STORE VISIT REPORT workbook to populate sales, GM%, GM$, and inventory productivity.
           </div>
         );
       }
@@ -9365,7 +9365,7 @@ export default function OperationsTab({
               </ResponsiveContainer>
             ) : (
               <div style={{ padding: '18px', border: '1px dashed #cbd5e1', borderRadius: '10px', color: '#64748b', fontSize: '13px' }}>
-                No used inventory aging rows found yet. Upload a Plato&apos;s Closet workbook with the AGED INVENTORY section to populate this report.
+                No used inventory aging rows found yet. Upload a MONTHLY STORE VISIT REPORT workbook with the AGED INVENTORY section to populate this report.
               </div>
             )}
           </div>

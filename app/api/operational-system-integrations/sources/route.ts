@@ -19,8 +19,8 @@ type SourceDefinition = {
 
 const SOURCE_DEFINITIONS: SourceDefinition[] = [
   { provider: 'BAMBOOHR', sourceCode: 'BAMBOOHR_STANDARD', label: 'BambooHR' },
-  { provider: 'SPREADSHEET_UPLOAD', sourceCode: 'PLATOS_CLOSET_STORE_VISIT', label: "Spreadsheet - Plato's Closet", retailOnly: true },
-  { provider: 'SPREADSHEET_UPLOAD', sourceCode: 'PLATOS_INVENTORY', label: "Spreadsheet - Plato's Inventory", retailOnly: true },
+  { provider: 'SPREADSHEET_UPLOAD', sourceCode: 'PLATOS_CLOSET_STORE_VISIT', label: 'MONTHLY STORE VISIT REPORT', retailOnly: true },
+  { provider: 'SPREADSHEET_UPLOAD', sourceCode: 'PLATOS_INVENTORY', label: 'Monthly Inventory Report', retailOnly: true },
 ];
 
 function getSourceDefinition(sourceCode: string): SourceDefinition | null {
