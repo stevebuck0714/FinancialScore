@@ -653,6 +653,90 @@ async function buildDatasetTablePreview(config: any) {
   };
 }
 
+async function buildDatasetChartPreview(config: any) {
+  const dataset = getReportDataset(config?.dataset || config?.datasetId);
+  if (!dataset) return null;
+  const series = Array.isArray(config?.series) ? config.series : [];
+  const metrics = series
+    .map((item: any) => {
+      const column = getDatasetColumn(dataset, item?.field);
+      if (!column || (column.type !== 'number' && column.type !== 'currency' && column.type !== 'percent')) return null;
+      return {
+        column,
+        aggregation: String(item?.aggregation || (column.type === 'percent' ? 'average' : 'sum')).toLowerCase(),
+      };
+    })
+    .filter((item): item is { column: ReportDatasetColumn; aggregation: string } => Boolean(item));
+  if (metrics.length === 0) return null;
+
+  const dateColumn = getDatasetColumn(dataset, dataset.dateField || 'snapshotDate') || dataset.columns.find((column) => column.type === 'date');
+  if (!dateColumn) return null;
+
+  const filters = normalizeDatasetFilters(dataset, Array.isArray(config?.filters) ? config.filters : []);
+  const whereClauses: Prisma.Sql[] = [Prisma.sql`"companyId" = ${String(config.companyId)}`];
+  filters.forEach((filter) => {
+    const column = getDatasetColumn(dataset, filter.field);
+    if (!column) return;
+    const field = datasetColumnSql(column);
+    if (filter.operator === 'containsany' && Array.isArray(filter.fields) && filter.fields.length > 0) {
+      const orClauses = filter.fields
+        .map((fieldKey) => getDatasetColumn(dataset, fieldKey))
+        .filter((item): item is ReportDatasetColumn => Boolean(item))
+        .map((item) => Prisma.sql`${datasetColumnSql(item)}::text ILIKE ${`%${filter.value}%`}`);
+      if (orClauses.length > 0) whereClauses.push(Prisma.sql`(${Prisma.join(orClauses, ' OR ')})`);
+    } else if (filter.operator === 'equals') {
+      whereClauses.push(Prisma.sql`${field}::text = ${filter.value}`);
+    } else if (filter.operator === 'gte') {
+      whereClauses.push(Prisma.sql`${field} >= ${filter.value}::timestamp`);
+    } else if (filter.operator === 'lte') {
+      whereClauses.push(Prisma.sql`${field} <= ${filter.value}::timestamp`);
+    } else {
+      whereClauses.push(Prisma.sql`${field}::text ILIKE ${`%${filter.value}%`}`);
+    }
+  });
+
+  const metricSelects = metrics.map(({ column, aggregation }) => {
+    const aggregate = aggregation === 'average' || aggregation === 'avg' ? 'AVG' : 'SUM';
+    return Prisma.sql`${Prisma.raw(aggregate)}(${datasetColumnSql(column)})::double precision AS ${datasetIdentifier(column.key)}`;
+  });
+
+  const rows = await prisma.$queryRaw<Array<Record<string, unknown>>>(Prisma.sql`
+    SELECT
+      date_trunc('month', ${datasetColumnSql(dateColumn)})::date AS "monthDate",
+      ${Prisma.join(metricSelects, ', ')}
+    FROM ${datasetIdentifier(dataset.tableName)}
+    WHERE ${Prisma.join(whereClauses, ' AND ')}
+      AND ${datasetColumnSql(dateColumn)} IS NOT NULL
+    GROUP BY 1
+    ORDER BY 1 ASC
+    LIMIT 120
+  `);
+
+  return {
+    rows: rows.map((row) => {
+      const date = row.monthDate instanceof Date ? row.monthDate : new Date(String(row.monthDate || ''));
+      const values: Record<string, number> = {};
+      metrics.forEach(({ column }) => {
+        values[column.key] = toNumber(row[column.key]);
+      });
+      return {
+        month: monthLabel(date),
+        monthDate: date.toISOString(),
+        values,
+      };
+    }),
+    tableColumns: [],
+    tableRows: [],
+    fields: metrics.map(({ column }) => column.key),
+    fieldCatalog: [],
+    dataset: {
+      id: dataset.id,
+      label: dataset.label,
+      tableName: dataset.tableName,
+    },
+  };
+}
+
 export async function POST(request: NextRequest) {
   try {
     await requireAuth();
@@ -687,6 +771,10 @@ export async function POST(request: NextRequest) {
     ].map((item) => String(item || '')).join(' ');
     if (String(previewConfig?.chartType || '').toLowerCase() === 'table' && previewConfig?.dataset) {
       const datasetPreview = await buildDatasetTablePreview({ ...previewConfig, companyId });
+      if (datasetPreview) return NextResponse.json(datasetPreview);
+    }
+    if (previewConfig?.dataset) {
+      const datasetPreview = await buildDatasetChartPreview({ ...previewConfig, companyId });
       if (datasetPreview) return NextResponse.json(datasetPreview);
     }
 

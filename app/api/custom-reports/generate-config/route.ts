@@ -128,7 +128,7 @@ function normalizeSeries(config: any, chartType: ReportChartType, fieldCatalog: 
 
 function normalizeDatasetConfig(rawConfig: any, prompt: string, chartType: ReportChartType) {
   const explicitDataset = getReportDataset(rawConfig?.dataset || rawConfig?.dataSet || rawConfig?.datasetId);
-  const inferredDataset = chartType === 'table' ? inferDatasetFromPrompt(prompt) : null;
+  const inferredDataset = inferDatasetFromPrompt(prompt);
   const dataset = explicitDataset || inferredDataset;
   if (!dataset) return null;
 
@@ -152,27 +152,54 @@ function normalizeDatasetConfig(rawConfig: any, prompt: string, chartType: Repor
   };
 }
 
-function buildDatasetTableConfig(prompt: string, requestedType: ReportChartType, rawConfig: any = {}) {
+function datasetColumnFormat(column: { type?: string; key?: string }) {
+  if (['unitPrice', 'unitCost', 'avgCost'].includes(String(column.key || ''))) return 'unitCurrency';
+  if (column.type === 'currency') return 'currency';
+  if (column.type === 'percent') return 'percent';
+  if (column.type === 'number') return 'number';
+  return undefined;
+}
+
+function buildDatasetReportConfig(prompt: string, requestedType: ReportChartType, rawConfig: any = {}) {
   const chartType = normalizeChartType(rawConfig?.chartType, requestedType);
   const datasetConfig = normalizeDatasetConfig(rawConfig, prompt, chartType);
   if (!datasetConfig) return null;
   const dataset = getReportDataset(datasetConfig.dataset) as ReportDataset;
   const entityName = extractEntityNameFromPrompt(prompt);
+  const metricColumns = datasetConfig.columns.filter((column: any) => (
+    column.type === 'number' || column.type === 'currency' || column.type === 'percent'
+  ));
+  const chartSeries = metricColumns.length > 0
+    ? metricColumns
+    : dataset.defaultColumns
+        .map((key) => dataset.columns.find((column) => column.key === key))
+        .filter((column: any) => column?.type === 'number' || column?.type === 'currency' || column?.type === 'percent')
+        .slice(0, 2);
+  const normalizedChartType = chartType === 'table' ? 'table' : chartType;
   return {
     title: String(rawConfig?.title || (entityName ? `${entityName} ${dataset.label}` : dataset.label)).slice(0, 120),
     description: String(rawConfig?.description || `${dataset.description} Filtered and bounded by the report request.`).slice(0, 500),
-    chartType: 'table' as ReportChartType,
+    chartType: normalizedChartType as ReportChartType,
     dataSource: 'operational',
-    timeGrain: String(rawConfig?.timeGrain || 'detail'),
+    timeGrain: String(rawConfig?.timeGrain || (normalizedChartType === 'table' ? 'detail' : 'month')),
     xAxis: {
       field: dataset.dateField || 'snapshotDate',
-      label: 'Date',
+      label: normalizedChartType === 'table' ? 'Date' : 'Month',
     },
     yAxes: {
       left: 'Value',
       right: 'Percent',
     },
-    series: [],
+    series: normalizedChartType === 'table'
+      ? []
+      : chartSeries.map((column: any, index: number) => ({
+          field: column.key,
+          label: column.label || column.key,
+          chartType: normalizedChartType === 'combo' ? (index === 0 ? 'bar' : 'line') : normalizedChartType,
+          axis: column.type === 'percent' ? 'right' : 'left',
+          aggregation: column.type === 'percent' ? 'average' : 'sum',
+          format: datasetColumnFormat(column),
+        })),
     filters: datasetConfig.filters,
     dataset: datasetConfig.dataset,
     columns: datasetConfig.columns,
@@ -631,7 +658,7 @@ export async function POST(request: NextRequest) {
       });
 
       const parsed = safeJsonParse(aiResult.text);
-      reportConfig = buildDatasetTableConfig(prompt, requestedType, parsed) || validateReportConfig(parsed, requestedType, fieldCatalog, prompt);
+      reportConfig = buildDatasetReportConfig(prompt, requestedType, parsed) || validateReportConfig(parsed, requestedType, fieldCatalog, prompt);
       generatedBy = {
         model,
         api: aiResult.api,
@@ -648,7 +675,7 @@ export async function POST(request: NextRequest) {
         reason: 'AI credentials are not configured for local development.',
       };
     }
-    reportConfig = buildDatasetTableConfig(prompt, requestedType, reportConfig) || enhanceConfigFromPrompt(reportConfig, prompt, fieldCatalog);
+    reportConfig = buildDatasetReportConfig(prompt, requestedType, reportConfig) || enhanceConfigFromPrompt(reportConfig, prompt, fieldCatalog);
 
     return NextResponse.json({
       reportConfig,
