@@ -748,6 +748,11 @@ export async function POST(request: NextRequest) {
         accountClassification: true,
       },
     });
+    const existingByAccountId = new Map(
+      existingMappingsAll
+        .filter((row) => String(row.accountId || "").trim())
+        .map((row) => [normalize(row.accountId), row]),
+    );
     const existingByComparableName = new Map(
       existingMappingsAll.map((row) => [normalizeForCompare(String(row.accountName || "")), row]),
     );
@@ -779,13 +784,20 @@ export async function POST(request: NextRequest) {
         !existing && incomingAccountName
           ? existingByComparableName.get(normalizeForCompare(incomingAccountName))
           : null;
-      const matchedExisting = existing || nameFallbackExisting || null;
-      const existingAccountId = String(matchedExisting?.accountId || "").trim() || null;
-      const existingAccountCode = String(matchedExisting?.accountCode || "").trim() || null;
       const sourceMatch =
         quickBooksById.get(normalize(m.accountId)) ||
         quickBooksByName.get(normalize(m.accountName));
       const sourceAccountId = sourceMatch?.accountId ? String(sourceMatch.accountId).trim() : null;
+      const accountIdOwner =
+        (incomingAccountId ? existingByAccountId.get(normalize(incomingAccountId)) : null) ||
+        (sourceAccountId ? existingByAccountId.get(normalize(sourceAccountId)) : null) ||
+        null;
+      // AccountMapping has a unique companyId + accountId constraint. If the
+      // incoming/source ID already belongs to a different saved row, update that
+      // identity row instead of assigning the ID to a name/code fallback row.
+      const matchedExisting = accountIdOwner || existing || nameFallbackExisting || null;
+      const existingAccountId = String(matchedExisting?.accountId || "").trim() || null;
+      const existingAccountCode = String(matchedExisting?.accountCode || "").trim() || null;
       const sourceAccountCode =
         sourceMatch?.accountCode && sourceMatch.accountCode !== sourceMatch.accountId
           ? String(sourceMatch.accountCode).trim()
@@ -795,8 +807,9 @@ export async function POST(request: NextRequest) {
       const incomingUsableCode =
         incomingAccountCode && incomingAccountCode !== incomingAccountId ? incomingAccountCode : null;
       const resolvedAccountName = sourceMatch?.accountName || incomingAccountName;
+      const resolvedAccountId = incomingAccountId || existingAccountId || sourceAccountId;
       const baseMappingData = {
-        accountId: incomingAccountId || existingAccountId || sourceAccountId,
+        accountId: resolvedAccountId,
         accountCode: sourceAccountCode || incomingUsableCode || existingUsableCode,
         accountClassification:
           m.accountClassification || matchedExisting?.accountClassification || null,
