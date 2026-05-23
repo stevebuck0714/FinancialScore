@@ -89,6 +89,7 @@ export default function AccountMappingTable({
       if (!raw) return '';
       return raw.toLowerCase().startsWith('manual:') ? raw.slice('manual:'.length).trim() : raw;
     };
+    const hasManualPrefix = String(value || '').trim().toLowerCase().startsWith('manual:');
     const accountCodeSource = `${String(accountCodeRaw || '').trim()} ${String(accountName || '').trim()}`;
     const accountCodeMatch = accountCodeSource.match(/(\d{4,})/);
     const accountCode = accountCodeMatch ? Number(accountCodeMatch[1]) : NaN;
@@ -158,6 +159,28 @@ export default function AccountMappingTable({
     const normalizedAccountName = (accountName || '').trim().toLowerCase();
     const compact = normalized.replace(/[\s_-]+/g, '');
     const compactAccountName = normalizedAccountName.replace(/[\s_-]+/g, '');
+    if (hasManualPrefix) {
+      if (normalized.includes('non-operating') || normalized.includes('non operating') || compact.includes('nonoperating')) {
+        return 'nonOperating';
+      }
+      if (normalized === 'revenue' || normalized === 'income' || normalized.includes('revenue') || normalized.includes('income')) {
+        return 'revenue';
+      }
+      if (
+        normalized === 'cost of goods sold' ||
+        normalized === 'costofgoodssold' ||
+        normalized === 'cogs' ||
+        normalized.includes('cost of goods sold') ||
+        normalized.includes('cogs')
+      ) {
+        return 'cogs';
+      }
+      if (normalized === 'expense' || normalized.includes('expense')) return 'expense';
+      if (normalized === 'asset' || normalized.includes('asset')) return 'asset';
+      if (normalized === 'liability' || normalized.includes('liabil')) return 'liability';
+      if (normalized === 'equity' || normalized.includes('equity')) return 'equity';
+      return 'other';
+    }
     if (normalized.includes('non-operating') || normalized.includes('non operating') || compact.includes('nonoperating')) {
       return 'nonOperating';
     }
