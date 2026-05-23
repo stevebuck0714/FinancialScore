@@ -17563,6 +17563,180 @@ function FinancialScorePage() {
                       Scroll to see all accounts | Use this to verify account mappings and amounts
                     </p>
                   </div>
+                  {!hasCsvData && qbRawData && (
+                    <div style={{ marginTop: '18px', borderTop: '1px solid #e2e8f0', paddingTop: '16px' }}>
+                      {(() => {
+                        type RawImportRow = {
+                          statement: string;
+                          rowType: string;
+                          sectionPath: string;
+                          name: string;
+                          accountId: string;
+                          rawValue: string;
+                          numericValue: number | null;
+                          originalIndex: number;
+                        };
+
+                        const parseRawAmount = (raw: unknown): number | null => {
+                          if (typeof raw === 'number') return Number.isFinite(raw) ? raw : null;
+                          if (typeof raw !== 'string') return null;
+                          const trimmed = raw.trim();
+                          if (!trimmed) return null;
+                          const parsed = Number.parseFloat(
+                            trimmed
+                              .replace(/\$/g, '')
+                              .replace(/,/g, '')
+                              .replace(/\(([^)]+)\)/, '-$1')
+                          );
+                          return Number.isFinite(parsed) ? parsed : null;
+                        };
+
+                        const getLatestColumnIndex = (report: any): number => {
+                          const cols = Array.isArray(report?.Columns?.Column) ? report.Columns.Column : [];
+                          if (cols.length <= 1) return -1;
+                          let bestIndex = -1;
+                          let bestTime = Number.NEGATIVE_INFINITY;
+                          for (let i = 1; i < cols.length; i += 1) {
+                            const title = String(cols[i]?.ColTitle || '').trim();
+                            if (!title || title.toLowerCase() === 'total') continue;
+                            const isoMonth = title.match(/^(\d{4})-(\d{2})$/);
+                            const parsedTime = isoMonth
+                              ? new Date(`${isoMonth[1]}-${isoMonth[2]}-01T00:00:00Z`).getTime()
+                              : new Date(title).getTime();
+                            if (Number.isFinite(parsedTime) && parsedTime > bestTime) {
+                              bestTime = parsedTime;
+                              bestIndex = i;
+                            }
+                          }
+                          if (bestIndex >= 1) return bestIndex;
+                          for (let i = cols.length - 1; i >= 1; i -= 1) {
+                            const title = String(cols[i]?.ColTitle || '').trim().toLowerCase();
+                            if (title !== 'total') return i;
+                          }
+                          return -1;
+                        };
+
+                        const collectRawImportRows = (report: any, statement: string): RawImportRow[] => {
+                          const rows: RawImportRow[] = [];
+                          const latestColIndex = getLatestColumnIndex(report);
+                          const rootRows = Array.isArray(report?.Rows?.Row) ? report.Rows.Row : [];
+                          let originalIndex = 0;
+
+                          const pushRow = (
+                            rowType: string,
+                            sectionPath: string,
+                            name: unknown,
+                            accountId: unknown,
+                            rawValue: unknown,
+                          ) => {
+                            const label = String(name || '').trim();
+                            if (!label) return;
+                            const raw = String(rawValue ?? '').trim();
+                            rows.push({
+                              statement,
+                              rowType,
+                              sectionPath,
+                              name: label,
+                              accountId: String(accountId || '').trim(),
+                              rawValue: raw,
+                              numericValue: parseRawAmount(raw),
+                              originalIndex,
+                            });
+                            originalIndex += 1;
+                          };
+
+                          const walkRows = (inputRows: any[], path: string[]) => {
+                            for (const row of inputRows || []) {
+                              if (!row || typeof row !== 'object') continue;
+                              if (row.type === 'Section') {
+                                const headerName = String(row?.Header?.ColData?.[0]?.value || '').trim();
+                                const headerId = String(row?.Header?.ColData?.[0]?.id || '').trim();
+                                const nextPath = headerName ? [...path, headerName] : path;
+                                if (latestColIndex >= 1 && Array.isArray(row?.Summary?.ColData)) {
+                                  pushRow(
+                                    'Section Summary',
+                                    path.join(' > '),
+                                    headerName || row.Summary.ColData[0]?.value,
+                                    headerId,
+                                    row.Summary.ColData[latestColIndex]?.value,
+                                  );
+                                }
+                                const nested = Array.isArray(row?.Rows?.Row) ? row.Rows.Row : [];
+                                if (nested.length > 0) walkRows(nested, nextPath);
+                                continue;
+                              }
+                              if (row.type !== 'Data' || !Array.isArray(row.ColData)) continue;
+                              pushRow(
+                                'Data',
+                                path.join(' > '),
+                                row.ColData[0]?.value,
+                                row.ColData[0]?.id,
+                                latestColIndex >= 1 ? row.ColData[latestColIndex]?.value : '',
+                              );
+                            }
+                          };
+
+                          walkRows(rootRows, []);
+                          return rows;
+                        };
+
+                        const rawImportRows = [
+                          ...collectRawImportRows(qbRawData.profitAndLoss, 'Profit & Loss'),
+                          ...collectRawImportRows(qbRawData.balanceSheet, 'Balance Sheet'),
+                        ].filter((row) => row.rawValue !== '' || row.accountId || row.rowType === 'Section Summary');
+
+                        return (
+                          <>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', marginBottom: '10px', flexWrap: 'wrap' }}>
+                              <div>
+                                <h3 style={{ margin: 0, fontSize: '16px', fontWeight: '700', color: '#1e293b' }}>
+                                  Raw QBO Import Rows
+                                </h3>
+                                <p style={{ margin: '4px 0 0 0', fontSize: '12px', color: '#64748b' }}>
+                                  Direct rows and section summaries from the latest imported QBO report. These are raw imported values, not mapped or inferred.
+                                </p>
+                              </div>
+                              <span style={{ fontSize: '12px', color: '#475569', fontWeight: 600 }}>
+                                {rawImportRows.length} rows
+                              </span>
+                            </div>
+                            <div style={{ overflowX: 'auto', maxHeight: '420px', overflowY: 'auto', border: '1px solid #e2e8f0', borderRadius: '8px' }}>
+                              <table style={{ width: '100%', fontSize: '11px', borderCollapse: 'collapse' }}>
+                                <thead style={{ position: 'sticky', top: 0, background: '#f8fafc', zIndex: 1 }}>
+                                  <tr style={{ borderBottom: '1px solid #e2e8f0' }}>
+                                    <th style={{ textAlign: 'left', padding: '7px 8px', color: '#475569' }}>Statement</th>
+                                    <th style={{ textAlign: 'left', padding: '7px 8px', color: '#475569' }}>Row Type</th>
+                                    <th style={{ textAlign: 'left', padding: '7px 8px', color: '#475569' }}>Section</th>
+                                    <th style={{ textAlign: 'left', padding: '7px 8px', color: '#475569' }}>Name</th>
+                                    <th style={{ textAlign: 'left', padding: '7px 8px', color: '#475569' }}>QBO ID</th>
+                                    <th style={{ textAlign: 'right', padding: '7px 8px', color: '#475569' }}>
+                                      {latestAccountReviewMonthLabel ? `Imported Value (${latestAccountReviewMonthLabel})` : 'Imported Value'}
+                                    </th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {rawImportRows.map((row) => (
+                                    <tr key={`${row.statement}-${row.rowType}-${row.originalIndex}-${row.name}`} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                                      <td style={{ padding: '6px 8px', color: '#334155', whiteSpace: 'nowrap' }}>{row.statement}</td>
+                                      <td style={{ padding: '6px 8px', color: row.rowType === 'Section Summary' ? '#7c3aed' : '#0369a1', whiteSpace: 'nowrap', fontWeight: 600 }}>{row.rowType}</td>
+                                      <td style={{ padding: '6px 8px', color: '#64748b', minWidth: '180px' }}>{row.sectionPath || 'Root'}</td>
+                                      <td style={{ padding: '6px 8px', color: '#1e293b', minWidth: '220px' }}>{row.name}</td>
+                                      <td style={{ padding: '6px 8px', color: '#64748b', fontFamily: 'monospace' }}>{row.accountId || 'N/A'}</td>
+                                      <td style={{ padding: '6px 8px', textAlign: 'right', color: row.numericValue == null ? '#64748b' : row.numericValue >= 0 ? '#10b981' : '#ef4444', fontWeight: 600, fontFamily: 'monospace' }}>
+                                        {row.numericValue == null
+                                          ? (row.rawValue || 'N/A')
+                                          : `$${Math.abs(row.numericValue).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}${row.numericValue < 0 ? ' (CR)' : ''}`}
+                                      </td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            </div>
+                          </>
+                        );
+                      })()}
+                    </div>
+                  )}
                 </div>
                 )}
               </div>
