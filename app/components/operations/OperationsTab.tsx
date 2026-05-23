@@ -6763,6 +6763,61 @@ export default function OperationsTab({
       ].some((value) => String(value || '').toLowerCase().includes(search));
     });
     const vendorPricingVisibleRows = vendorPricingFilteredRows.slice(0, 1000);
+    const vendorPricingByItem = (() => {
+      const byItem = new Map<string, any[]>();
+      const parseEffectiveMs = (value: unknown) => {
+        const raw = String(value || '').trim();
+        if (!raw) return 0;
+        const parsed = /^\d{4}-\d{2}-\d{2}$/.test(raw)
+          ? new Date(`${raw}T00:00:00.000Z`)
+          : new Date(raw);
+        return Number.isNaN(parsed.getTime()) ? 0 : parsed.getTime();
+      };
+      for (const row of vendorPricingRows as any[]) {
+        const item = String(row?.item || '').trim();
+        if (!item) continue;
+        const price = Number(row?.vendorPricingSheet ?? row?.formalContracts ?? row?.actualNoAdj ?? 0);
+        if (!Number.isFinite(price) || price <= 0) continue;
+        const entry = {
+          ...row,
+          materialCost: price,
+          freightPerPiece: Number(row?.unitFreightCost || 0),
+          dutyPerPiece: Number(row?.unitDutyCost || 0),
+          insurancePerPiece: Number(row?.unitInsuranceCost || 0),
+          rankValue: Number(row?.rank || 999999),
+          effectiveMs: parseEffectiveMs(row?.effectiveDate),
+        };
+        const rows = byItem.get(item) || [];
+        rows.push(entry);
+        byItem.set(item, rows);
+      }
+      byItem.forEach((rows) => {
+        rows.sort((a, b) => {
+          const rankA = Number.isFinite(a.rankValue) ? a.rankValue : 999999;
+          const rankB = Number.isFinite(b.rankValue) ? b.rankValue : 999999;
+          if (rankA !== rankB) return rankA - rankB;
+          return Number(b.effectiveMs || 0) - Number(a.effectiveMs || 0);
+        });
+      });
+      return byItem;
+    })();
+    const getVendorMaterialCostForItem = (item: string, asOfMs: number) => {
+      const rows = vendorPricingByItem.get(String(item || '').trim()) || [];
+      if (!rows.length) return null;
+      const rankOneRows = rows.filter((row) => Number(row.rankValue || 0) === 1);
+      const candidates = rankOneRows.length ? rankOneRows : rows;
+      const asOfCandidates = asOfMs > 0
+        ? candidates.filter((row) => Number(row.effectiveMs || 0) > 0 && Number(row.effectiveMs || 0) <= asOfMs)
+        : [];
+      const selected = (asOfCandidates.length ? asOfCandidates : candidates)[0];
+      if (!selected) return null;
+      return {
+        materialCost: Number.isFinite(Number(selected.materialCost)) && Number(selected.materialCost) > 0 ? Number(selected.materialCost) : null,
+        freightPerPiece: Number.isFinite(Number(selected.freightPerPiece)) && Number(selected.freightPerPiece) > 0 ? Number(selected.freightPerPiece) : null,
+        dutyPerPiece: Number.isFinite(Number(selected.dutyPerPiece)) && Number(selected.dutyPerPiece) > 0 ? Number(selected.dutyPerPiece) : null,
+        insurancePerPiece: Number.isFinite(Number(selected.insurancePerPiece)) && Number(selected.insurancePerPiece) > 0 ? Number(selected.insurancePerPiece) : null,
+      };
+    };
     const productMarginLatestDate = wholesaleProductRecords
       .map((row: any) => String(row?.snapshotDate || '').slice(0, 10))
       .filter(Boolean)
@@ -6822,13 +6877,22 @@ export default function OperationsTab({
         };
         bucket.quantity += qty;
         bucket.revenue += Number(row?.revenue || row?.currentPriceTotal || 0);
-        bucket.materialCost += Number(row?.cogs || row?.materialCost || row?.currentCostOfMaterial || 0);
+        const explicitMaterialCost = Number(row?.cogs || row?.materialCost || row?.currentCostOfMaterial || 0);
+        const rowDate = parseCoverageUtcDay(String(row?.snapshotDate || row?.date || row?.orderDate || ''));
+        const vendorCost = getVendorMaterialCostForItem(aprPartNumber, rowDate ? rowDate.getTime() : 0);
+        bucket.materialCost += explicitMaterialCost > 0 ? explicitMaterialCost : Number(vendorCost?.materialCost || 0) * Math.max(1, qty);
         bucket.tariff += Number(row?.tariffTotal || row?.tariffAllocated || 0);
         bucket.tariff = addPerPieceValue(bucket.tariff, row?.currentImpactOfTariffPerPiece ?? row?.tariffPerPiece, qty);
         bucket.duties += Number(row?.dutiesTotal || row?.dutyTotal || row?.dutiesAllocated || 0);
         bucket.duties = addPerPieceValue(bucket.duties, row?.currentImpactOfDutiesPerPiece ?? row?.dutiesPerPiece ?? row?.dutyPerPiece, qty);
+        if (!Number(row?.dutiesTotal || row?.dutyTotal || row?.dutiesAllocated || row?.currentImpactOfDutiesPerPiece || row?.dutiesPerPiece || row?.dutyPerPiece || 0)) {
+          bucket.duties = addPerPieceValue(bucket.duties, vendorCost?.dutyPerPiece, qty);
+        }
         bucket.freight += Number(row?.freightAllocated || row?.freightTotal || 0);
         bucket.freight = addPerPieceValue(bucket.freight, row?.costOfFreightPerPiece ?? row?.freightPerPiece, qty);
+        if (!Number(row?.freightAllocated || row?.freightTotal || row?.costOfFreightPerPiece || row?.freightPerPiece || 0)) {
+          bucket.freight = addPerPieceValue(bucket.freight, vendorCost?.freightPerPiece, qty);
+        }
         bucket.operatingExpenses += Number(row?.operatingExpensesAllocated || row?.operatingExpensesTotal || 0);
         bucket.operatingExpenses = addPerPieceValue(bucket.operatingExpenses, row?.currentOperatingExpenses ?? row?.operatingExpensesPerPiece, qty);
         buckets.set(key, bucket);
@@ -7462,7 +7526,6 @@ export default function OperationsTab({
                   {[
                     { label: 'APR P/N' },
                     { label: 'Customer ID' },
-                    { label: 'Customer Group' },
                     { label: 'Customer Name' },
                     { label: 'Customer P/N' },
                     { label: 'Item', itemColumn: true },
@@ -7477,7 +7540,7 @@ export default function OperationsTab({
                     { label: ['Current', 'Net', 'Profit'], compact: true },
                     { label: ['Current Net', 'Profit', '(%)'], compact: true },
                   ].map((column, index) => (
-                    <th key={Array.isArray(column.label) ? column.label.join(' ') : column.label} style={{ padding: '8px', fontSize: '12px', color: '#334155', textAlign: index >= 6 ? 'right' : 'left', whiteSpace: column.compact ? 'normal' : 'nowrap', lineHeight: 1.15, minWidth: column.compact ? '66px' : column.itemColumn ? '110px' : undefined, maxWidth: column.compact ? '76px' : column.itemColumn ? '140px' : undefined }}>
+                    <th key={Array.isArray(column.label) ? column.label.join(' ') : column.label} style={{ padding: '8px', fontSize: '12px', color: '#334155', textAlign: index >= 5 ? 'right' : 'left', whiteSpace: column.compact ? 'normal' : 'nowrap', lineHeight: 1.15, minWidth: column.compact ? '66px' : column.itemColumn ? '110px' : undefined, maxWidth: column.compact ? '76px' : column.itemColumn ? '140px' : undefined }}>
                       {Array.isArray(column.label)
                         ? column.label.map((line) => <React.Fragment key={line}>{line}<br /></React.Fragment>)
                         : column.label}
@@ -7501,7 +7564,6 @@ export default function OperationsTab({
                           </button>
                         </td>
                         <td style={{ padding: '8px', fontSize: '12px', color: '#475569', fontWeight: 700 }}>{group.customerId || 'N/A'}</td>
-                        <td style={{ padding: '8px', fontSize: '12px', color: '#334155', fontWeight: 700 }}>{group.customerGroup}</td>
                         <td style={{ padding: '8px', fontSize: '12px', color: '#0f172a', fontWeight: 800 }}>{group.customerName}</td>
                         <td style={{ padding: '8px', fontSize: '12px', color: '#64748b' }}>{group.rows.length.toLocaleString()} items</td>
                         <td style={{ padding: '8px', fontSize: '12px', color: '#64748b', maxWidth: '140px', whiteSpace: 'normal', overflowWrap: 'anywhere' }}>Customer subtotal</td>
@@ -7520,7 +7582,6 @@ export default function OperationsTab({
                         <tr key={row.key} style={{ borderBottom: '1px solid #f1f5f9' }}>
                           <td style={{ padding: '8px', fontSize: '12px', color: '#0f172a', fontWeight: 700, whiteSpace: 'nowrap' }}>{row.aprPartNumber}</td>
                           <td style={{ padding: '8px', fontSize: '12px', color: '#475569' }}>{row.customerId || 'N/A'}</td>
-                          <td style={{ padding: '8px', fontSize: '12px', color: '#475569' }}>{row.customerGroup}</td>
                           <td style={{ padding: '8px', fontSize: '12px', color: '#334155' }}>{row.customerName}</td>
                           <td style={{ padding: '8px', fontSize: '12px', color: '#475569', whiteSpace: 'nowrap' }}>{row.customerPartNumber || 'N/A'}</td>
                           <td style={{ padding: '8px', fontSize: '12px', color: '#334155', maxWidth: '140px', whiteSpace: 'normal', overflowWrap: 'anywhere' }}>{row.item}</td>
