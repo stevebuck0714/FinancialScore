@@ -60,7 +60,12 @@ export interface ParsedFinancialData {
 }
 
 /**
- * Extract all Data rows (individual accounts) from a QB report recursively
+ * Extract all account-bearing rows from a QB report recursively.
+ *
+ * QBO sometimes represents an account with children as a Section whose Header
+ * contains the account id/name and whose Summary contains the account balance.
+ * Treat that section summary as the parent account value so mapped parent
+ * accounts (for example 3100 Capital Investment) are not dropped.
  */
 function extractAccountRows(rows: QBRow[]): QBRow[] {
   const accountRows: QBRow[] = [];
@@ -73,11 +78,29 @@ function extractAccountRows(rows: QBRow[]): QBRow[] {
     if (row.type === 'Data') {
       // This is an account row
       accountRows.push(row);
-    } else if (row.type === 'Section' && row.Rows) {
+    } else if (row.type === 'Section') {
+      const headerCols = asQBCols(row.Header?.ColData);
+      const summaryCols = asQBCols(row.Summary?.ColData);
+      const headerName = String(headerCols[0]?.value || '').trim();
+      const headerId = String(headerCols[0]?.id || '').trim();
+      if (headerName && summaryCols.length > 0 && (headerId || !/^total\b/i.test(headerName))) {
+        accountRows.push({
+          type: 'Data',
+          ColData: [
+            {
+              value: headerName,
+              id: headerId || undefined,
+            },
+            ...summaryCols.slice(1),
+          ],
+        });
+      }
+      if (row.Rows) {
       // Recursively extract from nested rows
-      const nestedRows = nestedQBRows(row);
-      const nestedAccounts = extractAccountRows(nestedRows);
-      accountRows.push(...nestedAccounts);
+        const nestedRows = nestedQBRows(row);
+        const nestedAccounts = extractAccountRows(nestedRows);
+        accountRows.push(...nestedAccounts);
+      }
     }
   }
   
