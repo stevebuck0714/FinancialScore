@@ -2075,6 +2075,86 @@ function FinancialScorePage() {
     return getClassificationOptionValue(fallback);
   };
 
+  const getTargetFieldFamilyForUi = (targetField: unknown): 'revenue' | 'cogs' | 'expense' | 'asset' | 'liability' | 'equity' | 'other' => {
+    const normalized = normalizeMappingTargetField(targetField).trim().toLowerCase();
+    if (!normalized || normalized === 'unmapped' || normalized === 'ignored') return 'other';
+    if (normalized === 'revenue' || normalized === 'otherrevenue' || normalized.startsWith('rev_')) return 'revenue';
+    if (
+      normalized === 'cogstotal' ||
+      normalized === 'costofgoodssold' ||
+      normalized.startsWith('cogs_') ||
+      normalized.startsWith('cogs')
+    ) return 'cogs';
+    if (
+      [
+        'payroll',
+        'ownerbasepay',
+        'ownersretirement',
+        'benefits',
+        'insurance',
+        'professionalfees',
+        'subcontractors',
+        'rent',
+        'taxlicense',
+        'stateincometaxes',
+        'federalincometaxes',
+        'phonecomm',
+        'infrastructure',
+        'autotravel',
+        'salesexpense',
+        'marketing',
+        'trainingcert',
+        'mealsentertainment',
+        'interestexpense',
+        'depreciationamortization',
+        'otherexpense',
+        'expense',
+        'operatingexpensetotal',
+        'nonoperatingexpense',
+      ].includes(normalized)
+    ) return 'expense';
+    if (['cash', 'ar', 'inventory', 'otherca', 'tca', 'fixedassets', 'otherassets', 'totalassets'].includes(normalized)) return 'asset';
+    if (['ap', 'loc', 'othercl', 'tcl', 'ltd', 'totalliab'].includes(normalized)) return 'liability';
+    if (
+      [
+        'ownerscapital',
+        'ownersdraw',
+        'commonstock',
+        'preferredstock',
+        'retainedearnings',
+        'additionalpaidincapital',
+        'treasurystock',
+        'totalequity',
+        'totallande',
+      ].includes(normalized)
+    ) return 'equity';
+    return 'other';
+  };
+
+  const getClassificationFamilyForUi = (classification: unknown): 'revenue' | 'cogs' | 'expense' | 'asset' | 'liability' | 'equity' | 'other' => {
+    const selected = getClassificationOptionValue(classification).toLowerCase();
+    if (selected === 'revenue') return 'revenue';
+    if (selected === 'cost of goods sold') return 'cogs';
+    if (selected === 'expense') return 'expense';
+    if (selected === 'asset') return 'asset';
+    if (selected === 'liability') return 'liability';
+    if (selected === 'equity') return 'equity';
+    return 'other';
+  };
+
+  const clearIncompatibleTargetField = (mapping: any, selectedClassification: string) => {
+    const targetFamily = getTargetFieldFamilyForUi(mapping?.targetField);
+    const classificationFamily = getClassificationFamilyForUi(selectedClassification);
+    if (targetFamily === 'other' || classificationFamily === 'other' || targetFamily === classificationFamily) {
+      return mapping;
+    }
+    return {
+      ...mapping,
+      targetField: 'unmapped',
+      validationWarning: 'classification_mismatch',
+    };
+  };
+
   const normalizeAccountMappingForSave = (mapping: any) => {
     return {
       ...mapping,
@@ -17430,7 +17510,7 @@ function FinancialScorePage() {
                                                 });
                                             if (currentIndex >= 0 && updated[currentIndex]) {
                                               updated[currentIndex] = {
-                                                ...updated[currentIndex],
+                                                ...clearIncompatibleTargetField(updated[currentIndex], selected),
                                                 accountClassification: encodeManualClassification(selected),
                                               };
                                               return updated;
@@ -17556,7 +17636,7 @@ function FinancialScorePage() {
                                         const updated = [...(Array.isArray(prev) ? prev : [])];
                                         if (!updated[originalIndex]) return prev;
                                         updated[originalIndex] = {
-                                          ...updated[originalIndex],
+                                          ...clearIncompatibleTargetField(updated[originalIndex], selected),
                                           accountClassification: encodeManualClassification(selected),
                                         };
                                         return updated;

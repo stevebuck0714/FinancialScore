@@ -706,10 +706,17 @@ export async function POST(request: NextRequest) {
           validationWarning: semanticallyInvalid ? "classification_mismatch" : "invalid_target_field",
         };
       }
+      if (isExplicitlyMapped && semanticallyInvalid) {
+        return {
+          ...m,
+          invalidTargetField: m.targetField,
+          targetField: "unmapped",
+          validationWarning: "classification_mismatch",
+        };
+      }
       return {
         ...m,
         targetField: normalizedTargetField || "unmapped",
-        ...(semanticallyInvalid ? { validationWarning: "classification_mismatch" } : {}),
       };
     });
     const mappedRows = sanitizedUniqueMappings.filter(
