@@ -17046,27 +17046,39 @@ function FinancialScorePage() {
 
                             const rows = Array.isArray(report?.Rows?.Row) ? report.Rows.Row : [];
                             const visitRows = (inputRows: any[]) => {
-                              for (const row of inputRows) {
-                                if (row?.type === 'Section') {
-                                  const nested = Array.isArray(row?.Rows?.Row) ? row.Rows.Row : [];
-                                  if (nested.length > 0) visitRows(nested);
-                                  continue;
-                                }
-                                if (row?.type !== 'Data' || !Array.isArray(row?.ColData) || latestColIndex < 1) continue;
-
-                                const name = String(row.ColData[0]?.value || '').trim();
-                                if (!name || name.toLowerCase().includes('total')) continue;
-
-                                // QBO report rows carry account id on the first (name) column.
-                                const accountId = String(row.ColData[0]?.id || '').trim();
-                                const amount = parseAmount(row.ColData[latestColIndex]?.value);
-
+                              const setDirectAccountValue = (name: unknown, id: unknown, rawAmount: unknown) => {
+                                const accountName = String(name || '').trim();
+                                if (!accountName || accountName.toLowerCase().startsWith('total ')) return;
+                                const accountId = String(id || '').trim();
+                                const amount = parseAmount(rawAmount);
                                 if (accountId) {
                                   valueByKey.set(`id:${accountId}`, amount);
                                   const normalizedId = accountId.toLowerCase().replace(/[^a-z0-9]/g, '');
                                   if (normalizedId) valueByKey.set(`id:${normalizedId}`, amount);
                                 }
-                                valueByKey.set(`name:${name.toLowerCase()}`, amount);
+                                valueByKey.set(`name:${accountName.toLowerCase()}`, amount);
+                              };
+
+                              for (const row of inputRows) {
+                                if (row?.type === 'Section') {
+                                  if (latestColIndex >= 1 && Array.isArray(row?.Summary?.ColData)) {
+                                    setDirectAccountValue(
+                                      row?.Header?.ColData?.[0]?.value,
+                                      row?.Header?.ColData?.[0]?.id,
+                                      row.Summary.ColData[latestColIndex]?.value,
+                                    );
+                                  }
+                                  const nested = Array.isArray(row?.Rows?.Row) ? row.Rows.Row : [];
+                                  if (nested.length > 0) visitRows(nested);
+                                  continue;
+                                }
+                                if (row?.type !== 'Data' || !Array.isArray(row?.ColData) || latestColIndex < 1) continue;
+                                // QBO report rows carry account id on the first (name) column.
+                                setDirectAccountValue(
+                                  row.ColData[0]?.value,
+                                  row.ColData[0]?.id,
+                                  row.ColData[latestColIndex]?.value,
+                                );
                               }
                             };
 
