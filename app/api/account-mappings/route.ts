@@ -753,6 +753,7 @@ export async function POST(request: NextRequest) {
         accountId: true,
         accountCode: true,
         accountClassification: true,
+        targetField: true,
       },
     });
     const existingByAccountId = new Map(
@@ -783,6 +784,7 @@ export async function POST(request: NextRequest) {
           accountId: true,
           accountCode: true,
           accountClassification: true,
+          targetField: true,
         },
       });
       const nameFallbackExisting =
@@ -815,12 +817,20 @@ export async function POST(request: NextRequest) {
       const resolvedAccountId = incomingAccountId || existingAccountId || sourceAccountId;
       const incomingAccountClassification =
         m.accountClassification || matchedExisting?.accountClassification || null;
+      const existingHasManualClassification = isManualClassification(matchedExisting?.accountClassification);
+      const incomingHasManualClassification = isManualClassification(m.accountClassification);
+      const effectiveAccountClassification =
+        existingHasManualClassification && !incomingHasManualClassification
+          ? matchedExisting?.accountClassification || null
+          : incomingAccountClassification;
       const classificationChanged =
         !!matchedExisting &&
-        !!m.accountClassification &&
+        incomingHasManualClassification &&
         normalizeForCompare(stripManualClassificationPrefix(m.accountClassification)) !==
           normalizeForCompare(stripManualClassificationPrefix(matchedExisting.accountClassification));
-      const targetField = classificationChanged
+      const targetField = existingHasManualClassification && !incomingHasManualClassification
+        ? normalizeTargetFieldValue(matchedExisting?.targetField, sectorCategory) || "unmapped"
+        : classificationChanged
         ? "unmapped"
         : normalizedTargetField && normalizedTargetField !== ""
           ? normalizedTargetField
@@ -828,7 +838,7 @@ export async function POST(request: NextRequest) {
       const baseMappingData = {
         accountId: resolvedAccountId,
         accountCode: sourceAccountCode || incomingUsableCode || existingUsableCode,
-        accountClassification: incomingAccountClassification,
+        accountClassification: effectiveAccountClassification,
         targetField,
       };
       const incomingOwnerPercent = (() => {

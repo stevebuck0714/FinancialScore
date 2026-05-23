@@ -283,6 +283,7 @@ export function createMonthlyRecords(
     const inventory = getRowValue(bsRows, 'Inventory', colIndex);
     const currentAssets = getRowValue(bsRows, 'Total Current Assets', colIndex) || getRowValue(bsRows, 'Current Assets', colIndex);
     const fixedAssets = getRowValue(bsRows, 'Fixed Assets', colIndex) || getRowValue(bsRows, 'Property and Equipment', colIndex);
+    const otherAssets = getRowValue(bsRows, 'Other Assets', colIndex);
     const totalAssets = getRowValue(bsRows, 'Total Assets', colIndex) || getRowValue(bsRows, 'TOTAL ASSETS', colIndex);
     const ap = getRowValue(bsRows, 'Accounts Payable', colIndex) || getRowValue(bsRows, 'A/P', colIndex);
     const currentLiabilities = getRowValue(bsRows, 'Total Current Liabilities', colIndex) || getRowValue(bsRows, 'Current Liabilities', colIndex);
@@ -349,7 +350,7 @@ export function createMonthlyRecords(
       otherCA: Math.max(0, currentAssets - cash - ar - inventory),
       tca: currentAssets,
       fixedAssets,
-      otherAssets: Math.max(0, totalAssets - currentAssets - fixedAssets),
+      otherAssets: otherAssets || Math.max(0, totalAssets - currentAssets - fixedAssets),
       totalAssets,
       ap,
       otherCL: Math.max(0, currentLiabilities - ap),
