@@ -16965,13 +16965,15 @@ function FinancialScorePage() {
                             const parsed = Number.parseFloat(normalized);
                             return Number.isFinite(parsed) ? parsed : 0;
                           };
-                          const collectQboAccountIdsByName = (rawData: any): Map<string, string> => {
-                            const valueByName = new Map<string, string>();
-                            const upsert = (name: unknown, id: unknown) => {
-                              const accountName = String(name || '').trim().toLowerCase();
+                          const normalizeAccountLookupKey = (value: unknown): string =>
+                            String(value || '').trim().toLowerCase();
+                          const collectQboAccountIdsByLookupKey = (rawData: any): Map<string, string> => {
+                            const valueByLookupKey = new Map<string, string>();
+                            const upsert = (lookupValue: unknown, id: unknown) => {
+                              const accountName = normalizeAccountLookupKey(lookupValue);
                               const accountId = String(id || '').trim();
                               if (!accountName || !accountId) return;
-                              if (!valueByName.has(accountName)) valueByName.set(accountName, accountId);
+                              if (!valueByLookupKey.has(accountName)) valueByLookupKey.set(accountName, accountId);
                             };
 
                             const chartAccounts = Array.isArray(rawData?.chartOfAccounts?.QueryResponse?.Account)
@@ -16979,7 +16981,11 @@ function FinancialScorePage() {
                               : [];
                             chartAccounts.forEach((account: any) => {
                               if (!account || typeof account !== 'object') return;
-                              upsert(account.Name, account.Id || account.AcctNum);
+                              const accountId = account.Id || account.AcctNum;
+                              upsert(account.Name, accountId);
+                              upsert(account.FullyQualifiedName, accountId);
+                              upsert(account.AcctNum, accountId);
+                              upsert(account.Id, accountId);
                             });
 
                             const visitRows = (rows: any[]) => {
@@ -16998,7 +17004,7 @@ function FinancialScorePage() {
                             if (plRows.length > 0) visitRows(plRows);
                             if (bsRows.length > 0) visitRows(bsRows);
 
-                            return valueByName;
+                            return valueByLookupKey;
                           };
 
                           const collectLatestValues = (report: any) => {
@@ -17200,7 +17206,7 @@ function FinancialScorePage() {
                           ).toUpperCase();
                           const isQboCompany = selectedAccountingSystem === 'QUICKBOOKS' || selectedAccountingSystem === 'QUICKBOOKS_DESKTOP';
                           const isInforCompany = selectedAccountingSystem === 'INFOR_M3' || selectedAccountingSystem === 'INFOR_CSI';
-                          const qboAccountIdsByName = isQboCompany ? collectQboAccountIdsByName(qbRawData) : new Map<string, string>();
+                          const qboAccountIdsByLookupKey = isQboCompany ? collectQboAccountIdsByLookupKey(qbRawData) : new Map<string, string>();
                           // For Infor, authoritative account-review values come from the dedicated API endpoint.
                           // Avoid mixing in payload-derived rollups that can fan out one target-field total
                           // (e.g. cash) to many detailed accounts.
@@ -17415,9 +17421,17 @@ function FinancialScorePage() {
                                 const codeRaw = String(mapping.accountCode || '').trim();
                                 const nameRaw = String(mapping.accountName || '').trim();
                                 const displayAccountCode = getDisplayAccountCode(mapping);
+                                const qboLookupKeys = [
+                                  idRaw,
+                                  codeRaw,
+                                  displayAccountCode,
+                                  nameRaw,
+                                ].map(normalizeAccountLookupKey).filter(Boolean);
                                 const resolvedQboClassId =
                                   idRaw ||
-                                  (isQboCompany ? String(qboAccountIdsByName.get(nameRaw.toLowerCase()) || '').trim() : '');
+                                  (isQboCompany
+                                    ? String(qboLookupKeys.map((key) => qboAccountIdsByLookupKey.get(key)).find(Boolean) || '').trim()
+                                    : '');
                                 const idNormalized = idRaw.toLowerCase().replace(/[^a-z0-9]/g, '');
                                 const codeNormalized = codeRaw.toLowerCase().replace(/[^a-z0-9]/g, '');
                                 const resolvedNormalized = resolvedQboClassId.toLowerCase().replace(/[^a-z0-9]/g, '');

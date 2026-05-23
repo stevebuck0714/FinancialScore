@@ -622,7 +622,6 @@ async function collectAllMappedValuesFromMonthlyFinancial(
     // Guardrail: do not fan out one rolled-up monthly target amount (e.g. payroll)
     // to every mapped account under that target.
     if (targetMappings.length !== 1) {
-      valueByKey.set(`target:${normalizedTarget}`, amount);
       continue;
     }
 
@@ -634,7 +633,6 @@ async function collectAllMappedValuesFromMonthlyFinancial(
     if (accountId) setAccountValueByAliases(valueByKey, accountId, amount);
     if (accountCode) setAccountValueByAliases(valueByKey, accountCode, amount);
     if (accountName) valueByKey.set(`name:${accountName}`, amount);
-    valueByKey.set(`target:${normalizedTarget}`, amount);
   }
 
   return valueByKey;
