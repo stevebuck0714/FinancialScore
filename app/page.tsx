@@ -17086,8 +17086,11 @@ function FinancialScorePage() {
                             return valueByKey;
                           };
 
-                          const plValues = qbRawData?.profitAndLoss ? collectLatestValues(qbRawData.profitAndLoss) : new Map<string, number>();
-                          const bsValues = qbRawData?.balanceSheet ? collectLatestValues(qbRawData.balanceSheet) : new Map<string, number>();
+                          const qboReviewRawData =
+                            qbRawData ||
+                            (accountReviewRawData?.profitAndLoss || accountReviewRawData?.balanceSheet ? accountReviewRawData : null);
+                          const plValues = qboReviewRawData?.profitAndLoss ? collectLatestValues(qboReviewRawData.profitAndLoss) : new Map<string, number>();
+                          const bsValues = qboReviewRawData?.balanceSheet ? collectLatestValues(qboReviewRawData.balanceSheet) : new Map<string, number>();
                           const collectLatestValuesFromInforPayload = (
                             rawFinancial: any,
                             targetMonthLabel: string | null
@@ -17218,7 +17221,7 @@ function FinancialScorePage() {
                           ).toUpperCase();
                           const isQboCompany = selectedAccountingSystem === 'QUICKBOOKS' || selectedAccountingSystem === 'QUICKBOOKS_DESKTOP';
                           const isInforCompany = selectedAccountingSystem === 'INFOR_M3' || selectedAccountingSystem === 'INFOR_CSI';
-                          const qboAccountIdsByLookupKey = isQboCompany ? collectQboAccountIdsByLookupKey(qbRawData) : new Map<string, string>();
+                          const qboAccountIdsByLookupKey = isQboCompany && qboReviewRawData ? collectQboAccountIdsByLookupKey(qboReviewRawData) : new Map<string, string>();
                           // For Infor, authoritative account-review values come from the dedicated API endpoint.
                           // Avoid mixing in payload-derived rollups that can fan out one target-field total
                           // (e.g. cash) to many detailed accounts.
@@ -17563,9 +17566,12 @@ function FinancialScorePage() {
                       Scroll to see all accounts | Use this to verify account mappings and amounts
                     </p>
                   </div>
-                  {!hasCsvData && qbRawData && (
+                  {!hasCsvData && (qbRawData || accountReviewRawData?.profitAndLoss || accountReviewRawData?.balanceSheet) && (
                     <div style={{ marginTop: '18px', borderTop: '1px solid #e2e8f0', paddingTop: '16px' }}>
                       {(() => {
+                        const rawQboImportData =
+                          qbRawData ||
+                          (accountReviewRawData?.profitAndLoss || accountReviewRawData?.balanceSheet ? accountReviewRawData : null);
                         type RawImportRow = {
                           statement: string;
                           rowType: string;
@@ -17681,8 +17687,8 @@ function FinancialScorePage() {
                         };
 
                         const rawImportRows = [
-                          ...collectRawImportRows(qbRawData.profitAndLoss, 'Profit & Loss'),
-                          ...collectRawImportRows(qbRawData.balanceSheet, 'Balance Sheet'),
+                          ...collectRawImportRows(rawQboImportData?.profitAndLoss, 'Profit & Loss'),
+                          ...collectRawImportRows(rawQboImportData?.balanceSheet, 'Balance Sheet'),
                         ].filter((row) => row.rawValue !== '' || row.accountId || row.rowType === 'Section Summary');
 
                         return (
