@@ -15708,6 +15708,11 @@ function FinancialScorePage() {
             // Get accounts for mapping from CSV data (if available)
             const csvAccountsForMapping = selectedCompanyCsvTrialBalanceData ? getAccountsForMapping(selectedCompanyCsvTrialBalanceData) : [];
             const hasCsvData = hasCsvDataForSelectedCompany;
+            const hasRawQboImportData = !!(
+              qbRawData ||
+              accountReviewRawData?.profitAndLoss ||
+              accountReviewRawData?.balanceSheet
+            );
             const mappedApiSourceLabel =
               selectedAccountingSystem === 'QUICKBOOKS'
                 ? 'QuickBooks'
@@ -16844,7 +16849,7 @@ function FinancialScorePage() {
                 )}
 
                 {/* Account Preview Section */}
-                {(hasCsvData || aiMappings.length > 0) && (
+                {(hasCsvData || aiMappings.length > 0 || hasRawQboImportData) && (
                 <div style={{ background: 'white', borderRadius: '12px', padding: '24px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', gap: '12px', flexWrap: 'wrap' }}>
                     <h2 style={{ fontSize: '20px', fontWeight: '600', color: '#1e293b', margin: 0 }}>
@@ -17566,7 +17571,7 @@ function FinancialScorePage() {
                       Scroll to see all accounts | Use this to verify account mappings and amounts
                     </p>
                   </div>
-                  {!hasCsvData && (qbRawData || accountReviewRawData?.profitAndLoss || accountReviewRawData?.balanceSheet) && (
+                  {hasRawQboImportData && (
                     <div style={{ marginTop: '18px', borderTop: '1px solid #e2e8f0', paddingTop: '16px' }}>
                       {(() => {
                         const rawQboImportData =

@@ -329,7 +329,11 @@ export function createMonthlyRecords(
             // Prevent account-mapping totals from clobbering balance-sheet rollups.
             if (RESERVED_BALANCE_SHEET_FIELDS.has(field)) return acc;
             const numeric = Number(value || 0);
-            acc[field] = Number.isFinite(numeric) ? Math.abs(numeric) : 0;
+            if (!Number.isFinite(numeric)) {
+              acc[field] = 0;
+              return acc;
+            }
+            acc[field] = field === 'ownersDraw' ? -Math.abs(numeric) : Math.abs(numeric);
             return acc;
           }, {} as Record<string, number>)
         : {};
