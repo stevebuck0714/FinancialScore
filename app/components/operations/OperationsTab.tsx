@@ -7403,7 +7403,7 @@ export default function OperationsTab({
       if (!productMarginRows.length) {
         return (
           <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '24px', color: '#64748b' }}>
-            No product margin rows are available for the selected date range.
+            No product margin rows are available from the loaded wholesale order-line data.
           </div>
         );
       }
