@@ -17360,6 +17360,7 @@ function FinancialScorePage() {
                                         value={selectedTypeOption}
                                         onChange={(e) => {
                                           const selected = e.target.value;
+                                          setAccountReviewSort({ key: 'type', direction: 'asc' });
                                           setAccountReviewTypeOverrideValues(selected, ...(typeOverrideValues || []));
                                           setCsvTrialBalanceData((prev: any) => {
                                             if (!prev || !Array.isArray(prev.accounts)) return prev;
@@ -17506,6 +17507,7 @@ function FinancialScorePage() {
                                     value={selectedTypeOption}
                                     onChange={(e) => {
                                       const selected = e.target.value;
+                                      setAccountReviewSort({ key: 'type', direction: 'asc' });
                                       setAccountReviewTypeOverrideValues(selected, ...(typeOverrideValues || []));
                                       setAiMappings((prev) => {
                                         const updated = [...(Array.isArray(prev) ? prev : [])];
