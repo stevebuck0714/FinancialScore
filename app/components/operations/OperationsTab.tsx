@@ -6327,10 +6327,13 @@ export default function OperationsTab({
           color: '#334155',
           cursor: 'pointer',
           userSelect: 'none',
-          whiteSpace: 'nowrap',
+          whiteSpace: key === 'itemName' || key === 'sku' ? 'nowrap' : 'normal',
+          lineHeight: 1.15,
+          minWidth: key === 'itemName' ? '260px' : key === 'sku' ? '140px' : key === 'site' ? '72px' : '78px',
+          maxWidth: key === 'itemName' ? '320px' : key === 'sku' ? '170px' : key === 'site' ? '90px' : '92px',
         }}
       >
-        {label}{priceCostSortLabel(key)}
+        <span style={{ display: 'inline-block' }}>{label}</span>{priceCostSortLabel(key)}
       </th>
     );
     const paretoRows = [...comparisonRowsWithSignal]
@@ -7462,19 +7465,19 @@ export default function OperationsTab({
                     { label: 'Customer Group' },
                     { label: 'Customer Name' },
                     { label: 'Customer P/N' },
-                    { label: 'Item' },
-                    { label: ['Current Price', '($)'], compact: true },
-                    { label: ['Current Cost', 'of Material', '($)'], compact: true },
-                    { label: ['Current Tariff', 'Impact per', 'Piece'], compact: true },
-                    { label: ['Current Duties', 'Impact per', 'Piece ($)'], compact: true },
-                    { label: ['Freight Cost', 'per Piece', '($)'], compact: true },
-                    { label: ['Current Cost', 'of Sales', '($)'], compact: true },
-                    { label: ['Current Operating', 'Expenses', '($)'], compact: true },
-                    { label: ['Current Fully', 'Loaded Cost', '($)'], compact: true },
-                    { label: ['Current Net', 'Profit', '($)'], compact: true },
+                    { label: 'Item', itemColumn: true },
+                    { label: ['Current', 'Price'], compact: true },
+                    { label: ['Current', 'Cost', 'of', 'Material'], compact: true },
+                    { label: ['Current', 'Tariff', 'Impact per', 'Piece'], compact: true },
+                    { label: ['Current', 'Duties', 'Impact per', 'Piece'], compact: true },
+                    { label: ['Freight', 'Cost per', 'Piece'], compact: true },
+                    { label: ['Current', 'Cost', 'of', 'Sales'], compact: true },
+                    { label: ['Current', 'Operating', 'Expenses'], compact: true },
+                    { label: ['Current', 'Fully', 'Loaded', 'Cost'], compact: true },
+                    { label: ['Current', 'Net', 'Profit'], compact: true },
                     { label: ['Current Net', 'Profit', '(%)'], compact: true },
                   ].map((column, index) => (
-                    <th key={Array.isArray(column.label) ? column.label.join(' ') : column.label} style={{ padding: '8px', fontSize: '12px', color: '#334155', textAlign: index >= 6 ? 'right' : 'left', whiteSpace: column.compact ? 'normal' : 'nowrap', lineHeight: 1.2, minWidth: column.compact ? '84px' : undefined, maxWidth: column.compact ? '96px' : undefined }}>
+                    <th key={Array.isArray(column.label) ? column.label.join(' ') : column.label} style={{ padding: '8px', fontSize: '12px', color: '#334155', textAlign: index >= 6 ? 'right' : 'left', whiteSpace: column.compact ? 'normal' : 'nowrap', lineHeight: 1.15, minWidth: column.compact ? '66px' : column.itemColumn ? '110px' : undefined, maxWidth: column.compact ? '76px' : column.itemColumn ? '140px' : undefined }}>
                       {Array.isArray(column.label)
                         ? column.label.map((line) => <React.Fragment key={line}>{line}<br /></React.Fragment>)
                         : column.label}
@@ -7501,7 +7504,7 @@ export default function OperationsTab({
                         <td style={{ padding: '8px', fontSize: '12px', color: '#334155', fontWeight: 700 }}>{group.customerGroup}</td>
                         <td style={{ padding: '8px', fontSize: '12px', color: '#0f172a', fontWeight: 800 }}>{group.customerName}</td>
                         <td style={{ padding: '8px', fontSize: '12px', color: '#64748b' }}>{group.rows.length.toLocaleString()} items</td>
-                        <td style={{ padding: '8px', fontSize: '12px', color: '#64748b' }}>Customer subtotal</td>
+                        <td style={{ padding: '8px', fontSize: '12px', color: '#64748b', maxWidth: '140px', whiteSpace: 'normal', overflowWrap: 'anywhere' }}>Customer subtotal</td>
                         {renderMoneyCell(group.currentPrice)}
                         {renderMoneyCell(group.materialCost)}
                         {renderMoneyCell(group.tariffPerPiece)}
@@ -7520,7 +7523,7 @@ export default function OperationsTab({
                           <td style={{ padding: '8px', fontSize: '12px', color: '#475569' }}>{row.customerGroup}</td>
                           <td style={{ padding: '8px', fontSize: '12px', color: '#334155' }}>{row.customerName}</td>
                           <td style={{ padding: '8px', fontSize: '12px', color: '#475569', whiteSpace: 'nowrap' }}>{row.customerPartNumber || 'N/A'}</td>
-                          <td style={{ padding: '8px', fontSize: '12px', color: '#334155', minWidth: '180px' }}>{row.item}</td>
+                          <td style={{ padding: '8px', fontSize: '12px', color: '#334155', maxWidth: '140px', whiteSpace: 'normal', overflowWrap: 'anywhere' }}>{row.item}</td>
                           {renderMoneyCell(row.currentPrice)}
                           {renderMoneyCell(row.materialCost)}
                           {renderMoneyCell(row.tariffPerPiece)}
@@ -8778,8 +8781,8 @@ export default function OperationsTab({
                 <tbody>
                   {sortedComparisonRows.map((row, idx) => (
                     <tr key={`${row.itemName}-${row.sku}-${idx}`} style={{ borderBottom: '1px solid #f1f5f9' }}>
-                      <td style={{ padding: '8px', fontSize: '13px', color: '#0f172a', fontWeight: 600 }}>{row.itemName}</td>
-                      <td style={{ padding: '8px', fontSize: '13px', color: '#475569' }}>{row.sku}</td>
+                      <td style={{ padding: '8px', fontSize: '13px', color: '#0f172a', fontWeight: 600, whiteSpace: 'nowrap' }}>{row.itemName}</td>
+                      <td style={{ padding: '8px', fontSize: '13px', color: '#475569', whiteSpace: 'nowrap' }}>{row.sku}</td>
                       <td style={{ padding: '8px', fontSize: '13px', color: '#475569' }}>{row.site}</td>
                       <td style={{ padding: '8px', textAlign: 'right', fontSize: '13px' }}>{row.priceThisWeek == null ? 'N/A' : formatCurrencyWithCents(row.priceThisWeek)}</td>
                       <td style={{ padding: '8px', textAlign: 'right', fontSize: '13px' }}>{row.pricePriorWeek == null ? 'N/A' : formatCurrencyWithCents(row.pricePriorWeek)}</td>
