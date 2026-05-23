@@ -765,8 +765,6 @@ export async function POST(request: NextRequest) {
     );
     for (const m of sanitizedUniqueMappings) {
       const normalizedTargetField = normalizeTargetFieldValue(m.targetField, sectorCategory);
-      const targetField =
-        normalizedTargetField && normalizedTargetField !== "" ? normalizedTargetField : "unmapped";
       const incomingAccountId = String(m.accountId || "").trim() || null;
       const incomingAccountCode = String(m.accountCode || "").trim() || null;
       const incomingAccountName = String(m.accountName || "").trim();
@@ -815,11 +813,22 @@ export async function POST(request: NextRequest) {
         incomingAccountCode && incomingAccountCode !== incomingAccountId ? incomingAccountCode : null;
       const resolvedAccountName = sourceMatch?.accountName || incomingAccountName;
       const resolvedAccountId = incomingAccountId || existingAccountId || sourceAccountId;
+      const incomingAccountClassification =
+        m.accountClassification || matchedExisting?.accountClassification || null;
+      const classificationChanged =
+        !!matchedExisting &&
+        !!m.accountClassification &&
+        normalizeForCompare(stripManualClassificationPrefix(m.accountClassification)) !==
+          normalizeForCompare(stripManualClassificationPrefix(matchedExisting.accountClassification));
+      const targetField = classificationChanged
+        ? "unmapped"
+        : normalizedTargetField && normalizedTargetField !== ""
+          ? normalizedTargetField
+          : "unmapped";
       const baseMappingData = {
         accountId: resolvedAccountId,
         accountCode: sourceAccountCode || incomingUsableCode || existingUsableCode,
-        accountClassification:
-          m.accountClassification || matchedExisting?.accountClassification || null,
+        accountClassification: incomingAccountClassification,
         targetField,
       };
       const incomingOwnerPercent = (() => {

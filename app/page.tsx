@@ -2075,83 +2075,11 @@ function FinancialScorePage() {
     return getClassificationOptionValue(fallback);
   };
 
-  const getTargetFieldFamilyForUi = (targetField: unknown): 'revenue' | 'cogs' | 'expense' | 'asset' | 'liability' | 'equity' | 'other' => {
-    const normalized = normalizeMappingTargetField(targetField).trim().toLowerCase();
-    if (!normalized || normalized === 'unmapped' || normalized === 'ignored') return 'other';
-    if (normalized === 'revenue' || normalized === 'otherrevenue' || normalized.startsWith('rev_')) return 'revenue';
-    if (
-      normalized === 'cogstotal' ||
-      normalized === 'costofgoodssold' ||
-      normalized.startsWith('cogs_') ||
-      normalized.startsWith('cogs')
-    ) return 'cogs';
-    if (
-      [
-        'payroll',
-        'ownerbasepay',
-        'ownersretirement',
-        'benefits',
-        'insurance',
-        'professionalfees',
-        'subcontractors',
-        'rent',
-        'taxlicense',
-        'stateincometaxes',
-        'federalincometaxes',
-        'phonecomm',
-        'infrastructure',
-        'autotravel',
-        'salesexpense',
-        'marketing',
-        'trainingcert',
-        'mealsentertainment',
-        'interestexpense',
-        'depreciationamortization',
-        'otherexpense',
-        'expense',
-        'operatingexpensetotal',
-        'nonoperatingexpense',
-      ].includes(normalized)
-    ) return 'expense';
-    if (['cash', 'ar', 'inventory', 'otherca', 'tca', 'fixedassets', 'otherassets', 'totalassets'].includes(normalized)) return 'asset';
-    if (['ap', 'loc', 'othercl', 'tcl', 'ltd', 'totalliab'].includes(normalized)) return 'liability';
-    if (
-      [
-        'ownerscapital',
-        'ownersdraw',
-        'commonstock',
-        'preferredstock',
-        'retainedearnings',
-        'additionalpaidincapital',
-        'treasurystock',
-        'totalequity',
-        'totallande',
-      ].includes(normalized)
-    ) return 'equity';
-    return 'other';
-  };
-
-  const getClassificationFamilyForUi = (classification: unknown): 'revenue' | 'cogs' | 'expense' | 'asset' | 'liability' | 'equity' | 'other' => {
-    const selected = getClassificationOptionValue(classification).toLowerCase();
-    if (selected === 'revenue') return 'revenue';
-    if (selected === 'cost of goods sold') return 'cogs';
-    if (selected === 'expense') return 'expense';
-    if (selected === 'asset') return 'asset';
-    if (selected === 'liability') return 'liability';
-    if (selected === 'equity') return 'equity';
-    return 'other';
-  };
-
-  const clearIncompatibleTargetField = (mapping: any, selectedClassification: string) => {
-    const targetFamily = getTargetFieldFamilyForUi(mapping?.targetField);
-    const classificationFamily = getClassificationFamilyForUi(selectedClassification);
-    if (targetFamily === 'other' || classificationFamily === 'other' || targetFamily === classificationFamily) {
-      return mapping;
-    }
+  const resetMappingForAccountReviewTypeChange = (mapping: any) => {
+    const { invalidTargetField: _invalidTargetField, validationWarning: _validationWarning, ...rest } = mapping || {};
     return {
-      ...mapping,
+      ...rest,
       targetField: 'unmapped',
-      validationWarning: 'classification_mismatch',
     };
   };
 
@@ -17282,83 +17210,6 @@ function FinancialScorePage() {
                             ...(isInforCompany ? [] : Array.from(inforValues.entries())),
                             ...Array.from(apiInforValues.entries()),
                           ]);
-                          const latestMasterMonthRow = (() => {
-                            const masterRows = Array.isArray((masterData as any)?.monthlyData)
-                              ? (masterData as any).monthlyData
-                              : [];
-                            const loadedRows = Array.isArray(loadedMonthlyData) ? loadedMonthlyData : [];
-                            const rows = masterRows.length > 0 ? masterRows : loadedRows;
-                            if (rows.length === 0) return null;
-                            const selectedTargetMonth = String(apiFinancialTargetMonth || '').trim();
-                            if (/^\d{4}-\d{2}$/.test(selectedTargetMonth)) {
-                              const targetRow = [...rows].reverse().find((row: any) => {
-                                const raw = String(row?.monthDate || row?.month || row?.date || '').trim();
-                                if (/^\d{4}-\d{2}/.test(raw)) return raw.slice(0, 7) === selectedTargetMonth;
-                                const parsed = raw ? new Date(raw) : null;
-                                if (!parsed || Number.isNaN(parsed.getTime())) return false;
-                                return `${parsed.getUTCFullYear()}-${String(parsed.getUTCMonth() + 1).padStart(2, '0')}` === selectedTargetMonth;
-                              });
-                              if (targetRow) return targetRow as Record<string, unknown>;
-                            }
-                            return rows[rows.length - 1] as Record<string, unknown>;
-                          })();
-
-                          const getLatestValueByTargetField = (targetField: unknown, sourceClassification?: unknown): number | undefined => {
-                            if (!latestMasterMonthRow) return undefined;
-                            const normalizedTarget = normalizeMappingTargetField(targetField);
-                            const classification = stripManualClassificationPrefix(sourceClassification).trim().toUpperCase();
-                            const tryGetNumeric = (key: string): number | undefined => {
-                              if (!key || !(key in latestMasterMonthRow)) return undefined;
-                              const value = latestMasterMonthRow[key];
-                              if (typeof value === 'number') return Number.isFinite(value) ? value : undefined;
-                              if (typeof value === 'string') {
-                                const parsed = parseAmount(value);
-                                return Number.isFinite(parsed) ? parsed : undefined;
-                              }
-                              return undefined;
-                            };
-
-                            if (normalizedTarget && normalizedTarget !== 'unmapped' && normalizedTarget !== 'ignored') {
-                              const direct = tryGetNumeric(normalizedTarget);
-                              if (direct !== undefined) return direct;
-
-                              // Sector-specific fields roll up to core monthly fields in master data.
-                              if (normalizedTarget.startsWith('rev_')) {
-                                const revTotal = tryGetNumeric('revenue');
-                                if (revTotal !== undefined) return revTotal;
-                              }
-                              if (normalizedTarget.startsWith('cogs_')) {
-                                const cogsTotal = tryGetNumeric('cogsTotal');
-                                if (cogsTotal !== undefined) return cogsTotal;
-                              }
-                            }
-
-                            // Final source-type fallback for non-QB systems where account-level row matching is absent.
-                            if (classification === 'R' || classification === 'INCOME' || classification === 'REVENUE') {
-                              return tryGetNumeric('revenue');
-                            }
-                            if (classification === 'E' || classification === 'EXPENSE') {
-                              return tryGetNumeric('expense');
-                            }
-                            if (
-                              classification === 'C' ||
-                              classification === 'COGS' ||
-                              classification.includes('COST OF SALES') ||
-                              classification.includes('COST OF GOODS')
-                            ) {
-                              return tryGetNumeric('cogsTotal');
-                            }
-                            if (classification === 'A' || classification === 'ASSET') {
-                              return tryGetNumeric('totalAssets');
-                            }
-                            if (classification === 'L' || classification === 'LIABILITY') {
-                              return tryGetNumeric('totalLiab');
-                            }
-                            if (classification === 'Q' || classification === 'EQUITY') {
-                              return tryGetNumeric('totalEquity');
-                            }
-                            return undefined;
-                          };
 
                           return (hasCsvData && csvTrialBalanceData
                           ? (() => {
@@ -17510,7 +17361,7 @@ function FinancialScorePage() {
                                                 });
                                             if (currentIndex >= 0 && updated[currentIndex]) {
                                               updated[currentIndex] = {
-                                                ...clearIncompatibleTargetField(updated[currentIndex], selected),
+                                                ...resetMappingForAccountReviewTypeChange(updated[currentIndex]),
                                                 accountClassification: encodeManualClassification(selected),
                                               };
                                               return updated;
@@ -17571,9 +17422,6 @@ function FinancialScorePage() {
                                 const codeNormalized = codeRaw.toLowerCase().replace(/[^a-z0-9]/g, '');
                                 const resolvedNormalized = resolvedQboClassId.toLowerCase().replace(/[^a-z0-9]/g, '');
                                 const nameKey = nameRaw.toLowerCase();
-                                const targetLookupKey = normalizeMappingTargetField(mapping?.targetField)
-                                  .toLowerCase()
-                                  .replace(/[^a-z0-9]/g, '');
                                 const byId = idRaw ? mergedValues.get(`id:${idRaw}`) : undefined;
                                 const byCode = codeRaw ? mergedValues.get(`id:${codeRaw}`) : undefined;
                                 const byResolved = resolvedQboClassId ? mergedValues.get(`id:${resolvedQboClassId}`) : undefined;
@@ -17581,11 +17429,6 @@ function FinancialScorePage() {
                                 const byCodeNormalized = codeNormalized ? mergedValues.get(`id:${codeNormalized}`) : undefined;
                                 const byResolvedNormalized = resolvedNormalized ? mergedValues.get(`id:${resolvedNormalized}`) : undefined;
                                 const byName = nameKey ? mergedValues.get(`name:${nameKey}`) : undefined;
-                                const byTarget = targetLookupKey ? mergedValues.get(`target:${targetLookupKey}`) : undefined;
-                                const byMappedField = getLatestValueByTargetField(
-                                  mapping?.targetField,
-                                  mapping?.accountClassification || mapping?.sourceStatus
-                                );
                                 const latestValue =
                                   byId !== undefined ? byId :
                                   byCode !== undefined ? byCode :
@@ -17594,8 +17437,6 @@ function FinancialScorePage() {
                                   byCodeNormalized !== undefined ? byCodeNormalized :
                                   byResolvedNormalized !== undefined ? byResolvedNormalized :
                                   byName !== undefined ? byName :
-                                  byTarget !== undefined ? byTarget :
-                                  byMappedField !== undefined ? byMappedField :
                                   null;
                                 const typeOverrideValues = [
                                   mapping?.accountId,
@@ -17636,7 +17477,7 @@ function FinancialScorePage() {
                                         const updated = [...(Array.isArray(prev) ? prev : [])];
                                         if (!updated[originalIndex]) return prev;
                                         updated[originalIndex] = {
-                                          ...clearIncompatibleTargetField(updated[originalIndex], selected),
+                                          ...resetMappingForAccountReviewTypeChange(updated[originalIndex]),
                                           accountClassification: encodeManualClassification(selected),
                                         };
                                         return updated;
