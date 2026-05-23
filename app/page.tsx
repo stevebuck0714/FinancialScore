@@ -2383,6 +2383,8 @@ function FinancialScorePage() {
         })
       });
 
+      const result = await response.json().catch(() => ({}));
+
       if (response.ok) {
         masterDataStore.clearCompanyCache(currentCompany.id);
         invalidateAccountReviewValuesCache(currentCompany.id);
@@ -2392,9 +2394,15 @@ function FinancialScorePage() {
             clearOnFailure: false,
           });
         }
-        alert('Account mappings saved successfully!');
+        await refreshCompanyMappings(currentCompany.id);
+        const invalidCount = typeof result?.invalidCount === 'number' ? result.invalidCount : 0;
+        alert(
+          invalidCount > 0
+            ? `Account mappings saved, but ${invalidCount} mapping${invalidCount === 1 ? '' : 's'} need review.`
+            : 'Account mappings saved successfully!'
+        );
       } else {
-        const errorBody = await response.json().catch(() => ({}));
+        const errorBody = result || {};
         alert(`Failed to save account mappings${errorBody?.error ? `: ${errorBody.error}` : ''}${errorBody?.details ? `\n${typeof errorBody.details === 'string' ? errorBody.details : JSON.stringify(errorBody.details)}` : ''}`);
       }
     } catch (error) {
@@ -4237,7 +4245,7 @@ function FinancialScorePage() {
               lobAllocations: m.lobAllocations,
               sourceStatus: m.sourceStatus || 'mapped',
             }));
-            setAiMappings(loadedMappings);
+            setAiMappings((prev) => mergeGeneratedMappingsWithExisting(loadedMappings, prev));
             setShowMappingSection(true);
             setMappingSourceSummary(data.sourceSummary || null);
           } else {
@@ -5034,7 +5042,7 @@ function FinancialScorePage() {
             }
             if (mappings && mappings.length > 0) {
               console.log('Loaded saved account mappings:', mappings);
-              setAiMappings(normalizeMappingsForUi(mappings));
+              setAiMappings((prev) => mergeGeneratedMappingsWithExisting(mappings, prev));
               if (savedLobs && Array.isArray(savedLobs) && savedLobs.length > 0) {
                 console.log('Loaded saved Lines of Business:', savedLobs);
               // Convert from stored format to LOBData format
