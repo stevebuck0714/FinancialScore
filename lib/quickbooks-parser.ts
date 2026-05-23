@@ -31,6 +31,11 @@ function asQBCols(value: unknown): QBColData[] {
   return value.filter((cell) => cell && typeof cell === 'object') as QBColData[];
 }
 
+function isMappableQboSystemSummaryName(value: unknown): boolean {
+  const normalized = String(value || '').trim().toLowerCase().replace(/[^a-z0-9]+/g, '');
+  return normalized === 'netincome' || normalized === 'currentyearearnings';
+}
+
 export interface ParsedFinancialData {
   monthDate: Date;
   revenue: number;
@@ -83,6 +88,7 @@ function extractAccountRows(rows: QBRow[]): QBRow[] {
       const summaryCols = asQBCols(row.Summary?.ColData);
       const headerName = String(headerCols[0]?.value || '').trim();
       const headerId = String(headerCols[0]?.id || '').trim();
+      const summaryName = String(summaryCols[0]?.value || '').trim();
       if (headerName && summaryCols.length > 0 && (headerId || !/^total\b/i.test(headerName))) {
         accountRows.push({
           type: 'Data',
@@ -90,6 +96,19 @@ function extractAccountRows(rows: QBRow[]): QBRow[] {
             {
               value: headerName,
               id: headerId || undefined,
+            },
+            ...summaryCols.slice(1),
+          ],
+        });
+      } else if (!headerName && summaryCols.length > 0 && isMappableQboSystemSummaryName(summaryName)) {
+        // QBO system-calculated summaries (for example Net Income) do not have
+        // chart-of-account IDs, but users can explicitly map them by label/path.
+        accountRows.push({
+          type: 'Data',
+          ColData: [
+            {
+              value: summaryName,
+              id: undefined,
             },
             ...summaryCols.slice(1),
           ],
