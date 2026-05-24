@@ -553,6 +553,7 @@ function normalizeHiringJob(row: TableRow, departmentDivisionMap: Map<string, st
 function normalizeHiringApplication(
   row: TableRow,
   jobsByKey: Map<string, HiringJobRow> = new Map(),
+  jobs: HiringJobRow[] = [],
   departmentDivisionMap: Map<string, string> = new Map()
 ): HiringApplicationRow {
   const job = asRecord(row.job);
@@ -579,7 +580,19 @@ function normalizeHiringApplication(
     asString(requisition.title);
   const matchedJob = Array.from(hiringJobLookupKeys(row))
     .map((key) => jobsByKey.get(key))
-    .find((item): item is HiringJobRow => Boolean(item)) || null;
+    .find((item): item is HiringJobRow => Boolean(item)) ||
+    (() => {
+      const applicationTitleKey = hiringLookupKey(rawJobTitle);
+      if (!applicationTitleKey) return null;
+      return jobs.find((jobRow) => {
+        const jobTitleKey = hiringLookupKey(jobRow.title);
+        return jobTitleKey && (
+          jobTitleKey === applicationTitleKey ||
+          jobTitleKey.includes(applicationTitleKey) ||
+          applicationTitleKey.includes(jobTitleKey)
+        );
+      }) || null;
+    })();
   const applicant = asRecord(row.applicant);
   const firstName = asString(row.firstName) || asString(applicant.firstName);
   const lastName = asString(row.lastName) || asString(applicant.lastName);
@@ -663,7 +676,7 @@ export async function getBambooHrHiringPayload(companyId: string) {
     const normalizedTitle = hiringLookupKey(job.title);
     if (normalizedTitle) jobsByKey.set(`title:${normalizedTitle}`, job);
   });
-  const applications = applicationRows.map((row) => normalizeHiringApplication(row, jobsByKey, departmentDivisionMap));
+  const applications = applicationRows.map((row) => normalizeHiringApplication(row, jobsByKey, jobs, departmentDivisionMap));
   const applicationsByStatus = countRows(applications, 'status', 'status');
   const applicantsByJob = jobs
     .map((job) => ({
