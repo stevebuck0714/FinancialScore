@@ -147,6 +147,18 @@ type VendorPricingSortKey =
   | 'vendorPricingSheet'
   | 'difference'
   | 'updatedDiff';
+type OpenBottleneckSortKey =
+  | 'customerName'
+  | 'orderId'
+  | 'lineId'
+  | 'item'
+  | 'orderDate'
+  | 'dueDate'
+  | 'openAge'
+  | 'pastDueDays'
+  | 'qtyOrdered'
+  | 'qtyInvoiced'
+  | 'wipValue';
 type ProductReportView = 'productMarginAnalysis' | 'wholesaleRawData' | 'vendorPricing' | 'performance' | 'retailForecast' | 'merchandiseProfitability';
 
 const clampNumber = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
@@ -808,6 +820,8 @@ export default function OperationsTab({
   const [vendorPricingSearchTerm, setVendorPricingSearchTerm] = useState('');
   const [vendorPricingSortKey, setVendorPricingSortKey] = useState<VendorPricingSortKey>('item');
   const [vendorPricingSortDir, setVendorPricingSortDir] = useState<'asc' | 'desc'>('asc');
+  const [openBottleneckSortKey, setOpenBottleneckSortKey] = useState<OpenBottleneckSortKey>('openAge');
+  const [openBottleneckSortDir, setOpenBottleneckSortDir] = useState<'asc' | 'desc'>('desc');
   const [selectedRetailForecastSubcategory, setSelectedRetailForecastSubcategory] = useState('');
   const [retailForecastTableSortKey, setRetailForecastTableSortKey] = useState<RetailForecastTableSortKey>('next3Base');
   const [retailForecastTableSortDir, setRetailForecastTableSortDir] = useState<'asc' | 'desc'>('desc');
@@ -13454,15 +13468,41 @@ Strategies to Improve the CCC
       { key: 'ccc', label: 'Cash Conversion Cycle', note: 'DSO + DIO - DPO.', render: (row: any) => formatMetricRatio(row.ccc, 1) },
       { key: 'operatingLeverage', label: 'Operating Leverage', note: '% Change EBITDA / % Change Revenue.', render: (row: any) => formatMetricRatio(row.operatingLeverage) },
     ];
+    const formulaRows = [
+      { label: 'EBITDA Margin', formula: 'EBITDA / Revenue' },
+      { label: 'GMROE', formula: 'Gross Profit / Operating Expenses' },
+      { label: 'Incremental EBITDA Margin', formula: 'Delta EBITDA / Delta Revenue' },
+      { label: 'SG&A % of Gross Profit', formula: 'Operating Expenses / Gross Profit' },
+      { label: 'Inventory Turns', formula: 'Annualized COGS / Average Inventory' },
+      { label: 'GMROI', formula: 'Annualized Gross Profit / Average Inventory' },
+      { label: 'Working Capital Efficiency', formula: 'EBITDA / (AR + Inventory - AP)' },
+      { label: 'Operating Leverage', formula: '% Change EBITDA / % Change Revenue' },
+      { label: 'Employee Productivity', formula: 'EBITDA, Revenue, or Gross Profit / Employee Count' },
+    ];
 
     return (
       <div style={{ background: 'white', borderRadius: '12px', padding: '20px', border: '1px solid #e2e8f0' }}>
-        <div style={{ marginBottom: '16px' }}>
-          <h3 style={{ fontSize: '20px', fontWeight: 800, color: '#1e293b', margin: 0 }}>EBITDA Performance</h3>
-          <div style={{ marginTop: '4px', fontSize: '12px', color: '#64748b' }}>
-            Monthly wholesale EBITDA scalability, overhead efficiency, inventory productivity, and working-capital conversion.
-            Enter monthly employee counts where imports do not include headcount to calculate per-employee KPIs.
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '16px', marginBottom: '16px' }}>
+          <div>
+            <h3 style={{ fontSize: '20px', fontWeight: 800, color: '#1e293b', margin: 0 }}>EBITDA Performance</h3>
+            <div style={{ marginTop: '4px', fontSize: '12px', color: '#64748b' }}>
+              Monthly wholesale EBITDA scalability, overhead efficiency, inventory productivity, and working-capital conversion.
+              Enter monthly employee counts where imports do not include headcount to calculate per-employee KPIs.
+            </div>
           </div>
+          <details style={{ position: 'relative', minWidth: '260px', maxWidth: '440px', textAlign: 'right' }}>
+            <summary style={{ cursor: 'pointer', color: '#2751d0', fontSize: '12px', fontWeight: 800, listStyle: 'none' }}>
+              Metric Formulas
+            </summary>
+            <div style={{ marginTop: '8px', textAlign: 'left', border: '1px solid #dbeafe', borderRadius: '10px', padding: '10px 12px', background: '#f8fafc', boxShadow: '0 8px 24px rgba(15, 23, 42, 0.08)' }}>
+              {formulaRows.map((row) => (
+                <div key={row.label} style={{ display: 'grid', gridTemplateColumns: '150px minmax(0, 1fr)', gap: '10px', padding: '6px 0', borderBottom: row.label === formulaRows[formulaRows.length - 1].label ? 'none' : '1px solid #e2e8f0' }}>
+                  <div style={{ color: '#0f172a', fontSize: '11px', fontWeight: 800 }}>{row.label}</div>
+                  <div style={{ color: '#475569', fontSize: '11px', lineHeight: 1.4 }}>{row.formula}</div>
+                </div>
+              ))}
+            </div>
+          </details>
         </div>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: '12px', marginBottom: '16px' }}>
           {cards.map((card) => (
@@ -13473,12 +13513,6 @@ Strategies to Improve the CCC
             </div>
           ))}
         </div>
-        <details style={{ marginBottom: '16px', border: '1px solid #e2e8f0', borderRadius: '10px', padding: '10px 12px', background: '#f8fafc' }}>
-          <summary style={{ cursor: 'pointer', fontWeight: 800, color: '#1e293b', fontSize: '13px' }}>Metric notes and formulas</summary>
-          <div style={{ marginTop: '10px', color: '#475569', fontSize: '12px', lineHeight: 1.6 }}>
-            EBITDA Margin = EBITDA / Revenue. GMROE = Gross Profit / Operating Expenses. Incremental EBITDA Margin = Delta EBITDA / Delta Revenue. SG&A % of Gross Profit uses operating expenses as the SG&A proxy. Inventory Turns = annualized COGS / average inventory. GMROI = annualized gross profit / average inventory. Working Capital Efficiency = EBITDA / (AR + Inventory - AP). Operating Leverage = % Change EBITDA / % Change Revenue. Employee productivity uses imported headcount when available, or the manually entered monthly employee count. Sales-rep productivity shows N/A until sales-rep data is available in the monthly source.
-          </div>
-        </details>
         <div style={{ overflowX: 'auto' }}>
           <table style={{ width: '100%', minWidth: '1320px', borderCollapse: 'collapse' }}>
             <thead>
@@ -19034,23 +19068,31 @@ Strategies to Improve the CCC
       const gp = rows.reduce((sum, row) => sum + Number(row.grossProfit || 0), 0);
       return rev > 0 && gp !== 0 ? (gp / rev) * 100 : null;
     };
-    const executiveMetrics = [
-      { label: 'Top 5 Customers % Revenue', value: pct(share(top5.reduce((sum, row) => sum + row.revenue, 0), totalRevenue)) },
-      { label: 'Top 10 Customers % Revenue', value: pct(share(top10.reduce((sum, row) => sum + row.revenue, 0), totalRevenue)) },
-      { label: 'Top 5 Customers % Gross Profit', value: pct(share(top5.reduce((sum, row) => sum + Number(row.grossProfit || 0), 0), totalGrossProfit)) },
-      { label: 'Largest Customer % Revenue', value: pct(share(customerRows[0]?.revenue || 0, totalRevenue)) },
-      { label: 'Largest Customer % EBITDA Contribution', value: pct(share(customerRows[0]?.ebitdaContribution || 0, totalEbitda)) },
-      { label: 'Avg Gross Margin - Top 10', value: pct(avgMargin(top10)) },
-      { label: 'Avg Gross Margin - Remaining Customers', value: pct(avgMargin(customerRows.slice(10))) },
-      { label: 'Customer Retention Rate', value: pct(customerRows.length ? (customerRows.filter((row) => row.months.size > 1).length / customerRows.length) * 100 : null) },
-      { label: 'Revenue from New Customers', value: formatCurrency(customerRows.filter((row) => row.months.size === 1).reduce((sum, row) => sum + Number(row.revenue || 0), 0)) },
-    ];
-    const monthlyTrendRows = monthKeys.map((monthKey) => {
+    const firstMonthByCustomer = new Map<string, string>();
+    monthKeys.forEach((monthKey) => {
+      const values = Array.from((monthCustomerMap.get(monthKey) || new Map()).values());
+      values.forEach((row: any) => {
+        const name = String(row.name || 'Unknown Customer');
+        if (!firstMonthByCustomer.has(name)) firstMonthByCustomer.set(name, monthKey);
+      });
+    });
+    const monthlyCustomerMetrics = monthKeys.map((monthKey) => {
       const values = Array.from((monthCustomerMap.get(monthKey) || new Map()).values()).sort((a: any, b: any) => Number(b.revenue || 0) - Number(a.revenue || 0));
       const rev = values.reduce((sum: number, row: any) => sum + Number(row.revenue || 0), 0);
       const gp = values.reduce((sum: number, row: any) => sum + Number(row.grossProfit || 0), 0);
       const eb = values.reduce((sum: number, row: any) => sum + Number(row.ebitda || 0), 0);
+      const currentCustomers = values.map((row: any) => String(row.name || 'Unknown Customer'));
+      const retainedCustomers = currentCustomers.filter((name) => String(firstMonthByCustomer.get(name) || '') < monthKey);
+      const newCustomerRevenue = values
+        .filter((row: any) => firstMonthByCustomer.get(String(row.name || 'Unknown Customer')) === monthKey)
+        .reduce((sum: number, row: any) => sum + Number(row.revenue || 0), 0);
+      const monthAvgMargin = (rows: any[]) => {
+        const monthRevenue = rows.reduce((sum: number, row: any) => sum + Number(row.revenue || 0), 0);
+        const monthGrossProfit = rows.reduce((sum: number, row: any) => sum + Number(row.grossProfit || 0), 0);
+        return monthRevenue > 0 && monthGrossProfit !== 0 ? (monthGrossProfit / monthRevenue) * 100 : null;
+      };
       return {
+        monthKey,
         month: formatMonth(monthKey),
         revenue: rev,
         top5Rev: share(values.slice(0, 5).reduce((sum: number, row: any) => sum + Number(row.revenue || 0), 0), rev),
@@ -19058,8 +19100,25 @@ Strategies to Improve the CCC
         largestRev: share(values[0]?.revenue || 0, rev),
         top5Gp: share(values.slice(0, 5).reduce((sum: number, row: any) => sum + Number(row.grossProfit || 0), 0), gp),
         top5Ebitda: share(values.slice(0, 5).reduce((sum: number, row: any) => sum + Number(row.ebitda || 0), 0), eb),
+        largestEbitda: share(values[0]?.ebitda || 0, eb),
+        top10AvgMargin: monthAvgMargin(values.slice(0, 10)),
+        remainingAvgMargin: monthAvgMargin(values.slice(10)),
+        retentionRate: currentCustomers.length ? (retainedCustomers.length / currentCustomers.length) * 100 : null,
+        newCustomerRevenue,
       };
     });
+    const executiveMetricRows = [
+      { label: 'Top 5 Customers % Revenue', render: (row: any) => pct(row.top5Rev) },
+      { label: 'Top 10 Customers % Revenue', render: (row: any) => pct(row.top10Rev) },
+      { label: 'Top 5 Customers % Gross Profit', render: (row: any) => pct(row.top5Gp) },
+      { label: 'Largest Customer % Revenue', render: (row: any) => pct(row.largestRev) },
+      { label: 'Largest Customer % EBITDA Contribution', render: (row: any) => pct(row.largestEbitda) },
+      { label: 'Avg Gross Margin - Top 10', render: (row: any) => pct(row.top10AvgMargin) },
+      { label: 'Avg Gross Margin - Remaining Customers', render: (row: any) => pct(row.remainingAvgMargin) },
+      { label: 'Customer Retention Rate', render: (row: any) => pct(row.retentionRate) },
+      { label: 'Revenue from New Customers', render: (row: any) => formatCurrency(row.newCustomerRevenue) },
+    ];
+    const monthlyTrendRows = monthlyCustomerMetrics;
     const riskRows = top10.map((row) => {
       const revenueShare = share(row.revenue, totalRevenue) || 0;
       const revRisk = revenueRiskScore(revenueShare);
@@ -19081,7 +19140,7 @@ Strategies to Improve the CCC
     );
     return (
       <div>
-        {section('Executive Summary Dashboard', <table style={tableStyle}><thead><tr><th style={thStyle}>Metric</th><th style={{ ...thStyle, textAlign: 'right' }}>Monthly Last 12 Months</th></tr></thead><tbody>{executiveMetrics.map((metric) => <tr key={metric.label}><td style={{ ...tdStyle, fontWeight: 700 }}>{metric.label}</td><td style={{ ...tdStyle, textAlign: 'right' }}>{metric.value}</td></tr>)}</tbody></table>)}
+        {section('Executive Summary Dashboard', <div style={{ overflowX: 'auto' }}><table style={{ ...tableStyle, minWidth: '1220px' }}><thead><tr><th style={{ ...thStyle, minWidth: '240px' }}>Metric</th>{monthlyCustomerMetrics.map((row) => <th key={row.monthKey} style={{ ...thStyle, textAlign: 'right', minWidth: '90px' }}>{row.month}</th>)}</tr></thead><tbody>{executiveMetricRows.map((metric) => <tr key={metric.label}><td style={{ ...tdStyle, fontWeight: 700 }}>{metric.label}</td>{monthlyCustomerMetrics.map((row) => <td key={`${metric.label}-${row.monthKey}`} style={{ ...tdStyle, textAlign: 'right', whiteSpace: 'nowrap' }}>{metric.render(row)}</td>)}</tr>)}</tbody></table></div>)}
         {section('Monthly Customer Concentration Trend', <div style={{ overflowX: 'auto' }}><table style={{ ...tableStyle, minWidth: '820px' }}><thead><tr>{['Month', 'Total Revenue', 'Top 5 % Rev', 'Top 10 % Rev', 'Largest Customer %', 'Top 5 % GP', 'Top 5 % EBITDA'].map((h) => <th key={h} style={{ ...thStyle, textAlign: h === 'Month' ? 'left' : 'right' }}>{h}</th>)}</tr></thead><tbody>{monthlyTrendRows.map((row) => <tr key={row.month}><td style={tdStyle}>{row.month}</td><td style={{ ...tdStyle, textAlign: 'right' }}>{formatCurrency(row.revenue)}</td><td style={{ ...tdStyle, textAlign: 'right' }}>{pct(row.top5Rev)}</td><td style={{ ...tdStyle, textAlign: 'right' }}>{pct(row.top10Rev)}</td><td style={{ ...tdStyle, textAlign: 'right' }}>{pct(row.largestRev)}</td><td style={{ ...tdStyle, textAlign: 'right' }}>{pct(row.top5Gp)}</td><td style={{ ...tdStyle, textAlign: 'right' }}>{pct(row.top5Ebitda)}</td></tr>)}</tbody></table></div>)}
         {section('Top Customer Profitability Analysis', <div style={{ overflowX: 'auto' }}><table style={{ ...tableStyle, minWidth: '920px' }}><thead><tr>{['Customer', 'Revenue', 'Gross Profit', 'GP %', 'EBITDA Contribution', 'AR Days', 'Inventory Burden', 'Strategic Importance'].map((h) => <th key={h} style={{ ...thStyle, textAlign: h === 'Customer' ? 'left' : 'right' }}>{h}</th>)}</tr></thead><tbody>{top5.map((row) => <tr key={row.name}><td style={{ ...tdStyle, fontWeight: 700 }}>{row.name}</td><td style={{ ...tdStyle, textAlign: 'right' }}>{formatCurrency(row.revenue)}</td><td style={{ ...tdStyle, textAlign: 'right' }}>{formatCurrency(Number(row.grossProfit || 0))}</td><td style={{ ...tdStyle, textAlign: 'right' }}>{pct(row.gpPct)}</td><td style={{ ...tdStyle, textAlign: 'right' }}>{formatCurrency(Number(row.ebitdaContribution || 0))}</td><td style={{ ...tdStyle, textAlign: 'right' }}>N/A</td><td style={{ ...tdStyle, textAlign: 'right' }}>N/A</td><td style={{ ...tdStyle, textAlign: 'right' }}>{(share(row.revenue, totalRevenue) || 0) > 10 ? 'High' : 'Medium'}</td></tr>)}</tbody></table></div>)}
         {section('Customer Risk Heatmap', <><div style={{ overflowX: 'auto' }}><table style={{ ...tableStyle, minWidth: '860px' }}><thead><tr>{['Customer', 'Revenue Risk', 'Margin Risk', 'Retention Risk', 'Payment Risk', 'Strategic Risk', 'Overall Risk'].map((h) => <th key={h} style={thStyle}>{h}</th>)}</tr></thead><tbody>{riskRows.map((row) => <tr key={row.name}><td style={{ ...tdStyle, fontWeight: 700 }}>{row.name}</td>{[row.revRisk, row.marginRisk, row.retentionRisk, row.paymentRisk, row.strategicRisk, row.overall].map((score, idx) => <td key={idx} style={{ ...tdStyle, color: riskColor(score), fontWeight: 700 }}>{riskLabel(score)}</td>)}</tr>)}</tbody></table></div><details style={{ marginTop: '12px', border: '1px solid #e2e8f0', borderRadius: '10px', padding: '10px 12px', background: '#f8fafc' }}><summary style={{ cursor: 'pointer', fontWeight: 800, color: '#1e293b', fontSize: '13px' }}>Risk formulas and scoring framework</summary><div style={{ marginTop: '10px', color: '#475569', fontSize: '12px', lineHeight: 1.6 }}>Revenue Risk = Customer Revenue / Total Company Revenue. Score: less than 5% = 1, 5-10% = 2, 10-15% = 3, 15-20% = 4, greater than 20% = 5. Margin Risk uses gross margin quality and customer EBITDA contribution where available. Retention Risk is based on customer activity across the selected monthly window until explicit churn data is imported. Payment Risk is reserved for DSO / AR aging by customer; it defaults to Medium until imported. Strategic Risk is a qualitative dependency score using concentration as the current proxy. Overall Risk = Revenue Risk x 25% + Margin Risk x 25% + Retention Risk x 20% + Payment Risk x 15% + Strategic Risk x 15%.</div></details></>)}
@@ -19166,20 +19225,140 @@ Strategies to Improve the CCC
       revenue: Number(row.revenue || 0),
       delta: Number(row.delta || 0),
     }));
-    const topOpenWipRows = [...wipItems]
-      .sort((a: any, b: any) => Number(b.wipValue || 0) - Number(a.wipValue || 0))
-      .slice(0, 20);
+    const openBottleneckValue = (row: any, key: OpenBottleneckSortKey) => {
+      if (key === 'openAge') {
+        const orderDate = validDate(row.orderDate);
+        return orderDate && asOf ? diffDays(orderDate, asOf) : null;
+      }
+      if (key === 'pastDueDays') {
+        const dueDate = validDate(row.dueDate);
+        return dueDate && asOf && dueDate.getTime() < asOf.getTime() ? diffDays(dueDate, asOf) : null;
+      }
+      if (key === 'orderDate' || key === 'dueDate') {
+        const parsed = validDate(row[key]);
+        return parsed ? parsed.getTime() : null;
+      }
+      if (key === 'qtyOrdered' || key === 'qtyInvoiced' || key === 'wipValue') {
+        const parsed = Number(row[key] || 0);
+        return Number.isFinite(parsed) ? parsed : null;
+      }
+      return String(row[key] || '').trim();
+    };
+    const openBottleneckNumericKeys = new Set<OpenBottleneckSortKey>([
+      'orderDate',
+      'dueDate',
+      'openAge',
+      'pastDueDays',
+      'qtyOrdered',
+      'qtyInvoiced',
+      'wipValue',
+    ]);
+    const sortedOpenBottleneckRows = [...wipItems].sort((a: any, b: any) => {
+      const direction = openBottleneckSortDir === 'asc' ? 1 : -1;
+      const left = openBottleneckValue(a, openBottleneckSortKey);
+      const right = openBottleneckValue(b, openBottleneckSortKey);
+      if (openBottleneckNumericKeys.has(openBottleneckSortKey)) {
+        const leftMissing = left == null || !Number.isFinite(Number(left));
+        const rightMissing = right == null || !Number.isFinite(Number(right));
+        if (leftMissing && rightMissing) return 0;
+        if (leftMissing) return 1;
+        if (rightMissing) return -1;
+        return (Number(left) - Number(right)) * direction;
+      }
+      return String(left || '').localeCompare(String(right || ''), undefined, { sensitivity: 'base', numeric: true }) * direction;
+    });
+    const handleOpenBottleneckSort = (key: OpenBottleneckSortKey) => {
+      if (openBottleneckSortKey === key) {
+        setOpenBottleneckSortDir((prev) => (prev === 'asc' ? 'desc' : 'asc'));
+        return;
+      }
+      setOpenBottleneckSortKey(key);
+      setOpenBottleneckSortDir(openBottleneckNumericKeys.has(key) ? 'desc' : 'asc');
+    };
+    const openBottleneckSortLabel = (key: OpenBottleneckSortKey) =>
+      openBottleneckSortKey === key ? (openBottleneckSortDir === 'asc' ? ' ▲' : ' ▼') : ' ↕';
+    const velocityRows = wipItems.map((row: any) => ({
+      ...row,
+      openAge: openBottleneckValue(row, 'openAge') as number | null,
+      pastDueDays: openBottleneckValue(row, 'pastDueDays') as number | null,
+      wipValueNumber: Number(row.wipValue || 0),
+    }));
+    const agingBuckets = [
+      { label: '0-30 Days', min: 0, max: 30 },
+      { label: '31-60 Days', min: 31, max: 60 },
+      { label: '61-90 Days', min: 61, max: 90 },
+      { label: '90+ Days', min: 91, max: Number.POSITIVE_INFINITY },
+    ].map((bucket) => {
+      const rows = velocityRows.filter((row: any) => Number(row.openAge || 0) >= bucket.min && Number(row.openAge || 0) <= bucket.max);
+      return {
+        ...bucket,
+        lineCount: rows.length,
+        wipValue: rows.reduce((sum: number, row: any) => sum + Number(row.wipValueNumber || 0), 0),
+        avgAge: avg(rows.map((row: any) => Number(row.openAge || 0)).filter((value: number) => Number.isFinite(value))),
+      };
+    });
+    const buildVelocitySummary = (keyFn: (row: any) => string, labelKey: string) => {
+      const grouped = new Map<string, { label: string; lines: number; wipValue: number; ages: number[]; pastDueAges: number[] }>();
+      velocityRows.forEach((row: any) => {
+        const label = keyFn(row) || 'N/A';
+        if (!grouped.has(label)) grouped.set(label, { label, lines: 0, wipValue: 0, ages: [], pastDueAges: [] });
+        const acc = grouped.get(label)!;
+        acc.lines += 1;
+        acc.wipValue += Number(row.wipValueNumber || 0);
+        if (row.openAge != null && Number.isFinite(Number(row.openAge))) acc.ages.push(Number(row.openAge));
+        if (row.pastDueDays != null && Number.isFinite(Number(row.pastDueDays))) acc.pastDueAges.push(Number(row.pastDueDays));
+      });
+      return Array.from(grouped.values())
+        .map((row) => ({
+          ...row,
+          [labelKey]: row.label,
+          avgAge: avg(row.ages),
+          maxAge: row.ages.length ? Math.max(...row.ages) : null,
+          avgPastDueDays: avg(row.pastDueAges),
+        }))
+        .sort((a, b) => Number(b.avgAge || 0) - Number(a.avgAge || 0))
+        .slice(0, 10);
+    };
+    const velocityByItemRows = buildVelocitySummary((row) => String(row.item || 'N/A'), 'item');
+    const velocityByCustomerRows = buildVelocitySummary((row) => String(row.customerName || 'N/A'), 'customerName');
+    const topOpenWipRows = sortedOpenBottleneckRows.slice(0, 20);
     const metricCards = [
       { label: 'Open WIP Value', value: formatCurrency(Number(wipSummary?.totals?.totalWip || 0)), detail: 'From open order-line WIP' },
-      { label: 'Loaded WIP Lines', value: number(wipItems.length), detail: 'Open WIP lines returned by source' },
       { label: 'Avg Open WIP Age', value: days(avg(openWipAges)), detail: 'As-of date minus order date' },
-      { label: 'Past-Due Open Lines', value: number(pastDueItems.length), detail: dueDateItems.length ? `${pct(pastDueItems.length, dueDateItems.length)} of lines with due dates` : 'No due dates loaded' },
-      { label: 'Avg Past-Due Days', value: days(avg(pastDueDays)), detail: 'As-of date minus due date' },
       { label: 'WIP Qty Invoiced %', value: pct(qtyInvoiced, qtyOrdered), detail: 'Qty invoiced / qty ordered on open lines' },
+      { label: '90+ Day Open Lines', value: number(agingBuckets.find((bucket) => bucket.label === '90+ Days')?.lineCount || 0), detail: 'Oldest open order-line bucket' },
     ];
     const tableStyle = { width: '100%', borderCollapse: 'collapse' as const };
     const thStyle: React.CSSProperties = { padding: '8px', fontSize: '12px', color: '#334155', textAlign: 'left', background: '#f8fafc', borderBottom: '1px solid #e2e8f0' };
     const tdStyle: React.CSSProperties = { padding: '8px', fontSize: '12px', color: '#334155', borderBottom: '1px solid #f1f5f9' };
+    const openBottleneckColumns: Array<{ key: OpenBottleneckSortKey; label: string; align?: 'left' | 'right' }> = [
+      { key: 'customerName', label: 'Customer' },
+      { key: 'orderId', label: 'Order' },
+      { key: 'lineId', label: 'Line' },
+      { key: 'item', label: 'Item' },
+      { key: 'orderDate', label: 'Order Date' },
+      { key: 'dueDate', label: 'Due Date' },
+      { key: 'openAge', label: 'Open Age', align: 'right' },
+      { key: 'pastDueDays', label: 'Past Due Days', align: 'right' },
+      { key: 'qtyOrdered', label: 'Qty Ordered', align: 'right' },
+      { key: 'qtyInvoiced', label: 'Qty Invoiced', align: 'right' },
+      { key: 'wipValue', label: 'WIP Value', align: 'right' },
+    ];
+    const renderOpenBottleneckHeader = (column: { key: OpenBottleneckSortKey; label: string; align?: 'left' | 'right' }) => (
+      <th
+        key={column.key}
+        onClick={() => handleOpenBottleneckSort(column.key)}
+        style={{
+          ...thStyle,
+          textAlign: column.align || 'left',
+          cursor: 'pointer',
+          userSelect: 'none',
+          whiteSpace: 'nowrap',
+        }}
+      >
+        {column.label}{openBottleneckSortLabel(column.key)}
+      </th>
+    );
     const section = (title: string, body: React.ReactNode) => (
       <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '16px', marginBottom: '16px' }}>
         <h3 style={{ margin: '0 0 12px', fontSize: '17px', color: '#0f172a' }}>{title}</h3>
@@ -19191,39 +19370,77 @@ Strategies to Improve the CCC
       <div>
         <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '18px', marginBottom: '16px' }}>
           <h3 style={{ margin: 0, fontSize: '20px', fontWeight: 800, color: '#0f172a' }}>Execution Velocity</h3>
-          <div style={{ marginTop: '4px', color: '#64748b', fontSize: '12px' }}>
-            Real-data view of order-to-revenue execution using loaded customer bookings, order-line WIP, invoice quantity, due-date, and revenue records. PPAP, approval, ECO, and launch milestone KPIs are excluded until those source dates are imported.
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: '0.95fr 1.55fr', gap: '16px', alignItems: 'start', marginBottom: '16px' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '12px' }}>
+            {metricCards.map((card) => (
+              <div key={card.label} style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '14px' }}>
+                <div style={{ fontSize: '11px', color: '#64748b', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em' }}>{card.label}</div>
+                <div style={{ marginTop: '6px', fontSize: '22px', fontWeight: 800, color: '#0f172a' }}>{card.value}</div>
+                <div style={{ marginTop: '4px', fontSize: '11px', color: '#64748b' }}>{card.detail}</div>
+              </div>
+            ))}
+          </div>
+          <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '16px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '16px', marginBottom: '12px' }}>
+              <h3 style={{ margin: 0, fontSize: '17px', color: '#0f172a' }}>Open Order-Line Aging Buckets</h3>
+              <details style={{ position: 'relative', maxWidth: '520px', textAlign: 'right' }}>
+                  <summary style={{ cursor: 'pointer', color: '#2751d0', fontSize: '12px', fontWeight: 800, listStyle: 'none' }}>
+                    What does this show?
+                  </summary>
+                  <div style={{ marginTop: '8px', textAlign: 'left', border: '1px solid #dbeafe', borderRadius: '10px', padding: '10px 12px', background: '#f8fafc', color: '#475569', fontSize: '12px', lineHeight: 1.5 }}>
+                    Open order lines are grouped by how many days have elapsed from order date to the latest WIP snapshot date. The goal is to highlight aging work that is not moving through the order-to-invoice process quickly enough. WIP Value is the remaining open value in each age bucket.
+                  </div>
+              </details>
+            </div>
+            <div style={{ overflowX: 'auto' }}>
+              <table style={{ ...tableStyle, minWidth: '560px' }}>
+                <thead><tr>{['Age Bucket', 'Open Lines', 'Avg Open Age', 'WIP Value'].map((header) => <th key={header} style={{ ...thStyle, textAlign: header === 'Age Bucket' ? 'left' : 'right' }}>{header}</th>)}</tr></thead>
+                <tbody>{agingBuckets.map((bucket) => <tr key={bucket.label}><td style={{ ...tdStyle, fontWeight: 700 }}>{bucket.label}</td><td style={{ ...tdStyle, textAlign: 'right' }}>{number(bucket.lineCount)}</td><td style={{ ...tdStyle, textAlign: 'right' }}>{days(bucket.avgAge)}</td><td style={{ ...tdStyle, textAlign: 'right' }}>{formatCurrency(bucket.wipValue)}</td></tr>)}</tbody>
+              </table>
+            </div>
           </div>
         </div>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: '12px', marginBottom: '16px' }}>
-          {metricCards.map((card) => (
-            <div key={card.label} style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '14px' }}>
-              <div style={{ fontSize: '11px', color: '#64748b', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em' }}>{card.label}</div>
-              <div style={{ marginTop: '6px', fontSize: '22px', fontWeight: 800, color: '#0f172a' }}>{card.value}</div>
-              <div style={{ marginTop: '4px', fontSize: '11px', color: '#64748b' }}>{card.detail}</div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '16px', alignItems: 'start' }}>
+          {section('Velocity by Item', (
+            <div style={{ overflowX: 'auto' }}>
+              <table style={{ ...tableStyle, minWidth: '620px' }}>
+                <thead><tr>{['Item', 'Open Lines', 'Avg Open Age', 'Max Open Age', 'WIP Value'].map((header) => <th key={header} style={{ ...thStyle, textAlign: header === 'Item' ? 'left' : 'right' }}>{header}</th>)}</tr></thead>
+                <tbody>{velocityByItemRows.map((row: any) => <tr key={row.item}><td style={{ ...tdStyle, fontWeight: 700 }}>{row.item}</td><td style={{ ...tdStyle, textAlign: 'right' }}>{number(row.lines)}</td><td style={{ ...tdStyle, textAlign: 'right' }}>{days(row.avgAge)}</td><td style={{ ...tdStyle, textAlign: 'right' }}>{row.maxAge == null ? 'N/A' : number(row.maxAge)}</td><td style={{ ...tdStyle, textAlign: 'right' }}>{formatCurrency(row.wipValue)}</td></tr>)}</tbody>
+              </table>
+            </div>
+          ))}
+          {section('Velocity by Customer', (
+            <div style={{ overflowX: 'auto' }}>
+              <table style={{ ...tableStyle, minWidth: '620px' }}>
+                <thead><tr>{['Customer', 'Open Lines', 'Avg Open Age', 'Max Open Age', 'WIP Value'].map((header) => <th key={header} style={{ ...thStyle, textAlign: header === 'Customer' ? 'left' : 'right' }}>{header}</th>)}</tr></thead>
+                <tbody>{velocityByCustomerRows.map((row: any) => <tr key={row.customerName}><td style={{ ...tdStyle, fontWeight: 700 }}>{row.customerName}</td><td style={{ ...tdStyle, textAlign: 'right' }}>{number(row.lines)}</td><td style={{ ...tdStyle, textAlign: 'right' }}>{days(row.avgAge)}</td><td style={{ ...tdStyle, textAlign: 'right' }}>{row.maxAge == null ? 'N/A' : number(row.maxAge)}</td><td style={{ ...tdStyle, textAlign: 'right' }}>{formatCurrency(row.wipValue)}</td></tr>)}</tbody>
+              </table>
             </div>
           ))}
         </div>
-        {section('Monthly Invoiced Lines by Snapshot Date', (
-          <div style={{ overflowX: 'auto' }}>
-            <table style={{ ...tableStyle, minWidth: '720px' }}>
-              <thead><tr>{['Month', 'Lines Invoiced', 'Qty Invoiced', 'Invoiced Amount'].map((header) => <th key={header} style={{ ...thStyle, textAlign: header === 'Month' ? 'left' : 'right' }}>{header}</th>)}</tr></thead>
-              <tbody>{throughputRows.map((row) => <tr key={row.month}><td style={tdStyle}>{monthLabel(row.month)}</td><td style={{ ...tdStyle, textAlign: 'right' }}>{number(row.linesInvoiced)}</td><td style={{ ...tdStyle, textAlign: 'right' }}>{number(row.qtyInvoiced)}</td><td style={{ ...tdStyle, textAlign: 'right' }}>{formatCurrency(row.invoicedAmount)}</td></tr>)}</tbody>
-            </table>
-          </div>
-        ))}
-        {section('Revenue Realization Bridge', (
-          <div style={{ overflowX: 'auto' }}>
-            <table style={{ ...tableStyle, minWidth: '720px' }}>
-              <thead><tr>{['Period', 'Bookings', 'Revenue', 'Bookings Less Revenue'].map((header) => <th key={header} style={{ ...thStyle, textAlign: header === 'Period' ? 'left' : 'right' }}>{header}</th>)}</tr></thead>
-              <tbody>{bridgeRows.map((row) => <tr key={row.period}><td style={tdStyle}>{row.period}</td><td style={{ ...tdStyle, textAlign: 'right' }}>{formatCurrency(row.bookings)}</td><td style={{ ...tdStyle, textAlign: 'right' }}>{formatCurrency(row.revenue)}</td><td style={{ ...tdStyle, textAlign: 'right', color: row.delta > 0 ? '#b45309' : '#166534', fontWeight: 700 }}>{formatCurrency(row.delta)}</td></tr>)}</tbody>
-            </table>
-          </div>
-        ))}
-        {section('Open Bottleneck Queue', (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '16px', alignItems: 'start' }}>
+          {section('Monthly Invoiced Lines by Snapshot Date', (
+            <div style={{ overflowX: 'auto' }}>
+              <table style={{ ...tableStyle, minWidth: '560px' }}>
+                <thead><tr>{['Month', 'Lines Invoiced', 'Qty Invoiced', 'Invoiced Amount'].map((header) => <th key={header} style={{ ...thStyle, textAlign: header === 'Month' ? 'left' : 'right' }}>{header}</th>)}</tr></thead>
+                <tbody>{throughputRows.map((row) => <tr key={row.month}><td style={tdStyle}>{monthLabel(row.month)}</td><td style={{ ...tdStyle, textAlign: 'right' }}>{number(row.linesInvoiced)}</td><td style={{ ...tdStyle, textAlign: 'right' }}>{number(row.qtyInvoiced)}</td><td style={{ ...tdStyle, textAlign: 'right' }}>{formatCurrency(row.invoicedAmount)}</td></tr>)}</tbody>
+              </table>
+            </div>
+          ))}
+          {section('Revenue Realization Bridge', (
+            <div style={{ overflowX: 'auto' }}>
+              <table style={{ ...tableStyle, minWidth: '560px' }}>
+                <thead><tr>{['Period', 'Bookings', 'Revenue', 'Bookings Less Revenue'].map((header) => <th key={header} style={{ ...thStyle, textAlign: header === 'Period' ? 'left' : 'right' }}>{header}</th>)}</tr></thead>
+                <tbody>{bridgeRows.map((row) => <tr key={row.period}><td style={tdStyle}>{row.period}</td><td style={{ ...tdStyle, textAlign: 'right' }}>{formatCurrency(row.bookings)}</td><td style={{ ...tdStyle, textAlign: 'right' }}>{formatCurrency(row.revenue)}</td><td style={{ ...tdStyle, textAlign: 'right', color: row.delta > 0 ? '#b45309' : '#166534', fontWeight: 700 }}>{formatCurrency(row.delta)}</td></tr>)}</tbody>
+              </table>
+            </div>
+          ))}
+        </div>
+        {section('Open Orders / Lines', (
           <div style={{ overflowX: 'auto' }}>
             <table style={{ ...tableStyle, minWidth: '980px' }}>
-              <thead><tr>{['Customer', 'Order', 'Line', 'Item', 'Order Date', 'Due Date', 'Open Age', 'Past Due Days', 'Qty Ordered', 'Qty Invoiced', 'WIP Value'].map((header) => <th key={header} style={{ ...thStyle, textAlign: ['Qty Ordered', 'Qty Invoiced', 'WIP Value', 'Open Age', 'Past Due Days'].includes(header) ? 'right' : 'left' }}>{header}</th>)}</tr></thead>
+              <thead><tr>{openBottleneckColumns.map(renderOpenBottleneckHeader)}</tr></thead>
               <tbody>{topOpenWipRows.map((row: any, index: number) => {
                 const orderDate = validDate(row.orderDate);
                 const dueDate = validDate(row.dueDate);

@@ -2113,6 +2113,10 @@ export async function GET(request: NextRequest) {
                   gte: latestOrderSnapshotDate,
                   lte: snapshotDayEnd,
                 },
+                OR: [
+                  { remainingAmount: { gt: 0 } },
+                  { remainingAmount: null, contractValue: { gt: 0 } },
+                ],
               },
               select: {
                 snapshotDate: true,
@@ -2130,8 +2134,8 @@ export async function GET(request: NextRequest) {
                 invoicedAmount: true,
                 remainingAmount: true,
               },
-              orderBy: [{ contractValue: 'desc' }],
-              take: dashboardRowCap,
+              orderBy: [{ remainingAmount: 'desc' }, { contractValue: 'desc' }],
+              take: rawPayloadRowCap,
             });
             const orderIdsForRawLookup = Array.from(
               new Set(
@@ -2464,7 +2468,7 @@ export async function GET(request: NextRequest) {
             const allWipCustomers = Array.from(byCustomer.values())
               .filter((row) => Number(row.wipValue || 0) > 0)
               .sort((a, b) => b.wipValue - a.wipValue);
-            wipTopCustomers = allWipCustomers.slice(0, 10).map((row) => ({
+            wipTopCustomers = allWipCustomers.slice(0, 50).map((row) => ({
               ...row,
               wipItems: (() => {
                 const chronological = [...row.wipItems].sort((a, b) => {
