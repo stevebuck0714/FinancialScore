@@ -85,6 +85,7 @@ type EmployeeCompensationRow = {
   employeeName: string;
   role: string;
   department: string;
+  division: string;
   location: string;
   employmentStatus: string;
   payType: string;
@@ -373,6 +374,7 @@ function buildEmployeeCompensationRoster(employees: CurrentEmployee[]): Employee
       employeeName: employee.name,
       role: employee.role,
       department: employee.department,
+      division: employee.division,
       location: employee.location,
       employmentStatus: employee.employmentStatus,
       payType: employee.payType,
