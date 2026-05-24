@@ -210,6 +210,10 @@ const FORECAST_STANDARD_REPORT_OPTIONS: Array<{ key: string; label: string; grou
 ];
 
 const OVERVIEW_STANDARD_REPORT_OPTIONS: Array<{ key: string; label: string; group: string }> = [
+  { key: 'overviewStdCashConversionAnalysis', label: 'Cash Conversion Analysis', group: 'Overview' },
+  { key: 'overviewStdEbitdaPerformance', label: 'EBITDA Performance', group: 'Overview' },
+  { key: 'overviewStdCustomerConcentrationExposure', label: 'Customer Concentration Exposure', group: 'Overview' },
+  { key: 'overviewStdExecutionVelocity', label: 'Execution Velocity', group: 'Overview' },
   { key: 'overviewStdArAging', label: 'AR Aging', group: 'Overview' },
   { key: 'overviewStdApAging', label: 'AP Aging', group: 'Overview' },
   { key: 'overviewStdCashTrend', label: 'Cash Trend', group: 'Overview' },

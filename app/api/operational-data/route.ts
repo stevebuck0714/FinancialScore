@@ -29,6 +29,7 @@ import { getInforM3CredentialsWithOptionalEnvFallback } from '@/lib/infor-m3/cre
 import { callInforIonApi } from '@/lib/infor-m3/client';
 import { getApBalanceSheetAnchorConfig } from '@/lib/financial/ap-balance-sheet-anchor';
 import { getArBalanceSheetAnchorConfig } from '@/lib/financial/ar-balance-sheet-anchor';
+import { getCashAccountAllowlistSet, isAllowedCashAccount } from '@/lib/financial/cash-balance-sheet-anchor';
 import { computeDsoSeriesFromDaily } from '@/lib/financials/dso-from-daily';
 import {
   ensurePlatosClosetMonthlyFacts,
@@ -6462,6 +6463,16 @@ export async function GET(request: NextRequest) {
           },
           take: factRowCap,
         });
+        const cashAccountAllowlist = getCashAccountAllowlistSet(companyId);
+        const allowedAccountCashRows = rawAccountCashRows.filter((row) =>
+          isAllowedCashAccount(
+            {
+              accountId: row.accountId,
+              accountNumber: row.accountNumber,
+            },
+            cashAccountAllowlist
+          )
+        );
         const accountPeriodLatest = new Map<
           string,
           {
@@ -6472,7 +6483,7 @@ export async function GET(request: NextRequest) {
             accountNumber: string | null;
           }
         >();
-        for (const row of rawAccountCashRows) {
+        for (const row of allowedAccountCashRows) {
           const snapshotDate = new Date(row.snapshotDate);
           const accountKey =
             accountKeyFromParts(row.accountId, row.accountNumber, row.accountName) ||

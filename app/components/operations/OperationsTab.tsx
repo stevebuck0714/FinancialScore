@@ -643,6 +643,7 @@ export default function OperationsTab({
     return isOverviewOnly ? 'overview' : 'dashboard';
   });
   const [activeForecastBasisTab, setActiveForecastBasisTab] = useState<'cash-basis' | 'accrual-basis'>('accrual-basis');
+  const [activeOverviewSubTab, setActiveOverviewSubTab] = useState<'cash-conversion-analysis' | 'ebitda-performance' | 'customer-concentration-exposure' | 'execution-velocity'>('cash-conversion-analysis');
   const [activeCashSubTab, setActiveCashSubTab] = useState<'cash-conversion-analysis' | 'cash-position'>('cash-conversion-analysis');
   const [activeCashBasisForecastTab, setActiveCashBasisForecastTab] = useState<'income-statement-forecast' | 'cash-forecast' | 'graphs'>('income-statement-forecast');
   const [activeAccrualBasisForecastTab, setActiveAccrualBasisForecastTab] = useState<'income-statement-forecast' | 'cash-forecast' | 'graphs'>('cash-forecast');
@@ -707,6 +708,7 @@ export default function OperationsTab({
   const [caApFilterDue, setCaApFilterDue] = useState<'all' | 'past_due' | 'due_7' | 'd30' | 'd60' | 'd90+'>('all');
   const [dailyFinancialData, setDailyFinancialData] = useState<any>(null);
   const [cashConversionFinancialData, setCashConversionFinancialData] = useState<any>(null);
+  const [ebitdaEmployeeInputsByMonth, setEbitdaEmployeeInputsByMonth] = useState<Record<string, string>>({});
   const [companyOperationalHubConfig, setCompanyOperationalHubConfig] = useState<any>(operationalHubConfig || null);
   const [dailyFinancialView, setDailyFinancialView] = useState<'summary' | 'income' | 'balance' | 'cashflow'>('summary');
   const [dailyFinancialStatementRollup, setDailyFinancialStatementRollup] = useState<'daily' | 'quarterly' | 'annual'>('daily');
@@ -923,6 +925,11 @@ export default function OperationsTab({
   const moduleSource: 'layout-config' | 'sector-default' = layoutModules.length > 0 ? 'layout-config' : 'sector-default';
   const resolvedModules = moduleSource === 'layout-config' ? layoutModules : sectorModules;
   const enabledDashboardModules = resolvedModules.filter((module) => isTabModuleEnabled(module));
+  const isWholesaleTradeSector = String(industrySectorCategory || '').trim() === '42';
+  const isOverviewCashConversionEnabled = isSectionEnabled('overviewStdCashConversionAnalysis');
+  const isOverviewEbitdaPerformanceEnabled = isSectionEnabled('overviewStdEbitdaPerformance');
+  const isOverviewCustomerConcentrationEnabled = isSectionEnabled('overviewStdCustomerConcentrationExposure');
+  const isOverviewExecutionVelocityEnabled = isSectionEnabled('overviewStdExecutionVelocity');
   const availableModuleTabs = Array.from(
     new Set([
       ...(resolvedModules.length > 0 ? resolvedModules : ['customers', 'ar', 'ap', 'products', 'inventory', 'cash']),
@@ -937,12 +944,18 @@ export default function OperationsTab({
         ...(isTabModuleEnabled('forecast') ? ['forecast' as OpTab] : []),
         ...availableModuleTabs,
       ];
+  const getOperationalTabLabel = (moduleKey: string): string => {
+    if (isWholesaleTradeSector && moduleKey === 'products_skus') {
+      return 'Products';
+    }
+    return getModuleLabel(moduleKey) || moduleKey.replace(/_/g, ' ');
+  };
   const moduleTitlesByType = Object.fromEntries(
     orderedDashboardDataTypes
       .map((type) => {
         const modulesForType = availableModuleTabs.filter((module) => mapModuleToDataType(module) === type);
         if (!modulesForType.length) return [type, null];
-        const labels = modulesForType.map((module) => getModuleLabel(module));
+        const labels = modulesForType.map((module) => getOperationalTabLabel(module));
         return [type, labels.length === 1 ? labels[0] : `${labels[0]} (+${labels.length - 1})`];
       })
       .filter(([, label]) => Boolean(label))
@@ -998,14 +1011,15 @@ export default function OperationsTab({
 
   useEffect(() => {
     if (activeTab === 'cash') {
-      setActiveCashSubTab('cash-conversion-analysis');
+      setActiveCashSubTab(isWholesaleTradeSector ? 'cash-position' : 'cash-conversion-analysis');
     }
-  }, [activeTab]);
+  }, [activeTab, isWholesaleTradeSector]);
 
   useEffect(() => {
     const needsCashConversionData =
       (activeTab === 'forecast' && activeForecastBasisTab === 'cash-basis') ||
-      (activeTab === 'cash' && activeCashSubTab === 'cash-conversion-analysis');
+      (isWholesaleTradeSector && activeTab === 'dashboard' && (isOverviewCashConversionEnabled || isOverviewEbitdaPerformanceEnabled)) ||
+      (!isWholesaleTradeSector && activeTab === 'cash' && activeCashSubTab === 'cash-conversion-analysis');
     if (!needsCashConversionData) return;
 
     let cancelled = false;
@@ -1025,6 +1039,7 @@ export default function OperationsTab({
     };
   }, [
     activeTab,
+    activeOverviewSubTab,
     activeCashSubTab,
     activeForecastBasisTab,
     activeAccrualBasisForecastTab,
@@ -1033,6 +1048,9 @@ export default function OperationsTab({
     frequency,
     startDate,
     endDate,
+    isOverviewCashConversionEnabled,
+    isOverviewEbitdaPerformanceEnabled,
+    isWholesaleTradeSector,
   ]);
 
   useEffect(() => {
@@ -1248,7 +1266,7 @@ export default function OperationsTab({
   }, [isCustomersTab, selectedCompanyId]);
 
   useEffect(() => {
-    if (activeTab !== 'overview') return;
+    if (activeTab !== 'overview' && activeTab !== 'dashboard') return;
     const needsAnyCoreData = !arData || !apData || !cashData || !inventoryData || !customerData || !productData;
     if (!needsAnyCoreData) return;
 
@@ -11110,47 +11128,51 @@ export default function OperationsTab({
       )
     );
     const covenantBreaches = cash13WeekRows.filter((row) => row.totalCash < covenantFloor).length;
+    const showCashConversionInCashTab = !isWholesaleTradeSector;
+    const effectiveCashSubTab = showCashConversionInCashTab ? activeCashSubTab : 'cash-position';
 
     return (
       <div style={{ padding: '8px 32px 32px' }}>
-        <div className="ops-print-hide" style={{ display: 'flex', gap: '8px', marginBottom: '20px', borderBottom: '2px solid #e2e8f0' }}>
-          <button
-            onClick={() => setActiveCashSubTab('cash-conversion-analysis')}
-            style={{
-              padding: '12px 18px',
-              background: 'none',
-              color: activeCashSubTab === 'cash-conversion-analysis' ? '#2751d0' : '#64748b',
-              border: 'none',
-              borderBottom: activeCashSubTab === 'cash-conversion-analysis' ? '3px solid #2751d0' : '3px solid transparent',
-              fontSize: '14px',
-              fontWeight: '600',
-              cursor: 'pointer',
-              transition: 'all 0.2s'
-            }}
-          >
-            Cash Conversion Analysis
-          </button>
-          <button
-            onClick={() => setActiveCashSubTab('cash-position')}
-            style={{
-              padding: '12px 18px',
-              background: 'none',
-              color: activeCashSubTab === 'cash-position' ? '#2751d0' : '#64748b',
-              border: 'none',
-              borderBottom: activeCashSubTab === 'cash-position' ? '3px solid #2751d0' : '3px solid transparent',
-              fontSize: '14px',
-              fontWeight: '600',
-              cursor: 'pointer',
-              transition: 'all 0.2s'
-            }}
-          >
-            Cash Position
-          </button>
-        </div>
+        {showCashConversionInCashTab && (
+          <div className="ops-print-hide" style={{ display: 'flex', gap: '8px', marginBottom: '20px', borderBottom: '2px solid #e2e8f0' }}>
+            <button
+              onClick={() => setActiveCashSubTab('cash-conversion-analysis')}
+              style={{
+                padding: '12px 18px',
+                background: 'none',
+                color: activeCashSubTab === 'cash-conversion-analysis' ? '#2751d0' : '#64748b',
+                border: 'none',
+                borderBottom: activeCashSubTab === 'cash-conversion-analysis' ? '3px solid #2751d0' : '3px solid transparent',
+                fontSize: '14px',
+                fontWeight: '600',
+                cursor: 'pointer',
+                transition: 'all 0.2s'
+              }}
+            >
+              Cash Conversion Analysis
+            </button>
+            <button
+              onClick={() => setActiveCashSubTab('cash-position')}
+              style={{
+                padding: '12px 18px',
+                background: 'none',
+                color: activeCashSubTab === 'cash-position' ? '#2751d0' : '#64748b',
+                border: 'none',
+                borderBottom: activeCashSubTab === 'cash-position' ? '3px solid #2751d0' : '3px solid transparent',
+                fontSize: '14px',
+                fontWeight: '600',
+                cursor: 'pointer',
+                transition: 'all 0.2s'
+              }}
+            >
+              Cash Position
+            </button>
+          </div>
+        )}
 
-        {activeCashSubTab === 'cash-conversion-analysis' && renderCashConversionAnalysis()}
+        {effectiveCashSubTab === 'cash-conversion-analysis' && renderCashConversionAnalysis()}
 
-        {activeCashSubTab === 'cash-position' && (
+        {effectiveCashSubTab === 'cash-position' && (
           <div>
         <h2 style={{ fontSize: '24px', fontWeight: '700', color: '#1e293b', marginBottom: '16px' }}>
           Cash Position
@@ -13277,6 +13299,226 @@ Strategies to Improve the CCC
             basisMode="accrual"
           />
         )}
+      </div>
+    );
+  };
+
+  const renderWholesaleEbitdaPerformance = () => {
+    const financialRecords = Array.isArray(cashConversionFinancialData?.records) ? cashConversionFinancialData.records : [];
+    const getFirstNumber = (row: any, keys: string[]) => {
+      for (const key of keys) {
+        const value = Number(row?.[key]);
+        if (Number.isFinite(value)) return value;
+      }
+      return null;
+    };
+    const safeDivide = (num: number, denom: number) => (Number.isFinite(num) && Number.isFinite(denom) && denom !== 0 ? num / denom : null);
+    const formatMetricCurrency = (value: number | null | undefined) =>
+      value == null || !Number.isFinite(Number(value)) ? 'N/A' : formatCurrency(Number(value));
+    const formatMetricPct = (value: number | null | undefined) =>
+      value == null || !Number.isFinite(Number(value)) ? 'N/A' : `${Number(value).toFixed(1)}%`;
+    const formatMetricRatio = (value: number | null | undefined, digits = 2) =>
+      value == null || !Number.isFinite(Number(value)) ? 'N/A' : Number(value).toFixed(digits);
+    const monthLabel = (value: unknown) => {
+      const parsed = new Date(String(value || ''));
+      return Number.isNaN(parsed.getTime())
+        ? 'N/A'
+        : parsed.toLocaleDateString('en-US', { month: 'short', year: 'numeric', timeZone: 'UTC' });
+    };
+    const monthKey = (value: unknown) => {
+      const parsed = new Date(String(value || ''));
+      return Number.isNaN(parsed.getTime())
+        ? String(value || 'unknown')
+        : `${parsed.getUTCFullYear()}-${String(parsed.getUTCMonth() + 1).padStart(2, '0')}`;
+    };
+    const monthlyRecords = [...financialRecords]
+      .filter((row: any) => row?.snapshotDate)
+      .sort((a: any, b: any) => new Date(a.snapshotDate).getTime() - new Date(b.snapshotDate).getTime());
+    const rows = monthlyRecords.map((row: any, index: number) => {
+      const prior = index > 0 ? monthlyRecords[index - 1] : null;
+      const revenue = getFirstNumber(row, ['revenue', 'sales', 'netSales']) || 0;
+      const cogs = getFirstNumber(row, ['cogsTotal', 'cogs', 'costOfGoodsSold']) || 0;
+      const grossProfit = getFirstNumber(row, ['grossProfit', 'grossMarginDollars']) ?? (revenue - cogs);
+      const operatingExpenses = getFirstNumber(row, ['operatingExpenses', 'sga', 'sgAndA', 'expense']) || 0;
+      const ebitda = getFirstNumber(row, ['ebitda', 'EBITDA']) ?? (grossProfit - operatingExpenses);
+      const inventory = getFirstNumber(row, ['inventory', 'averageInventory', 'inventoryOnHandDollars']) || 0;
+      const priorInventory = prior ? (getFirstNumber(prior, ['inventory', 'averageInventory', 'inventoryOnHandDollars']) || inventory) : inventory;
+      const avgInventory = (inventory + priorInventory) / 2;
+      const ar = getFirstNumber(row, ['ar', 'accountsReceivable', 'accounts_receivable']) || 0;
+      const ap = getFirstNumber(row, ['ap', 'accountsPayable', 'accounts_payable']) || 0;
+      const importedEmployees = getFirstNumber(row, ['totalEmployees', 'employees', 'headcount']);
+      const key = monthKey(row.snapshotDate);
+      const employeeInputValue = ebitdaEmployeeInputsByMonth[key] || '';
+      const manualEmployees = Number(employeeInputValue);
+      const employees = importedEmployees ?? (Number.isFinite(manualEmployees) && manualEmployees > 0 ? manualEmployees : null);
+      const priorRevenue = prior ? (getFirstNumber(prior, ['revenue', 'sales', 'netSales']) || 0) : null;
+      const priorCogs = prior ? (getFirstNumber(prior, ['cogsTotal', 'cogs', 'costOfGoodsSold']) || 0) : null;
+      const priorGrossProfit = prior
+        ? (getFirstNumber(prior, ['grossProfit', 'grossMarginDollars']) ?? ((priorRevenue || 0) - (priorCogs || 0)))
+        : null;
+      const priorOperatingExpenses = prior ? (getFirstNumber(prior, ['operatingExpenses', 'sga', 'sgAndA', 'expense']) || 0) : null;
+      const priorEbitda =
+        prior && priorGrossProfit != null && priorOperatingExpenses != null
+          ? (getFirstNumber(prior, ['ebitda', 'EBITDA']) ?? (priorGrossProfit - priorOperatingExpenses))
+          : null;
+      const deltaRevenue = priorRevenue == null ? null : revenue - priorRevenue;
+      const deltaEbitda = priorEbitda == null ? null : ebitda - priorEbitda;
+      const revenuePctChange = priorRevenue && priorRevenue !== 0 && deltaRevenue != null ? deltaRevenue / priorRevenue : null;
+      const ebitdaPctChange = priorEbitda && priorEbitda !== 0 && deltaEbitda != null ? deltaEbitda / priorEbitda : null;
+      const parsedMonth = new Date(String(row.snapshotDate || ''));
+      const daysInMonth = Number.isNaN(parsedMonth.getTime()) ? 30 : new Date(Date.UTC(parsedMonth.getUTCFullYear(), parsedMonth.getUTCMonth() + 1, 0)).getUTCDate();
+      const dailyRevenue = revenue / daysInMonth;
+      const dailyCogs = cogs / daysInMonth;
+      const dso = safeDivide(ar, dailyRevenue);
+      const dio = safeDivide(inventory, dailyCogs);
+      const dpo = safeDivide(ap, dailyCogs);
+      const ccc = dso != null && dio != null && dpo != null ? dso + dio - dpo : null;
+      const netWorkingCapital = ar + inventory - ap;
+
+      return {
+        monthKey: key,
+        month: monthLabel(row.snapshotDate),
+        employeeInputValue,
+        employees,
+        employeesImported: importedEmployees != null,
+        revenue,
+        grossProfit,
+        ebitda,
+        ebitdaMarginPct: safeDivide(ebitda, revenue) == null ? null : safeDivide(ebitda, revenue)! * 100,
+        gmroe: safeDivide(grossProfit, operatingExpenses),
+        ebitdaPerEmployee: employees ? safeDivide(ebitda, employees) : null,
+        revenuePerEmployee: employees ? safeDivide(revenue, employees) : null,
+        grossProfitPerEmployee: employees ? safeDivide(grossProfit, employees) : null,
+        incrementalEbitdaMarginPct: deltaRevenue && deltaRevenue !== 0 && deltaEbitda != null ? (deltaEbitda / deltaRevenue) * 100 : null,
+        sgaPctGrossProfit: safeDivide(operatingExpenses, grossProfit) == null ? null : safeDivide(operatingExpenses, grossProfit)! * 100,
+        inventoryTurns: safeDivide(cogs * 12, avgInventory),
+        gmroi: safeDivide(grossProfit * 12, avgInventory),
+        workingCapitalEfficiency: safeDivide(ebitda, netWorkingCapital),
+        ccc,
+        operatingLeverage: revenuePctChange != null && revenuePctChange !== 0 && ebitdaPctChange != null ? ebitdaPctChange / revenuePctChange : null,
+      };
+    }).reverse();
+    const latest = rows[0] || null;
+    const cards = [
+      { label: 'EBITDA Margin', value: latest ? formatMetricPct(latest.ebitdaMarginPct) : 'N/A', detail: 'EBITDA / Revenue' },
+      { label: 'GMROE', value: latest ? formatMetricRatio(latest.gmroe) : 'N/A', detail: 'Gross Profit / Operating Expenses' },
+      { label: 'Incremental EBITDA Margin', value: latest ? formatMetricPct(latest.incrementalEbitdaMarginPct) : 'N/A', detail: 'Delta EBITDA / Delta Revenue' },
+      { label: 'Operating Leverage', value: latest ? formatMetricRatio(latest.operatingLeverage) : 'N/A', detail: '% Change EBITDA / % Change Revenue' },
+    ];
+    const monthRows = rows.slice(0, 12).reverse();
+    const employeeInputCell = (row: any) => row.employeesImported ? (
+      <span>{formatMetricRatio(row.employees, 0)}</span>
+    ) : (
+      <input
+        type="number"
+        min="0"
+        step="1"
+        value={row.employeeInputValue}
+        onChange={(event) => {
+          const nextValue = event.target.value;
+          setEbitdaEmployeeInputsByMonth((prev) => ({
+            ...prev,
+            [row.monthKey]: nextValue,
+          }));
+        }}
+        placeholder="Enter"
+        style={{
+          width: '78px',
+          border: '1px solid #cbd5e1',
+          borderRadius: '6px',
+          padding: '5px 6px',
+          fontSize: '12px',
+          textAlign: 'right',
+        }}
+      />
+    );
+    const metricRows = [
+      { key: 'revenue', label: 'Revenue', note: 'Top-line sales for the month.', render: (row: any) => formatMetricCurrency(row.revenue) },
+      { key: 'ebitda', label: 'EBITDA', note: '', render: (row: any) => formatMetricCurrency(row.ebitda) },
+      {
+        key: 'employees',
+        label: '# Employees',
+        note: '',
+        render: employeeInputCell,
+      },
+      { key: 'ebitdaMarginPct', label: 'EBITDA Margin %', note: 'EBITDA / Revenue.', render: (row: any) => formatMetricPct(row.ebitdaMarginPct) },
+      { key: 'gmroe', label: 'GMROE', note: 'Gross Profit / Operating Expenses.', render: (row: any) => formatMetricRatio(row.gmroe) },
+      { key: 'ebitdaPerEmployee', label: 'EBITDA / Employee', note: 'EBITDA divided by employee count.', render: (row: any) => formatMetricCurrency(row.ebitdaPerEmployee) },
+      { key: 'revenuePerEmployee', label: 'Revenue / Employee', note: 'Revenue divided by employee count.', render: (row: any) => formatMetricCurrency(row.revenuePerEmployee) },
+      { key: 'grossProfitPerEmployee', label: 'Gross Profit / Employee', note: 'Gross profit divided by employee count.', render: (row: any) => formatMetricCurrency(row.grossProfitPerEmployee) },
+      { key: 'incrementalEbitdaMarginPct', label: 'Incremental EBITDA Margin', note: 'Delta EBITDA / Delta Revenue.', render: (row: any) => formatMetricPct(row.incrementalEbitdaMarginPct) },
+      { key: 'sgaPctGrossProfit', label: 'SG&A % of GP', note: 'Operating expenses / gross profit.', render: (row: any) => formatMetricPct(row.sgaPctGrossProfit) },
+      { key: 'inventoryTurns', label: 'Inventory Turns', note: 'Annualized COGS / average inventory.', render: (row: any) => formatMetricRatio(row.inventoryTurns) },
+      { key: 'gmroi', label: 'GMROI', note: 'Annualized gross profit / average inventory.', render: (row: any) => formatMetricRatio(row.gmroi) },
+      { key: 'workingCapitalEfficiency', label: 'EBITDA / NWC', note: 'EBITDA / (AR + Inventory - AP).', render: (row: any) => formatMetricRatio(row.workingCapitalEfficiency) },
+      { key: 'ccc', label: 'Cash Conversion Cycle', note: 'DSO + DIO - DPO.', render: (row: any) => formatMetricRatio(row.ccc, 1) },
+      { key: 'operatingLeverage', label: 'Operating Leverage', note: '% Change EBITDA / % Change Revenue.', render: (row: any) => formatMetricRatio(row.operatingLeverage) },
+    ];
+
+    return (
+      <div style={{ background: 'white', borderRadius: '12px', padding: '20px', border: '1px solid #e2e8f0' }}>
+        <div style={{ marginBottom: '16px' }}>
+          <h3 style={{ fontSize: '20px', fontWeight: 800, color: '#1e293b', margin: 0 }}>EBITDA Performance</h3>
+          <div style={{ marginTop: '4px', fontSize: '12px', color: '#64748b' }}>
+            Monthly wholesale EBITDA scalability, overhead efficiency, inventory productivity, and working-capital conversion.
+            Enter monthly employee counts where imports do not include headcount to calculate per-employee KPIs.
+          </div>
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: '12px', marginBottom: '16px' }}>
+          {cards.map((card) => (
+            <div key={card.label} style={{ border: '1px solid #e2e8f0', borderRadius: '10px', padding: '12px', background: '#f8fafc' }}>
+              <div style={{ fontSize: '11px', color: '#64748b', marginBottom: '4px' }}>{card.label}</div>
+              <div style={{ fontSize: '20px', fontWeight: 800, color: '#0f172a' }}>{card.value}</div>
+              <div style={{ fontSize: '11px', color: '#64748b', marginTop: '4px' }}>{card.detail}</div>
+            </div>
+          ))}
+        </div>
+        <details style={{ marginBottom: '16px', border: '1px solid #e2e8f0', borderRadius: '10px', padding: '10px 12px', background: '#f8fafc' }}>
+          <summary style={{ cursor: 'pointer', fontWeight: 800, color: '#1e293b', fontSize: '13px' }}>Metric notes and formulas</summary>
+          <div style={{ marginTop: '10px', color: '#475569', fontSize: '12px', lineHeight: 1.6 }}>
+            EBITDA Margin = EBITDA / Revenue. GMROE = Gross Profit / Operating Expenses. Incremental EBITDA Margin = Delta EBITDA / Delta Revenue. SG&A % of Gross Profit uses operating expenses as the SG&A proxy. Inventory Turns = annualized COGS / average inventory. GMROI = annualized gross profit / average inventory. Working Capital Efficiency = EBITDA / (AR + Inventory - AP). Operating Leverage = % Change EBITDA / % Change Revenue. Employee productivity uses imported headcount when available, or the manually entered monthly employee count. Sales-rep productivity shows N/A until sales-rep data is available in the monthly source.
+          </div>
+        </details>
+        <div style={{ overflowX: 'auto' }}>
+          <table style={{ width: '100%', minWidth: '1320px', borderCollapse: 'collapse' }}>
+            <thead>
+              <tr style={{ background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
+                <th style={{ padding: '8px', fontSize: '12px', color: '#334155', textAlign: 'left', whiteSpace: 'nowrap', minWidth: '210px' }}>
+                  KPI / Ratio
+                </th>
+                {monthRows.map((row: any) => (
+                  <th key={row.monthKey} style={{ padding: '8px', fontSize: '12px', color: '#334155', textAlign: 'right', whiteSpace: 'nowrap', minWidth: '92px' }}>
+                    {row.month}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {metricRows.map((metric) => (
+                <tr key={metric.key} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                  <td style={{ padding: '8px', fontSize: '12px', color: '#0f172a', textAlign: 'left', whiteSpace: 'normal', fontWeight: 700 }}>
+                    <div>{metric.label}</div>
+                    {metric.note && (
+                      <div style={{ marginTop: '2px', fontSize: '10.5px', color: '#64748b', fontWeight: 500, lineHeight: 1.3 }}>{metric.note}</div>
+                    )}
+                  </td>
+                  {monthRows.map((row: any) => (
+                    <td key={`${metric.key}-${row.monthKey}`} style={{ padding: '8px', fontSize: '12px', color: '#334155', textAlign: 'right', whiteSpace: 'nowrap' }}>
+                      {metric.render(row)}
+                    </td>
+                  ))}
+                </tr>
+              ))}
+              {!monthRows.length && (
+                <tr>
+                  <td colSpan={2} style={{ padding: '14px', color: '#64748b', fontSize: '13px' }}>
+                    No monthly financial data is available for EBITDA Performance.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
       </div>
     );
   };
@@ -18701,6 +18943,315 @@ Strategies to Improve the CCC
     );
   };
 
+  const renderCustomerConcentrationExposure = () => {
+    const customerRecords = Array.isArray(customerData?.records) ? customerData.records : [];
+    const wholesaleRows = Array.isArray(wholesaleProductsData?.summary?.wholesaleOrderLines)
+      ? wholesaleProductsData.summary.wholesaleOrderLines
+      : [];
+    const toMonthKey = (value: unknown) => {
+      const parsed = new Date(String(value || ''));
+      return Number.isNaN(parsed.getTime()) ? '' : `${parsed.getUTCFullYear()}-${String(parsed.getUTCMonth() + 1).padStart(2, '0')}`;
+    };
+    const formatMonth = (monthKey: string) => {
+      const [year, month] = monthKey.split('-').map(Number);
+      const parsed = new Date(Date.UTC(year || 2000, (month || 1) - 1, 1));
+      return Number.isNaN(parsed.getTime()) ? monthKey : parsed.toLocaleDateString('en-US', { month: 'short', year: 'numeric', timeZone: 'UTC' });
+    };
+    const pct = (value: number | null | undefined) => value == null || !Number.isFinite(Number(value)) ? 'N/A' : `${Number(value).toFixed(1)}%`;
+    const ratio = (value: number | null | undefined, digits = 1) => value == null || !Number.isFinite(Number(value)) ? 'N/A' : Number(value).toFixed(digits);
+    const share = (value: number, total: number) => total > 0 ? (value / total) * 100 : null;
+    const riskLabel = (score: number) => score >= 4 ? 'High' : score >= 3 ? 'Medium' : 'Low';
+    const riskColor = (score: number) => score >= 4 ? '#991b1b' : score >= 3 ? '#92400e' : '#166534';
+    const revenueRiskScore = (shareValue: number) => shareValue > 20 ? 5 : shareValue > 15 ? 4 : shareValue > 10 ? 3 : shareValue > 5 ? 2 : 1;
+    const marginRiskScore = (marginPct: number) => marginPct < 0 ? 5 : marginPct < 10 ? 4 : marginPct < 18 ? 3 : marginPct < 25 ? 2 : 1;
+    const selectedStart = parseDateValue(startDate);
+    const selectedEnd = parseDateValue(endDate);
+    const selectedStartKey = selectedStart ? selectedStart.toISOString().slice(0, 10) : null;
+    const selectedEndKey = selectedEnd ? selectedEnd.toISOString().slice(0, 10) : null;
+    const customerMap = new Map<string, any>();
+    const monthCustomerMap = new Map<string, Map<string, any>>();
+    const ensureCustomer = (name: string) => {
+      const key = name || 'Unknown Customer';
+      if (!customerMap.has(key)) {
+        customerMap.set(key, { name: key, revenue: 0, grossProfit: 0, ebitdaContribution: 0, months: new Set<string>(), arDays: null as number | null });
+      }
+      return customerMap.get(key);
+    };
+    customerRecords.forEach((record: any) => {
+      const parsed = parseDateValue(record?.snapshotDate);
+      if (!parsed) return;
+      const dayKey = parsed.toISOString().slice(0, 10);
+      if (selectedStartKey && dayKey < selectedStartKey) return;
+      if (selectedEndKey && dayKey > selectedEndKey) return;
+      const monthKey = toMonthKey(record?.snapshotDate);
+      const name = String(record?.customerName || 'Unknown Customer');
+      const revenue = Number(record?.revenue || 0);
+      const customer = ensureCustomer(name);
+      customer.revenue += revenue;
+      customer.months.add(monthKey);
+      if (!monthCustomerMap.has(monthKey)) monthCustomerMap.set(monthKey, new Map());
+      const monthMap = monthCustomerMap.get(monthKey)!;
+      const monthCustomer = monthMap.get(name) || { name, revenue: 0, grossProfit: 0, ebitda: 0 };
+      monthCustomer.revenue += revenue;
+      monthMap.set(name, monthCustomer);
+    });
+    wholesaleRows.forEach((row: any) => {
+      const monthKey = toMonthKey(row?.snapshotDate || row?.date || row?.orderDate);
+      if (!monthKey) return;
+      const name = String(row?.customer || row?.customerName || 'Unknown Customer').trim() || 'Unknown Customer';
+      const revenue = Number(row?.revenue || row?.currentPriceTotal || 0);
+      const cogs = Number(row?.cogs || row?.materialCost || row?.currentCostOfMaterial || 0);
+      const operatingExpense = Number(row?.operatingExpensesAllocated || row?.operatingExpensesTotal || 0);
+      const grossProfit = Number(row?.grossProfit || row?.grossMarginDollars || (revenue - cogs));
+      const ebitda = grossProfit - operatingExpense;
+      const customer = ensureCustomer(name);
+      if (!customer.revenue) customer.revenue += revenue;
+      customer.grossProfit += grossProfit;
+      customer.ebitdaContribution += ebitda;
+      if (!monthCustomerMap.has(monthKey)) monthCustomerMap.set(monthKey, new Map());
+      const monthMap = monthCustomerMap.get(monthKey)!;
+      const monthCustomer = monthMap.get(name) || { name, revenue: 0, grossProfit: 0, ebitda: 0 };
+      if (!monthCustomer.revenue) monthCustomer.revenue += revenue;
+      monthCustomer.grossProfit += grossProfit;
+      monthCustomer.ebitda += ebitda;
+      monthMap.set(name, monthCustomer);
+    });
+    const monthKeys = Array.from(monthCustomerMap.keys()).filter(Boolean).sort().slice(-12);
+    const customerRows = Array.from(customerMap.values())
+      .map((row) => ({
+        ...row,
+        gpPct: row.revenue > 0 && row.grossProfit ? (row.grossProfit / row.revenue) * 100 : null,
+      }))
+      .filter((row) => Number(row.revenue || 0) > 0)
+      .sort((a, b) => b.revenue - a.revenue);
+    const totalRevenue = customerRows.reduce((sum, row) => sum + Number(row.revenue || 0), 0);
+    const totalGrossProfit = customerRows.reduce((sum, row) => sum + Number(row.grossProfit || 0), 0);
+    const totalEbitda = customerRows.reduce((sum, row) => sum + Number(row.ebitdaContribution || 0), 0);
+    const top5 = customerRows.slice(0, 5);
+    const top10 = customerRows.slice(0, 10);
+    const avgMargin = (rows: any[]) => {
+      const rev = rows.reduce((sum, row) => sum + Number(row.revenue || 0), 0);
+      const gp = rows.reduce((sum, row) => sum + Number(row.grossProfit || 0), 0);
+      return rev > 0 && gp !== 0 ? (gp / rev) * 100 : null;
+    };
+    const executiveMetrics = [
+      { label: 'Top 5 Customers % Revenue', value: pct(share(top5.reduce((sum, row) => sum + row.revenue, 0), totalRevenue)) },
+      { label: 'Top 10 Customers % Revenue', value: pct(share(top10.reduce((sum, row) => sum + row.revenue, 0), totalRevenue)) },
+      { label: 'Top 5 Customers % Gross Profit', value: pct(share(top5.reduce((sum, row) => sum + Number(row.grossProfit || 0), 0), totalGrossProfit)) },
+      { label: 'Largest Customer % Revenue', value: pct(share(customerRows[0]?.revenue || 0, totalRevenue)) },
+      { label: 'Largest Customer % EBITDA Contribution', value: pct(share(customerRows[0]?.ebitdaContribution || 0, totalEbitda)) },
+      { label: 'Avg Gross Margin - Top 10', value: pct(avgMargin(top10)) },
+      { label: 'Avg Gross Margin - Remaining Customers', value: pct(avgMargin(customerRows.slice(10))) },
+      { label: 'Customer Retention Rate', value: pct(customerRows.length ? (customerRows.filter((row) => row.months.size > 1).length / customerRows.length) * 100 : null) },
+      { label: 'Revenue from New Customers', value: formatCurrency(customerRows.filter((row) => row.months.size === 1).reduce((sum, row) => sum + Number(row.revenue || 0), 0)) },
+    ];
+    const monthlyTrendRows = monthKeys.map((monthKey) => {
+      const values = Array.from((monthCustomerMap.get(monthKey) || new Map()).values()).sort((a: any, b: any) => Number(b.revenue || 0) - Number(a.revenue || 0));
+      const rev = values.reduce((sum: number, row: any) => sum + Number(row.revenue || 0), 0);
+      const gp = values.reduce((sum: number, row: any) => sum + Number(row.grossProfit || 0), 0);
+      const eb = values.reduce((sum: number, row: any) => sum + Number(row.ebitda || 0), 0);
+      return {
+        month: formatMonth(monthKey),
+        revenue: rev,
+        top5Rev: share(values.slice(0, 5).reduce((sum: number, row: any) => sum + Number(row.revenue || 0), 0), rev),
+        top10Rev: share(values.slice(0, 10).reduce((sum: number, row: any) => sum + Number(row.revenue || 0), 0), rev),
+        largestRev: share(values[0]?.revenue || 0, rev),
+        top5Gp: share(values.slice(0, 5).reduce((sum: number, row: any) => sum + Number(row.grossProfit || 0), 0), gp),
+        top5Ebitda: share(values.slice(0, 5).reduce((sum: number, row: any) => sum + Number(row.ebitda || 0), 0), eb),
+      };
+    });
+    const riskRows = top10.map((row) => {
+      const revenueShare = share(row.revenue, totalRevenue) || 0;
+      const revRisk = revenueRiskScore(revenueShare);
+      const marginRisk = marginRiskScore(Number(row.gpPct ?? 20));
+      const retentionRisk = row.months.size <= 1 ? 4 : 2;
+      const paymentRisk = 3;
+      const strategicRisk = revenueShare > 20 ? 4 : revenueShare > 10 ? 3 : 2;
+      const overall = revRisk * 0.25 + marginRisk * 0.25 + retentionRisk * 0.2 + paymentRisk * 0.15 + strategicRisk * 0.15;
+      return { ...row, revRisk, marginRisk, retentionRisk, paymentRisk, strategicRisk, overall };
+    });
+    const tableStyle = { width: '100%', borderCollapse: 'collapse' as const };
+    const thStyle: React.CSSProperties = { padding: '8px', fontSize: '12px', color: '#334155', textAlign: 'left', background: '#f8fafc', borderBottom: '1px solid #e2e8f0' };
+    const tdStyle: React.CSSProperties = { padding: '8px', fontSize: '12px', color: '#334155', borderBottom: '1px solid #f1f5f9' };
+    const section = (title: string, body: React.ReactNode) => (
+      <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '16px', marginBottom: '16px' }}>
+        <h3 style={{ margin: '0 0 12px', fontSize: '17px', color: '#0f172a' }}>{title}</h3>
+        {body}
+      </div>
+    );
+    return (
+      <div>
+        {section('Executive Summary Dashboard', <table style={tableStyle}><thead><tr><th style={thStyle}>Metric</th><th style={{ ...thStyle, textAlign: 'right' }}>Monthly Last 12 Months</th></tr></thead><tbody>{executiveMetrics.map((metric) => <tr key={metric.label}><td style={{ ...tdStyle, fontWeight: 700 }}>{metric.label}</td><td style={{ ...tdStyle, textAlign: 'right' }}>{metric.value}</td></tr>)}</tbody></table>)}
+        {section('Monthly Customer Concentration Trend', <div style={{ overflowX: 'auto' }}><table style={{ ...tableStyle, minWidth: '820px' }}><thead><tr>{['Month', 'Total Revenue', 'Top 5 % Rev', 'Top 10 % Rev', 'Largest Customer %', 'Top 5 % GP', 'Top 5 % EBITDA'].map((h) => <th key={h} style={{ ...thStyle, textAlign: h === 'Month' ? 'left' : 'right' }}>{h}</th>)}</tr></thead><tbody>{monthlyTrendRows.map((row) => <tr key={row.month}><td style={tdStyle}>{row.month}</td><td style={{ ...tdStyle, textAlign: 'right' }}>{formatCurrency(row.revenue)}</td><td style={{ ...tdStyle, textAlign: 'right' }}>{pct(row.top5Rev)}</td><td style={{ ...tdStyle, textAlign: 'right' }}>{pct(row.top10Rev)}</td><td style={{ ...tdStyle, textAlign: 'right' }}>{pct(row.largestRev)}</td><td style={{ ...tdStyle, textAlign: 'right' }}>{pct(row.top5Gp)}</td><td style={{ ...tdStyle, textAlign: 'right' }}>{pct(row.top5Ebitda)}</td></tr>)}</tbody></table></div>)}
+        {section('Top Customer Profitability Analysis', <div style={{ overflowX: 'auto' }}><table style={{ ...tableStyle, minWidth: '920px' }}><thead><tr>{['Customer', 'Revenue', 'Gross Profit', 'GP %', 'EBITDA Contribution', 'AR Days', 'Inventory Burden', 'Strategic Importance'].map((h) => <th key={h} style={{ ...thStyle, textAlign: h === 'Customer' ? 'left' : 'right' }}>{h}</th>)}</tr></thead><tbody>{top5.map((row) => <tr key={row.name}><td style={{ ...tdStyle, fontWeight: 700 }}>{row.name}</td><td style={{ ...tdStyle, textAlign: 'right' }}>{formatCurrency(row.revenue)}</td><td style={{ ...tdStyle, textAlign: 'right' }}>{formatCurrency(Number(row.grossProfit || 0))}</td><td style={{ ...tdStyle, textAlign: 'right' }}>{pct(row.gpPct)}</td><td style={{ ...tdStyle, textAlign: 'right' }}>{formatCurrency(Number(row.ebitdaContribution || 0))}</td><td style={{ ...tdStyle, textAlign: 'right' }}>N/A</td><td style={{ ...tdStyle, textAlign: 'right' }}>N/A</td><td style={{ ...tdStyle, textAlign: 'right' }}>{(share(row.revenue, totalRevenue) || 0) > 10 ? 'High' : 'Medium'}</td></tr>)}</tbody></table></div>)}
+        {section('Customer Risk Heatmap', <><div style={{ overflowX: 'auto' }}><table style={{ ...tableStyle, minWidth: '860px' }}><thead><tr>{['Customer', 'Revenue Risk', 'Margin Risk', 'Retention Risk', 'Payment Risk', 'Strategic Risk', 'Overall Risk'].map((h) => <th key={h} style={thStyle}>{h}</th>)}</tr></thead><tbody>{riskRows.map((row) => <tr key={row.name}><td style={{ ...tdStyle, fontWeight: 700 }}>{row.name}</td>{[row.revRisk, row.marginRisk, row.retentionRisk, row.paymentRisk, row.strategicRisk, row.overall].map((score, idx) => <td key={idx} style={{ ...tdStyle, color: riskColor(score), fontWeight: 700 }}>{riskLabel(score)}</td>)}</tr>)}</tbody></table></div><details style={{ marginTop: '12px', border: '1px solid #e2e8f0', borderRadius: '10px', padding: '10px 12px', background: '#f8fafc' }}><summary style={{ cursor: 'pointer', fontWeight: 800, color: '#1e293b', fontSize: '13px' }}>Risk formulas and scoring framework</summary><div style={{ marginTop: '10px', color: '#475569', fontSize: '12px', lineHeight: 1.6 }}>Revenue Risk = Customer Revenue / Total Company Revenue. Score: less than 5% = 1, 5-10% = 2, 10-15% = 3, 15-20% = 4, greater than 20% = 5. Margin Risk uses gross margin quality and customer EBITDA contribution where available. Retention Risk is based on customer activity across the selected monthly window until explicit churn data is imported. Payment Risk is reserved for DSO / AR aging by customer; it defaults to Medium until imported. Strategic Risk is a qualitative dependency score using concentration as the current proxy. Overall Risk = Revenue Risk x 25% + Margin Risk x 25% + Retention Risk x 20% + Payment Risk x 15% + Strategic Risk x 15%.</div></details></>)}
+        {section('Customer Quality Analysis', <div style={{ overflowX: 'auto' }}><table style={{ ...tableStyle, minWidth: '760px' }}><thead><tr>{['Customer Segment', 'Revenue %', 'Gross Margin %', 'EBITDA %', 'Growth Rate', 'Operational Complexity', 'Strategic Value'].map((h) => <th key={h} style={thStyle}>{h}</th>)}</tr></thead><tbody>{[{ label: 'Enterprise Accounts', rows: customerRows.slice(0, 10), complexity: 'High', value: 'High' }, { label: 'Mid-Market Accounts', rows: customerRows.slice(10, 30), complexity: 'Medium', value: 'Medium' }, { label: 'Independent Accounts', rows: customerRows.slice(30), complexity: 'Low', value: 'Diversification' }, { label: 'E-Commerce / Digital', rows: [], complexity: 'N/A', value: 'N/A' }].map((segment) => { const rev = segment.rows.reduce((sum, row) => sum + Number(row.revenue || 0), 0); const gp = segment.rows.reduce((sum, row) => sum + Number(row.grossProfit || 0), 0); const eb = segment.rows.reduce((sum, row) => sum + Number(row.ebitdaContribution || 0), 0); return <tr key={segment.label}><td style={{ ...tdStyle, fontWeight: 700 }}>{segment.label}</td><td style={tdStyle}>{pct(share(rev, totalRevenue))}</td><td style={tdStyle}>{pct(rev > 0 ? (gp / rev) * 100 : null)}</td><td style={tdStyle}>{pct(share(eb, totalEbitda))}</td><td style={tdStyle}>N/A</td><td style={tdStyle}>{segment.complexity}</td><td style={tdStyle}>{segment.value}</td></tr>; })}</tbody></table></div>)}
+        {section('Customer Movement Tracker', <div style={{ overflowX: 'auto' }}><table style={{ ...tableStyle, minWidth: '720px' }}><thead><tr>{['Customer', 'Status', 'Revenue Impact', 'EBITDA Impact', 'Reason'].map((h) => <th key={h} style={thStyle}>{h}</th>)}</tr></thead><tbody>{riskRows.slice(0, 8).map((row) => <tr key={row.name}><td style={{ ...tdStyle, fontWeight: 700 }}>{row.name}</td><td style={tdStyle}>Active</td><td style={tdStyle}>{formatCurrency(row.revenue)}</td><td style={tdStyle}>{formatCurrency(Number(row.ebitdaContribution || 0))}</td><td style={tdStyle}>Monthly movement reason not imported</td></tr>)}</tbody></table></div>)}
+      </div>
+    );
+  };
+
+  const renderExecutionVelocity = () => {
+    const wipSummary = customerData?.summary?.wip || {};
+    const wipAsOfDate = wipSummary?.asOf ? new Date(wipSummary.asOf) : null;
+    const wipCustomers = Array.isArray(wipSummary?.topCustomers) ? wipSummary.topCustomers : [];
+    const wipItems = wipCustomers.flatMap((customer: any) =>
+      Array.isArray(customer?.wipItems)
+        ? customer.wipItems.map((item: any) => ({
+            ...item,
+            customerName: customer.customerName,
+            customerId: customer.customerId,
+          }))
+        : []
+    );
+    const bookingsBridge = Array.isArray(customerData?.summary?.bookings?.bridge)
+      ? customerData.summary.bookings.bridge
+      : [];
+    const wholesaleRows = Array.isArray(wholesaleProductsData?.summary?.wholesaleOrderLines)
+      ? wholesaleProductsData.summary.wholesaleOrderLines
+      : [];
+    const validDate = (value: unknown) => {
+      const parsed = value ? new Date(String(value)) : null;
+      return parsed && !Number.isNaN(parsed.getTime()) ? parsed : null;
+    };
+    const diffDays = (start: Date, end: Date) => Math.round((end.getTime() - start.getTime()) / 86400000);
+    const avg = (values: number[]) => values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : null;
+    const pct = (num: number, denom: number) => denom > 0 ? `${((num / denom) * 100).toFixed(1)}%` : 'N/A';
+    const days = (value: number | null) => value == null || !Number.isFinite(value) ? 'N/A' : `${value.toFixed(1)} days`;
+    const number = (value: number | null | undefined) => value == null || !Number.isFinite(Number(value)) ? 'N/A' : Number(value).toLocaleString();
+    const asOf = wipAsOfDate && !Number.isNaN(wipAsOfDate.getTime()) ? wipAsOfDate : null;
+    const openWipAges = asOf
+      ? wipItems
+          .map((item: any) => {
+            const orderDate = validDate(item.orderDate);
+            return orderDate ? diffDays(orderDate, asOf) : null;
+          })
+          .filter((value: number | null): value is number => value != null && Number.isFinite(value) && value >= 0)
+      : [];
+    const dueDateItems = wipItems
+      .map((item: any) => ({ item, dueDate: validDate(item.dueDate) }))
+      .filter((row: any) => row.dueDate);
+    const pastDueItems = asOf
+      ? dueDateItems.filter((row: any) => row.dueDate.getTime() < asOf.getTime())
+      : [];
+    const pastDueDays = asOf
+      ? pastDueItems.map((row: any) => diffDays(row.dueDate, asOf)).filter((value: number) => value >= 0)
+      : [];
+    const qtyOrdered = wipItems.reduce((sum: number, item: any) => sum + Number(item.qtyOrdered || 0), 0);
+    const qtyInvoiced = wipItems.reduce((sum: number, item: any) => sum + Number(item.qtyInvoiced || 0), 0);
+    const shippedRows = wholesaleRows.filter((row: any) => Number(row.qtyInvoiced || 0) > 0 && validDate(row.snapshotDate));
+    const monthKey = (value: unknown) => {
+      const parsed = validDate(value);
+      return parsed ? `${parsed.getUTCFullYear()}-${String(parsed.getUTCMonth() + 1).padStart(2, '0')}` : '';
+    };
+    const monthLabel = (key: string) => {
+      const [year, month] = key.split('-').map(Number);
+      const parsed = new Date(Date.UTC(year || 2000, (month || 1) - 1, 1));
+      return Number.isNaN(parsed.getTime()) ? key : parsed.toLocaleDateString('en-US', { month: 'short', year: 'numeric', timeZone: 'UTC' });
+    };
+    const throughputByMonth = new Map<string, { month: string; linesInvoiced: number; qtyInvoiced: number; invoicedAmount: number }>();
+    shippedRows.forEach((row: any) => {
+      const key = monthKey(row.snapshotDate);
+      if (!key) return;
+      const current = throughputByMonth.get(key) || { month: key, linesInvoiced: 0, qtyInvoiced: 0, invoicedAmount: 0 };
+      current.linesInvoiced += 1;
+      current.qtyInvoiced += Number(row.qtyInvoiced || 0);
+      current.invoicedAmount += Number(row.invoicedAmount || 0);
+      throughputByMonth.set(key, current);
+    });
+    const throughputRows = Array.from(throughputByMonth.values()).sort((a, b) => a.month.localeCompare(b.month)).slice(-12);
+    const bridgeRows = bookingsBridge.slice(-12).map((row: any) => ({
+      period: String(row.period || ''),
+      bookings: Number(row.bookings || 0),
+      revenue: Number(row.revenue || 0),
+      delta: Number(row.delta || 0),
+    }));
+    const topOpenWipRows = [...wipItems]
+      .sort((a: any, b: any) => Number(b.wipValue || 0) - Number(a.wipValue || 0))
+      .slice(0, 20);
+    const metricCards = [
+      { label: 'Open WIP Value', value: formatCurrency(Number(wipSummary?.totals?.totalWip || 0)), detail: 'From open order-line WIP' },
+      { label: 'Loaded WIP Lines', value: number(wipItems.length), detail: 'Open WIP lines returned by source' },
+      { label: 'Avg Open WIP Age', value: days(avg(openWipAges)), detail: 'As-of date minus order date' },
+      { label: 'Past-Due Open Lines', value: number(pastDueItems.length), detail: dueDateItems.length ? `${pct(pastDueItems.length, dueDateItems.length)} of lines with due dates` : 'No due dates loaded' },
+      { label: 'Avg Past-Due Days', value: days(avg(pastDueDays)), detail: 'As-of date minus due date' },
+      { label: 'WIP Qty Invoiced %', value: pct(qtyInvoiced, qtyOrdered), detail: 'Qty invoiced / qty ordered on open lines' },
+    ];
+    const tableStyle = { width: '100%', borderCollapse: 'collapse' as const };
+    const thStyle: React.CSSProperties = { padding: '8px', fontSize: '12px', color: '#334155', textAlign: 'left', background: '#f8fafc', borderBottom: '1px solid #e2e8f0' };
+    const tdStyle: React.CSSProperties = { padding: '8px', fontSize: '12px', color: '#334155', borderBottom: '1px solid #f1f5f9' };
+    const section = (title: string, body: React.ReactNode) => (
+      <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '16px', marginBottom: '16px' }}>
+        <h3 style={{ margin: '0 0 12px', fontSize: '17px', color: '#0f172a' }}>{title}</h3>
+        {body}
+      </div>
+    );
+
+    return (
+      <div>
+        <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '18px', marginBottom: '16px' }}>
+          <h3 style={{ margin: 0, fontSize: '20px', fontWeight: 800, color: '#0f172a' }}>Execution Velocity</h3>
+          <div style={{ marginTop: '4px', color: '#64748b', fontSize: '12px' }}>
+            Real-data view of order-to-revenue execution using loaded customer bookings, order-line WIP, invoice quantity, due-date, and revenue records. PPAP, approval, ECO, and launch milestone KPIs are excluded until those source dates are imported.
+          </div>
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: '12px', marginBottom: '16px' }}>
+          {metricCards.map((card) => (
+            <div key={card.label} style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '14px' }}>
+              <div style={{ fontSize: '11px', color: '#64748b', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em' }}>{card.label}</div>
+              <div style={{ marginTop: '6px', fontSize: '22px', fontWeight: 800, color: '#0f172a' }}>{card.value}</div>
+              <div style={{ marginTop: '4px', fontSize: '11px', color: '#64748b' }}>{card.detail}</div>
+            </div>
+          ))}
+        </div>
+        {section('Monthly Invoiced Lines by Snapshot Date', (
+          <div style={{ overflowX: 'auto' }}>
+            <table style={{ ...tableStyle, minWidth: '720px' }}>
+              <thead><tr>{['Month', 'Lines Invoiced', 'Qty Invoiced', 'Invoiced Amount'].map((header) => <th key={header} style={{ ...thStyle, textAlign: header === 'Month' ? 'left' : 'right' }}>{header}</th>)}</tr></thead>
+              <tbody>{throughputRows.map((row) => <tr key={row.month}><td style={tdStyle}>{monthLabel(row.month)}</td><td style={{ ...tdStyle, textAlign: 'right' }}>{number(row.linesInvoiced)}</td><td style={{ ...tdStyle, textAlign: 'right' }}>{number(row.qtyInvoiced)}</td><td style={{ ...tdStyle, textAlign: 'right' }}>{formatCurrency(row.invoicedAmount)}</td></tr>)}</tbody>
+            </table>
+          </div>
+        ))}
+        {section('Revenue Realization Bridge', (
+          <div style={{ overflowX: 'auto' }}>
+            <table style={{ ...tableStyle, minWidth: '720px' }}>
+              <thead><tr>{['Period', 'Bookings', 'Revenue', 'Bookings Less Revenue'].map((header) => <th key={header} style={{ ...thStyle, textAlign: header === 'Period' ? 'left' : 'right' }}>{header}</th>)}</tr></thead>
+              <tbody>{bridgeRows.map((row) => <tr key={row.period}><td style={tdStyle}>{row.period}</td><td style={{ ...tdStyle, textAlign: 'right' }}>{formatCurrency(row.bookings)}</td><td style={{ ...tdStyle, textAlign: 'right' }}>{formatCurrency(row.revenue)}</td><td style={{ ...tdStyle, textAlign: 'right', color: row.delta > 0 ? '#b45309' : '#166534', fontWeight: 700 }}>{formatCurrency(row.delta)}</td></tr>)}</tbody>
+            </table>
+          </div>
+        ))}
+        {section('Open Bottleneck Queue', (
+          <div style={{ overflowX: 'auto' }}>
+            <table style={{ ...tableStyle, minWidth: '980px' }}>
+              <thead><tr>{['Customer', 'Order', 'Line', 'Item', 'Order Date', 'Due Date', 'Open Age', 'Past Due Days', 'Qty Ordered', 'Qty Invoiced', 'WIP Value'].map((header) => <th key={header} style={{ ...thStyle, textAlign: ['Qty Ordered', 'Qty Invoiced', 'WIP Value', 'Open Age', 'Past Due Days'].includes(header) ? 'right' : 'left' }}>{header}</th>)}</tr></thead>
+              <tbody>{topOpenWipRows.map((row: any, index: number) => {
+                const orderDate = validDate(row.orderDate);
+                const dueDate = validDate(row.dueDate);
+                const openAge = orderDate && asOf ? diffDays(orderDate, asOf) : null;
+                const pastDue = dueDate && asOf && dueDate.getTime() < asOf.getTime() ? diffDays(dueDate, asOf) : null;
+                return (
+                  <tr key={`${row.orderId || 'order'}-${row.lineId || index}`}>
+                    <td style={{ ...tdStyle, fontWeight: 700 }}>{row.customerName || 'N/A'}</td>
+                    <td style={tdStyle}>{row.orderId || 'N/A'}</td>
+                    <td style={tdStyle}>{row.lineId || 'N/A'}</td>
+                    <td style={tdStyle}>{row.item || 'N/A'}</td>
+                    <td style={tdStyle}>{row.orderDate || 'N/A'}</td>
+                    <td style={tdStyle}>{row.dueDate || 'N/A'}</td>
+                    <td style={{ ...tdStyle, textAlign: 'right' }}>{openAge == null ? 'N/A' : openAge}</td>
+                    <td style={{ ...tdStyle, textAlign: 'right', color: pastDue ? '#b91c1c' : '#334155', fontWeight: pastDue ? 700 : 400 }}>{pastDue == null ? 'N/A' : pastDue}</td>
+                    <td style={{ ...tdStyle, textAlign: 'right' }}>{number(Number(row.qtyOrdered || 0))}</td>
+                    <td style={{ ...tdStyle, textAlign: 'right' }}>{number(Number(row.qtyInvoiced || 0))}</td>
+                    <td style={{ ...tdStyle, textAlign: 'right' }}>{formatCurrency(Number(row.wipValue || 0))}</td>
+                  </tr>
+                );
+              })}</tbody>
+            </table>
+          </div>
+        ))}
+      </div>
+    );
+  };
+
   const renderModuleTabContent = (moduleKey: string) => {
     if (moduleKey === 'forecast') {
       return renderForecast();
@@ -18730,6 +19281,66 @@ Strategies to Improve the CCC
     return (
       <div style={{ padding: '32px', color: '#64748b' }}>
         No renderer is configured for module <strong>{moduleKey}</strong>.
+      </div>
+    );
+  };
+
+  const renderDashboardOverviewContent = () => {
+    const dashboard = (
+      <OpsDashboard
+        selectedCompanyId={selectedCompanyId}
+        companyName={companyName}
+        industrySectorCategory={industrySectorCategory}
+        activeModules={enabledDashboardModules}
+        moduleTitlesByType={moduleTitlesByType}
+        operationalHubSections={operationalHubSections}
+      />
+    );
+
+    const overviewReports = [
+      ...(isOverviewCashConversionEnabled ? [{ key: 'cash-conversion-analysis' as const, label: 'Cash Conversion Analysis' }] : []),
+      ...(isOverviewEbitdaPerformanceEnabled ? [{ key: 'ebitda-performance' as const, label: 'EBITDA Performance' }] : []),
+      ...(isOverviewCustomerConcentrationEnabled ? [{ key: 'customer-concentration-exposure' as const, label: 'Customer Concentration Exposure' }] : []),
+      ...(isOverviewExecutionVelocityEnabled ? [{ key: 'execution-velocity' as const, label: 'Execution Velocity' }] : []),
+    ];
+    if (!isWholesaleTradeSector || !overviewReports.length) return dashboard;
+    const effectiveOverviewSubTab = overviewReports.some((tab) => tab.key === activeOverviewSubTab)
+      ? activeOverviewSubTab
+      : overviewReports[0].key;
+
+    return (
+      <div style={{ paddingTop: '8px' }}>
+        <div className="ops-print-hide" style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', margin: '0 32px 16px', borderBottom: '2px solid #e2e8f0' }}>
+          {overviewReports.map((tab) => (
+            <button
+              key={tab.key}
+              type="button"
+              onClick={() => setActiveOverviewSubTab(tab.key)}
+              style={{
+                padding: '12px 18px',
+                background: 'none',
+                color: effectiveOverviewSubTab === tab.key ? '#2751d0' : '#64748b',
+                border: 'none',
+                borderBottom: effectiveOverviewSubTab === tab.key ? '3px solid #2751d0' : '3px solid transparent',
+                fontSize: '14px',
+                fontWeight: 600,
+                cursor: 'pointer',
+                transition: 'all 0.2s',
+              }}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </div>
+        <div style={{ padding: '0 32px 32px' }}>
+          {effectiveOverviewSubTab === 'ebitda-performance'
+            ? renderWholesaleEbitdaPerformance()
+            : effectiveOverviewSubTab === 'customer-concentration-exposure'
+              ? renderCustomerConcentrationExposure()
+              : effectiveOverviewSubTab === 'execution-velocity'
+                ? renderExecutionVelocity()
+              : renderCashConversionAnalysis()}
+        </div>
       </div>
     );
   };
@@ -18794,7 +19405,7 @@ Strategies to Improve the CCC
               ? 'Overview'
               : tab === 'forecast'
                 ? 'Forecast'
-              : getModuleLabel(tab)}
+              : getOperationalTabLabel(tab)}
           </button>
         ))}
       </div>
@@ -18803,16 +19414,7 @@ Strategies to Improve the CCC
       <div className="ops-print-hide">{renderFilters()}</div>
 
       {/* Content */}
-      {activeTab === 'dashboard' && (
-        <OpsDashboard
-          selectedCompanyId={selectedCompanyId}
-          companyName={companyName}
-          industrySectorCategory={industrySectorCategory}
-          activeModules={enabledDashboardModules}
-          moduleTitlesByType={moduleTitlesByType}
-          operationalHubSections={operationalHubSections}
-        />
-      )}
+      {activeTab === 'dashboard' && renderDashboardOverviewContent()}
       {activeTab !== 'dashboard' && renderModuleTabContent(activeTab)}
     </div>
   );
