@@ -452,6 +452,9 @@ function addHiringLookupKey(keys: Set<string>, prefix: 'id' | 'title', value: un
 function hiringJobLookupKeys(row: TableRow): Set<string> {
   const keys = new Set<string>();
   const job = asRecord(row.job);
+  const jobOpening = asRecord(row.jobOpening);
+  const posting = asRecord(row.posting);
+  const requisition = asRecord(row.requisition);
   const title = asRecord(row.title);
   [
     row.id,
@@ -465,6 +468,13 @@ function hiringJobLookupKeys(row: TableRow): Set<string> {
     job.id,
     job.jobId,
     job.requisitionId,
+    jobOpening.id,
+    jobOpening.jobId,
+    jobOpening.requisitionId,
+    posting.id,
+    posting.jobId,
+    requisition.id,
+    requisition.jobId,
     title.id,
   ].forEach((value) => addHiringLookupKey(keys, 'id', value));
   [
@@ -472,7 +482,15 @@ function hiringJobLookupKeys(row: TableRow): Set<string> {
     asString(row.jobTitle),
     labelValue(row.job),
     asString(job.title),
+    labelValue(job.title),
     asString(job.name),
+    labelValue(jobOpening.title),
+    asString(jobOpening.title),
+    asString(jobOpening.name),
+    labelValue(posting.title),
+    asString(posting.title),
+    labelValue(requisition.title),
+    asString(requisition.title),
   ].forEach((value) => addHiringLookupKey(keys, 'title', value));
   return keys;
 }
@@ -538,6 +556,9 @@ function normalizeHiringApplication(
   departmentDivisionMap: Map<string, string> = new Map()
 ): HiringApplicationRow {
   const job = asRecord(row.job);
+  const jobOpening = asRecord(row.jobOpening);
+  const posting = asRecord(row.posting);
+  const requisition = asRecord(row.requisition);
   const jobId = (
     idValue(row.job) ||
     asString(row.jobId) ||
@@ -545,7 +566,17 @@ function normalizeHiringApplication(
     asString(row.requisitionId) ||
     asString(row.requisition_id)
   );
-  const rawJobTitle = labelValue(row.job) || asString(job.title) || asString(row.jobTitle);
+  const rawJobTitle =
+    labelValue(row.job) ||
+    labelValue(job.title) ||
+    asString(job.title) ||
+    asString(row.jobTitle) ||
+    labelValue(jobOpening.title) ||
+    asString(jobOpening.title) ||
+    labelValue(posting.title) ||
+    asString(posting.title) ||
+    labelValue(requisition.title) ||
+    asString(requisition.title);
   const matchedJob = Array.from(hiringJobLookupKeys(row))
     .map((key) => jobsByKey.get(key))
     .find((item): item is HiringJobRow => Boolean(item)) || null;
@@ -558,7 +589,18 @@ function normalizeHiringApplication(
     asString(applicant.name) ||
     [firstName, lastName].filter(Boolean).join(' ')
   ).trim();
-  const department = matchedJob?.department || labelValue(row.department) || 'Unassigned';
+  const department =
+    matchedJob?.department ||
+    labelValue(row.department) ||
+    labelValue(job.department) ||
+    asString(job.department) ||
+    labelValue(jobOpening.department) ||
+    asString(jobOpening.department) ||
+    labelValue(posting.department) ||
+    asString(posting.department) ||
+    labelValue(requisition.department) ||
+    asString(requisition.department) ||
+    'Unassigned';
   const division = divisionForDepartment(department, departmentDivisionMap);
   const clientName = currentBambooHrClientName();
   return {
