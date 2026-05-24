@@ -84,6 +84,7 @@ const OPERATIONAL_HUB_SECTION_OPTIONS: Array<{ key: string; label: string; group
   { key: 'lsHeadcountByDepartment', label: 'Headcount by Department', group: 'Labor & Scheduling' },
   { key: 'lsLocationPayTypeMix', label: 'Location / Pay Type Mix', group: 'Labor & Scheduling' },
   { key: 'lsBillRateLevelCoverage', label: 'Bill Rate Level Coverage', group: 'Labor & Scheduling' },
+  { key: 'hiringApplicantsByDivDept', label: 'Applicants by Div/Dept', group: 'Hiring' },
   { key: 'hiringOpenJobs', label: 'Open Jobs', group: 'Hiring' },
   { key: 'hiringApplicantPipeline', label: 'Applicant Pipeline', group: 'Hiring' },
   { key: 'hiringApplicationsByStatus', label: 'Applications by Status', group: 'Hiring' },

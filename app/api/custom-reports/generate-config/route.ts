@@ -178,7 +178,7 @@ function buildDatasetReportConfig(prompt: string, requestedType: ReportChartType
         .map((key) => dataset.columns.find((column) => column.key === key))
         .filter((column: any) => column?.type === 'number' || column?.type === 'currency' || column?.type === 'percent')
         .slice(0, 2);
-  const normalizedChartType = chartType === 'table' ? 'table' : chartType;
+  const normalizedChartType = chartType === 'table' || !dataset.dateField ? 'table' : chartType;
   return {
     title: String(rawConfig?.title || (entityName ? `${entityName} ${dataset.label}` : dataset.label)).slice(0, 120),
     description: String(rawConfig?.description || `${dataset.description} Filtered and bounded by the report request.`).slice(0, 500),

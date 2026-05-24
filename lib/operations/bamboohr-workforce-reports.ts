@@ -19,6 +19,7 @@ type HiringJobRow = {
   title: string;
   status: string;
   openJobs: number;
+  division: string;
   department: string;
   location: string;
   postedDate: string | null;
@@ -32,6 +33,8 @@ type HiringApplicationRow = {
   id: string;
   jobId: string;
   jobTitle: string;
+  division: string;
+  department: string;
   applicantName: string;
   email: string | null;
   phone: string | null;
@@ -420,15 +423,91 @@ function idValue(value: unknown): string {
   return asString(record.id) || asString(value);
 }
 
-function normalizeHiringJob(row: TableRow): HiringJobRow {
+function departmentMapKey(value: unknown): string {
+  return asString(value)
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '');
+}
+
+function hiringLookupKey(value: unknown): string {
+  return asString(value)
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '');
+}
+
+function addHiringLookupKey(keys: Set<string>, prefix: 'id' | 'title', value: unknown) {
+  const key = hiringLookupKey(value);
+  if (key) keys.add(`${prefix}:${key}`);
+}
+
+function hiringJobLookupKeys(row: TableRow): Set<string> {
+  const keys = new Set<string>();
+  const job = asRecord(row.job);
+  const title = asRecord(row.title);
+  [
+    row.id,
+    row.jobId,
+    row.job_id,
+    row.requisitionId,
+    row.requisition_id,
+    row.jobOpeningId,
+    row.openingId,
+    row.postingId,
+    job.id,
+    job.jobId,
+    job.requisitionId,
+    title.id,
+  ].forEach((value) => addHiringLookupKey(keys, 'id', value));
+  [
+    labelValue(row.title),
+    asString(row.jobTitle),
+    labelValue(row.job),
+    asString(job.title),
+    asString(job.name),
+  ].forEach((value) => addHiringLookupKey(keys, 'title', value));
+  return keys;
+}
+
+function buildDepartmentDivisionMap(metadata: Record<string, unknown>): Map<string, string> {
+  const snapshot = asRecord(metadata[SNAPSHOT_METADATA_KEY]);
+  const dimensions = asRecord(snapshot.dimensions);
+  const roster = Array.isArray(dimensions.employeeCompensationRoster) ? dimensions.employeeCompensationRoster : [];
+  const counts = new Map<string, Map<string, number>>();
+  roster.forEach((item) => {
+    const row = asRecord(item);
+    const department = asString(row.department);
+    const division = asString(row.division);
+    if (!department || !division) return;
+    const departmentKey = departmentMapKey(department);
+    if (!departmentKey) return;
+    const divisionCounts = counts.get(departmentKey) || new Map<string, number>();
+    divisionCounts.set(division, (divisionCounts.get(division) || 0) + 1);
+    counts.set(departmentKey, divisionCounts);
+  });
+  return new Map(
+    Array.from(counts.entries()).map(([departmentKey, divisionCounts]) => {
+      const [division] = Array.from(divisionCounts.entries()).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))[0];
+      return [departmentKey, division];
+    })
+  );
+}
+
+function divisionForDepartment(department: string, departmentDivisionMap: Map<string, string>): string {
+  return departmentDivisionMap.get(departmentMapKey(department)) || 'Unassigned';
+}
+
+function normalizeHiringJob(row: TableRow, departmentDivisionMap: Map<string, string> = new Map()): HiringJobRow {
   const titleRecord = asRecord(row.title);
   const status = labelValue(row.status) || 'Unknown';
+  const department = labelValue(row.department) || 'Unassigned';
+  const division = labelValue(row.division) || divisionForDepartment(department, departmentDivisionMap);
   return {
     id: asString(row.id) || idValue(row.job) || asString(titleRecord.id),
     title: labelValue(row.title) || asString(row.jobTitle) || 'Untitled Job',
     status,
     openJobs: status.toLowerCase() === 'open' ? 1 : 0,
-    department: labelValue(row.department) || 'Unassigned',
+    division,
+    department,
     location: labelValue(row.location) || 'Unassigned',
     postedDate: asString(row.postedDate) || asString(row.createdDate) || null,
     activeApplicantsCount: asNumber(row.activeApplicantsCount) || 0,
@@ -438,7 +517,11 @@ function normalizeHiringJob(row: TableRow): HiringJobRow {
   };
 }
 
-function normalizeHiringApplication(row: TableRow, jobsById: Map<string, HiringJobRow> = new Map()): HiringApplicationRow {
+function normalizeHiringApplication(
+  row: TableRow,
+  jobsByKey: Map<string, HiringJobRow> = new Map(),
+  departmentDivisionMap: Map<string, string> = new Map()
+): HiringApplicationRow {
   const job = asRecord(row.job);
   const jobId = (
     idValue(row.job) ||
@@ -447,7 +530,10 @@ function normalizeHiringApplication(row: TableRow, jobsById: Map<string, HiringJ
     asString(row.requisitionId) ||
     asString(row.requisition_id)
   );
-  const matchedJob = jobId ? jobsById.get(jobId) : null;
+  const rawJobTitle = labelValue(row.job) || asString(job.title) || asString(row.jobTitle);
+  const matchedJob = Array.from(hiringJobLookupKeys(row))
+    .map((key) => jobsByKey.get(key))
+    .find((item): item is HiringJobRow => Boolean(item)) || null;
   const applicant = asRecord(row.applicant);
   const firstName = asString(row.firstName) || asString(applicant.firstName);
   const lastName = asString(row.lastName) || asString(applicant.lastName);
@@ -457,10 +543,14 @@ function normalizeHiringApplication(row: TableRow, jobsById: Map<string, HiringJ
     asString(applicant.name) ||
     [firstName, lastName].filter(Boolean).join(' ')
   ).trim();
+  const department = labelValue(row.department) || matchedJob?.department || 'Unassigned';
+  const division = labelValue(row.division) || divisionForDepartment(department, departmentDivisionMap) || matchedJob?.division || 'Unassigned';
   return {
     id: asString(row.id),
     jobId,
-    jobTitle: labelValue(row.job) || asString(job.title) || asString(row.jobTitle) || matchedJob?.title || 'Unassigned Job',
+    jobTitle: rawJobTitle || matchedJob?.title || 'Unassigned Job',
+    division,
+    department,
     applicantName: applicantName || 'Applicant',
     email: asString(row.email) || asString(row.emailAddress) || asString(applicant.email) || null,
     phone: asString(row.phone) || asString(row.phoneNumber) || asString(applicant.phone) || null,
@@ -498,25 +588,82 @@ async function fetchBambooHrHiringApplications(settings: BambooHrSettings): Prom
 }
 
 export async function getBambooHrHiringPayload(companyId: string) {
-  const { settings } = await readBambooHrSettings(companyId);
+  const { settings, metadata } = await readBambooHrSettings(companyId);
+  const departmentDivisionMap = buildDepartmentDivisionMap(metadata);
   const [jobsResponse, applicationRows] = await Promise.all([
     fetchBambooHrJson(settings, 'applicant_tracking/jobs'),
     fetchBambooHrHiringApplications(settings),
   ]);
-  const jobs = readCollection(jobsResponse.json, ['jobs']).map(normalizeHiringJob);
-  const jobsById = new Map(jobs.map((job) => [job.id, job]));
-  const applications = applicationRows.map((row) => normalizeHiringApplication(row, jobsById));
+  const jobRows = readCollection(jobsResponse.json, ['jobs']);
+  const jobs = jobRows.map((row) => normalizeHiringJob(row, departmentDivisionMap));
+  const jobsByKey = new Map<string, HiringJobRow>();
+  jobs.forEach((job, index) => {
+    hiringJobLookupKeys(jobRows[index] || {}).forEach((key) => jobsByKey.set(key, job));
+    const normalizedJobId = hiringLookupKey(job.id);
+    if (normalizedJobId) jobsByKey.set(`id:${normalizedJobId}`, job);
+    const normalizedTitle = hiringLookupKey(job.title);
+    if (normalizedTitle) jobsByKey.set(`title:${normalizedTitle}`, job);
+  });
+  const applications = applicationRows.map((row) => normalizeHiringApplication(row, jobsByKey, departmentDivisionMap));
   const applicationsByStatus = countRows(applications, 'status', 'status');
   const applicantsByJob = jobs
     .map((job) => ({
       jobId: job.id,
       title: job.title,
       status: job.status,
+      division: job.division,
+      department: job.department,
       activeApplicantsCount: job.activeApplicantsCount,
       newApplicantsCount: job.newApplicantsCount,
       totalApplicantsCount: job.totalApplicantsCount,
     }))
     .sort((a, b) => b.activeApplicantsCount - a.activeApplicantsCount);
+  const jobsByDivisionDepartment = jobs.reduce((groups: Map<string, {
+    openJobs: number;
+    totalJobs: number;
+  }>, job) => {
+    const division = job.division || 'Unassigned';
+    const department = job.department || 'Unassigned';
+    const key = `${division}||${department}`;
+    const group = groups.get(key) || { openJobs: 0, totalJobs: 0 };
+    group.openJobs += job.openJobs;
+    group.totalJobs += 1;
+    groups.set(key, group);
+    return groups;
+  }, new Map());
+  const applicantsByDivisionDepartment = Array.from(
+    applications.reduce((groups: Map<string, {
+      division: string;
+      department: string;
+      openJobs: number;
+      totalJobs: number;
+      activeApplicantsCount: number;
+      newApplicantsCount: number;
+      totalApplicantsCount: number;
+    }>, application) => {
+      const division = application.division || 'Unassigned';
+      const department = application.department || 'Unassigned';
+      const key = `${division}||${department}`;
+      const jobGroup = jobsByDivisionDepartment.get(key);
+      const normalizedStatus = String(application.status || '').toLowerCase().replace(/[_-]+/g, ' ');
+      const group = groups.get(key) || {
+        division,
+        department,
+        openJobs: jobGroup?.openJobs || 0,
+        totalJobs: jobGroup?.totalJobs || 0,
+        activeApplicantsCount: 0,
+        newApplicantsCount: 0,
+        totalApplicantsCount: 0,
+      };
+      if (normalizedStatus === 'new' || normalizedStatus.includes('new applicant')) group.newApplicantsCount += 1;
+      if (!normalizedStatus.includes('reject') && !normalizedStatus.includes('decline') && !normalizedStatus.includes('hire')) {
+        group.activeApplicantsCount += 1;
+      }
+      group.totalApplicantsCount += 1;
+      groups.set(key, group);
+      return groups;
+    }, new Map()).values()
+  ).sort((a, b) => a.division.localeCompare(b.division) || a.department.localeCompare(b.department));
 
   return {
     meta: { source: 'BAMBOOHR_HIRING', generatedAt: new Date().toISOString(), applicationsPageLimit: HIRING_APPLICATION_PAGE_LIMIT },
@@ -533,6 +680,7 @@ export async function getBambooHrHiringPayload(companyId: string) {
     applications,
     applicationsByStatus,
     applicantsByJob,
+    applicantsByDivisionDepartment,
     newApplicantsByJob: applicantsByJob.filter((row) => row.newApplicantsCount > 0),
     postingPerformance: applicantsByJob,
     records: jobs,

@@ -633,6 +633,7 @@ export default function OperationsTab({
   const [billingCashData, setBillingCashData] = useState<any>(null);
   const [bcPriorityFilter, setBcPriorityFilter] = useState<'all' | 'collect' | 'pay'>('all');
   const [laborSchedulingData, setLaborSchedulingData] = useState<any>(null);
+  const [selectedLaborRosterDivision, setSelectedLaborRosterDivision] = useState<string>('');
   const [selectedLaborRosterDepartment, setSelectedLaborRosterDepartment] = useState<string>('');
   const [hiringData, setHiringData] = useState<any>(null);
   const [expandedHiringJobs, setExpandedHiringJobs] = useState<Record<string, boolean>>({});
@@ -640,6 +641,7 @@ export default function OperationsTab({
   const [hiringApplicantsByJobExpanded, setHiringApplicantsByJobExpanded] = useState<boolean>(true);
   const [hiringApplicantsSortKey, setHiringApplicantsSortKey] = useState<'title' | 'status' | 'activeApplicantsCount' | 'newApplicantsCount' | 'totalApplicantsCount'>('totalApplicantsCount');
   const [hiringApplicantsSortDir, setHiringApplicantsSortDir] = useState<'asc' | 'desc'>('desc');
+  const [expandedHiringApplicantDivisions, setExpandedHiringApplicantDivisions] = useState<Record<string, boolean>>({});
   const [customersSitesData, setCustomersSitesData] = useState<any>(null);
   const [revenueBillablesData, setRevenueBillablesData] = useState<any>(null);
   const [unitEconomicsData, setUnitEconomicsData] = useState<any>(null);
@@ -16702,9 +16704,19 @@ Strategies to Improve the CCC
       const billRateLevelCoverage: any[] = Array.isArray(laborSchedulingData.billRateLevelCoverage) ? laborSchedulingData.billRateLevelCoverage : [];
       const missingBillRateLevel: any[] = Array.isArray(laborSchedulingData.missingBillRateLevel) ? laborSchedulingData.missingBillRateLevel : [];
       const employeeCompensationRoster: any[] = Array.isArray(laborSchedulingData.employeeCompensationRoster) ? laborSchedulingData.employeeCompensationRoster : [];
+      const normalizeRosterDivision = (value: any) => String(value || 'Unassigned').trim() || 'Unassigned';
       const normalizeRosterDepartment = (value: any) => String(value || 'Unassigned').trim() || 'Unassigned';
+      const rosterDivisions = Array.from(new Set(
+        employeeCompensationRoster
+          .map((row) => normalizeRosterDivision(row.division))
+      )).sort((a, b) => a.localeCompare(b));
+      const effectiveRosterDivision =
+        selectedLaborRosterDivision && rosterDivisions.includes(selectedLaborRosterDivision)
+          ? selectedLaborRosterDivision
+          : (rosterDivisions[0] || '');
       const rosterDepartments = Array.from(new Set(
         employeeCompensationRoster
+          .filter((row) => normalizeRosterDivision(row.division) === effectiveRosterDivision)
           .map((row) => normalizeRosterDepartment(row.department))
       )).sort((a, b) => a.localeCompare(b));
       const effectiveRosterDepartment =
@@ -16713,7 +16725,10 @@ Strategies to Improve the CCC
           : (rosterDepartments[0] || '');
       const departmentCompensationRoster = effectiveRosterDepartment
         ? employeeCompensationRoster
-            .filter((row) => normalizeRosterDepartment(row.department) === effectiveRosterDepartment)
+            .filter((row) => (
+              normalizeRosterDivision(row.division) === effectiveRosterDivision &&
+              normalizeRosterDepartment(row.department) === effectiveRosterDepartment
+            ))
             .sort((a, b) => String(a.role || '').localeCompare(String(b.role || '')) || String(a.employeeName || '').localeCompare(String(b.employeeName || '')))
         : [];
       const sourceNote = String(laborSchedulingData?.meta?.note || summary.note || '');
@@ -16767,11 +16782,25 @@ Strategies to Improve the CCC
           {isSectionEnabled('lsEmployeeCompensationRoster') && (
             <div style={cardStyle}>
               <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', alignItems: 'center', marginBottom: '12px', flexWrap: 'wrap' }}>
-                <div style={{ ...cardTitleStyle, marginBottom: 0 }}>Employee Compensation Roster by Department</div>
+                <div style={{ ...cardTitleStyle, marginBottom: 0 }}>Employee Compensation Roster by Division / Department</div>
                 <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
                   <span style={{ fontSize: '12px', color: '#64748b', fontWeight: 600 }}>
                     {Number(departmentCompensationRoster.length || 0).toLocaleString('en-US')} employees
                   </span>
+                  <label htmlFor="labor-roster-division" style={{ fontSize: '12px', color: '#64748b', fontWeight: 600 }}>Division</label>
+                  <select
+                    id="labor-roster-division"
+                    value={effectiveRosterDivision}
+                    onChange={(event) => {
+                      setSelectedLaborRosterDivision(event.target.value);
+                      setSelectedLaborRosterDepartment('');
+                    }}
+                    style={{ border: '1px solid #cbd5e1', borderRadius: '8px', padding: '6px 28px 6px 10px', fontSize: '13px', color: '#0f172a', background: '#fff', minWidth: '220px' }}
+                  >
+                    {rosterDivisions.map((division) => (
+                      <option key={division} value={division}>{division}</option>
+                    ))}
+                  </select>
                   <label htmlFor="labor-roster-department" style={{ fontSize: '12px', color: '#64748b', fontWeight: 600 }}>Department</label>
                   <select
                     id="labor-roster-department"
@@ -16787,11 +16816,12 @@ Strategies to Improve the CCC
               </div>
               <div style={{ overflowX: 'auto', maxHeight: '520px', overflowY: 'auto' }}>
                 <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                  <thead><tr><th style={thStyle}>Employee</th><th style={thStyle}>Role</th><th style={thStyle}>Department</th><th style={thStyle}>Location</th><th style={thStyle}>Status</th><th style={thStyle}>Pay Type</th><th style={{ ...thStyle, textAlign: 'right' }}>Annual Pay</th><th style={{ ...thStyle, textAlign: 'right' }}>Monthly Pay</th><th style={thStyle}>Bill Rate Level</th></tr></thead>
+                  <thead><tr><th style={thStyle}>Employee</th><th style={thStyle}>Role</th><th style={thStyle}>Division</th><th style={thStyle}>Department</th><th style={thStyle}>Location</th><th style={thStyle}>Status</th><th style={thStyle}>Pay Type</th><th style={{ ...thStyle, textAlign: 'right' }}>Annual Pay</th><th style={{ ...thStyle, textAlign: 'right' }}>Monthly Pay</th><th style={thStyle}>Bill Rate Level</th></tr></thead>
                   <tbody>{departmentCompensationRoster.map((row) => (
                     <tr key={row.employeeId}>
                       <td style={{ ...tdStyle, fontWeight: 600 }}>{row.employeeName || row.employeeId}</td>
                       <td style={tdStyle}>{row.role}</td>
+                      <td style={tdStyle}>{normalizeRosterDivision(row.division)}</td>
                       <td style={tdStyle}>{row.department}</td>
                       <td style={tdStyle}>{row.location}</td>
                       <td style={tdStyle}>{row.employmentStatus}</td>
@@ -17027,6 +17057,7 @@ Strategies to Improve the CCC
     const applications: any[] = Array.isArray(hiringData.applications) ? hiringData.applications : [];
     const applicationsByStatus: any[] = Array.isArray(hiringData.applicationsByStatus) ? hiringData.applicationsByStatus : [];
     const applicantsByJob: any[] = Array.isArray(hiringData.applicantsByJob) ? hiringData.applicantsByJob : [];
+    const applicantsByDivisionDepartment: any[] = Array.isArray(hiringData.applicantsByDivisionDepartment) ? hiringData.applicantsByDivisionDepartment : [];
     const newApplicantsByJob: any[] = Array.isArray(hiringData.newApplicantsByJob) ? hiringData.newApplicantsByJob : [];
     const postingPerformance: any[] = Array.isArray(hiringData.postingPerformance) ? hiringData.postingPerformance : applicantsByJob;
     const cardStyle: React.CSSProperties = { background: '#fff', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '20px' };
@@ -17040,6 +17071,80 @@ Strategies to Improve the CCC
       map[key].push(application);
       return map;
     }, {});
+    const normalizeHiringDimension = (value: any) => String(value || 'Unassigned').trim() || 'Unassigned';
+    const hiringJobLookup = new Map<string, any>();
+    jobs.forEach((job) => {
+      const idKey = String(job.jobId || job.id || '').trim();
+      const titleKey = String(job.title || job.jobTitle || '').trim();
+      if (idKey) hiringJobLookup.set(`id:${idKey}`, job);
+      if (titleKey) hiringJobLookup.set(`title:${titleKey}`, job);
+    });
+    applicantsByJob.forEach((job) => {
+      const idKey = String(job.jobId || job.id || '').trim();
+      const titleKey = String(job.title || job.jobTitle || '').trim();
+      if (idKey) hiringJobLookup.set(`id:${idKey}`, { ...(hiringJobLookup.get(`id:${idKey}`) || {}), ...job });
+      if (titleKey) hiringJobLookup.set(`title:${titleKey}`, { ...(hiringJobLookup.get(`title:${titleKey}`) || {}), ...job });
+    });
+    const enrichedApplications = applications.map((application) => {
+      const job =
+        hiringJobLookup.get(`id:${String(application.jobId || '').trim()}`) ||
+        hiringJobLookup.get(`title:${String(application.jobTitle || '').trim()}`) ||
+        {};
+      return {
+        ...application,
+        division: normalizeHiringDimension(application.division || job.division),
+        department: normalizeHiringDimension(application.department || job.department),
+        jobTitle: application.jobTitle || job.title || job.jobTitle || 'Unassigned Job',
+      };
+    });
+    const jobsByDivisionDepartment = jobs.reduce((groups: Map<string, any[]>, job) => {
+      const division = normalizeHiringDimension(job.division);
+      const department = normalizeHiringDimension(job.department);
+      const key = `${division}||${department}`;
+      groups.set(key, [...(groups.get(key) || []), job]);
+      return groups;
+    }, new Map<string, any[]>());
+    const hiringDivisionGroups = Array.from(
+      applicantsByDivisionDepartment.reduce((groups: Map<string, any>, row) => {
+        const division = normalizeHiringDimension(row.division);
+        const department = normalizeHiringDimension(row.department);
+        const group = groups.get(division) || {
+          division,
+          departments: new Map<string, any>(),
+          openJobs: 0,
+          activeApplicantsCount: 0,
+          newApplicantsCount: 0,
+          totalApplicantsCount: 0,
+        };
+        const departmentRows = enrichedApplications
+          .filter((application) => normalizeHiringDimension(application.division) === division && normalizeHiringDimension(application.department) === department)
+          .sort((a, b) => String(a.jobTitle || '').localeCompare(String(b.jobTitle || '')) || String(a.applicantName || '').localeCompare(String(b.applicantName || '')));
+        const departmentJobs = (jobsByDivisionDepartment.get(`${division}||${department}`) || [])
+          .sort((a, b) => String(a.title || a.jobTitle || '').localeCompare(String(b.title || b.jobTitle || '')));
+        const departmentSummary = {
+          division,
+          department,
+          openJobs: Number(row.openJobs || 0),
+          activeApplicantsCount: Number(row.activeApplicantsCount || 0),
+          newApplicantsCount: Number(row.newApplicantsCount || 0),
+          totalApplicantsCount: Number(row.totalApplicantsCount || 0),
+          applications: departmentRows,
+          jobs: departmentJobs,
+        };
+        group.departments.set(department, departmentSummary);
+        group.openJobs += departmentSummary.openJobs;
+        group.activeApplicantsCount += departmentSummary.activeApplicantsCount;
+        group.newApplicantsCount += departmentSummary.newApplicantsCount;
+        group.totalApplicantsCount += departmentSummary.totalApplicantsCount;
+        groups.set(division, group);
+        return groups;
+      }, new Map<string, any>()).values()
+    )
+      .map((group: any) => ({
+        ...group,
+        departments: Array.from(group.departments.values()).sort((a: any, b: any) => a.department.localeCompare(b.department)),
+      }))
+      .sort((a: any, b: any) => a.division.localeCompare(b.division));
     const applicantRowsForJob = (row: any) => {
       const directKey = String(row.jobId || '');
       if (directKey && applicantRowsByJobId[directKey]) return applicantRowsByJobId[directKey];
@@ -17188,6 +17293,8 @@ Strategies to Improve the CCC
                     <tr>
                       <th style={thStyle}>Applicant / Hire</th>
                       <th style={thStyle}>Job</th>
+                      <th style={thStyle}>Division</th>
+                      <th style={thStyle}>Department</th>
                       <th style={thStyle}>Applied</th>
                       <th style={thStyle}>Updated</th>
                       <th style={thStyle}>Hired / Start</th>
@@ -17203,6 +17310,8 @@ Strategies to Improve the CCC
                       <tr key={application.id || `${status}-${application.jobTitle}-${application.applicantName}-${application.appliedDate}`}>
                         <td style={{ ...tdStyle, fontWeight: 600 }}>{application.applicantName || 'Applicant'}</td>
                         <td style={tdStyle}>{application.jobTitle || '—'}</td>
+                        <td style={tdStyle}>{application.division || 'Unassigned'}</td>
+                        <td style={tdStyle}>{application.department || 'Unassigned'}</td>
                         <td style={tdStyle}>{formatHiringDate(application.appliedDate)}</td>
                         <td style={tdStyle}>{formatHiringDate(application.lastUpdated)}</td>
                         <td style={tdStyle}>{formatHiringDate(application.hiredDate)}</td>
@@ -17247,6 +17356,111 @@ Strategies to Improve the CCC
             </div>
             <div style={{ marginTop: '10px', fontSize: '12px', color: '#64748b' }}>
               Source: {String(hiringData?.meta?.source || 'operational').replace(/_/g, ' ')} · As of {summary.asOfDate || '—'}
+            </div>
+          </div>
+        )}
+
+        {isSectionEnabled('hiringApplicantsByDivDept') && (
+          <div style={cardStyle}>
+            <div style={{ ...cardTitleStyle, marginBottom: '14px' }}>Applicants by Div/Dept</div>
+            <div style={{ overflowX: 'auto', maxHeight: '620px', overflowY: 'auto' }}>
+              <table style={{ width: '100%', minWidth: '1100px', borderCollapse: 'collapse' }}>
+                <thead>
+                  <tr>
+                    <th style={thStyle}>Division</th>
+                    <th style={thStyle}>Department</th>
+                    <th style={thStyle}>Applicant</th>
+                    <th style={thStyle}>Job Title</th>
+                    <th style={thStyle}>Status</th>
+                    <th style={thStyle}>Applied</th>
+                    <th style={thStyle}>Updated</th>
+                    <th style={thStyle}>Email</th>
+                    <th style={thStyle}>Phone</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {hiringDivisionGroups.length ? hiringDivisionGroups.map((divisionGroup: any) => {
+                    const isExpanded = expandedHiringApplicantDivisions[divisionGroup.division] ?? false;
+                    return (
+                      <React.Fragment key={divisionGroup.division}>
+                        <tr style={{ background: '#f8fafc', borderBottom: '1px solid #cbd5e1' }}>
+                          <td style={{ ...tdStyle, fontWeight: 800 }}>
+                            <button
+                              type="button"
+                              onClick={() => setExpandedHiringApplicantDivisions((prev) => ({ ...prev, [divisionGroup.division]: !(prev[divisionGroup.division] ?? false) }))}
+                              aria-label={isExpanded ? 'Collapse division' : 'Expand division'}
+                              style={{ border: 0, background: 'transparent', color: '#1d4ed8', cursor: 'pointer', fontSize: '14px', fontWeight: 800, marginRight: '8px', padding: '0 2px', lineHeight: 1 }}
+                            >
+                              {isExpanded ? 'v' : '>'}
+                            </button>
+                            {divisionGroup.division}
+                            <span style={{ marginLeft: '8px', color: '#64748b', fontSize: '12px', fontWeight: 500 }}>
+                              {Number(divisionGroup.totalApplicantsCount || 0).toLocaleString('en-US')} applicants
+                            </span>
+                          </td>
+                          <td style={tdStyle}>—</td>
+                          <td style={tdStyle}>—</td>
+                          <td style={tdStyle}>—</td>
+                          <td style={tdStyle}>—</td>
+                          <td style={tdStyle}>—</td>
+                          <td style={tdStyle}>—</td>
+                          <td style={tdStyle}>—</td>
+                          <td style={tdStyle}>—</td>
+                        </tr>
+                        {isExpanded && divisionGroup.departments.map((department: any) => (
+                          <React.Fragment key={`${divisionGroup.division}-${department.department}`}>
+                            <tr style={{ background: '#fff', borderBottom: '1px solid #e2e8f0' }}>
+                              <td style={tdStyle}></td>
+                              <td style={{ ...tdStyle, fontWeight: 700 }}>
+                                {department.department}
+                                <span style={{ marginLeft: '8px', color: '#64748b', fontSize: '12px', fontWeight: 500 }}>
+                                  {Number(department.totalApplicantsCount || 0).toLocaleString('en-US')} applicants
+                                </span>
+                              </td>
+                              <td style={tdStyle}>—</td>
+                              <td style={tdStyle}>
+                                {department.jobs?.length
+                                  ? department.jobs.map((job: any) => job.title || job.jobTitle || 'Untitled Job').join(' · ')
+                                  : '—'}
+                              </td>
+                              <td style={tdStyle}>—</td>
+                              <td style={tdStyle}>—</td>
+                              <td style={tdStyle}>—</td>
+                              <td style={tdStyle}>—</td>
+                              <td style={tdStyle}>—</td>
+                            </tr>
+                            {department.applications?.length ? department.applications.map((application: any) => (
+                              <tr key={application.id || `${divisionGroup.division}-${department.department}-${application.jobTitle}-${application.applicantName}-${application.appliedDate}`}>
+                                <td style={tdStyle}></td>
+                                <td style={tdStyle}></td>
+                                <td style={{ ...tdStyle, fontWeight: 600 }}>{application.applicantName || 'Applicant'}</td>
+                                <td style={tdStyle}>{application.jobTitle || '—'}</td>
+                                <td style={tdStyle}>{application.status || '—'}</td>
+                                <td style={tdStyle}>{formatHiringDate(application.appliedDate)}</td>
+                                <td style={tdStyle}>{formatHiringDate(application.lastUpdated)}</td>
+                                <td style={tdStyle}>{application.email || '—'}</td>
+                                <td style={tdStyle}>{application.phone || '—'}</td>
+                              </tr>
+                            )) : (
+                              <tr key={`${divisionGroup.division}-${department.department}-empty`}>
+                                <td style={tdStyle}></td>
+                                <td style={tdStyle}></td>
+                                <td colSpan={7} style={{ ...tdStyle, color: '#64748b' }}>No applicants returned for this department.</td>
+                              </tr>
+                            )}
+                          </React.Fragment>
+                        ))}
+                      </React.Fragment>
+                    );
+                  }) : (
+                    <tr>
+                      <td colSpan={9} style={{ padding: '14px', color: '#64748b', fontSize: '13px', textAlign: 'center' }}>
+                        No division or department applicant data returned from BambooHR.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
             </div>
           </div>
         )}
@@ -17337,6 +17551,8 @@ Strategies to Improve the CCC
                 <thead>
                   <tr>
                     <th style={thStyle}>Job</th>
+                    <th style={thStyle}>Division</th>
+                    <th style={thStyle}>Department</th>
                     <th style={thStyle}>Status</th>
                     <th style={{ ...thStyle, textAlign: 'right' }}>Active</th>
                     <th style={{ ...thStyle, textAlign: 'right' }}>New</th>
@@ -17371,12 +17587,14 @@ Strategies to Improve the CCC
                             </button>
                             {row.title}
                           </td>
+                          <td style={tdStyle}>{row.division || 'Unassigned'}</td>
+                          <td style={tdStyle}>{row.department || 'Unassigned'}</td>
                           <td style={tdStyle}>{row.status || '—'}</td>
                           <td style={{ ...tdStyle, textAlign: 'right' }}>{Number(row.activeApplicantsCount || 0).toLocaleString('en-US')}</td>
                           <td style={{ ...tdStyle, textAlign: 'right' }}>{Number(row.newApplicantsCount || 0).toLocaleString('en-US')}</td>
                           <td style={{ ...tdStyle, textAlign: 'right', fontWeight: 700 }}>{Number(row.totalApplicantsCount || 0).toLocaleString('en-US')}</td>
                         </tr>
-                        {renderApplicantExpansionRow(row, 5)}
+                        {renderApplicantExpansionRow(row, 7)}
                       </React.Fragment>
                     );
                   })}
@@ -17391,7 +17609,7 @@ Strategies to Improve the CCC
             <div style={cardTitleStyle}>New Applications</div>
             <div style={{ overflowX: 'auto', maxHeight: '520px', overflowY: 'auto' }}>
               <table style={{ width: '100%', minWidth: '980px', borderCollapse: 'collapse' }}>
-                <thead><tr><th style={thStyle}>Job</th><th style={{ ...thStyle, textAlign: 'right' }}>New Applications</th><th style={{ ...thStyle, textAlign: 'right' }}>Active Applications</th><th style={{ ...thStyle, textAlign: 'right' }}>Applicant / Hire Details</th></tr></thead>
+                <thead><tr><th style={thStyle}>Job</th><th style={thStyle}>Division</th><th style={thStyle}>Department</th><th style={{ ...thStyle, textAlign: 'right' }}>New Applications</th><th style={{ ...thStyle, textAlign: 'right' }}>Active Applications</th><th style={{ ...thStyle, textAlign: 'right' }}>Applicant / Hire Details</th></tr></thead>
                 <tbody>{newApplicantsByJob.slice(0, 15).map((row) => {
                   const jobKey = String(row.jobId || row.title || 'job');
                   const isExpanded = expandedHiringJobs[jobKey] === true;
@@ -17411,11 +17629,13 @@ Strategies to Improve the CCC
                             <span>{row.title}</span>
                           </div>
                         </td>
+                        <td style={tdStyle}>{row.division || 'Unassigned'}</td>
+                        <td style={tdStyle}>{row.department || 'Unassigned'}</td>
                         <td style={{ ...tdStyle, textAlign: 'right', color: '#7c3aed', fontWeight: 700 }}>{Number(row.newApplicantsCount || 0).toLocaleString('en-US')}</td>
                         <td style={{ ...tdStyle, textAlign: 'right' }}>{Number(row.activeApplicantsCount || 0).toLocaleString('en-US')}</td>
                         <td style={{ ...tdStyle, textAlign: 'right', fontWeight: 700, color: applicantCount > 0 ? '#0f172a' : '#94a3b8' }}>{Number(applicantCount || 0).toLocaleString('en-US')}</td>
                       </tr>
-                      {renderApplicantExpansionRow(row, 4)}
+                      {renderApplicantExpansionRow(row, 6)}
                     </React.Fragment>
                   );
                 })}</tbody>

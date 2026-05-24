@@ -619,9 +619,173 @@ function serializeDatasetTableValue(value: unknown) {
   return value;
 }
 
+function isWorkforceDataset(dataset: ReportDataset) {
+  return dataset.id === 'workforce_departments' || dataset.id === 'workforce_employee_roster';
+}
+
+function workforceRosterColumnSql(column: ReportDatasetColumn): Prisma.Sql {
+  switch (column.key) {
+    case 'employeeName':
+      return Prisma.sql`emp->>'employeeName'`;
+    case 'division':
+      return Prisma.sql`emp->>'division'`;
+    case 'department':
+      return Prisma.sql`emp->>'department'`;
+    case 'role':
+      return Prisma.sql`emp->>'role'`;
+    case 'location':
+      return Prisma.sql`emp->>'location'`;
+    case 'employmentStatus':
+      return Prisma.sql`emp->>'employmentStatus'`;
+    case 'payType':
+      return Prisma.sql`emp->>'payType'`;
+    case 'paidPer':
+      return Prisma.sql`emp->>'paidPer'`;
+    case 'annualCost':
+      return Prisma.sql`NULLIF(emp->>'annualCost', '')::double precision`;
+    case 'monthlyCost':
+      return Prisma.sql`NULLIF(emp->>'monthlyCost', '')::double precision`;
+    case 'billRateLevel':
+      return Prisma.sql`emp->>'billRateLevel'`;
+    default:
+      return Prisma.sql`NULL`;
+  }
+}
+
+function workforceDepartmentColumnSql(column: ReportDatasetColumn): Prisma.Sql {
+  switch (column.key) {
+    case 'division':
+      return Prisma.sql`"division"`;
+    case 'department':
+      return Prisma.sql`"department"`;
+    case 'employeeCount':
+      return Prisma.sql`"employeeCount"`;
+    default:
+      return Prisma.sql`NULL`;
+  }
+}
+
+function addDatasetFilterClauses(
+  dataset: ReportDataset,
+  filters: ReportDatasetFilterConfig[],
+  whereClauses: Prisma.Sql[],
+  columnSql: (column: ReportDatasetColumn) => Prisma.Sql
+) {
+  filters.forEach((filter) => {
+    const column = getDatasetColumn(dataset, filter.field);
+    if (!column) return;
+    const field = columnSql(column);
+    if (filter.operator === 'containsany' && Array.isArray(filter.fields) && filter.fields.length > 0) {
+      const orClauses = filter.fields
+        .map((fieldKey) => getDatasetColumn(dataset, fieldKey))
+        .filter((item): item is ReportDatasetColumn => Boolean(item))
+        .map((item) => Prisma.sql`${columnSql(item)}::text ILIKE ${`%${filter.value}%`}`);
+      if (orClauses.length > 0) whereClauses.push(Prisma.sql`(${Prisma.join(orClauses, ' OR ')})`);
+    } else if (filter.operator === 'equals') {
+      whereClauses.push(Prisma.sql`${field}::text = ${filter.value}`);
+    } else if (filter.operator === 'gte') {
+      whereClauses.push(Prisma.sql`${field} >= ${filter.value}::double precision`);
+    } else if (filter.operator === 'lte') {
+      whereClauses.push(Prisma.sql`${field} <= ${filter.value}::double precision`);
+    } else {
+      whereClauses.push(Prisma.sql`${field}::text ILIKE ${`%${filter.value}%`}`);
+    }
+  });
+}
+
+async function buildWorkforceDatasetTablePreview(dataset: ReportDataset, config: any) {
+  const columns = normalizeDatasetColumns(dataset, Array.isArray(config?.columns) ? config.columns : []);
+  const filters = normalizeDatasetFilters(dataset, Array.isArray(config?.filters) ? config.filters : []);
+  const sort = normalizeDatasetSort(dataset, Array.isArray(config?.sort) ? config.sort : []);
+  const limit = normalizeDatasetLimit(dataset, config?.limit);
+  const selectColumnSql = dataset.id === 'workforce_departments' ? workforceDepartmentColumnSql : workforceRosterColumnSql;
+  const filterColumnSql = selectColumnSql;
+  const whereClauses: Prisma.Sql[] = [];
+  addDatasetFilterClauses(dataset, filters, whereClauses, filterColumnSql);
+
+  const selectFields = columns.map((column) => Prisma.sql`${selectColumnSql(column)} AS ${datasetIdentifier(column.key)}`);
+  const orderBy = sort
+    .map((item) => {
+      const column = getDatasetColumn(dataset, item.field);
+      return column ? Prisma.sql`${selectColumnSql(column)} ${Prisma.raw(item.direction === 'asc' ? 'ASC' : 'DESC')}` : null;
+    })
+    .filter(Boolean) as Prisma.Sql[];
+
+  const rows = dataset.id === 'workforce_departments'
+    ? await prisma.$queryRaw<Array<Record<string, unknown>>>(Prisma.sql`
+        WITH roster AS (
+          SELECT
+            NULLIF(emp->>'division', '') AS "division",
+            NULLIF(emp->>'department', '') AS "department"
+          FROM "OperationalSystemConnection" osc
+          CROSS JOIN LATERAL jsonb_array_elements(
+            osc."connectionMetadata"->'bambooHrWorkforceReportSnapshot'->'dimensions'->'employeeCompensationRoster'
+          ) AS emp
+          WHERE osc."companyId" = ${String(config.companyId)}
+            AND osc."provider" = 'BAMBOOHR'
+            AND osc."sourceCode" = 'BAMBOOHR_STANDARD'
+            AND NULLIF(emp->>'department', '') IS NOT NULL
+        ),
+        grouped AS (
+          SELECT
+            COALESCE("division", 'Unassigned') AS "division",
+            "department",
+            COUNT(*)::double precision AS "employeeCount"
+          FROM roster
+          GROUP BY COALESCE("division", 'Unassigned'), "department"
+        )
+        SELECT ${Prisma.join(selectFields, ', ')}
+        FROM grouped
+        ${whereClauses.length > 0 ? Prisma.sql`WHERE ${Prisma.join(whereClauses, ' AND ')}` : Prisma.empty}
+        ${orderBy.length > 0 ? Prisma.sql`ORDER BY ${Prisma.join(orderBy, ', ')}` : Prisma.empty}
+        LIMIT ${limit}
+      `)
+    : await prisma.$queryRaw<Array<Record<string, unknown>>>(Prisma.sql`
+        SELECT ${Prisma.join(selectFields, ', ')}
+        FROM "OperationalSystemConnection" osc
+        CROSS JOIN LATERAL jsonb_array_elements(
+          osc."connectionMetadata"->'bambooHrWorkforceReportSnapshot'->'dimensions'->'employeeCompensationRoster'
+        ) AS emp
+        WHERE osc."companyId" = ${String(config.companyId)}
+          AND osc."provider" = 'BAMBOOHR'
+          AND osc."sourceCode" = 'BAMBOOHR_STANDARD'
+          ${whereClauses.length > 0 ? Prisma.sql`AND ${Prisma.join(whereClauses, ' AND ')}` : Prisma.empty}
+        ${orderBy.length > 0 ? Prisma.sql`ORDER BY ${Prisma.join(orderBy, ', ')}` : Prisma.empty}
+        LIMIT ${limit}
+      `);
+
+  const tableRows = rows.map((row) => {
+    const output: Record<string, unknown> = { values: {} };
+    columns.forEach((column) => {
+      const value = serializeDatasetTableValue(row[column.key]);
+      if (column.type === 'number' || column.type === 'currency' || column.type === 'percent') {
+        (output.values as Record<string, number>)[column.key] = toNumber(value);
+      } else {
+        output[column.key] = value;
+      }
+    });
+    return output;
+  });
+
+  return {
+    rows: [],
+    tableColumns: columns.map(datasetColumnToTableColumn),
+    tableRows,
+    fields: [],
+    fieldCatalog: [],
+    dataset: {
+      id: dataset.id,
+      label: dataset.label,
+      tableName: dataset.tableName,
+      limit,
+    },
+  };
+}
+
 async function buildDatasetTablePreview(config: any) {
   const dataset = getReportDataset(config?.dataset || config?.datasetId);
   if (!dataset) return null;
+  if (isWorkforceDataset(dataset)) return buildWorkforceDatasetTablePreview(dataset, config);
 
   const columns = normalizeDatasetColumns(dataset, Array.isArray(config?.columns) ? config.columns : []);
   const filters = normalizeDatasetFilters(dataset, Array.isArray(config?.filters) ? config.filters : []);
