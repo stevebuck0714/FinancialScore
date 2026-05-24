@@ -105,6 +105,48 @@ type PriceCostComparisonSortKey =
   | 'marginPctPriorWeek'
   | 'marginDeltaPts'
   | 'status';
+type ProductMarginSortKey =
+  | 'aprPartNumber'
+  | 'customerId'
+  | 'customerName'
+  | 'customerPartNumber'
+  | 'currentPrice'
+  | 'materialCost'
+  | 'tariffPerPiece'
+  | 'dutiesPerPiece'
+  | 'freightPerPiece'
+  | 'currentCostOfSales'
+  | 'operatingExpensesPerPiece'
+  | 'fullyLoadedCost'
+  | 'netProfit'
+  | 'netProfitPct';
+type WholesaleRawSortKey =
+  | 'item'
+  | 'order'
+  | 'quarter'
+  | 'customerName'
+  | 'customerId'
+  | 'isoDate'
+  | 'monthLabel'
+  | 'qty'
+  | 'unitPrice'
+  | 'year'
+  | 'customerGroup'
+  | 'customerPartNumber'
+  | 'revenue'
+  | 'team';
+type VendorPricingSortKey =
+  | 'item'
+  | 'vendorId'
+  | 'vendorName'
+  | 'rank'
+  | 'effectiveDate'
+  | 'breakQty1'
+  | 'actualNoAdj'
+  | 'formalContracts'
+  | 'vendorPricingSheet'
+  | 'difference'
+  | 'updatedDiff';
 type ProductReportView = 'productMarginAnalysis' | 'wholesaleRawData' | 'vendorPricing' | 'performance' | 'retailForecast' | 'merchandiseProfitability';
 
 const clampNumber = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
@@ -751,13 +793,19 @@ export default function OperationsTab({
   const [productReportView, setProductReportView] = useState<ProductReportView>('productMarginAnalysis');
   const [productMarginCustomerFilter, setProductMarginCustomerFilter] = useState('all');
   const [expandedProductMarginCustomers, setExpandedProductMarginCustomers] = useState<Record<string, boolean>>({});
+  const [productMarginSortKey, setProductMarginSortKey] = useState<ProductMarginSortKey>('customerName');
+  const [productMarginSortDir, setProductMarginSortDir] = useState<'asc' | 'desc'>('asc');
   const [wholesaleRawCustomerFilter, setWholesaleRawCustomerFilter] = useState('all');
+  const [wholesaleRawSortKey, setWholesaleRawSortKey] = useState<WholesaleRawSortKey>('isoDate');
+  const [wholesaleRawSortDir, setWholesaleRawSortDir] = useState<'asc' | 'desc'>('desc');
   const [wholesaleRawTimeframe, setWholesaleRawTimeframe] = useState<'currentMonth' | 'currentYear' | 'year' | 'custom' | 'allLoaded'>('currentYear');
   const [wholesaleRawYear, setWholesaleRawYear] = useState('');
   const [wholesaleRawStartDate, setWholesaleRawStartDate] = useState('');
   const [wholesaleRawEndDate, setWholesaleRawEndDate] = useState('');
   const [vendorPricingVendorFilter, setVendorPricingVendorFilter] = useState('all');
   const [vendorPricingSearchTerm, setVendorPricingSearchTerm] = useState('');
+  const [vendorPricingSortKey, setVendorPricingSortKey] = useState<VendorPricingSortKey>('item');
+  const [vendorPricingSortDir, setVendorPricingSortDir] = useState<'asc' | 'desc'>('asc');
   const [selectedRetailForecastSubcategory, setSelectedRetailForecastSubcategory] = useState('');
   const [retailForecastTableSortKey, setRetailForecastTableSortKey] = useState<RetailForecastTableSortKey>('next3Base');
   const [retailForecastTableSortDir, setRetailForecastTableSortDir] = useState<'asc' | 'desc'>('desc');
@@ -6320,9 +6368,17 @@ export default function OperationsTab({
     };
     const priceCostSortLabel = (key: PriceCostComparisonSortKey) =>
       priceCostSortKey === key ? (priceCostSortDir === 'asc' ? ' ▲' : ' ▼') : ' ↕';
+    const priceCostMetricCellStyle = {
+      padding: '6px 5px',
+      textAlign: 'right' as const,
+      fontSize: '12px',
+      whiteSpace: 'nowrap' as const,
+      width: '66px',
+      maxWidth: '74px',
+    };
     const renderPriceCostSortHeader = (
       key: PriceCostComparisonSortKey,
-      label: string,
+      label: string | string[],
       align: 'left' | 'right' = 'left',
     ) => (
       <th
@@ -6336,11 +6392,15 @@ export default function OperationsTab({
           userSelect: 'none',
           whiteSpace: key === 'itemName' || key === 'sku' ? 'nowrap' : 'normal',
           lineHeight: 1.15,
-          minWidth: key === 'itemName' ? '260px' : key === 'sku' ? '140px' : key === 'site' ? '72px' : '78px',
-          maxWidth: key === 'itemName' ? '320px' : key === 'sku' ? '170px' : key === 'site' ? '90px' : '92px',
+          minWidth: key === 'itemName' ? '260px' : key === 'sku' ? '140px' : '62px',
+          maxWidth: key === 'itemName' ? '320px' : key === 'sku' ? '170px' : '76px',
         }}
       >
-        <span style={{ display: 'inline-block' }}>{label}</span>{priceCostSortLabel(key)}
+        <span style={{ display: 'inline-block' }}>
+          {Array.isArray(label)
+            ? label.map((line, index) => <React.Fragment key={`${line}-${index}`}>{line}<br /></React.Fragment>)
+            : label}
+        </span>{priceCostSortLabel(key)}
       </th>
     );
     const paretoRows = [...comparisonRowsWithSignal]
@@ -6740,6 +6800,7 @@ export default function OperationsTab({
     const isProductMarginAnalysisEnabled = isWholesaleProductSector && isSectionEnabled('productsProductMarginAnalysis');
     const isWholesaleRawDataEnabled = isWholesaleProductSector && isSectionEnabled('productsWholesaleRawData');
     const isVendorPricingEnabled = isWholesaleProductSector && isSectionEnabled('productsVendorPricing');
+    const isProductPerformanceEnabled = isSectionEnabled('productsPerformance');
     const isRetailForecastingEnabled = isSectionEnabled('productsRetailForecasting');
     const hasRetailForecastView = isRetailProductSector && isRetailForecastingEnabled && retailForecasts.length > 0;
     const vendorPricingRows = Array.isArray(wholesaleProductsData?.summary?.wholesaleVendorPricingRows)
@@ -6769,7 +6830,49 @@ export default function OperationsTab({
         row?.effectiveDate,
       ].some((value) => String(value || '').toLowerCase().includes(search));
     });
-    const vendorPricingVisibleRows = vendorPricingFilteredRows.slice(0, 1000);
+    const vendorPricingTextSortKeys = new Set<VendorPricingSortKey>([
+      'item',
+      'vendorId',
+      'vendorName',
+      'effectiveDate',
+    ]);
+    const vendorPricingNumericSortKeys = new Set<VendorPricingSortKey>([
+      'rank',
+      'breakQty1',
+      'actualNoAdj',
+      'formalContracts',
+      'vendorPricingSheet',
+      'difference',
+      'updatedDiff',
+    ]);
+    const sortedVendorPricingRows = [...vendorPricingFilteredRows].sort((a: any, b: any) => {
+      const direction = vendorPricingSortDir === 'asc' ? 1 : -1;
+      const left = a?.[vendorPricingSortKey];
+      const right = b?.[vendorPricingSortKey];
+      if (vendorPricingNumericSortKeys.has(vendorPricingSortKey)) {
+        const leftMissing = left == null || !Number.isFinite(Number(left));
+        const rightMissing = right == null || !Number.isFinite(Number(right));
+        if (leftMissing && rightMissing) return 0;
+        if (leftMissing) return 1;
+        if (rightMissing) return -1;
+        return (Number(left) - Number(right)) * direction;
+      }
+      if (vendorPricingTextSortKeys.has(vendorPricingSortKey)) {
+        return String(left || '').localeCompare(String(right || ''), undefined, { sensitivity: 'base', numeric: true }) * direction;
+      }
+      return 0;
+    });
+    const handleVendorPricingSort = (key: VendorPricingSortKey) => {
+      if (vendorPricingSortKey === key) {
+        setVendorPricingSortDir((prev) => (prev === 'asc' ? 'desc' : 'asc'));
+        return;
+      }
+      setVendorPricingSortKey(key);
+      setVendorPricingSortDir(vendorPricingNumericSortKeys.has(key) || key === 'effectiveDate' ? 'desc' : 'asc');
+    };
+    const vendorPricingSortLabel = (key: VendorPricingSortKey) =>
+      vendorPricingSortKey === key ? (vendorPricingSortDir === 'asc' ? ' ▲' : ' ▼') : ' ↕';
+    const vendorPricingVisibleRows = sortedVendorPricingRows.slice(0, 1000);
     const vendorPricingByItem = (() => {
       const byItem = new Map<string, any[]>();
       const parseEffectiveMs = (value: unknown) => {
@@ -7002,6 +7105,61 @@ export default function OperationsTab({
       productMarginCustomerFilter === 'all'
         ? productMarginCustomerGroups
         : productMarginCustomerGroups.filter((group) => group.key === productMarginCustomerFilter);
+    const productMarginTextSortKeys = new Set<ProductMarginSortKey>([
+      'aprPartNumber',
+      'customerId',
+      'customerName',
+      'customerPartNumber',
+    ]);
+    const compareProductMarginValues = (left: unknown, right: unknown) => {
+      const direction = productMarginSortDir === 'asc' ? 1 : -1;
+      if (productMarginTextSortKeys.has(productMarginSortKey)) {
+        return String(left || '').localeCompare(String(right || ''), undefined, { sensitivity: 'base', numeric: true }) * direction;
+      }
+
+      const leftMissing = left == null || !Number.isFinite(Number(left));
+      const rightMissing = right == null || !Number.isFinite(Number(right));
+      if (leftMissing && rightMissing) return 0;
+      if (leftMissing) return 1;
+      if (rightMissing) return -1;
+      return (Number(left) - Number(right)) * direction;
+    };
+    const getProductMarginGroupSortValue = (group: any) => {
+      if (productMarginSortKey === 'customerId' || productMarginSortKey === 'customerName') {
+        return group?.[productMarginSortKey];
+      }
+      if (!productMarginTextSortKeys.has(productMarginSortKey)) {
+        return group?.[productMarginSortKey];
+      }
+      const sortedRows = [...(group?.rows || [])].sort((a, b) => (
+        compareProductMarginValues(a?.[productMarginSortKey], b?.[productMarginSortKey]) ||
+        String(a?.aprPartNumber || '').localeCompare(String(b?.aprPartNumber || ''), undefined, { sensitivity: 'base', numeric: true })
+      ));
+      return sortedRows[0]?.[productMarginSortKey] || '';
+    };
+    const sortedVisibleProductMarginCustomerGroups = [...visibleProductMarginCustomerGroups]
+      .map((group) => ({
+        ...group,
+        rows: [...group.rows].sort((a, b) => (
+          compareProductMarginValues(a?.[productMarginSortKey], b?.[productMarginSortKey]) ||
+          String(a?.customerName || '').localeCompare(String(b?.customerName || ''), undefined, { sensitivity: 'base', numeric: true }) ||
+          String(a?.aprPartNumber || '').localeCompare(String(b?.aprPartNumber || ''), undefined, { sensitivity: 'base', numeric: true })
+        )),
+      }))
+      .sort((a, b) => (
+        compareProductMarginValues(getProductMarginGroupSortValue(a), getProductMarginGroupSortValue(b)) ||
+        String(a.customerName || '').localeCompare(String(b.customerName || ''), undefined, { sensitivity: 'base', numeric: true })
+      ));
+    const handleProductMarginSort = (key: ProductMarginSortKey) => {
+      if (productMarginSortKey === key) {
+        setProductMarginSortDir((prev) => (prev === 'asc' ? 'desc' : 'asc'));
+        return;
+      }
+      setProductMarginSortKey(key);
+      setProductMarginSortDir(productMarginTextSortKeys.has(key) ? 'asc' : 'desc');
+    };
+    const productMarginSortLabel = (key: ProductMarginSortKey) =>
+      productMarginSortKey === key ? (productMarginSortDir === 'asc' ? ' ▲' : ' ▼') : ' ↕';
     const wholesaleRawBaseRows = (wholesaleProductRecords as any[])
       .filter((row) => !row?.isPlaceholderRow)
       .map((row, index) => {
@@ -7070,10 +7228,54 @@ export default function OperationsTab({
           return afterStart && beforeEnd;
         }
         return true;
-      })
-      .sort((a, b) => b.isoDate.localeCompare(a.isoDate) || a.customerName.localeCompare(b.customerName, undefined, { sensitivity: 'base', numeric: true }));
+      });
+    const wholesaleRawTextSortKeys = new Set<WholesaleRawSortKey>([
+      'item',
+      'order',
+      'customerName',
+      'customerId',
+      'isoDate',
+      'monthLabel',
+      'year',
+      'customerGroup',
+      'customerPartNumber',
+      'team',
+    ]);
+    const wholesaleRawNumericSortKeys = new Set<WholesaleRawSortKey>([
+      'quarter',
+      'qty',
+      'unitPrice',
+      'revenue',
+    ]);
+    const sortedWholesaleRawRows = [...wholesaleRawFilteredRows].sort((a, b) => {
+      const direction = wholesaleRawSortDir === 'asc' ? 1 : -1;
+      const left = a?.[wholesaleRawSortKey];
+      const right = b?.[wholesaleRawSortKey];
+      if (wholesaleRawNumericSortKeys.has(wholesaleRawSortKey)) {
+        const leftMissing = left == null || !Number.isFinite(Number(left));
+        const rightMissing = right == null || !Number.isFinite(Number(right));
+        if (leftMissing && rightMissing) return 0;
+        if (leftMissing) return 1;
+        if (rightMissing) return -1;
+        return (Number(left) - Number(right)) * direction;
+      }
+      if (wholesaleRawTextSortKeys.has(wholesaleRawSortKey)) {
+        return String(left || '').localeCompare(String(right || ''), undefined, { sensitivity: 'base', numeric: true }) * direction;
+      }
+      return 0;
+    });
+    const handleWholesaleRawSort = (key: WholesaleRawSortKey) => {
+      if (wholesaleRawSortKey === key) {
+        setWholesaleRawSortDir((prev) => (prev === 'asc' ? 'desc' : 'asc'));
+        return;
+      }
+      setWholesaleRawSortKey(key);
+      setWholesaleRawSortDir(wholesaleRawNumericSortKeys.has(key) || key === 'isoDate' ? 'desc' : 'asc');
+    };
+    const wholesaleRawSortLabel = (key: WholesaleRawSortKey) =>
+      wholesaleRawSortKey === key ? (wholesaleRawSortDir === 'asc' ? ' ▲' : ' ▼') : ' ↕';
     const wholesaleRawVisibleRowLimit = 500;
-    const wholesaleRawVisibleRows = wholesaleRawFilteredRows.slice(0, wholesaleRawVisibleRowLimit);
+    const wholesaleRawVisibleRows = sortedWholesaleRawRows.slice(0, wholesaleRawVisibleRowLimit);
     const effectiveRetailForecastKey =
       selectedRetailForecastSubcategory && retailForecastOptions.some((row) => row.key === selectedRetailForecastSubcategory)
         ? selectedRetailForecastSubcategory
@@ -7321,15 +7523,31 @@ export default function OperationsTab({
       </th>
     );
     const isMerchandiseProfitabilityEnabled = isSectionEnabled('productsMerchandiseProfitability');
+    const fallbackProductReportView: ProductReportView =
+      isProductPerformanceEnabled
+        ? 'performance'
+        : isProductMarginAnalysisEnabled
+        ? 'productMarginAnalysis'
+        : isWholesaleRawDataEnabled
+        ? 'wholesaleRawData'
+        : isVendorPricingEnabled
+        ? 'vendorPricing'
+        : isRetailProductSector && isMerchandiseProfitabilityEnabled
+        ? 'merchandiseProfitability'
+        : isRetailProductSector && isRetailForecastingEnabled
+        ? 'retailForecast'
+        : 'performance';
     const effectiveProductReportView =
       productReportView === 'productMarginAnalysis' && !isProductMarginAnalysisEnabled
-        ? 'performance'
+        ? fallbackProductReportView
         : productReportView === 'wholesaleRawData' && !isWholesaleRawDataEnabled
-        ? 'performance'
+        ? fallbackProductReportView
         : productReportView === 'vendorPricing' && !isVendorPricingEnabled
-        ? 'performance'
+        ? fallbackProductReportView
+        : productReportView === 'performance' && !isProductPerformanceEnabled
+        ? fallbackProductReportView
         : productReportView;
-    const productViewSwitcher = isProductMarginAnalysisEnabled || isWholesaleRawDataEnabled || isVendorPricingEnabled || (isRetailProductSector && (isRetailForecastingEnabled || isMerchandiseProfitabilityEnabled)) ? (
+    const productViewSwitcher = isProductMarginAnalysisEnabled || isWholesaleRawDataEnabled || isVendorPricingEnabled || isProductPerformanceEnabled || (isRetailProductSector && (isRetailForecastingEnabled || isMerchandiseProfitabilityEnabled)) ? (
       <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '16px' }}>
         {isProductMarginAnalysisEnabled && (
           <button
@@ -7385,22 +7603,24 @@ export default function OperationsTab({
             Vendor Pricing
           </button>
         )}
-        <button
-          type="button"
-          onClick={() => setProductReportView('performance')}
-          style={{
-            border: '1px solid #cbd5e1',
-            borderRadius: '999px',
-            padding: '8px 12px',
-            background: effectiveProductReportView === 'performance' ? '#e0e7ff' : '#ffffff',
-            color: effectiveProductReportView === 'performance' ? '#3730a3' : '#334155',
-            fontWeight: 700,
-            cursor: 'pointer',
-            fontSize: '12px',
-          }}
-        >
-          Performance
-        </button>
+        {isProductPerformanceEnabled && (
+          <button
+            type="button"
+            onClick={() => setProductReportView('performance')}
+            style={{
+              border: '1px solid #cbd5e1',
+              borderRadius: '999px',
+              padding: '8px 12px',
+              background: effectiveProductReportView === 'performance' ? '#e0e7ff' : '#ffffff',
+              color: effectiveProductReportView === 'performance' ? '#3730a3' : '#334155',
+              fontWeight: 700,
+              cursor: 'pointer',
+              fontSize: '12px',
+            }}
+          >
+            Performance
+          </button>
+        )}
         {isMerchandiseProfitabilityEnabled && (
           <button
             type="button"
@@ -7444,22 +7664,43 @@ export default function OperationsTab({
         value == null || !Number.isFinite(Number(value)) ? 'N/A' : formatCurrencyWithCents(Number(value));
       const formatMarginPct = (value: number | null | undefined) =>
         value == null || !Number.isFinite(Number(value)) ? 'N/A' : `${Number(value).toFixed(1)}%`;
+      const productMarginColumns: Array<{
+        key: ProductMarginSortKey;
+        label: string | string[];
+        compact?: boolean;
+        summaryColumn?: boolean;
+      }> = [
+        { key: 'aprPartNumber', label: 'APR P/N', summaryColumn: true },
+        { key: 'customerId', label: 'Customer ID' },
+        { key: 'customerName', label: 'Customer Name' },
+        { key: 'customerPartNumber', label: 'Customer P/N' },
+        { key: 'currentPrice', label: ['Current', 'Price'], compact: true },
+        { key: 'materialCost', label: ['Current', 'Cost', 'of', 'Material'], compact: true },
+        { key: 'tariffPerPiece', label: ['Current', 'Tariff', 'Impact per', 'Piece'], compact: true },
+        { key: 'dutiesPerPiece', label: ['Current', 'Duties', 'Impact per', 'Piece'], compact: true },
+        { key: 'freightPerPiece', label: ['Freight', 'Cost per', 'Piece'], compact: true },
+        { key: 'currentCostOfSales', label: ['Current', 'Cost', 'of', 'Sales'], compact: true },
+        { key: 'operatingExpensesPerPiece', label: ['Current', 'Operating', 'Expenses'], compact: true },
+        { key: 'fullyLoadedCost', label: ['Current', 'Fully', 'Loaded', 'Cost'], compact: true },
+        { key: 'netProfit', label: ['Current', 'Net', 'Profit'], compact: true },
+        { key: 'netProfitPct', label: ['Current Net', 'Profit', '(%)'], compact: true },
+      ];
       const setVisibleCustomersExpanded = (expanded: boolean) => {
         setExpandedProductMarginCustomers((prev) => {
           const next = { ...prev };
-          visibleProductMarginCustomerGroups.forEach((group) => {
+          sortedVisibleProductMarginCustomerGroups.forEach((group) => {
             next[group.key] = expanded;
           });
           return next;
         });
       };
       const renderMoneyCell = (value: number | null | undefined, emphasize = false) => (
-        <td style={{ padding: '8px', fontSize: '12px', color: Number(value || 0) < 0 ? '#b91c1c' : '#334155', textAlign: 'right', fontWeight: emphasize ? 700 : 500, whiteSpace: 'nowrap' }}>
+        <td style={{ padding: '6px 5px', fontSize: '11.5px', color: Number(value || 0) < 0 ? '#b91c1c' : '#334155', textAlign: 'right', fontWeight: emphasize ? 700 : 500, whiteSpace: 'nowrap', width: '64px', maxWidth: '70px' }}>
           {formatMarginCurrency(value)}
         </td>
       );
       const renderPctCell = (value: number | null | undefined) => (
-        <td style={{ padding: '8px', fontSize: '12px', color: Number(value || 0) < 0 ? '#b91c1c' : '#334155', textAlign: 'right', fontWeight: 700, whiteSpace: 'nowrap' }}>
+        <td style={{ padding: '6px 5px', fontSize: '11.5px', color: Number(value || 0) < 0 ? '#b91c1c' : '#334155', textAlign: 'right', fontWeight: 700, whiteSpace: 'nowrap', width: '64px', maxWidth: '70px' }}>
           {formatMarginPct(value)}
         </td>
       );
@@ -7527,41 +7768,40 @@ export default function OperationsTab({
           </div>
 
           <div style={{ overflowX: 'auto', maxHeight: '620px', overflowY: 'auto' }}>
-            <table style={{ width: '100%', minWidth: '1850px', borderCollapse: 'collapse' }}>
+            <table style={{ width: '100%', minWidth: '1530px', borderCollapse: 'collapse' }}>
               <thead>
                 <tr style={{ borderBottom: '1px solid #e2e8f0', background: '#f8fafc', position: 'sticky', top: 0, zIndex: 1 }}>
-                  {[
-                    { label: 'APR P/N' },
-                    { label: 'Customer ID' },
-                    { label: 'Customer Name' },
-                    { label: 'Customer P/N' },
-                    { label: 'Item', itemColumn: true },
-                    { label: ['Current', 'Price'], compact: true },
-                    { label: ['Current', 'Cost', 'of', 'Material'], compact: true },
-                    { label: ['Current', 'Tariff', 'Impact per', 'Piece'], compact: true },
-                    { label: ['Current', 'Duties', 'Impact per', 'Piece'], compact: true },
-                    { label: ['Freight', 'Cost per', 'Piece'], compact: true },
-                    { label: ['Current', 'Cost', 'of', 'Sales'], compact: true },
-                    { label: ['Current', 'Operating', 'Expenses'], compact: true },
-                    { label: ['Current', 'Fully', 'Loaded', 'Cost'], compact: true },
-                    { label: ['Current', 'Net', 'Profit'], compact: true },
-                    { label: ['Current Net', 'Profit', '(%)'], compact: true },
-                  ].map((column, index) => (
-                    <th key={Array.isArray(column.label) ? column.label.join(' ') : column.label} style={{ padding: '8px', fontSize: '12px', color: '#334155', textAlign: index >= 5 ? 'right' : 'left', whiteSpace: column.compact ? 'normal' : 'nowrap', lineHeight: 1.15, minWidth: column.compact ? '66px' : column.itemColumn ? '110px' : undefined, maxWidth: column.compact ? '76px' : column.itemColumn ? '140px' : undefined }}>
+                  {productMarginColumns.map((column, index) => (
+                    <th
+                      key={column.key}
+                      onClick={() => handleProductMarginSort(column.key)}
+                      style={{
+                        padding: column.compact ? '6px 5px' : '8px',
+                        fontSize: column.compact ? '11.5px' : '12px',
+                        color: '#334155',
+                        textAlign: index >= 4 ? 'right' : 'left',
+                        whiteSpace: column.compact ? 'normal' : 'nowrap',
+                        lineHeight: 1.15,
+                        cursor: 'pointer',
+                        userSelect: 'none',
+                        minWidth: column.compact ? '58px' : column.summaryColumn ? '82px' : undefined,
+                        maxWidth: column.compact ? '68px' : column.summaryColumn ? '96px' : undefined,
+                      }}
+                    >
                       {Array.isArray(column.label)
                         ? column.label.map((line) => <React.Fragment key={line}>{line}<br /></React.Fragment>)
-                        : column.label}
+                        : column.label}{productMarginSortLabel(column.key)}
                     </th>
                   ))}
                 </tr>
               </thead>
               <tbody>
-                {visibleProductMarginCustomerGroups.map((group) => {
+                {sortedVisibleProductMarginCustomerGroups.map((group) => {
                   const expanded = productMarginCustomerFilter !== 'all' || expandedProductMarginCustomers[group.key] === true;
                   return (
                     <React.Fragment key={group.key}>
                       <tr style={{ borderBottom: '1px solid #e2e8f0', background: '#f8fafc' }}>
-                        <td style={{ padding: '8px', fontSize: '12px', color: '#0f172a', fontWeight: 800, whiteSpace: 'nowrap' }}>
+                        <td style={{ padding: '8px', fontSize: '12px', color: '#0f172a', fontWeight: 800, whiteSpace: 'nowrap', maxWidth: '96px' }}>
                           <button
                             type="button"
                             onClick={() => toggleProductMarginCustomerExpanded(group.key)}
@@ -7573,7 +7813,6 @@ export default function OperationsTab({
                         <td style={{ padding: '8px', fontSize: '12px', color: '#475569', fontWeight: 700 }}>{group.customerId || 'N/A'}</td>
                         <td style={{ padding: '8px', fontSize: '12px', color: '#0f172a', fontWeight: 800 }}>{group.customerName}</td>
                         <td style={{ padding: '8px', fontSize: '12px', color: '#64748b' }}>{group.rows.length.toLocaleString()} items</td>
-                        <td style={{ padding: '8px', fontSize: '12px', color: '#64748b', maxWidth: '140px', whiteSpace: 'normal', overflowWrap: 'anywhere' }}>Customer subtotal</td>
                         {renderMoneyCell(group.currentPrice)}
                         {renderMoneyCell(group.materialCost)}
                         {renderMoneyCell(group.tariffPerPiece)}
@@ -7591,7 +7830,6 @@ export default function OperationsTab({
                           <td style={{ padding: '8px', fontSize: '12px', color: '#475569' }}>{row.customerId || 'N/A'}</td>
                           <td style={{ padding: '8px', fontSize: '12px', color: '#334155' }}>{row.customerName}</td>
                           <td style={{ padding: '8px', fontSize: '12px', color: '#475569', whiteSpace: 'nowrap' }}>{row.customerPartNumber || 'N/A'}</td>
-                          <td style={{ padding: '8px', fontSize: '12px', color: '#334155', maxWidth: '140px', whiteSpace: 'normal', overflowWrap: 'anywhere' }}>{row.item}</td>
                           {renderMoneyCell(row.currentPrice)}
                           {renderMoneyCell(row.materialCost)}
                           {renderMoneyCell(row.tariffPerPiece)}
@@ -7621,20 +7859,26 @@ export default function OperationsTab({
       };
       const formatRawQty = (value: number) =>
         new Intl.NumberFormat('en-US', { maximumFractionDigits: 2 }).format(Number(value || 0));
-      const rawColumns: Array<{ key: string; label: string; align?: 'left' | 'right'; render: (row: any) => React.ReactNode }> = [
+      const rawColumns: Array<{
+        key: WholesaleRawSortKey;
+        label: string;
+        align?: 'left' | 'right';
+        width?: string;
+        maxWidth?: string;
+        render: (row: any) => React.ReactNode;
+      }> = [
         { key: 'item', label: 'Item', render: (row) => row.item || 'N/A' },
         { key: 'order', label: 'Order', render: (row) => row.order || 'N/A' },
-        { key: 'quarter', label: 'QTR', align: 'right', render: (row) => row.quarter || 'N/A' },
+        { key: 'quarter', label: 'QTR', align: 'right', width: '46px', maxWidth: '52px', render: (row) => row.quarter || 'N/A' },
         { key: 'customerName', label: 'Customer Name', render: (row) => row.customerName || 'N/A' },
         { key: 'customerId', label: 'Customer ID', render: (row) => row.customerId || 'N/A' },
-        { key: 'date', label: 'Date', render: (row) => formatRawDate(row.isoDate) },
+        { key: 'isoDate', label: 'Date', width: '84px', maxWidth: '92px', render: (row) => formatRawDate(row.isoDate) },
         { key: 'monthLabel', label: 'MONTH', render: (row) => row.monthLabel || 'N/A' },
-        { key: 'qty', label: 'Qty', align: 'right', render: (row) => formatRawQty(row.qty) },
+        { key: 'qty', label: 'Qty', align: 'right', width: '58px', maxWidth: '66px', render: (row) => formatRawQty(row.qty) },
         { key: 'unitPrice', label: 'Unit Price', align: 'right', render: (row) => formatCurrencyWithCents(row.unitPrice) },
-        { key: 'transaction', label: 'Transaction', render: (row) => row.transaction || 'N/A' },
-        { key: 'year', label: 'YEAR', align: 'right', render: (row) => row.year || 'N/A' },
-        { key: 'customerGroup', label: 'Customer Group', render: (row) => row.customerGroup || 'N/A' },
-        { key: 'customerPartNumber', label: 'Customer P/N', render: (row) => row.customerPartNumber || 'N/A' },
+        { key: 'year', label: 'YEAR', align: 'right', width: '54px', maxWidth: '62px', render: (row) => row.year || 'N/A' },
+        { key: 'customerGroup', label: 'Customer Group', width: '108px', maxWidth: '126px', render: (row) => row.customerGroup || 'N/A' },
+        { key: 'customerPartNumber', label: 'Customer P/N', width: '104px', maxWidth: '124px', render: (row) => row.customerPartNumber || 'N/A' },
         { key: 'revenue', label: 'Revenue', align: 'right', render: (row) => formatCurrencyWithCents(row.revenue) },
         { key: 'team', label: 'TEAM', render: (row) => row.team || 'N/A' },
       ];
@@ -7728,12 +7972,28 @@ export default function OperationsTab({
           )}
 
           <div style={{ overflowX: 'auto', maxHeight: '620px', overflowY: 'auto' }}>
-            <table style={{ width: '100%', minWidth: '1700px', borderCollapse: 'collapse' }}>
+            <table style={{ width: '100%', minWidth: '1500px', borderCollapse: 'collapse' }}>
               <thead>
                 <tr style={{ borderBottom: '1px solid #e2e8f0', background: '#f8fafc', position: 'sticky', top: 0, zIndex: 1 }}>
                   {rawColumns.map((column) => (
-                    <th key={column.key} style={{ padding: '8px', fontSize: '12px', color: '#334155', textAlign: column.align || 'left', whiteSpace: 'nowrap' }}>
-                      {column.label}
+                    <th
+                      key={column.key}
+                      onClick={() => handleWholesaleRawSort(column.key)}
+                      style={{
+                        padding: '8px',
+                        fontSize: '12px',
+                        color: '#334155',
+                        textAlign: column.align || 'left',
+                        whiteSpace: 'nowrap',
+                        width: column.width,
+                        maxWidth: column.maxWidth,
+                        overflow: column.maxWidth ? 'hidden' : undefined,
+                        textOverflow: column.maxWidth ? 'ellipsis' : undefined,
+                        cursor: 'pointer',
+                        userSelect: 'none',
+                      }}
+                    >
+                      {column.label}{wholesaleRawSortLabel(column.key)}
                     </th>
                   ))}
                 </tr>
@@ -7742,7 +8002,20 @@ export default function OperationsTab({
                 {wholesaleRawVisibleRows.map((row) => (
                   <tr key={row.key} style={{ borderBottom: '1px solid #f1f5f9' }}>
                     {rawColumns.map((column) => (
-                      <td key={column.key} style={{ padding: '8px', fontSize: '12px', color: '#334155', textAlign: column.align || 'left', whiteSpace: 'nowrap' }}>
+                      <td
+                        key={column.key}
+                        style={{
+                          padding: '8px',
+                          fontSize: '12px',
+                          color: '#334155',
+                          textAlign: column.align || 'left',
+                          whiteSpace: 'nowrap',
+                          width: column.width,
+                          maxWidth: column.maxWidth,
+                          overflow: column.maxWidth ? 'hidden' : undefined,
+                          textOverflow: column.maxWidth ? 'ellipsis' : undefined,
+                        }}
+                      >
                         {column.render(row)}
                       </td>
                     ))}
@@ -7775,7 +8048,7 @@ export default function OperationsTab({
         const parsed = new Date(`${raw.slice(0, 10)}T00:00:00.000Z`);
         return Number.isNaN(parsed.getTime()) ? raw : parsed.toLocaleDateString('en-US', { timeZone: 'UTC' });
       };
-      const columns: Array<{ key: string; label: string; align?: 'left' | 'right'; render: (row: any) => React.ReactNode }> = [
+      const columns: Array<{ key: VendorPricingSortKey; label: string; align?: 'left' | 'right'; render: (row: any) => React.ReactNode }> = [
         { key: 'item', label: 'Item', render: (row) => row.item || 'N/A' },
         { key: 'vendorId', label: 'Vendor id', render: (row) => row.vendorId || 'N/A' },
         { key: 'vendorName', label: 'Vendor Name', render: (row) => row.vendorName || 'N/A' },
@@ -7848,8 +8121,20 @@ export default function OperationsTab({
               <thead>
                 <tr style={{ borderBottom: '1px solid #e2e8f0', background: '#f8fafc', position: 'sticky', top: 0, zIndex: 1 }}>
                   {columns.map((column) => (
-                    <th key={column.key} style={{ padding: '8px', fontSize: '12px', color: '#334155', textAlign: column.align || 'left', whiteSpace: 'nowrap' }}>
-                      {column.label}
+                    <th
+                      key={column.key}
+                      onClick={() => handleVendorPricingSort(column.key)}
+                      style={{
+                        padding: '8px',
+                        fontSize: '12px',
+                        color: '#334155',
+                        textAlign: column.align || 'left',
+                        whiteSpace: 'nowrap',
+                        cursor: 'pointer',
+                        userSelect: 'none',
+                      }}
+                    >
+                      {column.label}{vendorPricingSortLabel(column.key)}
                     </th>
                   ))}
                 </tr>
@@ -8741,6 +9026,20 @@ export default function OperationsTab({
       );
     }
 
+    if (!isProductPerformanceEnabled) {
+      return (
+        <div style={{ padding: '8px 32px 32px' }}>
+          <h2 style={{ fontSize: '24px', fontWeight: '700', color: '#1e293b', marginBottom: '16px' }}>
+            Product Sales Performance
+          </h2>
+          {productViewSwitcher}
+          <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '24px', color: '#64748b' }}>
+            No Products / SKUs sections are enabled for this company.
+          </div>
+        </div>
+      );
+    }
+
     return (
       <div style={{ padding: '8px 32px 32px' }}>
         <h2 style={{ fontSize: '24px', fontWeight: '700', color: '#1e293b', marginBottom: '16px' }}>
@@ -8824,21 +9123,20 @@ export default function OperationsTab({
           </div>
 
           <div style={{ overflowX: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: '1450px' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: '1180px' }}>
               <thead>
                 <tr style={{ borderBottom: '1px solid #e2e8f0', background: '#f8fafc' }}>
                   {renderPriceCostSortHeader('itemName', 'Item')}
                   {renderPriceCostSortHeader('sku', 'SKU')}
-                  {renderPriceCostSortHeader('site', 'Site')}
-                  {renderPriceCostSortHeader('priceThisWeek', 'Price (This)', 'right')}
-                  {renderPriceCostSortHeader('pricePriorWeek', 'Price (Prior)', 'right')}
-                  {renderPriceCostSortHeader('priceDelta', 'Price Delta', 'right')}
-                  {renderPriceCostSortHeader('costThisWeek', 'Cost (This)', 'right')}
-                  {renderPriceCostSortHeader('costPriorWeek', 'Cost (Prior)', 'right')}
-                  {renderPriceCostSortHeader('costDelta', 'Cost Delta', 'right')}
-                  {renderPriceCostSortHeader('spreadThisWeek', 'Spread (This)', 'right')}
-                  {renderPriceCostSortHeader('spreadPriorWeek', 'Spread (Prior)', 'right')}
-                  {renderPriceCostSortHeader('spreadDelta', 'Spread Delta', 'right')}
+                  {renderPriceCostSortHeader('priceThisWeek', ['Price', '(This)'], 'right')}
+                  {renderPriceCostSortHeader('pricePriorWeek', ['Price', '(Prior)'], 'right')}
+                  {renderPriceCostSortHeader('priceDelta', ['Price', 'Delta'], 'right')}
+                  {renderPriceCostSortHeader('costThisWeek', ['Cost', '(This)'], 'right')}
+                  {renderPriceCostSortHeader('costPriorWeek', ['Cost', '(Prior)'], 'right')}
+                  {renderPriceCostSortHeader('costDelta', ['Cost', 'Delta'], 'right')}
+                  {renderPriceCostSortHeader('spreadThisWeek', ['Spread', '(This)'], 'right')}
+                  {renderPriceCostSortHeader('spreadPriorWeek', ['Spread', '(Prior)'], 'right')}
+                  {renderPriceCostSortHeader('spreadDelta', ['Spread', 'Delta'], 'right')}
                   {renderPriceCostSortHeader('marginPctThisWeek', 'Margin % (This)', 'right')}
                   {renderPriceCostSortHeader('marginPctPriorWeek', 'Margin % (Prior)', 'right')}
                   {renderPriceCostSortHeader('marginDeltaPts', 'Margin Delta pts', 'right')}
@@ -8851,20 +9149,19 @@ export default function OperationsTab({
                     <tr key={`${row.itemName}-${row.sku}-${idx}`} style={{ borderBottom: '1px solid #f1f5f9' }}>
                       <td style={{ padding: '8px', fontSize: '13px', color: '#0f172a', fontWeight: 600, whiteSpace: 'nowrap' }}>{row.itemName}</td>
                       <td style={{ padding: '8px', fontSize: '13px', color: '#475569', whiteSpace: 'nowrap' }}>{row.sku}</td>
-                      <td style={{ padding: '8px', fontSize: '13px', color: '#475569' }}>{row.site}</td>
-                      <td style={{ padding: '8px', textAlign: 'right', fontSize: '13px' }}>{row.priceThisWeek == null ? 'N/A' : formatCurrencyWithCents(row.priceThisWeek)}</td>
-                      <td style={{ padding: '8px', textAlign: 'right', fontSize: '13px' }}>{row.pricePriorWeek == null ? 'N/A' : formatCurrencyWithCents(row.pricePriorWeek)}</td>
-                      <td style={{ padding: '8px', textAlign: 'right', fontSize: '13px', color: (row.priceDelta ?? 0) >= 0 ? '#166534' : '#b91c1c', fontWeight: 600 }}>
+                      <td style={priceCostMetricCellStyle}>{row.priceThisWeek == null ? 'N/A' : formatCurrencyWithCents(row.priceThisWeek)}</td>
+                      <td style={priceCostMetricCellStyle}>{row.pricePriorWeek == null ? 'N/A' : formatCurrencyWithCents(row.pricePriorWeek)}</td>
+                      <td style={{ ...priceCostMetricCellStyle, color: (row.priceDelta ?? 0) >= 0 ? '#166534' : '#b91c1c', fontWeight: 600 }}>
                         {row.priceDelta == null ? 'N/A' : `${row.priceDelta >= 0 ? '+' : ''}${formatCurrencyWithCents(row.priceDelta)}`}
                       </td>
-                      <td style={{ padding: '8px', textAlign: 'right', fontSize: '13px' }}>{row.costThisWeek == null ? 'N/A' : formatCurrencyWithCents(row.costThisWeek)}</td>
-                      <td style={{ padding: '8px', textAlign: 'right', fontSize: '13px' }}>{row.costPriorWeek == null ? 'N/A' : formatCurrencyWithCents(row.costPriorWeek)}</td>
-                      <td style={{ padding: '8px', textAlign: 'right', fontSize: '13px', color: (row.costDelta ?? 0) <= 0 ? '#166534' : '#b91c1c', fontWeight: 600 }}>
+                      <td style={priceCostMetricCellStyle}>{row.costThisWeek == null ? 'N/A' : formatCurrencyWithCents(row.costThisWeek)}</td>
+                      <td style={priceCostMetricCellStyle}>{row.costPriorWeek == null ? 'N/A' : formatCurrencyWithCents(row.costPriorWeek)}</td>
+                      <td style={{ ...priceCostMetricCellStyle, color: (row.costDelta ?? 0) <= 0 ? '#166534' : '#b91c1c', fontWeight: 600 }}>
                         {row.costDelta == null ? 'N/A' : `${row.costDelta >= 0 ? '+' : ''}${formatCurrencyWithCents(row.costDelta)}`}
                       </td>
-                      <td style={{ padding: '8px', textAlign: 'right', fontSize: '13px' }}>{row.spreadThisWeek == null ? 'N/A' : formatCurrencyWithCents(row.spreadThisWeek)}</td>
-                      <td style={{ padding: '8px', textAlign: 'right', fontSize: '13px' }}>{row.spreadPriorWeek == null ? 'N/A' : formatCurrencyWithCents(row.spreadPriorWeek)}</td>
-                      <td style={{ padding: '8px', textAlign: 'right', fontSize: '13px', color: (row.spreadDelta ?? 0) >= 0 ? '#166534' : '#b91c1c', fontWeight: 700 }}>
+                      <td style={priceCostMetricCellStyle}>{row.spreadThisWeek == null ? 'N/A' : formatCurrencyWithCents(row.spreadThisWeek)}</td>
+                      <td style={priceCostMetricCellStyle}>{row.spreadPriorWeek == null ? 'N/A' : formatCurrencyWithCents(row.spreadPriorWeek)}</td>
+                      <td style={{ ...priceCostMetricCellStyle, color: (row.spreadDelta ?? 0) >= 0 ? '#166534' : '#b91c1c', fontWeight: 700 }}>
                         {row.spreadDelta == null ? 'N/A' : `${row.spreadDelta >= 0 ? '+' : ''}${formatCurrencyWithCents(row.spreadDelta)}`}
                       </td>
                       <td style={{ padding: '8px', textAlign: 'right', fontSize: '13px' }}>{row.marginPctThisWeek == null ? 'N/A' : `${row.marginPctThisWeek.toFixed(1)}%`}</td>
@@ -8888,7 +9185,7 @@ export default function OperationsTab({
                   ))}
                   {sortedComparisonRows.length === 0 && (
                     <tr>
-                      <td colSpan={16} style={{ padding: '12px', fontSize: '13px', color: '#64748b' }}>
+                      <td colSpan={15} style={{ padding: '12px', fontSize: '13px', color: '#64748b' }}>
                         No rows match current filters.
                       </td>
                     </tr>

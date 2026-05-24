@@ -17,6 +17,7 @@ const OPERATIONAL_HUB_SECTION_OPTIONS: Array<{ key: string; label: string; group
   { key: 'productsProductMarginAnalysis', label: 'Product Margin Analysis', group: 'Products' },
   { key: 'productsWholesaleRawData', label: 'Raw Data', group: 'Products' },
   { key: 'productsVendorPricing', label: 'Vendor Pricing', group: 'Products' },
+  { key: 'productsPerformance', label: 'Performance', group: 'Products' },
   { key: 'productsRetailForecasting', label: 'Retail Forecasting / Monthly Inventory Report', group: 'Products' },
   { key: 'productsMerchandiseProfitability', label: 'Merchandise Profitability', group: 'Products' },
   { key: 'productsPriceCostComparison', label: 'Weekly Price-Cost Comparison', group: 'Products' },
@@ -156,6 +157,29 @@ const OPERATIONAL_HUB_SECTION_OPTIONS: Array<{ key: string; label: string; group
   { key: 'caApMainTable', label: 'Main Table (toggle)', group: 'Construction AP' },
   { key: 'caApPaymentPriority', label: 'Payment Priority', group: 'Construction AP' },
 ];
+
+const WHOLESALE_ORDERS_SALES_EXCLUDED_REPORT_KEYS = new Set([
+  'customersTopByRevenue',
+  'customersRevenueDistribution',
+  'customersConcentrationRisk',
+  'customersAtRiskQueue',
+]);
+
+const WHOLESALE_CUSTOMERS_EXCLUDED_REPORT_KEYS = new Set([
+  'customersWipByCustomer',
+  'customersPlatoSalesMetricCards',
+  'customersPlatoSalesHistoryChart',
+  'customersPlatoSalesHistoryTables',
+  'customersGrossMarginHistoryChart',
+  'customersGrossMarginHistoryTable',
+  'customersRetentionProxy',
+  'customersInvoiceVelocity',
+]);
+
+const WHOLESALE_INVENTORY_EXCLUDED_REPORT_KEYS = new Set([
+  'inventoryRetailTurns',
+  'inventoryRetailProductAging',
+]);
 
 const OPERATIONAL_HUB_SECTIONS_BY_DATATYPE_GROUP: Record<string, string> = {
   customers: 'Customers',
@@ -933,6 +957,7 @@ export default function SiteAdminDashboard(props: any) {
   };
 
   const getOperationalHubTabCategoryOptions = (company: any): Array<{ key: string; label: string; group: string }> => {
+    const companySectorCategory = String(company?.industrySectorCategory || '').trim();
     const sectorModules = getTopLineBucketsForSector(company?.industrySectorCategory || null).map((bucket) => String(bucket.key || '').trim());
     const moduleSet = Array.from(new Set(['dashboard', 'forecast', ...sectorModules, 'cash', 'daily_financials'].filter(Boolean)));
     return moduleSet.map((moduleKey) => ({
@@ -942,6 +967,8 @@ export default function SiteAdminDashboard(props: any) {
           ? 'Overview'
           : moduleKey === 'forecast'
             ? 'Forecast'
+          : companySectorCategory === '42' && moduleKey === 'products_skus'
+            ? 'Products'
           : getModuleLabel(moduleKey) || moduleKey.replace(/_/g, ' '),
       group: 'Tab Categories',
     }));
@@ -1008,6 +1035,9 @@ export default function SiteAdminDashboard(props: any) {
       return OPERATIONAL_HUB_SECTION_OPTIONS
         .filter((item) => item.group === sourceGroup)
         .filter((item) => !['productsProductMarginAnalysis', 'productsWholesaleRawData', 'productsVendorPricing'].includes(item.key) || companySectorCategory === '42')
+        .filter((item) => companySectorCategory !== '42' || moduleKey !== 'orders_sales' || !WHOLESALE_ORDERS_SALES_EXCLUDED_REPORT_KEYS.has(item.key))
+        .filter((item) => companySectorCategory !== '42' || moduleKey !== 'customers' || !WHOLESALE_CUSTOMERS_EXCLUDED_REPORT_KEYS.has(item.key))
+        .filter((item) => companySectorCategory !== '42' || moduleKey !== 'inventory' || !WHOLESALE_INVENTORY_EXCLUDED_REPORT_KEYS.has(item.key))
         .map((item) => ({
           ...item,
           group: option.label,
