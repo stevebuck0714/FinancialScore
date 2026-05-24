@@ -19,6 +19,7 @@ type HiringJobRow = {
   title: string;
   status: string;
   openJobs: number;
+  clientName: string;
   division: string;
   department: string;
   location: string;
@@ -33,6 +34,7 @@ type HiringApplicationRow = {
   id: string;
   jobId: string;
   jobTitle: string;
+  clientName: string;
   division: string;
   department: string;
   applicantName: string;
@@ -54,6 +56,7 @@ type CurrentEmployee = {
   id: string;
   name: string;
   role: string;
+  clientName: string;
   department: string;
   division: string;
   location: string;
@@ -87,6 +90,7 @@ type EmployeeCompensationRow = {
   employeeId: string;
   employeeName: string;
   role: string;
+  clientName: string;
   department: string;
   division: string;
   location: string;
@@ -167,6 +171,7 @@ export type BambooHrWorkforceReportSnapshot = {
 
 const SNAPSHOT_METADATA_KEY = 'bambooHrWorkforceReportSnapshot';
 const MAX_CONCURRENCY = 8;
+const CURRENT_BAMBOOHR_CLIENT_NAME = 'Eli Lilly';
 
 function asRecord(value: unknown): Record<string, unknown> {
   return value && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
@@ -308,13 +313,16 @@ function normalizeCurrentEmployee(employee: EmployeeRow, detail: Record<string, 
   const firstName = asString(employee.firstName);
   const lastName = asString(employee.lastName);
   const employeeId = asString(employee.id);
+  const department = asString(job.department) || asString(employee.department) || 'Unassigned';
+  const division = asString(job.division) || asString(employee.division) || 'Unassigned';
 
   return {
     id: employeeId,
     name: asString(employee.displayName) || [firstName, lastName].filter(Boolean).join(' ') || employeeId,
     role: asString(job.jobTitle) || asString(employee.jobTitle) || 'Unassigned',
-    department: asString(job.department) || asString(employee.department) || 'Unassigned',
-    division: asString(job.division) || asString(employee.division) || 'Unassigned',
+    clientName: currentBambooHrClientName(),
+    department,
+    division,
     location: asString(job.location) || asString(employee.location) || 'Unassigned',
     employmentStatus: asString(status.employmentStatus) || asString(employee.status) || 'Current',
     employeeTaxType: asString(status.employeeTaxType) || 'Unassigned',
@@ -376,6 +384,7 @@ function buildEmployeeCompensationRoster(employees: CurrentEmployee[]): Employee
       employeeId: employee.id,
       employeeName: employee.name,
       role: employee.role,
+      clientName: employee.clientName,
       department: employee.department,
       division: employee.division,
       location: employee.location,
@@ -496,16 +505,22 @@ function divisionForDepartment(department: string, departmentDivisionMap: Map<st
   return departmentDivisionMap.get(departmentMapKey(department)) || 'Unassigned';
 }
 
+function currentBambooHrClientName(): string {
+  return CURRENT_BAMBOOHR_CLIENT_NAME;
+}
+
 function normalizeHiringJob(row: TableRow, departmentDivisionMap: Map<string, string> = new Map()): HiringJobRow {
   const titleRecord = asRecord(row.title);
   const status = labelValue(row.status) || 'Unknown';
   const department = labelValue(row.department) || 'Unassigned';
-  const division = labelValue(row.division) || divisionForDepartment(department, departmentDivisionMap);
+  const division = divisionForDepartment(department, departmentDivisionMap);
+  const clientName = currentBambooHrClientName();
   return {
     id: asString(row.id) || idValue(row.job) || asString(titleRecord.id),
     title: labelValue(row.title) || asString(row.jobTitle) || 'Untitled Job',
     status,
     openJobs: status.toLowerCase() === 'open' ? 1 : 0,
+    clientName,
     division,
     department,
     location: labelValue(row.location) || 'Unassigned',
@@ -543,12 +558,14 @@ function normalizeHiringApplication(
     asString(applicant.name) ||
     [firstName, lastName].filter(Boolean).join(' ')
   ).trim();
-  const department = labelValue(row.department) || matchedJob?.department || 'Unassigned';
-  const division = labelValue(row.division) || divisionForDepartment(department, departmentDivisionMap) || matchedJob?.division || 'Unassigned';
+  const department = matchedJob?.department || labelValue(row.department) || 'Unassigned';
+  const division = divisionForDepartment(department, departmentDivisionMap);
+  const clientName = currentBambooHrClientName();
   return {
     id: asString(row.id),
     jobId,
     jobTitle: rawJobTitle || matchedJob?.title || 'Unassigned Job',
+    clientName,
     division,
     department,
     applicantName: applicantName || 'Applicant',
@@ -611,6 +628,7 @@ export async function getBambooHrHiringPayload(companyId: string) {
       jobId: job.id,
       title: job.title,
       status: job.status,
+      clientName: job.clientName,
       division: job.division,
       department: job.department,
       activeApplicantsCount: job.activeApplicantsCount,
@@ -619,13 +637,15 @@ export async function getBambooHrHiringPayload(companyId: string) {
     }))
     .sort((a, b) => b.activeApplicantsCount - a.activeApplicantsCount);
   const jobsByDivisionDepartment = jobs.reduce((groups: Map<string, {
+    clientName: string;
     openJobs: number;
     totalJobs: number;
   }>, job) => {
+    const clientName = job.clientName || 'Unassigned';
     const division = job.division || 'Unassigned';
     const department = job.department || 'Unassigned';
-    const key = `${division}||${department}`;
-    const group = groups.get(key) || { openJobs: 0, totalJobs: 0 };
+    const key = `${clientName}||${division}||${department}`;
+    const group = groups.get(key) || { clientName, openJobs: 0, totalJobs: 0 };
     group.openJobs += job.openJobs;
     group.totalJobs += 1;
     groups.set(key, group);
@@ -633,6 +653,7 @@ export async function getBambooHrHiringPayload(companyId: string) {
   }, new Map());
   const applicantsByDivisionDepartment = Array.from(
     applications.reduce((groups: Map<string, {
+      clientName: string;
       division: string;
       department: string;
       openJobs: number;
@@ -641,12 +662,14 @@ export async function getBambooHrHiringPayload(companyId: string) {
       newApplicantsCount: number;
       totalApplicantsCount: number;
     }>, application) => {
+      const clientName = application.clientName || 'Unassigned';
       const division = application.division || 'Unassigned';
       const department = application.department || 'Unassigned';
-      const key = `${division}||${department}`;
+      const key = `${clientName}||${division}||${department}`;
       const jobGroup = jobsByDivisionDepartment.get(key);
       const normalizedStatus = String(application.status || '').toLowerCase().replace(/[_-]+/g, ' ');
       const group = groups.get(key) || {
+        clientName,
         division,
         department,
         openJobs: jobGroup?.openJobs || 0,

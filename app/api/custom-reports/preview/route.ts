@@ -24,6 +24,7 @@ import {
   buildJobCostControlMock,
   buildProjectPortfolioMock,
 } from '@/lib/operations/construction-mock-data';
+import { getBambooHrHiringPayload } from '@/lib/operations/bamboohr-workforce-reports';
 
 function toNumber(value: unknown): number {
   const n = Number(value ?? 0);
@@ -623,10 +624,104 @@ function isWorkforceDataset(dataset: ReportDataset) {
   return dataset.id === 'workforce_departments' || dataset.id === 'workforce_employee_roster';
 }
 
+function isHiringApplicantDataset(dataset: ReportDataset) {
+  return dataset.id === 'hiring_applicants';
+}
+
+function textMatchesFilter(value: unknown, filter: ReportDatasetFilterConfig) {
+  const haystack = normalizeFilterText(value);
+  const needle = normalizeFilterText(filter.value);
+  if (!needle) return true;
+  if (filter.operator === 'equals') return haystack === needle;
+  return haystack.includes(needle);
+}
+
+function applyInMemoryDatasetFilters(rows: Array<Record<string, unknown>>, filters: ReportDatasetFilterConfig[]) {
+  if (filters.length === 0) return rows;
+  return rows.filter((row) =>
+    filters.every((filter) => {
+      if (filter.operator === 'containsany' && Array.isArray(filter.fields) && filter.fields.length > 0) {
+        return filter.fields.some((field) => textMatchesFilter(row[field], filter));
+      }
+      return textMatchesFilter(row[filter.field], filter);
+    })
+  );
+}
+
+function compareDatasetValues(a: unknown, b: unknown) {
+  const aNumber = Number(a);
+  const bNumber = Number(b);
+  if (Number.isFinite(aNumber) && Number.isFinite(bNumber)) return aNumber - bNumber;
+  return String(a || '').localeCompare(String(b || ''));
+}
+
+async function buildHiringApplicantsDatasetTablePreview(dataset: ReportDataset, config: any) {
+  const columns = normalizeDatasetColumns(dataset, Array.isArray(config?.columns) ? config.columns : []);
+  const filters = normalizeDatasetFilters(dataset, Array.isArray(config?.filters) ? config.filters : []);
+  const sort = normalizeDatasetSort(dataset, Array.isArray(config?.sort) ? config.sort : []);
+  const limit = normalizeDatasetLimit(dataset, config?.limit);
+  const payload = await getBambooHrHiringPayload(String(config.companyId));
+  const applications = Array.isArray(payload?.applications) ? payload.applications : [];
+  const rows = applyInMemoryDatasetFilters(
+    applications.map((application: any) => ({
+      applicantName: application.applicantName || '',
+      jobTitle: application.jobTitle || '',
+      clientName: application.clientName || '',
+      division: application.division || '',
+      department: application.department || '',
+      status: application.status || '',
+      appliedDate: application.appliedDate || null,
+      lastUpdated: application.lastUpdated || null,
+      hiredDate: application.hiredDate || null,
+      email: application.email || '',
+      phone: application.phone || '',
+      source: application.source || '',
+      location: application.location || '',
+      rating: application.rating ?? null,
+    })),
+    filters
+  ).sort((a, b) => {
+    for (const item of sort) {
+      const comparison = compareDatasetValues(a[item.field], b[item.field]);
+      if (comparison !== 0) return item.direction === 'asc' ? comparison : -comparison;
+    }
+    return 0;
+  }).slice(0, limit);
+
+  const tableRows = rows.map((row) => {
+    const output: Record<string, unknown> = { values: {} };
+    columns.forEach((column) => {
+      const value = serializeDatasetTableValue(row[column.key]);
+      if (column.type === 'number' || column.type === 'currency' || column.type === 'percent') {
+        (output.values as Record<string, number>)[column.key] = toNumber(value);
+      } else {
+        output[column.key] = value;
+      }
+    });
+    return output;
+  });
+
+  return {
+    rows: [],
+    tableColumns: columns.map(datasetColumnToTableColumn),
+    tableRows,
+    fields: [],
+    fieldCatalog: [],
+    dataset: {
+      id: dataset.id,
+      label: dataset.label,
+      tableName: dataset.tableName,
+      limit,
+    },
+  };
+}
+
 function workforceRosterColumnSql(column: ReportDatasetColumn): Prisma.Sql {
   switch (column.key) {
     case 'employeeName':
       return Prisma.sql`emp->>'employeeName'`;
+    case 'clientName':
+      return Prisma.sql`emp->>'clientName'`;
     case 'division':
       return Prisma.sql`emp->>'division'`;
     case 'department':
@@ -656,6 +751,8 @@ function workforceDepartmentColumnSql(column: ReportDatasetColumn): Prisma.Sql {
   switch (column.key) {
     case 'division':
       return Prisma.sql`"division"`;
+    case 'clientName':
+      return Prisma.sql`"clientName"`;
     case 'department':
       return Prisma.sql`"department"`;
     case 'employeeCount':
@@ -715,6 +812,7 @@ async function buildWorkforceDatasetTablePreview(dataset: ReportDataset, config:
     ? await prisma.$queryRaw<Array<Record<string, unknown>>>(Prisma.sql`
         WITH roster AS (
           SELECT
+            COALESCE(NULLIF(emp->>'clientName', ''), 'Unassigned') AS "clientName",
             NULLIF(emp->>'division', '') AS "division",
             NULLIF(emp->>'department', '') AS "department"
           FROM "OperationalSystemConnection" osc
@@ -729,10 +827,11 @@ async function buildWorkforceDatasetTablePreview(dataset: ReportDataset, config:
         grouped AS (
           SELECT
             COALESCE("division", 'Unassigned') AS "division",
+            "clientName",
             "department",
             COUNT(*)::double precision AS "employeeCount"
           FROM roster
-          GROUP BY COALESCE("division", 'Unassigned'), "department"
+          GROUP BY "clientName", COALESCE("division", 'Unassigned'), "department"
         )
         SELECT ${Prisma.join(selectFields, ', ')}
         FROM grouped
@@ -785,6 +884,7 @@ async function buildWorkforceDatasetTablePreview(dataset: ReportDataset, config:
 async function buildDatasetTablePreview(config: any) {
   const dataset = getReportDataset(config?.dataset || config?.datasetId);
   if (!dataset) return null;
+  if (isHiringApplicantDataset(dataset)) return buildHiringApplicantsDatasetTablePreview(dataset, config);
   if (isWorkforceDataset(dataset)) return buildWorkforceDatasetTablePreview(dataset, config);
 
   const columns = normalizeDatasetColumns(dataset, Array.isArray(config?.columns) ? config.columns : []);

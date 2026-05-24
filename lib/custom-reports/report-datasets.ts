@@ -77,15 +77,17 @@ export const reportDatasets: ReportDataset[] = [
     description: 'Department and division headcount from the curated workforce roster snapshot.',
     tableName: 'OperationalSystemConnection',
     aliases: ['departments', 'department names', 'all department names', 'departments by division', 'division departments', 'headcount by department', 'workforce departments', 'employee departments'],
-    defaultColumns: ['division', 'department', 'employeeCount'],
-    defaultSort: [{ field: 'division', direction: 'asc' }, { field: 'department', direction: 'asc' }],
+    defaultColumns: ['clientName', 'division', 'department', 'employeeCount'],
+    defaultSort: [{ field: 'clientName', direction: 'asc' }, { field: 'division', direction: 'asc' }, { field: 'department', direction: 'asc' }],
     defaultLimit: 250,
     maxPreviewLimit: 500,
     entityFilters: [
+      { field: 'clientName', entityType: 'client', aliases: ['client', 'customer'] },
       { field: 'division', entityType: 'division', aliases: ['division'] },
       { field: 'department', entityType: 'department', aliases: ['department'] },
     ],
     columns: [
+      col('clientName', 'Client', 'text', ['client', 'customer']),
       col('division', 'Division', 'text', ['division', 'business unit']),
       col('department', 'Department', 'text', ['department', 'department name', 'dept']),
       col('employeeCount', 'Employee Count', 'number', ['headcount', 'employee count', 'employees', 'count']),
@@ -97,11 +99,12 @@ export const reportDatasets: ReportDataset[] = [
     description: 'Employee roster detail from the curated workforce snapshot, including division, department, role, location, status, and compensation fields.',
     tableName: 'OperationalSystemConnection',
     aliases: ['employee roster', 'employees', 'workforce', 'workforce roster', 'bamboohr employees', 'employee compensation roster', 'staff roster', 'payroll roster'],
-    defaultColumns: ['employeeName', 'division', 'department', 'role', 'location', 'employmentStatus', 'billRateLevel'],
-    defaultSort: [{ field: 'department', direction: 'asc' }, { field: 'employeeName', direction: 'asc' }],
+    defaultColumns: ['employeeName', 'clientName', 'division', 'department', 'role', 'location', 'employmentStatus', 'billRateLevel'],
+    defaultSort: [{ field: 'clientName', direction: 'asc' }, { field: 'department', direction: 'asc' }, { field: 'employeeName', direction: 'asc' }],
     defaultLimit: 250,
     maxPreviewLimit: 500,
     entityFilters: [
+      { field: 'clientName', entityType: 'client', aliases: ['client', 'customer'] },
       { field: 'division', entityType: 'division', aliases: ['division'] },
       { field: 'department', entityType: 'department', aliases: ['department'] },
       { field: 'employeeName', entityType: 'employee', aliases: ['employee', 'person'] },
@@ -110,6 +113,7 @@ export const reportDatasets: ReportDataset[] = [
     ],
     columns: [
       col('employeeName', 'Employee', 'text', ['employee', 'employee name', 'name']),
+      col('clientName', 'Client', 'text', ['client', 'customer']),
       col('division', 'Division', 'text', ['division', 'business unit']),
       col('department', 'Department', 'text', ['department', 'department name', 'dept']),
       col('role', 'Role', 'text', ['role', 'job title', 'title']),
@@ -120,6 +124,41 @@ export const reportDatasets: ReportDataset[] = [
       col('annualCost', 'Annual Pay', 'currency', ['annual pay', 'annual cost', 'salary']),
       col('monthlyCost', 'Monthly Pay', 'currency', ['monthly pay', 'monthly cost']),
       col('billRateLevel', 'Bill Rate Level', 'text', ['bill rate level', 'rate level']),
+    ],
+  },
+  {
+    id: 'hiring_applicants',
+    label: 'Hiring Applicants',
+    description: 'Applicant tracking detail from the curated BambooHR hiring feed, including applicant name, job title, division, department, status, dates, and contact fields.',
+    tableName: 'BambooHrHiringPayload',
+    aliases: ['applicants', 'applicant search', 'candidate search', 'candidates', 'hiring applicants', 'applicant tracking', 'ats applicants', 'application detail'],
+    defaultColumns: ['applicantName', 'jobTitle', 'clientName', 'division', 'department', 'status', 'appliedDate', 'lastUpdated', 'email', 'phone'],
+    defaultSort: [{ field: 'clientName', direction: 'asc' }, { field: 'lastUpdated', direction: 'desc' }, { field: 'applicantName', direction: 'asc' }],
+    defaultLimit: 250,
+    maxPreviewLimit: 500,
+    entityFilters: [
+      { field: 'clientName', entityType: 'client', aliases: ['client', 'customer'] },
+      { field: 'applicantName', entityType: 'applicant', aliases: ['applicant', 'candidate', 'name'] },
+      { field: 'jobTitle', entityType: 'role', aliases: ['job', 'job title', 'role', 'position'] },
+      { field: 'division', entityType: 'division', aliases: ['division'] },
+      { field: 'department', entityType: 'department', aliases: ['department'] },
+      { field: 'status', entityType: 'status', aliases: ['status', 'stage'] },
+    ],
+    columns: [
+      col('applicantName', 'Applicant', 'text', ['applicant', 'candidate', 'applicant name', 'candidate name', 'name']),
+      col('jobTitle', 'Job Title', 'text', ['job', 'job title', 'role', 'position']),
+      col('clientName', 'Client', 'text', ['client', 'customer']),
+      col('division', 'Division', 'text', ['division', 'business unit']),
+      col('department', 'Department', 'text', ['department', 'dept']),
+      col('status', 'Status', 'text', ['status', 'stage']),
+      col('appliedDate', 'Applied Date', 'date', ['applied', 'applied date']),
+      col('lastUpdated', 'Last Updated', 'date', ['updated', 'last updated']),
+      col('hiredDate', 'Hired / Start Date', 'date', ['hired', 'start date', 'hire date']),
+      col('email', 'Email', 'text', ['email']),
+      col('phone', 'Phone', 'text', ['phone']),
+      col('source', 'Source', 'text', ['source']),
+      col('location', 'Location', 'text', ['location']),
+      col('rating', 'Rating', 'number', ['rating']),
     ],
   },
   {
@@ -789,6 +828,18 @@ function extractEntityNameByType(prompt: string, entityType: string): string | n
       /\bvendor\s+(.+?)(?:\s+with\b|\s+where\b|\s+showing\b|\s+return\b|\s+including\b|\s+bills?\b|$)/i,
       /\bsupplier\s+(.+?)(?:\s+with\b|\s+where\b|\s+showing\b|\s+return\b|\s+including\b|\s+bills?\b|$)/i,
     ],
+    applicant: [
+      /\bapplicant\s+(.+?)(?:\s+with\b|\s+where\b|\s+showing\b|\s+return\b|\s+including\b|$)/i,
+      /\bcandidate\s+(.+?)(?:\s+with\b|\s+where\b|\s+showing\b|\s+return\b|\s+including\b|$)/i,
+      /\b(?:find|search|lookup)\s+(?:applicant|candidate)\s+(.+?)(?:\s+with\b|\s+where\b|\s+showing\b|\s+return\b|\s+including\b|$)/i,
+    ],
+    employee: [
+      /\bemployee\s+(.+?)(?:\s+with\b|\s+where\b|\s+showing\b|\s+return\b|\s+including\b|$)/i,
+      /\b(?:find|search|lookup)\s+employee\s+(.+?)(?:\s+with\b|\s+where\b|\s+showing\b|\s+return\b|\s+including\b|$)/i,
+    ],
+    role: [
+      /\b(?:role|job title|position)\s+(.+?)(?:\s+with\b|\s+where\b|\s+showing\b|\s+return\b|\s+including\b|$)/i,
+    ],
   };
   const patterns = patternsByType[entityType] || [];
   for (const pattern of patterns) {
@@ -809,6 +860,23 @@ export function inferDatasetFiltersFromPrompt(dataset: ReportDataset, prompt: st
   const explicitProductName = extractEntityNameByType(prompt, 'product');
   const explicitVendorName = extractEntityNameByType(prompt, 'vendor');
   const explicitCustomerName = extractEntityNameByType(prompt, 'customer');
+  const explicitApplicantName = extractEntityNameByType(prompt, 'applicant');
+  const explicitEmployeeName = extractEntityNameByType(prompt, 'employee');
+  const explicitRoleName = extractEntityNameByType(prompt, 'role');
+  const hasApplicantFilter = dataset.entityFilters.some((filter) => filter.entityType === 'applicant');
+  const hasEmployeeFilter = dataset.entityFilters.some((filter) => filter.entityType === 'employee');
+  if (hasApplicantFilter && explicitApplicantName) {
+    const filterMeta = dataset.entityFilters.find((filter) => filter.entityType === 'applicant');
+    return filterMeta ? [{ field: filterMeta.field, operator: 'contains', value: explicitApplicantName, entityType: 'applicant' }] : [];
+  }
+  if (hasEmployeeFilter && explicitEmployeeName) {
+    const filterMeta = dataset.entityFilters.find((filter) => filter.entityType === 'employee');
+    return filterMeta ? [{ field: filterMeta.field, operator: 'contains', value: explicitEmployeeName, entityType: 'employee' }] : [];
+  }
+  if (explicitRoleName && dataset.entityFilters.some((filter) => filter.entityType === 'role')) {
+    const filterMeta = dataset.entityFilters.find((filter) => filter.entityType === 'role');
+    return filterMeta ? [{ field: filterMeta.field, operator: 'contains', value: explicitRoleName, entityType: 'role' }] : [];
+  }
   const hasProductFilterCue = /\b(for|of|where|with)\s+(item|sku|product|part)\b/.test(normalizedPrompt);
   const preferredEntityType = explicitVendorName || normalizedPrompt.includes('vendor') || normalizedPrompt.includes('supplier')
     ? 'vendor'

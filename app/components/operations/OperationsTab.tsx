@@ -818,6 +818,10 @@ export default function OperationsTab({
       </div>
     );
   };
+  const normalizeOperationalClient = (value: any) => String(value || 'Unassigned').trim() || 'Unassigned';
+  const matchesSelectedOperationalClient = (value: any) => (
+    selectedOperationalClient === '__ALL__' || normalizeOperationalClient(value) === selectedOperationalClient
+  );
   
   // Date range and frequency filters
   const [frequency, setFrequency] = useState<'daily' | 'weekly' | 'monthly'>('daily');
@@ -16703,7 +16707,8 @@ Strategies to Improve the CCC
       const payTypeMix: any[] = Array.isArray(laborSchedulingData.payTypeMix) ? laborSchedulingData.payTypeMix : [];
       const billRateLevelCoverage: any[] = Array.isArray(laborSchedulingData.billRateLevelCoverage) ? laborSchedulingData.billRateLevelCoverage : [];
       const missingBillRateLevel: any[] = Array.isArray(laborSchedulingData.missingBillRateLevel) ? laborSchedulingData.missingBillRateLevel : [];
-      const employeeCompensationRoster: any[] = Array.isArray(laborSchedulingData.employeeCompensationRoster) ? laborSchedulingData.employeeCompensationRoster : [];
+      const employeeCompensationRoster: any[] = (Array.isArray(laborSchedulingData.employeeCompensationRoster) ? laborSchedulingData.employeeCompensationRoster : [])
+        .filter((row: any) => matchesSelectedOperationalClient(row.clientName));
       const normalizeRosterDivision = (value: any) => String(value || 'Unassigned').trim() || 'Unassigned';
       const normalizeRosterDepartment = (value: any) => String(value || 'Unassigned').trim() || 'Unassigned';
       const rosterDivisions = Array.from(new Set(
@@ -17053,13 +17058,19 @@ Strategies to Improve the CCC
     }
 
     const summary = hiringData.summary || {};
-    const jobs: any[] = Array.isArray(hiringData.jobs) ? hiringData.jobs : [];
-    const applications: any[] = Array.isArray(hiringData.applications) ? hiringData.applications : [];
+    const jobs: any[] = (Array.isArray(hiringData.jobs) ? hiringData.jobs : [])
+      .filter((row: any) => matchesSelectedOperationalClient(row.clientName));
+    const applications: any[] = (Array.isArray(hiringData.applications) ? hiringData.applications : [])
+      .filter((row: any) => matchesSelectedOperationalClient(row.clientName));
     const applicationsByStatus: any[] = Array.isArray(hiringData.applicationsByStatus) ? hiringData.applicationsByStatus : [];
-    const applicantsByJob: any[] = Array.isArray(hiringData.applicantsByJob) ? hiringData.applicantsByJob : [];
-    const applicantsByDivisionDepartment: any[] = Array.isArray(hiringData.applicantsByDivisionDepartment) ? hiringData.applicantsByDivisionDepartment : [];
-    const newApplicantsByJob: any[] = Array.isArray(hiringData.newApplicantsByJob) ? hiringData.newApplicantsByJob : [];
-    const postingPerformance: any[] = Array.isArray(hiringData.postingPerformance) ? hiringData.postingPerformance : applicantsByJob;
+    const applicantsByJob: any[] = (Array.isArray(hiringData.applicantsByJob) ? hiringData.applicantsByJob : [])
+      .filter((row: any) => matchesSelectedOperationalClient(row.clientName));
+    const applicantsByDivisionDepartment: any[] = (Array.isArray(hiringData.applicantsByDivisionDepartment) ? hiringData.applicantsByDivisionDepartment : [])
+      .filter((row: any) => matchesSelectedOperationalClient(row.clientName));
+    const newApplicantsByJob: any[] = (Array.isArray(hiringData.newApplicantsByJob) ? hiringData.newApplicantsByJob : [])
+      .filter((row: any) => matchesSelectedOperationalClient(row.clientName));
+    const postingPerformance: any[] = (Array.isArray(hiringData.postingPerformance) ? hiringData.postingPerformance : applicantsByJob)
+      .filter((row: any) => matchesSelectedOperationalClient(row.clientName));
     const cardStyle: React.CSSProperties = { background: '#fff', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '20px' };
     const cardTitleStyle: React.CSSProperties = { margin: '0 0 12px 0', fontSize: '13px', fontWeight: 700, color: '#0f172a', textTransform: 'uppercase', letterSpacing: '0.04em' };
     const thStyle: React.CSSProperties = { textAlign: 'left', padding: '8px 10px', fontSize: '11px', fontWeight: 700, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.04em', borderBottom: '1px solid #e2e8f0', background: '#f8fafc' };
@@ -17337,6 +17348,7 @@ Strategies to Improve the CCC
 
     return (
       <div style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+        {renderOperationalClientSelector()}
         {isSectionEnabled('hiringOpenJobs') && (
           <div style={cardStyle}>
             <div style={{ ...cardTitleStyle, marginBottom: '14px' }}>Hiring Summary</div>
