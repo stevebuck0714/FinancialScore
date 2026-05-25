@@ -534,6 +534,7 @@ const HEAVY_PREFETCH_TYPES: OpsDataType[] = ['ar-aging', 'ap-aging', 'customers'
 const OPERATIONAL_DATA_CACHE_TTL_MS = 2 * 60 * 1000;
 const CUSTOMER_DATA_CACHE_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 const CUSTOMER_CONCENTRATION_CLIENT_CACHE_VERSION = 'customer-concentration-exposure-v10';
+const CUSTOMER_WIP_CLIENT_CACHE_VERSION = 'customer-wip-source-v2';
 const WHOLESALE_PRODUCTS_REPORT_CACHE_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 
 type InvestigatePlaybook = {
@@ -1542,6 +1543,7 @@ export default function OperationsTab({
       '2020-01-01',
       maxSelectableEndDate,
       '42',
+      CUSTOMER_WIP_CLIENT_CACHE_VERSION,
     ].join('|');
 
   const getCachedWholesaleProductsReportData = () => {
@@ -1607,6 +1609,7 @@ export default function OperationsTab({
       endDate,
       String(industrySectorCategory || ''),
       rollupToken,
+      type === 'customers' ? CUSTOMER_WIP_CLIENT_CACHE_VERSION : 'n/a',
     ].join('|');
   };
 
@@ -3907,21 +3910,8 @@ export default function OperationsTab({
           const wholesaleWipSourceRows = Array.isArray(wholesaleProductsData?.summary?.wholesaleOrderLines)
             ? wholesaleProductsData.summary.wholesaleOrderLines
             : [];
-          const latestWholesaleWipSnapshotTime = wholesaleWipSourceRows.reduce((latest: number, row: any) => {
-            const parsed = parseDateValue(row?.snapshotDate ? String(row.snapshotDate) : null);
-            return parsed ? Math.max(latest, parsed.getTime()) : latest;
-          }, 0);
-          const latestWholesaleWipSnapshotDay = latestWholesaleWipSnapshotTime
-            ? new Date(latestWholesaleWipSnapshotTime).toISOString().slice(0, 10)
-            : '';
-          const currentWholesaleWipRows = latestWholesaleWipSnapshotDay
-            ? wholesaleWipSourceRows.filter((row: any) => {
-                const parsed = parseDateValue(row?.snapshotDate ? String(row.snapshotDate) : null);
-                return parsed?.toISOString().slice(0, 10) === latestWholesaleWipSnapshotDay;
-              })
-            : [];
           const normalizeWipToken = (value: unknown) => String(value || '').trim().toLowerCase().replace(/\s+/g, ' ');
-          const latestWipLineByDisplayKey = currentWholesaleWipRows.reduce((acc: Map<string, any>, row: any) => {
+          const latestWipLineByDisplayKey = wholesaleWipSourceRows.reduce((acc: Map<string, any>, row: any) => {
             const customerName = String(row?.customerName || row?.customer || 'Unknown Customer').trim() || 'Unknown Customer';
             const orderId = String(row?.orderId || '').trim();
             const lineId = String(row?.lineId || '').trim();
@@ -3986,18 +3976,17 @@ export default function OperationsTab({
               return acc;
             }, new Map<string, any>()).values()
           ).sort((a: any, b: any) => Number(b.wipValue || 0) - Number(a.wipValue || 0));
-          const sourceWipRows = wipFromWholesaleRows.length > 0
-            ? wipFromWholesaleRows
-            : (Array.isArray(wipSummary?.topCustomers) ? wipSummary.topCustomers : []);
-          const sourceWipTotals = wipFromWholesaleRows.length > 0
-            ? wipFromWholesaleRows.reduce((acc: any, row: any) => {
+          const summaryWipRows = Array.isArray(wipSummary?.topCustomers) ? wipSummary.topCustomers : [];
+          const sourceWipRows = summaryWipRows.length > 0 ? summaryWipRows : wipFromWholesaleRows;
+          const sourceWipTotals = summaryWipRows.length > 0
+            ? (wipSummary?.totals || {})
+            : wipFromWholesaleRows.reduce((acc: any, row: any) => {
                 acc.totalWip += Number(row.wipValue || 0);
                 acc.totalContractValue += Number(row.contractValue || 0);
                 acc.totalInvoicedValue += Number(row.invoicedValue || 0);
                 acc.customerCount += 1;
                 return acc;
-              }, { totalWip: 0, totalContractValue: 0, totalInvoicedValue: 0, customerCount: 0 })
-            : (wipSummary?.totals || {});
+              }, { totalWip: 0, totalContractValue: 0, totalInvoicedValue: 0, customerCount: 0 });
           const wipTotals = {
             totalWip: Number(sourceWipTotals?.totalWip || 0),
             totalContractValue: Number(sourceWipTotals?.totalContractValue || 0),

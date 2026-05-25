@@ -52,6 +52,7 @@ const OPERATIONAL_DATA_CACHE_TTL_SECONDS = 120;
 const CUSTOMER_CONCENTRATION_CACHE_TTL_SECONDS = 30 * 24 * 60 * 60;
 const CUSTOMER_CONCENTRATION_CACHE_VERSION = 'customer-concentration-exposure-v10';
 const CUSTOMER_REVENUE_SOURCE_VERSION = 'customer-revenue-source-v2';
+const CUSTOMER_WIP_SOURCE_VERSION = 'customer-wip-source-v2';
 const WHOLESALE_PRODUCTS_REPORT_CACHE_TTL_SECONDS = 30 * 24 * 60 * 60;
 const OPERATIONAL_CACHEABLE_TYPES = new Set([
   'customers',
@@ -2455,9 +2456,11 @@ export async function GET(request: NextRequest) {
               shouldApplyHydratedDateFilter ? hydratedInforDates : null,
               cacheType === 'customers' ? CUSTOMER_CONCENTRATION_CACHE_VERSION : null,
               cacheType === 'customers' ? CUSTOMER_REVENUE_SOURCE_VERSION : null,
+              cacheType === 'customers' ? CUSTOMER_WIP_SOURCE_VERSION : null,
+              isWholesaleProductsReportRequest ? CUSTOMER_WIP_SOURCE_VERSION : null,
             ]),
             dataVersion: isWholesaleProductsReportRequest
-              ? 'wholesale-products-report-manual-v1'
+              ? `wholesale-products-report-manual-${CUSTOMER_WIP_SOURCE_VERSION}`
               : await buildOperationalDataVersion(companyId, cacheType, startDate, endDate),
           }
         : null;
@@ -3199,16 +3202,14 @@ export async function GET(request: NextRequest) {
             : null;
           if (latestOrderSnapshotDate) {
             wipAsOf = latestOrderSnapshotDate.toISOString();
-            // Query the exact stored timestamp only (no day-range expansion that can pick up rogue batches)
-            const snapshotDayEnd = latestOrderSnapshotDate;
+            // Build current WIP from the latest known state for each order line.
+            // The newest snapshot timestamp can be a partial batch, so using only
+            // that timestamp drops customers whose latest line state is older.
             const latestOrderRows = await bookingsOrderLineDelegate.findMany({
               where: {
                 companyId,
                 frequency: orderLineFrequencyForQuery,
-                snapshotDate: {
-                  gte: latestOrderSnapshotDate,
-                  lte: snapshotDayEnd,
-                },
+                snapshotDate: { lte: endDate },
               },
               select: {
                 snapshotDate: true,
@@ -3226,7 +3227,7 @@ export async function GET(request: NextRequest) {
                 invoicedAmount: true,
                 remainingAmount: true,
               },
-              orderBy: [{ remainingAmount: 'desc' }, { contractValue: 'desc' }],
+              orderBy: [{ snapshotDate: 'desc' }, { remainingAmount: 'desc' }, { contractValue: 'desc' }],
               take: rawPayloadRowCap,
             });
             const orderIdsForRawLookup = Array.from(
