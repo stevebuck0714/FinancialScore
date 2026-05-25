@@ -19115,6 +19115,7 @@ Strategies to Improve the CCC
         newCustomerRevenue,
       };
     });
+    const executiveMonthlyCustomerMetrics = [...monthlyCustomerMetrics].reverse();
     const executiveMetricRows = [
       { label: 'Top 5 Customers % Revenue', render: (row: any) => pct(row.top5Rev) },
       { label: 'Top 10 Customers % Revenue', render: (row: any) => pct(row.top10Rev) },
@@ -19126,7 +19127,7 @@ Strategies to Improve the CCC
       { label: 'Customer Retention Rate', render: (row: any) => pct(row.retentionRate) },
       { label: 'Revenue from New Customers', render: (row: any) => formatCurrency(row.newCustomerRevenue) },
     ];
-    const monthlyTrendRows = monthlyCustomerMetrics;
+    const monthlyTrendRows = executiveMonthlyCustomerMetrics;
     const riskRows = top10.map((row) => {
       const revenueShare = share(row.revenue, totalRevenue) || 0;
       const revRisk = revenueRiskScore(revenueShare);
@@ -19148,7 +19149,7 @@ Strategies to Improve the CCC
     );
     return (
       <div>
-        {section('Executive Summary Dashboard', <div style={{ overflowX: 'auto' }}><table style={{ ...tableStyle, minWidth: '1220px' }}><thead><tr><th style={{ ...thStyle, minWidth: '240px' }}>Metric</th>{monthlyCustomerMetrics.map((row) => <th key={row.monthKey} style={{ ...thStyle, textAlign: 'right', minWidth: '90px' }}>{row.month}</th>)}</tr></thead><tbody>{executiveMetricRows.map((metric) => <tr key={metric.label}><td style={{ ...tdStyle, fontWeight: 700 }}>{metric.label}</td>{monthlyCustomerMetrics.map((row) => <td key={`${metric.label}-${row.monthKey}`} style={{ ...tdStyle, textAlign: 'right', whiteSpace: 'nowrap' }}>{metric.render(row)}</td>)}</tr>)}</tbody></table></div>)}
+        {section('Executive Summary Dashboard', <div style={{ overflowX: 'auto' }}><table style={{ ...tableStyle, minWidth: '1220px' }}><thead><tr><th style={{ ...thStyle, minWidth: '240px' }}>Metric</th>{executiveMonthlyCustomerMetrics.map((row) => <th key={row.monthKey} style={{ ...thStyle, textAlign: 'right', minWidth: '90px' }}>{row.month}</th>)}</tr></thead><tbody>{executiveMetricRows.map((metric) => <tr key={metric.label}><td style={{ ...tdStyle, fontWeight: 700 }}>{metric.label}</td>{executiveMonthlyCustomerMetrics.map((row) => <td key={`${metric.label}-${row.monthKey}`} style={{ ...tdStyle, textAlign: 'right', whiteSpace: 'nowrap' }}>{metric.render(row)}</td>)}</tr>)}</tbody></table></div>)}
         {section('Monthly Customer Concentration Trend', <div style={{ overflowX: 'auto' }}><table style={{ ...tableStyle, minWidth: '820px' }}><thead><tr>{['Month', 'Total Revenue', 'Top 5 % Rev', 'Top 10 % Rev', 'Largest Customer %', 'Top 5 % GP', 'Top 5 % EBITDA'].map((h) => <th key={h} style={{ ...thStyle, textAlign: h === 'Month' ? 'left' : 'right' }}>{h}</th>)}</tr></thead><tbody>{monthlyTrendRows.map((row) => <tr key={row.month}><td style={tdStyle}>{row.month}</td><td style={{ ...tdStyle, textAlign: 'right' }}>{formatCurrency(row.revenue)}</td><td style={{ ...tdStyle, textAlign: 'right' }}>{pct(row.top5Rev)}</td><td style={{ ...tdStyle, textAlign: 'right' }}>{pct(row.top10Rev)}</td><td style={{ ...tdStyle, textAlign: 'right' }}>{pct(row.largestRev)}</td><td style={{ ...tdStyle, textAlign: 'right' }}>{pct(row.top5Gp)}</td><td style={{ ...tdStyle, textAlign: 'right' }}>{pct(row.top5Ebitda)}</td></tr>)}</tbody></table></div>)}
         {section('Top Customer Profitability Analysis', <div style={{ overflowX: 'auto' }}><table style={{ ...tableStyle, minWidth: '920px' }}><thead><tr>{['Customer', 'Revenue', 'Gross Profit', 'GP %', 'EBITDA Contribution', 'AR Days', 'Inventory Burden', 'Strategic Importance'].map((h) => <th key={h} style={{ ...thStyle, textAlign: h === 'Customer' ? 'left' : 'right' }}>{h}</th>)}</tr></thead><tbody>{top5.map((row) => <tr key={row.name}><td style={{ ...tdStyle, fontWeight: 700 }}>{row.name}</td><td style={{ ...tdStyle, textAlign: 'right' }}>{formatCurrency(row.revenue)}</td><td style={{ ...tdStyle, textAlign: 'right' }}>{formatCurrency(Number(row.grossProfit || 0))}</td><td style={{ ...tdStyle, textAlign: 'right' }}>{pct(row.gpPct)}</td><td style={{ ...tdStyle, textAlign: 'right' }}>{formatCurrency(Number(row.ebitdaContribution || 0))}</td><td style={{ ...tdStyle, textAlign: 'right' }}>N/A</td><td style={{ ...tdStyle, textAlign: 'right' }}>N/A</td><td style={{ ...tdStyle, textAlign: 'right' }}>{(share(row.revenue, totalRevenue) || 0) > 10 ? 'High' : 'Medium'}</td></tr>)}</tbody></table></div>)}
         {section('Customer Risk Heatmap', <><div style={{ overflowX: 'auto' }}><table style={{ ...tableStyle, minWidth: '860px' }}><thead><tr>{['Customer', 'Revenue Risk', 'Margin Risk', 'Retention Risk', 'Payment Risk', 'Strategic Risk', 'Overall Risk'].map((h) => <th key={h} style={thStyle}>{h}</th>)}</tr></thead><tbody>{riskRows.map((row) => <tr key={row.name}><td style={{ ...tdStyle, fontWeight: 700 }}>{row.name}</td>{[row.revRisk, row.marginRisk, row.retentionRisk, row.paymentRisk, row.strategicRisk, row.overall].map((score, idx) => <td key={idx} style={{ ...tdStyle, color: riskColor(score), fontWeight: 700 }}>{riskLabel(score)}</td>)}</tr>)}</tbody></table></div><details style={{ marginTop: '12px', border: '1px solid #e2e8f0', borderRadius: '10px', padding: '10px 12px', background: '#f8fafc' }}><summary style={{ cursor: 'pointer', fontWeight: 800, color: '#1e293b', fontSize: '13px' }}>Risk formulas and scoring framework</summary><div style={{ marginTop: '10px', color: '#475569', fontSize: '12px', lineHeight: 1.6 }}>Revenue Risk = Customer Revenue / Total Company Revenue. Score: less than 5% = 1, 5-10% = 2, 10-15% = 3, 15-20% = 4, greater than 20% = 5. Margin Risk uses gross margin quality and customer EBITDA contribution where available. Retention Risk is based on customer activity across the selected monthly window until explicit churn data is imported. Payment Risk is reserved for DSO / AR aging by customer; it defaults to Medium until imported. Strategic Risk is a qualitative dependency score using concentration as the current proxy. Overall Risk = Revenue Risk x 25% + Margin Risk x 25% + Retention Risk x 20% + Payment Risk x 15% + Strategic Risk x 15%.</div></details></>)}
@@ -19191,6 +19192,15 @@ Strategies to Improve the CCC
       .filter((date): date is Date => Boolean(date))
       .sort((a, b) => b.getTime() - a.getTime())[0] || null;
     const asOf = wipAsOfDate && !Number.isNaN(wipAsOfDate.getTime()) ? wipAsOfDate : fallbackAsOf;
+    const formatDisplayDate = (value: unknown) => formatDateInputLabel(value instanceof Date ? value : String(value || ''));
+    const orderHistoryStart = asOf
+      ? new Date(Date.UTC(asOf.getUTCFullYear() - 3, asOf.getUTCMonth(), asOf.getUTCDate()))
+      : null;
+    const isWithinOrderHistoryWindow = (value: unknown) => {
+      if (!orderHistoryStart) return true;
+      const parsed = validDate(value);
+      return Boolean(parsed && parsed.getTime() >= orderHistoryStart.getTime());
+    };
     const monthKey = (value: unknown) => {
       const parsed = validDate(value);
       return parsed ? `${parsed.getUTCFullYear()}-${String(parsed.getUTCMonth() + 1).padStart(2, '0')}` : '';
@@ -19209,6 +19219,7 @@ Strategies to Improve the CCC
     const rowsByOrderLine = new Map<string, any[]>();
     wholesaleRows.forEach((row: any) => {
       if (!validDate(row?.snapshotDate)) return;
+      if (!isWithinOrderHistoryWindow(row?.orderDate || row?.date)) return;
       const key = orderLineKey(row);
       if (!key.replace(/\|/g, '').trim()) return;
       const rows = rowsByOrderLine.get(key) || [];
@@ -19273,7 +19284,8 @@ Strategies to Improve the CCC
         });
         const contractValue = Number(latest?.contractValue || 0);
         const invoicedAmount = Number(latest?.invoicedAmount || 0);
-        const wipValue = Math.max(contractValue - invoicedAmount, 0);
+        const remainingStored = Number(latest?.remainingAmount ?? NaN);
+        const wipValue = Number.isFinite(remainingStored) ? Math.max(remainingStored, 0) : Math.max(contractValue - invoicedAmount, 0);
         const qtyOrderedLatest = Number(latest?.qtyOrdered || 0);
         const qtyInvoicedLatest = Number(latest?.qtyInvoiced || 0);
         const isOpen = wipValue > 0 && (qtyOrderedLatest <= 0 || qtyInvoicedLatest + 1e-4 < qtyOrderedLatest);
@@ -19309,7 +19321,8 @@ Strategies to Improve the CCC
         })[0];
         const contractValue = Number(latest?.contractValue || 0);
         const invoicedValue = Number(latest?.invoicedAmount || 0);
-        const wipValue = Math.max(contractValue - invoicedValue, 0);
+        const remainingStored = Number(latest?.remainingAmount ?? NaN);
+        const wipValue = Number.isFinite(remainingStored) ? Math.max(remainingStored, 0) : Math.max(contractValue - invoicedValue, 0);
         const qtyOrderedLatest = Number(latest?.qtyOrdered || 0);
         const qtyInvoicedLatest = Number(latest?.qtyInvoiced || 0);
         return {
@@ -19329,7 +19342,9 @@ Strategies to Improve the CCC
         };
       })
       .filter((row: any) => Number(row.wipValue || 0) > 0 && (Number(row.qtyOrdered || 0) <= 0 || Number(row.qtyInvoiced || 0) + 1e-4 < Number(row.qtyOrdered || 0)));
-    const executionItems = snapshotOpenItems.length > 0 ? snapshotOpenItems : wipItems;
+    const executionItems = snapshotOpenItems.length > 0
+      ? snapshotOpenItems
+      : wipItems.filter((item: any) => isWithinOrderHistoryWindow(item?.orderDate));
     const openWipAges = asOf
       ? executionItems
           .map((item: any) => {
@@ -19478,7 +19493,21 @@ Strategies to Improve the CCC
     };
     const velocityByItemRows = buildVelocitySummary((row) => String(row.item || 'N/A'), 'item');
     const velocityByCustomerRows = buildVelocitySummary((row) => String(row.customerName || 'N/A'), 'customerName');
-    const topOpenWipRows = sortedOpenBottleneckRows.slice(0, 20);
+    const topOpenWipRows = sortedOpenBottleneckRows;
+    const openWipRowsByYear = Array.from(
+      topOpenWipRows.reduce((groups: Map<string, any[]>, row: any) => {
+        const orderDate = validDate(row.orderDate);
+        const year = orderDate ? String(orderDate.getUTCFullYear()) : 'Unknown Year';
+        const rows = groups.get(year) || [];
+        rows.push(row);
+        groups.set(year, rows);
+        return groups;
+      }, new Map<string, any[]>()).entries()
+    ).sort(([leftYear], [rightYear]) => {
+      if (leftYear === 'Unknown Year') return 1;
+      if (rightYear === 'Unknown Year') return -1;
+      return Number(rightYear) - Number(leftYear);
+    });
     const totalOpenWipValue = executionItems.reduce((sum: number, item: any) => sum + Number(item.wipValue || 0), 0);
     const metricCards = [
       { label: 'Open WIP Value', value: formatCurrency(Number(wipSummary?.totals?.totalWip || totalOpenWipValue || 0)), detail: 'From open order-line WIP' },
@@ -19495,7 +19524,7 @@ Strategies to Improve the CCC
       { key: 'lineId', label: 'Line' },
       { key: 'item', label: 'Item' },
       { key: 'orderDate', label: 'Order Date' },
-      { key: 'dueDate', label: 'Due Date' },
+      { key: 'dueDate', label: 'Target Date' },
       { key: 'openAge', label: 'Open Age', align: 'right' },
       { key: 'pastDueDays', label: 'Past Due Days', align: 'right' },
       { key: 'qtyOrdered', label: 'Qty Ordered', align: 'right' },
@@ -19596,31 +19625,40 @@ Strategies to Improve the CCC
           ))}
         </div>
         {section('Open Orders / Lines', (
-          <div style={{ overflowX: 'auto' }}>
-            <table style={{ ...tableStyle, minWidth: '980px' }}>
-              <thead><tr>{openBottleneckColumns.map(renderOpenBottleneckHeader)}</tr></thead>
-              <tbody>{topOpenWipRows.map((row: any, index: number) => {
-                const orderDate = validDate(row.orderDate);
-                const dueDate = validDate(row.dueDate);
-                const openAge = orderDate && asOf ? diffDays(orderDate, asOf) : null;
-                const pastDue = dueDate && asOf && dueDate.getTime() < asOf.getTime() ? diffDays(dueDate, asOf) : null;
-                return (
-                  <tr key={`${row.orderId || 'order'}-${row.lineId || index}`}>
-                    <td style={{ ...tdStyle, fontWeight: 700 }}>{row.customerName || 'N/A'}</td>
-                    <td style={tdStyle}>{row.orderId || 'N/A'}</td>
-                    <td style={tdStyle}>{row.lineId || 'N/A'}</td>
-                    <td style={tdStyle}>{row.item || 'N/A'}</td>
-                    <td style={tdStyle}>{row.orderDate || 'N/A'}</td>
-                    <td style={tdStyle}>{row.dueDate || 'N/A'}</td>
-                    <td style={{ ...tdStyle, textAlign: 'right' }}>{openAge == null ? 'N/A' : openAge}</td>
-                    <td style={{ ...tdStyle, textAlign: 'right', color: pastDue ? '#b91c1c' : '#334155', fontWeight: pastDue ? 700 : 400 }}>{pastDue == null ? 'N/A' : pastDue}</td>
-                    <td style={{ ...tdStyle, textAlign: 'right' }}>{number(Number(row.qtyOrdered || 0))}</td>
-                    <td style={{ ...tdStyle, textAlign: 'right' }}>{number(Number(row.qtyInvoiced || 0))}</td>
-                    <td style={{ ...tdStyle, textAlign: 'right' }}>{formatCurrency(Number(row.wipValue || 0))}</td>
-                  </tr>
-                );
-              })}</tbody>
-            </table>
+          <div>
+            {openWipRowsByYear.map(([year, rows]) => (
+              <details key={year} open style={{ marginBottom: '12px', border: '1px solid #e2e8f0', borderRadius: '10px', overflow: 'hidden' }}>
+                <summary style={{ cursor: 'pointer', padding: '10px 12px', background: '#f8fafc', color: '#0f172a', fontSize: '13px', fontWeight: 800 }}>
+                  {year} Open Orders ({rows.length.toLocaleString()})
+                </summary>
+                <div style={{ overflowX: 'auto' }}>
+                  <table style={{ ...tableStyle, minWidth: '980px' }}>
+                    <thead><tr>{openBottleneckColumns.map(renderOpenBottleneckHeader)}</tr></thead>
+                    <tbody>{rows.map((row: any, index: number) => {
+                      const orderDate = validDate(row.orderDate);
+                      const dueDate = validDate(row.dueDate);
+                      const openAge = orderDate && asOf ? diffDays(orderDate, asOf) : null;
+                      const pastDue = dueDate && asOf && dueDate.getTime() < asOf.getTime() ? diffDays(dueDate, asOf) : null;
+                      return (
+                        <tr key={`${year}-${row.orderId || 'order'}-${row.lineId || index}`}>
+                          <td style={{ ...tdStyle, fontWeight: 700 }}>{row.customerName || 'N/A'}</td>
+                          <td style={tdStyle}>{row.orderId || 'N/A'}</td>
+                          <td style={tdStyle}>{row.lineId || 'N/A'}</td>
+                          <td style={tdStyle}>{row.item || 'N/A'}</td>
+                          <td style={tdStyle}>{formatDisplayDate(row.orderDate)}</td>
+                          <td style={tdStyle}>{formatDisplayDate(row.dueDate)}</td>
+                          <td style={{ ...tdStyle, textAlign: 'right' }}>{openAge == null ? 'N/A' : openAge}</td>
+                          <td style={{ ...tdStyle, textAlign: 'right', color: pastDue ? '#b91c1c' : '#334155', fontWeight: pastDue ? 700 : 400 }}>{pastDue == null ? 'N/A' : pastDue}</td>
+                          <td style={{ ...tdStyle, textAlign: 'right' }}>{number(Number(row.qtyOrdered || 0))}</td>
+                          <td style={{ ...tdStyle, textAlign: 'right' }}>{number(Number(row.qtyInvoiced || 0))}</td>
+                          <td style={{ ...tdStyle, textAlign: 'right' }}>{formatCurrency(Number(row.wipValue || 0))}</td>
+                        </tr>
+                      );
+                    })}</tbody>
+                  </table>
+                </div>
+              </details>
+            ))}
           </div>
         ))}
         {section('No Invoice Movement / Stuck Open Lines', (
@@ -19639,8 +19677,8 @@ Strategies to Improve the CCC
                   <td style={tdStyle}>{row.orderId}</td>
                   <td style={tdStyle}>{row.lineId}</td>
                   <td style={tdStyle}>{row.item}</td>
-                  <td style={tdStyle}>{row.orderDate || 'N/A'}</td>
-                  <td style={tdStyle}>{row.snapshotDate || 'N/A'}</td>
+                  <td style={tdStyle}>{formatDisplayDate(row.orderDate)}</td>
+                  <td style={tdStyle}>{formatDisplayDate(row.snapshotDate)}</td>
                   <td style={{ ...tdStyle, textAlign: 'right' }}>{row.openAge == null ? 'N/A' : row.openAge}</td>
                   <td style={{ ...tdStyle, textAlign: 'right' }}>{number(row.qtyOrdered)}</td>
                   <td style={{ ...tdStyle, textAlign: 'right' }}>{number(row.qtyInvoiced)}</td>

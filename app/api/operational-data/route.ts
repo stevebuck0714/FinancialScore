@@ -1934,9 +1934,22 @@ export async function GET(request: NextRequest) {
             orderBy: { snapshotDate: 'asc' },
             take: 50000,
           });
-          const basis: 'orderline_delta' | 'customer_sales_snapshot' = salesData.length > 0 ? 'customer_sales_snapshot' : 'orderline_delta';
-          if (salesData.length === 0) {
-            salesData = await deriveCustomerSalesFromOrderLineDeltas(companyId, orderLineFrequencyForQuery, startDate, endDate);
+          let basis: 'orderline_delta' | 'customer_sales_snapshot' = salesData.length > 0 ? 'customer_sales_snapshot' : 'orderline_delta';
+          const monthCount = (rows: any[]) =>
+            new Set(
+              rows
+                .map((row) => {
+                  const snapshot = new Date(row?.snapshotDate);
+                  return Number.isNaN(snapshot.getTime()) ? '' : businessMonthKey(snapshot);
+                })
+                .filter(Boolean)
+            ).size;
+          if (isInforCompany) {
+            const orderLineSalesData = await deriveCustomerSalesFromOrderLineDeltas(companyId, orderLineFrequencyForQuery, startDate, endDate);
+            if (orderLineSalesData.length > 0) {
+              salesData = orderLineSalesData;
+              basis = 'orderline_delta';
+            }
           }
 
           const mtdStart = startOfBusinessMonth(endDate);
@@ -5513,11 +5526,53 @@ export async function GET(request: NextRequest) {
         const wholesaleOrderLines =
           String(sectorCategory || '').trim() === '42' && productOrderLineDelegate?.findMany
             ? await (async () => {
+                const normalizeOrderLineToken = (value: unknown): string => {
+                  const raw = String(value ?? '').trim();
+                  if (!raw) return '';
+                  const numeric = Number(raw);
+                  return Number.isFinite(numeric) ? String(numeric) : raw.toUpperCase();
+                };
+                const buildRawOrderLineKey = (orderId: unknown, lineId: unknown, releaseId?: unknown) => {
+                  const order = normalizeOrderLineToken(orderId);
+                  const lineRaw = String(lineId ?? '').trim();
+                  const [linePart, releasePart] = lineRaw.split('-');
+                  const line = normalizeOrderLineToken(linePart);
+                  const release = normalizeOrderLineToken(releaseId ?? releasePart ?? '0') || '0';
+                  return `${order}||${line}||${release}`;
+                };
+                const rawDueDateByOrderLine = new Map<string, string>();
+                const rawOrderRows = await prisma.inforRawRecord.findMany({
+                  where: {
+                    companyId,
+                    miProgram: 'SLCoitems',
+                    businessDate: { gte: startDate, lte: endDate },
+                  },
+                  select: {
+                    payload: true,
+                    businessDate: true,
+                    fetchedAt: true,
+                  },
+                  orderBy: [{ businessDate: 'desc' }, { fetchedAt: 'desc' }],
+                  take: Math.min(rawPayloadRowCap, 50000),
+                });
+                for (const rawRow of rawOrderRows as any[]) {
+                  const payload = rawRow?.payload;
+                  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) continue;
+                  const orderId = payload['CoNum'] ?? payload['coNum'] ?? payload['Order'] ?? payload['orderId'];
+                  const lineId = payload['CoLine'] ?? payload['coLine'] ?? payload['Line'] ?? payload['lineId'];
+                  const releaseId = payload['CoRelease'] ?? payload['coRelease'] ?? payload['Release'];
+                  const dueDateRaw = String(payload['DueDate'] ?? payload['dueDate'] ?? '').trim();
+                  if (!orderId || !lineId || !dueDateRaw) continue;
+                  const key = buildRawOrderLineKey(orderId, lineId, releaseId);
+                  if (!key.replace(/\|/g, '').trim() || rawDueDateByOrderLine.has(key)) continue;
+                  const parsedDueDate = new Date(dueDateRaw.replace(/\s+\d{2}:\d{2}:\d{2}\.\d+$/, ''));
+                  rawDueDateByOrderLine.set(key, Number.isNaN(parsedDueDate.getTime()) ? dueDateRaw : parsedDueDate.toISOString());
+                }
                 const orderRows = await productOrderLineDelegate.findMany({
                   where: {
                     companyId,
                     frequency: productFrequencyForQuery,
-                    snapshotDate: dateFilter,
+                    snapshotDate: { gte: startDate, lte: endDate },
                   },
                   select: {
                     snapshotDate: true,
@@ -5534,6 +5589,7 @@ export async function GET(request: NextRequest) {
                     unitPrice: true,
                     contractValue: true,
                     invoicedAmount: true,
+                    remainingAmount: true,
                     sourceTransaction: true,
                   },
                   orderBy: [{ snapshotDate: 'desc' }, { customerName: 'asc' }, { orderId: 'asc' }],
@@ -5543,6 +5599,7 @@ export async function GET(request: NextRequest) {
                   source: 'customer-order-line',
                   snapshotDate: row.snapshotDate,
                   date: row.orderDate || row.snapshotDate,
+                  dueDate: rawDueDateByOrderLine.get(buildRawOrderLineKey(row.orderId, row.lineId)) || null,
                   customerId: row.customerId || null,
                   customerName: row.customerName || null,
                   customer: row.customerName || null,
@@ -5558,6 +5615,7 @@ export async function GET(request: NextRequest) {
                   revenue: Number(row.invoicedAmount || row.contractValue || 0),
                   contractValue: Number(row.contractValue || 0),
                   invoicedAmount: Number(row.invoicedAmount || 0),
+                  remainingAmount: Number(row.remainingAmount || 0),
                   transaction: row.sourceTransaction || null,
                   sourceTransaction: row.sourceTransaction || null,
                 }));
