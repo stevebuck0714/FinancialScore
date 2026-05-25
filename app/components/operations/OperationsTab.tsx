@@ -509,6 +509,7 @@ type MonitorCard = {
 type CardSeverity = 'normal' | 'warning' | 'critical' | 'loading';
 const HEAVY_PREFETCH_TYPES: OpsDataType[] = ['ar-aging', 'ap-aging', 'customers', 'products'];
 const OPERATIONAL_DATA_CACHE_TTL_MS = 2 * 60 * 1000;
+const CUSTOMER_DATA_CACHE_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 
 type InvestigatePlaybook = {
   title: string;
@@ -664,6 +665,7 @@ export default function OperationsTab({
   const [error, setError] = useState<string | null>(null);
   const [summary, setSummary] = useState<any>(null);
   const [customerData, setCustomerData] = useState<any>(null);
+  const [customerConcentrationRefreshing, setCustomerConcentrationRefreshing] = useState(false);
   const [arData, setArData] = useState<any>(null);
   const [apData, setApData] = useState<any>(null);
   const [productData, setProductData] = useState<any>(null);
@@ -1432,9 +1434,13 @@ export default function OperationsTab({
     }
   };
 
-  const fetchOperationalType = async (type: OpsDataType) => {
+  const fetchOperationalType = async (type: OpsDataType, options?: { refreshConcentration?: boolean }) => {
     const typeLimit = type === 'customers' || type === 'products' ? 500 : 1000;
-    const timeoutMs = type === 'customers' || type === 'products' ? 45000 : 25000;
+    const timeoutMs = type === 'customers' && options?.refreshConcentration
+      ? 120000
+      : type === 'customers' || type === 'products'
+      ? 45000
+      : 25000;
     const requestFrequency = type === 'daily-financials' ? 'daily' : frequency;
     const params = new URLSearchParams({
       companyId: selectedCompanyId,
@@ -1450,6 +1456,7 @@ export default function OperationsTab({
             currency: 'USD',
           }
         : {}),
+      ...(type === 'customers' && options?.refreshConcentration ? { refreshConcentration: '1' } : {}),
     });
     const controller = new AbortController();
     const timeoutId = window.setTimeout(() => controller.abort(), timeoutMs);
@@ -1509,7 +1516,8 @@ export default function OperationsTab({
     const key = buildOperationalDataCacheKey(type);
     const cached = operationalDataCacheRef.current.get(key);
     if (!cached) return null;
-    if (Date.now() - cached.fetchedAt > OPERATIONAL_DATA_CACHE_TTL_MS) {
+    const ttlMs = type === 'customers' ? CUSTOMER_DATA_CACHE_TTL_MS : OPERATIONAL_DATA_CACHE_TTL_MS;
+    if (Date.now() - cached.fetchedAt > ttlMs) {
       operationalDataCacheRef.current.delete(key);
       return null;
     }
@@ -1582,7 +1590,7 @@ export default function OperationsTab({
 
   const fetchOperationalTypeWithCache = async (
     type: OpsDataType,
-    options?: { preferCache?: boolean; forceRefresh?: boolean }
+    options?: { preferCache?: boolean; forceRefresh?: boolean; refreshConcentration?: boolean }
   ) => {
     const preferCache = options?.preferCache === true;
     const forceRefresh = options?.forceRefresh === true;
@@ -1591,11 +1599,15 @@ export default function OperationsTab({
     if (!forceRefresh && preferCache && cached) {
       return cached;
     }
+    if (forceRefresh) {
+      operationalDataCacheRef.current.delete(key);
+      operationalDataInflightRef.current.delete(key);
+    }
     const inflight = operationalDataInflightRef.current.get(key);
     if (inflight) {
       return inflight;
     }
-    const request = fetchOperationalType(type)
+    const request = fetchOperationalType(type, { refreshConcentration: options?.refreshConcentration === true })
       .then((data) => {
         setCachedOperationalData(type, data);
         return data;
@@ -1740,6 +1752,9 @@ export default function OperationsTab({
         applyOperationalTypeData(type, cached);
         setError(null);
         setLoading(false);
+        if (type === 'customers') {
+          return;
+        }
         void fetchOperationalTypeWithCache(type, { forceRefresh: true })
           .then((fresh) => {
             if (fresh) applyOperationalTypeData(type, fresh);
@@ -1757,6 +1772,22 @@ export default function OperationsTab({
       setError(err.message);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const refreshCustomerConcentrationExposure = async () => {
+    setCustomerConcentrationRefreshing(true);
+    setError(null);
+    try {
+      const fresh = await fetchOperationalTypeWithCache('customers', {
+        forceRefresh: true,
+        refreshConcentration: true,
+      });
+      if (fresh) applyOperationalTypeData('customers', fresh);
+    } catch (err: any) {
+      setError(err?.message || 'Failed to refresh customer concentration data');
+    } finally {
+      setCustomerConcentrationRefreshing(false);
     }
   };
 
@@ -19453,6 +19484,25 @@ Strategies to Improve the CCC
     );
     return (
       <div>
+        <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '10px' }}>
+          <button
+            type="button"
+            onClick={() => void refreshCustomerConcentrationExposure()}
+            disabled={customerConcentrationRefreshing}
+            style={{
+              border: '1px solid #cbd5e1',
+              borderRadius: '8px',
+              background: customerConcentrationRefreshing ? '#f1f5f9' : 'white',
+              color: '#334155',
+              padding: '7px 11px',
+              fontSize: '12px',
+              fontWeight: 700,
+              cursor: customerConcentrationRefreshing ? 'not-allowed' : 'pointer',
+            }}
+          >
+            {customerConcentrationRefreshing ? 'Refreshing...' : 'Refresh Customer Concentration'}
+          </button>
+        </div>
         {section('Executive Summary Dashboard', <div style={{ overflowX: 'auto' }}><table style={{ ...tableStyle, minWidth: '1220px' }}><thead><tr><th style={{ ...thStyle, minWidth: '240px' }}>Metric</th>{executiveMonthlyCustomerMetrics.map((row) => <th key={row.monthKey} style={{ ...thStyle, textAlign: 'right', minWidth: '90px' }}>{row.month}</th>)}</tr></thead><tbody>{executiveMetricRows.map((metric) => <tr key={metric.label}><td style={{ ...tdStyle, fontWeight: 700 }}>{metric.label}</td>{executiveMonthlyCustomerMetrics.map((row) => <td key={`${metric.label}-${row.monthKey}`} style={{ ...tdStyle, textAlign: 'right', whiteSpace: 'nowrap' }}>{metric.render(row)}</td>)}</tr>)}</tbody></table></div>)}
         {section('Monthly Customer Concentration Trend', <div style={{ overflowX: 'auto' }}><table style={{ ...tableStyle, minWidth: '820px' }}><thead><tr>{['Month', 'Total Revenue', 'Top 5 % Rev', 'Top 10 % Rev', 'Largest Customer %', 'Top 5 % GP', 'Top 5 % EBITDA'].map((h) => <th key={h} style={{ ...thStyle, textAlign: h === 'Month' ? 'left' : 'right' }}>{h}</th>)}</tr></thead><tbody>{monthlyTrendRows.map((row) => <tr key={row.month}><td style={tdStyle}>{row.month}</td><td style={{ ...tdStyle, textAlign: 'right' }}>{formatCurrency(row.revenue)}</td><td style={{ ...tdStyle, textAlign: 'right' }}>{pct(row.top5Rev)}</td><td style={{ ...tdStyle, textAlign: 'right' }}>{pct(row.top10Rev)}</td><td style={{ ...tdStyle, textAlign: 'right' }}>{pct(row.largestRev)}</td><td style={{ ...tdStyle, textAlign: 'right' }}>{pct(row.top5Gp)}</td><td style={{ ...tdStyle, textAlign: 'right' }}>{pct(row.top5Ebitda)}</td></tr>)}</tbody></table></div>)}
         <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '16px', marginBottom: '16px' }}>

@@ -49,6 +49,7 @@ import { privateCacheHeaders } from '@/lib/http-cache';
 export const dynamic = 'force-dynamic';
 
 const OPERATIONAL_DATA_CACHE_TTL_SECONDS = 120;
+const CUSTOMER_CONCENTRATION_CACHE_TTL_SECONDS = 30 * 24 * 60 * 60;
 const OPERATIONAL_CACHEABLE_TYPES = new Set([
   'customers',
   'ar-aging',
@@ -2005,6 +2006,11 @@ export async function GET(request: NextRequest) {
     const type = searchParams.get('type');
     const startDateParam = searchParams.get('startDate');
     const endDateParam = searchParams.get('endDate');
+    const refreshConcentration = ['1', 'true', 'yes'].includes(
+      String(searchParams.get('refreshConcentration') || '')
+        .trim()
+        .toLowerCase()
+    );
     const skuParam = String(searchParams.get('sku') || '').trim();
     const includeCostHistory = ['1', 'true', 'yes'].includes(
       String(searchParams.get('includeCostHistory') || '')
@@ -2107,7 +2113,7 @@ export async function GET(request: NextRequest) {
           };
 
     const cacheType = String(type || '').trim();
-    const cacheableRequest = OPERATIONAL_CACHEABLE_TYPES.has(cacheType) && !skuParam && !includeCostHistory;
+    const cacheableRequest = OPERATIONAL_CACHEABLE_TYPES.has(cacheType) && !skuParam && !includeCostHistory && !refreshConcentration;
     const operationalCache =
       cacheableRequest
         ? {
@@ -2302,6 +2308,38 @@ export async function GET(request: NextRequest) {
               basis = 'orderline_delta';
             }
           }
+          const concentrationCache = {
+            namespace: 'customer-concentration-exposure',
+            cacheKey: hashCacheParts([
+              companyId,
+              frequency,
+              startDate.toISOString(),
+              endDate.toISOString(),
+              sectorCategory,
+              'last-12-completed-months',
+            ]),
+            dataVersion: 'customer-concentration-exposure-v1',
+          };
+          const cachedCustomerConcentration = refreshConcentration
+            ? null
+            : await readDerivedApiCache<{
+                executiveMonthly: any[];
+                customerMonthly: any[];
+                monthKeys: string[];
+                sourceCoverage: Record<string, string>;
+              }>(concentrationCache).catch(() => null);
+          let customerConcentrationExecutiveMonthly: any[] = Array.isArray(cachedCustomerConcentration?.executiveMonthly)
+            ? cachedCustomerConcentration.executiveMonthly
+            : [];
+          let customerConcentrationMonthlyCustomers: any[] = Array.isArray(cachedCustomerConcentration?.customerMonthly)
+            ? cachedCustomerConcentration.customerMonthly
+            : [];
+          let concentrationMonthKeys: string[] = Array.isArray(cachedCustomerConcentration?.monthKeys)
+            ? cachedCustomerConcentration.monthKeys
+            : [];
+          let customerConcentrationSourceCoverage: Record<string, string> = cachedCustomerConcentration?.sourceCoverage || {};
+
+          if (!cachedCustomerConcentration) {
           const buildCompletedMonthKeys = () => {
             const today = new Date();
             const todayUtc = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate()));
@@ -2318,7 +2356,7 @@ export async function GET(request: NextRequest) {
               return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
             });
           };
-          const concentrationMonthKeys = buildCompletedMonthKeys();
+          concentrationMonthKeys = buildCompletedMonthKeys();
           const concentrationStart = monthStartFromBusinessMonthKey(concentrationMonthKeys[concentrationMonthKeys.length - 1]);
           const concentrationEndKey = concentrationMonthKeys[0];
           const concentrationEnd = new Date(Date.UTC(
@@ -2382,15 +2420,53 @@ export async function GET(request: NextRequest) {
           const rawInvoiceRowsForNewCustomerHistory = isInforCompany
             ? await deriveCustomerSalesFromRawInvoices(companyId, newCustomerLookbackStart, concentrationEnd)
             : [];
+          const rawInvoiceMonthsForConcentration = new Set(
+            rawInvoiceRowsForConcentration
+              .map((row: any) => {
+                const snapshot = new Date(row?.snapshotDate);
+                return Number.isNaN(snapshot.getTime()) ? '' : businessMonthKey(snapshot);
+              })
+              .filter(Boolean)
+          );
           const concentrationSourceRows = rawInvoiceRowsForConcentration.length > 0
-            ? rawInvoiceRowsForConcentration
+            ? [
+                ...rawInvoiceRowsForConcentration,
+                ...(customerSnapshotRowsForConcentration as any[]).filter((row: any) => {
+                  const snapshot = new Date(row?.snapshotDate);
+                  const monthKey = Number.isNaN(snapshot.getTime()) ? '' : businessMonthKey(snapshot);
+                  return monthKey && !rawInvoiceMonthsForConcentration.has(monthKey);
+                }),
+              ]
             : customerSnapshotRowsForConcentration;
+          const customerSnapshotRowsForNewCustomerHistory = await prisma.customerSalesSnapshot.findMany({
+            where: {
+              companyId,
+              snapshotDate: { gte: newCustomerLookbackStart, lte: concentrationEnd },
+            },
+            orderBy: { snapshotDate: 'asc' },
+            take: 100000,
+          });
+          const rawInvoiceMonthsForNewCustomerHistory = new Set(
+            rawInvoiceRowsForNewCustomerHistory
+              .map((row: any) => {
+                const snapshot = new Date(row?.snapshotDate);
+                return Number.isNaN(snapshot.getTime()) ? '' : businessMonthKey(snapshot);
+              })
+              .filter(Boolean)
+          );
           const concentrationByMonth = new Map<string, Map<string, any>>();
           const firstMonthByCustomerForConcentration = new Map<string, string>();
           const firstMonthByCustomerFromActualSales = new Map<string, string>();
           const firstMonthSourceRows = rawInvoiceRowsForNewCustomerHistory.length > 0
-            ? rawInvoiceRowsForNewCustomerHistory
-            : customerSnapshotRowsForConcentration;
+            ? [
+                ...rawInvoiceRowsForNewCustomerHistory,
+                ...(customerSnapshotRowsForNewCustomerHistory as any[]).filter((row: any) => {
+                  const snapshot = new Date(row?.snapshotDate);
+                  const monthKey = Number.isNaN(snapshot.getTime()) ? '' : businessMonthKey(snapshot);
+                  return monthKey && !rawInvoiceMonthsForNewCustomerHistory.has(monthKey);
+                }),
+              ]
+            : customerSnapshotRowsForNewCustomerHistory;
           for (const row of firstMonthSourceRows as any[]) {
             const snapshot = new Date(row?.snapshotDate);
             if (Number.isNaN(snapshot.getTime())) continue;
@@ -2442,10 +2518,10 @@ export async function GET(request: NextRequest) {
           };
           const sourceCoverageByMonth = new Map<string, string>();
           concentrationMonthKeys.forEach((monthKey) => {
-            if (Array.from(concentrationByMonth.get(monthKey)?.values() || []).length > 0) sourceCoverageByMonth.set(monthKey, rawInvoiceRowsForConcentration.length > 0 ? 'raw_slartrans_invoice' : 'customer_sales_snapshot');
+            if (Array.from(concentrationByMonth.get(monthKey)?.values() || []).length > 0) sourceCoverageByMonth.set(monthKey, rawInvoiceMonthsForConcentration.has(monthKey) ? 'raw_slartrans_invoice' : 'customer_sales_snapshot');
             else sourceCoverageByMonth.set(monthKey, 'none');
           });
-          const customerConcentrationExecutiveMonthly = concentrationMonthKeys.map((monthKey) => {
+          customerConcentrationExecutiveMonthly = concentrationMonthKeys.map((monthKey) => {
             const values = Array.from((concentrationByMonth.get(monthKey) || new Map()).values())
               .sort((a: any, b: any) => Number(b.revenue || 0) - Number(a.revenue || 0));
             const totalRevenue = values.reduce((sum: number, row: any) => sum + Number(row.revenue || 0), 0);
@@ -2486,7 +2562,7 @@ export async function GET(request: NextRequest) {
               newCustomerRevenue: totalRevenue > 0 ? newCustomerRevenue : null,
             };
           });
-          const customerConcentrationMonthlyCustomers = concentrationMonthKeys.flatMap((monthKey) =>
+          customerConcentrationMonthlyCustomers = concentrationMonthKeys.flatMap((monthKey) =>
             Array.from((concentrationByMonth.get(monthKey) || new Map()).values()).map((row: any) => ({
               monthKey,
               month: formatConcentrationMonth(monthKey),
@@ -2498,6 +2574,20 @@ export async function GET(request: NextRequest) {
               ebitda: Number(row.ebitda || 0),
             }))
           );
+          customerConcentrationSourceCoverage = Object.fromEntries(sourceCoverageByMonth.entries());
+          await writeDerivedApiCache({
+            ...concentrationCache,
+            payload: {
+              executiveMonthly: customerConcentrationExecutiveMonthly,
+              customerMonthly: customerConcentrationMonthlyCustomers,
+              monthKeys: concentrationMonthKeys,
+              sourceCoverage: customerConcentrationSourceCoverage,
+            },
+            ttlSeconds: CUSTOMER_CONCENTRATION_CACHE_TTL_SECONDS,
+          }).catch((error) => {
+            console.warn('Customer concentration cache write failed:', error);
+          });
+          }
 
           const mtdStart = startOfBusinessMonth(endDate);
           const qtdStart = startOfBusinessQuarter(endDate);
@@ -2617,7 +2707,7 @@ export async function GET(request: NextRequest) {
               executiveMonthly: customerConcentrationExecutiveMonthly,
               customerMonthly: customerConcentrationMonthlyCustomers,
               monthKeys: concentrationMonthKeys,
-              sourceCoverage: Object.fromEntries(sourceCoverageByMonth.entries()),
+              sourceCoverage: customerConcentrationSourceCoverage,
             },
           };
         };
