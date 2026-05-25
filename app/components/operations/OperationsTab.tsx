@@ -510,6 +510,8 @@ type CardSeverity = 'normal' | 'warning' | 'critical' | 'loading';
 const HEAVY_PREFETCH_TYPES: OpsDataType[] = ['ar-aging', 'ap-aging', 'customers', 'products'];
 const OPERATIONAL_DATA_CACHE_TTL_MS = 2 * 60 * 1000;
 const CUSTOMER_DATA_CACHE_TTL_MS = 30 * 24 * 60 * 60 * 1000;
+const CUSTOMER_CONCENTRATION_CLIENT_CACHE_VERSION = 'customer-concentration-exposure-v2';
+const WHOLESALE_PRODUCTS_REPORT_CACHE_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 
 type InvestigatePlaybook = {
   title: string;
@@ -672,6 +674,7 @@ export default function OperationsTab({
   const [wholesaleProductsData, setWholesaleProductsData] = useState<any>(null);
   const [wholesaleProductsLoading, setWholesaleProductsLoading] = useState(false);
   const [wholesaleProductsError, setWholesaleProductsError] = useState<string | null>(null);
+  const [wholesaleProductsRefreshing, setWholesaleProductsRefreshing] = useState(false);
   const [inventoryData, setInventoryData] = useState<any>(null);
   const [cashData, setCashData] = useState<any>(null);
   const [selectedCashTrendAccount, setSelectedCashTrendAccount] = useState<string>('__TOTAL__');
@@ -786,6 +789,8 @@ export default function OperationsTab({
   const [customerMetricModalNames, setCustomerMetricModalNames] = useState<string[]>([]);
   const operationalDataCacheRef = useRef<Map<string, { fetchedAt: number; data: any }>>(new Map());
   const operationalDataInflightRef = useRef<Map<string, Promise<any>>>(new Map());
+  const wholesaleProductsReportCacheRef = useRef<Map<string, { fetchedAt: number; data: any }>>(new Map());
+  const wholesaleProductsReportInflightRef = useRef<Map<string, Promise<any>>>(new Map());
   const [inventoryAgingSearchTerm, setInventoryAgingSearchTerm] = useState('');
   const [inventoryAgingTableExpanded, setInventoryAgingTableExpanded] = useState(true);
   const [inventoryAgingSortKey, setInventoryAgingSortKey] = useState<
@@ -1479,7 +1484,43 @@ export default function OperationsTab({
     }
   };
 
-  const fetchWholesaleProductsReportData = async () => {
+  const buildWholesaleProductsReportCacheKey = () =>
+    [
+      selectedCompanyId,
+      'products',
+      'wholesale-report',
+      'daily',
+      '2020-01-01',
+      maxSelectableEndDate,
+      '42',
+    ].join('|');
+
+  const getCachedWholesaleProductsReportData = () => {
+    const key = buildWholesaleProductsReportCacheKey();
+    const cached = wholesaleProductsReportCacheRef.current.get(key);
+    if (!cached) return null;
+    if (Date.now() - cached.fetchedAt > WHOLESALE_PRODUCTS_REPORT_CACHE_TTL_MS) {
+      wholesaleProductsReportCacheRef.current.delete(key);
+      return null;
+    }
+    return cached.data ?? null;
+  };
+
+  const setCachedWholesaleProductsReportData = (data: any) => {
+    wholesaleProductsReportCacheRef.current.set(buildWholesaleProductsReportCacheKey(), { fetchedAt: Date.now(), data });
+  };
+
+  const fetchWholesaleProductsReportData = async (options?: { forceRefresh?: boolean }) => {
+    const key = buildWholesaleProductsReportCacheKey();
+    if (!options?.forceRefresh) {
+      const cached = getCachedWholesaleProductsReportData();
+      if (cached) return cached;
+      const inflight = wholesaleProductsReportInflightRef.current.get(key);
+      if (inflight) return inflight;
+    } else {
+      wholesaleProductsReportCacheRef.current.delete(key);
+      wholesaleProductsReportInflightRef.current.delete(key);
+    }
     const params = new URLSearchParams({
       companyId: selectedCompanyId,
       type: 'products',
@@ -1488,14 +1529,22 @@ export default function OperationsTab({
       endDate: maxSelectableEndDate,
       limit: '5000',
       sectorCategory: '42',
+      ...(options?.forceRefresh ? { refreshWholesaleProducts: '1' } : {}),
     });
-    const response = await fetch(`/api/operational-data?${params}`, {
+    const request = fetch(`/api/operational-data?${params}`, {
       cache: 'no-store',
+    }).then(async (response) => {
+      if (!response.ok) {
+        throw new Error('Failed to load wholesale product report data');
+      }
+      const payload = await response.json();
+      setCachedWholesaleProductsReportData(payload);
+      return payload;
+    }).finally(() => {
+      wholesaleProductsReportInflightRef.current.delete(key);
     });
-    if (!response.ok) {
-      throw new Error('Failed to load wholesale product report data');
-    }
-    return response.json();
+    wholesaleProductsReportInflightRef.current.set(key, request);
+    return request;
   };
 
   const buildOperationalDataCacheKey = (type: OpsDataType): string => {
@@ -1516,6 +1565,13 @@ export default function OperationsTab({
     const key = buildOperationalDataCacheKey(type);
     const cached = operationalDataCacheRef.current.get(key);
     if (!cached) return null;
+    if (
+      type === 'customers' &&
+      cached.data?.summary?.customerConcentration?.cacheVersion !== CUSTOMER_CONCENTRATION_CLIENT_CACHE_VERSION
+    ) {
+      operationalDataCacheRef.current.delete(key);
+      return null;
+    }
     const ttlMs = type === 'customers' ? CUSTOMER_DATA_CACHE_TTL_MS : OPERATIONAL_DATA_CACHE_TTL_MS;
     if (Date.now() - cached.fetchedAt > ttlMs) {
       operationalDataCacheRef.current.delete(key);
@@ -1634,7 +1690,7 @@ export default function OperationsTab({
           console.warn('Failed to refresh Products data after operational upload:', error);
         });
       if (industrySectorCategory === '42') {
-        void fetchWholesaleProductsReportData()
+        void fetchWholesaleProductsReportData({ forceRefresh: true })
           .then((fresh) => {
             if (fresh) setWholesaleProductsData(fresh);
           })
@@ -1648,10 +1704,18 @@ export default function OperationsTab({
     return () => window.removeEventListener('operational-data-updated', handleOperationalDataUpdated);
   }, [selectedCompanyId, industrySectorCategory, frequency, startDate, endDate]);
 
+  const shouldLoadWholesaleProductsReport =
+    Boolean(selectedCompanyId) &&
+    industrySectorCategory === '42' &&
+    mapModuleToDataType(activeTab) === 'products' &&
+    (productReportView === 'productMarginAnalysis' || productReportView === 'wholesaleRawData' || productReportView === 'vendorPricing');
+
   useEffect(() => {
-    if (!selectedCompanyId || industrySectorCategory !== '42') {
-      setWholesaleProductsData(null);
-      setWholesaleProductsError(null);
+    if (!shouldLoadWholesaleProductsReport) {
+      if (!selectedCompanyId || industrySectorCategory !== '42') {
+        setWholesaleProductsData(null);
+        setWholesaleProductsError(null);
+      }
       setWholesaleProductsLoading(false);
       return;
     }
@@ -1676,7 +1740,7 @@ export default function OperationsTab({
     return () => {
       cancelled = true;
     };
-  }, [selectedCompanyId, industrySectorCategory, maxSelectableEndDate]);
+  }, [shouldLoadWholesaleProductsReport, industrySectorCategory, maxSelectableEndDate]);
 
   const prefetchTabData = (tab: string) => {
     const type = mapModuleToDataType(tab) || null;
@@ -1788,6 +1852,21 @@ export default function OperationsTab({
       setError(err?.message || 'Failed to refresh customer concentration data');
     } finally {
       setCustomerConcentrationRefreshing(false);
+    }
+  };
+
+  const refreshWholesaleProductsReport = async () => {
+    setWholesaleProductsRefreshing(true);
+    setWholesaleProductsLoading(true);
+    setWholesaleProductsError(null);
+    try {
+      const fresh = await fetchWholesaleProductsReportData({ forceRefresh: true });
+      if (fresh) setWholesaleProductsData(fresh);
+    } catch (err: any) {
+      setWholesaleProductsError(err?.message || 'Failed to refresh wholesale product report data');
+    } finally {
+      setWholesaleProductsRefreshing(false);
+      setWholesaleProductsLoading(false);
     }
   };
 
@@ -6390,7 +6469,7 @@ export default function OperationsTab({
 
   // Product Sales Tab  
   const renderProducts = () => {
-    if (loading) {
+    if (loading && !productData) {
       return <div style={{ padding: '40px', textAlign: 'center', color: '#64748b' }}>Loading product data...</div>;
     }
 
@@ -7890,6 +7969,14 @@ export default function OperationsTab({
               )}
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+              <button
+                type="button"
+                onClick={() => void refreshWholesaleProductsReport()}
+                disabled={wholesaleProductsRefreshing}
+                style={{ border: '1px solid #cbd5e1', borderRadius: '8px', padding: '8px 10px', background: wholesaleProductsRefreshing ? '#f1f5f9' : '#fff', color: '#334155', fontSize: '12px', fontWeight: 700, cursor: wholesaleProductsRefreshing ? 'not-allowed' : 'pointer' }}
+              >
+                {wholesaleProductsRefreshing ? 'Refreshing...' : 'Refresh Margin Data'}
+              </button>
               <select
                 value={productMarginCustomerFilter}
                 onChange={(event) => setProductMarginCustomerFilter(event.target.value)}

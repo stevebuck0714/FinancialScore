@@ -50,6 +50,8 @@ export const dynamic = 'force-dynamic';
 
 const OPERATIONAL_DATA_CACHE_TTL_SECONDS = 120;
 const CUSTOMER_CONCENTRATION_CACHE_TTL_SECONDS = 30 * 24 * 60 * 60;
+const CUSTOMER_CONCENTRATION_CACHE_VERSION = 'customer-concentration-exposure-v2';
+const WHOLESALE_PRODUCTS_REPORT_CACHE_TTL_SECONDS = 30 * 24 * 60 * 60;
 const OPERATIONAL_CACHEABLE_TYPES = new Set([
   'customers',
   'ar-aging',
@@ -2011,6 +2013,11 @@ export async function GET(request: NextRequest) {
         .trim()
         .toLowerCase()
     );
+    const refreshWholesaleProducts = ['1', 'true', 'yes'].includes(
+      String(searchParams.get('refreshWholesaleProducts') || '')
+        .trim()
+        .toLowerCase()
+    );
     const skuParam = String(searchParams.get('sku') || '').trim();
     const includeCostHistory = ['1', 'true', 'yes'].includes(
       String(searchParams.get('includeCostHistory') || '')
@@ -2113,7 +2120,21 @@ export async function GET(request: NextRequest) {
           };
 
     const cacheType = String(type || '').trim();
-    const cacheableRequest = OPERATIONAL_CACHEABLE_TYPES.has(cacheType) && !skuParam && !includeCostHistory && !refreshConcentration;
+    const isWholesaleProductsReportRequest =
+      cacheType === 'products' &&
+      String(sectorCategory || '').trim() === '42' &&
+      frequency === 'daily' &&
+      String(startDateParam || '') === '2020-01-01' &&
+      boundedLimit >= 5000;
+    const operationalCacheTtlSeconds = isWholesaleProductsReportRequest
+      ? WHOLESALE_PRODUCTS_REPORT_CACHE_TTL_SECONDS
+      : OPERATIONAL_DATA_CACHE_TTL_SECONDS;
+    const cacheableRequest =
+      OPERATIONAL_CACHEABLE_TYPES.has(cacheType) &&
+      !skuParam &&
+      !includeCostHistory &&
+      !refreshConcentration &&
+      !(isWholesaleProductsReportRequest && refreshWholesaleProducts);
     const operationalCache =
       cacheableRequest
         ? {
@@ -2129,15 +2150,18 @@ export async function GET(request: NextRequest) {
               statementRollup,
               boundedLimit,
               shouldApplyHydratedDateFilter ? hydratedInforDates : null,
+              cacheType === 'customers' ? CUSTOMER_CONCENTRATION_CACHE_VERSION : null,
             ]),
-            dataVersion: await buildOperationalDataVersion(companyId, cacheType, startDate, endDate),
+            dataVersion: isWholesaleProductsReportRequest
+              ? 'wholesale-products-report-manual-v1'
+              : await buildOperationalDataVersion(companyId, cacheType, startDate, endDate),
           }
         : null;
 
     if (operationalCache) {
       const cachedPayload = await readDerivedApiCache<any>(operationalCache);
       if (cachedPayload) {
-        return NextResponse.json(cachedPayload, { headers: privateCacheHeaders(OPERATIONAL_DATA_CACHE_TTL_SECONDS, 300) });
+        return NextResponse.json(cachedPayload, { headers: privateCacheHeaders(operationalCacheTtlSeconds, 300) });
       }
     }
 
@@ -2146,12 +2170,12 @@ export async function GET(request: NextRequest) {
         await writeDerivedApiCache({
           ...operationalCache,
           payload,
-          ttlSeconds: OPERATIONAL_DATA_CACHE_TTL_SECONDS,
+          ttlSeconds: operationalCacheTtlSeconds,
         }).catch((error) => {
           console.warn('Operational data cache write failed:', error);
         });
       }
-      return NextResponse.json(payload, { headers: privateCacheHeaders(OPERATIONAL_DATA_CACHE_TTL_SECONDS, 300) });
+      return NextResponse.json(payload, { headers: privateCacheHeaders(operationalCacheTtlSeconds, 300) });
     };
     const mockDataDisabledResponse = (dataType: string) => NextResponse.json(
       {
@@ -2318,7 +2342,7 @@ export async function GET(request: NextRequest) {
               sectorCategory,
               'last-12-completed-months',
             ]),
-            dataVersion: 'customer-concentration-exposure-v1',
+            dataVersion: CUSTOMER_CONCENTRATION_CACHE_VERSION,
           };
           const cachedCustomerConcentration = refreshConcentration
             ? null
@@ -2327,6 +2351,7 @@ export async function GET(request: NextRequest) {
                 customerMonthly: any[];
                 monthKeys: string[];
                 sourceCoverage: Record<string, string>;
+                cacheVersion?: string;
               }>(concentrationCache).catch(() => null);
           let customerConcentrationExecutiveMonthly: any[] = Array.isArray(cachedCustomerConcentration?.executiveMonthly)
             ? cachedCustomerConcentration.executiveMonthly
@@ -2376,6 +2401,9 @@ export async function GET(request: NextRequest) {
             orderBy: { snapshotDate: 'asc' },
             take: 100000,
           });
+          const orderLineSalesRowsForConcentration = isInforCompany
+            ? await deriveCustomerSalesFromOrderLineDeltas(companyId, orderLineFrequencyForQuery, concentrationStart, concentrationEnd)
+            : [];
           const rawOrderLineMarginRowsForConcentration = isInforCompany
             ? await deriveCustomerMarginFromRawOrderLineDeltas(companyId, concentrationStart, concentrationEnd)
             : [];
@@ -2428,16 +2456,27 @@ export async function GET(request: NextRequest) {
               })
               .filter(Boolean)
           );
-          const concentrationSourceRows = rawInvoiceRowsForConcentration.length > 0
-            ? [
-                ...rawInvoiceRowsForConcentration,
-                ...(customerSnapshotRowsForConcentration as any[]).filter((row: any) => {
-                  const snapshot = new Date(row?.snapshotDate);
-                  const monthKey = Number.isNaN(snapshot.getTime()) ? '' : businessMonthKey(snapshot);
-                  return monthKey && !rawInvoiceMonthsForConcentration.has(monthKey);
-                }),
-              ]
-            : customerSnapshotRowsForConcentration;
+          const orderLineMonthsForConcentration = new Set(
+            orderLineSalesRowsForConcentration
+              .map((row: any) => {
+                const snapshot = new Date(row?.snapshotDate);
+                return Number.isNaN(snapshot.getTime()) ? '' : businessMonthKey(snapshot);
+              })
+              .filter(Boolean)
+          );
+          const concentrationSourceRows = [
+            ...rawInvoiceRowsForConcentration,
+            ...orderLineSalesRowsForConcentration.filter((row: any) => {
+              const snapshot = new Date(row?.snapshotDate);
+              const monthKey = Number.isNaN(snapshot.getTime()) ? '' : businessMonthKey(snapshot);
+              return monthKey && !rawInvoiceMonthsForConcentration.has(monthKey);
+            }),
+            ...(customerSnapshotRowsForConcentration as any[]).filter((row: any) => {
+              const snapshot = new Date(row?.snapshotDate);
+              const monthKey = Number.isNaN(snapshot.getTime()) ? '' : businessMonthKey(snapshot);
+              return monthKey && !rawInvoiceMonthsForConcentration.has(monthKey) && !orderLineMonthsForConcentration.has(monthKey);
+            }),
+          ];
           const customerSnapshotRowsForNewCustomerHistory = await prisma.customerSalesSnapshot.findMany({
             where: {
               companyId,
@@ -2446,8 +2485,19 @@ export async function GET(request: NextRequest) {
             orderBy: { snapshotDate: 'asc' },
             take: 100000,
           });
+          const orderLineSalesRowsForNewCustomerHistory = isInforCompany
+            ? await deriveCustomerSalesFromOrderLineDeltas(companyId, orderLineFrequencyForQuery, newCustomerLookbackStart, concentrationEnd)
+            : [];
           const rawInvoiceMonthsForNewCustomerHistory = new Set(
             rawInvoiceRowsForNewCustomerHistory
+              .map((row: any) => {
+                const snapshot = new Date(row?.snapshotDate);
+                return Number.isNaN(snapshot.getTime()) ? '' : businessMonthKey(snapshot);
+              })
+              .filter(Boolean)
+          );
+          const orderLineMonthsForNewCustomerHistory = new Set(
+            orderLineSalesRowsForNewCustomerHistory
               .map((row: any) => {
                 const snapshot = new Date(row?.snapshotDate);
                 return Number.isNaN(snapshot.getTime()) ? '' : businessMonthKey(snapshot);
@@ -2457,16 +2507,19 @@ export async function GET(request: NextRequest) {
           const concentrationByMonth = new Map<string, Map<string, any>>();
           const firstMonthByCustomerForConcentration = new Map<string, string>();
           const firstMonthByCustomerFromActualSales = new Map<string, string>();
-          const firstMonthSourceRows = rawInvoiceRowsForNewCustomerHistory.length > 0
-            ? [
-                ...rawInvoiceRowsForNewCustomerHistory,
-                ...(customerSnapshotRowsForNewCustomerHistory as any[]).filter((row: any) => {
-                  const snapshot = new Date(row?.snapshotDate);
-                  const monthKey = Number.isNaN(snapshot.getTime()) ? '' : businessMonthKey(snapshot);
-                  return monthKey && !rawInvoiceMonthsForNewCustomerHistory.has(monthKey);
-                }),
-              ]
-            : customerSnapshotRowsForNewCustomerHistory;
+          const firstMonthSourceRows = [
+            ...rawInvoiceRowsForNewCustomerHistory,
+            ...orderLineSalesRowsForNewCustomerHistory.filter((row: any) => {
+              const snapshot = new Date(row?.snapshotDate);
+              const monthKey = Number.isNaN(snapshot.getTime()) ? '' : businessMonthKey(snapshot);
+              return monthKey && !rawInvoiceMonthsForNewCustomerHistory.has(monthKey);
+            }),
+            ...(customerSnapshotRowsForNewCustomerHistory as any[]).filter((row: any) => {
+              const snapshot = new Date(row?.snapshotDate);
+              const monthKey = Number.isNaN(snapshot.getTime()) ? '' : businessMonthKey(snapshot);
+              return monthKey && !rawInvoiceMonthsForNewCustomerHistory.has(monthKey) && !orderLineMonthsForNewCustomerHistory.has(monthKey);
+            }),
+          ];
           for (const row of firstMonthSourceRows as any[]) {
             const snapshot = new Date(row?.snapshotDate);
             if (Number.isNaN(snapshot.getTime())) continue;
@@ -2518,7 +2571,16 @@ export async function GET(request: NextRequest) {
           };
           const sourceCoverageByMonth = new Map<string, string>();
           concentrationMonthKeys.forEach((monthKey) => {
-            if (Array.from(concentrationByMonth.get(monthKey)?.values() || []).length > 0) sourceCoverageByMonth.set(monthKey, rawInvoiceMonthsForConcentration.has(monthKey) ? 'raw_slartrans_invoice' : 'customer_sales_snapshot');
+            if (Array.from(concentrationByMonth.get(monthKey)?.values() || []).length > 0) {
+              sourceCoverageByMonth.set(
+                monthKey,
+                rawInvoiceMonthsForConcentration.has(monthKey)
+                  ? 'raw_slartrans_invoice'
+                  : orderLineMonthsForConcentration.has(monthKey)
+                  ? 'customer_order_line_delta'
+                  : 'customer_sales_snapshot'
+              );
+            }
             else sourceCoverageByMonth.set(monthKey, 'none');
           });
           customerConcentrationExecutiveMonthly = concentrationMonthKeys.map((monthKey) => {
@@ -2582,6 +2644,7 @@ export async function GET(request: NextRequest) {
               customerMonthly: customerConcentrationMonthlyCustomers,
               monthKeys: concentrationMonthKeys,
               sourceCoverage: customerConcentrationSourceCoverage,
+              cacheVersion: CUSTOMER_CONCENTRATION_CACHE_VERSION,
             },
             ttlSeconds: CUSTOMER_CONCENTRATION_CACHE_TTL_SECONDS,
           }).catch((error) => {
@@ -2708,6 +2771,7 @@ export async function GET(request: NextRequest) {
               customerMonthly: customerConcentrationMonthlyCustomers,
               monthKeys: concentrationMonthKeys,
               sourceCoverage: customerConcentrationSourceCoverage,
+              cacheVersion: CUSTOMER_CONCENTRATION_CACHE_VERSION,
             },
           };
         };
@@ -6170,7 +6234,7 @@ export async function GET(request: NextRequest) {
               .slice(0, 10);
 
         const wholesaleOrderLines =
-          String(sectorCategory || '').trim() === '42' && productOrderLineDelegate?.findMany
+          isWholesaleProductsReportRequest && productOrderLineDelegate?.findMany
             ? await (async () => {
                 const normalizeOrderLineToken = (value: unknown): string => {
                   const raw = String(value ?? '').trim();
@@ -6491,7 +6555,7 @@ export async function GET(request: NextRequest) {
             : [];
 
         const wholesaleVendorPricingRows =
-          String(sectorCategory || '').trim() === '42'
+          isWholesaleProductsReportRequest
             ? await (async () => {
                 const rawRows = await prisma.inforRawRecord.findMany({
                   where: {
