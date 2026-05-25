@@ -50,7 +50,7 @@ export const dynamic = 'force-dynamic';
 
 const OPERATIONAL_DATA_CACHE_TTL_SECONDS = 120;
 const CUSTOMER_CONCENTRATION_CACHE_TTL_SECONDS = 30 * 24 * 60 * 60;
-const CUSTOMER_CONCENTRATION_CACHE_VERSION = 'customer-concentration-exposure-v5';
+const CUSTOMER_CONCENTRATION_CACHE_VERSION = 'customer-concentration-exposure-v6';
 const WHOLESALE_PRODUCTS_REPORT_CACHE_TTL_SECONDS = 30 * 24 * 60 * 60;
 const OPERATIONAL_CACHEABLE_TYPES = new Set([
   'customers',
@@ -887,8 +887,6 @@ async function deriveCustomerSalesFromRawInvoices(
       FROM "InforRawRecord"
       WHERE "companyId" = ${companyId}
         AND "miProgram" = 'SLArtrans'
-        AND "businessDate" >= ${startDate}::date
-        AND "businessDate" <= ${endDate}::date
     )
     SELECT
       date_trunc('month', invoice_date)::date AS month_start,
@@ -900,6 +898,7 @@ async function deriveCustomerSalesFromRawInvoices(
     WHERE invoice_date >= ${startDate}::date
       AND invoice_date <= ${endDate}::date
       AND amount <> 0
+      AND (trans_type IS NULL OR trans_type IN ('I', 'D'))
     GROUP BY 1, 2, 3
     HAVING SUM(ABS(amount)) > 0
     ORDER BY 1 ASC, 3 ASC
@@ -989,6 +988,51 @@ async function deriveCustomerMarginFromRawOrderLineDeltas(
       WHERE order_id IS NOT NULL AND TRIM(order_id) <> ''
       ORDER BY order_id, "businessDate" DESC NULLS LAST, "fetchedAt" DESC NULLS LAST, "createdAt" DESC NULLS LAST
     ),
+    invoice_orders AS (
+      SELECT
+        order_id,
+        customer_id,
+        customer_name,
+        invoice_date
+      FROM (
+        SELECT
+          COALESCE(
+            NULLIF("payload"->>'CoNum', ''),
+            NULLIF("payload"->>'CONUM', ''),
+            NULLIF("payload"->>'coNum', ''),
+            NULLIF("payload"->>'OrderNum', ''),
+            NULLIF("payload"->>'OrderNo', '')
+          ) AS order_id,
+          COALESCE(
+            NULLIF("payload"->>'CustNum', ''),
+            NULLIF("payload"->>'CorpCust', '')
+          ) AS customer_id,
+          COALESCE(
+            NULLIF("payload"->>'DerCustName', ''),
+            NULLIF("payload"->>'CadName', ''),
+            NULLIF("payload"->>'DerCustNoName', ''),
+            NULLIF("payload"->>'CustNum', '')
+          ) AS customer_name,
+          COALESCE(
+            CASE
+              WHEN "payload"->>'InvDate' ~ '^\\d{8}' THEN to_date(LEFT("payload"->>'InvDate', 8), 'YYYYMMDD')
+              WHEN "payload"->>'InvDate' ~ '^\\d{4}-\\d{2}-\\d{2}' THEN LEFT("payload"->>'InvDate', 10)::date
+              ELSE NULL
+            END,
+            "businessDate"::date
+          ) AS invoice_date,
+          "fetchedAt",
+          "createdAt"
+        FROM "InforRawRecord"
+        WHERE "companyId" = ${companyId}
+          AND "miProgram" = 'SLArtrans'
+          AND (UPPER(NULLIF("payload"->>'Type', '')) IS NULL OR UPPER(NULLIF("payload"->>'Type', '')) IN ('I', 'D'))
+      ) raw_invoices
+      WHERE order_id IS NOT NULL
+        AND TRIM(order_id) <> ''
+        AND invoice_date >= ${startDate}::date
+        AND invoice_date <= ${endDate}::date
+    ),
     raw_lines AS (
       SELECT
         "businessDate"::date AS day,
@@ -1024,13 +1068,37 @@ async function deriveCustomerMarginFromRawOrderLineDeltas(
           NULLIF(regexp_replace("payload"->>'unitCost', '[^0-9.-]', '', 'g'), '')::double precision,
           0
         ) AS unit_cost,
+        COALESCE(
+          CASE
+            WHEN "payload"->>'InvDate' ~ '^\\d{8}' THEN to_date(LEFT("payload"->>'InvDate', 8), 'YYYYMMDD')
+            WHEN "payload"->>'InvDate' ~ '^\\d{4}-\\d{2}-\\d{2}' THEN LEFT("payload"->>'InvDate', 10)::date
+            WHEN "payload"->>'InvoiceDate' ~ '^\\d{8}' THEN to_date(LEFT("payload"->>'InvoiceDate', 8), 'YYYYMMDD')
+            WHEN "payload"->>'InvoiceDate' ~ '^\\d{4}-\\d{2}-\\d{2}' THEN LEFT("payload"->>'InvoiceDate', 10)::date
+            ELSE NULL
+          END,
+          CASE
+            WHEN "payload"->>'ShipDate' ~ '^\\d{8}' THEN to_date(LEFT("payload"->>'ShipDate', 8), 'YYYYMMDD')
+            WHEN "payload"->>'ShipDate' ~ '^\\d{4}-\\d{2}-\\d{2}' THEN LEFT("payload"->>'ShipDate', 10)::date
+            ELSE NULL
+          END,
+          CASE
+            WHEN "payload"->>'DueDate' ~ '^\\d{8}' THEN to_date(LEFT("payload"->>'DueDate', 8), 'YYYYMMDD')
+            WHEN "payload"->>'DueDate' ~ '^\\d{4}-\\d{2}-\\d{2}' THEN LEFT("payload"->>'DueDate', 10)::date
+            ELSE NULL
+          END
+        ) AS line_invoice_date,
         "fetchedAt",
         "createdAt"
       FROM "InforRawRecord"
       WHERE "companyId" = ${companyId}
         AND "miProgram" IN ('SLCoitems', 'SLCOITEMS')
-        AND "businessDate" >= ${lineLookbackStart}::date
-        AND "businessDate" <= ${endDate}::date
+        AND (
+          ("businessDate" >= ${lineLookbackStart}::date AND "businessDate" <= ${endDate}::date)
+          OR "payload" ? 'InvDate'
+          OR "payload" ? 'InvoiceDate'
+          OR "payload" ? 'ShipDate'
+          OR "payload" ? 'DueDate'
+        )
     ),
     daily_state AS (
       SELECT *
@@ -1062,22 +1130,89 @@ async function deriveCustomerMarginFromRawOrderLineDeltas(
         unit_cost
       FROM daily_state
       LEFT JOIN headers ON headers.order_id = daily_state.order_id
+    ),
+    delta_margin AS (
+      SELECT
+        to_char(date_trunc('month', day), 'YYYY-MM') AS month_key,
+        LOWER(regexp_replace(TRIM(COALESCE(customer_name, customer_id, 'Unknown Customer')), '\\s+', ' ', 'g')) AS customer_key,
+        LOWER(regexp_replace(TRIM(COALESCE(customer_id, '')), '\\s+', ' ', 'g')) AS customer_id_key,
+        TRIM(COALESCE(customer_name, customer_id, 'Unknown Customer')) AS customer_name,
+        SUM(qty_delta * unit_price)::double precision AS revenue,
+        SUM(qty_delta * unit_cost)::double precision AS cogs
+      FROM line_deltas
+      WHERE day >= ${startDate}::date
+        AND day <= ${endDate}::date
+        AND qty_delta > 0
+        AND unit_price > 0
+        AND unit_cost > 0
+      GROUP BY 1, 2, 3, 4
+      HAVING SUM(qty_delta * unit_price) > 0 AND SUM(qty_delta * unit_cost) > 0
+    ),
+    invoice_state AS (
+      SELECT *
+      FROM (
+        SELECT
+          raw_lines.*,
+          COALESCE(raw_lines.line_invoice_date, invoice_orders.invoice_date) AS invoice_date,
+          COALESCE(NULLIF(TRIM(raw_lines.line_customer_id), ''), invoice_orders.customer_id, headers.customer_id) AS customer_id,
+          COALESCE(invoice_orders.customer_name, headers.customer_name) AS customer_name,
+          ROW_NUMBER() OVER (
+            PARTITION BY raw_lines.order_id, raw_lines.line_id, raw_lines.release_id
+            ORDER BY raw_lines."businessDate" DESC NULLS LAST, raw_lines."fetchedAt" DESC NULLS LAST, raw_lines."createdAt" DESC NULLS LAST
+          ) AS rn
+        FROM raw_lines
+        LEFT JOIN headers ON headers.order_id = raw_lines.order_id
+        LEFT JOIN invoice_orders ON invoice_orders.order_id = raw_lines.order_id
+        WHERE raw_lines.order_id IS NOT NULL
+          AND TRIM(raw_lines.order_id) <> ''
+          AND raw_lines.qty_invoiced > 0
+          AND raw_lines.unit_price > 0
+          AND raw_lines.unit_cost > 0
+      ) ranked
+      WHERE rn = 1
+        AND invoice_date >= ${startDate}::date
+        AND invoice_date <= ${endDate}::date
+    ),
+    invoice_margin AS (
+      SELECT
+        to_char(date_trunc('month', invoice_date), 'YYYY-MM') AS month_key,
+        LOWER(regexp_replace(TRIM(COALESCE(customer_name, customer_id, 'Unknown Customer')), '\\s+', ' ', 'g')) AS customer_key,
+        LOWER(regexp_replace(TRIM(COALESCE(customer_id, '')), '\\s+', ' ', 'g')) AS customer_id_key,
+        TRIM(COALESCE(customer_name, customer_id, 'Unknown Customer')) AS customer_name,
+        SUM(qty_invoiced * unit_price)::double precision AS revenue,
+        SUM(qty_invoiced * unit_cost)::double precision AS cogs
+      FROM invoice_state
+      GROUP BY 1, 2, 3, 4
+      HAVING SUM(qty_invoiced * unit_price) > 0 AND SUM(qty_invoiced * unit_cost) > 0
+    ),
+    combined_margin AS (
+      SELECT * FROM delta_margin
+      UNION ALL
+      SELECT invoice_margin.*
+      FROM invoice_margin
+      WHERE NOT EXISTS (
+        SELECT 1
+        FROM delta_margin
+        WHERE delta_margin.month_key = invoice_margin.month_key
+          AND (
+            delta_margin.customer_key = invoice_margin.customer_key
+            OR (
+              delta_margin.customer_id_key <> ''
+              AND delta_margin.customer_id_key = invoice_margin.customer_id_key
+            )
+          )
+      )
     )
     SELECT
-      to_char(date_trunc('month', day), 'YYYY-MM') AS month_key,
-      LOWER(regexp_replace(TRIM(COALESCE(customer_name, customer_id, 'Unknown Customer')), '\\s+', ' ', 'g')) AS customer_key,
-      LOWER(regexp_replace(TRIM(COALESCE(customer_id, '')), '\\s+', ' ', 'g')) AS customer_id_key,
-      TRIM(COALESCE(customer_name, customer_id, 'Unknown Customer')) AS customer_name,
-      SUM(qty_delta * unit_price)::double precision AS revenue,
-      SUM(qty_delta * unit_cost)::double precision AS cogs
-    FROM line_deltas
-    WHERE day >= ${startDate}::date
-      AND day <= ${endDate}::date
-      AND qty_delta > 0
-      AND unit_price > 0
-      AND unit_cost > 0
-    GROUP BY 1, 2, 3
-    HAVING SUM(qty_delta * unit_price) > 0 AND SUM(qty_delta * unit_cost) > 0
+      month_key,
+      customer_key,
+      customer_id_key,
+      customer_name,
+      SUM(revenue)::double precision AS revenue,
+      SUM(cogs)::double precision AS cogs
+    FROM combined_margin
+    GROUP BY 1, 2, 3, 4
+    HAVING SUM(revenue) > 0 AND SUM(cogs) > 0
     ORDER BY 1 ASC, 3 ASC
   `);
 
@@ -2408,16 +2543,6 @@ export async function GET(request: NextRequest) {
           const rawOrderLineMarginRowsForConcentration = isInforCompany
             ? await deriveCustomerMarginFromRawOrderLineDeltas(companyId, concentrationStart, concentrationEnd)
             : [];
-          const rawOrderLineSalesRowsForConcentration = rawOrderLineMarginRowsForConcentration.map((row) => ({
-            companyId,
-            snapshotDate: monthStartFromBusinessMonthKey(row.monthKey),
-            frequency: 'monthly' as const,
-            customerId: row.customerIdKey || null,
-            customerName: row.customerName,
-            revenue: row.revenue,
-            invoiceCount: 0,
-            avgInvoiceSize: null,
-          }));
           const marginByMonthCustomer = new Map<string, { grossProfit: number; revenue: number }>();
           for (const row of customerSnapshotRowsForConcentration as any[]) {
             const snapshot = new Date(row?.snapshotDate);
@@ -2452,10 +2577,10 @@ export async function GET(request: NextRequest) {
               }
             }
           }
+          const newCustomerLookbackStart = new Date(Date.UTC(concentrationStart.getUTCFullYear() - 3, concentrationStart.getUTCMonth(), 1));
           const rawInvoiceRowsForConcentration = isInforCompany
             ? await deriveCustomerSalesFromRawInvoices(companyId, concentrationStart, concentrationEnd)
             : [];
-          const newCustomerLookbackStart = new Date(Date.UTC(concentrationStart.getUTCFullYear() - 3, concentrationStart.getUTCMonth(), 1));
           const rawInvoiceRowsForNewCustomerHistory = isInforCompany
             ? await deriveCustomerSalesFromRawInvoices(companyId, newCustomerLookbackStart, concentrationEnd)
             : [];
@@ -2475,14 +2600,6 @@ export async function GET(request: NextRequest) {
               })
               .filter(Boolean)
           );
-          const rawOrderLineMonthsForConcentration = new Set(
-            rawOrderLineSalesRowsForConcentration
-              .map((row: any) => {
-                const snapshot = new Date(row?.snapshotDate);
-                return Number.isNaN(snapshot.getTime()) ? '' : businessMonthKey(snapshot);
-              })
-              .filter(Boolean)
-          );
           const concentrationSourceRows = [
             ...rawInvoiceRowsForConcentration,
             ...orderLineSalesRowsForConcentration.filter((row: any) => {
@@ -2490,15 +2607,10 @@ export async function GET(request: NextRequest) {
               const monthKey = Number.isNaN(snapshot.getTime()) ? '' : businessMonthKey(snapshot);
               return monthKey && !rawInvoiceMonthsForConcentration.has(monthKey);
             }),
-            ...rawOrderLineSalesRowsForConcentration.filter((row: any) => {
-              const snapshot = new Date(row?.snapshotDate);
-              const monthKey = Number.isNaN(snapshot.getTime()) ? '' : businessMonthKey(snapshot);
-              return monthKey && !rawInvoiceMonthsForConcentration.has(monthKey) && !orderLineMonthsForConcentration.has(monthKey);
-            }),
             ...(customerSnapshotRowsForConcentration as any[]).filter((row: any) => {
               const snapshot = new Date(row?.snapshotDate);
               const monthKey = Number.isNaN(snapshot.getTime()) ? '' : businessMonthKey(snapshot);
-              return monthKey && !rawInvoiceMonthsForConcentration.has(monthKey) && !orderLineMonthsForConcentration.has(monthKey) && !rawOrderLineMonthsForConcentration.has(monthKey);
+              return monthKey && !rawInvoiceMonthsForConcentration.has(monthKey) && !orderLineMonthsForConcentration.has(monthKey);
             }),
           ];
           const customerSnapshotRowsForNewCustomerHistory = await prisma.customerSalesSnapshot.findMany({
@@ -2520,14 +2632,6 @@ export async function GET(request: NextRequest) {
               })
               .filter(Boolean)
           );
-          const orderLineMonthsForNewCustomerHistory = new Set(
-            orderLineSalesRowsForNewCustomerHistory
-              .map((row: any) => {
-                const snapshot = new Date(row?.snapshotDate);
-                return Number.isNaN(snapshot.getTime()) ? '' : businessMonthKey(snapshot);
-              })
-              .filter(Boolean)
-          );
           const concentrationByMonth = new Map<string, Map<string, any>>();
           const firstMonthByCustomerForConcentration = new Map<string, string>();
           const firstMonthByCustomerFromActualSales = new Map<string, string>();
@@ -2541,7 +2645,7 @@ export async function GET(request: NextRequest) {
             ...(customerSnapshotRowsForNewCustomerHistory as any[]).filter((row: any) => {
               const snapshot = new Date(row?.snapshotDate);
               const monthKey = Number.isNaN(snapshot.getTime()) ? '' : businessMonthKey(snapshot);
-              return monthKey && !rawInvoiceMonthsForNewCustomerHistory.has(monthKey) && !orderLineMonthsForNewCustomerHistory.has(monthKey);
+              return monthKey && !rawInvoiceMonthsForNewCustomerHistory.has(monthKey);
             }),
           ];
           for (const row of firstMonthSourceRows as any[]) {
@@ -2568,8 +2672,8 @@ export async function GET(request: NextRequest) {
             const marginKey = `${monthKey}||${customerKey}`;
             const marginRow = marginByMonthCustomer.get(marginKey) || (customerIdKey ? marginByMonthCustomer.get(`${monthKey}||${customerIdKey}`) : undefined);
             const hasGrossProfit = Boolean(marginRow && marginRow.revenue > 0);
-            const grossProfit = marginRow ? marginRow.grossProfit : 0;
-            const grossProfitRevenue = marginRow ? marginRow.revenue : 0;
+            const grossProfit = marginRow ? marginRow.grossProfit * (revenue / Math.max(marginRow.revenue, 1)) : 0;
+            const grossProfitRevenue = marginRow ? revenue : 0;
             if (!concentrationByMonth.has(monthKey)) concentrationByMonth.set(monthKey, new Map());
             const monthMap = concentrationByMonth.get(monthKey)!;
             const current = monthMap.get(customerKey) || {
@@ -2602,8 +2706,6 @@ export async function GET(request: NextRequest) {
                   ? 'raw_slartrans_invoice'
                   : orderLineMonthsForConcentration.has(monthKey)
                   ? 'customer_order_line_delta'
-                  : rawOrderLineMonthsForConcentration.has(monthKey)
-                  ? 'raw_slcoitems_delta'
                   : 'customer_sales_snapshot'
               );
             }
