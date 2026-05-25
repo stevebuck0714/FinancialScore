@@ -19286,9 +19286,6 @@ Strategies to Improve the CCC
 
   const renderCustomerConcentrationExposure = () => {
     const customerRecords = Array.isArray(customerData?.records) ? customerData.records : [];
-    const wholesaleRows = Array.isArray(wholesaleProductsData?.summary?.wholesaleOrderLines)
-      ? wholesaleProductsData.summary.wholesaleOrderLines
-      : [];
     const toMonthKey = (value: unknown) => {
       const parsed = new Date(String(value || ''));
       return Number.isNaN(parsed.getTime()) ? '' : `${parsed.getUTCFullYear()}-${String(parsed.getUTCMonth() + 1).padStart(2, '0')}`;
@@ -19647,12 +19644,19 @@ Strategies to Improve the CCC
     }, 0);
     const arDueByCustomer = new Map<string, number>();
     const invoiceArDueByCustomer = new Map<string, number>();
+    const customerOpenArRows = Array.isArray(customerData?.summary?.customerOpenArByCustomer)
+      ? customerData.summary.customerOpenArByCustomer
+      : [];
+    const hasCompleteCustomerOpenAr = customerData?.summary?.customerOpenArComplete === true;
     const addArDue = (target: Map<string, number>, name: unknown, amount: unknown) => {
       const key = normalizeCustomerName(name);
       const due = Number(amount || 0);
       if (!key || !Number.isFinite(due) || due <= 0) return;
       target.set(key, (target.get(key) || 0) + due);
     };
+    customerOpenArRows.forEach((row: any) => {
+      addArDue(arDueByCustomer, row?.customerName || row?.name, row?.totalDue ?? row?.total ?? row?.amountDueHome);
+    });
     (arData?.summary?.unpaidByCustomer || arData?.summary?.breakdown || []).forEach((row: any) => {
       addArDue(arDueByCustomer, row?.customerName || row?.name, row?.totalDue ?? row?.total ?? row?.amountDueHome);
     });
@@ -19665,23 +19669,15 @@ Strategies to Improve the CCC
     invoiceArDueByCustomer.forEach((due, key) => {
       if (!arDueByCustomer.has(key)) arDueByCustomer.set(key, due);
     });
-    const latestOrderLineByKey = new Map<string, any>();
-    wholesaleRows.forEach((row: any) => {
-      const key = [row?.customerId || row?.customerName || row?.customer || '', row?.orderId || '', row?.lineId || '', row?.itemId || row?.sku || row?.itemName || ''].join('||');
-      const existing = latestOrderLineByKey.get(key);
-      const rowDate = new Date(String(row?.snapshotDate || ''));
-      const existingDate = existing ? new Date(String(existing?.snapshotDate || '')) : null;
-      if (!existing || (!Number.isNaN(rowDate.getTime()) && (!existingDate || Number.isNaN(existingDate.getTime()) || rowDate.getTime() > existingDate.getTime()))) {
-        latestOrderLineByKey.set(key, row);
-      }
-    });
+    const wipSummary = customerData?.summary?.wip || {};
+    const hasCompleteWipByCustomer = Array.isArray(wipSummary?.byCustomer);
+    const realWipRows = hasCompleteWipByCustomer
+      ? wipSummary.byCustomer
+      : (Array.isArray(wipSummary?.topCustomers) ? wipSummary.topCustomers : []);
     const wipBurdenByCustomer = new Map<string, number>();
-    latestOrderLineByKey.forEach((row: any) => {
+    realWipRows.forEach((row: any) => {
       const customerKey = normalizeCustomerName(row?.customerName || row?.customer);
-      const contractValue = Number(row?.contractValue || row?.revenue || 0);
-      const invoicedAmount = Number(row?.invoicedAmount || 0);
-      const remainingStored = Number(row?.remainingAmount ?? NaN);
-      const wipValue = Number.isFinite(remainingStored) ? Math.max(remainingStored, 0) : Math.max(contractValue - invoicedAmount, 0);
+      const wipValue = Number(row?.wipValue ?? row?.remainingAmount);
       if (!customerKey || wipValue <= 0) return;
       wipBurdenByCustomer.set(customerKey, (wipBurdenByCustomer.get(customerKey) || 0) + wipValue);
     });
@@ -19701,15 +19697,16 @@ Strategies to Improve the CCC
       }, new Map<string, any>()).entries()
     )
       .map(([key, row]) => {
-        const arDue = arDueByCustomer.get(key) || 0;
-        const arDays = row.revenue > 0 && profitabilityPeriodDays > 0 && arDue > 0 ? (arDue / row.revenue) * profitabilityPeriodDays : null;
+        const arDue = hasCompleteCustomerOpenAr ? (arDueByCustomer.get(key) || 0) : arDueByCustomer.get(key);
+        const wipBurden = hasCompleteWipByCustomer ? (wipBurdenByCustomer.get(key) || 0) : wipBurdenByCustomer.get(key);
+        const arDays = row.revenue > 0 && profitabilityPeriodDays > 0 && arDue != null ? (arDue / row.revenue) * profitabilityPeriodDays : null;
         return {
           ...row,
           gpPct: row.grossProfitRevenue > 0 && row.grossProfit ? (row.grossProfit / row.grossProfitRevenue) * 100 : null,
           ebitdaContribution: row.ebitdaContribution || null,
           arDays,
-          wipBurden: wipBurdenByCustomer.get(key) || 0,
-          wipBurdenPct: row.revenue > 0 && (wipBurdenByCustomer.get(key) || 0) > 0 ? ((wipBurdenByCustomer.get(key) || 0) / row.revenue) * 100 : null,
+          wipBurden,
+          wipBurdenPct: row.revenue > 0 && wipBurden != null ? (wipBurden / row.revenue) * 100 : null,
           strategicImportance: row.revenue > 0 && profitabilityTotalRevenue > 0 && (row.revenue / profitabilityTotalRevenue) * 100 > 10 ? 'High' : 'Medium',
         };
       })
@@ -19755,7 +19752,7 @@ Strategies to Improve the CCC
           <div style={{ overflowX: 'auto' }}>
             <table style={{ ...tableStyle, minWidth: '980px' }}>
               <thead><tr>{['Customer', 'Revenue', 'Gross Profit', 'GP %', 'EBITDA Contribution', 'AR Days', 'Current WIP', 'WIP / Revenue', 'Strategic Importance'].map((h) => <th key={h} style={{ ...thStyle, textAlign: h === 'Customer' ? 'left' : 'right' }}>{h}</th>)}</tr></thead>
-              <tbody>{profitabilityRows.map((row) => <tr key={row.name}><td style={{ ...tdStyle, fontWeight: 700 }}>{row.name}</td><td style={{ ...tdStyle, textAlign: 'right' }}>{formatCurrency(row.revenue)}</td><td style={{ ...tdStyle, textAlign: 'right' }}>{row.gpPct == null ? 'N/A' : formatCurrency(Number(row.grossProfit || 0))}</td><td style={{ ...tdStyle, textAlign: 'right' }}>{pct(row.gpPct)}</td><td style={{ ...tdStyle, textAlign: 'right' }}>{row.ebitdaContribution == null ? 'N/A' : formatCurrency(Number(row.ebitdaContribution || 0))}</td><td style={{ ...tdStyle, textAlign: 'right' }}>{row.arDays == null ? 'N/A' : `${Number(row.arDays).toFixed(1)}`}</td><td style={{ ...tdStyle, textAlign: 'right' }}>{row.wipBurden > 0 ? formatCurrency(row.wipBurden) : 'N/A'}</td><td style={{ ...tdStyle, textAlign: 'right' }}>{pct(row.wipBurdenPct)}</td><td style={{ ...tdStyle, textAlign: 'right' }}>{row.strategicImportance}</td></tr>)}</tbody>
+              <tbody>{profitabilityRows.map((row) => <tr key={row.name}><td style={{ ...tdStyle, fontWeight: 700 }}>{row.name}</td><td style={{ ...tdStyle, textAlign: 'right' }}>{formatCurrency(row.revenue)}</td><td style={{ ...tdStyle, textAlign: 'right' }}>{row.gpPct == null ? 'N/A' : formatCurrency(Number(row.grossProfit || 0))}</td><td style={{ ...tdStyle, textAlign: 'right' }}>{pct(row.gpPct)}</td><td style={{ ...tdStyle, textAlign: 'right' }}>{row.ebitdaContribution == null ? 'N/A' : formatCurrency(Number(row.ebitdaContribution || 0))}</td><td style={{ ...tdStyle, textAlign: 'right' }}>{row.arDays == null ? 'N/A' : `${Number(row.arDays).toFixed(1)}`}</td><td style={{ ...tdStyle, textAlign: 'right' }}>{row.wipBurden == null ? 'N/A' : formatCurrency(row.wipBurden)}</td><td style={{ ...tdStyle, textAlign: 'right' }}>{pct(row.wipBurdenPct)}</td><td style={{ ...tdStyle, textAlign: 'right' }}>{row.strategicImportance}</td></tr>)}</tbody>
             </table>
           </div>
         </div>

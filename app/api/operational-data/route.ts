@@ -3128,6 +3128,14 @@ export async function GET(request: NextRequest) {
             wipValue: number;
           }>;
         }> = [];
+        let wipByCustomer: Array<{
+          customerId: string | null;
+          customerName: string;
+          contractValue: number;
+          invoicedValue: number;
+          wipValue: number;
+          lineCount: number;
+        }> = [];
         let wipTotals = {
           totalWip: 0,
           totalContractValue: 0,
@@ -3513,6 +3521,7 @@ export async function GET(request: NextRequest) {
             const allWipCustomers = Array.from(byCustomer.values())
               .filter((row) => Number(row.wipValue || 0) > 0)
               .sort((a, b) => b.wipValue - a.wipValue);
+            wipByCustomer = allWipCustomers.map(({ wipItems, ...row }) => row);
             wipTopCustomers = allWipCustomers.slice(0, 50).map((row) => ({
               ...row,
               wipItems: (() => {
@@ -3549,7 +3558,7 @@ export async function GET(request: NextRequest) {
           }
         }
 
-          return { wipAsOf, wipTopCustomers, wipTotals };
+          return { wipAsOf, wipTopCustomers, wipByCustomer, wipTotals };
         };
 
         // --- Track 3: AR overview (invoice details + open invoices) ---
@@ -3570,6 +3579,12 @@ export async function GET(request: NextRequest) {
           pastDueCustomerNames: [] as string[],
           atRiskCustomerNames: [] as string[],
         };
+        let customerOpenArByCustomer: Array<{
+          customerId: string | null;
+          customerName: string;
+          totalDue: number;
+        }> = [];
+        let customerOpenArComplete = false;
         const arInvoiceDetailDelegate =
           (prisma as any).aRInvoiceDetail || (prisma as any).arInvoiceDetail;
         if (arInvoiceDetailDelegate?.findFirst && arInvoiceDetailDelegate?.findMany) {
@@ -3712,6 +3727,8 @@ export async function GET(request: NextRequest) {
                   },
                   take: dashboardRowCap,
                 });
+                customerOpenArComplete = openRows.length < dashboardRowCap;
+                const openArByCustomer = new Map<string, { customerId: string | null; customerName: string; totalDue: number }>();
                 for (const row of openRows as any[]) {
                   const customerId = String(row?.customerId || '').trim();
                   const customerName = String(row?.customerName || '').trim();
@@ -3729,6 +3746,17 @@ export async function GET(request: NextRequest) {
                       existingCustomer.name = customerName;
                     }
                   }
+                  const openAmount = Number(row?.amountDueHome || 0);
+                  if (Number.isFinite(openAmount) && openAmount > 0) {
+                    const current = openArByCustomer.get(key) || {
+                      customerId: customerId || null,
+                      customerName,
+                      totalDue: 0,
+                    };
+                    if (!current.customerName && customerName) current.customerName = customerName;
+                    current.totalDue += openAmount;
+                    openArByCustomer.set(key, current);
+                  }
                   const dueDateRaw = row?.dueDate ? new Date(row.dueDate) : null;
                   const dueDate = dueDateRaw && !Number.isNaN(dueDateRaw.getTime()) ? startOfUtcDay(dueDateRaw) : null;
                   const overdueByDate = dueDate ? dueDate.getTime() < asOfDate.getTime() : false;
@@ -3738,6 +3766,9 @@ export async function GET(request: NextRequest) {
                     pastDueByCustomer.set(key, Number(pastDueByCustomer.get(key) || 0) + overdueAmount);
                   }
                 }
+                customerOpenArByCustomer = Array.from(openArByCustomer.values())
+                  .filter((row) => row.customerName && Number(row.totalDue || 0) > 0)
+                  .sort((a, b) => Number(b.totalDue || 0) - Number(a.totalDue || 0));
               }
             }
             const activeKeys = new Set(
@@ -3777,7 +3808,7 @@ export async function GET(request: NextRequest) {
           }
         }
 
-          return { customerOverview };
+          return { customerOverview, customerOpenArByCustomer, customerOpenArComplete };
         };
 
         if (shouldUseMockData) {
@@ -3824,7 +3855,10 @@ export async function GET(request: NextRequest) {
               asOf: wipResult.wipAsOf,
               totals: wipResult.wipTotals,
               topCustomers: wipResult.wipTopCustomers,
+              byCustomer: wipResult.wipByCustomer,
             },
+            customerOpenArByCustomer: arResult.customerOpenArByCustomer,
+            customerOpenArComplete: arResult.customerOpenArComplete,
             platosSalesPage,
           },
         });
