@@ -788,6 +788,7 @@ export default function OperationsTab({
   const [customerMetricModalOpen, setCustomerMetricModalOpen] = useState(false);
   const [customerMetricModalTitle, setCustomerMetricModalTitle] = useState('');
   const [customerMetricModalNames, setCustomerMetricModalNames] = useState<string[]>([]);
+  const [customerConcentrationMetricChart, setCustomerConcentrationMetricChart] = useState<any | null>(null);
   const operationalDataCacheRef = useRef<Map<string, { fetchedAt: number; data: any }>>(new Map());
   const operationalDataInflightRef = useRef<Map<string, Promise<any>>>(new Map());
   const wholesaleProductsReportCacheRef = useRef<Map<string, { fetchedAt: number; data: any }>>(new Map());
@@ -19499,16 +19500,82 @@ Strategies to Improve the CCC
       </div>
     );
     const executiveMetricRows = [
-      { label: 'Top 5 Customers % Revenue', render: (row: any) => pct(row.top5Rev) },
-      { label: 'Top 10 Customers % Revenue', render: (row: any) => pct(row.top10Rev) },
-      { label: 'Top 5 Customers % Gross Profit', render: (row: any) => pct(row.top5Gp) },
-      { label: 'Largest Customer % Revenue', render: (row: any) => pct(row.largestRev) },
-      { label: 'Largest Customer % EBITDA Contribution', render: (row: any) => pct(row.largestEbitda) },
-      { label: 'Avg Gross Margin - Top 10', render: (row: any) => pct(row.top10AvgMargin) },
-      { label: 'Avg Gross Margin - Customers 11+', render: (row: any) => pct(row.remainingAvgMargin) },
-      { label: 'Customer Retention Rate', render: (row: any) => pct(row.retentionRate) },
-      { label: 'Revenue from New Customers', render: (row: any) => row.newCustomerRevenue == null ? 'N/A' : formatCurrency(row.newCustomerRevenue) },
+      { label: 'Top 5 Customers % Revenue', format: 'percent', getValue: (row: any) => row.top5Rev, render: (row: any) => pct(row.top5Rev) },
+      { label: 'Top 10 Customers % Revenue', format: 'percent', getValue: (row: any) => row.top10Rev, render: (row: any) => pct(row.top10Rev) },
+      { label: 'Top 5 Customers % Gross Profit', format: 'percent', getValue: (row: any) => row.top5Gp, render: (row: any) => pct(row.top5Gp) },
+      { label: 'Largest Customer % Revenue', format: 'percent', getValue: (row: any) => row.largestRev, render: (row: any) => pct(row.largestRev) },
+      { label: 'Largest Customer % EBITDA Contribution', format: 'percent', getValue: (row: any) => row.largestEbitda, render: (row: any) => pct(row.largestEbitda) },
+      { label: 'Avg Gross Margin - Top 10', format: 'percent', getValue: (row: any) => row.top10AvgMargin, render: (row: any) => pct(row.top10AvgMargin) },
+      { label: 'Avg Gross Margin - Customers 11+', format: 'percent', getValue: (row: any) => row.remainingAvgMargin, render: (row: any) => pct(row.remainingAvgMargin) },
+      { label: 'Customer Retention Rate', format: 'percent', getValue: (row: any) => row.retentionRate, render: (row: any) => pct(row.retentionRate) },
+      { label: 'Revenue from New Customers', format: 'currency', getValue: (row: any) => row.newCustomerRevenue, render: (row: any) => row.newCustomerRevenue == null ? 'N/A' : formatCurrency(row.newCustomerRevenue) },
     ];
+    const openExecutiveMetricChart = (metric: any) => {
+      const chartRows = [...executiveMonthlyCustomerMetrics]
+        .reverse()
+        .map((row: any) => {
+          const rawValue = metric.getValue(row);
+          const value = rawValue == null || rawValue === '' ? null : Number(rawValue);
+          return {
+            month: row.month,
+            monthKey: row.monthKey,
+            value: Number.isFinite(value) ? value : null,
+          };
+        });
+      setCustomerConcentrationMetricChart({
+        title: metric.label,
+        format: metric.format,
+        rows: chartRows,
+      });
+    };
+    const closeExecutiveMetricChart = () => setCustomerConcentrationMetricChart(null);
+    const formatExecutiveMetricChartValue = (value: any, format: string) => {
+      const n = Number(value || 0);
+      return format === 'currency' ? formatCurrency(n) : `${n.toFixed(1)}%`;
+    };
+    const executiveMetricChartModal = customerConcentrationMetricChart ? (
+      <div
+        role="dialog"
+        aria-modal="true"
+        onClick={closeExecutiveMetricChart}
+        style={{ position: 'fixed', inset: 0, background: 'rgba(15, 23, 42, 0.45)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '24px' }}
+      >
+        <div
+          onClick={(event) => event.stopPropagation()}
+          style={{ width: 'min(860px, 96vw)', background: 'white', borderRadius: '14px', border: '1px solid #e2e8f0', boxShadow: '0 24px 80px rgba(15, 23, 42, 0.28)', padding: '18px' }}
+        >
+          <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '16px', marginBottom: '12px' }}>
+            <div>
+              <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 800, color: '#0f172a' }}>{customerConcentrationMetricChart.title}</h3>
+              <div style={{ marginTop: '4px', fontSize: '12px', color: '#64748b' }}>Monthly trend from the Executive Summary Dashboard.</div>
+            </div>
+            <button
+              type="button"
+              onClick={closeExecutiveMetricChart}
+              style={{ border: '1px solid #cbd5e1', background: 'white', borderRadius: '8px', padding: '6px 10px', fontSize: '12px', fontWeight: 700, color: '#334155', cursor: 'pointer' }}
+            >
+              Close
+            </button>
+          </div>
+          <ResponsiveContainer width="100%" height={340}>
+            <LineChart data={customerConcentrationMetricChart.rows} margin={{ top: 12, right: 24, left: 8, bottom: 8 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+              <XAxis dataKey="month" stroke="#64748b" style={{ fontSize: '12px' }} />
+              <YAxis
+                stroke="#64748b"
+                style={{ fontSize: '12px' }}
+                tickFormatter={(value) => formatExecutiveMetricChartValue(value, customerConcentrationMetricChart.format)}
+              />
+              <Tooltip
+                formatter={(value: any) => [formatExecutiveMetricChartValue(value, customerConcentrationMetricChart.format), customerConcentrationMetricChart.title]}
+                contentStyle={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '8px' }}
+              />
+              <Line type="monotone" dataKey="value" name={customerConcentrationMetricChart.title} stroke="#2563eb" strokeWidth={3} dot={{ r: 4 }} connectNulls />
+            </LineChart>
+          </ResponsiveContainer>
+        </div>
+      </div>
+    ) : null;
     const refreshControls = (
       <>
         <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '10px' }}>
@@ -19542,7 +19609,7 @@ Strategies to Improve the CCC
         )}
       </>
     );
-    const executiveSummarySection = section('Executive Summary Dashboard', <div style={{ overflowX: 'auto' }}><table style={{ ...tableStyle, minWidth: '1220px' }}><thead><tr><th style={{ ...thStyle, minWidth: '240px' }}>Metric</th>{executiveMonthlyCustomerMetrics.map((row) => <th key={row.monthKey} style={{ ...thStyle, textAlign: 'right', minWidth: '90px' }}>{row.month}</th>)}</tr></thead><tbody>{executiveMetricRows.map((metric) => <tr key={metric.label}><td style={{ ...tdStyle, fontWeight: 700 }}>{metric.label}</td>{executiveMonthlyCustomerMetrics.map((row) => <td key={`${metric.label}-${row.monthKey}`} style={{ ...tdStyle, textAlign: 'right', whiteSpace: 'nowrap' }}>{metric.render(row)}</td>)}</tr>)}</tbody></table></div>);
+    const executiveSummarySection = section('Executive Summary Dashboard', <div style={{ overflowX: 'auto' }}><table style={{ ...tableStyle, minWidth: '1220px' }}><thead><tr><th style={{ ...thStyle, minWidth: '240px' }}>Metric</th>{executiveMonthlyCustomerMetrics.map((row) => <th key={row.monthKey} style={{ ...thStyle, textAlign: 'right', minWidth: '90px' }}>{row.month}</th>)}</tr></thead><tbody>{executiveMetricRows.map((metric) => <tr key={metric.label}><td style={{ ...tdStyle, fontWeight: 700 }}><button type="button" onClick={() => openExecutiveMetricChart(metric)} style={{ border: 0, padding: 0, background: 'transparent', color: '#1d4ed8', font: 'inherit', fontWeight: 800, cursor: 'pointer', textAlign: 'left', textDecoration: 'underline', textUnderlineOffset: '3px' }}>{metric.label}</button></td>{executiveMonthlyCustomerMetrics.map((row) => <td key={`${metric.label}-${row.monthKey}`} style={{ ...tdStyle, textAlign: 'right', whiteSpace: 'nowrap' }}>{metric.render(row)}</td>)}</tr>)}</tbody></table></div>);
     const monthlyTrendSection = section('Monthly Customer Concentration Trend', <div style={{ overflowX: 'auto' }}><table style={{ ...tableStyle, minWidth: '820px' }}><thead><tr>{['Month', 'Total Revenue', 'Top 5 % Rev', 'Top 10 % Rev', 'Largest Customer %', 'Top 5 % GP', 'Top 5 % EBITDA'].map((h) => <th key={h} style={{ ...thStyle, textAlign: h === 'Month' ? 'left' : 'right' }}>{h}</th>)}</tr></thead><tbody>{monthlyTrendRows.map((row) => <tr key={row.month}><td style={tdStyle}>{row.month}</td><td style={{ ...tdStyle, textAlign: 'right' }}>{formatCurrency(row.revenue)}</td><td style={{ ...tdStyle, textAlign: 'right' }}>{pct(row.top5Rev)}</td><td style={{ ...tdStyle, textAlign: 'right' }}>{pct(row.top10Rev)}</td><td style={{ ...tdStyle, textAlign: 'right' }}>{pct(row.largestRev)}</td><td style={{ ...tdStyle, textAlign: 'right' }}>{pct(row.top5Gp)}</td><td style={{ ...tdStyle, textAlign: 'right' }}>{pct(row.top5Ebitda)}</td></tr>)}</tbody></table></div>);
     if (customerConcentrationRenderStage < 3) {
       return (
@@ -19552,6 +19619,7 @@ Strategies to Improve the CCC
           {customerConcentrationRenderStage >= 2 ? monthlyTrendSection : (
             <div style={{ padding: '12px', fontSize: '12px', color: '#64748b' }}>Loading monthly customer concentration trend...</div>
           )}
+          {executiveMetricChartModal}
         </div>
       );
     }
@@ -19663,6 +19731,7 @@ Strategies to Improve the CCC
         {refreshControls}
         {executiveSummarySection}
         {monthlyTrendSection}
+        {executiveMetricChartModal}
         <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '16px', marginBottom: '16px' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '16px', marginBottom: '12px' }}>
             <div>
