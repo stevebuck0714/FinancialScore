@@ -2669,7 +2669,6 @@ export async function GET(request: NextRequest) {
             : [];
           let customerConcentrationSourceCoverage: Record<string, string> = cachedCustomerConcentration?.sourceCoverage || {};
 
-          if (!cachedCustomerConcentration) {
           const buildCompletedMonthKeys = () => {
             const today = new Date();
             const todayUtc = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate()));
@@ -2686,7 +2685,38 @@ export async function GET(request: NextRequest) {
               return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
             });
           };
-          concentrationMonthKeys = buildCompletedMonthKeys();
+
+          if (!concentrationMonthKeys.length) {
+            concentrationMonthKeys = buildCompletedMonthKeys();
+          }
+
+          const formatConcentrationMonth = (monthKey: string) => {
+            const [year, month] = monthKey.split('-').map(Number);
+            return new Date(Date.UTC(year || 2000, (month || 1) - 1, 1)).toLocaleDateString('en-US', { month: 'short', year: 'numeric', timeZone: 'UTC' });
+          };
+
+          if (!cachedCustomerConcentration && !refreshConcentration) {
+            customerConcentrationExecutiveMonthly = concentrationMonthKeys.map((monthKey) => ({
+              monthKey,
+              month: formatConcentrationMonth(monthKey),
+              source: 'not_cached',
+              totalRevenue: 0,
+              top5Rev: null,
+              top10Rev: null,
+              largestRev: null,
+              top5Gp: null,
+              top5Ebitda: null,
+              largestEbitda: null,
+              top10AvgMargin: null,
+              remainingAvgMargin: null,
+              retentionRate: null,
+              newCustomerRevenue: null,
+            }));
+            customerConcentrationMonthlyCustomers = [];
+            customerConcentrationSourceCoverage = Object.fromEntries(concentrationMonthKeys.map((monthKey) => [monthKey, 'not_cached']));
+          }
+
+          if (!cachedCustomerConcentration && refreshConcentration) {
           const concentrationStart = monthStartFromBusinessMonthKey(concentrationMonthKeys[concentrationMonthKeys.length - 1]);
           const concentrationEndKey = concentrationMonthKeys[0];
           const concentrationEnd = new Date(Date.UTC(
@@ -2863,10 +2893,6 @@ export async function GET(request: NextRequest) {
             const priorFirst = firstMonthByCustomerForConcentration.get(customerKey);
             if (!priorFirst || monthKey < priorFirst) firstMonthByCustomerForConcentration.set(customerKey, monthKey);
           }
-          const formatConcentrationMonth = (monthKey: string) => {
-            const [year, month] = monthKey.split('-').map(Number);
-            return new Date(Date.UTC(year || 2000, (month || 1) - 1, 1)).toLocaleDateString('en-US', { month: 'short', year: 'numeric', timeZone: 'UTC' });
-          };
           const sourceCoverageByMonth = new Map<string, string>();
           concentrationMonthKeys.forEach((monthKey) => {
             if (Array.from(concentrationByMonth.get(monthKey)?.values() || []).length > 0) {

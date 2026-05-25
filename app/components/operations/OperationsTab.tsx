@@ -19486,7 +19486,7 @@ Strategies to Improve the CCC
       : [];
     const concentrationIsRefreshing = customerConcentrationRefreshing || customerData?.summary?.customerConcentration?.refreshing === true;
     const apiExecutiveHasRevenue = apiExecutiveMonthly.some((row: any) => Number(row.revenue || 0) > 0);
-    const executiveMonthlyCustomerMetrics = apiExecutiveMonthly.length === 12 && (apiExecutiveHasRevenue || concentrationIsRefreshing)
+    const executiveMonthlyCustomerMetrics = apiExecutiveMonthly.length === 12
       ? apiExecutiveMonthly
       : [...monthlyCustomerMetrics].reverse();
     const monthlyTrendRows = executiveMonthlyCustomerMetrics;
@@ -19604,7 +19604,7 @@ Strategies to Improve the CCC
         )}
         {!concentrationIsRefreshing && apiExecutiveMonthly.length === 12 && !apiExecutiveHasRevenue && (
           <div style={{ background: '#fff7ed', border: '1px solid #fed7aa', borderRadius: '10px', color: '#9a3412', fontSize: '12px', fontWeight: 700, padding: '10px 12px', marginBottom: '12px' }}>
-            Customer concentration did not return revenue for the selected 12-month window. Click Refresh Customer Concentration to force a rebuild from raw order-line data.
+            Customer concentration does not have a populated cached result for this 12-month window. Click Refresh Customer Concentration to rebuild it.
           </div>
         )}
       </>
