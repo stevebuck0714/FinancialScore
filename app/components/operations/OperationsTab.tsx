@@ -19286,6 +19286,9 @@ Strategies to Improve the CCC
 
   const renderCustomerConcentrationExposure = () => {
     const customerRecords = Array.isArray(customerData?.records) ? customerData.records : [];
+    const wholesaleRows = Array.isArray(wholesaleProductsData?.summary?.wholesaleOrderLines)
+      ? wholesaleProductsData.summary.wholesaleOrderLines
+      : [];
     const toMonthKey = (value: unknown) => {
       const parsed = new Date(String(value || ''));
       return Number.isNaN(parsed.getTime()) ? '' : `${parsed.getUTCFullYear()}-${String(parsed.getUTCMonth() + 1).padStart(2, '0')}`;
