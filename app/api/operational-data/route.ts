@@ -156,6 +156,20 @@ async function buildOperationalDataVersion(companyId: string, type: string | nul
           endDate
         )
       : Promise.resolve({ label: 'CustomerSalesSnapshot', skipped: true }),
+    (includeAll || type === 'customers')
+      ? safeOperationalVersionPart(
+          'InforRawRecordCustomerSales',
+          `SELECT COUNT(*)::text AS count, MAX("createdAt") AS "maxCreatedAt", MAX("fetchedAt") AS "maxFetchedAt", MAX("businessDate") AS "maxBusinessDate"
+           FROM "InforRawRecord"
+           WHERE "companyId" = $1
+             AND "miProgram" IN ('SLArtrans', 'SLCoitems', 'SLCOITEMS', 'SLCos', 'SLCohdrs')
+             AND "businessDate" >= $2
+             AND "businessDate" <= $3`,
+          companyId,
+          startDate,
+          endDate
+        )
+      : Promise.resolve({ label: 'InforRawRecordCustomerSales', skipped: true }),
     (includeAll || type === 'ar-aging')
       ? safeOperationalVersionPart(
           'ARAgingSnapshot',
@@ -189,6 +203,33 @@ async function buildOperationalDataVersion(companyId: string, type: string | nul
           endDate
         )
       : Promise.resolve({ label: 'ProductSalesSnapshot', skipped: true }),
+    (includeAll || type === 'products')
+      ? safeOperationalVersionPart(
+          'InforRawRecordProducts',
+          `SELECT COUNT(*)::text AS count, MAX("createdAt") AS "maxCreatedAt", MAX("fetchedAt") AS "maxFetchedAt", MAX("businessDate") AS "maxBusinessDate"
+           FROM "InforRawRecord"
+           WHERE "companyId" = $1
+             AND "miProgram" IN (
+               'SLCoitems',
+               'SLCOITEMS',
+               'SLItems',
+               'SLItemVends',
+               'SLItemVendPrices',
+               'SLCustomerItems',
+               'SLCustItems',
+               'SLCustItem',
+               'SLItemCusts',
+               'SLItemCust',
+               'SLCustItemXrefs',
+               'SLCustItemCrossRefs',
+               'SLCustomerItemCrossRefs'
+             )
+             AND ("businessDate" IS NULL OR ("businessDate" >= $2 AND "businessDate" <= $3))`,
+          companyId,
+          startDate,
+          endDate
+        )
+      : Promise.resolve({ label: 'InforRawRecordProducts', skipped: true }),
     (includeAll || type === 'inventory')
       ? safeOperationalVersionPart(
           'InventorySnapshot',
@@ -266,6 +307,18 @@ function endOfUtcDay(date: Date): Date {
   return new Date(
     Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate(), 23, 59, 59, 999),
   );
+}
+
+function parseInforDateValue(value: unknown): Date | null {
+  const raw = String(value || '').trim();
+  if (!raw) return null;
+  const compactMatch = raw.match(/^(\d{4})(\d{2})(\d{2})/);
+  if (compactMatch) {
+    const [, year, month, day] = compactMatch;
+    return new Date(Date.UTC(Number(year), Number(month) - 1, Number(day)));
+  }
+  const parsed = new Date(raw.replace(/\s+\d{2}:\d{2}:\d{2}\.\d+$/, ''));
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
 }
 
 function parseDateParamBoundary(value: string | null, boundary: 'start' | 'end', fallback: Date): Date {
@@ -864,6 +917,178 @@ async function deriveCustomerSalesFromRawInvoices(
       avgInvoiceSize: invoiceCount > 0 ? revenue / invoiceCount : null,
     };
   });
+}
+
+async function deriveCustomerMarginFromRawOrderLineDeltas(
+  companyId: string,
+  startDate: Date,
+  endDate: Date
+): Promise<
+  Array<{
+    monthKey: string;
+    customerKey: string;
+    customerIdKey: string;
+    customerName: string;
+    revenue: number;
+    grossProfit: number;
+  }>
+> {
+  const lineLookbackStart = new Date(startDate);
+  lineLookbackStart.setUTCDate(lineLookbackStart.getUTCDate() - 45);
+  const rows = await prisma.$queryRaw<
+    Array<{
+      month_key: string;
+      customer_key: string;
+      customer_id_key: string | null;
+      customer_name: string | null;
+      revenue: number;
+      cogs: number;
+    }>
+  >(Prisma.sql`
+    WITH headers AS (
+      SELECT DISTINCT ON (order_id)
+        order_id,
+        NULLIF(TRIM(customer_id), '') AS customer_id,
+        NULLIF(TRIM(
+          CASE
+            WHEN POSITION(' - ' IN COALESCE(customer_name, '')) > 0
+              THEN SUBSTRING(customer_name FROM POSITION(' - ' IN customer_name) + 3)
+            ELSE customer_name
+          END
+        ), '') AS customer_name
+      FROM (
+        SELECT
+          COALESCE(
+            NULLIF("payload"->>'CoNum', ''),
+            NULLIF("payload"->>'CONUM', ''),
+            NULLIF("payload"->>'coNum', '')
+          ) AS order_id,
+          COALESCE(
+            NULLIF("payload"->>'CustNum', ''),
+            NULLIF("payload"->>'CoCustNum', ''),
+            NULLIF("payload"->>'CustNo', '')
+          ) AS customer_id,
+          COALESCE(
+            NULLIF("payload"->>'DerCustNoName', ''),
+            NULLIF("payload"->>'DerCustName', ''),
+            NULLIF("payload"->>'CustName', ''),
+            NULLIF("payload"->>'Name', '')
+          ) AS customer_name,
+          "businessDate",
+          "fetchedAt",
+          "createdAt"
+        FROM "InforRawRecord"
+        WHERE "companyId" = ${companyId}
+          AND "miProgram" IN ('SLCos', 'SLCohdrs')
+          AND "businessDate" <= ${endDate}::date
+      ) raw_headers
+      WHERE order_id IS NOT NULL AND TRIM(order_id) <> ''
+      ORDER BY order_id, "businessDate" DESC NULLS LAST, "fetchedAt" DESC NULLS LAST, "createdAt" DESC NULLS LAST
+    ),
+    raw_lines AS (
+      SELECT
+        "businessDate"::date AS day,
+        COALESCE(
+          NULLIF("payload"->>'CoNum', ''),
+          NULLIF("payload"->>'CONUM', ''),
+          NULLIF("payload"->>'coNum', '')
+        ) AS order_id,
+        COALESCE(NULLIF("payload"->>'CoLine', ''), NULLIF("payload"->>'COLINE', ''), NULLIF("payload"->>'coLine', ''), '0') AS line_id,
+        COALESCE(NULLIF("payload"->>'CoRelease', ''), NULLIF("payload"->>'CORELEASE', ''), NULLIF("payload"->>'coRelease', ''), '0') AS release_id,
+        COALESCE(
+          NULLIF("payload"->>'CustNum', ''),
+          NULLIF("payload"->>'CoCustNum', ''),
+          NULLIF("payload"->>'CustNo', '')
+        ) AS line_customer_id,
+        COALESCE(
+          NULLIF(regexp_replace("payload"->>'QtyInvoiced', '[^0-9.-]', '', 'g'), '')::double precision,
+          NULLIF(regexp_replace("payload"->>'qtyInvoiced', '[^0-9.-]', '', 'g'), '')::double precision,
+          0
+        ) AS qty_invoiced,
+        COALESCE(
+          NULLIF(regexp_replace("payload"->>'Price', '[^0-9.-]', '', 'g'), '')::double precision,
+          NULLIF(regexp_replace("payload"->>'price', '[^0-9.-]', '', 'g'), '')::double precision,
+          NULLIF(regexp_replace("payload"->>'Upri', '[^0-9.-]', '', 'g'), '')::double precision,
+          NULLIF(regexp_replace("payload"->>'unitPrice', '[^0-9.-]', '', 'g'), '')::double precision,
+          NULLIF(regexp_replace("payload"->>'UnitPrice', '[^0-9.-]', '', 'g'), '')::double precision,
+          0
+        ) AS unit_price,
+        COALESCE(
+          NULLIF(regexp_replace("payload"->>'Cost', '[^0-9.-]', '', 'g'), '')::double precision,
+          NULLIF(regexp_replace("payload"->>'MatlCost', '[^0-9.-]', '', 'g'), '')::double precision,
+          NULLIF(regexp_replace("payload"->>'UnitCost', '[^0-9.-]', '', 'g'), '')::double precision,
+          NULLIF(regexp_replace("payload"->>'unitCost', '[^0-9.-]', '', 'g'), '')::double precision,
+          0
+        ) AS unit_cost,
+        "fetchedAt",
+        "createdAt"
+      FROM "InforRawRecord"
+      WHERE "companyId" = ${companyId}
+        AND "miProgram" IN ('SLCoitems', 'SLCOITEMS')
+        AND "businessDate" >= ${lineLookbackStart}::date
+        AND "businessDate" <= ${endDate}::date
+    ),
+    daily_state AS (
+      SELECT *
+      FROM (
+        SELECT
+          raw_lines.*,
+          ROW_NUMBER() OVER (
+            PARTITION BY day, order_id, line_id, release_id
+            ORDER BY "fetchedAt" DESC NULLS LAST, "createdAt" DESC NULLS LAST
+          ) AS rn
+        FROM raw_lines
+        WHERE order_id IS NOT NULL AND TRIM(order_id) <> ''
+      ) ranked
+      WHERE rn = 1
+    ),
+    line_deltas AS (
+      SELECT
+        day,
+        COALESCE(NULLIF(TRIM(line_customer_id), ''), headers.customer_id) AS customer_id,
+        headers.customer_name,
+        GREATEST(
+          qty_invoiced - LAG(qty_invoiced, 1, 0) OVER (
+            PARTITION BY order_id, line_id, release_id
+            ORDER BY day ASC
+          ),
+          0
+        ) AS qty_delta,
+        unit_price,
+        unit_cost
+      FROM daily_state
+      LEFT JOIN headers ON headers.order_id = daily_state.order_id
+    )
+    SELECT
+      to_char(date_trunc('month', day), 'YYYY-MM') AS month_key,
+      LOWER(regexp_replace(TRIM(COALESCE(customer_name, customer_id, 'Unknown Customer')), '\\s+', ' ', 'g')) AS customer_key,
+      LOWER(regexp_replace(TRIM(COALESCE(customer_id, '')), '\\s+', ' ', 'g')) AS customer_id_key,
+      TRIM(COALESCE(customer_name, customer_id, 'Unknown Customer')) AS customer_name,
+      SUM(qty_delta * unit_price)::double precision AS revenue,
+      SUM(qty_delta * unit_cost)::double precision AS cogs
+    FROM line_deltas
+    WHERE day >= ${startDate}::date
+      AND day <= ${endDate}::date
+      AND qty_delta > 0
+      AND unit_price > 0
+      AND unit_cost > 0
+    GROUP BY 1, 2, 3
+    HAVING SUM(qty_delta * unit_price) > 0 AND SUM(qty_delta * unit_cost) > 0
+    ORDER BY 1 ASC, 3 ASC
+  `);
+
+  return rows.map((row) => {
+    const revenue = Number(row.revenue || 0);
+    const cogs = Number(row.cogs || 0);
+    return {
+      monthKey: String(row.month_key || ''),
+      customerKey: String(row.customer_key || '').trim(),
+      customerIdKey: String(row.customer_id_key || '').trim(),
+      customerName: String(row.customer_name || 'Unknown Customer').trim() || 'Unknown Customer',
+      revenue,
+      grossProfit: revenue - cogs,
+    };
+  }).filter((row) => row.monthKey && row.customerKey && row.revenue > 0 && Number.isFinite(row.grossProfit));
 }
 
 function normalizeAccountNameForKey(name: string): string {
@@ -2113,6 +2338,9 @@ export async function GET(request: NextRequest) {
             orderBy: { snapshotDate: 'asc' },
             take: 100000,
           });
+          const rawOrderLineMarginRowsForConcentration = isInforCompany
+            ? await deriveCustomerMarginFromRawOrderLineDeltas(companyId, concentrationStart, concentrationEnd)
+            : [];
           const marginByMonthCustomer = new Map<string, { grossProfit: number; revenue: number }>();
           for (const row of customerSnapshotRowsForConcentration as any[]) {
             const snapshot = new Date(row?.snapshotDate);
@@ -2134,6 +2362,18 @@ export async function GET(request: NextRequest) {
             current.grossProfit += grossProfit;
             current.revenue += revenue;
             marginByMonthCustomer.set(key, current);
+          }
+          for (const row of rawOrderLineMarginRowsForConcentration) {
+            const key = `${row.monthKey}||${row.customerKey}`;
+            if (!marginByMonthCustomer.has(key)) {
+              marginByMonthCustomer.set(key, { grossProfit: row.grossProfit, revenue: row.revenue });
+            }
+            if (row.customerIdKey) {
+              const idKey = `${row.monthKey}||${row.customerIdKey}`;
+              if (!marginByMonthCustomer.has(idKey)) {
+                marginByMonthCustomer.set(idKey, { grossProfit: row.grossProfit, revenue: row.revenue });
+              }
+            }
           }
           const rawInvoiceRowsForConcentration = isInforCompany
             ? await deriveCustomerSalesFromRawInvoices(companyId, concentrationStart, concentrationEnd)
@@ -2169,12 +2409,14 @@ export async function GET(request: NextRequest) {
             if (!concentrationMonthKeys.includes(monthKey)) continue;
             const customerName = String(row?.customerName || 'Unknown Customer').trim() || 'Unknown Customer';
             const customerKey = customerName.toLowerCase().replace(/\s+/g, ' ');
+            const customerIdKey = String(row?.customerId || '').trim().toLowerCase().replace(/\s+/g, ' ');
             const revenue = Number(row?.revenue || 0);
             if (!Number.isFinite(revenue) || revenue <= 0) continue;
             const marginKey = `${monthKey}||${customerKey}`;
-            const marginRow = marginByMonthCustomer.get(marginKey);
+            const marginRow = marginByMonthCustomer.get(marginKey) || (customerIdKey ? marginByMonthCustomer.get(`${monthKey}||${customerIdKey}`) : undefined);
             const hasGrossProfit = Boolean(marginRow && marginRow.revenue > 0);
-            const grossProfit = marginRow ? marginRow.grossProfit * (revenue / Math.max(marginRow.revenue, 1)) : 0;
+            const grossProfit = marginRow ? marginRow.grossProfit : 0;
+            const grossProfitRevenue = marginRow ? marginRow.revenue : 0;
             if (!concentrationByMonth.has(monthKey)) concentrationByMonth.set(monthKey, new Map());
             const monthMap = concentrationByMonth.get(monthKey)!;
             const current = monthMap.get(customerKey) || {
@@ -2187,7 +2429,7 @@ export async function GET(request: NextRequest) {
             current.revenue += revenue;
             if (hasGrossProfit && Number.isFinite(grossProfit)) {
               current.grossProfit += grossProfit;
-              current.grossProfitRevenue += revenue;
+              current.grossProfitRevenue += grossProfitRevenue;
               current.ebitda += grossProfit;
             }
             monthMap.set(customerKey, current);
@@ -2241,7 +2483,7 @@ export async function GET(request: NextRequest) {
               top10AvgMargin: marginForRows(top10),
               remainingAvgMargin: marginForRows(values.slice(10)),
               retentionRate: currentCustomerKeys.length ? (retainedCustomers.length / currentCustomerKeys.length) * 100 : null,
-              newCustomerRevenue: sourceCoverageByMonth.get(monthKey) === 'customer_sales_snapshot' ? newCustomerRevenue : null,
+              newCustomerRevenue: totalRevenue > 0 ? newCustomerRevenue : null,
             };
           });
           const customerConcentrationMonthlyCustomers = concentrationMonthKeys.flatMap((monthKey) =>
@@ -2570,12 +2812,14 @@ export async function GET(request: NextRequest) {
               }
             };
             if (orderIdsForRawLookup.length > 0 && (prisma as any).inforRawRecord?.findMany) {
+              const rawLookupDayStart = startOfUtcDay(latestOrderSnapshotDate);
+              const rawLookupDayEnd = endOfUtcDay(latestOrderSnapshotDate);
               const rawRows = await (prisma as any).inforRawRecord.findMany({
                 where: {
                   companyId,
                   platform: { in: ['INFOR_M3', 'INFOR_CSI'] },
                   miProgram: { in: ['SLCOITEMS', 'SLCoitems'] },
-                  businessDate: latestOrderSnapshotDate,
+                  businessDate: { gte: rawLookupDayStart, lte: rawLookupDayEnd },
                 },
                 select: {
                   payload: true,
@@ -2639,7 +2883,7 @@ export async function GET(request: NextRequest) {
               const orderDateRaw = row?.orderDate ? new Date(row.orderDate) : null;
               const orderDate =
                 orderDateRaw && !Number.isNaN(orderDateRaw.getTime()) ? orderDateRaw.toISOString().slice(0, 10) : null;
-              const rawDueDate = rawDetail?.dueDate ? new Date(rawDetail.dueDate.replace(/\s+\d{2}:\d{2}:\d{2}\.\d+$/, '')) : null;
+              const rawDueDate = parseInforDateValue(rawDetail?.dueDate);
               const dueDate = rawDueDate && !Number.isNaN(rawDueDate.getTime()) ? rawDueDate.toISOString().slice(0, 10) : null;
               const qtyOrdered = Math.max(Number(row?.qtyOrdered || 0), 0);
               const qtyShipped = Math.max(Number(rawDetail?.qtyShipped || 0), 0);
@@ -3445,7 +3689,7 @@ export async function GET(request: NextRequest) {
           }, {});
           unpaidByCustomer = Object.values(customerAging)
             .sort((a: any, b: any) => b.totalDue - a.totalDue)
-            .slice(0, 25) as any[];
+            .slice(0, 500) as any[];
           unpaidInvoices = invoiceRowsOpenDeduped
             .sort((a: any, b: any) => {
               const aDue = a.dueDate ? new Date(a.dueDate).getTime() : -Infinity;
@@ -3878,7 +4122,7 @@ export async function GET(request: NextRequest) {
 
           unpaidByCustomer = Object.values(customerAging)
             .sort((a: any, b: any) => b.totalDue - a.totalDue)
-            .slice(0, 25) as any[];
+            .slice(0, 500) as any[];
 
           const openRowsWithBalance = openRowsEligible;
           unpaidInvoices = openRowsWithBalance
@@ -4254,7 +4498,7 @@ export async function GET(request: NextRequest) {
               lastPaymentDate: row.lastPaymentDate || null,
             }))
             .sort((a, b) => Number(b.totalDue || 0) - Number(a.totalDue || 0))
-            .slice(0, 25);
+            .slice(0, 500);
         }
 
         const originMapDelegate = (prisma as any).aRInvoiceOriginMap;
@@ -5859,8 +6103,78 @@ export async function GET(request: NextRequest) {
                   const line = normalizeOrderLineToken(linePart);
                   return `${order}||${line}`;
                 };
+                const customerPartNumberKeys = [
+                  'CustItem',
+                  'custItem',
+                  'CUSTITEM',
+                  'CustomerItem',
+                  'customerItem',
+                  'CustomerItemNumber',
+                  'customerItemNumber',
+                  'CustomerPartNumber',
+                  'customerPartNumber',
+                  'CustPart',
+                  'custPart',
+                  'CustomerPart',
+                  'customerPart',
+                  'ItemCust',
+                  'itemCust',
+                  'ItemCustomer',
+                  'itemCustomer',
+                  'CustomerSku',
+                  'customerSku',
+                ];
+                const readRawCustomerPartNumber = (payload: any) => {
+                  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return '';
+                  for (const key of customerPartNumberKeys) {
+                    const value = payload[key];
+                    if (value != null && String(value).trim()) return String(value).trim();
+                  }
+                  return '';
+                };
+                const readRawCustomerId = (payload: any) => {
+                  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return '';
+                  return String(
+                    payload['CustNum'] ??
+                      payload['custNum'] ??
+                      payload['CUSTNUM'] ??
+                      payload['CustomerNumber'] ??
+                      payload['customerNumber'] ??
+                      payload['CustomerId'] ??
+                      payload['customerId'] ??
+                      ''
+                  ).trim();
+                };
+                const readRawAprPartNumber = (payload: any) => {
+                  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return '';
+                  return String(
+                    payload['Item'] ??
+                      payload['item'] ??
+                      payload['ITEM'] ??
+                      payload['DerItem'] ??
+                      payload['derItem'] ??
+                      payload['ItemNumber'] ??
+                      payload['itemNumber'] ??
+                      ''
+                  ).trim();
+                };
+                const buildCustomerItemKey = (customerId: unknown, aprPartNumber: unknown) =>
+                  `${normalizeOrderLineToken(customerId)}||${normalizeOrderLineToken(aprPartNumber)}`;
+                const escapeRegExp = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                const extractCustomerPartFromOverview = (overview: unknown, customerName: unknown) => {
+                  const rawOverview = String(overview || '').trim();
+                  const rawCustomer = String(customerName || '').trim();
+                  if (!rawOverview || !rawCustomer) return '';
+                  const normalizedCustomer = rawCustomer.replace(/\s+/g, ' ');
+                  const match = rawOverview.match(new RegExp(`${escapeRegExp(normalizedCustomer)}\\s+([A-Za-z0-9][A-Za-z0-9._/-]{2,})\\b`, 'i'));
+                  return match?.[1] ? match[1].trim() : '';
+                };
                 const rawDueDateByOrderLine = new Map<string, string>();
                 const rawDueDateByOrderLineNoRelease = new Map<string, string>();
+                const rawCustomerPartByOrderLine = new Map<string, string>();
+                const rawCustomerPartByOrderLineNoRelease = new Map<string, string>();
+                const rawCustomerPartByCustomerItem = new Map<string, string>();
+                const rawItemOverviewByAprPart = new Map<string, string>();
                 const rawOrderRows = await prisma.inforRawRecord.findMany({
                   where: {
                     companyId,
@@ -5882,14 +6196,21 @@ export async function GET(request: NextRequest) {
                   const lineId = payload['CoLine'] ?? payload['coLine'] ?? payload['COLINE'] ?? payload['Line'] ?? payload['lineId'];
                   const releaseId = payload['CoRelease'] ?? payload['coRelease'] ?? payload['CORELEASE'] ?? payload['Release'];
                   const dueDateRaw = String(payload['DueDate'] ?? payload['dueDate'] ?? payload['DUEDATE'] ?? '').trim();
-                  if (!orderId || !lineId || !dueDateRaw) continue;
+                  const customerPartNumber = readRawCustomerPartNumber(payload);
+                  if (!orderId || !lineId || (!dueDateRaw && !customerPartNumber)) continue;
                   const key = buildRawOrderLineKey(orderId, lineId, releaseId);
-                  if (!key.replace(/\|/g, '').trim() || rawDueDateByOrderLine.has(key)) continue;
-                  const parsedDueDate = new Date(dueDateRaw.replace(/\s+\d{2}:\d{2}:\d{2}\.\d+$/, ''));
-                  const dueDate = Number.isNaN(parsedDueDate.getTime()) ? dueDateRaw : parsedDueDate.toISOString();
-                  rawDueDateByOrderLine.set(key, dueDate);
                   const noReleaseKey = buildRawOrderLineNoReleaseKey(orderId, lineId);
-                  if (!rawDueDateByOrderLineNoRelease.has(noReleaseKey)) rawDueDateByOrderLineNoRelease.set(noReleaseKey, dueDate);
+                  if (!key.replace(/\|/g, '').trim()) continue;
+                  if (dueDateRaw && !rawDueDateByOrderLine.has(key)) {
+                    const parsedDueDate = parseInforDateValue(dueDateRaw);
+                    const dueDate = parsedDueDate ? parsedDueDate.toISOString() : dueDateRaw;
+                    rawDueDateByOrderLine.set(key, dueDate);
+                    if (!rawDueDateByOrderLineNoRelease.has(noReleaseKey)) rawDueDateByOrderLineNoRelease.set(noReleaseKey, dueDate);
+                  }
+                  if (customerPartNumber && !rawCustomerPartByOrderLine.has(key)) {
+                    rawCustomerPartByOrderLine.set(key, customerPartNumber);
+                    if (!rawCustomerPartByOrderLineNoRelease.has(noReleaseKey)) rawCustomerPartByOrderLineNoRelease.set(noReleaseKey, customerPartNumber);
+                  }
                 }
                 const orderRows = await productOrderLineDelegate.findMany({
                   where: {
@@ -5947,14 +6268,99 @@ export async function GET(request: NextRequest) {
                     const lineId = payload['CoLine'] ?? payload['coLine'] ?? payload['COLINE'] ?? payload['Line'] ?? payload['lineId'];
                     const releaseId = payload['CoRelease'] ?? payload['coRelease'] ?? payload['CORELEASE'] ?? payload['Release'];
                     const dueDateRaw = String(payload['DueDate'] ?? payload['dueDate'] ?? payload['DUEDATE'] ?? '').trim();
-                    if (!orderId || !lineId || !dueDateRaw) continue;
+                    const customerPartNumber = readRawCustomerPartNumber(payload);
+                    if (!orderId || !lineId || (!dueDateRaw && !customerPartNumber)) continue;
                     const key = buildRawOrderLineKey(orderId, lineId, releaseId);
-                    if (!key.replace(/\|/g, '').trim() || rawDueDateByOrderLine.has(key)) continue;
-                    const parsedDueDate = new Date(dueDateRaw.replace(/\s+\d{2}:\d{2}:\d{2}\.\d+$/, ''));
-                    const dueDate = Number.isNaN(parsedDueDate.getTime()) ? dueDateRaw : parsedDueDate.toISOString();
-                    rawDueDateByOrderLine.set(key, dueDate);
                     const noReleaseKey = buildRawOrderLineNoReleaseKey(orderId, lineId);
-                    if (!rawDueDateByOrderLineNoRelease.has(noReleaseKey)) rawDueDateByOrderLineNoRelease.set(noReleaseKey, dueDate);
+                    if (!key.replace(/\|/g, '').trim()) continue;
+                    if (dueDateRaw && !rawDueDateByOrderLine.has(key)) {
+                      const parsedDueDate = parseInforDateValue(dueDateRaw);
+                      const dueDate = parsedDueDate ? parsedDueDate.toISOString() : dueDateRaw;
+                      rawDueDateByOrderLine.set(key, dueDate);
+                      if (!rawDueDateByOrderLineNoRelease.has(noReleaseKey)) rawDueDateByOrderLineNoRelease.set(noReleaseKey, dueDate);
+                    }
+                    if (customerPartNumber && !rawCustomerPartByOrderLine.has(key)) {
+                      rawCustomerPartByOrderLine.set(key, customerPartNumber);
+                      if (!rawCustomerPartByOrderLineNoRelease.has(noReleaseKey)) rawCustomerPartByOrderLineNoRelease.set(noReleaseKey, customerPartNumber);
+                    }
+                  }
+                }
+                const customerIdsForPartLookup = Array.from(
+                  new Set((orderRows as any[]).map((row) => String(row?.customerId || '').trim()).filter(Boolean))
+                ).slice(0, 1000);
+                const aprPartsForPartLookup = Array.from(
+                  new Set(
+                    (orderRows as any[])
+                      .flatMap((row) => [row?.sku, row?.itemId, row?.itemName])
+                      .map((value) => String(value || '').trim())
+                      .filter(Boolean)
+                  )
+                ).slice(0, 2000);
+                if (customerIdsForPartLookup.length > 0 && aprPartsForPartLookup.length > 0) {
+                  const customerItemRows = await prisma.$queryRaw<Array<{ payload: any }>>(Prisma.sql`
+                    SELECT "payload"
+                    FROM "InforRawRecord"
+                    WHERE "companyId" = ${companyId}
+                      AND "miProgram" IN (
+                        'SLCustomerItems',
+                        'SLCustItems',
+                        'SLCustItem',
+                        'SLItemCusts',
+                        'SLItemCust',
+                        'SLCustItemXrefs',
+                        'SLCustItemCrossRefs',
+                        'SLCustomerItemCrossRefs'
+                      )
+                      AND TRIM(COALESCE(
+                        "payload"->>'CustNum',
+                        "payload"->>'custNum',
+                        "payload"->>'CUSTNUM',
+                        "payload"->>'CustomerNumber',
+                        "payload"->>'customerNumber',
+                        "payload"->>'CustomerId',
+                        "payload"->>'customerId'
+                      )) IN (${Prisma.join(customerIdsForPartLookup)})
+                      AND TRIM(COALESCE(
+                        "payload"->>'Item',
+                        "payload"->>'item',
+                        "payload"->>'ITEM',
+                        "payload"->>'DerItem',
+                        "payload"->>'derItem',
+                        "payload"->>'ItemNumber',
+                        "payload"->>'itemNumber'
+                      )) IN (${Prisma.join(aprPartsForPartLookup)})
+                    ORDER BY "businessDate" DESC NULLS LAST, "fetchedAt" DESC
+                    LIMIT ${Math.min(rawPayloadRowCap, 50000)}
+                  `);
+                  for (const rawRow of customerItemRows as any[]) {
+                    const payload = rawRow?.payload;
+                    if (!payload || typeof payload !== 'object' || Array.isArray(payload)) continue;
+                    const customerPartNumber = readRawCustomerPartNumber(payload);
+                    if (!customerPartNumber) continue;
+                    const key = buildCustomerItemKey(readRawCustomerId(payload), readRawAprPartNumber(payload));
+                    if (!key.replace(/\|/g, '').trim() || rawCustomerPartByCustomerItem.has(key)) continue;
+                    rawCustomerPartByCustomerItem.set(key, customerPartNumber);
+                  }
+                }
+                if (aprPartsForPartLookup.length > 0) {
+                  const itemOverviewRows = await prisma.$queryRaw<Array<{ payload: any }>>(Prisma.sql`
+                    SELECT DISTINCT ON (TRIM(COALESCE("payload"->>'Item', "payload"->>'item', "payload"->>'ITEM')))
+                      "payload"
+                    FROM "InforRawRecord"
+                    WHERE "companyId" = ${companyId}
+                      AND "miProgram" = 'SLItems'
+                      AND TRIM(COALESCE("payload"->>'Item', "payload"->>'item', "payload"->>'ITEM')) IN (${Prisma.join(aprPartsForPartLookup)})
+                      AND NULLIF(TRIM(COALESCE("payload"->>'Overview', "payload"->>'overview', "payload"->>'itmUf_PartNotes')), '') IS NOT NULL
+                    ORDER BY TRIM(COALESCE("payload"->>'Item', "payload"->>'item', "payload"->>'ITEM')), "businessDate" DESC NULLS LAST, "fetchedAt" DESC
+                    LIMIT ${Math.min(aprPartsForPartLookup.length, 2000)}
+                  `);
+                  for (const rawRow of itemOverviewRows as any[]) {
+                    const payload = rawRow?.payload;
+                    if (!payload || typeof payload !== 'object' || Array.isArray(payload)) continue;
+                    const aprPartNumber = readRawAprPartNumber(payload);
+                    const overview = String(payload['Overview'] ?? payload['overview'] ?? payload['itmUf_PartNotes'] ?? '').trim();
+                    const key = normalizeOrderLineToken(aprPartNumber);
+                    if (key && overview && !rawItemOverviewByAprPart.has(key)) rawItemOverviewByAprPart.set(key, overview);
                   }
                 }
                 return (orderRows as any[]).map((row) => ({
@@ -5973,6 +6379,13 @@ export async function GET(request: NextRequest) {
                   itemId: row.itemId || row.sku || row.itemName || null,
                   sku: row.sku || row.itemId || row.itemName || null,
                   itemName: row.itemName || row.itemId || row.sku || null,
+                  customerPartNumber:
+                    rawCustomerPartByOrderLine.get(buildRawOrderLineKey(row.orderId, row.lineId)) ||
+                    rawCustomerPartByOrderLineNoRelease.get(buildRawOrderLineNoReleaseKey(row.orderId, row.lineId)) ||
+                    rawCustomerPartByCustomerItem.get(buildCustomerItemKey(row.customerId, row.sku || row.itemId || row.itemName)) ||
+                    extractCustomerPartFromOverview(rawItemOverviewByAprPart.get(normalizeOrderLineToken(row.sku || row.itemId || row.itemName)), row.customerName) ||
+                    null,
+                  partNote: rawItemOverviewByAprPart.get(normalizeOrderLineToken(row.sku || row.itemId || row.itemName)) || null,
                   quantitySold: Number(row.qtyInvoiced || row.qtyOrdered || 0),
                   qtyOrdered: Number(row.qtyOrdered || 0),
                   qtyInvoiced: Number(row.qtyInvoiced || 0),

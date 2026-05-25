@@ -159,7 +159,7 @@ type OpenBottleneckSortKey =
   | 'qtyOrdered'
   | 'qtyInvoiced'
   | 'wipValue';
-type VelocitySummarySortKey = 'view' | 'name' | 'lines' | 'avgAge' | 'maxAge' | 'wipValue';
+type VelocitySummarySortKey = 'customerName' | 'item' | 'lines' | 'avgAge' | 'maxAge' | 'wipValue';
 type ProductReportView = 'productMarginAnalysis' | 'wholesaleRawData' | 'vendorPricing' | 'performance' | 'retailForecast' | 'merchandiseProfitability';
 
 const clampNumber = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
@@ -811,6 +811,7 @@ export default function OperationsTab({
   const [expandedProductMarginCustomers, setExpandedProductMarginCustomers] = useState<Record<string, boolean>>({});
   const [productMarginSortKey, setProductMarginSortKey] = useState<ProductMarginSortKey>('customerName');
   const [productMarginSortDir, setProductMarginSortDir] = useState<'asc' | 'desc'>('asc');
+  const [productMarginNoteModal, setProductMarginNoteModal] = useState<{ title: string; note: string } | null>(null);
   const [wholesaleRawCustomerFilter, setWholesaleRawCustomerFilter] = useState('all');
   const [wholesaleRawSortKey, setWholesaleRawSortKey] = useState<WholesaleRawSortKey>('isoDate');
   const [wholesaleRawSortDir, setWholesaleRawSortDir] = useState<'asc' | 'desc'>('desc');
@@ -911,6 +912,8 @@ export default function OperationsTab({
   });
   const hasHydratedDateRangeRef = useRef(false);
   const dateRangeSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const hasHydratedEbitdaEmployeeInputsRef = useRef(false);
+  const ebitdaEmployeeInputsSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => {
     setExpandedWipCustomers({});
   }, [selectedCompanyId, startDate, endDate, frequency]);
@@ -1168,6 +1171,7 @@ export default function OperationsTab({
   useEffect(() => {
     if (!selectedCompanyId) return;
     hasHydratedDateRangeRef.current = false;
+    hasHydratedEbitdaEmployeeInputsRef.current = false;
     let cancelled = false;
 
     const defaultRange = () => {
@@ -1203,6 +1207,20 @@ export default function OperationsTab({
       };
     };
 
+    const normalizeEmployeeInputs = (value: any) => {
+      const candidate = value && typeof value === 'object' && !Array.isArray(value) ? value : null;
+      if (!candidate) return null;
+      return Object.entries(candidate).reduce<Record<string, string>>((acc, [key, rawValue]) => {
+        const monthKey = String(key || '').trim();
+        const employeeCount = String(rawValue ?? '').trim();
+        const parsed = Number(employeeCount);
+        if (monthKey && employeeCount && Number.isFinite(parsed) && parsed >= 0) {
+          acc[monthKey] = employeeCount;
+        }
+        return acc;
+      }, {});
+    };
+
     const applyRange = (range: { frequency: 'daily' | 'weekly' | 'monthly'; startDate: string; endDate: string }) => {
       setFrequency(range.frequency);
       setStartDate(range.startDate);
@@ -1210,16 +1228,19 @@ export default function OperationsTab({
       hasHydratedDateRangeRef.current = true;
     };
 
-    const loadRange = async () => {
+    const loadDashboardPreferences = async () => {
       let loadedRange: ReturnType<typeof normalizeRange> = null;
+      let loadedEmployeeInputs: ReturnType<typeof normalizeEmployeeInputs> = null;
       try {
         const response = await fetch(`/api/ops-dashboard-prefs?companyId=${encodeURIComponent(selectedCompanyId)}`);
         if (response.ok) {
           const data = await response.json();
           loadedRange = normalizeRange(data?.preferences?.dateRange);
+          loadedEmployeeInputs = normalizeEmployeeInputs(data?.preferences?.ebitdaEmployeeInputsByMonth);
         }
       } catch {
         loadedRange = null;
+        loadedEmployeeInputs = null;
       }
 
       if (!loadedRange) {
@@ -1231,10 +1252,23 @@ export default function OperationsTab({
         }
       }
 
-      if (!cancelled) applyRange(loadedRange || defaultRange());
+      if (!loadedEmployeeInputs) {
+        try {
+          const raw = window.localStorage.getItem(`ops:ebitda-employees:${selectedCompanyId}`);
+          loadedEmployeeInputs = normalizeEmployeeInputs(raw ? JSON.parse(raw) : null);
+        } catch {
+          loadedEmployeeInputs = null;
+        }
+      }
+
+      if (!cancelled) {
+        applyRange(loadedRange || defaultRange());
+        setEbitdaEmployeeInputsByMonth(loadedEmployeeInputs || {});
+        hasHydratedEbitdaEmployeeInputsRef.current = true;
+      }
     };
 
-    void loadRange();
+    void loadDashboardPreferences();
     return () => {
       cancelled = true;
     };
@@ -1277,6 +1311,38 @@ export default function OperationsTab({
       }
     };
   }, [selectedCompanyId, frequency, startDate, endDate]);
+
+  useEffect(() => {
+    if (!selectedCompanyId || !hasHydratedEbitdaEmployeeInputsRef.current) return;
+    const payload = ebitdaEmployeeInputsByMonth;
+    try {
+      window.localStorage.setItem(`ops:ebitda-employees:${selectedCompanyId}`, JSON.stringify(payload));
+    } catch {
+      // Ignore storage failures
+    }
+    if (ebitdaEmployeeInputsSaveTimerRef.current) {
+      clearTimeout(ebitdaEmployeeInputsSaveTimerRef.current);
+    }
+    ebitdaEmployeeInputsSaveTimerRef.current = setTimeout(() => {
+      void fetch('/api/ops-dashboard-prefs', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          companyId: selectedCompanyId,
+          preferences: {
+            ebitdaEmployeeInputsByMonth: payload,
+          },
+        }),
+      }).catch(() => {
+        // Local storage still preserves the inputs if the network save fails.
+      });
+    }, 600);
+    return () => {
+      if (ebitdaEmployeeInputsSaveTimerRef.current) {
+        clearTimeout(ebitdaEmployeeInputsSaveTimerRef.current);
+      }
+    };
+  }, [selectedCompanyId, ebitdaEmployeeInputsByMonth]);
 
   useEffect(() => {
     if (!isCustomersTab || !selectedCompanyId) return;
@@ -7002,6 +7068,7 @@ export default function OperationsTab({
         const customerId = String(row?.customerId || row?.customerNumber || row?.custNum || '').trim();
         const customerGroup = String(row?.customerGroup || '').trim();
         const customerPartNumber = String(row?.customerPartNumber || row?.customerPn || row?.customerPN || row?.customerItem || row?.customerSku || row?.custItem || row?.CustItem || '').trim();
+        const partNote = String(row?.partNote || row?.productNote || row?.overview || '').trim();
         const item = String(row?.itemName || aprPartNumber).trim() || aprPartNumber;
         const key = [customerGroup, customerId, customerName, aprPartNumber, customerPartNumber, item].join('||');
         const bucket = buckets.get(key) || {
@@ -7012,6 +7079,7 @@ export default function OperationsTab({
           customerGroup,
           customerName,
           customerPartNumber,
+          partNote,
           item,
           quantity: 0,
           revenue: 0,
@@ -7021,6 +7089,7 @@ export default function OperationsTab({
           freight: 0,
           operatingExpenses: 0,
         };
+        if (!bucket.partNote && partNote) bucket.partNote = partNote;
         bucket.quantity += qty;
         bucket.revenue += Number(row?.revenue || row?.currentPriceTotal || 0);
         const explicitMaterialCost = Number(row?.cogs || row?.materialCost || row?.currentCostOfMaterial || 0);
@@ -7705,11 +7774,13 @@ export default function OperationsTab({
         label: string | string[];
         compact?: boolean;
         summaryColumn?: boolean;
+        width?: string;
+        maxWidth?: string;
       }> = [
         { key: 'aprPartNumber', label: 'APR P/N', summaryColumn: true },
-        { key: 'customerId', label: 'Customer ID' },
-        { key: 'customerName', label: 'Customer Name' },
-        { key: 'customerPartNumber', label: 'Customer P/N' },
+        { key: 'customerId', label: 'Customer ID', width: '76px', maxWidth: '84px' },
+        { key: 'customerName', label: 'Customer Name', width: '150px', maxWidth: '170px' },
+        { key: 'customerPartNumber', label: 'Customer P/N', width: '92px', maxWidth: '108px' },
         { key: 'currentPrice', label: ['Current', 'Price'], compact: true },
         { key: 'materialCost', label: ['Current', 'Cost', 'of', 'Material'], compact: true },
         { key: 'tariffPerPiece', label: ['Current', 'Tariff', 'Impact per', 'Piece'], compact: true },
@@ -7740,6 +7811,20 @@ export default function OperationsTab({
           {formatMarginPct(value)}
         </td>
       );
+      const productMarginTextCellStyle = (column: ProductMarginSortKey, emphasis: React.CSSProperties = {}): React.CSSProperties => {
+        const columnConfig = productMarginColumns.find((candidate) => candidate.key === column);
+        return {
+          padding: '8px',
+          fontSize: '12px',
+          color: '#334155',
+          whiteSpace: 'nowrap',
+          overflow: 'hidden',
+          textOverflow: 'ellipsis',
+          width: columnConfig?.width,
+          maxWidth: columnConfig?.maxWidth,
+          ...emphasis,
+        };
+      };
 
       if (wholesaleProductsLoading && !Array.isArray(wholesaleProductsData?.summary?.wholesaleOrderLines)) {
         return <div style={{ padding: '40px', textAlign: 'center', color: '#64748b' }}>Loading wholesale product margin data...</div>;
@@ -7804,7 +7889,17 @@ export default function OperationsTab({
           </div>
 
           <div style={{ overflowX: 'auto', maxHeight: '620px', overflowY: 'auto' }}>
-            <table style={{ width: '100%', minWidth: '1530px', borderCollapse: 'collapse' }}>
+            <table style={{ width: '100%', minWidth: '1410px', borderCollapse: 'collapse', tableLayout: 'fixed' }}>
+              <colgroup>
+                {productMarginColumns.map((column) => (
+                  <col
+                    key={column.key}
+                    style={{
+                      width: column.width || (column.compact ? '66px' : column.summaryColumn ? '96px' : undefined),
+                    }}
+                  />
+                ))}
+              </colgroup>
               <thead>
                 <tr style={{ borderBottom: '1px solid #e2e8f0', background: '#f8fafc', position: 'sticky', top: 0, zIndex: 1 }}>
                   {productMarginColumns.map((column, index) => (
@@ -7820,8 +7915,8 @@ export default function OperationsTab({
                         lineHeight: 1.15,
                         cursor: 'pointer',
                         userSelect: 'none',
-                        minWidth: column.compact ? '58px' : column.summaryColumn ? '82px' : undefined,
-                        maxWidth: column.compact ? '68px' : column.summaryColumn ? '96px' : undefined,
+                        width: column.width || (column.compact ? '64px' : column.summaryColumn ? '96px' : undefined),
+                        maxWidth: column.maxWidth || (column.compact ? '68px' : column.summaryColumn ? '96px' : undefined),
                       }}
                     >
                       {Array.isArray(column.label)
@@ -7837,7 +7932,7 @@ export default function OperationsTab({
                   return (
                     <React.Fragment key={group.key}>
                       <tr style={{ borderBottom: '1px solid #e2e8f0', background: '#f8fafc' }}>
-                        <td style={{ padding: '8px', fontSize: '12px', color: '#0f172a', fontWeight: 800, whiteSpace: 'nowrap', maxWidth: '96px' }}>
+                        <td style={productMarginTextCellStyle('aprPartNumber', { color: '#0f172a', fontWeight: 800, maxWidth: '96px' })}>
                           <button
                             type="button"
                             onClick={() => toggleProductMarginCustomerExpanded(group.key)}
@@ -7846,9 +7941,9 @@ export default function OperationsTab({
                             {expanded ? '▼' : '▶'} Summary
                           </button>
                         </td>
-                        <td style={{ padding: '8px', fontSize: '12px', color: '#475569', fontWeight: 700 }}>{group.customerId || 'N/A'}</td>
-                        <td style={{ padding: '8px', fontSize: '12px', color: '#0f172a', fontWeight: 800 }}>{group.customerName}</td>
-                        <td style={{ padding: '8px', fontSize: '12px', color: '#64748b' }}>{group.rows.length.toLocaleString()} items</td>
+                        <td style={productMarginTextCellStyle('customerId', { color: '#475569', fontWeight: 700 })} title={group.customerId || 'N/A'}>{group.customerId || 'N/A'}</td>
+                        <td style={productMarginTextCellStyle('customerName', { color: '#0f172a', fontWeight: 800 })} title={group.customerName}>{group.customerName}</td>
+                        <td style={productMarginTextCellStyle('customerPartNumber', { color: '#64748b' })}>{group.rows.length.toLocaleString()} items</td>
                         {renderMoneyCell(group.currentPrice)}
                         {renderMoneyCell(group.materialCost)}
                         {renderMoneyCell(group.tariffPerPiece)}
@@ -7862,10 +7957,24 @@ export default function OperationsTab({
                       </tr>
                       {expanded && group.rows.map((row: any) => (
                         <tr key={row.key} style={{ borderBottom: '1px solid #f1f5f9' }}>
-                          <td style={{ padding: '8px', fontSize: '12px', color: '#0f172a', fontWeight: 700, whiteSpace: 'nowrap' }}>{row.aprPartNumber}</td>
-                          <td style={{ padding: '8px', fontSize: '12px', color: '#475569' }}>{row.customerId || 'N/A'}</td>
-                          <td style={{ padding: '8px', fontSize: '12px', color: '#334155' }}>{row.customerName}</td>
-                          <td style={{ padding: '8px', fontSize: '12px', color: '#475569', whiteSpace: 'nowrap' }}>{row.customerPartNumber || 'N/A'}</td>
+                          <td style={productMarginTextCellStyle('aprPartNumber', { color: '#0f172a', fontWeight: 700 })} title={row.aprPartNumber}>
+                            <div style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{row.aprPartNumber}</div>
+                            {row.partNote ? (
+                              <button
+                                type="button"
+                                onClick={() => setProductMarginNoteModal({
+                                  title: `${row.aprPartNumber} notes${row.customerName ? ` - ${row.customerName}` : ''}`,
+                                  note: row.partNote,
+                                })}
+                                style={{ border: 'none', background: 'transparent', padding: 0, marginTop: '3px', color: '#2563eb', cursor: 'pointer', fontSize: '11px', fontWeight: 700 }}
+                              >
+                                View notes
+                              </button>
+                            ) : null}
+                          </td>
+                          <td style={productMarginTextCellStyle('customerId', { color: '#475569' })} title={row.customerId || 'N/A'}>{row.customerId || 'N/A'}</td>
+                          <td style={productMarginTextCellStyle('customerName')} title={row.customerName}>{row.customerName}</td>
+                          <td style={productMarginTextCellStyle('customerPartNumber', { color: '#475569' })} title={row.customerPartNumber || 'N/A'}>{row.customerPartNumber || 'N/A'}</td>
                           {renderMoneyCell(row.currentPrice)}
                           {renderMoneyCell(row.materialCost)}
                           {renderMoneyCell(row.tariffPerPiece)}
@@ -7884,6 +7993,40 @@ export default function OperationsTab({
               </tbody>
             </table>
           </div>
+          {productMarginNoteModal && (
+            <div
+              onClick={() => setProductMarginNoteModal(null)}
+              style={{
+                position: 'fixed',
+                inset: 0,
+                background: 'rgba(15, 23, 42, 0.45)',
+                zIndex: 70,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                padding: '24px',
+              }}
+            >
+              <div
+                onClick={(event) => event.stopPropagation()}
+                style={{ width: 'min(820px, 100%)', maxHeight: '82vh', background: 'white', borderRadius: '14px', border: '1px solid #e2e8f0', boxShadow: '0 24px 60px rgba(15, 23, 42, 0.25)', overflow: 'hidden' }}
+              >
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', padding: '14px 16px', borderBottom: '1px solid #e2e8f0', background: '#f8fafc' }}>
+                  <div style={{ fontSize: '15px', fontWeight: 800, color: '#0f172a' }}>{productMarginNoteModal.title}</div>
+                  <button
+                    type="button"
+                    onClick={() => setProductMarginNoteModal(null)}
+                    style={{ border: '1px solid #cbd5e1', borderRadius: '8px', background: 'white', padding: '5px 10px', cursor: 'pointer', color: '#334155', fontSize: '12px', fontWeight: 700 }}
+                  >
+                    Close
+                  </button>
+                </div>
+                <div style={{ padding: '16px', maxHeight: 'calc(82vh - 56px)', overflowY: 'auto', whiteSpace: 'pre-wrap', fontSize: '13px', lineHeight: 1.55, color: '#334155' }}>
+                  {productMarginNoteModal.note}
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       );
     };
@@ -13434,10 +13577,15 @@ Strategies to Improve the CCC
         value={row.employeeInputValue}
         onChange={(event) => {
           const nextValue = event.target.value;
-          setEbitdaEmployeeInputsByMonth((prev) => ({
-            ...prev,
-            [row.monthKey]: nextValue,
-          }));
+          setEbitdaEmployeeInputsByMonth((prev) => {
+            const next = { ...prev };
+            if (nextValue === '') {
+              delete next[row.monthKey];
+            } else {
+              next[row.monthKey] = nextValue;
+            }
+            return next;
+          });
         }}
         placeholder="Enter"
         style={{
@@ -19202,11 +19350,24 @@ Strategies to Improve the CCC
       return sum + new Date(Date.UTC(year || 2000, month || 1, 0)).getUTCDate();
     }, 0);
     const arDueByCustomer = new Map<string, number>();
-    (arData?.summary?.unpaidByCustomer || arData?.summary?.breakdown || []).forEach((row: any) => {
-      const key = normalizeCustomerName(row?.customerName || row?.name);
-      const due = Number(row?.totalDue ?? row?.total ?? row?.amountDueHome ?? 0);
+    const invoiceArDueByCustomer = new Map<string, number>();
+    const addArDue = (target: Map<string, number>, name: unknown, amount: unknown) => {
+      const key = normalizeCustomerName(name);
+      const due = Number(amount || 0);
       if (!key || !Number.isFinite(due) || due <= 0) return;
-      arDueByCustomer.set(key, (arDueByCustomer.get(key) || 0) + due);
+      target.set(key, (target.get(key) || 0) + due);
+    };
+    (arData?.summary?.unpaidByCustomer || arData?.summary?.breakdown || []).forEach((row: any) => {
+      addArDue(arDueByCustomer, row?.customerName || row?.name, row?.totalDue ?? row?.total ?? row?.amountDueHome);
+    });
+    const customerInvoiceRows = Array.isArray(arData?.summary?.customerInvoices) ? arData.summary.customerInvoices : [];
+    const unpaidInvoiceRows = Array.isArray(arData?.summary?.unpaidInvoices) ? arData.summary.unpaidInvoices : [];
+    const invoiceRowsForArDays = customerInvoiceRows.length ? customerInvoiceRows : unpaidInvoiceRows;
+    invoiceRowsForArDays.forEach((row: any) => {
+      addArDue(invoiceArDueByCustomer, row?.customerName || row?.name, row?.amountDueHome ?? row?.amountDue ?? row?.totalDue);
+    });
+    invoiceArDueByCustomer.forEach((due, key) => {
+      if (!arDueByCustomer.has(key)) arDueByCustomer.set(key, due);
     });
     const latestOrderLineByKey = new Map<string, any>();
     wholesaleRows.forEach((row: any) => {
@@ -19637,12 +19798,14 @@ Strategies to Improve the CCC
         avgAge: avg(rows.map((row: any) => Number(row.openAge || 0)).filter((value: number) => Number.isFinite(value))),
       };
     });
-    const buildVelocitySummary = (keyFn: (row: any) => string, labelKey: string) => {
-      const grouped = new Map<string, { label: string; lines: number; wipValue: number; ages: number[]; pastDueAges: number[] }>();
+    const buildVelocitySummary = () => {
+      const grouped = new Map<string, { customerName: string; item: string; lines: number; wipValue: number; ages: number[]; pastDueAges: number[] }>();
       velocityRows.forEach((row: any) => {
-        const label = keyFn(row) || 'N/A';
-        if (!grouped.has(label)) grouped.set(label, { label, lines: 0, wipValue: 0, ages: [], pastDueAges: [] });
-        const acc = grouped.get(label)!;
+        const customerName = String(row.customerName || 'N/A');
+        const item = String(row.item || 'N/A');
+        const key = `${customerName}||${item}`;
+        if (!grouped.has(key)) grouped.set(key, { customerName, item, lines: 0, wipValue: 0, ages: [], pastDueAges: [] });
+        const acc = grouped.get(key)!;
         acc.lines += 1;
         acc.wipValue += Number(row.wipValueNumber || 0);
         if (row.openAge != null && Number.isFinite(Number(row.openAge))) acc.ages.push(Number(row.openAge));
@@ -19651,22 +19814,16 @@ Strategies to Improve the CCC
       return Array.from(grouped.values())
         .map((row) => ({
           ...row,
-          [labelKey]: row.label,
           avgAge: avg(row.ages),
           maxAge: row.ages.length ? Math.max(...row.ages) : null,
           avgPastDueDays: avg(row.pastDueAges),
         }))
         .sort((a, b) => Number(b.avgAge || 0) - Number(a.avgAge || 0))
-        .slice(0, 10);
+        .slice(0, 20);
     };
-    const velocityByItemRows = buildVelocitySummary((row) => String(row.item || 'N/A'), 'item');
-    const velocityByCustomerRows = buildVelocitySummary((row) => String(row.customerName || 'N/A'), 'customerName');
-    const velocitySummaryRows = [
-      ...velocityByCustomerRows.map((row: any) => ({ ...row, view: 'Customer', name: row.customerName })),
-      ...velocityByItemRows.map((row: any) => ({ ...row, view: 'Item', name: row.item })),
-    ].sort((a: any, b: any) => {
+    const velocitySummaryRows = buildVelocitySummary().sort((a: any, b: any) => {
       const direction = velocitySummarySortDir === 'asc' ? 1 : -1;
-      if (velocitySummarySortKey === 'view' || velocitySummarySortKey === 'name') {
+      if (velocitySummarySortKey === 'customerName' || velocitySummarySortKey === 'item') {
         return String(a[velocitySummarySortKey] || '').localeCompare(String(b[velocitySummarySortKey] || ''), undefined, { sensitivity: 'base', numeric: true }) * direction;
       }
       const left = Number(a[velocitySummarySortKey] ?? -Infinity);
@@ -19684,13 +19841,13 @@ Strategies to Improve the CCC
         return;
       }
       setVelocitySummarySortKey(key);
-      setVelocitySummarySortDir(key === 'view' || key === 'name' ? 'asc' : 'desc');
+      setVelocitySummarySortDir(key === 'customerName' || key === 'item' ? 'asc' : 'desc');
     };
     const velocitySummarySortLabel = (key: VelocitySummarySortKey) =>
       velocitySummarySortKey === key ? (velocitySummarySortDir === 'asc' ? ' ▲' : ' ▼') : ' ↕';
     const velocitySummaryColumns: Array<{ key: VelocitySummarySortKey; label: string; align?: 'left' | 'right' }> = [
-      { key: 'view', label: 'View' },
-      { key: 'name', label: 'Name' },
+      { key: 'customerName', label: 'Customer' },
+      { key: 'item', label: 'Item' },
       { key: 'lines', label: 'Open Lines', align: 'right' },
       { key: 'avgAge', label: 'Avg Open Age', align: 'right' },
       { key: 'maxAge', label: 'Max Open Age', align: 'right' },
@@ -19794,7 +19951,7 @@ Strategies to Improve the CCC
         </div>
         {section('Velocity Summary', (
           <div style={{ overflowX: 'auto' }}>
-            <table style={{ ...tableStyle, minWidth: '760px' }}>
+            <table style={{ ...tableStyle, minWidth: '880px' }}>
               <thead>
                 <tr>
                   {velocitySummaryColumns.map((column) => (
@@ -19808,7 +19965,7 @@ Strategies to Improve the CCC
                   ))}
                 </tr>
               </thead>
-              <tbody>{velocitySummaryRows.map((row: any) => <tr key={`${row.view}-${row.name}`}><td style={tdStyle}>{row.view}</td><td style={{ ...tdStyle, fontWeight: 700 }}>{row.name}</td><td style={{ ...tdStyle, textAlign: 'right' }}>{number(row.lines)}</td><td style={{ ...tdStyle, textAlign: 'right' }}>{days(row.avgAge)}</td><td style={{ ...tdStyle, textAlign: 'right' }}>{row.maxAge == null ? 'N/A' : number(row.maxAge)}</td><td style={{ ...tdStyle, textAlign: 'right' }}>{formatCurrency(row.wipValue)}</td></tr>)}</tbody>
+              <tbody>{velocitySummaryRows.map((row: any) => <tr key={`${row.customerName}-${row.item}`}><td style={{ ...tdStyle, fontWeight: 700 }}>{row.customerName}</td><td style={tdStyle}>{row.item}</td><td style={{ ...tdStyle, textAlign: 'right' }}>{number(row.lines)}</td><td style={{ ...tdStyle, textAlign: 'right' }}>{days(row.avgAge)}</td><td style={{ ...tdStyle, textAlign: 'right' }}>{row.maxAge == null ? 'N/A' : number(row.maxAge)}</td><td style={{ ...tdStyle, textAlign: 'right' }}>{formatCurrency(row.wipValue)}</td></tr>)}</tbody>
             </table>
           </div>
         ))}

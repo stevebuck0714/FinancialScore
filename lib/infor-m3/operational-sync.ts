@@ -81,6 +81,15 @@ const DEFAULT_CSI_PROGRAM_ROWS: InforProgramRow[] = [
     enabled: true,
   },
   {
+    module: 'Sales',
+    miProgram: 'SLCustomerItems',
+    endpointPath: '/APR_PRD/CSI/IDORequestService/ido/load/SLCustomerItems?properties=CustNum,Item,CustItem,Description,RowPointer&recordCap=1000',
+    mongooseConfig: 'TMSManager',
+    site: '',
+    transactions: ['CSI_LOAD'],
+    enabled: true,
+  },
+  {
     module: 'AR',
     miProgram: 'SLCustDrfts',
     endpointPath:
@@ -129,7 +138,7 @@ const DEFAULT_CSI_PROGRAM_ROWS: InforProgramRow[] = [
   {
     module: 'Sales',
     miProgram: 'SLCoitems',
-    endpointPath: '/APR_PRD/CSI/IDORequestService/ido/load/SLCoitems?properties=CoNum,CoLine,CoRelease,CustNum,Item,Description,QtyOrdered,QtyShipped,QtyInvoiced,QtyReturned,Price,ExtPrice,Cost,MatlCost,ExtMatlCost,Disc,RepPrice,Whse,Stat,DueDate,PromiseDate,OrderDate,ShipDate,RecordDate,RowPointer&recordCap=1000',
+    endpointPath: '/APR_PRD/CSI/IDORequestService/ido/load/SLCoitems?properties=CoNum,CoLine,CoRelease,CustNum,CustItem,Item,Description,QtyOrdered,QtyShipped,QtyInvoiced,QtyReturned,Price,ExtPrice,Cost,MatlCost,ExtMatlCost,Disc,RepPrice,Whse,Stat,DueDate,PromiseDate,OrderDate,ShipDate,RecordDate,RowPointer&recordCap=1000',
     mongooseConfig: 'TMSManager',
     site: '',
     transactions: ['CSI_LOAD'],
@@ -1631,6 +1640,7 @@ const SL_COITEMS_SAFE_PROPERTIES = [
   'CoLine',
   'CoRelease',
   'CustNum',
+  'CustItem',
   'OrderDate',
   'Item',
   'Stat',
