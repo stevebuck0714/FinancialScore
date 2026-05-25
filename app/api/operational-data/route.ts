@@ -862,26 +862,47 @@ async function deriveCustomerSalesFromRawInvoices(
           CASE
             WHEN "payload"->>'InvDate' ~ '^\\d{8}' THEN to_date(LEFT("payload"->>'InvDate', 8), 'YYYYMMDD')
             WHEN "payload"->>'InvDate' ~ '^\\d{4}-\\d{2}-\\d{2}' THEN LEFT("payload"->>'InvDate', 10)::date
+            WHEN "payload"->>'RecordDate' ~ '^\\d{8}' THEN to_date(LEFT("payload"->>'RecordDate', 8), 'YYYYMMDD')
+            WHEN "payload"->>'RecordDate' ~ '^\\d{4}-\\d{2}-\\d{2}' THEN LEFT("payload"->>'RecordDate', 10)::date
+            WHEN "payload"->>'DistDate' ~ '^\\d{8}' THEN to_date(LEFT("payload"->>'DistDate', 8), 'YYYYMMDD')
+            WHEN "payload"->>'DistDate' ~ '^\\d{4}-\\d{2}-\\d{2}' THEN LEFT("payload"->>'DistDate', 10)::date
+            WHEN "payload"->>'DueDate' ~ '^\\d{8}' THEN to_date(LEFT("payload"->>'DueDate', 8), 'YYYYMMDD')
+            WHEN "payload"->>'DueDate' ~ '^\\d{4}-\\d{2}-\\d{2}' THEN LEFT("payload"->>'DueDate', 10)::date
             ELSE NULL
           END,
           "businessDate"::date
         ) AS invoice_date,
         COALESCE(
           NULLIF("payload"->>'CustNum', ''),
-          NULLIF("payload"->>'CorpCust', '')
+          NULLIF("payload"->>'CorpCust', ''),
+          NULLIF("payload"->>'CustNo', ''),
+          NULLIF("payload"->>'customerId', '')
         ) AS customer_id,
         COALESCE(
           NULLIF("payload"->>'DerCustName', ''),
           NULLIF("payload"->>'CadName', ''),
           NULLIF("payload"->>'DerCustNoName', ''),
+          NULLIF("payload"->>'CustName', ''),
+          NULLIF("payload"->>'Name', ''),
           NULLIF("payload"->>'CustNum', '')
         ) AS customer_name,
-        NULLIF("payload"->>'InvNum', '') AS invoice_no,
+        COALESCE(
+          NULLIF("payload"->>'InvNum', ''),
+          NULLIF("payload"->>'DerInvNum', ''),
+          NULLIF("payload"->>'ApplyToInvNum', ''),
+          NULLIF("payload"->>'DerApplyToInvNum', ''),
+          NULLIF("payload"->>'invoiceNo', ''),
+          NULLIF("payload"->>'invoiceNumber', '')
+        ) AS invoice_no,
         UPPER(NULLIF("payload"->>'Type', '')) AS trans_type,
         COALESCE(
           NULLIF(regexp_replace("payload"->>'Amount', '[^0-9.-]', '', 'g'), '')::double precision,
           NULLIF(regexp_replace("payload"->>'DomAmt', '[^0-9.-]', '', 'g'), '')::double precision,
           NULLIF(regexp_replace("payload"->>'CUAM', '[^0-9.-]', '', 'g'), '')::double precision,
+          NULLIF(regexp_replace("payload"->>'ACAM', '[^0-9.-]', '', 'g'), '')::double precision,
+          NULLIF(regexp_replace("payload"->>'InvAmt', '[^0-9.-]', '', 'g'), '')::double precision,
+          NULLIF(regexp_replace("payload"->>'invoiceAmount', '[^0-9.-]', '', 'g'), '')::double precision,
+          NULLIF(regexp_replace("payload"->>'DerOrderBalance', '[^0-9.-]', '', 'g'), '')::double precision,
           0
         )::double precision AS amount
       FROM "InforRawRecord"
@@ -898,7 +919,7 @@ async function deriveCustomerSalesFromRawInvoices(
     WHERE invoice_date >= ${startDate}::date
       AND invoice_date <= ${endDate}::date
       AND amount <> 0
-      AND (trans_type IS NULL OR trans_type IN ('I', 'D'))
+      AND (trans_type IS NULL OR trans_type NOT IN ('P', 'C'))
     GROUP BY 1, 2, 3
     HAVING SUM(ABS(amount)) > 0
     ORDER BY 1 ASC, 3 ASC
@@ -1017,6 +1038,12 @@ async function deriveCustomerMarginFromRawOrderLineDeltas(
             CASE
               WHEN "payload"->>'InvDate' ~ '^\\d{8}' THEN to_date(LEFT("payload"->>'InvDate', 8), 'YYYYMMDD')
               WHEN "payload"->>'InvDate' ~ '^\\d{4}-\\d{2}-\\d{2}' THEN LEFT("payload"->>'InvDate', 10)::date
+              WHEN "payload"->>'RecordDate' ~ '^\\d{8}' THEN to_date(LEFT("payload"->>'RecordDate', 8), 'YYYYMMDD')
+              WHEN "payload"->>'RecordDate' ~ '^\\d{4}-\\d{2}-\\d{2}' THEN LEFT("payload"->>'RecordDate', 10)::date
+              WHEN "payload"->>'DistDate' ~ '^\\d{8}' THEN to_date(LEFT("payload"->>'DistDate', 8), 'YYYYMMDD')
+              WHEN "payload"->>'DistDate' ~ '^\\d{4}-\\d{2}-\\d{2}' THEN LEFT("payload"->>'DistDate', 10)::date
+              WHEN "payload"->>'DueDate' ~ '^\\d{8}' THEN to_date(LEFT("payload"->>'DueDate', 8), 'YYYYMMDD')
+              WHEN "payload"->>'DueDate' ~ '^\\d{4}-\\d{2}-\\d{2}' THEN LEFT("payload"->>'DueDate', 10)::date
               ELSE NULL
             END,
             "businessDate"::date
@@ -1026,7 +1053,7 @@ async function deriveCustomerMarginFromRawOrderLineDeltas(
         FROM "InforRawRecord"
         WHERE "companyId" = ${companyId}
           AND "miProgram" = 'SLArtrans'
-          AND (UPPER(NULLIF("payload"->>'Type', '')) IS NULL OR UPPER(NULLIF("payload"->>'Type', '')) IN ('I', 'D'))
+          AND (UPPER(NULLIF("payload"->>'Type', '')) IS NULL OR UPPER(NULLIF("payload"->>'Type', '')) NOT IN ('P', 'C'))
       ) raw_invoices
       WHERE order_id IS NOT NULL
         AND TRIM(order_id) <> ''
