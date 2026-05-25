@@ -50,7 +50,7 @@ export const dynamic = 'force-dynamic';
 
 const OPERATIONAL_DATA_CACHE_TTL_SECONDS = 120;
 const CUSTOMER_CONCENTRATION_CACHE_TTL_SECONDS = 30 * 24 * 60 * 60;
-const CUSTOMER_CONCENTRATION_CACHE_VERSION = 'customer-concentration-exposure-v6';
+const CUSTOMER_CONCENTRATION_CACHE_VERSION = 'customer-concentration-exposure-v7';
 const WHOLESALE_PRODUCTS_REPORT_CACHE_TTL_SECONDS = 30 * 24 * 60 * 60;
 const OPERATIONAL_CACHEABLE_TYPES = new Set([
   'customers',

@@ -510,7 +510,7 @@ type CardSeverity = 'normal' | 'warning' | 'critical' | 'loading';
 const HEAVY_PREFETCH_TYPES: OpsDataType[] = ['ar-aging', 'ap-aging', 'customers', 'products'];
 const OPERATIONAL_DATA_CACHE_TTL_MS = 2 * 60 * 1000;
 const CUSTOMER_DATA_CACHE_TTL_MS = 30 * 24 * 60 * 60 * 1000;
-const CUSTOMER_CONCENTRATION_CLIENT_CACHE_VERSION = 'customer-concentration-exposure-v6';
+const CUSTOMER_CONCENTRATION_CLIENT_CACHE_VERSION = 'customer-concentration-exposure-v7';
 const WHOLESALE_PRODUCTS_REPORT_CACHE_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 
 type InvestigatePlaybook = {
