@@ -50,7 +50,7 @@ export const dynamic = 'force-dynamic';
 
 const OPERATIONAL_DATA_CACHE_TTL_SECONDS = 120;
 const CUSTOMER_CONCENTRATION_CACHE_TTL_SECONDS = 30 * 24 * 60 * 60;
-const CUSTOMER_CONCENTRATION_CACHE_VERSION = 'customer-concentration-exposure-v7';
+const CUSTOMER_CONCENTRATION_CACHE_VERSION = 'customer-concentration-exposure-v8';
 const WHOLESALE_PRODUCTS_REPORT_CACHE_TTL_SECONDS = 30 * 24 * 60 * 60;
 const OPERATIONAL_CACHEABLE_TYPES = new Set([
   'customers',
@@ -2427,8 +2427,11 @@ export async function GET(request: NextRequest) {
 
     switch (type) {
       case 'customers': {
+        const normalizedAccountingSystemKey = normalizedAccountingSystem.replace(/[\s-]+/g, '_');
         const isInforCompany =
-          normalizedAccountingSystem === 'INFOR_M3' || normalizedAccountingSystem === 'INFOR_CSI';
+          normalizedAccountingSystemKey === 'INFOR_M3' ||
+          normalizedAccountingSystemKey === 'INFOR_CSI' ||
+          normalizedAccountingSystemKey === 'CSI';
         const customerFrequencyForQuery: 'daily' | 'weekly' | 'monthly' =
           isInforCompany && frequency !== 'daily' ? 'daily' : frequency;
         const orderLineFrequencyForQuery: 'daily' | 'weekly' | 'monthly' =
