@@ -159,7 +159,18 @@ type OpenBottleneckSortKey =
   | 'qtyOrdered'
   | 'qtyInvoiced'
   | 'wipValue';
-type VelocitySummarySortKey = 'customerName' | 'item' | 'lines' | 'avgAge' | 'maxAge' | 'wipValue';
+type StuckOpenLineSortKey =
+  | 'customerName'
+  | 'orderId'
+  | 'lineId'
+  | 'item'
+  | 'orderDate'
+  | 'dueDate'
+  | 'pastDueDate'
+  | 'qtyOrdered'
+  | 'qtyInvoiced'
+  | 'wipValue'
+  | 'status';
 type ProductReportView = 'productMarginAnalysis' | 'wholesaleRawData' | 'vendorPricing' | 'performance' | 'retailForecast' | 'merchandiseProfitability';
 
 const clampNumber = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
@@ -834,8 +845,8 @@ export default function OperationsTab({
   const [vendorPricingSortDir, setVendorPricingSortDir] = useState<'asc' | 'desc'>('asc');
   const [openBottleneckSortKey, setOpenBottleneckSortKey] = useState<OpenBottleneckSortKey>('openAge');
   const [openBottleneckSortDir, setOpenBottleneckSortDir] = useState<'asc' | 'desc'>('desc');
-  const [velocitySummarySortKey, setVelocitySummarySortKey] = useState<VelocitySummarySortKey>('avgAge');
-  const [velocitySummarySortDir, setVelocitySummarySortDir] = useState<'asc' | 'desc'>('desc');
+  const [stuckOpenLineSortKey, setStuckOpenLineSortKey] = useState<StuckOpenLineSortKey>('pastDueDate');
+  const [stuckOpenLineSortDir, setStuckOpenLineSortDir] = useState<'asc' | 'desc'>('desc');
   const [selectedRetailForecastSubcategory, setSelectedRetailForecastSubcategory] = useState('');
   const [retailForecastTableSortKey, setRetailForecastTableSortKey] = useState<RetailForecastTableSortKey>('next3Base');
   const [retailForecastTableSortDir, setRetailForecastTableSortDir] = useState<'asc' | 'desc'>('desc');
@@ -19799,6 +19810,8 @@ Strategies to Improve the CCC
       .filter((date): date is Date => Boolean(date))
       .sort((a, b) => b.getTime() - a.getTime())[0] || null;
     const asOf = wipAsOfDate && !Number.isNaN(wipAsOfDate.getTime()) ? wipAsOfDate : fallbackAsOf;
+    const today = new Date();
+    const currentDateForPastDue = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate()));
     const formatDisplayDate = (value: unknown) => formatDateInputLabel(value instanceof Date ? value : String(value || ''));
     const orderHistoryStart = asOf
       ? new Date(Date.UTC(asOf.getUTCFullYear() - 3, asOf.getUTCMonth(), asOf.getUTCDate()))
@@ -19864,7 +19877,7 @@ Strategies to Improve the CCC
         invoiceActivityByMonth.set(keyMonth, current);
       });
     });
-    const noInvoiceMovementRows = Array.from(rowsByOrderLine.entries())
+    const baseNoInvoiceMovementRows = Array.from(rowsByOrderLine.entries())
       .map(([key, rows]) => {
         const chronological = [...rows].sort((a: any, b: any) => {
           const aDate = validDate(a?.snapshotDate)?.getTime() || 0;
@@ -19897,7 +19910,7 @@ Strategies to Improve the CCC
         const qtyInvoicedLatest = Number(latest?.qtyInvoiced || 0);
         const isOpen = wipValue > 0 && (qtyOrderedLatest <= 0 || qtyInvoicedLatest + 1e-4 < qtyOrderedLatest);
         const orderDate = validDate(latest?.orderDate || latest?.date);
-        const latestSnapshot = validDate(latest?.snapshotDate);
+        const dueDate = validDate(latest?.dueDate);
         return {
           key,
           customerName: latest?.customerName || latest?.customer || 'N/A',
@@ -19905,9 +19918,9 @@ Strategies to Improve the CCC
           lineId: latest?.lineId || 'N/A',
           item: latest?.itemName || latest?.sku || latest?.itemId || 'N/A',
           orderDate: latest?.orderDate || latest?.date || null,
-          snapshotDate: latest?.snapshotDate || null,
+          dueDate: latest?.dueDate || null,
           openAge: orderDate && asOf ? diffDays(orderDate, asOf) : null,
-          daysSinceSnapshot: latestSnapshot && asOf ? diffDays(latestSnapshot, asOf) : null,
+          pastDueDate: dueDate ? diffDays(dueDate, currentDateForPastDue) : null,
           qtyOrdered: qtyOrderedLatest,
           qtyInvoiced: qtyInvoicedLatest,
           wipValue,
@@ -19916,9 +19929,53 @@ Strategies to Improve the CCC
           status: chronological.length <= 1 ? 'Single snapshot in range' : 'No invoice movement in range',
         };
       })
-      .filter((row) => row.isOpen && !row.hasInvoiceMovement)
-      .sort((a, b) => Number(b.openAge || 0) - Number(a.openAge || 0) || Number(b.wipValue || 0) - Number(a.wipValue || 0))
-      .slice(0, 20);
+      .filter((row) => row.isOpen && !row.hasInvoiceMovement);
+    const stuckOpenLineNumericKeys = new Set<StuckOpenLineSortKey>([
+      'orderDate',
+      'dueDate',
+      'pastDueDate',
+      'qtyOrdered',
+      'qtyInvoiced',
+      'wipValue',
+    ]);
+    const stuckOpenLineValue = (row: any, key: StuckOpenLineSortKey) => {
+      if (key === 'orderDate' || key === 'dueDate') {
+        const parsed = validDate(row[key]);
+        return parsed ? parsed.getTime() : null;
+      }
+      if (stuckOpenLineNumericKeys.has(key)) {
+        const parsed = Number(row[key]);
+        return Number.isFinite(parsed) ? parsed : null;
+      }
+      return String(row[key] || '').trim();
+    };
+    const compareStuckOpenLineRows = (a: any, b: any) => {
+      const direction = stuckOpenLineSortDir === 'asc' ? 1 : -1;
+      const left = stuckOpenLineValue(a, stuckOpenLineSortKey);
+      const right = stuckOpenLineValue(b, stuckOpenLineSortKey);
+      if (stuckOpenLineNumericKeys.has(stuckOpenLineSortKey)) {
+        const leftMissing = left == null || !Number.isFinite(Number(left));
+        const rightMissing = right == null || !Number.isFinite(Number(right));
+        if (leftMissing && rightMissing) return 0;
+        if (leftMissing) return 1;
+        if (rightMissing) return -1;
+        return (Number(left) - Number(right)) * direction;
+      }
+      return String(left || '').localeCompare(String(right || ''), undefined, { sensitivity: 'base', numeric: true }) * direction;
+    };
+    const handleStuckOpenLineSort = (key: StuckOpenLineSortKey) => {
+      if (stuckOpenLineSortKey === key) {
+        setStuckOpenLineSortDir((prev) => (prev === 'asc' ? 'desc' : 'asc'));
+        return;
+      }
+      setStuckOpenLineSortKey(key);
+      setStuckOpenLineSortDir(stuckOpenLineNumericKeys.has(key) ? 'desc' : 'asc');
+    };
+    const stuckOpenLineSortLabel = (key: StuckOpenLineSortKey) =>
+      stuckOpenLineSortKey === key ? (stuckOpenLineSortDir === 'asc' ? ' ▲' : ' ▼') : ' ↕';
+    const noInvoiceMovementRows = [...baseNoInvoiceMovementRows]
+      .sort(compareStuckOpenLineRows)
+      .slice(0, 50);
     const snapshotOpenItems = Array.from(rowsByOrderLine.values())
       .map((rows) => {
         const latest = [...rows].sort((a: any, b: any) => {
@@ -20077,61 +20134,6 @@ Strategies to Improve the CCC
         avgAge: avg(rows.map((row: any) => Number(row.openAge || 0)).filter((value: number) => Number.isFinite(value))),
       };
     });
-    const buildVelocitySummary = () => {
-      const grouped = new Map<string, { customerName: string; item: string; lines: number; wipValue: number; ages: number[]; pastDueAges: number[] }>();
-      velocityRows.forEach((row: any) => {
-        const customerName = String(row.customerName || 'N/A');
-        const item = String(row.item || 'N/A');
-        const key = `${customerName}||${item}`;
-        if (!grouped.has(key)) grouped.set(key, { customerName, item, lines: 0, wipValue: 0, ages: [], pastDueAges: [] });
-        const acc = grouped.get(key)!;
-        acc.lines += 1;
-        acc.wipValue += Number(row.wipValueNumber || 0);
-        if (row.openAge != null && Number.isFinite(Number(row.openAge))) acc.ages.push(Number(row.openAge));
-        if (row.pastDueDays != null && Number.isFinite(Number(row.pastDueDays))) acc.pastDueAges.push(Number(row.pastDueDays));
-      });
-      return Array.from(grouped.values())
-        .map((row) => ({
-          ...row,
-          avgAge: avg(row.ages),
-          maxAge: row.ages.length ? Math.max(...row.ages) : null,
-          avgPastDueDays: avg(row.pastDueAges),
-        }))
-        .sort((a, b) => Number(b.avgAge || 0) - Number(a.avgAge || 0))
-        .slice(0, 20);
-    };
-    const velocitySummaryRows = buildVelocitySummary().sort((a: any, b: any) => {
-      const direction = velocitySummarySortDir === 'asc' ? 1 : -1;
-      if (velocitySummarySortKey === 'customerName' || velocitySummarySortKey === 'item') {
-        return String(a[velocitySummarySortKey] || '').localeCompare(String(b[velocitySummarySortKey] || ''), undefined, { sensitivity: 'base', numeric: true }) * direction;
-      }
-      const left = Number(a[velocitySummarySortKey] ?? -Infinity);
-      const right = Number(b[velocitySummarySortKey] ?? -Infinity);
-      const leftMissing = !Number.isFinite(left);
-      const rightMissing = !Number.isFinite(right);
-      if (leftMissing && rightMissing) return 0;
-      if (leftMissing) return 1;
-      if (rightMissing) return -1;
-      return (left - right) * direction;
-    });
-    const handleVelocitySummarySort = (key: VelocitySummarySortKey) => {
-      if (velocitySummarySortKey === key) {
-        setVelocitySummarySortDir((prev) => (prev === 'asc' ? 'desc' : 'asc'));
-        return;
-      }
-      setVelocitySummarySortKey(key);
-      setVelocitySummarySortDir(key === 'customerName' || key === 'item' ? 'asc' : 'desc');
-    };
-    const velocitySummarySortLabel = (key: VelocitySummarySortKey) =>
-      velocitySummarySortKey === key ? (velocitySummarySortDir === 'asc' ? ' ▲' : ' ▼') : ' ↕';
-    const velocitySummaryColumns: Array<{ key: VelocitySummarySortKey; label: string; align?: 'left' | 'right' }> = [
-      { key: 'customerName', label: 'Customer' },
-      { key: 'item', label: 'Item' },
-      { key: 'lines', label: 'Open Lines', align: 'right' },
-      { key: 'avgAge', label: 'Avg Open Age', align: 'right' },
-      { key: 'maxAge', label: 'Max Open Age', align: 'right' },
-      { key: 'wipValue', label: 'WIP Value', align: 'right' },
-    ];
     const topOpenWipRows = sortedOpenBottleneckRows;
     const openWipRowsByYear = Array.from(
       topOpenWipRows.reduce((groups: Map<string, any[]>, row: any) => {
@@ -20158,6 +20160,28 @@ Strategies to Improve the CCC
     const tableStyle = { width: '100%', borderCollapse: 'collapse' as const };
     const thStyle: React.CSSProperties = { padding: '8px', fontSize: '12px', color: '#334155', textAlign: 'left', background: '#f8fafc', borderBottom: '1px solid #e2e8f0' };
     const tdStyle: React.CSSProperties = { padding: '8px', fontSize: '12px', color: '#334155', borderBottom: '1px solid #f1f5f9' };
+    const stuckOpenLineColumns: Array<{ key: StuckOpenLineSortKey; label: string; align?: 'left' | 'right' }> = [
+      { key: 'customerName', label: 'Customer' },
+      { key: 'orderId', label: 'Order' },
+      { key: 'lineId', label: 'Line' },
+      { key: 'item', label: 'Item' },
+      { key: 'orderDate', label: 'Order Date' },
+      { key: 'dueDate', label: 'Due Date' },
+      { key: 'pastDueDate', label: 'Past Due Date', align: 'right' },
+      { key: 'qtyOrdered', label: 'Qty Ordered', align: 'right' },
+      { key: 'qtyInvoiced', label: 'Qty Invoiced', align: 'right' },
+      { key: 'wipValue', label: 'WIP Value', align: 'right' },
+      { key: 'status', label: 'Status' },
+    ];
+    const renderStuckOpenLineHeader = (column: { key: StuckOpenLineSortKey; label: string; align?: 'left' | 'right' }) => (
+      <th
+        key={column.key}
+        onClick={() => handleStuckOpenLineSort(column.key)}
+        style={{ ...thStyle, textAlign: column.align || 'left', cursor: 'pointer', userSelect: 'none', whiteSpace: 'nowrap' }}
+      >
+        {column.label}{stuckOpenLineSortLabel(column.key)}
+      </th>
+    );
     const openBottleneckColumns: Array<{ key: OpenBottleneckSortKey; label: string; align?: 'left' | 'right' }> = [
       { key: 'customerName', label: 'Customer' },
       { key: 'orderId', label: 'Order' },
@@ -20228,26 +20252,6 @@ Strategies to Improve the CCC
             </div>
           </div>
         </div>
-        {section('Velocity Summary', (
-          <div style={{ overflowX: 'auto' }}>
-            <table style={{ ...tableStyle, minWidth: '880px' }}>
-              <thead>
-                <tr>
-                  {velocitySummaryColumns.map((column) => (
-                    <th
-                      key={column.key}
-                      onClick={() => handleVelocitySummarySort(column.key)}
-                      style={{ ...thStyle, textAlign: column.align || 'left', cursor: 'pointer', userSelect: 'none', whiteSpace: 'nowrap' }}
-                    >
-                      {column.label}{velocitySummarySortLabel(column.key)}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>{velocitySummaryRows.map((row: any) => <tr key={`${row.customerName}-${row.item}`}><td style={{ ...tdStyle, fontWeight: 700 }}>{row.customerName}</td><td style={tdStyle}>{row.item}</td><td style={{ ...tdStyle, textAlign: 'right' }}>{number(row.lines)}</td><td style={{ ...tdStyle, textAlign: 'right' }}>{days(row.avgAge)}</td><td style={{ ...tdStyle, textAlign: 'right' }}>{row.maxAge == null ? 'N/A' : number(row.maxAge)}</td><td style={{ ...tdStyle, textAlign: 'right' }}>{formatCurrency(row.wipValue)}</td></tr>)}</tbody>
-            </table>
-          </div>
-        ))}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '16px', alignItems: 'start' }}>
           {section('Monthly Invoiced Lines by Snapshot Date', (
             <div style={{ overflowX: 'auto' }}>
@@ -20308,9 +20312,7 @@ Strategies to Improve the CCC
             <table style={{ ...tableStyle, minWidth: '980px' }}>
               <thead>
                 <tr>
-                  {['Customer', 'Order', 'Line', 'Item', 'Order Date', 'Latest Snapshot', 'Open Age', 'Qty Ordered', 'Qty Invoiced', 'WIP Value', 'Status'].map((header) => (
-                    <th key={header} style={{ ...thStyle, textAlign: ['Open Age', 'Qty Ordered', 'Qty Invoiced', 'WIP Value'].includes(header) ? 'right' : 'left' }}>{header}</th>
-                  ))}
+                  {stuckOpenLineColumns.map(renderStuckOpenLineHeader)}
                 </tr>
               </thead>
               <tbody>{noInvoiceMovementRows.map((row) => (
@@ -20320,8 +20322,8 @@ Strategies to Improve the CCC
                   <td style={tdStyle}>{row.lineId}</td>
                   <td style={tdStyle}>{row.item}</td>
                   <td style={tdStyle}>{formatDisplayDate(row.orderDate)}</td>
-                  <td style={tdStyle}>{formatDisplayDate(row.snapshotDate)}</td>
-                  <td style={{ ...tdStyle, textAlign: 'right' }}>{row.openAge == null ? 'N/A' : row.openAge}</td>
+                  <td style={tdStyle}>{formatDisplayDate(row.dueDate)}</td>
+                  <td style={{ ...tdStyle, textAlign: 'right' }}>{row.pastDueDate == null ? 'N/A' : row.pastDueDate}</td>
                   <td style={{ ...tdStyle, textAlign: 'right' }}>{number(row.qtyOrdered)}</td>
                   <td style={{ ...tdStyle, textAlign: 'right' }}>{number(row.qtyInvoiced)}</td>
                   <td style={{ ...tdStyle, textAlign: 'right' }}>{formatCurrency(row.wipValue)}</td>
