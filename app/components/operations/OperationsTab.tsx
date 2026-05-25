@@ -3086,8 +3086,39 @@ export default function OperationsTab({
           totalInvoices: Number(row?.totalInvoices || row?.invoiceCount || 0),
         }))
       : [];
+    const concentrationMonthlyCustomerRows = Array.isArray(summary?.customerConcentration?.customerMonthly)
+      ? summary.customerConcentration.customerMonthly
+      : [];
+    const concentrationRowsForSelectedPeriod = concentrationMonthlyCustomerRows.filter((row: any) => {
+      const monthKey = String(row?.monthKey || '');
+      if (!monthKey || Number(row?.revenue || 0) <= 0) return false;
+      if (effectivePeriodKey === 'all') return true;
+      if (customerRevenuePeriodMode === 'month') return monthKey === effectivePeriodKey;
+      if (customerRevenuePeriodMode === 'year') return monthKey.startsWith(`${effectivePeriodKey}-`);
+      if (customerRevenuePeriodMode === 'quarter') {
+        const [year, quarterRaw] = String(effectivePeriodKey).split('-Q');
+        const quarter = Number(quarterRaw || 0);
+        const month = Number(monthKey.slice(5, 7));
+        return monthKey.startsWith(`${year}-`) && Math.floor((month - 1) / 3) + 1 === quarter;
+      }
+      return false;
+    });
+    const concentrationTopCustomersForTable = Array.from(
+      concentrationRowsForSelectedPeriod.reduce((acc: Map<string, { name: string; totalRevenue: number; totalInvoices: null }>, row: any) => {
+        const name = String(row?.customerName || row?.name || 'Unknown Customer').trim() || 'Unknown Customer';
+        const key = name.toLowerCase().replace(/\s+/g, ' ');
+        const current = acc.get(key) || { name, totalRevenue: 0, totalInvoices: null };
+        current.totalRevenue += Number(row?.revenue || 0);
+        acc.set(key, current);
+        return acc;
+      }, new Map<string, { name: string; totalRevenue: number; totalInvoices: null }>()).values()
+    ).sort((a, b) => Number(b.totalRevenue || 0) - Number(a.totalRevenue || 0));
     const rankedCustomersForTableEffective =
-      rankedCustomersForTable.length > 0 ? rankedCustomersForTable : summaryTopCustomers;
+      concentrationTopCustomersForTable.length >= 10
+        ? concentrationTopCustomersForTable
+        : rankedCustomersForTable.length > 0
+          ? rankedCustomersForTable
+          : summaryTopCustomers;
     const selectedPeriodLabel =
       customerRevenuePeriodMode === 'year'
         ? (effectivePeriodKey === 'all' ? 'All Years' : effectivePeriodKey)
@@ -3831,13 +3862,94 @@ export default function OperationsTab({
             chartTotal = chartCustomers.reduce((sum: number, c: any) => sum + c.totalRevenue, 0);
           }
           const wipSummary = summary?.wip || {};
+          const wholesaleWipSourceRows = Array.isArray(wholesaleProductsData?.summary?.wholesaleOrderLines)
+            ? wholesaleProductsData.summary.wholesaleOrderLines
+            : [];
+          const normalizeWipToken = (value: unknown) => String(value || '').trim().toLowerCase().replace(/\s+/g, ' ');
+          const latestWipLineByDisplayKey = wholesaleWipSourceRows.reduce((acc: Map<string, any>, row: any) => {
+            const customerName = String(row?.customerName || row?.customer || 'Unknown Customer').trim() || 'Unknown Customer';
+            const orderId = String(row?.orderId || '').trim();
+            const lineId = String(row?.lineId || '').trim();
+            const item = String(row?.itemName || row?.sku || row?.itemId || 'UNKNOWN_ITEM').trim() || 'UNKNOWN_ITEM';
+            const displayKey = [
+              normalizeWipToken(customerName),
+              normalizeWipToken(orderId),
+              normalizeWipToken(lineId),
+              normalizeWipToken(item),
+            ].join('||');
+            if (!displayKey.replace(/\|/g, '')) return acc;
+            const existing = acc.get(displayKey);
+            const rowSnapshot = parseDateValue(row?.snapshotDate ? String(row.snapshotDate) : null)?.getTime() || 0;
+            const existingSnapshot = parseDateValue(existing?.snapshotDate ? String(existing.snapshotDate) : null)?.getTime() || 0;
+            if (!existing || rowSnapshot >= existingSnapshot) {
+              acc.set(displayKey, { ...row, customerName, orderId, lineId, item });
+            }
+            return acc;
+          }, new Map<string, any>());
+          const wipFromWholesaleRows = Array.from(
+            Array.from(latestWipLineByDisplayKey.values()).reduce((acc: Map<string, any>, row: any) => {
+              const customerName = String(row?.customerName || 'Unknown Customer').trim() || 'Unknown Customer';
+              const customerKey = normalizeWipToken(customerName);
+              const contractValue = Math.max(Number(row?.contractValue || row?.revenue || 0), 0);
+              const invoicedValue = Math.max(Number(row?.invoicedAmount || 0), 0);
+              const remainingStored = Number(row?.remainingAmount ?? NaN);
+              const wipValue = Number.isFinite(remainingStored) ? Math.max(remainingStored, 0) : Math.max(contractValue - invoicedValue, 0);
+              const qtyOrdered = Math.max(Number(row?.qtyOrdered || 0), 0);
+              const qtyInvoiced = Math.max(Number(row?.qtyInvoiced || 0), 0);
+              if (!customerKey || wipValue <= 0) return acc;
+              if (qtyOrdered > 0 && qtyInvoiced + 1e-4 >= qtyOrdered) return acc;
+              if (!acc.has(customerKey)) {
+                acc.set(customerKey, {
+                  customerId: String(row?.customerId || '').trim(),
+                  customerName,
+                  contractValue: 0,
+                  invoicedValue: 0,
+                  wipValue: 0,
+                  lineCount: 0,
+                  wipItems: [],
+                });
+              }
+              const current = acc.get(customerKey)!;
+              current.contractValue += contractValue;
+              current.invoicedValue += invoicedValue;
+              current.wipValue += wipValue;
+              current.lineCount += 1;
+              current.wipItems.push({
+                orderId: String(row?.orderId || 'UNKNOWN_ORDER'),
+                lineId: String(row?.lineId || 'UNKNOWN_LINE'),
+                item: String(row?.item || row?.itemName || row?.sku || row?.itemId || 'UNKNOWN_ITEM'),
+                stat: row?.stat ? String(row.stat) : null,
+                orderDate: row?.orderDate ? String(row.orderDate) : null,
+                dueDate: row?.dueDate ? String(row.dueDate) : null,
+                qtyOrdered,
+                qtyShipped: Number(row?.qtyShipped || 0),
+                qtyInvoiced,
+                contractValue,
+                invoicedValue,
+                wipValue,
+              });
+              return acc;
+            }, new Map<string, any>()).values()
+          ).sort((a: any, b: any) => Number(b.wipValue || 0) - Number(a.wipValue || 0));
+          const sourceWipRows = wipFromWholesaleRows.length > 0
+            ? wipFromWholesaleRows
+            : (Array.isArray(wipSummary?.topCustomers) ? wipSummary.topCustomers : []);
+          const sourceWipTotals = wipFromWholesaleRows.length > 0
+            ? wipFromWholesaleRows.reduce((acc: any, row: any) => {
+                acc.totalWip += Number(row.wipValue || 0);
+                acc.totalContractValue += Number(row.contractValue || 0);
+                acc.totalInvoicedValue += Number(row.invoicedValue || 0);
+                acc.customerCount += 1;
+                return acc;
+              }, { totalWip: 0, totalContractValue: 0, totalInvoicedValue: 0, customerCount: 0 })
+            : (wipSummary?.totals || {});
           const wipTotals = {
-            totalWip: Number(wipSummary?.totals?.totalWip || 0),
-            totalContractValue: Number(wipSummary?.totals?.totalContractValue || 0),
-            totalInvoicedValue: Number(wipSummary?.totals?.totalInvoicedValue || 0),
-            customerCount: Number(wipSummary?.totals?.customerCount || 0),
+            totalWip: Number(sourceWipTotals?.totalWip || 0),
+            totalContractValue: Number(sourceWipTotals?.totalContractValue || 0),
+            totalInvoicedValue: Number(sourceWipTotals?.totalInvoicedValue || 0),
+            customerCount: Number(sourceWipTotals?.customerCount || 0),
           };
-          const wipRows = (Array.isArray(wipSummary?.topCustomers) ? wipSummary.topCustomers : [])
+          const wipRows = sourceWipRows
             .map((row: any) => ({
               customerId: String(row?.customerId || '').trim(),
               customerName: String(row?.customerName || 'Unknown Customer'),

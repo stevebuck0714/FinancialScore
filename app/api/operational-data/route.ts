@@ -51,6 +51,7 @@ export const dynamic = 'force-dynamic';
 const OPERATIONAL_DATA_CACHE_TTL_SECONDS = 120;
 const CUSTOMER_CONCENTRATION_CACHE_TTL_SECONDS = 30 * 24 * 60 * 60;
 const CUSTOMER_CONCENTRATION_CACHE_VERSION = 'customer-concentration-exposure-v10';
+const CUSTOMER_REVENUE_SOURCE_VERSION = 'customer-revenue-source-v2';
 const WHOLESALE_PRODUCTS_REPORT_CACHE_TTL_SECONDS = 30 * 24 * 60 * 60;
 const OPERATIONAL_CACHEABLE_TYPES = new Set([
   'customers',
@@ -2453,6 +2454,7 @@ export async function GET(request: NextRequest) {
               boundedLimit,
               shouldApplyHydratedDateFilter ? hydratedInforDates : null,
               cacheType === 'customers' ? CUSTOMER_CONCENTRATION_CACHE_VERSION : null,
+              cacheType === 'customers' ? CUSTOMER_REVENUE_SOURCE_VERSION : null,
             ]),
             dataVersion: isWholesaleProductsReportRequest
               ? 'wholesale-products-report-manual-v1'
@@ -2614,9 +2616,46 @@ export async function GET(request: NextRequest) {
               ...salesData,
             ].sort((a, b) => new Date(a.snapshotDate).getTime() - new Date(b.snapshotDate).getTime());
           }
-          let basis: 'orderline_delta' | 'customer_sales_snapshot' = salesData.length > 0 ? 'customer_sales_snapshot' : 'orderline_delta';
+          let basis: 'raw_slartrans_invoice' | 'orderline_delta' | 'customer_sales_snapshot' = salesData.length > 0 ? 'customer_sales_snapshot' : 'orderline_delta';
+          let bookingsSourceData: any[] = salesData;
           if (isInforCompany) {
             const orderLineSalesData = await deriveCustomerSalesFromOrderLineDeltas(companyId, orderLineFrequencyForQuery, startDate, endDate);
+            const rawInvoiceSalesData = await deriveCustomerSalesFromRawInvoices(companyId, startDate, endDate);
+            if (orderLineSalesData.length > 0) {
+              bookingsSourceData = orderLineSalesData;
+            }
+            if (rawInvoiceSalesData.length > 0) {
+              const rawInvoiceMonths = new Set(
+                rawInvoiceSalesData
+                  .map((row) => {
+                    const snapshot = new Date(row?.snapshotDate);
+                    return Number.isNaN(snapshot.getTime()) ? '' : businessMonthKey(snapshot);
+                  })
+                  .filter(Boolean)
+              );
+              const snapshotMonths = new Set(
+                salesData
+                  .map((row) => {
+                    const snapshot = new Date(row?.snapshotDate);
+                    return Number.isNaN(snapshot.getTime()) ? '' : businessMonthKey(snapshot);
+                  })
+                  .filter(Boolean)
+              );
+              salesData = [
+                ...rawInvoiceSalesData,
+                ...salesData.filter((row) => {
+                  const snapshot = new Date(row?.snapshotDate);
+                  const monthKey = Number.isNaN(snapshot.getTime()) ? '' : businessMonthKey(snapshot);
+                  return monthKey && !rawInvoiceMonths.has(monthKey);
+                }),
+                ...orderLineSalesData.filter((row) => {
+                  const snapshot = new Date(row?.snapshotDate);
+                  const monthKey = Number.isNaN(snapshot.getTime()) ? '' : businessMonthKey(snapshot);
+                  return monthKey && !rawInvoiceMonths.has(monthKey) && !snapshotMonths.has(monthKey);
+                }),
+              ].sort((a, b) => new Date(a.snapshotDate).getTime() - new Date(b.snapshotDate).getTime());
+              basis = 'raw_slartrans_invoice';
+            }
             if (orderLineSalesData.length > 0) {
               const orderLineMonths = new Set(
                 orderLineSalesData
@@ -2626,15 +2665,17 @@ export async function GET(request: NextRequest) {
                   })
                   .filter(Boolean)
               );
-              salesData = [
-                ...salesData.filter((row) => {
-                  const snapshot = new Date(row?.snapshotDate);
-                  const monthKey = Number.isNaN(snapshot.getTime()) ? '' : businessMonthKey(snapshot);
-                  return !orderLineMonths.has(monthKey);
-                }),
-                ...orderLineSalesData,
-              ].sort((a, b) => new Date(a.snapshotDate).getTime() - new Date(b.snapshotDate).getTime());
-              basis = 'orderline_delta';
+              if (rawInvoiceSalesData.length === 0) {
+                salesData = [
+                  ...salesData.filter((row) => {
+                    const snapshot = new Date(row?.snapshotDate);
+                    const monthKey = Number.isNaN(snapshot.getTime()) ? '' : businessMonthKey(snapshot);
+                    return !orderLineMonths.has(monthKey);
+                  }),
+                  ...orderLineSalesData,
+                ].sort((a, b) => new Date(a.snapshotDate).getTime() - new Date(b.snapshotDate).getTime());
+                basis = 'orderline_delta';
+              }
             }
           }
           const concentrationCache = {
@@ -2987,7 +3028,7 @@ export async function GET(request: NextRequest) {
             { customerId: string | null; customerName: string; mtd: number; qtd: number; ytd: number }
           >();
           const bookingsByMonth = new Map<string, number>();
-          for (const row of salesData as any[]) {
+          for (const row of bookingsSourceData as any[]) {
             const snapshot = new Date(row.snapshotDate);
             if (Number.isNaN(snapshot.getTime())) continue;
             const rev = Math.max(0, Number(row.revenue || 0));
