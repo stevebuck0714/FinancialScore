@@ -19156,7 +19156,27 @@ Strategies to Improve the CCC
         newCustomerRevenue,
       };
     });
-    const executiveMonthlyCustomerMetrics = [...monthlyCustomerMetrics].reverse();
+    const apiExecutiveMonthly = Array.isArray(customerData?.summary?.customerConcentration?.executiveMonthly)
+      ? customerData.summary.customerConcentration.executiveMonthly.map((row: any) => ({
+          monthKey: row.monthKey,
+          month: row.month,
+          revenue: Number(row.totalRevenue || row.revenue || 0),
+          top5Rev: row.top5Rev,
+          top10Rev: row.top10Rev,
+          largestRev: row.largestRev,
+          top5Gp: row.top5Gp,
+          top5Ebitda: row.top5Ebitda,
+          largestEbitda: row.largestEbitda,
+          top10AvgMargin: row.top10AvgMargin,
+          remainingAvgMargin: row.remainingAvgMargin,
+          retentionRate: row.retentionRate,
+          newCustomerRevenue: Number(row.newCustomerRevenue || 0),
+          source: row.source,
+        }))
+      : [];
+    const executiveMonthlyCustomerMetrics = apiExecutiveMonthly.length === 12
+      ? apiExecutiveMonthly
+      : [...monthlyCustomerMetrics].reverse();
     const profitabilityPeriodOptions = [
       { key: 'lastMonth' as const, label: 'Last Completed Month', months: 1 },
       { key: 'last3' as const, label: 'Last 3 Completed Months', months: 3 },
@@ -19184,8 +19204,6 @@ Strategies to Improve the CCC
     });
     const latestOrderLineByKey = new Map<string, any>();
     wholesaleRows.forEach((row: any) => {
-      const monthKey = toMonthKey(row?.snapshotDate || row?.date || row?.orderDate);
-      if (!profitabilityMonthKeys.includes(monthKey)) return;
       const key = [row?.customerId || row?.customerName || row?.customer || '', row?.orderId || '', row?.lineId || '', row?.itemId || row?.sku || row?.itemName || ''].join('||');
       const existing = latestOrderLineByKey.get(key);
       const rowDate = new Date(String(row?.snapshotDate || ''));
@@ -19229,6 +19247,7 @@ Strategies to Improve the CCC
           ebitdaContribution: row.ebitdaContribution || null,
           arDays,
           wipBurden: wipBurdenByCustomer.get(key) || 0,
+          wipBurdenPct: row.revenue > 0 && (wipBurdenByCustomer.get(key) || 0) > 0 ? ((wipBurdenByCustomer.get(key) || 0) / row.revenue) * 100 : null,
           strategicImportance: row.revenue > 0 && profitabilityTotalRevenue > 0 && (row.revenue / profitabilityTotalRevenue) * 100 > 10 ? 'High' : 'Medium',
         };
       })
@@ -19287,13 +19306,13 @@ Strategies to Improve the CCC
           <details style={{ marginBottom: '12px', border: '1px solid #e2e8f0', borderRadius: '10px', padding: '10px 12px', background: '#f8fafc' }}>
             <summary style={{ cursor: 'pointer', fontSize: '12px', fontWeight: 800, color: '#2751d0' }}>How are AR Days and WIP Burden calculated?</summary>
             <div style={{ marginTop: '8px', fontSize: '12px', color: '#475569', lineHeight: 1.5 }}>
-              AR Days = customer open AR divided by revenue for the selected period, multiplied by the number of days in that period. WIP Burden = open order-line WIP value for that customer in the selected period. Values show N/A when the required customer-level AR, revenue, or open WIP data is not available.
+              AR Days = current open AR divided by revenue for the selected period, multiplied by the number of days in that period. Current WIP = latest open order-line WIP value for that customer. WIP / Revenue compares current open WIP to selected-period revenue. AR Days can exceed the selected period when open AR is larger than period revenue. Values show N/A when the required customer-level AR, revenue, or open WIP data is not available.
             </div>
           </details>
           <div style={{ overflowX: 'auto' }}>
             <table style={{ ...tableStyle, minWidth: '980px' }}>
-              <thead><tr>{['Customer', 'Revenue', 'Gross Profit', 'GP %', 'EBITDA Contribution', 'AR Days', 'WIP Burden', 'Strategic Importance'].map((h) => <th key={h} style={{ ...thStyle, textAlign: h === 'Customer' ? 'left' : 'right' }}>{h}</th>)}</tr></thead>
-              <tbody>{profitabilityRows.map((row) => <tr key={row.name}><td style={{ ...tdStyle, fontWeight: 700 }}>{row.name}</td><td style={{ ...tdStyle, textAlign: 'right' }}>{formatCurrency(row.revenue)}</td><td style={{ ...tdStyle, textAlign: 'right' }}>{row.gpPct == null ? 'N/A' : formatCurrency(Number(row.grossProfit || 0))}</td><td style={{ ...tdStyle, textAlign: 'right' }}>{pct(row.gpPct)}</td><td style={{ ...tdStyle, textAlign: 'right' }}>{row.ebitdaContribution == null ? 'N/A' : formatCurrency(Number(row.ebitdaContribution || 0))}</td><td style={{ ...tdStyle, textAlign: 'right' }}>{row.arDays == null ? 'N/A' : `${Number(row.arDays).toFixed(1)}`}</td><td style={{ ...tdStyle, textAlign: 'right' }}>{row.wipBurden > 0 ? formatCurrency(row.wipBurden) : 'N/A'}</td><td style={{ ...tdStyle, textAlign: 'right' }}>{row.strategicImportance}</td></tr>)}</tbody>
+              <thead><tr>{['Customer', 'Revenue', 'Gross Profit', 'GP %', 'EBITDA Contribution', 'AR Days', 'Current WIP', 'WIP / Revenue', 'Strategic Importance'].map((h) => <th key={h} style={{ ...thStyle, textAlign: h === 'Customer' ? 'left' : 'right' }}>{h}</th>)}</tr></thead>
+              <tbody>{profitabilityRows.map((row) => <tr key={row.name}><td style={{ ...tdStyle, fontWeight: 700 }}>{row.name}</td><td style={{ ...tdStyle, textAlign: 'right' }}>{formatCurrency(row.revenue)}</td><td style={{ ...tdStyle, textAlign: 'right' }}>{row.gpPct == null ? 'N/A' : formatCurrency(Number(row.grossProfit || 0))}</td><td style={{ ...tdStyle, textAlign: 'right' }}>{pct(row.gpPct)}</td><td style={{ ...tdStyle, textAlign: 'right' }}>{row.ebitdaContribution == null ? 'N/A' : formatCurrency(Number(row.ebitdaContribution || 0))}</td><td style={{ ...tdStyle, textAlign: 'right' }}>{row.arDays == null ? 'N/A' : `${Number(row.arDays).toFixed(1)}`}</td><td style={{ ...tdStyle, textAlign: 'right' }}>{row.wipBurden > 0 ? formatCurrency(row.wipBurden) : 'N/A'}</td><td style={{ ...tdStyle, textAlign: 'right' }}>{pct(row.wipBurdenPct)}</td><td style={{ ...tdStyle, textAlign: 'right' }}>{row.strategicImportance}</td></tr>)}</tbody>
             </table>
           </div>
         </div>
@@ -19570,7 +19589,7 @@ Strategies to Improve the CCC
       'qtyInvoiced',
       'wipValue',
     ]);
-    const sortedOpenBottleneckRows = [...executionItems].sort((a: any, b: any) => {
+    const compareOpenBottleneckRows = (a: any, b: any) => {
       const direction = openBottleneckSortDir === 'asc' ? 1 : -1;
       const left = openBottleneckValue(a, openBottleneckSortKey);
       const right = openBottleneckValue(b, openBottleneckSortKey);
@@ -19583,7 +19602,8 @@ Strategies to Improve the CCC
         return (Number(left) - Number(right)) * direction;
       }
       return String(left || '').localeCompare(String(right || ''), undefined, { sensitivity: 'base', numeric: true }) * direction;
-    });
+    };
+    const sortedOpenBottleneckRows = [...executionItems].sort(compareOpenBottleneckRows);
     const handleOpenBottleneckSort = (key: OpenBottleneckSortKey) => {
       if (openBottleneckSortKey === key) {
         setOpenBottleneckSortDir((prev) => (prev === 'asc' ? 'desc' : 'asc'));
@@ -19648,7 +19668,8 @@ Strategies to Improve the CCC
         groups.set(year, rows);
         return groups;
       }, new Map<string, any[]>()).entries()
-    ).sort(([leftYear], [rightYear]) => {
+    ).map(([year, rows]) => [year, [...rows].sort(compareOpenBottleneckRows)] as [string, any[]])
+    .sort(([leftYear], [rightYear]) => {
       if (leftYear === 'Unknown Year') return 1;
       if (rightYear === 'Unknown Year') return -1;
       return Number(rightYear) - Number(leftYear);
@@ -19669,7 +19690,7 @@ Strategies to Improve the CCC
       { key: 'lineId', label: 'Line' },
       { key: 'item', label: 'Item' },
       { key: 'orderDate', label: 'Order Date' },
-      { key: 'dueDate', label: 'Target Date' },
+      { key: 'dueDate', label: 'Due Date' },
       { key: 'openAge', label: 'Open Age', align: 'right' },
       { key: 'pastDueDays', label: 'Past Due Days', align: 'right' },
       { key: 'qtyOrdered', label: 'Qty Ordered', align: 'right' },

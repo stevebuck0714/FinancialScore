@@ -1984,6 +1984,165 @@ export async function GET(request: NextRequest) {
               basis = 'orderline_delta';
             }
           }
+          const buildCompletedMonthKeys = () => {
+            const today = new Date();
+            const todayUtc = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate()));
+            const effectiveEnd = endDate.getTime() > todayUtc.getTime() ? todayUtc : endDate;
+            const year = effectiveEnd.getUTCFullYear();
+            const month = effectiveEnd.getUTCMonth();
+            const day = effectiveEnd.getUTCDate();
+            const lastDayOfMonth = new Date(Date.UTC(year, month + 1, 0)).getUTCDate();
+            const endMonth = day >= lastDayOfMonth
+              ? new Date(Date.UTC(year, month, 1))
+              : new Date(Date.UTC(year, month - 1, 1));
+            return Array.from({ length: 12 }, (_, index) => {
+              const d = new Date(Date.UTC(endMonth.getUTCFullYear(), endMonth.getUTCMonth() - index, 1));
+              return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
+            });
+          };
+          const concentrationMonthKeys = buildCompletedMonthKeys();
+          const concentrationStart = monthStartFromBusinessMonthKey(concentrationMonthKeys[concentrationMonthKeys.length - 1]);
+          const concentrationEndKey = concentrationMonthKeys[0];
+          const concentrationEnd = new Date(Date.UTC(
+            Number(concentrationEndKey.slice(0, 4)),
+            Number(concentrationEndKey.slice(5, 7)),
+            0,
+            23,
+            59,
+            59,
+            999
+          ));
+          const customerSnapshotRowsForConcentration = await prisma.customerSalesSnapshot.findMany({
+            where: {
+              companyId,
+              snapshotDate: { gte: concentrationStart, lte: concentrationEnd },
+            },
+            orderBy: { snapshotDate: 'asc' },
+            take: 100000,
+          });
+          const snapshotMonths = new Set(
+            customerSnapshotRowsForConcentration
+              .map((row: any) => {
+                const snapshot = new Date(row?.snapshotDate);
+                return Number.isNaN(snapshot.getTime()) ? '' : businessMonthKey(snapshot);
+              })
+              .filter(Boolean)
+          );
+          const orderLineRowsForConcentration: any[] = [];
+          if (isInforCompany) {
+            const filledMonths = new Set(snapshotMonths);
+            const orderLineFrequencies = Array.from(new Set([
+              orderLineFrequencyForQuery,
+              'daily',
+              'monthly',
+              'weekly',
+            ])) as Array<'daily' | 'weekly' | 'monthly'>;
+            for (const orderLineFrequency of orderLineFrequencies) {
+              const rowsForFrequency = await deriveCustomerSalesFromOrderLineDeltas(companyId, orderLineFrequency, concentrationStart, concentrationEnd);
+              const monthsInFrequency = new Set(
+                rowsForFrequency
+                  .map((row: any) => {
+                    const snapshot = new Date(row?.snapshotDate);
+                    return Number.isNaN(snapshot.getTime()) ? '' : businessMonthKey(snapshot);
+                  })
+                  .filter(Boolean)
+              );
+              const missingMonthsFromFrequency = Array.from(monthsInFrequency).filter((monthKey) => !filledMonths.has(monthKey));
+              if (missingMonthsFromFrequency.length === 0) continue;
+              missingMonthsFromFrequency.forEach((monthKey) => filledMonths.add(monthKey));
+              orderLineRowsForConcentration.push(
+                ...rowsForFrequency.filter((row: any) => {
+                  const snapshot = new Date(row?.snapshotDate);
+                  const monthKey = Number.isNaN(snapshot.getTime()) ? '' : businessMonthKey(snapshot);
+                  return missingMonthsFromFrequency.includes(monthKey);
+                })
+              );
+            }
+          }
+          const concentrationSourceRows = [...customerSnapshotRowsForConcentration, ...orderLineRowsForConcentration];
+          const concentrationByMonth = new Map<string, Map<string, any>>();
+          const firstMonthByCustomerForConcentration = new Map<string, string>();
+          for (const row of concentrationSourceRows as any[]) {
+            const snapshot = new Date(row?.snapshotDate);
+            if (Number.isNaN(snapshot.getTime())) continue;
+            const monthKey = businessMonthKey(snapshot);
+            if (!concentrationMonthKeys.includes(monthKey)) continue;
+            const customerName = String(row?.customerName || 'Unknown Customer').trim() || 'Unknown Customer';
+            const customerKey = customerName.toLowerCase().replace(/\s+/g, ' ');
+            const revenue = Number(row?.revenue || 0);
+            if (!Number.isFinite(revenue) || revenue <= 0) continue;
+            const hasGrossProfit = row?.grossMargin != null || row?.cogs != null;
+            const grossProfit = hasGrossProfit ? Number(row?.grossMargin ?? (revenue - Number(row?.cogs || 0))) : 0;
+            if (!concentrationByMonth.has(monthKey)) concentrationByMonth.set(monthKey, new Map());
+            const monthMap = concentrationByMonth.get(monthKey)!;
+            const current = monthMap.get(customerKey) || {
+              customerName,
+              revenue: 0,
+              grossProfit: 0,
+              grossProfitRevenue: 0,
+              ebitda: 0,
+            };
+            current.revenue += revenue;
+            if (hasGrossProfit && Number.isFinite(grossProfit)) {
+              current.grossProfit += grossProfit;
+              current.grossProfitRevenue += revenue;
+              current.ebitda += grossProfit;
+            }
+            monthMap.set(customerKey, current);
+            const priorFirst = firstMonthByCustomerForConcentration.get(customerKey);
+            if (!priorFirst || monthKey < priorFirst) firstMonthByCustomerForConcentration.set(customerKey, monthKey);
+          }
+          const formatConcentrationMonth = (monthKey: string) => {
+            const [year, month] = monthKey.split('-').map(Number);
+            return new Date(Date.UTC(year || 2000, (month || 1) - 1, 1)).toLocaleDateString('en-US', { month: 'short', year: 'numeric', timeZone: 'UTC' });
+          };
+          const sourceCoverageByMonth = new Map<string, string>();
+          concentrationMonthKeys.forEach((monthKey) => {
+            if (snapshotMonths.has(monthKey)) sourceCoverageByMonth.set(monthKey, 'customer_sales_snapshot');
+            else if (Array.from(concentrationByMonth.get(monthKey)?.values() || []).length > 0) sourceCoverageByMonth.set(monthKey, 'orderline_delta');
+            else sourceCoverageByMonth.set(monthKey, 'none');
+          });
+          const customerConcentrationExecutiveMonthly = concentrationMonthKeys.map((monthKey) => {
+            const values = Array.from((concentrationByMonth.get(monthKey) || new Map()).values())
+              .sort((a: any, b: any) => Number(b.revenue || 0) - Number(a.revenue || 0));
+            const totalRevenue = values.reduce((sum: number, row: any) => sum + Number(row.revenue || 0), 0);
+            const totalGrossProfit = values.reduce((sum: number, row: any) => sum + Number(row.grossProfit || 0), 0);
+            const totalEbitda = values.reduce((sum: number, row: any) => sum + Number(row.ebitda || 0), 0);
+            const marginForRows = (rows: any[]) => {
+              const marginRevenue = rows.reduce((sum: number, row: any) => sum + Number(row.grossProfitRevenue || 0), 0);
+              const marginGrossProfit = rows.reduce((sum: number, row: any) => sum + Number(row.grossProfit || 0), 0);
+              return marginRevenue > 0 ? (marginGrossProfit / marginRevenue) * 100 : null;
+            };
+            const currentCustomerKeys = values.map((row: any) => String(row.customerName || 'Unknown Customer').trim().toLowerCase().replace(/\s+/g, ' '));
+            const retainedCustomers = currentCustomerKeys.filter((key) => {
+              const firstMonth = firstMonthByCustomerForConcentration.get(key);
+              return firstMonth && firstMonth < monthKey;
+            });
+            const newCustomerRevenue = values
+              .filter((row: any) => {
+                const name = String(row.customerName || 'Unknown Customer').trim();
+                return firstMonthByCustomerForConcentration.get(name.toLowerCase().replace(/\s+/g, ' ')) === monthKey;
+              })
+              .reduce((sum: number, row: any) => sum + Number(row.revenue || 0), 0);
+            const top5 = values.slice(0, 5);
+            const top10 = values.slice(0, 10);
+            return {
+              monthKey,
+              month: formatConcentrationMonth(monthKey),
+              source: sourceCoverageByMonth.get(monthKey) || 'none',
+              totalRevenue,
+              top5Rev: totalRevenue > 0 ? (top5.reduce((sum: number, row: any) => sum + Number(row.revenue || 0), 0) / totalRevenue) * 100 : null,
+              top10Rev: totalRevenue > 0 ? (top10.reduce((sum: number, row: any) => sum + Number(row.revenue || 0), 0) / totalRevenue) * 100 : null,
+              largestRev: totalRevenue > 0 ? (Number(values[0]?.revenue || 0) / totalRevenue) * 100 : null,
+              top5Gp: totalGrossProfit !== 0 ? (top5.reduce((sum: number, row: any) => sum + Number(row.grossProfit || 0), 0) / totalGrossProfit) * 100 : null,
+              top5Ebitda: totalEbitda !== 0 ? (top5.reduce((sum: number, row: any) => sum + Number(row.ebitda || 0), 0) / totalEbitda) * 100 : null,
+              largestEbitda: totalEbitda !== 0 ? (Number(values[0]?.ebitda || 0) / totalEbitda) * 100 : null,
+              top10AvgMargin: marginForRows(top10),
+              remainingAvgMargin: marginForRows(values.slice(10)),
+              retentionRate: currentCustomerKeys.length ? (retainedCustomers.length / currentCustomerKeys.length) * 100 : null,
+              newCustomerRevenue,
+            };
+          });
 
           const mtdStart = startOfBusinessMonth(endDate);
           const qtdStart = startOfBusinessQuarter(endDate);
@@ -2099,6 +2258,11 @@ export async function GET(request: NextRequest) {
             bookingsVsRevenueBridge,
             backlogSeries,
             topCustomersSummary,
+            customerConcentration: {
+              executiveMonthly: customerConcentrationExecutiveMonthly,
+              monthKeys: concentrationMonthKeys,
+              sourceCoverage: Object.fromEntries(sourceCoverageByMonth.entries()),
+            },
           };
         };
 
@@ -2806,6 +2970,7 @@ export async function GET(request: NextRequest) {
           summary: {
             topCustomers: salesResult.topCustomersSummary,
             customerDataBasis: salesResult.basis,
+            customerConcentration: salesResult.customerConcentration,
             revenueLabel: 'Revenue',
             customerOverview: arResult.customerOverview,
             bookings: {
@@ -5628,6 +5793,38 @@ export async function GET(request: NextRequest) {
                   orderBy: [{ snapshotDate: 'desc' }, { customerName: 'asc' }, { orderId: 'asc' }],
                   take: Math.min(rawPayloadRowCap, 50000),
                 });
+                const orderIdsForDueDateLookup = Array.from(
+                  new Set((orderRows as any[]).map((row) => String(row?.orderId || '').trim()).filter(Boolean))
+                ).slice(0, 1000);
+                if (orderIdsForDueDateLookup.length > 0) {
+                  const targetedRawOrderRows = await prisma.$queryRaw<Array<{ payload: any }>>(Prisma.sql`
+                    SELECT "payload"
+                    FROM "InforRawRecord"
+                    WHERE "companyId" = ${companyId}
+                      AND "miProgram" = 'SLCoitems'
+                      AND COALESCE(
+                        "payload"->>'CoNum',
+                        "payload"->>'coNum',
+                        "payload"->>'Order',
+                        "payload"->>'orderId'
+                      ) IN (${Prisma.join(orderIdsForDueDateLookup)})
+                    ORDER BY "businessDate" DESC NULLS LAST, "fetchedAt" DESC
+                    LIMIT ${Math.min(rawPayloadRowCap, 50000)}
+                  `);
+                  for (const rawRow of targetedRawOrderRows as any[]) {
+                    const payload = rawRow?.payload;
+                    if (!payload || typeof payload !== 'object' || Array.isArray(payload)) continue;
+                    const orderId = payload['CoNum'] ?? payload['coNum'] ?? payload['Order'] ?? payload['orderId'];
+                    const lineId = payload['CoLine'] ?? payload['coLine'] ?? payload['Line'] ?? payload['lineId'];
+                    const releaseId = payload['CoRelease'] ?? payload['coRelease'] ?? payload['Release'];
+                    const dueDateRaw = String(payload['DueDate'] ?? payload['dueDate'] ?? '').trim();
+                    if (!orderId || !lineId || !dueDateRaw) continue;
+                    const key = buildRawOrderLineKey(orderId, lineId, releaseId);
+                    if (!key.replace(/\|/g, '').trim() || rawDueDateByOrderLine.has(key)) continue;
+                    const parsedDueDate = new Date(dueDateRaw.replace(/\s+\d{2}:\d{2}:\d{2}\.\d+$/, ''));
+                    rawDueDateByOrderLine.set(key, Number.isNaN(parsedDueDate.getTime()) ? dueDateRaw : parsedDueDate.toISOString());
+                  }
+                }
                 return (orderRows as any[]).map((row) => ({
                   source: 'customer-order-line',
                   snapshotDate: row.snapshotDate,
