@@ -6727,6 +6727,8 @@ export async function GET(request: NextRequest) {
                 };
                 const rawDueDateByOrderLine = new Map<string, string>();
                 const rawDueDateByOrderLineNoRelease = new Map<string, string>();
+                const rawQtyShippedByOrderLine = new Map<string, number>();
+                const rawQtyShippedByOrderLineNoRelease = new Map<string, number>();
                 const rawCustomerPartByOrderLine = new Map<string, string>();
                 const rawCustomerPartByOrderLineNoRelease = new Map<string, string>();
                 const rawCustomerPartByCustomerItem = new Map<string, string>();
@@ -6752,8 +6754,9 @@ export async function GET(request: NextRequest) {
                   const lineId = payload['CoLine'] ?? payload['coLine'] ?? payload['COLINE'] ?? payload['Line'] ?? payload['lineId'];
                   const releaseId = payload['CoRelease'] ?? payload['coRelease'] ?? payload['CORELEASE'] ?? payload['Release'];
                   const dueDateRaw = String(payload['DueDate'] ?? payload['dueDate'] ?? payload['DUEDATE'] ?? '').trim();
+                  const qtyShippedRaw = Number(payload['QtyShipped'] ?? payload['qtyShipped'] ?? payload['QTYSHIPPED'] ?? 0);
                   const customerPartNumber = readRawCustomerPartNumber(payload);
-                  if (!orderId || !lineId || (!dueDateRaw && !customerPartNumber)) continue;
+                  if (!orderId || !lineId || (!dueDateRaw && !customerPartNumber && qtyShippedRaw <= 0)) continue;
                   const key = buildRawOrderLineKey(orderId, lineId, releaseId);
                   const noReleaseKey = buildRawOrderLineNoReleaseKey(orderId, lineId);
                   if (!key.replace(/\|/g, '').trim()) continue;
@@ -6762,6 +6765,10 @@ export async function GET(request: NextRequest) {
                     const dueDate = parsedDueDate ? parsedDueDate.toISOString() : dueDateRaw;
                     rawDueDateByOrderLine.set(key, dueDate);
                     if (!rawDueDateByOrderLineNoRelease.has(noReleaseKey)) rawDueDateByOrderLineNoRelease.set(noReleaseKey, dueDate);
+                  }
+                  if (qtyShippedRaw > 0 && !rawQtyShippedByOrderLine.has(key)) {
+                    rawQtyShippedByOrderLine.set(key, qtyShippedRaw);
+                    if (!rawQtyShippedByOrderLineNoRelease.has(noReleaseKey)) rawQtyShippedByOrderLineNoRelease.set(noReleaseKey, qtyShippedRaw);
                   }
                   if (customerPartNumber && !rawCustomerPartByOrderLine.has(key)) {
                     rawCustomerPartByOrderLine.set(key, customerPartNumber);
@@ -6824,8 +6831,9 @@ export async function GET(request: NextRequest) {
                     const lineId = payload['CoLine'] ?? payload['coLine'] ?? payload['COLINE'] ?? payload['Line'] ?? payload['lineId'];
                     const releaseId = payload['CoRelease'] ?? payload['coRelease'] ?? payload['CORELEASE'] ?? payload['Release'];
                     const dueDateRaw = String(payload['DueDate'] ?? payload['dueDate'] ?? payload['DUEDATE'] ?? '').trim();
+                    const qtyShippedRaw = Number(payload['QtyShipped'] ?? payload['qtyShipped'] ?? payload['QTYSHIPPED'] ?? 0);
                     const customerPartNumber = readRawCustomerPartNumber(payload);
-                    if (!orderId || !lineId || (!dueDateRaw && !customerPartNumber)) continue;
+                    if (!orderId || !lineId || (!dueDateRaw && !customerPartNumber && qtyShippedRaw <= 0)) continue;
                     const key = buildRawOrderLineKey(orderId, lineId, releaseId);
                     const noReleaseKey = buildRawOrderLineNoReleaseKey(orderId, lineId);
                     if (!key.replace(/\|/g, '').trim()) continue;
@@ -6834,6 +6842,10 @@ export async function GET(request: NextRequest) {
                       const dueDate = parsedDueDate ? parsedDueDate.toISOString() : dueDateRaw;
                       rawDueDateByOrderLine.set(key, dueDate);
                       if (!rawDueDateByOrderLineNoRelease.has(noReleaseKey)) rawDueDateByOrderLineNoRelease.set(noReleaseKey, dueDate);
+                    }
+                    if (qtyShippedRaw > 0 && !rawQtyShippedByOrderLine.has(key)) {
+                      rawQtyShippedByOrderLine.set(key, qtyShippedRaw);
+                      if (!rawQtyShippedByOrderLineNoRelease.has(noReleaseKey)) rawQtyShippedByOrderLineNoRelease.set(noReleaseKey, qtyShippedRaw);
                     }
                     if (customerPartNumber && !rawCustomerPartByOrderLine.has(key)) {
                       rawCustomerPartByOrderLine.set(key, customerPartNumber);
@@ -6944,6 +6956,10 @@ export async function GET(request: NextRequest) {
                   partNote: rawItemOverviewByAprPart.get(normalizeOrderLineToken(row.sku || row.itemId || row.itemName)) || null,
                   quantitySold: Number(row.qtyInvoiced || row.qtyOrdered || 0),
                   qtyOrdered: Number(row.qtyOrdered || 0),
+                  qtyShipped:
+                    rawQtyShippedByOrderLine.get(buildRawOrderLineKey(row.orderId, row.lineId)) ||
+                    rawQtyShippedByOrderLineNoRelease.get(buildRawOrderLineNoReleaseKey(row.orderId, row.lineId)) ||
+                    0,
                   qtyInvoiced: Number(row.qtyInvoiced || 0),
                   unitPrice: Number(row.unitPrice || 0),
                   revenue: Number(row.invoicedAmount || row.contractValue || 0),

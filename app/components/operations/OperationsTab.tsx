@@ -171,6 +171,18 @@ type StuckOpenLineSortKey =
   | 'qtyInvoiced'
   | 'wipValue'
   | 'status';
+type WipLineItemSortKey =
+  | 'orderId'
+  | 'lineId'
+  | 'item'
+  | 'orderDate'
+  | 'dueDate'
+  | 'qtyOrdered'
+  | 'qtyShipped'
+  | 'qtyInvoiced'
+  | 'wipValue'
+  | 'contractValue'
+  | 'invoicedValue';
 type ProductReportView = 'productMarginAnalysis' | 'wholesaleRawData' | 'vendorPricing' | 'performance' | 'retailForecast' | 'merchandiseProfitability';
 
 const clampNumber = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
@@ -762,8 +774,10 @@ export default function OperationsTab({
   const [demandSortDir, setDemandSortDir] = useState<'asc' | 'desc'>('desc');
   const [customerDateRangeSaveStatus, setCustomerDateRangeSaveStatus] = useState<string | null>(null);
   const [customerRevenuePeriodMode, setCustomerRevenuePeriodMode] = useState<'year' | 'quarter' | 'month'>('month');
-  const [customerRevenuePeriodKey, setCustomerRevenuePeriodKey] = useState<string>('all');
+  const [customerRevenuePeriodKey, setCustomerRevenuePeriodKey] = useState<string>(() => monthKeyFromDateValue(new Date()));
   const [expandedWipCustomers, setExpandedWipCustomers] = useState<Record<string, boolean>>({});
+  const [wipLineItemSortKey, setWipLineItemSortKey] = useState<WipLineItemSortKey>('orderId');
+  const [wipLineItemSortDir, setWipLineItemSortDir] = useState<'asc' | 'desc'>('asc');
   const [salesHistoryCategoriesExpanded, setSalesHistoryCategoriesExpanded] = useState(true);
   const [expandedSalesHistoryCategories, setExpandedSalesHistoryCategories] = useState<Record<string, boolean>>({});
   const [hiddenCategorySalesSeries, setHiddenCategorySalesSeries] = useState<Record<string, boolean>>({});
@@ -1205,8 +1219,10 @@ export default function OperationsTab({
   }, [dailyFinancialData, dailyFinancialWindowStart]);
 
   useEffect(() => {
-    setCustomerRevenuePeriodKey('all');
-  }, [startDate, endDate, frequency, customerData]);
+    if (customerRevenuePeriodMode === 'month') {
+      setCustomerRevenuePeriodKey(monthKeyFromDateValue(endDate || new Date()));
+    }
+  }, [startDate, endDate, frequency, customerData, customerRevenuePeriodMode]);
 
   useEffect(() => {
     if (!selectedCompanyId) return;
@@ -3057,13 +3073,38 @@ export default function OperationsTab({
     for (const row of customerPeriodRecords) {
       periodSet.add(String((row as any)[periodAccessor]));
     }
-    const periodOptions = Array.from(periodSet).sort((a, b) => String(b).localeCompare(String(a)));
+    const selectedPeriodEnd = parseDateValue(endDate) || new Date();
+    const recentMonthOptions = Array.from({ length: 3 }, (_, index) => {
+      const d = new Date(Date.UTC(selectedPeriodEnd.getUTCFullYear(), selectedPeriodEnd.getUTCMonth() - index, 1));
+      return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
+    });
+    const recentQuarterOptions = Array.from({ length: 3 }, (_, index) => {
+      const d = new Date(Date.UTC(selectedPeriodEnd.getUTCFullYear(), selectedPeriodEnd.getUTCMonth() - index * 3, 1));
+      return `${d.getUTCFullYear()}-Q${Math.floor(d.getUTCMonth() / 3) + 1}`;
+    });
+    const minimumPeriodOptions =
+      customerRevenuePeriodMode === 'month'
+        ? recentMonthOptions
+        : customerRevenuePeriodMode === 'quarter'
+          ? recentQuarterOptions
+          : [];
+    const periodOptions = Array.from(new Set([...minimumPeriodOptions, ...Array.from(periodSet)]))
+      .sort((a, b) => String(b).localeCompare(String(a)));
+    const currentCustomerRevenuePeriodKey = (mode: 'year' | 'quarter' | 'month') => {
+      if (mode === 'year') return String(selectedPeriodEnd.getUTCFullYear());
+      if (mode === 'quarter') {
+        return `${selectedPeriodEnd.getUTCFullYear()}-Q${Math.floor(selectedPeriodEnd.getUTCMonth() / 3) + 1}`;
+      }
+      return `${selectedPeriodEnd.getUTCFullYear()}-${String(selectedPeriodEnd.getUTCMonth() + 1).padStart(2, '0')}`;
+    };
     const effectivePeriodKey =
       customerRevenuePeriodKey === 'all'
         ? 'all'
         : periodOptions.includes(customerRevenuePeriodKey)
           ? customerRevenuePeriodKey
-          : 'all';
+          : periodOptions.includes(currentCustomerRevenuePeriodKey(customerRevenuePeriodMode))
+            ? currentCustomerRevenuePeriodKey(customerRevenuePeriodMode)
+            : 'all';
     const filteredRecordsForTopCustomers =
       effectivePeriodKey === 'all'
         ? records
@@ -3866,8 +3907,21 @@ export default function OperationsTab({
           const wholesaleWipSourceRows = Array.isArray(wholesaleProductsData?.summary?.wholesaleOrderLines)
             ? wholesaleProductsData.summary.wholesaleOrderLines
             : [];
+          const latestWholesaleWipSnapshotTime = wholesaleWipSourceRows.reduce((latest: number, row: any) => {
+            const parsed = parseDateValue(row?.snapshotDate ? String(row.snapshotDate) : null);
+            return parsed ? Math.max(latest, parsed.getTime()) : latest;
+          }, 0);
+          const latestWholesaleWipSnapshotDay = latestWholesaleWipSnapshotTime
+            ? new Date(latestWholesaleWipSnapshotTime).toISOString().slice(0, 10)
+            : '';
+          const currentWholesaleWipRows = latestWholesaleWipSnapshotDay
+            ? wholesaleWipSourceRows.filter((row: any) => {
+                const parsed = parseDateValue(row?.snapshotDate ? String(row.snapshotDate) : null);
+                return parsed?.toISOString().slice(0, 10) === latestWholesaleWipSnapshotDay;
+              })
+            : [];
           const normalizeWipToken = (value: unknown) => String(value || '').trim().toLowerCase().replace(/\s+/g, ' ');
-          const latestWipLineByDisplayKey = wholesaleWipSourceRows.reduce((acc: Map<string, any>, row: any) => {
+          const latestWipLineByDisplayKey = currentWholesaleWipRows.reduce((acc: Map<string, any>, row: any) => {
             const customerName = String(row?.customerName || row?.customer || 'Unknown Customer').trim() || 'Unknown Customer';
             const orderId = String(row?.orderId || '').trim();
             const lineId = String(row?.lineId || '').trim();
@@ -3923,7 +3977,7 @@ export default function OperationsTab({
                 orderDate: row?.orderDate ? String(row.orderDate) : null,
                 dueDate: row?.dueDate ? String(row.dueDate) : null,
                 qtyOrdered,
-                qtyShipped: Number(row?.qtyShipped || 0),
+                qtyShipped: Number(row?.qtyShipped ?? row?.QtyShipped ?? row?.QTYSHIPPED ?? 0),
                 qtyInvoiced,
                 contractValue,
                 invoicedValue,
@@ -4043,6 +4097,64 @@ export default function OperationsTab({
             setCustomerMetricModalNames(names);
             setCustomerMetricModalOpen(true);
           };
+          const wipLineItemNumericSortKeys = new Set<WipLineItemSortKey>([
+            'orderDate',
+            'dueDate',
+            'qtyOrdered',
+            'qtyShipped',
+            'qtyInvoiced',
+            'wipValue',
+            'contractValue',
+            'invoicedValue',
+          ]);
+          const wipLineItemValue = (item: any, key: WipLineItemSortKey) => {
+            if (key === 'orderDate' || key === 'dueDate') {
+              const parsed = parseDateValue(item?.[key] ? String(item[key]) : null);
+              return parsed ? parsed.getTime() : null;
+            }
+            if (wipLineItemNumericSortKeys.has(key)) {
+              const parsed = Number(item?.[key]);
+              return Number.isFinite(parsed) ? parsed : null;
+            }
+            return String(item?.[key] || '').trim();
+          };
+          const compareWipLineItems = (a: any, b: any) => {
+            const direction = wipLineItemSortDir === 'asc' ? 1 : -1;
+            const left = wipLineItemValue(a, wipLineItemSortKey);
+            const right = wipLineItemValue(b, wipLineItemSortKey);
+            if (wipLineItemNumericSortKeys.has(wipLineItemSortKey)) {
+              const leftMissing = left == null || !Number.isFinite(Number(left));
+              const rightMissing = right == null || !Number.isFinite(Number(right));
+              if (leftMissing && rightMissing) return 0;
+              if (leftMissing) return 1;
+              if (rightMissing) return -1;
+              return (Number(left) - Number(right)) * direction;
+            }
+            return String(left || '').localeCompare(String(right || ''), undefined, { sensitivity: 'base', numeric: true }) * direction;
+          };
+          const handleWipLineItemSort = (key: WipLineItemSortKey) => {
+            if (wipLineItemSortKey === key) {
+              setWipLineItemSortDir((prev) => (prev === 'asc' ? 'desc' : 'asc'));
+              return;
+            }
+            setWipLineItemSortKey(key);
+            setWipLineItemSortDir(wipLineItemNumericSortKeys.has(key) ? 'desc' : 'asc');
+          };
+          const wipLineItemSortLabel = (key: WipLineItemSortKey) =>
+            wipLineItemSortKey === key ? (wipLineItemSortDir === 'asc' ? ' ▲' : ' ▼') : ' ↕';
+          const wipLineItemColumns: Array<{ key: WipLineItemSortKey; label: string; align?: 'left' | 'right' }> = [
+            { key: 'orderId', label: 'Order' },
+            { key: 'lineId', label: 'Line' },
+            { key: 'item', label: 'Item' },
+            { key: 'orderDate', label: 'Order Date' },
+            { key: 'dueDate', label: 'Due Date' },
+            { key: 'qtyOrdered', label: 'Qty Ord', align: 'right' },
+            { key: 'qtyShipped', label: 'Qty Shp', align: 'right' },
+            { key: 'qtyInvoiced', label: 'Qty Inv', align: 'right' },
+            { key: 'wipValue', label: 'WIP', align: 'right' },
+            { key: 'contractValue', label: 'Contract', align: 'right' },
+            { key: 'invoicedValue', label: 'Invoiced', align: 'right' },
+          ];
 
           const renderPieLabel = ({ cx, cy, midAngle, outerRadius, percent }: any) => {
             const radius = outerRadius + 16;
@@ -4205,29 +4317,25 @@ export default function OperationsTab({
                                         <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                                           <thead>
                                             <tr style={{ borderBottom: '1px solid #cbd5e1' }}>
-                                              <th style={{ textAlign: 'left', padding: '4px 8px', fontSize: '12px', color: '#475569' }}>Order</th>
-                                              <th style={{ textAlign: 'left', padding: '4px 8px', fontSize: '12px', color: '#475569' }}>Line</th>
-                                              <th style={{ textAlign: 'left', padding: '4px 8px', fontSize: '12px', color: '#475569' }}>Item</th>
-                                              <th style={{ textAlign: 'left', padding: '4px 8px', fontSize: '12px', color: '#475569' }}>Stat</th>
-                                              <th style={{ textAlign: 'left', padding: '4px 8px', fontSize: '12px', color: '#475569' }}>Order Date</th>
-                                              <th style={{ textAlign: 'left', padding: '4px 8px', fontSize: '12px', color: '#475569' }}>Due</th>
-                                              <th style={{ textAlign: 'right', padding: '4px 8px', fontSize: '12px', color: '#475569' }}>Qty Ord</th>
-                                              <th style={{ textAlign: 'right', padding: '4px 8px', fontSize: '12px', color: '#475569' }}>Qty Shp</th>
-                                              <th style={{ textAlign: 'right', padding: '4px 8px', fontSize: '12px', color: '#475569' }}>Qty Inv</th>
-                                              <th style={{ textAlign: 'right', padding: '4px 8px', fontSize: '12px', color: '#475569' }}>WIP</th>
-                                              <th style={{ textAlign: 'right', padding: '4px 8px', fontSize: '12px', color: '#475569' }}>Contract</th>
-                                              <th style={{ textAlign: 'right', padding: '4px 8px', fontSize: '12px', color: '#475569' }}>Invoiced</th>
+                                              {wipLineItemColumns.map((column) => (
+                                                <th
+                                                  key={column.key}
+                                                  onClick={() => handleWipLineItemSort(column.key)}
+                                                  style={{ textAlign: column.align || 'left', padding: '4px 8px', fontSize: '12px', color: '#475569', cursor: 'pointer', userSelect: 'none', whiteSpace: 'nowrap' }}
+                                                >
+                                                  {column.label}{wipLineItemSortLabel(column.key)}
+                                                </th>
+                                              ))}
                                             </tr>
                                           </thead>
                                           <tbody>
-                                            {row.wipItems.map((item: any, itemIndex: number) => (
+                                            {[...row.wipItems].sort(compareWipLineItems).map((item: any, itemIndex: number) => (
                                               <tr key={`${rowKey}-${item.orderId}-${item.lineId}-${itemIndex}`} style={{ borderBottom: '1px solid #e2e8f0' }}>
                                                 <td style={{ padding: '4px 8px', fontSize: '12px', color: '#1e293b' }}>{item.orderId}</td>
                                                 <td style={{ padding: '4px 8px', fontSize: '12px', color: '#1e293b' }}>{item.lineId}</td>
                                                 <td style={{ padding: '4px 8px', fontSize: '12px', color: '#1e293b' }}>{item.item}</td>
-                                                <td style={{ padding: '4px 8px', fontSize: '12px', color: '#1e293b' }}>{item.stat || '-'}</td>
-                                                <td style={{ padding: '4px 8px', fontSize: '12px', color: '#64748b' }}>{item.orderDate || '-'}</td>
-                                                <td style={{ padding: '4px 8px', fontSize: '12px', color: '#64748b' }}>{item.dueDate || '-'}</td>
+                                                <td style={{ padding: '4px 8px', fontSize: '12px', color: '#64748b' }}>{item.orderDate ? formatDateInputLabel(item.orderDate) : '-'}</td>
+                                                <td style={{ padding: '4px 8px', fontSize: '12px', color: '#64748b' }}>{item.dueDate ? formatDateInputLabel(item.dueDate) : '-'}</td>
                                                 <td style={{ padding: '4px 8px', fontSize: '12px', color: '#1e293b', textAlign: 'right' }}>{item.qtyOrdered.toLocaleString('en-US')}</td>
                                                 <td style={{ padding: '4px 8px', fontSize: '12px', color: '#1e293b', textAlign: 'right' }}>{item.qtyShipped.toLocaleString('en-US')}</td>
                                                 <td style={{ padding: '4px 8px', fontSize: '12px', color: '#1e293b', textAlign: 'right' }}>{item.qtyInvoiced.toLocaleString('en-US')}</td>
@@ -4279,7 +4387,7 @@ export default function OperationsTab({
                       onChange={(e) => {
                         const mode = e.target.value as 'year' | 'quarter' | 'month';
                         setCustomerRevenuePeriodMode(mode);
-                        setCustomerRevenuePeriodKey('all');
+                        setCustomerRevenuePeriodKey(currentCustomerRevenuePeriodKey(mode));
                       }}
                       style={{ padding: '4px 8px', border: '1px solid #cbd5e1', borderRadius: '6px', fontSize: '12px', color: '#334155', background: 'white' }}
                     >
