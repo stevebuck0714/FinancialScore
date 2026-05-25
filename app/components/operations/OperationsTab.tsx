@@ -721,6 +721,7 @@ export default function OperationsTab({
   const [dailyFinancialData, setDailyFinancialData] = useState<any>(null);
   const [cashConversionFinancialData, setCashConversionFinancialData] = useState<any>(null);
   const [ebitdaEmployeeInputsByMonth, setEbitdaEmployeeInputsByMonth] = useState<Record<string, string>>({});
+  const [customerProfitabilityPeriod, setCustomerProfitabilityPeriod] = useState<'lastMonth' | 'last3' | 'last12'>('last12');
   const [companyOperationalHubConfig, setCompanyOperationalHubConfig] = useState<any>(operationalHubConfig || null);
   const [dailyFinancialView, setDailyFinancialView] = useState<'summary' | 'income' | 'balance' | 'cashflow'>('summary');
   const [dailyFinancialStatementRollup, setDailyFinancialStatementRollup] = useState<'daily' | 'quarterly' | 'annual'>('daily');
@@ -19000,10 +19001,11 @@ Strategies to Improve the CCC
     const selectedEndKey = selectedEnd ? selectedEnd.toISOString().slice(0, 10) : null;
     const customerMap = new Map<string, any>();
     const monthCustomerMap = new Map<string, Map<string, any>>();
+    const customerRecordMonthKeys = new Set<string>();
     const ensureCustomer = (name: string) => {
       const key = name || 'Unknown Customer';
       if (!customerMap.has(key)) {
-        customerMap.set(key, { name: key, revenue: 0, grossProfit: 0, ebitdaContribution: 0, months: new Set<string>(), arDays: null as number | null });
+        customerMap.set(key, { name: key, revenue: 0, grossProfit: 0, grossProfitRevenue: 0, ebitdaContribution: 0, months: new Set<string>(), arDays: null as number | null });
       }
       return customerMap.get(key);
     };
@@ -19014,40 +19016,78 @@ Strategies to Improve the CCC
       if (selectedStartKey && dayKey < selectedStartKey) return;
       if (selectedEndKey && dayKey > selectedEndKey) return;
       const monthKey = toMonthKey(record?.snapshotDate);
+      customerRecordMonthKeys.add(monthKey);
       const name = String(record?.customerName || 'Unknown Customer');
       const revenue = Number(record?.revenue || 0);
+      const hasGrossProfit = record?.grossMargin != null || record?.cogs != null;
+      const grossProfit = hasGrossProfit
+        ? Number(record?.grossMargin ?? (revenue - Number(record?.cogs || 0)))
+        : 0;
       const customer = ensureCustomer(name);
       customer.revenue += revenue;
+      if (hasGrossProfit) {
+        customer.grossProfit += grossProfit;
+        customer.grossProfitRevenue += revenue;
+      }
       customer.months.add(monthKey);
       if (!monthCustomerMap.has(monthKey)) monthCustomerMap.set(monthKey, new Map());
       const monthMap = monthCustomerMap.get(monthKey)!;
-      const monthCustomer = monthMap.get(name) || { name, revenue: 0, grossProfit: 0, ebitda: 0 };
+      const monthCustomer = monthMap.get(name) || { name, revenue: 0, grossProfit: 0, grossProfitRevenue: 0, ebitda: 0 };
       monthCustomer.revenue += revenue;
+      if (hasGrossProfit) {
+        monthCustomer.grossProfit += grossProfit;
+        monthCustomer.grossProfitRevenue += revenue;
+      }
       monthMap.set(name, monthCustomer);
     });
     wholesaleRows.forEach((row: any) => {
       const monthKey = toMonthKey(row?.snapshotDate || row?.date || row?.orderDate);
       if (!monthKey) return;
+      if (customerRecordMonthKeys.has(monthKey)) return;
       const name = String(row?.customer || row?.customerName || 'Unknown Customer').trim() || 'Unknown Customer';
       const revenue = Number(row?.revenue || row?.currentPriceTotal || 0);
+      const hasGrossProfit = row?.grossProfit != null || row?.grossMarginDollars != null || row?.cogs != null || row?.materialCost != null || row?.currentCostOfMaterial != null;
       const cogs = Number(row?.cogs || row?.materialCost || row?.currentCostOfMaterial || 0);
       const operatingExpense = Number(row?.operatingExpensesAllocated || row?.operatingExpensesTotal || 0);
-      const grossProfit = Number(row?.grossProfit || row?.grossMarginDollars || (revenue - cogs));
+      const grossProfit = hasGrossProfit ? Number(row?.grossProfit ?? row?.grossMarginDollars ?? (revenue - cogs)) : 0;
       const ebitda = grossProfit - operatingExpense;
       const customer = ensureCustomer(name);
       if (!customer.revenue) customer.revenue += revenue;
-      customer.grossProfit += grossProfit;
-      customer.ebitdaContribution += ebitda;
+      if (hasGrossProfit) {
+        customer.grossProfit += grossProfit;
+        customer.grossProfitRevenue += revenue;
+        customer.ebitdaContribution += ebitda;
+      }
       if (!monthCustomerMap.has(monthKey)) monthCustomerMap.set(monthKey, new Map());
       const monthMap = monthCustomerMap.get(monthKey)!;
-      const monthCustomer = monthMap.get(name) || { name, revenue: 0, grossProfit: 0, ebitda: 0 };
+      const monthCustomer = monthMap.get(name) || { name, revenue: 0, grossProfit: 0, grossProfitRevenue: 0, ebitda: 0 };
       if (!monthCustomer.revenue) monthCustomer.revenue += revenue;
-      monthCustomer.grossProfit += grossProfit;
-      monthCustomer.ebitda += ebitda;
+      if (hasGrossProfit) {
+        monthCustomer.grossProfit += grossProfit;
+        monthCustomer.grossProfitRevenue += revenue;
+        monthCustomer.ebitda += ebitda;
+      }
       monthMap.set(name, monthCustomer);
     });
     const populatedMonthKeys = Array.from(monthCustomerMap.keys()).filter(Boolean).sort();
-    const endMonthKey = populatedMonthKeys[populatedMonthKeys.length - 1] || toMonthKey(endDate) || toMonthKey(new Date());
+    const completedMonthKeyFromEndDate = (value: unknown) => {
+      const parsed = parseDateValue(value);
+      if (!parsed) return toMonthKey(new Date());
+      const today = new Date();
+      const todayUtc = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate()));
+      const effectiveEnd = parsed.getTime() > todayUtc.getTime() ? todayUtc : parsed;
+      const year = effectiveEnd.getUTCFullYear();
+      const month = effectiveEnd.getUTCMonth();
+      const day = effectiveEnd.getUTCDate();
+      const lastDayOfMonth = new Date(Date.UTC(year, month + 1, 0)).getUTCDate();
+      const completedMonth = day >= lastDayOfMonth
+        ? new Date(Date.UTC(year, month, 1))
+        : new Date(Date.UTC(year, month - 1, 1));
+      return `${completedMonth.getUTCFullYear()}-${String(completedMonth.getUTCMonth() + 1).padStart(2, '0')}`;
+    };
+    const lastCompletedMonthKey = completedMonthKeyFromEndDate(endDate);
+    const populatedCompletedMonthKeys = populatedMonthKeys.filter((monthKey) => monthKey <= lastCompletedMonthKey);
+    const endMonthKey = populatedCompletedMonthKeys[populatedCompletedMonthKeys.length - 1] || lastCompletedMonthKey || toMonthKey(new Date());
     const buildLastTwelveMonthKeys = (lastMonthKey: string) => {
       const [yearRaw, monthRaw] = String(lastMonthKey || '').split('-').map(Number);
       const endMonth = Number.isFinite(yearRaw) && Number.isFinite(monthRaw)
@@ -19062,7 +19102,7 @@ Strategies to Improve the CCC
     const customerRows = Array.from(customerMap.values())
       .map((row) => ({
         ...row,
-        gpPct: row.revenue > 0 && row.grossProfit ? (row.grossProfit / row.revenue) * 100 : null,
+        gpPct: row.grossProfitRevenue > 0 && row.grossProfit ? (row.grossProfit / row.grossProfitRevenue) * 100 : null,
       }))
       .filter((row) => Number(row.revenue || 0) > 0)
       .sort((a, b) => b.revenue - a.revenue);
@@ -19072,10 +19112,11 @@ Strategies to Improve the CCC
     const top5 = customerRows.slice(0, 5);
     const top10 = customerRows.slice(0, 10);
     const avgMargin = (rows: any[]) => {
-      const rev = rows.reduce((sum, row) => sum + Number(row.revenue || 0), 0);
+      const rev = rows.reduce((sum, row) => sum + Number(row.grossProfitRevenue || 0), 0);
       const gp = rows.reduce((sum, row) => sum + Number(row.grossProfit || 0), 0);
       return rev > 0 && gp !== 0 ? (gp / rev) * 100 : null;
     };
+    const normalizeCustomerName = (name: unknown) => String(name || 'Unknown Customer').trim().toLowerCase().replace(/\s+/g, ' ');
     const firstMonthByCustomer = new Map<string, string>();
     monthKeys.forEach((monthKey) => {
       const values = Array.from((monthCustomerMap.get(monthKey) || new Map()).values());
@@ -19095,7 +19136,7 @@ Strategies to Improve the CCC
         .filter((row: any) => firstMonthByCustomer.get(String(row.name || 'Unknown Customer')) === monthKey)
         .reduce((sum: number, row: any) => sum + Number(row.revenue || 0), 0);
       const monthAvgMargin = (rows: any[]) => {
-        const monthRevenue = rows.reduce((sum: number, row: any) => sum + Number(row.revenue || 0), 0);
+        const monthRevenue = rows.reduce((sum: number, row: any) => sum + Number(row.grossProfitRevenue || 0), 0);
         const monthGrossProfit = rows.reduce((sum: number, row: any) => sum + Number(row.grossProfit || 0), 0);
         return monthRevenue > 0 && monthGrossProfit !== 0 ? (monthGrossProfit / monthRevenue) * 100 : null;
       };
@@ -19116,6 +19157,84 @@ Strategies to Improve the CCC
       };
     });
     const executiveMonthlyCustomerMetrics = [...monthlyCustomerMetrics].reverse();
+    const profitabilityPeriodOptions = [
+      { key: 'lastMonth' as const, label: 'Last Completed Month', months: 1 },
+      { key: 'last3' as const, label: 'Last 3 Completed Months', months: 3 },
+      { key: 'last12' as const, label: 'Last 12 Completed Months', months: 12 },
+    ];
+    const profitabilityPeriod = profitabilityPeriodOptions.find((option) => option.key === customerProfitabilityPeriod) || profitabilityPeriodOptions[2];
+    const profitabilityMonthKeys = monthKeys.slice(-profitabilityPeriod.months);
+    const profitabilityPeriodLabel = profitabilityMonthKeys.length
+      ? `${formatMonth(profitabilityMonthKeys[0])} - ${formatMonth(profitabilityMonthKeys[profitabilityMonthKeys.length - 1])}`
+      : 'N/A';
+    const profitabilityTotalRevenue = profitabilityMonthKeys.reduce((sum, monthKey) => {
+      const values = Array.from((monthCustomerMap.get(monthKey) || new Map()).values());
+      return sum + values.reduce((monthSum: number, row: any) => monthSum + Number(row.revenue || 0), 0);
+    }, 0);
+    const profitabilityPeriodDays = profitabilityMonthKeys.reduce((sum, monthKey) => {
+      const [year, month] = monthKey.split('-').map(Number);
+      return sum + new Date(Date.UTC(year || 2000, month || 1, 0)).getUTCDate();
+    }, 0);
+    const arDueByCustomer = new Map<string, number>();
+    (arData?.summary?.unpaidByCustomer || arData?.summary?.breakdown || []).forEach((row: any) => {
+      const key = normalizeCustomerName(row?.customerName || row?.name);
+      const due = Number(row?.totalDue ?? row?.total ?? row?.amountDueHome ?? 0);
+      if (!key || !Number.isFinite(due) || due <= 0) return;
+      arDueByCustomer.set(key, (arDueByCustomer.get(key) || 0) + due);
+    });
+    const latestOrderLineByKey = new Map<string, any>();
+    wholesaleRows.forEach((row: any) => {
+      const monthKey = toMonthKey(row?.snapshotDate || row?.date || row?.orderDate);
+      if (!profitabilityMonthKeys.includes(monthKey)) return;
+      const key = [row?.customerId || row?.customerName || row?.customer || '', row?.orderId || '', row?.lineId || '', row?.itemId || row?.sku || row?.itemName || ''].join('||');
+      const existing = latestOrderLineByKey.get(key);
+      const rowDate = new Date(String(row?.snapshotDate || ''));
+      const existingDate = existing ? new Date(String(existing?.snapshotDate || '')) : null;
+      if (!existing || (!Number.isNaN(rowDate.getTime()) && (!existingDate || Number.isNaN(existingDate.getTime()) || rowDate.getTime() > existingDate.getTime()))) {
+        latestOrderLineByKey.set(key, row);
+      }
+    });
+    const wipBurdenByCustomer = new Map<string, number>();
+    latestOrderLineByKey.forEach((row: any) => {
+      const customerKey = normalizeCustomerName(row?.customerName || row?.customer);
+      const contractValue = Number(row?.contractValue || row?.revenue || 0);
+      const invoicedAmount = Number(row?.invoicedAmount || 0);
+      const remainingStored = Number(row?.remainingAmount ?? NaN);
+      const wipValue = Number.isFinite(remainingStored) ? Math.max(remainingStored, 0) : Math.max(contractValue - invoicedAmount, 0);
+      if (!customerKey || wipValue <= 0) return;
+      wipBurdenByCustomer.set(customerKey, (wipBurdenByCustomer.get(customerKey) || 0) + wipValue);
+    });
+    const profitabilityRows = Array.from(
+      profitabilityMonthKeys.reduce((acc: Map<string, any>, monthKey) => {
+        const values = Array.from((monthCustomerMap.get(monthKey) || new Map()).values());
+        values.forEach((row: any) => {
+          const name = String(row.name || 'Unknown Customer');
+          const key = normalizeCustomerName(name);
+          const current = acc.get(key) || { name, revenue: 0, grossProfit: 0, grossProfitRevenue: 0, ebitdaContribution: 0 };
+          current.revenue += Number(row.revenue || 0);
+          current.grossProfit += Number(row.grossProfit || 0);
+          current.grossProfitRevenue += Number(row.grossProfitRevenue || 0);
+          current.ebitdaContribution += Number(row.ebitda || 0);
+          acc.set(key, current);
+        });
+        return acc;
+      }, new Map<string, any>()).entries()
+    )
+      .map(([key, row]) => {
+        const arDue = arDueByCustomer.get(key) || 0;
+        const arDays = row.revenue > 0 && profitabilityPeriodDays > 0 && arDue > 0 ? (arDue / row.revenue) * profitabilityPeriodDays : null;
+        return {
+          ...row,
+          gpPct: row.grossProfitRevenue > 0 && row.grossProfit ? (row.grossProfit / row.grossProfitRevenue) * 100 : null,
+          ebitdaContribution: row.ebitdaContribution || null,
+          arDays,
+          wipBurden: wipBurdenByCustomer.get(key) || 0,
+          strategicImportance: row.revenue > 0 && profitabilityTotalRevenue > 0 && (row.revenue / profitabilityTotalRevenue) * 100 > 10 ? 'High' : 'Medium',
+        };
+      })
+      .filter((row) => Number(row.revenue || 0) > 0)
+      .sort((a, b) => Number(b.revenue || 0) - Number(a.revenue || 0))
+      .slice(0, 10);
     const executiveMetricRows = [
       { label: 'Top 5 Customers % Revenue', render: (row: any) => pct(row.top5Rev) },
       { label: 'Top 10 Customers % Revenue', render: (row: any) => pct(row.top10Rev) },
@@ -19123,7 +19242,7 @@ Strategies to Improve the CCC
       { label: 'Largest Customer % Revenue', render: (row: any) => pct(row.largestRev) },
       { label: 'Largest Customer % EBITDA Contribution', render: (row: any) => pct(row.largestEbitda) },
       { label: 'Avg Gross Margin - Top 10', render: (row: any) => pct(row.top10AvgMargin) },
-      { label: 'Avg Gross Margin - Remaining Customers', render: (row: any) => pct(row.remainingAvgMargin) },
+      { label: 'Avg Gross Margin - Customers 11+', render: (row: any) => pct(row.remainingAvgMargin) },
       { label: 'Customer Retention Rate', render: (row: any) => pct(row.retentionRate) },
       { label: 'Revenue from New Customers', render: (row: any) => formatCurrency(row.newCustomerRevenue) },
     ];
@@ -19151,7 +19270,33 @@ Strategies to Improve the CCC
       <div>
         {section('Executive Summary Dashboard', <div style={{ overflowX: 'auto' }}><table style={{ ...tableStyle, minWidth: '1220px' }}><thead><tr><th style={{ ...thStyle, minWidth: '240px' }}>Metric</th>{executiveMonthlyCustomerMetrics.map((row) => <th key={row.monthKey} style={{ ...thStyle, textAlign: 'right', minWidth: '90px' }}>{row.month}</th>)}</tr></thead><tbody>{executiveMetricRows.map((metric) => <tr key={metric.label}><td style={{ ...tdStyle, fontWeight: 700 }}>{metric.label}</td>{executiveMonthlyCustomerMetrics.map((row) => <td key={`${metric.label}-${row.monthKey}`} style={{ ...tdStyle, textAlign: 'right', whiteSpace: 'nowrap' }}>{metric.render(row)}</td>)}</tr>)}</tbody></table></div>)}
         {section('Monthly Customer Concentration Trend', <div style={{ overflowX: 'auto' }}><table style={{ ...tableStyle, minWidth: '820px' }}><thead><tr>{['Month', 'Total Revenue', 'Top 5 % Rev', 'Top 10 % Rev', 'Largest Customer %', 'Top 5 % GP', 'Top 5 % EBITDA'].map((h) => <th key={h} style={{ ...thStyle, textAlign: h === 'Month' ? 'left' : 'right' }}>{h}</th>)}</tr></thead><tbody>{monthlyTrendRows.map((row) => <tr key={row.month}><td style={tdStyle}>{row.month}</td><td style={{ ...tdStyle, textAlign: 'right' }}>{formatCurrency(row.revenue)}</td><td style={{ ...tdStyle, textAlign: 'right' }}>{pct(row.top5Rev)}</td><td style={{ ...tdStyle, textAlign: 'right' }}>{pct(row.top10Rev)}</td><td style={{ ...tdStyle, textAlign: 'right' }}>{pct(row.largestRev)}</td><td style={{ ...tdStyle, textAlign: 'right' }}>{pct(row.top5Gp)}</td><td style={{ ...tdStyle, textAlign: 'right' }}>{pct(row.top5Ebitda)}</td></tr>)}</tbody></table></div>)}
-        {section('Top Customer Profitability Analysis', <div style={{ overflowX: 'auto' }}><table style={{ ...tableStyle, minWidth: '920px' }}><thead><tr>{['Customer', 'Revenue', 'Gross Profit', 'GP %', 'EBITDA Contribution', 'AR Days', 'Inventory Burden', 'Strategic Importance'].map((h) => <th key={h} style={{ ...thStyle, textAlign: h === 'Customer' ? 'left' : 'right' }}>{h}</th>)}</tr></thead><tbody>{top5.map((row) => <tr key={row.name}><td style={{ ...tdStyle, fontWeight: 700 }}>{row.name}</td><td style={{ ...tdStyle, textAlign: 'right' }}>{formatCurrency(row.revenue)}</td><td style={{ ...tdStyle, textAlign: 'right' }}>{formatCurrency(Number(row.grossProfit || 0))}</td><td style={{ ...tdStyle, textAlign: 'right' }}>{pct(row.gpPct)}</td><td style={{ ...tdStyle, textAlign: 'right' }}>{formatCurrency(Number(row.ebitdaContribution || 0))}</td><td style={{ ...tdStyle, textAlign: 'right' }}>N/A</td><td style={{ ...tdStyle, textAlign: 'right' }}>N/A</td><td style={{ ...tdStyle, textAlign: 'right' }}>{(share(row.revenue, totalRevenue) || 0) > 10 ? 'High' : 'Medium'}</td></tr>)}</tbody></table></div>)}
+        <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '16px', marginBottom: '16px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '16px', marginBottom: '12px' }}>
+            <div>
+              <h3 style={{ margin: 0, fontSize: '17px', color: '#0f172a' }}>Top Customer Profitability Analysis</h3>
+              <div style={{ marginTop: '4px', fontSize: '12px', color: '#64748b' }}>Period: {profitabilityPeriodLabel}</div>
+            </div>
+            <select
+              value={customerProfitabilityPeriod}
+              onChange={(event) => setCustomerProfitabilityPeriod(event.target.value as 'lastMonth' | 'last3' | 'last12')}
+              style={{ padding: '6px 10px', border: '1px solid #cbd5e1', borderRadius: '8px', fontSize: '12px', color: '#334155', background: 'white' }}
+            >
+              {profitabilityPeriodOptions.map((option) => <option key={option.key} value={option.key}>{option.label}</option>)}
+            </select>
+          </div>
+          <details style={{ marginBottom: '12px', border: '1px solid #e2e8f0', borderRadius: '10px', padding: '10px 12px', background: '#f8fafc' }}>
+            <summary style={{ cursor: 'pointer', fontSize: '12px', fontWeight: 800, color: '#2751d0' }}>How are AR Days and WIP Burden calculated?</summary>
+            <div style={{ marginTop: '8px', fontSize: '12px', color: '#475569', lineHeight: 1.5 }}>
+              AR Days = customer open AR divided by revenue for the selected period, multiplied by the number of days in that period. WIP Burden = open order-line WIP value for that customer in the selected period. Values show N/A when the required customer-level AR, revenue, or open WIP data is not available.
+            </div>
+          </details>
+          <div style={{ overflowX: 'auto' }}>
+            <table style={{ ...tableStyle, minWidth: '980px' }}>
+              <thead><tr>{['Customer', 'Revenue', 'Gross Profit', 'GP %', 'EBITDA Contribution', 'AR Days', 'WIP Burden', 'Strategic Importance'].map((h) => <th key={h} style={{ ...thStyle, textAlign: h === 'Customer' ? 'left' : 'right' }}>{h}</th>)}</tr></thead>
+              <tbody>{profitabilityRows.map((row) => <tr key={row.name}><td style={{ ...tdStyle, fontWeight: 700 }}>{row.name}</td><td style={{ ...tdStyle, textAlign: 'right' }}>{formatCurrency(row.revenue)}</td><td style={{ ...tdStyle, textAlign: 'right' }}>{row.gpPct == null ? 'N/A' : formatCurrency(Number(row.grossProfit || 0))}</td><td style={{ ...tdStyle, textAlign: 'right' }}>{pct(row.gpPct)}</td><td style={{ ...tdStyle, textAlign: 'right' }}>{row.ebitdaContribution == null ? 'N/A' : formatCurrency(Number(row.ebitdaContribution || 0))}</td><td style={{ ...tdStyle, textAlign: 'right' }}>{row.arDays == null ? 'N/A' : `${Number(row.arDays).toFixed(1)}`}</td><td style={{ ...tdStyle, textAlign: 'right' }}>{row.wipBurden > 0 ? formatCurrency(row.wipBurden) : 'N/A'}</td><td style={{ ...tdStyle, textAlign: 'right' }}>{row.strategicImportance}</td></tr>)}</tbody>
+            </table>
+          </div>
+        </div>
         {section('Customer Risk Heatmap', <><div style={{ overflowX: 'auto' }}><table style={{ ...tableStyle, minWidth: '860px' }}><thead><tr>{['Customer', 'Revenue Risk', 'Margin Risk', 'Retention Risk', 'Payment Risk', 'Strategic Risk', 'Overall Risk'].map((h) => <th key={h} style={thStyle}>{h}</th>)}</tr></thead><tbody>{riskRows.map((row) => <tr key={row.name}><td style={{ ...tdStyle, fontWeight: 700 }}>{row.name}</td>{[row.revRisk, row.marginRisk, row.retentionRisk, row.paymentRisk, row.strategicRisk, row.overall].map((score, idx) => <td key={idx} style={{ ...tdStyle, color: riskColor(score), fontWeight: 700 }}>{riskLabel(score)}</td>)}</tr>)}</tbody></table></div><details style={{ marginTop: '12px', border: '1px solid #e2e8f0', borderRadius: '10px', padding: '10px 12px', background: '#f8fafc' }}><summary style={{ cursor: 'pointer', fontWeight: 800, color: '#1e293b', fontSize: '13px' }}>Risk formulas and scoring framework</summary><div style={{ marginTop: '10px', color: '#475569', fontSize: '12px', lineHeight: 1.6 }}>Revenue Risk = Customer Revenue / Total Company Revenue. Score: less than 5% = 1, 5-10% = 2, 10-15% = 3, 15-20% = 4, greater than 20% = 5. Margin Risk uses gross margin quality and customer EBITDA contribution where available. Retention Risk is based on customer activity across the selected monthly window until explicit churn data is imported. Payment Risk is reserved for DSO / AR aging by customer; it defaults to Medium until imported. Strategic Risk is a qualitative dependency score using concentration as the current proxy. Overall Risk = Revenue Risk x 25% + Margin Risk x 25% + Retention Risk x 20% + Payment Risk x 15% + Strategic Risk x 15%.</div></details></>)}
         {section('Customer Quality Analysis', <div style={{ overflowX: 'auto' }}><table style={{ ...tableStyle, minWidth: '760px' }}><thead><tr>{['Customer Segment', 'Revenue %', 'Gross Margin %', 'EBITDA %', 'Growth Rate', 'Operational Complexity', 'Strategic Value'].map((h) => <th key={h} style={thStyle}>{h}</th>)}</tr></thead><tbody>{[{ label: 'Enterprise Accounts', rows: customerRows.slice(0, 10), complexity: 'High', value: 'High' }, { label: 'Mid-Market Accounts', rows: customerRows.slice(10, 30), complexity: 'Medium', value: 'Medium' }, { label: 'Independent Accounts', rows: customerRows.slice(30), complexity: 'Low', value: 'Diversification' }, { label: 'E-Commerce / Digital', rows: [], complexity: 'N/A', value: 'N/A' }].map((segment) => { const rev = segment.rows.reduce((sum, row) => sum + Number(row.revenue || 0), 0); const gp = segment.rows.reduce((sum, row) => sum + Number(row.grossProfit || 0), 0); const eb = segment.rows.reduce((sum, row) => sum + Number(row.ebitdaContribution || 0), 0); return <tr key={segment.label}><td style={{ ...tdStyle, fontWeight: 700 }}>{segment.label}</td><td style={tdStyle}>{pct(share(rev, totalRevenue))}</td><td style={tdStyle}>{pct(rev > 0 ? (gp / rev) * 100 : null)}</td><td style={tdStyle}>{pct(share(eb, totalEbitda))}</td><td style={tdStyle}>N/A</td><td style={tdStyle}>{segment.complexity}</td><td style={tdStyle}>{segment.value}</td></tr>; })}</tbody></table></div>)}
         {section('Customer Movement Tracker', <div style={{ overflowX: 'auto' }}><table style={{ ...tableStyle, minWidth: '720px' }}><thead><tr>{['Customer', 'Status', 'Revenue Impact', 'EBITDA Impact', 'Reason'].map((h) => <th key={h} style={thStyle}>{h}</th>)}</tr></thead><tbody>{riskRows.slice(0, 8).map((row) => <tr key={row.name}><td style={{ ...tdStyle, fontWeight: 700 }}>{row.name}</td><td style={tdStyle}>Active</td><td style={tdStyle}>{formatCurrency(row.revenue)}</td><td style={tdStyle}>{formatCurrency(Number(row.ebitdaContribution || 0))}</td><td style={tdStyle}>Monthly movement reason not imported</td></tr>)}</tbody></table></div>)}

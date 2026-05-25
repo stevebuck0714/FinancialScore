@@ -1934,20 +1934,53 @@ export async function GET(request: NextRequest) {
             orderBy: { snapshotDate: 'asc' },
             take: 50000,
           });
-          let basis: 'orderline_delta' | 'customer_sales_snapshot' = salesData.length > 0 ? 'customer_sales_snapshot' : 'orderline_delta';
-          const monthCount = (rows: any[]) =>
-            new Set(
-              rows
+          if (isInforCompany && customerFrequencyForQuery !== 'monthly') {
+            const existingMonths = new Set(
+              salesData
                 .map((row) => {
                   const snapshot = new Date(row?.snapshotDate);
                   return Number.isNaN(snapshot.getTime()) ? '' : businessMonthKey(snapshot);
                 })
                 .filter(Boolean)
-            ).size;
+            );
+            const monthlySalesData = await prisma.customerSalesSnapshot.findMany({
+              where: {
+                companyId,
+                frequency: 'monthly',
+                snapshotDate: { gte: startDate, lte: endDate },
+              },
+              orderBy: { snapshotDate: 'asc' },
+              take: 50000,
+            });
+            salesData = [
+              ...monthlySalesData.filter((row) => {
+                const snapshot = new Date(row?.snapshotDate);
+                const monthKey = Number.isNaN(snapshot.getTime()) ? '' : businessMonthKey(snapshot);
+                return monthKey && !existingMonths.has(monthKey);
+              }),
+              ...salesData,
+            ].sort((a, b) => new Date(a.snapshotDate).getTime() - new Date(b.snapshotDate).getTime());
+          }
+          let basis: 'orderline_delta' | 'customer_sales_snapshot' = salesData.length > 0 ? 'customer_sales_snapshot' : 'orderline_delta';
           if (isInforCompany) {
             const orderLineSalesData = await deriveCustomerSalesFromOrderLineDeltas(companyId, orderLineFrequencyForQuery, startDate, endDate);
             if (orderLineSalesData.length > 0) {
-              salesData = orderLineSalesData;
+              const orderLineMonths = new Set(
+                orderLineSalesData
+                  .map((row) => {
+                    const snapshot = new Date(row?.snapshotDate);
+                    return Number.isNaN(snapshot.getTime()) ? '' : businessMonthKey(snapshot);
+                  })
+                  .filter(Boolean)
+              );
+              salesData = [
+                ...salesData.filter((row) => {
+                  const snapshot = new Date(row?.snapshotDate);
+                  const monthKey = Number.isNaN(snapshot.getTime()) ? '' : businessMonthKey(snapshot);
+                  return !orderLineMonths.has(monthKey);
+                }),
+                ...orderLineSalesData,
+              ].sort((a, b) => new Date(a.snapshotDate).getTime() - new Date(b.snapshotDate).getTime());
               basis = 'orderline_delta';
             }
           }
