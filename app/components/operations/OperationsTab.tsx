@@ -1741,6 +1741,7 @@ export default function OperationsTab({
     Boolean(selectedCompanyId) &&
     industrySectorCategory === '42' &&
     (
+      mapModuleToDataType(activeTab) === 'customers' ||
       (mapModuleToDataType(activeTab) === 'products' &&
         (productReportView === 'productMarginAnalysis' || productReportView === 'wholesaleRawData' || productReportView === 'vendorPricing')) ||
       ((activeTab === 'overview' || activeTab === 'dashboard') && activeOverviewSubTab === 'execution-velocity')
