@@ -50,7 +50,7 @@ export const dynamic = 'force-dynamic';
 
 const OPERATIONAL_DATA_CACHE_TTL_SECONDS = 120;
 const CUSTOMER_CONCENTRATION_CACHE_TTL_SECONDS = 30 * 24 * 60 * 60;
-const CUSTOMER_CONCENTRATION_CACHE_VERSION = 'customer-concentration-exposure-v9';
+const CUSTOMER_CONCENTRATION_CACHE_VERSION = 'customer-concentration-exposure-v10';
 const WHOLESALE_PRODUCTS_REPORT_CACHE_TTL_SECONDS = 30 * 24 * 60 * 60;
 const OPERATIONAL_CACHEABLE_TYPES = new Set([
   'customers',
@@ -2840,9 +2840,10 @@ export async function GET(request: NextRequest) {
             if (!Number.isFinite(revenue) || revenue <= 0) continue;
             const marginKey = `${monthKey}||${customerKey}`;
             const marginRow = marginByMonthCustomer.get(marginKey) || (customerIdKey ? marginByMonthCustomer.get(`${monthKey}||${customerIdKey}`) : undefined);
-            const hasGrossProfit = Boolean(marginRow && marginRow.revenue > 0);
-            const grossProfit = marginRow ? marginRow.grossProfit * (revenue / Math.max(marginRow.revenue, 1)) : 0;
-            const grossProfitRevenue = marginRow ? revenue : 0;
+            const marginRatio = marginRow && marginRow.revenue > 0 ? marginRow.grossProfit / marginRow.revenue : null;
+            const hasGrossProfit = marginRatio != null && Number.isFinite(marginRatio) && marginRatio >= -1 && marginRatio <= 1;
+            const grossProfit = hasGrossProfit ? revenue * marginRatio : 0;
+            const grossProfitRevenue = hasGrossProfit ? revenue : 0;
             if (!concentrationByMonth.has(monthKey)) concentrationByMonth.set(monthKey, new Map());
             const monthMap = concentrationByMonth.get(monthKey)!;
             const current = monthMap.get(customerKey) || {
