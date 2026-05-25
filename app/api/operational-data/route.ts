@@ -50,7 +50,7 @@ export const dynamic = 'force-dynamic';
 
 const OPERATIONAL_DATA_CACHE_TTL_SECONDS = 120;
 const CUSTOMER_CONCENTRATION_CACHE_TTL_SECONDS = 30 * 24 * 60 * 60;
-const CUSTOMER_CONCENTRATION_CACHE_VERSION = 'customer-concentration-exposure-v3';
+const CUSTOMER_CONCENTRATION_CACHE_VERSION = 'customer-concentration-exposure-v5';
 const WHOLESALE_PRODUCTS_REPORT_CACHE_TTL_SECONDS = 30 * 24 * 60 * 60;
 const OPERATIONAL_CACHEABLE_TYPES = new Set([
   'customers',
@@ -887,6 +887,8 @@ async function deriveCustomerSalesFromRawInvoices(
       FROM "InforRawRecord"
       WHERE "companyId" = ${companyId}
         AND "miProgram" = 'SLArtrans'
+        AND "businessDate" >= ${startDate}::date
+        AND "businessDate" <= ${endDate}::date
     )
     SELECT
       date_trunc('month', invoice_date)::date AS month_start,
@@ -898,7 +900,6 @@ async function deriveCustomerSalesFromRawInvoices(
     WHERE invoice_date >= ${startDate}::date
       AND invoice_date <= ${endDate}::date
       AND amount <> 0
-      AND (trans_type IS NULL OR trans_type IN ('I', 'D'))
     GROUP BY 1, 2, 3
     HAVING SUM(ABS(amount)) > 0
     ORDER BY 1 ASC, 3 ASC
