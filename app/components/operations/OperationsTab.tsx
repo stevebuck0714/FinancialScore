@@ -19976,8 +19976,9 @@ Strategies to Improve the CCC
     const noInvoiceMovementRows = [...baseNoInvoiceMovementRows]
       .sort(compareStuckOpenLineRows)
       .slice(0, 50);
-    const snapshotOpenItems = Array.from(rowsByOrderLine.values())
-      .map((rows) => {
+    const normalizeOpenLineToken = (value: unknown) => String(value || '').trim().toLowerCase().replace(/\s+/g, ' ');
+    const snapshotOpenItemsRaw = Array.from(rowsByOrderLine.entries())
+      .map(([rowKey, rows]) => {
         const latest = [...rows].sort((a: any, b: any) => {
           const aDate = validDate(a?.snapshotDate)?.getTime() || 0;
           const bDate = validDate(b?.snapshotDate)?.getTime() || 0;
@@ -19990,6 +19991,7 @@ Strategies to Improve the CCC
         const qtyOrderedLatest = Number(latest?.qtyOrdered || 0);
         const qtyInvoicedLatest = Number(latest?.qtyInvoiced || 0);
         return {
+          rowKey,
           customerName: String(latest?.customerName || latest?.customer || 'N/A'),
           customerId: latest?.customerId || null,
           orderId: latest?.orderId || null,
@@ -20003,9 +20005,26 @@ Strategies to Improve the CCC
           contractValue,
           invoicedValue,
           wipValue,
+          snapshotDate: latest?.snapshotDate || null,
+          snapshotTime: validDate(latest?.snapshotDate)?.getTime() || 0,
         };
       })
       .filter((row: any) => Number(row.wipValue || 0) > 0 && (Number(row.qtyOrdered || 0) <= 0 || Number(row.qtyInvoiced || 0) + 1e-4 < Number(row.qtyOrdered || 0)));
+    const snapshotOpenItems = Array.from(
+      snapshotOpenItemsRaw.reduce((deduped: Map<string, any>, row: any) => {
+        const displayKey = [
+          normalizeOpenLineToken(row.customerName),
+          normalizeOpenLineToken(row.orderId),
+          normalizeOpenLineToken(row.lineId),
+          normalizeOpenLineToken(row.item),
+        ].join('||');
+        const existing = deduped.get(displayKey);
+        if (!existing || Number(row.snapshotTime || 0) > Number(existing.snapshotTime || 0)) {
+          deduped.set(displayKey, { ...row, rowKey: displayKey });
+        }
+        return deduped;
+      }, new Map<string, any>()).values()
+    );
     const executionItems = snapshotOpenItems.length > 0
       ? snapshotOpenItems
       : wipItems.filter((item: any) => isWithinOrderHistoryWindow(item?.orderDate));
@@ -20101,7 +20120,9 @@ Strategies to Improve the CCC
         if (rightMissing) return -1;
         return (Number(left) - Number(right)) * direction;
       }
-      return String(left || '').localeCompare(String(right || ''), undefined, { sensitivity: 'base', numeric: true }) * direction;
+      const compared = String(left || '').localeCompare(String(right || ''), undefined, { sensitivity: 'base', numeric: true }) * direction;
+      if (compared !== 0) return compared;
+      return String(a.rowKey || '').localeCompare(String(b.rowKey || ''), undefined, { sensitivity: 'base', numeric: true });
     };
     const sortedOpenBottleneckRows = [...executionItems].sort(compareOpenBottleneckRows);
     const handleOpenBottleneckSort = (key: OpenBottleneckSortKey) => {
@@ -20286,7 +20307,7 @@ Strategies to Improve the CCC
                       const openAge = orderDate && asOf ? diffDays(orderDate, asOf) : null;
                       const pastDue = dueDate && asOf && dueDate.getTime() < asOf.getTime() ? diffDays(dueDate, asOf) : null;
                       return (
-                        <tr key={`${year}-${row.orderId || 'order'}-${row.lineId || index}`}>
+                        <tr key={`${year}-${row.rowKey || `${row.orderId || 'order'}-${row.lineId || index}`}`}>
                           <td style={{ ...tdStyle, fontWeight: 700 }}>{row.customerName || 'N/A'}</td>
                           <td style={tdStyle}>{row.orderId || 'N/A'}</td>
                           <td style={tdStyle}>{row.lineId || 'N/A'}</td>
