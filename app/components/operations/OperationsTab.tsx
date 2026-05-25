@@ -13485,10 +13485,6 @@ Strategies to Improve the CCC
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '16px', marginBottom: '16px' }}>
           <div>
             <h3 style={{ fontSize: '20px', fontWeight: 800, color: '#1e293b', margin: 0 }}>EBITDA Performance</h3>
-            <div style={{ marginTop: '4px', fontSize: '12px', color: '#64748b' }}>
-              Monthly wholesale EBITDA scalability, overhead efficiency, inventory productivity, and working-capital conversion.
-              Enter monthly employee counts where imports do not include headcount to calculate per-employee KPIs.
-            </div>
           </div>
           <details style={{ position: 'relative', minWidth: '260px', maxWidth: '440px', textAlign: 'right' }}>
             <summary style={{ cursor: 'pointer', color: '#2751d0', fontSize: '12px', fontWeight: 800, listStyle: 'none' }}>
@@ -19050,7 +19046,19 @@ Strategies to Improve the CCC
       monthCustomer.ebitda += ebitda;
       monthMap.set(name, monthCustomer);
     });
-    const monthKeys = Array.from(monthCustomerMap.keys()).filter(Boolean).sort().slice(-12);
+    const populatedMonthKeys = Array.from(monthCustomerMap.keys()).filter(Boolean).sort();
+    const endMonthKey = populatedMonthKeys[populatedMonthKeys.length - 1] || toMonthKey(endDate) || toMonthKey(new Date());
+    const buildLastTwelveMonthKeys = (lastMonthKey: string) => {
+      const [yearRaw, monthRaw] = String(lastMonthKey || '').split('-').map(Number);
+      const endMonth = Number.isFinite(yearRaw) && Number.isFinite(monthRaw)
+        ? new Date(Date.UTC(yearRaw, Math.max(0, monthRaw - 1), 1))
+        : new Date();
+      return Array.from({ length: 12 }, (_, index) => {
+        const month = new Date(Date.UTC(endMonth.getUTCFullYear(), endMonth.getUTCMonth() - (11 - index), 1));
+        return `${month.getUTCFullYear()}-${String(month.getUTCMonth() + 1).padStart(2, '0')}`;
+      });
+    };
+    const monthKeys = buildLastTwelveMonthKeys(endMonthKey);
     const customerRows = Array.from(customerMap.values())
       .map((row) => ({
         ...row,
@@ -19178,27 +19186,11 @@ Strategies to Improve the CCC
     const pct = (num: number, denom: number) => denom > 0 ? `${((num / denom) * 100).toFixed(1)}%` : 'N/A';
     const days = (value: number | null) => value == null || !Number.isFinite(value) ? 'N/A' : `${value.toFixed(1)} days`;
     const number = (value: number | null | undefined) => value == null || !Number.isFinite(Number(value)) ? 'N/A' : Number(value).toLocaleString();
-    const asOf = wipAsOfDate && !Number.isNaN(wipAsOfDate.getTime()) ? wipAsOfDate : null;
-    const openWipAges = asOf
-      ? wipItems
-          .map((item: any) => {
-            const orderDate = validDate(item.orderDate);
-            return orderDate ? diffDays(orderDate, asOf) : null;
-          })
-          .filter((value: number | null): value is number => value != null && Number.isFinite(value) && value >= 0)
-      : [];
-    const dueDateItems = wipItems
-      .map((item: any) => ({ item, dueDate: validDate(item.dueDate) }))
-      .filter((row: any) => row.dueDate);
-    const pastDueItems = asOf
-      ? dueDateItems.filter((row: any) => row.dueDate.getTime() < asOf.getTime())
-      : [];
-    const pastDueDays = asOf
-      ? pastDueItems.map((row: any) => diffDays(row.dueDate, asOf)).filter((value: number) => value >= 0)
-      : [];
-    const qtyOrdered = wipItems.reduce((sum: number, item: any) => sum + Number(item.qtyOrdered || 0), 0);
-    const qtyInvoiced = wipItems.reduce((sum: number, item: any) => sum + Number(item.qtyInvoiced || 0), 0);
-    const shippedRows = wholesaleRows.filter((row: any) => Number(row.qtyInvoiced || 0) > 0 && validDate(row.snapshotDate));
+    const fallbackAsOf = wholesaleRows
+      .map((row: any) => validDate(row?.snapshotDate || row?.date || row?.orderDate))
+      .filter((date): date is Date => Boolean(date))
+      .sort((a, b) => b.getTime() - a.getTime())[0] || null;
+    const asOf = wipAsOfDate && !Number.isNaN(wipAsOfDate.getTime()) ? wipAsOfDate : fallbackAsOf;
     const monthKey = (value: unknown) => {
       const parsed = validDate(value);
       return parsed ? `${parsed.getUTCFullYear()}-${String(parsed.getUTCMonth() + 1).padStart(2, '0')}` : '';
@@ -19208,23 +19200,188 @@ Strategies to Improve the CCC
       const parsed = new Date(Date.UTC(year || 2000, (month || 1) - 1, 1));
       return Number.isNaN(parsed.getTime()) ? key : parsed.toLocaleDateString('en-US', { month: 'short', year: 'numeric', timeZone: 'UTC' });
     };
-    const throughputByMonth = new Map<string, { month: string; linesInvoiced: number; qtyInvoiced: number; invoicedAmount: number }>();
-    shippedRows.forEach((row: any) => {
-      const key = monthKey(row.snapshotDate);
-      if (!key) return;
-      const current = throughputByMonth.get(key) || { month: key, linesInvoiced: 0, qtyInvoiced: 0, invoicedAmount: 0 };
-      current.linesInvoiced += 1;
-      current.qtyInvoiced += Number(row.qtyInvoiced || 0);
-      current.invoicedAmount += Number(row.invoicedAmount || 0);
-      throughputByMonth.set(key, current);
+    const orderLineKey = (row: any) => [
+      row?.customerId || row?.customerName || '',
+      row?.orderId || '',
+      row?.lineId || '',
+      row?.itemId || row?.sku || row?.itemName || '',
+    ].join('||');
+    const rowsByOrderLine = new Map<string, any[]>();
+    wholesaleRows.forEach((row: any) => {
+      if (!validDate(row?.snapshotDate)) return;
+      const key = orderLineKey(row);
+      if (!key.replace(/\|/g, '').trim()) return;
+      const rows = rowsByOrderLine.get(key) || [];
+      rows.push(row);
+      rowsByOrderLine.set(key, rows);
     });
-    const throughputRows = Array.from(throughputByMonth.values()).sort((a, b) => a.month.localeCompare(b.month)).slice(-12);
-    const bridgeRows = bookingsBridge.slice(-12).map((row: any) => ({
-      period: String(row.period || ''),
-      bookings: Number(row.bookings || 0),
-      revenue: Number(row.revenue || 0),
-      delta: Number(row.delta || 0),
-    }));
+    const invoiceActivityByMonth = new Map<string, { month: string; lineKeys: Set<string>; qtyInvoiced: number; invoicedAmount: number }>();
+    rowsByOrderLine.forEach((rows, key) => {
+      const chronological = rows.sort((a: any, b: any) => {
+        const aDate = validDate(a?.snapshotDate)?.getTime() || 0;
+        const bDate = validDate(b?.snapshotDate)?.getTime() || 0;
+        return aDate - bDate;
+      });
+      let previousQty: number | null = null;
+      let previousAmount: number | null = null;
+      chronological.forEach((row: any) => {
+        const currentQty = Number(row?.qtyInvoiced || 0);
+        const currentAmount = Number(row?.invoicedAmount || 0);
+        if (previousQty == null || previousAmount == null) {
+          previousQty = currentQty;
+          previousAmount = currentAmount;
+          return;
+        }
+        const qtyDelta = currentQty - previousQty;
+        const amountDelta = currentAmount - previousAmount;
+        previousQty = currentQty;
+        previousAmount = currentAmount;
+        if (qtyDelta <= 0 && amountDelta <= 0) return;
+        const keyMonth = monthKey(row?.snapshotDate);
+        if (!keyMonth) return;
+        const current = invoiceActivityByMonth.get(keyMonth) || { month: keyMonth, lineKeys: new Set<string>(), qtyInvoiced: 0, invoicedAmount: 0 };
+        current.lineKeys.add(key);
+        current.qtyInvoiced += Math.max(qtyDelta, 0);
+        current.invoicedAmount += Math.max(amountDelta, 0);
+        invoiceActivityByMonth.set(keyMonth, current);
+      });
+    });
+    const noInvoiceMovementRows = Array.from(rowsByOrderLine.entries())
+      .map(([key, rows]) => {
+        const chronological = [...rows].sort((a: any, b: any) => {
+          const aDate = validDate(a?.snapshotDate)?.getTime() || 0;
+          const bDate = validDate(b?.snapshotDate)?.getTime() || 0;
+          return aDate - bDate;
+        });
+        const latest = chronological[chronological.length - 1];
+        let previousQty: number | null = null;
+        let previousAmount: number | null = null;
+        let hasInvoiceMovement = false;
+        chronological.forEach((row: any) => {
+          const currentQty = Number(row?.qtyInvoiced || 0);
+          const currentAmount = Number(row?.invoicedAmount || 0);
+          if (previousQty == null || previousAmount == null) {
+            previousQty = currentQty;
+            previousAmount = currentAmount;
+            return;
+          }
+          if (currentQty > previousQty || currentAmount > previousAmount) {
+            hasInvoiceMovement = true;
+          }
+          previousQty = currentQty;
+          previousAmount = currentAmount;
+        });
+        const contractValue = Number(latest?.contractValue || 0);
+        const invoicedAmount = Number(latest?.invoicedAmount || 0);
+        const wipValue = Math.max(contractValue - invoicedAmount, 0);
+        const qtyOrderedLatest = Number(latest?.qtyOrdered || 0);
+        const qtyInvoicedLatest = Number(latest?.qtyInvoiced || 0);
+        const isOpen = wipValue > 0 && (qtyOrderedLatest <= 0 || qtyInvoicedLatest + 1e-4 < qtyOrderedLatest);
+        const orderDate = validDate(latest?.orderDate || latest?.date);
+        const latestSnapshot = validDate(latest?.snapshotDate);
+        return {
+          key,
+          customerName: latest?.customerName || latest?.customer || 'N/A',
+          orderId: latest?.orderId || 'N/A',
+          lineId: latest?.lineId || 'N/A',
+          item: latest?.itemName || latest?.sku || latest?.itemId || 'N/A',
+          orderDate: latest?.orderDate || latest?.date || null,
+          snapshotDate: latest?.snapshotDate || null,
+          openAge: orderDate && asOf ? diffDays(orderDate, asOf) : null,
+          daysSinceSnapshot: latestSnapshot && asOf ? diffDays(latestSnapshot, asOf) : null,
+          qtyOrdered: qtyOrderedLatest,
+          qtyInvoiced: qtyInvoicedLatest,
+          wipValue,
+          hasInvoiceMovement,
+          isOpen,
+          status: chronological.length <= 1 ? 'Single snapshot in range' : 'No invoice movement in range',
+        };
+      })
+      .filter((row) => row.isOpen && !row.hasInvoiceMovement)
+      .sort((a, b) => Number(b.openAge || 0) - Number(a.openAge || 0) || Number(b.wipValue || 0) - Number(a.wipValue || 0))
+      .slice(0, 20);
+    const snapshotOpenItems = Array.from(rowsByOrderLine.values())
+      .map((rows) => {
+        const latest = [...rows].sort((a: any, b: any) => {
+          const aDate = validDate(a?.snapshotDate)?.getTime() || 0;
+          const bDate = validDate(b?.snapshotDate)?.getTime() || 0;
+          return bDate - aDate;
+        })[0];
+        const contractValue = Number(latest?.contractValue || 0);
+        const invoicedValue = Number(latest?.invoicedAmount || 0);
+        const wipValue = Math.max(contractValue - invoicedValue, 0);
+        const qtyOrderedLatest = Number(latest?.qtyOrdered || 0);
+        const qtyInvoicedLatest = Number(latest?.qtyInvoiced || 0);
+        return {
+          customerName: String(latest?.customerName || latest?.customer || 'N/A'),
+          customerId: latest?.customerId || null,
+          orderId: latest?.orderId || null,
+          lineId: latest?.lineId || null,
+          item: latest?.itemName || latest?.sku || latest?.itemId || 'N/A',
+          orderDate: latest?.orderDate || latest?.date || null,
+          dueDate: latest?.dueDate || null,
+          qtyOrdered: qtyOrderedLatest,
+          qtyShipped: Number(latest?.qtyShipped || 0),
+          qtyInvoiced: qtyInvoicedLatest,
+          contractValue,
+          invoicedValue,
+          wipValue,
+        };
+      })
+      .filter((row: any) => Number(row.wipValue || 0) > 0 && (Number(row.qtyOrdered || 0) <= 0 || Number(row.qtyInvoiced || 0) + 1e-4 < Number(row.qtyOrdered || 0)));
+    const executionItems = snapshotOpenItems.length > 0 ? snapshotOpenItems : wipItems;
+    const openWipAges = asOf
+      ? executionItems
+          .map((item: any) => {
+            const orderDate = validDate(item.orderDate);
+            return orderDate ? diffDays(orderDate, asOf) : null;
+          })
+          .filter((value: number | null): value is number => value != null && Number.isFinite(value) && value >= 0)
+      : [];
+    const qtyOrdered = executionItems.reduce((sum: number, item: any) => sum + Number(item.qtyOrdered || 0), 0);
+    const qtyInvoiced = executionItems.reduce((sum: number, item: any) => sum + Number(item.qtyInvoiced || 0), 0);
+    const throughputRows = Array.from(invoiceActivityByMonth.values())
+      .map((row) => ({
+        month: row.month,
+        linesInvoiced: row.lineKeys.size,
+        qtyInvoiced: row.qtyInvoiced,
+        invoicedAmount: row.invoicedAmount,
+      }))
+      .sort((a, b) => a.month.localeCompare(b.month))
+      .slice(-12);
+    const bridgeRows = (() => {
+      if (bookingsBridge.length > 0) {
+        return bookingsBridge.slice(-12).map((row: any) => ({
+          period: String(row.period || ''),
+          bookings: Number(row.bookings || 0),
+          revenue: Number(row.revenue || 0),
+          delta: Number(row.delta || 0),
+        }));
+      }
+      const byMonth = new Map<string, { period: string; bookings: number; revenue: number; delta: number }>();
+      rowsByOrderLine.forEach((rows) => {
+        const representative = [...rows].sort((a: any, b: any) => {
+          const aDate = validDate(a?.snapshotDate)?.getTime() || 0;
+          const bDate = validDate(b?.snapshotDate)?.getTime() || 0;
+          return bDate - aDate;
+        })[0];
+        const key = monthKey(representative?.orderDate || representative?.date);
+        if (!key) return;
+        const current = byMonth.get(key) || { period: key, bookings: 0, revenue: 0, delta: 0 };
+        current.bookings += Number(representative?.contractValue || 0);
+        byMonth.set(key, current);
+      });
+      invoiceActivityByMonth.forEach((row, key) => {
+        const current = byMonth.get(key) || { period: key, bookings: 0, revenue: 0, delta: 0 };
+        current.revenue += Number(row.invoicedAmount || 0);
+        byMonth.set(key, current);
+      });
+      byMonth.forEach((current, key) => {
+        current.delta = current.bookings - current.revenue;
+        byMonth.set(key, current);
+      });
+      return Array.from(byMonth.values()).sort((a, b) => a.period.localeCompare(b.period)).slice(-12);
+    })();
     const openBottleneckValue = (row: any, key: OpenBottleneckSortKey) => {
       if (key === 'openAge') {
         const orderDate = validDate(row.orderDate);
@@ -19253,7 +19410,7 @@ Strategies to Improve the CCC
       'qtyInvoiced',
       'wipValue',
     ]);
-    const sortedOpenBottleneckRows = [...wipItems].sort((a: any, b: any) => {
+    const sortedOpenBottleneckRows = [...executionItems].sort((a: any, b: any) => {
       const direction = openBottleneckSortDir === 'asc' ? 1 : -1;
       const left = openBottleneckValue(a, openBottleneckSortKey);
       const right = openBottleneckValue(b, openBottleneckSortKey);
@@ -19277,7 +19434,7 @@ Strategies to Improve the CCC
     };
     const openBottleneckSortLabel = (key: OpenBottleneckSortKey) =>
       openBottleneckSortKey === key ? (openBottleneckSortDir === 'asc' ? ' ▲' : ' ▼') : ' ↕';
-    const velocityRows = wipItems.map((row: any) => ({
+    const velocityRows = executionItems.map((row: any) => ({
       ...row,
       openAge: openBottleneckValue(row, 'openAge') as number | null,
       pastDueDays: openBottleneckValue(row, 'pastDueDays') as number | null,
@@ -19322,8 +19479,9 @@ Strategies to Improve the CCC
     const velocityByItemRows = buildVelocitySummary((row) => String(row.item || 'N/A'), 'item');
     const velocityByCustomerRows = buildVelocitySummary((row) => String(row.customerName || 'N/A'), 'customerName');
     const topOpenWipRows = sortedOpenBottleneckRows.slice(0, 20);
+    const totalOpenWipValue = executionItems.reduce((sum: number, item: any) => sum + Number(item.wipValue || 0), 0);
     const metricCards = [
-      { label: 'Open WIP Value', value: formatCurrency(Number(wipSummary?.totals?.totalWip || 0)), detail: 'From open order-line WIP' },
+      { label: 'Open WIP Value', value: formatCurrency(Number(wipSummary?.totals?.totalWip || totalOpenWipValue || 0)), detail: 'From open order-line WIP' },
       { label: 'Avg Open WIP Age', value: days(avg(openWipAges)), detail: 'As-of date minus order date' },
       { label: 'WIP Qty Invoiced %', value: pct(qtyInvoiced, qtyOrdered), detail: 'Qty invoiced / qty ordered on open lines' },
       { label: '90+ Day Open Lines', value: number(agingBuckets.find((bucket) => bucket.label === '90+ Days')?.lineCount || 0), detail: 'Oldest open order-line bucket' },
@@ -19462,6 +19620,34 @@ Strategies to Improve the CCC
                   </tr>
                 );
               })}</tbody>
+            </table>
+          </div>
+        ))}
+        {section('No Invoice Movement / Stuck Open Lines', (
+          <div style={{ overflowX: 'auto' }}>
+            <table style={{ ...tableStyle, minWidth: '980px' }}>
+              <thead>
+                <tr>
+                  {['Customer', 'Order', 'Line', 'Item', 'Order Date', 'Latest Snapshot', 'Open Age', 'Qty Ordered', 'Qty Invoiced', 'WIP Value', 'Status'].map((header) => (
+                    <th key={header} style={{ ...thStyle, textAlign: ['Open Age', 'Qty Ordered', 'Qty Invoiced', 'WIP Value'].includes(header) ? 'right' : 'left' }}>{header}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>{noInvoiceMovementRows.map((row) => (
+                <tr key={row.key}>
+                  <td style={{ ...tdStyle, fontWeight: 700 }}>{row.customerName}</td>
+                  <td style={tdStyle}>{row.orderId}</td>
+                  <td style={tdStyle}>{row.lineId}</td>
+                  <td style={tdStyle}>{row.item}</td>
+                  <td style={tdStyle}>{row.orderDate || 'N/A'}</td>
+                  <td style={tdStyle}>{row.snapshotDate || 'N/A'}</td>
+                  <td style={{ ...tdStyle, textAlign: 'right' }}>{row.openAge == null ? 'N/A' : row.openAge}</td>
+                  <td style={{ ...tdStyle, textAlign: 'right' }}>{number(row.qtyOrdered)}</td>
+                  <td style={{ ...tdStyle, textAlign: 'right' }}>{number(row.qtyInvoiced)}</td>
+                  <td style={{ ...tdStyle, textAlign: 'right' }}>{formatCurrency(row.wipValue)}</td>
+                  <td style={tdStyle}>{row.status}</td>
+                </tr>
+              ))}</tbody>
             </table>
           </div>
         ))}

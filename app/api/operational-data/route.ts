@@ -2113,10 +2113,6 @@ export async function GET(request: NextRequest) {
                   gte: latestOrderSnapshotDate,
                   lte: snapshotDayEnd,
                 },
-                OR: [
-                  { remainingAmount: { gt: 0 } },
-                  { remainingAmount: null, contractValue: { gt: 0 } },
-                ],
               },
               select: {
                 snapshotDate: true,
