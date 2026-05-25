@@ -19170,7 +19170,7 @@ Strategies to Improve the CCC
           top10AvgMargin: row.top10AvgMargin,
           remainingAvgMargin: row.remainingAvgMargin,
           retentionRate: row.retentionRate,
-          newCustomerRevenue: Number(row.newCustomerRevenue || 0),
+          newCustomerRevenue: row.newCustomerRevenue == null ? null : Number(row.newCustomerRevenue || 0),
           source: row.source,
         }))
       : [];
@@ -19263,7 +19263,7 @@ Strategies to Improve the CCC
       { label: 'Avg Gross Margin - Top 10', render: (row: any) => pct(row.top10AvgMargin) },
       { label: 'Avg Gross Margin - Customers 11+', render: (row: any) => pct(row.remainingAvgMargin) },
       { label: 'Customer Retention Rate', render: (row: any) => pct(row.retentionRate) },
-      { label: 'Revenue from New Customers', render: (row: any) => formatCurrency(row.newCustomerRevenue) },
+      { label: 'Revenue from New Customers', render: (row: any) => row.newCustomerRevenue == null ? 'N/A' : formatCurrency(row.newCustomerRevenue) },
     ];
     const monthlyTrendRows = executiveMonthlyCustomerMetrics;
     const riskRows = top10.map((row) => {

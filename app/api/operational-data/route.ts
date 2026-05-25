@@ -773,6 +773,99 @@ async function deriveCustomerSalesFromOrderLineDeltas(
   });
 }
 
+async function deriveCustomerSalesFromRawInvoices(
+  companyId: string,
+  startDate: Date,
+  endDate: Date
+): Promise<
+  Array<{
+    companyId: string;
+    snapshotDate: Date;
+    frequency: 'monthly';
+    customerId: string | null;
+    customerName: string;
+    revenue: number;
+    invoiceCount: number;
+    avgInvoiceSize: number | null;
+  }>
+> {
+  const rows = await prisma.$queryRaw<
+    Array<{
+      month_start: Date;
+      customer_id: string | null;
+      customer_name: string | null;
+      revenue: number;
+      invoice_count: number;
+    }>
+  >(Prisma.sql`
+    WITH raw_rows AS (
+      SELECT
+        "miProgram",
+        "payload",
+        COALESCE(
+          CASE
+            WHEN "payload"->>'InvDate' ~ '^\\d{8}' THEN to_date(LEFT("payload"->>'InvDate', 8), 'YYYYMMDD')
+            WHEN "payload"->>'InvDate' ~ '^\\d{4}-\\d{2}-\\d{2}' THEN LEFT("payload"->>'InvDate', 10)::date
+            ELSE NULL
+          END,
+          "businessDate"::date
+        ) AS invoice_date,
+        COALESCE(
+          NULLIF("payload"->>'CustNum', ''),
+          NULLIF("payload"->>'CorpCust', '')
+        ) AS customer_id,
+        COALESCE(
+          NULLIF("payload"->>'DerCustName', ''),
+          NULLIF("payload"->>'CadName', ''),
+          NULLIF("payload"->>'DerCustNoName', ''),
+          NULLIF("payload"->>'CustNum', '')
+        ) AS customer_name,
+        NULLIF("payload"->>'InvNum', '') AS invoice_no,
+        UPPER(NULLIF("payload"->>'Type', '')) AS trans_type,
+        COALESCE(
+          NULLIF(regexp_replace("payload"->>'Amount', '[^0-9.-]', '', 'g'), '')::double precision,
+          NULLIF(regexp_replace("payload"->>'DomAmt', '[^0-9.-]', '', 'g'), '')::double precision,
+          NULLIF(regexp_replace("payload"->>'CUAM', '[^0-9.-]', '', 'g'), '')::double precision,
+          0
+        )::double precision AS amount
+      FROM "InforRawRecord"
+      WHERE "companyId" = ${companyId}
+        AND "miProgram" = 'SLArtrans'
+    )
+    SELECT
+      date_trunc('month', invoice_date)::date AS month_start,
+      NULLIF(TRIM(COALESCE(customer_id, '')), '') AS customer_id,
+      NULLIF(TRIM(COALESCE(customer_name, '')), '') AS customer_name,
+      SUM(ABS(amount))::double precision AS revenue,
+      COUNT(DISTINCT COALESCE(invoice_no, customer_id || ':' || invoice_date::text || ':' || amount::text))::int AS invoice_count
+    FROM raw_rows
+    WHERE invoice_date >= ${startDate}::date
+      AND invoice_date <= ${endDate}::date
+      AND amount <> 0
+      AND (trans_type IS NULL OR trans_type IN ('I', 'D'))
+    GROUP BY 1, 2, 3
+    HAVING SUM(ABS(amount)) > 0
+    ORDER BY 1 ASC, 3 ASC
+  `);
+
+  return rows.map((row) => {
+    const customerId = String(row.customer_id || '').trim() || null;
+    const customerName = String(row.customer_name || '').trim() || (customerId ? `Customer ${customerId}` : 'Unknown Customer');
+    const revenue = Number(row.revenue || 0);
+    const invoiceCount = Math.max(0, Number(row.invoice_count || 0));
+    return {
+      companyId,
+      snapshotDate: new Date(row.month_start),
+      frequency: 'monthly',
+      customerId,
+      customerName,
+      revenue,
+      invoiceCount,
+      avgInvoiceSize: invoiceCount > 0 ? revenue / invoiceCount : null,
+    };
+  });
+}
+
 function normalizeAccountNameForKey(name: string): string {
   return String(name || '')
     .trim()
@@ -2020,48 +2113,44 @@ export async function GET(request: NextRequest) {
             orderBy: { snapshotDate: 'asc' },
             take: 100000,
           });
-          const snapshotMonths = new Set(
-            customerSnapshotRowsForConcentration
-              .map((row: any) => {
-                const snapshot = new Date(row?.snapshotDate);
-                return Number.isNaN(snapshot.getTime()) ? '' : businessMonthKey(snapshot);
-              })
-              .filter(Boolean)
-          );
-          const orderLineRowsForConcentration: any[] = [];
-          if (isInforCompany) {
-            const filledMonths = new Set(snapshotMonths);
-            const orderLineFrequencies = Array.from(new Set([
-              orderLineFrequencyForQuery,
-              'daily',
-              'monthly',
-              'weekly',
-            ])) as Array<'daily' | 'weekly' | 'monthly'>;
-            for (const orderLineFrequency of orderLineFrequencies) {
-              const rowsForFrequency = await deriveCustomerSalesFromOrderLineDeltas(companyId, orderLineFrequency, concentrationStart, concentrationEnd);
-              const monthsInFrequency = new Set(
-                rowsForFrequency
-                  .map((row: any) => {
-                    const snapshot = new Date(row?.snapshotDate);
-                    return Number.isNaN(snapshot.getTime()) ? '' : businessMonthKey(snapshot);
-                  })
-                  .filter(Boolean)
-              );
-              const missingMonthsFromFrequency = Array.from(monthsInFrequency).filter((monthKey) => !filledMonths.has(monthKey));
-              if (missingMonthsFromFrequency.length === 0) continue;
-              missingMonthsFromFrequency.forEach((monthKey) => filledMonths.add(monthKey));
-              orderLineRowsForConcentration.push(
-                ...rowsForFrequency.filter((row: any) => {
-                  const snapshot = new Date(row?.snapshotDate);
-                  const monthKey = Number.isNaN(snapshot.getTime()) ? '' : businessMonthKey(snapshot);
-                  return missingMonthsFromFrequency.includes(monthKey);
-                })
-              );
-            }
+          const marginByMonthCustomer = new Map<string, { grossProfit: number; revenue: number }>();
+          for (const row of customerSnapshotRowsForConcentration as any[]) {
+            const snapshot = new Date(row?.snapshotDate);
+            if (Number.isNaN(snapshot.getTime())) continue;
+            const monthKey = businessMonthKey(snapshot);
+            const customerName = String(row?.customerName || 'Unknown Customer').trim() || 'Unknown Customer';
+            const customerKey = customerName.toLowerCase().replace(/\s+/g, ' ');
+            const revenue = Number(row?.revenue || 0);
+            const hasGrossProfit = row?.grossMargin != null || row?.cogs != null;
+            if (!hasGrossProfit || !Number.isFinite(revenue) || revenue <= 0) continue;
+            const grossProfit = Number(row?.grossMargin ?? (revenue - Number(row?.cogs || 0)));
+            if (!Number.isFinite(grossProfit)) continue;
+            const key = `${monthKey}||${customerKey}`;
+            const current = marginByMonthCustomer.get(key) || { grossProfit: 0, revenue: 0 };
+            current.grossProfit += grossProfit;
+            current.revenue += revenue;
+            marginByMonthCustomer.set(key, current);
           }
-          const concentrationSourceRows = [...customerSnapshotRowsForConcentration, ...orderLineRowsForConcentration];
+          const rawInvoiceRowsForConcentration = isInforCompany
+            ? await deriveCustomerSalesFromRawInvoices(companyId, concentrationStart, concentrationEnd)
+            : [];
+          const concentrationSourceRows = rawInvoiceRowsForConcentration.length > 0
+            ? rawInvoiceRowsForConcentration
+            : customerSnapshotRowsForConcentration;
           const concentrationByMonth = new Map<string, Map<string, any>>();
           const firstMonthByCustomerForConcentration = new Map<string, string>();
+          const firstMonthByCustomerFromActualSales = new Map<string, string>();
+          for (const row of customerSnapshotRowsForConcentration as any[]) {
+            const snapshot = new Date(row?.snapshotDate);
+            if (Number.isNaN(snapshot.getTime())) continue;
+            const monthKey = businessMonthKey(snapshot);
+            const customerName = String(row?.customerName || 'Unknown Customer').trim() || 'Unknown Customer';
+            const customerKey = customerName.toLowerCase().replace(/\s+/g, ' ');
+            const revenue = Number(row?.revenue || 0);
+            if (!Number.isFinite(revenue) || revenue <= 0) continue;
+            const priorFirst = firstMonthByCustomerFromActualSales.get(customerKey);
+            if (!priorFirst || monthKey < priorFirst) firstMonthByCustomerFromActualSales.set(customerKey, monthKey);
+          }
           for (const row of concentrationSourceRows as any[]) {
             const snapshot = new Date(row?.snapshotDate);
             if (Number.isNaN(snapshot.getTime())) continue;
@@ -2071,8 +2160,10 @@ export async function GET(request: NextRequest) {
             const customerKey = customerName.toLowerCase().replace(/\s+/g, ' ');
             const revenue = Number(row?.revenue || 0);
             if (!Number.isFinite(revenue) || revenue <= 0) continue;
-            const hasGrossProfit = row?.grossMargin != null || row?.cogs != null;
-            const grossProfit = hasGrossProfit ? Number(row?.grossMargin ?? (revenue - Number(row?.cogs || 0))) : 0;
+            const marginKey = `${monthKey}||${customerKey}`;
+            const marginRow = marginByMonthCustomer.get(marginKey);
+            const hasGrossProfit = Boolean(marginRow && marginRow.revenue > 0);
+            const grossProfit = marginRow ? marginRow.grossProfit * (revenue / Math.max(marginRow.revenue, 1)) : 0;
             if (!concentrationByMonth.has(monthKey)) concentrationByMonth.set(monthKey, new Map());
             const monthMap = concentrationByMonth.get(monthKey)!;
             const current = monthMap.get(customerKey) || {
@@ -2098,8 +2189,7 @@ export async function GET(request: NextRequest) {
           };
           const sourceCoverageByMonth = new Map<string, string>();
           concentrationMonthKeys.forEach((monthKey) => {
-            if (snapshotMonths.has(monthKey)) sourceCoverageByMonth.set(monthKey, 'customer_sales_snapshot');
-            else if (Array.from(concentrationByMonth.get(monthKey)?.values() || []).length > 0) sourceCoverageByMonth.set(monthKey, 'orderline_delta');
+            if (Array.from(concentrationByMonth.get(monthKey)?.values() || []).length > 0) sourceCoverageByMonth.set(monthKey, rawInvoiceRowsForConcentration.length > 0 ? 'raw_slartrans_invoice' : 'customer_sales_snapshot');
             else sourceCoverageByMonth.set(monthKey, 'none');
           });
           const customerConcentrationExecutiveMonthly = concentrationMonthKeys.map((monthKey) => {
@@ -2121,7 +2211,7 @@ export async function GET(request: NextRequest) {
             const newCustomerRevenue = values
               .filter((row: any) => {
                 const name = String(row.customerName || 'Unknown Customer').trim();
-                return firstMonthByCustomerForConcentration.get(name.toLowerCase().replace(/\s+/g, ' ')) === monthKey;
+                return firstMonthByCustomerFromActualSales.get(name.toLowerCase().replace(/\s+/g, ' ')) === monthKey;
               })
               .reduce((sum: number, row: any) => sum + Number(row.revenue || 0), 0);
             const top5 = values.slice(0, 5);
@@ -2140,7 +2230,7 @@ export async function GET(request: NextRequest) {
               top10AvgMargin: marginForRows(top10),
               remainingAvgMargin: marginForRows(values.slice(10)),
               retentionRate: currentCustomerKeys.length ? (retainedCustomers.length / currentCustomerKeys.length) * 100 : null,
-              newCustomerRevenue,
+              newCustomerRevenue: sourceCoverageByMonth.get(monthKey) === 'customer_sales_snapshot' ? newCustomerRevenue : null,
             };
           });
 
