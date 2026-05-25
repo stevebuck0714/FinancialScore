@@ -50,7 +50,7 @@ export const dynamic = 'force-dynamic';
 
 const OPERATIONAL_DATA_CACHE_TTL_SECONDS = 120;
 const CUSTOMER_CONCENTRATION_CACHE_TTL_SECONDS = 30 * 24 * 60 * 60;
-const CUSTOMER_CONCENTRATION_CACHE_VERSION = 'customer-concentration-exposure-v2';
+const CUSTOMER_CONCENTRATION_CACHE_VERSION = 'customer-concentration-exposure-v3';
 const WHOLESALE_PRODUCTS_REPORT_CACHE_TTL_SECONDS = 30 * 24 * 60 * 60;
 const OPERATIONAL_CACHEABLE_TYPES = new Set([
   'customers',
@@ -2407,6 +2407,16 @@ export async function GET(request: NextRequest) {
           const rawOrderLineMarginRowsForConcentration = isInforCompany
             ? await deriveCustomerMarginFromRawOrderLineDeltas(companyId, concentrationStart, concentrationEnd)
             : [];
+          const rawOrderLineSalesRowsForConcentration = rawOrderLineMarginRowsForConcentration.map((row) => ({
+            companyId,
+            snapshotDate: monthStartFromBusinessMonthKey(row.monthKey),
+            frequency: 'monthly' as const,
+            customerId: row.customerIdKey || null,
+            customerName: row.customerName,
+            revenue: row.revenue,
+            invoiceCount: 0,
+            avgInvoiceSize: null,
+          }));
           const marginByMonthCustomer = new Map<string, { grossProfit: number; revenue: number }>();
           for (const row of customerSnapshotRowsForConcentration as any[]) {
             const snapshot = new Date(row?.snapshotDate);
@@ -2464,6 +2474,14 @@ export async function GET(request: NextRequest) {
               })
               .filter(Boolean)
           );
+          const rawOrderLineMonthsForConcentration = new Set(
+            rawOrderLineSalesRowsForConcentration
+              .map((row: any) => {
+                const snapshot = new Date(row?.snapshotDate);
+                return Number.isNaN(snapshot.getTime()) ? '' : businessMonthKey(snapshot);
+              })
+              .filter(Boolean)
+          );
           const concentrationSourceRows = [
             ...rawInvoiceRowsForConcentration,
             ...orderLineSalesRowsForConcentration.filter((row: any) => {
@@ -2471,10 +2489,15 @@ export async function GET(request: NextRequest) {
               const monthKey = Number.isNaN(snapshot.getTime()) ? '' : businessMonthKey(snapshot);
               return monthKey && !rawInvoiceMonthsForConcentration.has(monthKey);
             }),
-            ...(customerSnapshotRowsForConcentration as any[]).filter((row: any) => {
+            ...rawOrderLineSalesRowsForConcentration.filter((row: any) => {
               const snapshot = new Date(row?.snapshotDate);
               const monthKey = Number.isNaN(snapshot.getTime()) ? '' : businessMonthKey(snapshot);
               return monthKey && !rawInvoiceMonthsForConcentration.has(monthKey) && !orderLineMonthsForConcentration.has(monthKey);
+            }),
+            ...(customerSnapshotRowsForConcentration as any[]).filter((row: any) => {
+              const snapshot = new Date(row?.snapshotDate);
+              const monthKey = Number.isNaN(snapshot.getTime()) ? '' : businessMonthKey(snapshot);
+              return monthKey && !rawInvoiceMonthsForConcentration.has(monthKey) && !orderLineMonthsForConcentration.has(monthKey) && !rawOrderLineMonthsForConcentration.has(monthKey);
             }),
           ];
           const customerSnapshotRowsForNewCustomerHistory = await prisma.customerSalesSnapshot.findMany({
@@ -2578,6 +2601,8 @@ export async function GET(request: NextRequest) {
                   ? 'raw_slartrans_invoice'
                   : orderLineMonthsForConcentration.has(monthKey)
                   ? 'customer_order_line_delta'
+                  : rawOrderLineMonthsForConcentration.has(monthKey)
+                  ? 'raw_slcoitems_delta'
                   : 'customer_sales_snapshot'
               );
             }
@@ -2637,19 +2662,22 @@ export async function GET(request: NextRequest) {
             }))
           );
           customerConcentrationSourceCoverage = Object.fromEntries(sourceCoverageByMonth.entries());
-          await writeDerivedApiCache({
-            ...concentrationCache,
-            payload: {
-              executiveMonthly: customerConcentrationExecutiveMonthly,
-              customerMonthly: customerConcentrationMonthlyCustomers,
-              monthKeys: concentrationMonthKeys,
-              sourceCoverage: customerConcentrationSourceCoverage,
-              cacheVersion: CUSTOMER_CONCENTRATION_CACHE_VERSION,
-            },
-            ttlSeconds: CUSTOMER_CONCENTRATION_CACHE_TTL_SECONDS,
-          }).catch((error) => {
-            console.warn('Customer concentration cache write failed:', error);
-          });
+          const concentrationHasRevenue = customerConcentrationExecutiveMonthly.some((row) => Number(row?.totalRevenue || row?.revenue || 0) > 0);
+          if (concentrationHasRevenue) {
+            await writeDerivedApiCache({
+              ...concentrationCache,
+              payload: {
+                executiveMonthly: customerConcentrationExecutiveMonthly,
+                customerMonthly: customerConcentrationMonthlyCustomers,
+                monthKeys: concentrationMonthKeys,
+                sourceCoverage: customerConcentrationSourceCoverage,
+                cacheVersion: CUSTOMER_CONCENTRATION_CACHE_VERSION,
+              },
+              ttlSeconds: CUSTOMER_CONCENTRATION_CACHE_TTL_SECONDS,
+            }).catch((error) => {
+              console.warn('Customer concentration cache write failed:', error);
+            });
+          }
           }
 
           const mtdStart = startOfBusinessMonth(endDate);

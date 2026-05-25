@@ -510,7 +510,7 @@ type CardSeverity = 'normal' | 'warning' | 'critical' | 'loading';
 const HEAVY_PREFETCH_TYPES: OpsDataType[] = ['ar-aging', 'ap-aging', 'customers', 'products'];
 const OPERATIONAL_DATA_CACHE_TTL_MS = 2 * 60 * 1000;
 const CUSTOMER_DATA_CACHE_TTL_MS = 30 * 24 * 60 * 60 * 1000;
-const CUSTOMER_CONCENTRATION_CLIENT_CACHE_VERSION = 'customer-concentration-exposure-v2';
+const CUSTOMER_CONCENTRATION_CLIENT_CACHE_VERSION = 'customer-concentration-exposure-v3';
 const WHOLESALE_PRODUCTS_REPORT_CACHE_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 
 type InvestigatePlaybook = {
@@ -728,6 +728,7 @@ export default function OperationsTab({
   const [cashConversionFinancialData, setCashConversionFinancialData] = useState<any>(null);
   const [ebitdaEmployeeInputsByMonth, setEbitdaEmployeeInputsByMonth] = useState<Record<string, string>>({});
   const [customerProfitabilityPeriod, setCustomerProfitabilityPeriod] = useState<'lastMonth' | 'last3' | 'last12'>('last12');
+  const [customerConcentrationRenderStage, setCustomerConcentrationRenderStage] = useState(1);
   const [companyOperationalHubConfig, setCompanyOperationalHubConfig] = useState<any>(operationalHubConfig || null);
   const [dailyFinancialView, setDailyFinancialView] = useState<'summary' | 'income' | 'balance' | 'cashflow'>('summary');
   const [dailyFinancialStatementRollup, setDailyFinancialStatementRollup] = useState<'daily' | 'quarterly' | 'annual'>('daily');
@@ -1129,6 +1130,26 @@ export default function OperationsTab({
       loadTabData(activeTab);
     }
   }, [activeTab, selectedCompanyId, industrySectorCategory, frequency, startDate, endDate, dailyFinancialStatementRollup]);
+
+  useEffect(() => {
+    if (activeOverviewSubTab !== 'customer-concentration-exposure') return;
+    setCustomerConcentrationRenderStage(1);
+    const timers = [
+      window.setTimeout(() => setCustomerConcentrationRenderStage(2), 50),
+      window.setTimeout(() => setCustomerConcentrationRenderStage(3), 150),
+      window.setTimeout(() => setCustomerConcentrationRenderStage(4), 300),
+    ];
+    return () => {
+      timers.forEach((timer) => window.clearTimeout(timer));
+    };
+  }, [
+    activeOverviewSubTab,
+    selectedCompanyId,
+    startDate,
+    endDate,
+    customerData?.summary?.customerConcentration?.cacheVersion,
+    customerConcentrationRefreshing,
+  ]);
 
   useEffect(() => {
     setCompanyOperationalHubConfig(operationalHubConfig || null);
@@ -1707,8 +1728,11 @@ export default function OperationsTab({
   const shouldLoadWholesaleProductsReport =
     Boolean(selectedCompanyId) &&
     industrySectorCategory === '42' &&
-    mapModuleToDataType(activeTab) === 'products' &&
-    (productReportView === 'productMarginAnalysis' || productReportView === 'wholesaleRawData' || productReportView === 'vendorPricing');
+    (
+      (mapModuleToDataType(activeTab) === 'products' &&
+        (productReportView === 'productMarginAnalysis' || productReportView === 'wholesaleRawData' || productReportView === 'vendorPricing')) ||
+      ((activeTab === 'overview' || activeTab === 'dashboard') && activeOverviewSubTab === 'execution-velocity')
+    );
 
   useEffect(() => {
     if (!shouldLoadWholesaleProductsReport) {
@@ -1842,6 +1866,22 @@ export default function OperationsTab({
   const refreshCustomerConcentrationExposure = async () => {
     setCustomerConcentrationRefreshing(true);
     setError(null);
+    setCustomerData((prev: any) => prev
+      ? {
+          ...prev,
+          summary: {
+            ...(prev.summary || {}),
+            customerConcentration: {
+              executiveMonthly: [],
+              customerMonthly: [],
+              monthKeys: [],
+              sourceCoverage: {},
+              cacheVersion: CUSTOMER_CONCENTRATION_CLIENT_CACHE_VERSION,
+              refreshing: true,
+            },
+          },
+        }
+      : prev);
     try {
       const fresh = await fetchOperationalTypeWithCache('customers', {
         forceRefresh: true,
@@ -19443,9 +19483,78 @@ Strategies to Improve the CCC
           source: row.source,
         }))
       : [];
-    const executiveMonthlyCustomerMetrics = apiExecutiveMonthly.length === 12
+    const concentrationIsRefreshing = customerConcentrationRefreshing || customerData?.summary?.customerConcentration?.refreshing === true;
+    const apiExecutiveHasRevenue = apiExecutiveMonthly.some((row: any) => Number(row.revenue || 0) > 0);
+    const executiveMonthlyCustomerMetrics = apiExecutiveMonthly.length === 12 && (apiExecutiveHasRevenue || concentrationIsRefreshing)
       ? apiExecutiveMonthly
       : [...monthlyCustomerMetrics].reverse();
+    const monthlyTrendRows = executiveMonthlyCustomerMetrics;
+    const tableStyle = { width: '100%', borderCollapse: 'collapse' as const };
+    const thStyle: React.CSSProperties = { padding: '8px', fontSize: '12px', color: '#334155', textAlign: 'left', background: '#f8fafc', borderBottom: '1px solid #e2e8f0' };
+    const tdStyle: React.CSSProperties = { padding: '8px', fontSize: '12px', color: '#334155', borderBottom: '1px solid #f1f5f9' };
+    const section = (title: string, body: React.ReactNode) => (
+      <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '16px', marginBottom: '16px' }}>
+        <h3 style={{ margin: '0 0 12px', fontSize: '17px', color: '#0f172a' }}>{title}</h3>
+        {body}
+      </div>
+    );
+    const executiveMetricRows = [
+      { label: 'Top 5 Customers % Revenue', render: (row: any) => pct(row.top5Rev) },
+      { label: 'Top 10 Customers % Revenue', render: (row: any) => pct(row.top10Rev) },
+      { label: 'Top 5 Customers % Gross Profit', render: (row: any) => pct(row.top5Gp) },
+      { label: 'Largest Customer % Revenue', render: (row: any) => pct(row.largestRev) },
+      { label: 'Largest Customer % EBITDA Contribution', render: (row: any) => pct(row.largestEbitda) },
+      { label: 'Avg Gross Margin - Top 10', render: (row: any) => pct(row.top10AvgMargin) },
+      { label: 'Avg Gross Margin - Customers 11+', render: (row: any) => pct(row.remainingAvgMargin) },
+      { label: 'Customer Retention Rate', render: (row: any) => pct(row.retentionRate) },
+      { label: 'Revenue from New Customers', render: (row: any) => row.newCustomerRevenue == null ? 'N/A' : formatCurrency(row.newCustomerRevenue) },
+    ];
+    const refreshControls = (
+      <>
+        <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '10px' }}>
+          <button
+            type="button"
+            onClick={() => void refreshCustomerConcentrationExposure()}
+            disabled={customerConcentrationRefreshing}
+            style={{
+              border: '1px solid #cbd5e1',
+              borderRadius: '8px',
+              background: customerConcentrationRefreshing ? '#f1f5f9' : 'white',
+              color: '#334155',
+              padding: '7px 11px',
+              fontSize: '12px',
+              fontWeight: 700,
+              cursor: customerConcentrationRefreshing ? 'not-allowed' : 'pointer',
+            }}
+          >
+            {customerConcentrationRefreshing ? 'Refreshing...' : 'Refresh Customer Concentration'}
+          </button>
+        </div>
+        {concentrationIsRefreshing && (
+          <div style={{ background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: '10px', color: '#1d4ed8', fontSize: '12px', fontWeight: 700, padding: '10px 12px', marginBottom: '12px' }}>
+            Recomputing customer concentration from source data. This can take up to two minutes for the first refresh.
+          </div>
+        )}
+        {!concentrationIsRefreshing && apiExecutiveMonthly.length === 12 && !apiExecutiveHasRevenue && (
+          <div style={{ background: '#fff7ed', border: '1px solid #fed7aa', borderRadius: '10px', color: '#9a3412', fontSize: '12px', fontWeight: 700, padding: '10px 12px', marginBottom: '12px' }}>
+            Customer concentration did not return revenue for the selected 12-month window. Click Refresh Customer Concentration to force a rebuild from raw order-line data.
+          </div>
+        )}
+      </>
+    );
+    const executiveSummarySection = section('Executive Summary Dashboard', <div style={{ overflowX: 'auto' }}><table style={{ ...tableStyle, minWidth: '1220px' }}><thead><tr><th style={{ ...thStyle, minWidth: '240px' }}>Metric</th>{executiveMonthlyCustomerMetrics.map((row) => <th key={row.monthKey} style={{ ...thStyle, textAlign: 'right', minWidth: '90px' }}>{row.month}</th>)}</tr></thead><tbody>{executiveMetricRows.map((metric) => <tr key={metric.label}><td style={{ ...tdStyle, fontWeight: 700 }}>{metric.label}</td>{executiveMonthlyCustomerMetrics.map((row) => <td key={`${metric.label}-${row.monthKey}`} style={{ ...tdStyle, textAlign: 'right', whiteSpace: 'nowrap' }}>{metric.render(row)}</td>)}</tr>)}</tbody></table></div>);
+    const monthlyTrendSection = section('Monthly Customer Concentration Trend', <div style={{ overflowX: 'auto' }}><table style={{ ...tableStyle, minWidth: '820px' }}><thead><tr>{['Month', 'Total Revenue', 'Top 5 % Rev', 'Top 10 % Rev', 'Largest Customer %', 'Top 5 % GP', 'Top 5 % EBITDA'].map((h) => <th key={h} style={{ ...thStyle, textAlign: h === 'Month' ? 'left' : 'right' }}>{h}</th>)}</tr></thead><tbody>{monthlyTrendRows.map((row) => <tr key={row.month}><td style={tdStyle}>{row.month}</td><td style={{ ...tdStyle, textAlign: 'right' }}>{formatCurrency(row.revenue)}</td><td style={{ ...tdStyle, textAlign: 'right' }}>{pct(row.top5Rev)}</td><td style={{ ...tdStyle, textAlign: 'right' }}>{pct(row.top10Rev)}</td><td style={{ ...tdStyle, textAlign: 'right' }}>{pct(row.largestRev)}</td><td style={{ ...tdStyle, textAlign: 'right' }}>{pct(row.top5Gp)}</td><td style={{ ...tdStyle, textAlign: 'right' }}>{pct(row.top5Ebitda)}</td></tr>)}</tbody></table></div>);
+    if (customerConcentrationRenderStage < 3) {
+      return (
+        <div>
+          {refreshControls}
+          {executiveSummarySection}
+          {customerConcentrationRenderStage >= 2 ? monthlyTrendSection : (
+            <div style={{ padding: '12px', fontSize: '12px', color: '#64748b' }}>Loading monthly customer concentration trend...</div>
+          )}
+        </div>
+      );
+    }
     const profitabilityPeriodOptions = [
       { key: 'lastMonth' as const, label: 'Last Completed Month', months: 1 },
       { key: 'last3' as const, label: 'Last 3 Completed Months', months: 3 },
@@ -19459,7 +19568,8 @@ Strategies to Improve the CCC
     const apiCustomerMonthlyRows = Array.isArray(customerData?.summary?.customerConcentration?.customerMonthly)
       ? customerData.summary.customerConcentration.customerMonthly
       : [];
-    const profitabilitySourceRows = apiCustomerMonthlyRows.length > 0
+    const apiCustomerMonthlyHasRevenue = apiCustomerMonthlyRows.some((row: any) => Number(row?.revenue || 0) > 0);
+    const profitabilitySourceRows = apiCustomerMonthlyRows.length > 0 && (apiCustomerMonthlyHasRevenue || concentrationIsRefreshing)
       ? apiCustomerMonthlyRows.filter((row: any) => profitabilityMonthKeys.includes(String(row?.monthKey || '')))
       : profitabilityMonthKeys.flatMap((monthKey) => Array.from((monthCustomerMap.get(monthKey) || new Map()).values()).map((row: any) => ({ ...row, monthKey })));
     const profitabilityTotalRevenue = profitabilitySourceRows.reduce((sum: number, row: any) => sum + Number(row.revenue || 0), 0);
@@ -19538,18 +19648,6 @@ Strategies to Improve the CCC
       .filter((row) => Number(row.revenue || 0) > 0)
       .sort((a, b) => Number(b.revenue || 0) - Number(a.revenue || 0))
       .slice(0, 10);
-    const executiveMetricRows = [
-      { label: 'Top 5 Customers % Revenue', render: (row: any) => pct(row.top5Rev) },
-      { label: 'Top 10 Customers % Revenue', render: (row: any) => pct(row.top10Rev) },
-      { label: 'Top 5 Customers % Gross Profit', render: (row: any) => pct(row.top5Gp) },
-      { label: 'Largest Customer % Revenue', render: (row: any) => pct(row.largestRev) },
-      { label: 'Largest Customer % EBITDA Contribution', render: (row: any) => pct(row.largestEbitda) },
-      { label: 'Avg Gross Margin - Top 10', render: (row: any) => pct(row.top10AvgMargin) },
-      { label: 'Avg Gross Margin - Customers 11+', render: (row: any) => pct(row.remainingAvgMargin) },
-      { label: 'Customer Retention Rate', render: (row: any) => pct(row.retentionRate) },
-      { label: 'Revenue from New Customers', render: (row: any) => row.newCustomerRevenue == null ? 'N/A' : formatCurrency(row.newCustomerRevenue) },
-    ];
-    const monthlyTrendRows = executiveMonthlyCustomerMetrics;
     const riskRows = top10.map((row) => {
       const revenueShare = share(row.revenue, totalRevenue) || 0;
       const revRisk = revenueRiskScore(revenueShare);
@@ -19560,38 +19658,11 @@ Strategies to Improve the CCC
       const overall = revRisk * 0.25 + marginRisk * 0.25 + retentionRisk * 0.2 + paymentRisk * 0.15 + strategicRisk * 0.15;
       return { ...row, revRisk, marginRisk, retentionRisk, paymentRisk, strategicRisk, overall };
     });
-    const tableStyle = { width: '100%', borderCollapse: 'collapse' as const };
-    const thStyle: React.CSSProperties = { padding: '8px', fontSize: '12px', color: '#334155', textAlign: 'left', background: '#f8fafc', borderBottom: '1px solid #e2e8f0' };
-    const tdStyle: React.CSSProperties = { padding: '8px', fontSize: '12px', color: '#334155', borderBottom: '1px solid #f1f5f9' };
-    const section = (title: string, body: React.ReactNode) => (
-      <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '16px', marginBottom: '16px' }}>
-        <h3 style={{ margin: '0 0 12px', fontSize: '17px', color: '#0f172a' }}>{title}</h3>
-        {body}
-      </div>
-    );
     return (
       <div>
-        <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '10px' }}>
-          <button
-            type="button"
-            onClick={() => void refreshCustomerConcentrationExposure()}
-            disabled={customerConcentrationRefreshing}
-            style={{
-              border: '1px solid #cbd5e1',
-              borderRadius: '8px',
-              background: customerConcentrationRefreshing ? '#f1f5f9' : 'white',
-              color: '#334155',
-              padding: '7px 11px',
-              fontSize: '12px',
-              fontWeight: 700,
-              cursor: customerConcentrationRefreshing ? 'not-allowed' : 'pointer',
-            }}
-          >
-            {customerConcentrationRefreshing ? 'Refreshing...' : 'Refresh Customer Concentration'}
-          </button>
-        </div>
-        {section('Executive Summary Dashboard', <div style={{ overflowX: 'auto' }}><table style={{ ...tableStyle, minWidth: '1220px' }}><thead><tr><th style={{ ...thStyle, minWidth: '240px' }}>Metric</th>{executiveMonthlyCustomerMetrics.map((row) => <th key={row.monthKey} style={{ ...thStyle, textAlign: 'right', minWidth: '90px' }}>{row.month}</th>)}</tr></thead><tbody>{executiveMetricRows.map((metric) => <tr key={metric.label}><td style={{ ...tdStyle, fontWeight: 700 }}>{metric.label}</td>{executiveMonthlyCustomerMetrics.map((row) => <td key={`${metric.label}-${row.monthKey}`} style={{ ...tdStyle, textAlign: 'right', whiteSpace: 'nowrap' }}>{metric.render(row)}</td>)}</tr>)}</tbody></table></div>)}
-        {section('Monthly Customer Concentration Trend', <div style={{ overflowX: 'auto' }}><table style={{ ...tableStyle, minWidth: '820px' }}><thead><tr>{['Month', 'Total Revenue', 'Top 5 % Rev', 'Top 10 % Rev', 'Largest Customer %', 'Top 5 % GP', 'Top 5 % EBITDA'].map((h) => <th key={h} style={{ ...thStyle, textAlign: h === 'Month' ? 'left' : 'right' }}>{h}</th>)}</tr></thead><tbody>{monthlyTrendRows.map((row) => <tr key={row.month}><td style={tdStyle}>{row.month}</td><td style={{ ...tdStyle, textAlign: 'right' }}>{formatCurrency(row.revenue)}</td><td style={{ ...tdStyle, textAlign: 'right' }}>{pct(row.top5Rev)}</td><td style={{ ...tdStyle, textAlign: 'right' }}>{pct(row.top10Rev)}</td><td style={{ ...tdStyle, textAlign: 'right' }}>{pct(row.largestRev)}</td><td style={{ ...tdStyle, textAlign: 'right' }}>{pct(row.top5Gp)}</td><td style={{ ...tdStyle, textAlign: 'right' }}>{pct(row.top5Ebitda)}</td></tr>)}</tbody></table></div>)}
+        {refreshControls}
+        {executiveSummarySection}
+        {monthlyTrendSection}
         <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '16px', marginBottom: '16px' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '16px', marginBottom: '12px' }}>
             <div>
@@ -19619,7 +19690,9 @@ Strategies to Improve the CCC
             </table>
           </div>
         </div>
-        {section('Customer Risk Heatmap', <><div style={{ overflowX: 'auto' }}><table style={{ ...tableStyle, minWidth: '860px' }}><thead><tr>{['Customer', 'Revenue Risk', 'Margin Risk', 'Retention Risk', 'Payment Risk', 'Strategic Risk', 'Overall Risk'].map((h) => <th key={h} style={thStyle}>{h}</th>)}</tr></thead><tbody>{riskRows.map((row) => <tr key={row.name}><td style={{ ...tdStyle, fontWeight: 700 }}>{row.name}</td>{[row.revRisk, row.marginRisk, row.retentionRisk, row.paymentRisk, row.strategicRisk, row.overall].map((score, idx) => <td key={idx} style={{ ...tdStyle, color: riskColor(score), fontWeight: 700 }}>{riskLabel(score)}</td>)}</tr>)}</tbody></table></div><details style={{ marginTop: '12px', border: '1px solid #e2e8f0', borderRadius: '10px', padding: '10px 12px', background: '#f8fafc' }}><summary style={{ cursor: 'pointer', fontWeight: 800, color: '#1e293b', fontSize: '13px' }}>Risk formulas and scoring framework</summary><div style={{ marginTop: '10px', color: '#475569', fontSize: '12px', lineHeight: 1.6 }}>Revenue Risk = Customer Revenue / Total Company Revenue. Score: less than 5% = 1, 5-10% = 2, 10-15% = 3, 15-20% = 4, greater than 20% = 5. Margin Risk uses gross margin quality and customer EBITDA contribution where available. Retention Risk is based on customer activity across the selected monthly window until explicit churn data is imported. Payment Risk is reserved for DSO / AR aging by customer; it defaults to Medium until imported. Strategic Risk is a qualitative dependency score using concentration as the current proxy. Overall Risk = Revenue Risk x 25% + Margin Risk x 25% + Retention Risk x 20% + Payment Risk x 15% + Strategic Risk x 15%.</div></details></>)}
+        {customerConcentrationRenderStage >= 4 ? section('Customer Risk Heatmap', <><div style={{ overflowX: 'auto' }}><table style={{ ...tableStyle, minWidth: '860px' }}><thead><tr>{['Customer', 'Revenue Risk', 'Margin Risk', 'Retention Risk', 'Payment Risk', 'Strategic Risk', 'Overall Risk'].map((h) => <th key={h} style={thStyle}>{h}</th>)}</tr></thead><tbody>{riskRows.map((row) => <tr key={row.name}><td style={{ ...tdStyle, fontWeight: 700 }}>{row.name}</td>{[row.revRisk, row.marginRisk, row.retentionRisk, row.paymentRisk, row.strategicRisk, row.overall].map((score, idx) => <td key={idx} style={{ ...tdStyle, color: riskColor(score), fontWeight: 700 }}>{riskLabel(score)}</td>)}</tr>)}</tbody></table></div><details style={{ marginTop: '12px', border: '1px solid #e2e8f0', borderRadius: '10px', padding: '10px 12px', background: '#f8fafc' }}><summary style={{ cursor: 'pointer', fontWeight: 800, color: '#1e293b', fontSize: '13px' }}>Risk formulas and scoring framework</summary><div style={{ marginTop: '10px', color: '#475569', fontSize: '12px', lineHeight: 1.6 }}>Revenue Risk = Customer Revenue / Total Company Revenue. Score: less than 5% = 1, 5-10% = 2, 10-15% = 3, 15-20% = 4, greater than 20% = 5. Margin Risk uses gross margin quality and customer EBITDA contribution where available. Retention Risk is based on customer activity across the selected monthly window until explicit churn data is imported. Payment Risk is reserved for DSO / AR aging by customer; it defaults to Medium until imported. Strategic Risk is a qualitative dependency score using concentration as the current proxy. Overall Risk = Revenue Risk x 25% + Margin Risk x 25% + Retention Risk x 20% + Payment Risk x 15% + Strategic Risk x 15%.</div></details></>) : (
+          <div style={{ padding: '12px', fontSize: '12px', color: '#64748b' }}>Loading customer risk heatmap...</div>
+        )}
       </div>
     );
   };
