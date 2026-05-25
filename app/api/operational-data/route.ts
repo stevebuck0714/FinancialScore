@@ -2121,9 +2121,13 @@ export async function GET(request: NextRequest) {
             const customerName = String(row?.customerName || 'Unknown Customer').trim() || 'Unknown Customer';
             const customerKey = customerName.toLowerCase().replace(/\s+/g, ' ');
             const revenue = Number(row?.revenue || 0);
-            const hasGrossProfit = row?.grossMargin != null || row?.cogs != null;
+            const cogs = Number(row?.cogs || 0);
+            const rawGrossMargin = Number(row?.grossMargin ?? NaN);
+            const hasGrossProfit = cogs > 0 || (Number.isFinite(rawGrossMargin) && Math.abs(rawGrossMargin - revenue) > 0.01);
             if (!hasGrossProfit || !Number.isFinite(revenue) || revenue <= 0) continue;
-            const grossProfit = Number(row?.grossMargin ?? (revenue - Number(row?.cogs || 0)));
+            const grossProfit = Number.isFinite(rawGrossMargin) && Math.abs(rawGrossMargin - revenue) > 0.01
+              ? rawGrossMargin
+              : revenue - cogs;
             if (!Number.isFinite(grossProfit)) continue;
             const key = `${monthKey}||${customerKey}`;
             const current = marginByMonthCustomer.get(key) || { grossProfit: 0, revenue: 0 };
@@ -2134,13 +2138,20 @@ export async function GET(request: NextRequest) {
           const rawInvoiceRowsForConcentration = isInforCompany
             ? await deriveCustomerSalesFromRawInvoices(companyId, concentrationStart, concentrationEnd)
             : [];
+          const newCustomerLookbackStart = new Date(Date.UTC(concentrationStart.getUTCFullYear() - 3, concentrationStart.getUTCMonth(), 1));
+          const rawInvoiceRowsForNewCustomerHistory = isInforCompany
+            ? await deriveCustomerSalesFromRawInvoices(companyId, newCustomerLookbackStart, concentrationEnd)
+            : [];
           const concentrationSourceRows = rawInvoiceRowsForConcentration.length > 0
             ? rawInvoiceRowsForConcentration
             : customerSnapshotRowsForConcentration;
           const concentrationByMonth = new Map<string, Map<string, any>>();
           const firstMonthByCustomerForConcentration = new Map<string, string>();
           const firstMonthByCustomerFromActualSales = new Map<string, string>();
-          for (const row of customerSnapshotRowsForConcentration as any[]) {
+          const firstMonthSourceRows = rawInvoiceRowsForNewCustomerHistory.length > 0
+            ? rawInvoiceRowsForNewCustomerHistory
+            : customerSnapshotRowsForConcentration;
+          for (const row of firstMonthSourceRows as any[]) {
             const snapshot = new Date(row?.snapshotDate);
             if (Number.isNaN(snapshot.getTime())) continue;
             const monthKey = businessMonthKey(snapshot);
@@ -2233,6 +2244,18 @@ export async function GET(request: NextRequest) {
               newCustomerRevenue: sourceCoverageByMonth.get(monthKey) === 'customer_sales_snapshot' ? newCustomerRevenue : null,
             };
           });
+          const customerConcentrationMonthlyCustomers = concentrationMonthKeys.flatMap((monthKey) =>
+            Array.from((concentrationByMonth.get(monthKey) || new Map()).values()).map((row: any) => ({
+              monthKey,
+              month: formatConcentrationMonth(monthKey),
+              source: sourceCoverageByMonth.get(monthKey) || 'none',
+              customerName: row.customerName,
+              revenue: Number(row.revenue || 0),
+              grossProfit: Number(row.grossProfit || 0),
+              grossProfitRevenue: Number(row.grossProfitRevenue || 0),
+              ebitda: Number(row.ebitda || 0),
+            }))
+          );
 
           const mtdStart = startOfBusinessMonth(endDate);
           const qtdStart = startOfBusinessQuarter(endDate);
@@ -2350,6 +2373,7 @@ export async function GET(request: NextRequest) {
             topCustomersSummary,
             customerConcentration: {
               executiveMonthly: customerConcentrationExecutiveMonthly,
+              customerMonthly: customerConcentrationMonthlyCustomers,
               monthKeys: concentrationMonthKeys,
               sourceCoverage: Object.fromEntries(sourceCoverageByMonth.entries()),
             },
@@ -5828,7 +5852,15 @@ export async function GET(request: NextRequest) {
                   const release = normalizeOrderLineToken(releaseId ?? releasePart ?? '0') || '0';
                   return `${order}||${line}||${release}`;
                 };
+                const buildRawOrderLineNoReleaseKey = (orderId: unknown, lineId: unknown) => {
+                  const order = normalizeOrderLineToken(orderId);
+                  const lineRaw = String(lineId ?? '').trim();
+                  const [linePart] = lineRaw.split('-');
+                  const line = normalizeOrderLineToken(linePart);
+                  return `${order}||${line}`;
+                };
                 const rawDueDateByOrderLine = new Map<string, string>();
+                const rawDueDateByOrderLineNoRelease = new Map<string, string>();
                 const rawOrderRows = await prisma.inforRawRecord.findMany({
                   where: {
                     companyId,
@@ -5846,15 +5878,18 @@ export async function GET(request: NextRequest) {
                 for (const rawRow of rawOrderRows as any[]) {
                   const payload = rawRow?.payload;
                   if (!payload || typeof payload !== 'object' || Array.isArray(payload)) continue;
-                  const orderId = payload['CoNum'] ?? payload['coNum'] ?? payload['Order'] ?? payload['orderId'];
-                  const lineId = payload['CoLine'] ?? payload['coLine'] ?? payload['Line'] ?? payload['lineId'];
-                  const releaseId = payload['CoRelease'] ?? payload['coRelease'] ?? payload['Release'];
-                  const dueDateRaw = String(payload['DueDate'] ?? payload['dueDate'] ?? '').trim();
+                  const orderId = payload['CoNum'] ?? payload['coNum'] ?? payload['CONUM'] ?? payload['OrderNum'] ?? payload['orderNo'] ?? payload['orderNumber'] ?? payload['Order'] ?? payload['orderId'];
+                  const lineId = payload['CoLine'] ?? payload['coLine'] ?? payload['COLINE'] ?? payload['Line'] ?? payload['lineId'];
+                  const releaseId = payload['CoRelease'] ?? payload['coRelease'] ?? payload['CORELEASE'] ?? payload['Release'];
+                  const dueDateRaw = String(payload['DueDate'] ?? payload['dueDate'] ?? payload['DUEDATE'] ?? '').trim();
                   if (!orderId || !lineId || !dueDateRaw) continue;
                   const key = buildRawOrderLineKey(orderId, lineId, releaseId);
                   if (!key.replace(/\|/g, '').trim() || rawDueDateByOrderLine.has(key)) continue;
                   const parsedDueDate = new Date(dueDateRaw.replace(/\s+\d{2}:\d{2}:\d{2}\.\d+$/, ''));
-                  rawDueDateByOrderLine.set(key, Number.isNaN(parsedDueDate.getTime()) ? dueDateRaw : parsedDueDate.toISOString());
+                  const dueDate = Number.isNaN(parsedDueDate.getTime()) ? dueDateRaw : parsedDueDate.toISOString();
+                  rawDueDateByOrderLine.set(key, dueDate);
+                  const noReleaseKey = buildRawOrderLineNoReleaseKey(orderId, lineId);
+                  if (!rawDueDateByOrderLineNoRelease.has(noReleaseKey)) rawDueDateByOrderLineNoRelease.set(noReleaseKey, dueDate);
                 }
                 const orderRows = await productOrderLineDelegate.findMany({
                   where: {
@@ -5892,34 +5927,44 @@ export async function GET(request: NextRequest) {
                     FROM "InforRawRecord"
                     WHERE "companyId" = ${companyId}
                       AND "miProgram" = 'SLCoitems'
-                      AND COALESCE(
+                      AND TRIM(COALESCE(
                         "payload"->>'CoNum',
                         "payload"->>'coNum',
+                        "payload"->>'CONUM',
+                        "payload"->>'OrderNum',
+                        "payload"->>'orderNo',
+                        "payload"->>'orderNumber',
                         "payload"->>'Order',
                         "payload"->>'orderId'
-                      ) IN (${Prisma.join(orderIdsForDueDateLookup)})
+                      )) IN (${Prisma.join(orderIdsForDueDateLookup)})
                     ORDER BY "businessDate" DESC NULLS LAST, "fetchedAt" DESC
                     LIMIT ${Math.min(rawPayloadRowCap, 50000)}
                   `);
                   for (const rawRow of targetedRawOrderRows as any[]) {
                     const payload = rawRow?.payload;
                     if (!payload || typeof payload !== 'object' || Array.isArray(payload)) continue;
-                    const orderId = payload['CoNum'] ?? payload['coNum'] ?? payload['Order'] ?? payload['orderId'];
-                    const lineId = payload['CoLine'] ?? payload['coLine'] ?? payload['Line'] ?? payload['lineId'];
-                    const releaseId = payload['CoRelease'] ?? payload['coRelease'] ?? payload['Release'];
-                    const dueDateRaw = String(payload['DueDate'] ?? payload['dueDate'] ?? '').trim();
+                    const orderId = payload['CoNum'] ?? payload['coNum'] ?? payload['CONUM'] ?? payload['OrderNum'] ?? payload['orderNo'] ?? payload['orderNumber'] ?? payload['Order'] ?? payload['orderId'];
+                    const lineId = payload['CoLine'] ?? payload['coLine'] ?? payload['COLINE'] ?? payload['Line'] ?? payload['lineId'];
+                    const releaseId = payload['CoRelease'] ?? payload['coRelease'] ?? payload['CORELEASE'] ?? payload['Release'];
+                    const dueDateRaw = String(payload['DueDate'] ?? payload['dueDate'] ?? payload['DUEDATE'] ?? '').trim();
                     if (!orderId || !lineId || !dueDateRaw) continue;
                     const key = buildRawOrderLineKey(orderId, lineId, releaseId);
                     if (!key.replace(/\|/g, '').trim() || rawDueDateByOrderLine.has(key)) continue;
                     const parsedDueDate = new Date(dueDateRaw.replace(/\s+\d{2}:\d{2}:\d{2}\.\d+$/, ''));
-                    rawDueDateByOrderLine.set(key, Number.isNaN(parsedDueDate.getTime()) ? dueDateRaw : parsedDueDate.toISOString());
+                    const dueDate = Number.isNaN(parsedDueDate.getTime()) ? dueDateRaw : parsedDueDate.toISOString();
+                    rawDueDateByOrderLine.set(key, dueDate);
+                    const noReleaseKey = buildRawOrderLineNoReleaseKey(orderId, lineId);
+                    if (!rawDueDateByOrderLineNoRelease.has(noReleaseKey)) rawDueDateByOrderLineNoRelease.set(noReleaseKey, dueDate);
                   }
                 }
                 return (orderRows as any[]).map((row) => ({
                   source: 'customer-order-line',
                   snapshotDate: row.snapshotDate,
                   date: row.orderDate || row.snapshotDate,
-                  dueDate: rawDueDateByOrderLine.get(buildRawOrderLineKey(row.orderId, row.lineId)) || null,
+                  dueDate:
+                    rawDueDateByOrderLine.get(buildRawOrderLineKey(row.orderId, row.lineId)) ||
+                    rawDueDateByOrderLineNoRelease.get(buildRawOrderLineNoReleaseKey(row.orderId, row.lineId)) ||
+                    null,
                   customerId: row.customerId || null,
                   customerName: row.customerName || null,
                   customer: row.customerName || null,

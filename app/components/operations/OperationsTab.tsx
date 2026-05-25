@@ -159,6 +159,7 @@ type OpenBottleneckSortKey =
   | 'qtyOrdered'
   | 'qtyInvoiced'
   | 'wipValue';
+type VelocitySummarySortKey = 'view' | 'name' | 'lines' | 'avgAge' | 'maxAge' | 'wipValue';
 type ProductReportView = 'productMarginAnalysis' | 'wholesaleRawData' | 'vendorPricing' | 'performance' | 'retailForecast' | 'merchandiseProfitability';
 
 const clampNumber = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
@@ -823,6 +824,8 @@ export default function OperationsTab({
   const [vendorPricingSortDir, setVendorPricingSortDir] = useState<'asc' | 'desc'>('asc');
   const [openBottleneckSortKey, setOpenBottleneckSortKey] = useState<OpenBottleneckSortKey>('openAge');
   const [openBottleneckSortDir, setOpenBottleneckSortDir] = useState<'asc' | 'desc'>('desc');
+  const [velocitySummarySortKey, setVelocitySummarySortKey] = useState<VelocitySummarySortKey>('avgAge');
+  const [velocitySummarySortDir, setVelocitySummarySortDir] = useState<'asc' | 'desc'>('desc');
   const [selectedRetailForecastSubcategory, setSelectedRetailForecastSubcategory] = useState('');
   const [retailForecastTableSortKey, setRetailForecastTableSortKey] = useState<RetailForecastTableSortKey>('next3Base');
   const [retailForecastTableSortDir, setRetailForecastTableSortDir] = useState<'asc' | 'desc'>('desc');
@@ -19187,10 +19190,13 @@ Strategies to Improve the CCC
     const profitabilityPeriodLabel = profitabilityMonthKeys.length
       ? `${formatMonth(profitabilityMonthKeys[0])} - ${formatMonth(profitabilityMonthKeys[profitabilityMonthKeys.length - 1])}`
       : 'N/A';
-    const profitabilityTotalRevenue = profitabilityMonthKeys.reduce((sum, monthKey) => {
-      const values = Array.from((monthCustomerMap.get(monthKey) || new Map()).values());
-      return sum + values.reduce((monthSum: number, row: any) => monthSum + Number(row.revenue || 0), 0);
-    }, 0);
+    const apiCustomerMonthlyRows = Array.isArray(customerData?.summary?.customerConcentration?.customerMonthly)
+      ? customerData.summary.customerConcentration.customerMonthly
+      : [];
+    const profitabilitySourceRows = apiCustomerMonthlyRows.length > 0
+      ? apiCustomerMonthlyRows.filter((row: any) => profitabilityMonthKeys.includes(String(row?.monthKey || '')))
+      : profitabilityMonthKeys.flatMap((monthKey) => Array.from((monthCustomerMap.get(monthKey) || new Map()).values()).map((row: any) => ({ ...row, monthKey })));
+    const profitabilityTotalRevenue = profitabilitySourceRows.reduce((sum: number, row: any) => sum + Number(row.revenue || 0), 0);
     const profitabilityPeriodDays = profitabilityMonthKeys.reduce((sum, monthKey) => {
       const [year, month] = monthKey.split('-').map(Number);
       return sum + new Date(Date.UTC(year || 2000, month || 1, 0)).getUTCDate();
@@ -19223,18 +19229,17 @@ Strategies to Improve the CCC
       wipBurdenByCustomer.set(customerKey, (wipBurdenByCustomer.get(customerKey) || 0) + wipValue);
     });
     const profitabilityRows = Array.from(
-      profitabilityMonthKeys.reduce((acc: Map<string, any>, monthKey) => {
-        const values = Array.from((monthCustomerMap.get(monthKey) || new Map()).values());
-        values.forEach((row: any) => {
+      profitabilitySourceRows.reduce((acc: Map<string, any>, row: any) => {
           const name = String(row.name || 'Unknown Customer');
-          const key = normalizeCustomerName(name);
-          const current = acc.get(key) || { name, revenue: 0, grossProfit: 0, grossProfitRevenue: 0, ebitdaContribution: 0 };
+          const customerName = String(row.customerName || row.name || 'Unknown Customer');
+          const displayName = customerName || name;
+          const key = normalizeCustomerName(displayName);
+          const current = acc.get(key) || { name: displayName, revenue: 0, grossProfit: 0, grossProfitRevenue: 0, ebitdaContribution: 0 };
           current.revenue += Number(row.revenue || 0);
           current.grossProfit += Number(row.grossProfit || 0);
           current.grossProfitRevenue += Number(row.grossProfitRevenue || 0);
-          current.ebitdaContribution += Number(row.ebitda || 0);
+          current.ebitdaContribution += Number(row.ebitda || row.ebitdaContribution || 0);
           acc.set(key, current);
-        });
         return acc;
       }, new Map<string, any>()).entries()
     )
@@ -19317,8 +19322,6 @@ Strategies to Improve the CCC
           </div>
         </div>
         {section('Customer Risk Heatmap', <><div style={{ overflowX: 'auto' }}><table style={{ ...tableStyle, minWidth: '860px' }}><thead><tr>{['Customer', 'Revenue Risk', 'Margin Risk', 'Retention Risk', 'Payment Risk', 'Strategic Risk', 'Overall Risk'].map((h) => <th key={h} style={thStyle}>{h}</th>)}</tr></thead><tbody>{riskRows.map((row) => <tr key={row.name}><td style={{ ...tdStyle, fontWeight: 700 }}>{row.name}</td>{[row.revRisk, row.marginRisk, row.retentionRisk, row.paymentRisk, row.strategicRisk, row.overall].map((score, idx) => <td key={idx} style={{ ...tdStyle, color: riskColor(score), fontWeight: 700 }}>{riskLabel(score)}</td>)}</tr>)}</tbody></table></div><details style={{ marginTop: '12px', border: '1px solid #e2e8f0', borderRadius: '10px', padding: '10px 12px', background: '#f8fafc' }}><summary style={{ cursor: 'pointer', fontWeight: 800, color: '#1e293b', fontSize: '13px' }}>Risk formulas and scoring framework</summary><div style={{ marginTop: '10px', color: '#475569', fontSize: '12px', lineHeight: 1.6 }}>Revenue Risk = Customer Revenue / Total Company Revenue. Score: less than 5% = 1, 5-10% = 2, 10-15% = 3, 15-20% = 4, greater than 20% = 5. Margin Risk uses gross margin quality and customer EBITDA contribution where available. Retention Risk is based on customer activity across the selected monthly window until explicit churn data is imported. Payment Risk is reserved for DSO / AR aging by customer; it defaults to Medium until imported. Strategic Risk is a qualitative dependency score using concentration as the current proxy. Overall Risk = Revenue Risk x 25% + Margin Risk x 25% + Retention Risk x 20% + Payment Risk x 15% + Strategic Risk x 15%.</div></details></>)}
-        {section('Customer Quality Analysis', <div style={{ overflowX: 'auto' }}><table style={{ ...tableStyle, minWidth: '760px' }}><thead><tr>{['Customer Segment', 'Revenue %', 'Gross Margin %', 'EBITDA %', 'Growth Rate', 'Operational Complexity', 'Strategic Value'].map((h) => <th key={h} style={thStyle}>{h}</th>)}</tr></thead><tbody>{[{ label: 'Enterprise Accounts', rows: customerRows.slice(0, 10), complexity: 'High', value: 'High' }, { label: 'Mid-Market Accounts', rows: customerRows.slice(10, 30), complexity: 'Medium', value: 'Medium' }, { label: 'Independent Accounts', rows: customerRows.slice(30), complexity: 'Low', value: 'Diversification' }, { label: 'E-Commerce / Digital', rows: [], complexity: 'N/A', value: 'N/A' }].map((segment) => { const rev = segment.rows.reduce((sum, row) => sum + Number(row.revenue || 0), 0); const gp = segment.rows.reduce((sum, row) => sum + Number(row.grossProfit || 0), 0); const eb = segment.rows.reduce((sum, row) => sum + Number(row.ebitdaContribution || 0), 0); return <tr key={segment.label}><td style={{ ...tdStyle, fontWeight: 700 }}>{segment.label}</td><td style={tdStyle}>{pct(share(rev, totalRevenue))}</td><td style={tdStyle}>{pct(rev > 0 ? (gp / rev) * 100 : null)}</td><td style={tdStyle}>{pct(share(eb, totalEbitda))}</td><td style={tdStyle}>N/A</td><td style={tdStyle}>{segment.complexity}</td><td style={tdStyle}>{segment.value}</td></tr>; })}</tbody></table></div>)}
-        {section('Customer Movement Tracker', <div style={{ overflowX: 'auto' }}><table style={{ ...tableStyle, minWidth: '720px' }}><thead><tr>{['Customer', 'Status', 'Revenue Impact', 'EBITDA Impact', 'Reason'].map((h) => <th key={h} style={thStyle}>{h}</th>)}</tr></thead><tbody>{riskRows.slice(0, 8).map((row) => <tr key={row.name}><td style={{ ...tdStyle, fontWeight: 700 }}>{row.name}</td><td style={tdStyle}>Active</td><td style={tdStyle}>{formatCurrency(row.revenue)}</td><td style={tdStyle}>{formatCurrency(Number(row.ebitdaContribution || 0))}</td><td style={tdStyle}>Monthly movement reason not imported</td></tr>)}</tbody></table></div>)}
       </div>
     );
   };
@@ -19658,6 +19661,41 @@ Strategies to Improve the CCC
     };
     const velocityByItemRows = buildVelocitySummary((row) => String(row.item || 'N/A'), 'item');
     const velocityByCustomerRows = buildVelocitySummary((row) => String(row.customerName || 'N/A'), 'customerName');
+    const velocitySummaryRows = [
+      ...velocityByCustomerRows.map((row: any) => ({ ...row, view: 'Customer', name: row.customerName })),
+      ...velocityByItemRows.map((row: any) => ({ ...row, view: 'Item', name: row.item })),
+    ].sort((a: any, b: any) => {
+      const direction = velocitySummarySortDir === 'asc' ? 1 : -1;
+      if (velocitySummarySortKey === 'view' || velocitySummarySortKey === 'name') {
+        return String(a[velocitySummarySortKey] || '').localeCompare(String(b[velocitySummarySortKey] || ''), undefined, { sensitivity: 'base', numeric: true }) * direction;
+      }
+      const left = Number(a[velocitySummarySortKey] ?? -Infinity);
+      const right = Number(b[velocitySummarySortKey] ?? -Infinity);
+      const leftMissing = !Number.isFinite(left);
+      const rightMissing = !Number.isFinite(right);
+      if (leftMissing && rightMissing) return 0;
+      if (leftMissing) return 1;
+      if (rightMissing) return -1;
+      return (left - right) * direction;
+    });
+    const handleVelocitySummarySort = (key: VelocitySummarySortKey) => {
+      if (velocitySummarySortKey === key) {
+        setVelocitySummarySortDir((prev) => (prev === 'asc' ? 'desc' : 'asc'));
+        return;
+      }
+      setVelocitySummarySortKey(key);
+      setVelocitySummarySortDir(key === 'view' || key === 'name' ? 'asc' : 'desc');
+    };
+    const velocitySummarySortLabel = (key: VelocitySummarySortKey) =>
+      velocitySummarySortKey === key ? (velocitySummarySortDir === 'asc' ? ' ▲' : ' ▼') : ' ↕';
+    const velocitySummaryColumns: Array<{ key: VelocitySummarySortKey; label: string; align?: 'left' | 'right' }> = [
+      { key: 'view', label: 'View' },
+      { key: 'name', label: 'Name' },
+      { key: 'lines', label: 'Open Lines', align: 'right' },
+      { key: 'avgAge', label: 'Avg Open Age', align: 'right' },
+      { key: 'maxAge', label: 'Max Open Age', align: 'right' },
+      { key: 'wipValue', label: 'WIP Value', align: 'right' },
+    ];
     const topOpenWipRows = sortedOpenBottleneckRows;
     const openWipRowsByYear = Array.from(
       topOpenWipRows.reduce((groups: Map<string, any[]>, row: any) => {
@@ -19754,24 +19792,26 @@ Strategies to Improve the CCC
             </div>
           </div>
         </div>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '16px', alignItems: 'start' }}>
-          {section('Velocity by Item', (
-            <div style={{ overflowX: 'auto' }}>
-              <table style={{ ...tableStyle, minWidth: '620px' }}>
-                <thead><tr>{['Item', 'Open Lines', 'Avg Open Age', 'Max Open Age', 'WIP Value'].map((header) => <th key={header} style={{ ...thStyle, textAlign: header === 'Item' ? 'left' : 'right' }}>{header}</th>)}</tr></thead>
-                <tbody>{velocityByItemRows.map((row: any) => <tr key={row.item}><td style={{ ...tdStyle, fontWeight: 700 }}>{row.item}</td><td style={{ ...tdStyle, textAlign: 'right' }}>{number(row.lines)}</td><td style={{ ...tdStyle, textAlign: 'right' }}>{days(row.avgAge)}</td><td style={{ ...tdStyle, textAlign: 'right' }}>{row.maxAge == null ? 'N/A' : number(row.maxAge)}</td><td style={{ ...tdStyle, textAlign: 'right' }}>{formatCurrency(row.wipValue)}</td></tr>)}</tbody>
-              </table>
-            </div>
-          ))}
-          {section('Velocity by Customer', (
-            <div style={{ overflowX: 'auto' }}>
-              <table style={{ ...tableStyle, minWidth: '620px' }}>
-                <thead><tr>{['Customer', 'Open Lines', 'Avg Open Age', 'Max Open Age', 'WIP Value'].map((header) => <th key={header} style={{ ...thStyle, textAlign: header === 'Customer' ? 'left' : 'right' }}>{header}</th>)}</tr></thead>
-                <tbody>{velocityByCustomerRows.map((row: any) => <tr key={row.customerName}><td style={{ ...tdStyle, fontWeight: 700 }}>{row.customerName}</td><td style={{ ...tdStyle, textAlign: 'right' }}>{number(row.lines)}</td><td style={{ ...tdStyle, textAlign: 'right' }}>{days(row.avgAge)}</td><td style={{ ...tdStyle, textAlign: 'right' }}>{row.maxAge == null ? 'N/A' : number(row.maxAge)}</td><td style={{ ...tdStyle, textAlign: 'right' }}>{formatCurrency(row.wipValue)}</td></tr>)}</tbody>
-              </table>
-            </div>
-          ))}
-        </div>
+        {section('Velocity Summary', (
+          <div style={{ overflowX: 'auto' }}>
+            <table style={{ ...tableStyle, minWidth: '760px' }}>
+              <thead>
+                <tr>
+                  {velocitySummaryColumns.map((column) => (
+                    <th
+                      key={column.key}
+                      onClick={() => handleVelocitySummarySort(column.key)}
+                      style={{ ...thStyle, textAlign: column.align || 'left', cursor: 'pointer', userSelect: 'none', whiteSpace: 'nowrap' }}
+                    >
+                      {column.label}{velocitySummarySortLabel(column.key)}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>{velocitySummaryRows.map((row: any) => <tr key={`${row.view}-${row.name}`}><td style={tdStyle}>{row.view}</td><td style={{ ...tdStyle, fontWeight: 700 }}>{row.name}</td><td style={{ ...tdStyle, textAlign: 'right' }}>{number(row.lines)}</td><td style={{ ...tdStyle, textAlign: 'right' }}>{days(row.avgAge)}</td><td style={{ ...tdStyle, textAlign: 'right' }}>{row.maxAge == null ? 'N/A' : number(row.maxAge)}</td><td style={{ ...tdStyle, textAlign: 'right' }}>{formatCurrency(row.wipValue)}</td></tr>)}</tbody>
+            </table>
+          </div>
+        ))}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '16px', alignItems: 'start' }}>
           {section('Monthly Invoiced Lines by Snapshot Date', (
             <div style={{ overflowX: 'auto' }}>
