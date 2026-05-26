@@ -52,7 +52,7 @@ const OPERATIONAL_DATA_CACHE_TTL_SECONDS = 120;
 const CUSTOMER_CONCENTRATION_CACHE_TTL_SECONDS = 30 * 24 * 60 * 60;
 const CUSTOMER_CONCENTRATION_CACHE_VERSION = 'customer-concentration-exposure-v10';
 const CUSTOMER_REVENUE_SOURCE_VERSION = 'customer-revenue-source-v2';
-const CUSTOMER_WIP_SOURCE_VERSION = 'customer-backlog-source-v2';
+const CUSTOMER_WIP_SOURCE_VERSION = 'customer-backlog-source-v3';
 const CUSTOMER_BACKLOG_MIN_ORDER_DATE = '2023-06-01';
 const WHOLESALE_PRODUCTS_REPORT_CACHE_TTL_SECONDS = 30 * 24 * 60 * 60;
 const OPERATIONAL_CACHEABLE_TYPES = new Set([
@@ -3406,14 +3406,15 @@ export async function GET(request: NextRequest) {
             for (const row of latestOrderRows as any[]) {
               const orderId = String(row?.orderId || '').trim() || 'UNKNOWN_ORDER';
               const lineId = String(row?.lineId || '').trim() || 'UNKNOWN_LINE';
-              const lineKey = `${orderId}|${lineId}`;
+              const rawLineKey = `${orderId}|${lineId}`;
               const parsedLine = parseSnapshotLine(lineId);
               const normalizedLineKey = buildOrderLineKey(orderId, parsedLine.line, parsedLine.release);
               const customerId = String(row?.customerId || '').trim() || null;
               const customerName = String(row?.customerName || '').trim() || (customerId ? `Customer ${customerId}` : 'Unknown Customer');
-              const rawDetail = rawDetailByOrderLine.get(normalizedLineKey) || rawDetailByOrderLine.get(lineKey);
+              const rawDetail = rawDetailByOrderLine.get(normalizedLineKey) || rawDetailByOrderLine.get(rawLineKey);
               const snapshotItem = String(row?.itemName || row?.itemId || row?.sku || '').trim();
               const item = rawDetail?.item || snapshotItem || 'UNKNOWN_ITEM';
+              const orderItemKey = `${orderId}|${normalizeToken(item) || 'UNKNOWN_ITEM'}`;
               const stat = rawDetail?.stat || null;
               const orderDateRaw = row?.orderDate ? new Date(row.orderDate) : null;
               const orderDate =
@@ -3436,8 +3437,8 @@ export async function GET(request: NextRequest) {
               } else if (qtyOrdered > 0 && qtyInvoiced + 1e-4 >= qtyOrdered) {
                 remainingValue = 0;
               }
-              if (!latestLineState.has(lineKey)) {
-                latestLineState.set(lineKey, {
+              if (!latestLineState.has(orderItemKey)) {
+                latestLineState.set(orderItemKey, {
                   customerId,
                   customerName,
                   orderId,

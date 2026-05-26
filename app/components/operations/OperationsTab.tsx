@@ -534,7 +534,7 @@ const HEAVY_PREFETCH_TYPES: OpsDataType[] = ['ar-aging', 'ap-aging', 'customers'
 const OPERATIONAL_DATA_CACHE_TTL_MS = 2 * 60 * 1000;
 const CUSTOMER_DATA_CACHE_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 const CUSTOMER_CONCENTRATION_CLIENT_CACHE_VERSION = 'customer-concentration-exposure-v10';
-const CUSTOMER_WIP_CLIENT_CACHE_VERSION = 'customer-backlog-source-v2';
+const CUSTOMER_WIP_CLIENT_CACHE_VERSION = 'customer-backlog-source-v3';
 const CUSTOMER_BACKLOG_MIN_ORDER_DATE = '2023-06-01';
 const WHOLESALE_PRODUCTS_REPORT_CACHE_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 
@@ -3920,7 +3920,6 @@ export default function OperationsTab({
             const displayKey = [
               normalizeWipToken(customerName),
               normalizeWipToken(orderId),
-              normalizeWipToken(lineId),
               normalizeWipToken(item),
             ].join('||');
             if (!displayKey.replace(/\|/g, '')) return acc;
@@ -4136,7 +4135,6 @@ export default function OperationsTab({
             wipLineItemSortKey === key ? (wipLineItemSortDir === 'asc' ? ' ▲' : ' ▼') : ' ↕';
           const wipLineItemColumns: Array<{ key: WipLineItemSortKey; label: string; align?: 'left' | 'right' }> = [
             { key: 'orderId', label: 'Order' },
-            { key: 'lineId', label: 'Line' },
             { key: 'item', label: 'Item' },
             { key: 'orderDate', label: 'Order Date' },
             { key: 'dueDate', label: 'Due Date' },
@@ -4324,7 +4322,6 @@ export default function OperationsTab({
                                             {[...row.wipItems].sort(compareWipLineItems).map((item: any, itemIndex: number) => (
                                               <tr key={`${rowKey}-${item.orderId}-${item.lineId}-${itemIndex}`} style={{ borderBottom: '1px solid #e2e8f0' }}>
                                                 <td style={{ padding: '4px 8px', fontSize: '12px', color: '#1e293b' }}>{item.orderId}</td>
-                                                <td style={{ padding: '4px 8px', fontSize: '12px', color: '#1e293b' }}>{item.lineId}</td>
                                                 <td style={{ padding: '4px 8px', fontSize: '12px', color: '#1e293b' }}>{item.item}</td>
                                                 <td style={{ padding: '4px 8px', fontSize: '12px', color: '#64748b' }}>{item.orderDate ? formatDateInputLabel(item.orderDate) : '-'}</td>
                                                 <td style={{ padding: '4px 8px', fontSize: '12px', color: '#64748b' }}>{item.dueDate ? formatDateInputLabel(item.dueDate) : '-'}</td>
@@ -20233,7 +20230,6 @@ Strategies to Improve the CCC
         const displayKey = [
           normalizeOpenLineToken(row.customerName),
           normalizeOpenLineToken(row.orderId),
-          normalizeOpenLineToken(row.lineId),
           normalizeOpenLineToken(row.item),
         ].join('||');
         const existing = deduped.get(displayKey);
