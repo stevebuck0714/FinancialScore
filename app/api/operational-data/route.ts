@@ -52,7 +52,7 @@ const OPERATIONAL_DATA_CACHE_TTL_SECONDS = 120;
 const CUSTOMER_CONCENTRATION_CACHE_TTL_SECONDS = 30 * 24 * 60 * 60;
 const CUSTOMER_CONCENTRATION_CACHE_VERSION = 'customer-concentration-exposure-v10';
 const CUSTOMER_REVENUE_SOURCE_VERSION = 'customer-revenue-source-v2';
-const CUSTOMER_WIP_SOURCE_VERSION = 'customer-backlog-source-v3';
+const CUSTOMER_WIP_SOURCE_VERSION = 'customer-backlog-source-v4';
 const CUSTOMER_BACKLOG_MIN_ORDER_DATE = '2023-06-01';
 const WHOLESALE_PRODUCTS_REPORT_CACHE_TTL_SECONDS = 30 * 24 * 60 * 60;
 const OPERATIONAL_CACHEABLE_TYPES = new Set([
@@ -3240,13 +3240,27 @@ export async function GET(request: NextRequest) {
               )
             );
             const orderIdsForRawLookupSet = new Set(orderIdsForRawLookup);
-            const rawDetailByOrderLine = new Map<string, { item: string; stat: string | null; dueDate?: string | null; qtyShipped?: number; qtyInvoiced?: number }>();
             const normalizeToken = (value: unknown): string => {
               const raw = String(value ?? '').trim();
               if (!raw) return '';
               const num = Number(raw);
               if (Number.isFinite(num)) return String(num);
               return raw.toUpperCase();
+            };
+            type RawOrderDetail = {
+              item: string;
+              stat: string | null;
+              dueDate?: string | null;
+              qtyOrdered?: number;
+              qtyShipped?: number;
+              qtyInvoiced?: number;
+              unitPrice?: number;
+            };
+            const rawDetailByOrderLine = new Map<string, RawOrderDetail>();
+            const rawDetailByOrderItem = new Map<string, RawOrderDetail>();
+            const parseRawNumber = (value: unknown) => {
+              const parsed = Number(String(value ?? '').replace(/,/g, '').trim());
+              return Number.isFinite(parsed) ? parsed : 0;
             };
             const parseSnapshotLine = (lineId: unknown): { line: string; release: string } => {
               const raw = String(lineId ?? '').trim();
@@ -3262,6 +3276,14 @@ export async function GET(request: NextRequest) {
               const line = normalizeToken(lineRaw) || '0';
               const release = normalizeToken(releaseRaw) || '0';
               return `${orderId}|${line}-${release}`;
+            };
+            const buildOrderItemKey = (orderIdRaw: unknown, itemRaw: unknown): string =>
+              `${normalizeToken(orderIdRaw)}|${normalizeToken(itemRaw) || 'UNKNOWN_ITEM'}`;
+            const setRawDetail = (orderIdRaw: unknown, lineRaw: unknown, releaseRaw: unknown, detail: RawOrderDetail) => {
+              const rawLineKey = buildOrderLineKey(orderIdRaw, lineRaw, releaseRaw);
+              const rawItemKey = buildOrderItemKey(orderIdRaw, detail.item);
+              if (!rawDetailByOrderLine.has(rawLineKey)) rawDetailByOrderLine.set(rawLineKey, detail);
+              if (!rawDetailByOrderItem.has(rawItemKey)) rawDetailByOrderItem.set(rawItemKey, detail);
             };
             const hydrateRawDetailFromLiveCsi = async (orderIdsInput: string[]) => {
               try {
@@ -3304,7 +3326,7 @@ export async function GET(request: NextRequest) {
                         .join(' OR ');
                       const path =
                         `/APR_PRD/CSI/IDORequestService/ido/load/SLCoitems?recordCap=5000` +
-                        `&properties=${encodeURIComponent('CoNum,CoLine,CoRelease,Item,Stat,QtyShipped,QtyInvoiced,DueDate')}` +
+                        `&properties=${encodeURIComponent('CoNum,CoLine,CoRelease,Item,Stat,QtyOrdered,QtyShipped,QtyInvoiced,DueDate,Price')}` +
                         `&filter=${encodeURIComponent(filter)}`;
                       const response = await callInforIonApi(resolved.credentials, path, {
                         timeoutMs: 8000,
@@ -3330,13 +3352,20 @@ export async function GET(request: NextRequest) {
                       const rawItem = String(payload['Item'] ?? payload['ITNO'] ?? '').trim();
                       const rawStat = String(payload['Stat'] ?? payload['STAT'] ?? '').trim() || null;
                       const rawDueDateStr2 = String(payload['DueDate'] ?? payload['dueDate'] ?? '').trim();
-                      const rawQtyShipped2 = Number(payload['QtyShipped'] ?? payload['qtyShipped'] ?? 0);
-                      const rawQtyInvoiced2 = Number(payload['QtyInvoiced'] ?? payload['qtyInvoiced'] ?? 0);
+                      const rawQtyOrdered2 = parseRawNumber(payload['QtyOrdered'] ?? payload['qtyOrdered'] ?? payload['QtyOrd'] ?? payload['qtyOrd']);
+                      const rawQtyShipped2 = parseRawNumber(payload['QtyShipped'] ?? payload['qtyShipped']);
+                      const rawQtyInvoiced2 = parseRawNumber(payload['QtyInvoiced'] ?? payload['qtyInvoiced']);
+                      const rawUnitPrice2 = parseRawNumber(payload['Price'] ?? payload['price'] ?? payload['UnitPrice'] ?? payload['unitPrice']);
                       if (!rawItem && !rawStat && !rawDueDateStr2) continue;
-                      const rawLineKey = buildOrderLineKey(rawOrderId, rawLine, rawRelease);
-                      if (!rawDetailByOrderLine.has(rawLineKey)) {
-                        rawDetailByOrderLine.set(rawLineKey, { item: rawItem || 'UNKNOWN_ITEM', stat: rawStat, dueDate: rawDueDateStr2 || null, qtyShipped: rawQtyShipped2, qtyInvoiced: rawQtyInvoiced2 });
-                      }
+                      setRawDetail(rawOrderId, rawLine, rawRelease, {
+                        item: rawItem || 'UNKNOWN_ITEM',
+                        stat: rawStat,
+                        dueDate: rawDueDateStr2 || null,
+                        qtyOrdered: rawQtyOrdered2,
+                        qtyShipped: rawQtyShipped2,
+                        qtyInvoiced: rawQtyInvoiced2,
+                        unitPrice: rawUnitPrice2,
+                      });
                     }
                   }
                 }
@@ -3345,18 +3374,17 @@ export async function GET(request: NextRequest) {
               }
             };
             if (orderIdsForRawLookup.length > 0 && (prisma as any).inforRawRecord?.findMany) {
-              const rawLookupDayStart = startOfUtcDay(latestOrderSnapshotDate);
-              const rawLookupDayEnd = endOfUtcDay(latestOrderSnapshotDate);
               const rawRows = await (prisma as any).inforRawRecord.findMany({
                 where: {
                   companyId,
                   platform: { in: ['INFOR_M3', 'INFOR_CSI'] },
                   miProgram: { in: ['SLCOITEMS', 'SLCoitems'] },
-                  businessDate: { gte: rawLookupDayStart, lte: rawLookupDayEnd },
+                  businessDate: { lte: endDate },
                 },
                 select: {
                   payload: true,
                 },
+                orderBy: [{ businessDate: 'desc' }, { fetchedAt: 'desc' }],
                 take: rawPayloadRowCap,
               });
               for (const row of rawRows as any[]) {
@@ -3372,13 +3400,20 @@ export async function GET(request: NextRequest) {
                 const rawItem = String(payload['Item'] ?? payload['ITNO'] ?? '').trim();
                 const rawStat = String(payload['Stat'] ?? payload['STAT'] ?? '').trim() || null;
                 const rawDueDateStr = String(payload['DueDate'] ?? payload['dueDate'] ?? '').trim();
-                const rawQtyShipped = Number(payload['QtyShipped'] ?? payload['qtyShipped'] ?? 0);
-                const rawQtyInvoiced = Number(payload['QtyInvoiced'] ?? payload['qtyInvoiced'] ?? 0);
+                const rawQtyOrdered = parseRawNumber(payload['QtyOrdered'] ?? payload['qtyOrdered'] ?? payload['QtyOrd'] ?? payload['qtyOrd']);
+                const rawQtyShipped = parseRawNumber(payload['QtyShipped'] ?? payload['qtyShipped']);
+                const rawQtyInvoiced = parseRawNumber(payload['QtyInvoiced'] ?? payload['qtyInvoiced']);
+                const rawUnitPrice = parseRawNumber(payload['Price'] ?? payload['price'] ?? payload['UnitPrice'] ?? payload['unitPrice']);
                 if (!rawItem && !rawStat && !rawDueDateStr) continue;
-                const rawLineKey = buildOrderLineKey(rawOrderId, rawLine, rawRelease);
-                if (!rawDetailByOrderLine.has(rawLineKey)) {
-                  rawDetailByOrderLine.set(rawLineKey, { item: rawItem || 'UNKNOWN_ITEM', stat: rawStat, dueDate: rawDueDateStr || null, qtyShipped: rawQtyShipped, qtyInvoiced: rawQtyInvoiced });
-                }
+                setRawDetail(rawOrderId, rawLine, rawRelease, {
+                  item: rawItem || 'UNKNOWN_ITEM',
+                  stat: rawStat,
+                  dueDate: rawDueDateStr || null,
+                  qtyOrdered: rawQtyOrdered,
+                  qtyShipped: rawQtyShipped,
+                  qtyInvoiced: rawQtyInvoiced,
+                  unitPrice: rawUnitPrice,
+                });
               }
             }
             const ORDER_LINE_STATUSES_CLOSED_FOR_WIP = new Set(['C', 'F', 'I']);
@@ -3413,26 +3448,29 @@ export async function GET(request: NextRequest) {
               const customerName = String(row?.customerName || '').trim() || (customerId ? `Customer ${customerId}` : 'Unknown Customer');
               const rawDetail = rawDetailByOrderLine.get(normalizedLineKey) || rawDetailByOrderLine.get(rawLineKey);
               const snapshotItem = String(row?.itemName || row?.itemId || row?.sku || '').trim();
-              const item = rawDetail?.item || snapshotItem || 'UNKNOWN_ITEM';
+              const itemDetail = rawDetailByOrderItem.get(buildOrderItemKey(orderId, snapshotItem));
+              const authoritativeRawDetail = itemDetail || rawDetail;
+              if (!authoritativeRawDetail) continue;
+              const item = authoritativeRawDetail.item || snapshotItem || 'UNKNOWN_ITEM';
               const orderItemKey = `${orderId}|${normalizeToken(item) || 'UNKNOWN_ITEM'}`;
-              const stat = rawDetail?.stat || null;
+              const stat = authoritativeRawDetail.stat || null;
               const orderDateRaw = row?.orderDate ? new Date(row.orderDate) : null;
               const orderDate =
                 orderDateRaw && !Number.isNaN(orderDateRaw.getTime()) ? orderDateRaw.toISOString().slice(0, 10) : null;
               if (!orderDate || orderDate < CUSTOMER_BACKLOG_MIN_ORDER_DATE) continue;
-              const rawDueDate = parseInforDateValue(rawDetail?.dueDate);
+              const rawDueDate = parseInforDateValue(authoritativeRawDetail.dueDate);
               const dueDate = rawDueDate && !Number.isNaN(rawDueDate.getTime()) ? rawDueDate.toISOString().slice(0, 10) : null;
-              const qtyOrdered = Math.max(Number(row?.qtyOrdered || 0), 0);
-              const qtyShipped = Math.max(Number(rawDetail?.qtyShipped || 0), 0);
-              const qtyInvoiced = Math.max(Number(row?.qtyInvoiced || 0), 0);
-              const unitPrice = Math.max(Number(row?.unitPrice || 0), 0);
+              const qtyOrdered = Math.max(Number(authoritativeRawDetail.qtyOrdered || 0), 0);
+              const qtyShipped = Math.max(Number(authoritativeRawDetail.qtyShipped || 0), 0);
+              const qtyInvoiced = Math.max(Number(authoritativeRawDetail.qtyInvoiced || 0), 0);
+              const unitPrice = Math.max(Number(authoritativeRawDetail.unitPrice || 0), 0);
               const contractValue = qtyOrdered * unitPrice;
               const invoicedValue = qtyInvoiced * unitPrice;
               let remainingValue = Math.max(qtyOrdered - qtyInvoiced, 0) * unitPrice;
               const statTrim = String(stat || '')
                 .trim()
                 .toUpperCase();
-              if (statTrim && ORDER_LINE_STATUSES_CLOSED_FOR_WIP.has(statTrim)) {
+              if (statTrim !== 'O' || ORDER_LINE_STATUSES_CLOSED_FOR_WIP.has(statTrim)) {
                 remainingValue = 0;
               } else if (qtyOrdered > 0 && qtyInvoiced + 1e-4 >= qtyOrdered) {
                 remainingValue = 0;
@@ -3505,7 +3543,7 @@ export async function GET(request: NextRequest) {
               const st = String(line.stat || '')
                 .trim()
                 .toUpperCase();
-              if (st && ORDER_LINE_STATUSES_CLOSED_FOR_WIP.has(st)) {
+              if (st !== 'O' || ORDER_LINE_STATUSES_CLOSED_FOR_WIP.has(st)) {
                 line.remainingValue = 0;
                 continue;
               }

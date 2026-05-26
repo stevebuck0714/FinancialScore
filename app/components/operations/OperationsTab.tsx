@@ -534,7 +534,7 @@ const HEAVY_PREFETCH_TYPES: OpsDataType[] = ['ar-aging', 'ap-aging', 'customers'
 const OPERATIONAL_DATA_CACHE_TTL_MS = 2 * 60 * 1000;
 const CUSTOMER_DATA_CACHE_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 const CUSTOMER_CONCENTRATION_CLIENT_CACHE_VERSION = 'customer-concentration-exposure-v10';
-const CUSTOMER_WIP_CLIENT_CACHE_VERSION = 'customer-backlog-source-v3';
+const CUSTOMER_WIP_CLIENT_CACHE_VERSION = 'customer-backlog-source-v4';
 const CUSTOMER_BACKLOG_MIN_ORDER_DATE = '2023-06-01';
 const WHOLESALE_PRODUCTS_REPORT_CACHE_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 
