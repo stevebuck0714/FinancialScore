@@ -534,7 +534,7 @@ const HEAVY_PREFETCH_TYPES: OpsDataType[] = ['ar-aging', 'ap-aging', 'customers'
 const OPERATIONAL_DATA_CACHE_TTL_MS = 2 * 60 * 1000;
 const CUSTOMER_DATA_CACHE_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 const CUSTOMER_CONCENTRATION_CLIENT_CACHE_VERSION = 'customer-concentration-exposure-v10';
-const CUSTOMER_WIP_CLIENT_CACHE_VERSION = 'customer-wip-source-v2';
+const CUSTOMER_WIP_CLIENT_CACHE_VERSION = 'customer-backlog-source-v1';
 const WHOLESALE_PRODUCTS_REPORT_CACHE_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 
 type InvestigatePlaybook = {
@@ -3241,14 +3241,14 @@ export default function OperationsTab({
         ['Customer Concentration Risk', 'Category Revenue Concentration'],
         ['Revenue Retention Proxy (Top Accounts)', 'Revenue Retention Proxy (Top Categories)'],
         ['At-Risk Accounts Queue', 'At-Risk Categories Queue'],
-        ['WIP by Customer (Unbilled)', 'WIP by Product Category (Unbilled)'],
+        ['Open Backlog by Customer', 'Open Backlog by Product Category'],
         ['Total Active Customers', 'Total Active Product Categories'],
         ['New Customers (Last 90 Days)', 'New Product Categories (Last 90 Days)'],
         ['Customer Concentration (Top 5)', 'Category Concentration (Top 5)'],
         ['Customers Past Due', 'Categories Past Due'],
         ['At-Risk Customers', 'At-Risk Categories'],
         ['Avg Revenue per Customer', 'Avg Revenue per Category'],
-        ['Customers with WIP', 'Categories with WIP'],
+        ['Customers with Backlog', 'Categories with Backlog'],
         ['Customer', 'Product Category'],
         ['Customers', 'Product Categories'],
         ['customer', 'product category'],
@@ -3567,23 +3567,23 @@ export default function OperationsTab({
       { title: string; sections: Array<{ heading?: string; body: string | string[] }> }
     > = {
       customersWipByCustomer: {
-        title: 'WIP by Customer (Unbilled)',
+        title: 'Open Backlog by Customer',
         sections: [
           {
             body:
-              'Lists how much work-in-progress (orders shipped or delivered but not yet invoiced) sits against each customer at the As-of date.',
+              'Lists open order backlog by customer at the As-of date, calculated as (Qty Ordered - Qty Invoiced) * Unit Price.',
           },
           {
             heading: 'Why it matters',
             body: [
-              'Unbilled WIP is revenue you\u2019ve already earned but haven\u2019t turned into AR \u2014 it ties up cash and lengthens the cash-conversion cycle.',
-              'Concentrations against one customer signal billing process gaps or contract disputes worth investigating.',
+              'Open backlog shows ordered value that has not yet been invoiced, which affects capacity, cash timing, and customer concentration.',
+              'Concentrations against one customer are worth reviewing for delivery timing and billing cadence.',
             ],
           },
           {
             heading: 'Data source',
             body:
-              'Aggregated from open customer orders / shipments that have not been matched to an invoice. The four KPI tiles summarize total WIP, customer count, oldest order age, and average days unbilled.',
+              'Aggregated from customer order lines using quantity ordered, quantity invoiced, and unit price. Full production/work-order state is not available for true production WIP, so this report is open backlog.',
           },
         ],
       },
@@ -3694,21 +3694,21 @@ export default function OperationsTab({
         sections: [
           {
             body:
-              'A prioritized worklist of customers most likely to underperform or churn, combining declining revenue trend with high unbilled / WIP backlog.',
+              'A prioritized worklist of customers most likely to underperform or churn, combining declining revenue trend with high open backlog.',
           },
           {
             heading: 'Columns',
             body: [
               'YTD Bookings \u2014 year-to-date booked or invoiced revenue for the customer.',
-              'WIP / Unbilled \u2014 dollars of work delivered but not yet invoiced.',
-              'WIP Mix % \u2014 unbilled WIP as a share of bookings; high values flag billing or contract issues.',
+              'Open Backlog \u2014 dollars of ordered value not yet invoiced.',
+              'Backlog Mix % \u2014 open backlog as a share of bookings; high values flag delivery or billing timing risk.',
               'Trend \u2014 percent change in revenue versus the prior comparable window. Negative values are red.',
             ],
           },
           {
             heading: 'How to use it',
             body:
-              'Treat the top of the queue as your weekly outreach list \u2014 a falling trend combined with rising unbilled WIP usually means an issue is brewing on the account.',
+              'Treat the top of the queue as your weekly outreach list. A falling trend combined with rising open backlog usually means an issue is brewing on the account.',
           },
         ],
       },
@@ -3935,12 +3935,12 @@ export default function OperationsTab({
             Array.from(latestWipLineByDisplayKey.values()).reduce((acc: Map<string, any>, row: any) => {
               const customerName = String(row?.customerName || 'Unknown Customer').trim() || 'Unknown Customer';
               const customerKey = normalizeWipToken(customerName);
-              const contractValue = Math.max(Number(row?.contractValue || row?.revenue || 0), 0);
-              const invoicedValue = Math.max(Number(row?.invoicedAmount || 0), 0);
-              const remainingStored = Number(row?.remainingAmount ?? NaN);
-              const wipValue = Number.isFinite(remainingStored) ? Math.max(remainingStored, 0) : Math.max(contractValue - invoicedValue, 0);
               const qtyOrdered = Math.max(Number(row?.qtyOrdered || 0), 0);
               const qtyInvoiced = Math.max(Number(row?.qtyInvoiced || 0), 0);
+              const unitPrice = Math.max(Number(row?.unitPrice || 0), 0);
+              const contractValue = qtyOrdered * unitPrice;
+              const invoicedValue = qtyInvoiced * unitPrice;
+              const wipValue = Math.max(qtyOrdered - qtyInvoiced, 0) * unitPrice;
               if (!customerKey || wipValue <= 0) return acc;
               if (qtyOrdered > 0 && qtyInvoiced + 1e-4 >= qtyOrdered) return acc;
               if (!acc.has(customerKey)) {
@@ -4140,7 +4140,7 @@ export default function OperationsTab({
             { key: 'qtyOrdered', label: 'Qty Ord', align: 'right' },
             { key: 'qtyShipped', label: 'Qty Shp', align: 'right' },
             { key: 'qtyInvoiced', label: 'Qty Inv', align: 'right' },
-            { key: 'wipValue', label: 'WIP', align: 'right' },
+            { key: 'wipValue', label: 'Backlog', align: 'right' },
             { key: 'contractValue', label: 'Contract', align: 'right' },
             { key: 'invoicedValue', label: 'Invoiced', align: 'right' },
           ];
@@ -4222,7 +4222,7 @@ export default function OperationsTab({
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px', gap: '12px', flexWrap: 'wrap' }}>
                   <div style={{ display: 'flex', alignItems: 'center' }}>
                     <h3 style={{ fontSize: '18px', fontWeight: '700', color: '#1e293b', margin: 0 }}>
-                      {retailizeCustomerText('WIP by Customer (Unbilled)')}
+                      {retailizeCustomerText('Open Backlog by Customer')}
                     </h3>
                     {renderCustomerChartInfoLink('customersWipByCustomer')}
                   </div>
@@ -4230,7 +4230,7 @@ export default function OperationsTab({
                 </div>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(140px, 1fr))', gap: '8px', marginBottom: '12px' }}>
                   <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '8px 10px' }}>
-                    <div style={{ fontSize: '11px', color: '#64748b' }}>Total WIP</div>
+                    <div style={{ fontSize: '11px', color: '#64748b' }}>Total Backlog</div>
                     <div style={{ fontSize: '14px', fontWeight: 700, color: '#b45309' }}>{formatCurrency(wipTotals.totalWip)}</div>
                   </div>
                   <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '8px 10px' }}>
@@ -4242,12 +4242,12 @@ export default function OperationsTab({
                     <div style={{ fontSize: '14px', fontWeight: 700, color: '#16a34a' }}>{formatCurrency(wipTotals.totalInvoicedValue)}</div>
                   </div>
                   <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '8px 10px' }}>
-                    <div style={{ fontSize: '11px', color: '#64748b' }}>{retailizeCustomerText('Customers with WIP')}</div>
+                    <div style={{ fontSize: '11px', color: '#64748b' }}>{retailizeCustomerText('Customers with Backlog')}</div>
                     <div style={{ fontSize: '14px', fontWeight: 700, color: '#1e293b' }}>{wipTotals.customerCount}</div>
                   </div>
                 </div>
                 {wipRows.length === 0 ? (
-                  <div style={{ fontSize: '12px', color: '#64748b' }}>No WIP rows found in selected operational snapshots.</div>
+                  <div style={{ fontSize: '12px', color: '#64748b' }}>No open backlog rows found in selected operational snapshots.</div>
                 ) : (
                   <div style={{ overflowX: 'auto' }}>
                     <table style={{ width: '100%', borderCollapse: 'collapse' }}>
@@ -4256,7 +4256,7 @@ export default function OperationsTab({
                           <th style={{ textAlign: 'center', padding: '6px 10px', fontSize: '13px', fontWeight: 700, color: 'white', width: '42px' }}></th>
                           <th style={{ textAlign: 'left', padding: '6px 10px', fontSize: '13px', fontWeight: 700, color: 'white' }}>Rank</th>
                           <th style={{ textAlign: 'left', padding: '6px 10px', fontSize: '13px', fontWeight: 700, color: 'white' }}>{retailizeCustomerText('Customer')}</th>
-                          <th style={{ textAlign: 'right', padding: '6px 10px', fontSize: '13px', fontWeight: 700, color: 'white' }}>WIP</th>
+                          <th style={{ textAlign: 'right', padding: '6px 10px', fontSize: '13px', fontWeight: 700, color: 'white' }}>Backlog</th>
                           <th style={{ textAlign: 'right', padding: '6px 10px', fontSize: '13px', fontWeight: 700, color: 'white' }}>Contract</th>
                           <th style={{ textAlign: 'right', padding: '6px 10px', fontSize: '13px', fontWeight: 700, color: 'white' }}>Invoiced</th>
                           <th style={{ textAlign: 'right', padding: '6px 10px', fontSize: '13px', fontWeight: 700, color: 'white' }}>Open Lines</th>
@@ -4283,7 +4283,7 @@ export default function OperationsTab({
                                       fontWeight: 700,
                                       lineHeight: 1,
                                     }}
-                                    aria-label={isExpanded ? 'Collapse WIP line items' : 'Expand WIP line items'}
+                                    aria-label={isExpanded ? 'Collapse backlog line items' : 'Expand backlog line items'}
                                     title={isExpanded ? 'Collapse' : 'Expand'}
                                   >
                                     {isExpanded ? '-' : '+'}
@@ -4337,7 +4337,7 @@ export default function OperationsTab({
                                         </table>
                                       </div>
                                     ) : (
-                                      <div style={{ fontSize: '12px', color: '#64748b' }}>No line-level WIP items available.</div>
+                                      <div style={{ fontSize: '12px', color: '#64748b' }}>No line-level backlog items available.</div>
                                     )}
                                   </td>
                                 </tr>
@@ -4633,8 +4633,8 @@ export default function OperationsTab({
                         <tr style={{ borderBottom: '2px solid #1d4ed8', background: '#2563eb' }}>
                           <th style={{ textAlign: 'left', padding: '6px 10px', fontSize: '13px', fontWeight: 700, color: 'white' }}>{retailizeCustomerText('Customer')}</th>
                           <th style={{ textAlign: 'right', padding: '6px 10px', fontSize: '13px', fontWeight: 700, color: 'white' }}>YTD Bookings</th>
-                          <th style={{ textAlign: 'right', padding: '6px 10px', fontSize: '13px', fontWeight: 700, color: 'white' }}>WIP / Unbilled</th>
-                          <th style={{ textAlign: 'right', padding: '6px 10px', fontSize: '13px', fontWeight: 700, color: 'white' }}>WIP Mix %</th>
+                          <th style={{ textAlign: 'right', padding: '6px 10px', fontSize: '13px', fontWeight: 700, color: 'white' }}>Open Backlog</th>
+                          <th style={{ textAlign: 'right', padding: '6px 10px', fontSize: '13px', fontWeight: 700, color: 'white' }}>Backlog Mix %</th>
                           <th style={{ textAlign: 'right', padding: '6px 10px', fontSize: '13px', fontWeight: 700, color: 'white' }}>Trend</th>
                         </tr>
                       </thead>
@@ -19970,12 +19970,12 @@ Strategies to Improve the CCC
           <details style={{ marginBottom: '12px', border: '1px solid #e2e8f0', borderRadius: '10px', padding: '10px 12px', background: '#f8fafc' }}>
             <summary style={{ cursor: 'pointer', fontSize: '12px', fontWeight: 800, color: '#2751d0' }}>How are AR Days and WIP Burden calculated?</summary>
             <div style={{ marginTop: '8px', fontSize: '12px', color: '#475569', lineHeight: 1.5 }}>
-              AR Days = current open AR divided by revenue for the selected period, multiplied by the number of days in that period. Current WIP = latest open order-line WIP value for that customer. WIP / Revenue compares current open WIP to selected-period revenue. AR Days can exceed the selected period when open AR is larger than period revenue. Values show N/A when the required customer-level AR, revenue, or open WIP data is not available.
+              AR Days = current open AR divided by revenue for the selected period, multiplied by the number of days in that period. Current Backlog = latest open order-line backlog value for that customer, calculated as (Qty Ordered - Qty Invoiced) * Unit Price. Backlog / Revenue compares current open backlog to selected-period revenue. AR Days can exceed the selected period when open AR is larger than period revenue. Values show N/A when the required customer-level AR, revenue, or open backlog data is not available.
             </div>
           </details>
           <div style={{ overflowX: 'auto' }}>
             <table style={{ ...tableStyle, minWidth: '980px' }}>
-              <thead><tr>{['Customer', 'Revenue', 'Gross Profit', 'GP %', 'EBITDA Contribution', 'AR Days', 'Current WIP', 'WIP / Revenue', 'Strategic Importance'].map((h) => <th key={h} style={{ ...thStyle, textAlign: h === 'Customer' ? 'left' : 'right' }}>{h}</th>)}</tr></thead>
+              <thead><tr>{['Customer', 'Revenue', 'Gross Profit', 'GP %', 'EBITDA Contribution', 'AR Days', 'Current Backlog', 'Backlog / Revenue', 'Strategic Importance'].map((h) => <th key={h} style={{ ...thStyle, textAlign: h === 'Customer' ? 'left' : 'right' }}>{h}</th>)}</tr></thead>
               <tbody>{profitabilityRows.map((row) => <tr key={row.name}><td style={{ ...tdStyle, fontWeight: 700 }}>{row.name}</td><td style={{ ...tdStyle, textAlign: 'right' }}>{formatCurrency(row.revenue)}</td><td style={{ ...tdStyle, textAlign: 'right' }}>{row.gpPct == null ? 'N/A' : formatCurrency(Number(row.grossProfit || 0))}</td><td style={{ ...tdStyle, textAlign: 'right' }}>{pct(row.gpPct)}</td><td style={{ ...tdStyle, textAlign: 'right' }}>{row.ebitdaContribution == null ? 'N/A' : formatCurrency(Number(row.ebitdaContribution || 0))}</td><td style={{ ...tdStyle, textAlign: 'right' }}>{row.arDays == null ? 'N/A' : `${Number(row.arDays).toFixed(1)}`}</td><td style={{ ...tdStyle, textAlign: 'right' }}>{row.wipBurden == null ? 'N/A' : formatCurrency(row.wipBurden)}</td><td style={{ ...tdStyle, textAlign: 'right' }}>{pct(row.wipBurdenPct)}</td><td style={{ ...tdStyle, textAlign: 'right' }}>{row.strategicImportance}</td></tr>)}</tbody>
             </table>
           </div>
@@ -20112,12 +20112,12 @@ Strategies to Improve the CCC
           previousQty = currentQty;
           previousAmount = currentAmount;
         });
-        const contractValue = Number(latest?.contractValue || 0);
-        const invoicedAmount = Number(latest?.invoicedAmount || 0);
-        const remainingStored = Number(latest?.remainingAmount ?? NaN);
-        const wipValue = Number.isFinite(remainingStored) ? Math.max(remainingStored, 0) : Math.max(contractValue - invoicedAmount, 0);
         const qtyOrderedLatest = Number(latest?.qtyOrdered || 0);
         const qtyInvoicedLatest = Number(latest?.qtyInvoiced || 0);
+        const unitPrice = Math.max(Number(latest?.unitPrice || 0), 0);
+        const contractValue = Math.max(qtyOrderedLatest, 0) * unitPrice;
+        const invoicedAmount = Math.max(qtyInvoicedLatest, 0) * unitPrice;
+        const wipValue = Math.max(qtyOrderedLatest - qtyInvoicedLatest, 0) * unitPrice;
         const isOpen = wipValue > 0 && (qtyOrderedLatest <= 0 || qtyInvoicedLatest + 1e-4 < qtyOrderedLatest);
         const orderDate = validDate(latest?.orderDate || latest?.date);
         const dueDate = validDate(latest?.dueDate);
@@ -20194,12 +20194,12 @@ Strategies to Improve the CCC
           const bDate = validDate(b?.snapshotDate)?.getTime() || 0;
           return bDate - aDate;
         })[0];
-        const contractValue = Number(latest?.contractValue || 0);
-        const invoicedValue = Number(latest?.invoicedAmount || 0);
-        const remainingStored = Number(latest?.remainingAmount ?? NaN);
-        const wipValue = Number.isFinite(remainingStored) ? Math.max(remainingStored, 0) : Math.max(contractValue - invoicedValue, 0);
         const qtyOrderedLatest = Number(latest?.qtyOrdered || 0);
         const qtyInvoicedLatest = Number(latest?.qtyInvoiced || 0);
+        const unitPrice = Math.max(Number(latest?.unitPrice || 0), 0);
+        const contractValue = Math.max(qtyOrderedLatest, 0) * unitPrice;
+        const invoicedValue = Math.max(qtyInvoicedLatest, 0) * unitPrice;
+        const wipValue = Math.max(qtyOrderedLatest - qtyInvoicedLatest, 0) * unitPrice;
         return {
           rowKey,
           customerName: String(latest?.customerName || latest?.customer || 'N/A'),
@@ -20383,9 +20383,9 @@ Strategies to Improve the CCC
     });
     const totalOpenWipValue = executionItems.reduce((sum: number, item: any) => sum + Number(item.wipValue || 0), 0);
     const metricCards = [
-      { label: 'Open WIP Value', value: formatCurrency(Number(wipSummary?.totals?.totalWip || totalOpenWipValue || 0)), detail: 'From open order-line WIP' },
-      { label: 'Avg Open WIP Age', value: days(avg(openWipAges)), detail: 'As-of date minus order date' },
-      { label: 'WIP Qty Invoiced %', value: pct(qtyInvoiced, qtyOrdered), detail: 'Qty invoiced / qty ordered on open lines' },
+      { label: 'Open Backlog Value', value: formatCurrency(Number(wipSummary?.totals?.totalWip || totalOpenWipValue || 0)), detail: 'From open order-line backlog' },
+      { label: 'Avg Open Backlog Age', value: days(avg(openWipAges)), detail: 'As-of date minus order date' },
+      { label: 'Backlog Qty Invoiced %', value: pct(qtyInvoiced, qtyOrdered), detail: 'Qty invoiced / qty ordered on open lines' },
       { label: '90+ Day Open Lines', value: number(agingBuckets.find((bucket) => bucket.label === '90+ Days')?.lineCount || 0), detail: 'Oldest open order-line bucket' },
     ];
     const tableStyle = { width: '100%', borderCollapse: 'collapse' as const };
@@ -20401,7 +20401,7 @@ Strategies to Improve the CCC
       { key: 'pastDueDate', label: 'Past Due Date', align: 'right' },
       { key: 'qtyOrdered', label: 'Qty Ordered', align: 'right' },
       { key: 'qtyInvoiced', label: 'Qty Invoiced', align: 'right' },
-      { key: 'wipValue', label: 'WIP Value', align: 'right' },
+      { key: 'wipValue', label: 'Backlog Value', align: 'right' },
       { key: 'status', label: 'Status' },
     ];
     const renderStuckOpenLineHeader = (column: { key: StuckOpenLineSortKey; label: string; align?: 'left' | 'right' }) => (
@@ -20424,7 +20424,7 @@ Strategies to Improve the CCC
       { key: 'pastDueDays', label: 'Past Due Days', align: 'right' },
       { key: 'qtyOrdered', label: 'Qty Ordered', align: 'right' },
       { key: 'qtyInvoiced', label: 'Qty Invoiced', align: 'right' },
-      { key: 'wipValue', label: 'WIP Value', align: 'right' },
+      { key: 'wipValue', label: 'Backlog Value', align: 'right' },
     ];
     const renderOpenBottleneckHeader = (column: { key: OpenBottleneckSortKey; label: string; align?: 'left' | 'right' }) => (
       <th
@@ -20471,13 +20471,13 @@ Strategies to Improve the CCC
                     What does this show?
                   </summary>
                   <div style={{ marginTop: '8px', textAlign: 'left', border: '1px solid #dbeafe', borderRadius: '10px', padding: '10px 12px', background: '#f8fafc', color: '#475569', fontSize: '12px', lineHeight: 1.5 }}>
-                    Open order lines are grouped by how many days have elapsed from order date to the latest WIP snapshot date. The goal is to highlight aging work that is not moving through the order-to-invoice process quickly enough. WIP Value is the remaining open value in each age bucket.
+                    Open order lines are grouped by how many days have elapsed from order date to the latest order-line snapshot date. The goal is to highlight aging backlog that is not moving through the order-to-invoice process quickly enough. Backlog Value is calculated as (Qty Ordered - Qty Invoiced) * Unit Price.
                   </div>
               </details>
             </div>
             <div style={{ overflowX: 'auto' }}>
               <table style={{ ...tableStyle, minWidth: '560px' }}>
-                <thead><tr>{['Age Bucket', 'Open Lines', 'Avg Open Age', 'WIP Value'].map((header) => <th key={header} style={{ ...thStyle, textAlign: header === 'Age Bucket' ? 'left' : 'right' }}>{header}</th>)}</tr></thead>
+                <thead><tr>{['Age Bucket', 'Open Lines', 'Avg Open Age', 'Backlog Value'].map((header) => <th key={header} style={{ ...thStyle, textAlign: header === 'Age Bucket' ? 'left' : 'right' }}>{header}</th>)}</tr></thead>
                 <tbody>{agingBuckets.map((bucket) => <tr key={bucket.label}><td style={{ ...tdStyle, fontWeight: 700 }}>{bucket.label}</td><td style={{ ...tdStyle, textAlign: 'right' }}>{number(bucket.lineCount)}</td><td style={{ ...tdStyle, textAlign: 'right' }}>{days(bucket.avgAge)}</td><td style={{ ...tdStyle, textAlign: 'right' }}>{formatCurrency(bucket.wipValue)}</td></tr>)}</tbody>
               </table>
             </div>

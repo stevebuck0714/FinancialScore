@@ -52,7 +52,7 @@ const OPERATIONAL_DATA_CACHE_TTL_SECONDS = 120;
 const CUSTOMER_CONCENTRATION_CACHE_TTL_SECONDS = 30 * 24 * 60 * 60;
 const CUSTOMER_CONCENTRATION_CACHE_VERSION = 'customer-concentration-exposure-v10';
 const CUSTOMER_REVENUE_SOURCE_VERSION = 'customer-revenue-source-v2';
-const CUSTOMER_WIP_SOURCE_VERSION = 'customer-wip-source-v2';
+const CUSTOMER_WIP_SOURCE_VERSION = 'customer-backlog-source-v1';
 const WHOLESALE_PRODUCTS_REPORT_CACHE_TTL_SECONDS = 30 * 24 * 60 * 60;
 const OPERATIONAL_CACHEABLE_TYPES = new Set([
   'customers',
@@ -3223,6 +3223,7 @@ export async function GET(request: NextRequest) {
                 sku: true,
                 qtyOrdered: true,
                 qtyInvoiced: true,
+                unitPrice: true,
                 contractValue: true,
                 invoicedAmount: true,
                 remainingAmount: true,
@@ -3394,6 +3395,7 @@ export async function GET(request: NextRequest) {
                 qtyOrdered: number;
                 qtyShipped: number;
                 qtyInvoiced: number;
+                unitPrice: number;
                 contractValue: number;
                 invoicedValue: number;
                 remainingValue: number;
@@ -3419,12 +3421,10 @@ export async function GET(request: NextRequest) {
               const qtyOrdered = Math.max(Number(row?.qtyOrdered || 0), 0);
               const qtyShipped = Math.max(Number(rawDetail?.qtyShipped || 0), 0);
               const qtyInvoiced = Math.max(Number(row?.qtyInvoiced || 0), 0);
-              const contractValue = Math.max(Number(row?.contractValue || 0), 0);
-              const invoicedValue = Math.max(Number(row?.invoicedAmount || 0), 0);
-              const remainingStored = Number(row?.remainingAmount ?? NaN);
-              let remainingValue = Number.isFinite(remainingStored)
-                ? Math.max(remainingStored, 0)
-                : Math.max(contractValue - invoicedValue, 0);
+              const unitPrice = Math.max(Number(row?.unitPrice || 0), 0);
+              const contractValue = qtyOrdered * unitPrice;
+              const invoicedValue = qtyInvoiced * unitPrice;
+              let remainingValue = Math.max(qtyOrdered - qtyInvoiced, 0) * unitPrice;
               const statTrim = String(stat || '')
                 .trim()
                 .toUpperCase();
@@ -3446,6 +3446,7 @@ export async function GET(request: NextRequest) {
                   qtyOrdered,
                   qtyShipped,
                   qtyInvoiced,
+                  unitPrice,
                   contractValue,
                   invoicedValue,
                   remainingValue,
@@ -3490,6 +3491,9 @@ export async function GET(request: NextRequest) {
               }
             }
             for (const line of latestLineState.values()) {
+              line.contractValue = line.qtyOrdered * line.unitPrice;
+              line.invoicedValue = line.qtyInvoiced * line.unitPrice;
+              line.remainingValue = Math.max(line.qtyOrdered - line.qtyInvoiced, 0) * line.unitPrice;
               const st = String(line.stat || '')
                 .trim()
                 .toUpperCase();
@@ -3566,21 +3570,15 @@ export async function GET(request: NextRequest) {
             wipByCustomer = allWipCustomers.map(({ wipItems, ...row }) => row);
             wipTopCustomers = allWipCustomers.slice(0, 50).map((row) => ({
               ...row,
-              wipItems: (() => {
-                const chronological = [...row.wipItems].sort((a, b) => {
-                  const aDate = String(a.orderDate || '');
-                  const bDate = String(b.orderDate || '');
-                  if (aDate !== bDate) return aDate.localeCompare(bDate);
-                  const aOrder = String(a.orderId || '');
-                  const bOrder = String(b.orderId || '');
-                  if (aOrder !== bOrder) return aOrder.localeCompare(bOrder);
-                  return String(a.lineId || '').localeCompare(String(b.lineId || ''));
-                });
-                // Keep chronological display, but show the most recent portion
-                // so 2024/2025/2026 lines are visible instead of only oldest rows.
-                const recent = chronological.slice(-200);
-                return recent;
-              })(),
+              wipItems: [...row.wipItems].sort((a, b) => {
+                const aDate = String(a.orderDate || '');
+                const bDate = String(b.orderDate || '');
+                if (aDate !== bDate) return aDate.localeCompare(bDate);
+                const aOrder = String(a.orderId || '');
+                const bOrder = String(b.orderId || '');
+                if (aOrder !== bOrder) return aOrder.localeCompare(bOrder);
+                return String(a.lineId || '').localeCompare(String(b.lineId || ''));
+              }),
             }));
             wipTotals = allWipCustomers.reduce(
               (acc, row) => {
