@@ -52,7 +52,8 @@ const OPERATIONAL_DATA_CACHE_TTL_SECONDS = 120;
 const CUSTOMER_CONCENTRATION_CACHE_TTL_SECONDS = 30 * 24 * 60 * 60;
 const CUSTOMER_CONCENTRATION_CACHE_VERSION = 'customer-concentration-exposure-v10';
 const CUSTOMER_REVENUE_SOURCE_VERSION = 'customer-revenue-source-v2';
-const CUSTOMER_WIP_SOURCE_VERSION = 'customer-backlog-source-v1';
+const CUSTOMER_WIP_SOURCE_VERSION = 'customer-backlog-source-v2';
+const CUSTOMER_BACKLOG_MIN_ORDER_DATE = '2023-06-01';
 const WHOLESALE_PRODUCTS_REPORT_CACHE_TTL_SECONDS = 30 * 24 * 60 * 60;
 const OPERATIONAL_CACHEABLE_TYPES = new Set([
   'customers',
@@ -3381,6 +3382,7 @@ export async function GET(request: NextRequest) {
               }
             }
             const ORDER_LINE_STATUSES_CLOSED_FOR_WIP = new Set(['C', 'F', 'I']);
+            const backlogMinOrderDate = new Date(`${CUSTOMER_BACKLOG_MIN_ORDER_DATE}T00:00:00.000Z`);
             const latestLineState = new Map<
               string,
               {
@@ -3416,6 +3418,7 @@ export async function GET(request: NextRequest) {
               const orderDateRaw = row?.orderDate ? new Date(row.orderDate) : null;
               const orderDate =
                 orderDateRaw && !Number.isNaN(orderDateRaw.getTime()) ? orderDateRaw.toISOString().slice(0, 10) : null;
+              if (!orderDate || orderDate < CUSTOMER_BACKLOG_MIN_ORDER_DATE) continue;
               const rawDueDate = parseInforDateValue(rawDetail?.dueDate);
               const dueDate = rawDueDate && !Number.isNaN(rawDueDate.getTime()) ? rawDueDate.toISOString().slice(0, 10) : null;
               const qtyOrdered = Math.max(Number(row?.qtyOrdered || 0), 0);
@@ -3491,6 +3494,10 @@ export async function GET(request: NextRequest) {
               }
             }
             for (const line of latestLineState.values()) {
+              if (!line.orderDate || new Date(`${line.orderDate}T00:00:00.000Z`) < backlogMinOrderDate) {
+                line.remainingValue = 0;
+                continue;
+              }
               line.contractValue = line.qtyOrdered * line.unitPrice;
               line.invoicedValue = line.qtyInvoiced * line.unitPrice;
               line.remainingValue = Math.max(line.qtyOrdered - line.qtyInvoiced, 0) * line.unitPrice;

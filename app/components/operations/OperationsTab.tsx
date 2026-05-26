@@ -534,7 +534,8 @@ const HEAVY_PREFETCH_TYPES: OpsDataType[] = ['ar-aging', 'ap-aging', 'customers'
 const OPERATIONAL_DATA_CACHE_TTL_MS = 2 * 60 * 1000;
 const CUSTOMER_DATA_CACHE_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 const CUSTOMER_CONCENTRATION_CLIENT_CACHE_VERSION = 'customer-concentration-exposure-v10';
-const CUSTOMER_WIP_CLIENT_CACHE_VERSION = 'customer-backlog-source-v1';
+const CUSTOMER_WIP_CLIENT_CACHE_VERSION = 'customer-backlog-source-v2';
+const CUSTOMER_BACKLOG_MIN_ORDER_DATE = '2023-06-01';
 const WHOLESALE_PRODUCTS_REPORT_CACHE_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 
 type InvestigatePlaybook = {
@@ -3935,6 +3936,8 @@ export default function OperationsTab({
             Array.from(latestWipLineByDisplayKey.values()).reduce((acc: Map<string, any>, row: any) => {
               const customerName = String(row?.customerName || 'Unknown Customer').trim() || 'Unknown Customer';
               const customerKey = normalizeWipToken(customerName);
+              const parsedOrderDate = parseDateValue(row?.orderDate ? String(row.orderDate) : null);
+              if (!parsedOrderDate || parsedOrderDate.toISOString().slice(0, 10) < CUSTOMER_BACKLOG_MIN_ORDER_DATE) return acc;
               const qtyOrdered = Math.max(Number(row?.qtyOrdered || 0), 0);
               const qtyInvoiced = Math.max(Number(row?.qtyInvoiced || 0), 0);
               const unitPrice = Math.max(Number(row?.unitPrice || 0), 0);
@@ -20121,6 +20124,8 @@ Strategies to Improve the CCC
         const isOpen = wipValue > 0 && (qtyOrderedLatest <= 0 || qtyInvoicedLatest + 1e-4 < qtyOrderedLatest);
         const orderDate = validDate(latest?.orderDate || latest?.date);
         const dueDate = validDate(latest?.dueDate);
+        const orderDateKey = orderDate ? orderDate.toISOString().slice(0, 10) : '';
+        if (!orderDateKey || orderDateKey < CUSTOMER_BACKLOG_MIN_ORDER_DATE) return null;
         return {
           key,
           customerName: latest?.customerName || latest?.customer || 'N/A',
@@ -20139,7 +20144,7 @@ Strategies to Improve the CCC
           status: chronological.length <= 1 ? 'Single snapshot in range' : 'No invoice movement in range',
         };
       })
-      .filter((row) => row.isOpen && !row.hasInvoiceMovement);
+      .filter((row) => row?.isOpen && !row.hasInvoiceMovement);
     const stuckOpenLineNumericKeys = new Set<StuckOpenLineSortKey>([
       'orderDate',
       'dueDate',
@@ -20200,6 +20205,9 @@ Strategies to Improve the CCC
         const contractValue = Math.max(qtyOrderedLatest, 0) * unitPrice;
         const invoicedValue = Math.max(qtyInvoicedLatest, 0) * unitPrice;
         const wipValue = Math.max(qtyOrderedLatest - qtyInvoicedLatest, 0) * unitPrice;
+        const orderDate = validDate(latest?.orderDate || latest?.date);
+        const orderDateKey = orderDate ? orderDate.toISOString().slice(0, 10) : '';
+        if (!orderDateKey || orderDateKey < CUSTOMER_BACKLOG_MIN_ORDER_DATE) return null;
         return {
           rowKey,
           customerName: String(latest?.customerName || latest?.customer || 'N/A'),
@@ -20219,7 +20227,7 @@ Strategies to Improve the CCC
           snapshotTime: validDate(latest?.snapshotDate)?.getTime() || 0,
         };
       })
-      .filter((row: any) => Number(row.wipValue || 0) > 0 && (Number(row.qtyOrdered || 0) <= 0 || Number(row.qtyInvoiced || 0) + 1e-4 < Number(row.qtyOrdered || 0)));
+      .filter((row: any) => row && Number(row.wipValue || 0) > 0 && (Number(row.qtyOrdered || 0) <= 0 || Number(row.qtyInvoiced || 0) + 1e-4 < Number(row.qtyOrdered || 0)));
     const snapshotOpenItems = Array.from(
       snapshotOpenItemsRaw.reduce((deduped: Map<string, any>, row: any) => {
         const displayKey = [
