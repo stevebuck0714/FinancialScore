@@ -211,6 +211,17 @@ async function buildOperationalDataVersion(companyId: string, type: string | nul
       : Promise.resolve({ label: 'ProductSalesSnapshot', skipped: true }),
     (includeAll || type === 'products')
       ? safeOperationalVersionPart(
+          'CustomerOrderLineSnapshot',
+          `SELECT COUNT(*)::text AS count, MAX("createdAt") AS "maxCreatedAt", MAX("snapshotDate") AS "maxSnapshotDate"
+           FROM "CustomerOrderLineSnapshot"
+           WHERE "companyId" = $1 AND "snapshotDate" >= $2 AND "snapshotDate" <= $3`,
+          companyId,
+          startDate,
+          endDate
+        )
+      : Promise.resolve({ label: 'CustomerOrderLineSnapshot', skipped: true }),
+    (includeAll || type === 'products')
+      ? safeOperationalVersionPart(
           'InforRawRecordProducts',
           `SELECT COUNT(*)::text AS count, MAX("createdAt") AS "maxCreatedAt", MAX("fetchedAt") AS "maxFetchedAt", MAX("businessDate") AS "maxBusinessDate"
            FROM "InforRawRecord"
@@ -2305,9 +2316,6 @@ function aggregateApSeriesByFrequency(
 export async function GET(request: NextRequest) {
   try {
     const isProduction = process.env.NODE_ENV === 'production';
-    // SECURITY: Require authentication
-    await requireAuth();
-    
     const searchParams = request.nextUrl.searchParams;
     const companyId = searchParams.get('companyId');
     const type = searchParams.get('type');
@@ -2346,6 +2354,31 @@ export async function GET(request: NextRequest) {
     const factRowCap = Math.min(Math.max(boundedLimit * 10, 5000), 25000);
     const rawPayloadRowCap = Math.min(Math.max(boundedLimit * 10, 10000), 50000);
     const sectorCategoryParam = searchParams.get('sectorCategory');
+    const cronSecret = String(process.env.CRON_SECRET || '').trim();
+    const authHeader = String(request.headers.get('authorization') || '').trim();
+    const hasCronCacheWarmupAuth =
+      Boolean(cronSecret && authHeader === `Bearer ${cronSecret}`) &&
+      ['1', 'true', 'yes'].includes(String(searchParams.get('cacheWarmup') || '').trim().toLowerCase());
+    const isCronWholesaleProductsWarmup =
+      hasCronCacheWarmupAuth &&
+      type === 'products' &&
+      frequency === 'daily' &&
+      String(startDateParam || '') === '2020-01-01' &&
+      String(sectorCategoryParam || '').trim() === '42' &&
+      boundedLimit >= 5000;
+    const isCronProductsPerformanceWarmup =
+      hasCronCacheWarmupAuth &&
+      type === 'products' &&
+      frequency === 'daily' &&
+      String(sectorCategoryParam || '').trim() === '42' &&
+      boundedLimit === 500;
+    const isCronProductsCacheWarmup = isCronWholesaleProductsWarmup || isCronProductsPerformanceWarmup;
+
+    // SECURITY: Require normal user auth unless this is the tightly scoped cron
+    // warmup that rebuilds wholesale product caches after snapshot hydration.
+    if (!isCronProductsCacheWarmup) {
+      await requireAuth();
+    }
 
     if (!companyId) {
       return NextResponse.json(
@@ -2354,14 +2387,17 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    // SECURITY: Validate access to company data
-    const hasAccess = await validateCompanyAccess(companyId);
-    if (!hasAccess) {
-      await auditForbiddenAccess('OperationalData', companyId, 'READ');
-      return NextResponse.json(
-        { error: 'Forbidden: Access to this company denied' },
-        { status: 403 }
-      );
+    // SECURITY: Validate access to company data. Cron warmups are authorized by
+    // CRON_SECRET above and limited to wholesale-trade product cache requests.
+    if (!isCronProductsCacheWarmup) {
+      const hasAccess = await validateCompanyAccess(companyId);
+      if (!hasAccess) {
+        await auditForbiddenAccess('OperationalData', companyId, 'READ');
+        return NextResponse.json(
+          { error: 'Forbidden: Access to this company denied' },
+          { status: 403 }
+        );
+      }
     }
 
     // Default date range: last 90 days
@@ -2385,6 +2421,12 @@ export async function GET(request: NextRequest) {
       return NextResponse.json(
         { error: 'Company not found' },
         { status: 404 }
+      );
+    }
+    if (isCronProductsCacheWarmup && String(company.industrySectorCategory || '').trim() !== '42') {
+      return NextResponse.json(
+        { error: 'Cron product cache warmup is limited to wholesale trade companies.' },
+        { status: 403 }
       );
     }
 
@@ -2438,8 +2480,7 @@ export async function GET(request: NextRequest) {
       OPERATIONAL_CACHEABLE_TYPES.has(cacheType) &&
       !skuParam &&
       !includeCostHistory &&
-      !refreshConcentration &&
-      !(isWholesaleProductsReportRequest && refreshWholesaleProducts);
+      !refreshConcentration;
     const operationalCache =
       cacheableRequest
         ? {
@@ -2460,13 +2501,11 @@ export async function GET(request: NextRequest) {
               cacheType === 'customers' ? CUSTOMER_WIP_SOURCE_VERSION : null,
               isWholesaleProductsReportRequest ? CUSTOMER_WIP_SOURCE_VERSION : null,
             ]),
-            dataVersion: isWholesaleProductsReportRequest
-              ? `wholesale-products-report-manual-${CUSTOMER_WIP_SOURCE_VERSION}`
-              : await buildOperationalDataVersion(companyId, cacheType, startDate, endDate),
+            dataVersion: await buildOperationalDataVersion(companyId, cacheType, startDate, endDate),
           }
         : null;
 
-    if (operationalCache) {
+    if (operationalCache && !(isWholesaleProductsReportRequest && refreshWholesaleProducts)) {
       const cachedPayload = await readDerivedApiCache<any>(operationalCache);
       if (cachedPayload) {
         return NextResponse.json(cachedPayload, { headers: privateCacheHeaders(operationalCacheTtlSeconds, 300) });
