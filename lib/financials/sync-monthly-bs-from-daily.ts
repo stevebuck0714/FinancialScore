@@ -1,4 +1,5 @@
 import prisma from '@/lib/prisma';
+import { BS_LAST_DAY_FIELDS } from '@/lib/financial/month-publish';
 
 /**
  * Syncs MonthlyFinancial balance-sheet columns from DailyFinancialSnapshot
@@ -17,33 +18,7 @@ import prisma from '@/lib/prisma';
  * Returns a small summary so callers can log it.
  */
 
-const BS_FIELDS = [
-  'cash',
-  'ar',
-  'inventory',
-  'otherCA',
-  'tca',
-  'fixedAssets',
-  'otherAssets',
-  'totalAssets',
-  'ap',
-  'loc',
-  'otherCL',
-  'tcl',
-  'ltd',
-  'totalLiab',
-  'ownersCapital',
-  'ownersDraw',
-  'commonStock',
-  'preferredStock',
-  'retainedEarnings',
-  'additionalPaidInCapital',
-  'treasuryStock',
-  'totalEquity',
-  'totalLAndE',
-] as const;
-
-type BsField = (typeof BS_FIELDS)[number];
+type BsField = (typeof BS_LAST_DAY_FIELDS)[number];
 
 export type SyncMonthlyBsFromDailyOutcome = {
   ok: boolean;
@@ -139,7 +114,7 @@ export async function syncMonthlyFinancialBsFromDailySnapshot(
     }
 
     const updates: Partial<Record<BsField, number>> = {};
-    for (const f of BS_FIELDS) {
+    for (const f of BS_LAST_DAY_FIELDS) {
       updates[f] = Number((dfs as any)[f] || 0);
     }
     try {

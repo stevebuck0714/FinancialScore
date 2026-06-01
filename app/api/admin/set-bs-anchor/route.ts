@@ -11,8 +11,10 @@ export const dynamic = 'force-dynamic';
  *   companyId: string
  *   anchorDate: string             // YYYY-MM-DD (EOD balance-sheet date)
  *   balances: {
- *     cash?, ar?, inventory?, otherCA?, fixedAssets?, otherAssets?,
- *     ap?, loc?, otherCL?, ltd?,
+ *     cash?, ar?, retainageReceivables?, contractAssets?, inventory?, otherCA?,
+ *     fixedAssets?, constructionEquipment?, officeEquipment?, shopEquipment?,
+ *     investments?, rightOfUseLeases?, otherAssets?,
+ *     ap?, loc?, contractLiabilities?, otherCL?, ltd?,
  *     ownersCapital?, ownersDraw?, commonStock?, preferredStock?,
  *     retainedEarnings?, additionalPaidInCapital?, treasuryStock?
  *   }
@@ -32,12 +34,20 @@ export const dynamic = 'force-dynamic';
 const ANCHOR_FIELDS = [
   'cash',
   'ar',
+  'retainageReceivables',
+  'contractAssets',
   'inventory',
   'otherCA',
   'fixedAssets',
+  'constructionEquipment',
+  'officeEquipment',
+  'shopEquipment',
+  'investments',
+  'rightOfUseLeases',
   'otherAssets',
   'ap',
   'loc',
+  'contractLiabilities',
   'otherCL',
   'ltd',
   'ownersCapital',
@@ -112,9 +122,11 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     // Sanity: report whether the supplied balance sheet balances. This is
     // informational only; we still persist whatever the caller gave us.
     const totalAssets =
-      data.cash + data.ar + data.inventory + data.otherCA +
-      data.fixedAssets + data.otherAssets;
-    const totalLiab = data.ap + data.loc + data.otherCL + data.ltd;
+      data.cash + data.ar + data.retainageReceivables + data.contractAssets +
+      data.inventory + data.otherCA + data.fixedAssets +
+      data.constructionEquipment + data.officeEquipment + data.shopEquipment +
+      data.investments + data.rightOfUseLeases + data.otherAssets;
+    const totalLiab = data.ap + data.loc + data.contractLiabilities + data.otherCL + data.ltd;
     const totalEquity =
       data.ownersCapital + data.ownersDraw + data.commonStock +
       data.preferredStock + data.retainedEarnings +

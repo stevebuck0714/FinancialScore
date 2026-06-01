@@ -287,11 +287,20 @@ export default function LOBReportingTab({
         // Balance sheet fields
         cash: monthData.cash || 0,
         ar: monthData.ar || 0,
+        retainageReceivables: monthData.retainageReceivables || 0,
+        contractAssets: monthData.contractAssets || 0,
         inventory: monthData.inventory || 0,
         otherCA: monthData.otherCA || 0,
         fixedAssets: monthData.fixedAssets || 0,
+        constructionEquipment: monthData.constructionEquipment || 0,
+        officeEquipment: monthData.officeEquipment || 0,
+        shopEquipment: monthData.shopEquipment || 0,
+        investments: monthData.investments || 0,
+        rightOfUseLeases: monthData.rightOfUseLeases || 0,
         otherAssets: monthData.otherAssets || 0,
         ap: monthData.ap || 0,
+        loc: monthData.loc || 0,
+        contractLiabilities: monthData.contractLiabilities || 0,
         otherCL: monthData.otherCL || 0,
         ltd: monthData.ltd || 0,
         ownersCapital: monthData.ownersCapital || 0,
@@ -343,8 +352,10 @@ export default function LOBReportingTab({
         'taxLicense', 'phoneComm', 'infrastructure', 'autoTravel', 'salesExpense', 
         'marketing', 'mealsEntertainment', 'otherExpense',
         // Balance sheet fields
-        'cash', 'ar', 'inventory', 'otherCA', 'fixedAssets', 'otherAssets',
-        'ap', 'otherCL', 'ltd', 'ownersCapital', 'ownersDraw', 'commonStock',
+        'cash', 'ar', 'retainageReceivables', 'contractAssets', 'inventory', 'otherCA',
+        'fixedAssets', 'constructionEquipment', 'officeEquipment', 'shopEquipment',
+        'investments', 'rightOfUseLeases', 'otherAssets',
+        'ap', 'loc', 'contractLiabilities', 'otherCL', 'ltd', 'ownersCapital', 'ownersDraw', 'commonStock',
         'preferredStock', 'retainedEarnings', 'additionalPaidInCapital', 'treasuryStock'
       ];
       
@@ -439,8 +450,10 @@ export default function LOBReportingTab({
                              'taxLicense', 'phoneComm', 'infrastructure', 'autoTravel', 'salesExpense', 
                              'marketing', 'mealsEntertainment', 'otherExpense',
                              // Balance sheet fields
-                             'cash', 'ar', 'inventory', 'otherCA', 'fixedAssets', 'otherAssets',
-                             'ap', 'otherCL', 'ltd', 'ownersCapital', 'ownersDraw', 'commonStock',
+                             'cash', 'ar', 'retainageReceivables', 'contractAssets', 'inventory', 'otherCA',
+                             'fixedAssets', 'constructionEquipment', 'officeEquipment', 'shopEquipment',
+                             'investments', 'rightOfUseLeases', 'otherAssets',
+                             'ap', 'loc', 'contractLiabilities', 'otherCL', 'ltd', 'ownersCapital', 'ownersDraw', 'commonStock',
                              'preferredStock', 'retainedEarnings', 'additionalPaidInCapital', 'treasuryStock'];
           
           fieldNames.forEach(fieldName => {
@@ -486,16 +499,25 @@ export default function LOBReportingTab({
         // Sum across all LOBs (use totals)
         const cash = fields.cash;
         const ar = fields.ar;
+        const retainageReceivables = fields.retainageReceivables;
+        const contractAssets = fields.contractAssets;
         const inventory = fields.inventory;
         const otherCA = fields.otherCA;
-        const tca = cash + ar + inventory + otherCA;
-        const fixedAssets = fields.fixedAssets;
+        const tca = cash + ar + retainageReceivables + contractAssets + inventory + otherCA;
+        const fixedAssets = fields.fixedAssets || fields.constructionEquipment + fields.officeEquipment + fields.shopEquipment;
+        const constructionEquipment = fields.constructionEquipment;
+        const officeEquipment = fields.officeEquipment;
+        const shopEquipment = fields.shopEquipment;
+        const investments = fields.investments;
+        const rightOfUseLeases = fields.rightOfUseLeases;
         const otherAssets = fields.otherAssets;
-        const totalAssets = tca + fixedAssets + otherAssets;
+        const totalAssets = tca + fixedAssets + investments + rightOfUseLeases + otherAssets;
         
         const ap = fields.ap;
+        const loc = fields.loc;
+        const contractLiabilities = fields.contractLiabilities;
         const otherCL = fields.otherCL;
-        const tcl = ap + otherCL;
+        const tcl = ap + loc + contractLiabilities + otherCL;
         const ltd = fields.ltd;
         const totalLiab = tcl + ltd;
         
@@ -517,13 +539,22 @@ export default function LOBReportingTab({
           federalIncomeTaxes: fields.federalIncomeTaxes,
           cash,
           ar,
+          retainageReceivables,
+          contractAssets,
           inventory,
           otherCA,
           tca,
           fixedAssets,
+          constructionEquipment,
+          officeEquipment,
+          shopEquipment,
+          investments,
+          rightOfUseLeases,
           otherAssets,
           totalAssets,
           ap,
+          loc,
+          contractLiabilities,
           otherCL,
           tcl,
           ltd,
@@ -546,16 +577,25 @@ export default function LOBReportingTab({
         
         const cash = getLOBVal('cash');
         const ar = getLOBVal('ar');
+        const retainageReceivables = getLOBVal('retainageReceivables');
+        const contractAssets = getLOBVal('contractAssets');
         const inventory = getLOBVal('inventory');
         const otherCA = getLOBVal('otherCA');
-        const tca = cash + ar + inventory + otherCA;
-        const fixedAssets = getLOBVal('fixedAssets');
+        const tca = cash + ar + retainageReceivables + contractAssets + inventory + otherCA;
+        const constructionEquipment = getLOBVal('constructionEquipment');
+        const officeEquipment = getLOBVal('officeEquipment');
+        const shopEquipment = getLOBVal('shopEquipment');
+        const fixedAssets = getLOBVal('fixedAssets') || constructionEquipment + officeEquipment + shopEquipment;
+        const investments = getLOBVal('investments');
+        const rightOfUseLeases = getLOBVal('rightOfUseLeases');
         const otherAssets = getLOBVal('otherAssets');
-        const totalAssets = tca + fixedAssets + otherAssets;
+        const totalAssets = tca + fixedAssets + investments + rightOfUseLeases + otherAssets;
         
         const ap = getLOBVal('ap');
+        const loc = getLOBVal('loc');
+        const contractLiabilities = getLOBVal('contractLiabilities');
         const otherCL = getLOBVal('otherCL');
-        const tcl = ap + otherCL;
+        const tcl = ap + loc + contractLiabilities + otherCL;
         const ltd = getLOBVal('ltd');
         const totalLiab = tcl + ltd;
         
@@ -577,13 +617,22 @@ export default function LOBReportingTab({
           federalIncomeTaxes: getLOBVal('federalIncomeTaxes'),
           cash,
           ar,
+          retainageReceivables,
+          contractAssets,
           inventory,
           otherCA,
           tca,
           fixedAssets,
+          constructionEquipment,
+          officeEquipment,
+          shopEquipment,
+          investments,
+          rightOfUseLeases,
           otherAssets,
           totalAssets,
           ap,
+          loc,
+          contractLiabilities,
           otherCL,
           tcl,
           ltd,

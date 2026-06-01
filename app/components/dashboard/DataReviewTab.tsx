@@ -3,7 +3,7 @@
 import React from "react";
 import { exportDataReviewToExcel } from "../../utils/excel-export";
 import type { MonthlyDataRow, Mappings } from "../../types";
-import { useMasterData } from "@/lib/master-data-store";
+import { useAllMasterData } from "@/lib/master-data-store";
 import { getFieldDisplayName } from "@/lib/constants/field-display-names";
 
 interface DataReviewTabProps {
@@ -13,11 +13,9 @@ interface DataReviewTabProps {
 }
 
 export default function DataReviewTab({ selectedCompanyId, companyName, accountMappings }: DataReviewTabProps) {
-  // Use master data store instead of receiving monthly data as prop
-  // Data Review shows the same published-only month-end window as every other
-  // financial report. Today (Apr 22) the latest column is March; April appears
-  // on May 1 after the publish-month cron flips it to PUBLISHED.
-  const { monthlyData, loading: masterDataLoading, error: masterDataError } = useMasterData(selectedCompanyId);
+  // Data Review is an import QA surface, so it must show all saved/processed
+  // months immediately instead of waiting for the month-publish gate.
+  const { monthlyData, loading: masterDataLoading, error: masterDataError } = useAllMasterData(selectedCompanyId);
 
   const getMonthKey = (monthValue: unknown): string | null => {
     if (monthValue instanceof Date && !Number.isNaN(monthValue.getTime())) {
@@ -53,6 +51,37 @@ export default function DataReviewTab({ selectedCompanyId, companyName, accountM
     };
   }, [monthlyData]);
   const displayedMonths = monthly;
+  const renderBalanceSheetLine = (field: keyof MonthlyDataRow | string, label: string, paddingLeft = "20px") => (
+    <tr style={{ borderBottom: "1px solid #f1f5f9" }}>
+      <td
+        style={{
+          padding: "8px 10px",
+          paddingLeft,
+          position: "sticky",
+          left: 0,
+          background: "white",
+          zIndex: 1,
+        }}
+      >
+        {label}
+      </td>
+      {monthly.slice(-36).map((m: any, idx: number) => (
+        <td
+          key={idx}
+          style={{
+            padding: "8px 10px",
+            textAlign: "right",
+            fontFamily: "monospace",
+          }}
+        >
+          ${(Number(m?.[field] || 0)).toLocaleString("en-US", {
+            minimumFractionDigits: 0,
+            maximumFractionDigits: 0,
+          })}
+        </td>
+      ))}
+    </tr>
+  );
 
   // Check if master data exists
   if (masterDataLoading) {
@@ -1631,6 +1660,8 @@ export default function DataReviewTab({ selectedCompanyId, companyName, accountM
                       </td>
                     ))}
                   </tr>
+                  {renderBalanceSheetLine('retainageReceivables', 'Retainage Receivables')}
+                  {renderBalanceSheetLine('contractAssets', 'Contract Assets')}
                   <tr style={{ borderBottom: "1px solid #f1f5f9" }}>
                     <td
                       style={{
@@ -1759,6 +1790,11 @@ export default function DataReviewTab({ selectedCompanyId, companyName, accountM
                       </td>
                     ))}
                   </tr>
+                  {renderBalanceSheetLine('constructionEquipment', 'Construction Equipment', "32px")}
+                  {renderBalanceSheetLine('officeEquipment', 'Office Equipment', "32px")}
+                  {renderBalanceSheetLine('shopEquipment', 'Shop Equipment', "32px")}
+                  {renderBalanceSheetLine('investments', 'Investments')}
+                  {renderBalanceSheetLine('rightOfUseLeases', 'Right of Use - Leases')}
                   <tr style={{ borderBottom: "1px solid #f1f5f9" }}>
                     <td
                       style={{
@@ -1911,6 +1947,7 @@ export default function DataReviewTab({ selectedCompanyId, companyName, accountM
                       </td>
                     ))}
                   </tr>
+                  {renderBalanceSheetLine('contractLiabilities', 'Contract Liabilities')}
                   <tr style={{ borderBottom: "1px solid #f1f5f9" }}>
                     <td
                       style={{

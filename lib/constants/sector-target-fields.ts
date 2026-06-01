@@ -6,6 +6,9 @@ export interface TargetFieldOption {
 type SectorSchema = {
   revenue: string[];
   cogs: string[];
+  asset?: TargetFieldOption[];
+  liability?: TargetFieldOption[];
+  equity?: TargetFieldOption[];
 };
 
 const LEGACY_REVENUE_OPTIONS: TargetFieldOption[] = [{ value: 'revenue', label: 'Revenue' }];
@@ -127,6 +130,18 @@ const SECTOR_SCHEMA_BY_CODE: Record<string, SectorSchema> = {
       'Equipment Rental & Job Equipment',
       'Job-Specific Permits / Fees',
       'Other COGS',
+    ],
+    asset: [
+      { value: 'retainageReceivables', label: 'Retainage Receivables' },
+      { value: 'contractAssets', label: 'Contract Assets' },
+      { value: 'constructionEquipment', label: 'Construction Equipment' },
+      { value: 'officeEquipment', label: 'Office Equipment' },
+      { value: 'shopEquipment', label: 'Shop Equipment' },
+      { value: 'investments', label: 'Investments' },
+      { value: 'rightOfUseLeases', label: 'Right of Use - Leases' },
+    ],
+    liability: [
+      { value: 'contractLiabilities', label: 'Contract Liabilities' },
     ],
   },
   '32': {
@@ -352,10 +367,15 @@ export function getCogsTargetFieldOptions(industrySectorCategory?: string | null
 }
 
 export function getTargetFieldOptions(industrySectorCategory?: string | null) {
+  const schema = getSectorSchema(industrySectorCategory);
   return {
     revenue: getRevenueTargetFieldOptions(industrySectorCategory),
     cogs: getCogsTargetFieldOptions(industrySectorCategory),
-    ...STATIC_TARGET_FIELD_OPTIONS,
+    expense: STATIC_TARGET_FIELD_OPTIONS.expense,
+    nonOperating: STATIC_TARGET_FIELD_OPTIONS.nonOperating,
+    asset: [...STATIC_TARGET_FIELD_OPTIONS.asset, ...(schema?.asset || [])],
+    liability: [...STATIC_TARGET_FIELD_OPTIONS.liability, ...(schema?.liability || [])],
+    equity: [...STATIC_TARGET_FIELD_OPTIONS.equity, ...(schema?.equity || [])],
   };
 }
 

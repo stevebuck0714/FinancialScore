@@ -613,10 +613,17 @@ const ImportFinancialsTab: React.FC<ImportFinancialsTabProps> = ({
                 {renderColumnSelector("Total Assets", "assets")}
                 {renderColumnSelector("Cash", "cash")}
                 {renderColumnSelector("Accounts Receivable", "ar")}
+                {renderColumnSelector("Retainage Receivables", "retainageReceivables")}
+                {renderColumnSelector("Contract Assets", "contractAssets")}
                 {renderColumnSelector("Inventory", "inventory")}
                 {renderColumnSelector("Other Current Assets", "otherCA")}
                 {renderColumnSelector("Total Current Assets", "tca")}
                 {renderColumnSelector("Fixed Assets", "fixedAssets")}
+                {renderColumnSelector("Construction Equipment", "constructionEquipment")}
+                {renderColumnSelector("Office Equipment", "officeEquipment")}
+                {renderColumnSelector("Shop Equipment", "shopEquipment")}
+                {renderColumnSelector("Investments", "investments")}
+                {renderColumnSelector("Right of Use - Leases", "rightOfUseLeases")}
                 {renderColumnSelector("Other Assets", "otherAssets")}
               </div>
 
@@ -635,6 +642,7 @@ const ImportFinancialsTab: React.FC<ImportFinancialsTabProps> = ({
                 </h4>
                 {renderColumnSelector("Accounts Payable", "ap")}
                 {renderColumnSelector("Line of Credit", "loc")}
+                {renderColumnSelector("Contract Liabilities", "contractLiabilities")}
                 {renderColumnSelector("Other Current Liabilities", "otherCL")}
                 {renderColumnSelector("Total Current Liabilities", "tcl")}
                 {renderColumnSelector("Long Term Debt", "ltd")}

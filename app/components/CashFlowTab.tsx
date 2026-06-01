@@ -138,13 +138,25 @@ export default function CashFlowTab({
     const netIncome = (curr.revenue || 0) - (curr.cogsTotal || 0) - (curr.expense || 0);
     const depreciation = curr.depreciationAmortization || 0;
     const changeInAR = (curr.ar || 0) - (prev.ar || 0);
+    const changeInRetainageReceivables = (curr.retainageReceivables || 0) - (prev.retainageReceivables || 0);
+    const changeInContractAssets = (curr.contractAssets || 0) - (prev.contractAssets || 0);
     const changeInInventory = (curr.inventory || 0) - (prev.inventory || 0);
     const changeInAP = (curr.ap || 0) - (prev.ap || 0);
-    const changeInWorkingCapital = -(changeInAR + changeInInventory - changeInAP);
+    const changeInContractLiabilities = (curr.contractLiabilities || 0) - (prev.contractLiabilities || 0);
+    const changeInWorkingCapital = -(
+      changeInAR +
+      changeInRetainageReceivables +
+      changeInContractAssets +
+      changeInInventory -
+      changeInAP -
+      changeInContractLiabilities
+    );
     const operatingCashFlow = netIncome + depreciation + changeInWorkingCapital;
     
     // Investing Activities
-    const changeInFixedAssets = (curr.fixedAssets || 0) - (prev.fixedAssets || 0);
+    const currFixedAssetBase = (curr.fixedAssets || 0) || ((curr.constructionEquipment || 0) + (curr.officeEquipment || 0) + (curr.shopEquipment || 0));
+    const prevFixedAssetBase = (prev.fixedAssets || 0) || ((prev.constructionEquipment || 0) + (prev.officeEquipment || 0) + (prev.shopEquipment || 0));
+    const changeInFixedAssets = currFixedAssetBase - prevFixedAssetBase;
     const capitalExpenditures = changeInFixedAssets + depreciation;
     const investingCashFlow = -capitalExpenditures;
     
@@ -259,11 +271,23 @@ export default function CashFlowTab({
     const netIncome = (curr.revenue || 0) - (curr.cogsTotal || 0) - (curr.expense || 0);
     const depreciation = curr.depreciationAmortization || 0;
     const changeInAR = (curr.ar || 0) - (prev.ar || 0);
+    const changeInRetainageReceivables = (curr.retainageReceivables || 0) - (prev.retainageReceivables || 0);
+    const changeInContractAssets = (curr.contractAssets || 0) - (prev.contractAssets || 0);
     const changeInInventory = (curr.inventory || 0) - (prev.inventory || 0);
     const changeInAP = (curr.ap || 0) - (prev.ap || 0);
-    const changeInWorkingCapital = -(changeInAR + changeInInventory - changeInAP);
+    const changeInContractLiabilities = (curr.contractLiabilities || 0) - (prev.contractLiabilities || 0);
+    const changeInWorkingCapital = -(
+      changeInAR +
+      changeInRetainageReceivables +
+      changeInContractAssets +
+      changeInInventory -
+      changeInAP -
+      changeInContractLiabilities
+    );
     const operatingCashFlow = netIncome + depreciation + changeInWorkingCapital;
-    const changeInFixedAssets = (curr.fixedAssets || 0) - (prev.fixedAssets || 0);
+    const currFixedAssetBase = (curr.fixedAssets || 0) || ((curr.constructionEquipment || 0) + (curr.officeEquipment || 0) + (curr.shopEquipment || 0));
+    const prevFixedAssetBase = (prev.fixedAssets || 0) || ((prev.constructionEquipment || 0) + (prev.officeEquipment || 0) + (prev.shopEquipment || 0));
+    const changeInFixedAssets = currFixedAssetBase - prevFixedAssetBase;
     const capitalExpenditures = changeInFixedAssets + depreciation;
     const investingCashFlow = -capitalExpenditures;
     const changeInDebt = (curr.ltd || 0) - (prev.ltd || 0);

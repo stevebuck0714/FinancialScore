@@ -728,15 +728,24 @@ export function processTrialBalanceToMonthly(
       // Balance Sheet - Assets
       cash: 0,
       ar: 0,
+      retainageReceivables: 0,
+      contractAssets: 0,
       inventory: 0,
       otherCA: 0,
       tca: 0,
       fixedAssets: 0,
+      constructionEquipment: 0,
+      officeEquipment: 0,
+      shopEquipment: 0,
+      investments: 0,
+      rightOfUseLeases: 0,
       otherAssets: 0,
       totalAssets: 0,
       
       // Balance Sheet - Liabilities
       ap: 0,
+      loc: 0,
+      contractLiabilities: 0,
       otherCL: 0,
       tcl: 0,
       ltd: 0,
@@ -808,11 +817,19 @@ export function processTrialBalanceToMonthly(
     }
     
     // Current Assets total
-    monthlyRecord.tca = Number(monthlyRecord.cash || 0) + Number(monthlyRecord.ar || 0) + Number(monthlyRecord.inventory || 0) + Number(monthlyRecord.otherCA || 0);
-    monthlyRecord.totalAssets = Number(monthlyRecord.tca || 0) + Number(monthlyRecord.fixedAssets || 0) + Number(monthlyRecord.otherAssets || 0);
+    monthlyRecord.tca = Number(monthlyRecord.cash || 0) + Number(monthlyRecord.ar || 0) +
+      Number(monthlyRecord.retainageReceivables || 0) + Number(monthlyRecord.contractAssets || 0) +
+      Number(monthlyRecord.inventory || 0) + Number(monthlyRecord.otherCA || 0);
+    monthlyRecord.fixedAssets = Number(monthlyRecord.fixedAssets || 0) +
+      Number(monthlyRecord.constructionEquipment || 0) + Number(monthlyRecord.officeEquipment || 0) +
+      Number(monthlyRecord.shopEquipment || 0);
+    monthlyRecord.totalAssets = Number(monthlyRecord.tca || 0) + Number(monthlyRecord.fixedAssets || 0) +
+      Number(monthlyRecord.investments || 0) + Number(monthlyRecord.rightOfUseLeases || 0) +
+      Number(monthlyRecord.otherAssets || 0);
     
     // Liabilities total
-    monthlyRecord.tcl = Number(monthlyRecord.ap || 0) + Number(monthlyRecord.otherCL || 0);
+    monthlyRecord.tcl = Number(monthlyRecord.ap || 0) + Number(monthlyRecord.loc || 0) +
+      Number(monthlyRecord.contractLiabilities || 0) + Number(monthlyRecord.otherCL || 0);
     monthlyRecord.totalLiab = Number(monthlyRecord.tcl || 0) + Number(monthlyRecord.ltd || 0);
     
     // Equity total (sum of detailed equity fields if not directly mapped)
@@ -950,13 +967,22 @@ export function processTrialBalanceToDailySnapshotsAndLines(
       extraordinaryItems: 0,
       cash: 0,
       ar: 0,
+      retainageReceivables: 0,
+      contractAssets: 0,
       inventory: 0,
       otherCA: 0,
       tca: 0,
       fixedAssets: 0,
+      constructionEquipment: 0,
+      officeEquipment: 0,
+      shopEquipment: 0,
+      investments: 0,
+      rightOfUseLeases: 0,
       otherAssets: 0,
       totalAssets: 0,
       ap: 0,
+      loc: 0,
+      contractLiabilities: 0,
       otherCL: 0,
       tcl: 0,
       ltd: 0,
@@ -1015,9 +1041,17 @@ export function processTrialBalanceToDailySnapshotsAndLines(
       Number(dailyRecord.cogsCommissions || 0) + Number(dailyRecord.cogsOther || 0);
     if (!hasSectorCogsMapping && cogsFromComponents > 0) dailyRecord.cogsTotal = cogsFromComponents;
 
-    dailyRecord.tca = Number(dailyRecord.cash || 0) + Number(dailyRecord.ar || 0) + Number(dailyRecord.inventory || 0) + Number(dailyRecord.otherCA || 0);
-    dailyRecord.totalAssets = Number(dailyRecord.tca || 0) + Number(dailyRecord.fixedAssets || 0) + Number(dailyRecord.otherAssets || 0);
-    dailyRecord.tcl = Number(dailyRecord.ap || 0) + Number(dailyRecord.otherCL || 0);
+    dailyRecord.tca = Number(dailyRecord.cash || 0) + Number(dailyRecord.ar || 0) +
+      Number(dailyRecord.retainageReceivables || 0) + Number(dailyRecord.contractAssets || 0) +
+      Number(dailyRecord.inventory || 0) + Number(dailyRecord.otherCA || 0);
+    dailyRecord.fixedAssets = Number(dailyRecord.fixedAssets || 0) +
+      Number(dailyRecord.constructionEquipment || 0) + Number(dailyRecord.officeEquipment || 0) +
+      Number(dailyRecord.shopEquipment || 0);
+    dailyRecord.totalAssets = Number(dailyRecord.tca || 0) + Number(dailyRecord.fixedAssets || 0) +
+      Number(dailyRecord.investments || 0) + Number(dailyRecord.rightOfUseLeases || 0) +
+      Number(dailyRecord.otherAssets || 0);
+    dailyRecord.tcl = Number(dailyRecord.ap || 0) + Number(dailyRecord.loc || 0) +
+      Number(dailyRecord.contractLiabilities || 0) + Number(dailyRecord.otherCL || 0);
     dailyRecord.totalLiab = Number(dailyRecord.tcl || 0) + Number(dailyRecord.ltd || 0);
     const equityFromComponents = Number(dailyRecord.ownersCapital || 0) + Number(dailyRecord.commonStock || 0) +
       Number(dailyRecord.preferredStock || 0) + Number(dailyRecord.retainedEarnings || 0) +

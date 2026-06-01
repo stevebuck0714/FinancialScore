@@ -446,12 +446,20 @@ const DAILY_STATEMENT_BALANCE_FIELDS = [
   'cash',
   'ar',
   'ap',
+  'retainageReceivables',
+  'contractAssets',
   'inventory',
   'otherCA',
   'tca',
   'fixedAssets',
+  'constructionEquipment',
+  'officeEquipment',
+  'shopEquipment',
+  'investments',
+  'rightOfUseLeases',
   'otherAssets',
   'loc',
+  'contractLiabilities',
   'otherCL',
   'tcl',
   'ltd',
@@ -515,12 +523,20 @@ function aggregateDailyStatementRows(
   cash: number;
   ar: number;
   ap: number;
+  retainageReceivables: number;
+  contractAssets: number;
   inventory: number;
   otherCA: number;
   tca: number;
   fixedAssets: number;
+  constructionEquipment: number;
+  officeEquipment: number;
+  shopEquipment: number;
+  investments: number;
+  rightOfUseLeases: number;
   otherAssets: number;
   loc: number;
+  contractLiabilities: number;
   otherCL: number;
   tcl: number;
   ltd: number;
@@ -548,12 +564,20 @@ function aggregateDailyStatementRows(
       cash: number;
       ar: number;
       ap: number;
+      retainageReceivables: number;
+      contractAssets: number;
       inventory: number;
       otherCA: number;
       tca: number;
       fixedAssets: number;
+      constructionEquipment: number;
+      officeEquipment: number;
+      shopEquipment: number;
+      investments: number;
+      rightOfUseLeases: number;
       otherAssets: number;
       loc: number;
+      contractLiabilities: number;
       otherCL: number;
       tcl: number;
       ltd: number;
@@ -603,12 +627,20 @@ function aggregateDailyStatementRows(
         cash: 0,
         ar: 0,
         ap: 0,
+        retainageReceivables: 0,
+        contractAssets: 0,
         inventory: 0,
         otherCA: 0,
         tca: 0,
         fixedAssets: 0,
+        constructionEquipment: 0,
+        officeEquipment: 0,
+        shopEquipment: 0,
+        investments: 0,
+        rightOfUseLeases: 0,
         otherAssets: 0,
         loc: 0,
+        contractLiabilities: 0,
         otherCL: 0,
         tcl: 0,
         ltd: 0,
@@ -643,9 +675,16 @@ function aggregateDailyStatementRows(
   return Array.from(buckets.entries())
     .sort((a, b) => a[1].periodStart.getTime() - b[1].periodStart.getTime())
     .map(([periodKey, bucket]) => {
-      const tca = bucket.tca !== 0 ? bucket.tca : bucket.cash + bucket.ar + bucket.inventory + bucket.otherCA;
-      const totalAssets = bucket.totalAssets !== 0 ? bucket.totalAssets : tca + bucket.fixedAssets + bucket.otherAssets;
-      const tcl = bucket.tcl !== 0 ? bucket.tcl : bucket.ap + bucket.loc + bucket.otherCL;
+      const tca = bucket.tca !== 0
+        ? bucket.tca
+        : bucket.cash + bucket.ar + bucket.retainageReceivables + bucket.contractAssets + bucket.inventory + bucket.otherCA;
+      const fixedAssets = bucket.fixedAssets !== 0
+        ? bucket.fixedAssets
+        : bucket.constructionEquipment + bucket.officeEquipment + bucket.shopEquipment;
+      const totalAssets = bucket.totalAssets !== 0
+        ? bucket.totalAssets
+        : tca + fixedAssets + bucket.investments + bucket.rightOfUseLeases + bucket.otherAssets;
+      const tcl = bucket.tcl !== 0 ? bucket.tcl : bucket.ap + bucket.loc + bucket.contractLiabilities + bucket.otherCL;
       const totalLiab = bucket.totalLiab !== 0 ? bucket.totalLiab : tcl + bucket.ltd;
       const totalEquity =
         bucket.totalEquity !== 0
@@ -670,12 +709,20 @@ function aggregateDailyStatementRows(
         cash: bucket.cash,
         ar: bucket.ar,
         ap: bucket.ap,
+        retainageReceivables: bucket.retainageReceivables,
+        contractAssets: bucket.contractAssets,
         inventory: bucket.inventory,
         otherCA: bucket.otherCA,
         tca,
-        fixedAssets: bucket.fixedAssets,
+        fixedAssets,
+        constructionEquipment: bucket.constructionEquipment,
+        officeEquipment: bucket.officeEquipment,
+        shopEquipment: bucket.shopEquipment,
+        investments: bucket.investments,
+        rightOfUseLeases: bucket.rightOfUseLeases,
         otherAssets: bucket.otherAssets,
         loc: bucket.loc,
+        contractLiabilities: bucket.contractLiabilities,
         otherCL: bucket.otherCL,
         tcl,
         ltd: bucket.ltd,

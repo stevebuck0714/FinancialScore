@@ -45,15 +45,23 @@ type Frequency = 'daily' | 'weekly' | 'monthly';
 const ASSET_TARGET_FIELDS = new Set<string>([
   'cash',
   'ar',
+  'retainageReceivables',
+  'contractAssets',
   'inventory',
   'otherCA',
   'fixedAssets',
+  'constructionEquipment',
+  'officeEquipment',
+  'shopEquipment',
+  'investments',
+  'rightOfUseLeases',
   'otherAssets',
 ]);
 
 const LIABILITY_TARGET_FIELDS = new Set<string>([
   'ap',
   'loc',
+  'contractLiabilities',
   'otherCL',
   'ltd',
 ]);
@@ -151,13 +159,21 @@ const TOKEN_TO_DFS_COLUMN: Record<string, string> = {
   // BS — assets
   cash: 'cash',
   ar: 'ar',
+  retainagereceivables: 'retainageReceivables',
+  contractassets: 'contractAssets',
   inventory: 'inventory',
   otherca: 'otherCA',
   fixedassets: 'fixedAssets',
+  constructionequipment: 'constructionEquipment',
+  officeequipment: 'officeEquipment',
+  shopequipment: 'shopEquipment',
+  investments: 'investments',
+  rightofuseleases: 'rightOfUseLeases',
   otherassets: 'otherAssets',
   // BS — liabilities
   ap: 'ap',
   loc: 'loc',
+  contractliabilities: 'contractLiabilities',
   othercl: 'otherCL',
   ltd: 'ltd',
   // BS — equity
@@ -286,12 +302,20 @@ export function resolveDfsColumnsForTargetField(rawTargetField: string): readonl
 const ANCHOR_BS_FIELDS = [
   'cash',
   'ar',
+  'retainageReceivables',
+  'contractAssets',
   'inventory',
   'otherCA',
   'fixedAssets',
+  'constructionEquipment',
+  'officeEquipment',
+  'shopEquipment',
+  'investments',
+  'rightOfUseLeases',
   'otherAssets',
   'ap',
   'loc',
+  'contractLiabilities',
   'otherCL',
   'ltd',
   'ownersCapital',
@@ -473,14 +497,22 @@ type ComputedSnapshot = {
   // BS
   cash: number;
   ar: number;
+  retainageReceivables: number;
+  contractAssets: number;
   inventory: number;
   otherCA: number;
   tca: number;
   fixedAssets: number;
+  constructionEquipment: number;
+  officeEquipment: number;
+  shopEquipment: number;
+  investments: number;
+  rightOfUseLeases: number;
   otherAssets: number;
   totalAssets: number;
   ap: number;
   loc: number;
+  contractLiabilities: number;
   otherCL: number;
   tcl: number;
   ltd: number;
@@ -653,12 +685,20 @@ export type AnchorRecord = {
   anchorDate: Date;
   cash: number;
   ar: number;
+  retainageReceivables: number;
+  contractAssets: number;
   inventory: number;
   otherCA: number;
   fixedAssets: number;
+  constructionEquipment: number;
+  officeEquipment: number;
+  shopEquipment: number;
+  investments: number;
+  rightOfUseLeases: number;
   otherAssets: number;
   ap: number;
   loc: number;
+  contractLiabilities: number;
   otherCL: number;
   ltd: number;
   ownersCapital: number;
@@ -694,12 +734,20 @@ async function findAnchorForDate(
     anchorDate: row.anchorDate,
     cash: row.cash,
     ar: row.ar,
+    retainageReceivables: (row as any).retainageReceivables || 0,
+    contractAssets: (row as any).contractAssets || 0,
     inventory: row.inventory,
     otherCA: row.otherCA,
     fixedAssets: row.fixedAssets,
+    constructionEquipment: (row as any).constructionEquipment || 0,
+    officeEquipment: (row as any).officeEquipment || 0,
+    shopEquipment: (row as any).shopEquipment || 0,
+    investments: (row as any).investments || 0,
+    rightOfUseLeases: (row as any).rightOfUseLeases || 0,
     otherAssets: row.otherAssets,
     ap: row.ap,
     loc: row.loc,
+    contractLiabilities: (row as any).contractLiabilities || 0,
     otherCL: row.otherCL,
     ltd: row.ltd,
     ownersCapital: row.ownersCapital,
@@ -860,18 +908,27 @@ export async function computeDailyBalanceSheetFromGL(
   // ---- Balance sheet ----
   const cash = anchorVal('cash') + get(bsByField, 'cash');
   const ar = anchorVal('ar') + get(bsByField, 'ar');
+  const retainageReceivables = anchorVal('retainageReceivables') + get(bsByField, 'retainageReceivables');
+  const contractAssets = anchorVal('contractAssets') + get(bsByField, 'contractAssets');
   const inventory = anchorVal('inventory') + get(bsByField, 'inventory');
   const otherCA = anchorVal('otherCA') + get(bsByField, 'otherCA');
   const fixedAssets = anchorVal('fixedAssets') + get(bsByField, 'fixedAssets');
+  const constructionEquipment = anchorVal('constructionEquipment') + get(bsByField, 'constructionEquipment');
+  const officeEquipment = anchorVal('officeEquipment') + get(bsByField, 'officeEquipment');
+  const shopEquipment = anchorVal('shopEquipment') + get(bsByField, 'shopEquipment');
+  const investments = anchorVal('investments') + get(bsByField, 'investments');
+  const rightOfUseLeases = anchorVal('rightOfUseLeases') + get(bsByField, 'rightOfUseLeases');
   const otherAssets = anchorVal('otherAssets') + get(bsByField, 'otherAssets');
-  const tca = cash + ar + inventory + otherCA;
-  const totalAssets = tca + fixedAssets + otherAssets;
+  const fixedAssetsTotal = fixedAssets || constructionEquipment + officeEquipment + shopEquipment;
+  const tca = cash + ar + retainageReceivables + contractAssets + inventory + otherCA;
+  const totalAssets = tca + fixedAssetsTotal + investments + rightOfUseLeases + otherAssets;
 
   const ap = anchorVal('ap') + get(bsByField, 'ap');
   const loc = anchorVal('loc') + get(bsByField, 'loc');
+  const contractLiabilities = anchorVal('contractLiabilities') + get(bsByField, 'contractLiabilities');
   const otherCL = anchorVal('otherCL') + get(bsByField, 'otherCL');
   const ltd = anchorVal('ltd') + get(bsByField, 'ltd');
-  const tcl = ap + loc + otherCL;
+  const tcl = ap + loc + contractLiabilities + otherCL;
   const totalLiab = tcl + ltd;
 
   const ownersCapital = anchorVal('ownersCapital') + get(bsByField, 'ownersCapital');
@@ -941,14 +998,22 @@ export async function computeDailyBalanceSheetFromGL(
   const out = emptySnapshot();
   out.cash = cash;
   out.ar = ar;
+  out.retainageReceivables = retainageReceivables;
+  out.contractAssets = contractAssets;
   out.inventory = inventory;
   out.otherCA = otherCA;
   out.tca = tca;
-  out.fixedAssets = fixedAssets;
+  out.fixedAssets = fixedAssetsTotal;
+  out.constructionEquipment = constructionEquipment;
+  out.officeEquipment = officeEquipment;
+  out.shopEquipment = shopEquipment;
+  out.investments = investments;
+  out.rightOfUseLeases = rightOfUseLeases;
   out.otherAssets = otherAssets;
   out.totalAssets = totalAssets;
   out.ap = ap;
   out.loc = loc;
+  out.contractLiabilities = contractLiabilities;
   out.otherCL = otherCL;
   out.tcl = tcl;
   out.ltd = ltd;
@@ -1008,14 +1073,22 @@ export type RebuildDailyBSOptions = {
 const REBUILD_BS_UPDATE_FIELDS: ReadonlyArray<keyof ComputedSnapshot> = [
   'cash',
   'ar',
+  'retainageReceivables',
+  'contractAssets',
   'inventory',
   'otherCA',
   'tca',
   'fixedAssets',
+  'constructionEquipment',
+  'officeEquipment',
+  'shopEquipment',
+  'investments',
+  'rightOfUseLeases',
   'otherAssets',
   'totalAssets',
   'ap',
   'loc',
+  'contractLiabilities',
   'otherCL',
   'tcl',
   'ltd',
@@ -1117,12 +1190,20 @@ export async function rebuildDailyFinancialSnapshotsFromGL(
     anchorDate: row.anchorDate,
     cash: row.cash,
     ar: row.ar,
+    retainageReceivables: (row as any).retainageReceivables || 0,
+    contractAssets: (row as any).contractAssets || 0,
     inventory: row.inventory,
     otherCA: row.otherCA,
     fixedAssets: row.fixedAssets,
+    constructionEquipment: (row as any).constructionEquipment || 0,
+    officeEquipment: (row as any).officeEquipment || 0,
+    shopEquipment: (row as any).shopEquipment || 0,
+    investments: (row as any).investments || 0,
+    rightOfUseLeases: (row as any).rightOfUseLeases || 0,
     otherAssets: row.otherAssets,
     ap: row.ap,
     loc: row.loc,
+    contractLiabilities: (row as any).contractLiabilities || 0,
     otherCL: row.otherCL,
     ltd: row.ltd,
     ownersCapital: row.ownersCapital,

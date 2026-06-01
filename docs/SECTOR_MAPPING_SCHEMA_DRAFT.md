@@ -105,6 +105,34 @@ It is intended as an approval artifact before implementation.
 - `cogs_job_specific_permits_fees` - Job-Specific Permits / Fees
 - `cogs_other_cogs` - Other COGS
 
+**Balance sheet categories**
+
+Assets:
+- `cash` - Cash
+- `ar` - Accounts Receivable
+- `retainageReceivables` - Retainage Receivables
+- `contractAssets` - Contract Assets
+- `inventory` - Inventory
+- `otherCA` - Other Current Assets
+- `tca` - Total Current Assets
+- `fixedAssets` - Fixed Assets
+- `constructionEquipment` - Construction Equipment
+- `officeEquipment` - Office Equipment
+- `shopEquipment` - Shop Equipment
+- `investments` - Investments
+- `rightOfUseLeases` - Right of Use - Leases
+- `otherAssets` - Other Assets
+- `totalAssets` - Total Assets
+
+Liabilities:
+- `ap` - Accounts Payable
+- `loc` - Line of Credit / Short-term Debt
+- `contractLiabilities` - Contract Liabilities
+- `otherCL` - Other Current Liabilities
+- `tcl` - Total Current Liabilities
+- `ltd` - Long-term Debt
+- `totalLiab` - Total Liabilities
+
 ### NAICS 31-33 - Manufacturing
 
 **Revenue categories**

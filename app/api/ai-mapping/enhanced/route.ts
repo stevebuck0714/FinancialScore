@@ -454,8 +454,26 @@ function classifyTargetFieldFamily(targetField: string): 'revenue' | 'cogs' | 'e
   ) {
     return 'expense';
   }
-  if (['cash', 'ar', 'inventory', 'otherca', 'tca', 'fixedassets', 'otherassets', 'totalassets'].includes(normalized)) return 'asset';
-  if (['ap', 'othercl', 'tcl', 'ltd', 'totalliab', 'loc'].includes(normalized)) return 'liability';
+  if (
+    [
+      'cash',
+      'ar',
+      'retainagereceivables',
+      'contractassets',
+      'inventory',
+      'otherca',
+      'tca',
+      'fixedassets',
+      'constructionequipment',
+      'officeequipment',
+      'shopequipment',
+      'investments',
+      'rightofuseleases',
+      'otherassets',
+      'totalassets',
+    ].includes(normalized)
+  ) return 'asset';
+  if (['ap', 'contractliabilities', 'othercl', 'tcl', 'ltd', 'totalliab', 'loc'].includes(normalized)) return 'liability';
   if (
     [
       'ownerscapital',

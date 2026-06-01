@@ -190,8 +190,8 @@ export default function MDAView({
     
     // Working Capital Analysis
     const lastMonth = monthly[monthly.length - 1];
-    const currentAssets = lastMonth.tca || ((lastMonth.cash || 0) + (lastMonth.ar || 0) + (lastMonth.inventory || 0) + (lastMonth.otherCA || 0));
-    const currentLiab = Math.abs(lastMonth.tcl || ((lastMonth.ap || 0) + (lastMonth.otherCL || 0)));
+    const currentAssets = lastMonth.tca || ((lastMonth.cash || 0) + (lastMonth.ar || 0) + (lastMonth.retainageReceivables || 0) + (lastMonth.contractAssets || 0) + (lastMonth.inventory || 0) + (lastMonth.otherCA || 0));
+    const currentLiab = Math.abs(lastMonth.tcl || ((lastMonth.ap || 0) + (lastMonth.loc || 0) + (lastMonth.contractLiabilities || 0) + (lastMonth.otherCL || 0)));
     const workingCapital = currentAssets - currentLiab;
     const wcRatioMDA = currentLiab > 0 ? currentAssets / currentLiab : 0;
     
@@ -1034,8 +1034,8 @@ function ExecutiveSummaryTab({
               
               const currentMonth = monthly[monthly.length - 1];
               const month12Ago = monthly.length >= 13 ? monthly[monthly.length - 13] : monthly[0];
-              const currentWC_val = ((currentMonth.cash || 0) + (currentMonth.ar || 0) + (currentMonth.inventory || 0)) - ((currentMonth.ap || 0) + (currentMonth.otherCL || 0));
-              const priorWC = ((month12Ago.cash || 0) + (month12Ago.ar || 0) + (month12Ago.inventory || 0)) - ((month12Ago.ap || 0) + (month12Ago.otherCL || 0));
+              const currentWC_val = ((currentMonth.cash || 0) + (currentMonth.ar || 0) + (currentMonth.retainageReceivables || 0) + (currentMonth.contractAssets || 0) + (currentMonth.inventory || 0)) - ((currentMonth.ap || 0) + (currentMonth.loc || 0) + (currentMonth.contractLiabilities || 0) + (currentMonth.otherCL || 0));
+              const priorWC = ((month12Ago.cash || 0) + (month12Ago.ar || 0) + (month12Ago.retainageReceivables || 0) + (month12Ago.contractAssets || 0) + (month12Ago.inventory || 0)) - ((month12Ago.ap || 0) + (month12Ago.loc || 0) + (month12Ago.contractLiabilities || 0) + (month12Ago.otherCL || 0));
               const changeInWC = currentWC_val - priorWC;
               const changeInFixedAssets = (currentMonth.fixedAssets || 0) - (month12Ago.fixedAssets || 0);
               const ttmCapEx = Math.max(0, changeInFixedAssets + ttmDepreciation);
@@ -1281,8 +1281,8 @@ function CriticalReviewTab({
     }
 
     // Liquidity Issues
-    const currentAssets = last.tca || ((last.cash || 0) + (last.ar || 0) + (last.inventory || 0) + (last.otherCA || 0));
-    const currentLiab = Math.abs(last.tcl || ((last.ap || 0) + (last.otherCL || 0)));
+    const currentAssets = last.tca || ((last.cash || 0) + (last.ar || 0) + (last.retainageReceivables || 0) + (last.contractAssets || 0) + (last.inventory || 0) + (last.otherCA || 0));
+    const currentLiab = Math.abs(last.tcl || ((last.ap || 0) + (last.loc || 0) + (last.contractLiabilities || 0) + (last.otherCL || 0)));
     const currentRatio = currentLiab > 0 ? currentAssets / currentLiab : 0;
 
     if (currentRatio < 1.0 && currentRatio > 0) {

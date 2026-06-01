@@ -980,8 +980,8 @@ export default function DashboardView({
                     
                   // Calculate working capital data
                   const wcData = monthly.map(m => {
-                    const ca = m.tca || ((m.cash || 0) + (m.ar || 0) + (m.inventory || 0) + (m.otherCA || 0));
-                    const cl = m.tcl || ((m.ap || 0) + (m.otherCL || 0));
+                    const ca = m.tca || ((m.cash || 0) + (m.ar || 0) + (m.retainageReceivables || 0) + (m.contractAssets || 0) + (m.inventory || 0) + (m.otherCA || 0));
+                    const cl = m.tcl || ((m.ap || 0) + (m.loc || 0) + (m.contractLiabilities || 0) + (m.otherCL || 0));
                     return {
                       month: m.month,
                       currentAssets: ca,
@@ -1099,8 +1099,8 @@ export default function DashboardView({
                     // DCF calculation
                     const currentMonth = monthly[monthly.length - 1];
                     const month12Ago = monthly.length >= 13 ? monthly[monthly.length - 13] : monthly[0];
-                    const currentWC_val = ((currentMonth.cash || 0) + (currentMonth.ar || 0) + (currentMonth.inventory || 0)) - ((currentMonth.ap || 0) + (currentMonth.otherCL || 0));
-                    const priorWC = ((month12Ago.cash || 0) + (month12Ago.ar || 0) + (month12Ago.inventory || 0)) - ((month12Ago.ap || 0) + (month12Ago.otherCL || 0));
+                    const currentWC_val = ((currentMonth.cash || 0) + (currentMonth.ar || 0) + (currentMonth.retainageReceivables || 0) + (currentMonth.contractAssets || 0) + (currentMonth.inventory || 0)) - ((currentMonth.ap || 0) + (currentMonth.loc || 0) + (currentMonth.contractLiabilities || 0) + (currentMonth.otherCL || 0));
+                    const priorWC = ((month12Ago.cash || 0) + (month12Ago.ar || 0) + (month12Ago.retainageReceivables || 0) + (month12Ago.contractAssets || 0) + (month12Ago.inventory || 0)) - ((month12Ago.ap || 0) + (month12Ago.loc || 0) + (month12Ago.contractLiabilities || 0) + (month12Ago.otherCL || 0));
                     const changeInWC = currentWC_val - priorWC;
                     const changeInFixedAssets = (currentMonth.fixedAssets || 0) - (month12Ago.fixedAssets || 0);
                     const ttmCapEx = Math.max(0, changeInFixedAssets + ttmDepreciation);
@@ -1263,7 +1263,7 @@ export default function DashboardView({
                   return <LineChart key={widget} title="Accounts Receivable" data={monthly.map(m => ({ month: m.month, value: m.ar || 0 }))} color="#0ea5e9" compact formatter={(v) => '$' + (v / 1000).toFixed(0) + 'K'} />;
                 }
                 if (widget === 'Current Assets') {
-                  return <LineChart key={widget} title="Current Assets" data={monthly.map(m => ({ month: m.month, value: m.tca || ((m.cash || 0) + (m.ar || 0) + (m.inventory || 0) + (m.otherCA || 0)) }))} color="#5eead4" compact formatter={(v) => '$' + (v / 1000).toFixed(0) + 'K'} />;
+                  return <LineChart key={widget} title="Current Assets" data={monthly.map(m => ({ month: m.month, value: m.tca || ((m.cash || 0) + (m.ar || 0) + (m.retainageReceivables || 0) + (m.contractAssets || 0) + (m.inventory || 0) + (m.otherCA || 0)) }))} color="#5eead4" compact formatter={(v) => '$' + (v / 1000).toFixed(0) + 'K'} />;
                 }
                 if (widget === 'Fixed Assets') {
                   return <LineChart key={widget} title="Fixed Assets" data={monthly.map(m => ({ month: m.month, value: m.fixedAssets || 0 }))} color="#a78bfa" compact formatter={(v) => '$' + (v / 1000).toFixed(0) + 'K'} />;
@@ -1414,8 +1414,8 @@ export default function DashboardView({
                   
                   // Calculate historical working capital
                   const wcHistorical = monthly.map(m => {
-                    const ca = m.tca || ((m.cash || 0) + (m.ar || 0) + (m.inventory || 0) + (m.otherCA || 0));
-                    const cl = m.tcl || ((m.ap || 0) + (m.otherCL || 0));
+                    const ca = m.tca || ((m.cash || 0) + (m.ar || 0) + (m.retainageReceivables || 0) + (m.contractAssets || 0) + (m.inventory || 0) + (m.otherCA || 0));
+                    const cl = m.tcl || ((m.ap || 0) + (m.loc || 0) + (m.contractLiabilities || 0) + (m.otherCL || 0));
                     return {
                       month: m.month,
                       value: ca - cl,

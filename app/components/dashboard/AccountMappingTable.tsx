@@ -162,8 +162,26 @@ export default function AccountMappingTable({
           'operatingexpensetotal',
         ].includes(normalizedTarget)
       ) return 'expense';
-      if (['cash', 'ar', 'inventory', 'otherca', 'tca', 'fixedassets', 'otherassets', 'totalassets'].includes(normalizedTarget)) return 'asset';
-      if (['ap', 'loc', 'othercl', 'tcl', 'ltd', 'totalliab'].includes(normalizedTarget)) return 'liability';
+      if (
+        [
+          'cash',
+          'ar',
+          'retainagereceivables',
+          'contractassets',
+          'inventory',
+          'otherca',
+          'tca',
+          'fixedassets',
+          'constructionequipment',
+          'officeequipment',
+          'shopequipment',
+          'investments',
+          'rightofuseleases',
+          'otherassets',
+          'totalassets',
+        ].includes(normalizedTarget)
+      ) return 'asset';
+      if (['ap', 'loc', 'contractliabilities', 'othercl', 'tcl', 'ltd', 'totalliab'].includes(normalizedTarget)) return 'liability';
       if (
         [
           'ownerscapital',

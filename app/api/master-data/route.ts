@@ -155,15 +155,18 @@ export async function GET(request: NextRequest) {
     const monthlyData = sourceRows.map((month: any) => {
       const cash = month.cash || 0;
       const ar = month.ar || 0;
+      const retainageReceivables = month.retainageReceivables || 0;
+      const contractAssets = month.contractAssets || 0;
       const inventory = month.inventory || 0;
       const otherCA = month.otherCA || 0;
       const ap = month.ap || 0;
       const loc = month.loc || 0;
+      const contractLiabilities = month.contractLiabilities || 0;
       const otherCL = month.otherCL || 0;
 
       // Some legacy master-data shapes omitted tca/tcl; provide explicit fields with safe fallbacks.
-      const tca = month.tca ?? (cash + ar + inventory + otherCA);
-      const tcl = month.tcl ?? (ap + loc + otherCL);
+      const tca = month.tca ?? (cash + ar + retainageReceivables + contractAssets + inventory + otherCA);
+      const tcl = month.tcl ?? (ap + loc + contractLiabilities + otherCL);
 
       const revenueBreakdown = month.revenueBreakdown && typeof month.revenueBreakdown === 'object'
         ? month.revenueBreakdown
@@ -242,14 +245,22 @@ export async function GET(request: NextRequest) {
       extraordinaryItems: month.extraordinaryItems || 0,
       cash,
       ar,
+      retainageReceivables,
+      contractAssets,
       inventory,
       otherCA,
       tca,
       fixedAssets: month.fixedAssets || 0,
+      constructionEquipment: month.constructionEquipment || 0,
+      officeEquipment: month.officeEquipment || 0,
+      shopEquipment: month.shopEquipment || 0,
+      investments: month.investments || 0,
+      rightOfUseLeases: month.rightOfUseLeases || 0,
       otherAssets: month.otherAssets || 0,
       totalAssets: month.totalAssets || 0,
       ap,
       loc,
+      contractLiabilities,
       otherCL,
       tcl,
       ltd: month.ltd || 0,

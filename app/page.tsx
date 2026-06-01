@@ -4864,14 +4864,22 @@ function FinancialScorePage() {
               operatingExpenseTotal: m.expense || 0,
               cash: m.cash || 0,
               ar: m.ar || 0,
+              retainageReceivables: m.retainageReceivables || 0,
+              contractAssets: m.contractAssets || 0,
               inventory: m.inventory || 0,
               otherCA: m.otherCA || 0,
               tca: m.tca || 0,
               fixedAssets: m.fixedAssets || 0,
+              constructionEquipment: m.constructionEquipment || 0,
+              officeEquipment: m.officeEquipment || 0,
+              shopEquipment: m.shopEquipment || 0,
+              investments: m.investments || 0,
+              rightOfUseLeases: m.rightOfUseLeases || 0,
               otherAssets: m.otherAssets || 0,
               totalAssets: m.totalAssets || 0,
               ap: m.ap || 0,
               loc: m.loc || 0,
+              contractLiabilities: m.contractLiabilities || 0,
               otherCL: m.otherCL || 0,
               tcl: m.tcl || 0,
               ltd: m.ltd || 0,
@@ -4972,14 +4980,22 @@ function FinancialScorePage() {
                 // Balance Sheet
                 cash: m.cash || 0,
                 ar: m.ar || 0,
+                retainageReceivables: m.retainageReceivables || 0,
+                contractAssets: m.contractAssets || 0,
                 inventory: m.inventory || 0,
                 otherCA: m.otherCA || 0,
                 tca: m.tca || 0,
                 fixedAssets: m.fixedAssets || 0,
+                constructionEquipment: m.constructionEquipment || 0,
+                officeEquipment: m.officeEquipment || 0,
+                shopEquipment: m.shopEquipment || 0,
+                investments: m.investments || 0,
+                rightOfUseLeases: m.rightOfUseLeases || 0,
                 otherAssets: m.otherAssets || 0,
                 totalAssets: m.totalAssets || 0,
                 ap: m.ap || 0,
                 loc: m.loc || 0,
+                contractLiabilities: m.contractLiabilities || 0,
                 otherCL: m.otherCL || 0,
                 tcl: m.tcl || 0,
                 ltd: m.ltd || 0,
@@ -5503,14 +5519,22 @@ function FinancialScorePage() {
             totalAssets: m.totalAssets || 0,
             cash: m.cash || 0,
             ar: m.ar || 0,
+            retainageReceivables: m.retainageReceivables || 0,
+            contractAssets: m.contractAssets || 0,
             inventory: m.inventory || 0,
             otherCA: m.otherCA || 0,
             tca: m.tca || 0,
             fixedAssets: m.fixedAssets || 0,
+            constructionEquipment: m.constructionEquipment || 0,
+            officeEquipment: m.officeEquipment || 0,
+            shopEquipment: m.shopEquipment || 0,
+            investments: m.investments || 0,
+            rightOfUseLeases: m.rightOfUseLeases || 0,
             otherAssets: m.otherAssets || 0,
             // Balance Sheet - Liabilities
             ap: m.ap || 0,
             loc: m.loc || 0,
+            contractLiabilities: m.contractLiabilities || 0,
             otherCL: m.otherCL || 0,
             tcl: m.tcl || 0,
             ltd: m.ltd || 0,
@@ -5642,13 +5666,21 @@ function FinancialScorePage() {
           totalLiab: parseFloat(row[mapping.totalLiab!]) || 0,
           cash: parseFloat(row[mapping.cash!]) || 0,
           ar: parseFloat(row[mapping.ar!]) || 0,
+          retainageReceivables: parseFloat(row[mapping.retainageReceivables!]) || 0,
+          contractAssets: parseFloat(row[mapping.contractAssets!]) || 0,
           inventory: parseFloat(row[mapping.inventory!]) || 0,
           otherCA: parseFloat(row[mapping.otherCA!]) || 0,
           tca: parseFloat(row[mapping.tca!]) || 0,
           fixedAssets: parseFloat(row[mapping.fixedAssets!]) || 0,
+          constructionEquipment: parseFloat(row[mapping.constructionEquipment!]) || 0,
+          officeEquipment: parseFloat(row[mapping.officeEquipment!]) || 0,
+          shopEquipment: parseFloat(row[mapping.shopEquipment!]) || 0,
+          investments: parseFloat(row[mapping.investments!]) || 0,
+          rightOfUseLeases: parseFloat(row[mapping.rightOfUseLeases!]) || 0,
           otherAssets: parseFloat(row[mapping.otherAssets!]) || 0,
           ap: parseFloat(row[mapping.ap!]) || 0,
           loc: parseFloat(row[mapping.loc!]) || 0,
+          contractLiabilities: parseFloat(row[mapping.contractLiabilities!]) || 0,
           otherCL: parseFloat(row[mapping.otherCL!]) || 0,
           tcl: parseFloat(row[mapping.tcl!]) || 0,
           ltd: parseFloat(row[mapping.ltd!]) || 0,
@@ -5754,16 +5786,24 @@ function FinancialScorePage() {
       if (!mapping.totalAssets && (n.includes('totalasset') || n === 'totalassets' || n === 'assets')) mapping.totalAssets = col;
       if (!mapping.cash && n === 'cash') mapping.cash = col;
       if (!mapping.ar && (n.includes('accountsreceivable') || n.includes('receivable') || n === 'ar')) mapping.ar = col;
+      if (!mapping.retainageReceivables && (n.includes('retainagereceivable') || n.includes('retainagereceivables'))) mapping.retainageReceivables = col;
+      if (!mapping.contractAssets && (n.includes('contractasset') || n.includes('contractassets'))) mapping.contractAssets = col;
       if (!mapping.inventory && n.includes('inventory')) mapping.inventory = col;
       if (!mapping.otherCA && (n.includes('othercurrentasset') || n === 'othercurrentassets')) mapping.otherCA = col;
       if (!mapping.tca && (n.includes('totalcurrentasset') || n === 'totalcurrentassets' || n === 'currentassets')) mapping.tca = col;
       if (!mapping.fixedAssets && (n.includes('fixedasset') || n === 'fixedassets')) mapping.fixedAssets = col;
+      if (!mapping.constructionEquipment && n.includes('constructionequipment')) mapping.constructionEquipment = col;
+      if (!mapping.officeEquipment && n.includes('officeequipment')) mapping.officeEquipment = col;
+      if (!mapping.shopEquipment && n.includes('shopequipment')) mapping.shopEquipment = col;
+      if (!mapping.investments && (n === 'investments' || n === 'investment')) mapping.investments = col;
+      if (!mapping.rightOfUseLeases && (n.includes('rightofuselease') || n.includes('rightofuseleases') || n.includes('roulease'))) mapping.rightOfUseLeases = col;
       if (!mapping.otherAssets && (n.includes('otherasset') && !n.includes('current'))) mapping.otherAssets = col;
       
       // Liabilities & Equity
       if (!mapping.totalLiab && (n.includes('totalliab') || n === 'totalliabilities' || n === 'liabilities')) mapping.totalLiab = col;
       if (!mapping.ap && (n.includes('accountspayable') || n.includes('payable') || n === 'ap')) mapping.ap = col;
       if (!mapping.loc && (n.includes('lineofcredit') || n === 'loc' || n.includes('creditline'))) mapping.loc = col;
+      if (!mapping.contractLiabilities && (n.includes('contractliability') || n.includes('contractliabilities'))) mapping.contractLiabilities = col;
       if (!mapping.otherCL && (n.includes('othercurrentliab') || n === 'othercurrentliabilities')) mapping.otherCL = col;
       if (!mapping.tcl && (n.includes('totalcurrentliab') || n === 'totalcurrentliabilities' || n === 'currentliabilities')) mapping.tcl = col;
       if (!mapping.ltd && (n.includes('longtermdebt') || n.includes('ltd') || n === 'longtermdebt')) mapping.ltd = col;
@@ -8632,8 +8672,11 @@ function FinancialScorePage() {
       'cogsTotal',
       'cash',
       'ar',
+      'retainageReceivables',
+      'contractAssets',
       'inventory',
       'ap',
+      'contractLiabilities',
       'tca',
       'tcl',
       'totalAssets',
@@ -8691,13 +8734,21 @@ function FinancialScorePage() {
       totalLiab: parseFloat(row[mapping.totalLiab!]) || 0,
       cash: parseFloat(row[mapping.cash!]) || 0,
       ar: parseFloat(row[mapping.ar!]) || 0,
+      retainageReceivables: parseFloat(row[mapping.retainageReceivables!]) || 0,
+      contractAssets: parseFloat(row[mapping.contractAssets!]) || 0,
       inventory: parseFloat(row[mapping.inventory!]) || 0,
       otherCA: parseFloat(row[mapping.otherCA!]) || 0,
       tca: parseFloat(row[mapping.tca!]) || 0,
       fixedAssets: parseFloat(row[mapping.fixedAssets!]) || 0,
+      constructionEquipment: parseFloat(row[mapping.constructionEquipment!]) || 0,
+      officeEquipment: parseFloat(row[mapping.officeEquipment!]) || 0,
+      shopEquipment: parseFloat(row[mapping.shopEquipment!]) || 0,
+      investments: parseFloat(row[mapping.investments!]) || 0,
+      rightOfUseLeases: parseFloat(row[mapping.rightOfUseLeases!]) || 0,
       otherAssets: parseFloat(row[mapping.otherAssets!]) || 0,
       ap: parseFloat(row[mapping.ap!]) || 0,
       loc: parseFloat(row[mapping.loc!]) || 0,
+      contractLiabilities: parseFloat(row[mapping.contractLiabilities!]) || 0,
       otherCL: parseFloat(row[mapping.otherCL!]) || 0,
       tcl: parseFloat(row[mapping.tcl!]) || 0,
       ltd: parseFloat(row[mapping.ltd!]) || 0,
@@ -8925,8 +8976,8 @@ function FinancialScorePage() {
       const fScore = (pScore + aScore) / 2;
       
       const cur = monthly[i];
-      const currentAssets = cur.tca || ((cur.cash || 0) + (cur.ar || 0) + (cur.inventory || 0) + (cur.otherCA || 0));
-      const currentLiab = Math.abs(cur.tcl || ((cur.ap || 0) + (cur.loc || 0) + (cur.otherCL || 0)));
+      const currentAssets = cur.tca || ((cur.cash || 0) + (cur.ar || 0) + (cur.retainageReceivables || 0) + (cur.contractAssets || 0) + (cur.inventory || 0) + (cur.otherCA || 0));
+      const currentLiab = Math.abs(cur.tcl || ((cur.ap || 0) + (cur.loc || 0) + (cur.contractLiabilities || 0) + (cur.otherCL || 0)));
       const quickAssets = (cur.cash || 0) + (cur.ar || 0);
 
       const currentRatio = currentLiab > 0 ? currentAssets / currentLiab : 0;
@@ -8953,8 +9004,8 @@ function FinancialScorePage() {
       const priorMonth = i > 0 ? monthly[i - 1] : cur;
       
       // Sales/Working Capital: Monthly revenue / Average WC (current + prior month)
-      const priorMonthCurrentAssets = i > 0 ? (priorMonth.tca || ((priorMonth.cash || 0) + (priorMonth.ar || 0) + (priorMonth.inventory || 0) + (priorMonth.otherCA || 0))) : currentAssets;
-      const priorMonthCurrentLiab = i > 0 ? Math.abs(priorMonth.tcl || ((priorMonth.ap || 0) + (priorMonth.loc || 0) + (priorMonth.otherCL || 0))) : currentLiab;
+      const priorMonthCurrentAssets = i > 0 ? (priorMonth.tca || ((priorMonth.cash || 0) + (priorMonth.ar || 0) + (priorMonth.retainageReceivables || 0) + (priorMonth.contractAssets || 0) + (priorMonth.inventory || 0) + (priorMonth.otherCA || 0))) : currentAssets;
+      const priorMonthCurrentLiab = i > 0 ? Math.abs(priorMonth.tcl || ((priorMonth.ap || 0) + (priorMonth.loc || 0) + (priorMonth.contractLiabilities || 0) + (priorMonth.otherCL || 0))) : currentLiab;
       const priorMonthWorkingCap = priorMonthCurrentAssets - priorMonthCurrentLiab;
       const avgWorkingCap = (workingCap + priorMonthWorkingCap) / 2;
       const salesWC = avgWorkingCap !== 0 ? (cur.revenue || 0) / avgWorkingCap : 0;
@@ -8972,8 +9023,8 @@ function FinancialScorePage() {
       const ltmNetIncome = ltmR - ltmE;
       const ltmDepreciation = ltmE * 0.05; // Estimated depreciation
       const priorMonth12 = i >= 12 ? monthly[i - 12] : cur;
-      const priorWorkingCap12CA = priorMonth12.tca || ((priorMonth12.cash || 0) + (priorMonth12.ar || 0) + (priorMonth12.inventory || 0) + (priorMonth12.otherCA || 0));
-      const priorWorkingCap12CL = priorMonth12.tcl || ((priorMonth12.ap || 0) + (priorMonth12.loc || 0) + (priorMonth12.otherCL || 0));
+      const priorWorkingCap12CA = priorMonth12.tca || ((priorMonth12.cash || 0) + (priorMonth12.ar || 0) + (priorMonth12.retainageReceivables || 0) + (priorMonth12.contractAssets || 0) + (priorMonth12.inventory || 0) + (priorMonth12.otherCA || 0));
+      const priorWorkingCap12CL = priorMonth12.tcl || ((priorMonth12.ap || 0) + (priorMonth12.loc || 0) + (priorMonth12.contractLiabilities || 0) + (priorMonth12.otherCL || 0));
       const priorWorkingCap = priorWorkingCap12CA - priorWorkingCap12CL;
       const changeInWorkingCap = workingCap - priorWorkingCap;
       const ltmOperatingCF = ltmNetIncome + ltmDepreciation - changeInWorkingCap;
@@ -9123,8 +9174,8 @@ function FinancialScorePage() {
     
     // Working Capital Analysis
     const lastMonth = monthly[monthly.length - 1];
-    const currentAssets = lastMonth.tca || ((lastMonth.cash || 0) + (lastMonth.ar || 0) + (lastMonth.inventory || 0) + (lastMonth.otherCA || 0));
-    const currentLiab = Math.abs(lastMonth.tcl || ((lastMonth.ap || 0) + (lastMonth.loc || 0) + (lastMonth.otherCL || 0)));
+    const currentAssets = lastMonth.tca || ((lastMonth.cash || 0) + (lastMonth.ar || 0) + (lastMonth.retainageReceivables || 0) + (lastMonth.contractAssets || 0) + (lastMonth.inventory || 0) + (lastMonth.otherCA || 0));
+    const currentLiab = Math.abs(lastMonth.tcl || ((lastMonth.ap || 0) + (lastMonth.loc || 0) + (lastMonth.contractLiabilities || 0) + (lastMonth.otherCL || 0)));
     const workingCapital = currentAssets - currentLiab;
     // Fix: If no current liabilities but have current assets, treat as very strong (>10.0), not 0
     const wcRatioMDA = currentLiab > 0 ? currentAssets / currentLiab : (currentAssets > 0 ? 999 : 0);
@@ -13658,10 +13709,17 @@ function FinancialScorePage() {
                       <h4 style={{ fontSize: '15px', fontWeight: '600', color: '#475569', marginBottom: '12px', borderBottom: '2px solid #e2e8f0', paddingBottom: '8px' }}>Assets</h4>
                       {renderColumnSelector('Cash', 'cash')}
                       {renderColumnSelector('Accounts Receivable', 'ar')}
+                      {renderColumnSelector('Retainage Receivables', 'retainageReceivables')}
+                      {renderColumnSelector('Contract Assets', 'contractAssets')}
                       {renderColumnSelector('Inventory', 'inventory')}
                       {renderColumnSelector('Other Current Assets', 'otherCA')}
                       {renderColumnSelector('Total Current Assets', 'tca')}
                       {renderColumnSelector('Fixed Assets', 'fixedAssets')}
+                      {renderColumnSelector('Construction Equipment', 'constructionEquipment')}
+                      {renderColumnSelector('Office Equipment', 'officeEquipment')}
+                      {renderColumnSelector('Shop Equipment', 'shopEquipment')}
+                      {renderColumnSelector('Investments', 'investments')}
+                      {renderColumnSelector('Right of Use - Leases', 'rightOfUseLeases')}
                       {renderColumnSelector('Other Assets', 'otherAssets')}
                     </div>
                     
@@ -13669,6 +13727,7 @@ function FinancialScorePage() {
                       <h4 style={{ fontSize: '15px', fontWeight: '600', color: '#475569', marginBottom: '12px', borderBottom: '2px solid #e2e8f0', paddingBottom: '8px' }}>Liabilities & Other</h4>
                       {renderColumnSelector('Accounts Payable', 'ap')}
                       {renderColumnSelector('Line of Credit', 'loc')}
+                      {renderColumnSelector('Contract Liabilities', 'contractLiabilities')}
                       {renderColumnSelector('Other Current Liabilities', 'otherCL')}
                       {renderColumnSelector('Total Current Liabilities', 'tcl')}
                       {renderColumnSelector('Long Term Debt', 'ltd')}
@@ -26647,17 +26706,25 @@ function FinancialScorePage() {
                     // Assets - Use Data Review fields and imported totals
                     const cash = latest.cash || 0;
                     const ar = latest.ar || 0;
+                    const retainageReceivables = latest.retainageReceivables || 0;
+                    const contractAssets = latest.contractAssets || 0;
                     const inventory = latest.inventory || 0;
                     const otherCA = latest.otherCA || 0;
                     const tca = latest.tca || 0;  // Use imported total
                     
                     const fixedAssets = latest.fixedAssets || 0;
+                    const constructionEquipment = latest.constructionEquipment || 0;
+                    const officeEquipment = latest.officeEquipment || 0;
+                    const shopEquipment = latest.shopEquipment || 0;
+                    const investments = latest.investments || 0;
+                    const rightOfUseLeases = latest.rightOfUseLeases || 0;
                     const otherAssets = latest.otherAssets || 0;
                     const totalAssets = latest.totalAssets || 0;  // Use imported total
                     
                     // Liabilities - Use Data Review fields and imported totals
                     const ap = latest.ap || 0;
                     const loc = latest.loc || 0;
+                    const contractLiabilities = latest.contractLiabilities || 0;
                     const otherCL = latest.otherCL || 0;
                     const tcl = latest.tcl || 0;  // Use imported total
                     
@@ -26679,7 +26746,7 @@ function FinancialScorePage() {
                     // Calculate Total Liabilities & Equity to match Data Review page (do NOT use imported totalLAndE)
                     const totalLAndE = totalLiabilities + totalEquity;
                     
-                    return { label: p.label, cash, ar, inventory, otherCA, tca, fixedAssets, otherAssets, totalAssets, ap, loc, otherCL, tcl, ltd, totalLiabilities, ownersCapital, ownersDraw, commonStock, preferredStock, retainedEarnings, additionalPaidInCapital, treasuryStock, paidInCapital, totalEquity, totalLAndE };
+                    return { label: p.label, cash, ar, retainageReceivables, contractAssets, inventory, otherCA, tca, fixedAssets, constructionEquipment, officeEquipment, shopEquipment, investments, rightOfUseLeases, otherAssets, totalAssets, ap, loc, contractLiabilities, otherCL, tcl, ltd, totalLiabilities, ownersCapital, ownersDraw, commonStock, preferredStock, retainedEarnings, additionalPaidInCapital, treasuryStock, paidInCapital, totalEquity, totalLAndE };
                   });
                   const Row = ({ label, values, indent = 0, bold = false }: any) => (
                     <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${balanceData.length}, 110px)`, gap: '4px', padding: '4px 0', fontSize: bold ? '14px' : '13px', fontWeight: bold ? '600' : 'normal' }}>
@@ -26704,10 +26771,17 @@ function FinancialScorePage() {
                         <div style={{ margin: '8px 0 4px', fontSize: '14px', fontWeight: '600', color: '#475569' }}>Current Assets</div>
                         {balanceData.some(p => p.cash !== 0) && <Row label="Cash" values={balanceData.map(p => p.cash)} indent={20} />}
                         {balanceData.some(p => p.ar !== 0) && <Row label="Accounts Receivable" values={balanceData.map(p => p.ar)} indent={20} />}
+                        {balanceData.some(p => p.retainageReceivables !== 0) && <Row label="Retainage Receivables" values={balanceData.map(p => p.retainageReceivables)} indent={20} />}
+                        {balanceData.some(p => p.contractAssets !== 0) && <Row label="Contract Assets" values={balanceData.map(p => p.contractAssets)} indent={20} />}
                         {balanceData.some(p => p.inventory !== 0) && <Row label="Inventory" values={balanceData.map(p => p.inventory)} indent={20} />}
                         {balanceData.some(p => p.otherCA !== 0) && <Row label="Other Current Assets" values={balanceData.map(p => p.otherCA)} indent={20} />}
                         <Row label="Total Current Assets" values={balanceData.map(p => p.tca)} bold />
                         {balanceData.some(p => p.fixedAssets !== 0) && <Row label="Fixed Assets" values={balanceData.map(p => p.fixedAssets)} />}
+                        {balanceData.some(p => p.constructionEquipment !== 0) && <Row label="Construction Equipment" values={balanceData.map(p => p.constructionEquipment)} indent={20} />}
+                        {balanceData.some(p => p.officeEquipment !== 0) && <Row label="Office Equipment" values={balanceData.map(p => p.officeEquipment)} indent={20} />}
+                        {balanceData.some(p => p.shopEquipment !== 0) && <Row label="Shop Equipment" values={balanceData.map(p => p.shopEquipment)} indent={20} />}
+                        {balanceData.some(p => p.investments !== 0) && <Row label="Investments" values={balanceData.map(p => p.investments)} />}
+                        {balanceData.some(p => p.rightOfUseLeases !== 0) && <Row label="Right of Use - Leases" values={balanceData.map(p => p.rightOfUseLeases)} />}
                         {balanceData.some(p => p.otherAssets !== 0) && <Row label="Other Assets" values={balanceData.map(p => p.otherAssets)} />}
                         <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${balanceData.length}, 110px)`, gap: '4px', padding: '10px 8px', background: '#dbeafe', borderRadius: '4px', margin: '8px 0', fontWeight: '700', color: '#1e40af' }}>
                           <div>TOTAL ASSETS</div>
@@ -26717,6 +26791,7 @@ function FinancialScorePage() {
                         <div style={{ margin: '8px 0 4px', fontSize: '14px', fontWeight: '600', color: '#475569' }}>Current Liabilities</div>
                         {balanceData.some(p => p.ap !== 0) && <Row label="Accounts Payable" values={balanceData.map(p => p.ap)} indent={20} />}
                         {balanceData.some(p => p.loc !== 0) && <Row label="Line of Credit" values={balanceData.map(p => p.loc)} indent={20} />}
+                        {balanceData.some(p => p.contractLiabilities !== 0) && <Row label="Contract Liabilities" values={balanceData.map(p => p.contractLiabilities)} indent={20} />}
                         {balanceData.some(p => p.otherCL !== 0) && <Row label="Other Current Liabilities" values={balanceData.map(p => p.otherCL)} indent={20} />}
                         <Row label="Total Current Liabilities" values={balanceData.map(p => p.tcl)} bold />
                         {balanceData.some(p => p.ltd !== 0) && <Row label="Long-Term Debt" values={balanceData.map(p => p.ltd)} />}
@@ -26766,16 +26841,24 @@ function FinancialScorePage() {
                 // For balance sheet, use Data Review fields and imported totals
                 const cash = latestMonth.cash || 0;
                 const ar = latestMonth.ar || 0;
+                const retainageReceivables = latestMonth.retainageReceivables || 0;
+                const contractAssets = latestMonth.contractAssets || 0;
                 const inventory = latestMonth.inventory || 0;
                 const otherCA = latestMonth.otherCA || 0;
                 const tca = latestMonth.tca || 0;  // Use imported total
                 
                 const fixedAssets = latestMonth.fixedAssets || 0;
+                const constructionEquipment = latestMonth.constructionEquipment || 0;
+                const officeEquipment = latestMonth.officeEquipment || 0;
+                const shopEquipment = latestMonth.shopEquipment || 0;
+                const investments = latestMonth.investments || 0;
+                const rightOfUseLeases = latestMonth.rightOfUseLeases || 0;
                 const otherAssets = latestMonth.otherAssets || 0;
                 const totalAssets = latestMonth.totalAssets || 0;  // Use imported total
                 
                 const ap = latestMonth.ap || 0;
                 const loc = latestMonth.loc || 0;
+                const contractLiabilities = latestMonth.contractLiabilities || 0;
                 const otherCL = latestMonth.otherCL || 0;
                 const tcl = latestMonth.tcl || 0;  // Use imported total
                 
@@ -26825,6 +26908,18 @@ function FinancialScorePage() {
                             <span style={{ color: '#64748b' }}>${ar.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
                           </div>
                         )}
+                        {retainageReceivables !== 0 && (
+                          <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0 4px 20px', fontSize: '14px' }}>
+                            <span style={{ color: '#64748b' }}>Retainage Receivables</span>
+                            <span style={{ color: '#64748b' }}>${retainageReceivables.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
+                          </div>
+                        )}
+                        {contractAssets !== 0 && (
+                          <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0 4px 20px', fontSize: '14px' }}>
+                            <span style={{ color: '#64748b' }}>Contract Assets</span>
+                            <span style={{ color: '#64748b' }}>${contractAssets.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
+                          </div>
+                        )}
                         {inventory !== 0 && (
                           <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0 4px 20px', fontSize: '14px' }}>
                             <span style={{ color: '#64748b' }}>Inventory</span>
@@ -26848,6 +26943,36 @@ function FinancialScorePage() {
                         <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0', fontSize: '14px' }}>
                           <span style={{ color: '#64748b' }}>Fixed Assets</span>
                           <span style={{ color: '#64748b' }}>${fixedAssets.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
+                        </div>
+                      )}
+                      {constructionEquipment !== 0 && (
+                        <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0 4px 20px', fontSize: '14px' }}>
+                          <span style={{ color: '#64748b' }}>Construction Equipment</span>
+                          <span style={{ color: '#64748b' }}>${constructionEquipment.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
+                        </div>
+                      )}
+                      {officeEquipment !== 0 && (
+                        <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0 4px 20px', fontSize: '14px' }}>
+                          <span style={{ color: '#64748b' }}>Office Equipment</span>
+                          <span style={{ color: '#64748b' }}>${officeEquipment.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
+                        </div>
+                      )}
+                      {shopEquipment !== 0 && (
+                        <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0 4px 20px', fontSize: '14px' }}>
+                          <span style={{ color: '#64748b' }}>Shop Equipment</span>
+                          <span style={{ color: '#64748b' }}>${shopEquipment.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
+                        </div>
+                      )}
+                      {investments !== 0 && (
+                        <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0', fontSize: '14px' }}>
+                          <span style={{ color: '#64748b' }}>Investments</span>
+                          <span style={{ color: '#64748b' }}>${investments.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
+                        </div>
+                      )}
+                      {rightOfUseLeases !== 0 && (
+                        <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0', fontSize: '14px' }}>
+                          <span style={{ color: '#64748b' }}>Right of Use - Leases</span>
+                          <span style={{ color: '#64748b' }}>${rightOfUseLeases.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
                         </div>
                       )}
                       {otherAssets !== 0 && (
@@ -26885,6 +27010,12 @@ function FinancialScorePage() {
                           <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0 4px 20px', fontSize: '14px' }}>
                             <span style={{ color: '#64748b' }}>Line of Credit</span>
                             <span style={{ color: '#64748b' }}>${loc.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
+                          </div>
+                        )}
+                        {contractLiabilities !== 0 && (
+                          <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0 4px 20px', fontSize: '14px' }}>
+                            <span style={{ color: '#64748b' }}>Contract Liabilities</span>
+                            <span style={{ color: '#64748b' }}>${contractLiabilities.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
                           </div>
                         )}
                         {otherCL !== 0 && (

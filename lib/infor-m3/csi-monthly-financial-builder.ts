@@ -615,14 +615,22 @@ function initMonthRow(month: string) {
     extraordinaryItems: 0,
     cash: 0,
     ar: 0,
+    retainageReceivables: 0,
+    contractAssets: 0,
     inventory: 0,
     otherCA: 0,
     tca: 0,
     fixedAssets: 0,
+    constructionEquipment: 0,
+    officeEquipment: 0,
+    shopEquipment: 0,
+    investments: 0,
+    rightOfUseLeases: 0,
     otherAssets: 0,
     totalAssets: 0,
     ap: 0,
     loc: 0,
+    contractLiabilities: 0,
     otherCL: 0,
     tcl: 0,
     ltd: 0,
@@ -665,13 +673,21 @@ type OpeningBalanceSeedRow = {
 const BS_TARGET_FIELDS = new Set([
   'cash',
   'ar',
+  'retainagereceivables',
+  'contractassets',
   'inventory',
   'otherca',
   'fixedassets',
+  'constructionequipment',
+  'officeequipment',
+  'shopequipment',
+  'investments',
+  'rightofuseleases',
   'otherassets',
   'totalassets',
   'ap',
   'loc',
+  'contractliabilities',
   'othercl',
   'tcl',
   'ltd',
@@ -738,15 +754,23 @@ const BUCKET_KEY_BY_TARGET_FIELD: Record<string, keyof ReturnType<typeof initMon
   // Balance sheet — assets
   cash: 'cash',
   ar: 'ar',
+  retainagereceivables: 'retainageReceivables',
+  contractassets: 'contractAssets',
   inventory: 'inventory',
   otherca: 'otherCA',
   tca: 'tca',
   fixedassets: 'fixedAssets',
+  constructionequipment: 'constructionEquipment',
+  officeequipment: 'officeEquipment',
+  shopequipment: 'shopEquipment',
+  investments: 'investments',
+  rightofuseleases: 'rightOfUseLeases',
   otherassets: 'otherAssets',
   totalassets: 'totalAssets',
   // Balance sheet — liabilities
   ap: 'ap',
   loc: 'loc',
+  contractliabilities: 'contractLiabilities',
   othercl: 'otherCL',
   tcl: 'tcl',
   ltd: 'ltd',
@@ -868,7 +892,22 @@ function applyMappedAmount(
     addToBreakdown(bucket.expenseBreakdown as Record<string, unknown>, normalized, amountExpense);
     return true;
   }
-  if (lower === 'cash' || lower === 'ar' || lower === 'inventory' || lower === 'otherca' || lower === 'fixedassets' || lower === 'otherassets' || lower === 'totalassets') {
+  if (
+    lower === 'cash' ||
+    lower === 'ar' ||
+    lower === 'retainagereceivables' ||
+    lower === 'contractassets' ||
+    lower === 'inventory' ||
+    lower === 'otherca' ||
+    lower === 'fixedassets' ||
+    lower === 'constructionequipment' ||
+    lower === 'officeequipment' ||
+    lower === 'shopequipment' ||
+    lower === 'investments' ||
+    lower === 'rightofuseleases' ||
+    lower === 'otherassets' ||
+    lower === 'totalassets'
+  ) {
     const assetKey = resolveBucketKey(bucket, lower);
     if (assetKey && assetKey !== 'totalAssets') {
       (bucket as unknown as Record<string, number>)[assetKey as string] += amountBalance;
@@ -878,7 +917,7 @@ function applyMappedAmount(
     bucket.totalAssets += amountBalance;
     return true;
   }
-  if (lower === 'ap' || lower === 'loc' || lower === 'othercl' || lower === 'tcl' || lower === 'ltd' || lower === 'totalliab') {
+  if (lower === 'ap' || lower === 'loc' || lower === 'contractliabilities' || lower === 'othercl' || lower === 'tcl' || lower === 'ltd' || lower === 'totalliab') {
     const liabKey = resolveBucketKey(bucket, lower);
     if (liabKey && liabKey !== 'totalLiab') {
       (bucket as unknown as Record<string, number>)[liabKey as string] += amountBalance;

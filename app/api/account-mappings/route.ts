@@ -221,8 +221,26 @@ function getTargetFieldFamily(targetField: string): "revenue" | "cogs" | "expens
   ) {
     return "expense";
   }
-  if (["cash", "ar", "inventory", "otherca", "tca", "fixedassets", "otherassets", "totalassets"].includes(normalized)) return "asset";
-  if (["ap", "loc", "othercl", "tcl", "ltd", "totalliab"].includes(normalized)) return "liability";
+  if (
+    [
+      "cash",
+      "ar",
+      "retainagereceivables",
+      "contractassets",
+      "inventory",
+      "otherca",
+      "tca",
+      "fixedassets",
+      "constructionequipment",
+      "officeequipment",
+      "shopequipment",
+      "investments",
+      "rightofuseleases",
+      "otherassets",
+      "totalassets",
+    ].includes(normalized)
+  ) return "asset";
+  if (["ap", "loc", "contractliabilities", "othercl", "tcl", "ltd", "totalliab"].includes(normalized)) return "liability";
   if (
     [
       "ownerscapital",

@@ -12058,13 +12058,21 @@ export default function OperationsTab({
         netIncome: Number(row.netIncome || (Number(row.revenue || 0) - Number(row.cogsTotal || 0) - Number(row.expense || 0))),
         cash: Number(row.cash || 0),
         ar: Number(row.ar || 0),
+        retainageReceivables: Number(row.retainageReceivables || 0),
+        contractAssets: Number(row.contractAssets || 0),
         otherCA: Number(row.otherCA || 0),
         tca: Number(row.tca || 0),
         inventory: Number(row.inventory || 0),
         fixedAssets: Number(row.fixedAssets || 0),
+        constructionEquipment: Number(row.constructionEquipment || 0),
+        officeEquipment: Number(row.officeEquipment || 0),
+        shopEquipment: Number(row.shopEquipment || 0),
+        investments: Number(row.investments || 0),
+        rightOfUseLeases: Number(row.rightOfUseLeases || 0),
         otherAssets: Number(row.otherAssets || 0),
         ap: Number(row.ap || 0),
         loc: Number(row.loc || 0),
+        contractLiabilities: Number(row.contractLiabilities || 0),
         otherCL: Number(row.otherCL || 0),
         tcl: Number(row.tcl || 0),
         ltd: Number(row.ltd || 0),
@@ -12102,15 +12110,23 @@ export default function OperationsTab({
         { label: 'Current Assets', styleType: 'section', valuesByDate: rollupSeries('tca') },
         { label: getFieldDisplayName('cash'), styleType: 'normal', valuesByDate: rollupSeries('cash') },
         { label: getFieldDisplayName('accountsReceivable'), styleType: 'normal', valuesByDate: rollupSeries('ar') },
+        { label: getFieldDisplayName('retainageReceivables'), styleType: 'normal', valuesByDate: rollupSeries('retainageReceivables') },
+        { label: getFieldDisplayName('contractAssets'), styleType: 'normal', valuesByDate: rollupSeries('contractAssets') },
         { label: getFieldDisplayName('inventory'), styleType: 'normal', valuesByDate: rollupSeries('inventory') },
         { label: getFieldDisplayName('otherCurrentAssets'), styleType: 'normal', valuesByDate: rollupSeries('otherCA') },
         { label: getFieldDisplayName('totalCurrentAssets'), styleType: 'subtotal', valuesByDate: rollupSeries('tca') },
         { label: 'Long-Term Assets', styleType: 'section', valuesByDate: rollupSeries('fixedAssets') },
         { label: getFieldDisplayName('fixedAssets'), styleType: 'normal', valuesByDate: rollupSeries('fixedAssets') },
+        { label: getFieldDisplayName('constructionEquipment'), styleType: 'normal', valuesByDate: rollupSeries('constructionEquipment') },
+        { label: getFieldDisplayName('officeEquipment'), styleType: 'normal', valuesByDate: rollupSeries('officeEquipment') },
+        { label: getFieldDisplayName('shopEquipment'), styleType: 'normal', valuesByDate: rollupSeries('shopEquipment') },
+        { label: getFieldDisplayName('investments'), styleType: 'normal', valuesByDate: rollupSeries('investments') },
+        { label: getFieldDisplayName('rightOfUseLeases'), styleType: 'normal', valuesByDate: rollupSeries('rightOfUseLeases') },
         { label: getFieldDisplayName('otherAssets'), styleType: 'normal', valuesByDate: rollupSeries('otherAssets') },
         { label: 'Current Liabilities', styleType: 'section', valuesByDate: rollupSeries('tcl') },
         { label: getFieldDisplayName('accountsPayable'), styleType: 'normal', valuesByDate: rollupSeries('ap') },
         { label: getFieldDisplayName('loc'), styleType: 'normal', valuesByDate: rollupSeries('loc') },
+        { label: getFieldDisplayName('contractLiabilities'), styleType: 'normal', valuesByDate: rollupSeries('contractLiabilities') },
         { label: getFieldDisplayName('otherCurrentLiabilities'), styleType: 'normal', valuesByDate: rollupSeries('otherCL') },
         { label: getFieldDisplayName('totalCurrentLiabilities'), styleType: 'subtotal', valuesByDate: rollupSeries('tcl') },
         { label: 'Long-Term Liabilities', styleType: 'section', valuesByDate: rollupSeries('ltd') },
@@ -12417,14 +12433,22 @@ export default function OperationsTab({
       expense: ['expense', 'expenses', 'totalexpense', 'operatingexpense'],
       cash: ['cash', 'cashbalance', 'endingcash'],
       ar: ['ar', 'accountsreceivable', 'tradear', 'netar'],
+      retainageReceivables: ['retainagereceivables', 'retainagereceivable'],
+      contractAssets: ['contractassets', 'contractasset'],
       inventory: ['inventory', 'stock', 'inv', 'inventoryasset'],
       otherCA: ['otherca', 'othercurrentassets'],
       tca: ['tca', 'totalcurrentassets'],
       fixedAssets: ['fixedassets', 'propertyplantandequipment', 'ppe'],
+      constructionEquipment: ['constructionequipment'],
+      officeEquipment: ['officeequipment'],
+      shopEquipment: ['shopequipment'],
+      investments: ['investments', 'investment'],
+      rightOfUseLeases: ['rightofuseleases', 'rightofuselease', 'rouleases'],
       otherAssets: ['otherassets'],
       totalAssets: ['totalassets'],
       ap: ['ap', 'accountspayable', 'tradeap'],
       loc: ['loc', 'lineofcredit'],
+      contractLiabilities: ['contractliabilities', 'contractliability'],
       otherCL: ['othercl', 'othercurrentliabilities'],
       tcl: ['tcl', 'totalcurrentliabilities'],
       ltd: ['ltd', 'longtermdebt'],
@@ -12496,19 +12520,28 @@ export default function OperationsTab({
       // Using mapped movement fallback here can shift values across adjacent days.
       const cash = getSnapshotOnlyValue(row, 'cash');
       const ar = getSnapshotOnlyValue(row, 'ar');
+      const retainageReceivables = getSnapshotOnlyValue(row, 'retainageReceivables');
+      const contractAssets = getSnapshotOnlyValue(row, 'contractAssets');
       const inventory = getSnapshotOnlyValue(row, 'inventory');
       const otherCA = getSnapshotOnlyValue(row, 'otherCA');
       const tcaRaw = getSnapshotOnlyValue(row, 'tca');
-      const tca = tcaRaw !== 0 ? tcaRaw : cash + ar + inventory + otherCA;
-      const fixedAssets = getSnapshotOnlyValue(row, 'fixedAssets');
+      const tca = tcaRaw !== 0 ? tcaRaw : cash + ar + retainageReceivables + contractAssets + inventory + otherCA;
+      const fixedAssetsRaw = getSnapshotOnlyValue(row, 'fixedAssets');
+      const constructionEquipment = getSnapshotOnlyValue(row, 'constructionEquipment');
+      const officeEquipment = getSnapshotOnlyValue(row, 'officeEquipment');
+      const shopEquipment = getSnapshotOnlyValue(row, 'shopEquipment');
+      const fixedAssets = fixedAssetsRaw !== 0 ? fixedAssetsRaw : constructionEquipment + officeEquipment + shopEquipment;
+      const investments = getSnapshotOnlyValue(row, 'investments');
+      const rightOfUseLeases = getSnapshotOnlyValue(row, 'rightOfUseLeases');
       const otherAssets = getSnapshotOnlyValue(row, 'otherAssets');
       const totalAssetsRaw = getSnapshotOnlyValue(row, 'totalAssets');
-      const totalAssets = totalAssetsRaw !== 0 ? totalAssetsRaw : tca + fixedAssets + otherAssets;
+      const totalAssets = totalAssetsRaw !== 0 ? totalAssetsRaw : tca + fixedAssets + investments + rightOfUseLeases + otherAssets;
       const ap = getSnapshotOnlyValue(row, 'ap');
       const loc = getSnapshotOnlyValue(row, 'loc');
+      const contractLiabilities = getSnapshotOnlyValue(row, 'contractLiabilities');
       const otherCL = getSnapshotOnlyValue(row, 'otherCL');
       const tclRaw = getSnapshotOnlyValue(row, 'tcl');
-      const tcl = tclRaw !== 0 ? tclRaw : ap + loc + otherCL;
+      const tcl = tclRaw !== 0 ? tclRaw : ap + loc + contractLiabilities + otherCL;
       const ltd = getSnapshotOnlyValue(row, 'ltd');
       const totalLiabRaw = getSnapshotOnlyValue(row, 'totalLiab');
       const totalLiab = totalLiabRaw !== 0 ? totalLiabRaw : tcl + ltd;
@@ -12531,12 +12564,20 @@ export default function OperationsTab({
       const hasBalanceSource =
         cash !== 0 ||
         ar !== 0 ||
+        retainageReceivables !== 0 ||
+        contractAssets !== 0 ||
         inventory !== 0 ||
         otherCA !== 0 ||
         fixedAssets !== 0 ||
+        constructionEquipment !== 0 ||
+        officeEquipment !== 0 ||
+        shopEquipment !== 0 ||
+        investments !== 0 ||
+        rightOfUseLeases !== 0 ||
         otherAssets !== 0 ||
         ap !== 0 ||
         loc !== 0 ||
+        contractLiabilities !== 0 ||
         otherCL !== 0 ||
         ltd !== 0;
 
@@ -12561,14 +12602,22 @@ export default function OperationsTab({
         netIncome,
         cash,
         ar,
+        retainageReceivables,
+        contractAssets,
         inventory,
         otherCA,
         tca,
         fixedAssets,
+        constructionEquipment,
+        officeEquipment,
+        shopEquipment,
+        investments,
+        rightOfUseLeases,
         otherAssets,
         totalAssets,
         ap,
         loc,
+        contractLiabilities,
         otherCL,
         tcl,
         ltd,
@@ -12797,16 +12846,24 @@ export default function OperationsTab({
       { label: 'Current Assets', styleType: 'section', suppressValues: true },
       { key: 'cash', label: `  ${getFieldDisplayName('cash')}`, styleType: 'normal' },
       { key: 'ar', label: `  ${getFieldDisplayName('accountsReceivable')}`, styleType: 'normal' },
+      { key: 'retainageReceivables', label: `  ${getFieldDisplayName('retainageReceivables')}`, styleType: 'normal' },
+      { key: 'contractAssets', label: `  ${getFieldDisplayName('contractAssets')}`, styleType: 'normal' },
       { key: 'inventory', label: `  ${getFieldDisplayName('inventory')}`, styleType: 'normal' },
       { key: 'otherCA', label: `  ${getFieldDisplayName('otherCurrentAssets')}`, styleType: 'normal' },
       { key: 'tca', label: getFieldDisplayName('totalCurrentAssets'), styleType: 'subtotal' },
       { label: 'Long-Term Assets', styleType: 'section', suppressValues: true },
       { key: 'fixedAssets', label: `  ${getFieldDisplayName('fixedAssets')}`, styleType: 'normal' },
+      { key: 'constructionEquipment', label: `    ${getFieldDisplayName('constructionEquipment')}`, styleType: 'normal' },
+      { key: 'officeEquipment', label: `    ${getFieldDisplayName('officeEquipment')}`, styleType: 'normal' },
+      { key: 'shopEquipment', label: `    ${getFieldDisplayName('shopEquipment')}`, styleType: 'normal' },
+      { key: 'investments', label: `  ${getFieldDisplayName('investments')}`, styleType: 'normal' },
+      { key: 'rightOfUseLeases', label: `  ${getFieldDisplayName('rightOfUseLeases')}`, styleType: 'normal' },
       { key: 'otherAssets', label: `  ${getFieldDisplayName('otherAssets')}`, styleType: 'normal' },
       { key: 'totalAssets', label: getFieldDisplayName('totalAssets'), styleType: 'total' },
       { label: 'Current Liabilities', styleType: 'section', suppressValues: true },
       { key: 'ap', label: `  ${getFieldDisplayName('accountsPayable')}`, styleType: 'normal' },
       { key: 'loc', label: `  ${getFieldDisplayName('loc')}`, styleType: 'normal' },
+      { key: 'contractLiabilities', label: `  ${getFieldDisplayName('contractLiabilities')}`, styleType: 'normal' },
       { key: 'otherCL', label: `  ${getFieldDisplayName('otherCurrentLiabilities')}`, styleType: 'normal' },
       { key: 'tcl', label: getFieldDisplayName('totalCurrentLiabilities'), styleType: 'subtotal' },
       { label: 'Long-Term Liabilities', styleType: 'section', suppressValues: true },
@@ -12841,14 +12898,20 @@ export default function OperationsTab({
       const depreciation = Number(row.depreciationAmortization || 0);
       const changeAR = index + 1 < sortedRecords.length ? Number(row.ar || 0) - Number(sortedRecords[windowStart + index + 1]?.ar || 0) : 0;
       const changeAP = index + 1 < sortedRecords.length ? Number(row.ap || 0) - Number(sortedRecords[windowStart + index + 1]?.ap || 0) : 0;
+      const changeRetainageReceivables = index + 1 < sortedRecords.length ? Number(row.retainageReceivables || 0) - Number(sortedRecords[windowStart + index + 1]?.retainageReceivables || 0) : 0;
+      const changeContractAssets = index + 1 < sortedRecords.length ? Number(row.contractAssets || 0) - Number(sortedRecords[windowStart + index + 1]?.contractAssets || 0) : 0;
+      const changeContractLiabilities = index + 1 < sortedRecords.length ? Number(row.contractLiabilities || 0) - Number(sortedRecords[windowStart + index + 1]?.contractLiabilities || 0) : 0;
       const changeInventory = index + 1 < sortedRecords.length ? Number(row.inventory || 0) - Number(sortedRecords[windowStart + index + 1]?.inventory || 0) : 0;
-      const operatingProxy = netIncome + depreciation - changeAR + changeAP - changeInventory;
+      const operatingProxy = netIncome + depreciation - changeAR - changeRetainageReceivables - changeContractAssets + changeAP + changeContractLiabilities - changeInventory;
       return {
         date: toDisplayDate(row.snapshotDate),
         netIncome,
         depreciation,
         changeAR,
         changeAP,
+        changeRetainageReceivables,
+        changeContractAssets,
+        changeContractLiabilities,
         changeInventory,
         operatingProxy,
         changeCash,
@@ -12867,7 +12930,10 @@ export default function OperationsTab({
       { key: 'netIncome', label: getFieldDisplayName('netIncome'), styleType: 'section' },
       { key: 'depreciation', label: getFieldDisplayName('depreciationAmortization'), styleType: 'normal' },
       { key: 'changeAR', label: 'Change in Accounts Receivable', styleType: 'normal' },
+      { key: 'changeRetainageReceivables', label: 'Change in Retainage Receivables', styleType: 'normal' },
+      { key: 'changeContractAssets', label: 'Change in Contract Assets', styleType: 'normal' },
       { key: 'changeAP', label: 'Change in Accounts Payable', styleType: 'normal' },
+      { key: 'changeContractLiabilities', label: 'Change in Contract Liabilities', styleType: 'normal' },
       { key: 'changeInventory', label: 'Change in Inventory', styleType: 'normal' },
       { key: 'operatingProxy', label: 'Operating Cash Flow (Proxy)', styleType: 'subtotal' },
       { key: 'changeCash', label: 'Net Change in Cash', styleType: 'section' },

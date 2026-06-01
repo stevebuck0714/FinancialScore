@@ -30,6 +30,11 @@ export default function WorkingCapitalTab({
   };
 
   const monthly = Array.isArray(prefetchedMonthlyData) ? prefetchedMonthlyData : [];
+  const currentAssetsFor = (month: any): number =>
+    month?.tca || ((month?.cash || 0) + (month?.ar || 0) + (month?.retainageReceivables || 0) +
+      (month?.contractAssets || 0) + (month?.inventory || 0) + (month?.otherCA || 0));
+  const currentLiabilitiesFor = (month: any): number =>
+    Math.abs(month?.tcl || ((month?.ap || 0) + (month?.loc || 0) + (month?.contractLiabilities || 0) + (month?.otherCL || 0)));
   const [showWCRatioFormula, setShowWCRatioFormula] = React.useState(false);
   const [showDaysWCFormula, setShowDaysWCFormula] = React.useState(false);
   const [showCCCFormula, setShowCCCFormula] = React.useState(false);
@@ -107,14 +112,14 @@ export default function WorkingCapitalTab({
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '24px', marginBottom: '32px' }}>
         {(() => {
           const lastMonth = monthly[monthly.length - 1];
-          const currentAssets = lastMonth.tca || ((lastMonth.cash || 0) + (lastMonth.ar || 0) + (lastMonth.inventory || 0) + (lastMonth.otherCA || 0));
-          const currentLiab = Math.abs(lastMonth.tcl || ((lastMonth.ap || 0) + (lastMonth.otherCL || 0)));
+          const currentAssets = currentAssetsFor(lastMonth);
+          const currentLiab = currentLiabilitiesFor(lastMonth);
           const workingCapital = currentAssets - currentLiab;
           const wcRatio = currentLiab > 0 ? currentAssets / currentLiab : 0;
 
           // Calculate trend (compare to previous month)
           const prevMonth = monthly.length > 1 ? monthly[monthly.length - 2] : null;
-          const prevWC = prevMonth ? (prevMonth.tca || ((prevMonth.cash || 0) + (prevMonth.ar || 0) + (prevMonth.inventory || 0) + (prevMonth.otherCA || 0))) - Math.abs(prevMonth.tcl || ((prevMonth.ap || 0) + (prevMonth.otherCL || 0))) : workingCapital;
+          const prevWC = prevMonth ? currentAssetsFor(prevMonth) - currentLiabilitiesFor(prevMonth) : workingCapital;
           const wcChange = workingCapital - prevWC;
           const wcChangePercent = prevWC !== 0 ? (wcChange / Math.abs(prevWC)) * 100 : 0;
 
@@ -423,6 +428,16 @@ export default function WorkingCapitalTab({
                 color: '#3b82f6'
               },
               {
+                name: 'Retainage Receivables',
+                value: lastMonth.retainageReceivables || 0,
+                color: '#0ea5e9'
+              },
+              {
+                name: 'Contract Assets',
+                value: lastMonth.contractAssets || 0,
+                color: '#14b8a6'
+              },
+              {
                 name: 'Inventory',
                 value: lastMonth.inventory || 0,
                 color: '#8b5cf6'
@@ -436,6 +451,11 @@ export default function WorkingCapitalTab({
                 name: 'Accounts Payable',
                 value: Math.abs(lastMonth.ap || 0),
                 color: '#ef4444'
+              },
+              {
+                name: 'Contract Liabilities',
+                value: Math.abs(lastMonth.contractLiabilities || 0),
+                color: '#fb7185'
               },
               {
                 name: 'Other Current Liabilities',
@@ -471,8 +491,8 @@ export default function WorkingCapitalTab({
         <div style={{ height: '450px', position: 'relative', width: '100%' }}>
           <SimpleChart
             data={monthly.slice(-36).map((month, index) => {
-              const currentAssets = month.tca || ((month.cash || 0) + (month.ar || 0) + (month.inventory || 0) + (month.otherCA || 0));
-              const currentLiab = Math.abs(month.tcl || ((month.ap || 0) + (month.otherCL || 0)));
+              const currentAssets = currentAssetsFor(month);
+              const currentLiab = currentLiabilitiesFor(month);
               const wc = currentAssets - currentLiab;
 
               return {
@@ -529,8 +549,8 @@ export default function WorkingCapitalTab({
         <div style={{ height: '450px', position: 'relative', width: '100%', paddingLeft: '40px', paddingRight: '20px' }}>
           {(() => {
             const chartData = monthly.slice(-36).map((month, index) => {
-              const currentAssets = month.tca || ((month.cash || 0) + (month.ar || 0) + (month.inventory || 0) + (month.otherCA || 0));
-              const currentLiab = Math.abs(month.tcl || ((month.ap || 0) + (month.otherCL || 0)));
+              const currentAssets = currentAssetsFor(month);
+              const currentLiab = currentLiabilitiesFor(month);
               return {
                 month: formatMonthLabel(month.month, index),
                 assets: currentAssets / 1000,
