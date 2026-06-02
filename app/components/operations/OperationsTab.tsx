@@ -185,7 +185,16 @@ type WipLineItemSortKey =
   | 'invoicedValue';
 type ProductReportView = 'productMarginAnalysis' | 'wholesaleRawData' | 'vendorPricing' | 'performance' | 'retailForecast' | 'merchandiseProfitability';
 
+const OPERATIONAL_REPORT_MIN_DATE = '2024-01-01';
+const WHOLESALE_INVENTORY_EXCLUDED_SECTION_KEYS = new Set([
+  'inventoryRetailTurns',
+  'inventoryRetailProductAging',
+]);
 const clampNumber = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
+const clampDateInputToReportFloor = (value: string): string =>
+  /^\d{4}-\d{2}-\d{2}$/.test(String(value || '')) && value < OPERATIONAL_REPORT_MIN_DATE
+    ? OPERATIONAL_REPORT_MIN_DATE
+    : value;
 const toFiniteNumber = (value: unknown): number | null => {
   const num = Number(value);
   return Number.isFinite(num) ? num : null;
@@ -876,6 +885,12 @@ export default function OperationsTab({
       ? (companyOperationalHubConfig.sections as Record<string, any>)
       : {};
   const isSectionEnabled = (sectionKey: string): boolean => {
+    if (
+      String(industrySectorCategory || '').trim() === '42' &&
+      WHOLESALE_INVENTORY_EXCLUDED_SECTION_KEYS.has(sectionKey)
+    ) {
+      return false;
+    }
     const value = operationalHubSections[sectionKey];
     return value === undefined ? true : value !== false;
   };
@@ -941,7 +956,7 @@ export default function OperationsTab({
   const [startDate, setStartDate] = useState<string>(() => {
     const date = new Date(yesterdayLocal);
     date.setFullYear(date.getFullYear() - 3);
-    return toLocalInputDate(date);
+    return clampDateInputToReportFloor(toLocalInputDate(date));
   });
   const [endDate, setEndDate] = useState<string>(() => {
     return maxSelectableEndDate;
@@ -964,6 +979,11 @@ export default function OperationsTab({
   useEffect(() => {
     if (endDate > maxSelectableEndDate) setEndDate(maxSelectableEndDate);
   }, [endDate, maxSelectableEndDate]);
+
+  useEffect(() => {
+    const clampedStartDate = clampDateInputToReportFloor(startDate);
+    if (clampedStartDate !== startDate) setStartDate(clampedStartDate);
+  }, [startDate]);
 
   useEffect(() => {
     // Enforce product/user date pickers defaulting to prior day.
@@ -1239,7 +1259,7 @@ export default function OperationsTab({
       start.setDate(start.getDate() - 90);
       return {
         frequency: 'daily' as 'daily' | 'weekly' | 'monthly',
-        startDate: toLocalInputDate(start),
+        startDate: clampDateInputToReportFloor(toLocalInputDate(start)),
         endDate: toLocalInputDate(end),
       };
     };
@@ -1258,10 +1278,12 @@ export default function OperationsTab({
         : null;
       if (!nextFrequency || !nextStartDate || !nextEndDate) return null;
       const cappedEndDate = nextEndDate > maxSelectableEndDate ? maxSelectableEndDate : nextEndDate;
+      const reportEndDate = cappedEndDate < OPERATIONAL_REPORT_MIN_DATE ? OPERATIONAL_REPORT_MIN_DATE : cappedEndDate;
+      const reportStartDate = clampDateInputToReportFloor(nextStartDate);
       return {
         frequency: nextFrequency,
-        startDate: nextStartDate > cappedEndDate ? cappedEndDate : nextStartDate,
-        endDate: cappedEndDate,
+        startDate: reportStartDate > reportEndDate ? reportEndDate : reportStartDate,
+        endDate: reportEndDate,
       };
     };
 
@@ -1541,7 +1563,7 @@ export default function OperationsTab({
       'products',
       'wholesale-report',
       'daily',
-      '2020-01-01',
+      OPERATIONAL_REPORT_MIN_DATE,
       maxSelectableEndDate,
       '42',
       CUSTOMER_WIP_CLIENT_CACHE_VERSION,
@@ -1577,7 +1599,7 @@ export default function OperationsTab({
       companyId: selectedCompanyId,
       type: 'products',
       frequency: 'daily',
-      startDate: '2020-01-01',
+      startDate: OPERATIONAL_REPORT_MIN_DATE,
       endDate: maxSelectableEndDate,
       limit: '5000',
       sectorCategory: '42',
@@ -2614,8 +2636,9 @@ export default function OperationsTab({
           <input
             type="date"
             value={startDate}
+            min={OPERATIONAL_REPORT_MIN_DATE}
             max={endDate}
-            onChange={(e) => setStartDate(e.target.value)}
+            onChange={(e) => setStartDate(clampDateInputToReportFloor(e.target.value))}
             style={{
               padding: '6px 10px',
               border: '1px solid #e2e8f0',

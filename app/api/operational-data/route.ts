@@ -54,6 +54,7 @@ const CUSTOMER_CONCENTRATION_CACHE_VERSION = 'customer-concentration-exposure-v1
 const CUSTOMER_REVENUE_SOURCE_VERSION = 'customer-revenue-source-v2';
 const CUSTOMER_WIP_SOURCE_VERSION = 'customer-backlog-source-v4';
 const CUSTOMER_BACKLOG_MIN_ORDER_DATE = '2023-06-01';
+const OPERATIONAL_REPORT_MIN_DATE = '2024-01-01';
 const WHOLESALE_PRODUCTS_REPORT_CACHE_TTL_SECONDS = 30 * 24 * 60 * 60;
 const OPERATIONAL_CACHEABLE_TYPES = new Set([
   'customers',
@@ -366,6 +367,11 @@ function parseIsoDayKey(dayKey: string): Date {
     return new Date(`${dayKey}T00:00:00.000Z`);
   }
   return new Date(Date.UTC(year, month - 1, day, 0, 0, 0, 0));
+}
+
+function clampReportStartDate(date: Date): Date {
+  const reportFloor = parseIsoDayKey(OPERATIONAL_REPORT_MIN_DATE);
+  return date.getTime() < reportFloor.getTime() ? reportFloor : date;
 }
 
 function computeDailyCashTotalsByDate(
@@ -2410,7 +2416,7 @@ export async function GET(request: NextRequest) {
       hasCronCacheWarmupAuth &&
       type === 'products' &&
       frequency === 'daily' &&
-      String(startDateParam || '') === '2020-01-01' &&
+      String(startDateParam || '') === OPERATIONAL_REPORT_MIN_DATE &&
       String(sectorCategoryParam || '').trim() === '42' &&
       boundedLimit >= 5000;
     const isCronProductsPerformanceWarmup =
@@ -2453,7 +2459,7 @@ export async function GET(request: NextRequest) {
     const defaultStartDate = new Date(defaultEndDate);
     defaultStartDate.setDate(defaultStartDate.getDate() - 90);
 
-    const startDate = parseDateParamBoundary(startDateParam, 'start', defaultStartDate);
+    const startDate = clampReportStartDate(parseDateParamBoundary(startDateParam, 'start', defaultStartDate));
     const endDate = parseDateParamBoundary(endDateParam, 'end', defaultEndDate);
     const company = await prisma.company.findUnique({
       where: { id: companyId },
@@ -2518,7 +2524,7 @@ export async function GET(request: NextRequest) {
       cacheType === 'products' &&
       String(sectorCategory || '').trim() === '42' &&
       frequency === 'daily' &&
-      String(startDateParam || '') === '2020-01-01' &&
+      dateKeyUtc(startDate) === OPERATIONAL_REPORT_MIN_DATE &&
       boundedLimit >= 5000;
     const operationalCacheTtlSeconds = isWholesaleProductsReportRequest
       ? WHOLESALE_PRODUCTS_REPORT_CACHE_TTL_SECONDS

@@ -4,6 +4,8 @@ import { privateCacheHeaders } from '@/lib/http-cache';
 import { hashCacheParts, readDerivedApiCache, writeDerivedApiCache } from '@/lib/derived-api-cache';
 
 const MASTER_DATA_CACHE_TTL_SECONDS = 120;
+const MASTER_DATA_REPORT_MIN_DATE = '2024-01-01';
+const MASTER_DATA_REPORT_MIN_DATE_UTC = new Date(`${MASTER_DATA_REPORT_MIN_DATE}T00:00:00.000Z`);
 
 const toNumber = (value: unknown): number => {
   const numeric = Number(value);
@@ -43,15 +45,19 @@ async function buildMasterDataVersion(companyId: string, scope: 'published' | 'a
     prisma.$queryRawUnsafe<Array<Record<string, unknown>>>(
       `SELECT COUNT(*)::text AS count, MAX("createdAt") AS "maxCreatedAt", MAX("monthDate") AS "maxMonthDate"
        FROM "MonthlyFinancial"
-       WHERE "companyId" = $1`,
-      companyId
+       WHERE "companyId" = $1
+         AND "monthDate" >= $2`,
+      companyId,
+      MASTER_DATA_REPORT_MIN_DATE_UTC
     ).catch((error: any) => [{ unavailable: true, error: String(error?.message || error).slice(0, 120) }]),
     scope === 'published'
       ? prisma.$queryRawUnsafe<Array<Record<string, unknown>>>(
           `SELECT COUNT(*)::text AS count, MAX("updatedAt") AS "maxUpdatedAt", MAX("monthStart") AS "maxMonthStart"
            FROM "FinancialMonthPublish"
-           WHERE "companyId" = $1`,
-          companyId
+           WHERE "companyId" = $1
+             AND "monthStart" >= $2`,
+          companyId,
+          MASTER_DATA_REPORT_MIN_DATE_UTC
         ).catch((error: any) => [{ unavailable: true, error: String(error?.message || error).slice(0, 120) }])
       : Promise.resolve([{ skipped: true }]),
   ]);
@@ -84,7 +90,7 @@ export async function GET(request: NextRequest) {
 
     const cacheContext = {
       namespace: 'master-data',
-      cacheKey: hashCacheParts([companyId, scope]),
+      cacheKey: hashCacheParts([companyId, scope, MASTER_DATA_REPORT_MIN_DATE]),
       dataVersion: await buildMasterDataVersion(companyId, scope),
     };
     const cachedPayload = await readDerivedApiCache<any>(cacheContext);
@@ -97,6 +103,9 @@ export async function GET(request: NextRequest) {
       where: { companyId },
       select: {
         monthlyData: {
+          where: {
+            monthDate: { gte: MASTER_DATA_REPORT_MIN_DATE_UTC },
+          },
           orderBy: { monthDate: 'asc' },
         },
       },
@@ -131,7 +140,11 @@ export async function GET(request: NextRequest) {
     let publishedKeys: Set<string> | null = null;
     if (scope === 'published') {
       const publishedRows = await prisma.financialMonthPublish.findMany({
-        where: { companyId, status: { in: ['PUBLISHED', 'LOCKED'] } },
+        where: {
+          companyId,
+          status: { in: ['PUBLISHED', 'LOCKED'] },
+          monthStart: { gte: MASTER_DATA_REPORT_MIN_DATE_UTC },
+        },
         select: { monthStart: true },
       });
       publishedKeys = new Set(

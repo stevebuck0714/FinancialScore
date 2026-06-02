@@ -4,6 +4,8 @@ export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 export const maxDuration = 300;
 
+const OPERATIONAL_REPORT_MIN_DATE = '2024-01-01';
+
 async function hasPendingInforTransformsForCompany(prisma: any, companyId: string): Promise<boolean> {
   const rows = await prisma.$queryRaw<Array<{ id: string }>>`
     SELECT rc."id"
@@ -29,7 +31,8 @@ function yesterdayIsoUtc(): string {
 function defaultProductsStartIsoUtc(): string {
   const now = new Date();
   const start = new Date(Date.UTC(now.getUTCFullYear() - 3, now.getUTCMonth(), now.getUTCDate() - 1));
-  return start.toISOString().slice(0, 10);
+  const startDate = start.toISOString().slice(0, 10);
+  return startDate < OPERATIONAL_REPORT_MIN_DATE ? OPERATIONAL_REPORT_MIN_DATE : startDate;
 }
 
 async function fetchProductCacheWarmup(params: {
@@ -114,7 +117,7 @@ async function warmWholesaleProductCachesForCompany(params: {
     origin: params.origin,
     cronSecret: params.cronSecret,
     companyId: params.companyId,
-    startDate: '2020-01-01',
+    startDate: OPERATIONAL_REPORT_MIN_DATE,
     endDate,
     limit: '5000',
     refreshWholesaleProducts: true,
