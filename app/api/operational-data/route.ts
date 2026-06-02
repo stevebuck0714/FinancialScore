@@ -49,6 +49,7 @@ import { privateCacheHeaders } from '@/lib/http-cache';
 export const dynamic = 'force-dynamic';
 
 const OPERATIONAL_DATA_CACHE_TTL_SECONDS = 120;
+const OPERATIONAL_HEAVY_DATA_CACHE_TTL_SECONDS = 30 * 60;
 const CUSTOMER_CONCENTRATION_CACHE_TTL_SECONDS = 30 * 24 * 60 * 60;
 const CUSTOMER_CONCENTRATION_CACHE_VERSION = 'customer-concentration-exposure-v10';
 const CUSTOMER_REVENUE_SOURCE_VERSION = 'customer-revenue-source-v2';
@@ -2423,13 +2424,18 @@ export async function GET(request: NextRequest) {
       hasCronCacheWarmupAuth &&
       type === 'products' &&
       frequency === 'daily' &&
-      String(sectorCategoryParam || '').trim() === '42' &&
+      boundedLimit === 500;
+    const isCronCustomersWarmup =
+      hasCronCacheWarmupAuth &&
+      type === 'customers' &&
+      frequency === 'daily' &&
       boundedLimit === 500;
     const isCronProductsCacheWarmup = isCronWholesaleProductsWarmup || isCronProductsPerformanceWarmup;
+    const isCronOperationalCacheWarmup = isCronProductsCacheWarmup || isCronCustomersWarmup;
 
     // SECURITY: Require normal user auth unless this is the tightly scoped cron
     // warmup that rebuilds wholesale product caches after snapshot hydration.
-    if (!isCronProductsCacheWarmup) {
+    if (!isCronOperationalCacheWarmup) {
       await requireAuth();
     }
 
@@ -2441,8 +2447,8 @@ export async function GET(request: NextRequest) {
     }
 
     // SECURITY: Validate access to company data. Cron warmups are authorized by
-    // CRON_SECRET above and limited to wholesale-trade product cache requests.
-    if (!isCronProductsCacheWarmup) {
+    // CRON_SECRET above and limited to daily product/customer cache requests.
+    if (!isCronOperationalCacheWarmup) {
       const hasAccess = await validateCompanyAccess(companyId);
       if (!hasAccess) {
         await auditForbiddenAccess('OperationalData', companyId, 'READ');
@@ -2528,6 +2534,8 @@ export async function GET(request: NextRequest) {
       boundedLimit >= 5000;
     const operationalCacheTtlSeconds = isWholesaleProductsReportRequest
       ? WHOLESALE_PRODUCTS_REPORT_CACHE_TTL_SECONDS
+      : cacheType === 'products' || cacheType === 'customers'
+      ? OPERATIONAL_HEAVY_DATA_CACHE_TTL_SECONDS
       : OPERATIONAL_DATA_CACHE_TTL_SECONDS;
     const cacheableRequest =
       OPERATIONAL_CACHEABLE_TYPES.has(cacheType) &&

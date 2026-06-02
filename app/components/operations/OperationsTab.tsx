@@ -539,8 +539,9 @@ type MonitorCard = {
   dataType?: OpsDataType;
 };
 type CardSeverity = 'normal' | 'warning' | 'critical' | 'loading';
-const HEAVY_PREFETCH_TYPES: OpsDataType[] = ['ar-aging', 'ap-aging', 'customers', 'products'];
+const HEAVY_PREFETCH_TYPES: OpsDataType[] = ['ar-aging', 'ap-aging'];
 const OPERATIONAL_DATA_CACHE_TTL_MS = 2 * 60 * 1000;
+const PRODUCT_DATA_CACHE_TTL_MS = 30 * 60 * 1000;
 const CUSTOMER_DATA_CACHE_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 const CUSTOMER_CONCENTRATION_CLIENT_CACHE_VERSION = 'customer-concentration-exposure-v10';
 const CUSTOMER_WIP_CLIENT_CACHE_VERSION = 'customer-backlog-source-v4';
@@ -1647,7 +1648,12 @@ export default function OperationsTab({
       operationalDataCacheRef.current.delete(key);
       return null;
     }
-    const ttlMs = type === 'customers' ? CUSTOMER_DATA_CACHE_TTL_MS : OPERATIONAL_DATA_CACHE_TTL_MS;
+    const ttlMs =
+      type === 'customers'
+        ? CUSTOMER_DATA_CACHE_TTL_MS
+        : type === 'products'
+        ? PRODUCT_DATA_CACHE_TTL_MS
+        : OPERATIONAL_DATA_CACHE_TTL_MS;
     if (Date.now() - cached.fetchedAt > ttlMs) {
       operationalDataCacheRef.current.delete(key);
       return null;
@@ -1895,16 +1901,6 @@ export default function OperationsTab({
         applyOperationalTypeData(type, cached);
         setError(null);
         setLoading(false);
-        if (type === 'customers') {
-          return;
-        }
-        void fetchOperationalTypeWithCache(type, { forceRefresh: true })
-          .then((fresh) => {
-            if (fresh) applyOperationalTypeData(type, fresh);
-          })
-          .catch(() => {
-            // Keep cached data visible if background refresh fails.
-          });
         return;
       }
       setLoading(true);
@@ -6763,6 +6759,45 @@ export default function OperationsTab({
     const { records, summary } = productData;
     const isRetailProductSector = industrySectorCategory === '45';
     const isWholesaleProductSector = industrySectorCategory === '42';
+    const isProductMarginAnalysisEnabled = isWholesaleProductSector && isSectionEnabled('productsProductMarginAnalysis');
+    const isWholesaleRawDataEnabled = isWholesaleProductSector && isSectionEnabled('productsWholesaleRawData');
+    const isVendorPricingEnabled = isWholesaleProductSector && isSectionEnabled('productsVendorPricing');
+    const isProductPerformanceEnabled = isSectionEnabled('productsPerformance');
+    const isRetailForecastingEnabled = isSectionEnabled('productsRetailForecasting');
+    const isMerchandiseProfitabilityEnabled = isSectionEnabled('productsMerchandiseProfitability');
+    const fallbackProductReportView: ProductReportView =
+      isProductPerformanceEnabled
+        ? 'performance'
+        : isProductMarginAnalysisEnabled
+        ? 'productMarginAnalysis'
+        : isWholesaleRawDataEnabled
+        ? 'wholesaleRawData'
+        : isVendorPricingEnabled
+        ? 'vendorPricing'
+        : isRetailProductSector && isMerchandiseProfitabilityEnabled
+        ? 'merchandiseProfitability'
+        : isRetailProductSector && isRetailForecastingEnabled
+        ? 'retailForecast'
+        : 'performance';
+    const effectiveProductReportView =
+      productReportView === 'productMarginAnalysis' && !isProductMarginAnalysisEnabled
+        ? fallbackProductReportView
+        : productReportView === 'wholesaleRawData' && !isWholesaleRawDataEnabled
+        ? fallbackProductReportView
+        : productReportView === 'vendorPricing' && !isVendorPricingEnabled
+        ? fallbackProductReportView
+        : productReportView === 'performance' && !isProductPerformanceEnabled
+        ? fallbackProductReportView
+        : productReportView;
+    const shouldRenderProductPerformance = effectiveProductReportView === 'performance' && isProductPerformanceEnabled;
+    const shouldRenderProductMargin = effectiveProductReportView === 'productMarginAnalysis' && isProductMarginAnalysisEnabled;
+    const shouldRenderWholesaleRaw = effectiveProductReportView === 'wholesaleRawData' && isWholesaleRawDataEnabled;
+    const shouldRenderVendorPricing = effectiveProductReportView === 'vendorPricing' && isVendorPricingEnabled;
+    const shouldRenderRetailForecast = effectiveProductReportView === 'retailForecast' && isRetailProductSector && isRetailForecastingEnabled;
+    const shouldRenderMerchandiseProfitability =
+      effectiveProductReportView === 'merchandiseProfitability' && isRetailProductSector && isMerchandiseProfitabilityEnabled;
+    const shouldBuildRetailForecasts = shouldRenderRetailForecast || shouldRenderMerchandiseProfitability;
+    const shouldBuildVendorPricingData = shouldRenderVendorPricing || shouldRenderProductMargin;
     const platosMetrics = summary?.platosMetrics || null;
     const usePlatosMonthlyFallback =
       summary?.source === 'platos-closet-monthly-facts' && frequency === 'monthly';
@@ -6773,12 +6808,23 @@ export default function OperationsTab({
         : isWholesaleProductSector
         ? []
         : rawProductRecords;
-    const weeklyMarginModel = buildWeeklyProductMarginModel({
-      records: rawProductRecords,
-      topProducts: Array.isArray(summary?.topProducts) ? summary.topProducts : [],
-      rangeStart: startDate,
-      rangeEnd: endDate,
-    });
+    const shouldBuildWeeklyMarginModel =
+      !isWholesaleProductSector ||
+      shouldRenderProductPerformance ||
+      shouldRenderRetailForecast ||
+      shouldRenderMerchandiseProfitability;
+    const weeklyMarginModel = shouldBuildWeeklyMarginModel
+      ? buildWeeklyProductMarginModel({
+          records: rawProductRecords,
+          topProducts: Array.isArray(summary?.topProducts) ? summary.topProducts : [],
+          rangeStart: startDate,
+          rangeEnd: endDate,
+        })
+      : {
+          weeks: [],
+          productWeekly: [],
+          comparisonRows: [],
+        };
     const latestPlatosMonthRows =
       usePlatosMonthlyFallback && platosMetrics?.latestMonthKey
         ? rawProductRecords.filter((row: any) => String(row?.snapshotDate || '').slice(0, 7) === platosMetrics.latestMonthKey)
@@ -7251,6 +7297,12 @@ export default function OperationsTab({
     const asOfDateLabel = formatCoverageDate(endDate);
     const coverageLabel = startDate && endDate ? `${formatCoverageDate(startDate)} - ${formatCoverageDate(endDate)} (selected)` : 'N/A';
     const productCategoryOverview = (() => {
+      if (!shouldRenderProductPerformance) {
+        return {
+          activeCount: 0,
+          concentrationTop3Pct: 0,
+        };
+      }
       const endUtc = parseCoverageUtcDay(endDate) || new Date();
       const start365 = new Date(Date.UTC(endUtc.getUTCFullYear(), endUtc.getUTCMonth(), endUtc.getUTCDate() - 364));
       const start90 = new Date(Date.UTC(endUtc.getUTCFullYear(), endUtc.getUTCMonth(), endUtc.getUTCDate() - 89));
@@ -7290,17 +7342,12 @@ export default function OperationsTab({
       },
     ];
     const allProductMetricCards = [...productCategoryMetricCards, ...productMetricCards];
-    const retailForecasts = buildRetailSubcategoryForecasts(rawProductRecords);
+    const retailForecasts = shouldBuildRetailForecasts ? buildRetailSubcategoryForecasts(rawProductRecords) : [];
     const retailForecastOptions = [...retailForecasts].sort((a, b) =>
       a.label.localeCompare(b.label, undefined, { sensitivity: 'base', numeric: true }),
     );
-    const isProductMarginAnalysisEnabled = isWholesaleProductSector && isSectionEnabled('productsProductMarginAnalysis');
-    const isWholesaleRawDataEnabled = isWholesaleProductSector && isSectionEnabled('productsWholesaleRawData');
-    const isVendorPricingEnabled = isWholesaleProductSector && isSectionEnabled('productsVendorPricing');
-    const isProductPerformanceEnabled = isSectionEnabled('productsPerformance');
-    const isRetailForecastingEnabled = isSectionEnabled('productsRetailForecasting');
     const hasRetailForecastView = isRetailProductSector && isRetailForecastingEnabled && retailForecasts.length > 0;
-    const vendorPricingRows = Array.isArray(wholesaleProductsData?.summary?.wholesaleVendorPricingRows)
+    const vendorPricingRows = shouldBuildVendorPricingData && Array.isArray(wholesaleProductsData?.summary?.wholesaleVendorPricingRows)
       ? wholesaleProductsData.summary.wholesaleVendorPricingRows
       : [];
     const vendorPricingVendorOptions = Array.from(
@@ -7425,12 +7472,15 @@ export default function OperationsTab({
         insurancePerPiece: Number.isFinite(Number(selected.insurancePerPiece)) && Number(selected.insurancePerPiece) > 0 ? Number(selected.insurancePerPiece) : null,
       };
     };
-    const productMarginLatestDate = wholesaleProductRecords
-      .map((row: any) => String(row?.snapshotDate || '').slice(0, 10))
-      .filter(Boolean)
-      .sort((a, b) => a.localeCompare(b))
-      .slice(-1)[0] || '';
+    const productMarginLatestDate = shouldRenderProductMargin
+      ? wholesaleProductRecords
+          .map((row: any) => String(row?.snapshotDate || '').slice(0, 10))
+          .filter(Boolean)
+          .sort((a, b) => a.localeCompare(b))
+          .slice(-1)[0] || ''
+      : '';
     const productMarginRows = (() => {
+      if (!shouldRenderProductMargin) return [];
       const latestRowsByItem = new Map<string, { latestMs: number; rows: any[] }>();
       for (const row of wholesaleProductRecords as any[]) {
         if (row?.isPlaceholderRow) continue;
@@ -7660,7 +7710,7 @@ export default function OperationsTab({
     };
     const productMarginSortLabel = (key: ProductMarginSortKey) =>
       productMarginSortKey === key ? (productMarginSortDir === 'asc' ? ' ▲' : ' ▼') : ' ↕';
-    const wholesaleRawBaseRows = (wholesaleProductRecords as any[])
+    const wholesaleRawBaseRows = (shouldRenderWholesaleRaw ? (wholesaleProductRecords as any[]) : [])
       .filter((row) => !row?.isPlaceholderRow)
       .map((row, index) => {
         const parsedDate = parseCoverageUtcDay(String(row?.snapshotDate || row?.date || row?.orderDate || ''));
@@ -7808,6 +7858,7 @@ export default function OperationsTab({
       return (Number(left) - Number(right)) * direction;
     });
     const merchandiseProfitability = (() => {
+      if (!shouldRenderMerchandiseProfitability) return null;
       const retailRows = (rawProductRecords as any[])
         .map((row) => ({
           monthKey: monthKeyFromDateValue(row?.snapshotDate || row?.monthStart || row?.date),
@@ -8022,31 +8073,6 @@ export default function OperationsTab({
         {label}{retailForecastTableSortKey === key ? (retailForecastTableSortDir === 'asc' ? ' ↑' : ' ↓') : ' ↕'}
       </th>
     );
-    const isMerchandiseProfitabilityEnabled = isSectionEnabled('productsMerchandiseProfitability');
-    const fallbackProductReportView: ProductReportView =
-      isProductPerformanceEnabled
-        ? 'performance'
-        : isProductMarginAnalysisEnabled
-        ? 'productMarginAnalysis'
-        : isWholesaleRawDataEnabled
-        ? 'wholesaleRawData'
-        : isVendorPricingEnabled
-        ? 'vendorPricing'
-        : isRetailProductSector && isMerchandiseProfitabilityEnabled
-        ? 'merchandiseProfitability'
-        : isRetailProductSector && isRetailForecastingEnabled
-        ? 'retailForecast'
-        : 'performance';
-    const effectiveProductReportView =
-      productReportView === 'productMarginAnalysis' && !isProductMarginAnalysisEnabled
-        ? fallbackProductReportView
-        : productReportView === 'wholesaleRawData' && !isWholesaleRawDataEnabled
-        ? fallbackProductReportView
-        : productReportView === 'vendorPricing' && !isVendorPricingEnabled
-        ? fallbackProductReportView
-        : productReportView === 'performance' && !isProductPerformanceEnabled
-        ? fallbackProductReportView
-        : productReportView;
     const productViewSwitcher = isProductMarginAnalysisEnabled || isWholesaleRawDataEnabled || isVendorPricingEnabled || isProductPerformanceEnabled || (isRetailProductSector && (isRetailForecastingEnabled || isMerchandiseProfitabilityEnabled)) ? (
       <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '16px' }}>
         {isProductMarginAnalysisEnabled && (

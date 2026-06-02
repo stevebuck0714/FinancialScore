@@ -35,24 +35,28 @@ function defaultProductsStartIsoUtc(): string {
   return startDate < OPERATIONAL_REPORT_MIN_DATE ? OPERATIONAL_REPORT_MIN_DATE : startDate;
 }
 
-async function fetchProductCacheWarmup(params: {
+async function fetchOperationalCacheWarmup(params: {
   origin: string;
   cronSecret: string;
   companyId: string;
+  type: 'customers' | 'products';
   startDate: string;
   endDate: string;
   limit: string;
+  sectorCategory?: string | null;
   refreshWholesaleProducts?: boolean;
 }): Promise<any> {
   const url = new URL('/api/operational-data', params.origin);
   url.searchParams.set('companyId', params.companyId);
-  url.searchParams.set('type', 'products');
+  url.searchParams.set('type', params.type);
   url.searchParams.set('frequency', 'daily');
   url.searchParams.set('startDate', params.startDate);
   url.searchParams.set('endDate', params.endDate);
   url.searchParams.set('limit', params.limit);
-  url.searchParams.set('sectorCategory', '42');
   url.searchParams.set('cacheWarmup', '1');
+  if (params.sectorCategory) {
+    url.searchParams.set('sectorCategory', params.sectorCategory);
+  }
   if (params.refreshWholesaleProducts) {
     url.searchParams.set('refreshWholesaleProducts', '1');
   }
@@ -82,6 +86,7 @@ async function fetchProductCacheWarmup(params: {
   return {
     ok: true,
     status: response.status,
+    type: params.type,
     records: Array.isArray(payload?.records) ? payload.records.length : null,
     wholesaleOrderLines: Array.isArray(payload?.summary?.wholesaleOrderLines)
       ? payload.summary.wholesaleOrderLines.length
@@ -92,7 +97,39 @@ async function fetchProductCacheWarmup(params: {
   };
 }
 
-async function warmWholesaleProductCachesForCompany(params: {
+async function fetchMasterDataCacheWarmup(params: {
+  origin: string;
+  companyId: string;
+}): Promise<any> {
+  const url = new URL('/api/master-data', params.origin);
+  url.searchParams.set('companyId', params.companyId);
+  url.searchParams.set('scope', 'published');
+  url.searchParams.set('cacheWarmup', '1');
+
+  const response = await fetch(url, { cache: 'no-store' });
+  let payload: any = null;
+  try {
+    payload = await response.json();
+  } catch {
+    payload = null;
+  }
+
+  if (!response.ok) {
+    return {
+      ok: false,
+      status: response.status,
+      error: String(payload?.error || payload?.details || response.statusText || 'Warmup request failed').slice(0, 500),
+    };
+  }
+
+  return {
+    ok: true,
+    status: response.status,
+    months: Number.isFinite(Number(payload?.months)) ? Number(payload.months) : null,
+  };
+}
+
+async function warmReportCachesForCompany(params: {
   prisma: any;
   origin: string;
   cronSecret: string;
@@ -103,39 +140,57 @@ async function warmWholesaleProductCachesForCompany(params: {
     select: { industrySectorCategory: true },
   });
 
-  if (String(company?.industrySectorCategory || '').trim() !== '42') {
-    return {
-      companyId: params.companyId,
-      ok: true,
-      skipped: true,
-      reason: 'not_wholesale_trade',
-    };
-  }
-
   const endDate = yesterdayIsoUtc();
-  const wholesaleReport = await fetchProductCacheWarmup({
+  const sectorCategory = String(company?.industrySectorCategory || '').trim() || null;
+  const customers = await fetchOperationalCacheWarmup({
     origin: params.origin,
     cronSecret: params.cronSecret,
     companyId: params.companyId,
+    type: 'customers',
     startDate: OPERATIONAL_REPORT_MIN_DATE,
     endDate,
-    limit: '5000',
-    refreshWholesaleProducts: true,
+    limit: '500',
+    sectorCategory,
   });
-  const performanceProducts = await fetchProductCacheWarmup({
+  const performanceProducts = await fetchOperationalCacheWarmup({
     origin: params.origin,
     cronSecret: params.cronSecret,
     companyId: params.companyId,
+    type: 'products',
     startDate: defaultProductsStartIsoUtc(),
     endDate,
     limit: '500',
+    sectorCategory,
+  });
+  const wholesaleReport = sectorCategory === '42'
+    ? await fetchOperationalCacheWarmup({
+        origin: params.origin,
+        cronSecret: params.cronSecret,
+        companyId: params.companyId,
+        type: 'products',
+        startDate: OPERATIONAL_REPORT_MIN_DATE,
+        endDate,
+        limit: '5000',
+        sectorCategory,
+        refreshWholesaleProducts: true,
+      })
+    : {
+        ok: true,
+        skipped: true,
+        reason: 'not_wholesale_trade',
+      };
+  const masterData = await fetchMasterDataCacheWarmup({
+    origin: params.origin,
+    companyId: params.companyId,
   });
 
   return {
     companyId: params.companyId,
-    ok: Boolean(wholesaleReport?.ok && performanceProducts?.ok),
-    wholesaleReport,
+    ok: Boolean(customers?.ok && performanceProducts?.ok && wholesaleReport?.ok && masterData?.ok),
+    customers,
     performanceProducts,
+    wholesaleReport,
+    masterData,
   };
 }
 
@@ -248,7 +303,7 @@ export async function GET(request: NextRequest) {
             });
             continue;
           }
-          warmupResults.push(await warmWholesaleProductCachesForCompany({
+          warmupResults.push(await warmReportCachesForCompany({
             prisma,
             origin: request.nextUrl.origin,
             cronSecret,
