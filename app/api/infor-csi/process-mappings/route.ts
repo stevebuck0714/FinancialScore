@@ -21,6 +21,28 @@ function normalizeTargetMonth(value: unknown): string | null {
   return /^\d{4}-\d{2}$/.test(raw) ? raw : null;
 }
 
+function formatStageError(value: unknown, fallback = 'Unknown error') {
+  if (value == null || value === '') return fallback;
+  if (typeof value === 'string') return value;
+  if (value instanceof Error) return value.message || fallback;
+  if (typeof value === 'object') {
+    const record = value as Record<string, unknown>;
+    const parts = [
+      record.message,
+      record.error,
+      record.code ? `code: ${record.code}` : null,
+      record.id ? `id: ${record.id}` : null,
+    ].filter(Boolean);
+    if (parts.length) return parts.map((part) => String(part)).join(' | ');
+    try {
+      return JSON.stringify(value);
+    } catch {
+      return fallback;
+    }
+  }
+  return String(value);
+}
+
 async function parseJsonResponse(response: Response): Promise<StageResult> {
   const requestId = response.headers.get('x-vercel-id');
   const text = await response.text();
@@ -97,8 +119,8 @@ export async function POST(request: NextRequest) {
         {
           success: false,
           stage: 'save_mappings',
-          error: saveStage.payload?.error || 'Failed to save account mappings',
-          details: saveStage.payload?.details || null,
+          error: formatStageError(saveStage.payload?.error, 'Failed to save account mappings'),
+          details: saveStage.payload?.details == null ? null : formatStageError(saveStage.payload.details, ''),
           saveStage,
         },
         { status: saveStage.status || 500 },
@@ -126,8 +148,8 @@ export async function POST(request: NextRequest) {
         {
           success: false,
           stage: 'reprocess',
-          error: reprocessStage.payload?.error || reprocessStage.payload?.message || 'Failed to reprocess financial mappings',
-          details: reprocessStage.payload?.details || null,
+          error: formatStageError(reprocessStage.payload?.error || reprocessStage.payload?.message, 'Failed to reprocess financial mappings'),
+          details: reprocessStage.payload?.details == null ? null : formatStageError(reprocessStage.payload.details, ''),
           diagnostics: reprocessStage.payload?.diagnostics || null,
           saveStage,
           reprocessStage,

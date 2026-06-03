@@ -6,7 +6,8 @@ import { requireAuth, validateCompanyAccess } from '@/lib/tenant-security';
 export const dynamic = 'force-dynamic';
 export const maxDuration = 120;
 
-const LOAN_ACTIVITY_CACHE_VERSION = 7;
+const LOAN_ACTIVITY_CACHE_VERSION = 10;
+const STALE_LOAN_ACTIVITY_MONTHS = 18;
 
 type LoanTermInput = {
   instrumentKey: string;
@@ -225,6 +226,34 @@ function toNumber(value: unknown): number | null {
   if (value === null || value === undefined || value === '') return null;
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : null;
+}
+
+function dateToTime(value: unknown): number | null {
+  if (!value) return null;
+  const parsed = new Date(String(value));
+  const time = parsed.getTime();
+  return Number.isFinite(time) ? time : null;
+}
+
+function subtractMonths(date: Date, months: number) {
+  const next = new Date(date);
+  next.setUTCMonth(next.getUTCMonth() - months);
+  return next;
+}
+
+function shouldHideInactiveLoanFromReport(instrument: any) {
+  const termCurrentBalance = toNumber(instrument?.terms?.currentBalance);
+  const derivedCurrentBalance = toNumber(instrument?.derivedCurrentBalance);
+  const currentBalance = termCurrentBalance ?? derivedCurrentBalance;
+  if (currentBalance !== null && Math.abs(currentBalance) > 0.005) return false;
+
+  const lastActivityTime = dateToTime(instrument?.lastDate);
+  if (!lastActivityTime) return true;
+
+  const asOfTime = dateToTime(instrument?.derivedCurrentBalanceAsOf);
+  const referenceDate = asOfTime ? new Date(asOfTime) : new Date();
+  const staleBefore = subtractMonths(referenceDate, STALE_LOAN_ACTIVITY_MONTHS).getTime();
+  return lastActivityTime < staleBefore;
 }
 
 function cleanText(value: unknown, maxLength = 500): string | null {
@@ -622,7 +651,6 @@ async function loadLoanActivity(companyId: string) {
       return true;
     }),
   ];
-
   const accountNameFallbacks = await loadAccountNameFallbacks(
     companyId,
     principalRows.map((row) => row.accountId)
@@ -906,11 +934,14 @@ async function buildLoanActivityPayload(companyId: string) {
       recentActivity: [],
       terms: term,
     }));
+  const reportInstruments = [...merged, ...configuredOnly].filter(
+    (instrument) => !shouldHideInactiveLoanFromReport(instrument)
+  );
 
   return {
     companyId,
     cacheVersion: LOAN_ACTIVITY_CACHE_VERSION,
-    instruments: [...merged, ...configuredOnly],
+    instruments: reportInstruments,
     generatedAt: new Date().toISOString(),
   };
 }

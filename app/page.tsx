@@ -47,6 +47,27 @@ const DailyAlertsView = dynamic(() => import('./components/operations/DailyAlert
 const DataRoomView = dynamic(() => import('./components/dataroom/DataRoomView'), { ssr: false });
 const CustomReportsView = dynamic(() => import('./components/reports/CustomReportsView'), { ssr: false });
 
+function formatErrorText(value: any, fallback = 'Unknown error') {
+  if (value == null || value === '') return fallback;
+  if (typeof value === 'string') return value;
+  if (value instanceof Error) return value.message || fallback;
+  if (typeof value === 'object') {
+    const parts = [
+      value.message,
+      value.error,
+      value.code ? `code: ${value.code}` : null,
+      value.id ? `id: ${value.id}` : null,
+    ].filter(Boolean);
+    if (parts.length) return parts.map((part) => String(part)).join(' | ');
+    try {
+      return JSON.stringify(value);
+    } catch {
+      return fallback;
+    }
+  }
+  return String(value);
+}
+
 const Header = dynamic(() => import('./components/layout/Header'), { ssr: false });
 import SiteAdminDashboard from './components/siteadmin/SiteAdminDashboard';
 import { renderColumnSelector as renderColumnSelectorUtil } from './utils/import-helpers';
@@ -2305,18 +2326,19 @@ function FinancialScorePage() {
       const result = await response.json().catch(() => ({}));
       if (!response.ok || !result?.success) {
         const stage = String(result?.stage || 'unknown');
+        const errorText = formatErrorText(result?.error || result?.message, 'CSI pipeline failed');
         const details = result?.details
-          ? (typeof result.details === 'string' ? result.details : JSON.stringify(result.details))
+          ? formatErrorText(result.details, '')
           : '';
         setCsiPipelineStatus({
           state: 'error',
           trigger: 'apply',
           stage,
-          message: result?.error || result?.message || 'CSI pipeline failed',
+          message: errorText,
           updatedAt: Date.now(),
         });
         alert(
-          `CSI processing failed at stage "${stage}". ${result?.error || result?.message || 'Unknown error.'}` +
+          `CSI processing failed at stage "${stage}". ${errorText}` +
             (details ? `\nDetails: ${details}` : '')
         );
         return false;
@@ -2344,14 +2366,15 @@ function FinancialScorePage() {
       );
       return true;
     } catch (error: any) {
+      const errorText = formatErrorText(error, 'CSI pipeline failed');
       setCsiPipelineStatus({
         state: 'error',
         trigger: 'apply',
         stage: 'exception',
-        message: error?.message || 'CSI pipeline failed',
+        message: errorText,
         updatedAt: Date.now(),
       });
-      alert(`CSI processing failed: ${error?.message || 'Unknown error'}`);
+      alert(`CSI processing failed: ${errorText}`);
       return false;
     } finally {
       setIsProcessingMonthlyData(false);
