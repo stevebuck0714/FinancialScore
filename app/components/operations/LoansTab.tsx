@@ -8,6 +8,7 @@ type LoanTerms = {
   loanType?: string | null;
   lender?: string | null;
   originalBalance?: number | string | null;
+  loanOriginationDate?: string | null;
   currentBalance?: number | string | null;
   interestRatePct?: number | string | null;
   maturityDate?: string | null;
@@ -28,8 +29,11 @@ type LoanInstrument = {
   debits: number;
   credits: number;
   estimatedInterestPaid: number;
+  instrumentStatus?: 'active' | 'inactive' | 'unknown';
+  statusReason?: string | null;
   derivedCurrentBalance?: number | null;
   derivedCurrentBalanceSource?: string | null;
+  derivedCurrentBalanceAsOf?: string | null;
   monthlyActivity: Array<{
     month: string;
     activityTotal: number;
@@ -63,6 +67,7 @@ const emptyTerms: LoanTerms = {
   loanType: '',
   lender: '',
   originalBalance: '',
+  loanOriginationDate: '',
   currentBalance: '',
   interestRatePct: '',
   maturityDate: '',
@@ -131,6 +136,7 @@ function buildTerms(instrument: LoanInstrument): LoanTerms {
     loanType: normalizeInputValue(instrument.terms?.loanType),
     lender: normalizeInputValue(instrument.terms?.lender),
     originalBalance: normalizeInputValue(instrument.terms?.originalBalance),
+    loanOriginationDate: normalizeDateInput(instrument.terms?.loanOriginationDate),
     currentBalance: normalizeInputValue(instrument.terms?.currentBalance),
     interestRatePct: normalizeInputValue(instrument.terms?.interestRatePct),
     maturityDate: normalizeDateInput(instrument.terms?.maturityDate),
@@ -158,12 +164,14 @@ export default function LoansTab({ selectedCompanyId, operationalHubSections }: 
     return value === undefined ? true : value !== false;
   };
 
-  const loadLoans = useCallback(async () => {
+  const loadLoans = useCallback(async (force = false) => {
     if (!selectedCompanyId) return;
     setLoading(true);
     setError(null);
     try {
-      const response = await fetch(`/api/operations/loans?companyId=${encodeURIComponent(selectedCompanyId)}`, {
+      const params = new URLSearchParams({ companyId: selectedCompanyId });
+      if (force) params.set('force', 'true');
+      const response = await fetch(`/api/operations/loans?${params.toString()}`, {
         cache: 'no-store',
       });
       const data = await response.json();
@@ -223,7 +231,7 @@ export default function LoansTab({ selectedCompanyId, operationalHubSections }: 
         throw new Error(data?.error || data?.details || 'Failed to save loan terms');
       }
       setSaveMessage('Loan terms saved.');
-      await loadLoans();
+      await loadLoans(true);
     } catch (err: any) {
       setError(err?.message || 'Failed to save loan terms');
     } finally {
@@ -279,7 +287,7 @@ export default function LoansTab({ selectedCompanyId, operationalHubSections }: 
       <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
         <button
           type="button"
-          onClick={() => void loadLoans()}
+          onClick={() => void loadLoans(true)}
           disabled={loading}
           style={{
             border: '1px solid #cbd5e1',
@@ -319,11 +327,13 @@ export default function LoansTab({ selectedCompanyId, operationalHubSections }: 
                   <tr>
                     <th style={thStyle}>Loan / Instrument Name</th>
                     <th style={thStyle}>GL Account</th>
+                    <th style={{ ...thStyle, textAlign: 'right' }}>Original Balance</th>
                     <th style={{ ...thStyle, textAlign: 'right' }}>Principal GL Activity</th>
-                    <th style={{ ...thStyle, textAlign: 'right' }}>Matched Interest</th>
+                    <th style={{ ...thStyle, textAlign: 'right' }}>Interest</th>
                     <th style={{ ...thStyle, textAlign: 'right' }}>Current Balance</th>
                     <th style={{ ...thStyle, textAlign: 'right' }}>Transactions</th>
-                    <th style={thStyle}>Transaction Period</th>
+                    <th style={thStyle}>Last Transaction</th>
+                    <th style={thStyle}>Maturity Date</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -340,27 +350,27 @@ export default function LoansTab({ selectedCompanyId, operationalHubSections }: 
                           <div style={{ marginTop: '2px', fontSize: '11px', color: '#64748b', fontWeight: 500 }}>
                             {instrument.terms?.loanType || 'Loan type not set'}
                             {instrument.terms?.lender ? ` | ${instrument.terms.lender}` : ''}
+                            {instrument.instrumentStatus === 'inactive' ? ' | Inactive' : ''}
                           </div>
                         </td>
                         <td style={tdStyle}>
                           {instrument.accountId || '-'}
+                        </td>
+                        <td style={{ ...tdStyle, textAlign: 'right' }}>
+                          {instrument.terms?.originalBalance ? formatCurrency(instrument.terms.originalBalance) : '-'}
                         </td>
                         <td style={{ ...tdStyle, textAlign: 'right', fontWeight: 700 }}>{formatCurrency(instrument.activityTotal)}</td>
                         <td style={{ ...tdStyle, textAlign: 'right' }}>{formatCurrency(instrument.estimatedInterestPaid)}</td>
                         <td style={{ ...tdStyle, textAlign: 'right' }}>
                           {instrument.terms?.currentBalance || instrument.derivedCurrentBalance
                             ? (
-                              <>
-                                <div>{formatCurrency(instrument.terms?.currentBalance || instrument.derivedCurrentBalance)}</div>
-                                <div style={{ marginTop: '2px', fontSize: '11px', color: '#64748b' }}>
-                                  {instrument.terms?.currentBalance ? 'Manual' : instrument.derivedCurrentBalanceSource || 'Derived'}
-                                </div>
-                              </>
+                              formatCurrency(instrument.terms?.currentBalance || instrument.derivedCurrentBalance)
                             )
                             : '-'}
                         </td>
                         <td style={{ ...tdStyle, textAlign: 'right' }}>{formatNumber(instrument.transactionCount)}</td>
-                        <td style={tdStyle}>{formatActivityPeriod(instrument.firstDate, instrument.lastDate)}</td>
+                        <td style={tdStyle}>{formatDate(instrument.lastDate)}</td>
+                        <td style={tdStyle}>{instrument.terms?.maturityDate ? formatDate(instrument.terms.maturityDate) : '-'}</td>
                       </tr>
                     );
                   })}
@@ -387,6 +397,7 @@ export default function LoansTab({ selectedCompanyId, operationalHubSections }: 
                     ['loanType', 'Loan Type', 'text'],
                     ['lender', 'Lender', 'text'],
                     ['originalBalance', 'Original Balance', 'number'],
+                    ['loanOriginationDate', 'Loan Origination Date', 'date'],
                     ['currentBalance', 'Current Balance', 'number'],
                     ['interestRatePct', 'Interest Rate %', 'number'],
                     ['maturityDate', 'Maturity Date', 'date'],
@@ -448,9 +459,6 @@ export default function LoansTab({ selectedCompanyId, operationalHubSections }: 
                       <th style={thStyle}>Account #</th>
                       <th style={thStyle}>Account Name</th>
                       <th style={thStyle}>Transaction Type</th>
-                      <th style={thStyle}>Ref</th>
-                      <th style={{ ...thStyle, textAlign: 'right' }}>Debit</th>
-                      <th style={{ ...thStyle, textAlign: 'right' }}>Credit</th>
                       <th style={{ ...thStyle, textAlign: 'right' }}>Net Amount</th>
                     </tr>
                   </thead>
@@ -461,9 +469,6 @@ export default function LoansTab({ selectedCompanyId, operationalHubSections }: 
                         <td style={tdStyle}>{row.accountId || '-'}</td>
                         <td style={tdStyle}>{row.accountName || selectedInstrument.displayName || '-'}</td>
                         <td style={tdStyle}>{classifyLoanTransaction(row)}</td>
-                        <td style={tdStyle}>{row.ref || '-'}</td>
-                        <td style={{ ...tdStyle, textAlign: 'right' }}>{formatCurrency(row.debitAmount)}</td>
-                        <td style={{ ...tdStyle, textAlign: 'right' }}>{formatCurrency(row.creditAmount)}</td>
                         <td style={{ ...tdStyle, textAlign: 'right', fontWeight: 700 }}>{formatCurrency(row.signedAmount)}</td>
                       </tr>
                     ))}

@@ -1,0 +1,6 @@
+CREATE TABLE IF NOT EXISTS "LoanActivityCache" (
+  "companyId" TEXT PRIMARY KEY,
+  "payload" JSONB NOT NULL,
+  "generatedAt" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  "updatedAt" TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);

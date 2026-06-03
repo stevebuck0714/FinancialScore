@@ -6,12 +6,15 @@ import { requireAuth, validateCompanyAccess } from '@/lib/tenant-security';
 export const dynamic = 'force-dynamic';
 export const maxDuration = 120;
 
+const LOAN_ACTIVITY_CACHE_VERSION = 7;
+
 type LoanTermInput = {
   instrumentKey: string;
   displayName?: string | null;
   loanType?: string | null;
   lender?: string | null;
   originalBalance?: number | null;
+  loanOriginationDate?: string | null;
   currentBalance?: number | null;
   interestRatePct?: number | null;
   maturityDate?: string | null;
@@ -79,6 +82,7 @@ async function ensureLoanTermsTable() {
       "loanType" TEXT,
       "lender" TEXT,
       "originalBalance" NUMERIC(18, 2),
+      "loanOriginationDate" DATE,
       "currentBalance" NUMERIC(18, 2),
       "interestRatePct" NUMERIC(9, 4),
       "maturityDate" DATE,
@@ -94,6 +98,127 @@ async function ensureLoanTermsTable() {
     CREATE INDEX IF NOT EXISTS "LoanInstrumentTerm_company_idx"
       ON "LoanInstrumentTerm" ("companyId");
   `);
+  await prisma.$executeRawUnsafe(`
+    ALTER TABLE "LoanInstrumentTerm"
+      ADD COLUMN IF NOT EXISTS "loanOriginationDate" DATE;
+  `);
+}
+
+async function ensureLoanActivityCacheTable() {
+  await prisma.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS "LoanActivityCache" (
+      "companyId" TEXT PRIMARY KEY,
+      "payload" JSONB NOT NULL,
+      "generatedAt" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      "updatedAt" TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+  `);
+}
+
+async function readLoanActivityCache(companyId: string): Promise<{ payload: any; generatedAt: string } | null> {
+  await ensureLoanActivityCacheTable();
+  const rows = await prisma.$queryRawUnsafe<Array<{ payload: any; generatedAt: Date }>>(
+    `
+      SELECT "payload", "generatedAt"
+      FROM "LoanActivityCache"
+      WHERE "companyId" = $1
+      LIMIT 1
+    `,
+    companyId
+  );
+  const row = rows[0];
+  if (!row?.payload) return null;
+  if (Number(row.payload?.cacheVersion || 0) !== LOAN_ACTIVITY_CACHE_VERSION) return null;
+  return {
+    payload: row.payload,
+    generatedAt: row.generatedAt?.toISOString?.() || new Date().toISOString(),
+  };
+}
+
+async function loadLoanAccountMetadata(companyId: string, accountIds: string[]): Promise<Map<string, {
+  targetField: string | null;
+  accountClassification: string | null;
+}>> {
+  const ids = Array.from(new Set(accountIds.map((id) => String(id || '').trim()).filter(Boolean)));
+  const metadata = new Map<string, { targetField: string | null; accountClassification: string | null }>();
+  if (!ids.length) return metadata;
+
+  const rows = await prisma.$queryRawUnsafe<Array<{
+    accountId: string | null;
+    targetField: string | null;
+    accountClassification: string | null;
+  }>>(
+    `
+      SELECT
+        TRIM("accountId") AS "accountId",
+        NULLIF(TRIM(COALESCE("targetField", '')), '') AS "targetField",
+        NULLIF(TRIM(COALESCE("accountClassification", '')), '') AS "accountClassification"
+      FROM "AccountMapping"
+      WHERE "companyId" = $1
+        AND TRIM("accountId") = ANY($2::text[])
+    `,
+    companyId,
+    ids
+  );
+
+  for (const row of rows) {
+    const accountId = String(row.accountId || '').trim();
+    if (!accountId || metadata.has(accountId)) continue;
+    metadata.set(accountId, {
+      targetField: row.targetField || null,
+      accountClassification: row.accountClassification || null,
+    });
+  }
+
+  return metadata;
+}
+
+async function loadLatestDailyFinancialSnapshot(companyId: string): Promise<{
+  snapshotDate: Date | null;
+  loc: number;
+  ltd: number;
+} | null> {
+  const rows = await prisma.$queryRawUnsafe<Array<{
+    snapshotDate: Date | null;
+    loc: number | null;
+    ltd: number | null;
+  }>>(
+    `
+      SELECT
+        "snapshotDate",
+        "loc"::float8 AS "loc",
+        "ltd"::float8 AS "ltd"
+      FROM "DailyFinancialSnapshot"
+      WHERE "companyId" = $1
+      ORDER BY "snapshotDate" DESC
+      LIMIT 1
+    `,
+    companyId
+  );
+  const row = rows[0];
+  if (!row) return null;
+  return {
+    snapshotDate: row.snapshotDate || null,
+    loc: Math.abs(Number(row.loc || 0)),
+    ltd: Math.abs(Number(row.ltd || 0)),
+  };
+}
+
+async function writeLoanActivityCache(companyId: string, payload: any) {
+  await ensureLoanActivityCacheTable();
+  await prisma.$executeRawUnsafe(
+    `
+      INSERT INTO "LoanActivityCache" ("companyId", "payload", "generatedAt", "updatedAt")
+      VALUES ($1, $2::jsonb, NOW(), NOW())
+      ON CONFLICT ("companyId")
+      DO UPDATE SET
+        "payload" = EXCLUDED."payload",
+        "generatedAt" = EXCLUDED."generatedAt",
+        "updatedAt" = NOW()
+    `,
+    companyId,
+    JSON.stringify(payload)
+  );
 }
 
 function toNumber(value: unknown): number | null {
@@ -151,6 +276,7 @@ async function loadLoanTerms(companyId: string) {
         "loanType",
         "lender",
         "originalBalance",
+        "loanOriginationDate",
         "currentBalance",
         "interestRatePct",
         "maturityDate",
@@ -416,43 +542,6 @@ async function loadInforRawLoanInterestActivity(companyId: string): Promise<Map<
 }
 
 async function loadLoanActivity(companyId: string) {
-  let principalRows = await prisma.$queryRawUnsafe<any[]>(
-    `
-      SELECT
-        CONCAT('gl:', TRIM("accountId")) AS "instrumentKey",
-        TRIM("accountId") AS "accountId",
-        COALESCE(MAX(NULLIF(TRIM("accountName"), '')), MAX(TRIM("accountId"))) AS "accountName",
-        COUNT(*)::int AS "transactionCount",
-        MIN("transDate") AS "firstDate",
-        MAX("transDate") AS "lastDate",
-        SUM(COALESCE("signedAmount", 0))::float8 AS "activityTotal",
-        SUM(COALESCE("debitAmount", 0))::float8 AS "debits",
-        SUM(COALESCE("creditAmount", 0))::float8 AS "credits"
-      FROM "GLTransactionFact"
-      WHERE "companyId" = $1
-        AND (
-          COALESCE("accountName", '') ~* $2
-          OR TRIM("accountId") IN ('39010', '39110', '39160', '39165')
-        )
-        AND NOT (
-          COALESCE("accountName", '') ~* 'interest income|interest expense|accrued interest'
-          OR TRIM("accountId") IN ('76050', '76350', '83010')
-        )
-        AND NOT (
-          COALESCE("accountName", '') ~* $3
-          OR TRIM("accountId") ~ '^10[0-9]'
-        )
-        AND NOT (COALESCE("accountName", '') ~* $4)
-      GROUP BY TRIM("accountId")
-      HAVING COUNT(*) > 0
-      ORDER BY TRIM("accountId")
-    `,
-    companyId,
-    DEBT_ACCOUNT_NAME_PATTERN,
-    CASH_ACCOUNT_NAME_PATTERN,
-    NON_DEBT_LOAN_ACCOUNT_PATTERN
-  );
-
   const mappedDebtRows = await prisma.$queryRawUnsafe<any[]>(
     `
       SELECT
@@ -474,7 +563,6 @@ async function loadLoanActivity(companyId: string) {
         )
         AND (
           COALESCE("accountName", '') ~* $2
-          OR TRIM("accountId") IN ('39010', '39110', '39140', '39160', '39165')
           OR COALESCE("targetField", '') IN ('loc', 'ltd')
         )
         AND NOT (
@@ -488,6 +576,41 @@ async function loadLoanActivity(companyId: string) {
     DEBT_ACCOUNT_NAME_PATTERN,
     NON_DEBT_LOAN_ACCOUNT_PATTERN
   );
+
+  const mappedDebtAccountIds = Array.from(
+    new Set(mappedDebtRows.map((row) => String(row.accountId || '').trim()).filter(Boolean))
+  );
+
+  let principalRows = mappedDebtAccountIds.length
+    ? await prisma.$queryRawUnsafe<any[]>(
+    `
+      SELECT
+        CONCAT('gl:', TRIM("accountId")) AS "instrumentKey",
+        TRIM("accountId") AS "accountId",
+        COALESCE(MAX(NULLIF(TRIM("accountName"), '')), MAX(TRIM("accountId"))) AS "accountName",
+        COUNT(*)::int AS "transactionCount",
+        MIN("transDate") AS "firstDate",
+        MAX("transDate") AS "lastDate",
+        SUM(COALESCE("signedAmount", 0))::float8 AS "activityTotal",
+        SUM(COALESCE("debitAmount", 0))::float8 AS "debits",
+        SUM(COALESCE("creditAmount", 0))::float8 AS "credits"
+      FROM "GLTransactionFact"
+      WHERE "companyId" = $1
+        AND TRIM("accountId") = ANY($2::text[])
+        AND NOT (
+          COALESCE("accountName", '') ~* 'interest income|interest expense|accrued interest'
+          OR TRIM("accountId") IN ('76050', '76350', '83010')
+        )
+        AND NOT (COALESCE("accountName", '') ~* $3)
+      GROUP BY TRIM("accountId")
+      HAVING COUNT(*) > 0
+      ORDER BY TRIM("accountId")
+    `,
+    companyId,
+    mappedDebtAccountIds,
+    NON_DEBT_LOAN_ACCOUNT_PATTERN
+  )
+    : [];
 
   const existingInstrumentKeys = new Set(principalRows.map((row) => String(row.instrumentKey || '')));
   principalRows = [
@@ -509,8 +632,14 @@ async function loadLoanActivity(companyId: string) {
     principalRows.map((row) => row.accountId)
   );
   const rawInforInterestByAccount = await loadInforRawLoanInterestActivity(companyId);
+  const accountMetadata = await loadLoanAccountMetadata(
+    companyId,
+    principalRows.map((row) => row.accountId)
+  );
+  const latestDailySnapshot = await loadLatestDailyFinancialSnapshot(companyId);
 
-  const monthlyRows = await prisma.$queryRawUnsafe<any[]>(
+  const monthlyRows = mappedDebtAccountIds.length
+    ? await prisma.$queryRawUnsafe<any[]>(
     `
       SELECT
         CONCAT('gl:', TRIM("accountId")) AS "instrumentKey",
@@ -521,29 +650,23 @@ async function loadLoanActivity(companyId: string) {
         COUNT(*)::int AS "transactionCount"
       FROM "GLTransactionFact"
       WHERE "companyId" = $1
-        AND (
-          COALESCE("accountName", '') ~* $2
-          OR TRIM("accountId") IN ('39010', '39110', '39160', '39165')
-        )
+        AND TRIM("accountId") = ANY($2::text[])
         AND NOT (
           COALESCE("accountName", '') ~* 'interest income|interest expense|accrued interest'
           OR TRIM("accountId") IN ('76050', '76350', '83010')
         )
-        AND NOT (
-          COALESCE("accountName", '') ~* $3
-          OR TRIM("accountId") ~ '^10[0-9]'
-        )
-        AND NOT (COALESCE("accountName", '') ~* $4)
+        AND NOT (COALESCE("accountName", '') ~* $3)
       GROUP BY TRIM("accountId"), DATE_TRUNC('month', "transDate")::date
       ORDER BY TRIM("accountId"), "month"
     `,
     companyId,
-    DEBT_ACCOUNT_NAME_PATTERN,
-    CASH_ACCOUNT_NAME_PATTERN,
+    mappedDebtAccountIds,
     NON_DEBT_LOAN_ACCOUNT_PATTERN
-  );
+  )
+    : [];
 
-  const detailRows = await prisma.$queryRawUnsafe<any[]>(
+  const detailRows = mappedDebtAccountIds.length
+    ? await prisma.$queryRawUnsafe<any[]>(
     `
       SELECT
         CONCAT('gl:', TRIM("accountId")) AS "instrumentKey",
@@ -560,22 +683,18 @@ async function loadLoanActivity(companyId: string) {
       FROM "GLTransactionFact"
       WHERE "companyId" = $1
         AND (
-          COALESCE("accountName", '') ~* $2
-          OR TRIM("accountId") IN ('39010', '39110', '39140', '39160', '39165')
+          TRIM("accountId") = ANY($2::text[])
+          OR TRIM("accountId") IN ('39140', '76050', '76350', '83010')
+          OR COALESCE("accountName", '') ~* 'interest'
         )
-        AND NOT (
-          COALESCE("accountName", '') ~* $3
-          OR TRIM("accountId") ~ '^10[0-9]'
-        )
-        AND NOT (COALESCE("accountName", '') ~* $4)
+        AND NOT (TRIM("accountId") ~ '^10[0-9]' AND COALESCE("accountName", '') !~* 'interest')
       ORDER BY "transDate" DESC
       LIMIT 300
     `,
     companyId,
-    DEBT_ACCOUNT_NAME_PATTERN,
-    CASH_ACCOUNT_NAME_PATTERN,
-    NON_DEBT_LOAN_ACCOUNT_PATTERN
-  );
+    mappedDebtAccountIds
+  )
+    : [];
 
   const interestRows = detailRows.filter((row) => {
     const haystack = `${row.accountId || ''} ${row.accountName || ''} ${row.ref || ''} ${row.description || ''}`.toLowerCase();
@@ -618,6 +737,61 @@ async function loadLoanActivity(companyId: string) {
     return acc;
   }, {});
 
+  const baseBalanceByAccount = new Map<string, number>();
+  const baseSignedBalanceByAccount = new Map<string, number>();
+  principalRows.forEach((row) => {
+    const accountId = String(row.accountId || '').trim();
+    const rawInforActivity = rawInforActivityByAccount.get(accountId) || null;
+    const rawTxCount = Number(rawInforActivity?.transactionCount || 0);
+    const glTxCount = Number(row.transactionCount || 0);
+    const rawLast = rawInforActivity?.lastDate ? new Date(rawInforActivity.lastDate).getTime() : 0;
+    const glLast = row.lastDate ? new Date(row.lastDate).getTime() : 0;
+    const targetField = (accountMetadata.get(accountId)?.targetField || '').toLowerCase();
+    const useRawActivity =
+      rawInforActivity &&
+      rawTxCount > glTxCount &&
+      (targetField !== 'loc' || rawLast >= glLast);
+    const principalActivityTotal = useRawActivity
+      ? Number(rawInforActivity.activityTotal || 0)
+      : Number(row.activityTotal || 0);
+    baseSignedBalanceByAccount.set(accountId, principalActivityTotal);
+    baseBalanceByAccount.set(accountId, Math.abs(principalActivityTotal));
+  });
+
+  const locAccountIds = principalRows
+    .map((row) => String(row.accountId || '').trim())
+    .filter((accountId) => (accountMetadata.get(accountId)?.targetField || '').toLowerCase() === 'loc');
+  const ltdAccountIds = principalRows
+    .map((row) => String(row.accountId || '').trim())
+    .filter((accountId) => (accountMetadata.get(accountId)?.targetField || '').toLowerCase() === 'ltd');
+  const latestLocBalance = Math.abs(Number(latestDailySnapshot?.loc || 0));
+  const latestLtdBalance = Math.abs(Number(latestDailySnapshot?.ltd || 0));
+  const latestSnapshotDate = latestDailySnapshot?.snapshotDate || null;
+  const activeLocAccountIds = new Set<string>();
+  const activeLtdAccountIds = new Set<string>();
+  if (latestLocBalance > 0) {
+    locAccountIds.forEach((accountId) => {
+      const balance = Math.abs(Number(baseSignedBalanceByAccount.get(accountId) || 0));
+      const tolerance = Math.max(1, latestLocBalance * 0.0025);
+      if (Math.abs(balance - latestLocBalance) <= tolerance) {
+        activeLocAccountIds.add(accountId);
+      }
+    });
+  }
+  if (latestLtdBalance > 0) {
+    const ltdGlTotal = ltdAccountIds.reduce((sum, accountId) => {
+      const row = principalRows.find((item) => String(item.accountId || '').trim() === accountId);
+      return sum + Math.abs(Number(row?.activityTotal || 0));
+    }, 0);
+    const tolerance = Math.max(1, latestLtdBalance * 0.0025);
+    if (Math.abs(ltdGlTotal - latestLtdBalance) <= tolerance) {
+      ltdAccountIds.forEach((accountId) => {
+        const row = principalRows.find((item) => String(item.accountId || '').trim() === accountId);
+        if (Math.abs(Number(row?.activityTotal || 0)) > 0) activeLtdAccountIds.add(accountId);
+      });
+    }
+  }
+
   return principalRows.map((row) => {
     const accountId = String(row.accountId || '').trim();
     const rawInforActivity = rawInforActivityByAccount.get(accountId) || null;
@@ -635,12 +809,48 @@ async function loadLoanActivity(companyId: string) {
       linkedInterest.reduce((sum, item) => sum + Math.abs(Number(item.signedAmount || 0)), 0) +
       rawInforInterest.reduce((sum, item) => sum + Math.abs(Number(item.signedAmount || 0)), 0);
 
-    const useRawActivity =
-      rawInforActivity && Number(rawInforActivity.transactionCount || 0) > Number(row.transactionCount || 0);
+    const rawTxCount = Number(rawInforActivity?.transactionCount || 0);
+    const glTxCount = Number(row.transactionCount || 0);
+    const rawLast = rawInforActivity?.lastDate ? new Date(rawInforActivity.lastDate).getTime() : 0;
+    const glLast = row.lastDate ? new Date(row.lastDate).getTime() : 0;
+    const targetField = (accountMetadata.get(accountId)?.targetField || '').toLowerCase();
+    let useRawActivity =
+      rawInforActivity &&
+      rawTxCount > glTxCount &&
+      (targetField !== 'loc' || rawLast >= glLast);
+    if ((targetField === 'loc' && activeLocAccountIds.has(accountId)) || (targetField === 'ltd' && activeLtdAccountIds.has(accountId))) {
+      useRawActivity = false;
+    }
     const principalActivityTotal = useRawActivity
       ? Number(rawInforActivity.activityTotal || 0)
       : Number(row.activityTotal || 0);
-    const derivedCurrentBalance = principalActivityTotal === 0 ? null : Math.abs(principalActivityTotal);
+    const baseDerivedBalance = Math.abs(principalActivityTotal);
+    let derivedCurrentBalance = null as number | null;
+    let derivedCurrentBalanceSource = useRawActivity ? 'Infor ledger activity' : 'GLTransactionFact cumulative activity';
+    let derivedCurrentBalanceAsOf = null as Date | null;
+    let instrumentStatus: 'active' | 'inactive' | 'unknown' = 'unknown';
+    let statusReason: string | null = 'Current balance not shown until it reconciles to a current balance-sheet source.';
+    if (targetField === 'loc' && latestLocBalance > 0) {
+      if (activeLocAccountIds.has(accountId)) {
+        derivedCurrentBalance = latestLocBalance;
+        derivedCurrentBalanceSource = 'GL reconciles to Daily Financials LOC balance';
+        derivedCurrentBalanceAsOf = latestSnapshotDate;
+        instrumentStatus = 'active';
+        statusReason = null;
+      } else {
+        derivedCurrentBalance = 0;
+        derivedCurrentBalanceSource = 'Inactive LOC; not in latest Daily Financials LOC balance';
+        derivedCurrentBalanceAsOf = latestSnapshotDate;
+        instrumentStatus = 'inactive';
+        statusReason = 'Mapped as LOC, but this account does not reconcile to the latest Daily Financials LOC balance.';
+      }
+    } else if (targetField === 'ltd' && activeLtdAccountIds.has(accountId)) {
+      derivedCurrentBalance = Math.abs(Number(row.activityTotal || 0));
+      derivedCurrentBalanceSource = 'GL reconciles to Daily Financials LTD balance';
+      derivedCurrentBalanceAsOf = latestSnapshotDate;
+      instrumentStatus = 'active';
+      statusReason = null;
+    }
 
     return {
       instrumentKey: String(row.instrumentKey),
@@ -654,8 +864,11 @@ async function loadLoanActivity(companyId: string) {
       debits: Number(row.debits || 0),
       credits: Number(row.credits || 0),
       estimatedInterestPaid: interestTotal,
+      instrumentStatus,
+      statusReason,
       derivedCurrentBalance,
-      derivedCurrentBalanceSource: useRawActivity ? 'Infor ledger activity' : 'GLTransactionFact cumulative activity',
+      derivedCurrentBalanceSource,
+      derivedCurrentBalanceAsOf,
       monthlyActivity: monthlyByInstrument[String(row.instrumentKey)] || [],
       recentActivity: [
         ...(useRawActivity ? rawInforActivity.recentActivity : detailByInstrument[String(row.instrumentKey)] || []),
@@ -663,6 +876,43 @@ async function loadLoanActivity(companyId: string) {
       ].sort((a, b) => new Date(b?.transDate || 0).getTime() - new Date(a?.transDate || 0).getTime()).slice(0, 30),
     };
   });
+}
+
+async function buildLoanActivityPayload(companyId: string) {
+  const [terms, instruments] = await Promise.all([
+    loadLoanTerms(companyId),
+    loadLoanActivity(companyId),
+  ]);
+  const termsByKey = new Map(terms.map((term) => [String(term.instrumentKey), term]));
+  const merged = instruments.map((instrument) => ({
+    ...instrument,
+    terms: termsByKey.get(instrument.instrumentKey) || null,
+  }));
+  const configuredOnly = terms
+    .filter((term) => !merged.some((instrument) => instrument.instrumentKey === term.instrumentKey))
+    .map((term) => ({
+      instrumentKey: term.instrumentKey,
+      accountId: '',
+      displayName: term.displayName || term.instrumentKey,
+      source: 'manual',
+      transactionCount: 0,
+      firstDate: null,
+      lastDate: null,
+      activityTotal: 0,
+      debits: 0,
+      credits: 0,
+      estimatedInterestPaid: 0,
+      monthlyActivity: [],
+      recentActivity: [],
+      terms: term,
+    }));
+
+  return {
+    companyId,
+    cacheVersion: LOAN_ACTIVITY_CACHE_VERSION,
+    instruments: [...merged, ...configuredOnly],
+    generatedAt: new Date().toISOString(),
+  };
 }
 
 export async function GET(request: NextRequest) {
@@ -675,38 +925,22 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Forbidden: Access to this company denied' }, { status: 403 });
     }
 
-    const [terms, instruments] = await Promise.all([
-      loadLoanTerms(companyId),
-      loadLoanActivity(companyId),
-    ]);
-    const termsByKey = new Map(terms.map((term) => [String(term.instrumentKey), term]));
-    const merged = instruments.map((instrument) => ({
-      ...instrument,
-      terms: termsByKey.get(instrument.instrumentKey) || null,
-    }));
-    const configuredOnly = terms
-      .filter((term) => !merged.some((instrument) => instrument.instrumentKey === term.instrumentKey))
-      .map((term) => ({
-        instrumentKey: term.instrumentKey,
-        accountId: '',
-        displayName: term.displayName || term.instrumentKey,
-        source: 'manual',
-        transactionCount: 0,
-        firstDate: null,
-        lastDate: null,
-        activityTotal: 0,
-        debits: 0,
-        credits: 0,
-        estimatedInterestPaid: 0,
-        monthlyActivity: [],
-        recentActivity: [],
-        terms: term,
-      }));
+    const force = ['1', 'true', 'yes'].includes(String(request.nextUrl.searchParams.get('force') || '').toLowerCase());
+    if (!force) {
+      const cached = await readLoanActivityCache(companyId);
+      if (cached) {
+        return NextResponse.json({
+          ...cached.payload,
+          cache: { hit: true, generatedAt: cached.generatedAt },
+        });
+      }
+    }
 
+    const payload = await buildLoanActivityPayload(companyId);
+    await writeLoanActivityCache(companyId, payload);
     return NextResponse.json({
-      companyId,
-      instruments: [...merged, ...configuredOnly],
-      generatedAt: new Date().toISOString(),
+      ...payload,
+      cache: { hit: false, generatedAt: payload.generatedAt },
     });
   } catch (error: any) {
     console.error('Operations loans GET error:', error);
@@ -742,6 +976,7 @@ export async function POST(request: NextRequest) {
     const loanType = cleanText(input.loanType, 100);
     const lender = cleanText(input.lender, 160);
     const originalBalance = toNumber(input.originalBalance);
+    const loanOriginationDate = normalizeDate(input.loanOriginationDate);
     const currentBalance = toNumber(input.currentBalance);
     const interestRatePct = toNumber(input.interestRatePct);
     const maturityDate = normalizeDate(input.maturityDate);
@@ -758,6 +993,7 @@ export async function POST(request: NextRequest) {
           "loanType",
           "lender",
           "originalBalance",
+          "loanOriginationDate",
           "currentBalance",
           "interestRatePct",
           "maturityDate",
@@ -766,13 +1002,14 @@ export async function POST(request: NextRequest) {
           "notes",
           "updatedAt"
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::date, $10, $11, $12, NOW())
+        VALUES ($1, $2, $3, $4, $5, $6, $7::date, $8, $9, $10::date, $11, $12, $13, NOW())
         ON CONFLICT ("companyId", "instrumentKey")
         DO UPDATE SET
           "displayName" = EXCLUDED."displayName",
           "loanType" = EXCLUDED."loanType",
           "lender" = EXCLUDED."lender",
           "originalBalance" = EXCLUDED."originalBalance",
+          "loanOriginationDate" = EXCLUDED."loanOriginationDate",
           "currentBalance" = EXCLUDED."currentBalance",
           "interestRatePct" = EXCLUDED."interestRatePct",
           "maturityDate" = EXCLUDED."maturityDate",
@@ -788,6 +1025,7 @@ export async function POST(request: NextRequest) {
       loanType,
       lender,
       originalBalance,
+      loanOriginationDate,
       currentBalance,
       interestRatePct,
       maturityDate,
