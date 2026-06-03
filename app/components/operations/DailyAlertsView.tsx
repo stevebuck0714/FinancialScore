@@ -2721,161 +2721,163 @@ export default function DailyAlertsView({ companyId, companyName, onNavigate }: 
             </button>
           </div>
 
-          <div style={{ marginTop: '16px', display: 'grid', gridTemplateColumns: 'repeat(2, minmax(320px, 1fr))', gap: '12px' }}>
-            {attentionAlerts.length === 0 && monitoringAlerts.length === 0 && (
-              <div style={{ border: '1px solid #e2e8f0', borderRadius: '10px', padding: '14px', background: 'white', color: '#475569', gridColumn: '1 / -1' }}>
-                No critical day-over-day deteriorations or unresolved critical findings right now.
-              </div>
-            )}
-            {attentionAlerts.map((alert) => (
-              <div key={alert.id} style={{ border: '1px solid #fecaca', borderRadius: '10px', padding: '12px', background: '#fff7f7' }}>
-                <div style={{ display: 'grid', gap: '8px' }}>
-                  <div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '10px', minWidth: 0 }}>
-                      <div style={{ fontSize: '17px', fontWeight: 700, color: '#7f1d1d', minWidth: 0, overflowWrap: 'anywhere' }}>{alert.title}</div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
-                        <span
-                          style={{
-                            fontSize: '11px',
-                            fontWeight: 700,
-                            borderRadius: '999px',
-                            padding: '3px 8px',
-                            background: statusColor(alert.status).bg,
-                            color: statusColor(alert.status).fg,
-                            border: `1px solid ${statusColor(alert.status).border}`,
-                          }}
-                        >
-                          {(alert.status || 'new').toUpperCase()}
-                        </span>
-                        <button
-                          onClick={() => onNavigate(alert.drillView)}
-                          style={{ fontSize: '13px', fontWeight: 700, color: '#1f70c1', background: 'transparent', border: 'none', cursor: 'pointer', whiteSpace: 'nowrap' }}
-                        >
-                          Open
-                        </button>
+          {!showPolicySettings && (
+            <div style={{ marginTop: '16px', display: 'grid', gridTemplateColumns: 'repeat(2, minmax(320px, 1fr))', gap: '12px' }}>
+              {attentionAlerts.length === 0 && monitoringAlerts.length === 0 && (
+                <div style={{ border: '1px solid #e2e8f0', borderRadius: '10px', padding: '14px', background: 'white', color: '#475569', gridColumn: '1 / -1' }}>
+                  No critical day-over-day deteriorations or unresolved critical findings right now.
+                </div>
+              )}
+              {attentionAlerts.map((alert) => (
+                <div key={alert.id} style={{ border: '1px solid #fecaca', borderRadius: '10px', padding: '12px', background: '#fff7f7' }}>
+                  <div style={{ display: 'grid', gap: '8px' }}>
+                    <div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '10px', minWidth: 0 }}>
+                        <div style={{ fontSize: '17px', fontWeight: 700, color: '#7f1d1d', minWidth: 0, overflowWrap: 'anywhere' }}>{alert.title}</div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
+                          <span
+                            style={{
+                              fontSize: '11px',
+                              fontWeight: 700,
+                              borderRadius: '999px',
+                              padding: '3px 8px',
+                              background: statusColor(alert.status).bg,
+                              color: statusColor(alert.status).fg,
+                              border: `1px solid ${statusColor(alert.status).border}`,
+                            }}
+                          >
+                            {(alert.status || 'new').toUpperCase()}
+                          </span>
+                          <button
+                            onClick={() => onNavigate(alert.drillView)}
+                            style={{ fontSize: '13px', fontWeight: 700, color: '#1f70c1', background: 'transparent', border: 'none', cursor: 'pointer', whiteSpace: 'nowrap' }}
+                          >
+                            Open
+                          </button>
+                        </div>
+                      </div>
+                      <div style={{ fontSize: '14px', color: '#334155', marginTop: '2px' }}>{alert.detail}</div>
+                      <div style={{ fontSize: '13px', color: '#64748b', marginTop: '4px' }}>
+                        <strong>Owner:</strong> {alert.owner}
+                        {alert.itemLabel ? ` | ${alert.itemLabel}` : ''}
+                        {alert.deltaText ? ` | ${alert.deltaText}` : ''}
+                        {typeof alert.priorityScore === 'number' ? ` | Priority ${alert.priorityScore}` : ''}
+                        {alert.dueAt ? ` | Due ${formatDateTime(alert.dueAt)}` : ''}
+                        {alert.snoozedUntil ? ` | Snoozed until ${formatDateTime(alert.snoozedUntil)}` : ''}
+                      </div>
+                      <div style={{ marginTop: '6px', display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+                        {getPreviewSpecs(alert).map((spec) => (
+                          <button
+                            key={spec.key}
+                            onClick={() => openPreview(alert, spec)}
+                            style={{ fontSize: '12px', fontWeight: 700, color: spec.color, background: 'transparent', border: 'none', padding: 0, cursor: 'pointer', textDecoration: 'underline' }}
+                          >
+                            {spec.label} Trend
+                          </button>
+                        ))}
+                        {renderFocusScoreHelp(alert)}
                       </div>
                     </div>
-                    <div style={{ fontSize: '14px', color: '#334155', marginTop: '2px' }}>{alert.detail}</div>
-                    <div style={{ fontSize: '13px', color: '#64748b', marginTop: '4px' }}>
-                      <strong>Owner:</strong> {alert.owner}
-                      {alert.itemLabel ? ` | ${alert.itemLabel}` : ''}
-                      {alert.deltaText ? ` | ${alert.deltaText}` : ''}
-                      {typeof alert.priorityScore === 'number' ? ` | Priority ${alert.priorityScore}` : ''}
-                      {alert.dueAt ? ` | Due ${formatDateTime(alert.dueAt)}` : ''}
-                      {alert.snoozedUntil ? ` | Snoozed until ${formatDateTime(alert.snoozedUntil)}` : ''}
-                    </div>
-                    <div style={{ marginTop: '6px', display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
-                      {getPreviewSpecs(alert).map((spec) => (
-                        <button
-                          key={spec.key}
-                          onClick={() => openPreview(alert, spec)}
-                          style={{ fontSize: '12px', fontWeight: 700, color: spec.color, background: 'transparent', border: 'none', padding: 0, cursor: 'pointer', textDecoration: 'underline' }}
-                        >
-                          {spec.label} Trend
-                        </button>
-                      ))}
-                      {renderFocusScoreHelp(alert)}
-                    </div>
-                  </div>
-                  <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr)', gap: '8px', alignItems: 'center' }}>
-                    <div style={{ minWidth: 0 }}>
-                      {renderLifecycleActions(alert)}
+                    <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr)', gap: '8px', alignItems: 'center' }}>
+                      <div style={{ minWidth: 0 }}>
+                        {renderLifecycleActions(alert)}
+                      </div>
                     </div>
                   </div>
                 </div>
-              </div>
-            ))}
+              ))}
 
-            {monitoringAlerts.length > 0 && (
-              <div style={{ gridColumn: '1 / -1', marginTop: '4px', fontSize: '13px', fontWeight: 700, color: '#92400e' }}>
-                Monitoring
-              </div>
-            )}
-            {monitoringAlerts.map((alert) => (
-              <div key={alert.id} style={{ border: '1px solid #fde68a', borderRadius: '10px', padding: '12px', background: '#fffbeb' }}>
-                <div style={{ display: 'grid', gap: '8px' }}>
-                  <div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '10px', minWidth: 0 }}>
-                      <div style={{ fontSize: '16px', fontWeight: 700, color: '#92400e', minWidth: 0, overflowWrap: 'anywhere' }}>{alert.title}</div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
-                        <span
-                          style={{
-                            fontSize: '11px',
-                            fontWeight: 700,
-                            borderRadius: '999px',
-                            padding: '3px 8px',
-                            background: statusColor(alert.status).bg,
-                            color: statusColor(alert.status).fg,
-                            border: `1px solid ${statusColor(alert.status).border}`,
-                          }}
-                        >
-                          {(alert.status || 'new').toUpperCase()}
-                        </span>
-                        <button
-                          onClick={() => onNavigate(alert.drillView)}
-                          style={{ fontSize: '13px', fontWeight: 700, color: '#1f70c1', background: 'transparent', border: 'none', cursor: 'pointer', whiteSpace: 'nowrap' }}
-                        >
-                          Open
-                        </button>
+              {monitoringAlerts.length > 0 && (
+                <div style={{ gridColumn: '1 / -1', marginTop: '4px', fontSize: '13px', fontWeight: 700, color: '#92400e' }}>
+                  Monitoring
+                </div>
+              )}
+              {monitoringAlerts.map((alert) => (
+                <div key={alert.id} style={{ border: '1px solid #fde68a', borderRadius: '10px', padding: '12px', background: '#fffbeb' }}>
+                  <div style={{ display: 'grid', gap: '8px' }}>
+                    <div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '10px', minWidth: 0 }}>
+                        <div style={{ fontSize: '16px', fontWeight: 700, color: '#92400e', minWidth: 0, overflowWrap: 'anywhere' }}>{alert.title}</div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
+                          <span
+                            style={{
+                              fontSize: '11px',
+                              fontWeight: 700,
+                              borderRadius: '999px',
+                              padding: '3px 8px',
+                              background: statusColor(alert.status).bg,
+                              color: statusColor(alert.status).fg,
+                              border: `1px solid ${statusColor(alert.status).border}`,
+                            }}
+                          >
+                            {(alert.status || 'new').toUpperCase()}
+                          </span>
+                          <button
+                            onClick={() => onNavigate(alert.drillView)}
+                            style={{ fontSize: '13px', fontWeight: 700, color: '#1f70c1', background: 'transparent', border: 'none', cursor: 'pointer', whiteSpace: 'nowrap' }}
+                          >
+                            Open
+                          </button>
+                        </div>
+                      </div>
+                      <div style={{ fontSize: '14px', color: '#334155', marginTop: '2px' }}>{alert.detail}</div>
+                      <div style={{ fontSize: '13px', color: '#64748b', marginTop: '4px' }}>
+                        <strong>Owner:</strong> {alert.owner}
+                        {alert.itemLabel ? ` | ${alert.itemLabel}` : ''}
+                        {alert.deltaText ? ` | ${alert.deltaText}` : ''}
+                        {typeof alert.priorityScore === 'number' ? ` | Priority ${alert.priorityScore}` : ''}
+                        {alert.dueAt ? ` | Due ${formatDateTime(alert.dueAt)}` : ''}
+                        {alert.snoozedUntil ? ` | Snoozed until ${formatDateTime(alert.snoozedUntil)}` : ''}
+                      </div>
+                      <div style={{ marginTop: '6px', display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+                        {getPreviewSpecs(alert).map((spec) => (
+                          <button
+                            key={spec.key}
+                            onClick={() => openPreview(alert, spec)}
+                            style={{ fontSize: '12px', fontWeight: 700, color: spec.color, background: 'transparent', border: 'none', padding: 0, cursor: 'pointer', textDecoration: 'underline' }}
+                          >
+                            {spec.label} Trend
+                          </button>
+                        ))}
+                        {renderFocusScoreHelp(alert)}
                       </div>
                     </div>
-                    <div style={{ fontSize: '14px', color: '#334155', marginTop: '2px' }}>{alert.detail}</div>
-                    <div style={{ fontSize: '13px', color: '#64748b', marginTop: '4px' }}>
-                      <strong>Owner:</strong> {alert.owner}
-                      {alert.itemLabel ? ` | ${alert.itemLabel}` : ''}
-                      {alert.deltaText ? ` | ${alert.deltaText}` : ''}
-                      {typeof alert.priorityScore === 'number' ? ` | Priority ${alert.priorityScore}` : ''}
-                      {alert.dueAt ? ` | Due ${formatDateTime(alert.dueAt)}` : ''}
-                      {alert.snoozedUntil ? ` | Snoozed until ${formatDateTime(alert.snoozedUntil)}` : ''}
-                    </div>
-                    <div style={{ marginTop: '6px', display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
-                      {getPreviewSpecs(alert).map((spec) => (
-                        <button
-                          key={spec.key}
-                          onClick={() => openPreview(alert, spec)}
-                          style={{ fontSize: '12px', fontWeight: 700, color: spec.color, background: 'transparent', border: 'none', padding: 0, cursor: 'pointer', textDecoration: 'underline' }}
-                        >
-                          {spec.label} Trend
-                        </button>
-                      ))}
-                      {renderFocusScoreHelp(alert)}
-                    </div>
-                  </div>
-                  <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr)', gap: '8px', alignItems: 'center' }}>
-                    <div style={{ minWidth: 0 }}>
-                      {renderLifecycleActions(alert)}
+                    <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr)', gap: '8px', alignItems: 'center' }}>
+                      <div style={{ minWidth: 0 }}>
+                        {renderLifecycleActions(alert)}
+                      </div>
                     </div>
                   </div>
                 </div>
-              </div>
-            ))}
-            {resolvedAlerts.length > 0 && (
-              <>
-                <div style={{ gridColumn: '1 / -1', marginTop: '6px', fontSize: '13px', fontWeight: 700, color: '#166534' }}>
-                  Resolved
-                </div>
-                {resolvedAlerts.slice(0, 10).map((alert) => (
-                  <div key={alert.id} style={{ border: '1px solid #bbf7d0', borderRadius: '10px', padding: '12px', background: '#f0fdf4' }}>
-                    <div style={{ display: 'grid', gap: '8px' }}>
-                      <div>
-                        <div style={{ fontSize: '15px', fontWeight: 700, color: '#166534' }}>{alert.title}</div>
-                        <div style={{ fontSize: '13px', color: '#334155', marginTop: '2px' }}>{alert.detail}</div>
-                        <div style={{ fontSize: '12px', color: '#64748b', marginTop: '4px' }}>
-                          <strong>Owner:</strong> {alert.owner}
-                          {alert.modifiedAt ? ` | Updated ${formatDateTime(alert.modifiedAt)}` : ''}
+              ))}
+              {resolvedAlerts.length > 0 && (
+                <>
+                  <div style={{ gridColumn: '1 / -1', marginTop: '6px', fontSize: '13px', fontWeight: 700, color: '#166534' }}>
+                    Resolved
+                  </div>
+                  {resolvedAlerts.slice(0, 10).map((alert) => (
+                    <div key={alert.id} style={{ border: '1px solid #bbf7d0', borderRadius: '10px', padding: '12px', background: '#f0fdf4' }}>
+                      <div style={{ display: 'grid', gap: '8px' }}>
+                        <div>
+                          <div style={{ fontSize: '15px', fontWeight: 700, color: '#166534' }}>{alert.title}</div>
+                          <div style={{ fontSize: '13px', color: '#334155', marginTop: '2px' }}>{alert.detail}</div>
+                          <div style={{ fontSize: '12px', color: '#64748b', marginTop: '4px' }}>
+                            <strong>Owner:</strong> {alert.owner}
+                            {alert.modifiedAt ? ` | Updated ${formatDateTime(alert.modifiedAt)}` : ''}
+                          </div>
                         </div>
-                      </div>
-                      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr)', gap: '8px', alignItems: 'center' }}>
-                        <div style={{ minWidth: 0 }}>
-                          {renderLifecycleActions(alert)}
+                        <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr)', gap: '8px', alignItems: 'center' }}>
+                          <div style={{ minWidth: 0 }}>
+                            {renderLifecycleActions(alert)}
+                          </div>
                         </div>
                       </div>
                     </div>
-                  </div>
-                ))}
-              </>
-            )}
-          </div>
+                  ))}
+                </>
+              )}
+            </div>
+          )}
         </>
       )}
 
