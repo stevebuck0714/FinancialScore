@@ -8,6 +8,7 @@ export type OpsDataType =
   | 'hiring'
   | 'inventory'
   | 'cash'
+  | 'loans'
   | 'daily-financials'
   | 'revenue-billables'
   | 'unit-economics'
@@ -34,6 +35,8 @@ const MODULE_DEFINITIONS: ModuleDefinition[] = [
   { key: 'daily-financials', label: 'Daily Financials', dataType: 'daily-financials' },
   { key: 'cash', label: 'Cash', dataType: 'cash' },
   { key: 'cash_liquidity', label: 'Cash & Liquidity', dataType: 'cash' },
+  { key: 'loans', label: 'Loans', dataType: 'loans' },
+  { key: 'debt_loans', label: 'Loans', dataType: 'loans' },
   { key: 'ar', label: 'AR', dataType: 'ar-aging' },
   { key: 'billing_ar', label: 'Billing & AR', dataType: 'ar-aging' },
   { key: 'ar_receipts', label: 'AR / Receipts', dataType: 'ar-aging' },
@@ -128,6 +131,11 @@ const MODULE_KEY_ALIASES: Record<string, string> = MODULE_DEFINITIONS.reduce((ac
   return acc;
 }, {} as Record<string, string>);
 
+const LOANS_DEFAULT_ENABLED_COMPANY_IDS = new Set([
+  // Atlantic Precision Resource: first live implementation for GL-derived loan tracking.
+  'cmmcp278j0002kz0439rlixdj',
+]);
+
 export function resolveModuleKey(moduleKey: string): string {
   const raw = String(moduleKey || '').trim();
   if (!raw) return '';
@@ -148,4 +156,8 @@ export function getModuleLabel(moduleKey: string): string {
   const key = resolveModuleKey(moduleKey);
   if (!key) return '';
   return MODULE_MAP[key]?.label || key.replace(/_/g, ' ');
+}
+
+export function isLoansDefaultEnabledForCompany(companyId: string | null | undefined): boolean {
+  return LOANS_DEFAULT_ENABLED_COMPANY_IDS.has(String(companyId || '').trim());
 }

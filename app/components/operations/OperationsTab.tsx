@@ -25,9 +25,10 @@ import {
 import OpsDashboard from './OpsDashboard';
 import FinancialForecastTab from '../FinancialForecastTab';
 import WorkingCapitalForecastTab from './WorkingCapitalForecastTab';
+import LoansTab from './LoansTab';
 import { getSdeSectorBenchmarks } from '@/lib/sde-sector-benchmarks';
 import { getSectorMockProfile, getTopLineBucketsForSector } from '@/lib/operations/sector-mock-data';
-import { getModuleLabel, mapModuleToDataType, resolveModuleKey, type OpsDataType } from '@/lib/operations/module-registry';
+import { getModuleLabel, isLoansDefaultEnabledForCompany, mapModuleToDataType, resolveModuleKey, type OpsDataType } from '@/lib/operations/module-registry';
 import { buildWeeklyProductMarginModel } from '@/lib/operations/product-margin-weekly';
 import { getFieldDisplayName } from '@/lib/constants/field-display-names';
 import { formatDateInputLabel, formatDateSafeUtc, parseDateSafeUtc, toLocalInputDate } from '@/app/utils/date';
@@ -907,6 +908,7 @@ export default function OperationsTab({
     const normalized = raw === 'overview' ? 'dashboard' : raw;
     if (!normalized) return true;
     const value = operationalHubSections[`tab:${normalized}`];
+    if (normalized === 'loans' && value === undefined) return isLoansDefaultEnabledForCompany(selectedCompanyId);
     return value === undefined ? true : value !== false;
   };
   const renderOperationalClientSelector = () => {
@@ -1012,6 +1014,7 @@ export default function OperationsTab({
     new Set([
       ...(resolvedModules.length > 0 ? resolvedModules : ['customers', 'ar', 'ap', 'products', 'inventory', 'cash']),
       'daily_financials',
+      'loans',
       'working_capital_forecast',
     ])
   ).filter((module) => isTabModuleEnabled(module) && !['working_capital_forecast', 'working-capital-forecast'].includes(module));
@@ -2582,6 +2585,7 @@ export default function OperationsTab({
       activeTab === 'overview' ||
       activeTab === 'dashboard' ||
       activeTab === 'forecast' ||
+      activeTab === 'loans' ||
       mapModuleToDataType(activeTab) === 'hiring' ||
       activeTab === 'working_capital_forecast' ||
       activeTab === 'working-capital-forecast'
@@ -20693,6 +20697,15 @@ Strategies to Improve the CCC
     }
     if (moduleKey === 'working_capital_forecast' || moduleKey === 'working-capital-forecast') {
       return <WorkingCapitalForecastTab selectedCompanyId={selectedCompanyId} />;
+    }
+    if (moduleKey === 'loans' || mapModuleToDataType(moduleKey) === 'loans') {
+      return (
+        <LoansTab
+          selectedCompanyId={selectedCompanyId}
+          companyName={companyName}
+          operationalHubSections={operationalHubSections}
+        />
+      );
     }
     const dataType = mapModuleToDataType(moduleKey);
     if (dataType === 'customers') return renderCustomers();

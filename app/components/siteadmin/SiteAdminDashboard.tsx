@@ -8,7 +8,7 @@ import { formatPhoneNumber } from '@/app/utils/phone';
 import PasswordInput from '@/app/components/common/PasswordInput';
 import BillingDashboard from '@/app/components/billing/BillingDashboard';
 import { getTopLineBucketsForSector } from '@/lib/operations/sector-mock-data';
-import { getModuleLabel, mapModuleToDataType } from '@/lib/operations/module-registry';
+import { getModuleLabel, isLoansDefaultEnabledForCompany, mapModuleToDataType } from '@/lib/operations/module-registry';
 import AccountingSystemPanel from '@/app/components/accounting-systems/AccountingSystemPanel';
 import { isPluginAccountingSystem } from '@/lib/accounting-systems/registry';
 import { companiesApi, consultantsApi, ApiError } from '@/lib/api-client';
@@ -38,6 +38,10 @@ const OPERATIONAL_HUB_SECTION_OPTIONS: Array<{ key: string; label: string; group
   { key: 'inventoryRetailProductAging', label: 'Retail Product Aging', group: 'Inventory' },
   { key: 'cashBankAccounts', label: 'Bank Accounts Table', group: 'Cash' },
   { key: 'cashDistributionByAccount', label: 'Distribution by Account', group: 'Cash' },
+  { key: 'loansSummaryCards', label: 'Summary KPI Cards', group: 'Loans' },
+  { key: 'loansInstrumentTable', label: 'Loan Instruments Table', group: 'Loans' },
+  { key: 'loansTermsEditor', label: 'Loan Terms Editor', group: 'Loans' },
+  { key: 'loansRecentGlActivity', label: 'Recent GL Activity Table', group: 'Loans' },
   { key: 'dailySummaryCards', label: 'Summary KPI Cards', group: 'Daily Financials' },
   { key: 'dailyTrendChart', label: 'Daily Trend Chart', group: 'Daily Financials' },
   { key: 'dailyIncomeStatement', label: 'Income Statement View', group: 'Daily Financials' },
@@ -191,6 +195,7 @@ const OPERATIONAL_HUB_SECTIONS_BY_DATATYPE_GROUP: Record<string, string> = {
   hiring: 'Hiring',
   inventory: 'Inventory',
   cash: 'Cash',
+  loans: 'Loans',
   'daily-financials': 'Daily Financials',
   'revenue-billables': 'Revenue & Billables',
   'unit-economics': 'Unit Economics',
@@ -963,7 +968,7 @@ export default function SiteAdminDashboard(props: any) {
   const getOperationalHubTabCategoryOptions = (company: any): Array<{ key: string; label: string; group: string }> => {
     const companySectorCategory = String(company?.industrySectorCategory || '').trim();
     const sectorModules = getTopLineBucketsForSector(company?.industrySectorCategory || null).map((bucket) => String(bucket.key || '').trim());
-    const moduleSet = Array.from(new Set(['dashboard', 'forecast', ...sectorModules, 'cash', 'daily_financials'].filter(Boolean)));
+    const moduleSet = Array.from(new Set(['dashboard', 'forecast', ...sectorModules, 'cash', 'daily_financials', 'loans'].filter(Boolean)));
     return moduleSet.map((moduleKey) => ({
       key: `tab:${moduleKey}`,
       label:
@@ -987,7 +992,9 @@ export default function SiteAdminDashboard(props: any) {
     tabOptions.forEach((option) => {
       const sectionKey = option.key;
       const explicit = draft ? draft[sectionKey] : undefined;
-      const enabled = explicit === undefined ? true : explicit !== false;
+      const enabled = explicit === undefined
+        ? sectionKey !== 'tab:loans' || isLoansDefaultEnabledForCompany(company?.id)
+        : explicit !== false;
       if (enabled && sectionKey.startsWith('tab:')) {
         enabledTabKeys.add(sectionKey.slice(4));
       }
@@ -1000,7 +1007,9 @@ export default function SiteAdminDashboard(props: any) {
     return tabOptions
       .filter((option) => {
         const explicit = draft ? draft[option.key] : undefined;
-        return explicit === undefined ? true : explicit !== false;
+        return explicit === undefined
+          ? option.key !== 'tab:loans' || isLoansDefaultEnabledForCompany(company?.id)
+          : explicit !== false;
       })
       .map((option) => option.label);
   };
@@ -1016,7 +1025,9 @@ export default function SiteAdminDashboard(props: any) {
     const tabOptions = getOperationalHubTabCategoryOptions(company);
     const selectedTabOptions = tabOptions.filter((option) => {
       const explicit = draft ? draft[option.key] : undefined;
-      return explicit === undefined ? true : explicit !== false;
+      return explicit === undefined
+        ? option.key !== 'tab:loans' || isLoansDefaultEnabledForCompany(company?.id)
+        : explicit !== false;
     });
     const sectionOptionsBySelectedTab = selectedTabOptions.flatMap((option) => {
       const moduleKey = option.key.startsWith('tab:') ? option.key.slice(4) : option.key;
@@ -1067,7 +1078,9 @@ export default function SiteAdminDashboard(props: any) {
     const options = getOperationalHubSectionOptionsForCompany(company, sections);
     return options.reduce<Record<string, boolean>>((acc, option) => {
       const explicit = sections[option.key];
-      acc[option.key] = explicit === undefined ? true : explicit !== false;
+      acc[option.key] = explicit === undefined
+        ? option.key !== 'tab:loans' || isLoansDefaultEnabledForCompany(company?.id)
+        : explicit !== false;
       return acc;
     }, {});
   };
