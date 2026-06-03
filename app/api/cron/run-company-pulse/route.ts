@@ -11,6 +11,8 @@ type PulseCronResult = {
   skipped?: boolean;
   reason?: string;
   alerts?: number;
+  executiveBriefingWarmed?: boolean;
+  executiveBriefingError?: string;
   error?: string;
 };
 
@@ -73,6 +75,40 @@ async function resolveCompanyIds(request: NextRequest): Promise<string[]> {
   return rows.map((row) => row.companyId);
 }
 
+async function warmDailyExecutiveBriefing(request: NextRequest, companyId: string): Promise<{
+  ok: boolean;
+  error?: string;
+}> {
+  const cronSecret = String(process.env.CRON_SECRET || '').trim();
+  if (!cronSecret) {
+    return { ok: false, error: 'CRON_SECRET is required to warm Daily Executive Briefing cache.' };
+  }
+
+  const url = new URL('/api/pulse/exec-briefing', request.url);
+  url.searchParams.set('companyId', companyId);
+  url.searchParams.set('force', 'true');
+
+  const vercelBypass = String(process.env.VERCEL_AUTOMATION_BYPASS_SECRET || '').trim();
+  const response = await fetch(url, {
+    headers: {
+      authorization: `Bearer ${cronSecret}`,
+      ...(vercelBypass ? { 'x-vercel-protection-bypass': vercelBypass } : {}),
+    },
+    cache: 'no-store',
+  });
+
+  if (response.ok) return { ok: true };
+
+  let details = response.statusText || `HTTP ${response.status}`;
+  try {
+    const payload = await response.json();
+    details = String(payload?.error || payload?.details || details);
+  } catch {
+    // Keep the status text when the response is not JSON.
+  }
+  return { ok: false, error: details.slice(0, 500) };
+}
+
 export async function GET(request: NextRequest) {
   const startedAt = Date.now();
   if (!isAuthorized(request)) {
@@ -99,10 +135,13 @@ export async function GET(request: NextRequest) {
         const generated = await generateCompanyPulse(companyId, {
           actorEmail: 'company-pulse-cron',
         });
+        const briefingWarmup = await warmDailyExecutiveBriefing(request, companyId);
         results.push({
           companyId,
-          ok: true,
+          ok: briefingWarmup.ok,
           alerts: generated.alerts.filter((alert) => alert.status !== 'resolved' && alert.isActive !== false).length,
+          executiveBriefingWarmed: briefingWarmup.ok,
+          executiveBriefingError: briefingWarmup.error,
         });
       } catch (error: any) {
         results.push({

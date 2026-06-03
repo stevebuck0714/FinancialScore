@@ -41,6 +41,12 @@ const PRIVATE_DAILY_CACHE_HEADERS = {
 
 let pulseCacheTablesPromise: Promise<void> | null = null;
 
+function isCronAuthorized(request: NextRequest): boolean {
+  const cronSecret = String(process.env.CRON_SECRET || '').trim();
+  const authHeader = String(request.headers.get('authorization') || '').trim();
+  return Boolean(cronSecret && authHeader === `Bearer ${cronSecret}`);
+}
+
 function asNumber(value: unknown): number {
   const n = Number(value ?? 0);
   return Number.isFinite(n) ? n : 0;
@@ -644,16 +650,21 @@ async function writeDailySummary(companyId: string, summaryDate: string, dataVer
 
 export async function GET(request: NextRequest) {
   try {
-    await requireAuth();
+    const authorizedByCron = isCronAuthorized(request);
+    if (!authorizedByCron) {
+      await requireAuth();
+    }
 
     const companyId = request.nextUrl.searchParams.get('companyId') || '';
     if (!companyId) return NextResponse.json({ error: 'Company ID is required' }, { status: 400 });
     const forceRefresh = request.nextUrl.searchParams.get('force') === 'true';
 
-    const hasAccess = await validateCompanyAccess(companyId);
-    if (!hasAccess) {
-      await auditForbiddenAccess('Company', companyId, 'PULSE_EXEC_BRIEFING_READ');
-      return NextResponse.json({ error: 'Forbidden: Access to this company denied' }, { status: 403 });
+    if (!authorizedByCron) {
+      const hasAccess = await validateCompanyAccess(companyId);
+      if (!hasAccess) {
+        await auditForbiddenAccess('Company', companyId, 'PULSE_EXEC_BRIEFING_READ');
+        return NextResponse.json({ error: 'Forbidden: Access to this company denied' }, { status: 403 });
+      }
     }
 
     const endDate = new Date();
