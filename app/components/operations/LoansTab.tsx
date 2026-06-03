@@ -54,7 +54,6 @@ type LoanInstrument = {
 
 type LoansTabProps = {
   selectedCompanyId: string;
-  companyName: string;
   operationalHubSections?: Record<string, any>;
 };
 
@@ -141,7 +140,7 @@ function buildTerms(instrument: LoanInstrument): LoanTerms {
   };
 }
 
-export default function LoansTab({ selectedCompanyId, companyName, operationalHubSections }: LoansTabProps) {
+export default function LoansTab({ selectedCompanyId, operationalHubSections }: LoansTabProps) {
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -158,22 +157,6 @@ export default function LoansTab({ selectedCompanyId, companyName, operationalHu
     const value = operationalHubSections?.[sectionKey];
     return value === undefined ? true : value !== false;
   };
-
-  const totals = useMemo(() => {
-    return instruments.reduce(
-      (acc, instrument) => {
-        acc.transactionCount += Number(instrument.transactionCount || 0);
-        acc.netActivity += Number(instrument.activityTotal || 0);
-        acc.debits += Number(instrument.debits || 0);
-        acc.credits += Number(instrument.credits || 0);
-        acc.interest += Number(instrument.estimatedInterestPaid || 0);
-        const currentBalance = Number(instrument.terms?.currentBalance || instrument.derivedCurrentBalance || 0);
-        if (Number.isFinite(currentBalance) && currentBalance !== 0) acc.currentBalance += currentBalance;
-        return acc;
-      },
-      { transactionCount: 0, netActivity: 0, debits: 0, credits: 0, interest: 0, currentBalance: 0 }
-    );
-  }, [instruments]);
 
   const loadLoans = useCallback(async () => {
     if (!selectedCompanyId) return;
@@ -293,13 +276,7 @@ export default function LoansTab({ selectedCompanyId, companyName, operationalHu
 
   return (
     <div style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', gap: '16px', alignItems: 'flex-start' }}>
-        <div>
-          <h2 style={{ margin: 0, fontSize: '24px', color: '#0f172a' }}>Loans</h2>
-          <p style={{ margin: '6px 0 0', color: '#64748b', fontSize: '14px' }}>
-            ERP-derived loan movement from GL activity, paired with user-maintained loan terms for {companyName}.
-          </p>
-        </div>
+      <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
         <button
           type="button"
           onClick={() => void loadLoans()}
@@ -323,21 +300,6 @@ export default function LoansTab({ selectedCompanyId, companyName, operationalHu
           {error}
         </div>
       )}
-
-      {isSectionEnabled('loansSummaryCards') && <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, minmax(0, 1fr))', gap: '12px' }}>
-        {[
-          { label: 'Detected Instruments', value: formatNumber(instruments.length), color: '#0f172a' },
-          { label: 'GL Transactions', value: formatNumber(totals.transactionCount), color: '#1d4ed8' },
-          { label: 'Principal GL Activity', value: formatCurrency(totals.netActivity), color: totals.netActivity < 0 ? '#b91c1c' : '#0f766e' },
-          { label: 'Current Balance', value: formatCurrency(totals.currentBalance), color: '#7c3aed' },
-          { label: 'Matched Interest', value: formatCurrency(totals.interest), color: '#b45309' },
-        ].map((item) => (
-          <div key={item.label} style={{ ...cardStyle, padding: '12px' }}>
-            <div style={labelStyle}>{item.label}</div>
-            <div style={{ fontSize: '20px', fontWeight: 800, color: item.color }}>{item.value}</div>
-          </div>
-        ))}
-      </div>}
 
       {loading && instruments.length === 0 ? (
         <div style={{ ...cardStyle, color: '#64748b' }}>Loading loan activity...</div>

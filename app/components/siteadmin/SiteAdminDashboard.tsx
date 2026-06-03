@@ -38,7 +38,6 @@ const OPERATIONAL_HUB_SECTION_OPTIONS: Array<{ key: string; label: string; group
   { key: 'inventoryRetailProductAging', label: 'Retail Product Aging', group: 'Inventory' },
   { key: 'cashBankAccounts', label: 'Bank Accounts Table', group: 'Cash' },
   { key: 'cashDistributionByAccount', label: 'Distribution by Account', group: 'Cash' },
-  { key: 'loansSummaryCards', label: 'Summary KPI Cards', group: 'Loans' },
   { key: 'loansInstrumentTable', label: 'Loan Instruments Table', group: 'Loans' },
   { key: 'loansTermsEditor', label: 'Loan Terms Editor', group: 'Loans' },
   { key: 'loansRecentGlActivity', label: 'Recent GL Activity Table', group: 'Loans' },
