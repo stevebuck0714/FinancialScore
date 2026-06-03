@@ -151,8 +151,8 @@ const RESOLVED_STATUSES = new Set(['resolved', 'realized', 'closed', 'done', 'co
 const OPERATIONAL_FOCUS_KEY = '__focusWatchlist';
 const AR_TOP_CUSTOMER_MATERIALITY_LIMIT = 5;
 const AP_TOP_VENDOR_MATERIALITY_LIMIT = 5;
-const COMPANY_PULSE_ALERTS_ENABLED = false;
-type PulseTab = 'alerts' | 'briefing' | 'policy';
+const COMPANY_PULSE_ALERTS_ENABLED = true;
+type PulseTab = 'company-pulse' | 'briefing';
 
 type PolicyExplainer = {
   what: string;
@@ -382,7 +382,7 @@ function buildPolicyExplainer(def: (typeof PULSE_POLICY_DEFINITIONS)[number]): P
 }
 
 export default function DailyAlertsView({ companyId, companyName, onNavigate }: DailyAlertsViewProps) {
-  const activeTab: PulseTab = 'briefing';
+  const [activeTab, setActiveTab] = useState<PulseTab>('company-pulse');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [alerts, setAlerts] = useState<AlertItem[]>([]);
@@ -409,6 +409,9 @@ export default function DailyAlertsView({ companyId, companyName, onNavigate }: 
   const [execBriefing, setExecBriefing] = useState<ExecBriefing | null>(null);
   const [execBriefingLoading, setExecBriefingLoading] = useState(false);
   const [execBriefingError, setExecBriefingError] = useState<string | null>(null);
+  const [pulseRefreshing, setPulseRefreshing] = useState(false);
+  const [pulseGeneratedAt, setPulseGeneratedAt] = useState<string | null>(null);
+  const [showPolicySettings, setShowPolicySettings] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -422,6 +425,39 @@ export default function DailyAlertsView({ companyId, companyName, onNavigate }: 
         setPolicyOverrides({});
         setIndustrySectorCategory(null);
         setLoading(false);
+        return;
+      }
+      try {
+        const params = new URLSearchParams({ companyId });
+        const response = await fetchWithTimeout(`/api/pulse/company-pulse?${params}`, undefined, 30000);
+        if (!response.ok) {
+          let message = 'Failed to load Company Pulse';
+          try {
+            const payload = await response.json();
+            if (payload?.error) message = payload.error;
+            if (payload?.details) message += ` (${payload.details})`;
+          } catch {
+            // Keep default message when response is not JSON.
+          }
+          throw new Error(message);
+        }
+        const data = await response.json();
+        if (!cancelled) {
+          const cache = data?.cache || {};
+          setAlerts(dedupeAlertItems(Array.isArray(data?.alerts) ? data.alerts : []));
+          setReadinessItems(Array.isArray(cache?.readinessItems) ? cache.readinessItems : []);
+          setGoalsSnapshot(data?.goalsSnapshot && typeof data.goalsSnapshot === 'object' ? data.goalsSnapshot : {});
+          setPolicyOverrides(data?.policyOverrides && typeof data.policyOverrides === 'object' ? data.policyOverrides : {});
+          setIndustrySectorCategory(data?.industrySectorCategory || null);
+          setPulseGeneratedAt(cache?.generatedAt || null);
+          setLoading(false);
+        }
+        return;
+      } catch (serverError: any) {
+        if (!cancelled) {
+          setError(serverError?.message || 'Failed to load Company Pulse');
+          setLoading(false);
+        }
         return;
       }
       try {
@@ -1905,8 +1941,47 @@ export default function DailyAlertsView({ companyId, companyName, onNavigate }: 
   }, [companyId]);
 
   useEffect(() => {
-    loadExecBriefing();
-  }, [companyId, loadExecBriefing]);
+    if (activeTab === 'briefing') {
+      loadExecBriefing();
+    }
+  }, [activeTab, companyId, loadExecBriefing]);
+
+  const refreshCompanyPulse = async () => {
+    if (!companyId || pulseRefreshing) return;
+    setPulseRefreshing(true);
+    setError(null);
+    try {
+      const response = await fetchWithTimeout('/api/pulse/company-pulse', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ companyId }),
+      }, 60000);
+      if (!response.ok) {
+        let message = 'Failed to refresh Company Pulse';
+        try {
+          const payload = await response.json();
+          if (payload?.error) message = payload.error;
+          if (payload?.details) message += ` (${payload.details})`;
+        } catch {
+          // Keep default message when response is not JSON.
+        }
+        throw new Error(message);
+      }
+      const data = await response.json();
+      const cache = data?.cache || {};
+      setAlerts(dedupeAlertItems(Array.isArray(data?.alerts) ? data.alerts : []));
+      setReadinessItems(Array.isArray(cache?.readinessItems) ? cache.readinessItems : []);
+      setGoalsSnapshot(data?.goalsSnapshot && typeof data.goalsSnapshot === 'object' ? data.goalsSnapshot : {});
+      setPolicyOverrides(data?.policyOverrides && typeof data.policyOverrides === 'object' ? data.policyOverrides : {});
+      setIndustrySectorCategory(data?.industrySectorCategory || null);
+      setPulseGeneratedAt(cache?.generatedAt || null);
+      clearDailyCache('alerts', companyId);
+    } catch (err: any) {
+      setError(err?.message || 'Failed to refresh Company Pulse');
+    } finally {
+      setPulseRefreshing(false);
+    }
+  };
 
   const activeAlerts = useMemo(
     () => alerts.filter((a) => a.status !== 'resolved' && a.isActive !== false),
@@ -2030,6 +2105,7 @@ export default function DailyAlertsView({ companyId, companyName, onNavigate }: 
       setPolicyOverrides(cleanedOverrides);
       clearDailyCache('alerts', companyId);
       setPolicyStatus('Policy settings saved. Company overrides are now active.');
+      await refreshCompanyPulse();
     } catch (err: any) {
       setPolicyStatus(err?.message || 'Failed to save policy settings');
     } finally {
@@ -2555,11 +2631,34 @@ export default function DailyAlertsView({ companyId, companyName, onNavigate }: 
     <div style={{ maxWidth: '1400px', margin: '0 auto', padding: '32px' }}>
       <div style={{ marginTop: '4px', borderBottom: '1px solid #e2e8f0', paddingBottom: '10px' }}>
         <div style={{ fontSize: '17px', fontWeight: 700, color: '#2751d0' }}>
-          Daily Briefing
+          Daily Alerts
+        </div>
+        <div style={{ marginTop: '14px', display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+          {[
+            { id: 'company-pulse' as PulseTab, label: 'Company Pulse' },
+            { id: 'briefing' as PulseTab, label: 'Daily Executive Briefing' },
+          ].map((tab) => (
+            <button
+              key={tab.id}
+              onClick={() => setActiveTab(tab.id)}
+              style={{
+                fontSize: '13px',
+                fontWeight: 800,
+                color: activeTab === tab.id ? '#1d4ed8' : '#475569',
+                background: activeTab === tab.id ? '#eff6ff' : 'white',
+                border: `1px solid ${activeTab === tab.id ? '#bfdbfe' : '#e2e8f0'}`,
+                borderRadius: '999px',
+                padding: '7px 12px',
+                cursor: 'pointer',
+              }}
+            >
+              {tab.label}
+            </button>
+          ))}
         </div>
       </div>
 
-      {COMPANY_PULSE_ALERTS_ENABLED && (
+      {COMPANY_PULSE_ALERTS_ENABLED && activeTab === 'company-pulse' && (
         <>
           <div style={{ marginTop: '12px', display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
             <span style={{ fontSize: '12px', color: '#7f1d1d', fontWeight: 700, background: '#fee2e2', border: '1px solid #fecaca', borderRadius: '999px', padding: '4px 10px' }}>
@@ -2584,6 +2683,42 @@ export default function DailyAlertsView({ companyId, companyName, onNavigate }: 
                 Data readiness: {readinessCounts.ready} ready / {readinessCounts.partial} partial / {readinessCounts.missing} missing
               </span>
             )}
+            {pulseGeneratedAt && (
+              <span style={{ fontSize: '12px', color: '#475569', fontWeight: 700, background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '999px', padding: '4px 10px' }}>
+                Cached: {formatDateTime(pulseGeneratedAt)}
+              </span>
+            )}
+            <button
+              onClick={refreshCompanyPulse}
+              disabled={pulseRefreshing}
+              style={{
+                fontSize: '12px',
+                fontWeight: 800,
+                color: 'white',
+                background: pulseRefreshing ? '#94a3b8' : '#2751d0',
+                border: '1px solid #2751d0',
+                borderRadius: '999px',
+                padding: '5px 11px',
+                cursor: pulseRefreshing ? 'not-allowed' : 'pointer',
+              }}
+            >
+              {pulseRefreshing ? 'Refreshing...' : 'Refresh Pulse'}
+            </button>
+            <button
+              onClick={() => setShowPolicySettings((prev) => !prev)}
+              style={{
+                fontSize: '12px',
+                fontWeight: 800,
+                color: showPolicySettings ? '#1d4ed8' : '#475569',
+                background: showPolicySettings ? '#eff6ff' : 'white',
+                border: `1px solid ${showPolicySettings ? '#bfdbfe' : '#cbd5e1'}`,
+                borderRadius: '999px',
+                padding: '5px 11px',
+                cursor: 'pointer',
+              }}
+            >
+              {showPolicySettings ? 'Hide Policies' : 'Policy Settings'}
+            </button>
           </div>
 
           <div style={{ marginTop: '16px', display: 'grid', gridTemplateColumns: 'repeat(2, minmax(320px, 1fr))', gap: '12px' }}>
@@ -2818,7 +2953,7 @@ export default function DailyAlertsView({ companyId, companyName, onNavigate }: 
         </div>
       )}
 
-      {COMPANY_PULSE_ALERTS_ENABLED && (
+      {COMPANY_PULSE_ALERTS_ENABLED && activeTab === 'company-pulse' && showPolicySettings && (
         <div style={{ marginTop: '14px', border: '1px solid #e2e8f0', borderRadius: '12px', background: 'white', padding: '14px' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
             <div style={{ fontSize: '13px', color: '#334155' }}>

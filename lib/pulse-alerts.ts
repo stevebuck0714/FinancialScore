@@ -57,6 +57,12 @@ export function createPulseId(prefix: string): string {
   return `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
 }
 
+function normalizePulseStatus(value: unknown): PulseAlertStatus {
+  const raw = String(value || '').trim().toLowerCase();
+  if (raw === 'acknowledged' || raw === 'snoozed' || raw === 'resolved') return raw;
+  return 'new';
+}
+
 export async function ensurePulseAlertTables(): Promise<void> {
   await prisma.$executeRawUnsafe(`
     CREATE TABLE IF NOT EXISTS "PulseAlert" (
@@ -156,5 +162,170 @@ export async function insertPulseEvent(params: {
     params.note || null,
     JSON.stringify(params.payload || {}),
     new Date().toISOString()
+  );
+}
+
+export async function syncPulseAlertsForCompany(params: {
+  companyId: string;
+  alerts: PulseAlertInput[];
+  actorUserId?: string | null;
+  actorEmail?: string | null;
+}): Promise<PulseAlertRow[]> {
+  await ensurePulseAlertTables();
+
+  const nowIso = new Date().toISOString();
+  const seenFingerprints = new Set<string>();
+
+  for (const alert of params.alerts) {
+    const fingerprint = String(alert.fingerprint || '').trim();
+    if (!fingerprint || seenFingerprints.has(fingerprint)) continue;
+    seenFingerprints.add(fingerprint);
+
+    const existing = await prisma.$queryRawUnsafe<PulseAlertRow[]>(
+      `SELECT * FROM "PulseAlert"
+       WHERE "companyId" = $1 AND "fingerprint" = $2
+       ORDER BY "isActive" DESC, "modifiedAt" DESC
+       LIMIT 1`,
+      params.companyId,
+      fingerprint
+    );
+    const current = existing[0];
+
+    if (!current) {
+      const id = createPulseId('pa');
+      await prisma.$executeRawUnsafe(
+        `INSERT INTO "PulseAlert"
+          (id, "companyId", "fingerprint", "source", "title", "detail", "owner", "drillView", "deltaText", "updatedAt", "itemLabel", "priorityScore", "bucket", "priorityFocusTerm", "explainability", "status", "isActive", "lastSeenAt", "modifiedAt", "createdAt")
+         VALUES
+          ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::timestamp, $11, $12, $13, $14, $15::jsonb, 'new', TRUE, $16::timestamp, $17::timestamp, $18::timestamp)`,
+        id,
+        params.companyId,
+        fingerprint,
+        alert.source,
+        alert.title,
+        alert.detail,
+        alert.owner,
+        alert.drillView,
+        alert.deltaText || null,
+        alert.updatedAt || null,
+        alert.itemLabel || null,
+        alert.priorityScore ?? null,
+        alert.bucket || null,
+        alert.priorityFocusTerm || null,
+        JSON.stringify(alert.explainability || {}),
+        nowIso,
+        nowIso,
+        nowIso
+      );
+      await insertPulseEvent({
+        alertId: id,
+        companyId: params.companyId,
+        eventType: 'created',
+        toStatus: 'new',
+        actorUserId: params.actorUserId || null,
+        actorEmail: params.actorEmail || null,
+        payload: { fingerprint, source: alert.source },
+      });
+      continue;
+    }
+
+    await prisma.$executeRawUnsafe(
+      `UPDATE "PulseAlert"
+       SET "isActive" = FALSE, "modifiedAt" = $1::timestamp
+       WHERE "companyId" = $2
+         AND "fingerprint" = $3
+         AND "id" <> $4
+         AND "status" <> 'resolved'`,
+      nowIso,
+      params.companyId,
+      fingerprint,
+      current.id
+    );
+
+    let nextStatus: PulseAlertStatus = normalizePulseStatus(current.status);
+    let resolvedAtIso: string | null = current.resolvedAt ? new Date(current.resolvedAt).toISOString() : null;
+    if (nextStatus === 'resolved') {
+      nextStatus = 'new';
+      resolvedAtIso = null;
+      await insertPulseEvent({
+        alertId: current.id,
+        companyId: params.companyId,
+        eventType: 'reopened',
+        fromStatus: 'resolved',
+        toStatus: 'new',
+        actorUserId: params.actorUserId || null,
+        actorEmail: params.actorEmail || null,
+        payload: { reason: 'detected_again' },
+      });
+    }
+
+    await prisma.$executeRawUnsafe(
+      `UPDATE "PulseAlert"
+       SET "source" = $1,
+           "title" = $2,
+           "detail" = $3,
+           "owner" = $4,
+           "drillView" = $5,
+           "deltaText" = $6,
+           "updatedAt" = $7::timestamp,
+           "itemLabel" = $8,
+           "priorityScore" = $9,
+           "bucket" = $10,
+           "priorityFocusTerm" = $11,
+           "explainability" = $12::jsonb,
+           "status" = $13,
+           "resolvedAt" = $14::timestamp,
+           "isActive" = TRUE,
+           "lastSeenAt" = $15::timestamp,
+           "modifiedAt" = $16::timestamp
+       WHERE "id" = $17`,
+      alert.source,
+      alert.title,
+      alert.detail,
+      alert.owner,
+      alert.drillView,
+      alert.deltaText || null,
+      alert.updatedAt || null,
+      alert.itemLabel || null,
+      alert.priorityScore ?? null,
+      alert.bucket || null,
+      alert.priorityFocusTerm || null,
+      JSON.stringify(alert.explainability || {}),
+      nextStatus,
+      resolvedAtIso,
+      nowIso,
+      nowIso,
+      current.id
+    );
+  }
+
+  if (seenFingerprints.size > 0) {
+    await prisma.$executeRawUnsafe(
+      `UPDATE "PulseAlert"
+       SET "isActive" = FALSE, "modifiedAt" = $1::timestamp
+       WHERE "companyId" = $2
+         AND "status" <> 'resolved'
+         AND NOT ("fingerprint" = ANY($3::text[]))`,
+      nowIso,
+      params.companyId,
+      Array.from(seenFingerprints)
+    );
+  } else {
+    await prisma.$executeRawUnsafe(
+      `UPDATE "PulseAlert"
+       SET "isActive" = FALSE, "modifiedAt" = $1::timestamp
+       WHERE "companyId" = $2
+         AND "status" <> 'resolved'`,
+      nowIso,
+      params.companyId
+    );
+  }
+
+  return prisma.$queryRawUnsafe<PulseAlertRow[]>(
+    `SELECT * FROM "PulseAlert"
+     WHERE "companyId" = $1
+       AND ("isActive" = TRUE OR "status" = 'resolved')
+     ORDER BY COALESCE("priorityScore", 0) DESC, "modifiedAt" DESC`,
+    params.companyId
   );
 }

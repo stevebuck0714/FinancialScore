@@ -4,7 +4,7 @@ import { auditForbiddenAccess } from '@/lib/audit-logger';
 import { requireAuth, validateCompanyAccess } from '@/lib/tenant-security';
 import { ensurePulseAlertTables, insertPulseEvent, type PulseAlertRow, type PulseAlertStatus } from '@/lib/pulse-alerts';
 
-const PULSE_ALERTS_API_ENABLED = false;
+const PULSE_ALERTS_API_ENABLED = String(process.env.COMPANY_PULSE_ENABLED || 'true').toLowerCase() !== 'false';
 const PULSE_ALERTS_DISABLED_RESPONSE = {
   error: 'Company Pulse alerts are disabled. Use Daily Briefing instead.',
 };

@@ -213,7 +213,7 @@ export default function Header({
                   textAlign: 'center'
                 }}
               >
-                DAILY BRIEFING
+                DAILY ALERTS
               </button>
               <button
                 onClick={() => handleNavigation('operations')}
