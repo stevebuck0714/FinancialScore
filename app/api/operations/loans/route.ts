@@ -6,7 +6,7 @@ import { requireAuth, validateCompanyAccess } from '@/lib/tenant-security';
 export const dynamic = 'force-dynamic';
 export const maxDuration = 120;
 
-const LOAN_ACTIVITY_CACHE_VERSION = 12;
+const LOAN_ACTIVITY_CACHE_VERSION = 13;
 const STALE_LOAN_ACTIVITY_MONTHS = 18;
 
 type LoanTermInput = {
@@ -866,6 +866,9 @@ async function loadLoanActivity(companyId: string) {
       rawInforActivity &&
       rawTxCount > glTxCount &&
       (targetField !== 'loc' || rawLast >= glLast);
+    if (targetField === 'ltd' && glTxCount > 0) {
+      useRawActivity = false;
+    }
     if ((targetField === 'loc' && activeLocAccountIds.has(accountId)) || (targetField === 'ltd' && activeLtdAccountIds.has(accountId))) {
       useRawActivity = false;
     }
@@ -892,10 +895,10 @@ async function loadLoanActivity(companyId: string) {
         instrumentStatus = 'inactive';
         statusReason = 'Mapped as LOC, but this account does not reconcile to the latest Daily Financials LOC balance.';
       }
-    } else if (targetField === 'ltd' && activeLtdAccountIds.has(accountId)) {
+    } else if (targetField === 'ltd' && Math.abs(Number(row.activityTotal || 0)) > 0) {
       derivedCurrentBalance = Math.abs(Number(row.activityTotal || 0));
-      derivedCurrentBalanceSource = 'GL reconciles to Daily Financials LTD balance';
-      derivedCurrentBalanceAsOf = latestSnapshotDate;
+      derivedCurrentBalanceSource = 'GLTransactionFact cumulative LTD activity';
+      derivedCurrentBalanceAsOf = row.lastDate || latestSnapshotDate;
       instrumentStatus = 'active';
       statusReason = null;
     }
