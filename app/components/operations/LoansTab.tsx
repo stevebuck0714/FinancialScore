@@ -290,7 +290,7 @@ export default function LoansTab({ selectedCompanyId, companyName, currentUser =
         balance,
         utilizationPct: creditLimit > 0 ? (balance / creditLimit) * 100 : null,
       };
-    });
+    }).reverse();
     const highestUtilization = trendRows.reduce((max, row) => row.utilizationPct === null ? max : Math.max(max, row.utilizationPct), 0);
     const cashOnHand = latestMonthly ? Number(latestMonthly.cash || 0) : null;
     const revenueYtd = monthlyRows
@@ -498,13 +498,13 @@ export default function LoansTab({ selectedCompanyId, companyName, currentUser =
       {detail && <div style={{ marginTop: '4px', color: '#64748b', fontSize: '12px' }}>{detail}</div>}
     </div>
   );
-  const renderMetricRows = (rows: Array<[string, string]>) => (
+  const renderMetricRows = (rows: Array<[string, string]>, compact = false) => (
     <table style={{ width: '100%', borderCollapse: 'collapse' }}>
       <tbody>
         {rows.map(([label, value]) => (
           <tr key={label}>
-            <td style={{ ...tdStyle, color: '#475569' }}>{label}</td>
-            <td style={{ ...tdStyle, textAlign: 'right', fontWeight: 800 }}>{value}</td>
+            <td style={{ ...tdStyle, padding: compact ? '6px 10px' : tdStyle.padding, fontSize: compact ? '12px' : tdStyle.fontSize, color: '#475569' }}>{label}</td>
+            <td style={{ ...tdStyle, padding: compact ? '6px 10px' : tdStyle.padding, fontSize: compact ? '12px' : tdStyle.fontSize, textAlign: 'right', fontWeight: 800 }}>{value}</td>
           </tr>
         ))}
       </tbody>
@@ -741,10 +741,8 @@ export default function LoansTab({ selectedCompanyId, companyName, currentUser =
             {renderKpiCard('Outstanding Balance', formatCurrency(liquidityData.outstandingBalance), 'Current amount borrowed')}
             {renderKpiCard('Available Credit', liquidityData.availableCredit === null ? '-' : formatCurrency(liquidityData.availableCredit), 'Remaining borrowing capacity')}
             {renderKpiCard('Utilization %', formatOptionalPercent(liquidityData.utilizationPct), 'Balance / limit')}
-            {renderKpiCard('Interest Rate', formatOptionalPercent(liquidityData.interestRatePct), 'From loan terms')}
             {renderKpiCard('Interest Expense YTD', formatCurrency(liquidityData.interestYtd), 'LOC interest detected in loan activity')}
             {renderKpiCard('Net Draws YTD', formatCurrency(liquidityData.netDrawsYtd), 'Draws less repayments')}
-            {renderKpiCard('Covenant Status', liquidityData.covenantStatus, 'Latest covenant read')}
           </div>
 
           {liquidityData.locInstruments.length === 0 && (
@@ -753,85 +751,91 @@ export default function LoansTab({ selectedCompanyId, companyName, currentUser =
             </div>
           )}
 
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(360px, 1fr))', gap: '16px' }}>
-            <div style={{ ...cardStyle, padding: 0, overflow: 'hidden' }}>
-              <div style={{ padding: '14px 16px', borderBottom: '1px solid #e2e8f0', fontWeight: 900 }}>1. LOC Utilization Trend</div>
-              <div style={{ padding: '14px 16px', color: '#64748b', fontSize: '12px' }}>Outstanding balance as a percentage of total credit limit over time.</div>
-              <div style={{ padding: '0 16px 14px' }}>
-                {liquidityData.trendRows.length > 0 ? liquidityData.trendRows.map((row) => {
-                  const utilization = Number(row.utilizationPct || 0);
-                  return (
-                    <div key={row.month} style={{ display: 'grid', gridTemplateColumns: '76px 1fr 54px', alignItems: 'center', gap: '8px', marginBottom: '8px', fontSize: '12px' }}>
-                      <span style={{ color: '#475569', fontWeight: 700 }}>{formatDate(row.month)}</span>
-                      <div style={{ height: '10px', borderRadius: '999px', background: '#e2e8f0', overflow: 'hidden' }}>
-                        <div style={{ width: `${Math.min(utilization, 100)}%`, height: '100%', background: utilization >= 80 ? '#dc2626' : utilization >= 65 ? '#f59e0b' : '#2751d0' }} />
+          <div style={{ display: 'grid', gridTemplateColumns: 'minmax(360px, 1.25fr) repeat(2, minmax(300px, 1fr))', gap: '16px', alignItems: 'start' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              <div style={{ ...cardStyle, padding: 0, overflow: 'hidden' }}>
+                <div style={{ padding: '14px 16px', borderBottom: '1px solid #e2e8f0', fontWeight: 900 }}>1. LOC Utilization Trend</div>
+                <div style={{ padding: '14px 16px', color: '#64748b', fontSize: '12px' }}>Outstanding balance as a percentage of total credit limit over time.</div>
+                <div style={{ padding: '0 16px 14px' }}>
+                  {liquidityData.trendRows.length > 0 ? liquidityData.trendRows.map((row) => {
+                    const utilization = Number(row.utilizationPct || 0);
+                    return (
+                      <div key={row.month} style={{ display: 'grid', gridTemplateColumns: '76px 1fr 54px', alignItems: 'center', gap: '8px', marginBottom: '8px', fontSize: '12px' }}>
+                        <span style={{ color: '#475569', fontWeight: 700 }}>{formatDate(row.month)}</span>
+                        <div style={{ height: '10px', borderRadius: '999px', background: '#e2e8f0', overflow: 'hidden' }}>
+                          <div style={{ width: `${Math.min(utilization, 100)}%`, height: '100%', background: utilization >= 80 ? '#dc2626' : utilization >= 65 ? '#f59e0b' : '#2751d0' }} />
+                        </div>
+                        <span style={{ textAlign: 'right', fontWeight: 800 }}>{formatOptionalPercent(row.utilizationPct)}</span>
                       </div>
-                      <span style={{ textAlign: 'right', fontWeight: 800 }}>{formatOptionalPercent(row.utilizationPct)}</span>
-                    </div>
-                  );
-                }) : <div style={{ color: '#64748b', fontSize: '13px' }}>No monthly LOC trend data available.</div>}
+                    );
+                  }) : <div style={{ color: '#64748b', fontSize: '13px' }}>No monthly LOC trend data available.</div>}
+                </div>
+                {renderMetricRows([
+                  ['Credit Limit', liquidityData.creditLimit > 0 ? formatCurrency(liquidityData.creditLimit) : '-'],
+                  ['Outstanding Balance', formatCurrency(liquidityData.outstandingBalance)],
+                  ['Available Credit', liquidityData.availableCredit === null ? '-' : formatCurrency(liquidityData.availableCredit)],
+                  ['Utilization %', formatOptionalPercent(liquidityData.utilizationPct)],
+                  ['Highest Utilization (12 months)', formatOptionalPercent(liquidityData.highestUtilization)],
+                ], true)}
               </div>
-              {renderMetricRows([
-                ['Credit Limit', liquidityData.creditLimit > 0 ? formatCurrency(liquidityData.creditLimit) : '-'],
-                ['Outstanding Balance', formatCurrency(liquidityData.outstandingBalance)],
-                ['Available Credit', liquidityData.availableCredit === null ? '-' : formatCurrency(liquidityData.availableCredit)],
-                ['Utilization %', formatOptionalPercent(liquidityData.utilizationPct)],
-                ['Highest Utilization (12 months)', formatOptionalPercent(liquidityData.highestUtilization)],
-              ])}
+
+              <div style={{ ...cardStyle, padding: 0, overflow: 'hidden' }}>
+                <div style={{ padding: '12px 14px', borderBottom: '1px solid #e2e8f0', fontWeight: 900 }}>6. Cash Flow vs LOC Usage</div>
+                {renderMetricRows([
+                  ['Operating Cash Flow', liquidityData.operatingCashFlow === null ? '-' : formatCurrency(liquidityData.operatingCashFlow)],
+                  ['LOC Balance', formatCurrency(liquidityData.outstandingBalance)],
+                  ['Cash on Hand', liquidityData.cashOnHand === null ? '-' : formatCurrency(liquidityData.cashOnHand)],
+                  ['Burn Rate', formatCurrency(liquidityData.burnRate)],
+                  ['Months of Liquidity', liquidityData.monthsOfLiquidity === null ? '-' : liquidityData.monthsOfLiquidity.toFixed(1)],
+                ], true)}
+              </div>
             </div>
 
-            <div style={{ ...cardStyle, padding: 0, overflow: 'hidden' }}>
-              <div style={{ padding: '14px 16px', borderBottom: '1px solid #e2e8f0', fontWeight: 900 }}>2. Draws vs Repayments</div>
-              {renderMetricRows([
-                ['Total Draws YTD', formatCurrency(liquidityData.drawsYtd)],
-                ['Total Repayments YTD', formatCurrency(liquidityData.repaymentsYtd)],
-                ['Net Change in Balance', formatCurrency(liquidityData.netDrawsYtd)],
-                ['Average Draw Size', liquidityData.averageDraw === null ? '-' : formatCurrency(liquidityData.averageDraw)],
-                ['Average Repayment Size', liquidityData.averageRepayment === null ? '-' : formatCurrency(liquidityData.averageRepayment)],
-              ])}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              <div style={{ ...cardStyle, padding: 0, overflow: 'hidden' }}>
+                <div style={{ padding: '12px 14px', borderBottom: '1px solid #e2e8f0', fontWeight: 900 }}>2. Draws vs Repayments</div>
+                {renderMetricRows([
+                  ['Total Draws YTD', formatCurrency(liquidityData.drawsYtd)],
+                  ['Total Repayments YTD', formatCurrency(liquidityData.repaymentsYtd)],
+                  ['Net Change in Balance', formatCurrency(liquidityData.netDrawsYtd)],
+                  ['Average Draw Size', liquidityData.averageDraw === null ? '-' : formatCurrency(liquidityData.averageDraw)],
+                  ['Average Repayment Size', liquidityData.averageRepayment === null ? '-' : formatCurrency(liquidityData.averageRepayment)],
+                ], true)}
+              </div>
+
+              <div style={{ ...cardStyle, padding: 0, overflow: 'hidden' }}>
+                <div style={{ padding: '12px 14px', borderBottom: '1px solid #e2e8f0', fontWeight: 900 }}>3. Available Credit Remaining</div>
+                {renderMetricRows([
+                  ['Available Credit $', liquidityData.availableCredit === null ? '-' : formatCurrency(liquidityData.availableCredit)],
+                  ['% Remaining', formatOptionalPercent(liquidityData.percentRemaining)],
+                  ['Days Since Last Draw', formatOptionalDays(liquidityData.daysSinceLastDraw)],
+                  ['Days Since Last Payment', formatOptionalDays(liquidityData.daysSinceLastPayment)],
+                ], true)}
+              </div>
             </div>
 
-            <div style={{ ...cardStyle, padding: 0, overflow: 'hidden' }}>
-              <div style={{ padding: '14px 16px', borderBottom: '1px solid #e2e8f0', fontWeight: 900 }}>3. Available Credit Remaining</div>
-              {renderMetricRows([
-                ['Available Credit $', liquidityData.availableCredit === null ? '-' : formatCurrency(liquidityData.availableCredit)],
-                ['% Remaining', formatOptionalPercent(liquidityData.percentRemaining)],
-                ['Days Since Last Draw', formatOptionalDays(liquidityData.daysSinceLastDraw)],
-                ['Days Since Last Payment', formatOptionalDays(liquidityData.daysSinceLastPayment)],
-              ])}
-            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              <div style={{ ...cardStyle, padding: 0, overflow: 'hidden' }}>
+                <div style={{ padding: '12px 14px', borderBottom: '1px solid #e2e8f0', fontWeight: 900 }}>4. Interest Expense Trend</div>
+                {renderMetricRows([
+                  ['Interest Paid YTD', formatCurrency(liquidityData.interestYtd)],
+                  ['Effective Interest Rate', formatOptionalPercent(liquidityData.interestRatePct)],
+                  ['Weighted Average Rate', formatOptionalPercent(liquidityData.interestRatePct)],
+                  ['Interest as % of Revenue', formatOptionalPercent(liquidityData.interestAsRevenuePct)],
+                ], true)}
+              </div>
 
-            <div style={{ ...cardStyle, padding: 0, overflow: 'hidden' }}>
-              <div style={{ padding: '14px 16px', borderBottom: '1px solid #e2e8f0', fontWeight: 900 }}>4. Interest Expense Trend</div>
-              {renderMetricRows([
-                ['Interest Paid YTD', formatCurrency(liquidityData.interestYtd)],
-                ['Effective Interest Rate', formatOptionalPercent(liquidityData.interestRatePct)],
-                ['Weighted Average Rate', formatOptionalPercent(liquidityData.interestRatePct)],
-                ['Interest as % of Revenue', formatOptionalPercent(liquidityData.interestAsRevenuePct)],
-              ])}
-            </div>
-
-            <div style={{ ...cardStyle, padding: 0, overflow: 'hidden' }}>
-              <div style={{ padding: '14px 16px', borderBottom: '1px solid #e2e8f0', fontWeight: 900 }}>5. Risk & Covenant Dashboard</div>
-              {renderMetricRows([
-                ['Debt Service Coverage Ratio (DSCR)', '-'],
-                ['EBITDA Coverage', '-'],
-                ['Loan-to-Value (LTV)', '-'],
-                ['Covenant Headroom', '-'],
-                ['Days Past Due', '-'],
-                ['Delinquency Status', 'Current'],
-              ])}
-            </div>
-
-            <div style={{ ...cardStyle, padding: 0, overflow: 'hidden' }}>
-              <div style={{ padding: '14px 16px', borderBottom: '1px solid #e2e8f0', fontWeight: 900 }}>6. Cash Flow vs LOC Usage</div>
-              {renderMetricRows([
-                ['Operating Cash Flow', liquidityData.operatingCashFlow === null ? '-' : formatCurrency(liquidityData.operatingCashFlow)],
-                ['LOC Balance', formatCurrency(liquidityData.outstandingBalance)],
-                ['Cash on Hand', liquidityData.cashOnHand === null ? '-' : formatCurrency(liquidityData.cashOnHand)],
-                ['Burn Rate', formatCurrency(liquidityData.burnRate)],
-                ['Months of Liquidity', liquidityData.monthsOfLiquidity === null ? '-' : liquidityData.monthsOfLiquidity.toFixed(1)],
-              ])}
+              <div style={{ ...cardStyle, padding: 0, overflow: 'hidden' }}>
+                <div style={{ padding: '12px 14px', borderBottom: '1px solid #e2e8f0', fontWeight: 900 }}>5. Risk & Covenant Dashboard</div>
+                {renderMetricRows([
+                  ['Debt Service Coverage Ratio (DSCR)', '-'],
+                  ['EBITDA Coverage', '-'],
+                  ['Loan-to-Value (LTV)', '-'],
+                  ['Covenant Headroom', '-'],
+                  ['Days Past Due', '-'],
+                  ['Delinquency Status', 'Current'],
+                ], true)}
+              </div>
             </div>
           </div>
         </div>
