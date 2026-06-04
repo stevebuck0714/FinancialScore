@@ -6,7 +6,7 @@ import { requireAuth, validateCompanyAccess } from '@/lib/tenant-security';
 export const dynamic = 'force-dynamic';
 export const maxDuration = 120;
 
-const LOAN_ACTIVITY_CACHE_VERSION = 15;
+const LOAN_ACTIVITY_CACHE_VERSION = 16;
 const STALE_LOAN_ACTIVITY_MONTHS = 13;
 
 type LoanTermInput = {
@@ -277,6 +277,22 @@ function sumActivityForMonth(activity: any[], month: string) {
   return activity.reduce((sum, row) => {
     return monthKey(row?.transDate) === month ? sum + Math.abs(Number(row?.signedAmount || 0)) : sum;
   }, 0);
+}
+
+function dedupeActivityRows(rows: any[]) {
+  const seen = new Set<string>();
+  return rows.filter((row) => {
+    const key = [
+      row?.transDate ? new Date(row.transDate).toISOString().slice(0, 10) : '',
+      String(row?.accountId || '').trim(),
+      String(row?.ref || '').trim(),
+      String(row?.description || '').trim(),
+      Number(row?.signedAmount || 0).toFixed(2),
+    ].join('|');
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 }
 
 function cleanText(value: unknown, maxLength = 500): string | null {
@@ -853,10 +869,12 @@ async function loadLoanActivity(companyId: string) {
     const linkedInterest = interestRows.filter((interest) => {
       const interestAccountId = String(interest.accountId || '').trim();
       const haystack = `${interest.accountName || ''} ${interest.ref || ''} ${interest.description || ''}`.toLowerCase();
-      if (accountId === '39165' && interestAccountId === '76350') return true;
+      if (accountId === '39185' && interestAccountId === '76350') return true;
+      if (accountId === '39165' && interestAccountId === '76050' && /term loan|amnb term/.test(haystack)) return true;
+      if (accountId === '39175' && interestAccountId === '76050' && /\bsba\b|eidl/.test(haystack)) return true;
       return tokens.some((token) => haystack.includes(token));
     });
-    const allInterestActivity = [...linkedInterest, ...rawInforInterest];
+    const allInterestActivity = dedupeActivityRows([...linkedInterest, ...rawInforInterest]);
 
     const rawTxCount = Number(rawInforActivity?.transactionCount || 0);
     const glTxCount = Number(row.transactionCount || 0);
@@ -904,10 +922,10 @@ async function loadLoanActivity(companyId: string) {
       statusReason = null;
     }
     const monthlyActivity = monthlyByInstrument[String(row.instrumentKey)] || [];
-    const recentActivity = [
+    const recentActivity = dedupeActivityRows([
       ...(useRawActivity ? rawInforActivity.recentActivity : detailByInstrument[String(row.instrumentKey)] || []),
-      ...rawInforInterest,
-    ].sort((a, b) => new Date(b?.transDate || 0).getTime() - new Date(a?.transDate || 0).getTime()).slice(0, 30);
+      ...allInterestActivity,
+    ]).sort((a, b) => new Date(b?.transDate || 0).getTime() - new Date(a?.transDate || 0).getTime()).slice(0, 30);
     const reportAsOfDate = latestSnapshotDate || new Date();
     const currentMonth = monthKey(reportAsOfDate);
     const currentMonthSignedActivity = signedPrincipalChangeForMonth(
