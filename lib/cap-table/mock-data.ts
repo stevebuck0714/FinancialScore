@@ -1,7 +1,7 @@
 export type CapTableRound = {
   id: string;
   name: string;
-  type: 'Founder' | 'Seed' | 'Series A' | 'Series B';
+  type: 'Founder' | 'Seed' | 'Series A' | 'Series B' | 'SAFE' | 'Convertible Note';
   date: string;
   capitalRaised: number;
   preMoneyValuation: number | null;
@@ -25,6 +25,11 @@ export type CapTableSecurityClass = {
   expiration?: string | null;
   valuationCap?: number | null;
   discountPct?: number | null;
+  principalAmount?: number | null;
+  interestRatePct?: number | null;
+  maturityDate?: string | null;
+  conversionTrigger?: string | null;
+  accruedInterest?: number | null;
 };
 
 export type CapTableHolding = {
@@ -84,6 +89,8 @@ export const capTableMockData: CapTableMockData = {
   rounds: [
     { id: 'founder', name: 'Founder', type: 'Founder', date: '2020-01-15', capitalRaised: 50_000, preMoneyValuation: null, postMoneyValuation: null, sharePrice: 0.001, sharesIssued: 5_000_000 },
     { id: 'seed', name: 'Seed', type: 'Seed', date: '2021-04-01', capitalRaised: 1_000_000, preMoneyValuation: 4_000_000, postMoneyValuation: 5_000_000, sharePrice: 1, sharesIssued: 1_000_000 },
+    { id: 'bridge-note', name: 'Bridge Note', type: 'Convertible Note', date: '2022-03-01', capitalRaised: 750_000, preMoneyValuation: null, postMoneyValuation: null, sharePrice: null, sharesIssued: 0 },
+    { id: 'post-money-safe', name: 'Post-money SAFE', type: 'SAFE', date: '2022-06-01', capitalRaised: 500_000, preMoneyValuation: null, postMoneyValuation: null, sharePrice: null, sharesIssued: 0 },
     { id: 'series-a', name: 'Series A', type: 'Series A', date: '2022-09-15', capitalRaised: 5_000_000, preMoneyValuation: 15_000_000, postMoneyValuation: 20_000_000, sharePrice: 2.5, sharesIssued: 2_000_000 },
     { id: 'series-b', name: 'Series B', type: 'Series B', date: '2024-05-20', capitalRaised: 15_000_000, preMoneyValuation: 45_000_000, postMoneyValuation: 60_000_000, sharePrice: 10, sharesIssued: 1_500_000 },
   ],
@@ -94,7 +101,8 @@ export const capTableMockData: CapTableMockData = {
     { id: 'series-b-pref', securityType: 'Preferred', series: 'Preferred Series B', units: 1_500_000, asConvertedShares: 1_500_000, liquidationPreference: '1.0x participating cap at 2.0x', conversionRatio: '1:1', participationRights: 'Capped', dividendRights: '8% non-cumulative' },
     { id: 'options', securityType: 'Options', series: 'Options Outstanding', units: 300_000, asConvertedShares: 300_000, strikePrice: 1.25 },
     { id: 'warrants', securityType: 'Warrants', series: 'Warrants', units: 200_000, asConvertedShares: 200_000, strikePrice: 8, expiration: '2029-05-20' },
-    { id: 'safe', securityType: 'SAFEs', series: 'Post-money SAFE', units: 0, asConvertedShares: 0, valuationCap: 12_000_000, discountPct: 20 },
+    { id: 'safe', securityType: 'SAFEs', series: 'Post-money SAFE', units: 500_000, asConvertedShares: 0, valuationCap: 12_000_000, discountPct: 20, conversionTrigger: 'Next equity financing' },
+    { id: 'convertible-note', securityType: 'Convertible Notes', series: '2022 Bridge Note', units: 750_000, asConvertedShares: 400_000, valuationCap: 10_000_000, discountPct: 20, principalAmount: 750_000, interestRatePct: 6, maturityDate: '2024-03-01', conversionTrigger: 'Qualified financing over $3.0M', accruedInterest: 90_000 },
   ],
   holdings: [
     { holder: 'Founder A', security: 'Common', shares: 3_000_000, costBasis: 0.001, basicOwnershipPct: 35.3, fullyDilutedOwnershipPct: 30 },
@@ -104,6 +112,8 @@ export const capTableMockData: CapTableMockData = {
     { holder: 'VC Fund II', security: 'Series B', shares: 1_500_000, costBasis: 10, basicOwnershipPct: 17.6, fullyDilutedOwnershipPct: 15 },
     { holder: 'ESOP Pool', security: 'Options', shares: 300_000, costBasis: 1.25, basicOwnershipPct: 0, fullyDilutedOwnershipPct: 3 },
     { holder: 'Strategic Partner', security: 'Warrants', shares: 200_000, costBasis: 8, basicOwnershipPct: 0, fullyDilutedOwnershipPct: 2 },
+    { holder: 'Bridge Note Investors', security: 'Convertible Note', shares: 400_000, costBasis: 1.875, basicOwnershipPct: 0, fullyDilutedOwnershipPct: 4 },
+    { holder: 'SAFE Investors', security: 'Post-money SAFE', shares: 0, costBasis: 0, basicOwnershipPct: 0, fullyDilutedOwnershipPct: 0 },
   ],
   ownershipEvolution: [
     { holder: 'Founder A', founder: 60, seed: 48, seriesA: 36, seriesB: 30, current: 30 },

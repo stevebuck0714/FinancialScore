@@ -9,6 +9,7 @@ export type OpsDataType =
   | 'inventory'
   | 'cash'
   | 'loans'
+  | 'cap-table'
   | 'daily-financials'
   | 'revenue-billables'
   | 'unit-economics'
@@ -37,6 +38,8 @@ const MODULE_DEFINITIONS: ModuleDefinition[] = [
   { key: 'cash_liquidity', label: 'Cash & Liquidity', dataType: 'cash' },
   { key: 'loans', label: 'Loans', dataType: 'loans' },
   { key: 'debt_loans', label: 'Loans', dataType: 'loans' },
+  { key: 'cap_table', label: 'Cap Table', dataType: 'cap-table' },
+  { key: 'cap-table', label: 'Cap Table', dataType: 'cap-table' },
   { key: 'ar', label: 'AR', dataType: 'ar-aging' },
   { key: 'billing_ar', label: 'Billing & AR', dataType: 'ar-aging' },
   { key: 'ar_receipts', label: 'AR / Receipts', dataType: 'ar-aging' },

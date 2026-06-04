@@ -42,6 +42,13 @@ const OPERATIONAL_HUB_SECTION_OPTIONS: Array<{ key: string; label: string; group
   { key: 'loansTermsEditor', label: 'Loan Terms Editor', group: 'Loans' },
   { key: 'loansRecentGlActivity', label: 'Recent GL Activity Table', group: 'Loans' },
   { key: 'loansCovenants', label: 'Covenants Tab', group: 'Loans' },
+  { key: 'capTableCurrentOwnership', label: 'Current Ownership Report', group: 'Cap Table' },
+  { key: 'capTableFinancingHistory', label: 'Financing Round History', group: 'Cap Table' },
+  { key: 'capTableOwnershipEvolution', label: 'Ownership Evolution', group: 'Cap Table' },
+  { key: 'capTableDilutionAnalysis', label: 'Dilution Analysis', group: 'Cap Table' },
+  { key: 'capTableSecurityClasses', label: 'Security Classes Report', group: 'Cap Table' },
+  { key: 'capTableExitWaterfall', label: 'Exit Waterfall Analysis', group: 'Cap Table' },
+  { key: 'capTableInvestmentPerformance', label: 'Investment Performance', group: 'Cap Table' },
   { key: 'dailySummaryCards', label: 'Summary KPI Cards', group: 'Daily Financials' },
   { key: 'dailyTrendChart', label: 'Daily Trend Chart', group: 'Daily Financials' },
   { key: 'dailyIncomeStatement', label: 'Income Statement View', group: 'Daily Financials' },
@@ -195,6 +202,7 @@ const OPERATIONAL_HUB_SECTIONS_BY_DATATYPE_GROUP: Record<string, string> = {
   inventory: 'Inventory',
   cash: 'Cash',
   loans: 'Loans',
+  'cap-table': 'Cap Table',
   'daily-financials': 'Daily Financials',
   'revenue-billables': 'Revenue & Billables',
   'unit-economics': 'Unit Economics',
@@ -967,7 +975,7 @@ export default function SiteAdminDashboard(props: any) {
   const getOperationalHubTabCategoryOptions = (company: any): Array<{ key: string; label: string; group: string }> => {
     const companySectorCategory = String(company?.industrySectorCategory || '').trim();
     const sectorModules = getTopLineBucketsForSector(company?.industrySectorCategory || null).map((bucket) => String(bucket.key || '').trim());
-    const moduleSet = Array.from(new Set(['dashboard', 'forecast', ...sectorModules, 'cash', 'daily_financials', 'loans'].filter(Boolean)));
+    const moduleSet = Array.from(new Set(['dashboard', 'forecast', ...sectorModules, 'cash', 'daily_financials', 'loans', 'cap_table'].filter(Boolean)));
     return moduleSet.map((moduleKey) => ({
       key: `tab:${moduleKey}`,
       label:
@@ -985,15 +993,21 @@ export default function SiteAdminDashboard(props: any) {
   const getOperationalHubReportTabOptions = (company: any): Array<{ key: string; label: string; group: string }> =>
     getOperationalHubTabCategoryOptions(company);
 
+  const isOperationalHubTabDefaultEnabled = (sectionKey: string, company: any): boolean => {
+    const moduleKey = sectionKey.startsWith('tab:') ? sectionKey.slice(4) : sectionKey;
+    const dataType = mapModuleToDataType(moduleKey);
+    if (dataType === 'cap-table') return false;
+    if (moduleKey === 'loans' || dataType === 'loans') return isLoansDefaultEnabledForCompany(company?.id);
+    return true;
+  };
+
   const getSelectedTabCategoryKeys = (company: any, draft?: Record<string, boolean>): Set<string> => {
     const tabOptions = getOperationalHubTabCategoryOptions(company);
     const enabledTabKeys = new Set<string>();
     tabOptions.forEach((option) => {
       const sectionKey = option.key;
       const explicit = draft ? draft[sectionKey] : undefined;
-      const enabled = explicit === undefined
-        ? sectionKey !== 'tab:loans' || isLoansDefaultEnabledForCompany(company?.id)
-        : explicit !== false;
+      const enabled = explicit === undefined ? isOperationalHubTabDefaultEnabled(sectionKey, company) : explicit !== false;
       if (enabled && sectionKey.startsWith('tab:')) {
         enabledTabKeys.add(sectionKey.slice(4));
       }
@@ -1006,9 +1020,7 @@ export default function SiteAdminDashboard(props: any) {
     return tabOptions
       .filter((option) => {
         const explicit = draft ? draft[option.key] : undefined;
-        return explicit === undefined
-          ? option.key !== 'tab:loans' || isLoansDefaultEnabledForCompany(company?.id)
-          : explicit !== false;
+        return explicit === undefined ? isOperationalHubTabDefaultEnabled(option.key, company) : explicit !== false;
       })
       .map((option) => option.label);
   };
@@ -1024,9 +1036,7 @@ export default function SiteAdminDashboard(props: any) {
     const tabOptions = getOperationalHubTabCategoryOptions(company);
     const selectedTabOptions = tabOptions.filter((option) => {
       const explicit = draft ? draft[option.key] : undefined;
-      return explicit === undefined
-        ? option.key !== 'tab:loans' || isLoansDefaultEnabledForCompany(company?.id)
-        : explicit !== false;
+      return explicit === undefined ? isOperationalHubTabDefaultEnabled(option.key, company) : explicit !== false;
     });
     const sectionOptionsBySelectedTab = selectedTabOptions.flatMap((option) => {
       const moduleKey = option.key.startsWith('tab:') ? option.key.slice(4) : option.key;
@@ -1077,9 +1087,7 @@ export default function SiteAdminDashboard(props: any) {
     const options = getOperationalHubSectionOptionsForCompany(company, sections);
     return options.reduce<Record<string, boolean>>((acc, option) => {
       const explicit = sections[option.key];
-      acc[option.key] = explicit === undefined
-        ? option.key !== 'tab:loans' || isLoansDefaultEnabledForCompany(company?.id)
-        : explicit !== false;
+      acc[option.key] = explicit === undefined ? isOperationalHubTabDefaultEnabled(option.key, company) : explicit !== false;
       return acc;
     }, {});
   };

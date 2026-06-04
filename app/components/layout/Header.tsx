@@ -68,7 +68,6 @@ export default function Header({
     { id: 'projections', label: 'Projections', section: 'financial-reports' },
     { id: 'cash-flow', label: 'Cash Flow', section: 'financial-reports' },
     { id: 'working-capital', label: 'Working Capital', section: 'financial-reports' },
-    { id: 'cap-table', label: 'Cap Table', section: 'financial-reports' },
     { id: 'financial-statements', label: 'Financial Statements', section: 'financial-statements' },
   ];
   // Views that should still light up the header "Reports" tab when active,

@@ -26,6 +26,7 @@ import OpsDashboard from './OpsDashboard';
 import FinancialForecastTab from '../FinancialForecastTab';
 import WorkingCapitalForecastTab from './WorkingCapitalForecastTab';
 import LoansTab from './LoansTab';
+import CapTableView from '../cap-table/CapTableView';
 import { getSdeSectorBenchmarks } from '@/lib/sde-sector-benchmarks';
 import { getSectorMockProfile, getTopLineBucketsForSector } from '@/lib/operations/sector-mock-data';
 import { getModuleLabel, isLoansDefaultEnabledForCompany, mapModuleToDataType, resolveModuleKey, type OpsDataType } from '@/lib/operations/module-registry';
@@ -914,6 +915,7 @@ export default function OperationsTab({
     if (!normalized) return true;
     const value = operationalHubSections[`tab:${normalized}`];
     if (normalized === 'loans' && value === undefined) return isLoansDefaultEnabledForCompany(selectedCompanyId);
+    if (mapModuleToDataType(normalized) === 'cap-table' && value === undefined) return false;
     return value === undefined ? true : value !== false;
   };
   const renderOperationalClientSelector = () => {
@@ -1020,6 +1022,7 @@ export default function OperationsTab({
       ...(resolvedModules.length > 0 ? resolvedModules : ['customers', 'ar', 'ap', 'products', 'inventory', 'cash']),
       'daily_financials',
       'loans',
+      'cap_table',
       'working_capital_forecast',
     ])
   ).filter((module) => isTabModuleEnabled(module) && !['working_capital_forecast', 'working-capital-forecast'].includes(module));
@@ -20677,6 +20680,15 @@ Strategies to Improve the CCC
     if (dataType === 'hiring') return renderHiring();
     if (dataType === 'inventory') return renderInventory();
     if (dataType === 'cash') return renderCash();
+    if (dataType === 'cap-table') {
+      return (
+        <CapTableView
+          selectedCompanyId={selectedCompanyId}
+          companyName={companyName}
+          operationalHubSections={operationalHubSections}
+        />
+      );
+    }
     if (dataType === 'daily-financials') return renderDailyFinancials();
     if (dataType === 'revenue-billables') return renderRevenueBillables();
     if (dataType === 'unit-economics') return renderUnitEconomics();

@@ -6,6 +6,7 @@ import { getMockCapTableData } from '@/lib/cap-table/mock-data';
 type CapTableViewProps = {
   selectedCompanyId: string;
   companyName?: string;
+  operationalHubSections?: Record<string, any>;
 };
 
 type TabKey = 'ownership' | 'history' | 'securities' | 'waterfall' | 'performance';
@@ -36,9 +37,21 @@ function formatDate(value: string) {
   return parsed.toLocaleDateString('en-US', { timeZone: 'UTC' });
 }
 
-export default function CapTableView({ selectedCompanyId, companyName }: CapTableViewProps) {
+export default function CapTableView({ selectedCompanyId, companyName, operationalHubSections }: CapTableViewProps) {
   const [activeTab, setActiveTab] = useState<TabKey>('ownership');
   const data = getMockCapTableData();
+  const isSectionEnabled = (sectionKey: string): boolean => {
+    const value = operationalHubSections?.[sectionKey];
+    return value === undefined ? true : value !== false;
+  };
+  const tabOptions = [
+    { key: 'ownership' as TabKey, label: 'Current Ownership', sections: ['capTableCurrentOwnership'] },
+    { key: 'history' as TabKey, label: 'Financing & Dilution', sections: ['capTableFinancingHistory', 'capTableOwnershipEvolution', 'capTableDilutionAnalysis'] },
+    { key: 'securities' as TabKey, label: 'Security Classes', sections: ['capTableSecurityClasses'] },
+    { key: 'waterfall' as TabKey, label: 'Exit Waterfall', sections: ['capTableExitWaterfall'] },
+    { key: 'performance' as TabKey, label: 'Performance Linkage', sections: ['capTableInvestmentPerformance'] },
+  ].filter((tab) => tab.sections.some((section) => isSectionEnabled(section)));
+  const effectiveActiveTab = tabOptions.some((tab) => tab.key === activeTab) ? activeTab : tabOptions[0]?.key || 'ownership';
   const fullyDilutedTotal = data.securities.reduce((sum, security) => sum + security.asConvertedShares, 0);
   const totalCapitalRaised = data.rounds.reduce((sum, round) => sum + round.capitalRaised, 0);
   const latestEnterpriseValue = data.performance[data.performance.length - 1]?.enterpriseValue || 0;
@@ -107,14 +120,14 @@ export default function CapTableView({ selectedCompanyId, companyName }: CapTabl
       </div>
 
       <div style={{ display: 'flex', gap: '6px', borderBottom: '2px solid #e2e8f0', overflowX: 'auto' }}>
-        <button type="button" style={tabStyle(activeTab === 'ownership')} onClick={() => setActiveTab('ownership')}>Current Ownership</button>
-        <button type="button" style={tabStyle(activeTab === 'history')} onClick={() => setActiveTab('history')}>Financing & Dilution</button>
-        <button type="button" style={tabStyle(activeTab === 'securities')} onClick={() => setActiveTab('securities')}>Security Classes</button>
-        <button type="button" style={tabStyle(activeTab === 'waterfall')} onClick={() => setActiveTab('waterfall')}>Exit Waterfall</button>
-        <button type="button" style={tabStyle(activeTab === 'performance')} onClick={() => setActiveTab('performance')}>Performance Linkage</button>
+        {tabOptions.map((tab) => (
+          <button key={tab.key} type="button" style={tabStyle(effectiveActiveTab === tab.key)} onClick={() => setActiveTab(tab.key)}>
+            {tab.label}
+          </button>
+        ))}
       </div>
 
-      {activeTab === 'ownership' && (
+      {effectiveActiveTab === 'ownership' && (
         <>
           <div style={{ ...cardStyle, padding: 0, overflow: 'hidden' }}>
             <div style={{ padding: '14px 16px', borderBottom: '1px solid #e2e8f0', fontWeight: 900 }}>Current Capitalization Summary</div>
@@ -180,8 +193,9 @@ export default function CapTableView({ selectedCompanyId, companyName }: CapTabl
         </>
       )}
 
-      {activeTab === 'history' && (
+      {effectiveActiveTab === 'history' && (
         <>
+          {isSectionEnabled('capTableFinancingHistory') && (
           <div style={{ ...cardStyle, padding: 0, overflow: 'hidden' }}>
             <div style={{ padding: '14px 16px', borderBottom: '1px solid #e2e8f0', fontWeight: 900 }}>Financing Round History</div>
             <div style={{ overflowX: 'auto' }}>
@@ -213,8 +227,10 @@ export default function CapTableView({ selectedCompanyId, companyName }: CapTabl
               </table>
             </div>
           </div>
+          )}
 
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(360px, 1fr))', gap: '16px' }}>
+            {isSectionEnabled('capTableOwnershipEvolution') && (
             <div style={{ ...cardStyle, padding: 0, overflow: 'hidden' }}>
               <div style={{ padding: '14px 16px', borderBottom: '1px solid #e2e8f0', fontWeight: 900 }}>Ownership Evolution</div>
               <div style={{ overflowX: 'auto' }}>
@@ -244,7 +260,9 @@ export default function CapTableView({ selectedCompanyId, companyName }: CapTabl
                 </table>
               </div>
             </div>
+            )}
 
+            {isSectionEnabled('capTableDilutionAnalysis') && (
             <div style={{ ...cardStyle, padding: 0, overflow: 'hidden' }}>
               <div style={{ padding: '14px 16px', borderBottom: '1px solid #e2e8f0', fontWeight: 900 }}>Round-by-Round Dilution</div>
               <div style={{ overflowX: 'auto' }}>
@@ -272,11 +290,12 @@ export default function CapTableView({ selectedCompanyId, companyName }: CapTabl
                 </table>
               </div>
             </div>
+            )}
           </div>
         </>
       )}
 
-      {activeTab === 'securities' && (
+      {effectiveActiveTab === 'securities' && (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '16px' }}>
           {data.securities.map((security) => (
             <div key={security.id} style={cardStyle}>
@@ -294,13 +313,18 @@ export default function CapTableView({ selectedCompanyId, companyName }: CapTabl
                 {security.expiration && <div><strong>Expiration:</strong> {formatDate(security.expiration)}</div>}
                 {security.valuationCap != null && <div><strong>Valuation Cap:</strong> {formatCurrency(security.valuationCap)}</div>}
                 {security.discountPct != null && <div><strong>Discount:</strong> {formatPercent(security.discountPct)}</div>}
+                {security.principalAmount != null && <div><strong>Principal:</strong> {formatCurrency(security.principalAmount)}</div>}
+                {security.interestRatePct != null && <div><strong>Interest Rate:</strong> {formatPercent(security.interestRatePct)}</div>}
+                {security.maturityDate && <div><strong>Maturity:</strong> {formatDate(security.maturityDate)}</div>}
+                {security.conversionTrigger && <div><strong>Conversion Trigger:</strong> {security.conversionTrigger}</div>}
+                {security.accruedInterest != null && <div><strong>Accrued Interest:</strong> {formatCurrency(security.accruedInterest)}</div>}
               </div>
             </div>
           ))}
         </div>
       )}
 
-      {activeTab === 'waterfall' && (
+      {effectiveActiveTab === 'waterfall' && (
         <div style={{ ...cardStyle, padding: 0, overflow: 'hidden' }}>
           <div style={{ padding: '14px 16px', borderBottom: '1px solid #e2e8f0', fontWeight: 900 }}>Waterfall Exit Analysis</div>
           <div style={{ overflowX: 'auto' }}>
@@ -326,7 +350,7 @@ export default function CapTableView({ selectedCompanyId, companyName }: CapTabl
         </div>
       )}
 
-      {activeTab === 'performance' && (
+      {effectiveActiveTab === 'performance' && (
         <div style={{ ...cardStyle, padding: 0, overflow: 'hidden' }}>
           <div style={{ padding: '14px 16px', borderBottom: '1px solid #e2e8f0', fontWeight: 900 }}>Investment Performance Linkage</div>
           <div style={{ padding: '0 16px 12px', color: '#64748b', fontSize: '12px', marginTop: '12px' }}>
