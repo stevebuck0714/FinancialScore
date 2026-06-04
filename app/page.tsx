@@ -41,7 +41,6 @@ const CompanySettingsTab = dynamic(() => import('./components/admin/CompanySetti
 // Feature flag for covenants module
 const COVENANTS_ENABLED = process.env.NEXT_PUBLIC_COVENANTS_ENABLED === 'true' || true; // Default to enabled for development
 
-const CovenantsTab = dynamic(() => import('./covenants/components/CovenantsTab'), { ssr: false });
 const OperationsTab = dynamic(() => import('./components/operations/OperationsTab'), { ssr: false });
 const DailyAlertsView = dynamic(() => import('./components/operations/DailyAlertsView'), { ssr: false });
 const DataRoomView = dynamic(() => import('./components/dataroom/DataRoomView'), { ssr: false });
@@ -238,7 +237,6 @@ const NAVIGABLE_VIEWS = new Set([
   'ma-charts',
   'custom-print',
   'dashboard',
-  'covenants',
   'operations',
   'pa-overview',
   'pa-critical-issues',
@@ -1433,7 +1431,6 @@ function FinancialScorePage() {
     if (view === 'projections') return 'financial-reports';
     if (view === 'cash-flow') return 'financial-reports';
     if (view === 'working-capital') return 'financial-reports';
-    if (view === 'covenants') return 'financial-reports';
     if (view === 'financial-statements') return 'financial-statements';
     if (view === 'valuation-reports') return 'valuation';
     if (view === 'valuation') return 'valuation';
@@ -14788,30 +14785,14 @@ function FinancialScorePage() {
         </div>
       )}
 
-      {/* Covenants View - Accessible from header navigation */}
-      {currentView === 'covenants' && selectedCompanyId && (
-        <CovenantsTab
-          selectedCompanyId={selectedCompanyId}
-          currentUser={currentUser}
-          monthly={monthly}
-          companyName={companyName}
-        />
-      )}
-
-      {/* Covenants View - No Company Selected */}
-      {currentView === 'covenants' && !selectedCompanyId && (
-        <div style={{ maxWidth: '1400px', margin: '0 auto', padding: '64px 32px', textAlign: 'center' }}>
-          <h2 style={{ fontSize: '28px', fontWeight: '600', color: '#1e293b', marginBottom: '16px' }}>No Company Selected</h2>
-          <p style={{ fontSize: '16px', color: '#64748b', marginBottom: '12px' }}>Please select a company to manage covenants.</p>
-        </div>
-      )}
-
       {/* Operations View - With Company Selected */}
       {currentView === 'operations' && selectedCompanyId && (
         <OperationsTab
           selectedCompanyId={selectedCompanyId}
           companyName={companyName}
           industrySectorCategory={company?.industrySectorCategory || null}
+          currentUser={currentUser}
+          monthly={monthly}
           initialTab={operationsPrintConfig?.tab}
           initialForecastBasisTab={operationsPrintConfig?.forecastBasisTab}
           initialForecastSubTab={operationsPrintConfig?.forecastSubTab}
@@ -18262,6 +18243,8 @@ function FinancialScorePage() {
           selectedCompanyId={selectedCompanyId}
           companyName={companyName}
           industrySectorCategory={company?.industrySectorCategory || null}
+          currentUser={currentUser}
+          monthly={monthly}
           viewMode="overview-only"
         />
       )}

@@ -535,7 +535,6 @@ export default function CovenantsTab({
   monthly,
   companyName
 }: CovenantsTabProps) {
-  console.log('🏢 CovenantsTab RENDER - props:', { selectedCompanyId, companyName, monthlyLength: monthly?.length });
   const [activeTab, setActiveTab] = useState<'overview' | 'details' | 'alerts' | 'settings' | 'add-loan'>('overview');
   const [selectedLoan, setSelectedLoan] = useState<Loan | null>(null);
   const [loans, setLoans] = useState<Loan[]>([]);
@@ -1122,23 +1121,36 @@ export default function CovenantsTab({
   };
 
   return (
-    <div style={{ maxWidth: '1400px', margin: '0 auto', padding: '16px 16px 16px 8px' }}>
+    <div style={{ width: '100%', padding: 0 }}>
       {/* Header */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+      <div
+        style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          flexWrap: 'wrap',
+          gap: '12px',
+          marginBottom: '12px',
+          background: 'white',
+          border: '1px solid #e2e8f0',
+          borderRadius: '12px',
+          padding: '14px 16px',
+        }}
+      >
         <div style={{ flex: 1 }}>
-          <h1 style={{ fontSize: '24px', fontWeight: 'bold', color: '#1e293b', margin: '0 0 4px 0' }}>
+          <h2 style={{ fontSize: '18px', fontWeight: 800, color: '#0f172a', margin: '0 0 4px 0' }}>
             {activeTab === 'add-loan' ? 'Loan Management' : (selectedLoan ? selectedLoan.loanName : 'Loan Covenants')}
             {selectedLoan?.loanIdNumber && activeTab !== 'add-loan' && ` - ${selectedLoan.loanIdNumber}`}
-          </h1>
+          </h2>
           {selectedLoan && activeTab !== 'add-loan' && (
-            <p style={{ fontSize: '14px', color: '#64748b', margin: 0 }}>
+            <p style={{ fontSize: '12px', color: '#64748b', margin: 0 }}>
               {selectedLoan.lenderName} • {new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 0 }).format(selectedLoan.loanAmount)}
             </p>
           )}
         </div>
 
         {selectedLoan && activeTab !== 'add-loan' && (
-          <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
+          <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
             {/* Loan Selector Dropdown */}
             <select
               value={selectedLoan.id}
@@ -1150,10 +1162,10 @@ export default function CovenantsTab({
                 padding: '8px 12px',
                 border: '1px solid #d1d5db',
                 borderRadius: '6px',
-                fontSize: '14px',
+                fontSize: '13px',
                 background: 'white',
                 cursor: 'pointer',
-                minWidth: '200px'
+                minWidth: '220px'
               }}
             >
               {loans.map(loan => (
@@ -1164,20 +1176,20 @@ export default function CovenantsTab({
             </select>
 
             <div style={{
-              padding: '8px 16px',
+              padding: '6px 12px',
               background: complianceScore >= 80 ? '#dcfce7' : complianceScore >= 60 ? '#fef3c7' : '#fee2e2',
               border: `1px solid ${complianceScore >= 80 ? '#16a34a' : complianceScore >= 60 ? '#d97706' : '#dc2626'}`,
               borderRadius: '6px',
               textAlign: 'center'
             }}>
               <div style={{
-                fontSize: '18px',
+                fontSize: '16px',
                 fontWeight: 'bold',
                 color: complianceScore >= 80 ? '#16a34a' : complianceScore >= 60 ? '#d97706' : '#dc2626'
               }}>
                 {complianceScore}%
               </div>
-              <div style={{ fontSize: '10px', color: '#64748b' }}>Compliance</div>
+              <div style={{ fontSize: '10px', color: '#64748b', lineHeight: 1 }}>Compliance</div>
             </div>
           </div>
         )}
@@ -1197,7 +1209,15 @@ export default function CovenantsTab({
       )}
 
       {/* Navigation Tabs */}
-      <div style={{ display: 'flex', gap: '8px', borderBottom: '2px solid #e2e8f0', marginBottom: '16px' }}>
+      <div
+        style={{
+          display: 'flex',
+          gap: '6px',
+          borderBottom: '2px solid #e2e8f0',
+          marginBottom: '16px',
+          overflowX: 'auto',
+        }}
+      >
         {[
           { id: 'overview', label: 'Overview' },
           { id: 'details', label: 'Details' },
@@ -1210,19 +1230,20 @@ export default function CovenantsTab({
             onClick={() => setActiveTab(tab.id as any)}
             disabled={tab.id !== 'add-loan' && !selectedLoan}
             style={{
-              padding: '12px 20px',
+              padding: '10px 12px',
               background: 'none',
               color: activeTab === tab.id ? '#2751d0' : (tab.id !== 'add-loan' && !selectedLoan) ? '#cbd5e1' : '#64748b',
               border: 'none',
               borderBottom: activeTab === tab.id ? '3px solid #2751d0' : '3px solid transparent',
-              fontSize: '16px',
-              fontWeight: '600',
+              fontSize: '13px',
+              fontWeight: 700,
               cursor: (tab.id !== 'add-loan' && !selectedLoan) ? 'not-allowed' : 'pointer',
               transition: 'all 0.2s',
               display: 'flex',
               alignItems: 'center',
               gap: '6px',
-              opacity: (tab.id !== 'add-loan' && !selectedLoan) ? 0.5 : 1
+              opacity: (tab.id !== 'add-loan' && !selectedLoan) ? 0.5 : 1,
+              whiteSpace: 'nowrap',
             }}
           >
             {'icon' in tab && tab.icon}
@@ -1242,44 +1263,44 @@ export default function CovenantsTab({
       {activeTab === 'overview' && selectedLoan && (
         <div>
           {/* Compact Compliance Summary Cards */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '8px', marginBottom: '16px' }}>
-            <div style={{ background: 'white', borderRadius: '6px', padding: '16px', border: '2px solid #e5e7eb', boxShadow: '0 1px 3px rgba(0,0,0,0.03)' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '10px', marginBottom: '16px' }}>
+            <div style={{ background: 'white', borderRadius: '10px', padding: '14px', border: '1px solid #e2e8f0' }}>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                 <div style={{ display: 'flex', alignItems: 'center' }}>
-                  <CheckCircle style={{ color: '#10B981', marginRight: '6px' }} size={20} />
-                  <span style={{ fontSize: '32px', fontWeight: 'bold', color: '#10B981' }}>Compliant</span>
+                  <CheckCircle style={{ color: '#10B981', marginRight: '6px' }} size={18} />
+                  <span style={{ fontSize: '14px', fontWeight: 800, color: '#10B981' }}>Compliant</span>
                 </div>
-                <div style={{ fontSize: '32px', fontWeight: 'bold', color: '#10B981' }}>{compliantCount}</div>
+                <div style={{ fontSize: '24px', fontWeight: 800, color: '#10B981' }}>{compliantCount}</div>
               </div>
             </div>
 
-            <div style={{ background: 'white', borderRadius: '6px', padding: '16px', border: '2px solid #e5e7eb', boxShadow: '0 1px 3px rgba(0,0,0,0.03)' }}>
+            <div style={{ background: 'white', borderRadius: '10px', padding: '14px', border: '1px solid #e2e8f0' }}>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                 <div style={{ display: 'flex', alignItems: 'center' }}>
-                  <AlertTriangle style={{ color: '#F59E0B', marginRight: '6px' }} size={20} />
-                  <span style={{ fontSize: '32px', fontWeight: 'bold', color: '#F59E0B' }}>Warning</span>
+                  <AlertTriangle style={{ color: '#F59E0B', marginRight: '6px' }} size={18} />
+                  <span style={{ fontSize: '14px', fontWeight: 800, color: '#F59E0B' }}>Warning</span>
                 </div>
-                <div style={{ fontSize: '32px', fontWeight: 'bold', color: '#F59E0B' }}>{warningCount}</div>
+                <div style={{ fontSize: '24px', fontWeight: 800, color: '#F59E0B' }}>{warningCount}</div>
               </div>
             </div>
 
-            <div style={{ background: 'white', borderRadius: '6px', padding: '16px', border: '2px solid #e5e7eb', boxShadow: '0 1px 3px rgba(0,0,0,0.03)' }}>
+            <div style={{ background: 'white', borderRadius: '10px', padding: '14px', border: '1px solid #e2e8f0' }}>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                 <div style={{ display: 'flex', alignItems: 'center' }}>
-                  <XCircle style={{ color: '#EF4444', marginRight: '6px' }} size={20} />
-                  <span style={{ fontSize: '32px', fontWeight: 'bold', color: '#EF4444' }}>Breached</span>
+                  <XCircle style={{ color: '#EF4444', marginRight: '6px' }} size={18} />
+                  <span style={{ fontSize: '14px', fontWeight: 800, color: '#EF4444' }}>Breached</span>
                 </div>
-                <div style={{ fontSize: '32px', fontWeight: 'bold', color: '#EF4444' }}>{breachedCount}</div>
+                <div style={{ fontSize: '24px', fontWeight: 800, color: '#EF4444' }}>{breachedCount}</div>
               </div>
             </div>
 
-            <div style={{ background: 'white', borderRadius: '6px', padding: '16px', border: '2px solid #e5e7eb', boxShadow: '0 1px 3px rgba(0,0,0,0.03)' }}>
+            <div style={{ background: 'white', borderRadius: '10px', padding: '14px', border: '1px solid #e2e8f0' }}>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                 <div style={{ display: 'flex', alignItems: 'center' }}>
-                  <Target style={{ color: '#667eea', marginRight: '6px' }} size={20} />
-                  <span style={{ fontSize: '32px', fontWeight: 'bold', color: '#667eea' }}>Total</span>
+                  <Target style={{ color: '#667eea', marginRight: '6px' }} size={18} />
+                  <span style={{ fontSize: '14px', fontWeight: 800, color: '#667eea' }}>Total</span>
                 </div>
-                <div style={{ fontSize: '32px', fontWeight: 'bold', color: '#667eea' }}>{totalCount}</div>
+                <div style={{ fontSize: '24px', fontWeight: 800, color: '#667eea' }}>{totalCount}</div>
               </div>
             </div>
           </div>
@@ -1308,7 +1329,7 @@ export default function CovenantsTab({
                   </div>
 
                   {/* Covenant Grid for this Category */}
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '8px' }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '8px' }}>
                     {categoryCovenants.map((covenant) => (
                       <div key={covenant.id} style={{
                         display: 'flex',

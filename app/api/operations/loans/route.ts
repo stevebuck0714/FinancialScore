@@ -6,7 +6,7 @@ import { requireAuth, validateCompanyAccess } from '@/lib/tenant-security';
 export const dynamic = 'force-dynamic';
 export const maxDuration = 120;
 
-const LOAN_ACTIVITY_CACHE_VERSION = 10;
+const LOAN_ACTIVITY_CACHE_VERSION = 12;
 const STALE_LOAN_ACTIVITY_MONTHS = 18;
 
 type LoanTermInput = {
@@ -224,7 +224,8 @@ async function writeLoanActivityCache(companyId: string, payload: any) {
 
 function toNumber(value: unknown): number | null {
   if (value === null || value === undefined || value === '') return null;
-  const parsed = Number(value);
+  const normalized = typeof value === 'string' ? value.replace(/[$,\s]/g, '') : value;
+  const parsed = Number(normalized);
   return Number.isFinite(parsed) ? parsed : null;
 }
 
@@ -242,10 +243,8 @@ function subtractMonths(date: Date, months: number) {
 }
 
 function shouldHideInactiveLoanFromReport(instrument: any) {
-  const termCurrentBalance = toNumber(instrument?.terms?.currentBalance);
   const derivedCurrentBalance = toNumber(instrument?.derivedCurrentBalance);
-  const currentBalance = termCurrentBalance ?? derivedCurrentBalance;
-  if (currentBalance !== null && Math.abs(currentBalance) > 0.005) return false;
+  if (derivedCurrentBalance !== null && Math.abs(derivedCurrentBalance) > 0.005) return false;
 
   const lastActivityTime = dateToTime(instrument?.lastDate);
   if (!lastActivityTime) return true;
@@ -254,6 +253,29 @@ function shouldHideInactiveLoanFromReport(instrument: any) {
   const referenceDate = asOfTime ? new Date(asOfTime) : new Date();
   const staleBefore = subtractMonths(referenceDate, STALE_LOAN_ACTIVITY_MONTHS).getTime();
   return lastActivityTime < staleBefore;
+}
+
+function signedPrincipalChangeForMonth(
+  monthlyActivity: any[],
+  recentActivity: any[],
+  month: string,
+  useRawActivity: boolean
+) {
+  if (!month) return 0;
+  if (useRawActivity) {
+    return recentActivity.reduce((sum, row) => {
+      return monthKey(row?.transDate) === month ? sum + Number(row?.signedAmount || 0) : sum;
+    }, 0);
+  }
+  const row = monthlyActivity.find((item) => String(item.month || '') === month);
+  return Number(row?.activityTotal || 0);
+}
+
+function sumActivityForMonth(activity: any[], month: string) {
+  if (!month) return 0;
+  return activity.reduce((sum, row) => {
+    return monthKey(row?.transDate) === month ? sum + Math.abs(Number(row?.signedAmount || 0)) : sum;
+  }, 0);
 }
 
 function cleanText(value: unknown, maxLength = 500): string | null {
@@ -833,9 +855,7 @@ async function loadLoanActivity(companyId: string) {
       if (accountId === '39165' && interestAccountId === '76350') return true;
       return tokens.some((token) => haystack.includes(token));
     });
-    const interestTotal =
-      linkedInterest.reduce((sum, item) => sum + Math.abs(Number(item.signedAmount || 0)), 0) +
-      rawInforInterest.reduce((sum, item) => sum + Math.abs(Number(item.signedAmount || 0)), 0);
+    const allInterestActivity = [...linkedInterest, ...rawInforInterest];
 
     const rawTxCount = Number(rawInforActivity?.transactionCount || 0);
     const glTxCount = Number(row.transactionCount || 0);
@@ -879,6 +899,21 @@ async function loadLoanActivity(companyId: string) {
       instrumentStatus = 'active';
       statusReason = null;
     }
+    const monthlyActivity = monthlyByInstrument[String(row.instrumentKey)] || [];
+    const recentActivity = [
+      ...(useRawActivity ? rawInforActivity.recentActivity : detailByInstrument[String(row.instrumentKey)] || []),
+      ...rawInforInterest,
+    ].sort((a, b) => new Date(b?.transDate || 0).getTime() - new Date(a?.transDate || 0).getTime()).slice(0, 30);
+    const currentMonth = monthKey(derivedCurrentBalanceAsOf || latestSnapshotDate || row.lastDate);
+    const currentMonthSignedActivity = signedPrincipalChangeForMonth(
+      monthlyActivity,
+      recentActivity,
+      currentMonth,
+      Boolean(useRawActivity)
+    );
+    const principalChange = -currentMonthSignedActivity;
+    const priorMonthBalance = derivedCurrentBalance === null ? null : Math.max(0, Math.abs(derivedCurrentBalance) - principalChange);
+    const currentMonthInterestPaid = sumActivityForMonth(allInterestActivity, currentMonth);
 
     return {
       instrumentKey: String(row.instrumentKey),
@@ -891,17 +926,18 @@ async function loadLoanActivity(companyId: string) {
       activityTotal: principalActivityTotal,
       debits: Number(row.debits || 0),
       credits: Number(row.credits || 0),
-      estimatedInterestPaid: interestTotal,
+      estimatedInterestPaid: currentMonthInterestPaid,
+      currentMonthInterestPaid,
       instrumentStatus,
       statusReason,
       derivedCurrentBalance,
       derivedCurrentBalanceSource,
       derivedCurrentBalanceAsOf,
-      monthlyActivity: monthlyByInstrument[String(row.instrumentKey)] || [],
-      recentActivity: [
-        ...(useRawActivity ? rawInforActivity.recentActivity : detailByInstrument[String(row.instrumentKey)] || []),
-        ...rawInforInterest,
-      ].sort((a, b) => new Date(b?.transDate || 0).getTime() - new Date(a?.transDate || 0).getTime()).slice(0, 30),
+      priorMonthBalance,
+      principalChange,
+      principalChangeMonth: currentMonth,
+      monthlyActivity,
+      recentActivity,
     };
   });
 }
@@ -1065,9 +1101,13 @@ export async function POST(request: NextRequest) {
       notes
     );
 
+    const payload = await buildLoanActivityPayload(companyId);
+    await writeLoanActivityCache(companyId, payload);
+
     return NextResponse.json({
       ok: true,
       term: rows[0] || null,
+      payload,
       updatedBy: authContext.email || authContext.userId || null,
     });
   } catch (error: any) {

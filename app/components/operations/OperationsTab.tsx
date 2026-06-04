@@ -32,11 +32,14 @@ import { getModuleLabel, isLoansDefaultEnabledForCompany, mapModuleToDataType, r
 import { buildWeeklyProductMarginModel } from '@/lib/operations/product-margin-weekly';
 import { getFieldDisplayName } from '@/lib/constants/field-display-names';
 import { formatDateInputLabel, formatDateSafeUtc, parseDateSafeUtc, toLocalInputDate } from '@/app/utils/date';
+import type { MonthlyDataRow, User } from '@/app/types';
 
 interface OperationsTabProps {
   selectedCompanyId: string;
   companyName: string;
   industrySectorCategory?: string | null;
+  currentUser?: User | null;
+  monthly?: MonthlyDataRow[];
   operationalHubConfig?: any;
   viewMode?: 'full' | 'overview-only';
   initialTab?: string;
@@ -681,6 +684,8 @@ export default function OperationsTab({
   selectedCompanyId,
   companyName,
   industrySectorCategory,
+  currentUser = null,
+  monthly = [],
   operationalHubConfig,
   viewMode = 'full',
   initialTab,
@@ -11997,53 +12002,6 @@ export default function OperationsTab({
           </div>
         )}
 
-        {isSectionEnabled('cashCovenantMonitor') && (
-          <div style={{ background: 'white', padding: '8px 24px 24px', borderRadius: '12px', border: '1px solid #e2e8f0', marginTop: '24px' }}>
-          <h3 style={{ fontSize: '18px', fontWeight: '700', color: '#1e293b', marginBottom: '8px' }}>
-            Minimum Cash Covenant Monitor
-          </h3>
-          <div style={{ marginBottom: '8px', fontSize: '11px', color: '#64748b' }}>
-            Threshold proxy (floor): {formatCurrency(covenantFloor)} | As of: {cashAsOfLabel}
-          </div>
-          {cash13WeekRows.length === 0 ? (
-            <div style={{ height: '160px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#64748b' }}>
-              Not enough cash history to evaluate covenant coverage.
-            </div>
-          ) : (
-            <div style={{ overflowX: 'auto' }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                <thead>
-                  <tr style={{ borderBottom: '2px solid #1d4ed8', background: '#2563eb' }}>
-                    <th style={{ textAlign: 'left', padding: '6px 10px', fontSize: '13px', fontWeight: '700', color: 'white' }}>Period</th>
-                    <th style={{ textAlign: 'right', padding: '6px 10px', fontSize: '13px', fontWeight: '700', color: 'white' }}>Cash Balance</th>
-                    <th style={{ textAlign: 'right', padding: '6px 10px', fontSize: '13px', fontWeight: '700', color: 'white' }}>Variance to Floor</th>
-                    <th style={{ textAlign: 'left', padding: '6px 10px', fontSize: '13px', fontWeight: '700', color: 'white' }}>Status</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {cash13WeekRows.map((row) => {
-                    const variance = Number(row.totalCash || 0) - covenantFloor;
-                    const isBreach = variance < 0;
-                    return (
-                      <tr key={row.period} style={{ borderBottom: '1px solid #e2e8f0' }}>
-                        <td style={{ padding: '6px 10px', fontSize: '13px', color: '#1e293b', fontWeight: 600 }}>{row.period}</td>
-                        <td style={{ padding: '6px 10px', fontSize: '13px', color: '#1e293b', textAlign: 'right' }}>{formatCurrency(Number(row.totalCash || 0))}</td>
-                        <td style={{ padding: '6px 10px', fontSize: '13px', color: isBreach ? '#dc2626' : '#16a34a', textAlign: 'right', fontWeight: 600 }}>
-                          {isBreach ? '-' : '+'}
-                          {formatCurrency(Math.abs(variance))}
-                        </td>
-                        <td style={{ padding: '6px 10px', fontSize: '13px', color: isBreach ? '#dc2626' : '#16a34a', fontWeight: 700 }}>
-                          {isBreach ? 'Breach' : 'Compliant'}
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </div>
-        )}
           </div>
         )}
       </div>
@@ -20703,6 +20661,8 @@ Strategies to Improve the CCC
         <LoansTab
           selectedCompanyId={selectedCompanyId}
           companyName={companyName}
+          currentUser={currentUser}
+          monthly={monthly}
           operationalHubSections={operationalHubSections}
         />
       );
