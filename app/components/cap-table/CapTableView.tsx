@@ -1,0 +1,367 @@
+'use client';
+
+import React, { useState } from 'react';
+import { getMockCapTableData } from '@/lib/cap-table/mock-data';
+
+type CapTableViewProps = {
+  selectedCompanyId: string;
+  companyName?: string;
+};
+
+type TabKey = 'ownership' | 'history' | 'securities' | 'waterfall' | 'performance';
+
+function formatCurrency(value: number | null | undefined, digits = 0) {
+  if (value === null || value === undefined || Number.isNaN(Number(value))) return '-';
+  return Number(value).toLocaleString('en-US', {
+    style: 'currency',
+    currency: 'USD',
+    minimumFractionDigits: digits,
+    maximumFractionDigits: digits,
+  });
+}
+
+function formatNumber(value: number | null | undefined) {
+  if (value === null || value === undefined || Number.isNaN(Number(value))) return '-';
+  return Number(value).toLocaleString('en-US');
+}
+
+function formatPercent(value: number | null | undefined) {
+  if (value === null || value === undefined || Number.isNaN(Number(value))) return '-';
+  return `${Number(value).toFixed(1)}%`;
+}
+
+function formatDate(value: string) {
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return value;
+  return parsed.toLocaleDateString('en-US', { timeZone: 'UTC' });
+}
+
+export default function CapTableView({ selectedCompanyId, companyName }: CapTableViewProps) {
+  const [activeTab, setActiveTab] = useState<TabKey>('ownership');
+  const data = getMockCapTableData();
+  const fullyDilutedTotal = data.securities.reduce((sum, security) => sum + security.asConvertedShares, 0);
+  const totalCapitalRaised = data.rounds.reduce((sum, round) => sum + round.capitalRaised, 0);
+  const latestEnterpriseValue = data.performance[data.performance.length - 1]?.enterpriseValue || 0;
+  const waterfallHolders = Object.keys(data.exitWaterfall[0]?.distributions || {});
+
+  const cardStyle: React.CSSProperties = {
+    background: 'white',
+    border: '1px solid #e2e8f0',
+    borderRadius: '12px',
+    padding: '16px',
+  };
+  const thStyle: React.CSSProperties = {
+    textAlign: 'left',
+    padding: '9px 10px',
+    fontSize: '11px',
+    fontWeight: 800,
+    color: '#475569',
+    textTransform: 'uppercase',
+    letterSpacing: '0.04em',
+    borderBottom: '1px solid #e2e8f0',
+    background: '#f8fafc',
+  };
+  const tdStyle: React.CSSProperties = {
+    padding: '9px 10px',
+    fontSize: '13px',
+    color: '#0f172a',
+    borderBottom: '1px solid #f1f5f9',
+  };
+  const tabStyle = (active: boolean): React.CSSProperties => ({
+    border: 'none',
+    background: 'transparent',
+    borderBottom: active ? '3px solid #2751d0' : '3px solid transparent',
+    color: active ? '#2751d0' : '#64748b',
+    padding: '10px 12px',
+    fontSize: '13px',
+    fontWeight: 800,
+    cursor: 'pointer',
+    whiteSpace: 'nowrap',
+  });
+
+  return (
+    <div style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', gap: '16px', alignItems: 'flex-start', flexWrap: 'wrap' }}>
+        <div>
+          <h1 style={{ margin: 0, fontSize: '24px', color: '#0f172a' }}>Cap Table</h1>
+          <div style={{ marginTop: '4px', color: '#64748b', fontSize: '13px' }}>
+            Mock dev data for {companyName || selectedCompanyId} as of {formatDate(data.asOfDate)}.
+          </div>
+        </div>
+        <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+          {[
+            ['Fully Diluted Shares', formatNumber(fullyDilutedTotal)],
+            ['Capital Raised', formatCurrency(totalCapitalRaised)],
+            ['Latest Enterprise Value', formatCurrency(latestEnterpriseValue)],
+          ].map(([label, value]) => (
+            <div key={label} style={{ ...cardStyle, padding: '10px 14px', minWidth: '160px' }}>
+              <div style={{ fontSize: '11px', color: '#64748b', fontWeight: 800, textTransform: 'uppercase' }}>{label}</div>
+              <div style={{ fontSize: '18px', fontWeight: 900, color: '#0f172a', marginTop: '2px' }}>{value}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div style={{ ...cardStyle, background: '#f8fafc', color: '#475569', fontSize: '13px' }}>
+        Development preview only. This module is currently backed by deterministic mock cap table data so the report interface can be reviewed before database-backed cap table records are introduced.
+      </div>
+
+      <div style={{ display: 'flex', gap: '6px', borderBottom: '2px solid #e2e8f0', overflowX: 'auto' }}>
+        <button type="button" style={tabStyle(activeTab === 'ownership')} onClick={() => setActiveTab('ownership')}>Current Ownership</button>
+        <button type="button" style={tabStyle(activeTab === 'history')} onClick={() => setActiveTab('history')}>Financing & Dilution</button>
+        <button type="button" style={tabStyle(activeTab === 'securities')} onClick={() => setActiveTab('securities')}>Security Classes</button>
+        <button type="button" style={tabStyle(activeTab === 'waterfall')} onClick={() => setActiveTab('waterfall')}>Exit Waterfall</button>
+        <button type="button" style={tabStyle(activeTab === 'performance')} onClick={() => setActiveTab('performance')}>Performance Linkage</button>
+      </div>
+
+      {activeTab === 'ownership' && (
+        <>
+          <div style={{ ...cardStyle, padding: 0, overflow: 'hidden' }}>
+            <div style={{ padding: '14px 16px', borderBottom: '1px solid #e2e8f0', fontWeight: 900 }}>Current Capitalization Summary</div>
+            <div style={{ overflowX: 'auto' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                <thead>
+                  <tr>
+                    <th style={thStyle}>Security Type</th>
+                    <th style={{ ...thStyle, textAlign: 'right' }}>Units</th>
+                    <th style={{ ...thStyle, textAlign: 'right' }}>As Converted Shares</th>
+                    <th style={{ ...thStyle, textAlign: 'right' }}>% Ownership</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {data.securities.filter((security) => security.asConvertedShares > 0).map((security) => (
+                    <tr key={security.id}>
+                      <td style={{ ...tdStyle, fontWeight: 800 }}>{security.series}</td>
+                      <td style={{ ...tdStyle, textAlign: 'right' }}>{formatNumber(security.units)}</td>
+                      <td style={{ ...tdStyle, textAlign: 'right' }}>{formatNumber(security.asConvertedShares)}</td>
+                      <td style={{ ...tdStyle, textAlign: 'right', fontWeight: 800 }}>{formatPercent((security.asConvertedShares / fullyDilutedTotal) * 100)}</td>
+                    </tr>
+                  ))}
+                  <tr>
+                    <td style={{ ...tdStyle, fontWeight: 900 }}>Fully Diluted Total</td>
+                    <td style={{ ...tdStyle, textAlign: 'right', fontWeight: 900 }}>{formatNumber(fullyDilutedTotal)}</td>
+                    <td style={{ ...tdStyle, textAlign: 'right', fontWeight: 900 }}>{formatNumber(fullyDilutedTotal)}</td>
+                    <td style={{ ...tdStyle, textAlign: 'right', fontWeight: 900 }}>100.0%</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <div style={{ ...cardStyle, padding: 0, overflow: 'hidden' }}>
+            <div style={{ padding: '14px 16px', borderBottom: '1px solid #e2e8f0', fontWeight: 900 }}>Holder Detail</div>
+            <div style={{ overflowX: 'auto' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                <thead>
+                  <tr>
+                    <th style={thStyle}>Holder</th>
+                    <th style={thStyle}>Security</th>
+                    <th style={{ ...thStyle, textAlign: 'right' }}>Shares</th>
+                    <th style={{ ...thStyle, textAlign: 'right' }}>Cost Basis</th>
+                    <th style={{ ...thStyle, textAlign: 'right' }}>Basic %</th>
+                    <th style={{ ...thStyle, textAlign: 'right' }}>Fully Diluted %</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {data.holdings.map((holding) => (
+                    <tr key={`${holding.holder}-${holding.security}`}>
+                      <td style={{ ...tdStyle, fontWeight: 800 }}>{holding.holder}</td>
+                      <td style={tdStyle}>{holding.security}</td>
+                      <td style={{ ...tdStyle, textAlign: 'right' }}>{formatNumber(holding.shares)}</td>
+                      <td style={{ ...tdStyle, textAlign: 'right' }}>{formatCurrency(holding.costBasis, holding.costBasis < 1 ? 3 : 2)}/share</td>
+                      <td style={{ ...tdStyle, textAlign: 'right' }}>{formatPercent(holding.basicOwnershipPct)}</td>
+                      <td style={{ ...tdStyle, textAlign: 'right', fontWeight: 800 }}>{formatPercent(holding.fullyDilutedOwnershipPct)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </>
+      )}
+
+      {activeTab === 'history' && (
+        <>
+          <div style={{ ...cardStyle, padding: 0, overflow: 'hidden' }}>
+            <div style={{ padding: '14px 16px', borderBottom: '1px solid #e2e8f0', fontWeight: 900 }}>Financing Round History</div>
+            <div style={{ overflowX: 'auto' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                <thead>
+                  <tr>
+                    <th style={thStyle}>Round</th>
+                    <th style={thStyle}>Date</th>
+                    <th style={{ ...thStyle, textAlign: 'right' }}>Capital Raised</th>
+                    <th style={{ ...thStyle, textAlign: 'right' }}>Pre-Money</th>
+                    <th style={{ ...thStyle, textAlign: 'right' }}>Post-Money</th>
+                    <th style={{ ...thStyle, textAlign: 'right' }}>Share Price</th>
+                    <th style={{ ...thStyle, textAlign: 'right' }}>Shares Issued</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {data.rounds.map((round) => (
+                    <tr key={round.id}>
+                      <td style={{ ...tdStyle, fontWeight: 800 }}>{round.name}</td>
+                      <td style={tdStyle}>{formatDate(round.date)}</td>
+                      <td style={{ ...tdStyle, textAlign: 'right' }}>{formatCurrency(round.capitalRaised)}</td>
+                      <td style={{ ...tdStyle, textAlign: 'right' }}>{formatCurrency(round.preMoneyValuation)}</td>
+                      <td style={{ ...tdStyle, textAlign: 'right' }}>{formatCurrency(round.postMoneyValuation)}</td>
+                      <td style={{ ...tdStyle, textAlign: 'right' }}>{round.sharePrice == null ? '-' : formatCurrency(round.sharePrice, round.sharePrice < 1 ? 3 : 2)}</td>
+                      <td style={{ ...tdStyle, textAlign: 'right' }}>{formatNumber(round.sharesIssued)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(360px, 1fr))', gap: '16px' }}>
+            <div style={{ ...cardStyle, padding: 0, overflow: 'hidden' }}>
+              <div style={{ padding: '14px 16px', borderBottom: '1px solid #e2e8f0', fontWeight: 900 }}>Ownership Evolution</div>
+              <div style={{ overflowX: 'auto' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                  <thead>
+                    <tr>
+                      <th style={thStyle}>Holder</th>
+                      <th style={{ ...thStyle, textAlign: 'right' }}>Founder</th>
+                      <th style={{ ...thStyle, textAlign: 'right' }}>Seed</th>
+                      <th style={{ ...thStyle, textAlign: 'right' }}>Series A</th>
+                      <th style={{ ...thStyle, textAlign: 'right' }}>Series B</th>
+                      <th style={{ ...thStyle, textAlign: 'right' }}>Current</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {data.ownershipEvolution.map((row) => (
+                      <tr key={row.holder}>
+                        <td style={{ ...tdStyle, fontWeight: 800 }}>{row.holder}</td>
+                        <td style={{ ...tdStyle, textAlign: 'right' }}>{formatPercent(row.founder)}</td>
+                        <td style={{ ...tdStyle, textAlign: 'right' }}>{formatPercent(row.seed)}</td>
+                        <td style={{ ...tdStyle, textAlign: 'right' }}>{formatPercent(row.seriesA)}</td>
+                        <td style={{ ...tdStyle, textAlign: 'right' }}>{formatPercent(row.seriesB)}</td>
+                        <td style={{ ...tdStyle, textAlign: 'right', fontWeight: 800 }}>{formatPercent(row.current)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <div style={{ ...cardStyle, padding: 0, overflow: 'hidden' }}>
+              <div style={{ padding: '14px 16px', borderBottom: '1px solid #e2e8f0', fontWeight: 900 }}>Round-by-Round Dilution</div>
+              <div style={{ overflowX: 'auto' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                  <thead>
+                    <tr>
+                      <th style={thStyle}>Round</th>
+                      <th style={{ ...thStyle, textAlign: 'right' }}>New Shares</th>
+                      <th style={{ ...thStyle, textAlign: 'right' }}>Dilution</th>
+                      <th style={{ ...thStyle, textAlign: 'right' }}>Founder Before</th>
+                      <th style={{ ...thStyle, textAlign: 'right' }}>Founder After</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {data.dilution.map((row) => (
+                      <tr key={row.round}>
+                        <td style={{ ...tdStyle, fontWeight: 800 }}>{row.round}</td>
+                        <td style={{ ...tdStyle, textAlign: 'right' }}>{formatNumber(row.newSharesIssued)}</td>
+                        <td style={{ ...tdStyle, textAlign: 'right' }}>{formatPercent(row.dilutionPct)}</td>
+                        <td style={{ ...tdStyle, textAlign: 'right' }}>{formatPercent(row.founderOwnershipBefore)}</td>
+                        <td style={{ ...tdStyle, textAlign: 'right', fontWeight: 800 }}>{formatPercent(row.founderOwnershipAfter)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </>
+      )}
+
+      {activeTab === 'securities' && (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '16px' }}>
+          {data.securities.map((security) => (
+            <div key={security.id} style={cardStyle}>
+              <div style={{ fontWeight: 900, color: '#0f172a' }}>{security.series}</div>
+              <div style={{ color: '#64748b', fontSize: '12px', marginTop: '2px' }}>{security.securityType}</div>
+              <div style={{ display: 'grid', gap: '8px', marginTop: '12px', fontSize: '13px' }}>
+                <div><strong>Units:</strong> {formatNumber(security.units)}</div>
+                <div><strong>As Converted:</strong> {formatNumber(security.asConvertedShares)}</div>
+                {security.votingRights && <div><strong>Voting:</strong> {security.votingRights}</div>}
+                {security.liquidationPreference && <div><strong>Liquidation:</strong> {security.liquidationPreference}</div>}
+                {security.conversionRatio && <div><strong>Conversion:</strong> {security.conversionRatio}</div>}
+                {security.participationRights && <div><strong>Participation:</strong> {security.participationRights}</div>}
+                {security.dividendRights && <div><strong>Dividends:</strong> {security.dividendRights}</div>}
+                {security.strikePrice != null && <div><strong>Strike:</strong> {formatCurrency(security.strikePrice, 2)}</div>}
+                {security.expiration && <div><strong>Expiration:</strong> {formatDate(security.expiration)}</div>}
+                {security.valuationCap != null && <div><strong>Valuation Cap:</strong> {formatCurrency(security.valuationCap)}</div>}
+                {security.discountPct != null && <div><strong>Discount:</strong> {formatPercent(security.discountPct)}</div>}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {activeTab === 'waterfall' && (
+        <div style={{ ...cardStyle, padding: 0, overflow: 'hidden' }}>
+          <div style={{ padding: '14px 16px', borderBottom: '1px solid #e2e8f0', fontWeight: 900 }}>Waterfall Exit Analysis</div>
+          <div style={{ overflowX: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+              <thead>
+                <tr>
+                  <th style={thStyle}>Exit Value</th>
+                  {waterfallHolders.map((holder) => <th key={holder} style={{ ...thStyle, textAlign: 'right' }}>{holder}</th>)}
+                </tr>
+              </thead>
+              <tbody>
+                {data.exitWaterfall.map((row) => (
+                  <tr key={row.exitValue}>
+                    <td style={{ ...tdStyle, fontWeight: 900 }}>{formatCurrency(row.exitValue)}</td>
+                    {waterfallHolders.map((holder) => (
+                      <td key={holder} style={{ ...tdStyle, textAlign: 'right' }}>{formatCurrency(row.distributions[holder] || 0)}</td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {activeTab === 'performance' && (
+        <div style={{ ...cardStyle, padding: 0, overflow: 'hidden' }}>
+          <div style={{ padding: '14px 16px', borderBottom: '1px solid #e2e8f0', fontWeight: 900 }}>Investment Performance Linkage</div>
+          <div style={{ padding: '0 16px 12px', color: '#64748b', fontSize: '12px', marginTop: '12px' }}>
+            Corelytics differentiator: ownership linked to operating performance and valuation at each financing round.
+          </div>
+          <div style={{ overflowX: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+              <thead>
+                <tr>
+                  <th style={thStyle}>Round</th>
+                  <th style={{ ...thStyle, textAlign: 'right' }}>Revenue</th>
+                  <th style={{ ...thStyle, textAlign: 'right' }}>EBITDA</th>
+                  <th style={{ ...thStyle, textAlign: 'right' }}>Enterprise Value</th>
+                  <th style={{ ...thStyle, textAlign: 'right' }}>Ownership %</th>
+                  <th style={{ ...thStyle, textAlign: 'right' }}>Invested Capital</th>
+                  <th style={{ ...thStyle, textAlign: 'right' }}>Implied Current Value</th>
+                </tr>
+              </thead>
+              <tbody>
+                {data.performance.map((row) => (
+                  <tr key={row.round}>
+                    <td style={{ ...tdStyle, fontWeight: 900 }}>{row.round}</td>
+                    <td style={{ ...tdStyle, textAlign: 'right' }}>{formatCurrency(row.revenue)}</td>
+                    <td style={{ ...tdStyle, textAlign: 'right', color: row.ebitda < 0 ? '#dc2626' : '#16a34a' }}>{formatCurrency(row.ebitda)}</td>
+                    <td style={{ ...tdStyle, textAlign: 'right' }}>{formatCurrency(row.enterpriseValue)}</td>
+                    <td style={{ ...tdStyle, textAlign: 'right' }}>{formatPercent(row.ownershipPct)}</td>
+                    <td style={{ ...tdStyle, textAlign: 'right' }}>{formatCurrency(row.investedCapital)}</td>
+                    <td style={{ ...tdStyle, textAlign: 'right', fontWeight: 900 }}>{formatCurrency(row.impliedCurrentValue)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}

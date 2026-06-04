@@ -45,6 +45,7 @@ const OperationsTab = dynamic(() => import('./components/operations/OperationsTa
 const DailyAlertsView = dynamic(() => import('./components/operations/DailyAlertsView'), { ssr: false });
 const DataRoomView = dynamic(() => import('./components/dataroom/DataRoomView'), { ssr: false });
 const CustomReportsView = dynamic(() => import('./components/reports/CustomReportsView'), { ssr: false });
+const CapTableView = dynamic(() => import('./components/cap-table/CapTableView'), { ssr: false });
 
 function formatErrorText(value: any, fallback = 'Unknown error') {
   if (value == null || value === '') return fallback;
@@ -246,6 +247,7 @@ const NAVIGABLE_VIEWS = new Set([
   'pa-opportunity-workspace',
   'dataroom',
   'custom-reports',
+  'cap-table',
 ]);
 
 type InforOperationalSyncStatus = {
@@ -1193,7 +1195,7 @@ function FinancialScorePage() {
   const [error, setError] = useState<string | null>(null);
   const [isFreshUpload, setIsFreshUpload] = useState<boolean>(false);
   const [loadedMonthlyData, setLoadedMonthlyData] = useState<MonthlyDataRow[]>([]);
-  const [currentView, setCurrentView] = useState<'login' | 'admin' | 'consultant-dashboard' | 'siteadmin' | 'upload' | 'results' | 'kpis' | 'mda' | 'ai-analysis' | 'daily-alerts' | 'financial-forecast' | 'projections' | 'working-capital' | 'valuation-reports' | 'valuation' | 'cash-flow' | 'financial-statements' | 'trend-analysis' | 'profile' | 'goals' | 'fs-intro' | 'fs-score' | 'ma-welcome' | 'ma-questionnaire' | 'ma-your-results' | 'ma-scores-summary' | 'ma-scoring-guide' | 'ma-charts' | 'custom-print' | 'dashboard' | 'covenants' | 'operations' | 'pa-overview' | 'pa-critical-issues' | 'pa-focus-board' | 'pa-trend-explorer' | 'pa-anomaly-inbox' | 'pa-opportunity-workspace' | 'dataroom' | 'custom-reports'>('login');
+  const [currentView, setCurrentView] = useState<'login' | 'admin' | 'consultant-dashboard' | 'siteadmin' | 'upload' | 'results' | 'kpis' | 'mda' | 'ai-analysis' | 'daily-alerts' | 'financial-forecast' | 'projections' | 'working-capital' | 'valuation-reports' | 'valuation' | 'cash-flow' | 'financial-statements' | 'trend-analysis' | 'profile' | 'goals' | 'fs-intro' | 'fs-score' | 'ma-welcome' | 'ma-questionnaire' | 'ma-your-results' | 'ma-scores-summary' | 'ma-scoring-guide' | 'ma-charts' | 'custom-print' | 'dashboard' | 'covenants' | 'operations' | 'pa-overview' | 'pa-critical-issues' | 'pa-focus-board' | 'pa-trend-explorer' | 'pa-anomaly-inbox' | 'pa-opportunity-workspace' | 'dataroom' | 'custom-reports' | 'cap-table'>('login');
   const [valuationBuilderSelections, setValuationBuilderSelections] = useState<Record<string, boolean>>({
     es_enterpriseValueRange: true,
     es_primaryValuationMethod: true,
@@ -1438,6 +1440,7 @@ function FinancialScorePage() {
     if (view === 'mda') return 'mda';
     if (view === 'dataroom') return 'dataroom';
     if (view === 'custom-reports') return 'custom-reports';
+    if (view === 'cap-table') return 'financial-reports';
     if (view.startsWith('ma-')) return 'management-assessment';
     return null;
   };
@@ -1464,7 +1467,7 @@ function FinancialScorePage() {
   }, [currentView]);
 
   useEffect(() => {
-    const reportViews = ['custom-print', 'valuation-reports'];
+    const reportViews = ['custom-print', 'valuation-reports', 'cap-table'];
     if (reportViews.includes(currentView)) {
       setIsReportsExpanded(true);
     }
@@ -1763,6 +1766,11 @@ function FinancialScorePage() {
     }
     if (view === 'custom-reports' && !isCustomReportsEnabledByAdmin) {
       alert('Custom Reports are disabled for this company.');
+      return;
+    }
+
+    if (view === 'cap-table' && !selectedCompanyId) {
+      alert('Please select a company first.');
       return;
     }
 
@@ -12798,6 +12806,34 @@ function FinancialScorePage() {
                       >
                         {currentView === 'custom-print' && '› '}STANDARD REPORTS
                       </div>
+                      <div
+                        onClick={() => handleNavigation('cap-table')}
+                        style={{
+                          fontSize: '13px',
+                          color: currentView === 'cap-table' ? '#1F70C1' : '#475569',
+                          padding: '5px 12px',
+                          cursor: 'pointer',
+                          borderRadius: '6px',
+                          marginBottom: '4px',
+                          background: currentView === 'cap-table' ? '#e0f2fe' : 'transparent',
+                          fontWeight: currentView === 'cap-table' ? '600' : '400',
+                          transition: 'all 0.2s'
+                        }}
+                        onMouseEnter={(e) => {
+                          if (currentView !== 'cap-table') {
+                            e.currentTarget.style.background = '#f8fafc';
+                            e.currentTarget.style.color = '#1F70C1';
+                          }
+                        }}
+                        onMouseLeave={(e) => {
+                          if (currentView !== 'cap-table') {
+                            e.currentTarget.style.background = 'transparent';
+                            e.currentTarget.style.color = '#475569';
+                          }
+                        }}
+                      >
+                        {currentView === 'cap-table' && '› '}CAP TABLE
+                      </div>
                       {hasCompanySectionAccess('valuation') && isValuationReportsEnabledByAdmin && (
                         <div
                           onClick={() => handleNavigation('valuation-reports')}
@@ -14850,6 +14886,19 @@ function FinancialScorePage() {
         <div style={{ maxWidth: '1400px', margin: '0 auto', padding: '64px 32px', textAlign: 'center' }}>
           <h2 style={{ fontSize: '28px', fontWeight: '600', color: '#1e293b', marginBottom: '16px' }}>No Company Selected</h2>
           <p style={{ fontSize: '16px', color: '#64748b', marginBottom: '12px' }}>Please select a company to build custom reports.</p>
+        </div>
+      )}
+
+      {currentView === 'cap-table' && selectedCompanyId && (
+        <CapTableView
+          selectedCompanyId={selectedCompanyId}
+          companyName={companyName || ''}
+        />
+      )}
+      {currentView === 'cap-table' && !selectedCompanyId && (
+        <div style={{ maxWidth: '1400px', margin: '0 auto', padding: '64px 32px', textAlign: 'center' }}>
+          <h2 style={{ fontSize: '28px', fontWeight: '600', color: '#1e293b', marginBottom: '16px' }}>No Company Selected</h2>
+          <p style={{ fontSize: '16px', color: '#64748b', marginBottom: '12px' }}>Please select a company to view the cap table report.</p>
         </div>
       )}
 

@@ -6,8 +6,8 @@ import { requireAuth, validateCompanyAccess } from '@/lib/tenant-security';
 export const dynamic = 'force-dynamic';
 export const maxDuration = 120;
 
-const LOAN_ACTIVITY_CACHE_VERSION = 13;
-const STALE_LOAN_ACTIVITY_MONTHS = 18;
+const LOAN_ACTIVITY_CACHE_VERSION = 15;
+const STALE_LOAN_ACTIVITY_MONTHS = 13;
 
 type LoanTermInput = {
   instrumentKey: string;
@@ -244,15 +244,16 @@ function subtractMonths(date: Date, months: number) {
 
 function shouldHideInactiveLoanFromReport(instrument: any) {
   const derivedCurrentBalance = toNumber(instrument?.derivedCurrentBalance);
-  if (derivedCurrentBalance !== null && Math.abs(derivedCurrentBalance) > 0.005) return false;
-
   const lastActivityTime = dateToTime(instrument?.lastDate);
   if (!lastActivityTime) return true;
 
   const asOfTime = dateToTime(instrument?.derivedCurrentBalanceAsOf);
   const referenceDate = asOfTime ? new Date(asOfTime) : new Date();
   const staleBefore = subtractMonths(referenceDate, STALE_LOAN_ACTIVITY_MONTHS).getTime();
-  return lastActivityTime < staleBefore;
+  const isStale = lastActivityTime < staleBefore;
+  if (String(instrument?.targetField || '').toLowerCase() === 'ltd') return isStale;
+  if (derivedCurrentBalance !== null && Math.abs(derivedCurrentBalance) > 0.005) return false;
+  return isStale;
 }
 
 function signedPrincipalChangeForMonth(
@@ -907,7 +908,8 @@ async function loadLoanActivity(companyId: string) {
       ...(useRawActivity ? rawInforActivity.recentActivity : detailByInstrument[String(row.instrumentKey)] || []),
       ...rawInforInterest,
     ].sort((a, b) => new Date(b?.transDate || 0).getTime() - new Date(a?.transDate || 0).getTime()).slice(0, 30);
-    const currentMonth = monthKey(derivedCurrentBalanceAsOf || latestSnapshotDate || row.lastDate);
+    const reportAsOfDate = latestSnapshotDate || new Date();
+    const currentMonth = monthKey(reportAsOfDate);
     const currentMonthSignedActivity = signedPrincipalChangeForMonth(
       monthlyActivity,
       recentActivity,
@@ -922,6 +924,7 @@ async function loadLoanActivity(companyId: string) {
       instrumentKey: String(row.instrumentKey),
       accountId,
       displayName: name,
+      targetField,
       source: useRawActivity ? 'ApiSyncLog:INFOR_M3' : 'GLTransactionFact',
       transactionCount: useRawActivity ? Number(rawInforActivity.transactionCount || 0) : Number(row.transactionCount || 0),
       firstDate: useRawActivity ? rawInforActivity.firstDate : row.firstDate,
