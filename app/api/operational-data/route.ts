@@ -7056,16 +7056,36 @@ export async function GET(request: NextRequest) {
                   }
                 }
                 if (aprPartsForPartLookup.length > 0) {
+                  const cachedItemOverviewRows = await prisma.$queryRaw<Array<{ itemNumber: string; overview: string | null; partNotes: string | null }>>(Prisma.sql`
+                    SELECT "itemNumber", "overview", "partNotes"
+                    FROM "InforItemOverviewCache"
+                    WHERE "companyId" = ${companyId}
+                      AND "platform" = 'INFOR_M3'
+                      AND "itemNumber" IN (${Prisma.join(aprPartsForPartLookup)})
+                      AND COALESCE(NULLIF(TRIM("overview"), ''), NULLIF(TRIM("partNotes"), '')) IS NOT NULL
+                    LIMIT ${Math.min(aprPartsForPartLookup.length, 2000)}
+                  `);
+                  for (const cacheRow of cachedItemOverviewRows as any[]) {
+                    const aprPartNumber = String(cacheRow?.itemNumber || '').trim();
+                    const overview = String(cacheRow?.overview || cacheRow?.partNotes || '').trim();
+                    const key = normalizeOrderLineToken(aprPartNumber);
+                    if (key && overview && !rawItemOverviewByAprPart.has(key)) rawItemOverviewByAprPart.set(key, overview);
+                  }
+
+                  const aprPartsMissingCachedOverview = aprPartsForPartLookup.filter(
+                    (partNumber) => !rawItemOverviewByAprPart.has(normalizeOrderLineToken(partNumber))
+                  );
+                  if (aprPartsMissingCachedOverview.length > 0) {
                   const itemOverviewRows = await prisma.$queryRaw<Array<{ payload: any }>>(Prisma.sql`
                     SELECT DISTINCT ON (TRIM(COALESCE("payload"->>'Item', "payload"->>'item', "payload"->>'ITEM')))
                       "payload"
                     FROM "InforRawRecord"
                     WHERE "companyId" = ${companyId}
                       AND "miProgram" = 'SLItems'
-                      AND TRIM(COALESCE("payload"->>'Item', "payload"->>'item', "payload"->>'ITEM')) IN (${Prisma.join(aprPartsForPartLookup)})
+                        AND TRIM(COALESCE("payload"->>'Item', "payload"->>'item', "payload"->>'ITEM')) IN (${Prisma.join(aprPartsMissingCachedOverview)})
                       AND NULLIF(TRIM(COALESCE("payload"->>'Overview', "payload"->>'overview', "payload"->>'itmUf_PartNotes')), '') IS NOT NULL
                     ORDER BY TRIM(COALESCE("payload"->>'Item', "payload"->>'item', "payload"->>'ITEM')), "businessDate" DESC NULLS LAST, "fetchedAt" DESC
-                    LIMIT ${Math.min(aprPartsForPartLookup.length, 2000)}
+                      LIMIT ${Math.min(aprPartsMissingCachedOverview.length, 2000)}
                   `);
                   for (const rawRow of itemOverviewRows as any[]) {
                     const payload = rawRow?.payload;
@@ -7074,6 +7094,7 @@ export async function GET(request: NextRequest) {
                     const overview = String(payload['Overview'] ?? payload['overview'] ?? payload['itmUf_PartNotes'] ?? '').trim();
                     const key = normalizeOrderLineToken(aprPartNumber);
                     if (key && overview && !rawItemOverviewByAprPart.has(key)) rawItemOverviewByAprPart.set(key, overview);
+                  }
                   }
                 }
                 return (orderRows as any[]).map((row) => ({

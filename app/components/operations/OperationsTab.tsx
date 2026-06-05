@@ -865,6 +865,7 @@ export default function OperationsTab({
   const [productMarginSortKey, setProductMarginSortKey] = useState<ProductMarginSortKey>('customerName');
   const [productMarginSortDir, setProductMarginSortDir] = useState<'asc' | 'desc'>('asc');
   const [productMarginNoteModal, setProductMarginNoteModal] = useState<{ title: string; note: string } | null>(null);
+  const [productMarginNoteLoadingKey, setProductMarginNoteLoadingKey] = useState<string | null>(null);
   const [wholesaleRawCustomerFilter, setWholesaleRawCustomerFilter] = useState('all');
   const [wholesaleRawSortKey, setWholesaleRawSortKey] = useState<WholesaleRawSortKey>('isoDate');
   const [wholesaleRawSortDir, setWholesaleRawSortDir] = useState<'asc' | 'desc'>('desc');
@@ -7722,6 +7723,46 @@ export default function OperationsTab({
     };
     const productMarginSortLabel = (key: ProductMarginSortKey) =>
       productMarginSortKey === key ? (productMarginSortDir === 'asc' ? ' ▲' : ' ▼') : ' ↕';
+    const loadProductMarginNote = async (row: any) => {
+      const itemNumber = String(row?.aprPartNumber || row?.sku || row?.itemId || row?.item || '').trim();
+      if (!itemNumber || !selectedCompanyId) return;
+      const rowKey = String(row?.key || itemNumber);
+      const existingNote = String(row?.partNote || '').trim();
+      if (existingNote) {
+        setProductMarginNoteModal({
+          title: `${itemNumber} notes${row?.customerName ? ` - ${row.customerName}` : ''}`,
+          note: existingNote,
+        });
+        return;
+      }
+      setProductMarginNoteLoadingKey(rowKey);
+      try {
+        const params = new URLSearchParams({
+          companyId: selectedCompanyId,
+          item: itemNumber,
+        });
+        const response = await fetch(`/api/infor-csi/items/overview?${params.toString()}`, {
+          cache: 'no-store',
+        });
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok || payload?.ok === false) {
+          throw new Error(payload?.error || 'Unable to load item notes.');
+        }
+        const item = payload?.item || {};
+        const note = String(item.overview || item.partNotes || '').trim();
+        setProductMarginNoteModal({
+          title: `${itemNumber} notes${row?.customerName ? ` - ${row.customerName}` : ''}`,
+          note: note || 'No notes were returned for this item.',
+        });
+      } catch (error) {
+        setProductMarginNoteModal({
+          title: `${itemNumber} notes`,
+          note: error instanceof Error ? error.message : 'Unable to load item notes.',
+        });
+      } finally {
+        setProductMarginNoteLoadingKey((current) => (current === rowKey ? null : current));
+      }
+    };
     const wholesaleRawBaseRows = (shouldRenderWholesaleRaw ? (wholesaleProductRecords as any[]) : [])
       .filter((row) => !row?.isPlaceholderRow)
       .map((row, index) => {
@@ -8400,18 +8441,23 @@ export default function OperationsTab({
                         <tr key={row.key} style={{ borderBottom: '1px solid #f1f5f9' }}>
                           <td style={productMarginTextCellStyle('aprPartNumber', { color: '#0f172a', fontWeight: 700 })} title={row.aprPartNumber}>
                             <div style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{row.aprPartNumber}</div>
-                            {row.partNote ? (
-                              <button
-                                type="button"
-                                onClick={() => setProductMarginNoteModal({
-                                  title: `${row.aprPartNumber} notes${row.customerName ? ` - ${row.customerName}` : ''}`,
-                                  note: row.partNote,
-                                })}
-                                style={{ border: 'none', background: 'transparent', padding: 0, marginTop: '3px', color: '#2563eb', cursor: 'pointer', fontSize: '11px', fontWeight: 700 }}
-                              >
-                                View notes
-                              </button>
-                            ) : null}
+                            <button
+                              type="button"
+                              onClick={() => loadProductMarginNote(row)}
+                              disabled={productMarginNoteLoadingKey === row.key}
+                              style={{
+                                border: 'none',
+                                background: 'transparent',
+                                padding: 0,
+                                marginTop: '3px',
+                                color: productMarginNoteLoadingKey === row.key ? '#94a3b8' : '#2563eb',
+                                cursor: productMarginNoteLoadingKey === row.key ? 'wait' : 'pointer',
+                                fontSize: '11px',
+                                fontWeight: 700,
+                              }}
+                            >
+                              {productMarginNoteLoadingKey === row.key ? 'Loading notes...' : row.partNote ? 'View notes' : 'Load notes'}
+                            </button>
                           </td>
                           <td style={productMarginTextCellStyle('customerId', { color: '#475569' })} title={row.customerId || 'N/A'}>{row.customerId || 'N/A'}</td>
                           <td style={productMarginTextCellStyle('customerName')} title={row.customerName}>{row.customerName}</td>

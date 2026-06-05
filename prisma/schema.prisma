@@ -819,6 +819,27 @@ model InforRawCompleteness {
   @@index([isComplete, updatedAt(sort: Desc)])
 }
 
+model InforItemOverviewCache {
+  id          String   @id @default(cuid())
+  companyId   String
+  platform    String   @default("INFOR_M3")
+  itemNumber  String
+  description String?
+  overview    String?
+  partNotes   String?
+  recordDate  DateTime?
+  changeDate  DateTime?
+  rawPayload  Json?
+  fetchedAt   DateTime @default(now())
+  expiresAt   DateTime
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([companyId, platform, itemNumber])
+  @@index([companyId, platform, expiresAt])
+  @@index([companyId, platform, fetchedAt(sort: Desc)])
+}
+
 model AccountMapping {
   id                    String   @id @default(cuid())
   companyId             String

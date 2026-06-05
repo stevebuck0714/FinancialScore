@@ -156,7 +156,8 @@ const DEFAULT_CSI_PROGRAM_ROWS: InforProgramRow[] = [
   {
     module: 'Inventory',
     miProgram: 'SLItems',
-    endpointPath: '/APR_PRD/CSI/IDORequestService/ido/load/SLItems?recordCap=1000',
+    endpointPath:
+      '/APR_PRD/CSI/IDORequestService/ido/load/SLItems?properties=Item,Description,Stat,ProductCode,PMTCode,ChangeDate,RecordDate,AvgUCost,AvgMatlCost,CurUCost,CurMatCost,CurMatlCost,DerUnitCost,DerQtyOnHand,UnitCost&recordCap=1000',
     mongooseConfig: 'TMSManager',
     site: '',
     transactions: ['CSI_LOAD'],
