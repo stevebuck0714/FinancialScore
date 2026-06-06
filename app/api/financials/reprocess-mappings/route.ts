@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import { ingestFinancialPayload } from '@/lib/financial-ingestion';
+import { syncErpDailyFinancialsFromGL } from '@/lib/financial/sync-erp-daily-financials';
 import { buildCsiMonthlyDataFromGlResponses } from '@/lib/infor-m3/csi-monthly-financial-builder';
 
 export const dynamic = 'force-dynamic';
@@ -805,6 +806,16 @@ export async function POST(request: NextRequest) {
         targetMonth: targetMonth || undefined,
         mode,
       });
+      const monthlyFinancialFinalizer = result.ok
+        ? await syncErpDailyFinancialsFromGL({
+            companyId: String(companyId),
+            rebuildDailySnapshots: false,
+            syncMonthly: true,
+          })
+        : null;
+      if (monthlyFinancialFinalizer && !monthlyFinancialFinalizer.ok) {
+        diagnostics.monthlyFinancialSyncWarning = monthlyFinancialFinalizer;
+      }
 
       if (result.ok && typeof result.financialRecordId === 'string' && result.financialRecordId) {
         const persistedRows = await prisma.monthlyFinancial.findMany({
@@ -844,6 +855,7 @@ export async function POST(request: NextRequest) {
               : 'Infor M3 reprocess completed successfully.')
             : result.error || (isInforCsi ? 'Infor CSI reprocess failed.' : 'Infor M3 reprocess failed.'),
           diagnostics,
+          monthlyFinancialFinalizer,
           ...result,
         },
         { status: result.status },

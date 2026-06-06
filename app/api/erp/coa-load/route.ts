@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import { requireCompanyAccess } from '@/lib/tenant-security';
 import { ingestFinancialPayload } from '@/lib/financial-ingestion';
+import { syncErpDailyFinancialsFromGL } from '@/lib/financial/sync-erp-daily-financials';
 import { seedQuickBooksDesktopAccountMappings } from '@/lib/quickbooks-desktop/account-mapping-seed';
 import { seedInforAccountMappings } from '@/lib/infor-m3/account-mapping-seed';
 import { buildCsiMonthlyDataFromGlResponses } from '@/lib/infor-m3/csi-monthly-financial-builder';
@@ -964,12 +965,37 @@ export async function POST(request: NextRequest) {
           'Account mappings refreshed, but monthly financial ingestion reported errors. Reprocess monthly data separately if needed.',
       };
     }
+    let monthlyFinancialFinalizer: Awaited<ReturnType<typeof syncErpDailyFinancialsFromGL>> | null = null;
+    if (
+      ingestResult?.ok &&
+      canIngestFinancials &&
+      (accountingSystem === 'INFOR_M3' || accountingSystem === 'INFOR_CSI') &&
+      !ingestResult?.ingestionSkipped
+    ) {
+      monthlyFinancialFinalizer = await syncErpDailyFinancialsFromGL({
+        companyId,
+        rebuildDailySnapshots: false,
+        syncMonthly: true,
+      });
+      if (!monthlyFinancialFinalizer.ok) {
+        ingestResult = {
+          ...ingestResult,
+          ok: true,
+          partialSuccess: true,
+          monthlyFinancialSyncWarning: monthlyFinancialFinalizer,
+          ingestionSkipReason:
+            ingestResult.ingestionSkipReason ||
+            'Monthly financial ingestion completed, but Data Review sync from Daily Financials reported warnings.',
+        };
+      }
+    }
     timings.ingestionMs = Date.now() - ingestionStartedAt;
     timings.totalMs = Date.now() - requestStartedAt;
     console.log('[ERP COA] Financial ingestion complete', {
       canIngestFinancials,
       recordsImported: ingestResult.recordsImported ?? 0,
       ingestionSkipped: Boolean((ingestResult as any).ingestionSkipped),
+      monthlyFinancialFinalizer,
       elapsedMs: Date.now() - requestStartedAt,
       timings,
     });
@@ -985,6 +1011,7 @@ export async function POST(request: NextRequest) {
         maxMonths: CSI_REBUILD_MAX_MONTHS,
         syntheticMonthlyBuild,
         accountMappingSeed: seedSummary,
+        monthlyFinancialFinalizer,
         timings,
         ...ingestResult,
       },

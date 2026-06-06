@@ -977,16 +977,26 @@ export async function computeDailyBalanceSheetFromGL(
   const totalExpense = sumExpenseRollups(ytdByField);
   const ytdNetIncome = revenue + nonOperatingIncome - totalExpense;
 
-  const retainedEarnings = bookedRE + ytdNetIncome;
-
-  const totalEquity =
+  const estimatedRetainedEarnings = bookedRE + ytdNetIncome;
+  const otherEquity =
     ownersCapital +
     ownersDraw +
     commonStock +
     preferredStock +
-    retainedEarnings +
     additionalPaidInCapital +
     treasuryStock;
+
+  // Retained earnings is the equity bridge on the balance sheet. Store the
+  // balancing amount so Daily Financials and MonthlyFinancial publish a
+  // coherent balance sheet even when CSI does not provide clean equity detail.
+  const retainedEarningsBridge = totalAssets - totalLiab - otherEquity;
+  const retainedEarnings = Number.isFinite(retainedEarningsBridge)
+    ? retainedEarningsBridge
+    : estimatedRetainedEarnings;
+
+  const totalEquity =
+    otherEquity +
+    retainedEarnings;
   const totalLAndE = totalLiab + totalEquity;
 
   // ---- P&L bucket fields (DAILY DELTA) — every PNL_SUM_FIELDS field gets
