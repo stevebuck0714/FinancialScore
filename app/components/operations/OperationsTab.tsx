@@ -773,7 +773,7 @@ export default function OperationsTab({
   const [customerConcentrationRenderStage, setCustomerConcentrationRenderStage] = useState(1);
   const [companyOperationalHubConfig, setCompanyOperationalHubConfig] = useState<any>(operationalHubConfig || null);
   const [dailyFinancialView, setDailyFinancialView] = useState<'summary' | 'income' | 'balance' | 'cashflow'>('summary');
-  const [dailyFinancialStatementRollup, setDailyFinancialStatementRollup] = useState<'daily' | 'quarterly' | 'annual'>('daily');
+  const [dailyFinancialStatementRollup, setDailyFinancialStatementRollup] = useState<'daily' | 'monthly' | 'quarterly' | 'annual'>('daily');
   const [selectedDailyTrendMetrics, setSelectedDailyTrendMetrics] = useState<Array<'revenue' | 'expense' | 'net' | 'cash' | 'grossMargin' | 'marginPct'>>([
     'revenue',
     'expense',
@@ -12167,43 +12167,43 @@ export default function OperationsTab({
         { label: getFieldDisplayName('netIncome'), styleType: 'total', valuesByDate: rollupSeries('netIncome') },
       ] as Array<{ label: string; styleType: 'section' | 'subtotal' | 'total'; valuesByDate: Record<string, number> }>;
       const balanceRowDefs = [
-        { label: 'Current Assets', styleType: 'section', valuesByDate: rollupSeries('tca') },
-        { label: getFieldDisplayName('cash'), styleType: 'normal', valuesByDate: rollupSeries('cash') },
-        { label: getFieldDisplayName('accountsReceivable'), styleType: 'normal', valuesByDate: rollupSeries('ar') },
-        { label: getFieldDisplayName('retainageReceivables'), styleType: 'normal', valuesByDate: rollupSeries('retainageReceivables') },
-        { label: getFieldDisplayName('contractAssets'), styleType: 'normal', valuesByDate: rollupSeries('contractAssets') },
-        { label: getFieldDisplayName('inventory'), styleType: 'normal', valuesByDate: rollupSeries('inventory') },
-        { label: getFieldDisplayName('otherCurrentAssets'), styleType: 'normal', valuesByDate: rollupSeries('otherCA') },
+        { label: 'Current Assets', styleType: 'section', suppressValues: true },
+        { label: `  ${getFieldDisplayName('cash')}`, styleType: 'normal', valuesByDate: rollupSeries('cash') },
+        { label: `  ${getFieldDisplayName('accountsReceivable')}`, styleType: 'normal', valuesByDate: rollupSeries('ar') },
+        { label: `  ${getFieldDisplayName('retainageReceivables')}`, styleType: 'normal', valuesByDate: rollupSeries('retainageReceivables') },
+        { label: `  ${getFieldDisplayName('contractAssets')}`, styleType: 'normal', valuesByDate: rollupSeries('contractAssets') },
+        { label: `  ${getFieldDisplayName('inventory')}`, styleType: 'normal', valuesByDate: rollupSeries('inventory') },
+        { label: `  ${getFieldDisplayName('otherCurrentAssets')}`, styleType: 'normal', valuesByDate: rollupSeries('otherCA') },
         { label: getFieldDisplayName('totalCurrentAssets'), styleType: 'subtotal', valuesByDate: rollupSeries('tca') },
-        { label: 'Long-Term Assets', styleType: 'section', valuesByDate: rollupSeries('fixedAssets') },
-        { label: getFieldDisplayName('fixedAssets'), styleType: 'normal', valuesByDate: rollupSeries('fixedAssets') },
-        { label: getFieldDisplayName('constructionEquipment'), styleType: 'normal', valuesByDate: rollupSeries('constructionEquipment') },
-        { label: getFieldDisplayName('officeEquipment'), styleType: 'normal', valuesByDate: rollupSeries('officeEquipment') },
-        { label: getFieldDisplayName('shopEquipment'), styleType: 'normal', valuesByDate: rollupSeries('shopEquipment') },
-        { label: getFieldDisplayName('investments'), styleType: 'normal', valuesByDate: rollupSeries('investments') },
-        { label: getFieldDisplayName('rightOfUseLeases'), styleType: 'normal', valuesByDate: rollupSeries('rightOfUseLeases') },
-        { label: getFieldDisplayName('otherAssets'), styleType: 'normal', valuesByDate: rollupSeries('otherAssets') },
-        { label: 'Current Liabilities', styleType: 'section', valuesByDate: rollupSeries('tcl') },
-        { label: getFieldDisplayName('accountsPayable'), styleType: 'normal', valuesByDate: rollupSeries('ap') },
-        { label: getFieldDisplayName('loc'), styleType: 'normal', valuesByDate: rollupSeries('loc') },
-        { label: getFieldDisplayName('contractLiabilities'), styleType: 'normal', valuesByDate: rollupSeries('contractLiabilities') },
-        { label: getFieldDisplayName('otherCurrentLiabilities'), styleType: 'normal', valuesByDate: rollupSeries('otherCL') },
-        { label: getFieldDisplayName('totalCurrentLiabilities'), styleType: 'subtotal', valuesByDate: rollupSeries('tcl') },
-        { label: 'Long-Term Liabilities', styleType: 'section', valuesByDate: rollupSeries('ltd') },
-        { label: getFieldDisplayName('longTermDebt'), styleType: 'normal', valuesByDate: rollupSeries('ltd') },
+        { label: 'Long-Term Assets', styleType: 'section', suppressValues: true },
+        { label: `  ${getFieldDisplayName('fixedAssets')}`, styleType: 'normal', valuesByDate: rollupSeries('fixedAssets') },
+        { label: `    ${getFieldDisplayName('constructionEquipment')}`, styleType: 'normal', valuesByDate: rollupSeries('constructionEquipment') },
+        { label: `    ${getFieldDisplayName('officeEquipment')}`, styleType: 'normal', valuesByDate: rollupSeries('officeEquipment') },
+        { label: `    ${getFieldDisplayName('shopEquipment')}`, styleType: 'normal', valuesByDate: rollupSeries('shopEquipment') },
+        { label: `  ${getFieldDisplayName('investments')}`, styleType: 'normal', valuesByDate: rollupSeries('investments') },
+        { label: `  ${getFieldDisplayName('rightOfUseLeases')}`, styleType: 'normal', valuesByDate: rollupSeries('rightOfUseLeases') },
+        { label: `  ${getFieldDisplayName('otherAssets')}`, styleType: 'normal', valuesByDate: rollupSeries('otherAssets') },
         { label: getFieldDisplayName('totalAssets'), styleType: 'total', valuesByDate: rollupSeries('totalAssets') },
+        { label: 'Current Liabilities', styleType: 'section', suppressValues: true },
+        { label: `  ${getFieldDisplayName('accountsPayable')}`, styleType: 'normal', valuesByDate: rollupSeries('ap') },
+        { label: `  ${getFieldDisplayName('loc')}`, styleType: 'normal', valuesByDate: rollupSeries('loc') },
+        { label: `  ${getFieldDisplayName('contractLiabilities')}`, styleType: 'normal', valuesByDate: rollupSeries('contractLiabilities') },
+        { label: `  ${getFieldDisplayName('otherCurrentLiabilities')}`, styleType: 'normal', valuesByDate: rollupSeries('otherCL') },
+        { label: getFieldDisplayName('totalCurrentLiabilities'), styleType: 'subtotal', valuesByDate: rollupSeries('tcl') },
+        { label: 'Long-Term Liabilities', styleType: 'section', suppressValues: true },
+        { label: `  ${getFieldDisplayName('longTermDebt')}`, styleType: 'normal', valuesByDate: rollupSeries('ltd') },
         { label: getFieldDisplayName('totalLiabilities'), styleType: 'subtotal', valuesByDate: rollupSeries('totalLiab') },
-        { label: 'Equity', styleType: 'section', valuesByDate: rollupSeries('totalEquity') },
-        { label: getFieldDisplayName('ownersCapital'), styleType: 'normal', valuesByDate: rollupSeries('ownersCapital') },
-        { label: getFieldDisplayName('ownersDraw'), styleType: 'normal', valuesByDate: rollupSeries('ownersDraw') },
-        { label: getFieldDisplayName('commonStock'), styleType: 'normal', valuesByDate: rollupSeries('commonStock') },
-        { label: getFieldDisplayName('preferredStock'), styleType: 'normal', valuesByDate: rollupSeries('preferredStock') },
-        { label: getFieldDisplayName('retainedEarnings'), styleType: 'normal', valuesByDate: rollupSeries('retainedEarnings') },
-        { label: getFieldDisplayName('additionalPaidInCapital'), styleType: 'normal', valuesByDate: rollupSeries('additionalPaidInCapital') },
-        { label: getFieldDisplayName('treasuryStock'), styleType: 'normal', valuesByDate: rollupSeries('treasuryStock') },
+        { label: 'Equity', styleType: 'section', suppressValues: true },
+        { label: `  ${getFieldDisplayName('ownersCapital')}`, styleType: 'normal', valuesByDate: rollupSeries('ownersCapital') },
+        { label: `  ${getFieldDisplayName('ownersDraw')}`, styleType: 'normal', valuesByDate: rollupSeries('ownersDraw') },
+        { label: `  ${getFieldDisplayName('commonStock')}`, styleType: 'normal', valuesByDate: rollupSeries('commonStock') },
+        { label: `  ${getFieldDisplayName('preferredStock')}`, styleType: 'normal', valuesByDate: rollupSeries('preferredStock') },
+        { label: `  ${getFieldDisplayName('retainedEarnings')}`, styleType: 'normal', valuesByDate: rollupSeries('retainedEarnings') },
+        { label: `  ${getFieldDisplayName('additionalPaidInCapital')}`, styleType: 'normal', valuesByDate: rollupSeries('additionalPaidInCapital') },
+        { label: `  ${getFieldDisplayName('treasuryStock')}`, styleType: 'normal', valuesByDate: rollupSeries('treasuryStock') },
         { label: getFieldDisplayName('totalEquity'), styleType: 'subtotal', valuesByDate: rollupSeries('totalEquity') },
         { label: getFieldDisplayName('totalLiabilitiesAndEquity'), styleType: 'total', valuesByDate: rollupSeries('totalLAndE') },
-      ] as Array<{ label: string; styleType: 'normal' | 'section' | 'subtotal' | 'total'; valuesByDate: Record<string, number> }>;
+      ] as Array<{ label: string; styleType: 'normal' | 'section' | 'subtotal' | 'total'; valuesByDate?: Record<string, number>; suppressValues?: boolean }>;
       const statementRowStyle = (
         styleType: 'normal' | 'section' | 'subtotal' | 'total' | undefined
       ): { rowBg: string; textColor: string; weight: 400 | 500 | 600 | 700 } => {
@@ -12240,6 +12240,7 @@ export default function OperationsTab({
             <div style={{ marginLeft: 'auto', display: 'flex', gap: '6px', alignItems: 'center' }}>
               <span style={{ fontSize: '12px', color: '#64748b' }}>Rollup</span>
               <button style={tabButtonStyle(dailyFinancialStatementRollup === 'daily')} onClick={() => setDailyFinancialStatementRollup('daily')}>Daily</button>
+              <button style={tabButtonStyle(dailyFinancialStatementRollup === 'monthly')} onClick={() => setDailyFinancialStatementRollup('monthly')}>Monthly</button>
               <button style={tabButtonStyle(dailyFinancialStatementRollup === 'quarterly')} onClick={() => setDailyFinancialStatementRollup('quarterly')}>Quarterly</button>
               <button style={tabButtonStyle(dailyFinancialStatementRollup === 'annual')} onClick={() => setDailyFinancialStatementRollup('annual')}>Annual</button>
             </div>
@@ -12304,7 +12305,7 @@ export default function OperationsTab({
                         </td>
                         {rollupDays.map((day: any) => (
                           <td key={`${rowDef.label}-${day.dateKey}`} style={{ padding: '10px', borderBottom: '1px solid #f1f5f9', textAlign: 'right', fontSize: '12px', fontWeight: statementRowStyle(rowDef.styleType).weight, color: statementRowStyle(rowDef.styleType).textColor, whiteSpace: 'nowrap' }}>
-                            {formatCurrency(Number(rowDef.valuesByDate[day.dateKey] || 0))}
+                            {rowDef.suppressValues ? '' : formatCurrency(Number(rowDef.valuesByDate?.[day.dateKey] || 0))}
                           </td>
                         ))}
                       </tr>
@@ -13048,6 +13049,7 @@ export default function OperationsTab({
           <div style={{ marginLeft: 'auto', display: 'flex', gap: '6px', alignItems: 'center' }}>
             <span style={{ fontSize: '12px', color: '#64748b' }}>Rollup</span>
             <button style={tabButtonStyle(dailyFinancialStatementRollup === 'daily')} onClick={() => setDailyFinancialStatementRollup('daily')}>Daily</button>
+            <button style={tabButtonStyle(dailyFinancialStatementRollup === 'monthly')} onClick={() => setDailyFinancialStatementRollup('monthly')}>Monthly</button>
             <button style={tabButtonStyle(dailyFinancialStatementRollup === 'quarterly')} onClick={() => setDailyFinancialStatementRollup('quarterly')}>Quarterly</button>
             <button style={tabButtonStyle(dailyFinancialStatementRollup === 'annual')} onClick={() => setDailyFinancialStatementRollup('annual')}>Annual</button>
           </div>

@@ -446,7 +446,7 @@ function monthStartFromBusinessMonthKey(key: string): Date {
   return new Date(Date.UTC(year, month - 1, 1, 0, 0, 0, 0));
 }
 
-type StatementRollup = 'daily' | 'quarterly' | 'annual';
+type StatementRollup = 'daily' | 'monthly' | 'quarterly' | 'annual';
 
 const DAILY_STATEMENT_INCOME_FIELDS = ['revenue', 'cogsTotal', 'expense'] as const;
 const DAILY_STATEMENT_BALANCE_FIELDS = [
@@ -507,6 +507,9 @@ function endOfBusinessYearByDate(date: Date): Date {
 function statementRollupKey(date: Date, rollup: StatementRollup): string {
   if (rollup === 'daily') {
     return dateKeyUtc(date);
+  }
+  if (rollup === 'monthly') {
+    return businessMonthKey(date);
   }
   if (rollup === 'quarterly') {
     const quarter = Math.floor(date.getUTCMonth() / 3) + 1;
@@ -615,12 +618,16 @@ function aggregateDailyStatementRows(
       const periodStart =
         rollup === 'daily'
           ? startOfUtcDay(snapshotDate)
+          : rollup === 'monthly'
+            ? startOfBusinessMonth(snapshotDate)
           : rollup === 'quarterly'
             ? startOfBusinessQuarterByDate(snapshotDate)
             : startOfBusinessYearByDate(snapshotDate);
       const periodEnd =
         rollup === 'daily'
           ? endOfUtcDay(snapshotDate)
+          : rollup === 'monthly'
+            ? new Date(Date.UTC(snapshotDate.getUTCFullYear(), snapshotDate.getUTCMonth() + 1, 0, 23, 59, 59, 999))
           : rollup === 'quarterly'
             ? endOfBusinessQuarterByDate(snapshotDate)
             : endOfBusinessYearByDate(snapshotDate);
@@ -2398,7 +2405,7 @@ export async function GET(request: NextRequest) {
       .trim()
       .toLowerCase();
     const statementRollup: StatementRollup =
-      rawStatementRollup === 'quarterly' || rawStatementRollup === 'annual'
+      rawStatementRollup === 'monthly' || rawStatementRollup === 'quarterly' || rawStatementRollup === 'annual'
         ? (rawStatementRollup as StatementRollup)
         : 'daily';
     const frequency = (searchParams.get('frequency') || 'monthly') as 'daily' | 'weekly' | 'monthly';
