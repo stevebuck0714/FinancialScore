@@ -58,6 +58,30 @@ type CashSnapshot = {
   cashBalance: number;
 };
 
+type DailyFinancialRow = {
+  snapshotDate: Date;
+  revenue: number;
+  expense: number;
+  cogsTotal: number;
+  depreciationAmortization?: number | null;
+  cash?: number | null;
+  ar?: number | null;
+  ap?: number | null;
+  loc?: number | null;
+};
+
+type SalesSnapshot = {
+  snapshotDate: Date;
+  customerName?: string | null;
+  itemName?: string | null;
+  sku?: string | null;
+  revenue: number;
+  cogs?: number | null;
+  grossMargin?: number | null;
+  grossMarginPct?: number | null;
+  quantitySold?: number | null;
+};
+
 type FindingRow = {
   id: string;
   type: string | null;
@@ -69,6 +93,16 @@ type FindingRow = {
 };
 
 const OPERATIONAL_FOCUS_KEY = '__focusWatchlist';
+const EXECUTIVE_LOOKBACK_DAYS = 120;
+const SALES_LOOKBACK_DAYS = 90;
+const MATERIAL_REVENUE_DROP_PCT = -20;
+const MATERIAL_GROSS_PROFIT_DROP_AMOUNT = -50000;
+const CUSTOMER_CONCENTRATION_TOP1_PCT = 50;
+const CUSTOMER_CONCENTRATION_TOP3_PCT = 80;
+const SKU_CONCENTRATION_TOP1_PCT = 35;
+const SKU_CONCENTRATION_TOP5_PCT = 40;
+const LIQUIDITY_MIN_CASH_TO_LOC_PCT = 5;
+const LIQUIDITY_MIN_CASH_TO_AR_PCT = 10;
 
 function todayKey(now = new Date()): string {
   return now.toISOString().slice(0, 10);
@@ -95,6 +129,26 @@ function dayOverDayPct(current: number, previous: number): number {
   return ((current - previous) / previous) * 100;
 }
 
+function startOfUtcDay(value: Date): Date {
+  return new Date(Date.UTC(value.getUTCFullYear(), value.getUTCMonth(), value.getUTCDate()));
+}
+
+function addUtcDays(value: Date, days: number): Date {
+  const next = new Date(value);
+  next.setUTCDate(next.getUTCDate() + days);
+  return next;
+}
+
+function monthKey(value: Date): string {
+  return `${value.getUTCFullYear()}-${String(value.getUTCMonth() + 1).padStart(2, '0')}`;
+}
+
+function monthLabel(key: string): string {
+  const [year, month] = key.split('-').map(Number);
+  const date = new Date(Date.UTC(year, month - 1, 1));
+  return new Intl.DateTimeFormat('en-US', { month: 'long', year: 'numeric', timeZone: 'UTC' }).format(date);
+}
+
 function agingOver30(snapshot: AgingSnapshot, totalKey: 'totalAR' | 'totalAP'): number {
   return pct(
     asNumber(snapshot.days31to60) + asNumber(snapshot.days61to90) + asNumber(snapshot.days90plus),
@@ -116,6 +170,67 @@ function formatMoney(value: number): string {
     currency: 'USD',
     maximumFractionDigits: 0,
   }).format(value);
+}
+
+function formatPct(value: number): string {
+  return `${value.toFixed(1)}%`;
+}
+
+function summarizeFinancialRows(rows: DailyFinancialRow[]): {
+  revenue: number;
+  grossProfit: number;
+  expense: number;
+  ebitda: number;
+} {
+  return rows.reduce(
+    (acc, row) => {
+      const revenue = asNumber(row.revenue);
+      const cogs = asNumber(row.cogsTotal);
+      const expense = asNumber(row.expense);
+      acc.revenue += revenue;
+      acc.grossProfit += revenue - cogs;
+      acc.expense += expense;
+      acc.ebitda += revenue - cogs - expense + asNumber(row.depreciationAmortization);
+      return acc;
+    },
+    { revenue: 0, grossProfit: 0, expense: 0, ebitda: 0 }
+  );
+}
+
+function aggregateRecentSales(
+  rows: SalesSnapshot[],
+  nameKey: 'customerName' | 'itemName'
+): Array<{
+  name: string;
+  revenue: number;
+  grossProfit: number;
+  grossMarginPct: number;
+  sku?: string | null;
+}> {
+  const dates = Array.from(new Set(rows.map((row) => row.snapshotDate.toISOString().slice(0, 10)))).sort();
+  const recentDates = new Set(dates.slice(-6));
+  const byName = new Map<string, { name: string; revenue: number; grossProfit: number; sku?: string | null }>();
+
+  rows.forEach((row) => {
+    if (!recentDates.has(row.snapshotDate.toISOString().slice(0, 10))) return;
+    const name = String(row[nameKey] || '').trim();
+    if (!name) return;
+    const current = byName.get(name) || { name, revenue: 0, grossProfit: 0, sku: row.sku || null };
+    const revenue = asNumber(row.revenue);
+    const grossProfit =
+      row.grossMargin != null ? asNumber(row.grossMargin) : revenue - asNumber(row.cogs);
+    current.revenue += revenue;
+    current.grossProfit += grossProfit;
+    if (!current.sku && row.sku) current.sku = row.sku;
+    byName.set(name, current);
+  });
+
+  return Array.from(byName.values())
+    .map((row) => ({
+      ...row,
+      grossMarginPct: pct(row.grossProfit, row.revenue),
+    }))
+    .sort((a, b) => b.revenue - a.revenue);
 }
 
 function extractPriorityFocusTerms(goals: Record<string, any>): string[] {
@@ -355,8 +470,10 @@ export async function generateCompanyPulse(companyId: string, options: GenerateO
   const goals = await loadOperationalGoals(companyId);
   const policyOverrides = sanitizePulsePolicyOverrides(goals[PULSE_POLICY_OVERRIDE_KEY]);
   const policy = getResolvedPulsePolicyValues(policyOverrides, company.industrySectorCategory);
+  const lookbackStart = addUtcDays(startOfUtcDay(new Date()), -EXECUTIVE_LOOKBACK_DAYS);
+  const salesLookbackStart = addUtcDays(startOfUtcDay(new Date()), -SALES_LOOKBACK_DAYS);
 
-  const [arRows, apRows, cashDates, dailyFinancialRows, findings] = await Promise.all([
+  const [arRows, apRows, cashDates, dailyFinancialRows, customerRows, productRows, findings] = await Promise.all([
     prisma.aRAgingSnapshot.findMany({
       where: { companyId, frequency: 'daily' },
       orderBy: { snapshotDate: 'desc' },
@@ -369,9 +486,19 @@ export async function generateCompanyPulse(companyId: string, options: GenerateO
     }),
     loadLatestCashDates(companyId),
     prisma.dailyFinancialSnapshot.findMany({
-      where: { companyId, frequency: 'daily' },
+      where: { companyId, frequency: 'daily', snapshotDate: { gte: lookbackStart } },
       orderBy: { snapshotDate: 'desc' },
-      take: 8,
+      take: 150,
+    }),
+    prisma.customerSalesSnapshot.findMany({
+      where: { companyId, snapshotDate: { gte: salesLookbackStart } },
+      orderBy: { snapshotDate: 'desc' },
+      take: 500,
+    }),
+    prisma.productSalesSnapshot.findMany({
+      where: { companyId, snapshotDate: { gte: salesLookbackStart } },
+      orderBy: { snapshotDate: 'desc' },
+      take: 500,
     }),
     loadCriticalFindings(companyId),
   ]);
@@ -383,6 +510,8 @@ export async function generateCompanyPulse(companyId: string, options: GenerateO
   const latestCash = cashDates[0];
   const priorCash = cashDates[1];
   const latestDaily = dailyFinancialRows[0];
+  const latestCustomer = customerRows[0];
+  const latestProduct = productRows[0];
 
   const readinessItems: PulseReadinessItem[] = [
     {
@@ -412,6 +541,20 @@ export async function generateCompanyPulse(companyId: string, options: GenerateO
       status: freshnessStatus(latestDaily?.snapshotDate),
       reason: latestDaily ? 'Latest daily financial snapshot is available.' : 'No daily financial snapshot found.',
       lastUpdated: iso(latestDaily?.snapshotDate),
+    },
+    {
+      key: 'customer-sales',
+      label: 'Customer sales snapshots',
+      status: freshnessStatus(latestCustomer?.snapshotDate),
+      reason: latestCustomer ? 'Latest customer sales snapshot is available.' : 'No customer sales snapshot found.',
+      lastUpdated: iso(latestCustomer?.snapshotDate),
+    },
+    {
+      key: 'product-sales',
+      label: 'Product sales snapshots',
+      status: freshnessStatus(latestProduct?.snapshotDate),
+      reason: latestProduct ? 'Latest product sales snapshot is available.' : 'No product sales snapshot found.',
+      lastUpdated: iso(latestProduct?.snapshotDate),
     },
     {
       key: 'findings',
@@ -570,6 +713,164 @@ export async function generateCompanyPulse(companyId: string, options: GenerateO
     }
   }
 
+  const orderedFinancialRows = [...dailyFinancialRows].sort(
+    (a, b) => a.snapshotDate.getTime() - b.snapshotDate.getTime()
+  );
+  const currentMonth = latestDaily ? monthKey(latestDaily.snapshotDate) : todayKey().slice(0, 7);
+  const completedRows = orderedFinancialRows.filter((row) => monthKey(row.snapshotDate) !== currentMonth);
+  const rowsByMonth = new Map<string, DailyFinancialRow[]>();
+  completedRows.forEach((row) => {
+    const key = monthKey(row.snapshotDate);
+    rowsByMonth.set(key, [...(rowsByMonth.get(key) || []), row]);
+  });
+  const completedMonthKeys = Array.from(rowsByMonth.keys()).sort();
+  const latestCompletedMonthKey = completedMonthKeys[completedMonthKeys.length - 1];
+  const priorCompletedMonthKey = completedMonthKeys[completedMonthKeys.length - 2];
+  if (latestCompletedMonthKey && priorCompletedMonthKey) {
+    const latestMonth = summarizeFinancialRows(rowsByMonth.get(latestCompletedMonthKey) || []);
+    const priorMonth = summarizeFinancialRows(rowsByMonth.get(priorCompletedMonthKey) || []);
+    const revenueDelta = latestMonth.revenue - priorMonth.revenue;
+    const revenueDeltaPct = dayOverDayPct(latestMonth.revenue, priorMonth.revenue);
+    const grossProfitDelta = latestMonth.grossProfit - priorMonth.grossProfit;
+    const grossProfitDeltaPct = dayOverDayPct(latestMonth.grossProfit, priorMonth.grossProfit);
+    if (revenueDeltaPct <= MATERIAL_REVENUE_DROP_PCT || grossProfitDelta <= MATERIAL_GROSS_PROFIT_DROP_AMOUNT) {
+      alerts.push({
+        fingerprint: `monthly-financial-deterioration:${latestCompletedMonthKey}`,
+        source: 'open-critical',
+        title: 'Monthly revenue and gross profit deteriorated',
+        detail: `${monthLabel(latestCompletedMonthKey)} revenue was ${formatMoney(latestMonth.revenue)}, ${formatPct(revenueDeltaPct)} vs ${monthLabel(priorCompletedMonthKey)}; gross profit changed ${formatMoney(grossProfitDelta)} (${formatPct(grossProfitDeltaPct)}).`,
+        owner: 'Finance Owner',
+        drillView: 'performance-analytics',
+        deltaText: `Revenue ${formatPct(revenueDeltaPct)}`,
+        updatedAt: latestDaily?.snapshotDate.toISOString() || nowIso,
+        itemLabel: monthLabel(latestCompletedMonthKey),
+        priorityScore: Math.min(100, Math.round(78 + Math.max(0, Math.abs(revenueDeltaPct) - 20) / 2)),
+        bucket: 'attention',
+        explainability: {
+          triggerName: 'Monthly Financial Deterioration',
+          formula: 'Aggregate DailyFinancialSnapshot by completed month; compare latest completed month to prior completed month for revenue % and gross profit dollar movement',
+          threshold: `revenueDeltaPct <= ${MATERIAL_REVENUE_DROP_PCT}% OR grossProfitDelta <= ${formatMoney(MATERIAL_GROSS_PROFIT_DROP_AMOUNT)}`,
+          reasonNow: `Revenue delta ${formatMoney(revenueDelta)} (${formatPct(revenueDeltaPct)}); gross profit delta ${formatMoney(grossProfitDelta)} (${formatPct(grossProfitDeltaPct)})`,
+          policySource: 'Company Pulse executive-risk rule',
+          dataRefs: ['DailyFinancialSnapshot'],
+          sourceTimestamp: latestDaily?.snapshotDate.toISOString(),
+        },
+      });
+    }
+  }
+
+  if (latestDaily) {
+    const balanceSheetCash = asNumber(latestDaily.cash);
+    const balanceSheetAr = Math.abs(asNumber(latestDaily.ar));
+    const balanceSheetAp = Math.abs(asNumber(latestDaily.ap));
+    const loc = Math.abs(asNumber(latestDaily.loc));
+    const cashToLocPct = pct(balanceSheetCash, loc);
+    const cashToArPct = pct(balanceSheetCash, balanceSheetAr);
+    if (
+      balanceSheetCash > 0 &&
+      ((loc > 0 && cashToLocPct < LIQUIDITY_MIN_CASH_TO_LOC_PCT) ||
+        (balanceSheetAr > 0 && cashToArPct < LIQUIDITY_MIN_CASH_TO_AR_PCT))
+    ) {
+      alerts.push({
+        fingerprint: `balance-sheet-liquidity:${latestDaily.snapshotDate.toISOString().slice(0, 10)}`,
+        source: 'open-critical',
+        title: 'Balance sheet liquidity is thin',
+        detail: `Cash is ${formatMoney(balanceSheetCash)} vs AR ${formatMoney(balanceSheetAr)}, AP ${formatMoney(balanceSheetAp)}, and line of credit ${formatMoney(loc)}.`,
+        owner: 'Finance Owner',
+        drillView: 'cash-flow',
+        deltaText: loc > 0 ? `Cash/LOC ${formatPct(cashToLocPct)}` : `Cash/AR ${formatPct(cashToArPct)}`,
+        updatedAt: latestDaily.snapshotDate.toISOString(),
+        itemLabel: 'Cash, AR, AP, LOC',
+        priorityScore: Math.min(100, Math.round(82 + Math.max(0, LIQUIDITY_MIN_CASH_TO_LOC_PCT - cashToLocPct) * 2)),
+        bucket: 'attention',
+        explainability: {
+          triggerName: 'Balance Sheet Liquidity / LOC Pressure',
+          formula: 'Compare balance-sheet cash to AR and line-of-credit exposure from latest DailyFinancialSnapshot',
+          threshold: `cash / LOC < ${LIQUIDITY_MIN_CASH_TO_LOC_PCT}% OR cash / AR < ${LIQUIDITY_MIN_CASH_TO_AR_PCT}%`,
+          reasonNow: `Cash/LOC ${formatPct(cashToLocPct)}; Cash/AR ${formatPct(cashToArPct)}; AP ${formatMoney(balanceSheetAp)}`,
+          policySource: 'Company Pulse executive-risk rule',
+          dataRefs: ['DailyFinancialSnapshot.cash', 'DailyFinancialSnapshot.ar', 'DailyFinancialSnapshot.ap', 'DailyFinancialSnapshot.loc'],
+          sourceTimestamp: latestDaily.snapshotDate.toISOString(),
+        },
+      });
+    }
+  }
+
+  const customerSales = aggregateRecentSales(customerRows, 'customerName');
+  const totalCustomerRevenue = customerSales.reduce((sum, row) => sum + row.revenue, 0);
+  const topCustomer = customerSales[0];
+  const topCustomerShare = pct(asNumber(topCustomer?.revenue), totalCustomerRevenue);
+  const top3CustomerShare = pct(
+    customerSales.slice(0, 3).reduce((sum, row) => sum + row.revenue, 0),
+    totalCustomerRevenue
+  );
+  if (
+    totalCustomerRevenue > 0 &&
+    topCustomer &&
+    (topCustomerShare >= CUSTOMER_CONCENTRATION_TOP1_PCT || top3CustomerShare >= CUSTOMER_CONCENTRATION_TOP3_PCT)
+  ) {
+    alerts.push({
+      fingerprint: 'customer-concentration-risk',
+      source: 'open-critical',
+      title: 'Customer concentration risk is elevated',
+      detail: `${topCustomer.name} is ${formatPct(topCustomerShare)} of recent customer revenue; top 3 customers are ${formatPct(top3CustomerShare)}.`,
+      owner: 'Sales Lead',
+      drillView: 'performance-analytics',
+      deltaText: `Top customer ${formatPct(topCustomerShare)}`,
+      updatedAt: latestCustomer?.snapshotDate.toISOString() || nowIso,
+      itemLabel: topCustomer.name,
+      priorityScore: Math.min(100, Math.round(70 + Math.max(topCustomerShare - 50, top3CustomerShare - 80))),
+      bucket: 'attention',
+      explainability: {
+        triggerName: 'Customer Concentration Risk',
+        formula: 'Recent top customer revenue / total recent customer revenue; top-3 revenue / total recent customer revenue',
+        threshold: `top customer share >= ${CUSTOMER_CONCENTRATION_TOP1_PCT}% OR top 3 share >= ${CUSTOMER_CONCENTRATION_TOP3_PCT}%`,
+        reasonNow: `Top customer ${formatPct(topCustomerShare)}; top 3 ${formatPct(top3CustomerShare)}; total recent revenue ${formatMoney(totalCustomerRevenue)}`,
+        policySource: 'Company Pulse executive-risk rule',
+        dataRefs: ['CustomerSalesSnapshot'],
+        sourceTimestamp: latestCustomer?.snapshotDate.toISOString(),
+      },
+    });
+  }
+
+  const productSales = aggregateRecentSales(productRows, 'itemName');
+  const totalProductRevenue = productSales.reduce((sum, row) => sum + row.revenue, 0);
+  const topProduct = productSales[0];
+  const topProductShare = pct(asNumber(topProduct?.revenue), totalProductRevenue);
+  const top5ProductShare = pct(
+    productSales.slice(0, 5).reduce((sum, row) => sum + row.revenue, 0),
+    totalProductRevenue
+  );
+  if (
+    totalProductRevenue > 0 &&
+    topProduct &&
+    (topProductShare >= SKU_CONCENTRATION_TOP1_PCT || top5ProductShare >= SKU_CONCENTRATION_TOP5_PCT)
+  ) {
+    const topProductLabel = topProduct.sku || topProduct.name;
+    alerts.push({
+      fingerprint: 'sku-concentration-risk',
+      source: 'open-critical',
+      title: 'SKU concentration risk is elevated',
+      detail: `${topProductLabel} is ${formatPct(topProductShare)} of recent product revenue; top 5 SKUs are ${formatPct(top5ProductShare)}.`,
+      owner: 'Operations Lead',
+      drillView: 'performance-analytics',
+      deltaText: `Top 5 ${formatPct(top5ProductShare)}`,
+      updatedAt: latestProduct?.snapshotDate.toISOString() || nowIso,
+      itemLabel: topProductLabel,
+      priorityScore: Math.min(100, Math.round(65 + Math.max(topProductShare - 35, top5ProductShare - 75))),
+      bucket: topProductShare >= 50 || top5ProductShare >= 85 ? 'attention' : 'monitoring',
+      explainability: {
+        triggerName: 'SKU Concentration / Margin Mix Risk',
+        formula: 'Recent top SKU revenue / total recent product revenue; top-5 SKU revenue / total recent product revenue',
+        threshold: `top SKU share >= ${SKU_CONCENTRATION_TOP1_PCT}% OR top 5 share >= ${SKU_CONCENTRATION_TOP5_PCT}%`,
+        reasonNow: `Top SKU ${formatPct(topProductShare)} at ${formatMoney(topProduct.revenue)} revenue and ${formatPct(topProduct.grossMarginPct)} gross margin; top 5 ${formatPct(top5ProductShare)}`,
+        policySource: 'Company Pulse executive-risk rule',
+        dataRefs: ['ProductSalesSnapshot'],
+        sourceTimestamp: latestProduct?.snapshotDate.toISOString(),
+      },
+    });
+  }
+
   findings
     .filter((finding) => !isResolvedFinding(finding.payload))
     .slice(0, 12)
@@ -633,6 +934,10 @@ export async function generateCompanyPulse(companyId: string, options: GenerateO
         latestAp: iso(latestAp?.snapshotDate),
         latestCash: iso(latestCash?.snapshotDate),
         latestDaily: iso(latestDaily?.snapshotDate),
+        latestCustomer: iso(latestCustomer?.snapshotDate),
+        latestProduct: iso(latestProduct?.snapshotDate),
+        latestCompletedMonthKey,
+        priorCompletedMonthKey,
         findings: findings.map((finding) => `${finding.id}:${iso(finding.updatedAt)}`),
         policyOverrides,
       })

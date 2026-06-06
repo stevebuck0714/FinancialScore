@@ -299,6 +299,37 @@ export async function syncPulseAlertsForCompany(params: {
     );
   }
 
+  const staleActiveRows = await prisma.$queryRawUnsafe<Array<{ id: string; fingerprint: string; status: string }>>(
+    `SELECT "id", "fingerprint", "status"
+     FROM "PulseAlert"
+     WHERE "companyId" = $1
+       AND "isActive" = TRUE
+       AND "status" <> 'resolved'`,
+    params.companyId
+  );
+
+  for (const row of staleActiveRows) {
+    if (seenFingerprints.has(row.fingerprint)) continue;
+    await prisma.$executeRawUnsafe(
+      `UPDATE "PulseAlert"
+       SET "isActive" = FALSE,
+           "modifiedAt" = $1::timestamp
+       WHERE "id" = $2`,
+      nowIso,
+      row.id
+    );
+    await insertPulseEvent({
+      alertId: row.id,
+      companyId: params.companyId,
+      eventType: 'cleared',
+      fromStatus: row.status,
+      toStatus: row.status,
+      actorUserId: params.actorUserId || null,
+      actorEmail: params.actorEmail || null,
+      payload: { reason: 'not_detected_in_latest_generation', fingerprint: row.fingerprint },
+    });
+  }
+
   return prisma.$queryRawUnsafe<PulseAlertRow[]>(
     `SELECT * FROM "PulseAlert"
      WHERE "companyId" = $1
