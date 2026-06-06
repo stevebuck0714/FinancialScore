@@ -12333,7 +12333,7 @@ export default function OperationsTab({
                         </td>
                         {rollupDays.map((day: any) => (
                           <td key={`${rowDef.label}-${day.dateKey}`} style={{ padding: '10px', borderBottom: '1px solid #f1f5f9', textAlign: 'right', fontSize: '12px', fontWeight: statementRowStyle(rowDef.styleType).weight, color: statementRowStyle(rowDef.styleType).textColor, whiteSpace: 'nowrap' }}>
-                            {formatCurrency(Number(rowDef.valuesByDate[day.dateKey] || 0))}
+                            {rowDef.suppressValues ? '' : formatCurrency(Number(rowDef.valuesByDate?.[day.dateKey] || 0))}
                           </td>
                         ))}
                       </tr>
