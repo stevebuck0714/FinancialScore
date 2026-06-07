@@ -2221,7 +2221,7 @@ function FinancialScorePage() {
 
   const getDisplayAccountCode = (mapping: any): string => {
     const embeddedCode = normalizeAccountCodeForMatch(mapping?.accountName);
-    const preferred = [mapping?.accountCode, embeddedCode];
+    const preferred = [mapping?.accountCode, mapping?.accountId, embeddedCode];
     for (const value of preferred) {
       const raw = String(value || '').trim();
       if (raw) return raw;
@@ -2424,8 +2424,11 @@ function FinancialScorePage() {
         }
         await refreshCompanyMappings(currentCompany.id);
         const invalidCount = typeof result?.invalidCount === 'number' ? result.invalidCount : 0;
+        const rebuildQueued = result?.propagation?.skipped === 'queued_required_mapping_rebuild';
         alert(
-          invalidCount > 0
+          rebuildQueued
+            ? `Account mappings saved. Financial data rebuild is queued and required before refreshed Daily Financials/Data Review values are final.`
+            : invalidCount > 0
             ? `Account mappings saved, but ${invalidCount} mapping${invalidCount === 1 ? '' : 's'} need review.`
             : 'Account mappings saved successfully!'
         );

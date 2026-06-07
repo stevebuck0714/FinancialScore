@@ -1053,6 +1053,11 @@ export type RebuildDailyBSOptions = {
   startDate: Date;
   endDate: Date;
   frequency?: Frequency;
+  /**
+   * Optional explicit snapshot dates to rebuild. When supplied, only these
+   * normalized UTC dates inside [startDate, endDate] are processed.
+   */
+  snapshotDates?: Date[];
   /** 1-12, default 1 (January) */
   fiscalYearStartMonth?: number;
   /** 1-31, default 1 */
@@ -1253,15 +1258,14 @@ export async function rebuildDailyFinancialSnapshotsFromGL(
   let datesProcessed = 0;
   let rowsWritten = 0;
   let anchorsApplied = 0;
-  const cursor = new Date(startUtc.getTime());
-  while (cursor.getTime() <= endUtc.getTime()) {
-    const fiscalYearStart = computeFiscalYearStart(cursor, fyMonth, fyDay);
-    const anchor = anchorForDate(cursor);
+  const processDate = async (snapshotDate: Date) => {
+    const fiscalYearStart = computeFiscalYearStart(snapshotDate, fyMonth, fyDay);
+    const anchor = anchorForDate(snapshotDate);
     if (anchor) anchorsApplied++;
 
     const snapshot = await computeDailyBalanceSheetFromGL(
       companyId,
-      cursor,
+      snapshotDate,
       fiscalYearStart,
       accountIdToTarget,
       anchor
@@ -1287,14 +1291,14 @@ export async function rebuildDailyFinancialSnapshotsFromGL(
       where: {
         companyId_snapshotDate_frequency: {
           companyId,
-          snapshotDate: cursor,
+          snapshotDate,
           frequency,
         },
       },
       update: updatePayload,
       create: {
         companyId,
-        snapshotDate: cursor,
+        snapshotDate,
         frequency,
         ...snapshot,
         sourcePlatform: 'INFOR_M3_GL_REBUILD',
@@ -1303,7 +1307,34 @@ export async function rebuildDailyFinancialSnapshotsFromGL(
 
     rowsWritten++;
     datesProcessed++;
-    cursor.setUTCDate(cursor.getUTCDate() + 1);
+  };
+
+  const explicitSnapshotDates = Array.isArray(opts.snapshotDates)
+    ? Array.from(
+        new Map(
+          opts.snapshotDates
+            .map((date) => {
+              if (!(date instanceof Date) || Number.isNaN(date.getTime())) return null;
+              const normalized = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
+              return [normalized.toISOString().slice(0, 10), normalized] as const;
+            })
+            .filter((entry): entry is readonly [string, Date] => !!entry)
+        ).values()
+      )
+        .filter((date) => date.getTime() >= startUtc.getTime() && date.getTime() <= endUtc.getTime())
+        .sort((a, b) => a.getTime() - b.getTime())
+    : [];
+
+  if (explicitSnapshotDates.length > 0) {
+    for (const snapshotDate of explicitSnapshotDates) {
+      await processDate(snapshotDate);
+    }
+  } else {
+    const cursor = new Date(startUtc.getTime());
+    while (cursor.getTime() <= endUtc.getTime()) {
+      await processDate(new Date(cursor.getTime()));
+      cursor.setUTCDate(cursor.getUTCDate() + 1);
+    }
   }
 
   return {

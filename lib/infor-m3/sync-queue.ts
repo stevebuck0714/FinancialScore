@@ -11,6 +11,7 @@ import {
 import { notifyAdminsOfSyncFailure } from '@/lib/sync-alerts';
 import { orchestrateQuickBooksOnlineOperationalSync } from '@/lib/quickbooks-online/operational-orchestrator';
 import { syncErpDailyFinancialsFromGL } from '@/lib/financial/sync-erp-daily-financials';
+import { rebuildDailyFinancialSnapshotsFromGL } from '@/lib/financial/daily-bs-from-gl';
 
 const LEASE_SECONDS = 120;
 const DEFAULT_MAX_ATTEMPTS = 6;
@@ -28,6 +29,8 @@ const DEFAULT_RUN_MAX_AGE_HOURS = 8;
 const DEFAULT_TASK_FETCH_TIMEOUT_MS = 240_000;
 const DEFAULT_TASK_EXECUTION_TIMEOUT_MS = 270_000;
 const PENDING_TRANSFORM_REPLAY_MODE = 'pending_transform_replay';
+const FINANCIAL_MAPPING_REBUILD_MODE = 'financial_mapping_rebuild';
+const FINANCIAL_MAPPING_REBUILD_CHUNK_SIZE = 30;
 
 type QueueRunRecord = {
   id: string;
@@ -367,6 +370,102 @@ export function isInforSyncQueueEnabled(): boolean {
   // In local/staging development, default to queue mode so async runs cannot
   // get stuck in metadata-only "running" state without a cron worker.
   return String(process.env.NODE_ENV || '').trim().toLowerCase() !== 'production';
+}
+
+export async function enqueueFinancialMappingRebuildRun(input: {
+  companyId: string;
+  startDate: Date;
+  endDate: Date;
+  snapshotDates?: Date[];
+}): Promise<{
+  runId: string;
+  status: string;
+  taskCount: number;
+}> {
+  const companyId = String(input.companyId || '').trim();
+  if (!companyId) throw new Error('enqueueFinancialMappingRebuildRun: companyId required');
+  if (!(input.startDate instanceof Date) || Number.isNaN(input.startDate.getTime())) {
+    throw new Error('enqueueFinancialMappingRebuildRun: invalid startDate');
+  }
+  if (!(input.endDate instanceof Date) || Number.isNaN(input.endDate.getTime())) {
+    throw new Error('enqueueFinancialMappingRebuildRun: invalid endDate');
+  }
+
+  const activeRun = await db().inforSyncRun.findFirst({
+    where: {
+      companyId,
+      platform: 'INFOR_M3',
+      status: 'running',
+      mode: { not: PENDING_TRANSFORM_REPLAY_MODE },
+    },
+    select: { id: true },
+  });
+  const runId = randomUUID();
+  const status = activeRun ? 'queued' : 'running';
+  const normalizedDates = Array.isArray(input.snapshotDates)
+    ? Array.from(
+        new Map(
+          input.snapshotDates
+            .filter((date) => date instanceof Date && !Number.isNaN(date.getTime()))
+            .map((date) => {
+              const normalized = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
+              return [normalized.toISOString().slice(0, 10), normalized.toISOString()] as const;
+            })
+        ).values()
+      )
+    : [];
+  const dateChunks = normalizedDates.length > 0
+    ? Array.from({ length: Math.ceil(normalizedDates.length / FINANCIAL_MAPPING_REBUILD_CHUNK_SIZE) }, (_unused, index) =>
+        normalizedDates.slice(index * FINANCIAL_MAPPING_REBUILD_CHUNK_SIZE, (index + 1) * FINANCIAL_MAPPING_REBUILD_CHUNK_SIZE)
+      )
+    : [[]];
+
+  await db().$transaction(async (tx) => {
+    await tx.inforSyncRun.create({
+      data: {
+        id: runId,
+        companyId,
+        platform: 'INFOR_M3',
+        status,
+        frequency: 'daily',
+        mode: FINANCIAL_MAPPING_REBUILD_MODE,
+        startDate: input.startDate,
+        endDate: input.endDate,
+        message: status === 'queued'
+          ? 'Mapping-change financial rebuild queued behind active Infor sync.'
+          : 'Mapping-change financial rebuild queued.',
+      },
+    });
+    for (const chunk of dateChunks) {
+      await tx.inforSyncTask.create({
+        data: {
+          runId,
+          companyId,
+          status: 'pending',
+          maxAttempts: DEFAULT_MAX_ATTEMPTS,
+          payload: {
+            mode: FINANCIAL_MAPPING_REBUILD_MODE,
+            startDate: input.startDate.toISOString(),
+            endDate: input.endDate.toISOString(),
+            snapshotDates: chunk,
+          },
+        },
+      });
+    }
+  });
+
+  return { runId, status, taskCount: dateChunks.length };
+}
+
+export async function hasPendingFinancialMappingRebuildRuns(): Promise<boolean> {
+  const count = await db().inforSyncRun.count({
+    where: {
+      platform: 'INFOR_M3',
+      mode: FINANCIAL_MAPPING_REBUILD_MODE,
+      status: { in: ['queued', 'running'] },
+    },
+  });
+  return count > 0;
 }
 
 async function notifyQueueRunFailure(
@@ -974,6 +1073,104 @@ async function processTask(
       status: 'deferred',
       details: `Pinned to worker ${taskWorkerBaseUrl}; current worker ${currentWorkerBaseUrl} released task.`,
     };
+  }
+  if (String(task.run.mode || '') === FINANCIAL_MAPPING_REBUILD_MODE) {
+    const startedAt = Date.now();
+    const startDate = new Date(String(taskPayload.startDate || task.run.startDate || ''));
+    const endDate = new Date(String(taskPayload.endDate || task.run.endDate || ''));
+    const snapshotDates = Array.isArray(taskPayload.snapshotDates)
+      ? taskPayload.snapshotDates
+          .map((value) => new Date(String(value || '')))
+          .filter((date) => !Number.isNaN(date.getTime()))
+      : [];
+    try {
+      const rebuilt = await rebuildDailyFinancialSnapshotsFromGL({
+        companyId: task.companyId,
+        startDate,
+        endDate,
+        frequency: 'daily',
+        snapshotDates,
+        pnlUpdateMode: 'overwrite',
+      });
+      const now = new Date();
+      let runCompletedInThisTask = false;
+      let processed = false;
+      await db().$transaction(async (tx) => {
+        const leaseConsumed = await tx.inforSyncTask.updateMany({
+          where: { id: task.id, status: 'leased' },
+          data: {
+            status: 'done',
+            attemptCount: Math.max(0, Number(task.attemptCount || 0)) + 1,
+            finishedAt: now,
+            updatedAt: now,
+            lastError: null,
+            lastResponse: rebuilt,
+            leaseOwner: null,
+            leaseExpiresAt: null,
+          },
+        });
+        if (Number(leaseConsumed?.count || 0) !== 1) return;
+        processed = true;
+        await tx.inforSyncTaskAttempt.create({
+          data: {
+            taskId: task.id,
+            runId: task.runId,
+            companyId: task.companyId,
+            attemptNo: Math.max(0, Number(task.attemptCount || 0)) + 1,
+            status: 'success',
+            httpStatus: null,
+            errorMessage: null,
+            responseSnippet: JSON.stringify(rebuilt).slice(0, 280),
+            recordsCreated: Number(rebuilt.rowsWritten || 0),
+            warningCount: 0,
+            durationMs: Date.now() - startedAt,
+            finishedAt: now,
+          },
+        });
+        await tx.inforSyncRun.updateMany({
+          where: { id: task.runId, status: 'running' },
+          data: {
+            chunkCount: { increment: 1 },
+            recordsCreated: { increment: Number(rebuilt.rowsWritten || 0) },
+            updatedAt: now,
+            lastChunkAt: now,
+            lastError: null,
+          },
+        });
+        const remaining = await tx.inforSyncTask.count({
+          where: { runId: task.runId, status: { in: ['pending', 'leased'] } },
+        });
+        if (remaining === 0) {
+          const completed = await tx.inforSyncRun.updateMany({
+            where: { id: task.runId, status: 'running' },
+            data: {
+              status: 'done',
+              finishedAt: now,
+              updatedAt: now,
+              message: 'Mapping-change financial rebuild completed.',
+            },
+          });
+          runCompletedInThisTask = Number(completed?.count || 0) === 1;
+        }
+      });
+      if (!processed) {
+        return { runId: task.runId, taskId: task.id, status: 'aborted', details: 'Task lease was already released.' };
+      }
+      if (runCompletedInThisTask) {
+        const finalizer = await syncErpDailyFinancialsFromGL({
+          companyId: task.companyId,
+          rebuildDailySnapshots: false,
+          syncMonthly: true,
+        });
+        if (!finalizer.ok) {
+          await markRunPostProcessingFailure(task, 'mapping-change monthly financial sync', JSON.stringify(finalizer));
+          return { runId: task.runId, taskId: task.id, status: 'failed', details: JSON.stringify(finalizer) };
+        }
+      }
+      return { runId: task.runId, taskId: task.id, status: 'success' };
+    } catch (error) {
+      return markTaskExecutionFailure(task, errorToMessage(error, 'Mapping-change financial rebuild failed'));
+    }
   }
   const start = Date.now();
   const isBusinessDayFanoutTask = taskPayload.businessDayFanout === true;

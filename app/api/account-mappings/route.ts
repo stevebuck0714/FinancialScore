@@ -1,10 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { getAllowedTargetFieldSet, getTargetFieldOptions } from "@/lib/constants/sector-target-fields";
-import { rebuildDailyFinancialSnapshotsFromGL } from "@/lib/financial/daily-bs-from-gl";
-import { syncMonthlyFinancialBsFromDailySnapshot } from "@/lib/financials/sync-monthly-bs-from-daily";
-import { syncMonthlyFinancialPnlFromDailySnapshot } from "@/lib/financials/sync-monthly-pnl-from-daily";
 import { publishMonthsFromMonthlyFinancialDirect } from "@/lib/financial/publish-month-service";
+import { enqueueFinancialMappingRebuildRun } from "@/lib/infor-m3/sync-queue";
 
 export const dynamic = "force-dynamic";
 // Mapping save can trigger a downstream DFS rebuild (Infor tenants only)
@@ -975,13 +973,14 @@ export async function POST(request: NextRequest) {
       accountingSystem === "INFOR_M3" || accountingSystem === "INFOR_CSI";
     if (isInforCompany) {
       try {
-        const monthlyBounds = await prisma.monthlyFinancial.aggregate({
+        const latestFinancialRecord = await prisma.financialRecord.findFirst({
           where: { companyId },
-          _min: { monthDate: true },
-          _max: { monthDate: true },
+          orderBy: { createdAt: "desc" },
+          include: { monthlyData: { orderBy: { monthDate: "asc" } } },
         });
-        const minMonth = monthlyBounds._min.monthDate;
-        const maxMonth = monthlyBounds._max.monthDate;
+        const monthlyRows = latestFinancialRecord?.monthlyData || [];
+        const minMonth = monthlyRows[0]?.monthDate || null;
+        const maxMonth = monthlyRows[monthlyRows.length - 1]?.monthDate || null;
         if (minMonth && maxMonth) {
           const startDate = new Date(
             Date.UTC(minMonth.getUTCFullYear(), minMonth.getUTCMonth(), 1, 0, 0, 0),
@@ -989,40 +988,31 @@ export async function POST(request: NextRequest) {
           const endDate = new Date(
             Date.UTC(maxMonth.getUTCFullYear(), maxMonth.getUTCMonth() + 1, 0, 23, 59, 59),
           );
-          const rebuilt = await rebuildDailyFinancialSnapshotsFromGL({
+          const existingSnapshotDates = await prisma.dailyFinancialSnapshot.findMany({
+            where: {
+              companyId,
+              frequency: "daily",
+              snapshotDate: { gte: startDate, lte: endDate },
+            },
+            select: { snapshotDate: true },
+            orderBy: { snapshotDate: "asc" },
+          });
+          const snapshotDates = existingSnapshotDates.map((row) => row.snapshotDate);
+          const queued = await enqueueFinancialMappingRebuildRun({
             companyId,
             startDate,
             endDate,
-            frequency: "daily",
-            // Mapping changes can rewire which accounts feed which DFS
-            // P&L columns. Force overwrite so the DFS rows reflect the
-            // new mapping immediately, otherwise stale per-day P&L
-            // values linger until the nightly sync.
-            pnlUpdateMode: "overwrite",
+            snapshotDates,
           });
-          const bsSync = await syncMonthlyFinancialBsFromDailySnapshot(companyId);
-          // Re-derive MonthlyFinancial P&L scalars + revenue/cogs/expense
-          // breakdown JSON from GL truth so Data Review and the rest of
-          // useMasterData reflect the mapping change without waiting for
-          // a nightly job. Idempotent and best-effort.
-          const pnlSync = await syncMonthlyFinancialPnlFromDailySnapshot(companyId);
           propagation = {
             ok: true,
+            skipped: "queued_required_mapping_rebuild",
             rebuilt: {
-              datesProcessed: rebuilt.datesProcessed,
-              rowsWritten: rebuilt.rowsWritten,
-              mappedAccountCount: rebuilt.mappedAccountCount,
+              datesProcessed: snapshotDates.length,
+              rowsWritten: 0,
+              mappedAccountCount: 0,
             },
-            bsSync: {
-              monthsUpdated: bsSync.monthsUpdated,
-              monthsSkippedNoDfs: bsSync.monthsSkippedNoDfs,
-              errors: bsSync.errors,
-            },
-            pnlSync: {
-              monthsUpdated: pnlSync.monthsUpdated,
-              monthsSkipped: pnlSync.monthsSkippedNoMappings,
-              errors: pnlSync.errors,
-            },
+            ...(queued as any),
           };
         } else {
           propagation = { ok: false, skipped: "no_monthly_bounds" };
