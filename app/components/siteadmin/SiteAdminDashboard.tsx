@@ -2131,6 +2131,7 @@ export default function SiteAdminDashboard(props: any) {
   const [syncTestingBambooHrCompanyId, setSyncTestingBambooHrCompanyId] = React.useState<string | null>(null);
   const [syncingBambooHrCompanyId, setSyncingBambooHrCompanyId] = React.useState<string | null>(null);
   const [probingBambooHrCompanyId, setProbingBambooHrCompanyId] = React.useState<string | null>(null);
+  const [disconnectingBambooHrCompanyId, setDisconnectingBambooHrCompanyId] = React.useState<string | null>(null);
   const [bambooHrProbeResultsByCompany, setBambooHrProbeResultsByCompany] = React.useState<Record<string, string>>({});
   const [platosClosetSettingsByCompany, setPlatosClosetSettingsByCompany] = React.useState<
     Record<
@@ -3110,6 +3111,34 @@ export default function SiteAdminDashboard(props: any) {
       setSyncingBambooHrCompanyId((prev) => (prev === companyId ? null : prev));
     }
   };
+  const disconnectBambooHrConnection = async (companyId: string) => {
+    if (!confirm('Disconnect BambooHR for this company? This removes the stored BambooHR API connection and stops BambooHR syncs.')) {
+      return;
+    }
+    try {
+      setDisconnectingBambooHrCompanyId(companyId);
+      const response = await fetch('/api/operational-system-integrations/bamboohr/settings', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ companyId }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok || !data?.ok) {
+        throw new Error(data?.details || data?.error || 'Failed to disconnect BambooHR');
+      }
+      setBambooHrStatusByCompany((prev) => ({ ...prev, [companyId]: 'NOT_CONNECTED' }));
+      setBambooHrLastSyncByCompany((prev) => ({ ...prev, [companyId]: null }));
+      setBambooHrErrorByCompany((prev) => ({ ...prev, [companyId]: null }));
+      setBambooHrProbeResultsByCompany((prev) => ({ ...prev, [companyId]: '' }));
+      await loadBambooHrSettings(companyId);
+      await loadOperationalSources(companyId);
+      alert('BambooHR disconnected for this company.');
+    } catch (error: any) {
+      alert(`Failed to disconnect BambooHR: ${error?.message || 'Unknown error'}`);
+    } finally {
+      setDisconnectingBambooHrCompanyId((prev) => (prev === companyId ? null : prev));
+    }
+  };
   const probeBambooHrDomains = async (companyId: string) => {
     try {
       setProbingBambooHrCompanyId(companyId);
@@ -3313,9 +3342,11 @@ export default function SiteAdminDashboard(props: any) {
     const isSyncTesting = syncTestingBambooHrCompanyId === companyId;
     const isSyncing = syncingBambooHrCompanyId === companyId;
     const isProbing = probingBambooHrCompanyId === companyId;
-    const isBusy = isSaving || isValidating || isSyncTesting || isSyncing || isProbing;
+    const isDisconnecting = disconnectingBambooHrCompanyId === companyId;
+    const isBusy = isSaving || isValidating || isSyncTesting || isSyncing || isProbing || isDisconnecting;
     const probeResults = bambooHrProbeResultsByCompany[companyId] || '';
     const statusTheme = getOperationalSourceStatusTheme(status);
+    const isConnected = status === 'ACTIVE';
 
     return (
       <div style={{ padding: '12px', background: '#f8fafc', borderRadius: '6px', border: '1px solid #e2e8f0', gridColumn: '1 / 2', order: 4 }}>
@@ -3366,7 +3397,28 @@ export default function SiteAdminDashboard(props: any) {
         </div>
 
         <div style={{ marginBottom: '8px', padding: '8px', background: statusTheme.bg, border: `1px solid ${statusTheme.border}`, borderRadius: '6px' }}>
-          <div style={{ fontSize: '12px', fontWeight: '600', color: statusTheme.fg }}>{statusTheme.label}</div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px', marginBottom: '2px' }}>
+            <div style={{ fontSize: '12px', fontWeight: '600', color: statusTheme.fg }}>{statusTheme.label}</div>
+            {isConnected ? (
+              <button
+                type="button"
+                onClick={() => disconnectBambooHrConnection(companyId)}
+                disabled={isBusy}
+                style={{
+                  padding: '5px 9px',
+                  background: isBusy ? '#cbd5e1' : 'white',
+                  color: isBusy ? '#334155' : '#b91c1c',
+                  border: `1px solid ${isBusy ? '#cbd5e1' : '#fecaca'}`,
+                  borderRadius: '6px',
+                  fontSize: '11px',
+                  fontWeight: '700',
+                  cursor: isBusy ? 'not-allowed' : 'pointer',
+                }}
+              >
+                {isDisconnecting ? 'Disconnecting...' : 'Disconnect'}
+              </button>
+            ) : null}
+          </div>
           <div style={{ fontSize: '12px', color: statusTheme.fg }}>
             {lastSyncAt ? `Last sync: ${new Date(lastSyncAt).toLocaleString()}` : 'No BambooHR sync has been run for this company yet.'}
           </div>

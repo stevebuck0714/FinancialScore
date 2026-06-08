@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import { requireSiteAdminAuthorizedInforCompany } from '@/lib/infor-m3/route-guards';
 import {
+  deleteOperationalSystemConnection,
   getOperationalSystemConnection,
   saveOperationalSystemConnection,
 } from '@/lib/operational/operational-system-connections';
@@ -118,6 +119,34 @@ export async function POST(request: NextRequest) {
     });
   } catch (error: any) {
     const message = error?.message || 'Failed to save BambooHR settings';
+    const status = message.includes('Unauthorized') ? 401 : message.includes('Forbidden') ? 403 : 500;
+    return NextResponse.json({ ok: false, error: message }, { status });
+  }
+}
+
+export async function DELETE(request: NextRequest) {
+  try {
+    const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
+    const { companyId } = await requireSiteAdminAuthorizedInforCompany(request, body);
+    const company = await prisma.company.findUnique({
+      where: { id: companyId },
+      select: { id: true },
+    });
+
+    if (!company) {
+      return NextResponse.json({ ok: false, error: 'Company not found' }, { status: 404 });
+    }
+
+    await deleteOperationalSystemConnection(companyId, 'BAMBOOHR', SOURCE_CODE);
+
+    return NextResponse.json({
+      ok: true,
+      companyId,
+      sourceCode: SOURCE_CODE,
+      status: 'NOT_CONNECTED',
+    });
+  } catch (error: any) {
+    const message = error?.message || 'Failed to disconnect BambooHR';
     const status = message.includes('Unauthorized') ? 401 : message.includes('Forbidden') ? 403 : 500;
     return NextResponse.json({ ok: false, error: message }, { status });
   }
