@@ -29,7 +29,7 @@ export default function PdfViewPage({ searchParams }: PdfViewPageProps) {
         <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '10px', padding: '20px', maxWidth: '560px' }}>
           <h1 style={{ fontSize: '18px', fontWeight: 700, color: '#1e293b', margin: '0 0 8px 0' }}>Unable to open PDF</h1>
           <p style={{ fontSize: '14px', color: '#475569', margin: 0 }}>
-            The PDF link is missing or invalid. Please return to DataRoom and try opening the file again.
+            The PDF link is missing or invalid. Please return and try opening the file again.
           </p>
         </div>
       </main>

@@ -44,7 +44,7 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Company not found' }, { status: 404 });
     }
 
-    const docs = await prisma.companyDocument.findMany({
+    const docs = await prisma.dataRoomDocument.findMany({
       where: { companyId },
       orderBy: { createdAt: 'desc' },
       select: {

@@ -16,7 +16,7 @@ export type DataRoomQuotaCheck = {
 };
 
 export async function getCompanyDataRoomUsage(companyId: string): Promise<number> {
-  const agg = await prisma.companyDocument.aggregate({
+  const agg = await prisma.dataRoomDocument.aggregate({
     where: { companyId },
     _sum: { sizeBytes: true },
   });
@@ -35,7 +35,7 @@ export async function ensureCompanyWithinDataRoomQuota(params: {
   const [usedBytes, existingBlobDoc] = await Promise.all([
     getCompanyDataRoomUsage(companyId),
     incomingBlobUrl
-      ? prisma.companyDocument.findUnique({
+      ? prisma.dataRoomDocument.findUnique({
           where: { blobUrl: incomingBlobUrl },
           select: { id: true, companyId: true, sizeBytes: true },
         })

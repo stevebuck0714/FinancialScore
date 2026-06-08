@@ -86,7 +86,7 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    const docs = await prisma.companyDocument.findMany({
+    const docs = await prisma.dataRoomDocument.findMany({
       where: { companyId, id: { in: Array.from(targetIds) } },
       select: {
         id: true,

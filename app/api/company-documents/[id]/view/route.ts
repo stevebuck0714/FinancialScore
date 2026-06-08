@@ -1,12 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import { requireAuth, validateCompanyAccess } from '@/lib/tenant-security';
-import {
-  applyDocumentPolicyOverrides,
-  isCompanyAdminForDataRoom,
-  resolveDataRoomCapabilities,
-} from '@/lib/dataroom/access';
-import { appendDataRoomAuditEvents, buildDataRoomAuditEvent } from '@/lib/dataroom/audit';
 
 export const dynamic = 'force-dynamic';
 const OFFICE_WEB_VIEWER_MAX_BYTES = 25 * 1024 * 1024;
@@ -60,7 +54,7 @@ function isOfficePreviewable(contentType: string | null, fileName: string) {
 
 export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
   try {
-    const context = await requireAuth();
+    await requireAuth();
     const { id } = await ctx.params;
 
     const doc = await prisma.companyDocument.findUnique({
@@ -80,169 +74,12 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string 
     const canInlinePreview = isPreviewableDocument(doc.contentType, doc.originalFileName);
     const canOfficePreview = isOfficePreviewable(doc.contentType, doc.originalFileName);
 
-    const company = await prisma.company.findUnique({
-      where: { id: doc.companyId },
-      select: { userDefinedAllocations: true },
-    });
-    const dataRoomIndex =
-      company?.userDefinedAllocations &&
-      typeof company.userDefinedAllocations === 'object' &&
-      !Array.isArray(company.userDefinedAllocations)
-        ? (company.userDefinedAllocations as any)?.dataRoom?.documentIndex
-        : null;
-    if (Array.isArray(dataRoomIndex)) {
-      const entry = dataRoomIndex.find((d: any) => String(d?.documentId || '') === String(id));
-      const isCompanyAdmin =
-        context.role === 'SITEADMIN' ||
-        context.role === 'CONSULTANT' ||
-        (await isCompanyAdminForDataRoom(context.userId, doc.companyId));
-      const baseCaps = await resolveDataRoomCapabilities({
-        userId: context.userId,
-        role: context.role,
-        companyId: doc.companyId,
-        userDefinedAllocations: company?.userDefinedAllocations,
-        folderId: entry?.folderId ? String(entry.folderId) : null,
-        documentId: id,
-        isCompanyAdmin,
-      });
-      const caps = applyDocumentPolicyOverrides(baseCaps, entry);
-      if (!caps.view) {
-        try {
-          const nextUDA = appendDataRoomAuditEvents(company?.userDefinedAllocations, [
-            buildDataRoomAuditEvent({
-              action: 'document_view_blocked',
-              companyId: doc.companyId,
-              userId: context.userId,
-              userEmail: context.email,
-              documentId: id,
-              folderId: entry?.folderId ? String(entry.folderId) : null,
-              details: { reason: 'view_not_allowed' },
-            }),
-          ]);
-          await prisma.company.update({
-            where: { id: doc.companyId },
-            data: { userDefinedAllocations: nextUDA as any },
-          });
-        } catch {
-          // Ignore audit-write failures.
-        }
-        return NextResponse.json({ error: 'View is not allowed for this document.' }, { status: 403 });
-      }
-
-      const scanStatus = String(entry?.scanStatus || '');
-      if (entry && scanStatus !== 'clean') {
-        try {
-          const nextUDA = appendDataRoomAuditEvents(company?.userDefinedAllocations, [
-            buildDataRoomAuditEvent({
-              action: 'document_view_blocked',
-              companyId: doc.companyId,
-              userId: context.userId,
-              userEmail: context.email,
-              documentId: id,
-              folderId: entry?.folderId ? String(entry.folderId) : null,
-              details: { reason: 'scan_not_clean', scanStatus: scanStatus || 'pending_scan' },
-            }),
-          ]);
-          await prisma.company.update({
-            where: { id: doc.companyId },
-            data: { userDefinedAllocations: nextUDA as any },
-          });
-        } catch {
-          // Ignore audit-write failures.
-        }
-        return NextResponse.json(
-          { error: `Document is quarantined until malware scan is clean (current status: ${scanStatus || 'pending_scan'}).` },
-          { status: 423 },
-        );
-      }
-
-      try {
-        const latestCompany = await prisma.company.findUnique({
-          where: { id: doc.companyId },
-          select: { userDefinedAllocations: true },
-        });
-        const latestRoot =
-          latestCompany?.userDefinedAllocations &&
-          typeof latestCompany.userDefinedAllocations === 'object' &&
-          !Array.isArray(latestCompany.userDefinedAllocations)
-            ? (latestCompany.userDefinedAllocations as any)
-            : {};
-        const latestDataRoom =
-          latestRoot?.dataRoom &&
-          typeof latestRoot.dataRoom === 'object' &&
-          !Array.isArray(latestRoot.dataRoom)
-            ? latestRoot.dataRoom
-            : {};
-        const indexArray = Array.isArray(latestDataRoom.documentIndex)
-          ? latestDataRoom.documentIndex
-          : [];
-        const viewer = await prisma.user.findUnique({
-          where: { id: context.userId },
-          select: { name: true, email: true },
-        });
-        const viewedAt = new Date().toISOString();
-        const viewerName = String(viewer?.name || viewer?.email || context.email || 'Unknown');
-        const updatedIndex = indexArray.map((d: any) =>
-          String(d?.documentId || '') === String(id)
-            ? (() => {
-                const historyRaw = Array.isArray(d?.viewHistory) ? d.viewHistory : [];
-                const nextHistory = [
-                  {
-                    viewedByUserId: context.userId,
-                    viewedByName: viewerName,
-                    viewedAt,
-                  },
-                  ...historyRaw,
-                ].slice(0, 10);
-                return {
-                  ...d,
-                  lastViewedByUserId: context.userId,
-                  lastViewedByName: viewerName,
-                  lastViewedAt: viewedAt,
-                  viewHistory: nextHistory,
-                };
-              })()
-            : d
-        );
-        const nextUDA = appendDataRoomAuditEvents(
-          {
-            ...latestRoot,
-            dataRoom: {
-              ...latestDataRoom,
-              documentIndex: updatedIndex,
-            },
-          },
-          [
-          buildDataRoomAuditEvent({
-            action: 'document_viewed',
-            companyId: doc.companyId,
-            userId: context.userId,
-            userEmail: context.email,
-            documentId: id,
-            folderId: entry?.folderId ? String(entry.folderId) : null,
-            details: {
-              contentType: doc.contentType || null,
-              previewOnly: true,
-              previewMode: canInlinePreview ? 'inline' : canOfficePreview ? 'office_viewer' : 'unsupported',
-            },
-          }),
-          ],
-        );
-        await prisma.company.update({
-          where: { id: doc.companyId },
-          data: { userDefinedAllocations: nextUDA as any },
-        });
-      } catch {
-        // Ignore audit-write failures; preview should still work.
-      }
-    }
-
     if (canInlinePreview) {
       const isPdf =
         String(doc.contentType || '').toLowerCase() === 'application/pdf' ||
         String(doc.originalFileName || '').toLowerCase().endsWith('.pdf');
       if (isPdf) {
-        const pdfViewerUrl = new URL('/dataroom/pdf-view', req.url);
+        const pdfViewerUrl = new URL('/documents/pdf-view', req.url);
         pdfViewerUrl.searchParams.set('src', doc.blobUrl);
         pdfViewerUrl.searchParams.set('name', doc.originalFileName || 'Document.pdf');
         return NextResponse.redirect(pdfViewerUrl, { status: 302 });

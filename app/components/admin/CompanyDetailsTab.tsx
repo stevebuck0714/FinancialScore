@@ -147,14 +147,12 @@ export default function CompanyDetailsTab({
 }: CompanyDetailsTabProps) {
   const ACCESSIBLE_SECTIONS: { id: string; label: string }[] = [
     { id: "ask-corelytics", label: "Ask Corelytics" },
-    { id: "business-pulse", label: "Business Pulse" },
+    { id: "business-pulse", label: "Daily Alerts" },
     { id: "operational-dashboard", label: "Operational Dashboard" },
     { id: "company-dashboard", label: "Company Dashboard" },
     { id: "financial-reports", label: "Financial Reports" },
-    { id: "financial-statements", label: "Financial Statements" },
     { id: "valuation", label: "Valuation" },
     { id: "expert-analysis", label: "Expert Analysis" },
-    { id: "mda", label: "MD&A" },
     { id: "management-assessment", label: "Team Assessment" },
     { id: "dataroom", label: "Corelytics DataRoom" },
     { id: "custom-reports", label: "Custom Reports" },

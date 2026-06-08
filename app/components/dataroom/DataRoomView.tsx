@@ -392,7 +392,7 @@ export default function DataRoomView({ selectedCompanyId, companyName }: DataRoo
     try {
       const blob = await upload(file.name, file, {
         access: 'public',
-        handleUploadUrl: '/api/company-documents/upload',
+        handleUploadUrl: '/api/dataroom/upload',
         clientPayload: JSON.stringify({
           companyId: selectedCompanyId,
           category: 'OTHER',
@@ -401,7 +401,7 @@ export default function DataRoomView({ selectedCompanyId, companyName }: DataRoo
         }),
       });
 
-      const registerRes = await fetch('/api/company-documents', {
+      const registerRes = await fetch('/api/dataroom/documents', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -409,29 +409,16 @@ export default function DataRoomView({ selectedCompanyId, companyName }: DataRoo
           category: 'OTHER',
           originalFileName: file.name,
           blob,
+          folderId: selectedFolderId,
         }),
       });
       const registerData = await registerRes.json();
       if (!registerRes.ok) {
-        throw new Error(registerData?.error || 'Failed to register document');
+        throw new Error(registerData?.error || 'Failed to register Data Room document');
       }
 
-      const docId = String(registerData?.document?.id || '');
+      const docId = String(registerData?.documentId || '');
       if (!docId) throw new Error('Missing document ID after upload');
-
-      const assignRes = await fetch('/api/dataroom/documents', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          companyId: selectedCompanyId,
-          documentId: docId,
-          folderId: selectedFolderId,
-        }),
-      });
-      const assignData = await assignRes.json();
-      if (!assignRes.ok) {
-        throw new Error(assignData?.error || 'Failed to assign DataRoom folder');
-      }
 
       // Best-effort auto-scan trigger after assignment.
       try {
@@ -457,7 +444,7 @@ export default function DataRoomView({ selectedCompanyId, companyName }: DataRoo
   };
 
   const removeFromDataRoom = async (documentId: string) => {
-    if (!confirm('Remove this document from DataRoom folder index? (File remains in company documents)')) {
+    if (!confirm('Delete this document from the Data Room repository? This does not affect internal company Documents.')) {
       return;
     }
     setWorkingDocId(documentId);
@@ -468,10 +455,10 @@ export default function DataRoomView({ selectedCompanyId, companyName }: DataRoo
         { method: 'DELETE' },
       );
       const data = await res.json();
-      if (!res.ok) throw new Error(data?.error || 'Failed to remove from DataRoom index');
+      if (!res.ok) throw new Error(data?.error || 'Failed to delete Data Room document');
       await loadOverview();
     } catch (e: any) {
-      setError(e?.message || 'Failed to remove document from DataRoom index');
+      setError(e?.message || 'Failed to delete Data Room document');
     } finally {
       setWorkingDocId(null);
     }
@@ -528,7 +515,7 @@ export default function DataRoomView({ selectedCompanyId, companyName }: DataRoo
       }
       return;
     }
-    window.open(`/api/company-documents/${doc.id}/open`, '_blank', 'noreferrer');
+    window.open(`/api/dataroom/documents/${doc.id}/open`, '_blank', 'noreferrer');
     // Refresh shortly after open so repeated downloads show up in history.
     window.setTimeout(() => {
       loadOverview();
@@ -547,40 +534,12 @@ export default function DataRoomView({ selectedCompanyId, companyName }: DataRoo
       }
       return;
     }
-    window.open(`/api/company-documents/${doc.id}/view`, '_blank', 'noreferrer');
+    window.open(`/api/dataroom/documents/${doc.id}/view`, '_blank', 'noreferrer');
   };
 
   const runDocumentSearch = async () => {
-    const question = docSearchQuestion.trim();
-    if (!docSearchDocumentId || !question) return;
-    if (selectedSearchDoc && String(selectedSearchDoc.extractionStatus || '').toUpperCase() !== 'DONE') {
-      alert('This document is still processing text extraction. Try again once status is DONE.');
-      return;
-    }
-    setDocSearchLoading(true);
-    setDocSearchError(null);
+    setDocSearchError('Data Room document search needs a dedicated Data Room index and is temporarily unavailable.');
     setDocSearchResponse(null);
-    try {
-      const res = await fetch('/api/ai-analysis/ask', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          companyId: selectedCompanyId,
-          companyName,
-          question,
-          useExternalSources: false,
-          documentId: docSearchDocumentId,
-          mode: 'document',
-        }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data?.error || 'Failed to search document');
-      setDocSearchResponse(data as AskResponse);
-    } catch (e: any) {
-      setDocSearchError(e?.message || 'Failed to search document');
-    } finally {
-      setDocSearchLoading(false);
-    }
   };
 
   return (
@@ -895,13 +854,14 @@ export default function DataRoomView({ selectedCompanyId, companyName }: DataRoo
           <div style={{ background: '#f8fafc', borderBottom: '1px solid #e2e8f0', padding: '10px 12px' }}>
             <div style={{ fontSize: '14px', fontWeight: 800, color: '#1e293b' }}>Search Documents</div>
             <div style={{ marginTop: '2px', fontSize: '12px', color: '#64748b' }}>
-              Ask questions against a selected DataRoom document.
+              Data Room document search will use its own dedicated index and is temporarily unavailable.
             </div>
           </div>
           <div style={{ padding: '12px', display: 'grid', gap: '10px' }}>
             <select
               value={docSearchDocumentId}
               onChange={(e) => setDocSearchDocumentId(e.target.value)}
+              disabled
               style={{ padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '13px' }}
             >
               <option value="">Select document</option>
@@ -916,7 +876,7 @@ export default function DataRoomView({ selectedCompanyId, companyName }: DataRoo
                 value={docSearchQuestion}
                 onChange={(e) => setDocSearchQuestion(e.target.value)}
                 placeholder={docSearchDocumentId ? 'Ask about this document...' : 'Select a document first...'}
-                disabled={!docSearchDocumentId}
+                disabled
                 style={{ flex: 1, padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '13px' }}
                 onKeyDown={(e) => {
                   if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
@@ -928,10 +888,7 @@ export default function DataRoomView({ selectedCompanyId, companyName }: DataRoo
                 type="button"
                 onClick={runDocumentSearch}
                 disabled={
-                  docSearchLoading ||
-                  !docSearchDocumentId ||
-                  !docSearchQuestion.trim() ||
-                  (selectedSearchDoc ? String(selectedSearchDoc.extractionStatus || '').toUpperCase() !== 'DONE' : false)
+                  true
                 }
                 style={{
                   border: 'none',
@@ -941,7 +898,7 @@ export default function DataRoomView({ selectedCompanyId, companyName }: DataRoo
                   padding: '10px 12px',
                   fontSize: '12px',
                   fontWeight: 800,
-                  cursor: docSearchLoading || !docSearchDocumentId || !docSearchQuestion.trim() ? 'not-allowed' : 'pointer',
+                  cursor: 'not-allowed',
                 }}
               >
                 {docSearchLoading ? 'Searching...' : 'Search Document'}

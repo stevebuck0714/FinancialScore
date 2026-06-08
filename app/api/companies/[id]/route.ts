@@ -152,6 +152,7 @@ export async function DELETE(
       await tx.apiSyncLog.deleteMany({ where: { companyId } });
       await tx.companyDocumentChunk.deleteMany({ where: { companyId } });
       await tx.companyDocument.deleteMany({ where: { companyId } });
+      await (tx as any).dataRoomDocument.deleteMany({ where: { companyId } });
       await tx.loan.deleteMany({ where: { companyId } });
 
       await tx.company.delete({ where: { id: companyId } });

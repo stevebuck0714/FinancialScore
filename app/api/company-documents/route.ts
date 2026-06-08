@@ -2,8 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import { requireAuth, validateCompanyAccess } from '@/lib/tenant-security';
 import { sanitizeTextForPostgres } from '@/lib/company-documents/extract-text';
-import { validateDataRoomFilePolicy } from '@/lib/dataroom/file-policy';
-import { ensureCompanyWithinDataRoomQuota } from '@/lib/dataroom/quota';
+import { validateCompanyDocumentFilePolicy } from '@/lib/company-documents/file-policy';
 
 export const dynamic = 'force-dynamic';
 
@@ -109,7 +108,7 @@ export async function POST(req: NextRequest) {
     if (!originalFileName) return NextResponse.json({ error: 'originalFileName is required' }, { status: 400 });
     if (!blobUrl) return NextResponse.json({ error: 'blob.url is required' }, { status: 400 });
 
-    const policy = validateDataRoomFilePolicy({
+    const policy = validateCompanyDocumentFilePolicy({
       fileName: originalFileName,
       contentType,
       sizeBytes,
@@ -121,22 +120,6 @@ export async function POST(req: NextRequest) {
     const hasAccess = await validateCompanyAccess(companyId);
     if (!hasAccess) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
-    }
-
-    const quota = await ensureCompanyWithinDataRoomQuota({
-      companyId,
-      incomingSizeBytes: Number(sizeBytes || 0),
-      incomingBlobUrl: blobUrl,
-    });
-    if (!quota.ok) {
-      return NextResponse.json(
-        {
-          error: `Storage quota exceeded. Quota: ${Math.round(quota.quotaBytes / (1024 * 1024))} MB, projected usage: ${Math.round(
-            quota.projectedUsedBytes / (1024 * 1024),
-          )} MB.`,
-        },
-        { status: 400 },
-      );
     }
 
     const doc = await prisma.companyDocument.upsert({

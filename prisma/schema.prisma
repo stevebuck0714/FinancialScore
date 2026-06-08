@@ -97,6 +97,7 @@ model Company {
   users                      User[]
   userAccess                 UserCompanyAccess[]
   documents                  CompanyDocument[]
+  dataRoomDocuments          DataRoomDocument[]
   documentChunks             CompanyDocumentChunk[]
   loans                      Loan[]
   xeroTransactions           XeroTransaction[]
@@ -164,6 +165,7 @@ model User {
   companyAccess        UserCompanyAccess[]
   trustedDevices       TrustedDevice[]
   uploadedDocuments    CompanyDocument[]  @relation("CompanyDocumentUploadedBy")
+  uploadedDataRoomDocuments DataRoomDocument[] @relation("DataRoomDocumentUploadedBy")
   customReportsCreated CustomReport[]     @relation("CustomReportCreatedBy")
 
   @@index([email])
@@ -246,6 +248,33 @@ model CompanyDocument {
   company          Company                 @relation(fields: [companyId], references: [id], onDelete: Cascade)
   uploadedBy       User                    @relation("CompanyDocumentUploadedBy", fields: [uploadedByUserId], references: [id], onDelete: Cascade)
   chunks           CompanyDocumentChunk[]
+
+  @@index([companyId])
+  @@index([uploadedByUserId])
+  @@index([category])
+  @@index([createdAt])
+}
+
+model DataRoomDocument {
+  id               String                  @id @default(cuid())
+  companyId        String
+  uploadedByUserId String
+  category         CompanyDocumentCategory
+
+  originalFileName String
+  blobUrl          String                  @unique
+  blobPathname     String?                 @unique
+  contentType      String?
+  sizeBytes        Int?
+
+  extractionStatus String                  @default("PENDING")
+  extractionError  String?
+
+  createdAt        DateTime                @default(now())
+  updatedAt        DateTime                @updatedAt
+
+  company          Company                 @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  uploadedBy       User                    @relation("DataRoomDocumentUploadedBy", fields: [uploadedByUserId], references: [id], onDelete: Cascade)
 
   @@index([companyId])
   @@index([uploadedByUserId])

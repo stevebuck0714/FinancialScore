@@ -3,10 +3,10 @@ import { handleUpload, type HandleUploadBody } from '@vercel/blob/client';
 import prisma from '@/lib/prisma';
 import { requireAuth, validateCompanyAccess } from '@/lib/tenant-security';
 import { sanitizeTextForPostgres } from '@/lib/company-documents/extract-text';
-import {
-  COMPANY_DOCUMENT_ALLOWED_CONTENT_TYPES,
-  validateCompanyDocumentFilePolicy,
-} from '@/lib/company-documents/file-policy';
+import { DATAROOM_ALLOWED_CONTENT_TYPES } from '@/lib/dataroom/constants';
+import { validateDataRoomFilePolicy } from '@/lib/dataroom/file-policy';
+import { ensureCompanyWithinDataRoomQuota } from '@/lib/dataroom/quota';
+import { resolveDataRoomCapabilities } from '@/lib/dataroom/access';
 
 export const dynamic = 'force-dynamic';
 
@@ -28,7 +28,6 @@ export async function POST(request: Request): Promise<Response> {
 
   try {
     if (!process.env.BLOB_READ_WRITE_TOKEN) {
-      // Keep message explicit; this is the #1 misconfig in local dev.
       return NextResponse.json(
         { error: 'BLOB_READ_WRITE_TOKEN is not set (required for Vercel Blob uploads)' },
         { status: 500 },
@@ -40,12 +39,6 @@ export async function POST(request: Request): Promise<Response> {
       request,
       onBeforeGenerateToken: async (_pathname, clientPayload) => {
         const context = await requireAuth();
-
-        console.log('📄 Blob upload token request', {
-          hasBlobToken: !!process.env.BLOB_READ_WRITE_TOKEN,
-          clientPayloadType: typeof clientPayload,
-        });
-
         const payload =
           typeof clientPayload === 'string'
             ? (() => {
@@ -56,17 +49,17 @@ export async function POST(request: Request): Promise<Response> {
                 }
               })()
             : ((clientPayload || {}) as any);
+
         const companyId = String(payload.companyId || '').trim();
         const category = asCategory(payload.category);
         const originalFileName = String(payload.originalFileName || '').trim();
         const sizeBytes = typeof payload.sizeBytes === 'number' ? Math.trunc(payload.sizeBytes) : null;
 
         if (!companyId || !category || !originalFileName) {
-          console.warn('❌ Missing upload payload', { companyId, category, originalFileName });
           throw new Error('Missing upload payload (companyId/category/originalFileName)');
         }
 
-        const filePolicy = validateCompanyDocumentFilePolicy({
+        const filePolicy = validateDataRoomFilePolicy({
           fileName: originalFileName,
           sizeBytes,
         });
@@ -82,8 +75,34 @@ export async function POST(request: Request): Promise<Response> {
           throw new Error('Forbidden');
         }
 
+        const company = await prisma.company.findUnique({
+          where: { id: companyId },
+          select: { userDefinedAllocations: true },
+        });
+        const capabilities = await resolveDataRoomCapabilities({
+          userId: context.userId,
+          role: context.role,
+          companyId,
+          userDefinedAllocations: company?.userDefinedAllocations,
+        });
+        if (!capabilities.upload && !capabilities.manage) {
+          throw new Error('Forbidden: Data Room upload access required');
+        }
+
+        const quota = await ensureCompanyWithinDataRoomQuota({
+          companyId,
+          incomingSizeBytes: Number(sizeBytes),
+        });
+        if (!quota.ok) {
+          throw new Error(
+            `Storage quota exceeded. Quota: ${Math.round(quota.quotaBytes / (1024 * 1024))} MB, projected usage: ${Math.round(
+              quota.projectedUsedBytes / (1024 * 1024),
+            )} MB.`,
+          );
+        }
+
         return {
-          allowedContentTypes: [...COMPANY_DOCUMENT_ALLOWED_CONTENT_TYPES],
+          allowedContentTypes: [...DATAROOM_ALLOWED_CONTENT_TYPES],
           addRandomSuffix: true,
           tokenPayload: JSON.stringify({
             companyId,
@@ -94,8 +113,6 @@ export async function POST(request: Request): Promise<Response> {
         };
       },
       onUploadCompleted: async ({ blob, tokenPayload }) => {
-        // NOTE: Vercel calls this after upload completes. It won't fire on localhost
-        // unless you use ngrok and set VERCEL_BLOB_CALLBACK_URL.
         try {
           const p = tokenPayload ? JSON.parse(tokenPayload) : {};
           const companyId = String(p?.companyId || '').trim();
@@ -107,8 +124,7 @@ export async function POST(request: Request): Promise<Response> {
             return;
           }
 
-          // Upsert in case the client also registers explicitly (local dev).
-          const doc = await prisma.companyDocument.upsert({
+          await prisma.dataRoomDocument.upsert({
             where: { blobUrl: blob.url },
             create: {
               companyId,
@@ -129,25 +145,15 @@ export async function POST(request: Request): Promise<Response> {
               contentType: blob.contentType || null,
               sizeBytes: typeof (blob as any).size === 'number' ? Math.trunc((blob as any).size) : null,
             },
-            select: { id: true },
-          });
-
-          // Heavy extraction and embedding indexing run through
-          // /api/company-documents/process-pending so upload callbacks stay fast.
-          await prisma.companyDocument.update({
-            where: { id: doc.id },
-            data: { extractionStatus: 'PENDING', extractionError: null, indexStatus: 'PENDING', indexedAt: null, indexError: null },
           });
         } catch (e) {
-          console.warn('onUploadCompleted failed (ignored):', e);
+          console.warn('Data Room onUploadCompleted failed (ignored):', e);
         }
       },
     });
 
     return NextResponse.json(jsonResponse);
   } catch (error: any) {
-    console.error('❌ /api/company-documents/upload failed:', error?.message || error);
-    return NextResponse.json({ error: error?.message || 'Upload failed' }, { status: 400 });
+    return NextResponse.json({ error: error?.message || 'Data Room upload failed' }, { status: 400 });
   }
 }
-
