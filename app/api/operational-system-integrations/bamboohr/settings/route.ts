@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import { requireSiteAdminAuthorizedInforCompany } from '@/lib/infor-m3/route-guards';
 import {
-  deleteOperationalSystemConnection,
   getOperationalSystemConnection,
   saveOperationalSystemConnection,
 } from '@/lib/operational/operational-system-connections';
@@ -137,13 +136,45 @@ export async function DELETE(request: NextRequest) {
       return NextResponse.json({ ok: false, error: 'Company not found' }, { status: 404 });
     }
 
-    await deleteOperationalSystemConnection(companyId, 'BAMBOOHR', SOURCE_CODE);
+    const existing = await getOperationalSystemConnection(companyId, 'BAMBOOHR', SOURCE_CODE);
+    const existingMetadata =
+      existing?.connectionMetadata && typeof existing.connectionMetadata === 'object' && !Array.isArray(existing.connectionMetadata)
+        ? (existing.connectionMetadata as Record<string, unknown>)
+        : {};
+    const existingSettings =
+      existingMetadata.bambooHrSettings && typeof existingMetadata.bambooHrSettings === 'object' && !Array.isArray(existingMetadata.bambooHrSettings)
+        ? (existingMetadata.bambooHrSettings as Record<string, unknown>)
+        : {};
+
+    await saveOperationalSystemConnection({
+      companyId,
+      provider: 'BAMBOOHR',
+      sourceCode: SOURCE_CODE,
+      authType: existing?.authType || 'API_KEY',
+      status: 'INACTIVE',
+      accessToken: null,
+      refreshToken: null,
+      tokenExpiresAt: null,
+      baseUrl: existing?.baseUrl || (typeof existingSettings.baseUrl === 'string' ? existingSettings.baseUrl : null),
+      lastSyncAt: existing?.lastSyncAt || null,
+      autoSync: false,
+      syncFrequency: existing?.syncFrequency || defaultBambooHrSettings.syncFrequency,
+      connectionMetadata: {
+        ...existingMetadata,
+        bambooHrSettings: {
+          ...existingSettings,
+          apiKey: '',
+        },
+        bambooHrDisconnectedAt: new Date().toISOString(),
+      },
+      errorMessage: null,
+    });
 
     return NextResponse.json({
       ok: true,
       companyId,
       sourceCode: SOURCE_CODE,
-      status: 'NOT_CONNECTED',
+      status: 'INACTIVE',
     });
   } catch (error: any) {
     const message = error?.message || 'Failed to disconnect BambooHR';
