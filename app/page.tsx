@@ -2519,15 +2519,24 @@ function FinancialScorePage() {
       setCompanyManagementSubTab('payments');
     }
   }, [adminDashboardTab]);
+
   const [expandedBusinessIds, setExpandedBusinessIds] = useState<Set<string>>(new Set());
   const [editingPricing, setEditingPricing] = useState<{[key: string]: any}>({});
   const [editingConsultantInfo, setEditingConsultantInfo] = useState<{[key: string]: any}>({});
   const [expandedConsultantInfo, setExpandedConsultantInfo] = useState<Set<string>>(new Set());
   const [companyToDelete, setCompanyToDelete] = useState<{companyId: string, businessId: string, companyName: string} | null>(null);
   const [showDeleteConfirmation, setShowDeleteConfirmation] = useState(false);
+  const [deleteCompanyConfirmText, setDeleteCompanyConfirmText] = useState('');
   const [siteAdminViewingAs, setSiteAdminViewingAs] = useState<any>(null);
   const [siteAdminSessionUser, setSiteAdminSessionUser] = useState<any>(null);
   const [showAddConsultantForm, setShowAddConsultantForm] = useState(false);
+
+  useEffect(() => {
+    if (showDeleteConfirmation) {
+      setDeleteCompanyConfirmText('');
+    }
+  }, [showDeleteConfirmation, companyToDelete?.companyId]);
+
   // Persist the original Site Administrator identity so "Return to Site Administration"
   // remains available while previewing companies across navigation.
   useEffect(() => {
@@ -3703,6 +3712,10 @@ function FinancialScorePage() {
   // Delete company handler
   const handleDeleteCompany = async () => {
     if (!companyToDelete) return;
+    if (deleteCompanyConfirmText.trim() !== companyToDelete.companyName) {
+      alert(`Type "${companyToDelete.companyName}" to confirm deletion.`);
+      return;
+    }
 
     const normalizedRole = String(currentUser?.role || '').toUpperCase();
     const canDeleteCompany = normalizedRole === 'CONSULTANT' || normalizedRole === 'SITEADMIN';
@@ -3710,6 +3723,7 @@ function FinancialScorePage() {
       alert('Only consultants and site admins can delete companies.');
       setShowDeleteConfirmation(false);
       setCompanyToDelete(null);
+      setDeleteCompanyConfirmText('');
       return;
     }
 
@@ -3774,11 +3788,13 @@ function FinancialScorePage() {
         // Close the confirmation dialog
         setShowDeleteConfirmation(false);
         setCompanyToDelete(null);
+        setDeleteCompanyConfirmText('');
       } else {
         const errorMessage = result?.error || 'Delete request was rejected by the server.';
         alert(`Could not delete company "${companyToDelete.companyName}". ${errorMessage}`);
         setShowDeleteConfirmation(false);
         setCompanyToDelete(null);
+        setDeleteCompanyConfirmText('');
       }
     } catch (error) {
       console.error('Error deleting company:', error);
@@ -27971,6 +27987,30 @@ function FinancialScorePage() {
               <p style={{ fontSize: '14px', color: '#ef4444', marginTop: '12px', fontWeight: '600' }}>
                 This action cannot be undone. All data associated with this company will be permanently deleted.
               </p>
+              <div style={{ marginTop: '18px', textAlign: 'left' }}>
+                <label style={{ display: 'block', fontSize: '13px', fontWeight: 700, color: '#334155', marginBottom: '6px' }}>
+                  Type the company name to confirm:
+                </label>
+                <div style={{ fontSize: '13px', color: '#0f172a', fontWeight: 800, marginBottom: '8px' }}>
+                  {companyToDelete.companyName}
+                </div>
+                <input
+                  type="text"
+                  value={deleteCompanyConfirmText}
+                  onChange={(e) => setDeleteCompanyConfirmText(e.target.value)}
+                  placeholder={companyToDelete.companyName}
+                  autoFocus
+                  style={{
+                    width: '100%',
+                    padding: '10px 12px',
+                    border: deleteCompanyConfirmText.trim() === companyToDelete.companyName ? '1px solid #22c55e' : '1px solid #cbd5e1',
+                    borderRadius: '8px',
+                    fontSize: '14px',
+                    color: '#0f172a',
+                    boxSizing: 'border-box',
+                  }}
+                />
+              </div>
             </div>
             
             <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
@@ -27978,6 +28018,7 @@ function FinancialScorePage() {
                 onClick={() => {
                   setShowDeleteConfirmation(false);
                   setCompanyToDelete(null);
+                  setDeleteCompanyConfirmText('');
                 }}
                 style={{
                   padding: '12px 24px',
@@ -27997,19 +28038,24 @@ function FinancialScorePage() {
               </button>
               <button
                 onClick={handleDeleteCompany}
+                disabled={deleteCompanyConfirmText.trim() !== companyToDelete.companyName}
                 style={{
                   padding: '12px 24px',
-                  background: '#ef4444',
+                  background: deleteCompanyConfirmText.trim() === companyToDelete.companyName ? '#ef4444' : '#fca5a5',
                   color: 'white',
                   border: 'none',
                   borderRadius: '8px',
                   fontSize: '14px',
                   fontWeight: '600',
-                  cursor: 'pointer',
+                  cursor: deleteCompanyConfirmText.trim() === companyToDelete.companyName ? 'pointer' : 'not-allowed',
                   transition: 'background 0.2s'
                 }}
-                onMouseEnter={(e) => e.currentTarget.style.background = '#dc2626'}
-                onMouseLeave={(e) => e.currentTarget.style.background = '#ef4444'}
+                onMouseEnter={(e) => {
+                  if (deleteCompanyConfirmText.trim() === companyToDelete.companyName) e.currentTarget.style.background = '#dc2626';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.background = deleteCompanyConfirmText.trim() === companyToDelete.companyName ? '#ef4444' : '#fca5a5';
+                }}
               >
                 Delete Company
               </button>
