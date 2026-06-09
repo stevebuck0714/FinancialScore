@@ -116,7 +116,7 @@ export default function DashboardView({
   trendData,
   companyName,
   selectedCompanyId,
-  selectedDashboardWidgets,
+  selectedDashboardWidgets: selectedDashboardWidgetsRaw,
   setSelectedDashboardWidgets,
   showDashboardCustomizer,
   setShowDashboardCustomizer,
@@ -129,6 +129,7 @@ export default function DashboardView({
   expenseGoals,
   onSaveDashboardPrefs
 }: DashboardViewProps) {
+  const selectedDashboardWidgets = Array.isArray(selectedDashboardWidgetsRaw) ? selectedDashboardWidgetsRaw : [];
   const [isSaving, setIsSaving] = useState(false);
   const [isPreparingPrint, setIsPreparingPrint] = useState(false);
   const [printOrientation] = useState<'portrait' | 'landscape'>('portrait');

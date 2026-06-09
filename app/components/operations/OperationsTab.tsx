@@ -1039,6 +1039,7 @@ export default function OperationsTab({
         ...(isTabModuleEnabled('forecast') ? ['forecast' as OpTab] : []),
         ...availableModuleTabs,
       ];
+  const safeAvailableTabs = Array.isArray(availableTabs) ? availableTabs : [];
   const getOperationalTabLabel = (moduleKey: string): string => {
     if (isWholesaleTradeSector && moduleKey === 'products_skus') {
       return 'Products';
@@ -1068,17 +1069,17 @@ export default function OperationsTab({
   };
 
   useEffect(() => {
-    if (!availableTabs.includes(activeTab)) {
-      setActiveTab(availableTabs[0] || 'dashboard');
+    if (!safeAvailableTabs.includes(activeTab)) {
+      setActiveTab(safeAvailableTabs[0] || 'dashboard');
     }
-  }, [activeTab, availableTabs]);
+  }, [activeTab, safeAvailableTabs]);
 
   useEffect(() => {
     if (!initialTab) return;
-    if (availableTabs.includes(initialTab as OpTab)) {
+    if (safeAvailableTabs.includes(initialTab as OpTab)) {
       setActiveTab(initialTab as OpTab);
     }
-  }, [initialTab, availableTabs]);
+  }, [initialTab, safeAvailableTabs]);
 
   useEffect(() => {
     if (initialForecastBasisTab) {
