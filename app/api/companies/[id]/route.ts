@@ -68,17 +68,18 @@ function quoteIdentifier(identifier: string): string {
   return `"${identifier.replace(/"/g, '""')}"`;
 }
 
-async function tableExists(tx: any, tableName: string): Promise<boolean> {
-  const regclassName = quoteIdentifier(tableName);
-  const rows = (await tx.$queryRawUnsafe(
-    'SELECT to_regclass($1) IS NOT NULL AS "exists"',
-    regclassName,
-  )) as Array<{ exists: boolean }>;
-  return Boolean(rows?.[0]?.exists);
+async function getExistingCompanyScopedTables(): Promise<Set<string>> {
+  const rows = await prisma.$queryRawUnsafe<Array<{ tableName: string }>>(
+    `SELECT tablename AS "tableName"
+     FROM pg_catalog.pg_tables
+     WHERE schemaname = 'public'
+       AND tablename = ANY($1::text[])`,
+    COMPANY_SCOPED_TABLE_DELETE_ORDER as unknown as string[],
+  );
+  return new Set(rows.map((row) => row.tableName));
 }
 
-async function deleteCompanyScopedRowsIfTableExists(tx: any, tableName: string, companyId: string) {
-  if (!(await tableExists(tx, tableName))) return;
+async function deleteCompanyScopedRows(tx: any, tableName: string, companyId: string) {
   await tx.$executeRawUnsafe(
     `DELETE FROM ${quoteIdentifier(tableName)} WHERE "companyId" = $1`,
     companyId,
@@ -212,9 +213,11 @@ export async function DELETE(
 
     // Hard delete all data scoped to this company. Some tables are manual or
     // recently added migrations in prod, so guard each cleanup by table existence.
+    const existingCompanyScopedTables = await getExistingCompanyScopedTables();
     await prisma.$transaction(async (tx) => {
       for (const tableName of COMPANY_SCOPED_TABLE_DELETE_ORDER) {
-        await deleteCompanyScopedRowsIfTableExists(tx, tableName, companyId);
+        if (!existingCompanyScopedTables.has(tableName)) continue;
+        await deleteCompanyScopedRows(tx, tableName, companyId);
       }
 
       // Remove direct company users after document rows so uploadedBy FKs do not
@@ -222,7 +225,7 @@ export async function DELETE(
       await tx.user.deleteMany({ where: { companyId } });
 
       await tx.company.delete({ where: { id: companyId } });
-    });
+    }, { timeout: 30000, maxWait: 10000 });
 
     console.log(`Hard-deleted company ${companyId} requested by ${context.email}`);
     await auditCompanyOperation('COMPANY_DELETED', companyId, {
