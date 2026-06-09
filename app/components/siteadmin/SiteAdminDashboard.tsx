@@ -2090,6 +2090,8 @@ export default function SiteAdminDashboard(props: any) {
     Record<
       string,
       {
+        qboUsername: string;
+        qboPassword: string;
         syncFrequency: 'daily' | 'weekly' | 'monthly' | '';
         syncTime: string;
         operationalLoadMode: 'rolling_90' | 'backfill_3y';
@@ -2287,6 +2289,8 @@ export default function SiteAdminDashboard(props: any) {
     { dataDomain: 'Payments', qbEntity: 'ReceivePaymentQuery' },
   ];
   const defaultQboSettings = {
+    qboUsername: '',
+    qboPassword: '',
     syncFrequency: 'daily' as 'daily' | 'weekly' | 'monthly' | '',
     syncTime: '08:00',
     operationalLoadMode: 'rolling_90' as 'rolling_90' | 'backfill_3y',
@@ -5707,6 +5711,37 @@ export default function SiteAdminDashboard(props: any) {
                                                       Operational data loads when the user runs QuickBooks sync: default 90-day refresh, or optional 3-year backfill (async monthly chunks after first sync).
                                                     </div>
                                                   </div>
+                                                  <div style={{ marginBottom: '8px', padding: '8px', background: '#fff7ed', border: '1px solid #fed7aa', borderRadius: '6px' }}>
+                                                    <div style={{ fontSize: '12px', fontWeight: '600', color: '#9a3412', marginBottom: '6px' }}>
+                                                      QBO Credentials (manual reference only)
+                                                    </div>
+                                                    <div style={{ fontSize: '12px', color: '#9a3412', marginBottom: '8px' }}>
+                                                      These fields do not connect to QuickBooks. They are saved only so a site admin can manually log in to QBO if needed.
+                                                    </div>
+                                                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(180px, 1fr))', gap: '8px' }}>
+                                                      <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#334155' }}>
+                                                        <span style={{ fontWeight: 600 }}>QBO Username</span>
+                                                        <input
+                                                          type="text"
+                                                          value={getQboSettings(company.id).qboUsername}
+                                                          onChange={(e) => setQboSetting(company.id, 'qboUsername', e.target.value)}
+                                                          placeholder="QBO login username or email"
+                                                          style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white' }}
+                                                        />
+                                                      </label>
+                                                      <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#334155' }}>
+                                                        <span style={{ fontWeight: 600 }}>QBO Password</span>
+                                                        <input
+                                                          type="password"
+                                                          value={getQboSettings(company.id).qboPassword}
+                                                          onChange={(e) => setQboSetting(company.id, 'qboPassword', e.target.value)}
+                                                          placeholder="QBO login password"
+                                                          autoComplete="new-password"
+                                                          style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white' }}
+                                                        />
+                                                      </label>
+                                                    </div>
+                                                  </div>
                                                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(180px, 1fr))', gap: '8px' }}>
                                                     <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#334155' }}>
                                                       <span style={{ fontWeight: 600 }}>Operational load *</span>
@@ -8602,6 +8637,37 @@ export default function SiteAdminDashboard(props: any) {
                                         <div style={{ fontSize: '12px', fontWeight: '600', color: '#166534' }}>QuickBooks Online operational sync configuration</div>
                                         <div style={{ fontSize: '12px', color: '#166534' }}>
                                           Operational data loads when the user runs QuickBooks sync (90-day default or 3-year backfill).
+                                        </div>
+                                      </div>
+                                      <div style={{ marginBottom: '8px', padding: '8px', background: '#fff7ed', border: '1px solid #fed7aa', borderRadius: '6px' }}>
+                                        <div style={{ fontSize: '12px', fontWeight: '600', color: '#9a3412', marginBottom: '6px' }}>
+                                          QBO Credentials (manual reference only)
+                                        </div>
+                                        <div style={{ fontSize: '12px', color: '#9a3412', marginBottom: '8px' }}>
+                                          These fields do not connect to QuickBooks. They are saved only so a site admin can manually log in to QBO if needed.
+                                        </div>
+                                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(180px, 1fr))', gap: '8px' }}>
+                                          <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#334155' }}>
+                                            <span style={{ fontWeight: 600 }}>QBO Username</span>
+                                            <input
+                                              type="text"
+                                              value={getQboSettings(businessCompany.id).qboUsername}
+                                              onChange={(e) => setQboSetting(businessCompany.id, 'qboUsername', e.target.value)}
+                                              placeholder="QBO login username or email"
+                                              style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white' }}
+                                            />
+                                          </label>
+                                          <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#334155' }}>
+                                            <span style={{ fontWeight: 600 }}>QBO Password</span>
+                                            <input
+                                              type="password"
+                                              value={getQboSettings(businessCompany.id).qboPassword}
+                                              onChange={(e) => setQboSetting(businessCompany.id, 'qboPassword', e.target.value)}
+                                              placeholder="QBO login password"
+                                              autoComplete="new-password"
+                                              style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white' }}
+                                            />
+                                          </label>
                                         </div>
                                       </div>
 

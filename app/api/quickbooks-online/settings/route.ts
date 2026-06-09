@@ -6,6 +6,8 @@ import { readQboOperationalBackfill, readQboOperationalPendingLoad } from '@/lib
 export const dynamic = 'force-dynamic';
 
 type QuickBooksOnlineSettings = {
+  qboUsername: string;
+  qboPassword: string;
   syncFrequency: 'daily' | 'weekly' | 'monthly' | '';
   syncTime: string;
   /** Rolling 90-day (default) vs pending 3-year backfill on next client sync */
@@ -25,6 +27,8 @@ type QuickBooksOnlineProgram = {
 };
 
 const defaultSettings: QuickBooksOnlineSettings = {
+  qboUsername: '',
+  qboPassword: '',
   syncFrequency: 'daily',
   syncTime: '08:00',
   operationalLoadMode: 'rolling_90',
@@ -65,6 +69,8 @@ function sanitizeSettings(value: unknown): QuickBooksOnlineSettings {
     loadModeRaw === 'backfill_3y' ? 'backfill_3y' : 'rolling_90';
 
   return {
+    qboUsername: asString(src.qboUsername),
+    qboPassword: asString(src.qboPassword),
     syncFrequency:
       syncFrequency === 'daily' || syncFrequency === 'weekly' || syncFrequency === 'monthly' ? syncFrequency : '',
     syncTime: asString(src.syncTime) || '08:00',
