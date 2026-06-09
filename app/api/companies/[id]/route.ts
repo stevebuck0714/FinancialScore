@@ -3,6 +3,88 @@ import { requireAuth, validateCompanyAccess } from '@/lib/tenant-security';
 import { auditCompanyOperation, auditForbiddenAccess } from '@/lib/audit-logger';
 import prisma from '@/lib/prisma';
 
+const COMPANY_SCOPED_TABLE_DELETE_ORDER = [
+  'FinancialForecastBudgetArchive',
+  'FinancialForecastInputSettings',
+  'CustomReport',
+  'UserCompanyAccess',
+  'CompanyDocumentChunk',
+  'DataRoomDocument',
+  'CompanyDocument',
+  'MonthlyFinancial',
+  'FinancialRecord',
+  'AssessmentRecord',
+  'CompanyProfile',
+  'AccountingConnection',
+  'OperationalSystemConnection',
+  'PlatosClosetMonthlyFact',
+  'PlatosClosetWorkbookSnapshot',
+  'ApiSyncLog',
+  'PulseExecBriefingCache',
+  'PulseDailySummary',
+  'InforSyncTaskAttempt',
+  'InforSyncTask',
+  'InforSyncRun',
+  'InforRawRecord',
+  'InforRawBatch',
+  'InforRawCompleteness',
+  'InforItemOverviewCache',
+  'AccountMapping',
+  'XeroTransaction',
+  'PaymentTransaction',
+  'SubscriptionEvent',
+  'Subscription',
+  'RevenueRecord',
+  'Loan',
+  'CustomerSalesSnapshot',
+  'ARAgingSnapshot',
+  'AROpenInvoiceSnapshot',
+  'ARPaymentFact',
+  'GLTransactionFact',
+  'APTransactionFact',
+  'ARTransactionFact',
+  'ARInvoiceDetail',
+  'ARInvoiceOriginMap',
+  'CustomerContractStatus',
+  'CustomerCashFlow',
+  'CustomerOrderLineSnapshot',
+  'SalesInvoiceHeaderSnapshot',
+  'APOpenBillSnapshot',
+  'APPaymentFact',
+  'APAgingSnapshot',
+  'VendorSnapshot',
+  'ProductSalesSnapshot',
+  'InventorySnapshot',
+  'CashSnapshot',
+  'DailyFinancialSnapshot',
+  'DailyFinancialImportRun',
+  'FinancialMonthPublish',
+  'DailyFinancialMappedLine',
+  'BalanceSheetAnchor',
+  'BalanceSheetAccountAnchor',
+] as const;
+
+function quoteIdentifier(identifier: string): string {
+  return `"${identifier.replace(/"/g, '""')}"`;
+}
+
+async function tableExists(tx: any, tableName: string): Promise<boolean> {
+  const regclassName = quoteIdentifier(tableName);
+  const rows = (await tx.$queryRawUnsafe(
+    'SELECT to_regclass($1) IS NOT NULL AS "exists"',
+    regclassName,
+  )) as Array<{ exists: boolean }>;
+  return Boolean(rows?.[0]?.exists);
+}
+
+async function deleteCompanyScopedRowsIfTableExists(tx: any, tableName: string, companyId: string) {
+  if (!(await tableExists(tx, tableName))) return;
+  await tx.$executeRawUnsafe(
+    `DELETE FROM ${quoteIdentifier(tableName)} WHERE "companyId" = $1`,
+    companyId,
+  );
+}
+
 // MANUAL WORKAROUND: If you need to delete companies immediately,
 // you can run this SQL directly in your database:
 
@@ -128,32 +210,16 @@ export async function DELETE(
       });
     }
 
-    // Hard delete all data scoped to this company.
-    // Some models do not have FK cascades, so we explicitly clean them.
+    // Hard delete all data scoped to this company. Some tables are manual or
+    // recently added migrations in prod, so guard each cleanup by table existence.
     await prisma.$transaction(async (tx) => {
-      await tx.paymentTransaction.deleteMany({ where: { companyId } });
-      await tx.customerSalesSnapshot.deleteMany({ where: { companyId } });
-      await tx.aRAgingSnapshot.deleteMany({ where: { companyId } });
-      await tx.aPAgingSnapshot.deleteMany({ where: { companyId } });
-      await tx.productSalesSnapshot.deleteMany({ where: { companyId } });
-      await tx.inventorySnapshot.deleteMany({ where: { companyId } });
-      await tx.cashSnapshot.deleteMany({ where: { companyId } });
+      for (const tableName of COMPANY_SCOPED_TABLE_DELETE_ORDER) {
+        await deleteCompanyScopedRowsIfTableExists(tx, tableName, companyId);
+      }
 
-      // Keep this explicit even when some tables have FK cascade.
-      await tx.subscriptionEvent.deleteMany({ where: { companyId } });
-      await tx.subscription.deleteMany({ where: { companyId } });
-      await tx.revenueRecord.deleteMany({ where: { companyId } });
-      await tx.companyProfile.deleteMany({ where: { companyId } });
-      await tx.financialRecord.deleteMany({ where: { companyId } });
-      await tx.assessmentRecord.deleteMany({ where: { companyId } });
+      // Remove direct company users after document rows so uploadedBy FKs do not
+      // depend on database-specific cascade behavior.
       await tx.user.deleteMany({ where: { companyId } });
-      await tx.accountingConnection.deleteMany({ where: { companyId } });
-      await tx.accountMapping.deleteMany({ where: { companyId } });
-      await tx.apiSyncLog.deleteMany({ where: { companyId } });
-      await tx.companyDocumentChunk.deleteMany({ where: { companyId } });
-      await tx.companyDocument.deleteMany({ where: { companyId } });
-      await (tx as any).dataRoomDocument.deleteMany({ where: { companyId } });
-      await tx.loan.deleteMany({ where: { companyId } });
 
       await tx.company.delete({ where: { id: companyId } });
     });
