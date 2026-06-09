@@ -561,7 +561,9 @@ export default function OpsDashboard({
     const type = mapModuleToDataType(module);
     if (!type) return;
     const label = getModuleLabel(module);
-    if (!modulesByType[type].includes(label)) modulesByType[type].push(label);
+    const moduleBucket = modulesByType[type];
+    if (!moduleBucket) return;
+    if (!moduleBucket.includes(label)) moduleBucket.push(label);
   });
 
   const customerLabels = hasConfiguredModules ? modulesByType.customers : ['Customer Sales'];
