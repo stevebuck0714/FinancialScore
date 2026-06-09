@@ -95,39 +95,6 @@ export function getOperationalHubDefaultModuleKeys(sectorCategory?: string | nul
   return Array.from(new Set(['dashboard', 'forecast', ...sectorModules, 'cash', 'daily_financials', 'loans', 'cap_table']));
 }
 
-function getSectorBucketModuleKeys(sectorCategory?: string | null): string[] {
-  return getTopLineBucketsForSector(sectorCategory).map((bucket) => String(bucket.key || '').trim()).filter(Boolean);
-}
-
-export function hasStaleOperationalHubSectorTabOverrides(
-  sectorCategory?: string | null,
-  sections?: Record<string, any> | null
-): boolean {
-  if (!sections || typeof sections !== 'object' || Array.isArray(sections)) return false;
-  const sectorModules = getSectorBucketModuleKeys(sectorCategory);
-  if (sectorModules.length === 0) return false;
-  const tabKeys = sectorModules.map((moduleKey) => `tab:${moduleKey}`);
-  const hasExplicitSectorTabOverride = tabKeys.some((key) => Object.prototype.hasOwnProperty.call(sections, key));
-  if (!hasExplicitSectorTabOverride) return false;
-  return tabKeys.every((key) => sections[key] === false);
-}
-
-export function getOperationalHubSectionsForSector(
-  sectorCategory?: string | null,
-  sections?: Record<string, any> | null
-): Record<string, any> {
-  const safeSections =
-    sections && typeof sections === 'object' && !Array.isArray(sections)
-      ? sections
-      : {};
-  if (!hasStaleOperationalHubSectorTabOverrides(sectorCategory, safeSections)) return safeSections;
-  const next = { ...safeSections };
-  getSectorBucketModuleKeys(sectorCategory).forEach((moduleKey) => {
-    delete next[`tab:${moduleKey}`];
-  });
-  return next;
-}
-
 export function getOperationalHubModuleLabel(moduleKey: string, sectorCategory?: string | null): string {
   if (moduleKey === 'dashboard') return 'Overview';
   if (moduleKey === 'forecast') return 'Forecast';

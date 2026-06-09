@@ -30,7 +30,7 @@ import CapTableView from '../cap-table/CapTableView';
 import { getSdeSectorBenchmarks } from '@/lib/sde-sector-benchmarks';
 import { getSectorMockProfile } from '@/lib/operations/sector-mock-data';
 import { getModuleLabel, isLoansDefaultEnabledForCompany, mapModuleToDataType, resolveModuleKey, type OpsDataType } from '@/lib/operations/module-registry';
-import { getOperationalHubDefaultModuleKeys, getOperationalHubSectionsForSector } from '@/lib/operations/operational-hub-layout';
+import { getOperationalHubDefaultModuleKeys } from '@/lib/operations/operational-hub-layout';
 import { buildWeeklyProductMarginModel } from '@/lib/operations/product-margin-weekly';
 import { getFieldDisplayName } from '@/lib/constants/field-display-names';
 import { formatDateInputLabel, formatDateSafeUtc, parseDateSafeUtc, toLocalInputDate } from '@/app/utils/date';
@@ -888,7 +888,7 @@ export default function OperationsTab({
   const [retailForecastTableSortKey, setRetailForecastTableSortKey] = useState<RetailForecastTableSortKey>('next3Base');
   const [retailForecastTableSortDir, setRetailForecastTableSortDir] = useState<'asc' | 'desc'>('desc');
   const [showCccInfoModal, setShowCccInfoModal] = useState(false);
-  const rawOperationalHubSections =
+  const operationalHubSections =
     companyOperationalHubConfig &&
     typeof companyOperationalHubConfig === 'object' &&
     companyOperationalHubConfig.sections &&
@@ -896,7 +896,6 @@ export default function OperationsTab({
     !Array.isArray(companyOperationalHubConfig.sections)
       ? (companyOperationalHubConfig.sections as Record<string, any>)
       : {};
-  const operationalHubSections = getOperationalHubSectionsForSector(industrySectorCategory || null, rawOperationalHubSections);
   const isSectionEnabled = (sectionKey: string): boolean => {
     if (
       String(industrySectorCategory || '').trim() === '42' &&
