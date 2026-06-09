@@ -140,6 +140,36 @@ const DEFAULT_WEEKLY_DRIVER: WeeklyDriver = {
   opex: 18000,
   grossMarginPct: 35,
 };
+const EMPTY_INPUTS: ForecastInputs = {
+  inventoryTurns: 0,
+  minCashBuffer: 0,
+  locLimit: 0,
+  locAprPct: 0,
+  creditSalesPct: 0,
+  historicalSalesLookbackWeeks: 0,
+  historicalSalesCollectionLagWeeks: 0,
+  arCurrentCollectPct: 0,
+  ar30To60CollectPct: 0,
+  ar60To90CollectPct: 0,
+  ar90PlusCollectPct: 0,
+  arWeek1WeightPct: 0,
+  arWeek2WeightPct: 0,
+  arWeek3WeightPct: 0,
+  arWeek4WeightPct: 0,
+  apCurrentPayPct: 0,
+  ap30To60PayPct: 0,
+  ap60To90PayPct: 0,
+  ap90PlusPayPct: 0,
+  apWeek1WeightPct: 0,
+  apWeek2WeightPct: 0,
+  apWeek3WeightPct: 0,
+  apWeek4WeightPct: 0,
+};
+const EMPTY_WEEKLY_DRIVER: WeeklyDriver = {
+  sales: 0,
+  opex: 0,
+  grossMarginPct: 35,
+};
 const DEFAULT_SCHEDULED_EXPENSE_RULES: ScheduledExpenseRule[] = [
   { key: 'payroll', label: 'Payroll', monthlyAmount: 72000, timing: 'semi-monthly', weekday: 5, dayOfMonth: 1 },
   { key: 'rent', label: 'Rent', monthlyAmount: 25000, timing: 'monthly', weekday: 1, dayOfMonth: 1 },
@@ -150,6 +180,8 @@ const FORECAST_WEEKS = 13;
 const DEFAULT_STARTING_BALANCES: StartingBalances = { cash: 0, ar: 0, ap: 0, inventory: 0, loc: 0 };
 const DEFAULT_FLOW_PROFILE: HistoricalFlowProfile = { arRunoffRate: 0.12, apRunoffRate: 0.12, inventoryToSalesRatio: 0.3 };
 const DEFAULT_AGING_BUCKETS: AgingBuckets = { current: 0, bucket30to60: 0, bucket60to90: 0, bucket90plus: 0 };
+const hasAnyPositiveValue = (values: Array<unknown>): boolean =>
+  values.some((value) => Number.isFinite(Number(value)) && Number(value) > 0);
 
 const formatCurrency = (value: number): string =>
   `$${Math.round(Number(value || 0)).toLocaleString('en-US')}`;
@@ -531,8 +563,8 @@ const normalizeInputs = (raw: any, fallback: ForecastInputs): ForecastInputs => 
 export default function WorkingCapitalForecastTab({ selectedCompanyId, basisMode = 'cash', viewMode = 'full' }: WorkingCapitalForecastTabProps) {
   const isInputsOnly = viewMode === 'inputs-only';
   const isAccrualFullCashForecast = basisMode === 'accrual' && !isInputsOnly;
-  const [inputs, setInputs] = useState<ForecastInputs>(DEFAULT_INPUTS);
-  const [historicalAverages, setHistoricalAverages] = useState<WeeklyDriver>(DEFAULT_WEEKLY_DRIVER);
+  const [inputs, setInputs] = useState<ForecastInputs>(EMPTY_INPUTS);
+  const [historicalAverages, setHistoricalAverages] = useState<WeeklyDriver>(EMPTY_WEEKLY_DRIVER);
   const [historicalSalesByWeek, setHistoricalSalesByWeek] = useState<number[]>([]);
   const [accrualOpexAmountByRow, setAccrualOpexAmountByRow] = useState<Record<string, number[]>>({});
   const [accrualOpexPctByRow, setAccrualOpexPctByRow] = useState<Record<string, number[]>>({});
@@ -540,7 +572,7 @@ export default function WorkingCapitalForecastTab({ selectedCompanyId, basisMode
     { ...DEFAULT_ACCRUAL_OPEX_PAYMENT_TREATMENT_BY_KEY },
   );
   const [weeklyDrivers, setWeeklyDrivers] = useState<WeeklyDriver[]>(
-    Array.from({ length: FORECAST_WEEKS }, () => ({ ...DEFAULT_WEEKLY_DRIVER }))
+    Array.from({ length: FORECAST_WEEKS }, () => ({ ...EMPTY_WEEKLY_DRIVER }))
   );
   const [forecastMonthRefs, setForecastMonthRefs] = useState<MonthlyBaseRef[]>([]);
   const [weekMonthLabels, setWeekMonthLabels] = useState<string[]>(Array.from({ length: FORECAST_WEEKS }, () => ''));
@@ -773,12 +805,26 @@ export default function WorkingCapitalForecastTab({ selectedCompanyId, basisMode
         let arRunoffRate = DEFAULT_FLOW_PROFILE.arRunoffRate;
         let apRunoffRate = DEFAULT_FLOW_PROFILE.apRunoffRate;
         let recentHistoricalSales: number[] = [];
+        let hasImportedDailyFinancialValues = false;
         if (dailyFinancialResponse.ok) {
           const dailyFinancial = await dailyFinancialResponse.json();
           if (Array.isArray(dailyFinancial?.records) && dailyFinancial.records.length > 0) {
             const weekly = new Map<string, { revenue: number; expense: number; ar: number; ap: number; latestTs: number }>();
             const inventoryRatioSamples: number[] = [];
             for (const row of dailyFinancial.records) {
+              if (
+                hasAnyPositiveValue([
+                  row?.cash,
+                  row?.ar,
+                  row?.ap,
+                  row?.inventory,
+                  row?.loc,
+                  row?.revenue,
+                  row?.expense,
+                ])
+              ) {
+                hasImportedDailyFinancialValues = true;
+              }
               const snapshot = row?.snapshotDate ? new Date(row.snapshotDate) : null;
               if (!snapshot || Number.isNaN(snapshot.getTime())) continue;
               const day = snapshot.getUTCDay();
@@ -921,12 +967,34 @@ export default function WorkingCapitalForecastTab({ selectedCompanyId, basisMode
             marginMonthlyBase = [];
             monthRefsBase = [];
           }
+          const hasMonthlyBaseData = hasAnyPositiveValue([
+            ...revenueMonthlyBase,
+            ...opexMonthlyBase,
+          ]);
+          const hasAccrualForecastInputs =
+            Object.values(loadedOpexAmountByRow).some((values) => Array.isArray(values) && hasAnyPositiveValue(values));
+          const hasImportedStartingBalances = hasAnyPositiveValue(Object.values(derivedStartingBalances));
+          const hasAgingBalances = hasAnyPositiveValue([
+            ...Object.values(derivedArBuckets),
+            ...Object.values(derivedApBuckets),
+          ]);
+          const hasForecastSourceData =
+            hasImportedStartingBalances ||
+            hasAgingBalances ||
+            hasImportedDailyFinancialValues ||
+            hasAnyPositiveValue(recentHistoricalSales) ||
+            hasMonthlyBaseData ||
+            hasAccrualForecastInputs ||
+            locLoanAmount > 0 ||
+            suggestedInventoryTurns > 0;
+          const seedInputs = hasForecastSourceData ? derivedInputs : EMPTY_INPUTS;
+          const seedAverages = hasForecastSourceData ? resolvedAverages : EMPTY_WEEKLY_DRIVER;
           setHistoricalSalesByWeek(recentHistoricalSales);
           setForecastMonthRefs(monthRefsBase);
           setWeekMonthLabels(buildWeekMonthLabels(monthRefsBase));
 
           if (savedSettings) {
-            const mergedInputs = normalizeInputs(savedSettings.inputs, derivedInputs);
+            const mergedInputs = normalizeInputs(savedSettings.inputs, seedInputs);
             const resolvedInputs =
               locLoanAmount > 0
                 ? { ...mergedInputs, locLimit: locLoanAmount }
@@ -952,7 +1020,7 @@ export default function WorkingCapitalForecastTab({ selectedCompanyId, basisMode
                 ? Math.max(0, Math.round(latestLocBalance || 0))
                 : savedStartingBalances.loc,
             };
-            const mergedAverages = normalizeWeeklyDriver(savedSettings.historicalAverages, resolvedAverages);
+            const mergedAverages = normalizeWeeklyDriver(savedSettings.historicalAverages, seedAverages);
             const mergedWeekly = normalizeWeeklyDriverList(savedSettings.weeklyDrivers, mergedAverages);
             const seededWeekly = applyMonthlyBaseCalendarToWeeklyDrivers(
               mergedWeekly,
@@ -967,9 +1035,9 @@ export default function WorkingCapitalForecastTab({ selectedCompanyId, basisMode
             setStartingBalances(resolvedStartingBalances);
             setLastSavedAt(savedSettings.updatedAt ? String(savedSettings.updatedAt) : null);
           } else {
-            setInputs(derivedInputs);
-            setHistoricalAverages(resolvedAverages);
-            const defaults = Array.from({ length: FORECAST_WEEKS }, () => ({ ...resolvedAverages }));
+            setInputs(seedInputs);
+            setHistoricalAverages(seedAverages);
+            const defaults = Array.from({ length: FORECAST_WEEKS }, () => ({ ...seedAverages }));
             setWeeklyDrivers(
               applyMonthlyBaseCalendarToWeeklyDrivers(
                 defaults,
