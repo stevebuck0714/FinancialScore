@@ -12,6 +12,7 @@ import {
   getOperationalHubDefaultModuleKeys,
   getOperationalHubDefaultReportsForModule,
   getOperationalHubModuleLabel,
+  getOperationalHubSectionsForSector,
 } from '@/lib/operations/operational-hub-layout';
 import AccountingSystemPanel from '@/app/components/accounting-systems/AccountingSystemPanel';
 import { isPluginAccountingSystem } from '@/lib/accounting-systems/registry';
@@ -956,7 +957,7 @@ export default function SiteAdminDashboard(props: any) {
       !Array.isArray(operationalHub.sections)
         ? operationalHub.sections
         : {};
-    return sections;
+    return getOperationalHubSectionsForSector(company?.industrySectorCategory || null, sections);
   };
 
   const getOperationalHubCustomReports = (company: any): OperationalHubCustomReport[] => {

@@ -145,9 +145,11 @@ export default function OpsDashboard({
     }
   };
 
-  const normalizeWidgetOrder = (currentOrder: string[], availableIds: string[]) => {
-    const filtered = currentOrder.filter((id) => availableIds.includes(id));
-    const missing = availableIds.filter((id) => !filtered.includes(id));
+  const normalizeWidgetOrder = (currentOrder: string[] | undefined | null, availableIds: string[] | undefined | null) => {
+    const safeCurrentOrder = Array.isArray(currentOrder) ? currentOrder : [];
+    const safeAvailableIds = Array.isArray(availableIds) ? availableIds : [];
+    const filtered = safeCurrentOrder.filter((id) => safeAvailableIds.includes(id));
+    const missing = safeAvailableIds.filter((id) => !filtered.includes(id));
     return [...filtered, ...missing];
   };
 
