@@ -119,7 +119,7 @@ const TOP_LINE_BUCKETS_BY_SECTOR: Record<string, Bucket[]> = {
     { key: 'units_properties', label: 'Units / Properties (occupancy, availability)' },
     { key: 'leasing_sales', label: 'Leasing / Sales (applications, renewals)' },
     { key: 'maintenance_work_orders', label: 'Maintenance / Work Orders' },
-    { key: 'tenants_customers', label: 'Tenants / Customers (delinquency, retention)' },
+    { key: 'commercial_property_types', label: 'Commercial Property Types' },
   ],
   '54': [
     { key: 'cash', label: 'Cash' },
@@ -279,6 +279,352 @@ function topLineNames(prefix: string, count: number): string[] {
   return Array.from({ length: count }, (_, i) => `${prefix} ${String(i + 1).padStart(2, '0')}`);
 }
 
+const REAL_ESTATE_PROPERTIES = [
+  { property: 'Rivergate Retail Center', type: 'Retail', units: 42, rentableSqFt: 186000, marketRent: 32.5 },
+  { property: 'Northline Medical Plaza', type: 'Office', units: 28, rentableSqFt: 124000, marketRent: 36.25 },
+  { property: 'Parkway Logistics Hub', type: 'Industrial', units: 16, rentableSqFt: 412000, marketRent: 11.8 },
+  { property: 'The Meridian Apartments', type: 'Multifamily', units: 168, rentableSqFt: 151200, marketRent: 2.18 },
+  { property: 'Cedar Grove Development', type: 'Land & Development', units: 6, rentableSqFt: 94000, marketRent: 0 },
+];
+
+const REAL_ESTATE_TENANTS = [
+  'Anchor Grocery Co.',
+  'Summit Medical Group',
+  'Northstar Distribution',
+  'Meridian Residential LLC',
+  'Urban Growth Partners',
+  'Bluebird Fitness',
+  'Harbor Dental',
+  'Keystone Supply',
+];
+
+const REAL_ESTATE_MAINTENANCE_TYPES = [
+  'HVAC',
+  'Plumbing',
+  'Electrical',
+  'Exterior / Grounds',
+  'Life Safety',
+  'Tenant Improvement',
+];
+
+function buildRealEstateOperationalHubMockData(req: MockRequest, profile: SectorProfile) {
+  const dates = listDates(req.startDate, req.endDate, req.frequency);
+  const latestDate = dates[0] || req.endDate;
+  const monthLabel = latestDate.toLocaleDateString('en-US', { month: 'short', year: 'numeric', timeZone: 'UTC' });
+  const scale = profile.scale;
+
+  const propertyRows = REAL_ESTATE_PROPERTIES.map((property, index) => {
+    const occupiedUnits = Math.max(0, property.units - (index + 2));
+    const occupancyPct = property.units > 0 ? (occupiedUnits / property.units) * 100 : 0;
+    const averageRent = property.marketRent > 0 ? property.marketRent * (0.96 + index * 0.012) : 0;
+    const monthlyRent = property.rentableSqFt * averageRent / 12;
+    const delinquentAmount = metric(4200 + index * 950, index + 1, scale);
+    return {
+      ...property,
+      occupiedUnits,
+      vacantUnits: property.units - occupiedUnits,
+      occupancyPct: Math.round(occupancyPct * 10) / 10,
+      averageRent: Math.round(averageRent * 100) / 100,
+      monthlyRent: Math.round(monthlyRent),
+      delinquentAmount,
+      renewalCount: 3 + index,
+      expiringLeases: 4 + index * 2,
+    };
+  });
+
+  const occupancyVacancy = propertyRows.map((row) => ({
+    property: row.property,
+    propertyType: row.type,
+    totalUnits: row.units,
+    occupiedUnits: row.occupiedUnits,
+    vacantUnits: row.vacantUnits,
+    occupancyPct: row.occupancyPct,
+  }));
+
+  const unitAvailability = propertyRows.flatMap((row, propertyIndex) =>
+    Array.from({ length: Math.min(row.vacantUnits, 4) }, (_, unitIndex) => ({
+      property: row.property,
+      unit: `${String.fromCharCode(65 + propertyIndex)}-${100 + unitIndex}`,
+      propertyType: row.type,
+      rentableSqFt: Math.round(row.rentableSqFt / Math.max(row.units, 1)),
+      askingRent: row.averageRent,
+      availableDate: new Date(Date.UTC(latestDate.getUTCFullYear(), latestDate.getUTCMonth(), 10 + unitIndex * 4)).toISOString(),
+      status: unitIndex % 3 === 0 ? 'Ready' : unitIndex % 3 === 1 ? 'Make-ready' : 'Under LOI',
+    }))
+  );
+
+  const rentRollSummary = propertyRows.map((row) => ({
+    property: row.property,
+    propertyType: row.type,
+    tenantCount: row.occupiedUnits,
+    rentableSqFt: row.rentableSqFt,
+    monthlyRent: row.monthlyRent,
+    annualizedRent: row.monthlyRent * 12,
+    averageRent: row.averageRent,
+  }));
+
+  const leaseExpirationSchedule = propertyRows.flatMap((row, propertyIndex) =>
+    [30, 60, 90, 180].map((days, bucketIndex) => ({
+      property: row.property,
+      propertyType: row.type,
+      bucket: `${days} days`,
+      expiringLeases: Math.max(1, row.expiringLeases - bucketIndex),
+      expiringRent: Math.round(row.monthlyRent * (0.08 + bucketIndex * 0.035)),
+      largestTenant: REAL_ESTATE_TENANTS[(propertyIndex + bucketIndex) % REAL_ESTATE_TENANTS.length],
+    }))
+  );
+
+  const moveInsMoveOuts = dates.slice(0, 6).map((date, index) => ({
+    period: date.toISOString().slice(0, 10),
+    moveIns: Math.round(metric(5 + index, index + 1, 0.85)),
+    moveOuts: Math.round(metric(3 + index, index + 2, 0.72)),
+    netAbsorption: Math.round(metric(2, index + 1, 0.75)),
+  }));
+
+  const rentalRateTrend = dates.slice(0, 8).map((date, index) => ({
+    period: date.toISOString().slice(0, 10),
+    marketRent: Math.round(metric(27.5, index + 1, 1) * 100) / 100,
+    inPlaceRent: Math.round(metric(25.8, index + 1, 1) * 100) / 100,
+    renewalRent: Math.round(metric(26.9, index + 1, 1) * 100) / 100,
+  }));
+
+  const propertyPerformance = propertyRows.map((row, index) => ({
+    property: row.property,
+    propertyType: row.type,
+    revenue: Math.round(row.monthlyRent * 12),
+    noi: Math.round(row.monthlyRent * 12 * (0.58 + index * 0.025)),
+    occupancyPct: row.occupancyPct,
+    delinquentAmount: row.delinquentAmount,
+  }));
+
+  const unitMixPerformance = ['Studio', '1 BR', '2 BR', '3 BR', 'Retail Inline', 'Anchor', 'Industrial Bay'].map((mix, index) => ({
+    unitMix: mix,
+    unitCount: Math.round(metric(18 + index * 4, index + 1, 0.8)),
+    occupancyPct: Math.round((88 + (index % 4) * 2.3) * 10) / 10,
+    averageRent: Math.round(metric(1850 + index * 210, index + 2, 0.55)),
+    revenue: Math.round(metric(76000 + index * 11000, index + 2, scale)),
+  }));
+
+  const delinquencyByProperty = propertyRows.map((row, index) => ({
+    property: row.property,
+    propertyType: row.type,
+    delinquentTenants: 1 + (index % 4),
+    delinquentAmount: row.delinquentAmount,
+    over30Amount: Math.round(row.delinquentAmount * 0.48),
+    over60Amount: Math.round(row.delinquentAmount * 0.22),
+  }));
+
+  const renewalPipeline = propertyRows.map((row, index) => ({
+    property: row.property,
+    propertyType: row.type,
+    renewalsDue: row.renewalCount,
+    renewalProbabilityPct: 72 + index * 3,
+    expectedRenewals: Math.round(row.renewalCount * (0.72 + index * 0.03)),
+    atRiskRent: Math.round(row.monthlyRent * (0.07 + index * 0.018)),
+  }));
+
+  const leasingRows = REAL_ESTATE_TENANTS.map((tenant, index) => {
+    const revenue = metric(52000 + index * 6800, index + 1, scale);
+    const unbilled = metric(6800 + index * 850, index + 2, scale);
+    const invoiceVelocityDays = 18 + index * 2;
+    return {
+      customerName: tenant,
+      propertyType: REAL_ESTATE_PROPERTIES[index % REAL_ESTATE_PROPERTIES.length].type,
+      revenue,
+      unbilled,
+      invoiceCount: 4 + index,
+      grossMargin: revenue * (0.42 + (index % 3) * 0.035),
+      invoiceVelocityDays,
+      riskStatus: index % 5 === 0 ? 'At Risk' : index % 3 === 0 ? 'Watch' : 'Healthy',
+    };
+  });
+  const leasingTotalRevenue = leasingRows.reduce((sum, row) => sum + row.revenue, 0);
+
+  const leasingSales = {
+    wipByCustomer: leasingRows.map((row) => ({
+      customerName: row.customerName,
+      propertyType: row.propertyType,
+      unbilledAmount: Math.round(row.unbilled),
+      stage: row.unbilled > 10000 ? 'Awaiting invoice' : 'In progress',
+    })),
+    topCustomersByRevenue: [...leasingRows]
+      .sort((a, b) => b.revenue - a.revenue)
+      .map((row) => ({ customerName: row.customerName, propertyType: row.propertyType, revenue: Math.round(row.revenue), invoiceCount: row.invoiceCount })),
+    revenueDistributionByCustomer: leasingRows.map((row) => ({
+      customerName: row.customerName,
+      revenue: Math.round(row.revenue),
+      revenueSharePct: Math.round((row.revenue / Math.max(leasingTotalRevenue, 1)) * 1000) / 10,
+    })),
+    salesMetricCards: {
+      activeCustomers: leasingRows.length,
+      totalRevenue: Math.round(leasingTotalRevenue),
+      averageRevenuePerCustomer: Math.round(leasingTotalRevenue / leasingRows.length),
+      atRiskAccounts: leasingRows.filter((row) => row.riskStatus === 'At Risk').length,
+    },
+    salesHistoryChart: dates.slice(0, 8).map((date, index) => ({
+      period: date.toISOString().slice(0, 10),
+      revenue: Math.round(metric(88000, index + 1, scale)),
+      invoiceCount: Math.round(metric(22, index + 1, 0.9)),
+    })),
+    salesBuysHistoryTables: leasingRows.map((row) => ({
+      customerName: row.customerName,
+      sales: Math.round(row.revenue),
+      buys: Math.round(row.revenue * 0.58),
+      netSpread: Math.round(row.revenue - row.revenue * 0.58),
+    })),
+    grossMarginHistoryChart: dates.slice(0, 8).map((date, index) => ({
+      period: date.toISOString().slice(0, 10),
+      revenue: Math.round(metric(88000, index + 1, scale)),
+      grossMargin: Math.round(metric(36500, index + 1, scale)),
+      grossMarginPct: Math.round((39 + Math.sin(index) * 2.4) * 10) / 10,
+    })),
+    grossMarginHistoryTable: leasingRows.map((row) => ({
+      customerName: row.customerName,
+      revenue: Math.round(row.revenue),
+      grossMargin: Math.round(row.grossMargin),
+      grossMarginPct: Math.round((row.grossMargin / Math.max(row.revenue, 1)) * 1000) / 10,
+    })),
+    concentrationRisk: {
+      top1Pct: Math.round((Math.max(...leasingRows.map((row) => row.revenue)) / Math.max(leasingTotalRevenue, 1)) * 1000) / 10,
+      top5Pct: Math.round((leasingRows.slice(0, 5).reduce((sum, row) => sum + row.revenue, 0) / Math.max(leasingTotalRevenue, 1)) * 1000) / 10,
+      status: 'Watch',
+    },
+    revenueRetentionProxy: leasingRows.map((row, index) => ({
+      customerName: row.customerName,
+      priorRevenue: Math.round(row.revenue * (0.9 + index * 0.01)),
+      currentRevenue: Math.round(row.revenue),
+      status: row.riskStatus === 'At Risk' ? 'At Risk' : 'Retained',
+    })),
+    revenueVsInvoiceVelocity: leasingRows.map((row) => ({
+      customerName: row.customerName,
+      revenue: Math.round(row.revenue),
+      invoiceVelocityDays: row.invoiceVelocityDays,
+    })),
+    atRiskAccountsQueue: leasingRows
+      .filter((row) => row.riskStatus !== 'Healthy')
+      .map((row) => ({ customerName: row.customerName, revenue: Math.round(row.revenue), riskStatus: row.riskStatus, nextAction: 'Review renewal and AR status' })),
+  };
+
+  const workOrders = propertyRows.flatMap((property, propertyIndex) =>
+    REAL_ESTATE_MAINTENANCE_TYPES.map((type, typeIndex) => ({
+      workOrderId: `WO-${propertyIndex + 1}${String(typeIndex + 1).padStart(2, '0')}`,
+      property: property.property,
+      unit: `${String.fromCharCode(65 + propertyIndex)}-${100 + typeIndex}`,
+      type,
+      priority: typeIndex % 4 === 0 ? 'Urgent' : typeIndex % 3 === 0 ? 'High' : typeIndex % 2 === 0 ? 'Medium' : 'Low',
+      status: typeIndex % 3 === 0 ? 'Open' : typeIndex % 3 === 1 ? 'In Progress' : 'Scheduled',
+      ageDays: 2 + propertyIndex * 3 + typeIndex * 4,
+      estimatedCost: Math.round(metric(650 + typeIndex * 180, propertyIndex + typeIndex + 1, scale)),
+      vendor: `${profile.vendorPrefix} ${String((typeIndex % 5) + 1).padStart(2, '0')}`,
+    }))
+  );
+  const openWorkOrders = workOrders.filter((row) => row.status !== 'Scheduled');
+
+  const maintenanceWorkOrders = {
+    openWorkOrders,
+    workOrderAging: ['0-7', '8-14', '15-30', '31+'].map((bucket, index) => ({
+      bucket,
+      count: openWorkOrders.filter((row) =>
+        index === 0 ? row.ageDays <= 7 : index === 1 ? row.ageDays > 7 && row.ageDays <= 14 : index === 2 ? row.ageDays > 14 && row.ageDays <= 30 : row.ageDays > 30
+      ).length,
+    })),
+    backlogByPriority: ['Urgent', 'High', 'Medium', 'Low'].map((priority) => ({
+      priority,
+      count: openWorkOrders.filter((row) => row.priority === priority).length,
+      estimatedCost: openWorkOrders.filter((row) => row.priority === priority).reduce((sum, row) => sum + row.estimatedCost, 0),
+    })),
+    completionTrend: dates.slice(0, 8).map((date, index) => ({
+      period: date.toISOString().slice(0, 10),
+      opened: Math.round(metric(18, index + 1, 0.8)),
+      completed: Math.round(metric(16, index + 2, 0.82)),
+    })),
+    responseTimeSla: propertyRows.map((row, index) => ({
+      property: row.property,
+      avgResponseHours: Math.round((8 + index * 1.7) * 10) / 10,
+      slaMetPct: Math.round((92 - index * 2.4) * 10) / 10,
+    })),
+    costByPropertyUnit: propertyRows.map((row) => ({
+      property: row.property,
+      totalCost: workOrders.filter((workOrder) => workOrder.property === row.property).reduce((sum, workOrder) => sum + workOrder.estimatedCost, 0),
+      costPerUnit: Math.round(workOrders.filter((workOrder) => workOrder.property === row.property).reduce((sum, workOrder) => sum + workOrder.estimatedCost, 0) / Math.max(row.units, 1)),
+    })),
+    vendorPerformance: Array.from(new Set(workOrders.map((row) => row.vendor))).map((vendor, index) => ({
+      vendor,
+      completedJobs: 8 + index * 3,
+      avgCompletionDays: Math.round((2.8 + index * 0.6) * 10) / 10,
+      callbackRatePct: Math.round((3.5 + index * 0.9) * 10) / 10,
+    })),
+    repeatIssues: REAL_ESTATE_MAINTENANCE_TYPES.map((type, index) => ({
+      issueType: type,
+      repeatCount: 2 + (index % 4),
+      affectedProperties: 1 + (index % 3),
+    })),
+  };
+
+  const commercialPropertyTypes = {
+    propertyTypeOverview: ['Retail', 'Office', 'Industrial', 'Multifamily', 'Land & Development'].map((type, index) => ({
+      propertyType: type,
+      activeAssignments: 6 + index * 2,
+      pipelineValue: Math.round(metric(740000 + index * 185000, index + 1, scale)),
+      expectedFees: Math.round(metric(42000 + index * 9200, index + 1, scale)),
+      avgDealCycleDays: 48 + index * 9,
+    })),
+    dealPipelineByType: ['Prospecting', 'Valuation', 'LOI', 'Under Contract', 'Closed'].flatMap((stage, stageIndex) =>
+      ['Retail', 'Office', 'Industrial', 'Multifamily', 'Land & Development'].map((type, typeIndex) => ({
+        stage,
+        propertyType: type,
+        dealCount: 1 + ((stageIndex + typeIndex) % 5),
+        pipelineValue: Math.round(metric(220000 + typeIndex * 64000, stageIndex + typeIndex + 1, scale)),
+      }))
+    ),
+    revenueMixByType: ['Retail', 'Office', 'Industrial', 'Multifamily', 'Land & Development'].map((type, index) => ({
+      propertyType: type,
+      revenue: Math.round(metric(112000 + index * 28500, index + 2, scale)),
+      advisoryRevenue: Math.round(metric(28000 + index * 6200, index + 1, scale)),
+      brokerageRevenue: Math.round(metric(84000 + index * 22300, index + 1, scale)),
+    })),
+    marketCompsByType: ['Retail', 'Office', 'Industrial', 'Multifamily', 'Land & Development'].map((type, index) => ({
+      propertyType: type,
+      compCount: 8 + index * 3,
+      avgPricePerSqFt: type === 'Multifamily' ? null : Math.round(metric(118 + index * 34, index + 1, 1)),
+      avgCapRatePct: Math.round((6.1 + index * 0.28) * 100) / 100,
+    })),
+    advisoryEngagements: REAL_ESTATE_TENANTS.slice(0, 5).map((client, index) => ({
+      client,
+      propertyType: ['Retail', 'Office', 'Industrial', 'Multifamily', 'Land & Development'][index],
+      engagementType: index % 2 === 0 ? 'Brokerage' : 'Advisory',
+      status: index % 3 === 0 ? 'Proposal' : index % 3 === 1 ? 'Active' : 'Final Review',
+      expectedFee: Math.round(metric(24000 + index * 7200, index + 1, scale)),
+    })),
+  };
+
+  return {
+    asOf: latestDate.toISOString(),
+    periodLabel: monthLabel,
+    unitsProperties: {
+      occupancyVacancy,
+      unitAvailability,
+      rentRollSummary,
+      leaseExpirationSchedule,
+      moveInsMoveOuts,
+      rentalRateTrend,
+      propertyPerformance,
+      unitMixPerformance,
+      delinquencyByProperty,
+      renewalPipeline,
+    },
+    leasingSales,
+    maintenanceWorkOrders,
+    commercialPropertyTypes,
+  };
+}
+
+export function buildRealEstateOperationalHubMockReports(req: MockRequest) {
+  const code = normalizeSectorCategory(req.sectorCategory);
+  const profile = SECTOR_PROFILES[code] || SECTOR_PROFILES['01'];
+  return buildRealEstateOperationalHubMockData(req, profile);
+}
+
 export function getTopLineBucketsForSector(sectorCategory?: string | null): Bucket[] {
   const code = normalizeSectorCategory(sectorCategory);
   return TOP_LINE_BUCKETS_BY_SECTOR[code] || TOP_LINE_BUCKETS_BY_SECTOR['01'];
@@ -402,6 +748,9 @@ function buildCustomersResponse(req: MockRequest, profile: SectorProfile) {
     summary: {
       topCustomers: totals.sort((a, b) => b.totalRevenue - a.totalRevenue).slice(0, 10),
       topLineBuckets: getTopLineBucketsForSector(req.sectorCategory),
+      ...(normalizeSectorCategory(req.sectorCategory) === '53'
+        ? { realEstateReports: buildRealEstateOperationalHubMockData(req, profile) }
+        : {}),
     },
   };
 }
@@ -526,6 +875,9 @@ function buildProductResponse(req: MockRequest, profile: SectorProfile) {
     summary: {
       topProducts: totals.sort((a, b) => b.totalRevenue - a.totalRevenue).slice(0, 10),
       topLineBuckets: getTopLineBucketsForSector(req.sectorCategory),
+      ...(normalizeSectorCategory(req.sectorCategory) === '53'
+        ? { realEstateReports: buildRealEstateOperationalHubMockData(req, profile) }
+        : {}),
     },
   };
 }

@@ -3,7 +3,7 @@ import { Prisma } from '@prisma/client';
 import prisma from '@/lib/prisma';
 import { requireAuth, validateCompanyAccess } from '@/lib/tenant-security';
 import { auditForbiddenAccess } from '@/lib/audit-logger';
-import { buildOperationalMockResponse, buildOperationalMockSummaryCounts } from '@/lib/operations/sector-mock-data';
+import { buildOperationalMockResponse, buildOperationalMockSummaryCounts, buildRealEstateOperationalHubMockReports } from '@/lib/operations/sector-mock-data';
 import {
   buildJobCostControlMock,
   buildProjectPortfolioMock,
@@ -2513,6 +2513,18 @@ export async function GET(request: NextRequest) {
     /** GL balance_movement:* + TB anchors — Infor CSI / M3 only (not QuickBooks, not arbitrary ERPs). */
     const isInforGlCompany =
       normalizedAccountingSystem === 'INFOR_M3' || normalizedAccountingSystem === 'INFOR_CSI';
+    const getRealEstateReportsForSummary = () =>
+      String(sectorCategory || '').trim() === '53'
+        ? buildRealEstateOperationalHubMockReports({
+            type: 'products',
+            companyId,
+            sectorCategory,
+            frequency,
+            startDate,
+            endDate,
+            limit: boundedLimit,
+          })
+        : undefined;
 
     // Build date filter. For INFOR daily operational reads, gate on business dates
     // that have completed raw->snapshot hydration to avoid stale/partial snapshots.
@@ -4053,6 +4065,7 @@ export async function GET(request: NextRequest) {
             customerOpenArByCustomer: arResult.customerOpenArByCustomer,
             customerOpenArComplete: arResult.customerOpenArComplete,
             platosSalesPage,
+            realEstateReports: getRealEstateReportsForSummary(),
           },
         });
       }
@@ -7258,6 +7271,7 @@ export async function GET(request: NextRequest) {
             topProducts: topProductsSummary,
             wholesaleOrderLines,
             wholesaleVendorPricingRows,
+            realEstateReports: getRealEstateReportsForSummary(),
           },
         });
 

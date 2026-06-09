@@ -7,8 +7,12 @@ import { INDUSTRY_SECTORS } from '@/data/industrySectors';
 import { formatPhoneNumber } from '@/app/utils/phone';
 import PasswordInput from '@/app/components/common/PasswordInput';
 import BillingDashboard from '@/app/components/billing/BillingDashboard';
-import { getTopLineBucketsForSector } from '@/lib/operations/sector-mock-data';
-import { getModuleLabel, isLoansDefaultEnabledForCompany, mapModuleToDataType } from '@/lib/operations/module-registry';
+import { isLoansDefaultEnabledForCompany, mapModuleToDataType } from '@/lib/operations/module-registry';
+import {
+  getOperationalHubDefaultModuleKeys,
+  getOperationalHubDefaultReportsForModule,
+  getOperationalHubModuleLabel,
+} from '@/lib/operations/operational-hub-layout';
 import AccountingSystemPanel from '@/app/components/accounting-systems/AccountingSystemPanel';
 import { isPluginAccountingSystem } from '@/lib/accounting-systems/registry';
 import { companiesApi, consultantsApi, ApiError } from '@/lib/api-client';
@@ -975,18 +979,10 @@ export default function SiteAdminDashboard(props: any) {
 
   const getOperationalHubTabCategoryOptions = (company: any): Array<{ key: string; label: string; group: string }> => {
     const companySectorCategory = String(company?.industrySectorCategory || '').trim();
-    const sectorModules = getTopLineBucketsForSector(company?.industrySectorCategory || null).map((bucket) => String(bucket.key || '').trim());
-    const moduleSet = Array.from(new Set(['dashboard', 'forecast', ...sectorModules, 'cash', 'daily_financials', 'loans', 'cap_table'].filter(Boolean)));
+    const moduleSet = getOperationalHubDefaultModuleKeys(companySectorCategory);
     return moduleSet.map((moduleKey) => ({
       key: `tab:${moduleKey}`,
-      label:
-        moduleKey === 'dashboard'
-          ? 'Overview'
-          : moduleKey === 'forecast'
-            ? 'Forecast'
-          : companySectorCategory === '42' && moduleKey === 'products_skus'
-            ? 'Products'
-          : getModuleLabel(moduleKey) || moduleKey.replace(/_/g, ' '),
+      label: getOperationalHubModuleLabel(moduleKey, companySectorCategory),
       group: 'Tab Categories',
     }));
   };
@@ -1053,10 +1049,17 @@ export default function SiteAdminDashboard(props: any) {
           group: option.label,
         }));
       }
+      const companySectorCategory = String(company?.industrySectorCategory || '').trim();
+      const defaultReports = getOperationalHubDefaultReportsForModule(moduleKey, companySectorCategory);
+      if (defaultReports.length > 0 && companySectorCategory === '53') {
+        return defaultReports.map((item) => ({
+          ...item,
+          group: option.label,
+        }));
+      }
       const dataType = mapModuleToDataType(moduleKey);
       const sourceGroup = dataType ? OPERATIONAL_HUB_SECTIONS_BY_DATATYPE_GROUP[dataType] : null;
       if (!sourceGroup) return [];
-      const companySectorCategory = String(company?.industrySectorCategory || '').trim();
       return OPERATIONAL_HUB_SECTION_OPTIONS
         .filter((item) => item.group === sourceGroup)
         .filter((item) => !['productsProductMarginAnalysis', 'productsWholesaleRawData', 'productsVendorPricing'].includes(item.key) || companySectorCategory === '42')
@@ -1210,6 +1213,7 @@ export default function SiteAdminDashboard(props: any) {
     }
     const dataType =
       mapModuleToDataType(tabKey) ||
+      (tabKey === 'commercial_property_types' ? 'commercial-property-types' : '') ||
       (tabKey === 'dashboard' ? 'dashboard' : tabKey === 'forecast' ? 'forecast' : '');
     if (!dataType) {
       alert('Selected tab category is not mapped to a report family yet.');

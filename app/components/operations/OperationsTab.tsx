@@ -28,8 +28,9 @@ import WorkingCapitalForecastTab from './WorkingCapitalForecastTab';
 import LoansTab from './LoansTab';
 import CapTableView from '../cap-table/CapTableView';
 import { getSdeSectorBenchmarks } from '@/lib/sde-sector-benchmarks';
-import { getSectorMockProfile, getTopLineBucketsForSector } from '@/lib/operations/sector-mock-data';
+import { getSectorMockProfile } from '@/lib/operations/sector-mock-data';
 import { getModuleLabel, isLoansDefaultEnabledForCompany, mapModuleToDataType, resolveModuleKey, type OpsDataType } from '@/lib/operations/module-registry';
+import { getOperationalHubDefaultModuleKeys } from '@/lib/operations/operational-hub-layout';
 import { buildWeeklyProductMarginModel } from '@/lib/operations/product-margin-weekly';
 import { getFieldDisplayName } from '@/lib/constants/field-display-names';
 import { formatDateInputLabel, formatDateSafeUtc, parseDateSafeUtc, toLocalInputDate } from '@/app/utils/date';
@@ -550,6 +551,7 @@ const PRODUCT_DATA_CACHE_TTL_MS = 30 * 60 * 1000;
 const CUSTOMER_DATA_CACHE_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 const CUSTOMER_CONCENTRATION_CLIENT_CACHE_VERSION = 'customer-concentration-exposure-v10';
 const CUSTOMER_WIP_CLIENT_CACHE_VERSION = 'customer-backlog-source-v4';
+const REAL_ESTATE_REPORT_CLIENT_CACHE_VERSION = 'real-estate-sector-53-reports-v1';
 const CUSTOMER_BACKLOG_MIN_ORDER_DATE = '2023-06-01';
 const WHOLESALE_PRODUCTS_REPORT_CACHE_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 
@@ -866,6 +868,7 @@ export default function OperationsTab({
   const [productMarginSortDir, setProductMarginSortDir] = useState<'asc' | 'desc'>('asc');
   const [productMarginNoteModal, setProductMarginNoteModal] = useState<{ title: string; note: string } | null>(null);
   const [productMarginNoteLoadingKey, setProductMarginNoteLoadingKey] = useState<string | null>(null);
+  const [realEstateTableSort, setRealEstateTableSort] = useState<Record<string, { key: string; dir: 'asc' | 'desc' }>>({});
   const [wholesaleRawCustomerFilter, setWholesaleRawCustomerFilter] = useState('all');
   const [wholesaleRawSortKey, setWholesaleRawSortKey] = useState<WholesaleRawSortKey>('isoDate');
   const [wholesaleRawSortDir, setWholesaleRawSortDir] = useState<'asc' | 'desc'>('desc');
@@ -1009,7 +1012,9 @@ export default function OperationsTab({
         .map((module: unknown) => resolveModuleKey(String(module || '').trim()))
         .filter((module: string) => module && module.toLowerCase() !== 'ops-default')
     : [];
-  const sectorModules = getTopLineBucketsForSector(industrySectorCategory).map((bucket) => resolveModuleKey(bucket.key));
+  const sectorModules = getOperationalHubDefaultModuleKeys(industrySectorCategory)
+    .map((moduleKey) => resolveModuleKey(moduleKey))
+    .filter((moduleKey) => moduleKey && !['dashboard', 'forecast'].includes(moduleKey));
   const moduleSource: 'layout-config' | 'sector-default' = layoutModules.length > 0 ? 'layout-config' : 'sector-default';
   const resolvedModules = moduleSource === 'layout-config' ? layoutModules : sectorModules;
   const enabledDashboardModules = resolvedModules.filter((module) => isTabModuleEnabled(module));
@@ -1637,6 +1642,12 @@ export default function OperationsTab({
   const buildOperationalDataCacheKey = (type: OpsDataType): string => {
     const requestFrequency = type === 'daily-financials' ? 'daily' : frequency;
     const rollupToken = type === 'daily-financials' ? dailyFinancialStatementRollup : 'n/a';
+    const sectorReportVersion =
+      String(industrySectorCategory || '').trim() === '53' && (type === 'customers' || type === 'products')
+        ? REAL_ESTATE_REPORT_CLIENT_CACHE_VERSION
+        : type === 'customers'
+        ? CUSTOMER_WIP_CLIENT_CACHE_VERSION
+        : 'n/a';
     return [
       selectedCompanyId,
       type,
@@ -1645,7 +1656,7 @@ export default function OperationsTab({
       endDate,
       String(industrySectorCategory || ''),
       rollupToken,
-      type === 'customers' ? CUSTOMER_WIP_CLIENT_CACHE_VERSION : 'n/a',
+      sectorReportVersion,
     ].join('|');
   };
 
@@ -1656,6 +1667,14 @@ export default function OperationsTab({
     if (
       type === 'customers' &&
       cached.data?.summary?.customerConcentration?.cacheVersion !== CUSTOMER_CONCENTRATION_CLIENT_CACHE_VERSION
+    ) {
+      operationalDataCacheRef.current.delete(key);
+      return null;
+    }
+    if (
+      String(industrySectorCategory || '').trim() === '53' &&
+      (type === 'customers' || type === 'products') &&
+      !cached.data?.summary?.realEstateReports
     ) {
       operationalDataCacheRef.current.delete(key);
       return null;
@@ -20700,9 +20719,564 @@ Strategies to Improve the CCC
     );
   };
 
+  const getRealEstateReports = () =>
+    productData?.summary?.realEstateReports ||
+    customerData?.summary?.realEstateReports ||
+    null;
+
+  const renderRealEstateRowsTable = (
+    tableKey: string,
+    rows: any[],
+    columns: Array<{ key: string; label: string; format?: (value: any, row: any) => string }>
+  ) => {
+    if (!Array.isArray(rows) || rows.length === 0) {
+      return <div style={{ color: '#64748b', fontSize: '13px' }}>No mock rows available for this report.</div>;
+    }
+    const sort = realEstateTableSort[tableKey] || { key: columns[0]?.key || '', dir: 'asc' as const };
+    const sortedRows = [...rows].sort((a, b) => {
+      const left = a?.[sort.key];
+      const right = b?.[sort.key];
+      const leftNumber = Number(left);
+      const rightNumber = Number(right);
+      const bothNumeric = Number.isFinite(leftNumber) && Number.isFinite(rightNumber);
+      if (bothNumeric) {
+        return (leftNumber - rightNumber) * (sort.dir === 'asc' ? 1 : -1);
+      }
+      const leftText = String(left ?? '').toLowerCase();
+      const rightText = String(right ?? '').toLowerCase();
+      return leftText.localeCompare(rightText, undefined, { numeric: true }) * (sort.dir === 'asc' ? 1 : -1);
+    });
+    const toggleSort = (key: string) => {
+      setRealEstateTableSort((prev) => {
+        const current = prev[tableKey];
+        return {
+          ...prev,
+          [tableKey]: {
+            key,
+            dir: current?.key === key && current.dir === 'asc' ? 'desc' : 'asc',
+          },
+        };
+      });
+    };
+    return (
+      <div style={{ overflowX: 'auto' }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: '760px' }}>
+          <thead>
+            <tr>
+              {columns.map((column) => (
+                <th key={column.key} style={{ padding: '8px', textAlign: 'left', fontSize: '12px', color: '#475569', borderBottom: '1px solid #e2e8f0' }}>
+                  <button
+                    type="button"
+                    onClick={() => toggleSort(column.key)}
+                    style={{
+                      border: 'none',
+                      background: 'transparent',
+                      color: '#475569',
+                      cursor: 'pointer',
+                      fontSize: '12px',
+                      fontWeight: 700,
+                      padding: 0,
+                      textAlign: 'left',
+                    }}
+                  >
+                    {column.label}{sort.key === column.key ? (sort.dir === 'asc' ? ' ^' : ' v') : ''}
+                  </button>
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {sortedRows.map((row, rowIndex) => {
+              const rowKey =
+                row?.workOrderId ||
+                row?.id ||
+                row?.unit ||
+                row?.customerName ||
+                row?.client ||
+                columns.map((column) => String(row?.[column.key] ?? '')).join('|') ||
+                `${tableKey}-${rowIndex}`;
+              return (
+              <tr key={`${tableKey}-${rowKey}`}>
+                {columns.map((column) => {
+                  const value = row?.[column.key];
+                  return (
+                    <td key={column.key} style={{ padding: '8px', fontSize: '13px', color: '#334155', borderBottom: '1px solid #f1f5f9' }}>
+                      {column.format ? column.format(value, row) : value == null || value === '' ? 'N/A' : String(value)}
+                    </td>
+                  );
+                })}
+              </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    );
+  };
+
+  const renderRealEstateReportCard = (
+    title: string,
+    sectionKey: string,
+    rows: any[],
+    columns: Array<{ key: string; label: string; format?: (value: any, row: any) => string }>
+  ) => {
+    if (!isSectionEnabled(sectionKey)) return null;
+    return (
+      <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '16px', marginBottom: '14px' }}>
+        <h3 style={{ margin: '0 0 12px 0', fontSize: '16px', color: '#1e293b' }}>{title}</h3>
+        {renderRealEstateRowsTable(sectionKey, rows, columns)}
+      </div>
+    );
+  };
+
+  const renderRealEstateMetricCards = (cards: Array<{ label: string; value: string | number }>) => (
+    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '12px', marginBottom: '14px' }}>
+      {cards.map((card) => (
+        <div key={card.label} style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '16px' }}>
+          <div style={{ fontSize: '12px', color: '#64748b', fontWeight: 700, textTransform: 'uppercase' }}>{card.label}</div>
+          <div style={{ marginTop: '6px', fontSize: '24px', color: '#0f172a', fontWeight: 800 }}>{card.value}</div>
+        </div>
+      ))}
+    </div>
+  );
+
+  const REAL_ESTATE_CHART_COLORS = ['#2563eb', '#0f766e', '#f97316', '#7c3aed', '#dc2626', '#64748b'];
+
+  const renderRealEstateChartCard = (
+    title: string,
+    type: 'bar' | 'line' | 'pie',
+    data: any[],
+    config: {
+      xKey?: string;
+      yKeys?: string[];
+      nameKey?: string;
+      valueKey?: string;
+    }
+  ) => {
+    if (!Array.isArray(data) || data.length === 0) return null;
+    return (
+      <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '16px', marginBottom: '14px' }}>
+        <h3 style={{ margin: '0 0 12px 0', fontSize: '16px', color: '#1e293b' }}>{title}</h3>
+        <div style={{ width: '100%', height: 280 }}>
+          <ResponsiveContainer>
+            {type === 'line' ? (
+              <LineChart data={data}>
+                <CartesianGrid strokeDasharray="3 3" />
+                <XAxis dataKey={config.xKey} tick={{ fontSize: 11 }} />
+                <YAxis tick={{ fontSize: 11 }} />
+                <Tooltip formatter={(value: any) => Number(value || 0).toLocaleString()} />
+                <Legend />
+                {(config.yKeys || []).map((key, index) => (
+                  <Line key={key} type="monotone" dataKey={key} stroke={REAL_ESTATE_CHART_COLORS[index % REAL_ESTATE_CHART_COLORS.length]} strokeWidth={2} dot={false} />
+                ))}
+              </LineChart>
+            ) : type === 'bar' ? (
+              <BarChart data={data}>
+                <CartesianGrid strokeDasharray="3 3" />
+                <XAxis dataKey={config.xKey} tick={{ fontSize: 11 }} />
+                <YAxis tick={{ fontSize: 11 }} />
+                <Tooltip formatter={(value: any) => Number(value || 0).toLocaleString()} />
+                <Legend />
+                {(config.yKeys || []).map((key, index) => (
+                  <Bar key={key} dataKey={key} fill={REAL_ESTATE_CHART_COLORS[index % REAL_ESTATE_CHART_COLORS.length]} />
+                ))}
+              </BarChart>
+            ) : (
+              <PieChart>
+                <Tooltip formatter={(value: any) => Number(value || 0).toLocaleString()} />
+                <Legend />
+                <Pie
+                  data={data}
+                  dataKey={config.valueKey || 'value'}
+                  nameKey={config.nameKey || 'name'}
+                  cx="50%"
+                  cy="50%"
+                  outerRadius={90}
+                  label
+                >
+                  {data.map((_, index) => (
+                    <Cell key={`slice-${index}`} fill={REAL_ESTATE_CHART_COLORS[index % REAL_ESTATE_CHART_COLORS.length]} />
+                  ))}
+                </Pie>
+              </PieChart>
+            )}
+          </ResponsiveContainer>
+        </div>
+      </div>
+    );
+  };
+
+  const renderRealEstatePageShell = (title: string, subtitle: string, children: React.ReactNode) => {
+    const reports = getRealEstateReports();
+    if (loading && !reports) {
+      return <div style={{ padding: '40px', textAlign: 'center', color: '#64748b' }}>Loading real estate mock data...</div>;
+    }
+    if (!reports) {
+      return (
+        <div style={{ padding: '32px', color: '#64748b' }}>
+          Real estate mock data is not available yet. Enable mock operational data for this company or refresh the page.
+        </div>
+      );
+    }
+    return (
+      <div style={{ padding: '24px 32px' }}>
+        <div style={{ marginBottom: '18px' }}>
+          <h2 style={{ margin: 0, fontSize: '24px', color: '#0f172a' }}>{title}</h2>
+          <p style={{ margin: '6px 0 0 0', color: '#64748b', fontSize: '14px' }}>{subtitle}</p>
+        </div>
+        {children}
+      </div>
+    );
+  };
+
+  const moneyColumn = (value: any) => formatCurrency(Number(value || 0));
+  const numberColumn = (value: any) => Number(value || 0).toLocaleString();
+  const pctColumn = (value: any) => `${Number(value || 0).toFixed(1)}%`;
+  const dateColumn = (value: any) => String(value || '').slice(0, 10) || 'N/A';
+
+  const renderRealEstateUnitsProperties = () => {
+    const data = getRealEstateReports()?.unitsProperties || {};
+    return renderRealEstatePageShell(
+      'Units / Properties',
+      'Occupancy, rent roll, lease expirations, unit mix, delinquency, and renewal pipeline for sector 53.',
+      <>
+        {renderRealEstateMetricCards([
+          { label: 'Properties', value: Array.isArray(data.propertyPerformance) ? data.propertyPerformance.length : 0 },
+          { label: 'Available Units', value: Array.isArray(data.unitAvailability) ? data.unitAvailability.length : 0 },
+          { label: 'Renewals Due', value: Array.isArray(data.renewalPipeline) ? data.renewalPipeline.reduce((sum: number, row: any) => sum + Number(row.renewalsDue || 0), 0) : 0 },
+          { label: 'Delinquency', value: formatCurrency(Array.isArray(data.delinquencyByProperty) ? data.delinquencyByProperty.reduce((sum: number, row: any) => sum + Number(row.delinquentAmount || 0), 0) : 0) },
+        ])}
+        {isSectionEnabled('propertiesOccupancyVacancy') && renderRealEstateChartCard('Occupancy by Property', 'bar', data.occupancyVacancy, {
+          xKey: 'property',
+          yKeys: ['occupiedUnits', 'vacantUnits'],
+        })}
+        {isSectionEnabled('propertiesRentalRateTrend') && renderRealEstateChartCard('Rental Rate Trend', 'line', data.rentalRateTrend, {
+          xKey: 'period',
+          yKeys: ['marketRent', 'inPlaceRent', 'renewalRent'],
+        })}
+        {isSectionEnabled('propertiesPropertyPerformance') && renderRealEstateChartCard('NOI by Property', 'bar', data.propertyPerformance, {
+          xKey: 'property',
+          yKeys: ['revenue', 'noi'],
+        })}
+        {renderRealEstateReportCard('Occupancy / Vacancy', 'propertiesOccupancyVacancy', data.occupancyVacancy, [
+          { key: 'property', label: 'Property' },
+          { key: 'propertyType', label: 'Type' },
+          { key: 'totalUnits', label: 'Total Units', format: numberColumn },
+          { key: 'occupiedUnits', label: 'Occupied', format: numberColumn },
+          { key: 'vacantUnits', label: 'Vacant', format: numberColumn },
+          { key: 'occupancyPct', label: 'Occupancy', format: pctColumn },
+        ])}
+        {renderRealEstateReportCard('Unit Availability', 'propertiesUnitAvailability', data.unitAvailability, [
+          { key: 'property', label: 'Property' },
+          { key: 'unit', label: 'Unit' },
+          { key: 'propertyType', label: 'Type' },
+          { key: 'rentableSqFt', label: 'Sq Ft', format: numberColumn },
+          { key: 'askingRent', label: 'Asking Rent', format: moneyColumn },
+          { key: 'availableDate', label: 'Available', format: dateColumn },
+          { key: 'status', label: 'Status' },
+        ])}
+        {renderRealEstateReportCard('Rent Roll Summary', 'propertiesRentRollSummary', data.rentRollSummary, [
+          { key: 'property', label: 'Property' },
+          { key: 'propertyType', label: 'Type' },
+          { key: 'tenantCount', label: 'Tenants', format: numberColumn },
+          { key: 'rentableSqFt', label: 'Sq Ft', format: numberColumn },
+          { key: 'monthlyRent', label: 'Monthly Rent', format: moneyColumn },
+          { key: 'annualizedRent', label: 'Annual Rent', format: moneyColumn },
+          { key: 'averageRent', label: 'Avg Rent', format: moneyColumn },
+        ])}
+        {renderRealEstateReportCard('Lease Expiration Schedule', 'propertiesLeaseExpirationSchedule', data.leaseExpirationSchedule, [
+          { key: 'property', label: 'Property' },
+          { key: 'propertyType', label: 'Type' },
+          { key: 'bucket', label: 'Bucket' },
+          { key: 'expiringLeases', label: 'Expiring Leases', format: numberColumn },
+          { key: 'expiringRent', label: 'Expiring Rent', format: moneyColumn },
+          { key: 'largestTenant', label: 'Largest Tenant' },
+        ])}
+        {renderRealEstateReportCard('Move-Ins / Move-Outs', 'propertiesMoveInsMoveOuts', data.moveInsMoveOuts, [
+          { key: 'period', label: 'Period', format: dateColumn },
+          { key: 'moveIns', label: 'Move-Ins', format: numberColumn },
+          { key: 'moveOuts', label: 'Move-Outs', format: numberColumn },
+          { key: 'netAbsorption', label: 'Net Absorption', format: numberColumn },
+        ])}
+        {renderRealEstateReportCard('Rental Rate Trend', 'propertiesRentalRateTrend', data.rentalRateTrend, [
+          { key: 'period', label: 'Period', format: dateColumn },
+          { key: 'marketRent', label: 'Market Rent', format: moneyColumn },
+          { key: 'inPlaceRent', label: 'In-Place Rent', format: moneyColumn },
+          { key: 'renewalRent', label: 'Renewal Rent', format: moneyColumn },
+        ])}
+        {renderRealEstateReportCard('Property Performance', 'propertiesPropertyPerformance', data.propertyPerformance, [
+          { key: 'property', label: 'Property' },
+          { key: 'propertyType', label: 'Type' },
+          { key: 'revenue', label: 'Revenue', format: moneyColumn },
+          { key: 'noi', label: 'NOI', format: moneyColumn },
+          { key: 'occupancyPct', label: 'Occupancy', format: pctColumn },
+          { key: 'delinquentAmount', label: 'Delinquency', format: moneyColumn },
+        ])}
+        {renderRealEstateReportCard('Unit Mix Performance', 'propertiesUnitMixPerformance', data.unitMixPerformance, [
+          { key: 'unitMix', label: 'Unit Mix' },
+          { key: 'unitCount', label: 'Units', format: numberColumn },
+          { key: 'occupancyPct', label: 'Occupancy', format: pctColumn },
+          { key: 'averageRent', label: 'Avg Rent', format: moneyColumn },
+          { key: 'revenue', label: 'Revenue', format: moneyColumn },
+        ])}
+        {renderRealEstateReportCard('Delinquency by Property', 'propertiesDelinquencyByProperty', data.delinquencyByProperty, [
+          { key: 'property', label: 'Property' },
+          { key: 'propertyType', label: 'Type' },
+          { key: 'delinquentTenants', label: 'Delinquent Tenants', format: numberColumn },
+          { key: 'delinquentAmount', label: 'Delinquent Amount', format: moneyColumn },
+          { key: 'over30Amount', label: 'Over 30', format: moneyColumn },
+          { key: 'over60Amount', label: 'Over 60', format: moneyColumn },
+        ])}
+        {renderRealEstateReportCard('Renewal Pipeline', 'propertiesRenewalPipeline', data.renewalPipeline, [
+          { key: 'property', label: 'Property' },
+          { key: 'propertyType', label: 'Type' },
+          { key: 'renewalsDue', label: 'Renewals Due', format: numberColumn },
+          { key: 'renewalProbabilityPct', label: 'Probability', format: pctColumn },
+          { key: 'expectedRenewals', label: 'Expected Renewals', format: numberColumn },
+          { key: 'atRiskRent', label: 'At-Risk Rent', format: moneyColumn },
+        ])}
+      </>
+    );
+  };
+
+  const renderRealEstateLeasingSales = () => {
+    const data = getRealEstateReports()?.leasingSales || {};
+    return renderRealEstatePageShell(
+      'Leasing / Sales',
+      'Brokerage, leasing, advisory revenue, customer concentration, invoice velocity, and at-risk accounts.',
+      <>
+        {renderRealEstateMetricCards([
+          { label: 'Active Customers', value: data.salesMetricCards?.activeCustomers || 0 },
+          { label: 'Total Revenue', value: formatCurrency(Number(data.salesMetricCards?.totalRevenue || 0)) },
+          { label: 'Avg Revenue / Customer', value: formatCurrency(Number(data.salesMetricCards?.averageRevenuePerCustomer || 0)) },
+          { label: 'At-Risk Accounts', value: data.salesMetricCards?.atRiskAccounts || 0 },
+        ])}
+        {isSectionEnabled('customersPlatoSalesHistoryChart') && renderRealEstateChartCard('Sales History Chart', 'line', data.salesHistoryChart, {
+          xKey: 'period',
+          yKeys: ['revenue', 'invoiceCount'],
+        })}
+        {isSectionEnabled('customersRevenueDistribution') && renderRealEstateChartCard('Revenue Distribution by Customer', 'pie', data.revenueDistributionByCustomer, {
+          nameKey: 'customerName',
+          valueKey: 'revenue',
+        })}
+        {isSectionEnabled('customersGrossMarginHistoryChart') && renderRealEstateChartCard('Gross Margin History Chart', 'line', data.grossMarginHistoryChart, {
+          xKey: 'period',
+          yKeys: ['revenue', 'grossMargin'],
+        })}
+        {renderRealEstateReportCard('WIP by Customer (Unbilled)', 'customersWipByCustomer', data.wipByCustomer, [
+          { key: 'customerName', label: 'Customer' },
+          { key: 'propertyType', label: 'Property Type' },
+          { key: 'unbilledAmount', label: 'Unbilled', format: moneyColumn },
+          { key: 'stage', label: 'Stage' },
+        ])}
+        {renderRealEstateReportCard('Top Customers by Revenue', 'customersTopByRevenue', data.topCustomersByRevenue, [
+          { key: 'customerName', label: 'Customer' },
+          { key: 'propertyType', label: 'Property Type' },
+          { key: 'revenue', label: 'Revenue', format: moneyColumn },
+          { key: 'invoiceCount', label: 'Invoices', format: numberColumn },
+        ])}
+        {renderRealEstateReportCard('Revenue Distribution by Customer', 'customersRevenueDistribution', data.revenueDistributionByCustomer, [
+          { key: 'customerName', label: 'Customer' },
+          { key: 'revenue', label: 'Revenue', format: moneyColumn },
+          { key: 'revenueSharePct', label: 'Share', format: pctColumn },
+        ])}
+        {renderRealEstateReportCard('Sales History Chart', 'customersPlatoSalesHistoryChart', data.salesHistoryChart, [
+          { key: 'period', label: 'Period', format: dateColumn },
+          { key: 'revenue', label: 'Revenue', format: moneyColumn },
+          { key: 'invoiceCount', label: 'Invoices', format: numberColumn },
+        ])}
+        {renderRealEstateReportCard('Sales / Buys History Tables', 'customersPlatoSalesHistoryTables', data.salesBuysHistoryTables, [
+          { key: 'customerName', label: 'Customer' },
+          { key: 'sales', label: 'Sales', format: moneyColumn },
+          { key: 'buys', label: 'Cost / Buy Side', format: moneyColumn },
+          { key: 'netSpread', label: 'Net Spread', format: moneyColumn },
+        ])}
+        {renderRealEstateReportCard('Gross Margin History Chart', 'customersGrossMarginHistoryChart', data.grossMarginHistoryChart, [
+          { key: 'period', label: 'Period', format: dateColumn },
+          { key: 'revenue', label: 'Revenue', format: moneyColumn },
+          { key: 'grossMargin', label: 'Gross Margin', format: moneyColumn },
+          { key: 'grossMarginPct', label: 'GM %', format: pctColumn },
+        ])}
+        {renderRealEstateReportCard('Gross Margin History Table', 'customersGrossMarginHistoryTable', data.grossMarginHistoryTable, [
+          { key: 'customerName', label: 'Customer' },
+          { key: 'revenue', label: 'Revenue', format: moneyColumn },
+          { key: 'grossMargin', label: 'Gross Margin', format: moneyColumn },
+          { key: 'grossMarginPct', label: 'GM %', format: pctColumn },
+        ])}
+        {isSectionEnabled('customersConcentrationRisk') && renderRealEstateMetricCards([
+          { label: 'Top 1 Share', value: `${Number(data.concentrationRisk?.top1Pct || 0).toFixed(1)}%` },
+          { label: 'Top 5 Share', value: `${Number(data.concentrationRisk?.top5Pct || 0).toFixed(1)}%` },
+          { label: 'Concentration Status', value: data.concentrationRisk?.status || 'N/A' },
+        ])}
+        {renderRealEstateReportCard('Revenue Retention Proxy', 'customersRetentionProxy', data.revenueRetentionProxy, [
+          { key: 'customerName', label: 'Customer' },
+          { key: 'priorRevenue', label: 'Prior Revenue', format: moneyColumn },
+          { key: 'currentRevenue', label: 'Current Revenue', format: moneyColumn },
+          { key: 'status', label: 'Status' },
+        ])}
+        {renderRealEstateReportCard('Revenue vs Invoice Velocity', 'customersInvoiceVelocity', data.revenueVsInvoiceVelocity, [
+          { key: 'customerName', label: 'Customer' },
+          { key: 'revenue', label: 'Revenue', format: moneyColumn },
+          { key: 'invoiceVelocityDays', label: 'Invoice Velocity Days', format: numberColumn },
+        ])}
+        {renderRealEstateReportCard('At-Risk Accounts Queue', 'customersAtRiskQueue', data.atRiskAccountsQueue, [
+          { key: 'customerName', label: 'Customer' },
+          { key: 'revenue', label: 'Revenue', format: moneyColumn },
+          { key: 'riskStatus', label: 'Risk' },
+          { key: 'nextAction', label: 'Next Action' },
+        ])}
+      </>
+    );
+  };
+
+  const renderRealEstateMaintenance = () => {
+    const data = getRealEstateReports()?.maintenanceWorkOrders || {};
+    return renderRealEstatePageShell(
+      'Maintenance / Work Orders',
+      'Open work orders, aging, backlog priority, completion trend, SLA, property cost, vendors, and repeat issues.',
+      <>
+        {renderRealEstateMetricCards([
+          { label: 'Open Work Orders', value: Array.isArray(data.openWorkOrders) ? data.openWorkOrders.length : 0 },
+          { label: 'Estimated Cost', value: formatCurrency(Array.isArray(data.openWorkOrders) ? data.openWorkOrders.reduce((sum: number, row: any) => sum + Number(row.estimatedCost || 0), 0) : 0) },
+          { label: 'Urgent / High', value: Array.isArray(data.openWorkOrders) ? data.openWorkOrders.filter((row: any) => row.priority === 'Urgent' || row.priority === 'High').length : 0 },
+        ])}
+        {isSectionEnabled('maintenanceBacklogByPriority') && renderRealEstateChartCard('Backlog by Priority', 'bar', data.backlogByPriority, {
+          xKey: 'priority',
+          yKeys: ['count', 'estimatedCost'],
+        })}
+        {isSectionEnabled('maintenanceCompletionTrend') && renderRealEstateChartCard('Completion Trend', 'line', data.completionTrend, {
+          xKey: 'period',
+          yKeys: ['opened', 'completed'],
+        })}
+        {isSectionEnabled('maintenanceCostByPropertyUnit') && renderRealEstateChartCard('Maintenance Cost by Property', 'bar', data.costByPropertyUnit, {
+          xKey: 'property',
+          yKeys: ['totalCost', 'costPerUnit'],
+        })}
+        {renderRealEstateReportCard('Open Work Orders', 'maintenanceOpenWorkOrders', data.openWorkOrders, [
+          { key: 'workOrderId', label: 'Work Order' },
+          { key: 'property', label: 'Property' },
+          { key: 'unit', label: 'Unit' },
+          { key: 'type', label: 'Type' },
+          { key: 'priority', label: 'Priority' },
+          { key: 'status', label: 'Status' },
+          { key: 'ageDays', label: 'Age Days', format: numberColumn },
+          { key: 'estimatedCost', label: 'Est. Cost', format: moneyColumn },
+          { key: 'vendor', label: 'Vendor' },
+        ])}
+        {renderRealEstateReportCard('Work Order Aging', 'maintenanceWorkOrderAging', data.workOrderAging, [
+          { key: 'bucket', label: 'Age Bucket' },
+          { key: 'count', label: 'Count', format: numberColumn },
+        ])}
+        {renderRealEstateReportCard('Backlog by Priority', 'maintenanceBacklogByPriority', data.backlogByPriority, [
+          { key: 'priority', label: 'Priority' },
+          { key: 'count', label: 'Count', format: numberColumn },
+          { key: 'estimatedCost', label: 'Estimated Cost', format: moneyColumn },
+        ])}
+        {renderRealEstateReportCard('Completion Trend', 'maintenanceCompletionTrend', data.completionTrend, [
+          { key: 'period', label: 'Period', format: dateColumn },
+          { key: 'opened', label: 'Opened', format: numberColumn },
+          { key: 'completed', label: 'Completed', format: numberColumn },
+        ])}
+        {renderRealEstateReportCard('Response Time / SLA', 'maintenanceResponseTimeSla', data.responseTimeSla, [
+          { key: 'property', label: 'Property' },
+          { key: 'avgResponseHours', label: 'Avg Response Hours', format: numberColumn },
+          { key: 'slaMetPct', label: 'SLA Met', format: pctColumn },
+        ])}
+        {renderRealEstateReportCard('Cost by Property / Unit', 'maintenanceCostByPropertyUnit', data.costByPropertyUnit, [
+          { key: 'property', label: 'Property' },
+          { key: 'totalCost', label: 'Total Cost', format: moneyColumn },
+          { key: 'costPerUnit', label: 'Cost / Unit', format: moneyColumn },
+        ])}
+        {renderRealEstateReportCard('Vendor Performance', 'maintenanceVendorPerformance', data.vendorPerformance, [
+          { key: 'vendor', label: 'Vendor' },
+          { key: 'completedJobs', label: 'Completed Jobs', format: numberColumn },
+          { key: 'avgCompletionDays', label: 'Avg Completion Days', format: numberColumn },
+          { key: 'callbackRatePct', label: 'Callback Rate', format: pctColumn },
+        ])}
+        {renderRealEstateReportCard('Repeat Issues', 'maintenanceRepeatIssues', data.repeatIssues, [
+          { key: 'issueType', label: 'Issue Type' },
+          { key: 'repeatCount', label: 'Repeat Count', format: numberColumn },
+          { key: 'affectedProperties', label: 'Affected Properties', format: numberColumn },
+        ])}
+      </>
+    );
+  };
+
+  const renderRealEstateCommercialPropertyTypes = () => {
+    const data = getRealEstateReports()?.commercialPropertyTypes || {};
+    const renderPropertyTypeActivity = (title: string, sectionKey: string, propertyType: string) =>
+      renderRealEstateReportCard(title, sectionKey, Array.isArray(data.propertyTypeOverview) ? data.propertyTypeOverview.filter((row: any) => row.propertyType === propertyType) : [], [
+        { key: 'propertyType', label: 'Property Type' },
+        { key: 'activeAssignments', label: 'Active Assignments', format: numberColumn },
+        { key: 'pipelineValue', label: 'Pipeline Value', format: moneyColumn },
+        { key: 'expectedFees', label: 'Expected Fees', format: moneyColumn },
+        { key: 'avgDealCycleDays', label: 'Avg Deal Cycle Days', format: numberColumn },
+      ]);
+    return renderRealEstatePageShell(
+      'Commercial Property Types',
+      'Brokerage and advisory services across retail, office, industrial, multifamily, and land/development.',
+      <>
+        {renderRealEstateChartCard('Pipeline Value by Property Type', 'bar', data.propertyTypeOverview, {
+          xKey: 'propertyType',
+          yKeys: ['pipelineValue', 'expectedFees'],
+        })}
+        {isSectionEnabled('commercialPropertyRevenueMixByType') && renderRealEstateChartCard('Revenue Mix by Property Type', 'pie', data.revenueMixByType, {
+          nameKey: 'propertyType',
+          valueKey: 'revenue',
+        })}
+        {isSectionEnabled('commercialPropertyDealPipelineByType') && renderRealEstateChartCard('Deal Pipeline by Stage', 'bar', data.dealPipelineByType, {
+          xKey: 'stage',
+          yKeys: ['dealCount'],
+        })}
+        {renderPropertyTypeActivity('Retail Property Activity', 'commercialPropertyRetailActivity', 'Retail')}
+        {renderPropertyTypeActivity('Office Property Activity', 'commercialPropertyOfficeActivity', 'Office')}
+        {renderPropertyTypeActivity('Industrial Property Activity', 'commercialPropertyIndustrialActivity', 'Industrial')}
+        {renderPropertyTypeActivity('Multifamily Property Activity', 'commercialPropertyMultifamilyActivity', 'Multifamily')}
+        {renderPropertyTypeActivity('Land & Development Pipeline', 'commercialPropertyLandDevelopmentPipeline', 'Land & Development')}
+        {renderRealEstateReportCard('Deal Pipeline by Property Type', 'commercialPropertyDealPipelineByType', data.dealPipelineByType, [
+          { key: 'stage', label: 'Stage' },
+          { key: 'propertyType', label: 'Property Type' },
+          { key: 'dealCount', label: 'Deals', format: numberColumn },
+          { key: 'pipelineValue', label: 'Pipeline Value', format: moneyColumn },
+        ])}
+        {renderRealEstateReportCard('Revenue Mix by Property Type', 'commercialPropertyRevenueMixByType', data.revenueMixByType, [
+          { key: 'propertyType', label: 'Property Type' },
+          { key: 'revenue', label: 'Revenue', format: moneyColumn },
+          { key: 'advisoryRevenue', label: 'Advisory', format: moneyColumn },
+          { key: 'brokerageRevenue', label: 'Brokerage', format: moneyColumn },
+        ])}
+        {renderRealEstateReportCard('Commission / Fee Pipeline by Property Type', 'commercialPropertyCommissionsByType', data.propertyTypeOverview, [
+          { key: 'propertyType', label: 'Property Type' },
+          { key: 'activeAssignments', label: 'Active Assignments', format: numberColumn },
+          { key: 'pipelineValue', label: 'Pipeline Value', format: moneyColumn },
+          { key: 'expectedFees', label: 'Expected Fees', format: moneyColumn },
+        ])}
+        {renderRealEstateReportCard('Market Comps by Property Type', 'commercialPropertyMarketCompsByType', data.marketCompsByType, [
+          { key: 'propertyType', label: 'Property Type' },
+          { key: 'compCount', label: 'Comps', format: numberColumn },
+          { key: 'avgPricePerSqFt', label: 'Avg $ / Sq Ft', format: (value) => value == null ? 'N/A' : moneyColumn(value) },
+          { key: 'avgCapRatePct', label: 'Avg Cap Rate', format: pctColumn },
+        ])}
+        {renderRealEstateReportCard('Advisory Engagements by Property Type', 'commercialPropertyAdvisoryEngagements', data.advisoryEngagements, [
+          { key: 'client', label: 'Client' },
+          { key: 'propertyType', label: 'Property Type' },
+          { key: 'engagementType', label: 'Engagement Type' },
+          { key: 'status', label: 'Status' },
+          { key: 'expectedFee', label: 'Expected Fee', format: moneyColumn },
+        ])}
+      </>
+    );
+  };
+
   const renderModuleTabContent = (moduleKey: string) => {
     if (moduleKey === 'forecast') {
       return renderForecast();
+    }
+    if (String(industrySectorCategory || '').trim() === '53') {
+      if (moduleKey === 'units_properties') return renderRealEstateUnitsProperties();
+      if (moduleKey === 'leasing_sales') return renderRealEstateLeasingSales();
+      if (moduleKey === 'maintenance_work_orders') return renderRealEstateMaintenance();
+      if (moduleKey === 'commercial_property_types') return renderRealEstateCommercialPropertyTypes();
     }
     if (moduleKey === 'working_capital_forecast' || moduleKey === 'working-capital-forecast') {
       return <WorkingCapitalForecastTab selectedCompanyId={selectedCompanyId} />;

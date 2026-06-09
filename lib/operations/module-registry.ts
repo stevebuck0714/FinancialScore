@@ -90,6 +90,7 @@ const MODULE_DEFINITIONS: ModuleDefinition[] = [
   { key: 'outcomes', label: 'Outcomes', dataType: 'products' },
   { key: 'venues_assets', label: 'Venues / Assets', dataType: 'products' },
   { key: 'units_properties', label: 'Units / Properties', dataType: 'products' },
+  { key: 'commercial_property_types', label: 'Commercial Property Types', dataType: 'products' },
   { key: 'assets_equipment', label: 'Assets & Equipment', dataType: 'products' },
   { key: 'network_assets', label: 'Network Assets', dataType: 'products' },
   { key: 'routes_lanes_services', label: 'Routes / Lanes / Services', dataType: 'products' },
