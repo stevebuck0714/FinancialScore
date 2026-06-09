@@ -60,15 +60,15 @@ export default function Header({
   // they remain reachable from the left sidebar but should not appear in the
   // header dropdown.
   const financialReportsViews = [
-    { id: 'dashboard', label: "Financial KPI's", section: 'company-dashboard' },
+    { id: 'dashboard', label: "Financial KPI's", section: 'financial-reports' },
     { id: 'kpis', label: 'Key Ratios', section: 'financial-reports' },
-    { id: 'mda', label: 'MD&A', section: 'mda' },
+    { id: 'mda', label: 'MD&A', section: 'financial-reports' },
     { id: 'trend-analysis', label: 'Performance Trends', section: 'financial-reports' },
     { id: 'goals', label: 'Targets and Goals', section: 'financial-reports' },
     { id: 'projections', label: 'Projections', section: 'financial-reports' },
     { id: 'cash-flow', label: 'Cash Flow', section: 'financial-reports' },
     { id: 'working-capital', label: 'Working Capital', section: 'financial-reports' },
-    { id: 'financial-statements', label: 'Financial Statements', section: 'financial-statements' },
+    { id: 'financial-statements', label: 'Financial Statements', section: 'financial-reports' },
   ];
   // Views that should still light up the header "Reports" tab when active,
   // even if they don't appear in the dropdown (sidebar-only entries).

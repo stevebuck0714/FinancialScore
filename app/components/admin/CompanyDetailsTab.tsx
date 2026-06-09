@@ -150,11 +150,11 @@ export default function CompanyDetailsTab({
     { id: "business-pulse", label: "Daily Alerts" },
     { id: "operational-dashboard", label: "Operational Dashboard" },
     { id: "company-dashboard", label: "Company Dashboard" },
-    { id: "financial-reports", label: "Financial Reports" },
+    { id: "financial-reports", label: "Financial Reporting" },
     { id: "valuation", label: "Valuation" },
     { id: "expert-analysis", label: "Expert Analysis" },
     { id: "management-assessment", label: "Team Assessment" },
-    { id: "dataroom", label: "Corelytics DataRoom" },
+    { id: "dataroom", label: "Data Room" },
     { id: "custom-reports", label: "Custom Reports" },
   ];
   const DATAROOM_CAPABILITIES: Array<{
