@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import { syncQuickBooksDesktopOperationalPayload, type QbDesktopOperationalPayload } from '@/lib/quickbooks-desktop/operational-sync';
+import { getQuickBooksDesktopVariant, isQuickBooksDesktopFamily } from '@/lib/quickbooks-desktop/family';
 
 type Frequency = 'daily' | 'weekly' | 'monthly';
 
@@ -48,12 +49,13 @@ export async function POST(request: NextRequest) {
     if (!company) {
       return NextResponse.json({ ok: false, error: 'Company not found' }, { status: 404 });
     }
-    if (String(company.accountingSystem || '').toUpperCase() !== 'QUICKBOOKS_DESKTOP') {
+    if (!isQuickBooksDesktopFamily(company.accountingSystem)) {
       return NextResponse.json(
-        { ok: false, error: 'Operational push is only supported for QUICKBOOKS_DESKTOP companies.' },
+        { ok: false, error: 'Operational push is only supported for QuickBooks Desktop-family companies.' },
         { status: 400 }
       );
     }
+    const variant = getQuickBooksDesktopVariant(company.accountingSystem);
 
     const frequency = normalizeFrequency(body.frequency);
     const payload =
@@ -89,6 +91,7 @@ export async function POST(request: NextRequest) {
 
     const mergedMetadata = {
       ...existingMetadata,
+      quickbooksDesktopVariant: variant,
       quickbooksDesktopOperationalPayload: payload,
       quickbooksDesktopLastPushAt: new Date().toISOString(),
       quickbooksDesktopLastPushFrequency: frequency,
@@ -103,7 +106,7 @@ export async function POST(request: NextRequest) {
       },
       update: {
         status: existingConnection?.status || 'ACTIVE',
-        platformVersion: existingConnection?.platformVersion || 'qb-desktop-1.0',
+        platformVersion: existingConnection?.platformVersion || (variant === 'ENTERPRISE' ? 'qb-enterprise-1.0' : 'qb-desktop-1.0'),
         connectionMetadata: mergedMetadata,
         errorMessage: null,
       },
@@ -111,7 +114,7 @@ export async function POST(request: NextRequest) {
         companyId,
         platform: 'QUICKBOOKS',
         status: 'ACTIVE',
-        platformVersion: 'qb-desktop-1.0',
+        platformVersion: variant === 'ENTERPRISE' ? 'qb-enterprise-1.0' : 'qb-desktop-1.0',
         autoSync: true,
         syncFrequency: frequency,
         connectionMetadata: mergedMetadata,

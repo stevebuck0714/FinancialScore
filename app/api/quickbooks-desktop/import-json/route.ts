@@ -3,6 +3,7 @@ import prisma from '@/lib/prisma';
 import { requireSiteAdminAuthorizedInforCompany } from '@/lib/infor-m3/route-guards';
 import { ingestFinancialPayload } from '@/lib/financial-ingestion';
 import { seedQuickBooksDesktopAccountMappings } from '@/lib/quickbooks-desktop/account-mapping-seed';
+import { getQuickBooksDesktopVariant, isQuickBooksDesktopFamily } from '@/lib/quickbooks-desktop/family';
 
 export const dynamic = 'force-dynamic';
 
@@ -52,12 +53,13 @@ export async function POST(request: NextRequest) {
     if (!company) {
       return NextResponse.json({ ok: false, error: 'Company not found' }, { status: 404 });
     }
-    if (String(company.accountingSystem || '').toUpperCase() !== 'QUICKBOOKS_DESKTOP') {
+    if (!isQuickBooksDesktopFamily(company.accountingSystem)) {
       return NextResponse.json(
-        { ok: false, error: 'JSON import is only supported for QUICKBOOKS_DESKTOP companies.' },
+        { ok: false, error: 'JSON import is only supported for QuickBooks Desktop-family companies.' },
         { status: 400 },
       );
     }
+    const variant = getQuickBooksDesktopVariant(company.accountingSystem);
 
     const existingConnection = await prisma.accountingConnection.findUnique({
       where: {
@@ -72,6 +74,7 @@ export async function POST(request: NextRequest) {
         connectionMetadata: true,
       },
     });
+    const platformVersion = existingConnection?.platformVersion || (variant === 'ENTERPRISE' ? 'qb-enterprise-1.0' : 'qb-desktop-1.0');
     const existingMetadata =
       existingConnection?.connectionMetadata &&
       typeof existingConnection.connectionMetadata === 'object' &&
@@ -151,9 +154,10 @@ export async function POST(request: NextRequest) {
       },
       update: {
         status: existingConnection?.status || 'ACTIVE',
-        platformVersion: existingConnection?.platformVersion || 'qb-desktop-1.0',
+        platformVersion,
         connectionMetadata: {
           ...existingMetadata,
+          quickbooksDesktopVariant: variant,
           quickbooksDesktopFinancialPayload: payload,
           quickbooksDesktopFinancialLastPushAt: new Date().toISOString(),
           quickbooksDesktopFinancialLastPushFrequency: frequency,
@@ -174,10 +178,11 @@ export async function POST(request: NextRequest) {
         companyId,
         platform: 'QUICKBOOKS',
         status: 'ACTIVE',
-        platformVersion: 'qb-desktop-1.0',
+        platformVersion,
         autoSync: true,
         syncFrequency: frequency,
         connectionMetadata: {
+          quickbooksDesktopVariant: variant,
           quickbooksDesktopFinancialPayload: payload,
           quickbooksDesktopFinancialLastPushAt: new Date().toISOString(),
           quickbooksDesktopFinancialLastPushFrequency: frequency,
@@ -198,7 +203,7 @@ export async function POST(request: NextRequest) {
     const result = await ingestFinancialPayload({
       companyId,
       platform: 'QUICKBOOKS',
-      source: 'quickbooks-desktop',
+      source: variant === 'ENTERPRISE' ? 'quickbooks-enterprise' : 'quickbooks-desktop',
       payload,
       syncType: 'financial_push',
       targetMonth: targetMonth || undefined,

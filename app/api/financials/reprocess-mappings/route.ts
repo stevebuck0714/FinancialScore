@@ -3,6 +3,7 @@ import prisma from '@/lib/prisma';
 import { ingestFinancialPayload } from '@/lib/financial-ingestion';
 import { syncErpDailyFinancialsFromGL } from '@/lib/financial/sync-erp-daily-financials';
 import { buildCsiMonthlyDataFromGlResponses } from '@/lib/infor-m3/csi-monthly-financial-builder';
+import { isQuickBooksDesktopFamily } from '@/lib/quickbooks-desktop/family';
 
 export const dynamic = 'force-dynamic';
 const CSI_REBUILD_MAX_MONTHS = 36;
@@ -30,6 +31,7 @@ function normalizeConfiguredPlatform(value: unknown): string {
   if (compact.includes('INFOR') && compact.includes('CSI')) return 'INFOR_CSI';
   if (compact.includes('INFOR') && compact.includes('M3')) return 'INFOR_M3';
   if (compact === 'QUICKBOOKS_DESKTOP' || compact === 'QUICKBOOKSDESKTOP') return 'QUICKBOOKS_DESKTOP';
+  if (compact === 'QUICKBOOKS_ENTERPRISE' || compact === 'QUICKBOOKSENTERPRISE') return 'QUICKBOOKS_ENTERPRISE';
   if (compact === 'QUICKBOOKS_ONLINE' || compact === 'QBO') return 'QUICKBOOKS';
   if (compact === 'CSV' || compact === 'CSVFILE') return 'CSV_FILE';
   return compact;
@@ -862,7 +864,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    if (configuredPlatform === 'QUICKBOOKS_DESKTOP') {
+    if (isQuickBooksDesktopFamily(configuredPlatform)) {
       const connection = await prisma.accountingConnection.findUnique({
         where: {
           companyId_platform: {
@@ -898,7 +900,7 @@ export async function POST(request: NextRequest) {
       const result = await ingestFinancialPayload({
         companyId: String(companyId),
         platform: 'QUICKBOOKS',
-        source: 'quickbooks-desktop',
+        source: configuredPlatform === 'QUICKBOOKS_ENTERPRISE' ? 'quickbooks-enterprise' : 'quickbooks-desktop',
         payload: financialPayload,
         syncType: 'reprocess_financial_payload',
         targetMonth: targetMonth || undefined,

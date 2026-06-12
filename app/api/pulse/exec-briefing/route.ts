@@ -688,7 +688,7 @@ export async function GET(request: NextRequest) {
       where: { id: companyId },
       select: { id: true, name: true, accountingSystem: true, industrySector: true, industrySectorCategory: true },
     } as any);
-    const isQuickBooksCompany = ['QUICKBOOKS', 'QUICKBOOKS_DESKTOP'].includes(
+    const isQuickBooksCompany = ['QUICKBOOKS', 'QUICKBOOKS_DESKTOP', 'QUICKBOOKS_ENTERPRISE'].includes(
       String(company?.accountingSystem || '').trim().toUpperCase()
     );
     if (isQuickBooksCompany) {

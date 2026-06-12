@@ -2,6 +2,11 @@ import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import { requireSiteAdminAuthorizedInforCompany } from '@/lib/infor-m3/route-guards';
 import { encryptOAuthToken } from '@/lib/encryption';
+import {
+  getQuickBooksDesktopFamilyLabel,
+  getQuickBooksDesktopVariant,
+  isQuickBooksDesktopFamily,
+} from '@/lib/quickbooks-desktop/family';
 
 export const dynamic = 'force-dynamic';
 
@@ -61,6 +66,41 @@ const defaultPrograms: QuickBooksDesktopProgram[] = [
   { dataDomain: 'Invoices', qbEntity: 'InvoiceQuery' },
   { dataDomain: 'Bills', qbEntity: 'BillQuery' },
   { dataDomain: 'Payments', qbEntity: 'ReceivePaymentQuery' },
+];
+
+const defaultEnterprisePrograms: QuickBooksDesktopProgram[] = [
+  { dataDomain: 'Chart of Accounts', qbEntity: 'AccountQuery' },
+  { dataDomain: 'Offices / Divisions', qbEntity: 'ClassQuery' },
+  { dataDomain: 'Customers / Jobs', qbEntity: 'CustomerQuery' },
+  { dataDomain: 'Customer Types', qbEntity: 'CustomerTypeQuery' },
+  { dataDomain: 'Job Types', qbEntity: 'JobTypeQuery' },
+  { dataDomain: 'Vendors', qbEntity: 'VendorQuery' },
+  { dataDomain: 'Vendor Types', qbEntity: 'VendorTypeQuery' },
+  { dataDomain: 'Employees / Agents', qbEntity: 'EmployeeQuery' },
+  { dataDomain: 'Sales Reps', qbEntity: 'SalesRepQuery' },
+  { dataDomain: 'Service / Product Items', qbEntity: 'ItemQuery' },
+  { dataDomain: 'Terms', qbEntity: 'TermsQuery' },
+  { dataDomain: 'Payment Methods', qbEntity: 'PaymentMethodQuery' },
+  { dataDomain: 'Sales Tax Codes', qbEntity: 'SalesTaxCodeQuery' },
+  { dataDomain: 'Invoices', qbEntity: 'InvoiceQuery' },
+  { dataDomain: 'Sales Receipts', qbEntity: 'SalesReceiptQuery' },
+  { dataDomain: 'Payments', qbEntity: 'ReceivePaymentQuery' },
+  { dataDomain: 'Deposits', qbEntity: 'DepositQuery' },
+  { dataDomain: 'Credit Memos', qbEntity: 'CreditMemoQuery' },
+  { dataDomain: 'Estimates', qbEntity: 'EstimateQuery' },
+  { dataDomain: 'Sales Orders', qbEntity: 'SalesOrderQuery' },
+  { dataDomain: 'Bills', qbEntity: 'BillQuery' },
+  { dataDomain: 'Bill Payments - Checks', qbEntity: 'BillPaymentCheckQuery' },
+  { dataDomain: 'Bill Payments - Credit Cards', qbEntity: 'BillPaymentCreditCardQuery' },
+  { dataDomain: 'Vendor Credits', qbEntity: 'VendorCreditQuery' },
+  { dataDomain: 'Checks', qbEntity: 'CheckQuery' },
+  { dataDomain: 'Credit Card Charges', qbEntity: 'CreditCardChargeQuery' },
+  { dataDomain: 'Purchase Orders', qbEntity: 'PurchaseOrderQuery' },
+  { dataDomain: 'Item Receipts', qbEntity: 'ItemReceiptQuery' },
+  { dataDomain: 'Journal Entries', qbEntity: 'JournalEntryQuery' },
+  { dataDomain: 'Transfers', qbEntity: 'TransferQuery' },
+  { dataDomain: 'Inventory Adjustments', qbEntity: 'InventoryAdjustmentQuery' },
+  { dataDomain: 'Inventory Sites', qbEntity: 'InventorySiteQuery' },
 ];
 
 function asString(value: unknown): string {
@@ -124,8 +164,12 @@ function sanitizeSettings(value: unknown): QuickBooksDesktopSettings {
   };
 }
 
-function sanitizePrograms(value: unknown): QuickBooksDesktopProgram[] {
-  if (!Array.isArray(value)) return defaultPrograms;
+function getDefaultPrograms(accountingSystem: unknown): QuickBooksDesktopProgram[] {
+  return getQuickBooksDesktopVariant(accountingSystem) === 'ENTERPRISE' ? defaultEnterprisePrograms : defaultPrograms;
+}
+
+function sanitizePrograms(value: unknown, fallbackPrograms: QuickBooksDesktopProgram[] = defaultPrograms): QuickBooksDesktopProgram[] {
+  if (!Array.isArray(value)) return fallbackPrograms;
   const cleaned = value
     .map((row) => {
       const src = row && typeof row === 'object' && !Array.isArray(row) ? (row as Record<string, unknown>) : {};
@@ -135,7 +179,7 @@ function sanitizePrograms(value: unknown): QuickBooksDesktopProgram[] {
       };
     })
     .filter((row) => row.dataDomain || row.qbEntity);
-  return cleaned.length > 0 ? cleaned : defaultPrograms;
+  return cleaned.length > 0 ? cleaned : fallbackPrograms;
 }
 
 export async function GET(request: NextRequest) {
@@ -149,9 +193,9 @@ export async function GET(request: NextRequest) {
     if (!company) {
       return NextResponse.json({ ok: false, error: 'Company not found' }, { status: 404 });
     }
-    if (company.accountingSystem !== 'QUICKBOOKS_DESKTOP') {
+    if (!isQuickBooksDesktopFamily(company.accountingSystem)) {
       return NextResponse.json(
-        { ok: false, error: 'QuickBooks Desktop settings are only available for QUICKBOOKS_DESKTOP companies.' },
+        { ok: false, error: 'QuickBooks Desktop-family settings are only available for QuickBooks Desktop or QuickBooks Enterprise companies.' },
         { status: 400 }
       );
     }
@@ -197,7 +241,8 @@ export async function GET(request: NextRequest) {
         ? (metadata.quickbooksDesktopCredentials as Record<string, unknown>)
         : {};
     const webConnectorPasswordSet = Boolean(asString(existingCredentials.webConnectorPasswordEncrypted));
-    const programs = sanitizePrograms(metadata.quickbooksDesktopPrograms || defaultPrograms);
+    const fallbackPrograms = getDefaultPrograms(company.accountingSystem);
+    const programs = sanitizePrograms(metadata.quickbooksDesktopPrograms || fallbackPrograms, fallbackPrograms);
 
     return NextResponse.json({
       ok: true,
@@ -231,9 +276,9 @@ export async function POST(request: NextRequest) {
     if (!company) {
       return NextResponse.json({ ok: false, error: 'Company not found' }, { status: 404 });
     }
-    if (company.accountingSystem !== 'QUICKBOOKS_DESKTOP') {
+    if (!isQuickBooksDesktopFamily(company.accountingSystem)) {
       return NextResponse.json(
-        { ok: false, error: 'QuickBooks Desktop settings are only available for QUICKBOOKS_DESKTOP companies.' },
+        { ok: false, error: 'QuickBooks Desktop-family settings are only available for QuickBooks Desktop or QuickBooks Enterprise companies.' },
         { status: 400 }
       );
     }
@@ -244,7 +289,9 @@ export async function POST(request: NextRequest) {
       ...settings,
       webConnectorPassword: '',
     };
-    const programs = sanitizePrograms(body.programs || defaultPrograms);
+    const fallbackPrograms = getDefaultPrograms(company.accountingSystem);
+    const programs = sanitizePrograms(body.programs || fallbackPrograms, fallbackPrograms);
+    const variant = getQuickBooksDesktopVariant(company.accountingSystem);
 
     const existing = await prisma.accountingConnection.findUnique({
       where: {
@@ -287,11 +334,13 @@ export async function POST(request: NextRequest) {
       quickbooksDesktopSettings: settingsToStore,
       quickbooksDesktopCredentials,
       quickbooksDesktopPrograms: programs,
+      quickbooksDesktopVariant: variant,
       operationalPullTime: settingsToStore.syncTime || '08:00',
       operationalScheduleUpdatedAt: new Date().toISOString(),
       quickbooksDesktopLastUpdatedAt: new Date().toISOString(),
     };
     const scheduleFrequency = settingsToStore.syncFrequency || 'daily';
+    const platformVersion = existing?.platformVersion || (variant === 'ENTERPRISE' ? 'qb-enterprise-1.0' : 'qb-desktop-1.0');
 
     await prisma.accountingConnection.upsert({
       where: {
@@ -302,7 +351,7 @@ export async function POST(request: NextRequest) {
       },
       update: {
         connectionMetadata: mergedMetadata,
-        platformVersion: existing?.platformVersion || 'qb-desktop-1.0',
+        platformVersion,
         status: existing?.status || 'INACTIVE',
         autoSync: true,
         syncFrequency: scheduleFrequency,
@@ -312,7 +361,7 @@ export async function POST(request: NextRequest) {
         companyId,
         platform: 'QUICKBOOKS',
         status: 'INACTIVE',
-        platformVersion: 'qb-desktop-1.0',
+        platformVersion,
         autoSync: true,
         syncFrequency: scheduleFrequency,
         connectionMetadata: mergedMetadata,
@@ -322,7 +371,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       ok: true,
       companyId,
-      message: 'QuickBooks Desktop settings saved for this company.',
+      message: `${getQuickBooksDesktopFamilyLabel(company.accountingSystem)} settings saved for this company.`,
     });
   } catch (error: any) {
     const message = error?.message || 'Failed to save QuickBooks Desktop settings';

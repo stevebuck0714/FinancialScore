@@ -72,6 +72,7 @@ function resolveMonthStartUtc(targetMonth: string | null): Date | null {
 const GROUP_B_ACCOUNTING_SYSTEMS = new Set([
   'QUICKBOOKS',
   'QUICKBOOKS_DESKTOP',
+  'QUICKBOOKS_ENTERPRISE',
   'XERO',
   'SAGE',
 ]);

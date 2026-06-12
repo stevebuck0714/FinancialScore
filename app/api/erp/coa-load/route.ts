@@ -4,6 +4,7 @@ import { requireCompanyAccess } from '@/lib/tenant-security';
 import { ingestFinancialPayload } from '@/lib/financial-ingestion';
 import { syncErpDailyFinancialsFromGL } from '@/lib/financial/sync-erp-daily-financials';
 import { seedQuickBooksDesktopAccountMappings } from '@/lib/quickbooks-desktop/account-mapping-seed';
+import { isQuickBooksDesktopFamily } from '@/lib/quickbooks-desktop/family';
 import { seedInforAccountMappings } from '@/lib/infor-m3/account-mapping-seed';
 import { buildCsiMonthlyDataFromGlResponses } from '@/lib/infor-m3/csi-monthly-financial-builder';
 
@@ -37,6 +38,18 @@ const ERP_COA_CONNECTORS: Record<string, ConnectorConfig> = {
     enabled: true,
     platform: 'QUICKBOOKS',
     source: 'quickbooks-desktop',
+    payloadMetadataKey: 'quickbooksDesktopFinancialPayload',
+    lastPushAtMetadataKey: 'quickbooksDesktopFinancialLastPushAt',
+    lastPushFrequencyMetadataKey: 'quickbooksDesktopFinancialLastPushFrequency',
+    seedLastRunAtMetadataKey: 'quickbooksDesktopAccountSeedLastRunAt',
+    seedSummaryMetadataKey: 'quickbooksDesktopAccountSeedSummary',
+    seedSnapshotMetadataKey: 'quickbooksDesktopAccountSeedSnapshot',
+    seedActiveIdsMetadataKey: 'quickbooksDesktopActiveAccountIds',
+  },
+  QUICKBOOKS_ENTERPRISE: {
+    enabled: true,
+    platform: 'QUICKBOOKS',
+    source: 'quickbooks-enterprise',
     payloadMetadataKey: 'quickbooksDesktopFinancialPayload',
     lastPushAtMetadataKey: 'quickbooksDesktopFinancialLastPushAt',
     lastPushFrequencyMetadataKey: 'quickbooksDesktopFinancialLastPushFrequency',
@@ -527,7 +540,7 @@ export async function POST(request: NextRequest) {
         {
           ok: false,
           error: `${accountingSystem} ERP COA load wiring is reserved for a future release.`,
-          supportedToday: ['QUICKBOOKS_DESKTOP', 'INFOR_M3', 'INFOR_CSI'],
+          supportedToday: ['QUICKBOOKS_DESKTOP', 'QUICKBOOKS_ENTERPRISE', 'INFOR_M3', 'INFOR_CSI'],
         },
         { status: 501 }
       );
@@ -755,7 +768,7 @@ export async function POST(request: NextRequest) {
         }
       | null = null;
 
-    if (accountingSystem === 'QUICKBOOKS_DESKTOP') {
+    if (isQuickBooksDesktopFamily(accountingSystem)) {
       seedSummary = await seedQuickBooksDesktopAccountMappings(companyId, payload);
     } else if (accountingSystem === 'INFOR_M3' || accountingSystem === 'INFOR_CSI') {
       seedSummary = await seedInforAccountMappings(companyId, payload);

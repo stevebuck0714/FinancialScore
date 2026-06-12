@@ -111,7 +111,7 @@ export async function GET(request: NextRequest) {
         industrySector: true,
       },
     });
-    const isQuickBooksCompany = ['QUICKBOOKS', 'QUICKBOOKS_DESKTOP'].includes(
+    const isQuickBooksCompany = ['QUICKBOOKS', 'QUICKBOOKS_DESKTOP', 'QUICKBOOKS_ENTERPRISE'].includes(
       String(company?.accountingSystem || '').trim().toUpperCase()
     );
 

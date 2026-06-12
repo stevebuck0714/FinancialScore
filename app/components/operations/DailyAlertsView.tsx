@@ -607,7 +607,7 @@ export default function DailyAlertsView({ companyId, companyName, onNavigate }: 
         const pulseOverrides = sanitizePulsePolicyOverrides(goals[PULSE_POLICY_OVERRIDE_KEY]);
         const pulsePolicy = getResolvedPulsePolicyValues(pulseOverrides, companySectorCategory);
         const priorityFocusTerms = extractPriorityFocusTerms(goals);
-        const isQuickBooksCompany = ['QUICKBOOKS', 'QUICKBOOKS_DESKTOP'].includes(
+        const isQuickBooksCompany = ['QUICKBOOKS', 'QUICKBOOKS_DESKTOP', 'QUICKBOOKS_ENTERPRISE'].includes(
           String(companyRecord?.accountingSystem || '').trim().toUpperCase()
         );
         const processedMasterRows = Array.isArray(performanceContextData?.data?.monthlyFinancials)

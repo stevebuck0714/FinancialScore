@@ -2509,7 +2509,9 @@ export async function GET(request: NextRequest) {
     const sectorCategory = sectorCategoryParam || company?.industrySectorCategory || '01';
     const normalizedAccountingSystem = String(company.accountingSystem || '').trim().toUpperCase();
     const isQuickBooksCompany =
-      normalizedAccountingSystem === 'QUICKBOOKS' || normalizedAccountingSystem === 'QUICKBOOKS_DESKTOP';
+      normalizedAccountingSystem === 'QUICKBOOKS' ||
+      normalizedAccountingSystem === 'QUICKBOOKS_DESKTOP' ||
+      normalizedAccountingSystem === 'QUICKBOOKS_ENTERPRISE';
     /** GL balance_movement:* + TB anchors — Infor CSI / M3 only (not QuickBooks, not arbitrary ERPs). */
     const isInforGlCompany =
       normalizedAccountingSystem === 'INFOR_M3' || normalizedAccountingSystem === 'INFOR_CSI';

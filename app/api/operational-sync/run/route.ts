@@ -3,6 +3,7 @@ import type { AccountingPlatform } from '@prisma/client';
 import prisma from '@/lib/prisma';
 import { requireSiteAdminAuthorizedInforCompany } from '@/lib/infor-m3/route-guards';
 import { runOperationalSyncForCompany, type SyncFrequency } from '@/lib/operational-sync/runner';
+import { isQuickBooksDesktopFamily } from '@/lib/quickbooks-desktop/family';
 
 export const dynamic = 'force-dynamic';
 
@@ -17,7 +18,7 @@ function normalizeFrequency(value: unknown): SyncFrequency {
 function mapAccountingSystemToPlatform(system: unknown): AccountingPlatform | null {
   const normalized = String(system || '').trim().toUpperCase();
   if (normalized === 'INFOR_M3' || normalized === 'INFOR_CSI') return 'INFOR_M3';
-  if (normalized === 'QUICKBOOKS' || normalized === 'QUICKBOOKS_DESKTOP') return 'QUICKBOOKS';
+  if (normalized === 'QUICKBOOKS' || isQuickBooksDesktopFamily(normalized)) return 'QUICKBOOKS';
   if (normalized === 'DYNAMICS' || normalized === 'DYNAMICS365') return 'DYNAMICS365';
   if (normalized === 'ACUMATICA') return 'ACUMATICA';
   if (normalized === 'ODOO') return 'ODOO';

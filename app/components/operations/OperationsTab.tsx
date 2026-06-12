@@ -888,6 +888,7 @@ export default function OperationsTab({
   const [retailForecastTableSortKey, setRetailForecastTableSortKey] = useState<RetailForecastTableSortKey>('next3Base');
   const [retailForecastTableSortDir, setRetailForecastTableSortDir] = useState<'asc' | 'desc'>('desc');
   const [showCccInfoModal, setShowCccInfoModal] = useState(false);
+  const [mortgageRevenuePeriod, setMortgageRevenuePeriod] = useState<'monthly' | 'quarterly' | 'annually'>('monthly');
   const operationalHubSections =
     companyOperationalHubConfig &&
     typeof companyOperationalHubConfig === 'object' &&
@@ -21118,6 +21119,777 @@ Strategies to Improve the CCC
   const pctColumn = (value: any) => `${Number(value || 0).toFixed(1)}%`;
   const dateColumn = (value: any) => String(value || '').slice(0, 10) || 'N/A';
 
+  const REAL_ESTATE_DIVISION_CONFIG: Record<string, {
+    title: string;
+    subtitle: string;
+    baseRevenue: number;
+    basePipeline: number;
+    producerLabel: string;
+    sections: {
+      region: string;
+      pipeline: string;
+      producer: string;
+      conversion: string;
+    };
+  }> = {
+    residential_real_estate: {
+      title: 'Residential Real Estate',
+      subtitle: 'Residential brokerage performance across 56 offices and 6 regions.',
+      baseRevenue: 18400000,
+      basePipeline: 42800000,
+      producerLabel: 'Agent',
+      sections: {
+        region: 'residentialRegionScorecard',
+        pipeline: 'residentialClosingsPipeline',
+        producer: 'residentialAgentProductivity',
+        conversion: 'residentialOfficeLeaderboard',
+      },
+    },
+    mortgage: {
+      title: 'Mortgage',
+      subtitle: 'Loan pipeline, loan officer productivity, and pull-through by region.',
+      baseRevenue: 7200000,
+      basePipeline: 18600000,
+      producerLabel: 'Loan Officer',
+      sections: {
+        region: 'mortgageRegionScorecard',
+        pipeline: 'mortgageLoanPipeline',
+        producer: 'mortgageOfficerProductivity',
+        conversion: 'mortgagePullThrough',
+      },
+    },
+    title_company: {
+      title: 'Title Company',
+      subtitle: 'Title order pipeline, closing volume, and turnaround metrics by region.',
+      baseRevenue: 5100000,
+      basePipeline: 8200000,
+      producerLabel: 'Escrow Team',
+      sections: {
+        region: 'titleRegionScorecard',
+        pipeline: 'titleOrderPipeline',
+        producer: 'titleClosingVolume',
+        conversion: 'titleTurnaroundTimes',
+      },
+    },
+    insurance_services: {
+      title: 'Insurance Services',
+      subtitle: 'Policy production, producer performance, retention, and renewals by region.',
+      baseRevenue: 3900000,
+      basePipeline: 6100000,
+      producerLabel: 'Producer',
+      sections: {
+        region: 'insuranceRegionScorecard',
+        pipeline: 'insurancePolicyProduction',
+        producer: 'insuranceProducerProductivity',
+        conversion: 'insuranceRetentionRenewals',
+      },
+    },
+    commercial_real_estate: {
+      title: 'Commercial Real Estate',
+      subtitle: 'Commercial deal pipeline, broker productivity, and property-type mix.',
+      baseRevenue: 8600000,
+      basePipeline: 31200000,
+      producerLabel: 'Broker',
+      sections: {
+        region: 'commercialRegionScorecard',
+        pipeline: 'commercialDealPipeline',
+        producer: 'commercialBrokerProductivity',
+        conversion: 'commercialPropertyTypeMix',
+      },
+    },
+  };
+
+  const renderRealEstateDivision = (moduleKey: string) => {
+    const config = REAL_ESTATE_DIVISION_CONFIG[moduleKey];
+    if (!config) return null;
+    const regions = ['Northwest', 'Northeast', 'Central', 'Southwest', 'Southeast', 'Mountain'];
+    const regionRows = regions.map((region, index) => {
+      const weight = 0.13 + index * 0.017;
+      const revenue = Math.round(config.baseRevenue * weight);
+      const pipeline = Math.round(config.basePipeline * (0.12 + index * 0.019));
+      return {
+        region,
+        revenue,
+        ebitda: Math.round(revenue * (0.14 + index * 0.012)),
+        pipeline,
+        producers: 8 + index * 3,
+        closedUnits: 22 + index * 6,
+        conversionPct: Math.round((18 + index * 1.6) * 10) / 10,
+      };
+    });
+    const pipelineRows = regions.flatMap((region, regionIndex) =>
+      ['Lead', 'Under Contract', 'Due Diligence', 'Closing'].map((stage, stageIndex) => ({
+        region,
+        stage,
+        dealCount: 8 + regionIndex * 2 + stageIndex,
+        pipelineValue: Math.round(config.basePipeline * (0.035 + regionIndex * 0.006 + stageIndex * 0.004)),
+        expectedRevenue: Math.round(config.baseRevenue * (0.018 + regionIndex * 0.004 + stageIndex * 0.003)),
+      }))
+    );
+    const producerRows = Array.from({ length: 15 }, (_, index) => ({
+      producer: `${config.producerLabel} ${index + 1}`,
+      region: regions[index % regions.length],
+      revenue: Math.round(config.baseRevenue * (0.025 + index * 0.0025)),
+      pipeline: Math.round(config.basePipeline * (0.03 + index * 0.002)),
+      closedUnits: 12 + (index % 8),
+      conversionPct: Math.round((21 + (index % 6) * 2.1) * 10) / 10,
+    }));
+    const officeRows = Array.from({ length: moduleKey === 'residential_real_estate' ? 56 : 12 }, (_, index) => ({
+      office: moduleKey === 'residential_real_estate' ? `Office ${String(index + 1).padStart(2, '0')}` : `${config.title} Team ${index + 1}`,
+      region: regions[index % regions.length],
+      revenue: Math.round(config.baseRevenue * (0.012 + (index % 9) * 0.0018)),
+      pipeline: Math.round(config.basePipeline * (0.015 + (index % 7) * 0.002)),
+      producers: 3 + (index % 8),
+      closedUnits: 7 + (index % 13),
+    }));
+    const trendMonths = Array.from({ length: 36 }, (_, index) => {
+      const date = new Date(Date.UTC(2023, 6 + index, 1));
+      return date.toLocaleDateString('en-US', { month: 'short', year: '2-digit', timeZone: 'UTC' });
+    });
+    const residentialHomesSoldTrendRows = trendMonths.map((period, index) => ({
+      period,
+      homesSold: 210 + index * 3 + Math.round(Math.sin(index / 3) * 18),
+    }));
+    const residentialAveragePriceTrendRows = trendMonths.map((period, index) => {
+      const listingPrice = 418000 + index * 1850 + Math.round(Math.sin(index / 4) * 9500);
+      return {
+        period,
+        averageListingPrice: listingPrice,
+        averageSalesPrice: Math.round(listingPrice * (0.975 + (index % 6) * 0.004)),
+      };
+    });
+    const residentialSalesRevenueScorecardRows = [
+      { kpi: 'Transactions Closed', company: '10,940', region: '1,824 avg', office: '195 avg' },
+      { kpi: 'Sales Volume', company: formatCurrency(4_820_000_000), region: formatCurrency(803_000_000), office: formatCurrency(86_000_000) },
+      { kpi: 'Gross Commission Income (GCI)', company: formatCurrency(126_400_000), region: formatCurrency(21_100_000), office: formatCurrency(2_260_000) },
+      { kpi: 'Net Revenue', company: formatCurrency(43_200_000), region: formatCurrency(7_200_000), office: formatCurrency(772_000) },
+      { kpi: 'Avg Sales Price', company: formatCurrency(441_000), region: formatCurrency(438_500), office: formatCurrency(436_800) },
+      { kpi: 'Avg Commission %', company: '2.62%', region: '2.61%', office: '2.60%' },
+      { kpi: 'YTD Growth %', company: '10.7%', region: '9.8%', office: '8.9%' },
+      { kpi: 'Budget vs Actual', company: '+4.8%', region: '+3.9%', office: '+2.7%' },
+    ];
+    const residentialPipelineForecastRows = [
+      { month: 'Current Month', expectedClosings: 1040, expectedRevenue: 4_920_000 },
+      { month: 'Next Month', expectedClosings: 1115, expectedRevenue: 5_180_000 },
+      { month: '90 Days', expectedClosings: 3310, expectedRevenue: 15_640_000 },
+    ];
+    const residentialPipelineKpiRows = [
+      { metric: 'Active Listings', count: 1860, value: formatCurrency(812_000_000) },
+      { metric: 'New Listings', count: 438, value: formatCurrency(192_000_000) },
+      { metric: 'Under Contract', count: 612, value: formatCurrency(281_000_000) },
+      { metric: 'Pending Sales', count: 724, value: formatCurrency(333_000_000) },
+      { metric: 'Expected Closings', count: 1040, value: formatCurrency(478_000_000) },
+      { metric: 'Forecasted GCI', count: 0, value: formatCurrency(12_540_000) },
+      { metric: 'Listing Inventory Value', count: 0, value: formatCurrency(812_000_000) },
+    ];
+    const residentialAgentProductivityRows = [
+      { tier: 'Top Producers', agents: 42, salesVolume: formatCurrency(1_640_000_000), gci: formatCurrency(42_900_000), revenue: formatCurrency(14_800_000), conversionRate: '32.4%' },
+      { tier: 'Mid Producers', agents: 96, salesVolume: formatCurrency(1_880_000_000), gci: formatCurrency(49_200_000), revenue: formatCurrency(16_900_000), conversionRate: '24.6%' },
+      { tier: 'Emerging Producers', agents: 58, salesVolume: formatCurrency(820_000_000), gci: formatCurrency(21_500_000), revenue: formatCurrency(7_400_000), conversionRate: '17.8%' },
+      { tier: 'Inactive Agents', agents: 16, salesVolume: formatCurrency(86_000_000), gci: formatCurrency(2_300_000), revenue: formatCurrency(790_000), conversionRate: '4.2%' },
+    ];
+    const residentialAgentExecutiveMetrics = [
+      { metric: 'Top 20 Agents %', value: '41.5%' },
+      { metric: 'Revenue Concentration', value: 'Top 20 agents generate 38.6% of residential revenue' },
+      { metric: 'Average Production per Agent', value: formatCurrency(203_774) },
+    ];
+    const residentialCustomerAttachmentRows = [
+      { metric: 'Closed Residential Transactions', count: 10_940 },
+      { metric: 'Mortgage Attachments', count: 5_361 },
+      { metric: 'Title Attachments', count: 6_345 },
+      { metric: 'Insurance Attachments', count: 3_840 },
+    ];
+    const residentialAttachmentRateRows = [
+      { service: 'Mortgage', attachRate: '49.0%' },
+      { service: 'Title', attachRate: '58.0%' },
+      { service: 'Insurance', attachRate: '35.1%' },
+    ];
+    const residentialAttachmentByOfficeRows = officeRows.slice(0, 12).map((row, index) => ({
+      office: row.office,
+      mortgagePct: `${Math.round(42 + (index % 8) * 2.1)}%`,
+      titlePct: `${Math.round(51 + (index % 7) * 2.4)}%`,
+      insurancePct: `${Math.round(28 + (index % 6) * 2.2)}%`,
+    }));
+    const mortgageProductionScorecardRows = [
+      { kpi: 'Funded Loans', mtd: '412', ytd: '3,840', budget: '4,020' },
+      { kpi: 'Funded Volume', mtd: formatCurrency(186_000_000), ytd: formatCurrency(1_720_000_000), budget: formatCurrency(1_840_000_000) },
+      { kpi: 'Revenue', mtd: formatCurrency(7_200_000), ytd: formatCurrency(68_400_000), budget: formatCurrency(71_500_000) },
+      { kpi: 'Gain on Sale Revenue', mtd: formatCurrency(3_150_000), ytd: formatCurrency(29_200_000), budget: formatCurrency(31_100_000) },
+      { kpi: 'Revenue / Loan', mtd: formatCurrency(17_476), ytd: formatCurrency(17_813), budget: formatCurrency(17_786) },
+      { kpi: 'Average Loan Size', mtd: formatCurrency(451_456), ytd: formatCurrency(447_917), budget: formatCurrency(457_711) },
+      { kpi: 'YTD Growth %', mtd: '9.8%', ytd: '11.4%', budget: '10.0%' },
+      { kpi: 'Budget vs Actual', mtd: '+3.2%', ytd: '-1.6%', budget: '0.0%' },
+    ];
+    const mortgagePipelineStageRows = [
+      { stage: 'Application', loans: 540, volume: formatCurrency(242_000_000) },
+      { stage: 'Processing', loans: 418, volume: formatCurrency(188_000_000) },
+      { stage: 'Underwriting', loans: 332, volume: formatCurrency(151_000_000) },
+      { stage: 'Conditional Approval', loans: 284, volume: formatCurrency(129_000_000) },
+      { stage: 'Clear to Close', loans: 176, volume: formatCurrency(82_000_000) },
+      { stage: 'Scheduled Funding', loans: 118, volume: formatCurrency(56_000_000) },
+    ];
+    const mortgageForecastRows = [
+      { month: 'Current Month', expectedFundings: 412, expectedVolume: formatCurrency(186_000_000), expectedRevenue: formatCurrency(7_200_000) },
+      { month: 'Next Month', expectedFundings: 438, expectedVolume: formatCurrency(198_000_000), expectedRevenue: formatCurrency(7_680_000) },
+      { month: '90 Days', expectedFundings: 1280, expectedVolume: formatCurrency(580_000_000), expectedRevenue: formatCurrency(22_400_000) },
+    ];
+    const mortgageRegionalRankingRows = regions.map((region, index) => ({
+      region,
+      volume: formatCurrency(220_000_000 + index * 18_500_000),
+      revenue: formatCurrency(8_400_000 + index * 640_000),
+      growth: `${(8.1 + index * 1.1).toFixed(1)}%`,
+    }));
+    const mortgageOfficeRankingRows = officeRows.slice(0, 12).map((row, index) => ({
+      rank: index + 1,
+      office: row.office,
+      volume: formatCurrency(28_000_000 + index * 1_850_000),
+      revenue: formatCurrency(1_020_000 + index * 72_000),
+    }));
+    const mortgageLoanOfficerRankingRows = producerRows.slice(0, 12).map((row, index) => ({
+      rank: index + 1,
+      loanOfficer: row.producer,
+      fundings: 38 + index * 3,
+      volume: formatCurrency(17_500_000 + index * 1_250_000),
+      revenue: formatCurrency(680_000 + index * 48_000),
+    }));
+    const mortgageProductionMetricRows = [
+      { metric: 'Volume per LO', value: formatCurrency(5_820_000) },
+      { metric: 'Revenue per LO', value: formatCurrency(226_000) },
+      { metric: 'Loans per LO', value: '12.8' },
+      { metric: 'Revenue per Office', value: formatCurrency(1_430_000) },
+    ];
+    const mortgageFunnelRows = [
+      { stage: 'Lead', count: 980, conversion: '100.0%' },
+      { stage: 'Application', count: 540, conversion: '55.1%' },
+      { stage: 'Approved', count: 382, conversion: '70.7%' },
+      { stage: 'Funded', count: 284, conversion: '74.3%' },
+    ];
+    const mortgagePullThroughRows = [
+      { kpi: 'Application-to-Funding %', value: '52.6%' },
+      { kpi: 'Approval-to-Funding %', value: '74.3%' },
+      { kpi: 'Fallout Rate %', value: '25.7%' },
+      { kpi: 'Average Days to Close', value: '31.4' },
+    ];
+    const mortgageFalloutRows = [
+      { reason: 'Credit Issues', count: 42 },
+      { reason: 'Appraisal', count: 31 },
+      { reason: 'Debt-to-Income', count: 28 },
+      { reason: 'Customer Withdrawal', count: 24 },
+      { reason: 'Property Issues', count: 18 },
+      { reason: 'Rate Shopping', count: 16 },
+    ];
+    const mortgageAttachmentFunnelRows = [
+      { stage: 'Residential Transactions', count: 10_940 },
+      { stage: 'Mortgage Opportunities', count: 7_820 },
+      { stage: 'Applications', count: 5_361 },
+      { stage: 'Funded Loans', count: 3_840 },
+    ];
+    const mortgageAttachmentRateRows = [
+      { metric: 'Mortgage Attach Rate', rate: '49.0%' },
+      { metric: 'Application Rate', rate: '68.6%' },
+      { metric: 'Funding Rate', rate: '71.6%' },
+    ];
+    const mortgageAttachmentByOfficeRows = officeRows.slice(0, 12).map((row, index) => ({
+      office: row.office,
+      transactions: 80 + index * 6,
+      fundedLoans: 34 + index * 3,
+      attachRate: `${Math.round(42 + (index % 8) * 2.1)}%`,
+    }));
+    const mortgageAttachmentByAgentRows = producerRows.slice(0, 12).map((row, index) => ({
+      agent: `Agent ${index + 1}`,
+      transactions: 36 + index * 3,
+      mortgageReferrals: 18 + index * 2,
+      attachRate: `${Math.round(41 + (index % 7) * 2.3)}%`,
+    }));
+    const titleProductionScorecardRows = [
+      { kpi: 'Closed Files', mtd: '524', ytd: '4,920', budget: '5,080', priorYear: '4,420' },
+      { kpi: 'Revenue', mtd: formatCurrency(5_800_000), ytd: formatCurrency(54_900_000), budget: formatCurrency(57_100_000), priorYear: formatCurrency(49_600_000) },
+      { kpi: 'Revenue / File', mtd: formatCurrency(11_069), ytd: formatCurrency(11_159), budget: formatCurrency(11_240), priorYear: formatCurrency(11_222) },
+      { kpi: 'Closing Volume', mtd: formatCurrency(238_000_000), ytd: formatCurrency(2_210_000_000), budget: formatCurrency(2_310_000_000), priorYear: formatCurrency(1_980_000_000) },
+      { kpi: 'Open Orders', mtd: '1,248', ytd: '8,940', budget: '9,150', priorYear: '8,120' },
+      { kpi: 'New Orders', mtd: '746', ytd: '6,380', budget: '6,540', priorYear: '5,890' },
+      { kpi: 'Cancelled Orders', mtd: '58', ytd: '512', budget: '460', priorYear: '548' },
+      { kpi: 'YTD Growth %', mtd: '10.4%', ytd: '10.7%', budget: '8.5%', priorYear: '6.9%' },
+    ];
+    const titlePipelineStageRows = [
+      { stage: 'New Order', files: 410, revenuePotential: formatCurrency(4_420_000) },
+      { stage: 'Title Search', files: 356, revenuePotential: formatCurrency(3_890_000) },
+      { stage: 'Commitment Issued', files: 298, revenuePotential: formatCurrency(3_310_000) },
+      { stage: 'Escrow Open', files: 262, revenuePotential: formatCurrency(2_940_000) },
+      { stage: 'Scheduled Closing', files: 184, revenuePotential: formatCurrency(2_160_000) },
+      { stage: 'Closed', files: 524, revenuePotential: formatCurrency(5_800_000) },
+    ];
+    const titleForecastRows = [
+      { month: 'Current Month', expectedClosings: 524, expectedRevenue: formatCurrency(5_800_000) },
+      { month: 'Next Month', expectedClosings: 552, expectedRevenue: formatCurrency(6_120_000) },
+      { month: '90-Day Forecast', expectedClosings: 1620, expectedRevenue: formatCurrency(18_200_000) },
+    ];
+    const titleOfficeRows = Array.from({ length: 56 }, (_, index) => ({
+      office: `Office ${String(index + 1).padStart(2, '0')}`,
+      region: regions[index % regions.length],
+      brokerageTransactions: 86 + (index % 14) * 7,
+      titleClosings: 44 + (index % 12) * 5,
+      closedFiles: 62 + (index % 16) * 4,
+      revenue: formatCurrency(620_000 + (index % 18) * 42_000),
+      attachRate: `${Math.round(51 + (index % 9) * 1.8)}%`,
+    }));
+    const titleOfficeRankingRows = titleOfficeRows.slice(0, 12).map((row, index) => ({
+      rank: index + 1,
+      office: row.office,
+      closedFiles: row.closedFiles,
+      revenue: row.revenue,
+    }));
+    const titleEscrowOfficerRankingRows = producerRows.slice(0, 12).map((_, index) => ({
+      rank: index + 1,
+      escrowOfficer: `Escrow Officer ${index + 1}`,
+      filesClosed: 46 + index * 3,
+      revenue: formatCurrency(510_000 + index * 38_000),
+    }));
+    const titleRankingMetricRows = [
+      { metric: 'Revenue per Officer', value: formatCurrency(432_000) },
+      { metric: 'Files per Officer', value: '41.8' },
+      { metric: 'Revenue per Office', value: formatCurrency(980_000) },
+      { metric: 'Revenue Growth %', value: '10.7%' },
+      { metric: 'Revenue per Employee', value: formatCurrency(214_000) },
+    ];
+    const titleOperationalEfficiencyRows = [
+      { kpi: 'Avg Days to Close', current: '29.6', goal: '28.0' },
+      { kpi: 'Cancellation Rate', current: '7.8%', goal: '< 7.0%' },
+      { kpi: 'Files per Officer', current: '41.8', goal: '40.0' },
+      { kpi: 'Open Files per Officer', current: '72.4', goal: '68.0' },
+      { kpi: 'Re-open Rate', current: '2.4%', goal: '< 2.0%' },
+      { kpi: 'Closing Delays', current: '38', goal: '< 30' },
+      { kpi: 'Customer Satisfaction Score', current: '92.0', goal: '94.0' },
+    ];
+    const titleAttachmentFunnelRows = [
+      { stage: 'Residential Closings', count: 10_940 },
+      { stage: 'Mortgage Closings', count: 3_840 },
+      { stage: 'Eligible Title Transactions', count: 9_120 },
+      { stage: 'Title Closings', count: 5_290 },
+    ];
+    const titleAttachmentRateRows = [
+      { source: 'Residential Brokerage', attachRate: '58.0%' },
+      { source: 'Mortgage Division', attachRate: '64.2%' },
+      { source: 'Overall Enterprise', attachRate: '60.4%' },
+    ];
+    const titleAttachmentByRegionRows = regions.map((region, index) => ({
+      region,
+      attachRate: `${(54.5 + index * 1.8).toFixed(1)}%`,
+    }));
+    const metricTotal = (rows: any[], key: string) => rows.reduce((sum, row) => sum + Number(row[key] || 0), 0);
+    const mortgagePeriodMultiplier = mortgageRevenuePeriod === 'annually' ? 12 : mortgageRevenuePeriod === 'quarterly' ? 3 : 1;
+    const mortgageRevenueRegionRows = regionRows.map((row) => ({
+      ...row,
+      revenue: Math.round(Number(row.revenue || 0) * mortgagePeriodMultiplier),
+      ebitda: Math.round(Number(row.ebitda || 0) * mortgagePeriodMultiplier),
+    }));
+    return renderRealEstatePageShell(
+      config.title,
+      config.subtitle,
+      <>
+        {renderRealEstateMetricCards([
+          { label: 'Revenue', value: formatCurrency(metricTotal(regionRows, 'revenue')) },
+          { label: 'Pipeline', value: formatCurrency(metricTotal(regionRows, 'pipeline')) },
+          { label: 'Regions', value: regions.length },
+          { label: config.producerLabel === 'Escrow Team' ? 'Teams' : `${config.producerLabel}s`, value: metricTotal(regionRows, 'producers') },
+        ])}
+        {isSectionEnabled(config.sections.region) && (
+          moduleKey === 'mortgage' ? (
+            <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '16px', marginBottom: '14px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', marginBottom: '12px' }}>
+                <h3 style={{ margin: 0, fontSize: '16px', color: '#1e293b' }}>Mortgage Revenue by Region</h3>
+                <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', color: '#475569', fontWeight: 700 }}>
+                  Period
+                  <select
+                    value={mortgageRevenuePeriod}
+                    onChange={(event) => setMortgageRevenuePeriod(event.target.value as 'monthly' | 'quarterly' | 'annually')}
+                    style={{ border: '1px solid #cbd5e1', borderRadius: '8px', padding: '8px 10px', fontSize: '13px', background: 'white' }}
+                  >
+                    <option value="monthly">Monthly</option>
+                    <option value="quarterly">Quarterly</option>
+                    <option value="annually">Annually</option>
+                  </select>
+                </label>
+              </div>
+              <div style={{ height: 280 }}>
+                <ResponsiveContainer>
+                  <BarChart data={mortgageRevenueRegionRows}>
+                    <CartesianGrid strokeDasharray="3 3" />
+                    <XAxis dataKey="region" tick={{ fontSize: 11 }} />
+                    <YAxis tickFormatter={(value) => `$${(Number(value) / 1000000).toFixed(1)}M`} />
+                    <Tooltip formatter={(value: any) => formatCurrency(Number(value || 0))} />
+                    <Legend />
+                    <Bar dataKey="revenue" fill="#2563eb" name="Revenue" />
+                    <Bar dataKey="ebitda" fill="#0f766e" name="EBITDA" />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+          ) : renderRealEstateChartCard('Revenue by Region', 'bar', regionRows, {
+            xKey: 'region',
+            yKeys: ['revenue', 'ebitda'],
+          })
+        )}
+        {moduleKey === 'residential_real_estate' && (
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '14px', marginBottom: '14px' }}>
+            <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '16px' }}>
+              <h3 style={{ margin: '0 0 12px 0', fontSize: '16px', color: '#1e293b' }}>Homes Sold - 3 Year Monthly Trend</h3>
+              <div style={{ height: 300 }}>
+                <ResponsiveContainer>
+                  <LineChart data={residentialHomesSoldTrendRows}>
+                    <CartesianGrid strokeDasharray="3 3" />
+                    <XAxis dataKey="period" interval={2} tick={{ fontSize: 11 }} />
+                    <YAxis />
+                    <Tooltip formatter={(value: any) => Number(value || 0).toLocaleString()} />
+                    <Legend />
+                    <Line type="monotone" dataKey="homesSold" stroke="#2563eb" strokeWidth={2} name="Homes Sold" dot={false} />
+                  </LineChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+            <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '16px' }}>
+              <h3 style={{ margin: '0 0 12px 0', fontSize: '16px', color: '#1e293b' }}>Average Home Sales Price vs. Listing Price</h3>
+              <div style={{ height: 300 }}>
+                <ResponsiveContainer>
+                  <LineChart data={residentialAveragePriceTrendRows}>
+                    <CartesianGrid strokeDasharray="3 3" />
+                    <XAxis dataKey="period" interval={2} tick={{ fontSize: 11 }} />
+                    <YAxis tickFormatter={(value) => `$${(Number(value) / 1000).toFixed(0)}K`} />
+                    <Tooltip formatter={(value: any) => formatCurrency(Number(value || 0))} />
+                    <Legend />
+                    <Line type="monotone" dataKey="averageSalesPrice" stroke="#0f766e" strokeWidth={2} name="Avg Sales Price" dot={false} />
+                    <Line type="monotone" dataKey="averageListingPrice" stroke="#f97316" strokeWidth={2} name="Avg Listing Price" dot={false} />
+                  </LineChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+          </div>
+        )}
+        {moduleKey === 'residential_real_estate' && (
+          <>
+            {renderRealEstateReportCard('Sales & Revenue Scorecard', 'residentialSalesRevenueScorecard', residentialSalesRevenueScorecardRows, [
+              { key: 'kpi', label: 'KPI' },
+              { key: 'company', label: 'Company' },
+              { key: 'region', label: 'Region' },
+              { key: 'office', label: 'Office' },
+            ])}
+            {isSectionEnabled('residentialPipelineForecast') && (
+              <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '16px', marginBottom: '14px' }}>
+                <h3 style={{ margin: '0 0 6px 0', fontSize: '16px', color: '#1e293b' }}>Pipeline & Forecast Report</h3>
+                <p style={{ margin: '0 0 12px', color: '#64748b', fontSize: '13px' }}>What will happen over the next 30-90 days?</p>
+                {renderRealEstateMetricCards([
+                  { label: 'Active Listings', value: residentialPipelineKpiRows[0].count },
+                  { label: 'Under Contract', value: residentialPipelineKpiRows[2].count },
+                  { label: 'Pending Sales', value: residentialPipelineKpiRows[3].count },
+                  { label: 'Forecasted GCI', value: residentialPipelineKpiRows[5].value },
+                ])}
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '14px' }}>
+                  {renderRealEstateRowsTable('residentialPipelineKpis', residentialPipelineKpiRows, [
+                    { key: 'metric', label: 'KPI' },
+                    { key: 'count', label: 'Count', format: (value) => Number(value || 0) ? numberColumn(value) : '-' },
+                    { key: 'value', label: 'Value' },
+                  ])}
+                  {renderRealEstateRowsTable('residentialPipelineForecast', residentialPipelineForecastRows, [
+                    { key: 'month', label: 'Month' },
+                    { key: 'expectedClosings', label: 'Expected Closings', format: numberColumn },
+                    { key: 'expectedRevenue', label: 'Expected Revenue', format: moneyColumn },
+                  ])}
+                </div>
+              </div>
+            )}
+            {isSectionEnabled('residentialAgentProductivityReport') && (
+              <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '16px', marginBottom: '14px' }}>
+                <h3 style={{ margin: '0 0 6px 0', fontSize: '16px', color: '#1e293b' }}>Agent Productivity Report</h3>
+                <p style={{ margin: '0 0 12px', color: '#64748b', fontSize: '13px' }}>Who is producing?</p>
+                {renderRealEstateMetricCards([
+                  { label: 'Top 20 Agents %', value: residentialAgentExecutiveMetrics[0].value },
+                  { label: 'Average Production / Agent', value: residentialAgentExecutiveMetrics[2].value },
+                  { label: 'Top Producer Agents', value: residentialAgentProductivityRows[0].agents },
+                  { label: 'Inactive Agents', value: residentialAgentProductivityRows[3].agents },
+                ])}
+                {renderRealEstateRowsTable('residentialAgentProductivityReport', residentialAgentProductivityRows, [
+                  { key: 'tier', label: 'Agent Tier' },
+                  { key: 'agents', label: 'Agents', format: numberColumn },
+                  { key: 'salesVolume', label: 'Sales Volume' },
+                  { key: 'gci', label: 'GCI' },
+                  { key: 'revenue', label: 'Revenue' },
+                  { key: 'conversionRate', label: 'Conversion Rate' },
+                ])}
+                <div style={{ marginTop: '12px' }}>
+                  {renderRealEstateRowsTable('residentialAgentExecutiveMetrics', residentialAgentExecutiveMetrics, [
+                    { key: 'metric', label: 'Executive Metric' },
+                    { key: 'value', label: 'Value' },
+                  ])}
+                </div>
+              </div>
+            )}
+            {isSectionEnabled('residentialCustomerAttachmentReport') && (
+              <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '16px', marginBottom: '14px' }}>
+                <h3 style={{ margin: '0 0 6px 0', fontSize: '16px', color: '#1e293b' }}>Customer Attachment Report</h3>
+                <p style={{ margin: '0 0 12px', color: '#64748b', fontSize: '13px' }}>Are brokerage transactions generating mortgage, title, and insurance revenue?</p>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '14px', marginBottom: '14px' }}>
+                  {renderRealEstateRowsTable('residentialCustomerAttachmentCounts', residentialCustomerAttachmentRows, [
+                    { key: 'metric', label: 'Metric' },
+                    { key: 'count', label: 'Count', format: numberColumn },
+                  ])}
+                  {renderRealEstateRowsTable('residentialAttachmentRates', residentialAttachmentRateRows, [
+                    { key: 'service', label: 'Service' },
+                    { key: 'attachRate', label: 'Attach Rate' },
+                  ])}
+                </div>
+                {renderRealEstateRowsTable('residentialAttachmentByOffice', residentialAttachmentByOfficeRows, [
+                  { key: 'office', label: 'Office' },
+                  { key: 'mortgagePct', label: 'Mortgage %' },
+                  { key: 'titlePct', label: 'Title %' },
+                  { key: 'insurancePct', label: 'Insurance %' },
+                ])}
+              </div>
+            )}
+          </>
+        )}
+        {moduleKey === 'mortgage' && (
+          <>
+            {renderRealEstateReportCard('Mortgage Production Scorecard', 'mortgageProductionScorecard', mortgageProductionScorecardRows, [
+              { key: 'kpi', label: 'KPI' },
+              { key: 'mtd', label: 'MTD' },
+              { key: 'ytd', label: 'YTD' },
+              { key: 'budget', label: 'Budget' },
+            ])}
+            {isSectionEnabled('mortgagePipelineForecastReport') && (
+              <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '16px', marginBottom: '14px' }}>
+                <h3 style={{ margin: '0 0 6px 0', fontSize: '16px', color: '#1e293b' }}>Loan Pipeline & Forecast Report</h3>
+                <p style={{ margin: '0 0 12px', color: '#64748b', fontSize: '13px' }}>What will fund in the next 30-90 days?</p>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '14px' }}>
+                  {renderRealEstateRowsTable('mortgagePipelineStageRows', mortgagePipelineStageRows, [
+                    { key: 'stage', label: 'Stage' },
+                    { key: 'loans', label: 'Loans', format: numberColumn },
+                    { key: 'volume', label: 'Volume' },
+                  ])}
+                  {renderRealEstateRowsTable('mortgageForecastRows', mortgageForecastRows, [
+                    { key: 'month', label: 'Month' },
+                    { key: 'expectedFundings', label: 'Expected Fundings', format: numberColumn },
+                    { key: 'expectedVolume', label: 'Expected Volume' },
+                    { key: 'expectedRevenue', label: 'Expected Revenue' },
+                  ])}
+                </div>
+              </div>
+            )}
+            {isSectionEnabled('mortgageProductionRankingReport') && (
+              <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '16px', marginBottom: '14px' }}>
+                <h3 style={{ margin: '0 0 6px 0', fontSize: '16px', color: '#1e293b' }}>Production Ranking Report</h3>
+                <p style={{ margin: '0 0 12px', color: '#64748b', fontSize: '13px' }}>Which regions, offices, and loan officers are driving results?</p>
+                {renderRealEstateRowsTable('mortgageRegionalRankingRows', mortgageRegionalRankingRows, [
+                  { key: 'region', label: 'Region' },
+                  { key: 'volume', label: 'Volume' },
+                  { key: 'revenue', label: 'Revenue' },
+                  { key: 'growth', label: 'Growth' },
+                ])}
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '14px', marginTop: '14px' }}>
+                  {renderRealEstateRowsTable('mortgageOfficeRankingRows', mortgageOfficeRankingRows, [
+                    { key: 'rank', label: 'Rank', format: numberColumn },
+                    { key: 'office', label: 'Office' },
+                    { key: 'volume', label: 'Volume' },
+                    { key: 'revenue', label: 'Revenue' },
+                  ])}
+                  {renderRealEstateRowsTable('mortgageLoanOfficerRankingRows', mortgageLoanOfficerRankingRows, [
+                    { key: 'rank', label: 'Rank', format: numberColumn },
+                    { key: 'loanOfficer', label: 'LO' },
+                    { key: 'fundings', label: 'Fundings', format: numberColumn },
+                    { key: 'volume', label: 'Volume' },
+                    { key: 'revenue', label: 'Revenue' },
+                  ])}
+                </div>
+                <div style={{ marginTop: '14px' }}>
+                  {renderRealEstateRowsTable('mortgageProductionMetricRows', mortgageProductionMetricRows, [
+                    { key: 'metric', label: 'Additional Metric' },
+                    { key: 'value', label: 'Value' },
+                  ])}
+                </div>
+              </div>
+            )}
+            {isSectionEnabled('mortgageFunnelPullThroughReport') && (
+              <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '16px', marginBottom: '14px' }}>
+                <h3 style={{ margin: '0 0 6px 0', fontSize: '16px', color: '#1e293b' }}>Funnel & Pull-Through Report</h3>
+                <p style={{ margin: '0 0 12px', color: '#64748b', fontSize: '13px' }}>How efficiently are applications becoming funded loans?</p>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '14px' }}>
+                  {renderRealEstateRowsTable('mortgageFunnelRows', mortgageFunnelRows, [
+                    { key: 'stage', label: 'Stage' },
+                    { key: 'count', label: 'Count', format: numberColumn },
+                    { key: 'conversion', label: 'Conversion' },
+                  ])}
+                  {renderRealEstateRowsTable('mortgagePullThroughRows', mortgagePullThroughRows, [
+                    { key: 'kpi', label: 'KPI' },
+                    { key: 'value', label: 'Value' },
+                  ])}
+                </div>
+                <div style={{ marginTop: '14px' }}>
+                  {renderRealEstateRowsTable('mortgageFalloutRows', mortgageFalloutRows, [
+                    { key: 'reason', label: 'Fallout Reason' },
+                    { key: 'count', label: 'Count', format: numberColumn },
+                  ])}
+                </div>
+              </div>
+            )}
+            {isSectionEnabled('mortgageAttachmentReport') && (
+              <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '16px', marginBottom: '14px' }}>
+                <h3 style={{ margin: '0 0 6px 0', fontSize: '16px', color: '#1e293b' }}>Mortgage Attachment Report</h3>
+                <p style={{ margin: '0 0 12px', color: '#64748b', fontSize: '13px' }}>How effectively are brokerage transactions converting into mortgage customers?</p>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '14px', marginBottom: '14px' }}>
+                  {renderRealEstateRowsTable('mortgageAttachmentFunnelRows', mortgageAttachmentFunnelRows, [
+                    { key: 'stage', label: 'Stage' },
+                    { key: 'count', label: 'Count', format: numberColumn },
+                  ])}
+                  {renderRealEstateRowsTable('mortgageAttachmentRateRows', mortgageAttachmentRateRows, [
+                    { key: 'metric', label: 'Metric' },
+                    { key: 'rate', label: 'Rate' },
+                  ])}
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '14px' }}>
+                  {renderRealEstateRowsTable('mortgageAttachmentByOfficeRows', mortgageAttachmentByOfficeRows, [
+                    { key: 'office', label: 'Office' },
+                    { key: 'transactions', label: 'Transactions', format: numberColumn },
+                    { key: 'fundedLoans', label: 'Funded Loans', format: numberColumn },
+                    { key: 'attachRate', label: 'Attach Rate' },
+                  ])}
+                  {renderRealEstateRowsTable('mortgageAttachmentByAgentRows', mortgageAttachmentByAgentRows, [
+                    { key: 'agent', label: 'Agent' },
+                    { key: 'transactions', label: 'Transactions', format: numberColumn },
+                    { key: 'mortgageReferrals', label: 'Mortgage Referrals', format: numberColumn },
+                    { key: 'attachRate', label: 'Attach Rate' },
+                  ])}
+                </div>
+              </div>
+            )}
+          </>
+        )}
+        {moduleKey === 'title_company' && (
+          <>
+            {renderRealEstateReportCard('Title Production Scorecard', 'titleProductionScorecard', titleProductionScorecardRows, [
+              { key: 'kpi', label: 'KPI' },
+              { key: 'mtd', label: 'MTD' },
+              { key: 'ytd', label: 'YTD' },
+              { key: 'budget', label: 'Budget' },
+              { key: 'priorYear', label: 'Prior Year' },
+            ])}
+            {isSectionEnabled('titleEscrowPipelineForecastReport') && (
+              <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '16px', marginBottom: '14px' }}>
+                <h3 style={{ margin: '0 0 6px 0', fontSize: '16px', color: '#1e293b' }}>Escrow Pipeline & Forecast Report</h3>
+                <p style={{ margin: '0 0 12px', color: '#64748b', fontSize: '13px' }}>Forecast future closings and revenue.</p>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '14px' }}>
+                  {renderRealEstateRowsTable('titlePipelineStageRows', titlePipelineStageRows, [
+                    { key: 'stage', label: 'Stage' },
+                    { key: 'files', label: 'Files', format: numberColumn },
+                    { key: 'revenuePotential', label: 'Revenue Potential' },
+                  ])}
+                  {renderRealEstateRowsTable('titleForecastRows', titleForecastRows, [
+                    { key: 'month', label: 'Month' },
+                    { key: 'expectedClosings', label: 'Expected Closings', format: numberColumn },
+                    { key: 'expectedRevenue', label: 'Expected Revenue' },
+                  ])}
+                </div>
+              </div>
+            )}
+            {isSectionEnabled('titleOfficeEscrowOfficerRankingReport') && (
+              <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '16px', marginBottom: '14px' }}>
+                <h3 style={{ margin: '0 0 6px 0', fontSize: '16px', color: '#1e293b' }}>Office & Escrow Officer Ranking Report</h3>
+                <p style={{ margin: '0 0 12px', color: '#64748b', fontSize: '13px' }}>Identify top and bottom performers across offices and escrow officers.</p>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '14px' }}>
+                  {renderRealEstateRowsTable('titleOfficeRankingRows', titleOfficeRankingRows, [
+                    { key: 'rank', label: 'Rank', format: numberColumn },
+                    { key: 'office', label: 'Office' },
+                    { key: 'closedFiles', label: 'Closed Files', format: numberColumn },
+                    { key: 'revenue', label: 'Revenue' },
+                  ])}
+                  {renderRealEstateRowsTable('titleEscrowOfficerRankingRows', titleEscrowOfficerRankingRows, [
+                    { key: 'rank', label: 'Rank', format: numberColumn },
+                    { key: 'escrowOfficer', label: 'Escrow Officer' },
+                    { key: 'filesClosed', label: 'Files Closed', format: numberColumn },
+                    { key: 'revenue', label: 'Revenue' },
+                  ])}
+                </div>
+                <div style={{ marginTop: '14px' }}>
+                  {renderRealEstateRowsTable('titleRankingMetricRows', titleRankingMetricRows, [
+                    { key: 'metric', label: 'Additional KPI' },
+                    { key: 'value', label: 'Value' },
+                  ])}
+                </div>
+              </div>
+            )}
+            {renderRealEstateReportCard('Operational Efficiency Report', 'titleOperationalEfficiencyReport', titleOperationalEfficiencyRows, [
+              { key: 'kpi', label: 'KPI' },
+              { key: 'current', label: 'Current' },
+              { key: 'goal', label: 'Goal' },
+            ])}
+            {isSectionEnabled('titleAttachmentReport') && (
+              <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '16px', marginBottom: '14px' }}>
+                <h3 style={{ margin: '0 0 6px 0', fontSize: '16px', color: '#1e293b' }}>Title Attachment Report</h3>
+                <p style={{ margin: '0 0 12px', color: '#64748b', fontSize: '13px' }}>How effectively are residential and mortgage transactions converting into title business?</p>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '14px', marginBottom: '14px' }}>
+                  {renderRealEstateRowsTable('titleAttachmentFunnelRows', titleAttachmentFunnelRows, [
+                    { key: 'stage', label: 'Stage' },
+                    { key: 'count', label: 'Count', format: numberColumn },
+                  ])}
+                  {renderRealEstateRowsTable('titleAttachmentRateRows', titleAttachmentRateRows, [
+                    { key: 'source', label: 'Source' },
+                    { key: 'attachRate', label: 'Attach Rate' },
+                  ])}
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '14px' }}>
+                  {renderRealEstateRowsTable('titleAttachmentByOfficeRows', titleOfficeRows.slice(0, 12), [
+                    { key: 'office', label: 'Office' },
+                    { key: 'brokerageTransactions', label: 'Brokerage Transactions', format: numberColumn },
+                    { key: 'titleClosings', label: 'Title Closings', format: numberColumn },
+                    { key: 'attachRate', label: 'Attach Rate' },
+                  ])}
+                  {renderRealEstateRowsTable('titleAttachmentByRegionRows', titleAttachmentByRegionRows, [
+                    { key: 'region', label: 'Region' },
+                    { key: 'attachRate', label: 'Attach Rate' },
+                  ])}
+                </div>
+              </div>
+            )}
+          </>
+        )}
+        {moduleKey !== 'residential_real_estate' && moduleKey !== 'mortgage' && moduleKey !== 'title_company' && (
+          <>
+            {renderRealEstateReportCard('Region Scorecard', config.sections.region, regionRows, [
+              { key: 'region', label: 'Region' },
+              { key: 'revenue', label: 'Revenue', format: moneyColumn },
+              { key: 'ebitda', label: 'EBITDA', format: moneyColumn },
+              { key: 'pipeline', label: 'Pipeline', format: moneyColumn },
+              { key: 'producers', label: config.producerLabel === 'Escrow Team' ? 'Teams' : `${config.producerLabel}s`, format: numberColumn },
+              { key: 'closedUnits', label: 'Closed Units', format: numberColumn },
+              { key: 'conversionPct', label: 'Conversion', format: pctColumn },
+            ])}
+            {renderRealEstateReportCard(config.sections.pipeline.includes('Pipeline') ? 'Pipeline' : 'Pipeline Detail', config.sections.pipeline, pipelineRows, [
+              { key: 'region', label: 'Region' },
+              { key: 'stage', label: 'Stage' },
+              { key: 'dealCount', label: 'Deals', format: numberColumn },
+              { key: 'pipelineValue', label: 'Pipeline Value', format: moneyColumn },
+              { key: 'expectedRevenue', label: 'Expected Revenue', format: moneyColumn },
+            ])}
+            {renderRealEstateReportCard(`${config.producerLabel} Productivity`, config.sections.producer, producerRows, [
+              { key: 'producer', label: config.producerLabel },
+              { key: 'region', label: 'Region' },
+              { key: 'revenue', label: 'Revenue', format: moneyColumn },
+              { key: 'pipeline', label: 'Pipeline', format: moneyColumn },
+              { key: 'closedUnits', label: 'Closed Units', format: numberColumn },
+              { key: 'conversionPct', label: 'Conversion', format: pctColumn },
+            ])}
+            {renderRealEstateReportCard(moduleKey === 'commercial_real_estate' ? 'Property Type Mix' : moduleKey === 'title_company' ? 'Turnaround / Closing Detail' : moduleKey === 'insurance_services' ? 'Retention / Renewals' : 'Office / Conversion Detail', config.sections.conversion, officeRows, [
+              { key: 'office', label: moduleKey === 'residential_real_estate' ? 'Office' : 'Team' },
+              { key: 'region', label: 'Region' },
+              { key: 'revenue', label: 'Revenue', format: moneyColumn },
+              { key: 'pipeline', label: 'Pipeline', format: moneyColumn },
+              { key: 'producers', label: config.producerLabel === 'Escrow Team' ? 'Teams' : `${config.producerLabel}s`, format: numberColumn },
+              { key: 'closedUnits', label: 'Closed Units', format: numberColumn },
+            ])}
+          </>
+        )}
+      </>
+    );
+  };
+
   const renderRealEstateUnitsProperties = () => {
     const data = getRealEstateReports()?.unitsProperties || {};
     return renderRealEstatePageShell(
@@ -21457,6 +22229,7 @@ Strategies to Improve the CCC
       return renderForecast();
     }
     if (String(industrySectorCategory || '').trim() === '53') {
+      if (REAL_ESTATE_DIVISION_CONFIG[moduleKey]) return renderRealEstateDivision(moduleKey);
       if (moduleKey === 'units_properties') return renderRealEstateUnitsProperties();
       if (moduleKey === 'leasing_sales') return renderRealEstateLeasingSales();
       if (moduleKey === 'maintenance_work_orders') return renderRealEstateMaintenance();

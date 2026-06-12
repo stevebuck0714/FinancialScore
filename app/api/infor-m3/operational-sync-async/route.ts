@@ -16,6 +16,7 @@ import {
   mapQueueRunToLegacy,
 } from '@/lib/infor-m3/sync-queue';
 import { isInforSyncInProcessWorkerEnabled } from '@/lib/infor-m3/operational-sync-handler';
+import { isQuickBooksDesktopFamily } from '@/lib/quickbooks-desktop/family';
 
 export const dynamic = 'force-dynamic';
 
@@ -37,7 +38,7 @@ function normalizeMode(value: unknown): InforOperationalAsyncRun['mode'] {
 
 function normalizeQueuePlatform(value: unknown): AccountingPlatform {
   const normalized = String(value || '').trim().toUpperCase();
-  if (normalized === 'QUICKBOOKS' || normalized === 'QUICKBOOKS_DESKTOP') return 'QUICKBOOKS';
+  if (normalized === 'QUICKBOOKS' || isQuickBooksDesktopFamily(normalized)) return 'QUICKBOOKS';
   return 'INFOR_M3';
 }
 

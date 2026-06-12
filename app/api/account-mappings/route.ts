@@ -3,6 +3,7 @@ import prisma from "@/lib/prisma";
 import { getAllowedTargetFieldSet, getTargetFieldOptions } from "@/lib/constants/sector-target-fields";
 import { publishMonthsFromMonthlyFinancialDirect } from "@/lib/financial/publish-month-service";
 import { enqueueFinancialMappingRebuildRun } from "@/lib/infor-m3/sync-queue";
+import { isQuickBooksDesktopFamily } from "@/lib/quickbooks-desktop/family";
 
 export const dynamic = "force-dynamic";
 // Mapping save can trigger a downstream DFS rebuild (Infor tenants only)
@@ -346,7 +347,7 @@ async function loadSeedSnapshotFromMetadataPath(
   companyId: string,
   accountingSystem: string,
 ): Promise<unknown> {
-  if (accountingSystem !== "INFOR_M3" && accountingSystem !== "INFOR_CSI" && accountingSystem !== "QUICKBOOKS_DESKTOP") {
+  if (accountingSystem !== "INFOR_M3" && accountingSystem !== "INFOR_CSI" && !isQuickBooksDesktopFamily(accountingSystem)) {
     return null;
   }
   const snapshotPath =
@@ -355,7 +356,7 @@ async function loadSeedSnapshotFromMetadataPath(
       : accountingSystem === "INFOR_CSI"
         ? "inforCsiAccountSeedSnapshot"
         : "quickbooksDesktopAccountSeedSnapshot";
-  const platform = accountingSystem === "QUICKBOOKS_DESKTOP" ? "QUICKBOOKS" : "INFOR_M3";
+  const platform = isQuickBooksDesktopFamily(accountingSystem) ? "QUICKBOOKS" : "INFOR_M3";
   const rows = await prisma.$queryRaw<Array<{ snapshot: unknown }>>`
     SELECT "connectionMetadata"->${snapshotPath} AS snapshot
     FROM "AccountingConnection"
@@ -370,7 +371,7 @@ async function loadSeedLastRunAtFromMetadataPath(
   companyId: string,
   accountingSystem: string,
 ): Promise<string | null> {
-  if (accountingSystem !== "INFOR_M3" && accountingSystem !== "INFOR_CSI" && accountingSystem !== "QUICKBOOKS_DESKTOP") {
+  if (accountingSystem !== "INFOR_M3" && accountingSystem !== "INFOR_CSI" && !isQuickBooksDesktopFamily(accountingSystem)) {
     return null;
   }
   const runAtPath =
@@ -379,7 +380,7 @@ async function loadSeedLastRunAtFromMetadataPath(
       : accountingSystem === "INFOR_CSI"
         ? "inforCsiAccountSeedLastRunAt"
         : "quickbooksDesktopAccountSeedLastRunAt";
-  const platform = accountingSystem === "QUICKBOOKS_DESKTOP" ? "QUICKBOOKS" : "INFOR_M3";
+  const platform = isQuickBooksDesktopFamily(accountingSystem) ? "QUICKBOOKS" : "INFOR_M3";
   const rows = await prisma.$queryRaw<Array<{ run_at: unknown }>>`
     SELECT "connectionMetadata"->>${runAtPath} AS run_at
     FROM "AccountingConnection"
@@ -461,7 +462,7 @@ export async function GET(request: NextRequest) {
     const seededPlatform =
       accountingSystem === "INFOR_M3" || accountingSystem === "INFOR_CSI"
         ? "INFOR_M3"
-        : accountingSystem === "QUICKBOOKS_DESKTOP"
+        : isQuickBooksDesktopFamily(accountingSystem)
           ? "QUICKBOOKS"
           : null;
 

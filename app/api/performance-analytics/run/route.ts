@@ -638,7 +638,7 @@ export async function POST(request: NextRequest) {
         companySizeCategory: true,
       },
     });
-    const isQuickBooksCompany = ['QUICKBOOKS', 'QUICKBOOKS_DESKTOP'].includes(
+    const isQuickBooksCompany = ['QUICKBOOKS', 'QUICKBOOKS_DESKTOP', 'QUICKBOOKS_ENTERPRISE'].includes(
       String(company?.accountingSystem || '').trim().toUpperCase()
     );
 

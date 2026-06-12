@@ -77,6 +77,15 @@ const SECTOR_32_REPORTS_BY_MODULE: Record<string, OperationalHubReportDefinition
 };
 
 const SECTOR_53_REPORTS_BY_MODULE: Record<string, OperationalHubReportDefinition[]> = {
+  firm: [
+    { key: 'firmDivisionScorecard', label: 'Division Scorecard', group: 'Firm' },
+    { key: 'firmRevenueByDivision', label: 'Revenue by Division', group: 'Firm' },
+    { key: 'firmRegionBreakout', label: 'Region Breakout', group: 'Firm' },
+    { key: 'firmOfficeLeaderboard', label: 'Office Leaderboard', group: 'Firm' },
+    { key: 'firmDivisionDetail', label: 'Division Detail', group: 'Firm' },
+    { key: 'firmOfficeDivisionMatrix', label: 'Office / Division Matrix', group: 'Firm' },
+    { key: 'firmAgentProducerLeaderboard', label: 'Agent / Producer Leaderboard', group: 'Firm' },
+  ],
   units_properties: [
     { key: 'propertiesOccupancyVacancy', label: 'Occupancy / Vacancy', group: 'Units / Properties' },
     { key: 'propertiesUnitAvailability', label: 'Unit Availability', group: 'Units / Properties' },
@@ -110,6 +119,46 @@ const SECTOR_53_REPORTS_BY_MODULE: Record<string, OperationalHubReportDefinition
     { key: 'commercialPropertyCommissionsByType', label: 'Commission / Fee Pipeline by Property Type', group: 'Commercial Property Types' },
     { key: 'commercialPropertyMarketCompsByType', label: 'Market Comps by Property Type', group: 'Commercial Property Types' },
     { key: 'commercialPropertyAdvisoryEngagements', label: 'Advisory Engagements by Property Type', group: 'Commercial Property Types' },
+  ],
+  residential_real_estate: [
+    { key: 'residentialSalesRevenueScorecard', label: 'Sales & Revenue Scorecard', group: 'Residential Real Estate' },
+    { key: 'residentialPipelineForecast', label: 'Pipeline & Forecast Report', group: 'Residential Real Estate' },
+    { key: 'residentialAgentProductivityReport', label: 'Agent Productivity Report', group: 'Residential Real Estate' },
+    { key: 'residentialCustomerAttachmentReport', label: 'Customer Attachment Report', group: 'Residential Real Estate' },
+    { key: 'residentialRegionScorecard', label: 'Region Scorecard', group: 'Residential Real Estate' },
+    { key: 'residentialOfficeLeaderboard', label: 'Office Leaderboard', group: 'Residential Real Estate' },
+    { key: 'residentialAgentProductivity', label: 'Agent Productivity', group: 'Residential Real Estate' },
+    { key: 'residentialClosingsPipeline', label: 'Closings / Pipeline', group: 'Residential Real Estate' },
+  ],
+  mortgage: [
+    { key: 'mortgageProductionScorecard', label: 'Mortgage Production Scorecard', group: 'Mortgage' },
+    { key: 'mortgagePipelineForecastReport', label: 'Loan Pipeline & Forecast Report', group: 'Mortgage' },
+    { key: 'mortgageProductionRankingReport', label: 'Production Ranking Report', group: 'Mortgage' },
+    { key: 'mortgageFunnelPullThroughReport', label: 'Funnel & Pull-Through Report', group: 'Mortgage' },
+    { key: 'mortgageAttachmentReport', label: 'Mortgage Attachment Report', group: 'Mortgage' },
+    { key: 'mortgageRegionScorecard', label: 'Region Scorecard', group: 'Mortgage' },
+    { key: 'mortgageLoanPipeline', label: 'Loan Pipeline', group: 'Mortgage' },
+    { key: 'mortgageOfficerProductivity', label: 'Loan Officer Productivity', group: 'Mortgage' },
+    { key: 'mortgagePullThrough', label: 'Pull-Through / Close Rate', group: 'Mortgage' },
+  ],
+  title_company: [
+    { key: 'titleProductionScorecard', label: 'Title Production Scorecard', group: 'Title Company' },
+    { key: 'titleEscrowPipelineForecastReport', label: 'Escrow Pipeline & Forecast Report', group: 'Title Company' },
+    { key: 'titleOfficeEscrowOfficerRankingReport', label: 'Office & Escrow Officer Ranking Report', group: 'Title Company' },
+    { key: 'titleOperationalEfficiencyReport', label: 'Operational Efficiency Report', group: 'Title Company' },
+    { key: 'titleAttachmentReport', label: 'Title Attachment Report', group: 'Title Company' },
+  ],
+  insurance_services: [
+    { key: 'insuranceRegionScorecard', label: 'Region Scorecard', group: 'Insurance Services' },
+    { key: 'insurancePolicyProduction', label: 'Policy Production', group: 'Insurance Services' },
+    { key: 'insuranceProducerProductivity', label: 'Producer Productivity', group: 'Insurance Services' },
+    { key: 'insuranceRetentionRenewals', label: 'Retention / Renewals', group: 'Insurance Services' },
+  ],
+  commercial_real_estate: [
+    { key: 'commercialRegionScorecard', label: 'Region Scorecard', group: 'Commercial Real Estate' },
+    { key: 'commercialDealPipeline', label: 'Deal Pipeline', group: 'Commercial Real Estate' },
+    { key: 'commercialBrokerProductivity', label: 'Broker Productivity', group: 'Commercial Real Estate' },
+    { key: 'commercialPropertyTypeMix', label: 'Property Type Mix', group: 'Commercial Real Estate' },
   ],
 };
 

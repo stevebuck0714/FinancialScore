@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import { ingestFinancialPayload } from '@/lib/financial-ingestion';
 import { seedQuickBooksDesktopAccountMappings } from '@/lib/quickbooks-desktop/account-mapping-seed';
+import { getQuickBooksDesktopVariant, isQuickBooksDesktopFamily } from '@/lib/quickbooks-desktop/family';
 
 type Frequency = 'daily' | 'weekly' | 'monthly';
 type FinancialImportMode = 'through' | 'only';
@@ -62,12 +63,13 @@ export async function POST(request: NextRequest) {
     if (!company) {
       return NextResponse.json({ ok: false, error: 'Company not found' }, { status: 404 });
     }
-    if (String(company.accountingSystem || '').toUpperCase() !== 'QUICKBOOKS_DESKTOP') {
+    if (!isQuickBooksDesktopFamily(company.accountingSystem)) {
       return NextResponse.json(
-        { ok: false, error: 'Financial push is only supported for QUICKBOOKS_DESKTOP companies.' },
+        { ok: false, error: 'Financial push is only supported for QuickBooks Desktop-family companies.' },
         { status: 400 },
       );
     }
+    const variant = getQuickBooksDesktopVariant(company.accountingSystem);
 
     const frequency = normalizeFrequency(body.frequency);
     const targetMonth = normalizeTargetMonth(body.targetMonth);
@@ -92,6 +94,7 @@ export async function POST(request: NextRequest) {
       !Array.isArray(existingConnection.connectionMetadata)
         ? (existingConnection.connectionMetadata as Record<string, unknown>)
         : {};
+    const platformVersion = existingConnection?.platformVersion || (variant === 'ENTERPRISE' ? 'qb-enterprise-1.0' : 'qb-desktop-1.0');
 
     const bodyPayload =
       body.payload && typeof body.payload === 'object' && !Array.isArray(body.payload)
@@ -182,9 +185,10 @@ export async function POST(request: NextRequest) {
       },
       update: {
         status: existingConnection?.status || 'ACTIVE',
-        platformVersion: existingConnection?.platformVersion || 'qb-desktop-1.0',
+        platformVersion,
         connectionMetadata: {
           ...existingMetadata,
+          quickbooksDesktopVariant: variant,
           quickbooksDesktopFinancialPayload: payload,
           quickbooksDesktopFinancialLastPushAt: new Date().toISOString(),
           quickbooksDesktopFinancialLastPushFrequency: frequency,
@@ -205,10 +209,11 @@ export async function POST(request: NextRequest) {
         companyId,
         platform: 'QUICKBOOKS',
         status: 'ACTIVE',
-        platformVersion: 'qb-desktop-1.0',
+        platformVersion,
         autoSync: true,
         syncFrequency: frequency,
         connectionMetadata: {
+          quickbooksDesktopVariant: variant,
           quickbooksDesktopFinancialPayload: payload,
           quickbooksDesktopFinancialLastPushAt: new Date().toISOString(),
           quickbooksDesktopFinancialLastPushFrequency: frequency,
@@ -229,7 +234,7 @@ export async function POST(request: NextRequest) {
     const result = await ingestFinancialPayload({
       companyId,
       platform: 'QUICKBOOKS',
-      source: 'quickbooks-desktop',
+      source: variant === 'ENTERPRISE' ? 'quickbooks-enterprise' : 'quickbooks-desktop',
       payload,
       syncType: 'financial_push',
       targetMonth: targetMonth || undefined,

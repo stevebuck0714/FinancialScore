@@ -15,6 +15,7 @@ import {
 } from '@/lib/operations/operational-hub-layout';
 import AccountingSystemPanel from '@/app/components/accounting-systems/AccountingSystemPanel';
 import { isPluginAccountingSystem } from '@/lib/accounting-systems/registry';
+import { getQuickBooksDesktopFamilyLabel, isQuickBooksDesktopFamily } from '@/lib/quickbooks-desktop/family';
 import { companiesApi, consultantsApi, ApiError } from '@/lib/api-client';
 
 const OPERATIONAL_HUB_SECTION_OPTIONS: Array<{ key: string; label: string; group: string }> = [
@@ -239,6 +240,10 @@ const OVERVIEW_STANDARD_REPORT_OPTIONS: Array<{ key: string; label: string; grou
   { key: 'overviewStdEbitda', label: 'EBITDA', group: 'Overview' },
 ];
 
+const REAL_ESTATE_OVERVIEW_REPORT_OPTIONS: Array<{ key: string; label: string; group: string }> = [
+  { key: 'realEstateExecutiveReport', label: 'Executive Report', group: 'Overview' },
+];
+
 type OperationalHubCustomReport = {
   id: string;
   label: string;
@@ -346,7 +351,7 @@ export default function SiteAdminDashboard(props: any) {
     if (normalized === 'INFOR_M3') return 'Infor M3';
     if (normalized === 'INFOR_CSI') return 'Infor SyteLine CSI';
     if (normalized === 'QUICKBOOKS') return 'QuickBooks Online';
-    if (normalized === 'QUICKBOOKS_DESKTOP') return 'QuickBooks Desktop';
+    if (isQuickBooksDesktopFamily(normalized)) return getQuickBooksDesktopFamilyLabel(normalized);
     if (normalized === 'DYNAMICS' || normalized === 'DYNAMICS365') return 'Dynamics 365';
     if (normalized === 'ACUMATICA') return 'Acumatica';
     if (normalized === 'SAGE_INTACCT') return 'Sage Intacct';
@@ -403,7 +408,7 @@ export default function SiteAdminDashboard(props: any) {
           });
         }
       });
-    } else if (company.accountingSystem === 'QUICKBOOKS_DESKTOP') {
+    } else if (isQuickBooksDesktopFamily(company.accountingSystem)) {
       loadQbDesktopSettings(id);
     } else if (company.accountingSystem === 'QUICKBOOKS') {
       loadQboSettings(id);
@@ -1045,7 +1050,12 @@ export default function SiteAdminDashboard(props: any) {
     const sectionOptionsBySelectedTab = selectedTabOptions.flatMap((option) => {
       const moduleKey = option.key.startsWith('tab:') ? option.key.slice(4) : option.key;
       if (moduleKey === 'dashboard') {
-        return OVERVIEW_STANDARD_REPORT_OPTIONS.map((item) => ({
+        const companySectorCategory = String(company?.industrySectorCategory || '').trim();
+        const overviewOptions =
+          companySectorCategory === '53'
+            ? REAL_ESTATE_OVERVIEW_REPORT_OPTIONS
+            : OVERVIEW_STANDARD_REPORT_OPTIONS;
+        return overviewOptions.map((item) => ({
           ...item,
           group: option.label,
         }));
@@ -3916,7 +3926,7 @@ export default function SiteAdminDashboard(props: any) {
         return;
       }
 
-      if (system === 'QUICKBOOKS_DESKTOP') {
+      if (isQuickBooksDesktopFamily(system)) {
         loadQbDesktopSettings(companyId);
         return;
       }
@@ -5358,7 +5368,7 @@ export default function SiteAdminDashboard(props: any) {
                                                   </div>
                                                 </div>
                                                 {['INFOR_M3', 'INFOR_CSI'].includes(String(company.accountingSystem || '').toUpperCase()) && null}
-                                                {company.accountingSystem === 'QUICKBOOKS_DESKTOP' && (
+                                                {isQuickBooksDesktopFamily(company.accountingSystem) && (
                                                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', justifyContent: 'flex-end' }}>
                                                     <input
                                                       id={`consultant-qbdesktop-json-file-${company.id}`}
@@ -5852,11 +5862,11 @@ export default function SiteAdminDashboard(props: any) {
                                                     </label>
                                                   </div>
                                                 </>
-                                              ) : company.accountingSystem === 'QUICKBOOKS_DESKTOP' ? (
+                                              ) : isQuickBooksDesktopFamily(company.accountingSystem) ? (
                                                 <>
                                                   <div style={{ marginBottom: '8px', padding: '8px', background: '#fef3c7', border: '1px solid #fbbf24', borderRadius: '6px' }}>
                                                     <div style={{ fontSize: '12px', fontWeight: '600', color: '#92400e' }}>
-                                                      QuickBooks Desktop configuration
+                                                      {getQuickBooksDesktopFamilyLabel(company.accountingSystem)} configuration
                                                     </div>
                                                     <div style={{ fontSize: '12px', color: '#78350f' }}>
                                                       This company is configured for Web Connector/SDK setup. Save the required technical values below.
@@ -6362,7 +6372,7 @@ export default function SiteAdminDashboard(props: any) {
                                                 <div style={{ display: 'flex', gap: '6px' }}>
                                                   <button
                                                     onClick={() =>
-                                                      company.accountingSystem === 'QUICKBOOKS_DESKTOP'
+                                                      isQuickBooksDesktopFamily(company.accountingSystem)
                                                         ? addQbDesktopProgram(company.id)
                                                         : company.accountingSystem === 'QUICKBOOKS'
                                                           ? addQboProgram(company.id)
@@ -6383,7 +6393,7 @@ export default function SiteAdminDashboard(props: any) {
                                                   </button>
                                                   <button
                                                     onClick={() =>
-                                                      company.accountingSystem === 'QUICKBOOKS_DESKTOP'
+                                                      isQuickBooksDesktopFamily(company.accountingSystem)
                                                         ? saveQbDesktopSettings(company.id)
                                                         : company.accountingSystem === 'QUICKBOOKS'
                                                           ? saveQboSettings(company.id)
@@ -6458,7 +6468,7 @@ export default function SiteAdminDashboard(props: any) {
                                                       ))}
                                                     </tbody>
                                                   </table>
-                                                ) : company.accountingSystem === 'QUICKBOOKS_DESKTOP' ? (
+                                                ) : isQuickBooksDesktopFamily(company.accountingSystem) ? (
                                                   <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
                                                     <thead>
                                                       <tr style={{ background: '#f1f5f9', borderBottom: '1px solid #e2e8f0' }}>
@@ -8876,14 +8886,14 @@ export default function SiteAdminDashboard(props: any) {
                                       {isOperationalSourceSelected(businessCompany.id, 'PLATOS_CLOSET_STORE_VISIT') && renderPlatosClosetOperationalIntegrationCard(businessCompany.id, businessCompany.name)}
                                       {isOperationalSourceSelected(businessCompany.id, 'PLATOS_CLOSET_STORE_VISIT') && renderPlatosClosetDataDomainsCard(businessCompany.id)}
                                   </div>
-                                ) : businessCompany?.accountingSystem === 'QUICKBOOKS_DESKTOP' ? (
+                                ) : isQuickBooksDesktopFamily(businessCompany?.accountingSystem) ? (
                                   <div style={{ display: 'grid', gridTemplateColumns: '60% 40%', gap: '8px', marginBottom: '8px' }}>
                                     <div style={{ padding: '12px', background: '#f8fafc', borderRadius: '6px', border: '1px solid #e2e8f0' }}>
                                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px', marginBottom: '10px' }}>
                                         <div>
                                           <h4 style={{ fontSize: '14px', fontWeight: '600', color: '#1e293b', marginBottom: '8px' }}>Accounting Integration (Site Admin Only)</h4>
                                           <div style={{ fontSize: '12px', color: '#64748b' }}>
-                                            QuickBooks Desktop setup for <strong>{businessCompany.name}</strong>
+                                            {getQuickBooksDesktopFamilyLabel(businessCompany?.accountingSystem)} setup for <strong>{businessCompany.name}</strong>
                                           </div>
                                         </div>
                                         <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', justifyContent: 'flex-end' }}>

@@ -2004,6 +2004,7 @@ function FinancialScorePage() {
       CSV_FILE: 'csv_trial_balance',
       QUICKBOOKS: 'quickbooks',
       QUICKBOOKS_DESKTOP: 'quickbooks_desktop',
+      QUICKBOOKS_ENTERPRISE: 'quickbooks_enterprise',
       XERO: 'xero',
       SAGE: 'sage',
       SAGE_INTACCT: 'sage_intacct',
@@ -5288,7 +5289,7 @@ function FinancialScorePage() {
       ? companies.find((c) => c.id === selectedCompanyId)
       : undefined;
     const system = String(selectedCompany?.accountingSystem || '').toUpperCase();
-    const supportsAccountReviewLatestValues = ['INFOR_M3', 'INFOR_CSI', 'QUICKBOOKS', 'QUICKBOOKS_DESKTOP'].includes(system);
+    const supportsAccountReviewLatestValues = ['INFOR_M3', 'INFOR_CSI', 'QUICKBOOKS', 'QUICKBOOKS_DESKTOP', 'QUICKBOOKS_ENTERPRISE'].includes(system);
     if (!selectedCompanyId || !currentUser || !supportsAccountReviewLatestValues) {
       setAccountReviewApiValues({});
       return;
@@ -7029,10 +7030,10 @@ function FinancialScorePage() {
     }
     if (
       !selectedAccountingSystem ||
-      !['QUICKBOOKS_DESKTOP', 'INFOR_M3', 'INFOR_CSI'].includes(String(selectedAccountingSystem).toUpperCase())
+      !['QUICKBOOKS_DESKTOP', 'QUICKBOOKS_ENTERPRISE', 'INFOR_M3', 'INFOR_CSI'].includes(String(selectedAccountingSystem).toUpperCase())
     ) {
       console.warn('[ERP COA] Blocked before POST: unsupported accounting system', { selectedAccountingSystem });
-      alert('ERP COA Load is currently available for QuickBooks Desktop, Infor M3, and Infor SyteLine CSI.');
+      alert('ERP COA Load is currently available for QuickBooks Desktop, QuickBooks Enterprise, Infor M3, and Infor SyteLine CSI.');
       return;
     }
 
@@ -8039,7 +8040,7 @@ function FinancialScorePage() {
       const accountingSystem = String(companyForSync?.accountingSystem || '').toUpperCase();
 
       // Refresh connector status so "Last synced" updates immediately in API Connections.
-      if (accountingSystem === 'QUICKBOOKS' || accountingSystem === 'QUICKBOOKS_DESKTOP') {
+      if (accountingSystem === 'QUICKBOOKS' || accountingSystem === 'QUICKBOOKS_DESKTOP' || accountingSystem === 'QUICKBOOKS_ENTERPRISE') {
         await checkQBStatus(companyId);
       } else if (accountingSystem === 'XERO') {
         await checkXeroStatus(companyId);
@@ -9832,6 +9833,7 @@ function FinancialScorePage() {
       ORACLE_EBS: 'Oracle EBS',
       QUICKBOOKS: 'QuickBooks',
       QUICKBOOKS_DESKTOP: 'QuickBooks Desktop',
+      QUICKBOOKS_ENTERPRISE: 'QuickBooks Enterprise',
       SAGE_INTACCT: 'Sage Intacct',
       SAP_S4HANA: 'SAP S/4HANA',
       VISTA_CLOUD: 'Viewpoint Vista Cloud',
@@ -12008,6 +12010,8 @@ function FinancialScorePage() {
         return 'QuickBooks Online';
       case 'QUICKBOOKS_DESKTOP':
         return 'QuickBooks Desktop';
+      case 'QUICKBOOKS_ENTERPRISE':
+        return 'QuickBooks Enterprise';
       case 'SAGE':
         return 'Sage';
       case 'SAGE_INTACCT':
@@ -13923,14 +13927,14 @@ function FinancialScorePage() {
               )}
 
               {selectedAccountingSystem &&
-                !['QUICKBOOKS', 'QUICKBOOKS_DESKTOP', 'XERO', 'INFOR_M3', 'INFOR_CSI', 'SAGE', 'SAGE_INTACCT', 'NETSUITE', 'DYNAMICS', 'DYNAMICS365', 'ACUMATICA', 'ODOO', 'VISTA_CLOUD', 'CSV_FILE'].includes(selectedAccountingSystem) && (
+                !['QUICKBOOKS', 'QUICKBOOKS_DESKTOP', 'QUICKBOOKS_ENTERPRISE', 'XERO', 'INFOR_M3', 'INFOR_CSI', 'SAGE', 'SAGE_INTACCT', 'NETSUITE', 'DYNAMICS', 'DYNAMICS365', 'ACUMATICA', 'ODOO', 'VISTA_CLOUD', 'CSV_FILE'].includes(selectedAccountingSystem) && (
                   <div style={{ marginBottom: '16px', padding: '12px', background: '#fff7ed', border: '1px solid #fed7aa', borderRadius: '8px', fontSize: '13px', color: '#9a3412' }}>
                     {selectedAccountingSystemLabel} is not supported yet.
                   </div>
                 )}
 
               {selectedAccountingSystem &&
-                ['QUICKBOOKS_DESKTOP', 'DYNAMICS', 'DYNAMICS365', 'ACUMATICA', 'ODOO', 'SAGE_INTACCT', 'VISTA_CLOUD'].includes(selectedAccountingSystem) && (
+                ['QUICKBOOKS_DESKTOP', 'QUICKBOOKS_ENTERPRISE', 'DYNAMICS', 'DYNAMICS365', 'ACUMATICA', 'ODOO', 'SAGE_INTACCT', 'VISTA_CLOUD'].includes(selectedAccountingSystem) && (
                   <div style={{ marginBottom: '16px', padding: '12px', background: '#f0f9ff', border: '1px solid #bae6fd', borderRadius: '8px', fontSize: '13px', color: '#0c4a6e' }}>
                     {String(currentUser?.role || '').toUpperCase() === 'SITEADMIN' ? (
                       <>
@@ -15702,6 +15706,7 @@ function FinancialScorePage() {
 
                   if (
                     selectedAccountingSystem === 'QUICKBOOKS_DESKTOP' ||
+                    selectedAccountingSystem === 'QUICKBOOKS_ENTERPRISE' ||
                     selectedAccountingSystem === 'INFOR_M3' ||
                     selectedAccountingSystem === 'INFOR_CSI'
                   ) {
@@ -15820,7 +15825,7 @@ function FinancialScorePage() {
               hasCsvData ||
               hasSavedCsvInLocalStorage;
             const selectedSystemNormalized = String(selectedAccountingSystem || '').toUpperCase();
-            const erpCaoEnabledSystems = ['QUICKBOOKS_DESKTOP', 'INFOR_M3', 'INFOR_CSI'];
+            const erpCaoEnabledSystems = ['QUICKBOOKS_DESKTOP', 'QUICKBOOKS_ENTERPRISE', 'INFOR_M3', 'INFOR_CSI'];
             const showErpCaoLoadPanel = erpCaoEnabledSystems.includes(selectedSystemNormalized);
             // Process Mappings button is always available once the user is in this
             // section (which itself only renders when there are mappings or CSV
@@ -17306,7 +17311,10 @@ function FinancialScorePage() {
                               ? companies.find((company: any) => company.id === selectedCompanyId)?.accountingSystem
                               : '') || ''
                           ).toUpperCase();
-                          const isQboCompany = selectedAccountingSystem === 'QUICKBOOKS' || selectedAccountingSystem === 'QUICKBOOKS_DESKTOP';
+                          const isQboCompany =
+                            selectedAccountingSystem === 'QUICKBOOKS' ||
+                            selectedAccountingSystem === 'QUICKBOOKS_DESKTOP' ||
+                            selectedAccountingSystem === 'QUICKBOOKS_ENTERPRISE';
                           const isInforCompany = selectedAccountingSystem === 'INFOR_M3' || selectedAccountingSystem === 'INFOR_CSI';
                           const qboAccountIdsByLookupKey = isQboCompany && qboReviewRawData ? collectQboAccountIdsByLookupKey(qboReviewRawData) : new Map<string, string>();
                           // For Infor, authoritative account-review values come from the dedicated API endpoint.

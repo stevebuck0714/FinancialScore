@@ -13,6 +13,7 @@ export const ACCOUNTING_SYSTEMS = [
   { value: 'ODOO', label: 'Odoo' },
   { value: 'QUICKBOOKS', label: 'QuickBooks Online' },
   { value: 'QUICKBOOKS_DESKTOP', label: 'QuickBooks Desktop' },
+  { value: 'QUICKBOOKS_ENTERPRISE', label: 'QuickBooks Enterprise' },
   { value: 'SAGE', label: 'Sage' },
   { value: 'SAGE_INTACCT', label: 'Sage Intacct' },
   { value: 'VISTA_CLOUD', label: 'Viewpoint Vista Cloud' },
