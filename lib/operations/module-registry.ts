@@ -1,5 +1,6 @@
 export type OpsDataType =
   | 'customers'
+  | 'sales'
   | 'customers-sites'
   | 'ar-aging'
   | 'ap-aging'
@@ -47,7 +48,7 @@ const MODULE_DEFINITIONS: ModuleDefinition[] = [
   { key: 'ap', label: 'AP', dataType: 'ap-aging' },
   { key: 'payables', label: 'Payables', dataType: 'ap-aging' },
   { key: 'inventory', label: 'Inventory', dataType: 'inventory' },
-  { key: 'sales', label: 'Sales', dataType: 'customers' },
+  { key: 'sales', label: 'Sales', dataType: 'sales' },
   { key: 'orders_sales', label: 'Orders / Sales', dataType: 'customers' },
   { key: 'sales_transactions', label: 'Sales Transactions', dataType: 'customers' },
   { key: 'sales_pipeline', label: 'Sales / Pipeline', dataType: 'customers' },

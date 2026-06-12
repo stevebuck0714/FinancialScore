@@ -46,7 +46,34 @@ const REPORTS_BY_DATA_GROUP: Record<string, OperationalHubReportDefinition[]> = 
 
 const DATA_TYPE_GROUP: Record<string, string> = {
   customers: 'Customers',
+  sales: 'Customers',
   products: 'Products',
+};
+
+const SECTOR_32_REPORTS_BY_MODULE: Record<string, OperationalHubReportDefinition[]> = {
+  inventory: [
+    { key: 'customersWipByCustomer', label: 'WIP / Open Production', group: 'Inventory' },
+    { key: 'inventoryValueTrend', label: 'Value Trend', group: 'Inventory' },
+    { key: 'inventoryMovement', label: 'Inventory Movement', group: 'Inventory' },
+    { key: 'inventoryCurrentTable', label: 'Current Inventory Table', group: 'Inventory' },
+    { key: 'inventoryDistribution', label: 'Value Distribution', group: 'Inventory' },
+    { key: 'inventoryAgingObsolescenceV1', label: 'Inventory Aging & Obsolescence', group: 'Inventory' },
+  ],
+  sales: [
+    { key: 'customersPlatoSalesMetricCards', label: 'Sales Metric Cards', group: 'Sales' },
+    { key: 'customersPlatoSalesHistoryChart', label: 'Sales History Chart', group: 'Sales' },
+    { key: 'customersPlatoSalesHistoryTables', label: 'Sales History Tables', group: 'Sales' },
+    { key: 'customersGrossMarginHistoryChart', label: 'Gross Margin History Chart', group: 'Sales' },
+    { key: 'customersGrossMarginHistoryTable', label: 'Gross Margin History Table', group: 'Sales' },
+    { key: 'customersInvoiceVelocity', label: 'Revenue vs Invoice Velocity', group: 'Sales' },
+  ],
+  customers: [
+    { key: 'customersTopByRevenue', label: 'Top Customers by Revenue', group: 'Customers' },
+    { key: 'customersRevenueDistribution', label: 'Revenue Distribution by Customer', group: 'Customers' },
+    { key: 'customersConcentrationRisk', label: 'Concentration Risk', group: 'Customers' },
+    { key: 'customersRetentionProxy', label: 'Revenue Retention Proxy', group: 'Customers' },
+    { key: 'customersAtRiskQueue', label: 'At-Risk Accounts Queue', group: 'Customers' },
+  ],
 };
 
 const SECTOR_53_REPORTS_BY_MODULE: Record<string, OperationalHubReportDefinition[]> = {
@@ -107,6 +134,9 @@ export function getOperationalHubDefaultReportsForModule(
   sectorCategory?: string | null
 ): OperationalHubReportDefinition[] {
   const sector = normalizeSector(sectorCategory);
+  if (sector === '32' && SECTOR_32_REPORTS_BY_MODULE[moduleKey]) {
+    return SECTOR_32_REPORTS_BY_MODULE[moduleKey];
+  }
   if (sector === '53' && SECTOR_53_REPORTS_BY_MODULE[moduleKey]) {
     return SECTOR_53_REPORTS_BY_MODULE[moduleKey];
   }

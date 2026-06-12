@@ -1058,7 +1058,7 @@ export default function SiteAdminDashboard(props: any) {
       }
       const companySectorCategory = String(company?.industrySectorCategory || '').trim();
       const defaultReports = getOperationalHubDefaultReportsForModule(moduleKey, companySectorCategory);
-      if (defaultReports.length > 0 && companySectorCategory === '53') {
+      if (defaultReports.length > 0 && ['32', '53'].includes(companySectorCategory)) {
         return defaultReports.map((item) => ({
           ...item,
           group: option.label,

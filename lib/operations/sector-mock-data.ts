@@ -279,6 +279,22 @@ function topLineNames(prefix: string, count: number): string[] {
   return Array.from({ length: count }, (_, i) => `${prefix} ${String(i + 1).padStart(2, '0')}`);
 }
 
+function listMonthlyDatesAscending(startDate: Date, endDate: Date, maxPoints: number): Date[] {
+  const dates: Date[] = [];
+  const cursor = new Date(Date.UTC(startDate.getUTCFullYear(), startDate.getUTCMonth(), 1));
+  const end = new Date(Date.UTC(endDate.getUTCFullYear(), endDate.getUTCMonth(), 1));
+  while (cursor <= end) {
+    dates.push(new Date(cursor));
+    cursor.setUTCMonth(cursor.getUTCMonth() + 1);
+  }
+  return dates.slice(-maxPoints);
+}
+
+function deterministicNoise(seed: number): number {
+  const raw = Math.sin(seed * 12.9898) * 43758.5453;
+  return raw - Math.floor(raw);
+}
+
 const REAL_ESTATE_PROPERTIES = [
   { property: 'Rivergate Retail Center', type: 'Retail', units: 42, rentableSqFt: 186000, marketRent: 32.5 },
   { property: 'Northline Medical Plaza', type: 'Office', units: 28, rentableSqFt: 124000, marketRent: 36.25 },
@@ -718,6 +734,62 @@ export function getSectorArApFallbacks(sectorCategory?: string | null) {
 }
 
 function buildCustomersResponse(req: MockRequest, profile: SectorProfile) {
+  if (normalizeSectorCategory(req.sectorCategory) === '32' && req.frequency === 'monthly') {
+    const customers = [
+      { name: 'Regional Grocery Distributor', share: 0.24 },
+      { name: 'Pittsburgh Foodservice Group', share: 0.18 },
+      { name: 'Mid-Atlantic Bakery Supply', share: 0.15 },
+      { name: 'Independent Market Network', share: 0.13 },
+      { name: 'Restaurant Group Accounts', share: 0.11 },
+      { name: 'Institutional Food Buyers', share: 0.09 },
+      { name: 'Local Retail Partners', share: 0.06 },
+      { name: 'Specialty Wholesale Accounts', share: 0.04 },
+    ];
+    const seasonalFactors = [0.92, 0.94, 1.0, 1.04, 1.06, 1.08, 1.07, 1.09, 1.12, 1.15, 1.24, 1.3];
+    const dates = listMonthlyDatesAscending(req.startDate, req.endDate, 36);
+    const baseYear = dates[0]?.getUTCFullYear() || req.startDate.getUTCFullYear();
+    const records = dates.flatMap((date, monthIndex) => {
+      const yearsSinceStart = date.getUTCFullYear() - baseYear + date.getUTCMonth() / 12;
+      const annualGrowth = Math.pow(1.085, yearsSinceStart);
+      const seasonal = seasonalFactors[date.getUTCMonth()] ?? 1;
+      const monthlyRevenue = 392000 * annualGrowth * seasonal;
+      return customers.map((customer, customerIndex) => {
+        const noise = 0.985 + deterministicNoise(monthIndex * 19 + customerIndex * 7 + 3) * 0.03;
+        const revenue = Math.round(monthlyRevenue * customer.share * noise);
+        const invoiceCount = Math.max(8, Math.round(revenue / (820 + customerIndex * 28)));
+        return {
+          companyId: req.companyId,
+          snapshotDate: date.toISOString(),
+          frequency: req.frequency,
+          customerName: customer.name,
+          revenue,
+          cogs: Math.round(revenue * 0.66),
+          grossMargin: Math.round(revenue * 0.34),
+          grossMarginPct: 34,
+          invoiceCount,
+          avgInvoiceSize: revenue / invoiceCount,
+          bookings: Math.round(revenue * 1.015),
+        };
+      });
+    });
+    const limited = records.slice(0, req.limit || 5000);
+    const totals = customers.map((customer) => {
+      const rows = limited.filter((row) => row.customerName === customer.name);
+      return {
+        name: customer.name,
+        totalRevenue: rows.reduce((sum, row) => sum + row.revenue, 0),
+        totalInvoices: rows.reduce((sum, row) => sum + row.invoiceCount, 0),
+      };
+    });
+    return {
+      records: limited,
+      summary: {
+        topCustomers: totals.sort((a, b) => b.totalRevenue - a.totalRevenue).slice(0, 10),
+        topLineBuckets: getTopLineBucketsForSector(req.sectorCategory),
+      },
+    };
+  }
+
   const customers = topLineNames(profile.customerPrefix, 8);
   const dates = listDates(req.startDate, req.endDate, req.frequency);
   const records = dates.flatMap((date, i) =>
