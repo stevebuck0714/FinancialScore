@@ -1029,6 +1029,13 @@ export default function SiteAdminDashboard(props: any) {
     return sectorByCode?.sectorName || `Sector ${sectorCategory}`;
   };
 
+  const getIndustryNameForCompany = (company: any): string => {
+    const industryId = String(company?.industrySector || '').trim();
+    if (!industryId) return 'Not set';
+    const industry = INDUSTRY_SECTORS.find((item) => String(item?.id || '').trim() === industryId);
+    return industry?.name || `Industry ${industryId}`;
+  };
+
   const getOperationalHubSectionOptionsForCompany = (company: any, draft?: Record<string, boolean>): Array<{ key: string; label: string; group: string }> => {
     const tabOptions = getOperationalHubTabCategoryOptions(company);
     const selectedTabOptions = tabOptions.filter((option) => {
@@ -1391,6 +1398,9 @@ export default function SiteAdminDashboard(props: any) {
                     <span>TAB CATEGORIES</span>
                     <span style={{ fontSize: '11px', fontWeight: 700, color: '#1e3a8a', textTransform: 'uppercase' }}>
                       SECTOR: {getSectorNameForCompany(company)}
+                    </span>
+                    <span style={{ fontSize: '11px', fontWeight: 700, color: '#1e3a8a', textTransform: 'uppercase' }}>
+                      INDUSTRY: {getIndustryNameForCompany(company)}
                     </span>
                   </div>
                 ) : (
