@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import { requireSiteAdminAuthorizedInforCompany } from '@/lib/infor-m3/route-guards';
+import { encryptOAuthToken } from '@/lib/encryption';
 
 export const dynamic = 'force-dynamic';
 
@@ -12,6 +13,7 @@ type QuickBooksDesktopSettings = {
   ownerId: string;
   fileId: string;
   webConnectorUsername: string;
+  webConnectorPassword: string;
   pollingIntervalMinutes: string;
   permissionScope: 'READ_ONLY' | 'READ_WRITE' | '';
   unattendedAccessRequired: 'YES' | 'NO' | '';
@@ -38,6 +40,7 @@ const defaultSettings: QuickBooksDesktopSettings = {
   ownerId: '',
   fileId: '',
   webConnectorUsername: '',
+  webConnectorPassword: '',
   pollingIntervalMinutes: '60',
   permissionScope: 'READ_ONLY',
   unattendedAccessRequired: 'YES',
@@ -79,6 +82,7 @@ function sanitizeSettings(value: unknown): QuickBooksDesktopSettings {
     ownerId: asString(src.ownerId),
     fileId: asString(src.fileId),
     webConnectorUsername: asString(src.webConnectorUsername),
+    webConnectorPassword: asString(src.webConnectorPassword),
     pollingIntervalMinutes: asString(src.pollingIntervalMinutes) || '60',
     permissionScope:
       asString(src.permissionScope) === 'READ_WRITE'
@@ -186,6 +190,13 @@ export async function GET(request: NextRequest) {
       ...legacySettings,
       ...platformSettings,
     });
+    const existingCredentials =
+      metadata.quickbooksDesktopCredentials &&
+      typeof metadata.quickbooksDesktopCredentials === 'object' &&
+      !Array.isArray(metadata.quickbooksDesktopCredentials)
+        ? (metadata.quickbooksDesktopCredentials as Record<string, unknown>)
+        : {};
+    const webConnectorPasswordSet = Boolean(asString(existingCredentials.webConnectorPasswordEncrypted));
     const programs = sanitizePrograms(metadata.quickbooksDesktopPrograms || defaultPrograms);
 
     return NextResponse.json({
@@ -194,7 +205,11 @@ export async function GET(request: NextRequest) {
       status: connection?.status || 'NOT_CONNECTED',
       lastSyncAt: connection?.lastSyncAt || null,
       errorMessage: connection?.errorMessage || null,
-      settings,
+      settings: {
+        ...settings,
+        webConnectorPassword: '',
+        webConnectorPasswordSet,
+      },
       programs,
     });
   } catch (error: any) {
@@ -224,6 +239,11 @@ export async function POST(request: NextRequest) {
     }
 
     const settings = sanitizeSettings(body.settings || defaultSettings);
+    const webConnectorPassword = settings.webConnectorPassword;
+    const settingsToStore = {
+      ...settings,
+      webConnectorPassword: '',
+    };
     const programs = sanitizePrograms(body.programs || defaultPrograms);
 
     const existing = await prisma.accountingConnection.findUnique({
@@ -244,16 +264,34 @@ export async function POST(request: NextRequest) {
       existing?.connectionMetadata && typeof existing.connectionMetadata === 'object' && !Array.isArray(existing.connectionMetadata)
         ? (existing.connectionMetadata as Record<string, unknown>)
         : {};
+    const existingCredentials =
+      existingMetadata.quickbooksDesktopCredentials &&
+      typeof existingMetadata.quickbooksDesktopCredentials === 'object' &&
+      !Array.isArray(existingMetadata.quickbooksDesktopCredentials)
+        ? (existingMetadata.quickbooksDesktopCredentials as Record<string, unknown>)
+        : {};
+    const quickbooksDesktopCredentials = webConnectorPassword
+      ? {
+          ...existingCredentials,
+          webConnectorUsername: settings.webConnectorUsername,
+          webConnectorPasswordEncrypted: encryptOAuthToken(webConnectorPassword),
+          webConnectorPasswordUpdatedAt: new Date().toISOString(),
+        }
+      : {
+          ...existingCredentials,
+          webConnectorUsername: settings.webConnectorUsername,
+        };
 
     const mergedMetadata = {
       ...existingMetadata,
-      quickbooksDesktopSettings: settings,
+      quickbooksDesktopSettings: settingsToStore,
+      quickbooksDesktopCredentials,
       quickbooksDesktopPrograms: programs,
-      operationalPullTime: settings.syncTime || '08:00',
+      operationalPullTime: settingsToStore.syncTime || '08:00',
       operationalScheduleUpdatedAt: new Date().toISOString(),
       quickbooksDesktopLastUpdatedAt: new Date().toISOString(),
     };
-    const scheduleFrequency = settings.syncFrequency || 'daily';
+    const scheduleFrequency = settingsToStore.syncFrequency || 'daily';
 
     await prisma.accountingConnection.upsert({
       where: {

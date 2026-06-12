@@ -2073,6 +2073,8 @@ export default function SiteAdminDashboard(props: any) {
         ownerId: string;
         fileId: string;
         webConnectorUsername: string;
+        webConnectorPassword: string;
+        webConnectorPasswordSet: boolean;
         pollingIntervalMinutes: string;
         permissionScope: 'READ_ONLY' | 'READ_WRITE' | '';
         unattendedAccessRequired: 'YES' | 'NO' | '';
@@ -2271,6 +2273,8 @@ export default function SiteAdminDashboard(props: any) {
     ownerId: '',
     fileId: '',
     webConnectorUsername: '',
+    webConnectorPassword: '',
+    webConnectorPasswordSet: false,
     pollingIntervalMinutes: '60',
     permissionScope: 'READ_ONLY' as 'READ_ONLY' | 'READ_WRITE' | '',
     unattendedAccessRequired: 'YES' as 'YES' | 'NO' | '',
@@ -5858,6 +5862,7 @@ export default function SiteAdminDashboard(props: any) {
                                                       { key: 'ownerId', label: 'Owner ID (GUID) *' },
                                                       { key: 'fileId', label: 'File ID (GUID) *' },
                                                       { key: 'webConnectorUsername', label: 'Web Connector Username *' },
+                                                      { key: 'webConnectorPassword', label: 'Web Connector Password' },
                                                       { key: 'pollingIntervalMinutes', label: 'Polling Interval (minutes) *' },
                                                       { key: 'desktopEditionYear', label: 'QB Desktop Edition + Year *' },
                                                       { key: 'countryVersion', label: 'Country Version *' },
@@ -5876,6 +5881,23 @@ export default function SiteAdminDashboard(props: any) {
                                                             <option value="WEB_CONNECTOR">QuickBooks Web Connector</option>
                                                             <option value="SDK">SDK</option>
                                                           </select>
+                                                        ) : field.key === 'webConnectorPassword' ? (
+                                                          <>
+                                                            <PasswordInput
+                                                              value={getQbDesktopSettings(company.id).webConnectorPassword || ''}
+                                                              onChange={(value) => setQbDesktopSetting(company.id, 'webConnectorPassword', value)}
+                                                              placeholder={
+                                                                getQbDesktopSettings(company.id).webConnectorPasswordSet
+                                                                  ? 'Password saved - leave blank to keep'
+                                                                  : 'Enter Web Connector password'
+                                                              }
+                                                              autoComplete="new-password"
+                                                              style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white' }}
+                                                            />
+                                                            {getQbDesktopSettings(company.id).webConnectorPasswordSet ? (
+                                                              <span style={{ fontSize: '11px', color: '#64748b' }}>A password is saved. Enter a new value only to replace it.</span>
+                                                            ) : null}
+                                                          </>
                                                         ) : (
                                                           <input
                                                             type="text"
@@ -8920,6 +8942,7 @@ export default function SiteAdminDashboard(props: any) {
                                           { key: 'ownerId', label: 'Owner ID (GUID) *' },
                                           { key: 'fileId', label: 'File ID (GUID) *' },
                                           { key: 'webConnectorUsername', label: 'Web Connector Username *' },
+                                          { key: 'webConnectorPassword', label: 'Web Connector Password' },
                                           { key: 'pollingIntervalMinutes', label: 'Polling Interval (minutes) *' },
                                           { key: 'desktopEditionYear', label: 'QB Desktop Edition + Year *' },
                                           { key: 'countryVersion', label: 'Country Version *' },
@@ -8938,6 +8961,23 @@ export default function SiteAdminDashboard(props: any) {
                                                 <option value="WEB_CONNECTOR">QuickBooks Web Connector</option>
                                                 <option value="SDK">SDK</option>
                                               </select>
+                                            ) : field.key === 'webConnectorPassword' ? (
+                                              <>
+                                                <PasswordInput
+                                                  value={qbDesktopSettings.webConnectorPassword || ''}
+                                                  onChange={(value) => setQbDesktopSetting(businessCompany.id, 'webConnectorPassword', value)}
+                                                  placeholder={
+                                                    qbDesktopSettings.webConnectorPasswordSet
+                                                      ? 'Password saved - leave blank to keep'
+                                                      : 'Enter Web Connector password'
+                                                  }
+                                                  autoComplete="new-password"
+                                                  style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white' }}
+                                                />
+                                                {qbDesktopSettings.webConnectorPasswordSet ? (
+                                                  <span style={{ fontSize: '11px', color: '#64748b' }}>A password is saved. Enter a new value only to replace it.</span>
+                                                ) : null}
+                                              </>
                                             ) : (
                                               <input
                                                 type="text"

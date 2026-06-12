@@ -1,0 +1,103 @@
+{\rtf1\ansi\deff0
+{\fonttbl{\f0 Arial;}{\f1 Courier New;}}
+\fs24
+\b 5 Generation Bakers LLC - QuickBooks Desktop Onboarding\b0\par
+\par
+Company: 5 Generation Bakers LLC\par
+Corelytics Company ID: cmq6pjenb0001l5049udok08d\par
+Integration: QuickBooks Desktop via QuickBooks Web Connector\par
+Default sync: Daily at 08:00 local time\par
+\par
+\b 1. What Corelytics Sends To The Client\b0\par
+\par
+Corelytics will send the client a QuickBooks Web Connector configuration file.\par
+\par
+File name: 5_generation_bakers_corelytics_prod.qwc\par
+\par
+QWC file contents:\par
+\par
+{\f1
+<?xml version="1.0"?>\par
+<QBWCXML>\par
+  <AppName>Corelytics Data Connector</AppName>\par
+  <AppID></AppID>\par
+  <AppURL>https://api.corelytics.com/qbdesktop/service.asmx</AppURL>\par
+  <AppDescription>Corelytics QuickBooks Desktop integration (read-only sync)</AppDescription>\par
+  <AppSupport>https://dashboard.corelytics.com/support</AppSupport>\par
+  <UserName>qbwc_cmq6pjenb_prod</UserName>\par
+  <OwnerID>\{837ad88b-c1a9-42df-9fa2-b82f853543b4\}</OwnerID>\par
+  <FileID>\{1ce8696f-a566-4eb0-9c0f-aa39c683063e\}</FileID>\par
+  <QBType>QBFS</QBType>\par
+  <Style>Document</Style>\par
+  <AuthFlags>0xF</AuthFlags>\par
+  <Scheduler>\par
+    <RunEveryNSeconds>3600</RunEveryNSeconds>\par
+  </Scheduler>\par
+</QBWCXML>\par
+}\par
+Corelytics will also send the Web Connector password for qbwc_cmq6pjenb_prod through a secure channel. Do not send this password in plain email, and do not include it in the .qwc file.\par
+\par
+\b Corelytics setup values\b0\par
+\par
+Integration Type: QuickBooks Web Connector\par
+Application Name: Corelytics Data Connector\par
+SOAP/App Endpoint URL: https://api.corelytics.com/qbdesktop/service.asmx\par
+Support URL: https://dashboard.corelytics.com/support\par
+Owner ID: \{837ad88b-c1a9-42df-9fa2-b82f853543b4\}\par
+File ID: \{1ce8696f-a566-4eb0-9c0f-aa39c683063e\}\par
+Web Connector Username: qbwc_cmq6pjenb_prod\par
+Polling Interval: 60 minutes\par
+Permission Scope: Read-only\par
+Unattended Access Required: Yes\par
+Sync Direction: QuickBooks to Corelytics\par
+Sync Frequency: Daily\par
+Sync Time: 08:00 local time\par
+\par
+\b 2. What The Client Needs To Do\b0\par
+\par
+1. Confirm QuickBooks Web Connector is installed on the Windows machine/server that can access the production QuickBooks company file.\par
+2. Open QuickBooks Desktop as Admin in the target production company file.\par
+3. Open QuickBooks Web Connector.\par
+4. Import the Corelytics .qwc file provided above.\par
+5. Enter the Web Connector password provided separately by Corelytics.\par
+6. Approve the QuickBooks integrated application prompt for Corelytics.\par
+7. Allow access when QuickBooks is not running, if prompted, so scheduled syncs can run.\par
+8. Keep the QuickBooks host machine online during the agreed sync window.\par
+9. Coordinate with Corelytics for the first test sync and validation.\par
+\par
+\b 3. What The Client Sends Back To Corelytics\b0\par
+\par
+Please return the following information before setup:\par
+\par
+QuickBooks Desktop edition and year: ______________________________\par
+QuickBooks country version: US / Other: ______________________________\par
+Target production company file path (.QBW): ______________________________\par
+Confirm this is the production company file: Yes / No\par
+QuickBooks host machine/server name: ______________________________\par
+Is QuickBooks Web Connector installed? Yes / No\par
+Can a QuickBooks Admin attend the setup session? Yes / No\par
+Can the host machine stay online during sync windows? Yes / No\par
+Is outbound HTTPS allowed from the QB host? Yes / No\par
+IT/network contact name and email: ______________________________\par
+Preferred setup date/time and time zone: ______________________________\par
+\par
+\b Requested data domains for initial sync\b0\par
+\par
+Chart of Accounts - AccountQuery\par
+Customers - CustomerQuery\par
+Vendors - VendorQuery\par
+Invoices - InvoiceQuery\par
+Bills - BillQuery\par
+Payments - ReceivePaymentQuery\par
+\par
+\b 4. Internal Corelytics Notes\b0\par
+\par
+Site Admin fields still requiring client-provided values:\par
+\par
+QB Desktop Edition + Year: Waiting on client\par
+Country Version: Default to US, confirm with client\par
+Target Company File Path (.QBW): Waiting on client\par
+Host Machine Name: Waiting on client\par
+\par
+Corelytics must provision the backend credential for qbwc_cmq6pjenb_prod before the client imports the .qwc file.\par
+}
