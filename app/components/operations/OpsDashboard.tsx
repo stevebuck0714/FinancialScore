@@ -58,6 +58,9 @@ export default function OpsDashboard({
   const [selectedDivisionByRegionDivision, setSelectedDivisionByRegionDivision] = useState('Residential Real Estate');
   const [selectedAttachRevenueMetric, setSelectedAttachRevenueMetric] = useState<'revenue' | 'ebitda' | 'margin'>('revenue');
   const [selectedProducerReportRange, setSelectedProducerReportRange] = useState<'top50' | 'bottom50'>('top50');
+  const [selectedExecutiveTrend, setSelectedExecutiveTrend] = useState<{ type: 'division' | 'region'; label: string } | null>(null);
+  const [selectedAttachOfficeTrend, setSelectedAttachOfficeTrend] = useState<string | null>(null);
+  const [selectedProfitabilityOfficeTrend, setSelectedProfitabilityOfficeTrend] = useState<string | null>(null);
   const [firmTableSort, setFirmTableSort] = useState<Record<string, { key: string; dir: 'asc' | 'desc' }>>({});
   const [hiddenDivisionTrendSeries, setHiddenDivisionTrendSeries] = useState<Record<string, Record<string, boolean>>>({});
 
@@ -466,8 +469,41 @@ export default function OpsDashboard({
   );
 
   // Prepare chart data
+  const hasRecords = (data: any) => Array.isArray(data?.records) && data.records.length > 0;
+
+  const buildRealEstateOverviewPeriods = (frequency: string) => {
+    const count = frequency === 'monthly' ? 12 : frequency === 'weekly' ? 16 : 30;
+    const end = new Date();
+    return Array.from({ length: count }, (_, index) => {
+      const offset = count - index - 1;
+      const date = new Date(Date.UTC(end.getFullYear(), end.getMonth(), end.getDate()));
+      if (frequency === 'monthly') {
+        date.setUTCMonth(date.getUTCMonth() - offset);
+        date.setUTCDate(1);
+      } else if (frequency === 'weekly') {
+        date.setUTCDate(date.getUTCDate() - offset * 7);
+      } else {
+        date.setUTCDate(date.getUTCDate() - offset);
+      }
+      return formatDate(toLocalInputDate(date), frequency);
+    });
+  };
+
+  const buildRealEstateOverviewSeries = (
+    frequency: string,
+    valueKey: string,
+    base: number,
+    step: number,
+    wave = 0,
+  ) => buildRealEstateOverviewPeriods(frequency).map((period, index) => ({
+    period,
+    [valueKey]: Math.round(base + index * step + Math.sin(index / 3) * wave),
+  }));
+
   const prepareCustomerChartData = () => {
-    if (!customerData?.records) return [];
+    if (!hasRecords(customerData)) {
+      return isRealEstateSector ? buildRealEstateOverviewSeries(customerFreq, 'revenue', 145000, 2600, 9500) : [];
+    }
     const records = trimDailyToWeekdayWindow(customerData.records, customerFreq);
     const periodTrend = records.reduce((acc: any, record: any) => {
       const period = formatDate(record.snapshotDate, customerFreq);
@@ -481,7 +517,16 @@ export default function OpsDashboard({
   };
 
   const prepareArChartData = () => {
-    if (!arData?.records) return [];
+    if (!hasRecords(arData)) {
+      return isRealEstateSector
+        ? buildRealEstateOverviewPeriods(arFreq).map((period, index) => ({
+          period,
+          totalAR: Math.round(1250000 + index * 14500),
+          current: Math.round(910000 + index * 9800),
+          over30: Math.round(340000 + Math.sin(index / 3) * 42000),
+        }))
+        : [];
+    }
     const records = trimDailyToWeekdayWindow(arData.records, arFreq);
     return records.map((record: any) => ({
       period: formatDate(record.snapshotDate, arFreq),
@@ -492,7 +537,16 @@ export default function OpsDashboard({
   };
 
   const prepareApChartData = () => {
-    if (!apData?.records) return [];
+    if (!hasRecords(apData)) {
+      return isRealEstateSector
+        ? buildRealEstateOverviewPeriods(apFreq).map((period, index) => ({
+          period,
+          totalAP: Math.round(780000 + index * 8200),
+          current: Math.round(590000 + index * 6100),
+          over30: Math.round(190000 + Math.sin(index / 4) * 26000),
+        }))
+        : [];
+    }
     const records = trimDailyToWeekdayWindow(apData.records, apFreq);
     return records.map((record: any) => ({
       period: formatDate(record.snapshotDate, apFreq),
@@ -503,7 +557,9 @@ export default function OpsDashboard({
   };
 
   const prepareProductChartData = () => {
-    if (!productData?.records) return [];
+    if (!hasRecords(productData)) {
+      return isRealEstateSector ? buildRealEstateOverviewSeries(productFreq, 'revenue', 172000, 3100, 11500) : [];
+    }
     const records = trimDailyToWeekdayWindow(productData.records, productFreq);
     const periodTrend = records.reduce((acc: any, record: any) => {
       const period = formatDate(record.snapshotDate, productFreq);
@@ -517,7 +573,9 @@ export default function OpsDashboard({
   };
 
   const prepareInventoryChartData = () => {
-    if (!inventoryData?.records) return [];
+    if (!hasRecords(inventoryData)) {
+      return isRealEstateSector ? buildRealEstateOverviewSeries(inventoryFreq, 'value', 7400000, 28500, 95000) : [];
+    }
     const records = trimDailyToWeekdayWindow(inventoryData.records, inventoryFreq);
     const periodValue: any = {};
     records.forEach((record: any) => {
@@ -531,7 +589,9 @@ export default function OpsDashboard({
   };
 
   const prepareCashChartData = () => {
-    if (!cashData?.records) return [];
+    if (!hasRecords(cashData)) {
+      return isRealEstateSector ? buildRealEstateOverviewSeries(cashFreq, 'totalCash', 5100000, 18000, 75000) : [];
+    }
     const records = trimDailyToWeekdayWindow(cashData.records, cashFreq);
     const periodTrend = records.reduce((acc: any, record: any) => {
       const period = formatDate(record.snapshotDate, cashFreq);
@@ -545,7 +605,9 @@ export default function OpsDashboard({
   };
 
   const prepareEbitdaChartData = () => {
-    if (!ebitdaData?.records) return [];
+    if (!hasRecords(ebitdaData)) {
+      return isRealEstateSector ? buildRealEstateOverviewSeries(ebitdaFreq, 'ebitda', 34500, 850, 4200) : [];
+    }
     const records = trimDailyToWeekdayWindow(ebitdaData.records, ebitdaFreq);
     const periodTrend = records.reduce((acc: any, record: any) => {
       const period = formatDate(record.snapshotDate, ebitdaFreq);
@@ -574,6 +636,7 @@ export default function OpsDashboard({
 
   const modulesByType: Record<OpsDataType, string[]> = {
     customers: [],
+    sales: [],
     'customers-sites': [],
     'ar-aging': [],
     'ap-aging': [],
@@ -582,6 +645,8 @@ export default function OpsDashboard({
     hiring: [],
     inventory: [],
     cash: [],
+    loans: [],
+    'cap-table': [],
     'daily-financials': [],
     'revenue-billables': [],
     'unit-economics': [],
@@ -722,6 +787,22 @@ export default function OpsDashboard({
     titlePct: Math.round(51 + (index % 7) * 2.4),
     insurancePct: Math.round(28 + (index % 6) * 2.2),
   }));
+  const buildOfficeAttachTrendRows = (officeName: string | null) => {
+    const officeIndex = officeAttachRows.findIndex((row) => row.office === officeName);
+    if (officeIndex < 0) return [];
+    const office = officeAttachRows[officeIndex];
+    return trendMonths.map((period, monthIndex) => {
+      const progress = monthIndex / Math.max(trendMonths.length - 1, 1);
+      const wave = Math.sin(monthIndex / 3 + officeIndex * 0.25);
+      return {
+        period,
+        mortgagePct: Math.round((office.mortgagePct - 4.8 + progress * 4.8 + wave * 1.2) * 10) / 10,
+        titlePct: Math.round((office.titlePct - 4.2 + progress * 4.2 + Math.sin(monthIndex / 3 + 0.7 + officeIndex * 0.2) * 1.1) * 10) / 10,
+        insurancePct: Math.round((office.insurancePct - 3.6 + progress * 3.6 + Math.sin(monthIndex / 4 + officeIndex * 0.18) * 1.0) * 10) / 10,
+      };
+    });
+  };
+  const selectedAttachOfficeTrendRows = buildOfficeAttachTrendRows(selectedAttachOfficeTrend);
   const regionAttachRows = firmRegions.map((region, index) => ({
     region,
     mortgagePct: `${Math.round(44 + index * 1.9)}%`,
@@ -780,6 +861,25 @@ export default function OpsDashboard({
     ebitda: row.ebitda,
     ebitdaPct: row.revenue ? Math.round((row.ebitda / row.revenue) * 1000) / 10 : 0,
   }));
+  const buildOfficeProfitabilityTrendRows = (officeName: string | null) => {
+    const officeIndex = officeProfitabilityRows.findIndex((row) => row.office === officeName);
+    if (officeIndex < 0) return [];
+    const office = officeProfitabilityRows[officeIndex];
+    return trendMonths.map((period, monthIndex) => {
+      const progress = 1 + monthIndex * 0.006;
+      const revenueSeasonality = 1 + Math.sin(monthIndex / 3 + officeIndex * 0.18) * 0.045;
+      const ebitdaSeasonality = 1 + Math.sin(monthIndex / 3 + 0.6 + officeIndex * 0.18) * 0.04;
+      const revenue = Math.round((office.revenue / 12) * progress * revenueSeasonality);
+      const ebitda = Math.round((office.ebitda / 12) * progress * ebitdaSeasonality);
+      return {
+        period,
+        revenue,
+        ebitda,
+        ebitdaPct: revenue ? Math.round((ebitda / revenue) * 1000) / 10 : 0,
+      };
+    });
+  };
+  const selectedProfitabilityOfficeTrendRows = buildOfficeProfitabilityTrendRows(selectedProfitabilityOfficeTrend);
   const regionalPerformanceRows = firmRegions.map((region, index) => {
     const rows = firmRegionRows.filter((row) => row.region === region);
     const revenue = rows.reduce((sum, row) => sum + row.revenue, 0);
@@ -792,6 +892,28 @@ export default function OpsDashboard({
       growthPct: Math.round((7.5 + index * 1.2) * 10) / 10,
     };
   });
+  const buildExecutiveTrendRows = (selection: { type: 'division' | 'region'; label: string } | null) => {
+    if (!selection) return [];
+    const source =
+      selection.type === 'division'
+        ? firmDivisions.find((division) => division.label === selection.label)
+        : regionalPerformanceRows.find((region) => region.region === selection.label);
+    const annualRevenue = Number(source?.revenue || 0);
+    const annualEbitda = Number(source?.ebitda || 0);
+    return trendMonths.map((period, monthIndex) => {
+      const growth = 1 + monthIndex * 0.0065;
+      const seasonality = 1 + Math.sin(monthIndex / 3) * 0.045;
+      const revenue = Math.round((annualRevenue / 12) * growth * seasonality);
+      const ebitda = Math.round((annualEbitda / 12) * growth * (1 + Math.sin(monthIndex / 3 + 0.5) * 0.035));
+      return {
+        period,
+        revenue,
+        ebitda,
+        ebitdaPct: revenue ? Math.round((ebitda / revenue) * 1000) / 10 : 0,
+      };
+    });
+  };
+  const selectedExecutiveTrendRows = buildExecutiveTrendRows(selectedExecutiveTrend);
   const marketShareRows = firmOfficeRows.map((row, index) => ({
     office: row.office,
     region: row.region,
@@ -923,7 +1045,7 @@ export default function OpsDashboard({
   }));
   const renderFirmTable = (
     rows: any[],
-    columns: Array<{ key: string; label: string; format?: (value: any) => string; width?: string }>,
+    columns: Array<{ key: string; label: string; format?: (value: any) => string; render?: (row: any) => React.ReactNode; width?: string }>,
     sortableTableKey = '',
   ) => {
     const isCompactTable = columns.length <= 5 || sortableTableKey === 'regionalMarketShare';
@@ -981,7 +1103,7 @@ export default function OpsDashboard({
             <tr key={`${row.division || row.office || row.agent || 'row'}-${row.region || rowIndex}-${rowIndex}`}>
               {columns.map((column) => (
                 <td key={column.key} style={{ padding: '8px', fontSize: '13px', color: '#334155', borderBottom: '1px solid #f1f5f9', width: column.width }}>
-                  {column.format ? column.format(row[column.key]) : row[column.key] == null || row[column.key] === '' ? 'N/A' : String(row[column.key])}
+                  {column.render ? column.render(row) : column.format ? column.format(row[column.key]) : row[column.key] == null || row[column.key] === '' ? 'N/A' : String(row[column.key])}
                 </td>
               ))}
             </tr>
@@ -1013,6 +1135,167 @@ export default function OpsDashboard({
           </div>
         </div>
         {children}
+      </div>
+    );
+  };
+  const renderExecutiveTrendDrilldown = () => {
+    if (!selectedExecutiveTrend) return null;
+    return renderFirmReportCard(
+      `${selectedExecutiveTrend.label} - 3 Year Monthly Trend`,
+      'realEstateExecutiveReport',
+      (
+        <ResponsiveContainer width="100%" height={340}>
+          <LineChart data={selectedExecutiveTrendRows}>
+            <CartesianGrid strokeDasharray="3 3" />
+            <XAxis dataKey="period" interval={2} tick={{ fontSize: 11 }} />
+            <YAxis yAxisId="money" tickFormatter={(value) => `$${(Number(value || 0) / 1000).toFixed(0)}K`} tick={{ fontSize: 11 }} />
+            <YAxis yAxisId="percent" orientation="right" tickFormatter={(value) => `${Number(value || 0).toFixed(0)}%`} tick={{ fontSize: 11 }} />
+            <Tooltip
+              content={({ active, payload, label }: any) => {
+                if (!active || !payload?.length) return null;
+                const point = payload[0]?.payload || {};
+                return (
+                  <div style={{ background: 'white', border: '1px solid #cbd5e1', borderRadius: '10px', padding: '10px 12px', boxShadow: '0 8px 18px rgba(15, 23, 42, 0.12)', fontSize: '12px', color: '#334155' }}>
+                    <div style={{ fontWeight: 800, color: '#0f172a', marginBottom: '6px' }}>{label}</div>
+                    <div>Revenue: <strong>{formatCurrency(Number(point.revenue || 0))}</strong></div>
+                    <div>EBITDA: <strong>{formatCurrency(Number(point.ebitda || 0))}</strong></div>
+                    <div>EBITDA %: <strong>{Number(point.ebitdaPct || 0).toFixed(1)}%</strong></div>
+                  </div>
+                );
+              }}
+            />
+            <Legend />
+            <Line yAxisId="money" type="monotone" dataKey="revenue" stroke="#2563eb" strokeWidth={2.5} dot={false} name="Revenue" />
+            <Line yAxisId="money" type="monotone" dataKey="ebitda" stroke="#0f766e" strokeWidth={2.5} dot={false} name="EBITDA" />
+            <Line yAxisId="percent" type="monotone" dataKey="ebitdaPct" stroke="#f97316" strokeWidth={2.5} dot={false} name="EBITDA %" />
+          </LineChart>
+        </ResponsiveContainer>
+      ),
+      true,
+      '',
+      (
+        <button
+          type="button"
+          onClick={() => setSelectedExecutiveTrend(null)}
+          style={{ border: '1px solid #cbd5e1', borderRadius: '8px', padding: '7px 10px', background: 'white', color: '#475569', fontSize: '12px', fontWeight: 800, cursor: 'pointer' }}
+        >
+          Close
+        </button>
+      ),
+    );
+  };
+  const renderAttachOfficeTrendPopup = () => {
+    if (!selectedAttachOfficeTrend) return null;
+    return (
+      <div
+        className="ops-print-hide"
+        role="dialog"
+        aria-modal="true"
+        aria-label={`${selectedAttachOfficeTrend} historical attach rates`}
+        onClick={() => setSelectedAttachOfficeTrend(null)}
+        style={{ position: 'fixed', inset: 0, background: 'rgba(15, 23, 42, 0.45)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '24px' }}
+      >
+        <div
+          onClick={(event) => event.stopPropagation()}
+          style={{ width: 'min(960px, 100%)', maxHeight: '90vh', overflowY: 'auto', background: 'white', borderRadius: '16px', padding: '20px', boxShadow: '0 24px 60px rgba(15, 23, 42, 0.25)' }}
+        >
+          <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '16px', marginBottom: '16px' }}>
+            <div>
+              <h3 style={{ margin: 0, fontSize: '20px', color: '#0f172a', fontWeight: 800 }}>{selectedAttachOfficeTrend} Historical Attach Rates</h3>
+              <p style={{ margin: '6px 0 0', color: '#64748b', fontSize: '13px' }}>3-year monthly mortgage, title, and insurance attachment trend.</p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setSelectedAttachOfficeTrend(null)}
+              style={{ border: '1px solid #cbd5e1', borderRadius: '8px', padding: '7px 10px', background: 'white', color: '#475569', fontSize: '12px', fontWeight: 800, cursor: 'pointer' }}
+            >
+              Close
+            </button>
+          </div>
+          <ResponsiveContainer width="100%" height={380}>
+            <LineChart data={selectedAttachOfficeTrendRows}>
+              <CartesianGrid strokeDasharray="3 3" />
+              <XAxis dataKey="period" interval={2} tick={{ fontSize: 11 }} />
+              <YAxis tickFormatter={(value) => `${Number(value || 0).toFixed(0)}%`} tick={{ fontSize: 11 }} />
+              <Tooltip
+                content={({ active, payload, label }: any) => {
+                  if (!active || !payload?.length) return null;
+                  const point = payload[0]?.payload || {};
+                  return (
+                    <div style={{ background: 'white', border: '1px solid #cbd5e1', borderRadius: '10px', padding: '10px 12px', boxShadow: '0 8px 18px rgba(15, 23, 42, 0.12)', fontSize: '12px', color: '#334155' }}>
+                      <div style={{ fontWeight: 800, color: '#0f172a', marginBottom: '6px' }}>{label}</div>
+                      <div>Mortgage: <strong>{Number(point.mortgagePct || 0).toFixed(1)}%</strong></div>
+                      <div>Title: <strong>{Number(point.titlePct || 0).toFixed(1)}%</strong></div>
+                      <div>Insurance: <strong>{Number(point.insurancePct || 0).toFixed(1)}%</strong></div>
+                    </div>
+                  );
+                }}
+              />
+              <Legend />
+              <Line type="monotone" dataKey="mortgagePct" stroke="#2563eb" strokeWidth={2.5} dot={false} name="Mortgage" />
+              <Line type="monotone" dataKey="titlePct" stroke="#f97316" strokeWidth={2.5} dot={false} name="Title" />
+              <Line type="monotone" dataKey="insurancePct" stroke="#7c3aed" strokeWidth={2.5} dot={false} name="Insurance" />
+            </LineChart>
+          </ResponsiveContainer>
+        </div>
+      </div>
+    );
+  };
+  const renderProfitabilityOfficeTrendPopup = () => {
+    if (!selectedProfitabilityOfficeTrend) return null;
+    return (
+      <div
+        className="ops-print-hide"
+        role="dialog"
+        aria-modal="true"
+        aria-label={`${selectedProfitabilityOfficeTrend} historical profitability`}
+        onClick={() => setSelectedProfitabilityOfficeTrend(null)}
+        style={{ position: 'fixed', inset: 0, background: 'rgba(15, 23, 42, 0.45)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '24px' }}
+      >
+        <div
+          onClick={(event) => event.stopPropagation()}
+          style={{ width: 'min(960px, 100%)', maxHeight: '90vh', overflowY: 'auto', background: 'white', borderRadius: '16px', padding: '20px', boxShadow: '0 24px 60px rgba(15, 23, 42, 0.25)' }}
+        >
+          <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '16px', marginBottom: '16px' }}>
+            <div>
+              <h3 style={{ margin: 0, fontSize: '20px', color: '#0f172a', fontWeight: 800 }}>{selectedProfitabilityOfficeTrend} Historical Profitability</h3>
+              <p style={{ margin: '6px 0 0', color: '#64748b', fontSize: '13px' }}>3-year monthly revenue, EBITDA, and EBITDA % trend.</p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setSelectedProfitabilityOfficeTrend(null)}
+              style={{ border: '1px solid #cbd5e1', borderRadius: '8px', padding: '7px 10px', background: 'white', color: '#475569', fontSize: '12px', fontWeight: 800, cursor: 'pointer' }}
+            >
+              Close
+            </button>
+          </div>
+          <ResponsiveContainer width="100%" height={380}>
+            <LineChart data={selectedProfitabilityOfficeTrendRows}>
+              <CartesianGrid strokeDasharray="3 3" />
+              <XAxis dataKey="period" interval={2} tick={{ fontSize: 11 }} />
+              <YAxis yAxisId="money" tickFormatter={(value) => `$${(Number(value || 0) / 1000).toFixed(0)}K`} tick={{ fontSize: 11 }} />
+              <YAxis yAxisId="percent" orientation="right" tickFormatter={(value) => `${Number(value || 0).toFixed(0)}%`} tick={{ fontSize: 11 }} />
+              <Tooltip
+                content={({ active, payload, label }: any) => {
+                  if (!active || !payload?.length) return null;
+                  const point = payload[0]?.payload || {};
+                  return (
+                    <div style={{ background: 'white', border: '1px solid #cbd5e1', borderRadius: '10px', padding: '10px 12px', boxShadow: '0 8px 18px rgba(15, 23, 42, 0.12)', fontSize: '12px', color: '#334155' }}>
+                      <div style={{ fontWeight: 800, color: '#0f172a', marginBottom: '6px' }}>{label}</div>
+                      <div>Revenue: <strong>{formatCurrency(Number(point.revenue || 0))}</strong></div>
+                      <div>EBITDA: <strong>{formatCurrency(Number(point.ebitda || 0))}</strong></div>
+                      <div>EBITDA %: <strong>{Number(point.ebitdaPct || 0).toFixed(1)}%</strong></div>
+                    </div>
+                  );
+                }}
+              />
+              <Legend />
+              <Line yAxisId="money" type="monotone" dataKey="revenue" stroke="#2563eb" strokeWidth={2.5} dot={false} name="Revenue" />
+              <Line yAxisId="money" type="monotone" dataKey="ebitda" stroke="#0f766e" strokeWidth={2.5} dot={false} name="EBITDA" />
+              <Line yAxisId="percent" type="monotone" dataKey="ebitdaPct" stroke="#f97316" strokeWidth={2.5} dot={false} name="EBITDA %" />
+            </LineChart>
+          </ResponsiveContainer>
+        </div>
       </div>
     );
   };
@@ -1241,14 +1524,47 @@ export default function OpsDashboard({
             {renderFirmReportCard('Enterprise Value Creation Dashboard', 'realEstateExecutiveReport', renderFirmTable(enterpriseValueCreationRows, simpleColumns([
               ['metric', 'Metric'], ['apr', 'Apr'], ['may', 'May'], ['jun', 'Jun'], ['forecast90', '90 Forecast'],
             ])))}
-            {renderFirmReportCard('Revenue by Division', 'realEstateExecutiveReport', renderFirmTable(firmDivisions, divisionColumns, 'executiveRevenueByDivision'))}
+            {renderFirmReportCard('Revenue by Division', 'realEstateExecutiveReport', renderFirmTable(firmDivisions, [
+              {
+                key: 'label',
+                label: 'Division',
+                render: (row: any) => (
+                  <button
+                    type="button"
+                    onClick={() => setSelectedExecutiveTrend({ type: 'division', label: row.label })}
+                    style={{ border: 'none', background: 'transparent', padding: 0, color: '#2751d0', cursor: 'pointer', fontSize: '13px', fontWeight: 800, textAlign: 'left', textDecoration: 'underline' }}
+                  >
+                    {row.label}
+                  </button>
+                ),
+              },
+              moneyColumn('revenue', 'Revenue'),
+              moneyColumn('ebitda', 'EBITDA'),
+              { key: 'marginPct', label: 'Margin', format: (value: any) => `${Number(value || 0).toFixed(1)}%` },
+              numberColumn('offices', 'Offices'),
+              numberColumn('producers', 'Producers'),
+              moneyColumn('pipeline', 'Pipeline'),
+            ], 'executiveRevenueByDivision'))}
             {renderFirmReportCard('Revenue by Region', 'realEstateExecutiveReport', renderFirmTable(regionalPerformanceRows, [
-              { key: 'region', label: 'Region' },
+              {
+                key: 'region',
+                label: 'Region',
+                render: (row: any) => (
+                  <button
+                    type="button"
+                    onClick={() => setSelectedExecutiveTrend({ type: 'region', label: row.region })}
+                    style={{ border: 'none', background: 'transparent', padding: 0, color: '#2751d0', cursor: 'pointer', fontSize: '13px', fontWeight: 800, textAlign: 'left', textDecoration: 'underline' }}
+                  >
+                    {row.region}
+                  </button>
+                ),
+              },
               moneyColumn('revenue', 'Revenue'),
               moneyColumn('ebitda', 'EBITDA'),
               { key: 'marginPct', label: 'Margin %', format: (value: any) => `${Number(value || 0).toFixed(1)}%` },
               { key: 'growthPct', label: 'Growth %', format: (value: any) => `${Number(value || 0).toFixed(1)}%` },
             ], 'executiveRevenueByRegion'))}
+            {renderExecutiveTrendDrilldown()}
             {renderFirmReportCard('Residential Real Estate Attach Rate', 'realEstateExecutiveReport', (
               renderFirmTable(regionAttachRowsWithTotal, simpleColumns([
                 ['region', 'Region'], ['mortgagePct', 'Mortgage %'], ['titlePct', 'Title %'], ['insurancePct', 'Insurance %'],
@@ -1287,14 +1603,38 @@ export default function OpsDashboard({
             ))}
             {renderFirmReportCard('Attach Rate by Office', 'realEstateExecutiveReport', (
               renderFirmTable(officeAttachRows, [
-                { key: 'office', label: 'Office' },
+                {
+                  key: 'office',
+                  label: 'Office',
+                  render: (row: any) => (
+                    <button
+                      type="button"
+                      onClick={() => setSelectedAttachOfficeTrend(row.office)}
+                      style={{ border: 'none', background: 'transparent', padding: 0, color: '#2751d0', cursor: 'pointer', fontSize: '13px', fontWeight: 800, textAlign: 'left', textDecoration: 'underline' }}
+                    >
+                      {row.office}
+                    </button>
+                  ),
+                },
                 { key: 'mortgagePct', label: 'Mortgage %', format: (value: any) => `${Number(value || 0).toFixed(0)}%` },
                 { key: 'titlePct', label: 'Title %', format: (value: any) => `${Number(value || 0).toFixed(0)}%` },
                 { key: 'insurancePct', label: 'Insurance %', format: (value: any) => `${Number(value || 0).toFixed(0)}%` },
               ], 'attachRateByOffice')
             ), false, 'Each row shows the share of that office’s residential transactions that also used mortgage, title, or insurance services. Example: Office 01 at Mortgage 42% means 42% of Office 01 residential transactions also used the mortgage business.')}
             {renderFirmReportCard('Office Profitability Table', 'realEstateExecutiveReport', renderFirmTable(officeProfitabilityRows, [
-              { key: 'office', label: 'Office' },
+              {
+                key: 'office',
+                label: 'Office',
+                render: (row: any) => (
+                  <button
+                    type="button"
+                    onClick={() => setSelectedProfitabilityOfficeTrend(row.office)}
+                    style={{ border: 'none', background: 'transparent', padding: 0, color: '#2751d0', cursor: 'pointer', fontSize: '13px', fontWeight: 800, textAlign: 'left', textDecoration: 'underline' }}
+                  >
+                    {row.office}
+                  </button>
+                ),
+              },
               moneyColumn('revenue', 'Revenue'),
               moneyColumn('ebitda', 'EBITDA'),
               { key: 'ebitdaPct', label: 'EBITDA %', format: (value: any) => `${Number(value || 0).toFixed(1)}%` },
@@ -1639,12 +1979,15 @@ export default function OpsDashboard({
             ], 'commercialMetrics'))}
           </div>
         )}
+        {renderAttachOfficeTrendPopup()}
+        {renderProfitabilityOfficeTrendPopup()}
       </div>
     );
   };
 
   const primaryLabelByType: Record<OpsDataType, string> = {
     customers: customerLabels[0] || 'Customer Sales',
+    sales: 'Sales',
     'customers-sites': 'Customers / Sites',
     'ar-aging': arLabels[0] || 'AR Aging',
     'ap-aging': apLabels[0] || 'AP Aging',
@@ -1653,6 +1996,8 @@ export default function OpsDashboard({
     hiring: 'Hiring',
     inventory: inventoryLabels[0] || 'Inventory',
     cash: cashLabels[0] || 'Cash Balance',
+    loans: 'Loans',
+    'cap-table': 'Cap Table',
     'daily-financials': 'Daily Financials',
     'revenue-billables': 'Revenue & Billables',
     'unit-economics': 'Unit Economics',
