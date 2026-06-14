@@ -799,6 +799,7 @@ export default function OperationsTab({
   const [expandedWipCustomers, setExpandedWipCustomers] = useState<Record<string, boolean>>({});
   const [wipLineItemSortKey, setWipLineItemSortKey] = useState<WipLineItemSortKey>('orderId');
   const [wipLineItemSortDir, setWipLineItemSortDir] = useState<'asc' | 'desc'>('asc');
+  const [selectedResidentialFunnelRegion, setSelectedResidentialFunnelRegion] = useState('__ALL__');
   const [salesHistoryCategoriesExpanded, setSalesHistoryCategoriesExpanded] = useState(true);
   const [expandedSalesHistoryCategories, setExpandedSalesHistoryCategories] = useState<Record<string, boolean>>({});
   const [hiddenCategorySalesSeries, setHiddenCategorySalesSeries] = useState<Record<string, boolean>>({});
@@ -21258,6 +21259,22 @@ Strategies to Improve the CCC
         averageSalesPrice: Math.round(listingPrice * (0.975 + (index % 6) * 0.004)),
       };
     });
+    const selectedFunnelRegionIndex = regions.indexOf(selectedResidentialFunnelRegion);
+    const selectedFunnelRegionMultiplier =
+      selectedResidentialFunnelRegion === '__ALL__'
+        ? 1
+        : Math.max(0.1, 0.12 + Math.max(selectedFunnelRegionIndex, 0) * 0.018);
+    const residentialFunnelTrendRows = trendMonths.map((period, index) => {
+      const seasonalLift = Math.round(Math.sin(index / 3) * 24);
+      const homeBuyers = Math.round((860 + index * 10 + seasonalLift) * selectedFunnelRegionMultiplier);
+      return {
+        period,
+        homeBuyers,
+        mortgageCustomers: Math.round(homeBuyers * (0.45 + (index % 6) * 0.008)),
+        titleCustomers: Math.round(homeBuyers * (0.53 + (index % 5) * 0.009)),
+        insuranceCustomers: Math.round(homeBuyers * (0.31 + (index % 4) * 0.007)),
+      };
+    });
     const residentialSalesRevenueScorecardRows = [
       { kpi: 'Transactions Closed', company: '10,940', region: '1,824 avg', office: '195 avg' },
       { kpi: 'Sales Volume', company: formatCurrency(4_820_000_000), region: formatCurrency(803_000_000), office: formatCurrency(86_000_000) },
@@ -21645,6 +21662,40 @@ Strategies to Improve the CCC
                 ])}
               </div>
             )}
+            <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '16px', marginBottom: '14px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px', marginBottom: '12px' }}>
+                <div>
+                  <h3 style={{ margin: '0 0 6px 0', fontSize: '16px', color: '#1e293b' }}>Residential Transaction Funnel - Monthly Trend</h3>
+                  <p style={{ margin: 0, color: '#64748b', fontSize: '13px' }}>Monthly trend of residential home-buyer transactions and the customers captured by mortgage, title, and insurance.</p>
+                </div>
+                <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', color: '#475569', fontWeight: 700 }}>
+                  Region
+                  <select
+                    value={selectedResidentialFunnelRegion}
+                    onChange={(event) => setSelectedResidentialFunnelRegion(event.target.value)}
+                    style={{ border: '1px solid #cbd5e1', borderRadius: '8px', padding: '8px 10px', fontSize: '13px', background: 'white' }}
+                  >
+                    <option value="__ALL__">All Regions</option>
+                    {regions.map((region) => (
+                      <option key={region} value={region}>{region}</option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+              <ResponsiveContainer width="100%" height={360}>
+                <LineChart data={residentialFunnelTrendRows}>
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis dataKey="period" interval={2} tick={{ fontSize: 11 }} />
+                  <YAxis />
+                  <Tooltip formatter={(value: any) => Number(value || 0).toLocaleString()} />
+                  <Legend />
+                  <Line type="monotone" dataKey="homeBuyers" stroke="#2563eb" strokeWidth={2} name="Home Buyers" />
+                  <Line type="monotone" dataKey="mortgageCustomers" stroke="#0f766e" strokeWidth={2} name="Mortgage Customers" />
+                  <Line type="monotone" dataKey="titleCustomers" stroke="#f97316" strokeWidth={2} name="Title Customers" />
+                  <Line type="monotone" dataKey="insuranceCustomers" stroke="#7c3aed" strokeWidth={2} name="Insurance Customers" />
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
           </>
         )}
         {moduleKey === 'mortgage' && (
