@@ -97,6 +97,7 @@ const MODULE_DEFINITIONS: ModuleDefinition[] = [
   { key: 'title_company', label: 'Title Company', dataType: 'products' },
   { key: 'insurance_services', label: 'Insurance Services', dataType: 'products' },
   { key: 'commercial_real_estate', label: 'Commercial Real Estate', dataType: 'products' },
+  { key: 'property_management', label: 'Property Management', dataType: 'products' },
   { key: 'assets_equipment', label: 'Assets & Equipment', dataType: 'products' },
   { key: 'network_assets', label: 'Network Assets', dataType: 'products' },
   { key: 'routes_lanes_services', label: 'Routes / Lanes / Services', dataType: 'products' },

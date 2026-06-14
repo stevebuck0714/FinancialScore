@@ -50,12 +50,16 @@ export default function OpsDashboard({
   const [activeRealEstateExecutiveTab, setActiveRealEstateExecutiveTab] = useState<'executive' | 'regional' | 'division' | 'office'>('executive');
   const [realEstateReportStartDate, setRealEstateReportStartDate] = useState('2026-06-01');
   const [realEstateReportEndDate, setRealEstateReportEndDate] = useState('2026-06-13');
-  const [selectedRegionalDashboardRegion, setSelectedRegionalDashboardRegion] = useState('Northwest');
-  const [selectedRegionalAttachOfficeRegion, setSelectedRegionalAttachOfficeRegion] = useState('Northwest');
-  const [selectedRegionalMarketShareRegion, setSelectedRegionalMarketShareRegion] = useState('Northwest');
+  const [selectedRegionalDashboardRegion, setSelectedRegionalDashboardRegion] = useState('Buffalo / Western NY');
+  const [selectedRegionalAttachOfficeRegion, setSelectedRegionalAttachOfficeRegion] = useState('Buffalo / Western NY');
+  const [selectedRegionalMarketShareRegion, setSelectedRegionalMarketShareRegion] = useState('Buffalo / Western NY');
+  const [selectedDivisionValueCreationDivision, setSelectedDivisionValueCreationDivision] = useState('Residential Real Estate');
+  const [selectedDivisionKpiDivision, setSelectedDivisionKpiDivision] = useState('Residential Real Estate');
   const [selectedDivisionByRegionDivision, setSelectedDivisionByRegionDivision] = useState('Residential Real Estate');
   const [selectedAttachRevenueMetric, setSelectedAttachRevenueMetric] = useState<'revenue' | 'ebitda' | 'margin'>('revenue');
+  const [selectedProducerReportRange, setSelectedProducerReportRange] = useState<'top50' | 'bottom50'>('top50');
   const [firmTableSort, setFirmTableSort] = useState<Record<string, { key: string; dir: 'asc' | 'desc' }>>({});
+  const [hiddenDivisionTrendSeries, setHiddenDivisionTrendSeries] = useState<Record<string, Record<string, boolean>>>({});
 
   const setRealEstateReportRange = (start: Date, end: Date) => {
     setRealEstateReportStartDate(toLocalInputDate(start));
@@ -620,8 +624,9 @@ export default function OpsDashboard({
     { key: 'title', label: 'Title Company', revenue: 5100000, ebitda: 940000, offices: 0, producers: 42, pipeline: 8200000, marginPct: 18.4 },
     { key: 'insurance', label: 'Insurance Services', revenue: 3900000, ebitda: 760000, offices: 0, producers: 38, pipeline: 6100000, marginPct: 19.5 },
     { key: 'commercial-real-estate', label: 'Commercial Real Estate', revenue: 8600000, ebitda: 1760000, offices: 0, producers: 31, pipeline: 31200000, marginPct: 20.5 },
+    { key: 'property-management', label: 'Property Management', revenue: 6400000, ebitda: 1280000, offices: 0, producers: 46, pipeline: 9800000, marginPct: 20.0 },
   ];
-  const firmRegions = ['Northwest', 'Northeast', 'Central', 'Southwest', 'Southeast', 'Mountain'];
+  const firmRegions = ['Buffalo / Western NY', 'Rochester Region', 'Syracuse / Central NY', 'Albany / Capital Region', 'Arizona'];
   const firmRegionOfficeCount = (regionIndex: number) => (regionIndex < 2 ? 10 : 9);
   const firmRegionRows = firmDivisions.flatMap((division, divisionIndex) =>
     firmRegions.map((region, regionIndex) => {
@@ -666,6 +671,21 @@ export default function OpsDashboard({
       closedUnits: 18 + (index % 9),
     };
   });
+  const producerReportRows = Array.from({ length: 1800 }, (_, index) => {
+    const revenue = Math.round(98000 + (1799 - index) * 1350 + Math.sin(index / 7) * 18500);
+    const ebitda = Math.round(revenue * (0.12 + (index % 8) * 0.006));
+    return {
+      producer: `Producer ${String(index + 1).padStart(4, '0')}`,
+      revenue,
+      transactions: 8 + (index % 42),
+      ebitda,
+      revenuePerProducer: revenue,
+      ebitdaPerProducer: ebitda,
+    };
+  });
+  const selectedProducerReportRows = [...producerReportRows]
+    .sort((a, b) => selectedProducerReportRange === 'top50' ? b.revenue - a.revenue : a.revenue - b.revenue)
+    .slice(0, 50);
   const executiveAsOfDate = 'June 13, 2026';
   const executiveRevenue = { mtd: 4850000, ytd: 43200000, budget: 45600000, priorYear: 39100000 };
   const executiveEbitda = { mtd: 840000, ytd: 7860000, budget: 8200000, priorYear: 6940000 };
@@ -844,6 +864,26 @@ export default function OpsDashboard({
   const regionalTitleCompanyTrendRows = buildDivisionRegionalTrendRows('Title Company');
   const regionalInsuranceServicesTrendRows = buildDivisionRegionalTrendRows('Insurance Services');
   const regionalCommercialRealEstateTrendRows = buildDivisionRegionalTrendRows('Commercial Real Estate');
+  const buildDivisionTrendRows = (
+    metric: 'revenue' | 'ebitda' | 'transactions' | 'attachRates',
+    decimals = 0,
+  ) => trendMonths.map((period, monthIndex) =>
+    firmDivisions.reduce<Record<string, number | string>>((row, division, divisionIndex) => {
+      const growth = 1 + monthIndex * 0.006;
+      const seasonality = 1 + Math.sin(monthIndex / 3 + divisionIndex * 0.4) * 0.04;
+      let rawValue = 0;
+      if (metric === 'revenue') rawValue = (division.revenue / 12) * growth * seasonality;
+      if (metric === 'ebitda') rawValue = (division.ebitda / 12) * growth * seasonality;
+      if (metric === 'transactions') rawValue = (135 + divisionIndex * 22 + monthIndex * 1.8) * seasonality;
+      if (metric === 'attachRates') rawValue = 34 + divisionIndex * 3.1 + Math.sin(monthIndex / 4 + divisionIndex) * 2.2;
+      row[division.label] = decimals ? Math.round(rawValue * 10 ** decimals) / 10 ** decimals : Math.round(rawValue);
+      return row;
+    }, { period })
+  );
+  const divisionRevenueTrendRows = buildDivisionTrendRows('revenue');
+  const divisionEbitdaTrendRows = buildDivisionTrendRows('ebitda');
+  const divisionTransactionsTrendRows = buildDivisionTrendRows('transactions');
+  const divisionAttachRatesTrendRows = buildDivisionTrendRows('attachRates', 1);
   const divisionSummaryRows = firmDivisions.map((division, index) => ({
     division: division.label,
     transactions: 980 + index * 185,
@@ -862,6 +902,10 @@ export default function OpsDashboard({
     transactions: row.closedUnits,
     grossMargin: Math.round(row.revenue * 0.38),
     ebitda: row.ebitda,
+    ebitdaPct: row.revenue ? Math.round((row.ebitda / row.revenue) * 1000) / 10 : 0,
+    attachRevenue: Math.round(row.revenue * (0.48 + (index % 5) * 0.025)),
+    attachEbitda: Math.round(row.revenue * (0.48 + (index % 5) * 0.025) * (0.19 + (index % 4) * 0.008)),
+    attachRevenuePct: Math.round(((0.48 + (index % 5) * 0.025) * 100) * 10) / 10,
     listingsTaken: 12 + (index % 9),
     closings: row.closedUnits,
     volume: row.pipeline,
@@ -1003,6 +1047,52 @@ export default function OpsDashboard({
       </ResponsiveContainer>
     </>
   ));
+  const renderDivisionTrendChart = (
+    trendKey: string,
+    title: string,
+    rows: Array<Record<string, number | string>>,
+    valueFormatter: (value: any) => string,
+  ) => {
+    const hiddenSeries = hiddenDivisionTrendSeries[trendKey] || {};
+    const toggleSeries = (entry: any) => {
+      const dataKey = String(entry?.dataKey || entry?.value || '');
+      if (!dataKey) return;
+      setHiddenDivisionTrendSeries((prev) => ({
+        ...prev,
+        [trendKey]: {
+          ...(prev[trendKey] || {}),
+          [dataKey]: !prev[trendKey]?.[dataKey],
+        },
+      }));
+    };
+
+    return renderFirmReportCard(title, 'realEstateExecutiveReport', (
+      <ResponsiveContainer width="100%" height={300}>
+        <LineChart data={rows}>
+          <CartesianGrid strokeDasharray="3 3" />
+          <XAxis dataKey="period" interval={5} tick={{ fontSize: 11 }} />
+          <YAxis tickFormatter={(value) => valueFormatter(value)} tick={{ fontSize: 11 }} />
+          <Tooltip formatter={(value: any, name: any) => [valueFormatter(value), String(name)]} />
+          <Legend onClick={toggleSeries} wrapperStyle={{ cursor: 'pointer' }} />
+          {firmDivisions.map((division, index) => (
+            <Line
+              key={division.key}
+              type="monotone"
+              dataKey={division.label}
+              stroke={COLORS[index % COLORS.length]}
+              strokeWidth={2.5}
+              name={division.label}
+              dot={false}
+              activeDot={{ r: 4 }}
+              connectNulls
+              isAnimationActive={false}
+              hide={Boolean(hiddenSeries[division.label])}
+            />
+          ))}
+        </LineChart>
+      </ResponsiveContainer>
+    ));
+  };
   const reportHelp = (text: string) => (
     <p style={{ margin: '0 0 12px', color: '#64748b', fontSize: '13px', lineHeight: 1.5 }}>
       {text}
@@ -1384,33 +1474,86 @@ export default function OpsDashboard({
 
         {activeRealEstateExecutiveTab === 'division' && (
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '18px' }}>
-            {renderFirmReportCard('Division Summary - Company Total', 'realEstateExecutiveReport', renderFirmTable(divisionSummaryRows, [
-              { key: 'division', label: 'Division' },
-              numberColumn('transactions', 'Transactions'),
-              moneyColumn('volume', 'Volume'),
-              moneyColumn('gci', 'GCI'),
-              moneyColumn('netRevenue', 'Net Revenue'),
-              { key: 'agentProductivity', label: 'Agent Productivity' },
-            ]))}
-            {renderFirmReportCard('Division by Region', 'realEstateExecutiveReport', (
-              <>
-                <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '12px' }}>
-                  <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', color: '#475569', fontWeight: 700 }}>
-                    Division
-                    <select
-                      value={selectedDivisionByRegionDivision}
-                      onChange={(event) => setSelectedDivisionByRegionDivision(event.target.value)}
-                      style={{ border: '1px solid #cbd5e1', borderRadius: '8px', padding: '8px 10px', fontSize: '13px', background: 'white' }}
-                    >
-                      {firmDivisions.map((division) => (
-                        <option key={division.key} value={division.label}>{division.label}</option>
-                      ))}
-                    </select>
-                  </label>
-                </div>
-                {renderFirmTable(firmRegionRows.filter((row) => row.division === selectedDivisionByRegionDivision), regionColumns)}
-              </>
+            {renderFirmReportCard('Division Value Creation Dashboard', 'realEstateExecutiveReport', renderFirmTable(enterpriseValueCreationRows, simpleColumns([
+              ['metric', 'Metric'], ['apr', 'Apr'], ['may', 'May'], ['jun', 'Jun'], ['forecast90', '90 Forecast'],
+            ])), false, '', (
+              <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', color: '#475569', fontWeight: 700 }}>
+                Division
+                <select
+                  value={selectedDivisionValueCreationDivision}
+                  onChange={(event) => setSelectedDivisionValueCreationDivision(event.target.value)}
+                  style={{ border: '1px solid #cbd5e1', borderRadius: '8px', padding: '8px 10px', fontSize: '13px', background: 'white' }}
+                >
+                  {firmDivisions.map((division) => (
+                    <option key={division.key} value={division.label}>{division.label}</option>
+                  ))}
+                </select>
+              </label>
             ))}
+            {renderFirmReportCard('Division KPI Dashboard', 'realEstateExecutiveReport', renderFirmTable([
+              { kpi: 'Revenue', mtd: formatCurrency(2180000), ytd: formatCurrency(18400000), budget: formatCurrency(19100000), priorYear: formatCurrency(16900000) },
+              { kpi: 'EBITDA', mtd: formatCurrency(382000), ytd: formatCurrency(3220000), budget: formatCurrency(3350000), priorYear: formatCurrency(2880000) },
+              { kpi: 'EBITDA %', mtd: '17.5%', ytd: '17.5%', budget: '17.5%', priorYear: '17.0%' },
+              { kpi: 'Growth %', mtd: '8.4%', ytd: '8.9%', budget: '10.0%', priorYear: '7.5%' },
+              { kpi: 'Revenue / Producer', mtd: formatCurrency(86792), ytd: formatCurrency(86792), budget: formatCurrency(90000), priorYear: formatCurrency(81400) },
+            ], [
+              { key: 'kpi', label: 'KPI' },
+              { key: 'mtd', label: 'MTD' },
+              { key: 'ytd', label: 'YTD' },
+              { key: 'budget', label: 'Budget' },
+              { key: 'priorYear', label: 'Prior Year' },
+            ]), false, '', (
+              <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', color: '#475569', fontWeight: 700 }}>
+                Division
+                <select
+                  value={selectedDivisionKpiDivision}
+                  onChange={(event) => setSelectedDivisionKpiDivision(event.target.value)}
+                  style={{ border: '1px solid #cbd5e1', borderRadius: '8px', padding: '8px 10px', fontSize: '13px', background: 'white' }}
+                >
+                  {firmDivisions.map((division) => (
+                    <option key={division.key} value={division.label}>{division.label}</option>
+                  ))}
+                </select>
+              </label>
+            ))}
+            {renderFirmReportCard('Division by Region', 'realEstateExecutiveReport', (
+              renderFirmTable(firmRegionRows
+                .filter((row) => row.division === selectedDivisionByRegionDivision)
+                .map((row, index) => ({
+                  ...row,
+                  marginPct: row.revenue ? Math.round((row.ebitda / row.revenue) * 1000) / 10 : 0,
+                  growthPct: Math.round((7.2 + index * 1.1) * 10) / 10,
+                  revenuePerProducer: Math.round(row.revenue / Math.max(row.producers, 1)),
+                  pipelineVolume: row.pipeline,
+                  attachRevenue: Math.round(row.revenue * (0.28 + (index % 4) * 0.035)),
+                })), [
+                { key: 'region', label: 'Region' },
+                moneyColumn('revenue', 'Revenue'),
+                moneyColumn('ebitda', 'EBITDA'),
+                { key: 'marginPct', label: 'Margin %', format: (value: any) => `${Number(value || 0).toFixed(1)}%` },
+                { key: 'growthPct', label: 'Growth %', format: (value: any) => `${Number(value || 0).toFixed(1)}%` },
+                moneyColumn('revenuePerProducer', 'Revenue / Producer'),
+                moneyColumn('attachRevenue', 'Attach Revenue'),
+                moneyColumn('pipelineVolume', 'Pipeline Volume'),
+              ])
+            ), false, '', (
+              <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', color: '#475569', fontWeight: 700 }}>
+                Division
+                <select
+                  value={selectedDivisionByRegionDivision}
+                  onChange={(event) => setSelectedDivisionByRegionDivision(event.target.value)}
+                  style={{ border: '1px solid #cbd5e1', borderRadius: '8px', padding: '8px 10px', fontSize: '13px', background: 'white' }}
+                >
+                  {firmDivisions.map((division) => (
+                    <option key={division.key} value={division.label}>{division.label}</option>
+                  ))}
+                </select>
+              </label>
+            ))}
+            {renderDivisionTrendChart('divisionRevenue', 'Trend Analysis - Revenue', divisionRevenueTrendRows, (value) => `$${(Number(value || 0) / 1000).toFixed(0)}K`)}
+            {renderDivisionTrendChart('divisionEbitda', 'Trend Analysis - EBITDA', divisionEbitdaTrendRows, (value) => `$${(Number(value || 0) / 1000).toFixed(0)}K`)}
+            {renderDivisionTrendChart('divisionTransactions', 'Trend Analysis - Transactions', divisionTransactionsTrendRows, (value) => Number(value || 0).toLocaleString())}
+            {renderDivisionTrendChart('divisionAttachRates', 'Trend Analysis - Attach Rates', divisionAttachRatesTrendRows, (value) => `${Number(value || 0).toFixed(1)}%`)}
           </div>
         )}
 
@@ -1422,10 +1565,9 @@ export default function OpsDashboard({
               moneyColumn('revenueYtd', 'Revenue YTD'),
               moneyColumn('budget', 'Budget'),
               moneyColumn('priorYear', 'Prior Year'),
-              numberColumn('transactions', 'Transactions'),
-              moneyColumn('grossMargin', 'Gross Margin'),
               moneyColumn('ebitda', 'EBITDA'),
-            ]))}
+              { key: 'ebitdaPct', label: 'EBITDA %', format: (value: any) => `${Number(value || 0).toFixed(1)}%` },
+            ], 'officeScorecard'))}
             {renderFirmReportCard('Residential Real Estate by Office', 'realEstateExecutiveReport', renderFirmTable(officeScorecardRows, [
               { key: 'office', label: 'Office' },
               { key: 'region', label: 'Region' },
@@ -1434,8 +1576,34 @@ export default function OpsDashboard({
               moneyColumn('gci', 'GCI'),
               moneyColumn('revenueYtd', 'Net Revenue'),
               moneyColumn('gciPerAgent', 'GCI / Agent'),
-            ]))}
-            {renderFirmReportCard('Residential Metrics', 'realEstateExecutiveReport', renderFirmTable(officeScorecardRows, [
+            ], 'residentialRealEstateByOffice'))}
+            {renderFirmReportCard('Attach Revenue', 'realEstateExecutiveReport', renderFirmTable(officeScorecardRows, [
+              { key: 'office', label: 'Office' },
+              moneyColumn('attachRevenue', 'Attach Revenue'),
+              moneyColumn('attachEbitda', 'Attach EBITDA'),
+              { key: 'attachRevenuePct', label: '% Revenue Attached', format: (value: any) => `${Number(value || 0).toFixed(1)}%` },
+            ], 'officeAttachRevenue'))}
+            {renderFirmReportCard('Producer Report', 'realEstateExecutiveReport', renderFirmTable(selectedProducerReportRows, [
+              { key: 'producer', label: 'Producer' },
+              moneyColumn('revenue', 'Revenue'),
+              numberColumn('transactions', 'Transactions'),
+              moneyColumn('ebitda', 'EBITDA'),
+              moneyColumn('revenuePerProducer', 'Rev / Producer'),
+              moneyColumn('ebitdaPerProducer', 'EBITDA / Producer'),
+            ], 'producerReport'), false, '', (
+              <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', color: '#475569', fontWeight: 700 }}>
+                Show
+                <select
+                  value={selectedProducerReportRange}
+                  onChange={(event) => setSelectedProducerReportRange(event.target.value as 'top50' | 'bottom50')}
+                  style={{ border: '1px solid #cbd5e1', borderRadius: '8px', padding: '8px 10px', fontSize: '13px', background: 'white' }}
+                >
+                  <option value="top50">Top 50</option>
+                  <option value="bottom50">Bottom 50</option>
+                </select>
+              </label>
+            ))}
+            {renderFirmReportCard('Residential Sales Metrics', 'realEstateExecutiveReport', renderFirmTable(officeScorecardRows, [
               { key: 'office', label: 'Office' },
               numberColumn('listingsTaken', 'Listings Taken'),
               numberColumn('closings', 'Closings'),
@@ -1443,32 +1611,32 @@ export default function OpsDashboard({
               moneyColumn('gci', 'GCI'),
               numberColumn('agentCount', 'Agent Count'),
               moneyColumn('gciPerAgent', 'GCI / Agent'),
-            ]))}
+            ], 'residentialMetrics'))}
             {renderFirmReportCard('Mortgage Metrics', 'realEstateExecutiveReport', renderFirmTable(officeScorecardRows, [
               { key: 'office', label: 'Office' },
               numberColumn('mortgageApplications', 'Applications'),
               numberColumn('mortgageFundings', 'Fundings'),
               moneyColumn('loanVolume', 'Loan Volume'),
               moneyColumn('revenueMtd', 'Revenue'),
-            ]))}
+            ], 'mortgageMetrics'))}
             {renderFirmReportCard('Title Metrics', 'realEstateExecutiveReport', renderFirmTable(officeScorecardRows, [
               { key: 'office', label: 'Office' },
               numberColumn('titleOpenEscrows', 'Open Escrows'),
               numberColumn('titleClosedEscrows', 'Closed Escrows'),
               moneyColumn('revenueMtd', 'Revenue'),
-            ]))}
+            ], 'titleMetrics'))}
             {renderFirmReportCard('Insurance Metrics', 'realEstateExecutiveReport', renderFirmTable(officeScorecardRows, [
               { key: 'office', label: 'Office' },
               numberColumn('insurancePolicies', 'Policies Written'),
               moneyColumn('premiumVolume', 'Premium Volume'),
               moneyColumn('revenueMtd', 'Revenue'),
-            ]))}
+            ], 'insuranceMetrics'))}
             {renderFirmReportCard('Commercial Metrics', 'realEstateExecutiveReport', renderFirmTable(officeScorecardRows, [
               { key: 'office', label: 'Office' },
               numberColumn('commercialDeals', 'Deals Closed'),
               moneyColumn('volume', 'Volume'),
               moneyColumn('revenueMtd', 'Revenue'),
-            ]))}
+            ], 'commercialMetrics'))}
           </div>
         )}
       </div>
@@ -1729,7 +1897,7 @@ export default function OpsDashboard({
         {renderRealEstateExecutiveReport()}
 
         {/* Dashboard Grid */}
-        {!(isRealEstateSector && activeRealEstateExecutiveTab === 'regional') && (
+        {!(isRealEstateSector && ['regional', 'division', 'office'].includes(activeRealEstateExecutiveTab)) && (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(500px, 1fr))', gap: '24px' }}>
           
           {/* Customer Sales Widget */}

@@ -21198,12 +21198,25 @@ Strategies to Improve the CCC
         conversion: 'commercialPropertyTypeMix',
       },
     },
+    property_management: {
+      title: 'Property Management',
+      subtitle: 'Property management portfolio performance, managed units, and operating metrics by region.',
+      baseRevenue: 6400000,
+      basePipeline: 9800000,
+      producerLabel: 'Property Manager',
+      sections: {
+        region: 'propertyManagementRegionScorecard',
+        pipeline: 'propertyManagementPortfolioPipeline',
+        producer: 'propertyManagerProductivity',
+        conversion: 'propertyManagementOperatingMetrics',
+      },
+    },
   };
 
   const renderRealEstateDivision = (moduleKey: string) => {
     const config = REAL_ESTATE_DIVISION_CONFIG[moduleKey];
     if (!config) return null;
-    const regions = ['Northwest', 'Northeast', 'Central', 'Southwest', 'Southeast', 'Mountain'];
+    const regions = ['Buffalo / Western NY', 'Rochester Region', 'Syracuse / Central NY', 'Albany / Capital Region', 'Arizona'];
     const regionRows = regions.map((region, index) => {
       const weight = 0.13 + index * 0.017;
       const revenue = Math.round(config.baseRevenue * weight);
@@ -21212,6 +21225,8 @@ Strategies to Improve the CCC
         region,
         revenue,
         ebitda: Math.round(revenue * (0.14 + index * 0.012)),
+        ebitdaPct: Math.round((14 + index * 1.2) * 10) / 10,
+        annualGrowthRate: Math.round((6.8 + index * 0.9) * 10) / 10,
         pipeline,
         producers: 8 + index * 3,
         closedUnits: 22 + index * 6,
@@ -21907,6 +21922,8 @@ Strategies to Improve the CCC
               { key: 'region', label: 'Region' },
               { key: 'revenue', label: 'Revenue', format: moneyColumn },
               { key: 'ebitda', label: 'EBITDA', format: moneyColumn },
+              { key: 'ebitdaPct', label: 'EBITDA %', format: pctColumn },
+              { key: 'annualGrowthRate', label: 'Annual Growth Rate', format: pctColumn },
               { key: 'pipeline', label: 'Pipeline', format: moneyColumn },
               { key: 'producers', label: config.producerLabel === 'Escrow Team' ? 'Teams' : `${config.producerLabel}s`, format: numberColumn },
               { key: 'closedUnits', label: 'Closed Units', format: numberColumn },
@@ -21927,7 +21944,7 @@ Strategies to Improve the CCC
               { key: 'closedUnits', label: 'Closed Units', format: numberColumn },
               { key: 'conversionPct', label: 'Conversion', format: pctColumn },
             ])}
-            {renderRealEstateReportCard(moduleKey === 'commercial_real_estate' ? 'Property Type Mix' : moduleKey === 'title_company' ? 'Turnaround / Closing Detail' : moduleKey === 'insurance_services' ? 'Retention / Renewals' : 'Office / Conversion Detail', config.sections.conversion, officeRows, [
+            {renderRealEstateReportCard(moduleKey === 'commercial_real_estate' ? 'Property Type Mix' : moduleKey === 'title_company' ? 'Turnaround / Closing Detail' : moduleKey === 'insurance_services' ? 'Retention / Renewals' : moduleKey === 'property_management' ? 'Portfolio Operating Metrics' : 'Office / Conversion Detail', config.sections.conversion, officeRows, [
               { key: 'office', label: moduleKey === 'residential_real_estate' ? 'Office' : 'Team' },
               { key: 'region', label: 'Region' },
               { key: 'revenue', label: 'Revenue', format: moneyColumn },

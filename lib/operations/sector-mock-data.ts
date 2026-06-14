@@ -121,6 +121,7 @@ const TOP_LINE_BUCKETS_BY_SECTOR: Record<string, Bucket[]> = {
     { key: 'title_company', label: 'Title Company' },
     { key: 'insurance_services', label: 'Insurance Services' },
     { key: 'commercial_real_estate', label: 'Commercial Real Estate' },
+    { key: 'property_management', label: 'Property Management' },
     { key: 'units_properties', label: 'Units / Properties (occupancy, availability)' },
     { key: 'leasing_sales', label: 'Leasing / Sales (applications, renewals)' },
     { key: 'maintenance_work_orders', label: 'Maintenance / Work Orders' },

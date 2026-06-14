@@ -160,6 +160,12 @@ const SECTOR_53_REPORTS_BY_MODULE: Record<string, OperationalHubReportDefinition
     { key: 'commercialBrokerProductivity', label: 'Broker Productivity', group: 'Commercial Real Estate' },
     { key: 'commercialPropertyTypeMix', label: 'Property Type Mix', group: 'Commercial Real Estate' },
   ],
+  property_management: [
+    { key: 'propertyManagementRegionScorecard', label: 'Region Scorecard', group: 'Property Management' },
+    { key: 'propertyManagementPortfolioPipeline', label: 'Portfolio Pipeline', group: 'Property Management' },
+    { key: 'propertyManagerProductivity', label: 'Property Manager Productivity', group: 'Property Management' },
+    { key: 'propertyManagementOperatingMetrics', label: 'Operating Metrics', group: 'Property Management' },
+  ],
 };
 
 function normalizeSector(sectorCategory?: string | null): string {
