@@ -141,21 +141,6 @@ export default function DataReviewTab({ selectedCompanyId, companyName, accountM
   }
 
   const formatDynamicFieldLabel = (field: string): string => {
-    if (field.startsWith("rev_")) {
-      return field
-        .replace(/^rev_/, "")
-        .split("_")
-        .map((part) => (part ? part[0].toUpperCase() + part.slice(1) : part))
-        .join(" ");
-    }
-    if (field.startsWith("cogs_")) {
-      const label = field
-        .replace(/^cogs_/, "")
-        .split("_")
-        .map((part) => (part ? part[0].toUpperCase() + part.slice(1) : part))
-        .join(" ");
-      return label;
-    }
     return getFieldDisplayName(field);
   };
 

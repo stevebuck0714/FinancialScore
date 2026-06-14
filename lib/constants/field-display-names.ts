@@ -15,8 +15,19 @@
 export const FIELD_DISPLAY_NAMES: Record<string, string> = {
   // Revenue
   revenue: 'Total Revenue',
+  rev_residential_sales_revenue: 'Residential Sales Revenue',
+  rev_commercial_sales_revenue: 'Commercial Sales Revenue',
+  rev_insurance_commission_revenue: 'Insurance Commission Revenue',
+  rev_mortgage_origination_revenue: 'Mortgage Origination Revenue',
+  rev_title_services_revenue: 'Title Services Revenue',
   
   // COGS
+  cogs_residential_sales_commissions: 'Residential Sales Commissions',
+  cogs_commercial_sales_commissions: 'Commercial Sales Commissions',
+  cogs_mortgage_processing_costs: 'Mortgage Processing Costs',
+  cogs_title_search_and_closing_costs: 'Title Search & Closing Costs',
+  cogs_insurance_carrier_costs: 'Insurance Carrier Costs',
+  cogs_property_operations: 'Property Operations',
   cogsPayroll: 'Payroll',
   cogsOwnerPay: 'Owner Pay',
   cogsContractors: 'Contractors',

@@ -234,6 +234,11 @@ const SECTOR_SCHEMA_BY_CODE: Record<string, SectorSchema> = {
   },
   '53': {
     revenue: [
+      'Residential Sales Revenue',
+      'Commercial Sales Revenue',
+      'Insurance Commission Revenue',
+      'Mortgage Origination Revenue',
+      'Title Services Revenue',
       'Rental Income',
       'CAM / Operating Cost Recoveries',
       'Property Management Fees',
@@ -242,7 +247,19 @@ const SECTOR_SCHEMA_BY_CODE: Record<string, SectorSchema> = {
       'Ancillary Income',
       'Other Revenue',
     ],
-    cogs: ['Property Operating Costs', 'Direct Property Labor', 'Property Management Costs', 'Building Depreciation', 'Other COGS'],
+    cogs: [
+      'Residential Sales Commissions',
+      'Commercial Sales Commissions',
+      'Mortgage Processing Costs',
+      'Title Search & Closing Costs',
+      'Insurance Carrier Costs',
+      'Property Operations',
+      'Property Operating Costs',
+      'Direct Property Labor',
+      'Property Management Costs',
+      'Building Depreciation',
+      'Other COGS',
+    ],
   },
   '54': {
     revenue: [
