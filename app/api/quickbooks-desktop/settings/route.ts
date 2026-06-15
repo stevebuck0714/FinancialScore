@@ -35,6 +35,7 @@ type QuickBooksDesktopSettings = {
 type QuickBooksDesktopProgram = {
   dataDomain: string;
   qbEntity: string;
+  enabled: boolean;
 };
 
 const defaultSettings: QuickBooksDesktopSettings = {
@@ -60,47 +61,47 @@ const defaultSettings: QuickBooksDesktopSettings = {
 };
 
 const defaultPrograms: QuickBooksDesktopProgram[] = [
-  { dataDomain: 'Chart of Accounts', qbEntity: 'AccountQuery' },
-  { dataDomain: 'Customers', qbEntity: 'CustomerQuery' },
-  { dataDomain: 'Vendors', qbEntity: 'VendorQuery' },
-  { dataDomain: 'Invoices', qbEntity: 'InvoiceQuery' },
-  { dataDomain: 'Bills', qbEntity: 'BillQuery' },
-  { dataDomain: 'Payments', qbEntity: 'ReceivePaymentQuery' },
+  { dataDomain: 'Chart of Accounts', qbEntity: 'AccountQuery', enabled: true },
+  { dataDomain: 'Customers', qbEntity: 'CustomerQuery', enabled: true },
+  { dataDomain: 'Vendors', qbEntity: 'VendorQuery', enabled: true },
+  { dataDomain: 'Invoices', qbEntity: 'InvoiceQuery', enabled: true },
+  { dataDomain: 'Bills', qbEntity: 'BillQuery', enabled: true },
+  { dataDomain: 'Payments', qbEntity: 'ReceivePaymentQuery', enabled: true },
 ];
 
 const defaultEnterprisePrograms: QuickBooksDesktopProgram[] = [
-  { dataDomain: 'Chart of Accounts', qbEntity: 'AccountQuery' },
-  { dataDomain: 'Offices / Divisions', qbEntity: 'ClassQuery' },
-  { dataDomain: 'Customers / Jobs', qbEntity: 'CustomerQuery' },
-  { dataDomain: 'Customer Types', qbEntity: 'CustomerTypeQuery' },
-  { dataDomain: 'Job Types', qbEntity: 'JobTypeQuery' },
-  { dataDomain: 'Vendors', qbEntity: 'VendorQuery' },
-  { dataDomain: 'Vendor Types', qbEntity: 'VendorTypeQuery' },
-  { dataDomain: 'Employees / Agents', qbEntity: 'EmployeeQuery' },
-  { dataDomain: 'Sales Reps', qbEntity: 'SalesRepQuery' },
-  { dataDomain: 'Service / Product Items', qbEntity: 'ItemQuery' },
-  { dataDomain: 'Terms', qbEntity: 'TermsQuery' },
-  { dataDomain: 'Payment Methods', qbEntity: 'PaymentMethodQuery' },
-  { dataDomain: 'Sales Tax Codes', qbEntity: 'SalesTaxCodeQuery' },
-  { dataDomain: 'Invoices', qbEntity: 'InvoiceQuery' },
-  { dataDomain: 'Sales Receipts', qbEntity: 'SalesReceiptQuery' },
-  { dataDomain: 'Payments', qbEntity: 'ReceivePaymentQuery' },
-  { dataDomain: 'Deposits', qbEntity: 'DepositQuery' },
-  { dataDomain: 'Credit Memos', qbEntity: 'CreditMemoQuery' },
-  { dataDomain: 'Estimates', qbEntity: 'EstimateQuery' },
-  { dataDomain: 'Sales Orders', qbEntity: 'SalesOrderQuery' },
-  { dataDomain: 'Bills', qbEntity: 'BillQuery' },
-  { dataDomain: 'Bill Payments - Checks', qbEntity: 'BillPaymentCheckQuery' },
-  { dataDomain: 'Bill Payments - Credit Cards', qbEntity: 'BillPaymentCreditCardQuery' },
-  { dataDomain: 'Vendor Credits', qbEntity: 'VendorCreditQuery' },
-  { dataDomain: 'Checks', qbEntity: 'CheckQuery' },
-  { dataDomain: 'Credit Card Charges', qbEntity: 'CreditCardChargeQuery' },
-  { dataDomain: 'Purchase Orders', qbEntity: 'PurchaseOrderQuery' },
-  { dataDomain: 'Item Receipts', qbEntity: 'ItemReceiptQuery' },
-  { dataDomain: 'Journal Entries', qbEntity: 'JournalEntryQuery' },
-  { dataDomain: 'Transfers', qbEntity: 'TransferQuery' },
-  { dataDomain: 'Inventory Adjustments', qbEntity: 'InventoryAdjustmentQuery' },
-  { dataDomain: 'Inventory Sites', qbEntity: 'InventorySiteQuery' },
+  { dataDomain: 'Chart of Accounts', qbEntity: 'AccountQuery', enabled: true },
+  { dataDomain: 'Offices / Divisions', qbEntity: 'ClassQuery', enabled: true },
+  { dataDomain: 'Customers / Jobs', qbEntity: 'CustomerQuery', enabled: true },
+  { dataDomain: 'Customer Types', qbEntity: 'CustomerTypeQuery', enabled: true },
+  { dataDomain: 'Job Types', qbEntity: 'JobTypeQuery', enabled: true },
+  { dataDomain: 'Vendors', qbEntity: 'VendorQuery', enabled: true },
+  { dataDomain: 'Vendor Types', qbEntity: 'VendorTypeQuery', enabled: true },
+  { dataDomain: 'Employees / Agents', qbEntity: 'EmployeeQuery', enabled: true },
+  { dataDomain: 'Sales Reps', qbEntity: 'SalesRepQuery', enabled: true },
+  { dataDomain: 'Service / Product Items', qbEntity: 'ItemQuery', enabled: true },
+  { dataDomain: 'Terms', qbEntity: 'TermsQuery', enabled: true },
+  { dataDomain: 'Payment Methods', qbEntity: 'PaymentMethodQuery', enabled: true },
+  { dataDomain: 'Sales Tax Codes', qbEntity: 'SalesTaxCodeQuery', enabled: true },
+  { dataDomain: 'Invoices', qbEntity: 'InvoiceQuery', enabled: true },
+  { dataDomain: 'Sales Receipts', qbEntity: 'SalesReceiptQuery', enabled: true },
+  { dataDomain: 'Payments', qbEntity: 'ReceivePaymentQuery', enabled: true },
+  { dataDomain: 'Deposits', qbEntity: 'DepositQuery', enabled: true },
+  { dataDomain: 'Credit Memos', qbEntity: 'CreditMemoQuery', enabled: true },
+  { dataDomain: 'Estimates', qbEntity: 'EstimateQuery', enabled: true },
+  { dataDomain: 'Sales Orders', qbEntity: 'SalesOrderQuery', enabled: true },
+  { dataDomain: 'Bills', qbEntity: 'BillQuery', enabled: true },
+  { dataDomain: 'Bill Payments - Checks', qbEntity: 'BillPaymentCheckQuery', enabled: true },
+  { dataDomain: 'Bill Payments - Credit Cards', qbEntity: 'BillPaymentCreditCardQuery', enabled: true },
+  { dataDomain: 'Vendor Credits', qbEntity: 'VendorCreditQuery', enabled: true },
+  { dataDomain: 'Checks', qbEntity: 'CheckQuery', enabled: true },
+  { dataDomain: 'Credit Card Charges', qbEntity: 'CreditCardChargeQuery', enabled: true },
+  { dataDomain: 'Purchase Orders', qbEntity: 'PurchaseOrderQuery', enabled: true },
+  { dataDomain: 'Item Receipts', qbEntity: 'ItemReceiptQuery', enabled: true },
+  { dataDomain: 'Journal Entries', qbEntity: 'JournalEntryQuery', enabled: true },
+  { dataDomain: 'Transfers', qbEntity: 'TransferQuery', enabled: true },
+  { dataDomain: 'Inventory Adjustments', qbEntity: 'InventoryAdjustmentQuery', enabled: true },
+  { dataDomain: 'Inventory Sites', qbEntity: 'InventorySiteQuery', enabled: true },
 ];
 
 function asString(value: unknown): string {
@@ -176,6 +177,7 @@ function sanitizePrograms(value: unknown, fallbackPrograms: QuickBooksDesktopPro
       return {
         dataDomain: asString(src.dataDomain),
         qbEntity: asString(src.qbEntity),
+        enabled: src.enabled !== false,
       };
     })
     .filter((row) => row.dataDomain || row.qbEntity);

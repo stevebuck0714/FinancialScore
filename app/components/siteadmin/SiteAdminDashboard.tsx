@@ -2110,7 +2110,7 @@ export default function SiteAdminDashboard(props: any) {
     >
   >({});
   const [qbDesktopProgramsByCompany, setQbDesktopProgramsByCompany] = React.useState<
-    Record<string, Array<{ dataDomain: string; qbEntity: string }>>
+    Record<string, Array<{ dataDomain: string; qbEntity: string; enabled: boolean }>>
   >({});
   const [qboSettingsByCompany, setQboSettingsByCompany] = React.useState<
     Record<
@@ -2309,12 +2309,38 @@ export default function SiteAdminDashboard(props: any) {
   };
 
   const defaultQbDesktopPrograms = [
-    { dataDomain: 'Chart of Accounts', qbEntity: 'AccountQuery' },
-    { dataDomain: 'Customers', qbEntity: 'CustomerQuery' },
-    { dataDomain: 'Vendors', qbEntity: 'VendorQuery' },
-    { dataDomain: 'Invoices', qbEntity: 'InvoiceQuery' },
-    { dataDomain: 'Bills', qbEntity: 'BillQuery' },
-    { dataDomain: 'Payments', qbEntity: 'ReceivePaymentQuery' },
+    { dataDomain: 'Chart of Accounts', qbEntity: 'AccountQuery', enabled: true },
+    { dataDomain: 'Offices / Divisions', qbEntity: 'ClassQuery', enabled: true },
+    { dataDomain: 'Customers / Jobs', qbEntity: 'CustomerQuery', enabled: true },
+    { dataDomain: 'Customer Types', qbEntity: 'CustomerTypeQuery', enabled: true },
+    { dataDomain: 'Job Types', qbEntity: 'JobTypeQuery', enabled: true },
+    { dataDomain: 'Vendors', qbEntity: 'VendorQuery', enabled: true },
+    { dataDomain: 'Vendor Types', qbEntity: 'VendorTypeQuery', enabled: true },
+    { dataDomain: 'Employees / Agents', qbEntity: 'EmployeeQuery', enabled: true },
+    { dataDomain: 'Sales Reps', qbEntity: 'SalesRepQuery', enabled: true },
+    { dataDomain: 'Service / Product Items', qbEntity: 'ItemQuery', enabled: true },
+    { dataDomain: 'Terms', qbEntity: 'TermsQuery', enabled: true },
+    { dataDomain: 'Payment Methods', qbEntity: 'PaymentMethodQuery', enabled: true },
+    { dataDomain: 'Sales Tax Codes', qbEntity: 'SalesTaxCodeQuery', enabled: true },
+    { dataDomain: 'Invoices', qbEntity: 'InvoiceQuery', enabled: true },
+    { dataDomain: 'Sales Receipts', qbEntity: 'SalesReceiptQuery', enabled: true },
+    { dataDomain: 'Payments', qbEntity: 'ReceivePaymentQuery', enabled: true },
+    { dataDomain: 'Deposits', qbEntity: 'DepositQuery', enabled: true },
+    { dataDomain: 'Credit Memos', qbEntity: 'CreditMemoQuery', enabled: true },
+    { dataDomain: 'Estimates', qbEntity: 'EstimateQuery', enabled: true },
+    { dataDomain: 'Sales Orders', qbEntity: 'SalesOrderQuery', enabled: true },
+    { dataDomain: 'Bills', qbEntity: 'BillQuery', enabled: true },
+    { dataDomain: 'Bill Payments - Checks', qbEntity: 'BillPaymentCheckQuery', enabled: true },
+    { dataDomain: 'Bill Payments - Credit Cards', qbEntity: 'BillPaymentCreditCardQuery', enabled: true },
+    { dataDomain: 'Vendor Credits', qbEntity: 'VendorCreditQuery', enabled: true },
+    { dataDomain: 'Checks', qbEntity: 'CheckQuery', enabled: true },
+    { dataDomain: 'Credit Card Charges', qbEntity: 'CreditCardChargeQuery', enabled: true },
+    { dataDomain: 'Purchase Orders', qbEntity: 'PurchaseOrderQuery', enabled: true },
+    { dataDomain: 'Item Receipts', qbEntity: 'ItemReceiptQuery', enabled: true },
+    { dataDomain: 'Journal Entries', qbEntity: 'JournalEntryQuery', enabled: true },
+    { dataDomain: 'Transfers', qbEntity: 'TransferQuery', enabled: true },
+    { dataDomain: 'Inventory Adjustments', qbEntity: 'InventoryAdjustmentQuery', enabled: true },
+    { dataDomain: 'Inventory Sites', qbEntity: 'InventorySiteQuery', enabled: true },
   ];
   const defaultQboSettings = {
     qboUsername: '',
@@ -2520,10 +2546,10 @@ export default function SiteAdminDashboard(props: any) {
     }));
   };
 
-  const setQbDesktopPrograms = (companyId: string, programs: Array<{ dataDomain: string; qbEntity: string }>) => {
+  const setQbDesktopPrograms = (companyId: string, programs: Array<{ dataDomain: string; qbEntity: string; enabled?: boolean }>) => {
     setQbDesktopProgramsByCompany((prev) => ({
       ...prev,
-      [companyId]: programs,
+      [companyId]: programs.map((row) => ({ ...row, enabled: row.enabled !== false })),
     }));
   };
   const setQboSetting = (
@@ -2672,8 +2698,8 @@ export default function SiteAdminDashboard(props: any) {
   const updateQbDesktopProgram = (
     companyId: string,
     index: number,
-    field: 'dataDomain' | 'qbEntity',
-    value: string
+    field: 'dataDomain' | 'qbEntity' | 'enabled',
+    value: string | boolean
   ) => {
     const current = getQbDesktopPrograms(companyId);
     const next = current.map((row, i) => (i === index ? { ...row, [field]: value } : row));
@@ -2682,7 +2708,7 @@ export default function SiteAdminDashboard(props: any) {
 
   const addQbDesktopProgram = (companyId: string) => {
     const current = getQbDesktopPrograms(companyId);
-    setQbDesktopPrograms(companyId, [...current, { dataDomain: '', qbEntity: '' }]);
+    setQbDesktopPrograms(companyId, [...current, { dataDomain: '', qbEntity: '', enabled: true }]);
   };
   const updateQboProgram = (
     companyId: string,
@@ -2806,7 +2832,7 @@ export default function SiteAdminDashboard(props: any) {
   const deleteQbDesktopProgram = (companyId: string, index: number) => {
     const current = getQbDesktopPrograms(companyId);
     const next = current.filter((_, i) => i !== index);
-    setQbDesktopPrograms(companyId, next.length > 0 ? next : [{ dataDomain: '', qbEntity: '' }]);
+    setQbDesktopPrograms(companyId, next.length > 0 ? next : [{ dataDomain: '', qbEntity: '', enabled: true }]);
   };
   const deleteQboProgram = (companyId: string, index: number) => {
     const current = getQboPrograms(companyId);
@@ -6474,6 +6500,7 @@ export default function SiteAdminDashboard(props: any) {
                                                       <tr style={{ background: '#f1f5f9', borderBottom: '1px solid #e2e8f0' }}>
                                                         <th style={{ textAlign: 'left', padding: '6px', color: '#475569' }}>Data Domain</th>
                                                         <th style={{ textAlign: 'left', padding: '6px', color: '#475569' }}>QB Entity</th>
+                                                        <th style={{ textAlign: 'left', padding: '6px', color: '#475569', width: '80px' }}>Enabled</th>
                                                         <th style={{ textAlign: 'left', padding: '6px', color: '#475569', width: '70px' }}>Action</th>
                                                       </tr>
                                                     </thead>
@@ -6496,6 +6523,13 @@ export default function SiteAdminDashboard(props: any) {
                                                               onChange={(e) => updateQbDesktopProgram(company.id, index, 'qbEntity', e.target.value)}
                                                               placeholder="QB Entity"
                                                               style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '4px', padding: '6px', fontSize: '12px', background: 'white' }}
+                                                            />
+                                                          </td>
+                                                          <td style={{ padding: '6px' }}>
+                                                            <input
+                                                              type="checkbox"
+                                                              checked={row.enabled !== false}
+                                                              onChange={(e) => updateQbDesktopProgram(company.id, index, 'enabled', e.target.checked)}
                                                             />
                                                           </td>
                                                           <td style={{ padding: '6px' }}>
@@ -9121,6 +9155,7 @@ export default function SiteAdminDashboard(props: any) {
                                             <tr style={{ background: '#f1f5f9', borderBottom: '1px solid #e2e8f0' }}>
                                               <th style={{ textAlign: 'left', padding: '6px', color: '#475569' }}>Data Domain</th>
                                               <th style={{ textAlign: 'left', padding: '6px', color: '#475569' }}>QB Entity</th>
+                                              <th style={{ textAlign: 'left', padding: '6px', color: '#475569', width: '80px' }}>Enabled</th>
                                               <th style={{ textAlign: 'left', padding: '6px', color: '#475569', width: '70px' }}>Action</th>
                                             </tr>
                                           </thead>
@@ -9143,6 +9178,13 @@ export default function SiteAdminDashboard(props: any) {
                                                     onChange={(e) => updateQbDesktopProgram(businessCompany.id, index, 'qbEntity', e.target.value)}
                                                     placeholder="QB Entity"
                                                     style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '4px', padding: '6px', fontSize: '12px', background: 'white' }}
+                                                  />
+                                                </td>
+                                                <td style={{ padding: '6px' }}>
+                                                  <input
+                                                    type="checkbox"
+                                                    checked={row.enabled !== false}
+                                                    onChange={(e) => updateQbDesktopProgram(businessCompany.id, index, 'enabled', e.target.checked)}
                                                   />
                                                 </td>
                                                 <td style={{ padding: '6px' }}>

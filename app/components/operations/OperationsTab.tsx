@@ -870,6 +870,10 @@ export default function OperationsTab({
   const [productMarginNoteModal, setProductMarginNoteModal] = useState<{ title: string; note: string } | null>(null);
   const [productMarginNoteLoadingKey, setProductMarginNoteLoadingKey] = useState<string | null>(null);
   const [realEstateTableSort, setRealEstateTableSort] = useState<Record<string, { key: string; dir: 'asc' | 'desc' }>>({});
+  const [expandedAgentProductivityTiers, setExpandedAgentProductivityTiers] = useState<Record<string, boolean>>({});
+  const [isResidentialOfficeAttachmentTableExpanded, setIsResidentialOfficeAttachmentTableExpanded] = useState(true);
+  const [residentialOfficeMonthlyGoals, setResidentialOfficeMonthlyGoals] = useState<Record<string, { salesVolumeGoal: string; unitsGoal: string }>>({});
+  const [residentialAttachGoals, setResidentialAttachGoals] = useState({ mortgagePct: '49', titlePct: '58', insurancePct: '35' });
   const [wholesaleRawCustomerFilter, setWholesaleRawCustomerFilter] = useState('all');
   const [wholesaleRawSortKey, setWholesaleRawSortKey] = useState<WholesaleRawSortKey>('isoDate');
   const [wholesaleRawSortDir, setWholesaleRawSortDir] = useState<'asc' | 'desc'>('desc');
@@ -21000,6 +21004,344 @@ Strategies to Improve the CCC
     );
   };
 
+  const parseRealEstateCurrencyValue = (value: any) => {
+    const parsed = Number(String(value ?? '').replace(/[^0-9.-]/g, ''));
+    return Number.isFinite(parsed) ? parsed : 0;
+  };
+
+  const buildResidentialAgentDetailRows = (tierRow: any, tierIndex: number) => {
+    const agents = Math.max(0, Number(tierRow?.agents || 0));
+    const salesVolume = parseRealEstateCurrencyValue(tierRow?.salesVolume);
+    const gci = parseRealEstateCurrencyValue(tierRow?.gci);
+    const revenue = parseRealEstateCurrencyValue(tierRow?.revenue);
+    const baseConversionRate = Number(String(tierRow?.conversionRate || '0').replace('%', '')) || 0;
+    const firstNames = ['Alex', 'Jordan', 'Taylor', 'Morgan', 'Casey', 'Riley', 'Jamie', 'Avery', 'Cameron', 'Reese', 'Drew', 'Quinn'];
+    const lastNames = ['Bennett', 'Hayes', 'Sullivan', 'Morgan', 'Reed', 'Parker', 'Collins', 'Brooks', 'Foster', 'Price', 'Coleman', 'Sutton'];
+    const weights = Array.from({ length: agents }, (_, index) => {
+      const rankWeight = 1 + ((agents - index) / Math.max(agents, 1)) * 0.55;
+      const variation = 1 + ((index + tierIndex) % 5) * 0.035;
+      return rankWeight * variation;
+    });
+    const totalWeight = weights.reduce((sum, weight) => sum + weight, 0) || 1;
+
+    return weights.map((weight, index) => {
+      const share = weight / totalWeight;
+      const conversionDelta = (((index % 7) - 3) * 0.35) + (tierIndex * 0.08);
+      return {
+        agent: `${firstNames[(index + tierIndex) % firstNames.length]} ${lastNames[(index * 2 + tierIndex) % lastNames.length]} ${String(index + 1).padStart(2, '0')}`,
+        agents: 1,
+        salesVolume: formatCurrency(salesVolume * share),
+        gci: formatCurrency(gci * share),
+        revenue: formatCurrency(revenue * share),
+        conversionRate: `${Math.max(0, baseConversionRate + conversionDelta).toFixed(1)}%`,
+      };
+    });
+  };
+
+  const renderResidentialAgentProductivityTable = (rows: any[]) => {
+    if (!Array.isArray(rows) || rows.length === 0) {
+      return <div style={{ color: '#64748b', fontSize: '13px' }}>No mock rows available for this report.</div>;
+    }
+    const sortedRows = [...rows].sort((a, b) => String(a?.tier || '').localeCompare(String(b?.tier || ''), undefined, { numeric: true }));
+    const columns = [
+      { key: 'tier', label: 'Agent Tier' },
+      { key: 'agents', label: 'Agents' },
+      { key: 'salesVolume', label: 'Sales Volume' },
+      { key: 'gci', label: 'GCI' },
+      { key: 'revenue', label: 'Revenue' },
+      { key: 'conversionRate', label: 'Conversion Rate' },
+    ];
+    return (
+      <div style={{ overflowX: 'auto' }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: '860px' }}>
+          <thead>
+            <tr>
+              {columns.map((column) => (
+                <th key={column.key} style={{ padding: '8px', textAlign: 'left', fontSize: '12px', color: '#475569', borderBottom: '1px solid #e2e8f0' }}>
+                  {column.label}{column.key === 'tier' ? ' ^' : ''}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {sortedRows.map((row, rowIndex) => {
+              const tierKey = String(row?.tier || `tier-${rowIndex}`);
+              const isExpanded = expandedAgentProductivityTiers[tierKey] === true;
+              const detailRows = isExpanded ? buildResidentialAgentDetailRows(row, rowIndex) : [];
+              return (
+                <React.Fragment key={`agent-tier-${tierKey}`}>
+                  <tr>
+                    <td style={{ padding: '8px', fontSize: '13px', color: '#1e293b', borderBottom: '1px solid #f1f5f9', fontWeight: 700 }}>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setExpandedAgentProductivityTiers((prev) => ({
+                            ...prev,
+                            [tierKey]: !prev[tierKey],
+                          }))
+                        }
+                        aria-expanded={isExpanded}
+                        style={{
+                          border: 'none',
+                          background: 'transparent',
+                          color: '#0f172a',
+                          cursor: 'pointer',
+                          fontSize: '13px',
+                          fontWeight: 700,
+                          padding: 0,
+                          textAlign: 'left',
+                        }}
+                      >
+                        <span style={{ display: 'inline-block', width: '18px', color: '#64748b' }}>{isExpanded ? 'v' : '>'}</span>
+                        {row.tier}
+                      </button>
+                    </td>
+                    <td style={{ padding: '8px', fontSize: '13px', color: '#334155', borderBottom: '1px solid #f1f5f9' }}>{numberColumn(row.agents)}</td>
+                    <td style={{ padding: '8px', fontSize: '13px', color: '#334155', borderBottom: '1px solid #f1f5f9' }}>{row.salesVolume}</td>
+                    <td style={{ padding: '8px', fontSize: '13px', color: '#334155', borderBottom: '1px solid #f1f5f9' }}>{row.gci}</td>
+                    <td style={{ padding: '8px', fontSize: '13px', color: '#334155', borderBottom: '1px solid #f1f5f9' }}>{row.revenue}</td>
+                    <td style={{ padding: '8px', fontSize: '13px', color: '#334155', borderBottom: '1px solid #f1f5f9' }}>{row.conversionRate}</td>
+                  </tr>
+                  {detailRows.map((agentRow) => (
+                    <tr key={`${tierKey}-${agentRow.agent}`} style={{ background: '#f8fafc' }}>
+                      <td style={{ padding: '7px 8px 7px 28px', fontSize: '12px', color: '#475569', borderBottom: '1px solid #eef2f7' }}>{agentRow.agent}</td>
+                      <td style={{ padding: '7px 8px', fontSize: '12px', color: '#475569', borderBottom: '1px solid #eef2f7' }}>{agentRow.agents}</td>
+                      <td style={{ padding: '7px 8px', fontSize: '12px', color: '#475569', borderBottom: '1px solid #eef2f7' }}>{agentRow.salesVolume}</td>
+                      <td style={{ padding: '7px 8px', fontSize: '12px', color: '#475569', borderBottom: '1px solid #eef2f7' }}>{agentRow.gci}</td>
+                      <td style={{ padding: '7px 8px', fontSize: '12px', color: '#475569', borderBottom: '1px solid #eef2f7' }}>{agentRow.revenue}</td>
+                      <td style={{ padding: '7px 8px', fontSize: '12px', color: '#475569', borderBottom: '1px solid #eef2f7' }}>{agentRow.conversionRate}</td>
+                    </tr>
+                  ))}
+                </React.Fragment>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    );
+  };
+
+  const renderResidentialOfficeAttachmentGoalsTable = (rows: any[]) => {
+    if (!Array.isArray(rows) || rows.length === 0) {
+      return <div style={{ color: '#64748b', fontSize: '13px' }}>No office rows available for this report.</div>;
+    }
+
+    const tableKey = 'residentialOfficeAttachmentGoals';
+    const sort = realEstateTableSort[tableKey] || { key: 'office', dir: 'asc' as const };
+    const getOfficeGoals = (office: string, row: any) => {
+      const saved = residentialOfficeMonthlyGoals[office];
+      return {
+        salesVolumeGoal: saved?.salesVolumeGoal ?? String(Math.round(Number(row?.salesVolume || 0) * 1.05)),
+        unitsGoal: saved?.unitsGoal ?? String(Math.max(1, Number(row?.units || 0) + 1)),
+      };
+    };
+    const readPct = (value: any) => {
+      const parsed = Number(String(value ?? '').replace('%', ''));
+      return Number.isFinite(parsed) ? parsed : 0;
+    };
+    const readGoal = (value: any) => {
+      const parsed = Number(String(value ?? '').replace(/[^0-9.-]/g, ''));
+      return Number.isFinite(parsed) ? parsed : 0;
+    };
+    const formatSalesVolumeGoalInput = (value: any) => {
+      const raw = String(value ?? '').trim();
+      if (!raw) return '';
+      return Math.round(readGoal(raw)).toLocaleString('en-US');
+    };
+    const getSortValue = (row: any, key: string) => {
+      const office = String(row?.office || '');
+      const goals = getOfficeGoals(office, row);
+      if (key === 'salesVolume') return Number(row?.salesVolume || 0);
+      if (key === 'salesVolumeGoal') return readGoal(goals.salesVolumeGoal);
+      if (key === 'units') return Number(row?.units || 0);
+      if (key === 'unitsGoal') return readGoal(goals.unitsGoal);
+      if (key === 'mortgagePct') return readPct(row?.mortgagePct);
+      if (key === 'mortgageGoal') return readGoal(residentialAttachGoals.mortgagePct);
+      if (key === 'titlePct') return readPct(row?.titlePct);
+      if (key === 'titleGoal') return readGoal(residentialAttachGoals.titlePct);
+      if (key === 'insurancePct') return readPct(row?.insurancePct);
+      if (key === 'insuranceGoal') return readGoal(residentialAttachGoals.insurancePct);
+      return String(row?.[key] ?? '').toLowerCase();
+    };
+    const sortedRows = [...rows].sort((a, b) => {
+      const left = getSortValue(a, sort.key);
+      const right = getSortValue(b, sort.key);
+      if (typeof left === 'number' && typeof right === 'number') {
+        return (left - right) * (sort.dir === 'asc' ? 1 : -1);
+      }
+      return String(left).localeCompare(String(right), undefined, { numeric: true }) * (sort.dir === 'asc' ? 1 : -1);
+    });
+    const toggleSort = (key: string) => {
+      setRealEstateTableSort((prev) => {
+        const current = prev[tableKey];
+        return {
+          ...prev,
+          [tableKey]: {
+            key,
+            dir: current?.key === key && current.dir === 'asc' ? 'desc' : 'asc',
+          },
+        };
+      });
+    };
+    const updateOfficeGoal = (office: string, field: 'salesVolumeGoal' | 'unitsGoal', value: string, row: any) => {
+      const current = getOfficeGoals(office, row);
+      setResidentialOfficeMonthlyGoals((prev) => ({
+        ...prev,
+        [office]: {
+          ...current,
+          [field]: value,
+        },
+      }));
+    };
+    const thStyle = { padding: '8px', textAlign: 'left' as const, fontSize: '12px', color: '#475569', borderBottom: '1px solid #e2e8f0', whiteSpace: 'nowrap' as const };
+    const tdStyle = { padding: '8px', fontSize: '13px', color: '#334155', borderBottom: '1px solid #f1f5f9', whiteSpace: 'nowrap' as const };
+    const inputStyle = { width: '100%', minWidth: '96px', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '6px 8px', fontSize: '12px', background: 'white' };
+    const salesVolumeGoalInputStyle = { ...inputStyle, width: '98px', minWidth: '0', paddingLeft: '18px' };
+    const salesVolumeGoalInputWrapStyle = { position: 'relative' as const, width: '98px' };
+    const unitsGoalInputStyle = { ...inputStyle, width: '58px', minWidth: '0' };
+    const attachGoalInputStyle = { ...inputStyle, minWidth: '74px' };
+    const salesVolumeGoalCellStyle = { ...tdStyle, width: '116px', maxWidth: '116px' };
+    const unitsGoalCellStyle = { ...tdStyle, width: '76px', maxWidth: '76px' };
+    const renderHeader = (key: string, label: string) => (
+      <th
+        key={key}
+        style={{
+          ...thStyle,
+          ...(key === 'salesVolumeGoal' ? { width: '116px', maxWidth: '116px' } : {}),
+          ...(key === 'unitsGoal' ? { width: '76px', maxWidth: '76px' } : {}),
+        }}
+      >
+        <button
+          type="button"
+          onClick={() => toggleSort(key)}
+          style={{ border: 'none', background: 'transparent', color: '#475569', cursor: 'pointer', fontSize: '12px', fontWeight: 700, padding: 0, textAlign: 'left' }}
+        >
+          {label}{sort.key === key ? (sort.dir === 'asc' ? ' ^' : ' v') : ''}
+        </button>
+      </th>
+    );
+    const performanceStyle = (actual: number, goal: number) =>
+      goal > 0 && actual < goal
+        ? { color: '#b91c1c', background: '#fef2f2', fontWeight: 700 }
+        : {};
+
+    return (
+      <div style={{ marginTop: '14px' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px', marginBottom: '12px' }}>
+          <div>
+            <button
+              type="button"
+              onClick={() => setIsResidentialOfficeAttachmentTableExpanded((prev) => !prev)}
+              aria-expanded={isResidentialOfficeAttachmentTableExpanded}
+              style={{ border: 'none', background: 'transparent', color: '#0f172a', cursor: 'pointer', fontSize: '14px', fontWeight: 800, padding: 0 }}
+            >
+              <span style={{ display: 'inline-block', width: '18px', color: '#64748b' }}>{isResidentialOfficeAttachmentTableExpanded ? 'v' : '>'}</span>
+              Office Monthly Goals & Attach Rates
+            </button>
+            <div style={{ marginTop: '4px', fontSize: '12px', color: '#64748b' }}>
+              Sales volume and unit goals are monthly by office. Attach goals apply company-wide.
+            </div>
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(90px, 1fr))', gap: '8px', minWidth: '320px' }}>
+            {[
+              { key: 'mortgagePct', label: 'Mortgage Goal %' },
+              { key: 'titlePct', label: 'Title Goal %' },
+              { key: 'insurancePct', label: 'Insurance Goal %' },
+            ].map((goal) => (
+              <label key={goal.key} style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '11px', color: '#64748b', fontWeight: 700 }}>
+                {goal.label}
+                <input
+                  type="number"
+                  min="0"
+                  max="100"
+                  step="0.1"
+                  value={(residentialAttachGoals as any)[goal.key]}
+                  onChange={(event) =>
+                    setResidentialAttachGoals((prev) => ({
+                      ...prev,
+                      [goal.key]: event.target.value,
+                    }))
+                  }
+                  style={attachGoalInputStyle}
+                />
+              </label>
+            ))}
+          </div>
+        </div>
+        {isResidentialOfficeAttachmentTableExpanded && (
+          <div style={{ overflowX: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: '1040px' }}>
+              <thead>
+                <tr>
+                  {renderHeader('office', 'Office')}
+                  {renderHeader('salesVolume', 'Sales Volume')}
+                  {renderHeader('salesVolumeGoal', 'Goal')}
+                  {renderHeader('units', 'Units')}
+                  {renderHeader('unitsGoal', 'Goal')}
+                  {renderHeader('mortgagePct', 'Mortgage %')}
+                  {renderHeader('mortgageGoal', 'Goal')}
+                  {renderHeader('titlePct', 'Title %')}
+                  {renderHeader('titleGoal', 'Goal')}
+                  {renderHeader('insurancePct', 'Insurance %')}
+                  {renderHeader('insuranceGoal', 'Goal')}
+                </tr>
+              </thead>
+              <tbody>
+                {sortedRows.map((row) => {
+                  const office = String(row?.office || '');
+                  const goals = getOfficeGoals(office, row);
+                  const salesGoal = readGoal(goals.salesVolumeGoal);
+                  const unitsGoal = readGoal(goals.unitsGoal);
+                  const mortgageGoal = readGoal(residentialAttachGoals.mortgagePct);
+                  const titleGoal = readGoal(residentialAttachGoals.titlePct);
+                  const insuranceGoal = readGoal(residentialAttachGoals.insurancePct);
+                  const mortgagePct = readPct(row.mortgagePct);
+                  const titlePct = readPct(row.titlePct);
+                  const insurancePct = readPct(row.insurancePct);
+                  return (
+                    <tr key={`residential-office-attachment-${office}`}>
+                      <td style={{ ...tdStyle, fontWeight: 700, color: '#1e293b' }}>{office}</td>
+                      <td style={{ ...tdStyle, ...performanceStyle(Number(row.salesVolume || 0), salesGoal) }}>{formatCurrency(Number(row.salesVolume || 0))}</td>
+                      <td style={salesVolumeGoalCellStyle}>
+                        <div style={salesVolumeGoalInputWrapStyle}>
+                          <span style={{ position: 'absolute', left: '8px', top: '50%', transform: 'translateY(-50%)', color: '#64748b', fontSize: '12px', pointerEvents: 'none' }}>$</span>
+                          <input
+                            type="text"
+                            inputMode="numeric"
+                            value={formatSalesVolumeGoalInput(goals.salesVolumeGoal)}
+                            onChange={(event) => updateOfficeGoal(office, 'salesVolumeGoal', event.target.value.replace(/[^0-9]/g, ''), row)}
+                            style={salesVolumeGoalInputStyle}
+                          />
+                        </div>
+                      </td>
+                      <td style={{ ...tdStyle, ...performanceStyle(Number(row.units || 0), unitsGoal) }}>{numberColumn(row.units)}</td>
+                      <td style={unitsGoalCellStyle}>
+                        <input
+                          type="number"
+                          min="0"
+                          step="1"
+                          value={goals.unitsGoal}
+                          onChange={(event) => updateOfficeGoal(office, 'unitsGoal', event.target.value, row)}
+                          style={unitsGoalInputStyle}
+                        />
+                      </td>
+                      <td style={{ ...tdStyle, ...performanceStyle(mortgagePct, mortgageGoal) }}>{row.mortgagePct}</td>
+                      <td style={tdStyle}>{mortgageGoal.toFixed(1)}%</td>
+                      <td style={{ ...tdStyle, ...performanceStyle(titlePct, titleGoal) }}>{row.titlePct}</td>
+                      <td style={tdStyle}>{titleGoal.toFixed(1)}%</td>
+                      <td style={{ ...tdStyle, ...performanceStyle(insurancePct, insuranceGoal) }}>{row.insurancePct}</td>
+                      <td style={tdStyle}>{insuranceGoal.toFixed(1)}%</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    );
+  };
+
   const renderRealEstateReportCard = (
     title: string,
     sectionKey: string,
@@ -21336,11 +21678,13 @@ Strategies to Improve the CCC
       { service: 'Title', attachRate: '58.0%' },
       { service: 'Insurance', attachRate: '35.1%' },
     ];
-    const residentialAttachmentByOfficeRows = officeRows.slice(0, 12).map((row, index) => ({
+    const residentialAttachmentByOfficeRows = officeRows.map((row, index) => ({
       office: row.office,
-      mortgagePct: `${Math.round(42 + (index % 8) * 2.1)}%`,
-      titlePct: `${Math.round(51 + (index % 7) * 2.4)}%`,
-      insurancePct: `${Math.round(28 + (index % 6) * 2.2)}%`,
+      salesVolume: row.closedUnits * (420_000 + (index % 10) * 8_500),
+      units: row.closedUnits,
+      mortgagePct: `${(42 + (index % 8) * 2.1).toFixed(1)}%`,
+      titlePct: `${(51 + (index % 7) * 2.4).toFixed(1)}%`,
+      insurancePct: `${(28 + (index % 6) * 2.2).toFixed(1)}%`,
     }));
     const mortgageProductionScorecardRows = [
       { kpi: 'Funded Loans', mtd: '412', ytd: '3,840', budget: '4,020' },
@@ -21605,6 +21949,23 @@ Strategies to Improve the CCC
               { key: 'region', label: 'Region' },
               { key: 'office', label: 'Office' },
             ])}
+            {isSectionEnabled('residentialCustomerAttachmentReport') && (
+              <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '16px', marginBottom: '14px' }}>
+                <h3 style={{ margin: '0 0 6px 0', fontSize: '16px', color: '#1e293b' }}>Customer Attachment Report</h3>
+                <p style={{ margin: '0 0 12px', color: '#64748b', fontSize: '13px' }}>Are brokerage transactions generating mortgage, title, and insurance revenue?</p>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '14px', marginBottom: '14px' }}>
+                  {renderRealEstateRowsTable('residentialCustomerAttachmentCounts', residentialCustomerAttachmentRows, [
+                    { key: 'metric', label: 'Metric' },
+                    { key: 'count', label: 'Count', format: numberColumn },
+                  ])}
+                  {renderRealEstateRowsTable('residentialAttachmentRates', residentialAttachmentRateRows, [
+                    { key: 'service', label: 'Service' },
+                    { key: 'attachRate', label: 'Attach Rate' },
+                  ])}
+                </div>
+                {renderResidentialOfficeAttachmentGoalsTable(residentialAttachmentByOfficeRows)}
+              </div>
+            )}
             {isSectionEnabled('residentialPipelineForecast') && (
               <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '16px', marginBottom: '14px' }}>
                 <h3 style={{ margin: '0 0 6px 0', fontSize: '16px', color: '#1e293b' }}>Pipeline & Forecast Report</h3>
@@ -21639,42 +22000,13 @@ Strategies to Improve the CCC
                   { label: 'Top Producer Agents', value: residentialAgentProductivityRows[0].agents },
                   { label: 'Inactive Agents', value: residentialAgentProductivityRows[3].agents },
                 ])}
-                {renderRealEstateRowsTable('residentialAgentProductivityReport', residentialAgentProductivityRows, [
-                  { key: 'tier', label: 'Agent Tier' },
-                  { key: 'agents', label: 'Agents', format: numberColumn },
-                  { key: 'salesVolume', label: 'Sales Volume' },
-                  { key: 'gci', label: 'GCI' },
-                  { key: 'revenue', label: 'Revenue' },
-                  { key: 'conversionRate', label: 'Conversion Rate' },
-                ])}
+                {renderResidentialAgentProductivityTable(residentialAgentProductivityRows)}
                 <div style={{ marginTop: '12px' }}>
                   {renderRealEstateRowsTable('residentialAgentExecutiveMetrics', residentialAgentExecutiveMetrics, [
                     { key: 'metric', label: 'Executive Metric' },
                     { key: 'value', label: 'Value' },
                   ])}
                 </div>
-              </div>
-            )}
-            {isSectionEnabled('residentialCustomerAttachmentReport') && (
-              <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '16px', marginBottom: '14px' }}>
-                <h3 style={{ margin: '0 0 6px 0', fontSize: '16px', color: '#1e293b' }}>Customer Attachment Report</h3>
-                <p style={{ margin: '0 0 12px', color: '#64748b', fontSize: '13px' }}>Are brokerage transactions generating mortgage, title, and insurance revenue?</p>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '14px', marginBottom: '14px' }}>
-                  {renderRealEstateRowsTable('residentialCustomerAttachmentCounts', residentialCustomerAttachmentRows, [
-                    { key: 'metric', label: 'Metric' },
-                    { key: 'count', label: 'Count', format: numberColumn },
-                  ])}
-                  {renderRealEstateRowsTable('residentialAttachmentRates', residentialAttachmentRateRows, [
-                    { key: 'service', label: 'Service' },
-                    { key: 'attachRate', label: 'Attach Rate' },
-                  ])}
-                </div>
-                {renderRealEstateRowsTable('residentialAttachmentByOffice', residentialAttachmentByOfficeRows, [
-                  { key: 'office', label: 'Office' },
-                  { key: 'mortgagePct', label: 'Mortgage %' },
-                  { key: 'titlePct', label: 'Title %' },
-                  { key: 'insurancePct', label: 'Insurance %' },
-                ])}
               </div>
             )}
             <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '16px', marginBottom: '14px' }}>
