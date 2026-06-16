@@ -122,6 +122,7 @@ const OPERATIONAL_HUB_SECTION_OPTIONS: Array<{ key: string; label: string; group
   { key: 'rbBillRateLevelSummary', label: 'Bill Rate Level Summary', group: 'Revenue & Billables' },
   { key: 'rbEmployeesByBillRateLevel', label: 'Employees by Bill Rate Level', group: 'Revenue & Billables' },
   { key: 'rbEmployeesByMarketBillRateLevel', label: 'Employees by Market + Bill Rate Level', group: 'Revenue & Billables' },
+  { key: 'rbEstimatedBillableEconomics', label: 'Estimated Billable Economics by Employee', group: 'Revenue & Billables' },
   { key: 'rbUnavailableRateInputs', label: 'Missing Rate Card / Hours Inputs', group: 'Revenue & Billables' },
   { key: 'ueSpreadPerHour', label: 'Spread per Hour', group: 'Unit Economics' },
   { key: 'ueGrossMarginByClient', label: 'Gross Margin % by Client', group: 'Unit Economics' },

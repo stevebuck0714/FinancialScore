@@ -19522,6 +19522,9 @@ Strategies to Improve the CCC
     if (isBambooHrWorkforce) {
       const billRateLevelRows: any[] = Array.isArray(revenueBillablesData.billRateLevelRows) ? revenueBillablesData.billRateLevelRows : [];
       const billRateLevelByMarketRows: any[] = Array.isArray(revenueBillablesData.billRateLevelByMarketRows) ? revenueBillablesData.billRateLevelByMarketRows : [];
+      const estimatedBillableEconomicsRows: any[] = Array.isArray(revenueBillablesData.estimatedBillableEconomicsByEmployee)
+        ? revenueBillablesData.estimatedBillableEconomicsByEmployee
+        : [];
       const unavailableReports: string[] = Array.isArray(revenueBillablesData.unavailableReports) ? revenueBillablesData.unavailableReports : [];
       const sourceNote = String(revenueBillablesData?.meta?.note || summary.note || '');
       const billableEmployeeCount = Number(
@@ -19605,6 +19608,67 @@ Strategies to Improve the CCC
               </div>
             </div>}
           </div>
+
+          {isSectionEnabled('rbEstimatedBillableEconomics') && (
+            <div style={cardStyle}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', alignItems: 'flex-start', marginBottom: '12px' }}>
+                <div>
+                  <div style={cardTitleStyle}>Estimated Billable Economics by Employee</div>
+                  <div style={{ fontSize: '12px', color: '#64748b', marginTop: '4px' }}>
+                    Uses Cogent Rate Card bill rates and 1,920 estimated annual billable hours. This is estimated capacity, not actual recognized revenue.
+                  </div>
+                </div>
+                <div style={{ padding: '6px 10px', borderRadius: '999px', background: '#eef2ff', color: '#3730a3', fontSize: '12px', fontWeight: 700 }}>
+                  {estimatedBillableEconomicsRows.length.toLocaleString('en-US')} matched employees
+                </div>
+              </div>
+              {estimatedBillableEconomicsRows.length > 0 ? (
+                <div style={{ overflowX: 'auto', maxHeight: '520px', overflowY: 'auto' }}>
+                  <table style={{ width: '100%', minWidth: '1180px', borderCollapse: 'collapse' }}>
+                    <thead>
+                      <tr>
+                        <th style={thStyle}>Employee</th>
+                        <th style={thStyle}>Role</th>
+                        <th style={thStyle}>Market</th>
+                        <th style={thStyle}>Bill Rate Level</th>
+                        <th style={{ ...thStyle, textAlign: 'right' }}>Pay Rate</th>
+                        <th style={{ ...thStyle, textAlign: 'right' }}>Bill Rate</th>
+                        <th style={{ ...thStyle, textAlign: 'right' }}>Bill-to-Pay</th>
+                        <th style={{ ...thStyle, textAlign: 'right' }}>Est. Annual Billings</th>
+                        <th style={{ ...thStyle, textAlign: 'right' }}>Annual Pay</th>
+                        <th style={{ ...thStyle, textAlign: 'right' }}>Est. Spread</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {estimatedBillableEconomicsRows.map((row) => {
+                        const key = row.employeeId || `${row.employeeName}-${row.market}-${row.billRateLevel}`;
+                        return (
+                          <tr key={key}>
+                            <td style={{ ...tdStyle, fontWeight: 700 }}>{row.employeeName || 'Unassigned'}</td>
+                            <td style={tdStyle}>{row.role || 'Unassigned'}</td>
+                            <td style={{ ...tdStyle, fontWeight: 600 }}>{row.market || row.location || 'Unassigned'}</td>
+                            <td style={tdStyle}>{row.billRateLevel || row.normalizedBillRateLevel || 'Unassigned'}</td>
+                            <td style={{ ...tdStyle, textAlign: 'right' }}>{row.payRate == null ? '—' : formatUnitCost(Number(row.payRate))}</td>
+                            <td style={{ ...tdStyle, textAlign: 'right', fontWeight: 700 }}>{formatUnitCost(Number(row.rateCardBillRate || 0))}</td>
+                            <td style={{ ...tdStyle, textAlign: 'right', fontWeight: 700 }}>{row.billToPayRatio == null ? '—' : `${Number(row.billToPayRatio).toFixed(2)}x`}</td>
+                            <td style={{ ...tdStyle, textAlign: 'right' }}>{formatCurrency(Number(row.estimatedAnnualBillings || 0))}</td>
+                            <td style={{ ...tdStyle, textAlign: 'right' }}>{row.estimatedAnnualPay == null ? '—' : formatCurrency(Number(row.estimatedAnnualPay))}</td>
+                            <td style={{ ...tdStyle, textAlign: 'right', fontWeight: 700, color: Number(row.estimatedAnnualSpread || 0) >= 0 ? '#166534' : '#991b1b' }}>
+                              {row.estimatedAnnualSpread == null ? '—' : formatCurrency(Number(row.estimatedAnnualSpread))}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <div style={{ padding: '12px', background: '#fff7ed', border: '1px solid #fed7aa', borderRadius: '8px', fontSize: '13px', color: '#9a3412' }}>
+                  Upload and sync an active Cogent Rate Card to match employees to market bill rates.
+                </div>
+              )}
+            </div>
+          )}
 
           {isSectionEnabled('rbUnavailableRateInputs') && <div style={cardStyle}>
             <div style={cardTitleStyle}>Reports Awaiting Client Rate Card</div>

@@ -111,6 +111,26 @@ type EmployeeBillRateMatch = {
   billRate: number;
 };
 
+type EstimatedBillableEconomicsRow = {
+  employeeId: string;
+  employeeName: string;
+  role: string;
+  clientName: string;
+  department: string;
+  division: string;
+  location: string;
+  market: string;
+  billRateLevel: string;
+  normalizedBillRateLevel: string;
+  payRate: number | null;
+  annualPay: number | null;
+  rateCardBillRate: number;
+  billToPayRatio: number | null;
+  estimatedAnnualBillings: number;
+  estimatedAnnualPay: number | null;
+  estimatedAnnualSpread: number | null;
+};
+
 type EmployeeCompensationRow = {
   employeeId: string;
   employeeName: string;
@@ -178,6 +198,7 @@ export type BambooHrWorkforceReportSnapshot = {
     billRateLevelByRole: Array<{ role: string; headcount: number; covered: number; coveragePct: number; topLevels: string[] }>;
     billRateLevelRows: GroupRow[];
     billRateLevelByMarketRows: BillRateLevelByMarketRow[];
+    estimatedBillableEconomicsByEmployee: EstimatedBillableEconomicsRow[];
     unavailableReports: string[];
   };
   unitEconomics: {
@@ -203,6 +224,7 @@ export type BambooHrWorkforceReportSnapshot = {
 const SNAPSHOT_METADATA_KEY = 'bambooHrWorkforceReportSnapshot';
 const MAX_CONCURRENCY = 8;
 const CURRENT_BAMBOOHR_CLIENT_NAME = 'Eli Lilly';
+const ESTIMATED_ANNUAL_BILLABLE_HOURS = 1920;
 
 function asRecord(value: unknown): Record<string, unknown> {
   return value && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
@@ -497,6 +519,42 @@ function buildEmployeeBillRateMatches(
       };
     })
     .filter((row): row is EmployeeBillRateMatch => Boolean(row));
+}
+
+function buildEstimatedBillableEconomicsRows(matches: EmployeeBillRateMatch[]): EstimatedBillableEconomicsRow[] {
+  return matches
+    .map((match) => {
+      const employee = match.employee;
+      const payRate = employee.hourlyCost == null ? null : Number(employee.hourlyCost);
+      const annualPay = employee.annualCost == null ? null : Number(employee.annualCost);
+      const estimatedAnnualBillings = round2(match.billRate * ESTIMATED_ANNUAL_BILLABLE_HOURS);
+      const estimatedAnnualPay = annualPay == null ? null : round2(annualPay);
+      const estimatedAnnualSpread = estimatedAnnualPay == null ? null : round2(estimatedAnnualBillings - estimatedAnnualPay);
+      const billToPayRatio = payRate != null && payRate > 0 ? round2(match.billRate / payRate) : null;
+      return {
+        employeeId: employee.id,
+        employeeName: employee.name,
+        role: employee.role,
+        clientName: employee.clientName,
+        department: employee.department,
+        division: employee.division,
+        location: employee.location,
+        market: match.market,
+        billRateLevel: employee.billRateLevel,
+        normalizedBillRateLevel: match.normalizedBillRateLevel,
+        payRate: payRate == null ? null : round2(payRate),
+        annualPay: estimatedAnnualPay,
+        rateCardBillRate: round2(match.billRate),
+        billToPayRatio,
+        estimatedAnnualBillings,
+        estimatedAnnualPay,
+        estimatedAnnualSpread,
+      };
+    })
+    .sort((a, b) => (
+      (b.estimatedAnnualSpread ?? -Infinity) - (a.estimatedAnnualSpread ?? -Infinity) ||
+      a.employeeName.localeCompare(b.employeeName)
+    ));
 }
 
 function labelValue(value: unknown): string {
@@ -862,6 +920,7 @@ function buildPayload(
   const avgPayRate = average(billRateMatchesWithPay.map((match) => match.employee.hourlyCost));
   const overallBillToPayRate = avgBillRate != null && avgPayRate != null && avgPayRate > 0 ? round2(avgBillRate / avgPayRate) : null;
   const numericBillRatesAvailable = billRateMatches.length > 0;
+  const estimatedBillableEconomicsByEmployee = buildEstimatedBillableEconomicsRows(billRateMatches);
   const missingBillRateLevel = employees
     .filter((employee) => employee.billRateLevel === 'Missing bill rate level')
     .map((employee) => ({
@@ -928,10 +987,11 @@ function buildPayload(
       billRateLevelByRole: buildBillRateLevelByRole(employees),
       billRateLevelRows: groupEmployees(employees, (employee) => employee.billRateLevel),
       billRateLevelByMarketRows: buildBillRateLevelByMarketRows(employees),
+      estimatedBillableEconomicsByEmployee,
       unavailableReports: numericBillRatesAvailable
         ? [
-            'Recognized revenue by employee still requires billable hours or assignment-level revenue.',
-            'Customer profitability requires billed hours or recognized assignment revenue in addition to the rate card.',
+            `Estimated employee billings use the rate card multiplied by ${ESTIMATED_ANNUAL_BILLABLE_HOURS.toLocaleString('en-US')} annual billable hours; actual recognized revenue still requires billed hours or assignment-level revenue.`,
+            'Actual customer profitability requires billed hours or recognized assignment revenue in addition to the rate card.',
           ]
         : [
             'Customer revenue by employee requires customer billed compensation rates or recognized revenue by employee.',
@@ -1039,6 +1099,7 @@ export function getBambooHrRevenueBillablesPayload(snapshot: BambooHrWorkforceRe
     billRateLevelByRole: snapshot.revenueBillables.billRateLevelByRole,
     billRateLevelRows: snapshot.revenueBillables.billRateLevelRows,
     billRateLevelByMarketRows: snapshot.revenueBillables.billRateLevelByMarketRows,
+    estimatedBillableEconomicsByEmployee: snapshot.revenueBillables.estimatedBillableEconomicsByEmployee,
     unavailableReports: snapshot.revenueBillables.unavailableReports,
     records: snapshot.revenueBillables.billRateLevelRows,
   };
