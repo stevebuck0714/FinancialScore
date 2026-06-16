@@ -3425,6 +3425,7 @@ function FinancialScorePage() {
   const [qbError, setQbError] = useState<string | null>(null);
   const operationalWorkbookFileInputRef = useRef<HTMLInputElement | null>(null);
   const platosInventoryWorkbookFileInputRef = useRef<HTMLInputElement | null>(null);
+  const cogentRateCardFileInputRef = useRef<HTMLInputElement | null>(null);
   const [companyOperationalSources, setCompanyOperationalSources] = useState<
     Array<{
       provider: string;
@@ -3443,10 +3444,14 @@ function FinancialScorePage() {
       } | null;
       parsedWorkbook?: {
         parsedAt?: string;
+        clientName?: string;
         monthKey?: string | null;
         workbookPeriod?: string | null;
         monthCount?: number;
         monthKeys?: string[];
+        years?: number[];
+        markets?: string[];
+        levels?: string[];
         subcategoryCount?: number;
         rowCount?: number;
         storeInfo?: Record<string, string | number | null>;
@@ -3464,6 +3469,7 @@ function FinancialScorePage() {
   const [operationalSourcesError, setOperationalSourcesError] = useState<string | null>(null);
   const [uploadingOperationalWorkbook, setUploadingOperationalWorkbook] = useState(false);
   const [uploadingPlatosInventoryWorkbook, setUploadingPlatosInventoryWorkbook] = useState(false);
+  const [uploadingCogentRateCard, setUploadingCogentRateCard] = useState(false);
   
 
   // State - API Loading & Errors
@@ -6954,6 +6960,78 @@ function FinancialScorePage() {
       alert(`Failed to upload Monthly Inventory Report workbook: ${message}`);
     } finally {
       setUploadingPlatosInventoryWorkbook(false);
+    }
+  };
+
+  const uploadCogentRateCardWorkbook = async () => {
+    if (!selectedCompanyId) {
+      alert('Please select a company first');
+      return;
+    }
+    const input = cogentRateCardFileInputRef.current;
+    const file = input?.files?.[0];
+    if (!file) {
+      alert('Choose a Cogent Rate Card workbook first.');
+      return;
+    }
+
+    setUploadingCogentRateCard(true);
+    setOperationalSourcesError(null);
+    try {
+      const blob = await upload(file.name, file, {
+        access: 'public',
+        handleUploadUrl: '/api/company-documents/upload',
+        clientPayload: JSON.stringify({
+          companyId: selectedCompanyId,
+          category: 'OTHER',
+          originalFileName: file.name,
+          sizeBytes: file.size,
+        }),
+      });
+
+      const docResponse = await fetch('/api/company-documents', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          companyId: selectedCompanyId,
+          category: 'OTHER',
+          originalFileName: file.name,
+          blob,
+        }),
+      });
+      const docData = await docResponse.json();
+      if (!docResponse.ok || !docData?.document?.id) {
+        throw new Error(docData?.error || 'Failed to register Cogent Rate Card document');
+      }
+
+      const workbookResponse = await fetch('/api/operational-system-integrations/cogent-rate-card/workbook', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          companyId: selectedCompanyId,
+          documentId: docData.document.id,
+          originalFileName: file.name,
+          blob,
+        }),
+      });
+      const workbookData = await workbookResponse.json();
+      if (!workbookResponse.ok || !workbookData?.ok) {
+        throw new Error(workbookData?.error || 'Cogent Rate Card validation failed');
+      }
+
+      if (input) input.value = '';
+      await loadCompanyOperationalSources(selectedCompanyId);
+      window.dispatchEvent(new CustomEvent('operational-data-updated', {
+        detail: { companyId: selectedCompanyId, types: ['revenue-billables', 'unit-economics'], sourceCode: 'COGENT_RATE_CARD' },
+      }));
+      alert(`Cogent Rate Card uploaded successfully (${workbookData.rowCount || 0} rate rows).`);
+    } catch (error: any) {
+      console.error('Failed to upload Cogent Rate Card:', error);
+      const message = error?.message || 'Upload failed';
+      setOperationalSourcesError(message);
+      alert(`Failed to upload Cogent Rate Card: ${message}`);
+    } finally {
+      setUploadingCogentRateCard(false);
     }
   };
 
@@ -13952,6 +14030,7 @@ function FinancialScorePage() {
 
               {selectedAccountingSystem === 'QUICKBOOKS' && (() => {
                 const bambooSource = companyOperationalSources.find((source) => source.sourceCode === 'BAMBOOHR_STANDARD') || null;
+                const cogentRateCardSource = companyOperationalSources.find((source) => source.sourceCode === 'COGENT_RATE_CARD') || null;
                 const platosSource = companyOperationalSources.find((source) => source.sourceCode === 'PLATOS_CLOSET_STORE_VISIT') || null;
                 const platosInventorySource = companyOperationalSources.find((source) => source.sourceCode === 'PLATOS_INVENTORY') || null;
                 const operationalSourceCount = companyOperationalSources.length;
@@ -14118,6 +14197,107 @@ function FinancialScorePage() {
                     </div>
                     {bambooSource.errorMessage ? (
                       <div style={{ fontSize: '12px', color: '#991b1b', marginTop: '6px' }}>{bambooSource.errorMessage}</div>
+                    ) : null}
+                  </div>
+                )}
+
+                {cogentRateCardSource && (
+                  <div style={{ marginBottom: '12px', padding: '14px', background: 'white', border: '1px solid #e2e8f0', borderRadius: '10px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px', marginBottom: '8px' }}>
+                      <div>
+                        <div style={{ fontSize: '14px', fontWeight: '700', color: '#1e293b' }}>{cogentRateCardSource.label}</div>
+                        <div style={{ fontSize: '12px', color: '#64748b' }}>Cogent bill rate workbook upload</div>
+                      </div>
+                      <div style={{
+                        padding: '4px 8px',
+                        borderRadius: '999px',
+                        fontSize: '11px',
+                        fontWeight: '700',
+                        background: cogentRateCardSource.workbookUpload ? '#dcfce7' : '#fef3c7',
+                        color: cogentRateCardSource.workbookUpload ? '#166534' : '#92400e'
+                      }}>
+                        {cogentRateCardSource.workbookUpload ? 'Rate card active' : 'Awaiting rate card'}
+                      </div>
+                    </div>
+
+                    <div style={{ marginBottom: '10px', padding: '10px', background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: '8px', fontSize: '12px', color: '#1d4ed8' }}>
+                      Expected workbook: <strong>Cogent Rate Card</strong> with year, location, and rate level rows. Uploading a new workbook makes it the active rate card while keeping the previous document version.
+                    </div>
+
+                    <input
+                      ref={cogentRateCardFileInputRef}
+                      type="file"
+                      accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                      disabled={uploadingCogentRateCard}
+                      style={{ marginBottom: '10px', width: '100%' }}
+                    />
+
+                    <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap', marginBottom: '12px' }}>
+                      <button
+                        onClick={uploadCogentRateCardWorkbook}
+                        disabled={uploadingCogentRateCard}
+                        style={{
+                          padding: '10px 14px',
+                          borderRadius: '10px',
+                          border: 'none',
+                          background: uploadingCogentRateCard ? '#94a3b8' : '#7c3aed',
+                          color: 'white',
+                          fontWeight: 800,
+                          cursor: uploadingCogentRateCard ? 'not-allowed' : 'pointer',
+                        }}
+                      >
+                        {uploadingCogentRateCard ? 'Uploading…' : 'Upload Cogent Rate Card'}
+                      </button>
+                      <button
+                        onClick={() => selectedCompanyId && loadCompanyOperationalSources(selectedCompanyId)}
+                        disabled={loadingOperationalSources || uploadingCogentRateCard}
+                        style={{
+                          padding: '10px 14px',
+                          borderRadius: '10px',
+                          border: '1px solid #e2e8f0',
+                          background: 'white',
+                          color: '#0f172a',
+                          fontWeight: 800,
+                          cursor: loadingOperationalSources || uploadingCogentRateCard ? 'not-allowed' : 'pointer',
+                        }}
+                      >
+                        Refresh
+                      </button>
+                    </div>
+
+                    {cogentRateCardSource.workbookUpload ? (
+                      <div style={{ fontSize: '12px', color: '#475569', lineHeight: 1.6 }}>
+                        <div><strong>File:</strong> {cogentRateCardSource.workbookUpload.originalFileName || 'Cogent Rate Card workbook'}</div>
+                        <div><strong>Uploaded:</strong> {cogentRateCardSource.workbookUpload.uploadedAt ? new Date(cogentRateCardSource.workbookUpload.uploadedAt).toLocaleString() : 'Unknown'}</div>
+                        <div><strong>Sheets found:</strong> {Array.isArray(cogentRateCardSource.workbookUpload.sheetNames) ? cogentRateCardSource.workbookUpload.sheetNames.join(', ') : 'Unknown'}</div>
+                        {cogentRateCardSource.workbookUpload.blobUrl ? (
+                          <div>
+                            <a href={cogentRateCardSource.workbookUpload.blobUrl} target="_blank" rel="noreferrer" style={{ color: '#2563eb', fontWeight: 600 }}>
+                              Open uploaded rate card
+                            </a>
+                          </div>
+                        ) : null}
+                      </div>
+                    ) : (
+                      <div style={{ fontSize: '12px', color: '#64748b' }}>
+                        No Cogent Rate Card uploaded yet.
+                      </div>
+                    )}
+
+                    {cogentRateCardSource.parsedWorkbook && (
+                      <div style={{ marginTop: '12px', padding: '10px', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px', fontSize: '12px', color: '#334155' }}>
+                        <div style={{ fontWeight: '700', color: '#1e293b', marginBottom: '6px' }}>Active rate card summary</div>
+                        <div><strong>Parsed:</strong> {cogentRateCardSource.parsedWorkbook.parsedAt ? new Date(cogentRateCardSource.parsedWorkbook.parsedAt).toLocaleString() : 'Unknown'}</div>
+                        <div><strong>Client:</strong> {cogentRateCardSource.parsedWorkbook.clientName || 'Unknown'}</div>
+                        <div><strong>Years:</strong> {Array.isArray(cogentRateCardSource.parsedWorkbook.years) ? cogentRateCardSource.parsedWorkbook.years.join(', ') : 'Unknown'}</div>
+                        <div><strong>Markets:</strong> {Array.isArray(cogentRateCardSource.parsedWorkbook.markets) ? cogentRateCardSource.parsedWorkbook.markets.join(', ') : 'Unknown'}</div>
+                        <div><strong>Levels:</strong> {Array.isArray(cogentRateCardSource.parsedWorkbook.levels) ? cogentRateCardSource.parsedWorkbook.levels.join(', ') : 'Unknown'}</div>
+                        <div><strong>Rate rows:</strong> {cogentRateCardSource.parsedWorkbook.rowCount ?? 0}</div>
+                      </div>
+                    )}
+
+                    {cogentRateCardSource.errorMessage ? (
+                      <div style={{ fontSize: '12px', color: '#991b1b', marginTop: '8px' }}>{cogentRateCardSource.errorMessage}</div>
                     ) : null}
                   </div>
                 )}

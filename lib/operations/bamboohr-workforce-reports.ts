@@ -10,6 +10,13 @@ import {
   getOperationalSystemConnection,
   saveOperationalSystemConnection,
 } from '@/lib/operational/operational-system-connections';
+import {
+  type ParsedCogentRateCard,
+  findCogentRate,
+  normalizeRateCardLevel,
+  normalizeRateCardMarket,
+  readCogentRateCard,
+} from '@/lib/operational/cogent-rate-card';
 
 type EmployeeRow = Record<string, unknown>;
 type TableRow = Record<string, unknown>;
@@ -90,6 +97,20 @@ type GroupRow = {
   billRateLevelCoveragePct: number;
 };
 
+type BillRateLevelByMarketRow = {
+  key: string;
+  market: string;
+  billRateLevel: string;
+  headcount: number;
+};
+
+type EmployeeBillRateMatch = {
+  employee: CurrentEmployee;
+  market: string;
+  normalizedBillRateLevel: string;
+  billRate: number;
+};
+
 type EmployeeCompensationRow = {
   employeeId: string;
   employeeName: string;
@@ -124,7 +145,7 @@ export type BambooHrWorkforceReportSnapshot = {
     avgAnnualCost: number | null;
     avgMonthlyCost: number | null;
     totalAnnualCost: number | null;
-    numericBillRatesAvailable: false;
+    numericBillRatesAvailable: boolean;
     billableHoursAvailable: false;
     note: string;
   };
@@ -144,14 +165,19 @@ export type BambooHrWorkforceReportSnapshot = {
     summary: {
       asOfDate: string;
       employeeCount: number;
+      billableEmployeeCount: number;
       billRateLevelCoveragePct: number;
       distinctBillRateLevels: number;
-      numericBillRatesAvailable: false;
+      numericBillRatesAvailable: boolean;
+      avgBillRate: number | null;
+      avgPayRate: number | null;
+      overallBillToPayRate: number | null;
       billableHoursAvailable: false;
       note: string;
     };
     billRateLevelByRole: Array<{ role: string; headcount: number; covered: number; coveragePct: number; topLevels: string[] }>;
     billRateLevelRows: GroupRow[];
+    billRateLevelByMarketRows: BillRateLevelByMarketRow[];
     unavailableReports: string[];
   };
   unitEconomics: {
@@ -425,6 +451,52 @@ function buildBillRateLevelByRole(employees: CurrentEmployee[]) {
       topLevels: levelCounts,
     };
   });
+}
+
+function normalizeBillRateMarket(location: string): string {
+  return normalizeRateCardMarket(location);
+}
+
+function buildBillRateLevelByMarketRows(employees: CurrentEmployee[]): BillRateLevelByMarketRow[] {
+  const rows = employees.filter((employee) => employee.billRateLevel !== 'Missing bill rate level');
+  const groups = new Map<string, BillRateLevelByMarketRow>();
+  for (const employee of rows) {
+    const market = normalizeBillRateMarket(employee.location);
+    const billRateLevel = employee.billRateLevel || 'Unassigned';
+    const key = `${market} / ${billRateLevel}`;
+    const group = groups.get(key) || { key, market, billRateLevel, headcount: 0 };
+    group.headcount += 1;
+    groups.set(key, group);
+  }
+  return Array.from(groups.values())
+    .sort((a, b) => a.market.localeCompare(b.market) || a.billRateLevel.localeCompare(b.billRateLevel));
+}
+
+function buildEmployeeBillRateMatches(
+  employees: CurrentEmployee[],
+  rateCard: ParsedCogentRateCard | null,
+  generatedAt: string
+): EmployeeBillRateMatch[] {
+  if (!rateCard?.rows?.length) return [];
+  const snapshotYear = Number.parseInt(generatedAt.slice(0, 4), 10) || new Date().getFullYear();
+  return employees
+    .map((employee) => {
+      const market = normalizeBillRateMarket(employee.location);
+      const normalizedBillRateLevel = normalizeRateCardLevel(employee.billRateLevel);
+      const rate = findCogentRate(rateCard.rows, {
+        year: snapshotYear,
+        market,
+        billRateLevel: normalizedBillRateLevel,
+      });
+      if (!rate) return null;
+      return {
+        employee,
+        market,
+        normalizedBillRateLevel,
+        billRate: rate.billRate,
+      };
+    })
+    .filter((row): row is EmployeeBillRateMatch => Boolean(row));
 }
 
 function labelValue(value: unknown): string {
@@ -774,11 +846,22 @@ export async function getBambooHrHiringPayload(companyId: string) {
   };
 }
 
-function buildPayload(companyId: string, employees: CurrentEmployee[], generatedAt: string): BambooHrWorkforceReportSnapshot {
+function buildPayload(
+  companyId: string,
+  employees: CurrentEmployee[],
+  generatedAt: string,
+  rateCard: ParsedCogentRateCard | null = null
+): BambooHrWorkforceReportSnapshot {
   const coveredBillRateLevels = employees.filter((employee) => employee.billRateLevel !== 'Missing bill rate level').length;
   const employeesWithPayRate = employees.filter((employee) => employee.hourlyCost != null || employee.annualCost != null).length;
   const annualCosts = finiteNumbers(employees.map((employee) => employee.annualCost));
   const totalAnnualCost = annualCosts.length ? round2(annualCosts.reduce((sum, value) => sum + value, 0)) : null;
+  const billRateMatches = buildEmployeeBillRateMatches(employees, rateCard, generatedAt);
+  const billRateMatchesWithPay = billRateMatches.filter((match) => match.employee.hourlyCost != null && Number(match.employee.hourlyCost) > 0);
+  const avgBillRate = average(billRateMatches.map((match) => match.billRate));
+  const avgPayRate = average(billRateMatchesWithPay.map((match) => match.employee.hourlyCost));
+  const overallBillToPayRate = avgBillRate != null && avgPayRate != null && avgPayRate > 0 ? round2(avgBillRate / avgPayRate) : null;
+  const numericBillRatesAvailable = billRateMatches.length > 0;
   const missingBillRateLevel = employees
     .filter((employee) => employee.billRateLevel === 'Missing bill rate level')
     .map((employee) => ({
@@ -787,8 +870,9 @@ function buildPayload(companyId: string, employees: CurrentEmployee[], generated
       department: employee.department,
       location: employee.location,
     }));
-  const note =
-    'Employee compensation and bill-rate levels are available. Customer billed compensation rates or a client rate-card mapping are needed to unlock customer revenue and margin reports.';
+  const note = numericBillRatesAvailable
+    ? `Employee compensation, bill-rate levels, and the active ${rateCard?.sourceName || 'client rate card'} are available for bill-to-pay analysis.`
+    : 'Employee compensation and bill-rate levels are available. Customer billed compensation rates or a client rate-card mapping are needed to unlock customer revenue and margin reports.';
 
   return {
     source: 'BAMBOOHR_WORKFORCE',
@@ -808,7 +892,7 @@ function buildPayload(companyId: string, employees: CurrentEmployee[], generated
       avgAnnualCost: average(employees.map((employee) => employee.annualCost)),
       avgMonthlyCost: average(employees.map((employee) => (employee.annualCost == null ? null : round2(employee.annualCost / 12)))),
       totalAnnualCost,
-      numericBillRatesAvailable: false,
+      numericBillRatesAvailable,
       billableHoursAvailable: false,
       note,
     },
@@ -831,19 +915,29 @@ function buildPayload(companyId: string, employees: CurrentEmployee[], generated
       summary: {
         asOfDate: generatedAt.slice(0, 10),
         employeeCount: employees.length,
+        billableEmployeeCount: numericBillRatesAvailable ? billRateMatches.length : coveredBillRateLevels,
         billRateLevelCoveragePct: pct(coveredBillRateLevels, employees.length),
         distinctBillRateLevels: groupEmployees(employees, (employee) => employee.billRateLevel).filter((row) => row.key !== 'Missing bill rate level').length,
-        numericBillRatesAvailable: false,
+        numericBillRatesAvailable,
+        avgBillRate,
+        avgPayRate,
+        overallBillToPayRate,
         billableHoursAvailable: false,
         note,
       },
       billRateLevelByRole: buildBillRateLevelByRole(employees),
       billRateLevelRows: groupEmployees(employees, (employee) => employee.billRateLevel),
-      unavailableReports: [
-        'Customer revenue by employee requires customer billed compensation rates or recognized revenue by employee.',
-        'Customer revenue rollups require a client rate-card mapping for each compensation / bill-rate level.',
-        'Customer profitability requires billed compensation rates plus employee compensation costs.',
-      ],
+      billRateLevelByMarketRows: buildBillRateLevelByMarketRows(employees),
+      unavailableReports: numericBillRatesAvailable
+        ? [
+            'Recognized revenue by employee still requires billable hours or assignment-level revenue.',
+            'Customer profitability requires billed hours or recognized assignment revenue in addition to the rate card.',
+          ]
+        : [
+            'Customer revenue by employee requires customer billed compensation rates or recognized revenue by employee.',
+            'Customer revenue rollups require a client rate-card mapping for each compensation / bill-rate level.',
+            'Customer profitability requires billed compensation rates plus employee compensation costs.',
+          ],
     },
     unitEconomics: {
       summary: {
@@ -861,11 +955,15 @@ function buildPayload(companyId: string, employees: CurrentEmployee[], generated
       payCostByLocation: groupEmployees(employees, (employee) => employee.location),
       employeeCompensationRoster: buildEmployeeCompensationRoster(employees),
       missingBillRateLevel,
-      unavailableReports: [
-        'Compensation spread requires customer billed compensation rates.',
-        'Pay vs billed compensation analysis requires a bill-rate-level rate card.',
-        'Contribution margin requires customer billed compensation rates or recognized assignment revenue.',
-      ],
+      unavailableReports: numericBillRatesAvailable
+        ? [
+            'Contribution margin requires billable hours or recognized assignment revenue.',
+          ]
+        : [
+            'Compensation spread requires customer billed compensation rates.',
+            'Pay vs billed compensation analysis requires a bill-rate-level rate card.',
+            'Contribution margin requires customer billed compensation rates or recognized assignment revenue.',
+          ],
     },
   };
 }
@@ -886,7 +984,9 @@ export async function buildAndSaveBambooHrWorkforceReportSnapshot(companyId: str
     return normalizeCurrentEmployee(employee, detail, { jobInfo, employmentStatus, compensation });
   });
 
-  const snapshot = buildPayload(companyId, currentEmployees, new Date().toISOString());
+  const generatedAt = new Date().toISOString();
+  const rateCard = await readCogentRateCard(companyId).catch(() => null);
+  const snapshot = buildPayload(companyId, currentEmployees, generatedAt, rateCard);
   await saveOperationalSystemConnection({
     companyId,
     provider: 'BAMBOOHR',
@@ -938,6 +1038,7 @@ export function getBambooHrRevenueBillablesPayload(snapshot: BambooHrWorkforceRe
     summary: snapshot.revenueBillables.summary,
     billRateLevelByRole: snapshot.revenueBillables.billRateLevelByRole,
     billRateLevelRows: snapshot.revenueBillables.billRateLevelRows,
+    billRateLevelByMarketRows: snapshot.revenueBillables.billRateLevelByMarketRows,
     unavailableReports: snapshot.revenueBillables.unavailableReports,
     records: snapshot.revenueBillables.billRateLevelRows,
   };

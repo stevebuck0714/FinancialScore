@@ -7,6 +7,7 @@ import {
   listOperationalSystemConnections,
   saveOperationalSystemConnection,
 } from '@/lib/operational/operational-system-connections';
+import { COGENT_RATE_CARD_LABEL, COGENT_RATE_CARD_SOURCE_CODE } from '@/lib/operational/cogent-rate-card';
 
 export const dynamic = 'force-dynamic';
 
@@ -19,6 +20,7 @@ type SourceDefinition = {
 
 const SOURCE_DEFINITIONS: SourceDefinition[] = [
   { provider: 'BAMBOOHR', sourceCode: 'BAMBOOHR_STANDARD', label: 'BambooHR' },
+  { provider: 'SPREADSHEET_UPLOAD', sourceCode: COGENT_RATE_CARD_SOURCE_CODE, label: COGENT_RATE_CARD_LABEL },
   { provider: 'SPREADSHEET_UPLOAD', sourceCode: 'PLATOS_CLOSET_STORE_VISIT', label: 'MONTHLY STORE VISIT REPORT', retailOnly: true },
   { provider: 'SPREADSHEET_UPLOAD', sourceCode: 'PLATOS_INVENTORY', label: 'Monthly Inventory Report', retailOnly: true },
 ];

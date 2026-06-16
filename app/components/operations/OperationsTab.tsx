@@ -18650,6 +18650,14 @@ Strategies to Improve the CCC
       const days = Math.round((endDateValue.getTime() - startDateValue.getTime()) / 86_400_000);
       return Number.isFinite(days) && days >= 0 ? days : null;
     };
+    const isWithinSelectedHiringRange = (value: any) => {
+      const parsed = parseDateValue(value);
+      if (!parsed) return false;
+      const time = parsed.getTime();
+      if (selectedHiringStartTime != null && time < selectedHiringStartTime) return false;
+      if (selectedHiringEndTime != null && time > selectedHiringEndTime) return false;
+      return true;
+    };
     const formatHiringDays = (value: number | null) => (
       value == null ? '—' : `${Math.round(value).toLocaleString('en-US')} days`
     );
@@ -18698,12 +18706,16 @@ Strategies to Improve the CCC
       const title = String(application.jobTitle || '').trim();
       return (id ? jobsByApplicationKey.get(`id:${id}`) : null) || (title ? jobsByApplicationKey.get(`title:${title}`) : null) || {};
     };
-    const timeToFillByHireRows: any[] = applications
-      .filter((application) => application.hiredDate || hiringStageText(application).includes('hire'))
+    const timeToFillByHireRows: any[] = allApplications
+      .filter((application) => {
+        const completionDate = application.hiredDate || application.acceptedOfferDate || application.startDate;
+        if (completionDate) return isWithinSelectedHiringRange(completionDate);
+        return hiringStageText(application).includes('hire');
+      })
       .map((application) => {
         const job = jobForApplication(application);
         const postedDate = application.jobPostedDate || job.postedDate || null;
-        const hiredDate = application.hiredDate || null;
+        const hiredDate = application.hiredDate || application.acceptedOfferDate || null;
         const startDateValue = application.startDate || null;
         return {
           employeeName: application.applicantName || 'Applicant',
@@ -18717,7 +18729,7 @@ Strategies to Improve the CCC
           daysOpen: hiringDaysBetween(postedDate, startDateValue || hiredDate),
         };
       })
-      .filter((row) => row.postedDate || row.hiredDate || row.startDate);
+      .filter((row) => row.postedDate || row.hiredDate || row.startDate || row.employeeName);
     const timeToFillSortValue = (row: any) => {
       if (['postedDate', 'hiredDate', 'startDate'].includes(hiringTimeToFillSortKey)) {
         const time = parseDateValue(row[hiringTimeToFillSortKey])?.getTime();
@@ -19116,7 +19128,7 @@ Strategies to Improve the CCC
               </table>
             </div>
             <div style={{ marginTop: '10px', fontSize: '12px', color: '#64748b' }}>
-              Time to fill is calculated per hired person from job posted date to that person's hired date. Time open uses posted date to start date when available, otherwise hired date.
+              Time to fill is calculated per hired person from job posted date to that person's hired date. This table uses hired / accepted / start dates for the selected range, not application date.
             </div>
           </div>
         )}
@@ -19508,10 +19520,25 @@ Strategies to Improve the CCC
     const isBambooHrWorkforce = revenueBillablesData?.meta?.source === 'BAMBOOHR_WORKFORCE';
 
     if (isBambooHrWorkforce) {
-      const billRateLevelByRole: any[] = Array.isArray(revenueBillablesData.billRateLevelByRole) ? revenueBillablesData.billRateLevelByRole : [];
       const billRateLevelRows: any[] = Array.isArray(revenueBillablesData.billRateLevelRows) ? revenueBillablesData.billRateLevelRows : [];
+      const billRateLevelByMarketRows: any[] = Array.isArray(revenueBillablesData.billRateLevelByMarketRows) ? revenueBillablesData.billRateLevelByMarketRows : [];
       const unavailableReports: string[] = Array.isArray(revenueBillablesData.unavailableReports) ? revenueBillablesData.unavailableReports : [];
       const sourceNote = String(revenueBillablesData?.meta?.note || summary.note || '');
+      const billableEmployeeCount = Number(
+        summary.billableEmployeeCount ??
+        billRateLevelRows
+          .filter((row) => String(row?.key || '') !== 'Missing bill rate level')
+          .reduce((sum, row) => sum + Number(row?.headcount || 0), 0)
+      );
+      const overallBillToPayRate = Number(
+        summary.overallBillToPayRate ??
+        summary.billToPayRate ??
+        (
+          Number(summary.avgBillRate || 0) > 0 && Number(summary.avgPayRate || summary.avgHourlyCost || 0) > 0
+            ? Number(summary.avgBillRate || 0) / Number(summary.avgPayRate || summary.avgHourlyCost || 0)
+            : NaN
+        )
+      );
 
       return (
         <div style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
@@ -19519,12 +19546,13 @@ Strategies to Improve the CCC
           {isSectionEnabled('rbBillRateLevelSummary') && (
             <div style={{ ...cardStyle, paddingBottom: '16px' }}>
               <div style={{ ...cardTitleStyle, marginBottom: '14px' }}>Bill Rate Level Coverage</div>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: '12px' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, minmax(0, 1fr))', gap: '12px' }}>
                 {[
                   { label: 'Employees', value: Number(summary.employeeCount || 0).toLocaleString('en-US'), color: '#1d4ed8' },
-                  { label: 'Bill Rate Level Coverage', value: `${Number(summary.billRateLevelCoveragePct || 0).toFixed(1)}%`, color: '#7c3aed' },
+                  { label: 'Billable Employees', value: billableEmployeeCount.toLocaleString('en-US'), color: '#7c3aed' },
                   { label: 'Distinct Levels', value: Number(summary.distinctBillRateLevels || 0).toLocaleString('en-US'), color: '#0f766e' },
                   { label: 'Client Rate Card', value: summary.numericBillRatesAvailable ? 'Available' : 'Needed', color: '#b45309' },
+                  { label: 'Overall Bill to Pay Rate', value: Number.isFinite(overallBillToPayRate) ? `${overallBillToPayRate.toFixed(2)}x` : 'Needed', color: '#0f172a' },
                 ].map((kpi) => (
                   <div key={kpi.label} style={{ padding: '12px', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px' }}>
                     <div style={{ fontSize: '11px', color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: '4px' }}>{kpi.label}</div>
@@ -19537,23 +19565,6 @@ Strategies to Improve the CCC
           )}
 
           <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)', gap: '16px' }}>
-            {isSectionEnabled('rbBillRateLevelByRole') && <div style={cardStyle}>
-              <div style={cardTitleStyle}>Bill Rate Level Coverage by Role</div>
-              <div style={{ overflowX: 'auto', maxHeight: '420px', overflowY: 'auto' }}>
-                <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                  <thead><tr><th style={thStyle}>Role</th><th style={{ ...thStyle, textAlign: 'right' }}>Headcount</th><th style={{ ...thStyle, textAlign: 'right' }}>Covered</th><th style={{ ...thStyle, textAlign: 'right' }}>Coverage</th><th style={thStyle}>Top Levels</th></tr></thead>
-                  <tbody>{billRateLevelByRole.slice(0, 18).map((row) => (
-                    <tr key={row.role}>
-                      <td style={{ ...tdStyle, fontWeight: 600 }}>{row.role}</td>
-                      <td style={{ ...tdStyle, textAlign: 'right' }}>{Number(row.headcount || 0).toLocaleString('en-US')}</td>
-                      <td style={{ ...tdStyle, textAlign: 'right' }}>{Number(row.covered || 0).toLocaleString('en-US')}</td>
-                      <td style={{ ...tdStyle, textAlign: 'right' }}>{Number(row.coveragePct || 0).toFixed(1)}%</td>
-                      <td style={tdStyle}>{Array.isArray(row.topLevels) ? row.topLevels.join(', ') : '—'}</td>
-                    </tr>
-                  ))}</tbody>
-                </table>
-              </div>
-            </div>}
             {isSectionEnabled('rbEmployeesByBillRateLevel') && <div style={cardStyle}>
               <div style={cardTitleStyle}>Employees by Bill Rate Level</div>
               <ResponsiveContainer width="100%" height={360}>
@@ -19565,6 +19576,33 @@ Strategies to Improve the CCC
                   <Bar dataKey="headcount" fill="#7c3aed" radius={0} />
                 </BarChart>
               </ResponsiveContainer>
+            </div>}
+            {isSectionEnabled('rbEmployeesByMarketBillRateLevel') && <div style={cardStyle}>
+              <div style={cardTitleStyle}>Employees by Market + Bill Rate Level</div>
+              <ResponsiveContainer width="100%" height={360}>
+                <BarChart data={billRateLevelByMarketRows.slice(0, 18)} margin={{ top: 8, right: 8, left: 8, bottom: 120 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                  <XAxis dataKey="key" angle={-30} textAnchor="end" height={140} tick={chartLabelStyle} interval={0} />
+                  <YAxis tick={chartLabelStyle} />
+                  <Tooltip formatter={(value: any) => [Number(value || 0).toLocaleString('en-US'), 'Employees']} />
+                  <Bar dataKey="headcount" fill="#2563eb" radius={0} />
+                </BarChart>
+              </ResponsiveContainer>
+              <div style={{ overflowX: 'auto', maxHeight: '320px', overflowY: 'auto', marginTop: '12px' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                  <thead><tr><th style={thStyle}>Market</th><th style={thStyle}>Bill Rate Level</th><th style={{ ...thStyle, textAlign: 'right' }}>Employees</th></tr></thead>
+                  <tbody>{billRateLevelByMarketRows.map((row) => (
+                    <tr key={row.key}>
+                      <td style={{ ...tdStyle, fontWeight: 600 }}>{row.market}</td>
+                      <td style={tdStyle}>{row.billRateLevel}</td>
+                      <td style={{ ...tdStyle, textAlign: 'right', fontWeight: 700 }}>{Number(row.headcount || 0).toLocaleString('en-US')}</td>
+                    </tr>
+                  ))}</tbody>
+                </table>
+              </div>
+              <div style={{ marginTop: '10px', fontSize: '12px', color: '#64748b' }}>
+                CA locations are split into CA - SF and CA - SD for rate-card matching.
+              </div>
             </div>}
           </div>
 
