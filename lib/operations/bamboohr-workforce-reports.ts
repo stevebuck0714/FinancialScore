@@ -41,9 +41,13 @@ type HiringApplicationRow = {
   email: string | null;
   phone: string | null;
   status: string;
+  jobStage: string;
   applicationCount: number;
+  jobPostedDate: string | null;
+  acceptedOfferDate: string | null;
   appliedDate: string | null;
   hiredDate: string | null;
+  startDate: string | null;
   lastUpdated: string | null;
   source: string | null;
   location: string | null;
@@ -111,6 +115,7 @@ export type BambooHrWorkforceReportSnapshot = {
     asOfDate: string;
     headcount: number;
     activeOrCurrentHeadcount: number;
+    billableHeadcount: number;
     billRateLevelCoveragePct: number;
     employeesWithPayRate: number;
     hourlyCount: number;
@@ -627,9 +632,13 @@ function normalizeHiringApplication(
     email: asString(row.email) || asString(row.emailAddress) || asString(applicant.email) || null,
     phone: asString(row.phone) || asString(row.phoneNumber) || asString(applicant.phone) || null,
     status: labelValue(row.status) || 'Unknown',
+    jobStage: labelValue(row.jobStage) || labelValue(row.stage) || labelValue(row.applicationStage) || labelValue(row.workflowStage) || labelValue(row.status) || 'Unknown',
     applicationCount: 1,
+    jobPostedDate: matchedJob?.postedDate || null,
+    acceptedOfferDate: asString(row.acceptedOfferDate) || asString(row.offerAcceptedDate) || asString(row.offerAcceptanceDate) || asString(row.acceptedDate) || null,
     appliedDate: asString(row.appliedDate) || asString(row.createdDate) || null,
-    hiredDate: asString(row.hiredDate) || asString(row.hireDate) || asString(row.startDate) || null,
+    hiredDate: asString(row.hiredDate) || asString(row.hireDate) || null,
+    startDate: asString(row.startDate) || asString(row.employeeStartDate) || asString(row.hireStartDate) || null,
     lastUpdated: asString(row.lastUpdated) || asString(row.updatedDate) || asString(row.updatedAt) || null,
     source: labelValue(row.source) || asString(row.referralSource) || asString(row.applicationSource) || asString(row.sourceName) || null,
     location: labelValue(row.location) || labelValue(job.location) || matchedJob?.location || null,
@@ -790,6 +799,7 @@ function buildPayload(companyId: string, employees: CurrentEmployee[], generated
       asOfDate: generatedAt.slice(0, 10),
       headcount: employees.length,
       activeOrCurrentHeadcount: employees.filter((employee) => !/terminated/i.test(employee.employmentStatus)).length,
+      billableHeadcount: coveredBillRateLevels,
       billRateLevelCoveragePct: pct(coveredBillRateLevels, employees.length),
       employeesWithPayRate,
       hourlyCount: employees.filter((employee) => employee.paidPer.toLowerCase() === 'hour').length,

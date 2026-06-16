@@ -738,16 +738,18 @@ export default function OperationsTab({
   const [billingCashData, setBillingCashData] = useState<any>(null);
   const [bcPriorityFilter, setBcPriorityFilter] = useState<'all' | 'collect' | 'pay'>('all');
   const [laborSchedulingData, setLaborSchedulingData] = useState<any>(null);
+  const [selectedLaborCompensationRoleLocation, setSelectedLaborCompensationRoleLocation] = useState<string>('__ALL__');
   const [selectedLaborRosterDivision, setSelectedLaborRosterDivision] = useState<string>('');
   const [selectedLaborRosterDepartment, setSelectedLaborRosterDepartment] = useState<string>('');
   const [hiringData, setHiringData] = useState<any>(null);
   const [expandedHiringJobs, setExpandedHiringJobs] = useState<Record<string, boolean>>({});
-  const [hiringStatusDetailExpanded, setHiringStatusDetailExpanded] = useState<boolean>(true);
   const [hiringApplicantsByJobExpanded, setHiringApplicantsByJobExpanded] = useState<boolean>(true);
-  const [hiringApplicantsSortKey, setHiringApplicantsSortKey] = useState<'title' | 'status' | 'activeApplicantsCount' | 'newApplicantsCount' | 'totalApplicantsCount'>('totalApplicantsCount');
+  const [hiringApplicantsSortKey, setHiringApplicantsSortKey] = useState<'title' | 'division' | 'department' | 'status' | 'activeApplicantsCount' | 'newApplicantsCount' | 'totalApplicantsCount'>('totalApplicantsCount');
   const [hiringApplicantsSortDir, setHiringApplicantsSortDir] = useState<'asc' | 'desc'>('desc');
-  const [hiringStatusDetailSortKey, setHiringStatusDetailSortKey] = useState<'applicantName' | 'jobTitle' | 'division' | 'department' | 'appliedDate' | 'lastUpdated' | 'email' | 'location'>('applicantName');
-  const [hiringStatusDetailSortDir, setHiringStatusDetailSortDir] = useState<'asc' | 'desc'>('asc');
+  const [hiringApplicantDetailSortKey, setHiringApplicantDetailSortKey] = useState<'applicantName' | 'status' | 'jobStage' | 'appliedDate' | 'hiredDate' | 'email' | 'phone' | 'rating'>('applicantName');
+  const [hiringApplicantDetailSortDir, setHiringApplicantDetailSortDir] = useState<'asc' | 'desc'>('asc');
+  const [hiringTimeToFillSortKey, setHiringTimeToFillSortKey] = useState<'employeeName' | 'title' | 'division' | 'department' | 'postedDate' | 'hiredDate' | 'startDate' | 'daysToFill' | 'daysOpen'>('hiredDate');
+  const [hiringTimeToFillSortDir, setHiringTimeToFillSortDir] = useState<'asc' | 'desc'>('desc');
   const [customersSitesData, setCustomersSitesData] = useState<any>(null);
   const [revenueBillablesData, setRevenueBillablesData] = useState<any>(null);
   const [unitEconomicsData, setUnitEconomicsData] = useState<any>(null);
@@ -18146,8 +18148,47 @@ Strategies to Improve the CCC
       const payTypeMix: any[] = Array.isArray(laborSchedulingData.payTypeMix) ? laborSchedulingData.payTypeMix : [];
       const billRateLevelCoverage: any[] = Array.isArray(laborSchedulingData.billRateLevelCoverage) ? laborSchedulingData.billRateLevelCoverage : [];
       const missingBillRateLevel: any[] = Array.isArray(laborSchedulingData.missingBillRateLevel) ? laborSchedulingData.missingBillRateLevel : [];
+      const billableHeadcount = Number(
+        summary.billableHeadcount ??
+        billRateLevelCoverage.find((row) => row?.label === 'Has Bill Rate Level')?.count ??
+        0
+      );
       const employeeCompensationRoster: any[] = (Array.isArray(laborSchedulingData.employeeCompensationRoster) ? laborSchedulingData.employeeCompensationRoster : [])
         .filter((row: any) => matchesSelectedOperationalClient(row.clientName));
+      const normalizeCompensationLocation = (value: any) => String(value || 'Unassigned').trim() || 'Unassigned';
+      const compensationRoleLocationOptions = Array.from(new Set(
+        employeeCompensationRoster.map((row) => normalizeCompensationLocation(row.location))
+      )).sort((a, b) => a.localeCompare(b));
+      const effectiveCompensationRoleLocation =
+        selectedLaborCompensationRoleLocation === '__ALL__' || compensationRoleLocationOptions.includes(selectedLaborCompensationRoleLocation)
+          ? selectedLaborCompensationRoleLocation
+          : '__ALL__';
+      const compensationRoleRoster = effectiveCompensationRoleLocation === '__ALL__'
+        ? employeeCompensationRoster
+        : employeeCompensationRoster.filter((row) => normalizeCompensationLocation(row.location) === effectiveCompensationRoleLocation);
+      const compensationByRoleRows = effectiveCompensationRoleLocation === '__ALL__'
+        ? headcountByRole
+        : Array.from(compensationRoleRoster.reduce((groups: Map<string, any[]>, row) => {
+            const key = String(row.role || 'Unassigned').trim() || 'Unassigned';
+            groups.set(key, [...(groups.get(key) || []), row]);
+            return groups;
+          }, new Map<string, any[]>()).entries())
+            .map(([key, rows]) => {
+              const annualCosts = rows.map((row) => Number(row.annualCost)).filter((value) => Number.isFinite(value));
+              const monthlyCosts = rows.map((row) => Number(row.monthlyCost)).filter((value) => Number.isFinite(value));
+              const billableRows = rows.filter((row) => String(row.billRateLevel || '') !== 'Missing bill rate level').length;
+              return {
+                key,
+                headcount: rows.length,
+                totalAnnualCost: annualCosts.length ? annualCosts.reduce((sum, value) => sum + value, 0) : null,
+                avgAnnualCost: annualCosts.length ? averageNumber(annualCosts) : null,
+                avgMonthlyCost: monthlyCosts.length ? averageNumber(monthlyCosts) : null,
+                minAnnualCost: annualCosts.length ? Math.min(...annualCosts) : null,
+                maxAnnualCost: annualCosts.length ? Math.max(...annualCosts) : null,
+                billRateLevelCoveragePct: rows.length ? (billableRows / rows.length) * 100 : 0,
+              };
+            })
+            .sort((a, b) => b.headcount - a.headcount || a.key.localeCompare(b.key));
       const normalizeRosterDivision = (value: any) => String(value || 'Unassigned').trim() || 'Unassigned';
       const normalizeRosterDepartment = (value: any) => String(value || 'Unassigned').trim() || 'Unassigned';
       const rosterDivisions = Array.from(new Set(
@@ -18186,9 +18227,9 @@ Strategies to Improve the CCC
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, minmax(0, 1fr))', gap: '12px' }}>
                 {[
                   { label: 'Headcount', value: Number(summary.headcount || 0).toLocaleString('en-US'), color: '#1d4ed8' },
+                  { label: 'Billable Headcount', value: billableHeadcount.toLocaleString('en-US'), color: '#7c3aed' },
                   { label: 'Total Annual Pay', value: summary.totalAnnualCost == null ? '—' : formatCurrency(summary.totalAnnualCost), color: '#0f766e' },
                   { label: 'Avg Annual Pay', value: summary.avgAnnualCost == null ? '—' : formatCurrency(summary.avgAnnualCost), color: '#0f172a' },
-                  { label: 'Avg Monthly Pay', value: summary.avgMonthlyCost == null ? '—' : formatCurrency(summary.avgMonthlyCost), color: '#b45309' },
                   { label: 'Bill Rate Level Coverage', value: `${Number(summary.billRateLevelCoveragePct || 0).toFixed(1)}%`, color: '#7c3aed' },
                 ].map((kpi) => (
                   <div key={kpi.label} style={{ padding: '12px', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px' }}>
@@ -18203,11 +18244,30 @@ Strategies to Improve the CCC
 
           {isSectionEnabled('lsCompensationByRole') && (
             <div style={cardStyle}>
-              <div style={cardTitleStyle}>Compensation by Role</div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', alignItems: 'center', marginBottom: '12px', flexWrap: 'wrap' }}>
+                <div style={{ ...cardTitleStyle, marginBottom: 0 }}>Compensation by Role</div>
+                <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
+                  <span style={{ fontSize: '12px', color: '#64748b', fontWeight: 600 }}>
+                    {Number(compensationRoleRoster.length || 0).toLocaleString('en-US')} employees
+                  </span>
+                  <label htmlFor="labor-compensation-role-location" style={{ fontSize: '12px', color: '#64748b', fontWeight: 600 }}>Location</label>
+                  <select
+                    id="labor-compensation-role-location"
+                    value={effectiveCompensationRoleLocation}
+                    onChange={(event) => setSelectedLaborCompensationRoleLocation(event.target.value)}
+                    style={{ border: '1px solid #cbd5e1', borderRadius: '8px', padding: '6px 28px 6px 10px', fontSize: '13px', color: '#0f172a', background: '#fff', minWidth: '220px' }}
+                  >
+                    <option value="__ALL__">All Locations</option>
+                    {compensationRoleLocationOptions.map((location) => (
+                      <option key={location} value={location}>{location}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
               <div style={{ overflowX: 'auto', maxHeight: '420px', overflowY: 'auto' }}>
                 <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                   <thead><tr><th style={thStyle}>Role</th><th style={{ ...thStyle, textAlign: 'right' }}>Headcount</th><th style={{ ...thStyle, textAlign: 'right' }}>Total Annual Pay</th><th style={{ ...thStyle, textAlign: 'right' }}>Avg Annual Pay</th><th style={{ ...thStyle, textAlign: 'right' }}>Avg Monthly Pay</th><th style={{ ...thStyle, textAlign: 'right' }}>Min / Max Annual</th><th style={{ ...thStyle, textAlign: 'right' }}>Rate Level Coverage</th></tr></thead>
-                  <tbody>{headcountByRole.slice(0, 24).map((row) => (
+                  <tbody>{compensationByRoleRows.slice(0, 24).map((row) => (
                     <tr key={row.key}>
                       <td style={{ ...tdStyle, fontWeight: 600 }}>{row.key}</td>
                       <td style={{ ...tdStyle, textAlign: 'right' }}>{Number(row.headcount || 0).toLocaleString('en-US')}</td>
@@ -18282,9 +18342,9 @@ Strategies to Improve the CCC
 
           <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)', gap: '16px' }}>
             {isSectionEnabled('lsHeadcountByRole') && <div style={cardStyle}>
-              <div style={cardTitleStyle}>Headcount by Role</div>
+              <div style={cardTitleStyle}>Headcount by Location</div>
               <ResponsiveContainer width="100%" height={320}>
-                <BarChart data={headcountByRole.slice(0, 12)} margin={{ top: 8, right: 8, left: 8, bottom: 70 }}>
+                <BarChart data={headcountByLocation.slice(0, 12)} margin={{ top: 8, right: 8, left: 8, bottom: 70 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
                   <XAxis dataKey="key" angle={-30} textAnchor="end" height={95} tick={chartLabelStyle} interval={0} />
                   <YAxis tick={chartLabelStyle} />
@@ -18497,33 +18557,39 @@ Strategies to Improve the CCC
     }
 
     const summary = hiringData.summary || {};
-    const jobs: any[] = (Array.isArray(hiringData.jobs) ? hiringData.jobs : [])
-      .filter((row: any) => matchesSelectedOperationalClient(row.clientName));
-    const applications: any[] = (Array.isArray(hiringData.applications) ? hiringData.applications : [])
-      .filter((row: any) => matchesSelectedOperationalClient(row.clientName));
-    const applicationsByStatus: any[] = Array.isArray(hiringData.applicationsByStatus) ? hiringData.applicationsByStatus : [];
-    const applicantsByJob: any[] = (Array.isArray(hiringData.applicantsByJob) ? hiringData.applicantsByJob : [])
-      .filter((row: any) => matchesSelectedOperationalClient(row.clientName));
-    const newApplicantsByJob: any[] = (Array.isArray(hiringData.newApplicantsByJob) ? hiringData.newApplicantsByJob : [])
-      .filter((row: any) => matchesSelectedOperationalClient(row.clientName));
-    const postingPerformance: any[] = (Array.isArray(hiringData.postingPerformance) ? hiringData.postingPerformance : applicantsByJob)
-      .filter((row: any) => matchesSelectedOperationalClient(row.clientName));
+    const hiringJobDedupeKey = (row: any) => {
+      const id = String(row?.jobId || row?.id || '').trim();
+      if (id) return `id:${id}`;
+      return [
+        row?.title,
+        row?.division,
+        row?.department,
+        row?.status,
+      ].map((value) => String(value || '').trim().toLowerCase()).join('||');
+    };
+    const hiringApplicationDedupeKey = (row: any) => {
+      const id = String(row?.id || '').trim();
+      if (id) return `id:${id}`;
+      return [
+        row?.jobId,
+        row?.jobTitle,
+        row?.applicantName,
+        row?.email,
+        row?.appliedDate,
+        row?.status,
+      ].map((value) => String(value || '').trim().toLowerCase()).join('||');
+    };
+    const jobs: any[] = Array.from(new Map((Array.isArray(hiringData.jobs) ? hiringData.jobs : [])
+      .filter((row: any) => matchesSelectedOperationalClient(row.clientName))
+      .map((row: any) => [hiringJobDedupeKey(row), row])).values());
+    const allApplications: any[] = Array.from(new Map((Array.isArray(hiringData.applications) ? hiringData.applications : [])
+      .filter((row: any) => matchesSelectedOperationalClient(row.clientName))
+      .map((row: any) => [hiringApplicationDedupeKey(row), row])).values());
     const cardStyle: React.CSSProperties = { background: '#fff', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '20px' };
     const cardTitleStyle: React.CSSProperties = { margin: '0 0 12px 0', fontSize: '13px', fontWeight: 700, color: '#0f172a', textTransform: 'uppercase', letterSpacing: '0.04em' };
     const thStyle: React.CSSProperties = { textAlign: 'left', padding: '8px 10px', fontSize: '11px', fontWeight: 700, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.04em', borderBottom: '1px solid #e2e8f0', background: '#f8fafc' };
     const tdStyle: React.CSSProperties = { padding: '8px 10px', fontSize: '13px', color: '#0f172a', borderBottom: '1px solid #f1f5f9' };
     const chartLabelStyle = { fontSize: '12px', fill: '#64748b' };
-    const applicantRowsByJobId = applications.reduce((map: Record<string, any[]>, application) => {
-      const key = String(application.jobId || application.jobTitle || 'Unassigned Job');
-      if (!map[key]) map[key] = [];
-      map[key].push(application);
-      return map;
-    }, {});
-    const applicantRowsForJob = (row: any) => {
-      const directKey = String(row.jobId || '');
-      if (directKey && applicantRowsByJobId[directKey]) return applicantRowsByJobId[directKey];
-      return applications.filter((application) => String(application.jobTitle || '') === String(row.title || ''));
-    };
     const normalizeHiringStatus = (value: any) => String(value || 'Unknown').trim() || 'Unknown';
     const statusRank = (status: string) => {
       const normalized = status.toLowerCase().replace(/[_-]+/g, ' ');
@@ -18537,19 +18603,217 @@ Strategies to Improve the CCC
       if (normalized.includes('reject') || normalized.includes('decline')) return 98;
       return 50;
     };
-    const applicationsByDetailedStatus = Object.entries(
-      applications.reduce((map: Record<string, any[]>, application) => {
-        const status = normalizeHiringStatus(application.status);
-        if (!map[status]) map[status] = [];
-        map[status].push(application);
-        return map;
-      }, {})
-    ).sort(([statusA], [statusB]) => {
-      const rankDelta = statusRank(statusA) - statusRank(statusB);
-      return rankDelta || statusA.localeCompare(statusB);
+    const isNewHiringStatus = (status: any) => {
+      const normalized = normalizeHiringStatus(status).toLowerCase().replace(/[_-]+/g, ' ');
+      return normalized === 'new' || normalized.includes('new applicant');
+    };
+    const isActiveHiringStatus = (status: any) => {
+      const normalized = normalizeHiringStatus(status).toLowerCase().replace(/[_-]+/g, ' ');
+      return !normalized.includes('reject') && !normalized.includes('decline') && !normalized.includes('hire');
+    };
+    const hasHiringStatusKeyword = (status: any, keyword: string) => (
+      normalizeHiringStatus(status).toLowerCase().replace(/[_-]+/g, ' ').includes(keyword)
+    );
+    const hiringStageText = (application: any) => (
+      `${normalizeHiringStatus(application.jobStage)} ${normalizeHiringStatus(application.status)}`
+        .toLowerCase()
+        .replace(/[_-]+/g, ' ')
+    );
+    const selectedHiringStart = parseDateValue(startDate);
+    const selectedHiringEnd = parseDateValue(endDate);
+    const selectedHiringStartTime = selectedHiringStart?.getTime() ?? null;
+    const selectedHiringEndTime = selectedHiringEnd == null ? null : selectedHiringEnd.getTime() + 86_399_999;
+    const applications = allApplications.filter((application) => {
+      const applied = parseDateValue(application.appliedDate);
+      if (!applied) return selectedHiringStartTime == null && selectedHiringEndTime == null;
+      const appliedTime = applied.getTime();
+      if (selectedHiringStartTime != null && appliedTime < selectedHiringStartTime) return false;
+      if (selectedHiringEndTime != null && appliedTime > selectedHiringEndTime) return false;
+      return true;
     });
+    const applicationsByStatus: any[] = Array.from(
+      applications.reduce((counts: Map<string, number>, application) => {
+        const status = normalizeHiringStatus(application.status);
+        counts.set(status, (counts.get(status) || 0) + 1);
+        return counts;
+      }, new Map<string, number>()).entries()
+    )
+      .map(([status, count]) => ({ status, count }))
+      .sort((a, b) => {
+        const rankDelta = statusRank(a.status) - statusRank(b.status);
+        return rankDelta || a.status.localeCompare(b.status);
+      });
+    const hiringDaysBetween = (start: any, end: any): number | null => {
+      const startDateValue = parseDateValue(start);
+      const endDateValue = parseDateValue(end);
+      if (!startDateValue || !endDateValue) return null;
+      const days = Math.round((endDateValue.getTime() - startDateValue.getTime()) / 86_400_000);
+      return Number.isFinite(days) && days >= 0 ? days : null;
+    };
+    const formatHiringDays = (value: number | null) => (
+      value == null ? '—' : `${Math.round(value).toLocaleString('en-US')} days`
+    );
+    const funnelByRoleRows: any[] = Array.from(
+      applications.reduce((groups: Map<string, any>, application) => {
+        const role = String(application.jobTitle || 'Unassigned Role').trim() || 'Unassigned Role';
+        const group = groups.get(role) || {
+          role,
+          screened: 0,
+          interviewed: 0,
+          offered: 0,
+          hired: 0,
+          totalApplications: 0,
+        };
+        const stageText = hiringStageText(application);
+        group.totalApplications += 1;
+        if (stageText.includes('screen')) group.screened += 1;
+        if (stageText.includes('interview')) group.interviewed += 1;
+        if (stageText.includes('offer')) group.offered += 1;
+        if (stageText.includes('hire')) group.hired += 1;
+        groups.set(role, group);
+        return groups;
+      }, new Map<string, any>()).values()
+    ).sort((a, b) => (
+      Number(b.screened || 0) + Number(b.interviewed || 0) + Number(b.offered || 0) + Number(b.hired || 0)
+    ) - (
+      Number(a.screened || 0) + Number(a.interviewed || 0) + Number(a.offered || 0) + Number(a.hired || 0)
+    ) || Number(b.totalApplications || 0) - Number(a.totalApplications || 0) || String(a.role || '').localeCompare(String(b.role || '')));
+    const applicationsForJob = (row: any) => {
+      const directKey = String(row.jobId || row.id || '');
+      const title = String(row.title || row.jobTitle || '');
+      return applications.filter((application) => (
+        (directKey && String(application.jobId || '') === directKey) ||
+        String(application.jobTitle || '') === title
+      ));
+    };
+    const jobsByApplicationKey = new Map<string, any>();
+    jobs.forEach((job) => {
+      const id = String(job.id || job.jobId || '').trim();
+      const title = String(job.title || '').trim();
+      if (id) jobsByApplicationKey.set(`id:${id}`, job);
+      if (title) jobsByApplicationKey.set(`title:${title}`, job);
+    });
+    const jobForApplication = (application: any) => {
+      const id = String(application.jobId || '').trim();
+      const title = String(application.jobTitle || '').trim();
+      return (id ? jobsByApplicationKey.get(`id:${id}`) : null) || (title ? jobsByApplicationKey.get(`title:${title}`) : null) || {};
+    };
+    const timeToFillByHireRows: any[] = applications
+      .filter((application) => application.hiredDate || hiringStageText(application).includes('hire'))
+      .map((application) => {
+        const job = jobForApplication(application);
+        const postedDate = application.jobPostedDate || job.postedDate || null;
+        const hiredDate = application.hiredDate || null;
+        const startDateValue = application.startDate || null;
+        return {
+          employeeName: application.applicantName || 'Applicant',
+          title: application.jobTitle || job.title || 'Unassigned Job',
+          division: application.division || job.division || 'Unassigned',
+          department: application.department || job.department || 'Unassigned',
+          postedDate,
+          hiredDate,
+          startDate: startDateValue,
+          daysToFill: hiringDaysBetween(postedDate, hiredDate),
+          daysOpen: hiringDaysBetween(postedDate, startDateValue || hiredDate),
+        };
+      })
+      .filter((row) => row.postedDate || row.hiredDate || row.startDate);
+    const timeToFillSortValue = (row: any) => {
+      if (['postedDate', 'hiredDate', 'startDate'].includes(hiringTimeToFillSortKey)) {
+        const time = parseDateValue(row[hiringTimeToFillSortKey])?.getTime();
+        return Number.isFinite(time) ? time : 0;
+      }
+      if (['daysToFill', 'daysOpen'].includes(hiringTimeToFillSortKey)) return Number(row[hiringTimeToFillSortKey] ?? -1);
+      return String(row[hiringTimeToFillSortKey] || '').toLowerCase();
+    };
+    const sortedTimeToFillByHireRows = [...timeToFillByHireRows].sort((a, b) => {
+      const aValue = timeToFillSortValue(a);
+      const bValue = timeToFillSortValue(b);
+      const direction = hiringTimeToFillSortDir === 'asc' ? 1 : -1;
+      const comparison =
+        typeof aValue === 'number' && typeof bValue === 'number'
+          ? aValue - bValue
+          : String(aValue).localeCompare(String(bValue));
+      if (comparison !== 0) return comparison * direction;
+      return String(a.employeeName || '').localeCompare(String(b.employeeName || ''));
+    });
+    const renderTimeToFillSortHeader = (
+      key: typeof hiringTimeToFillSortKey,
+      label: string,
+      align: 'left' | 'right' = 'left'
+    ) => {
+      const active = hiringTimeToFillSortKey === key;
+      return (
+        <th style={{ ...thStyle, textAlign: align }}>
+          <button
+            type="button"
+            onClick={() => {
+              if (active) {
+                setHiringTimeToFillSortDir((current) => (current === 'asc' ? 'desc' : 'asc'));
+              } else {
+                setHiringTimeToFillSortKey(key);
+                setHiringTimeToFillSortDir(['postedDate', 'hiredDate', 'startDate', 'daysToFill', 'daysOpen'].includes(key) ? 'desc' : 'asc');
+              }
+            }}
+            style={{
+              border: 0,
+              background: 'transparent',
+              padding: 0,
+              color: 'inherit',
+              font: 'inherit',
+              fontWeight: 700,
+              cursor: 'pointer',
+              textTransform: 'inherit',
+              letterSpacing: 'inherit',
+              textAlign: align,
+            }}
+          >
+            {label}{active ? (hiringTimeToFillSortDir === 'asc' ? ' ^' : ' v') : ''}
+          </button>
+        </th>
+      );
+    };
+    const avgTimeToFillValues = timeToFillByHireRows
+      .map((row) => Number(row.daysToFill))
+      .filter((value) => Number.isFinite(value));
+    const avgTimeOpenValues = timeToFillByHireRows
+      .map((row) => Number(row.daysOpen))
+      .filter((value) => Number.isFinite(value));
+    const avgTimeToFillDays = avgTimeToFillValues.length ? averageNumber(avgTimeToFillValues) : null;
+    const avgTimeOpenDays = avgTimeOpenValues.length ? averageNumber(avgTimeOpenValues) : null;
+    const applicantsByJob: any[] = jobs
+      .map((job) => {
+        const rows = applicationsForJob(job);
+        return {
+          jobId: job.id || job.jobId,
+          title: job.title,
+          status: job.status,
+          clientName: job.clientName,
+          division: job.division,
+          department: job.department,
+          activeApplicantsCount: rows.filter((row) => isActiveHiringStatus(row.status)).length,
+          newApplicantsCount: rows.filter((row) => isNewHiringStatus(row.status)).length,
+          totalApplicantsCount: rows.length,
+        };
+      })
+      .sort((a, b) => b.activeApplicantsCount - a.activeApplicantsCount || b.totalApplicantsCount - a.totalApplicantsCount);
+    const postingPerformance: any[] = applicantsByJob;
+    const applicantRowsByJobId = applications.reduce((map: Record<string, any[]>, application) => {
+      const key = String(application.jobId || application.jobTitle || 'Unassigned Job');
+      if (!map[key]) map[key] = [];
+      map[key].push(application);
+      return map;
+    }, {});
+    const applicantRowsForJob = (row: any) => {
+      const directKey = String(row.jobId || '');
+      if (directKey && applicantRowsByJobId[directKey]) return applicantRowsByJobId[directKey];
+      return applications.filter((application) => String(application.jobTitle || '') === String(row.title || ''));
+    };
+    const hiringApplicantNumericSortKeys = new Set(['activeApplicantsCount', 'newApplicantsCount', 'totalApplicantsCount']);
     const applicantsSortValue = (row: any) => {
       if (hiringApplicantsSortKey === 'title') return String(row.title || '').toLowerCase();
+      if (hiringApplicantsSortKey === 'division') return String(row.division || '').toLowerCase();
+      if (hiringApplicantsSortKey === 'department') return String(row.department || '').toLowerCase();
       if (hiringApplicantsSortKey === 'status') return String(row.status || '').toLowerCase();
       return Number(row[hiringApplicantsSortKey] || 0);
     };
@@ -18570,59 +18834,22 @@ Strategies to Improve the CCC
       if (comparison === 0) comparison = applicantsSortTieBreaker(a, b);
       return comparison * direction;
     });
-    const applicantsSortOptions: Array<{ key: typeof hiringApplicantsSortKey; label: string }> = [
-      { key: 'title', label: 'Job' },
-      { key: 'status', label: 'Status' },
-      { key: 'activeApplicantsCount', label: 'Active Applications' },
-      { key: 'newApplicantsCount', label: 'New Applications' },
-      { key: 'totalApplicantsCount', label: 'Total Applications' },
-    ];
-    const formatHiringDate = (value: any) => {
-      const raw = String(value || '').trim();
-      if (!raw) return '—';
-      const match = raw.match(/^(\d{4})-(\d{2})-(\d{2})/);
-      return match ? `${match[2]}/${match[3]}/${match[1]}` : raw;
-    };
-    const statusDetailSortColumns: Array<{ key: typeof hiringStatusDetailSortKey; label: string }> = [
-      { key: 'applicantName', label: 'Applicant / Hire' },
-      { key: 'jobTitle', label: 'Job' },
-      { key: 'division', label: 'Division' },
-      { key: 'department', label: 'Department' },
-      { key: 'appliedDate', label: 'Applied' },
-      { key: 'lastUpdated', label: 'Updated' },
-      { key: 'email', label: 'Email' },
-      { key: 'location', label: 'Location' },
-    ];
-    const statusDetailSortValue = (row: any) => {
-      if (['appliedDate', 'lastUpdated'].includes(hiringStatusDetailSortKey)) {
-        const time = new Date(String(row[hiringStatusDetailSortKey] || '')).getTime();
-        return Number.isFinite(time) ? time : 0;
-      }
-      return String(row[hiringStatusDetailSortKey] || '').toLowerCase();
-    };
-    const sortedStatusDetailRows = (rows: any[]) => [...rows].sort((a, b) => {
-      const aValue = statusDetailSortValue(a);
-      const bValue = statusDetailSortValue(b);
-      const direction = hiringStatusDetailSortDir === 'asc' ? 1 : -1;
-      const comparison =
-        typeof aValue === 'number' && typeof bValue === 'number'
-          ? aValue - bValue
-          : String(aValue).localeCompare(String(bValue));
-      if (comparison !== 0) return comparison * direction;
-      return String(a.applicantName || '').localeCompare(String(b.applicantName || ''));
-    });
-    const renderStatusDetailHeader = (column: (typeof statusDetailSortColumns)[number]) => {
-      const active = hiringStatusDetailSortKey === column.key;
+    const renderApplicantsByJobSortHeader = (
+      key: typeof hiringApplicantsSortKey,
+      label: string,
+      align: 'left' | 'right' = 'left'
+    ) => {
+      const active = hiringApplicantsSortKey === key;
       return (
-        <th key={column.key} style={thStyle}>
+        <th style={{ ...thStyle, textAlign: align }}>
           <button
             type="button"
             onClick={() => {
               if (active) {
-                setHiringStatusDetailSortDir((current) => (current === 'asc' ? 'desc' : 'asc'));
+                setHiringApplicantsSortDir((current) => (current === 'asc' ? 'desc' : 'asc'));
               } else {
-                setHiringStatusDetailSortKey(column.key);
-                setHiringStatusDetailSortDir(column.key.endsWith('Date') || column.key === 'lastUpdated' ? 'desc' : 'asc');
+                setHiringApplicantsSortKey(key);
+                setHiringApplicantsSortDir(hiringApplicantNumericSortKeys.has(key) ? 'desc' : 'asc');
               }
             }}
             style={{
@@ -18635,9 +18862,81 @@ Strategies to Improve the CCC
               cursor: 'pointer',
               textTransform: 'inherit',
               letterSpacing: 'inherit',
+              textAlign: align,
             }}
           >
-            {column.label}{active ? (hiringStatusDetailSortDir === 'asc' ? ' ^' : ' v') : ''}
+            {label}{active ? (hiringApplicantsSortDir === 'asc' ? ' ^' : ' v') : ''}
+          </button>
+        </th>
+      );
+    };
+    const applicantsSortOptions: Array<{ key: typeof hiringApplicantsSortKey; label: string }> = [
+      { key: 'title', label: 'Job' },
+      { key: 'division', label: 'Division' },
+      { key: 'department', label: 'Department' },
+      { key: 'status', label: 'Status' },
+      { key: 'activeApplicantsCount', label: 'Active Applications' },
+      { key: 'newApplicantsCount', label: 'New Applications' },
+      { key: 'totalApplicantsCount', label: 'Total Applications' },
+    ];
+    const formatHiringDate = (value: any) => {
+      const raw = String(value || '').trim();
+      if (!raw) return '—';
+      const match = raw.match(/^(\d{4})-(\d{2})-(\d{2})/);
+      return match ? `${match[2]}/${match[3]}/${match[1]}` : raw;
+    };
+    const applicantDetailSortValue = (row: any) => {
+      if (['appliedDate', 'hiredDate'].includes(hiringApplicantDetailSortKey)) {
+        const time = new Date(String(row[hiringApplicantDetailSortKey] || '')).getTime();
+        return Number.isFinite(time) ? time : 0;
+      }
+      if (hiringApplicantDetailSortKey === 'rating') return Number(row.rating || 0);
+      if (hiringApplicantDetailSortKey === 'jobStage') return String(row.jobStage || row.status || '').toLowerCase();
+      return String(row[hiringApplicantDetailSortKey] || '').toLowerCase();
+    };
+    const sortedApplicantDetailRows = (rows: any[]) => [...rows].sort((a, b) => {
+      const aValue = applicantDetailSortValue(a);
+      const bValue = applicantDetailSortValue(b);
+      const direction = hiringApplicantDetailSortDir === 'asc' ? 1 : -1;
+      const comparison =
+        typeof aValue === 'number' && typeof bValue === 'number'
+          ? aValue - bValue
+          : String(aValue).localeCompare(String(bValue));
+      if (comparison !== 0) return comparison * direction;
+      return String(a.applicantName || '').localeCompare(String(b.applicantName || ''));
+    });
+    const renderApplicantDetailSortHeader = (
+      key: typeof hiringApplicantDetailSortKey,
+      label: string,
+      align: 'left' | 'right' = 'left'
+    ) => {
+      const active = hiringApplicantDetailSortKey === key;
+      return (
+        <th style={{ ...thStyle, textAlign: align }}>
+          <button
+            type="button"
+            onClick={() => {
+              if (active) {
+                setHiringApplicantDetailSortDir((current) => (current === 'asc' ? 'desc' : 'asc'));
+              } else {
+                setHiringApplicantDetailSortKey(key);
+                setHiringApplicantDetailSortDir(['appliedDate', 'hiredDate', 'rating'].includes(key) ? 'desc' : 'asc');
+              }
+            }}
+            style={{
+              border: 0,
+              background: 'transparent',
+              padding: 0,
+              color: 'inherit',
+              font: 'inherit',
+              fontWeight: 700,
+              cursor: 'pointer',
+              textTransform: 'inherit',
+              letterSpacing: 'inherit',
+              textAlign: align,
+            }}
+          >
+            {label}{active ? (hiringApplicantDetailSortDir === 'asc' ? ' ^' : ' v') : ''}
           </button>
         </th>
       );
@@ -18655,20 +18954,22 @@ Strategies to Improve the CCC
                 <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                   <thead>
                     <tr>
-                      <th style={thStyle}>Applicant / Hire</th>
-                      <th style={thStyle}>Status</th>
-                      <th style={thStyle}>Applied</th>
-                      <th style={thStyle}>Hired / Start</th>
-                      <th style={thStyle}>Email</th>
-                      <th style={thStyle}>Phone</th>
-                      <th style={{ ...thStyle, textAlign: 'right' }}>Rating</th>
+                      {renderApplicantDetailSortHeader('applicantName', 'Applicant / Hire')}
+                      {renderApplicantDetailSortHeader('status', 'Status')}
+                      {renderApplicantDetailSortHeader('jobStage', 'Job Stage')}
+                      {renderApplicantDetailSortHeader('appliedDate', 'Applied')}
+                      {renderApplicantDetailSortHeader('hiredDate', 'Hired / Start')}
+                      {renderApplicantDetailSortHeader('email', 'Email')}
+                      {renderApplicantDetailSortHeader('phone', 'Phone')}
+                      {renderApplicantDetailSortHeader('rating', 'Rating', 'right')}
                     </tr>
                   </thead>
                   <tbody>
-                    {applicantRows.map((application) => (
+                    {sortedApplicantDetailRows(applicantRows).map((application) => (
                       <tr key={application.id || `${jobKey}-${application.applicantName}-${application.appliedDate}`}>
                         <td style={{ ...tdStyle, fontWeight: 600 }}>{application.applicantName || 'Applicant'}</td>
                         <td style={tdStyle}>{application.status || '—'}</td>
+                        <td style={tdStyle}>{application.jobStage || application.status || '—'}</td>
                         <td style={tdStyle}>{formatHiringDate(application.appliedDate)}</td>
                         <td style={tdStyle}>{formatHiringDate(application.hiredDate)}</td>
                         <td style={tdStyle}>{application.email || '—'}</td>
@@ -18686,86 +18987,52 @@ Strategies to Improve the CCC
         </tr>
       );
     };
-    const renderApplicationStatusDetail = () => (
-      <div style={cardStyle}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', alignItems: 'center', marginBottom: hiringStatusDetailExpanded ? '12px' : 0 }}>
-          <div style={{ ...cardTitleStyle, marginBottom: 0 }}>Application Detail by Status</div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-            <div style={{ fontSize: '12px', color: '#64748b', whiteSpace: 'nowrap' }}>
-              {Number(applications.length || 0).toLocaleString('en-US')} applications
-            </div>
-            <button
-              type="button"
-              onClick={() => setHiringStatusDetailExpanded((current) => !current)}
-              style={{
-                border: '1px solid #cbd5e1',
-                background: hiringStatusDetailExpanded ? '#eff6ff' : '#fff',
-                color: '#1d4ed8',
-                borderRadius: '999px',
-                padding: '4px 10px',
-                fontSize: '12px',
-                fontWeight: 700,
-                cursor: 'pointer',
-                whiteSpace: 'nowrap',
-              }}
-            >
-              {hiringStatusDetailExpanded ? 'Collapse' : 'Expand'}
-            </button>
-          </div>
-        </div>
-        {hiringStatusDetailExpanded && <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-          {applicationsByDetailedStatus.length ? applicationsByDetailedStatus.map(([status, rows]) => (
-            <div key={status} style={{ border: '1px solid #e2e8f0', borderRadius: '10px', overflow: 'hidden' }}>
-              <div style={{ padding: '10px 12px', background: '#f8fafc', borderBottom: '1px solid #e2e8f0', display: 'flex', justifyContent: 'space-between', gap: '12px', alignItems: 'center' }}>
-                <div style={{ fontSize: '13px', fontWeight: 700, color: '#0f172a' }}>{status}</div>
-                <div style={{ fontSize: '12px', color: '#64748b' }}>{Number(rows.length || 0).toLocaleString('en-US')} applications</div>
-              </div>
-              <div style={{ overflowX: 'auto', maxHeight: '320px', overflowY: 'auto' }}>
-                <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                  <thead>
-                    <tr>
-                      {statusDetailSortColumns.map(renderStatusDetailHeader)}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {sortedStatusDetailRows(rows).map((application) => (
-                      <tr key={application.id || `${status}-${application.jobTitle}-${application.applicantName}-${application.appliedDate}`}>
-                        <td style={{ ...tdStyle, fontWeight: 600 }}>{application.applicantName || 'Applicant'}</td>
-                        <td style={tdStyle}>{application.jobTitle || '—'}</td>
-                        <td style={tdStyle}>{application.division || 'Unassigned'}</td>
-                        <td style={tdStyle}>{application.department || 'Unassigned'}</td>
-                        <td style={tdStyle}>{formatHiringDate(application.appliedDate)}</td>
-                        <td style={tdStyle}>{formatHiringDate(application.lastUpdated)}</td>
-                        <td style={tdStyle}>{application.email || '—'}</td>
-                        <td style={tdStyle}>{application.location || '—'}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          )) : (
-            <div style={{ padding: '12px', border: '1px solid #e2e8f0', borderRadius: '8px', color: '#64748b', fontSize: '13px' }}>
-              No application detail rows returned from BambooHR.
-            </div>
-          )}
-        </div>}
+    const renderHiringDateRangeControls = () => (
+      <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
+        <label htmlFor="hiring-start-date" style={{ fontSize: '12px', color: '#64748b', fontWeight: 600 }}>From</label>
+        <input
+          id="hiring-start-date"
+          type="date"
+          value={startDate}
+          min={OPERATIONAL_REPORT_MIN_DATE}
+          max={endDate}
+          onChange={(event) => setStartDate(clampDateInputToReportFloor(event.target.value))}
+          style={{ border: '1px solid #cbd5e1', borderRadius: '8px', padding: '6px 10px', fontSize: '13px', color: '#0f172a', background: '#fff' }}
+        />
+        <label htmlFor="hiring-end-date" style={{ fontSize: '12px', color: '#64748b', fontWeight: 600 }}>To</label>
+        <input
+          id="hiring-end-date"
+          type="date"
+          value={endDate}
+          min={startDate}
+          max={maxSelectableEndDate}
+          onChange={(event) => {
+            const candidate = event.target.value;
+            setEndDate(candidate > maxSelectableEndDate ? maxSelectableEndDate : candidate);
+          }}
+          style={{ border: '1px solid #cbd5e1', borderRadius: '8px', padding: '6px 10px', fontSize: '13px', color: '#0f172a', background: '#fff' }}
+        />
       </div>
     );
 
     return (
       <div style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
-        {renderOperationalClientSelector()}
+        <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', alignItems: 'center', flexWrap: 'wrap' }}>
+          {renderOperationalClientSelector()}
+          {renderHiringDateRangeControls()}
+        </div>
         {isSectionEnabled('hiringOpenJobs') && (
           <div style={cardStyle}>
             <div style={{ ...cardTitleStyle, marginBottom: '14px' }}>Hiring Summary</div>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '12px' }}>
               {[
                 { label: 'Open Jobs', value: Number(summary.openJobs || 0).toLocaleString('en-US'), color: '#1d4ed8' },
-                { label: 'Total Jobs', value: Number(summary.totalJobs || jobs.length || 0).toLocaleString('en-US'), color: '#0f172a' },
-                { label: 'Active Applications', value: Number(summary.activeApplicants || 0).toLocaleString('en-US'), color: '#0f766e' },
-                { label: 'New Applications', value: Number(summary.newApplicants || 0).toLocaleString('en-US'), color: '#7c3aed' },
-                { label: 'Applications Sampled', value: Number(summary.applicationsSampled || applications.length || 0).toLocaleString('en-US'), color: '#b45309' },
+                { label: 'New Applications', value: Number(applications.filter((row) => isNewHiringStatus(row.status)).length || 0).toLocaleString('en-US'), color: '#7c3aed' },
+                { label: 'Interviewed', value: Number(applications.filter((row) => hasHiringStatusKeyword(row.status, 'interview')).length || 0).toLocaleString('en-US'), color: '#0f766e' },
+                { label: 'Meet & Greet', value: Number(applications.filter((row) => hasHiringStatusKeyword(row.status, 'meet') || hasHiringStatusKeyword(row.status, 'greet')).length || 0).toLocaleString('en-US'), color: '#b45309' },
+                { label: 'Applications Sampled', value: Number(applications.length || 0).toLocaleString('en-US'), color: '#0f172a' },
+                { label: 'Avg Time to Fill', value: formatHiringDays(avgTimeToFillDays), color: '#1d4ed8' },
+                { label: 'Avg Time Open', value: formatHiringDays(avgTimeOpenDays), color: '#7c3aed' },
               ].map((kpi) => (
                 <div key={kpi.label} style={{ padding: '12px', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px' }}>
                   <div style={{ fontSize: '11px', color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: '4px' }}>{kpi.label}</div>
@@ -18774,7 +19041,7 @@ Strategies to Improve the CCC
               ))}
             </div>
             <div style={{ marginTop: '10px', fontSize: '12px', color: '#64748b' }}>
-              Source: {String(hiringData?.meta?.source || 'operational').replace(/_/g, ' ')} · As of {summary.asOfDate || '—'}
+              Source: {String(hiringData?.meta?.source || 'operational').replace(/_/g, ' ')} · As of {summary.asOfDate || '—'} · Applied date range: {formatDateInputLabel(startDate)} to {formatDateInputLabel(endDate)}
             </div>
           </div>
         )}
@@ -18813,7 +19080,91 @@ Strategies to Improve the CCC
           </div>
         )}
 
-        {isSectionEnabled('hiringApplicationsByStatus') && renderApplicationStatusDetail()}
+        {isSectionEnabled('hiringTimeToFillByJob') && (
+          <div style={cardStyle}>
+            <div style={cardTitleStyle}>Time to Fill by Hire</div>
+            <div style={{ overflowX: 'auto', maxHeight: '420px', overflowY: 'auto' }}>
+              <table style={{ width: '100%', minWidth: '1100px', borderCollapse: 'collapse' }}>
+                <thead>
+                  <tr>
+                    {renderTimeToFillSortHeader('employeeName', 'Employee / Hire')}
+                    {renderTimeToFillSortHeader('title', 'Job')}
+                    {renderTimeToFillSortHeader('division', 'Division')}
+                    {renderTimeToFillSortHeader('department', 'Department')}
+                    {renderTimeToFillSortHeader('postedDate', 'Posted')}
+                    {renderTimeToFillSortHeader('hiredDate', 'Hired')}
+                    {renderTimeToFillSortHeader('startDate', 'Start')}
+                    {renderTimeToFillSortHeader('daysToFill', 'Days to Fill', 'right')}
+                    {renderTimeToFillSortHeader('daysOpen', 'Days Open', 'right')}
+                  </tr>
+                </thead>
+                <tbody>
+                  {sortedTimeToFillByHireRows.map((row) => (
+                    <tr key={`${row.employeeName}-${row.title}-${row.hiredDate || row.startDate || row.postedDate}`}>
+                      <td style={{ ...tdStyle, fontWeight: 600 }}>{row.employeeName}</td>
+                      <td style={{ ...tdStyle, fontWeight: 600 }}>{row.title || 'Untitled Job'}</td>
+                      <td style={tdStyle}>{row.division || 'Unassigned'}</td>
+                      <td style={tdStyle}>{row.department || 'Unassigned'}</td>
+                      <td style={tdStyle}>{formatHiringDate(row.postedDate)}</td>
+                      <td style={tdStyle}>{formatHiringDate(row.hiredDate)}</td>
+                      <td style={tdStyle}>{formatHiringDate(row.startDate)}</td>
+                      <td style={{ ...tdStyle, textAlign: 'right', fontWeight: 700 }}>{formatHiringDays(row.daysToFill)}</td>
+                      <td style={{ ...tdStyle, textAlign: 'right', fontWeight: 700 }}>{formatHiringDays(row.daysOpen)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <div style={{ marginTop: '10px', fontSize: '12px', color: '#64748b' }}>
+              Time to fill is calculated per hired person from job posted date to that person's hired date. Time open uses posted date to start date when available, otherwise hired date.
+            </div>
+          </div>
+        )}
+
+        {isSectionEnabled('hiringFunnelByRole') && (
+          <div style={cardStyle}>
+            <div style={cardTitleStyle}>Funnel by Role</div>
+            <ResponsiveContainer width="100%" height={360}>
+              <BarChart data={funnelByRoleRows.slice(0, 12)} margin={{ top: 8, right: 8, left: 8, bottom: 90 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                <XAxis dataKey="role" angle={-30} textAnchor="end" height={110} tick={chartLabelStyle} interval={0} />
+                <YAxis tick={chartLabelStyle} />
+                <Tooltip formatter={(value: any, name: any) => [Number(value || 0).toLocaleString('en-US'), String(name)]} />
+                <Legend />
+                <Bar dataKey="screened" name="Screened" stackId="funnel" fill="#2563eb" radius={0} />
+                <Bar dataKey="interviewed" name="Interviewed" stackId="funnel" fill="#0f766e" radius={0} />
+                <Bar dataKey="offered" name="Offered" stackId="funnel" fill="#b45309" radius={0} />
+                <Bar dataKey="hired" name="Hired" stackId="funnel" fill="#7c3aed" radius={0} />
+              </BarChart>
+            </ResponsiveContainer>
+            <div style={{ overflowX: 'auto', maxHeight: '420px', overflowY: 'auto', marginTop: '12px' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                <thead>
+                  <tr>
+                    <th style={thStyle}>Role</th>
+                    <th style={{ ...thStyle, textAlign: 'right' }}>Screened</th>
+                    <th style={{ ...thStyle, textAlign: 'right' }}>Interviewed</th>
+                    <th style={{ ...thStyle, textAlign: 'right' }}>Offered</th>
+                    <th style={{ ...thStyle, textAlign: 'right' }}>Hired</th>
+                    <th style={{ ...thStyle, textAlign: 'right' }}>Total Applications</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {funnelByRoleRows.map((row) => (
+                    <tr key={row.role}>
+                      <td style={{ ...tdStyle, fontWeight: 600 }}>{row.role}</td>
+                      <td style={{ ...tdStyle, textAlign: 'right' }}>{Number(row.screened || 0).toLocaleString('en-US')}</td>
+                      <td style={{ ...tdStyle, textAlign: 'right' }}>{Number(row.interviewed || 0).toLocaleString('en-US')}</td>
+                      <td style={{ ...tdStyle, textAlign: 'right' }}>{Number(row.offered || 0).toLocaleString('en-US')}</td>
+                      <td style={{ ...tdStyle, textAlign: 'right' }}>{Number(row.hired || 0).toLocaleString('en-US')}</td>
+                      <td style={{ ...tdStyle, textAlign: 'right', fontWeight: 700 }}>{Number(row.totalApplications || 0).toLocaleString('en-US')}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
 
         {isSectionEnabled('hiringApplicantsByJob') && (
           <div style={cardStyle}>
@@ -18832,22 +19183,13 @@ Strategies to Improve the CCC
                       onChange={(event) => {
                         const nextKey = event.target.value as typeof hiringApplicantsSortKey;
                         setHiringApplicantsSortKey(nextKey);
-                        setHiringApplicantsSortDir(['title', 'status'].includes(nextKey) ? 'asc' : 'desc');
+                        setHiringApplicantsSortDir(hiringApplicantNumericSortKeys.has(nextKey) ? 'desc' : 'asc');
                       }}
                       style={{ border: '1px solid #cbd5e1', borderRadius: '8px', padding: '6px 28px 6px 10px', fontSize: '13px', color: '#0f172a', background: '#fff' }}
                     >
                       {applicantsSortOptions.map((option) => (
                         <option key={option.key} value={option.key}>{option.label}</option>
                       ))}
-                    </select>
-                    <select
-                      value={hiringApplicantsSortDir}
-                      onChange={(event) => setHiringApplicantsSortDir(event.target.value as 'asc' | 'desc')}
-                      aria-label="Applicants by Job sort direction"
-                      style={{ border: '1px solid #cbd5e1', borderRadius: '8px', padding: '6px 28px 6px 10px', fontSize: '13px', color: '#0f172a', background: '#fff' }}
-                    >
-                      <option value="asc">Ascending</option>
-                      <option value="desc">Descending</option>
                     </select>
                   </>
                 )}
@@ -18864,13 +19206,13 @@ Strategies to Improve the CCC
               <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                 <thead>
                   <tr>
-                    <th style={thStyle}>Job</th>
-                    <th style={thStyle}>Division</th>
-                    <th style={thStyle}>Department</th>
-                    <th style={thStyle}>Status</th>
-                    <th style={{ ...thStyle, textAlign: 'right' }}>Active</th>
-                    <th style={{ ...thStyle, textAlign: 'right' }}>New</th>
-                    <th style={{ ...thStyle, textAlign: 'right' }}>Total</th>
+                    {renderApplicantsByJobSortHeader('title', 'Job')}
+                    {renderApplicantsByJobSortHeader('division', 'Division')}
+                    {renderApplicantsByJobSortHeader('department', 'Department')}
+                    {renderApplicantsByJobSortHeader('status', 'Status')}
+                    {renderApplicantsByJobSortHeader('activeApplicantsCount', 'Active', 'right')}
+                    {renderApplicantsByJobSortHeader('newApplicantsCount', 'New', 'right')}
+                    {renderApplicantsByJobSortHeader('totalApplicantsCount', 'Total', 'right')}
                   </tr>
                 </thead>
                 <tbody>
@@ -18915,46 +19257,6 @@ Strategies to Improve the CCC
                 </tbody>
               </table>
             </div>}
-          </div>
-        )}
-
-        {isSectionEnabled('hiringNewApplicants') && (
-          <div style={cardStyle}>
-            <div style={cardTitleStyle}>New Applications</div>
-            <div style={{ overflowX: 'auto', maxHeight: '520px', overflowY: 'auto' }}>
-              <table style={{ width: '100%', minWidth: '980px', borderCollapse: 'collapse' }}>
-                <thead><tr><th style={thStyle}>Job</th><th style={thStyle}>Division</th><th style={thStyle}>Department</th><th style={{ ...thStyle, textAlign: 'right' }}>New Applications</th><th style={{ ...thStyle, textAlign: 'right' }}>Active Applications</th><th style={{ ...thStyle, textAlign: 'right' }}>Applicant / Hire Details</th></tr></thead>
-                <tbody>{newApplicantsByJob.slice(0, 15).map((row) => {
-                  const jobKey = String(row.jobId || row.title || 'job');
-                  const isExpanded = expandedHiringJobs[jobKey] === true;
-                  const applicantCount = applicantRowsForJob(row).length;
-                  return (
-                    <React.Fragment key={jobKey}>
-                      <tr style={{ background: isExpanded ? '#f8fafc' : '#fff' }}>
-                        <td style={{ ...tdStyle, fontWeight: 600 }}>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                            <button
-                              type="button"
-                              onClick={() => setExpandedHiringJobs((current) => ({ ...current, [jobKey]: !current[jobKey] }))}
-                              style={{ border: '1px solid #cbd5e1', background: isExpanded ? '#eff6ff' : '#fff', color: '#1d4ed8', borderRadius: '999px', padding: '4px 10px', fontSize: '12px', fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap' }}
-                            >
-                              {isExpanded ? 'Hide' : 'Show'}
-                            </button>
-                            <span>{row.title}</span>
-                          </div>
-                        </td>
-                        <td style={tdStyle}>{row.division || 'Unassigned'}</td>
-                        <td style={tdStyle}>{row.department || 'Unassigned'}</td>
-                        <td style={{ ...tdStyle, textAlign: 'right', color: '#7c3aed', fontWeight: 700 }}>{Number(row.newApplicantsCount || 0).toLocaleString('en-US')}</td>
-                        <td style={{ ...tdStyle, textAlign: 'right' }}>{Number(row.activeApplicantsCount || 0).toLocaleString('en-US')}</td>
-                        <td style={{ ...tdStyle, textAlign: 'right', fontWeight: 700, color: applicantCount > 0 ? '#0f172a' : '#94a3b8' }}>{Number(applicantCount || 0).toLocaleString('en-US')}</td>
-                      </tr>
-                      {renderApplicantExpansionRow(row, 6)}
-                    </React.Fragment>
-                  );
-                })}</tbody>
-              </table>
-            </div>
           </div>
         )}
 
