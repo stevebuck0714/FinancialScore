@@ -3,6 +3,7 @@ import prisma from '@/lib/prisma';
 import { requireSiteAdminAuthorizedInforCompany } from '@/lib/infor-m3/route-guards';
 import {
   deleteOperationalSystemConnection,
+  getOperationalSystemConnection,
   isQuickBooksAccountingSystem,
   listOperationalSystemConnections,
   saveOperationalSystemConnection,
@@ -100,15 +101,27 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ ok: false, error: `${source.label} is limited to Retail companies.` }, { status: 400 });
     }
 
+    const existing = await getOperationalSystemConnection(companyId, source.provider, source.sourceCode);
+
     await saveOperationalSystemConnection({
       companyId,
       provider: source.provider,
       sourceCode: source.sourceCode,
-      status: 'INACTIVE',
-      autoSync: false,
-      syncFrequency: 'manual',
-      connectionMetadata: { sourceLabel: source.label, sourceCreatedAt: new Date().toISOString() },
-      errorMessage: null,
+      status: existing?.status || 'INACTIVE',
+      authType: existing?.authType || null,
+      accessToken: existing?.accessToken || null,
+      refreshToken: existing?.refreshToken || null,
+      tokenExpiresAt: existing?.tokenExpiresAt || null,
+      baseUrl: existing?.baseUrl || null,
+      lastSyncAt: existing?.lastSyncAt || null,
+      autoSync: existing?.autoSync ?? false,
+      syncFrequency: existing?.syncFrequency || 'manual',
+      connectionMetadata: {
+        ...(existing?.connectionMetadata || {}),
+        sourceLabel: source.label,
+        sourceCreatedAt: (existing?.connectionMetadata || {}).sourceCreatedAt || new Date().toISOString(),
+      },
+      errorMessage: existing?.errorMessage || null,
     });
 
     return NextResponse.json({ ok: true, companyId, sourceCode });

@@ -2941,11 +2941,16 @@ export default function SiteAdminDashboard(props: any) {
       if (!response.ok || !data?.ok) return;
       const available = Array.isArray(data?.availableSources) ? data.availableSources : [];
       const selected = Array.isArray(data?.selectedSources) ? data.selectedSources : [];
+      const selectedCodes = new Set(selected.map((source: any) => String(source?.sourceCode || '')));
+      const selectable = available.filter((source: any) => !selectedCodes.has(String(source?.sourceCode || '')));
       setAvailableOperationalSourcesByCompany((prev) => ({ ...prev, [companyId]: available }));
       setSelectedOperationalSourcesByCompany((prev) => ({ ...prev, [companyId]: selected }));
       setOperationalSourceToAddByCompany((prev) => ({
         ...prev,
-        [companyId]: prev[companyId] || (available[0]?.sourceCode ?? ''),
+        [companyId]:
+          selectable.find((source: any) => source.sourceCode === prev[companyId])?.sourceCode ||
+          selectable[0]?.sourceCode ||
+          '',
       }));
       if (selected.some((source: any) => String(source?.sourceCode || '') === 'BAMBOOHR_STANDARD')) {
         loadBambooHrSettings(companyId);
@@ -3259,7 +3264,13 @@ export default function SiteAdminDashboard(props: any) {
     }
   };
   const addOperationalSource = async (companyId: string) => {
-    const sourceCode = String(operationalSourceToAddByCompany[companyId] || '').trim();
+    const selectedCodes = new Set(getSelectedOperationalSources(companyId).map((source) => String(source.sourceCode || '')));
+    const selectableSources = getAvailableOperationalSources(companyId).filter((source) => !selectedCodes.has(String(source.sourceCode || '')));
+    const stateSourceCode = String(operationalSourceToAddByCompany[companyId] || '').trim();
+    const sourceCode =
+      selectableSources.find((source) => source.sourceCode === stateSourceCode)?.sourceCode ||
+      selectableSources[0]?.sourceCode ||
+      '';
     if (!sourceCode) {
       alert('Select an operational source to add.');
       return;

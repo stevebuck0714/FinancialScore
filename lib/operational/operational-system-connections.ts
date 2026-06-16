@@ -169,7 +169,8 @@ export async function getOperationalSystemConnection(
 
 export async function saveOperationalSystemConnection(input: SaveConnectionInput): Promise<void> {
   const delegate = getDelegate();
-  const payload = {
+  const hasOwn = (key: keyof SaveConnectionInput) => Object.prototype.hasOwnProperty.call(input, key);
+  const createPayload = {
     authType: input.authType ?? null,
     accessToken: input.accessToken ?? null,
     refreshToken: input.refreshToken ?? null,
@@ -182,6 +183,19 @@ export async function saveOperationalSystemConnection(input: SaveConnectionInput
     errorMessage: input.errorMessage ?? null,
     status: input.status,
   };
+  const updatePayload = {
+    status: input.status,
+    autoSync: input.autoSync,
+    syncFrequency: input.syncFrequency,
+    ...(hasOwn('authType') ? { authType: input.authType ?? null } : {}),
+    ...(hasOwn('accessToken') ? { accessToken: input.accessToken ?? null } : {}),
+    ...(hasOwn('refreshToken') ? { refreshToken: input.refreshToken ?? null } : {}),
+    ...(hasOwn('tokenExpiresAt') ? { tokenExpiresAt: input.tokenExpiresAt ?? null } : {}),
+    ...(hasOwn('baseUrl') ? { baseUrl: input.baseUrl ?? null } : {}),
+    ...(hasOwn('lastSyncAt') ? { lastSyncAt: input.lastSyncAt ?? null } : {}),
+    ...(hasOwn('connectionMetadata') ? { connectionMetadata: input.connectionMetadata ?? null } : {}),
+    ...(hasOwn('errorMessage') ? { errorMessage: input.errorMessage ?? null } : {}),
+  };
 
   if (delegate) {
     await delegate.upsert({
@@ -192,12 +206,12 @@ export async function saveOperationalSystemConnection(input: SaveConnectionInput
           sourceCode: input.sourceCode,
         },
       },
-      update: payload,
+      update: updatePayload,
       create: {
         companyId: input.companyId,
         provider: input.provider,
         sourceCode: input.sourceCode,
-        ...payload,
+        ...createPayload,
       },
     });
     return;
@@ -228,33 +242,33 @@ export async function saveOperationalSystemConnection(input: SaveConnectionInput
       ${input.companyId},
       ${input.provider}::"OperationalSystemProvider",
       ${input.sourceCode},
-      ${payload.status}::"ConnectionStatus",
-      ${payload.authType},
-      ${payload.accessToken},
-      ${payload.refreshToken},
-      ${payload.tokenExpiresAt},
-      ${payload.baseUrl},
-      ${payload.lastSyncAt},
-      ${payload.autoSync},
-      ${payload.syncFrequency},
-      ${payload.connectionMetadata ? JSON.stringify(payload.connectionMetadata) : null}::jsonb,
-      ${payload.errorMessage},
+      ${createPayload.status}::"ConnectionStatus",
+      ${createPayload.authType},
+      ${createPayload.accessToken},
+      ${createPayload.refreshToken},
+      ${createPayload.tokenExpiresAt},
+      ${createPayload.baseUrl},
+      ${createPayload.lastSyncAt},
+      ${createPayload.autoSync},
+      ${createPayload.syncFrequency},
+      ${createPayload.connectionMetadata ? JSON.stringify(createPayload.connectionMetadata) : null}::jsonb,
+      ${createPayload.errorMessage},
       NOW(),
       NOW()
     )
     ON CONFLICT ("companyId", "provider", "sourceCode")
     DO UPDATE SET
       "status" = EXCLUDED."status",
-      "authType" = EXCLUDED."authType",
-      "accessToken" = EXCLUDED."accessToken",
-      "refreshToken" = EXCLUDED."refreshToken",
-      "tokenExpiresAt" = EXCLUDED."tokenExpiresAt",
-      "baseUrl" = EXCLUDED."baseUrl",
-      "lastSyncAt" = EXCLUDED."lastSyncAt",
+      "authType" = CASE WHEN ${hasOwn('authType')} THEN EXCLUDED."authType" ELSE "OperationalSystemConnection"."authType" END,
+      "accessToken" = CASE WHEN ${hasOwn('accessToken')} THEN EXCLUDED."accessToken" ELSE "OperationalSystemConnection"."accessToken" END,
+      "refreshToken" = CASE WHEN ${hasOwn('refreshToken')} THEN EXCLUDED."refreshToken" ELSE "OperationalSystemConnection"."refreshToken" END,
+      "tokenExpiresAt" = CASE WHEN ${hasOwn('tokenExpiresAt')} THEN EXCLUDED."tokenExpiresAt" ELSE "OperationalSystemConnection"."tokenExpiresAt" END,
+      "baseUrl" = CASE WHEN ${hasOwn('baseUrl')} THEN EXCLUDED."baseUrl" ELSE "OperationalSystemConnection"."baseUrl" END,
+      "lastSyncAt" = CASE WHEN ${hasOwn('lastSyncAt')} THEN EXCLUDED."lastSyncAt" ELSE "OperationalSystemConnection"."lastSyncAt" END,
       "autoSync" = EXCLUDED."autoSync",
       "syncFrequency" = EXCLUDED."syncFrequency",
-      "connectionMetadata" = EXCLUDED."connectionMetadata",
-      "errorMessage" = EXCLUDED."errorMessage",
+      "connectionMetadata" = CASE WHEN ${hasOwn('connectionMetadata')} THEN EXCLUDED."connectionMetadata" ELSE "OperationalSystemConnection"."connectionMetadata" END,
+      "errorMessage" = CASE WHEN ${hasOwn('errorMessage')} THEN EXCLUDED."errorMessage" ELSE "OperationalSystemConnection"."errorMessage" END,
       "updatedAt" = NOW()
   `);
 }

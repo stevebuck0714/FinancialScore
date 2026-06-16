@@ -83,29 +83,43 @@ export async function POST(request: NextRequest) {
           .join(' | ')
           .slice(0, 900);
 
+    const nextMetadata = success
+      ? {
+          ...existingMetadata,
+          bambooHrSettings: settings,
+          bambooHrDataDomains: dataDomains,
+          bambooHrLastSyncTestAt: now.toISOString(),
+          bambooHrLastSyncTestSummary: {
+            totalRecordsRead,
+            enabledDomainCount: enabledDomains.length,
+            failedDomainCount: failedResults.length,
+            results,
+          },
+        }
+      : {
+          ...existingMetadata,
+          bambooHrDataDomains: dataDomains,
+          bambooHrLastSyncTestAt: now.toISOString(),
+          bambooHrLastSyncTestSummary: {
+            totalRecordsRead,
+            enabledDomainCount: enabledDomains.length,
+            failedDomainCount: failedResults.length,
+            results,
+          },
+        };
+
     await saveOperationalSystemConnection({
       companyId,
       provider: 'BAMBOOHR',
       sourceCode: BAMBOOHR_SOURCE_CODE,
-      authType: settings.authType || 'API_KEY',
+      authType: success ? settings.authType || 'API_KEY' : existing?.authType || settings.authType || 'API_KEY',
       status: success ? 'ACTIVE' : 'ERROR',
-      accessToken: settings.apiKey,
-      baseUrl: settings.baseUrl || null,
+      accessToken: success ? settings.apiKey : existing?.accessToken || null,
+      baseUrl: success ? settings.baseUrl || null : existing?.baseUrl || null,
       lastSyncAt: success ? now : existing?.lastSyncAt || null,
-      autoSync: true,
-      syncFrequency: settings.syncFrequency || 'daily',
-      connectionMetadata: {
-        ...existingMetadata,
-        bambooHrSettings: settings,
-        bambooHrDataDomains: dataDomains,
-        bambooHrLastSyncTestAt: now.toISOString(),
-        bambooHrLastSyncTestSummary: {
-          totalRecordsRead,
-          enabledDomainCount: enabledDomains.length,
-          failedDomainCount: failedResults.length,
-          results,
-        },
-      },
+      autoSync: existing?.autoSync ?? true,
+      syncFrequency: success ? settings.syncFrequency || 'daily' : existing?.syncFrequency || settings.syncFrequency || 'daily',
+      connectionMetadata: nextMetadata,
       errorMessage,
     });
 

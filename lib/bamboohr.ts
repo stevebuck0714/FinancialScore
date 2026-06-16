@@ -63,7 +63,7 @@ function asString(value: unknown): string {
 
 function extractBambooHrSubdomain(value: string): string {
   return asString(value)
-    .replace(/^https?:\/\//i, '')
+    .replace(/^https?:\/+/i, '')
     .replace(/\.bamboohr\.com.*$/i, '')
     .replace(/\/+$/, '');
 }

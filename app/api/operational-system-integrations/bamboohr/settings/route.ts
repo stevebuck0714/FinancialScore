@@ -40,11 +40,11 @@ export async function GET(request: NextRequest) {
 
     const settings = sanitizeBambooHrSettings(
       {
+        ...platformSettings,
         syncFrequency: typeof connection?.syncFrequency === 'string' ? connection.syncFrequency : defaultBambooHrSettings.syncFrequency,
         authType: connection?.authType || defaultBambooHrSettings.authType,
-        baseUrl: connection?.baseUrl || '',
-        apiKey: connection?.accessToken || '',
-        ...platformSettings,
+        baseUrl: connection?.baseUrl || (typeof platformSettings.baseUrl === 'string' ? platformSettings.baseUrl : ''),
+        apiKey: connection?.accessToken || (typeof platformSettings.apiKey === 'string' ? platformSettings.apiKey : ''),
       },
       connection?.accessToken || ''
     );
@@ -81,6 +81,11 @@ export async function POST(request: NextRequest) {
     }
     const existing = await getOperationalSystemConnection(companyId, 'BAMBOOHR', SOURCE_CODE);
 
+    const submittedSettings =
+      body.settings && typeof body.settings === 'object' && !Array.isArray(body.settings)
+        ? (body.settings as Record<string, unknown>)
+        : {};
+    const submittedApiKey = typeof submittedSettings.apiKey === 'string' ? submittedSettings.apiKey.trim() : '';
     const settings = sanitizeBambooHrSettings(body.settings || defaultBambooHrSettings, existing?.accessToken || '');
     const dataDomains = sanitizeBambooHrDataDomains(body.dataDomains || defaultBambooHrDataDomains);
     const existingMetadata =
@@ -101,7 +106,7 @@ export async function POST(request: NextRequest) {
       sourceCode: SOURCE_CODE,
       authType: settings.authType || 'API_KEY',
       status: existing?.status || 'INACTIVE',
-      accessToken: settings.apiKey || existing?.accessToken || null,
+      accessToken: submittedApiKey || existing?.accessToken || settings.apiKey || null,
       baseUrl: settings.baseUrl || null,
       autoSync: true,
       syncFrequency: scheduleFrequency,
