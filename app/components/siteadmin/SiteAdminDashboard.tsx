@@ -2107,12 +2107,17 @@ export default function SiteAdminDashboard(props: any) {
         syncDirection: 'QB_TO_PLATFORM' | 'TWO_WAY' | '';
         syncFrequency: 'daily' | 'weekly' | 'monthly' | '';
         syncTime: string;
+        initialSyncStartDate: string;
       }
     >
   >({});
   const [qbDesktopProgramsByCompany, setQbDesktopProgramsByCompany] = React.useState<
     Record<string, Array<{ dataDomain: string; qbEntity: string; enabled: boolean }>>
   >({});
+  const [qbDesktopDateRangeByCompany, setQbDesktopDateRangeByCompany] = React.useState<
+    Record<string, { startDate: string; endDate: string }>
+  >({});
+  const [queuingQbDesktopDateRangeCompanyId, setQueuingQbDesktopDateRangeCompanyId] = React.useState<string | null>(null);
   const [qboSettingsByCompany, setQboSettingsByCompany] = React.useState<
     Record<
       string,
@@ -2307,6 +2312,7 @@ export default function SiteAdminDashboard(props: any) {
     syncDirection: 'QB_TO_PLATFORM' as 'QB_TO_PLATFORM' | 'TWO_WAY' | '',
     syncFrequency: 'daily' as 'daily' | 'weekly' | 'monthly' | '',
     syncTime: '08:00',
+    initialSyncStartDate: '',
   };
 
   const defaultQbDesktopPrograms = [
@@ -2500,6 +2506,8 @@ export default function SiteAdminDashboard(props: any) {
     qbDesktopSettingsByCompany[companyId] || defaultQbDesktopSettings;
   const getQbDesktopPrograms = (companyId: string) =>
     qbDesktopProgramsByCompany[companyId] || defaultQbDesktopPrograms;
+  const getQbDesktopDateRange = (companyId: string) =>
+    qbDesktopDateRangeByCompany[companyId] || { startDate: '', endDate: '' };
   const getQboSettings = (companyId: string) =>
     qboSettingsByCompany[companyId] || defaultQboSettings;
   const getQboPrograms = (companyId: string) =>
@@ -2551,6 +2559,15 @@ export default function SiteAdminDashboard(props: any) {
     setQbDesktopProgramsByCompany((prev) => ({
       ...prev,
       [companyId]: programs.map((row) => ({ ...row, enabled: row.enabled !== false })),
+    }));
+  };
+  const setQbDesktopDateRange = (companyId: string, next: Partial<{ startDate: string; endDate: string }>) => {
+    setQbDesktopDateRangeByCompany((prev) => ({
+      ...prev,
+      [companyId]: {
+        ...(prev[companyId] || { startDate: '', endDate: '' }),
+        ...next,
+      },
     }));
   };
   const setQboSetting = (
@@ -2993,6 +3010,81 @@ export default function SiteAdminDashboard(props: any) {
     } catch (error: any) {
       alert(`Failed to save QuickBooks Desktop settings: ${error?.message || 'Unknown error'}`);
     }
+  };
+
+  const queueQbDesktopDateRange = async (companyId: string) => {
+    const range = getQbDesktopDateRange(companyId);
+    if (!range.startDate || !range.endDate) {
+      alert('Select both Start Date and End Date for the QuickBooks Desktop date range.');
+      return;
+    }
+    if (new Date(range.startDate).getTime() > new Date(range.endDate).getTime()) {
+      alert('QuickBooks Desktop date range is invalid: Start Date must be before End Date.');
+      return;
+    }
+
+    try {
+      setQueuingQbDesktopDateRangeCompanyId(companyId);
+      const response = await fetch('/api/quickbooks-desktop/queue-date-range', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          companyId,
+          startDate: range.startDate,
+          endDate: range.endDate,
+        }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok || !data?.ok) {
+        throw new Error(data?.details || data?.error || 'Failed to queue QuickBooks Desktop date range');
+      }
+      alert(`QuickBooks Desktop date range queued: ${range.startDate} to ${range.endDate}. Run QuickBooks Web Connector Update Selected to pull it.`);
+    } catch (error: any) {
+      alert(`Failed to queue QuickBooks Desktop date range: ${error?.message || 'Unknown error'}`);
+    } finally {
+      setQueuingQbDesktopDateRangeCompanyId(null);
+    }
+  };
+
+  const renderQbDesktopDateRangeControls = (companyId: string) => {
+    const range = getQbDesktopDateRange(companyId);
+    const isQueuing = queuingQbDesktopDateRangeCompanyId === companyId;
+
+    return (
+      <div style={{ marginTop: '10px', padding: '10px', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '6px', overflow: 'hidden' }}>
+        <div style={{ fontSize: '12px', fontWeight: 700, color: '#334155', marginBottom: '4px' }}>Manual Date Range Pull</div>
+        <div style={{ fontSize: '11px', color: '#64748b', marginBottom: '8px' }}>
+          Queue a one-time QuickBooks Desktop backfill. The range runs the next time Web Connector updates this app.
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: '8px', alignItems: 'end' }}>
+          <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', minWidth: 0, fontSize: '12px', color: '#334155' }}>
+            <span style={{ fontWeight: 600 }}>Start Date</span>
+            <input
+              type="date"
+              value={range.startDate}
+              onChange={(e) => setQbDesktopDateRange(companyId, { startDate: e.target.value })}
+              style={{ width: '100%', minWidth: 0, boxSizing: 'border-box', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white' }}
+            />
+          </label>
+          <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', minWidth: 0, fontSize: '12px', color: '#334155' }}>
+            <span style={{ fontWeight: 600 }}>End Date</span>
+            <input
+              type="date"
+              value={range.endDate}
+              onChange={(e) => setQbDesktopDateRange(companyId, { endDate: e.target.value })}
+              style={{ width: '100%', minWidth: 0, boxSizing: 'border-box', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white' }}
+            />
+          </label>
+          <button
+            onClick={() => queueQbDesktopDateRange(companyId)}
+            disabled={isQueuing}
+            style={{ width: '100%', minWidth: 0, boxSizing: 'border-box', padding: '8px 12px', background: isQueuing ? '#94a3b8' : '#7c3aed', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: isQueuing ? 'not-allowed' : 'pointer' }}
+          >
+            {isQueuing ? 'Queuing...' : 'Queue Range Pull'}
+          </button>
+        </div>
+      </div>
+    );
   };
   const saveQboSettings = async (companyId: string) => {
     try {
@@ -5926,6 +6018,7 @@ export default function SiteAdminDashboard(props: any) {
                                                       { key: 'countryVersion', label: 'Country Version *' },
                                                       { key: 'companyFilePath', label: 'Target Company File Path (.QBW) *' },
                                                       { key: 'hostMachineName', label: 'Host Machine Name *' },
+                                                      { key: 'initialSyncStartDate', label: 'Initial Sync Start Date (YYYY-MM-DD)' },
                                                     ].map((field) => (
                                                       <label key={`${company.id}-qbdesktop-${field.key}`} style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#334155' }}>
                                                         <span style={{ fontWeight: 600 }}>{field.label}</span>
@@ -6050,6 +6143,7 @@ export default function SiteAdminDashboard(props: any) {
                                                       </select>
                                                     </label>
                                                   </div>
+                                                  {renderQbDesktopDateRangeControls(company.id)}
                                                 </>
                                               ) : company.accountingSystem === 'DYNAMICS' || company.accountingSystem === 'DYNAMICS365' ? (
                                                 <>
@@ -9014,6 +9108,7 @@ export default function SiteAdminDashboard(props: any) {
                                           { key: 'countryVersion', label: 'Country Version *' },
                                           { key: 'companyFilePath', label: 'Target Company File Path (.QBW) *' },
                                           { key: 'hostMachineName', label: 'Host Machine Name *' },
+                                          { key: 'initialSyncStartDate', label: 'Initial Sync Start Date (YYYY-MM-DD)' },
                                         ].map((field) => (
                                           <label key={`${businessCompany.id}-qbdesktop-${field.key}`} style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#334155' }}>
                                             <span style={{ fontWeight: 600 }}>{field.label}</span>
@@ -9138,6 +9233,7 @@ export default function SiteAdminDashboard(props: any) {
                                           </select>
                                         </label>
                                       </div>
+                                      {renderQbDesktopDateRangeControls(businessCompany.id)}
                                     </div>
 
                                     <div style={{ padding: '12px', background: '#f8fafc', borderRadius: '6px', border: '1px solid #e2e8f0' }}>

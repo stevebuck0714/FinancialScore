@@ -30,6 +30,7 @@ type QuickBooksDesktopSettings = {
   syncDirection: 'QB_TO_PLATFORM' | 'TWO_WAY' | '';
   syncFrequency: 'daily' | 'weekly' | 'monthly' | '';
   syncTime: string;
+  initialSyncStartDate: string;
 };
 
 type QuickBooksDesktopProgram = {
@@ -58,6 +59,7 @@ const defaultSettings: QuickBooksDesktopSettings = {
   syncDirection: 'QB_TO_PLATFORM',
   syncFrequency: 'daily',
   syncTime: '08:00',
+  initialSyncStartDate: '',
 };
 
 const defaultPrograms: QuickBooksDesktopProgram[] = [
@@ -162,6 +164,7 @@ function sanitizeSettings(value: unknown): QuickBooksDesktopSettings {
             ? 'daily'
             : '',
     syncTime: asString(src.syncTime) || '08:00',
+    initialSyncStartDate: asString(src.initialSyncStartDate),
   };
 }
 

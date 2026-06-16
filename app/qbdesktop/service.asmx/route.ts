@@ -24,8 +24,11 @@ type QbDesktopMetadata = {
     qbEntity?: unknown;
     enabled?: unknown;
   }>;
+  quickbooksDesktopQueuedDateRange?: QbwcDateRange | null;
   quickbooksDesktopWebConnectorSessions?: Record<string, QbwcSession>;
   quickbooksDesktopWebConnectorLastRun?: Record<string, unknown>;
+  quickbooksDesktopInitialPullCompletedAt?: unknown;
+  quickbooksDesktopLastWebConnectorSyncAt?: unknown;
 };
 
 type Frequency = 'daily' | 'weekly' | 'monthly';
@@ -44,7 +47,15 @@ type QbwcSession = {
   currentIndex: number;
   requests: string[];
   responses: Record<string, QbwcResponseSet>;
+  dateRange: QbwcDateRange;
   lastError?: string | null;
+};
+
+type QbwcDateRange = {
+  mode: 'INITIAL_3Y' | 'INCREMENTAL' | 'MANUAL';
+  startDate: string;
+  endDate: string;
+  requestedAt?: string;
 };
 
 const DEFAULT_REQUESTS = [
@@ -55,6 +66,27 @@ const DEFAULT_REQUESTS = [
   'BillQuery',
   'ReceivePaymentQuery',
 ];
+
+const TRANSACTION_REQUESTS = new Set([
+  'InvoiceQuery',
+  'BillQuery',
+  'ReceivePaymentQuery',
+  'SalesReceiptQuery',
+  'DepositQuery',
+  'CreditMemoQuery',
+  'EstimateQuery',
+  'SalesOrderQuery',
+  'BillPaymentCheckQuery',
+  'BillPaymentCreditCardQuery',
+  'VendorCreditQuery',
+  'CheckQuery',
+  'CreditCardChargeQuery',
+  'PurchaseOrderQuery',
+  'ItemReceiptQuery',
+  'JournalEntryQuery',
+  'TransferQuery',
+  'InventoryAdjustmentQuery',
+]);
 
 const RET_TAG_BY_REQUEST: Record<string, string> = {
   AccountQuery: 'AccountRet',
@@ -146,6 +178,30 @@ function normalizeFrequency(value: unknown): Frequency {
   return 'daily';
 }
 
+function formatDate(date: Date): string {
+  return date.toISOString().slice(0, 10);
+}
+
+function parseDateString(value: unknown): string {
+  if (typeof value !== 'string') return '';
+  const trimmed = value.trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) return '';
+  const date = new Date(`${trimmed}T00:00:00.000Z`);
+  return Number.isNaN(date.getTime()) ? '' : trimmed;
+}
+
+function addDays(date: Date, days: number): Date {
+  const next = new Date(date);
+  next.setUTCDate(next.getUTCDate() + days);
+  return next;
+}
+
+function addYears(date: Date, years: number): Date {
+  const next = new Date(date);
+  next.setUTCFullYear(next.getUTCFullYear() + years);
+  return next;
+}
+
 function uniqueStrings(values: string[]): string[] {
   const seen = new Set<string>();
   const result: string[] = [];
@@ -170,19 +226,23 @@ function buildRequestList(metadata: QbDesktopMetadata): string[] {
     .filter((entity) => Boolean(RET_TAG_BY_REQUEST[entity] || entity.match(/^[A-Za-z][A-Za-z0-9]*Query$/)));
 }
 
-function buildQbxmlRequest(requestName: string): string {
+function buildTransactionDateFilter(dateRange: QbwcDateRange): string {
+  if (!dateRange.startDate || !dateRange.endDate) return '';
+  return `<TxnDateRangeFilter><FromTxnDate>${xmlEscape(dateRange.startDate)}</FromTxnDate><ToTxnDate>${xmlEscape(dateRange.endDate)}</ToTxnDate></TxnDateRangeFilter>`;
+}
+
+function buildQbxmlRequest(requestName: string, dateRange: QbwcDateRange): string {
   const childrenByRequest: Record<string, string> = {
     AccountQuery: '<ActiveStatus>All</ActiveStatus>',
     CustomerQuery: '<ActiveStatus>All</ActiveStatus>',
     VendorQuery: '<ActiveStatus>All</ActiveStatus>',
     ItemQuery: '<ActiveStatus>All</ActiveStatus>',
-    InvoiceQuery: '<MaxReturned>1000</MaxReturned><IncludeLineItems>true</IncludeLineItems>',
-    BillQuery: '<MaxReturned>1000</MaxReturned><IncludeLineItems>true</IncludeLineItems>',
-    ReceivePaymentQuery: '<MaxReturned>1000</MaxReturned>',
   };
   const requestTag = `${requestName}Rq`;
   const requestId = xmlEscape(requestName);
-  const children = childrenByRequest[requestName] || '<MaxReturned>1000</MaxReturned>';
+  const dateFilter = TRANSACTION_REQUESTS.has(requestName) ? buildTransactionDateFilter(dateRange) : '';
+  const includeLineItems = ['InvoiceQuery', 'BillQuery'].includes(requestName) ? '<IncludeLineItems>true</IncludeLineItems>' : '';
+  const children = childrenByRequest[requestName] || `<MaxReturned>1000</MaxReturned>${dateFilter}${includeLineItems}`;
 
   return `<?xml version="1.0" encoding="utf-8"?>
 <?qbxml version="13.0"?>
@@ -301,6 +361,46 @@ function getCompanyFilePath(metadata: QbDesktopMetadata): string {
   return path;
 }
 
+function getRunDateRange(metadata: QbDesktopMetadata): QbwcDateRange {
+  const today = new Date();
+  const endDate = formatDate(today);
+  const queued = metadata.quickbooksDesktopQueuedDateRange;
+  const queuedStartDate = parseDateString(queued?.startDate);
+  const queuedEndDate = parseDateString(queued?.endDate);
+
+  if (queuedStartDate && queuedEndDate && queuedStartDate <= queuedEndDate) {
+    return {
+      mode: 'MANUAL',
+      startDate: queuedStartDate,
+      endDate: queuedEndDate,
+      requestedAt: typeof queued?.requestedAt === 'string' ? queued.requestedAt : undefined,
+    };
+  }
+
+  if (!metadata.quickbooksDesktopInitialPullCompletedAt) {
+    const configuredStartDate = parseDateString(metadata.quickbooksDesktopSettings?.initialSyncStartDate);
+    return {
+      mode: 'INITIAL_3Y',
+      startDate: configuredStartDate || formatDate(addYears(today, -3)),
+      endDate,
+    };
+  }
+
+  const lastSyncAt =
+    typeof metadata.quickbooksDesktopLastWebConnectorSyncAt === 'string'
+      ? new Date(metadata.quickbooksDesktopLastWebConnectorSyncAt)
+      : null;
+  const incrementalStart = lastSyncAt && !Number.isNaN(lastSyncAt.getTime())
+    ? formatDate(addDays(lastSyncAt, -2))
+    : formatDate(addDays(today, -2));
+
+  return {
+    mode: 'INCREMENTAL',
+    startDate: incrementalStart,
+    endDate,
+  };
+}
+
 function buildFinancialPayload(session: QbwcSession): Record<string, unknown> {
   const payload: Record<string, unknown> = {
     monthlyData: [],
@@ -309,6 +409,7 @@ function buildFinancialPayload(session: QbwcSession): Record<string, unknown> {
       exportedAt: new Date().toISOString(),
       ticket: session.ticket,
       requests: session.requests,
+      dateRange: session.dateRange,
     },
   };
 
@@ -574,10 +675,15 @@ async function finalizeSession(connection: NonNullable<Awaited<ReturnType<typeof
     quickbooksDesktopFinancialPayload: financialPayload,
     quickbooksDesktopOperationalPayload: operationalPayload,
     quickbooksDesktopLastWebConnectorSyncAt: new Date().toISOString(),
+    quickbooksDesktopInitialPullCompletedAt:
+      metadata.quickbooksDesktopInitialPullCompletedAt || new Date().toISOString(),
+    quickbooksDesktopQueuedDateRange:
+      session.dateRange.mode === 'MANUAL' ? null : metadata.quickbooksDesktopQueuedDateRange || null,
     quickbooksDesktopWebConnectorLastRun: {
       ticket: session.ticket,
       completedAt: new Date().toISOString(),
       requests: session.requests,
+      dateRange: session.dateRange,
       recordCounts: Object.fromEntries(
         Object.entries(session.responses).map(([key, response]) => [key, response.records.length]),
       ),
@@ -700,6 +806,7 @@ export async function POST(request: NextRequest) {
           currentIndex: 0,
           requests: buildRequestList(auth.metadata),
           responses: {},
+          dateRange: getRunDateRange(auth.metadata),
           lastError: null,
         };
 
@@ -716,7 +823,7 @@ export async function POST(request: NextRequest) {
         if (!requestName) return soapString('sendRequestXML', '');
 
         await saveSession(found.session.companyId, found.session);
-        return soapString('sendRequestXML', buildQbxmlRequest(requestName));
+        return soapString('sendRequestXML', buildQbxmlRequest(requestName, found.session.dateRange));
       }
 
       case 'receiveResponseXML': {
