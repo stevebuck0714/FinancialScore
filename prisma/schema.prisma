@@ -79,6 +79,7 @@ model Company {
   userDefinedAllocations     Json?                  // Array of user defined allocation templates: [{lobName: string, percentage: number}]
   accountMappings            AccountMapping[]
   accountingConnections      AccountingConnection[]
+  quickBooksDesktopBackfillPages QuickBooksDesktopBackfillPage[]
   operationalSystemConnections OperationalSystemConnection[]
   platosClosetWorkbookSnapshots PlatosClosetWorkbookSnapshot[]
   platosClosetMonthlyFacts   PlatosClosetMonthlyFact[]
@@ -532,6 +533,29 @@ model AccountingConnection {
   @@index([companyId])
   @@index([status])
   @@index([lastSyncAt])
+}
+
+model QuickBooksDesktopBackfillPage {
+  id             String   @id @default(cuid())
+  companyId      String
+  batchId        String
+  jobId          String
+  ticket         String?
+  requestName    String
+  pageNumber     Int
+  recordCount    Int      @default(0)
+  remainingCount Int?
+  payload        Json
+  rawXmlPreview  String?
+  createdAt      DateTime @default(now())
+
+  company        Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@unique([jobId, pageNumber])
+  @@index([companyId, batchId])
+  @@index([jobId])
+  @@index([requestName])
+  @@index([createdAt])
 }
 
 model OperationalSystemConnection {

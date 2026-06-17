@@ -38,6 +38,7 @@ type Frequency = 'daily' | 'weekly' | 'monthly';
 type QbwcResponseSet = {
   receivedAt: string;
   records: Array<Record<string, unknown>>;
+  recordCount?: number;
   rawResponseXmlPreview?: string;
 };
 
@@ -523,6 +524,84 @@ function buildCombinedBackfillSession(
   };
 }
 
+function getBatchIdFromJobId(jobId: string): string {
+  return jobId.split(':')[0] || jobId;
+}
+
+async function saveBackfillPage(
+  companyId: string,
+  session: QbwcSession,
+  requestName: string,
+  pageNumber: number,
+  pageRecords: Array<Record<string, unknown>>,
+  remainingCount: number | null,
+  responseXml: string,
+): Promise<void> {
+  if (!session.backfillJobId) return;
+  const batchId = getBatchIdFromJobId(session.backfillJobId);
+  const payloadJson = JSON.stringify(pageRecords);
+  const rawXmlPreview = responseXml.slice(0, 50000);
+
+  await prisma.$executeRaw`
+    INSERT INTO "QuickBooksDesktopBackfillPage" (
+      "id",
+      "companyId",
+      "batchId",
+      "jobId",
+      "ticket",
+      "requestName",
+      "pageNumber",
+      "recordCount",
+      "remainingCount",
+      "payload",
+      "rawXmlPreview"
+    )
+    VALUES (
+      ${randomUUID()},
+      ${companyId},
+      ${batchId},
+      ${session.backfillJobId},
+      ${session.ticket},
+      ${requestName},
+      ${pageNumber},
+      ${pageRecords.length},
+      ${remainingCount},
+      CAST(${payloadJson} AS jsonb),
+      ${rawXmlPreview}
+    )
+    ON CONFLICT ("jobId", "pageNumber") DO UPDATE SET
+      "ticket" = EXCLUDED."ticket",
+      "recordCount" = EXCLUDED."recordCount",
+      "remainingCount" = EXCLUDED."remainingCount",
+      "payload" = EXCLUDED."payload",
+      "rawXmlPreview" = EXCLUDED."rawXmlPreview";
+  `;
+}
+
+async function loadBackfillJobResponse(jobId: string, requestName: string): Promise<QbwcResponseSet> {
+  const rows = await prisma.$queryRaw<Array<{ payload: unknown; createdAt: Date }>>`
+    SELECT "payload", "createdAt"
+    FROM "QuickBooksDesktopBackfillPage"
+    WHERE "jobId" = ${jobId}
+    ORDER BY "pageNumber" ASC
+  `;
+  const records = rows.flatMap((row) => Array.isArray(row.payload) ? row.payload as Array<Record<string, unknown>> : []);
+  return {
+    receivedAt: rows[rows.length - 1]?.createdAt?.toISOString?.() || new Date().toISOString(),
+    records,
+    recordCount: records.length,
+  };
+}
+
+async function loadBackfillResponses(jobs: Record<string, QbdBackfillJob>): Promise<Record<string, QbwcResponseSet>> {
+  const responses: Record<string, QbwcResponseSet> = {};
+  for (const job of Object.values(jobs).sort((a, b) => String(a.createdAt).localeCompare(String(b.createdAt)))) {
+    if (job.status !== 'completed') continue;
+    responses[job.requestName] = await loadBackfillJobResponse(job.id, job.requestName);
+  }
+  return responses;
+}
+
 function buildFinancialPayload(session: QbwcSession): Record<string, unknown> {
   const payload: Record<string, unknown> = {
     monthlyData: [],
@@ -806,12 +885,15 @@ async function completeBackfillJob(
   }
 
   const requestName = session.requests[0];
-  const response = session.responses[requestName] || {
-    receivedAt: new Date().toISOString(),
-    records: [],
-  };
+  const response = session.backfillJobId
+    ? await loadBackfillJobResponse(session.backfillJobId, requestName)
+    : session.responses[requestName] || {
+        receivedAt: new Date().toISOString(),
+        records: [],
+      };
   let shouldFinalize = false;
   let combinedSession: QbwcSession | null = null;
+  let completedJobsSnapshot: Record<string, QbdBackfillJob> | null = null;
 
   await updateMetadata(connection.companyId, (metadata) => {
     const jobs = metadata.quickbooksDesktopBackfillJobs || {};
@@ -820,7 +902,11 @@ async function completeBackfillJob(
     const now = new Date().toISOString();
     const responses = {
       ...(metadata.quickbooksDesktopBackfillResponses || {}),
-      [requestName]: response,
+      [requestName]: {
+        receivedAt: response.receivedAt,
+        records: [],
+        recordCount: response.records.length,
+      },
     };
     const completedJob: QbdBackfillJob = {
       ...job,
@@ -837,9 +923,7 @@ async function completeBackfillJob(
       [jobId]: completedJob,
     };
     shouldFinalize = Object.values(nextJobs).every((nextJob) => nextJob.status === 'completed');
-    if (shouldFinalize) {
-      combinedSession = buildCombinedBackfillSession(session.ticket, connection.companyId, nextJobs, responses);
-    }
+    completedJobsSnapshot = shouldFinalize ? nextJobs : null;
 
     return {
       ...metadata,
@@ -848,7 +932,9 @@ async function completeBackfillJob(
     };
   });
 
-  if (shouldFinalize && combinedSession) {
+  if (shouldFinalize && completedJobsSnapshot) {
+    const fullResponses = await loadBackfillResponses(completedJobsSnapshot);
+    combinedSession = buildCombinedBackfillSession(session.ticket, connection.companyId, completedJobsSnapshot, fullResponses);
     await finalizeSession(connection, combinedSession);
   }
 }
@@ -880,6 +966,7 @@ async function updateBackfillJobProgress(companyId: string, session: QbwcSession
   if (!jobId) return;
   const response = session.responses[requestName];
   const iterator = session.iterators?.[requestName];
+  const recordCount = response?.recordCount ?? response?.records.length ?? 0;
   await updateMetadata(companyId, (metadata) => {
     const jobs = metadata.quickbooksDesktopBackfillJobs || {};
     const job = jobs[jobId];
@@ -892,8 +979,8 @@ async function updateBackfillJobProgress(companyId: string, session: QbwcSession
           ...job,
           status: 'running',
           updatedAt: new Date().toISOString(),
-          recordCount: response?.records.length || 0,
-          pageCount: iterator?.pageCount || Math.max(1, Math.ceil(((response?.records.length || 0)) / QBD_TRANSACTION_PAGE_SIZE)),
+          recordCount,
+          pageCount: iterator?.pageCount || Math.max(1, Math.ceil(recordCount / QBD_TRANSACTION_PAGE_SIZE)),
           iteratorRemainingCount: iterator?.remainingCount ?? null,
           lastError: null,
         },
@@ -1118,13 +1205,27 @@ export async function POST(request: NextRequest) {
         const pageRecords = parseResponseRecords(requestName, responseXml);
         const existingResponse = session.responses[requestName];
         const existingRecords = existingResponse?.records || [];
+        const previousIterator = session.iterators?.[requestName];
+        const pageNumber = (previousIterator?.pageCount || 0) + 1;
+        const nextIterator = getIteratorState(requestName, responseXml);
+        const nextRecordCount = (existingResponse?.recordCount ?? existingRecords.length) + pageRecords.length;
+        if (session.backfillJobId) {
+          await saveBackfillPage(
+            session.companyId,
+            session,
+            requestName,
+            pageNumber,
+            pageRecords,
+            nextIterator?.remainingCount ?? null,
+            responseXml,
+          );
+        }
         session.responses[requestName] = {
           receivedAt: new Date().toISOString(),
-          records: [...existingRecords, ...pageRecords],
+          records: session.backfillJobId ? [] : [...existingRecords, ...pageRecords],
+          recordCount: nextRecordCount,
           rawResponseXmlPreview: responseXml.slice(0, 50000),
         };
-        const previousIterator = session.iterators?.[requestName];
-        const nextIterator = getIteratorState(requestName, responseXml);
         session.iterators = {
           ...(session.iterators || {}),
         };

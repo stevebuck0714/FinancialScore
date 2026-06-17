@@ -155,10 +155,14 @@ function summarizeLatestWebConnectorSession(metadata: Record<string, unknown>): 
     iteratorRemainingCount: Number(currentIterator?.remainingCount || 0) || null,
     currentPageCount: Number(currentIterator?.pageCount || 0) || null,
     recordCounts: Object.fromEntries(
-      Object.entries(responses).map(([key, response]) => [
-        key,
-        Array.isArray(asRecord(response)?.records) ? (asRecord(response)?.records as unknown[]).length : 0,
-      ]),
+      Object.entries(responses).map(([key, response]) => {
+        const responseRecord = asRecord(response);
+        const recordCount = Number(responseRecord?.recordCount || 0);
+        return [
+          key,
+          recordCount || (Array.isArray(responseRecord?.records) ? (responseRecord?.records as unknown[]).length : 0),
+        ];
+      }),
     ),
   };
 }

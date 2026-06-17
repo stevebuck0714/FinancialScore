@@ -141,6 +141,11 @@ export async function POST(request: NextRequest) {
       }),
     );
 
+    await prisma.$executeRaw`
+      DELETE FROM "QuickBooksDesktopBackfillPage"
+      WHERE "companyId" = ${companyId}
+    `;
+
     await prisma.accountingConnection.update({
       where: {
         companyId_platform: {
