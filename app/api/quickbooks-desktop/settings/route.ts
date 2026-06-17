@@ -120,6 +120,10 @@ function asString(value: unknown): string {
   return typeof value === 'string' ? value.trim() : '';
 }
 
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : null;
+}
+
 function sanitizeSettings(value: unknown): QuickBooksDesktopSettings {
   const src = value && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
   return {
@@ -265,6 +269,9 @@ export async function GET(request: NextRequest) {
       status: connection?.status || 'NOT_CONNECTED',
       lastSyncAt: connection?.lastSyncAt || null,
       errorMessage: connection?.errorMessage || null,
+      queuedDateRange: asRecord(metadata.quickbooksDesktopQueuedDateRange),
+      webConnectorLastRun: asRecord(metadata.quickbooksDesktopWebConnectorLastRun),
+      lastWebConnectorSyncAt: asString(metadata.quickbooksDesktopLastWebConnectorSyncAt) || null,
       settings: {
         ...settings,
         webConnectorPassword: '',

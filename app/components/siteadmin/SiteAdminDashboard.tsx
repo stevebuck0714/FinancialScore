@@ -2117,6 +2117,19 @@ export default function SiteAdminDashboard(props: any) {
   const [qbDesktopDateRangeByCompany, setQbDesktopDateRangeByCompany] = React.useState<
     Record<string, { startDate: string; endDate: string }>
   >({});
+  const [qbDesktopSyncStatusByCompany, setQbDesktopSyncStatusByCompany] = React.useState<
+    Record<
+      string,
+      {
+        status: string;
+        lastSyncAt: string | null;
+        errorMessage: string | null;
+        queuedDateRange: Record<string, any> | null;
+        webConnectorLastRun: Record<string, any> | null;
+        lastWebConnectorSyncAt: string | null;
+      }
+    >
+  >({});
   const [queuingQbDesktopDateRangeCompanyId, setQueuingQbDesktopDateRangeCompanyId] = React.useState<string | null>(null);
   const [qboSettingsByCompany, setQboSettingsByCompany] = React.useState<
     Record<
@@ -2508,6 +2521,15 @@ export default function SiteAdminDashboard(props: any) {
     qbDesktopProgramsByCompany[companyId] || defaultQbDesktopPrograms;
   const getQbDesktopDateRange = (companyId: string) =>
     qbDesktopDateRangeByCompany[companyId] || { startDate: '', endDate: '' };
+  const getQbDesktopSyncStatus = (companyId: string) =>
+    qbDesktopSyncStatusByCompany[companyId] || {
+      status: 'NOT_CONNECTED',
+      lastSyncAt: null,
+      errorMessage: null,
+      queuedDateRange: null,
+      webConnectorLastRun: null,
+      lastWebConnectorSyncAt: null,
+    };
   const getQboSettings = (companyId: string) =>
     qboSettingsByCompany[companyId] || defaultQboSettings;
   const getQboPrograms = (companyId: string) =>
@@ -2888,6 +2910,17 @@ export default function SiteAdminDashboard(props: any) {
       if (Array.isArray(data?.programs)) {
         setQbDesktopPrograms(companyId, data.programs);
       }
+      setQbDesktopSyncStatusByCompany((prev) => ({
+        ...prev,
+        [companyId]: {
+          status: String(data?.status || 'NOT_CONNECTED'),
+          lastSyncAt: data?.lastSyncAt || null,
+          errorMessage: data?.errorMessage || null,
+          queuedDateRange: data?.queuedDateRange && typeof data.queuedDateRange === 'object' ? data.queuedDateRange : null,
+          webConnectorLastRun: data?.webConnectorLastRun && typeof data.webConnectorLastRun === 'object' ? data.webConnectorLastRun : null,
+          lastWebConnectorSyncAt: data?.lastWebConnectorSyncAt || null,
+        },
+      }));
     } catch (error) {
       console.error('Failed to load QuickBooks Desktop settings:', error);
     }
@@ -3038,7 +3071,8 @@ export default function SiteAdminDashboard(props: any) {
       if (!response.ok || !data?.ok) {
         throw new Error(data?.details || data?.error || 'Failed to queue QuickBooks Desktop date range');
       }
-      alert(`QuickBooks Desktop date range queued: ${range.startDate} to ${range.endDate}. Run QuickBooks Web Connector Update Selected to pull it.`);
+      await loadQbDesktopSettings(companyId);
+      alert(`QuickBooks Desktop date range queued: ${range.startDate} to ${range.endDate}. Run QuickBooks Web Connector Update Selected, then click Refresh Status here to confirm completion.`);
     } catch (error: any) {
       alert(`Failed to queue QuickBooks Desktop date range: ${error?.message || 'Unknown error'}`);
     } finally {
@@ -3049,6 +3083,25 @@ export default function SiteAdminDashboard(props: any) {
   const renderQbDesktopDateRangeControls = (companyId: string) => {
     const range = getQbDesktopDateRange(companyId);
     const isQueuing = queuingQbDesktopDateRangeCompanyId === companyId;
+    const syncStatus = getQbDesktopSyncStatus(companyId);
+    const queuedRange = syncStatus.queuedDateRange;
+    const lastRun = syncStatus.webConnectorLastRun;
+    const lastRunRange = lastRun?.dateRange && typeof lastRun.dateRange === 'object' ? lastRun.dateRange as Record<string, any> : null;
+    const lastRunCompletedAt = typeof lastRun?.completedAt === 'string' ? lastRun.completedAt : '';
+    const lastRunError = typeof lastRun?.lastError === 'string' ? lastRun.lastError : '';
+    const recordCounts = lastRun?.recordCounts && typeof lastRun.recordCounts === 'object' && !Array.isArray(lastRun.recordCounts)
+      ? lastRun.recordCounts as Record<string, unknown>
+      : null;
+    const statusLabel = queuedRange
+      ? 'Queued - waiting for Web Connector'
+      : lastRunCompletedAt
+        ? 'Completed'
+        : syncStatus.lastSyncAt
+          ? 'Synced'
+          : 'Not run yet';
+    const statusColor = syncStatus.errorMessage || lastRunError ? '#b91c1c' : queuedRange ? '#92400e' : lastRunCompletedAt || syncStatus.lastSyncAt ? '#166534' : '#475569';
+    const statusBg = syncStatus.errorMessage || lastRunError ? '#fef2f2' : queuedRange ? '#fffbeb' : lastRunCompletedAt || syncStatus.lastSyncAt ? '#f0fdf4' : '#f8fafc';
+    const statusBorder = syncStatus.errorMessage || lastRunError ? '#fecaca' : queuedRange ? '#fde68a' : lastRunCompletedAt || syncStatus.lastSyncAt ? '#bbf7d0' : '#e2e8f0';
 
     return (
       <div style={{ marginTop: '10px', padding: '10px', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '6px', overflow: 'hidden' }}>
@@ -3082,6 +3135,37 @@ export default function SiteAdminDashboard(props: any) {
           >
             {isQueuing ? 'Queuing...' : 'Queue Range Pull'}
           </button>
+        </div>
+        <div style={{ marginTop: '10px', padding: '10px', background: statusBg, border: `1px solid ${statusBorder}`, borderRadius: '6px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', gap: '8px', alignItems: 'center', marginBottom: '4px' }}>
+            <div style={{ fontSize: '12px', fontWeight: 700, color: statusColor }}>{statusLabel}</div>
+            <button
+              type="button"
+              onClick={() => loadQbDesktopSettings(companyId)}
+              style={{ padding: '4px 8px', background: 'white', color: '#334155', border: '1px solid #cbd5e1', borderRadius: '6px', fontSize: '11px', fontWeight: 600, cursor: 'pointer' }}
+            >
+              Refresh Status
+            </button>
+          </div>
+          <div style={{ fontSize: '11px', color: statusColor, lineHeight: 1.5 }}>
+            {queuedRange ? (
+              <div>Queued range: {queuedRange.startDate || '—'} to {queuedRange.endDate || '—'}{queuedRange.requestedAt ? ` (queued ${new Date(String(queuedRange.requestedAt)).toLocaleString()})` : ''}</div>
+            ) : lastRunCompletedAt ? (
+              <div>Last completed: {new Date(lastRunCompletedAt).toLocaleString()}{lastRunRange ? ` for ${lastRunRange.startDate || '—'} to ${lastRunRange.endDate || '—'}` : ''}</div>
+            ) : syncStatus.lastSyncAt ? (
+              <div>Last sync: {new Date(syncStatus.lastSyncAt).toLocaleString()}</div>
+            ) : (
+              <div>No QuickBooks Desktop Web Connector run has completed yet.</div>
+            )}
+            {recordCounts ? (
+              <div>
+                Records pulled: {Object.entries(recordCounts).map(([name, count]) => `${name.replace(/Query$/, '')}: ${Number(count || 0).toLocaleString('en-US')}`).join(', ')}
+              </div>
+            ) : null}
+            {syncStatus.errorMessage || lastRunError ? (
+              <div style={{ marginTop: '4px', fontWeight: 600 }}>Error: {syncStatus.errorMessage || lastRunError}</div>
+            ) : null}
+          </div>
         </div>
       </div>
     );
