@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { randomUUID } from 'crypto';
 import prisma from '@/lib/prisma';
 import { requireSiteAdminAuthorizedInforCompany } from '@/lib/infor-m3/route-guards';
 import { isQuickBooksDesktopFamily } from '@/lib/quickbooks-desktop/family';
@@ -11,6 +12,48 @@ function parseDate(value: unknown): string {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) return '';
   const date = new Date(`${trimmed}T00:00:00.000Z`);
   return Number.isNaN(date.getTime()) ? '' : trimmed;
+}
+
+const DEFAULT_QBD_REQUESTS = [
+  'AccountQuery',
+  'CustomerQuery',
+  'VendorQuery',
+  'InvoiceQuery',
+  'BillQuery',
+  'ReceivePaymentQuery',
+  'ItemQuery',
+  'SalesReceiptQuery',
+  'DepositQuery',
+  'CreditMemoQuery',
+  'JournalEntryQuery',
+  'PurchaseOrderQuery',
+  'CheckQuery',
+  'VendorCreditQuery',
+  'BillPaymentCheckQuery',
+  'BillPaymentCreditCardQuery',
+];
+
+function getEnabledQbDesktopRequests(metadata: Record<string, unknown>): string[] {
+  const programs = Array.isArray(metadata.quickbooksDesktopPrograms)
+    ? metadata.quickbooksDesktopPrograms
+    : [];
+  const requests = programs.length > 0
+    ? programs
+        .filter((program) => {
+          const row = program && typeof program === 'object' && !Array.isArray(program)
+            ? program as Record<string, unknown>
+            : {};
+          return row.enabled !== false;
+        })
+        .map((program) => {
+          const row = program && typeof program === 'object' && !Array.isArray(program)
+            ? program as Record<string, unknown>
+            : {};
+          return typeof row.qbEntity === 'string' ? row.qbEntity.trim() : '';
+        })
+    : DEFAULT_QBD_REQUESTS;
+  return Array.from(new Set(requests))
+    .filter((requestName) => /^[A-Za-z][A-Za-z0-9]*Query$/.test(requestName));
 }
 
 export async function POST(request: NextRequest) {
@@ -73,6 +116,30 @@ export async function POST(request: NextRequest) {
       endDate,
       requestedAt: new Date().toISOString(),
     };
+    const batchId = randomUUID();
+    const now = new Date().toISOString();
+    const enabledRequests = getEnabledQbDesktopRequests(metadata);
+    const backfillJobs = Object.fromEntries(
+      enabledRequests.map((requestName, index) => {
+        const id = `${batchId}:${String(index + 1).padStart(3, '0')}:${requestName}`;
+        return [
+          id,
+          {
+            id,
+            batchId,
+            status: 'queued',
+            requestName,
+            dateRange: queuedDateRange,
+            createdAt: now,
+            updatedAt: now,
+            recordCount: 0,
+            pageCount: 0,
+            iteratorRemainingCount: null,
+            lastError: null,
+          },
+        ];
+      }),
+    );
 
     await prisma.accountingConnection.update({
       where: {
@@ -85,6 +152,9 @@ export async function POST(request: NextRequest) {
         connectionMetadata: {
           ...metadata,
           quickbooksDesktopQueuedDateRange: queuedDateRange,
+          quickbooksDesktopBackfillBatchId: batchId,
+          quickbooksDesktopBackfillJobs: backfillJobs,
+          quickbooksDesktopBackfillResponses: {},
         } as any,
       },
     });
@@ -93,6 +163,8 @@ export async function POST(request: NextRequest) {
       ok: true,
       companyId,
       queuedDateRange,
+      batchId,
+      jobCount: enabledRequests.length,
       message: 'The requested QuickBooks Desktop date range will run on the next Web Connector update.',
     });
   } catch (error: any) {

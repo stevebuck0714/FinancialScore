@@ -163,6 +163,31 @@ function summarizeLatestWebConnectorSession(metadata: Record<string, unknown>): 
   };
 }
 
+function summarizeBackfillJobs(metadata: Record<string, unknown>): Array<Record<string, unknown>> {
+  const jobs = asRecord(metadata.quickbooksDesktopBackfillJobs);
+  if (!jobs) return [];
+  return Object.values(jobs)
+    .map(asRecord)
+    .filter((job): job is Record<string, unknown> => Boolean(job))
+    .map((job) => ({
+      id: asString(job.id),
+      batchId: asString(job.batchId),
+      status: asString(job.status) || 'unknown',
+      requestName: asString(job.requestName),
+      dateRange: asRecord(job.dateRange),
+      createdAt: asString(job.createdAt) || null,
+      updatedAt: asString(job.updatedAt) || null,
+      startedAt: asString(job.startedAt) || null,
+      completedAt: asString(job.completedAt) || null,
+      failedAt: asString(job.failedAt) || null,
+      recordCount: Number(job.recordCount || 0),
+      pageCount: Number(job.pageCount || 0),
+      iteratorRemainingCount: job.iteratorRemainingCount === null ? null : Number(job.iteratorRemainingCount || 0),
+      lastError: asString(job.lastError) || null,
+    }))
+    .sort((a, b) => asString(a.createdAt).localeCompare(asString(b.createdAt)));
+}
+
 function sanitizeSettings(value: unknown): QuickBooksDesktopSettings {
   const src = value && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
   return {
@@ -311,6 +336,7 @@ export async function GET(request: NextRequest) {
       queuedDateRange: asRecord(metadata.quickbooksDesktopQueuedDateRange),
       webConnectorLastRun: asRecord(metadata.quickbooksDesktopWebConnectorLastRun),
       webConnectorActiveSession: summarizeLatestWebConnectorSession(metadata),
+      backfillJobs: summarizeBackfillJobs(metadata),
       lastWebConnectorSyncAt: asString(metadata.quickbooksDesktopLastWebConnectorSyncAt) || null,
       settings: {
         ...settings,

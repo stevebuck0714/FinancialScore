@@ -25,6 +25,8 @@ type QbDesktopMetadata = {
     enabled?: unknown;
   }>;
   quickbooksDesktopQueuedDateRange?: QbwcDateRange | null;
+  quickbooksDesktopBackfillJobs?: Record<string, QbdBackfillJob>;
+  quickbooksDesktopBackfillResponses?: Record<string, QbwcResponseSet>;
   quickbooksDesktopWebConnectorSessions?: Record<string, QbwcSession>;
   quickbooksDesktopWebConnectorLastRun?: Record<string, unknown>;
   quickbooksDesktopInitialPullCompletedAt?: unknown;
@@ -49,6 +51,25 @@ type QbwcSession = {
   responses: Record<string, QbwcResponseSet>;
   iterators?: Record<string, QbwcIteratorState>;
   dateRange: QbwcDateRange;
+  backfillJobId?: string;
+  lastError?: string | null;
+};
+
+type QbdBackfillJob = {
+  id: string;
+  batchId: string;
+  status: 'queued' | 'running' | 'completed' | 'failed';
+  requestName: string;
+  dateRange: QbwcDateRange;
+  createdAt: string;
+  updatedAt: string;
+  ticket?: string;
+  startedAt?: string;
+  completedAt?: string;
+  failedAt?: string;
+  recordCount?: number;
+  pageCount?: number;
+  iteratorRemainingCount?: number | null;
   lastError?: string | null;
 };
 
@@ -256,8 +277,11 @@ function buildRequestList(metadata: QbDesktopMetadata): string[] {
         .filter((program) => program.enabled !== false)
         .map((program) => (typeof program.qbEntity === 'string' ? program.qbEntity : ''))
     : [];
+  const sourceRequests = configured.length > 0
+    ? configured
+    : [...DEFAULT_REQUESTS, ...RECOMMENDED_QBD_REQUESTS];
 
-  return uniqueStrings([...(configured.length > 0 ? configured : DEFAULT_REQUESTS), ...RECOMMENDED_QBD_REQUESTS])
+  return uniqueStrings(sourceRequests)
     .filter((entity) => entity.endsWith('Query'))
     .filter((entity) => Boolean(RET_TAG_BY_REQUEST[entity] || entity.match(/^[A-Za-z][A-Za-z0-9]*Query$/)));
 }
@@ -453,6 +477,46 @@ function getRunDateRange(metadata: QbDesktopMetadata): QbwcDateRange {
     mode: 'INCREMENTAL',
     startDate: incrementalStart,
     endDate,
+  };
+}
+
+function getNextBackfillJob(metadata: QbDesktopMetadata): QbdBackfillJob | null {
+  const jobs = metadata.quickbooksDesktopBackfillJobs || {};
+  return Object.values(jobs)
+    .filter((job) => job.status === 'queued' || job.status === 'running')
+    .sort((a, b) => String(a.createdAt).localeCompare(String(b.createdAt)))[0] || null;
+}
+
+function buildCombinedBackfillSession(
+  ticket: string,
+  companyId: string,
+  jobs: Record<string, QbdBackfillJob>,
+  responses: Record<string, QbwcResponseSet>,
+): QbwcSession {
+  const completedJobs = Object.values(jobs)
+    .filter((job) => job.status === 'completed')
+    .sort((a, b) => String(a.createdAt).localeCompare(String(b.createdAt)));
+  const firstJob = completedJobs[0];
+  const requests = completedJobs.map((job) => job.requestName);
+
+  return {
+    ticket,
+    companyId,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+    currentIndex: requests.length,
+    requests,
+    responses: Object.fromEntries(
+      completedJobs
+        .map((job) => [job.requestName, responses[job.requestName]] as const)
+        .filter(([, response]) => Boolean(response)),
+    ),
+    dateRange: firstJob?.dateRange || {
+      mode: 'MANUAL',
+      startDate: '',
+      endDate: '',
+    },
+    lastError: null,
   };
 }
 
@@ -702,6 +766,139 @@ async function getSession(ticket: string): Promise<{ connection: Awaited<ReturnT
   return { connection, metadata, session };
 }
 
+async function markBackfillJobFailed(companyId: string, jobId: string, message: string): Promise<void> {
+  await updateMetadata(companyId, (metadata) => {
+    const jobs = metadata.quickbooksDesktopBackfillJobs || {};
+    const job = jobs[jobId];
+    if (!job) return metadata;
+    const now = new Date().toISOString();
+    return {
+      ...metadata,
+      quickbooksDesktopBackfillJobs: {
+        ...jobs,
+        [jobId]: {
+          ...job,
+          status: 'failed',
+          failedAt: now,
+          updatedAt: now,
+          lastError: message,
+        },
+      },
+      quickbooksDesktopWebConnectorLastRun: {
+        ...(metadata.quickbooksDesktopWebConnectorLastRun || {}),
+        lastError: message,
+      },
+    };
+  });
+}
+
+async function completeBackfillJob(
+  connection: NonNullable<Awaited<ReturnType<typeof loadConnection>>>,
+  session: QbwcSession,
+): Promise<void> {
+  const jobId = session.backfillJobId;
+  if (!jobId) {
+    await finalizeSession(connection, session);
+    return;
+  }
+
+  const requestName = session.requests[0];
+  const response = session.responses[requestName] || {
+    receivedAt: new Date().toISOString(),
+    records: [],
+  };
+  let shouldFinalize = false;
+  let combinedSession: QbwcSession | null = null;
+
+  await updateMetadata(connection.companyId, (metadata) => {
+    const jobs = metadata.quickbooksDesktopBackfillJobs || {};
+    const job = jobs[jobId];
+    if (!job) return metadata;
+    const now = new Date().toISOString();
+    const responses = {
+      ...(metadata.quickbooksDesktopBackfillResponses || {}),
+      [requestName]: response,
+    };
+    const completedJob: QbdBackfillJob = {
+      ...job,
+      status: 'completed',
+      completedAt: now,
+      updatedAt: now,
+      recordCount: response.records.length,
+      pageCount: Math.max(1, Math.ceil((response.records.length || 0) / QBD_TRANSACTION_PAGE_SIZE)),
+      iteratorRemainingCount: null,
+      lastError: null,
+    };
+    const nextJobs: Record<string, QbdBackfillJob> = {
+      ...jobs,
+      [jobId]: completedJob,
+    };
+    shouldFinalize = Object.values(nextJobs).every((nextJob) => nextJob.status === 'completed');
+    if (shouldFinalize) {
+      combinedSession = buildCombinedBackfillSession(session.ticket, connection.companyId, nextJobs, responses);
+    }
+
+    return {
+      ...metadata,
+      quickbooksDesktopBackfillJobs: nextJobs,
+      quickbooksDesktopBackfillResponses: responses,
+    };
+  });
+
+  if (shouldFinalize && combinedSession) {
+    await finalizeSession(connection, combinedSession);
+  }
+}
+
+async function markBackfillJobRunning(companyId: string, job: QbdBackfillJob, ticket: string): Promise<void> {
+  await updateMetadata(companyId, (metadata) => {
+    const jobs = metadata.quickbooksDesktopBackfillJobs || {};
+    const current = jobs[job.id] || job;
+    const now = new Date().toISOString();
+    return {
+      ...metadata,
+      quickbooksDesktopBackfillJobs: {
+        ...jobs,
+        [job.id]: {
+          ...current,
+          status: 'running',
+          ticket,
+          startedAt: current.startedAt || now,
+          updatedAt: now,
+          lastError: null,
+        },
+      },
+    };
+  });
+}
+
+async function updateBackfillJobProgress(companyId: string, session: QbwcSession, requestName: string): Promise<void> {
+  const jobId = session.backfillJobId;
+  if (!jobId) return;
+  const response = session.responses[requestName];
+  const iterator = session.iterators?.[requestName];
+  await updateMetadata(companyId, (metadata) => {
+    const jobs = metadata.quickbooksDesktopBackfillJobs || {};
+    const job = jobs[jobId];
+    if (!job) return metadata;
+    return {
+      ...metadata,
+      quickbooksDesktopBackfillJobs: {
+        ...jobs,
+        [jobId]: {
+          ...job,
+          status: 'running',
+          updatedAt: new Date().toISOString(),
+          recordCount: response?.records.length || 0,
+          pageCount: iterator?.pageCount || Math.max(1, Math.ceil(((response?.records.length || 0)) / QBD_TRANSACTION_PAGE_SIZE)),
+          iteratorRemainingCount: iterator?.remainingCount ?? null,
+          lastError: null,
+        },
+      },
+    };
+  });
+}
+
 async function finalizeSession(connection: NonNullable<Awaited<ReturnType<typeof loadConnection>>>, session: QbwcSession): Promise<void> {
   const companyId = connection.companyId;
   const frequency = normalizeFrequency(connection.syncFrequency);
@@ -859,19 +1056,24 @@ export async function POST(request: NextRequest) {
 
         const ticket = `corelytics:${auth.companyId}:${randomUUID()}`;
         const now = new Date().toISOString();
+        const backfillJob = getNextBackfillJob(auth.metadata);
         const session: QbwcSession = {
           ticket,
           companyId: auth.companyId,
           createdAt: now,
           updatedAt: now,
           currentIndex: 0,
-          requests: buildRequestList(auth.metadata),
+          requests: backfillJob ? [backfillJob.requestName] : buildRequestList(auth.metadata),
           responses: {},
           iterators: {},
-          dateRange: getRunDateRange(auth.metadata),
+          dateRange: backfillJob ? backfillJob.dateRange : getRunDateRange(auth.metadata),
+          backfillJobId: backfillJob?.id,
           lastError: null,
         };
 
+        if (backfillJob) {
+          await markBackfillJobRunning(auth.companyId, backfillJob, ticket);
+        }
         await saveSession(auth.companyId, session);
         return authenticateResponse(ticket, getCompanyFilePath(auth.metadata));
       }
@@ -904,6 +1106,9 @@ export async function POST(request: NextRequest) {
         if (hresult || message) {
           session.lastError = [hresult, message].filter(Boolean).join(' - ') || 'QuickBooks returned an error.';
           await saveSession(session.companyId, session);
+          if (session.backfillJobId) {
+            await markBackfillJobFailed(session.companyId, session.backfillJobId, session.lastError);
+          }
           return soapInt('receiveResponseXML', -1);
         }
 
@@ -935,9 +1140,12 @@ export async function POST(request: NextRequest) {
           : 100;
         const complete = session.currentIndex >= session.requests.length;
         await saveSession(session.companyId, session);
+        if (session.backfillJobId) {
+          await updateBackfillJobProgress(session.companyId, session, requestName);
+        }
 
         if (complete) {
-          await finalizeSession(found.connection!, session);
+          await completeBackfillJob(found.connection!, session);
           return soapInt('receiveResponseXML', 100);
         }
 

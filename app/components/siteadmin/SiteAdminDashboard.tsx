@@ -2127,6 +2127,7 @@ export default function SiteAdminDashboard(props: any) {
         queuedDateRange: Record<string, any> | null;
         webConnectorLastRun: Record<string, any> | null;
         webConnectorActiveSession: Record<string, any> | null;
+        backfillJobs: Array<Record<string, any>>;
         lastWebConnectorSyncAt: string | null;
       }
     >
@@ -2531,6 +2532,7 @@ export default function SiteAdminDashboard(props: any) {
       queuedDateRange: null,
       webConnectorLastRun: null,
       webConnectorActiveSession: null,
+      backfillJobs: [],
       lastWebConnectorSyncAt: null,
     };
   const getQboSettings = (companyId: string) =>
@@ -2922,6 +2924,7 @@ export default function SiteAdminDashboard(props: any) {
           queuedDateRange: data?.queuedDateRange && typeof data.queuedDateRange === 'object' ? data.queuedDateRange : null,
           webConnectorLastRun: data?.webConnectorLastRun && typeof data.webConnectorLastRun === 'object' ? data.webConnectorLastRun : null,
           webConnectorActiveSession: data?.webConnectorActiveSession && typeof data.webConnectorActiveSession === 'object' ? data.webConnectorActiveSession : null,
+          backfillJobs: Array.isArray(data?.backfillJobs) ? data.backfillJobs : [],
           lastWebConnectorSyncAt: data?.lastWebConnectorSyncAt || null,
         },
       }));
@@ -3113,6 +3116,16 @@ export default function SiteAdminDashboard(props: any) {
     const isQueuing = queuingQbDesktopDateRangeCompanyId === companyId;
     const syncStatus = getQbDesktopSyncStatus(companyId);
     const queuedRange = syncStatus.queuedDateRange;
+    const backfillJobs = Array.isArray(syncStatus.backfillJobs) ? syncStatus.backfillJobs : [];
+    const backfillJobCounts = backfillJobs.reduce((counts, job) => {
+      const status = String(job?.status || 'unknown').toLowerCase();
+      counts[status] = (counts[status] || 0) + 1;
+      return counts;
+    }, {} as Record<string, number>);
+    const visibleBackfillJobs = backfillJobs.filter((job) => {
+      const status = String(job?.status || '').toLowerCase();
+      return status === 'running' || status === 'failed' || status === 'queued';
+    }).slice(0, 8);
     const activeSession = syncStatus.webConnectorActiveSession;
     const lastRun = syncStatus.webConnectorLastRun;
     const activeSessionRange = activeSession?.dateRange && typeof activeSession.dateRange === 'object' ? activeSession.dateRange as Record<string, any> : null;
@@ -3228,6 +3241,26 @@ export default function SiteAdminDashboard(props: any) {
             {activeSessionCounts ? (
               <div>
                 Records so far: {Object.entries(activeSessionCounts).map(([name, count]) => `${name.replace(/Query$/, '')}: ${Number(count || 0).toLocaleString('en-US')}`).join(', ')}
+              </div>
+            ) : null}
+            {backfillJobs.length > 0 ? (
+              <div style={{ marginTop: '8px', paddingTop: '8px', borderTop: `1px solid ${statusBorder}` }}>
+                <div style={{ fontWeight: 700 }}>
+                  Backfill jobs: {backfillJobs.length.toLocaleString('en-US')}
+                  {` | queued: ${Number(backfillJobCounts.queued || 0).toLocaleString('en-US')}`}
+                  {` | running: ${Number(backfillJobCounts.running || 0).toLocaleString('en-US')}`}
+                  {` | completed: ${Number(backfillJobCounts.completed || 0).toLocaleString('en-US')}`}
+                  {` | failed: ${Number(backfillJobCounts.failed || 0).toLocaleString('en-US')}`}
+                </div>
+                {visibleBackfillJobs.map((job) => (
+                  <div key={String(job.id || job.requestName)} style={{ marginTop: '3px' }}>
+                    {String(job.requestName || '').replace(/Query$/, '') || 'Unknown'}: {String(job.status || 'unknown')}
+                    {Number(job.recordCount || 0) > 0 ? `, records ${Number(job.recordCount || 0).toLocaleString('en-US')}` : ''}
+                    {Number(job.pageCount || 0) > 0 ? `, pages ${Number(job.pageCount || 0).toLocaleString('en-US')}` : ''}
+                    {job.updatedAt ? `, updated ${new Date(String(job.updatedAt)).toLocaleString()}` : ''}
+                    {job.lastError ? `, error: ${String(job.lastError)}` : ''}
+                  </div>
+                ))}
               </div>
             ) : null}
             {syncStatus.errorMessage || lastRunError || activeSessionError ? (
