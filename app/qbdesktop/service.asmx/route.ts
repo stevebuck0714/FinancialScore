@@ -112,6 +112,8 @@ const TRANSACTION_REQUESTS = new Set([
   'InventoryAdjustmentQuery',
 ]);
 
+const QBD_TRANSACTION_PAGE_SIZE = 250;
+
 const RET_TAG_BY_REQUEST: Record<string, string> = {
   AccountQuery: 'AccountRet',
   CustomerQuery: 'CustomerRet',
@@ -277,7 +279,7 @@ function buildQbxmlRequest(requestName: string, dateRange: QbwcDateRange, contex
   const useIterator = TRANSACTION_REQUESTS.has(requestName);
   const dateFilter = TRANSACTION_REQUESTS.has(requestName) ? buildTransactionDateFilter(dateRange) : '';
   const includeLineItems = ['InvoiceQuery', 'BillQuery'].includes(requestName) ? '<IncludeLineItems>true</IncludeLineItems>' : '';
-  const children = childrenByRequest[requestName] || `<MaxReturned>1000</MaxReturned>${dateFilter}${includeLineItems}`;
+  const children = childrenByRequest[requestName] || `<MaxReturned>${QBD_TRANSACTION_PAGE_SIZE}</MaxReturned>${dateFilter}${includeLineItems}`;
   const iteratorAttributes = useIterator
     ? context.iteratorID
       ? ` iterator="Continue" iteratorID="${xmlEscape(context.iteratorID)}"`
@@ -743,7 +745,7 @@ async function finalizeSession(connection: NonNullable<Awaited<ReturnType<typeof
       pageCounts: Object.fromEntries(
         Object.entries(session.responses).map(([key, response]) => [
           key,
-          Math.max(1, Math.ceil((response.records.length || 0) / 1000)),
+          Math.max(1, Math.ceil((response.records.length || 0) / QBD_TRANSACTION_PAGE_SIZE)),
         ]),
       ),
       accountMappingSeed,
