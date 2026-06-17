@@ -1135,10 +1135,12 @@ export async function POST(request: NextRequest) {
           session.currentIndex += 1;
         }
 
-        const progress = session.requests.length > 0
-          ? Math.min(99, Math.round((session.currentIndex / session.requests.length) * 100))
-          : 100;
         const complete = session.currentIndex >= session.requests.length;
+        const progress = complete
+          ? 100
+          : session.requests.length > 0
+            ? Math.max(1, Math.min(99, Math.round((session.currentIndex / session.requests.length) * 100)))
+            : 1;
         await saveSession(session.companyId, session);
         if (session.backfillJobId) {
           await updateBackfillJobProgress(session.companyId, session, requestName);
