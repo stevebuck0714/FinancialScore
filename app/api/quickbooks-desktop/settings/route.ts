@@ -75,6 +75,10 @@ const defaultPrograms: QuickBooksDesktopProgram[] = [
   { dataDomain: 'Credit Memos', qbEntity: 'CreditMemoQuery', enabled: true },
   { dataDomain: 'Journal Entries', qbEntity: 'JournalEntryQuery', enabled: true },
   { dataDomain: 'Purchase Orders', qbEntity: 'PurchaseOrderQuery', enabled: true },
+  { dataDomain: 'Checks', qbEntity: 'CheckQuery', enabled: true },
+  { dataDomain: 'Vendor Credits', qbEntity: 'VendorCreditQuery', enabled: true },
+  { dataDomain: 'Bill Payments - Checks', qbEntity: 'BillPaymentCheckQuery', enabled: true },
+  { dataDomain: 'Bill Payments - Credit Cards', qbEntity: 'BillPaymentCreditCardQuery', enabled: true },
 ];
 
 const defaultEnterprisePrograms: QuickBooksDesktopProgram[] = [

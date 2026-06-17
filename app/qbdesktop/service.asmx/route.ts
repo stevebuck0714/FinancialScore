@@ -74,6 +74,10 @@ const RECOMMENDED_QBD_REQUESTS = [
   'CreditMemoQuery',
   'JournalEntryQuery',
   'PurchaseOrderQuery',
+  'CheckQuery',
+  'VendorCreditQuery',
+  'BillPaymentCheckQuery',
+  'BillPaymentCreditCardQuery',
 ];
 
 const TRANSACTION_REQUESTS = new Set([
