@@ -47,8 +47,15 @@ type QbwcSession = {
   currentIndex: number;
   requests: string[];
   responses: Record<string, QbwcResponseSet>;
+  iterators?: Record<string, QbwcIteratorState>;
   dateRange: QbwcDateRange;
   lastError?: string | null;
+};
+
+type QbwcIteratorState = {
+  iteratorID: string;
+  remainingCount: number;
+  pageCount: number;
 };
 
 type QbwcDateRange = {
@@ -56,6 +63,10 @@ type QbwcDateRange = {
   startDate: string;
   endDate: string;
   requestedAt?: string;
+};
+
+type QbwcRequestContext = {
+  iteratorID?: string;
 };
 
 const DEFAULT_REQUESTS = [
@@ -165,6 +176,16 @@ function getInnerXml(xml: string, tagName: string): string {
   return match ? match[1] : '';
 }
 
+function getXmlTagAttribute(xml: string, tagName: string, attributeName: string): string {
+  const pattern = new RegExp(`<(?:[\\w.-]+:)?${tagName}\\b([^>]*)>`, 'i');
+  const tagMatch = xml.match(pattern);
+  const attributes = tagMatch ? tagMatch[1] : '';
+  if (!attributes) return '';
+  const attributePattern = new RegExp(`\\b${attributeName}\\s*=\\s*["']([^"']*)["']`, 'i');
+  const attributeMatch = attributes.match(attributePattern);
+  return attributeMatch ? xmlDecode(attributeMatch[1].trim()) : '';
+}
+
 function getXmlRecords(xml: string, tagName: string): string[] {
   const records: string[] = [];
   const pattern = new RegExp(`<(?:[\\w.-]+:)?${tagName}\\b[^>]*>([\\s\\S]*?)</(?:[\\w.-]+:)?${tagName}>`, 'gi');
@@ -244,24 +265,27 @@ function buildTransactionDateFilter(dateRange: QbwcDateRange): string {
   return `<TxnDateRangeFilter><FromTxnDate>${xmlEscape(dateRange.startDate)}</FromTxnDate><ToTxnDate>${xmlEscape(dateRange.endDate)}</ToTxnDate></TxnDateRangeFilter>`;
 }
 
-function buildQbxmlRequest(requestName: string, dateRange: QbwcDateRange): string {
+function buildQbxmlRequest(requestName: string, dateRange: QbwcDateRange, context: QbwcRequestContext = {}): string {
   const childrenByRequest: Record<string, string> = {
-    AccountQuery: '<ActiveStatus>All</ActiveStatus>',
-    CustomerQuery: '<ActiveStatus>All</ActiveStatus>',
-    VendorQuery: '<ActiveStatus>All</ActiveStatus>',
-    ItemQuery: '<ActiveStatus>All</ActiveStatus>',
+    AccountQuery: '<MaxReturned>1000</MaxReturned><ActiveStatus>All</ActiveStatus>',
+    CustomerQuery: '<MaxReturned>1000</MaxReturned><ActiveStatus>All</ActiveStatus>',
+    VendorQuery: '<MaxReturned>1000</MaxReturned><ActiveStatus>All</ActiveStatus>',
+    ItemQuery: '<MaxReturned>1000</MaxReturned><ActiveStatus>All</ActiveStatus>',
   };
   const requestTag = `${requestName}Rq`;
   const requestId = xmlEscape(requestName);
   const dateFilter = TRANSACTION_REQUESTS.has(requestName) ? buildTransactionDateFilter(dateRange) : '';
   const includeLineItems = ['InvoiceQuery', 'BillQuery'].includes(requestName) ? '<IncludeLineItems>true</IncludeLineItems>' : '';
   const children = childrenByRequest[requestName] || `<MaxReturned>1000</MaxReturned>${dateFilter}${includeLineItems}`;
+  const iteratorAttributes = context.iteratorID
+    ? ` iterator="Continue" iteratorID="${xmlEscape(context.iteratorID)}"`
+    : ' iterator="Start"';
 
   return `<?xml version="1.0" encoding="utf-8"?>
 <?qbxml version="13.0"?>
 <QBXML>
   <QBXMLMsgsRq onError="continueOnError">
-    <${requestTag} requestID="${requestId}">
+    <${requestTag} requestID="${requestId}"${iteratorAttributes}>
       ${children}
     </${requestTag}>
   </QBXMLMsgsRq>
@@ -336,6 +360,19 @@ function parseResponseRecords(requestName: string, xml: string): Array<Record<st
 
     return record;
   });
+}
+
+function getIteratorState(requestName: string, xml: string): QbwcIteratorState | null {
+  const responseTag = `${requestName}Rs`;
+  const iteratorID = getXmlTagAttribute(xml, responseTag, 'iteratorID');
+  const remainingRaw = getXmlTagAttribute(xml, responseTag, 'iteratorRemainingCount');
+  const remainingCount = Math.max(0, Number(remainingRaw || 0));
+  if (!iteratorID || !Number.isFinite(remainingCount) || remainingCount <= 0) return null;
+  return {
+    iteratorID,
+    remainingCount,
+    pageCount: 1,
+  };
 }
 
 function getRef(record: Record<string, unknown>, refName: string): { id: string; name: string } {
@@ -700,6 +737,12 @@ async function finalizeSession(connection: NonNullable<Awaited<ReturnType<typeof
       recordCounts: Object.fromEntries(
         Object.entries(session.responses).map(([key, response]) => [key, response.records.length]),
       ),
+      pageCounts: Object.fromEntries(
+        Object.entries(session.responses).map(([key, response]) => [
+          key,
+          Math.max(1, Math.ceil((response.records.length || 0) / 1000)),
+        ]),
+      ),
       accountMappingSeed,
       operationalSync,
       lastError,
@@ -819,6 +862,7 @@ export async function POST(request: NextRequest) {
           currentIndex: 0,
           requests: buildRequestList(auth.metadata),
           responses: {},
+          iterators: {},
           dateRange: getRunDateRange(auth.metadata),
           lastError: null,
         };
@@ -834,9 +878,10 @@ export async function POST(request: NextRequest) {
 
         const requestName = found.session.requests[found.session.currentIndex];
         if (!requestName) return soapString('sendRequestXML', '');
+        const iteratorID = found.session.iterators?.[requestName]?.iteratorID;
 
         await saveSession(found.session.companyId, found.session);
-        return soapString('sendRequestXML', buildQbxmlRequest(requestName, found.session.dateRange));
+        return soapString('sendRequestXML', buildQbxmlRequest(requestName, found.session.dateRange, { iteratorID }));
       }
 
       case 'receiveResponseXML': {
@@ -857,12 +902,28 @@ export async function POST(request: NextRequest) {
           return soapInt('receiveResponseXML', -1);
         }
 
+        const pageRecords = parseResponseRecords(requestName, responseXml);
+        const existingResponse = session.responses[requestName];
+        const existingRecords = existingResponse?.records || [];
         session.responses[requestName] = {
           receivedAt: new Date().toISOString(),
-          records: parseResponseRecords(requestName, responseXml),
+          records: [...existingRecords, ...pageRecords],
           rawResponseXmlPreview: responseXml.slice(0, 50000),
         };
-        session.currentIndex += 1;
+        const previousIterator = session.iterators?.[requestName];
+        const nextIterator = getIteratorState(requestName, responseXml);
+        session.iterators = {
+          ...(session.iterators || {}),
+        };
+        if (nextIterator) {
+          session.iterators[requestName] = {
+            ...nextIterator,
+            pageCount: (previousIterator?.pageCount || 0) + 1,
+          };
+        } else {
+          delete session.iterators[requestName];
+          session.currentIndex += 1;
+        }
 
         const progress = session.requests.length > 0
           ? Math.min(99, Math.round((session.currentIndex / session.requests.length) * 100))
