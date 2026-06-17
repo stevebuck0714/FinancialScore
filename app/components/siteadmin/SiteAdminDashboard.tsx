@@ -2126,6 +2126,7 @@ export default function SiteAdminDashboard(props: any) {
         errorMessage: string | null;
         queuedDateRange: Record<string, any> | null;
         webConnectorLastRun: Record<string, any> | null;
+        webConnectorActiveSession: Record<string, any> | null;
         lastWebConnectorSyncAt: string | null;
       }
     >
@@ -2528,6 +2529,7 @@ export default function SiteAdminDashboard(props: any) {
       errorMessage: null,
       queuedDateRange: null,
       webConnectorLastRun: null,
+      webConnectorActiveSession: null,
       lastWebConnectorSyncAt: null,
     };
   const getQboSettings = (companyId: string) =>
@@ -2918,6 +2920,7 @@ export default function SiteAdminDashboard(props: any) {
           errorMessage: data?.errorMessage || null,
           queuedDateRange: data?.queuedDateRange && typeof data.queuedDateRange === 'object' ? data.queuedDateRange : null,
           webConnectorLastRun: data?.webConnectorLastRun && typeof data.webConnectorLastRun === 'object' ? data.webConnectorLastRun : null,
+          webConnectorActiveSession: data?.webConnectorActiveSession && typeof data.webConnectorActiveSession === 'object' ? data.webConnectorActiveSession : null,
           lastWebConnectorSyncAt: data?.lastWebConnectorSyncAt || null,
         },
       }));
@@ -3085,23 +3088,31 @@ export default function SiteAdminDashboard(props: any) {
     const isQueuing = queuingQbDesktopDateRangeCompanyId === companyId;
     const syncStatus = getQbDesktopSyncStatus(companyId);
     const queuedRange = syncStatus.queuedDateRange;
+    const activeSession = syncStatus.webConnectorActiveSession;
     const lastRun = syncStatus.webConnectorLastRun;
+    const activeSessionRange = activeSession?.dateRange && typeof activeSession.dateRange === 'object' ? activeSession.dateRange as Record<string, any> : null;
+    const activeSessionCounts = activeSession?.recordCounts && typeof activeSession.recordCounts === 'object' && !Array.isArray(activeSession.recordCounts)
+      ? activeSession.recordCounts as Record<string, unknown>
+      : null;
+    const activeSessionError = typeof activeSession?.lastError === 'string' ? activeSession.lastError : '';
     const lastRunRange = lastRun?.dateRange && typeof lastRun.dateRange === 'object' ? lastRun.dateRange as Record<string, any> : null;
     const lastRunCompletedAt = typeof lastRun?.completedAt === 'string' ? lastRun.completedAt : '';
     const lastRunError = typeof lastRun?.lastError === 'string' ? lastRun.lastError : '';
     const recordCounts = lastRun?.recordCounts && typeof lastRun.recordCounts === 'object' && !Array.isArray(lastRun.recordCounts)
       ? lastRun.recordCounts as Record<string, unknown>
       : null;
-    const statusLabel = queuedRange
+    const statusLabel = activeSession
+      ? 'Running - Web Connector is pulling data'
+      : queuedRange
       ? 'Queued - waiting for Web Connector'
       : lastRunCompletedAt
         ? 'Completed'
         : syncStatus.lastSyncAt
           ? 'Synced'
           : 'Not run yet';
-    const statusColor = syncStatus.errorMessage || lastRunError ? '#b91c1c' : queuedRange ? '#92400e' : lastRunCompletedAt || syncStatus.lastSyncAt ? '#166534' : '#475569';
-    const statusBg = syncStatus.errorMessage || lastRunError ? '#fef2f2' : queuedRange ? '#fffbeb' : lastRunCompletedAt || syncStatus.lastSyncAt ? '#f0fdf4' : '#f8fafc';
-    const statusBorder = syncStatus.errorMessage || lastRunError ? '#fecaca' : queuedRange ? '#fde68a' : lastRunCompletedAt || syncStatus.lastSyncAt ? '#bbf7d0' : '#e2e8f0';
+    const statusColor = syncStatus.errorMessage || lastRunError || activeSessionError ? '#b91c1c' : activeSession ? '#1d4ed8' : queuedRange ? '#92400e' : lastRunCompletedAt || syncStatus.lastSyncAt ? '#166534' : '#475569';
+    const statusBg = syncStatus.errorMessage || lastRunError || activeSessionError ? '#fef2f2' : activeSession ? '#eff6ff' : queuedRange ? '#fffbeb' : lastRunCompletedAt || syncStatus.lastSyncAt ? '#f0fdf4' : '#f8fafc';
+    const statusBorder = syncStatus.errorMessage || lastRunError || activeSessionError ? '#fecaca' : activeSession ? '#bfdbfe' : queuedRange ? '#fde68a' : lastRunCompletedAt || syncStatus.lastSyncAt ? '#bbf7d0' : '#e2e8f0';
 
     return (
       <div style={{ marginTop: '10px', padding: '10px', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '6px', overflow: 'hidden' }}>
@@ -3148,7 +3159,19 @@ export default function SiteAdminDashboard(props: any) {
             </button>
           </div>
           <div style={{ fontSize: '11px', color: statusColor, lineHeight: 1.5 }}>
-            {queuedRange ? (
+            {activeSession ? (
+              <>
+                <div>
+                  Active range: {activeSessionRange?.startDate || '—'} to {activeSessionRange?.endDate || '—'}
+                  {activeSession.updatedAt ? ` (last update ${new Date(String(activeSession.updatedAt)).toLocaleString()})` : ''}
+                </div>
+                <div>
+                  Current request: {activeSession.currentRequest || '—'} ({Number(activeSession.currentIndex || 0) + 1} of {Number(activeSession.requestCount || 0)})
+                  {activeSession.currentPageCount ? `, page ${Number(activeSession.currentPageCount).toLocaleString('en-US')}` : ''}
+                  {activeSession.iteratorRemainingCount ? `, about ${Number(activeSession.iteratorRemainingCount).toLocaleString('en-US')} remaining in this request` : ''}
+                </div>
+              </>
+            ) : queuedRange ? (
               <div>Queued range: {queuedRange.startDate || '—'} to {queuedRange.endDate || '—'}{queuedRange.requestedAt ? ` (queued ${new Date(String(queuedRange.requestedAt)).toLocaleString()})` : ''}</div>
             ) : lastRunCompletedAt ? (
               <div>Last completed: {new Date(lastRunCompletedAt).toLocaleString()}{lastRunRange ? ` for ${lastRunRange.startDate || '—'} to ${lastRunRange.endDate || '—'}` : ''}</div>
@@ -3162,8 +3185,13 @@ export default function SiteAdminDashboard(props: any) {
                 Records pulled: {Object.entries(recordCounts).map(([name, count]) => `${name.replace(/Query$/, '')}: ${Number(count || 0).toLocaleString('en-US')}`).join(', ')}
               </div>
             ) : null}
-            {syncStatus.errorMessage || lastRunError ? (
-              <div style={{ marginTop: '4px', fontWeight: 600 }}>Error: {syncStatus.errorMessage || lastRunError}</div>
+            {activeSessionCounts ? (
+              <div>
+                Records so far: {Object.entries(activeSessionCounts).map(([name, count]) => `${name.replace(/Query$/, '')}: ${Number(count || 0).toLocaleString('en-US')}`).join(', ')}
+              </div>
+            ) : null}
+            {syncStatus.errorMessage || lastRunError || activeSessionError ? (
+              <div style={{ marginTop: '4px', fontWeight: 600 }}>Error: {syncStatus.errorMessage || lastRunError || activeSessionError}</div>
             ) : null}
           </div>
         </div>

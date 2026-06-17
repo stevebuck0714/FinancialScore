@@ -124,6 +124,45 @@ function asRecord(value: unknown): Record<string, unknown> | null {
   return value && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : null;
 }
 
+function summarizeLatestWebConnectorSession(metadata: Record<string, unknown>): Record<string, unknown> | null {
+  const sessions = asRecord(metadata.quickbooksDesktopWebConnectorSessions);
+  if (!sessions) return null;
+
+  const lastRun = asRecord(metadata.quickbooksDesktopWebConnectorLastRun);
+  const completedTicket = asString(lastRun?.ticket);
+  const session = Object.values(sessions)
+    .map(asRecord)
+    .filter((value): value is Record<string, unknown> => Boolean(value))
+    .sort((a, b) => asString(b.updatedAt).localeCompare(asString(a.updatedAt)))[0];
+  if (!session || asString(session.ticket) === completedTicket) return null;
+
+  const requests = Array.isArray(session.requests) ? session.requests.map((value) => String(value || '')) : [];
+  const currentIndex = Math.max(0, Number(session.currentIndex || 0));
+  const responses = asRecord(session.responses) || {};
+  const iterators = asRecord(session.iterators) || {};
+  const currentRequest = requests[currentIndex] || '';
+  const currentIterator = asRecord(iterators[currentRequest]);
+
+  return {
+    ticket: asString(session.ticket),
+    createdAt: asString(session.createdAt) || null,
+    updatedAt: asString(session.updatedAt) || null,
+    currentIndex,
+    requestCount: requests.length,
+    currentRequest,
+    dateRange: asRecord(session.dateRange),
+    lastError: asString(session.lastError) || null,
+    iteratorRemainingCount: Number(currentIterator?.remainingCount || 0) || null,
+    currentPageCount: Number(currentIterator?.pageCount || 0) || null,
+    recordCounts: Object.fromEntries(
+      Object.entries(responses).map(([key, response]) => [
+        key,
+        Array.isArray(asRecord(response)?.records) ? (asRecord(response)?.records as unknown[]).length : 0,
+      ]),
+    ),
+  };
+}
+
 function sanitizeSettings(value: unknown): QuickBooksDesktopSettings {
   const src = value && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
   return {
@@ -271,6 +310,7 @@ export async function GET(request: NextRequest) {
       errorMessage: connection?.errorMessage || null,
       queuedDateRange: asRecord(metadata.quickbooksDesktopQueuedDateRange),
       webConnectorLastRun: asRecord(metadata.quickbooksDesktopWebConnectorLastRun),
+      webConnectorActiveSession: summarizeLatestWebConnectorSession(metadata),
       lastWebConnectorSyncAt: asString(metadata.quickbooksDesktopLastWebConnectorSyncAt) || null,
       settings: {
         ...settings,
