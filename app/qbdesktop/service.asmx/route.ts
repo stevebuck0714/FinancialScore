@@ -133,7 +133,7 @@ const TRANSACTION_REQUESTS = new Set([
   'InventoryAdjustmentQuery',
 ]);
 
-const QBD_TRANSACTION_PAGE_SIZE = 250;
+const QBD_TRANSACTION_PAGE_SIZE = 100;
 
 const RET_TAG_BY_REQUEST: Record<string, string> = {
   AccountQuery: 'AccountRet',
