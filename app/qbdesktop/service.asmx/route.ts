@@ -134,6 +134,7 @@ const TRANSACTION_REQUESTS = new Set([
 ]);
 
 const QBD_TRANSACTION_PAGE_SIZE = 100;
+const QBD_INCLUDE_TRANSACTION_LINE_ITEMS = false;
 
 const RET_TAG_BY_REQUEST: Record<string, string> = {
   AccountQuery: 'AccountRet',
@@ -302,7 +303,9 @@ function buildQbxmlRequest(requestName: string, dateRange: QbwcDateRange, contex
   const requestId = xmlEscape(requestName);
   const useIterator = TRANSACTION_REQUESTS.has(requestName);
   const dateFilter = TRANSACTION_REQUESTS.has(requestName) ? buildTransactionDateFilter(dateRange) : '';
-  const includeLineItems = ['InvoiceQuery', 'BillQuery'].includes(requestName) ? '<IncludeLineItems>true</IncludeLineItems>' : '';
+  const includeLineItems = QBD_INCLUDE_TRANSACTION_LINE_ITEMS && ['InvoiceQuery', 'BillQuery'].includes(requestName)
+    ? '<IncludeLineItems>true</IncludeLineItems>'
+    : '';
   const children = childrenByRequest[requestName] || `<MaxReturned>${QBD_TRANSACTION_PAGE_SIZE}</MaxReturned>${dateFilter}${includeLineItems}`;
   const iteratorAttributes = useIterator
     ? context.iteratorID
