@@ -67,6 +67,15 @@ const DEFAULT_REQUESTS = [
   'ReceivePaymentQuery',
 ];
 
+const RECOMMENDED_QBD_REQUESTS = [
+  'ItemQuery',
+  'SalesReceiptQuery',
+  'DepositQuery',
+  'CreditMemoQuery',
+  'JournalEntryQuery',
+  'PurchaseOrderQuery',
+];
+
 const TRANSACTION_REQUESTS = new Set([
   'InvoiceQuery',
   'BillQuery',
@@ -221,7 +230,7 @@ function buildRequestList(metadata: QbDesktopMetadata): string[] {
         .map((program) => (typeof program.qbEntity === 'string' ? program.qbEntity : ''))
     : [];
 
-  return uniqueStrings(configured.length > 0 ? configured : DEFAULT_REQUESTS)
+  return uniqueStrings([...(configured.length > 0 ? configured : DEFAULT_REQUESTS), ...RECOMMENDED_QBD_REQUESTS])
     .filter((entity) => entity.endsWith('Query'))
     .filter((entity) => Boolean(RET_TAG_BY_REQUEST[entity] || entity.match(/^[A-Za-z][A-Za-z0-9]*Query$/)));
 }

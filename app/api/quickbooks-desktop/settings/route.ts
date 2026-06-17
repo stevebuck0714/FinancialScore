@@ -69,6 +69,12 @@ const defaultPrograms: QuickBooksDesktopProgram[] = [
   { dataDomain: 'Invoices', qbEntity: 'InvoiceQuery', enabled: true },
   { dataDomain: 'Bills', qbEntity: 'BillQuery', enabled: true },
   { dataDomain: 'Payments', qbEntity: 'ReceivePaymentQuery', enabled: true },
+  { dataDomain: 'Items / Products', qbEntity: 'ItemQuery', enabled: true },
+  { dataDomain: 'Sales Receipts', qbEntity: 'SalesReceiptQuery', enabled: true },
+  { dataDomain: 'Deposits', qbEntity: 'DepositQuery', enabled: true },
+  { dataDomain: 'Credit Memos', qbEntity: 'CreditMemoQuery', enabled: true },
+  { dataDomain: 'Journal Entries', qbEntity: 'JournalEntryQuery', enabled: true },
+  { dataDomain: 'Purchase Orders', qbEntity: 'PurchaseOrderQuery', enabled: true },
 ];
 
 const defaultEnterprisePrograms: QuickBooksDesktopProgram[] = [
