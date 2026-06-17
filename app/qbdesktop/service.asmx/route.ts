@@ -267,19 +267,22 @@ function buildTransactionDateFilter(dateRange: QbwcDateRange): string {
 
 function buildQbxmlRequest(requestName: string, dateRange: QbwcDateRange, context: QbwcRequestContext = {}): string {
   const childrenByRequest: Record<string, string> = {
-    AccountQuery: '<MaxReturned>1000</MaxReturned><ActiveStatus>All</ActiveStatus>',
-    CustomerQuery: '<MaxReturned>1000</MaxReturned><ActiveStatus>All</ActiveStatus>',
-    VendorQuery: '<MaxReturned>1000</MaxReturned><ActiveStatus>All</ActiveStatus>',
-    ItemQuery: '<MaxReturned>1000</MaxReturned><ActiveStatus>All</ActiveStatus>',
+    AccountQuery: '<ActiveStatus>All</ActiveStatus>',
+    CustomerQuery: '<ActiveStatus>All</ActiveStatus>',
+    VendorQuery: '<ActiveStatus>All</ActiveStatus>',
+    ItemQuery: '<ActiveStatus>All</ActiveStatus>',
   };
   const requestTag = `${requestName}Rq`;
   const requestId = xmlEscape(requestName);
+  const useIterator = TRANSACTION_REQUESTS.has(requestName);
   const dateFilter = TRANSACTION_REQUESTS.has(requestName) ? buildTransactionDateFilter(dateRange) : '';
   const includeLineItems = ['InvoiceQuery', 'BillQuery'].includes(requestName) ? '<IncludeLineItems>true</IncludeLineItems>' : '';
   const children = childrenByRequest[requestName] || `<MaxReturned>1000</MaxReturned>${dateFilter}${includeLineItems}`;
-  const iteratorAttributes = context.iteratorID
-    ? ` iterator="Continue" iteratorID="${xmlEscape(context.iteratorID)}"`
-    : ' iterator="Start"';
+  const iteratorAttributes = useIterator
+    ? context.iteratorID
+      ? ` iterator="Continue" iteratorID="${xmlEscape(context.iteratorID)}"`
+      : ' iterator="Start"'
+    : '';
 
   return `<?xml version="1.0" encoding="utf-8"?>
 <?qbxml version="13.0"?>
