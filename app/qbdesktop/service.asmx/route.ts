@@ -137,7 +137,7 @@ const TRANSACTION_REQUESTS = new Set([
 
 const QBD_TRANSACTION_PAGE_SIZE = 100;
 const QBD_INCLUDE_TRANSACTION_LINE_ITEMS = false;
-const QBD_BACKFILL_JOBS_PER_SESSION = 4;
+const QBD_BACKFILL_JOBS_PER_SESSION = 6;
 
 const RET_TAG_BY_REQUEST: Record<string, string> = {
   AccountQuery: 'AccountRet',
