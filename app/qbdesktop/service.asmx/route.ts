@@ -53,6 +53,7 @@ type QbwcSession = {
   iterators?: Record<string, QbwcIteratorState>;
   dateRange: QbwcDateRange;
   backfillJobId?: string;
+  backfillJobIds?: Record<string, string>;
   lastError?: string | null;
 };
 
@@ -136,6 +137,7 @@ const TRANSACTION_REQUESTS = new Set([
 
 const QBD_TRANSACTION_PAGE_SIZE = 100;
 const QBD_INCLUDE_TRANSACTION_LINE_ITEMS = false;
+const QBD_BACKFILL_JOBS_PER_SESSION = 4;
 
 const RET_TAG_BY_REQUEST: Record<string, string> = {
   AccountQuery: 'AccountRet',
@@ -484,11 +486,12 @@ function getRunDateRange(metadata: QbDesktopMetadata): QbwcDateRange {
   };
 }
 
-function getNextBackfillJob(metadata: QbDesktopMetadata): QbdBackfillJob | null {
+function getNextBackfillJobs(metadata: QbDesktopMetadata): QbdBackfillJob[] {
   const jobs = metadata.quickbooksDesktopBackfillJobs || {};
   return Object.values(jobs)
     .filter((job) => job.status === 'queued' || job.status === 'running')
-    .sort((a, b) => String(a.createdAt).localeCompare(String(b.createdAt)))[0] || null;
+    .sort((a, b) => String(a.createdAt).localeCompare(String(b.createdAt)))
+    .slice(0, QBD_BACKFILL_JOBS_PER_SESSION);
 }
 
 function buildCombinedBackfillSession(
@@ -528,6 +531,10 @@ function getBatchIdFromJobId(jobId: string): string {
   return jobId.split(':')[0] || jobId;
 }
 
+function getBackfillJobIdForRequest(session: QbwcSession, requestName: string): string {
+  return session.backfillJobIds?.[requestName] || session.backfillJobId || '';
+}
+
 async function saveBackfillPage(
   companyId: string,
   session: QbwcSession,
@@ -537,8 +544,9 @@ async function saveBackfillPage(
   remainingCount: number | null,
   responseXml: string,
 ): Promise<void> {
-  if (!session.backfillJobId) return;
-  const batchId = getBatchIdFromJobId(session.backfillJobId);
+  const jobId = getBackfillJobIdForRequest(session, requestName);
+  if (!jobId) return;
+  const batchId = getBatchIdFromJobId(jobId);
   const payloadJson = JSON.stringify(pageRecords);
   const rawXmlPreview = responseXml.slice(0, 50000);
 
@@ -560,7 +568,7 @@ async function saveBackfillPage(
       ${randomUUID()},
       ${companyId},
       ${batchId},
-      ${session.backfillJobId},
+      ${jobId},
       ${session.ticket},
       ${requestName},
       ${pageNumber},
@@ -877,16 +885,17 @@ async function markBackfillJobFailed(companyId: string, jobId: string, message: 
 async function completeBackfillJob(
   connection: NonNullable<Awaited<ReturnType<typeof loadConnection>>>,
   session: QbwcSession,
+  requestNameOverride?: string,
 ): Promise<void> {
-  const jobId = session.backfillJobId;
+  const requestName = requestNameOverride || session.requests[0];
+  const jobId = getBackfillJobIdForRequest(session, requestName);
   if (!jobId) {
     await finalizeSession(connection, session);
     return;
   }
 
-  const requestName = session.requests[0];
-  const response = session.backfillJobId
-    ? await loadBackfillJobResponse(session.backfillJobId, requestName)
+  const response = jobId
+    ? await loadBackfillJobResponse(jobId, requestName)
     : session.responses[requestName] || {
         receivedAt: new Date().toISOString(),
         records: [],
@@ -961,8 +970,14 @@ async function markBackfillJobRunning(companyId: string, job: QbdBackfillJob, ti
   });
 }
 
+async function markBackfillJobsRunning(companyId: string, jobs: QbdBackfillJob[], ticket: string): Promise<void> {
+  for (const job of jobs) {
+    await markBackfillJobRunning(companyId, job, ticket);
+  }
+}
+
 async function updateBackfillJobProgress(companyId: string, session: QbwcSession, requestName: string): Promise<void> {
-  const jobId = session.backfillJobId;
+  const jobId = getBackfillJobIdForRequest(session, requestName);
   if (!jobId) return;
   const response = session.responses[requestName];
   const iterator = session.iterators?.[requestName];
@@ -1146,23 +1161,26 @@ export async function POST(request: NextRequest) {
 
         const ticket = `corelytics:${auth.companyId}:${randomUUID()}`;
         const now = new Date().toISOString();
-        const backfillJob = getNextBackfillJob(auth.metadata);
+        const backfillJobs = getNextBackfillJobs(auth.metadata);
+        const backfillRequests = backfillJobs.map((job) => job.requestName);
+        const backfillJobIds = Object.fromEntries(backfillJobs.map((job) => [job.requestName, job.id]));
         const session: QbwcSession = {
           ticket,
           companyId: auth.companyId,
           createdAt: now,
           updatedAt: now,
           currentIndex: 0,
-          requests: backfillJob ? [backfillJob.requestName] : buildRequestList(auth.metadata),
+          requests: backfillRequests.length > 0 ? backfillRequests : buildRequestList(auth.metadata),
           responses: {},
           iterators: {},
-          dateRange: backfillJob ? backfillJob.dateRange : getRunDateRange(auth.metadata),
-          backfillJobId: backfillJob?.id,
+          dateRange: backfillJobs[0]?.dateRange || getRunDateRange(auth.metadata),
+          backfillJobId: backfillJobs[0]?.id,
+          backfillJobIds: backfillRequests.length > 0 ? backfillJobIds : undefined,
           lastError: null,
         };
 
-        if (backfillJob) {
-          await markBackfillJobRunning(auth.companyId, backfillJob, ticket);
+        if (backfillJobs.length > 0) {
+          await markBackfillJobsRunning(auth.companyId, backfillJobs, ticket);
         }
         await saveSession(auth.companyId, session);
         return authenticateResponse(ticket, getCompanyFilePath(auth.metadata));
@@ -1196,8 +1214,9 @@ export async function POST(request: NextRequest) {
         if (hresult || message) {
           session.lastError = [hresult, message].filter(Boolean).join(' - ') || 'QuickBooks returned an error.';
           await saveSession(session.companyId, session);
-          if (session.backfillJobId) {
-            await markBackfillJobFailed(session.companyId, session.backfillJobId, session.lastError);
+          const failedJobId = getBackfillJobIdForRequest(session, requestName);
+          if (failedJobId) {
+            await markBackfillJobFailed(session.companyId, failedJobId, session.lastError);
           }
           return soapInt('receiveResponseXML', -1);
         }
@@ -1237,6 +1256,9 @@ export async function POST(request: NextRequest) {
         } else {
           delete session.iterators[requestName];
           session.currentIndex += 1;
+          if (getBackfillJobIdForRequest(session, requestName)) {
+            await completeBackfillJob(found.connection!, session, requestName);
+          }
         }
 
         const complete = session.currentIndex >= session.requests.length;
@@ -1251,7 +1273,9 @@ export async function POST(request: NextRequest) {
         }
 
         if (complete) {
-          await completeBackfillJob(found.connection!, session);
+          if (!session.backfillJobIds && !session.backfillJobId) {
+            await finalizeSession(found.connection!, session);
+          }
           return soapInt('receiveResponseXML', 100);
         }
 
