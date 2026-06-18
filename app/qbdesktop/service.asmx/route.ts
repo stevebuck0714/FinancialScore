@@ -115,12 +115,16 @@ const DEFAULT_REQUESTS = [
   'ReceivePaymentQuery',
 ];
 
-const RECOMMENDED_QBD_REQUESTS = [
+const REQUIRED_QBD_REPORT_REQUESTS = [
   'BalanceSheetStandardReportQuery',
   'TrialBalanceReportQuery',
   'GeneralDetailReportQuery',
   'OtherNameQuery',
   'EntityQuery',
+];
+
+const RECOMMENDED_QBD_REQUESTS = [
+  ...REQUIRED_QBD_REPORT_REQUESTS,
   'ItemQuery',
   'SalesReceiptQuery',
   'DepositQuery',
@@ -322,7 +326,7 @@ function buildRequestList(metadata: QbDesktopMetadata): string[] {
         .map((program) => (typeof program.qbEntity === 'string' ? program.qbEntity : ''))
     : [];
   const sourceRequests = configured.length > 0
-    ? configured
+    ? [...configured, ...REQUIRED_QBD_REPORT_REQUESTS]
     : [...DEFAULT_REQUESTS, ...RECOMMENDED_QBD_REQUESTS];
 
   return uniqueStrings(sourceRequests)

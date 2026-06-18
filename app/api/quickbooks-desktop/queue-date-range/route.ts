@@ -6,6 +6,14 @@ import { isQuickBooksDesktopFamily } from '@/lib/quickbooks-desktop/family';
 
 export const dynamic = 'force-dynamic';
 
+const REQUIRED_QBD_REPORT_REQUESTS = [
+  'BalanceSheetStandardReportQuery',
+  'TrialBalanceReportQuery',
+  'GeneralDetailReportQuery',
+  'OtherNameQuery',
+  'EntityQuery',
+];
+
 function parseDate(value: unknown): string {
   if (typeof value !== 'string') return '';
   const trimmed = value.trim();
@@ -16,11 +24,7 @@ function parseDate(value: unknown): string {
 
 const DEFAULT_QBD_REQUESTS = [
   'AccountQuery',
-  'BalanceSheetStandardReportQuery',
-  'TrialBalanceReportQuery',
-  'GeneralDetailReportQuery',
-  'OtherNameQuery',
-  'EntityQuery',
+  ...REQUIRED_QBD_REPORT_REQUESTS,
   'CustomerQuery',
   'VendorQuery',
   'InvoiceQuery',
@@ -57,7 +61,7 @@ function getEnabledQbDesktopRequests(metadata: Record<string, unknown>): string[
           return typeof row.qbEntity === 'string' ? row.qbEntity.trim() : '';
         })
     : DEFAULT_QBD_REQUESTS;
-  return Array.from(new Set(requests))
+  return Array.from(new Set([...requests, ...REQUIRED_QBD_REPORT_REQUESTS]))
     .filter((requestName) => /^[A-Za-z][A-Za-z0-9]*Query$/.test(requestName));
 }
 
