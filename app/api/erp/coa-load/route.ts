@@ -4,6 +4,7 @@ import { requireCompanyAccess } from '@/lib/tenant-security';
 import { ingestFinancialPayload } from '@/lib/financial-ingestion';
 import { syncErpDailyFinancialsFromGL } from '@/lib/financial/sync-erp-daily-financials';
 import { seedQuickBooksDesktopAccountMappings } from '@/lib/quickbooks-desktop/account-mapping-seed';
+import { loadQuickBooksDesktopBackfillPayloads } from '@/lib/quickbooks-desktop/backfill-payloads';
 import { isQuickBooksDesktopFamily } from '@/lib/quickbooks-desktop/family';
 import { seedInforAccountMappings } from '@/lib/infor-m3/account-mapping-seed';
 import { buildCsiMonthlyDataFromGlResponses } from '@/lib/infor-m3/csi-monthly-financial-builder';
@@ -202,6 +203,21 @@ async function loadPayloadFromConnectionMetadataPath(
     const raw = rows[0]?.payload;
     if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
       return normalizePayload(raw as Record<string, unknown>);
+    }
+    if (key === 'quickbooksDesktopFinancialPayload') {
+      const connection = await prisma.accountingConnection.findUnique({
+        where: {
+          companyId_platform: {
+            companyId,
+            platform: 'QUICKBOOKS',
+          },
+        },
+        select: {
+          connectionMetadata: true,
+        },
+      });
+      const rebuilt = await loadQuickBooksDesktopBackfillPayloads(companyId, connection?.connectionMetadata);
+      return rebuilt?.financialPayload || null;
     }
   } catch (error) {
     console.warn('[ERP COA] payload path query failed; falling back to metadata read', {

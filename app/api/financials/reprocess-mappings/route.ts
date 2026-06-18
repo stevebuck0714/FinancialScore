@@ -881,17 +881,21 @@ export async function POST(request: NextRequest) {
         connection?.connectionMetadata && typeof connection.connectionMetadata === 'object' && !Array.isArray(connection.connectionMetadata)
           ? (connection.connectionMetadata as Record<string, unknown>)
           : {};
-      const financialPayload =
+      let financialPayload =
         metadata.quickbooksDesktopFinancialPayload && typeof metadata.quickbooksDesktopFinancialPayload === 'object'
           ? (metadata.quickbooksDesktopFinancialPayload as Record<string, unknown>)
           : null;
+      if (!financialPayload) {
+        const { loadQuickBooksDesktopBackfillPayloads } = await import('@/lib/quickbooks-desktop/backfill-payloads');
+        financialPayload = (await loadQuickBooksDesktopBackfillPayloads(String(companyId), metadata))?.financialPayload || null;
+      }
 
       if (!financialPayload) {
         return NextResponse.json(
           {
             success: false,
             error:
-              'No QuickBooks Desktop financial payload is available yet. Push financial payload from Desktop host first, then reprocess.',
+              'No QuickBooks Desktop financial payload or completed backfill pages are available yet.',
           },
           { status: 400 },
         );

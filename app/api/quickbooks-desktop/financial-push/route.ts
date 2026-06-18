@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import { ingestFinancialPayload } from '@/lib/financial-ingestion';
 import { seedQuickBooksDesktopAccountMappings } from '@/lib/quickbooks-desktop/account-mapping-seed';
+import { loadQuickBooksDesktopBackfillPayloads } from '@/lib/quickbooks-desktop/backfill-payloads';
 import { getQuickBooksDesktopVariant, isQuickBooksDesktopFamily } from '@/lib/quickbooks-desktop/family';
 
 type Frequency = 'daily' | 'weekly' | 'monthly';
@@ -106,13 +107,18 @@ export async function POST(request: NextRequest) {
       !Array.isArray(existingMetadata.quickbooksDesktopFinancialPayload)
         ? (existingMetadata.quickbooksDesktopFinancialPayload as Record<string, unknown>)
         : null;
-    const payload = bodyPayload || storedPayload;
+    const rebuiltPayload =
+      bodyPayload || storedPayload
+        ? null
+        : (await loadQuickBooksDesktopBackfillPayloads(companyId, existingMetadata))?.financialPayload || null;
+    const payload = bodyPayload || storedPayload || rebuiltPayload;
     if (!payload) {
       return NextResponse.json(
-        { ok: false, error: 'payload object is required (or previously saved payload must exist)' },
+        { ok: false, error: 'payload object is required, or a saved payload/completed backfill pages must exist' },
         { status: 400 }
       );
     }
+    const payloadToStore = bodyPayload || storedPayload;
 
     let seedSummary = {
       extracted: 0,
@@ -189,7 +195,7 @@ export async function POST(request: NextRequest) {
         connectionMetadata: {
           ...existingMetadata,
           quickbooksDesktopVariant: variant,
-          quickbooksDesktopFinancialPayload: payload,
+          ...(payloadToStore ? { quickbooksDesktopFinancialPayload: payloadToStore } : {}),
           quickbooksDesktopFinancialLastPushAt: new Date().toISOString(),
           quickbooksDesktopFinancialLastPushFrequency: frequency,
           quickbooksDesktopAccountSeedLastRunAt: new Date().toISOString(),
@@ -214,7 +220,7 @@ export async function POST(request: NextRequest) {
         syncFrequency: frequency,
         connectionMetadata: {
           quickbooksDesktopVariant: variant,
-          quickbooksDesktopFinancialPayload: payload,
+          ...(payloadToStore ? { quickbooksDesktopFinancialPayload: payloadToStore } : {}),
           quickbooksDesktopFinancialLastPushAt: new Date().toISOString(),
           quickbooksDesktopFinancialLastPushFrequency: frequency,
           quickbooksDesktopAccountSeedLastRunAt: new Date().toISOString(),

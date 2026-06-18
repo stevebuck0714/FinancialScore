@@ -5,6 +5,7 @@ import { syncInforM3OperationalData } from '@/lib/infor-m3/operational-sync';
 import { isInforSyncQueueEnabled, startQueueRun } from '@/lib/infor-m3/sync-queue';
 import { normalizeInforSystem } from '@/lib/infor-m3/system';
 import { syncQuickBooksDesktopOperationalPayload, type QbDesktopOperationalPayload } from '@/lib/quickbooks-desktop/operational-sync';
+import { loadQuickBooksDesktopBackfillPayloads } from '@/lib/quickbooks-desktop/backfill-payloads';
 import type { AccountingConnection, AccountingPlatform } from '@prisma/client';
 
 export type SyncFrequency = 'daily' | 'weekly' | 'monthly';
@@ -263,16 +264,19 @@ export async function runOperationalSyncForConnection(
     if (!connection.accessToken) {
       const metadata =
         asRecord(connection.connectionMetadata);
-      const payload =
+      let payload =
         metadata.quickbooksDesktopOperationalPayload && typeof metadata.quickbooksDesktopOperationalPayload === 'object'
           ? (metadata.quickbooksDesktopOperationalPayload as QbDesktopOperationalPayload)
           : null;
+      if (!payload) {
+        payload = (await loadQuickBooksDesktopBackfillPayloads(connection.companyId, metadata))?.operationalPayload || null;
+      }
       if (!payload) {
         return {
           success: false,
           recordsCreated: 0,
           errors: [
-            'No token-based QuickBooks connection or QB Desktop operational payload is available yet.',
+            'No token-based QuickBooks connection, QB Desktop operational payload, or completed backfill pages are available yet.',
           ],
         };
       }

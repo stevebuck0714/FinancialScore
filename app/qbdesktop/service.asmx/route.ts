@@ -3,10 +3,11 @@ import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import { decryptOAuthToken } from '@/lib/encryption';
 import { seedQuickBooksDesktopAccountMappings } from '@/lib/quickbooks-desktop/account-mapping-seed';
+import { syncQuickBooksDesktopOperationalPayload } from '@/lib/quickbooks-desktop/operational-sync';
 import {
-  syncQuickBooksDesktopOperationalPayload,
-  type QbDesktopOperationalPayload,
-} from '@/lib/quickbooks-desktop/operational-sync';
+  buildQuickBooksDesktopFinancialPayload,
+  buildQuickBooksDesktopOperationalPayload,
+} from '@/lib/quickbooks-desktop/backfill-payloads';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -224,15 +225,6 @@ function getXmlRecords(xml: string, tagName: string): string[] {
   return records;
 }
 
-function toNumber(value: unknown): number {
-  if (typeof value === 'number') return Number.isFinite(value) ? value : 0;
-  if (typeof value === 'string') {
-    const parsed = Number(value.replace(/,/g, '').trim());
-    return Number.isFinite(parsed) ? parsed : 0;
-  }
-  return 0;
-}
-
 function normalizeFrequency(value: unknown): Frequency {
   const normalized = String(value || '').trim().toLowerCase();
   if (normalized === 'weekly' || normalized === 'monthly') return normalized;
@@ -407,16 +399,6 @@ function getIteratorState(requestName: string, xml: string): QbwcIteratorState |
     iteratorID,
     remainingCount,
     pageCount: 1,
-  };
-}
-
-function getRef(record: Record<string, unknown>, refName: string): { id: string; name: string } {
-  const ref = record[refName];
-  if (!ref || typeof ref !== 'object' || Array.isArray(ref)) return { id: '', name: '' };
-  const src = ref as Record<string, unknown>;
-  return {
-    id: typeof src.ListID === 'string' ? src.ListID : '',
-    name: typeof src.FullName === 'string' ? src.FullName : '',
   };
 }
 
@@ -608,117 +590,6 @@ async function loadBackfillResponses(jobs: Record<string, QbdBackfillJob>): Prom
     responses[job.requestName] = await loadBackfillJobResponse(job.id, job.requestName);
   }
   return responses;
-}
-
-function buildFinancialPayload(session: QbwcSession): Record<string, unknown> {
-  const payload: Record<string, unknown> = {
-    monthlyData: [],
-    metadata: {
-      source: 'QuickBooks Desktop Web Connector',
-      exportedAt: new Date().toISOString(),
-      ticket: session.ticket,
-      requests: session.requests,
-      dateRange: session.dateRange,
-    },
-  };
-
-  for (const [requestName, response] of Object.entries(session.responses || {})) {
-    payload[requestName] = {
-      [RET_TAG_BY_REQUEST[requestName] || requestName.replace(/Query$/, 'Ret')]: response.records || [],
-    };
-  }
-
-  return payload;
-}
-
-function buildOperationalPayload(session: QbwcSession): QbDesktopOperationalPayload {
-  const accounts = session.responses.AccountQuery?.records || [];
-  const invoices = session.responses.InvoiceQuery?.records || [];
-  const bills = session.responses.BillQuery?.records || [];
-  const items = session.responses.ItemQuery?.records || [];
-
-  const cash = accounts
-    .filter((account) => {
-      const type = String(account.AccountType || account.SpecialAccountType || '').toLowerCase();
-      const name = String(account.FullName || account.Name || '').toLowerCase();
-      return type.includes('bank') || name.includes('cash') || name.includes('checking') || name.includes('savings');
-    })
-    .map((account) => ({
-      accountId: String(account.ListID || ''),
-      accountName: String(account.FullName || account.Name || 'Cash Account'),
-      accountNumber: String(account.AccountNumber || '') || null,
-      cashBalance: toNumber(account.Balance || account.TotalBalance),
-    }));
-
-  const customerSalesById = new Map<string, { customerId: string; customerName: string; revenue: number; invoiceCount: number }>();
-  const productSalesById = new Map<string, { itemId: string; itemName: string; quantitySold: number; revenue: number }>();
-  let totalAR = 0;
-
-  for (const invoice of invoices) {
-    const customer = getRef(invoice, 'CustomerRef');
-    const customerName = customer.name || 'Unknown Customer';
-    const customerId = customer.id || customerName;
-    const revenue = toNumber(invoice.Subtotal || invoice.TotalAmount || invoice.Amount);
-    const arBalance = toNumber(invoice.BalanceRemaining || invoice.OpenAmount);
-    totalAR += arBalance;
-
-    const current = customerSalesById.get(customerId) || {
-      customerId,
-      customerName,
-      revenue: 0,
-      invoiceCount: 0,
-    };
-    current.revenue += revenue;
-    current.invoiceCount += 1;
-    customerSalesById.set(customerId, current);
-
-    const lines = Array.isArray(invoice.InvoiceLineRet) ? invoice.InvoiceLineRet : [];
-    for (const line of lines) {
-      const lineRecord = line && typeof line === 'object' && !Array.isArray(line) ? (line as Record<string, unknown>) : {};
-      const item = getRef(lineRecord, 'ItemRef');
-      const itemName = item.name || String(lineRecord.Desc || '') || 'Unknown Item';
-      const itemId = item.id || itemName;
-      const lineRevenue = toNumber(lineRecord.Amount);
-      const currentProduct = productSalesById.get(itemId) || {
-        itemId,
-        itemName,
-        quantitySold: 0,
-        revenue: 0,
-      };
-      currentProduct.quantitySold += toNumber(lineRecord.Quantity);
-      currentProduct.revenue += lineRevenue;
-      productSalesById.set(itemId, currentProduct);
-    }
-  }
-
-  return {
-    asOfDate: new Date().toISOString().slice(0, 10),
-    cash,
-    arAging: totalAR > 0 ? { totalAR, current: totalAR, days1to30: 0, days31to60: 0, days61to90: 0, days90plus: 0 } : null,
-    // BillQuery headers do not expose reliable per-bill open AP; OpenAmount repeats across unrelated bills.
-    apAging: null,
-    customerSales: Array.from(customerSalesById.values()).map((row) => ({
-      ...row,
-      avgInvoiceSize: row.invoiceCount > 0 ? row.revenue / row.invoiceCount : 0,
-    })),
-    productSales: Array.from(productSalesById.values()).map((row) => ({
-      itemId: row.itemId,
-      itemName: row.itemName,
-      quantitySold: row.quantitySold,
-      revenue: row.revenue,
-      cogs: 0,
-      grossMargin: row.revenue,
-      grossMarginPct: row.revenue > 0 ? 100 : 0,
-    })),
-    inventory: items.map((item) => ({
-      itemId: String(item.ListID || ''),
-      itemName: String(item.FullName || item.Name || 'Unknown Item'),
-      sku: String(item.Name || '') || null,
-      qtyOnHand: toNumber(item.QuantityOnHand),
-      avgCost: toNumber(item.AverageCost || item.PurchaseCost),
-      assetValue: toNumber(item.TotalValue),
-    })),
-  };
 }
 
 function getSoapMethod(xml: string): string {
@@ -1007,8 +878,8 @@ async function updateBackfillJobProgress(companyId: string, session: QbwcSession
 async function finalizeSession(connection: NonNullable<Awaited<ReturnType<typeof loadConnection>>>, session: QbwcSession): Promise<void> {
   const companyId = connection.companyId;
   const frequency = normalizeFrequency(connection.syncFrequency);
-  const financialPayload = buildFinancialPayload(session);
-  const operationalPayload = buildOperationalPayload(session);
+  const financialPayload = buildQuickBooksDesktopFinancialPayload(session);
+  const operationalPayload = buildQuickBooksDesktopOperationalPayload(session);
 
   let accountMappingSeed: unknown = null;
   let operationalSync: unknown = null;
@@ -1027,34 +898,40 @@ async function finalizeSession(connection: NonNullable<Awaited<ReturnType<typeof
     lastError = lastError ? `${lastError}; ${message}` : message;
   }
 
-  await updateMetadata(companyId, (metadata) => ({
-    ...metadata,
-    quickbooksDesktopFinancialPayload: financialPayload,
-    quickbooksDesktopOperationalPayload: operationalPayload,
-    quickbooksDesktopLastWebConnectorSyncAt: new Date().toISOString(),
-    quickbooksDesktopInitialPullCompletedAt:
-      metadata.quickbooksDesktopInitialPullCompletedAt || new Date().toISOString(),
-    quickbooksDesktopQueuedDateRange:
-      session.dateRange.mode === 'MANUAL' ? null : metadata.quickbooksDesktopQueuedDateRange || null,
-    quickbooksDesktopWebConnectorLastRun: {
-      ticket: session.ticket,
-      completedAt: new Date().toISOString(),
-      requests: session.requests,
-      dateRange: session.dateRange,
-      recordCounts: Object.fromEntries(
-        Object.entries(session.responses).map(([key, response]) => [key, response.records.length]),
-      ),
-      pageCounts: Object.fromEntries(
-        Object.entries(session.responses).map(([key, response]) => [
-          key,
-          Math.max(1, Math.ceil((response.records.length || 0) / QBD_TRANSACTION_PAGE_SIZE)),
-        ]),
-      ),
-      accountMappingSeed,
-      operationalSync,
-      lastError,
-    },
-  }));
+  await updateMetadata(companyId, (metadata) => {
+    const {
+      quickbooksDesktopFinancialPayload: _financialPayload,
+      quickbooksDesktopOperationalPayload: _operationalPayload,
+      ...metadataWithoutPayloads
+    } = metadata as QbDesktopMetadata & Record<string, unknown>;
+
+    return {
+      ...metadataWithoutPayloads,
+      quickbooksDesktopLastWebConnectorSyncAt: new Date().toISOString(),
+      quickbooksDesktopInitialPullCompletedAt:
+        metadata.quickbooksDesktopInitialPullCompletedAt || new Date().toISOString(),
+      quickbooksDesktopQueuedDateRange:
+        session.dateRange.mode === 'MANUAL' ? null : metadata.quickbooksDesktopQueuedDateRange || null,
+      quickbooksDesktopWebConnectorLastRun: {
+        ticket: session.ticket,
+        completedAt: new Date().toISOString(),
+        requests: session.requests,
+        dateRange: session.dateRange,
+        recordCounts: Object.fromEntries(
+          Object.entries(session.responses).map(([key, response]) => [key, response.records.length]),
+        ),
+        pageCounts: Object.fromEntries(
+          Object.entries(session.responses).map(([key, response]) => [
+            key,
+            Math.max(1, Math.ceil((response.records.length || 0) / QBD_TRANSACTION_PAGE_SIZE)),
+          ]),
+        ),
+        accountMappingSeed,
+        operationalSync,
+        lastError,
+      },
+    };
+  });
 
   await prisma.accountingConnection.update({
     where: {
