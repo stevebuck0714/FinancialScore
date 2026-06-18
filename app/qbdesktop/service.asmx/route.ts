@@ -986,6 +986,7 @@ async function updateBackfillJobProgress(companyId: string, session: QbwcSession
     const jobs = metadata.quickbooksDesktopBackfillJobs || {};
     const job = jobs[jobId];
     if (!job) return metadata;
+    if (job.status === 'completed' || job.status === 'failed') return metadata;
     return {
       ...metadata,
       quickbooksDesktopBackfillJobs: {
