@@ -691,13 +691,12 @@ function buildOperationalPayload(session: QbwcSession): QbDesktopOperationalPayl
     }
   }
 
-  const totalAP = bills.reduce((sum, bill) => sum + toNumber(bill.BalanceRemaining || bill.OpenAmount || bill.AmountDue), 0);
-
   return {
     asOfDate: new Date().toISOString().slice(0, 10),
     cash,
     arAging: totalAR > 0 ? { totalAR, current: totalAR, days1to30: 0, days31to60: 0, days61to90: 0, days90plus: 0 } : null,
-    apAging: totalAP > 0 ? { totalAP, current: totalAP, days1to30: 0, days31to60: 0, days61to90: 0, days90plus: 0 } : null,
+    // BillQuery headers do not expose reliable per-bill open AP; OpenAmount repeats across unrelated bills.
+    apAging: null,
     customerSales: Array.from(customerSalesById.values()).map((row) => ({
       ...row,
       avgInvoiceSize: row.invoiceCount > 0 ? row.revenue / row.invoiceCount : 0,
