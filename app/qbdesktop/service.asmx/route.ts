@@ -116,6 +116,11 @@ const DEFAULT_REQUESTS = [
 ];
 
 const RECOMMENDED_QBD_REQUESTS = [
+  'BalanceSheetStandardReportQuery',
+  'TrialBalanceReportQuery',
+  'GeneralDetailReportQuery',
+  'OtherNameQuery',
+  'EntityQuery',
   'ItemQuery',
   'SalesReceiptQuery',
   'DepositQuery',
@@ -149,6 +154,12 @@ const TRANSACTION_REQUESTS = new Set([
   'InventoryAdjustmentQuery',
 ]);
 
+const REPORT_REQUESTS = new Set([
+  'BalanceSheetStandardReportQuery',
+  'TrialBalanceReportQuery',
+  'GeneralDetailReportQuery',
+]);
+
 const QBD_TRANSACTION_PAGE_SIZE = 100;
 const QBD_INCLUDE_TRANSACTION_LINE_ITEMS = false;
 const QBD_BACKFILL_JOBS_PER_SESSION = 6;
@@ -159,6 +170,8 @@ const RET_TAG_BY_REQUEST: Record<string, string> = {
   AccountQuery: 'AccountRet',
   CustomerQuery: 'CustomerRet',
   VendorQuery: 'VendorRet',
+  OtherNameQuery: 'OtherNameRet',
+  EntityQuery: 'EntityRet',
   InvoiceQuery: 'InvoiceRet',
   BillQuery: 'BillRet',
   ReceivePaymentQuery: 'ReceivePaymentRet',
@@ -187,6 +200,9 @@ const RET_TAG_BY_REQUEST: Record<string, string> = {
   TransferQuery: 'TransferRet',
   InventoryAdjustmentQuery: 'InventoryAdjustmentRet',
   InventorySiteQuery: 'InventorySiteRet',
+  BalanceSheetStandardReportQuery: 'ReportRet',
+  TrialBalanceReportQuery: 'ReportRet',
+  GeneralDetailReportQuery: 'ReportRet',
 };
 
 function xmlEscape(value: string): string {
@@ -227,6 +243,23 @@ function getXmlTagAttribute(xml: string, tagName: string, attributeName: string)
   const attributePattern = new RegExp(`\\b${attributeName}\\s*=\\s*["']([^"']*)["']`, 'i');
   const attributeMatch = attributes.match(attributePattern);
   return attributeMatch ? xmlDecode(attributeMatch[1].trim()) : '';
+}
+
+function getAttributeFromTagXml(tagXml: string, attributeName: string): string {
+  const attributePattern = new RegExp(`\\b${attributeName}\\s*=\\s*["']([^"']*)["']`, 'i');
+  const attributeMatch = tagXml.match(attributePattern);
+  return attributeMatch ? xmlDecode(attributeMatch[1].trim()) : '';
+}
+
+function getXmlOpenTags(xml: string, tagName: string): string[] {
+  const tags: string[] = [];
+  const pattern = new RegExp(`<(?:[\\w.-]+:)?${tagName}\\b[^>]*\\/?>`, 'gi');
+  let match = pattern.exec(xml);
+  while (match) {
+    tags.push(match[0]);
+    match = pattern.exec(xml);
+  }
+  return tags;
 }
 
 function getXmlRecords(xml: string, tagName: string): string[] {
@@ -302,15 +335,42 @@ function buildTransactionDateFilter(dateRange: QbwcDateRange): string {
   return `<TxnDateRangeFilter><FromTxnDate>${xmlEscape(dateRange.startDate)}</FromTxnDate><ToTxnDate>${xmlEscape(dateRange.endDate)}</ToTxnDate></TxnDateRangeFilter>`;
 }
 
+function buildReportPeriod(dateRange: QbwcDateRange): string {
+  if (!dateRange.startDate || !dateRange.endDate) return '';
+  return `<ReportPeriod><FromReportDate>${xmlEscape(dateRange.startDate)}</FromReportDate><ToReportDate>${xmlEscape(dateRange.endDate)}</ToReportDate></ReportPeriod>`;
+}
+
+function buildReportChildren(requestName: string, dateRange: QbwcDateRange): string {
+  const period = buildReportPeriod(dateRange);
+  const basis = '<ReportBasis>Accrual</ReportBasis>';
+  if (requestName === 'GeneralDetailReportQuery') {
+    return `<GeneralDetailReportType>GeneralLedger</GeneralDetailReportType>${period}${basis}`;
+  }
+  return `${period}${basis}`;
+}
+
 function buildQbxmlRequest(requestName: string, dateRange: QbwcDateRange, context: QbwcRequestContext = {}): string {
   const childrenByRequest: Record<string, string> = {
     AccountQuery: '<ActiveStatus>All</ActiveStatus>',
     CustomerQuery: '<ActiveStatus>All</ActiveStatus>',
     VendorQuery: '<ActiveStatus>All</ActiveStatus>',
+    OtherNameQuery: '<ActiveStatus>All</ActiveStatus>',
+    EntityQuery: '<ActiveStatus>All</ActiveStatus>',
     ItemQuery: '<ActiveStatus>All</ActiveStatus>',
   };
   const requestTag = `${requestName}Rq`;
   const requestId = xmlEscape(requestName);
+  if (REPORT_REQUESTS.has(requestName)) {
+    return `<?xml version="1.0" encoding="utf-8"?>
+<?qbxml version="13.0"?>
+<QBXML>
+  <QBXMLMsgsRq onError="continueOnError">
+    <${requestTag} requestID="${requestId}">
+      ${buildReportChildren(requestName, dateRange)}
+    </${requestTag}>
+  </QBXMLMsgsRq>
+</QBXML>`;
+  }
   const useIterator = TRANSACTION_REQUESTS.has(requestName);
   const dateFilter = TRANSACTION_REQUESTS.has(requestName) ? buildTransactionDateFilter(dateRange) : '';
   const includeLineItems = (context.includeLineItems || QBD_INCLUDE_TRANSACTION_LINE_ITEMS) && ['InvoiceQuery', 'BillQuery'].includes(requestName)
@@ -388,7 +448,53 @@ function parseSimpleRecord(xml: string): Record<string, unknown> {
   return record;
 }
 
+function parseReportRow(rowXml: string, rowType: string, index: number): Record<string, unknown> {
+  const rowDataTag = getXmlOpenTags(rowXml, 'RowData')[0] || '';
+  const rowValue = getAttributeFromTagXml(rowDataTag, 'value') || getXmlText(rowXml, 'RowData');
+  const rowTypeAttr = getAttributeFromTagXml(rowDataTag, 'rowType');
+  const colData = getXmlOpenTags(rowXml, 'ColData').map((tag) => ({
+    colID: getAttributeFromTagXml(tag, 'colID'),
+    value: getAttributeFromTagXml(tag, 'value'),
+  }));
+  return {
+    rowIndex: index,
+    rowKind: rowType,
+    rowType: rowTypeAttr,
+    rowValue,
+    accountName: rowValue || colData[0]?.value || '',
+    colData,
+  };
+}
+
+function parseReportRecords(requestName: string, xml: string): Array<Record<string, unknown>> {
+  const reportXml = getInnerXml(xml, 'ReportRet');
+  if (!reportXml) return [];
+  const header = {
+    reportName: getXmlText(reportXml, 'ReportName'),
+    reportTitle: getXmlText(reportXml, 'ReportTitle'),
+    reportSubtitle: getXmlText(reportXml, 'ReportSubtitle'),
+    reportBasis: getXmlText(reportXml, 'ReportBasis'),
+    numRows: getXmlText(reportXml, 'NumRows'),
+    numColumns: getXmlText(reportXml, 'NumColumns'),
+  };
+  const rows: Array<Record<string, unknown>> = [];
+  for (const rowType of ['TextRow', 'DataRow', 'SubtotalRow', 'TotalRow']) {
+    const rowXmls = getXmlRecords(reportXml, rowType);
+    for (const rowXml of rowXmls) {
+      rows.push({
+        requestName,
+        ...header,
+        ...parseReportRow(rowXml, rowType, rows.length),
+      });
+    }
+  }
+  return rows;
+}
+
 function parseResponseRecords(requestName: string, xml: string): Array<Record<string, unknown>> {
+  if (REPORT_REQUESTS.has(requestName)) {
+    return parseReportRecords(requestName, xml);
+  }
   const retTag = RET_TAG_BY_REQUEST[requestName] || requestName.replace(/Query$/, 'Ret');
   return getXmlRecords(xml, retTag).map((recordXml) => {
     const record = parseSimpleRecord(recordXml);

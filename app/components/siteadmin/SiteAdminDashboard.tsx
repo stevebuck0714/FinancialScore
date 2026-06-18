@@ -2337,6 +2337,11 @@ export default function SiteAdminDashboard(props: any) {
 
   const defaultQbDesktopPrograms = [
     { dataDomain: 'Chart of Accounts', qbEntity: 'AccountQuery', enabled: true },
+    { dataDomain: 'Balance Sheet Standard Report', qbEntity: 'BalanceSheetStandardReportQuery', enabled: true },
+    { dataDomain: 'Trial Balance Report', qbEntity: 'TrialBalanceReportQuery', enabled: true },
+    { dataDomain: 'General Ledger Detail Report', qbEntity: 'GeneralDetailReportQuery', enabled: true },
+    { dataDomain: 'Other Names', qbEntity: 'OtherNameQuery', enabled: true },
+    { dataDomain: 'Entities', qbEntity: 'EntityQuery', enabled: true },
     { dataDomain: 'Offices / Divisions', qbEntity: 'ClassQuery', enabled: true },
     { dataDomain: 'Customers / Jobs', qbEntity: 'CustomerQuery', enabled: true },
     { dataDomain: 'Customer Types', qbEntity: 'CustomerTypeQuery', enabled: true },

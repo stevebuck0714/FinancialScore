@@ -38,6 +38,8 @@ const RET_TAG_BY_REQUEST: Record<string, string> = {
   AccountQuery: 'AccountRet',
   CustomerQuery: 'CustomerRet',
   VendorQuery: 'VendorRet',
+  OtherNameQuery: 'OtherNameRet',
+  EntityQuery: 'EntityRet',
   InvoiceQuery: 'InvoiceRet',
   BillQuery: 'BillRet',
   ReceivePaymentQuery: 'ReceivePaymentRet',
@@ -66,6 +68,9 @@ const RET_TAG_BY_REQUEST: Record<string, string> = {
   TransferQuery: 'TransferRet',
   InventoryAdjustmentQuery: 'InventoryAdjustmentRet',
   InventorySiteQuery: 'InventorySiteRet',
+  BalanceSheetStandardReportQuery: 'ReportRet',
+  TrialBalanceReportQuery: 'ReportRet',
+  GeneralDetailReportQuery: 'ReportRet',
 };
 
 function asRecord(value: unknown): Record<string, unknown> {

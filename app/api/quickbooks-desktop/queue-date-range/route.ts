@@ -16,6 +16,11 @@ function parseDate(value: unknown): string {
 
 const DEFAULT_QBD_REQUESTS = [
   'AccountQuery',
+  'BalanceSheetStandardReportQuery',
+  'TrialBalanceReportQuery',
+  'GeneralDetailReportQuery',
+  'OtherNameQuery',
+  'EntityQuery',
   'CustomerQuery',
   'VendorQuery',
   'InvoiceQuery',

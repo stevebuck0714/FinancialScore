@@ -39,6 +39,14 @@ type QuickBooksDesktopProgram = {
   enabled: boolean;
 };
 
+const newlyAddedDefaultProgramEntities = new Set([
+  'BalanceSheetStandardReportQuery',
+  'TrialBalanceReportQuery',
+  'GeneralDetailReportQuery',
+  'OtherNameQuery',
+  'EntityQuery',
+]);
+
 const defaultSettings: QuickBooksDesktopSettings = {
   integrationType: 'WEB_CONNECTOR',
   applicationName: '',
@@ -64,6 +72,11 @@ const defaultSettings: QuickBooksDesktopSettings = {
 
 const defaultPrograms: QuickBooksDesktopProgram[] = [
   { dataDomain: 'Chart of Accounts', qbEntity: 'AccountQuery', enabled: true },
+  { dataDomain: 'Balance Sheet Standard Report', qbEntity: 'BalanceSheetStandardReportQuery', enabled: true },
+  { dataDomain: 'Trial Balance Report', qbEntity: 'TrialBalanceReportQuery', enabled: true },
+  { dataDomain: 'General Ledger Detail Report', qbEntity: 'GeneralDetailReportQuery', enabled: true },
+  { dataDomain: 'Other Names', qbEntity: 'OtherNameQuery', enabled: true },
+  { dataDomain: 'Entities', qbEntity: 'EntityQuery', enabled: true },
   { dataDomain: 'Customers', qbEntity: 'CustomerQuery', enabled: true },
   { dataDomain: 'Vendors', qbEntity: 'VendorQuery', enabled: true },
   { dataDomain: 'Invoices', qbEntity: 'InvoiceQuery', enabled: true },
@@ -83,6 +96,11 @@ const defaultPrograms: QuickBooksDesktopProgram[] = [
 
 const defaultEnterprisePrograms: QuickBooksDesktopProgram[] = [
   { dataDomain: 'Chart of Accounts', qbEntity: 'AccountQuery', enabled: true },
+  { dataDomain: 'Balance Sheet Standard Report', qbEntity: 'BalanceSheetStandardReportQuery', enabled: true },
+  { dataDomain: 'Trial Balance Report', qbEntity: 'TrialBalanceReportQuery', enabled: true },
+  { dataDomain: 'General Ledger Detail Report', qbEntity: 'GeneralDetailReportQuery', enabled: true },
+  { dataDomain: 'Other Names', qbEntity: 'OtherNameQuery', enabled: true },
+  { dataDomain: 'Entities', qbEntity: 'EntityQuery', enabled: true },
   { dataDomain: 'Offices / Divisions', qbEntity: 'ClassQuery', enabled: true },
   { dataDomain: 'Customers / Jobs', qbEntity: 'CustomerQuery', enabled: true },
   { dataDomain: 'Customer Types', qbEntity: 'CustomerTypeQuery', enabled: true },
@@ -267,7 +285,12 @@ function sanitizePrograms(value: unknown, fallbackPrograms: QuickBooksDesktopPro
       };
     })
     .filter((row) => row.dataDomain || row.qbEntity);
-  return cleaned.length > 0 ? cleaned : fallbackPrograms;
+  if (cleaned.length === 0) return fallbackPrograms;
+  const existingEntities = new Set(cleaned.map((row) => row.qbEntity).filter(Boolean));
+  const missingDefaults = fallbackPrograms.filter(
+    (row) => row.qbEntity && newlyAddedDefaultProgramEntities.has(row.qbEntity) && !existingEntities.has(row.qbEntity),
+  );
+  return [...cleaned, ...missingDefaults];
 }
 
 export async function GET(request: NextRequest) {
