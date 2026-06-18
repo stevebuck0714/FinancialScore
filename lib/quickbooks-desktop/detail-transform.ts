@@ -37,6 +37,33 @@ export type QbdDetailTransformResult = {
   errors: string[];
 };
 
+type ProductSnapshotRow = {
+  companyId: string;
+  snapshotDate: Date;
+  frequency: 'daily' | 'monthly';
+  itemId: string | null;
+  itemName: string;
+  sku: string | null;
+  quantitySold: number;
+  revenue: number;
+  cogs: number;
+  grossMargin: number;
+  grossMarginPct: number | null;
+};
+
+type CustomerSnapshotRow = {
+  companyId: string;
+  snapshotDate: Date;
+  frequency: 'daily' | 'monthly';
+  customerId: string | null;
+  customerName: string;
+  revenue: number;
+  invoiceCount: number;
+  avgInvoiceSize: number;
+};
+
+const CREATE_MANY_BATCH_SIZE = 1000;
+
 function asRecord(value: unknown): Record<string, unknown> {
   return value && typeof value === 'object' && !Array.isArray(value)
     ? (value as Record<string, unknown>)
@@ -84,6 +111,33 @@ function dayKey(date: Date): string {
 
 function monthKey(date: Date): string {
   return date.toISOString().slice(0, 7);
+}
+
+function getDateRange(dates: Date[]): { gte: Date; lte: Date } | null {
+  if (dates.length === 0) return null;
+  let min = dates[0];
+  let max = dates[0];
+  for (const date of dates) {
+    if (date.getTime() < min.getTime()) min = date;
+    if (date.getTime() > max.getTime()) max = date;
+  }
+  return { gte: min, lte: max };
+}
+
+async function createProductRowsInBatches(rows: ProductSnapshotRow[]): Promise<void> {
+  for (let index = 0; index < rows.length; index += CREATE_MANY_BATCH_SIZE) {
+    await prisma.productSalesSnapshot.createMany({
+      data: rows.slice(index, index + CREATE_MANY_BATCH_SIZE),
+    });
+  }
+}
+
+async function createCustomerRowsInBatches(rows: CustomerSnapshotRow[]): Promise<void> {
+  for (let index = 0; index < rows.length; index += CREATE_MANY_BATCH_SIZE) {
+    await prisma.customerSalesSnapshot.createMany({
+      data: rows.slice(index, index + CREATE_MANY_BATCH_SIZE),
+    });
+  }
 }
 
 function getRef(record: Record<string, unknown>, key: string): { id: string; name: string } {
@@ -215,84 +269,85 @@ export async function transformQuickBooksDesktopInvoiceDetail(companyId: string)
     errors.push('No invoice detail dates were found in saved QBD detail pages.');
   }
 
-  await prisma.$transaction(async (tx) => {
-    for (const snapshotDate of dayDates) {
-      await tx.productSalesSnapshot.deleteMany({
-        where: {
-          companyId,
-          frequency: 'daily',
-          snapshotDate,
-        },
-      });
-      await tx.customerSalesSnapshot.deleteMany({
-        where: {
-          companyId,
-          frequency: 'daily',
-          snapshotDate,
-        },
-      });
-    }
-    for (const snapshotDate of monthDates) {
-      await tx.productSalesSnapshot.deleteMany({
-        where: {
-          companyId,
-          frequency: 'monthly',
-          snapshotDate,
-        },
-      });
-      await tx.customerSalesSnapshot.deleteMany({
-        where: {
-          companyId,
-          frequency: 'monthly',
-          snapshotDate,
-        },
-      });
-    }
+  const dailyRange = getDateRange(dayDates);
+  const monthlyRange = getDateRange(monthDates);
 
-    const productData = [...productDailyByKey.values(), ...productMonthlyByKey.values()]
-      .filter((row) => row.itemName)
-      .map((row) => {
-        const cogs = 0;
-        const grossMargin = row.revenue - cogs;
-        return {
-          companyId,
-          snapshotDate: row.snapshotDate,
-          frequency: row.frequency,
-          itemId: row.itemId,
-          itemName: row.itemName,
-          sku: row.sku,
-          quantitySold: row.quantitySold,
-          revenue: row.revenue,
-          cogs,
-          grossMargin,
-          grossMarginPct: row.revenue > 0 ? (grossMargin / row.revenue) * 100 : null,
-        };
-      });
+  if (dailyRange) {
+    await prisma.productSalesSnapshot.deleteMany({
+      where: {
+        companyId,
+        frequency: 'daily',
+        snapshotDate: dailyRange,
+      },
+    });
+    await prisma.customerSalesSnapshot.deleteMany({
+      where: {
+        companyId,
+        frequency: 'daily',
+        snapshotDate: dailyRange,
+      },
+    });
+  }
+  if (monthlyRange) {
+    await prisma.productSalesSnapshot.deleteMany({
+      where: {
+        companyId,
+        frequency: 'monthly',
+        snapshotDate: monthlyRange,
+      },
+    });
+    await prisma.customerSalesSnapshot.deleteMany({
+      where: {
+        companyId,
+        frequency: 'monthly',
+        snapshotDate: monthlyRange,
+      },
+    });
+  }
 
-    if (productData.length > 0) {
-      await tx.productSalesSnapshot.createMany({ data: productData });
-    }
+  const productData = [...productDailyByKey.values(), ...productMonthlyByKey.values()]
+    .filter((row) => row.itemName)
+    .map((row): ProductSnapshotRow => {
+      const cogs = 0;
+      const grossMargin = row.revenue - cogs;
+      return {
+        companyId,
+        snapshotDate: row.snapshotDate,
+        frequency: row.frequency,
+        itemId: row.itemId,
+        itemName: row.itemName,
+        sku: row.sku,
+        quantitySold: row.quantitySold,
+        revenue: row.revenue,
+        cogs,
+        grossMargin,
+        grossMarginPct: row.revenue > 0 ? (grossMargin / row.revenue) * 100 : null,
+      };
+    });
 
-    const customerData = [...customerDailyByKey.values(), ...customerMonthlyByKey.values()]
-      .filter((row) => row.customerName)
-      .map((row) => {
-        const invoiceCount = Math.max(1, row.invoiceIds.size);
-        return {
-          companyId,
-          snapshotDate: row.snapshotDate,
-          frequency: row.frequency,
-          customerId: row.customerId,
-          customerName: row.customerName,
-          revenue: row.revenue,
-          invoiceCount,
-          avgInvoiceSize: row.revenue / invoiceCount,
-        };
-      });
+  if (productData.length > 0) {
+    await createProductRowsInBatches(productData);
+  }
 
-    if (customerData.length > 0) {
-      await tx.customerSalesSnapshot.createMany({ data: customerData });
-    }
-  });
+  const customerData = [...customerDailyByKey.values(), ...customerMonthlyByKey.values()]
+    .filter((row) => row.customerName)
+    .map((row): CustomerSnapshotRow => {
+      const invoiceCount = Math.max(1, row.invoiceIds.size);
+      return {
+        companyId,
+        snapshotDate: row.snapshotDate,
+        frequency: row.frequency,
+        customerId: row.customerId,
+        customerName: row.customerName,
+        revenue: row.revenue,
+        invoiceCount,
+        avgInvoiceSize: row.revenue / invoiceCount,
+      };
+    });
+
+  if (customerData.length > 0) {
+    await createCustomerRowsInBatches(customerData);
+  }
 
   await prisma.apiSyncLog.create({
     data: {
