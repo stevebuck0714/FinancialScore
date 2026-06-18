@@ -438,6 +438,336 @@ function summarizeMappingsForDiagnostics(
   };
 }
 
+type QbdMappedMonthlyRow = Record<string, unknown> & {
+  monthDate: string;
+  revenue: number;
+  cogsTotal: number;
+  expense: number;
+  revenueBreakdown: Record<string, number>;
+  cogsBreakdown: Record<string, number>;
+  expenseBreakdown: Record<string, number>;
+};
+
+const QBD_EXPENSE_TARGET_FIELDS = new Set([
+  'payroll',
+  'ownerBasePay',
+  'benefits',
+  'insurance',
+  'professionalFees',
+  'subcontractors',
+  'rent',
+  'taxLicense',
+  'stateIncomeTaxes',
+  'federalIncomeTaxes',
+  'phoneComm',
+  'infrastructure',
+  'autoTravel',
+  'salesExpense',
+  'marketing',
+  'trainingCert',
+  'mealsEntertainment',
+  'interestExpense',
+  'depreciationAmortization',
+  'otherExpense',
+  'nonOperatingExpense',
+]);
+
+const QBD_BALANCE_SHEET_TARGET_FIELDS = new Set([
+  'cash',
+  'ar',
+  'retainageReceivables',
+  'contractAssets',
+  'inventory',
+  'otherCA',
+  'fixedAssets',
+  'constructionEquipment',
+  'officeEquipment',
+  'shopEquipment',
+  'investments',
+  'rightOfUseLeases',
+  'otherAssets',
+  'ap',
+  'loc',
+  'contractLiabilities',
+  'otherCL',
+  'ltd',
+  'ownersCapital',
+  'ownersDraw',
+  'commonStock',
+  'preferredStock',
+  'retainedEarnings',
+  'additionalPaidInCapital',
+  'treasuryStock',
+]);
+
+function qbdAsRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
+}
+
+function qbdAsArray(value: unknown): Record<string, unknown>[] {
+  return Array.isArray(value) ? value.map(qbdAsRecord).filter((row) => Object.keys(row).length > 0) : [];
+}
+
+function qbdString(value: unknown): string {
+  if (typeof value === 'string') return value.trim();
+  if (typeof value === 'number' || typeof value === 'bigint') return String(value);
+  return '';
+}
+
+function qbdNumber(value: unknown): number {
+  if (typeof value === 'number') return Number.isFinite(value) ? value : 0;
+  if (typeof value === 'string') {
+    const parsed = Number(value.replace(/,/g, '').replace(/\(([^)]+)\)/, '-$1').trim());
+    return Number.isFinite(parsed) ? parsed : 0;
+  }
+  return 0;
+}
+
+function qbdRef(record: Record<string, unknown>, key: string): { id: string; name: string } {
+  const ref = qbdAsRecord(record[key]);
+  return {
+    id: qbdString(ref.ListID),
+    name: qbdString(ref.FullName || ref.Name),
+  };
+}
+
+function qbdMonthKey(value: unknown): string | null {
+  const raw = qbdString(value);
+  if (!raw) return null;
+  if (/^\d{4}-\d{2}/.test(raw)) return raw.slice(0, 7);
+  const parsed = new Date(raw);
+  if (Number.isNaN(parsed.getTime())) return null;
+  return `${parsed.getUTCFullYear()}-${String(parsed.getUTCMonth() + 1).padStart(2, '0')}`;
+}
+
+function qbdReadNestedNumber(record: Record<string, unknown>, keys: string[]): number {
+  for (const key of keys) {
+    const value = qbdNumber(record[key]);
+    if (value !== 0) return value;
+  }
+  return 0;
+}
+
+function createQbdMappedMonth(monthKey: string): QbdMappedMonthlyRow {
+  return {
+    monthDate: `${monthKey}-01`,
+    revenue: 0,
+    cogsTotal: 0,
+    expense: 0,
+    revenueBreakdown: {},
+    cogsBreakdown: {},
+    expenseBreakdown: {},
+  };
+}
+
+function qbdAddMappedAmount(row: QbdMappedMonthlyRow, targetField: string, amount: number) {
+  if (!targetField || targetField === 'unmapped' || amount === 0) return;
+  if (targetField === 'revenue' || targetField.startsWith('rev_')) {
+    row.revenue += amount;
+    if (targetField.startsWith('rev_')) {
+      row.revenueBreakdown[targetField] = Number(row.revenueBreakdown[targetField] || 0) + amount;
+    }
+    return;
+  }
+  if (targetField === 'cogsTotal' || targetField === 'costOfGoodsSold' || targetField.startsWith('cogs')) {
+    row.cogsTotal += amount;
+    const key = targetField.startsWith('cogs_') ? targetField : 'cogs_other';
+    row.cogsBreakdown[key] = Number(row.cogsBreakdown[key] || 0) + amount;
+    if (targetField in row && targetField !== 'cogsTotal') row[targetField] = Number(row[targetField] || 0) + amount;
+    return;
+  }
+  if (QBD_EXPENSE_TARGET_FIELDS.has(targetField)) {
+    row.expense += amount;
+    row[targetField] = Number(row[targetField] || 0) + amount;
+    row.expenseBreakdown[targetField] = Number(row.expenseBreakdown[targetField] || 0) + amount;
+  }
+}
+
+function qbdApplyBalance(row: QbdMappedMonthlyRow, targetField: string, balance: number) {
+  if (!QBD_BALANCE_SHEET_TARGET_FIELDS.has(targetField) || balance === 0) return;
+  row[targetField] = Number(row[targetField] || 0) + balance;
+}
+
+async function loadQbdPageRecords(companyId: string, requestName: string, detailOnly = false): Promise<Record<string, unknown>[]> {
+  const rows = detailOnly
+    ? await prisma.$queryRaw<Array<{ payload: unknown }>>`
+        SELECT "payload"
+        FROM "QuickBooksDesktopBackfillPage"
+        WHERE "companyId" = ${companyId}
+          AND "requestName" = ${requestName}
+          AND "jobId" LIKE '%:detail:%'
+        ORDER BY "jobId", "pageNumber" ASC
+      `
+    : await prisma.$queryRaw<Array<{ payload: unknown }>>`
+        SELECT "payload"
+        FROM "QuickBooksDesktopBackfillPage"
+        WHERE "companyId" = ${companyId}
+          AND "requestName" = ${requestName}
+          AND "jobId" NOT LIKE '%:detail:%'
+        ORDER BY "jobId", "pageNumber" ASC
+      `;
+  return rows.flatMap((row) => (Array.isArray(row.payload) ? row.payload.map(qbdAsRecord) : []));
+}
+
+async function buildQuickBooksDesktopMappedMonthlyPayload(companyId: string, basePayload: Record<string, unknown>) {
+  const mappings = await prisma.accountMapping.findMany({
+    where: { companyId },
+    select: { accountId: true, accountName: true, accountCode: true, targetField: true },
+  });
+  const targetByKey = new Map<string, string>();
+  for (const mapping of mappings) {
+    const target = qbdString(mapping.targetField);
+    for (const key of [mapping.accountId, mapping.accountName, mapping.accountCode].map(qbdString).filter(Boolean)) {
+      targetByKey.set(key.toLowerCase(), target);
+    }
+  }
+
+  const getTarget = (ref: { id?: string; name?: string }) =>
+    targetByKey.get(qbdString(ref.id).toLowerCase()) ||
+    targetByKey.get(qbdString(ref.name).toLowerCase()) ||
+    '';
+
+  const [accounts, items, invoiceDetail, billDetail, checkRows, creditMemoDetail, salesReceiptRows, journalRows, depositRows, vendorCreditRows] =
+    await Promise.all([
+      loadQbdPageRecords(companyId, 'AccountQuery'),
+      loadQbdPageRecords(companyId, 'ItemQuery'),
+      loadQbdPageRecords(companyId, 'InvoiceQuery', true),
+      loadQbdPageRecords(companyId, 'BillQuery', true),
+      loadQbdPageRecords(companyId, 'CheckQuery'),
+      loadQbdPageRecords(companyId, 'CreditMemoQuery', true),
+      loadQbdPageRecords(companyId, 'SalesReceiptQuery'),
+      loadQbdPageRecords(companyId, 'JournalEntryQuery'),
+      loadQbdPageRecords(companyId, 'DepositQuery'),
+      loadQbdPageRecords(companyId, 'VendorCreditQuery'),
+    ]);
+
+  const itemAccountByKey = new Map<string, { incomeTarget: string; cogsTarget: string; expenseTarget: string; assetTarget: string }>();
+  for (const item of items) {
+    const salesOrPurchase = qbdAsRecord(item.SalesOrPurchase);
+    const salesAndPurchase = qbdAsRecord(item.SalesAndPurchase);
+    const income = qbdRef(salesAndPurchase, 'IncomeAccountRef');
+    const cogs = qbdRef(salesAndPurchase, 'COGSAccountRef');
+    const asset = qbdRef(item, 'AssetAccountRef');
+    const purchase = qbdRef(salesAndPurchase, 'ExpenseAccountRef');
+    const salesOrPurchaseAccount = qbdRef(salesOrPurchase, 'AccountRef');
+    const value = {
+      incomeTarget: getTarget(income) || getTarget(salesOrPurchaseAccount),
+      cogsTarget: getTarget(cogs),
+      expenseTarget: getTarget(purchase) || getTarget(salesOrPurchaseAccount),
+      assetTarget: getTarget(asset),
+    };
+    for (const key of [item.ListID, item.FullName, item.Name].map(qbdString).filter(Boolean)) {
+      itemAccountByKey.set(key.toLowerCase(), value);
+    }
+  }
+
+  const months = new Map<string, QbdMappedMonthlyRow>();
+  const getMonth = (monthKey: string) => {
+    const row = months.get(monthKey) || createQbdMappedMonth(monthKey);
+    months.set(monthKey, row);
+    return row;
+  };
+  const itemTargets = (ref: { id: string; name: string }) =>
+    itemAccountByKey.get(qbdString(ref.id).toLowerCase()) ||
+    itemAccountByKey.get(qbdString(ref.name).toLowerCase()) ||
+    null;
+
+  const addItemRevenueLines = (records: Record<string, unknown>[], multiplier: number) => {
+    for (const txn of records) {
+      const month = qbdMonthKey(txn.TxnDate);
+      if (!month) continue;
+      const row = getMonth(month);
+      for (const line of qbdAsArray(txn.InvoiceLineRet || txn.SalesReceiptLineRet || txn.CreditMemoLineRet)) {
+        const item = qbdRef(line, 'ItemRef');
+        const targets = itemTargets(item);
+        qbdAddMappedAmount(row, targets?.incomeTarget || 'revenue', qbdNumber(line.Amount) * multiplier);
+      }
+    }
+  };
+
+  addItemRevenueLines(invoiceDetail, 1);
+  addItemRevenueLines(salesReceiptRows, 1);
+  addItemRevenueLines(creditMemoDetail, -1);
+
+  const addExpenseLines = (records: Record<string, unknown>[], multiplier: number) => {
+    for (const txn of records) {
+      const month = qbdMonthKey(txn.TxnDate);
+      if (!month) continue;
+      const row = getMonth(month);
+      for (const line of qbdAsArray(txn.ExpenseLineRet)) {
+        const target = getTarget(qbdRef(line, 'AccountRef'));
+        qbdAddMappedAmount(row, target, qbdNumber(line.Amount) * multiplier);
+      }
+      for (const line of qbdAsArray(txn.ItemLineRet)) {
+        const item = qbdRef(line, 'ItemRef');
+        const targets = itemTargets(item);
+        qbdAddMappedAmount(row, targets?.expenseTarget || targets?.cogsTarget || '', qbdNumber(line.Amount) * multiplier);
+      }
+    }
+  };
+
+  addExpenseLines(billDetail, 1);
+  addExpenseLines(checkRows, 1);
+  addExpenseLines(vendorCreditRows, -1);
+
+  for (const deposit of depositRows) {
+    const month = qbdMonthKey(deposit.TxnDate);
+    if (!month) continue;
+    const row = getMonth(month);
+    for (const line of qbdAsArray(deposit.DepositLineRet)) {
+      qbdAddMappedAmount(row, getTarget(qbdRef(line, 'AccountRef')), qbdNumber(line.Amount));
+    }
+  }
+
+  for (const journal of journalRows) {
+    const month = qbdMonthKey(journal.TxnDate);
+    if (!month) continue;
+    const row = getMonth(month);
+    for (const line of qbdAsArray(journal.JournalDebitLine || journal.JournalDebitLineRet)) {
+      const target = getTarget(qbdRef(line, 'AccountRef'));
+      const amount = qbdNumber(line.Amount);
+      qbdAddMappedAmount(row, target, amount);
+      qbdApplyBalance(row, target, amount);
+    }
+    for (const line of qbdAsArray(journal.JournalCreditLine || journal.JournalCreditLineRet)) {
+      const target = getTarget(qbdRef(line, 'AccountRef'));
+      const amount = qbdNumber(line.Amount) * -1;
+      qbdAddMappedAmount(row, target, amount);
+      qbdApplyBalance(row, target, amount);
+    }
+  }
+
+  const sortedMonthKeys = Array.from(months.keys()).sort();
+  const latestMonth = sortedMonthKeys[sortedMonthKeys.length - 1] || null;
+  if (latestMonth) {
+    const latest = getMonth(latestMonth);
+    for (const account of accounts) {
+      const target = getTarget({ id: qbdString(account.ListID), name: qbdString(account.FullName || account.Name) });
+      qbdApplyBalance(latest, target, qbdReadNestedNumber(account, ['TotalBalance', 'Balance']));
+    }
+  }
+
+  const monthlyData = Array.from(months.values()).sort((a, b) => String(a.monthDate).localeCompare(String(b.monthDate)));
+  return {
+    ...basePayload,
+    monthlyData,
+    metadata: {
+      ...(basePayload.metadata && typeof basePayload.metadata === 'object' && !Array.isArray(basePayload.metadata)
+        ? (basePayload.metadata as Record<string, unknown>)
+        : {}),
+      qbdMappedMonthlyBuild: {
+        generatedAt: new Date().toISOString(),
+        mappings: mappings.length,
+        months: monthlyData.length,
+        invoiceDetailRows: invoiceDetail.length,
+        billDetailRows: billDetail.length,
+        checkRows: checkRows.length,
+        itemRows: items.length,
+      },
+    },
+  };
+}
+
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
@@ -901,6 +1231,22 @@ export async function POST(request: NextRequest) {
         );
       }
 
+      const qbdDiagnostics: Record<string, unknown> = {
+        companyId: String(companyId),
+        configuredPlatform,
+        targetMonth: targetMonth || null,
+        mode,
+        hadMonthlyDataRows: hasMonthlyDataRows(financialPayload),
+      };
+      if (!hasMonthlyDataRows(financialPayload)) {
+        financialPayload = await buildQuickBooksDesktopMappedMonthlyPayload(String(companyId), financialPayload);
+        qbdDiagnostics.rebuiltMappedMonthlyData = true;
+        qbdDiagnostics.rebuiltMonthlyRows = Array.isArray(financialPayload.monthlyData) ? financialPayload.monthlyData.length : 0;
+        qbdDiagnostics.rebuiltCoverage = summarizeMonthlyRowsCoverage(
+          Array.isArray(financialPayload.monthlyData) ? (financialPayload.monthlyData as Array<Record<string, unknown>>) : [],
+        );
+      }
+
       const result = await ingestFinancialPayload({
         companyId: String(companyId),
         platform: 'QUICKBOOKS',
@@ -917,6 +1263,7 @@ export async function POST(request: NextRequest) {
           message: result.ok
             ? 'QuickBooks Desktop reprocess completed successfully.'
             : result.error || 'QuickBooks Desktop reprocess failed.',
+          diagnostics: qbdDiagnostics,
           ...result,
         },
         { status: result.status },

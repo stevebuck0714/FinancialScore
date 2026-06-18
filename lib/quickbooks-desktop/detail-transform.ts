@@ -4,6 +4,15 @@ type DetailPageRow = {
   payload: unknown;
 };
 
+type ItemMaster = {
+  itemId: string;
+  fullName: string;
+  name: string;
+  displayName: string;
+  sku: string | null;
+  avgCost: number;
+};
+
 type ProductAggregate = {
   snapshotDate: Date;
   frequency: 'daily' | 'monthly';
@@ -12,6 +21,7 @@ type ProductAggregate = {
   sku: string | null;
   quantitySold: number;
   revenue: number;
+  cogs: number;
 };
 
 type CustomerAggregate = {
@@ -91,6 +101,18 @@ function toNumber(value: unknown): number {
   return 0;
 }
 
+function getNestedRecord(record: Record<string, unknown>, key: string): Record<string, unknown> {
+  return asRecord(record[key]);
+}
+
+function firstString(...values: unknown[]): string {
+  for (const value of values) {
+    const stringValue = asString(value);
+    if (stringValue) return stringValue;
+  }
+  return '';
+}
+
 function startOfUtcDay(value: unknown): Date | null {
   const raw = asString(value);
   if (!raw) return null;
@@ -152,7 +174,64 @@ function getSku(itemName: string): string | null {
   const trimmed = itemName.trim();
   if (!trimmed) return null;
   const parts = trimmed.split(':').map((part) => part.trim()).filter(Boolean);
-  return parts[0] || trimmed;
+  return parts[parts.length - 1] || parts[0] || trimmed;
+}
+
+function looksLikeCode(value: string): boolean {
+  const trimmed = value.trim();
+  if (!trimmed) return false;
+  return /^[A-Z0-9\-_.\/: ]+$/i.test(trimmed) && /\d/.test(trimmed);
+}
+
+function chooseDisplayName(item: Record<string, unknown>): string {
+  const salesOrPurchase = getNestedRecord(item, 'SalesOrPurchase');
+  const salesAndPurchase = getNestedRecord(item, 'SalesAndPurchase');
+  const description = firstString(
+    item.SalesDesc,
+    item.PurchaseDesc,
+    item.Description,
+    salesAndPurchase.SalesDesc,
+    salesAndPurchase.PurchaseDesc,
+    salesOrPurchase.Desc,
+  );
+  const fullName = firstString(item.FullName, item.Name);
+  if (description && (!looksLikeCode(description) || looksLikeCode(fullName))) return description;
+  return description || fullName || 'Unknown Item';
+}
+
+function buildItemMaster(records: Array<Record<string, unknown>>): Map<string, ItemMaster> {
+  const byKey = new Map<string, ItemMaster>();
+  for (const item of records) {
+    const salesOrPurchase = getNestedRecord(item, 'SalesOrPurchase');
+    const salesAndPurchase = getNestedRecord(item, 'SalesAndPurchase');
+    const itemId = asString(item.ListID);
+    const fullName = firstString(item.FullName, item.Name);
+    const name = asString(item.Name) || getSku(fullName) || fullName;
+    const sku = name || getSku(fullName);
+    const avgCost = toNumber(
+      item.AverageCost ||
+        item.PurchaseCost ||
+        salesAndPurchase.PurchaseCost ||
+        salesOrPurchase.Price ||
+        salesAndPurchase.SalesPrice,
+    );
+    const master: ItemMaster = {
+      itemId,
+      fullName,
+      name,
+      displayName: chooseDisplayName(item),
+      sku: sku || null,
+      avgCost,
+    };
+    for (const key of [itemId, fullName, name, sku].filter(Boolean)) {
+      byKey.set(String(key), master);
+    }
+  }
+  return byKey;
+}
+
+function resolveItemMaster(itemsByKey: Map<string, ItemMaster>, itemId: string, itemName: string): ItemMaster | null {
+  return itemsByKey.get(itemId) || itemsByKey.get(itemName) || itemsByKey.get(getSku(itemName) || '') || null;
 }
 
 async function loadInvoiceDetailPages(companyId: string): Promise<DetailPageRow[]> {
@@ -166,9 +245,21 @@ async function loadInvoiceDetailPages(companyId: string): Promise<DetailPageRow[
   `;
 }
 
+async function loadItemPages(companyId: string): Promise<DetailPageRow[]> {
+  return prisma.$queryRaw<DetailPageRow[]>`
+    SELECT "payload"
+    FROM "QuickBooksDesktopBackfillPage"
+    WHERE "companyId" = ${companyId}
+      AND "requestName" = 'ItemQuery'
+    ORDER BY "jobId", "pageNumber" ASC
+  `;
+}
+
 export async function transformQuickBooksDesktopInvoiceDetail(companyId: string): Promise<QbdDetailTransformResult> {
   const errors: string[] = [];
-  const rows = await loadInvoiceDetailPages(companyId);
+  const [rows, itemRows] = await Promise.all([loadInvoiceDetailPages(companyId), loadItemPages(companyId)]);
+  const itemRecords = itemRows.flatMap((row) => (Array.isArray(row.payload) ? row.payload.map(asRecord) : []));
+  const itemsByKey = buildItemMaster(itemRecords);
   const productDailyByKey = new Map<string, ProductAggregate>();
   const productMonthlyByKey = new Map<string, ProductAggregate>();
   const customerDailyByKey = new Map<string, CustomerAggregate>();
@@ -184,22 +275,26 @@ export async function transformQuickBooksDesktopInvoiceDetail(companyId: string)
     snapshotDate: Date,
     itemId: string,
     itemName: string,
+    sku: string | null,
     quantity: number,
     amount: number,
+    avgCost: number,
   ) => {
     const keyPrefix = frequency === 'daily' ? dayKey(snapshotDate) : monthKey(snapshotDate);
-    const key = `${keyPrefix}:${itemId || itemName}`;
+    const key = `${keyPrefix}:${itemId || sku || itemName}`;
     const current = target.get(key) || {
       snapshotDate,
       frequency,
       itemId: itemId || null,
       itemName: itemName || 'Unknown Item',
-      sku: getSku(itemName),
+      sku,
       quantitySold: 0,
       revenue: 0,
+      cogs: 0,
     };
     current.quantitySold += quantity;
     current.revenue += amount;
+    current.cogs += avgCost > 0 && quantity > 0 ? avgCost * quantity : 0;
     target.set(key, current);
   };
 
@@ -245,15 +340,19 @@ export async function transformQuickBooksDesktopInvoiceDetail(companyId: string)
         const item = getRef(line, 'ItemRef');
         const amount = toNumber(line.Amount);
         const quantity = toNumber(line.Quantity);
-        const itemName = item.name || asString(line.FullName) || asString(line.Desc);
+        const lineItemName = item.name || asString(line.FullName) || asString(line.Desc);
+        const master = resolveItemMaster(itemsByKey, item.id, lineItemName);
+        const itemName = master?.displayName || lineItemName;
+        const sku = master?.sku || getSku(lineItemName);
+        const avgCost = Number(master?.avgCost || 0);
 
         // QBD can return blank separator/subtotal/memo lines. They are not product sales rows.
-        if (!item.id && !itemName) continue;
+        if (!item.id && !lineItemName) continue;
         if (amount === 0 && quantity === 0) continue;
 
         invoiceLinesRead += 1;
-        addProduct(productDailyByKey, 'daily', dailyDate, item.id, itemName, quantity, amount);
-        addProduct(productMonthlyByKey, 'monthly', monthlyDate, item.id, itemName, quantity, amount);
+        addProduct(productDailyByKey, 'daily', dailyDate, item.id, itemName, sku, quantity, amount, avgCost);
+        addProduct(productMonthlyByKey, 'monthly', monthlyDate, item.id, itemName, sku, quantity, amount, avgCost);
         invoiceRevenue += amount;
       }
       if (invoiceRevenue !== 0) {
@@ -308,7 +407,7 @@ export async function transformQuickBooksDesktopInvoiceDetail(companyId: string)
   const productData = [...productDailyByKey.values(), ...productMonthlyByKey.values()]
     .filter((row) => row.itemName)
     .map((row): ProductSnapshotRow => {
-      const cogs = 0;
+      const cogs = row.cogs;
       const grossMargin = row.revenue - cogs;
       return {
         companyId,

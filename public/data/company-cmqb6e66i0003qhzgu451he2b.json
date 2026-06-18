@@ -1,0 +1,7166 @@
+[
+  {
+    "monthDate": "2023-06-30T07:00:00.000Z",
+    "date": "2023-06-30T07:00:00.000Z",
+    "month": "2023-06",
+    "revenue": 710000,
+    "cogsPayroll": 0,
+    "cogsOwnerPay": 0,
+    "cogsContractors": 0,
+    "cogsMaterials": 0,
+    "cogsCommissions": 0,
+    "cogsOther": 0,
+    "cogsTotal": 187750,
+    "payroll": 210000,
+    "ownerBasePay": 0,
+    "benefits": 0,
+    "insurance": 16000,
+    "professionalFees": 15000,
+    "subcontractors": 0,
+    "rent": 18000,
+    "taxLicense": 0,
+    "stateIncomeTaxes": 0,
+    "federalIncomeTaxes": 24312,
+    "phoneComm": 0,
+    "infrastructure": 3000,
+    "autoTravel": 11000,
+    "salesExpense": 25000,
+    "marketing": 0,
+    "trainingCert": 0,
+    "mealsEntertainment": 0,
+    "interestExpense": 70000,
+    "depreciationAmortization": 35000,
+    "otherExpense": 22000,
+    "expense": 0,
+    "nonOperatingIncome": 0,
+    "nonOperatingExpense": 0,
+    "extraordinaryItems": 0,
+    "cash": 800000,
+    "ar": 530000,
+    "retainageReceivables": 0,
+    "contractAssets": 0,
+    "inventory": 13200000,
+    "otherCA": 40000,
+    "tca": 14570000,
+    "fixedAssets": 2500000,
+    "constructionEquipment": 0,
+    "officeEquipment": 0,
+    "shopEquipment": 0,
+    "investments": 0,
+    "rightOfUseLeases": 0,
+    "otherAssets": 950000,
+    "totalAssets": 18020000,
+    "ap": 150000,
+    "loc": 0,
+    "contractLiabilities": 0,
+    "otherCL": 610000,
+    "tcl": 760000,
+    "ltd": 8800000,
+    "totalLiab": 9560000,
+    "ownersCapital": 0,
+    "ownersDraw": 0,
+    "commonStock": 1000000,
+    "preferredStock": 0,
+    "retainedEarnings": 740000,
+    "additionalPaidInCapital": 0,
+    "treasuryStock": 0,
+    "totalEquity": 1740000,
+    "totalLAndE": 11300000,
+    "lobBreakdowns": {
+      "cash": {
+        "Unallocated": 800000
+      },
+      "ar": {
+        "Unallocated": 530000
+      },
+      "otherCA": {
+        "Unallocated": 40000
+      },
+      "inventory": {
+        "Unallocated": 13200000
+      },
+      "fixedAssets": {
+        "Unallocated": 2500000
+      },
+      "otherAssets": {
+        "Unallocated": 950000
+      },
+      "ap": {
+        "Unallocated": 150000
+      },
+      "otherCL": {
+        "Unallocated": 610000
+      },
+      "ltd": {
+        "Unallocated": 8800000
+      },
+      "commonStock": {
+        "Unallocated": 1000000
+      },
+      "retainedEarnings": {
+        "Unallocated": 740000
+      },
+      "rev_residential_sales_revenue": {
+        "Unallocated": 250000
+      },
+      "rev_commercial_sales_revenue": {
+        "Unallocated": 180000
+      },
+      "rev_property_management_fees": {
+        "Unallocated": 40000
+      },
+      "rev_insurance_commission_revenue": {
+        "Unallocated": 25000
+      },
+      "rev_mortgage_origination_revenue": {
+        "Unallocated": 55000
+      },
+      "rev_title_services_revenue": {
+        "Unallocated": 30000
+      },
+      "rev_rental_income": {
+        "Unallocated": 120000
+      },
+      "rev_other_revenue": {
+        "Unallocated": 10000
+      },
+      "cogs_residential_sales_commissions": {
+        "Unallocated": 87500
+      },
+      "cogs_commercial_sales_commissions": {
+        "Unallocated": 54000
+      },
+      "cogs_mortgage_processing_costs": {
+        "Unallocated": 11000
+      },
+      "cogs_title_search_and_closing_costs": {
+        "Unallocated": 7500
+      },
+      "cogs_insurance_carrier_costs": {
+        "Unallocated": 3750
+      },
+      "cogs_property_operations": {
+        "Unallocated": 24000
+      },
+      "payroll": {
+        "Unallocated": 210000
+      },
+      "salesExpense": {
+        "Unallocated": 25000
+      },
+      "rent": {
+        "Unallocated": 18000
+      },
+      "insurance": {
+        "Unallocated": 16000
+      },
+      "professionalFees": {
+        "Unallocated": 15000
+      },
+      "autoTravel": {
+        "Unallocated": 11000
+      },
+      "infrastructure": {
+        "Unallocated": 3000
+      },
+      "otherExpense": {
+        "Unallocated": 22000
+      },
+      "depreciationAmortization": {
+        "Unallocated": 35000
+      },
+      "interestExpense": {
+        "Unallocated": 70000
+      },
+      "federalIncomeTaxes": {
+        "Unallocated": 24312
+      }
+    },
+    "revenueBreakdown": {
+      "rev_residential_sales_revenue": 250000,
+      "rev_commercial_sales_revenue": 180000,
+      "rev_property_management_fees": 40000,
+      "rev_insurance_commission_revenue": 25000,
+      "rev_mortgage_origination_revenue": 55000,
+      "rev_title_services_revenue": 30000,
+      "rev_rental_income": 120000,
+      "rev_other_revenue": 10000
+    },
+    "expenseBreakdown": {
+      "Unallocated": 425000
+    },
+    "cogsBreakdown": {
+      "cogs_residential_sales_commissions": 87500,
+      "cogs_commercial_sales_commissions": 54000,
+      "cogs_mortgage_processing_costs": 11000,
+      "cogs_title_search_and_closing_costs": 7500,
+      "cogs_insurance_carrier_costs": 3750,
+      "cogs_property_operations": 24000
+    }
+  },
+  {
+    "monthDate": "2023-07-31T07:00:00.000Z",
+    "date": "2023-07-31T07:00:00.000Z",
+    "month": "2023-07",
+    "revenue": 717100,
+    "cogsPayroll": 0,
+    "cogsOwnerPay": 0,
+    "cogsContractors": 0,
+    "cogsMaterials": 0,
+    "cogsCommissions": 0,
+    "cogsOther": 0,
+    "cogsTotal": 189628,
+    "payroll": 212100,
+    "ownerBasePay": 0,
+    "benefits": 0,
+    "insurance": 16120,
+    "professionalFees": 15000,
+    "subcontractors": 0,
+    "rent": 18000,
+    "taxLicense": 0,
+    "stateIncomeTaxes": 0,
+    "federalIncomeTaxes": 24951,
+    "phoneComm": 0,
+    "infrastructure": 3000,
+    "autoTravel": 11000,
+    "salesExpense": 25250,
+    "marketing": 0,
+    "trainingCert": 0,
+    "mealsEntertainment": 0,
+    "interestExpense": 70000,
+    "depreciationAmortization": 35000,
+    "otherExpense": 22200,
+    "expense": 0,
+    "nonOperatingIncome": 0,
+    "nonOperatingExpense": 0,
+    "extraordinaryItems": 0,
+    "cash": 825000,
+    "ar": 535300,
+    "retainageReceivables": 0,
+    "contractAssets": 0,
+    "inventory": 13260000,
+    "otherCA": 40000,
+    "tca": 14660300,
+    "fixedAssets": 2490000,
+    "constructionEquipment": 0,
+    "officeEquipment": 0,
+    "shopEquipment": 0,
+    "investments": 0,
+    "rightOfUseLeases": 0,
+    "otherAssets": 950000,
+    "totalAssets": 18100300,
+    "ap": 151500,
+    "loc": 0,
+    "contractLiabilities": 0,
+    "otherCL": 610000,
+    "tcl": 761500,
+    "ltd": 8775000,
+    "totalLiab": 9536500,
+    "ownersCapital": 0,
+    "ownersDraw": 0,
+    "commonStock": 1000000,
+    "preferredStock": 0,
+    "retainedEarnings": 866000,
+    "additionalPaidInCapital": 0,
+    "treasuryStock": 0,
+    "totalEquity": 1866000,
+    "totalLAndE": 11402500,
+    "lobBreakdowns": {
+      "cash": {
+        "Unallocated": 825000
+      },
+      "ar": {
+        "Unallocated": 535300
+      },
+      "otherCA": {
+        "Unallocated": 40000
+      },
+      "inventory": {
+        "Unallocated": 13260000
+      },
+      "fixedAssets": {
+        "Unallocated": 2490000
+      },
+      "otherAssets": {
+        "Unallocated": 950000
+      },
+      "ap": {
+        "Unallocated": 151500
+      },
+      "otherCL": {
+        "Unallocated": 610000
+      },
+      "ltd": {
+        "Unallocated": 8775000
+      },
+      "commonStock": {
+        "Unallocated": 1000000
+      },
+      "retainedEarnings": {
+        "Unallocated": 866000
+      },
+      "rev_residential_sales_revenue": {
+        "Unallocated": 252500
+      },
+      "rev_commercial_sales_revenue": {
+        "Unallocated": 181800
+      },
+      "rev_property_management_fees": {
+        "Unallocated": 40400
+      },
+      "rev_insurance_commission_revenue": {
+        "Unallocated": 25250
+      },
+      "rev_mortgage_origination_revenue": {
+        "Unallocated": 55550
+      },
+      "rev_title_services_revenue": {
+        "Unallocated": 30300
+      },
+      "rev_rental_income": {
+        "Unallocated": 121200
+      },
+      "rev_other_revenue": {
+        "Unallocated": 10100
+      },
+      "cogs_residential_sales_commissions": {
+        "Unallocated": 88375
+      },
+      "cogs_commercial_sales_commissions": {
+        "Unallocated": 54540
+      },
+      "cogs_mortgage_processing_costs": {
+        "Unallocated": 11110
+      },
+      "cogs_title_search_and_closing_costs": {
+        "Unallocated": 7575
+      },
+      "cogs_insurance_carrier_costs": {
+        "Unallocated": 3788
+      },
+      "cogs_property_operations": {
+        "Unallocated": 24240
+      },
+      "payroll": {
+        "Unallocated": 212100
+      },
+      "salesExpense": {
+        "Unallocated": 25250
+      },
+      "rent": {
+        "Unallocated": 18000
+      },
+      "insurance": {
+        "Unallocated": 16120
+      },
+      "professionalFees": {
+        "Unallocated": 15000
+      },
+      "autoTravel": {
+        "Unallocated": 11000
+      },
+      "infrastructure": {
+        "Unallocated": 3000
+      },
+      "otherExpense": {
+        "Unallocated": 22200
+      },
+      "depreciationAmortization": {
+        "Unallocated": 35000
+      },
+      "interestExpense": {
+        "Unallocated": 70000
+      },
+      "federalIncomeTaxes": {
+        "Unallocated": 24951
+      }
+    },
+    "revenueBreakdown": {
+      "rev_residential_sales_revenue": 252500,
+      "rev_commercial_sales_revenue": 181800,
+      "rev_property_management_fees": 40400,
+      "rev_insurance_commission_revenue": 25250,
+      "rev_mortgage_origination_revenue": 55550,
+      "rev_title_services_revenue": 30300,
+      "rev_rental_income": 121200,
+      "rev_other_revenue": 10100
+    },
+    "expenseBreakdown": {
+      "Unallocated": 427670
+    },
+    "cogsBreakdown": {
+      "cogs_residential_sales_commissions": 88375,
+      "cogs_commercial_sales_commissions": 54540,
+      "cogs_mortgage_processing_costs": 11110,
+      "cogs_title_search_and_closing_costs": 7575,
+      "cogs_insurance_carrier_costs": 3788,
+      "cogs_property_operations": 24240
+    }
+  },
+  {
+    "monthDate": "2023-08-31T07:00:00.000Z",
+    "date": "2023-08-31T07:00:00.000Z",
+    "month": "2023-08",
+    "revenue": 724200,
+    "cogsPayroll": 0,
+    "cogsOwnerPay": 0,
+    "cogsContractors": 0,
+    "cogsMaterials": 0,
+    "cogsCommissions": 0,
+    "cogsOther": 0,
+    "cogsTotal": 191505,
+    "payroll": 214200,
+    "ownerBasePay": 0,
+    "benefits": 0,
+    "insurance": 16240,
+    "professionalFees": 15000,
+    "subcontractors": 0,
+    "rent": 18000,
+    "taxLicense": 0,
+    "stateIncomeTaxes": 0,
+    "federalIncomeTaxes": 25589,
+    "phoneComm": 0,
+    "infrastructure": 3000,
+    "autoTravel": 11000,
+    "salesExpense": 25500,
+    "marketing": 0,
+    "trainingCert": 0,
+    "mealsEntertainment": 0,
+    "interestExpense": 70000,
+    "depreciationAmortization": 35000,
+    "otherExpense": 22400,
+    "expense": 0,
+    "nonOperatingIncome": 0,
+    "nonOperatingExpense": 0,
+    "extraordinaryItems": 0,
+    "cash": 850000,
+    "ar": 540600,
+    "retainageReceivables": 0,
+    "contractAssets": 0,
+    "inventory": 13320000,
+    "otherCA": 40000,
+    "tca": 14750600,
+    "fixedAssets": 2480000,
+    "constructionEquipment": 0,
+    "officeEquipment": 0,
+    "shopEquipment": 0,
+    "investments": 0,
+    "rightOfUseLeases": 0,
+    "otherAssets": 950000,
+    "totalAssets": 18180600,
+    "ap": 153000,
+    "loc": 0,
+    "contractLiabilities": 0,
+    "otherCL": 610000,
+    "tcl": 763000,
+    "ltd": 8750000,
+    "totalLiab": 9513000,
+    "ownersCapital": 0,
+    "ownersDraw": 0,
+    "commonStock": 1000000,
+    "preferredStock": 0,
+    "retainedEarnings": 995000,
+    "additionalPaidInCapital": 0,
+    "treasuryStock": 0,
+    "totalEquity": 1995000,
+    "totalLAndE": 11508000,
+    "lobBreakdowns": {
+      "cash": {
+        "Unallocated": 850000
+      },
+      "ar": {
+        "Unallocated": 540600
+      },
+      "otherCA": {
+        "Unallocated": 40000
+      },
+      "inventory": {
+        "Unallocated": 13320000
+      },
+      "fixedAssets": {
+        "Unallocated": 2480000
+      },
+      "otherAssets": {
+        "Unallocated": 950000
+      },
+      "ap": {
+        "Unallocated": 153000
+      },
+      "otherCL": {
+        "Unallocated": 610000
+      },
+      "ltd": {
+        "Unallocated": 8750000
+      },
+      "commonStock": {
+        "Unallocated": 1000000
+      },
+      "retainedEarnings": {
+        "Unallocated": 995000
+      },
+      "rev_residential_sales_revenue": {
+        "Unallocated": 255000
+      },
+      "rev_commercial_sales_revenue": {
+        "Unallocated": 183600
+      },
+      "rev_property_management_fees": {
+        "Unallocated": 40800
+      },
+      "rev_insurance_commission_revenue": {
+        "Unallocated": 25500
+      },
+      "rev_mortgage_origination_revenue": {
+        "Unallocated": 56100
+      },
+      "rev_title_services_revenue": {
+        "Unallocated": 30600
+      },
+      "rev_rental_income": {
+        "Unallocated": 122400
+      },
+      "rev_other_revenue": {
+        "Unallocated": 10200
+      },
+      "cogs_residential_sales_commissions": {
+        "Unallocated": 89250
+      },
+      "cogs_commercial_sales_commissions": {
+        "Unallocated": 55080
+      },
+      "cogs_mortgage_processing_costs": {
+        "Unallocated": 11220
+      },
+      "cogs_title_search_and_closing_costs": {
+        "Unallocated": 7650
+      },
+      "cogs_insurance_carrier_costs": {
+        "Unallocated": 3825
+      },
+      "cogs_property_operations": {
+        "Unallocated": 24480
+      },
+      "payroll": {
+        "Unallocated": 214200
+      },
+      "salesExpense": {
+        "Unallocated": 25500
+      },
+      "rent": {
+        "Unallocated": 18000
+      },
+      "insurance": {
+        "Unallocated": 16240
+      },
+      "professionalFees": {
+        "Unallocated": 15000
+      },
+      "autoTravel": {
+        "Unallocated": 11000
+      },
+      "infrastructure": {
+        "Unallocated": 3000
+      },
+      "otherExpense": {
+        "Unallocated": 22400
+      },
+      "depreciationAmortization": {
+        "Unallocated": 35000
+      },
+      "interestExpense": {
+        "Unallocated": 70000
+      },
+      "federalIncomeTaxes": {
+        "Unallocated": 25589
+      }
+    },
+    "revenueBreakdown": {
+      "rev_residential_sales_revenue": 255000,
+      "rev_commercial_sales_revenue": 183600,
+      "rev_property_management_fees": 40800,
+      "rev_insurance_commission_revenue": 25500,
+      "rev_mortgage_origination_revenue": 56100,
+      "rev_title_services_revenue": 30600,
+      "rev_rental_income": 122400,
+      "rev_other_revenue": 10200
+    },
+    "expenseBreakdown": {
+      "Unallocated": 430340
+    },
+    "cogsBreakdown": {
+      "cogs_residential_sales_commissions": 89250,
+      "cogs_commercial_sales_commissions": 55080,
+      "cogs_mortgage_processing_costs": 11220,
+      "cogs_title_search_and_closing_costs": 7650,
+      "cogs_insurance_carrier_costs": 3825,
+      "cogs_property_operations": 24480
+    }
+  },
+  {
+    "monthDate": "2023-09-30T07:00:00.000Z",
+    "date": "2023-09-30T07:00:00.000Z",
+    "month": "2023-09",
+    "revenue": 731300,
+    "cogsPayroll": 0,
+    "cogsOwnerPay": 0,
+    "cogsContractors": 0,
+    "cogsMaterials": 0,
+    "cogsCommissions": 0,
+    "cogsOther": 0,
+    "cogsTotal": 193382,
+    "payroll": 216300,
+    "ownerBasePay": 0,
+    "benefits": 0,
+    "insurance": 16360,
+    "professionalFees": 15000,
+    "subcontractors": 0,
+    "rent": 18000,
+    "taxLicense": 0,
+    "stateIncomeTaxes": 0,
+    "federalIncomeTaxes": 26227,
+    "phoneComm": 0,
+    "infrastructure": 3000,
+    "autoTravel": 11000,
+    "salesExpense": 25750,
+    "marketing": 0,
+    "trainingCert": 0,
+    "mealsEntertainment": 0,
+    "interestExpense": 70000,
+    "depreciationAmortization": 35000,
+    "otherExpense": 22600,
+    "expense": 0,
+    "nonOperatingIncome": 0,
+    "nonOperatingExpense": 0,
+    "extraordinaryItems": 0,
+    "cash": 875000,
+    "ar": 545900,
+    "retainageReceivables": 0,
+    "contractAssets": 0,
+    "inventory": 13380000,
+    "otherCA": 40000,
+    "tca": 14840900,
+    "fixedAssets": 2470000,
+    "constructionEquipment": 0,
+    "officeEquipment": 0,
+    "shopEquipment": 0,
+    "investments": 0,
+    "rightOfUseLeases": 0,
+    "otherAssets": 950000,
+    "totalAssets": 18260900,
+    "ap": 154500,
+    "loc": 0,
+    "contractLiabilities": 0,
+    "otherCL": 610000,
+    "tcl": 764500,
+    "ltd": 8725000,
+    "totalLiab": 9489500,
+    "ownersCapital": 0,
+    "ownersDraw": 0,
+    "commonStock": 1000000,
+    "preferredStock": 0,
+    "retainedEarnings": 1127000,
+    "additionalPaidInCapital": 0,
+    "treasuryStock": 0,
+    "totalEquity": 2127000,
+    "totalLAndE": 11616500,
+    "lobBreakdowns": {
+      "cash": {
+        "Unallocated": 875000
+      },
+      "ar": {
+        "Unallocated": 545900
+      },
+      "otherCA": {
+        "Unallocated": 40000
+      },
+      "inventory": {
+        "Unallocated": 13380000
+      },
+      "fixedAssets": {
+        "Unallocated": 2470000
+      },
+      "otherAssets": {
+        "Unallocated": 950000
+      },
+      "ap": {
+        "Unallocated": 154500
+      },
+      "otherCL": {
+        "Unallocated": 610000
+      },
+      "ltd": {
+        "Unallocated": 8725000
+      },
+      "commonStock": {
+        "Unallocated": 1000000
+      },
+      "retainedEarnings": {
+        "Unallocated": 1127000
+      },
+      "rev_residential_sales_revenue": {
+        "Unallocated": 257500
+      },
+      "rev_commercial_sales_revenue": {
+        "Unallocated": 185400
+      },
+      "rev_property_management_fees": {
+        "Unallocated": 41200
+      },
+      "rev_insurance_commission_revenue": {
+        "Unallocated": 25750
+      },
+      "rev_mortgage_origination_revenue": {
+        "Unallocated": 56650
+      },
+      "rev_title_services_revenue": {
+        "Unallocated": 30900
+      },
+      "rev_rental_income": {
+        "Unallocated": 123600
+      },
+      "rev_other_revenue": {
+        "Unallocated": 10300
+      },
+      "cogs_residential_sales_commissions": {
+        "Unallocated": 90125
+      },
+      "cogs_commercial_sales_commissions": {
+        "Unallocated": 55620
+      },
+      "cogs_mortgage_processing_costs": {
+        "Unallocated": 11330
+      },
+      "cogs_title_search_and_closing_costs": {
+        "Unallocated": 7725
+      },
+      "cogs_insurance_carrier_costs": {
+        "Unallocated": 3862
+      },
+      "cogs_property_operations": {
+        "Unallocated": 24720
+      },
+      "payroll": {
+        "Unallocated": 216300
+      },
+      "salesExpense": {
+        "Unallocated": 25750
+      },
+      "rent": {
+        "Unallocated": 18000
+      },
+      "insurance": {
+        "Unallocated": 16360
+      },
+      "professionalFees": {
+        "Unallocated": 15000
+      },
+      "autoTravel": {
+        "Unallocated": 11000
+      },
+      "infrastructure": {
+        "Unallocated": 3000
+      },
+      "otherExpense": {
+        "Unallocated": 22600
+      },
+      "depreciationAmortization": {
+        "Unallocated": 35000
+      },
+      "interestExpense": {
+        "Unallocated": 70000
+      },
+      "federalIncomeTaxes": {
+        "Unallocated": 26227
+      }
+    },
+    "revenueBreakdown": {
+      "rev_residential_sales_revenue": 257500,
+      "rev_commercial_sales_revenue": 185400,
+      "rev_property_management_fees": 41200,
+      "rev_insurance_commission_revenue": 25750,
+      "rev_mortgage_origination_revenue": 56650,
+      "rev_title_services_revenue": 30900,
+      "rev_rental_income": 123600,
+      "rev_other_revenue": 10300
+    },
+    "expenseBreakdown": {
+      "Unallocated": 433010
+    },
+    "cogsBreakdown": {
+      "cogs_residential_sales_commissions": 90125,
+      "cogs_commercial_sales_commissions": 55620,
+      "cogs_mortgage_processing_costs": 11330,
+      "cogs_title_search_and_closing_costs": 7725,
+      "cogs_insurance_carrier_costs": 3862,
+      "cogs_property_operations": 24720
+    }
+  },
+  {
+    "monthDate": "2023-10-31T07:00:00.000Z",
+    "date": "2023-10-31T07:00:00.000Z",
+    "month": "2023-10",
+    "revenue": 738400,
+    "cogsPayroll": 0,
+    "cogsOwnerPay": 0,
+    "cogsContractors": 0,
+    "cogsMaterials": 0,
+    "cogsCommissions": 0,
+    "cogsOther": 0,
+    "cogsTotal": 195260,
+    "payroll": 218400,
+    "ownerBasePay": 0,
+    "benefits": 0,
+    "insurance": 16480,
+    "professionalFees": 15000,
+    "subcontractors": 0,
+    "rent": 18000,
+    "taxLicense": 0,
+    "stateIncomeTaxes": 0,
+    "federalIncomeTaxes": 26865,
+    "phoneComm": 0,
+    "infrastructure": 3000,
+    "autoTravel": 11000,
+    "salesExpense": 26000,
+    "marketing": 0,
+    "trainingCert": 0,
+    "mealsEntertainment": 0,
+    "interestExpense": 70000,
+    "depreciationAmortization": 35000,
+    "otherExpense": 22800,
+    "expense": 0,
+    "nonOperatingIncome": 0,
+    "nonOperatingExpense": 0,
+    "extraordinaryItems": 0,
+    "cash": 900000,
+    "ar": 551200,
+    "retainageReceivables": 0,
+    "contractAssets": 0,
+    "inventory": 13440000,
+    "otherCA": 40000,
+    "tca": 14931200,
+    "fixedAssets": 2460000,
+    "constructionEquipment": 0,
+    "officeEquipment": 0,
+    "shopEquipment": 0,
+    "investments": 0,
+    "rightOfUseLeases": 0,
+    "otherAssets": 950000,
+    "totalAssets": 18341200,
+    "ap": 156000,
+    "loc": 0,
+    "contractLiabilities": 0,
+    "otherCL": 610000,
+    "tcl": 766000,
+    "ltd": 8700000,
+    "totalLiab": 9466000,
+    "ownersCapital": 0,
+    "ownersDraw": 0,
+    "commonStock": 1000000,
+    "preferredStock": 0,
+    "retainedEarnings": 1262000,
+    "additionalPaidInCapital": 0,
+    "treasuryStock": 0,
+    "totalEquity": 2262000,
+    "totalLAndE": 11728000,
+    "lobBreakdowns": {
+      "cash": {
+        "Unallocated": 900000
+      },
+      "ar": {
+        "Unallocated": 551200
+      },
+      "otherCA": {
+        "Unallocated": 40000
+      },
+      "inventory": {
+        "Unallocated": 13440000
+      },
+      "fixedAssets": {
+        "Unallocated": 2460000
+      },
+      "otherAssets": {
+        "Unallocated": 950000
+      },
+      "ap": {
+        "Unallocated": 156000
+      },
+      "otherCL": {
+        "Unallocated": 610000
+      },
+      "ltd": {
+        "Unallocated": 8700000
+      },
+      "commonStock": {
+        "Unallocated": 1000000
+      },
+      "retainedEarnings": {
+        "Unallocated": 1262000
+      },
+      "rev_residential_sales_revenue": {
+        "Unallocated": 260000
+      },
+      "rev_commercial_sales_revenue": {
+        "Unallocated": 187200
+      },
+      "rev_property_management_fees": {
+        "Unallocated": 41600
+      },
+      "rev_insurance_commission_revenue": {
+        "Unallocated": 26000
+      },
+      "rev_mortgage_origination_revenue": {
+        "Unallocated": 57200
+      },
+      "rev_title_services_revenue": {
+        "Unallocated": 31200
+      },
+      "rev_rental_income": {
+        "Unallocated": 124800
+      },
+      "rev_other_revenue": {
+        "Unallocated": 10400
+      },
+      "cogs_residential_sales_commissions": {
+        "Unallocated": 91000
+      },
+      "cogs_commercial_sales_commissions": {
+        "Unallocated": 56160
+      },
+      "cogs_mortgage_processing_costs": {
+        "Unallocated": 11440
+      },
+      "cogs_title_search_and_closing_costs": {
+        "Unallocated": 7800
+      },
+      "cogs_insurance_carrier_costs": {
+        "Unallocated": 3900
+      },
+      "cogs_property_operations": {
+        "Unallocated": 24960
+      },
+      "payroll": {
+        "Unallocated": 218400
+      },
+      "salesExpense": {
+        "Unallocated": 26000
+      },
+      "rent": {
+        "Unallocated": 18000
+      },
+      "insurance": {
+        "Unallocated": 16480
+      },
+      "professionalFees": {
+        "Unallocated": 15000
+      },
+      "autoTravel": {
+        "Unallocated": 11000
+      },
+      "infrastructure": {
+        "Unallocated": 3000
+      },
+      "otherExpense": {
+        "Unallocated": 22800
+      },
+      "depreciationAmortization": {
+        "Unallocated": 35000
+      },
+      "interestExpense": {
+        "Unallocated": 70000
+      },
+      "federalIncomeTaxes": {
+        "Unallocated": 26865
+      }
+    },
+    "revenueBreakdown": {
+      "rev_residential_sales_revenue": 260000,
+      "rev_commercial_sales_revenue": 187200,
+      "rev_property_management_fees": 41600,
+      "rev_insurance_commission_revenue": 26000,
+      "rev_mortgage_origination_revenue": 57200,
+      "rev_title_services_revenue": 31200,
+      "rev_rental_income": 124800,
+      "rev_other_revenue": 10400
+    },
+    "expenseBreakdown": {
+      "Unallocated": 435680
+    },
+    "cogsBreakdown": {
+      "cogs_residential_sales_commissions": 91000,
+      "cogs_commercial_sales_commissions": 56160,
+      "cogs_mortgage_processing_costs": 11440,
+      "cogs_title_search_and_closing_costs": 7800,
+      "cogs_insurance_carrier_costs": 3900,
+      "cogs_property_operations": 24960
+    }
+  },
+  {
+    "monthDate": "2023-11-30T07:00:00.000Z",
+    "date": "2023-11-30T07:00:00.000Z",
+    "month": "2023-11",
+    "revenue": 745500,
+    "cogsPayroll": 0,
+    "cogsOwnerPay": 0,
+    "cogsContractors": 0,
+    "cogsMaterials": 0,
+    "cogsCommissions": 0,
+    "cogsOther": 0,
+    "cogsTotal": 197138,
+    "payroll": 220500,
+    "ownerBasePay": 0,
+    "benefits": 0,
+    "insurance": 16600,
+    "professionalFees": 15000,
+    "subcontractors": 0,
+    "rent": 18000,
+    "taxLicense": 0,
+    "stateIncomeTaxes": 0,
+    "federalIncomeTaxes": 27503,
+    "phoneComm": 0,
+    "infrastructure": 3000,
+    "autoTravel": 11000,
+    "salesExpense": 26250,
+    "marketing": 0,
+    "trainingCert": 0,
+    "mealsEntertainment": 0,
+    "interestExpense": 70000,
+    "depreciationAmortization": 35000,
+    "otherExpense": 23000,
+    "expense": 0,
+    "nonOperatingIncome": 0,
+    "nonOperatingExpense": 0,
+    "extraordinaryItems": 0,
+    "cash": 925000,
+    "ar": 556500,
+    "retainageReceivables": 0,
+    "contractAssets": 0,
+    "inventory": 13500000,
+    "otherCA": 40000,
+    "tca": 15021500,
+    "fixedAssets": 2450000,
+    "constructionEquipment": 0,
+    "officeEquipment": 0,
+    "shopEquipment": 0,
+    "investments": 0,
+    "rightOfUseLeases": 0,
+    "otherAssets": 950000,
+    "totalAssets": 18421500,
+    "ap": 157500,
+    "loc": 0,
+    "contractLiabilities": 0,
+    "otherCL": 610000,
+    "tcl": 767500,
+    "ltd": 8675000,
+    "totalLiab": 9442500,
+    "ownersCapital": 0,
+    "ownersDraw": 0,
+    "commonStock": 1000000,
+    "preferredStock": 0,
+    "retainedEarnings": 1400000,
+    "additionalPaidInCapital": 0,
+    "treasuryStock": 0,
+    "totalEquity": 2400000,
+    "totalLAndE": 11842500,
+    "lobBreakdowns": {
+      "cash": {
+        "Unallocated": 925000
+      },
+      "ar": {
+        "Unallocated": 556500
+      },
+      "otherCA": {
+        "Unallocated": 40000
+      },
+      "inventory": {
+        "Unallocated": 13500000
+      },
+      "fixedAssets": {
+        "Unallocated": 2450000
+      },
+      "otherAssets": {
+        "Unallocated": 950000
+      },
+      "ap": {
+        "Unallocated": 157500
+      },
+      "otherCL": {
+        "Unallocated": 610000
+      },
+      "ltd": {
+        "Unallocated": 8675000
+      },
+      "commonStock": {
+        "Unallocated": 1000000
+      },
+      "retainedEarnings": {
+        "Unallocated": 1400000
+      },
+      "rev_residential_sales_revenue": {
+        "Unallocated": 262500
+      },
+      "rev_commercial_sales_revenue": {
+        "Unallocated": 189000
+      },
+      "rev_property_management_fees": {
+        "Unallocated": 42000
+      },
+      "rev_insurance_commission_revenue": {
+        "Unallocated": 26250
+      },
+      "rev_mortgage_origination_revenue": {
+        "Unallocated": 57750
+      },
+      "rev_title_services_revenue": {
+        "Unallocated": 31500
+      },
+      "rev_rental_income": {
+        "Unallocated": 126000
+      },
+      "rev_other_revenue": {
+        "Unallocated": 10500
+      },
+      "cogs_residential_sales_commissions": {
+        "Unallocated": 91875
+      },
+      "cogs_commercial_sales_commissions": {
+        "Unallocated": 56700
+      },
+      "cogs_mortgage_processing_costs": {
+        "Unallocated": 11550
+      },
+      "cogs_title_search_and_closing_costs": {
+        "Unallocated": 7875
+      },
+      "cogs_insurance_carrier_costs": {
+        "Unallocated": 3938
+      },
+      "cogs_property_operations": {
+        "Unallocated": 25200
+      },
+      "payroll": {
+        "Unallocated": 220500
+      },
+      "salesExpense": {
+        "Unallocated": 26250
+      },
+      "rent": {
+        "Unallocated": 18000
+      },
+      "insurance": {
+        "Unallocated": 16600
+      },
+      "professionalFees": {
+        "Unallocated": 15000
+      },
+      "autoTravel": {
+        "Unallocated": 11000
+      },
+      "infrastructure": {
+        "Unallocated": 3000
+      },
+      "otherExpense": {
+        "Unallocated": 23000
+      },
+      "depreciationAmortization": {
+        "Unallocated": 35000
+      },
+      "interestExpense": {
+        "Unallocated": 70000
+      },
+      "federalIncomeTaxes": {
+        "Unallocated": 27503
+      }
+    },
+    "revenueBreakdown": {
+      "rev_residential_sales_revenue": 262500,
+      "rev_commercial_sales_revenue": 189000,
+      "rev_property_management_fees": 42000,
+      "rev_insurance_commission_revenue": 26250,
+      "rev_mortgage_origination_revenue": 57750,
+      "rev_title_services_revenue": 31500,
+      "rev_rental_income": 126000,
+      "rev_other_revenue": 10500
+    },
+    "expenseBreakdown": {
+      "Unallocated": 438350
+    },
+    "cogsBreakdown": {
+      "cogs_residential_sales_commissions": 91875,
+      "cogs_commercial_sales_commissions": 56700,
+      "cogs_mortgage_processing_costs": 11550,
+      "cogs_title_search_and_closing_costs": 7875,
+      "cogs_insurance_carrier_costs": 3938,
+      "cogs_property_operations": 25200
+    }
+  },
+  {
+    "monthDate": "2023-12-31T07:00:00.000Z",
+    "date": "2023-12-31T07:00:00.000Z",
+    "month": "2023-12",
+    "revenue": 752600,
+    "cogsPayroll": 0,
+    "cogsOwnerPay": 0,
+    "cogsContractors": 0,
+    "cogsMaterials": 0,
+    "cogsCommissions": 0,
+    "cogsOther": 0,
+    "cogsTotal": 199015,
+    "payroll": 222600,
+    "ownerBasePay": 0,
+    "benefits": 0,
+    "insurance": 16720,
+    "professionalFees": 15000,
+    "subcontractors": 0,
+    "rent": 18000,
+    "taxLicense": 0,
+    "stateIncomeTaxes": 0,
+    "federalIncomeTaxes": 28141,
+    "phoneComm": 0,
+    "infrastructure": 3000,
+    "autoTravel": 11000,
+    "salesExpense": 26500,
+    "marketing": 0,
+    "trainingCert": 0,
+    "mealsEntertainment": 0,
+    "interestExpense": 70000,
+    "depreciationAmortization": 35000,
+    "otherExpense": 23200,
+    "expense": 0,
+    "nonOperatingIncome": 0,
+    "nonOperatingExpense": 0,
+    "extraordinaryItems": 0,
+    "cash": 950000,
+    "ar": 561800,
+    "retainageReceivables": 0,
+    "contractAssets": 0,
+    "inventory": 13560000,
+    "otherCA": 40000,
+    "tca": 15111800,
+    "fixedAssets": 2440000,
+    "constructionEquipment": 0,
+    "officeEquipment": 0,
+    "shopEquipment": 0,
+    "investments": 0,
+    "rightOfUseLeases": 0,
+    "otherAssets": 950000,
+    "totalAssets": 18501800,
+    "ap": 159000,
+    "loc": 0,
+    "contractLiabilities": 0,
+    "otherCL": 610000,
+    "tcl": 769000,
+    "ltd": 8650000,
+    "totalLiab": 9419000,
+    "ownersCapital": 0,
+    "ownersDraw": 0,
+    "commonStock": 1000000,
+    "preferredStock": 0,
+    "retainedEarnings": 1541000,
+    "additionalPaidInCapital": 0,
+    "treasuryStock": 0,
+    "totalEquity": 2541000,
+    "totalLAndE": 11960000,
+    "lobBreakdowns": {
+      "cash": {
+        "Unallocated": 950000
+      },
+      "ar": {
+        "Unallocated": 561800
+      },
+      "otherCA": {
+        "Unallocated": 40000
+      },
+      "inventory": {
+        "Unallocated": 13560000
+      },
+      "fixedAssets": {
+        "Unallocated": 2440000
+      },
+      "otherAssets": {
+        "Unallocated": 950000
+      },
+      "ap": {
+        "Unallocated": 159000
+      },
+      "otherCL": {
+        "Unallocated": 610000
+      },
+      "ltd": {
+        "Unallocated": 8650000
+      },
+      "commonStock": {
+        "Unallocated": 1000000
+      },
+      "retainedEarnings": {
+        "Unallocated": 1541000
+      },
+      "rev_residential_sales_revenue": {
+        "Unallocated": 265000
+      },
+      "rev_commercial_sales_revenue": {
+        "Unallocated": 190800
+      },
+      "rev_property_management_fees": {
+        "Unallocated": 42400
+      },
+      "rev_insurance_commission_revenue": {
+        "Unallocated": 26500
+      },
+      "rev_mortgage_origination_revenue": {
+        "Unallocated": 58300
+      },
+      "rev_title_services_revenue": {
+        "Unallocated": 31800
+      },
+      "rev_rental_income": {
+        "Unallocated": 127200
+      },
+      "rev_other_revenue": {
+        "Unallocated": 10600
+      },
+      "cogs_residential_sales_commissions": {
+        "Unallocated": 92750
+      },
+      "cogs_commercial_sales_commissions": {
+        "Unallocated": 57240
+      },
+      "cogs_mortgage_processing_costs": {
+        "Unallocated": 11660
+      },
+      "cogs_title_search_and_closing_costs": {
+        "Unallocated": 7950
+      },
+      "cogs_insurance_carrier_costs": {
+        "Unallocated": 3975
+      },
+      "cogs_property_operations": {
+        "Unallocated": 25440
+      },
+      "payroll": {
+        "Unallocated": 222600
+      },
+      "salesExpense": {
+        "Unallocated": 26500
+      },
+      "rent": {
+        "Unallocated": 18000
+      },
+      "insurance": {
+        "Unallocated": 16720
+      },
+      "professionalFees": {
+        "Unallocated": 15000
+      },
+      "autoTravel": {
+        "Unallocated": 11000
+      },
+      "infrastructure": {
+        "Unallocated": 3000
+      },
+      "otherExpense": {
+        "Unallocated": 23200
+      },
+      "depreciationAmortization": {
+        "Unallocated": 35000
+      },
+      "interestExpense": {
+        "Unallocated": 70000
+      },
+      "federalIncomeTaxes": {
+        "Unallocated": 28141
+      }
+    },
+    "revenueBreakdown": {
+      "rev_residential_sales_revenue": 265000,
+      "rev_commercial_sales_revenue": 190800,
+      "rev_property_management_fees": 42400,
+      "rev_insurance_commission_revenue": 26500,
+      "rev_mortgage_origination_revenue": 58300,
+      "rev_title_services_revenue": 31800,
+      "rev_rental_income": 127200,
+      "rev_other_revenue": 10600
+    },
+    "expenseBreakdown": {
+      "Unallocated": 441020
+    },
+    "cogsBreakdown": {
+      "cogs_residential_sales_commissions": 92750,
+      "cogs_commercial_sales_commissions": 57240,
+      "cogs_mortgage_processing_costs": 11660,
+      "cogs_title_search_and_closing_costs": 7950,
+      "cogs_insurance_carrier_costs": 3975,
+      "cogs_property_operations": 25440
+    }
+  },
+  {
+    "monthDate": "2024-01-31T07:00:00.000Z",
+    "date": "2024-01-31T07:00:00.000Z",
+    "month": "2024-01",
+    "revenue": 759700,
+    "cogsPayroll": 0,
+    "cogsOwnerPay": 0,
+    "cogsContractors": 0,
+    "cogsMaterials": 0,
+    "cogsCommissions": 0,
+    "cogsOther": 0,
+    "cogsTotal": 200892,
+    "payroll": 224700,
+    "ownerBasePay": 0,
+    "benefits": 0,
+    "insurance": 16840,
+    "professionalFees": 15000,
+    "subcontractors": 0,
+    "rent": 18000,
+    "taxLicense": 0,
+    "stateIncomeTaxes": 0,
+    "federalIncomeTaxes": 28779,
+    "phoneComm": 0,
+    "infrastructure": 3000,
+    "autoTravel": 11000,
+    "salesExpense": 26750,
+    "marketing": 0,
+    "trainingCert": 0,
+    "mealsEntertainment": 0,
+    "interestExpense": 70000,
+    "depreciationAmortization": 35000,
+    "otherExpense": 23400,
+    "expense": 0,
+    "nonOperatingIncome": 0,
+    "nonOperatingExpense": 0,
+    "extraordinaryItems": 0,
+    "cash": 975000,
+    "ar": 567100,
+    "retainageReceivables": 0,
+    "contractAssets": 0,
+    "inventory": 13620000,
+    "otherCA": 40000,
+    "tca": 15202100,
+    "fixedAssets": 2430000,
+    "constructionEquipment": 0,
+    "officeEquipment": 0,
+    "shopEquipment": 0,
+    "investments": 0,
+    "rightOfUseLeases": 0,
+    "otherAssets": 950000,
+    "totalAssets": 18582100,
+    "ap": 160500,
+    "loc": 0,
+    "contractLiabilities": 0,
+    "otherCL": 610000,
+    "tcl": 770500,
+    "ltd": 8625000,
+    "totalLiab": 9395500,
+    "ownersCapital": 0,
+    "ownersDraw": 0,
+    "commonStock": 1000000,
+    "preferredStock": 0,
+    "retainedEarnings": 1685000,
+    "additionalPaidInCapital": 0,
+    "treasuryStock": 0,
+    "totalEquity": 2685000,
+    "totalLAndE": 12080500,
+    "lobBreakdowns": {
+      "cash": {
+        "Unallocated": 975000
+      },
+      "ar": {
+        "Unallocated": 567100
+      },
+      "otherCA": {
+        "Unallocated": 40000
+      },
+      "inventory": {
+        "Unallocated": 13620000
+      },
+      "fixedAssets": {
+        "Unallocated": 2430000
+      },
+      "otherAssets": {
+        "Unallocated": 950000
+      },
+      "ap": {
+        "Unallocated": 160500
+      },
+      "otherCL": {
+        "Unallocated": 610000
+      },
+      "ltd": {
+        "Unallocated": 8625000
+      },
+      "commonStock": {
+        "Unallocated": 1000000
+      },
+      "retainedEarnings": {
+        "Unallocated": 1685000
+      },
+      "rev_residential_sales_revenue": {
+        "Unallocated": 267500
+      },
+      "rev_commercial_sales_revenue": {
+        "Unallocated": 192600
+      },
+      "rev_property_management_fees": {
+        "Unallocated": 42800
+      },
+      "rev_insurance_commission_revenue": {
+        "Unallocated": 26750
+      },
+      "rev_mortgage_origination_revenue": {
+        "Unallocated": 58850
+      },
+      "rev_title_services_revenue": {
+        "Unallocated": 32100
+      },
+      "rev_rental_income": {
+        "Unallocated": 128400
+      },
+      "rev_other_revenue": {
+        "Unallocated": 10700
+      },
+      "cogs_residential_sales_commissions": {
+        "Unallocated": 93625
+      },
+      "cogs_commercial_sales_commissions": {
+        "Unallocated": 57780
+      },
+      "cogs_mortgage_processing_costs": {
+        "Unallocated": 11770
+      },
+      "cogs_title_search_and_closing_costs": {
+        "Unallocated": 8025
+      },
+      "cogs_insurance_carrier_costs": {
+        "Unallocated": 4012
+      },
+      "cogs_property_operations": {
+        "Unallocated": 25680
+      },
+      "payroll": {
+        "Unallocated": 224700
+      },
+      "salesExpense": {
+        "Unallocated": 26750
+      },
+      "rent": {
+        "Unallocated": 18000
+      },
+      "insurance": {
+        "Unallocated": 16840
+      },
+      "professionalFees": {
+        "Unallocated": 15000
+      },
+      "autoTravel": {
+        "Unallocated": 11000
+      },
+      "infrastructure": {
+        "Unallocated": 3000
+      },
+      "otherExpense": {
+        "Unallocated": 23400
+      },
+      "depreciationAmortization": {
+        "Unallocated": 35000
+      },
+      "interestExpense": {
+        "Unallocated": 70000
+      },
+      "federalIncomeTaxes": {
+        "Unallocated": 28779
+      }
+    },
+    "revenueBreakdown": {
+      "rev_residential_sales_revenue": 267500,
+      "rev_commercial_sales_revenue": 192600,
+      "rev_property_management_fees": 42800,
+      "rev_insurance_commission_revenue": 26750,
+      "rev_mortgage_origination_revenue": 58850,
+      "rev_title_services_revenue": 32100,
+      "rev_rental_income": 128400,
+      "rev_other_revenue": 10700
+    },
+    "expenseBreakdown": {
+      "Unallocated": 443690
+    },
+    "cogsBreakdown": {
+      "cogs_residential_sales_commissions": 93625,
+      "cogs_commercial_sales_commissions": 57780,
+      "cogs_mortgage_processing_costs": 11770,
+      "cogs_title_search_and_closing_costs": 8025,
+      "cogs_insurance_carrier_costs": 4012,
+      "cogs_property_operations": 25680
+    }
+  },
+  {
+    "monthDate": "2024-02-29T07:00:00.000Z",
+    "date": "2024-02-29T07:00:00.000Z",
+    "month": "2024-02",
+    "revenue": 766800,
+    "cogsPayroll": 0,
+    "cogsOwnerPay": 0,
+    "cogsContractors": 0,
+    "cogsMaterials": 0,
+    "cogsCommissions": 0,
+    "cogsOther": 0,
+    "cogsTotal": 202770,
+    "payroll": 226800,
+    "ownerBasePay": 0,
+    "benefits": 0,
+    "insurance": 16960,
+    "professionalFees": 15000,
+    "subcontractors": 0,
+    "rent": 18000,
+    "taxLicense": 0,
+    "stateIncomeTaxes": 0,
+    "federalIncomeTaxes": 29418,
+    "phoneComm": 0,
+    "infrastructure": 3000,
+    "autoTravel": 11000,
+    "salesExpense": 27000,
+    "marketing": 0,
+    "trainingCert": 0,
+    "mealsEntertainment": 0,
+    "interestExpense": 70000,
+    "depreciationAmortization": 35000,
+    "otherExpense": 23600,
+    "expense": 0,
+    "nonOperatingIncome": 0,
+    "nonOperatingExpense": 0,
+    "extraordinaryItems": 0,
+    "cash": 1000000,
+    "ar": 572400,
+    "retainageReceivables": 0,
+    "contractAssets": 0,
+    "inventory": 13680000,
+    "otherCA": 40000,
+    "tca": 15292400,
+    "fixedAssets": 2420000,
+    "constructionEquipment": 0,
+    "officeEquipment": 0,
+    "shopEquipment": 0,
+    "investments": 0,
+    "rightOfUseLeases": 0,
+    "otherAssets": 950000,
+    "totalAssets": 18662400,
+    "ap": 162000,
+    "loc": 0,
+    "contractLiabilities": 0,
+    "otherCL": 610000,
+    "tcl": 772000,
+    "ltd": 8600000,
+    "totalLiab": 9372000,
+    "ownersCapital": 0,
+    "ownersDraw": 0,
+    "commonStock": 1000000,
+    "preferredStock": 0,
+    "retainedEarnings": 1832000,
+    "additionalPaidInCapital": 0,
+    "treasuryStock": 0,
+    "totalEquity": 2832000,
+    "totalLAndE": 12204000,
+    "lobBreakdowns": {
+      "cash": {
+        "Unallocated": 1000000
+      },
+      "ar": {
+        "Unallocated": 572400
+      },
+      "otherCA": {
+        "Unallocated": 40000
+      },
+      "inventory": {
+        "Unallocated": 13680000
+      },
+      "fixedAssets": {
+        "Unallocated": 2420000
+      },
+      "otherAssets": {
+        "Unallocated": 950000
+      },
+      "ap": {
+        "Unallocated": 162000
+      },
+      "otherCL": {
+        "Unallocated": 610000
+      },
+      "ltd": {
+        "Unallocated": 8600000
+      },
+      "commonStock": {
+        "Unallocated": 1000000
+      },
+      "retainedEarnings": {
+        "Unallocated": 1832000
+      },
+      "rev_residential_sales_revenue": {
+        "Unallocated": 270000
+      },
+      "rev_commercial_sales_revenue": {
+        "Unallocated": 194400
+      },
+      "rev_property_management_fees": {
+        "Unallocated": 43200
+      },
+      "rev_insurance_commission_revenue": {
+        "Unallocated": 27000
+      },
+      "rev_mortgage_origination_revenue": {
+        "Unallocated": 59400
+      },
+      "rev_title_services_revenue": {
+        "Unallocated": 32400
+      },
+      "rev_rental_income": {
+        "Unallocated": 129600
+      },
+      "rev_other_revenue": {
+        "Unallocated": 10800
+      },
+      "cogs_residential_sales_commissions": {
+        "Unallocated": 94500
+      },
+      "cogs_commercial_sales_commissions": {
+        "Unallocated": 58320
+      },
+      "cogs_mortgage_processing_costs": {
+        "Unallocated": 11880
+      },
+      "cogs_title_search_and_closing_costs": {
+        "Unallocated": 8100
+      },
+      "cogs_insurance_carrier_costs": {
+        "Unallocated": 4050
+      },
+      "cogs_property_operations": {
+        "Unallocated": 25920
+      },
+      "payroll": {
+        "Unallocated": 226800
+      },
+      "salesExpense": {
+        "Unallocated": 27000
+      },
+      "rent": {
+        "Unallocated": 18000
+      },
+      "insurance": {
+        "Unallocated": 16960
+      },
+      "professionalFees": {
+        "Unallocated": 15000
+      },
+      "autoTravel": {
+        "Unallocated": 11000
+      },
+      "infrastructure": {
+        "Unallocated": 3000
+      },
+      "otherExpense": {
+        "Unallocated": 23600
+      },
+      "depreciationAmortization": {
+        "Unallocated": 35000
+      },
+      "interestExpense": {
+        "Unallocated": 70000
+      },
+      "federalIncomeTaxes": {
+        "Unallocated": 29418
+      }
+    },
+    "revenueBreakdown": {
+      "rev_residential_sales_revenue": 270000,
+      "rev_commercial_sales_revenue": 194400,
+      "rev_property_management_fees": 43200,
+      "rev_insurance_commission_revenue": 27000,
+      "rev_mortgage_origination_revenue": 59400,
+      "rev_title_services_revenue": 32400,
+      "rev_rental_income": 129600,
+      "rev_other_revenue": 10800
+    },
+    "expenseBreakdown": {
+      "Unallocated": 446360
+    },
+    "cogsBreakdown": {
+      "cogs_residential_sales_commissions": 94500,
+      "cogs_commercial_sales_commissions": 58320,
+      "cogs_mortgage_processing_costs": 11880,
+      "cogs_title_search_and_closing_costs": 8100,
+      "cogs_insurance_carrier_costs": 4050,
+      "cogs_property_operations": 25920
+    }
+  },
+  {
+    "monthDate": "2024-03-31T07:00:00.000Z",
+    "date": "2024-03-31T07:00:00.000Z",
+    "month": "2024-03",
+    "revenue": 773900,
+    "cogsPayroll": 0,
+    "cogsOwnerPay": 0,
+    "cogsContractors": 0,
+    "cogsMaterials": 0,
+    "cogsCommissions": 0,
+    "cogsOther": 0,
+    "cogsTotal": 204648,
+    "payroll": 228900,
+    "ownerBasePay": 0,
+    "benefits": 0,
+    "insurance": 17080,
+    "professionalFees": 15000,
+    "subcontractors": 0,
+    "rent": 18000,
+    "taxLicense": 0,
+    "stateIncomeTaxes": 0,
+    "federalIncomeTaxes": 30056,
+    "phoneComm": 0,
+    "infrastructure": 3000,
+    "autoTravel": 11000,
+    "salesExpense": 27250,
+    "marketing": 0,
+    "trainingCert": 0,
+    "mealsEntertainment": 0,
+    "interestExpense": 70000,
+    "depreciationAmortization": 35000,
+    "otherExpense": 23800,
+    "expense": 0,
+    "nonOperatingIncome": 0,
+    "nonOperatingExpense": 0,
+    "extraordinaryItems": 0,
+    "cash": 1025000,
+    "ar": 577700,
+    "retainageReceivables": 0,
+    "contractAssets": 0,
+    "inventory": 13740000,
+    "otherCA": 40000,
+    "tca": 15382700,
+    "fixedAssets": 2410000,
+    "constructionEquipment": 0,
+    "officeEquipment": 0,
+    "shopEquipment": 0,
+    "investments": 0,
+    "rightOfUseLeases": 0,
+    "otherAssets": 950000,
+    "totalAssets": 18742700,
+    "ap": 163500,
+    "loc": 0,
+    "contractLiabilities": 0,
+    "otherCL": 610000,
+    "tcl": 773500,
+    "ltd": 8575000,
+    "totalLiab": 9348500,
+    "ownersCapital": 0,
+    "ownersDraw": 0,
+    "commonStock": 1000000,
+    "preferredStock": 0,
+    "retainedEarnings": 1982000,
+    "additionalPaidInCapital": 0,
+    "treasuryStock": 0,
+    "totalEquity": 2982000,
+    "totalLAndE": 12330500,
+    "lobBreakdowns": {
+      "cash": {
+        "Unallocated": 1025000
+      },
+      "ar": {
+        "Unallocated": 577700
+      },
+      "otherCA": {
+        "Unallocated": 40000
+      },
+      "inventory": {
+        "Unallocated": 13740000
+      },
+      "fixedAssets": {
+        "Unallocated": 2410000
+      },
+      "otherAssets": {
+        "Unallocated": 950000
+      },
+      "ap": {
+        "Unallocated": 163500
+      },
+      "otherCL": {
+        "Unallocated": 610000
+      },
+      "ltd": {
+        "Unallocated": 8575000
+      },
+      "commonStock": {
+        "Unallocated": 1000000
+      },
+      "retainedEarnings": {
+        "Unallocated": 1982000
+      },
+      "rev_residential_sales_revenue": {
+        "Unallocated": 272500
+      },
+      "rev_commercial_sales_revenue": {
+        "Unallocated": 196200
+      },
+      "rev_property_management_fees": {
+        "Unallocated": 43600
+      },
+      "rev_insurance_commission_revenue": {
+        "Unallocated": 27250
+      },
+      "rev_mortgage_origination_revenue": {
+        "Unallocated": 59950
+      },
+      "rev_title_services_revenue": {
+        "Unallocated": 32700
+      },
+      "rev_rental_income": {
+        "Unallocated": 130800
+      },
+      "rev_other_revenue": {
+        "Unallocated": 10900
+      },
+      "cogs_residential_sales_commissions": {
+        "Unallocated": 95375
+      },
+      "cogs_commercial_sales_commissions": {
+        "Unallocated": 58860
+      },
+      "cogs_mortgage_processing_costs": {
+        "Unallocated": 11990
+      },
+      "cogs_title_search_and_closing_costs": {
+        "Unallocated": 8175
+      },
+      "cogs_insurance_carrier_costs": {
+        "Unallocated": 4088
+      },
+      "cogs_property_operations": {
+        "Unallocated": 26160
+      },
+      "payroll": {
+        "Unallocated": 228900
+      },
+      "salesExpense": {
+        "Unallocated": 27250
+      },
+      "rent": {
+        "Unallocated": 18000
+      },
+      "insurance": {
+        "Unallocated": 17080
+      },
+      "professionalFees": {
+        "Unallocated": 15000
+      },
+      "autoTravel": {
+        "Unallocated": 11000
+      },
+      "infrastructure": {
+        "Unallocated": 3000
+      },
+      "otherExpense": {
+        "Unallocated": 23800
+      },
+      "depreciationAmortization": {
+        "Unallocated": 35000
+      },
+      "interestExpense": {
+        "Unallocated": 70000
+      },
+      "federalIncomeTaxes": {
+        "Unallocated": 30056
+      }
+    },
+    "revenueBreakdown": {
+      "rev_residential_sales_revenue": 272500,
+      "rev_commercial_sales_revenue": 196200,
+      "rev_property_management_fees": 43600,
+      "rev_insurance_commission_revenue": 27250,
+      "rev_mortgage_origination_revenue": 59950,
+      "rev_title_services_revenue": 32700,
+      "rev_rental_income": 130800,
+      "rev_other_revenue": 10900
+    },
+    "expenseBreakdown": {
+      "Unallocated": 449030
+    },
+    "cogsBreakdown": {
+      "cogs_residential_sales_commissions": 95375,
+      "cogs_commercial_sales_commissions": 58860,
+      "cogs_mortgage_processing_costs": 11990,
+      "cogs_title_search_and_closing_costs": 8175,
+      "cogs_insurance_carrier_costs": 4088,
+      "cogs_property_operations": 26160
+    }
+  },
+  {
+    "monthDate": "2024-04-30T07:00:00.000Z",
+    "date": "2024-04-30T07:00:00.000Z",
+    "month": "2024-04",
+    "revenue": 781000,
+    "cogsPayroll": 0,
+    "cogsOwnerPay": 0,
+    "cogsContractors": 0,
+    "cogsMaterials": 0,
+    "cogsCommissions": 0,
+    "cogsOther": 0,
+    "cogsTotal": 206525,
+    "payroll": 231000,
+    "ownerBasePay": 0,
+    "benefits": 0,
+    "insurance": 17200,
+    "professionalFees": 15000,
+    "subcontractors": 0,
+    "rent": 18000,
+    "taxLicense": 0,
+    "stateIncomeTaxes": 0,
+    "federalIncomeTaxes": 30694,
+    "phoneComm": 0,
+    "infrastructure": 3000,
+    "autoTravel": 11000,
+    "salesExpense": 27500,
+    "marketing": 0,
+    "trainingCert": 0,
+    "mealsEntertainment": 0,
+    "interestExpense": 70000,
+    "depreciationAmortization": 35000,
+    "otherExpense": 24000,
+    "expense": 0,
+    "nonOperatingIncome": 0,
+    "nonOperatingExpense": 0,
+    "extraordinaryItems": 0,
+    "cash": 1050000,
+    "ar": 583000,
+    "retainageReceivables": 0,
+    "contractAssets": 0,
+    "inventory": 13800000,
+    "otherCA": 40000,
+    "tca": 15473000,
+    "fixedAssets": 2400000,
+    "constructionEquipment": 0,
+    "officeEquipment": 0,
+    "shopEquipment": 0,
+    "investments": 0,
+    "rightOfUseLeases": 0,
+    "otherAssets": 950000,
+    "totalAssets": 18823000,
+    "ap": 165000,
+    "loc": 0,
+    "contractLiabilities": 0,
+    "otherCL": 610000,
+    "tcl": 775000,
+    "ltd": 8550000,
+    "totalLiab": 9325000,
+    "ownersCapital": 0,
+    "ownersDraw": 0,
+    "commonStock": 1000000,
+    "preferredStock": 0,
+    "retainedEarnings": 2135000,
+    "additionalPaidInCapital": 0,
+    "treasuryStock": 0,
+    "totalEquity": 3135000,
+    "totalLAndE": 12460000,
+    "lobBreakdowns": {
+      "cash": {
+        "Unallocated": 1050000
+      },
+      "ar": {
+        "Unallocated": 583000
+      },
+      "otherCA": {
+        "Unallocated": 40000
+      },
+      "inventory": {
+        "Unallocated": 13800000
+      },
+      "fixedAssets": {
+        "Unallocated": 2400000
+      },
+      "otherAssets": {
+        "Unallocated": 950000
+      },
+      "ap": {
+        "Unallocated": 165000
+      },
+      "otherCL": {
+        "Unallocated": 610000
+      },
+      "ltd": {
+        "Unallocated": 8550000
+      },
+      "commonStock": {
+        "Unallocated": 1000000
+      },
+      "retainedEarnings": {
+        "Unallocated": 2135000
+      },
+      "rev_residential_sales_revenue": {
+        "Unallocated": 275000
+      },
+      "rev_commercial_sales_revenue": {
+        "Unallocated": 198000
+      },
+      "rev_property_management_fees": {
+        "Unallocated": 44000
+      },
+      "rev_insurance_commission_revenue": {
+        "Unallocated": 27500
+      },
+      "rev_mortgage_origination_revenue": {
+        "Unallocated": 60500
+      },
+      "rev_title_services_revenue": {
+        "Unallocated": 33000
+      },
+      "rev_rental_income": {
+        "Unallocated": 132000
+      },
+      "rev_other_revenue": {
+        "Unallocated": 11000
+      },
+      "cogs_residential_sales_commissions": {
+        "Unallocated": 96250
+      },
+      "cogs_commercial_sales_commissions": {
+        "Unallocated": 59400
+      },
+      "cogs_mortgage_processing_costs": {
+        "Unallocated": 12100
+      },
+      "cogs_title_search_and_closing_costs": {
+        "Unallocated": 8250
+      },
+      "cogs_insurance_carrier_costs": {
+        "Unallocated": 4125
+      },
+      "cogs_property_operations": {
+        "Unallocated": 26400
+      },
+      "payroll": {
+        "Unallocated": 231000
+      },
+      "salesExpense": {
+        "Unallocated": 27500
+      },
+      "rent": {
+        "Unallocated": 18000
+      },
+      "insurance": {
+        "Unallocated": 17200
+      },
+      "professionalFees": {
+        "Unallocated": 15000
+      },
+      "autoTravel": {
+        "Unallocated": 11000
+      },
+      "infrastructure": {
+        "Unallocated": 3000
+      },
+      "otherExpense": {
+        "Unallocated": 24000
+      },
+      "depreciationAmortization": {
+        "Unallocated": 35000
+      },
+      "interestExpense": {
+        "Unallocated": 70000
+      },
+      "federalIncomeTaxes": {
+        "Unallocated": 30694
+      }
+    },
+    "revenueBreakdown": {
+      "rev_residential_sales_revenue": 275000,
+      "rev_commercial_sales_revenue": 198000,
+      "rev_property_management_fees": 44000,
+      "rev_insurance_commission_revenue": 27500,
+      "rev_mortgage_origination_revenue": 60500,
+      "rev_title_services_revenue": 33000,
+      "rev_rental_income": 132000,
+      "rev_other_revenue": 11000
+    },
+    "expenseBreakdown": {
+      "Unallocated": 451700
+    },
+    "cogsBreakdown": {
+      "cogs_residential_sales_commissions": 96250,
+      "cogs_commercial_sales_commissions": 59400,
+      "cogs_mortgage_processing_costs": 12100,
+      "cogs_title_search_and_closing_costs": 8250,
+      "cogs_insurance_carrier_costs": 4125,
+      "cogs_property_operations": 26400
+    }
+  },
+  {
+    "monthDate": "2024-05-31T07:00:00.000Z",
+    "date": "2024-05-31T07:00:00.000Z",
+    "month": "2024-05",
+    "revenue": 788100,
+    "cogsPayroll": 0,
+    "cogsOwnerPay": 0,
+    "cogsContractors": 0,
+    "cogsMaterials": 0,
+    "cogsCommissions": 0,
+    "cogsOther": 0,
+    "cogsTotal": 208402,
+    "payroll": 233100,
+    "ownerBasePay": 0,
+    "benefits": 0,
+    "insurance": 17320,
+    "professionalFees": 15000,
+    "subcontractors": 0,
+    "rent": 18000,
+    "taxLicense": 0,
+    "stateIncomeTaxes": 0,
+    "federalIncomeTaxes": 31332,
+    "phoneComm": 0,
+    "infrastructure": 3000,
+    "autoTravel": 11000,
+    "salesExpense": 27750,
+    "marketing": 0,
+    "trainingCert": 0,
+    "mealsEntertainment": 0,
+    "interestExpense": 70000,
+    "depreciationAmortization": 35000,
+    "otherExpense": 24200,
+    "expense": 0,
+    "nonOperatingIncome": 0,
+    "nonOperatingExpense": 0,
+    "extraordinaryItems": 0,
+    "cash": 1075000,
+    "ar": 588300,
+    "retainageReceivables": 0,
+    "contractAssets": 0,
+    "inventory": 13860000,
+    "otherCA": 40000,
+    "tca": 15563300,
+    "fixedAssets": 2390000,
+    "constructionEquipment": 0,
+    "officeEquipment": 0,
+    "shopEquipment": 0,
+    "investments": 0,
+    "rightOfUseLeases": 0,
+    "otherAssets": 950000,
+    "totalAssets": 18903300,
+    "ap": 166500,
+    "loc": 0,
+    "contractLiabilities": 0,
+    "otherCL": 610000,
+    "tcl": 776500,
+    "ltd": 8525000,
+    "totalLiab": 9301500,
+    "ownersCapital": 0,
+    "ownersDraw": 0,
+    "commonStock": 1000000,
+    "preferredStock": 0,
+    "retainedEarnings": 2291000,
+    "additionalPaidInCapital": 0,
+    "treasuryStock": 0,
+    "totalEquity": 3291000,
+    "totalLAndE": 12592500,
+    "lobBreakdowns": {
+      "cash": {
+        "Unallocated": 1075000
+      },
+      "ar": {
+        "Unallocated": 588300
+      },
+      "otherCA": {
+        "Unallocated": 40000
+      },
+      "inventory": {
+        "Unallocated": 13860000
+      },
+      "fixedAssets": {
+        "Unallocated": 2390000
+      },
+      "otherAssets": {
+        "Unallocated": 950000
+      },
+      "ap": {
+        "Unallocated": 166500
+      },
+      "otherCL": {
+        "Unallocated": 610000
+      },
+      "ltd": {
+        "Unallocated": 8525000
+      },
+      "commonStock": {
+        "Unallocated": 1000000
+      },
+      "retainedEarnings": {
+        "Unallocated": 2291000
+      },
+      "rev_residential_sales_revenue": {
+        "Unallocated": 277500
+      },
+      "rev_commercial_sales_revenue": {
+        "Unallocated": 199800
+      },
+      "rev_property_management_fees": {
+        "Unallocated": 44400
+      },
+      "rev_insurance_commission_revenue": {
+        "Unallocated": 27750
+      },
+      "rev_mortgage_origination_revenue": {
+        "Unallocated": 61050
+      },
+      "rev_title_services_revenue": {
+        "Unallocated": 33300
+      },
+      "rev_rental_income": {
+        "Unallocated": 133200
+      },
+      "rev_other_revenue": {
+        "Unallocated": 11100
+      },
+      "cogs_residential_sales_commissions": {
+        "Unallocated": 97125
+      },
+      "cogs_commercial_sales_commissions": {
+        "Unallocated": 59940
+      },
+      "cogs_mortgage_processing_costs": {
+        "Unallocated": 12210
+      },
+      "cogs_title_search_and_closing_costs": {
+        "Unallocated": 8325
+      },
+      "cogs_insurance_carrier_costs": {
+        "Unallocated": 4162
+      },
+      "cogs_property_operations": {
+        "Unallocated": 26640
+      },
+      "payroll": {
+        "Unallocated": 233100
+      },
+      "salesExpense": {
+        "Unallocated": 27750
+      },
+      "rent": {
+        "Unallocated": 18000
+      },
+      "insurance": {
+        "Unallocated": 17320
+      },
+      "professionalFees": {
+        "Unallocated": 15000
+      },
+      "autoTravel": {
+        "Unallocated": 11000
+      },
+      "infrastructure": {
+        "Unallocated": 3000
+      },
+      "otherExpense": {
+        "Unallocated": 24200
+      },
+      "depreciationAmortization": {
+        "Unallocated": 35000
+      },
+      "interestExpense": {
+        "Unallocated": 70000
+      },
+      "federalIncomeTaxes": {
+        "Unallocated": 31332
+      }
+    },
+    "revenueBreakdown": {
+      "rev_residential_sales_revenue": 277500,
+      "rev_commercial_sales_revenue": 199800,
+      "rev_property_management_fees": 44400,
+      "rev_insurance_commission_revenue": 27750,
+      "rev_mortgage_origination_revenue": 61050,
+      "rev_title_services_revenue": 33300,
+      "rev_rental_income": 133200,
+      "rev_other_revenue": 11100
+    },
+    "expenseBreakdown": {
+      "Unallocated": 454370
+    },
+    "cogsBreakdown": {
+      "cogs_residential_sales_commissions": 97125,
+      "cogs_commercial_sales_commissions": 59940,
+      "cogs_mortgage_processing_costs": 12210,
+      "cogs_title_search_and_closing_costs": 8325,
+      "cogs_insurance_carrier_costs": 4162,
+      "cogs_property_operations": 26640
+    }
+  },
+  {
+    "monthDate": "2024-06-30T07:00:00.000Z",
+    "date": "2024-06-30T07:00:00.000Z",
+    "month": "2024-06",
+    "revenue": 795200,
+    "cogsPayroll": 0,
+    "cogsOwnerPay": 0,
+    "cogsContractors": 0,
+    "cogsMaterials": 0,
+    "cogsCommissions": 0,
+    "cogsOther": 0,
+    "cogsTotal": 210280,
+    "payroll": 235200,
+    "ownerBasePay": 0,
+    "benefits": 0,
+    "insurance": 17440,
+    "professionalFees": 15000,
+    "subcontractors": 0,
+    "rent": 18000,
+    "taxLicense": 0,
+    "stateIncomeTaxes": 0,
+    "federalIncomeTaxes": 31970,
+    "phoneComm": 0,
+    "infrastructure": 3000,
+    "autoTravel": 11000,
+    "salesExpense": 28000,
+    "marketing": 0,
+    "trainingCert": 0,
+    "mealsEntertainment": 0,
+    "interestExpense": 70000,
+    "depreciationAmortization": 35000,
+    "otherExpense": 24400,
+    "expense": 0,
+    "nonOperatingIncome": 0,
+    "nonOperatingExpense": 0,
+    "extraordinaryItems": 0,
+    "cash": 1100000,
+    "ar": 593600,
+    "retainageReceivables": 0,
+    "contractAssets": 0,
+    "inventory": 13920000,
+    "otherCA": 40000,
+    "tca": 15653600,
+    "fixedAssets": 2380000,
+    "constructionEquipment": 0,
+    "officeEquipment": 0,
+    "shopEquipment": 0,
+    "investments": 0,
+    "rightOfUseLeases": 0,
+    "otherAssets": 950000,
+    "totalAssets": 18983600,
+    "ap": 168000,
+    "loc": 0,
+    "contractLiabilities": 0,
+    "otherCL": 610000,
+    "tcl": 778000,
+    "ltd": 8500000,
+    "totalLiab": 9278000,
+    "ownersCapital": 0,
+    "ownersDraw": 0,
+    "commonStock": 1000000,
+    "preferredStock": 0,
+    "retainedEarnings": 2450000,
+    "additionalPaidInCapital": 0,
+    "treasuryStock": 0,
+    "totalEquity": 3450000,
+    "totalLAndE": 12728000,
+    "lobBreakdowns": {
+      "cash": {
+        "Unallocated": 1100000
+      },
+      "ar": {
+        "Unallocated": 593600
+      },
+      "otherCA": {
+        "Unallocated": 40000
+      },
+      "inventory": {
+        "Unallocated": 13920000
+      },
+      "fixedAssets": {
+        "Unallocated": 2380000
+      },
+      "otherAssets": {
+        "Unallocated": 950000
+      },
+      "ap": {
+        "Unallocated": 168000
+      },
+      "otherCL": {
+        "Unallocated": 610000
+      },
+      "ltd": {
+        "Unallocated": 8500000
+      },
+      "commonStock": {
+        "Unallocated": 1000000
+      },
+      "retainedEarnings": {
+        "Unallocated": 2450000
+      },
+      "rev_residential_sales_revenue": {
+        "Unallocated": 280000
+      },
+      "rev_commercial_sales_revenue": {
+        "Unallocated": 201600
+      },
+      "rev_property_management_fees": {
+        "Unallocated": 44800
+      },
+      "rev_insurance_commission_revenue": {
+        "Unallocated": 28000
+      },
+      "rev_mortgage_origination_revenue": {
+        "Unallocated": 61600
+      },
+      "rev_title_services_revenue": {
+        "Unallocated": 33600
+      },
+      "rev_rental_income": {
+        "Unallocated": 134400
+      },
+      "rev_other_revenue": {
+        "Unallocated": 11200
+      },
+      "cogs_residential_sales_commissions": {
+        "Unallocated": 98000
+      },
+      "cogs_commercial_sales_commissions": {
+        "Unallocated": 60480
+      },
+      "cogs_mortgage_processing_costs": {
+        "Unallocated": 12320
+      },
+      "cogs_title_search_and_closing_costs": {
+        "Unallocated": 8400
+      },
+      "cogs_insurance_carrier_costs": {
+        "Unallocated": 4200
+      },
+      "cogs_property_operations": {
+        "Unallocated": 26880
+      },
+      "payroll": {
+        "Unallocated": 235200
+      },
+      "salesExpense": {
+        "Unallocated": 28000
+      },
+      "rent": {
+        "Unallocated": 18000
+      },
+      "insurance": {
+        "Unallocated": 17440
+      },
+      "professionalFees": {
+        "Unallocated": 15000
+      },
+      "autoTravel": {
+        "Unallocated": 11000
+      },
+      "infrastructure": {
+        "Unallocated": 3000
+      },
+      "otherExpense": {
+        "Unallocated": 24400
+      },
+      "depreciationAmortization": {
+        "Unallocated": 35000
+      },
+      "interestExpense": {
+        "Unallocated": 70000
+      },
+      "federalIncomeTaxes": {
+        "Unallocated": 31970
+      }
+    },
+    "revenueBreakdown": {
+      "rev_residential_sales_revenue": 280000,
+      "rev_commercial_sales_revenue": 201600,
+      "rev_property_management_fees": 44800,
+      "rev_insurance_commission_revenue": 28000,
+      "rev_mortgage_origination_revenue": 61600,
+      "rev_title_services_revenue": 33600,
+      "rev_rental_income": 134400,
+      "rev_other_revenue": 11200
+    },
+    "expenseBreakdown": {
+      "Unallocated": 457040
+    },
+    "cogsBreakdown": {
+      "cogs_residential_sales_commissions": 98000,
+      "cogs_commercial_sales_commissions": 60480,
+      "cogs_mortgage_processing_costs": 12320,
+      "cogs_title_search_and_closing_costs": 8400,
+      "cogs_insurance_carrier_costs": 4200,
+      "cogs_property_operations": 26880
+    }
+  },
+  {
+    "monthDate": "2024-07-31T07:00:00.000Z",
+    "date": "2024-07-31T07:00:00.000Z",
+    "month": "2024-07",
+    "revenue": 802300,
+    "cogsPayroll": 0,
+    "cogsOwnerPay": 0,
+    "cogsContractors": 0,
+    "cogsMaterials": 0,
+    "cogsCommissions": 0,
+    "cogsOther": 0,
+    "cogsTotal": 212157,
+    "payroll": 237300,
+    "ownerBasePay": 0,
+    "benefits": 0,
+    "insurance": 17560,
+    "professionalFees": 15000,
+    "subcontractors": 0,
+    "rent": 18000,
+    "taxLicense": 0,
+    "stateIncomeTaxes": 0,
+    "federalIncomeTaxes": 32608,
+    "phoneComm": 0,
+    "infrastructure": 3000,
+    "autoTravel": 11000,
+    "salesExpense": 28250,
+    "marketing": 0,
+    "trainingCert": 0,
+    "mealsEntertainment": 0,
+    "interestExpense": 70000,
+    "depreciationAmortization": 35000,
+    "otherExpense": 24600,
+    "expense": 0,
+    "nonOperatingIncome": 0,
+    "nonOperatingExpense": 0,
+    "extraordinaryItems": 0,
+    "cash": 1125000,
+    "ar": 598900,
+    "retainageReceivables": 0,
+    "contractAssets": 0,
+    "inventory": 13980000,
+    "otherCA": 40000,
+    "tca": 15743900,
+    "fixedAssets": 2370000,
+    "constructionEquipment": 0,
+    "officeEquipment": 0,
+    "shopEquipment": 0,
+    "investments": 0,
+    "rightOfUseLeases": 0,
+    "otherAssets": 950000,
+    "totalAssets": 19063900,
+    "ap": 169500,
+    "loc": 0,
+    "contractLiabilities": 0,
+    "otherCL": 610000,
+    "tcl": 779500,
+    "ltd": 8475000,
+    "totalLiab": 9254500,
+    "ownersCapital": 0,
+    "ownersDraw": 0,
+    "commonStock": 1000000,
+    "preferredStock": 0,
+    "retainedEarnings": 2612000,
+    "additionalPaidInCapital": 0,
+    "treasuryStock": 0,
+    "totalEquity": 3612000,
+    "totalLAndE": 12866500,
+    "lobBreakdowns": {
+      "cash": {
+        "Unallocated": 1125000
+      },
+      "ar": {
+        "Unallocated": 598900
+      },
+      "otherCA": {
+        "Unallocated": 40000
+      },
+      "inventory": {
+        "Unallocated": 13980000
+      },
+      "fixedAssets": {
+        "Unallocated": 2370000
+      },
+      "otherAssets": {
+        "Unallocated": 950000
+      },
+      "ap": {
+        "Unallocated": 169500
+      },
+      "otherCL": {
+        "Unallocated": 610000
+      },
+      "ltd": {
+        "Unallocated": 8475000
+      },
+      "commonStock": {
+        "Unallocated": 1000000
+      },
+      "retainedEarnings": {
+        "Unallocated": 2612000
+      },
+      "rev_residential_sales_revenue": {
+        "Unallocated": 282500
+      },
+      "rev_commercial_sales_revenue": {
+        "Unallocated": 203400
+      },
+      "rev_property_management_fees": {
+        "Unallocated": 45200
+      },
+      "rev_insurance_commission_revenue": {
+        "Unallocated": 28250
+      },
+      "rev_mortgage_origination_revenue": {
+        "Unallocated": 62150
+      },
+      "rev_title_services_revenue": {
+        "Unallocated": 33900
+      },
+      "rev_rental_income": {
+        "Unallocated": 135600
+      },
+      "rev_other_revenue": {
+        "Unallocated": 11300
+      },
+      "cogs_residential_sales_commissions": {
+        "Unallocated": 98875
+      },
+      "cogs_commercial_sales_commissions": {
+        "Unallocated": 61020
+      },
+      "cogs_mortgage_processing_costs": {
+        "Unallocated": 12430
+      },
+      "cogs_title_search_and_closing_costs": {
+        "Unallocated": 8475
+      },
+      "cogs_insurance_carrier_costs": {
+        "Unallocated": 4237
+      },
+      "cogs_property_operations": {
+        "Unallocated": 27120
+      },
+      "payroll": {
+        "Unallocated": 237300
+      },
+      "salesExpense": {
+        "Unallocated": 28250
+      },
+      "rent": {
+        "Unallocated": 18000
+      },
+      "insurance": {
+        "Unallocated": 17560
+      },
+      "professionalFees": {
+        "Unallocated": 15000
+      },
+      "autoTravel": {
+        "Unallocated": 11000
+      },
+      "infrastructure": {
+        "Unallocated": 3000
+      },
+      "otherExpense": {
+        "Unallocated": 24600
+      },
+      "depreciationAmortization": {
+        "Unallocated": 35000
+      },
+      "interestExpense": {
+        "Unallocated": 70000
+      },
+      "federalIncomeTaxes": {
+        "Unallocated": 32608
+      }
+    },
+    "revenueBreakdown": {
+      "rev_residential_sales_revenue": 282500,
+      "rev_commercial_sales_revenue": 203400,
+      "rev_property_management_fees": 45200,
+      "rev_insurance_commission_revenue": 28250,
+      "rev_mortgage_origination_revenue": 62150,
+      "rev_title_services_revenue": 33900,
+      "rev_rental_income": 135600,
+      "rev_other_revenue": 11300
+    },
+    "expenseBreakdown": {
+      "Unallocated": 459710
+    },
+    "cogsBreakdown": {
+      "cogs_residential_sales_commissions": 98875,
+      "cogs_commercial_sales_commissions": 61020,
+      "cogs_mortgage_processing_costs": 12430,
+      "cogs_title_search_and_closing_costs": 8475,
+      "cogs_insurance_carrier_costs": 4237,
+      "cogs_property_operations": 27120
+    }
+  },
+  {
+    "monthDate": "2024-08-31T07:00:00.000Z",
+    "date": "2024-08-31T07:00:00.000Z",
+    "month": "2024-08",
+    "revenue": 809400,
+    "cogsPayroll": 0,
+    "cogsOwnerPay": 0,
+    "cogsContractors": 0,
+    "cogsMaterials": 0,
+    "cogsCommissions": 0,
+    "cogsOther": 0,
+    "cogsTotal": 214035,
+    "payroll": 239400,
+    "ownerBasePay": 0,
+    "benefits": 0,
+    "insurance": 17680,
+    "professionalFees": 15000,
+    "subcontractors": 0,
+    "rent": 18000,
+    "taxLicense": 0,
+    "stateIncomeTaxes": 0,
+    "federalIncomeTaxes": 33246,
+    "phoneComm": 0,
+    "infrastructure": 3000,
+    "autoTravel": 11000,
+    "salesExpense": 28500,
+    "marketing": 0,
+    "trainingCert": 0,
+    "mealsEntertainment": 0,
+    "interestExpense": 70000,
+    "depreciationAmortization": 35000,
+    "otherExpense": 24800,
+    "expense": 0,
+    "nonOperatingIncome": 0,
+    "nonOperatingExpense": 0,
+    "extraordinaryItems": 0,
+    "cash": 1150000,
+    "ar": 604200,
+    "retainageReceivables": 0,
+    "contractAssets": 0,
+    "inventory": 14040000,
+    "otherCA": 40000,
+    "tca": 15834200,
+    "fixedAssets": 2360000,
+    "constructionEquipment": 0,
+    "officeEquipment": 0,
+    "shopEquipment": 0,
+    "investments": 0,
+    "rightOfUseLeases": 0,
+    "otherAssets": 950000,
+    "totalAssets": 19144200,
+    "ap": 171000,
+    "loc": 0,
+    "contractLiabilities": 0,
+    "otherCL": 610000,
+    "tcl": 781000,
+    "ltd": 8450000,
+    "totalLiab": 9231000,
+    "ownersCapital": 0,
+    "ownersDraw": 0,
+    "commonStock": 1000000,
+    "preferredStock": 0,
+    "retainedEarnings": 2777000,
+    "additionalPaidInCapital": 0,
+    "treasuryStock": 0,
+    "totalEquity": 3777000,
+    "totalLAndE": 13008000,
+    "lobBreakdowns": {
+      "cash": {
+        "Unallocated": 1150000
+      },
+      "ar": {
+        "Unallocated": 604200
+      },
+      "otherCA": {
+        "Unallocated": 40000
+      },
+      "inventory": {
+        "Unallocated": 14040000
+      },
+      "fixedAssets": {
+        "Unallocated": 2360000
+      },
+      "otherAssets": {
+        "Unallocated": 950000
+      },
+      "ap": {
+        "Unallocated": 171000
+      },
+      "otherCL": {
+        "Unallocated": 610000
+      },
+      "ltd": {
+        "Unallocated": 8450000
+      },
+      "commonStock": {
+        "Unallocated": 1000000
+      },
+      "retainedEarnings": {
+        "Unallocated": 2777000
+      },
+      "rev_residential_sales_revenue": {
+        "Unallocated": 285000
+      },
+      "rev_commercial_sales_revenue": {
+        "Unallocated": 205200
+      },
+      "rev_property_management_fees": {
+        "Unallocated": 45600
+      },
+      "rev_insurance_commission_revenue": {
+        "Unallocated": 28500
+      },
+      "rev_mortgage_origination_revenue": {
+        "Unallocated": 62700
+      },
+      "rev_title_services_revenue": {
+        "Unallocated": 34200
+      },
+      "rev_rental_income": {
+        "Unallocated": 136800
+      },
+      "rev_other_revenue": {
+        "Unallocated": 11400
+      },
+      "cogs_residential_sales_commissions": {
+        "Unallocated": 99750
+      },
+      "cogs_commercial_sales_commissions": {
+        "Unallocated": 61560
+      },
+      "cogs_mortgage_processing_costs": {
+        "Unallocated": 12540
+      },
+      "cogs_title_search_and_closing_costs": {
+        "Unallocated": 8550
+      },
+      "cogs_insurance_carrier_costs": {
+        "Unallocated": 4275
+      },
+      "cogs_property_operations": {
+        "Unallocated": 27360
+      },
+      "payroll": {
+        "Unallocated": 239400
+      },
+      "salesExpense": {
+        "Unallocated": 28500
+      },
+      "rent": {
+        "Unallocated": 18000
+      },
+      "insurance": {
+        "Unallocated": 17680
+      },
+      "professionalFees": {
+        "Unallocated": 15000
+      },
+      "autoTravel": {
+        "Unallocated": 11000
+      },
+      "infrastructure": {
+        "Unallocated": 3000
+      },
+      "otherExpense": {
+        "Unallocated": 24800
+      },
+      "depreciationAmortization": {
+        "Unallocated": 35000
+      },
+      "interestExpense": {
+        "Unallocated": 70000
+      },
+      "federalIncomeTaxes": {
+        "Unallocated": 33246
+      }
+    },
+    "revenueBreakdown": {
+      "rev_residential_sales_revenue": 285000,
+      "rev_commercial_sales_revenue": 205200,
+      "rev_property_management_fees": 45600,
+      "rev_insurance_commission_revenue": 28500,
+      "rev_mortgage_origination_revenue": 62700,
+      "rev_title_services_revenue": 34200,
+      "rev_rental_income": 136800,
+      "rev_other_revenue": 11400
+    },
+    "expenseBreakdown": {
+      "Unallocated": 462380
+    },
+    "cogsBreakdown": {
+      "cogs_residential_sales_commissions": 99750,
+      "cogs_commercial_sales_commissions": 61560,
+      "cogs_mortgage_processing_costs": 12540,
+      "cogs_title_search_and_closing_costs": 8550,
+      "cogs_insurance_carrier_costs": 4275,
+      "cogs_property_operations": 27360
+    }
+  },
+  {
+    "monthDate": "2024-09-30T07:00:00.000Z",
+    "date": "2024-09-30T07:00:00.000Z",
+    "month": "2024-09",
+    "revenue": 816500,
+    "cogsPayroll": 0,
+    "cogsOwnerPay": 0,
+    "cogsContractors": 0,
+    "cogsMaterials": 0,
+    "cogsCommissions": 0,
+    "cogsOther": 0,
+    "cogsTotal": 215912,
+    "payroll": 241500,
+    "ownerBasePay": 0,
+    "benefits": 0,
+    "insurance": 17800,
+    "professionalFees": 15000,
+    "subcontractors": 0,
+    "rent": 18000,
+    "taxLicense": 0,
+    "stateIncomeTaxes": 0,
+    "federalIncomeTaxes": 33884,
+    "phoneComm": 0,
+    "infrastructure": 3000,
+    "autoTravel": 11000,
+    "salesExpense": 28750,
+    "marketing": 0,
+    "trainingCert": 0,
+    "mealsEntertainment": 0,
+    "interestExpense": 70000,
+    "depreciationAmortization": 35000,
+    "otherExpense": 25000,
+    "expense": 0,
+    "nonOperatingIncome": 0,
+    "nonOperatingExpense": 0,
+    "extraordinaryItems": 0,
+    "cash": 1175000,
+    "ar": 609500,
+    "retainageReceivables": 0,
+    "contractAssets": 0,
+    "inventory": 14100000,
+    "otherCA": 40000,
+    "tca": 15924500,
+    "fixedAssets": 2350000,
+    "constructionEquipment": 0,
+    "officeEquipment": 0,
+    "shopEquipment": 0,
+    "investments": 0,
+    "rightOfUseLeases": 0,
+    "otherAssets": 950000,
+    "totalAssets": 19224500,
+    "ap": 172500,
+    "loc": 0,
+    "contractLiabilities": 0,
+    "otherCL": 610000,
+    "tcl": 782500,
+    "ltd": 8425000,
+    "totalLiab": 9207500,
+    "ownersCapital": 0,
+    "ownersDraw": 0,
+    "commonStock": 1000000,
+    "preferredStock": 0,
+    "retainedEarnings": 2945000,
+    "additionalPaidInCapital": 0,
+    "treasuryStock": 0,
+    "totalEquity": 3945000,
+    "totalLAndE": 13152500,
+    "lobBreakdowns": {
+      "cash": {
+        "Unallocated": 1175000
+      },
+      "ar": {
+        "Unallocated": 609500
+      },
+      "otherCA": {
+        "Unallocated": 40000
+      },
+      "inventory": {
+        "Unallocated": 14100000
+      },
+      "fixedAssets": {
+        "Unallocated": 2350000
+      },
+      "otherAssets": {
+        "Unallocated": 950000
+      },
+      "ap": {
+        "Unallocated": 172500
+      },
+      "otherCL": {
+        "Unallocated": 610000
+      },
+      "ltd": {
+        "Unallocated": 8425000
+      },
+      "commonStock": {
+        "Unallocated": 1000000
+      },
+      "retainedEarnings": {
+        "Unallocated": 2945000
+      },
+      "rev_residential_sales_revenue": {
+        "Unallocated": 287500
+      },
+      "rev_commercial_sales_revenue": {
+        "Unallocated": 207000
+      },
+      "rev_property_management_fees": {
+        "Unallocated": 46000
+      },
+      "rev_insurance_commission_revenue": {
+        "Unallocated": 28750
+      },
+      "rev_mortgage_origination_revenue": {
+        "Unallocated": 63250
+      },
+      "rev_title_services_revenue": {
+        "Unallocated": 34500
+      },
+      "rev_rental_income": {
+        "Unallocated": 138000
+      },
+      "rev_other_revenue": {
+        "Unallocated": 11500
+      },
+      "cogs_residential_sales_commissions": {
+        "Unallocated": 100625
+      },
+      "cogs_commercial_sales_commissions": {
+        "Unallocated": 62100
+      },
+      "cogs_mortgage_processing_costs": {
+        "Unallocated": 12650
+      },
+      "cogs_title_search_and_closing_costs": {
+        "Unallocated": 8625
+      },
+      "cogs_insurance_carrier_costs": {
+        "Unallocated": 4312
+      },
+      "cogs_property_operations": {
+        "Unallocated": 27600
+      },
+      "payroll": {
+        "Unallocated": 241500
+      },
+      "salesExpense": {
+        "Unallocated": 28750
+      },
+      "rent": {
+        "Unallocated": 18000
+      },
+      "insurance": {
+        "Unallocated": 17800
+      },
+      "professionalFees": {
+        "Unallocated": 15000
+      },
+      "autoTravel": {
+        "Unallocated": 11000
+      },
+      "infrastructure": {
+        "Unallocated": 3000
+      },
+      "otherExpense": {
+        "Unallocated": 25000
+      },
+      "depreciationAmortization": {
+        "Unallocated": 35000
+      },
+      "interestExpense": {
+        "Unallocated": 70000
+      },
+      "federalIncomeTaxes": {
+        "Unallocated": 33884
+      }
+    },
+    "revenueBreakdown": {
+      "rev_residential_sales_revenue": 287500,
+      "rev_commercial_sales_revenue": 207000,
+      "rev_property_management_fees": 46000,
+      "rev_insurance_commission_revenue": 28750,
+      "rev_mortgage_origination_revenue": 63250,
+      "rev_title_services_revenue": 34500,
+      "rev_rental_income": 138000,
+      "rev_other_revenue": 11500
+    },
+    "expenseBreakdown": {
+      "Unallocated": 465050
+    },
+    "cogsBreakdown": {
+      "cogs_residential_sales_commissions": 100625,
+      "cogs_commercial_sales_commissions": 62100,
+      "cogs_mortgage_processing_costs": 12650,
+      "cogs_title_search_and_closing_costs": 8625,
+      "cogs_insurance_carrier_costs": 4312,
+      "cogs_property_operations": 27600
+    }
+  },
+  {
+    "monthDate": "2024-10-31T07:00:00.000Z",
+    "date": "2024-10-31T07:00:00.000Z",
+    "month": "2024-10",
+    "revenue": 823600,
+    "cogsPayroll": 0,
+    "cogsOwnerPay": 0,
+    "cogsContractors": 0,
+    "cogsMaterials": 0,
+    "cogsCommissions": 0,
+    "cogsOther": 0,
+    "cogsTotal": 217790,
+    "payroll": 243600,
+    "ownerBasePay": 0,
+    "benefits": 0,
+    "insurance": 17920,
+    "professionalFees": 15000,
+    "subcontractors": 0,
+    "rent": 18000,
+    "taxLicense": 0,
+    "stateIncomeTaxes": 0,
+    "federalIncomeTaxes": 34522,
+    "phoneComm": 0,
+    "infrastructure": 3000,
+    "autoTravel": 11000,
+    "salesExpense": 29000,
+    "marketing": 0,
+    "trainingCert": 0,
+    "mealsEntertainment": 0,
+    "interestExpense": 70000,
+    "depreciationAmortization": 35000,
+    "otherExpense": 25200,
+    "expense": 0,
+    "nonOperatingIncome": 0,
+    "nonOperatingExpense": 0,
+    "extraordinaryItems": 0,
+    "cash": 1200000,
+    "ar": 614800,
+    "retainageReceivables": 0,
+    "contractAssets": 0,
+    "inventory": 14160000,
+    "otherCA": 40000,
+    "tca": 16014800,
+    "fixedAssets": 2340000,
+    "constructionEquipment": 0,
+    "officeEquipment": 0,
+    "shopEquipment": 0,
+    "investments": 0,
+    "rightOfUseLeases": 0,
+    "otherAssets": 950000,
+    "totalAssets": 19304800,
+    "ap": 174000,
+    "loc": 0,
+    "contractLiabilities": 0,
+    "otherCL": 610000,
+    "tcl": 784000,
+    "ltd": 8400000,
+    "totalLiab": 9184000,
+    "ownersCapital": 0,
+    "ownersDraw": 0,
+    "commonStock": 1000000,
+    "preferredStock": 0,
+    "retainedEarnings": 3116000,
+    "additionalPaidInCapital": 0,
+    "treasuryStock": 0,
+    "totalEquity": 4116000,
+    "totalLAndE": 13300000,
+    "lobBreakdowns": {
+      "cash": {
+        "Unallocated": 1200000
+      },
+      "ar": {
+        "Unallocated": 614800
+      },
+      "otherCA": {
+        "Unallocated": 40000
+      },
+      "inventory": {
+        "Unallocated": 14160000
+      },
+      "fixedAssets": {
+        "Unallocated": 2340000
+      },
+      "otherAssets": {
+        "Unallocated": 950000
+      },
+      "ap": {
+        "Unallocated": 174000
+      },
+      "otherCL": {
+        "Unallocated": 610000
+      },
+      "ltd": {
+        "Unallocated": 8400000
+      },
+      "commonStock": {
+        "Unallocated": 1000000
+      },
+      "retainedEarnings": {
+        "Unallocated": 3116000
+      },
+      "rev_residential_sales_revenue": {
+        "Unallocated": 290000
+      },
+      "rev_commercial_sales_revenue": {
+        "Unallocated": 208800
+      },
+      "rev_property_management_fees": {
+        "Unallocated": 46400
+      },
+      "rev_insurance_commission_revenue": {
+        "Unallocated": 29000
+      },
+      "rev_mortgage_origination_revenue": {
+        "Unallocated": 63800
+      },
+      "rev_title_services_revenue": {
+        "Unallocated": 34800
+      },
+      "rev_rental_income": {
+        "Unallocated": 139200
+      },
+      "rev_other_revenue": {
+        "Unallocated": 11600
+      },
+      "cogs_residential_sales_commissions": {
+        "Unallocated": 101500
+      },
+      "cogs_commercial_sales_commissions": {
+        "Unallocated": 62640
+      },
+      "cogs_mortgage_processing_costs": {
+        "Unallocated": 12760
+      },
+      "cogs_title_search_and_closing_costs": {
+        "Unallocated": 8700
+      },
+      "cogs_insurance_carrier_costs": {
+        "Unallocated": 4350
+      },
+      "cogs_property_operations": {
+        "Unallocated": 27840
+      },
+      "payroll": {
+        "Unallocated": 243600
+      },
+      "salesExpense": {
+        "Unallocated": 29000
+      },
+      "rent": {
+        "Unallocated": 18000
+      },
+      "insurance": {
+        "Unallocated": 17920
+      },
+      "professionalFees": {
+        "Unallocated": 15000
+      },
+      "autoTravel": {
+        "Unallocated": 11000
+      },
+      "infrastructure": {
+        "Unallocated": 3000
+      },
+      "otherExpense": {
+        "Unallocated": 25200
+      },
+      "depreciationAmortization": {
+        "Unallocated": 35000
+      },
+      "interestExpense": {
+        "Unallocated": 70000
+      },
+      "federalIncomeTaxes": {
+        "Unallocated": 34522
+      }
+    },
+    "revenueBreakdown": {
+      "rev_residential_sales_revenue": 290000,
+      "rev_commercial_sales_revenue": 208800,
+      "rev_property_management_fees": 46400,
+      "rev_insurance_commission_revenue": 29000,
+      "rev_mortgage_origination_revenue": 63800,
+      "rev_title_services_revenue": 34800,
+      "rev_rental_income": 139200,
+      "rev_other_revenue": 11600
+    },
+    "expenseBreakdown": {
+      "Unallocated": 467720
+    },
+    "cogsBreakdown": {
+      "cogs_residential_sales_commissions": 101500,
+      "cogs_commercial_sales_commissions": 62640,
+      "cogs_mortgage_processing_costs": 12760,
+      "cogs_title_search_and_closing_costs": 8700,
+      "cogs_insurance_carrier_costs": 4350,
+      "cogs_property_operations": 27840
+    }
+  },
+  {
+    "monthDate": "2024-11-30T07:00:00.000Z",
+    "date": "2024-11-30T07:00:00.000Z",
+    "month": "2024-11",
+    "revenue": 830700,
+    "cogsPayroll": 0,
+    "cogsOwnerPay": 0,
+    "cogsContractors": 0,
+    "cogsMaterials": 0,
+    "cogsCommissions": 0,
+    "cogsOther": 0,
+    "cogsTotal": 219668,
+    "payroll": 245700,
+    "ownerBasePay": 0,
+    "benefits": 0,
+    "insurance": 18040,
+    "professionalFees": 15000,
+    "subcontractors": 0,
+    "rent": 18000,
+    "taxLicense": 0,
+    "stateIncomeTaxes": 0,
+    "federalIncomeTaxes": 35161,
+    "phoneComm": 0,
+    "infrastructure": 3000,
+    "autoTravel": 11000,
+    "salesExpense": 29250,
+    "marketing": 0,
+    "trainingCert": 0,
+    "mealsEntertainment": 0,
+    "interestExpense": 70000,
+    "depreciationAmortization": 35000,
+    "otherExpense": 25400,
+    "expense": 0,
+    "nonOperatingIncome": 0,
+    "nonOperatingExpense": 0,
+    "extraordinaryItems": 0,
+    "cash": 1225000,
+    "ar": 620100,
+    "retainageReceivables": 0,
+    "contractAssets": 0,
+    "inventory": 14220000,
+    "otherCA": 40000,
+    "tca": 16105100,
+    "fixedAssets": 2330000,
+    "constructionEquipment": 0,
+    "officeEquipment": 0,
+    "shopEquipment": 0,
+    "investments": 0,
+    "rightOfUseLeases": 0,
+    "otherAssets": 950000,
+    "totalAssets": 19385100,
+    "ap": 175500,
+    "loc": 0,
+    "contractLiabilities": 0,
+    "otherCL": 610000,
+    "tcl": 785500,
+    "ltd": 8375000,
+    "totalLiab": 9160500,
+    "ownersCapital": 0,
+    "ownersDraw": 0,
+    "commonStock": 1000000,
+    "preferredStock": 0,
+    "retainedEarnings": 3290000,
+    "additionalPaidInCapital": 0,
+    "treasuryStock": 0,
+    "totalEquity": 4290000,
+    "totalLAndE": 13450500,
+    "lobBreakdowns": {
+      "cash": {
+        "Unallocated": 1225000
+      },
+      "ar": {
+        "Unallocated": 620100
+      },
+      "otherCA": {
+        "Unallocated": 40000
+      },
+      "inventory": {
+        "Unallocated": 14220000
+      },
+      "fixedAssets": {
+        "Unallocated": 2330000
+      },
+      "otherAssets": {
+        "Unallocated": 950000
+      },
+      "ap": {
+        "Unallocated": 175500
+      },
+      "otherCL": {
+        "Unallocated": 610000
+      },
+      "ltd": {
+        "Unallocated": 8375000
+      },
+      "commonStock": {
+        "Unallocated": 1000000
+      },
+      "retainedEarnings": {
+        "Unallocated": 3290000
+      },
+      "rev_residential_sales_revenue": {
+        "Unallocated": 292500
+      },
+      "rev_commercial_sales_revenue": {
+        "Unallocated": 210600
+      },
+      "rev_property_management_fees": {
+        "Unallocated": 46800
+      },
+      "rev_insurance_commission_revenue": {
+        "Unallocated": 29250
+      },
+      "rev_mortgage_origination_revenue": {
+        "Unallocated": 64350
+      },
+      "rev_title_services_revenue": {
+        "Unallocated": 35100
+      },
+      "rev_rental_income": {
+        "Unallocated": 140400
+      },
+      "rev_other_revenue": {
+        "Unallocated": 11700
+      },
+      "cogs_residential_sales_commissions": {
+        "Unallocated": 102375
+      },
+      "cogs_commercial_sales_commissions": {
+        "Unallocated": 63180
+      },
+      "cogs_mortgage_processing_costs": {
+        "Unallocated": 12870
+      },
+      "cogs_title_search_and_closing_costs": {
+        "Unallocated": 8775
+      },
+      "cogs_insurance_carrier_costs": {
+        "Unallocated": 4388
+      },
+      "cogs_property_operations": {
+        "Unallocated": 28080
+      },
+      "payroll": {
+        "Unallocated": 245700
+      },
+      "salesExpense": {
+        "Unallocated": 29250
+      },
+      "rent": {
+        "Unallocated": 18000
+      },
+      "insurance": {
+        "Unallocated": 18040
+      },
+      "professionalFees": {
+        "Unallocated": 15000
+      },
+      "autoTravel": {
+        "Unallocated": 11000
+      },
+      "infrastructure": {
+        "Unallocated": 3000
+      },
+      "otherExpense": {
+        "Unallocated": 25400
+      },
+      "depreciationAmortization": {
+        "Unallocated": 35000
+      },
+      "interestExpense": {
+        "Unallocated": 70000
+      },
+      "federalIncomeTaxes": {
+        "Unallocated": 35161
+      }
+    },
+    "revenueBreakdown": {
+      "rev_residential_sales_revenue": 292500,
+      "rev_commercial_sales_revenue": 210600,
+      "rev_property_management_fees": 46800,
+      "rev_insurance_commission_revenue": 29250,
+      "rev_mortgage_origination_revenue": 64350,
+      "rev_title_services_revenue": 35100,
+      "rev_rental_income": 140400,
+      "rev_other_revenue": 11700
+    },
+    "expenseBreakdown": {
+      "Unallocated": 470390
+    },
+    "cogsBreakdown": {
+      "cogs_residential_sales_commissions": 102375,
+      "cogs_commercial_sales_commissions": 63180,
+      "cogs_mortgage_processing_costs": 12870,
+      "cogs_title_search_and_closing_costs": 8775,
+      "cogs_insurance_carrier_costs": 4388,
+      "cogs_property_operations": 28080
+    }
+  },
+  {
+    "monthDate": "2024-12-31T07:00:00.000Z",
+    "date": "2024-12-31T07:00:00.000Z",
+    "month": "2024-12",
+    "revenue": 837800,
+    "cogsPayroll": 0,
+    "cogsOwnerPay": 0,
+    "cogsContractors": 0,
+    "cogsMaterials": 0,
+    "cogsCommissions": 0,
+    "cogsOther": 0,
+    "cogsTotal": 221545,
+    "payroll": 247800,
+    "ownerBasePay": 0,
+    "benefits": 0,
+    "insurance": 18160,
+    "professionalFees": 15000,
+    "subcontractors": 0,
+    "rent": 18000,
+    "taxLicense": 0,
+    "stateIncomeTaxes": 0,
+    "federalIncomeTaxes": 35799,
+    "phoneComm": 0,
+    "infrastructure": 3000,
+    "autoTravel": 11000,
+    "salesExpense": 29500,
+    "marketing": 0,
+    "trainingCert": 0,
+    "mealsEntertainment": 0,
+    "interestExpense": 70000,
+    "depreciationAmortization": 35000,
+    "otherExpense": 25600,
+    "expense": 0,
+    "nonOperatingIncome": 0,
+    "nonOperatingExpense": 0,
+    "extraordinaryItems": 0,
+    "cash": 1250000,
+    "ar": 625400,
+    "retainageReceivables": 0,
+    "contractAssets": 0,
+    "inventory": 14280000,
+    "otherCA": 40000,
+    "tca": 16195400,
+    "fixedAssets": 2320000,
+    "constructionEquipment": 0,
+    "officeEquipment": 0,
+    "shopEquipment": 0,
+    "investments": 0,
+    "rightOfUseLeases": 0,
+    "otherAssets": 950000,
+    "totalAssets": 19465400,
+    "ap": 177000,
+    "loc": 0,
+    "contractLiabilities": 0,
+    "otherCL": 610000,
+    "tcl": 787000,
+    "ltd": 8350000,
+    "totalLiab": 9137000,
+    "ownersCapital": 0,
+    "ownersDraw": 0,
+    "commonStock": 1000000,
+    "preferredStock": 0,
+    "retainedEarnings": 3467000,
+    "additionalPaidInCapital": 0,
+    "treasuryStock": 0,
+    "totalEquity": 4467000,
+    "totalLAndE": 13604000,
+    "lobBreakdowns": {
+      "cash": {
+        "Unallocated": 1250000
+      },
+      "ar": {
+        "Unallocated": 625400
+      },
+      "otherCA": {
+        "Unallocated": 40000
+      },
+      "inventory": {
+        "Unallocated": 14280000
+      },
+      "fixedAssets": {
+        "Unallocated": 2320000
+      },
+      "otherAssets": {
+        "Unallocated": 950000
+      },
+      "ap": {
+        "Unallocated": 177000
+      },
+      "otherCL": {
+        "Unallocated": 610000
+      },
+      "ltd": {
+        "Unallocated": 8350000
+      },
+      "commonStock": {
+        "Unallocated": 1000000
+      },
+      "retainedEarnings": {
+        "Unallocated": 3467000
+      },
+      "rev_residential_sales_revenue": {
+        "Unallocated": 295000
+      },
+      "rev_commercial_sales_revenue": {
+        "Unallocated": 212400
+      },
+      "rev_property_management_fees": {
+        "Unallocated": 47200
+      },
+      "rev_insurance_commission_revenue": {
+        "Unallocated": 29500
+      },
+      "rev_mortgage_origination_revenue": {
+        "Unallocated": 64900
+      },
+      "rev_title_services_revenue": {
+        "Unallocated": 35400
+      },
+      "rev_rental_income": {
+        "Unallocated": 141600
+      },
+      "rev_other_revenue": {
+        "Unallocated": 11800
+      },
+      "cogs_residential_sales_commissions": {
+        "Unallocated": 103250
+      },
+      "cogs_commercial_sales_commissions": {
+        "Unallocated": 63720
+      },
+      "cogs_mortgage_processing_costs": {
+        "Unallocated": 12980
+      },
+      "cogs_title_search_and_closing_costs": {
+        "Unallocated": 8850
+      },
+      "cogs_insurance_carrier_costs": {
+        "Unallocated": 4425
+      },
+      "cogs_property_operations": {
+        "Unallocated": 28320
+      },
+      "payroll": {
+        "Unallocated": 247800
+      },
+      "salesExpense": {
+        "Unallocated": 29500
+      },
+      "rent": {
+        "Unallocated": 18000
+      },
+      "insurance": {
+        "Unallocated": 18160
+      },
+      "professionalFees": {
+        "Unallocated": 15000
+      },
+      "autoTravel": {
+        "Unallocated": 11000
+      },
+      "infrastructure": {
+        "Unallocated": 3000
+      },
+      "otherExpense": {
+        "Unallocated": 25600
+      },
+      "depreciationAmortization": {
+        "Unallocated": 35000
+      },
+      "interestExpense": {
+        "Unallocated": 70000
+      },
+      "federalIncomeTaxes": {
+        "Unallocated": 35799
+      }
+    },
+    "revenueBreakdown": {
+      "rev_residential_sales_revenue": 295000,
+      "rev_commercial_sales_revenue": 212400,
+      "rev_property_management_fees": 47200,
+      "rev_insurance_commission_revenue": 29500,
+      "rev_mortgage_origination_revenue": 64900,
+      "rev_title_services_revenue": 35400,
+      "rev_rental_income": 141600,
+      "rev_other_revenue": 11800
+    },
+    "expenseBreakdown": {
+      "Unallocated": 473060
+    },
+    "cogsBreakdown": {
+      "cogs_residential_sales_commissions": 103250,
+      "cogs_commercial_sales_commissions": 63720,
+      "cogs_mortgage_processing_costs": 12980,
+      "cogs_title_search_and_closing_costs": 8850,
+      "cogs_insurance_carrier_costs": 4425,
+      "cogs_property_operations": 28320
+    }
+  },
+  {
+    "monthDate": "2025-01-31T07:00:00.000Z",
+    "date": "2025-01-31T07:00:00.000Z",
+    "month": "2025-01",
+    "revenue": 844900,
+    "cogsPayroll": 0,
+    "cogsOwnerPay": 0,
+    "cogsContractors": 0,
+    "cogsMaterials": 0,
+    "cogsCommissions": 0,
+    "cogsOther": 0,
+    "cogsTotal": 223422,
+    "payroll": 249900,
+    "ownerBasePay": 0,
+    "benefits": 0,
+    "insurance": 18280,
+    "professionalFees": 15000,
+    "subcontractors": 0,
+    "rent": 18000,
+    "taxLicense": 0,
+    "stateIncomeTaxes": 0,
+    "federalIncomeTaxes": 36437,
+    "phoneComm": 0,
+    "infrastructure": 3000,
+    "autoTravel": 11000,
+    "salesExpense": 29750,
+    "marketing": 0,
+    "trainingCert": 0,
+    "mealsEntertainment": 0,
+    "interestExpense": 70000,
+    "depreciationAmortization": 35000,
+    "otherExpense": 25800,
+    "expense": 0,
+    "nonOperatingIncome": 0,
+    "nonOperatingExpense": 0,
+    "extraordinaryItems": 0,
+    "cash": 1275000,
+    "ar": 630700,
+    "retainageReceivables": 0,
+    "contractAssets": 0,
+    "inventory": 14340000,
+    "otherCA": 40000,
+    "tca": 16285700,
+    "fixedAssets": 2310000,
+    "constructionEquipment": 0,
+    "officeEquipment": 0,
+    "shopEquipment": 0,
+    "investments": 0,
+    "rightOfUseLeases": 0,
+    "otherAssets": 950000,
+    "totalAssets": 19545700,
+    "ap": 178500,
+    "loc": 0,
+    "contractLiabilities": 0,
+    "otherCL": 610000,
+    "tcl": 788500,
+    "ltd": 8325000,
+    "totalLiab": 9113500,
+    "ownersCapital": 0,
+    "ownersDraw": 0,
+    "commonStock": 1000000,
+    "preferredStock": 0,
+    "retainedEarnings": 3647000,
+    "additionalPaidInCapital": 0,
+    "treasuryStock": 0,
+    "totalEquity": 4647000,
+    "totalLAndE": 13760500,
+    "lobBreakdowns": {
+      "cash": {
+        "Unallocated": 1275000
+      },
+      "ar": {
+        "Unallocated": 630700
+      },
+      "otherCA": {
+        "Unallocated": 40000
+      },
+      "inventory": {
+        "Unallocated": 14340000
+      },
+      "fixedAssets": {
+        "Unallocated": 2310000
+      },
+      "otherAssets": {
+        "Unallocated": 950000
+      },
+      "ap": {
+        "Unallocated": 178500
+      },
+      "otherCL": {
+        "Unallocated": 610000
+      },
+      "ltd": {
+        "Unallocated": 8325000
+      },
+      "commonStock": {
+        "Unallocated": 1000000
+      },
+      "retainedEarnings": {
+        "Unallocated": 3647000
+      },
+      "rev_residential_sales_revenue": {
+        "Unallocated": 297500
+      },
+      "rev_commercial_sales_revenue": {
+        "Unallocated": 214200
+      },
+      "rev_property_management_fees": {
+        "Unallocated": 47600
+      },
+      "rev_insurance_commission_revenue": {
+        "Unallocated": 29750
+      },
+      "rev_mortgage_origination_revenue": {
+        "Unallocated": 65450
+      },
+      "rev_title_services_revenue": {
+        "Unallocated": 35700
+      },
+      "rev_rental_income": {
+        "Unallocated": 142800
+      },
+      "rev_other_revenue": {
+        "Unallocated": 11900
+      },
+      "cogs_residential_sales_commissions": {
+        "Unallocated": 104125
+      },
+      "cogs_commercial_sales_commissions": {
+        "Unallocated": 64260
+      },
+      "cogs_mortgage_processing_costs": {
+        "Unallocated": 13090
+      },
+      "cogs_title_search_and_closing_costs": {
+        "Unallocated": 8925
+      },
+      "cogs_insurance_carrier_costs": {
+        "Unallocated": 4462
+      },
+      "cogs_property_operations": {
+        "Unallocated": 28560
+      },
+      "payroll": {
+        "Unallocated": 249900
+      },
+      "salesExpense": {
+        "Unallocated": 29750
+      },
+      "rent": {
+        "Unallocated": 18000
+      },
+      "insurance": {
+        "Unallocated": 18280
+      },
+      "professionalFees": {
+        "Unallocated": 15000
+      },
+      "autoTravel": {
+        "Unallocated": 11000
+      },
+      "infrastructure": {
+        "Unallocated": 3000
+      },
+      "otherExpense": {
+        "Unallocated": 25800
+      },
+      "depreciationAmortization": {
+        "Unallocated": 35000
+      },
+      "interestExpense": {
+        "Unallocated": 70000
+      },
+      "federalIncomeTaxes": {
+        "Unallocated": 36437
+      }
+    },
+    "revenueBreakdown": {
+      "rev_residential_sales_revenue": 297500,
+      "rev_commercial_sales_revenue": 214200,
+      "rev_property_management_fees": 47600,
+      "rev_insurance_commission_revenue": 29750,
+      "rev_mortgage_origination_revenue": 65450,
+      "rev_title_services_revenue": 35700,
+      "rev_rental_income": 142800,
+      "rev_other_revenue": 11900
+    },
+    "expenseBreakdown": {
+      "Unallocated": 475730
+    },
+    "cogsBreakdown": {
+      "cogs_residential_sales_commissions": 104125,
+      "cogs_commercial_sales_commissions": 64260,
+      "cogs_mortgage_processing_costs": 13090,
+      "cogs_title_search_and_closing_costs": 8925,
+      "cogs_insurance_carrier_costs": 4462,
+      "cogs_property_operations": 28560
+    }
+  },
+  {
+    "monthDate": "2025-02-28T07:00:00.000Z",
+    "date": "2025-02-28T07:00:00.000Z",
+    "month": "2025-02",
+    "revenue": 852000,
+    "cogsPayroll": 0,
+    "cogsOwnerPay": 0,
+    "cogsContractors": 0,
+    "cogsMaterials": 0,
+    "cogsCommissions": 0,
+    "cogsOther": 0,
+    "cogsTotal": 225300,
+    "payroll": 252000,
+    "ownerBasePay": 0,
+    "benefits": 0,
+    "insurance": 18400,
+    "professionalFees": 15000,
+    "subcontractors": 0,
+    "rent": 18000,
+    "taxLicense": 0,
+    "stateIncomeTaxes": 0,
+    "federalIncomeTaxes": 37075,
+    "phoneComm": 0,
+    "infrastructure": 3000,
+    "autoTravel": 11000,
+    "salesExpense": 30000,
+    "marketing": 0,
+    "trainingCert": 0,
+    "mealsEntertainment": 0,
+    "interestExpense": 70000,
+    "depreciationAmortization": 35000,
+    "otherExpense": 26000,
+    "expense": 0,
+    "nonOperatingIncome": 0,
+    "nonOperatingExpense": 0,
+    "extraordinaryItems": 0,
+    "cash": 1300000,
+    "ar": 636000,
+    "retainageReceivables": 0,
+    "contractAssets": 0,
+    "inventory": 14400000,
+    "otherCA": 40000,
+    "tca": 16376000,
+    "fixedAssets": 2300000,
+    "constructionEquipment": 0,
+    "officeEquipment": 0,
+    "shopEquipment": 0,
+    "investments": 0,
+    "rightOfUseLeases": 0,
+    "otherAssets": 950000,
+    "totalAssets": 19626000,
+    "ap": 180000,
+    "loc": 0,
+    "contractLiabilities": 0,
+    "otherCL": 610000,
+    "tcl": 790000,
+    "ltd": 8300000,
+    "totalLiab": 9090000,
+    "ownersCapital": 0,
+    "ownersDraw": 0,
+    "commonStock": 1000000,
+    "preferredStock": 0,
+    "retainedEarnings": 3830000,
+    "additionalPaidInCapital": 0,
+    "treasuryStock": 0,
+    "totalEquity": 4830000,
+    "totalLAndE": 13920000,
+    "lobBreakdowns": {
+      "cash": {
+        "Unallocated": 1300000
+      },
+      "ar": {
+        "Unallocated": 636000
+      },
+      "otherCA": {
+        "Unallocated": 40000
+      },
+      "inventory": {
+        "Unallocated": 14400000
+      },
+      "fixedAssets": {
+        "Unallocated": 2300000
+      },
+      "otherAssets": {
+        "Unallocated": 950000
+      },
+      "ap": {
+        "Unallocated": 180000
+      },
+      "otherCL": {
+        "Unallocated": 610000
+      },
+      "ltd": {
+        "Unallocated": 8300000
+      },
+      "commonStock": {
+        "Unallocated": 1000000
+      },
+      "retainedEarnings": {
+        "Unallocated": 3830000
+      },
+      "rev_residential_sales_revenue": {
+        "Unallocated": 300000
+      },
+      "rev_commercial_sales_revenue": {
+        "Unallocated": 216000
+      },
+      "rev_property_management_fees": {
+        "Unallocated": 48000
+      },
+      "rev_insurance_commission_revenue": {
+        "Unallocated": 30000
+      },
+      "rev_mortgage_origination_revenue": {
+        "Unallocated": 66000
+      },
+      "rev_title_services_revenue": {
+        "Unallocated": 36000
+      },
+      "rev_rental_income": {
+        "Unallocated": 144000
+      },
+      "rev_other_revenue": {
+        "Unallocated": 12000
+      },
+      "cogs_residential_sales_commissions": {
+        "Unallocated": 105000
+      },
+      "cogs_commercial_sales_commissions": {
+        "Unallocated": 64800
+      },
+      "cogs_mortgage_processing_costs": {
+        "Unallocated": 13200
+      },
+      "cogs_title_search_and_closing_costs": {
+        "Unallocated": 9000
+      },
+      "cogs_insurance_carrier_costs": {
+        "Unallocated": 4500
+      },
+      "cogs_property_operations": {
+        "Unallocated": 28800
+      },
+      "payroll": {
+        "Unallocated": 252000
+      },
+      "salesExpense": {
+        "Unallocated": 30000
+      },
+      "rent": {
+        "Unallocated": 18000
+      },
+      "insurance": {
+        "Unallocated": 18400
+      },
+      "professionalFees": {
+        "Unallocated": 15000
+      },
+      "autoTravel": {
+        "Unallocated": 11000
+      },
+      "infrastructure": {
+        "Unallocated": 3000
+      },
+      "otherExpense": {
+        "Unallocated": 26000
+      },
+      "depreciationAmortization": {
+        "Unallocated": 35000
+      },
+      "interestExpense": {
+        "Unallocated": 70000
+      },
+      "federalIncomeTaxes": {
+        "Unallocated": 37075
+      }
+    },
+    "revenueBreakdown": {
+      "rev_residential_sales_revenue": 300000,
+      "rev_commercial_sales_revenue": 216000,
+      "rev_property_management_fees": 48000,
+      "rev_insurance_commission_revenue": 30000,
+      "rev_mortgage_origination_revenue": 66000,
+      "rev_title_services_revenue": 36000,
+      "rev_rental_income": 144000,
+      "rev_other_revenue": 12000
+    },
+    "expenseBreakdown": {
+      "Unallocated": 478400
+    },
+    "cogsBreakdown": {
+      "cogs_residential_sales_commissions": 105000,
+      "cogs_commercial_sales_commissions": 64800,
+      "cogs_mortgage_processing_costs": 13200,
+      "cogs_title_search_and_closing_costs": 9000,
+      "cogs_insurance_carrier_costs": 4500,
+      "cogs_property_operations": 28800
+    }
+  },
+  {
+    "monthDate": "2025-03-31T07:00:00.000Z",
+    "date": "2025-03-31T07:00:00.000Z",
+    "month": "2025-03",
+    "revenue": 859100,
+    "cogsPayroll": 0,
+    "cogsOwnerPay": 0,
+    "cogsContractors": 0,
+    "cogsMaterials": 0,
+    "cogsCommissions": 0,
+    "cogsOther": 0,
+    "cogsTotal": 227178,
+    "payroll": 254100,
+    "ownerBasePay": 0,
+    "benefits": 0,
+    "insurance": 18520,
+    "professionalFees": 15000,
+    "subcontractors": 0,
+    "rent": 18000,
+    "taxLicense": 0,
+    "stateIncomeTaxes": 0,
+    "federalIncomeTaxes": 37713,
+    "phoneComm": 0,
+    "infrastructure": 3000,
+    "autoTravel": 11000,
+    "salesExpense": 30250,
+    "marketing": 0,
+    "trainingCert": 0,
+    "mealsEntertainment": 0,
+    "interestExpense": 70000,
+    "depreciationAmortization": 35000,
+    "otherExpense": 26200,
+    "expense": 0,
+    "nonOperatingIncome": 0,
+    "nonOperatingExpense": 0,
+    "extraordinaryItems": 0,
+    "cash": 1325000,
+    "ar": 641300,
+    "retainageReceivables": 0,
+    "contractAssets": 0,
+    "inventory": 14460000,
+    "otherCA": 40000,
+    "tca": 16466300,
+    "fixedAssets": 2290000,
+    "constructionEquipment": 0,
+    "officeEquipment": 0,
+    "shopEquipment": 0,
+    "investments": 0,
+    "rightOfUseLeases": 0,
+    "otherAssets": 950000,
+    "totalAssets": 19706300,
+    "ap": 181500,
+    "loc": 0,
+    "contractLiabilities": 0,
+    "otherCL": 610000,
+    "tcl": 791500,
+    "ltd": 8275000,
+    "totalLiab": 9066500,
+    "ownersCapital": 0,
+    "ownersDraw": 0,
+    "commonStock": 1000000,
+    "preferredStock": 0,
+    "retainedEarnings": 4016000,
+    "additionalPaidInCapital": 0,
+    "treasuryStock": 0,
+    "totalEquity": 5016000,
+    "totalLAndE": 14082500,
+    "lobBreakdowns": {
+      "cash": {
+        "Unallocated": 1325000
+      },
+      "ar": {
+        "Unallocated": 641300
+      },
+      "otherCA": {
+        "Unallocated": 40000
+      },
+      "inventory": {
+        "Unallocated": 14460000
+      },
+      "fixedAssets": {
+        "Unallocated": 2290000
+      },
+      "otherAssets": {
+        "Unallocated": 950000
+      },
+      "ap": {
+        "Unallocated": 181500
+      },
+      "otherCL": {
+        "Unallocated": 610000
+      },
+      "ltd": {
+        "Unallocated": 8275000
+      },
+      "commonStock": {
+        "Unallocated": 1000000
+      },
+      "retainedEarnings": {
+        "Unallocated": 4016000
+      },
+      "rev_residential_sales_revenue": {
+        "Unallocated": 302500
+      },
+      "rev_commercial_sales_revenue": {
+        "Unallocated": 217800
+      },
+      "rev_property_management_fees": {
+        "Unallocated": 48400
+      },
+      "rev_insurance_commission_revenue": {
+        "Unallocated": 30250
+      },
+      "rev_mortgage_origination_revenue": {
+        "Unallocated": 66550
+      },
+      "rev_title_services_revenue": {
+        "Unallocated": 36300
+      },
+      "rev_rental_income": {
+        "Unallocated": 145200
+      },
+      "rev_other_revenue": {
+        "Unallocated": 12100
+      },
+      "cogs_residential_sales_commissions": {
+        "Unallocated": 105875
+      },
+      "cogs_commercial_sales_commissions": {
+        "Unallocated": 65340
+      },
+      "cogs_mortgage_processing_costs": {
+        "Unallocated": 13310
+      },
+      "cogs_title_search_and_closing_costs": {
+        "Unallocated": 9075
+      },
+      "cogs_insurance_carrier_costs": {
+        "Unallocated": 4538
+      },
+      "cogs_property_operations": {
+        "Unallocated": 29040
+      },
+      "payroll": {
+        "Unallocated": 254100
+      },
+      "salesExpense": {
+        "Unallocated": 30250
+      },
+      "rent": {
+        "Unallocated": 18000
+      },
+      "insurance": {
+        "Unallocated": 18520
+      },
+      "professionalFees": {
+        "Unallocated": 15000
+      },
+      "autoTravel": {
+        "Unallocated": 11000
+      },
+      "infrastructure": {
+        "Unallocated": 3000
+      },
+      "otherExpense": {
+        "Unallocated": 26200
+      },
+      "depreciationAmortization": {
+        "Unallocated": 35000
+      },
+      "interestExpense": {
+        "Unallocated": 70000
+      },
+      "federalIncomeTaxes": {
+        "Unallocated": 37713
+      }
+    },
+    "revenueBreakdown": {
+      "rev_residential_sales_revenue": 302500,
+      "rev_commercial_sales_revenue": 217800,
+      "rev_property_management_fees": 48400,
+      "rev_insurance_commission_revenue": 30250,
+      "rev_mortgage_origination_revenue": 66550,
+      "rev_title_services_revenue": 36300,
+      "rev_rental_income": 145200,
+      "rev_other_revenue": 12100
+    },
+    "expenseBreakdown": {
+      "Unallocated": 481070
+    },
+    "cogsBreakdown": {
+      "cogs_residential_sales_commissions": 105875,
+      "cogs_commercial_sales_commissions": 65340,
+      "cogs_mortgage_processing_costs": 13310,
+      "cogs_title_search_and_closing_costs": 9075,
+      "cogs_insurance_carrier_costs": 4538,
+      "cogs_property_operations": 29040
+    }
+  },
+  {
+    "monthDate": "2025-04-30T07:00:00.000Z",
+    "date": "2025-04-30T07:00:00.000Z",
+    "month": "2025-04",
+    "revenue": 866200,
+    "cogsPayroll": 0,
+    "cogsOwnerPay": 0,
+    "cogsContractors": 0,
+    "cogsMaterials": 0,
+    "cogsCommissions": 0,
+    "cogsOther": 0,
+    "cogsTotal": 229055,
+    "payroll": 256200,
+    "ownerBasePay": 0,
+    "benefits": 0,
+    "insurance": 18640,
+    "professionalFees": 15000,
+    "subcontractors": 0,
+    "rent": 18000,
+    "taxLicense": 0,
+    "stateIncomeTaxes": 0,
+    "federalIncomeTaxes": 38351,
+    "phoneComm": 0,
+    "infrastructure": 3000,
+    "autoTravel": 11000,
+    "salesExpense": 30500,
+    "marketing": 0,
+    "trainingCert": 0,
+    "mealsEntertainment": 0,
+    "interestExpense": 70000,
+    "depreciationAmortization": 35000,
+    "otherExpense": 26400,
+    "expense": 0,
+    "nonOperatingIncome": 0,
+    "nonOperatingExpense": 0,
+    "extraordinaryItems": 0,
+    "cash": 1350000,
+    "ar": 646600,
+    "retainageReceivables": 0,
+    "contractAssets": 0,
+    "inventory": 14520000,
+    "otherCA": 40000,
+    "tca": 16556600,
+    "fixedAssets": 2280000,
+    "constructionEquipment": 0,
+    "officeEquipment": 0,
+    "shopEquipment": 0,
+    "investments": 0,
+    "rightOfUseLeases": 0,
+    "otherAssets": 950000,
+    "totalAssets": 19786600,
+    "ap": 183000,
+    "loc": 0,
+    "contractLiabilities": 0,
+    "otherCL": 610000,
+    "tcl": 793000,
+    "ltd": 8250000,
+    "totalLiab": 9043000,
+    "ownersCapital": 0,
+    "ownersDraw": 0,
+    "commonStock": 1000000,
+    "preferredStock": 0,
+    "retainedEarnings": 4205000,
+    "additionalPaidInCapital": 0,
+    "treasuryStock": 0,
+    "totalEquity": 5205000,
+    "totalLAndE": 14248000,
+    "lobBreakdowns": {
+      "cash": {
+        "Unallocated": 1350000
+      },
+      "ar": {
+        "Unallocated": 646600
+      },
+      "otherCA": {
+        "Unallocated": 40000
+      },
+      "inventory": {
+        "Unallocated": 14520000
+      },
+      "fixedAssets": {
+        "Unallocated": 2280000
+      },
+      "otherAssets": {
+        "Unallocated": 950000
+      },
+      "ap": {
+        "Unallocated": 183000
+      },
+      "otherCL": {
+        "Unallocated": 610000
+      },
+      "ltd": {
+        "Unallocated": 8250000
+      },
+      "commonStock": {
+        "Unallocated": 1000000
+      },
+      "retainedEarnings": {
+        "Unallocated": 4205000
+      },
+      "rev_residential_sales_revenue": {
+        "Unallocated": 305000
+      },
+      "rev_commercial_sales_revenue": {
+        "Unallocated": 219600
+      },
+      "rev_property_management_fees": {
+        "Unallocated": 48800
+      },
+      "rev_insurance_commission_revenue": {
+        "Unallocated": 30500
+      },
+      "rev_mortgage_origination_revenue": {
+        "Unallocated": 67100
+      },
+      "rev_title_services_revenue": {
+        "Unallocated": 36600
+      },
+      "rev_rental_income": {
+        "Unallocated": 146400
+      },
+      "rev_other_revenue": {
+        "Unallocated": 12200
+      },
+      "cogs_residential_sales_commissions": {
+        "Unallocated": 106750
+      },
+      "cogs_commercial_sales_commissions": {
+        "Unallocated": 65880
+      },
+      "cogs_mortgage_processing_costs": {
+        "Unallocated": 13420
+      },
+      "cogs_title_search_and_closing_costs": {
+        "Unallocated": 9150
+      },
+      "cogs_insurance_carrier_costs": {
+        "Unallocated": 4575
+      },
+      "cogs_property_operations": {
+        "Unallocated": 29280
+      },
+      "payroll": {
+        "Unallocated": 256200
+      },
+      "salesExpense": {
+        "Unallocated": 30500
+      },
+      "rent": {
+        "Unallocated": 18000
+      },
+      "insurance": {
+        "Unallocated": 18640
+      },
+      "professionalFees": {
+        "Unallocated": 15000
+      },
+      "autoTravel": {
+        "Unallocated": 11000
+      },
+      "infrastructure": {
+        "Unallocated": 3000
+      },
+      "otherExpense": {
+        "Unallocated": 26400
+      },
+      "depreciationAmortization": {
+        "Unallocated": 35000
+      },
+      "interestExpense": {
+        "Unallocated": 70000
+      },
+      "federalIncomeTaxes": {
+        "Unallocated": 38351
+      }
+    },
+    "revenueBreakdown": {
+      "rev_residential_sales_revenue": 305000,
+      "rev_commercial_sales_revenue": 219600,
+      "rev_property_management_fees": 48800,
+      "rev_insurance_commission_revenue": 30500,
+      "rev_mortgage_origination_revenue": 67100,
+      "rev_title_services_revenue": 36600,
+      "rev_rental_income": 146400,
+      "rev_other_revenue": 12200
+    },
+    "expenseBreakdown": {
+      "Unallocated": 483740
+    },
+    "cogsBreakdown": {
+      "cogs_residential_sales_commissions": 106750,
+      "cogs_commercial_sales_commissions": 65880,
+      "cogs_mortgage_processing_costs": 13420,
+      "cogs_title_search_and_closing_costs": 9150,
+      "cogs_insurance_carrier_costs": 4575,
+      "cogs_property_operations": 29280
+    }
+  },
+  {
+    "monthDate": "2025-05-31T07:00:00.000Z",
+    "date": "2025-05-31T07:00:00.000Z",
+    "month": "2025-05",
+    "revenue": 873300,
+    "cogsPayroll": 0,
+    "cogsOwnerPay": 0,
+    "cogsContractors": 0,
+    "cogsMaterials": 0,
+    "cogsCommissions": 0,
+    "cogsOther": 0,
+    "cogsTotal": 230932,
+    "payroll": 258300,
+    "ownerBasePay": 0,
+    "benefits": 0,
+    "insurance": 18760,
+    "professionalFees": 15000,
+    "subcontractors": 0,
+    "rent": 18000,
+    "taxLicense": 0,
+    "stateIncomeTaxes": 0,
+    "federalIncomeTaxes": 38989,
+    "phoneComm": 0,
+    "infrastructure": 3000,
+    "autoTravel": 11000,
+    "salesExpense": 30750,
+    "marketing": 0,
+    "trainingCert": 0,
+    "mealsEntertainment": 0,
+    "interestExpense": 70000,
+    "depreciationAmortization": 35000,
+    "otherExpense": 26600,
+    "expense": 0,
+    "nonOperatingIncome": 0,
+    "nonOperatingExpense": 0,
+    "extraordinaryItems": 0,
+    "cash": 1375000,
+    "ar": 651900,
+    "retainageReceivables": 0,
+    "contractAssets": 0,
+    "inventory": 14580000,
+    "otherCA": 40000,
+    "tca": 16646900,
+    "fixedAssets": 2270000,
+    "constructionEquipment": 0,
+    "officeEquipment": 0,
+    "shopEquipment": 0,
+    "investments": 0,
+    "rightOfUseLeases": 0,
+    "otherAssets": 950000,
+    "totalAssets": 19866900,
+    "ap": 184500,
+    "loc": 0,
+    "contractLiabilities": 0,
+    "otherCL": 610000,
+    "tcl": 794500,
+    "ltd": 8225000,
+    "totalLiab": 9019500,
+    "ownersCapital": 0,
+    "ownersDraw": 0,
+    "commonStock": 1000000,
+    "preferredStock": 0,
+    "retainedEarnings": 4397000,
+    "additionalPaidInCapital": 0,
+    "treasuryStock": 0,
+    "totalEquity": 5397000,
+    "totalLAndE": 14416500,
+    "lobBreakdowns": {
+      "cash": {
+        "Unallocated": 1375000
+      },
+      "ar": {
+        "Unallocated": 651900
+      },
+      "otherCA": {
+        "Unallocated": 40000
+      },
+      "inventory": {
+        "Unallocated": 14580000
+      },
+      "fixedAssets": {
+        "Unallocated": 2270000
+      },
+      "otherAssets": {
+        "Unallocated": 950000
+      },
+      "ap": {
+        "Unallocated": 184500
+      },
+      "otherCL": {
+        "Unallocated": 610000
+      },
+      "ltd": {
+        "Unallocated": 8225000
+      },
+      "commonStock": {
+        "Unallocated": 1000000
+      },
+      "retainedEarnings": {
+        "Unallocated": 4397000
+      },
+      "rev_residential_sales_revenue": {
+        "Unallocated": 307500
+      },
+      "rev_commercial_sales_revenue": {
+        "Unallocated": 221400
+      },
+      "rev_property_management_fees": {
+        "Unallocated": 49200
+      },
+      "rev_insurance_commission_revenue": {
+        "Unallocated": 30750
+      },
+      "rev_mortgage_origination_revenue": {
+        "Unallocated": 67650
+      },
+      "rev_title_services_revenue": {
+        "Unallocated": 36900
+      },
+      "rev_rental_income": {
+        "Unallocated": 147600
+      },
+      "rev_other_revenue": {
+        "Unallocated": 12300
+      },
+      "cogs_residential_sales_commissions": {
+        "Unallocated": 107625
+      },
+      "cogs_commercial_sales_commissions": {
+        "Unallocated": 66420
+      },
+      "cogs_mortgage_processing_costs": {
+        "Unallocated": 13530
+      },
+      "cogs_title_search_and_closing_costs": {
+        "Unallocated": 9225
+      },
+      "cogs_insurance_carrier_costs": {
+        "Unallocated": 4612
+      },
+      "cogs_property_operations": {
+        "Unallocated": 29520
+      },
+      "payroll": {
+        "Unallocated": 258300
+      },
+      "salesExpense": {
+        "Unallocated": 30750
+      },
+      "rent": {
+        "Unallocated": 18000
+      },
+      "insurance": {
+        "Unallocated": 18760
+      },
+      "professionalFees": {
+        "Unallocated": 15000
+      },
+      "autoTravel": {
+        "Unallocated": 11000
+      },
+      "infrastructure": {
+        "Unallocated": 3000
+      },
+      "otherExpense": {
+        "Unallocated": 26600
+      },
+      "depreciationAmortization": {
+        "Unallocated": 35000
+      },
+      "interestExpense": {
+        "Unallocated": 70000
+      },
+      "federalIncomeTaxes": {
+        "Unallocated": 38989
+      }
+    },
+    "revenueBreakdown": {
+      "rev_residential_sales_revenue": 307500,
+      "rev_commercial_sales_revenue": 221400,
+      "rev_property_management_fees": 49200,
+      "rev_insurance_commission_revenue": 30750,
+      "rev_mortgage_origination_revenue": 67650,
+      "rev_title_services_revenue": 36900,
+      "rev_rental_income": 147600,
+      "rev_other_revenue": 12300
+    },
+    "expenseBreakdown": {
+      "Unallocated": 486410
+    },
+    "cogsBreakdown": {
+      "cogs_residential_sales_commissions": 107625,
+      "cogs_commercial_sales_commissions": 66420,
+      "cogs_mortgage_processing_costs": 13530,
+      "cogs_title_search_and_closing_costs": 9225,
+      "cogs_insurance_carrier_costs": 4612,
+      "cogs_property_operations": 29520
+    }
+  },
+  {
+    "monthDate": "2025-06-30T07:00:00.000Z",
+    "date": "2025-06-30T07:00:00.000Z",
+    "month": "2025-06",
+    "revenue": 880400,
+    "cogsPayroll": 0,
+    "cogsOwnerPay": 0,
+    "cogsContractors": 0,
+    "cogsMaterials": 0,
+    "cogsCommissions": 0,
+    "cogsOther": 0,
+    "cogsTotal": 232810,
+    "payroll": 260400,
+    "ownerBasePay": 0,
+    "benefits": 0,
+    "insurance": 18880,
+    "professionalFees": 15000,
+    "subcontractors": 0,
+    "rent": 18000,
+    "taxLicense": 0,
+    "stateIncomeTaxes": 0,
+    "federalIncomeTaxes": 39628,
+    "phoneComm": 0,
+    "infrastructure": 3000,
+    "autoTravel": 11000,
+    "salesExpense": 31000,
+    "marketing": 0,
+    "trainingCert": 0,
+    "mealsEntertainment": 0,
+    "interestExpense": 70000,
+    "depreciationAmortization": 35000,
+    "otherExpense": 26800,
+    "expense": 0,
+    "nonOperatingIncome": 0,
+    "nonOperatingExpense": 0,
+    "extraordinaryItems": 0,
+    "cash": 1400000,
+    "ar": 657200,
+    "retainageReceivables": 0,
+    "contractAssets": 0,
+    "inventory": 14640000,
+    "otherCA": 40000,
+    "tca": 16737200,
+    "fixedAssets": 2260000,
+    "constructionEquipment": 0,
+    "officeEquipment": 0,
+    "shopEquipment": 0,
+    "investments": 0,
+    "rightOfUseLeases": 0,
+    "otherAssets": 950000,
+    "totalAssets": 19947200,
+    "ap": 186000,
+    "loc": 0,
+    "contractLiabilities": 0,
+    "otherCL": 610000,
+    "tcl": 796000,
+    "ltd": 8200000,
+    "totalLiab": 8996000,
+    "ownersCapital": 0,
+    "ownersDraw": 0,
+    "commonStock": 1000000,
+    "preferredStock": 0,
+    "retainedEarnings": 4592000,
+    "additionalPaidInCapital": 0,
+    "treasuryStock": 0,
+    "totalEquity": 5592000,
+    "totalLAndE": 14588000,
+    "lobBreakdowns": {
+      "cash": {
+        "Unallocated": 1400000
+      },
+      "ar": {
+        "Unallocated": 657200
+      },
+      "otherCA": {
+        "Unallocated": 40000
+      },
+      "inventory": {
+        "Unallocated": 14640000
+      },
+      "fixedAssets": {
+        "Unallocated": 2260000
+      },
+      "otherAssets": {
+        "Unallocated": 950000
+      },
+      "ap": {
+        "Unallocated": 186000
+      },
+      "otherCL": {
+        "Unallocated": 610000
+      },
+      "ltd": {
+        "Unallocated": 8200000
+      },
+      "commonStock": {
+        "Unallocated": 1000000
+      },
+      "retainedEarnings": {
+        "Unallocated": 4592000
+      },
+      "rev_residential_sales_revenue": {
+        "Unallocated": 310000
+      },
+      "rev_commercial_sales_revenue": {
+        "Unallocated": 223200
+      },
+      "rev_property_management_fees": {
+        "Unallocated": 49600
+      },
+      "rev_insurance_commission_revenue": {
+        "Unallocated": 31000
+      },
+      "rev_mortgage_origination_revenue": {
+        "Unallocated": 68200
+      },
+      "rev_title_services_revenue": {
+        "Unallocated": 37200
+      },
+      "rev_rental_income": {
+        "Unallocated": 148800
+      },
+      "rev_other_revenue": {
+        "Unallocated": 12400
+      },
+      "cogs_residential_sales_commissions": {
+        "Unallocated": 108500
+      },
+      "cogs_commercial_sales_commissions": {
+        "Unallocated": 66960
+      },
+      "cogs_mortgage_processing_costs": {
+        "Unallocated": 13640
+      },
+      "cogs_title_search_and_closing_costs": {
+        "Unallocated": 9300
+      },
+      "cogs_insurance_carrier_costs": {
+        "Unallocated": 4650
+      },
+      "cogs_property_operations": {
+        "Unallocated": 29760
+      },
+      "payroll": {
+        "Unallocated": 260400
+      },
+      "salesExpense": {
+        "Unallocated": 31000
+      },
+      "rent": {
+        "Unallocated": 18000
+      },
+      "insurance": {
+        "Unallocated": 18880
+      },
+      "professionalFees": {
+        "Unallocated": 15000
+      },
+      "autoTravel": {
+        "Unallocated": 11000
+      },
+      "infrastructure": {
+        "Unallocated": 3000
+      },
+      "otherExpense": {
+        "Unallocated": 26800
+      },
+      "depreciationAmortization": {
+        "Unallocated": 35000
+      },
+      "interestExpense": {
+        "Unallocated": 70000
+      },
+      "federalIncomeTaxes": {
+        "Unallocated": 39628
+      }
+    },
+    "revenueBreakdown": {
+      "rev_residential_sales_revenue": 310000,
+      "rev_commercial_sales_revenue": 223200,
+      "rev_property_management_fees": 49600,
+      "rev_insurance_commission_revenue": 31000,
+      "rev_mortgage_origination_revenue": 68200,
+      "rev_title_services_revenue": 37200,
+      "rev_rental_income": 148800,
+      "rev_other_revenue": 12400
+    },
+    "expenseBreakdown": {
+      "Unallocated": 489080
+    },
+    "cogsBreakdown": {
+      "cogs_residential_sales_commissions": 108500,
+      "cogs_commercial_sales_commissions": 66960,
+      "cogs_mortgage_processing_costs": 13640,
+      "cogs_title_search_and_closing_costs": 9300,
+      "cogs_insurance_carrier_costs": 4650,
+      "cogs_property_operations": 29760
+    }
+  },
+  {
+    "monthDate": "2025-07-31T07:00:00.000Z",
+    "date": "2025-07-31T07:00:00.000Z",
+    "month": "2025-07",
+    "revenue": 887500,
+    "cogsPayroll": 0,
+    "cogsOwnerPay": 0,
+    "cogsContractors": 0,
+    "cogsMaterials": 0,
+    "cogsCommissions": 0,
+    "cogsOther": 0,
+    "cogsTotal": 234688,
+    "payroll": 262500,
+    "ownerBasePay": 0,
+    "benefits": 0,
+    "insurance": 19000,
+    "professionalFees": 15000,
+    "subcontractors": 0,
+    "rent": 18000,
+    "taxLicense": 0,
+    "stateIncomeTaxes": 0,
+    "federalIncomeTaxes": 40266,
+    "phoneComm": 0,
+    "infrastructure": 3000,
+    "autoTravel": 11000,
+    "salesExpense": 31250,
+    "marketing": 0,
+    "trainingCert": 0,
+    "mealsEntertainment": 0,
+    "interestExpense": 70000,
+    "depreciationAmortization": 35000,
+    "otherExpense": 27000,
+    "expense": 0,
+    "nonOperatingIncome": 0,
+    "nonOperatingExpense": 0,
+    "extraordinaryItems": 0,
+    "cash": 1425000,
+    "ar": 662500,
+    "retainageReceivables": 0,
+    "contractAssets": 0,
+    "inventory": 14700000,
+    "otherCA": 40000,
+    "tca": 16827500,
+    "fixedAssets": 2250000,
+    "constructionEquipment": 0,
+    "officeEquipment": 0,
+    "shopEquipment": 0,
+    "investments": 0,
+    "rightOfUseLeases": 0,
+    "otherAssets": 950000,
+    "totalAssets": 20027500,
+    "ap": 187500,
+    "loc": 0,
+    "contractLiabilities": 0,
+    "otherCL": 610000,
+    "tcl": 797500,
+    "ltd": 8175000,
+    "totalLiab": 8972500,
+    "ownersCapital": 0,
+    "ownersDraw": 0,
+    "commonStock": 1000000,
+    "preferredStock": 0,
+    "retainedEarnings": 4790000,
+    "additionalPaidInCapital": 0,
+    "treasuryStock": 0,
+    "totalEquity": 5790000,
+    "totalLAndE": 14762500,
+    "lobBreakdowns": {
+      "cash": {
+        "Unallocated": 1425000
+      },
+      "ar": {
+        "Unallocated": 662500
+      },
+      "otherCA": {
+        "Unallocated": 40000
+      },
+      "inventory": {
+        "Unallocated": 14700000
+      },
+      "fixedAssets": {
+        "Unallocated": 2250000
+      },
+      "otherAssets": {
+        "Unallocated": 950000
+      },
+      "ap": {
+        "Unallocated": 187500
+      },
+      "otherCL": {
+        "Unallocated": 610000
+      },
+      "ltd": {
+        "Unallocated": 8175000
+      },
+      "commonStock": {
+        "Unallocated": 1000000
+      },
+      "retainedEarnings": {
+        "Unallocated": 4790000
+      },
+      "rev_residential_sales_revenue": {
+        "Unallocated": 312500
+      },
+      "rev_commercial_sales_revenue": {
+        "Unallocated": 225000
+      },
+      "rev_property_management_fees": {
+        "Unallocated": 50000
+      },
+      "rev_insurance_commission_revenue": {
+        "Unallocated": 31250
+      },
+      "rev_mortgage_origination_revenue": {
+        "Unallocated": 68750
+      },
+      "rev_title_services_revenue": {
+        "Unallocated": 37500
+      },
+      "rev_rental_income": {
+        "Unallocated": 150000
+      },
+      "rev_other_revenue": {
+        "Unallocated": 12500
+      },
+      "cogs_residential_sales_commissions": {
+        "Unallocated": 109375
+      },
+      "cogs_commercial_sales_commissions": {
+        "Unallocated": 67500
+      },
+      "cogs_mortgage_processing_costs": {
+        "Unallocated": 13750
+      },
+      "cogs_title_search_and_closing_costs": {
+        "Unallocated": 9375
+      },
+      "cogs_insurance_carrier_costs": {
+        "Unallocated": 4688
+      },
+      "cogs_property_operations": {
+        "Unallocated": 30000
+      },
+      "payroll": {
+        "Unallocated": 262500
+      },
+      "salesExpense": {
+        "Unallocated": 31250
+      },
+      "rent": {
+        "Unallocated": 18000
+      },
+      "insurance": {
+        "Unallocated": 19000
+      },
+      "professionalFees": {
+        "Unallocated": 15000
+      },
+      "autoTravel": {
+        "Unallocated": 11000
+      },
+      "infrastructure": {
+        "Unallocated": 3000
+      },
+      "otherExpense": {
+        "Unallocated": 27000
+      },
+      "depreciationAmortization": {
+        "Unallocated": 35000
+      },
+      "interestExpense": {
+        "Unallocated": 70000
+      },
+      "federalIncomeTaxes": {
+        "Unallocated": 40266
+      }
+    },
+    "revenueBreakdown": {
+      "rev_residential_sales_revenue": 312500,
+      "rev_commercial_sales_revenue": 225000,
+      "rev_property_management_fees": 50000,
+      "rev_insurance_commission_revenue": 31250,
+      "rev_mortgage_origination_revenue": 68750,
+      "rev_title_services_revenue": 37500,
+      "rev_rental_income": 150000,
+      "rev_other_revenue": 12500
+    },
+    "expenseBreakdown": {
+      "Unallocated": 491750
+    },
+    "cogsBreakdown": {
+      "cogs_residential_sales_commissions": 109375,
+      "cogs_commercial_sales_commissions": 67500,
+      "cogs_mortgage_processing_costs": 13750,
+      "cogs_title_search_and_closing_costs": 9375,
+      "cogs_insurance_carrier_costs": 4688,
+      "cogs_property_operations": 30000
+    }
+  },
+  {
+    "monthDate": "2025-08-31T07:00:00.000Z",
+    "date": "2025-08-31T07:00:00.000Z",
+    "month": "2025-08",
+    "revenue": 894600,
+    "cogsPayroll": 0,
+    "cogsOwnerPay": 0,
+    "cogsContractors": 0,
+    "cogsMaterials": 0,
+    "cogsCommissions": 0,
+    "cogsOther": 0,
+    "cogsTotal": 236565,
+    "payroll": 264600,
+    "ownerBasePay": 0,
+    "benefits": 0,
+    "insurance": 19120,
+    "professionalFees": 15000,
+    "subcontractors": 0,
+    "rent": 18000,
+    "taxLicense": 0,
+    "stateIncomeTaxes": 0,
+    "federalIncomeTaxes": 40904,
+    "phoneComm": 0,
+    "infrastructure": 3000,
+    "autoTravel": 11000,
+    "salesExpense": 31500,
+    "marketing": 0,
+    "trainingCert": 0,
+    "mealsEntertainment": 0,
+    "interestExpense": 70000,
+    "depreciationAmortization": 35000,
+    "otherExpense": 27200,
+    "expense": 0,
+    "nonOperatingIncome": 0,
+    "nonOperatingExpense": 0,
+    "extraordinaryItems": 0,
+    "cash": 1450000,
+    "ar": 667800,
+    "retainageReceivables": 0,
+    "contractAssets": 0,
+    "inventory": 14760000,
+    "otherCA": 40000,
+    "tca": 16917800,
+    "fixedAssets": 2240000,
+    "constructionEquipment": 0,
+    "officeEquipment": 0,
+    "shopEquipment": 0,
+    "investments": 0,
+    "rightOfUseLeases": 0,
+    "otherAssets": 950000,
+    "totalAssets": 20107800,
+    "ap": 189000,
+    "loc": 0,
+    "contractLiabilities": 0,
+    "otherCL": 610000,
+    "tcl": 799000,
+    "ltd": 8150000,
+    "totalLiab": 8949000,
+    "ownersCapital": 0,
+    "ownersDraw": 0,
+    "commonStock": 1000000,
+    "preferredStock": 0,
+    "retainedEarnings": 4991000,
+    "additionalPaidInCapital": 0,
+    "treasuryStock": 0,
+    "totalEquity": 5991000,
+    "totalLAndE": 14940000,
+    "lobBreakdowns": {
+      "cash": {
+        "Unallocated": 1450000
+      },
+      "ar": {
+        "Unallocated": 667800
+      },
+      "otherCA": {
+        "Unallocated": 40000
+      },
+      "inventory": {
+        "Unallocated": 14760000
+      },
+      "fixedAssets": {
+        "Unallocated": 2240000
+      },
+      "otherAssets": {
+        "Unallocated": 950000
+      },
+      "ap": {
+        "Unallocated": 189000
+      },
+      "otherCL": {
+        "Unallocated": 610000
+      },
+      "ltd": {
+        "Unallocated": 8150000
+      },
+      "commonStock": {
+        "Unallocated": 1000000
+      },
+      "retainedEarnings": {
+        "Unallocated": 4991000
+      },
+      "rev_residential_sales_revenue": {
+        "Unallocated": 315000
+      },
+      "rev_commercial_sales_revenue": {
+        "Unallocated": 226800
+      },
+      "rev_property_management_fees": {
+        "Unallocated": 50400
+      },
+      "rev_insurance_commission_revenue": {
+        "Unallocated": 31500
+      },
+      "rev_mortgage_origination_revenue": {
+        "Unallocated": 69300
+      },
+      "rev_title_services_revenue": {
+        "Unallocated": 37800
+      },
+      "rev_rental_income": {
+        "Unallocated": 151200
+      },
+      "rev_other_revenue": {
+        "Unallocated": 12600
+      },
+      "cogs_residential_sales_commissions": {
+        "Unallocated": 110250
+      },
+      "cogs_commercial_sales_commissions": {
+        "Unallocated": 68040
+      },
+      "cogs_mortgage_processing_costs": {
+        "Unallocated": 13860
+      },
+      "cogs_title_search_and_closing_costs": {
+        "Unallocated": 9450
+      },
+      "cogs_insurance_carrier_costs": {
+        "Unallocated": 4725
+      },
+      "cogs_property_operations": {
+        "Unallocated": 30240
+      },
+      "payroll": {
+        "Unallocated": 264600
+      },
+      "salesExpense": {
+        "Unallocated": 31500
+      },
+      "rent": {
+        "Unallocated": 18000
+      },
+      "insurance": {
+        "Unallocated": 19120
+      },
+      "professionalFees": {
+        "Unallocated": 15000
+      },
+      "autoTravel": {
+        "Unallocated": 11000
+      },
+      "infrastructure": {
+        "Unallocated": 3000
+      },
+      "otherExpense": {
+        "Unallocated": 27200
+      },
+      "depreciationAmortization": {
+        "Unallocated": 35000
+      },
+      "interestExpense": {
+        "Unallocated": 70000
+      },
+      "federalIncomeTaxes": {
+        "Unallocated": 40904
+      }
+    },
+    "revenueBreakdown": {
+      "rev_residential_sales_revenue": 315000,
+      "rev_commercial_sales_revenue": 226800,
+      "rev_property_management_fees": 50400,
+      "rev_insurance_commission_revenue": 31500,
+      "rev_mortgage_origination_revenue": 69300,
+      "rev_title_services_revenue": 37800,
+      "rev_rental_income": 151200,
+      "rev_other_revenue": 12600
+    },
+    "expenseBreakdown": {
+      "Unallocated": 494420
+    },
+    "cogsBreakdown": {
+      "cogs_residential_sales_commissions": 110250,
+      "cogs_commercial_sales_commissions": 68040,
+      "cogs_mortgage_processing_costs": 13860,
+      "cogs_title_search_and_closing_costs": 9450,
+      "cogs_insurance_carrier_costs": 4725,
+      "cogs_property_operations": 30240
+    }
+  },
+  {
+    "monthDate": "2025-09-30T07:00:00.000Z",
+    "date": "2025-09-30T07:00:00.000Z",
+    "month": "2025-09",
+    "revenue": 901700,
+    "cogsPayroll": 0,
+    "cogsOwnerPay": 0,
+    "cogsContractors": 0,
+    "cogsMaterials": 0,
+    "cogsCommissions": 0,
+    "cogsOther": 0,
+    "cogsTotal": 238442,
+    "payroll": 266700,
+    "ownerBasePay": 0,
+    "benefits": 0,
+    "insurance": 19240,
+    "professionalFees": 15000,
+    "subcontractors": 0,
+    "rent": 18000,
+    "taxLicense": 0,
+    "stateIncomeTaxes": 0,
+    "federalIncomeTaxes": 41542,
+    "phoneComm": 0,
+    "infrastructure": 3000,
+    "autoTravel": 11000,
+    "salesExpense": 31750,
+    "marketing": 0,
+    "trainingCert": 0,
+    "mealsEntertainment": 0,
+    "interestExpense": 70000,
+    "depreciationAmortization": 35000,
+    "otherExpense": 27400,
+    "expense": 0,
+    "nonOperatingIncome": 0,
+    "nonOperatingExpense": 0,
+    "extraordinaryItems": 0,
+    "cash": 1475000,
+    "ar": 673100,
+    "retainageReceivables": 0,
+    "contractAssets": 0,
+    "inventory": 14820000,
+    "otherCA": 40000,
+    "tca": 17008100,
+    "fixedAssets": 2230000,
+    "constructionEquipment": 0,
+    "officeEquipment": 0,
+    "shopEquipment": 0,
+    "investments": 0,
+    "rightOfUseLeases": 0,
+    "otherAssets": 950000,
+    "totalAssets": 20188100,
+    "ap": 190500,
+    "loc": 0,
+    "contractLiabilities": 0,
+    "otherCL": 610000,
+    "tcl": 800500,
+    "ltd": 8125000,
+    "totalLiab": 8925500,
+    "ownersCapital": 0,
+    "ownersDraw": 0,
+    "commonStock": 1000000,
+    "preferredStock": 0,
+    "retainedEarnings": 5195000,
+    "additionalPaidInCapital": 0,
+    "treasuryStock": 0,
+    "totalEquity": 6195000,
+    "totalLAndE": 15120500,
+    "lobBreakdowns": {
+      "cash": {
+        "Unallocated": 1475000
+      },
+      "ar": {
+        "Unallocated": 673100
+      },
+      "otherCA": {
+        "Unallocated": 40000
+      },
+      "inventory": {
+        "Unallocated": 14820000
+      },
+      "fixedAssets": {
+        "Unallocated": 2230000
+      },
+      "otherAssets": {
+        "Unallocated": 950000
+      },
+      "ap": {
+        "Unallocated": 190500
+      },
+      "otherCL": {
+        "Unallocated": 610000
+      },
+      "ltd": {
+        "Unallocated": 8125000
+      },
+      "commonStock": {
+        "Unallocated": 1000000
+      },
+      "retainedEarnings": {
+        "Unallocated": 5195000
+      },
+      "rev_residential_sales_revenue": {
+        "Unallocated": 317500
+      },
+      "rev_commercial_sales_revenue": {
+        "Unallocated": 228600
+      },
+      "rev_property_management_fees": {
+        "Unallocated": 50800
+      },
+      "rev_insurance_commission_revenue": {
+        "Unallocated": 31750
+      },
+      "rev_mortgage_origination_revenue": {
+        "Unallocated": 69850
+      },
+      "rev_title_services_revenue": {
+        "Unallocated": 38100
+      },
+      "rev_rental_income": {
+        "Unallocated": 152400
+      },
+      "rev_other_revenue": {
+        "Unallocated": 12700
+      },
+      "cogs_residential_sales_commissions": {
+        "Unallocated": 111125
+      },
+      "cogs_commercial_sales_commissions": {
+        "Unallocated": 68580
+      },
+      "cogs_mortgage_processing_costs": {
+        "Unallocated": 13970
+      },
+      "cogs_title_search_and_closing_costs": {
+        "Unallocated": 9525
+      },
+      "cogs_insurance_carrier_costs": {
+        "Unallocated": 4762
+      },
+      "cogs_property_operations": {
+        "Unallocated": 30480
+      },
+      "payroll": {
+        "Unallocated": 266700
+      },
+      "salesExpense": {
+        "Unallocated": 31750
+      },
+      "rent": {
+        "Unallocated": 18000
+      },
+      "insurance": {
+        "Unallocated": 19240
+      },
+      "professionalFees": {
+        "Unallocated": 15000
+      },
+      "autoTravel": {
+        "Unallocated": 11000
+      },
+      "infrastructure": {
+        "Unallocated": 3000
+      },
+      "otherExpense": {
+        "Unallocated": 27400
+      },
+      "depreciationAmortization": {
+        "Unallocated": 35000
+      },
+      "interestExpense": {
+        "Unallocated": 70000
+      },
+      "federalIncomeTaxes": {
+        "Unallocated": 41542
+      }
+    },
+    "revenueBreakdown": {
+      "rev_residential_sales_revenue": 317500,
+      "rev_commercial_sales_revenue": 228600,
+      "rev_property_management_fees": 50800,
+      "rev_insurance_commission_revenue": 31750,
+      "rev_mortgage_origination_revenue": 69850,
+      "rev_title_services_revenue": 38100,
+      "rev_rental_income": 152400,
+      "rev_other_revenue": 12700
+    },
+    "expenseBreakdown": {
+      "Unallocated": 497090
+    },
+    "cogsBreakdown": {
+      "cogs_residential_sales_commissions": 111125,
+      "cogs_commercial_sales_commissions": 68580,
+      "cogs_mortgage_processing_costs": 13970,
+      "cogs_title_search_and_closing_costs": 9525,
+      "cogs_insurance_carrier_costs": 4762,
+      "cogs_property_operations": 30480
+    }
+  },
+  {
+    "monthDate": "2025-10-31T07:00:00.000Z",
+    "date": "2025-10-31T07:00:00.000Z",
+    "month": "2025-10",
+    "revenue": 908800,
+    "cogsPayroll": 0,
+    "cogsOwnerPay": 0,
+    "cogsContractors": 0,
+    "cogsMaterials": 0,
+    "cogsCommissions": 0,
+    "cogsOther": 0,
+    "cogsTotal": 240320,
+    "payroll": 268800,
+    "ownerBasePay": 0,
+    "benefits": 0,
+    "insurance": 19360,
+    "professionalFees": 15000,
+    "subcontractors": 0,
+    "rent": 18000,
+    "taxLicense": 0,
+    "stateIncomeTaxes": 0,
+    "federalIncomeTaxes": 42180,
+    "phoneComm": 0,
+    "infrastructure": 3000,
+    "autoTravel": 11000,
+    "salesExpense": 32000,
+    "marketing": 0,
+    "trainingCert": 0,
+    "mealsEntertainment": 0,
+    "interestExpense": 70000,
+    "depreciationAmortization": 35000,
+    "otherExpense": 27600,
+    "expense": 0,
+    "nonOperatingIncome": 0,
+    "nonOperatingExpense": 0,
+    "extraordinaryItems": 0,
+    "cash": 1500000,
+    "ar": 678400,
+    "retainageReceivables": 0,
+    "contractAssets": 0,
+    "inventory": 14880000,
+    "otherCA": 40000,
+    "tca": 17098400,
+    "fixedAssets": 2220000,
+    "constructionEquipment": 0,
+    "officeEquipment": 0,
+    "shopEquipment": 0,
+    "investments": 0,
+    "rightOfUseLeases": 0,
+    "otherAssets": 950000,
+    "totalAssets": 20268400,
+    "ap": 192000,
+    "loc": 0,
+    "contractLiabilities": 0,
+    "otherCL": 610000,
+    "tcl": 802000,
+    "ltd": 8100000,
+    "totalLiab": 8902000,
+    "ownersCapital": 0,
+    "ownersDraw": 0,
+    "commonStock": 1000000,
+    "preferredStock": 0,
+    "retainedEarnings": 5402000,
+    "additionalPaidInCapital": 0,
+    "treasuryStock": 0,
+    "totalEquity": 6402000,
+    "totalLAndE": 15304000,
+    "lobBreakdowns": {
+      "cash": {
+        "Unallocated": 1500000
+      },
+      "ar": {
+        "Unallocated": 678400
+      },
+      "otherCA": {
+        "Unallocated": 40000
+      },
+      "inventory": {
+        "Unallocated": 14880000
+      },
+      "fixedAssets": {
+        "Unallocated": 2220000
+      },
+      "otherAssets": {
+        "Unallocated": 950000
+      },
+      "ap": {
+        "Unallocated": 192000
+      },
+      "otherCL": {
+        "Unallocated": 610000
+      },
+      "ltd": {
+        "Unallocated": 8100000
+      },
+      "commonStock": {
+        "Unallocated": 1000000
+      },
+      "retainedEarnings": {
+        "Unallocated": 5402000
+      },
+      "rev_residential_sales_revenue": {
+        "Unallocated": 320000
+      },
+      "rev_commercial_sales_revenue": {
+        "Unallocated": 230400
+      },
+      "rev_property_management_fees": {
+        "Unallocated": 51200
+      },
+      "rev_insurance_commission_revenue": {
+        "Unallocated": 32000
+      },
+      "rev_mortgage_origination_revenue": {
+        "Unallocated": 70400
+      },
+      "rev_title_services_revenue": {
+        "Unallocated": 38400
+      },
+      "rev_rental_income": {
+        "Unallocated": 153600
+      },
+      "rev_other_revenue": {
+        "Unallocated": 12800
+      },
+      "cogs_residential_sales_commissions": {
+        "Unallocated": 112000
+      },
+      "cogs_commercial_sales_commissions": {
+        "Unallocated": 69120
+      },
+      "cogs_mortgage_processing_costs": {
+        "Unallocated": 14080
+      },
+      "cogs_title_search_and_closing_costs": {
+        "Unallocated": 9600
+      },
+      "cogs_insurance_carrier_costs": {
+        "Unallocated": 4800
+      },
+      "cogs_property_operations": {
+        "Unallocated": 30720
+      },
+      "payroll": {
+        "Unallocated": 268800
+      },
+      "salesExpense": {
+        "Unallocated": 32000
+      },
+      "rent": {
+        "Unallocated": 18000
+      },
+      "insurance": {
+        "Unallocated": 19360
+      },
+      "professionalFees": {
+        "Unallocated": 15000
+      },
+      "autoTravel": {
+        "Unallocated": 11000
+      },
+      "infrastructure": {
+        "Unallocated": 3000
+      },
+      "otherExpense": {
+        "Unallocated": 27600
+      },
+      "depreciationAmortization": {
+        "Unallocated": 35000
+      },
+      "interestExpense": {
+        "Unallocated": 70000
+      },
+      "federalIncomeTaxes": {
+        "Unallocated": 42180
+      }
+    },
+    "revenueBreakdown": {
+      "rev_residential_sales_revenue": 320000,
+      "rev_commercial_sales_revenue": 230400,
+      "rev_property_management_fees": 51200,
+      "rev_insurance_commission_revenue": 32000,
+      "rev_mortgage_origination_revenue": 70400,
+      "rev_title_services_revenue": 38400,
+      "rev_rental_income": 153600,
+      "rev_other_revenue": 12800
+    },
+    "expenseBreakdown": {
+      "Unallocated": 499760
+    },
+    "cogsBreakdown": {
+      "cogs_residential_sales_commissions": 112000,
+      "cogs_commercial_sales_commissions": 69120,
+      "cogs_mortgage_processing_costs": 14080,
+      "cogs_title_search_and_closing_costs": 9600,
+      "cogs_insurance_carrier_costs": 4800,
+      "cogs_property_operations": 30720
+    }
+  },
+  {
+    "monthDate": "2025-11-30T07:00:00.000Z",
+    "date": "2025-11-30T07:00:00.000Z",
+    "month": "2025-11",
+    "revenue": 915900,
+    "cogsPayroll": 0,
+    "cogsOwnerPay": 0,
+    "cogsContractors": 0,
+    "cogsMaterials": 0,
+    "cogsCommissions": 0,
+    "cogsOther": 0,
+    "cogsTotal": 242198,
+    "payroll": 270900,
+    "ownerBasePay": 0,
+    "benefits": 0,
+    "insurance": 19480,
+    "professionalFees": 15000,
+    "subcontractors": 0,
+    "rent": 18000,
+    "taxLicense": 0,
+    "stateIncomeTaxes": 0,
+    "federalIncomeTaxes": 42818,
+    "phoneComm": 0,
+    "infrastructure": 3000,
+    "autoTravel": 11000,
+    "salesExpense": 32250,
+    "marketing": 0,
+    "trainingCert": 0,
+    "mealsEntertainment": 0,
+    "interestExpense": 70000,
+    "depreciationAmortization": 35000,
+    "otherExpense": 27800,
+    "expense": 0,
+    "nonOperatingIncome": 0,
+    "nonOperatingExpense": 0,
+    "extraordinaryItems": 0,
+    "cash": 1525000,
+    "ar": 683700,
+    "retainageReceivables": 0,
+    "contractAssets": 0,
+    "inventory": 14940000,
+    "otherCA": 40000,
+    "tca": 17188700,
+    "fixedAssets": 2210000,
+    "constructionEquipment": 0,
+    "officeEquipment": 0,
+    "shopEquipment": 0,
+    "investments": 0,
+    "rightOfUseLeases": 0,
+    "otherAssets": 950000,
+    "totalAssets": 20348700,
+    "ap": 193500,
+    "loc": 0,
+    "contractLiabilities": 0,
+    "otherCL": 610000,
+    "tcl": 803500,
+    "ltd": 8075000,
+    "totalLiab": 8878500,
+    "ownersCapital": 0,
+    "ownersDraw": 0,
+    "commonStock": 1000000,
+    "preferredStock": 0,
+    "retainedEarnings": 5612000,
+    "additionalPaidInCapital": 0,
+    "treasuryStock": 0,
+    "totalEquity": 6612000,
+    "totalLAndE": 15490500,
+    "lobBreakdowns": {
+      "cash": {
+        "Unallocated": 1525000
+      },
+      "ar": {
+        "Unallocated": 683700
+      },
+      "otherCA": {
+        "Unallocated": 40000
+      },
+      "inventory": {
+        "Unallocated": 14940000
+      },
+      "fixedAssets": {
+        "Unallocated": 2210000
+      },
+      "otherAssets": {
+        "Unallocated": 950000
+      },
+      "ap": {
+        "Unallocated": 193500
+      },
+      "otherCL": {
+        "Unallocated": 610000
+      },
+      "ltd": {
+        "Unallocated": 8075000
+      },
+      "commonStock": {
+        "Unallocated": 1000000
+      },
+      "retainedEarnings": {
+        "Unallocated": 5612000
+      },
+      "rev_residential_sales_revenue": {
+        "Unallocated": 322500
+      },
+      "rev_commercial_sales_revenue": {
+        "Unallocated": 232200
+      },
+      "rev_property_management_fees": {
+        "Unallocated": 51600
+      },
+      "rev_insurance_commission_revenue": {
+        "Unallocated": 32250
+      },
+      "rev_mortgage_origination_revenue": {
+        "Unallocated": 70950
+      },
+      "rev_title_services_revenue": {
+        "Unallocated": 38700
+      },
+      "rev_rental_income": {
+        "Unallocated": 154800
+      },
+      "rev_other_revenue": {
+        "Unallocated": 12900
+      },
+      "cogs_residential_sales_commissions": {
+        "Unallocated": 112875
+      },
+      "cogs_commercial_sales_commissions": {
+        "Unallocated": 69660
+      },
+      "cogs_mortgage_processing_costs": {
+        "Unallocated": 14190
+      },
+      "cogs_title_search_and_closing_costs": {
+        "Unallocated": 9675
+      },
+      "cogs_insurance_carrier_costs": {
+        "Unallocated": 4838
+      },
+      "cogs_property_operations": {
+        "Unallocated": 30960
+      },
+      "payroll": {
+        "Unallocated": 270900
+      },
+      "salesExpense": {
+        "Unallocated": 32250
+      },
+      "rent": {
+        "Unallocated": 18000
+      },
+      "insurance": {
+        "Unallocated": 19480
+      },
+      "professionalFees": {
+        "Unallocated": 15000
+      },
+      "autoTravel": {
+        "Unallocated": 11000
+      },
+      "infrastructure": {
+        "Unallocated": 3000
+      },
+      "otherExpense": {
+        "Unallocated": 27800
+      },
+      "depreciationAmortization": {
+        "Unallocated": 35000
+      },
+      "interestExpense": {
+        "Unallocated": 70000
+      },
+      "federalIncomeTaxes": {
+        "Unallocated": 42818
+      }
+    },
+    "revenueBreakdown": {
+      "rev_residential_sales_revenue": 322500,
+      "rev_commercial_sales_revenue": 232200,
+      "rev_property_management_fees": 51600,
+      "rev_insurance_commission_revenue": 32250,
+      "rev_mortgage_origination_revenue": 70950,
+      "rev_title_services_revenue": 38700,
+      "rev_rental_income": 154800,
+      "rev_other_revenue": 12900
+    },
+    "expenseBreakdown": {
+      "Unallocated": 502430
+    },
+    "cogsBreakdown": {
+      "cogs_residential_sales_commissions": 112875,
+      "cogs_commercial_sales_commissions": 69660,
+      "cogs_mortgage_processing_costs": 14190,
+      "cogs_title_search_and_closing_costs": 9675,
+      "cogs_insurance_carrier_costs": 4838,
+      "cogs_property_operations": 30960
+    }
+  },
+  {
+    "monthDate": "2025-12-31T07:00:00.000Z",
+    "date": "2025-12-31T07:00:00.000Z",
+    "month": "2025-12",
+    "revenue": 923000,
+    "cogsPayroll": 0,
+    "cogsOwnerPay": 0,
+    "cogsContractors": 0,
+    "cogsMaterials": 0,
+    "cogsCommissions": 0,
+    "cogsOther": 0,
+    "cogsTotal": 244075,
+    "payroll": 273000,
+    "ownerBasePay": 0,
+    "benefits": 0,
+    "insurance": 19600,
+    "professionalFees": 15000,
+    "subcontractors": 0,
+    "rent": 18000,
+    "taxLicense": 0,
+    "stateIncomeTaxes": 0,
+    "federalIncomeTaxes": 43456,
+    "phoneComm": 0,
+    "infrastructure": 3000,
+    "autoTravel": 11000,
+    "salesExpense": 32500,
+    "marketing": 0,
+    "trainingCert": 0,
+    "mealsEntertainment": 0,
+    "interestExpense": 70000,
+    "depreciationAmortization": 35000,
+    "otherExpense": 28000,
+    "expense": 0,
+    "nonOperatingIncome": 0,
+    "nonOperatingExpense": 0,
+    "extraordinaryItems": 0,
+    "cash": 1550000,
+    "ar": 689000,
+    "retainageReceivables": 0,
+    "contractAssets": 0,
+    "inventory": 15000000,
+    "otherCA": 40000,
+    "tca": 17279000,
+    "fixedAssets": 2200000,
+    "constructionEquipment": 0,
+    "officeEquipment": 0,
+    "shopEquipment": 0,
+    "investments": 0,
+    "rightOfUseLeases": 0,
+    "otherAssets": 950000,
+    "totalAssets": 20429000,
+    "ap": 195000,
+    "loc": 0,
+    "contractLiabilities": 0,
+    "otherCL": 610000,
+    "tcl": 805000,
+    "ltd": 8050000,
+    "totalLiab": 8855000,
+    "ownersCapital": 0,
+    "ownersDraw": 0,
+    "commonStock": 1000000,
+    "preferredStock": 0,
+    "retainedEarnings": 5825000,
+    "additionalPaidInCapital": 0,
+    "treasuryStock": 0,
+    "totalEquity": 6825000,
+    "totalLAndE": 15680000,
+    "lobBreakdowns": {
+      "cash": {
+        "Unallocated": 1550000
+      },
+      "ar": {
+        "Unallocated": 689000
+      },
+      "otherCA": {
+        "Unallocated": 40000
+      },
+      "inventory": {
+        "Unallocated": 15000000
+      },
+      "fixedAssets": {
+        "Unallocated": 2200000
+      },
+      "otherAssets": {
+        "Unallocated": 950000
+      },
+      "ap": {
+        "Unallocated": 195000
+      },
+      "otherCL": {
+        "Unallocated": 610000
+      },
+      "ltd": {
+        "Unallocated": 8050000
+      },
+      "commonStock": {
+        "Unallocated": 1000000
+      },
+      "retainedEarnings": {
+        "Unallocated": 5825000
+      },
+      "rev_residential_sales_revenue": {
+        "Unallocated": 325000
+      },
+      "rev_commercial_sales_revenue": {
+        "Unallocated": 234000
+      },
+      "rev_property_management_fees": {
+        "Unallocated": 52000
+      },
+      "rev_insurance_commission_revenue": {
+        "Unallocated": 32500
+      },
+      "rev_mortgage_origination_revenue": {
+        "Unallocated": 71500
+      },
+      "rev_title_services_revenue": {
+        "Unallocated": 39000
+      },
+      "rev_rental_income": {
+        "Unallocated": 156000
+      },
+      "rev_other_revenue": {
+        "Unallocated": 13000
+      },
+      "cogs_residential_sales_commissions": {
+        "Unallocated": 113750
+      },
+      "cogs_commercial_sales_commissions": {
+        "Unallocated": 70200
+      },
+      "cogs_mortgage_processing_costs": {
+        "Unallocated": 14300
+      },
+      "cogs_title_search_and_closing_costs": {
+        "Unallocated": 9750
+      },
+      "cogs_insurance_carrier_costs": {
+        "Unallocated": 4875
+      },
+      "cogs_property_operations": {
+        "Unallocated": 31200
+      },
+      "payroll": {
+        "Unallocated": 273000
+      },
+      "salesExpense": {
+        "Unallocated": 32500
+      },
+      "rent": {
+        "Unallocated": 18000
+      },
+      "insurance": {
+        "Unallocated": 19600
+      },
+      "professionalFees": {
+        "Unallocated": 15000
+      },
+      "autoTravel": {
+        "Unallocated": 11000
+      },
+      "infrastructure": {
+        "Unallocated": 3000
+      },
+      "otherExpense": {
+        "Unallocated": 28000
+      },
+      "depreciationAmortization": {
+        "Unallocated": 35000
+      },
+      "interestExpense": {
+        "Unallocated": 70000
+      },
+      "federalIncomeTaxes": {
+        "Unallocated": 43456
+      }
+    },
+    "revenueBreakdown": {
+      "rev_residential_sales_revenue": 325000,
+      "rev_commercial_sales_revenue": 234000,
+      "rev_property_management_fees": 52000,
+      "rev_insurance_commission_revenue": 32500,
+      "rev_mortgage_origination_revenue": 71500,
+      "rev_title_services_revenue": 39000,
+      "rev_rental_income": 156000,
+      "rev_other_revenue": 13000
+    },
+    "expenseBreakdown": {
+      "Unallocated": 505100
+    },
+    "cogsBreakdown": {
+      "cogs_residential_sales_commissions": 113750,
+      "cogs_commercial_sales_commissions": 70200,
+      "cogs_mortgage_processing_costs": 14300,
+      "cogs_title_search_and_closing_costs": 9750,
+      "cogs_insurance_carrier_costs": 4875,
+      "cogs_property_operations": 31200
+    }
+  },
+  {
+    "monthDate": "2026-01-31T07:00:00.000Z",
+    "date": "2026-01-31T07:00:00.000Z",
+    "month": "2026-01",
+    "revenue": 930100,
+    "cogsPayroll": 0,
+    "cogsOwnerPay": 0,
+    "cogsContractors": 0,
+    "cogsMaterials": 0,
+    "cogsCommissions": 0,
+    "cogsOther": 0,
+    "cogsTotal": 245952,
+    "payroll": 275100,
+    "ownerBasePay": 0,
+    "benefits": 0,
+    "insurance": 19720,
+    "professionalFees": 15000,
+    "subcontractors": 0,
+    "rent": 18000,
+    "taxLicense": 0,
+    "stateIncomeTaxes": 0,
+    "federalIncomeTaxes": 44094,
+    "phoneComm": 0,
+    "infrastructure": 3000,
+    "autoTravel": 11000,
+    "salesExpense": 32750,
+    "marketing": 0,
+    "trainingCert": 0,
+    "mealsEntertainment": 0,
+    "interestExpense": 70000,
+    "depreciationAmortization": 35000,
+    "otherExpense": 28200,
+    "expense": 0,
+    "nonOperatingIncome": 0,
+    "nonOperatingExpense": 0,
+    "extraordinaryItems": 0,
+    "cash": 1575000,
+    "ar": 694300,
+    "retainageReceivables": 0,
+    "contractAssets": 0,
+    "inventory": 15060000,
+    "otherCA": 40000,
+    "tca": 17369300,
+    "fixedAssets": 2190000,
+    "constructionEquipment": 0,
+    "officeEquipment": 0,
+    "shopEquipment": 0,
+    "investments": 0,
+    "rightOfUseLeases": 0,
+    "otherAssets": 950000,
+    "totalAssets": 20509300,
+    "ap": 196500,
+    "loc": 0,
+    "contractLiabilities": 0,
+    "otherCL": 610000,
+    "tcl": 806500,
+    "ltd": 8025000,
+    "totalLiab": 8831500,
+    "ownersCapital": 0,
+    "ownersDraw": 0,
+    "commonStock": 1000000,
+    "preferredStock": 0,
+    "retainedEarnings": 6041000,
+    "additionalPaidInCapital": 0,
+    "treasuryStock": 0,
+    "totalEquity": 7041000,
+    "totalLAndE": 15872500,
+    "lobBreakdowns": {
+      "cash": {
+        "Unallocated": 1575000
+      },
+      "ar": {
+        "Unallocated": 694300
+      },
+      "otherCA": {
+        "Unallocated": 40000
+      },
+      "inventory": {
+        "Unallocated": 15060000
+      },
+      "fixedAssets": {
+        "Unallocated": 2190000
+      },
+      "otherAssets": {
+        "Unallocated": 950000
+      },
+      "ap": {
+        "Unallocated": 196500
+      },
+      "otherCL": {
+        "Unallocated": 610000
+      },
+      "ltd": {
+        "Unallocated": 8025000
+      },
+      "commonStock": {
+        "Unallocated": 1000000
+      },
+      "retainedEarnings": {
+        "Unallocated": 6041000
+      },
+      "rev_residential_sales_revenue": {
+        "Unallocated": 327500
+      },
+      "rev_commercial_sales_revenue": {
+        "Unallocated": 235800
+      },
+      "rev_property_management_fees": {
+        "Unallocated": 52400
+      },
+      "rev_insurance_commission_revenue": {
+        "Unallocated": 32750
+      },
+      "rev_mortgage_origination_revenue": {
+        "Unallocated": 72050
+      },
+      "rev_title_services_revenue": {
+        "Unallocated": 39300
+      },
+      "rev_rental_income": {
+        "Unallocated": 157200
+      },
+      "rev_other_revenue": {
+        "Unallocated": 13100
+      },
+      "cogs_residential_sales_commissions": {
+        "Unallocated": 114625
+      },
+      "cogs_commercial_sales_commissions": {
+        "Unallocated": 70740
+      },
+      "cogs_mortgage_processing_costs": {
+        "Unallocated": 14410
+      },
+      "cogs_title_search_and_closing_costs": {
+        "Unallocated": 9825
+      },
+      "cogs_insurance_carrier_costs": {
+        "Unallocated": 4912
+      },
+      "cogs_property_operations": {
+        "Unallocated": 31440
+      },
+      "payroll": {
+        "Unallocated": 275100
+      },
+      "salesExpense": {
+        "Unallocated": 32750
+      },
+      "rent": {
+        "Unallocated": 18000
+      },
+      "insurance": {
+        "Unallocated": 19720
+      },
+      "professionalFees": {
+        "Unallocated": 15000
+      },
+      "autoTravel": {
+        "Unallocated": 11000
+      },
+      "infrastructure": {
+        "Unallocated": 3000
+      },
+      "otherExpense": {
+        "Unallocated": 28200
+      },
+      "depreciationAmortization": {
+        "Unallocated": 35000
+      },
+      "interestExpense": {
+        "Unallocated": 70000
+      },
+      "federalIncomeTaxes": {
+        "Unallocated": 44094
+      }
+    },
+    "revenueBreakdown": {
+      "rev_residential_sales_revenue": 327500,
+      "rev_commercial_sales_revenue": 235800,
+      "rev_property_management_fees": 52400,
+      "rev_insurance_commission_revenue": 32750,
+      "rev_mortgage_origination_revenue": 72050,
+      "rev_title_services_revenue": 39300,
+      "rev_rental_income": 157200,
+      "rev_other_revenue": 13100
+    },
+    "expenseBreakdown": {
+      "Unallocated": 507770
+    },
+    "cogsBreakdown": {
+      "cogs_residential_sales_commissions": 114625,
+      "cogs_commercial_sales_commissions": 70740,
+      "cogs_mortgage_processing_costs": 14410,
+      "cogs_title_search_and_closing_costs": 9825,
+      "cogs_insurance_carrier_costs": 4912,
+      "cogs_property_operations": 31440
+    }
+  },
+  {
+    "monthDate": "2026-02-28T07:00:00.000Z",
+    "date": "2026-02-28T07:00:00.000Z",
+    "month": "2026-02",
+    "revenue": 937200,
+    "cogsPayroll": 0,
+    "cogsOwnerPay": 0,
+    "cogsContractors": 0,
+    "cogsMaterials": 0,
+    "cogsCommissions": 0,
+    "cogsOther": 0,
+    "cogsTotal": 247830,
+    "payroll": 277200,
+    "ownerBasePay": 0,
+    "benefits": 0,
+    "insurance": 19840,
+    "professionalFees": 15000,
+    "subcontractors": 0,
+    "rent": 18000,
+    "taxLicense": 0,
+    "stateIncomeTaxes": 0,
+    "federalIncomeTaxes": 44732,
+    "phoneComm": 0,
+    "infrastructure": 3000,
+    "autoTravel": 11000,
+    "salesExpense": 33000,
+    "marketing": 0,
+    "trainingCert": 0,
+    "mealsEntertainment": 0,
+    "interestExpense": 70000,
+    "depreciationAmortization": 35000,
+    "otherExpense": 28400,
+    "expense": 0,
+    "nonOperatingIncome": 0,
+    "nonOperatingExpense": 0,
+    "extraordinaryItems": 0,
+    "cash": 1600000,
+    "ar": 699600,
+    "retainageReceivables": 0,
+    "contractAssets": 0,
+    "inventory": 15120000,
+    "otherCA": 40000,
+    "tca": 17459600,
+    "fixedAssets": 2180000,
+    "constructionEquipment": 0,
+    "officeEquipment": 0,
+    "shopEquipment": 0,
+    "investments": 0,
+    "rightOfUseLeases": 0,
+    "otherAssets": 950000,
+    "totalAssets": 20589600,
+    "ap": 198000,
+    "loc": 0,
+    "contractLiabilities": 0,
+    "otherCL": 610000,
+    "tcl": 808000,
+    "ltd": 8000000,
+    "totalLiab": 8808000,
+    "ownersCapital": 0,
+    "ownersDraw": 0,
+    "commonStock": 1000000,
+    "preferredStock": 0,
+    "retainedEarnings": 6260000,
+    "additionalPaidInCapital": 0,
+    "treasuryStock": 0,
+    "totalEquity": 7260000,
+    "totalLAndE": 16068000,
+    "lobBreakdowns": {
+      "cash": {
+        "Unallocated": 1600000
+      },
+      "ar": {
+        "Unallocated": 699600
+      },
+      "otherCA": {
+        "Unallocated": 40000
+      },
+      "inventory": {
+        "Unallocated": 15120000
+      },
+      "fixedAssets": {
+        "Unallocated": 2180000
+      },
+      "otherAssets": {
+        "Unallocated": 950000
+      },
+      "ap": {
+        "Unallocated": 198000
+      },
+      "otherCL": {
+        "Unallocated": 610000
+      },
+      "ltd": {
+        "Unallocated": 8000000
+      },
+      "commonStock": {
+        "Unallocated": 1000000
+      },
+      "retainedEarnings": {
+        "Unallocated": 6260000
+      },
+      "rev_residential_sales_revenue": {
+        "Unallocated": 330000
+      },
+      "rev_commercial_sales_revenue": {
+        "Unallocated": 237600
+      },
+      "rev_property_management_fees": {
+        "Unallocated": 52800
+      },
+      "rev_insurance_commission_revenue": {
+        "Unallocated": 33000
+      },
+      "rev_mortgage_origination_revenue": {
+        "Unallocated": 72600
+      },
+      "rev_title_services_revenue": {
+        "Unallocated": 39600
+      },
+      "rev_rental_income": {
+        "Unallocated": 158400
+      },
+      "rev_other_revenue": {
+        "Unallocated": 13200
+      },
+      "cogs_residential_sales_commissions": {
+        "Unallocated": 115500
+      },
+      "cogs_commercial_sales_commissions": {
+        "Unallocated": 71280
+      },
+      "cogs_mortgage_processing_costs": {
+        "Unallocated": 14520
+      },
+      "cogs_title_search_and_closing_costs": {
+        "Unallocated": 9900
+      },
+      "cogs_insurance_carrier_costs": {
+        "Unallocated": 4950
+      },
+      "cogs_property_operations": {
+        "Unallocated": 31680
+      },
+      "payroll": {
+        "Unallocated": 277200
+      },
+      "salesExpense": {
+        "Unallocated": 33000
+      },
+      "rent": {
+        "Unallocated": 18000
+      },
+      "insurance": {
+        "Unallocated": 19840
+      },
+      "professionalFees": {
+        "Unallocated": 15000
+      },
+      "autoTravel": {
+        "Unallocated": 11000
+      },
+      "infrastructure": {
+        "Unallocated": 3000
+      },
+      "otherExpense": {
+        "Unallocated": 28400
+      },
+      "depreciationAmortization": {
+        "Unallocated": 35000
+      },
+      "interestExpense": {
+        "Unallocated": 70000
+      },
+      "federalIncomeTaxes": {
+        "Unallocated": 44732
+      }
+    },
+    "revenueBreakdown": {
+      "rev_residential_sales_revenue": 330000,
+      "rev_commercial_sales_revenue": 237600,
+      "rev_property_management_fees": 52800,
+      "rev_insurance_commission_revenue": 33000,
+      "rev_mortgage_origination_revenue": 72600,
+      "rev_title_services_revenue": 39600,
+      "rev_rental_income": 158400,
+      "rev_other_revenue": 13200
+    },
+    "expenseBreakdown": {
+      "Unallocated": 510440
+    },
+    "cogsBreakdown": {
+      "cogs_residential_sales_commissions": 115500,
+      "cogs_commercial_sales_commissions": 71280,
+      "cogs_mortgage_processing_costs": 14520,
+      "cogs_title_search_and_closing_costs": 9900,
+      "cogs_insurance_carrier_costs": 4950,
+      "cogs_property_operations": 31680
+    }
+  },
+  {
+    "monthDate": "2026-03-31T07:00:00.000Z",
+    "date": "2026-03-31T07:00:00.000Z",
+    "month": "2026-03",
+    "revenue": 944300,
+    "cogsPayroll": 0,
+    "cogsOwnerPay": 0,
+    "cogsContractors": 0,
+    "cogsMaterials": 0,
+    "cogsCommissions": 0,
+    "cogsOther": 0,
+    "cogsTotal": 249708,
+    "payroll": 279300,
+    "ownerBasePay": 0,
+    "benefits": 0,
+    "insurance": 19960,
+    "professionalFees": 15000,
+    "subcontractors": 0,
+    "rent": 18000,
+    "taxLicense": 0,
+    "stateIncomeTaxes": 0,
+    "federalIncomeTaxes": 45371,
+    "phoneComm": 0,
+    "infrastructure": 3000,
+    "autoTravel": 11000,
+    "salesExpense": 33250,
+    "marketing": 0,
+    "trainingCert": 0,
+    "mealsEntertainment": 0,
+    "interestExpense": 70000,
+    "depreciationAmortization": 35000,
+    "otherExpense": 28600,
+    "expense": 0,
+    "nonOperatingIncome": 0,
+    "nonOperatingExpense": 0,
+    "extraordinaryItems": 0,
+    "cash": 1625000,
+    "ar": 704900,
+    "retainageReceivables": 0,
+    "contractAssets": 0,
+    "inventory": 15180000,
+    "otherCA": 40000,
+    "tca": 17549900,
+    "fixedAssets": 2170000,
+    "constructionEquipment": 0,
+    "officeEquipment": 0,
+    "shopEquipment": 0,
+    "investments": 0,
+    "rightOfUseLeases": 0,
+    "otherAssets": 950000,
+    "totalAssets": 20669900,
+    "ap": 199500,
+    "loc": 0,
+    "contractLiabilities": 0,
+    "otherCL": 610000,
+    "tcl": 809500,
+    "ltd": 7975000,
+    "totalLiab": 8784500,
+    "ownersCapital": 0,
+    "ownersDraw": 0,
+    "commonStock": 1000000,
+    "preferredStock": 0,
+    "retainedEarnings": 6482000,
+    "additionalPaidInCapital": 0,
+    "treasuryStock": 0,
+    "totalEquity": 7482000,
+    "totalLAndE": 16266500,
+    "lobBreakdowns": {
+      "cash": {
+        "Unallocated": 1625000
+      },
+      "ar": {
+        "Unallocated": 704900
+      },
+      "otherCA": {
+        "Unallocated": 40000
+      },
+      "inventory": {
+        "Unallocated": 15180000
+      },
+      "fixedAssets": {
+        "Unallocated": 2170000
+      },
+      "otherAssets": {
+        "Unallocated": 950000
+      },
+      "ap": {
+        "Unallocated": 199500
+      },
+      "otherCL": {
+        "Unallocated": 610000
+      },
+      "ltd": {
+        "Unallocated": 7975000
+      },
+      "commonStock": {
+        "Unallocated": 1000000
+      },
+      "retainedEarnings": {
+        "Unallocated": 6482000
+      },
+      "rev_residential_sales_revenue": {
+        "Unallocated": 332500
+      },
+      "rev_commercial_sales_revenue": {
+        "Unallocated": 239400
+      },
+      "rev_property_management_fees": {
+        "Unallocated": 53200
+      },
+      "rev_insurance_commission_revenue": {
+        "Unallocated": 33250
+      },
+      "rev_mortgage_origination_revenue": {
+        "Unallocated": 73150
+      },
+      "rev_title_services_revenue": {
+        "Unallocated": 39900
+      },
+      "rev_rental_income": {
+        "Unallocated": 159600
+      },
+      "rev_other_revenue": {
+        "Unallocated": 13300
+      },
+      "cogs_residential_sales_commissions": {
+        "Unallocated": 116375
+      },
+      "cogs_commercial_sales_commissions": {
+        "Unallocated": 71820
+      },
+      "cogs_mortgage_processing_costs": {
+        "Unallocated": 14630
+      },
+      "cogs_title_search_and_closing_costs": {
+        "Unallocated": 9975
+      },
+      "cogs_insurance_carrier_costs": {
+        "Unallocated": 4988
+      },
+      "cogs_property_operations": {
+        "Unallocated": 31920
+      },
+      "payroll": {
+        "Unallocated": 279300
+      },
+      "salesExpense": {
+        "Unallocated": 33250
+      },
+      "rent": {
+        "Unallocated": 18000
+      },
+      "insurance": {
+        "Unallocated": 19960
+      },
+      "professionalFees": {
+        "Unallocated": 15000
+      },
+      "autoTravel": {
+        "Unallocated": 11000
+      },
+      "infrastructure": {
+        "Unallocated": 3000
+      },
+      "otherExpense": {
+        "Unallocated": 28600
+      },
+      "depreciationAmortization": {
+        "Unallocated": 35000
+      },
+      "interestExpense": {
+        "Unallocated": 70000
+      },
+      "federalIncomeTaxes": {
+        "Unallocated": 45371
+      }
+    },
+    "revenueBreakdown": {
+      "rev_residential_sales_revenue": 332500,
+      "rev_commercial_sales_revenue": 239400,
+      "rev_property_management_fees": 53200,
+      "rev_insurance_commission_revenue": 33250,
+      "rev_mortgage_origination_revenue": 73150,
+      "rev_title_services_revenue": 39900,
+      "rev_rental_income": 159600,
+      "rev_other_revenue": 13300
+    },
+    "expenseBreakdown": {
+      "Unallocated": 513110
+    },
+    "cogsBreakdown": {
+      "cogs_residential_sales_commissions": 116375,
+      "cogs_commercial_sales_commissions": 71820,
+      "cogs_mortgage_processing_costs": 14630,
+      "cogs_title_search_and_closing_costs": 9975,
+      "cogs_insurance_carrier_costs": 4988,
+      "cogs_property_operations": 31920
+    }
+  },
+  {
+    "monthDate": "2026-04-30T07:00:00.000Z",
+    "date": "2026-04-30T07:00:00.000Z",
+    "month": "2026-04",
+    "revenue": 951400,
+    "cogsPayroll": 0,
+    "cogsOwnerPay": 0,
+    "cogsContractors": 0,
+    "cogsMaterials": 0,
+    "cogsCommissions": 0,
+    "cogsOther": 0,
+    "cogsTotal": 251585,
+    "payroll": 281400,
+    "ownerBasePay": 0,
+    "benefits": 0,
+    "insurance": 20080,
+    "professionalFees": 15000,
+    "subcontractors": 0,
+    "rent": 18000,
+    "taxLicense": 0,
+    "stateIncomeTaxes": 0,
+    "federalIncomeTaxes": 46009,
+    "phoneComm": 0,
+    "infrastructure": 3000,
+    "autoTravel": 11000,
+    "salesExpense": 33500,
+    "marketing": 0,
+    "trainingCert": 0,
+    "mealsEntertainment": 0,
+    "interestExpense": 70000,
+    "depreciationAmortization": 35000,
+    "otherExpense": 28800,
+    "expense": 0,
+    "nonOperatingIncome": 0,
+    "nonOperatingExpense": 0,
+    "extraordinaryItems": 0,
+    "cash": 1650000,
+    "ar": 710200,
+    "retainageReceivables": 0,
+    "contractAssets": 0,
+    "inventory": 15240000,
+    "otherCA": 40000,
+    "tca": 17640200,
+    "fixedAssets": 2160000,
+    "constructionEquipment": 0,
+    "officeEquipment": 0,
+    "shopEquipment": 0,
+    "investments": 0,
+    "rightOfUseLeases": 0,
+    "otherAssets": 950000,
+    "totalAssets": 20750200,
+    "ap": 201000,
+    "loc": 0,
+    "contractLiabilities": 0,
+    "otherCL": 610000,
+    "tcl": 811000,
+    "ltd": 7950000,
+    "totalLiab": 8761000,
+    "ownersCapital": 0,
+    "ownersDraw": 0,
+    "commonStock": 1000000,
+    "preferredStock": 0,
+    "retainedEarnings": 6707000,
+    "additionalPaidInCapital": 0,
+    "treasuryStock": 0,
+    "totalEquity": 7707000,
+    "totalLAndE": 16468000,
+    "lobBreakdowns": {
+      "cash": {
+        "Unallocated": 1650000
+      },
+      "ar": {
+        "Unallocated": 710200
+      },
+      "otherCA": {
+        "Unallocated": 40000
+      },
+      "inventory": {
+        "Unallocated": 15240000
+      },
+      "fixedAssets": {
+        "Unallocated": 2160000
+      },
+      "otherAssets": {
+        "Unallocated": 950000
+      },
+      "ap": {
+        "Unallocated": 201000
+      },
+      "otherCL": {
+        "Unallocated": 610000
+      },
+      "ltd": {
+        "Unallocated": 7950000
+      },
+      "commonStock": {
+        "Unallocated": 1000000
+      },
+      "retainedEarnings": {
+        "Unallocated": 6707000
+      },
+      "rev_residential_sales_revenue": {
+        "Unallocated": 335000
+      },
+      "rev_commercial_sales_revenue": {
+        "Unallocated": 241200
+      },
+      "rev_property_management_fees": {
+        "Unallocated": 53600
+      },
+      "rev_insurance_commission_revenue": {
+        "Unallocated": 33500
+      },
+      "rev_mortgage_origination_revenue": {
+        "Unallocated": 73700
+      },
+      "rev_title_services_revenue": {
+        "Unallocated": 40200
+      },
+      "rev_rental_income": {
+        "Unallocated": 160800
+      },
+      "rev_other_revenue": {
+        "Unallocated": 13400
+      },
+      "cogs_residential_sales_commissions": {
+        "Unallocated": 117250
+      },
+      "cogs_commercial_sales_commissions": {
+        "Unallocated": 72360
+      },
+      "cogs_mortgage_processing_costs": {
+        "Unallocated": 14740
+      },
+      "cogs_title_search_and_closing_costs": {
+        "Unallocated": 10050
+      },
+      "cogs_insurance_carrier_costs": {
+        "Unallocated": 5025
+      },
+      "cogs_property_operations": {
+        "Unallocated": 32160
+      },
+      "payroll": {
+        "Unallocated": 281400
+      },
+      "salesExpense": {
+        "Unallocated": 33500
+      },
+      "rent": {
+        "Unallocated": 18000
+      },
+      "insurance": {
+        "Unallocated": 20080
+      },
+      "professionalFees": {
+        "Unallocated": 15000
+      },
+      "autoTravel": {
+        "Unallocated": 11000
+      },
+      "infrastructure": {
+        "Unallocated": 3000
+      },
+      "otherExpense": {
+        "Unallocated": 28800
+      },
+      "depreciationAmortization": {
+        "Unallocated": 35000
+      },
+      "interestExpense": {
+        "Unallocated": 70000
+      },
+      "federalIncomeTaxes": {
+        "Unallocated": 46009
+      }
+    },
+    "revenueBreakdown": {
+      "rev_residential_sales_revenue": 335000,
+      "rev_commercial_sales_revenue": 241200,
+      "rev_property_management_fees": 53600,
+      "rev_insurance_commission_revenue": 33500,
+      "rev_mortgage_origination_revenue": 73700,
+      "rev_title_services_revenue": 40200,
+      "rev_rental_income": 160800,
+      "rev_other_revenue": 13400
+    },
+    "expenseBreakdown": {
+      "Unallocated": 515780
+    },
+    "cogsBreakdown": {
+      "cogs_residential_sales_commissions": 117250,
+      "cogs_commercial_sales_commissions": 72360,
+      "cogs_mortgage_processing_costs": 14740,
+      "cogs_title_search_and_closing_costs": 10050,
+      "cogs_insurance_carrier_costs": 5025,
+      "cogs_property_operations": 32160
+    }
+  },
+  {
+    "monthDate": "2026-05-31T07:00:00.000Z",
+    "date": "2026-05-31T07:00:00.000Z",
+    "month": "2026-05",
+    "revenue": 958500,
+    "cogsPayroll": 0,
+    "cogsOwnerPay": 0,
+    "cogsContractors": 0,
+    "cogsMaterials": 0,
+    "cogsCommissions": 0,
+    "cogsOther": 0,
+    "cogsTotal": 253462,
+    "payroll": 283500,
+    "ownerBasePay": 0,
+    "benefits": 0,
+    "insurance": 20200,
+    "professionalFees": 15000,
+    "subcontractors": 0,
+    "rent": 18000,
+    "taxLicense": 0,
+    "stateIncomeTaxes": 0,
+    "federalIncomeTaxes": 46647,
+    "phoneComm": 0,
+    "infrastructure": 3000,
+    "autoTravel": 11000,
+    "salesExpense": 33750,
+    "marketing": 0,
+    "trainingCert": 0,
+    "mealsEntertainment": 0,
+    "interestExpense": 70000,
+    "depreciationAmortization": 35000,
+    "otherExpense": 29000,
+    "expense": 0,
+    "nonOperatingIncome": 0,
+    "nonOperatingExpense": 0,
+    "extraordinaryItems": 0,
+    "cash": 1675000,
+    "ar": 715500,
+    "retainageReceivables": 0,
+    "contractAssets": 0,
+    "inventory": 15300000,
+    "otherCA": 40000,
+    "tca": 17730500,
+    "fixedAssets": 2150000,
+    "constructionEquipment": 0,
+    "officeEquipment": 0,
+    "shopEquipment": 0,
+    "investments": 0,
+    "rightOfUseLeases": 0,
+    "otherAssets": 950000,
+    "totalAssets": 20830500,
+    "ap": 202500,
+    "loc": 0,
+    "contractLiabilities": 0,
+    "otherCL": 610000,
+    "tcl": 812500,
+    "ltd": 7925000,
+    "totalLiab": 8737500,
+    "ownersCapital": 0,
+    "ownersDraw": 0,
+    "commonStock": 1000000,
+    "preferredStock": 0,
+    "retainedEarnings": 6935000,
+    "additionalPaidInCapital": 0,
+    "treasuryStock": 0,
+    "totalEquity": 7935000,
+    "totalLAndE": 16672500,
+    "lobBreakdowns": {
+      "cash": {
+        "Unallocated": 1675000
+      },
+      "ar": {
+        "Unallocated": 715500
+      },
+      "otherCA": {
+        "Unallocated": 40000
+      },
+      "inventory": {
+        "Unallocated": 15300000
+      },
+      "fixedAssets": {
+        "Unallocated": 2150000
+      },
+      "otherAssets": {
+        "Unallocated": 950000
+      },
+      "ap": {
+        "Unallocated": 202500
+      },
+      "otherCL": {
+        "Unallocated": 610000
+      },
+      "ltd": {
+        "Unallocated": 7925000
+      },
+      "commonStock": {
+        "Unallocated": 1000000
+      },
+      "retainedEarnings": {
+        "Unallocated": 6935000
+      },
+      "rev_residential_sales_revenue": {
+        "Unallocated": 337500
+      },
+      "rev_commercial_sales_revenue": {
+        "Unallocated": 243000
+      },
+      "rev_property_management_fees": {
+        "Unallocated": 54000
+      },
+      "rev_insurance_commission_revenue": {
+        "Unallocated": 33750
+      },
+      "rev_mortgage_origination_revenue": {
+        "Unallocated": 74250
+      },
+      "rev_title_services_revenue": {
+        "Unallocated": 40500
+      },
+      "rev_rental_income": {
+        "Unallocated": 162000
+      },
+      "rev_other_revenue": {
+        "Unallocated": 13500
+      },
+      "cogs_residential_sales_commissions": {
+        "Unallocated": 118125
+      },
+      "cogs_commercial_sales_commissions": {
+        "Unallocated": 72900
+      },
+      "cogs_mortgage_processing_costs": {
+        "Unallocated": 14850
+      },
+      "cogs_title_search_and_closing_costs": {
+        "Unallocated": 10125
+      },
+      "cogs_insurance_carrier_costs": {
+        "Unallocated": 5062
+      },
+      "cogs_property_operations": {
+        "Unallocated": 32400
+      },
+      "payroll": {
+        "Unallocated": 283500
+      },
+      "salesExpense": {
+        "Unallocated": 33750
+      },
+      "rent": {
+        "Unallocated": 18000
+      },
+      "insurance": {
+        "Unallocated": 20200
+      },
+      "professionalFees": {
+        "Unallocated": 15000
+      },
+      "autoTravel": {
+        "Unallocated": 11000
+      },
+      "infrastructure": {
+        "Unallocated": 3000
+      },
+      "otherExpense": {
+        "Unallocated": 29000
+      },
+      "depreciationAmortization": {
+        "Unallocated": 35000
+      },
+      "interestExpense": {
+        "Unallocated": 70000
+      },
+      "federalIncomeTaxes": {
+        "Unallocated": 46647
+      }
+    },
+    "revenueBreakdown": {
+      "rev_residential_sales_revenue": 337500,
+      "rev_commercial_sales_revenue": 243000,
+      "rev_property_management_fees": 54000,
+      "rev_insurance_commission_revenue": 33750,
+      "rev_mortgage_origination_revenue": 74250,
+      "rev_title_services_revenue": 40500,
+      "rev_rental_income": 162000,
+      "rev_other_revenue": 13500
+    },
+    "expenseBreakdown": {
+      "Unallocated": 518450
+    },
+    "cogsBreakdown": {
+      "cogs_residential_sales_commissions": 118125,
+      "cogs_commercial_sales_commissions": 72900,
+      "cogs_mortgage_processing_costs": 14850,
+      "cogs_title_search_and_closing_costs": 10125,
+      "cogs_insurance_carrier_costs": 5062,
+      "cogs_property_operations": 32400
+    }
+  }
+]

@@ -804,6 +804,14 @@ export default function OperationsTab({
   const [selectedResidentialFunnelRegion, setSelectedResidentialFunnelRegion] = useState('__ALL__');
   const [salesHistoryCategoriesExpanded, setSalesHistoryCategoriesExpanded] = useState(true);
   const [expandedSalesHistoryCategories, setExpandedSalesHistoryCategories] = useState<Record<string, boolean>>({});
+  const [salesHistoryRangeMode, setSalesHistoryRangeMode] = useState<'all' | 'last30' | 'last90' | 'ytd' | 'last12' | 'custom'>('all');
+  const [salesHistoryRollup, setSalesHistoryRollup] = useState<'daily' | 'monthly' | 'quarterly' | 'annual'>('monthly');
+  const [salesHistoryStartDate, setSalesHistoryStartDate] = useState('');
+  const [salesHistoryEndDate, setSalesHistoryEndDate] = useState('');
+  const [grossMarginHistoryRangeMode, setGrossMarginHistoryRangeMode] = useState<'all' | 'last30' | 'last90' | 'ytd' | 'last12' | 'custom'>('last12');
+  const [grossMarginHistoryRollup, setGrossMarginHistoryRollup] = useState<'daily' | 'monthly' | 'quarterly' | 'annual'>('monthly');
+  const [grossMarginHistoryStartDate, setGrossMarginHistoryStartDate] = useState('');
+  const [grossMarginHistoryEndDate, setGrossMarginHistoryEndDate] = useState('');
   const [hiddenCategorySalesSeries, setHiddenCategorySalesSeries] = useState<Record<string, boolean>>({});
   const [opsSectorLayoutConfig, setOpsSectorLayoutConfig] = useState<any | null>(null);
   const [smartCardsLoading, setSmartCardsLoading] = useState(false);
@@ -862,7 +870,7 @@ export default function OperationsTab({
     'label' | 'category' | 'salesUnits' | 'buysUnits' | 'avgStockUnits' | 'latestOnHandUnits' | 'sellThroughPct' | 'turnRate'
   >('turnRate');
   const [retailTurnsSortDir, setRetailTurnsSortDir] = useState<'asc' | 'desc'>('desc');
-  const [productScopeMode, setProductScopeMode] = useState<'total' | 'product'>('total');
+  const [productScopeMode, setProductScopeMode] = useState<'total' | 'product'>('product');
   const [selectedScopeSku, setSelectedScopeSku] = useState('');
   const [productReportView, setProductReportView] = useState<ProductReportView>('productMarginAnalysis');
   const [productMarginCustomerFilter, setProductMarginCustomerFilter] = useState('all');
@@ -3157,8 +3165,27 @@ export default function OperationsTab({
         : customerRevenuePeriodMode === 'quarter'
           ? 'quarterKey'
           : 'monthKey';
+    const concentrationMonthlyCustomerRows = Array.isArray(summary?.customerConcentration?.customerMonthly)
+      ? summary.customerConcentration.customerMonthly
+      : [];
+    const concentrationPeriodRows = concentrationMonthlyCustomerRows
+      .map((row: any) => {
+        const monthKey = String(row?.monthKey || '').trim();
+        if (!/^\d{4}-\d{2}$/.test(monthKey)) return null;
+        const yearKey = monthKey.slice(0, 4);
+        const month = Number(monthKey.slice(5, 7));
+        return {
+          yearKey,
+          quarterKey: `${yearKey}-Q${Math.floor((month - 1) / 3) + 1}`,
+          monthKey,
+        };
+      })
+      .filter((row: any): row is { yearKey: string; quarterKey: string; monthKey: string } => Boolean(row));
     const periodSet = new Set<string>();
     for (const row of customerPeriodRecords) {
+      periodSet.add(String((row as any)[periodAccessor]));
+    }
+    for (const row of concentrationPeriodRows) {
       periodSet.add(String((row as any)[periodAccessor]));
     }
     const selectedPeriodEnd = parseDateValue(endDate) || new Date();
@@ -3215,9 +3242,6 @@ export default function OperationsTab({
           totalRevenue: Number(row?.totalRevenue || row?.revenue || 0),
           totalInvoices: Number(row?.totalInvoices || row?.invoiceCount || 0),
         }))
-      : [];
-    const concentrationMonthlyCustomerRows = Array.isArray(summary?.customerConcentration?.customerMonthly)
-      ? summary.customerConcentration.customerMonthly
       : [];
     const concentrationRowsForSelectedPeriod = concentrationMonthlyCustomerRows.filter((row: any) => {
       const monthKey = String(row?.monthKey || '');
@@ -3349,150 +3373,9 @@ export default function OperationsTab({
     const entityPluralLower = isRetailSalesLanguage ? 'product categories' : 'customers';
     const formatPct = (value: number | null | undefined) =>
       value == null || !Number.isFinite(value) ? 'N/A' : `${Number(value).toFixed(1)}%`;
-    const buildManufacturingSalesPage = () => {
-      if (!isSalesAnalyticsTab || String(industrySectorCategory || '').trim() !== '32') return null;
-      const buildDemoMonthRows = () => {
-        const parsedEnd = parseDateValue(endDate) || new Date();
-        const anchor = new Date(Date.UTC(parsedEnd.getUTCFullYear(), parsedEnd.getUTCMonth(), 1));
-        const seasonalFactors = [0.92, 0.94, 1.0, 1.04, 1.06, 1.08, 1.07, 1.09, 1.12, 1.15, 1.24, 1.3];
-        return Array.from({ length: 36 }, (_, index) => {
-          const date = new Date(Date.UTC(anchor.getUTCFullYear(), anchor.getUTCMonth() - (35 - index), 1));
-          const monthKey = `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}`;
-          const monthLabel = date.toLocaleDateString('en-US', { timeZone: 'UTC', month: 'short', year: 'numeric' });
-          const yearsSinceStart = index / 12;
-          const annualGrowth = Math.pow(1.085, yearsSinceStart);
-          const seasonal = seasonalFactors[date.getUTCMonth()] ?? 1;
-          const revenue = Math.round(392000 * annualGrowth * seasonal);
-          const invoices = Math.max(350, Math.round(revenue / 820));
-          return { monthKey, monthLabel, revenue, invoices };
-        });
-      };
-      const allDatedRecords = records
-        .map((record: any) => {
-          const parsed = parseDateValue(record?.snapshotDate);
-          return parsed ? { record, parsed } : null;
-        })
-        .filter((row: any): row is { record: any; parsed: Date } => Boolean(row))
-        .sort((a, b) => a.parsed.getTime() - b.parsed.getTime());
-      const latestRecordDate = allDatedRecords[allDatedRecords.length - 1]?.parsed || null;
-      const threeYearStart =
-        latestRecordDate
-          ? new Date(Date.UTC(latestRecordDate.getUTCFullYear(), latestRecordDate.getUTCMonth() - 35, 1))
-          : null;
-      const historyRecords = threeYearStart
-        ? allDatedRecords.filter((row) => row.parsed >= threeYearStart)
-        : allDatedRecords;
-      const recordMonthRows = Array.from(
-        historyRecords.reduce((acc: Map<string, { monthKey: string; monthLabel: string; revenue: number; invoices: number }>, row) => {
-          const { record, parsed } = row;
-          const monthKey = `${parsed.getUTCFullYear()}-${String(parsed.getUTCMonth() + 1).padStart(2, '0')}`;
-          const existing = acc.get(monthKey) || {
-            monthKey,
-            monthLabel: parsed.toLocaleDateString('en-US', { timeZone: 'UTC', month: 'short', year: 'numeric' }),
-            revenue: 0,
-            invoices: 0,
-          };
-          existing.revenue += Number(record?.revenue || 0);
-          existing.invoices += Number(record?.invoiceCount || 0);
-          acc.set(monthKey, existing);
-          return acc;
-        }, new Map<string, { monthKey: string; monthLabel: string; revenue: number; invoices: number }>())
-          .values()
-      ).sort((a, b) => a.monthKey.localeCompare(b.monthKey));
-      const monthRows = recordMonthRows.length >= 36 ? recordMonthRows.slice(-36) : buildDemoMonthRows();
-      if (monthRows.length === 0) return null;
-
-      const categoryMix = [
-        { label: 'Bread Loaves', pct: 0.44 },
-        { label: 'Rolls & Buns', pct: 0.24 },
-        { label: 'Specialty Bakery', pct: 0.18 },
-        { label: 'Private Label / Wholesale', pct: 0.14 },
-      ];
-      const categoryHistoryRows = categoryMix.map((category, categoryIndex) => {
-        const values: Record<string, number> = {};
-        monthRows.forEach((month, monthIndex) => {
-          const seasonalShift = ((monthIndex + categoryIndex) % 3 - 1) * 0.015;
-          values[month.monthKey] = Math.max(0, month.revenue * (category.pct + seasonalShift));
-        });
-        const total = Object.values(values).reduce((sum, value) => sum + value, 0);
-        return {
-          label: category.label,
-          values,
-          total,
-          items: [],
-        };
-      });
-      const totalValues = monthRows.reduce((acc: Record<string, number>, month) => {
-        acc[month.monthKey] = month.revenue;
-        return acc;
-      }, {});
-      const totalRevenue = monthRows.reduce((sum, month) => sum + month.revenue, 0);
-      const totalInvoices = monthRows.reduce((sum, month) => sum + month.invoices, 0);
-      const latestMonth = monthRows[monthRows.length - 1];
-      const priorMonth = monthRows[monthRows.length - 2] || null;
-      const currentYearRevenue = monthRows
-        .filter((month) => month.monthKey.startsWith(`${latestMonth.monthKey.slice(0, 4)}-`))
-        .reduce((sum, month) => sum + month.revenue, 0);
-      const latestGrossMarginPct = 34 + ((monthRows.length % 4) * 1.5);
-      const grossMarginRows = monthRows.map((month, index) => {
-        const gmPct = 33 + ((index % 4) * 1.25);
-        return {
-          monthKey: month.monthKey,
-          monthLabel: month.monthLabel,
-          gmDollars: month.revenue * (gmPct / 100),
-          gmPct,
-        };
-      });
-      const cogsRows = [{
-        label: 'Estimated COGS',
-        values: monthRows.reduce((acc: Record<string, number>, month, index) => {
-          const gmPct = 33 + ((index % 4) * 1.25);
-          const monthName = month.monthLabel.split(' ')[0];
-          acc[monthName] = (acc[monthName] || 0) + month.revenue * (1 - gmPct / 100);
-          return acc;
-        }, {}),
-      }];
-      const latestCogs = Number(cogsRows[0].values[latestMonth.monthLabel.split(' ')[0]] || 0);
-      cogsRows[0].values.Total = Object.entries(cogsRows[0].values)
-        .filter(([key]) => key !== 'Total' && key !== 'MTD')
-        .reduce((sum, [, value]) => sum + Number(value || 0), 0);
-      cogsRows[0].values.MTD = latestCogs;
-
-      return {
-        sales: {
-          mtdValue: latestMonth.revenue,
-          mtdCompPct: priorMonth && priorMonth.revenue > 0 ? (latestMonth.revenue - priorMonth.revenue) / priorMonth.revenue : 0,
-          totalValue: currentYearRevenue,
-          currentYearLabel: latestMonth.monthKey.slice(0, 4),
-          indexPct: priorMonth && priorMonth.revenue > 0 ? latestMonth.revenue / priorMonth.revenue : 1,
-          categoryHistory: {
-            months: monthRows.map((month) => ({ monthKey: month.monthKey, monthLabel: month.monthLabel })),
-            rows: categoryHistoryRows,
-            totalRow: {
-              label: 'Total Sales',
-              values: totalValues,
-              total: totalRevenue,
-            },
-          },
-        },
-        buys: {
-          rows: cogsRows,
-        },
-        grossMarginHistory: {
-          rows: grossMarginRows,
-          chartData: grossMarginRows.map((row) => ({
-            month: row.monthLabel,
-            gmDollars: row.gmDollars,
-            gmPct: row.gmPct,
-          })),
-        },
-        totalInvoices,
-        latestGrossMarginPct,
-      };
-    };
-    const manufacturingSalesPage = buildManufacturingSalesPage();
-    const salesPageForDisplay = manufacturingSalesPage || platosSalesPage;
-    const isManufacturingSalesFallback = Boolean(manufacturingSalesPage);
+    const manufacturingSalesPage = null;
+    const salesPageForDisplay = platosSalesPage;
+    const isManufacturingSalesFallback = false;
     const renderWorkbookHistoryTable = (title: string, section: any) => {
       if (!section || !Array.isArray(section.rows) || section.rows.length === 0) return null;
       const columns = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec', 'Total', 'MTD'];
@@ -3538,6 +3421,108 @@ export default function OperationsTab({
     };
     const renderCategorySalesHistoryTable = (title: string, section: any) => {
       const categoryHistory = section?.categoryHistory;
+      const parseSalesHistoryPeriodDate = (period: any): Date | null => {
+        const raw = String(period?.monthKey || period?.dateKey || period?.periodKey || '').trim();
+        if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return parseDateValue(raw);
+        if (/^\d{4}-\d{2}$/.test(raw)) return parseDateValue(`${raw}-01`);
+        if (/^\d{4}-Q[1-4]$/.test(raw)) {
+          const [year, quarter] = raw.split('-Q');
+          return parseDateValue(`${year}-${String((Number(quarter) - 1) * 3 + 1).padStart(2, '0')}-01`);
+        }
+        if (/^\d{4}$/.test(raw)) return parseDateValue(`${raw}-01-01`);
+        return parseDateValue(raw);
+      };
+      const salesHistoryPeriodKey = (date: Date, rollup: typeof salesHistoryRollup): string => {
+        const year = date.getUTCFullYear();
+        const month = date.getUTCMonth() + 1;
+        if (rollup === 'daily') return `${year}-${String(month).padStart(2, '0')}-${String(date.getUTCDate()).padStart(2, '0')}`;
+        if (rollup === 'monthly') return `${year}-${String(month).padStart(2, '0')}`;
+        if (rollup === 'quarterly') return `${year}-Q${Math.floor((month - 1) / 3) + 1}`;
+        return String(year);
+      };
+      const salesHistoryPeriodLabel = (date: Date, rollup: typeof salesHistoryRollup): string => {
+        if (rollup === 'daily') return date.toLocaleDateString('en-US', { timeZone: 'UTC', month: 'short', day: 'numeric', year: 'numeric' });
+        if (rollup === 'monthly') return date.toLocaleDateString('en-US', { timeZone: 'UTC', month: 'short', year: 'numeric' });
+        if (rollup === 'quarterly') return `Q${Math.floor(date.getUTCMonth() / 3) + 1} ${date.getUTCFullYear()}`;
+        return String(date.getUTCFullYear());
+      };
+      const addDays = (date: Date, days: number) => {
+        const copy = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
+        copy.setUTCDate(copy.getUTCDate() + days);
+        return copy;
+      };
+      const getSalesHistoryDateBounds = (months: any[]) => {
+        const datedMonths = months
+          .map((month) => ({ month, date: parseSalesHistoryPeriodDate(month) }))
+          .filter((entry): entry is { month: any; date: Date } => Boolean(entry.date));
+        const maxDate = datedMonths.reduce<Date | null>((latest, entry) => (!latest || entry.date > latest ? entry.date : latest), null);
+        if (!maxDate || salesHistoryRangeMode === 'all') return { start: null as Date | null, end: null as Date | null };
+        if (salesHistoryRangeMode === 'last30') return { start: addDays(maxDate, -29), end: maxDate };
+        if (salesHistoryRangeMode === 'last90') return { start: addDays(maxDate, -89), end: maxDate };
+        if (salesHistoryRangeMode === 'last12') {
+          const start = new Date(Date.UTC(maxDate.getUTCFullYear(), maxDate.getUTCMonth() - 11, 1));
+          return { start, end: maxDate };
+        }
+        if (salesHistoryRangeMode === 'ytd') return { start: new Date(Date.UTC(maxDate.getUTCFullYear(), 0, 1)), end: maxDate };
+        return {
+          start: salesHistoryStartDate ? parseDateValue(salesHistoryStartDate) : null,
+          end: salesHistoryEndDate ? parseDateValue(salesHistoryEndDate) : null,
+        };
+      };
+      const buildDisplayedCategoryHistory = (history: any) => {
+        const sourceMonths = Array.isArray(history?.months) ? history.months : [];
+        const { start, end } = getSalesHistoryDateBounds(sourceMonths);
+        const buckets = new Map<string, { monthKey: string; monthLabel: string; date: Date; sourceKeys: string[] }>();
+        for (const month of sourceMonths) {
+          const date = parseSalesHistoryPeriodDate(month);
+          if (!date) continue;
+          if (start && date < start) continue;
+          if (end && date > end) continue;
+          const key = salesHistoryPeriodKey(date, salesHistoryRollup);
+          const bucket = buckets.get(key) || {
+            monthKey: key,
+            monthLabel: salesHistoryPeriodLabel(date, salesHistoryRollup),
+            date,
+            sourceKeys: [],
+          };
+          bucket.sourceKeys.push(String(month.monthKey || month.dateKey || month.periodKey || ''));
+          buckets.set(key, bucket);
+        }
+        const months = Array.from(buckets.values()).sort((a, b) => a.date.getTime() - b.date.getTime());
+        const rollValues = (values: Record<string, number> = {}) =>
+          months.reduce((acc: Record<string, number>, month) => {
+            acc[month.monthKey] = month.sourceKeys.reduce((sum, sourceKey) => sum + Number(values?.[sourceKey] || 0), 0);
+            return acc;
+          }, {});
+        const rows = (Array.isArray(history?.rows) ? history.rows : []).map((row: any) => {
+          const values = rollValues(row?.values || {});
+          const items = (Array.isArray(row?.items) ? row.items : []).map((item: any) => {
+            const itemValues = rollValues(item?.values || {});
+            return {
+              ...item,
+              values: itemValues,
+              total: Object.values(itemValues).reduce((sum, value) => sum + Number(value || 0), 0),
+            };
+          });
+          return {
+            ...row,
+            values,
+            total: Object.values(values).reduce((sum, value) => sum + Number(value || 0), 0),
+            items,
+          };
+        });
+        const totalValues = rollValues(history?.totalRow?.values || {});
+        return {
+          ...history,
+          months,
+          rows,
+          totalRow: {
+            ...(history?.totalRow || {}),
+            values: totalValues,
+            total: Object.values(totalValues).reduce((sum, value) => sum + Number(value || 0), 0),
+          },
+        };
+      };
       if (
         !categoryHistory ||
         !Array.isArray(categoryHistory.months) ||
@@ -3546,15 +3531,72 @@ export default function OperationsTab({
       ) {
         return renderWorkbookHistoryTable(title, section);
       }
-      const months = categoryHistory.months;
+      const displayedHistory = buildDisplayedCategoryHistory(categoryHistory);
+      const months = displayedHistory.months;
       return (
         <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '16px' }}>
-          <h3 style={{ margin: '0 0 12px 0', fontSize: '16px', color: '#1e293b' }}>{title}</h3>
+          <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: '12px', flexWrap: 'wrap', marginBottom: '12px' }}>
+            <h3 style={{ margin: 0, fontSize: '16px', color: '#1e293b' }}>{title}</h3>
+            <div style={{ display: 'flex', alignItems: 'flex-end', gap: '8px', flexWrap: 'wrap' }}>
+              <label style={{ display: 'grid', gap: '4px', fontSize: '11px', color: '#64748b', fontWeight: 700 }}>
+                Range
+                <select
+                  value={salesHistoryRangeMode}
+                  onChange={(event) => setSalesHistoryRangeMode(event.target.value as any)}
+                  style={{ border: '1px solid #cbd5e1', borderRadius: '8px', padding: '6px 8px', fontSize: '12px', background: 'white' }}
+                >
+                  <option value="all">All Available</option>
+                  <option value="last30">Last 30 Days</option>
+                  <option value="last90">Last 90 Days</option>
+                  <option value="ytd">Year to Date</option>
+                  <option value="last12">Last 12 Months</option>
+                  <option value="custom">Custom</option>
+                </select>
+              </label>
+              <label style={{ display: 'grid', gap: '4px', fontSize: '11px', color: '#64748b', fontWeight: 700 }}>
+                From
+                <input
+                  type="date"
+                  value={salesHistoryStartDate}
+                  onChange={(event) => {
+                    setSalesHistoryStartDate(event.target.value);
+                    setSalesHistoryRangeMode('custom');
+                  }}
+                  style={{ border: '1px solid #cbd5e1', borderRadius: '8px', padding: '6px 8px', fontSize: '12px' }}
+                />
+              </label>
+              <label style={{ display: 'grid', gap: '4px', fontSize: '11px', color: '#64748b', fontWeight: 700 }}>
+                To
+                <input
+                  type="date"
+                  value={salesHistoryEndDate}
+                  onChange={(event) => {
+                    setSalesHistoryEndDate(event.target.value);
+                    setSalesHistoryRangeMode('custom');
+                  }}
+                  style={{ border: '1px solid #cbd5e1', borderRadius: '8px', padding: '6px 8px', fontSize: '12px' }}
+                />
+              </label>
+              <label style={{ display: 'grid', gap: '4px', fontSize: '11px', color: '#64748b', fontWeight: 700 }}>
+                Show
+                <select
+                  value={salesHistoryRollup}
+                  onChange={(event) => setSalesHistoryRollup(event.target.value as any)}
+                  style={{ border: '1px solid #cbd5e1', borderRadius: '8px', padding: '6px 8px', fontSize: '12px', background: 'white' }}
+                >
+                  <option value="daily">Daily</option>
+                  <option value="monthly">Monthly</option>
+                  <option value="quarterly">Quarterly</option>
+                  <option value="annual">Annual</option>
+                </select>
+              </label>
+            </div>
+          </div>
           <div style={{ overflowX: 'auto' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: '960px' }}>
               <thead>
                 <tr>
-                  <th style={{ padding: '8px', textAlign: 'left', fontSize: '12px', color: '#475569', borderBottom: '1px solid #e2e8f0' }}>Category</th>
+                  <th style={{ padding: '8px', textAlign: 'left', fontSize: '12px', color: '#475569', borderBottom: '1px solid #e2e8f0', whiteSpace: 'nowrap', minWidth: '240px' }}>Category</th>
                   {months.map((month: any) => (
                     <th key={month.monthKey} style={{ padding: '8px', textAlign: 'right', fontSize: '12px', color: '#475569', borderBottom: '1px solid #e2e8f0' }}>
                       {month.monthLabel || month.monthKey}
@@ -3565,7 +3607,7 @@ export default function OperationsTab({
               </thead>
               <tbody>
                 <tr style={{ background: '#f8fafc', borderBottom: '1px solid #cbd5e1' }}>
-                  <td style={{ padding: '8px', fontSize: '13px', fontWeight: 700, color: '#0f172a' }}>
+                  <td style={{ padding: '8px', fontSize: '13px', fontWeight: 700, color: '#0f172a', whiteSpace: 'nowrap' }}>
                     <button
                       onClick={() => setSalesHistoryCategoriesExpanded((prev) => !prev)}
                       style={{
@@ -3582,29 +3624,29 @@ export default function OperationsTab({
                     >
                       {salesHistoryCategoriesExpanded ? '-' : '+'}
                     </button>
-                    {categoryHistory.totalRow?.label || 'Total Sales'}
+                    {displayedHistory.totalRow?.label || 'Total Sales'}
                     <span style={{ marginLeft: '8px', color: '#64748b', fontSize: '12px', fontWeight: 500 }}>
-                      {categoryHistory.rows.length.toLocaleString()} categories
+                      {displayedHistory.rows.length.toLocaleString()} categories
                     </span>
                   </td>
                   {months.map((month: any) => (
                     <td key={month.monthKey} style={{ padding: '8px', textAlign: 'right', fontSize: '13px', color: '#16a34a', fontWeight: 700 }}>
-                      {formatCurrency(Number(categoryHistory.totalRow?.values?.[month.monthKey] || 0))}
+                      {formatCurrency(Number(displayedHistory.totalRow?.values?.[month.monthKey] || 0))}
                     </td>
                   ))}
                   <td style={{ padding: '8px', textAlign: 'right', fontSize: '13px', color: '#16a34a', fontWeight: 700 }}>
-                    {formatCurrency(Number(categoryHistory.totalRow?.total || 0))}
+                    {formatCurrency(Number(displayedHistory.totalRow?.total || 0))}
                   </td>
                 </tr>
                 {salesHistoryCategoriesExpanded &&
-                  categoryHistory.rows.map((row: any) => {
+                  displayedHistory.rows.map((row: any) => {
                     const categoryLabel = String(row?.label || 'Unknown');
                     const items = Array.isArray(row?.items) ? row.items : [];
                     const isCategoryExpanded = expandedSalesHistoryCategories[categoryLabel] ?? false;
                     return (
                       <React.Fragment key={categoryLabel}>
                         <tr>
-                          <td style={{ padding: '8px 8px 8px 42px', fontSize: '13px', fontWeight: 700, color: '#0f172a', borderBottom: '1px solid #e2e8f0' }}>
+                          <td style={{ padding: '8px 8px 8px 42px', fontSize: '13px', fontWeight: 700, color: '#0f172a', borderBottom: '1px solid #e2e8f0', whiteSpace: 'nowrap' }}>
                             {items.length > 0 && (
                               <button
                                 onClick={() =>
@@ -3647,7 +3689,7 @@ export default function OperationsTab({
                         {isCategoryExpanded &&
                           items.map((item: any) => (
                             <tr key={`${categoryLabel}-${String(item?.label || 'item')}`}>
-                              <td style={{ padding: '8px 8px 8px 76px', fontSize: '13px', fontWeight: 500, color: '#334155', borderBottom: '1px solid #f1f5f9' }}>
+                              <td style={{ padding: '8px 8px 8px 76px', fontSize: '13px', fontWeight: 500, color: '#334155', borderBottom: '1px solid #f1f5f9', whiteSpace: 'nowrap' }}>
                                 {String(item?.label || 'Unknown Item')}
                               </td>
                               {months.map((month: any) => (
@@ -3764,34 +3806,127 @@ export default function OperationsTab({
     };
     const renderGrossMarginHistoryTable = (title: string, section: any) => {
       if (!section || !Array.isArray(section.rows) || section.rows.length === 0) return null;
+      const parseGrossMarginDate = (row: any): Date | null => {
+        const raw = String(row?.monthKey || row?.dateKey || row?.periodKey || '').trim();
+        if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return parseDateValue(raw);
+        if (/^\d{4}-\d{2}$/.test(raw)) return parseDateValue(`${raw}-01`);
+        if (/^\d{4}-Q[1-4]$/.test(raw)) {
+          const [year, quarter] = raw.split('-Q');
+          return parseDateValue(`${year}-${String((Number(quarter) - 1) * 3 + 1).padStart(2, '0')}-01`);
+        }
+        if (/^\d{4}$/.test(raw)) return parseDateValue(`${raw}-01-01`);
+        return parseDateValue(raw || row?.monthLabel);
+      };
+      const grossMarginPeriodKey = (date: Date, rollup: typeof grossMarginHistoryRollup): string => {
+        const year = date.getUTCFullYear();
+        const month = date.getUTCMonth() + 1;
+        if (rollup === 'daily') return `${year}-${String(month).padStart(2, '0')}-${String(date.getUTCDate()).padStart(2, '0')}`;
+        if (rollup === 'monthly') return `${year}-${String(month).padStart(2, '0')}`;
+        if (rollup === 'quarterly') return `${year}-Q${Math.floor((month - 1) / 3) + 1}`;
+        return String(year);
+      };
+      const grossMarginPeriodLabel = (date: Date, rollup: typeof grossMarginHistoryRollup): string => {
+        if (rollup === 'daily') return date.toLocaleDateString('en-US', { timeZone: 'UTC', month: 'short', day: 'numeric', year: 'numeric' });
+        if (rollup === 'monthly') return date.toLocaleDateString('en-US', { timeZone: 'UTC', month: 'short', year: 'numeric' });
+        if (rollup === 'quarterly') return `Q${Math.floor(date.getUTCMonth() / 3) + 1} ${date.getUTCFullYear()}`;
+        return String(date.getUTCFullYear());
+      };
+      const addGrossMarginDays = (date: Date, days: number) => {
+        const copy = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
+        copy.setUTCDate(copy.getUTCDate() + days);
+        return copy;
+      };
+      const sourceRows = section.rows
+        .map((row: any) => ({ row, date: parseGrossMarginDate(row) }))
+        .filter((entry: any): entry is { row: any; date: Date } => Boolean(entry.date))
+        .sort((a, b) => a.date.getTime() - b.date.getTime());
+      const maxDate = sourceRows[sourceRows.length - 1]?.date || null;
+      const bounds = (() => {
+        if (!maxDate || grossMarginHistoryRangeMode === 'all') return { start: null as Date | null, end: null as Date | null };
+        if (grossMarginHistoryRangeMode === 'last30') return { start: addGrossMarginDays(maxDate, -29), end: maxDate };
+        if (grossMarginHistoryRangeMode === 'last90') return { start: addGrossMarginDays(maxDate, -89), end: maxDate };
+        if (grossMarginHistoryRangeMode === 'last12') {
+          return { start: new Date(Date.UTC(maxDate.getUTCFullYear(), maxDate.getUTCMonth() - 11, 1)), end: maxDate };
+        }
+        if (grossMarginHistoryRangeMode === 'ytd') return { start: new Date(Date.UTC(maxDate.getUTCFullYear(), 0, 1)), end: maxDate };
+        return {
+          start: grossMarginHistoryStartDate ? parseDateValue(grossMarginHistoryStartDate) : null,
+          end: grossMarginHistoryEndDate ? parseDateValue(grossMarginHistoryEndDate) : null,
+        };
+      })();
+      const buckets = new Map<string, { period: string; date: Date; gmDollars: number; revenueBasis: number }>();
+      for (const { row, date } of sourceRows) {
+        if (bounds.start && date < bounds.start) continue;
+        if (bounds.end && date > bounds.end) continue;
+        const key = grossMarginPeriodKey(date, grossMarginHistoryRollup);
+        const gmDollars = Number(row?.gmDollars || 0);
+        const gmPct = Number(row?.gmPct || 0);
+        const revenueBasis = gmPct > 0 ? gmDollars / (gmPct / 100) : 0;
+        const bucket = buckets.get(key) || {
+          period: grossMarginPeriodLabel(date, grossMarginHistoryRollup),
+          date,
+          gmDollars: 0,
+          revenueBasis: 0,
+        };
+        bucket.gmDollars += gmDollars;
+        bucket.revenueBasis += revenueBasis;
+        buckets.set(key, bucket);
+      }
+      const chartRows = Array.from(buckets.values())
+        .sort((a, b) => a.date.getTime() - b.date.getTime())
+        .map((row) => ({
+          period: row.period,
+          gmDollars: row.gmDollars,
+          gmPct: row.revenueBasis > 0 ? (row.gmDollars / row.revenueBasis) * 100 : null,
+        }));
       return (
         <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '16px' }}>
-          <h3 style={{ margin: '0 0 12px 0', fontSize: '16px', color: '#1e293b' }}>{title}</h3>
-          <div style={{ overflowX: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: '560px' }}>
-              <thead>
-                <tr>
-                  <th style={{ padding: '8px', textAlign: 'left', fontSize: '12px', color: '#475569', borderBottom: '1px solid #e2e8f0' }}>Month</th>
-                  <th style={{ padding: '8px', textAlign: 'right', fontSize: '12px', color: '#475569', borderBottom: '1px solid #e2e8f0' }}>Gross Margin $</th>
-                  <th style={{ padding: '8px', textAlign: 'right', fontSize: '12px', color: '#475569', borderBottom: '1px solid #e2e8f0' }}>Gross Margin %</th>
-                </tr>
-              </thead>
-              <tbody>
-                {section.rows.map((row: any) => (
-                  <tr key={String(row?.monthKey || row?.monthLabel || Math.random())}>
-                    <td style={{ padding: '8px', fontSize: '13px', fontWeight: 600, color: '#0f172a', borderBottom: '1px solid #f1f5f9' }}>
-                      {String(row?.monthLabel || row?.monthKey || '')}
-                    </td>
-                    <td style={{ padding: '8px', textAlign: 'right', fontSize: '13px', color: '#334155', borderBottom: '1px solid #f1f5f9' }}>
-                      {row?.gmDollars == null ? '' : formatCurrency(Number(row.gmDollars))}
-                    </td>
-                    <td style={{ padding: '8px', textAlign: 'right', fontSize: '13px', color: '#334155', borderBottom: '1px solid #f1f5f9' }}>
-                      {row?.gmPct == null ? '' : formatPct(Number(row.gmPct))}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+          <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: '12px', flexWrap: 'wrap', marginBottom: '12px' }}>
+            <h3 style={{ margin: 0, fontSize: '16px', color: '#1e293b' }}>{title}</h3>
+            <div style={{ display: 'flex', alignItems: 'flex-end', gap: '8px', flexWrap: 'wrap' }}>
+              <label style={{ display: 'grid', gap: '4px', fontSize: '11px', color: '#64748b', fontWeight: 700 }}>
+                Range
+                <select value={grossMarginHistoryRangeMode} onChange={(event) => setGrossMarginHistoryRangeMode(event.target.value as any)} style={{ border: '1px solid #cbd5e1', borderRadius: '8px', padding: '6px 8px', fontSize: '12px', background: 'white' }}>
+                  <option value="all">All Available</option>
+                  <option value="last30">Last 30 Days</option>
+                  <option value="last90">Last 90 Days</option>
+                  <option value="ytd">Year to Date</option>
+                  <option value="last12">Last 12 Months</option>
+                  <option value="custom">Custom</option>
+                </select>
+              </label>
+              <label style={{ display: 'grid', gap: '4px', fontSize: '11px', color: '#64748b', fontWeight: 700 }}>
+                From
+                <input type="date" value={grossMarginHistoryStartDate} onChange={(event) => { setGrossMarginHistoryStartDate(event.target.value); setGrossMarginHistoryRangeMode('custom'); }} style={{ border: '1px solid #cbd5e1', borderRadius: '8px', padding: '6px 8px', fontSize: '12px' }} />
+              </label>
+              <label style={{ display: 'grid', gap: '4px', fontSize: '11px', color: '#64748b', fontWeight: 700 }}>
+                To
+                <input type="date" value={grossMarginHistoryEndDate} onChange={(event) => { setGrossMarginHistoryEndDate(event.target.value); setGrossMarginHistoryRangeMode('custom'); }} style={{ border: '1px solid #cbd5e1', borderRadius: '8px', padding: '6px 8px', fontSize: '12px' }} />
+              </label>
+              <label style={{ display: 'grid', gap: '4px', fontSize: '11px', color: '#64748b', fontWeight: 700 }}>
+                Show
+                <select value={grossMarginHistoryRollup} onChange={(event) => setGrossMarginHistoryRollup(event.target.value as any)} style={{ border: '1px solid #cbd5e1', borderRadius: '8px', padding: '6px 8px', fontSize: '12px', background: 'white' }}>
+                  <option value="daily">Daily</option>
+                  <option value="monthly">Monthly</option>
+                  <option value="quarterly">Quarterly</option>
+                  <option value="annual">Annual</option>
+                </select>
+              </label>
+            </div>
+          </div>
+          <div style={{ height: '320px' }}>
+            <ResponsiveContainer width="100%" height="100%">
+              <ComposedChart data={chartRows}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                <XAxis dataKey="period" stroke="#64748b" style={{ fontSize: '11px' }} />
+                <YAxis yAxisId="left" stroke="#64748b" style={{ fontSize: '12px' }} tickFormatter={(value) => `$${(Number(value || 0) / 1000).toFixed(0)}k`} />
+                <YAxis yAxisId="right" orientation="right" stroke="#64748b" style={{ fontSize: '12px' }} tickFormatter={(value) => `${Number(value || 0).toFixed(0)}%`} />
+                <Tooltip formatter={(value: any, name: any) => [String(name) === 'Gross Margin %' ? formatPct(Number(value)) : formatCurrency(Number(value || 0)), String(name)]} />
+                <Legend />
+                <Bar yAxisId="left" dataKey="gmDollars" name="Gross Margin $" fill="#2563eb" radius={[4, 4, 0, 0]} />
+                <Line yAxisId="right" type="monotone" dataKey="gmPct" name="Gross Margin %" stroke="#16a34a" strokeWidth={3} dot={{ r: 3 }} connectNulls />
+              </ComposedChart>
+            </ResponsiveContainer>
           </div>
         </div>
       );
@@ -4008,6 +4143,28 @@ export default function OperationsTab({
         : isManufacturingSalesFallback
           ? Number(salesPageForDisplay?.sales?.totalValue || 0) / 8
           : 0;
+    const currentMonthKeyForTopCustomer = currentCustomerRevenuePeriodKey('month');
+    const currentMonthCustomerTotals = customerPeriodRecords
+      .filter((row: any) => String(row.monthKey) === currentMonthKeyForTopCustomer)
+      .reduce((acc: Record<string, number>, row: any) => {
+        const name = String(row?.record?.customerName || 'Unknown Customer').trim() || 'Unknown Customer';
+        acc[name] = Number(acc[name] || 0) + Number(row?.record?.revenue || 0);
+        return acc;
+      }, {});
+    const currentMonthTotalSales = Object.values(currentMonthCustomerTotals).reduce((sum, value) => sum + Number(value || 0), 0);
+    const currentMonthTopCustomer = Object.entries(currentMonthCustomerTotals).sort(([, a], [, b]) => Number(b || 0) - Number(a || 0))[0] || null;
+    const currentMonthTopCustomerSharePct =
+      currentMonthTotalSales > 0 && currentMonthTopCustomer
+        ? (Number(currentMonthTopCustomer[1] || 0) / currentMonthTotalSales) * 100
+        : 0;
+    const currentMonthTopCustomerLabel = currentMonthTopCustomer ? String(currentMonthTopCustomer[0]) : 'No customer sales';
+    const currentMonthTopCustomerPeriodLabel = (() => {
+      const [year, month] = currentMonthKeyForTopCustomer.split('-');
+      const date = new Date(Date.UTC(Number(year), Number(month) - 1, 1));
+      return Number.isNaN(date.getTime())
+        ? 'current month'
+        : date.toLocaleDateString('en-US', { month: 'short', year: 'numeric', timeZone: 'UTC' });
+    })();
     const newCustomerNames90Top = Array.isArray(customerOverviewTop?.newCustomerNames90)
       ? customerOverviewTop.newCustomerNames90.map((value: any) => String(value || '').trim()).filter(Boolean)
       : [];
@@ -4058,9 +4215,9 @@ export default function OperationsTab({
                   detail: 'Current month',
                 },
                 {
-                  title: retailizeCustomerText('Avg Revenue per Customer'),
-                  value: formatCurrency(avgRevenuePerCustomerMetric),
-                  detail: retailizeCustomerText('Total billed / active customers (365d)'),
+                  title: 'Top Customer Sales %',
+                  value: formatPct(currentMonthTopCustomerSharePct),
+                  detail: `${currentMonthTopCustomerPeriodLabel}: ${currentMonthTopCustomerLabel}`,
                 },
               ].map((card) => (
                 <div key={card.title} style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '16px' }}>
@@ -4108,7 +4265,7 @@ export default function OperationsTab({
             {isSectionEnabled('customersPlatoSalesHistoryTables') && (
               <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '16px', marginBottom: '20px' }}>
                 {renderCategorySalesHistoryTable('Sales History', salesPageForDisplay.sales)}
-                {renderWorkbookHistoryTable(isManufacturingSalesFallback ? 'Cost / Buy Side History' : 'Buys History', salesPageForDisplay.buys)}
+                {!isManufacturingSalesFallback && renderWorkbookHistoryTable('Buys History', salesPageForDisplay.buys)}
               </div>
             )}
 
@@ -4704,11 +4861,55 @@ export default function OperationsTab({
               {/* Revenue distribution chart */}
               {isSectionEnabled('customersRevenueDistribution') && (
               <div style={{ background: 'white', padding: '8px 24px 24px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px', gap: '12px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '6px', gap: '12px', flexWrap: 'wrap' }}>
                   <h3 style={{ fontSize: '18px', fontWeight: '600', color: '#1e293b', margin: 0 }}>
                     {retailizeCustomerText('Revenue Distribution by Customer')}
                   </h3>
-                  {renderCustomerChartInfoLink('customersRevenueDistribution')}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                    <select
+                      value={customerRevenuePeriodMode}
+                      onChange={(e) => {
+                        const mode = e.target.value as 'year' | 'quarter' | 'month';
+                        setCustomerRevenuePeriodMode(mode);
+                        setCustomerRevenuePeriodKey(currentCustomerRevenuePeriodKey(mode));
+                      }}
+                      style={{ padding: '4px 8px', border: '1px solid #cbd5e1', borderRadius: '6px', fontSize: '12px', color: '#334155', background: 'white' }}
+                    >
+                      <option value="month">Month</option>
+                      <option value="quarter">Quarter</option>
+                      <option value="year">Year</option>
+                    </select>
+                    <select
+                      value={effectivePeriodKey}
+                      onChange={(e) => setCustomerRevenuePeriodKey(e.target.value)}
+                      style={{ padding: '4px 8px', border: '1px solid #cbd5e1', borderRadius: '6px', fontSize: '12px', color: '#334155', background: 'white' }}
+                    >
+                      <option value="all">
+                        {customerRevenuePeriodMode === 'month'
+                          ? 'All Months'
+                          : customerRevenuePeriodMode === 'quarter'
+                            ? 'All Quarters'
+                            : 'All Years'}
+                      </option>
+                      {periodOptions.map((option) => (
+                        <option key={option} value={option}>
+                          {customerRevenuePeriodMode === 'month'
+                            ? (() => {
+                                const [y, m] = String(option).split('-');
+                                const d = new Date(Date.UTC(Number(y), Math.max(0, Number(m) - 1), 1));
+                                return Number.isNaN(d.getTime())
+                                  ? option
+                                  : d.toLocaleDateString('en-US', { year: 'numeric', month: 'long' });
+                              })()
+                            : option}
+                        </option>
+                      ))}
+                    </select>
+                    {renderCustomerChartInfoLink('customersRevenueDistribution')}
+                  </div>
+                </div>
+                <div style={{ fontSize: '11px', color: '#64748b', marginBottom: '6px' }}>
+                  Selected period: {selectedPeriodLabel}
                 </div>
                 <div style={{ display: 'flex', gap: '16px', alignItems: 'center' }}>
                   <div style={{ flex: 1.4 }}>
@@ -7276,16 +7477,26 @@ export default function OperationsTab({
         .sort((a, b) => a.marginAmountThisWeek - b.marginAmountThisWeek)
         .slice(0, 10);
     })();
-    const productScopeOptions = [...comparisonRowsBase]
-      .sort((a, b) => b.revenueThisWeek - a.revenueThisWeek)
-      .map((row) => ({
-        sku: row.sku,
-        label: `${row.itemName} (${row.sku})`,
-      }));
+    const productScopeOptions = Array.from(
+      [...comparisonRowsBase]
+        .sort((a, b) => b.revenueThisWeek - a.revenueThisWeek)
+        .reduce((acc: Map<string, { sku: string; label: string }>, row) => {
+          const sku = String(row.sku || row.itemId || row.itemName || '').trim();
+          if (!sku || acc.has(sku)) return acc;
+          acc.set(sku, {
+            sku,
+            label: `${String(row.itemName || sku).trim()} (${sku})`,
+          });
+          return acc;
+        }, new Map<string, { sku: string; label: string }>())
+        .values()
+    );
     const effectiveScopeSku =
       selectedScopeSku && productScopeOptions.some((option) => option.sku === selectedScopeSku)
         ? selectedScopeSku
         : (productScopeOptions[0]?.sku || '');
+    const effectiveScopeProductLabel =
+      productScopeOptions.find((option) => option.sku === effectiveScopeSku)?.label || effectiveScopeSku || 'N/A';
     const scopedProductSeries = usePlatosMonthlyFallback
       ? []
       : weeklyMarginModel.productWeekly
@@ -10259,10 +10470,41 @@ export default function OperationsTab({
           >
           {isSectionEnabled('productsPriceCostTrend') && (
             <div style={{ background: 'white', padding: '18px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px', gap: '12px' }}>
-              <h3 style={{ margin: 0, fontSize: '16px', color: '#1e293b' }}>
-                Price-Cost Trend ({productScopeMode === 'total' ? 'Total' : `Product: ${effectiveScopeSku || 'N/A'}`})
-              </h3>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '12px', gap: '12px', flexWrap: 'wrap' }}>
+              <div>
+                <h3 style={{ margin: 0, fontSize: '16px', color: '#1e293b' }}>
+                  Price-Cost Trend ({productScopeMode === 'total' ? 'Total' : `Product: ${effectiveScopeProductLabel}`})
+                </h3>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap', marginTop: '8px' }}>
+                  <label style={{ display: 'grid', gap: '4px', fontSize: '11px', color: '#64748b', fontWeight: 700 }}>
+                    Report Level
+                    <select
+                      value={productScopeMode}
+                      onChange={(event) => setProductScopeMode(event.target.value as 'total' | 'product')}
+                      style={{ border: '1px solid #cbd5e1', borderRadius: '8px', padding: '6px 8px', fontSize: '12px', background: 'white' }}
+                    >
+                      <option value="product">Product</option>
+                      <option value="total">Total</option>
+                    </select>
+                  </label>
+                  {productScopeMode === 'product' && (
+                    <label style={{ display: 'grid', gap: '4px', fontSize: '11px', color: '#64748b', fontWeight: 700 }}>
+                      Product
+                      <select
+                        value={effectiveScopeSku}
+                        onChange={(event) => setSelectedScopeSku(event.target.value)}
+                        style={{ border: '1px solid #cbd5e1', borderRadius: '8px', padding: '6px 8px', fontSize: '12px', minWidth: '260px', background: 'white' }}
+                      >
+                        {productScopeOptions.map((option) => (
+                          <option key={option.sku} value={option.sku}>
+                            {option.label}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  )}
+                </div>
+              </div>
               {renderChartInfoLink('productsPriceCostTrend')}
             </div>
             {renderCoverageMeta()}
@@ -10327,7 +10569,7 @@ export default function OperationsTab({
             <div style={{ background: 'white', padding: '18px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px', gap: '12px' }}>
               <h3 style={{ margin: 0, fontSize: '16px', color: '#1e293b' }}>
-                Price-Cost Waterfall ({productScopeMode === 'total' ? 'Total' : `Product: ${effectiveScopeSku || 'N/A'}`})
+                Price-Cost Waterfall ({productScopeMode === 'total' ? 'Total' : `Product: ${effectiveScopeProductLabel}`})
               </h3>
               {renderChartInfoLink('productsPriceCostWaterfall')}
             </div>
@@ -10434,7 +10676,7 @@ export default function OperationsTab({
               <div style={{ background: 'white', padding: '18px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px', gap: '12px' }}>
                   <h3 style={{ margin: 0, fontSize: '16px', color: '#1e293b' }}>
-                    Freight and Other Revenue Tracker ({productScopeMode === 'total' ? 'Total' : `Product: ${effectiveScopeSku || 'N/A'}`})
+                    Freight and Other Revenue Tracker ({productScopeMode === 'total' ? 'Total' : `Product: ${effectiveScopeProductLabel}`})
                   </h3>
                   {renderChartInfoLink('productsFreightOtherTracker')}
                 </div>

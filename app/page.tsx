@@ -2103,9 +2103,26 @@ function FinancialScorePage() {
   };
 
   const normalizeAccountMappingForSave = (mapping: any) => {
+    const visibleAccountReviewType = getAccountReviewTypeOverrideValue(
+      mapping?.accountId,
+      mapping?.accountCode,
+      mapping?.accountName,
+      getDisplayAccountCode(mapping),
+    );
+    const currentAccountReviewType = getClassificationOptionValue(mapping?.accountClassification);
+    const accountReviewMapping = visibleAccountReviewType
+      ? {
+          ...mapping,
+          accountClassification: encodeManualClassification(visibleAccountReviewType),
+          targetField:
+            visibleAccountReviewType === currentAccountReviewType
+              ? mapping?.targetField
+              : 'unmapped',
+        }
+      : mapping;
     return {
-      ...mapping,
-      targetField: normalizeMappingTargetField(mapping?.targetField),
+      ...accountReviewMapping,
+      targetField: normalizeMappingTargetField(accountReviewMapping?.targetField),
     };
   };
 
@@ -25009,13 +25026,14 @@ function FinancialScorePage() {
               const autoTravel = currentMonth.autoTravel || 0;
               const salesExpense = currentMonth.salesExpense || 0;
               const marketing = currentMonth.marketing || 0;
+              const trainingCert = currentMonth.trainingCert || 0;
               const mealsEntertainment = currentMonth.mealsEntertainment || 0;
               const otherExpense = currentMonth.otherExpense || 0;
 
               // Calculate total operating expenses including all expense fields from DataReviewTab
               const totalOpex = payroll + benefits + insurance + professionalFees + subcontractors +
                                rent + taxLicense + phoneComm + infrastructure + autoTravel +
-                               salesExpense + marketing + mealsEntertainment + otherExpense;
+                               salesExpense + marketing + trainingCert + mealsEntertainment + otherExpense;
 
               const operatingIncome = grossProfit - totalOpex;
               const operatingMargin = revenue > 0 ? (operatingIncome / revenue) * 100 : 0;
@@ -25099,6 +25117,7 @@ function FinancialScorePage() {
                         { key: 'autoTravel', label: 'Auto & Travel' },
                         { key: 'salesExpense', label: 'Sales & Marketing' },
                         { key: 'marketing', label: 'Marketing' },
+                        { key: 'trainingCert', label: 'Training & Certification' },
                         { key: 'mealsEntertainment', label: 'Meals & Entertainment' },
                         { key: 'otherExpense', label: 'Other Expenses' }
                       ];
@@ -25246,6 +25265,7 @@ function FinancialScorePage() {
               const autoTravel = currentMonth.autoTravel || 0;
               const salesExpense = currentMonth.salesExpense || 0;
               const marketing = currentMonth.marketing || 0;
+              const trainingCert = currentMonth.trainingCert || 0;
               const mealsEntertainment = currentMonth.mealsEntertainment || 0;
               const otherExpense = currentMonth.otherExpense || 0;
               const ownerBasePay = currentMonth.ownerBasePay || 0;
@@ -25256,7 +25276,7 @@ function FinancialScorePage() {
               const totalOpex = payroll + ownerBasePay + ownersRetirement + benefits + insurance + 
                                professionalFees + subcontractors + rent + taxLicense + phoneComm + 
                                infrastructure + autoTravel + salesExpense + marketing + 
-                               mealsEntertainment + depreciationAmortization + otherExpense;
+                               trainingCert + mealsEntertainment + depreciationAmortization + otherExpense;
               
               const operatingIncome = grossProfit - totalOpex;
               const operatingMargin = revenue > 0 ? (operatingIncome / revenue) * 100 : 0;
@@ -25431,6 +25451,13 @@ function FinancialScorePage() {
                         <span style={{ color: '#475569', paddingLeft: '20px' }}>Marketing</span>
                         <span style={{ color: '#475569', textAlign: 'right' }}>${marketing.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
                         <span style={{ color: '#475569', textAlign: 'right' }}>{pct(marketing).toFixed(1)}%</span>
+                      </div>
+                    )}
+                    {trainingCert > 0 && (
+                      <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', padding: '6px 0', fontSize: '14px' }}>
+                        <span style={{ color: '#475569', paddingLeft: '20px' }}>Training & Certification</span>
+                        <span style={{ color: '#475569', textAlign: 'right' }}>${trainingCert.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
+                        <span style={{ color: '#475569', textAlign: 'right' }}>{pct(trainingCert).toFixed(1)}%</span>
                       </div>
                     )}
                     {mealsEntertainment > 0 && (
@@ -26455,9 +26482,10 @@ function FinancialScorePage() {
                     const stateIncomeTaxes = calc(m, 'stateIncomeTaxes');
                     const federalIncomeTaxes = calc(m, 'federalIncomeTaxes');
                     const phoneComm = calc(m, 'phoneComm');
+                    const trainingCert = calc(m, 'trainingCert');
                     const mealsEntertainment = calc(m, 'mealsEntertainment');
                     const otherExpense = calc(m, 'otherExpense');
-                    const totalOpex = payroll + ownerBasePay + ownersRetirement + professionalFees + rent + infrastructure + autoTravel + insurance + salesExpense + subcontractors + depreciationAmortization + marketing + benefits + taxLicense + phoneComm + mealsEntertainment + otherExpense;
+                    const totalOpex = payroll + ownerBasePay + ownersRetirement + professionalFees + rent + infrastructure + autoTravel + insurance + salesExpense + subcontractors + depreciationAmortization + marketing + benefits + taxLicense + phoneComm + trainingCert + mealsEntertainment + otherExpense;
                     const grossProfit = revenue - cogs;
                     const operatingIncome = grossProfit - totalOpex;
                     const incomeBeforeTax = operatingIncome - interestExpense + nonOperatingIncome - nonOperatingExpense + extraordinaryItems;
@@ -26485,6 +26513,7 @@ function FinancialScorePage() {
                       benefits,
                       taxLicense,
                       phoneComm,
+                      trainingCert,
                       mealsEntertainment,
                       otherExpense,
                       totalOpex,
@@ -26588,6 +26617,7 @@ function FinancialScorePage() {
                             { key: 'autoTravel', label: 'Auto & Travel' },
                             { key: 'salesExpense', label: 'Sales & Marketing' },
                             { key: 'marketing', label: 'Marketing' },
+                            { key: 'trainingCert', label: 'Training & Certification' },
                             { key: 'mealsEntertainment', label: 'Meals & Entertainment' },
                             { key: 'otherExpense', label: 'Other Expenses' }
                           ];
@@ -26696,7 +26726,7 @@ function FinancialScorePage() {
                   'payroll', 'ownerBasePay', 'ownersRetirement', 'benefits', 'insurance', 
                   'professionalFees', 'subcontractors', 'rent', 'taxLicense', 'phoneComm', 
                   'infrastructure', 'autoTravel', 'salesExpense', 'marketing', 
-                  'mealsEntertainment', 'depreciationAmortization', 'otherExpense'
+                  'trainingCert', 'mealsEntertainment', 'depreciationAmortization', 'otherExpense'
                 ];
 
                 const expenses: { [key: string]: number } = {};

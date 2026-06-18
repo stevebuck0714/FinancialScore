@@ -43,8 +43,26 @@ export default function AccountMappingTable({
     const raw = String(value || '').trim();
     if (!raw) return '';
     const normalized = raw.toLowerCase();
-    if (normalized === 'nonopertingincome') return 'nonOperatingIncome';
-    if (normalized === 'nonopertingexpense') return 'nonOperatingExpense';
+    const compact = normalized.replace(/[^a-z0-9]+/g, '');
+    const canonicalAliases: Record<string, string> = {
+      nonopertingincome: 'nonOperatingIncome',
+      nonoperatingincome: 'nonOperatingIncome',
+      nonopertingexpense: 'nonOperatingExpense',
+      nonoperatingexpense: 'nonOperatingExpense',
+      trainingcert: 'trainingCert',
+      trainingcertification: 'trainingCert',
+      educationalexpense: 'trainingCert',
+      educationexpense: 'trainingCert',
+      otherexpense: 'otherExpense',
+      otherexpenses: 'otherExpense',
+      officesupplies: 'otherExpense',
+      bankscharges: 'otherExpense',
+      bankcharges: 'otherExpense',
+      miscellaneous: 'otherExpense',
+      miscellaneousexpense: 'otherExpense',
+      interestexpense: 'interestExpense',
+    };
+    if (canonicalAliases[compact]) return canonicalAliases[compact];
     if (normalized === 'ignored' || normalized === 'ignore' || normalized === 'do not process') return 'ignored';
     return raw;
   };
@@ -56,7 +74,8 @@ export default function AccountMappingTable({
   const ignoredOption = { value: 'ignored', label: 'Ignore / Do Not Process' };
   const isExcludedTargetField = (value?: string): boolean => {
     const normalized = canonicalizeTargetField(value).toLowerCase();
-    return !normalized || normalized === 'unmapped' || normalized === 'ignored';
+    const compact = normalized.replace(/[^a-z0-9]+/g, '');
+    return !compact || compact === 'unmapped' || compact === 'ignored';
   };
 
   const [collapsedSections, setCollapsedSections] = useState<{[key: string]: boolean}>({
@@ -125,16 +144,17 @@ export default function AccountMappingTable({
     const isLikelyCogsCode = codeCandidates.some((n) => n >= 5000 && n < 6000);
     const isLikelyEquityCode = codeCandidates.some((n) => n >= 3000 && n < 4000);
     const normalizedTarget = (targetField || '').trim().toLowerCase();
+    const compactTarget = normalizedTarget.replace(/[\s_-]+/g, '');
     if (normalizedTarget && normalizedTarget !== 'unmapped' && normalizedTarget !== 'ignored') {
-      if (normalizedTarget === 'nonoperatingincome' || normalizedTarget === 'nonoperatingexpense') return 'nonOperating';
-      if (normalizedTarget === 'revenue' || normalizedTarget === 'otherrevenue' || normalizedTarget.startsWith('rev_')) return 'revenue';
+      if (compactTarget === 'nonoperatingincome' || compactTarget === 'nonoperatingexpense') return 'nonOperating';
+      if (compactTarget === 'revenue' || compactTarget === 'otherrevenue' || normalizedTarget.startsWith('rev_')) return 'revenue';
       if (
-        normalizedTarget === 'cogstotal' ||
-        normalizedTarget === 'costofgoodssold' ||
+        compactTarget === 'cogstotal' ||
+        compactTarget === 'costofgoodssold' ||
         normalizedTarget.startsWith('cogs_') ||
-        normalizedTarget.startsWith('cogs')
+        compactTarget.startsWith('cogs')
       ) return 'cogs';
-      if (normalizedTarget === 'subcontractors' && isLikelyCogsCode) return 'cogs';
+      if (compactTarget === 'subcontractors' && isLikelyCogsCode) return 'cogs';
       if (
         [
           'payroll',
@@ -160,7 +180,7 @@ export default function AccountMappingTable({
           'otherexpense',
           'expense',
           'operatingexpensetotal',
-        ].includes(normalizedTarget)
+        ].includes(compactTarget)
       ) return 'expense';
       if (
         [
@@ -179,9 +199,9 @@ export default function AccountMappingTable({
           'rightofuseleases',
           'otherassets',
           'totalassets',
-        ].includes(normalizedTarget)
+        ].includes(compactTarget)
       ) return 'asset';
-      if (['ap', 'loc', 'contractliabilities', 'othercl', 'tcl', 'ltd', 'totalliab'].includes(normalizedTarget)) return 'liability';
+      if (['ap', 'loc', 'contractliabilities', 'othercl', 'tcl', 'ltd', 'totalliab'].includes(compactTarget)) return 'liability';
       if (
         [
           'ownerscapital',
@@ -193,7 +213,7 @@ export default function AccountMappingTable({
           'treasurystock',
           'totalequity',
           'totallande',
-        ].includes(normalizedTarget)
+        ].includes(compactTarget)
       ) return 'equity';
     }
 
@@ -234,17 +254,13 @@ export default function AccountMappingTable({
       normalized.includes('non-operating') ||
       normalized.includes('non operating') ||
       normalized.includes('other income') ||
-      normalized.includes('other expense') ||
       compact.includes('nonoperating') ||
       compact.includes('otherincome') ||
-      compact.includes('otherexpense') ||
       normalizedAccountName.includes('non-operating') ||
       normalizedAccountName.includes('non operating') ||
       normalizedAccountName.includes('other income') ||
-      normalizedAccountName.includes('other expense') ||
       compactAccountName.includes('nonoperating') ||
-      compactAccountName.includes('otherincome') ||
-      compactAccountName.includes('otherexpense');
+      compactAccountName.includes('otherincome');
     if (isLikelyNonOperatingCode || isNonOperatingLabel) return 'nonOperating';
     if (!normalized) return 'other';
     if (normalized === 'revenue' || normalized === 'income' || normalized.includes('revenue') || normalized.includes('income')) {
@@ -330,27 +346,35 @@ export default function AccountMappingTable({
   };
 
   const getGroupingClassification = (mapping: AccountMapping) => {
-    const hasManualClassification = String(mapping.accountClassification || '')
+    const canonicalTarget = canonicalizeTargetField(mapping.targetField);
+    const manualClassification = String(mapping.accountClassification || '')
       .trim()
       .toLowerCase()
-      .startsWith('manual:');
-    // Always group by source account type first so sections reflect the native
-    // accounting classification (Revenue/COGS/Expense/Asset/Liability/Equity),
-    // even when target fields are temporarily mis-mapped.
-    const sourceClassification = normalizeClassification(
-      mapping.accountClassification,
-      mapping.accountName,
-      undefined,
-      String(mapping.accountCode || mapping.accountId || ''),
-    );
-    if (hasManualClassification) return sourceClassification;
-    if (sourceClassification !== 'other') return sourceClassification;
+      .startsWith('manual:')
+      ? normalizeClassification(
+          mapping.accountClassification,
+          mapping.accountName,
+          undefined,
+          String(mapping.accountCode || mapping.accountId || ''),
+        )
+      : 'other';
+    if (manualClassification !== 'other') return manualClassification;
 
-    // Fallback to target field classification only when source is unknown.
+    if (!isExcludedTargetField(canonicalTarget)) {
+      return normalizeClassification(
+        undefined,
+        mapping.accountName,
+        canonicalTarget,
+        String(mapping.accountCode || mapping.accountId || ''),
+      );
+    }
+
+    // When there is no usable Account Review target, fall back to source
+    // account metadata so unmapped/new rows still land in a sensible section.
     return normalizeClassification(
       mapping.accountClassification,
       mapping.accountName,
-      mapping.targetField,
+      undefined,
       String(mapping.accountCode || mapping.accountId || ''),
     );
   };
@@ -451,6 +475,12 @@ export default function AccountMappingTable({
     const isOverAllocated = total > 100;
     const isUnderAllocated = total < 100 && total > 0;
     const activeLOBs = linesOfBusiness.filter(lob => lob && lob.name && lob.name.trim() !== '');
+    const sectionTargetOptions = getTargetFieldOptionsForSection(sectionKey);
+    const canonicalTarget = canonicalizeTargetField(mapping.targetField);
+    const targetBelongsToSection =
+      canonicalTarget === 'ignored' ||
+      sectionTargetOptions.some((option) => option.value === canonicalTarget);
+    const displayTargetField = targetBelongsToSection ? canonicalTarget : '';
 
     return (
       <tr key={globalIdx} style={{ borderBottom: '1px solid #f1f5f9' }}>
@@ -498,9 +528,9 @@ export default function AccountMappingTable({
                 border: '1px solid #cbd5e1',
                 borderRadius: '4px',
                 fontSize: '13px',
-                background: canonicalizeTargetField(mapping.targetField) === 'ignored'
+                background: displayTargetField === 'ignored'
                   ? '#f8fafc'
-                  : canonicalizeTargetField(mapping.targetField) ? '#f0fdf4' : '#fef2f2',
+                  : displayTargetField ? '#f0fdf4' : '#fef2f2',
                 cursor: 'pointer',
                 textAlign: 'left',
                 display: 'flex',
@@ -508,8 +538,8 @@ export default function AccountMappingTable({
                 alignItems: 'center'
               }}
             >
-              <span style={{ color: canonicalizeTargetField(mapping.targetField) ? '#1e293b' : '#94a3b8' }}>
-                {canonicalizeTargetField(mapping.targetField) ? getFieldLabel(mapping.targetField) : '-- Select Field --'}
+              <span style={{ color: displayTargetField ? '#1e293b' : '#94a3b8' }}>
+                {displayTargetField ? getFieldLabel(displayTargetField) : '-- Select Field --'}
               </span>
               <span style={{ fontSize: '10px', color: '#64748b' }}>{openTargetFieldDropdown === globalIdx ? '▲' : '▼'}</span>
             </button>
@@ -539,11 +569,11 @@ export default function AccountMappingTable({
                   <div style={{ padding: '12px 16px', borderBottom: '1px solid #e2e8f0', fontWeight: '600', color: '#374151' }}>
                     Select Target Field
                   </div>
-                  {getTargetFieldOptionsForSection(sectionKey).length === 0 ? (
+                  {sectionTargetOptions.length === 0 ? (
                     <div style={{ padding: '10px 16px', fontSize: '13px', color: '#64748b' }}>
                       No target fields for this category.
                     </div>
-                  ) : getTargetFieldOptionsForSection(sectionKey).map(opt => (
+                  ) : sectionTargetOptions.map(opt => (
                     <div
                       key={opt.value}
                       onClick={() => {
@@ -555,11 +585,11 @@ export default function AccountMappingTable({
                         cursor: 'pointer',
                         fontSize: '14px',
                         color: '#1e293b',
-                        background: canonicalizeTargetField(mapping.targetField) === opt.value ? '#dbeafe' : 'transparent',
+                        background: displayTargetField === opt.value ? '#dbeafe' : 'transparent',
                         borderBottom: '1px solid #f3f4f6'
                       }}
                       onMouseOver={(e) => e.currentTarget.style.background = '#f9fafb'}
-                      onMouseOut={(e) => e.currentTarget.style.background = canonicalizeTargetField(mapping.targetField) === opt.value ? '#dbeafe' : 'transparent'}
+                      onMouseOut={(e) => e.currentTarget.style.background = displayTargetField === opt.value ? '#dbeafe' : 'transparent'}
                     >
                       {opt.label}
                     </div>

@@ -6,7 +6,7 @@ import { requireAuth, validateCompanyAccess } from '@/lib/tenant-security';
 export const dynamic = 'force-dynamic';
 export const maxDuration = 120;
 
-const LOAN_ACTIVITY_CACHE_VERSION = 16;
+const LOAN_ACTIVITY_CACHE_VERSION = 17;
 const STALE_LOAN_ACTIVITY_MONTHS = 13;
 
 type LoanTermInput = {
@@ -202,6 +202,42 @@ async function loadLatestDailyFinancialSnapshot(companyId: string): Promise<{
     snapshotDate: row.snapshotDate || null,
     loc: Math.abs(Number(row.loc || 0)),
     ltd: Math.abs(Number(row.ltd || 0)),
+  };
+}
+
+async function loadLatestMonthlyFinancialDebtSnapshot(companyId: string): Promise<{
+  snapshotDate: Date | null;
+  loc: number;
+  ltd: number;
+  interestExpense: number;
+} | null> {
+  const rows = await prisma.$queryRawUnsafe<Array<{
+    snapshotDate: Date | null;
+    loc: number | null;
+    ltd: number | null;
+    interestExpense: number | null;
+  }>>(
+    `
+      SELECT
+        mf."monthDate" AS "snapshotDate",
+        mf."loc"::float8 AS "loc",
+        mf."ltd"::float8 AS "ltd",
+        mf."interestExpense"::float8 AS "interestExpense"
+      FROM "MonthlyFinancial" mf
+      JOIN "FinancialRecord" fr ON fr.id = mf."financialRecordId"
+      WHERE mf."companyId" = $1
+      ORDER BY fr."createdAt" DESC, mf."monthDate" DESC
+      LIMIT 1
+    `,
+    companyId
+  );
+  const row = rows[0];
+  if (!row) return null;
+  return {
+    snapshotDate: row.snapshotDate || null,
+    loc: Math.abs(Number(row.loc || 0)),
+    ltd: Math.abs(Number(row.ltd || 0)),
+    interestExpense: Math.abs(Number(row.interestExpense || 0)),
   };
 }
 
@@ -704,6 +740,7 @@ async function loadLoanActivity(companyId: string) {
     principalRows.map((row) => row.accountId)
   );
   const latestDailySnapshot = await loadLatestDailyFinancialSnapshot(companyId);
+  const latestMonthlyDebtSnapshot = await loadLatestMonthlyFinancialDebtSnapshot(companyId);
 
   const monthlyRows = mappedDebtAccountIds.length
     ? await prisma.$queryRawUnsafe<any[]>(
@@ -831,12 +868,22 @@ async function loadLoanActivity(companyId: string) {
   const ltdAccountIds = principalRows
     .map((row) => String(row.accountId || '').trim())
     .filter((accountId) => (accountMetadata.get(accountId)?.targetField || '').toLowerCase() === 'ltd');
-  const latestLocBalance = Math.abs(Number(latestDailySnapshot?.loc || 0));
-  const latestLtdBalance = Math.abs(Number(latestDailySnapshot?.ltd || 0));
-  const latestSnapshotDate = latestDailySnapshot?.snapshotDate || null;
+  const useMonthlyDebtSnapshot =
+    Math.abs(Number(latestDailySnapshot?.loc || 0)) === 0 &&
+    Math.abs(Number(latestDailySnapshot?.ltd || 0)) === 0 &&
+    !!latestMonthlyDebtSnapshot;
+  const debtSnapshotSource = useMonthlyDebtSnapshot ? 'MonthlyFinancial' : 'DailyFinancialSnapshot';
+  const latestLocBalance = Math.abs(Number((useMonthlyDebtSnapshot ? latestMonthlyDebtSnapshot?.loc : latestDailySnapshot?.loc) || 0));
+  const latestLtdBalance = Math.abs(Number((useMonthlyDebtSnapshot ? latestMonthlyDebtSnapshot?.ltd : latestDailySnapshot?.ltd) || 0));
+  const latestInterestExpense = Math.abs(Number(latestMonthlyDebtSnapshot?.interestExpense || 0));
+  const latestSnapshotDate =
+    (useMonthlyDebtSnapshot ? latestMonthlyDebtSnapshot?.snapshotDate : latestDailySnapshot?.snapshotDate) || null;
   const activeLocAccountIds = new Set<string>();
   const activeLtdAccountIds = new Set<string>();
   if (latestLocBalance > 0) {
+    if (locAccountIds.length === 1) {
+      activeLocAccountIds.add(locAccountIds[0]);
+    }
     locAccountIds.forEach((accountId) => {
       const balance = Math.abs(Number(baseSignedBalanceByAccount.get(accountId) || 0));
       const tolerance = Math.max(1, latestLocBalance * 0.0025);
@@ -846,6 +893,9 @@ async function loadLoanActivity(companyId: string) {
     });
   }
   if (latestLtdBalance > 0) {
+    if (ltdAccountIds.length === 1) {
+      activeLtdAccountIds.add(ltdAccountIds[0]);
+    }
     const ltdGlTotal = ltdAccountIds.reduce((sum, accountId) => {
       const row = principalRows.find((item) => String(item.accountId || '').trim() === accountId);
       return sum + Math.abs(Number(row?.activityTotal || 0));
@@ -903,7 +953,9 @@ async function loadLoanActivity(companyId: string) {
     if (targetField === 'loc' && latestLocBalance > 0) {
       if (activeLocAccountIds.has(accountId)) {
         derivedCurrentBalance = latestLocBalance;
-        derivedCurrentBalanceSource = 'GL reconciles to Daily Financials LOC balance';
+        derivedCurrentBalanceSource = debtSnapshotSource === 'MonthlyFinancial'
+          ? 'Mapped Monthly Financials LOC balance'
+          : 'GL reconciles to Daily Financials LOC balance';
         derivedCurrentBalanceAsOf = latestSnapshotDate;
         instrumentStatus = 'active';
         statusReason = null;
@@ -914,10 +966,14 @@ async function loadLoanActivity(companyId: string) {
         instrumentStatus = 'inactive';
         statusReason = 'Mapped as LOC, but this account does not reconcile to the latest Daily Financials LOC balance.';
       }
-    } else if (targetField === 'ltd' && Math.abs(Number(row.activityTotal || 0)) > 0) {
-      derivedCurrentBalance = Math.abs(Number(row.activityTotal || 0));
-      derivedCurrentBalanceSource = 'GLTransactionFact cumulative LTD activity';
-      derivedCurrentBalanceAsOf = row.lastDate || latestSnapshotDate;
+    } else if (targetField === 'ltd' && (activeLtdAccountIds.has(accountId) || Math.abs(Number(row.activityTotal || 0)) > 0)) {
+      derivedCurrentBalance = activeLtdAccountIds.has(accountId) && latestLtdBalance > 0
+        ? latestLtdBalance
+        : Math.abs(Number(row.activityTotal || 0));
+      derivedCurrentBalanceSource = activeLtdAccountIds.has(accountId) && latestLtdBalance > 0
+        ? (debtSnapshotSource === 'MonthlyFinancial' ? 'Mapped Monthly Financials LTD balance' : 'Daily Financials LTD balance')
+        : 'GLTransactionFact cumulative LTD activity';
+      derivedCurrentBalanceAsOf = (activeLtdAccountIds.has(accountId) && latestLtdBalance > 0 ? latestSnapshotDate : row.lastDate) || latestSnapshotDate;
       instrumentStatus = 'active';
       statusReason = null;
     }
@@ -936,7 +992,7 @@ async function loadLoanActivity(companyId: string) {
     );
     const principalChange = -currentMonthSignedActivity;
     const priorMonthBalance = derivedCurrentBalance === null ? null : Math.max(0, Math.abs(derivedCurrentBalance) - principalChange);
-    const currentMonthInterestPaid = sumActivityForMonth(allInterestActivity, currentMonth);
+    const currentMonthInterestPaid = sumActivityForMonth(allInterestActivity, currentMonth) || (targetField === 'loc' || targetField === 'ltd' ? latestInterestExpense : 0);
 
     return {
       instrumentKey: String(row.instrumentKey),
@@ -946,7 +1002,7 @@ async function loadLoanActivity(companyId: string) {
       source: useRawActivity ? 'ApiSyncLog:INFOR_M3' : 'GLTransactionFact',
       transactionCount: useRawActivity ? Number(rawInforActivity.transactionCount || 0) : Number(row.transactionCount || 0),
       firstDate: useRawActivity ? rawInforActivity.firstDate : row.firstDate,
-      lastDate: useRawActivity ? rawInforActivity.lastDate : row.lastDate,
+      lastDate: (useRawActivity ? rawInforActivity.lastDate : row.lastDate) || derivedCurrentBalanceAsOf,
       activityTotal: principalActivityTotal,
       debits: Number(row.debits || 0),
       credits: Number(row.credits || 0),

@@ -781,11 +781,23 @@ export async function POST(request: NextRequest) {
     const existingByComparableName = new Map(
       existingMappingsAll.map((row) => [normalizeForCompare(String(row.accountName || "")), row]),
     );
+    const existingByNormalizedCode = new Map<number, (typeof existingMappingsAll)[number]>();
+    for (const row of existingMappingsAll) {
+      const normalizedCode = extractNormalizedAccountCode(row.accountCode, row.accountId, row.accountName);
+      if (normalizedCode !== null && !existingByNormalizedCode.has(normalizedCode)) {
+        existingByNormalizedCode.set(normalizedCode, row);
+      }
+    }
     for (const m of sanitizedUniqueMappings) {
       const normalizedTargetField = normalizeTargetFieldValue(m.targetField, sectorCategory);
       const incomingAccountId = String(m.accountId || "").trim() || null;
       const incomingAccountCode = String(m.accountCode || "").trim() || null;
       const incomingAccountName = String(m.accountName || "").trim();
+      const incomingNormalizedCode = extractNormalizedAccountCode(
+        incomingAccountCode,
+        incomingAccountId,
+        incomingAccountName,
+      );
       const existing = await prisma.accountMapping.findFirst({
         where: {
           companyId,
@@ -808,6 +820,10 @@ export async function POST(request: NextRequest) {
         !existing && incomingAccountName
           ? existingByComparableName.get(normalizeForCompare(incomingAccountName))
           : null;
+      const codeFallbackExisting =
+        !existing && incomingNormalizedCode !== null
+          ? existingByNormalizedCode.get(incomingNormalizedCode)
+          : null;
       const sourceMatch =
         quickBooksById.get(normalize(m.accountId)) ||
         quickBooksByName.get(normalize(m.accountName));
@@ -819,7 +835,7 @@ export async function POST(request: NextRequest) {
       // AccountMapping has a unique companyId + accountId constraint. If the
       // incoming/source ID already belongs to a different saved row, update that
       // identity row instead of assigning the ID to a name/code fallback row.
-      const matchedExisting = accountIdOwner || existing || nameFallbackExisting || null;
+      const matchedExisting = accountIdOwner || existing || nameFallbackExisting || codeFallbackExisting || null;
       const existingAccountId = String(matchedExisting?.accountId || "").trim() || null;
       const existingAccountCode = String(matchedExisting?.accountCode || "").trim() || null;
       const sourceAccountCode =

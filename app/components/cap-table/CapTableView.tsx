@@ -39,7 +39,10 @@ function formatDate(value: string) {
 
 export default function CapTableView({ selectedCompanyId, companyName, operationalHubSections }: CapTableViewProps) {
   const [activeTab, setActiveTab] = useState<TabKey>('ownership');
-  const data = getMockCapTableData();
+  const allowMockCapTableData =
+    process.env.NODE_ENV === 'development' &&
+    process.env.NEXT_PUBLIC_ENABLE_CAP_TABLE_MOCKS === 'true';
+  const data = allowMockCapTableData ? getMockCapTableData() : null;
   const isSectionEnabled = (sectionKey: string): boolean => {
     const value = operationalHubSections?.[sectionKey];
     return value === undefined ? true : value !== false;
@@ -52,17 +55,39 @@ export default function CapTableView({ selectedCompanyId, companyName, operation
     { key: 'performance' as TabKey, label: 'Performance Linkage', sections: ['capTableInvestmentPerformance'] },
   ].filter((tab) => tab.sections.some((section) => isSectionEnabled(section)));
   const effectiveActiveTab = tabOptions.some((tab) => tab.key === activeTab) ? activeTab : tabOptions[0]?.key || 'ownership';
-  const fullyDilutedTotal = data.securities.reduce((sum, security) => sum + security.asConvertedShares, 0);
-  const totalCapitalRaised = data.rounds.reduce((sum, round) => sum + round.capitalRaised, 0);
-  const latestEnterpriseValue = data.performance[data.performance.length - 1]?.enterpriseValue || 0;
-  const waterfallHolders = Object.keys(data.exitWaterfall[0]?.distributions || {});
-
   const cardStyle: React.CSSProperties = {
     background: 'white',
     border: '1px solid #e2e8f0',
     borderRadius: '12px',
     padding: '16px',
   };
+
+  if (!data) {
+    return (
+      <div style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+        <div>
+          <h1 style={{ margin: 0, fontSize: '24px', color: '#0f172a' }}>Cap Table</h1>
+          <div style={{ marginTop: '4px', color: '#64748b', fontSize: '13px' }}>
+            {companyName || selectedCompanyId}
+          </div>
+        </div>
+        <div style={{ ...cardStyle, background: '#f8fafc' }}>
+          <div style={{ fontSize: '16px', fontWeight: 800, color: '#0f172a', marginBottom: '6px' }}>
+            No cap table data connected
+          </div>
+          <div style={{ fontSize: '13px', color: '#475569', lineHeight: 1.5 }}>
+            This page only displays database-backed cap table records. No mock or preview cap table data is shown when real data mode is active.
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  const fullyDilutedTotal = data.securities.reduce((sum, security) => sum + security.asConvertedShares, 0);
+  const totalCapitalRaised = data.rounds.reduce((sum, round) => sum + round.capitalRaised, 0);
+  const latestEnterpriseValue = data.performance[data.performance.length - 1]?.enterpriseValue || 0;
+  const waterfallHolders = Object.keys(data.exitWaterfall[0]?.distributions || {});
+
   const thStyle: React.CSSProperties = {
     textAlign: 'left',
     padding: '9px 10px',
@@ -98,7 +123,7 @@ export default function CapTableView({ selectedCompanyId, companyName, operation
         <div>
           <h1 style={{ margin: 0, fontSize: '24px', color: '#0f172a' }}>Cap Table</h1>
           <div style={{ marginTop: '4px', color: '#64748b', fontSize: '13px' }}>
-            Mock dev data for {companyName || selectedCompanyId} as of {formatDate(data.asOfDate)}.
+            Local mock preview for {companyName || selectedCompanyId} as of {formatDate(data.asOfDate)}.
           </div>
         </div>
         <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
@@ -116,7 +141,7 @@ export default function CapTableView({ selectedCompanyId, companyName, operation
       </div>
 
       <div style={{ ...cardStyle, background: '#f8fafc', color: '#475569', fontSize: '13px' }}>
-        Development preview only. This module is currently backed by deterministic mock cap table data so the report interface can be reviewed before database-backed cap table records are introduced.
+        Local development preview only. Mock cap table data is hidden unless NEXT_PUBLIC_ENABLE_CAP_TABLE_MOCKS=true in development.
       </div>
 
       <div style={{ display: 'flex', gap: '6px', borderBottom: '2px solid #e2e8f0', overflowX: 'auto' }}>
