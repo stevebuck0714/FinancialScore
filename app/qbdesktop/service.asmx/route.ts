@@ -58,6 +58,11 @@ type QbwcSession = {
   dateRange: QbwcDateRange;
   backfillJobId?: string;
   backfillJobIds?: Record<string, string>;
+  backfillJobSequence?: Array<{
+    id: string;
+    requestName: string;
+    dateRange: QbwcDateRange;
+  }>;
   backfillJobKind?: 'header' | 'detail';
   lastError?: string | null;
 };
@@ -148,7 +153,7 @@ const QBD_TRANSACTION_PAGE_SIZE = 100;
 const QBD_INCLUDE_TRANSACTION_LINE_ITEMS = false;
 const QBD_BACKFILL_JOBS_PER_SESSION = 6;
 const QBD_DETAIL_TRANSACTION_PAGE_SIZE = 25;
-const QBD_DETAIL_BACKFILL_JOBS_PER_SESSION = 1;
+const QBD_DETAIL_BACKFILL_JOBS_PER_SESSION = 6;
 
 const RET_TAG_BY_REQUEST: Record<string, string> = {
   AccountQuery: 'AccountRet',
@@ -553,7 +558,14 @@ function getBatchIdFromJobId(jobId: string): string {
 }
 
 function getBackfillJobIdForRequest(session: QbwcSession, requestName: string): string {
+  const currentJob = session.backfillJobSequence?.[session.currentIndex];
+  if (currentJob?.requestName === requestName) return currentJob.id;
   return session.backfillJobIds?.[requestName] || session.backfillJobId || '';
+}
+
+function getCurrentRequestDateRange(session: QbwcSession, requestName: string): QbwcDateRange {
+  const currentJob = session.backfillJobSequence?.[session.currentIndex];
+  return currentJob?.requestName === requestName ? currentJob.dateRange : session.dateRange;
 }
 
 async function saveBackfillPage(
@@ -799,15 +811,16 @@ async function completeBackfillJob(
   connection: NonNullable<Awaited<ReturnType<typeof loadConnection>>>,
   session: QbwcSession,
   requestNameOverride?: string,
+  jobIdOverride?: string,
 ): Promise<void> {
   const requestName = requestNameOverride || session.requests[0];
-  const jobId = getBackfillJobIdForRequest(session, requestName);
+  const jobId = jobIdOverride || getBackfillJobIdForRequest(session, requestName);
   if (!jobId) {
     await finalizeSession(connection, session);
     return;
   }
   if (getBackfillJobKind(session) === 'detail') {
-    await completeDetailBackfillJob(connection.companyId, session, requestName);
+    await completeDetailBackfillJob(connection.companyId, session, requestName, jobId);
     return;
   }
 
@@ -869,8 +882,9 @@ async function completeDetailBackfillJob(
   companyId: string,
   session: QbwcSession,
   requestName: string,
+  jobIdOverride?: string,
 ): Promise<void> {
-  const jobId = getBackfillJobIdForRequest(session, requestName);
+  const jobId = jobIdOverride || getBackfillJobIdForRequest(session, requestName);
   if (!jobId) return;
 
   const response = await loadBackfillJobResponse(jobId, requestName);
@@ -951,11 +965,18 @@ async function markBackfillJobsRunning(
   }
 }
 
-async function updateBackfillJobProgress(companyId: string, session: QbwcSession, requestName: string): Promise<void> {
-  const jobId = getBackfillJobIdForRequest(session, requestName);
+async function updateBackfillJobProgress(
+  companyId: string,
+  session: QbwcSession,
+  requestName: string,
+  jobIdOverride?: string,
+  responseKeyOverride?: string,
+): Promise<void> {
+  const jobId = jobIdOverride || getBackfillJobIdForRequest(session, requestName);
   if (!jobId) return;
-  const response = session.responses[requestName];
-  const iterator = session.iterators?.[requestName];
+  const responseKey = responseKeyOverride || jobId || requestName;
+  const response = session.responses[responseKey];
+  const iterator = session.iterators?.[responseKey];
   const recordCount = response?.recordCount ?? response?.records.length ?? 0;
   const kind = getBackfillJobKind(session);
   const pageSize = kind === 'detail' ? QBD_DETAIL_TRANSACTION_PAGE_SIZE : QBD_TRANSACTION_PAGE_SIZE;
@@ -1148,6 +1169,11 @@ export async function POST(request: NextRequest) {
         const backfillJobKind: 'header' | 'detail' = detailBackfillJobs.length > 0 ? 'detail' : 'header';
         const backfillRequests = selectedJobs.map((job) => job.requestName);
         const backfillJobIds = Object.fromEntries(selectedJobs.map((job) => [job.requestName, job.id]));
+        const backfillJobSequence = selectedJobs.map((job) => ({
+          id: job.id,
+          requestName: job.requestName,
+          dateRange: job.dateRange,
+        }));
         const session: QbwcSession = {
           ticket,
           companyId: auth.companyId,
@@ -1160,6 +1186,7 @@ export async function POST(request: NextRequest) {
           dateRange: selectedJobs[0]?.dateRange || getRunDateRange(auth.metadata),
           backfillJobId: selectedJobs[0]?.id,
           backfillJobIds: backfillRequests.length > 0 ? backfillJobIds : undefined,
+          backfillJobSequence: backfillRequests.length > 0 ? backfillJobSequence : undefined,
           backfillJobKind: backfillRequests.length > 0 ? backfillJobKind : undefined,
           lastError: null,
         };
@@ -1178,11 +1205,14 @@ export async function POST(request: NextRequest) {
 
         const requestName = found.session.requests[found.session.currentIndex];
         if (!requestName) return soapString('sendRequestXML', '');
-        const iteratorID = found.session.iterators?.[requestName]?.iteratorID;
+        const currentJobId = getBackfillJobIdForRequest(found.session, requestName);
+        const responseKey = currentJobId || requestName;
+        const iteratorID = found.session.iterators?.[responseKey]?.iteratorID;
         const isDetailBackfill = found.session.backfillJobKind === 'detail';
+        const requestDateRange = getCurrentRequestDateRange(found.session, requestName);
 
         await saveSession(found.session.companyId, found.session);
-        return soapString('sendRequestXML', buildQbxmlRequest(requestName, found.session.dateRange, {
+        return soapString('sendRequestXML', buildQbxmlRequest(requestName, requestDateRange, {
           iteratorID,
           includeLineItems: isDetailBackfill,
           pageSize: isDetailBackfill ? QBD_DETAIL_TRANSACTION_PAGE_SIZE : QBD_TRANSACTION_PAGE_SIZE,
@@ -1200,11 +1230,13 @@ export async function POST(request: NextRequest) {
         const session = found.session;
         const requestName = session.requests[session.currentIndex];
         if (!requestName) return soapInt('receiveResponseXML', 100);
+        const currentJobId = getBackfillJobIdForRequest(session, requestName);
+        const responseKey = currentJobId || requestName;
 
         if (hresult || message) {
           session.lastError = [hresult, message].filter(Boolean).join(' - ') || 'QuickBooks returned an error.';
           await saveSession(session.companyId, session);
-          const failedJobId = getBackfillJobIdForRequest(session, requestName);
+          const failedJobId = currentJobId;
           if (failedJobId) {
             await markBackfillJobFailed(session.companyId, failedJobId, session.lastError, getBackfillJobKind(session));
           }
@@ -1212,9 +1244,9 @@ export async function POST(request: NextRequest) {
         }
 
         const pageRecords = parseResponseRecords(requestName, responseXml);
-        const existingResponse = session.responses[requestName];
+        const existingResponse = session.responses[responseKey];
         const existingRecords = existingResponse?.records || [];
-        const previousIterator = session.iterators?.[requestName];
+        const previousIterator = session.iterators?.[responseKey];
         const pageNumber = (previousIterator?.pageCount || 0) + 1;
         const nextIterator = getIteratorState(requestName, responseXml);
         const nextRecordCount = (existingResponse?.recordCount ?? existingRecords.length) + pageRecords.length;
@@ -1229,7 +1261,7 @@ export async function POST(request: NextRequest) {
             responseXml,
           );
         }
-        session.responses[requestName] = {
+        session.responses[responseKey] = {
           receivedAt: new Date().toISOString(),
           records: session.backfillJobId ? [] : [...existingRecords, ...pageRecords],
           recordCount: nextRecordCount,
@@ -1239,15 +1271,15 @@ export async function POST(request: NextRequest) {
           ...(session.iterators || {}),
         };
         if (nextIterator) {
-          session.iterators[requestName] = {
+          session.iterators[responseKey] = {
             ...nextIterator,
             pageCount: (previousIterator?.pageCount || 0) + 1,
           };
         } else {
-          delete session.iterators[requestName];
+          delete session.iterators[responseKey];
           session.currentIndex += 1;
-          if (getBackfillJobIdForRequest(session, requestName)) {
-            await completeBackfillJob(found.connection!, session, requestName);
+          if (currentJobId) {
+            await completeBackfillJob(found.connection!, session, requestName, currentJobId);
           }
         }
 
@@ -1259,7 +1291,7 @@ export async function POST(request: NextRequest) {
             : 1;
         await saveSession(session.companyId, session);
         if (session.backfillJobId) {
-          await updateBackfillJobProgress(session.companyId, session, requestName);
+          await updateBackfillJobProgress(session.companyId, session, requestName, currentJobId, responseKey);
         }
 
         if (complete) {
