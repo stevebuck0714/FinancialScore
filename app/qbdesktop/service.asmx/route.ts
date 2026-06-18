@@ -28,6 +28,9 @@ type QbDesktopMetadata = {
   quickbooksDesktopQueuedDateRange?: QbwcDateRange | null;
   quickbooksDesktopBackfillJobs?: Record<string, QbdBackfillJob>;
   quickbooksDesktopBackfillResponses?: Record<string, QbwcResponseSet>;
+  quickbooksDesktopDetailBackfillJobs?: Record<string, QbdBackfillJob>;
+  quickbooksDesktopDetailBackfillResponses?: Record<string, QbwcResponseSet>;
+  quickbooksDesktopDetailBackfillLastRun?: Record<string, unknown>;
   quickbooksDesktopWebConnectorSessions?: Record<string, QbwcSession>;
   quickbooksDesktopWebConnectorLastRun?: Record<string, unknown>;
   quickbooksDesktopInitialPullCompletedAt?: unknown;
@@ -55,6 +58,7 @@ type QbwcSession = {
   dateRange: QbwcDateRange;
   backfillJobId?: string;
   backfillJobIds?: Record<string, string>;
+  backfillJobKind?: 'header' | 'detail';
   lastError?: string | null;
 };
 
@@ -63,6 +67,8 @@ type QbdBackfillJob = {
   batchId: string;
   status: 'queued' | 'running' | 'completed' | 'failed';
   requestName: string;
+  detailType?: 'line_items';
+  windowIndex?: number;
   dateRange: QbwcDateRange;
   createdAt: string;
   updatedAt: string;
@@ -91,6 +97,8 @@ type QbwcDateRange = {
 
 type QbwcRequestContext = {
   iteratorID?: string;
+  includeLineItems?: boolean;
+  pageSize?: number;
 };
 
 const DEFAULT_REQUESTS = [
@@ -139,6 +147,8 @@ const TRANSACTION_REQUESTS = new Set([
 const QBD_TRANSACTION_PAGE_SIZE = 100;
 const QBD_INCLUDE_TRANSACTION_LINE_ITEMS = false;
 const QBD_BACKFILL_JOBS_PER_SESSION = 6;
+const QBD_DETAIL_TRANSACTION_PAGE_SIZE = 25;
+const QBD_DETAIL_BACKFILL_JOBS_PER_SESSION = 2;
 
 const RET_TAG_BY_REQUEST: Record<string, string> = {
   AccountQuery: 'AccountRet',
@@ -298,10 +308,11 @@ function buildQbxmlRequest(requestName: string, dateRange: QbwcDateRange, contex
   const requestId = xmlEscape(requestName);
   const useIterator = TRANSACTION_REQUESTS.has(requestName);
   const dateFilter = TRANSACTION_REQUESTS.has(requestName) ? buildTransactionDateFilter(dateRange) : '';
-  const includeLineItems = QBD_INCLUDE_TRANSACTION_LINE_ITEMS && ['InvoiceQuery', 'BillQuery'].includes(requestName)
+  const includeLineItems = (context.includeLineItems || QBD_INCLUDE_TRANSACTION_LINE_ITEMS) && ['InvoiceQuery', 'BillQuery'].includes(requestName)
     ? '<IncludeLineItems>true</IncludeLineItems>'
     : '';
-  const children = childrenByRequest[requestName] || `<MaxReturned>${QBD_TRANSACTION_PAGE_SIZE}</MaxReturned>${dateFilter}${includeLineItems}`;
+  const pageSize = Math.max(1, Math.min(1000, Number(context.pageSize || QBD_TRANSACTION_PAGE_SIZE)));
+  const children = childrenByRequest[requestName] || `<MaxReturned>${pageSize}</MaxReturned>${dateFilter}${includeLineItems}`;
   const iteratorAttributes = useIterator
     ? context.iteratorID
       ? ` iterator="Continue" iteratorID="${xmlEscape(context.iteratorID)}"`
@@ -474,6 +485,34 @@ function getNextBackfillJobs(metadata: QbDesktopMetadata): QbdBackfillJob[] {
     .filter((job) => job.status === 'queued' || job.status === 'running')
     .sort((a, b) => String(a.createdAt).localeCompare(String(b.createdAt)))
     .slice(0, QBD_BACKFILL_JOBS_PER_SESSION);
+}
+
+function getNextDetailBackfillJobs(metadata: QbDesktopMetadata): QbdBackfillJob[] {
+  const jobs = metadata.quickbooksDesktopDetailBackfillJobs || {};
+  return Object.values(jobs)
+    .filter((job) => job.status === 'queued' || job.status === 'running')
+    .sort((a, b) => String(a.createdAt).localeCompare(String(b.createdAt)))
+    .slice(0, QBD_DETAIL_BACKFILL_JOBS_PER_SESSION);
+}
+
+function getBackfillJobKind(session: QbwcSession): 'header' | 'detail' {
+  return session.backfillJobKind === 'detail' ? 'detail' : 'header';
+}
+
+function getBackfillJobsForKind(metadata: QbDesktopMetadata, kind: 'header' | 'detail'): Record<string, QbdBackfillJob> {
+  return kind === 'detail'
+    ? metadata.quickbooksDesktopDetailBackfillJobs || {}
+    : metadata.quickbooksDesktopBackfillJobs || {};
+}
+
+function withBackfillJobsForKind(
+  metadata: QbDesktopMetadata,
+  kind: 'header' | 'detail',
+  jobs: Record<string, QbdBackfillJob>,
+): QbDesktopMetadata {
+  return kind === 'detail'
+    ? { ...metadata, quickbooksDesktopDetailBackfillJobs: jobs }
+    : { ...metadata, quickbooksDesktopBackfillJobs: jobs };
 }
 
 function buildCombinedBackfillSession(
@@ -726,15 +765,19 @@ async function getSession(ticket: string): Promise<{ connection: Awaited<ReturnT
   return { connection, metadata, session };
 }
 
-async function markBackfillJobFailed(companyId: string, jobId: string, message: string): Promise<void> {
+async function markBackfillJobFailed(
+  companyId: string,
+  jobId: string,
+  message: string,
+  kind: 'header' | 'detail' = 'header',
+): Promise<void> {
   await updateMetadata(companyId, (metadata) => {
-    const jobs = metadata.quickbooksDesktopBackfillJobs || {};
+    const jobs = getBackfillJobsForKind(metadata, kind);
     const job = jobs[jobId];
     if (!job) return metadata;
     const now = new Date().toISOString();
     return {
-      ...metadata,
-      quickbooksDesktopBackfillJobs: {
+      ...withBackfillJobsForKind(metadata, kind, {
         ...jobs,
         [jobId]: {
           ...job,
@@ -743,7 +786,7 @@ async function markBackfillJobFailed(companyId: string, jobId: string, message: 
           updatedAt: now,
           lastError: message,
         },
-      },
+      }),
       quickbooksDesktopWebConnectorLastRun: {
         ...(metadata.quickbooksDesktopWebConnectorLastRun || {}),
         lastError: message,
@@ -761,6 +804,10 @@ async function completeBackfillJob(
   const jobId = getBackfillJobIdForRequest(session, requestName);
   if (!jobId) {
     await finalizeSession(connection, session);
+    return;
+  }
+  if (getBackfillJobKind(session) === 'detail') {
+    await completeDetailBackfillJob(connection.companyId, session, requestName);
     return;
   }
 
@@ -818,14 +865,68 @@ async function completeBackfillJob(
   }
 }
 
-async function markBackfillJobRunning(companyId: string, job: QbdBackfillJob, ticket: string): Promise<void> {
+async function completeDetailBackfillJob(
+  companyId: string,
+  session: QbwcSession,
+  requestName: string,
+): Promise<void> {
+  const jobId = getBackfillJobIdForRequest(session, requestName);
+  if (!jobId) return;
+
+  const response = await loadBackfillJobResponse(jobId, requestName);
   await updateMetadata(companyId, (metadata) => {
-    const jobs = metadata.quickbooksDesktopBackfillJobs || {};
-    const current = jobs[job.id] || job;
+    const jobs = metadata.quickbooksDesktopDetailBackfillJobs || {};
+    const job = jobs[jobId];
+    if (!job) return metadata;
     const now = new Date().toISOString();
+    const nextJobs: Record<string, QbdBackfillJob> = {
+      ...jobs,
+      [jobId]: {
+        ...job,
+        status: 'completed',
+        completedAt: now,
+        updatedAt: now,
+        recordCount: response.records.length,
+        pageCount: Math.max(1, Math.ceil((response.records.length || 0) / QBD_DETAIL_TRANSACTION_PAGE_SIZE)),
+        iteratorRemainingCount: null,
+        lastError: null,
+      },
+    };
+    const allComplete = Object.values(nextJobs).every((nextJob) => nextJob.status === 'completed');
+
     return {
       ...metadata,
-      quickbooksDesktopBackfillJobs: {
+      quickbooksDesktopDetailBackfillJobs: nextJobs,
+      quickbooksDesktopDetailBackfillResponses: {
+        ...(metadata.quickbooksDesktopDetailBackfillResponses || {}),
+        [jobId]: {
+          receivedAt: response.receivedAt,
+          records: [],
+          recordCount: response.records.length,
+        },
+      },
+      quickbooksDesktopDetailBackfillLastRun: allComplete
+        ? {
+            batchId: job.batchId,
+            completedAt: now,
+            status: 'completed',
+          }
+        : metadata.quickbooksDesktopDetailBackfillLastRun,
+    };
+  });
+}
+
+async function markBackfillJobRunning(
+  companyId: string,
+  job: QbdBackfillJob,
+  ticket: string,
+  kind: 'header' | 'detail' = 'header',
+): Promise<void> {
+  await updateMetadata(companyId, (metadata) => {
+    const jobs = getBackfillJobsForKind(metadata, kind);
+    const current = jobs[job.id] || job;
+    const now = new Date().toISOString();
+    return withBackfillJobsForKind(metadata, kind, {
         ...jobs,
         [job.id]: {
           ...current,
@@ -835,14 +936,18 @@ async function markBackfillJobRunning(companyId: string, job: QbdBackfillJob, ti
           updatedAt: now,
           lastError: null,
         },
-      },
-    };
+      });
   });
 }
 
-async function markBackfillJobsRunning(companyId: string, jobs: QbdBackfillJob[], ticket: string): Promise<void> {
+async function markBackfillJobsRunning(
+  companyId: string,
+  jobs: QbdBackfillJob[],
+  ticket: string,
+  kind: 'header' | 'detail' = 'header',
+): Promise<void> {
   for (const job of jobs) {
-    await markBackfillJobRunning(companyId, job, ticket);
+    await markBackfillJobRunning(companyId, job, ticket, kind);
   }
 }
 
@@ -852,26 +957,25 @@ async function updateBackfillJobProgress(companyId: string, session: QbwcSession
   const response = session.responses[requestName];
   const iterator = session.iterators?.[requestName];
   const recordCount = response?.recordCount ?? response?.records.length ?? 0;
+  const kind = getBackfillJobKind(session);
+  const pageSize = kind === 'detail' ? QBD_DETAIL_TRANSACTION_PAGE_SIZE : QBD_TRANSACTION_PAGE_SIZE;
   await updateMetadata(companyId, (metadata) => {
-    const jobs = metadata.quickbooksDesktopBackfillJobs || {};
+    const jobs = getBackfillJobsForKind(metadata, kind);
     const job = jobs[jobId];
     if (!job) return metadata;
     if (job.status === 'completed' || job.status === 'failed') return metadata;
-    return {
-      ...metadata,
-      quickbooksDesktopBackfillJobs: {
+    return withBackfillJobsForKind(metadata, kind, {
         ...jobs,
         [jobId]: {
           ...job,
           status: 'running',
           updatedAt: new Date().toISOString(),
           recordCount,
-          pageCount: iterator?.pageCount || Math.max(1, Math.ceil(recordCount / QBD_TRANSACTION_PAGE_SIZE)),
+          pageCount: iterator?.pageCount || Math.max(1, Math.ceil(recordCount / pageSize)),
           iteratorRemainingCount: iterator?.remainingCount ?? null,
           lastError: null,
         },
-      },
-    };
+      });
   });
 }
 
@@ -1039,8 +1143,11 @@ export async function POST(request: NextRequest) {
         const ticket = `corelytics:${auth.companyId}:${randomUUID()}`;
         const now = new Date().toISOString();
         const backfillJobs = getNextBackfillJobs(auth.metadata);
-        const backfillRequests = backfillJobs.map((job) => job.requestName);
-        const backfillJobIds = Object.fromEntries(backfillJobs.map((job) => [job.requestName, job.id]));
+        const detailBackfillJobs = backfillJobs.length > 0 ? [] : getNextDetailBackfillJobs(auth.metadata);
+        const selectedJobs = backfillJobs.length > 0 ? backfillJobs : detailBackfillJobs;
+        const backfillJobKind: 'header' | 'detail' = detailBackfillJobs.length > 0 ? 'detail' : 'header';
+        const backfillRequests = selectedJobs.map((job) => job.requestName);
+        const backfillJobIds = Object.fromEntries(selectedJobs.map((job) => [job.requestName, job.id]));
         const session: QbwcSession = {
           ticket,
           companyId: auth.companyId,
@@ -1050,14 +1157,15 @@ export async function POST(request: NextRequest) {
           requests: backfillRequests.length > 0 ? backfillRequests : buildRequestList(auth.metadata),
           responses: {},
           iterators: {},
-          dateRange: backfillJobs[0]?.dateRange || getRunDateRange(auth.metadata),
-          backfillJobId: backfillJobs[0]?.id,
+          dateRange: selectedJobs[0]?.dateRange || getRunDateRange(auth.metadata),
+          backfillJobId: selectedJobs[0]?.id,
           backfillJobIds: backfillRequests.length > 0 ? backfillJobIds : undefined,
+          backfillJobKind: backfillRequests.length > 0 ? backfillJobKind : undefined,
           lastError: null,
         };
 
-        if (backfillJobs.length > 0) {
-          await markBackfillJobsRunning(auth.companyId, backfillJobs, ticket);
+        if (selectedJobs.length > 0) {
+          await markBackfillJobsRunning(auth.companyId, selectedJobs, ticket, backfillJobKind);
         }
         await saveSession(auth.companyId, session);
         return authenticateResponse(ticket, getCompanyFilePath(auth.metadata));
@@ -1071,9 +1179,14 @@ export async function POST(request: NextRequest) {
         const requestName = found.session.requests[found.session.currentIndex];
         if (!requestName) return soapString('sendRequestXML', '');
         const iteratorID = found.session.iterators?.[requestName]?.iteratorID;
+        const isDetailBackfill = found.session.backfillJobKind === 'detail';
 
         await saveSession(found.session.companyId, found.session);
-        return soapString('sendRequestXML', buildQbxmlRequest(requestName, found.session.dateRange, { iteratorID }));
+        return soapString('sendRequestXML', buildQbxmlRequest(requestName, found.session.dateRange, {
+          iteratorID,
+          includeLineItems: isDetailBackfill,
+          pageSize: isDetailBackfill ? QBD_DETAIL_TRANSACTION_PAGE_SIZE : QBD_TRANSACTION_PAGE_SIZE,
+        }));
       }
 
       case 'receiveResponseXML': {
@@ -1093,7 +1206,7 @@ export async function POST(request: NextRequest) {
           await saveSession(session.companyId, session);
           const failedJobId = getBackfillJobIdForRequest(session, requestName);
           if (failedJobId) {
-            await markBackfillJobFailed(session.companyId, failedJobId, session.lastError);
+            await markBackfillJobFailed(session.companyId, failedJobId, session.lastError, getBackfillJobKind(session));
           }
           return soapInt('receiveResponseXML', -1);
         }

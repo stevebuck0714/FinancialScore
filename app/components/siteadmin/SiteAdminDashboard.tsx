@@ -2128,11 +2128,14 @@ export default function SiteAdminDashboard(props: any) {
         webConnectorLastRun: Record<string, any> | null;
         webConnectorActiveSession: Record<string, any> | null;
         backfillJobs: Array<Record<string, any>>;
+        detailBackfillJobs: Array<Record<string, any>>;
+        detailBackfillLastRun: Record<string, any> | null;
         lastWebConnectorSyncAt: string | null;
       }
     >
   >({});
   const [queuingQbDesktopDateRangeCompanyId, setQueuingQbDesktopDateRangeCompanyId] = React.useState<string | null>(null);
+  const [queuingQbDesktopDetailCompanyId, setQueuingQbDesktopDetailCompanyId] = React.useState<string | null>(null);
   const [refreshingQbDesktopStatusCompanyId, setRefreshingQbDesktopStatusCompanyId] = React.useState<string | null>(null);
   const [qboSettingsByCompany, setQboSettingsByCompany] = React.useState<
     Record<
@@ -2533,6 +2536,8 @@ export default function SiteAdminDashboard(props: any) {
       webConnectorLastRun: null,
       webConnectorActiveSession: null,
       backfillJobs: [],
+      detailBackfillJobs: [],
+      detailBackfillLastRun: null,
       lastWebConnectorSyncAt: null,
     };
   const getQboSettings = (companyId: string) =>
@@ -2925,6 +2930,8 @@ export default function SiteAdminDashboard(props: any) {
           webConnectorLastRun: data?.webConnectorLastRun && typeof data.webConnectorLastRun === 'object' ? data.webConnectorLastRun : null,
           webConnectorActiveSession: data?.webConnectorActiveSession && typeof data.webConnectorActiveSession === 'object' ? data.webConnectorActiveSession : null,
           backfillJobs: Array.isArray(data?.backfillJobs) ? data.backfillJobs : [],
+          detailBackfillJobs: Array.isArray(data?.detailBackfillJobs) ? data.detailBackfillJobs : [],
+          detailBackfillLastRun: data?.detailBackfillLastRun && typeof data.detailBackfillLastRun === 'object' ? data.detailBackfillLastRun : null,
           lastWebConnectorSyncAt: data?.lastWebConnectorSyncAt || null,
         },
       }));
@@ -3111,18 +3118,64 @@ export default function SiteAdminDashboard(props: any) {
     }
   };
 
+  const queueQbDesktopDetailBackfill = async (companyId: string) => {
+    const range = getQbDesktopDateRange(companyId);
+    if (!range.startDate || !range.endDate) {
+      alert('Select both Start Date and End Date for the QuickBooks Desktop detail backfill.');
+      return;
+    }
+    if (new Date(range.startDate).getTime() > new Date(range.endDate).getTime()) {
+      alert('QuickBooks Desktop detail backfill range is invalid: Start Date must be before End Date.');
+      return;
+    }
+
+    try {
+      setQueuingQbDesktopDetailCompanyId(companyId);
+      const response = await fetch('/api/quickbooks-desktop/queue-detail-backfill', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          companyId,
+          startDate: range.startDate,
+          endDate: range.endDate,
+        }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok || !data?.ok) {
+        throw new Error(data?.details || data?.error || 'Failed to queue QuickBooks Desktop detail backfill');
+      }
+      await loadQbDesktopSettings(companyId);
+      alert(`QuickBooks Desktop line-item detail backfill queued: ${range.startDate} to ${range.endDate}. Run QuickBooks Web Connector Update Selected to pull invoice/bill line items.`);
+    } catch (error: any) {
+      alert(`Failed to queue QuickBooks Desktop detail backfill: ${error?.message || 'Unknown error'}`);
+    } finally {
+      setQueuingQbDesktopDetailCompanyId(null);
+    }
+  };
+
   const renderQbDesktopDateRangeControls = (companyId: string) => {
     const range = getQbDesktopDateRange(companyId);
     const isQueuing = queuingQbDesktopDateRangeCompanyId === companyId;
+    const isQueuingDetail = queuingQbDesktopDetailCompanyId === companyId;
     const syncStatus = getQbDesktopSyncStatus(companyId);
     const queuedRange = syncStatus.queuedDateRange;
     const backfillJobs = Array.isArray(syncStatus.backfillJobs) ? syncStatus.backfillJobs : [];
+    const detailBackfillJobs = Array.isArray(syncStatus.detailBackfillJobs) ? syncStatus.detailBackfillJobs : [];
     const backfillJobCounts = backfillJobs.reduce((counts, job) => {
       const status = String(job?.status || 'unknown').toLowerCase();
       counts[status] = (counts[status] || 0) + 1;
       return counts;
     }, {} as Record<string, number>);
+    const detailBackfillJobCounts = detailBackfillJobs.reduce((counts, job) => {
+      const status = String(job?.status || 'unknown').toLowerCase();
+      counts[status] = (counts[status] || 0) + 1;
+      return counts;
+    }, {} as Record<string, number>);
     const visibleBackfillJobs = backfillJobs.filter((job) => {
+      const status = String(job?.status || '').toLowerCase();
+      return status === 'running' || status === 'failed' || status === 'queued';
+    }).slice(0, 8);
+    const visibleDetailBackfillJobs = detailBackfillJobs.filter((job) => {
       const status = String(job?.status || '').toLowerCase();
       return status === 'running' || status === 'failed' || status === 'queued';
     }).slice(0, 8);
@@ -3193,6 +3246,14 @@ export default function SiteAdminDashboard(props: any) {
           >
             {isQueuing ? 'Queuing...' : 'Queue Range Pull'}
           </button>
+          <button
+            onClick={() => queueQbDesktopDetailBackfill(companyId)}
+            disabled={isQueuingDetail}
+            style={{ width: '100%', minWidth: 0, boxSizing: 'border-box', padding: '8px 12px', background: isQueuingDetail ? '#94a3b8' : '#0f766e', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: isQueuingDetail ? 'not-allowed' : 'pointer' }}
+            title="Queues Invoice and Bill line-item detail only. Start with a short range, such as one month."
+          >
+            {isQueuingDetail ? 'Queuing Detail...' : 'Queue Line-Item Detail'}
+          </button>
         </div>
         <div style={{ marginTop: '10px', padding: '10px', background: statusBg, border: `1px solid ${statusBorder}`, borderRadius: '6px' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', gap: '8px', alignItems: 'center', marginBottom: '4px' }}>
@@ -3255,6 +3316,27 @@ export default function SiteAdminDashboard(props: any) {
                 {visibleBackfillJobs.map((job) => (
                   <div key={String(job.id || job.requestName)} style={{ marginTop: '3px' }}>
                     {String(job.requestName || '').replace(/Query$/, '') || 'Unknown'}: {String(job.status || 'unknown')}
+                    {Number(job.recordCount || 0) > 0 ? `, records ${Number(job.recordCount || 0).toLocaleString('en-US')}` : ''}
+                    {Number(job.pageCount || 0) > 0 ? `, pages ${Number(job.pageCount || 0).toLocaleString('en-US')}` : ''}
+                    {job.updatedAt ? `, updated ${new Date(String(job.updatedAt)).toLocaleString()}` : ''}
+                    {job.lastError ? `, error: ${String(job.lastError)}` : ''}
+                  </div>
+                ))}
+              </div>
+            ) : null}
+            {detailBackfillJobs.length > 0 ? (
+              <div style={{ marginTop: '8px', paddingTop: '8px', borderTop: `1px solid ${statusBorder}` }}>
+                <div style={{ fontWeight: 700 }}>
+                  Detail jobs: {detailBackfillJobs.length.toLocaleString('en-US')}
+                  {` | queued: ${Number(detailBackfillJobCounts.queued || 0).toLocaleString('en-US')}`}
+                  {` | running: ${Number(detailBackfillJobCounts.running || 0).toLocaleString('en-US')}`}
+                  {` | completed: ${Number(detailBackfillJobCounts.completed || 0).toLocaleString('en-US')}`}
+                  {` | failed: ${Number(detailBackfillJobCounts.failed || 0).toLocaleString('en-US')}`}
+                </div>
+                {visibleDetailBackfillJobs.map((job) => (
+                  <div key={String(job.id || job.requestName)} style={{ marginTop: '3px' }}>
+                    {String(job.requestName || '').replace(/Query$/, '') || 'Unknown'} line items: {String(job.status || 'unknown')}
+                    {job.dateRange?.startDate || job.dateRange?.endDate ? ` (${job.dateRange?.startDate || '—'} to ${job.dateRange?.endDate || '—'})` : ''}
                     {Number(job.recordCount || 0) > 0 ? `, records ${Number(job.recordCount || 0).toLocaleString('en-US')}` : ''}
                     {Number(job.pageCount || 0) > 0 ? `, pages ${Number(job.pageCount || 0).toLocaleString('en-US')}` : ''}
                     {job.updatedAt ? `, updated ${new Date(String(job.updatedAt)).toLocaleString()}` : ''}

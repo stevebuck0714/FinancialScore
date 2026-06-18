@@ -341,6 +341,10 @@ export async function GET(request: NextRequest) {
       webConnectorLastRun: asRecord(metadata.quickbooksDesktopWebConnectorLastRun),
       webConnectorActiveSession: summarizeLatestWebConnectorSession(metadata),
       backfillJobs: summarizeBackfillJobs(metadata),
+      detailBackfillJobs: summarizeBackfillJobs({
+        quickbooksDesktopBackfillJobs: metadata.quickbooksDesktopDetailBackfillJobs,
+      }),
+      detailBackfillLastRun: asRecord(metadata.quickbooksDesktopDetailBackfillLastRun),
       lastWebConnectorSyncAt: asString(metadata.quickbooksDesktopLastWebConnectorSyncAt) || null,
       settings: {
         ...settings,
