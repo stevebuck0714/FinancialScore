@@ -2136,6 +2136,7 @@ export default function SiteAdminDashboard(props: any) {
   >({});
   const [queuingQbDesktopDateRangeCompanyId, setQueuingQbDesktopDateRangeCompanyId] = React.useState<string | null>(null);
   const [queuingQbDesktopDetailCompanyId, setQueuingQbDesktopDetailCompanyId] = React.useState<string | null>(null);
+  const [processingQbDesktopDetailCompanyId, setProcessingQbDesktopDetailCompanyId] = React.useState<string | null>(null);
   const [refreshingQbDesktopStatusCompanyId, setRefreshingQbDesktopStatusCompanyId] = React.useState<string | null>(null);
   const [qboSettingsByCompany, setQboSettingsByCompany] = React.useState<
     Record<
@@ -3153,10 +3154,36 @@ export default function SiteAdminDashboard(props: any) {
     }
   };
 
+  const processQbDesktopDetailBackfill = async (companyId: string) => {
+    try {
+      setProcessingQbDesktopDetailCompanyId(companyId);
+      const response = await fetch('/api/quickbooks-desktop/process-detail-backfill', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ companyId }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok || !data?.ok) {
+        throw new Error(data?.details || data?.error || 'Failed to process QuickBooks Desktop detail data');
+      }
+      alert(
+        `QuickBooks Desktop detail data processed.\n` +
+        `Invoice records: ${Number(data.invoiceRecordsRead || 0).toLocaleString('en-US')}\n` +
+        `Invoice lines: ${Number(data.invoiceLinesRead || 0).toLocaleString('en-US')}\n` +
+        `Product rows: ${Number(data.productRowsCreated || 0).toLocaleString('en-US')}`
+      );
+    } catch (error: any) {
+      alert(`Failed to process QuickBooks Desktop detail data: ${error?.message || 'Unknown error'}`);
+    } finally {
+      setProcessingQbDesktopDetailCompanyId(null);
+    }
+  };
+
   const renderQbDesktopDateRangeControls = (companyId: string) => {
     const range = getQbDesktopDateRange(companyId);
     const isQueuing = queuingQbDesktopDateRangeCompanyId === companyId;
     const isQueuingDetail = queuingQbDesktopDetailCompanyId === companyId;
+    const isProcessingDetail = processingQbDesktopDetailCompanyId === companyId;
     const syncStatus = getQbDesktopSyncStatus(companyId);
     const queuedRange = syncStatus.queuedDateRange;
     const backfillJobs = Array.isArray(syncStatus.backfillJobs) ? syncStatus.backfillJobs : [];
@@ -3253,6 +3280,14 @@ export default function SiteAdminDashboard(props: any) {
             title="Queues Invoice and Bill line-item detail only. Start with a short range, such as one month."
           >
             {isQueuingDetail ? 'Queuing Detail...' : 'Queue Line-Item Detail'}
+          </button>
+          <button
+            onClick={() => processQbDesktopDetailBackfill(companyId)}
+            disabled={isProcessingDetail}
+            style={{ width: '100%', minWidth: 0, boxSizing: 'border-box', padding: '8px 12px', background: isProcessingDetail ? '#94a3b8' : '#2563eb', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: isProcessingDetail ? 'not-allowed' : 'pointer' }}
+            title="Transforms saved invoice line-item detail pages into product sales snapshots."
+          >
+            {isProcessingDetail ? 'Processing...' : 'Process Detail Data'}
           </button>
         </div>
         <div style={{ marginTop: '10px', padding: '10px', background: statusBg, border: `1px solid ${statusBorder}`, borderRadius: '6px' }}>
