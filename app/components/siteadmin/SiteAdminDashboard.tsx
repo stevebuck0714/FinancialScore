@@ -3170,7 +3170,8 @@ export default function SiteAdminDashboard(props: any) {
         `QuickBooks Desktop detail data processed.\n` +
         `Invoice records: ${Number(data.invoiceRecordsRead || 0).toLocaleString('en-US')}\n` +
         `Invoice lines: ${Number(data.invoiceLinesRead || 0).toLocaleString('en-US')}\n` +
-        `Product rows: ${Number(data.productRowsCreated || 0).toLocaleString('en-US')}`
+        `Daily product rows: ${Number(data.dailyProductRowsCreated || 0).toLocaleString('en-US')}\n` +
+        `Daily customer rows: ${Number(data.dailyCustomerRowsCreated || 0).toLocaleString('en-US')}`
       );
     } catch (error: any) {
       alert(`Failed to process QuickBooks Desktop detail data: ${error?.message || 'Unknown error'}`);
@@ -4521,7 +4522,7 @@ export default function SiteAdminDashboard(props: any) {
     }
   };
 
-  const runInforM3FinancialImport = async (companyId: string, companyName: string) => {
+  const runMappedFinancialImport = async (companyId: string, companyName: string) => {
     if (runningFinancialImportByCompany[companyId]) {
       alert('Financial import is already running for this company.');
       return;
@@ -4559,7 +4560,7 @@ export default function SiteAdminDashboard(props: any) {
       if (!response.ok || (!isCsi && !data?.ok)) {
         const details = data?.details ? ` Details: ${data.details}` : '';
         const rid = requestId ? ` Request ID: ${requestId}` : '';
-        throw new Error(`${data?.error || 'Failed to run Infor financial import'}${details}${rid}`);
+        throw new Error(`${data?.error || 'Failed to run financial import'}${details}${rid}`);
       }
 
       const recordsImported = typeof data?.recordsImported === 'number' ? data.recordsImported : null;
@@ -4567,12 +4568,12 @@ export default function SiteAdminDashboard(props: any) {
         isCsi
           ? `CSI month publish complete for ${companyName} (${financialImportSettings.targetMonth}).`
           : recordsImported !== null
-            ? `Infor financial import complete for ${companyName}. ${recordsImported} records processed through ${financialImportSettings.targetMonth}.`
-            : `Infor financial import complete for ${companyName} through ${financialImportSettings.targetMonth}.`
+            ? `Financial import complete for ${companyName}. ${recordsImported} records processed through ${financialImportSettings.targetMonth}.`
+            : `Financial import complete for ${companyName} through ${financialImportSettings.targetMonth}.`
       );
       await checkInforM3Status?.(companyId);
     } catch (error: any) {
-      alert(`Infor financial import failed: ${error?.message || 'Unknown error'}`);
+      alert(`Financial import failed: ${error?.message || 'Unknown error'}`);
     } finally {
       setRunningFinancialImportByCompany((prev) => ({ ...prev, [companyId]: false }));
     }
@@ -4618,23 +4619,24 @@ export default function SiteAdminDashboard(props: any) {
     alert(
       `Data Load Instructions: ${label}\n\n` +
       `Initial setup / backfill:\n` +
-      `1) Run Ops Sync Now\n` +
-      `   - Starts background extraction from Infor (chunked run).\n` +
-      `   - Wait for sync status to stop showing Running.\n\n` +
-      `2) Open Data Mapping (client-owned step)\n` +
+      `1) Extract accounting data\n` +
+      `   - Infor: Run Ops Sync Now and wait for sync status to stop showing Running.\n` +
+      `   - QuickBooks Desktop: Queue/run the Web Connector header backfill and wait for all jobs to complete.\n\n` +
+      `2) Open Data Mapping\n` +
       `   - Review account mapping coverage.\n` +
       `   - Map any unmapped/new accounts.\n\n` +
       `3) Save mapping changes\n` +
       `   - Confirm mappings are complete enough for reporting.\n\n` +
-      `4) Run Financial Import\n` +
-      `   - Reprocesses mapping outputs and builds monthly financials through selected month.\n\n` +
+      `4) Run/process financial import\n` +
+      `   - Reprocesses mapping outputs and builds the master data used by Data Review and financial reports.\n` +
+      `   - QuickBooks Desktop line-item detail is separate operational sales data; it does not replace the mapped financial import.\n\n` +
       `5) Validate outputs\n` +
-      `   - Review statements/charts.\n` +
+      `   - Review Data Review, statements, and charts.\n` +
       `   - If totals look off, update mapping and rerun Financial Import.\n\n` +
       `Recurring month-end close (client-owned):\n` +
       `1) Close month in ERP\n` +
       `2) Review/save Data Mapping\n` +
-      `3) Run Financial Import for closed month/through month\n` +
+      `3) Run/process Financial Import for closed month/through month\n` +
       `4) Validate published financials`
     );
   };
@@ -5457,7 +5459,7 @@ export default function SiteAdminDashboard(props: any) {
                                                         Push Financial Payload
                                                       </button>
                                                       <button
-                                                        onClick={() => runInforM3FinancialImport(company.id, company.name)}
+                                                        onClick={() => runMappedFinancialImport(company.id, company.name)}
                                                         disabled={inforBusy || !inforConnected || !!runningFinancialImportByCompany[company.id]}
                                                         style={{ width: '100%', minWidth: 0, padding: '8px 10px', background: '#7c3aed', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: inforBusy || !inforConnected || !!runningFinancialImportByCompany[company.id] ? 'not-allowed' : 'pointer' }}
                                                       >
@@ -8325,7 +8327,7 @@ export default function SiteAdminDashboard(props: any) {
                                                 Push Financial Payload
                                               </button>
                                               <button
-                                                onClick={() => runInforM3FinancialImport(businessCompany.id, businessCompany.name)}
+                                                onClick={() => runMappedFinancialImport(businessCompany.id, businessCompany.name)}
                                                 disabled={inforBusy || !inforConnected || !!runningFinancialImportByCompany[businessCompany.id]}
                                                 style={{ width: '100%', minWidth: 0, padding: '8px 10px', background: '#7c3aed', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: inforBusy || !inforConnected || !!runningFinancialImportByCompany[businessCompany.id] ? 'not-allowed' : 'pointer' }}
                                               >
@@ -8759,7 +8761,7 @@ export default function SiteAdminDashboard(props: any) {
                                                 Push Financial Payload
                                               </button>
                                               <button
-                                                onClick={() => runInforM3FinancialImport(businessCompany.id, businessCompany.name)}
+                                                onClick={() => runMappedFinancialImport(businessCompany.id, businessCompany.name)}
                                                 disabled={inforBusy || !inforConnected || !!runningFinancialImportByCompany[businessCompany.id]}
                                                 style={{ padding: '8px 12px', background: '#7c3aed', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: inforBusy || !inforConnected || !!runningFinancialImportByCompany[businessCompany.id] ? 'not-allowed' : 'pointer' }}
                                               >

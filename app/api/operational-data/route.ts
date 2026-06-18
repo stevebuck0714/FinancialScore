@@ -2714,6 +2714,17 @@ export async function GET(request: NextRequest) {
             orderBy: { snapshotDate: 'asc' },
             take: 50000,
           });
+          if (isQuickBooksCompany && salesData.length === 0 && customerFrequencyForQuery !== 'monthly') {
+            salesData = await prisma.customerSalesSnapshot.findMany({
+              where: {
+                companyId,
+                frequency: 'monthly',
+                snapshotDate: { gte: startOfMonth(startDate), lte: endDate },
+              },
+              orderBy: { snapshotDate: 'asc' },
+              take: 50000,
+            });
+          }
           if (isInforCompany && customerFrequencyForQuery !== 'monthly') {
             const existingMonths = new Set(
               salesData
@@ -6302,6 +6313,17 @@ export async function GET(request: NextRequest) {
           orderBy: [{ snapshotDate: 'desc' }, { itemName: 'asc' }],
           take: productRowCap,
         });
+        if (isQuickBooksCompany && data.length === 0 && productFrequencyForQuery !== 'monthly') {
+          data = await prisma.productSalesSnapshot.findMany({
+            where: {
+              companyId,
+              frequency: 'monthly',
+              snapshotDate: { gte: startOfMonth(startDate), lte: endDate },
+            },
+            orderBy: [{ snapshotDate: 'desc' }, { itemName: 'asc' }],
+            take: productRowCap,
+          });
+        }
         data = data.sort(
           (a, b) =>
             new Date(a.snapshotDate).getTime() - new Date(b.snapshotDate).getTime() ||

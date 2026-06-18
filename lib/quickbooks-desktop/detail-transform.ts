@@ -6,6 +6,7 @@ type DetailPageRow = {
 
 type ProductAggregate = {
   snapshotDate: Date;
+  frequency: 'daily' | 'monthly';
   itemId: string | null;
   itemName: string;
   sku: string | null;
@@ -13,11 +14,25 @@ type ProductAggregate = {
   revenue: number;
 };
 
+type CustomerAggregate = {
+  snapshotDate: Date;
+  frequency: 'daily' | 'monthly';
+  customerId: string | null;
+  customerName: string;
+  revenue: number;
+  invoiceIds: Set<string>;
+};
+
 export type QbdDetailTransformResult = {
   success: boolean;
   invoiceRecordsRead: number;
   invoiceLinesRead: number;
   productRowsCreated: number;
+  customerRowsCreated: number;
+  dailyProductRowsCreated: number;
+  dailyCustomerRowsCreated: number;
+  monthlyProductRowsCreated: number;
+  monthlyCustomerRowsCreated: number;
   monthsProcessed: string[];
   errors: string[];
 };
@@ -49,12 +64,22 @@ function toNumber(value: unknown): number {
   return 0;
 }
 
-function startOfUtcMonth(value: unknown): Date | null {
+function startOfUtcDay(value: unknown): Date | null {
   const raw = asString(value);
   if (!raw) return null;
   const parsed = new Date(`${raw.slice(0, 10)}T00:00:00.000Z`);
   if (Number.isNaN(parsed.getTime())) return null;
+  return new Date(Date.UTC(parsed.getUTCFullYear(), parsed.getUTCMonth(), parsed.getUTCDate()));
+}
+
+function startOfUtcMonth(value: unknown): Date | null {
+  const parsed = startOfUtcDay(value);
+  if (!parsed) return null;
   return new Date(Date.UTC(parsed.getUTCFullYear(), parsed.getUTCMonth(), 1));
+}
+
+function dayKey(date: Date): string {
+  return date.toISOString().slice(0, 10);
 }
 
 function monthKey(date: Date): string {
@@ -90,18 +115,77 @@ async function loadInvoiceDetailPages(companyId: string): Promise<DetailPageRow[
 export async function transformQuickBooksDesktopInvoiceDetail(companyId: string): Promise<QbdDetailTransformResult> {
   const errors: string[] = [];
   const rows = await loadInvoiceDetailPages(companyId);
-  const productByKey = new Map<string, ProductAggregate>();
+  const productDailyByKey = new Map<string, ProductAggregate>();
+  const productMonthlyByKey = new Map<string, ProductAggregate>();
+  const customerDailyByKey = new Map<string, CustomerAggregate>();
+  const customerMonthlyByKey = new Map<string, CustomerAggregate>();
   const months = new Map<string, Date>();
+  const days = new Map<string, Date>();
   let invoiceRecordsRead = 0;
   let invoiceLinesRead = 0;
+
+  const addProduct = (
+    target: Map<string, ProductAggregate>,
+    frequency: 'daily' | 'monthly',
+    snapshotDate: Date,
+    itemId: string,
+    itemName: string,
+    quantity: number,
+    amount: number,
+  ) => {
+    const keyPrefix = frequency === 'daily' ? dayKey(snapshotDate) : monthKey(snapshotDate);
+    const key = `${keyPrefix}:${itemId || itemName}`;
+    const current = target.get(key) || {
+      snapshotDate,
+      frequency,
+      itemId: itemId || null,
+      itemName: itemName || 'Unknown Item',
+      sku: getSku(itemName),
+      quantitySold: 0,
+      revenue: 0,
+    };
+    current.quantitySold += quantity;
+    current.revenue += amount;
+    target.set(key, current);
+  };
+
+  const addCustomerRevenue = (
+    target: Map<string, CustomerAggregate>,
+    frequency: 'daily' | 'monthly',
+    snapshotDate: Date,
+    customerId: string,
+    customerName: string,
+    invoiceId: string,
+    amount: number,
+  ) => {
+    const keyPrefix = frequency === 'daily' ? dayKey(snapshotDate) : monthKey(snapshotDate);
+    const key = `${keyPrefix}:${customerId || customerName}`;
+    const current = target.get(key) || {
+      snapshotDate,
+      frequency,
+      customerId: customerId || null,
+      customerName: customerName || 'Unknown Customer',
+      revenue: 0,
+      invoiceIds: new Set<string>(),
+    };
+    current.revenue += amount;
+    if (invoiceId) current.invoiceIds.add(invoiceId);
+    target.set(key, current);
+  };
 
   for (const row of rows) {
     const invoices = Array.isArray(row.payload) ? row.payload.map(asRecord) : [];
     for (const invoice of invoices) {
       invoiceRecordsRead += 1;
-      const snapshotDate = startOfUtcMonth(invoice.TxnDate);
-      if (!snapshotDate) continue;
-      months.set(monthKey(snapshotDate), snapshotDate);
+      const dailyDate = startOfUtcDay(invoice.TxnDate);
+      const monthlyDate = startOfUtcMonth(invoice.TxnDate);
+      if (!dailyDate || !monthlyDate) continue;
+      days.set(dayKey(dailyDate), dailyDate);
+      months.set(monthKey(monthlyDate), monthlyDate);
+      const customer = getRef(invoice, 'CustomerRef');
+      const customerName = customer.name || asString(invoice.FullName) || 'Unknown Customer';
+      const invoiceId = asString(invoice.TxnID) || asString(invoice.RefNumber);
+      let invoiceRevenue = 0;
 
       for (const line of asArray(invoice.InvoiceLineRet)) {
         const item = getRef(line, 'ItemRef');
@@ -114,28 +198,40 @@ export async function transformQuickBooksDesktopInvoiceDetail(companyId: string)
         if (amount === 0 && quantity === 0) continue;
 
         invoiceLinesRead += 1;
-        const key = `${monthKey(snapshotDate)}:${item.id || itemName}`;
-        const current = productByKey.get(key) || {
-          snapshotDate,
-          itemId: item.id || null,
-          itemName: itemName || 'Unknown Item',
-          sku: getSku(itemName),
-          quantitySold: 0,
-          revenue: 0,
-        };
-        current.quantitySold += quantity;
-        current.revenue += amount;
-        productByKey.set(key, current);
+        addProduct(productDailyByKey, 'daily', dailyDate, item.id, itemName, quantity, amount);
+        addProduct(productMonthlyByKey, 'monthly', monthlyDate, item.id, itemName, quantity, amount);
+        invoiceRevenue += amount;
+      }
+      if (invoiceRevenue !== 0) {
+        addCustomerRevenue(customerDailyByKey, 'daily', dailyDate, customer.id, customerName, invoiceId, invoiceRevenue);
+        addCustomerRevenue(customerMonthlyByKey, 'monthly', monthlyDate, customer.id, customerName, invoiceId, invoiceRevenue);
       }
     }
   }
 
   const monthDates = Array.from(months.values());
-  if (monthDates.length === 0) {
-    errors.push('No invoice detail months were found in saved QBD detail pages.');
+  const dayDates = Array.from(days.values());
+  if (dayDates.length === 0) {
+    errors.push('No invoice detail dates were found in saved QBD detail pages.');
   }
 
   await prisma.$transaction(async (tx) => {
+    for (const snapshotDate of dayDates) {
+      await tx.productSalesSnapshot.deleteMany({
+        where: {
+          companyId,
+          frequency: 'daily',
+          snapshotDate,
+        },
+      });
+      await tx.customerSalesSnapshot.deleteMany({
+        where: {
+          companyId,
+          frequency: 'daily',
+          snapshotDate,
+        },
+      });
+    }
     for (const snapshotDate of monthDates) {
       await tx.productSalesSnapshot.deleteMany({
         where: {
@@ -144,9 +240,16 @@ export async function transformQuickBooksDesktopInvoiceDetail(companyId: string)
           snapshotDate,
         },
       });
+      await tx.customerSalesSnapshot.deleteMany({
+        where: {
+          companyId,
+          frequency: 'monthly',
+          snapshotDate,
+        },
+      });
     }
 
-    const data = Array.from(productByKey.values())
+    const productData = [...productDailyByKey.values(), ...productMonthlyByKey.values()]
       .filter((row) => row.itemName)
       .map((row) => {
         const cogs = 0;
@@ -154,7 +257,7 @@ export async function transformQuickBooksDesktopInvoiceDetail(companyId: string)
         return {
           companyId,
           snapshotDate: row.snapshotDate,
-          frequency: 'monthly',
+          frequency: row.frequency,
           itemId: row.itemId,
           itemName: row.itemName,
           sku: row.sku,
@@ -166,8 +269,28 @@ export async function transformQuickBooksDesktopInvoiceDetail(companyId: string)
         };
       });
 
-    if (data.length > 0) {
-      await tx.productSalesSnapshot.createMany({ data });
+    if (productData.length > 0) {
+      await tx.productSalesSnapshot.createMany({ data: productData });
+    }
+
+    const customerData = [...customerDailyByKey.values(), ...customerMonthlyByKey.values()]
+      .filter((row) => row.customerName)
+      .map((row) => {
+        const invoiceCount = Math.max(1, row.invoiceIds.size);
+        return {
+          companyId,
+          snapshotDate: row.snapshotDate,
+          frequency: row.frequency,
+          customerId: row.customerId,
+          customerName: row.customerName,
+          revenue: row.revenue,
+          invoiceCount,
+          avgInvoiceSize: row.revenue / invoiceCount,
+        };
+      });
+
+    if (customerData.length > 0) {
+      await tx.customerSalesSnapshot.createMany({ data: customerData });
     }
   });
 
@@ -177,12 +300,16 @@ export async function transformQuickBooksDesktopInvoiceDetail(companyId: string)
       platform: 'QUICKBOOKS',
       syncType: 'qbd_invoice_line_detail_transform',
       status: errors.length === 0 ? 'success' : 'error',
-      recordsImported: productByKey.size,
+      recordsImported: productDailyByKey.size + productMonthlyByKey.size,
       errorCount: errors.length,
       errorDetails: {
         errors,
         invoiceRecordsRead,
         invoiceLinesRead,
+        dailyProductRowsCreated: productDailyByKey.size,
+        dailyCustomerRowsCreated: customerDailyByKey.size,
+        monthlyProductRowsCreated: productMonthlyByKey.size,
+        monthlyCustomerRowsCreated: customerMonthlyByKey.size,
         monthsProcessed: Array.from(months.keys()).sort(),
       },
     },
@@ -192,7 +319,12 @@ export async function transformQuickBooksDesktopInvoiceDetail(companyId: string)
     success: errors.length === 0,
     invoiceRecordsRead,
     invoiceLinesRead,
-    productRowsCreated: productByKey.size,
+    productRowsCreated: productDailyByKey.size + productMonthlyByKey.size,
+    customerRowsCreated: customerDailyByKey.size + customerMonthlyByKey.size,
+    dailyProductRowsCreated: productDailyByKey.size,
+    dailyCustomerRowsCreated: customerDailyByKey.size,
+    monthlyProductRowsCreated: productMonthlyByKey.size,
+    monthlyCustomerRowsCreated: customerMonthlyByKey.size,
     monthsProcessed: Array.from(months.keys()).sort(),
     errors,
   };
