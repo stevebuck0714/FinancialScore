@@ -347,6 +347,9 @@ function buildReportPeriod(dateRange: QbwcDateRange): string {
 function buildReportChildren(requestName: string, dateRange: QbwcDateRange): string {
   const period = buildReportPeriod(dateRange);
   const basis = '<ReportBasis>Accrual</ReportBasis>';
+  if (requestName === 'TrialBalanceReportQuery') {
+    return `<GeneralSummaryReportType>TrialBalance</GeneralSummaryReportType>${period}${basis}`;
+  }
   if (requestName === 'GeneralDetailReportQuery') {
     return `<GeneralDetailReportType>GeneralLedger</GeneralDetailReportType>${period}${basis}`;
   }
@@ -365,13 +368,16 @@ function buildQbxmlRequest(requestName: string, dateRange: QbwcDateRange, contex
   const requestTag = `${requestName}Rq`;
   const requestId = xmlEscape(requestName);
   if (REPORT_REQUESTS.has(requestName)) {
+    const reportRequestTag = requestName === 'TrialBalanceReportQuery'
+      ? 'GeneralSummaryReportQueryRq'
+      : requestTag;
     return `<?xml version="1.0" encoding="utf-8"?>
 <?qbxml version="13.0"?>
 <QBXML>
   <QBXMLMsgsRq onError="continueOnError">
-    <${requestTag} requestID="${requestId}">
+    <${reportRequestTag} requestID="${requestId}">
       ${buildReportChildren(requestName, dateRange)}
-    </${requestTag}>
+    </${reportRequestTag}>
   </QBXMLMsgsRq>
 </QBXML>`;
   }
