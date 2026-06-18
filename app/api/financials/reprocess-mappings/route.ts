@@ -46,6 +46,16 @@ function hasMonthlyDataRows(payload: Record<string, unknown> | null): boolean {
   return Array.isArray(rows) && rows.length > 0;
 }
 
+async function hasQuickBooksDesktopBackfillPages(companyId: string): Promise<boolean> {
+  const rows = await prisma.$queryRaw<Array<{ count: bigint }>>`
+    SELECT COUNT(*)::bigint AS count
+    FROM "QuickBooksDesktopBackfillPage"
+    WHERE "companyId" = ${companyId}
+      AND "requestName" = 'AccountQuery'
+  `;
+  return Number(rows[0]?.count || 0) > 0;
+}
+
 function looksLikeCoaOnlyPayloadStub(payload: Record<string, unknown> | null): boolean {
   if (!payload) return false;
   const metadata =
@@ -996,6 +1006,12 @@ export async function POST(request: NextRequest) {
 
     const configuredPlatformRaw = String(company?.accountingSystem || '');
     const configuredPlatform = normalizeConfiguredPlatform(configuredPlatformRaw);
+    const hasQbdBackfillPages =
+      configuredPlatform === 'QUICKBOOKS' || isQuickBooksDesktopFamily(configuredPlatform)
+        ? await hasQuickBooksDesktopBackfillPages(String(companyId))
+        : false;
+    const shouldUseQuickBooksDesktopReprocess =
+      isQuickBooksDesktopFamily(configuredPlatform) || (configuredPlatform === 'QUICKBOOKS' && hasQbdBackfillPages);
 
     if (!configuredPlatform) {
       return NextResponse.json(
@@ -1027,7 +1043,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(payload, { status: xeroResponse.status });
     }
 
-    if (configuredPlatform === 'QUICKBOOKS') {
+    if (configuredPlatform === 'QUICKBOOKS' && !shouldUseQuickBooksDesktopReprocess) {
       const latestFinancialRecord = await prisma.financialRecord.findFirst({
         where: { companyId: String(companyId) },
         orderBy: { createdAt: 'desc' },
@@ -1402,7 +1418,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    if (isQuickBooksDesktopFamily(configuredPlatform)) {
+    if (shouldUseQuickBooksDesktopReprocess) {
       const connection = await prisma.accountingConnection.findUnique({
         where: {
           companyId_platform: {
@@ -1442,6 +1458,8 @@ export async function POST(request: NextRequest) {
       const qbdDiagnostics: Record<string, unknown> = {
         companyId: String(companyId),
         configuredPlatform,
+        configuredPlatformRaw,
+        hasQbdBackfillPages,
         targetMonth: targetMonth || null,
         mode,
         hadMonthlyDataRows: hasMonthlyDataRows(financialPayload),
