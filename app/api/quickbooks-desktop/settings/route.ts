@@ -138,6 +138,7 @@ function summarizeLatestWebConnectorSession(metadata: Record<string, unknown>): 
 
   const requests = Array.isArray(session.requests) ? session.requests.map((value) => String(value || '')) : [];
   const currentIndex = Math.max(0, Number(session.currentIndex || 0));
+  if (requests.length > 0 && currentIndex >= requests.length) return null;
   const responses = asRecord(session.responses) || {};
   const iterators = asRecord(session.iterators) || {};
   const currentRequest = requests[currentIndex] || '';
