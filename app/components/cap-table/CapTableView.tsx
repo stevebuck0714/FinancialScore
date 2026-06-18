@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { getMockCapTableData } from '@/lib/cap-table/mock-data';
 
 type CapTableViewProps = {
@@ -10,6 +10,28 @@ type CapTableViewProps = {
 };
 
 type TabKey = 'ownership' | 'history' | 'securities' | 'waterfall' | 'performance';
+
+type RealCapTableHolding = {
+  holder: string;
+  accountName: string;
+  accountCode?: string | null;
+  security: string;
+  targetField: string;
+  balance: number;
+  ownershipPct?: number | null;
+};
+
+type RealCapTableData = {
+  asOfDate: string;
+  source: string;
+  holdings: RealCapTableHolding[];
+  securitySummary: Array<{ security: string; balance: number; holders: number; ownershipPct: number }>;
+  summary: {
+    capitalBalance: number;
+    holderCount: number;
+    securityClassCount: number;
+  };
+};
 
 function formatCurrency(value: number | null | undefined, digits = 0) {
   if (value === null || value === undefined || Number.isNaN(Number(value))) return '-';
@@ -39,10 +61,45 @@ function formatDate(value: string) {
 
 export default function CapTableView({ selectedCompanyId, companyName, operationalHubSections }: CapTableViewProps) {
   const [activeTab, setActiveTab] = useState<TabKey>('ownership');
+  const [realData, setRealData] = useState<RealCapTableData | null>(null);
+  const [loadingRealData, setLoadingRealData] = useState(false);
+  const [realDataError, setRealDataError] = useState<string | null>(null);
   const allowMockCapTableData =
     process.env.NODE_ENV === 'development' &&
     process.env.NEXT_PUBLIC_ENABLE_CAP_TABLE_MOCKS === 'true';
   const data = allowMockCapTableData ? getMockCapTableData() : null;
+
+  useEffect(() => {
+    if (!selectedCompanyId) return;
+    let cancelled = false;
+    const loadRealCapTable = async () => {
+      setLoadingRealData(true);
+      setRealDataError(null);
+      try {
+        const response = await fetch(`/api/cap-table?companyId=${encodeURIComponent(selectedCompanyId)}`, { cache: 'no-store' });
+        const payload = await response.json().catch(() => ({}));
+        if (cancelled) return;
+        if (!response.ok) {
+          setRealData(null);
+          setRealDataError(payload?.error || 'Unable to load cap table data.');
+          return;
+        }
+        setRealData(Array.isArray(payload?.holdings) && payload.holdings.length > 0 ? payload : null);
+      } catch (error) {
+        if (!cancelled) {
+          setRealData(null);
+          setRealDataError(error instanceof Error ? error.message : 'Unable to load cap table data.');
+        }
+      } finally {
+        if (!cancelled) setLoadingRealData(false);
+      }
+    };
+    loadRealCapTable();
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedCompanyId]);
+
   const isSectionEnabled = (sectionKey: string): boolean => {
     const value = operationalHubSections?.[sectionKey];
     return value === undefined ? true : value !== false;
@@ -61,33 +118,6 @@ export default function CapTableView({ selectedCompanyId, companyName, operation
     borderRadius: '12px',
     padding: '16px',
   };
-
-  if (!data) {
-    return (
-      <div style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
-        <div>
-          <h1 style={{ margin: 0, fontSize: '24px', color: '#0f172a' }}>Cap Table</h1>
-          <div style={{ marginTop: '4px', color: '#64748b', fontSize: '13px' }}>
-            {companyName || selectedCompanyId}
-          </div>
-        </div>
-        <div style={{ ...cardStyle, background: '#f8fafc' }}>
-          <div style={{ fontSize: '16px', fontWeight: 800, color: '#0f172a', marginBottom: '6px' }}>
-            No cap table data connected
-          </div>
-          <div style={{ fontSize: '13px', color: '#475569', lineHeight: 1.5 }}>
-            This page only displays database-backed cap table records. No mock or preview cap table data is shown when real data mode is active.
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  const fullyDilutedTotal = data.securities.reduce((sum, security) => sum + security.asConvertedShares, 0);
-  const totalCapitalRaised = data.rounds.reduce((sum, round) => sum + round.capitalRaised, 0);
-  const latestEnterpriseValue = data.performance[data.performance.length - 1]?.enterpriseValue || 0;
-  const waterfallHolders = Object.keys(data.exitWaterfall[0]?.distributions || {});
-
   const thStyle: React.CSSProperties = {
     textAlign: 'left',
     padding: '9px 10px',
@@ -105,6 +135,120 @@ export default function CapTableView({ selectedCompanyId, companyName, operation
     color: '#0f172a',
     borderBottom: '1px solid #f1f5f9',
   };
+
+  if (realData) {
+    return (
+      <div style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', gap: '16px', alignItems: 'flex-start', flexWrap: 'wrap' }}>
+          <div>
+            <h1 style={{ margin: 0, fontSize: '24px', color: '#0f172a' }}>Cap Table</h1>
+            <div style={{ marginTop: '4px', color: '#64748b', fontSize: '13px' }}>
+              Real QBD equity-account balances for {companyName || selectedCompanyId} as of {formatDate(realData.asOfDate)}.
+            </div>
+          </div>
+          <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+            {[
+              ['Capital Balance', formatCurrency(realData.summary.capitalBalance)],
+              ['Holders', formatNumber(realData.summary.holderCount)],
+              ['Security Classes', formatNumber(realData.summary.securityClassCount)],
+            ].map(([label, value]) => (
+              <div key={label} style={{ ...cardStyle, padding: '10px 14px', minWidth: '160px' }}>
+                <div style={{ fontSize: '11px', color: '#64748b', fontWeight: 800, textTransform: 'uppercase' }}>{label}</div>
+                <div style={{ fontSize: '18px', fontWeight: 900, color: '#0f172a', marginTop: '2px' }}>{value}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div style={{ ...cardStyle, background: '#f8fafc', color: '#475569', fontSize: '13px', lineHeight: 1.5 }}>
+          This view is sourced from mapped QuickBooks Desktop equity accounts. It shows capital balance percentages, not legal share counts.
+        </div>
+
+        <div style={{ ...cardStyle, padding: 0, overflow: 'hidden' }}>
+          <div style={{ padding: '14px 16px', borderBottom: '1px solid #e2e8f0', fontWeight: 900 }}>Current Capitalization Summary</div>
+          <div style={{ overflowX: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+              <thead>
+                <tr>
+                  <th style={thStyle}>Security Type</th>
+                  <th style={{ ...thStyle, textAlign: 'right' }}>Capital Balance</th>
+                  <th style={{ ...thStyle, textAlign: 'right' }}>Holders</th>
+                  <th style={{ ...thStyle, textAlign: 'right' }}>% Ownership</th>
+                </tr>
+              </thead>
+              <tbody>
+                {realData.securitySummary.map((security) => (
+                  <tr key={security.security}>
+                    <td style={{ ...tdStyle, fontWeight: 800 }}>{security.security}</td>
+                    <td style={{ ...tdStyle, textAlign: 'right' }}>{formatCurrency(security.balance)}</td>
+                    <td style={{ ...tdStyle, textAlign: 'right' }}>{formatNumber(security.holders)}</td>
+                    <td style={{ ...tdStyle, textAlign: 'right', fontWeight: 800 }}>{security.ownershipPct ? formatPercent(security.ownershipPct) : '-'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div style={{ ...cardStyle, padding: 0, overflow: 'hidden' }}>
+          <div style={{ padding: '14px 16px', borderBottom: '1px solid #e2e8f0', fontWeight: 900 }}>Holder Detail</div>
+          <div style={{ overflowX: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+              <thead>
+                <tr>
+                  <th style={thStyle}>Holder</th>
+                  <th style={thStyle}>Security</th>
+                  <th style={thStyle}>Account</th>
+                  <th style={{ ...thStyle, textAlign: 'right' }}>Capital Balance</th>
+                  <th style={{ ...thStyle, textAlign: 'right' }}>% Ownership</th>
+                </tr>
+              </thead>
+              <tbody>
+                {realData.holdings.map((holding) => (
+                  <tr key={`${holding.accountName}-${holding.targetField}`}>
+                    <td style={{ ...tdStyle, fontWeight: 800 }}>{holding.holder}</td>
+                    <td style={tdStyle}>{holding.security}</td>
+                    <td style={tdStyle}>{holding.accountName}</td>
+                    <td style={{ ...tdStyle, textAlign: 'right' }}>{formatCurrency(holding.balance)}</td>
+                    <td style={{ ...tdStyle, textAlign: 'right', fontWeight: 800 }}>{holding.ownershipPct == null ? '-' : formatPercent(holding.ownershipPct)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (!data) {
+    return (
+      <div style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+        <div>
+          <h1 style={{ margin: 0, fontSize: '24px', color: '#0f172a' }}>Cap Table</h1>
+          <div style={{ marginTop: '4px', color: '#64748b', fontSize: '13px' }}>
+            {companyName || selectedCompanyId}
+          </div>
+        </div>
+        <div style={{ ...cardStyle, background: '#f8fafc' }}>
+          <div style={{ fontSize: '16px', fontWeight: 800, color: '#0f172a', marginBottom: '6px' }}>
+            No cap table data connected
+          </div>
+          <div style={{ fontSize: '13px', color: '#475569', lineHeight: 1.5 }}>
+            {loadingRealData
+              ? 'Loading real cap table data...'
+              : realDataError || 'No mapped QBD equity account balances are available for this company. No mock or preview cap table data is shown when real data mode is active.'}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  const fullyDilutedTotal = data.securities.reduce((sum, security) => sum + security.asConvertedShares, 0);
+  const totalCapitalRaised = data.rounds.reduce((sum, round) => sum + round.capitalRaised, 0);
+  const latestEnterpriseValue = data.performance[data.performance.length - 1]?.enterpriseValue || 0;
+  const waterfallHolders = Object.keys(data.exitWaterfall[0]?.distributions || {});
+
   const tabStyle = (active: boolean): React.CSSProperties => ({
     border: 'none',
     background: 'transparent',

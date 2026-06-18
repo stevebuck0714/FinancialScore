@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import { ingestFinancialPayload } from '@/lib/financial-ingestion';
 import { MONTHLY_FINANCIAL_NUMERIC_FIELDS } from '@/lib/financial-canonical';
+import { publishMonthsFromMonthlyFinancialDirect } from '@/lib/financial/publish-month-service';
 import { syncErpDailyFinancialsFromGL } from '@/lib/financial/sync-erp-daily-financials';
 import { buildCsiMonthlyDataFromGlResponses } from '@/lib/infor-m3/csi-monthly-financial-builder';
 import { isQuickBooksDesktopFamily } from '@/lib/quickbooks-desktop/family';
@@ -1467,6 +1468,19 @@ export async function POST(request: NextRequest) {
       if (qbdDailyFinancialSnapshots) {
         qbdDiagnostics.dailyFinancialSnapshots = qbdDailyFinancialSnapshots;
       }
+      const qbdPublishResult = result.ok
+        ? await publishMonthsFromMonthlyFinancialDirect({ companyId: String(companyId), force: true })
+        : null;
+      if (qbdPublishResult) {
+        qbdDiagnostics.publishedMasterData = {
+          success: qbdPublishResult.success,
+          publishedMonths: qbdPublishResult.publishedMonths.length,
+          skippedMonths: qbdPublishResult.skippedMonths.length,
+          lockedMonths: qbdPublishResult.lockedMonths.length,
+          missingMonths: qbdPublishResult.missingMonths.length,
+          error: qbdPublishResult.error || null,
+        };
+      }
 
       return NextResponse.json(
         {
@@ -1476,6 +1490,7 @@ export async function POST(request: NextRequest) {
             : result.error || 'QuickBooks Desktop reprocess failed.',
           diagnostics: qbdDiagnostics,
           qbdDailyFinancialSnapshots,
+          qbdPublishResult,
           ...result,
         },
         { status: result.status },
