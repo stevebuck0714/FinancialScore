@@ -18278,6 +18278,7 @@ function FinancialScorePage() {
           selectedCompanyId={selectedCompanyId}
           companyName={companyName}
           accountMappings={aiMappings}
+          industrySectorCategory={effectiveCompanySectorCategory}
         />
       )}
 

@@ -5,14 +5,16 @@ import { exportDataReviewToExcel } from "../../utils/excel-export";
 import type { MonthlyDataRow, Mappings } from "../../types";
 import { useAllMasterData } from "@/lib/master-data-store";
 import { getFieldDisplayName } from "@/lib/constants/field-display-names";
+import { getTargetFieldOptions } from "@/lib/constants/sector-target-fields";
 
 interface DataReviewTabProps {
   selectedCompanyId: string;
   companyName: string;
   accountMappings: Mappings[];
+  industrySectorCategory?: string | null;
 }
 
-export default function DataReviewTab({ selectedCompanyId, companyName, accountMappings }: DataReviewTabProps) {
+export default function DataReviewTab({ selectedCompanyId, companyName, accountMappings, industrySectorCategory }: DataReviewTabProps) {
   // Data Review is an import QA surface, so it must show all saved/processed
   // months immediately instead of waiting for the month-publish gate.
   const { monthlyData, loading: masterDataLoading, error: masterDataError } = useAllMasterData(selectedCompanyId);
@@ -51,37 +53,52 @@ export default function DataReviewTab({ selectedCompanyId, companyName, accountM
     };
   }, [monthlyData]);
   const displayedMonths = monthly;
-  const renderBalanceSheetLine = (field: keyof MonthlyDataRow | string, label: string, paddingLeft = "20px") => (
-    <tr style={{ borderBottom: "1px solid #f1f5f9" }}>
-      <td
-        style={{
-          padding: "8px 10px",
-          paddingLeft,
-          position: "sticky",
-          left: 0,
-          background: "white",
-          zIndex: 1,
-        }}
-      >
-        {label}
-      </td>
-      {monthly.slice(-36).map((m: any, idx: number) => (
+  const allowedBalanceSheetFields = React.useMemo(() => {
+    const targetOptions = getTargetFieldOptions(industrySectorCategory || undefined);
+    return new Set([
+      ...targetOptions.asset.map((option) => option.value),
+      ...targetOptions.liability.map((option) => option.value),
+      ...targetOptions.equity.map((option) => option.value),
+    ]);
+  }, [industrySectorCategory]);
+
+  const renderBalanceSheetLine = (field: keyof MonthlyDataRow | string, label: string, paddingLeft = "20px") => {
+    if (!allowedBalanceSheetFields.has(String(field))) return null;
+    const values = monthly.slice(-36).map((m: any) => Number(m?.[field] || 0));
+    if (!values.some((value) => value !== 0)) return null;
+
+    return (
+      <tr style={{ borderBottom: "1px solid #f1f5f9" }}>
         <td
-          key={idx}
           style={{
             padding: "8px 10px",
-            textAlign: "right",
-            fontFamily: "monospace",
+            paddingLeft,
+            position: "sticky",
+            left: 0,
+            background: "white",
+            zIndex: 1,
           }}
         >
-          ${(Number(m?.[field] || 0)).toLocaleString("en-US", {
-            minimumFractionDigits: 0,
-            maximumFractionDigits: 0,
-          })}
+          {label}
         </td>
-      ))}
-    </tr>
-  );
+        {values.map((value: number, idx: number) => (
+          <td
+            key={idx}
+            style={{
+              padding: "8px 10px",
+              textAlign: "right",
+              fontFamily: "monospace",
+            }}
+          >
+            ${value.toLocaleString("en-US", {
+              minimumFractionDigits: 0,
+              maximumFractionDigits: 0,
+            })}
+          </td>
+        ))}
+      </tr>
+    );
+  };
 
   // Check if master data exists
   if (masterDataLoading) {
