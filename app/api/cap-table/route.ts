@@ -35,6 +35,20 @@ function number(value: unknown): number {
   return 0;
 }
 
+function dateKey(value: unknown): string {
+  const raw = text(value);
+  if (!raw) return '';
+  if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw;
+  const parsed = new Date(raw);
+  return Number.isNaN(parsed.getTime()) ? '' : parsed.toISOString().slice(0, 10);
+}
+
+function reportColValue(record: Record<string, unknown>, colID: string): string {
+  const colData = Array.isArray(record.colData) ? record.colData.map(asRecord) : [];
+  const column = colData.find((col) => text(col.colID) === colID);
+  return text(column?.value);
+}
+
 function holderName(fullName: string): string {
   const leaf = fullName.split(':').pop() || fullName;
   return leaf
@@ -54,6 +68,54 @@ function securityLabel(targetField: string): string {
   return targetField;
 }
 
+type EquityActivity = {
+  txnDate: string;
+  txnType: string;
+  refNo: string;
+  name: string;
+  splitAccount: string;
+  amount: number;
+  balance: number;
+};
+
+async function loadEquityActivityByAccount(companyId: string) {
+  const rows = await prisma.$queryRaw<Array<{ payload: unknown }>>`
+    SELECT "payload"
+    FROM "QuickBooksDesktopBackfillPage"
+    WHERE "companyId" = ${companyId}
+      AND "requestName" = 'GeneralDetailReportQuery'
+    ORDER BY "createdAt" ASC, "pageNumber" ASC
+  `;
+  const byAccount = new Map<string, EquityActivity[]>();
+  for (const page of rows) {
+    const records = Array.isArray(page.payload) ? page.payload.map(asRecord) : [];
+    for (const record of records) {
+      if (text(record.rowKind) !== 'DataRow') continue;
+      const accountName = text(record.accountName || record.rowValue);
+      const txnDate = dateKey(reportColValue(record, '3'));
+      const amount = number(reportColValue(record, '8'));
+      if (!accountName || !txnDate || Math.abs(amount) < 0.005) continue;
+      const key = accountName.toLowerCase();
+      const activity = byAccount.get(key) || [];
+      activity.push({
+        txnDate,
+        txnType: reportColValue(record, '2'),
+        refNo: reportColValue(record, '4'),
+        name: reportColValue(record, '5'),
+        splitAccount: reportColValue(record, '7'),
+        amount,
+        balance: number(reportColValue(record, '9')),
+      });
+      byAccount.set(key, activity);
+    }
+  }
+  for (const [key, activity] of byAccount.entries()) {
+    activity.sort((a, b) => a.txnDate.localeCompare(b.txnDate));
+    byAccount.set(key, activity);
+  }
+  return byAccount;
+}
+
 export async function GET(request: NextRequest) {
   await requireAuth();
   const companyId = request.nextUrl.searchParams.get('companyId') || '';
@@ -67,7 +129,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
   }
 
-  const [mappings, pages] = await Promise.all([
+  const [mappings, pages, equityActivityByAccount] = await Promise.all([
     prisma.accountMapping.findMany({
       where: {
         companyId,
@@ -91,6 +153,7 @@ export async function GET(request: NextRequest) {
         AND "requestName" = 'AccountQuery'
       ORDER BY "createdAt" DESC, "pageNumber" ASC
     `,
+    loadEquityActivityByAccount(companyId),
   ]);
 
   const targetByKey = new Map<string, { targetField: string; accountName: string; accountCode: string | null }>();
@@ -132,6 +195,8 @@ export async function GET(request: NextRequest) {
         security: securityLabel(mapped.targetField),
         targetField: mapped.targetField,
         balance,
+        issuedDate: equityActivityByAccount.get((fullName || mapped.accountName).toLowerCase())?.[0]?.txnDate || null,
+        activity: equityActivityByAccount.get((fullName || mapped.accountName).toLowerCase()) || [],
       };
     })
     .filter((row): row is NonNullable<typeof row> => row !== null);

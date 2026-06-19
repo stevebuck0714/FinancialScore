@@ -2,6 +2,7 @@ import prisma from '@/lib/prisma';
 import { AccountingPlatform } from '@prisma/client';
 import type { Prisma } from '@prisma/client';
 import {
+  MONTHLY_FINANCIAL_NUMERIC_FIELDS,
   findZeroRevenueAnomalies,
   toCanonicalMonthlyFinancial,
   toMonthlyFinancialCreateInput,
@@ -119,17 +120,73 @@ function monthKey(date: Date): string {
   return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}`;
 }
 
+const PNL_NUMERIC_FIELDS = [
+  'revenue',
+  'expense',
+  'cogsPayroll',
+  'cogsOwnerPay',
+  'cogsContractors',
+  'cogsMaterials',
+  'cogsCommissions',
+  'cogsOther',
+  'cogsTotal',
+  'payroll',
+  'ownerBasePay',
+  'benefits',
+  'insurance',
+  'professionalFees',
+  'subcontractors',
+  'rent',
+  'taxLicense',
+  'stateIncomeTaxes',
+  'federalIncomeTaxes',
+  'phoneComm',
+  'infrastructure',
+  'autoTravel',
+  'salesExpense',
+  'marketing',
+  'trainingCert',
+  'mealsEntertainment',
+  'interestExpense',
+  'depreciationAmortization',
+  'otherExpense',
+  'nonOperatingIncome',
+  'nonOperatingExpense',
+  'extraordinaryItems',
+] as const satisfies ReadonlyArray<(typeof MONTHLY_FINANCIAL_NUMERIC_FIELDS)[number]>;
+
+function hasJsonEntries(value: unknown): boolean {
+  return Boolean(value && typeof value === 'object' && !Array.isArray(value) && Object.keys(value).length > 0);
+}
+
+function mergePnlFields(target: CanonicalMonthlyFinancial, source: CanonicalMonthlyFinancial): CanonicalMonthlyFinancial {
+  const merged = { ...target };
+  for (const field of PNL_NUMERIC_FIELDS) {
+    if (Number(merged[field] || 0) === 0 && Number(source[field] || 0) !== 0) {
+      merged[field] = source[field];
+    }
+  }
+  if (!hasJsonEntries(merged.revenueBreakdown) && hasJsonEntries(source.revenueBreakdown)) {
+    merged.revenueBreakdown = source.revenueBreakdown;
+  }
+  if (!hasJsonEntries(merged.cogsBreakdown) && hasJsonEntries(source.cogsBreakdown)) {
+    merged.cogsBreakdown = source.cogsBreakdown;
+  }
+  if (!hasJsonEntries(merged.expenseBreakdown) && hasJsonEntries(source.expenseBreakdown)) {
+    merged.expenseBreakdown = source.expenseBreakdown;
+  }
+  if (!hasJsonEntries(merged.lobBreakdowns) && hasJsonEntries(source.lobBreakdowns)) {
+    merged.lobBreakdowns = source.lobBreakdowns;
+  }
+  return merged;
+}
+
 function mergeTargetMonthRow(
   existing: CanonicalMonthlyFinancial | undefined,
   incoming: CanonicalMonthlyFinancial,
 ): CanonicalMonthlyFinancial {
   if (!existing) return incoming;
-  if (incoming.revenue !== 0 || existing.revenue === 0) return incoming;
-  return {
-    ...incoming,
-    revenue: existing.revenue,
-    revenueBreakdown: existing.revenueBreakdown,
-  };
+  return mergePnlFields(incoming, existing);
 }
 
 export async function ingestFinancialPayload(params: {
@@ -179,6 +236,27 @@ export async function ingestFinancialPayload(params: {
   let rowsForRecord = boundedRows;
 
   if (targetMonthDate) {
+    const existingPnlByMonth = new Map<string, CanonicalMonthlyFinancial>();
+    const boundedMonthDates = boundedRows.map((row) => row.monthDate);
+    if (boundedMonthDates.length > 0) {
+      const historicalRows = await prisma.monthlyFinancial.findMany({
+        where: {
+          companyId: params.companyId,
+          monthDate: { in: boundedMonthDates },
+        },
+        orderBy: { createdAt: 'desc' },
+      });
+      for (const row of historicalRows) {
+        const canonical = toCanonicalMonthlyFinancial({
+          ...(row as unknown as Record<string, unknown>),
+          monthDate: row.monthDate,
+        });
+        const key = monthKey(canonical.monthDate);
+        const existing = existingPnlByMonth.get(key);
+        existingPnlByMonth.set(key, existing ? mergePnlFields(existing, canonical) : canonical);
+      }
+    }
+
     const latestFinancialRecord = await prisma.financialRecord.findFirst({
       where: { companyId: params.companyId },
       select: {
@@ -201,7 +279,7 @@ export async function ingestFinancialPayload(params: {
       }
       for (const row of boundedRows) {
         const key = monthKey(row.monthDate);
-        merged.set(key, mergeTargetMonthRow(merged.get(key), row));
+        merged.set(key, mergeTargetMonthRow(existingPnlByMonth.get(key) || merged.get(key), row));
       }
       rowsForRecord = Array.from(merged.values()).sort((a, b) => a.monthDate.getTime() - b.monthDate.getTime());
     }

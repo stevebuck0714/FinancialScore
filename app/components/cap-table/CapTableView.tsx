@@ -19,6 +19,16 @@ type RealCapTableHolding = {
   targetField: string;
   balance: number;
   ownershipPct?: number | null;
+  issuedDate?: string | null;
+  activity?: Array<{
+    txnDate: string;
+    txnType: string;
+    refNo: string;
+    name: string;
+    splitAccount: string;
+    amount: number;
+    balance: number;
+  }>;
 };
 
 type RealCapTableData = {
@@ -182,9 +192,6 @@ export default function CapTableView({ selectedCompanyId, companyName, operation
         <div style={{ display: 'flex', justifyContent: 'space-between', gap: '16px', alignItems: 'flex-start', flexWrap: 'wrap' }}>
           <div>
             <h1 style={{ margin: 0, fontSize: '24px', color: '#0f172a' }}>Cap Table</h1>
-            <div style={{ marginTop: '4px', color: '#64748b', fontSize: '13px' }}>
-              Real QBD equity-account balances for {companyName || selectedCompanyId} as of {formatDate(realData.asOfDate)}.
-            </div>
           </div>
           <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
             {[
@@ -198,10 +205,6 @@ export default function CapTableView({ selectedCompanyId, companyName, operation
               </div>
             ))}
           </div>
-        </div>
-
-        <div style={{ ...cardStyle, background: '#f8fafc', color: '#475569', fontSize: '13px', lineHeight: 1.5 }}>
-          This view is sourced from mapped QuickBooks Desktop equity accounts. It shows capital balance percentages, not legal share counts.
         </div>
 
         <div style={{ ...cardStyle, padding: 0, overflow: 'hidden' }}>
@@ -238,6 +241,7 @@ export default function CapTableView({ selectedCompanyId, companyName, operation
                 <tr>
                   <th style={thStyle}>Holder</th>
                   <th style={thStyle}>Security</th>
+                  <th style={thStyle}>Issued Date</th>
                   <th style={thStyle}>Account</th>
                   <th style={{ ...thStyle, textAlign: 'right' }}>Capital Balance</th>
                   <th style={{ ...thStyle, textAlign: 'right' }}>% Ownership</th>
@@ -247,7 +251,7 @@ export default function CapTableView({ selectedCompanyId, companyName, operation
                 {holderGroups.map((group) => (
                   <React.Fragment key={group.security}>
                     <tr>
-                      <td colSpan={5} style={{ ...tdStyle, background: '#f8fafc', color: '#334155', fontWeight: 900 }}>
+                      <td colSpan={6} style={{ ...tdStyle, background: '#f8fafc', color: '#334155', fontWeight: 900 }}>
                         {group.security}
                       </td>
                     </tr>
@@ -255,6 +259,14 @@ export default function CapTableView({ selectedCompanyId, companyName, operation
                       <tr key={`${holding.accountName}-${holding.targetField}`}>
                         <td style={{ ...tdStyle, fontWeight: 800 }}>{holding.holder}</td>
                         <td style={tdStyle}>{holding.security}</td>
+                        <td style={tdStyle}>
+                          {holding.issuedDate ? formatDate(holding.issuedDate) : '-'}
+                          {holding.activity && holding.activity.length > 1 && (
+                            <div style={{ marginTop: '2px', color: '#64748b', fontSize: '11px' }}>
+                              {holding.activity.length} tranches
+                            </div>
+                          )}
+                        </td>
                         <td style={tdStyle}>{holding.accountName}</td>
                         <td style={{ ...tdStyle, textAlign: 'right' }}>{formatCurrency(holding.balance)}</td>
                         <td style={{ ...tdStyle, textAlign: 'right', fontWeight: 800 }}>{holding.ownershipPct == null ? '-' : formatPercent(holding.ownershipPct)}</td>
@@ -264,6 +276,7 @@ export default function CapTableView({ selectedCompanyId, companyName, operation
                       <td style={subtotalRowStyle}>{group.security} Subtotal</td>
                       <td style={subtotalRowStyle}>{group.security}</td>
                       <td style={subtotalRowStyle}>-</td>
+                      <td style={subtotalRowStyle}>-</td>
                       <td style={{ ...subtotalRowStyle, textAlign: 'right' }}>{formatCurrency(group.balance)}</td>
                       <td style={{ ...subtotalRowStyle, textAlign: 'right' }}>{group.ownershipPct ? formatPercent(group.ownershipPct) : '-'}</td>
                     </tr>
@@ -272,6 +285,7 @@ export default function CapTableView({ selectedCompanyId, companyName, operation
                 <tr>
                   <td style={grandTotalRowStyle}>Total All Securities</td>
                   <td style={grandTotalRowStyle}>All Securities</td>
+                  <td style={grandTotalRowStyle}>-</td>
                   <td style={grandTotalRowStyle}>-</td>
                   <td style={{ ...grandTotalRowStyle, textAlign: 'right' }}>{formatCurrency(holderDetailTotalBalance)}</td>
                   <td style={{ ...grandTotalRowStyle, textAlign: 'right' }}>{holderDetailTotalOwnershipPct ? formatPercent(holderDetailTotalOwnershipPct) : '-'}</td>
