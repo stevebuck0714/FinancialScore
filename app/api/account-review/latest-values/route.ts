@@ -727,14 +727,25 @@ export async function GET(request: NextRequest) {
     } = { values: new Map(), anchorDate: null, accountCount: 0 };
 
     if (isGroupB) {
-      // Group B (QuickBooks / Xero / Sage on-prem): no per-account
-      // GLTransactionFact ingestion. Latest Value is exclusively the
-      // 1:1-mapped MonthlyFinancial[targetField] for the selected month.
-      // Multi-mapped targets emit only a `target:<field>` rollup so the
-      // per-account row shows N/A instead of a fanned-out fake split.
+      // Group B (QuickBooks / Xero / Sage on-prem): P&L values come from the
+      // safe 1:1 MonthlyFinancial[targetField] collector. Multi-mapped targets
+      // stay N/A instead of fanning out one rollup amount to many accounts.
       const monthlyAll = await collectAllMappedValuesFromMonthlyFinancial(companyId, targetMonth);
       for (const [key, value] of monthlyAll.entries()) {
         valueByKey.set(key, value);
+      }
+
+      // QuickBooks Desktop / Enterprise reprocess can also persist trusted
+      // per-account balance-sheet anchors from BalanceSheetStandardReportQuery.
+      // Use those for BS account rows so Account Review can show actual
+      // account-level current values without fanning out MonthlyFinancial
+      // rollups like fixedAssets or loc.
+      if (accountingSystem === 'QUICKBOOKS_DESKTOP' || accountingSystem === 'QUICKBOOKS_ENTERPRISE') {
+        perAccountAnchorResult = await collectValuesFromPerAccountAnchors(companyId, targetMonth);
+        for (const [key, value] of perAccountAnchorResult.values.entries()) {
+          if (!bsAccountKeySet.has(key)) continue;
+          valueByKey.set(key, value);
+        }
       }
     } else {
       // Group A ("Big ERP" pattern): Infor M3/CSI, Sage Intacct, Vista Cloud,
