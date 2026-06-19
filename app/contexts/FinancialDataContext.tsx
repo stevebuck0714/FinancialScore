@@ -105,6 +105,7 @@ export function FinancialDataProvider({ children }: FinancialDataProviderProps) 
       commonStock: m.commonStock || 0,
       preferredStock: m.preferredStock || 0,
       retainedEarnings: m.retainedEarnings || 0,
+      currentYearNetIncome: m.currentYearNetIncome || 0,
       additionalPaidInCapital: m.additionalPaidInCapital || 0,
       treasuryStock: m.treasuryStock || 0,
       totalEquity: m.totalEquity || 0,
