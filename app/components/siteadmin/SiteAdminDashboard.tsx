@@ -3089,7 +3089,11 @@ export default function SiteAdminDashboard(props: any) {
     }
   };
 
-  const queueQbDesktopDateRange = async (companyId: string) => {
+  const queueQbDesktopDateRange = async (
+    companyId: string,
+    requestNames?: string[],
+    label = 'date range'
+  ) => {
     const range = getQbDesktopDateRange(companyId);
     if (!range.startDate || !range.endDate) {
       alert('Select both Start Date and End Date for the QuickBooks Desktop date range.');
@@ -3109,6 +3113,7 @@ export default function SiteAdminDashboard(props: any) {
           companyId,
           startDate: range.startDate,
           endDate: range.endDate,
+          ...(Array.isArray(requestNames) && requestNames.length > 0 ? { requestNames } : {}),
         }),
       });
       const data = await response.json().catch(() => ({}));
@@ -3116,9 +3121,10 @@ export default function SiteAdminDashboard(props: any) {
         throw new Error(data?.details || data?.error || 'Failed to queue QuickBooks Desktop date range');
       }
       await loadQbDesktopSettings(companyId);
-      alert(`QuickBooks Desktop date range queued: ${range.startDate} to ${range.endDate}. Run QuickBooks Web Connector Update Selected, then click Refresh Status here to confirm completion.`);
+      const jobCount = Number(data?.jobCount || requestNames?.length || 0);
+      alert(`QuickBooks Desktop ${label} queued: ${range.startDate} to ${range.endDate}${jobCount ? ` (${jobCount} jobs)` : ''}. Run QuickBooks Web Connector Update Selected, then click Refresh Status here to confirm completion.`);
     } catch (error: any) {
-      alert(`Failed to queue QuickBooks Desktop date range: ${error?.message || 'Unknown error'}`);
+      alert(`Failed to queue QuickBooks Desktop ${label}: ${error?.message || 'Unknown error'}`);
     } finally {
       setQueuingQbDesktopDateRangeCompanyId(null);
     }
@@ -3278,6 +3284,20 @@ export default function SiteAdminDashboard(props: any) {
             style={{ width: '100%', minWidth: 0, boxSizing: 'border-box', padding: '8px 12px', background: isQueuing ? '#94a3b8' : '#7c3aed', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: isQueuing ? 'not-allowed' : 'pointer' }}
           >
             {isQueuing ? 'Queuing...' : 'Queue Range Pull'}
+          </button>
+          <button
+            onClick={() =>
+              queueQbDesktopDateRange(
+                companyId,
+                ['BillPaymentCreditCardQuery', 'BalanceSheetStandardReportQuery'],
+                'BS + credit card payment pull'
+              )
+            }
+            disabled={isQueuing}
+            style={{ width: '100%', minWidth: 0, boxSizing: 'border-box', padding: '8px 12px', background: isQueuing ? '#94a3b8' : '#9333ea', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: isQueuing ? 'not-allowed' : 'pointer' }}
+            title="Queues only BillPaymentCreditCardQuery and BalanceSheetStandardReportQuery for the selected range."
+          >
+            {isQueuing ? 'Queuing...' : 'Queue BS + CC Only'}
           </button>
           <button
             onClick={() => queueQbDesktopDetailBackfill(companyId)}

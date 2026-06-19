@@ -9,10 +9,13 @@ export const dynamic = 'force-dynamic';
 const REQUIRED_QBD_REPORT_REQUESTS = [
   'BalanceSheetStandardReportQuery',
   'TrialBalanceReportQuery',
-  'GeneralDetailReportQuery',
   'OtherNameQuery',
   'EntityQuery',
 ];
+
+const BULK_EXCLUDED_QBD_REQUESTS = new Set([
+  'GeneralDetailReportQuery',
+]);
 
 function parseDate(value: unknown): string {
   if (typeof value !== 'string') return '';
@@ -20,6 +23,18 @@ function parseDate(value: unknown): string {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) return '';
   const date = new Date(`${trimmed}T00:00:00.000Z`);
   return Number.isNaN(date.getTime()) ? '' : trimmed;
+}
+
+function parseRequestNames(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return Array.from(
+    new Set(
+      value
+        .map((requestName) => (typeof requestName === 'string' ? requestName.trim() : ''))
+        .filter((requestName) => /^[A-Za-z][A-Za-z0-9]*Query$/.test(requestName))
+        .filter((requestName) => !BULK_EXCLUDED_QBD_REQUESTS.has(requestName)),
+    ),
+  );
 }
 
 const DEFAULT_QBD_REQUESTS = [
@@ -62,6 +77,7 @@ function getEnabledQbDesktopRequests(metadata: Record<string, unknown>): string[
         })
     : DEFAULT_QBD_REQUESTS;
   return Array.from(new Set([...requests, ...REQUIRED_QBD_REPORT_REQUESTS]))
+    .filter((requestName) => !BULK_EXCLUDED_QBD_REQUESTS.has(requestName))
     .filter((requestName) => /^[A-Za-z][A-Za-z0-9]*Query$/.test(requestName));
 }
 
@@ -127,7 +143,17 @@ export async function POST(request: NextRequest) {
     };
     const batchId = randomUUID();
     const now = new Date().toISOString();
-    const enabledRequests = getEnabledQbDesktopRequests(metadata);
+    const hasSelectedRequestNames = Array.isArray(body.requestNames);
+    const selectedRequests = parseRequestNames(body.requestNames);
+    if (hasSelectedRequestNames && selectedRequests.length === 0) {
+      return NextResponse.json(
+        { ok: false, error: 'No valid requestNames were provided for the targeted QuickBooks Desktop pull.' },
+        { status: 400 },
+      );
+    }
+    const enabledRequests = hasSelectedRequestNames
+      ? selectedRequests
+      : getEnabledQbDesktopRequests(metadata);
     const backfillJobs = Object.fromEntries(
       enabledRequests.map((requestName, index) => {
         const id = `${batchId}:${String(index + 1).padStart(3, '0')}:${requestName}`;
@@ -150,10 +176,20 @@ export async function POST(request: NextRequest) {
       }),
     );
 
-    await prisma.$executeRaw`
-      DELETE FROM "QuickBooksDesktopBackfillPage"
-      WHERE "companyId" = ${companyId}
-    `;
+    if (hasSelectedRequestNames) {
+      for (const requestName of selectedRequests) {
+        await prisma.$executeRaw`
+          DELETE FROM "QuickBooksDesktopBackfillPage"
+          WHERE "companyId" = ${companyId}
+            AND "requestName" = ${requestName}
+        `;
+      }
+    } else {
+      await prisma.$executeRaw`
+        DELETE FROM "QuickBooksDesktopBackfillPage"
+        WHERE "companyId" = ${companyId}
+      `;
+    }
 
     await prisma.accountingConnection.update({
       where: {
@@ -169,6 +205,7 @@ export async function POST(request: NextRequest) {
           quickbooksDesktopBackfillBatchId: batchId,
           quickbooksDesktopBackfillJobs: backfillJobs,
           quickbooksDesktopBackfillResponses: {},
+          quickbooksDesktopBackfillRequestNames: hasSelectedRequestNames ? selectedRequests : null,
         } as any,
       },
     });
@@ -179,6 +216,7 @@ export async function POST(request: NextRequest) {
       queuedDateRange,
       batchId,
       jobCount: enabledRequests.length,
+      requestNames: enabledRequests,
       message: 'The requested QuickBooks Desktop date range will run on the next Web Connector update.',
     });
   } catch (error: any) {
