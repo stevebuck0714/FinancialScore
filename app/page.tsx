@@ -1149,7 +1149,7 @@ function FinancialScorePage() {
   const [companyIndustrySector, setCompanyIndustrySector] = useState<number | ''>('');
   const [accountingSystem, setAccountingSystem] = useState('');
   const [companySizeCategory, setCompanySizeCategory] = useState('DEFAULT');
-  const [industrySectorCategory, setIndustrySectorCategory] = useState('01');
+  const [industrySectorCategory, setIndustrySectorCategory] = useState('');
   const [expandedCompanyInfoId, setExpandedCompanyInfoId] = useState('');
   const [isManagementAssessmentExpanded, setIsManagementAssessmentExpanded] = useState(false);
   const [isExpertAnalysisExpanded, setIsExpertAnalysisExpanded] = useState(false);
@@ -4157,7 +4157,7 @@ function FinancialScorePage() {
     const activeCompany = Array.isArray(companies)
       ? companies.find((c) => c.id === selectedCompanyId)
       : undefined;
-    const sectorCategory = resolveCompanyIndustrySectorCategory(activeCompany, industrySectorCategory);
+    const sectorCategory = resolveCompanyIndustrySectorCategory(activeCompany);
     const industryGroupId = activeCompany?.industrySector;
 
     setSdeManualInputs((prev) => {
@@ -8345,11 +8345,15 @@ function FinancialScorePage() {
 
   const saveCompanyDetails = async () => {
     if (!companyIndustrySector) { 
-      alert('Please select an industry sector'); 
+      alert('Please select an industry group'); 
       return; 
     }
     if (!accountingSystem) {
       alert('Please select an accounting system');
+      return;
+    }
+    if (!industrySectorCategory) {
+      alert('Please select an Industry Sector');
       return;
     }
     setIsLoading(true);
@@ -8381,7 +8385,7 @@ function FinancialScorePage() {
       setCompanyIndustrySector('');
       setAccountingSystem('');
       setCompanySizeCategory('DEFAULT');
-      setIndustrySectorCategory('01');
+      setIndustrySectorCategory('');
       
       // Stay on Consultant Dashboard
       setCurrentView('admin');
@@ -9824,7 +9828,7 @@ function FinancialScorePage() {
   // Main Logged-In View with Header
   const company = getCurrentCompany();
   const companyName = company ? company.name : '';
-  const effectiveCompanySectorCategory = resolveCompanyIndustrySectorCategory(company, industrySectorCategory);
+  const effectiveCompanySectorCategory = resolveCompanyIndustrySectorCategory(company);
   const printOperationsSectorCategory = effectiveCompanySectorCategory;
   const isConstructionPrintSector = printOperationsSectorCategory === '23';
   const selectedCompanyProfile = useMemo(

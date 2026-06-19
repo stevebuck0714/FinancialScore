@@ -154,7 +154,7 @@ export default function CompanyDetailsModal({
             </label>
             <select 
               value={companyIndustrySector} 
-              onChange={(e) => setCompanyIndustrySector(parseInt(e.target.value))} 
+              onChange={(e) => setCompanyIndustrySector(parseInt(e.target.value, 10))} 
               style={{ width: '100%', padding: '12px 16px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '14px', cursor: 'pointer' }}
             >
               <option value="">-- Select Industry --</option>

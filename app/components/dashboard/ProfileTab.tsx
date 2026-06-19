@@ -50,7 +50,7 @@ export default function ProfileTab({
   const [companyIndustryGroup, setCompanyIndustryGroup] = React.useState<number | ''>('');
   const [companyAccountingSystem, setCompanyAccountingSystem] = React.useState('');
   const [companySize, setCompanySize] = React.useState('DEFAULT');
-  const [companyIndustrySectorCode, setCompanyIndustrySectorCode] = React.useState('01');
+  const [companyIndustrySectorCode, setCompanyIndustrySectorCode] = React.useState('');
   const [companyAddressStreet, setCompanyAddressStreet] = React.useState('');
   const [companyAddressCity, setCompanyAddressCity] = React.useState('');
   const [companyAddressState, setCompanyAddressState] = React.useState('');
@@ -81,7 +81,7 @@ export default function ProfileTab({
     setCompanyIndustryGroup(company?.industrySector || '');
     setCompanyAccountingSystem(company?.accountingSystem || '');
     setCompanySize(company?.companySizeCategory || 'DEFAULT');
-    setCompanyIndustrySectorCode(company?.industrySectorCategory || '01');
+    setCompanyIndustrySectorCode(company?.industrySectorCategory || '');
     setCompanyAddressStreet(company?.addressStreet || '');
     setCompanyAddressCity(company?.addressCity || '');
     setCompanyAddressState(company?.addressState || '');
