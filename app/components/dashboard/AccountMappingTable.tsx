@@ -477,10 +477,12 @@ export default function AccountMappingTable({
     const activeLOBs = linesOfBusiness.filter(lob => lob && lob.name && lob.name.trim() !== '');
     const sectionTargetOptions = getTargetFieldOptionsForSection(sectionKey);
     const canonicalTarget = canonicalizeTargetField(mapping.targetField);
+    const hasSavedTarget = !!canonicalTarget && !isExcludedTargetField(canonicalTarget);
     const targetBelongsToSection =
       canonicalTarget === 'ignored' ||
       sectionTargetOptions.some((option) => option.value === canonicalTarget);
-    const displayTargetField = targetBelongsToSection ? canonicalTarget : '';
+    const displayTargetField = targetBelongsToSection || hasSavedTarget ? canonicalTarget : '';
+    const targetOutsideSection = hasSavedTarget && !targetBelongsToSection;
 
     return (
       <tr key={globalIdx} style={{ borderBottom: '1px solid #f1f5f9' }}>
@@ -528,7 +530,9 @@ export default function AccountMappingTable({
                 border: '1px solid #cbd5e1',
                 borderRadius: '4px',
                 fontSize: '13px',
-                background: displayTargetField === 'ignored'
+                background: targetOutsideSection
+                  ? '#fff7ed'
+                  : displayTargetField === 'ignored'
                   ? '#f8fafc'
                   : displayTargetField ? '#f0fdf4' : '#fef2f2',
                 cursor: 'pointer',

@@ -605,7 +605,7 @@ export async function GET(request: NextRequest) {
         accountCode: sourceCode || storedCode || null,
         accountClassification: effectiveClassification,
         invalidTargetField: m.targetField,
-        targetField: "",
+        targetField: effectiveTargetField,
         validationWarning: semanticallyInvalid ? "classification_mismatch" : "invalid_target_field",
         sourceStatus,
       };
