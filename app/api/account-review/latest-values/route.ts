@@ -740,7 +740,11 @@ export async function GET(request: NextRequest) {
       // Use those for BS account rows so Account Review can show actual
       // account-level current values without fanning out MonthlyFinancial
       // rollups like fixedAssets or loc.
-      if (accountingSystem === 'QUICKBOOKS_DESKTOP' || accountingSystem === 'QUICKBOOKS_ENTERPRISE') {
+      if (
+        accountingSystem === 'QUICKBOOKS' ||
+        accountingSystem === 'QUICKBOOKS_DESKTOP' ||
+        accountingSystem === 'QUICKBOOKS_ENTERPRISE'
+      ) {
         perAccountAnchorResult = await collectValuesFromPerAccountAnchors(companyId, targetMonth);
         for (const [key, value] of perAccountAnchorResult.values.entries()) {
           if (!bsAccountKeySet.has(key)) continue;
