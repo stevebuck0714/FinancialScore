@@ -119,6 +119,19 @@ function monthKey(date: Date): string {
   return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}`;
 }
 
+function mergeTargetMonthRow(
+  existing: CanonicalMonthlyFinancial | undefined,
+  incoming: CanonicalMonthlyFinancial,
+): CanonicalMonthlyFinancial {
+  if (!existing) return incoming;
+  if (incoming.revenue !== 0 || existing.revenue === 0) return incoming;
+  return {
+    ...incoming,
+    revenue: existing.revenue,
+    revenueBreakdown: existing.revenueBreakdown,
+  };
+}
+
 export async function ingestFinancialPayload(params: {
   companyId: string;
   platform: AccountingPlatform;
@@ -187,7 +200,8 @@ export async function ingestFinancialPayload(params: {
         merged.set(monthKey(canonical.monthDate), canonical);
       }
       for (const row of boundedRows) {
-        merged.set(monthKey(row.monthDate), row);
+        const key = monthKey(row.monthDate);
+        merged.set(key, mergeTargetMonthRow(merged.get(key), row));
       }
       rowsForRecord = Array.from(merged.values()).sort((a, b) => a.monthDate.getTime() - b.monthDate.getTime());
     }
@@ -214,8 +228,12 @@ export async function ingestFinancialPayload(params: {
     };
   }
 
-  const anomalies = findZeroRevenueAnomalies(boundedRows);
-  const latestMonth = boundedRows[boundedRows.length - 1].monthDate;
+  const touchedMonthSet = new Set(touchedMonths);
+  const validationRows = targetMonthDate
+    ? rowsForRecord.filter((row) => touchedMonthSet.has(monthKey(row.monthDate)))
+    : boundedRows;
+  const anomalies = findZeroRevenueAnomalies(validationRows);
+  const latestMonth = validationRows[validationRows.length - 1]?.monthDate || boundedRows[boundedRows.length - 1].monthDate;
   const latestMonthKey = `${latestMonth.getUTCFullYear()}-${String(latestMonth.getUTCMonth() + 1).padStart(2, '0')}`;
   const latestMonthWarnings = anomalies.filter((x) => x.month === latestMonthKey);
   const blockingFailures = anomalies.filter((x) => x.month !== latestMonthKey);
