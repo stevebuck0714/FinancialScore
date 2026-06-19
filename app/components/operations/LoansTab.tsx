@@ -193,6 +193,32 @@ function buildTerms(instrument: LoanInstrument): LoanTerms {
   };
 }
 
+function isLocInstrument(instrument: LoanInstrument): boolean {
+  const haystack = [
+    instrument.targetField,
+    instrument.displayName,
+    instrument.accountId,
+    instrument.terms?.displayName,
+    instrument.terms?.loanType,
+    instrument.terms?.lender,
+  ].join(' ').toLowerCase();
+  return instrument.targetField === 'loc' || /\bloc\b|line of credit/.test(haystack);
+}
+
+function sumNullableCurrency(
+  rows: LoanInstrument[],
+  selector: (instrument: LoanInstrument) => number | null | undefined
+): number | null {
+  let hasValue = false;
+  const total = rows.reduce((sum, row) => {
+    const value = selector(row);
+    if (value === null || value === undefined || !Number.isFinite(Number(value))) return sum;
+    hasValue = true;
+    return sum + Number(value);
+  }, 0);
+  return hasValue ? total : null;
+}
+
 export default function LoansTab({ selectedCompanyId, companyName, currentUser = null, monthly = [], operationalHubSections }: LoansTabProps) {
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -329,6 +355,27 @@ export default function LoansTab({ selectedCompanyId, companyName, currentUser =
       covenantStatus: 'Pass',
     };
   }, [instruments, monthly]);
+
+  const loanInstrumentSections = useMemo(() => {
+    const locRows = instruments.filter(isLocInstrument);
+    const longTermDebtRows = instruments.filter((instrument) => !isLocInstrument(instrument));
+    const totalsFor = (rows: LoanInstrument[]) => ({
+      priorMonthBalance: sumNullableCurrency(rows, (instrument) => instrument.priorMonthBalance),
+      principalChange: sumNullableCurrency(rows, (instrument) => instrument.principalChange),
+      currentMonthInterestPaid: sumNullableCurrency(rows, (instrument) => instrument.currentMonthInterestPaid),
+      derivedCurrentBalance: sumNullableCurrency(rows, (instrument) => instrument.derivedCurrentBalance),
+    });
+    const locTotals = totalsFor(locRows);
+    const longTermDebtTotals = totalsFor(longTermDebtRows);
+    const combinedRows = [...locRows, ...longTermDebtRows];
+    return {
+      locRows,
+      longTermDebtRows,
+      locTotals,
+      longTermDebtTotals,
+      combinedTotals: totalsFor(combinedRows),
+    };
+  }, [instruments]);
 
   const loadLoans = useCallback(async (force = false) => {
     if (!selectedCompanyId) return;
@@ -474,6 +521,7 @@ export default function LoansTab({ selectedCompanyId, companyName, currentUser =
     cursor: 'pointer',
   });
   const formatOptionalCurrency = (value: unknown) => {
+    if (value === null || value === undefined || value === '') return '-';
     const parsed = Number(value);
     return Number.isFinite(parsed) ? formatCurrency(parsed) : '-';
   };
@@ -509,6 +557,81 @@ export default function LoansTab({ selectedCompanyId, companyName, currentUser =
         ))}
       </tbody>
     </table>
+  );
+  const loanTableColumnCount = 9;
+  const totalCellStyle: React.CSSProperties = {
+    ...tdStyle,
+    textAlign: 'right',
+    fontWeight: 900,
+    background: '#eef2ff',
+  };
+  const renderLoanInstrumentRow = (instrument: LoanInstrument) => {
+    const selected = instrument.instrumentKey === selectedInstrument?.instrumentKey;
+    return (
+      <tr
+        key={instrument.instrumentKey}
+        onClick={() => setSelectedInstrumentKey(instrument.instrumentKey)}
+        style={{ cursor: 'pointer', background: selected ? '#eff6ff' : 'white' }}
+      >
+        <td style={{ ...tdStyle, fontWeight: 800 }}>
+          {instrument.terms?.displayName || instrument.displayName}
+          <div style={{ marginTop: '2px', fontSize: '11px', color: '#64748b', fontWeight: 500 }}>
+            {instrument.terms?.loanType || 'Loan type not set'}
+            {instrument.terms?.lender ? ` | ${instrument.terms.lender}` : ''}
+            {instrument.instrumentStatus === 'inactive' ? ' | Inactive' : ''}
+          </div>
+        </td>
+        <td style={tdStyle}>
+          {instrument.accountId || '-'}
+        </td>
+        <td style={{ ...tdStyle, textAlign: 'right' }}>
+          {instrument.terms?.originalBalance ? formatCurrency(instrument.terms.originalBalance) : '-'}
+        </td>
+        <td style={{ ...tdStyle, textAlign: 'right' }}>{formatOptionalCurrency(instrument.priorMonthBalance)}</td>
+        <td style={{ ...tdStyle, textAlign: 'right', fontWeight: 700 }}>{formatOptionalCurrency(instrument.principalChange)}</td>
+        <td style={{ ...tdStyle, textAlign: 'right' }}>{formatOptionalCurrency(instrument.currentMonthInterestPaid)}</td>
+        <td style={{ ...tdStyle, textAlign: 'right' }}>
+          {instrument.derivedCurrentBalance == null
+            ? '-'
+            : formatCurrency(instrument.derivedCurrentBalance)}
+        </td>
+        <td style={tdStyle}>{formatDate(instrument.lastDate)}</td>
+        <td style={tdStyle}>{instrument.terms?.maturityDate ? formatDate(instrument.terms.maturityDate) : '-'}</td>
+      </tr>
+    );
+  };
+  const renderLoanSection = (
+    title: string,
+    rows: LoanInstrument[],
+    totals: {
+      priorMonthBalance: number | null;
+      principalChange: number | null;
+      currentMonthInterestPaid: number | null;
+      derivedCurrentBalance: number | null;
+    }
+  ) => (
+    <>
+      <tr>
+        <td colSpan={loanTableColumnCount} style={{ ...tdStyle, background: '#f8fafc', color: '#0f172a', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+          {title} ({rows.length})
+        </td>
+      </tr>
+      {rows.length > 0 ? rows.map(renderLoanInstrumentRow) : (
+        <tr>
+          <td colSpan={loanTableColumnCount} style={{ ...tdStyle, color: '#64748b', fontStyle: 'italic' }}>
+            No loans in this section.
+          </td>
+        </tr>
+      )}
+      <tr>
+        <td style={{ ...totalCellStyle, textAlign: 'left' }} colSpan={3}>{title} Total</td>
+        <td style={totalCellStyle}>{formatOptionalCurrency(totals.priorMonthBalance)}</td>
+        <td style={totalCellStyle}>{formatOptionalCurrency(totals.principalChange)}</td>
+        <td style={totalCellStyle}>{formatOptionalCurrency(totals.currentMonthInterestPaid)}</td>
+        <td style={totalCellStyle}>{formatOptionalCurrency(totals.derivedCurrentBalance)}</td>
+        <td style={totalCellStyle} colSpan={2}></td>
+      </tr>
+    </>
   );
 
   return (
@@ -573,48 +696,23 @@ export default function LoansTab({ selectedCompanyId, companyName, currentUser =
                     <th style={{ ...thStyle, textAlign: 'right' }}>Loan Amount</th>
                     <th style={{ ...thStyle, textAlign: 'right' }}>Prior Mth Balance</th>
                     <th style={{ ...thStyle, textAlign: 'right' }}>Principal Change</th>
-                    <th style={{ ...thStyle, textAlign: 'right' }}>Interest</th>
+                    <th style={{ ...thStyle, textAlign: 'right' }}>Interest Paid (Month)</th>
                     <th style={{ ...thStyle, textAlign: 'right' }}>Current Balance</th>
                     <th style={thStyle}>Last Transaction</th>
                     <th style={thStyle}>Maturity Date</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {instruments.map((instrument) => {
-                    const selected = instrument.instrumentKey === selectedInstrument?.instrumentKey;
-                    return (
-                      <tr
-                        key={instrument.instrumentKey}
-                        onClick={() => setSelectedInstrumentKey(instrument.instrumentKey)}
-                        style={{ cursor: 'pointer', background: selected ? '#eff6ff' : 'white' }}
-                      >
-                        <td style={{ ...tdStyle, fontWeight: 800 }}>
-                          {instrument.terms?.displayName || instrument.displayName}
-                          <div style={{ marginTop: '2px', fontSize: '11px', color: '#64748b', fontWeight: 500 }}>
-                            {instrument.terms?.loanType || 'Loan type not set'}
-                            {instrument.terms?.lender ? ` | ${instrument.terms.lender}` : ''}
-                            {instrument.instrumentStatus === 'inactive' ? ' | Inactive' : ''}
-                          </div>
-                        </td>
-                        <td style={tdStyle}>
-                          {instrument.accountId || '-'}
-                        </td>
-                        <td style={{ ...tdStyle, textAlign: 'right' }}>
-                          {instrument.terms?.originalBalance ? formatCurrency(instrument.terms.originalBalance) : '-'}
-                        </td>
-                        <td style={{ ...tdStyle, textAlign: 'right' }}>{formatOptionalCurrency(instrument.priorMonthBalance)}</td>
-                        <td style={{ ...tdStyle, textAlign: 'right', fontWeight: 700 }}>{formatOptionalCurrency(instrument.principalChange)}</td>
-                        <td style={{ ...tdStyle, textAlign: 'right' }}>{formatCurrency(instrument.currentMonthInterestPaid || 0)}</td>
-                        <td style={{ ...tdStyle, textAlign: 'right' }}>
-                          {instrument.derivedCurrentBalance == null
-                            ? '-'
-                            : formatCurrency(instrument.derivedCurrentBalance)}
-                        </td>
-                        <td style={tdStyle}>{formatDate(instrument.lastDate)}</td>
-                        <td style={tdStyle}>{instrument.terms?.maturityDate ? formatDate(instrument.terms.maturityDate) : '-'}</td>
-                      </tr>
-                    );
-                  })}
+                  {renderLoanSection('Lines of Credit', loanInstrumentSections.locRows, loanInstrumentSections.locTotals)}
+                  {renderLoanSection('Long-Term Debt', loanInstrumentSections.longTermDebtRows, loanInstrumentSections.longTermDebtTotals)}
+                  <tr>
+                    <td style={{ ...totalCellStyle, textAlign: 'left', background: '#dbeafe', color: '#1e3a8a' }} colSpan={3}>Total Debt</td>
+                    <td style={{ ...totalCellStyle, background: '#dbeafe', color: '#1e3a8a' }}>{formatOptionalCurrency(loanInstrumentSections.combinedTotals.priorMonthBalance)}</td>
+                    <td style={{ ...totalCellStyle, background: '#dbeafe', color: '#1e3a8a' }}>{formatOptionalCurrency(loanInstrumentSections.combinedTotals.principalChange)}</td>
+                    <td style={{ ...totalCellStyle, background: '#dbeafe', color: '#1e3a8a' }}>{formatOptionalCurrency(loanInstrumentSections.combinedTotals.currentMonthInterestPaid)}</td>
+                    <td style={{ ...totalCellStyle, background: '#dbeafe', color: '#1e3a8a' }}>{formatOptionalCurrency(loanInstrumentSections.combinedTotals.derivedCurrentBalance)}</td>
+                    <td style={{ ...totalCellStyle, background: '#dbeafe' }} colSpan={2}></td>
+                  </tr>
                 </tbody>
               </table>
             </div>
