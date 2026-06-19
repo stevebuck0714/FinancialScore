@@ -574,6 +574,12 @@ function qbdReportAmount(record: Record<string, unknown>): number {
   return qbdNumber(amountColumn?.value);
 }
 
+function qbdReportColValue(record: Record<string, unknown>, colID: string): string {
+  const colData = Array.isArray(record.colData) ? record.colData.map(qbdAsRecord) : [];
+  const column = colData.find((col) => qbdString(col.colID) === colID);
+  return qbdString(column?.value);
+}
+
 function qbdBalanceSheetReportDateKey(records: Record<string, unknown>[]): string | null {
   for (const record of records) {
     const subtitle = qbdString(record.reportSubtitle);
@@ -584,6 +590,21 @@ function qbdBalanceSheetReportDateKey(records: Record<string, unknown>[]): strin
     return qbdDateKey(parsed.toISOString());
   }
   return null;
+}
+
+function qbdAddDays(dateKey: string, days: number): string | null {
+  const date = new Date(`${dateKey}T00:00:00.000Z`);
+  if (Number.isNaN(date.getTime())) return null;
+  date.setUTCDate(date.getUTCDate() + days);
+  return qbdDateKey(date.toISOString());
+}
+
+function copyQbdBalanceSheetFields(source: QbdMappedMonthlyRow, target: QbdMappedMonthlyRow) {
+  for (const field of QBD_BALANCE_SHEET_TARGET_FIELDS) {
+    const value = Number(source[field] || 0);
+    target[field] = value;
+  }
+  recomputeQbdBalanceSheetTotals(target);
 }
 
 function qbdRef(record: Record<string, unknown>, key: string): { id: string; name: string } {
@@ -762,7 +783,7 @@ async function buildQuickBooksDesktopMappedMonthlyPayload(companyId: string, bas
     targetByKey.get(qbdString(ref.code).toLowerCase()) ||
     '';
 
-  const [accounts, items, invoiceDetail, billDetail, checkRows, creditMemoDetail, salesReceiptRows, journalRows, depositRows, vendorCreditRows, balanceSheetReportRows] =
+  const [accounts, items, invoiceDetail, billDetail, checkRows, creditMemoDetail, salesReceiptRows, journalRows, depositRows, vendorCreditRows, balanceSheetReportRows, generalLedgerReportRows] =
     await Promise.all([
       loadQbdPageRecords(companyId, 'AccountQuery'),
       loadQbdPageRecords(companyId, 'ItemQuery'),
@@ -775,6 +796,7 @@ async function buildQuickBooksDesktopMappedMonthlyPayload(companyId: string, bas
       loadQbdPageRecords(companyId, 'DepositQuery'),
       loadQbdPageRecords(companyId, 'VendorCreditQuery'),
       loadQbdPageRecords(companyId, 'BalanceSheetStandardReportQuery'),
+      loadQbdPageRecords(companyId, 'GeneralDetailReportQuery'),
     ]);
 
   const itemAccountByKey = new Map<string, { incomeTarget: string; cogsTarget: string; expenseTarget: string; assetTarget: string }>();
@@ -921,11 +943,66 @@ async function buildQuickBooksDesktopMappedMonthlyPayload(companyId: string, bas
     dailySnapshots.set(balanceSheetReportDate, balanceSheetAnchor);
   }
 
+  const glMovementsByDate = new Map<string, Map<string, number>>();
+  let earliestGlDate: string | null = null;
+  for (const glRow of generalLedgerReportRows) {
+    if (qbdString(glRow.rowKind) !== 'DataRow') continue;
+    const accountName = qbdString(glRow.accountName || glRow.rowValue);
+    const target = getTarget({ name: accountName });
+    if (!QBD_BALANCE_SHEET_TARGET_FIELDS.has(target)) continue;
+    const dateKey = qbdDateKey(qbdReportColValue(glRow, '3'));
+    if (!dateKey || (balanceSheetReportDate && dateKey > balanceSheetReportDate)) continue;
+    const amount = qbdNumber(qbdReportColValue(glRow, '8'));
+    if (amount === 0) continue;
+    const dateMovements = glMovementsByDate.get(dateKey) || new Map<string, number>();
+    dateMovements.set(target, Number(dateMovements.get(target) || 0) + amount);
+    glMovementsByDate.set(dateKey, dateMovements);
+    earliestGlDate = earliestGlDate && earliestGlDate < dateKey ? earliestGlDate : dateKey;
+  }
+
+  if (balanceSheetAnchor && balanceSheetReportDate && earliestGlDate) {
+    const runningBalances = new Map<string, number>();
+    for (const field of QBD_BALANCE_SHEET_TARGET_FIELDS) {
+      runningBalances.set(field, Number(balanceSheetAnchor[field] || 0));
+    }
+
+    let cursor: string | null = balanceSheetReportDate;
+    while (cursor && cursor >= earliestGlDate) {
+      const dailyRow = getDailySnapshot(cursor);
+      for (const field of QBD_BALANCE_SHEET_TARGET_FIELDS) {
+        dailyRow[field] = Number(runningBalances.get(field) || 0);
+      }
+      recomputeQbdBalanceSheetTotals(dailyRow);
+
+      const movements = glMovementsByDate.get(cursor);
+      if (movements) {
+        for (const [field, amount] of movements.entries()) {
+          runningBalances.set(field, Number(runningBalances.get(field) || 0) - amount);
+        }
+      }
+      cursor = qbdAddDays(cursor, -1);
+    }
+
+    const latestDailyByMonth = new Map<string, QbdMappedMonthlyRow>();
+    for (const row of dailySnapshots.values()) {
+      const dateKey = qbdDateKey(row.snapshotDate);
+      if (!dateKey) continue;
+      const monthKey = dateKey.slice(0, 7);
+      const existing = latestDailyByMonth.get(monthKey);
+      if (!existing || String(existing.snapshotDate || '') < dateKey) {
+        latestDailyByMonth.set(monthKey, row);
+      }
+    }
+    for (const [monthKey, row] of latestDailyByMonth.entries()) {
+      copyQbdBalanceSheetFields(row, getMonth(monthKey));
+    }
+  }
+
   const sortedMonthKeys = Array.from(months.keys()).sort();
   const latestMonth = sortedMonthKeys[sortedMonthKeys.length - 1] || null;
   const sortedDailyKeys = Array.from(dailySnapshots.keys()).sort();
   const latestDay = sortedDailyKeys[sortedDailyKeys.length - 1] || null;
-  if (latestMonth) {
+  if (latestMonth && !balanceSheetAnchor) {
     const latest = getMonth(latestMonth);
     const accountFullNames = accounts.map((account) => qbdString(account.FullName || account.Name)).filter(Boolean);
     for (const account of accounts) {
@@ -970,6 +1047,9 @@ async function buildQuickBooksDesktopMappedMonthlyPayload(companyId: string, bas
         itemRows: items.length,
         balanceSheetReportRows: balanceSheetReportRows.length,
         balanceSheetReportDate,
+        generalLedgerReportRows: generalLedgerReportRows.length,
+        generalLedgerMovementDays: glMovementsByDate.size,
+        dailyBalanceSheetStartDate: earliestGlDate,
       },
     },
   };

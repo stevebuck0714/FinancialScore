@@ -6363,6 +6363,8 @@ export async function GET(request: NextRequest) {
             .replace(/\s+/g, '')
             .replace(/[^A-Za-z0-9]/g, '')
             .toUpperCase();
+        const qbdLooksLikeListId = (value: unknown): boolean =>
+          /^800[0-9A-F]*-\d+$/i.test(String(value || '').trim());
         const productKeyAliases = (row: any): string[] =>
           Array.from(
             new Set(
@@ -6373,9 +6375,70 @@ export async function GET(request: NextRequest) {
               ].filter(Boolean)
             )
           );
+        const qbdItemMastersByKey = new Map<string, { displayName: string; sku: string | null }>();
+        if (isQuickBooksCompany) {
+          const trimQbd = (value: unknown): string => String(value || '').trim();
+          const qbdRecord = (value: unknown): Record<string, unknown> =>
+            value && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
+          const qbdFirstString = (...values: unknown[]): string => {
+            for (const value of values) {
+              const text = trimQbd(value);
+              if (text) return text;
+            }
+            return '';
+          };
+          const qbdSkuFromName = (value: unknown): string => {
+            const text = trimQbd(value);
+            if (!text || qbdLooksLikeListId(text)) return '';
+            const parts = text.split(':').map((part) => part.trim()).filter(Boolean);
+            return parts[parts.length - 1] || text;
+          };
+          const qbdLooksLikeCode = (value: string): boolean =>
+            /^[A-Z0-9\-_.\/: ]+$/i.test(value.trim()) && /\d/.test(value);
+          const qbdDisplayScore = (value: unknown): number => {
+            const text = trimQbd(value);
+            if (!text || text.toLowerCase() === 'unknown item') return 0;
+            if (qbdLooksLikeListId(text)) return 1;
+            return qbdLooksLikeCode(text) ? 2 : 3;
+          };
+          const qbdItemRows = await prisma.$queryRaw<Array<{ payload: unknown }>>`
+            SELECT "payload"
+            FROM "QuickBooksDesktopBackfillPage"
+            WHERE "companyId" = ${companyId}
+              AND "requestName" = 'ItemQuery'
+            ORDER BY "createdAt" DESC, "pageNumber" ASC
+          `;
+          for (const page of qbdItemRows) {
+            const itemRecords = Array.isArray(page.payload) ? page.payload.map(qbdRecord) : [];
+            for (const item of itemRecords) {
+              const salesOrPurchase = qbdRecord(item.SalesOrPurchase);
+              const salesAndPurchase = qbdRecord(item.SalesAndPurchase);
+              const description = qbdFirstString(
+                item.SalesDesc,
+                item.PurchaseDesc,
+                item.Description,
+                salesAndPurchase.SalesDesc,
+                salesAndPurchase.PurchaseDesc,
+                salesOrPurchase.Desc,
+              );
+              const fullName = qbdFirstString(item.FullName, item.Name);
+              const displayName =
+                description && qbdDisplayScore(description) >= qbdDisplayScore(fullName)
+                  ? description
+                  : qbdFirstString(description, fullName, 'Unknown Item');
+              const sku = qbdSkuFromName(item.Name) || qbdSkuFromName(fullName) || null;
+              const master = { displayName, sku };
+              for (const alias of [item.ListID, item.FullName, item.Name, sku, displayName]) {
+                const key = canonicalProductKey(alias);
+                if (key && !qbdItemMastersByKey.has(key)) qbdItemMastersByKey.set(key, master);
+              }
+            }
+          }
+        }
         const trimProductToken = (value: unknown): string => String(value || '').trim();
         const looksLikeItemCode = (value: string): boolean =>
-          /[A-Za-z]/.test(value) || value.includes('-') || value.includes('/') || value.includes('_');
+          !qbdLooksLikeListId(value) &&
+          (/[A-Za-z]/.test(value) || value.includes('-') || value.includes('/') || value.includes('_') || (isQuickBooksCompany && /^\d+$/.test(value)));
         const looksNumericOnly = (value: string): boolean => /^\d+$/.test(value);
         const normalizeProductIdentity = (row: any) => {
           const rawSku = trimProductToken(row?.sku);
@@ -6387,8 +6450,8 @@ export async function GET(request: NextRequest) {
             return;
           }
           // No valid item-like identifier present: suppress numeric transaction/customer ids.
-          if (looksNumericOnly(rawSku)) row.sku = null;
-          if (looksNumericOnly(rawItemId)) row.itemId = null;
+          if (!isQuickBooksCompany && looksNumericOnly(rawSku)) row.sku = null;
+          if (!isQuickBooksCompany && looksNumericOnly(rawItemId)) row.itemId = null;
         };
 
         const recordsV1 = data.map((row: any) => ({
@@ -6401,6 +6464,36 @@ export async function GET(request: NextRequest) {
           isEstimatedCost: false,
         }));
         for (const row of recordsV1) normalizeProductIdentity(row);
+        if (qbdItemMastersByKey.size > 0) {
+          for (const row of recordsV1) {
+            const master = productKeyAliases(row)
+              .map((alias) => qbdItemMastersByKey.get(alias))
+              .find(Boolean);
+            if (!master) continue;
+            const currentName = String(row.itemName || '').trim();
+            const currentNameScore = qbdLooksLikeListId(currentName)
+              ? 1
+              : /^[A-Z0-9\-_.\/: ]+$/i.test(currentName) && /\d/.test(currentName)
+                ? 2
+                : currentName
+                  ? 3
+                  : 0;
+            const nextName = String(master.displayName || '').trim();
+            const nextNameScore = qbdLooksLikeListId(nextName)
+              ? 1
+              : /^[A-Z0-9\-_.\/: ]+$/i.test(nextName) && /\d/.test(nextName)
+                ? 2
+                : nextName
+                  ? 3
+                  : 0;
+            if (nextName && nextName.toLowerCase() !== 'unknown item' && nextNameScore >= currentNameScore) {
+              row.itemName = nextName;
+            }
+            if (master.sku && (!row.sku || qbdLooksLikeListId(row.sku))) {
+              row.sku = master.sku;
+            }
+          }
+        }
 
         // Quantity fallback from order-line snapshots when product quantity is missing/zero.
         const productOrderLineDelegate = (prisma as any).customerOrderLineSnapshot;

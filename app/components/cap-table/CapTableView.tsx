@@ -137,6 +137,46 @@ export default function CapTableView({ selectedCompanyId, companyName, operation
   };
 
   if (realData) {
+    const securityHolderTargetFields = new Set(['ownersCapital', 'commonStock', 'preferredStock', 'additionalPaidInCapital']);
+    const securityHoldings = realData.holdings.filter(
+      (holding) => securityHolderTargetFields.has(holding.targetField) && holding.balance > 0
+    );
+    const securitySummaryByName = new Map(realData.securitySummary.map((row) => [row.security, row]));
+    const holderGroups = Array.from(
+      securityHoldings.reduce<Map<string, RealCapTableHolding[]>>((map, holding) => {
+        const security = holding.security || 'Unclassified';
+        const rows = map.get(security) || [];
+        rows.push(holding);
+        map.set(security, rows);
+        return map;
+      }, new Map<string, RealCapTableHolding[]>())
+    )
+      .map(([security, holdings]) => {
+        const summary = securitySummaryByName.get(security);
+        return {
+          security,
+          holdings,
+          balance: summary?.balance ?? holdings.reduce((sum, holding) => sum + Number(holding.balance || 0), 0),
+          ownershipPct: summary?.ownershipPct ?? holdings.reduce((sum, holding) => sum + Number(holding.ownershipPct || 0), 0),
+        };
+      })
+      .sort((a, b) => Math.abs(b.balance) - Math.abs(a.balance));
+    const holderDetailTotalBalance = securityHoldings.reduce((sum, holding) => sum + Number(holding.balance || 0), 0);
+    const holderDetailTotalOwnershipPct = securityHoldings.reduce((sum, holding) => sum + Number(holding.ownershipPct || 0), 0);
+    const subtotalRowStyle: React.CSSProperties = {
+      ...tdStyle,
+      background: '#f8fafc',
+      borderTop: '1px solid #cbd5e1',
+      borderBottom: '1px solid #cbd5e1',
+      fontWeight: 900,
+    };
+    const grandTotalRowStyle: React.CSSProperties = {
+      ...tdStyle,
+      background: '#e0e7ff',
+      borderTop: '2px solid #94a3b8',
+      borderBottom: 'none',
+      fontWeight: 900,
+    };
     return (
       <div style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', gap: '16px', alignItems: 'flex-start', flexWrap: 'wrap' }}>
@@ -204,15 +244,38 @@ export default function CapTableView({ selectedCompanyId, companyName, operation
                 </tr>
               </thead>
               <tbody>
-                {realData.holdings.map((holding) => (
-                  <tr key={`${holding.accountName}-${holding.targetField}`}>
-                    <td style={{ ...tdStyle, fontWeight: 800 }}>{holding.holder}</td>
-                    <td style={tdStyle}>{holding.security}</td>
-                    <td style={tdStyle}>{holding.accountName}</td>
-                    <td style={{ ...tdStyle, textAlign: 'right' }}>{formatCurrency(holding.balance)}</td>
-                    <td style={{ ...tdStyle, textAlign: 'right', fontWeight: 800 }}>{holding.ownershipPct == null ? '-' : formatPercent(holding.ownershipPct)}</td>
-                  </tr>
+                {holderGroups.map((group) => (
+                  <React.Fragment key={group.security}>
+                    <tr>
+                      <td colSpan={5} style={{ ...tdStyle, background: '#f8fafc', color: '#334155', fontWeight: 900 }}>
+                        {group.security}
+                      </td>
+                    </tr>
+                    {group.holdings.map((holding) => (
+                      <tr key={`${holding.accountName}-${holding.targetField}`}>
+                        <td style={{ ...tdStyle, fontWeight: 800 }}>{holding.holder}</td>
+                        <td style={tdStyle}>{holding.security}</td>
+                        <td style={tdStyle}>{holding.accountName}</td>
+                        <td style={{ ...tdStyle, textAlign: 'right' }}>{formatCurrency(holding.balance)}</td>
+                        <td style={{ ...tdStyle, textAlign: 'right', fontWeight: 800 }}>{holding.ownershipPct == null ? '-' : formatPercent(holding.ownershipPct)}</td>
+                      </tr>
+                    ))}
+                    <tr>
+                      <td style={subtotalRowStyle}>{group.security} Subtotal</td>
+                      <td style={subtotalRowStyle}>{group.security}</td>
+                      <td style={subtotalRowStyle}>-</td>
+                      <td style={{ ...subtotalRowStyle, textAlign: 'right' }}>{formatCurrency(group.balance)}</td>
+                      <td style={{ ...subtotalRowStyle, textAlign: 'right' }}>{group.ownershipPct ? formatPercent(group.ownershipPct) : '-'}</td>
+                    </tr>
+                  </React.Fragment>
                 ))}
+                <tr>
+                  <td style={grandTotalRowStyle}>Total All Securities</td>
+                  <td style={grandTotalRowStyle}>All Securities</td>
+                  <td style={grandTotalRowStyle}>-</td>
+                  <td style={{ ...grandTotalRowStyle, textAlign: 'right' }}>{formatCurrency(holderDetailTotalBalance)}</td>
+                  <td style={{ ...grandTotalRowStyle, textAlign: 'right' }}>{holderDetailTotalOwnershipPct ? formatPercent(holderDetailTotalOwnershipPct) : '-'}</td>
+                </tr>
               </tbody>
             </table>
           </div>

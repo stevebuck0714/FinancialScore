@@ -662,12 +662,14 @@ async function loadLoanActivity(companyId: string) {
       WHERE "companyId" = $1
         AND NULLIF(TRIM("accountId"), '') IS NOT NULL
         AND (
-          UPPER(COALESCE("accountClassification", '')) IN ('L', 'LIABILITY', 'LIABILITIES')
-          OR TRIM("accountId") ~ '^39[0-9]'
-        )
-        AND (
-          COALESCE("accountName", '') ~* $2
-          OR COALESCE("targetField", '') IN ('loc', 'ltd')
+          COALESCE("targetField", '') IN ('loc', 'ltd')
+          OR (
+            (
+              UPPER(COALESCE("accountClassification", '')) IN ('L', 'LIABILITY', 'LIABILITIES')
+              OR TRIM("accountId") ~ '^39[0-9]'
+            )
+            AND COALESCE("accountName", '') ~* $2
+          )
         )
         AND NOT (
           COALESCE("accountName", '') ~* 'interest income|interest expense|accrued interest|interest payable'
@@ -726,10 +728,6 @@ async function loadLoanActivity(companyId: string) {
       return true;
     }),
   ];
-  const accountNameFallbacks = await loadAccountNameFallbacks(
-    companyId,
-    principalRows.map((row) => row.accountId)
-  );
   const rawInforActivityByAccount = await loadInforRawLoanActivity(
     companyId,
     principalRows.map((row) => row.accountId)
@@ -913,8 +911,7 @@ async function loadLoanActivity(companyId: string) {
     const accountId = String(row.accountId || '').trim();
     const rawInforActivity = rawInforActivityByAccount.get(accountId) || null;
     const rawInforInterest = rawInforInterestByAccount.get(accountId) || [];
-    const fallbackName = accountNameFallbacks.get(accountId);
-    const name = String(fallbackName || row.accountName || row.accountId || 'Loan');
+    const name = String(row.accountName || row.accountId || 'Loan');
     const tokens = compactTokens(`${row.accountId || ''} ${name}`);
     const linkedInterest = interestRows.filter((interest) => {
       const interestAccountId = String(interest.accountId || '').trim();

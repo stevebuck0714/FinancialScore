@@ -340,10 +340,15 @@ export async function transformQuickBooksDesktopInvoiceDetail(companyId: string)
         const item = getRef(line, 'ItemRef');
         const amount = toNumber(line.Amount);
         const quantity = toNumber(line.Quantity);
-        const lineItemName = item.name || asString(line.FullName) || asString(line.Desc);
+        const itemRefName = item.name || asString(line.FullName);
+        const lineDescription = asString(line.Desc);
+        const lineItemName = itemRefName || lineDescription;
         const master = resolveItemMaster(itemsByKey, item.id, lineItemName);
-        const itemName = master?.displayName || lineItemName;
-        const sku = master?.sku || getSku(lineItemName);
+        const itemName =
+          master?.displayName ||
+          (lineDescription && (!looksLikeCode(lineDescription) || looksLikeCode(itemRefName)) ? lineDescription : '') ||
+          lineItemName;
+        const sku = master?.sku || getSku(itemRefName || lineItemName);
         const avgCost = Number(master?.avgCost || 0);
 
         // QBD can return blank separator/subtotal/memo lines. They are not product sales rows.

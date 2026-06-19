@@ -4177,6 +4177,12 @@ export default function OperationsTab({
     const atRiskCustomerNamesTop = Array.isArray(customerOverviewTop?.atRiskCustomerNames)
       ? customerOverviewTop.atRiskCustomerNames.map((value: any) => String(value || '').trim()).filter(Boolean)
       : [];
+    const salesReportPayload = salesPageForDisplay || {};
+    const renderSalesReportEmptyState = (message = 'No data loaded for this report in the selected period.') => (
+      <div style={{ minHeight: '180px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#64748b', fontSize: '13px', textAlign: 'center', padding: '16px' }}>
+        {message}
+      </div>
+    );
     const openCustomerMetricPopupTop = (title: string, names: string[]) => {
       setCustomerMetricModalTitle(retailizeCustomerText(title));
       setCustomerMetricModalNames(names);
@@ -4189,29 +4195,28 @@ export default function OperationsTab({
           {isRetailSalesLanguage || isSalesAnalyticsTab ? 'Sales Analytics' : 'Customer Sales Analytics'}
         </h2>
 
-        {salesPageForDisplay && (
-          <div style={{ marginBottom: '24px' }}>
+        <div style={{ marginBottom: '24px' }}>
             {isSectionEnabled('customersPlatoSalesMetricCards') && (
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, minmax(0, 1fr))', gap: '12px', marginBottom: '16px' }}>
               {[
                 {
                   title: 'Sales MTD',
-                  value: formatCurrency(Number(salesPageForDisplay.sales?.mtdValue || 0)),
-                  detail: `${isManufacturingSalesFallback ? 'MoM' : 'YoY'} ${formatPct(Number(salesPageForDisplay.sales?.mtdCompPct || 0) * 100)}`,
+                  value: formatCurrency(Number(salesReportPayload.sales?.mtdValue || 0)),
+                  detail: `${isManufacturingSalesFallback ? 'MoM' : 'YoY'} ${formatPct(Number(salesReportPayload.sales?.mtdCompPct || 0) * 100)}`,
                 },
                 {
                   title: 'Sales Total',
-                  value: formatCurrency(Number(salesPageForDisplay.sales?.totalValue || 0)),
-                  detail: `${salesPageForDisplay.sales?.currentYearLabel || 'Current year'} total | Index ${formatPct(Number(salesPageForDisplay.sales?.indexPct || 0) * 100)}`,
+                  value: formatCurrency(Number(salesReportPayload.sales?.totalValue || 0)),
+                  detail: `${salesReportPayload.sales?.currentYearLabel || 'Current year'} total | Index ${formatPct(Number(salesReportPayload.sales?.indexPct || 0) * 100)}`,
                 },
                 {
                   title: 'Gross Margin $',
-                  value: formatCurrency(Number(salesPageForDisplay.grossMarginHistory?.rows?.slice(-1)?.[0]?.gmDollars || 0)),
+                  value: formatCurrency(Number(salesReportPayload.grossMarginHistory?.rows?.slice(-1)?.[0]?.gmDollars || 0)),
                   detail: 'Current month',
                 },
                 {
                   title: 'Gross Margin %',
-                  value: formatPct(Number(salesPageForDisplay.grossMarginHistory?.rows?.slice(-1)?.[0]?.gmPct || 0)),
+                  value: formatPct(Number(salesReportPayload.grossMarginHistory?.rows?.slice(-1)?.[0]?.gmPct || 0)),
                   detail: 'Current month',
                 },
                 {
@@ -4233,49 +4238,65 @@ export default function OperationsTab({
               <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '16px', marginBottom: '16px' }}>
                 <h3 style={{ margin: '0 0 12px 0', fontSize: '16px', color: '#1e293b' }}>Category Sales by Month</h3>
                 <ResponsiveContainer width="100%" height={300}>
-                  {renderCategorySalesHistoryChart(salesPageForDisplay.sales)}
+                  {renderCategorySalesHistoryChart(salesReportPayload.sales)}
                 </ResponsiveContainer>
               </div>
             )}
 
-            {isSectionEnabled('customersGrossMarginHistoryChart') && Array.isArray(salesPageForDisplay.grossMarginHistory?.chartData) && salesPageForDisplay.grossMarginHistory.chartData.length > 0 && (
+            {isSectionEnabled('customersGrossMarginHistoryChart') && (
               <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '16px', marginBottom: '16px' }}>
                 <h3 style={{ margin: '0 0 12px 0', fontSize: '16px', color: '#1e293b' }}>Gross Margin $ and % by Month</h3>
-                <ResponsiveContainer width="100%" height={320}>
-                  <ComposedChart data={salesPageForDisplay.grossMarginHistory.chartData}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-                    <XAxis dataKey="month" stroke="#64748b" style={{ fontSize: '12px' }} />
-                    <YAxis yAxisId="left" stroke="#64748b" style={{ fontSize: '12px' }} tickFormatter={(value) => `$${(Number(value || 0) / 1000).toFixed(0)}k`} />
-                    <YAxis yAxisId="right" orientation="right" stroke="#64748b" style={{ fontSize: '12px' }} tickFormatter={(value) => `${Number(value || 0).toFixed(0)}%`} />
-                    <Tooltip
-                      formatter={(value: any, name: any) =>
-                        String(name).includes('%')
-                          ? [`${Number(value || 0).toFixed(1)}%`, String(name)]
-                          : [formatCurrency(Number(value || 0)), String(name)]
-                      }
-                    />
-                    <Legend />
-                    <Bar yAxisId="left" dataKey="gmDollars" name="Gross Margin $" fill="#2563eb" radius={0} />
-                    <Line yAxisId="right" type="monotone" dataKey="gmPct" name="Gross Margin %" stroke="#16a34a" strokeWidth={3} dot={{ r: 3 }} />
-                  </ComposedChart>
-                </ResponsiveContainer>
+                {Array.isArray(salesReportPayload.grossMarginHistory?.chartData) && salesReportPayload.grossMarginHistory.chartData.length > 0 ? (
+                  <ResponsiveContainer width="100%" height={320}>
+                    <ComposedChart data={salesReportPayload.grossMarginHistory.chartData}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                      <XAxis dataKey="month" stroke="#64748b" style={{ fontSize: '12px' }} />
+                      <YAxis yAxisId="left" stroke="#64748b" style={{ fontSize: '12px' }} tickFormatter={(value) => `$${(Number(value || 0) / 1000).toFixed(0)}k`} />
+                      <YAxis yAxisId="right" orientation="right" stroke="#64748b" style={{ fontSize: '12px' }} tickFormatter={(value) => `${Number(value || 0).toFixed(0)}%`} />
+                      <Tooltip
+                        formatter={(value: any, name: any) =>
+                          String(name).includes('%')
+                            ? [`${Number(value || 0).toFixed(1)}%`, String(name)]
+                            : [formatCurrency(Number(value || 0)), String(name)]
+                        }
+                      />
+                      <Legend />
+                      <Bar yAxisId="left" dataKey="gmDollars" name="Gross Margin $" fill="#2563eb" radius={0} />
+                      <Line yAxisId="right" type="monotone" dataKey="gmPct" name="Gross Margin %" stroke="#16a34a" strokeWidth={3} dot={{ r: 3 }} />
+                    </ComposedChart>
+                  </ResponsiveContainer>
+                ) : renderSalesReportEmptyState()}
               </div>
             )}
 
             {isSectionEnabled('customersPlatoSalesHistoryTables') && (
               <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '16px', marginBottom: '20px' }}>
-                {renderCategorySalesHistoryTable('Sales History', salesPageForDisplay.sales)}
-                {!isManufacturingSalesFallback && renderWorkbookHistoryTable('Buys History', salesPageForDisplay.buys)}
+                {renderCategorySalesHistoryTable('Sales History', salesReportPayload.sales) || (
+                  <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '16px' }}>
+                    <h3 style={{ margin: '0 0 12px 0', fontSize: '16px', color: '#1e293b' }}>Sales History</h3>
+                    {renderSalesReportEmptyState()}
+                  </div>
+                )}
+                {!isManufacturingSalesFallback && (renderWorkbookHistoryTable('Buys History', salesReportPayload.buys) || (
+                  <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '16px' }}>
+                    <h3 style={{ margin: '0 0 12px 0', fontSize: '16px', color: '#1e293b' }}>Buys History</h3>
+                    {renderSalesReportEmptyState()}
+                  </div>
+                ))}
               </div>
             )}
 
             {isSectionEnabled('customersGrossMarginHistoryTable') && (
               <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '16px', marginBottom: '20px' }}>
-                {renderGrossMarginHistoryTable('Gross Margin by Month', salesPageForDisplay.grossMarginHistory)}
+                {renderGrossMarginHistoryTable('Gross Margin by Month', salesReportPayload.grossMarginHistory) || (
+                  <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '16px' }}>
+                    <h3 style={{ margin: '0 0 12px 0', fontSize: '16px', color: '#1e293b' }}>Gross Margin by Month</h3>
+                    {renderSalesReportEmptyState()}
+                  </div>
+                )}
               </div>
             )}
           </div>
-        )}
 
         {(() => {
           let tableCustomers = rankedCustomersForTableEffective.slice(0, 10).map((customer) => ({
@@ -7190,6 +7211,19 @@ export default function OperationsTab({
     const isProductPerformanceEnabled = isSectionEnabled('productsPerformance');
     const isRetailForecastingEnabled = isSectionEnabled('productsRetailForecasting');
     const isMerchandiseProfitabilityEnabled = isSectionEnabled('productsMerchandiseProfitability');
+    const hasAnyProductsReportEnabled =
+      isProductPerformanceEnabled ||
+      isRetailForecastingEnabled ||
+      isMerchandiseProfitabilityEnabled ||
+      isSectionEnabled('productsPriceCostComparison') ||
+      isSectionEnabled('productsPareto') ||
+      isSectionEnabled('productsScatter') ||
+      isSectionEnabled('productsScopeSelector') ||
+      isSectionEnabled('productsPriceCostTrend') ||
+      isSectionEnabled('productsPriceCostWaterfall') ||
+      isSectionEnabled('productsLossPrevention') ||
+      isSectionEnabled('productsBottomLossMakers') ||
+      isSectionEnabled('productsFreightOtherTracker');
     const fallbackProductReportView: ProductReportView =
       isProductPerformanceEnabled
         ? 'performance'
@@ -7199,9 +7233,9 @@ export default function OperationsTab({
         ? 'wholesaleRawData'
         : isVendorPricingEnabled
         ? 'vendorPricing'
-        : isRetailProductSector && isMerchandiseProfitabilityEnabled
+        : isMerchandiseProfitabilityEnabled
         ? 'merchandiseProfitability'
-        : isRetailProductSector && isRetailForecastingEnabled
+        : isRetailForecastingEnabled
         ? 'retailForecast'
         : 'performance';
     const effectiveProductReportView =
@@ -7213,14 +7247,18 @@ export default function OperationsTab({
         ? fallbackProductReportView
         : productReportView === 'performance' && !isProductPerformanceEnabled
         ? fallbackProductReportView
+        : productReportView === 'merchandiseProfitability' && !isMerchandiseProfitabilityEnabled
+        ? fallbackProductReportView
+        : productReportView === 'retailForecast' && !isRetailForecastingEnabled
+        ? fallbackProductReportView
         : productReportView;
-    const shouldRenderProductPerformance = effectiveProductReportView === 'performance' && isProductPerformanceEnabled;
+    const shouldRenderProductPerformance = isProductPerformanceEnabled;
     const shouldRenderProductMargin = effectiveProductReportView === 'productMarginAnalysis' && isProductMarginAnalysisEnabled;
     const shouldRenderWholesaleRaw = effectiveProductReportView === 'wholesaleRawData' && isWholesaleRawDataEnabled;
     const shouldRenderVendorPricing = effectiveProductReportView === 'vendorPricing' && isVendorPricingEnabled;
-    const shouldRenderRetailForecast = effectiveProductReportView === 'retailForecast' && isRetailProductSector && isRetailForecastingEnabled;
+    const shouldRenderRetailForecast = isRetailForecastingEnabled;
     const shouldRenderMerchandiseProfitability =
-      effectiveProductReportView === 'merchandiseProfitability' && isRetailProductSector && isMerchandiseProfitabilityEnabled;
+      isMerchandiseProfitabilityEnabled;
     const shouldBuildRetailForecasts = shouldRenderRetailForecast || shouldRenderMerchandiseProfitability;
     const shouldBuildVendorPricingData = shouldRenderVendorPricing || shouldRenderProductMargin;
     const platosMetrics = summary?.platosMetrics || null;
@@ -7781,7 +7819,7 @@ export default function OperationsTab({
     const retailForecastOptions = [...retailForecasts].sort((a, b) =>
       a.label.localeCompare(b.label, undefined, { sensitivity: 'base', numeric: true }),
     );
-    const hasRetailForecastView = isRetailProductSector && isRetailForecastingEnabled && retailForecasts.length > 0;
+    const hasRetailForecastView = isRetailForecastingEnabled && retailForecasts.length > 0;
     const vendorPricingRows = shouldBuildVendorPricingData && Array.isArray(wholesaleProductsData?.summary?.wholesaleVendorPricingRows)
       ? wholesaleProductsData.summary.wholesaleVendorPricingRows
       : [];
@@ -8230,7 +8268,15 @@ export default function OperationsTab({
       .slice(-1)[0] || '';
     const wholesaleRawLatestYear = wholesaleRawLatestDate.slice(0, 4);
     const wholesaleRawLatestMonth = wholesaleRawLatestDate.slice(0, 7);
-    const wholesaleRawYears = Array.from(new Set(wholesaleRawBaseRows.map((row) => row.year).filter(Boolean))).sort((a, b) => b.localeCompare(a));
+    const wholesaleRawYears = Array.from(
+      new Set([
+        ...wholesaleRawBaseRows.map((row) => row.year).filter(Boolean),
+        '2026',
+        '2025',
+        '2024',
+        '2023',
+      ])
+    ).sort((a, b) => b.localeCompare(a));
     const effectiveWholesaleRawYear =
       wholesaleRawYear && wholesaleRawYears.includes(wholesaleRawYear)
         ? wholesaleRawYear
@@ -8548,7 +8594,7 @@ export default function OperationsTab({
         {label}{retailForecastTableSortKey === key ? (retailForecastTableSortDir === 'asc' ? ' ↑' : ' ↓') : ' ↕'}
       </th>
     );
-    const productViewSwitcher = isProductMarginAnalysisEnabled || isWholesaleRawDataEnabled || isVendorPricingEnabled || isProductPerformanceEnabled || (isRetailProductSector && (isRetailForecastingEnabled || isMerchandiseProfitabilityEnabled)) ? (
+    const productViewSwitcher = isProductMarginAnalysisEnabled || isWholesaleRawDataEnabled || isVendorPricingEnabled || isProductPerformanceEnabled || isRetailForecastingEnabled || isMerchandiseProfitabilityEnabled ? (
       <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '16px' }}>
         {isProductMarginAnalysisEnabled && (
           <button
@@ -10088,33 +10134,7 @@ export default function OperationsTab({
       );
     }
 
-    if (effectiveProductReportView === 'merchandiseProfitability' && isRetailProductSector && isMerchandiseProfitabilityEnabled) {
-      return (
-        <div style={{ padding: '8px 32px 32px' }}>
-          <h2 style={{ fontSize: '24px', fontWeight: '700', color: '#1e293b', marginBottom: '16px' }}>
-            Product Sales Performance
-          </h2>
-          {productViewSwitcher}
-          {renderMerchandiseProfitabilityReport()}
-          {renderProductChartInfoModal()}
-        </div>
-      );
-    }
-
-    if (effectiveProductReportView === 'retailForecast' && isRetailProductSector && isRetailForecastingEnabled) {
-      return (
-        <div style={{ padding: '8px 32px 32px' }}>
-          <h2 style={{ fontSize: '24px', fontWeight: '700', color: '#1e293b', marginBottom: '16px' }}>
-            Product Sales Performance
-          </h2>
-          {productViewSwitcher}
-          {renderRetailForecastingReport()}
-          {renderProductChartInfoModal()}
-        </div>
-      );
-    }
-
-    if (!isProductPerformanceEnabled) {
+    if (!hasAnyProductsReportEnabled) {
       return (
         <div style={{ padding: '8px 32px 32px' }}>
           <h2 style={{ fontSize: '24px', fontWeight: '700', color: '#1e293b', marginBottom: '16px' }}>
@@ -10157,6 +10177,18 @@ export default function OperationsTab({
                 </div>
               ))}
             </div>
+          </div>
+        )}
+
+        {isMerchandiseProfitabilityEnabled && (
+          <div style={{ marginBottom: '20px' }}>
+            {renderMerchandiseProfitabilityReport()}
+          </div>
+        )}
+
+        {isRetailForecastingEnabled && (
+          <div style={{ marginBottom: '20px' }}>
+            {renderRetailForecastingReport()}
           </div>
         )}
 
@@ -10285,38 +10317,44 @@ export default function OperationsTab({
         </div>
         )}
 
-        {isSectionEnabled('productsLossPrevention') && Array.isArray(summary?.lossPrevention?.rows) && summary.lossPrevention.rows.length > 0 && (
+        {isSectionEnabled('productsLossPrevention') && (
           <div style={{ background: 'white', padding: '18px', borderRadius: '12px', border: '1px solid #e2e8f0', marginBottom: '20px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px', gap: '12px' }}>
               <h3 style={{ margin: 0, fontSize: '16px', color: '#1e293b' }}>Loss Prevention</h3>
               {renderChartInfoLink('productsLossPrevention')}
             </div>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '12px' }}>
-              <div>
-                <h4 style={{ margin: '0 0 8px 0', fontSize: '13px', color: '#475569' }}>Trade % of Buys</h4>
-                <ResponsiveContainer width="100%" height={260}>
-                  <LineChart data={summary.lossPrevention.rows}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-                    <XAxis dataKey="monthLabel" stroke="#64748b" style={{ fontSize: '12px' }} />
-                    <YAxis stroke="#64748b" style={{ fontSize: '12px' }} tickFormatter={(value) => `${Number(value || 0).toFixed(0)}%`} />
-                    <Tooltip formatter={(value: any) => [`${Number(value || 0).toFixed(1)}%`, 'Trade % of Buys']} />
-                    <Line type="monotone" dataKey="tradePctBuys" stroke="#2563eb" strokeWidth={2} dot={{ r: 3 }} connectNulls />
-                  </LineChart>
-                </ResponsiveContainer>
+            {Array.isArray(summary?.lossPrevention?.rows) && summary.lossPrevention.rows.length > 0 ? (
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '12px' }}>
+                <div>
+                  <h4 style={{ margin: '0 0 8px 0', fontSize: '13px', color: '#475569' }}>Trade % of Buys</h4>
+                  <ResponsiveContainer width="100%" height={260}>
+                    <LineChart data={summary.lossPrevention.rows}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                      <XAxis dataKey="monthLabel" stroke="#64748b" style={{ fontSize: '12px' }} />
+                      <YAxis stroke="#64748b" style={{ fontSize: '12px' }} tickFormatter={(value) => `${Number(value || 0).toFixed(0)}%`} />
+                      <Tooltip formatter={(value: any) => [`${Number(value || 0).toFixed(1)}%`, 'Trade % of Buys']} />
+                      <Line type="monotone" dataKey="tradePctBuys" stroke="#2563eb" strokeWidth={2} dot={{ r: 3 }} connectNulls />
+                    </LineChart>
+                  </ResponsiveContainer>
+                </div>
+                <div>
+                  <h4 style={{ margin: '0 0 8px 0', fontSize: '13px', color: '#475569' }}>Return % of Sales</h4>
+                  <ResponsiveContainer width="100%" height={260}>
+                    <LineChart data={summary.lossPrevention.rows}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                      <XAxis dataKey="monthLabel" stroke="#64748b" style={{ fontSize: '12px' }} />
+                      <YAxis stroke="#64748b" style={{ fontSize: '12px' }} tickFormatter={(value) => `${Number(value || 0).toFixed(0)}%`} />
+                      <Tooltip formatter={(value: any) => [`${Number(value || 0).toFixed(1)}%`, 'Return % of Sales']} />
+                      <Line type="monotone" dataKey="returnPctSales" stroke="#dc2626" strokeWidth={2} dot={{ r: 3 }} connectNulls />
+                    </LineChart>
+                  </ResponsiveContainer>
+                </div>
               </div>
-              <div>
-                <h4 style={{ margin: '0 0 8px 0', fontSize: '13px', color: '#475569' }}>Return % of Sales</h4>
-                <ResponsiveContainer width="100%" height={260}>
-                  <LineChart data={summary.lossPrevention.rows}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-                    <XAxis dataKey="monthLabel" stroke="#64748b" style={{ fontSize: '12px' }} />
-                    <YAxis stroke="#64748b" style={{ fontSize: '12px' }} tickFormatter={(value) => `${Number(value || 0).toFixed(0)}%`} />
-                    <Tooltip formatter={(value: any) => [`${Number(value || 0).toFixed(1)}%`, 'Return % of Sales']} />
-                    <Line type="monotone" dataKey="returnPctSales" stroke="#dc2626" strokeWidth={2} dot={{ r: 3 }} connectNulls />
-                  </LineChart>
-                </ResponsiveContainer>
+            ) : (
+              <div style={{ padding: '40px 16px', textAlign: 'center', color: '#64748b', fontSize: '13px', background: '#f8fafc', borderRadius: '8px' }}>
+                No loss-prevention rows are available for the selected period.
               </div>
-            </div>
+            )}
           </div>
         )}
 
