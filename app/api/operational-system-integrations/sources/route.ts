@@ -9,6 +9,7 @@ import {
   saveOperationalSystemConnection,
 } from '@/lib/operational/operational-system-connections';
 import { COGENT_RATE_CARD_LABEL, COGENT_RATE_CARD_SOURCE_CODE } from '@/lib/operational/cogent-rate-card';
+import { resolveCompanyIndustrySectorCategory } from '@/lib/industry-sector-resolver';
 
 export const dynamic = 'force-dynamic';
 
@@ -37,7 +38,7 @@ function isRetailSector(industrySectorCategory: string | null | undefined): bool
 async function getValidatedCompany(companyId: string) {
   const company = await prisma.company.findUnique({
     where: { id: companyId },
-    select: { accountingSystem: true, industrySectorCategory: true },
+    select: { accountingSystem: true, industrySector: true, industrySectorCategory: true },
   });
   if (!company) {
     throw new Error('Company not found');
@@ -45,7 +46,10 @@ async function getValidatedCompany(companyId: string) {
   if (!isQuickBooksAccountingSystem(company.accountingSystem)) {
     throw new Error('Operational sources are only available for QUICKBOOKS companies.');
   }
-  return company;
+  return {
+    ...company,
+    industrySectorCategory: resolveCompanyIndustrySectorCategory(company),
+  };
 }
 
 export async function GET(request: NextRequest) {

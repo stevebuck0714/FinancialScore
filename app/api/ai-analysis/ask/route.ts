@@ -16,6 +16,7 @@ import {
   getExecBriefingModuleProfile,
 } from '@/lib/pulse/exec-briefing-modules';
 import { buildOperationalMockResponse } from '@/lib/operations/sector-mock-data';
+import { resolveCompanyIndustrySectorCategory } from '@/lib/industry-sector-resolver';
 
 type RatioSnapshot = {
   name: string;
@@ -1422,7 +1423,8 @@ export async function runAskCorelyticsLegacy(request: NextRequest) {
       where: { id: companyId },
       select: { industrySector: true, industrySectorCategory: true, name: true },
     });
-    const moduleProfile = getExecBriefingModuleProfile(company?.industrySectorCategory);
+    const sectorCategory = resolveCompanyIndustrySectorCategory(company);
+    const moduleProfile = getExecBriefingModuleProfile(sectorCategory);
     const [productDaily, inventoryDaily] = await Promise.all([
       moduleProfile.genericSnapshots.products
         ? prisma.productSalesSnapshot.findMany({
@@ -1443,17 +1445,17 @@ export async function runAskCorelyticsLegacy(request: NextRequest) {
     if (moduleProfile.genericSnapshots.customers) {
       genericOperationalData.customers =
         summarizeCustomerRows(customersDaily) ||
-        buildMockSummary('customers', companyId, company?.industrySectorCategory);
+        buildMockSummary('customers', companyId, sectorCategory);
     }
     if (moduleProfile.genericSnapshots.products) {
       genericOperationalData.products =
         summarizeProductRows(productDaily) ||
-        buildMockSummary('products', companyId, company?.industrySectorCategory);
+        buildMockSummary('products', companyId, sectorCategory);
     }
     if (moduleProfile.genericSnapshots.inventory) {
       genericOperationalData.inventory =
         summarizeInventoryRows(inventoryDaily) ||
-        buildMockSummary('inventory', companyId, company?.industrySectorCategory);
+        buildMockSummary('inventory', companyId, sectorCategory);
     }
     const constructionOperations = moduleProfile.hasConstructionNativeModules
       ? buildConstructionBriefingFacts(companyId)
@@ -1787,7 +1789,7 @@ export async function runAskCorelyticsLegacy(request: NextRequest) {
       ? buildExternalQueryPlan({
           question,
           industryGroupName,
-          industrySectorCategory: company?.industrySectorCategory || null,
+          industrySectorCategory: sectorCategory,
           companyName: companyName || company?.name || null,
         })
       : null;

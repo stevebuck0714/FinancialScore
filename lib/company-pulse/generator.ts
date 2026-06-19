@@ -11,6 +11,7 @@ import {
   type PulseAlertInput,
   type PulseAlertRow,
 } from '@/lib/pulse-alerts';
+import { resolveCompanyIndustrySectorCategory } from '@/lib/industry-sector-resolver';
 
 export type PulseReadinessStatus = 'ready' | 'partial' | 'missing';
 
@@ -289,14 +290,14 @@ export async function getCompanyPulseContext(companyId: string): Promise<{
   const [company, goalsSnapshot] = await Promise.all([
     prisma.company.findUnique({
       where: { id: companyId },
-      select: { industrySectorCategory: true },
+      select: { industrySector: true, industrySectorCategory: true },
     }),
     loadOperationalGoals(companyId),
   ]);
   return {
     goalsSnapshot,
     policyOverrides: sanitizePulsePolicyOverrides(goalsSnapshot[PULSE_POLICY_OVERRIDE_KEY]),
-    industrySectorCategory: company?.industrySectorCategory || null,
+    industrySectorCategory: company ? resolveCompanyIndustrySectorCategory(company) : null,
   };
 }
 
@@ -463,13 +464,14 @@ export async function generateCompanyPulse(companyId: string, options: GenerateO
 }> {
   const company = await prisma.company.findUnique({
     where: { id: companyId },
-    select: { id: true, name: true, industrySectorCategory: true, accountingSystem: true },
+    select: { id: true, name: true, industrySector: true, industrySectorCategory: true, accountingSystem: true },
   });
   if (!company) throw new Error('Company not found');
 
   const goals = await loadOperationalGoals(companyId);
   const policyOverrides = sanitizePulsePolicyOverrides(goals[PULSE_POLICY_OVERRIDE_KEY]);
-  const policy = getResolvedPulsePolicyValues(policyOverrides, company.industrySectorCategory);
+  const resolvedSectorCategory = resolveCompanyIndustrySectorCategory(company);
+  const policy = getResolvedPulsePolicyValues(policyOverrides, resolvedSectorCategory);
   const lookbackStart = addUtcDays(startOfUtcDay(new Date()), -EXECUTIVE_LOOKBACK_DAYS);
   const salesLookbackStart = addUtcDays(startOfUtcDay(new Date()), -SALES_LOOKBACK_DAYS);
 

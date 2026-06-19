@@ -16,6 +16,7 @@ import {
   type ReportDatasetFilterConfig,
 } from '@/lib/custom-reports/report-datasets';
 import { buildOperationalMockResponse } from '@/lib/operations/sector-mock-data';
+import { resolveCompanyIndustrySectorCategory } from '@/lib/industry-sector-resolver';
 import {
   buildBillingCashMock,
   buildCommitmentsForecastMock,
@@ -1081,13 +1082,14 @@ export async function POST(request: NextRequest) {
 
     const company = await prisma.company.findUnique({
       where: { id: companyId },
-      select: { industrySectorCategory: true, userDefinedAllocations: true, forceOperationalMockData: true },
+      select: { industrySector: true, industrySectorCategory: true, userDefinedAllocations: true, forceOperationalMockData: true },
     });
     const customReports = (company?.userDefinedAllocations as any)?.customReports || {};
     if (customReports.enabledByAdmin !== true) {
       return NextResponse.json({ error: 'Custom Reports are disabled for this company.' }, { status: 403 });
     }
-    const fieldCatalog = getReportDataCatalog(company?.industrySectorCategory || null);
+    const sectorCategory = resolveCompanyIndustrySectorCategory(company);
+    const fieldCatalog = getReportDataCatalog(sectorCategory);
     const previewConfig = enhancePreviewConfig(config, fieldCatalog);
     const entityContext = [
       previewConfig?.scope?.entityName,
@@ -1163,7 +1165,7 @@ export async function POST(request: NextRequest) {
 
     const operationalRows = buildOperationalPreviewRows(
       companyId,
-      company?.industrySectorCategory || null,
+      sectorCategory,
       fields,
       fieldCatalog,
       Array.isArray(previewConfig?.filters) ? previewConfig.filters : [],
@@ -1185,7 +1187,7 @@ export async function POST(request: NextRequest) {
     const tablePreview = String(previewConfig?.chartType || '').toLowerCase() === 'table'
       ? buildOperationalTablePreview(
           companyId,
-          company?.industrySectorCategory || null,
+          sectorCategory,
           fields,
           fieldCatalog,
           Array.isArray(previewConfig?.filters) ? previewConfig.filters : [],

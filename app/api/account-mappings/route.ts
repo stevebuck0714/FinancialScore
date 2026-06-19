@@ -4,6 +4,7 @@ import { getAllowedTargetFieldSet, getTargetFieldOptions } from "@/lib/constants
 import { publishMonthsFromMonthlyFinancialDirect } from "@/lib/financial/publish-month-service";
 import { enqueueFinancialMappingRebuildRun } from "@/lib/infor-m3/sync-queue";
 import { isQuickBooksDesktopFamily } from "@/lib/quickbooks-desktop/family";
+import { resolveCompanyIndustrySectorCategory } from "@/lib/industry-sector-resolver";
 
 export const dynamic = "force-dynamic";
 // Mapping save can trigger a downstream DFS rebuild (Infor tenants only)
@@ -458,7 +459,7 @@ export async function GET(request: NextRequest) {
     // Get company context (LOB names + sector category)
     const company = await prisma.company.findUnique({
       where: { id: companyId },
-      select: { linesOfBusiness: true, industrySectorCategory: true, accountingSystem: true },
+      select: { linesOfBusiness: true, industrySector: true, industrySectorCategory: true, accountingSystem: true },
     });
 
     const accountingSystem = String(company?.accountingSystem || '').toUpperCase();
@@ -510,8 +511,8 @@ export async function GET(request: NextRequest) {
       return undefined;
     };
 
-    const allowedTargetFields = getAllowedTargetFieldSet(company?.industrySectorCategory || '01');
-    const sectorCategory = company?.industrySectorCategory || '01';
+    const sectorCategory = resolveCompanyIndustrySectorCategory(company);
+    const allowedTargetFields = getAllowedTargetFieldSet(sectorCategory);
     const invalidMappings = mappings.filter((m: any) => {
       const sourceMatch = findSourceMatch(m);
       const effectiveClassification = isManualClassification(m.accountClassification)
@@ -632,7 +633,7 @@ export async function GET(request: NextRequest) {
       mappings: sanitizedMappings,
       linesOfBusiness: company?.linesOfBusiness || [],
       userDefinedAllocations: [], // Not available in current schema
-      industrySectorCategory: company?.industrySectorCategory || '01',
+      industrySectorCategory: sectorCategory,
       invalidMappings: invalidMappings.map((m: any) => ({
         accountName: m.accountName,
         invalidTargetField: m.targetField,
@@ -674,7 +675,7 @@ export async function POST(request: NextRequest) {
     // Resolve company sector for sector-specific Revenue/COGS validation.
     const company = await prisma.company.findUnique({
       where: { id: companyId },
-      select: { id: true, industrySectorCategory: true, accountingSystem: true },
+      select: { id: true, industrySector: true, industrySectorCategory: true, accountingSystem: true },
     });
     if (!company) {
       return NextResponse.json(
@@ -683,7 +684,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const sectorCategory = company.industrySectorCategory || '01';
+    const sectorCategory = resolveCompanyIndustrySectorCategory(company);
     const allowedTargetFields = getAllowedTargetFieldSet(sectorCategory);
     const accountingSystem = String((company as any)?.accountingSystem || "").toUpperCase();
     const quickBooksSnapshot =

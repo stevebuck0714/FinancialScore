@@ -10,6 +10,7 @@ import {
   buildConstructionBriefingFacts,
   getExecBriefingModuleProfile,
 } from '@/lib/pulse/exec-briefing-modules';
+import { resolveCompanyIndustrySectorCategory } from '@/lib/industry-sector-resolver';
 
 export const dynamic = 'force-dynamic';
 
@@ -710,7 +711,8 @@ export async function GET(request: NextRequest) {
         return NextResponse.json(response, { headers: PRIVATE_DAILY_CACHE_HEADERS });
       }
     }
-    const moduleProfile = getExecBriefingModuleProfile(company?.industrySectorCategory);
+    const sectorCategory = resolveCompanyIndustrySectorCategory(company);
+    const moduleProfile = getExecBriefingModuleProfile(sectorCategory);
     const dataVersion = await buildPulseDataVersion(companyId, startDate, monthlyStartDate, moduleProfile);
     const versionedCacheKey = `${cacheKey}:${dataVersion.slice(0, 12)}`;
 
@@ -925,7 +927,7 @@ export async function GET(request: NextRequest) {
     const briefingPulseAlerts = (pulseAlerts || []).filter((alert: any) => !isStoredArApAlert(alert));
 
     facts = {
-      company: { name: company?.name || 'Company', industryGroupId, industryName: benchmarks[0]?.industryName || null, industrySectorCategory: company?.industrySectorCategory || null },
+      company: { name: company?.name || 'Company', industryGroupId, industryName: benchmarks[0]?.industryName || null, industrySectorCategory: sectorCategory },
       operationalModules: {
         sectorCategory: moduleProfile.sectorCategory,
         sectorKey: moduleProfile.sectorKey,

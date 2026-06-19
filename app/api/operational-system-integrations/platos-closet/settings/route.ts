@@ -6,6 +6,7 @@ import {
   isQuickBooksAccountingSystem,
   saveOperationalSystemConnection,
 } from '@/lib/operational/operational-system-connections';
+import { resolveCompanyIndustrySectorCategory } from '@/lib/industry-sector-resolver';
 
 export const dynamic = 'force-dynamic';
 
@@ -92,7 +93,7 @@ function sanitizeDataDomains(value: unknown): PlatosClosetDataDomain[] {
 async function getValidatedCompany(companyId: string) {
   const company = await prisma.company.findUnique({
     where: { id: companyId },
-    select: { accountingSystem: true, industrySectorCategory: true },
+    select: { accountingSystem: true, industrySector: true, industrySectorCategory: true },
   });
   if (!company) {
     throw new Error('Company not found');
@@ -100,7 +101,7 @@ async function getValidatedCompany(companyId: string) {
   if (!isQuickBooksAccountingSystem(company.accountingSystem)) {
     throw new Error('MONTHLY STORE VISIT REPORT settings are only available for QUICKBOOKS companies.');
   }
-  if (String(company.industrySectorCategory || '').trim() !== RETAIL_SECTOR_CODE) {
+  if (resolveCompanyIndustrySectorCategory(company) !== RETAIL_SECTOR_CODE) {
     throw new Error('MONTHLY STORE VISIT REPORT is limited to Retail companies.');
   }
   return company;

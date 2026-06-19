@@ -5,6 +5,7 @@ import { createModelText } from '@/lib/openai-helpers';
 import { auditForbiddenAccess } from '@/lib/audit-logger';
 import { requireAuth, validateCompanyAccess } from '@/lib/tenant-security';
 import { getReportDataCatalog, type ReportFieldCatalogItem } from '@/lib/custom-reports/report-data-catalog';
+import { resolveCompanyIndustrySectorCategory } from '@/lib/industry-sector-resolver';
 import {
   extractEntityNameFromPrompt,
   getReportDataset,
@@ -543,6 +544,7 @@ export async function POST(request: NextRequest) {
       select: {
         id: true,
         name: true,
+        industrySector: true,
         industrySectorCategory: true,
         userDefinedAllocations: true,
       },
@@ -553,7 +555,8 @@ export async function POST(request: NextRequest) {
     if (customReports.enabledByAdmin !== true) {
       return NextResponse.json({ error: 'Custom Reports are disabled for this company.' }, { status: 403 });
     }
-    const fieldCatalog = getReportDataCatalog(company.industrySectorCategory || null);
+    const sectorCategory = resolveCompanyIndustrySectorCategory(company);
+    const fieldCatalog = getReportDataCatalog(sectorCategory);
     const datasetCatalog = getReportDatasetCatalog();
 
     const recentRows = await prisma.monthlyFinancial.findMany({
@@ -614,7 +617,7 @@ export async function POST(request: NextRequest) {
             content: JSON.stringify({
               company: {
                 name: company.name,
-                industrySectorCategory: company.industrySectorCategory || null,
+                industrySectorCategory: sectorCategory,
               },
               requestedChartType: requestedType,
               userPrompt: prompt,

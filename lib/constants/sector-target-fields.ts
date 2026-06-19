@@ -1,3 +1,5 @@
+import { resolveSectorCategoryFromIndustrySector } from '@/lib/industry-sector-resolver';
+
 export interface TargetFieldOption {
   value: string;
   label: string;
@@ -368,7 +370,8 @@ function buildOptions(prefix: 'rev' | 'cogs', labels: string[]): TargetFieldOpti
 
 export function getSectorSchema(industrySectorCategory?: string | null): SectorSchema | null {
   if (!industrySectorCategory) return null;
-  return SECTOR_SCHEMA_BY_CODE[industrySectorCategory] || null;
+  const resolvedSectorCategory = resolveSectorCategoryFromIndustrySector(industrySectorCategory) || industrySectorCategory;
+  return SECTOR_SCHEMA_BY_CODE[resolvedSectorCategory] || null;
 }
 
 export function getRevenueTargetFieldOptions(industrySectorCategory?: string | null): TargetFieldOption[] {

@@ -6,6 +6,7 @@ import { sendAccountingSystemSelectionNotification } from "@/lib/email";
 import { listAccessibleCompaniesForUser } from "@/lib/user-company-access";
 import { DATAROOM_DEFAULT_FOLDERS } from "@/lib/dataroom/constants";
 import { privateCacheHeaders } from "@/lib/http-cache";
+import { resolveCompanyIndustrySectorCategory } from "@/lib/industry-sector-resolver";
 
 async function hasCompanyColumn(columnName: string): Promise<boolean> {
   // Guard against generated Prisma client drift:
@@ -223,6 +224,12 @@ export async function GET(request: NextRequest) {
       });
     }
 
+    const companiesWithResolvedSector = companies.map((company: any) => ({
+      ...company,
+      rawIndustrySectorCategory: company.industrySectorCategory || null,
+      industrySectorCategory: resolveCompanyIndustrySectorCategory(company),
+    }));
+
     console.log(`Retrieved ${companies.length} companies for user ${context.email}`);
 
     // AUDIT: Log company access (only log if viewing specific company)
@@ -230,7 +237,7 @@ export async function GET(request: NextRequest) {
       await auditCompanyOperation('COMPANY_VIEWED', companyId);
     }
 
-    return NextResponse.json({ companies }, { headers: privateCacheHeaders(companyId ? 30 : 60, 180) });
+    return NextResponse.json({ companies: companiesWithResolvedSector }, { headers: privateCacheHeaders(companyId ? 30 : 60, 180) });
   } catch (error: any) {
     console.error("Error fetching companies:", error);
     return NextResponse.json(
@@ -1510,7 +1517,13 @@ export async function PATCH(request: NextRequest) {
       }
     }
     
-    return NextResponse.json({ company }, { status: 200 });
+    const companyWithResolvedSector = {
+      ...company,
+      rawIndustrySectorCategory: (company as any).industrySectorCategory || null,
+      industrySectorCategory: resolveCompanyIndustrySectorCategory(company),
+    };
+
+    return NextResponse.json({ company: companyWithResolvedSector }, { status: 200 });
   } catch (error: any) {
     console.error("❌ ===== PATCH ERROR =====");
     console.error("❌ Error updating company:", error);

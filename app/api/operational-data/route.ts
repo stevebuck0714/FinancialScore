@@ -45,6 +45,7 @@ import {
 } from '@/lib/operational/retail-subcategory-history';
 import { hashCacheParts, readDerivedApiCache, writeDerivedApiCache } from '@/lib/derived-api-cache';
 import { privateCacheHeaders } from '@/lib/http-cache';
+import { resolveCompanyIndustrySectorCategory } from '@/lib/industry-sector-resolver';
 
 export const dynamic = 'force-dynamic';
 
@@ -2569,6 +2570,7 @@ export async function GET(request: NextRequest) {
       where: { id: companyId },
       select: {
         accountingSystem: true,
+        industrySector: true,
         industrySectorCategory: true,
         hasRealOperationalData: true,
         forceOperationalMockData: true,
@@ -2580,7 +2582,8 @@ export async function GET(request: NextRequest) {
         { status: 404 }
       );
     }
-    if (isCronProductsCacheWarmup && String(company.industrySectorCategory || '').trim() !== '42') {
+    const resolvedCompanySectorCategory = resolveCompanyIndustrySectorCategory(company);
+    if (isCronProductsCacheWarmup && resolvedCompanySectorCategory !== '42') {
       return NextResponse.json(
         { error: 'Cron product cache warmup is limited to wholesale trade companies.' },
         { status: 403 }
@@ -2597,7 +2600,7 @@ export async function GET(request: NextRequest) {
     // when enabled, always serve mock operational payloads for that company.
     const shouldUseMockData = company.forceOperationalMockData === true;
 
-    const sectorCategory = sectorCategoryParam || company?.industrySectorCategory || '01';
+    const sectorCategory = sectorCategoryParam || resolvedCompanySectorCategory;
     const normalizedAccountingSystem = String(company.accountingSystem || '').trim().toUpperCase();
     const isQuickBooksCompany =
       normalizedAccountingSystem === 'QUICKBOOKS' ||

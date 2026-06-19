@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import { requireCompanyAccess } from '@/lib/tenant-security';
 import { computeSdeRecommendationsFromMonthly } from '@/lib/sde-recommendations';
+import { resolveCompanyIndustrySectorCategory } from '@/lib/industry-sector-resolver';
 
 export const dynamic = 'force-dynamic';
 
@@ -20,7 +21,7 @@ export async function GET(request: NextRequest) {
     const [company, latestRecord] = await Promise.all([
       prisma.company.findUnique({
         where: { id: companyId },
-        select: { id: true, industrySectorCategory: true },
+        select: { id: true, industrySector: true, industrySectorCategory: true },
       }),
       prisma.financialRecord.findFirst({
         where: { companyId },
@@ -66,7 +67,7 @@ export async function GET(request: NextRequest) {
     }
 
     const payload = computeSdeRecommendationsFromMonthly(monthlyRows, {
-      industrySectorCategory: company.industrySectorCategory,
+      industrySectorCategory: resolveCompanyIndustrySectorCategory(company),
     });
 
     return NextResponse.json(payload);

@@ -20,6 +20,7 @@ import { US_STATES, KPI_TO_BENCHMARK_MAP } from './constants';
 import { KPI_FORMULAS } from './constants/kpi-formulas';
 import { getFieldDisplayName } from '@/lib/constants/field-display-names';
 import { addMonthsClamped, billingIntervalMonths } from '@/lib/billing/dateMath';
+import { resolveCompanyIndustrySectorCategory } from '@/lib/industry-sector-resolver';
 const LoginView = dynamic(() => import('./components/auth/LoginView'), { ssr: false });
 const MFAEnrollmentModal = dynamic(() => import('./components/auth/MFAEnrollmentModal'), { ssr: false });
 const MFAVerificationModal = dynamic(() => import('./components/auth/MFAVerificationModal'), { ssr: false });
@@ -4156,7 +4157,7 @@ function FinancialScorePage() {
     const activeCompany = Array.isArray(companies)
       ? companies.find((c) => c.id === selectedCompanyId)
       : undefined;
-    const sectorCategory = String(activeCompany?.industrySectorCategory || industrySectorCategory || '01');
+    const sectorCategory = resolveCompanyIndustrySectorCategory(activeCompany, industrySectorCategory);
     const industryGroupId = activeCompany?.industrySector;
 
     setSdeManualInputs((prev) => {
@@ -9823,7 +9824,8 @@ function FinancialScorePage() {
   // Main Logged-In View with Header
   const company = getCurrentCompany();
   const companyName = company ? company.name : '';
-  const printOperationsSectorCategory = String(company?.industrySectorCategory || industrySectorCategory || '01');
+  const effectiveCompanySectorCategory = resolveCompanyIndustrySectorCategory(company, industrySectorCategory);
+  const printOperationsSectorCategory = effectiveCompanySectorCategory;
   const isConstructionPrintSector = printOperationsSectorCategory === '23';
   const selectedCompanyProfile = useMemo(
     () => companyProfiles.find((p) => p.companyId === selectedCompanyId) || null,
@@ -9961,7 +9963,7 @@ function FinancialScorePage() {
       ].filter(Boolean).join(', ') || company?.location || '';
       const industryGroupMeta = getIndustryGroupMeta((company as any)?.industrySector);
       const sectorCategoryMeta = SECTOR_CATEGORIES.find(
-        (item) => String(item.code) === String((company as any)?.industrySectorCategory || '').trim(),
+        (item) => String(item.code) === String(effectiveCompanySectorCategory || '').trim(),
       );
       const response = await fetch('/api/company-market-context/generate', {
         method: 'POST',
@@ -9971,8 +9973,8 @@ function FinancialScorePage() {
           companyName,
           location,
           website: (company as any)?.website || (company as any)?.websiteUrl || (company as any)?.url || '',
-          industry: (company as any)?.industrySector || (company as any)?.industrySectorCategory || '',
-          industrySectorCategory: (company as any)?.industrySectorCategory || '',
+          industry: (company as any)?.industrySector || effectiveCompanySectorCategory || '',
+          industrySectorCategory: effectiveCompanySectorCategory || '',
           industrySectorCategoryName: sectorCategoryMeta?.name || '',
           industryGroupId: (company as any)?.industrySector || '',
           industryGroupName: industryGroupMeta?.name || '',
@@ -10003,7 +10005,7 @@ function FinancialScorePage() {
     } finally {
       progressTimers.forEach((timer) => window.clearTimeout(timer));
     }
-  }, [selectedCompanyId, companyName, company, selectedCompanyProfile, researchDepth, competitorSearchScopes]);
+  }, [selectedCompanyId, companyName, company, selectedCompanyProfile, effectiveCompanySectorCategory, researchDepth, competitorSearchScopes]);
   const businessOverviewProfileItems = useMemo(() => {
     const companyAddress = [
       company?.addressStreet,
@@ -10037,7 +10039,7 @@ function FinancialScorePage() {
     const accountingSystemLabel =
       accountingSystemLabelMap[String(company?.accountingSystem || '').toUpperCase()] ||
       (company?.accountingSystem ? String(company.accountingSystem) : 'N/A');
-    const sectorLabel = company?.industrySectorCategory || 'N/A';
+    const sectorLabel = effectiveCompanySectorCategory || 'N/A';
 
     if (!selectedCompanyProfile) {
       return [
@@ -10065,7 +10067,7 @@ function FinancialScorePage() {
       { label: 'Special Notes', value: selectedCompanyProfile.specialNotes || 'N/A' },
       { label: 'QoE Notes', value: selectedCompanyProfile.qoeNotes || 'N/A' },
     ];
-  }, [selectedCompanyProfile, company]);
+  }, [selectedCompanyProfile, company, effectiveCompanySectorCategory]);
   const businessOverviewKeyEmployees = useMemo(() => {
     const raw = Array.isArray(selectedCompanyProfile?.keyEmployees) ? selectedCompanyProfile?.keyEmployees : [];
     const currentYear = new Date().getFullYear();
@@ -10402,10 +10404,10 @@ function FinancialScorePage() {
         sdeManualInputs,
         sdeMultiplier,
         industrySectorCategory,
-        companyIndustrySectorCategory: company?.industrySectorCategory,
+        companyIndustrySectorCategory: effectiveCompanySectorCategory,
         customerQualityRecords,
       }),
-    [monthly, sdeManualInputs, sdeMultiplier, industrySectorCategory, company?.industrySectorCategory, customerQualityRecords],
+    [monthly, sdeManualInputs, sdeMultiplier, industrySectorCategory, effectiveCompanySectorCategory, customerQualityRecords],
   );
   const valuationSectionDefinitions = useMemo(() => ([
     {
@@ -15110,7 +15112,7 @@ function FinancialScorePage() {
         <OperationsTab
           selectedCompanyId={selectedCompanyId}
           companyName={companyName}
-          industrySectorCategory={company?.industrySectorCategory || null}
+          industrySectorCategory={effectiveCompanySectorCategory}
           currentUser={currentUser}
           monthly={monthly}
           initialTab={operationsPrintConfig?.tab}
@@ -15157,7 +15159,7 @@ function FinancialScorePage() {
         <CustomReportsView
           selectedCompanyId={selectedCompanyId}
           companyName={companyName || ''}
-          industrySectorCategory={company?.industrySectorCategory || null}
+          industrySectorCategory={effectiveCompanySectorCategory}
         />
       )}
       {currentView === 'custom-reports' && selectedCompanyId && !isCustomReportsEnabledByAdmin && (
@@ -16290,7 +16292,10 @@ function FinancialScorePage() {
                               accountCode: acc.acctId,  // Include account code for better AI mapping
                               accountType: acc.acctType,
                             }));
-                            const currentSectorCategory = companies.find(c => c.id === selectedCompanyId)?.industrySectorCategory || '01';
+                            const currentSectorCategory = resolveCompanyIndustrySectorCategory(
+                              companies.find(c => c.id === selectedCompanyId),
+                              industrySectorCategory,
+                            );
                             const targetFieldOptions = getTargetFieldOptions(currentSectorCategory);
                             const sectorTargetFields = [...targetFieldOptions.revenue, ...targetFieldOptions.cogs];
 
@@ -16397,7 +16402,10 @@ function FinancialScorePage() {
                               accountId: acc.accountId,
                               accountCode: acc.accountCode,
                             }));
-                            const currentSectorCategory = companies.find(c => c.id === selectedCompanyId)?.industrySectorCategory || '01';
+                            const currentSectorCategory = resolveCompanyIndustrySectorCategory(
+                              companies.find(c => c.id === selectedCompanyId),
+                              industrySectorCategory,
+                            );
                             const targetFieldOptions = getTargetFieldOptions(currentSectorCategory);
                             const sectorTargetFields = [...targetFieldOptions.revenue, ...targetFieldOptions.cogs];
 
@@ -16549,7 +16557,10 @@ function FinancialScorePage() {
                       mappings={aiMappings}
                       linesOfBusiness={linesOfBusiness}
                       userDefinedAllocations={userDefinedAllocations}
-                      industrySectorCategory={companies.find(c => c.id === selectedCompanyId)?.industrySectorCategory || '01'}
+                      industrySectorCategory={resolveCompanyIndustrySectorCategory(
+                        companies.find(c => c.id === selectedCompanyId),
+                        industrySectorCategory,
+                      )}
                       showOnlyActionable={showOnlyActionableMappings}
                       onMappingChange={(index, updates) => {
                         const updated = [...aiMappings];
@@ -18505,7 +18516,7 @@ function FinancialScorePage() {
         <FinancialForecastTab
           selectedCompanyId={selectedCompanyId}
           companyName={companyName || ''}
-          industrySectorCategory={company?.industrySectorCategory || null}
+          industrySectorCategory={effectiveCompanySectorCategory}
           prefetchedMonthlyData={monthly as any}
         />
       )}
@@ -18566,7 +18577,7 @@ function FinancialScorePage() {
         <OperationsTab
           selectedCompanyId={selectedCompanyId}
           companyName={companyName}
-          industrySectorCategory={company?.industrySectorCategory || null}
+          industrySectorCategory={effectiveCompanySectorCategory}
           currentUser={currentUser}
           monthly={monthly}
           viewMode="overview-only"
@@ -19762,7 +19773,7 @@ function FinancialScorePage() {
               return null;
             };
 
-            const sdeSectorCategory = company?.industrySectorCategory || industrySectorCategory || '01';
+            const sdeSectorCategory = effectiveCompanySectorCategory;
             const sdeSectorBenchmarks = getSdeSectorBenchmarks(sdeSectorCategory);
 
             const annualRevenueEbitdaData = (() => {
@@ -25004,6 +25015,54 @@ function FinancialScorePage() {
               condition: statementType === 'income-statement' && statementPeriod === 'current-month'
             });
 
+            const financialReportSectorCategory = effectiveCompanySectorCategory;
+            const financialReportTargetOptions = getTargetFieldOptions(financialReportSectorCategory);
+            const financialReportFieldLabelByValue = new Map<string, string>();
+            Object.values(financialReportTargetOptions).flat().forEach((option: any) => {
+              if (option?.value) financialReportFieldLabelByValue.set(option.value, option.label || option.value);
+            });
+            const getFinancialReportFieldLabel = (field: string): string =>
+              financialReportFieldLabelByValue.get(field) || getFieldDisplayName(field);
+            const orderedFinancialReportFields = (fields: string[], section: keyof typeof financialReportTargetOptions): string[] => {
+              const order = new Map((financialReportTargetOptions[section] || []).map((option: any, index: number) => [option.value, index]));
+              return [...fields].sort((a, b) => {
+                const aOrder = order.has(a) ? Number(order.get(a)) : Number.MAX_SAFE_INTEGER;
+                const bOrder = order.has(b) ? Number(order.get(b)) : Number.MAX_SAFE_INTEGER;
+                if (aOrder !== bOrder) return aOrder - bOrder;
+                return getFinancialReportFieldLabel(a).localeCompare(getFinancialReportFieldLabel(b));
+              });
+            };
+            const rowsHaveValue = (rows: any[], field: string): boolean =>
+              rows.some((row) => (Number(row?.[field]) || 0) !== 0);
+            const hasAnyBalanceValue = (values: number[]): boolean =>
+              values.some((value) => (Number(value) || 0) !== 0);
+            const currentAssetFields = new Set(['cash', 'ar', 'retainageReceivables', 'contractAssets', 'inventory', 'otherCA']);
+            const currentLiabilityFields = new Set(['ap', 'loc', 'contractLiabilities', 'otherCL']);
+            const assetReportRows = (financialReportTargetOptions.asset || []).map((option: any) => ({
+              key: option.value,
+              label: option.label,
+              indent: option.value === 'cash' || option.value === 'ar' || option.value === 'inventory' || option.value === 'otherCA' || currentAssetFields.has(option.value) ? 20 : 0,
+              group: currentAssetFields.has(option.value) ? 'current' : 'noncurrent',
+            }));
+            const currentAssetReportRows = assetReportRows.filter((row) => row.group === 'current');
+            const nonCurrentAssetReportRows = assetReportRows.filter((row) => row.group !== 'current');
+            const liabilityReportRows = (financialReportTargetOptions.liability || []).map((option: any) => ({
+              key: option.value,
+              label: option.label,
+              indent: currentLiabilityFields.has(option.value) ? 20 : 0,
+              group: currentLiabilityFields.has(option.value) ? 'current' : 'longterm',
+            }));
+            const currentLiabilityReportRows = liabilityReportRows.filter((row) => row.group === 'current');
+            const longTermLiabilityReportRows = liabilityReportRows.filter((row) => row.group !== 'current');
+            const equityReportRows = [
+              ...(financialReportTargetOptions.equity || []).map((option: any) => ({
+                key: option.value,
+                label: option.label,
+                indent: 20,
+              })),
+              ...(rowsHaveValue(monthly, 'paidInCapital') ? [{ key: 'paidInCapital', label: 'Paid-in Capital', indent: 20 }] : []),
+            ];
+
             const buildIncomeStatementDetails = (monthsInput: any[]) => {
               const months = Array.isArray(monthsInput) ? monthsInput : [];
               const revenue = months.reduce((sum, m) => sum + (Number(m?.revenue) || 0), 0);
@@ -25051,8 +25110,14 @@ function FinancialScorePage() {
               const cogsFromDetails = Object.values(cogsDetails).reduce((sum, value) => sum + (Number(value) || 0), 0);
               const cogs = cogsFromTotal !== 0 ? cogsFromTotal : cogsFromDetails;
 
-              const revenueDetailFields = Object.keys(revenueDetails).filter((field) => (Number(revenueDetails[field]) || 0) !== 0);
-              const cogsDetailFields = Object.keys(cogsDetails).filter((field) => (Number(cogsDetails[field]) || 0) !== 0);
+              const revenueDetailFields = orderedFinancialReportFields(
+                Object.keys(revenueDetails).filter((field) => (Number(revenueDetails[field]) || 0) !== 0),
+                'revenue',
+              );
+              const cogsDetailFields = orderedFinancialReportFields(
+                Object.keys(cogsDetails).filter((field) => (Number(cogsDetails[field]) || 0) !== 0),
+                'cogs',
+              );
 
               return { revenue, cogs, revenueDetails, cogsDetails, revenueDetailFields, cogsDetailFields };
             };
@@ -25166,7 +25231,7 @@ function FinancialScorePage() {
                     </div>
                     {revenueDetailFields.map((field) => (
                       <div key={field} style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
-                        <span style={{ color: '#475569' }}>{getFieldDisplayName(field)}</span>
+                        <span style={{ color: '#475569' }}>{getFinancialReportFieldLabel(field)}</span>
                         <span style={{ color: '#475569' }}>${(Number(revenueDetails[field]) || 0).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
                       </div>
                     ))}
@@ -25177,7 +25242,7 @@ function FinancialScorePage() {
                     <div style={{ fontWeight: '600', color: '#1e293b', marginBottom: '8px' }}>Cost of Goods Sold</div>
                     {cogsDetailFields.map((field) => (
                       <div key={field} style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
-                        <span style={{ color: '#475569' }}>{getFieldDisplayName(field)}</span>
+                        <span style={{ color: '#475569' }}>{getFinancialReportFieldLabel(field)}</span>
                         <span style={{ color: '#475569' }}>${(Number(cogsDetails[field]) || 0).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
                       </div>
                     ))}
@@ -25419,7 +25484,7 @@ function FinancialScorePage() {
                     </div>
                     {revenueDetailFields.map((field) => (
                       <div key={field} style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', padding: '6px 0', fontSize: '14px' }}>
-                        <span style={{ color: '#475569', paddingLeft: '20px' }}>{getFieldDisplayName(field)}</span>
+                        <span style={{ color: '#475569', paddingLeft: '20px' }}>{getFinancialReportFieldLabel(field)}</span>
                         <span style={{ color: '#475569', textAlign: 'right' }}>${(Number(revenueDetails[field]) || 0).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
                         <span style={{ color: '#475569', textAlign: 'right' }}>{pct(Number(revenueDetails[field]) || 0).toFixed(1)}%</span>
                       </div>
@@ -25431,7 +25496,7 @@ function FinancialScorePage() {
                     <div style={{ fontWeight: '600', color: '#1e293b', marginBottom: '8px', fontSize: '15px' }}>Cost of Goods Sold</div>
                     {cogsDetailFields.map((field) => (
                       <div key={field} style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', padding: '6px 0', fontSize: '14px' }}>
-                        <span style={{ color: '#475569', paddingLeft: '20px' }}>{getFieldDisplayName(field)}</span>
+                        <span style={{ color: '#475569', paddingLeft: '20px' }}>{getFinancialReportFieldLabel(field)}</span>
                         <span style={{ color: '#475569', textAlign: 'right' }}>${(Number(cogsDetails[field]) || 0).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
                         <span style={{ color: '#475569', textAlign: 'right' }}>{pct(Number(cogsDetails[field]) || 0).toFixed(1)}%</span>
                       </div>
@@ -26126,15 +26191,17 @@ function FinancialScorePage() {
                     ...calculatePeriodData(p.months),
                     label: p.label
                   }));
-                  const comparativeCogsFields = Array.from(
-                    new Set(periodsData.flatMap((p: any) => Object.keys(p.cogsDetails || {}))),
-                  ).filter((field) =>
-                    periodsData.some((p: any) => (Number((p.cogsDetails || {})[field]) || 0) !== 0),
+                  const comparativeCogsFields = orderedFinancialReportFields(
+                    Array.from(new Set(periodsData.flatMap((p: any) => Object.keys(p.cogsDetails || {})))).filter((field) =>
+                      periodsData.some((p: any) => (Number((p.cogsDetails || {})[field]) || 0) !== 0),
+                    ),
+                    'cogs',
                   );
-                  const comparativeRevenueFields = Array.from(
-                    new Set(periodsData.flatMap((p: any) => Object.keys(p.revenueDetails || {}))),
-                  ).filter((field) =>
-                    periodsData.some((p: any) => (Number((p.revenueDetails || {})[field]) || 0) !== 0),
+                  const comparativeRevenueFields = orderedFinancialReportFields(
+                    Array.from(new Set(periodsData.flatMap((p: any) => Object.keys(p.revenueDetails || {})))).filter((field) =>
+                      periodsData.some((p: any) => (Number((p.revenueDetails || {})[field]) || 0) !== 0),
+                    ),
+                    'revenue',
                   );
                   
                   return (
@@ -26163,7 +26230,7 @@ function FinancialScorePage() {
                         </div>
                         {comparativeRevenueFields.map((field) => (
                           <div key={field} style={{ display: 'grid', gridTemplateColumns: `180px repeat(${periodsData.length}, 110px)`, gap: '4px', padding: '4px 0', fontSize: '13px' }}>
-                            <div style={{ color: '#64748b', paddingLeft: '20px' }}>{getFieldDisplayName(field)}</div>
+                            <div style={{ color: '#64748b', paddingLeft: '20px' }}>{getFinancialReportFieldLabel(field)}</div>
                             {periodsData.map((p, i) => (
                               <div key={i} style={{ textAlign: 'right', color: '#64748b' }}>
                                 ${(Number((p.revenueDetails || {})[field]) || 0).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
@@ -26181,7 +26248,7 @@ function FinancialScorePage() {
                         {/* COGS Details */}
                         {comparativeCogsFields.map((field) => (
                           <div key={field} style={{ display: 'grid', gridTemplateColumns: `180px repeat(${periodsData.length}, 110px)`, gap: '4px', padding: '4px 0', fontSize: '13px' }}>
-                            <div style={{ color: '#64748b', paddingLeft: '20px' }}>{getFieldDisplayName(field)}</div>
+                            <div style={{ color: '#64748b', paddingLeft: '20px' }}>{getFinancialReportFieldLabel(field)}</div>
                             {periodsData.map((p, i) => (
                               <div key={i} style={{ textAlign: 'right', color: '#64748b' }}>
                                 ${(Number((p.cogsDetails || {})[field]) || 0).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
@@ -26412,7 +26479,7 @@ function FinancialScorePage() {
                         </div>
                     {revenueDetailFields.map((field) => (
                       <div key={field} style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
-                        <span style={{ color: '#475569' }}>{getFieldDisplayName(field)}</span>
+                        <span style={{ color: '#475569' }}>{getFinancialReportFieldLabel(field)}</span>
                         <span style={{ color: '#475569' }}>${(Number(revenueDetails[field]) || 0).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
                       </div>
                     ))}
@@ -26423,7 +26490,7 @@ function FinancialScorePage() {
                         <div style={{ fontWeight: '600', color: '#1e293b', marginBottom: '8px' }}>Cost of Goods Sold</div>
                     {cogsDetailFields.map((field) => (
                       <div key={field} style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
-                        <span style={{ color: '#475569' }}>{getFieldDisplayName(field)}</span>
+                        <span style={{ color: '#475569' }}>{getFinancialReportFieldLabel(field)}</span>
                         <span style={{ color: '#475569' }}>${(Number(cogsDetails[field]) || 0).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
                       </div>
                     ))}
@@ -26629,15 +26696,17 @@ function FinancialScorePage() {
                       netIncome
                     };
                   });
-                  const cogsDetailFields = Array.from(
-                    new Set(periodsData.flatMap((p: any) => Object.keys(p.cogsDetails || {}))),
-                  ).filter((field) =>
-                    periodsData.some((p: any) => (Number((p.cogsDetails || {})[field]) || 0) !== 0),
+                  const cogsDetailFields = orderedFinancialReportFields(
+                    Array.from(new Set(periodsData.flatMap((p: any) => Object.keys(p.cogsDetails || {})))).filter((field) =>
+                      periodsData.some((p: any) => (Number((p.cogsDetails || {})[field]) || 0) !== 0),
+                    ),
+                    'cogs',
                   );
-                  const revenueDetailFields = Array.from(
-                    new Set(periodsData.flatMap((p: any) => Object.keys(p.revenueDetails || {}))),
-                  ).filter((field) =>
-                    periodsData.some((p: any) => (Number((p.revenueDetails || {})[field]) || 0) !== 0),
+                  const revenueDetailFields = orderedFinancialReportFields(
+                    Array.from(new Set(periodsData.flatMap((p: any) => Object.keys(p.revenueDetails || {})))).filter((field) =>
+                      periodsData.some((p: any) => (Number((p.revenueDetails || {})[field]) || 0) !== 0),
+                    ),
+                    'revenue',
                   );
                   const RowWithPercent = ({ label, values, indent = 0, bold = false }: any) => (
                     <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${periodsData.length}, 90px 60px)`, gap: '4px', padding: '4px 0', fontSize: bold ? '14px' : '13px', fontWeight: bold ? '600' : 'normal' }}>
@@ -26673,7 +26742,7 @@ function FinancialScorePage() {
                         {revenueDetailFields.map((field) => (
                           <RowWithPercent
                             key={field}
-                            label={getFieldDisplayName(field)}
+                            label={getFinancialReportFieldLabel(field)}
                             values={periodsData.map((p: any) => Number((p.revenueDetails || {})[field]) || 0)}
                             indent={20}
                           />
@@ -26682,7 +26751,7 @@ function FinancialScorePage() {
                         {cogsDetailFields.map((field) => (
                           <RowWithPercent
                             key={field}
-                            label={getFieldDisplayName(field)}
+                            label={getFinancialReportFieldLabel(field)}
                             values={periodsData.map((p: any) => Number((p.cogsDetails || {})[field]) || 0)}
                             indent={20}
                           />
@@ -26876,7 +26945,7 @@ function FinancialScorePage() {
                         const value = Number(revenueDetails[field]) || 0;
                         return (
                           <div key={field} style={{ display: 'grid', gridTemplateColumns: '1fr 0.7fr 0.7fr', gap: '16px', padding: '4px 0 4px 20px', fontSize: '13px' }}>
-                            <div style={{ color: '#64748b' }}>{getFieldDisplayName(field)}</div>
+                            <div style={{ color: '#64748b' }}>{getFinancialReportFieldLabel(field)}</div>
                             <div style={{ textAlign: 'right', color: '#64748b' }}>${value.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
                             <div style={{ textAlign: 'right', color: '#64748b' }}>{calcPercent(value)}</div>
                           </div>
@@ -26890,7 +26959,7 @@ function FinancialScorePage() {
                           const value = Number(cogsDetails[field]) || 0;
                           return (
                             <div key={field} style={{ display: 'grid', gridTemplateColumns: '1fr 0.7fr 0.7fr', gap: '16px', padding: '4px 0 4px 20px', fontSize: '13px' }}>
-                              <div style={{ color: '#64748b' }}>{getFieldDisplayName(field)}</div>
+                              <div style={{ color: '#64748b' }}>{getFinancialReportFieldLabel(field)}</div>
                               <div style={{ textAlign: 'right', color: '#64748b' }}>${value.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
                               <div style={{ textAlign: 'right', color: '#64748b' }}>{calcPercent(value)}</div>
                             </div>
@@ -27112,44 +27181,44 @@ function FinancialScorePage() {
                         </div>
                         <div style={{ margin: '8px 0 4px', fontSize: '15px', fontWeight: '700', color: '#1e293b' }}>ASSETS</div>
                         <div style={{ margin: '8px 0 4px', fontSize: '14px', fontWeight: '600', color: '#475569' }}>Current Assets</div>
-                        {balanceData.some(p => p.cash !== 0) && <Row label="Cash" values={balanceData.map(p => p.cash)} indent={20} />}
-                        {balanceData.some(p => p.ar !== 0) && <Row label="Accounts Receivable" values={balanceData.map(p => p.ar)} indent={20} />}
-                        {balanceData.some(p => p.retainageReceivables !== 0) && <Row label="Retainage Receivables" values={balanceData.map(p => p.retainageReceivables)} indent={20} />}
-                        {balanceData.some(p => p.contractAssets !== 0) && <Row label="Contract Assets" values={balanceData.map(p => p.contractAssets)} indent={20} />}
-                        {balanceData.some(p => p.inventory !== 0) && <Row label="Inventory" values={balanceData.map(p => p.inventory)} indent={20} />}
-                        {balanceData.some(p => p.otherCA !== 0) && <Row label="Other Current Assets" values={balanceData.map(p => p.otherCA)} indent={20} />}
+                        {currentAssetReportRows.map((row) => {
+                          const values = balanceData.map((p) => Number(p[row.key]) || 0);
+                          return hasAnyBalanceValue(values) ? <Row key={row.key} label={row.label} values={values} indent={row.indent} /> : null;
+                        })}
                         <Row label="Total Current Assets" values={balanceData.map(p => p.tca)} bold />
-                        {balanceData.some(p => p.fixedAssets !== 0) && <Row label="Fixed Assets" values={balanceData.map(p => p.fixedAssets)} />}
-                        {balanceData.some(p => p.constructionEquipment !== 0) && <Row label="Construction Equipment" values={balanceData.map(p => p.constructionEquipment)} indent={20} />}
-                        {balanceData.some(p => p.officeEquipment !== 0) && <Row label="Office Equipment" values={balanceData.map(p => p.officeEquipment)} indent={20} />}
-                        {balanceData.some(p => p.shopEquipment !== 0) && <Row label="Shop Equipment" values={balanceData.map(p => p.shopEquipment)} indent={20} />}
-                        {balanceData.some(p => p.investments !== 0) && <Row label="Investments" values={balanceData.map(p => p.investments)} />}
-                        {balanceData.some(p => p.rightOfUseLeases !== 0) && <Row label="Right of Use - Leases" values={balanceData.map(p => p.rightOfUseLeases)} />}
-                        {balanceData.some(p => p.otherAssets !== 0) && <Row label="Other Assets" values={balanceData.map(p => p.otherAssets)} />}
+                        {nonCurrentAssetReportRows.map((row) => {
+                          const values = balanceData.map((p) => Number(p[row.key]) || 0);
+                          return hasAnyBalanceValue(values) ? <Row key={row.key} label={row.label} values={values} indent={row.indent} /> : null;
+                        })}
                         <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${balanceData.length}, 110px)`, gap: '4px', padding: '10px 8px', background: '#dbeafe', borderRadius: '4px', margin: '8px 0', fontWeight: '700', color: '#1e40af' }}>
                           <div>TOTAL ASSETS</div>
                           {balanceData.map((p, i) => <div key={i} style={{ textAlign: 'right' }}>${p.totalAssets.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>)}
                         </div>
                         <div style={{ margin: '12px 0 4px', fontSize: '15px', fontWeight: '700', color: '#1e293b' }}>LIABILITIES</div>
                         <div style={{ margin: '8px 0 4px', fontSize: '14px', fontWeight: '600', color: '#475569' }}>Current Liabilities</div>
-                        {balanceData.some(p => p.ap !== 0) && <Row label="Accounts Payable" values={balanceData.map(p => p.ap)} indent={20} />}
-                        {balanceData.some(p => p.loc !== 0) && <Row label="Line of Credit" values={balanceData.map(p => p.loc)} indent={20} />}
-                        {balanceData.some(p => p.contractLiabilities !== 0) && <Row label="Contract Liabilities" values={balanceData.map(p => p.contractLiabilities)} indent={20} />}
-                        {balanceData.some(p => p.otherCL !== 0) && <Row label="Other Current Liabilities" values={balanceData.map(p => p.otherCL)} indent={20} />}
+                        {currentLiabilityReportRows.map((row) => {
+                          const values = balanceData.map((p) => Number(p[row.key]) || 0);
+                          return hasAnyBalanceValue(values) ? <Row key={row.key} label={row.label} values={values} indent={row.indent} /> : null;
+                        })}
                         <Row label="Total Current Liabilities" values={balanceData.map(p => p.tcl)} bold />
-                        {balanceData.some(p => p.ltd !== 0) && <Row label="Long-Term Debt" values={balanceData.map(p => p.ltd)} />}
+                        {longTermLiabilityReportRows.map((row) => {
+                          const values = balanceData.map((p) => Number(p[row.key]) || 0);
+                          return hasAnyBalanceValue(values) ? <Row key={row.key} label={row.label} values={values} indent={row.indent} /> : null;
+                        })}
                         <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${balanceData.length}, 110px)`, gap: '4px', padding: '10px 8px', background: '#fef3c7', borderRadius: '4px', margin: '8px 0', fontWeight: '700', color: '#92400e' }}>
                           <div>TOTAL LIABILITIES</div>
                           {balanceData.map((p, i) => <div key={i} style={{ textAlign: 'right' }}>${p.totalLiabilities.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>)}
                         </div>
                         <div style={{ margin: '12px 0 4px', fontSize: '15px', fontWeight: '700', color: '#1e293b' }}>EQUITY</div>
-                        {balanceData.some(p => p.ownersCapital !== 0) && <Row label="Owner's Capital" values={balanceData.map(p => p.ownersCapital)} indent={20} />}
-                        {balanceData.some(p => p.ownersDraw !== 0) && <Row label="Owner's Draw" values={balanceData.map(p => p.ownersDraw)} indent={20} />}
-                        {balanceData.some(p => p.commonStock !== 0) && <Row label="Common Stock" values={balanceData.map(p => p.commonStock)} indent={20} />}
-                        {balanceData.some(p => p.preferredStock !== 0) && <Row label="Preferred Stock" values={balanceData.map(p => p.preferredStock)} indent={20} />}
+                        {equityReportRows
+                          .filter((row) => row.key !== 'retainedEarnings')
+                          .map((row) => {
+                            const values = balanceData.map((p) => Number(p[row.key]) || 0);
+                            return hasAnyBalanceValue(values) ? <Row key={row.key} label={row.label} values={values} indent={row.indent} /> : null;
+                          })}
                         {balanceData.some(p => p.retainedEarnings !== 0) && (
                           <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${balanceData.length}, 110px)`, gap: '4px', padding: '4px 0', fontSize: '13px' }}>
-                            <div style={{ color: '#64748b', paddingLeft: '20px' }}>Retained Earnings</div>
+                            <div style={{ color: '#64748b', paddingLeft: '20px' }}>{getFinancialReportFieldLabel('retainedEarnings')}</div>
                             {balanceData.map((p, i) => (
                               <div key={i} style={{ textAlign: 'right', color: '#64748b' }}>
                                 {p.retainedEarnings >= 0 ? '$' : '($'}{Math.abs(p.retainedEarnings).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}{p.retainedEarnings < 0 ? ')' : ''}
@@ -27157,9 +27226,6 @@ function FinancialScorePage() {
                             ))}
                           </div>
                         )}
-                        {balanceData.some(p => p.additionalPaidInCapital !== 0) && <Row label="Additional Paid-In Capital" values={balanceData.map(p => p.additionalPaidInCapital)} indent={20} />}
-                        {balanceData.some(p => p.treasuryStock !== 0) && <Row label="Treasury Stock" values={balanceData.map(p => p.treasuryStock)} indent={20} />}
-                        {balanceData.some(p => p.paidInCapital !== 0) && <Row label="Paid-in Capital" values={balanceData.map(p => p.paidInCapital)} indent={20} />}
                         <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${balanceData.length}, 110px)`, gap: '4px', padding: '12px 8px', background: '#dcfce7', borderRadius: '4px', margin: '12px 0 0', fontWeight: '700', fontSize: '15px' }}>
                           <div style={{ color: '#166534' }}>TOTAL EQUITY</div>
                           {balanceData.map((p, i) => (
@@ -27239,42 +27305,15 @@ function FinancialScorePage() {
                       {/* Current Assets */}
                       <div style={{ marginBottom: '16px' }}>
                         <div style={{ fontWeight: '600', color: '#475569', marginBottom: '8px' }}>Current Assets</div>
-                        {cash !== 0 && (
-                          <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0 4px 20px', fontSize: '14px' }}>
-                            <span style={{ color: '#64748b' }}>Cash</span>
-                            <span style={{ color: '#64748b' }}>${cash.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                          </div>
-                        )}
-                        {ar !== 0 && (
-                          <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0 4px 20px', fontSize: '14px' }}>
-                            <span style={{ color: '#64748b' }}>Accounts Receivable</span>
-                            <span style={{ color: '#64748b' }}>${ar.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                          </div>
-                        )}
-                        {retainageReceivables !== 0 && (
-                          <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0 4px 20px', fontSize: '14px' }}>
-                            <span style={{ color: '#64748b' }}>Retainage Receivables</span>
-                            <span style={{ color: '#64748b' }}>${retainageReceivables.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                          </div>
-                        )}
-                        {contractAssets !== 0 && (
-                          <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0 4px 20px', fontSize: '14px' }}>
-                            <span style={{ color: '#64748b' }}>Contract Assets</span>
-                            <span style={{ color: '#64748b' }}>${contractAssets.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                          </div>
-                        )}
-                        {inventory !== 0 && (
-                          <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0 4px 20px', fontSize: '14px' }}>
-                            <span style={{ color: '#64748b' }}>Inventory</span>
-                            <span style={{ color: '#64748b' }}>${inventory.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                          </div>
-                        )}
-                        {otherCA !== 0 && (
-                          <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0 4px 20px', fontSize: '14px' }}>
-                            <span style={{ color: '#64748b' }}>Other Current Assets</span>
-                            <span style={{ color: '#64748b' }}>${otherCA.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                          </div>
-                        )}
+                        {currentAssetReportRows.map((row) => {
+                          const value = Number((latestMonth as any)?.[row.key]) || 0;
+                          return value !== 0 ? (
+                            <div key={row.key} style={{ display: 'flex', justifyContent: 'space-between', padding: `4px 0 4px ${row.indent}px`, fontSize: '14px' }}>
+                              <span style={{ color: '#64748b' }}>{row.label}</span>
+                              <span style={{ color: '#64748b' }}>${value.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
+                            </div>
+                          ) : null;
+                        })}
                         <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0 8px 10px', borderTop: '1px solid #cbd5e1', marginTop: '4px', fontWeight: '600' }}>
                           <span style={{ color: '#475569' }}>Total Current Assets</span>
                           <span style={{ color: '#475569' }}>${tca.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
@@ -27282,48 +27321,15 @@ function FinancialScorePage() {
                       </div>
 
                       {/* Non-Current Assets */}
-                      {fixedAssets !== 0 && (
-                        <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0', fontSize: '14px' }}>
-                          <span style={{ color: '#64748b' }}>Fixed Assets</span>
-                          <span style={{ color: '#64748b' }}>${fixedAssets.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                        </div>
-                      )}
-                      {constructionEquipment !== 0 && (
-                        <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0 4px 20px', fontSize: '14px' }}>
-                          <span style={{ color: '#64748b' }}>Construction Equipment</span>
-                          <span style={{ color: '#64748b' }}>${constructionEquipment.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                        </div>
-                      )}
-                      {officeEquipment !== 0 && (
-                        <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0 4px 20px', fontSize: '14px' }}>
-                          <span style={{ color: '#64748b' }}>Office Equipment</span>
-                          <span style={{ color: '#64748b' }}>${officeEquipment.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                        </div>
-                      )}
-                      {shopEquipment !== 0 && (
-                        <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0 4px 20px', fontSize: '14px' }}>
-                          <span style={{ color: '#64748b' }}>Shop Equipment</span>
-                          <span style={{ color: '#64748b' }}>${shopEquipment.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                        </div>
-                      )}
-                      {investments !== 0 && (
-                        <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0', fontSize: '14px' }}>
-                          <span style={{ color: '#64748b' }}>Investments</span>
-                          <span style={{ color: '#64748b' }}>${investments.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                        </div>
-                      )}
-                      {rightOfUseLeases !== 0 && (
-                        <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0', fontSize: '14px' }}>
-                          <span style={{ color: '#64748b' }}>Right of Use - Leases</span>
-                          <span style={{ color: '#64748b' }}>${rightOfUseLeases.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                        </div>
-                      )}
-                      {otherAssets !== 0 && (
-                        <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0', fontSize: '14px' }}>
-                          <span style={{ color: '#64748b' }}>Other Assets</span>
-                          <span style={{ color: '#64748b' }}>${otherAssets.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                        </div>
-                      )}
+                      {nonCurrentAssetReportRows.map((row) => {
+                        const value = Number((latestMonth as any)?.[row.key]) || 0;
+                        return value !== 0 ? (
+                          <div key={row.key} style={{ display: 'flex', justifyContent: 'space-between', padding: `4px 0 4px ${row.indent}px`, fontSize: '14px' }}>
+                            <span style={{ color: '#64748b' }}>{row.label}</span>
+                            <span style={{ color: '#64748b' }}>${value.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
+                          </div>
+                        ) : null;
+                      })}
 
                       {/* TOTAL ASSETS */}
                       <div style={{ background: '#dbeafe', padding: '12px', borderRadius: '8px' }}>
@@ -27343,30 +27349,15 @@ function FinancialScorePage() {
                       {/* Current Liabilities */}
                       <div style={{ marginBottom: '16px' }}>
                         <div style={{ fontWeight: '600', color: '#475569', marginBottom: '8px' }}>Current Liabilities</div>
-                        {ap !== 0 && (
-                          <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0 4px 20px', fontSize: '14px' }}>
-                            <span style={{ color: '#64748b' }}>Accounts Payable</span>
-                            <span style={{ color: '#64748b' }}>${ap.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                          </div>
-                        )}
-                        {loc !== 0 && (
-                          <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0 4px 20px', fontSize: '14px' }}>
-                            <span style={{ color: '#64748b' }}>Line of Credit</span>
-                            <span style={{ color: '#64748b' }}>${loc.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                          </div>
-                        )}
-                        {contractLiabilities !== 0 && (
-                          <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0 4px 20px', fontSize: '14px' }}>
-                            <span style={{ color: '#64748b' }}>Contract Liabilities</span>
-                            <span style={{ color: '#64748b' }}>${contractLiabilities.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                          </div>
-                        )}
-                        {otherCL !== 0 && (
-                          <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0 4px 20px', fontSize: '14px' }}>
-                            <span style={{ color: '#64748b' }}>Other Current Liabilities</span>
-                            <span style={{ color: '#64748b' }}>${otherCL.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                          </div>
-                        )}
+                        {currentLiabilityReportRows.map((row) => {
+                          const value = Number((latestMonth as any)?.[row.key]) || 0;
+                          return value !== 0 ? (
+                            <div key={row.key} style={{ display: 'flex', justifyContent: 'space-between', padding: `4px 0 4px ${row.indent}px`, fontSize: '14px' }}>
+                              <span style={{ color: '#64748b' }}>{row.label}</span>
+                              <span style={{ color: '#64748b' }}>${value.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
+                            </div>
+                          ) : null;
+                        })}
                         <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0 8px 10px', borderTop: '1px solid #cbd5e1', marginTop: '4px', fontWeight: '600' }}>
                           <span style={{ color: '#475569' }}>Total Current Liabilities</span>
                           <span style={{ color: '#475569' }}>${tcl.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
@@ -27374,12 +27365,15 @@ function FinancialScorePage() {
                       </div>
 
                       {/* Long-Term Debt */}
-                      {ltd !== 0 && (
-                        <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0', fontSize: '14px' }}>
-                          <span style={{ color: '#64748b' }}>Long-Term Debt</span>
-                          <span style={{ color: '#64748b' }}>${ltd.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                        </div>
-                      )}
+                      {longTermLiabilityReportRows.map((row) => {
+                        const value = Number((latestMonth as any)?.[row.key]) || 0;
+                        return value !== 0 ? (
+                          <div key={row.key} style={{ display: 'flex', justifyContent: 'space-between', padding: `4px 0 4px ${row.indent}px`, fontSize: '14px' }}>
+                            <span style={{ color: '#64748b' }}>{row.label}</span>
+                            <span style={{ color: '#64748b' }}>${value.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
+                          </div>
+                        ) : null;
+                      })}
 
                       {/* TOTAL LIABILITIES */}
                       <div style={{ background: '#fef3c7', padding: '12px', borderRadius: '8px' }}>
@@ -27395,56 +27389,18 @@ function FinancialScorePage() {
                     {/* EQUITY */}
                     <div style={{ marginBottom: '32px' }}>
                       <div style={{ fontWeight: '700', fontSize: '18px', color: '#1e293b', marginBottom: '12px' }}>EQUITY</div>
-                      {ownersCapital !== 0 && (
-                        <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0 4px 20px', fontSize: '14px' }}>
-                          <span style={{ color: '#64748b' }}>Owner's Capital</span>
-                          <span style={{ color: '#64748b' }}>${ownersCapital.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                        </div>
-                      )}
-                      {ownersDraw !== 0 && (
-                        <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0 4px 20px', fontSize: '14px' }}>
-                          <span style={{ color: '#64748b' }}>Owner's Draw</span>
-                          <span style={{ color: '#64748b' }}>${ownersDraw.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                        </div>
-                      )}
-                      {commonStock !== 0 && (
-                        <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0 4px 20px', fontSize: '14px' }}>
-                          <span style={{ color: '#64748b' }}>Common Stock</span>
-                          <span style={{ color: '#64748b' }}>${commonStock.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                        </div>
-                      )}
-                      {preferredStock !== 0 && (
-                        <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0 4px 20px', fontSize: '14px' }}>
-                          <span style={{ color: '#64748b' }}>Preferred Stock</span>
-                          <span style={{ color: '#64748b' }}>${preferredStock.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                        </div>
-                      )}
-                      {retainedEarnings !== 0 && (
-                        <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0 4px 20px', fontSize: '14px' }}>
-                          <span style={{ color: '#64748b' }}>Retained Earnings</span>
-                          <span style={{ color: '#64748b' }}>
-                            {retainedEarnings >= 0 ? '$' : '($'}{Math.abs(retainedEarnings).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}{retainedEarnings < 0 ? ')' : ''}
-                          </span>
-                        </div>
-                      )}
-                      {additionalPaidInCapital !== 0 && (
-                        <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0 4px 20px', fontSize: '14px' }}>
-                          <span style={{ color: '#64748b' }}>Additional Paid-In Capital</span>
-                          <span style={{ color: '#64748b' }}>${additionalPaidInCapital.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                        </div>
-                      )}
-                      {treasuryStock !== 0 && (
-                        <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0 4px 20px', fontSize: '14px' }}>
-                          <span style={{ color: '#64748b' }}>Treasury Stock</span>
-                          <span style={{ color: '#64748b' }}>${treasuryStock.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                        </div>
-                      )}
-                      {paidInCapital > 0 && (
-                        <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0 4px 20px', fontSize: '14px' }}>
-                          <span style={{ color: '#64748b' }}>Paid-in Capital</span>
-                          <span style={{ color: '#64748b' }}>${paidInCapital.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                        </div>
-                      )}
+                      {equityReportRows.map((row) => {
+                        const value = Number((latestMonth as any)?.[row.key]) || 0;
+                        if (value === 0) return null;
+                        return (
+                          <div key={row.key} style={{ display: 'flex', justifyContent: 'space-between', padding: `4px 0 4px ${row.indent}px`, fontSize: '14px' }}>
+                            <span style={{ color: '#64748b' }}>{row.label}</span>
+                            <span style={{ color: '#64748b' }}>
+                              {value >= 0 ? '$' : '($'}{Math.abs(value).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}{value < 0 ? ')' : ''}
+                            </span>
+                          </div>
+                        );
+                      })}
 
                       {/* TOTAL EQUITY */}
                       <div style={{ background: '#dcfce7', padding: '12px', borderRadius: '8px', marginTop: '8px' }}>
