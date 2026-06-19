@@ -9,6 +9,62 @@ import { privateCacheHeaders } from '@/lib/http-cache';
 
 const FINANCIALS_CACHE_TTL_SECONDS = 120;
 
+const isQuickBooksDesktopFamily = (value: unknown): boolean => {
+  const normalized = String(value || '').trim().toUpperCase();
+  return normalized === 'QUICKBOOKS_DESKTOP' || normalized === 'QUICKBOOKS_ENTERPRISE';
+};
+
+const toNumber = (value: unknown): number => {
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? numeric : 0;
+};
+
+function monthlyNetIncome(row: any): number {
+  return (
+    toNumber(row?.revenue) -
+    toNumber(row?.cogsTotal) -
+    toNumber(row?.expense) +
+    toNumber(row?.nonOperatingIncome) -
+    toNumber(row?.nonOperatingExpense) +
+    toNumber(row?.extraordinaryItems) -
+    toNumber(row?.stateIncomeTaxes) -
+    toNumber(row?.federalIncomeTaxes)
+  );
+}
+
+function withQbdCurrentYearNetIncome(records: any[], enabled: boolean): any[] {
+  if (!enabled) return records;
+  return records.map((record) => {
+    const ytdByYear = new Map<number, number>();
+    const monthlyData = Array.isArray(record?.monthlyData)
+      ? record.monthlyData.map((row: any) => {
+          const monthDate = row?.monthDate ? new Date(row.monthDate) : null;
+          if (!monthDate || Number.isNaN(monthDate.getTime())) return row;
+          const year = monthDate.getUTCFullYear();
+          const currentYearNetIncome = Number(ytdByYear.get(year) || 0) + monthlyNetIncome(row);
+          ytdByYear.set(year, currentYearNetIncome);
+          const totalEquity =
+            toNumber(row.ownersCapital) +
+            toNumber(row.ownersDraw) +
+            toNumber(row.commonStock) +
+            toNumber(row.preferredStock) +
+            toNumber(row.retainedEarnings) +
+            currentYearNetIncome +
+            toNumber(row.additionalPaidInCapital) +
+            toNumber(row.treasuryStock);
+          const totalLiab = toNumber(row.totalLiab);
+          return {
+            ...row,
+            currentYearNetIncome,
+            totalEquity,
+            totalLAndE: totalLiab + totalEquity,
+          };
+        })
+      : record?.monthlyData;
+    return { ...record, monthlyData };
+  });
+}
+
 async function buildFinancialsDataVersion(companyId: string): Promise<string> {
   const [financialRows, monthlyRows, publishRows] = await Promise.all([
     prisma.$queryRawUnsafe<Array<Record<string, unknown>>>(
@@ -64,7 +120,7 @@ export async function GET(request: NextRequest) {
     const cacheContext = cacheableRequest
       ? {
           namespace: 'financials',
-          cacheKey: hashCacheParts([companyId, includeAllRecords]),
+          cacheKey: hashCacheParts([companyId, includeAllRecords, 'qbd-current-year-net-income-v1']),
           dataVersion: await buildFinancialsDataVersion(companyId),
         }
       : null;
@@ -80,7 +136,12 @@ export async function GET(request: NextRequest) {
     }
 
     // Fetch records (user has validated access)
-    const records = await withPrismaReconnectRetry(
+    const [company, records] = await Promise.all([
+      prisma.company.findUnique({
+        where: { id: companyId },
+        select: { accountingSystem: true },
+      }),
+      withPrismaReconnectRetry(
       () =>
         prisma.financialRecord.findMany({
           where: { companyId },
@@ -102,14 +163,16 @@ export async function GET(request: NextRequest) {
           ...(includeAllRecords ? {} : { take: 1 }),
         }),
       'financials.get.findMany'
-    );
+      ),
+    ]);
+    const responseRecords = withQbdCurrentYearNetIncome(records, isQuickBooksDesktopFamily(company?.accountingSystem));
 
     // AUDIT: Log financial data access
-    if (records.length > 0) {
-      await auditFinancialAccess('FINANCIAL_RECORD_VIEWED', records[0].id, companyId);
+    if (responseRecords.length > 0) {
+      await auditFinancialAccess('FINANCIAL_RECORD_VIEWED', responseRecords[0].id, companyId);
     }
 
-    const payload = { records };
+    const payload = { records: responseRecords };
     if (cacheContext) {
       await writeDerivedApiCache({
         ...cacheContext,

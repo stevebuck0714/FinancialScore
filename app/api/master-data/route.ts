@@ -12,6 +12,11 @@ const toNumber = (value: unknown): number => {
   return Number.isFinite(numeric) ? numeric : 0;
 };
 
+const isQuickBooksDesktopFamily = (value: unknown): boolean => {
+  const normalized = String(value || '').trim().toUpperCase();
+  return normalized === 'QUICKBOOKS_DESKTOP' || normalized === 'QUICKBOOKS_ENTERPRISE';
+};
+
 const collectPrefixedValues = (
   month: Record<string, unknown>,
   breakdown: Record<string, unknown>,
@@ -90,7 +95,7 @@ export async function GET(request: NextRequest) {
 
     const cacheContext = {
       namespace: 'master-data',
-      cacheKey: hashCacheParts([companyId, scope, MASTER_DATA_REPORT_MIN_DATE]),
+      cacheKey: hashCacheParts([companyId, scope, MASTER_DATA_REPORT_MIN_DATE, 'qbd-current-year-net-income-v1']),
       dataVersion: await buildMasterDataVersion(companyId, scope),
     };
     const cachedPayload = await readDerivedApiCache<any>(cacheContext);
@@ -99,7 +104,12 @@ export async function GET(request: NextRequest) {
     }
 
     // Fetch the latest financial record for this company
-    const latestRecord = await prisma.financialRecord.findFirst({
+    const [company, latestRecord] = await Promise.all([
+      prisma.company.findUnique({
+        where: { id: companyId },
+        select: { accountingSystem: true },
+      }),
+      prisma.financialRecord.findFirst({
       where: { companyId },
       select: {
         monthlyData: {
@@ -110,7 +120,9 @@ export async function GET(request: NextRequest) {
         },
       },
       orderBy: { createdAt: 'desc' },
-    });
+      }),
+    ]);
+    const shouldCalculateCurrentYearNetIncome = isQuickBooksDesktopFamily(company?.accountingSystem);
 
     if (!latestRecord || !latestRecord.monthlyData || latestRecord.monthlyData.length === 0) {
       // For ERP COA mapping-first workflows (for example CSI), it is valid to have
@@ -165,6 +177,7 @@ export async function GET(request: NextRequest) {
       : latestRecord.monthlyData);
 
     // Format monthly data to match expected structure
+    const ytdNetIncomeByYear = new Map<number, number>();
     const monthlyData = sourceRows.map((month: any) => {
       const cash = month.cash || 0;
       const ar = month.ar || 0;
@@ -220,19 +233,51 @@ export async function GET(request: NextRequest) {
       const sectorRevenueTotal = Object.values(revenueFields).reduce((sum, value) => sum + toNumber(value), 0);
       const sectorCogsTotal = Object.values(cogsFields).reduce((sum, value) => sum + toNumber(value), 0);
 
+      const revenue = hasSectorRevenue ? sectorRevenueTotal : toNumber(month.revenue);
+      const cogsTotal = hasSectorCogs ? sectorCogsTotal : toNumber(month.cogsTotal);
+      const expense = toNumber(month.expense);
+      const monthlyNetIncome =
+        revenue -
+        cogsTotal -
+        expense +
+        nonOperatingIncome -
+        nonOperatingExpense +
+        toNumber(month.extraordinaryItems) -
+        toNumber(month.stateIncomeTaxes) -
+        toNumber(month.federalIncomeTaxes);
+      const monthDate = month.monthDate ? new Date(month.monthDate) : null;
+      const fiscalYear = monthDate && !Number.isNaN(monthDate.getTime()) ? monthDate.getUTCFullYear() : 0;
+      const priorYtd = ytdNetIncomeByYear.get(fiscalYear) || 0;
+      const currentYearNetIncome = shouldCalculateCurrentYearNetIncome ? priorYtd + monthlyNetIncome : 0;
+      if (shouldCalculateCurrentYearNetIncome) {
+        ytdNetIncomeByYear.set(fiscalYear, currentYearNetIncome);
+      }
+      const equityWithoutNetIncome =
+        toNumber(month.ownersCapital) +
+        toNumber(month.ownersDraw) +
+        toNumber(month.commonStock) +
+        toNumber(month.preferredStock) +
+        toNumber(month.retainedEarnings) +
+        toNumber(month.additionalPaidInCapital) +
+        toNumber(month.treasuryStock);
+      const totalEquity = shouldCalculateCurrentYearNetIncome
+        ? equityWithoutNetIncome + currentYearNetIncome
+        : toNumber(month.totalEquity);
+      const totalLiab = toNumber(month.totalLiab);
+
       return {
       date: month.monthDate,
       month: month.monthDate,
       monthDate: month.monthDate,
-      revenue: hasSectorRevenue ? sectorRevenueTotal : toNumber(month.revenue),
-      expense: month.expense || 0,
+      revenue,
+      expense,
       cogsPayroll: hasSectorCogs ? 0 : month.cogsPayroll || 0,
       cogsOwnerPay: hasSectorCogs ? 0 : month.cogsOwnerPay || 0,
       cogsContractors: hasSectorCogs ? 0 : month.cogsContractors || 0,
       cogsMaterials: hasSectorCogs ? 0 : month.cogsMaterials || 0,
       cogsCommissions: hasSectorCogs ? 0 : month.cogsCommissions || 0,
       cogsOther: hasSectorCogs ? 0 : month.cogsOther || 0,
-      cogsTotal: hasSectorCogs ? sectorCogsTotal : toNumber(month.cogsTotal),
+      cogsTotal,
       payroll: month.payroll || 0,
       ownerBasePay: month.ownerBasePay || 0,
       benefits: month.benefits || 0,
@@ -283,9 +328,11 @@ export async function GET(request: NextRequest) {
       commonStock: month.commonStock || 0,
       preferredStock: month.preferredStock || 0,
       retainedEarnings: month.retainedEarnings || 0,
+      currentYearNetIncome,
       additionalPaidInCapital: month.additionalPaidInCapital || 0,
       treasuryStock: month.treasuryStock || 0,
-      totalEquity: month.totalEquity || 0,
+      totalEquity,
+      totalLAndE: shouldCalculateCurrentYearNetIncome ? totalLiab + totalEquity : toNumber(month.totalLAndE),
       revenueBreakdown,
       expenseBreakdown,
       cogsBreakdown,

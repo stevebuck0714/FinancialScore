@@ -567,6 +567,7 @@ const DAILY_STATEMENT_BALANCE_FIELDS = [
   'commonStock',
   'preferredStock',
   'retainedEarnings',
+  'currentYearNetIncome',
   'additionalPaidInCapital',
   'treasuryStock',
   'totalAssets',
@@ -647,6 +648,7 @@ function aggregateDailyStatementRows(
   commonStock: number;
   preferredStock: number;
   retainedEarnings: number;
+  currentYearNetIncome: number;
   additionalPaidInCapital: number;
   treasuryStock: number;
   totalAssets: number;
@@ -688,6 +690,7 @@ function aggregateDailyStatementRows(
       commonStock: number;
       preferredStock: number;
       retainedEarnings: number;
+      currentYearNetIncome: number;
       additionalPaidInCapital: number;
       treasuryStock: number;
       totalAssets: number;
@@ -755,6 +758,7 @@ function aggregateDailyStatementRows(
         commonStock: 0,
         preferredStock: 0,
         retainedEarnings: 0,
+        currentYearNetIncome: 0,
         additionalPaidInCapital: 0,
         treasuryStock: 0,
         totalAssets: 0,
@@ -800,6 +804,7 @@ function aggregateDailyStatementRows(
             bucket.commonStock +
             bucket.preferredStock +
             bucket.retainedEarnings +
+            bucket.currentYearNetIncome +
             bucket.additionalPaidInCapital +
             bucket.treasuryStock;
       const totalLAndE = bucket.totalLAndE !== 0 ? bucket.totalLAndE : totalLiab + totalEquity;
@@ -837,6 +842,7 @@ function aggregateDailyStatementRows(
         commonStock: bucket.commonStock,
         preferredStock: bucket.preferredStock,
         retainedEarnings: bucket.retainedEarnings,
+        currentYearNetIncome: bucket.currentYearNetIncome,
         additionalPaidInCapital: bucket.additionalPaidInCapital,
         treasuryStock: bucket.treasuryStock,
         totalAssets,
@@ -845,6 +851,53 @@ function aggregateDailyStatementRows(
         totalLAndE,
       };
     });
+}
+
+function dailyNetIncome(row: any): number {
+  return (
+    Number(row?.revenue || 0) -
+    Number(row?.cogsTotal || 0) -
+    Number(row?.expense || 0) +
+    Number(row?.nonOperatingIncome || 0) -
+    Number(row?.nonOperatingExpense || 0) +
+    Number(row?.extraordinaryItems || 0) -
+    Number(row?.stateIncomeTaxes || 0) -
+    Number(row?.federalIncomeTaxes || 0)
+  );
+}
+
+function annotateCurrentYearNetIncomeForQbdRows(rows: any[]): any[] {
+  const ytdByYear = new Map<number, number>();
+  const annotated = new Map<any, any>();
+  [...rows]
+    .sort((a, b) => new Date(a?.snapshotDate || 0).getTime() - new Date(b?.snapshotDate || 0).getTime())
+    .forEach((row) => {
+      const snapshotDate = row?.snapshotDate ? new Date(row.snapshotDate) : null;
+      if (!snapshotDate || Number.isNaN(snapshotDate.getTime())) {
+        annotated.set(row, row);
+        return;
+      }
+      const year = snapshotDate.getUTCFullYear();
+      const currentYearNetIncome = Number(ytdByYear.get(year) || 0) + dailyNetIncome(row);
+      ytdByYear.set(year, currentYearNetIncome);
+      const totalEquity =
+        Number(row?.ownersCapital || 0) +
+        Number(row?.ownersDraw || 0) +
+        Number(row?.commonStock || 0) +
+        Number(row?.preferredStock || 0) +
+        Number(row?.retainedEarnings || 0) +
+        currentYearNetIncome +
+        Number(row?.additionalPaidInCapital || 0) +
+        Number(row?.treasuryStock || 0);
+      const totalLiab = Number(row?.totalLiab || 0);
+      annotated.set(row, {
+        ...row,
+        currentYearNetIncome,
+        totalEquity,
+        totalLAndE: totalLiab + totalEquity,
+      });
+    });
+  return rows.map((row) => annotated.get(row) || row);
 }
 
 async function getHydratedInforBusinessDates(
@@ -2602,10 +2655,12 @@ export async function GET(request: NextRequest) {
 
     const sectorCategory = sectorCategoryParam || resolvedCompanySectorCategory;
     const normalizedAccountingSystem = String(company.accountingSystem || '').trim().toUpperCase();
-    const isQuickBooksCompany =
-      normalizedAccountingSystem === 'QUICKBOOKS' ||
+    const isQuickBooksDesktopCompany =
       normalizedAccountingSystem === 'QUICKBOOKS_DESKTOP' ||
       normalizedAccountingSystem === 'QUICKBOOKS_ENTERPRISE';
+    const isQuickBooksCompany =
+      normalizedAccountingSystem === 'QUICKBOOKS' ||
+      isQuickBooksDesktopCompany;
     /** GL balance_movement:* + TB anchors — Infor CSI / M3 only (not QuickBooks, not arbitrary ERPs). */
     const isInforGlCompany =
       normalizedAccountingSystem === 'INFOR_M3' || normalizedAccountingSystem === 'INFOR_CSI';
@@ -2671,6 +2726,7 @@ export async function GET(request: NextRequest) {
               statementCurrency,
               statementRollup,
               boundedLimit,
+              'qbd-current-year-net-income-v1',
               shouldApplyHydratedDateFilter ? hydratedInforDates : null,
               cacheType === 'customers' ? CUSTOMER_CONCENTRATION_CACHE_VERSION : null,
               cacheType === 'customers' ? CUSTOMER_REVENUE_SOURCE_VERSION : null,
@@ -8614,7 +8670,13 @@ export async function GET(request: NextRequest) {
           const expense = Number(row?.expense || 0);
           return revenue === 0 && cogsTotal === 0 && expense === 0;
         };
-        const dailyDataForAggregator: any[] = Array.isArray(data) ? data.slice() : [];
+        let dailyDataForAggregator: any[] = Array.isArray(data) ? data.slice() : [];
+        if (isQuickBooksDesktopCompany) {
+          dailyDataForAggregator = annotateCurrentYearNetIncomeForQbdRows(dailyDataForAggregator);
+          data = financialFrequencyForQuery === 'daily'
+            ? dailyDataForAggregator.slice()
+            : annotateCurrentYearNetIncomeForQbdRows(data);
+        }
         if (financialFrequencyForQuery === 'daily' && Array.isArray(data) && data.length) {
           data = data.filter((row: any) => !isWeekendNoActivity(row));
         }

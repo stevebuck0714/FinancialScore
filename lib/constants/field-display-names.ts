@@ -103,6 +103,7 @@ export const FIELD_DISPLAY_NAMES: Record<string, string> = {
   commonStock: 'Common Stock',
   preferredStock: 'Preferred Stock',
   retainedEarnings: 'Retained Earnings',
+  currentYearNetIncome: 'Current Year Net Income',
   additionalPaidInCapital: 'Additional Paid-In Capital',
   treasuryStock: 'Treasury Stock',
   totalEquity: 'TOTAL EQUITY',
