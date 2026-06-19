@@ -261,13 +261,16 @@ function getTargetFieldFamily(targetField: string): "revenue" | "cogs" | "expens
 function getClassificationFamily(classification: unknown): "revenue" | "cogs" | "expense" | "asset" | "liability" | "equity" | "other" {
   const normalized = stripManualClassificationPrefix(classification).toLowerCase();
   if (!normalized) return "other";
+  const compact = normalized.replace(/[^a-z0-9]+/g, "");
   if (normalized === "r") return "revenue";
   if (normalized === "e") return "expense";
   if (normalized === "a") return "asset";
   if (normalized === "l") return "liability";
   if (normalized === "q") return "equity";
   if (normalized === "c") return "cogs";
-  if (normalized.includes("cost of goods") || normalized.includes("cost of sales") || normalized.includes("cogs")) return "cogs";
+  if (compact.includes("costofgoods") || compact.includes("costofsales") || compact.includes("cogs")) return "cogs";
+  if (compact === "bank" || compact === "accountsreceivable" || compact === "othercurrentasset" || compact === "fixedasset" || compact === "otherasset") return "asset";
+  if (compact === "accountspayable" || compact === "creditcard" || compact === "othercurrentliability" || compact === "longtermliability") return "liability";
   if (normalized.includes("expense")) return "expense";
   if (normalized.includes("income") || normalized.includes("revenue") || normalized.includes("sales")) return "revenue";
   if (normalized.includes("asset")) return "asset";

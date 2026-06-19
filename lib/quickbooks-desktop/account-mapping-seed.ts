@@ -56,13 +56,23 @@ function inferClassification(raw: string): string | null {
   const value = raw.trim();
   if (!value) return null;
   const lc = value.toLowerCase();
-  if (lc.includes('income') || lc.includes('revenue') || lc.includes('sales')) return 'Income';
-  if (lc.includes('cogs') || lc.includes('cost of goods')) return 'Cost of Goods Sold';
+  const compact = lc.replace(/[^a-z0-9]+/g, '');
+  if (compact === 'bank' || compact === 'accountsreceivable' || compact.includes('asset')) return 'Asset';
+  if (
+    compact === 'accountspayable' ||
+    compact === 'creditcard' ||
+    compact.includes('liability') ||
+    compact.includes('liabilities')
+  ) return 'Liability';
+  if (compact.includes('costofgoods') || compact.includes('costofsales') || compact.includes('cogs')) return 'Cost of Goods Sold';
+  if (compact.includes('income') || compact.includes('revenue') || compact.includes('sales')) return 'Income';
   if (lc.includes('expense')) return 'Expense';
-  if (lc.includes('asset')) return 'Asset';
-  if (lc.includes('liabil')) return 'Liability';
-  if (lc.includes('equity')) return 'Equity';
+  if (compact.includes('equity')) return 'Equity';
   return value;
+}
+
+function isManualClassification(value: unknown): boolean {
+  return String(value || '').trim().toLowerCase().startsWith('manual:');
 }
 
 function maybeFromRecord(record: Record<string, unknown>): SourceAccount | null {
@@ -221,7 +231,9 @@ export async function seedQuickBooksDesktopAccountMappings(
       accountName: source.accountName,
       accountId: source.accountId,
       accountCode: source.accountCode,
-      accountClassification: source.classification,
+      accountClassification: isManualClassification(existingRow.accountClassification)
+        ? existingRow.accountClassification
+        : source.classification,
     };
     const changed =
       (existingRow.accountName || '') !== (next.accountName || '') ||

@@ -205,6 +205,15 @@ function isLocInstrument(instrument: LoanInstrument): boolean {
   return instrument.targetField === 'loc' || /\bloc\b|line of credit/.test(haystack);
 }
 
+function hasLoanInstrumentBalance(instrument: LoanInstrument): boolean {
+  const priorMonthBalance = Number(instrument.priorMonthBalance);
+  const currentBalance = Number(instrument.derivedCurrentBalance);
+  return (
+    (Number.isFinite(priorMonthBalance) && Math.abs(priorMonthBalance) > 0.005) ||
+    (Number.isFinite(currentBalance) && Math.abs(currentBalance) > 0.005)
+  );
+}
+
 function sumNullableCurrency(
   rows: LoanInstrument[],
   selector: (instrument: LoanInstrument) => number | null | undefined
@@ -357,8 +366,9 @@ export default function LoansTab({ selectedCompanyId, companyName, currentUser =
   }, [instruments, monthly]);
 
   const loanInstrumentSections = useMemo(() => {
-    const locRows = instruments.filter(isLocInstrument);
-    const longTermDebtRows = instruments.filter((instrument) => !isLocInstrument(instrument));
+    const rowsWithBalances = instruments.filter(hasLoanInstrumentBalance);
+    const locRows = rowsWithBalances.filter(isLocInstrument);
+    const longTermDebtRows = rowsWithBalances.filter((instrument) => !isLocInstrument(instrument));
     const totalsFor = (rows: LoanInstrument[]) => ({
       priorMonthBalance: sumNullableCurrency(rows, (instrument) => instrument.priorMonthBalance),
       principalChange: sumNullableCurrency(rows, (instrument) => instrument.principalChange),

@@ -2061,32 +2061,39 @@ function FinancialScorePage() {
   const getClassificationDisplayLabel = (value: unknown): string => {
     const raw = stripManualClassificationPrefix(value);
     if (!raw) return 'Other';
-    const compact = raw.toUpperCase();
-    if (compact === 'R') return 'Revenue';
-    if (compact === 'E') return 'Expense';
-    if (compact === 'A') return 'Asset';
-    if (compact === 'L') return 'Liability';
-    if (compact === 'O') return 'Other';
-    if (compact === 'Q') return 'Equity';
-    if (compact === 'EQUITY') return 'Equity';
-    if (compact === 'ASSET' || compact === 'ASSETS') return 'Asset';
-    if (compact === 'LIABILITY' || compact === 'LIABILITIES') return 'Liability';
-    if (compact.includes('NON-OPERATING') || compact.includes('NON OPERATING')) return 'Non-Operating Income & Expense';
-    if (compact === 'INCOME') return 'Revenue';
-    return raw;
+    const option = getClassificationOptionValue(raw);
+    return option === 'Other' ? raw : option;
   };
 
   const getClassificationOptionValue = (value: unknown): string => {
     const raw = stripManualClassificationPrefix(value).trim();
     if (!raw) return 'Other';
-    const compact = raw.toUpperCase();
-    if (compact.includes('NON-OPERATING') || compact.includes('NON OPERATING')) return 'Non-Operating Income & Expense';
-    if (compact === 'R' || compact === 'INCOME' || compact === 'REVENUE') return 'Revenue';
-    if (compact === 'C' || compact.includes('COST OF GOODS') || compact.includes('COST OF SALES') || compact === 'COGS') return 'Cost of Goods Sold';
-    if (compact === 'E' || compact === 'EXPENSE') return 'Expense';
-    if (compact === 'A' || compact === 'ASSET' || compact === 'ASSETS') return 'Asset';
-    if (compact === 'L' || compact === 'LIABILITY' || compact === 'LIABILITIES') return 'Liability';
-    if (compact === 'Q' || compact === 'EQUITY') return 'Equity';
+    const upper = raw.toUpperCase();
+    const compact = upper.replace(/[^A-Z0-9]+/g, '');
+    if (upper.includes('NON-OPERATING') || upper.includes('NON OPERATING') || compact.includes('NONOPERATING')) return 'Non-Operating Income & Expense';
+    if (compact === 'R' || compact === 'INCOME' || compact === 'REVENUE' || compact === 'SALES' || compact === 'OTHERINCOME') return 'Revenue';
+    if (compact === 'C' || compact === 'COGS' || compact.includes('COSTOFGOODS') || compact.includes('COSTOFSALES')) return 'Cost of Goods Sold';
+    if (compact === 'E' || compact === 'EXPENSE' || compact === 'OTHEREXPENSE') return 'Expense';
+    if (
+      compact === 'A' ||
+      compact === 'ASSET' ||
+      compact === 'ASSETS' ||
+      compact === 'BANK' ||
+      compact === 'ACCOUNTSRECEIVABLE' ||
+      compact === 'OTHERCURRENTASSET' ||
+      compact === 'FIXEDASSET' ||
+      compact === 'OTHERASSET'
+    ) return 'Asset';
+    if (
+      compact === 'L' ||
+      compact === 'LIABILITY' ||
+      compact === 'LIABILITIES' ||
+      compact === 'ACCOUNTSPAYABLE' ||
+      compact === 'CREDITCARD' ||
+      compact === 'OTHERCURRENTLIABILITY' ||
+      compact === 'LONGTERMLIABILITY'
+    ) return 'Liability';
+    if (compact === 'Q' || compact === 'EQUITY' || compact === 'RETAINEDEARNINGS' || compact === 'OPENINGBALANCEEQUITY') return 'Equity';
     return 'Other';
   };
 
@@ -2094,11 +2101,103 @@ function FinancialScorePage() {
     return getClassificationOptionValue(fallback);
   };
 
-  const resetMappingForAccountReviewTypeChange = (mapping: any) => {
+  const getAccountReviewTypeFamily = (value: unknown): string => {
+    const option = getClassificationOptionValue(value);
+    if (option === 'Revenue') return 'revenue';
+    if (option === 'Cost of Goods Sold') return 'cogs';
+    if (option === 'Expense') return 'expense';
+    if (option === 'Non-Operating Income & Expense') return 'nonOperating';
+    if (option === 'Asset') return 'asset';
+    if (option === 'Liability') return 'liability';
+    if (option === 'Equity') return 'equity';
+    return 'other';
+  };
+
+  const getTargetFieldReviewFamily = (targetField: unknown): string => {
+    const normalized = normalizeMappingTargetField(targetField).trim();
+    const compact = normalized.toLowerCase().replace(/[^a-z0-9]+/g, '');
+    if (!compact || compact === 'unmapped' || compact === 'ignored') return 'unmapped';
+    if (compact === 'revenue' || compact === 'otherrevenue' || compact.startsWith('rev')) return 'revenue';
+    if (compact === 'nonoperatingincome' || compact === 'nonoperatingexpense' || compact === 'extraordinaryitems') return 'nonOperating';
+    if (compact === 'costofgoodssold' || compact === 'cogstotal' || compact.startsWith('cogs')) return 'cogs';
+    if (
+      [
+        'payroll',
+        'ownerbasepay',
+        'ownersretirement',
+        'benefits',
+        'insurance',
+        'professionalfees',
+        'subcontractors',
+        'rent',
+        'taxlicense',
+        'stateincometaxes',
+        'federalincometaxes',
+        'phonecomm',
+        'infrastructure',
+        'autotravel',
+        'salesexpense',
+        'marketing',
+        'trainingcert',
+        'mealsentertainment',
+        'interestexpense',
+        'depreciationamortization',
+        'otherexpense',
+        'expense',
+        'operatingexpensetotal',
+      ].includes(compact)
+    ) return 'expense';
+    if (
+      [
+        'cash',
+        'ar',
+        'retainagereceivables',
+        'contractassets',
+        'inventory',
+        'otherca',
+        'tca',
+        'fixedassets',
+        'constructionequipment',
+        'officeequipment',
+        'shopequipment',
+        'investments',
+        'rightofuseleases',
+        'otherassets',
+        'totalassets',
+      ].includes(compact)
+    ) return 'asset';
+    if (['ap', 'loc', 'contractliabilities', 'othercl', 'tcl', 'ltd', 'totalliab'].includes(compact)) return 'liability';
+    if (
+      [
+        'ownerscapital',
+        'ownersdraw',
+        'commonstock',
+        'preferredstock',
+        'retainedearnings',
+        'additionalpaidincapital',
+        'treasurystock',
+        'totalequity',
+        'totallande',
+      ].includes(compact)
+    ) return 'equity';
+    return 'other';
+  };
+
+  const shouldClearTargetFieldForAccountReviewType = (mapping: any, selectedType: string): boolean => {
+    const targetFamily = getTargetFieldReviewFamily(mapping?.targetField);
+    if (targetFamily === 'unmapped') return false;
+    const selectedFamily = getAccountReviewTypeFamily(selectedType);
+    if (selectedFamily === 'other') return targetFamily !== 'other';
+    return targetFamily !== selectedFamily;
+  };
+
+  const resetMappingForAccountReviewTypeChange = (mapping: any, selectedType: string) => {
     const { invalidTargetField: _invalidTargetField, validationWarning: _validationWarning, ...rest } = mapping || {};
     return {
       ...rest,
-      targetField: 'unmapped',
+      targetField: shouldClearTargetFieldForAccountReviewType(mapping, selectedType)
+        ? 'unmapped'
+        : mapping?.targetField,
     };
   };
 
@@ -2115,7 +2214,8 @@ function FinancialScorePage() {
           ...mapping,
           accountClassification: encodeManualClassification(visibleAccountReviewType),
           targetField:
-            visibleAccountReviewType === currentAccountReviewType
+            visibleAccountReviewType === currentAccountReviewType ||
+            !shouldClearTargetFieldForAccountReviewType(mapping, visibleAccountReviewType)
               ? mapping?.targetField
               : 'unmapped',
         }
@@ -17675,7 +17775,7 @@ function FinancialScorePage() {
                                                 });
                                             if (currentIndex >= 0 && updated[currentIndex]) {
                                               updated[currentIndex] = {
-                                                ...resetMappingForAccountReviewTypeChange(updated[currentIndex]),
+                                                ...resetMappingForAccountReviewTypeChange(updated[currentIndex], selected),
                                                 accountClassification: encodeManualClassification(selected),
                                               };
                                               return updated;
@@ -17800,7 +17900,7 @@ function FinancialScorePage() {
                                         const updated = [...(Array.isArray(prev) ? prev : [])];
                                         if (!updated[originalIndex]) return prev;
                                         updated[originalIndex] = {
-                                          ...resetMappingForAccountReviewTypeChange(updated[originalIndex]),
+                                          ...resetMappingForAccountReviewTypeChange(updated[originalIndex], selected),
                                           accountClassification: encodeManualClassification(selected),
                                         };
                                         return updated;
