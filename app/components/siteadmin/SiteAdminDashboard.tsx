@@ -3092,7 +3092,8 @@ export default function SiteAdminDashboard(props: any) {
   const queueQbDesktopDateRange = async (
     companyId: string,
     requestNames?: string[],
-    label = 'date range'
+    label = 'date range',
+    options?: { chunkByMonth?: boolean; allowBulkExcludedRequests?: boolean }
   ) => {
     const range = getQbDesktopDateRange(companyId);
     if (!range.startDate || !range.endDate) {
@@ -3114,6 +3115,8 @@ export default function SiteAdminDashboard(props: any) {
           startDate: range.startDate,
           endDate: range.endDate,
           ...(Array.isArray(requestNames) && requestNames.length > 0 ? { requestNames } : {}),
+          ...(options?.chunkByMonth ? { chunkByMonth: true } : {}),
+          ...(options?.allowBulkExcludedRequests ? { allowBulkExcludedRequests: true } : {}),
         }),
       });
       const data = await response.json().catch(() => ({}));
@@ -3122,7 +3125,8 @@ export default function SiteAdminDashboard(props: any) {
       }
       await loadQbDesktopSettings(companyId);
       const jobCount = Number(data?.jobCount || requestNames?.length || 0);
-      alert(`QuickBooks Desktop ${label} queued: ${range.startDate} to ${range.endDate}${jobCount ? ` (${jobCount} jobs)` : ''}. Run QuickBooks Web Connector Update Selected, then click Refresh Status here to confirm completion.`);
+      const dateWindowCount = Number(data?.dateWindowCount || 0);
+      alert(`QuickBooks Desktop ${label} queued: ${range.startDate} to ${range.endDate}${jobCount ? ` (${jobCount} jobs)` : ''}${dateWindowCount > 1 ? ` across ${dateWindowCount} monthly windows` : ''}. Run QuickBooks Web Connector Update Selected, then click Refresh Status here to confirm completion.`);
     } catch (error: any) {
       alert(`Failed to queue QuickBooks Desktop ${label}: ${error?.message || 'Unknown error'}`);
     } finally {
@@ -3298,6 +3302,21 @@ export default function SiteAdminDashboard(props: any) {
             title="Queues only BillPaymentCreditCardQuery and BalanceSheetStandardReportQuery for the selected range."
           >
             {isQueuing ? 'Queuing...' : 'Queue BS + CC Only'}
+          </button>
+          <button
+            onClick={() =>
+              queueQbDesktopDateRange(
+                companyId,
+                ['GeneralDetailReportQuery'],
+                'monthly GL detail pull',
+                { chunkByMonth: true, allowBulkExcludedRequests: true }
+              )
+            }
+            disabled={isQueuing}
+            style={{ width: '100%', minWidth: 0, boxSizing: 'border-box', padding: '8px 12px', background: isQueuing ? '#94a3b8' : '#a16207', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: isQueuing ? 'not-allowed' : 'pointer' }}
+            title="Queues GeneralDetailReportQuery in one-month windows for the selected range."
+          >
+            {isQueuing ? 'Queuing...' : 'Queue GL Monthly'}
           </button>
           <button
             onClick={() => queueQbDesktopDetailBackfill(companyId)}

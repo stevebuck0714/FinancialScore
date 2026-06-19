@@ -25,16 +25,58 @@ function parseDate(value: unknown): string {
   return Number.isNaN(date.getTime()) ? '' : trimmed;
 }
 
-function parseRequestNames(value: unknown): string[] {
+function parseRequestNames(value: unknown, allowBulkExcluded = false): string[] {
   if (!Array.isArray(value)) return [];
   return Array.from(
     new Set(
       value
         .map((requestName) => (typeof requestName === 'string' ? requestName.trim() : ''))
         .filter((requestName) => /^[A-Za-z][A-Za-z0-9]*Query$/.test(requestName))
-        .filter((requestName) => !BULK_EXCLUDED_QBD_REQUESTS.has(requestName)),
+        .filter((requestName) => allowBulkExcluded || !BULK_EXCLUDED_QBD_REQUESTS.has(requestName)),
     ),
   );
+}
+
+function addDaysUtc(date: Date, days: number): Date {
+  const next = new Date(date);
+  next.setUTCDate(next.getUTCDate() + days);
+  return next;
+}
+
+function addMonthsUtc(date: Date, months: number): Date {
+  const next = new Date(date);
+  next.setUTCMonth(next.getUTCMonth() + months);
+  return next;
+}
+
+function dateKey(date: Date): string {
+  return date.toISOString().slice(0, 10);
+}
+
+function buildMonthlyDateRanges(startDate: string, endDate: string) {
+  const start = new Date(`${startDate}T00:00:00.000Z`);
+  const end = new Date(`${endDate}T00:00:00.000Z`);
+  const ranges: Array<{ startDate: string; endDate: string; windowIndex: number }> = [];
+  let cursor = new Date(Date.UTC(start.getUTCFullYear(), start.getUTCMonth(), 1));
+  let windowIndex = 0;
+
+  while (cursor.getTime() <= end.getTime()) {
+    const monthStart = cursor < start ? start : cursor;
+    const nextMonthStart = addMonthsUtc(new Date(Date.UTC(cursor.getUTCFullYear(), cursor.getUTCMonth(), 1)), 1);
+    const monthEndCandidate = addDaysUtc(nextMonthStart, -1);
+    const monthEnd = monthEndCandidate > end ? end : monthEndCandidate;
+    if (monthStart <= monthEnd) {
+      ranges.push({
+        startDate: dateKey(monthStart),
+        endDate: dateKey(monthEnd),
+        windowIndex,
+      });
+      windowIndex += 1;
+    }
+    cursor = nextMonthStart;
+  }
+
+  return ranges;
 }
 
 const DEFAULT_QBD_REQUESTS = [
@@ -143,8 +185,10 @@ export async function POST(request: NextRequest) {
     };
     const batchId = randomUUID();
     const now = new Date().toISOString();
+    const chunkByMonth = body.chunkByMonth === true;
+    const allowBulkExcludedRequests = body.allowBulkExcludedRequests === true || chunkByMonth;
     const hasSelectedRequestNames = Array.isArray(body.requestNames);
-    const selectedRequests = parseRequestNames(body.requestNames);
+    const selectedRequests = parseRequestNames(body.requestNames, allowBulkExcludedRequests);
     if (hasSelectedRequestNames && selectedRequests.length === 0) {
       return NextResponse.json(
         { ok: false, error: 'No valid requestNames were provided for the targeted QuickBooks Desktop pull.' },
@@ -154,17 +198,38 @@ export async function POST(request: NextRequest) {
     const enabledRequests = hasSelectedRequestNames
       ? selectedRequests
       : getEnabledQbDesktopRequests(metadata);
+    const dateRanges = chunkByMonth
+      ? buildMonthlyDateRanges(startDate, endDate)
+      : [{ startDate, endDate, windowIndex: 0 }];
+    if (dateRanges.length === 0) {
+      return NextResponse.json(
+        { ok: false, error: 'No valid date windows were generated for the QuickBooks Desktop pull.' },
+        { status: 400 },
+      );
+    }
+    const jobSpecs = dateRanges.flatMap((range) =>
+      enabledRequests.map((requestName) => ({
+        requestName,
+        dateRange: {
+          ...queuedDateRange,
+          startDate: range.startDate,
+          endDate: range.endDate,
+        },
+        windowIndex: range.windowIndex,
+      })),
+    );
     const backfillJobs = Object.fromEntries(
-      enabledRequests.map((requestName, index) => {
-        const id = `${batchId}:${String(index + 1).padStart(3, '0')}:${requestName}`;
+      jobSpecs.map((job, index) => {
+        const id = `${batchId}:${String(index + 1).padStart(3, '0')}:${String(job.windowIndex).padStart(3, '0')}:${job.requestName}`;
         return [
           id,
           {
             id,
             batchId,
             status: 'queued',
-            requestName,
-            dateRange: queuedDateRange,
+            requestName: job.requestName,
+            windowIndex: job.windowIndex,
+            dateRange: job.dateRange,
             createdAt: now,
             updatedAt: now,
             recordCount: 0,
@@ -206,6 +271,7 @@ export async function POST(request: NextRequest) {
           quickbooksDesktopBackfillJobs: backfillJobs,
           quickbooksDesktopBackfillResponses: {},
           quickbooksDesktopBackfillRequestNames: hasSelectedRequestNames ? selectedRequests : null,
+          quickbooksDesktopBackfillChunkByMonth: chunkByMonth,
         } as any,
       },
     });
@@ -215,8 +281,9 @@ export async function POST(request: NextRequest) {
       companyId,
       queuedDateRange,
       batchId,
-      jobCount: enabledRequests.length,
+      jobCount: jobSpecs.length,
       requestNames: enabledRequests,
+      dateWindowCount: dateRanges.length,
       message: 'The requested QuickBooks Desktop date range will run on the next Web Connector update.',
     });
   } catch (error: any) {
