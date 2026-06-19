@@ -647,6 +647,19 @@ async function collectAllMappedValuesFromMonthlyFinancial(
   return valueByKey;
 }
 
+async function hasQuickBooksDesktopBackfillPages(companyId: string): Promise<boolean> {
+  const rows = await withPrismaReconnectRetry(
+    () => prisma.$queryRaw<Array<{ count: bigint }>>`
+      SELECT COUNT(*)::bigint AS count
+      FROM "QuickBooksDesktopBackfillPage"
+      WHERE "companyId" = ${companyId}
+        AND "requestName" = 'AccountQuery'
+    `,
+    'account-review.latest-values.hasQuickBooksDesktopBackfillPages',
+  );
+  return Number(rows[0]?.count || 0) > 0;
+}
+
 export async function GET(request: NextRequest) {
   try {
     await requireAuth();
@@ -740,11 +753,11 @@ export async function GET(request: NextRequest) {
       // Use those for BS account rows so Account Review can show actual
       // account-level current values without fanning out MonthlyFinancial
       // rollups like fixedAssets or loc.
-      if (
-        accountingSystem === 'QUICKBOOKS' ||
+      const isQuickBooksDesktopAccountReview =
         accountingSystem === 'QUICKBOOKS_DESKTOP' ||
-        accountingSystem === 'QUICKBOOKS_ENTERPRISE'
-      ) {
+        accountingSystem === 'QUICKBOOKS_ENTERPRISE' ||
+        (accountingSystem === 'QUICKBOOKS' && await hasQuickBooksDesktopBackfillPages(companyId));
+      if (isQuickBooksDesktopAccountReview) {
         perAccountAnchorResult = await collectValuesFromPerAccountAnchors(companyId, targetMonth);
         for (const [key, value] of perAccountAnchorResult.values.entries()) {
           if (!bsAccountKeySet.has(key)) continue;
