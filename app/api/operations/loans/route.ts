@@ -6,7 +6,7 @@ import { requireAuth, validateCompanyAccess } from '@/lib/tenant-security';
 export const dynamic = 'force-dynamic';
 export const maxDuration = 120;
 
-const LOAN_ACTIVITY_CACHE_VERSION = 19;
+const LOAN_ACTIVITY_CACHE_VERSION = 21;
 const STALE_LOAN_ACTIVITY_MONTHS = 13;
 
 type LoanTermInput = {
@@ -292,22 +292,6 @@ function shouldHideInactiveLoanFromReport(instrument: any) {
   return isStale;
 }
 
-function signedPrincipalChangeForMonth(
-  monthlyActivity: any[],
-  recentActivity: any[],
-  month: string,
-  useRawActivity: boolean
-) {
-  if (!month) return 0;
-  if (useRawActivity) {
-    return recentActivity.reduce((sum, row) => {
-      return monthKey(row?.transDate) === month ? sum + Number(row?.signedAmount || 0) : sum;
-    }, 0);
-  }
-  const row = monthlyActivity.find((item) => String(item.month || '') === month);
-  return Number(row?.activityTotal || 0);
-}
-
 function sumActivityForMonth(activity: any[], month: string) {
   if (!month) return 0;
   return activity.reduce((sum, row) => {
@@ -356,6 +340,140 @@ function monthKey(value: unknown): string {
   const parsed = new Date(String(value || ''));
   if (Number.isNaN(parsed.getTime())) return '';
   return `${parsed.getUTCFullYear()}-${String(parsed.getUTCMonth() + 1).padStart(2, '0')}`;
+}
+
+function previousMonthEnd(value: Date): Date {
+  return new Date(Date.UTC(value.getUTCFullYear(), value.getUTCMonth(), 0, 23, 59, 59, 999));
+}
+
+function maxValidDate(values: unknown[]): Date | null {
+  let latest = 0;
+  for (const value of values) {
+    const time = dateToTime(value);
+    if (time && time > latest) latest = time;
+  }
+  return latest ? new Date(latest) : null;
+}
+
+async function loadLoanAccountBalanceSnapshots(
+  companyId: string,
+  accountIds: string[],
+  currentAsOfDate: Date,
+  priorAsOfDate: Date
+): Promise<Map<string, {
+  currentBalance: number | null;
+  priorMonthBalance: number | null;
+  currentSource: string | null;
+  priorSource: string | null;
+  currentAsOfDate: Date | null;
+  priorAsOfDate: Date | null;
+}>> {
+  const ids = Array.from(new Set(accountIds.map((id) => String(id || '').trim()).filter(Boolean)));
+  const balances = new Map<string, {
+    currentBalance: number | null;
+    priorMonthBalance: number | null;
+    currentSource: string | null;
+    priorSource: string | null;
+    currentAsOfDate: Date | null;
+    priorAsOfDate: Date | null;
+  }>();
+  ids.forEach((accountId) => {
+    balances.set(accountId, {
+      currentBalance: null,
+      priorMonthBalance: null,
+      currentSource: null,
+      priorSource: null,
+      currentAsOfDate: null,
+      priorAsOfDate: null,
+    });
+  });
+  if (!ids.length) return balances;
+
+  const anchorRows = await prisma.$queryRawUnsafe<Array<{
+    period: string;
+    accountId: string | null;
+    asOfDate: Date | null;
+    anchorDate: Date | null;
+    balance: number | null;
+  }>>(
+    `
+      WITH periods("period", "asOfDate") AS (
+        VALUES
+          ('current', $2::timestamptz),
+          ('prior', $3::timestamptz)
+      ),
+      anchors AS (
+        SELECT DISTINCT ON (p."period", TRIM(a."accountId"))
+          p."period",
+          p."asOfDate",
+          TRIM(a."accountId") AS "accountId",
+          a."anchorDate",
+          a."openingBalance"::float8 AS "openingBalance"
+        FROM periods p
+        JOIN "BalanceSheetAccountAnchor" a
+          ON a."companyId" = $1
+         AND a."anchorDate" <= p."asOfDate"
+         AND TRIM(a."accountId") = ANY($4::text[])
+        ORDER BY p."period", TRIM(a."accountId"), a."anchorDate" DESC
+      ),
+      deltas AS (
+        SELECT
+          a."period",
+          a."accountId",
+          SUM(COALESCE(g."signedAmount", 0))::float8 AS "delta"
+        FROM anchors a
+        LEFT JOIN "GLTransactionFact" g
+          ON g."companyId" = $1
+         AND TRIM(g."accountId") = a."accountId"
+         AND g."transDate" > a."anchorDate"
+         AND g."transDate" <= a."asOfDate"
+        GROUP BY a."period", a."accountId"
+      )
+      SELECT
+        a."period",
+        a."accountId",
+        a."asOfDate",
+        a."anchorDate",
+        (a."openingBalance" + COALESCE(d."delta", 0))::float8 AS "balance"
+      FROM anchors a
+      LEFT JOIN deltas d
+        ON d."period" = a."period"
+       AND d."accountId" = a."accountId"
+    `,
+    companyId,
+    currentAsOfDate,
+    priorAsOfDate,
+    ids
+  );
+
+  const setBalance = (
+    accountId: string,
+    period: string,
+    balance: number | null,
+    source: string,
+    asOfDate: Date | null
+  ) => {
+    const existing = balances.get(accountId);
+    if (!existing || balance === null || balance === undefined) return;
+    if (period === 'current' && existing.currentBalance === null) {
+      existing.currentBalance = Number(balance || 0);
+      existing.currentSource = source;
+      existing.currentAsOfDate = asOfDate;
+    }
+    if (period === 'prior' && existing.priorMonthBalance === null) {
+      existing.priorMonthBalance = Number(balance || 0);
+      existing.priorSource = source;
+      existing.priorAsOfDate = asOfDate;
+    }
+  };
+
+  for (const row of anchorRows) {
+    const accountId = String(row.accountId || '').trim();
+    if (!accountId) continue;
+    setBalance(accountId, String(row.period || ''), row.balance, 'BalanceSheetAccountAnchor + GL delta', row.asOfDate);
+  }
+
+  return balances;
 }
 
 function compactTokens(value: string): string[] {
@@ -739,6 +857,18 @@ async function loadLoanActivity(companyId: string) {
   );
   const latestDailySnapshot = await loadLatestDailyFinancialSnapshot(companyId);
   const latestMonthlyDebtSnapshot = await loadLatestMonthlyFinancialDebtSnapshot(companyId);
+  const latestActivityDate = maxValidDate([
+    ...principalRows.map((row) => row.lastDate),
+    ...Array.from(rawInforActivityByAccount.values()).map((row) => row?.lastDate),
+  ]);
+  const reportAsOfDate = latestDailySnapshot?.snapshotDate || latestMonthlyDebtSnapshot?.snapshotDate || latestActivityDate || new Date();
+  const priorAsOfDate = previousMonthEnd(reportAsOfDate);
+  const accountBalanceSnapshots = await loadLoanAccountBalanceSnapshots(
+    companyId,
+    principalRows.map((row) => row.accountId),
+    reportAsOfDate,
+    priorAsOfDate
+  );
 
   const monthlyRows = mappedDebtAccountIds.length
     ? await prisma.$queryRawUnsafe<any[]>(
@@ -941,55 +1071,36 @@ async function loadLoanActivity(companyId: string) {
     const principalActivityTotal = useRawActivity
       ? Number(rawInforActivity.activityTotal || 0)
       : Number(row.activityTotal || 0);
-    const baseDerivedBalance = Math.abs(principalActivityTotal);
-    let derivedCurrentBalance = null as number | null;
-    let derivedCurrentBalanceSource = useRawActivity ? 'Infor ledger activity' : 'GLTransactionFact cumulative activity';
-    let derivedCurrentBalanceAsOf = null as Date | null;
+    const accountBalanceSnapshot = accountBalanceSnapshots.get(accountId) || null;
+    const derivedCurrentBalance = accountBalanceSnapshot?.currentBalance == null
+      ? null
+      : Math.abs(Number(accountBalanceSnapshot.currentBalance || 0));
+    let derivedCurrentBalanceSource = null as string | null;
+    if (accountBalanceSnapshot?.currentSource) derivedCurrentBalanceSource = accountBalanceSnapshot.currentSource;
+    const derivedCurrentBalanceAsOf = accountBalanceSnapshot?.currentAsOfDate || null as Date | null;
     let instrumentStatus: 'active' | 'inactive' | 'unknown' = 'unknown';
-    let statusReason: string | null = 'Current balance not shown until it reconciles to a current balance-sheet source.';
-    if (targetField === 'loc' && latestLocBalance > 0) {
-      if (activeLocAccountIds.has(accountId)) {
-        derivedCurrentBalance = latestLocBalance;
-        derivedCurrentBalanceSource = debtSnapshotSource === 'MonthlyFinancial'
-          ? 'Mapped Monthly Financials LOC balance'
-          : 'GL reconciles to Daily Financials LOC balance';
-        derivedCurrentBalanceAsOf = latestSnapshotDate;
-        instrumentStatus = 'active';
-        statusReason = null;
-      } else {
-        derivedCurrentBalance = 0;
-        derivedCurrentBalanceSource = 'Inactive LOC; not in latest Daily Financials LOC balance';
-        derivedCurrentBalanceAsOf = latestSnapshotDate;
-        instrumentStatus = 'inactive';
-        statusReason = 'Mapped as LOC, but this account does not reconcile to the latest Daily Financials LOC balance.';
-      }
-    } else if (targetField === 'ltd' && (activeLtdAccountIds.has(accountId) || Math.abs(Number(row.activityTotal || 0)) > 0)) {
-      derivedCurrentBalance = activeLtdAccountIds.has(accountId) && latestLtdBalance > 0
-        ? latestLtdBalance
-        : Math.abs(Number(row.activityTotal || 0));
-      derivedCurrentBalanceSource = activeLtdAccountIds.has(accountId) && latestLtdBalance > 0
-        ? (debtSnapshotSource === 'MonthlyFinancial' ? 'Mapped Monthly Financials LTD balance' : 'Daily Financials LTD balance')
-        : 'GLTransactionFact cumulative LTD activity';
-      derivedCurrentBalanceAsOf = (activeLtdAccountIds.has(accountId) && latestLtdBalance > 0 ? latestSnapshotDate : row.lastDate) || latestSnapshotDate;
+    let statusReason: string | null = null;
+    if (derivedCurrentBalance !== null && Math.abs(derivedCurrentBalance) > 0.005) {
       instrumentStatus = 'active';
-      statusReason = null;
+    } else if (Number(row.transactionCount || 0) > 0 || rawTxCount > 0) {
+      instrumentStatus = 'inactive';
+      statusReason = 'No current account-level balance remains for this loan account.';
+    } else {
+      statusReason = 'Loan account is mapped, but no account-level balance or activity was found.';
     }
     const monthlyActivity = monthlyByInstrument[String(row.instrumentKey)] || [];
     const recentActivity = dedupeActivityRows([
       ...(useRawActivity ? rawInforActivity.recentActivity : detailByInstrument[String(row.instrumentKey)] || []),
       ...allInterestActivity,
     ]).sort((a, b) => new Date(b?.transDate || 0).getTime() - new Date(a?.transDate || 0).getTime()).slice(0, 30);
-    const reportAsOfDate = latestSnapshotDate || new Date();
     const currentMonth = monthKey(reportAsOfDate);
-    const currentMonthSignedActivity = signedPrincipalChangeForMonth(
-      monthlyActivity,
-      recentActivity,
-      currentMonth,
-      Boolean(useRawActivity)
-    );
-    const principalChange = -currentMonthSignedActivity;
-    const priorMonthBalance = derivedCurrentBalance === null ? null : Math.max(0, Math.abs(derivedCurrentBalance) - principalChange);
-    const currentMonthInterestPaid = sumActivityForMonth(allInterestActivity, currentMonth) || (targetField === 'loc' || targetField === 'ltd' ? latestInterestExpense : 0);
+    const priorMonthBalance = accountBalanceSnapshot?.priorMonthBalance == null
+      ? null
+      : Math.abs(Number(accountBalanceSnapshot.priorMonthBalance || 0));
+    const principalChange = derivedCurrentBalance !== null && priorMonthBalance !== null
+      ? derivedCurrentBalance - priorMonthBalance
+      : null;
+    const currentMonthInterestPaid = sumActivityForMonth(allInterestActivity, currentMonth);
 
     return {
       instrumentKey: String(row.instrumentKey),
@@ -1048,7 +1159,7 @@ async function buildLoanActivityPayload(companyId: string) {
       terms: term,
     }));
   const reportInstruments = [...merged, ...configuredOnly].filter(
-    (instrument) => !shouldHideInactiveLoanFromReport(instrument)
+    (instrument) => Boolean(instrument?.instrumentKey)
   );
 
   return {

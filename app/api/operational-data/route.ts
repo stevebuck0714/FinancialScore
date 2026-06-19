@@ -295,6 +295,97 @@ async function buildOperationalDataVersion(companyId: string, type: string | nul
   return hashCacheParts(parts);
 }
 
+const DAILY_FINANCIAL_COGS_DETAIL_FIELDS = [
+  'cogsPayroll',
+  'cogsOwnerPay',
+  'cogsContractors',
+  'cogsMaterials',
+  'cogsCommissions',
+  'cogsOther',
+] as const;
+
+const DAILY_FINANCIAL_OPERATING_EXPENSE_FIELDS = [
+  'payroll',
+  'ownerBasePay',
+  'benefits',
+  'insurance',
+  'professionalFees',
+  'subcontractors',
+  'rent',
+  'taxLicense',
+  'phoneComm',
+  'infrastructure',
+  'autoTravel',
+  'salesExpense',
+  'marketing',
+  'trainingCert',
+  'mealsEntertainment',
+  'interestExpense',
+  'depreciationAmortization',
+  'otherExpense',
+] as const;
+
+function appendDailyFinancialSnapshotMappedLines(mappedLines: any[], snapshotRows: any[]): any[] {
+  const lines = Array.isArray(mappedLines) ? [...mappedLines] : [];
+  const existingKeys = new Set(
+    lines.map((line) => {
+      const snapshotDate = line?.snapshotDate ? new Date(line.snapshotDate).toISOString().slice(0, 10) : '';
+      return `${snapshotDate}|${String(line?.targetField || '').trim()}`;
+    })
+  );
+
+  const appendLine = (row: any, targetField: string, amount: number, sourceAccountName: string) => {
+    if (!targetField || Math.abs(Number(amount || 0)) <= 0.005) return;
+    const snapshotDate = row?.snapshotDate ? new Date(row.snapshotDate) : null;
+    if (!snapshotDate || Number.isNaN(snapshotDate.getTime())) return;
+    const dateKey = snapshotDate.toISOString().slice(0, 10);
+    const key = `${dateKey}|${targetField}`;
+    if (existingKeys.has(key)) return;
+    existingKeys.add(key);
+    lines.push({
+      id: `snapshot:${dateKey}:${targetField}`,
+      companyId: row.companyId,
+      snapshotDate: row.snapshotDate,
+      frequency: row.frequency || 'daily',
+      sourceAccountName,
+      sourceAccountId: null,
+      sourceAccountType: 'DailyFinancialSnapshot',
+      targetField,
+      amount,
+      sourcePlatform: row.sourcePlatform || 'DailyFinancialSnapshot',
+      sourceRunId: row.sourceRunId || null,
+      createdAt: row.createdAt || null,
+      updatedAt: row.updatedAt || null,
+    });
+  };
+
+  for (const row of snapshotRows || []) {
+    let cogsDetailTotal = 0;
+    for (const field of DAILY_FINANCIAL_COGS_DETAIL_FIELDS) {
+      const amount = Number(row?.[field] || 0);
+      cogsDetailTotal += amount;
+      appendLine(row, field, amount, field);
+    }
+    const cogsTotal = Number(row?.cogsTotal || 0);
+    if (Math.abs(cogsTotal) > 0.005 && Math.abs(cogsDetailTotal) <= 0.005) {
+      appendLine(row, 'cogsOther', cogsTotal, 'Unallocated COGS');
+    }
+
+    let operatingExpenseDetailTotal = 0;
+    for (const field of DAILY_FINANCIAL_OPERATING_EXPENSE_FIELDS) {
+      const amount = Number(row?.[field] || 0);
+      operatingExpenseDetailTotal += amount;
+      appendLine(row, field, amount, field);
+    }
+    const expenseTotal = Number(row?.expense || 0);
+    if (Math.abs(expenseTotal) > 0.005 && Math.abs(operatingExpenseDetailTotal) <= 0.005) {
+      appendLine(row, 'otherExpense', expenseTotal, 'Unallocated Operating Expenses');
+    }
+  }
+
+  return lines;
+}
+
 function startOfMonth(date: Date): Date {
   return new Date(date.getFullYear(), date.getMonth(), 1);
 }
@@ -8574,6 +8665,7 @@ export async function GET(request: NextRequest) {
             return Number(row?.amount || 0) !== 0;
           });
         }
+        mappedLines = appendDailyFinancialSnapshotMappedLines(mappedLines, data);
         const statementRecords = aggregateDailyStatementRows(
           financialFrequencyForQuery === 'daily' ? dailyDataForAggregator : data,
           statementRollup

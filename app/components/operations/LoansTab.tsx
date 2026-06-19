@@ -606,11 +606,9 @@ export default function LoansTab({ selectedCompanyId, companyName, currentUser =
                         <td style={{ ...tdStyle, textAlign: 'right', fontWeight: 700 }}>{formatOptionalCurrency(instrument.principalChange)}</td>
                         <td style={{ ...tdStyle, textAlign: 'right' }}>{formatCurrency(instrument.currentMonthInterestPaid || 0)}</td>
                         <td style={{ ...tdStyle, textAlign: 'right' }}>
-                          {instrument.derivedCurrentBalance
-                            ? (
-                              formatCurrency(instrument.derivedCurrentBalance)
-                            )
-                            : '-'}
+                          {instrument.derivedCurrentBalance == null
+                            ? '-'
+                            : formatCurrency(instrument.derivedCurrentBalance)}
                         </td>
                         <td style={tdStyle}>{formatDate(instrument.lastDate)}</td>
                         <td style={tdStyle}>{instrument.terms?.maturityDate ? formatDate(instrument.terms.maturityDate) : '-'}</td>
