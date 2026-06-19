@@ -6,7 +6,7 @@ import { requireAuth, validateCompanyAccess } from '@/lib/tenant-security';
 export const dynamic = 'force-dynamic';
 export const maxDuration = 120;
 
-const LOAN_ACTIVITY_CACHE_VERSION = 21;
+const LOAN_ACTIVITY_CACHE_VERSION = 22;
 const STALE_LOAN_ACTIVITY_MONTHS = 13;
 
 type LoanTermInput = {
@@ -488,6 +488,42 @@ function compactTokens(value: string): string[] {
   );
 }
 
+function normalizeMatchText(value: unknown): string {
+  return String(value || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function qbdNumber(value: unknown): number {
+  if (typeof value === 'number') return Number.isFinite(value) ? value : 0;
+  const parsed = Number(String(value ?? '').replace(/,/g, '').replace(/\(([^)]+)\)/, '-$1').trim());
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function loanMatchTokens(value: string): string[] {
+  const generic = new Set([
+    'loan',
+    'note',
+    'payable',
+    'line',
+    'credit',
+    'bank',
+    'financial',
+    'capital',
+    'program',
+  ]);
+  return Array.from(
+    new Set(
+      normalizeMatchText(value)
+        .split(/\s+/)
+        .filter((token) => token.length >= 4 && !generic.has(token))
+    )
+  );
+}
+
 async function loadLoanTerms(companyId: string) {
   await ensureLoanTermsTable();
   return prisma.$queryRawUnsafe<any[]>(
@@ -763,6 +799,120 @@ async function loadInforRawLoanInterestActivity(companyId: string): Promise<Map<
   return byLoanAccount;
 }
 
+async function loadQuickBooksDesktopLoanInterestActivity(companyId: string, loanRows: any[]): Promise<Map<string, any[]>> {
+  const byLoanAccount = new Map<string, any[]>();
+  const accountIds = Array.from(new Set(loanRows.map((row) => String(row.accountId || '').trim()).filter(Boolean)));
+  if (!accountIds.length) return byLoanAccount;
+
+  const termsRows = await loadLoanTerms(companyId).catch(() => []);
+  const termsByInstrument = new Map(termsRows.map((term) => [String(term.instrumentKey || ''), term]));
+  const loanCandidates = loanRows
+    .map((row) => {
+      const accountId = String(row.accountId || '').trim();
+      const instrumentKey = String(row.instrumentKey || `gl:${accountId}`);
+      const terms = termsByInstrument.get(instrumentKey) || null;
+      const accountName = String(row.accountName || row.displayName || accountId || '').trim();
+      const displayName = String(terms?.displayName || accountName || '').trim();
+      const lender = String(terms?.lender || '').trim();
+      const phrases = [lender, displayName, accountName].map(normalizeMatchText).filter((text) => text.length >= 4);
+      const tokens = loanMatchTokens([lender, displayName, accountName].join(' '));
+      return { accountId, accountName, displayName, lender, phrases, tokens };
+    })
+    .filter((candidate) => candidate.accountId);
+
+  if (!loanCandidates.length) return byLoanAccount;
+
+  const rows = await prisma.$queryRawUnsafe<Array<{
+    accountName: string | null;
+    transDateRaw: string | null;
+    amountRaw: string | null;
+    txnType: string | null;
+    ref: string | null;
+    payee: string | null;
+    memo: string | null;
+    splitAccount: string | null;
+  }>>(
+    `
+      WITH qbd_rows AS (
+        SELECT row.value AS item
+        FROM "QuickBooksDesktopBackfillPage" p
+        CROSS JOIN LATERAL jsonb_array_elements(p."payload") row(value)
+        WHERE p."companyId" = $1
+          AND p."requestName" = 'GeneralDetailReportQuery'
+      )
+      SELECT
+        COALESCE(item->>'accountName', item->>'rowValue', '') AS "accountName",
+        COALESCE((SELECT c->>'value' FROM jsonb_array_elements(item->'colData') c WHERE c->>'colID' = '3'), '') AS "transDateRaw",
+        COALESCE((SELECT c->>'value' FROM jsonb_array_elements(item->'colData') c WHERE c->>'colID' = '8'), '') AS "amountRaw",
+        COALESCE((SELECT c->>'value' FROM jsonb_array_elements(item->'colData') c WHERE c->>'colID' = '2'), '') AS "txnType",
+        COALESCE((SELECT c->>'value' FROM jsonb_array_elements(item->'colData') c WHERE c->>'colID' = '4'), '') AS "ref",
+        COALESCE((SELECT c->>'value' FROM jsonb_array_elements(item->'colData') c WHERE c->>'colID' = '5'), '') AS "payee",
+        COALESCE((SELECT c->>'value' FROM jsonb_array_elements(item->'colData') c WHERE c->>'colID' = '6'), '') AS "memo",
+        COALESCE((SELECT c->>'value' FROM jsonb_array_elements(item->'colData') c WHERE c->>'colID' = '7'), '') AS "splitAccount"
+      FROM qbd_rows
+      WHERE item->>'rowKind' = 'DataRow'
+        AND COALESCE(item->>'accountName', item->>'rowValue', '') ~* 'interest'
+    `,
+    companyId
+  );
+
+  const bestMatchForRow = (row: {
+    accountName: string | null;
+    payee: string | null;
+    memo: string | null;
+    ref: string | null;
+    splitAccount: string | null;
+  }) => {
+    const haystack = normalizeMatchText([
+      row.accountName,
+      row.payee,
+      row.memo,
+      row.ref,
+      row.splitAccount,
+    ].join(' '));
+    let best: { accountId: string; score: number } | null = null;
+    for (const candidate of loanCandidates) {
+      let score = 0;
+      const lenderText = normalizeMatchText(candidate.lender);
+      if (lenderText && haystack.includes(lenderText)) score += 100;
+      for (const phrase of candidate.phrases) {
+        if (phrase && haystack.includes(phrase)) score += 50;
+      }
+      const tokenHits = candidate.tokens.filter((token) => haystack.includes(token)).length;
+      score += tokenHits * 10;
+      if (score > 0 && (!best || score > best.score)) {
+        best = { accountId: candidate.accountId, score };
+      }
+    }
+    return best?.accountId || null;
+  };
+
+  for (const row of rows) {
+    const amount = qbdNumber(row.amountRaw);
+    if (Math.abs(amount) <= 0.005) continue;
+    const loanAccountId = bestMatchForRow(row);
+    if (!loanAccountId) continue;
+    const transDate = row.transDateRaw ? new Date(`${row.transDateRaw}T00:00:00.000Z`) : null;
+    const activity = {
+      transDate: transDate && !Number.isNaN(transDate.getTime()) ? transDate : row.transDateRaw,
+      accountId: 'QBD_INTEREST_EXPENSE',
+      accountName: row.accountName || 'Interest Expense',
+      signedAmount: amount,
+      debitAmount: amount > 0 ? amount : 0,
+      creditAmount: amount < 0 ? Math.abs(amount) : 0,
+      drCr: null,
+      description: [row.payee, row.memo].filter(Boolean).join(' | ') || 'QBD Interest Expense',
+      ref: row.ref || row.txnType || null,
+      sourceProgram: 'QuickBooksDesktopBackfillPage:GeneralDetailReportQuery',
+    };
+    const existing = byLoanAccount.get(loanAccountId) || [];
+    existing.push(activity);
+    byLoanAccount.set(loanAccountId, existing);
+  }
+
+  return byLoanAccount;
+}
+
 async function loadLoanActivity(companyId: string) {
   const mappedDebtRows = await prisma.$queryRawUnsafe<any[]>(
     `
@@ -851,6 +1001,7 @@ async function loadLoanActivity(companyId: string) {
     principalRows.map((row) => row.accountId)
   );
   const rawInforInterestByAccount = await loadInforRawLoanInterestActivity(companyId);
+  const qbdInterestByAccount = await loadQuickBooksDesktopLoanInterestActivity(companyId, principalRows);
   const accountMetadata = await loadLoanAccountMetadata(
     companyId,
     principalRows.map((row) => row.accountId)
@@ -1041,6 +1192,7 @@ async function loadLoanActivity(companyId: string) {
     const accountId = String(row.accountId || '').trim();
     const rawInforActivity = rawInforActivityByAccount.get(accountId) || null;
     const rawInforInterest = rawInforInterestByAccount.get(accountId) || [];
+    const qbdInterest = qbdInterestByAccount.get(accountId) || [];
     const name = String(row.accountName || row.accountId || 'Loan');
     const tokens = compactTokens(`${row.accountId || ''} ${name}`);
     const linkedInterest = interestRows.filter((interest) => {
@@ -1051,7 +1203,7 @@ async function loadLoanActivity(companyId: string) {
       if (accountId === '39175' && interestAccountId === '76050' && /\bsba\b|eidl/.test(haystack)) return true;
       return tokens.some((token) => haystack.includes(token));
     });
-    const allInterestActivity = dedupeActivityRows([...linkedInterest, ...rawInforInterest]);
+    const allInterestActivity = dedupeActivityRows([...linkedInterest, ...rawInforInterest, ...qbdInterest]);
 
     const rawTxCount = Number(rawInforActivity?.transactionCount || 0);
     const glTxCount = Number(row.transactionCount || 0);

@@ -12,7 +12,7 @@ const latestValuesResponseCache = new Map<string, { cachedAt: number; payload: R
 
 function normalizeNumber(value: unknown): number {
   if (typeof value === 'number') return Number.isFinite(value) ? value : 0;
-  const parsed = Number(String(value ?? '').replace(/,/g, '').trim());
+  const parsed = Number(String(value ?? '').replace(/,/g, '').replace(/\(([^)]+)\)/, '-$1').trim());
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
@@ -120,6 +120,52 @@ function normalizeTargetField(value: unknown): string {
 function asObjectPayload(value: unknown): Record<string, unknown> | null {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
   return value as Record<string, unknown>;
+}
+
+function qbdReportColValue(record: Record<string, unknown>, colID: string): string {
+  const colData = Array.isArray(record.colData)
+    ? record.colData.filter((col): col is Record<string, unknown> => Boolean(col && typeof col === 'object' && !Array.isArray(col)))
+    : [];
+  const column = colData.find((col) => String(col.colID || '').trim() === colID);
+  return String(column?.value ?? '').trim();
+}
+
+function qbdReportAmount(record: Record<string, unknown>): number {
+  const colData = Array.isArray(record.colData)
+    ? record.colData.filter((col): col is Record<string, unknown> => Boolean(col && typeof col === 'object' && !Array.isArray(col)))
+    : [];
+  const amountColumn = colData.find((col) => String(col.colID || '').trim() === '2') || colData[colData.length - 1];
+  return normalizeNumber(amountColumn?.value);
+}
+
+function qbdBalanceSheetReportDateKey(records: Record<string, unknown>[]): string | null {
+  for (const record of records) {
+    const subtitle = String(record.reportSubtitle || '').trim();
+    const match = /^As of\s+(.+)$/i.exec(subtitle);
+    if (!match) continue;
+    const parsed = new Date(`${match[1]} UTC`);
+    if (Number.isNaN(parsed.getTime())) continue;
+    return `${parsed.getUTCFullYear()}-${String(parsed.getUTCMonth() + 1).padStart(2, '0')}-${String(parsed.getUTCDate()).padStart(2, '0')}`;
+  }
+  return null;
+}
+
+async function loadQbdPageRecords(companyId: string, requestName: string): Promise<Record<string, unknown>[]> {
+  const rows = await withPrismaReconnectRetry(
+    () => prisma.$queryRaw<Array<{ payload: unknown }>>`
+      SELECT "payload"
+      FROM "QuickBooksDesktopBackfillPage"
+      WHERE "companyId" = ${companyId}
+        AND "requestName" = ${requestName}
+      ORDER BY "jobId", "pageNumber" ASC
+    `,
+    `account-review.latest-values.loadQbdPageRecords.${requestName}`,
+  );
+  return rows.flatMap((row) =>
+    Array.isArray(row.payload)
+      ? row.payload.filter((item): item is Record<string, unknown> => Boolean(item && typeof item === 'object' && !Array.isArray(item)))
+      : [],
+  );
 }
 
 function buildAccountIdAliases(value: unknown): string[] {
@@ -660,6 +706,67 @@ async function hasQuickBooksDesktopBackfillPages(companyId: string): Promise<boo
   return Number(rows[0]?.count || 0) > 0;
 }
 
+async function collectValuesFromQuickBooksDesktopReports(
+  companyId: string,
+  targetMonth: string | null,
+  mappings: Array<{ accountId: string | null; accountCode: string | null; accountName: string | null; targetField: string | null }>
+): Promise<Map<string, number>> {
+  const valueByKey = new Map<string, number>();
+  const mappingByName = new Map<string, { accountId: string; accountCode: string; accountName: string }>();
+  for (const mapping of mappings) {
+    const accountName = String(mapping.accountName || '').trim();
+    if (!accountName) continue;
+    mappingByName.set(accountName.toLowerCase(), {
+      accountId: String(mapping.accountId || '').trim(),
+      accountCode: String(mapping.accountCode || '').trim(),
+      accountName,
+    });
+  }
+
+  const setMappedAccountValue = (accountNameRaw: unknown, amount: number) => {
+    const accountName = String(accountNameRaw || '').trim();
+    if (!accountName || /^total\b/i.test(accountName)) return;
+    const normalizedName = accountName.toLowerCase();
+    valueByKey.set(`name:${normalizedName}`, amount);
+    const mapping = mappingByName.get(normalizedName);
+    if (!mapping) return;
+    if (mapping.accountId) setAccountValueByAliases(valueByKey, mapping.accountId, amount);
+    if (mapping.accountCode) setAccountValueByAliases(valueByKey, mapping.accountCode, amount);
+    if (mapping.accountName) valueByKey.set(`name:${mapping.accountName.toLowerCase()}`, amount);
+  };
+
+  const balanceRows = await loadQbdPageRecords(companyId, 'BalanceSheetStandardReportQuery');
+  const targetMonthEnd = resolveMonthEndUtc(targetMonth);
+  const balanceSheetReportDateKey = qbdBalanceSheetReportDateKey(balanceRows);
+  const balanceSheetReportDate = balanceSheetReportDateKey ? new Date(`${balanceSheetReportDateKey}T23:59:59.999Z`) : null;
+  if (!targetMonthEnd || !balanceSheetReportDate || balanceSheetReportDate <= targetMonthEnd) {
+    for (const row of balanceRows) {
+      if (String(row.rowType || '').trim().toLowerCase() !== 'account') continue;
+      const accountName = String(row.accountName || row.rowValue || '').trim();
+      setMappedAccountValue(accountName, qbdReportAmount(row));
+    }
+  }
+
+  const generalLedgerRows = await loadQbdPageRecords(companyId, 'GeneralDetailReportQuery');
+  const pnlMovementsByAccount = new Map<string, number>();
+  for (const row of generalLedgerRows) {
+    if (String(row.rowKind || '').trim() !== 'DataRow') continue;
+    const dateKey = toYearMonth(qbdReportColValue(row, '3'));
+    if (targetMonth && dateKey && dateKey !== targetMonth) continue;
+    if (targetMonth && !dateKey) continue;
+    const accountName = String(row.accountName || row.rowValue || '').trim();
+    if (!accountName) continue;
+    const amount = normalizeNumber(qbdReportColValue(row, '8'));
+    if (amount === 0) continue;
+    pnlMovementsByAccount.set(accountName, Number(pnlMovementsByAccount.get(accountName) || 0) + amount);
+  }
+  for (const [accountName, amount] of pnlMovementsByAccount.entries()) {
+    setMappedAccountValue(accountName, amount);
+  }
+
+  return valueByKey;
+}
+
 export async function GET(request: NextRequest) {
   try {
     await requireAuth();
@@ -758,6 +865,11 @@ export async function GET(request: NextRequest) {
         accountingSystem === 'QUICKBOOKS_ENTERPRISE' ||
         (accountingSystem === 'QUICKBOOKS' && await hasQuickBooksDesktopBackfillPages(companyId));
       if (isQuickBooksDesktopAccountReview) {
+        const qbdReportValues = await collectValuesFromQuickBooksDesktopReports(companyId, targetMonth, mappings);
+        for (const [key, value] of qbdReportValues.entries()) {
+          valueByKey.set(key, value);
+        }
+
         perAccountAnchorResult = await collectValuesFromPerAccountAnchors(companyId, targetMonth);
         for (const [key, value] of perAccountAnchorResult.values.entries()) {
           if (!bsAccountKeySet.has(key)) continue;
