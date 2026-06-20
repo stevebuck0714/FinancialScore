@@ -10134,6 +10134,32 @@ export default function OperationsTab({
       );
     }
 
+    if (effectiveProductReportView === 'merchandiseProfitability' && isMerchandiseProfitabilityEnabled) {
+      return (
+        <div style={{ padding: '8px 32px 32px' }}>
+          <h2 style={{ fontSize: '24px', fontWeight: '700', color: '#1e293b', marginBottom: '16px' }}>
+            Product Sales Performance
+          </h2>
+          {productViewSwitcher}
+          {renderMerchandiseProfitabilityReport()}
+          {renderProductChartInfoModal()}
+        </div>
+      );
+    }
+
+    if (effectiveProductReportView === 'retailForecast' && isRetailForecastingEnabled) {
+      return (
+        <div style={{ padding: '8px 32px 32px' }}>
+          <h2 style={{ fontSize: '24px', fontWeight: '700', color: '#1e293b', marginBottom: '16px' }}>
+            Product Sales Performance
+          </h2>
+          {productViewSwitcher}
+          {renderRetailForecastingReport()}
+          {renderProductChartInfoModal()}
+        </div>
+      );
+    }
+
     if (!hasAnyProductsReportEnabled) {
       return (
         <div style={{ padding: '8px 32px 32px' }}>

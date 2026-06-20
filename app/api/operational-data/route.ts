@@ -2664,6 +2664,9 @@ export async function GET(request: NextRequest) {
     /** GL balance_movement:* + TB anchors — Infor CSI / M3 only (not QuickBooks, not arbitrary ERPs). */
     const isInforGlCompany =
       normalizedAccountingSystem === 'INFOR_M3' || normalizedAccountingSystem === 'INFOR_CSI';
+    // QBO product reports may be spreadsheet-backed. QBD/QBE and ERP product
+    // reports should use source-system snapshots before spreadsheet payloads.
+    const usesSourceSystemProductSnapshots = isQuickBooksDesktopCompany || isInforGlCompany;
     const getRealEstateReportsForSummary = () =>
       String(sectorCategory || '').trim() === '53'
         ? buildRealEstateOperationalHubMockReports({
@@ -2732,6 +2735,7 @@ export async function GET(request: NextRequest) {
               cacheType === 'customers' ? CUSTOMER_REVENUE_SOURCE_VERSION : null,
               cacheType === 'customers' ? CUSTOMER_WIP_SOURCE_VERSION : null,
               isWholesaleProductsReportRequest ? CUSTOMER_WIP_SOURCE_VERSION : null,
+              cacheType === 'products' && usesSourceSystemProductSnapshots ? 'products-source-system-snapshot-priority-v1' : null,
             ]),
             dataVersion: await buildOperationalDataVersion(companyId, cacheType, startDate, endDate),
           }
@@ -2771,7 +2775,7 @@ export async function GET(request: NextRequest) {
     const hasRetailSubcategoryHistory =
       (type === 'products' || type === 'inventory') && (await hasRetailSubcategoryHistoryFacts(companyId));
 
-    if (type === 'products' && hasRetailSubcategoryHistory) {
+    if (type === 'products' && hasRetailSubcategoryHistory && !usesSourceSystemProductSnapshots) {
       const retailPayload = await getRetailSubcategoryHistoryProductsPayload({
         companyId,
         startDate,
@@ -2782,7 +2786,7 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    if (type === 'products' && hasPlatosFacts) {
+    if (type === 'products' && hasPlatosFacts && !usesSourceSystemProductSnapshots) {
       const platosPayload = await getPlatosClosetProductsPayload({
         companyId,
         startDate,
