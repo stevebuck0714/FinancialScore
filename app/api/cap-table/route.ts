@@ -77,8 +77,13 @@ function holderKey(fullName: string): string {
   return normalizedKey(holderName(fullName));
 }
 
+function isDrawAccount(accountName: string): boolean {
+  return /^capital draws\s*-/i.test((accountName.split(':').pop() || accountName).trim());
+}
+
 function isMappedCapTableHolder(mapped: { targetField: string; accountName: string }): boolean {
   if (!CAP_TABLE_HOLDER_TARGETS.has(mapped.targetField)) return false;
+  if (isDrawAccount(mapped.accountName)) return false;
   const accountName = normalizedKey(mapped.accountName);
   const holder = holderKey(mapped.accountName);
   if (!accountName || !holder) return false;
@@ -346,6 +351,7 @@ export async function GET(request: NextRequest) {
           targetByHolderKey.get(holderKey(reportColValue(row, '1')));
         if (!mapped) continue;
         const resolvedAccountName = accountName || mapped.accountName;
+        if (isDrawAccount(resolvedAccountName) || isDrawAccount(mapped.accountName)) continue;
         const duplicateKeys = [
           mapped.accountName,
           resolvedAccountName,
