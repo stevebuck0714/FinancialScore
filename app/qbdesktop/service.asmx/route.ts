@@ -209,6 +209,21 @@ const RET_TAG_BY_REQUEST: Record<string, string> = {
   GeneralDetailReportQuery: 'ReportRet',
 };
 
+const ITEM_RET_TAGS = [
+  'ItemServiceRet',
+  'ItemInventoryRet',
+  'ItemNonInventoryRet',
+  'ItemInventoryAssemblyRet',
+  'ItemOtherChargeRet',
+  'ItemSubtotalRet',
+  'ItemDiscountRet',
+  'ItemPaymentRet',
+  'ItemSalesTaxRet',
+  'ItemSalesTaxGroupRet',
+  'ItemGroupRet',
+  'ItemFixedAssetRet',
+];
+
 function xmlEscape(value: string): string {
   return value
     .replace(/&/g, '&amp;')
@@ -442,6 +457,7 @@ function parseSimpleRecord(xml: string): Record<string, unknown> {
     'Quantity',
     'QuantityOnHand',
     'AverageCost',
+    'Price',
     'SalesPrice',
     'PurchaseCost',
     'TotalValue',
@@ -462,6 +478,13 @@ function parseSimpleRecord(xml: string): Record<string, unknown> {
   }
 
   return record;
+}
+
+function parseNestedSimpleRecord(xml: string, tagName: string): Record<string, unknown> | null {
+  const nestedXml = getInnerXml(xml, tagName);
+  if (!nestedXml) return null;
+  const record = parseSimpleRecord(nestedXml);
+  return Object.keys(record).length > 0 ? record : null;
 }
 
 function parseReportRow(rowXml: string, rowType: string, index: number): Record<string, unknown> {
@@ -510,6 +533,19 @@ function parseReportRecords(requestName: string, xml: string): Array<Record<stri
 function parseResponseRecords(requestName: string, xml: string): Array<Record<string, unknown>> {
   if (REPORT_REQUESTS.has(requestName)) {
     return parseReportRecords(requestName, xml);
+  }
+  if (requestName === 'ItemQuery') {
+    return ITEM_RET_TAGS.flatMap((retTag) =>
+      getXmlRecords(xml, retTag).map((recordXml) => {
+        const record = parseSimpleRecord(recordXml);
+        record.itemRetType = retTag;
+        const salesOrPurchase = parseNestedSimpleRecord(recordXml, 'SalesOrPurchase');
+        const salesAndPurchase = parseNestedSimpleRecord(recordXml, 'SalesAndPurchase');
+        if (salesOrPurchase) record.SalesOrPurchase = salesOrPurchase;
+        if (salesAndPurchase) record.SalesAndPurchase = salesAndPurchase;
+        return record;
+      }),
+    );
   }
   const retTag = RET_TAG_BY_REQUEST[requestName] || requestName.replace(/Query$/, 'Ret');
   return getXmlRecords(xml, retTag).map((recordXml) => {
