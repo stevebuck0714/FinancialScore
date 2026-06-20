@@ -2260,6 +2260,42 @@ export default function DataReviewTab({ selectedCompanyId, companyName, accountM
                       </td>
                     ))}
                   </tr>
+                  {monthly.slice(-36).some((m: any) => Number(m.currentYearNetIncome || 0) !== 0) && (
+                    <tr style={{ borderBottom: "1px solid #f1f5f9" }}>
+                      <td
+                        style={{
+                          padding: "8px 10px",
+                          paddingLeft: "20px",
+                          position: "sticky",
+                          left: 0,
+                          background: "white",
+                          zIndex: 1,
+                        }}
+                      >
+                        {getFieldDisplayName('currentYearNetIncome')}
+                      </td>
+                      {monthly.slice(-36).map((m: any, idx: number) => {
+                        const value = Number(m.currentYearNetIncome || 0);
+                        return (
+                          <td
+                            key={idx}
+                            style={{
+                              padding: "8px 10px",
+                              textAlign: "right",
+                              fontFamily: "monospace",
+                            }}
+                          >
+                            {value >= 0 ? "$" : "($"}
+                            {Math.abs(value).toLocaleString("en-US", {
+                              minimumFractionDigits: 0,
+                              maximumFractionDigits: 0,
+                            })}
+                            {value < 0 ? ")" : ""}
+                          </td>
+                        );
+                      })}
+                    </tr>
+                  )}
                   <tr style={{ borderBottom: "1px solid #f1f5f9" }}>
                     <td
                       style={{
