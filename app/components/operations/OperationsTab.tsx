@@ -1588,7 +1588,7 @@ export default function OperationsTab({
       ? 45000
       : 25000;
     const requestFrequency = apiType === 'daily-financials' ? 'daily' : frequency;
-    const requestStartDate = type === 'sales' || apiType === 'customers' ? getSalesHistoryStartDate() : startDate;
+    const requestStartDate = startDate;
     const params = new URLSearchParams({
       companyId: selectedCompanyId,
       type: apiType,
@@ -1694,7 +1694,7 @@ export default function OperationsTab({
     const requestFrequency = type === 'daily-financials' ? 'daily' : frequency;
     const rollupToken = type === 'daily-financials' ? dailyFinancialStatementRollup : 'n/a';
     const cacheFamily = type === 'sales' ? 'customers' : type;
-    const requestStartDate = type === 'sales' || cacheFamily === 'customers' ? getSalesHistoryStartDate() : startDate;
+    const requestStartDate = startDate;
     const sectorReportVersion =
       String(industrySectorCategory || '').trim() === '53' && (type === 'customers' || type === 'products')
         ? REAL_ESTATE_REPORT_CLIENT_CACHE_VERSION
@@ -3669,17 +3669,17 @@ export default function OperationsTab({
               </label>
             </div>
           </div>
-          <div style={{ overflowX: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: '960px' }}>
+          <div style={{ maxWidth: '100%', overflowX: 'auto', paddingBottom: '8px' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: `${Math.max(960, 360 + months.length * 112)}px` }}>
               <thead>
                 <tr>
                   <th style={{ padding: '8px', textAlign: 'left', fontSize: '12px', color: '#475569', borderBottom: '1px solid #e2e8f0', whiteSpace: 'nowrap', minWidth: '240px' }}>Category</th>
                   {months.map((month: any) => (
-                    <th key={month.monthKey} style={{ padding: '8px', textAlign: 'right', fontSize: '12px', color: '#475569', borderBottom: '1px solid #e2e8f0' }}>
+                    <th key={month.monthKey} style={{ padding: '8px', textAlign: 'right', fontSize: '12px', color: '#475569', borderBottom: '1px solid #e2e8f0', whiteSpace: 'nowrap', minWidth: '104px' }}>
                       {month.monthLabel || month.monthKey}
                     </th>
                   ))}
-                  <th style={{ padding: '8px', textAlign: 'right', fontSize: '12px', color: '#475569', borderBottom: '1px solid #e2e8f0' }}>Total</th>
+                  <th style={{ padding: '8px', textAlign: 'right', fontSize: '12px', color: '#475569', borderBottom: '1px solid #e2e8f0', whiteSpace: 'nowrap', minWidth: '112px' }}>Total</th>
                 </tr>
               </thead>
               <tbody>

@@ -53,7 +53,7 @@ const OPERATIONAL_DATA_CACHE_TTL_SECONDS = 120;
 const OPERATIONAL_HEAVY_DATA_CACHE_TTL_SECONDS = 30 * 60;
 const CUSTOMER_CONCENTRATION_CACHE_TTL_SECONDS = 30 * 24 * 60 * 60;
 const CUSTOMER_CONCENTRATION_CACHE_VERSION = 'customer-concentration-exposure-v10';
-const CUSTOMER_REVENUE_SOURCE_VERSION = 'customer-revenue-source-v3-source-system-sales';
+const CUSTOMER_REVENUE_SOURCE_VERSION = 'customer-revenue-source-v4-source-system-sales-names';
 const CUSTOMER_WIP_SOURCE_VERSION = 'customer-backlog-source-v4';
 const CUSTOMER_BACKLOG_MIN_ORDER_DATE = '2023-06-01';
 const WHOLESALE_PRODUCTS_REPORT_START_DATE = '2023-01-01';
@@ -3632,7 +3632,7 @@ export async function GET(request: NextRequest) {
           const months = Array.from(monthMap.values()).sort((a, b) => a.monthKey.localeCompare(b.monthKey));
           const categoryRows = Array.from(categoryMap.values())
             .sort((a, b) => Number(b.total || 0) - Number(a.total || 0))
-            .slice(0, 25);
+            .slice(0, 15);
           const totalRow = {
             label: 'Total Sales',
             values: Object.fromEntries(months.map((month) => [month.monthKey, Number(month.revenue || 0)])),
