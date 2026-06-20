@@ -798,6 +798,7 @@ export default function OperationsTab({
   const [customerDateRangeSaveStatus, setCustomerDateRangeSaveStatus] = useState<string | null>(null);
   const [customerRevenuePeriodMode, setCustomerRevenuePeriodMode] = useState<'year' | 'quarter' | 'month'>('month');
   const [customerRevenuePeriodKey, setCustomerRevenuePeriodKey] = useState<string>(() => monthKeyFromDateValue(new Date()));
+  const [hiddenCustomerTrendSeries, setHiddenCustomerTrendSeries] = useState<Record<string, boolean>>({});
   const [expandedWipCustomers, setExpandedWipCustomers] = useState<Record<string, boolean>>({});
   const [wipLineItemSortKey, setWipLineItemSortKey] = useState<WipLineItemSortKey>('orderId');
   const [wipLineItemSortDir, setWipLineItemSortDir] = useState<'asc' | 'desc'>('asc');
@@ -936,6 +937,9 @@ export default function OperationsTab({
   };
   const toggleWipCustomerExpanded = (key: string) => {
     setExpandedWipCustomers((prev) => ({ ...prev, [key]: !prev[key] }));
+  };
+  const toggleCustomerTrendSeries = (customerName: string) => {
+    setHiddenCustomerTrendSeries((prev) => ({ ...prev, [customerName]: !prev[customerName] }));
   };
   const toggleProductMarginCustomerExpanded = (key: string) => {
     setExpandedProductMarginCustomers((prev) => ({ ...prev, [key]: !prev[key] }));
@@ -1432,7 +1436,7 @@ export default function OperationsTab({
     return () => {
       cancelled = true;
     };
-  }, [selectedCompanyId, industrySectorCategory, maxSelectableEndDate, effectiveMaxSelectableEndDate]);
+  }, [selectedCompanyId, industrySectorCategory]);
 
   useEffect(() => {
     if (!selectedCompanyId || !hasHydratedDateRangeRef.current) return;
@@ -3184,6 +3188,7 @@ export default function OperationsTab({
     }
     const customerTrendRows = Array.from(customerTrendRowsByMonth.values());
     const customerTrendColors = ['#2563eb', '#16a34a', '#f97316', '#7c3aed', '#dc2626', '#0f766e', '#0891b2', '#9333ea', '#ca8a04', '#475569'];
+    const visibleTopTrendCustomers = topTrendCustomers.filter((customer) => !hiddenCustomerTrendSeries[customer.customerName]);
     const customerCoverageDates = recordsInSelectedDateRange
       .map((record: any) => parseDateValue(record.snapshotDate))
       .filter((date): date is Date => Boolean(date))
@@ -4752,6 +4757,67 @@ export default function OperationsTab({
                     No customer sales rows found for the trailing 36-month trend window.
                   </div>
                 ) : (
+                  <>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px', flexWrap: 'wrap', marginBottom: '12px' }}>
+                    <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                      {topTrendCustomers.map((customer, index) => {
+                        const isVisible = !hiddenCustomerTrendSeries[customer.customerName];
+                        const color = customerTrendColors[index % customerTrendColors.length];
+                        return (
+                          <button
+                            key={customer.key}
+                            type="button"
+                            onClick={() => toggleCustomerTrendSeries(customer.customerName)}
+                            style={{
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '6px',
+                              border: `1px solid ${isVisible ? color : '#cbd5e1'}`,
+                              borderRadius: '999px',
+                              background: isVisible ? '#f8fafc' : '#f1f5f9',
+                              color: isVisible ? '#0f172a' : '#64748b',
+                              padding: '5px 9px',
+                              fontSize: '11px',
+                              fontWeight: 700,
+                              cursor: 'pointer',
+                            }}
+                            title={isVisible ? `Hide ${customer.customerName}` : `Show ${customer.customerName}`}
+                          >
+                            <span style={{ width: '8px', height: '8px', borderRadius: '999px', background: isVisible ? color : '#94a3b8', display: 'inline-block' }} />
+                            <span>{customer.customerName}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                    <div style={{ display: 'flex', gap: '6px' }}>
+                      <button
+                        type="button"
+                        onClick={() => setHiddenCustomerTrendSeries({})}
+                        style={{ border: '1px solid #cbd5e1', borderRadius: '8px', background: 'white', color: '#2563eb', padding: '5px 8px', fontSize: '11px', fontWeight: 700, cursor: 'pointer' }}
+                      >
+                        Show all
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setHiddenCustomerTrendSeries(
+                            topTrendCustomers.reduce((acc: Record<string, boolean>, customer) => {
+                              acc[customer.customerName] = true;
+                              return acc;
+                            }, {})
+                          );
+                        }}
+                        style={{ border: '1px solid #cbd5e1', borderRadius: '8px', background: 'white', color: '#475569', padding: '5px 8px', fontSize: '11px', fontWeight: 700, cursor: 'pointer' }}
+                      >
+                        Hide all
+                      </button>
+                    </div>
+                  </div>
+                  {visibleTopTrendCustomers.length === 0 ? (
+                    <div style={{ fontSize: '12px', color: '#64748b', padding: '24px 0' }}>
+                      All customers are hidden. Select at least one customer to display the line chart.
+                    </div>
+                  ) : (
                   <ResponsiveContainer width="100%" height={360}>
                     <LineChart data={customerTrendRows}>
                       <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
@@ -4768,20 +4834,25 @@ export default function OperationsTab({
                         formatter={(value) => topTrendCustomers.find((customer) => customer.key === String(value))?.customerName || String(value)}
                         wrapperStyle={{ fontSize: '11px' }}
                       />
-                      {topTrendCustomers.map((customer, index) => (
+                      {visibleTopTrendCustomers.map((customer) => {
+                        const customerIndex = topTrendCustomers.findIndex((row) => row.key === customer.key);
+                        return (
                         <Line
                           key={customer.key}
                           type="monotone"
                           dataKey={customer.key}
                           name={customer.key}
-                          stroke={customerTrendColors[index % customerTrendColors.length]}
+                          stroke={customerTrendColors[Math.max(customerIndex, 0) % customerTrendColors.length]}
                           strokeWidth={2}
                           dot={false}
                           connectNulls
                         />
-                      ))}
+                        );
+                      })}
                     </LineChart>
                   </ResponsiveContainer>
+                  )}
+                  </>
                 )}
               </div>
               )}
