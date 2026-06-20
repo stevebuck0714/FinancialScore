@@ -37,6 +37,7 @@ const OPERATIONAL_HUB_SECTION_OPTIONS: Array<{ key: string; label: string; group
   { key: 'inventoryValueTrend', label: 'Value Trend', group: 'Inventory' },
   { key: 'inventoryMovement', label: 'Inventory Movement', group: 'Inventory' },
   { key: 'inventoryRetailTurns', label: 'Retail Turns / Sell-Through', group: 'Inventory' },
+  { key: 'customersWipByCustomer', label: 'WIP / Open Production', group: 'Inventory' },
   { key: 'inventoryCurrentTable', label: 'Current Inventory Table', group: 'Inventory' },
   { key: 'inventoryDistribution', label: 'Value Distribution', group: 'Inventory' },
   { key: 'inventoryAgingObsolescenceV1', label: 'Inventory Aging & Obsolescence', group: 'Inventory' },
@@ -76,7 +77,7 @@ const OPERATIONAL_HUB_SECTION_OPTIONS: Array<{ key: string; label: string; group
   { key: 'apExpenseRunRate', label: 'Expense Run Rate', group: 'AP' },
   { key: 'cash13WeekTrend', label: '13-Week Trend', group: 'Cash' },
   { key: 'cashBridge', label: 'Bridge (Receipts vs Disbursements)', group: 'Cash' },
-  { key: 'customersWipByCustomer', label: 'WIP by Customer (Unbilled)', group: 'Customers' },
+  { key: 'customersTop10MonthlyTrend', label: 'Top 10 Customers Monthly Trend', group: 'Customers' },
   { key: 'customersTopByRevenue', label: 'Top Customers by Revenue', group: 'Customers' },
   { key: 'customersRevenueDistribution', label: 'Revenue Distribution by Customer', group: 'Customers' },
   { key: 'customersPlatoSalesMetricCards', label: 'Sales Metric Cards', group: 'Customers' },
@@ -5249,6 +5250,10 @@ export default function SiteAdminDashboard(props: any) {
                                 </div>
                               ) : (
                                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '4px', fontSize: '11px', color: '#64748b' }}>
+                                  <div style={{ gridColumn: '1 / -1' }}>
+                                    <span style={{ fontWeight: '600' }}>Consultant ID:</span>
+                                    <span style={{ marginLeft: '4px', fontFamily: 'monospace', color: '#1e293b' }}>{consultant.id}</span>
+                                  </div>
                                   <div><span style={{ fontWeight: '600' }}>Email:</span> {consultant.email}</div>
                                   <div><span style={{ fontWeight: '600' }}>Phone:</span> {consultant.phone || 'N/A'}</div>
                                   <div style={{ gridColumn: '1 / -1' }}><span style={{ fontWeight: '600' }}>Company Name:</span> {consultant.companyName || 'N/A'}</div>

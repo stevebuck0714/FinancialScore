@@ -1003,6 +1003,13 @@ export default function OperationsTab({
   const [endDate, setEndDate] = useState<string>(() => {
     return maxSelectableEndDate;
   });
+  const [latestOperationalEndDate, setLatestOperationalEndDate] = useState<string | null>(null);
+  const effectiveMaxSelectableEndDate =
+    latestOperationalEndDate &&
+    /^\d{4}-\d{2}-\d{2}$/.test(latestOperationalEndDate) &&
+    latestOperationalEndDate <= maxSelectableEndDate
+      ? latestOperationalEndDate
+      : maxSelectableEndDate;
   const hasHydratedDateRangeRef = useRef(false);
   const dateRangeSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const hasHydratedEbitdaEmployeeInputsRef = useRef(false);
@@ -1019,8 +1026,8 @@ export default function OperationsTab({
   }, [selectedCompanyId, startDate, endDate, frequency]);
 
   useEffect(() => {
-    if (endDate > maxSelectableEndDate) setEndDate(maxSelectableEndDate);
-  }, [endDate, maxSelectableEndDate]);
+    if (endDate > effectiveMaxSelectableEndDate) setEndDate(effectiveMaxSelectableEndDate);
+  }, [endDate, effectiveMaxSelectableEndDate]);
 
   useEffect(() => {
     const clampedStartDate = clampDateInputToReportFloor(startDate);
@@ -1030,9 +1037,9 @@ export default function OperationsTab({
   useEffect(() => {
     // Enforce product/user date pickers defaulting to prior day.
     if (endDate === todayLocalInputDate) {
-      setEndDate(maxSelectableEndDate);
+      setEndDate(effectiveMaxSelectableEndDate);
     }
-  }, [endDate, todayLocalInputDate, maxSelectableEndDate]);
+  }, [endDate, todayLocalInputDate, effectiveMaxSelectableEndDate]);
 
   const orderedDashboardDataTypes: OpsDataType[] = ['customers', 'sales', 'ar-aging', 'ap-aging', 'products', 'inventory', 'cash', 'daily-financials'];
   const layoutModules: string[] = Array.isArray(opsSectorLayoutConfig?.modules)
@@ -1299,9 +1306,8 @@ export default function OperationsTab({
     hasHydratedEbitdaEmployeeInputsRef.current = false;
     let cancelled = false;
 
-    const defaultRange = () => {
-      const end = new Date();
-      end.setDate(end.getDate() - 1);
+    const defaultRange = (endDateKey = effectiveMaxSelectableEndDate) => {
+      const end = parseDateValue(endDateKey) || yesterdayLocal;
       const start = new Date(end);
       start.setDate(start.getDate() - 90);
       return {
@@ -1311,7 +1317,7 @@ export default function OperationsTab({
       };
     };
 
-    const normalizeRange = (value: any) => {
+    const normalizeRange = (value: any, latestEndDateKey = effectiveMaxSelectableEndDate) => {
       const candidate = value && typeof value === 'object' ? value : null;
       const nextFrequency =
         candidate?.frequency === 'weekly' || candidate?.frequency === 'monthly' || candidate?.frequency === 'daily'
@@ -1324,13 +1330,14 @@ export default function OperationsTab({
         ? String(candidate.endDate)
         : null;
       if (!nextFrequency || !nextStartDate || !nextEndDate) return null;
-      const cappedEndDate = nextEndDate > maxSelectableEndDate ? maxSelectableEndDate : nextEndDate;
+      const cappedEndDate = nextEndDate > latestEndDateKey ? latestEndDateKey : nextEndDate;
       const reportEndDate = cappedEndDate < OPERATIONAL_REPORT_MIN_DATE ? OPERATIONAL_REPORT_MIN_DATE : cappedEndDate;
       const reportStartDate = clampDateInputToReportFloor(nextStartDate);
       return {
         frequency: nextFrequency,
         startDate: reportStartDate > reportEndDate ? reportEndDate : reportStartDate,
         endDate: reportEndDate,
+        manualSave: candidate?.manualSave === true,
       };
     };
 
@@ -1358,11 +1365,30 @@ export default function OperationsTab({
     const loadDashboardPreferences = async () => {
       let loadedRange: ReturnType<typeof normalizeRange> = null;
       let loadedEmployeeInputs: ReturnType<typeof normalizeEmployeeInputs> = null;
+      let latestEndDateKey = effectiveMaxSelectableEndDate;
+      try {
+        const params = new URLSearchParams({
+          companyId: selectedCompanyId,
+          ...(industrySectorCategory ? { sectorCategory: industrySectorCategory } : {}),
+        });
+        const response = await fetch(`/api/operational-data?${params}`, { cache: 'no-store' });
+        if (response.ok) {
+          const data = await response.json();
+          const latestImportDate = String(data?.summary?.latestImportDate || '').slice(0, 10);
+          if (/^\d{4}-\d{2}-\d{2}$/.test(latestImportDate) && latestImportDate <= maxSelectableEndDate) {
+            latestEndDateKey = latestImportDate;
+            setLatestOperationalEndDate(latestImportDate);
+          }
+          if (data?.summary) setSummary(data.summary);
+        }
+      } catch {
+        // Summary loading is best-effort here; the normal summary loader also runs.
+      }
       try {
         const response = await fetch(`/api/ops-dashboard-prefs?companyId=${encodeURIComponent(selectedCompanyId)}`);
         if (response.ok) {
           const data = await response.json();
-          loadedRange = normalizeRange(data?.preferences?.dateRange);
+          loadedRange = normalizeRange(data?.preferences?.dateRange, latestEndDateKey);
           loadedEmployeeInputs = normalizeEmployeeInputs(data?.preferences?.ebitdaEmployeeInputsByMonth);
         }
       } catch {
@@ -1373,10 +1399,17 @@ export default function OperationsTab({
       if (!loadedRange) {
         try {
           const raw = window.localStorage.getItem(`ops:date-range:${selectedCompanyId}`);
-          loadedRange = normalizeRange(raw ? JSON.parse(raw) : null);
+          loadedRange = normalizeRange(raw ? JSON.parse(raw) : null, latestEndDateKey);
         } catch {
           loadedRange = null;
         }
+      }
+      if (loadedRange && !loadedRange.manualSave && latestEndDateKey > loadedRange.endDate) {
+        loadedRange = {
+          ...loadedRange,
+          endDate: latestEndDateKey,
+          startDate: loadedRange.startDate > latestEndDateKey ? latestEndDateKey : loadedRange.startDate,
+        };
       }
 
       if (!loadedEmployeeInputs) {
@@ -1389,7 +1422,7 @@ export default function OperationsTab({
       }
 
       if (!cancelled) {
-        applyRange(loadedRange || defaultRange());
+        applyRange(loadedRange || defaultRange(latestEndDateKey));
         setEbitdaEmployeeInputsByMonth(loadedEmployeeInputs || {});
         hasHydratedEbitdaEmployeeInputsRef.current = true;
       }
@@ -1399,7 +1432,7 @@ export default function OperationsTab({
     return () => {
       cancelled = true;
     };
-  }, [selectedCompanyId, maxSelectableEndDate]);
+  }, [selectedCompanyId, industrySectorCategory, maxSelectableEndDate, effectiveMaxSelectableEndDate]);
 
   useEffect(() => {
     if (!selectedCompanyId || !hasHydratedDateRangeRef.current) return;
@@ -1408,6 +1441,7 @@ export default function OperationsTab({
       startDate,
       endDate,
       savedAt: new Date().toISOString(),
+      manualSave: false,
     };
     try {
       const storageKey = `ops:date-range:${selectedCompanyId}`;
@@ -1415,28 +1449,6 @@ export default function OperationsTab({
     } catch {
       // Ignore storage failures
     }
-    if (dateRangeSaveTimerRef.current) {
-      clearTimeout(dateRangeSaveTimerRef.current);
-    }
-    dateRangeSaveTimerRef.current = setTimeout(() => {
-      void fetch('/api/ops-dashboard-prefs', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          companyId: selectedCompanyId,
-          preferences: {
-            dateRange: payload,
-          },
-        }),
-      }).catch(() => {
-        // Local storage still preserves the range if the network save fails.
-      });
-    }, 600);
-    return () => {
-      if (dateRangeSaveTimerRef.current) {
-        clearTimeout(dateRangeSaveTimerRef.current);
-      }
-    };
   }, [selectedCompanyId, frequency, startDate, endDate]);
 
   useEffect(() => {
@@ -1552,6 +1564,10 @@ export default function OperationsTab({
       if (!response.ok) throw new Error('Failed to load operational data');
       const data = await response.json();
       setSummary(data.summary);
+      const latestImportDate = String(data?.summary?.latestImportDate || '').slice(0, 10);
+      if (/^\d{4}-\d{2}-\d{2}$/.test(latestImportDate) && latestImportDate <= maxSelectableEndDate) {
+        setLatestOperationalEndDate(latestImportDate);
+      }
     } catch (err: any) {
       setError(err.message);
     } finally {
@@ -1574,7 +1590,7 @@ export default function OperationsTab({
       ? 45000
       : 25000;
     const requestFrequency = apiType === 'daily-financials' ? 'daily' : frequency;
-    const requestStartDate = type === 'sales' ? getSalesHistoryStartDate() : startDate;
+    const requestStartDate = type === 'sales' || apiType === 'customers' ? getSalesHistoryStartDate() : startDate;
     const params = new URLSearchParams({
       companyId: selectedCompanyId,
       type: apiType,
@@ -1619,7 +1635,7 @@ export default function OperationsTab({
       'wholesale-report',
       'daily',
       OPERATIONAL_REPORT_MIN_DATE,
-      maxSelectableEndDate,
+      effectiveMaxSelectableEndDate,
       '42',
       CUSTOMER_WIP_CLIENT_CACHE_VERSION,
     ].join('|');
@@ -1655,7 +1671,7 @@ export default function OperationsTab({
       type: 'products',
       frequency: 'daily',
       startDate: OPERATIONAL_REPORT_MIN_DATE,
-      endDate: maxSelectableEndDate,
+      endDate: effectiveMaxSelectableEndDate,
       limit: '5000',
       sectorCategory: '42',
       ...(options?.forceRefresh ? { refreshWholesaleProducts: '1' } : {}),
@@ -1680,7 +1696,7 @@ export default function OperationsTab({
     const requestFrequency = type === 'daily-financials' ? 'daily' : frequency;
     const rollupToken = type === 'daily-financials' ? dailyFinancialStatementRollup : 'n/a';
     const cacheFamily = type === 'sales' ? 'customers' : type;
-    const requestStartDate = type === 'sales' ? getSalesHistoryStartDate() : startDate;
+    const requestStartDate = type === 'sales' || cacheFamily === 'customers' ? getSalesHistoryStartDate() : startDate;
     const sectorReportVersion =
       String(industrySectorCategory || '').trim() === '53' && (type === 'customers' || type === 'products')
         ? REAL_ESTATE_REPORT_CLIENT_CACHE_VERSION
@@ -1896,7 +1912,7 @@ export default function OperationsTab({
     return () => {
       cancelled = true;
     };
-  }, [shouldLoadWholesaleProductsReport, industrySectorCategory, maxSelectableEndDate]);
+  }, [shouldLoadWholesaleProductsReport, industrySectorCategory, effectiveMaxSelectableEndDate]);
 
   const prefetchTabData = (tab: string) => {
     const type = mapModuleToDataType(tab) || null;
@@ -1913,7 +1929,7 @@ export default function OperationsTab({
     if (!trimmedSku) return [];
     const endForTrend = /^\d{4}-\d{2}-\d{2}$/.test(String(endDate || ''))
       ? new Date(`${endDate}T00:00:00.000Z`)
-      : new Date(`${maxSelectableEndDate}T00:00:00.000Z`);
+      : new Date(`${effectiveMaxSelectableEndDate}T00:00:00.000Z`);
     const startForTrend = new Date(endForTrend);
     startForTrend.setUTCFullYear(startForTrend.getUTCFullYear() - 3);
     const params = new URLSearchParams({
@@ -2724,10 +2740,10 @@ export default function OperationsTab({
           <input
             type="date"
             value={endDate}
-            max={maxSelectableEndDate}
+            max={effectiveMaxSelectableEndDate}
             onChange={(e) => {
               const candidate = e.target.value;
-              setEndDate(candidate > maxSelectableEndDate ? maxSelectableEndDate : candidate);
+              setEndDate(candidate > effectiveMaxSelectableEndDate ? effectiveMaxSelectableEndDate : candidate);
             }}
             style={{
               padding: '6px 10px',
@@ -2752,8 +2768,12 @@ export default function OperationsTab({
                 startDate,
                 endDate,
                 savedAt: new Date().toISOString(),
+                manualSave: true,
               };
               try {
+                if (dateRangeSaveTimerRef.current) {
+                  clearTimeout(dateRangeSaveTimerRef.current);
+                }
                 window.localStorage.setItem(`ops:date-range:${selectedCompanyId}`, JSON.stringify(payload));
                 await fetch('/api/ops-dashboard-prefs', {
                   method: 'POST',
@@ -2786,8 +2806,7 @@ export default function OperationsTab({
             <>
               <button
                 onClick={() => {
-                  const end = new Date();
-                  end.setDate(end.getDate() - 1);
+                  const end = parseDateValue(effectiveMaxSelectableEndDate) || yesterdayLocal;
                   const start = new Date(end);
                   start.setDate(start.getDate() - 30);
                   setStartDate(toLocalInputDate(start));
@@ -2808,8 +2827,7 @@ export default function OperationsTab({
               </button>
               <button
                 onClick={() => {
-                  const end = new Date();
-                  end.setDate(end.getDate() - 1);
+                  const end = parseDateValue(effectiveMaxSelectableEndDate) || yesterdayLocal;
                   const start = new Date(end);
                   start.setDate(start.getDate() - 90);
                   setStartDate(toLocalInputDate(start));
@@ -2834,8 +2852,7 @@ export default function OperationsTab({
             <>
               <button
                 onClick={() => {
-                  const end = new Date();
-                  end.setDate(end.getDate() - 1);
+                  const end = parseDateValue(effectiveMaxSelectableEndDate) || yesterdayLocal;
                   const start = new Date(end);
                   start.setDate(start.getDate() - (8 * 7)); // 8 weeks
                   setStartDate(toLocalInputDate(start));
@@ -2856,8 +2873,7 @@ export default function OperationsTab({
               </button>
               <button
                 onClick={() => {
-                  const end = new Date();
-                  end.setDate(end.getDate() - 1);
+                  const end = parseDateValue(effectiveMaxSelectableEndDate) || yesterdayLocal;
                   const start = new Date(end);
                   start.setDate(start.getDate() - (16 * 7)); // 16 weeks
                   setStartDate(toLocalInputDate(start));
@@ -2882,8 +2898,7 @@ export default function OperationsTab({
             <>
               <button
                 onClick={() => {
-                  const end = new Date();
-                  end.setDate(end.getDate() - 1);
+                  const end = parseDateValue(effectiveMaxSelectableEndDate) || yesterdayLocal;
                   const start = new Date(end);
                   start.setMonth(start.getMonth() - 6);
                   setStartDate(toLocalInputDate(start));
@@ -2904,8 +2919,7 @@ export default function OperationsTab({
               </button>
               <button
                 onClick={() => {
-                  const end = new Date();
-                  end.setDate(end.getDate() - 1);
+                  const end = parseDateValue(effectiveMaxSelectableEndDate) || yesterdayLocal;
                   const start = new Date(end);
                   start.setMonth(start.getMonth() - 12);
                   setStartDate(toLocalInputDate(start));
@@ -3107,6 +3121,69 @@ export default function OperationsTab({
     }, {});
 
     const trendData = Object.values(periodTrend);
+    const customerTrendEndDate = selectedEndForCustomer || parseDateValue(endDate) || new Date();
+    const customerTrendStartDate = new Date(Date.UTC(
+      customerTrendEndDate.getUTCFullYear(),
+      customerTrendEndDate.getUTCMonth() - 35,
+      1,
+    ));
+    const customerTrendRecords = records
+      .map((record: any) => {
+        const parsed = parseDateValue(record?.snapshotDate);
+        if (!parsed) return null;
+        const monthStart = new Date(Date.UTC(parsed.getUTCFullYear(), parsed.getUTCMonth(), 1));
+        if (monthStart < customerTrendStartDate || monthStart > customerTrendEndDate) return null;
+        const customerName = String(record?.customerName || 'Unknown Customer').trim() || 'Unknown Customer';
+        return {
+          customerName,
+          monthKey: `${monthStart.getUTCFullYear()}-${String(monthStart.getUTCMonth() + 1).padStart(2, '0')}`,
+          monthLabel: monthStart.toLocaleDateString('en-US', { month: 'short', year: '2-digit', timeZone: 'UTC' }),
+          revenue: Number(record?.revenue || 0),
+        };
+      })
+      .filter(Boolean) as Array<{ customerName: string; monthKey: string; monthLabel: string; revenue: number }>;
+    const topTrendCustomers = Array.from(
+      customerTrendRecords.reduce((acc: Map<string, number>, row) => {
+        acc.set(row.customerName, Number(acc.get(row.customerName) || 0) + Number(row.revenue || 0));
+        return acc;
+      }, new Map<string, number>()).entries()
+    )
+      .sort(([, a], [, b]) => Number(b || 0) - Number(a || 0))
+      .slice(0, 10)
+      .map(([customerName], index) => ({
+        customerName,
+        key: `customer_${index}`,
+      }));
+    const customerTrendKeyByName = new Map(topTrendCustomers.map((row) => [row.customerName, row.key]));
+    const customerTrendMonths = Array.from({ length: 36 }, (_, index) => {
+      const date = new Date(Date.UTC(customerTrendStartDate.getUTCFullYear(), customerTrendStartDate.getUTCMonth() + index, 1));
+      const monthKey = `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}`;
+      return {
+        monthKey,
+        monthLabel: date.toLocaleDateString('en-US', { month: 'short', year: '2-digit', timeZone: 'UTC' }),
+      };
+    });
+    const customerTrendRowsByMonth = new Map<string, any>(
+      customerTrendMonths.map((month) => [
+        month.monthKey,
+        topTrendCustomers.reduce(
+          (acc: any, customer) => ({
+            ...acc,
+            [customer.key]: 0,
+          }),
+          { monthKey: month.monthKey, monthLabel: month.monthLabel }
+        ),
+      ])
+    );
+    for (const row of customerTrendRecords) {
+      const customerKey = customerTrendKeyByName.get(row.customerName);
+      if (!customerKey) continue;
+      const monthRow = customerTrendRowsByMonth.get(row.monthKey);
+      if (!monthRow) continue;
+      monthRow[customerKey] = Number(monthRow[customerKey] || 0) + Number(row.revenue || 0);
+    }
+    const customerTrendRows = Array.from(customerTrendRowsByMonth.values());
+    const customerTrendColors = ['#2563eb', '#16a34a', '#f97316', '#7c3aed', '#dc2626', '#0f766e', '#0891b2', '#9333ea', '#ca8a04', '#475569'];
     const customerCoverageDates = recordsInSelectedDateRange
       .map((record: any) => parseDateValue(record.snapshotDate))
       .filter((date): date is Date => Boolean(date))
@@ -3342,6 +3419,7 @@ export default function OperationsTab({
       avgInvoice: Number(row.invoices || 0) > 0 ? Number(row.revenue || 0) / Number(row.invoices || 1) : 0,
     }));
     const isRetailSalesLanguage = industrySectorCategory === '45';
+    const isManufacturingSector = industrySectorCategory === '32';
     const retailizeCustomerText = (text: string): string => {
       if (!isRetailSalesLanguage) return text;
       return [
@@ -3957,6 +4035,23 @@ export default function OperationsTab({
             heading: 'Data source',
             body:
               'Aggregated from customer order lines using quantity ordered, quantity invoiced, and unit price. Full production/work-order state is not available for true production WIP, so this report is open backlog.',
+          },
+        ],
+      },
+      customersTop10MonthlyTrend: {
+        title: 'Top 10 Customers Monthly Trend',
+        sections: [
+          {
+            body:
+              'Shows monthly sales for the ten largest customers over the trailing 36 months ending on the current Ops To date.',
+          },
+          {
+            heading: 'How to read it',
+            body: [
+              'Each line is one customer, ranked by total sales across the 36-month window.',
+              'The y-axis is monthly sales dollars.',
+              'Use the chart to spot seasonality, customer growth, and customer revenue drop-offs that are hidden in a single-period top-customer table.',
+            ],
           },
         ],
       },
@@ -4639,7 +4734,58 @@ export default function OperationsTab({
                   </div>
                 </div>
               )}
-              {isSectionEnabled('customersWipByCustomer') && (
+              {isSectionEnabled('customersTop10MonthlyTrend') && (
+              <div style={{ background: 'white', padding: '16px 20px 20px', borderRadius: '12px', border: '1px solid #e2e8f0', marginBottom: '24px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px', gap: '12px', flexWrap: 'wrap' }}>
+                  <div style={{ display: 'flex', alignItems: 'center' }}>
+                    <h3 style={{ fontSize: '18px', fontWeight: '700', color: '#1e293b', margin: 0 }}>
+                      {retailizeCustomerText('Top 10 Customers Monthly Trend')}
+                    </h3>
+                    {renderCustomerChartInfoLink('customersTop10MonthlyTrend')}
+                  </div>
+                  <div style={{ fontSize: '11px', color: '#64748b' }}>
+                    Trailing 36 months ending {formatDateInputLabel(endDate)}
+                  </div>
+                </div>
+                {topTrendCustomers.length === 0 ? (
+                  <div style={{ fontSize: '12px', color: '#64748b' }}>
+                    No customer sales rows found for the trailing 36-month trend window.
+                  </div>
+                ) : (
+                  <ResponsiveContainer width="100%" height={360}>
+                    <LineChart data={customerTrendRows}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                      <XAxis dataKey="monthLabel" stroke="#64748b" style={{ fontSize: '11px' }} interval={2} />
+                      <YAxis stroke="#64748b" style={{ fontSize: '12px' }} tickFormatter={(value) => `$${(Number(value || 0) / 1000).toFixed(0)}k`} />
+                      <Tooltip
+                        formatter={(value: any, name: any) => [
+                          formatCurrency(Number(value || 0)),
+                          topTrendCustomers.find((customer) => customer.key === String(name))?.customerName || String(name),
+                        ]}
+                        labelFormatter={(label) => String(label)}
+                      />
+                      <Legend
+                        formatter={(value) => topTrendCustomers.find((customer) => customer.key === String(value))?.customerName || String(value)}
+                        wrapperStyle={{ fontSize: '11px' }}
+                      />
+                      {topTrendCustomers.map((customer, index) => (
+                        <Line
+                          key={customer.key}
+                          type="monotone"
+                          dataKey={customer.key}
+                          name={customer.key}
+                          stroke={customerTrendColors[index % customerTrendColors.length]}
+                          strokeWidth={2}
+                          dot={false}
+                          connectNulls
+                        />
+                      ))}
+                    </LineChart>
+                  </ResponsiveContainer>
+                )}
+              </div>
+              )}
+              {!isManufacturingSector && isSectionEnabled('customersWipByCustomer') && (
               <div style={{ background: 'white', padding: '16px 20px 20px', borderRadius: '12px', border: '1px solid #e2e8f0', marginBottom: '24px' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px', gap: '12px', flexWrap: 'wrap' }}>
                   <div style={{ display: 'flex', alignItems: 'center' }}>
@@ -7256,9 +7402,9 @@ export default function OperationsTab({
     const shouldRenderProductMargin = effectiveProductReportView === 'productMarginAnalysis' && isProductMarginAnalysisEnabled;
     const shouldRenderWholesaleRaw = effectiveProductReportView === 'wholesaleRawData' && isWholesaleRawDataEnabled;
     const shouldRenderVendorPricing = effectiveProductReportView === 'vendorPricing' && isVendorPricingEnabled;
-    const shouldRenderRetailForecast = isRetailForecastingEnabled;
+    const shouldRenderRetailForecast = effectiveProductReportView === 'retailForecast' && isRetailForecastingEnabled;
     const shouldRenderMerchandiseProfitability =
-      isMerchandiseProfitabilityEnabled;
+      effectiveProductReportView === 'merchandiseProfitability' && isMerchandiseProfitabilityEnabled;
     const shouldBuildRetailForecasts = shouldRenderRetailForecast || shouldRenderMerchandiseProfitability;
     const shouldBuildVendorPricingData = shouldRenderVendorPricing || shouldRenderProductMargin;
     const platosMetrics = summary?.platosMetrics || null;
@@ -10206,18 +10352,6 @@ export default function OperationsTab({
           </div>
         )}
 
-        {isMerchandiseProfitabilityEnabled && (
-          <div style={{ marginBottom: '20px' }}>
-            {renderMerchandiseProfitabilityReport()}
-          </div>
-        )}
-
-        {isRetailForecastingEnabled && (
-          <div style={{ marginBottom: '20px' }}>
-            {renderRetailForecastingReport()}
-          </div>
-        )}
-
         {isSectionEnabled('productsPriceCostComparison') && (
           <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '18px', marginBottom: '20px' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px', gap: '12px', flexWrap: 'wrap' }}>
@@ -10970,7 +11104,7 @@ export default function OperationsTab({
     };
     const inventoryTrendWindowEnd = /^\d{4}-\d{2}-\d{2}$/.test(String(endDate || ''))
       ? new Date(`${endDate}T00:00:00.000Z`)
-      : new Date(`${maxSelectableEndDate}T00:00:00.000Z`);
+      : new Date(`${effectiveMaxSelectableEndDate}T00:00:00.000Z`);
     const inventoryTrendWindowStart = new Date(inventoryTrendWindowEnd);
     inventoryTrendWindowStart.setUTCFullYear(inventoryTrendWindowStart.getUTCFullYear() - 3);
     const toInventoryIsoDay = (d: Date) =>
@@ -19328,10 +19462,10 @@ Strategies to Improve the CCC
           type="date"
           value={endDate}
           min={startDate}
-          max={maxSelectableEndDate}
+          max={effectiveMaxSelectableEndDate}
           onChange={(event) => {
             const candidate = event.target.value;
-            setEndDate(candidate > maxSelectableEndDate ? maxSelectableEndDate : candidate);
+            setEndDate(candidate > effectiveMaxSelectableEndDate ? effectiveMaxSelectableEndDate : candidate);
           }}
           style={{ border: '1px solid #cbd5e1', borderRadius: '8px', padding: '6px 10px', fontSize: '13px', color: '#0f172a', background: '#fff' }}
         />

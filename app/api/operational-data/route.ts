@@ -142,6 +142,54 @@ async function activateRealOperationalData(companyId: string): Promise<void> {
   });
 }
 
+function latestDateKeyFromValues(values: unknown[]): string | null {
+  let latest: Date | null = null;
+  for (const value of values) {
+    if (!value) continue;
+    const date = new Date(value as any);
+    if (Number.isNaN(date.getTime())) continue;
+    if (!latest || date.getTime() > latest.getTime()) latest = date;
+  }
+  return latest ? dateKeyUtc(latest) : null;
+}
+
+async function getLatestOperationalSnapshotDate(companyId: string): Promise<string | null> {
+  const [
+    customers,
+    arAging,
+    apAging,
+    products,
+    inventory,
+    cash,
+    dailyFinancials,
+    platosFacts,
+  ] = await Promise.all([
+    prisma.customerSalesSnapshot.aggregate({ where: { companyId }, _max: { snapshotDate: true } }),
+    prisma.aRAgingSnapshot.aggregate({ where: { companyId }, _max: { snapshotDate: true } }),
+    prisma.aPAgingSnapshot.aggregate({ where: { companyId }, _max: { snapshotDate: true } }),
+    prisma.productSalesSnapshot.aggregate({ where: { companyId }, _max: { snapshotDate: true } }),
+    prisma.inventorySnapshot.aggregate({ where: { companyId }, _max: { snapshotDate: true } }),
+    prisma.cashSnapshot.aggregate({ where: { companyId }, _max: { snapshotDate: true } }),
+    (prisma as any).dailyFinancialSnapshot
+      ? (prisma as any).dailyFinancialSnapshot.aggregate({ where: { companyId }, _max: { snapshotDate: true } })
+      : Promise.resolve(null),
+    (prisma as any).platosClosetMonthlyFact
+      ? (prisma as any).platosClosetMonthlyFact.aggregate({ where: { companyId }, _max: { monthStart: true } })
+      : Promise.resolve(null),
+  ]);
+
+  return latestDateKeyFromValues([
+    customers?._max?.snapshotDate,
+    arAging?._max?.snapshotDate,
+    apAging?._max?.snapshotDate,
+    products?._max?.snapshotDate,
+    inventory?._max?.snapshotDate,
+    cash?._max?.snapshotDate,
+    dailyFinancials?._max?.snapshotDate,
+    platosFacts?._max?.monthStart,
+  ]);
+}
+
 async function safeOperationalVersionPart(label: string, sql: string, ...params: unknown[]) {
   try {
     const rows = await prisma.$queryRawUnsafe<Array<Record<string, unknown>>>(sql, ...params);
@@ -9029,7 +9077,7 @@ export async function GET(request: NextRequest) {
 
       default:
         // Get all data types summary
-        const [customers, arAging, apAging, products, inventory, cash, dailyFinancials] = await Promise.all([
+        const [customers, arAging, apAging, products, inventory, cash, dailyFinancials, latestImportDate] = await Promise.all([
           prisma.customerSalesSnapshot.count({ where: { companyId } }),
           prisma.aRAgingSnapshot.count({ where: { companyId } }),
           prisma.aPAgingSnapshot.count({ where: { companyId } }),
@@ -9039,6 +9087,7 @@ export async function GET(request: NextRequest) {
           (prisma as any).dailyFinancialSnapshot
             ? (prisma as any).dailyFinancialSnapshot.count({ where: { companyId } })
             : Promise.resolve(0),
+          getLatestOperationalSnapshotDate(companyId),
         ]);
 
         const summary = {
@@ -9049,6 +9098,7 @@ export async function GET(request: NextRequest) {
           inventoryRecords: inventory,
           cashRecords: cash,
           dailyFinancialRecords: dailyFinancials,
+          latestImportDate,
         };
         if (shouldUseMockData) {
           return NextResponse.json({
