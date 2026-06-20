@@ -197,7 +197,7 @@ export default function CapTableView({ selectedCompanyId, companyName, operation
   };
 
   if (realData) {
-    const securityHolderTargetFields = new Set(['ownersCapital', 'commonStock', 'preferredStock', 'additionalPaidInCapital']);
+    const securityHolderTargetFields = new Set(['ownersCapital', 'commonStock', 'preferredStock']);
     const holderInputKey = (holding: RealCapTableHolding) => `${holding.targetField}:${holding.accountName}:${holding.holder}`;
     const securityHoldings = realData.holdings.filter((holding) => securityHolderTargetFields.has(holding.targetField));
     const securitySummaryByName = new Map(realData.securitySummary.map((row) => [row.security, row]));
