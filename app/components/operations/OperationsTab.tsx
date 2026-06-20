@@ -191,7 +191,7 @@ type WipLineItemSortKey =
   | 'invoicedValue';
 type ProductReportView = 'productMarginAnalysis' | 'wholesaleRawData' | 'vendorPricing' | 'performance' | 'retailForecast' | 'merchandiseProfitability';
 
-const OPERATIONAL_REPORT_MIN_DATE = '2023-01-01';
+const OPERATIONAL_REPORT_MIN_DATE = '2000-01-01';
 const WHOLESALE_INVENTORY_EXCLUDED_SECTION_KEYS = new Set([
   'inventoryRetailTurns',
   'inventoryRetailProductAging',
@@ -3851,6 +3851,9 @@ export default function OperationsTab({
         });
         return row;
       });
+      const visibleCategoryRows = [...categoryHistory.rows]
+        .sort((a: any, b: any) => Number(b?.total || 0) - Number(a?.total || 0))
+        .slice(0, 15);
 
       return (
         <LineChart data={chartRows}>
@@ -3868,8 +3871,8 @@ export default function OperationsTab({
           <YAxis stroke="#64748b" style={{ fontSize: '12px' }} tickFormatter={(value) => `$${(Number(value || 0) / 1000).toFixed(0)}k`} />
           <Tooltip formatter={(value: any, name: any) => [formatCurrency(Number(value || 0)), String(name)]} />
           <Legend onClick={toggleCategorySalesSeries} wrapperStyle={{ cursor: 'pointer' }} />
-          <Line type="monotone" dataKey="Total" name="Total Sales" stroke="#0f172a" strokeWidth={3} dot={{ r: 3 }} connectNulls />
-          {categoryHistory.rows.map((category: any, index: number) => {
+          <Line type="monotone" dataKey="Total" name="Total Sales" stroke="#0f172a" strokeWidth={3} dot={{ r: 3 }} connectNulls hide={Boolean(hiddenCategorySalesSeries.Total)} />
+          {visibleCategoryRows.map((category: any, index: number) => {
             const label = String(category?.label || 'Unknown');
             return (
               <Line

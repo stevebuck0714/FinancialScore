@@ -56,7 +56,7 @@ const CUSTOMER_CONCENTRATION_CACHE_VERSION = 'customer-concentration-exposure-v1
 const CUSTOMER_REVENUE_SOURCE_VERSION = 'customer-revenue-source-v3-source-system-sales';
 const CUSTOMER_WIP_SOURCE_VERSION = 'customer-backlog-source-v4';
 const CUSTOMER_BACKLOG_MIN_ORDER_DATE = '2023-06-01';
-const OPERATIONAL_REPORT_MIN_DATE = '2023-01-01';
+const OPERATIONAL_REPORT_MIN_DATE = '2000-01-01';
 const WHOLESALE_PRODUCTS_REPORT_CACHE_TTL_SECONDS = 30 * 24 * 60 * 60;
 const OPERATIONAL_CACHEABLE_TYPES = new Set([
   'customers',
@@ -3506,6 +3506,94 @@ export async function GET(request: NextRequest) {
               });
           if (rowsForPayload.length === 0) return null;
 
+          const canonicalProductKey = (value: unknown): string =>
+            String(value || '')
+              .trim()
+              .replace(/\s+/g, '')
+              .replace(/[^A-Za-z0-9]/g, '')
+              .toUpperCase();
+          const qbdLooksLikeListId = (value: unknown): boolean =>
+            /^800[0-9A-F]*-\d+$/i.test(String(value || '').trim());
+          const qbdItemMastersByKey = new Map<string, { displayName: string; sku: string | null }>();
+          if (isQuickBooksCompany) {
+            const trimQbd = (value: unknown): string => String(value || '').trim();
+            const qbdRecord = (value: unknown): Record<string, unknown> =>
+              value && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
+            const qbdFirstString = (...values: unknown[]): string => {
+              for (const value of values) {
+                const text = trimQbd(value);
+                if (text) return text;
+              }
+              return '';
+            };
+            const qbdSkuFromName = (value: unknown): string => {
+              const text = trimQbd(value);
+              if (!text || qbdLooksLikeListId(text)) return '';
+              const parts = text.split(':').map((part) => part.trim()).filter(Boolean);
+              return parts[parts.length - 1] || text;
+            };
+            const qbdLooksLikeCode = (value: string): boolean =>
+              /^[A-Z0-9\-_.\/: ]+$/i.test(value.trim()) && /\d/.test(value);
+            const qbdDisplayScore = (value: unknown): number => {
+              const text = trimQbd(value);
+              if (!text || text.toLowerCase() === 'unknown item') return 0;
+              if (qbdLooksLikeListId(text)) return 1;
+              return qbdLooksLikeCode(text) ? 2 : 3;
+            };
+            const qbdItemRows = await prisma.$queryRaw<Array<{ payload: unknown }>>`
+              SELECT "payload"
+              FROM "QuickBooksDesktopBackfillPage"
+              WHERE "companyId" = ${companyId}
+                AND "requestName" = 'ItemQuery'
+              ORDER BY "createdAt" DESC, "pageNumber" ASC
+            `;
+            for (const page of qbdItemRows) {
+              const itemRecords = Array.isArray(page.payload) ? page.payload.map(qbdRecord) : [];
+              for (const item of itemRecords) {
+                const salesOrPurchase = qbdRecord(item.SalesOrPurchase);
+                const salesAndPurchase = qbdRecord(item.SalesAndPurchase);
+                const description = qbdFirstString(
+                  item.SalesDesc,
+                  item.PurchaseDesc,
+                  item.Description,
+                  salesAndPurchase.SalesDesc,
+                  salesAndPurchase.PurchaseDesc,
+                  salesOrPurchase.Desc,
+                );
+                const fullName = qbdFirstString(item.FullName, item.Name);
+                const displayName =
+                  description && qbdDisplayScore(description) >= qbdDisplayScore(fullName)
+                    ? description
+                    : qbdFirstString(description, fullName, 'Unknown Item');
+                const sku = qbdSkuFromName(item.Name) || qbdSkuFromName(fullName) || null;
+                const master = { displayName, sku };
+                for (const alias of [item.ListID, item.FullName, item.Name, sku, displayName]) {
+                  const key = canonicalProductKey(alias);
+                  if (key && !qbdItemMastersByKey.has(key)) qbdItemMastersByKey.set(key, master);
+                }
+              }
+            }
+          }
+          const productDisplayName = (row: any): string => {
+            const aliases = Array.from(
+              new Set(
+                [
+                  canonicalProductKey(row?.itemName),
+                  canonicalProductKey(row?.sku),
+                  canonicalProductKey(row?.itemId),
+                ].filter(Boolean)
+              )
+            );
+            const master = aliases.map((alias) => qbdItemMastersByKey.get(alias)).find(Boolean);
+            const masterName = String(master?.displayName || '').trim();
+            if (masterName && masterName.toLowerCase() !== 'unknown item' && !qbdLooksLikeListId(masterName)) {
+              return masterName;
+            }
+            const itemName = String(row?.itemName || '').trim();
+            if (itemName && itemName.toLowerCase() !== 'unknown item' && !qbdLooksLikeListId(itemName)) return itemName;
+            return 'Unknown Product';
+          };
+
           const monthMap = new Map<string, { monthKey: string; monthLabel: string; revenue: number; cogs: number; grossMargin: number }>();
           const categoryMap = new Map<string, { label: string; values: Record<string, number>; total: number }>();
           const ytdStart = startOfBusinessYear(endDate);
@@ -3534,7 +3622,7 @@ export async function GET(request: NextRequest) {
             monthBucket.grossMargin += grossMargin;
             monthMap.set(monthKey, monthBucket);
 
-            const categoryLabel = String(row.itemName || row.sku || row.itemId || 'Unknown Product').trim() || 'Unknown Product';
+            const categoryLabel = productDisplayName(row);
             const categoryBucket = categoryMap.get(categoryLabel) || { label: categoryLabel, values: {}, total: 0 };
             categoryBucket.values[monthKey] = Number(categoryBucket.values[monthKey] || 0) + revenue;
             categoryBucket.total += revenue;
