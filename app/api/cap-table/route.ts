@@ -96,6 +96,75 @@ type EquityActivity = {
   balance: number;
 };
 
+type CapTableInputs = {
+  holderSharePrice: string;
+  sharesIssuedByHolding: Record<string, string>;
+};
+
+const CAP_TABLE_INPUTS_NAMESPACE = 'cap-table-inputs';
+
+function capTableInputsCacheKey(companyId: string): string {
+  return `company:${companyId}`;
+}
+
+function normalizeCapTableInputs(value: unknown): CapTableInputs {
+  const record = asRecord(value);
+  const sharesRaw = asRecord(record.sharesIssuedByHolding);
+  const sharesIssuedByHolding: Record<string, string> = {};
+  for (const [key, rawValue] of Object.entries(sharesRaw)) {
+    const normalizedKeyValue = text(key);
+    const normalizedValue = text(rawValue);
+    if (normalizedKeyValue && normalizedValue) sharesIssuedByHolding[normalizedKeyValue] = normalizedValue;
+  }
+  return {
+    holderSharePrice: text(record.holderSharePrice),
+    sharesIssuedByHolding,
+  };
+}
+
+async function loadCapTableInputs(companyId: string): Promise<CapTableInputs> {
+  const rows = await prisma.$queryRaw<Array<{ payload: unknown }>>`
+    SELECT "payload"
+    FROM "DerivedApiCache"
+    WHERE "namespace" = ${CAP_TABLE_INPUTS_NAMESPACE}
+      AND "cacheKey" = ${capTableInputsCacheKey(companyId)}
+    LIMIT 1
+  `;
+  return normalizeCapTableInputs(rows[0]?.payload);
+}
+
+async function saveCapTableInputs(companyId: string, inputs: CapTableInputs) {
+  const now = new Date();
+  const payloadJson = JSON.stringify(inputs);
+  await prisma.$executeRaw`
+    INSERT INTO "DerivedApiCache" (
+      "id",
+      "namespace",
+      "cacheKey",
+      "dataVersion",
+      "payload",
+      "createdAt",
+      "updatedAt",
+      "expiresAt"
+    )
+    VALUES (
+      ${`${CAP_TABLE_INPUTS_NAMESPACE}:${companyId}`},
+      ${CAP_TABLE_INPUTS_NAMESPACE},
+      ${capTableInputsCacheKey(companyId)},
+      'v1',
+      CAST(${payloadJson} AS jsonb),
+      ${now},
+      ${now},
+      ${new Date('2099-12-31T23:59:59.999Z')}
+    )
+    ON CONFLICT ("namespace", "cacheKey") DO UPDATE SET
+      "payload" = EXCLUDED."payload",
+      "dataVersion" = EXCLUDED."dataVersion",
+      "updatedAt" = EXCLUDED."updatedAt",
+      "expiresAt" = EXCLUDED."expiresAt";
+  `;
+}
+
 async function loadEquityActivityByAccount(companyId: string) {
   const rows = await prisma.$queryRaw<Array<{ payload: unknown }>>`
     SELECT "payload"
@@ -147,7 +216,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
   }
 
-  const [mappings, pages, balanceSheetPages, trialBalancePages, equityActivityByAccount] = await Promise.all([
+  const [mappings, pages, balanceSheetPages, trialBalancePages, equityActivityByAccount, savedInputs] = await Promise.all([
     prisma.accountMapping.findMany({
       where: {
         companyId,
@@ -186,6 +255,7 @@ export async function GET(request: NextRequest) {
       ORDER BY "createdAt" DESC, "pageNumber" ASC
     `,
     loadEquityActivityByAccount(companyId),
+    loadCapTableInputs(companyId),
   ]);
 
   const targetByKey = new Map<string, { targetField: string; accountName: string; accountCode: string | null }>();
@@ -236,44 +306,58 @@ export async function GET(request: NextRequest) {
     .filter((row): row is NonNullable<typeof row> => row !== null);
   let source = 'quickbooks-desktop-account-equity';
   let reportFallbackCreatedAt: Date | null = null;
-  if (holdings.length === 0) {
-    source = 'quickbooks-desktop-report-equity';
-    const seenAccounts = new Set<string>();
-    for (const pageSet of [balanceSheetPages, trialBalancePages]) {
-      for (const page of pageSet) {
-        const rows = Array.isArray(page.payload) ? page.payload.map(asRecord) : [];
-        for (const row of rows) {
-          if (text(row.rowKind) !== 'DataRow') continue;
-          const accountName = text(row.accountName || row.rowValue || reportColValue(row, '1'));
-          const mapped =
-            targetByKey.get(accountName.toLowerCase()) ||
-            targetByKey.get(text(row.rowValue).toLowerCase()) ||
-            targetByKey.get(reportColValue(row, '1').toLowerCase()) ||
-            targetByHolderKey.get(holderKey(accountName)) ||
-            targetByHolderKey.get(holderKey(text(row.rowValue))) ||
-            targetByHolderKey.get(holderKey(reportColValue(row, '1')));
-          if (!mapped) continue;
-          const resolvedAccountName = accountName || mapped.accountName;
-          const accountKey = normalizedKey(mapped.accountName || resolvedAccountName);
-          if (seenAccounts.has(accountKey)) continue;
-          const balance = reportAmount(row);
-          if (Math.abs(balance) < 0.005) continue;
-          const activity = equityActivityByAccount.get(resolvedAccountName.toLowerCase()) || [];
-          holdings.push({
-            holder: holderName(resolvedAccountName || mapped.accountName),
-            accountName: resolvedAccountName || mapped.accountName,
-            accountCode: mapped.accountCode,
-            security: securityLabel(mapped.targetField),
-            targetField: mapped.targetField,
-            balance,
-            issuedDate: activity[0]?.txnDate || null,
-            activity,
-          });
-          seenAccounts.add(accountKey);
-          reportFallbackCreatedAt = reportFallbackCreatedAt || page.createdAt;
-        }
+  const seenAccounts = new Set<string>();
+  const rememberHolding = (accountName: string, holder: string) => {
+    for (const key of [accountName, holder, holderName(accountName)].map(text).filter(Boolean)) {
+      seenAccounts.add(normalizedKey(key));
+      seenAccounts.add(holderKey(key));
+    }
+  };
+  for (const holding of holdings) {
+    rememberHolding(holding.accountName, holding.holder);
+  }
+  for (const pageSet of [balanceSheetPages, trialBalancePages]) {
+    for (const page of pageSet) {
+      const rows = Array.isArray(page.payload) ? page.payload.map(asRecord) : [];
+      for (const row of rows) {
+        if (text(row.rowKind) !== 'DataRow') continue;
+        const accountName = text(row.accountName || row.rowValue || reportColValue(row, '1'));
+        const mapped =
+          targetByKey.get(accountName.toLowerCase()) ||
+          targetByKey.get(text(row.rowValue).toLowerCase()) ||
+          targetByKey.get(reportColValue(row, '1').toLowerCase()) ||
+          targetByHolderKey.get(holderKey(accountName)) ||
+          targetByHolderKey.get(holderKey(text(row.rowValue))) ||
+          targetByHolderKey.get(holderKey(reportColValue(row, '1')));
+        if (!mapped) continue;
+        const resolvedAccountName = accountName || mapped.accountName;
+        const duplicateKeys = [
+          mapped.accountName,
+          resolvedAccountName,
+          holderName(resolvedAccountName),
+          holderName(mapped.accountName),
+        ].map(text).filter(Boolean);
+        if (duplicateKeys.some((key) => seenAccounts.has(normalizedKey(key)) || seenAccounts.has(holderKey(key)))) continue;
+        const balance = reportAmount(row);
+        if (Math.abs(balance) < 0.005) continue;
+        const activity = equityActivityByAccount.get(resolvedAccountName.toLowerCase()) || [];
+        holdings.push({
+          holder: holderName(resolvedAccountName || mapped.accountName),
+          accountName: resolvedAccountName || mapped.accountName,
+          accountCode: mapped.accountCode,
+          security: securityLabel(mapped.targetField),
+          targetField: mapped.targetField,
+          balance,
+          issuedDate: activity[0]?.txnDate || null,
+          activity,
+        });
+        rememberHolding(resolvedAccountName || mapped.accountName, holderName(resolvedAccountName || mapped.accountName));
+        reportFallbackCreatedAt = reportFallbackCreatedAt || page.createdAt;
       }
     }
+  }
+  if (reportFallbackCreatedAt) {
+    source = pages.length > 0 ? 'quickbooks-desktop-account-and-report-equity' : 'quickbooks-desktop-report-equity';
   }
 
   const ownershipEligibleTargets = new Set(['ownersCapital', 'commonStock', 'preferredStock', 'additionalPaidInCapital']);
@@ -305,7 +389,7 @@ export async function GET(request: NextRequest) {
   ).sort((a, b) => Math.abs(b.balance) - Math.abs(a.balance));
 
   const asOfDate =
-    (source === 'quickbooks-desktop-report-equity'
+    (source === 'quickbooks-desktop-report-equity' || source === 'quickbooks-desktop-account-and-report-equity'
       ? reportFallbackCreatedAt?.toISOString?.()
       : pages[0]?.createdAt?.toISOString?.()) || new Date().toISOString();
 
@@ -314,6 +398,7 @@ export async function GET(request: NextRequest) {
     source,
     asOfDate,
     holdings: enrichedHoldings,
+    savedInputs,
     securitySummary,
     summary: {
       capitalBalance: ownershipDenominator,
@@ -321,4 +406,23 @@ export async function GET(request: NextRequest) {
       securityClassCount: securitySummary.length,
     },
   });
+}
+
+export async function POST(request: NextRequest) {
+  await requireAuth();
+  const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
+  const companyId = text(body.companyId);
+  if (!companyId) {
+    return NextResponse.json({ error: 'companyId is required' }, { status: 400 });
+  }
+
+  const hasAccess = await validateCompanyAccess(companyId);
+  if (!hasAccess) {
+    await auditForbiddenAccess('CapTable', companyId, 'UPDATE');
+    return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+  }
+
+  const inputs = normalizeCapTableInputs(body);
+  await saveCapTableInputs(companyId, inputs);
+  return NextResponse.json({ success: true, savedInputs: inputs });
 }

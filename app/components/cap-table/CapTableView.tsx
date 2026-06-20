@@ -35,6 +35,10 @@ type RealCapTableData = {
   asOfDate: string;
   source: string;
   holdings: RealCapTableHolding[];
+  savedInputs?: {
+    holderSharePrice?: string;
+    sharesIssuedByHolding?: Record<string, string>;
+  };
   securitySummary: Array<{ security: string; balance: number; holders: number; ownershipPct: number }>;
   summary: {
     capitalBalance: number;
@@ -76,6 +80,8 @@ export default function CapTableView({ selectedCompanyId, companyName, operation
   const [realDataError, setRealDataError] = useState<string | null>(null);
   const [holderSharePrice, setHolderSharePrice] = useState('');
   const [sharesIssuedByHolding, setSharesIssuedByHolding] = useState<Record<string, string>>({});
+  const [inputsHydrated, setInputsHydrated] = useState(false);
+  const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
   const allowMockCapTableData =
     process.env.NODE_ENV === 'development' &&
     process.env.NEXT_PUBLIC_ENABLE_CAP_TABLE_MOCKS === 'true';
@@ -84,6 +90,8 @@ export default function CapTableView({ selectedCompanyId, companyName, operation
   useEffect(() => {
     if (!selectedCompanyId) return;
     let cancelled = false;
+    setInputsHydrated(false);
+    setSaveStatus('idle');
     const loadRealCapTable = async () => {
       setLoadingRealData(true);
       setRealDataError(null);
@@ -97,10 +105,19 @@ export default function CapTableView({ selectedCompanyId, companyName, operation
           return;
         }
         setRealData(Array.isArray(payload?.holdings) && payload.holdings.length > 0 ? payload : null);
+        const savedInputs = payload?.savedInputs && typeof payload.savedInputs === 'object' ? payload.savedInputs : {};
+        setHolderSharePrice(typeof savedInputs.holderSharePrice === 'string' ? savedInputs.holderSharePrice : '');
+        setSharesIssuedByHolding(
+          savedInputs.sharesIssuedByHolding && typeof savedInputs.sharesIssuedByHolding === 'object'
+            ? savedInputs.sharesIssuedByHolding
+            : {}
+        );
+        setInputsHydrated(true);
       } catch (error) {
         if (!cancelled) {
           setRealData(null);
           setRealDataError(error instanceof Error ? error.message : 'Unable to load cap table data.');
+          setInputsHydrated(true);
         }
       } finally {
         if (!cancelled) setLoadingRealData(false);
@@ -111,6 +128,29 @@ export default function CapTableView({ selectedCompanyId, companyName, operation
       cancelled = true;
     };
   }, [selectedCompanyId]);
+
+  useEffect(() => {
+    if (!selectedCompanyId || !inputsHydrated) return;
+    const timeout = window.setTimeout(async () => {
+      setSaveStatus('saving');
+      try {
+        const response = await fetch('/api/cap-table', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            companyId: selectedCompanyId,
+            holderSharePrice,
+            sharesIssuedByHolding,
+          }),
+        });
+        if (!response.ok) throw new Error('Unable to save cap table inputs.');
+        setSaveStatus('saved');
+      } catch (error) {
+        setSaveStatus('error');
+      }
+    }, 500);
+    return () => window.clearTimeout(timeout);
+  }, [holderSharePrice, inputsHydrated, selectedCompanyId, sharesIssuedByHolding]);
 
   const isSectionEnabled = (sectionKey: string): boolean => {
     const value = operationalHubSections?.[sectionKey];
@@ -251,18 +291,29 @@ export default function CapTableView({ selectedCompanyId, companyName, operation
         <div style={{ ...cardStyle, padding: 0, overflow: 'hidden' }}>
           <div style={{ padding: '14px 16px', borderBottom: '1px solid #e2e8f0', display: 'flex', justifyContent: 'space-between', gap: '12px', alignItems: 'center', flexWrap: 'wrap' }}>
             <div style={{ fontWeight: 900 }}>Holder Detail</div>
-            <label style={{ display: 'flex', gap: '8px', alignItems: 'center', fontSize: '13px', fontWeight: 800, color: '#475569' }}>
-              Share price
-              <input
-                type="number"
-                min="0"
-                step="0.0001"
-                value={holderSharePrice}
-                onChange={(event) => setHolderSharePrice(event.target.value)}
-                placeholder="0.00"
-                style={inputStyle}
-              />
-            </label>
+            <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
+              <div style={{ color: saveStatus === 'error' ? '#b91c1c' : '#64748b', fontSize: '12px', fontWeight: 800 }}>
+                {saveStatus === 'saving'
+                  ? 'Saving...'
+                  : saveStatus === 'saved'
+                    ? 'Saved'
+                    : saveStatus === 'error'
+                      ? 'Save failed'
+                      : ''}
+              </div>
+              <label style={{ display: 'flex', gap: '8px', alignItems: 'center', fontSize: '13px', fontWeight: 800, color: '#475569' }}>
+                Share price
+                <input
+                  type="number"
+                  min="0"
+                  step="0.0001"
+                  value={holderSharePrice}
+                  onChange={(event) => setHolderSharePrice(event.target.value)}
+                  placeholder="0.00"
+                  style={inputStyle}
+                />
+              </label>
+            </div>
           </div>
           <div style={{ overflowX: 'auto' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
