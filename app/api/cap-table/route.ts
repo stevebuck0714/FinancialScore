@@ -16,6 +16,8 @@ const EQUITY_TARGETS = new Set([
   'totalEquity',
 ]);
 
+const OWNERSHIP_TARGETS = new Set(['ownersCapital', 'commonStock', 'preferredStock', 'additionalPaidInCapital']);
+
 function asRecord(value: unknown): Record<string, unknown> {
   return value && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
 }
@@ -73,6 +75,19 @@ function normalizedKey(value: string): string {
 
 function holderKey(fullName: string): string {
   return normalizedKey(holderName(fullName));
+}
+
+function isMappedOwnershipHolder(mapped: { targetField: string; accountName: string }): boolean {
+  if (!OWNERSHIP_TARGETS.has(mapped.targetField)) return false;
+  const name = normalizedKey(mapped.accountName);
+  const holder = holderKey(mapped.accountName);
+  if (!name || !holder) return false;
+  if (name === 'opening balance equity') return false;
+  if (name === 'partner capital accounts') return false;
+  if (name === 'retained earnings') return false;
+  if (name.includes('current year net income')) return false;
+  if (holder === 'total equity' || holder === 'total capital') return false;
+  return true;
 }
 
 function securityLabel(targetField: string): string {
@@ -357,7 +372,7 @@ export async function GET(request: NextRequest) {
     }
   }
   for (const mapped of targetByHolderKey.values()) {
-    if (!/capital\s*-/i.test(mapped.accountName)) continue;
+    if (!isMappedOwnershipHolder(mapped)) continue;
     const duplicateKeys = [
       mapped.accountName,
       holderName(mapped.accountName),
@@ -380,16 +395,15 @@ export async function GET(request: NextRequest) {
     source = pages.length > 0 ? 'quickbooks-desktop-account-and-report-equity' : 'quickbooks-desktop-report-equity';
   }
 
-  const ownershipEligibleTargets = new Set(['ownersCapital', 'commonStock', 'preferredStock', 'additionalPaidInCapital']);
   const ownershipDenominator = holdings.reduce(
-    (sum, row) => sum + (ownershipEligibleTargets.has(row.targetField) && row.balance > 0 ? row.balance : 0),
+    (sum, row) => sum + (OWNERSHIP_TARGETS.has(row.targetField) && row.balance > 0 ? row.balance : 0),
     0,
   );
   const enrichedHoldings = holdings
     .map((row) => ({
       ...row,
       ownershipPct:
-        ownershipEligibleTargets.has(row.targetField) && row.balance > 0 && ownershipDenominator > 0
+        OWNERSHIP_TARGETS.has(row.targetField) && row.balance > 0 && ownershipDenominator > 0
           ? (row.balance / ownershipDenominator) * 100
           : null,
     }))
