@@ -49,12 +49,30 @@ function reportColValue(record: Record<string, unknown>, colID: string): string 
   return text(column?.value);
 }
 
+function reportAmount(record: Record<string, unknown>): number {
+  const colData = Array.isArray(record.colData) ? record.colData.map(asRecord) : [];
+  const byId = (colID: string) => number(colData.find((col) => text(col.colID) === colID)?.value);
+  const balance = byId('2');
+  if (Math.abs(balance) >= 0.005) return balance;
+  const credit = byId('3');
+  if (Math.abs(credit) >= 0.005) return credit;
+  return number(colData[colData.length - 1]?.value);
+}
+
 function holderName(fullName: string): string {
   const leaf = fullName.split(':').pop() || fullName;
   return leaf
     .replace(/^Capital\s*-\s*/i, '')
     .replace(/^Capital Draws\s*-\s*/i, '')
     .trim() || fullName;
+}
+
+function normalizedKey(value: string): string {
+  return value.toLowerCase().replace(/\s+/g, ' ').trim();
+}
+
+function holderKey(fullName: string): string {
+  return normalizedKey(holderName(fullName));
 }
 
 function securityLabel(targetField: string): string {
@@ -129,7 +147,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
   }
 
-  const [mappings, pages, balanceSheetPages, equityActivityByAccount] = await Promise.all([
+  const [mappings, pages, balanceSheetPages, trialBalancePages, equityActivityByAccount] = await Promise.all([
     prisma.accountMapping.findMany({
       where: {
         companyId,
@@ -160,10 +178,18 @@ export async function GET(request: NextRequest) {
         AND "requestName" = 'BalanceSheetStandardReportQuery'
       ORDER BY "createdAt" DESC, "pageNumber" ASC
     `,
+    prisma.$queryRaw<Array<{ payload: unknown; createdAt: Date }>>`
+      SELECT "payload", "createdAt"
+      FROM "QuickBooksDesktopBackfillPage"
+      WHERE "companyId" = ${companyId}
+        AND "requestName" = 'TrialBalanceReportQuery'
+      ORDER BY "createdAt" DESC, "pageNumber" ASC
+    `,
     loadEquityActivityByAccount(companyId),
   ]);
 
   const targetByKey = new Map<string, { targetField: string; accountName: string; accountCode: string | null }>();
+  const targetByHolderKey = new Map<string, { targetField: string; accountName: string; accountCode: string | null }>();
   for (const mapping of mappings) {
     const targetField = text(mapping.targetField);
     if (!EQUITY_TARGETS.has(targetField)) continue;
@@ -175,6 +201,7 @@ export async function GET(request: NextRequest) {
     for (const key of [mapping.accountId, mapping.accountName, mapping.accountCode].map(text).filter(Boolean)) {
       targetByKey.set(key.toLowerCase(), value);
     }
+    if (value.accountName) targetByHolderKey.set(holderKey(value.accountName), value);
   }
 
   const accounts = pages.flatMap((page) =>
@@ -208,32 +235,44 @@ export async function GET(request: NextRequest) {
     })
     .filter((row): row is NonNullable<typeof row> => row !== null);
   let source = 'quickbooks-desktop-account-equity';
+  let reportFallbackCreatedAt: Date | null = null;
   if (holdings.length === 0) {
-    source = 'quickbooks-desktop-balance-sheet-equity';
-    const balanceSheetRows = balanceSheetPages.flatMap((page) =>
-      Array.isArray(page.payload) ? page.payload.map(asRecord) : []
-    );
-    for (const row of balanceSheetRows) {
-      if (text(row.rowKind) !== 'DataRow') continue;
-      const accountName = text(row.accountName || row.rowValue || reportColValue(row, '1'));
-      const mapped =
-        targetByKey.get(accountName.toLowerCase()) ||
-        targetByKey.get(text(row.rowValue).toLowerCase()) ||
-        targetByKey.get(reportColValue(row, '1').toLowerCase());
-      if (!mapped) continue;
-      const balance = number(reportColValue(row, '2'));
-      if (Math.abs(balance) < 0.005) continue;
-      const activity = equityActivityByAccount.get(accountName.toLowerCase()) || [];
-      holdings.push({
-        holder: holderName(accountName || mapped.accountName),
-        accountName: accountName || mapped.accountName,
-        accountCode: mapped.accountCode,
-        security: securityLabel(mapped.targetField),
-        targetField: mapped.targetField,
-        balance,
-        issuedDate: activity[0]?.txnDate || null,
-        activity,
-      });
+    source = 'quickbooks-desktop-report-equity';
+    const seenAccounts = new Set<string>();
+    for (const pageSet of [balanceSheetPages, trialBalancePages]) {
+      for (const page of pageSet) {
+        const rows = Array.isArray(page.payload) ? page.payload.map(asRecord) : [];
+        for (const row of rows) {
+          if (text(row.rowKind) !== 'DataRow') continue;
+          const accountName = text(row.accountName || row.rowValue || reportColValue(row, '1'));
+          const mapped =
+            targetByKey.get(accountName.toLowerCase()) ||
+            targetByKey.get(text(row.rowValue).toLowerCase()) ||
+            targetByKey.get(reportColValue(row, '1').toLowerCase()) ||
+            targetByHolderKey.get(holderKey(accountName)) ||
+            targetByHolderKey.get(holderKey(text(row.rowValue))) ||
+            targetByHolderKey.get(holderKey(reportColValue(row, '1')));
+          if (!mapped) continue;
+          const resolvedAccountName = accountName || mapped.accountName;
+          const accountKey = normalizedKey(mapped.accountName || resolvedAccountName);
+          if (seenAccounts.has(accountKey)) continue;
+          const balance = reportAmount(row);
+          if (Math.abs(balance) < 0.005) continue;
+          const activity = equityActivityByAccount.get(resolvedAccountName.toLowerCase()) || [];
+          holdings.push({
+            holder: holderName(resolvedAccountName || mapped.accountName),
+            accountName: resolvedAccountName || mapped.accountName,
+            accountCode: mapped.accountCode,
+            security: securityLabel(mapped.targetField),
+            targetField: mapped.targetField,
+            balance,
+            issuedDate: activity[0]?.txnDate || null,
+            activity,
+          });
+          seenAccounts.add(accountKey);
+          reportFallbackCreatedAt = reportFallbackCreatedAt || page.createdAt;
+        }
+      }
     }
   }
 
@@ -266,8 +305,8 @@ export async function GET(request: NextRequest) {
   ).sort((a, b) => Math.abs(b.balance) - Math.abs(a.balance));
 
   const asOfDate =
-    (source === 'quickbooks-desktop-balance-sheet-equity'
-      ? balanceSheetPages[0]?.createdAt?.toISOString?.()
+    (source === 'quickbooks-desktop-report-equity'
+      ? reportFallbackCreatedAt?.toISOString?.()
       : pages[0]?.createdAt?.toISOString?.()) || new Date().toISOString();
 
   return NextResponse.json({
