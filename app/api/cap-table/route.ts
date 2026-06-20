@@ -129,7 +129,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
   }
 
-  const [mappings, pages, equityActivityByAccount] = await Promise.all([
+  const [mappings, pages, balanceSheetPages, equityActivityByAccount] = await Promise.all([
     prisma.accountMapping.findMany({
       where: {
         companyId,
@@ -151,6 +151,13 @@ export async function GET(request: NextRequest) {
       FROM "QuickBooksDesktopBackfillPage"
       WHERE "companyId" = ${companyId}
         AND "requestName" = 'AccountQuery'
+      ORDER BY "createdAt" DESC, "pageNumber" ASC
+    `,
+    prisma.$queryRaw<Array<{ payload: unknown; createdAt: Date }>>`
+      SELECT "payload", "createdAt"
+      FROM "QuickBooksDesktopBackfillPage"
+      WHERE "companyId" = ${companyId}
+        AND "requestName" = 'BalanceSheetStandardReportQuery'
       ORDER BY "createdAt" DESC, "pageNumber" ASC
     `,
     loadEquityActivityByAccount(companyId),
@@ -200,6 +207,35 @@ export async function GET(request: NextRequest) {
       };
     })
     .filter((row): row is NonNullable<typeof row> => row !== null);
+  let source = 'quickbooks-desktop-account-equity';
+  if (holdings.length === 0) {
+    source = 'quickbooks-desktop-balance-sheet-equity';
+    const balanceSheetRows = balanceSheetPages.flatMap((page) =>
+      Array.isArray(page.payload) ? page.payload.map(asRecord) : []
+    );
+    for (const row of balanceSheetRows) {
+      if (text(row.rowKind) !== 'DataRow') continue;
+      const accountName = text(row.accountName || row.rowValue || reportColValue(row, '1'));
+      const mapped =
+        targetByKey.get(accountName.toLowerCase()) ||
+        targetByKey.get(text(row.rowValue).toLowerCase()) ||
+        targetByKey.get(reportColValue(row, '1').toLowerCase());
+      if (!mapped) continue;
+      const balance = number(reportColValue(row, '2'));
+      if (Math.abs(balance) < 0.005) continue;
+      const activity = equityActivityByAccount.get(accountName.toLowerCase()) || [];
+      holdings.push({
+        holder: holderName(accountName || mapped.accountName),
+        accountName: accountName || mapped.accountName,
+        accountCode: mapped.accountCode,
+        security: securityLabel(mapped.targetField),
+        targetField: mapped.targetField,
+        balance,
+        issuedDate: activity[0]?.txnDate || null,
+        activity,
+      });
+    }
+  }
 
   const ownershipEligibleTargets = new Set(['ownersCapital', 'commonStock', 'preferredStock', 'additionalPaidInCapital']);
   const ownershipDenominator = holdings.reduce(
@@ -229,11 +265,14 @@ export async function GET(request: NextRequest) {
       .values(),
   ).sort((a, b) => Math.abs(b.balance) - Math.abs(a.balance));
 
-  const asOfDate = pages[0]?.createdAt?.toISOString?.() || new Date().toISOString();
+  const asOfDate =
+    (source === 'quickbooks-desktop-balance-sheet-equity'
+      ? balanceSheetPages[0]?.createdAt?.toISOString?.()
+      : pages[0]?.createdAt?.toISOString?.()) || new Date().toISOString();
 
   return NextResponse.json({
     success: true,
-    source: 'quickbooks-desktop-account-equity',
+    source,
     asOfDate,
     holdings: enrichedHoldings,
     securitySummary,
