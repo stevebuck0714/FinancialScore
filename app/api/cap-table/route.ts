@@ -356,6 +356,26 @@ export async function GET(request: NextRequest) {
       }
     }
   }
+  for (const mapped of targetByHolderKey.values()) {
+    if (!/capital\s*-/i.test(mapped.accountName)) continue;
+    const duplicateKeys = [
+      mapped.accountName,
+      holderName(mapped.accountName),
+    ].map(text).filter(Boolean);
+    if (duplicateKeys.some((key) => seenAccounts.has(normalizedKey(key)) || seenAccounts.has(holderKey(key)))) continue;
+    const activity = equityActivityByAccount.get(mapped.accountName.toLowerCase()) || [];
+    holdings.push({
+      holder: holderName(mapped.accountName),
+      accountName: mapped.accountName,
+      accountCode: mapped.accountCode,
+      security: securityLabel(mapped.targetField),
+      targetField: mapped.targetField,
+      balance: 0,
+      issuedDate: activity[0]?.txnDate || null,
+      activity,
+    });
+    rememberHolding(mapped.accountName, holderName(mapped.accountName));
+  }
   if (reportFallbackCreatedAt) {
     source = pages.length > 0 ? 'quickbooks-desktop-account-and-report-equity' : 'quickbooks-desktop-report-equity';
   }

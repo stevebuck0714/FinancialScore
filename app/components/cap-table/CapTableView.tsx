@@ -198,9 +198,8 @@ export default function CapTableView({ selectedCompanyId, companyName, operation
 
   if (realData) {
     const securityHolderTargetFields = new Set(['ownersCapital', 'commonStock', 'preferredStock', 'additionalPaidInCapital']);
-    const securityHoldings = realData.holdings.filter(
-      (holding) => securityHolderTargetFields.has(holding.targetField) && holding.balance > 0
-    );
+    const holderInputKey = (holding: RealCapTableHolding) => `${holding.targetField}:${holding.accountName}:${holding.holder}`;
+    const securityHoldings = realData.holdings.filter((holding) => securityHolderTargetFields.has(holding.targetField));
     const securitySummaryByName = new Map(realData.securitySummary.map((row) => [row.security, row]));
     const holderGroups = Array.from(
       securityHoldings.reduce<Map<string, RealCapTableHolding[]>>((map, holding) => {
@@ -221,7 +220,6 @@ export default function CapTableView({ selectedCompanyId, companyName, operation
         };
       })
       .sort((a, b) => Math.abs(b.balance) - Math.abs(a.balance));
-    const holderInputKey = (holding: RealCapTableHolding) => `${holding.targetField}:${holding.accountName}:${holding.holder}`;
     const sharePriceValue = Number(holderSharePrice) || 0;
     const getSharesIssued = (holding: RealCapTableHolding) => Number(sharesIssuedByHolding[holderInputKey(holding)]) || 0;
     const getHoldingValue = (holding: RealCapTableHolding) => getSharesIssued(holding) * sharePriceValue;
