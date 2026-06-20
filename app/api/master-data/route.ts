@@ -48,7 +48,13 @@ async function buildMasterDataVersion(companyId: string, scope: 'published' | 'a
       companyId
     ).catch((error: any) => [{ unavailable: true, error: String(error?.message || error).slice(0, 120) }]),
     prisma.$queryRawUnsafe<Array<Record<string, unknown>>>(
-      `SELECT COUNT(*)::text AS count, MAX("createdAt") AS "maxCreatedAt", MAX("monthDate") AS "maxMonthDate"
+      `SELECT
+         COUNT(*)::text AS count,
+         MAX("createdAt") AS "maxCreatedAt",
+         MAX("monthDate") AS "maxMonthDate",
+         SUM("commonStock")::text AS "commonStockChecksum",
+         SUM("totalEquity")::text AS "totalEquityChecksum",
+         SUM("totalLAndE")::text AS "totalLAndEChecksum"
        FROM "MonthlyFinancial"
        WHERE "companyId" = $1
          AND "monthDate" >= $2`,

@@ -2349,6 +2349,7 @@ export default function DataReviewTab({ selectedCompanyId, companyName, accountM
                         (m.commonStock || 0) +
                         (m.preferredStock || 0) +
                         (m.retainedEarnings || 0) +
+                        (m.currentYearNetIncome || 0) +
                         (m.additionalPaidInCapital || 0) +
                         (m.treasuryStock || 0);
                       return (
@@ -2399,6 +2400,7 @@ export default function DataReviewTab({ selectedCompanyId, companyName, accountM
                         (m.commonStock || 0) +
                         (m.preferredStock || 0) +
                         (m.retainedEarnings || 0) +
+                        (m.currentYearNetIncome || 0) +
                         (m.additionalPaidInCapital || 0) +
                         (m.treasuryStock || 0);
                       const totalLE =

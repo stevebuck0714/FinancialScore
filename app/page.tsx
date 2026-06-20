@@ -25063,16 +25063,11 @@ function FinancialScorePage() {
             const currentLiabilityReportRows = liabilityReportRows.filter((row) => row.group === 'current');
             const longTermLiabilityReportRows = liabilityReportRows.filter((row) => row.group !== 'current');
             const equityReportRows = [
-              ...(financialReportTargetOptions.equity || []).flatMap((option: any) => {
-                const row = {
-                  key: option.value,
-                  label: option.label,
-                  indent: 20,
-                };
-                return option.value === 'retainedEarnings' && rowsHaveValue(monthly, 'currentYearNetIncome')
-                  ? [row, { key: 'currentYearNetIncome', label: getFieldDisplayName('currentYearNetIncome'), indent: 20 }]
-                  : [row];
-              }),
+              ...(financialReportTargetOptions.equity || []).map((option: any) => ({
+                key: option.value,
+                label: option.label,
+                indent: 20,
+              })),
               ...(rowsHaveValue(monthly, 'paidInCapital') ? [{ key: 'paidInCapital', label: 'Paid-in Capital', indent: 20 }] : []),
             ];
 
@@ -27232,7 +27227,7 @@ function FinancialScorePage() {
                         </div>
                         <div style={{ margin: '12px 0 4px', fontSize: '15px', fontWeight: '700', color: '#1e293b' }}>EQUITY</div>
                         {equityReportRows
-                          .filter((row) => row.key !== 'retainedEarnings')
+                          .filter((row) => row.key !== 'retainedEarnings' && row.key !== 'currentYearNetIncome')
                           .map((row) => {
                             const values = balanceData.map((p) => Number(p[row.key]) || 0);
                             return hasAnyBalanceValue(values) ? <Row key={row.key} label={row.label} values={values} indent={row.indent} /> : null;
