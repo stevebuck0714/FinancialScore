@@ -74,6 +74,8 @@ export default function CapTableView({ selectedCompanyId, companyName, operation
   const [realData, setRealData] = useState<RealCapTableData | null>(null);
   const [loadingRealData, setLoadingRealData] = useState(false);
   const [realDataError, setRealDataError] = useState<string | null>(null);
+  const [holderSharePrice, setHolderSharePrice] = useState('');
+  const [sharesIssuedByHolding, setSharesIssuedByHolding] = useState<Record<string, string>>({});
   const allowMockCapTableData =
     process.env.NODE_ENV === 'development' &&
     process.env.NEXT_PUBLIC_ENABLE_CAP_TABLE_MOCKS === 'true';
@@ -145,6 +147,14 @@ export default function CapTableView({ selectedCompanyId, companyName, operation
     color: '#0f172a',
     borderBottom: '1px solid #f1f5f9',
   };
+  const inputStyle: React.CSSProperties = {
+    width: '120px',
+    padding: '6px 8px',
+    border: '1px solid #cbd5e1',
+    borderRadius: '8px',
+    fontSize: '13px',
+    textAlign: 'right',
+  };
 
   if (realData) {
     const securityHolderTargetFields = new Set(['ownersCapital', 'commonStock', 'preferredStock', 'additionalPaidInCapital']);
@@ -171,8 +181,13 @@ export default function CapTableView({ selectedCompanyId, companyName, operation
         };
       })
       .sort((a, b) => Math.abs(b.balance) - Math.abs(a.balance));
+    const holderInputKey = (holding: RealCapTableHolding) => `${holding.targetField}:${holding.accountName}:${holding.holder}`;
+    const sharePriceValue = Number(holderSharePrice) || 0;
+    const getSharesIssued = (holding: RealCapTableHolding) => Number(sharesIssuedByHolding[holderInputKey(holding)]) || 0;
+    const getHoldingValue = (holding: RealCapTableHolding) => getSharesIssued(holding) * sharePriceValue;
     const holderDetailTotalBalance = securityHoldings.reduce((sum, holding) => sum + Number(holding.balance || 0), 0);
-    const holderDetailTotalOwnershipPct = securityHoldings.reduce((sum, holding) => sum + Number(holding.ownershipPct || 0), 0);
+    const holderDetailTotalShares = securityHoldings.reduce((sum, holding) => sum + getSharesIssued(holding), 0);
+    const holderDetailTotalValue = securityHoldings.reduce((sum, holding) => sum + getHoldingValue(holding), 0);
     const subtotalRowStyle: React.CSSProperties = {
       ...tdStyle,
       background: '#f8fafc',
@@ -234,7 +249,21 @@ export default function CapTableView({ selectedCompanyId, companyName, operation
         </div>
 
         <div style={{ ...cardStyle, padding: 0, overflow: 'hidden' }}>
-          <div style={{ padding: '14px 16px', borderBottom: '1px solid #e2e8f0', fontWeight: 900 }}>Holder Detail</div>
+          <div style={{ padding: '14px 16px', borderBottom: '1px solid #e2e8f0', display: 'flex', justifyContent: 'space-between', gap: '12px', alignItems: 'center', flexWrap: 'wrap' }}>
+            <div style={{ fontWeight: 900 }}>Holder Detail</div>
+            <label style={{ display: 'flex', gap: '8px', alignItems: 'center', fontSize: '13px', fontWeight: 800, color: '#475569' }}>
+              Share price
+              <input
+                type="number"
+                min="0"
+                step="0.0001"
+                value={holderSharePrice}
+                onChange={(event) => setHolderSharePrice(event.target.value)}
+                placeholder="0.00"
+                style={inputStyle}
+              />
+            </label>
+          </div>
           <div style={{ overflowX: 'auto' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
               <thead>
@@ -242,53 +271,78 @@ export default function CapTableView({ selectedCompanyId, companyName, operation
                   <th style={thStyle}>Holder</th>
                   <th style={thStyle}>Security</th>
                   <th style={thStyle}>Issued Date</th>
-                  <th style={thStyle}>Account</th>
                   <th style={{ ...thStyle, textAlign: 'right' }}>Capital Balance</th>
+                  <th style={{ ...thStyle, textAlign: 'right' }}>Shares Issued</th>
+                  <th style={{ ...thStyle, textAlign: 'right' }}>Value</th>
                   <th style={{ ...thStyle, textAlign: 'right' }}>% Ownership</th>
                 </tr>
               </thead>
               <tbody>
-                {holderGroups.map((group) => (
-                  <React.Fragment key={group.security}>
-                    <tr>
-                      <td colSpan={6} style={{ ...tdStyle, background: '#f8fafc', color: '#334155', fontWeight: 900 }}>
-                        {group.security}
-                      </td>
-                    </tr>
-                    {group.holdings.map((holding) => (
-                      <tr key={`${holding.accountName}-${holding.targetField}`}>
-                        <td style={{ ...tdStyle, fontWeight: 800 }}>{holding.holder}</td>
-                        <td style={tdStyle}>{holding.security}</td>
-                        <td style={tdStyle}>
-                          {holding.issuedDate ? formatDate(holding.issuedDate) : '-'}
-                          {holding.activity && holding.activity.length > 1 && (
-                            <div style={{ marginTop: '2px', color: '#64748b', fontSize: '11px' }}>
-                              {holding.activity.length} tranches
-                            </div>
-                          )}
+                {holderGroups.map((group) => {
+                  const groupShares = group.holdings.reduce((sum, holding) => sum + getSharesIssued(holding), 0);
+                  const groupValue = group.holdings.reduce((sum, holding) => sum + getHoldingValue(holding), 0);
+                  const groupOwnershipPct = holderDetailTotalValue > 0 ? (groupValue / holderDetailTotalValue) * 100 : null;
+                  return (
+                    <React.Fragment key={group.security}>
+                      <tr>
+                        <td colSpan={7} style={{ ...tdStyle, background: '#f8fafc', color: '#334155', fontWeight: 900 }}>
+                          {group.security}
                         </td>
-                        <td style={tdStyle}>{holding.accountName}</td>
-                        <td style={{ ...tdStyle, textAlign: 'right' }}>{formatCurrency(holding.balance)}</td>
-                        <td style={{ ...tdStyle, textAlign: 'right', fontWeight: 800 }}>{holding.ownershipPct == null ? '-' : formatPercent(holding.ownershipPct)}</td>
                       </tr>
-                    ))}
-                    <tr>
-                      <td style={subtotalRowStyle}>{group.security} Subtotal</td>
-                      <td style={subtotalRowStyle}>{group.security}</td>
-                      <td style={subtotalRowStyle}>-</td>
-                      <td style={subtotalRowStyle}>-</td>
-                      <td style={{ ...subtotalRowStyle, textAlign: 'right' }}>{formatCurrency(group.balance)}</td>
-                      <td style={{ ...subtotalRowStyle, textAlign: 'right' }}>{group.ownershipPct ? formatPercent(group.ownershipPct) : '-'}</td>
-                    </tr>
-                  </React.Fragment>
-                ))}
+                      {group.holdings.map((holding) => {
+                        const key = holderInputKey(holding);
+                        const sharesIssued = sharesIssuedByHolding[key] || '';
+                        const holdingValue = getHoldingValue(holding);
+                        const ownershipPct = holderDetailTotalValue > 0 ? (holdingValue / holderDetailTotalValue) * 100 : null;
+                        return (
+                          <tr key={`${holding.accountName}-${holding.targetField}`}>
+                            <td style={{ ...tdStyle, fontWeight: 800 }}>{holding.holder}</td>
+                            <td style={tdStyle}>{holding.security}</td>
+                            <td style={tdStyle}>
+                              {holding.issuedDate ? formatDate(holding.issuedDate) : '-'}
+                              {holding.activity && holding.activity.length > 1 && (
+                                <div style={{ marginTop: '2px', color: '#64748b', fontSize: '11px' }}>
+                                  {holding.activity.length} tranches
+                                </div>
+                              )}
+                            </td>
+                            <td style={{ ...tdStyle, textAlign: 'right' }}>{formatCurrency(holding.balance)}</td>
+                            <td style={{ ...tdStyle, textAlign: 'right' }}>
+                              <input
+                                type="number"
+                                min="0"
+                                step="1"
+                                value={sharesIssued}
+                                onChange={(event) => setSharesIssuedByHolding((current) => ({ ...current, [key]: event.target.value }))}
+                                placeholder="0"
+                                style={inputStyle}
+                              />
+                            </td>
+                            <td style={{ ...tdStyle, textAlign: 'right' }}>{holdingValue > 0 ? formatCurrency(holdingValue) : '-'}</td>
+                            <td style={{ ...tdStyle, textAlign: 'right', fontWeight: 800 }}>{ownershipPct == null ? '-' : formatPercent(ownershipPct)}</td>
+                          </tr>
+                        );
+                      })}
+                      <tr>
+                        <td style={subtotalRowStyle}>{group.security} Subtotal</td>
+                        <td style={subtotalRowStyle}>{group.security}</td>
+                        <td style={subtotalRowStyle}>-</td>
+                        <td style={{ ...subtotalRowStyle, textAlign: 'right' }}>{formatCurrency(group.balance)}</td>
+                        <td style={{ ...subtotalRowStyle, textAlign: 'right' }}>{groupShares > 0 ? formatNumber(groupShares) : '-'}</td>
+                        <td style={{ ...subtotalRowStyle, textAlign: 'right' }}>{groupValue > 0 ? formatCurrency(groupValue) : '-'}</td>
+                        <td style={{ ...subtotalRowStyle, textAlign: 'right' }}>{groupOwnershipPct == null ? '-' : formatPercent(groupOwnershipPct)}</td>
+                      </tr>
+                    </React.Fragment>
+                  );
+                })}
                 <tr>
                   <td style={grandTotalRowStyle}>Total All Securities</td>
                   <td style={grandTotalRowStyle}>All Securities</td>
                   <td style={grandTotalRowStyle}>-</td>
-                  <td style={grandTotalRowStyle}>-</td>
                   <td style={{ ...grandTotalRowStyle, textAlign: 'right' }}>{formatCurrency(holderDetailTotalBalance)}</td>
-                  <td style={{ ...grandTotalRowStyle, textAlign: 'right' }}>{holderDetailTotalOwnershipPct ? formatPercent(holderDetailTotalOwnershipPct) : '-'}</td>
+                  <td style={{ ...grandTotalRowStyle, textAlign: 'right' }}>{holderDetailTotalShares > 0 ? formatNumber(holderDetailTotalShares) : '-'}</td>
+                  <td style={{ ...grandTotalRowStyle, textAlign: 'right' }}>{holderDetailTotalValue > 0 ? formatCurrency(holderDetailTotalValue) : '-'}</td>
+                  <td style={{ ...grandTotalRowStyle, textAlign: 'right' }}>{holderDetailTotalValue > 0 ? '100.0%' : '-'}</td>
                 </tr>
               </tbody>
             </table>
