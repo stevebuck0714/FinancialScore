@@ -191,7 +191,7 @@ type WipLineItemSortKey =
   | 'invoicedValue';
 type ProductReportView = 'productMarginAnalysis' | 'wholesaleRawData' | 'vendorPricing' | 'performance' | 'retailForecast' | 'merchandiseProfitability';
 
-const OPERATIONAL_REPORT_MIN_DATE = '2024-01-01';
+const OPERATIONAL_REPORT_MIN_DATE = '2023-01-01';
 const WHOLESALE_INVENTORY_EXCLUDED_SECTION_KEYS = new Set([
   'inventoryRetailTurns',
   'inventoryRetailProductAging',
@@ -3456,8 +3456,9 @@ export default function OperationsTab({
     const entityPluralLower = isRetailSalesLanguage ? 'product categories' : 'customers';
     const formatPct = (value: number | null | undefined) =>
       value == null || !Number.isFinite(value) ? 'N/A' : `${Number(value).toFixed(1)}%`;
-    const manufacturingSalesPage = null;
-    const salesPageForDisplay = platosSalesPage;
+    const sourceSystemSalesPage = summary?.sourceSystemSalesPage || null;
+    const salesPageForDisplay = sourceSystemSalesPage || platosSalesPage;
+    const isSourceSystemSalesPage = Boolean(sourceSystemSalesPage);
     const isManufacturingSalesFallback = false;
     const renderWorkbookHistoryTable = (title: string, section: any) => {
       if (!section || !Array.isArray(section.rows) || section.rows.length === 0) return null;
@@ -4377,7 +4378,7 @@ export default function OperationsTab({
                     {renderSalesReportEmptyState()}
                   </div>
                 )}
-                {!isManufacturingSalesFallback && (renderWorkbookHistoryTable('Buys History', salesReportPayload.buys) || (
+                {!isSourceSystemSalesPage && (renderWorkbookHistoryTable('Buys History', salesReportPayload.buys) || (
                   <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '16px' }}>
                     <h3 style={{ margin: '0 0 12px 0', fontSize: '16px', color: '#1e293b' }}>Buys History</h3>
                     {renderSalesReportEmptyState()}

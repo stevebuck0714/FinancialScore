@@ -53,10 +53,10 @@ const OPERATIONAL_DATA_CACHE_TTL_SECONDS = 120;
 const OPERATIONAL_HEAVY_DATA_CACHE_TTL_SECONDS = 30 * 60;
 const CUSTOMER_CONCENTRATION_CACHE_TTL_SECONDS = 30 * 24 * 60 * 60;
 const CUSTOMER_CONCENTRATION_CACHE_VERSION = 'customer-concentration-exposure-v10';
-const CUSTOMER_REVENUE_SOURCE_VERSION = 'customer-revenue-source-v2';
+const CUSTOMER_REVENUE_SOURCE_VERSION = 'customer-revenue-source-v3-source-system-sales';
 const CUSTOMER_WIP_SOURCE_VERSION = 'customer-backlog-source-v4';
 const CUSTOMER_BACKLOG_MIN_ORDER_DATE = '2023-06-01';
-const OPERATIONAL_REPORT_MIN_DATE = '2024-01-01';
+const OPERATIONAL_REPORT_MIN_DATE = '2023-01-01';
 const WHOLESALE_PRODUCTS_REPORT_CACHE_TTL_SECONDS = 30 * 24 * 60 * 60;
 const OPERATIONAL_CACHEABLE_TYPES = new Set([
   'customers',
@@ -249,7 +249,7 @@ async function buildOperationalDataVersion(companyId: string, type: string | nul
           endDate
         )
       : Promise.resolve({ label: 'APAgingSnapshot', skipped: true }),
-    (includeAll || type === 'products')
+    (includeAll || type === 'products' || type === 'customers')
       ? safeOperationalVersionPart(
           'ProductSalesSnapshot',
           `SELECT COUNT(*)::text AS count, MAX("createdAt") AS "maxCreatedAt", MAX("snapshotDate") AS "maxSnapshotDate"
@@ -3482,6 +3482,113 @@ export async function GET(request: NextRequest) {
           };
         };
 
+        const buildSourceSystemSalesPage = async () => {
+          if (!usesSourceSystemProductSnapshots) return null;
+          const productRows = await prisma.productSalesSnapshot.findMany({
+            where: {
+              companyId,
+              frequency,
+              snapshotDate: { gte: startDate, lte: endDate },
+            },
+            orderBy: { snapshotDate: 'asc' },
+            take: 100000,
+          });
+          const rowsForPayload = productRows.length > 0 || frequency === 'monthly'
+            ? productRows
+            : await prisma.productSalesSnapshot.findMany({
+                where: {
+                  companyId,
+                  frequency: 'monthly',
+                  snapshotDate: { gte: startOfMonth(startDate), lte: endDate },
+                },
+                orderBy: { snapshotDate: 'asc' },
+                take: 100000,
+              });
+          if (rowsForPayload.length === 0) return null;
+
+          const monthMap = new Map<string, { monthKey: string; monthLabel: string; revenue: number; cogs: number; grossMargin: number }>();
+          const categoryMap = new Map<string, { label: string; values: Record<string, number>; total: number }>();
+          const ytdStart = startOfBusinessYear(endDate);
+          const mtdStart = startOfBusinessMonth(endDate);
+          const priorMtdStart = new Date(Date.UTC(mtdStart.getUTCFullYear() - 1, mtdStart.getUTCMonth(), 1));
+          const priorMtdEnd = new Date(Date.UTC(endDate.getUTCFullYear() - 1, endDate.getUTCMonth(), endDate.getUTCDate(), 23, 59, 59, 999));
+          const priorYtdStart = new Date(Date.UTC(ytdStart.getUTCFullYear() - 1, 0, 1));
+          const priorYtdEnd = new Date(Date.UTC(endDate.getUTCFullYear() - 1, endDate.getUTCMonth(), endDate.getUTCDate(), 23, 59, 59, 999));
+          let mtdValue = 0;
+          let priorMtdValue = 0;
+          let totalValue = 0;
+          let priorYtdValue = 0;
+
+          for (const row of rowsForPayload as any[]) {
+            const snapshot = new Date(row.snapshotDate);
+            if (Number.isNaN(snapshot.getTime())) continue;
+            const revenue = Number(row.revenue || 0);
+            const cogs = Number(row.cogs || 0);
+            const rawGrossMargin = Number(row.grossMargin ?? NaN);
+            const grossMargin = Number.isFinite(rawGrossMargin) ? rawGrossMargin : revenue - cogs;
+            const monthKey = businessMonthKey(snapshot);
+            const monthLabel = snapshot.toLocaleDateString('en-US', { month: 'short', year: 'numeric', timeZone: 'UTC' });
+            const monthBucket = monthMap.get(monthKey) || { monthKey, monthLabel, revenue: 0, cogs: 0, grossMargin: 0 };
+            monthBucket.revenue += revenue;
+            monthBucket.cogs += cogs;
+            monthBucket.grossMargin += grossMargin;
+            monthMap.set(monthKey, monthBucket);
+
+            const categoryLabel = String(row.itemName || row.sku || row.itemId || 'Unknown Product').trim() || 'Unknown Product';
+            const categoryBucket = categoryMap.get(categoryLabel) || { label: categoryLabel, values: {}, total: 0 };
+            categoryBucket.values[monthKey] = Number(categoryBucket.values[monthKey] || 0) + revenue;
+            categoryBucket.total += revenue;
+            categoryMap.set(categoryLabel, categoryBucket);
+
+            if (snapshot >= mtdStart && snapshot <= endDate) mtdValue += revenue;
+            if (snapshot >= ytdStart && snapshot <= endDate) totalValue += revenue;
+            if (snapshot >= priorMtdStart && snapshot <= priorMtdEnd) priorMtdValue += revenue;
+            if (snapshot >= priorYtdStart && snapshot <= priorYtdEnd) priorYtdValue += revenue;
+          }
+
+          const months = Array.from(monthMap.values()).sort((a, b) => a.monthKey.localeCompare(b.monthKey));
+          const categoryRows = Array.from(categoryMap.values())
+            .sort((a, b) => Number(b.total || 0) - Number(a.total || 0))
+            .slice(0, 25);
+          const totalRow = {
+            label: 'Total Sales',
+            values: Object.fromEntries(months.map((month) => [month.monthKey, Number(month.revenue || 0)])),
+            total: months.reduce((sum, month) => sum + Number(month.revenue || 0), 0),
+          };
+          const grossMarginRows = months.map((month) => ({
+            monthKey: month.monthKey,
+            monthLabel: month.monthLabel,
+            gmDollars: Number(month.grossMargin || 0),
+            gmPct: Number(month.revenue || 0) > 0 ? (Number(month.grossMargin || 0) / Number(month.revenue || 0)) * 100 : 0,
+          }));
+
+          return {
+            source: 'source-system-product-snapshots',
+            sales: {
+              mtdValue,
+              mtdCompPct: priorMtdValue > 0 ? (mtdValue - priorMtdValue) / priorMtdValue : 0,
+              totalValue,
+              indexPct: priorYtdValue > 0 ? totalValue / priorYtdValue : 0,
+              currentYearLabel: String(endDate.getUTCFullYear()),
+              categoryHistory: {
+                months,
+                rows: categoryRows,
+                totalRow,
+              },
+            },
+            grossMarginHistory: {
+              rows: grossMarginRows,
+              chartData: grossMarginRows.map((row) => ({
+                month: row.monthLabel,
+                monthKey: row.monthKey,
+                gmDollars: row.gmDollars,
+                gmPct: row.gmPct,
+              })),
+            },
+            buys: null,
+          };
+        };
+
         // --- Track 2: WIP from order line snapshots ---
         const fetchWip = async () => {
         let wipAsOf: string | null = null;
@@ -4246,11 +4353,12 @@ export async function GET(request: NextRequest) {
         }
 
         // Run all three tracks in parallel
-        const [salesResult, wipResult, arResult, platosSalesPage] = await Promise.all([
+        const [salesResult, wipResult, arResult, platosSalesPage, sourceSystemSalesPage] = await Promise.all([
           fetchSalesAndBookings(),
           fetchWip(),
           fetchArOverview(),
           getPlatosClosetSalesPageSummary({ companyId, startDate, endDate }),
+          buildSourceSystemSalesPage(),
         ]);
 
         data = salesResult.salesData;
@@ -4280,6 +4388,7 @@ export async function GET(request: NextRequest) {
             customerOpenArByCustomer: arResult.customerOpenArByCustomer,
             customerOpenArComplete: arResult.customerOpenArComplete,
             platosSalesPage,
+            sourceSystemSalesPage,
             realEstateReports: getRealEstateReportsForSummary(),
           },
         });
