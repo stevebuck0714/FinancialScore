@@ -55,6 +55,7 @@ export default function CommercialTermsTab() {
   const [companies, setCompanies] = useState<CompanyRow[]>([]);
   const [consultants, setConsultants] = useState<ConsultantRow[]>([]);
   const [selectedConsultantId, setSelectedConsultantId] = useState('all');
+  const [deletingCompanyId, setDeletingCompanyId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
 
@@ -100,6 +101,35 @@ export default function CommercialTermsTab() {
   useEffect(() => {
     loadData();
   }, []);
+
+  const deleteCompany = async (company: CompanyRow) => {
+    const typedName = window.prompt(`Type "${company.name}" to permanently delete this company and all related data.`);
+    if (typedName !== company.name) {
+      if (typedName !== null) window.alert('Company name did not match. Delete cancelled.');
+      return;
+    }
+
+    try {
+      setDeletingCompanyId(company.id);
+      const response = await fetch(`/api/companies/${company.id}`, {
+        method: 'DELETE',
+        headers: {
+          'x-confirm-delete': 'true',
+        },
+      });
+      const result = await response.json().catch(() => ({}));
+
+      if (!response.ok || !result.success) {
+        throw new Error(result?.error || 'Failed to delete company');
+      }
+
+      setCompanies((prev) => prev.filter((item) => item.id !== company.id));
+    } catch (err: any) {
+      window.alert(err.message || 'Failed to delete company');
+    } finally {
+      setDeletingCompanyId(null);
+    }
+  };
 
   if (isLoading) {
     return <div style={{ padding: '40px', textAlign: 'center', color: '#64748b' }}>Loading commercial terms...</div>;
@@ -171,6 +201,7 @@ export default function CommercialTermsTab() {
               <th style={{ padding: '12px', textAlign: 'left', fontSize: '12px', color: '#64748b' }}>Invoice / Payment</th>
               <th style={{ padding: '12px', textAlign: 'right', fontSize: '12px', color: '#64748b' }}>Customer Pricing</th>
               <th style={{ padding: '12px', textAlign: 'left', fontSize: '12px', color: '#64748b' }}>Notes</th>
+              <th style={{ padding: '12px', textAlign: 'left', fontSize: '12px', color: '#64748b' }}>Actions</th>
             </tr>
           </thead>
           <tbody>
@@ -201,11 +232,29 @@ export default function CommercialTermsTab() {
                 <td style={{ padding: '12px', fontSize: '13px', color: '#475569', maxWidth: '260px' }}>
                   {company.commercialTermsNotes || ''}
                 </td>
+                <td style={{ padding: '12px', fontSize: '13px', color: '#475569' }}>
+                  <button
+                    onClick={() => deleteCompany(company)}
+                    disabled={deletingCompanyId === company.id}
+                    style={{
+                      padding: '6px 10px',
+                      background: deletingCompanyId === company.id ? '#fca5a5' : '#ef4444',
+                      color: 'white',
+                      border: 'none',
+                      borderRadius: '6px',
+                      fontSize: '12px',
+                      fontWeight: 700,
+                      cursor: deletingCompanyId === company.id ? 'not-allowed' : 'pointer',
+                    }}
+                  >
+                    {deletingCompanyId === company.id ? 'Deleting...' : 'Delete'}
+                  </button>
+                </td>
               </tr>
             ))}
             {filteredCompanies.length === 0 && (
               <tr>
-                <td colSpan={10} style={{ padding: '30px', textAlign: 'center', color: '#64748b' }}>No companies found for this consultant filter.</td>
+                <td colSpan={11} style={{ padding: '30px', textAlign: 'center', color: '#64748b' }}>No companies found for this consultant filter.</td>
               </tr>
             )}
           </tbody>

@@ -3,6 +3,89 @@ import prisma from '@/lib/prisma';
 import { hashPassword } from '@/lib/auth';
 import { validatePassword } from '@/lib/password-validator';
 
+const COMPANY_SCOPED_TABLE_DELETE_ORDER = [
+  'FinancialForecastBudgetArchive',
+  'FinancialForecastInputSettings',
+  'CustomReport',
+  'UserCompanyAccess',
+  'CompanyDocumentChunk',
+  'DataRoomDocument',
+  'CompanyDocument',
+  'MonthlyFinancial',
+  'FinancialRecord',
+  'AssessmentRecord',
+  'CompanyProfile',
+  'AccountingConnection',
+  'OperationalSystemConnection',
+  'PlatosClosetMonthlyFact',
+  'PlatosClosetWorkbookSnapshot',
+  'ApiSyncLog',
+  'PulseExecBriefingCache',
+  'PulseDailySummary',
+  'InforSyncTaskAttempt',
+  'InforSyncTask',
+  'InforSyncRun',
+  'InforRawRecord',
+  'InforRawBatch',
+  'InforRawCompleteness',
+  'InforItemOverviewCache',
+  'AccountMapping',
+  'XeroTransaction',
+  'PaymentTransaction',
+  'SubscriptionEvent',
+  'Subscription',
+  'RevenueRecord',
+  'Loan',
+  'CustomerSalesSnapshot',
+  'ARAgingSnapshot',
+  'AROpenInvoiceSnapshot',
+  'ARPaymentFact',
+  'GLTransactionFact',
+  'APTransactionFact',
+  'ARTransactionFact',
+  'ARInvoiceDetail',
+  'ARInvoiceOriginMap',
+  'CustomerContractStatus',
+  'CustomerCashFlow',
+  'CustomerOrderLineSnapshot',
+  'SalesInvoiceHeaderSnapshot',
+  'APOpenBillSnapshot',
+  'APPaymentFact',
+  'APAgingSnapshot',
+  'VendorSnapshot',
+  'ProductSalesSnapshot',
+  'InventorySnapshot',
+  'CashSnapshot',
+  'DailyFinancialSnapshot',
+  'DailyFinancialImportRun',
+  'FinancialMonthPublish',
+  'DailyFinancialMappedLine',
+  'BalanceSheetAnchor',
+  'BalanceSheetAccountAnchor',
+] as const;
+
+function quoteIdentifier(identifier: string): string {
+  return `"${identifier.replace(/"/g, '""')}"`;
+}
+
+async function getExistingCompanyScopedTables(): Promise<Set<string>> {
+  const rows = await prisma.$queryRawUnsafe<Array<{ tableName: string }>>(
+    `SELECT tablename AS "tableName"
+     FROM pg_catalog.pg_tables
+     WHERE schemaname = 'public'
+       AND tablename = ANY($1::text[])`,
+    COMPANY_SCOPED_TABLE_DELETE_ORDER as unknown as string[],
+  );
+  return new Set(rows.map((row) => row.tableName));
+}
+
+async function deleteCompanyScopedRows(tx: any, tableName: string, companyId: string) {
+  await tx.$executeRawUnsafe(
+    `DELETE FROM ${quoteIdentifier(tableName)} WHERE "companyId" = $1`,
+    companyId,
+  );
+}
+
 // GET all consultants (site admin only) or single consultant by ID
 export async function GET(request: NextRequest) {
   try {
@@ -328,16 +411,74 @@ export async function DELETE(request: NextRequest) {
       );
     }
 
-    // This will cascade delete companies, users, records, etc.
-    await prisma.consultant.delete({
-      where: { id }
+    const consultant = await prisma.consultant.findUnique({
+      where: { id },
+      select: {
+        id: true,
+        userId: true,
+        fullName: true,
+        companies: {
+          select: { id: true }
+        }
+      }
     });
 
+    if (!consultant) {
+      return NextResponse.json({ success: true, message: 'Consultant was already removed.' });
+    }
+
+    const ownedCompanyIds = consultant.companies.map((company) => company.id);
+    const existingCompanyScopedTables = await getExistingCompanyScopedTables();
+
+    await prisma.$transaction(async (tx) => {
+      for (const companyId of ownedCompanyIds) {
+        for (const tableName of COMPANY_SCOPED_TABLE_DELETE_ORDER) {
+          if (!existingCompanyScopedTables.has(tableName)) continue;
+          await deleteCompanyScopedRows(tx, tableName, companyId);
+        }
+
+        await tx.user.deleteMany({ where: { companyId } });
+        await tx.company.deleteMany({ where: { id: companyId } });
+      }
+
+      // Keep unrelated companies, but remove references to the deleted consultant.
+      await tx.company.updateMany({
+        where: { referralPartnerConsultantId: id },
+        data: {
+          referralPartnerConsultantId: null,
+          referralSetupFeePercentage: 0,
+          referralRecurringFeePercentage: 0
+        }
+      });
+
+      // Preserve non-company revenue history while removing the consultant FK.
+      await tx.revenueRecord.updateMany({
+        where: { consultantId: id },
+        data: { consultantId: null }
+      });
+
+      await tx.consultantPayable.deleteMany({ where: { consultantId: id } });
+
+      // Team members reference the consultant through User.consultantId.
+      // Delete them before the consultant so production FK behavior is explicit.
+      await tx.user.deleteMany({
+        where: {
+          consultantId: id,
+          id: { not: consultant.userId }
+        }
+      });
+
+      await tx.consultant.delete({ where: { id } });
+
+      // If the primary consultant user did not have consultantId populated, remove it here.
+      await tx.user.deleteMany({ where: { id: consultant.userId } });
+    }, { timeout: 30000, maxWait: 10000 });
+
     return NextResponse.json({ success: true });
-  } catch (error) {
+  } catch (error: any) {
     console.error('Error deleting consultant:', error);
     return NextResponse.json(
-      { error: 'Internal server error' },
+      { error: error.message || 'Internal server error' },
       { status: 500 }
     );
   }
