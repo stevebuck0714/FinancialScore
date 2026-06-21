@@ -45,7 +45,22 @@ export async function GET(request: NextRequest) {
         company: {
           select: {
             id: true,
-            name: true
+            name: true,
+            referralPartnerConsultantId: true,
+            referralSetupFeePercentage: true,
+            referralRecurringFeePercentage: true,
+            commercialBillingMethod: true,
+            commercialPaymentStatus: true,
+            commercialInvoiceNumber: true,
+            commercialPaymentDate: true,
+            commercialTermsNotes: true,
+            referralPartner: {
+              select: {
+                id: true,
+                fullName: true,
+                companyName: true
+              }
+            }
           }
         },
         consultant: {

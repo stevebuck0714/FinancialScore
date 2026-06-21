@@ -9,6 +9,21 @@ export default function BillingReportsTab() {
   const [expandedConsultants, setExpandedConsultants] = useState<Set<string>>(new Set());
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
+  const billingMethodLabels: Record<string, string> = {
+    usaepay: 'USAePay',
+    quickbooks_invoice: 'QuickBooks Invoice',
+    manual_external: 'Manual / External',
+    no_platform_payment: 'No Platform Payment',
+  };
+  const paymentStatusLabels: Record<string, string> = {
+    not_billed: 'Not Billed',
+    invoiced: 'Invoiced',
+    paid: 'Paid',
+    overdue: 'Overdue',
+    waived: 'Waived',
+    no_payment_required: 'No Payment Required',
+    external_paid: 'External Paid',
+  };
 
   const generateConsultantReport = async () => {
     try {
@@ -40,8 +55,11 @@ export default function BillingReportsTab() {
   const exportReport = () => {
     const data = consultantReport.map(r => ({
       'Consultant': r.consultantName,
+      'Owned Revenue': r.ownedRevenue,
+      'Referral Revenue': r.referralRevenue,
       'Total Revenue': r.totalRevenue,
       'Revenue Share %': r.revenueSharePercentage,
+      'Referral Share': r.referralShare,
       'Consultant Share': r.consultantShare,
       'Platform Share': r.platformShare,
       'Payment Count': r.recordCount
@@ -218,7 +236,10 @@ export default function BillingReportsTab() {
                     {consultant.consultantName}
                   </div>
                   <div style={{ fontSize: '13px', color: '#64748b', marginTop: '4px' }}>
-                    {consultant.recordCount} payments • {consultant.revenueSharePercentage}% share
+                    {consultant.recordCount} payments • {consultant.revenueSharePercentage}% owned-company share
+                  </div>
+                  <div style={{ fontSize: '12px', color: '#64748b', marginTop: '2px' }}>
+                    Owned revenue: {formatCurrency(consultant.ownedRevenue || 0)} • Referral revenue: {formatCurrency(consultant.referralRevenue || 0)}
                   </div>
                 </div>
                 <div style={{ textAlign: 'right', marginRight: '40px' }}>
@@ -247,7 +268,10 @@ export default function BillingReportsTab() {
                     <thead>
                       <tr style={{ borderBottom: '1px solid #e2e8f0' }}>
                         <th style={{ padding: '8px', textAlign: 'left', fontSize: '12px', fontWeight: '600', color: '#64748b' }}>Company</th>
+                        <th style={{ padding: '8px', textAlign: 'left', fontSize: '12px', fontWeight: '600', color: '#64748b' }}>Billing Method</th>
+                        <th style={{ padding: '8px', textAlign: 'left', fontSize: '12px', fontWeight: '600', color: '#64748b' }}>Payment Status</th>
                         <th style={{ padding: '8px', textAlign: 'right', fontSize: '12px', fontWeight: '600', color: '#64748b' }}>Total Revenue</th>
+                        <th style={{ padding: '8px', textAlign: 'right', fontSize: '12px', fontWeight: '600', color: '#64748b' }}>Referral Revenue</th>
                         <th style={{ padding: '8px', textAlign: 'right', fontSize: '12px', fontWeight: '600', color: '#64748b' }}>Payment Count</th>
                       </tr>
                     </thead>
@@ -255,8 +279,18 @@ export default function BillingReportsTab() {
                       {consultant.companies.map((company: any) => (
                         <tr key={company.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
                           <td style={{ padding: '8px', fontSize: '13px', color: '#1e293b' }}>{company.name}</td>
+                          <td style={{ padding: '8px', fontSize: '13px', color: '#64748b' }}>
+                            {billingMethodLabels[company.commercialBillingMethod || 'usaepay'] || 'USAePay'}
+                            {company.commercialInvoiceNumber ? ` (${company.commercialInvoiceNumber})` : ''}
+                          </td>
+                          <td style={{ padding: '8px', fontSize: '13px', color: '#64748b' }}>
+                            {paymentStatusLabels[company.commercialPaymentStatus || 'not_billed'] || 'Not Billed'}
+                          </td>
                           <td style={{ padding: '8px', fontSize: '13px', color: '#1e293b', textAlign: 'right', fontWeight: '500' }}>
                             {formatCurrency(company.totalRevenue)}
+                          </td>
+                          <td style={{ padding: '8px', fontSize: '13px', color: '#1e293b', textAlign: 'right', fontWeight: '500' }}>
+                            {formatCurrency(company.referralRevenue || 0)}
                           </td>
                           <td style={{ padding: '8px', fontSize: '13px', color: '#64748b', textAlign: 'right' }}>
                             {company.recordCount}

@@ -142,6 +142,15 @@ export async function GET(request: NextRequest) {
     const includeHasRealOperationalData = await hasCompanyColumn("hasRealOperationalData");
     const includeRealDataActivatedAt = await hasCompanyColumn("realDataActivatedAt");
     const includeForceOperationalMockData = await hasCompanyColumn("forceOperationalMockData");
+    const includeReferralPartnerConsultantId = await hasCompanyColumn("referralPartnerConsultantId");
+    const includeReferralSetupFeePercentage = await hasCompanyColumn("referralSetupFeePercentage");
+    const includeReferralRecurringFeePercentage = await hasCompanyColumn("referralRecurringFeePercentage");
+    const includeCommercialBillingMethod = await hasCompanyColumn("commercialBillingMethod");
+    const includeCommercialPaymentStatus = await hasCompanyColumn("commercialPaymentStatus");
+    const includeCommercialInvoiceNumber = await hasCompanyColumn("commercialInvoiceNumber");
+    const includeCommercialInvoiceUrl = await hasCompanyColumn("commercialInvoiceUrl");
+    const includeCommercialPaymentDate = await hasCompanyColumn("commercialPaymentDate");
+    const includeCommercialTermsNotes = await hasCompanyColumn("commercialTermsNotes");
     let companies;
     try {
       companies = await prisma.company.findMany({
@@ -173,12 +182,16 @@ export async function GET(request: NextRequest) {
           ...(includeHasRealOperationalData ? { hasRealOperationalData: true } : {}),
           ...(includeRealDataActivatedAt ? { realDataActivatedAt: true } : {}),
           ...(includeForceOperationalMockData ? { forceOperationalMockData: true } : {}),
-          // Skip affiliateCode in production (not needed)
-          ...(process.env.NODE_ENV === "production"
-            ? {}
-            : {
-                affiliateCode: true,
-              }),
+          ...(includeReferralPartnerConsultantId ? { referralPartnerConsultantId: true } : {}),
+          ...(includeReferralSetupFeePercentage ? { referralSetupFeePercentage: true } : {}),
+          ...(includeReferralRecurringFeePercentage ? { referralRecurringFeePercentage: true } : {}),
+          ...(includeCommercialBillingMethod ? { commercialBillingMethod: true } : {}),
+          ...(includeCommercialPaymentStatus ? { commercialPaymentStatus: true } : {}),
+          ...(includeCommercialInvoiceNumber ? { commercialInvoiceNumber: true } : {}),
+          ...(includeCommercialInvoiceUrl ? { commercialInvoiceUrl: true } : {}),
+          ...(includeCommercialPaymentDate ? { commercialPaymentDate: true } : {}),
+          ...(includeCommercialTermsNotes ? { commercialTermsNotes: true } : {}),
+          affiliateCode: true,
         },
         orderBy: { createdAt: "desc" },
         take: limit,
@@ -213,11 +226,16 @@ export async function GET(request: NextRequest) {
           ...(includeHasRealOperationalData ? { hasRealOperationalData: true } : {}),
           ...(includeRealDataActivatedAt ? { realDataActivatedAt: true } : {}),
           ...(includeForceOperationalMockData ? { forceOperationalMockData: true } : {}),
-          ...(process.env.NODE_ENV === "production"
-            ? {}
-            : {
-                affiliateCode: true,
-              }),
+          ...(includeReferralPartnerConsultantId ? { referralPartnerConsultantId: true } : {}),
+          ...(includeReferralSetupFeePercentage ? { referralSetupFeePercentage: true } : {}),
+          ...(includeReferralRecurringFeePercentage ? { referralRecurringFeePercentage: true } : {}),
+          ...(includeCommercialBillingMethod ? { commercialBillingMethod: true } : {}),
+          ...(includeCommercialPaymentStatus ? { commercialPaymentStatus: true } : {}),
+          ...(includeCommercialInvoiceNumber ? { commercialInvoiceNumber: true } : {}),
+          ...(includeCommercialInvoiceUrl ? { commercialInvoiceUrl: true } : {}),
+          ...(includeCommercialPaymentDate ? { commercialPaymentDate: true } : {}),
+          ...(includeCommercialTermsNotes ? { commercialTermsNotes: true } : {}),
+          affiliateCode: true,
         },
         orderBy: { createdAt: "desc" },
         take: limit,
@@ -1645,6 +1663,16 @@ export async function PUT(request: NextRequest) {
       subscriptionQuarterly,
       subscriptionAnnual,
       subscriptionSetupFee,
+      affiliateCode,
+      referralPartnerConsultantId,
+      referralSetupFeePercentage,
+      referralRecurringFeePercentage,
+      commercialBillingMethod,
+      commercialPaymentStatus,
+      commercialInvoiceNumber,
+      commercialInvoiceUrl,
+      commercialPaymentDate,
+      commercialTermsNotes,
     } = body || {};
 
     if (!id) {
@@ -1669,6 +1697,56 @@ export async function PUT(request: NextRequest) {
     if (setupFee !== undefined && (!Number.isFinite(setupFee) || setupFee < 0)) {
       return NextResponse.json({ error: 'Invalid setup fee value' }, { status: 400 });
     }
+    const normalizedAffiliateCode = affiliateCode === undefined
+      ? undefined
+      : String(affiliateCode || '').trim().toUpperCase();
+    const normalizedReferralPartnerConsultantId = referralPartnerConsultantId === undefined
+      ? undefined
+      : String(referralPartnerConsultantId || '').trim() || null;
+    const setupReferralPercent = referralSetupFeePercentage === undefined
+      ? undefined
+      : Number(referralSetupFeePercentage);
+    const recurringReferralPercent = referralRecurringFeePercentage === undefined
+      ? undefined
+      : Number(referralRecurringFeePercentage);
+
+    if (setupReferralPercent !== undefined && (!Number.isFinite(setupReferralPercent) || setupReferralPercent < 0 || setupReferralPercent > 100)) {
+      return NextResponse.json({ error: 'Invalid setup referral percentage' }, { status: 400 });
+    }
+    if (recurringReferralPercent !== undefined && (!Number.isFinite(recurringReferralPercent) || recurringReferralPercent < 0 || recurringReferralPercent > 100)) {
+      return NextResponse.json({ error: 'Invalid recurring referral percentage' }, { status: 400 });
+    }
+    if (normalizedReferralPartnerConsultantId) {
+      const referralPartner = await prisma.consultant.findUnique({
+        where: { id: normalizedReferralPartnerConsultantId },
+        select: { id: true },
+      });
+      if (!referralPartner) {
+        return NextResponse.json({ error: 'Referral partner consultant not found' }, { status: 400 });
+      }
+    }
+    const allowedBillingMethods = new Set(['usaepay', 'quickbooks_invoice', 'manual_external', 'no_platform_payment']);
+    const allowedPaymentStatuses = new Set(['not_billed', 'invoiced', 'paid', 'overdue', 'waived', 'no_payment_required', 'external_paid']);
+    const normalizedBillingMethod = commercialBillingMethod === undefined
+      ? undefined
+      : String(commercialBillingMethod || '').trim().toLowerCase();
+    const normalizedPaymentStatus = commercialPaymentStatus === undefined
+      ? undefined
+      : String(commercialPaymentStatus || '').trim().toLowerCase();
+    if (normalizedBillingMethod !== undefined && !allowedBillingMethods.has(normalizedBillingMethod)) {
+      return NextResponse.json({ error: 'Invalid billing method' }, { status: 400 });
+    }
+    if (normalizedPaymentStatus !== undefined && !allowedPaymentStatuses.has(normalizedPaymentStatus)) {
+      return NextResponse.json({ error: 'Invalid payment status' }, { status: 400 });
+    }
+    const parsedCommercialPaymentDate = commercialPaymentDate
+      ? new Date(commercialPaymentDate)
+      : commercialPaymentDate === null
+        ? null
+        : undefined;
+    if (parsedCommercialPaymentDate instanceof Date && Number.isNaN(parsedCommercialPaymentDate.getTime())) {
+      return NextResponse.json({ error: 'Invalid commercial payment date' }, { status: 400 });
+    }
 
     const company = await prisma.company.update({
       where: { id },
@@ -1677,6 +1755,16 @@ export async function PUT(request: NextRequest) {
         subscriptionQuarterlyPrice: quarterly,
         subscriptionAnnualPrice: annual,
         ...(setupFee !== undefined ? { subscriptionSetupFee: setupFee } : {}),
+        ...(normalizedAffiliateCode !== undefined ? { affiliateCode: normalizedAffiliateCode || null } : {}),
+        ...(normalizedReferralPartnerConsultantId !== undefined ? { referralPartnerConsultantId: normalizedReferralPartnerConsultantId } : {}),
+        ...(setupReferralPercent !== undefined ? { referralSetupFeePercentage: setupReferralPercent } : {}),
+        ...(recurringReferralPercent !== undefined ? { referralRecurringFeePercentage: recurringReferralPercent } : {}),
+        ...(normalizedBillingMethod !== undefined ? { commercialBillingMethod: normalizedBillingMethod } : {}),
+        ...(normalizedPaymentStatus !== undefined ? { commercialPaymentStatus: normalizedPaymentStatus } : {}),
+        ...(commercialInvoiceNumber !== undefined ? { commercialInvoiceNumber: String(commercialInvoiceNumber || '').trim() || null } : {}),
+        ...(commercialInvoiceUrl !== undefined ? { commercialInvoiceUrl: String(commercialInvoiceUrl || '').trim() || null } : {}),
+        ...(parsedCommercialPaymentDate !== undefined ? { commercialPaymentDate: parsedCommercialPaymentDate } : {}),
+        ...(commercialTermsNotes !== undefined ? { commercialTermsNotes: String(commercialTermsNotes || '').trim() || null } : {}),
         // Reset selected plan so the UI doesn't show a stale selection.
         selectedSubscriptionPlan: null,
         updatedAt: new Date(),
@@ -1689,6 +1777,16 @@ export async function PUT(request: NextRequest) {
         subscriptionQuarterlyPrice: true,
         subscriptionAnnualPrice: true,
         subscriptionSetupFee: true,
+        affiliateCode: true,
+        referralPartnerConsultantId: true,
+        referralSetupFeePercentage: true,
+        referralRecurringFeePercentage: true,
+        commercialBillingMethod: true,
+        commercialPaymentStatus: true,
+        commercialInvoiceNumber: true,
+        commercialInvoiceUrl: true,
+        commercialPaymentDate: true,
+        commercialTermsNotes: true,
         selectedSubscriptionPlan: true,
       },
     });

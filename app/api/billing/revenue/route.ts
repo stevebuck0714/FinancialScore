@@ -18,6 +18,15 @@ export async function GET() {
           gte: currentMonthRange.start,
           lte: currentMonthRange.end
         }
+      },
+      include: {
+        company: {
+          select: {
+            referralPartnerConsultantId: true,
+            referralSetupFeePercentage: true,
+            referralRecurringFeePercentage: true
+          }
+        }
       }
     });
 
@@ -33,6 +42,21 @@ export async function GET() {
       acc[serviceType] = (acc[serviceType] || 0) + record.amount;
       return acc;
     }, {});
+    const currentMonthReferralAttributedRevenue = currentMonthRecords
+      .filter((record) =>
+        !!record.company?.referralPartnerConsultantId &&
+        ['setup_fee', 'core'].includes(record.serviceType || 'core')
+      )
+      .reduce((sum, record) => sum + record.amount, 0);
+    const currentMonthReferralPayableEstimate = currentMonthRecords.reduce((sum, record) => {
+      if (!record.company?.referralPartnerConsultantId) return sum;
+      const serviceType = record.serviceType || 'core';
+      if (serviceType !== 'setup_fee' && serviceType !== 'core') return sum;
+      const percentage = serviceType === 'setup_fee'
+        ? record.company.referralSetupFeePercentage
+        : record.company.referralRecurringFeePercentage;
+      return sum + ((record.amount * Number(percentage || 0)) / 100);
+    }, 0);
 
     // MRR/ARR derived from actual current month revenue
     const totalMRR = currentMonthRevenue;
@@ -64,6 +88,10 @@ export async function GET() {
 
     const totalPendingPayables = pendingPayables.reduce((sum, p) => sum + p.payableAmount, 0);
     const pendingPayablesCount = pendingPayables.length;
+    const totalPendingReferralPayables = pendingPayables
+      .filter((p) => p.payableType === 'referral_partner')
+      .reduce((sum, p) => sum + p.payableAmount, 0);
+    const pendingReferralPayablesCount = pendingPayables.filter((p) => p.payableType === 'referral_partner').length;
 
     // Platform revenue = total revenue minus what's owed to consultants
     const platformRevenue = currentMonthRevenue - totalPendingPayables;
@@ -77,6 +105,22 @@ export async function GET() {
     const consultantCompaniesCount = payingCompanyIds.filter(r => r.consultantId).length;
     const directCompaniesCount = payingCompanyIds.filter(r => !r.consultantId).length;
     const activeCompaniesCount = payingCompanyIds.length;
+    const commercialCompanies = await prisma.company.findMany({
+      select: {
+        commercialBillingMethod: true,
+        commercialPaymentStatus: true,
+      }
+    });
+    const companyCountsByBillingMethod = commercialCompanies.reduce<Record<string, number>>((acc, company) => {
+      const key = company.commercialBillingMethod || 'usaepay';
+      acc[key] = (acc[key] || 0) + 1;
+      return acc;
+    }, {});
+    const companyCountsByPaymentStatus = commercialCompanies.reduce<Record<string, number>>((acc, company) => {
+      const key = company.commercialPaymentStatus || 'not_billed';
+      acc[key] = (acc[key] || 0) + 1;
+      return acc;
+    }, {});
 
     return NextResponse.json({
       totalMRR,
@@ -87,14 +131,20 @@ export async function GET() {
       currentMonthConsultantRevenue,
       currentMonthDirectRevenue,
       currentMonthRevenueByService,
+      currentMonthReferralAttributedRevenue,
+      currentMonthReferralPayableEstimate,
       previousMonthRevenue,
       revenueGrowth,
       totalPendingPayables,
       pendingPayablesCount,
+      totalPendingReferralPayables,
+      pendingReferralPayablesCount,
       platformRevenue,
       activeCompaniesCount,
       consultantCompaniesCount,
-      directCompaniesCount
+      directCompaniesCount,
+      companyCountsByBillingMethod,
+      companyCountsByPaymentStatus
     });
   } catch (error) {
     console.error('Error fetching revenue data:', error);

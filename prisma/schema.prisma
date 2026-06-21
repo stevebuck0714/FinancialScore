@@ -27,6 +27,7 @@ model Consultant {
   companyWebsite        String?
   companyZip            String?
   companies             Company[]
+  referredCompanies     Company[]           @relation("CompanyReferralPartner")
   revenueRecords        RevenueRecord[]
   payables              ConsultantPayable[]
   teamMembers           User[]              @relation("ConsultantTeamMembers")
@@ -70,6 +71,15 @@ model Company {
   selectedSubscriptionPlan   String?
   affiliateCode              String?
   affiliateId                String?
+  referralPartnerConsultantId String?
+  referralSetupFeePercentage  Float                  @default(0)
+  referralRecurringFeePercentage Float               @default(0)
+  commercialBillingMethod    String                  @default("usaepay") // usaepay, quickbooks_invoice, manual_external, no_platform_payment
+  commercialPaymentStatus    String                  @default("not_billed") // not_billed, invoiced, paid, overdue, waived, no_payment_required, external_paid
+  commercialInvoiceNumber    String?
+  commercialInvoiceUrl       String?
+  commercialPaymentDate      DateTime?
+  commercialTermsNotes       String?
   subscriptionStatus         String?                @default("active") // 'active', 'paused', 'cancelled'
   subscriptionStartDate      DateTime?
   nextBillingDate            DateTime?
@@ -92,6 +102,7 @@ model Company {
   subscriptionEvents         SubscriptionEvent[]
   affiliate                  Affiliate?             @relation(fields: [affiliateId], references: [id])
   consultant                 Consultant?            @relation(fields: [consultantId], references: [id], onDelete: SetNull)
+  referralPartner            Consultant?            @relation("CompanyReferralPartner", fields: [referralPartnerConsultantId], references: [id], onDelete: SetNull)
   profile                    CompanyProfile?
   financialRecords           FinancialRecord[]
   subscription               Subscription?
@@ -110,6 +121,7 @@ model Company {
 
   @@index([consultantId])
   @@index([affiliateId])
+  @@index([referralPartnerConsultantId])
 }
 
 model FinancialForecastInputSettings {
@@ -1164,6 +1176,7 @@ model ConsultantPayable {
   revenueSharePercentage Float    // Consultant's share % at time of calculation
   payableAmount          Float    // Amount owed to consultant (totalRevenue * share%)
   platformAmount         Float    // Amount kept by platform (totalRevenue * (100-share%))
+  payableType            String   @default("consultant_revenue_share") // consultant_revenue_share, referral_partner
   status                 String   @default("pending") // 'pending', 'paid', 'on_hold', 'cancelled'
   paidDate               DateTime?
   paymentMethod          String?  // How consultant was paid (check, ACH, wire, etc.)

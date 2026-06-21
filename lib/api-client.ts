@@ -126,7 +126,25 @@ export const companiesApi = {
     });
   },
 
-  async updatePricing(id: string, monthly: number, quarterly: number, annual: number, setupFee?: number) {
+  async updatePricing(
+    id: string,
+    monthly: number,
+    quarterly: number,
+    annual: number,
+    setupFee?: number,
+    affiliateCode?: string | null,
+    referral?: {
+      referralPartnerConsultantId?: string | null;
+      referralSetupFeePercentage?: number;
+      referralRecurringFeePercentage?: number;
+      commercialBillingMethod?: string;
+      commercialPaymentStatus?: string;
+      commercialInvoiceNumber?: string | null;
+      commercialInvoiceUrl?: string | null;
+      commercialPaymentDate?: string | null;
+      commercialTermsNotes?: string | null;
+    }
+  ) {
     return fetchApi('/api/companies', {
       method: 'PUT',
       body: JSON.stringify({ 
@@ -134,7 +152,9 @@ export const companiesApi = {
         subscriptionMonthly: monthly,
         subscriptionQuarterly: quarterly,
         subscriptionAnnual: annual,
-        ...(setupFee !== undefined ? { subscriptionSetupFee: setupFee } : {})
+        ...(setupFee !== undefined ? { subscriptionSetupFee: setupFee } : {}),
+        ...(affiliateCode !== undefined ? { affiliateCode } : {}),
+        ...(referral || {})
       }),
     });
   },

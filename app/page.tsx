@@ -878,7 +878,6 @@ function FinancialScorePage() {
   
   // State - Consultants
   const [consultants, setConsultants] = useState<Consultant[]>([]);
-  const [newConsultantType, setNewConsultantType] = useState('');
   const [newConsultantFullName, setNewConsultantFullName] = useState('');
   const [newConsultantAddress, setNewConsultantAddress] = useState('');
   const [newConsultantEmail, setNewConsultantEmail] = useState('');
@@ -8772,8 +8771,8 @@ function FinancialScorePage() {
 
   // Consultant CRUD functions
   const addConsultant = async () => {
-    if (!newConsultantType || !newConsultantFullName || !newConsultantEmail || !newConsultantPhone || !newConsultantPassword) {
-      alert('Please fill all required fields (Type, Contact Person, Email, Phone, Password)');
+    if (!newConsultantFullName || !newConsultantEmail || !newConsultantPassword) {
+      alert('Please fill all required fields (Contact Person, Email, Password)');
       return;
     }
     setIsLoading(true);
@@ -8784,7 +8783,7 @@ function FinancialScorePage() {
         password: newConsultantPassword,
         address: newConsultantAddress,
         phone: newConsultantPhone,
-        type: newConsultantType,
+        type: 'consultant',
         companyName: newConsultantCompanyName,
         companyAddress1: newConsultantCompanyAddress1,
         companyAddress2: newConsultantCompanyAddress2,
@@ -8797,7 +8796,7 @@ function FinancialScorePage() {
       // Add to local state (will be refreshed on next load)
       const newConsultant: Consultant = {
         id: consultant.id,
-        type: consultant.type || newConsultantType,
+        type: consultant.type || 'consultant',
         fullName: consultant.fullName,
         address: consultant.address || newConsultantAddress,
         email: consultant.email,
@@ -8814,7 +8813,6 @@ function FinancialScorePage() {
       setConsultants([...consultants, newConsultant]);
       
       // Clear form
-      setNewConsultantType('');
       setNewConsultantFullName('');
       setNewConsultantAddress('');
       setNewConsultantEmail('');
@@ -8838,9 +8836,38 @@ function FinancialScorePage() {
     }
   };
 
-  const updateCompanyPricing = async (companyId: string, pricing: { monthly: number; quarterly: number; annual: number; setupFee: number }) => {
+  const updateCompanyPricing = async (companyId: string, pricing: {
+    monthly: number;
+    quarterly: number;
+    annual: number;
+    setupFee: number;
+    affiliateCode?: string | null;
+    referralPartnerConsultantId?: string | null;
+    referralSetupFeePercentage?: number;
+    referralRecurringFeePercentage?: number;
+    commercialBillingMethod?: string;
+    commercialPaymentStatus?: string;
+    commercialInvoiceNumber?: string | null;
+    commercialInvoiceUrl?: string | null;
+    commercialPaymentDate?: string | null;
+    commercialTermsNotes?: string | null;
+  }) => {
     try {
-      await companiesApi.updatePricing(companyId, pricing.monthly, pricing.quarterly, pricing.annual, pricing.setupFee);
+      const affiliateCode = pricing.affiliateCode === undefined
+        ? undefined
+        : String(pricing.affiliateCode || '').trim().toUpperCase() || null;
+      const referral = {
+        referralPartnerConsultantId: pricing.referralPartnerConsultantId ? String(pricing.referralPartnerConsultantId) : null,
+        referralSetupFeePercentage: Number(pricing.referralSetupFeePercentage || 0),
+        referralRecurringFeePercentage: Number(pricing.referralRecurringFeePercentage || 0),
+        commercialBillingMethod: pricing.commercialBillingMethod || 'usaepay',
+        commercialPaymentStatus: pricing.commercialPaymentStatus || 'not_billed',
+        commercialInvoiceNumber: pricing.commercialInvoiceNumber || null,
+        commercialInvoiceUrl: pricing.commercialInvoiceUrl || null,
+        commercialPaymentDate: pricing.commercialPaymentDate || null,
+        commercialTermsNotes: pricing.commercialTermsNotes || null,
+      };
+      await companiesApi.updatePricing(companyId, pricing.monthly, pricing.quarterly, pricing.annual, pricing.setupFee, affiliateCode, referral);
       
       // Update local state
       safeSetCompanies(Array.isArray(companies) ? companies.map(c => 
@@ -8851,6 +8878,16 @@ function FinancialScorePage() {
               subscriptionQuarterlyPrice: pricing.quarterly,
               subscriptionAnnualPrice: pricing.annual,
               subscriptionSetupFee: pricing.setupFee,
+              ...(affiliateCode !== undefined ? { affiliateCode } : {}),
+              referralPartnerConsultantId: referral.referralPartnerConsultantId,
+              referralSetupFeePercentage: referral.referralSetupFeePercentage,
+              referralRecurringFeePercentage: referral.referralRecurringFeePercentage,
+              commercialBillingMethod: referral.commercialBillingMethod,
+              commercialPaymentStatus: referral.commercialPaymentStatus,
+              commercialInvoiceNumber: referral.commercialInvoiceNumber,
+              commercialInvoiceUrl: referral.commercialInvoiceUrl,
+              commercialPaymentDate: referral.commercialPaymentDate,
+              commercialTermsNotes: referral.commercialTermsNotes,
               selectedSubscriptionPlan: null // Reset selected plan when pricing changes
             } 
           : c
@@ -8863,7 +8900,7 @@ function FinancialScorePage() {
         return newState;
       });
       
-      alert('Pricing updated successfully! The business will see the new pricing on their next login or when they refresh.');
+      alert('Service pricing and referral tracking updated successfully.');
     } catch (error) {
       alert(error instanceof ApiError ? error.message : 'Failed to update pricing');
     }
@@ -13602,8 +13639,6 @@ function FinancialScorePage() {
               setExpandedCompanyIds={setExpandedCompanyIds}
               showAddConsultantForm={showAddConsultantForm}
               setShowAddConsultantForm={setShowAddConsultantForm}
-              newConsultantType={newConsultantType}
-              setNewConsultantType={setNewConsultantType}
               newConsultantFullName={newConsultantFullName}
               setNewConsultantFullName={setNewConsultantFullName}
               newConsultantEmail={newConsultantEmail}

@@ -6,7 +6,19 @@ import { formatCurrency, formatDate, getStatusColor, getStatusText } from '@/lib
 interface RevenueRecord {
   id: string;
   transactionId: string;
-  company: { id: string; name: string };
+  company: {
+    id: string;
+    name: string;
+    referralPartnerConsultantId?: string | null;
+    referralSetupFeePercentage?: number;
+    referralRecurringFeePercentage?: number;
+    commercialBillingMethod?: string | null;
+    commercialPaymentStatus?: string | null;
+    commercialInvoiceNumber?: string | null;
+    commercialPaymentDate?: string | null;
+    commercialTermsNotes?: string | null;
+    referralPartner?: { id: string; fullName: string; companyName?: string | null } | null;
+  };
   consultant: { id: string; fullName: string; revenueSharePercentage: number } | null;
   amount: number;
   paymentStatus: string;
@@ -22,6 +34,21 @@ export default function RevenueRecordsTab() {
   const [statusFilter, setStatusFilter] = useState('all');
   const [typeFilter, setTypeFilter] = useState('all'); // 'all', 'consultant', 'direct'
   const [serviceFilter, setServiceFilter] = useState('all');
+  const billingMethodLabels: Record<string, string> = {
+    usaepay: 'USAePay',
+    quickbooks_invoice: 'QuickBooks',
+    manual_external: 'Manual / External',
+    no_platform_payment: 'No Platform Payment',
+  };
+  const paymentStatusLabels: Record<string, string> = {
+    not_billed: 'Not Billed',
+    invoiced: 'Invoiced',
+    paid: 'Paid',
+    overdue: 'Overdue',
+    waived: 'Waived',
+    no_payment_required: 'No Payment Required',
+    external_paid: 'External Paid',
+  };
 
   const fetchRecords = useCallback(async () => {
     try {
@@ -178,6 +205,8 @@ export default function RevenueRecordsTab() {
                 <th style={{ padding: '12px 16px', textAlign: 'left', fontSize: '13px', fontWeight: '600', color: '#64748b' }}>Transaction ID</th>
                 <th style={{ padding: '12px 16px', textAlign: 'left', fontSize: '13px', fontWeight: '600', color: '#64748b' }}>Company</th>
                 <th style={{ padding: '12px 16px', textAlign: 'left', fontSize: '13px', fontWeight: '600', color: '#64748b' }}>Consultant</th>
+                <th style={{ padding: '12px 16px', textAlign: 'left', fontSize: '13px', fontWeight: '600', color: '#64748b' }}>Referral Partner</th>
+                <th style={{ padding: '12px 16px', textAlign: 'left', fontSize: '13px', fontWeight: '600', color: '#64748b' }}>Billing Terms</th>
                 <th style={{ padding: '12px 16px', textAlign: 'left', fontSize: '13px', fontWeight: '600', color: '#64748b' }}>Amount</th>
                 <th style={{ padding: '12px 16px', textAlign: 'left', fontSize: '13px', fontWeight: '600', color: '#64748b' }}>Share</th>
                 <th style={{ padding: '12px 16px', textAlign: 'left', fontSize: '13px', fontWeight: '600', color: '#64748b' }}>Service</th>
@@ -192,6 +221,14 @@ export default function RevenueRecordsTab() {
                   ? (record.amount * record.consultant.revenueSharePercentage) / 100
                   : 0;
                 const platformShare = record.amount - consultantShare;
+                const referralPercentage = record.serviceType === 'setup_fee'
+                  ? Number(record.company.referralSetupFeePercentage || 0)
+                  : (record.serviceType || 'core') === 'core'
+                    ? Number(record.company.referralRecurringFeePercentage || 0)
+                    : 0;
+                const referralShare = record.company.referralPartner && referralPercentage > 0
+                  ? (record.amount * referralPercentage) / 100
+                  : 0;
                 
                 return (
                   <tr key={record.id} style={{ borderBottom: '1px solid #e2e8f0' }}>
@@ -203,6 +240,23 @@ export default function RevenueRecordsTab() {
                     </td>
                     <td style={{ padding: '12px 16px', fontSize: '13px', color: '#64748b' }}>
                       {record.consultant ? record.consultant.fullName : <em style={{ color: '#10b981' }}>Direct Business</em>}
+                    </td>
+                    <td style={{ padding: '12px 16px', fontSize: '13px', color: '#64748b' }}>
+                      {record.company.referralPartner ? (
+                        <div>
+                          <div>{record.company.referralPartner.companyName || record.company.referralPartner.fullName}</div>
+                          <div style={{ fontSize: '12px' }}>{referralPercentage}% • {formatCurrency(referralShare)}</div>
+                        </div>
+                      ) : (
+                        <em>None</em>
+                      )}
+                    </td>
+                    <td style={{ padding: '12px 16px', fontSize: '12px', color: '#64748b' }}>
+                      <div>{billingMethodLabels[record.company.commercialBillingMethod || 'usaepay'] || 'USAePay'}</div>
+                      <div>{paymentStatusLabels[record.company.commercialPaymentStatus || 'not_billed'] || 'Not Billed'}</div>
+                      {record.company.commercialInvoiceNumber && (
+                        <div>Ref: {record.company.commercialInvoiceNumber}</div>
+                      )}
                     </td>
                     <td style={{ padding: '12px 16px', fontSize: '13px', color: '#1e293b', fontWeight: '600' }}>
                       {formatCurrency(record.amount)}

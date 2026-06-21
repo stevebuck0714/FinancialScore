@@ -210,6 +210,15 @@ export interface Company {
   nextBillingDate?: string | null;
   selectedSubscriptionPlan?: string | null;
   affiliateCode?: string | null;
+  referralPartnerConsultantId?: string | null;
+  referralSetupFeePercentage?: number;
+  referralRecurringFeePercentage?: number;
+  commercialBillingMethod?: string;
+  commercialPaymentStatus?: string;
+  commercialInvoiceNumber?: string | null;
+  commercialInvoiceUrl?: string | null;
+  commercialPaymentDate?: string | null;
+  commercialTermsNotes?: string | null;
   tier1SupportOwner?: 'CORELYTICS' | 'CONSULTANT';
   tier1SupportConsultantId?: string | null;
   tier1SupportContactEmail?: string | null;

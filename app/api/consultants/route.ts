@@ -69,6 +69,16 @@ export async function GET(request: NextRequest) {
             subscriptionMonthlyPrice: true,
             subscriptionQuarterlyPrice: true,
             subscriptionAnnualPrice: true,
+            affiliateCode: true,
+            referralPartnerConsultantId: true,
+            referralSetupFeePercentage: true,
+            referralRecurringFeePercentage: true,
+            commercialBillingMethod: true,
+            commercialPaymentStatus: true,
+            commercialInvoiceNumber: true,
+            commercialInvoiceUrl: true,
+            commercialPaymentDate: true,
+            commercialTermsNotes: true,
             _count: {
               select: {
                 users: true
@@ -156,7 +166,7 @@ export async function POST(request: NextRequest) {
           fullName,
           address: address || '',
           phone: phone || '',
-          type: type || '',
+          type: type || 'consultant',
           companyName: companyName || '',
           companyAddress1: companyAddress1 || '',
           companyAddress2: companyAddress2 || '',

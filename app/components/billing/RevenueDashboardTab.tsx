@@ -12,6 +12,8 @@ interface RevenueData {
   currentMonthConsultantRevenue: number;
   currentMonthDirectRevenue: number;
   currentMonthRevenueByService?: Record<string, number>;
+  currentMonthReferralAttributedRevenue: number;
+  currentMonthReferralPayableEstimate: number;
   previousMonthRevenue: number;
   revenueGrowth: {
     value: number;
@@ -20,10 +22,14 @@ interface RevenueData {
   };
   totalPendingPayables: number;
   pendingPayablesCount: number;
+  totalPendingReferralPayables: number;
+  pendingReferralPayablesCount: number;
   platformRevenue: number;
   activeCompaniesCount: number;
   consultantCompaniesCount: number;
   directCompaniesCount: number;
+  companyCountsByBillingMethod?: Record<string, number>;
+  companyCountsByPaymentStatus?: Record<string, number>;
 }
 
 export default function RevenueDashboardTab() {
@@ -66,6 +72,21 @@ export default function RevenueDashboardTab() {
   }
 
   if (!revenueData) return null;
+  const billingMethodLabels: Record<string, string> = {
+    usaepay: 'USAePay',
+    quickbooks_invoice: 'QuickBooks Invoice',
+    manual_external: 'Manual / External',
+    no_platform_payment: 'No Platform Payment',
+  };
+  const paymentStatusLabels: Record<string, string> = {
+    not_billed: 'Not Billed',
+    invoiced: 'Invoiced',
+    paid: 'Paid',
+    overdue: 'Overdue',
+    waived: 'Waived',
+    no_payment_required: 'No Payment Required',
+    external_paid: 'External Paid',
+  };
 
   return (
     <div>
@@ -158,6 +179,28 @@ export default function RevenueDashboardTab() {
             {revenueData.pendingPayablesCount} pending payment{revenueData.pendingPayablesCount !== 1 ? 's' : ''}
           </div>
         </div>
+
+        {/* Referral Partner Payables */}
+        <div style={{
+          background: 'white',
+          borderRadius: '12px',
+          padding: '24px',
+          boxShadow: '0 2px 8px rgba(0,0,0,0.06)',
+          border: '1px solid #e2e8f0'
+        }}>
+          <div style={{ fontSize: '14px', color: '#64748b', marginBottom: '8px', fontWeight: '500' }}>
+            Referral Partner Payables
+          </div>
+          <div style={{ fontSize: '32px', fontWeight: '700', color: '#1e293b', marginBottom: '4px' }}>
+            {formatCurrency(revenueData.currentMonthReferralPayableEstimate || 0)}
+          </div>
+          <div style={{ fontSize: '12px', color: '#64748b' }}>
+            On {formatCurrency(revenueData.currentMonthReferralAttributedRevenue || 0)} referral-attributed revenue
+          </div>
+          <div style={{ fontSize: '12px', color: '#f59e0b', marginTop: '4px' }}>
+            Pending generated: {formatCurrency(revenueData.totalPendingReferralPayables || 0)} across {revenueData.pendingReferralPayablesCount || 0} payable{(revenueData.pendingReferralPayablesCount || 0) !== 1 ? 's' : ''}
+          </div>
+        </div>
       </div>
 
       {/* Revenue Breakdown */}
@@ -219,6 +262,39 @@ export default function RevenueDashboardTab() {
           {Object.keys(revenueData.currentMonthRevenueByService || {}).length === 0 && (
             <div style={{ fontSize: '13px', color: '#64748b' }}>No received revenue this month.</div>
           )}
+        </div>
+      </div>
+
+      <div style={{
+        background: 'white',
+        borderRadius: '12px',
+        padding: '24px',
+        marginBottom: '20px',
+        boxShadow: '0 2px 8px rgba(0,0,0,0.06)',
+        border: '1px solid #e2e8f0'
+      }}>
+        <h3 style={{ fontSize: '18px', fontWeight: '600', color: '#1e293b', marginBottom: '16px' }}>
+          Customer Billing Terms
+        </h3>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
+          <div>
+            <div style={{ fontSize: '13px', color: '#64748b', marginBottom: '8px' }}>By Billing Method</div>
+            {Object.entries(revenueData.companyCountsByBillingMethod || {}).map(([method, count]) => (
+              <div key={method} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', color: '#334155', padding: '4px 0' }}>
+                <span>{billingMethodLabels[method] || method}</span>
+                <strong>{count}</strong>
+              </div>
+            ))}
+          </div>
+          <div>
+            <div style={{ fontSize: '13px', color: '#64748b', marginBottom: '8px' }}>By Payment Status</div>
+            {Object.entries(revenueData.companyCountsByPaymentStatus || {}).map(([status, count]) => (
+              <div key={status} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', color: '#334155', padding: '4px 0' }}>
+                <span>{paymentStatusLabels[status] || status}</span>
+                <strong>{count}</strong>
+              </div>
+            ))}
+          </div>
         </div>
       </div>
 

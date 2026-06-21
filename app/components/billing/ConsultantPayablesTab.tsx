@@ -18,6 +18,7 @@ interface ConsultantPayable {
   revenueSharePercentage: number;
   payableAmount: number;
   platformAmount: number;
+  payableType?: string;
   status: string;
   paidDate?: string;
   paymentMethod?: string;
@@ -185,6 +186,7 @@ export default function ConsultantPayablesTab() {
             <thead>
               <tr style={{ background: '#f8fafc', borderBottom: '2px solid #e2e8f0' }}>
                 <th style={{ padding: '12px 16px', textAlign: 'left', fontSize: '13px', fontWeight: '600', color: '#64748b' }}>Consultant</th>
+                <th style={{ padding: '12px 16px', textAlign: 'left', fontSize: '13px', fontWeight: '600', color: '#64748b' }}>Type</th>
                 <th style={{ padding: '12px 16px', textAlign: 'left', fontSize: '13px', fontWeight: '600', color: '#64748b' }}>Period</th>
                 <th style={{ padding: '12px 16px', textAlign: 'left', fontSize: '13px', fontWeight: '600', color: '#64748b' }}>Total Revenue</th>
                 <th style={{ padding: '12px 16px', textAlign: 'left', fontSize: '13px', fontWeight: '600', color: '#64748b' }}>Share %</th>
@@ -202,6 +204,9 @@ export default function ConsultantPayablesTab() {
                     {payable.consultant.companyName && (
                       <div style={{ fontSize: '12px', color: '#64748b', fontWeight: '400' }}>{payable.consultant.companyName}</div>
                     )}
+                  </td>
+                  <td style={{ padding: '12px 16px', fontSize: '13px', color: '#64748b' }}>
+                    {payable.payableType === 'referral_partner' ? 'Referral Partner' : 'Revenue Share'}
                   </td>
                   <td style={{ padding: '12px 16px', fontSize: '13px', color: '#64748b' }}>
                     {formatDateRange(payable.periodStart, payable.periodEnd)}
@@ -266,7 +271,7 @@ export default function ConsultantPayablesTab() {
             </tbody>
             <tfoot>
               <tr style={{ background: '#f8fafc', borderTop: '2px solid #e2e8f0' }}>
-                <td colSpan={4} style={{ padding: '12px 16px', fontSize: '14px', fontWeight: '700', color: '#1e293b' }}>
+                <td colSpan={5} style={{ padding: '12px 16px', fontSize: '14px', fontWeight: '700', color: '#1e293b' }}>
                   Totals
                 </td>
                 <td style={{ padding: '12px 16px', fontSize: '15px', fontWeight: '700', color: '#ef4444' }}>

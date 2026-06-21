@@ -5,8 +5,9 @@ import RevenueDashboardTab from './RevenueDashboardTab';
 import RevenueRecordsTab from './RevenueRecordsTab';
 import ConsultantPayablesTab from './ConsultantPayablesTab';
 import BillingReportsTab from './BillingReportsTab';
+import CommercialTermsTab from './CommercialTermsTab';
 
-type BillingTab = 'dashboard' | 'revenue-records' | 'payables' | 'reports';
+type BillingTab = 'dashboard' | 'commercial-terms' | 'revenue-records' | 'payables' | 'reports';
 
 export default function BillingDashboard() {
   const [activeTab, setActiveTab] = useState<BillingTab>('dashboard');
@@ -46,6 +47,23 @@ export default function BillingDashboard() {
           }}
         >
           📊 Dashboard
+        </button>
+        <button
+          onClick={() => setActiveTab('commercial-terms')}
+          style={{
+            padding: '12px 24px',
+            background: activeTab === 'commercial-terms' ? '#667eea' : 'transparent',
+            color: activeTab === 'commercial-terms' ? 'white' : '#64748b',
+            border: 'none',
+            borderBottom: activeTab === 'commercial-terms' ? '3px solid #667eea' : '3px solid transparent',
+            fontSize: '16px',
+            fontWeight: '600',
+            cursor: 'pointer',
+            borderRadius: '8px 8px 0 0',
+            transition: 'all 0.2s'
+          }}
+        >
+          Commercial Terms
         </button>
         <button
           onClick={() => setActiveTab('revenue-records')}
@@ -102,6 +120,7 @@ export default function BillingDashboard() {
 
       {/* Tab Content */}
       {activeTab === 'dashboard' && <RevenueDashboardTab />}
+      {activeTab === 'commercial-terms' && <CommercialTermsTab />}
       {activeTab === 'revenue-records' && <RevenueRecordsTab />}
       {activeTab === 'payables' && <ConsultantPayablesTab />}
       {activeTab === 'reports' && <BillingReportsTab />}
