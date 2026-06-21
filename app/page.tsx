@@ -1503,9 +1503,31 @@ function FinancialScorePage() {
   };
 
   const openDigitalPresenceWebsite = () => {
-    if (typeof window !== 'undefined') {
-      window.open('https://www.digi-presence.com', '_blank', 'noopener,noreferrer');
+    if (typeof window === 'undefined') return;
+    if (!selectedCompanyId) {
+      alert('Please select a company first.');
+      return;
     }
+
+    const digitalPresenceUrl = new URL('https://www.digi-presence.com/input');
+    digitalPresenceUrl.searchParams.set('companyId', selectedCompanyId);
+
+    const companyName = String((selectedCompany as any)?.name || '').trim();
+    if (companyName) {
+      digitalPresenceUrl.searchParams.set('companyName', companyName);
+    }
+
+    const websiteUrl = String(
+      (selectedCompany as any)?.website ||
+      (selectedCompany as any)?.websiteUrl ||
+      (selectedCompany as any)?.url ||
+      ''
+    ).trim();
+    if (websiteUrl) {
+      digitalPresenceUrl.searchParams.set('websiteUrl', websiteUrl);
+    }
+
+    window.open(digitalPresenceUrl.toString(), '_blank', 'noopener,noreferrer');
   };
 
   const handleDigitalPresenceClick = async () => {
