@@ -11,6 +11,7 @@ interface RevenueData {
   currentMonthRevenue: number;
   currentMonthConsultantRevenue: number;
   currentMonthDirectRevenue: number;
+  currentMonthRevenueByService?: Record<string, number>;
   previousMonthRevenue: number;
   revenueGrowth: {
     value: number;
@@ -190,6 +191,34 @@ export default function RevenueDashboardTab() {
               Based on active subscriptions
             </div>
           </div>
+        </div>
+      </div>
+
+      <div style={{
+        background: 'white',
+        borderRadius: '12px',
+        padding: '24px',
+        marginBottom: '20px',
+        boxShadow: '0 2px 8px rgba(0,0,0,0.06)',
+        border: '1px solid #e2e8f0'
+      }}>
+        <h3 style={{ fontSize: '18px', fontWeight: '600', color: '#1e293b', marginBottom: '16px' }}>
+          Revenue By Service
+        </h3>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '12px' }}>
+          {Object.entries(revenueData.currentMonthRevenueByService || {}).map(([serviceType, amount]) => (
+            <div key={serviceType} style={{ padding: '14px', background: '#f8fafc', borderRadius: '10px', border: '1px solid #e2e8f0' }}>
+              <div style={{ fontSize: '12px', color: '#64748b', textTransform: 'capitalize', marginBottom: '6px' }}>
+                {serviceType.replace(/_/g, ' ')}
+              </div>
+              <div style={{ fontSize: '20px', fontWeight: '700', color: '#1e293b' }}>
+                {formatCurrency(amount)}
+              </div>
+            </div>
+          ))}
+          {Object.keys(revenueData.currentMonthRevenueByService || {}).length === 0 && (
+            <div style={{ fontSize: '13px', color: '#64748b' }}>No received revenue this month.</div>
+          )}
         </div>
       </div>
 

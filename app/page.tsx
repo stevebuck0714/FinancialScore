@@ -969,6 +969,8 @@ function FinancialScorePage() {
   const [showCheckoutModal, setShowCheckoutModal] = useState(false);
   const [dataRoomCheckoutPlan, setDataRoomCheckoutPlan] = useState<'monthly' | 'quarterly' | 'annual' | null>(null);
   const [showDataRoomCheckoutModal, setShowDataRoomCheckoutModal] = useState(false);
+  const [digitalPresenceCheckoutPlan, setDigitalPresenceCheckoutPlan] = useState<'monthly' | 'quarterly' | 'annual' | null>(null);
+  const [showDigitalPresenceCheckoutModal, setShowDigitalPresenceCheckoutModal] = useState(false);
   
   // State - Active Subscription Management
   const [activeSubscription, setActiveSubscription] = useState<any>(null);
@@ -1409,6 +1411,7 @@ function FinancialScorePage() {
     'mda',
     'management-assessment',
     'dataroom',
+    'digital-presence',
     'custom-reports',
   ] as const;
   const isCompanyUser = currentUser?.role === 'user' && currentUser?.userType === 'company';
@@ -1499,6 +1502,70 @@ function FinancialScorePage() {
     setIsValuationExpanded(!shouldCollapse);
   };
 
+  const openDigitalPresenceWebsite = () => {
+    if (typeof window !== 'undefined') {
+      window.open('https://www.digi-presence.com', '_blank', 'noopener,noreferrer');
+    }
+  };
+
+  const handleDigitalPresenceClick = async () => {
+    if (!hasCompanySectionAccess('digital-presence')) {
+      alert('Access Restricted\n\nYour account does not have access to this section.');
+      return;
+    }
+    if (!selectedCompanyId) {
+      alert('Please select a company first.');
+      return;
+    }
+
+    let nextEnabledByAdmin = isDigitalPresenceEnabledByAdmin;
+    let nextPaymentRequired = isDigitalPresencePaymentRequired;
+    let nextIsActive = isDigitalPresenceActive;
+    let nextPricing = digitalPresencePricing;
+
+    try {
+      const companyRes = await fetch(`/api/companies?companyId=${encodeURIComponent(selectedCompanyId)}`, {
+        cache: 'no-store',
+      });
+      const companyJson = await companyRes.json();
+      if (companyRes.ok && Array.isArray(companyJson?.companies) && companyJson.companies.length > 0) {
+        const freshCompany = companyJson.companies[0] as any;
+        const freshDigitalPresence = freshCompany?.userDefinedAllocations?.digitalPresence || {};
+        const freshPricing = freshDigitalPresence?.pricing || {};
+        const freshStatus = String(freshDigitalPresence?.subscription?.status || 'inactive').toLowerCase();
+        nextEnabledByAdmin = Boolean(freshDigitalPresence?.enabledByAdmin);
+        nextPricing = {
+          monthly: Number(freshPricing?.monthly || 0),
+          quarterly: Number(freshPricing?.quarterly || 0),
+          annual: Number(freshPricing?.annual || 0),
+        };
+        nextPaymentRequired = nextPricing.monthly > 0 || nextPricing.quarterly > 0 || nextPricing.annual > 0;
+        nextIsActive = freshStatus === 'active';
+      }
+    } catch {
+      // Fallback to in-memory company state if the freshness check fails.
+    }
+
+    if (!nextEnabledByAdmin) {
+      alert('Digital Presence is not enabled for this company.');
+      return;
+    }
+
+    if (!nextPaymentRequired || nextIsActive) {
+      openDigitalPresenceWebsite();
+      return;
+    }
+
+    const firstPaidPlan =
+      nextPricing.monthly > 0
+        ? 'monthly'
+        : nextPricing.quarterly > 0
+          ? 'quarterly'
+          : 'annual';
+    setDigitalPresenceCheckoutPlan(firstPaidPlan);
+    setShowDigitalPresenceCheckoutModal(true);
+  };
+
   const loadAllCompanies = useCallback(async () => {
     try {
       if (!currentUser) return;
@@ -1544,7 +1611,26 @@ function FinancialScorePage() {
     };
   }, [companies, selectedCompanyId]);
 
+  const digitalPresenceState = useMemo(() => {
+    if (!selectedCompanyId || !Array.isArray(companies)) {
+      return { enabledByAdmin: false, subscriptionStatus: 'inactive' as const };
+    }
+    const selectedCompany = companies.find((c) => c.id === selectedCompanyId) as any;
+    const digitalPresence = selectedCompany?.userDefinedAllocations?.digitalPresence || {};
+    const rawStatus = String(digitalPresence?.subscription?.status || 'inactive').toLowerCase();
+    const subscriptionStatus =
+      rawStatus === 'active' || rawStatus === 'past_due' || rawStatus === 'canceled'
+        ? (rawStatus as 'active' | 'past_due' | 'canceled')
+        : ('inactive' as const);
+
+    return {
+      enabledByAdmin: Boolean(digitalPresence?.enabledByAdmin),
+      subscriptionStatus,
+    };
+  }, [companies, selectedCompanyId]);
+
   const isDataRoomEnabledByAdmin = dataRoomState.enabledByAdmin;
+  const isDigitalPresenceEnabledByAdmin = digitalPresenceState.enabledByAdmin;
   const isValuationReportsEnabledByAdmin = useMemo(() => {
     if (!selectedCompanyId || !Array.isArray(companies)) return true;
     const selectedCompany = companies.find((c) => c.id === selectedCompanyId) as any;
@@ -1566,6 +1652,8 @@ function FinancialScorePage() {
   }, [companies, customReportsEnabledByCompany, selectedCompanyId]);
   const dataRoomSubscriptionStatus = dataRoomState.subscriptionStatus;
   const isDataRoomActive = dataRoomSubscriptionStatus === 'active';
+  const digitalPresenceSubscriptionStatus = digitalPresenceState.subscriptionStatus;
+  const isDigitalPresenceActive = digitalPresenceSubscriptionStatus === 'active';
   const dataRoomPricing = useMemo(() => {
     const selectedCompany = Array.isArray(companies)
       ? (companies.find((c: any) => c.id === selectedCompanyId) as any)
@@ -1599,6 +1687,21 @@ function FinancialScorePage() {
     defaultDataRoomConsultantAnnualPrice,
   ]);
   const isDataRoomPaymentRequired = (dataRoomPricing.monthly > 0) || (dataRoomPricing.quarterly > 0) || (dataRoomPricing.annual > 0);
+  const digitalPresencePricing = useMemo(() => {
+    const selectedCompany = Array.isArray(companies)
+      ? (companies.find((c: any) => c.id === selectedCompanyId) as any)
+      : null;
+    const savedPricing = selectedCompany?.userDefinedAllocations?.digitalPresence?.pricing;
+    return {
+      monthly: Number(savedPricing?.monthly ?? 0),
+      quarterly: Number(savedPricing?.quarterly ?? 0),
+      annual: Number(savedPricing?.annual ?? 0),
+    };
+  }, [companies, selectedCompanyId]);
+  const isDigitalPresencePaymentRequired =
+    digitalPresencePricing.monthly > 0 ||
+    digitalPresencePricing.quarterly > 0 ||
+    digitalPresencePricing.annual > 0;
 
   useEffect(() => {
     if (!selectedCompanyId || !selectedCompany) return;
@@ -12971,6 +13074,33 @@ function FinancialScorePage() {
                 </>
               )}
 
+              {hasCompanySectionAccess('digital-presence') && isDigitalPresenceEnabledByAdmin && (
+                <h3
+                  onClick={handleDigitalPresenceClick}
+                  style={{
+                    fontSize: '14px',
+                    fontWeight: '700',
+                    color: '#334155',
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.5px',
+                    padding: '1px 32px',
+                    margin: '16px 0 0 0',
+                    cursor: 'pointer',
+                    transition: 'color 0.2s',
+                    whiteSpace: 'normal',
+                    lineHeight: '1.25'
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.color = '#1F70C1';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.color = '#334155';
+                  }}
+                >
+                  DIGITAL PRESENCE ↗
+                </h3>
+              )}
+
               {(hasCompanySectionAccess('financial-reports') || hasCompanySectionAccess('valuation')) && (
                 <div style={{ marginTop: '16px' }}>
                   <h3
@@ -15316,6 +15446,167 @@ function FinancialScorePage() {
                     style={{ flex: 1.5, padding: '12px', background: '#10b981', color: 'white', border: 'none', borderRadius: '8px', fontWeight: '700', cursor: 'pointer' }}
                   >
                     Activate DataRoom
+                  </button>
+                </div>
+              </form>
+
+              <div style={{ marginTop: '12px', padding: '10px', background: '#f0fdf4', borderRadius: '8px', border: '1px solid #86efac', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <Lock size={14} color="#059669" />
+                <span style={{ fontSize: '12px', color: '#059669', fontWeight: 600 }}>
+                  Secured by USAePay. Card data is encrypted in transit.
+                </span>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
+      {showDigitalPresenceCheckoutModal && digitalPresenceCheckoutPlan && selectedCompanyId && (() => {
+        const amount =
+          digitalPresenceCheckoutPlan === 'monthly'
+            ? digitalPresencePricing.monthly
+            : digitalPresenceCheckoutPlan === 'quarterly'
+              ? digitalPresencePricing.quarterly
+              : digitalPresencePricing.annual;
+        const getPlanAmount = (plan: 'monthly' | 'quarterly' | 'annual') =>
+          plan === 'monthly'
+            ? digitalPresencePricing.monthly
+            : plan === 'quarterly'
+              ? digitalPresencePricing.quarterly
+              : digitalPresencePricing.annual;
+
+        return (
+          <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999 }}>
+            <div style={{ background: 'white', borderRadius: '12px', padding: '28px', maxWidth: '640px', width: '92%', maxHeight: '90vh', overflow: 'auto', boxShadow: '0 20px 25px -5px rgba(0,0,0,0.1), 0 10px 10px -5px rgba(0,0,0,0.04)' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+                <h2 style={{ fontSize: '24px', fontWeight: '700', color: '#1e293b', margin: 0 }}>Enable Digital Presence</h2>
+                <button
+                  onClick={() => setShowDigitalPresenceCheckoutModal(false)}
+                  style={{ background: 'none', border: 'none', fontSize: '24px', cursor: 'pointer', color: '#64748b', padding: '0', lineHeight: '1' }}
+                >
+                  ×
+                </button>
+              </div>
+
+              <p style={{ fontSize: '13px', color: '#475569', marginBottom: '14px' }}>
+                Subscribe to Digital Presence access for this company.
+              </p>
+
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '8px', marginBottom: '14px' }}>
+                {(['monthly', 'quarterly', 'annual'] as const).map((plan) => {
+                  const planAmount = getPlanAmount(plan);
+                  const disabled = planAmount <= 0;
+                  return (
+                    <button
+                      key={plan}
+                      type="button"
+                      onClick={() => !disabled && setDigitalPresenceCheckoutPlan(plan)}
+                      disabled={disabled}
+                      style={{
+                        padding: '10px 8px',
+                        borderRadius: '8px',
+                        border: digitalPresenceCheckoutPlan === plan ? '2px solid #2563eb' : '1px solid #cbd5e1',
+                        background: disabled ? '#f1f5f9' : digitalPresenceCheckoutPlan === plan ? '#eff6ff' : 'white',
+                        fontSize: '12px',
+                        fontWeight: '700',
+                        color: disabled ? '#94a3b8' : '#1e293b',
+                        cursor: disabled ? 'not-allowed' : 'pointer',
+                        textTransform: 'capitalize',
+                      }}
+                    >
+                      {plan} ${planAmount.toFixed(2)}
+                    </button>
+                  );
+                })}
+              </div>
+
+              <form
+                onSubmit={async (e) => {
+                  e.preventDefault();
+                  const formData = new FormData(e.currentTarget);
+
+                  try {
+                    const response = await fetch('/api/digital-presence/checkout', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({
+                        companyId: selectedCompanyId,
+                        plan: digitalPresenceCheckoutPlan,
+                        cardNumber: formData.get('cardNumber'),
+                        cardholderName: formData.get('cardholderName'),
+                        expirationMonth: formData.get('expMonth'),
+                        expirationYear: formData.get('expYear'),
+                        cvv: formData.get('cvv'),
+                        billingAddress: {
+                          street: formData.get('street') as string,
+                          city: formData.get('city') as string,
+                          state: formData.get('state') as string,
+                          zip: formData.get('zip') as string,
+                        },
+                      }),
+                    });
+                    const result = await response.json();
+                    if (!response.ok || !result?.success) {
+                      throw new Error(result?.error || 'Payment failed');
+                    }
+
+                    alert('Digital Presence activated successfully.');
+                    setShowDigitalPresenceCheckoutModal(false);
+                    await loadAllCompanies();
+                    openDigitalPresenceWebsite();
+                  } catch (error: any) {
+                    alert(error?.message || 'Failed to activate Digital Presence.');
+                  }
+                }}
+              >
+                <div style={{ background: '#f8fafc', borderRadius: '10px', padding: '14px', marginBottom: '14px', border: '1px solid #e2e8f0' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span style={{ fontSize: '14px', fontWeight: '700', color: '#1e293b', textTransform: 'capitalize' }}>
+                      Digital Presence {digitalPresenceCheckoutPlan}
+                    </span>
+                    <span style={{ fontSize: '22px', fontWeight: '800', color: '#2563eb' }}>${amount.toFixed(2)}</span>
+                  </div>
+                </div>
+
+                <div style={{ background: '#f8fafc', borderRadius: '12px', padding: '20px', marginBottom: '14px', border: '1px solid #e2e8f0' }}>
+                  <h4 style={{ fontSize: '15px', fontWeight: '600', color: '#1e293b', marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <CreditCard size={15} /> Card Details
+                  </h4>
+                  <input name="cardNumber" autoComplete="cc-number" placeholder="Card Number" required style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1', marginBottom: '10px' }} />
+                  <input name="cardholderName" autoComplete="cc-name" placeholder="Cardholder Name" required style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1', marginBottom: '10px' }} />
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '8px' }}>
+                    <input name="expMonth" autoComplete="cc-exp-month" placeholder="MM" required style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1' }} />
+                    <input name="expYear" autoComplete="cc-exp-year" placeholder="YYYY" required style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1' }} />
+                    <input name="cvv" autoComplete="cc-csc" placeholder="CVV" required style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1' }} />
+                  </div>
+                </div>
+
+                <div style={{ background: '#f8fafc', borderRadius: '12px', padding: '20px', marginBottom: '14px', border: '1px solid #e2e8f0' }}>
+                  <h4 style={{ fontSize: '15px', fontWeight: '600', color: '#1e293b', marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <MapPin size={15} /> Billing Address
+                  </h4>
+                  <input name="street" placeholder="Street Address" required style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1', marginBottom: '10px' }} />
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginBottom: '10px' }}>
+                    <input name="city" placeholder="City" required style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1' }} />
+                    <input name="state" placeholder="State" required style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1' }} />
+                  </div>
+                  <input name="zip" placeholder="ZIP" required style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1' }} />
+                </div>
+
+                <div style={{ display: 'flex', gap: '10px' }}>
+                  <button
+                    type="button"
+                    onClick={() => setShowDigitalPresenceCheckoutModal(false)}
+                    style={{ flex: 1, padding: '12px', background: 'white', color: '#64748b', border: '1px solid #cbd5e1', borderRadius: '8px', fontWeight: '600', cursor: 'pointer' }}
+                  >
+                    Not now
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={amount <= 0}
+                    style={{ flex: 1.5, padding: '12px', background: amount <= 0 ? '#94a3b8' : '#10b981', color: 'white', border: 'none', borderRadius: '8px', fontWeight: '700', cursor: amount <= 0 ? 'not-allowed' : 'pointer' }}
+                  >
+                    Activate Digital Presence
                   </button>
                 </div>
               </form>

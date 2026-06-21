@@ -71,7 +71,14 @@ export async function POST(request: NextRequest) {
         })
       : null;
 
-    if (!subscription && !dataRoomContext) {
+    const digitalPresenceContext = !subscription && !dataRoomContext
+      ? await findDigitalPresenceCompanyByProcessorIds({
+          scheduleId: schedule_id || null,
+          customerId: customer || null,
+        })
+      : null;
+
+    if (!subscription && !dataRoomContext && !digitalPresenceContext) {
       console.warn('[USAePay Webhook] Subscription not found for customer:', customer, 'or schedule:', schedule_id);
       // Still return 200 to acknowledge receipt
       return NextResponse.json({ received: true });
@@ -89,6 +96,13 @@ export async function POST(request: NextRequest) {
       } else if (dataRoomContext) {
         console.log('[USAePay Webhook] ℹ️ DataRoom standalone transaction ignored:', {
           companyId: dataRoomContext.company.id,
+          transactionId: txnId,
+          status,
+          amount,
+        });
+      } else if (digitalPresenceContext) {
+        console.log('[USAePay Webhook] ℹ️ Digital Presence standalone transaction ignored:', {
+          companyId: digitalPresenceContext.company.id,
           transactionId: txnId,
           status,
           amount,
@@ -117,6 +131,27 @@ export async function POST(request: NextRequest) {
         });
       } else if (status === 'Declined' || status === 'Error') {
         await handleDataRoomFailedPayment(dataRoomContext, {
+          transactionId,
+          amount: txnAmount,
+          errorMessage: errMessage,
+          cardLast4: cc_number,
+          cardType: cardtype,
+        });
+      }
+    } else if (isRecurringEvent && digitalPresenceContext) {
+      const txnAmount = parseFloat(amount || '0');
+      const transactionId = key || refnum || `DP-${digitalPresenceContext.company.id}-${Date.now()}`;
+      const errMessage = error || result || 'Payment declined';
+
+      if (status === 'Approved') {
+        await handleDigitalPresenceSuccessfulPayment(digitalPresenceContext, {
+          transactionId,
+          amount: txnAmount,
+          cardLast4: cc_number,
+          cardType: cardtype,
+        });
+      } else if (status === 'Declined' || status === 'Error') {
+        await handleDigitalPresenceFailedPayment(digitalPresenceContext, {
           transactionId,
           amount: txnAmount,
           errorMessage: errMessage,
@@ -238,6 +273,7 @@ async function handleSuccessfulPayment(
         amount: paymentData.amount,
         paymentDate: now,
         paymentStatus: 'received',
+        serviceType: 'core',
         subscriptionPlan: subscription.plan,
         billingPeriodStart: start,
         billingPeriodEnd: end,
@@ -339,6 +375,7 @@ async function handleFailedPayment(
           amount: paymentData.amount,
           paymentDate: now,
           paymentStatus: 'failed',
+          serviceType: 'core',
           subscriptionPlan: subscription.plan,
           billingPeriodStart: start,
           billingPeriodEnd: end,
@@ -418,6 +455,7 @@ async function handleRefund(
         amount: -refundData.amount, // Negative amount for refund
         paymentDate: now,
         paymentStatus: 'refunded',
+        serviceType: 'core',
         subscriptionPlan: subscription.plan,
         billingPeriodStart: start,
         billingPeriodEnd: end,
@@ -446,6 +484,7 @@ type DataRoomCompanyContext = {
   company: {
     id: string;
     name: string;
+    consultantId: string | null;
     userDefinedAllocations: any;
   };
   dataRoom: any;
@@ -458,8 +497,8 @@ async function findDataRoomCompanyByProcessorIds(params: {
   const { scheduleId, customerId } = params;
   if (!scheduleId && !customerId) return null;
 
-  const rows = await prisma.$queryRaw<Array<{ id: string; name: string; userDefinedAllocations: any }>>`
-    SELECT id, name, "userDefinedAllocations"
+  const rows = await prisma.$queryRaw<Array<{ id: string; name: string; consultantId: string | null; userDefinedAllocations: any }>>`
+    SELECT id, name, "consultantId", "userDefinedAllocations"
     FROM "Company"
     WHERE (
       (${scheduleId} IS NOT NULL AND ("userDefinedAllocations"->'dataRoom'->'subscription'->>'usaepayBillingId') = ${scheduleId})
@@ -532,6 +571,23 @@ async function handleDataRoomSuccessfulPayment(
       cardType: paymentData.cardType,
       description: `DataRoom ${plan} recurring payment`,
       invoice: `DATAROOM-REC-${companyId}-${Date.now()}`,
+    },
+  });
+
+  const { start, end } = calculateBillingPeriod(now, plan);
+  await prisma.revenueRecord.create({
+    data: {
+      transactionId: paymentData.transactionId,
+      companyId,
+      consultantId: context.company.consultantId,
+      serviceType: 'dataroom',
+      amount: Number(paymentData.amount || 0),
+      paymentDate: now,
+      paymentStatus: 'received',
+      subscriptionPlan: plan,
+      billingPeriodStart: start,
+      billingPeriodEnd: end,
+      notes: `DataRoom recurring payment - ${context.company.name}`,
     },
   });
 
@@ -643,6 +699,213 @@ async function handleDataRoomFailedPayment(
       reason: paymentData.errorMessage || 'Payment declined by processor',
     });
   }
+}
+
+type DigitalPresenceCompanyContext = {
+  company: {
+    id: string;
+    name: string;
+    consultantId: string | null;
+    userDefinedAllocations: any;
+  };
+  digitalPresence: any;
+};
+
+async function findDigitalPresenceCompanyByProcessorIds(params: {
+  scheduleId: string | null;
+  customerId: string | null;
+}): Promise<DigitalPresenceCompanyContext | null> {
+  const { scheduleId, customerId } = params;
+  if (!scheduleId && !customerId) return null;
+
+  const rows = await prisma.$queryRaw<Array<{ id: string; name: string; consultantId: string | null; userDefinedAllocations: any }>>`
+    SELECT id, name, "consultantId", "userDefinedAllocations"
+    FROM "Company"
+    WHERE (
+      (${scheduleId} IS NOT NULL AND ("userDefinedAllocations"->'digitalPresence'->'subscription'->>'usaepayBillingId') = ${scheduleId})
+      OR
+      (${customerId} IS NOT NULL AND ("userDefinedAllocations"->'digitalPresence'->'subscription'->>'usaepayCustomerId') = ${customerId})
+    )
+    LIMIT 1
+  `;
+
+  const row = rows[0];
+  if (!row) return null;
+
+  const root = row.userDefinedAllocations && typeof row.userDefinedAllocations === 'object' ? row.userDefinedAllocations : {};
+  const digitalPresence = root?.digitalPresence && typeof root.digitalPresence === 'object' ? root.digitalPresence : {};
+  return {
+    company: row,
+    digitalPresence,
+  };
+}
+
+async function handleDigitalPresenceSuccessfulPayment(
+  context: DigitalPresenceCompanyContext,
+  paymentData: {
+    transactionId: string;
+    amount: number;
+    cardLast4?: string;
+    cardType?: string;
+  },
+) {
+  const companyId = context.company.id;
+  const now = new Date();
+  const currentPlan = String(context.digitalPresence?.subscription?.plan || 'monthly') as 'monthly' | 'quarterly' | 'annual';
+  const plan = ['monthly', 'quarterly', 'annual'].includes(currentPlan) ? currentPlan : 'monthly';
+  const nextBillingDate = addMonthsClamped(now, billingIntervalMonths(plan));
+  const existingFailedCount = Number(context.digitalPresence?.subscription?.failedPaymentCount || 0);
+
+  const updatedUDA = {
+    ...(context.company.userDefinedAllocations || {}),
+    digitalPresence: {
+      ...(context.digitalPresence || {}),
+      enabledByAdmin: true,
+      subscription: {
+        ...(context.digitalPresence?.subscription || {}),
+        status: 'active',
+        plan,
+        amount: Number(paymentData.amount || context.digitalPresence?.subscription?.amount || 0),
+        lastPaymentDate: now.toISOString(),
+        nextBillingDate: nextBillingDate.toISOString(),
+        pastDueSince: null,
+        graceEndsAt: null,
+        lastFailureReason: null,
+        failedPaymentCount: Math.max(0, existingFailedCount - 1),
+      },
+    },
+  };
+
+  await prisma.company.update({
+    where: { id: companyId },
+    data: { userDefinedAllocations: updatedUDA },
+  });
+
+  await prisma.paymentTransaction.create({
+    data: {
+      companyId,
+      amount: Number(paymentData.amount || 0),
+      status: 'SUCCESS',
+      type: 'RECURRING',
+      transactionId: paymentData.transactionId,
+      cardLast4: paymentData.cardLast4,
+      cardType: paymentData.cardType,
+      description: `Digital Presence ${plan} recurring payment`,
+      invoice: `DIGITAL-PRESENCE-REC-${companyId}-${Date.now()}`,
+    },
+  });
+
+  const { start, end } = calculateBillingPeriod(now, plan);
+  await prisma.revenueRecord.create({
+    data: {
+      transactionId: paymentData.transactionId,
+      companyId,
+      consultantId: context.company.consultantId,
+      serviceType: 'digital_presence',
+      amount: Number(paymentData.amount || 0),
+      paymentDate: now,
+      paymentStatus: 'received',
+      subscriptionPlan: plan,
+      billingPeriodStart: start,
+      billingPeriodEnd: end,
+      notes: `Digital Presence recurring payment - ${context.company.name}`,
+    },
+  });
+
+  await prisma.subscriptionEvent.create({
+    data: {
+      companyId,
+      eventType: 'digital_presence_payment_received',
+      newValue: paymentData.transactionId,
+      notes: `Digital Presence recurring payment received: $${Number(paymentData.amount || 0).toFixed(2)} (${plan})`,
+    },
+  });
+}
+
+async function handleDigitalPresenceFailedPayment(
+  context: DigitalPresenceCompanyContext,
+  paymentData: {
+    transactionId?: string;
+    amount: number;
+    errorMessage?: string;
+    cardLast4?: string;
+    cardType?: string;
+  },
+) {
+  const companyId = context.company.id;
+  const now = new Date();
+  const currentPlan = String(context.digitalPresence?.subscription?.plan || 'monthly') as 'monthly' | 'quarterly' | 'annual';
+  const plan = ['monthly', 'quarterly', 'annual'].includes(currentPlan) ? currentPlan : 'monthly';
+  const failedCount = Number(context.digitalPresence?.subscription?.failedPaymentCount || 0) + 1;
+  const pastDueSince = context.digitalPresence?.subscription?.pastDueSince || now.toISOString();
+  const graceEndsAt = new Date(now);
+  graceEndsAt.setDate(graceEndsAt.getDate() + 30);
+
+  const updatedUDA = {
+    ...(context.company.userDefinedAllocations || {}),
+    digitalPresence: {
+      ...(context.digitalPresence || {}),
+      enabledByAdmin: true,
+      subscription: {
+        ...(context.digitalPresence?.subscription || {}),
+        status: 'past_due',
+        plan,
+        amount: Number(context.digitalPresence?.subscription?.amount || paymentData.amount || 0),
+        pastDueSince,
+        graceEndsAt: graceEndsAt.toISOString(),
+        lastFailureReason: paymentData.errorMessage || 'Payment declined',
+        failedPaymentCount: failedCount,
+      },
+    },
+  };
+
+  await prisma.company.update({
+    where: { id: companyId },
+    data: { userDefinedAllocations: updatedUDA },
+  });
+
+  await prisma.paymentTransaction.create({
+    data: {
+      companyId,
+      amount: Number(paymentData.amount || 0),
+      status: 'FAILED',
+      type: 'RECURRING',
+      transactionId: paymentData.transactionId,
+      cardLast4: paymentData.cardLast4,
+      cardType: paymentData.cardType,
+      errorMessage: paymentData.errorMessage || 'Digital Presence recurring payment failed',
+      description: `Failed Digital Presence ${plan} recurring payment`,
+      invoice: `DIGITAL-PRESENCE-FAIL-${companyId}-${Date.now()}`,
+    },
+  });
+
+  if (paymentData.transactionId) {
+    const { start, end } = calculateBillingPeriod(now, plan);
+    await prisma.revenueRecord.create({
+      data: {
+        transactionId: paymentData.transactionId,
+        companyId,
+        consultantId: context.company.consultantId,
+        serviceType: 'digital_presence',
+        amount: Number(paymentData.amount || 0),
+        paymentDate: now,
+        paymentStatus: 'failed',
+        subscriptionPlan: plan,
+        billingPeriodStart: start,
+        billingPeriodEnd: end,
+        notes: `Digital Presence payment failed: ${paymentData.errorMessage || 'Payment declined'}`,
+      },
+    });
+  }
+
+  await prisma.subscriptionEvent.create({
+    data: {
+      companyId,
+      eventType: 'digital_presence_payment_failed',
+      newValue: paymentData.transactionId || 'unknown',
+      notes: `Digital Presence payment failed: ${paymentData.errorMessage || 'Payment declined'}`,
+    },
+  });
 }
 
 // GET endpoint for webhook verification (optional)

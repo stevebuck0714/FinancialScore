@@ -11,6 +11,7 @@ export async function GET(request: NextRequest) {
     const startDate = searchParams.get('startDate');
     const endDate = searchParams.get('endDate');
     const type = searchParams.get('type'); // 'consultant' or 'direct'
+    const serviceType = searchParams.get('serviceType');
 
     const where: any = {};
 
@@ -22,6 +23,9 @@ export async function GET(request: NextRequest) {
     }
     if (companyId) {
       where.companyId = companyId;
+    }
+    if (serviceType && serviceType !== 'all') {
+      where.serviceType = serviceType;
     }
     if (type === 'direct') {
       where.consultantId = null; // Direct businesses only
@@ -77,6 +81,7 @@ export async function POST(request: NextRequest) {
       amount, 
       paymentDate,
       subscriptionPlan,
+      serviceType,
       billingPeriodStart,
       billingPeriodEnd,
       processorFee,
@@ -114,6 +119,7 @@ export async function POST(request: NextRequest) {
         amount,
         paymentDate: paymentDate ? new Date(paymentDate) : new Date(),
         paymentStatus: 'received',
+        serviceType: serviceType || 'core',
         subscriptionPlan,
         billingPeriodStart: billingPeriodStart ? new Date(billingPeriodStart) : new Date(),
         billingPeriodEnd: billingPeriodEnd ? new Date(billingPeriodEnd) : new Date(),

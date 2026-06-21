@@ -1116,6 +1116,7 @@ model RevenueRecord {
   transactionId         String   @unique // USAePay or payment processor transaction ID
   companyId             String
   consultantId          String?  // NULL if direct business (no consultant)
+  serviceType           String   @default("core") // core, setup_fee, dataroom, valuation, digital_presence
   amount                Float
   paymentDate           DateTime
   paymentStatus         String   @default("received") // 'received', 'failed', 'refunded', 'pending'
@@ -1132,6 +1133,7 @@ model RevenueRecord {
 
   @@index([companyId])
   @@index([consultantId])
+  @@index([serviceType])
   @@index([paymentStatus])
   @@index([paymentDate])
   @@index([billingPeriodStart])

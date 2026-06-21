@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useCallback, useState, useEffect } from 'react';
 import { formatCurrency, formatDate, getStatusColor, getStatusText } from '@/lib/billing/billingHelpers';
 
 interface RevenueRecord {
@@ -11,6 +11,7 @@ interface RevenueRecord {
   amount: number;
   paymentStatus: string;
   paymentDate: string;
+  serviceType: string;
   subscriptionPlan: string;
   billingPeriodStart: string;
 }
@@ -20,12 +21,9 @@ export default function RevenueRecordsTab() {
   const [isLoading, setIsLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState('all');
   const [typeFilter, setTypeFilter] = useState('all'); // 'all', 'consultant', 'direct'
+  const [serviceFilter, setServiceFilter] = useState('all');
 
-  useEffect(() => {
-    fetchRecords();
-  }, [statusFilter, typeFilter]);
-
-  const fetchRecords = async () => {
+  const fetchRecords = useCallback(async () => {
     try {
       setIsLoading(true);
       let url = '/api/revenue-records?';
@@ -33,7 +31,10 @@ export default function RevenueRecordsTab() {
         url += `status=${statusFilter}&`;
       }
       if (typeFilter !== 'all') {
-        url += `type=${typeFilter}`;
+        url += `type=${typeFilter}&`;
+      }
+      if (serviceFilter !== 'all') {
+        url += `serviceType=${serviceFilter}`;
       }
       const response = await fetch(url);
       if (!response.ok) throw new Error('Failed to fetch revenue records');
@@ -44,7 +45,11 @@ export default function RevenueRecordsTab() {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [serviceFilter, statusFilter, typeFilter]);
+
+  useEffect(() => {
+    fetchRecords();
+  }, [fetchRecords]);
 
   const updateRecordStatus = async (recordId: string, newStatus: string) => {
     try {
@@ -118,6 +123,30 @@ export default function RevenueRecordsTab() {
               </button>
             ))}
           </div>
+
+          <div>
+            <span style={{ fontSize: '14px', fontWeight: '600', color: '#1e293b', marginRight: '8px' }}>Service:</span>
+            {['all', 'core', 'setup_fee', 'dataroom', 'valuation', 'digital_presence'].map(service => (
+              <button
+                key={service}
+                onClick={() => setServiceFilter(service)}
+                style={{
+                  padding: '6px 16px',
+                  marginRight: '8px',
+                  background: serviceFilter === service ? '#667eea' : '#f3f4f6',
+                  color: serviceFilter === service ? 'white' : '#64748b',
+                  border: 'none',
+                  borderRadius: '6px',
+                  fontSize: '13px',
+                  fontWeight: '500',
+                  cursor: 'pointer',
+                  textTransform: 'capitalize'
+                }}
+              >
+                {service === 'all' ? 'All' : service.replace(/_/g, ' ')}
+              </button>
+            ))}
+          </div>
         </div>
       </div>
 
@@ -151,6 +180,7 @@ export default function RevenueRecordsTab() {
                 <th style={{ padding: '12px 16px', textAlign: 'left', fontSize: '13px', fontWeight: '600', color: '#64748b' }}>Consultant</th>
                 <th style={{ padding: '12px 16px', textAlign: 'left', fontSize: '13px', fontWeight: '600', color: '#64748b' }}>Amount</th>
                 <th style={{ padding: '12px 16px', textAlign: 'left', fontSize: '13px', fontWeight: '600', color: '#64748b' }}>Share</th>
+                <th style={{ padding: '12px 16px', textAlign: 'left', fontSize: '13px', fontWeight: '600', color: '#64748b' }}>Service</th>
                 <th style={{ padding: '12px 16px', textAlign: 'left', fontSize: '13px', fontWeight: '600', color: '#64748b' }}>Plan</th>
                 <th style={{ padding: '12px 16px', textAlign: 'left', fontSize: '13px', fontWeight: '600', color: '#64748b' }}>Date</th>
                 <th style={{ padding: '12px 16px', textAlign: 'left', fontSize: '13px', fontWeight: '600', color: '#64748b' }}>Status</th>
@@ -186,6 +216,9 @@ export default function RevenueRecordsTab() {
                       ) : (
                         <div style={{ color: '#10b981', fontWeight: '600' }}>100% Platform</div>
                       )}
+                    </td>
+                    <td style={{ padding: '12px 16px', fontSize: '13px', color: '#64748b', textTransform: 'capitalize' }}>
+                      {(record.serviceType || 'core').replace(/_/g, ' ')}
                     </td>
                     <td style={{ padding: '12px 16px', fontSize: '13px', color: '#64748b', textTransform: 'capitalize' }}>
                       {record.subscriptionPlan}

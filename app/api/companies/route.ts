@@ -803,6 +803,17 @@ export async function POST(request: NextRequest) {
                 status: "inactive",
               },
             },
+            digitalPresence: {
+              enabledByAdmin: false,
+              pricing: {
+                monthly: 0,
+                quarterly: 0,
+                annual: 0,
+              },
+              subscription: {
+                status: "inactive",
+              },
+            },
           },
           // DO NOT store affiliate code or affiliate ID with company
           // Affiliate codes are used ONLY to determine pricing, then discarded
@@ -1311,6 +1322,80 @@ export async function PATCH(request: NextRequest) {
         ...currentUDA,
         valuation: {
           ...currentValuation,
+          enabledByAdmin: nextEnabled,
+          pricing: {
+            ...currentPricing,
+            monthly: Number.isFinite(nextMonthly) ? nextMonthly : 0,
+            quarterly: Number.isFinite(nextQuarterly) ? nextQuarterly : 0,
+            annual: Number.isFinite(nextAnnual) ? nextAnnual : 0,
+          },
+          subscription: {
+            status: String(currentSubscription.status || 'inactive').toLowerCase(),
+            ...currentSubscription,
+          },
+        },
+      };
+    }
+
+    // Digital Presence settings (stored in userDefinedAllocations.digitalPresence)
+    const hasDigitalPresenceSettingsUpdate =
+      updateFields.digitalPresenceEnabledByAdmin !== undefined ||
+      updateFields.digitalPresenceMonthlyPrice !== undefined ||
+      updateFields.digitalPresenceQuarterlyPrice !== undefined ||
+      updateFields.digitalPresenceAnnualPrice !== undefined;
+    if (hasDigitalPresenceSettingsUpdate) {
+      const currentUDA =
+        updateData.userDefinedAllocations &&
+        typeof updateData.userDefinedAllocations === 'object' &&
+        !Array.isArray(updateData.userDefinedAllocations)
+          ? (updateData.userDefinedAllocations as Record<string, any>)
+          : (
+              existingCompany?.userDefinedAllocations &&
+              typeof existingCompany.userDefinedAllocations === 'object' &&
+              !Array.isArray(existingCompany.userDefinedAllocations)
+                ? (existingCompany.userDefinedAllocations as Record<string, any>)
+                : {}
+            );
+      const currentDigitalPresence =
+        currentUDA.digitalPresence &&
+        typeof currentUDA.digitalPresence === 'object' &&
+        !Array.isArray(currentUDA.digitalPresence)
+          ? (currentUDA.digitalPresence as Record<string, any>)
+          : {};
+      const currentPricing =
+        currentDigitalPresence.pricing &&
+        typeof currentDigitalPresence.pricing === 'object' &&
+        !Array.isArray(currentDigitalPresence.pricing)
+          ? (currentDigitalPresence.pricing as Record<string, any>)
+          : {};
+      const currentSubscription =
+        currentDigitalPresence.subscription &&
+        typeof currentDigitalPresence.subscription === 'object' &&
+        !Array.isArray(currentDigitalPresence.subscription)
+          ? (currentDigitalPresence.subscription as Record<string, any>)
+          : {};
+
+      const nextEnabled =
+        updateFields.digitalPresenceEnabledByAdmin !== undefined
+          ? Boolean(updateFields.digitalPresenceEnabledByAdmin)
+          : Boolean(currentDigitalPresence.enabledByAdmin);
+      const nextMonthly =
+        updateFields.digitalPresenceMonthlyPrice !== undefined
+          ? Number(updateFields.digitalPresenceMonthlyPrice)
+          : Number(currentPricing.monthly ?? 0);
+      const nextQuarterly =
+        updateFields.digitalPresenceQuarterlyPrice !== undefined
+          ? Number(updateFields.digitalPresenceQuarterlyPrice)
+          : Number(currentPricing.quarterly ?? 0);
+      const nextAnnual =
+        updateFields.digitalPresenceAnnualPrice !== undefined
+          ? Number(updateFields.digitalPresenceAnnualPrice)
+          : Number(currentPricing.annual ?? 0);
+
+      updateData.userDefinedAllocations = {
+        ...currentUDA,
+        digitalPresence: {
+          ...currentDigitalPresence,
           enabledByAdmin: nextEnabled,
           pricing: {
             ...currentPricing,

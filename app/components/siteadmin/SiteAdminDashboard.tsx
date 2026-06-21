@@ -339,6 +339,11 @@ export default function SiteAdminDashboard(props: any) {
     Record<string, { monthly: number; quarterly: number; annual: number }>
   >({});
   const [savingValuationPricingCompanyId, setSavingValuationPricingCompanyId] = React.useState<string | null>(null);
+  const [savingDigitalPresenceCompanyId, setSavingDigitalPresenceCompanyId] = React.useState<string | null>(null);
+  const [editingDigitalPresencePricingByCompany, setEditingDigitalPresencePricingByCompany] = React.useState<
+    Record<string, { monthly: number; quarterly: number; annual: number }>
+  >({});
+  const [savingDigitalPresencePricingCompanyId, setSavingDigitalPresencePricingCompanyId] = React.useState<string | null>(null);
   const [runningFinancialImportByCompany, setRunningFinancialImportByCompany] = React.useState<Record<string, boolean>>({});
   const [companyDetailTabByCompany, setCompanyDetailTabByCompany] = React.useState<
     Record<string, 'accounting' | 'report-customization' | 'service-pricing'>
@@ -1774,6 +1779,246 @@ export default function SiteAdminDashboard(props: any) {
       setSavingValuationCompanyId(null);
     }
   };
+
+  const getDigitalPresenceEnabledByAdmin = (company: any) => {
+    const uda =
+      company?.userDefinedAllocations &&
+      typeof company.userDefinedAllocations === 'object' &&
+      !Array.isArray(company.userDefinedAllocations)
+        ? company.userDefinedAllocations
+        : {};
+    const digitalPresence =
+      uda?.digitalPresence &&
+      typeof uda.digitalPresence === 'object' &&
+      !Array.isArray(uda.digitalPresence)
+        ? uda.digitalPresence
+        : {};
+    return digitalPresence.enabledByAdmin === true;
+  };
+
+  const getDigitalPresenceSubscriptionStatus = (company: any) => {
+    const uda =
+      company?.userDefinedAllocations &&
+      typeof company.userDefinedAllocations === 'object' &&
+      !Array.isArray(company.userDefinedAllocations)
+        ? company.userDefinedAllocations
+        : {};
+    const digitalPresence =
+      uda?.digitalPresence &&
+      typeof uda.digitalPresence === 'object' &&
+      !Array.isArray(uda.digitalPresence)
+        ? uda.digitalPresence
+        : {};
+    return String(digitalPresence?.subscription?.status || 'inactive').toLowerCase();
+  };
+
+  const getDigitalPresencePricing = (company: any) => {
+    const uda =
+      company?.userDefinedAllocations &&
+      typeof company.userDefinedAllocations === 'object' &&
+      !Array.isArray(company.userDefinedAllocations)
+        ? company.userDefinedAllocations
+        : {};
+    const digitalPresence =
+      uda?.digitalPresence &&
+      typeof uda.digitalPresence === 'object' &&
+      !Array.isArray(uda.digitalPresence)
+        ? uda.digitalPresence
+        : {};
+    const pricing =
+      digitalPresence?.pricing &&
+      typeof digitalPresence.pricing === 'object' &&
+      !Array.isArray(digitalPresence.pricing)
+        ? digitalPresence.pricing
+        : {};
+    return {
+      monthly: Number(pricing?.monthly ?? 0),
+      quarterly: Number(pricing?.quarterly ?? 0),
+      annual: Number(pricing?.annual ?? 0),
+    };
+  };
+
+  const saveDigitalPresencePricing = async (companyId: string, pricing: { monthly: number; quarterly: number; annual: number }) => {
+    setSavingDigitalPresencePricingCompanyId(companyId);
+    try {
+      const response = await fetch('/api/companies', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: companyId,
+          digitalPresenceMonthlyPrice: Number(pricing.monthly || 0),
+          digitalPresenceQuarterlyPrice: Number(pricing.quarterly || 0),
+          digitalPresenceAnnualPrice: Number(pricing.annual || 0),
+        }),
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        const message = data?.message || data?.error || 'Failed to save Digital Presence pricing';
+        if (response.status === 401) {
+          alert(message);
+          if (typeof window !== 'undefined') {
+            window.location.href = '/?sessionExpired=1';
+          }
+          return;
+        }
+        throw new Error(message);
+      }
+      setCompanies((prev: any[]) =>
+        Array.isArray(prev)
+          ? prev.map((c: any) => (c.id === companyId ? { ...c, ...(data?.company || {}) } : c))
+          : prev
+      );
+      setEditingDigitalPresencePricingByCompany((prev) => {
+        const next = { ...prev };
+        delete next[companyId];
+        return next;
+      });
+      alert('Digital Presence pricing saved.');
+    } catch (error: any) {
+      alert(error?.message || 'Failed to save Digital Presence pricing');
+    } finally {
+      setSavingDigitalPresencePricingCompanyId(null);
+    }
+  };
+
+  const saveDigitalPresenceEnabledByAdmin = async (companyId: string, enabled: boolean) => {
+    setSavingDigitalPresenceCompanyId(companyId);
+    try {
+      const response = await fetch('/api/companies', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: companyId,
+          digitalPresenceEnabledByAdmin: enabled,
+        }),
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        const message = data?.message || data?.error || 'Failed to update Digital Presence setting';
+        if (response.status === 401) {
+          alert(message);
+          if (typeof window !== 'undefined') {
+            window.location.href = '/?sessionExpired=1';
+          }
+          return;
+        }
+        throw new Error(message);
+      }
+
+      setCompanies((prev: any[]) =>
+        Array.isArray(prev)
+          ? prev.map((c: any) => (c.id === companyId ? { ...c, ...(data?.company || {}) } : c))
+          : prev
+      );
+
+      alert(enabled ? 'Digital Presence enabled for this company.' : 'Digital Presence disabled for this company.');
+    } catch (error: any) {
+      alert(error?.message || 'Failed to update Digital Presence setting');
+    } finally {
+      setSavingDigitalPresenceCompanyId(null);
+    }
+  };
+
+  const renderDigitalPresencePricingCard = (company: any, headingTag: 'h4' | 'h6' = 'h6') => {
+    const HeadingTag = headingTag;
+    const editingDigitalPresence = editingDigitalPresencePricingByCompany[company.id];
+    const savingPricing = savingDigitalPresencePricingCompanyId === company.id;
+    const savingEnabled = savingDigitalPresenceCompanyId === company.id;
+
+    return (
+      <div style={{ padding: '4px 10px 10px 10px', background: '#fff7ed', borderRadius: '6px', border: '1px solid #fed7aa' }}>
+        <HeadingTag style={{ fontSize: '14px', fontWeight: '700', color: '#9a3412', marginBottom: '8px' }}>Digital Presence Pricing</HeadingTag>
+        {editingDigitalPresence ? (
+          <div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '6px', marginBottom: '8px' }}>
+              {(['monthly', 'quarterly', 'annual'] as const).map((period) => (
+                <div key={period}>
+                  <label style={{ fontSize: '10px', color: '#64748b', display: 'block', marginBottom: '2px', textTransform: 'capitalize' }}>{period} ($)</label>
+                  <input
+                    type="number"
+                    value={editingDigitalPresence[period]}
+                    onChange={(e) =>
+                      setEditingDigitalPresencePricingByCompany((prev) => ({
+                        ...prev,
+                        [company.id]: {
+                          ...prev[company.id],
+                          [period]: parseFloat(e.target.value) || 0,
+                        },
+                      }))
+                    }
+                    style={{ width: '100%', padding: '4px 6px', border: '1px solid #cbd5e1', borderRadius: '4px', fontSize: '11px' }}
+                  />
+                </div>
+              ))}
+            </div>
+            <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+              <button
+                onClick={() => saveDigitalPresencePricing(company.id, editingDigitalPresence)}
+                disabled={savingPricing}
+                style={{ padding: '6px 12px', background: '#10b981', color: 'white', border: 'none', borderRadius: '4px', fontSize: '12px', fontWeight: '700', cursor: savingPricing ? 'not-allowed' : 'pointer' }}
+              >
+                Save
+              </button>
+              <button
+                onClick={() => {
+                  setEditingDigitalPresencePricingByCompany((prev) => {
+                    const next = { ...prev };
+                    delete next[company.id];
+                    return next;
+                  });
+                }}
+                style={{ padding: '6px 12px', background: '#94a3b8', color: 'white', border: 'none', borderRadius: '4px', fontSize: '12px', fontWeight: '700', cursor: 'pointer' }}
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        ) : (
+          <>
+            <div style={{ fontSize: '13px', color: '#475569', lineHeight: '1.7', marginBottom: '8px' }}>
+              <div><strong>Monthly:</strong> ${getDigitalPresencePricing(company).monthly.toFixed(2)}</div>
+              <div><strong>Quarterly:</strong> ${getDigitalPresencePricing(company).quarterly.toFixed(2)}</div>
+              <div><strong>Annual:</strong> ${getDigitalPresencePricing(company).annual.toFixed(2)}</div>
+            </div>
+            <div style={{ fontSize: '11px', color: '#475569', marginBottom: '8px' }}>
+              Status: {getDigitalPresenceEnabledByAdmin(company) ? 'Enabled' : 'Disabled'} | Subscription: {getDigitalPresenceSubscriptionStatus(company)}
+            </div>
+            <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+              <button
+                onClick={() => saveDigitalPresenceEnabledByAdmin(company.id, !getDigitalPresenceEnabledByAdmin(company))}
+                disabled={savingEnabled}
+                style={{
+                  padding: '6px 12px',
+                  background: getDigitalPresenceEnabledByAdmin(company) ? '#dc2626' : '#2563eb',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '4px',
+                  fontSize: '12px',
+                  fontWeight: '700',
+                  cursor: savingEnabled ? 'not-allowed' : 'pointer',
+                }}
+              >
+                {getDigitalPresenceEnabledByAdmin(company) ? 'Disable Digital Presence' : 'Enable Digital Presence'}
+              </button>
+              <button
+                onClick={() => {
+                  const pricing = getDigitalPresencePricing(company);
+                  setEditingDigitalPresencePricingByCompany((prev) => ({
+                    ...prev,
+                    [company.id]: pricing,
+                  }));
+                }}
+                style={{ padding: '6px 12px', background: '#667eea', color: 'white', border: 'none', borderRadius: '4px', fontSize: '12px', fontWeight: '700', cursor: 'pointer' }}
+              >
+                Edit Pricing
+              </button>
+            </div>
+          </>
+        )}
+      </div>
+    );
+  };
+
   const [operationalSyncSettingsByCompany, setOperationalSyncSettingsByCompany] = React.useState<
     Record<
       string,
@@ -7303,7 +7548,7 @@ export default function SiteAdminDashboard(props: any) {
                                               border: '1px solid #cbd5e1',
                                             }}
                                           >
-                                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(220px, 1fr))', gap: '10px' }}>
+                                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, minmax(180px, 1fr))', gap: '10px' }}>
                                             {/* Subscription Pricing */}
                                             <div style={{ padding: '4px 10px 10px 10px', background: 'white', borderRadius: '6px', border: '1px solid #cbd5e1' }}>
                                               <h6 style={{ fontSize: '14px', fontWeight: '700', color: '#475569', marginBottom: '8px' }}>Subscription Pricing</h6>
@@ -7678,6 +7923,7 @@ export default function SiteAdminDashboard(props: any) {
                                                 </>
                                               )}
                                             </div>
+                                            {renderDigitalPresencePricingCard(company)}
                                           </div>
                                           </div>
 
@@ -10419,7 +10665,7 @@ export default function SiteAdminDashboard(props: any) {
                                     border: '1px solid #cbd5e1',
                                   }}
                                 >
-                                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(220px, 1fr))', gap: '10px' }}>
+                                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, minmax(180px, 1fr))', gap: '10px' }}>
                                   {/* Subscription Pricing */}
                                   <div style={{ padding: '4px 12px 12px 12px', background: '#fef3c7', borderRadius: '6px' }}>
                                     <h4 style={{ fontSize: '14px', fontWeight: '600', color: '#475569', marginBottom: '8px' }}>Subscription Pricing</h4>
@@ -10794,6 +11040,7 @@ export default function SiteAdminDashboard(props: any) {
                                       </>
                                     )}
                                   </div>
+                                  {renderDigitalPresencePricingCard(businessCompany, 'h4')}
                                 </div>
                               </div>
                               </div>

@@ -28,6 +28,11 @@ export async function GET() {
     const currentMonthDirectRevenue = currentMonthRecords
       .filter(r => !r.consultantId)
       .reduce((sum, r) => sum + r.amount, 0);
+    const currentMonthRevenueByService = currentMonthRecords.reduce<Record<string, number>>((acc, record) => {
+      const serviceType = record.serviceType || 'core';
+      acc[serviceType] = (acc[serviceType] || 0) + record.amount;
+      return acc;
+    }, {});
 
     // MRR/ARR derived from actual current month revenue
     const totalMRR = currentMonthRevenue;
@@ -81,6 +86,7 @@ export async function GET() {
       currentMonthRevenue,
       currentMonthConsultantRevenue,
       currentMonthDirectRevenue,
+      currentMonthRevenueByService,
       previousMonthRevenue,
       revenueGrowth,
       totalPendingPayables,
