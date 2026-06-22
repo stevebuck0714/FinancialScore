@@ -8852,6 +8852,7 @@ function FinancialScorePage() {
     annual: number;
     setupFee: number;
     affiliateCode?: string | null;
+    referralPartnerId?: string | null;
     referralPartnerConsultantId?: string | null;
     referralSetupFeePercentage?: number;
     referralRecurringFeePercentage?: number;
@@ -8869,6 +8870,7 @@ function FinancialScorePage() {
         ? undefined
         : String(pricing.affiliateCode || '').trim().toUpperCase() || null;
       const referral = {
+        referralPartnerId: pricing.referralPartnerId ? String(pricing.referralPartnerId) : null,
         referralPartnerConsultantId: pricing.referralPartnerConsultantId ? String(pricing.referralPartnerConsultantId) : null,
         referralSetupFeePercentage: Number(pricing.referralSetupFeePercentage || 0),
         referralRecurringFeePercentage: Number(pricing.referralRecurringFeePercentage || 0),
@@ -8893,6 +8895,7 @@ function FinancialScorePage() {
               subscriptionAnnualPrice: pricing.annual,
               subscriptionSetupFee: pricing.setupFee,
               ...(affiliateCode !== undefined ? { affiliateCode } : {}),
+              referralPartnerId: referral.referralPartnerId,
               referralPartnerConsultantId: referral.referralPartnerConsultantId,
               referralSetupFeePercentage: referral.referralSetupFeePercentage,
               referralRecurringFeePercentage: referral.referralRecurringFeePercentage,
@@ -8936,6 +8939,9 @@ function FinancialScorePage() {
     companyZip?: string;
     companyWebsite?: string;
     revenueSharePercentage?: number;
+    referralPartnerId?: string | null;
+    referralSetupFeePercentage?: number | null;
+    referralRecurringFeePercentage?: number | null;
   }) => {
     try {
       const response = await consultantsApi.update(consultantId, info);
@@ -8957,7 +8963,10 @@ function FinancialScorePage() {
               companyState: info.companyState,
               companyZip: info.companyZip,
               companyWebsite: info.companyWebsite,
-              revenueSharePercentage: info.revenueSharePercentage ?? c.revenueSharePercentage
+              revenueSharePercentage: info.revenueSharePercentage ?? c.revenueSharePercentage,
+              referralPartnerId: info.referralPartnerId ?? null,
+              referralSetupFeePercentage: info.referralSetupFeePercentage ?? null,
+              referralRecurringFeePercentage: info.referralRecurringFeePercentage ?? null
             } 
           : c
       ));

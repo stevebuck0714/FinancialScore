@@ -111,6 +111,31 @@ async function hasCompanyColumn(columnName: string): Promise<boolean> {
   }
 }
 
+async function hasConsultantColumn(columnName: string): Promise<boolean> {
+  const runtimeConsultantModel = ((prisma as any)?._runtimeDataModel?.models?.Consultant || null) as
+    | { fields?: Array<{ name?: string }> }
+    | null;
+  if (runtimeConsultantModel?.fields?.length) {
+    const supportsField = runtimeConsultantModel.fields.some((field) => field?.name === columnName);
+    if (!supportsField) return false;
+  }
+
+  try {
+    const rows = await prisma.$queryRaw<Array<{ exists: boolean }>>`
+      SELECT EXISTS(
+        SELECT 1
+        FROM information_schema.columns
+        WHERE table_name = 'Consultant'
+          AND column_name = ${columnName}
+      ) as "exists"
+    `;
+    return rows[0]?.exists === true;
+  } catch (error) {
+    console.warn(`Could not verify Consultant.${columnName} column`, error);
+    return false;
+  }
+}
+
 // GET all consultants (site admin only) or single consultant by ID
 export async function GET(request: NextRequest) {
   try {
@@ -155,8 +180,33 @@ export async function GET(request: NextRequest) {
     // Otherwise, fetch all consultants
     const includeCommercialInvoiceDate = await hasCompanyColumn('commercialInvoiceDate');
     const includeCommercialNextDueDate = await hasCompanyColumn('commercialNextDueDate');
+    const includeCompanyReferralPartnerId = await hasCompanyColumn('referralPartnerId');
+    const includeConsultantReferralPartnerId = await hasConsultantColumn('referralPartnerId');
+    const includeConsultantReferralSetupPercentage = await hasConsultantColumn('referralSetupFeePercentage');
+    const includeConsultantReferralRecurringPercentage = await hasConsultantColumn('referralRecurringFeePercentage');
     const consultants = await prisma.consultant.findMany({
-      include: {
+      select: {
+        id: true,
+        userId: true,
+        type: true,
+        fullName: true,
+        address: true,
+        phone: true,
+        revenueSharePercentage: true,
+        paymentMethod: true,
+        taxId: true,
+        createdAt: true,
+        updatedAt: true,
+        companyAddress1: true,
+        companyAddress2: true,
+        companyCity: true,
+        companyName: true,
+        companyState: true,
+        companyWebsite: true,
+        companyZip: true,
+        ...(includeConsultantReferralPartnerId ? { referralPartnerId: true } : {}),
+        ...(includeConsultantReferralSetupPercentage ? { referralSetupFeePercentage: true } : {}),
+        ...(includeConsultantReferralRecurringPercentage ? { referralRecurringFeePercentage: true } : {}),
         user: {
           select: {
             id: true,
@@ -179,7 +229,9 @@ export async function GET(request: NextRequest) {
             subscriptionMonthlyPrice: true,
             subscriptionQuarterlyPrice: true,
             subscriptionAnnualPrice: true,
+            selectedSubscriptionPlan: true,
             affiliateCode: true,
+            ...(includeCompanyReferralPartnerId ? { referralPartnerId: true } : {}),
             referralPartnerConsultantId: true,
             referralSetupFeePercentage: true,
             referralRecurringFeePercentage: true,
@@ -330,7 +382,10 @@ export async function PUT(request: NextRequest) {
     const { 
       id, fullName, email, address, phone, type,
       companyName, companyAddress1, companyAddress2, companyCity, companyState, companyZip, companyWebsite,
-      revenueSharePercentage
+      revenueSharePercentage,
+      referralPartnerId,
+      referralSetupFeePercentage,
+      referralRecurringFeePercentage
     } = await request.json();
 
     if (!id) {
@@ -399,6 +454,29 @@ export async function PUT(request: NextRequest) {
       if (companyZip !== undefined) consultantUpdateData.companyZip = companyZip;
       if (companyWebsite !== undefined) consultantUpdateData.companyWebsite = companyWebsite;
       if (revenueSharePercentage !== undefined) consultantUpdateData.revenueSharePercentage = revenueSharePercentage;
+      if (referralPartnerId !== undefined) {
+        const normalizedReferralPartnerId = String(referralPartnerId || '').trim() || null;
+        if (normalizedReferralPartnerId) {
+          const referralPartner = await (tx as any).referralPartner?.findUnique?.({
+            where: { id: normalizedReferralPartnerId },
+            select: { id: true }
+          });
+          if (!referralPartner) {
+            throw new Error('Referral partner not found');
+          }
+        }
+        consultantUpdateData.referralPartnerId = normalizedReferralPartnerId;
+      }
+      if (referralSetupFeePercentage !== undefined) {
+        consultantUpdateData.referralSetupFeePercentage = referralSetupFeePercentage === null || referralSetupFeePercentage === ''
+          ? null
+          : Number(referralSetupFeePercentage);
+      }
+      if (referralRecurringFeePercentage !== undefined) {
+        consultantUpdateData.referralRecurringFeePercentage = referralRecurringFeePercentage === null || referralRecurringFeePercentage === ''
+          ? null
+          : Number(referralRecurringFeePercentage);
+      }
 
       const updatedConsultant = await tx.consultant.update({
         where: { id },

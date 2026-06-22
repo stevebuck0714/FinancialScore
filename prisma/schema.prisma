@@ -26,14 +26,46 @@ model Consultant {
   companyState          String?
   companyWebsite        String?
   companyZip            String?
+  referralPartnerId     String?
+  referralSetupFeePercentage Float?
+  referralRecurringFeePercentage Float?
   companies             Company[]
   referredCompanies     Company[]           @relation("CompanyReferralPartner")
+  referralPartner       ReferralPartner?    @relation("ConsultantReferralPartner", fields: [referralPartnerId], references: [id], onDelete: SetNull)
   revenueRecords        RevenueRecord[]
   payables              ConsultantPayable[]
   teamMembers           User[]              @relation("ConsultantTeamMembers")
   user                  User                @relation("PrimaryConsultant", fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
+  @@index([referralPartnerId])
+}
+
+model ReferralPartner {
+  id                            String              @id @default(cuid())
+  name                          String
+  contactName                   String?
+  email                         String?
+  phone                         String?
+  addressStreet                 String?
+  addressCity                   String?
+  addressState                  String?
+  addressZip                    String?
+  addressCountry                String?
+  defaultSetupFeePercentage     Float               @default(0)
+  defaultRecurringFeePercentage Float               @default(0)
+  paymentMethod                 String?
+  taxId                         String?
+  notes                         String?
+  active                        Boolean             @default(true)
+  createdAt                     DateTime            @default(now())
+  updatedAt                     DateTime            @updatedAt
+  referredCompanies             Company[]           @relation("CompanyDirectReferralPartner")
+  referredConsultants           Consultant[]        @relation("ConsultantReferralPartner")
+  payables                      ConsultantPayable[]
+
+  @@index([active])
+  @@index([name])
 }
 
 model Company {
@@ -71,6 +103,7 @@ model Company {
   selectedSubscriptionPlan   String?
   affiliateCode              String?
   affiliateId                String?
+  referralPartnerId          String?
   referralPartnerConsultantId String?
   referralSetupFeePercentage  Float                  @default(0)
   referralRecurringFeePercentage Float               @default(0)
@@ -105,6 +138,7 @@ model Company {
   affiliate                  Affiliate?             @relation(fields: [affiliateId], references: [id])
   consultant                 Consultant?            @relation(fields: [consultantId], references: [id], onDelete: SetNull)
   referralPartner            Consultant?            @relation("CompanyReferralPartner", fields: [referralPartnerConsultantId], references: [id], onDelete: SetNull)
+  directReferralPartner      ReferralPartner?       @relation("CompanyDirectReferralPartner", fields: [referralPartnerId], references: [id], onDelete: SetNull)
   profile                    CompanyProfile?
   financialRecords           FinancialRecord[]
   subscription               Subscription?
@@ -123,6 +157,7 @@ model Company {
 
   @@index([consultantId])
   @@index([affiliateId])
+  @@index([referralPartnerId])
   @@index([referralPartnerConsultantId])
 }
 
@@ -1171,7 +1206,8 @@ model SubscriptionEvent {
 
 model ConsultantPayable {
   id                     String   @id @default(cuid())
-  consultantId           String
+  consultantId           String?
+  referralPartnerId      String?
   periodStart            DateTime
   periodEnd              DateTime
   totalCompanyRevenue    Float    // Sum of all revenue from consultant's companies
@@ -1186,9 +1222,11 @@ model ConsultantPayable {
   notes                  String?
   createdAt              DateTime @default(now())
   updatedAt              DateTime @updatedAt
-  consultant             Consultant @relation(fields: [consultantId], references: [id])
+  consultant             Consultant? @relation(fields: [consultantId], references: [id])
+  referralPartner        ReferralPartner? @relation(fields: [referralPartnerId], references: [id])
 
   @@index([consultantId])
+  @@index([referralPartnerId])
   @@index([status])
   @@index([periodStart])
   @@index([paidDate])

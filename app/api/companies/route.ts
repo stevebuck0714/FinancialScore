@@ -143,6 +143,7 @@ export async function GET(request: NextRequest) {
     const includeRealDataActivatedAt = await hasCompanyColumn("realDataActivatedAt");
     const includeForceOperationalMockData = await hasCompanyColumn("forceOperationalMockData");
     const includeReferralPartnerConsultantId = await hasCompanyColumn("referralPartnerConsultantId");
+    const includeReferralPartnerId = await hasCompanyColumn("referralPartnerId");
     const includeReferralSetupFeePercentage = await hasCompanyColumn("referralSetupFeePercentage");
     const includeReferralRecurringFeePercentage = await hasCompanyColumn("referralRecurringFeePercentage");
     const includeCommercialBillingMethod = await hasCompanyColumn("commercialBillingMethod");
@@ -177,6 +178,7 @@ export async function GET(request: NextRequest) {
           subscriptionMonthlyPrice: true,
           subscriptionQuarterlyPrice: true,
           subscriptionAnnualPrice: true,
+          selectedSubscriptionPlan: true,
           ...(includeSetupFee ? { subscriptionSetupFee: true } : {}),
           ...(includeTier1SupportOwner ? { tier1SupportOwner: true } : {}),
           ...(includeTier1SupportConsultantId ? { tier1SupportConsultantId: true } : {}),
@@ -185,6 +187,7 @@ export async function GET(request: NextRequest) {
           ...(includeRealDataActivatedAt ? { realDataActivatedAt: true } : {}),
           ...(includeForceOperationalMockData ? { forceOperationalMockData: true } : {}),
           ...(includeReferralPartnerConsultantId ? { referralPartnerConsultantId: true } : {}),
+          ...(includeReferralPartnerId ? { referralPartnerId: true } : {}),
           ...(includeReferralSetupFeePercentage ? { referralSetupFeePercentage: true } : {}),
           ...(includeReferralRecurringFeePercentage ? { referralRecurringFeePercentage: true } : {}),
           ...(includeCommercialBillingMethod ? { commercialBillingMethod: true } : {}),
@@ -223,6 +226,7 @@ export async function GET(request: NextRequest) {
           subscriptionMonthlyPrice: true,
           subscriptionQuarterlyPrice: true,
           subscriptionAnnualPrice: true,
+          selectedSubscriptionPlan: true,
           ...(includeSetupFee ? { subscriptionSetupFee: true } : {}),
           ...(includeTier1SupportOwner ? { tier1SupportOwner: true } : {}),
           ...(includeTier1SupportConsultantId ? { tier1SupportConsultantId: true } : {}),
@@ -231,6 +235,7 @@ export async function GET(request: NextRequest) {
           ...(includeRealDataActivatedAt ? { realDataActivatedAt: true } : {}),
           ...(includeForceOperationalMockData ? { forceOperationalMockData: true } : {}),
           ...(includeReferralPartnerConsultantId ? { referralPartnerConsultantId: true } : {}),
+          ...(includeReferralPartnerId ? { referralPartnerId: true } : {}),
           ...(includeReferralSetupFeePercentage ? { referralSetupFeePercentage: true } : {}),
           ...(includeReferralRecurringFeePercentage ? { referralRecurringFeePercentage: true } : {}),
           ...(includeCommercialBillingMethod ? { commercialBillingMethod: true } : {}),
@@ -1670,6 +1675,7 @@ export async function PUT(request: NextRequest) {
       subscriptionAnnual,
       subscriptionSetupFee,
       affiliateCode,
+      referralPartnerId,
       referralPartnerConsultantId,
       referralSetupFeePercentage,
       referralRecurringFeePercentage,
@@ -1711,6 +1717,9 @@ export async function PUT(request: NextRequest) {
     const normalizedReferralPartnerConsultantId = referralPartnerConsultantId === undefined
       ? undefined
       : String(referralPartnerConsultantId || '').trim() || null;
+    const normalizedReferralPartnerId = referralPartnerId === undefined
+      ? undefined
+      : String(referralPartnerId || '').trim() || null;
     const setupReferralPercent = referralSetupFeePercentage === undefined
       ? undefined
       : Number(referralSetupFeePercentage);
@@ -1731,6 +1740,15 @@ export async function PUT(request: NextRequest) {
       });
       if (!referralPartner) {
         return NextResponse.json({ error: 'Referral partner consultant not found' }, { status: 400 });
+      }
+    }
+    if (normalizedReferralPartnerId) {
+      const referralPartner = await (prisma as any).referralPartner?.findUnique?.({
+        where: { id: normalizedReferralPartnerId },
+        select: { id: true },
+      });
+      if (!referralPartner) {
+        return NextResponse.json({ error: 'Referral partner not found' }, { status: 400 });
       }
     }
     const allowedBillingMethods = new Set(['usaepay', 'quickbooks_invoice', 'manual_external', 'no_platform_payment']);
@@ -1766,6 +1784,7 @@ export async function PUT(request: NextRequest) {
     }
     const includeCommercialInvoiceDate = await hasCompanyColumn("commercialInvoiceDate");
     const includeCommercialNextDueDate = await hasCompanyColumn("commercialNextDueDate");
+    const includeReferralPartnerId = await hasCompanyColumn("referralPartnerId");
 
     const company = await prisma.company.update({
       where: { id },
@@ -1775,6 +1794,7 @@ export async function PUT(request: NextRequest) {
         subscriptionAnnualPrice: annual,
         ...(setupFee !== undefined ? { subscriptionSetupFee: setupFee } : {}),
         ...(normalizedAffiliateCode !== undefined ? { affiliateCode: normalizedAffiliateCode || null } : {}),
+        ...(includeReferralPartnerId && normalizedReferralPartnerId !== undefined ? { referralPartnerId: normalizedReferralPartnerId } : {}),
         ...(normalizedReferralPartnerConsultantId !== undefined ? { referralPartnerConsultantId: normalizedReferralPartnerConsultantId } : {}),
         ...(setupReferralPercent !== undefined ? { referralSetupFeePercentage: setupReferralPercent } : {}),
         ...(recurringReferralPercent !== undefined ? { referralRecurringFeePercentage: recurringReferralPercent } : {}),
@@ -1799,6 +1819,7 @@ export async function PUT(request: NextRequest) {
         subscriptionAnnualPrice: true,
         subscriptionSetupFee: true,
         affiliateCode: true,
+        ...(includeReferralPartnerId ? { referralPartnerId: true } : {}),
         referralPartnerConsultantId: true,
         referralSetupFeePercentage: true,
         referralRecurringFeePercentage: true,

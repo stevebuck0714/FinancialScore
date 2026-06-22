@@ -73,6 +73,7 @@ export async function GET(request: NextRequest) {
           select: {
             id: true,
             name: true,
+            referralPartnerId: true,
             referralPartnerConsultantId: true,
             referralSetupFeePercentage: true,
             referralRecurringFeePercentage: true,
@@ -89,6 +90,14 @@ export async function GET(request: NextRequest) {
                 fullName: true,
                 companyName: true
               }
+            },
+            directReferralPartner: {
+              select: {
+                id: true,
+                name: true,
+                defaultSetupFeePercentage: true,
+                defaultRecurringFeePercentage: true,
+              }
             }
           }
         },
@@ -96,7 +105,18 @@ export async function GET(request: NextRequest) {
           select: {
             id: true,
             fullName: true,
-            revenueSharePercentage: true
+            revenueSharePercentage: true,
+            referralPartnerId: true,
+            referralSetupFeePercentage: true,
+            referralRecurringFeePercentage: true,
+            referralPartner: {
+              select: {
+                id: true,
+                name: true,
+                defaultSetupFeePercentage: true,
+                defaultRecurringFeePercentage: true,
+              }
+            }
           }
         }
       },

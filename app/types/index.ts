@@ -210,6 +210,7 @@ export interface Company {
   nextBillingDate?: string | null;
   selectedSubscriptionPlan?: string | null;
   affiliateCode?: string | null;
+  referralPartnerId?: string | null;
   referralPartnerConsultantId?: string | null;
   referralSetupFeePercentage?: number;
   referralRecurringFeePercentage?: number;
@@ -310,6 +311,9 @@ export interface Consultant {
   companyState?: string;
   companyZip?: string;
   companyWebsite?: string;
+  referralPartnerId?: string | null;
+  referralSetupFeePercentage?: number | null;
+  referralRecurringFeePercentage?: number | null;
 }
 
 export interface User {

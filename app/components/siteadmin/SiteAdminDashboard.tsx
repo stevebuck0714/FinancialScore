@@ -312,17 +312,28 @@ export default function SiteAdminDashboard(props: any) {
     showAddSiteAdminForm, setShowAddSiteAdminForm
   } = props;
   const businessesLoading = Boolean(props.businessesLoading);
-  const referralPartnerConsultants = React.useMemo(
-    () => (Array.isArray(consultants) ? consultants : []).filter((consultant: any) => consultant?.type !== 'business'),
-    [consultants]
-  );
+  const [referralPartners, setReferralPartners] = React.useState<any[]>([]);
+  React.useEffect(() => {
+    let isMounted = true;
+    fetch('/api/referral-partners')
+      .then((response) => response.ok ? response.json() : { referralPartners: [] })
+      .then((data) => {
+        if (isMounted) setReferralPartners(Array.isArray(data?.referralPartners) ? data.referralPartners : []);
+      })
+      .catch(() => {
+        if (isMounted) setReferralPartners([]);
+      });
+    return () => {
+      isMounted = false;
+    };
+  }, []);
   const getReferralPartnerName = React.useCallback(
-    (consultantId?: string | null) => {
-      if (!consultantId) return 'None';
-      const consultant = referralPartnerConsultants.find((item: any) => item.id === consultantId);
-      return consultant?.companyName || consultant?.fullName || 'Unknown consultant';
+    (referralPartnerId?: string | null) => {
+      if (!referralPartnerId) return 'None';
+      const referralPartner = referralPartners.find((item: any) => item.id === referralPartnerId);
+      return referralPartner?.name || 'Unknown referral partner';
     },
-    [referralPartnerConsultants]
+    [referralPartners]
   );
   const billingMethodOptions = [
     { value: 'usaepay', label: 'USAePay Gateway' },
@@ -350,7 +361,25 @@ export default function SiteAdminDashboard(props: any) {
 
   const updateCompanyPricing = props.updateCompanyPricing as
     | undefined
-    | ((companyId: string, pricing: { monthly: number; quarterly: number; annual: number; setupFee: number; affiliateCode?: string | null }) => void);
+    | ((companyId: string, pricing: {
+        monthly: number;
+        quarterly: number;
+        annual: number;
+        setupFee: number;
+        affiliateCode?: string | null;
+        referralPartnerId?: string | null;
+        referralPartnerConsultantId?: string | null;
+        referralSetupFeePercentage?: number;
+        referralRecurringFeePercentage?: number;
+        commercialBillingMethod?: string;
+        commercialPaymentStatus?: string;
+        commercialInvoiceNumber?: string | null;
+        commercialInvoiceUrl?: string | null;
+        commercialInvoiceDate?: string | null;
+        commercialPaymentDate?: string | null;
+        commercialNextDueDate?: string | null;
+        commercialTermsNotes?: string | null;
+      }) => void);
   const [editingTier1RoutingByCompany, setEditingTier1RoutingByCompany] = React.useState<
     Record<string, { owner: 'CORELYTICS' | 'CONSULTANT'; consultantId: string; supportEmail: string }>
   >({});
@@ -5340,7 +5369,10 @@ export default function SiteAdminDashboard(props: any) {
                                           companyState: consultant.companyState || '',
                                           companyZip: consultant.companyZip || '',
                                           companyWebsite: consultant.companyWebsite || '',
-                                          revenueSharePercentage: consultant.revenueSharePercentage ?? 50
+                                          revenueSharePercentage: consultant.revenueSharePercentage ?? 50,
+                                          referralPartnerId: consultant.referralPartnerId || '',
+                                          referralSetupFeePercentage: consultant.referralSetupFeePercentage ?? '',
+                                          referralRecurringFeePercentage: consultant.referralRecurringFeePercentage ?? ''
                                         }
                                       });
                                     }}
@@ -5497,6 +5529,61 @@ export default function SiteAdminDashboard(props: any) {
                                       ℹ️ This is the consultant's share of revenue from their companies. Default is 50%.
                                     </div>
                                   </div>
+                                  <div style={{ marginTop: '6px', padding: '10px', background: '#eef2ff', border: '1px solid #c7d2fe', borderRadius: '6px' }}>
+                                    <label style={{ fontSize: '10px', fontWeight: '600', color: '#3730a3', display: 'block', marginBottom: '4px' }}>Consultant Referral Attribution</label>
+                                    <select
+                                      value={editingConsultantInfo[consultant.id].referralPartnerId || ''}
+                                      onChange={(e) => setEditingConsultantInfo({
+                                        ...editingConsultantInfo,
+                                        [consultant.id]: { ...editingConsultantInfo[consultant.id], referralPartnerId: e.target.value || null }
+                                      })}
+                                      style={{ width: '100%', padding: '4px 6px', border: '1px solid #c7d2fe', borderRadius: '4px', fontSize: '11px', backgroundColor: 'white', marginBottom: '6px' }}
+                                    >
+                                      <option value="">No referral partner</option>
+                                      {referralPartners.map((referralPartner: any) => (
+                                        <option key={referralPartner.id} value={referralPartner.id}>
+                                          {referralPartner.name}
+                                        </option>
+                                      ))}
+                                    </select>
+                                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px' }}>
+                                      <div>
+                                        <label style={{ fontSize: '9px', color: '#3730a3', display: 'block', marginBottom: '2px' }}>Setup Referral %</label>
+                                        <input
+                                          type="number"
+                                          min="0"
+                                          max="100"
+                                          step="0.1"
+                                          value={editingConsultantInfo[consultant.id].referralSetupFeePercentage ?? ''}
+                                          onChange={(e) => setEditingConsultantInfo({
+                                            ...editingConsultantInfo,
+                                            [consultant.id]: { ...editingConsultantInfo[consultant.id], referralSetupFeePercentage: e.target.value === '' ? null : parseFloat(e.target.value) || 0 }
+                                          })}
+                                          placeholder="Default"
+                                          style={{ width: '100%', padding: '4px 6px', border: '1px solid #c7d2fe', borderRadius: '4px', fontSize: '11px' }}
+                                        />
+                                      </div>
+                                      <div>
+                                        <label style={{ fontSize: '9px', color: '#3730a3', display: 'block', marginBottom: '2px' }}>Recurring Referral %</label>
+                                        <input
+                                          type="number"
+                                          min="0"
+                                          max="100"
+                                          step="0.1"
+                                          value={editingConsultantInfo[consultant.id].referralRecurringFeePercentage ?? ''}
+                                          onChange={(e) => setEditingConsultantInfo({
+                                            ...editingConsultantInfo,
+                                            [consultant.id]: { ...editingConsultantInfo[consultant.id], referralRecurringFeePercentage: e.target.value === '' ? null : parseFloat(e.target.value) || 0 }
+                                          })}
+                                          placeholder="Default"
+                                          style={{ width: '100%', padding: '4px 6px', border: '1px solid #c7d2fe', borderRadius: '4px', fontSize: '11px' }}
+                                        />
+                                      </div>
+                                    </div>
+                                    <div style={{ fontSize: '9px', color: '#3730a3', marginTop: '4px' }}>
+                                      Applies to this consultant's managed company revenue when the company does not have a direct referral partner override.
+                                    </div>
+                                  </div>
                                   <div style={{ display: 'flex', gap: '6px', marginTop: '8px' }}>
                                     <button
                                       onClick={() => {
@@ -5562,6 +5649,17 @@ export default function SiteAdminDashboard(props: any) {
                                     <span style={{ color: '#92400e', marginLeft: '4px' }}>
                                       {consultant.revenueSharePercentage ?? 50}% consultant / {100 - (consultant.revenueSharePercentage ?? 50)}% platform
                                     </span>
+                                  </div>
+                                  <div style={{ gridColumn: '1 / -1', padding: '6px', background: '#eef2ff', borderRadius: '4px', marginTop: '4px' }}>
+                                    <span style={{ fontWeight: '600', color: '#3730a3' }}>Consultant Referral Partner:</span>
+                                    <span style={{ color: '#3730a3', marginLeft: '4px' }}>
+                                      {getReferralPartnerName(consultant.referralPartnerId)}
+                                    </span>
+                                    {consultant.referralPartnerId && (
+                                      <div style={{ fontSize: '11px', color: '#3730a3', marginTop: '2px' }}>
+                                        Setup {consultant.referralSetupFeePercentage ?? 'default'}% / Recurring {consultant.referralRecurringFeePercentage ?? 'default'}%
+                                      </div>
+                                    )}
                                   </div>
                                 </div>
                               )}
@@ -7643,19 +7741,19 @@ export default function SiteAdminDashboard(props: any) {
                                                     />
                                                   </div>
                                                   <div style={{ gridColumn: 'span 2' }}>
-                                                    <label style={{ fontSize: '10px', color: '#64748b', display: 'block', marginBottom: '2px' }}>Referral Partner</label>
+                                                    <label style={{ fontSize: '10px', color: '#64748b', display: 'block', marginBottom: '2px' }}>Direct Referral Partner</label>
                                                     <select
-                                                      value={editing.referralPartnerConsultantId ?? ''}
+                                                      value={editing.referralPartnerId ?? ''}
                                                       onChange={(e) => setEditingPricing({
                                                         ...editingPricing,
-                                                        [company.id]: { ...editing, referralPartnerConsultantId: e.target.value || null }
+                                                        [company.id]: { ...editing, referralPartnerId: e.target.value || null }
                                                       })}
                                                       style={{ width: '100%', padding: '4px 6px', border: '1px solid #cbd5e1', borderRadius: '4px', fontSize: '11px', backgroundColor: 'white' }}
                                                     >
                                                       <option value="">None</option>
-                                                      {referralPartnerConsultants.map((consultant: any) => (
-                                                        <option key={consultant.id} value={consultant.id}>
-                                                          {consultant.companyName || consultant.fullName}
+                                                      {referralPartners.map((referralPartner: any) => (
+                                                        <option key={referralPartner.id} value={referralPartner.id}>
+                                                          {referralPartner.name}
                                                         </option>
                                                       ))}
                                                     </select>
@@ -7814,7 +7912,8 @@ export default function SiteAdminDashboard(props: any) {
                                                     <div><strong>Annual:</strong> ${company.subscriptionAnnualPrice?.toFixed(2) ?? '0.00'}</div>
                                                     <div><strong>Setup Fee:</strong> ${company.subscriptionSetupFee?.toFixed(2) ?? '0.00'}</div>
                                                     <div><strong>Affiliate Code:</strong> {company.affiliateCode || 'None'}</div>
-                                                    <div><strong>Referral Partner:</strong> {getReferralPartnerName(company.referralPartnerConsultantId)}</div>
+                                                    <div><strong>Direct Referral Partner:</strong> {getReferralPartnerName(company.referralPartnerId)}</div>
+                                                    {company.referralPartnerConsultantId && <div><strong>Legacy Referral Consultant:</strong> {company.referralPartnerConsultantId}</div>}
                                                     <div><strong>Referral Rates:</strong> Setup {company.referralSetupFeePercentage ?? 0}% / Recurring {company.referralRecurringFeePercentage ?? 0}%</div>
                                                     <div><strong>Billing Method:</strong> {getBillingMethodLabel(company.commercialBillingMethod)}</div>
                                                     <div><strong>Payment Status:</strong> {getPaymentStatusLabel(company.commercialPaymentStatus)}</div>
@@ -7834,6 +7933,7 @@ export default function SiteAdminDashboard(props: any) {
                                                           annual: company.subscriptionAnnualPrice ?? 0,
                                                           setupFee: company.subscriptionSetupFee ?? 0,
                                                           affiliateCode: company.affiliateCode || '',
+                                                          referralPartnerId: company.referralPartnerId || '',
                                                           referralPartnerConsultantId: company.referralPartnerConsultantId || '',
                                                           referralSetupFeePercentage: company.referralSetupFeePercentage ?? 0,
                                                           referralRecurringFeePercentage: company.referralRecurringFeePercentage ?? 0,
@@ -10932,19 +11032,19 @@ export default function SiteAdminDashboard(props: any) {
                                           />
                                         </div>
                                         <div style={{ gridColumn: 'span 2' }}>
-                                          <label style={{ fontSize: '12px', color: '#64748b', display: 'block', marginBottom: '3px' }}>Referral Partner</label>
+                                          <label style={{ fontSize: '12px', color: '#64748b', display: 'block', marginBottom: '3px' }}>Direct Referral Partner</label>
                                           <select
-                                            value={editing.referralPartnerConsultantId ?? ''}
+                                            value={editing.referralPartnerId ?? ''}
                                             onChange={(e) => setEditingPricing({
                                               ...editingPricing,
-                                              [businessCompany.id]: { ...editing, referralPartnerConsultantId: e.target.value || null }
+                                              [businessCompany.id]: { ...editing, referralPartnerId: e.target.value || null }
                                             })}
                                             style={{ width: '100%', padding: '6px 8px', border: '1px solid #cbd5e1', borderRadius: '4px', fontSize: '13px', backgroundColor: 'white' }}
                                           >
                                             <option value="">None</option>
-                                            {referralPartnerConsultants.map((consultant: any) => (
-                                              <option key={consultant.id} value={consultant.id}>
-                                                {consultant.companyName || consultant.fullName}
+                                            {referralPartners.map((referralPartner: any) => (
+                                              <option key={referralPartner.id} value={referralPartner.id}>
+                                                {referralPartner.name}
                                               </option>
                                             ))}
                                           </select>
@@ -11103,7 +11203,8 @@ export default function SiteAdminDashboard(props: any) {
                                           <div><strong>Annual:</strong> ${businessCompany?.subscriptionAnnualPrice?.toFixed(2) ?? '0.00'}</div>
                                           <div><strong>Setup Fee:</strong> ${businessCompany?.subscriptionSetupFee?.toFixed(2) ?? '0.00'}</div>
                                           <div><strong>Affiliate Code:</strong> {businessCompany?.affiliateCode || 'None'}</div>
-                                          <div><strong>Referral Partner:</strong> {getReferralPartnerName(businessCompany?.referralPartnerConsultantId)}</div>
+                                          <div><strong>Direct Referral Partner:</strong> {getReferralPartnerName(businessCompany?.referralPartnerId)}</div>
+                                          {businessCompany?.referralPartnerConsultantId && <div><strong>Legacy Referral Consultant:</strong> {businessCompany.referralPartnerConsultantId}</div>}
                                           <div><strong>Referral Rates:</strong> Setup {businessCompany?.referralSetupFeePercentage ?? 0}% / Recurring {businessCompany?.referralRecurringFeePercentage ?? 0}%</div>
                                           <div><strong>Billing Method:</strong> {getBillingMethodLabel(businessCompany?.commercialBillingMethod)}</div>
                                           <div><strong>Payment Status:</strong> {getPaymentStatusLabel(businessCompany?.commercialPaymentStatus)}</div>
@@ -11123,6 +11224,7 @@ export default function SiteAdminDashboard(props: any) {
                                                 annual: businessCompany?.subscriptionAnnualPrice ?? 0,
                                                 setupFee: businessCompany?.subscriptionSetupFee ?? 0,
                                                 affiliateCode: businessCompany?.affiliateCode || '',
+                                                referralPartnerId: businessCompany?.referralPartnerId || '',
                                                 referralPartnerConsultantId: businessCompany?.referralPartnerConsultantId || '',
                                                 referralSetupFeePercentage: businessCompany?.referralSetupFeePercentage ?? 0,
                                                 referralRecurringFeePercentage: businessCompany?.referralRecurringFeePercentage ?? 0,

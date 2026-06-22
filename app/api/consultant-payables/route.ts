@@ -7,6 +7,7 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const consultantId = searchParams.get('consultantId');
     const status = searchParams.get('status');
+    const payableType = searchParams.get('payableType');
 
     const where: any = {};
 
@@ -15,6 +16,9 @@ export async function GET(request: NextRequest) {
     }
     if (status) {
       where.status = status;
+    }
+    if (payableType) {
+      where.payableType = payableType;
     }
 
     const payables = await prisma.consultantPayable.findMany({
@@ -28,7 +32,8 @@ export async function GET(request: NextRequest) {
             revenueSharePercentage: true,
             paymentMethod: true
           }
-        }
+        },
+        referralPartner: true
       },
       orderBy: {
         periodStart: 'desc'
@@ -135,6 +140,9 @@ export async function POST(request: NextRequest) {
       }
 
       try {
+        if ((prisma as any).referralPartner) {
+          continue;
+        }
         // Referral partner payables are based on actual received setup/core revenue
         // from companies manually attributed to this consultant.
         const referralRecords = await prisma.revenueRecord.findMany({
@@ -221,6 +229,129 @@ export async function POST(request: NextRequest) {
           consultantId: consultant.id,
           consultantName: consultant.fullName,
           error: error.message
+        });
+      }
+    }
+
+    const referralPartnerDelegate = (prisma as any).referralPartner;
+    if (referralPartnerDelegate) {
+      try {
+        const referralPartners = await referralPartnerDelegate.findMany({
+          where: { active: true },
+          select: {
+            id: true,
+            name: true,
+            defaultSetupFeePercentage: true,
+            defaultRecurringFeePercentage: true,
+          },
+        });
+        const referralPartnersById = new Map<string, any>(referralPartners.map((partner: any) => [partner.id, partner]));
+
+        const referralRecords = await prisma.revenueRecord.findMany({
+          where: {
+            paymentStatus: 'received',
+            serviceType: { in: ['setup_fee', 'core'] },
+            paymentDate: {
+              gte: start,
+              lte: end,
+            },
+          },
+          include: {
+            company: {
+              select: {
+                id: true,
+                name: true,
+                referralPartnerId: true,
+                referralSetupFeePercentage: true,
+                referralRecurringFeePercentage: true,
+                consultant: {
+                  select: {
+                    id: true,
+                    referralPartnerId: true,
+                    referralSetupFeePercentage: true,
+                    referralRecurringFeePercentage: true,
+                  },
+                },
+              },
+            },
+          },
+        });
+
+        const linesByReferralPartner = new Map<string, Array<{ record: any; percentage: number; payableAmount: number }>>();
+        referralRecords.forEach((record: any) => {
+          const directReferralPartnerId = record.company?.referralPartnerId || null;
+          const consultantReferralPartnerId = record.company?.consultant?.referralPartnerId || null;
+          const effectiveReferralPartnerId = directReferralPartnerId || consultantReferralPartnerId;
+          if (!effectiveReferralPartnerId) return;
+
+          const referralPartner = referralPartnersById.get(effectiveReferralPartnerId);
+          if (!referralPartner) return;
+
+          const setupPercentage = directReferralPartnerId
+            ? record.company.referralSetupFeePercentage
+            : record.company.consultant?.referralSetupFeePercentage;
+          const recurringPercentage = directReferralPartnerId
+            ? record.company.referralRecurringFeePercentage
+            : record.company.consultant?.referralRecurringFeePercentage;
+          const percentage = record.serviceType === 'setup_fee'
+            ? Number(setupPercentage ?? referralPartner.defaultSetupFeePercentage ?? 0)
+            : Number(recurringPercentage ?? referralPartner.defaultRecurringFeePercentage ?? 0);
+          const payableAmount = (record.amount * percentage) / 100;
+          if (percentage <= 0 || payableAmount === 0) return;
+
+          const lines = linesByReferralPartner.get(effectiveReferralPartnerId) || [];
+          lines.push({ record, percentage, payableAmount });
+          linesByReferralPartner.set(effectiveReferralPartnerId, lines);
+        });
+
+        for (const [referralPartnerId, referralLines] of linesByReferralPartner.entries()) {
+          const referralPartner = referralPartnersById.get(referralPartnerId);
+          const totalReferralRevenue = referralLines.reduce((sum, line) => sum + line.record.amount, 0);
+          const referralPayableAmount = referralLines.reduce((sum, line) => sum + line.payableAmount, 0);
+          const referralPlatformAmount = totalReferralRevenue - referralPayableAmount;
+          const weightedReferralPercentage = totalReferralRevenue
+            ? (referralPayableAmount / totalReferralRevenue) * 100
+            : 0;
+          const setupRevenue = referralLines
+            .filter((line) => line.record.serviceType === 'setup_fee')
+            .reduce((sum, line) => sum + line.record.amount, 0);
+          const recurringRevenue = referralLines
+            .filter((line) => line.record.serviceType === 'core')
+            .reduce((sum, line) => sum + line.record.amount, 0);
+
+          const referralPayable = await prisma.consultantPayable.create({
+            data: {
+              consultantId: null,
+              referralPartnerId,
+              periodStart: start,
+              periodEnd: end,
+              totalCompanyRevenue: totalReferralRevenue,
+              revenueSharePercentage: weightedReferralPercentage,
+              payableAmount: referralPayableAmount,
+              platformAmount: referralPlatformAmount,
+              payableType: 'referral_partner',
+              status: 'pending',
+              notes: `Referral partner payable for ${referralPartner?.name || referralPartnerId}. Setup revenue: $${setupRevenue.toFixed(2)}; recurring revenue: $${recurringRevenue.toFixed(2)}.`,
+            },
+            include: {
+              consultant: {
+                select: {
+                  id: true,
+                  fullName: true,
+                  revenueSharePercentage: true,
+                },
+              },
+              referralPartner: true,
+            },
+          });
+
+          createdPayables.push(referralPayable);
+        }
+      } catch (error: any) {
+        errors.push({
+          consultantId: null,
+          consultantName: 'Referral partners',
+          error: error.message,
         });
       }
     }

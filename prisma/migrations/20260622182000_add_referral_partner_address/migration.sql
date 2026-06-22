@@ -1,0 +1,6 @@
+ALTER TABLE "ReferralPartner"
+  ADD COLUMN IF NOT EXISTS "addressStreet" TEXT,
+  ADD COLUMN IF NOT EXISTS "addressCity" TEXT,
+  ADD COLUMN IF NOT EXISTS "addressState" TEXT,
+  ADD COLUMN IF NOT EXISTS "addressZip" TEXT,
+  ADD COLUMN IF NOT EXISTS "addressCountry" TEXT;

@@ -48,6 +48,7 @@ export async function GET(request: NextRequest) {
     const report = [];
     const includeCommercialInvoiceDate = await hasCompanyColumn('commercialInvoiceDate');
     const includeCommercialNextDueDate = await hasCompanyColumn('commercialNextDueDate');
+    const includeReferralPartnerId = await hasCompanyColumn('referralPartnerId');
 
     for (const consultant of consultants) {
       // Get revenue records for this consultant
@@ -89,7 +90,8 @@ export async function GET(request: NextRequest) {
         paymentStatus: 'received',
         serviceType: { in: ['setup_fee', 'core'] },
         company: {
-          referralPartnerConsultantId: consultant.id
+          referralPartnerConsultantId: consultant.id,
+          ...(includeReferralPartnerId ? { referralPartnerId: null } : {})
         }
       };
 

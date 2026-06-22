@@ -19,7 +19,8 @@ export async function GET(
             paymentMethod: true,
             taxId: true
           }
-        }
+        },
+        referralPartner: true
       }
     });
 
@@ -30,28 +31,63 @@ export async function GET(
       );
     }
 
-    // Get the revenue records that contributed to this payable
-    const revenueRecords = await prisma.revenueRecord.findMany({
-      where: {
-        consultantId: payable.consultantId,
-        paymentStatus: 'received',
-        paymentDate: {
-          gte: payable.periodStart,
-          lte: payable.periodEnd
-        }
-      },
-      include: {
-        company: {
-          select: {
-            id: true,
-            name: true
+    let revenueRecords;
+    if (payable.payableType === 'referral_partner' && payable.referralPartnerId) {
+      const candidateRecords = await prisma.revenueRecord.findMany({
+        where: {
+          paymentStatus: 'received',
+          serviceType: { in: ['setup_fee', 'core'] },
+          paymentDate: {
+            gte: payable.periodStart,
+            lte: payable.periodEnd
           }
+        },
+        include: {
+          company: {
+            select: {
+              id: true,
+              name: true,
+              referralPartnerId: true,
+              consultant: {
+                select: {
+                  referralPartnerId: true
+                }
+              }
+            }
+          }
+        },
+        orderBy: {
+          paymentDate: 'desc'
         }
-      },
-      orderBy: {
-        paymentDate: 'desc'
-      }
-    });
+      });
+
+      revenueRecords = candidateRecords.filter((record: any) => {
+        const effectiveReferralPartnerId = record.company?.referralPartnerId || record.company?.consultant?.referralPartnerId || null;
+        return effectiveReferralPartnerId === payable.referralPartnerId;
+      });
+    } else {
+      revenueRecords = await prisma.revenueRecord.findMany({
+        where: {
+          consultantId: payable.consultantId,
+          paymentStatus: 'received',
+          paymentDate: {
+            gte: payable.periodStart,
+            lte: payable.periodEnd
+          }
+        },
+        include: {
+          company: {
+            select: {
+              id: true,
+              name: true
+            }
+          }
+        },
+        orderBy: {
+          paymentDate: 'desc'
+        }
+      });
+    }
 
     return NextResponse.json({ 
       payable,
@@ -111,7 +147,8 @@ export async function PUT(
             companyName: true,
             revenueSharePercentage: true
           }
-        }
+        },
+        referralPartner: true
       }
     });
 

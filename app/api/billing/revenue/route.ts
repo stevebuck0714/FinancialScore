@@ -23,8 +23,16 @@ export async function GET() {
         company: {
           select: {
             referralPartnerConsultantId: true,
+            referralPartnerId: true,
             referralSetupFeePercentage: true,
-            referralRecurringFeePercentage: true
+            referralRecurringFeePercentage: true,
+            consultant: {
+              select: {
+                referralPartnerId: true,
+                referralSetupFeePercentage: true,
+                referralRecurringFeePercentage: true,
+              }
+            }
           }
         }
       }
@@ -44,17 +52,20 @@ export async function GET() {
     }, {});
     const currentMonthReferralAttributedRevenue = currentMonthRecords
       .filter((record) =>
-        !!record.company?.referralPartnerConsultantId &&
+        (!!(record.company as any)?.referralPartnerId ||
+          !!(record.company as any)?.consultant?.referralPartnerId ||
+          !!record.company?.referralPartnerConsultantId) &&
         ['setup_fee', 'core'].includes(record.serviceType || 'core')
       )
       .reduce((sum, record) => sum + record.amount, 0);
     const currentMonthReferralPayableEstimate = currentMonthRecords.reduce((sum, record) => {
-      if (!record.company?.referralPartnerConsultantId) return sum;
+      const company = record.company as any;
+      if (!company?.referralPartnerId && !company?.consultant?.referralPartnerId && !company?.referralPartnerConsultantId) return sum;
       const serviceType = record.serviceType || 'core';
       if (serviceType !== 'setup_fee' && serviceType !== 'core') return sum;
-      const percentage = serviceType === 'setup_fee'
-        ? record.company.referralSetupFeePercentage
-        : record.company.referralRecurringFeePercentage;
+      const percentage = company.referralPartnerId || company.referralPartnerConsultantId
+        ? (serviceType === 'setup_fee' ? company.referralSetupFeePercentage : company.referralRecurringFeePercentage)
+        : (serviceType === 'setup_fee' ? company.consultant?.referralSetupFeePercentage : company.consultant?.referralRecurringFeePercentage);
       return sum + ((record.amount * Number(percentage || 0)) / 100);
     }, 0);
 

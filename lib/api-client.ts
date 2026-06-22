@@ -134,6 +134,7 @@ export const companiesApi = {
     setupFee?: number,
     affiliateCode?: string | null,
     referral?: {
+      referralPartnerId?: string | null;
       referralPartnerConsultantId?: string | null;
       referralSetupFeePercentage?: number;
       referralRecurringFeePercentage?: number;
@@ -243,6 +244,9 @@ export const consultantsApi = {
     companyZip?: string;
     companyWebsite?: string;
     revenueSharePercentage?: number;
+    referralPartnerId?: string | null;
+    referralSetupFeePercentage?: number | null;
+    referralRecurringFeePercentage?: number | null;
   }) {
     return fetchApi('/api/consultants', {
       method: 'PUT',

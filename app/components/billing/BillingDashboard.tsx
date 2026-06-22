@@ -3,27 +3,18 @@
 import React, { useState } from 'react';
 import RevenueDashboardTab from './RevenueDashboardTab';
 import RevenueRecordsTab from './RevenueRecordsTab';
-import ConsultantPayablesTab from './ConsultantPayablesTab';
+import PayablesTab from './PayablesTab';
 import BillingReportsTab from './BillingReportsTab';
 import CommercialTermsTab from './CommercialTermsTab';
+import ReferralPartnersTab from './ReferralPartnersTab';
 
-type BillingTab = 'dashboard' | 'commercial-terms' | 'revenue-records' | 'payables' | 'reports';
+type BillingTab = 'dashboard' | 'commercial-terms' | 'referral-partners' | 'revenue-records' | 'payables' | 'reports';
 
 export default function BillingDashboard() {
   const [activeTab, setActiveTab] = useState<BillingTab>('dashboard');
 
   return (
     <div style={{ padding: '24px' }}>
-      {/* Header */}
-      <div style={{ marginBottom: '24px' }}>
-        <h1 style={{ fontSize: '28px', fontWeight: '700', color: '#1e293b', marginBottom: '8px' }}>
-          💰 Revenue & Payables
-        </h1>
-        <p style={{ fontSize: '14px', color: '#64748b' }}>
-          Track revenue from companies and manage consultant payables
-        </p>
-      </div>
-
       {/* Tab Navigation */}
       <div style={{ 
         display: 'flex', 
@@ -83,6 +74,23 @@ export default function BillingDashboard() {
           💵 Revenue Records
         </button>
         <button
+          onClick={() => setActiveTab('referral-partners')}
+          style={{
+            padding: '12px 24px',
+            background: activeTab === 'referral-partners' ? '#667eea' : 'transparent',
+            color: activeTab === 'referral-partners' ? 'white' : '#64748b',
+            border: 'none',
+            borderBottom: activeTab === 'referral-partners' ? '3px solid #667eea' : '3px solid transparent',
+            fontSize: '16px',
+            fontWeight: '600',
+            cursor: 'pointer',
+            borderRadius: '8px 8px 0 0',
+            transition: 'all 0.2s'
+          }}
+        >
+          Referral Partners
+        </button>
+        <button
           onClick={() => setActiveTab('payables')}
           style={{
             padding: '12px 24px',
@@ -97,7 +105,7 @@ export default function BillingDashboard() {
             transition: 'all 0.2s'
           }}
         >
-          👥 Consultant Payables
+          Payables
         </button>
         <button
           onClick={() => setActiveTab('reports')}
@@ -121,8 +129,9 @@ export default function BillingDashboard() {
       {/* Tab Content */}
       {activeTab === 'dashboard' && <RevenueDashboardTab />}
       {activeTab === 'commercial-terms' && <CommercialTermsTab />}
+      {activeTab === 'referral-partners' && <ReferralPartnersTab />}
       {activeTab === 'revenue-records' && <RevenueRecordsTab />}
-      {activeTab === 'payables' && <ConsultantPayablesTab />}
+      {activeTab === 'payables' && <PayablesTab />}
       {activeTab === 'reports' && <BillingReportsTab />}
     </div>
   );

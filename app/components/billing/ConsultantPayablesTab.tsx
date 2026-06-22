@@ -1,16 +1,22 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { formatCurrency, formatDate, formatDateRange, getCurrentMonthRange } from '@/lib/billing/billingHelpers';
 
 interface ConsultantPayable {
   id: string;
-  consultant: {
+  consultant?: {
     id: string;
     fullName: string;
     companyName: string;
     revenueSharePercentage: number;
     paymentMethod?: string;
+  } | null;
+  referralPartner?: {
+    id: string;
+    name: string;
+    contactName?: string | null;
+    paymentMethod?: string | null;
   };
   periodStart: string;
   periodEnd: string;
@@ -25,22 +31,30 @@ interface ConsultantPayable {
   paymentReference?: string;
 }
 
-export default function ConsultantPayablesTab() {
+type ConsultantPayablesTabProps = {
+  payableType?: 'consultant_revenue_share' | 'referral_partner';
+  title?: string;
+  emptyMessage?: string;
+};
+
+export default function ConsultantPayablesTab({
+  payableType,
+  title = 'Payables',
+  emptyMessage = 'No payables found. Click "Generate Current Month Payables" to create them.',
+}: ConsultantPayablesTabProps) {
   const [payables, setPayables] = useState<ConsultantPayable[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
   const [statusFilter, setStatusFilter] = useState('all');
 
-  useEffect(() => {
-    fetchPayables();
-  }, [statusFilter]);
-
-  const fetchPayables = async () => {
+  const fetchPayables = useCallback(async () => {
     try {
       setIsLoading(true);
-      const url = statusFilter === 'all' 
-        ? '/api/consultant-payables'
-        : `/api/consultant-payables?status=${statusFilter}`;
+      const params = new URLSearchParams();
+      if (statusFilter !== 'all') params.set('status', statusFilter);
+      if (payableType) params.set('payableType', payableType);
+      const query = params.toString();
+      const url = query ? `/api/consultant-payables?${query}` : '/api/consultant-payables';
       const response = await fetch(url);
       if (!response.ok) throw new Error('Failed to fetch payables');
       const data = await response.json();
@@ -50,10 +64,14 @@ export default function ConsultantPayablesTab() {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [payableType, statusFilter]);
+
+  useEffect(() => {
+    fetchPayables();
+  }, [fetchPayables]);
 
   const generateMonthlyPayables = async () => {
-    if (!confirm('Generate payables for all consultants for the current month?')) {
+    if (!confirm('Generate current month consultant and referral partner payables?')) {
       return;
     }
 
@@ -115,6 +133,7 @@ export default function ConsultantPayablesTab() {
         marginBottom: '20px',
         boxShadow: '0 2px 8px rgba(0,0,0,0.06)'
       }}>
+        <h3 style={{ fontSize: '18px', fontWeight: 700, color: '#1e293b', margin: '0 0 14px 0' }}>{title}</h3>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '16px' }}>
           <div>
             <span style={{ fontSize: '14px', fontWeight: '600', color: '#1e293b', marginRight: '8px' }}>Status:</span>
@@ -173,7 +192,7 @@ export default function ConsultantPayablesTab() {
           textAlign: 'center',
           color: '#64748b'
         }}>
-          No consultant payables found. Click "Generate Current Month Payables" to create them.
+          {emptyMessage}
         </div>
       ) : (
         <div style={{ 
@@ -185,7 +204,7 @@ export default function ConsultantPayablesTab() {
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead>
               <tr style={{ background: '#f8fafc', borderBottom: '2px solid #e2e8f0' }}>
-                <th style={{ padding: '12px 16px', textAlign: 'left', fontSize: '13px', fontWeight: '600', color: '#64748b' }}>Consultant</th>
+                <th style={{ padding: '12px 16px', textAlign: 'left', fontSize: '13px', fontWeight: '600', color: '#64748b' }}>Payee</th>
                 <th style={{ padding: '12px 16px', textAlign: 'left', fontSize: '13px', fontWeight: '600', color: '#64748b' }}>Type</th>
                 <th style={{ padding: '12px 16px', textAlign: 'left', fontSize: '13px', fontWeight: '600', color: '#64748b' }}>Period</th>
                 <th style={{ padding: '12px 16px', textAlign: 'left', fontSize: '13px', fontWeight: '600', color: '#64748b' }}>Total Revenue</th>
@@ -200,8 +219,11 @@ export default function ConsultantPayablesTab() {
               {payables.map((payable) => (
                 <tr key={payable.id} style={{ borderBottom: '1px solid #e2e8f0' }}>
                   <td style={{ padding: '12px 16px', fontSize: '13px', color: '#1e293b', fontWeight: '600' }}>
-                    <div>{payable.consultant.fullName}</div>
-                    {payable.consultant.companyName && (
+                    <div>{payable.payableType === 'referral_partner' ? payable.referralPartner?.name || 'Referral Partner' : payable.consultant?.fullName || 'Consultant'}</div>
+                    {payable.payableType === 'referral_partner' && payable.referralPartner?.contactName && (
+                      <div style={{ fontSize: '12px', color: '#64748b', fontWeight: '400' }}>{payable.referralPartner.contactName}</div>
+                    )}
+                    {payable.payableType !== 'referral_partner' && payable.consultant?.companyName && (
                       <div style={{ fontSize: '12px', color: '#64748b', fontWeight: '400' }}>{payable.consultant.companyName}</div>
                     )}
                   </td>
