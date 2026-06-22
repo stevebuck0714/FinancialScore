@@ -15,7 +15,9 @@ interface RevenueRecord {
     commercialBillingMethod?: string | null;
     commercialPaymentStatus?: string | null;
     commercialInvoiceNumber?: string | null;
+    commercialInvoiceDate?: string | null;
     commercialPaymentDate?: string | null;
+    commercialNextDueDate?: string | null;
     commercialTermsNotes?: string | null;
     referralPartner?: { id: string; fullName: string; companyName?: string | null } | null;
   };
@@ -256,6 +258,15 @@ export default function RevenueRecordsTab() {
                       <div>{paymentStatusLabels[record.company.commercialPaymentStatus || 'not_billed'] || 'Not Billed'}</div>
                       {record.company.commercialInvoiceNumber && (
                         <div>Ref: {record.company.commercialInvoiceNumber}</div>
+                      )}
+                      {record.company.commercialInvoiceDate && (
+                        <div>Invoice: {formatDate(record.company.commercialInvoiceDate)}</div>
+                      )}
+                      {record.company.commercialPaymentDate && (
+                        <div>Paid: {formatDate(record.company.commercialPaymentDate)}</div>
+                      )}
+                      {record.company.commercialNextDueDate && (
+                        <div>Next due: {formatDate(record.company.commercialNextDueDate)}</div>
                       )}
                     </td>
                     <td style={{ padding: '12px 16px', fontSize: '13px', color: '#1e293b', fontWeight: '600' }}>

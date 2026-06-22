@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
-import { formatCurrency, exportToCSV, getCurrentMonthRange } from '@/lib/billing/billingHelpers';
+import { formatCurrency, formatDate, exportToCSV, getCurrentMonthRange } from '@/lib/billing/billingHelpers';
 
 export default function BillingReportsTab() {
   const [consultantReport, setConsultantReport] = useState<any[]>([]);
@@ -282,6 +282,9 @@ export default function BillingReportsTab() {
                           <td style={{ padding: '8px', fontSize: '13px', color: '#64748b' }}>
                             {billingMethodLabels[company.commercialBillingMethod || 'usaepay'] || 'USAePay'}
                             {company.commercialInvoiceNumber ? ` (${company.commercialInvoiceNumber})` : ''}
+                            {company.commercialInvoiceDate && <div style={{ fontSize: '12px' }}>Invoice: {formatDate(company.commercialInvoiceDate)}</div>}
+                            {company.commercialPaymentDate && <div style={{ fontSize: '12px' }}>Paid: {formatDate(company.commercialPaymentDate)}</div>}
+                            {company.commercialNextDueDate && <div style={{ fontSize: '12px' }}>Next due: {formatDate(company.commercialNextDueDate)}</div>}
                           </td>
                           <td style={{ padding: '8px', fontSize: '13px', color: '#64748b' }}>
                             {paymentStatusLabels[company.commercialPaymentStatus || 'not_billed'] || 'Not Billed'}

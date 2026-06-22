@@ -2979,6 +2979,16 @@ function FinancialScorePage() {
       return false; // Don't block if company not loaded yet
     }
 
+    const commercialBillingMethod = String((selectedCompany as any).commercialBillingMethod || 'usaepay').toLowerCase();
+    const isAdminManagedBilling =
+      commercialBillingMethod === 'quickbooks_invoice' ||
+      commercialBillingMethod === 'manual_external' ||
+      commercialBillingMethod === 'no_platform_payment';
+    if (isAdminManagedBilling) {
+      console.log('?? Admin-managed billing method - no client payment block', { commercialBillingMethod });
+      return false;
+    }
+
     // Check dedicated pricing fields
     let monthly = selectedCompany.subscriptionMonthlyPrice;
     let quarterly = selectedCompany.subscriptionQuarterlyPrice;
@@ -8849,7 +8859,9 @@ function FinancialScorePage() {
     commercialPaymentStatus?: string;
     commercialInvoiceNumber?: string | null;
     commercialInvoiceUrl?: string | null;
+    commercialInvoiceDate?: string | null;
     commercialPaymentDate?: string | null;
+    commercialNextDueDate?: string | null;
     commercialTermsNotes?: string | null;
   }) => {
     try {
@@ -8864,7 +8876,9 @@ function FinancialScorePage() {
         commercialPaymentStatus: pricing.commercialPaymentStatus || 'not_billed',
         commercialInvoiceNumber: pricing.commercialInvoiceNumber || null,
         commercialInvoiceUrl: pricing.commercialInvoiceUrl || null,
+        commercialInvoiceDate: pricing.commercialInvoiceDate || null,
         commercialPaymentDate: pricing.commercialPaymentDate || null,
+        commercialNextDueDate: pricing.commercialNextDueDate || null,
         commercialTermsNotes: pricing.commercialTermsNotes || null,
       };
       await companiesApi.updatePricing(companyId, pricing.monthly, pricing.quarterly, pricing.annual, pricing.setupFee, affiliateCode, referral);
@@ -8886,7 +8900,9 @@ function FinancialScorePage() {
               commercialPaymentStatus: referral.commercialPaymentStatus,
               commercialInvoiceNumber: referral.commercialInvoiceNumber,
               commercialInvoiceUrl: referral.commercialInvoiceUrl,
+              commercialInvoiceDate: referral.commercialInvoiceDate,
               commercialPaymentDate: referral.commercialPaymentDate,
+              commercialNextDueDate: referral.commercialNextDueDate,
               commercialTermsNotes: referral.commercialTermsNotes,
               selectedSubscriptionPlan: null // Reset selected plan when pricing changes
             } 

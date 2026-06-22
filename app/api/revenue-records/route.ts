@@ -1,6 +1,31 @@
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 
+async function hasCompanyColumn(columnName: string): Promise<boolean> {
+  const runtimeCompanyModel = ((prisma as any)?._runtimeDataModel?.models?.Company || null) as
+    | { fields?: Array<{ name?: string }> }
+    | null;
+  if (runtimeCompanyModel?.fields?.length) {
+    const supportsField = runtimeCompanyModel.fields.some((field) => field?.name === columnName);
+    if (!supportsField) return false;
+  }
+
+  try {
+    const rows = await prisma.$queryRaw<Array<{ exists: boolean }>>`
+      SELECT EXISTS(
+        SELECT 1
+        FROM information_schema.columns
+        WHERE table_name = 'Company'
+          AND column_name = ${columnName}
+      ) as "exists"
+    `;
+    return rows[0]?.exists === true;
+  } catch (error) {
+    console.warn(`Could not verify Company.${columnName} column`, error);
+    return false;
+  }
+}
+
 // GET - List revenue records with optional filters
 export async function GET(request: NextRequest) {
   try {
@@ -38,6 +63,8 @@ export async function GET(request: NextRequest) {
         lte: new Date(endDate)
       };
     }
+    const includeCommercialInvoiceDate = await hasCompanyColumn('commercialInvoiceDate');
+    const includeCommercialNextDueDate = await hasCompanyColumn('commercialNextDueDate');
 
     const records = await prisma.revenueRecord.findMany({
       where,
@@ -52,7 +79,9 @@ export async function GET(request: NextRequest) {
             commercialBillingMethod: true,
             commercialPaymentStatus: true,
             commercialInvoiceNumber: true,
+            ...(includeCommercialInvoiceDate ? { commercialInvoiceDate: true } : {}),
             commercialPaymentDate: true,
+            ...(includeCommercialNextDueDate ? { commercialNextDueDate: true } : {}),
             commercialTermsNotes: true,
             referralPartner: {
               select: {

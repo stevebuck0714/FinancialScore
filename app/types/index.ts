@@ -217,7 +217,9 @@ export interface Company {
   commercialPaymentStatus?: string;
   commercialInvoiceNumber?: string | null;
   commercialInvoiceUrl?: string | null;
+  commercialInvoiceDate?: string | null;
   commercialPaymentDate?: string | null;
+  commercialNextDueDate?: string | null;
   commercialTermsNotes?: string | null;
   tier1SupportOwner?: 'CORELYTICS' | 'CONSULTANT';
   tier1SupportConsultantId?: string | null;

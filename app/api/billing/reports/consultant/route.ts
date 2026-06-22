@@ -3,6 +3,31 @@ import prisma from '@/lib/prisma';
 
 export const dynamic = 'force-dynamic';
 
+async function hasCompanyColumn(columnName: string): Promise<boolean> {
+  const runtimeCompanyModel = ((prisma as any)?._runtimeDataModel?.models?.Company || null) as
+    | { fields?: Array<{ name?: string }> }
+    | null;
+  if (runtimeCompanyModel?.fields?.length) {
+    const supportsField = runtimeCompanyModel.fields.some((field) => field?.name === columnName);
+    if (!supportsField) return false;
+  }
+
+  try {
+    const rows = await prisma.$queryRaw<Array<{ exists: boolean }>>`
+      SELECT EXISTS(
+        SELECT 1
+        FROM information_schema.columns
+        WHERE table_name = 'Company'
+          AND column_name = ${columnName}
+      ) as "exists"
+    `;
+    return rows[0]?.exists === true;
+  } catch (error) {
+    console.warn(`Could not verify Company.${columnName} column`, error);
+    return false;
+  }
+}
+
 // GET - Revenue by consultant report (revenue sharing model)
 export async function GET(request: NextRequest) {
   try {
@@ -21,6 +46,8 @@ export async function GET(request: NextRequest) {
     });
 
     const report = [];
+    const includeCommercialInvoiceDate = await hasCompanyColumn('commercialInvoiceDate');
+    const includeCommercialNextDueDate = await hasCompanyColumn('commercialNextDueDate');
 
     for (const consultant of consultants) {
       // Get revenue records for this consultant
@@ -46,7 +73,10 @@ export async function GET(request: NextRequest) {
               selectedSubscriptionPlan: true,
               commercialBillingMethod: true,
               commercialPaymentStatus: true,
-              commercialInvoiceNumber: true
+              commercialInvoiceNumber: true,
+              ...(includeCommercialInvoiceDate ? { commercialInvoiceDate: true } : {}),
+              commercialPaymentDate: true,
+              ...(includeCommercialNextDueDate ? { commercialNextDueDate: true } : {})
             }
           }
         },
@@ -82,7 +112,10 @@ export async function GET(request: NextRequest) {
               referralRecurringFeePercentage: true,
               commercialBillingMethod: true,
               commercialPaymentStatus: true,
-              commercialInvoiceNumber: true
+              commercialInvoiceNumber: true,
+              ...(includeCommercialInvoiceDate ? { commercialInvoiceDate: true } : {}),
+              commercialPaymentDate: true,
+              ...(includeCommercialNextDueDate ? { commercialNextDueDate: true } : {})
             }
           }
         },
@@ -118,7 +151,10 @@ export async function GET(request: NextRequest) {
             recordCount: 0,
             commercialBillingMethod: record.company.commercialBillingMethod,
             commercialPaymentStatus: record.company.commercialPaymentStatus,
-            commercialInvoiceNumber: record.company.commercialInvoiceNumber
+            commercialInvoiceNumber: record.company.commercialInvoiceNumber,
+            commercialInvoiceDate: (record.company as any).commercialInvoiceDate,
+            commercialPaymentDate: record.company.commercialPaymentDate,
+            commercialNextDueDate: (record.company as any).commercialNextDueDate
           });
         }
         const companyData = companiesMap.get(companyId);
@@ -136,7 +172,10 @@ export async function GET(request: NextRequest) {
             referralRevenue: 0,
             commercialBillingMethod: record.company.commercialBillingMethod,
             commercialPaymentStatus: record.company.commercialPaymentStatus,
-            commercialInvoiceNumber: record.company.commercialInvoiceNumber
+            commercialInvoiceNumber: record.company.commercialInvoiceNumber,
+            commercialInvoiceDate: (record.company as any).commercialInvoiceDate,
+            commercialPaymentDate: record.company.commercialPaymentDate,
+            commercialNextDueDate: (record.company as any).commercialNextDueDate
           });
         }
         const companyData = companiesMap.get(companyId);

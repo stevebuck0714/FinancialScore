@@ -78,7 +78,9 @@ model Company {
   commercialPaymentStatus    String                  @default("not_billed") // not_billed, invoiced, paid, overdue, waived, no_payment_required, external_paid
   commercialInvoiceNumber    String?
   commercialInvoiceUrl       String?
+  commercialInvoiceDate      DateTime?
   commercialPaymentDate      DateTime?
+  commercialNextDueDate      DateTime?
   commercialTermsNotes       String?
   subscriptionStatus         String?                @default("active") // 'active', 'paused', 'cancelled'
   subscriptionStartDate      DateTime?

@@ -7731,6 +7731,18 @@ export default function SiteAdminDashboard(props: any) {
                                                     />
                                                   </div>
                                                   <div style={{ gridColumn: 'span 2' }}>
+                                                    <label style={{ fontSize: '10px', color: '#64748b', display: 'block', marginBottom: '2px' }}>Invoice Date</label>
+                                                    <input
+                                                      type="date"
+                                                      value={editing.commercialInvoiceDate ? String(editing.commercialInvoiceDate).slice(0, 10) : ''}
+                                                      onChange={(e) => setEditingPricing({
+                                                        ...editingPricing,
+                                                        [company.id]: { ...editing, commercialInvoiceDate: e.target.value || null }
+                                                      })}
+                                                      style={{ width: '100%', padding: '4px 6px', border: '1px solid #cbd5e1', borderRadius: '4px', fontSize: '11px' }}
+                                                    />
+                                                  </div>
+                                                  <div style={{ gridColumn: 'span 2' }}>
                                                     <label style={{ fontSize: '10px', color: '#64748b', display: 'block', marginBottom: '2px' }}>Payment Date</label>
                                                     <input
                                                       type="date"
@@ -7738,6 +7750,18 @@ export default function SiteAdminDashboard(props: any) {
                                                       onChange={(e) => setEditingPricing({
                                                         ...editingPricing,
                                                         [company.id]: { ...editing, commercialPaymentDate: e.target.value || null }
+                                                      })}
+                                                      style={{ width: '100%', padding: '4px 6px', border: '1px solid #cbd5e1', borderRadius: '4px', fontSize: '11px' }}
+                                                    />
+                                                  </div>
+                                                  <div style={{ gridColumn: 'span 2' }}>
+                                                    <label style={{ fontSize: '10px', color: '#64748b', display: 'block', marginBottom: '2px' }}>Next Due Date</label>
+                                                    <input
+                                                      type="date"
+                                                      value={editing.commercialNextDueDate ? String(editing.commercialNextDueDate).slice(0, 10) : ''}
+                                                      onChange={(e) => setEditingPricing({
+                                                        ...editingPricing,
+                                                        [company.id]: { ...editing, commercialNextDueDate: e.target.value || null }
                                                       })}
                                                       style={{ width: '100%', padding: '4px 6px', border: '1px solid #cbd5e1', borderRadius: '4px', fontSize: '11px' }}
                                                     />
@@ -7795,7 +7819,9 @@ export default function SiteAdminDashboard(props: any) {
                                                     <div><strong>Billing Method:</strong> {getBillingMethodLabel(company.commercialBillingMethod)}</div>
                                                     <div><strong>Payment Status:</strong> {getPaymentStatusLabel(company.commercialPaymentStatus)}</div>
                                                     {company.commercialInvoiceNumber && <div><strong>Invoice / Ref #:</strong> {company.commercialInvoiceNumber}</div>}
+                                                    {company.commercialInvoiceDate && <div><strong>Invoice Date:</strong> {String(company.commercialInvoiceDate).slice(0, 10)}</div>}
                                                     {company.commercialPaymentDate && <div><strong>Payment Date:</strong> {String(company.commercialPaymentDate).slice(0, 10)}</div>}
+                                                    {company.commercialNextDueDate && <div><strong>Next Due Date:</strong> {String(company.commercialNextDueDate).slice(0, 10)}</div>}
                                                     {company.commercialTermsNotes && <div><strong>Terms Notes:</strong> {company.commercialTermsNotes}</div>}
                                                   </div>
                                                   <button
@@ -7815,7 +7841,9 @@ export default function SiteAdminDashboard(props: any) {
                                                           commercialPaymentStatus: company.commercialPaymentStatus || 'not_billed',
                                                           commercialInvoiceNumber: company.commercialInvoiceNumber || '',
                                                           commercialInvoiceUrl: company.commercialInvoiceUrl || '',
+                                                          commercialInvoiceDate: company.commercialInvoiceDate || '',
                                                           commercialPaymentDate: company.commercialPaymentDate || '',
+                                                          commercialNextDueDate: company.commercialNextDueDate || '',
                                                           commercialTermsNotes: company.commercialTermsNotes || '',
                                                         }
                                                       });
@@ -10992,6 +11020,18 @@ export default function SiteAdminDashboard(props: any) {
                                           />
                                         </div>
                                         <div style={{ gridColumn: 'span 2' }}>
+                                          <label style={{ fontSize: '12px', color: '#64748b', display: 'block', marginBottom: '3px' }}>Invoice Date</label>
+                                          <input
+                                            type="date"
+                                            value={editing.commercialInvoiceDate ? String(editing.commercialInvoiceDate).slice(0, 10) : ''}
+                                            onChange={(e) => setEditingPricing({
+                                              ...editingPricing,
+                                              [businessCompany.id]: { ...editing, commercialInvoiceDate: e.target.value || null }
+                                            })}
+                                            style={{ width: '100%', padding: '6px 8px', border: '1px solid #cbd5e1', borderRadius: '4px', fontSize: '13px' }}
+                                          />
+                                        </div>
+                                        <div style={{ gridColumn: 'span 2' }}>
                                           <label style={{ fontSize: '12px', color: '#64748b', display: 'block', marginBottom: '3px' }}>Payment Date</label>
                                           <input
                                             type="date"
@@ -10999,6 +11039,18 @@ export default function SiteAdminDashboard(props: any) {
                                             onChange={(e) => setEditingPricing({
                                               ...editingPricing,
                                               [businessCompany.id]: { ...editing, commercialPaymentDate: e.target.value || null }
+                                            })}
+                                            style={{ width: '100%', padding: '6px 8px', border: '1px solid #cbd5e1', borderRadius: '4px', fontSize: '13px' }}
+                                          />
+                                        </div>
+                                        <div style={{ gridColumn: 'span 2' }}>
+                                          <label style={{ fontSize: '12px', color: '#64748b', display: 'block', marginBottom: '3px' }}>Next Due Date</label>
+                                          <input
+                                            type="date"
+                                            value={editing.commercialNextDueDate ? String(editing.commercialNextDueDate).slice(0, 10) : ''}
+                                            onChange={(e) => setEditingPricing({
+                                              ...editingPricing,
+                                              [businessCompany.id]: { ...editing, commercialNextDueDate: e.target.value || null }
                                             })}
                                             style={{ width: '100%', padding: '6px 8px', border: '1px solid #cbd5e1', borderRadius: '4px', fontSize: '13px' }}
                                           />
@@ -11056,7 +11108,9 @@ export default function SiteAdminDashboard(props: any) {
                                           <div><strong>Billing Method:</strong> {getBillingMethodLabel(businessCompany?.commercialBillingMethod)}</div>
                                           <div><strong>Payment Status:</strong> {getPaymentStatusLabel(businessCompany?.commercialPaymentStatus)}</div>
                                           {businessCompany?.commercialInvoiceNumber && <div><strong>Invoice / Ref #:</strong> {businessCompany.commercialInvoiceNumber}</div>}
+                                          {businessCompany?.commercialInvoiceDate && <div><strong>Invoice Date:</strong> {String(businessCompany.commercialInvoiceDate).slice(0, 10)}</div>}
                                           {businessCompany?.commercialPaymentDate && <div><strong>Payment Date:</strong> {String(businessCompany.commercialPaymentDate).slice(0, 10)}</div>}
+                                          {businessCompany?.commercialNextDueDate && <div><strong>Next Due Date:</strong> {String(businessCompany.commercialNextDueDate).slice(0, 10)}</div>}
                                           {businessCompany?.commercialTermsNotes && <div><strong>Terms Notes:</strong> {businessCompany.commercialTermsNotes}</div>}
                                         </div>
                                         <button
@@ -11076,7 +11130,9 @@ export default function SiteAdminDashboard(props: any) {
                                                 commercialPaymentStatus: businessCompany?.commercialPaymentStatus || 'not_billed',
                                                 commercialInvoiceNumber: businessCompany?.commercialInvoiceNumber || '',
                                                 commercialInvoiceUrl: businessCompany?.commercialInvoiceUrl || '',
+                                                commercialInvoiceDate: businessCompany?.commercialInvoiceDate || '',
                                                 commercialPaymentDate: businessCompany?.commercialPaymentDate || '',
+                                                commercialNextDueDate: businessCompany?.commercialNextDueDate || '',
                                                 commercialTermsNotes: businessCompany?.commercialTermsNotes || '',
                                               }
                                             });

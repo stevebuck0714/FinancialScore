@@ -86,6 +86,31 @@ async function deleteCompanyScopedRows(tx: any, tableName: string, companyId: st
   );
 }
 
+async function hasCompanyColumn(columnName: string): Promise<boolean> {
+  const runtimeCompanyModel = ((prisma as any)?._runtimeDataModel?.models?.Company || null) as
+    | { fields?: Array<{ name?: string }> }
+    | null;
+  if (runtimeCompanyModel?.fields?.length) {
+    const supportsField = runtimeCompanyModel.fields.some((field) => field?.name === columnName);
+    if (!supportsField) return false;
+  }
+
+  try {
+    const rows = await prisma.$queryRaw<Array<{ exists: boolean }>>`
+      SELECT EXISTS(
+        SELECT 1
+        FROM information_schema.columns
+        WHERE table_name = 'Company'
+          AND column_name = ${columnName}
+      ) as "exists"
+    `;
+    return rows[0]?.exists === true;
+  } catch (error) {
+    console.warn(`Could not verify Company.${columnName} column`, error);
+    return false;
+  }
+}
+
 // GET all consultants (site admin only) or single consultant by ID
 export async function GET(request: NextRequest) {
   try {
@@ -128,6 +153,8 @@ export async function GET(request: NextRequest) {
     }
 
     // Otherwise, fetch all consultants
+    const includeCommercialInvoiceDate = await hasCompanyColumn('commercialInvoiceDate');
+    const includeCommercialNextDueDate = await hasCompanyColumn('commercialNextDueDate');
     const consultants = await prisma.consultant.findMany({
       include: {
         user: {
@@ -160,7 +187,9 @@ export async function GET(request: NextRequest) {
             commercialPaymentStatus: true,
             commercialInvoiceNumber: true,
             commercialInvoiceUrl: true,
+            ...(includeCommercialInvoiceDate ? { commercialInvoiceDate: true } : {}),
             commercialPaymentDate: true,
+            ...(includeCommercialNextDueDate ? { commercialNextDueDate: true } : {}),
             commercialTermsNotes: true,
             _count: {
               select: {

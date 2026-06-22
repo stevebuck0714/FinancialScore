@@ -141,7 +141,9 @@ export const companiesApi = {
       commercialPaymentStatus?: string;
       commercialInvoiceNumber?: string | null;
       commercialInvoiceUrl?: string | null;
+      commercialInvoiceDate?: string | null;
       commercialPaymentDate?: string | null;
+      commercialNextDueDate?: string | null;
       commercialTermsNotes?: string | null;
     }
   ) {

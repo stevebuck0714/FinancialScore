@@ -149,7 +149,9 @@ export async function GET(request: NextRequest) {
     const includeCommercialPaymentStatus = await hasCompanyColumn("commercialPaymentStatus");
     const includeCommercialInvoiceNumber = await hasCompanyColumn("commercialInvoiceNumber");
     const includeCommercialInvoiceUrl = await hasCompanyColumn("commercialInvoiceUrl");
+    const includeCommercialInvoiceDate = await hasCompanyColumn("commercialInvoiceDate");
     const includeCommercialPaymentDate = await hasCompanyColumn("commercialPaymentDate");
+    const includeCommercialNextDueDate = await hasCompanyColumn("commercialNextDueDate");
     const includeCommercialTermsNotes = await hasCompanyColumn("commercialTermsNotes");
     let companies;
     try {
@@ -189,7 +191,9 @@ export async function GET(request: NextRequest) {
           ...(includeCommercialPaymentStatus ? { commercialPaymentStatus: true } : {}),
           ...(includeCommercialInvoiceNumber ? { commercialInvoiceNumber: true } : {}),
           ...(includeCommercialInvoiceUrl ? { commercialInvoiceUrl: true } : {}),
+          ...(includeCommercialInvoiceDate ? { commercialInvoiceDate: true } : {}),
           ...(includeCommercialPaymentDate ? { commercialPaymentDate: true } : {}),
+          ...(includeCommercialNextDueDate ? { commercialNextDueDate: true } : {}),
           ...(includeCommercialTermsNotes ? { commercialTermsNotes: true } : {}),
           affiliateCode: true,
         },
@@ -233,7 +237,9 @@ export async function GET(request: NextRequest) {
           ...(includeCommercialPaymentStatus ? { commercialPaymentStatus: true } : {}),
           ...(includeCommercialInvoiceNumber ? { commercialInvoiceNumber: true } : {}),
           ...(includeCommercialInvoiceUrl ? { commercialInvoiceUrl: true } : {}),
+          ...(includeCommercialInvoiceDate ? { commercialInvoiceDate: true } : {}),
           ...(includeCommercialPaymentDate ? { commercialPaymentDate: true } : {}),
+          ...(includeCommercialNextDueDate ? { commercialNextDueDate: true } : {}),
           ...(includeCommercialTermsNotes ? { commercialTermsNotes: true } : {}),
           affiliateCode: true,
         },
@@ -1671,7 +1677,9 @@ export async function PUT(request: NextRequest) {
       commercialPaymentStatus,
       commercialInvoiceNumber,
       commercialInvoiceUrl,
+      commercialInvoiceDate,
       commercialPaymentDate,
+      commercialNextDueDate,
       commercialTermsNotes,
     } = body || {};
 
@@ -1739,14 +1747,25 @@ export async function PUT(request: NextRequest) {
     if (normalizedPaymentStatus !== undefined && !allowedPaymentStatuses.has(normalizedPaymentStatus)) {
       return NextResponse.json({ error: 'Invalid payment status' }, { status: 400 });
     }
-    const parsedCommercialPaymentDate = commercialPaymentDate
-      ? new Date(commercialPaymentDate)
-      : commercialPaymentDate === null
-        ? null
-        : undefined;
+    const parseOptionalDate = (value: unknown) => {
+      if (value === undefined) return undefined;
+      if (value === null || value === '') return null;
+      return new Date(String(value));
+    };
+    const parsedCommercialInvoiceDate = parseOptionalDate(commercialInvoiceDate);
+    const parsedCommercialPaymentDate = parseOptionalDate(commercialPaymentDate);
+    const parsedCommercialNextDueDate = parseOptionalDate(commercialNextDueDate);
+    if (parsedCommercialInvoiceDate instanceof Date && Number.isNaN(parsedCommercialInvoiceDate.getTime())) {
+      return NextResponse.json({ error: 'Invalid commercial invoice date' }, { status: 400 });
+    }
     if (parsedCommercialPaymentDate instanceof Date && Number.isNaN(parsedCommercialPaymentDate.getTime())) {
       return NextResponse.json({ error: 'Invalid commercial payment date' }, { status: 400 });
     }
+    if (parsedCommercialNextDueDate instanceof Date && Number.isNaN(parsedCommercialNextDueDate.getTime())) {
+      return NextResponse.json({ error: 'Invalid commercial next due date' }, { status: 400 });
+    }
+    const includeCommercialInvoiceDate = await hasCompanyColumn("commercialInvoiceDate");
+    const includeCommercialNextDueDate = await hasCompanyColumn("commercialNextDueDate");
 
     const company = await prisma.company.update({
       where: { id },
@@ -1763,7 +1782,9 @@ export async function PUT(request: NextRequest) {
         ...(normalizedPaymentStatus !== undefined ? { commercialPaymentStatus: normalizedPaymentStatus } : {}),
         ...(commercialInvoiceNumber !== undefined ? { commercialInvoiceNumber: String(commercialInvoiceNumber || '').trim() || null } : {}),
         ...(commercialInvoiceUrl !== undefined ? { commercialInvoiceUrl: String(commercialInvoiceUrl || '').trim() || null } : {}),
+        ...(includeCommercialInvoiceDate && parsedCommercialInvoiceDate !== undefined ? { commercialInvoiceDate: parsedCommercialInvoiceDate } : {}),
         ...(parsedCommercialPaymentDate !== undefined ? { commercialPaymentDate: parsedCommercialPaymentDate } : {}),
+        ...(includeCommercialNextDueDate && parsedCommercialNextDueDate !== undefined ? { commercialNextDueDate: parsedCommercialNextDueDate } : {}),
         ...(commercialTermsNotes !== undefined ? { commercialTermsNotes: String(commercialTermsNotes || '').trim() || null } : {}),
         // Reset selected plan so the UI doesn't show a stale selection.
         selectedSubscriptionPlan: null,
@@ -1785,7 +1806,9 @@ export async function PUT(request: NextRequest) {
         commercialPaymentStatus: true,
         commercialInvoiceNumber: true,
         commercialInvoiceUrl: true,
+        ...(includeCommercialInvoiceDate ? { commercialInvoiceDate: true } : {}),
         commercialPaymentDate: true,
+        ...(includeCommercialNextDueDate ? { commercialNextDueDate: true } : {}),
         commercialTermsNotes: true,
         selectedSubscriptionPlan: true,
       },
