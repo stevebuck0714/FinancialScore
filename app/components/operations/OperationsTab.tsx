@@ -1112,6 +1112,8 @@ export default function OperationsTab({
   const dateRangeSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const hasHydratedEbitdaEmployeeInputsRef = useRef(false);
   const ebitdaEmployeeInputsSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const hasHydratedResidentialRateTrendsRef = useRef(false);
+  const residentialRateTrendsSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => {
     setExpandedWipCustomers({});
   }, [selectedCompanyId, startDate, endDate, frequency]);
@@ -1397,6 +1399,7 @@ export default function OperationsTab({
     if (!selectedCompanyId) return;
     hasHydratedDateRangeRef.current = false;
     hasHydratedEbitdaEmployeeInputsRef.current = false;
+    hasHydratedResidentialRateTrendsRef.current = false;
     let cancelled = false;
 
     const defaultRange = (endDateKey = effectiveMaxSelectableEndDate) => {
@@ -1447,6 +1450,14 @@ export default function OperationsTab({
         return acc;
       }, {});
     };
+    const normalizeResidentialRateTrends = (value: any) => {
+      if (!Array.isArray(value)) return null;
+      return Array.from({ length: 4 }, (_, index) => {
+        const rawValue = value[index];
+        const parsed = Number(rawValue);
+        return Number.isFinite(parsed) ? String(rawValue ?? '0.00') : '0.00';
+      });
+    };
 
     const applyRange = (range: { frequency: 'daily' | 'weekly' | 'monthly'; startDate: string; endDate: string }) => {
       setFrequency(range.frequency);
@@ -1458,6 +1469,7 @@ export default function OperationsTab({
     const loadDashboardPreferences = async () => {
       let loadedRange: ReturnType<typeof normalizeRange> = null;
       let loadedEmployeeInputs: ReturnType<typeof normalizeEmployeeInputs> = null;
+      let loadedResidentialRateTrends: ReturnType<typeof normalizeResidentialRateTrends> = null;
       let latestEndDateKey = effectiveMaxSelectableEndDate;
       try {
         const params = new URLSearchParams({
@@ -1483,10 +1495,12 @@ export default function OperationsTab({
           const data = await response.json();
           loadedRange = normalizeRange(data?.preferences?.dateRange, latestEndDateKey);
           loadedEmployeeInputs = normalizeEmployeeInputs(data?.preferences?.ebitdaEmployeeInputsByMonth);
+          loadedResidentialRateTrends = normalizeResidentialRateTrends(data?.preferences?.residentialMortgageRateQuarterlyChangesPct);
         }
       } catch {
         loadedRange = null;
         loadedEmployeeInputs = null;
+        loadedResidentialRateTrends = null;
       }
 
       if (!loadedRange) {
@@ -1516,11 +1530,21 @@ export default function OperationsTab({
           loadedEmployeeInputs = null;
         }
       }
+      if (!loadedResidentialRateTrends) {
+        try {
+          const raw = window.localStorage.getItem(`ops:residential-rate-trends:${selectedCompanyId}`);
+          loadedResidentialRateTrends = normalizeResidentialRateTrends(raw ? JSON.parse(raw) : null);
+        } catch {
+          loadedResidentialRateTrends = null;
+        }
+      }
 
       if (!cancelled) {
         applyRange(loadedRange || defaultRange(latestEndDateKey));
         setEbitdaEmployeeInputsByMonth(loadedEmployeeInputs || {});
+        setResidentialMortgageRateQuarterlyChangesPct(loadedResidentialRateTrends || ['0.00', '0.00', '0.00', '0.00']);
         hasHydratedEbitdaEmployeeInputsRef.current = true;
+        hasHydratedResidentialRateTrendsRef.current = true;
       }
     };
 
@@ -1578,6 +1602,38 @@ export default function OperationsTab({
       }
     };
   }, [selectedCompanyId, ebitdaEmployeeInputsByMonth]);
+
+  useEffect(() => {
+    if (!selectedCompanyId || !hasHydratedResidentialRateTrendsRef.current) return;
+    const payload = residentialMortgageRateQuarterlyChangesPct;
+    try {
+      window.localStorage.setItem(`ops:residential-rate-trends:${selectedCompanyId}`, JSON.stringify(payload));
+    } catch {
+      // Ignore storage failures
+    }
+    if (residentialRateTrendsSaveTimerRef.current) {
+      clearTimeout(residentialRateTrendsSaveTimerRef.current);
+    }
+    residentialRateTrendsSaveTimerRef.current = setTimeout(() => {
+      void fetch('/api/ops-dashboard-prefs', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          companyId: selectedCompanyId,
+          preferences: {
+            residentialMortgageRateQuarterlyChangesPct: payload,
+          },
+        }),
+      }).catch(() => {
+        // Local storage still preserves the rate assumptions if the network save fails.
+      });
+    }, 600);
+    return () => {
+      if (residentialRateTrendsSaveTimerRef.current) {
+        clearTimeout(residentialRateTrendsSaveTimerRef.current);
+      }
+    };
+  }, [selectedCompanyId, residentialMortgageRateQuarterlyChangesPct]);
 
   useEffect(() => {
     if (!isCustomersTab || !selectedCompanyId) return;
