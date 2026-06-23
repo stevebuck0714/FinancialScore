@@ -20,7 +20,8 @@ import {
   CartesianGrid,
   Tooltip,
   Legend,
-  ResponsiveContainer
+  ResponsiveContainer,
+  ReferenceLine
 } from 'recharts';
 import OpsDashboard from './OpsDashboard';
 import FinancialForecastTab from '../FinancialForecastTab';
@@ -799,6 +800,10 @@ export default function OperationsTab({
   const [wipLineItemSortKey, setWipLineItemSortKey] = useState<WipLineItemSortKey>('orderId');
   const [wipLineItemSortDir, setWipLineItemSortDir] = useState<'asc' | 'desc'>('asc');
   const [selectedResidentialFunnelRegion, setSelectedResidentialFunnelRegion] = useState('__ALL__');
+  const [selectedResidentialPriceOffice, setSelectedResidentialPriceOffice] = useState('__ALL__');
+  const [residentialMortgageRateMonthlyChangePct, setResidentialMortgageRateMonthlyChangePct] = useState('0.00');
+  const [residentialHomesSoldServerForecast, setResidentialHomesSoldServerForecast] = useState<Array<{ projectedHomesSold: number; projectedMortgageRate: number }>>([]);
+  const [residentialHomesSoldForecastLoading, setResidentialHomesSoldForecastLoading] = useState(false);
   const [salesHistoryCategoriesExpanded, setSalesHistoryCategoriesExpanded] = useState(true);
   const [expandedSalesHistoryCategories, setExpandedSalesHistoryCategories] = useState<Record<string, boolean>>({});
   const [salesHistoryRangeMode, setSalesHistoryRangeMode] = useState<'all' | 'last30' | 'last90' | 'ytd' | 'last12' | 'custom'>('all');
@@ -901,6 +906,88 @@ export default function OperationsTab({
   const [retailForecastTableSortDir, setRetailForecastTableSortDir] = useState<'asc' | 'desc'>('desc');
   const [showCccInfoModal, setShowCccInfoModal] = useState(false);
   const [mortgageRevenuePeriod, setMortgageRevenuePeriod] = useState<'monthly' | 'quarterly' | 'annually'>('monthly');
+  const realEstateTrendMonthDates = Array.from({ length: 36 }, (_, index) => new Date(Date.UTC(2023, 6 + index, 1)));
+  const formatRealEstateTrendMonth = (date: Date) => date.toLocaleDateString('en-US', { month: 'short', year: '2-digit', timeZone: 'UTC' });
+  const realEstateTrendMonths = realEstateTrendMonthDates.map(formatRealEstateTrendMonth);
+  const residentialHomesSoldHistory = realEstateTrendMonths.map((period, index) => ({
+    period,
+    homesSold: 210 + index * 3 + Math.round(Math.sin(index / 3) * 18),
+  }));
+  const residentialHistoricalMortgage30YearRates = [
+    6.84, 7.07, 7.20, 7.62, 7.44, 6.82,
+    6.64, 6.78, 6.82, 6.99, 7.06, 6.92,
+    6.85, 6.50, 6.18, 6.43, 6.81, 6.72,
+    6.96, 6.84, 6.65, 6.73, 6.82, 6.82,
+    6.72, 6.58, 6.35, 6.28, 6.34, 6.42,
+    6.48, 6.40, 6.32, 6.28, 6.22, 6.18,
+  ];
+  useEffect(() => {
+    const homesSoldValues = residentialHomesSoldHistory.map((row) => row.homesSold);
+    if (!selectedCompanyId || homesSoldValues.length === 0) return;
+    let cancelled = false;
+
+    const loadResidentialHomesSoldForecast = async () => {
+      setResidentialHomesSoldForecastLoading(true);
+      try {
+        const response = await fetch('/api/forecasting/real-estate/homes-sold', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            companyId: selectedCompanyId,
+            homesSoldValues,
+            mortgageRateValues: residentialHistoricalMortgage30YearRates,
+            periods: 12,
+            monthlyRateChangePct: residentialMortgageRateMonthlyChangePct,
+          }),
+        });
+        if (!response.ok) throw new Error(`Forecast request failed with status ${response.status}`);
+        const data = await response.json();
+        if (!cancelled) setResidentialHomesSoldServerForecast(Array.isArray(data?.forecast) ? data.forecast : []);
+      } catch (error) {
+        console.error('Error loading residential homes sold forecast:', error);
+        if (!cancelled) setResidentialHomesSoldServerForecast([]);
+      } finally {
+        if (!cancelled) setResidentialHomesSoldForecastLoading(false);
+      }
+    };
+
+    loadResidentialHomesSoldForecast();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- generated residential dashboard series are deterministic for this component.
+  }, [selectedCompanyId, residentialMortgageRateMonthlyChangePct]);
+  const residentialHomesSoldForecastRows = (() => {
+    const latestRate = residentialHistoricalMortgage30YearRates[residentialHistoricalMortgage30YearRates.length - 1] || 0;
+    const monthlyRateChange = Number.isFinite(Number(residentialMortgageRateMonthlyChangePct)) ? Number(residentialMortgageRateMonthlyChangePct) : 0;
+    const fallbackForecast = Array.from({ length: 12 }, (_, index) => ({
+      projectedHomesSold: residentialHomesSoldHistory[residentialHomesSoldHistory.length - 1]?.homesSold || 0,
+      projectedMortgageRate: Math.max(0, latestRate + monthlyRateChange * (index + 1)),
+    }));
+    const forecastSource = residentialHomesSoldServerForecast.length ? residentialHomesSoldServerForecast : fallbackForecast;
+    const historicalRows = residentialHomesSoldHistory.map((row, index) => ({
+      period: row.period,
+      homesSold: row.homesSold,
+      projectedHomesSold: index === residentialHomesSoldHistory.length - 1 ? row.homesSold : null,
+      mortgageRate: residentialHistoricalMortgage30YearRates[index],
+      projectedMortgageRate: index === residentialHomesSoldHistory.length - 1 ? latestRate : null,
+      isForecast: false,
+    }));
+    const lastTrendDate = realEstateTrendMonthDates[realEstateTrendMonthDates.length - 1];
+    const forecastRows = forecastSource.map((forecastPoint, index) => {
+      const forecastDate = new Date(Date.UTC(lastTrendDate.getUTCFullYear(), lastTrendDate.getUTCMonth() + index + 1, 1));
+      return {
+        period: formatRealEstateTrendMonth(forecastDate),
+        homesSold: null,
+        projectedHomesSold: forecastPoint.projectedHomesSold,
+        mortgageRate: null,
+        projectedMortgageRate: Math.round(Number(forecastPoint.projectedMortgageRate || 0) * 100) / 100,
+        isForecast: true,
+      };
+    });
+
+    return [...historicalRows, ...forecastRows];
+  })();
   const operationalHubSections =
     companyOperationalHubConfig &&
     typeof companyOperationalHubConfig === 'object' &&
@@ -22520,12 +22607,14 @@ Strategies to Improve the CCC
       const date = new Date(Date.UTC(2023, 6 + index, 1));
       return date.toLocaleDateString('en-US', { month: 'short', year: '2-digit', timeZone: 'UTC' });
     });
-    const residentialHomesSoldTrendRows = trendMonths.map((period, index) => ({
-      period,
-      homesSold: 210 + index * 3 + Math.round(Math.sin(index / 3) * 18),
-    }));
+    const selectedResidentialPriceOfficeIndex = selectedResidentialPriceOffice === '__ALL__'
+      ? -1
+      : officeRows.findIndex((row) => row.office === selectedResidentialPriceOffice);
+    const selectedResidentialPriceOfficeAdjustment = selectedResidentialPriceOfficeIndex < 0
+      ? 0
+      : (selectedResidentialPriceOfficeIndex % 14) * 2850 - 18500;
     const residentialAveragePriceTrendRows = trendMonths.map((period, index) => {
-      const listingPrice = 418000 + index * 1850 + Math.round(Math.sin(index / 4) * 9500);
+      const listingPrice = 418000 + selectedResidentialPriceOfficeAdjustment + index * 1850 + Math.round(Math.sin(index / 4 + Math.max(selectedResidentialPriceOfficeIndex, 0) * 0.08) * 9500);
       return {
         period,
         averageListingPrice: listingPrice,
@@ -22824,29 +22913,87 @@ Strategies to Improve the CCC
         )}
         {moduleKey === 'residential_real_estate' && (
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '14px', marginBottom: '14px' }}>
-            <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '16px' }}>
-              <h3 style={{ margin: '0 0 12px 0', fontSize: '16px', color: '#1e293b' }}>Homes Sold - 3 Year Monthly Trend</h3>
-              <div style={{ height: 300 }}>
+            <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '16px', gridColumn: '1 / -1' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px', flexWrap: 'wrap', marginBottom: '12px' }}>
+                <div>
+                  <h3 style={{ margin: '0 0 6px 0', fontSize: '16px', color: '#1e293b' }}>Homes Sold - 3 Year Monthly Trend + 12 Month Forecast</h3>
+                  <p style={{ margin: 0, color: '#64748b', fontSize: '13px' }}>
+                    Server-side SARIMAX-style forecast using homes-sold lags, annual seasonality, 30-year mortgage rates, and expected rate trend.
+                  </p>
+                </div>
+                <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', color: '#475569', fontWeight: 700 }}>
+                  Expected Rate Trend
+                  <input
+                    type="number"
+                    step="0.01"
+                    value={residentialMortgageRateMonthlyChangePct}
+                    onChange={(event) => setResidentialMortgageRateMonthlyChangePct(event.target.value)}
+                    style={{ width: '90px', border: '1px solid #cbd5e1', borderRadius: '8px', padding: '7px 9px', color: '#0f172a', fontSize: '13px' }}
+                  />
+                  <span style={{ color: '#64748b', fontSize: '12px' }}>pct pts / mo</span>
+                </label>
+              </div>
+              {residentialHomesSoldForecastLoading && (
+                <p style={{ margin: '0 0 10px', color: '#64748b', fontSize: '12px', fontWeight: 700 }}>
+                  Updating server-side forecast...
+                </p>
+              )}
+              <div style={{ height: 380 }}>
                 <ResponsiveContainer>
-                  <LineChart data={residentialHomesSoldTrendRows}>
+                  <LineChart data={residentialHomesSoldForecastRows} margin={{ top: 8, right: 16, left: 8, bottom: 8 }}>
                     <CartesianGrid strokeDasharray="3 3" />
                     <XAxis dataKey="period" interval={2} tick={{ fontSize: 11 }} />
-                    <YAxis />
-                    <Tooltip formatter={(value: any) => Number(value || 0).toLocaleString()} />
+                    <YAxis yAxisId="homes" tickFormatter={(value) => Number(value || 0).toLocaleString()} tick={{ fontSize: 11 }} />
+                    <YAxis yAxisId="rates" orientation="right" tickFormatter={(value) => `${Number(value || 0).toFixed(1)}%`} tick={{ fontSize: 11 }} domain={['dataMin - 0.25', 'dataMax + 0.25']} />
+                    <Tooltip
+                      content={({ active, payload, label }: any) => {
+                        if (!active || !payload?.length) return null;
+                        const point = payload[0]?.payload || {};
+                        const homesSoldValue = point.homesSold ?? point.projectedHomesSold;
+                        const mortgageRateValue = point.mortgageRate ?? point.projectedMortgageRate;
+
+                        return (
+                          <div style={{ background: 'white', border: '1px solid #cbd5e1', borderRadius: '10px', padding: '10px 12px', boxShadow: '0 8px 18px rgba(15, 23, 42, 0.12)', fontSize: '12px', color: '#334155' }}>
+                            <div style={{ fontWeight: 800, color: '#0f172a', marginBottom: '6px' }}>{label}</div>
+                            <div>Homes Sold: <strong>{Number(homesSoldValue || 0).toLocaleString()}</strong>{point.isForecast ? ' forecast' : ''}</div>
+                            <div>30-Year Mortgage Rate: <strong>{Number(mortgageRateValue || 0).toFixed(2)}%</strong>{point.isForecast ? ' projected' : ''}</div>
+                          </div>
+                        );
+                      }}
+                    />
                     <Legend />
-                    <Line type="monotone" dataKey="homesSold" stroke="#2563eb" strokeWidth={2} name="Homes Sold" dot={false} />
+                    <ReferenceLine yAxisId="homes" x={realEstateTrendMonths[realEstateTrendMonths.length - 1]} stroke="#94a3b8" strokeDasharray="4 4" label={{ value: 'Forecast Start', position: 'insideTopRight', fill: '#64748b', fontSize: 11 }} />
+                    <Line yAxisId="homes" type="monotone" dataKey="homesSold" stroke="#2563eb" strokeWidth={2.75} name="Historical Homes Sold" dot={false} connectNulls={false} isAnimationActive={false} />
+                    <Line yAxisId="homes" type="monotone" dataKey="projectedHomesSold" stroke="#2563eb" strokeWidth={2.75} strokeDasharray="6 4" name="Projected Homes Sold" dot={false} connectNulls={false} isAnimationActive={false} />
+                    <Line yAxisId="rates" type="monotone" dataKey="mortgageRate" stroke="#64748b" strokeWidth={2} name="Historical 30-Year Rate" dot={false} connectNulls={false} isAnimationActive={false} />
+                    <Line yAxisId="rates" type="monotone" dataKey="projectedMortgageRate" stroke="#64748b" strokeWidth={2} strokeDasharray="6 4" name="Projected 30-Year Rate" dot={false} connectNulls={false} isAnimationActive={false} />
                   </LineChart>
                 </ResponsiveContainer>
               </div>
             </div>
-            <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '16px' }}>
-              <h3 style={{ margin: '0 0 12px 0', fontSize: '16px', color: '#1e293b' }}>Average Home Sales Price vs. Listing Price</h3>
+            <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '16px', gridColumn: '1 / -1' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', flexWrap: 'wrap', marginBottom: '12px' }}>
+                <h3 style={{ margin: 0, fontSize: '16px', color: '#1e293b' }}>Average Home Sales Price vs. Listing Price</h3>
+                <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', color: '#475569', fontWeight: 700 }}>
+                  Office
+                  <select
+                    value={selectedResidentialPriceOffice}
+                    onChange={(event) => setSelectedResidentialPriceOffice(event.target.value)}
+                    style={{ border: '1px solid #cbd5e1', borderRadius: '8px', padding: '8px 10px', fontSize: '13px', background: 'white' }}
+                  >
+                    <option value="__ALL__">All Offices</option>
+                    {officeRows.map((row) => (
+                      <option key={row.office} value={row.office}>{row.office}</option>
+                    ))}
+                  </select>
+                </label>
+              </div>
               <div style={{ height: 300 }}>
                 <ResponsiveContainer>
                   <LineChart data={residentialAveragePriceTrendRows}>
                     <CartesianGrid strokeDasharray="3 3" />
                     <XAxis dataKey="period" interval={2} tick={{ fontSize: 11 }} />
-                    <YAxis tickFormatter={(value) => `$${(Number(value) / 1000).toFixed(0)}K`} />
+                    <YAxis domain={['dataMin - 10000', 'dataMax + 10000']} tickFormatter={(value) => `$${(Number(value) / 1000).toFixed(0)}K`} />
                     <Tooltip formatter={(value: any) => formatCurrency(Number(value || 0))} />
                     <Legend />
                     <Line type="monotone" dataKey="averageSalesPrice" stroke="#0f766e" strokeWidth={2} name="Avg Sales Price" dot={false} />
