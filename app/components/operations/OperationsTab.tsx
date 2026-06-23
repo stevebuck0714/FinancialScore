@@ -801,7 +801,7 @@ export default function OperationsTab({
   const [wipLineItemSortDir, setWipLineItemSortDir] = useState<'asc' | 'desc'>('asc');
   const [selectedResidentialFunnelRegion, setSelectedResidentialFunnelRegion] = useState('__ALL__');
   const [selectedResidentialPriceOffice, setSelectedResidentialPriceOffice] = useState('__ALL__');
-  const [residentialMortgageRateMonthlyChangePct, setResidentialMortgageRateMonthlyChangePct] = useState('0.00');
+  const [residentialMortgageRateQuarterlyChangesPct, setResidentialMortgageRateQuarterlyChangesPct] = useState(['0.00', '0.00', '0.00', '0.00']);
   const [residentialHomesSoldServerForecast, setResidentialHomesSoldServerForecast] = useState<Array<{ projectedHomesSold: number; projectedMortgageRate: number }>>([]);
   const [residentialHomesSoldForecastLoading, setResidentialHomesSoldForecastLoading] = useState(false);
   const [salesHistoryCategoriesExpanded, setSalesHistoryCategoriesExpanded] = useState(true);
@@ -921,6 +921,18 @@ export default function OperationsTab({
     6.72, 6.58, 6.35, 6.28, 6.34, 6.42,
     6.48, 6.40, 6.32, 6.28, 6.22, 6.18,
   ];
+  const residentialMortgageRateQuarterlyChanges = residentialMortgageRateQuarterlyChangesPct.map((value) => {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : 0;
+  });
+  const getResidentialProjectedMortgageRate = (latestRate: number, periodIndex: number) => {
+    let projectedRate = latestRate;
+    for (let monthIndex = 0; monthIndex <= periodIndex; monthIndex++) {
+      const quarterIndex = Math.min(Math.floor(monthIndex / 3), residentialMortgageRateQuarterlyChanges.length - 1);
+      projectedRate += residentialMortgageRateQuarterlyChanges[quarterIndex] || 0;
+    }
+    return Math.max(0, projectedRate);
+  };
   useEffect(() => {
     const homesSoldValues = residentialHomesSoldHistory.map((row) => row.homesSold);
     if (!selectedCompanyId || homesSoldValues.length === 0) return;
@@ -937,7 +949,7 @@ export default function OperationsTab({
             homesSoldValues,
             mortgageRateValues: residentialHistoricalMortgage30YearRates,
             periods: 12,
-            monthlyRateChangePct: residentialMortgageRateMonthlyChangePct,
+            quarterlyRateChangePct: residentialMortgageRateQuarterlyChanges,
           }),
         });
         if (!response.ok) throw new Error(`Forecast request failed with status ${response.status}`);
@@ -956,13 +968,12 @@ export default function OperationsTab({
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- generated residential dashboard series are deterministic for this component.
-  }, [selectedCompanyId, residentialMortgageRateMonthlyChangePct]);
+  }, [selectedCompanyId, residentialMortgageRateQuarterlyChangesPct]);
   const residentialHomesSoldForecastRows = (() => {
     const latestRate = residentialHistoricalMortgage30YearRates[residentialHistoricalMortgage30YearRates.length - 1] || 0;
-    const monthlyRateChange = Number.isFinite(Number(residentialMortgageRateMonthlyChangePct)) ? Number(residentialMortgageRateMonthlyChangePct) : 0;
     const fallbackForecast = Array.from({ length: 12 }, (_, index) => ({
       projectedHomesSold: residentialHomesSoldHistory[residentialHomesSoldHistory.length - 1]?.homesSold || 0,
-      projectedMortgageRate: Math.max(0, latestRate + monthlyRateChange * (index + 1)),
+      projectedMortgageRate: getResidentialProjectedMortgageRate(latestRate, index),
     }));
     const forecastSource = residentialHomesSoldServerForecast.length ? residentialHomesSoldServerForecast : fallbackForecast;
     const historicalRows = residentialHomesSoldHistory.map((row, index) => ({
@@ -22603,8 +22614,11 @@ Strategies to Improve the CCC
       producers: 3 + (index % 8),
       closedUnits: 7 + (index % 13),
     }));
-    const trendMonths = Array.from({ length: 36 }, (_, index) => {
+    const trendMonthDates = Array.from({ length: 36 }, (_, index) => {
       const date = new Date(Date.UTC(2023, 6 + index, 1));
+      return date;
+    });
+    const trendMonths = trendMonthDates.map((date) => {
       return date.toLocaleDateString('en-US', { month: 'short', year: '2-digit', timeZone: 'UTC' });
     });
     const selectedResidentialPriceOfficeIndex = selectedResidentialPriceOffice === '__ALL__'
@@ -22864,6 +22878,120 @@ Strategies to Improve the CCC
       revenue: Math.round(Number(row.revenue || 0) * mortgagePeriodMultiplier),
       ebitda: Math.round(Number(row.ebitda || 0) * mortgagePeriodMultiplier),
     }));
+    const divisionForecastConfig: Record<string, { title: string; metricName: string; base: number; trend: number; amplitude: number; phase: number; color: string }> = {
+      mortgage: {
+        title: 'Funded Loans - 3 Year Monthly Trend + 12 Month Forecast',
+        metricName: 'Funded Loans',
+        base: 308,
+        trend: 2.8,
+        amplitude: 24,
+        phase: 0.3,
+        color: '#2563eb',
+      },
+      title_company: {
+        title: 'Closed Files - 3 Year Monthly Trend + 12 Month Forecast',
+        metricName: 'Closed Files',
+        base: 410,
+        trend: 3.4,
+        amplitude: 30,
+        phase: 0.5,
+        color: '#0f766e',
+      },
+      insurance_services: {
+        title: 'New Policies - 3 Year Monthly Trend + 12 Month Forecast',
+        metricName: 'New Policies',
+        base: 620,
+        trend: 4.1,
+        amplitude: 42,
+        phase: 0.9,
+        color: '#7c3aed',
+      },
+      commercial_real_estate: {
+        title: 'Closed Commercial Deals - 3 Year Monthly Trend + 12 Month Forecast',
+        metricName: 'Closed Commercial Deals',
+        base: 34,
+        trend: 0.45,
+        amplitude: 5,
+        phase: 1.1,
+        color: '#f97316',
+      },
+      property_management: {
+        title: 'Managed Units - 3 Year Monthly Trend + 12 Month Forecast',
+        metricName: 'Managed Units',
+        base: 3780,
+        trend: 16,
+        amplitude: 95,
+        phase: 0.2,
+        color: '#0891b2',
+      },
+    };
+    const buildDivisionForecastRows = (forecastConfig: { base: number; trend: number; amplitude: number; phase: number }) => {
+      const historicalRows = trendMonths.map((period, index) => {
+        const value = Math.max(0, Math.round(forecastConfig.base + index * forecastConfig.trend + Math.sin(index / 3 + forecastConfig.phase) * forecastConfig.amplitude));
+        return {
+          period,
+          actual: value,
+          projected: index === trendMonths.length - 1 ? value : null,
+          isForecast: false,
+        };
+      });
+      const lastTrendDate = trendMonthDates[trendMonthDates.length - 1];
+      const forecastRows = Array.from({ length: 12 }, (_, index) => {
+        const historicalIndex = trendMonths.length + index;
+        const forecastDate = new Date(Date.UTC(lastTrendDate.getUTCFullYear(), lastTrendDate.getUTCMonth() + index + 1, 1));
+        return {
+          period: forecastDate.toLocaleDateString('en-US', { month: 'short', year: '2-digit', timeZone: 'UTC' }),
+          actual: null,
+          projected: Math.max(0, Math.round(forecastConfig.base + historicalIndex * forecastConfig.trend + Math.sin(historicalIndex / 3 + forecastConfig.phase) * forecastConfig.amplitude)),
+          isForecast: true,
+        };
+      });
+
+      return [...historicalRows, ...forecastRows];
+    };
+    const renderDivisionMonthlyForecastCard = () => {
+      const forecastConfig = divisionForecastConfig[moduleKey];
+      if (!forecastConfig) return null;
+      const chartRows = buildDivisionForecastRows(forecastConfig);
+
+      return (
+        <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '16px', marginBottom: '14px' }}>
+          <div style={{ marginBottom: '12px' }}>
+            <h3 style={{ margin: '0 0 6px 0', fontSize: '16px', color: '#1e293b' }}>{forecastConfig.title}</h3>
+            <p style={{ margin: 0, color: '#64748b', fontSize: '13px' }}>
+              12-month forecast based on the division&apos;s 3-year monthly trend, seasonality, and recent growth pattern.
+            </p>
+          </div>
+          <div style={{ height: 340 }}>
+            <ResponsiveContainer>
+              <LineChart data={chartRows} margin={{ top: 8, right: 16, left: 8, bottom: 8 }}>
+                <CartesianGrid strokeDasharray="3 3" />
+                <XAxis dataKey="period" interval={2} tick={{ fontSize: 11 }} />
+                <YAxis tickFormatter={(value) => Number(value || 0).toLocaleString()} tick={{ fontSize: 11 }} domain={['dataMin - 10', 'dataMax + 10']} />
+                <Tooltip
+                  content={({ active, payload, label }: any) => {
+                    if (!active || !payload?.length) return null;
+                    const point = payload[0]?.payload || {};
+                    const value = point.actual ?? point.projected;
+
+                    return (
+                      <div style={{ background: 'white', border: '1px solid #cbd5e1', borderRadius: '10px', padding: '10px 12px', boxShadow: '0 8px 18px rgba(15, 23, 42, 0.12)', fontSize: '12px', color: '#334155' }}>
+                        <div style={{ fontWeight: 800, color: '#0f172a', marginBottom: '6px' }}>{label}</div>
+                        <div>{forecastConfig.metricName}: <strong>{Number(value || 0).toLocaleString()}</strong>{point.isForecast ? ' forecast' : ''}</div>
+                      </div>
+                    );
+                  }}
+                />
+                <Legend />
+                <ReferenceLine x={trendMonths[trendMonths.length - 1]} stroke="#94a3b8" strokeDasharray="4 4" label={{ value: 'Forecast Start', position: 'insideTopRight', fill: '#64748b', fontSize: 11 }} />
+                <Line type="monotone" dataKey="actual" stroke={forecastConfig.color} strokeWidth={2.75} name={`Historical ${forecastConfig.metricName}`} dot={false} connectNulls={false} isAnimationActive={false} />
+                <Line type="monotone" dataKey="projected" stroke={forecastConfig.color} strokeWidth={2.75} strokeDasharray="6 4" name={`Projected ${forecastConfig.metricName}`} dot={false} connectNulls={false} isAnimationActive={false} />
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+      );
+    };
     return renderRealEstatePageShell(
       config.title,
       config.subtitle,
@@ -22911,6 +23039,7 @@ Strategies to Improve the CCC
             yKeys: ['revenue', 'ebitda'],
           })
         )}
+        {moduleKey !== 'residential_real_estate' && renderDivisionMonthlyForecastCard()}
         {moduleKey === 'residential_real_estate' && (
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '14px', marginBottom: '14px' }}>
             <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '16px', gridColumn: '1 / -1' }}>
@@ -22918,20 +23047,39 @@ Strategies to Improve the CCC
                 <div>
                   <h3 style={{ margin: '0 0 6px 0', fontSize: '16px', color: '#1e293b' }}>Homes Sold - 3 Year Monthly Trend + 12 Month Forecast</h3>
                   <p style={{ margin: 0, color: '#64748b', fontSize: '13px' }}>
-                    Server-side SARIMAX-style forecast using homes-sold lags, annual seasonality, 30-year mortgage rates, and expected rate trend.
+                    Server-side SARIMAX-style forecast using homes-sold lags, annual seasonality, 30-year mortgage rates, and quarterly expected rate trends.
                   </p>
                 </div>
-                <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', color: '#475569', fontWeight: 700 }}>
-                  Expected Rate Trend
-                  <input
-                    type="number"
-                    step="0.01"
-                    value={residentialMortgageRateMonthlyChangePct}
-                    onChange={(event) => setResidentialMortgageRateMonthlyChangePct(event.target.value)}
-                    style={{ width: '90px', border: '1px solid #cbd5e1', borderRadius: '8px', padding: '7px 9px', color: '#0f172a', fontSize: '13px' }}
-                  />
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                  <span style={{ fontSize: '13px', color: '#475569', fontWeight: 700 }}>Expected Rate Trend</span>
+                  {residentialMortgageRateQuarterlyChangesPct.map((value, index) => (
+                    <label key={`rate-quarter-${index}`} style={{ display: 'flex', alignItems: 'center', gap: '5px', fontSize: '12px', color: '#475569', fontWeight: 700 }}>
+                      Q{index + 1}
+                      <input
+                        type="number"
+                        step="0.01"
+                        value={value}
+                        onChange={(event) => {
+                          const nextValues = [...residentialMortgageRateQuarterlyChangesPct];
+                          nextValues[index] = event.target.value;
+                          setResidentialMortgageRateQuarterlyChangesPct(nextValues);
+                        }}
+                        style={{ width: '72px', border: '1px solid #cbd5e1', borderRadius: '8px', padding: '7px 9px', color: '#0f172a', fontSize: '13px' }}
+                      />
+                    </label>
+                  ))}
                   <span style={{ color: '#64748b', fontSize: '12px' }}>pct pts / mo</span>
-                </label>
+                  <details style={{ position: 'relative' }}>
+                    <summary style={{ cursor: 'pointer', color: '#2751d0', fontSize: '12px', fontWeight: 800, listStyle: 'none' }}>
+                      What is this?
+                    </summary>
+                    <div style={{ position: 'absolute', right: 0, zIndex: 20, width: '320px', marginTop: '8px', border: '1px solid #dbeafe', borderRadius: '10px', padding: '10px 12px', background: 'white', boxShadow: '0 12px 28px rgba(15, 23, 42, 0.16)', color: '#475569', fontSize: '12px', lineHeight: 1.5 }}>
+                      <div style={{ fontWeight: 800, color: '#0f172a', marginBottom: '6px' }}>Percentage points per month</div>
+                      <div>If today&apos;s 30-year mortgage rate is 6.50%, entering 0.10 means it rises to 6.60%, then 6.70%, then 6.80% over three months.</div>
+                      <div style={{ marginTop: '6px' }}>Entering -0.05 means it falls to 6.45%, then 6.40%, then 6.35%. This is not a percent change of the rate.</div>
+                    </div>
+                  </details>
+                </div>
               </div>
               {residentialHomesSoldForecastLoading && (
                 <p style={{ margin: '0 0 10px', color: '#64748b', fontSize: '12px', fontWeight: 700 }}>

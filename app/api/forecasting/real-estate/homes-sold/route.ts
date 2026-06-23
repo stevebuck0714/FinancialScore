@@ -24,6 +24,7 @@ export async function POST(request: NextRequest) {
       mortgageRateValues: Array.isArray(body?.mortgageRateValues) ? body.mortgageRateValues : [],
       periods: body?.periods,
       monthlyRateChangePct: body?.monthlyRateChangePct,
+      quarterlyRateChangePct: Array.isArray(body?.quarterlyRateChangePct) ? body.quarterlyRateChangePct : undefined,
     });
 
     return NextResponse.json(result);

@@ -3,6 +3,7 @@ export interface HomesSoldForecastInput {
   mortgageRateValues: number[];
   periods?: number;
   monthlyRateChangePct?: number;
+  quarterlyRateChangePct?: unknown[];
 }
 
 export interface HomesSoldForecastPoint {
@@ -18,6 +19,9 @@ export interface HomesSoldForecastResult {
 
 const SEASONAL_PERIOD = 12;
 const RIDGE_PENALTY = 0.75;
+const RATE_ELASTICITY_PER_POINT = -0.08;
+const MIN_RATE_SCENARIO_MULTIPLIER = 0.65;
+const MAX_RATE_SCENARIO_MULTIPLIER = 1.35;
 
 function sanitizeNumericSeries(values: unknown[], maxLength = 120): number[] {
   return values
@@ -58,6 +62,42 @@ function solveLinearSystem(matrix: number[][], vector: number[]): number[] | nul
   return augmented.map((row) => row[n]);
 }
 
+function sanitizeQuarterlyRateChanges(values: unknown[] | undefined, fallbackMonthlyRateChangePct: number): number[] {
+  if (!Array.isArray(values) || values.length === 0) {
+    return [fallbackMonthlyRateChangePct, fallbackMonthlyRateChangePct, fallbackMonthlyRateChangePct, fallbackMonthlyRateChangePct];
+  }
+
+  return Array.from({ length: 4 }, (_, index) => {
+    const parsed = Number(values[index]);
+    return Number.isFinite(parsed) ? parsed : 0;
+  });
+}
+
+function projectedRateForPeriod(latestRate: number, quarterlyRateChangePct: number[], periodIndex: number): number {
+  let projectedRate = latestRate;
+  for (let monthIndex = 0; monthIndex <= periodIndex; monthIndex++) {
+    const quarterIndex = Math.min(Math.floor(monthIndex / 3), quarterlyRateChangePct.length - 1);
+    projectedRate += quarterlyRateChangePct[quarterIndex] || 0;
+  }
+
+  return Math.max(0, projectedRate);
+}
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.min(Math.max(value, min), max);
+}
+
+function applyRateScenarioConstraint(projectedHomesSold: number, latestRate: number, projectedMortgageRate: number): number {
+  const rateDelta = projectedMortgageRate - latestRate;
+  const multiplier = clamp(
+    1 + RATE_ELASTICITY_PER_POINT * rateDelta,
+    MIN_RATE_SCENARIO_MULTIPLIER,
+    MAX_RATE_SCENARIO_MULTIPLIER,
+  );
+
+  return Math.max(0, Math.round(projectedHomesSold * multiplier));
+}
+
 export function forecastRealEstateHomesSold(input: HomesSoldForecastInput): HomesSoldForecastResult {
   const homesSoldValues = sanitizeNumericSeries(input.homesSoldValues);
   const mortgageRateValues = sanitizeNumericSeries(input.mortgageRateValues);
@@ -65,6 +105,7 @@ export function forecastRealEstateHomesSold(input: HomesSoldForecastInput): Home
   const monthlyRateChangePct = Number.isFinite(Number(input.monthlyRateChangePct))
     ? Number(input.monthlyRateChangePct)
     : 0;
+  const quarterlyRateChangePct = sanitizeQuarterlyRateChanges(input.quarterlyRateChangePct, monthlyRateChangePct);
   const latestHomesSold = homesSoldValues[homesSoldValues.length - 1] || 0;
   const latestRate = mortgageRateValues[mortgageRateValues.length - 1] || 0;
 
@@ -73,8 +114,12 @@ export function forecastRealEstateHomesSold(input: HomesSoldForecastInput): Home
       model: 'sarimax-style-ridge',
       forecast: Array.from({ length: periods }, (_, periodIndex) => ({
         periodIndex,
-        projectedHomesSold: Math.max(0, Math.round(latestHomesSold)),
-        projectedMortgageRate: Math.round(Math.max(0, latestRate + monthlyRateChangePct * (periodIndex + 1)) * 100) / 100,
+        projectedHomesSold: applyRateScenarioConstraint(
+          latestHomesSold,
+          latestRate,
+          projectedRateForPeriod(latestRate, quarterlyRateChangePct, periodIndex),
+        ),
+        projectedMortgageRate: Math.round(projectedRateForPeriod(latestRate, quarterlyRateChangePct, periodIndex) * 100) / 100,
       })),
     };
   }
@@ -131,8 +176,12 @@ export function forecastRealEstateHomesSold(input: HomesSoldForecastInput): Home
       model: 'sarimax-style-ridge',
       forecast: Array.from({ length: periods }, (_, periodIndex) => ({
         periodIndex,
-        projectedHomesSold: Math.max(0, Math.round(latestHomesSold)),
-        projectedMortgageRate: Math.round(Math.max(0, latestRate + monthlyRateChangePct * (periodIndex + 1)) * 100) / 100,
+        projectedHomesSold: applyRateScenarioConstraint(
+          latestHomesSold,
+          latestRate,
+          projectedRateForPeriod(latestRate, quarterlyRateChangePct, periodIndex),
+        ),
+        projectedMortgageRate: Math.round(projectedRateForPeriod(latestRate, quarterlyRateChangePct, periodIndex) * 100) / 100,
       })),
     };
   }
@@ -144,12 +193,12 @@ export function forecastRealEstateHomesSold(input: HomesSoldForecastInput): Home
     model: 'sarimax-style-ridge',
     forecast: Array.from({ length: periods }, (_, periodIndex) => {
       const forecastIndex = homesSoldValues.length + periodIndex;
-      const projectedMortgageRate = Math.max(0, latestRate + monthlyRateChangePct * (periodIndex + 1));
+      const projectedMortgageRate = projectedRateForPeriod(latestRate, quarterlyRateChangePct, periodIndex);
       forecastRates[forecastIndex] = projectedMortgageRate;
 
       const normalizedFeatureRow = normalize(featureForIndex(forecastIndex, forecastHomesSold, forecastRates));
       const forecast = normalizedFeatureRow.reduce((sum, value, index) => sum + value * coefficients[index], 0);
-      const projectedHomesSold = Math.max(0, Math.round(forecast));
+      const projectedHomesSold = applyRateScenarioConstraint(forecast, latestRate, projectedMortgageRate);
       forecastHomesSold[forecastIndex] = projectedHomesSold;
 
       return {
