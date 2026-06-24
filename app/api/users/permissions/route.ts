@@ -8,6 +8,10 @@ export async function PATCH(req: NextRequest) {
     
     const body = await req.json();
     const { userId, companyId, companyRole, sidebarAccess } = body;
+    const normalizedCompanyRole = companyRole === 'admin' ? 'admin' : 'user';
+    const normalizedSidebarAccess = Array.isArray(sidebarAccess)
+      ? sidebarAccess.filter((section) => typeof section === 'string')
+      : [];
 
     if (!userId) {
       return NextResponse.json(
@@ -67,14 +71,14 @@ export async function PATCH(req: NextRequest) {
         },
       },
       update: {
-        companyRole: companyRole || 'user',
-        sidebarAccess: sidebarAccess || [],
+        companyRole: normalizedCompanyRole,
+        sidebarAccess: normalizedSidebarAccess,
       },
       create: {
         userId,
         companyId: targetCompanyId,
-        companyRole: companyRole || 'user',
-        sidebarAccess: sidebarAccess || [],
+        companyRole: normalizedCompanyRole,
+        sidebarAccess: normalizedSidebarAccess,
       },
     });
 
@@ -82,13 +86,20 @@ export async function PATCH(req: NextRequest) {
     const updatedUser = await prisma.user.update({
       where: { id: userId },
       data: {
-        companyRole: companyRole || 'user',
-        sidebarAccess: sidebarAccess || [],
+        companyRole: normalizedCompanyRole,
+        sidebarAccess: normalizedSidebarAccess,
       },
       select: {
         id: true,
         email: true,
         name: true,
+        title: true,
+        phone: true,
+        role: true,
+        userType: true,
+        consultantId: true,
+        companyId: true,
+        createdAt: true,
         companyRole: true,
         sidebarAccess: true,
       },
@@ -96,7 +107,12 @@ export async function PATCH(req: NextRequest) {
 
     return NextResponse.json({
       success: true,
-      user: updatedUser,
+      user: {
+        ...updatedUser,
+        companyId: targetCompanyId,
+        companyRole: normalizedCompanyRole,
+        sidebarAccess: normalizedSidebarAccess,
+      },
     });
   } catch (error) {
     console.error('Error updating user permissions:', error);

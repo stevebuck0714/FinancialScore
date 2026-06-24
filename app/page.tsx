@@ -1404,7 +1404,9 @@ function FinancialScorePage() {
     'operational-dashboard',
     'company-dashboard',
     'financial-reports',
+    'standard-reports',
     'financial-statements',
+    'valuation-reports',
     'valuation',
     'expert-analysis',
     'mda',
@@ -1436,7 +1438,8 @@ function FinancialScorePage() {
     if (view === 'cash-flow') return 'financial-reports';
     if (view === 'working-capital') return 'financial-reports';
     if (view === 'financial-statements') return 'financial-reports';
-    if (view === 'valuation-reports') return 'valuation';
+    if (view === 'custom-print') return 'standard-reports';
+    if (view === 'valuation-reports') return 'valuation-reports';
     if (view === 'valuation') return 'valuation';
     if (view.startsWith('pa-')) return 'expert-analysis';
     if (view === 'dataroom') return 'dataroom';
@@ -1451,6 +1454,8 @@ function FinancialScorePage() {
     if (allowed.includes(section)) return true;
     // Backward compatibility for existing saved permissions.
     if (section === 'expert-analysis' && allowed.includes('performance-analytics')) return true;
+    if (section === 'standard-reports' && allowed.includes('financial-reports')) return true;
+    if (section === 'valuation-reports' && allowed.includes('valuation')) return true;
     return false;
   };
 
@@ -8448,6 +8453,32 @@ function FinancialScorePage() {
     });
   };
 
+  const handleUserPermissionsUpdated = (updatedUser: any) => {
+    if (!updatedUser?.id) return;
+    const normalizedUser = {
+      ...updatedUser,
+      role: String(updatedUser.role || 'user').toLowerCase(),
+      userType: updatedUser.userType
+        ? String(updatedUser.userType).toLowerCase()
+        : updatedUser.userType,
+    };
+
+    setUsers((prev) => {
+      const prevUsers = Array.isArray(prev) ? prev : [];
+      let replaced = false;
+      const nextUsers = prevUsers.map((user) => {
+        const sameMembership =
+          user.id === normalizedUser.id &&
+          (!normalizedUser.companyId || user.companyId === normalizedUser.companyId);
+        if (!sameMembership) return user;
+        replaced = true;
+        return { ...user, ...normalizedUser };
+      });
+
+      return replaced ? nextUsers : [...nextUsers, normalizedUser];
+    });
+  };
+
   const applyActiveCompany = async (companyId: string) => {
     await authApi.selectCompany(companyId);
     setSelectedCompanyId(companyId);
@@ -13185,7 +13216,8 @@ function FinancialScorePage() {
                 </h3>
               )}
 
-              {(hasCompanySectionAccess('financial-reports') || hasCompanySectionAccess('valuation')) && (
+              {(hasCompanySectionAccess('standard-reports') ||
+                hasCompanySectionAccess('valuation-reports')) && (
                 <div style={{ marginTop: '16px' }}>
                   <h3
                     onClick={() => setIsReportsExpanded((prev) => !prev)}
@@ -13211,35 +13243,37 @@ function FinancialScorePage() {
                   </h3>
                   {isReportsExpanded && (
                     <div style={{ paddingLeft: '36px' }}>
-                      <div
-                        onClick={() => handleNavigation('custom-print')}
-                        style={{
-                          fontSize: '13px',
-                          color: currentView === 'custom-print' ? '#1F70C1' : '#475569',
-                          padding: '5px 12px',
-                          cursor: 'pointer',
-                          borderRadius: '6px',
-                          marginBottom: '4px',
-                          background: currentView === 'custom-print' ? '#e0f2fe' : 'transparent',
-                          fontWeight: currentView === 'custom-print' ? '600' : '400',
-                          transition: 'all 0.2s'
-                        }}
-                        onMouseEnter={(e) => {
-                          if (currentView !== 'custom-print') {
-                            e.currentTarget.style.background = '#f8fafc';
-                            e.currentTarget.style.color = '#1F70C1';
-                          }
-                        }}
-                        onMouseLeave={(e) => {
-                          if (currentView !== 'custom-print') {
-                            e.currentTarget.style.background = 'transparent';
-                            e.currentTarget.style.color = '#475569';
-                          }
-                        }}
-                      >
-                        {currentView === 'custom-print' && '› '}STANDARD REPORTS
-                      </div>
-                      {hasCompanySectionAccess('valuation') && isValuationReportsEnabledByAdmin && (
+                      {hasCompanySectionAccess('standard-reports') && (
+                        <div
+                          onClick={() => handleNavigation('custom-print')}
+                          style={{
+                            fontSize: '13px',
+                            color: currentView === 'custom-print' ? '#1F70C1' : '#475569',
+                            padding: '5px 12px',
+                            cursor: 'pointer',
+                            borderRadius: '6px',
+                            marginBottom: '4px',
+                            background: currentView === 'custom-print' ? '#e0f2fe' : 'transparent',
+                            fontWeight: currentView === 'custom-print' ? '600' : '400',
+                            transition: 'all 0.2s'
+                          }}
+                          onMouseEnter={(e) => {
+                            if (currentView !== 'custom-print') {
+                              e.currentTarget.style.background = '#f8fafc';
+                              e.currentTarget.style.color = '#1F70C1';
+                            }
+                          }}
+                          onMouseLeave={(e) => {
+                            if (currentView !== 'custom-print') {
+                              e.currentTarget.style.background = 'transparent';
+                              e.currentTarget.style.color = '#475569';
+                            }
+                          }}
+                        >
+                          {currentView === 'custom-print' && '› '}STANDARD REPORTS
+                        </div>
+                      )}
+                      {hasCompanySectionAccess('valuation-reports') && isValuationReportsEnabledByAdmin && (
                         <div
                           onClick={() => handleNavigation('valuation-reports')}
                           style={{
@@ -13936,6 +13970,7 @@ function FinancialScorePage() {
               existingAssessmentUserEmail={existingAssessmentUserEmail}
               setExistingAssessmentUserEmail={setExistingAssessmentUserEmail}
               grantExistingUserAccess={grantExistingUserAccess}
+              onUserPermissionsUpdated={handleUserPermissionsUpdated}
               setSelectedCompanyId={setSelectedCompanyId}
               company={company}
               companyProfiles={companyProfiles}

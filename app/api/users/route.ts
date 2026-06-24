@@ -14,12 +14,15 @@ const DEFAULT_ALLOWED_SECTIONS = [
   'operational-dashboard',
   'company-dashboard',
   'financial-reports',
+  'standard-reports',
   'financial-statements',
+  'valuation-reports',
   'valuation',
   'expert-analysis',
   'mda',
   'management-assessment',
   'dataroom',
+  'digital-presence',
   'custom-reports',
 ];
 

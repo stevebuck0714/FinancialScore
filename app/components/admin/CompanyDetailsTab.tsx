@@ -15,6 +15,8 @@ interface User {
   consultantId?: string | null;
   role?: string;
   userType?: string;
+  companyRole?: "user" | "admin" | null;
+  sidebarAccess?: string[] | null;
 }
 
 interface Company {
@@ -35,6 +37,55 @@ interface AssessmentRecord {
   };
   companyId: string;
 }
+
+const ACCESSIBLE_SECTIONS: { id: string; label: string }[] = [
+  { id: "ask-corelytics", label: "Ask Corelytics" },
+  { id: "business-pulse", label: "Daily Alerts" },
+  { id: "operational-dashboard", label: "Operational Dashboard" },
+  { id: "company-dashboard", label: "Company Dashboard" },
+  { id: "financial-reports", label: "Financial Reporting" },
+  { id: "standard-reports", label: "Standard Reports" },
+  { id: "valuation", label: "Valuation" },
+  { id: "valuation-reports", label: "Valuation Report (CIM)" },
+  { id: "expert-analysis", label: "Expert Analysis" },
+  { id: "management-assessment", label: "Team Assessment" },
+  { id: "dataroom", label: "Data Room" },
+  { id: "digital-presence", label: "Digital Presence" },
+  { id: "custom-reports", label: "Custom Reports" },
+];
+
+const DEFAULT_ALLOWED_SECTIONS = ACCESSIBLE_SECTIONS.map((s) => s.id);
+
+const DATAROOM_CAPABILITIES: Array<{
+  id: "view" | "download" | "upload" | "share" | "manage";
+  label: string;
+}> = [
+  { id: "view", label: "View" },
+  { id: "download", label: "Download" },
+  { id: "upload", label: "Upload" },
+  { id: "share", label: "Share" },
+  { id: "manage", label: "Manage" },
+];
+
+const DEFAULT_DATAROOM_CAPS = {
+  view: true,
+  download: true,
+  upload: true,
+  share: true,
+  manage: true,
+};
+
+type DataRoomCaps = typeof DEFAULT_DATAROOM_CAPS;
+type DataRoomPermissionRule = {
+  default: DataRoomCaps;
+  folders: Record<string, DataRoomCaps>;
+  documents: Record<string, DataRoomCaps>;
+};
+type DataRoomFolderRef = {
+  id: string;
+  name: string;
+  documents: Array<{ id: string; name: string }>;
+};
 
 interface CompanyDetailsTabProps {
   currentUser: {
@@ -91,6 +142,7 @@ interface CompanyDetailsTabProps {
     companyId: string,
     userType: "company" | "assessment",
   ) => void;
+  onUserPermissionsUpdated?: (user: User) => void;
   setSelectedCompanyId: (id: string) => void;
 }
 
@@ -143,52 +195,9 @@ export default function CompanyDetailsTab({
   existingAssessmentUserEmail,
   setExistingAssessmentUserEmail,
   grantExistingUserAccess,
+  onUserPermissionsUpdated,
   setSelectedCompanyId,
 }: CompanyDetailsTabProps) {
-  const ACCESSIBLE_SECTIONS: { id: string; label: string }[] = [
-    { id: "ask-corelytics", label: "Ask Corelytics" },
-    { id: "business-pulse", label: "Daily Alerts" },
-    { id: "operational-dashboard", label: "Operational Dashboard" },
-    { id: "company-dashboard", label: "Company Dashboard" },
-    { id: "financial-reports", label: "Financial Reporting" },
-    { id: "valuation", label: "Valuation" },
-    { id: "expert-analysis", label: "Expert Analysis" },
-    { id: "management-assessment", label: "Team Assessment" },
-    { id: "dataroom", label: "Data Room" },
-    { id: "custom-reports", label: "Custom Reports" },
-  ];
-  const DATAROOM_CAPABILITIES: Array<{
-    id: "view" | "download" | "upload" | "share" | "manage";
-    label: string;
-  }> = [
-    { id: "view", label: "View" },
-    { id: "download", label: "Download" },
-    { id: "upload", label: "Upload" },
-    { id: "share", label: "Share" },
-    { id: "manage", label: "Manage" },
-  ];
-  const DEFAULT_DATAROOM_CAPS = {
-    view: true,
-    download: true,
-    upload: true,
-    share: true,
-    manage: true,
-  };
-  type DataRoomCaps = typeof DEFAULT_DATAROOM_CAPS;
-  type DataRoomPermissionRule = {
-    default: DataRoomCaps;
-    folders: Record<string, DataRoomCaps>;
-    documents: Record<string, DataRoomCaps>;
-  };
-  type DataRoomFolderRef = {
-    id: string;
-    name: string;
-    documents: Array<{ id: string; name: string }>;
-  };
-
-  // Stored in DB as allowed/visible sections for a company user.
-  const DEFAULT_ALLOWED_SECTIONS = ACCESSIBLE_SECTIONS.map((s) => s.id);
-
   // State for user permissions
   const [userPermissions, setUserPermissions] = React.useState<{
     [userId: string]: {
@@ -409,10 +418,14 @@ export default function CompanyDetailsTab({
         }),
       });
 
+      const data = await response.json();
       if (!response.ok) {
-        throw new Error("Failed to save permissions");
+        throw new Error(data?.error || "Failed to save permissions");
       }
 
+      if (data?.user) {
+        onUserPermissionsUpdated?.(data.user);
+      }
       alert("User permissions updated successfully!");
     } catch (error) {
       alert(
@@ -750,7 +763,7 @@ export default function CompanyDetailsTab({
                         sidebarAccess: DEFAULT_ALLOWED_SECTIONS,
                       };
                       const isAdmin = userPerm.role === "admin";
-                      const allowedSections = userPerm.sidebarAccess?.length
+                      const allowedSections = Array.isArray(userPerm.sidebarAccess)
                         ? userPerm.sidebarAccess
                         : DEFAULT_ALLOWED_SECTIONS;
                       const isExpanded = Boolean(expandedCompanyUsers[u.id]);

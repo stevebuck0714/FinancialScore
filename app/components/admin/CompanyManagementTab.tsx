@@ -64,6 +64,7 @@ interface CompanyManagementTabProps {
     companyId: string,
     userType: "company" | "assessment",
   ) => void;
+  onUserPermissionsUpdated?: (user: any) => void;
   setSelectedCompanyId: (id: string) => void;
   // Profile tab props
   company: any;
@@ -294,6 +295,7 @@ export default function CompanyManagementTab(props: CompanyManagementTabProps) {
           existingAssessmentUserEmail={props.existingAssessmentUserEmail}
           setExistingAssessmentUserEmail={props.setExistingAssessmentUserEmail}
           grantExistingUserAccess={props.grantExistingUserAccess}
+          onUserPermissionsUpdated={props.onUserPermissionsUpdated}
           setSelectedCompanyId={props.setSelectedCompanyId}
         />
       )}
