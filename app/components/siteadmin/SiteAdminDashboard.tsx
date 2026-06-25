@@ -2527,6 +2527,10 @@ export default function SiteAdminDashboard(props: any) {
   >({});
   const [operationalSourceToAddByCompany, setOperationalSourceToAddByCompany] = React.useState<Record<string, string>>({});
   const [savingOperationalSourceCompanyId, setSavingOperationalSourceCompanyId] = React.useState<string | null>(null);
+  const [operationalSourceDataDomainsByCompany, setOperationalSourceDataDomainsByCompany] = React.useState<
+    Record<string, Array<{ dataDomain: string; sourceObject: string; enabled: boolean }>>
+  >({});
+  const [savingOperationalSourceDataDomainsKey, setSavingOperationalSourceDataDomainsKey] = React.useState<string | null>(null);
   const [dynamicsSettingsByCompany, setDynamicsSettingsByCompany] = React.useState<
     Record<
       string,
@@ -2872,6 +2876,29 @@ export default function SiteAdminDashboard(props: any) {
     availableOperationalSourcesByCompany[companyId] || [];
   const getSelectedOperationalSources = (companyId: string) =>
     selectedOperationalSourcesByCompany[companyId] || [];
+  const getOperationalSourceDomainsKey = (companyId: string, sourceCode: string) =>
+    `${companyId}::${String(sourceCode || '').trim().toUpperCase()}`;
+  const getOperationalSourceDataDomains = (companyId: string, sourceCode: string) => {
+    const normalizedSourceCode = String(sourceCode || '').trim().toUpperCase();
+    const key = getOperationalSourceDomainsKey(companyId, normalizedSourceCode);
+    const detail = getConstructionOperationalSourceDetail(normalizedSourceCode);
+    return operationalSourceDataDomainsByCompany[key] || detail?.domains || [{ dataDomain: '', sourceObject: '', enabled: true }];
+  };
+  const setOperationalSourceDataDomains = (
+    companyId: string,
+    sourceCode: string,
+    dataDomains: Array<{ dataDomain: string; sourceObject: string; enabled: boolean }>
+  ) => {
+    const key = getOperationalSourceDomainsKey(companyId, sourceCode);
+    setOperationalSourceDataDomainsByCompany((prev) => ({
+      ...prev,
+      [key]: dataDomains.map((row) => ({
+        dataDomain: row.dataDomain || '',
+        sourceObject: row.sourceObject || '',
+        enabled: row.enabled !== false,
+      })),
+    }));
+  };
   const getDynamicsSettings = (companyId: string) =>
     dynamicsSettingsByCompany[companyId] || defaultDynamicsSettings;
   const getDynamicsPrograms = (companyId: string) =>
@@ -3103,6 +3130,26 @@ export default function SiteAdminDashboard(props: any) {
   const addBambooHrDataDomain = (companyId: string) => {
     const current = getBambooHrDataDomains(companyId);
     setBambooHrDataDomains(companyId, [...current, { dataDomain: '', bambooEntity: '', enabled: true }]);
+  };
+  const updateOperationalSourceDataDomain = (
+    companyId: string,
+    sourceCode: string,
+    index: number,
+    field: 'dataDomain' | 'sourceObject' | 'enabled',
+    value: string | boolean
+  ) => {
+    const current = getOperationalSourceDataDomains(companyId, sourceCode);
+    const next = current.map((row, i) => (i === index ? { ...row, [field]: value } : row));
+    setOperationalSourceDataDomains(companyId, sourceCode, next);
+  };
+  const addOperationalSourceDataDomain = (companyId: string, sourceCode: string) => {
+    const current = getOperationalSourceDataDomains(companyId, sourceCode);
+    setOperationalSourceDataDomains(companyId, sourceCode, [...current, { dataDomain: '', sourceObject: '', enabled: true }]);
+  };
+  const deleteOperationalSourceDataDomain = (companyId: string, sourceCode: string, index: number) => {
+    const current = getOperationalSourceDataDomains(companyId, sourceCode);
+    const next = current.filter((_, i) => i !== index);
+    setOperationalSourceDataDomains(companyId, sourceCode, next.length > 0 ? next : [{ dataDomain: '', sourceObject: '', enabled: true }]);
   };
   const updatePlatosClosetDataDomain = (
     companyId: string,
@@ -3339,6 +3386,20 @@ export default function SiteAdminDashboard(props: any) {
       console.error('Failed to load MONTHLY STORE VISIT REPORT settings:', error);
     }
   };
+  const loadOperationalSourceDataDomains = async (companyId: string, sourceCode: string) => {
+    const normalizedSourceCode = String(sourceCode || '').trim().toUpperCase();
+    if (!normalizedSourceCode) return;
+    try {
+      const response = await fetch(`/api/operational-system-integrations/source-domains?companyId=${companyId}&sourceCode=${normalizedSourceCode}`);
+      const data = await response.json();
+      if (!response.ok || !data?.ok) return;
+      if (Array.isArray(data?.dataDomains)) {
+        setOperationalSourceDataDomains(companyId, normalizedSourceCode, data.dataDomains);
+      }
+    } catch (error) {
+      console.error('Failed to load operational source data domains:', error);
+    }
+  };
   const loadOperationalSources = async (companyId: string) => {
     try {
       const response = await fetch(`/api/operational-system-integrations/sources?companyId=${companyId}`);
@@ -3362,6 +3423,9 @@ export default function SiteAdminDashboard(props: any) {
       }
       if (selected.some((source: any) => String(source?.sourceCode || '') === 'PLATOS_CLOSET_STORE_VISIT')) {
         loadPlatosClosetSettings(companyId);
+      }
+      if (selected.some((source: any) => String(source?.sourceCode || '') === 'ICE_ENCOMPASS')) {
+        loadOperationalSourceDataDomains(companyId, 'ICE_ENCOMPASS');
       }
     } catch (error) {
       console.error('Failed to load operational sources:', error);
@@ -3828,6 +3892,35 @@ export default function SiteAdminDashboard(props: any) {
       setSavingBambooHrCompanyId((prev) => (prev === companyId ? null : prev));
     }
   };
+  const saveOperationalSourceDataDomains = async (companyId: string, sourceCode: string) => {
+    const normalizedSourceCode = String(sourceCode || '').trim().toUpperCase();
+    const savingKey = getOperationalSourceDomainsKey(companyId, normalizedSourceCode);
+    try {
+      setSavingOperationalSourceDataDomainsKey(savingKey);
+      const response = await fetch('/api/operational-system-integrations/source-domains', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          companyId,
+          sourceCode: normalizedSourceCode,
+          dataDomains: getOperationalSourceDataDomains(companyId, normalizedSourceCode),
+        }),
+      });
+      const data = await response.json();
+      if (!response.ok || !data?.ok) {
+        throw new Error(data?.error || 'Failed to save operational source data domains');
+      }
+      if (Array.isArray(data?.dataDomains)) {
+        setOperationalSourceDataDomains(companyId, normalizedSourceCode, data.dataDomains);
+      }
+      await loadOperationalSources(companyId);
+      alert('Operational source data domains saved for this company.');
+    } catch (error: any) {
+      alert(`Failed to save operational source data domains: ${error?.message || 'Unknown error'}`);
+    } finally {
+      setSavingOperationalSourceDataDomainsKey((prev) => (prev === savingKey ? null : prev));
+    }
+  };
   const validateBambooHrConnection = async (companyId: string) => {
     try {
       setValidatingBambooHrCompanyId(companyId);
@@ -4210,17 +4303,30 @@ export default function SiteAdminDashboard(props: any) {
   const renderConstructionOperationalDataDomainsCard = (companyId: string, sourceCode: string) => {
     const detail = getConstructionOperationalSourceDetail(sourceCode);
     if (!detail) return null;
+    const dataDomains = getOperationalSourceDataDomains(companyId, sourceCode);
+    const savingKey = getOperationalSourceDomainsKey(companyId, sourceCode);
+    const isSaving = savingOperationalSourceDataDomainsKey === savingKey;
 
     return (
       <div style={{ padding: '12px', background: '#f8fafc', borderRadius: '6px', border: '1px solid #e2e8f0', gridColumn: '2 / 3', order: sourceCode === 'CREWTRACKS' ? 9 : sourceCode === 'ICE_ENCOMPASS' ? 13 : 11 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
           <h4 style={{ fontSize: '14px', fontWeight: '600', color: '#1e293b', margin: 0 }}>{detail.label} Data Domains</h4>
-          <button
-            disabled
-            style={{ padding: '6px 10px', background: '#cbd5e1', color: '#334155', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: 'not-allowed' }}
-          >
-            Save
-          </button>
+          <div style={{ display: 'flex', gap: '6px' }}>
+            <button
+              onClick={() => addOperationalSourceDataDomain(companyId, sourceCode)}
+              disabled={isSaving}
+              style={{ padding: '6px 10px', background: '#0ea5e9', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: isSaving ? 'not-allowed' : 'pointer' }}
+            >
+              + Add
+            </button>
+            <button
+              onClick={() => saveOperationalSourceDataDomains(companyId, sourceCode)}
+              disabled={isSaving}
+              style={{ padding: '6px 10px', background: '#334155', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: isSaving ? 'not-allowed' : 'pointer' }}
+            >
+              {isSaving ? 'Saving...' : 'Save'}
+            </button>
+          </div>
         </div>
         <div style={{ fontSize: '12px', color: '#64748b', marginBottom: '8px' }}>
           Data domains expected from the {detail.label} connector for operational reporting.
@@ -4232,15 +4338,45 @@ export default function SiteAdminDashboard(props: any) {
                 <th style={{ textAlign: 'left', padding: '6px', color: '#475569' }}>Data Domain</th>
                 <th style={{ textAlign: 'left', padding: '6px', color: '#475569' }}>Source Object / Endpoint</th>
                 <th style={{ textAlign: 'left', padding: '6px', color: '#475569', width: '80px' }}>Enabled</th>
+                <th style={{ textAlign: 'left', padding: '6px', color: '#475569', width: '70px' }}>Action</th>
               </tr>
             </thead>
             <tbody>
-              {detail.domains.map((row, index) => (
+              {dataDomains.map((row, index) => (
                 <tr key={`${companyId}-${sourceCode}-domain-${index}`} style={{ borderBottom: '1px solid #e2e8f0' }}>
-                  <td style={{ padding: '6px' }}>{row.dataDomain}</td>
-                  <td style={{ padding: '6px' }}>{row.sourceObject}</td>
+                  <td style={{ padding: '6px' }}>
+                    <input
+                      type="text"
+                      value={row.dataDomain}
+                      onChange={(e) => updateOperationalSourceDataDomain(companyId, sourceCode, index, 'dataDomain', e.target.value)}
+                      placeholder="Data Domain"
+                      style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '4px', padding: '6px', fontSize: '12px', background: 'white' }}
+                    />
+                  </td>
+                  <td style={{ padding: '6px' }}>
+                    <input
+                      type="text"
+                      value={row.sourceObject}
+                      onChange={(e) => updateOperationalSourceDataDomain(companyId, sourceCode, index, 'sourceObject', e.target.value)}
+                      placeholder="Source Object / Endpoint"
+                      style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '4px', padding: '6px', fontSize: '12px', background: 'white' }}
+                    />
+                  </td>
                   <td style={{ padding: '6px', textAlign: 'center' }}>
-                    <input type="checkbox" checked={row.enabled} disabled />
+                    <input
+                      type="checkbox"
+                      checked={Boolean(row.enabled)}
+                      onChange={(e) => updateOperationalSourceDataDomain(companyId, sourceCode, index, 'enabled', e.target.checked)}
+                    />
+                  </td>
+                  <td style={{ padding: '6px' }}>
+                    <button
+                      onClick={() => deleteOperationalSourceDataDomain(companyId, sourceCode, index)}
+                      disabled={isSaving}
+                      style={{ padding: '6px 8px', background: '#ef4444', color: 'white', border: 'none', borderRadius: '4px', fontSize: '11px', fontWeight: '600', cursor: isSaving ? 'not-allowed' : 'pointer' }}
+                    >
+                      Delete
+                    </button>
                   </td>
                 </tr>
               ))}
@@ -11114,6 +11250,8 @@ export default function SiteAdminDashboard(props: any) {
                                   {isOperationalSourceSelected(businessCompany.id, 'CREWTRACKS') && renderConstructionOperationalDataDomainsCard(businessCompany.id, 'CREWTRACKS')}
                                   {isOperationalSourceSelected(businessCompany.id, 'HILTI') && renderConstructionOperationalIntegrationCard(businessCompany.id, businessCompany.name, 'HILTI')}
                                   {isOperationalSourceSelected(businessCompany.id, 'HILTI') && renderConstructionOperationalDataDomainsCard(businessCompany.id, 'HILTI')}
+                                  {isOperationalSourceSelected(businessCompany.id, 'ICE_ENCOMPASS') && renderConstructionOperationalIntegrationCard(businessCompany.id, businessCompany.name, 'ICE_ENCOMPASS')}
+                                  {isOperationalSourceSelected(businessCompany.id, 'ICE_ENCOMPASS') && renderConstructionOperationalDataDomainsCard(businessCompany.id, 'ICE_ENCOMPASS')}
                                 </div>
 
                                 <div
