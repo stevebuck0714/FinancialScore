@@ -15,6 +15,7 @@ type EditableDataDomain = {
 
 const SOURCE_PROVIDERS: Record<string, string> = {
   ICE_ENCOMPASS: 'SPREADSHEET_UPLOAD',
+  LANTRAX_PROFIT_POWER: 'SPREADSHEET_UPLOAD',
 };
 
 const DEFAULT_DATA_DOMAINS: Record<string, EditableDataDomain[]> = {
@@ -27,6 +28,25 @@ const DEFAULT_DATA_DOMAINS: Record<string, EditableDataDomain[]> = {
     { dataDomain: 'Compliance / Disclosures', sourceObject: 'LE / CD timing and TRID disclosure status', enabled: true },
     { dataDomain: 'Organizations & Users', sourceObject: 'Branches, users, roles, loan teams', enabled: true },
     { dataDomain: 'Webhooks', sourceObject: 'Loan, document, condition, task, org/user events', enabled: true },
+  ],
+  LANTRAX_PROFIT_POWER: [
+    { dataDomain: 'Associates / Agent Roster', sourceObject: 'Agents, brokers, teams, status, production roles', enabled: true },
+    { dataDomain: 'Branch Offices', sourceObject: 'Office hierarchy, regions, office assignments', enabled: true },
+    { dataDomain: 'Listings / Inventory', sourceObject: 'Active, new, expired, withdrawn, and listing price records', enabled: true },
+    { dataDomain: 'Listings Under Contract', sourceObject: 'Under-contract listings, contract dates, expected close dates', enabled: true },
+    { dataDomain: 'Sales / Closings', sourceObject: 'Closed transactions, sides, closing dates, sales price, office, agent', enabled: true },
+    { dataDomain: 'Clients', sourceObject: 'Buyer and seller records linked to transactions', enabled: true },
+    { dataDomain: 'Commissions / GCI', sourceObject: 'Gross commission income, commission rate, listing/buyer side revenue', enabled: true },
+    { dataDomain: 'Splits / Company Dollar', sourceObject: 'Commission splits, agent net, company dollar, franchise/referral/marketing fees', enabled: true },
+    { dataDomain: 'Allocations', sourceObject: 'Commission allocations among agents and teams', enabled: true },
+    { dataDomain: 'Closing Payments', sourceObject: 'Closing disbursements and payment history', enabled: true },
+    { dataDomain: 'Escrow', sourceObject: 'Escrow balances and escrow transactions', enabled: true },
+    { dataDomain: 'AR Import', sourceObject: 'Agent receivables and back-office charges', enabled: true },
+    { dataDomain: 'Agent Recruiting / Retention', sourceObject: 'Associate start/end/status fields and office movement history', enabled: true },
+    { dataDomain: 'Marketing / Lead Attribution', sourceObject: 'Marketing activity and campaign attribution where available', enabled: false },
+    { dataDomain: 'Lookup Tables', sourceObject: 'Reference/master data for property type, status, source, office, role', enabled: true },
+    { dataDomain: 'SSO', sourceObject: 'OAuth / SSO integration metadata', enabled: false },
+    { dataDomain: 'Paging', sourceObject: 'Pagination controls for large API result sets', enabled: true },
   ],
 };
 

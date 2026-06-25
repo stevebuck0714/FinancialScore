@@ -23,6 +23,7 @@ const SOURCE_DEFINITIONS: SourceDefinition[] = [
   { provider: 'SPREADSHEET_UPLOAD', sourceCode: 'CREWTRACKS', label: 'Crewtracks', sectorCategories: ['23'] },
   { provider: 'SPREADSHEET_UPLOAD', sourceCode: 'HILTI', label: 'Hilti', sectorCategories: ['23'] },
   { provider: 'SPREADSHEET_UPLOAD', sourceCode: 'ICE_ENCOMPASS', label: 'ICE Encompass', sectorCategories: ['53'] },
+  { provider: 'SPREADSHEET_UPLOAD', sourceCode: 'LANTRAX_PROFIT_POWER', label: 'Profit Power Enterprise', sectorCategories: ['53'] },
   { provider: 'BAMBOOHR', sourceCode: 'BAMBOOHR_STANDARD', label: 'BambooHR', sectorCategories: ['56'] },
   { provider: 'SPREADSHEET_UPLOAD', sourceCode: COGENT_RATE_CARD_SOURCE_CODE, label: COGENT_RATE_CARD_LABEL, sectorCategories: ['56'] },
   { provider: 'SPREADSHEET_UPLOAD', sourceCode: 'PLATOS_CLOSET_STORE_VISIT', label: 'MONTHLY STORE VISIT REPORT', sectorCategories: ['45'] },

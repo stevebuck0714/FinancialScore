@@ -3427,6 +3427,9 @@ export default function SiteAdminDashboard(props: any) {
       if (selected.some((source: any) => String(source?.sourceCode || '') === 'ICE_ENCOMPASS')) {
         loadOperationalSourceDataDomains(companyId, 'ICE_ENCOMPASS');
       }
+      if (selected.some((source: any) => String(source?.sourceCode || '') === 'LANTRAX_PROFIT_POWER')) {
+        loadOperationalSourceDataDomains(companyId, 'LANTRAX_PROFIT_POWER');
+      }
     } catch (error) {
       console.error('Failed to load operational sources:', error);
     }
@@ -4223,10 +4226,42 @@ export default function SiteAdminDashboard(props: any) {
         { dataDomain: 'Webhooks', sourceObject: 'Loan, document, condition, task, org/user events', enabled: true },
       ],
     },
+    LANTRAX_PROFIT_POWER: {
+      label: 'Profit Power Enterprise',
+      description: 'Enterprise brokerage system data for listings, closings, commissions, agents, offices, receivables, escrow, and residential real estate operational analytics.',
+      credentialFields: ['Enterprise API Base URL', 'Enterprise Client ID', 'Enterprise Client Secret', 'OAuth Token URL', 'OAuth Redirect URI', 'Webhook Secret'],
+      domains: [
+        { dataDomain: 'Associates / Agent Roster', sourceObject: 'Agents, brokers, teams, status, production roles', enabled: true },
+        { dataDomain: 'Branch Offices', sourceObject: 'Office hierarchy, regions, office assignments', enabled: true },
+        { dataDomain: 'Listings / Inventory', sourceObject: 'Active, new, expired, withdrawn, and listing price records', enabled: true },
+        { dataDomain: 'Listings Under Contract', sourceObject: 'Under-contract listings, contract dates, expected close dates', enabled: true },
+        { dataDomain: 'Sales / Closings', sourceObject: 'Closed transactions, sides, closing dates, sales price, office, agent', enabled: true },
+        { dataDomain: 'Clients', sourceObject: 'Buyer and seller records linked to transactions', enabled: true },
+        { dataDomain: 'Commissions / GCI', sourceObject: 'Gross commission income, commission rate, listing/buyer side revenue', enabled: true },
+        { dataDomain: 'Splits / Company Dollar', sourceObject: 'Commission splits, agent net, company dollar, franchise/referral/marketing fees', enabled: true },
+        { dataDomain: 'Allocations', sourceObject: 'Commission allocations among agents and teams', enabled: true },
+        { dataDomain: 'Closing Payments', sourceObject: 'Closing disbursements and payment history', enabled: true },
+        { dataDomain: 'Escrow', sourceObject: 'Escrow balances and escrow transactions', enabled: true },
+        { dataDomain: 'AR Import', sourceObject: 'Agent receivables and back-office charges', enabled: true },
+        { dataDomain: 'Agent Recruiting / Retention', sourceObject: 'Associate start/end/status fields and office movement history', enabled: true },
+        { dataDomain: 'Marketing / Lead Attribution', sourceObject: 'Marketing activity and campaign attribution where available', enabled: false },
+        { dataDomain: 'Lookup Tables', sourceObject: 'Reference/master data for property type, status, source, office, role', enabled: true },
+        { dataDomain: 'SSO', sourceObject: 'OAuth / SSO integration metadata', enabled: false },
+        { dataDomain: 'Paging', sourceObject: 'Pagination controls for large API result sets', enabled: true },
+      ],
+    },
   };
 
   const getConstructionOperationalSourceDetail = (sourceCode: string) =>
     CONSTRUCTION_OPERATIONAL_SOURCE_DETAILS[String(sourceCode || '').trim().toUpperCase()] || null;
+  const getOperationalSourceCardOrder = (sourceCode: string, offset = 0) => {
+    const normalizedSourceCode = String(sourceCode || '').trim().toUpperCase();
+    if (normalizedSourceCode === 'CREWTRACKS') return 8 + offset;
+    if (normalizedSourceCode === 'HILTI') return 10 + offset;
+    if (normalizedSourceCode === 'ICE_ENCOMPASS') return 12 + offset;
+    if (normalizedSourceCode === 'LANTRAX_PROFIT_POWER') return 14 + offset;
+    return 20 + offset;
+  };
 
   const renderConstructionOperationalIntegrationCard = (companyId: string, companyName: string, sourceCode: string) => {
     const detail = getConstructionOperationalSourceDetail(sourceCode);
@@ -4239,7 +4274,7 @@ export default function SiteAdminDashboard(props: any) {
     const errorMessage = selectedSource?.errorMessage || null;
 
     return (
-      <div style={{ padding: '12px', background: '#f8fafc', borderRadius: '6px', border: '1px solid #e2e8f0', gridColumn: '1 / 2', order: sourceCode === 'CREWTRACKS' ? 8 : sourceCode === 'ICE_ENCOMPASS' ? 12 : 10 }}>
+      <div style={{ padding: '12px', background: '#f8fafc', borderRadius: '6px', border: '1px solid #e2e8f0', gridColumn: '1 / 2', order: getOperationalSourceCardOrder(sourceCode, 0) }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px', marginBottom: '10px' }}>
           <div>
             <h4 style={{ fontSize: '14px', fontWeight: '600', color: '#1e293b', marginBottom: '8px' }}>{detail.label}</h4>
@@ -4308,7 +4343,7 @@ export default function SiteAdminDashboard(props: any) {
     const isSaving = savingOperationalSourceDataDomainsKey === savingKey;
 
     return (
-      <div style={{ padding: '12px', background: '#f8fafc', borderRadius: '6px', border: '1px solid #e2e8f0', gridColumn: '2 / 3', order: sourceCode === 'CREWTRACKS' ? 9 : sourceCode === 'ICE_ENCOMPASS' ? 13 : 11 }}>
+      <div style={{ padding: '12px', background: '#f8fafc', borderRadius: '6px', border: '1px solid #e2e8f0', gridColumn: '2 / 3', order: getOperationalSourceCardOrder(sourceCode, 1) }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
           <h4 style={{ fontSize: '14px', fontWeight: '600', color: '#1e293b', margin: 0 }}>{detail.label} Data Domains</h4>
           <div style={{ display: 'flex', gap: '6px' }}>
@@ -7951,6 +7986,8 @@ export default function SiteAdminDashboard(props: any) {
                                             {isOperationalSourceSelected(company.id, 'HILTI') && renderConstructionOperationalDataDomainsCard(company.id, 'HILTI')}
                                             {isOperationalSourceSelected(company.id, 'ICE_ENCOMPASS') && renderConstructionOperationalIntegrationCard(company.id, company.name, 'ICE_ENCOMPASS')}
                                             {isOperationalSourceSelected(company.id, 'ICE_ENCOMPASS') && renderConstructionOperationalDataDomainsCard(company.id, 'ICE_ENCOMPASS')}
+                                            {isOperationalSourceSelected(company.id, 'LANTRAX_PROFIT_POWER') && renderConstructionOperationalIntegrationCard(company.id, company.name, 'LANTRAX_PROFIT_POWER')}
+                                            {isOperationalSourceSelected(company.id, 'LANTRAX_PROFIT_POWER') && renderConstructionOperationalDataDomainsCard(company.id, 'LANTRAX_PROFIT_POWER')}
                                             <div style={{ gridColumn: '1 / -1', order: 3, display: 'none' }}>
                                               {renderOperationalHubCustomizationCard(company)}
                                             </div>
@@ -11252,6 +11289,8 @@ export default function SiteAdminDashboard(props: any) {
                                   {isOperationalSourceSelected(businessCompany.id, 'HILTI') && renderConstructionOperationalDataDomainsCard(businessCompany.id, 'HILTI')}
                                   {isOperationalSourceSelected(businessCompany.id, 'ICE_ENCOMPASS') && renderConstructionOperationalIntegrationCard(businessCompany.id, businessCompany.name, 'ICE_ENCOMPASS')}
                                   {isOperationalSourceSelected(businessCompany.id, 'ICE_ENCOMPASS') && renderConstructionOperationalDataDomainsCard(businessCompany.id, 'ICE_ENCOMPASS')}
+                                  {isOperationalSourceSelected(businessCompany.id, 'LANTRAX_PROFIT_POWER') && renderConstructionOperationalIntegrationCard(businessCompany.id, businessCompany.name, 'LANTRAX_PROFIT_POWER')}
+                                  {isOperationalSourceSelected(businessCompany.id, 'LANTRAX_PROFIT_POWER') && renderConstructionOperationalDataDomainsCard(businessCompany.id, 'LANTRAX_PROFIT_POWER')}
                                 </div>
 
                                 <div

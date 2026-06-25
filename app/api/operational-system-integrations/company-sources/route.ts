@@ -14,6 +14,7 @@ const SOURCE_LABELS: Record<string, string> = {
   CREWTRACKS: 'Crewtracks',
   HILTI: 'Hilti',
   ICE_ENCOMPASS: 'ICE Encompass',
+  LANTRAX_PROFIT_POWER: 'Profit Power Enterprise',
 };
 
 export async function GET(request: NextRequest) {

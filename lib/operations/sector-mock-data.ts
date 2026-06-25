@@ -496,6 +496,144 @@ function buildEncompassMortgageMockData(dates: Date[], scale: number) {
   };
 }
 
+function buildProfitPowerBrokerageMockData(dates: Date[], scale: number) {
+  const asOf = dates[0] || new Date();
+  const regions = ['Buffalo / Western NY', 'Rochester Region', 'Syracuse / Central NY', 'Albany / Capital Region', 'Arizona'];
+  const officeRows = Array.from({ length: 56 }, (_, index) => {
+    const closedTransactions = 84 + (index % 14) * 7;
+    const avgSalesPrice = 410000 + (index % 10) * 9500;
+    const salesVolume = Math.round(closedTransactions * avgSalesPrice * scale);
+    const gci = Math.round(salesVolume * (0.0258 + (index % 5) * 0.0004));
+    const netRevenue = Math.round(gci * (0.342 + (index % 6) * 0.008));
+    const mortgageAttachments = Math.round(closedTransactions * (0.42 + (index % 8) * 0.021));
+    const titleAttachments = Math.round(closedTransactions * (0.51 + (index % 7) * 0.024));
+    const insuranceAttachments = Math.round(closedTransactions * (0.28 + (index % 6) * 0.022));
+    return {
+      office: `Office ${String(index + 1).padStart(2, '0')}`,
+      region: regions[index % regions.length],
+      activeAgents: 3 + (index % 8),
+      activeListings: 24 + (index % 12) * 3,
+      newListings: 6 + (index % 8),
+      underContract: 8 + (index % 10),
+      pendingSales: 10 + (index % 11),
+      closedTransactions,
+      salesVolume,
+      gci,
+      netRevenue,
+      avgSalesPrice,
+      avgCommissionPct: Math.round((gci / Math.max(salesVolume, 1)) * 1000) / 10,
+      mortgageAttachments,
+      titleAttachments,
+      insuranceAttachments,
+      mortgagePct: Math.round((mortgageAttachments / Math.max(closedTransactions, 1)) * 1000) / 10,
+      titlePct: Math.round((titleAttachments / Math.max(closedTransactions, 1)) * 1000) / 10,
+      insurancePct: Math.round((insuranceAttachments / Math.max(closedTransactions, 1)) * 1000) / 10,
+      agentReceivables: Math.round((18000 + (index % 9) * 2600) * scale),
+    };
+  });
+  const closedTransactions = officeRows.reduce((sum, row) => sum + row.closedTransactions, 0);
+  const salesVolume = officeRows.reduce((sum, row) => sum + row.salesVolume, 0);
+  const gci = officeRows.reduce((sum, row) => sum + row.gci, 0);
+  const netRevenue = officeRows.reduce((sum, row) => sum + row.netRevenue, 0);
+  const activeListings = officeRows.reduce((sum, row) => sum + row.activeListings, 0);
+  const newListings = officeRows.reduce((sum, row) => sum + row.newListings, 0);
+  const underContract = officeRows.reduce((sum, row) => sum + row.underContract, 0);
+  const pendingSales = officeRows.reduce((sum, row) => sum + row.pendingSales, 0);
+  const listingInventoryValue = Math.round(officeRows.reduce((sum, row) => sum + row.activeListings * row.avgSalesPrice, 0));
+  const mortgageAttachments = officeRows.reduce((sum, row) => sum + row.mortgageAttachments, 0);
+  const titleAttachments = officeRows.reduce((sum, row) => sum + row.titleAttachments, 0);
+  const insuranceAttachments = officeRows.reduce((sum, row) => sum + row.insuranceAttachments, 0);
+  const agentRows = Array.from({ length: 18 }, (_, index) => {
+    const transactions = 18 + (index % 9) * 4;
+    const avgPrice = 390000 + index * 18500;
+    const agentSalesVolume = Math.round(transactions * avgPrice);
+    const agentGci = Math.round(agentSalesVolume * (0.025 + (index % 5) * 0.0005));
+    return {
+      agent: `Agent ${index + 1}`,
+      office: officeRows[index % officeRows.length].office,
+      region: regions[index % regions.length],
+      transactions,
+      salesVolume: agentSalesVolume,
+      gci: agentGci,
+      companyDollar: Math.round(agentGci * (0.31 + (index % 4) * 0.025)),
+      mortgageReferrals: Math.round(transactions * (0.42 + (index % 7) * 0.023)),
+      retentionStatus: index % 11 === 0 ? 'At Risk' : index % 5 === 0 ? 'Watch' : 'Active',
+    };
+  });
+  const topAgentRevenue = [...agentRows].sort((a, b) => b.companyDollar - a.companyDollar).slice(0, 20).reduce((sum, row) => sum + row.companyDollar, 0);
+  const totalAgentRevenue = agentRows.reduce((sum, row) => sum + row.companyDollar, 0);
+  const forecastRows = ['Current Month', 'Next Month', '90 Days'].map((month, index) => {
+    const multiplier = index === 0 ? 0.095 : index === 1 ? 0.102 : 0.304;
+    return {
+      month,
+      expectedClosings: Math.round(closedTransactions * multiplier),
+      expectedRevenue: Math.round(netRevenue * multiplier),
+      expectedGci: Math.round(gci * multiplier),
+    };
+  });
+
+  return {
+    source: 'Profit Power Enterprise mock',
+    asOf: asOf.toISOString(),
+    summary: {
+      closedTransactions,
+      salesVolume,
+      gci,
+      netRevenue,
+      avgSalesPrice: Math.round(salesVolume / Math.max(closedTransactions, 1)),
+      avgCommissionPct: Math.round((gci / Math.max(salesVolume, 1)) * 1000) / 10,
+      ytdGrowthPct: 10.7,
+      budgetVariancePct: 4.8,
+      activeListings,
+      newListings,
+      underContract,
+      pendingSales,
+      forecastedGci: forecastRows[0]?.expectedGci || 0,
+      listingInventoryValue,
+      agentCount: agentRows.length,
+      inactiveAgents: 16,
+      top20AgentRevenuePct: Math.round((topAgentRevenue / Math.max(totalAgentRevenue, 1)) * 1000) / 10,
+      avgProductionPerAgent: Math.round(netRevenue / Math.max(agentRows.length, 1)),
+      mortgageAttachments,
+      titleAttachments,
+      insuranceAttachments,
+    },
+    officePerformance: officeRows,
+    agentPerformance: agentRows,
+    pipelineForecast: forecastRows,
+    pipelineKpis: [
+      { metric: 'Active Listings', count: activeListings, value: listingInventoryValue },
+      { metric: 'New Listings', count: newListings, value: Math.round(newListings * (salesVolume / Math.max(closedTransactions, 1))) },
+      { metric: 'Under Contract', count: underContract, value: Math.round(underContract * (salesVolume / Math.max(closedTransactions, 1))) },
+      { metric: 'Pending Sales', count: pendingSales, value: Math.round(pendingSales * (salesVolume / Math.max(closedTransactions, 1))) },
+      { metric: 'Expected Closings', count: forecastRows[0]?.expectedClosings || 0, value: Math.round((forecastRows[0]?.expectedClosings || 0) * (salesVolume / Math.max(closedTransactions, 1))) },
+      { metric: 'Forecasted GCI', count: 0, value: forecastRows[0]?.expectedGci || 0 },
+      { metric: 'Listing Inventory Value', count: 0, value: listingInventoryValue },
+    ],
+    agentProductivity: [
+      { tier: 'Top Producers', agents: 42, salesVolume: Math.round(salesVolume * 0.34), gci: Math.round(gci * 0.34), revenue: Math.round(netRevenue * 0.34), conversionRate: 32.4 },
+      { tier: 'Mid Producers', agents: 96, salesVolume: Math.round(salesVolume * 0.39), gci: Math.round(gci * 0.39), revenue: Math.round(netRevenue * 0.39), conversionRate: 24.6 },
+      { tier: 'Emerging Producers', agents: 58, salesVolume: Math.round(salesVolume * 0.17), gci: Math.round(gci * 0.17), revenue: Math.round(netRevenue * 0.17), conversionRate: 17.8 },
+      { tier: 'Inactive Agents', agents: 16, salesVolume: Math.round(salesVolume * 0.02), gci: Math.round(gci * 0.02), revenue: Math.round(netRevenue * 0.02), conversionRate: 4.2 },
+    ],
+    customerAttachment: {
+      closedTransactions,
+      mortgageAttachments,
+      titleAttachments,
+      insuranceAttachments,
+      mortgageAttachRate: Math.round((mortgageAttachments / Math.max(closedTransactions, 1)) * 1000) / 10,
+      titleAttachRate: Math.round((titleAttachments / Math.max(closedTransactions, 1)) * 1000) / 10,
+      insuranceAttachRate: Math.round((insuranceAttachments / Math.max(closedTransactions, 1)) * 1000) / 10,
+    },
+    arAndBackOfficeCharges: officeRows.map((row) => ({
+      office: row.office,
+      agentReceivables: row.agentReceivables,
+      backOfficeCharges: Math.round(row.agentReceivables * 0.42),
+      over30Pct: Math.round((16 + deterministicNoise(row.closedTransactions) * 8) * 10) / 10,
+    })),
+  };
+}
+
 function buildRealEstateOperationalHubMockData(req: MockRequest, profile: SectorProfile) {
   const dates = listDates(req.startDate, req.endDate, req.frequency);
   const latestDate = dates[0] || req.endDate;
@@ -806,6 +944,7 @@ function buildRealEstateOperationalHubMockData(req: MockRequest, profile: Sector
     maintenanceWorkOrders,
     commercialPropertyTypes,
     encompassMortgage: buildEncompassMortgageMockData(dates, scale),
+    profitPowerBrokerage: buildProfitPowerBrokerageMockData(dates, scale),
   };
 }
 
