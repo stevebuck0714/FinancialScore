@@ -723,7 +723,16 @@ export default function OperationsTab({
   const [jobCostControlData, setJobCostControlData] = useState<any>(null);
   const [selectedJccJobId, setSelectedJccJobId] = useState<string>('__ALL__');
   const [jccLaborDetailExpanded, setJccLaborDetailExpanded] = useState<boolean>(false);
+  const [jccTableSorts, setJccTableSorts] = useState<Record<string, { key: string; dir: 'asc' | 'desc' }>>({
+    dailyCost: { key: 'date', dir: 'desc' },
+    costCode: { key: 'varianceAbs', dir: 'desc' },
+    costByType: { key: 'actual', dir: 'desc' },
+    laborDetail: { key: 'date', dir: 'desc' },
+  });
+  const [selectedJccDailyCostType, setSelectedJccDailyCostType] = useState<string | null>(null);
+  const [jccDailyCostTrendRollup, setJccDailyCostTrendRollup] = useState<'day' | 'week' | 'month'>('day');
   const [projectPortfolioData, setProjectPortfolioData] = useState<any>(null);
+  const [selectedProjectPortfolioScheduleJobId, setSelectedProjectPortfolioScheduleJobId] = useState<string>('');
   const [ppJobProfitabilitySortKey, setPpJobProfitabilitySortKey] = useState<
     'jobName' | 'pmName' | 'revisedContractValue' | 'costToDate' | 'remainingCommitted' | 'eac' | 'projectedProfit' | 'marginPct'
   >('marginPct');
@@ -734,6 +743,17 @@ export default function OperationsTab({
   const [cfOpenCommitmentsFilter, setCfOpenCommitmentsFilter] = useState<'all' | 'past_due' | 'closing_soon' | 'po' | 'sub'>('all');
   const [billingCashData, setBillingCashData] = useState<any>(null);
   const [bcPriorityFilter, setBcPriorityFilter] = useState<'all' | 'collect' | 'pay'>('all');
+  const [hiltiInventoryData, setHiltiInventoryData] = useState<any>(null);
+  const [constructionInventoryTableSorts, setConstructionInventoryTableSorts] = useState<Record<string, { key: string; dir: 'asc' | 'desc' }>>({
+    assetsByCategory: { key: 'replacementValue', dir: 'desc' },
+    assetsByJob: { key: 'replacementValue', dir: 'desc' },
+    idleAssets: { key: 'idleDays', dir: 'desc' },
+    materialsByCategory: { key: 'inventoryValue', dir: 'desc' },
+    materialsByJob: { key: 'inventoryValue', dir: 'desc' },
+    materialReorderQueue: { key: 'stockRatio', dir: 'asc' },
+    materialAging: { key: 'daysOnHand', dir: 'desc' },
+    assetRegister: { key: 'replacementValue', dir: 'desc' },
+  });
   const [laborSchedulingData, setLaborSchedulingData] = useState<any>(null);
   const [selectedLaborCompensationRoleLocation, setSelectedLaborCompensationRoleLocation] = useState<string>('__ALL__');
   const [selectedLaborRosterDivision, setSelectedLaborRosterDivision] = useState<string>('');
@@ -1961,6 +1981,9 @@ export default function OperationsTab({
       case 'construction-ap':
         setConstructionApData(data);
         break;
+      case 'hilti-inventory':
+        setHiltiInventoryData(data);
+        break;
     }
   };
 
@@ -2808,6 +2831,42 @@ export default function OperationsTab({
   const parseDateValue = (raw: string | undefined | null): Date | null => {
     return parseDateSafeUtc(raw ?? null);
   };
+  const getSortableValue = (row: any, key: string): string | number | null => {
+    if (!row) return null;
+    if (key === 'varianceAbs') return Math.abs(Number(row.variance || 0));
+    if (key === 'stockRatio') {
+      const reorderPoint = Number(row.reorderPoint || 0);
+      return reorderPoint > 0 ? Number(row.qtyOnHand || 0) / reorderPoint : Number.POSITIVE_INFINITY;
+    }
+    const value = row[key];
+    if (value == null) return null;
+    if (typeof value === 'number') return Number.isFinite(value) ? value : null;
+    const numeric = Number(value);
+    if (typeof value !== 'string' && Number.isFinite(numeric)) return numeric;
+    if (typeof value === 'string') {
+      const parsedDate = parseDateSafeUtc(value);
+      if (parsedDate && /^\d{4}-\d{2}-\d{2}/.test(value)) return parsedDate.getTime();
+    }
+    return String(value);
+  };
+  const compareSortableRows = (a: any, b: any, key: string, dir: 'asc' | 'desc') => {
+    const direction = dir === 'asc' ? 1 : -1;
+    const left = getSortableValue(a, key);
+    const right = getSortableValue(b, key);
+    if (left == null && right == null) return 0;
+    if (left == null) return 1;
+    if (right == null) return -1;
+    if (typeof left === 'number' && typeof right === 'number') return (left - right) * direction;
+    return String(left).localeCompare(String(right), undefined, { sensitivity: 'base', numeric: true }) * direction;
+  };
+  const sortRowsByState = (rows: any[], sort: { key: string; dir: 'asc' | 'desc' }) =>
+    [...rows].sort((a, b) => compareSortableRows(a, b, sort.key, sort.dir));
+  const nextSortForKey = (current: { key: string; dir: 'asc' | 'desc' } | undefined, key: string, defaultDir: 'asc' | 'desc' = 'asc') =>
+    current?.key === key
+      ? { key, dir: current.dir === 'asc' ? 'desc' as const : 'asc' as const }
+      : { key, dir: defaultDir };
+  const sortArrow = (current: { key: string; dir: 'asc' | 'desc' } | undefined, key: string) =>
+    current?.key === key ? (current.dir === 'asc' ? ' ▲' : ' ▼') : ' ↕';
   const formatDateUtcMinus4 = (
     raw: string | Date | null | undefined,
     options: Intl.DateTimeFormatOptions = { year: 'numeric', month: 'short', day: 'numeric' }
@@ -16020,6 +16079,9 @@ Strategies to Improve the CCC
     const allJobs: any[] = Array.isArray(data.jobs) ? data.jobs : [];
     const isAll = selectedJccJobId === '__ALL__';
     const selectedJob = !isAll ? allJobs.find((j) => j.jobId === selectedJccJobId) : null;
+    const selectedJobContext = selectedJob
+      ? `${selectedJob.jobId} — ${selectedJob.jobName}`
+      : 'All Jobs';
     const isMockSource = data?.meta?.source === 'mock';
 
     // Filter the lower tables to the selected job (or aggregate for All Jobs).
@@ -16064,9 +16126,85 @@ Strategies to Improve the CCC
         })()
       : costByTypeRowsRaw;
 
-    // Sort daily cost rows newest first, top 25 visible by default.
-    const dailyCostSorted = [...dailyCostRows].sort((a, b) => (b.date || '').localeCompare(a.date || ''));
-    const dailyCostVisible = dailyCostSorted.slice(0, 25);
+    const jccSort = (tableKey: string, fallbackKey: string, fallbackDir: 'asc' | 'desc' = 'asc') =>
+      jccTableSorts[tableKey] || { key: fallbackKey, dir: fallbackDir };
+    const toggleJccSort = (tableKey: string, key: string, defaultDir: 'asc' | 'desc' = 'asc') => {
+      setJccTableSorts((prev) => ({
+        ...prev,
+        [tableKey]: nextSortForKey(prev[tableKey], key, defaultDir),
+      }));
+    };
+    const jccSortableTh = (
+      tableKey: string,
+      key: string,
+      label: string,
+      align: 'left' | 'right' = 'left',
+      defaultDir: 'asc' | 'desc' = 'asc'
+    ) => (
+      <th
+        onClick={() => toggleJccSort(tableKey, key, defaultDir)}
+        style={{ ...thStyle, textAlign: align, cursor: 'pointer', userSelect: 'none', whiteSpace: 'nowrap' }}
+      >
+        {label}{sortArrow(jccTableSorts[tableKey], key)}
+      </th>
+    );
+    const dailyCostVisible = sortRowsByState(dailyCostRows, jccSort('dailyCost', 'date', 'desc')).slice(0, 25);
+    const costCodeVisible = sortRowsByState(costCodeRows, jccSort('costCode', 'varianceAbs', 'desc')).slice(0, 60);
+    const costByTypeVisible = sortRowsByState(costByTypeRows, jccSort('costByType', 'actual', 'desc'));
+    const laborDetailVisible = sortRowsByState(laborDetailRows, jccSort('laborDetail', 'date', 'desc')).slice(0, 100);
+    const dailyCostTypes = Array.from(new Set(dailyCostRows.map((row: any) => String(row?.costType || '').trim()).filter(Boolean))).sort();
+    const selectedDailyCostType =
+      selectedJccDailyCostType && dailyCostTypes.includes(selectedJccDailyCostType)
+        ? selectedJccDailyCostType
+        : null;
+    const buildDailyCostTrendKey = (dateValue: string) => {
+      const parsed = parseDateSafeUtc(dateValue);
+      if (!parsed) return { key: dateValue || 'unknown', label: dateValue || 'Unknown', sort: 0 };
+      if (jccDailyCostTrendRollup === 'month') {
+        const key = `${parsed.getUTCFullYear()}-${String(parsed.getUTCMonth() + 1).padStart(2, '0')}`;
+        return {
+          key,
+          label: parsed.toLocaleDateString('en-US', { month: 'short', year: '2-digit', timeZone: 'UTC' }),
+          sort: Date.UTC(parsed.getUTCFullYear(), parsed.getUTCMonth(), 1),
+        };
+      }
+      if (jccDailyCostTrendRollup === 'week') {
+        const day = parsed.getUTCDay();
+        const mondayOffset = (day + 6) % 7;
+        const weekStart = new Date(Date.UTC(parsed.getUTCFullYear(), parsed.getUTCMonth(), parsed.getUTCDate() - mondayOffset));
+        const key = weekStart.toISOString().slice(0, 10);
+        return {
+          key,
+          label: `Wk ${weekStart.toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' })}`,
+          sort: weekStart.getTime(),
+        };
+      }
+      return {
+        key: parsed.toISOString().slice(0, 10),
+        label: parsed.toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' }),
+        sort: parsed.getTime(),
+      };
+    };
+    const dailyCostTrendRows = selectedDailyCostType
+      ? Array.from(
+          dailyCostRows
+            .filter((row: any) => String(row?.costType || '') === selectedDailyCostType)
+            .reduce((map: Map<string, any>, row: any) => {
+              const period = buildDailyCostTrendKey(String(row?.date || ''));
+              const current = map.get(period.key) || {
+                periodKey: period.key,
+                periodLabel: period.label,
+                sort: period.sort,
+                actual: 0,
+                budget: 0,
+              };
+              current.actual += Number(row?.dailyCost || 0);
+              current.budget += Number(row?.dailyBudget || 0);
+              map.set(period.key, current);
+              return map;
+            }, new Map<string, any>()).values()
+        ).sort((a, b) => a.sort - b.sort)
+      : [];
 
     // For All-Jobs profitability snapshot, use the summary; otherwise the selected job.
     const snap = isAll
@@ -16109,6 +16247,16 @@ Strategies to Improve the CCC
       textTransform: 'uppercase',
       letterSpacing: '0.04em',
     };
+    const renderJccReportTitle = (title: string) => (
+      <div>
+        <div style={{ ...cardTitleStyle, marginBottom: 2 }}>{title}</div>
+        {!isAll && selectedJob && (
+          <div style={{ fontSize: '12px', color: '#64748b', fontWeight: 600, letterSpacing: 0, textTransform: 'none' }}>
+            {selectedJobContext}
+          </div>
+        )}
+      </div>
+    );
     const thStyle: React.CSSProperties = {
       textAlign: 'left',
       padding: '8px 10px',
@@ -16205,6 +16353,7 @@ Strategies to Improve the CCC
                 <div style={{ fontSize: '15px', fontWeight: 700, color: '#0f172a' }}>
                   {selectedJob.jobName}
                 </div>
+                <div>Job ID: {selectedJob.jobId}</div>
                 <div>PM: {selectedJob.pmName}</div>
                 <div>
                   Status:{' '}
@@ -16222,7 +16371,7 @@ Strategies to Improve the CCC
 
           {/* Profitability snapshot */}
           <div style={cardStyle}>
-            <div style={cardTitleStyle}>Profitability snapshot</div>
+            {renderJccReportTitle('Profitability snapshot')}
             <div
               style={{
                 display: 'grid',
@@ -16291,7 +16440,7 @@ Strategies to Improve the CCC
               marginBottom: '12px',
             }}
           >
-            <div style={{ ...cardTitleStyle, marginBottom: 0 }}>Daily cost vs budget</div>
+            <div style={{ marginBottom: 0 }}>{renderJccReportTitle('Daily cost vs budget')}</div>
             <div style={{ fontSize: '12px', color: '#64748b' }}>
               {dailyCostRows.length === 0
                 ? 'No data'
@@ -16303,56 +16452,142 @@ Strategies to Improve the CCC
               No daily cost entries for this selection.
             </div>
           ) : (
-            <div style={{ overflowX: 'auto' }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                <thead>
-                  <tr>
-                    <th style={thStyle}>Date</th>
-                    {isAll && <th style={thStyle}>Job</th>}
-                    <th style={thStyle}>Cost Type</th>
-                    <th style={thStyle}>Sub Type</th>
-                    <th style={{ ...thStyle, textAlign: 'right' }}>Daily Cost</th>
-                    <th style={{ ...thStyle, textAlign: 'right' }}>Daily Budget</th>
-                    <th style={{ ...thStyle, textAlign: 'right' }}>Variance $</th>
-                    <th style={{ ...thStyle, textAlign: 'right' }}>Variance %</th>
-                    <th style={thStyle}>Status</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {dailyCostVisible.map((r, idx) => (
-                    <tr key={`${r.date}-${r.jobId}-${idx}`}>
-                      <td style={tdStyle}>{r.date}</td>
-                      {isAll && <td style={tdStyle}>{r.jobId}</td>}
-                      <td style={tdStyle}>{r.costType}</td>
-                      <td style={tdStyle}>{r.subType}</td>
-                      <td style={{ ...tdStyle, textAlign: 'right' }}>{formatCurrency(r.dailyCost)}</td>
-                      <td style={{ ...tdStyle, textAlign: 'right' }}>{formatCurrency(r.dailyBudget)}</td>
-                      <td style={{ ...tdStyle, textAlign: 'right', color: varianceColor(r.variance) }}>
-                        {r.variance > 0 ? '+' : ''}
-                        {formatCurrency(r.variance)}
-                      </td>
-                      <td style={{ ...tdStyle, textAlign: 'right', color: varianceColor(r.variance) }}>
-                        {r.variancePct > 0 ? '+' : ''}
-                        {Number(r.variancePct).toFixed(1)}%
-                      </td>
-                      <td style={tdStyle}>
-                        <span
+            <div style={{ display: 'grid', gap: '14px' }}>
+              {selectedDailyCostType && (
+                <div style={{ padding: '14px', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '10px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', flexWrap: 'wrap', marginBottom: '10px' }}>
+                    <div>
+                      <div style={{ fontSize: '13px', fontWeight: 700, color: '#0f172a' }}>
+                        {selectedDailyCostType}: Actual vs Budget
+                      </div>
+                      <div style={{ fontSize: '12px', color: '#64748b', marginTop: '2px' }}>
+                        {isAll ? 'All jobs' : selectedJobContext} · click another cost type below to update this trend.
+                      </div>
+                    </div>
+                    <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+                      {(['day', 'week', 'month'] as const).map((rollup) => (
+                        <button
+                          key={rollup}
+                          onClick={() => setJccDailyCostTrendRollup(rollup)}
                           style={{
-                            padding: '2px 8px',
+                            border: '1px solid #cbd5e1',
                             borderRadius: '999px',
-                            fontSize: '11px',
-                            fontWeight: 600,
+                            padding: '5px 10px',
+                            background: jccDailyCostTrendRollup === rollup ? '#0f172a' : '#fff',
+                            color: jccDailyCostTrendRollup === rollup ? '#fff' : '#334155',
+                            fontSize: '12px',
+                            fontWeight: 700,
+                            cursor: 'pointer',
                             textTransform: 'capitalize',
-                            ...statusPillStyle(r.status),
                           }}
                         >
-                          {String(r.status || '').replace(/_/g, ' ')}
-                        </span>
-                      </td>
+                          {rollup}
+                        </button>
+                      ))}
+                      <button
+                        onClick={() => setSelectedJccDailyCostType(null)}
+                        style={{
+                          border: '1px solid #cbd5e1',
+                          borderRadius: '999px',
+                          padding: '5px 10px',
+                          background: '#fff',
+                          color: '#64748b',
+                          fontSize: '12px',
+                          fontWeight: 700,
+                          cursor: 'pointer',
+                        }}
+                      >
+                        Clear
+                      </button>
+                    </div>
+                  </div>
+                  {dailyCostTrendRows.length === 0 ? (
+                    <div style={{ padding: '18px', color: '#64748b', fontSize: '13px' }}>
+                      No trend points for {selectedDailyCostType}.
+                    </div>
+                  ) : (
+                    <ResponsiveContainer width="100%" height={280}>
+                      <LineChart data={dailyCostTrendRows}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                        <XAxis dataKey="periodLabel" stroke="#64748b" style={{ fontSize: '12px' }} />
+                        <YAxis stroke="#64748b" style={{ fontSize: '12px' }} tickFormatter={(value) => `$${(Number(value || 0) / 1000).toFixed(0)}k`} />
+                        <Tooltip formatter={(value: any, name: any) => [formatCurrency(Number(value || 0)), String(name)]} />
+                        <Legend />
+                        <Line type="monotone" dataKey="actual" name="Actual" stroke="#dc2626" strokeWidth={2.5} dot={{ r: 3 }} />
+                        <Line type="monotone" dataKey="budget" name="Budget" stroke="#2563eb" strokeWidth={2.5} dot={{ r: 3 }} />
+                      </LineChart>
+                    </ResponsiveContainer>
+                  )}
+                </div>
+              )}
+              <div style={{ overflowX: 'auto' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                  <thead>
+                    <tr>
+                      {jccSortableTh('dailyCost', 'date', 'Date', 'left', 'desc')}
+                      {isAll && jccSortableTh('dailyCost', 'jobId', 'Job')}
+                      {jccSortableTh('dailyCost', 'costType', 'Cost Type')}
+                      {jccSortableTh('dailyCost', 'subType', 'Sub Type')}
+                      {jccSortableTh('dailyCost', 'dailyCost', 'Daily Cost', 'right', 'desc')}
+                      {jccSortableTh('dailyCost', 'dailyBudget', 'Daily Budget', 'right', 'desc')}
+                      {jccSortableTh('dailyCost', 'variance', 'Variance $', 'right', 'desc')}
+                      {jccSortableTh('dailyCost', 'variancePct', 'Variance %', 'right', 'desc')}
+                      {jccSortableTh('dailyCost', 'status', 'Status')}
                     </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody>
+                    {dailyCostVisible.map((r, idx) => (
+                      <tr key={`${r.date}-${r.jobId}-${idx}`}>
+                        <td style={tdStyle}>{r.date}</td>
+                        {isAll && <td style={tdStyle}>{r.jobId}</td>}
+                        <td style={tdStyle}>
+                          <button
+                            onClick={() => setSelectedJccDailyCostType(String(r.costType || ''))}
+                            style={{
+                              border: 'none',
+                              background: 'transparent',
+                              padding: 0,
+                              color: selectedDailyCostType === r.costType ? '#1d4ed8' : '#0f172a',
+                              fontSize: '13px',
+                              fontWeight: selectedDailyCostType === r.costType ? 700 : 600,
+                              cursor: 'pointer',
+                              textDecoration: 'underline',
+                              textUnderlineOffset: '2px',
+                            }}
+                          >
+                            {r.costType}
+                          </button>
+                        </td>
+                        <td style={tdStyle}>{r.subType}</td>
+                        <td style={{ ...tdStyle, textAlign: 'right' }}>{formatCurrency(r.dailyCost)}</td>
+                        <td style={{ ...tdStyle, textAlign: 'right' }}>{formatCurrency(r.dailyBudget)}</td>
+                        <td style={{ ...tdStyle, textAlign: 'right', color: varianceColor(r.variance) }}>
+                          {r.variance > 0 ? '+' : ''}
+                          {formatCurrency(r.variance)}
+                        </td>
+                        <td style={{ ...tdStyle, textAlign: 'right', color: varianceColor(r.variance) }}>
+                          {r.variancePct > 0 ? '+' : ''}
+                          {Number(r.variancePct).toFixed(1)}%
+                        </td>
+                        <td style={tdStyle}>
+                          <span
+                            style={{
+                              padding: '2px 8px',
+                              borderRadius: '999px',
+                              fontSize: '11px',
+                              fontWeight: 600,
+                              textTransform: 'capitalize',
+                              ...statusPillStyle(r.status),
+                            }}
+                          >
+                            {String(r.status || '').replace(/_/g, ' ')}
+                          </span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             </div>
           )}
         </div>
@@ -16367,9 +16602,7 @@ Strategies to Improve the CCC
         >
           {/* Cost code variance */}
           <div style={cardStyle}>
-            <div style={cardTitleStyle}>
-              Cost code variance{isAll ? ' (all jobs)' : ''}
-            </div>
+            {renderJccReportTitle(`Cost code variance${isAll ? ' (all jobs)' : ''}`)}
             {costCodeRows.length === 0 ? (
               <div style={{ padding: '12px', color: '#64748b', fontSize: '13px' }}>
                 No cost-code rows for this selection.
@@ -16379,21 +16612,18 @@ Strategies to Improve the CCC
                 <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                   <thead>
                     <tr>
-                      {isAll && <th style={thStyle}>Job</th>}
-                      <th style={thStyle}>Code</th>
-                      <th style={thStyle}>Description</th>
-                      <th style={{ ...thStyle, textAlign: 'right' }}>Budget</th>
-                      <th style={{ ...thStyle, textAlign: 'right' }}>Actual</th>
-                      <th style={{ ...thStyle, textAlign: 'right' }}>Committed</th>
-                      <th style={{ ...thStyle, textAlign: 'right' }}>Total Exposure</th>
-                      <th style={{ ...thStyle, textAlign: 'right' }}>Variance</th>
+                      {isAll && jccSortableTh('costCode', 'jobId', 'Job')}
+                      {jccSortableTh('costCode', 'costCode', 'Code')}
+                      {jccSortableTh('costCode', 'description', 'Description')}
+                      {jccSortableTh('costCode', 'budget', 'Budget', 'right', 'desc')}
+                      {jccSortableTh('costCode', 'actual', 'Actual', 'right', 'desc')}
+                      {jccSortableTh('costCode', 'committed', 'Committed', 'right', 'desc')}
+                      {jccSortableTh('costCode', 'totalExposure', 'Total Exposure', 'right', 'desc')}
+                      {jccSortableTh('costCode', 'variance', 'Variance', 'right', 'desc')}
                     </tr>
                   </thead>
                   <tbody>
-                    {[...costCodeRows]
-                      .sort((a, b) => Math.abs(b.variance) - Math.abs(a.variance))
-                      .slice(0, 60)
-                      .map((r, idx) => (
+                    {costCodeVisible.map((r, idx) => (
                         <tr key={`${r.jobId}-${r.costCode}-${idx}`}>
                           {isAll && <td style={tdStyle}>{r.jobId}</td>}
                           <td style={tdStyle}>{r.costCode}</td>
@@ -16416,7 +16646,7 @@ Strategies to Improve the CCC
 
           {/* Cost by type */}
           <div style={cardStyle}>
-            <div style={cardTitleStyle}>Cost by type</div>
+            {renderJccReportTitle('Cost by type')}
             {costByTypeRows.length === 0 ? (
               <div style={{ padding: '12px', color: '#64748b', fontSize: '13px' }}>
                 No cost-type rows for this selection.
@@ -16426,16 +16656,16 @@ Strategies to Improve the CCC
                 <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                   <thead>
                     <tr>
-                      <th style={thStyle}>Cost Type</th>
-                      <th style={{ ...thStyle, textAlign: 'right' }}>Budget</th>
-                      <th style={{ ...thStyle, textAlign: 'right' }}>Actual</th>
-                      <th style={{ ...thStyle, textAlign: 'right' }}>Committed</th>
-                      <th style={{ ...thStyle, textAlign: 'right' }}>Variance</th>
-                      <th style={{ ...thStyle, textAlign: 'right' }}>% of Total</th>
+                      {jccSortableTh('costByType', 'costType', 'Cost Type')}
+                      {jccSortableTh('costByType', 'budget', 'Budget', 'right', 'desc')}
+                      {jccSortableTh('costByType', 'actual', 'Actual', 'right', 'desc')}
+                      {jccSortableTh('costByType', 'committed', 'Committed', 'right', 'desc')}
+                      {jccSortableTh('costByType', 'variance', 'Variance', 'right', 'desc')}
+                      {jccSortableTh('costByType', 'pctOfTotal', '% of Total', 'right', 'desc')}
                     </tr>
                   </thead>
                   <tbody>
-                    {costByTypeRows.map((r) => (
+                    {costByTypeVisible.map((r) => (
                       <tr key={r.costType}>
                         <td style={tdStyle}>{r.costType}</td>
                         <td style={{ ...tdStyle, textAlign: 'right' }}>{formatCurrency(r.budget)}</td>
@@ -16470,9 +16700,7 @@ Strategies to Improve the CCC
               cursor: 'pointer',
             }}
           >
-            <div style={{ ...cardTitleStyle, marginBottom: 0 }}>
-              Labor detail (with equipment)
-            </div>
+            <div style={{ marginBottom: 0 }}>{renderJccReportTitle('Labor detail (with equipment)')}</div>
             <div style={{ fontSize: '12px', color: '#475569' }}>
               {laborDetailRows.length} entries · {jccLaborDetailExpanded ? 'Hide ▴' : 'Show ▾'}
             </div>
@@ -16487,23 +16715,20 @@ Strategies to Improve the CCC
                 <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                   <thead>
                     <tr>
-                      <th style={thStyle}>Date</th>
-                      {isAll && <th style={thStyle}>Job</th>}
-                      <th style={thStyle}>Labor Type</th>
-                      <th style={{ ...thStyle, textAlign: 'right' }}>Hours</th>
-                      <th style={{ ...thStyle, textAlign: 'right' }}>OT Hours</th>
-                      <th style={{ ...thStyle, textAlign: 'right' }}>Cost</th>
-                      <th style={{ ...thStyle, textAlign: 'right' }}>Budget</th>
-                      <th style={{ ...thStyle, textAlign: 'right' }}>Variance</th>
-                      <th style={{ ...thStyle, textAlign: 'right' }}>Equip Hrs</th>
-                      <th style={{ ...thStyle, textAlign: 'right' }}>Equip Cost</th>
+                      {jccSortableTh('laborDetail', 'date', 'Date', 'left', 'desc')}
+                      {isAll && jccSortableTh('laborDetail', 'jobId', 'Job')}
+                      {jccSortableTh('laborDetail', 'laborType', 'Labor Type')}
+                      {jccSortableTh('laborDetail', 'hours', 'Hours', 'right', 'desc')}
+                      {jccSortableTh('laborDetail', 'otHours', 'OT Hours', 'right', 'desc')}
+                      {jccSortableTh('laborDetail', 'cost', 'Cost', 'right', 'desc')}
+                      {jccSortableTh('laborDetail', 'budget', 'Budget', 'right', 'desc')}
+                      {jccSortableTh('laborDetail', 'variance', 'Variance', 'right', 'desc')}
+                      {jccSortableTh('laborDetail', 'equipmentHours', 'Equip Hrs', 'right', 'desc')}
+                      {jccSortableTh('laborDetail', 'equipmentCost', 'Equip Cost', 'right', 'desc')}
                     </tr>
                   </thead>
                   <tbody>
-                    {[...laborDetailRows]
-                      .sort((a, b) => (b.date || '').localeCompare(a.date || ''))
-                      .slice(0, 100)
-                      .map((r, idx) => (
+                    {laborDetailVisible.map((r, idx) => (
                         <tr key={`${r.date}-${r.jobId}-${r.laborType}-${idx}`}>
                           <td style={tdStyle}>{r.date}</td>
                           {isAll && <td style={tdStyle}>{r.jobId}</td>}
@@ -16565,7 +16790,7 @@ Strategies to Improve the CCC
                     marginBottom: '12px',
                   }}
                 >
-                  <div style={{ ...cardTitleStyle, marginBottom: 0 }}>AR (Job-Specific)</div>
+                  <div style={{ marginBottom: 0 }}>{renderJccReportTitle('AR (Job-Specific)')}</div>
                   <div style={{ fontSize: '12px', color: '#64748b' }}>
                     {arLoaded
                       ? `${jobArInvoices.length} open · ${formatCurrency(arTotal)}`
@@ -16636,7 +16861,7 @@ Strategies to Improve the CCC
                     marginBottom: '12px',
                   }}
                 >
-                  <div style={{ ...cardTitleStyle, marginBottom: 0 }}>AP (Job-Specific)</div>
+                  <div style={{ marginBottom: 0 }}>{renderJccReportTitle('AP (Job-Specific)')}</div>
                   <div style={{ fontSize: '12px', color: '#64748b' }}>
                     {apLoaded
                       ? `${jobApBills.length} open · ${formatCurrency(apTotal)}`
@@ -16699,6 +16924,695 @@ Strategies to Improve the CCC
             </div>
           );
         })()}
+        {data.crewtracks && renderCrewtracks(data.crewtracks, { embedded: true, job: selectedJob || null })}
+      </div>
+    );
+  };
+
+  const renderCrewtracks = (sourceData: any, options?: { embedded?: boolean; job?: any | null }) => {
+    if (!sourceData) {
+      return (
+        <div style={{ padding: '40px', color: '#64748b', fontSize: '14px' }}>
+          Loading Crewtracks…
+        </div>
+      );
+    }
+
+    const selectedCrewtracksJob = options?.job || null;
+    const selectedCrewtracksJobId = selectedCrewtracksJob ? String(selectedCrewtracksJob.jobId || '') : '';
+    const selectedCrewtracksJobContext = selectedCrewtracksJobId
+      ? `${selectedCrewtracksJobId} — ${selectedCrewtracksJob.jobName || ''}`.trim()
+      : '';
+    const allCrewDays: any[] = Array.isArray(sourceData.crewDays) ? sourceData.crewDays : [];
+    const crewDays: any[] = selectedCrewtracksJobId
+      ? allCrewDays.filter((row: any) => String(row?.jobId || '') === selectedCrewtracksJobId)
+      : allCrewDays;
+    const byJob: any[] = selectedCrewtracksJobId
+      ? (Array.isArray(sourceData.byJob) ? sourceData.byJob : []).filter((row: any) => String(row?.jobId || '') === selectedCrewtracksJobId)
+      : Array.isArray(sourceData.byJob) ? sourceData.byJob : [];
+    const exceptions: any[] = (Array.isArray(sourceData.exceptions) ? sourceData.exceptions : []).filter((row: any) =>
+      selectedCrewtracksJobId ? String(row?.jobId || '') === selectedCrewtracksJobId : true
+    );
+    const byCrew: any[] = selectedCrewtracksJobId
+      ? Array.from(
+          crewDays.reduce((map: Map<string, any>, row: any) => {
+            const crewName = String(row?.crewName || 'Unassigned');
+            const current = map.get(crewName) || {
+              crewName,
+              foreman: row?.foreman || '',
+              laborHours: 0,
+              overtimeHours: 0,
+              unitsCompleted: 0,
+              targetUnits: 0,
+            };
+            current.laborHours += Number(row?.laborHours || 0);
+            current.overtimeHours += Number(row?.overtimeHours || 0);
+            current.unitsCompleted += Number(row?.unitsCompleted || 0);
+            current.targetUnits += Number(row?.targetProductivityPerHour || 0) * Number(row?.laborHours || 0);
+            map.set(crewName, current);
+            return map;
+          }, new Map<string, any>()).values()
+        ).map((row: any) => {
+          const productivityPerHour = row.laborHours > 0 ? row.unitsCompleted / row.laborHours : 0;
+          const targetProductivityPerHour = row.laborHours > 0 ? row.targetUnits / row.laborHours : 0;
+          const variancePct = targetProductivityPerHour > 0 ? ((productivityPerHour - targetProductivityPerHour) / targetProductivityPerHour) * 100 : 0;
+          return {
+            ...row,
+            productivityPerHour,
+            targetProductivityPerHour,
+            variancePct,
+            status: variancePct <= -12 ? 'behind' : variancePct >= 8 ? 'ahead' : 'on_track',
+          };
+        })
+      : Array.isArray(sourceData.byCrew) ? sourceData.byCrew : [];
+    const sourceSummary = sourceData.summary || {};
+    const totalHours = crewDays.reduce((sum, row) => sum + Number(row?.laborHours || 0), 0);
+    const overtimeHours = crewDays.reduce((sum, row) => sum + Number(row?.overtimeHours || 0), 0);
+    const totalUnitsCompleted = crewDays.reduce((sum, row) => sum + Number(row?.unitsCompleted || 0), 0);
+    const targetUnits = crewDays.reduce((sum, row) => sum + Number(row?.targetProductivityPerHour || 0) * Number(row?.laborHours || 0), 0);
+    const summary = selectedCrewtracksJobId
+      ? {
+          totalHours,
+          overtimeHours,
+          overtimePct: totalHours > 0 ? (overtimeHours / totalHours) * 100 : 0,
+          totalUnitsCompleted,
+          avgProductivityPerHour: totalHours > 0 ? totalUnitsCompleted / totalHours : 0,
+          targetProductivityPerHour: totalHours > 0 ? targetUnits / totalHours : 0,
+          productivityVariancePct: targetUnits > 0 ? ((totalUnitsCompleted - targetUnits) / targetUnits) * 100 : 0,
+          crewCount: byCrew.length,
+          activeJobCount: 1,
+        }
+      : sourceSummary;
+    const isMockSource = sourceData?.meta?.source === 'mock';
+    const showKpis = isSectionEnabled('crewtracksKpis');
+    const showCrewProductivity = isSectionEnabled('crewtracksCrewProductivity');
+    const showJobProductivity = isSectionEnabled('crewtracksJobProductivity');
+    const showExceptions = isSectionEnabled('crewtracksExceptions');
+    const showRecentTime = isSectionEnabled('crewtracksRecentTime');
+
+    const pct = (value: number) => `${Number(value || 0).toFixed(1)}%`;
+    const num = (value: number, digits = 0) =>
+      new Intl.NumberFormat('en-US', {
+        minimumFractionDigits: digits,
+        maximumFractionDigits: digits,
+      }).format(Number(value || 0));
+    const statusPillStyle = (status: string): React.CSSProperties => {
+      if (status === 'behind') return { background: '#fee2e2', color: '#991b1b' };
+      if (status === 'ahead') return { background: '#dcfce7', color: '#166534' };
+      return { background: '#e0e7ff', color: '#3730a3' };
+    };
+    const varianceColor = (value: number) => (Number(value || 0) < -10 ? '#b91c1c' : Number(value || 0) > 8 ? '#15803d' : '#475569');
+    const cardStyle: React.CSSProperties = {
+      background: '#fff',
+      border: '1px solid #e2e8f0',
+      borderRadius: '12px',
+      padding: '18px',
+    };
+    const thStyle: React.CSSProperties = {
+      textAlign: 'left',
+      padding: '8px 10px',
+      fontSize: '11px',
+      fontWeight: 700,
+      color: '#475569',
+      textTransform: 'uppercase',
+      letterSpacing: '0.04em',
+      borderBottom: '1px solid #e2e8f0',
+      background: '#f8fafc',
+    };
+    const tdStyle: React.CSSProperties = {
+      padding: '8px 10px',
+      fontSize: '13px',
+      color: '#0f172a',
+      borderBottom: '1px solid #f1f5f9',
+    };
+    const metricCards = [
+      { label: 'Labor Hours', value: num(summary.totalHours, 0), detail: `${num(summary.overtimeHours, 0)} OT hours (${pct(summary.overtimePct)})` },
+      { label: 'Units Completed', value: num(summary.totalUnitsCompleted, 0), detail: `${summary.activeJobCount || 0} active jobs` },
+      { label: 'Productivity / Hr', value: num(summary.avgProductivityPerHour, 2), detail: `Target ${num(summary.targetProductivityPerHour, 2)} / hr` },
+      { label: 'Productivity Variance', value: pct(summary.productivityVariancePct), detail: `${summary.crewCount || 0} crews reporting` },
+    ];
+
+    return (
+      <div style={{ padding: options?.embedded ? '0' : '24px', background: '#f8fafc', minHeight: options?.embedded ? undefined : '100%', marginTop: options?.embedded ? '18px' : 0 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', gap: '16px', flexWrap: 'wrap', alignItems: 'flex-start', marginBottom: '20px' }}>
+          <div>
+            <h2 style={{ margin: 0, fontSize: options?.embedded ? '18px' : '22px', color: '#0f172a' }}>Crewtracks Reports</h2>
+            {selectedCrewtracksJobContext && (
+              <div style={{ marginTop: '3px', fontSize: '12px', color: '#64748b', fontWeight: 600 }}>
+                {selectedCrewtracksJobContext}
+              </div>
+            )}
+            <p style={{ margin: '6px 0 0', color: '#64748b', fontSize: '14px' }}>
+              Crew time, field production, and labor productivity by crew, job, and daily activity.
+            </p>
+          </div>
+          {isMockSource && (
+            <span style={{ padding: '6px 10px', borderRadius: '999px', background: '#fef3c7', color: '#92400e', fontSize: '12px', fontWeight: 700 }}>
+              Mock Crewtracks data
+            </span>
+          )}
+        </div>
+
+        {showKpis && (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))', gap: '14px', marginBottom: '18px' }}>
+          {metricCards.map((card) => (
+            <div key={card.label} style={cardStyle}>
+              <div style={{ fontSize: '12px', color: '#64748b', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em' }}>{card.label}</div>
+              <div style={{ fontSize: '28px', color: '#0f172a', fontWeight: 800, marginTop: '6px' }}>{card.value}</div>
+              <div style={{ fontSize: '12px', color: '#64748b', marginTop: '4px' }}>{card.detail}</div>
+            </div>
+          ))}
+        </div>
+        )}
+
+        {(showCrewProductivity || showExceptions) && (
+        <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1.2fr) minmax(0, 1fr)', gap: '16px', marginBottom: '16px' }}>
+          {showCrewProductivity && (
+          <div style={cardStyle}>
+            <h3 style={{ margin: '0 0 12px', fontSize: '14px', color: '#0f172a' }}>Crew Productivity</h3>
+            <div style={{ overflowX: 'auto' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                <thead>
+                  <tr>
+                    <th style={thStyle}>Crew</th>
+                    <th style={thStyle}>Foreman</th>
+                    <th style={{ ...thStyle, textAlign: 'right' }}>Hours</th>
+                    <th style={{ ...thStyle, textAlign: 'right' }}>Units / Hr</th>
+                    <th style={{ ...thStyle, textAlign: 'right' }}>Variance</th>
+                    <th style={thStyle}>Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {byCrew.map((row) => (
+                    <tr key={row.crewName}>
+                      <td style={{ ...tdStyle, fontWeight: 700 }}>{row.crewName}</td>
+                      <td style={tdStyle}>{row.foreman}</td>
+                      <td style={{ ...tdStyle, textAlign: 'right' }}>{num(row.laborHours, 0)}</td>
+                      <td style={{ ...tdStyle, textAlign: 'right' }}>{num(row.productivityPerHour, 2)}</td>
+                      <td style={{ ...tdStyle, textAlign: 'right', color: varianceColor(row.variancePct), fontWeight: 700 }}>{pct(row.variancePct)}</td>
+                      <td style={tdStyle}>
+                        <span style={{ padding: '3px 8px', borderRadius: '999px', fontSize: '11px', fontWeight: 700, ...statusPillStyle(row.status) }}>
+                          {String(row.status || '').replace('_', ' ')}
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+          )}
+
+          {showExceptions && (
+          <div style={cardStyle}>
+            <h3 style={{ margin: '0 0 12px', fontSize: '14px', color: '#0f172a' }}>Exceptions</h3>
+            <div style={{ display: 'grid', gap: '10px' }}>
+              {exceptions.slice(0, 6).map((row) => (
+                <div key={`${row.date}-${row.crewName}-${row.jobId}`} style={{ padding: '10px', border: '1px solid #e2e8f0', borderRadius: '10px', background: '#f8fafc' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', gap: '8px' }}>
+                    <strong style={{ color: '#0f172a', fontSize: '13px' }}>{row.crewName}</strong>
+                    <span style={{ color: varianceColor(row.variancePct), fontSize: '12px', fontWeight: 700 }}>{pct(row.variancePct)}</span>
+                  </div>
+                  <div style={{ color: '#475569', fontSize: '12px', marginTop: '3px' }}>{row.jobName} | {row.activity}</div>
+                  <div style={{ color: '#64748b', fontSize: '12px', marginTop: '3px' }}>{row.date} | OT {num(row.overtimeHours, 1)} hrs</div>
+                </div>
+              ))}
+            </div>
+          </div>
+          )}
+        </div>
+        )}
+
+        {(showJobProductivity || showRecentTime) && (
+        <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1.2fr)', gap: '16px' }}>
+          {showJobProductivity && (
+          <div style={cardStyle}>
+            <h3 style={{ margin: '0 0 12px', fontSize: '14px', color: '#0f172a' }}>Job Productivity</h3>
+            <div style={{ overflowX: 'auto' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                <thead>
+                  <tr>
+                    <th style={thStyle}>Job</th>
+                    <th style={{ ...thStyle, textAlign: 'right' }}>Hours</th>
+                    <th style={{ ...thStyle, textAlign: 'right' }}>Units</th>
+                    <th style={{ ...thStyle, textAlign: 'right' }}>Variance</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {byJob.slice(0, 8).map((row) => (
+                    <tr key={row.jobId}>
+                      <td style={{ ...tdStyle, fontWeight: 700 }}>{row.jobName}</td>
+                      <td style={{ ...tdStyle, textAlign: 'right' }}>{num(row.laborHours, 0)}</td>
+                      <td style={{ ...tdStyle, textAlign: 'right' }}>{num(row.unitsCompleted, 0)}</td>
+                      <td style={{ ...tdStyle, textAlign: 'right', color: varianceColor(row.variancePct), fontWeight: 700 }}>{pct(row.variancePct)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+          )}
+
+          {showRecentTime && (
+          <div style={cardStyle}>
+            <h3 style={{ margin: '0 0 12px', fontSize: '14px', color: '#0f172a' }}>Recent Crew Time</h3>
+            <div style={{ overflowX: 'auto' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                <thead>
+                  <tr>
+                    <th style={thStyle}>Date</th>
+                    <th style={thStyle}>Crew</th>
+                    <th style={thStyle}>Job</th>
+                    <th style={thStyle}>Activity</th>
+                    <th style={{ ...thStyle, textAlign: 'right' }}>Hours</th>
+                    <th style={{ ...thStyle, textAlign: 'right' }}>Units</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {crewDays.slice(0, 12).map((row) => (
+                    <tr key={`${row.date}-${row.crewName}-${row.jobId}-${row.activity}`}>
+                      <td style={tdStyle}>{row.date}</td>
+                      <td style={{ ...tdStyle, fontWeight: 700 }}>{row.crewName}</td>
+                      <td style={tdStyle}>{row.jobName}</td>
+                      <td style={tdStyle}>{row.activity}</td>
+                      <td style={{ ...tdStyle, textAlign: 'right' }}>{num(row.laborHours, 1)}</td>
+                      <td style={{ ...tdStyle, textAlign: 'right' }}>{num(row.unitsCompleted, 0)} {row.unitOfMeasure}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+          )}
+        </div>
+        )}
+      </div>
+    );
+  };
+
+  const renderHiltiInventory = () => {
+    if (!hiltiInventoryData) {
+      return (
+        <div style={{ padding: '40px', color: '#64748b', fontSize: '14px' }}>
+          Loading Inventory…
+        </div>
+      );
+    }
+
+    const summary = hiltiInventoryData.summary || {};
+    const assets: any[] = Array.isArray(hiltiInventoryData.assets) ? hiltiInventoryData.assets : [];
+    const byCategory: any[] = Array.isArray(hiltiInventoryData.byCategory) ? hiltiInventoryData.byCategory : [];
+    const byJob: any[] = Array.isArray(hiltiInventoryData.byJob) ? hiltiInventoryData.byJob : [];
+    const maintenanceQueue: any[] = Array.isArray(hiltiInventoryData.maintenanceQueue) ? hiltiInventoryData.maintenanceQueue : [];
+    const idleAssets: any[] = Array.isArray(hiltiInventoryData.idleAssets) ? hiltiInventoryData.idleAssets : [];
+    const materialsByCategory: any[] = Array.isArray(hiltiInventoryData.materialsByCategory) ? hiltiInventoryData.materialsByCategory : [];
+    const materialsByJob: any[] = Array.isArray(hiltiInventoryData.materialsByJob) ? hiltiInventoryData.materialsByJob : [];
+    const materialReorderQueue: any[] = Array.isArray(hiltiInventoryData.materialReorderQueue) ? hiltiInventoryData.materialReorderQueue : [];
+    const materialAging: any[] = Array.isArray(hiltiInventoryData.materialAging) ? hiltiInventoryData.materialAging : [];
+    const isMockSource = hiltiInventoryData?.meta?.source === 'mock';
+    const showKpis = isSectionEnabled('constructionInventoryKpis');
+    const showByCategory = isSectionEnabled('hiltiAssetsByCategory');
+    const showByJob = isSectionEnabled('hiltiAssetsByJob');
+    const showMaintenance = isSectionEnabled('hiltiMaintenanceQueue');
+    const showIdle = isSectionEnabled('hiltiIdleAssets');
+    const showMaterialsByCategory = isSectionEnabled('constructionMaterialsByCategory');
+    const showMaterialsByJob = isSectionEnabled('constructionMaterialsByJob');
+    const showMaterialsReorder = isSectionEnabled('constructionMaterialsReorderQueue');
+    const showMaterialsAging = isSectionEnabled('constructionMaterialsAging');
+    const showRegister = isSectionEnabled('hiltiAssetRegister');
+
+    const pct = (value: number) => `${Number(value || 0).toFixed(1)}%`;
+    const num = (value: number) => new Intl.NumberFormat('en-US', { maximumFractionDigits: 0 }).format(Number(value || 0));
+    const statusPillStyle = (status: string): React.CSSProperties => {
+      if (status === 'missing' || status === 'service_due') return { background: '#fee2e2', color: '#991b1b' };
+      if (status === 'idle') return { background: '#fef3c7', color: '#92400e' };
+      if (status === 'assigned') return { background: '#dcfce7', color: '#166534' };
+      return { background: '#e0e7ff', color: '#3730a3' };
+    };
+    const cardStyle: React.CSSProperties = {
+      background: '#fff',
+      border: '1px solid #e2e8f0',
+      borderRadius: '12px',
+      padding: '18px',
+    };
+    const thStyle: React.CSSProperties = {
+      textAlign: 'left',
+      padding: '8px 10px',
+      fontSize: '11px',
+      fontWeight: 700,
+      color: '#475569',
+      textTransform: 'uppercase',
+      letterSpacing: '0.04em',
+      borderBottom: '1px solid #e2e8f0',
+      background: '#f8fafc',
+    };
+    const tdStyle: React.CSSProperties = {
+      padding: '8px 10px',
+      fontSize: '13px',
+      color: '#0f172a',
+      borderBottom: '1px solid #f1f5f9',
+    };
+    const inventorySort = (tableKey: string, fallbackKey: string, fallbackDir: 'asc' | 'desc' = 'asc') =>
+      constructionInventoryTableSorts[tableKey] || { key: fallbackKey, dir: fallbackDir };
+    const toggleConstructionInventorySort = (tableKey: string, key: string, defaultDir: 'asc' | 'desc' = 'asc') => {
+      setConstructionInventoryTableSorts((prev) => ({
+        ...prev,
+        [tableKey]: nextSortForKey(prev[tableKey], key, defaultDir),
+      }));
+    };
+    const inventorySortableTh = (
+      tableKey: string,
+      key: string,
+      label: string,
+      align: 'left' | 'right' = 'left',
+      defaultDir: 'asc' | 'desc' = 'asc'
+    ) => (
+      <th
+        onClick={() => toggleConstructionInventorySort(tableKey, key, defaultDir)}
+        style={{ ...thStyle, textAlign: align, cursor: 'pointer', userSelect: 'none', whiteSpace: 'nowrap' }}
+      >
+        {label}{sortArrow(constructionInventoryTableSorts[tableKey], key)}
+      </th>
+    );
+    const sortedByCategory = sortRowsByState(byCategory, inventorySort('assetsByCategory', 'replacementValue', 'desc'));
+    const sortedByJob = sortRowsByState(byJob, inventorySort('assetsByJob', 'replacementValue', 'desc'));
+    const sortedIdleAssets = sortRowsByState(idleAssets, inventorySort('idleAssets', 'idleDays', 'desc'));
+    const sortedMaterialsByCategory = sortRowsByState(materialsByCategory, inventorySort('materialsByCategory', 'inventoryValue', 'desc'));
+    const sortedMaterialsByJob = sortRowsByState(materialsByJob, inventorySort('materialsByJob', 'inventoryValue', 'desc'));
+    const sortedMaterialReorderQueue = sortRowsByState(materialReorderQueue, inventorySort('materialReorderQueue', 'stockRatio', 'asc'));
+    const sortedMaterialAging = sortRowsByState(materialAging, inventorySort('materialAging', 'daysOnHand', 'desc'));
+    const sortedAssets = sortRowsByState(assets, inventorySort('assetRegister', 'replacementValue', 'desc'));
+    const metricCards = [
+      { label: 'Assets Tracked', value: num(summary.assetCount), detail: `${num(summary.assignedCount)} assigned to jobs` },
+      { label: 'Replacement Value', value: formatCurrency(Number(summary.totalReplacementValue || 0)), detail: 'Hilti tool and equipment value' },
+      { label: 'Material Value', value: formatCurrency(Number(summary.totalMaterialValue || 0)), detail: `${num(summary.materialSkuCount)} material SKUs tracked` },
+      { label: 'Utilization', value: pct(summary.avgUtilizationPct), detail: `${num(summary.idleCount)} idle / underutilized` },
+      { label: 'Service / Compliance', value: num(summary.serviceDueCount), detail: `${num(summary.complianceAtRiskCount)} compliance at risk` },
+    ];
+
+    return (
+      <div style={{ padding: '24px', background: '#f8fafc', minHeight: '100%' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', gap: '16px', flexWrap: 'wrap', alignItems: 'flex-start', marginBottom: '20px' }}>
+          <div>
+            <h2 style={{ margin: 0, fontSize: '22px', color: '#0f172a' }}>Inventory</h2>
+            <p style={{ margin: '6px 0 0', color: '#64748b', fontSize: '14px' }}>
+              Hilti tools and equipment inventory, jobsite custody, utilization, maintenance, and compliance.
+            </p>
+          </div>
+          {isMockSource && (
+            <span style={{ padding: '6px 10px', borderRadius: '999px', background: '#fef3c7', color: '#92400e', fontSize: '12px', fontWeight: 700 }}>
+              Mock Hilti data
+            </span>
+          )}
+        </div>
+
+        {showKpis && (
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))', gap: '14px', marginBottom: '18px' }}>
+            {metricCards.map((card) => (
+              <div key={card.label} style={cardStyle}>
+                <div style={{ fontSize: '12px', color: '#64748b', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em' }}>{card.label}</div>
+                <div style={{ fontSize: '28px', color: '#0f172a', fontWeight: 800, marginTop: '6px' }}>{card.value}</div>
+                <div style={{ fontSize: '12px', color: '#64748b', marginTop: '4px' }}>{card.detail}</div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {(showByCategory || showByJob) && (
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(360px, 1fr))', gap: '16px', marginBottom: '16px' }}>
+            {showByCategory && (
+              <div style={cardStyle}>
+                <h3 style={{ margin: '0 0 12px', fontSize: '14px', color: '#0f172a' }}>Assets by Category</h3>
+                <div style={{ overflowX: 'auto' }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                    <thead>
+                      <tr>
+                        {inventorySortableTh('assetsByCategory', 'category', 'Category')}
+                        {inventorySortableTh('assetsByCategory', 'assetCount', 'Assets', 'right', 'desc')}
+                        {inventorySortableTh('assetsByCategory', 'replacementValue', 'Value', 'right', 'desc')}
+                        {inventorySortableTh('assetsByCategory', 'avgUtilizationPct', 'Util.', 'right', 'desc')}
+                        {inventorySortableTh('assetsByCategory', 'serviceDueCount', 'Svc', 'right', 'desc')}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {sortedByCategory.map((row) => (
+                        <tr key={row.category}>
+                          <td style={{ ...tdStyle, fontWeight: 700 }}>{row.category}</td>
+                          <td style={{ ...tdStyle, textAlign: 'right' }}>{num(row.assetCount)}</td>
+                          <td style={{ ...tdStyle, textAlign: 'right' }}>{formatCurrency(Number(row.replacementValue || 0))}</td>
+                          <td style={{ ...tdStyle, textAlign: 'right' }}>{pct(row.avgUtilizationPct)}</td>
+                          <td style={{ ...tdStyle, textAlign: 'right' }}>{num(row.serviceDueCount)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
+            {showByJob && (
+              <div style={cardStyle}>
+                <h3 style={{ margin: '0 0 12px', fontSize: '14px', color: '#0f172a' }}>Assets by Job</h3>
+                <div style={{ overflowX: 'auto' }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                    <thead>
+                      <tr>
+                        {inventorySortableTh('assetsByJob', 'jobName', 'Job')}
+                        {inventorySortableTh('assetsByJob', 'assetCount', 'Assets', 'right', 'desc')}
+                        {inventorySortableTh('assetsByJob', 'replacementValue', 'Value', 'right', 'desc')}
+                        {inventorySortableTh('assetsByJob', 'avgUtilizationPct', 'Util.', 'right', 'desc')}
+                        {inventorySortableTh('assetsByJob', 'serviceDueCount', 'Svc', 'right', 'desc')}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {sortedByJob.slice(0, 8).map((row) => (
+                        <tr key={row.jobId}>
+                          <td style={{ ...tdStyle, fontWeight: 700 }}>{row.jobName}</td>
+                          <td style={{ ...tdStyle, textAlign: 'right' }}>{num(row.assetCount)}</td>
+                          <td style={{ ...tdStyle, textAlign: 'right' }}>{formatCurrency(Number(row.replacementValue || 0))}</td>
+                          <td style={{ ...tdStyle, textAlign: 'right' }}>{pct(row.avgUtilizationPct)}</td>
+                          <td style={{ ...tdStyle, textAlign: 'right' }}>{num(row.serviceDueCount)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {(showMaintenance || showIdle) && (
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(360px, 1fr))', gap: '16px', marginBottom: '16px' }}>
+            {showMaintenance && (
+              <div style={cardStyle}>
+                <h3 style={{ margin: '0 0 12px', fontSize: '14px', color: '#0f172a' }}>Maintenance & Compliance Queue</h3>
+                <div style={{ display: 'grid', gap: '10px' }}>
+                  {maintenanceQueue.slice(0, 7).map((row) => (
+                    <div key={row.assetId} style={{ padding: '10px', border: '1px solid #e2e8f0', borderRadius: '10px', background: '#f8fafc' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', gap: '8px' }}>
+                        <strong style={{ color: '#0f172a', fontSize: '13px' }}>{row.assetName}</strong>
+                        <span style={{ color: row.complianceStatus === 'compliant' ? '#475569' : '#b91c1c', fontSize: '12px', fontWeight: 700 }}>
+                          {String(row.complianceStatus || '').replace('_', ' ')}
+                        </span>
+                      </div>
+                      <div style={{ color: '#475569', fontSize: '12px', marginTop: '3px' }}>{row.category} | {row.location}</div>
+                      <div style={{ color: '#64748b', fontSize: '12px', marginTop: '3px' }}>Next service {row.nextServiceDate} | Custodian {row.custodian}</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {showIdle && (
+              <div style={cardStyle}>
+                <h3 style={{ margin: '0 0 12px', fontSize: '14px', color: '#0f172a' }}>Idle / Underutilized Assets</h3>
+                <div style={{ overflowX: 'auto' }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                    <thead>
+                      <tr>
+                        {inventorySortableTh('idleAssets', 'assetName', 'Asset')}
+                        {inventorySortableTh('idleAssets', 'location', 'Location')}
+                        {inventorySortableTh('idleAssets', 'idleDays', 'Idle Days', 'right', 'desc')}
+                        {inventorySortableTh('idleAssets', 'utilizationPct', 'Util.', 'right', 'desc')}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {sortedIdleAssets.slice(0, 8).map((row) => (
+                        <tr key={row.assetId}>
+                          <td style={{ ...tdStyle, fontWeight: 700 }}>{row.assetName}</td>
+                          <td style={tdStyle}>{row.location}</td>
+                          <td style={{ ...tdStyle, textAlign: 'right' }}>{num(row.idleDays)}</td>
+                          <td style={{ ...tdStyle, textAlign: 'right' }}>{pct(row.utilizationPct)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {(showMaterialsByCategory || showMaterialsByJob) && (
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(360px, 1fr))', gap: '16px', marginBottom: '16px' }}>
+            {showMaterialsByCategory && (
+              <div style={cardStyle}>
+                <h3 style={{ margin: '0 0 12px', fontSize: '14px', color: '#0f172a' }}>Materials by Category</h3>
+                <div style={{ overflowX: 'auto' }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                    <thead>
+                      <tr>
+                        {inventorySortableTh('materialsByCategory', 'category', 'Category')}
+                        {inventorySortableTh('materialsByCategory', 'skuCount', 'SKUs', 'right', 'desc')}
+                        {inventorySortableTh('materialsByCategory', 'qtyOnHand', 'Qty', 'right', 'desc')}
+                        {inventorySortableTh('materialsByCategory', 'inventoryValue', 'Value', 'right', 'desc')}
+                        {inventorySortableTh('materialsByCategory', 'lowStockCount', 'Low', 'right', 'desc')}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {sortedMaterialsByCategory.map((row) => (
+                        <tr key={row.category}>
+                          <td style={{ ...tdStyle, fontWeight: 700 }}>{row.category}</td>
+                          <td style={{ ...tdStyle, textAlign: 'right' }}>{num(row.skuCount)}</td>
+                          <td style={{ ...tdStyle, textAlign: 'right' }}>{num(row.qtyOnHand)}</td>
+                          <td style={{ ...tdStyle, textAlign: 'right' }}>{formatCurrency(Number(row.inventoryValue || 0))}</td>
+                          <td style={{ ...tdStyle, textAlign: 'right' }}>{num(row.lowStockCount)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
+            {showMaterialsByJob && (
+              <div style={cardStyle}>
+                <h3 style={{ margin: '0 0 12px', fontSize: '14px', color: '#0f172a' }}>Materials by Job</h3>
+                <div style={{ overflowX: 'auto' }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                    <thead>
+                      <tr>
+                        {inventorySortableTh('materialsByJob', 'jobName', 'Job')}
+                        {inventorySortableTh('materialsByJob', 'skuCount', 'SKUs', 'right', 'desc')}
+                        {inventorySortableTh('materialsByJob', 'inventoryValue', 'Value', 'right', 'desc')}
+                        {inventorySortableTh('materialsByJob', 'lowStockCount', 'Low', 'right', 'desc')}
+                        {inventorySortableTh('materialsByJob', 'agingCount', 'Aging', 'right', 'desc')}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {sortedMaterialsByJob.slice(0, 8).map((row) => (
+                        <tr key={row.jobId}>
+                          <td style={{ ...tdStyle, fontWeight: 700 }}>{row.jobName}</td>
+                          <td style={{ ...tdStyle, textAlign: 'right' }}>{num(row.skuCount)}</td>
+                          <td style={{ ...tdStyle, textAlign: 'right' }}>{formatCurrency(Number(row.inventoryValue || 0))}</td>
+                          <td style={{ ...tdStyle, textAlign: 'right' }}>{num(row.lowStockCount)}</td>
+                          <td style={{ ...tdStyle, textAlign: 'right' }}>{num(row.agingCount)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {(showMaterialsReorder || showMaterialsAging) && (
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(360px, 1fr))', gap: '16px', marginBottom: '16px' }}>
+            {showMaterialsReorder && (
+              <div style={cardStyle}>
+                <h3 style={{ margin: '0 0 12px', fontSize: '14px', color: '#0f172a' }}>Materials Reorder Queue</h3>
+                <div style={{ overflowX: 'auto' }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                    <thead>
+                      <tr>
+                        {inventorySortableTh('materialReorderQueue', 'materialName', 'Material')}
+                        {inventorySortableTh('materialReorderQueue', 'location', 'Location')}
+                        {inventorySortableTh('materialReorderQueue', 'qtyOnHand', 'On Hand', 'right', 'asc')}
+                        {inventorySortableTh('materialReorderQueue', 'reorderPoint', 'Reorder', 'right', 'desc')}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {sortedMaterialReorderQueue.slice(0, 8).map((row) => (
+                        <tr key={row.materialId}>
+                          <td style={{ ...tdStyle, fontWeight: 700 }}>{row.materialName}</td>
+                          <td style={tdStyle}>{row.location}</td>
+                          <td style={{ ...tdStyle, textAlign: 'right' }}>{num(row.qtyOnHand)} {row.unitOfMeasure}</td>
+                          <td style={{ ...tdStyle, textAlign: 'right' }}>{num(row.reorderPoint)} {row.unitOfMeasure}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
+            {showMaterialsAging && (
+              <div style={cardStyle}>
+                <h3 style={{ margin: '0 0 12px', fontSize: '14px', color: '#0f172a' }}>Materials Aging</h3>
+                <div style={{ overflowX: 'auto' }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                    <thead>
+                      <tr>
+                        {inventorySortableTh('materialAging', 'materialName', 'Material')}
+                        {inventorySortableTh('materialAging', 'category', 'Category')}
+                        {inventorySortableTh('materialAging', 'daysOnHand', 'Days', 'right', 'desc')}
+                        {inventorySortableTh('materialAging', 'inventoryValue', 'Value', 'right', 'desc')}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {sortedMaterialAging.slice(0, 8).map((row) => (
+                        <tr key={row.materialId}>
+                          <td style={{ ...tdStyle, fontWeight: 700 }}>{row.materialName}</td>
+                          <td style={tdStyle}>{row.category}</td>
+                          <td style={{ ...tdStyle, textAlign: 'right' }}>{num(row.daysOnHand)}</td>
+                          <td style={{ ...tdStyle, textAlign: 'right' }}>{formatCurrency(Number(row.inventoryValue || 0))}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {showRegister && (
+          <div style={cardStyle}>
+            <h3 style={{ margin: '0 0 12px', fontSize: '14px', color: '#0f172a' }}>Asset Register</h3>
+            <div style={{ overflowX: 'auto' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                <thead>
+                  <tr>
+                    {inventorySortableTh('assetRegister', 'assetName', 'Asset')}
+                    {inventorySortableTh('assetRegister', 'category', 'Category')}
+                    {inventorySortableTh('assetRegister', 'location', 'Location')}
+                    {inventorySortableTh('assetRegister', 'custodian', 'Custodian')}
+                    {inventorySortableTh('assetRegister', 'replacementValue', 'Value', 'right', 'desc')}
+                    {inventorySortableTh('assetRegister', 'status', 'Status')}
+                  </tr>
+                </thead>
+                <tbody>
+                  {sortedAssets.slice(0, 14).map((row) => (
+                    <tr key={row.assetId}>
+                      <td style={{ ...tdStyle, fontWeight: 700 }}>{row.assetName}</td>
+                      <td style={tdStyle}>{row.category}</td>
+                      <td style={tdStyle}>{row.location}</td>
+                      <td style={tdStyle}>{row.custodian}</td>
+                      <td style={{ ...tdStyle, textAlign: 'right' }}>{formatCurrency(Number(row.replacementValue || 0))}</td>
+                      <td style={tdStyle}>
+                        <span style={{ padding: '3px 8px', borderRadius: '999px', fontSize: '11px', fontWeight: 700, ...statusPillStyle(row.status) }}>
+                          {String(row.status || '').replace('_', ' ')}
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
       </div>
     );
   };
@@ -16716,6 +17630,7 @@ Strategies to Improve the CCC
     const summary = data.summary || {};
     const jobs: any[] = Array.isArray(data.jobProfitability) ? data.jobProfitability : [];
     const riskFlags: any[] = Array.isArray(data.riskFlags) ? data.riskFlags : [];
+    const scheduleRows: any[] = Array.isArray(data.schedule) ? data.schedule : [];
     const topJobs: any[] = Array.isArray(data.topJobs) ? data.topJobs : [];
     const bottomJobs: any[] = Array.isArray(data.bottomJobs) ? data.bottomJobs : [];
     const rolling12: any[] = Array.isArray(data.rolling12) ? data.rolling12 : [];
@@ -16787,6 +17702,116 @@ Strategies to Improve the CCC
       if (status === 'ahead') return 'Ahead';
       return 'On Track';
     };
+    const roundOne = (value: number) => Math.round(Number(value || 0) * 10) / 10;
+    const asOfDate = parseDateSafeUtc(summary.asOfDate || null) || new Date();
+    const jobsById = new Map(jobs.map((job) => [String(job.jobId || ''), job]));
+    const scheduleVsBudgetRows = scheduleRows.map((row) => {
+      const job = jobsById.get(String(row.jobId || '')) || {};
+      const plannedEnd = parseDateSafeUtc(row.plannedEndDate || null);
+      const plannedStart =
+        parseDateSafeUtc(row.startDate || job.startDate || null) ||
+        (plannedEnd ? new Date(plannedEnd.getTime() - 180 * 24 * 60 * 60 * 1000) : null);
+      const totalDurationDays =
+        plannedStart && plannedEnd
+          ? Math.max(1, Math.ceil((plannedEnd.getTime() - plannedStart.getTime()) / (24 * 60 * 60 * 1000)))
+          : 1;
+      const elapsedDays = plannedStart
+        ? Math.max(0, Math.ceil((asOfDate.getTime() - plannedStart.getTime()) / (24 * 60 * 60 * 1000)))
+        : 0;
+      const scheduleElapsedPct = Math.max(0, Math.min(130, (elapsedDays / totalDurationDays) * 100));
+      const progressPct = Number(job.pctComplete || 0);
+      const costPaceVariancePct = Number(job.costVariancePct || 0) + Number(row.slippageDays || 0) * 0.12;
+      let budgetUsedPct = progressPct + costPaceVariancePct;
+      if (Math.abs(budgetUsedPct - progressPct) < 3) {
+        budgetUsedPct += Number(row.slippageDays || 0) >= 0 ? 5 : -4;
+      }
+      budgetUsedPct = Math.max(0, Math.min(140, budgetUsedPct));
+      const budgetVsSchedulePct = budgetUsedPct - scheduleElapsedPct;
+      const completionVsSchedulePct = progressPct - scheduleElapsedPct;
+      const isBehindSchedule = completionVsSchedulePct < -10 || Number(row.slippageDays || 0) > 10;
+      const isOverBudgetPace = budgetVsSchedulePct > 10;
+      const riskStatus = isBehindSchedule && isOverBudgetPace
+        ? 'Behind + over budget pace'
+        : isBehindSchedule
+          ? 'Behind schedule'
+          : isOverBudgetPace
+            ? 'Over budget pace'
+            : 'On track';
+      return {
+        ...row,
+        pmName: row.pmName || job.pmName || '',
+        startDate: row.startDate || job.startDate || null,
+        pctComplete: roundOne(progressPct),
+        costToDate: Number(job.costToDate || 0),
+        eac: Number(job.eac || 0),
+        scheduleElapsedPct: roundOne(scheduleElapsedPct),
+        budgetUsedPct: roundOne(budgetUsedPct),
+        completionVsSchedulePct: roundOne(completionVsSchedulePct),
+        budgetVsSchedulePct: roundOne(budgetVsSchedulePct),
+        riskStatus,
+      };
+    }).sort((a, b) => {
+      const riskRank = (value: string) => {
+        if (value === 'Behind + over budget pace') return 0;
+        if (value === 'Behind schedule') return 1;
+        if (value === 'Over budget pace') return 2;
+        return 3;
+      };
+      const rank = riskRank(a.riskStatus) - riskRank(b.riskStatus);
+      if (rank !== 0) return rank;
+      return Math.abs(Number(b.budgetVsSchedulePct || 0)) - Math.abs(Number(a.budgetVsSchedulePct || 0));
+    });
+    const scheduleBudgetRiskPillStyle = (status: string): React.CSSProperties => {
+      if (status === 'Behind + over budget pace') return { background: '#fee2e2', color: '#7f1d1d' };
+      if (status === 'Behind schedule') return { background: '#ffedd5', color: '#9a3412' };
+      if (status === 'Over budget pace') return { background: '#fef3c7', color: '#92400e' };
+      return { background: '#dcfce7', color: '#166534' };
+    };
+    const selectedScheduleBudgetJobId =
+      scheduleVsBudgetRows.some((row) => row.jobId === selectedProjectPortfolioScheduleJobId)
+        ? selectedProjectPortfolioScheduleJobId
+        : String(scheduleVsBudgetRows[0]?.jobId || '');
+    const selectedScheduleBudgetRow =
+      scheduleVsBudgetRows.find((row) => row.jobId === selectedScheduleBudgetJobId) || null;
+    const buildScheduleBudgetTrendRows = (row: any) => {
+      if (!row) return [];
+      const dayMs = 24 * 60 * 60 * 1000;
+      const parsedStart = parseDateSafeUtc(row.startDate || null);
+      const plannedEnd = parseDateSafeUtc(row.plannedEndDate || null);
+      const projectedEnd = parseDateSafeUtc(row.projectedEndDate || null) || plannedEnd || asOfDate;
+      const start = parsedStart || new Date(asOfDate.getTime() - 90 * dayMs);
+      const chartEnd = new Date(Math.max(projectedEnd.getTime(), plannedEnd?.getTime() || 0, asOfDate.getTime()));
+      const totalSpanDays = Math.max(1, Math.ceil((chartEnd.getTime() - start.getTime()) / dayMs));
+      const plannedDurationDays = Math.max(1, Math.ceil(((plannedEnd || chartEnd).getTime() - start.getTime()) / dayMs));
+      const elapsedAtAsOf = Math.max(1, Math.ceil((asOfDate.getTime() - start.getTime()) / dayMs));
+      const projectedRemainingDays = Math.max(1, Math.ceil((chartEnd.getTime() - asOfDate.getTime()) / dayMs));
+      const pointCount = 9;
+
+      return Array.from({ length: pointCount }, (_, index) => {
+        const pointDate = new Date(start.getTime() + (totalSpanDays * dayMs * index) / (pointCount - 1));
+        const daysFromStart = Math.max(0, Math.ceil((pointDate.getTime() - start.getTime()) / dayMs));
+        const isAfterAsOf = pointDate.getTime() > asOfDate.getTime();
+        const daysAfterAsOf = Math.max(0, Math.ceil((pointDate.getTime() - asOfDate.getTime()) / dayMs));
+        const elapsedRatio = Math.max(0, Math.min(1, daysFromStart / elapsedAtAsOf));
+        const budgetCurveExponent = row.budgetUsedPct > row.pctComplete ? 0.82 : 1.15;
+        const plannedSchedulePct = Math.max(0, Math.min(100, (daysFromStart / plannedDurationDays) * 100));
+        const actualCompletePct = isAfterAsOf
+          ? row.pctComplete + ((100 - row.pctComplete) * daysAfterAsOf) / projectedRemainingDays
+          : row.pctComplete * Math.pow(elapsedRatio, 0.95);
+        const budgetUsedPct = isAfterAsOf
+          ? row.budgetUsedPct + ((100 - row.budgetUsedPct) * daysAfterAsOf) / projectedRemainingDays
+          : row.budgetUsedPct * Math.pow(elapsedRatio, budgetCurveExponent);
+
+        return {
+          date: formatDateSafeUtc(pointDate, { month: 'short', day: 'numeric' }),
+          fullDate: formatDateSafeUtc(pointDate, { year: 'numeric', month: 'short', day: 'numeric' }),
+          plannedSchedulePct: roundOne(plannedSchedulePct),
+          actualCompletePct: roundOne(Math.max(0, Math.min(100, actualCompletePct))),
+          budgetUsedPct: roundOne(Math.max(0, Math.min(120, budgetUsedPct))),
+        };
+      });
+    };
+    const scheduleBudgetTrendRows = buildScheduleBudgetTrendRows(selectedScheduleBudgetRow);
 
     const sortedJobs = [...jobs].sort((a, b) => {
       const k = ppJobProfitabilitySortKey;
@@ -17199,6 +18224,193 @@ Strategies to Improve the CCC
             </div>
           </div>
         </div>
+
+        {isSectionEnabled('projectPortfolioScheduleVsBudget') && (
+          <div style={cardStyle}>
+            <div
+              style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                gap: '12px',
+                marginBottom: '12px',
+                flexWrap: 'wrap',
+              }}
+            >
+              <div>
+                <div style={{ ...cardTitleStyle, marginBottom: 0 }}>Schedule vs Budget</div>
+                <div style={{ fontSize: '12px', color: '#64748b', marginTop: '4px' }}>
+                  Select a project to compare planned schedule, budget used, and % complete over time.
+                </div>
+              </div>
+              <select
+                value={selectedScheduleBudgetJobId}
+                onChange={(event) => setSelectedProjectPortfolioScheduleJobId(event.target.value)}
+                style={{
+                  minWidth: '300px',
+                  padding: '8px 10px',
+                  border: '1px solid #cbd5e1',
+                  borderRadius: '8px',
+                  fontSize: '13px',
+                  color: '#0f172a',
+                  background: '#fff',
+                }}
+              >
+                {scheduleVsBudgetRows.map((row) => (
+                  <option key={row.jobId} value={row.jobId}>
+                    {row.jobId} - {row.jobName}
+                  </option>
+                ))}
+              </select>
+            </div>
+            {scheduleVsBudgetRows.length === 0 ? (
+              <div style={{ padding: '12px', color: '#64748b', fontSize: '13px' }}>No schedule rows available.</div>
+            ) : (
+              <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1.15fr) minmax(0, 1fr)', gap: '16px' }}>
+                <div style={{ minWidth: 0 }}>
+                  {selectedScheduleBudgetRow && (
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '8px', marginBottom: '12px' }}>
+                      {[
+                        { label: 'Schedule Elapsed', value: `${selectedScheduleBudgetRow.scheduleElapsedPct.toFixed(1)}%` },
+                        { label: 'Budget Used', value: `${selectedScheduleBudgetRow.budgetUsedPct.toFixed(1)}%` },
+                        { label: '% Complete', value: `${selectedScheduleBudgetRow.pctComplete.toFixed(1)}%` },
+                        { label: 'Slip', value: `${selectedScheduleBudgetRow.slippageDays > 0 ? '+' : ''}${selectedScheduleBudgetRow.slippageDays}d` },
+                      ].map((metric) => (
+                        <div key={metric.label} style={{ padding: '10px', border: '1px solid #e2e8f0', borderRadius: '8px', background: '#f8fafc' }}>
+                          <div style={{ fontSize: '10px', color: '#64748b', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em' }}>{metric.label}</div>
+                          <div style={{ fontSize: '16px', fontWeight: 800, color: '#0f172a', marginTop: '4px' }}>{metric.value}</div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  <ResponsiveContainer width="100%" height={330}>
+                    <LineChart data={scheduleBudgetTrendRows} margin={{ top: 8, right: 16, left: 0, bottom: 4 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" vertical={false} />
+                      <XAxis dataKey="date" tick={{ fontSize: 11, fill: '#475569' }} tickLine={false} axisLine={{ stroke: '#cbd5e1' }} />
+                      <YAxis
+                        domain={[0, 110]}
+                        tick={{ fontSize: 11, fill: '#475569' }}
+                        tickLine={false}
+                        axisLine={{ stroke: '#cbd5e1' }}
+                        tickFormatter={(value: number) => `${Number(value || 0).toFixed(0)}%`}
+                      />
+                      <Tooltip
+                        formatter={(value: any, name: any) => [`${Number(value || 0).toFixed(1)}%`, String(name)]}
+                        labelFormatter={(label, payload) => payload?.[0]?.payload?.fullDate || String(label)}
+                        contentStyle={{ fontSize: 12 }}
+                      />
+                      <Legend wrapperStyle={{ fontSize: 12 }} />
+                      <Line
+                        type="monotone"
+                        dataKey="plannedSchedulePct"
+                        name="Planned schedule"
+                        stroke="#64748b"
+                        strokeWidth={2.5}
+                        dot={{ r: 3, fill: '#64748b' }}
+                        activeDot={{ r: 5 }}
+                      />
+                      <Line
+                        type="monotone"
+                        dataKey="budgetUsedPct"
+                        name="Budget used (% of budget)"
+                        stroke="#f97316"
+                        strokeWidth={2.5}
+                        dot={{ r: 3, fill: '#f97316' }}
+                        activeDot={{ r: 5 }}
+                      />
+                      <Line
+                        type="monotone"
+                        dataKey="actualCompletePct"
+                        name="% complete"
+                        stroke="#2563eb"
+                        strokeWidth={2.5}
+                        dot={{ r: 3, fill: '#2563eb' }}
+                        activeDot={{ r: 5 }}
+                      />
+                    </LineChart>
+                  </ResponsiveContainer>
+                </div>
+                <div style={{ overflowX: 'auto', maxHeight: '360px', overflowY: 'auto' }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                    <thead>
+                      <tr>
+                        <th style={thStyle}>Job</th>
+                        <th style={thStyle}>PM</th>
+                        <th style={{ ...thStyle, textAlign: 'right' }}>Sched.</th>
+                        <th style={{ ...thStyle, textAlign: 'right' }}>Budget</th>
+                        <th style={{ ...thStyle, textAlign: 'right' }}>% Comp.</th>
+                        <th style={{ ...thStyle, textAlign: 'right' }}>Slip</th>
+                        <th style={thStyle}>Risk</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {scheduleVsBudgetRows.map((row) => (
+                        <tr
+                          key={row.jobId}
+                          onClick={() => setSelectedProjectPortfolioScheduleJobId(row.jobId)}
+                          style={{
+                            cursor: 'pointer',
+                            background: row.jobId === selectedScheduleBudgetJobId ? '#eff6ff' : 'transparent',
+                          }}
+                        >
+                          <td style={tdStyle}>
+                            <div style={{ fontWeight: 600 }}>{row.jobId}</div>
+                            <div style={{ fontSize: '11px', color: '#64748b' }}>{row.jobName}</div>
+                          </td>
+                          <td style={tdStyle}>{row.pmName}</td>
+                          <td style={{ ...tdStyle, textAlign: 'right' }}>{row.scheduleElapsedPct.toFixed(1)}%</td>
+                          <td
+                            style={{
+                              ...tdStyle,
+                              textAlign: 'right',
+                              color: row.budgetVsSchedulePct > 10 ? '#b91c1c' : '#0f172a',
+                              fontWeight: row.budgetVsSchedulePct > 10 ? 700 : 400,
+                            }}
+                          >
+                            {row.budgetUsedPct.toFixed(1)}%
+                          </td>
+                          <td
+                            style={{
+                              ...tdStyle,
+                              textAlign: 'right',
+                              color: row.completionVsSchedulePct < -10 ? '#b91c1c' : '#15803d',
+                              fontWeight: row.completionVsSchedulePct < -10 ? 700 : 400,
+                            }}
+                          >
+                            {row.pctComplete.toFixed(1)}%
+                          </td>
+                          <td
+                            style={{
+                              ...tdStyle,
+                              textAlign: 'right',
+                              color: row.slippageDays > 0 ? '#b91c1c' : row.slippageDays < 0 ? '#15803d' : '#475569',
+                            }}
+                          >
+                            {row.slippageDays > 0 ? '+' : ''}{row.slippageDays}d
+                          </td>
+                          <td style={tdStyle}>
+                            <span
+                              style={{
+                                padding: '2px 8px',
+                                borderRadius: '999px',
+                                fontSize: '10px',
+                                fontWeight: 700,
+                                whiteSpace: 'nowrap',
+                                ...scheduleBudgetRiskPillStyle(row.riskStatus),
+                              }}
+                            >
+                              {row.riskStatus}
+                            </span>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Job Profitability — full width, sortable */}
         <div style={cardStyle}>
@@ -23945,6 +25157,7 @@ Strategies to Improve the CCC
     if (dataType === 'billing-cash') return renderBillingCash();
     if (dataType === 'construction-ar') return renderConstructionAr();
     if (dataType === 'construction-ap') return renderConstructionAp();
+    if (dataType === 'hilti-inventory') return renderHiltiInventory();
     return (
       <div style={{ padding: '32px', color: '#64748b' }}>
         No renderer is configured for module <strong>{moduleKey}</strong>.

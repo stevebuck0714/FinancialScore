@@ -50,6 +50,31 @@ const DATA_TYPE_GROUP: Record<string, string> = {
   products: 'Products',
 };
 
+const SECTOR_23_REPORTS_BY_MODULE: Record<string, OperationalHubReportDefinition[]> = {
+  construction_inventory: [
+    { key: 'constructionInventoryKpis', label: 'Inventory KPI Cards', group: 'Inventory' },
+    { key: 'hiltiAssetsByCategory', label: 'Equipment & Tools by Category', group: 'Inventory' },
+    { key: 'hiltiAssetsByJob', label: 'Equipment & Tools by Job', group: 'Inventory' },
+    { key: 'hiltiMaintenanceQueue', label: 'Equipment Maintenance & Compliance Queue', group: 'Inventory' },
+    { key: 'hiltiIdleAssets', label: 'Idle / Underutilized Equipment', group: 'Inventory' },
+    { key: 'constructionMaterialsByCategory', label: 'Materials by Category', group: 'Inventory' },
+    { key: 'constructionMaterialsByJob', label: 'Materials by Job', group: 'Inventory' },
+    { key: 'constructionMaterialsReorderQueue', label: 'Materials Reorder Queue', group: 'Inventory' },
+    { key: 'constructionMaterialsAging', label: 'Materials Aging', group: 'Inventory' },
+    { key: 'hiltiAssetRegister', label: 'Equipment Asset Register', group: 'Inventory' },
+  ],
+  job_cost_control: [
+    { key: 'crewtracksKpis', label: 'Crewtracks KPI Cards', group: 'Job Cost Control' },
+    { key: 'crewtracksCrewProductivity', label: 'Crew Productivity', group: 'Job Cost Control' },
+    { key: 'crewtracksJobProductivity', label: 'Job Productivity', group: 'Job Cost Control' },
+    { key: 'crewtracksExceptions', label: 'Crew Exceptions', group: 'Job Cost Control' },
+    { key: 'crewtracksRecentTime', label: 'Recent Crew Time', group: 'Job Cost Control' },
+  ],
+  project_portfolio: [
+    { key: 'projectPortfolioScheduleVsBudget', label: 'Schedule vs Budget', group: 'Project Portfolio' },
+  ],
+};
+
 const SECTOR_32_REPORTS_BY_MODULE: Record<string, OperationalHubReportDefinition[]> = {
   inventory: [
     { key: 'customersWipByCustomer', label: 'WIP / Open Production', group: 'Inventory' },
@@ -190,6 +215,9 @@ export function getOperationalHubDefaultReportsForModule(
   sectorCategory?: string | null
 ): OperationalHubReportDefinition[] {
   const sector = normalizeSector(sectorCategory);
+  if (sector === '23' && SECTOR_23_REPORTS_BY_MODULE[moduleKey]) {
+    return SECTOR_23_REPORTS_BY_MODULE[moduleKey];
+  }
   if (sector === '32' && SECTOR_32_REPORTS_BY_MODULE[moduleKey]) {
     return SECTOR_32_REPORTS_BY_MODULE[moduleKey];
   }

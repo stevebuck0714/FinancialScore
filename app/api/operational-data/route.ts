@@ -11,6 +11,8 @@ import {
   buildBillingCashMock,
   buildConstructionArMock,
   buildConstructionApMock,
+  buildCrewtracksMock,
+  buildHiltiInventoryMock,
 } from '@/lib/operations/construction-mock-data';
 import {
   buildRevenueBillablesMock,
@@ -9126,6 +9128,7 @@ export async function GET(request: NextRequest) {
         // M2: Mock-driven Job Cost Control. Vista-backed snapshot read lands
         // in M6 once a live customer is connected.
         const payload = buildJobCostControlMock(companyId);
+        const crewtracks = buildCrewtracksMock(companyId);
         return NextResponse.json({
           records: payload.jobs,
           jobs: payload.jobs,
@@ -9133,6 +9136,11 @@ export async function GET(request: NextRequest) {
           costCode: payload.costCode,
           costByType: payload.costByType,
           laborDetail: payload.laborDetail,
+          crewtracks,
+          crewtracksByCrew: crewtracks.byCrew,
+          crewtracksByJob: crewtracks.byJob,
+          crewtracksExceptions: crewtracks.exceptions,
+          crewtracksCrewDays: crewtracks.crewDays,
           summary: payload.summary,
           meta: payload.meta,
         });
@@ -9262,6 +9270,26 @@ export async function GET(request: NextRequest) {
           byBill: payload.byBill,
           paymentPriority: payload.paymentPriority,
           filters: payload.filters,
+          summary: payload.summary,
+          meta: payload.meta,
+        });
+      }
+
+      case 'hilti-inventory': {
+        if (!shouldUseMockData) return mockDataDisabledResponse('Hilti Inventory');
+        const payload = buildHiltiInventoryMock(companyId);
+        return NextResponse.json({
+          records: payload.assets,
+          assets: payload.assets,
+          byCategory: payload.byCategory,
+          byJob: payload.byJob,
+          materials: payload.materials,
+          materialsByCategory: payload.materialsByCategory,
+          materialsByJob: payload.materialsByJob,
+          materialReorderQueue: payload.materialReorderQueue,
+          materialAging: payload.materialAging,
+          maintenanceQueue: payload.maintenanceQueue,
+          idleAssets: payload.idleAssets,
           summary: payload.summary,
           meta: payload.meta,
         });

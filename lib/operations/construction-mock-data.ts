@@ -530,6 +530,7 @@ export type PpScheduleRow = {
   jobId: string;
   jobName: string;
   pmName: string;
+  startDate: string;
   plannedEndDate: string;
   projectedEndDate: string;
   slippageDays: number;            // positive = slipping behind, negative = ahead
@@ -715,6 +716,7 @@ export function buildProjectPortfolioMock(
       jobId: j.jobId,
       jobName: j.jobName,
       pmName: j.pmName,
+      startDate: j.startDate,
       plannedEndDate: ymd(plannedEnd),
       projectedEndDate: ymd(projectedEnd),
       slippageDays,
@@ -2064,6 +2066,562 @@ export function buildConstructionApMock(
     byBill: byBill.sort((a, b) => b.daysOutstanding - a.daysOutstanding),
     paymentPriority,
     filters: { jobs: filterJobs, pms, divisions },
+    meta: {
+      source: 'mock',
+      seed: seedKey,
+      generatedAt: new Date().toISOString(),
+    },
+  };
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// Crewtracks: crew time, production quantities, and labor productivity
+// ──────────────────────────────────────────────────────────────────────────
+
+export type CrewtracksCrewDayRow = {
+  date: string;
+  jobId: string;
+  jobName: string;
+  crewName: string;
+  foreman: string;
+  costCode: string;
+  activity: string;
+  laborHours: number;
+  overtimeHours: number;
+  crewSize: number;
+  unitsCompleted: number;
+  unitOfMeasure: string;
+  productivityPerHour: number;
+  targetProductivityPerHour: number;
+  variancePct: number;
+  status: 'ahead' | 'on_track' | 'behind';
+};
+
+export type CrewtracksPayload = {
+  summary: {
+    totalHours: number;
+    overtimeHours: number;
+    overtimePct: number;
+    totalUnitsCompleted: number;
+    avgProductivityPerHour: number;
+    targetProductivityPerHour: number;
+    productivityVariancePct: number;
+    crewCount: number;
+    activeJobCount: number;
+    asOfDate: string;
+  };
+  crewDays: CrewtracksCrewDayRow[];
+  byCrew: Array<{
+    crewName: string;
+    foreman: string;
+    laborHours: number;
+    overtimeHours: number;
+    unitsCompleted: number;
+    productivityPerHour: number;
+    targetProductivityPerHour: number;
+    variancePct: number;
+    status: 'ahead' | 'on_track' | 'behind';
+  }>;
+  byJob: Array<{
+    jobId: string;
+    jobName: string;
+    laborHours: number;
+    unitsCompleted: number;
+    productivityPerHour: number;
+    targetProductivityPerHour: number;
+    variancePct: number;
+  }>;
+  exceptions: CrewtracksCrewDayRow[];
+  meta: { source: 'mock'; seed: string; generatedAt: string };
+};
+
+export type BuildCrewtracksMockOptions = {
+  jobCount?: number;
+  coverageDays?: number;
+  asOf?: Date;
+};
+
+export function buildCrewtracksMock(
+  companyId: string,
+  options: BuildCrewtracksMockOptions = {}
+): CrewtracksPayload {
+  const seedKey = `crewtracks::${companyId || 'anonymous'}::v1`;
+  const rng = makeRng(seedKey);
+  const asOf = options.asOf || new Date();
+  const coverageDays = options.coverageDays ?? 28;
+  const jcc = buildJobCostControlMock(companyId, {
+    jobCount: options.jobCount ?? 10,
+    asOf,
+  });
+  const activeJobs = jcc.jobs.filter((job) => job.status !== 'closing_out').slice(0, 8);
+  const crews = [
+    { crewName: 'Crew A - Concrete', foreman: 'N. Alvarez', activity: 'Concrete placement', costCode: '03300', uom: 'CY', target: 2.2 },
+    { crewName: 'Crew B - Framing', foreman: 'T. Miller', activity: 'Framing install', costCode: '06100', uom: 'LF', target: 8.4 },
+    { crewName: 'Crew C - Sitework', foreman: 'K. Jackson', activity: 'Site prep / grading', costCode: '31000', uom: 'SY', target: 14.5 },
+    { crewName: 'Crew D - MEP', foreman: 'R. Singh', activity: 'MEP rough-in', costCode: '23000', uom: 'EA', target: 1.8 },
+  ] as const;
+
+  const crewDays: CrewtracksCrewDayRow[] = [];
+  for (let day = coverageDays - 1; day >= 0; day -= 1) {
+    const date = new Date(Date.UTC(asOf.getUTCFullYear(), asOf.getUTCMonth(), asOf.getUTCDate() - day));
+    const dow = date.getUTCDay();
+    if (dow === 0 || dow === 6) continue;
+    crews.forEach((crew, crewIdx) => {
+      const job = activeJobs[(day + crewIdx) % Math.max(1, activeJobs.length)];
+      if (!job) return;
+      const crewSize = rng.int(4, 9);
+      const laborHours = round2(crewSize * (7.4 + rng.next() * 1.8));
+      const overtimeHours = round2(rng.next() > 0.72 ? crewSize * (0.5 + rng.next() * 1.5) : 0);
+      const targetProductivityPerHour = crew.target;
+      const productivityMult = Math.max(0.62, Math.min(1.32, rng.norm(0.98, 0.16)));
+      const productivityPerHour = round2(targetProductivityPerHour * productivityMult);
+      const unitsCompleted = round2(productivityPerHour * laborHours);
+      const variancePct = round2(((productivityPerHour - targetProductivityPerHour) / targetProductivityPerHour) * 100);
+      const status = variancePct <= -12 ? 'behind' : variancePct >= 8 ? 'ahead' : 'on_track';
+
+      crewDays.push({
+        date: ymd(date),
+        jobId: job.jobId,
+        jobName: job.jobName,
+        crewName: crew.crewName,
+        foreman: crew.foreman,
+        costCode: crew.costCode,
+        activity: crew.activity,
+        laborHours,
+        overtimeHours,
+        crewSize,
+        unitsCompleted,
+        unitOfMeasure: crew.uom,
+        productivityPerHour,
+        targetProductivityPerHour,
+        variancePct,
+        status,
+      });
+    });
+  }
+
+  const rollup = <T extends string>(keyFn: (row: CrewtracksCrewDayRow) => T) => {
+    const map = new Map<T, { laborHours: number; overtimeHours: number; unitsCompleted: number; targetUnits: number; rows: CrewtracksCrewDayRow[] }>();
+    crewDays.forEach((row) => {
+      const key = keyFn(row);
+      const current = map.get(key) || { laborHours: 0, overtimeHours: 0, unitsCompleted: 0, targetUnits: 0, rows: [] };
+      current.laborHours += row.laborHours;
+      current.overtimeHours += row.overtimeHours;
+      current.unitsCompleted += row.unitsCompleted;
+      current.targetUnits += row.targetProductivityPerHour * row.laborHours;
+      current.rows.push(row);
+      map.set(key, current);
+    });
+    return map;
+  };
+
+  const crewRollup = rollup((row) => row.crewName);
+  const byCrew = Array.from(crewRollup.entries()).map(([crewName, values]) => {
+    const first = values.rows[0];
+    const productivityPerHour = values.laborHours > 0 ? values.unitsCompleted / values.laborHours : 0;
+    const targetProductivityPerHour = values.laborHours > 0 ? values.targetUnits / values.laborHours : 0;
+    const variancePct = targetProductivityPerHour > 0 ? ((productivityPerHour - targetProductivityPerHour) / targetProductivityPerHour) * 100 : 0;
+    return {
+      crewName,
+      foreman: first?.foreman || '',
+      laborHours: round2(values.laborHours),
+      overtimeHours: round2(values.overtimeHours),
+      unitsCompleted: round2(values.unitsCompleted),
+      productivityPerHour: round2(productivityPerHour),
+      targetProductivityPerHour: round2(targetProductivityPerHour),
+      variancePct: round2(variancePct),
+      status: variancePct <= -12 ? 'behind' as const : variancePct >= 8 ? 'ahead' as const : 'on_track' as const,
+    };
+  }).sort((a, b) => a.variancePct - b.variancePct);
+
+  const jobRollup = rollup((row) => row.jobId);
+  const byJob = Array.from(jobRollup.entries()).map(([jobId, values]) => {
+    const first = values.rows[0];
+    const productivityPerHour = values.laborHours > 0 ? values.unitsCompleted / values.laborHours : 0;
+    const targetProductivityPerHour = values.laborHours > 0 ? values.targetUnits / values.laborHours : 0;
+    const variancePct = targetProductivityPerHour > 0 ? ((productivityPerHour - targetProductivityPerHour) / targetProductivityPerHour) * 100 : 0;
+    return {
+      jobId,
+      jobName: first?.jobName || jobId,
+      laborHours: round2(values.laborHours),
+      unitsCompleted: round2(values.unitsCompleted),
+      productivityPerHour: round2(productivityPerHour),
+      targetProductivityPerHour: round2(targetProductivityPerHour),
+      variancePct: round2(variancePct),
+    };
+  }).sort((a, b) => a.variancePct - b.variancePct);
+
+  const totalHours = crewDays.reduce((sum, row) => sum + row.laborHours, 0);
+  const overtimeHours = crewDays.reduce((sum, row) => sum + row.overtimeHours, 0);
+  const totalUnitsCompleted = crewDays.reduce((sum, row) => sum + row.unitsCompleted, 0);
+  const totalTargetUnits = crewDays.reduce((sum, row) => sum + row.targetProductivityPerHour * row.laborHours, 0);
+  const avgProductivityPerHour = totalHours > 0 ? totalUnitsCompleted / totalHours : 0;
+  const targetProductivityPerHour = totalHours > 0 ? totalTargetUnits / totalHours : 0;
+  const productivityVariancePct = targetProductivityPerHour > 0
+    ? ((avgProductivityPerHour - targetProductivityPerHour) / targetProductivityPerHour) * 100
+    : 0;
+
+  return {
+    summary: {
+      totalHours: round2(totalHours),
+      overtimeHours: round2(overtimeHours),
+      overtimePct: totalHours > 0 ? round2((overtimeHours / totalHours) * 100) : 0,
+      totalUnitsCompleted: round2(totalUnitsCompleted),
+      avgProductivityPerHour: round2(avgProductivityPerHour),
+      targetProductivityPerHour: round2(targetProductivityPerHour),
+      productivityVariancePct: round2(productivityVariancePct),
+      crewCount: crews.length,
+      activeJobCount: activeJobs.length,
+      asOfDate: ymd(asOf),
+    },
+    crewDays: crewDays.sort((a, b) => b.date.localeCompare(a.date)),
+    byCrew,
+    byJob,
+    exceptions: crewDays.filter((row) => row.status === 'behind' || row.overtimeHours > 0).sort((a, b) => a.variancePct - b.variancePct).slice(0, 12),
+    meta: {
+      source: 'mock',
+      seed: seedKey,
+      generatedAt: new Date().toISOString(),
+    },
+  };
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// Hilti: construction tool / equipment inventory, utilization, and maintenance
+// ──────────────────────────────────────────────────────────────────────────
+
+export type HiltiAssetRow = {
+  assetId: string;
+  assetName: string;
+  category: string;
+  serialNumber: string;
+  status: 'assigned' | 'available' | 'idle' | 'service_due' | 'missing';
+  jobId: string | null;
+  jobName: string | null;
+  location: string;
+  custodian: string;
+  acquisitionCost: number;
+  replacementValue: number;
+  utilizationPct: number;
+  idleDays: number;
+  lastSeenDate: string;
+  nextServiceDate: string;
+  complianceStatus: 'compliant' | 'inspection_due' | 'expired';
+};
+
+export type ConstructionMaterialInventoryRow = {
+  materialId: string;
+  materialName: string;
+  category: string;
+  jobId: string | null;
+  jobName: string | null;
+  location: string;
+  qtyOnHand: number;
+  unitOfMeasure: string;
+  avgCost: number;
+  inventoryValue: number;
+  daysOnHand: number;
+  reorderPoint: number;
+  status: 'ok' | 'low_stock' | 'excess' | 'aging';
+};
+
+export type HiltiInventoryPayload = {
+  summary: {
+    assetCount: number;
+    assignedCount: number;
+    idleCount: number;
+    serviceDueCount: number;
+    missingCount: number;
+    totalReplacementValue: number;
+    materialSkuCount: number;
+    totalMaterialValue: number;
+    avgUtilizationPct: number;
+    complianceAtRiskCount: number;
+    asOfDate: string;
+  };
+  assets: HiltiAssetRow[];
+  byCategory: Array<{
+    category: string;
+    assetCount: number;
+    assignedCount: number;
+    idleCount: number;
+    serviceDueCount: number;
+    replacementValue: number;
+    avgUtilizationPct: number;
+  }>;
+  byJob: Array<{
+    jobId: string;
+    jobName: string;
+    assetCount: number;
+    replacementValue: number;
+    avgUtilizationPct: number;
+    serviceDueCount: number;
+  }>;
+  materials: ConstructionMaterialInventoryRow[];
+  materialsByCategory: Array<{
+    category: string;
+    skuCount: number;
+    qtyOnHand: number;
+    inventoryValue: number;
+    lowStockCount: number;
+    agingCount: number;
+  }>;
+  materialsByJob: Array<{
+    jobId: string;
+    jobName: string;
+    skuCount: number;
+    inventoryValue: number;
+    lowStockCount: number;
+    agingCount: number;
+  }>;
+  materialReorderQueue: ConstructionMaterialInventoryRow[];
+  materialAging: ConstructionMaterialInventoryRow[];
+  maintenanceQueue: HiltiAssetRow[];
+  idleAssets: HiltiAssetRow[];
+  meta: { source: 'mock'; seed: string; generatedAt: string };
+};
+
+export type BuildHiltiInventoryMockOptions = {
+  jobCount?: number;
+  assetCount?: number;
+  asOf?: Date;
+};
+
+export function buildHiltiInventoryMock(
+  companyId: string,
+  options: BuildHiltiInventoryMockOptions = {}
+): HiltiInventoryPayload {
+  const seedKey = `hilti-inventory::${companyId || 'anonymous'}::v1`;
+  const rng = makeRng(seedKey);
+  const asOf = options.asOf || new Date();
+  const assetCount = options.assetCount ?? 42;
+  const jcc = buildJobCostControlMock(companyId, {
+    jobCount: options.jobCount ?? 10,
+    asOf,
+  });
+  const activeJobs = jcc.jobs.filter((job) => job.status !== 'closing_out').slice(0, 8);
+  const locations = ['Main Warehouse', 'North Yard', 'Service Van 12', 'Service Van 18', 'Tool Cage A'] as const;
+  const custodians = ['D. Reyes', 'M. O\'Brien', 'L. Patel', 'C. Nakamura', 'A. Schultz', 'J. Thompson'] as const;
+  const catalog = [
+    { category: 'Concrete Tools', names: ['Rotary Hammer', 'Breaker', 'Concrete Saw'], cost: 1800 },
+    { category: 'Layout & Measuring', names: ['Laser Level', 'Total Station', 'Distance Meter'], cost: 2400 },
+    { category: 'Power Tools', names: ['Impact Driver Kit', 'Cordless Grinder', 'Circular Saw'], cost: 950 },
+    { category: 'Anchoring', names: ['Anchor System Kit', 'Epoxy Dispenser', 'Core Drill'], cost: 1250 },
+    { category: 'Safety & Compliance', names: ['Dust Extractor', 'Fall Protection Kit', 'Inspection Monitor'], cost: 1100 },
+    { category: 'Heavy Equipment', names: ['Compact Loader Attachment', 'Generator', 'Light Tower'], cost: 5200 },
+  ] as const;
+  const materialCatalog = [
+    { category: 'Concrete & Masonry', names: ['Ready Mix Reserve', 'CMU Block', 'Rebar #5'], uom: 'unit', cost: 6.8 },
+    { category: 'Steel & Metals', names: ['Structural Steel', 'Metal Studs', 'Decking Panels'], uom: 'lf', cost: 18.5 },
+    { category: 'Lumber & Framing', names: ['Dimensional Lumber', 'Plywood Sheathing', 'Engineered Joists'], uom: 'sheet', cost: 42 },
+    { category: 'MEP Rough-In', names: ['Copper Pipe', 'Conduit Bundles', 'Wire Pull Boxes'], uom: 'bundle', cost: 74 },
+    { category: 'Drywall & Finishes', names: ['Drywall Sheets', 'Joint Compound', 'Ceiling Tile'], uom: 'unit', cost: 21 },
+    { category: 'Site Consumables', names: ['Fasteners', 'Adhesives', 'Safety Supplies'], uom: 'box', cost: 38 },
+  ] as const;
+
+  const assets: HiltiAssetRow[] = [];
+  for (let idx = 0; idx < assetCount; idx += 1) {
+    const item = catalog[idx % catalog.length];
+    const assetName = `${rng.pick(item.names)} ${100 + idx}`;
+    const assigned = rng.next() > 0.22;
+    const job = assigned && activeJobs.length > 0 ? activeJobs[idx % activeJobs.length] : null;
+    const idleDays = assigned ? rng.int(0, 8) : rng.int(6, 45);
+    const utilizationPct = assigned ? Math.max(18, Math.min(96, rng.norm(68, 17))) : Math.max(0, Math.min(34, rng.norm(18, 10)));
+    const serviceDueSoon = rng.next() > 0.82 || idleDays > 30;
+    const missing = rng.next() > 0.96;
+    const status: HiltiAssetRow['status'] = missing
+      ? 'missing'
+      : serviceDueSoon
+        ? 'service_due'
+        : !assigned && idleDays > 14
+          ? 'idle'
+          : assigned
+            ? 'assigned'
+            : 'available';
+    const lastSeenDate = new Date(Date.UTC(asOf.getUTCFullYear(), asOf.getUTCMonth(), asOf.getUTCDate() - Math.min(idleDays, 28)));
+    const nextServiceDate = new Date(Date.UTC(asOf.getUTCFullYear(), asOf.getUTCMonth(), asOf.getUTCDate() + rng.int(-12, 45)));
+    const complianceStatus: HiltiAssetRow['complianceStatus'] = missing
+      ? 'expired'
+      : serviceDueSoon && rng.next() > 0.48
+        ? 'inspection_due'
+        : rng.next() > 0.94
+          ? 'expired'
+          : 'compliant';
+    const acquisitionCost = round0(item.cost * rng.norm(1, 0.14));
+
+    assets.push({
+      assetId: `HILTI-${String(idx + 1).padStart(4, '0')}`,
+      assetName,
+      category: item.category,
+      serialNumber: `SN-${rng.int(100000, 999999)}`,
+      status,
+      jobId: job?.jobId || null,
+      jobName: job?.jobName || null,
+      location: job?.jobName || rng.pick(locations),
+      custodian: assigned ? rng.pick(custodians) : 'Warehouse',
+      acquisitionCost,
+      replacementValue: round0(acquisitionCost * rng.norm(1.12, 0.08)),
+      utilizationPct: round2(utilizationPct),
+      idleDays,
+      lastSeenDate: ymd(lastSeenDate),
+      nextServiceDate: ymd(nextServiceDate),
+      complianceStatus,
+    });
+  }
+
+  const materials: ConstructionMaterialInventoryRow[] = [];
+  for (let idx = 0; idx < 36; idx += 1) {
+    const item = materialCatalog[idx % materialCatalog.length];
+    const assignedToJob = rng.next() > 0.32;
+    const job = assignedToJob && activeJobs.length > 0 ? activeJobs[(idx + 2) % activeJobs.length] : null;
+    const qtyOnHand = round2(Math.max(0, rng.norm(145, 62)));
+    const reorderPoint = round2(Math.max(20, rng.norm(70, 22)));
+    const daysOnHand = rng.int(4, 145);
+    const avgCost = round2(item.cost * rng.norm(1, 0.18));
+    const inventoryValue = round0(qtyOnHand * avgCost);
+    const status: ConstructionMaterialInventoryRow['status'] = qtyOnHand < reorderPoint
+      ? 'low_stock'
+      : daysOnHand > 90
+        ? 'aging'
+        : qtyOnHand > reorderPoint * 2.8
+          ? 'excess'
+          : 'ok';
+
+    materials.push({
+      materialId: `MAT-${String(idx + 1).padStart(4, '0')}`,
+      materialName: `${rng.pick(item.names)} ${idx + 1}`,
+      category: item.category,
+      jobId: job?.jobId || null,
+      jobName: job?.jobName || null,
+      location: job?.jobName || rng.pick(locations),
+      qtyOnHand,
+      unitOfMeasure: item.uom,
+      avgCost,
+      inventoryValue,
+      daysOnHand,
+      reorderPoint,
+      status,
+    });
+  }
+
+  const byCategory = Array.from(
+    assets.reduce((map, row) => {
+      const current = map.get(row.category) || {
+        category: row.category,
+        assetCount: 0,
+        assignedCount: 0,
+        idleCount: 0,
+        serviceDueCount: 0,
+        replacementValue: 0,
+        utilizationTotal: 0,
+      };
+      current.assetCount += 1;
+      if (row.status === 'assigned') current.assignedCount += 1;
+      if (row.status === 'idle') current.idleCount += 1;
+      if (row.status === 'service_due') current.serviceDueCount += 1;
+      current.replacementValue += row.replacementValue;
+      current.utilizationTotal += row.utilizationPct;
+      map.set(row.category, current);
+      return map;
+    }, new Map<string, { category: string; assetCount: number; assignedCount: number; idleCount: number; serviceDueCount: number; replacementValue: number; utilizationTotal: number }>())
+  ).map(([, row]) => ({
+    category: row.category,
+    assetCount: row.assetCount,
+    assignedCount: row.assignedCount,
+    idleCount: row.idleCount,
+    serviceDueCount: row.serviceDueCount,
+    replacementValue: round0(row.replacementValue),
+    avgUtilizationPct: row.assetCount > 0 ? round2(row.utilizationTotal / row.assetCount) : 0,
+  })).sort((a, b) => b.replacementValue - a.replacementValue);
+
+  const byJob = Array.from(
+    assets.filter((row) => row.jobId && row.jobName).reduce((map, row) => {
+      const key = row.jobId || '';
+      const current = map.get(key) || {
+        jobId: key,
+        jobName: row.jobName || key,
+        assetCount: 0,
+        replacementValue: 0,
+        utilizationTotal: 0,
+        serviceDueCount: 0,
+      };
+      current.assetCount += 1;
+      current.replacementValue += row.replacementValue;
+      current.utilizationTotal += row.utilizationPct;
+      if (row.status === 'service_due') current.serviceDueCount += 1;
+      map.set(key, current);
+      return map;
+    }, new Map<string, { jobId: string; jobName: string; assetCount: number; replacementValue: number; utilizationTotal: number; serviceDueCount: number }>())
+  ).map(([, row]) => ({
+    jobId: row.jobId,
+    jobName: row.jobName,
+    assetCount: row.assetCount,
+    replacementValue: round0(row.replacementValue),
+    avgUtilizationPct: row.assetCount > 0 ? round2(row.utilizationTotal / row.assetCount) : 0,
+    serviceDueCount: row.serviceDueCount,
+  })).sort((a, b) => b.replacementValue - a.replacementValue);
+
+  const assignedCount = assets.filter((row) => row.status === 'assigned').length;
+  const idleAssets = assets.filter((row) => row.status === 'idle' || row.idleDays >= 14).sort((a, b) => b.idleDays - a.idleDays);
+  const maintenanceQueue = assets
+    .filter((row) => row.status === 'service_due' || row.complianceStatus !== 'compliant')
+    .sort((a, b) => a.nextServiceDate.localeCompare(b.nextServiceDate));
+  const totalReplacementValue = assets.reduce((sum, row) => sum + row.replacementValue, 0);
+  const avgUtilizationPct = assets.length > 0 ? assets.reduce((sum, row) => sum + row.utilizationPct, 0) / assets.length : 0;
+  const materialsByCategory = Array.from(
+    materials.reduce((map, row) => {
+      const current = map.get(row.category) || { category: row.category, skuCount: 0, qtyOnHand: 0, inventoryValue: 0, lowStockCount: 0, agingCount: 0 };
+      current.skuCount += 1;
+      current.qtyOnHand += row.qtyOnHand;
+      current.inventoryValue += row.inventoryValue;
+      if (row.status === 'low_stock') current.lowStockCount += 1;
+      if (row.status === 'aging') current.agingCount += 1;
+      map.set(row.category, current);
+      return map;
+    }, new Map<string, { category: string; skuCount: number; qtyOnHand: number; inventoryValue: number; lowStockCount: number; agingCount: number }>())
+  ).map(([, row]) => ({ ...row, qtyOnHand: round2(row.qtyOnHand), inventoryValue: round0(row.inventoryValue) }))
+    .sort((a, b) => b.inventoryValue - a.inventoryValue);
+  const materialsByJob = Array.from(
+    materials.filter((row) => row.jobId && row.jobName).reduce((map, row) => {
+      const key = row.jobId || '';
+      const current = map.get(key) || { jobId: key, jobName: row.jobName || key, skuCount: 0, inventoryValue: 0, lowStockCount: 0, agingCount: 0 };
+      current.skuCount += 1;
+      current.inventoryValue += row.inventoryValue;
+      if (row.status === 'low_stock') current.lowStockCount += 1;
+      if (row.status === 'aging') current.agingCount += 1;
+      map.set(key, current);
+      return map;
+    }, new Map<string, { jobId: string; jobName: string; skuCount: number; inventoryValue: number; lowStockCount: number; agingCount: number }>())
+  ).map(([, row]) => ({ ...row, inventoryValue: round0(row.inventoryValue) }))
+    .sort((a, b) => b.inventoryValue - a.inventoryValue);
+  const materialReorderQueue = materials.filter((row) => row.status === 'low_stock').sort((a, b) => (a.qtyOnHand / Math.max(a.reorderPoint, 1)) - (b.qtyOnHand / Math.max(b.reorderPoint, 1)));
+  const materialAging = materials.filter((row) => row.status === 'aging' || row.daysOnHand >= 75).sort((a, b) => b.daysOnHand - a.daysOnHand);
+  const totalMaterialValue = materials.reduce((sum, row) => sum + row.inventoryValue, 0);
+
+  return {
+    summary: {
+      assetCount: assets.length,
+      assignedCount,
+      idleCount: idleAssets.length,
+      serviceDueCount: maintenanceQueue.length,
+      missingCount: assets.filter((row) => row.status === 'missing').length,
+      totalReplacementValue: round0(totalReplacementValue),
+      materialSkuCount: materials.length,
+      totalMaterialValue: round0(totalMaterialValue),
+      avgUtilizationPct: round2(avgUtilizationPct),
+      complianceAtRiskCount: assets.filter((row) => row.complianceStatus !== 'compliant').length,
+      asOfDate: ymd(asOf),
+    },
+    assets: assets.sort((a, b) => b.replacementValue - a.replacementValue),
+    byCategory,
+    byJob,
+    materials: materials.sort((a, b) => b.inventoryValue - a.inventoryValue),
+    materialsByCategory,
+    materialsByJob,
+    materialReorderQueue,
+    materialAging,
+    maintenanceQueue,
+    idleAssets,
     meta: {
       source: 'mock',
       seed: seedKey,

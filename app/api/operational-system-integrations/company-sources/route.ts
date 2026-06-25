@@ -11,6 +11,8 @@ const SOURCE_LABELS: Record<string, string> = {
   [COGENT_RATE_CARD_SOURCE_CODE]: COGENT_RATE_CARD_LABEL,
   PLATOS_CLOSET_STORE_VISIT: 'MONTHLY STORE VISIT REPORT',
   PLATOS_INVENTORY: 'Monthly Inventory Report',
+  CREWTRACKS: 'Crewtracks',
+  HILTI: 'Hilti',
 };
 
 export async function GET(request: NextRequest) {

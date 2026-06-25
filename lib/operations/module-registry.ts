@@ -22,7 +22,8 @@ export type OpsDataType =
   | 'commitments-forecast'
   | 'billing-cash'
   | 'construction-ar'
-  | 'construction-ap';
+  | 'construction-ap'
+  | 'hilti-inventory';
 
 type ModuleDefinition = {
   key: string;
@@ -117,6 +118,7 @@ const MODULE_DEFINITIONS: ModuleDefinition[] = [
   { key: 'billing_cash', label: 'Billing & Cash', dataType: 'billing-cash' },
   { key: 'construction_ar', label: 'AR', dataType: 'construction-ar' },
   { key: 'construction_ap', label: 'AP', dataType: 'construction-ap' },
+  { key: 'construction_inventory', label: 'Inventory', dataType: 'hilti-inventory' },
 ];
 
 const MODULE_MAP: Record<string, ModuleDefinition> = MODULE_DEFINITIONS.reduce((acc, module) => {

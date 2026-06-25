@@ -68,6 +68,11 @@ const operationalTemplates: Record<string, Omit<ReportFieldCatalogItem, 'moduleK
     { field: 'op.job-cost-control.variance', label: 'Job Cost Variance', source: 'operational', format: 'currency', recordSet: 'costByType', valueKey: 'variance', categoryKey: 'costType' },
     { field: 'op.job-cost-control.dailyCost', label: 'Daily Job Cost', source: 'operational', format: 'currency', recordSet: 'dailyCost', valueKey: 'dailyCost', categoryKey: 'costType' },
     { field: 'op.job-cost-control.dailyBudget', label: 'Daily Job Budget', source: 'operational', format: 'currency', recordSet: 'dailyCost', valueKey: 'dailyBudget', categoryKey: 'costType' },
+    { field: 'op.job-cost-control.crewLaborHours', label: 'Crewtracks Labor Hours', source: 'operational', format: 'number', recordSet: 'crewtracksByCrew', valueKey: 'laborHours' },
+    { field: 'op.job-cost-control.crewOvertimeHours', label: 'Crewtracks Overtime Hours', source: 'operational', format: 'number', recordSet: 'crewtracksByCrew', valueKey: 'overtimeHours' },
+    { field: 'op.job-cost-control.crewUnitsCompleted', label: 'Crewtracks Units Completed', source: 'operational', format: 'number', recordSet: 'crewtracksByCrew', valueKey: 'unitsCompleted' },
+    { field: 'op.job-cost-control.crewProductivityPerHour', label: 'Crewtracks Productivity per Hour', source: 'operational', format: 'number', recordSet: 'crewtracksByCrew', valueKey: 'productivityPerHour' },
+    { field: 'op.job-cost-control.crewVariancePct', label: 'Crewtracks Productivity Variance %', source: 'operational', format: 'percent', recordSet: 'crewtracksByCrew', valueKey: 'variancePct' },
   ],
   hiring: [
     { field: 'op.hiring.openJobs', label: 'Open Jobs', source: 'operational', format: 'number', recordSet: 'jobs', valueKey: 'openJobs' },
@@ -93,6 +98,17 @@ const operationalTemplates: Record<string, Omit<ReportFieldCatalogItem, 'moduleK
   ],
   'construction-ap': [
     { field: 'op.construction-ap.totalAP', label: 'Construction AP by Project', source: 'operational', format: 'currency', recordSet: 'byProject', valueKey: 'totalAP' },
+  ],
+  'hilti-inventory': [
+    { field: 'op.hilti.assetCount', label: 'Hilti Assets by Category', source: 'operational', format: 'number', recordSet: 'byCategory', valueKey: 'assetCount' },
+    { field: 'op.hilti.replacementValue', label: 'Hilti Replacement Value', source: 'operational', format: 'currency', recordSet: 'byCategory', valueKey: 'replacementValue' },
+    { field: 'op.hilti.utilizationPct', label: 'Hilti Utilization %', source: 'operational', format: 'percent', recordSet: 'byCategory', valueKey: 'avgUtilizationPct' },
+    { field: 'op.hilti.serviceDueCount', label: 'Hilti Service Due Count', source: 'operational', format: 'number', recordSet: 'byCategory', valueKey: 'serviceDueCount' },
+    { field: 'op.hilti.idleDays', label: 'Hilti Idle Days', source: 'operational', format: 'number', recordSet: 'idleAssets', valueKey: 'idleDays' },
+    { field: 'op.construction-materials.inventoryValue', label: 'Materials Inventory Value', source: 'operational', format: 'currency', recordSet: 'materialsByCategory', valueKey: 'inventoryValue' },
+    { field: 'op.construction-materials.qtyOnHand', label: 'Materials Quantity On Hand', source: 'operational', format: 'number', recordSet: 'materialsByCategory', valueKey: 'qtyOnHand' },
+    { field: 'op.construction-materials.lowStockCount', label: 'Materials Low Stock Count', source: 'operational', format: 'number', recordSet: 'materialsByCategory', valueKey: 'lowStockCount' },
+    { field: 'op.construction-materials.agingCount', label: 'Materials Aging Count', source: 'operational', format: 'number', recordSet: 'materialsByCategory', valueKey: 'agingCount' },
   ],
 };
 

@@ -656,6 +656,7 @@ export default function OpsDashboard({
     'billing-cash': [],
     'construction-ar': [],
     'construction-ap': [],
+    'hilti-inventory': [],
   };
 
   configuredModules.forEach((module) => {
@@ -2007,6 +2008,7 @@ export default function OpsDashboard({
     'billing-cash': 'Billing & Cash',
     'construction-ar': 'AR',
     'construction-ap': 'AP',
+    'hilti-inventory': 'Inventory',
   };
 
   const extraWidgets: Array<{ type: OpsDataType; label: string }> = [

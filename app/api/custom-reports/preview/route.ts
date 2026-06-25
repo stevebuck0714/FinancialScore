@@ -22,6 +22,7 @@ import {
   buildCommitmentsForecastMock,
   buildConstructionApMock,
   buildConstructionArMock,
+  buildHiltiInventoryMock,
   buildJobCostControlMock,
   buildProjectPortfolioMock,
 } from '@/lib/operations/construction-mock-data';
@@ -104,6 +105,7 @@ function getOperationalPayload(companyId: string, sectorCategory: string | null,
   if (dataType === 'billing-cash') return buildBillingCashMock(companyId);
   if (dataType === 'construction-ar') return buildConstructionArMock(companyId);
   if (dataType === 'construction-ap') return buildConstructionApMock(companyId);
+  if (dataType === 'hilti-inventory') return buildHiltiInventoryMock(companyId);
   if (dataType === 'hiring') {
     throw new Error('Hiring custom report preview requires live BambooHR data; mock fallback is disabled.');
   }

@@ -221,6 +221,7 @@ const OPERATIONAL_HUB_SECTIONS_BY_DATATYPE_GROUP: Record<string, string> = {
   'billing-cash': 'Billing & Cash',
   'construction-ar': 'Construction AR',
   'construction-ap': 'Construction AP',
+  'hilti-inventory': 'Inventory',
 };
 
 const FORECAST_STANDARD_REPORT_OPTIONS: Array<{ key: string; label: string; group: string }> = [
@@ -462,6 +463,7 @@ export default function SiteAdminDashboard(props: any) {
     const id = company?.id;
     if (!id) return;
     setSelectedCompanyId(id);
+    loadOperationalSources(id);
     if (['INFOR_M3', 'INFOR_CSI'].includes(String(company.accountingSystem || '').toUpperCase())) {
       loadInforM3Credentials?.(id);
       loadCompanyPrograms(id);
@@ -482,7 +484,6 @@ export default function SiteAdminDashboard(props: any) {
       loadQbDesktopSettings(id);
     } else if (company.accountingSystem === 'QUICKBOOKS') {
       loadQboSettings(id);
-      loadOperationalSources(id);
     } else if (company.accountingSystem === 'DYNAMICS' || company.accountingSystem === 'DYNAMICS365') {
       loadDynamicsSettings(id);
     } else if (company.accountingSystem === 'ACUMATICA') {
@@ -1138,7 +1139,7 @@ export default function SiteAdminDashboard(props: any) {
       }
       const companySectorCategory = String(company?.industrySectorCategory || '').trim();
       const defaultReports = getOperationalHubDefaultReportsForModule(moduleKey, companySectorCategory);
-      if (defaultReports.length > 0 && ['32', '53'].includes(companySectorCategory)) {
+      if (defaultReports.length > 0 && ['23', '32', '53'].includes(companySectorCategory)) {
         return defaultReports.map((item) => ({
           ...item,
           group: option.label,
@@ -4083,6 +4084,158 @@ export default function SiteAdminDashboard(props: any) {
           : { bg: '#fef3c7', border: '#fbbf24', fg: '#92400e', label: 'Not Connected' };
   };
 
+  const CONSTRUCTION_OPERATIONAL_SOURCE_DETAILS: Record<
+    string,
+    {
+      label: string;
+      description: string;
+      credentialFields: string[];
+      domains: Array<{ dataDomain: string; sourceObject: string; enabled: boolean }>;
+    }
+  > = {
+    CREWTRACKS: {
+      label: 'Crewtracks',
+      description: 'Crew time, production, labor activity, and field productivity data for construction operations.',
+      credentialFields: ['Base URL', 'Company / Tenant ID', 'API Key', 'Webhook Secret'],
+      domains: [
+        { dataDomain: 'Crew Time', sourceObject: 'Time entries / timesheets', enabled: true },
+        { dataDomain: 'Crew Assignments', sourceObject: 'Crew, employee, and job assignments', enabled: true },
+        { dataDomain: 'Production Quantities', sourceObject: 'Daily production units by job/cost code', enabled: true },
+        { dataDomain: 'Labor Productivity', sourceObject: 'Hours, quantities, and productivity metrics', enabled: true },
+      ],
+    },
+    HILTI: {
+      label: 'Hilti',
+      description: 'Tool, equipment, asset location, and utilization data for construction operations.',
+      credentialFields: ['Base URL', 'Account / Tenant ID', 'Client ID', 'Client Secret'],
+      domains: [
+        { dataDomain: 'Assets & Tools', sourceObject: 'Tool and asset catalog', enabled: true },
+        { dataDomain: 'Asset Locations', sourceObject: 'Jobsite / warehouse assignments', enabled: true },
+        { dataDomain: 'Utilization', sourceObject: 'Usage, idle time, and custody history', enabled: true },
+        { dataDomain: 'Maintenance & Compliance', sourceObject: 'Service, inspection, and compliance records', enabled: true },
+      ],
+    },
+  };
+
+  const getConstructionOperationalSourceDetail = (sourceCode: string) =>
+    CONSTRUCTION_OPERATIONAL_SOURCE_DETAILS[String(sourceCode || '').trim().toUpperCase()] || null;
+
+  const renderConstructionOperationalIntegrationCard = (companyId: string, companyName: string, sourceCode: string) => {
+    const detail = getConstructionOperationalSourceDetail(sourceCode);
+    if (!detail) return null;
+    const selectedSource = getSelectedOperationalSources(companyId).find(
+      (source) => String(source.sourceCode || '').toUpperCase() === sourceCode
+    );
+    const statusTheme = getOperationalSourceStatusTheme(selectedSource?.status);
+    const lastSyncAt = selectedSource?.lastSyncAt || null;
+    const errorMessage = selectedSource?.errorMessage || null;
+
+    return (
+      <div style={{ padding: '12px', background: '#f8fafc', borderRadius: '6px', border: '1px solid #e2e8f0', gridColumn: '1 / 2', order: sourceCode === 'CREWTRACKS' ? 8 : 10 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px', marginBottom: '10px' }}>
+          <div>
+            <h4 style={{ fontSize: '14px', fontWeight: '600', color: '#1e293b', marginBottom: '8px' }}>{detail.label}</h4>
+            <div style={{ fontSize: '12px', color: '#64748b' }}>
+              {detail.label} setup for <strong>{companyName}</strong>
+            </div>
+          </div>
+          <button
+            disabled
+            style={{ padding: '8px 12px', background: '#cbd5e1', color: '#334155', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: 'not-allowed' }}
+          >
+            Save
+          </button>
+        </div>
+
+        <div style={{ marginBottom: '8px', padding: '8px', background: statusTheme.bg, border: `1px solid ${statusTheme.border}`, borderRadius: '6px' }}>
+          <div style={{ fontSize: '12px', fontWeight: '600', color: statusTheme.fg }}>{statusTheme.label}</div>
+          <div style={{ fontSize: '12px', color: statusTheme.fg }}>
+            {lastSyncAt ? `Last sync: ${new Date(lastSyncAt).toLocaleString()}` : `No ${detail.label} sync has been run for this company yet.`}
+          </div>
+          {errorMessage ? <div style={{ fontSize: '12px', color: statusTheme.fg, marginTop: '4px' }}>{errorMessage}</div> : null}
+        </div>
+
+        <div style={{ marginBottom: '8px', padding: '8px', background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: '6px' }}>
+          <div style={{ fontSize: '12px', fontWeight: '600', color: '#1d4ed8' }}>{detail.label} operational connection</div>
+          <div style={{ fontSize: '12px', color: '#1d4ed8' }}>
+            {detail.description}
+          </div>
+        </div>
+
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(180px, 1fr))', gap: '8px' }}>
+          {detail.credentialFields.map((field) => (
+            <label key={`${companyId}-${sourceCode}-${field}`} style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#334155' }}>
+              <span style={{ fontWeight: 600 }}>{field}</span>
+              <input
+                type={field.toLowerCase().includes('secret') || field.toLowerCase().includes('key') ? 'password' : 'text'}
+                value=""
+                disabled
+                placeholder="Connection fields pending connector implementation"
+                style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: '#f1f5f9', color: '#64748b' }}
+              />
+            </label>
+          ))}
+          <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#334155' }}>
+            <span style={{ fontWeight: 600 }}>Sync Frequency</span>
+            <select disabled value="daily" style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: '#f1f5f9', color: '#64748b' }}>
+              <option value="daily">Daily</option>
+            </select>
+          </label>
+          <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#334155' }}>
+            <span style={{ fontWeight: 600 }}>Sync Time (Local)</span>
+            <select disabled value="08:00" style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: '#f1f5f9', color: '#64748b' }}>
+              <option value="08:00">08:00</option>
+            </select>
+          </label>
+        </div>
+      </div>
+    );
+  };
+
+  const renderConstructionOperationalDataDomainsCard = (companyId: string, sourceCode: string) => {
+    const detail = getConstructionOperationalSourceDetail(sourceCode);
+    if (!detail) return null;
+
+    return (
+      <div style={{ padding: '12px', background: '#f8fafc', borderRadius: '6px', border: '1px solid #e2e8f0', gridColumn: '2 / 3', order: sourceCode === 'CREWTRACKS' ? 9 : 11 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+          <h4 style={{ fontSize: '14px', fontWeight: '600', color: '#1e293b', margin: 0 }}>{detail.label} Data Domains</h4>
+          <button
+            disabled
+            style={{ padding: '6px 10px', background: '#cbd5e1', color: '#334155', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: 'not-allowed' }}
+          >
+            Save
+          </button>
+        </div>
+        <div style={{ fontSize: '12px', color: '#64748b', marginBottom: '8px' }}>
+          Data domains expected from the {detail.label} connector for construction reporting.
+        </div>
+        <div style={{ overflowX: 'auto' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
+            <thead>
+              <tr style={{ background: '#f1f5f9', borderBottom: '1px solid #e2e8f0' }}>
+                <th style={{ textAlign: 'left', padding: '6px', color: '#475569' }}>Data Domain</th>
+                <th style={{ textAlign: 'left', padding: '6px', color: '#475569' }}>Source Object / Endpoint</th>
+                <th style={{ textAlign: 'left', padding: '6px', color: '#475569', width: '80px' }}>Enabled</th>
+              </tr>
+            </thead>
+            <tbody>
+              {detail.domains.map((row, index) => (
+                <tr key={`${companyId}-${sourceCode}-domain-${index}`} style={{ borderBottom: '1px solid #e2e8f0' }}>
+                  <td style={{ padding: '6px' }}>{row.dataDomain}</td>
+                  <td style={{ padding: '6px' }}>{row.sourceObject}</td>
+                  <td style={{ padding: '6px', textAlign: 'center' }}>
+                    <input type="checkbox" checked={row.enabled} disabled />
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    );
+  };
+
   const renderOperationalSourceSelectorCard = (companyId: string) => {
     const availableSources = getAvailableOperationalSources(companyId);
     const selectedSources = getSelectedOperationalSources(companyId);
@@ -4689,6 +4842,7 @@ export default function SiteAdminDashboard(props: any) {
         Array.isArray(companies) ? companies.find((entry: any) => String(entry?.id || '') === companyId) : null;
       if (!company) return;
       const system = String(company?.accountingSystem || '').trim().toUpperCase();
+      loadOperationalSources(companyId);
 
       if (system === 'INFOR_M3' || system === 'INFOR_CSI') {
         loadInforM3Credentials?.(companyId);
@@ -4718,7 +4872,6 @@ export default function SiteAdminDashboard(props: any) {
       }
       if (system === 'QUICKBOOKS') {
         loadQboSettings(companyId);
-        loadOperationalSources(companyId);
         return;
       }
       if (system === 'DYNAMICS' || system === 'DYNAMICS365') {
@@ -7641,6 +7794,10 @@ export default function SiteAdminDashboard(props: any) {
                                             {isOperationalSourceSelected(company.id, 'BAMBOOHR_STANDARD') && renderBambooHrDataDomainsCard(company.id)}
                                             {company.accountingSystem === 'QUICKBOOKS' && isOperationalSourceSelected(company.id, 'PLATOS_CLOSET_STORE_VISIT') && renderPlatosClosetOperationalIntegrationCard(company.id, company.name)}
                                             {company.accountingSystem === 'QUICKBOOKS' && isOperationalSourceSelected(company.id, 'PLATOS_CLOSET_STORE_VISIT') && renderPlatosClosetDataDomainsCard(company.id)}
+                                            {isOperationalSourceSelected(company.id, 'CREWTRACKS') && renderConstructionOperationalIntegrationCard(company.id, company.name, 'CREWTRACKS')}
+                                            {isOperationalSourceSelected(company.id, 'CREWTRACKS') && renderConstructionOperationalDataDomainsCard(company.id, 'CREWTRACKS')}
+                                            {isOperationalSourceSelected(company.id, 'HILTI') && renderConstructionOperationalIntegrationCard(company.id, company.name, 'HILTI')}
+                                            {isOperationalSourceSelected(company.id, 'HILTI') && renderConstructionOperationalDataDomainsCard(company.id, 'HILTI')}
                                             <div style={{ gridColumn: '1 / -1', order: 3, display: 'none' }}>
                                               {renderOperationalHubCustomizationCard(company)}
                                             </div>
@@ -10936,6 +11093,10 @@ export default function SiteAdminDashboard(props: any) {
                                   {renderOperationalSourceSelectorCard(businessCompany.id)}
                                   {isOperationalSourceSelected(businessCompany.id, 'BAMBOOHR_STANDARD') && renderBambooHrOperationalIntegrationCard(businessCompany.id, businessCompany.name)}
                                   {isOperationalSourceSelected(businessCompany.id, 'BAMBOOHR_STANDARD') && renderBambooHrDataDomainsCard(businessCompany.id)}
+                                  {isOperationalSourceSelected(businessCompany.id, 'CREWTRACKS') && renderConstructionOperationalIntegrationCard(businessCompany.id, businessCompany.name, 'CREWTRACKS')}
+                                  {isOperationalSourceSelected(businessCompany.id, 'CREWTRACKS') && renderConstructionOperationalDataDomainsCard(businessCompany.id, 'CREWTRACKS')}
+                                  {isOperationalSourceSelected(businessCompany.id, 'HILTI') && renderConstructionOperationalIntegrationCard(businessCompany.id, businessCompany.name, 'HILTI')}
+                                  {isOperationalSourceSelected(businessCompany.id, 'HILTI') && renderConstructionOperationalDataDomainsCard(businessCompany.id, 'HILTI')}
                                 </div>
 
                                 <div

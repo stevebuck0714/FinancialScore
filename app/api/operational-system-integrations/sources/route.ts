@@ -4,7 +4,6 @@ import { requireSiteAdminAuthorizedInforCompany } from '@/lib/infor-m3/route-gua
 import {
   deleteOperationalSystemConnection,
   getOperationalSystemConnection,
-  isQuickBooksAccountingSystem,
   listOperationalSystemConnections,
   saveOperationalSystemConnection,
 } from '@/lib/operational/operational-system-connections';
@@ -17,22 +16,25 @@ type SourceDefinition = {
   provider: 'BAMBOOHR' | 'SPREADSHEET_UPLOAD';
   sourceCode: string;
   label: string;
-  retailOnly?: boolean;
+  sectorCategories: string[];
 };
 
 const SOURCE_DEFINITIONS: SourceDefinition[] = [
-  { provider: 'BAMBOOHR', sourceCode: 'BAMBOOHR_STANDARD', label: 'BambooHR' },
-  { provider: 'SPREADSHEET_UPLOAD', sourceCode: COGENT_RATE_CARD_SOURCE_CODE, label: COGENT_RATE_CARD_LABEL },
-  { provider: 'SPREADSHEET_UPLOAD', sourceCode: 'PLATOS_CLOSET_STORE_VISIT', label: 'MONTHLY STORE VISIT REPORT', retailOnly: true },
-  { provider: 'SPREADSHEET_UPLOAD', sourceCode: 'PLATOS_INVENTORY', label: 'Monthly Inventory Report', retailOnly: true },
+  { provider: 'SPREADSHEET_UPLOAD', sourceCode: 'CREWTRACKS', label: 'Crewtracks', sectorCategories: ['23'] },
+  { provider: 'SPREADSHEET_UPLOAD', sourceCode: 'HILTI', label: 'Hilti', sectorCategories: ['23'] },
+  { provider: 'BAMBOOHR', sourceCode: 'BAMBOOHR_STANDARD', label: 'BambooHR', sectorCategories: ['56'] },
+  { provider: 'SPREADSHEET_UPLOAD', sourceCode: COGENT_RATE_CARD_SOURCE_CODE, label: COGENT_RATE_CARD_LABEL, sectorCategories: ['56'] },
+  { provider: 'SPREADSHEET_UPLOAD', sourceCode: 'PLATOS_CLOSET_STORE_VISIT', label: 'MONTHLY STORE VISIT REPORT', sectorCategories: ['45'] },
+  { provider: 'SPREADSHEET_UPLOAD', sourceCode: 'PLATOS_INVENTORY', label: 'Monthly Inventory Report', sectorCategories: ['45'] },
 ];
 
 function getSourceDefinition(sourceCode: string): SourceDefinition | null {
   return SOURCE_DEFINITIONS.find((source) => source.sourceCode === sourceCode) || null;
 }
 
-function isRetailSector(industrySectorCategory: string | null | undefined): boolean {
-  return String(industrySectorCategory || '').trim() === '45';
+function isSourceAvailableForSector(source: SourceDefinition, industrySectorCategory: string | null | undefined): boolean {
+  const sectorCategory = String(industrySectorCategory || '').trim();
+  return source.sectorCategories.includes(sectorCategory);
 }
 
 async function getValidatedCompany(companyId: string) {
@@ -42,9 +44,6 @@ async function getValidatedCompany(companyId: string) {
   });
   if (!company) {
     throw new Error('Company not found');
-  }
-  if (!isQuickBooksAccountingSystem(company.accountingSystem)) {
-    throw new Error('Operational sources are only available for QUICKBOOKS companies.');
   }
   return {
     ...company,
@@ -59,7 +58,7 @@ export async function GET(request: NextRequest) {
     const connections = await listOperationalSystemConnections(companyId);
 
     const availableSources = SOURCE_DEFINITIONS
-      .filter((source) => !source.retailOnly || isRetailSector(company.industrySectorCategory))
+      .filter((source) => isSourceAvailableForSector(source, company.industrySectorCategory))
       .map((source) => ({
         provider: source.provider,
         sourceCode: source.sourceCode,
@@ -101,8 +100,8 @@ export async function POST(request: NextRequest) {
     if (!source) {
       return NextResponse.json({ ok: false, error: 'Unknown operational source.' }, { status: 400 });
     }
-    if (source.retailOnly && !isRetailSector(company.industrySectorCategory)) {
-      return NextResponse.json({ ok: false, error: `${source.label} is limited to Retail companies.` }, { status: 400 });
+    if (!isSourceAvailableForSector(source, company.industrySectorCategory)) {
+      return NextResponse.json({ ok: false, error: `${source.label} is not available for this company's sector.` }, { status: 400 });
     }
 
     const existing = await getOperationalSystemConnection(companyId, source.provider, source.sourceCode);

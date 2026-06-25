@@ -1,0 +1,17 @@
+<?xml version="1.0"?>
+<QBWCXML>
+  <AppName>Corelytics Data Connector</AppName>
+  <AppID></AppID>
+  <AppURL>https://api.corelytics.com/qbdesktop/service.asmx</AppURL>
+  <AppDescription>Corelytics QuickBooks Desktop integration (read-only sync)</AppDescription>
+  <AppSupport>https://dashboard.corelytics.com/support</AppSupport>
+  <UserName>qbwc_cmq6pjenb_prod</UserName>
+  <OwnerID>{2e0531bd-50b3-42f8-a951-11c61b82187e}</OwnerID>
+  <FileID>{718da61e-dfd5-4818-922c-e898903f71d0}</FileID>
+  <QBType>QBFS</QBType>
+  <Style>Document</Style>
+  <AuthFlags>0xF</AuthFlags>
+  <Scheduler>
+    <RunEveryNSeconds>3600</RunEveryNSeconds>
+  </Scheduler>
+</QBWCXML>
