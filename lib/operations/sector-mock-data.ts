@@ -330,6 +330,172 @@ const REAL_ESTATE_MAINTENANCE_TYPES = [
   'Tenant Improvement',
 ];
 
+function buildEncompassMortgageMockData(dates: Date[], scale: number) {
+  const asOf = dates[0] || new Date();
+  const stages = [
+    { stage: 'Started / Lead', loans: 980, pullThroughPct: 100, avgDays: 2.4 },
+    { stage: 'Application', loans: 642, pullThroughPct: 65.5, avgDays: 4.8 },
+    { stage: 'Processing', loans: 511, pullThroughPct: 79.6, avgDays: 8.6 },
+    { stage: 'Underwriting', loans: 403, pullThroughPct: 78.9, avgDays: 6.9 },
+    { stage: 'Conditional Approval', loans: 318, pullThroughPct: 78.9, avgDays: 5.7 },
+    { stage: 'Clear to Close', loans: 224, pullThroughPct: 70.4, avgDays: 3.3 },
+    { stage: 'Funded', loans: 176, pullThroughPct: 78.6, avgDays: 1.5 },
+  ];
+  const branches = ['Buffalo', 'Rochester', 'Syracuse', 'Albany', 'Phoenix', 'Scottsdale'];
+  const products = ['Conventional', 'FHA', 'VA', 'Jumbo', 'USDA'];
+  const channels = ['Retail', 'Builder', 'Referral', 'Online'];
+  const officers = ['Avery Morgan', 'Jordan Hayes', 'Taylor Bennett', 'Riley Parker', 'Casey Collins', 'Morgan Reed', 'Cameron Price', 'Quinn Brooks'];
+  const pipelineStages = stages.map((row, index) => {
+    const loans = Math.round(row.loans * (0.92 + deterministicNoise(index + 17) * 0.16));
+    const avgLoanSize = 392000 + index * 8700;
+    return {
+      stage: row.stage,
+      loans,
+      volume: Math.round(loans * avgLoanSize * scale),
+      pullThroughPct: Math.round(row.pullThroughPct * 10) / 10,
+      avgDaysInStage: Math.round(row.avgDays * 10) / 10,
+    };
+  });
+  const fundedLoans = pipelineStages.find((row) => row.stage === 'Funded')?.loans || 0;
+  const fundedVolume = pipelineStages.find((row) => row.stage === 'Funded')?.volume || 0;
+  const applicationLoans = pipelineStages.find((row) => row.stage === 'Application')?.loans || 1;
+  const pipelineVolume = pipelineStages.reduce((sum, row) => sum + row.volume, 0);
+  const revenue = Math.round(fundedVolume * 0.034);
+  const cycleTimeRows = [
+    { milestone: 'Application to Processing', avgDays: 4.8, targetDays: 4.0, loans: 642 },
+    { milestone: 'Processing to Underwriting', avgDays: 8.6, targetDays: 7.0, loans: 511 },
+    { milestone: 'Underwriting to Conditional Approval', avgDays: 6.9, targetDays: 5.5, loans: 403 },
+    { milestone: 'Conditional Approval to CTC', avgDays: 5.7, targetDays: 4.5, loans: 318 },
+    { milestone: 'CTC to Funding', avgDays: 3.3, targetDays: 3.0, loans: 224 },
+    { milestone: 'Application to Funding', avgDays: 31.6, targetDays: 29.0, loans: fundedLoans },
+  ].map((row, index) => ({
+    ...row,
+    avgDays: Math.round((row.avgDays + deterministicNoise(index + 31) * 1.1) * 10) / 10,
+    varianceDays: Math.round((row.avgDays - row.targetDays) * 10) / 10,
+  }));
+  const productionByOfficer = officers.map((loanOfficer, index) => {
+    const loans = 18 + index * 3 + Math.round(deterministicNoise(index + 5) * 8);
+    const avgLoanSize = 382000 + (index % 5) * 24000;
+    const volume = Math.round(loans * avgLoanSize);
+    return {
+      loanOfficer,
+      branch: branches[index % branches.length],
+      fundedLoans: loans,
+      fundedVolume: volume,
+      pullThroughPct: Math.round((56 + (index % 6) * 3.4) * 10) / 10,
+      avgDaysToClose: Math.round((28.5 + (index % 5) * 1.7) * 10) / 10,
+      conditionAgingDays: Math.round((4.2 + (index % 4) * 1.1) * 10) / 10,
+    };
+  });
+  const productionByBranch = branches.map((branch, index) => {
+    const branchRows = productionByOfficer.filter((row) => row.branch === branch);
+    const branchLoans = branchRows.reduce((sum, row) => sum + row.fundedLoans, 0);
+    const branchVolume = branchRows.reduce((sum, row) => sum + row.fundedVolume, 0);
+    return {
+      branch,
+      fundedLoans: branchLoans,
+      fundedVolume: branchVolume,
+      pullThroughPct: Math.round((58 + index * 2.2) * 10) / 10,
+      avgDaysToClose: Math.round((29.4 + index * 0.8) * 10) / 10,
+    };
+  });
+  const productChannelPerformance = products.flatMap((product, productIndex) =>
+    channels.map((channel, channelIndex) => {
+      const applications = 42 + productIndex * 8 + channelIndex * 5;
+      const funded = Math.round(applications * (0.42 + productIndex * 0.025 + channelIndex * 0.018));
+      return {
+        product,
+        channel,
+        applications,
+        fundedLoans: funded,
+        pullThroughPct: Math.round((funded / applications) * 1000) / 10,
+        avgLoanSize: Math.round(326000 + productIndex * 36000 + channelIndex * 14000),
+      };
+    })
+  );
+  const falloutRows = [
+    { reason: 'Credit / FICO', count: 42, falloutPct: 18.7 },
+    { reason: 'Debt-to-Income', count: 36, falloutPct: 16.0 },
+    { reason: 'Rate / Pricing', count: 31, falloutPct: 13.8 },
+    { reason: 'Appraisal / Collateral', count: 28, falloutPct: 12.4 },
+    { reason: 'Borrower Withdrew', count: 24, falloutPct: 10.7 },
+    { reason: 'Income / Employment Verification', count: 21, falloutPct: 9.3 },
+  ];
+  const conditionBottlenecks = [
+    { bucket: 'Borrower Docs', openConditions: 188, avgAgeDays: 6.8, owner: 'Processor', risk: 'Watch' },
+    { bucket: 'Income / VOE', openConditions: 142, avgAgeDays: 8.9, owner: 'Processor', risk: 'High' },
+    { bucket: 'Appraisal Review', openConditions: 96, avgAgeDays: 7.6, owner: 'Underwriter', risk: 'Watch' },
+    { bucket: 'Title / HOI', openConditions: 84, avgAgeDays: 5.4, owner: 'Closer', risk: 'Normal' },
+    { bucket: 'Compliance / TRID', openConditions: 38, avgAgeDays: 3.2, owner: 'Compliance', risk: 'Normal' },
+  ];
+  const documentBottlenecks = [
+    { documentType: 'Initial Disclosure Package', waitingLoans: 34, avgAgeDays: 2.7, eventSource: 'Document delivery webhook' },
+    { documentType: 'Income Documents', waitingLoans: 118, avgAgeDays: 6.4, eventSource: 'eFolder attachments' },
+    { documentType: 'Appraisal', waitingLoans: 52, avgAgeDays: 7.9, eventSource: 'Services / appraisal' },
+    { documentType: 'Closing Disclosure', waitingLoans: 27, avgAgeDays: 2.3, eventSource: 'Compliance disclosures' },
+    { documentType: 'Funding Package', waitingLoans: 19, avgAgeDays: 1.8, eventSource: 'Document package metadata' },
+  ];
+  const pipelineTrend = dates.slice(0, 12).reverse().map((date, index) => ({
+    period: date.toLocaleDateString('en-US', { month: 'short', year: '2-digit', timeZone: 'UTC' }),
+    applications: Math.round(485 + index * 8 + Math.sin(index / 2) * 36),
+    approvals: Math.round(348 + index * 7 + Math.sin(index / 2 + 0.4) * 24),
+    funded: Math.round(255 + index * 5 + Math.sin(index / 2 + 0.8) * 18),
+  }));
+  const loanPipelineDetail = Array.from({ length: 18 }, (_, index) => {
+    const stage = pipelineStages[index % pipelineStages.length].stage;
+    const branch = branches[index % branches.length];
+    const product = products[index % products.length];
+    const loanAmount = 285000 + index * 24500;
+    const created = new Date(Date.UTC(asOf.getUTCFullYear(), asOf.getUTCMonth(), Math.max(1, 24 - index)));
+    return {
+      loanId: `ENC-${String(71000 + index).padStart(5, '0')}`,
+      borrower: `Borrower ${index + 1}`,
+      stage,
+      branch,
+      loanOfficer: officers[index % officers.length],
+      product,
+      loanAmount,
+      daysInStage: 2 + (index % 9),
+      closingDate: new Date(Date.UTC(asOf.getUTCFullYear(), asOf.getUTCMonth() + 1, 4 + (index % 18))).toISOString().slice(0, 10),
+      createdDate: created.toISOString().slice(0, 10),
+      risk: index % 7 === 0 ? 'High' : index % 4 === 0 ? 'Watch' : 'Normal',
+    };
+  });
+
+  return {
+    source: 'ICE Encompass Developer Connect mock',
+    asOf: asOf.toISOString(),
+    summary: {
+      activePipelineLoans: pipelineStages.filter((row) => row.stage !== 'Funded').reduce((sum, row) => sum + row.loans, 0),
+      pipelineVolume,
+      fundedLoans,
+      fundedVolume,
+      revenue,
+      applicationToFundingPct: Math.round((fundedLoans / Math.max(applicationLoans, 1)) * 1000) / 10,
+      avgDaysToClose: cycleTimeRows.find((row) => row.milestone === 'Application to Funding')?.avgDays || 0,
+      openConditions: conditionBottlenecks.reduce((sum, row) => sum + row.openConditions, 0),
+    },
+    productionScorecard: [
+      { kpi: 'Active Pipeline Loans', value: pipelineStages.filter((row) => row.stage !== 'Funded').reduce((sum, row) => sum + row.loans, 0), detail: 'Open Encompass loan pipeline' },
+      { kpi: 'Pipeline Volume', value: pipelineVolume, detail: 'Loan amount in active pipeline' },
+      { kpi: 'Funded Loans', value: fundedLoans, detail: 'Current month funded loans' },
+      { kpi: 'Funded Volume', value: fundedVolume, detail: 'Current month funded volume' },
+      { kpi: 'Application-to-Funding %', value: Math.round((fundedLoans / Math.max(applicationLoans, 1)) * 1000) / 10, detail: 'Pull-through from applications' },
+      { kpi: 'Avg Days to Close', value: cycleTimeRows.find((row) => row.milestone === 'Application to Funding')?.avgDays || 0, detail: 'Application to funding' },
+    ],
+    pipelineStages,
+    pipelineTrend,
+    productionByOfficer,
+    productionByBranch,
+    productChannelPerformance,
+    cycleTimeRows,
+    falloutRows,
+    conditionBottlenecks,
+    documentBottlenecks,
+    loanPipelineDetail,
+  };
+}
+
 function buildRealEstateOperationalHubMockData(req: MockRequest, profile: SectorProfile) {
   const dates = listDates(req.startDate, req.endDate, req.frequency);
   const latestDate = dates[0] || req.endDate;
@@ -639,6 +805,7 @@ function buildRealEstateOperationalHubMockData(req: MockRequest, profile: Sector
     leasingSales,
     maintenanceWorkOrders,
     commercialPropertyTypes,
+    encompassMortgage: buildEncompassMortgageMockData(dates, scale),
   };
 }
 

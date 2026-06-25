@@ -23777,7 +23777,7 @@ Strategies to Improve the CCC
       basePipeline: 18600000,
       producerLabel: 'Loan Officer',
       sections: {
-        region: 'mortgageRegionScorecard',
+        region: 'mortgageProductionRankingReport',
         pipeline: 'mortgageLoanPipeline',
         producer: 'mortgageOfficerProductivity',
         conversion: 'mortgagePullThrough',
@@ -24139,6 +24139,27 @@ Strategies to Improve the CCC
       region,
       attachRate: `${(54.5 + index * 1.8).toFixed(1)}%`,
     }));
+    const encompassMortgage = getRealEstateReports()?.encompassMortgage || {};
+    const encompassSummary = encompassMortgage.summary || {};
+    const encompassProductionScorecardRows = Array.isArray(encompassMortgage.productionScorecard) ? encompassMortgage.productionScorecard : [];
+    const encompassPipelineStageRows = Array.isArray(encompassMortgage.pipelineStages) ? encompassMortgage.pipelineStages : [];
+    const encompassPipelineTrendRows = Array.isArray(encompassMortgage.pipelineTrend) ? encompassMortgage.pipelineTrend : [];
+    const encompassProductionByOfficerRows = Array.isArray(encompassMortgage.productionByOfficer) ? encompassMortgage.productionByOfficer : [];
+    const encompassProductionByBranchRows = Array.isArray(encompassMortgage.productionByBranch) ? encompassMortgage.productionByBranch : [];
+    const encompassProductChannelRows = Array.isArray(encompassMortgage.productChannelPerformance) ? encompassMortgage.productChannelPerformance : [];
+    const encompassCycleTimeRows = Array.isArray(encompassMortgage.cycleTimeRows) ? encompassMortgage.cycleTimeRows : [];
+    const encompassFalloutRows = Array.isArray(encompassMortgage.falloutRows) ? encompassMortgage.falloutRows : [];
+    const encompassConditionBottleneckRows = Array.isArray(encompassMortgage.conditionBottlenecks) ? encompassMortgage.conditionBottlenecks : [];
+    const encompassDocumentBottleneckRows = Array.isArray(encompassMortgage.documentBottlenecks) ? encompassMortgage.documentBottlenecks : [];
+    const encompassLoanPipelineDetailRows = Array.isArray(encompassMortgage.loanPipelineDetail) ? encompassMortgage.loanPipelineDetail : [];
+    const encompassMetricValue = (value: any, row: any) => {
+      const label = String(row?.kpi || '').toLowerCase();
+      const numeric = Number(value || 0);
+      if (label.includes('volume') || label.includes('revenue')) return formatCurrency(numeric);
+      if (label.includes('%')) return `${numeric.toFixed(1)}%`;
+      if (label.includes('days')) return numeric.toFixed(1);
+      return numberColumn(numeric);
+    };
     const metricTotal = (rows: any[], key: string) => rows.reduce((sum, row) => sum + Number(row[key] || 0), 0);
     const mortgagePeriodMultiplier = mortgageRevenuePeriod === 'annually' ? 12 : mortgageRevenuePeriod === 'quarterly' ? 3 : 1;
     const mortgageRevenueRegionRows = regionRows.map((row) => ({
@@ -24526,27 +24547,57 @@ Strategies to Improve the CCC
         )}
         {moduleKey === 'mortgage' && (
           <>
-            {renderRealEstateReportCard('Mortgage Production Scorecard', 'mortgageProductionScorecard', mortgageProductionScorecardRows, [
-              { key: 'kpi', label: 'KPI' },
-              { key: 'mtd', label: 'MTD' },
-              { key: 'ytd', label: 'YTD' },
-              { key: 'budget', label: 'Budget' },
-            ])}
+            {isSectionEnabled('mortgageProductionScorecard') && (
+              <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '16px', marginBottom: '14px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px', flexWrap: 'wrap', marginBottom: '12px' }}>
+                  <div>
+                    <h3 style={{ margin: '0 0 6px 0', fontSize: '16px', color: '#1e293b' }}>Mortgage Production Scorecard</h3>
+                    <p style={{ margin: 0, color: '#64748b', fontSize: '13px' }}>
+                      Pipeline, funded production, pull-through, and open operational work from mortgage loan system data.
+                    </p>
+                  </div>
+                  <span style={{ padding: '5px 9px', borderRadius: '999px', background: '#eff6ff', color: '#1d4ed8', fontSize: '11px', fontWeight: 800 }}>Mock mortgage data</span>
+                </div>
+                {renderRealEstateMetricCards([
+                  { label: 'Active Pipeline Loans', value: numberColumn(encompassSummary.activePipelineLoans || 0) },
+                  { label: 'Pipeline Volume', value: formatCurrency(encompassSummary.pipelineVolume || 0) },
+                  { label: 'Funded Loans', value: numberColumn(encompassSummary.fundedLoans || 0) },
+                  { label: 'Funded Volume', value: formatCurrency(encompassSummary.fundedVolume || 0) },
+                  { label: 'Application-to-Funding', value: `${Number(encompassSummary.applicationToFundingPct || 0).toFixed(1)}%` },
+                  { label: 'Open Conditions', value: numberColumn(encompassSummary.openConditions || 0) },
+                ])}
+                {renderRealEstateRowsTable('encompassProductionScorecardRows', encompassProductionScorecardRows, [
+                  { key: 'kpi', label: 'KPI' },
+                  { key: 'value', label: 'Value', format: encompassMetricValue },
+                  { key: 'detail', label: 'Source / Meaning' },
+                ])}
+              </div>
+            )}
             {isSectionEnabled('mortgagePipelineForecastReport') && (
               <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '16px', marginBottom: '14px' }}>
                 <h3 style={{ margin: '0 0 6px 0', fontSize: '16px', color: '#1e293b' }}>Loan Pipeline & Forecast Report</h3>
-                <p style={{ margin: '0 0 12px', color: '#64748b', fontSize: '13px' }}>What will fund in the next 30-90 days?</p>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '14px' }}>
-                  {renderRealEstateRowsTable('mortgagePipelineStageRows', mortgagePipelineStageRows, [
+                <p style={{ margin: '0 0 12px', color: '#64748b', fontSize: '13px' }}>Pipeline views, milestones, folders, and projected funding visibility from mortgage loan system data.</p>
+                <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1.05fr) minmax(0, 1fr)', gap: '14px', alignItems: 'start' }}>
+                  <div style={{ height: 310 }}>
+                    <ResponsiveContainer>
+                      <LineChart data={encompassPipelineTrendRows}>
+                        <CartesianGrid strokeDasharray="3 3" />
+                        <XAxis dataKey="period" tick={{ fontSize: 11 }} />
+                        <YAxis tickFormatter={(value) => Number(value || 0).toLocaleString()} tick={{ fontSize: 11 }} />
+                        <Tooltip formatter={(value: any) => Number(value || 0).toLocaleString()} />
+                        <Legend />
+                        <Line type="monotone" dataKey="applications" name="Applications" stroke="#2563eb" strokeWidth={2.5} dot={false} />
+                        <Line type="monotone" dataKey="approvals" name="Approvals" stroke="#0f766e" strokeWidth={2.5} dot={false} />
+                        <Line type="monotone" dataKey="funded" name="Funded" stroke="#f97316" strokeWidth={2.5} dot={false} />
+                      </LineChart>
+                    </ResponsiveContainer>
+                  </div>
+                  {renderRealEstateRowsTable('encompassPipelineStageRows', encompassPipelineStageRows, [
                     { key: 'stage', label: 'Stage' },
                     { key: 'loans', label: 'Loans', format: numberColumn },
-                    { key: 'volume', label: 'Volume' },
-                  ])}
-                  {renderRealEstateRowsTable('mortgageForecastRows', mortgageForecastRows, [
-                    { key: 'month', label: 'Month' },
-                    { key: 'expectedFundings', label: 'Expected Fundings', format: numberColumn },
-                    { key: 'expectedVolume', label: 'Expected Volume' },
-                    { key: 'expectedRevenue', label: 'Expected Revenue' },
+                    { key: 'volume', label: 'Volume', format: moneyColumn },
+                    { key: 'pullThroughPct', label: 'Pull-Through', format: pctColumn },
+                    { key: 'avgDaysInStage', label: 'Avg Days', format: (value) => Number(value || 0).toFixed(1) },
                   ])}
                 </div>
               </div>
@@ -24554,32 +24605,22 @@ Strategies to Improve the CCC
             {isSectionEnabled('mortgageProductionRankingReport') && (
               <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '16px', marginBottom: '14px' }}>
                 <h3 style={{ margin: '0 0 6px 0', fontSize: '16px', color: '#1e293b' }}>Production Ranking Report</h3>
-                <p style={{ margin: '0 0 12px', color: '#64748b', fontSize: '13px' }}>Which regions, offices, and loan officers are driving results?</p>
-                {renderRealEstateRowsTable('mortgageRegionalRankingRows', mortgageRegionalRankingRows, [
-                  { key: 'region', label: 'Region' },
-                  { key: 'volume', label: 'Volume' },
-                  { key: 'revenue', label: 'Revenue' },
-                  { key: 'growth', label: 'Growth' },
-                ])}
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '14px', marginTop: '14px' }}>
-                  {renderRealEstateRowsTable('mortgageOfficeRankingRows', mortgageOfficeRankingRows, [
-                    { key: 'rank', label: 'Rank', format: numberColumn },
-                    { key: 'office', label: 'Office' },
-                    { key: 'volume', label: 'Volume' },
-                    { key: 'revenue', label: 'Revenue' },
+                <p style={{ margin: '0 0 12px', color: '#64748b', fontSize: '13px' }}>Which branches and loan officers are driving funded volume, pull-through, and operational velocity?</p>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '14px' }}>
+                  {renderRealEstateRowsTable('encompassProductionByBranchRows', encompassProductionByBranchRows, [
+                    { key: 'branch', label: 'Branch' },
+                    { key: 'fundedLoans', label: 'Funded Loans', format: numberColumn },
+                    { key: 'fundedVolume', label: 'Funded Volume', format: moneyColumn },
+                    { key: 'pullThroughPct', label: 'Pull-Through', format: pctColumn },
+                    { key: 'avgDaysToClose', label: 'Avg Days', format: (value) => Number(value || 0).toFixed(1) },
                   ])}
-                  {renderRealEstateRowsTable('mortgageLoanOfficerRankingRows', mortgageLoanOfficerRankingRows, [
-                    { key: 'rank', label: 'Rank', format: numberColumn },
-                    { key: 'loanOfficer', label: 'LO' },
-                    { key: 'fundings', label: 'Fundings', format: numberColumn },
-                    { key: 'volume', label: 'Volume' },
-                    { key: 'revenue', label: 'Revenue' },
-                  ])}
-                </div>
-                <div style={{ marginTop: '14px' }}>
-                  {renderRealEstateRowsTable('mortgageProductionMetricRows', mortgageProductionMetricRows, [
-                    { key: 'metric', label: 'Additional Metric' },
-                    { key: 'value', label: 'Value' },
+                  {renderRealEstateRowsTable('encompassProductionByOfficerRows', encompassProductionByOfficerRows, [
+                    { key: 'loanOfficer', label: 'Loan Officer' },
+                    { key: 'branch', label: 'Branch' },
+                    { key: 'fundedLoans', label: 'Funded', format: numberColumn },
+                    { key: 'fundedVolume', label: 'Volume', format: moneyColumn },
+                    { key: 'pullThroughPct', label: 'Pull-Through', format: pctColumn },
+                    { key: 'conditionAgingDays', label: 'Condition Age', format: (value) => Number(value || 0).toFixed(1) },
                   ])}
                 </div>
               </div>
@@ -24587,24 +24628,74 @@ Strategies to Improve the CCC
             {isSectionEnabled('mortgageFunnelPullThroughReport') && (
               <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '16px', marginBottom: '14px' }}>
                 <h3 style={{ margin: '0 0 6px 0', fontSize: '16px', color: '#1e293b' }}>Funnel & Pull-Through Report</h3>
-                <p style={{ margin: '0 0 12px', color: '#64748b', fontSize: '13px' }}>How efficiently are applications becoming funded loans?</p>
+                <p style={{ margin: '0 0 12px', color: '#64748b', fontSize: '13px' }}>Application conversion, product/channel pull-through, and fallout reasons from loan pipeline and status data.</p>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '14px' }}>
-                  {renderRealEstateRowsTable('mortgageFunnelRows', mortgageFunnelRows, [
-                    { key: 'stage', label: 'Stage' },
-                    { key: 'count', label: 'Count', format: numberColumn },
-                    { key: 'conversion', label: 'Conversion' },
+                  {renderRealEstateRowsTable('encompassProductChannelRows', encompassProductChannelRows, [
+                    { key: 'product', label: 'Product' },
+                    { key: 'channel', label: 'Channel' },
+                    { key: 'applications', label: 'Applications', format: numberColumn },
+                    { key: 'fundedLoans', label: 'Funded', format: numberColumn },
+                    { key: 'pullThroughPct', label: 'Pull-Through', format: pctColumn },
+                    { key: 'avgLoanSize', label: 'Avg Loan Size', format: moneyColumn },
                   ])}
-                  {renderRealEstateRowsTable('mortgagePullThroughRows', mortgagePullThroughRows, [
-                    { key: 'kpi', label: 'KPI' },
-                    { key: 'value', label: 'Value' },
-                  ])}
-                </div>
-                <div style={{ marginTop: '14px' }}>
-                  {renderRealEstateRowsTable('mortgageFalloutRows', mortgageFalloutRows, [
+                  {renderRealEstateRowsTable('encompassFalloutRows', encompassFalloutRows, [
                     { key: 'reason', label: 'Fallout Reason' },
                     { key: 'count', label: 'Count', format: numberColumn },
+                    { key: 'falloutPct', label: 'Fallout %', format: pctColumn },
                   ])}
                 </div>
+              </div>
+            )}
+            {isSectionEnabled('mortgageCycleTimeByMilestone') && (
+              <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '16px', marginBottom: '14px' }}>
+                <h3 style={{ margin: '0 0 6px 0', fontSize: '16px', color: '#1e293b' }}>Cycle-Time by Milestone</h3>
+                <p style={{ margin: '0 0 12px', color: '#64748b', fontSize: '13px' }}>Milestone timing from application through funding, compared with internal cycle-time targets.</p>
+                {renderRealEstateRowsTable('encompassCycleTimeRows', encompassCycleTimeRows, [
+                  { key: 'milestone', label: 'Milestone' },
+                  { key: 'avgDays', label: 'Avg Days', format: (value) => Number(value || 0).toFixed(1) },
+                  { key: 'targetDays', label: 'Target Days', format: (value) => Number(value || 0).toFixed(1) },
+                  { key: 'varianceDays', label: 'Variance', format: (value) => `${Number(value || 0) >= 0 ? '+' : ''}${Number(value || 0).toFixed(1)}` },
+                  { key: 'loans', label: 'Loans', format: numberColumn },
+                ])}
+              </div>
+            )}
+            {isSectionEnabled('mortgageOperationalBottlenecks') && (
+              <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '16px', marginBottom: '14px' }}>
+                <h3 style={{ margin: '0 0 6px 0', fontSize: '16px', color: '#1e293b' }}>Conditions & Document Bottlenecks</h3>
+                <p style={{ margin: '0 0 12px', color: '#64748b', fontSize: '13px' }}>Operational bottlenecks from enhanced conditions, eFolder documents, disclosures, service orders, and workflow tasks.</p>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '14px' }}>
+                  {renderRealEstateRowsTable('encompassConditionBottleneckRows', encompassConditionBottleneckRows, [
+                    { key: 'bucket', label: 'Condition Bucket' },
+                    { key: 'openConditions', label: 'Open', format: numberColumn },
+                    { key: 'avgAgeDays', label: 'Avg Age', format: (value) => Number(value || 0).toFixed(1) },
+                    { key: 'owner', label: 'Owner' },
+                    { key: 'risk', label: 'Risk' },
+                  ])}
+                  {renderRealEstateRowsTable('encompassDocumentBottleneckRows', encompassDocumentBottleneckRows, [
+                    { key: 'documentType', label: 'Document / Package' },
+                    { key: 'waitingLoans', label: 'Waiting Loans', format: numberColumn },
+                    { key: 'avgAgeDays', label: 'Avg Age', format: (value) => Number(value || 0).toFixed(1) },
+                    { key: 'eventSource', label: 'Source' },
+                  ])}
+                </div>
+              </div>
+            )}
+            {isSectionEnabled('mortgageLoanPipelineDetail') && (
+              <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '16px', marginBottom: '14px' }}>
+                <h3 style={{ margin: '0 0 6px 0', fontSize: '16px', color: '#1e293b' }}>Loan Pipeline Detail</h3>
+                <p style={{ margin: '0 0 12px', color: '#64748b', fontSize: '13px' }}>Loan-level operational view with borrower names masked for PII/NPI-safe analytics mockups.</p>
+                {renderRealEstateRowsTable('encompassLoanPipelineDetailRows', encompassLoanPipelineDetailRows, [
+                  { key: 'loanId', label: 'Loan ID' },
+                  { key: 'borrower', label: 'Borrower' },
+                  { key: 'stage', label: 'Stage' },
+                  { key: 'branch', label: 'Branch' },
+                  { key: 'loanOfficer', label: 'Loan Officer' },
+                  { key: 'product', label: 'Product' },
+                  { key: 'loanAmount', label: 'Loan Amount', format: moneyColumn },
+                  { key: 'daysInStage', label: 'Days in Stage', format: numberColumn },
+                  { key: 'closingDate', label: 'Est. Closing', format: dateColumn },
+                  { key: 'risk', label: 'Risk' },
+                ])}
               </div>
             )}
             {isSectionEnabled('mortgageAttachmentReport') && (

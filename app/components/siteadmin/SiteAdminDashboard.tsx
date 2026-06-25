@@ -4115,6 +4115,21 @@ export default function SiteAdminDashboard(props: any) {
         { dataDomain: 'Maintenance & Compliance', sourceObject: 'Service, inspection, and compliance records', enabled: true },
       ],
     },
+    ICE_ENCOMPASS: {
+      label: 'ICE Encompass',
+      description: 'Read-oriented mortgage loan, pipeline, milestone, condition, document, disclosure, and user analytics from Encompass Developer Connect REST APIs.',
+      credentialFields: ['Environment / Instance URL', 'Client ID', 'Client Secret', 'API Key', 'OAuth Redirect URI', 'Webhook Secret'],
+      domains: [
+        { dataDomain: 'Loans', sourceObject: 'Loan details and selected loan fields', enabled: true },
+        { dataDomain: 'Loan Pipeline', sourceObject: 'Pipeline views, folders, milestones, dates, loan teams', enabled: true },
+        { dataDomain: 'Milestones & Workflow', sourceObject: 'Application, processing, underwriting, closing, funding stages', enabled: true },
+        { dataDomain: 'Conditions', sourceObject: 'Underwriting and closing condition status / lifecycle', enabled: true },
+        { dataDomain: 'Documents / eFolder', sourceObject: 'Document packages, disclosures, attachments, metadata', enabled: true },
+        { dataDomain: 'Compliance / Disclosures', sourceObject: 'LE / CD timing and TRID disclosure status', enabled: true },
+        { dataDomain: 'Organizations & Users', sourceObject: 'Branches, users, roles, loan teams', enabled: true },
+        { dataDomain: 'Webhooks', sourceObject: 'Loan, document, condition, task, org/user events', enabled: true },
+      ],
+    },
   };
 
   const getConstructionOperationalSourceDetail = (sourceCode: string) =>
@@ -4131,7 +4146,7 @@ export default function SiteAdminDashboard(props: any) {
     const errorMessage = selectedSource?.errorMessage || null;
 
     return (
-      <div style={{ padding: '12px', background: '#f8fafc', borderRadius: '6px', border: '1px solid #e2e8f0', gridColumn: '1 / 2', order: sourceCode === 'CREWTRACKS' ? 8 : 10 }}>
+      <div style={{ padding: '12px', background: '#f8fafc', borderRadius: '6px', border: '1px solid #e2e8f0', gridColumn: '1 / 2', order: sourceCode === 'CREWTRACKS' ? 8 : sourceCode === 'ICE_ENCOMPASS' ? 12 : 10 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px', marginBottom: '10px' }}>
           <div>
             <h4 style={{ fontSize: '14px', fontWeight: '600', color: '#1e293b', marginBottom: '8px' }}>{detail.label}</h4>
@@ -4197,7 +4212,7 @@ export default function SiteAdminDashboard(props: any) {
     if (!detail) return null;
 
     return (
-      <div style={{ padding: '12px', background: '#f8fafc', borderRadius: '6px', border: '1px solid #e2e8f0', gridColumn: '2 / 3', order: sourceCode === 'CREWTRACKS' ? 9 : 11 }}>
+      <div style={{ padding: '12px', background: '#f8fafc', borderRadius: '6px', border: '1px solid #e2e8f0', gridColumn: '2 / 3', order: sourceCode === 'CREWTRACKS' ? 9 : sourceCode === 'ICE_ENCOMPASS' ? 13 : 11 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
           <h4 style={{ fontSize: '14px', fontWeight: '600', color: '#1e293b', margin: 0 }}>{detail.label} Data Domains</h4>
           <button
@@ -4208,7 +4223,7 @@ export default function SiteAdminDashboard(props: any) {
           </button>
         </div>
         <div style={{ fontSize: '12px', color: '#64748b', marginBottom: '8px' }}>
-          Data domains expected from the {detail.label} connector for construction reporting.
+          Data domains expected from the {detail.label} connector for operational reporting.
         </div>
         <div style={{ overflowX: 'auto' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
@@ -7798,6 +7813,8 @@ export default function SiteAdminDashboard(props: any) {
                                             {isOperationalSourceSelected(company.id, 'CREWTRACKS') && renderConstructionOperationalDataDomainsCard(company.id, 'CREWTRACKS')}
                                             {isOperationalSourceSelected(company.id, 'HILTI') && renderConstructionOperationalIntegrationCard(company.id, company.name, 'HILTI')}
                                             {isOperationalSourceSelected(company.id, 'HILTI') && renderConstructionOperationalDataDomainsCard(company.id, 'HILTI')}
+                                            {isOperationalSourceSelected(company.id, 'ICE_ENCOMPASS') && renderConstructionOperationalIntegrationCard(company.id, company.name, 'ICE_ENCOMPASS')}
+                                            {isOperationalSourceSelected(company.id, 'ICE_ENCOMPASS') && renderConstructionOperationalDataDomainsCard(company.id, 'ICE_ENCOMPASS')}
                                             <div style={{ gridColumn: '1 / -1', order: 3, display: 'none' }}>
                                               {renderOperationalHubCustomizationCard(company)}
                                             </div>

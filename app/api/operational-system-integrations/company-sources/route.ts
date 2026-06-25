@@ -13,6 +13,7 @@ const SOURCE_LABELS: Record<string, string> = {
   PLATOS_INVENTORY: 'Monthly Inventory Report',
   CREWTRACKS: 'Crewtracks',
   HILTI: 'Hilti',
+  ICE_ENCOMPASS: 'ICE Encompass',
 };
 
 export async function GET(request: NextRequest) {
