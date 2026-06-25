@@ -754,6 +754,9 @@ export default function OperationsTab({
     materialAging: { key: 'daysOnHand', dir: 'desc' },
     assetRegister: { key: 'replacementValue', dir: 'desc' },
   });
+  const [expandedInventoryAssetCategories, setExpandedInventoryAssetCategories] = useState<Record<string, boolean>>({});
+  const [expandedInventoryAssetJobs, setExpandedInventoryAssetJobs] = useState<Record<string, boolean>>({});
+  const [inventoryEquipmentSearch, setInventoryEquipmentSearch] = useState<string>('');
   const [laborSchedulingData, setLaborSchedulingData] = useState<any>(null);
   const [selectedLaborCompensationRoleLocation, setSelectedLaborCompensationRoleLocation] = useState<string>('__ALL__');
   const [selectedLaborRosterDivision, setSelectedLaborRosterDivision] = useState<string>('');
@@ -17229,7 +17232,6 @@ Strategies to Improve the CCC
     const materialsByJob: any[] = Array.isArray(hiltiInventoryData.materialsByJob) ? hiltiInventoryData.materialsByJob : [];
     const materialReorderQueue: any[] = Array.isArray(hiltiInventoryData.materialReorderQueue) ? hiltiInventoryData.materialReorderQueue : [];
     const materialAging: any[] = Array.isArray(hiltiInventoryData.materialAging) ? hiltiInventoryData.materialAging : [];
-    const isMockSource = hiltiInventoryData?.meta?.source === 'mock';
     const showKpis = isSectionEnabled('constructionInventoryKpis');
     const showByCategory = isSectionEnabled('hiltiAssetsByCategory');
     const showByJob = isSectionEnabled('hiltiAssetsByJob');
@@ -17302,6 +17304,67 @@ Strategies to Improve the CCC
     const sortedMaterialReorderQueue = sortRowsByState(materialReorderQueue, inventorySort('materialReorderQueue', 'stockRatio', 'asc'));
     const sortedMaterialAging = sortRowsByState(materialAging, inventorySort('materialAging', 'daysOnHand', 'desc'));
     const sortedAssets = sortRowsByState(assets, inventorySort('assetRegister', 'replacementValue', 'desc'));
+    const normalizedEquipmentSearch = inventoryEquipmentSearch.trim().toLowerCase();
+    const equipmentSearchResults = normalizedEquipmentSearch
+      ? assets
+        .filter((asset) => {
+          const searchable = [
+            asset.assetName,
+            asset.assetId,
+            asset.category,
+            asset.serialNumber,
+          ].map((value) => String(value || '').toLowerCase()).join(' ');
+          return searchable.includes(normalizedEquipmentSearch);
+        })
+        .sort((a, b) => String(a.assetName || '').localeCompare(String(b.assetName || '')))
+      : [];
+    const assetsForCategory = (category: string) =>
+      assets
+        .filter((asset) => String(asset.category || '') === String(category || ''))
+        .sort((a, b) => Number(b.replacementValue || 0) - Number(a.replacementValue || 0));
+    const assetsForJob = (jobId: string | null, jobName: string | null) =>
+      assets
+        .filter((asset) => {
+          if (jobId) return String(asset.jobId || '') === String(jobId);
+          return String(asset.jobName || '') === String(jobName || '');
+        })
+        .sort((a, b) => Number(b.replacementValue || 0) - Number(a.replacementValue || 0));
+    const renderExpandedAssetRows = (rows: any[], colspan: number) => (
+      <tr>
+        <td colSpan={colspan} style={{ padding: 0, borderBottom: '1px solid #e2e8f0', background: '#f8fafc' }}>
+          <div style={{ padding: '10px 12px' }}>
+            {rows.length === 0 ? (
+              <div style={{ color: '#64748b', fontSize: '12px' }}>No asset details available.</div>
+            ) : (
+              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                <thead>
+                  <tr>
+                    <th style={{ ...thStyle, fontSize: '10px' }}>Asset</th>
+                    <th style={{ ...thStyle, fontSize: '10px' }}>Asset ID</th>
+                    <th style={{ ...thStyle, fontSize: '10px' }}>Status</th>
+                    <th style={{ ...thStyle, fontSize: '10px', textAlign: 'right' }}>Value</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {rows.map((asset) => (
+                    <tr key={asset.assetId}>
+                      <td style={{ ...tdStyle, fontSize: '12px', fontWeight: 700 }}>{asset.assetName}</td>
+                      <td style={{ ...tdStyle, fontSize: '12px', color: '#475569' }}>{asset.assetId}</td>
+                      <td style={{ ...tdStyle, fontSize: '12px' }}>
+                        <span style={{ padding: '2px 7px', borderRadius: '999px', fontSize: '10px', fontWeight: 700, ...statusPillStyle(asset.status) }}>
+                          {String(asset.status || '').replace('_', ' ')}
+                        </span>
+                      </td>
+                      <td style={{ ...tdStyle, fontSize: '12px', textAlign: 'right', fontWeight: 700 }}>{formatCurrency(Number(asset.replacementValue || 0))}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+        </td>
+      </tr>
+    );
     const metricCards = [
       { label: 'Assets Tracked', value: num(summary.assetCount), detail: `${num(summary.assignedCount)} assigned to jobs` },
       { label: 'Replacement Value', value: formatCurrency(Number(summary.totalReplacementValue || 0)), detail: 'Hilti tool and equipment value' },
@@ -17319,11 +17382,6 @@ Strategies to Improve the CCC
               Hilti tools and equipment inventory, jobsite custody, utilization, maintenance, and compliance.
             </p>
           </div>
-          {isMockSource && (
-            <span style={{ padding: '6px 10px', borderRadius: '999px', background: '#fef3c7', color: '#92400e', fontSize: '12px', fontWeight: 700 }}>
-              Mock Hilti data
-            </span>
-          )}
         </div>
 
         {showKpis && (
@@ -17337,6 +17395,79 @@ Strategies to Improve the CCC
             ))}
           </div>
         )}
+
+        <div style={{ ...cardStyle, marginBottom: '16px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', gap: '14px', flexWrap: 'wrap', alignItems: 'flex-end' }}>
+            <div>
+              <h3 style={{ margin: '0 0 6px', fontSize: '14px', color: '#0f172a' }}>Find Equipment Location</h3>
+              <p style={{ margin: 0, color: '#64748b', fontSize: '12px' }}>
+                Search by equipment name to find the current location, job site, and custodian.
+              </p>
+            </div>
+            <input
+              type="search"
+              value={inventoryEquipmentSearch}
+              onChange={(event) => setInventoryEquipmentSearch(event.target.value)}
+              placeholder="Search equipment name..."
+              style={{
+                minWidth: '280px',
+                flex: '1 1 320px',
+                maxWidth: '520px',
+                border: '1px solid #cbd5e1',
+                borderRadius: '10px',
+                padding: '10px 12px',
+                fontSize: '13px',
+                color: '#0f172a',
+                background: '#fff',
+              }}
+            />
+          </div>
+          {inventoryEquipmentSearch.trim() && (
+            <div style={{ marginTop: '14px', overflowX: 'auto' }}>
+              {equipmentSearchResults.length === 0 ? (
+                <div style={{ padding: '12px', borderRadius: '10px', background: '#f8fafc', color: '#64748b', fontSize: '13px' }}>
+                  No equipment found matching "{inventoryEquipmentSearch.trim()}".
+                </div>
+              ) : (
+                <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                  <thead>
+                    <tr>
+                      <th style={thStyle}>Equipment</th>
+                      <th style={thStyle}>Asset ID</th>
+                      <th style={thStyle}>Location</th>
+                      <th style={thStyle}>Job Site</th>
+                      <th style={thStyle}>Custodian</th>
+                      <th style={thStyle}>Status</th>
+                      <th style={{ ...thStyle, textAlign: 'right' }}>Value</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {equipmentSearchResults.slice(0, 12).map((asset) => (
+                      <tr key={asset.assetId}>
+                        <td style={{ ...tdStyle, fontWeight: 700 }}>{asset.assetName}</td>
+                        <td style={{ ...tdStyle, color: '#475569' }}>{asset.assetId}</td>
+                        <td style={tdStyle}>{asset.location || 'Unknown'}</td>
+                        <td style={tdStyle}>{asset.jobName || 'Unassigned'}</td>
+                        <td style={tdStyle}>{asset.custodian || 'Unassigned'}</td>
+                        <td style={tdStyle}>
+                          <span style={{ padding: '2px 7px', borderRadius: '999px', fontSize: '10px', fontWeight: 700, ...statusPillStyle(asset.status) }}>
+                            {String(asset.status || '').replace('_', ' ')}
+                          </span>
+                        </td>
+                        <td style={{ ...tdStyle, textAlign: 'right', fontWeight: 700 }}>{formatCurrency(Number(asset.replacementValue || 0))}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+              {equipmentSearchResults.length > 12 && (
+                <div style={{ marginTop: '8px', color: '#64748b', fontSize: '12px' }}>
+                  Showing 12 of {num(equipmentSearchResults.length)} matches. Refine the equipment name to narrow results.
+                </div>
+              )}
+            </div>
+          )}
+        </div>
 
         {(showByCategory || showByJob) && (
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(360px, 1fr))', gap: '16px', marginBottom: '16px' }}>
@@ -17355,15 +17486,32 @@ Strategies to Improve the CCC
                       </tr>
                     </thead>
                     <tbody>
-                      {sortedByCategory.map((row) => (
-                        <tr key={row.category}>
-                          <td style={{ ...tdStyle, fontWeight: 700 }}>{row.category}</td>
-                          <td style={{ ...tdStyle, textAlign: 'right' }}>{num(row.assetCount)}</td>
-                          <td style={{ ...tdStyle, textAlign: 'right' }}>{formatCurrency(Number(row.replacementValue || 0))}</td>
-                          <td style={{ ...tdStyle, textAlign: 'right' }}>{pct(row.avgUtilizationPct)}</td>
-                          <td style={{ ...tdStyle, textAlign: 'right' }}>{num(row.serviceDueCount)}</td>
-                        </tr>
-                      ))}
+                      {sortedByCategory.map((row) => {
+                        const categoryKey = String(row.category || '');
+                        const isExpanded = expandedInventoryAssetCategories[categoryKey] === true;
+                        const detailRows = isExpanded ? assetsForCategory(categoryKey) : [];
+                        return (
+                          <React.Fragment key={categoryKey}>
+                            <tr>
+                              <td style={{ ...tdStyle, fontWeight: 700 }}>
+                                <button
+                                  type="button"
+                                  onClick={() => setExpandedInventoryAssetCategories((prev) => ({ ...prev, [categoryKey]: !prev[categoryKey] }))}
+                                  style={{ border: 'none', background: 'transparent', padding: 0, color: '#0f172a', cursor: 'pointer', fontSize: '13px', fontWeight: 800, textAlign: 'left' }}
+                                >
+                                  <span style={{ display: 'inline-block', width: '16px', color: '#64748b' }}>{isExpanded ? 'v' : '>'}</span>
+                                  {row.category}
+                                </button>
+                              </td>
+                              <td style={{ ...tdStyle, textAlign: 'right' }}>{num(row.assetCount)}</td>
+                              <td style={{ ...tdStyle, textAlign: 'right' }}>{formatCurrency(Number(row.replacementValue || 0))}</td>
+                              <td style={{ ...tdStyle, textAlign: 'right' }}>{pct(row.avgUtilizationPct)}</td>
+                              <td style={{ ...tdStyle, textAlign: 'right' }}>{num(row.serviceDueCount)}</td>
+                            </tr>
+                            {isExpanded && renderExpandedAssetRows(detailRows, 5)}
+                          </React.Fragment>
+                        );
+                      })}
                     </tbody>
                   </table>
                 </div>
@@ -17385,15 +17533,32 @@ Strategies to Improve the CCC
                       </tr>
                     </thead>
                     <tbody>
-                      {sortedByJob.slice(0, 8).map((row) => (
-                        <tr key={row.jobId}>
-                          <td style={{ ...tdStyle, fontWeight: 700 }}>{row.jobName}</td>
-                          <td style={{ ...tdStyle, textAlign: 'right' }}>{num(row.assetCount)}</td>
-                          <td style={{ ...tdStyle, textAlign: 'right' }}>{formatCurrency(Number(row.replacementValue || 0))}</td>
-                          <td style={{ ...tdStyle, textAlign: 'right' }}>{pct(row.avgUtilizationPct)}</td>
-                          <td style={{ ...tdStyle, textAlign: 'right' }}>{num(row.serviceDueCount)}</td>
-                        </tr>
-                      ))}
+                      {sortedByJob.slice(0, 8).map((row) => {
+                        const jobKey = String(row.jobId || row.jobName || '');
+                        const isExpanded = expandedInventoryAssetJobs[jobKey] === true;
+                        const detailRows = isExpanded ? assetsForJob(row.jobId || null, row.jobName || null) : [];
+                        return (
+                          <React.Fragment key={jobKey}>
+                            <tr>
+                              <td style={{ ...tdStyle, fontWeight: 700 }}>
+                                <button
+                                  type="button"
+                                  onClick={() => setExpandedInventoryAssetJobs((prev) => ({ ...prev, [jobKey]: !prev[jobKey] }))}
+                                  style={{ border: 'none', background: 'transparent', padding: 0, color: '#0f172a', cursor: 'pointer', fontSize: '13px', fontWeight: 800, textAlign: 'left' }}
+                                >
+                                  <span style={{ display: 'inline-block', width: '16px', color: '#64748b' }}>{isExpanded ? 'v' : '>'}</span>
+                                  {row.jobName}
+                                </button>
+                              </td>
+                              <td style={{ ...tdStyle, textAlign: 'right' }}>{num(row.assetCount)}</td>
+                              <td style={{ ...tdStyle, textAlign: 'right' }}>{formatCurrency(Number(row.replacementValue || 0))}</td>
+                              <td style={{ ...tdStyle, textAlign: 'right' }}>{pct(row.avgUtilizationPct)}</td>
+                              <td style={{ ...tdStyle, textAlign: 'right' }}>{num(row.serviceDueCount)}</td>
+                            </tr>
+                            {isExpanded && renderExpandedAssetRows(detailRows, 5)}
+                          </React.Fragment>
+                        );
+                      })}
                     </tbody>
                   </table>
                 </div>
