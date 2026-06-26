@@ -3618,9 +3618,16 @@ export async function GET(request: NextRequest) {
           }
           const productTokenAliases = (...values: unknown[]): string[] => {
             const aliases: string[] = [];
-            for (const value of values) {
-              const raw = String(value || '').trim();
-              if (!raw) continue;
+            const rawValues = values.map((value) => String(value || '').trim()).filter(Boolean);
+            for (const raw of rawValues.filter((value) => value.includes(':'))) {
+              const parts = raw.split(/[:|,/\\]+/).map((part) => part.trim()).filter(Boolean);
+              const lastPart = parts[parts.length - 1] || '';
+              const lastKey = canonicalProductKey(lastPart);
+              if (lastKey) aliases.push(lastKey);
+              const fullKey = canonicalProductKey(raw);
+              if (fullKey) aliases.push(fullKey);
+            }
+            for (const raw of rawValues) {
               const fullKey = canonicalProductKey(raw);
               if (fullKey) aliases.push(fullKey);
               const parts = raw.split(/[:|,/\\]+/).map((part) => part.trim()).filter(Boolean);
@@ -7068,9 +7075,16 @@ export async function GET(request: NextRequest) {
         if (bakersCogsByKey.size > 0) {
           const bakersProductKeyAliases = (row: any): string[] => {
             const aliases: string[] = [];
-            for (const value of [row?.sku, row?.itemId, row?.itemName]) {
-              const raw = String(value || '').trim();
-              if (!raw) continue;
+            const rawValues = [row?.sku, row?.itemId, row?.itemName].map((value) => String(value || '').trim()).filter(Boolean);
+            for (const raw of rawValues.filter((value) => value.includes(':'))) {
+              const parts = raw.split(/[:|,/\\]+/).map((part) => part.trim()).filter(Boolean);
+              const lastPart = parts[parts.length - 1] || '';
+              const lastKey = canonicalProductKey(lastPart);
+              if (lastKey) aliases.push(lastKey);
+              const fullKey = canonicalProductKey(raw);
+              if (fullKey) aliases.push(fullKey);
+            }
+            for (const raw of rawValues) {
               const fullKey = canonicalProductKey(raw);
               if (fullKey) aliases.push(fullKey);
               const parts = raw.split(/[:|,/\\]+/).map((part) => part.trim()).filter(Boolean);
