@@ -26,6 +26,7 @@ import {
 import OpsDashboard from './OpsDashboard';
 import FinancialForecastTab from '../FinancialForecastTab';
 import WorkingCapitalForecastTab from './WorkingCapitalForecastTab';
+import ResidentialRevenueForecast from './real-estate-forecast/ResidentialRevenueForecast';
 import LoansTab from './LoansTab';
 import CapTableView from '../cap-table/CapTableView';
 import { getSdeSectorBenchmarks } from '@/lib/sde-sector-benchmarks';
@@ -47,7 +48,7 @@ interface OperationsTabProps {
   viewMode?: 'full' | 'overview-only';
   initialTab?: string;
   initialForecastBasisTab?: 'cash-basis' | 'accrual-basis';
-  initialForecastSubTab?: 'income-statement-forecast' | 'cash-forecast' | 'graphs';
+  initialForecastSubTab?: ForecastSubTab;
   initialPrintSectionKey?: string;
 }
 
@@ -191,6 +192,7 @@ type WipLineItemSortKey =
   | 'contractValue'
   | 'invoicedValue';
 type ProductReportView = 'productMarginAnalysis' | 'wholesaleRawData' | 'vendorPricing' | 'performance' | 'retailForecast' | 'merchandiseProfitability';
+type ForecastSubTab = 'income-statement-forecast' | 'cash-forecast' | 'graphs' | 'residential-revenue-forecast';
 
 const WHOLESALE_PRODUCTS_REPORT_START_DATE = '2023-01-01';
 const WHOLESALE_INVENTORY_EXCLUDED_SECTION_KEYS = new Set([
@@ -702,8 +704,8 @@ export default function OperationsTab({
   const [activeForecastBasisTab, setActiveForecastBasisTab] = useState<'cash-basis' | 'accrual-basis'>('accrual-basis');
   const [activeOverviewSubTab, setActiveOverviewSubTab] = useState<'cash-conversion-analysis' | 'ebitda-performance' | 'customer-concentration-exposure' | 'execution-velocity'>('cash-conversion-analysis');
   const [activeCashSubTab, setActiveCashSubTab] = useState<'cash-conversion-analysis' | 'cash-position'>('cash-conversion-analysis');
-  const [activeCashBasisForecastTab, setActiveCashBasisForecastTab] = useState<'income-statement-forecast' | 'cash-forecast' | 'graphs'>('income-statement-forecast');
-  const [activeAccrualBasisForecastTab, setActiveAccrualBasisForecastTab] = useState<'income-statement-forecast' | 'cash-forecast' | 'graphs'>('cash-forecast');
+  const [activeCashBasisForecastTab, setActiveCashBasisForecastTab] = useState<ForecastSubTab>('income-statement-forecast');
+  const [activeAccrualBasisForecastTab, setActiveAccrualBasisForecastTab] = useState<ForecastSubTab>('cash-forecast');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [summary, setSummary] = useState<any>(null);
@@ -928,7 +930,7 @@ export default function OperationsTab({
   const [retailForecastTableSortKey, setRetailForecastTableSortKey] = useState<RetailForecastTableSortKey>('next3Base');
   const [retailForecastTableSortDir, setRetailForecastTableSortDir] = useState<'asc' | 'desc'>('desc');
   const [showCccInfoModal, setShowCccInfoModal] = useState(false);
-  const [mortgageRevenuePeriod, setMortgageRevenuePeriod] = useState<'monthly' | 'quarterly' | 'annually'>('monthly');
+  const [realEstateRegionRevenuePeriod, setRealEstateRegionRevenuePeriod] = useState<'currentMonth' | 'currentQuarter' | 'yearToDate'>('currentMonth');
   const realEstateTrendMonthDates = Array.from({ length: 36 }, (_, index) => new Date(Date.UTC(2023, 6 + index, 1)));
   const formatRealEstateTrendMonth = (date: Date) => date.toLocaleDateString('en-US', { month: 'short', year: '2-digit', timeZone: 'UTC' });
   const realEstateTrendMonths = realEstateTrendMonthDates.map(formatRealEstateTrendMonth);
@@ -14833,9 +14835,28 @@ Strategies to Improve the CCC
     };
 
   const renderForecast = () => {
+    const isRealEstateSector = String(industrySectorCategory || '').trim() === '53';
     return (
       <div style={{ padding: '8px 32px 32px' }}>
         <div className="ops-print-hide" style={{ display: 'flex', gap: '8px', marginBottom: '20px', borderBottom: '2px solid #e2e8f0' }}>
+          {isRealEstateSector && (
+            <button
+              onClick={() => setActiveAccrualBasisForecastTab('residential-revenue-forecast')}
+              style={{
+                padding: '12px 18px',
+                background: 'none',
+                color: activeAccrualBasisForecastTab === 'residential-revenue-forecast' ? '#2751d0' : '#64748b',
+                border: 'none',
+                borderBottom: activeAccrualBasisForecastTab === 'residential-revenue-forecast' ? '3px solid #2751d0' : '3px solid transparent',
+                fontSize: '14px',
+                fontWeight: '600',
+                cursor: 'pointer',
+                transition: 'all 0.2s'
+              }}
+            >
+              Residential Revenue Forecast
+            </button>
+          )}
           <button
             onClick={() => setActiveAccrualBasisForecastTab('cash-forecast')}
             style={{
@@ -14885,6 +14906,10 @@ Strategies to Improve the CCC
             Graphs
           </button>
         </div>
+
+        {isRealEstateSector && activeAccrualBasisForecastTab === 'residential-revenue-forecast' && (
+          <ResidentialRevenueForecast />
+        )}
 
         {activeAccrualBasisForecastTab === 'income-statement-forecast' && (
           <FinancialForecastTab
@@ -24422,12 +24447,69 @@ Strategies to Improve the CCC
       return numberColumn(numeric);
     };
     const metricTotal = (rows: any[], key: string) => rows.reduce((sum, row) => sum + Number(row[key] || 0), 0);
-    const mortgagePeriodMultiplier = mortgageRevenuePeriod === 'annually' ? 12 : mortgageRevenuePeriod === 'quarterly' ? 3 : 1;
-    const mortgageRevenueRegionRows = regionRows.map((row) => ({
+    const regionRevenuePeriodLabel =
+      realEstateRegionRevenuePeriod === 'yearToDate'
+        ? 'Year to Date'
+        : realEstateRegionRevenuePeriod === 'currentQuarter'
+          ? 'Current Quarter'
+          : 'Current Month';
+    const regionRevenuePeriodMultiplier =
+      realEstateRegionRevenuePeriod === 'yearToDate'
+        ? 12
+        : realEstateRegionRevenuePeriod === 'currentQuarter'
+          ? 3
+          : 1;
+    const revenueRegionRows = regionRows.map((row) => ({
       ...row,
-      revenue: Math.round(Number(row.revenue || 0) * mortgagePeriodMultiplier),
-      ebitda: Math.round(Number(row.ebitda || 0) * mortgagePeriodMultiplier),
+      revenue: Math.round(Number(row.revenue || 0) * regionRevenuePeriodMultiplier),
+      ebitda: Math.round(Number(row.ebitda || 0) * regionRevenuePeriodMultiplier),
+      pipeline: Math.round(Number(row.pipeline || 0) * regionRevenuePeriodMultiplier),
     }));
+    const renderRevenueByRegionReport = () => (
+      <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '16px', marginBottom: '14px' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px', flexWrap: 'wrap', marginBottom: '12px' }}>
+          <div>
+            <h3 style={{ margin: 0, fontSize: '16px', color: '#1e293b' }}>Revenue by Region</h3>
+            <p style={{ margin: '6px 0 0', color: '#64748b', fontSize: '13px' }}>
+              {regionRevenuePeriodLabel} revenue and EBITDA by region for {config.title}.
+            </p>
+          </div>
+          <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', color: '#475569', fontWeight: 700 }}>
+            Period
+            <select
+              value={realEstateRegionRevenuePeriod}
+              onChange={(event) => setRealEstateRegionRevenuePeriod(event.target.value as 'currentMonth' | 'currentQuarter' | 'yearToDate')}
+              style={{ border: '1px solid #cbd5e1', borderRadius: '8px', padding: '8px 10px', fontSize: '13px', background: 'white' }}
+            >
+              <option value="currentMonth">Current Month</option>
+              <option value="currentQuarter">Current Quarter</option>
+              <option value="yearToDate">Year to Date</option>
+            </select>
+          </label>
+        </div>
+        <div style={{ height: 280, marginBottom: '12px' }}>
+          <ResponsiveContainer>
+            <BarChart data={revenueRegionRows}>
+              <CartesianGrid strokeDasharray="3 3" />
+              <XAxis dataKey="region" tick={{ fontSize: 11 }} />
+              <YAxis tickFormatter={(value) => `$${(Number(value) / 1000000).toFixed(1)}M`} />
+              <Tooltip formatter={(value: any) => formatCurrency(Number(value || 0))} />
+              <Legend />
+              <Bar dataKey="revenue" fill="#2563eb" name="Revenue" />
+              <Bar dataKey="ebitda" fill="#0f766e" name="EBITDA" />
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+        {renderRealEstateRowsTable(`revenueByRegion-${moduleKey}`, revenueRegionRows, [
+          { key: 'region', label: 'Region' },
+          { key: 'revenue', label: 'Revenue', format: moneyColumn },
+          { key: 'ebitda', label: 'EBITDA', format: moneyColumn },
+          { key: 'ebitdaPct', label: 'EBITDA %', format: pctColumn },
+          { key: 'pipeline', label: 'Pipeline', format: moneyColumn },
+          { key: 'closedUnits', label: 'Closed Units', format: numberColumn },
+        ])}
+      </div>
+    );
     const divisionForecastConfig: Record<string, { title: string; metricName: string; base: number; trend: number; amplitude: number; phase: number; color: string }> = {
       mortgage: {
         title: 'Funded Loans - 3 Year Monthly Trend + 12 Month Forecast',
@@ -24553,41 +24635,7 @@ Strategies to Improve the CCC
           { label: config.producerLabel === 'Escrow Team' ? 'Teams' : `${config.producerLabel}s`, value: metricTotal(regionRows, 'producers') },
         ])}
         {isSectionEnabled(config.sections.region) && (
-          moduleKey === 'mortgage' ? (
-            <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '16px', marginBottom: '14px' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', marginBottom: '12px' }}>
-                <h3 style={{ margin: 0, fontSize: '16px', color: '#1e293b' }}>Mortgage Revenue by Region</h3>
-                <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', color: '#475569', fontWeight: 700 }}>
-                  Period
-                  <select
-                    value={mortgageRevenuePeriod}
-                    onChange={(event) => setMortgageRevenuePeriod(event.target.value as 'monthly' | 'quarterly' | 'annually')}
-                    style={{ border: '1px solid #cbd5e1', borderRadius: '8px', padding: '8px 10px', fontSize: '13px', background: 'white' }}
-                  >
-                    <option value="monthly">Monthly</option>
-                    <option value="quarterly">Quarterly</option>
-                    <option value="annually">Annually</option>
-                  </select>
-                </label>
-              </div>
-              <div style={{ height: 280 }}>
-                <ResponsiveContainer>
-                  <BarChart data={mortgageRevenueRegionRows}>
-                    <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis dataKey="region" tick={{ fontSize: 11 }} />
-                    <YAxis tickFormatter={(value) => `$${(Number(value) / 1000000).toFixed(1)}M`} />
-                    <Tooltip formatter={(value: any) => formatCurrency(Number(value || 0))} />
-                    <Legend />
-                    <Bar dataKey="revenue" fill="#2563eb" name="Revenue" />
-                    <Bar dataKey="ebitda" fill="#0f766e" name="EBITDA" />
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
-            </div>
-          ) : renderRealEstateChartCard('Revenue by Region', 'bar', regionRows, {
-            xKey: 'region',
-            yKeys: ['revenue', 'ebitda'],
-          })
+          renderRevenueByRegionReport()
         )}
         {moduleKey !== 'residential_real_estate' && renderDivisionMonthlyForecastCard()}
         {moduleKey === 'residential_real_estate' && (
