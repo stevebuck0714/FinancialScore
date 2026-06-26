@@ -7839,6 +7839,19 @@ export default function OperationsTab({
       width: '66px',
       maxWidth: '74px',
     };
+    const priceCostSkuCellStyle = {
+      padding: '8px 6px',
+      fontSize: '13px',
+      color: '#475569',
+      whiteSpace: 'nowrap' as const,
+      width: '78px',
+      maxWidth: '90px',
+    };
+    const displaySkuCode = (value: unknown): string => {
+      const raw = String(value || '').trim();
+      const parts = raw.split(':').map((part) => part.trim()).filter(Boolean);
+      return parts[parts.length - 1] || raw;
+    };
     const renderPriceCostSortHeader = (
       key: PriceCostComparisonSortKey,
       label: string | string[],
@@ -7855,8 +7868,9 @@ export default function OperationsTab({
           userSelect: 'none',
           whiteSpace: key === 'itemName' || key === 'sku' ? 'nowrap' : 'normal',
           lineHeight: 1.15,
-          minWidth: key === 'itemName' ? '260px' : key === 'sku' ? '140px' : '62px',
-          maxWidth: key === 'itemName' ? '320px' : key === 'sku' ? '170px' : '76px',
+          width: key === 'sku' ? '78px' : key === 'itemName' ? '260px' : undefined,
+          minWidth: key === 'itemName' ? '260px' : key === 'sku' ? '78px' : '62px',
+          maxWidth: key === 'itemName' ? '360px' : key === 'sku' ? '90px' : '76px',
         }}
       >
         <span style={{ display: 'inline-block' }}>
@@ -10739,7 +10753,7 @@ export default function OperationsTab({
                   {sortedComparisonRows.map((row, idx) => (
                     <tr key={`${row.itemName}-${row.sku}-${idx}`} style={{ borderBottom: '1px solid #f1f5f9' }}>
                       <td style={{ padding: '8px', fontSize: '13px', color: '#0f172a', fontWeight: 600, whiteSpace: 'nowrap' }}>{row.itemName}</td>
-                      <td style={{ padding: '8px', fontSize: '13px', color: '#475569', whiteSpace: 'nowrap' }}>{row.sku}</td>
+                      <td style={priceCostSkuCellStyle}>{displaySkuCode(row.sku)}</td>
                       <td style={priceCostMetricCellStyle}>{row.priceThisWeek == null ? 'N/A' : formatCurrencyWithCents(row.priceThisWeek)}</td>
                       <td style={priceCostMetricCellStyle}>{row.pricePriorWeek == null ? 'N/A' : formatCurrencyWithCents(row.pricePriorWeek)}</td>
                       <td style={{ ...priceCostMetricCellStyle, color: (row.priceDelta ?? 0) >= 0 ? '#166534' : '#b91c1c', fontWeight: 600 }}>

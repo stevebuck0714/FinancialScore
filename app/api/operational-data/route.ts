@@ -3590,6 +3590,11 @@ export async function GET(request: NextRequest) {
             if (itemName && itemName.toLowerCase() !== 'unknown item' && !qbdLooksLikeListId(itemName)) return itemName;
             return 'Unknown Product';
           };
+          const displayProductCode = (value: unknown): string => {
+            const raw = String(value || '').trim();
+            const parts = raw.split(':').map((part) => part.trim()).filter(Boolean);
+            return parts[parts.length - 1] || raw;
+          };
           const bakersCogsProductRows = await prisma.$queryRaw<Array<{ productId: string; productName: string }>>`
             SELECT DISTINCT ON ("productId")
               "productId",
@@ -3609,15 +3614,24 @@ export async function GET(request: NextRequest) {
               if (key && !bakersProductNameByKey.has(key)) bakersProductNameByKey.set(key, productName);
             }
           }
-          const productTokenAliases = (...values: unknown[]): string[] =>
-            Array.from(
-              new Set(
-                values
-                  .flatMap((value) => String(value || '').split(/[:|,/\\]+/))
-                  .map((value) => canonicalProductKey(value))
-                  .filter(Boolean)
-              )
-            );
+          const productTokenAliases = (...values: unknown[]): string[] => {
+            const aliases: string[] = [];
+            for (const value of values) {
+              const raw = String(value || '').trim();
+              if (!raw) continue;
+              const fullKey = canonicalProductKey(raw);
+              if (fullKey) aliases.push(fullKey);
+              const parts = raw.split(/[:|,/\\]+/).map((part) => part.trim()).filter(Boolean);
+              const lastPart = parts[parts.length - 1] || '';
+              const lastKey = canonicalProductKey(lastPart);
+              if (lastKey) aliases.push(lastKey);
+              for (const part of parts.slice(0, -1)) {
+                const key = canonicalProductKey(part);
+                if (key) aliases.push(key);
+              }
+            }
+            return Array.from(new Set(aliases));
+          };
           const bakersProductName = (row: any, label: string): string | null => {
             const aliases = productTokenAliases(row?.sku, row?.itemId, row?.itemName, label);
             return aliases.map((alias) => bakersProductNameByKey.get(alias)).find(Boolean) || null;
@@ -3654,18 +3668,19 @@ export async function GET(request: NextRequest) {
             monthMap.set(monthKey, monthBucket);
 
             const categoryLabel = productDisplayName(row);
-            const categoryBucket = categoryMap.get(categoryLabel) || { label: categoryLabel, itemName: null, values: {}, total: 0 };
+            const displayCategoryLabel = displayProductCode(categoryLabel);
+            const categoryBucket = categoryMap.get(displayCategoryLabel) || { label: displayCategoryLabel, itemName: null, values: {}, total: 0 };
             categoryBucket.values[monthKey] = Number(categoryBucket.values[monthKey] || 0) + revenue;
             categoryBucket.total += revenue;
-            categoryMap.set(categoryLabel, categoryBucket);
+            categoryMap.set(displayCategoryLabel, categoryBucket);
             const uploadedProductName = bakersProductName(row, categoryLabel);
             if (uploadedProductName) categoryBucket.itemName = uploadedProductName;
 
-            const volumeBucket = volumeCategoryMap.get(categoryLabel) || { label: categoryLabel, itemName: null, values: {}, total: 0 };
+            const volumeBucket = volumeCategoryMap.get(displayCategoryLabel) || { label: displayCategoryLabel, itemName: null, values: {}, total: 0 };
             volumeBucket.values[monthKey] = Number(volumeBucket.values[monthKey] || 0) + quantitySold;
             volumeBucket.total += quantitySold;
             if (uploadedProductName) volumeBucket.itemName = uploadedProductName;
-            volumeCategoryMap.set(categoryLabel, volumeBucket);
+            volumeCategoryMap.set(displayCategoryLabel, volumeBucket);
 
             if (snapshot >= mtdStart && snapshot <= endDate) mtdValue += revenue;
             if (snapshot >= ytdStart && snapshot <= endDate) totalValue += revenue;
@@ -7046,12 +7061,22 @@ export async function GET(request: NextRequest) {
         }
         if (bakersCogsByKey.size > 0) {
           const bakersProductKeyAliases = (row: any): string[] => {
-            const baseAliases = productKeyAliases(row);
-            const tokenAliases = [row?.sku, row?.itemId, row?.itemName]
-              .flatMap((value) => String(value || '').split(/[:|,/\\]+/))
-              .map((value) => canonicalProductKey(value))
-              .filter(Boolean);
-            return Array.from(new Set([...baseAliases, ...tokenAliases]));
+            const aliases: string[] = [];
+            for (const value of [row?.sku, row?.itemId, row?.itemName]) {
+              const raw = String(value || '').trim();
+              if (!raw) continue;
+              const fullKey = canonicalProductKey(raw);
+              if (fullKey) aliases.push(fullKey);
+              const parts = raw.split(/[:|,/\\]+/).map((part) => part.trim()).filter(Boolean);
+              const lastPart = parts[parts.length - 1] || '';
+              const lastKey = canonicalProductKey(lastPart);
+              if (lastKey) aliases.push(lastKey);
+              for (const part of parts.slice(0, -1)) {
+                const key = canonicalProductKey(part);
+                if (key) aliases.push(key);
+              }
+            }
+            return Array.from(new Set([...aliases, ...productKeyAliases(row)]));
           };
           for (const row of recordsV1) {
             const bakersCogs = bakersProductKeyAliases(row)
