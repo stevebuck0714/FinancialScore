@@ -2,12 +2,14 @@ import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import { requireAuth, validateCompanyAccess } from '@/lib/tenant-security';
 import { listOperationalSystemConnections } from '@/lib/operational/operational-system-connections';
+import { BAKERS_COGS_LABEL, BAKERS_COGS_SOURCE_CODE } from '@/lib/operational/bakers-cogs';
 import { COGENT_RATE_CARD_LABEL, COGENT_RATE_CARD_SOURCE_CODE } from '@/lib/operational/cogent-rate-card';
 
 export const dynamic = 'force-dynamic';
 
 const SOURCE_LABELS: Record<string, string> = {
   BAMBOOHR_STANDARD: 'BambooHR',
+  [BAKERS_COGS_SOURCE_CODE]: BAKERS_COGS_LABEL,
   [COGENT_RATE_CARD_SOURCE_CODE]: COGENT_RATE_CARD_LABEL,
   PLATOS_CLOSET_STORE_VISIT: 'MONTHLY STORE VISIT REPORT',
   PLATOS_INVENTORY: 'Monthly Inventory Report',
@@ -60,6 +62,8 @@ export async function GET(request: NextRequest) {
               ? metadata.platosClosetWorkbookUpload || null
               : source.sourceCode === 'PLATOS_INVENTORY'
                 ? metadata.platosInventoryWorkbookUpload || null
+              : source.sourceCode === BAKERS_COGS_SOURCE_CODE
+                ? metadata.bakersCogsWorkbookUpload || null
               : source.sourceCode === COGENT_RATE_CARD_SOURCE_CODE
                 ? metadata.cogentRateCardWorkbookUpload || null
               : null,
@@ -68,6 +72,8 @@ export async function GET(request: NextRequest) {
               ? metadata.platosClosetParsedWorkbook || null
               : source.sourceCode === 'PLATOS_INVENTORY'
                 ? metadata.platosInventoryParsedWorkbook || null
+              : source.sourceCode === BAKERS_COGS_SOURCE_CODE
+                ? metadata.bakersCogsParsedWorkbook || null
               : source.sourceCode === COGENT_RATE_CARD_SOURCE_CODE
                 ? metadata.cogentRateCardParsedWorkbook || null
               : null,

@@ -3683,6 +3683,7 @@ function FinancialScorePage() {
   const operationalWorkbookFileInputRef = useRef<HTMLInputElement | null>(null);
   const platosInventoryWorkbookFileInputRef = useRef<HTMLInputElement | null>(null);
   const cogentRateCardFileInputRef = useRef<HTMLInputElement | null>(null);
+  const bakersCogsFileInputRef = useRef<HTMLInputElement | null>(null);
   const [companyOperationalSources, setCompanyOperationalSources] = useState<
     Array<{
       provider: string;
@@ -3706,11 +3707,21 @@ function FinancialScorePage() {
         workbookPeriod?: string | null;
         monthCount?: number;
         monthKeys?: string[];
+        formulaDateKeys?: string[];
         years?: number[];
         markets?: string[];
         levels?: string[];
+        productCount?: number;
         subcategoryCount?: number;
         rowCount?: number;
+        products?: Array<{
+          sheetName?: string;
+          productName?: string;
+          productId?: string;
+          formulaDateKey?: string;
+          rowCount?: number;
+          totals?: Record<string, number | null>;
+        }>;
         storeInfo?: Record<string, string | number | null>;
         salesKpis?: Array<{ metric: string; current: number | null; prior: number | null; delta: number | null }>;
         categorySummary?: {
@@ -3727,6 +3738,7 @@ function FinancialScorePage() {
   const [uploadingOperationalWorkbook, setUploadingOperationalWorkbook] = useState(false);
   const [uploadingPlatosInventoryWorkbook, setUploadingPlatosInventoryWorkbook] = useState(false);
   const [uploadingCogentRateCard, setUploadingCogentRateCard] = useState(false);
+  const [uploadingBakersCogs, setUploadingBakersCogs] = useState(false);
   
 
   // State - API Loading & Errors
@@ -7292,6 +7304,78 @@ function FinancialScorePage() {
       alert(`Failed to upload Cogent Rate Card: ${message}`);
     } finally {
       setUploadingCogentRateCard(false);
+    }
+  };
+
+  const uploadBakersCogsWorkbook = async () => {
+    if (!selectedCompanyId) {
+      alert('Please select a company first');
+      return;
+    }
+    const input = bakersCogsFileInputRef.current;
+    const file = input?.files?.[0];
+    if (!file) {
+      alert('Choose a Bakers COGS workbook first.');
+      return;
+    }
+
+    setUploadingBakersCogs(true);
+    setOperationalSourcesError(null);
+    try {
+      const blob = await upload(file.name, file, {
+        access: 'public',
+        handleUploadUrl: '/api/company-documents/upload',
+        clientPayload: JSON.stringify({
+          companyId: selectedCompanyId,
+          category: 'OTHER',
+          originalFileName: file.name,
+          sizeBytes: file.size,
+        }),
+      });
+
+      const docResponse = await fetch('/api/company-documents', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          companyId: selectedCompanyId,
+          category: 'OTHER',
+          originalFileName: file.name,
+          blob,
+        }),
+      });
+      const docData = await docResponse.json();
+      if (!docResponse.ok || !docData?.document?.id) {
+        throw new Error(docData?.error || 'Failed to register Bakers COGS document');
+      }
+
+      const workbookResponse = await fetch('/api/operational-system-integrations/bakers-cogs/workbook', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          companyId: selectedCompanyId,
+          documentId: docData.document.id,
+          originalFileName: file.name,
+          blob,
+        }),
+      });
+      const workbookData = await workbookResponse.json();
+      if (!workbookResponse.ok || !workbookData?.ok) {
+        throw new Error(workbookData?.error || 'Bakers COGS validation failed');
+      }
+
+      if (input) input.value = '';
+      await loadCompanyOperationalSources(selectedCompanyId);
+      window.dispatchEvent(new CustomEvent('operational-data-updated', {
+        detail: { companyId: selectedCompanyId, types: ['products', 'unit-economics'], sourceCode: 'BAKERS_COGS' },
+      }));
+      alert(`Bakers COGS uploaded successfully (${workbookData.productCount || 0} products, ${workbookData.rowCount || 0} rows).`);
+    } catch (error: any) {
+      console.error('Failed to upload Bakers COGS:', error);
+      const message = error?.message || 'Upload failed';
+      setOperationalSourcesError(message);
+      alert(`Failed to upload Bakers COGS: ${message}`);
+    } finally {
+      setUploadingBakersCogs(false);
     }
   };
 
@@ -14400,6 +14484,121 @@ function FinancialScorePage() {
                     )}
                   </div>
                 )}
+
+              {(() => {
+                const bakersCogsSource = companyOperationalSources.find((source) => source.sourceCode === 'BAKERS_COGS') || null;
+                if (!bakersCogsSource) return null;
+                return (
+                  <div style={{ background: '#f8fafc', borderRadius: '12px', padding: '24px', marginBottom: '20px', border: '2px solid #e2e8f0' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px', marginBottom: '16px' }}>
+                      <div>
+                        <h3 style={{ fontSize: '18px', fontWeight: '600', color: '#1e293b', marginBottom: '4px' }}>{bakersCogsSource.label}</h3>
+                        <p style={{ fontSize: '13px', color: '#64748b', margin: 0 }}>Manufacturing product COGS workbook upload</p>
+                      </div>
+                      <div style={{
+                        padding: '4px 8px',
+                        borderRadius: '999px',
+                        fontSize: '11px',
+                        fontWeight: '700',
+                        background: bakersCogsSource.workbookUpload ? '#dcfce7' : '#fef3c7',
+                        color: bakersCogsSource.workbookUpload ? '#166534' : '#92400e'
+                      }}>
+                        {bakersCogsSource.workbookUpload ? 'COGS uploaded' : 'Awaiting COGS workbook'}
+                      </div>
+                    </div>
+
+                    <div style={{ marginBottom: '10px', padding: '10px', background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: '8px', fontSize: '12px', color: '#1d4ed8' }}>
+                      Expected workbook: <strong>Bakers COGS</strong>. Each product worksheet should include Product Name, Item Code, Date, ingredient rows, packaging rows, labor rows, and COGS totals.
+                    </div>
+
+                    <input
+                      ref={bakersCogsFileInputRef}
+                      type="file"
+                      accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                      disabled={uploadingBakersCogs}
+                      style={{ marginBottom: '10px', width: '100%' }}
+                    />
+
+                    <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap', marginBottom: '12px' }}>
+                      <button
+                        onClick={uploadBakersCogsWorkbook}
+                        disabled={uploadingBakersCogs}
+                        style={{
+                          padding: '10px 14px',
+                          borderRadius: '10px',
+                          border: 'none',
+                          background: uploadingBakersCogs ? '#94a3b8' : '#b45309',
+                          color: 'white',
+                          fontWeight: 800,
+                          cursor: uploadingBakersCogs ? 'not-allowed' : 'pointer',
+                        }}
+                      >
+                        {uploadingBakersCogs ? 'Uploading…' : 'Upload Bakers COGS'}
+                      </button>
+                      <button
+                        onClick={() => selectedCompanyId && loadCompanyOperationalSources(selectedCompanyId)}
+                        disabled={loadingOperationalSources || uploadingBakersCogs}
+                        style={{
+                          padding: '10px 14px',
+                          borderRadius: '10px',
+                          border: '1px solid #e2e8f0',
+                          background: 'white',
+                          color: '#0f172a',
+                          fontWeight: 800,
+                          cursor: loadingOperationalSources || uploadingBakersCogs ? 'not-allowed' : 'pointer',
+                        }}
+                      >
+                        Refresh
+                      </button>
+                    </div>
+
+                    {bakersCogsSource.workbookUpload ? (
+                      <div style={{ fontSize: '12px', color: '#475569', lineHeight: 1.6 }}>
+                        <div><strong>File:</strong> {bakersCogsSource.workbookUpload.originalFileName || 'Bakers COGS workbook'}</div>
+                        <div><strong>Uploaded:</strong> {bakersCogsSource.workbookUpload.uploadedAt ? new Date(bakersCogsSource.workbookUpload.uploadedAt).toLocaleString() : 'Unknown'}</div>
+                        <div><strong>Sheets found:</strong> {Array.isArray(bakersCogsSource.workbookUpload.sheetNames) ? bakersCogsSource.workbookUpload.sheetNames.join(', ') : 'Unknown'}</div>
+                        {bakersCogsSource.workbookUpload.blobUrl ? (
+                          <div>
+                            <a href={bakersCogsSource.workbookUpload.blobUrl} target="_blank" rel="noreferrer" style={{ color: '#2563eb', fontWeight: 600 }}>
+                              Open uploaded COGS workbook
+                            </a>
+                          </div>
+                        ) : null}
+                      </div>
+                    ) : (
+                      <div style={{ fontSize: '12px', color: '#64748b' }}>
+                        No Bakers COGS workbook uploaded yet.
+                      </div>
+                    )}
+
+                    {bakersCogsSource.parsedWorkbook && (
+                      <div style={{ marginTop: '12px', padding: '10px', background: 'white', border: '1px solid #e2e8f0', borderRadius: '8px', fontSize: '12px', color: '#334155' }}>
+                        <div style={{ fontWeight: '700', color: '#1e293b', marginBottom: '6px' }}>Parsed COGS summary</div>
+                        <div><strong>Parsed:</strong> {bakersCogsSource.parsedWorkbook.parsedAt ? new Date(bakersCogsSource.parsedWorkbook.parsedAt).toLocaleString() : 'Unknown'}</div>
+                        <div><strong>Products parsed:</strong> {bakersCogsSource.parsedWorkbook.productCount ?? 0}</div>
+                        <div><strong>Rows saved:</strong> {bakersCogsSource.parsedWorkbook.rowCount ?? 0}</div>
+                        {Array.isArray(bakersCogsSource.parsedWorkbook.formulaDateKeys) && bakersCogsSource.parsedWorkbook.formulaDateKeys.length > 0 ? (
+                          <div><strong>Formula dates:</strong> {bakersCogsSource.parsedWorkbook.formulaDateKeys.join(', ')}</div>
+                        ) : null}
+                        {Array.isArray(bakersCogsSource.parsedWorkbook.products) && bakersCogsSource.parsedWorkbook.products.length > 0 ? (
+                          <div style={{ marginTop: '6px' }}>
+                            <strong>Products:</strong>{' '}
+                            {bakersCogsSource.parsedWorkbook.products
+                              .slice(0, 5)
+                              .map((product) => `${product.productName || product.sheetName || 'Unknown'} (${product.productId || 'No ID'})`)
+                              .join(', ')}
+                            {bakersCogsSource.parsedWorkbook.products.length > 5 ? `, +${bakersCogsSource.parsedWorkbook.products.length - 5} more` : ''}
+                          </div>
+                        ) : null}
+                      </div>
+                    )}
+
+                    {bakersCogsSource.errorMessage ? (
+                      <div style={{ fontSize: '12px', color: '#991b1b', marginTop: '8px' }}>{bakersCogsSource.errorMessage}</div>
+                    ) : null}
+                  </div>
+                );
+              })()}
 
               {selectedAccountingSystem === 'QUICKBOOKS' && (() => {
                 const bambooSource = companyOperationalSources.find((source) => source.sourceCode === 'BAMBOOHR_STANDARD') || null;

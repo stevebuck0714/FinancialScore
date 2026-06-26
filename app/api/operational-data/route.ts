@@ -6946,6 +6946,70 @@ export async function GET(request: NextRequest) {
           }
         }
 
+        const bakersCogsRows = productWindowTruncated
+          ? []
+          : await prisma.$queryRaw<
+              Array<{
+                productId: string;
+                productName: string;
+                formulaDateKey: string;
+                valueNumber: number | null;
+              }>
+            >`
+              SELECT DISTINCT ON ("productId")
+                "productId",
+                "productName",
+                "formulaDateKey",
+                "valueNumber"::double precision AS "valueNumber"
+              FROM "BakersCogsFact"
+              WHERE "companyId" = ${companyId}
+                AND "sourceCode" = 'BAKERS_COGS'
+                AND "lineType" = 'SUMMARY'
+                AND "metricName" = 'totalCogs'
+                AND "valueNumber" IS NOT NULL
+              ORDER BY "productId", "formulaDate" DESC, "updatedAt" DESC
+            `;
+        const bakersCogsByKey = new Map<string, { unitCost: number; productName: string; formulaDateKey: string }>();
+        for (const row of bakersCogsRows) {
+          const unitCost = Number(row.valueNumber || 0);
+          if (!Number.isFinite(unitCost) || unitCost <= 0) continue;
+          const cogsRecord = {
+            unitCost,
+            productName: String(row.productName || '').trim(),
+            formulaDateKey: String(row.formulaDateKey || '').trim(),
+          };
+          for (const alias of [row.productId, row.productName]) {
+            const key = canonicalProductKey(alias);
+            if (key && !bakersCogsByKey.has(key)) bakersCogsByKey.set(key, cogsRecord);
+          }
+        }
+        if (bakersCogsByKey.size > 0) {
+          const bakersProductKeyAliases = (row: any): string[] => {
+            const baseAliases = productKeyAliases(row);
+            const tokenAliases = [row?.sku, row?.itemId, row?.itemName]
+              .flatMap((value) => String(value || '').split(/[:|,/\\]+/))
+              .map((value) => canonicalProductKey(value))
+              .filter(Boolean);
+            return Array.from(new Set([...baseAliases, ...tokenAliases]));
+          };
+          for (const row of recordsV1) {
+            const bakersCogs = bakersProductKeyAliases(row)
+              .map((alias) => bakersCogsByKey.get(alias))
+              .find(Boolean);
+            if (!bakersCogs) continue;
+
+            const qty = Math.max(0, Number(row.quantitySold || 0));
+            if (bakersCogs.productName) row.itemName = bakersCogs.productName;
+            row.bakersCogsMatched = true;
+            if (qty > 0) {
+              row.cogs = bakersCogs.unitCost * qty;
+              row.isEstimatedCost = false;
+              row.costSource = 'BAKERS_COGS';
+              row.costSourceFormulaDate = bakersCogs.formulaDateKey || null;
+            }
+          }
+        }
+
         // Cost proxy fallback from inventory avg cost when transactional cogs is missing/zero.
         const inventoryRows = productWindowTruncated
           ? []
@@ -6996,6 +7060,7 @@ export async function GET(request: NextRequest) {
           }
         }
         for (const row of recordsV1) {
+          if (row.bakersCogsMatched) continue;
           const day = productIsoDay(row.snapshotDate);
           const preferredName = productKeyAliases(row)
             .map((alias) => String(descriptionByKey.get(`${day}|${alias}`) || '').trim())

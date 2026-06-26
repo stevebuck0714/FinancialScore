@@ -128,6 +128,7 @@ model Company {
   operationalSystemConnections OperationalSystemConnection[]
   platosClosetWorkbookSnapshots PlatosClosetWorkbookSnapshot[]
   platosClosetMonthlyFacts   PlatosClosetMonthlyFact[]
+  bakersCogsFacts            BakersCogsFact[]
   apiSyncLogs                ApiSyncLog[]
   inforRawBatches            InforRawBatch[]
   inforRawRecords            InforRawRecord[]
@@ -688,6 +689,37 @@ model PlatosClosetMonthlyFact {
   @@index([companyId, sourceCode, monthStart])
   @@index([companyId, sourceCode, factType, monthStart])
   @@index([companyId, sourceCode, monthKey])
+}
+
+model BakersCogsFact {
+  id             String   @id @default(cuid())
+  companyId       String
+  sourceCode      String   @default("BAKERS_COGS")
+  productId       String
+  productName     String
+  formulaDate     DateTime
+  formulaDateKey  String
+  sheetName       String
+  lineType        String
+  lineNumber      Int      @default(0)
+  metricName      String   @default("")
+  categoryNo      String   @default("")
+  description     String?
+  quantity        Float?
+  unitCost        Float?
+  lineCost        Float?
+  valueNumber     Float?
+  notes           String?
+  metadata        Json?
+  uploadedAt      DateTime @default(now())
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  company         Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@unique([companyId, sourceCode, productId, formulaDateKey, lineType, lineNumber, metricName])
+  @@index([companyId, sourceCode, formulaDate])
+  @@index([companyId, sourceCode, productId])
+  @@index([companyId, sourceCode, lineType])
 }
 
 model ApiSyncLog {

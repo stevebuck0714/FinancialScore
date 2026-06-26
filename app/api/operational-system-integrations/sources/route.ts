@@ -7,6 +7,7 @@ import {
   listOperationalSystemConnections,
   saveOperationalSystemConnection,
 } from '@/lib/operational/operational-system-connections';
+import { BAKERS_COGS_LABEL, BAKERS_COGS_SOURCE_CODE } from '@/lib/operational/bakers-cogs';
 import { COGENT_RATE_CARD_LABEL, COGENT_RATE_CARD_SOURCE_CODE } from '@/lib/operational/cogent-rate-card';
 import { resolveCompanyIndustrySectorCategory } from '@/lib/industry-sector-resolver';
 
@@ -22,6 +23,7 @@ type SourceDefinition = {
 const SOURCE_DEFINITIONS: SourceDefinition[] = [
   { provider: 'SPREADSHEET_UPLOAD', sourceCode: 'CREWTRACKS', label: 'Crewtracks', sectorCategories: ['23'] },
   { provider: 'SPREADSHEET_UPLOAD', sourceCode: 'HILTI', label: 'Hilti', sectorCategories: ['23'] },
+  { provider: 'SPREADSHEET_UPLOAD', sourceCode: BAKERS_COGS_SOURCE_CODE, label: BAKERS_COGS_LABEL, sectorCategories: ['32'] },
   { provider: 'SPREADSHEET_UPLOAD', sourceCode: 'ICE_ENCOMPASS', label: 'ICE Encompass', sectorCategories: ['53'] },
   { provider: 'SPREADSHEET_UPLOAD', sourceCode: 'LANTRAX_PROFIT_POWER', label: 'Profit Power Enterprise', sectorCategories: ['53'] },
   { provider: 'BAMBOOHR', sourceCode: 'BAMBOOHR_STANDARD', label: 'BambooHR', sectorCategories: ['56'] },
