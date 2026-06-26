@@ -55,7 +55,7 @@ const OPERATIONAL_DATA_CACHE_TTL_SECONDS = 120;
 const OPERATIONAL_HEAVY_DATA_CACHE_TTL_SECONDS = 30 * 60;
 const CUSTOMER_CONCENTRATION_CACHE_TTL_SECONDS = 30 * 24 * 60 * 60;
 const CUSTOMER_CONCENTRATION_CACHE_VERSION = 'customer-concentration-exposure-v10';
-const CUSTOMER_REVENUE_SOURCE_VERSION = 'customer-revenue-source-v4-source-system-sales-names';
+const CUSTOMER_REVENUE_SOURCE_VERSION = 'customer-revenue-source-v5-bakers-product-id-display';
 const CUSTOMER_WIP_SOURCE_VERSION = 'customer-backlog-source-v4';
 const CUSTOMER_BACKLOG_MIN_ORDER_DATE = '2023-06-01';
 const WHOLESALE_PRODUCTS_REPORT_START_DATE = '2023-01-01';
@@ -2780,7 +2780,7 @@ export async function GET(request: NextRequest) {
               cacheType === 'customers' ? CUSTOMER_REVENUE_SOURCE_VERSION : null,
               cacheType === 'customers' ? CUSTOMER_WIP_SOURCE_VERSION : null,
               isWholesaleProductsReportRequest ? CUSTOMER_WIP_SOURCE_VERSION : null,
-              cacheType === 'products' && usesSourceSystemProductSnapshots ? 'products-source-system-snapshot-priority-v1' : null,
+              cacheType === 'products' && usesSourceSystemProductSnapshots ? 'products-source-system-bakers-cogs-v2' : null,
             ]),
             dataVersion: await buildOperationalDataVersion(companyId, cacheType, startDate, endDate),
           }
@@ -3605,13 +3605,15 @@ export async function GET(request: NextRequest) {
               AND "productName" IS NOT NULL
             ORDER BY "productId", "formulaDate" DESC, "updatedAt" DESC
           `;
-          const bakersProductNameByKey = new Map<string, string>();
+          const bakersProductByKey = new Map<string, { productId: string; productName: string }>();
           for (const row of bakersCogsProductRows) {
+            const productId = String(row.productId || '').trim();
             const productName = String(row.productName || '').trim();
-            if (!productName) continue;
+            if (!productId || !productName) continue;
+            const product = { productId, productName };
             for (const alias of [row.productId, row.productName]) {
               const key = canonicalProductKey(alias);
-              if (key && !bakersProductNameByKey.has(key)) bakersProductNameByKey.set(key, productName);
+              if (key && !bakersProductByKey.has(key)) bakersProductByKey.set(key, product);
             }
           }
           const productTokenAliases = (...values: unknown[]): string[] => {
@@ -3632,9 +3634,9 @@ export async function GET(request: NextRequest) {
             }
             return Array.from(new Set(aliases));
           };
-          const bakersProductName = (row: any, label: string): string | null => {
+          const bakersProductMatch = (row: any, label: string): { productId: string; productName: string } | null => {
             const aliases = productTokenAliases(row?.sku, row?.itemId, row?.itemName, label);
-            return aliases.map((alias) => bakersProductNameByKey.get(alias)).find(Boolean) || null;
+            return aliases.map((alias) => bakersProductByKey.get(alias)).find(Boolean) || null;
           };
 
           const monthMap = new Map<string, { monthKey: string; monthLabel: string; revenue: number; cogs: number; grossMargin: number }>();
@@ -3668,12 +3670,13 @@ export async function GET(request: NextRequest) {
             monthMap.set(monthKey, monthBucket);
 
             const categoryLabel = productDisplayName(row);
-            const displayCategoryLabel = displayProductCode(categoryLabel);
+            const uploadedProduct = bakersProductMatch(row, categoryLabel);
+            const displayCategoryLabel = uploadedProduct?.productId || displayProductCode(categoryLabel);
             const categoryBucket = categoryMap.get(displayCategoryLabel) || { label: displayCategoryLabel, itemName: null, values: {}, total: 0 };
             categoryBucket.values[monthKey] = Number(categoryBucket.values[monthKey] || 0) + revenue;
             categoryBucket.total += revenue;
             categoryMap.set(displayCategoryLabel, categoryBucket);
-            const uploadedProductName = bakersProductName(row, categoryLabel);
+            const uploadedProductName = uploadedProduct?.productName || null;
             if (uploadedProductName) categoryBucket.itemName = uploadedProductName;
 
             const volumeBucket = volumeCategoryMap.get(displayCategoryLabel) || { label: displayCategoryLabel, itemName: null, values: {}, total: 0 };
@@ -7045,11 +7048,14 @@ export async function GET(request: NextRequest) {
             AND "valueNumber" IS NOT NULL
           ORDER BY "productId", "formulaDate" DESC, "updatedAt" DESC
         `;
-        const bakersCogsByKey = new Map<string, { unitCost: number; productName: string; formulaDateKey: string }>();
+        const bakersCogsByKey = new Map<string, { productId: string; unitCost: number; productName: string; formulaDateKey: string }>();
         for (const row of bakersCogsRows) {
           const unitCost = Number(row.valueNumber || 0);
+          const productId = String(row.productId || '').trim();
           if (!Number.isFinite(unitCost) || unitCost <= 0) continue;
+          if (!productId) continue;
           const cogsRecord = {
+            productId,
             unitCost,
             productName: String(row.productName || '').trim(),
             formulaDateKey: String(row.formulaDateKey || '').trim(),
@@ -7086,6 +7092,8 @@ export async function GET(request: NextRequest) {
 
             const qty = Math.max(0, Number(row.quantitySold || 0));
             if (bakersCogs.productName) row.itemName = bakersCogs.productName;
+            row.sku = bakersCogs.productId;
+            row.itemId = bakersCogs.productId;
             row.bakersCogsMatched = true;
             row.unitCostOverride = bakersCogs.unitCost;
             row.unitCostSource = 'BAKERS_COGS';
