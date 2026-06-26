@@ -134,6 +134,14 @@ export default function ResidentialRevenueForecast() {
   const next12Title = forecastRows.reduce((sum, row) => sum + row.titleRevenue, 0);
   const next12Insurance = forecastRows.reduce((sum, row) => sum + row.insuranceRevenue, 0);
   const firstForecastMonthLabel = forecastRows[0]?.monthLabel || '';
+  const chartRows = useMemo(() => rows.map((row) => {
+    const chartRow: Record<string, unknown> = { ...row };
+    for (const line of REVENUE_LINES) {
+      chartRow[`${line.key}Actual`] = row.periodType === 'Actual' ? row[line.key] : null;
+      chartRow[`${line.key}Forecast`] = row.periodType === 'Forecast' ? row[line.key] : null;
+    }
+    return chartRow;
+  }), [rows]);
 
   const updateAssumption = (key: keyof Omit<ResidentialRevenueForecastAssumptions, 'attachRates'>, value: string) => {
     setAssumptions((prev) => ({ ...prev, [key]: Number(value || 0) }));
@@ -231,7 +239,7 @@ export default function ResidentialRevenueForecast() {
           </div>
           <div style={{ height: 390 }}>
             <ResponsiveContainer>
-              <LineChart data={rows} margin={{ top: 8, right: 18, left: 8, bottom: 8 }}>
+              <LineChart data={chartRows} margin={{ top: 8, right: 18, left: 8, bottom: 8 }}>
                 <CartesianGrid strokeDasharray="3 3" />
                 <XAxis dataKey="monthLabel" interval={2} tick={{ fontSize: 11 }} orientation="top" />
                 <YAxis tickFormatter={(value) => `$${(Number(value) / 1000000).toFixed(1)}M`} tick={{ fontSize: 11 }} />
@@ -245,17 +253,28 @@ export default function ResidentialRevenueForecast() {
                     label={{ value: 'Forecast Start', position: 'insideTopRight', fill: '#64748b', fontSize: 11 }}
                   />
                 )}
-                {visibleLineItems.map((line) => (
+                {visibleLineItems.flatMap((line) => [
                   <Line
-                    key={line.key}
+                    key={`${line.key}-actual`}
                     type="monotone"
-                    dataKey={line.key}
+                    dataKey={`${line.key}Actual`}
                     stroke={line.color}
                     strokeWidth={line.key === 'totalRevenue' ? 3 : 2}
                     dot={false}
                     name={line.label}
-                  />
-                ))}
+                  />,
+                  <Line
+                    key={`${line.key}-forecast`}
+                    type="monotone"
+                    dataKey={`${line.key}Forecast`}
+                    stroke={line.color}
+                    strokeWidth={line.key === 'totalRevenue' ? 3 : 2}
+                    strokeDasharray="6 4"
+                    dot={false}
+                    name={`${line.label} Forecast`}
+                    legendType="none"
+                  />,
+                ])}
               </LineChart>
             </ResponsiveContainer>
           </div>

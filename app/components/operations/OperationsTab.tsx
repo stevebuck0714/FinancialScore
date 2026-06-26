@@ -696,6 +696,7 @@ export default function OperationsTab({
   initialPrintSectionKey
 }: OperationsTabProps) {
   const isOverviewOnly = viewMode === 'overview-only';
+  const isRealEstateSector = String(industrySectorCategory || '').trim() === '53';
   const isWipPrintRequest = initialPrintSectionKey === 'cfWipReport';
   const [activeTab, setActiveTab] = useState<OpTab>(() => {
     if (initialTab) return initialTab as OpTab;
@@ -705,7 +706,10 @@ export default function OperationsTab({
   const [activeOverviewSubTab, setActiveOverviewSubTab] = useState<'cash-conversion-analysis' | 'ebitda-performance' | 'customer-concentration-exposure' | 'execution-velocity'>('cash-conversion-analysis');
   const [activeCashSubTab, setActiveCashSubTab] = useState<'cash-conversion-analysis' | 'cash-position'>('cash-conversion-analysis');
   const [activeCashBasisForecastTab, setActiveCashBasisForecastTab] = useState<ForecastSubTab>('income-statement-forecast');
-  const [activeAccrualBasisForecastTab, setActiveAccrualBasisForecastTab] = useState<ForecastSubTab>('cash-forecast');
+  const [activeAccrualBasisForecastTab, setActiveAccrualBasisForecastTab] = useState<ForecastSubTab>(() => (
+    isRealEstateSector ? 'residential-revenue-forecast' : 'cash-forecast'
+  ));
+  const hasAppliedRealEstateForecastDefaultRef = useRef(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [summary, setSummary] = useState<any>(null);
@@ -1241,6 +1245,14 @@ export default function OperationsTab({
       setActiveForecastBasisTab(initialForecastBasisTab);
     }
   }, [initialForecastBasisTab]);
+
+  useEffect(() => {
+    if (!isRealEstateSector || initialForecastSubTab || hasAppliedRealEstateForecastDefaultRef.current) return;
+    hasAppliedRealEstateForecastDefaultRef.current = true;
+    setActiveAccrualBasisForecastTab((current) => (
+      current === 'cash-forecast' ? 'residential-revenue-forecast' : current
+    ));
+  }, [isRealEstateSector, initialForecastSubTab]);
 
   useEffect(() => {
     if (!initialForecastSubTab) return;
@@ -14835,7 +14847,6 @@ Strategies to Improve the CCC
     };
 
   const renderForecast = () => {
-    const isRealEstateSector = String(industrySectorCategory || '').trim() === '53';
     return (
       <div style={{ padding: '8px 32px 32px' }}>
         <div className="ops-print-hide" style={{ display: 'flex', gap: '8px', marginBottom: '20px', borderBottom: '2px solid #e2e8f0' }}>
