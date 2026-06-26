@@ -55,7 +55,7 @@ const OPERATIONAL_DATA_CACHE_TTL_SECONDS = 120;
 const OPERATIONAL_HEAVY_DATA_CACHE_TTL_SECONDS = 30 * 60;
 const CUSTOMER_CONCENTRATION_CACHE_TTL_SECONDS = 30 * 24 * 60 * 60;
 const CUSTOMER_CONCENTRATION_CACHE_VERSION = 'customer-concentration-exposure-v10';
-const CUSTOMER_REVENUE_SOURCE_VERSION = 'customer-revenue-source-v5-bakers-product-id-display';
+const CUSTOMER_REVENUE_SOURCE_VERSION = 'customer-revenue-source-v6-bakers-raw-child-id';
 const CUSTOMER_WIP_SOURCE_VERSION = 'customer-backlog-source-v4';
 const CUSTOMER_BACKLOG_MIN_ORDER_DATE = '2023-06-01';
 const WHOLESALE_PRODUCTS_REPORT_START_DATE = '2023-01-01';
@@ -2780,7 +2780,7 @@ export async function GET(request: NextRequest) {
               cacheType === 'customers' ? CUSTOMER_REVENUE_SOURCE_VERSION : null,
               cacheType === 'customers' ? CUSTOMER_WIP_SOURCE_VERSION : null,
               isWholesaleProductsReportRequest ? CUSTOMER_WIP_SOURCE_VERSION : null,
-              cacheType === 'products' && usesSourceSystemProductSnapshots ? 'products-source-system-bakers-cogs-v2' : null,
+              cacheType === 'products' && usesSourceSystemProductSnapshots ? 'products-source-system-bakers-raw-child-id-v3' : null,
             ]),
             dataVersion: await buildOperationalDataVersion(companyId, cacheType, startDate, endDate),
           }
@@ -3642,7 +3642,7 @@ export async function GET(request: NextRequest) {
             return Array.from(new Set(aliases));
           };
           const bakersProductMatch = (row: any, label: string): { productId: string; productName: string } | null => {
-            const aliases = productTokenAliases(row?.sku, row?.itemId, row?.itemName, label);
+            const aliases = productTokenAliases(row?.itemName, row?.sku, row?.itemId, label);
             return aliases.map((alias) => bakersProductByKey.get(alias)).find(Boolean) || null;
           };
 
@@ -3678,7 +3678,7 @@ export async function GET(request: NextRequest) {
 
             const categoryLabel = productDisplayName(row);
             const uploadedProduct = bakersProductMatch(row, categoryLabel);
-            const displayCategoryLabel = uploadedProduct?.productId || displayProductCode(categoryLabel);
+            const displayCategoryLabel = uploadedProduct?.productId || displayProductCode(String(row?.sku || row?.itemId || categoryLabel));
             const categoryBucket = categoryMap.get(displayCategoryLabel) || { label: displayCategoryLabel, itemName: null, values: {}, total: 0 };
             categoryBucket.values[monthKey] = Number(categoryBucket.values[monthKey] || 0) + revenue;
             categoryBucket.total += revenue;
@@ -6940,6 +6940,9 @@ export async function GET(request: NextRequest) {
 
         const recordsV1 = data.map((row: any) => ({
           ...row,
+          rawBakersSku: row?.sku,
+          rawBakersItemId: row?.itemId,
+          rawBakersItemName: row?.itemName,
           quantitySold: Number(row?.quantitySold || 0),
           cogs: Number(row?.cogs || 0),
           freightAllocated: 0,
@@ -7075,7 +7078,14 @@ export async function GET(request: NextRequest) {
         if (bakersCogsByKey.size > 0) {
           const bakersProductKeyAliases = (row: any): string[] => {
             const aliases: string[] = [];
-            const rawValues = [row?.sku, row?.itemId, row?.itemName].map((value) => String(value || '').trim()).filter(Boolean);
+            const rawValues = [
+              row?.rawBakersItemName,
+              row?.rawBakersSku,
+              row?.rawBakersItemId,
+              row?.itemName,
+              row?.sku,
+              row?.itemId,
+            ].map((value) => String(value || '').trim()).filter(Boolean);
             for (const raw of rawValues.filter((value) => value.includes(':'))) {
               const parts = raw.split(/[:|,/\\]+/).map((part) => part.trim()).filter(Boolean);
               const lastPart = parts[parts.length - 1] || '';
