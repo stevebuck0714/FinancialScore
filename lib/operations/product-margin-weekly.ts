@@ -7,6 +7,7 @@ type InputRecord = {
   revenue?: number;
   cogs?: number;
   quantitySold?: number;
+  unitCostOverride?: number | null;
   freightAllocated?: number;
   otherRevenueAllocated?: number;
   returnsAmount?: number;
@@ -43,6 +44,7 @@ type ItemWeekRow = {
   units: number;
   netRevenue: number;
   cogs: number;
+  unitCostOverride: number | null;
   freightAllocated: number;
   otherRevenueAllocated: number;
   returnsAmount: number;
@@ -182,6 +184,9 @@ export function buildWeeklyProductMarginModel(params: {
     const customer = String(row.customer || '').trim() || 'N/A';
     const netRevenue = toNumber(row.revenue);
     const cogs = toNumber(row.cogs);
+    const unitCostOverrideRaw = Number(row.unitCostOverride);
+    const unitCostOverride =
+      Number.isFinite(unitCostOverrideRaw) && unitCostOverrideRaw > 0 ? unitCostOverrideRaw : null;
     const units = toNumber(row.quantitySold);
     const freightAllocated = toNumber(row.freightAllocated);
     const otherRevenueAllocated = toNumber(row.otherRevenueAllocated);
@@ -198,6 +203,7 @@ export function buildWeeklyProductMarginModel(params: {
         units,
         netRevenue,
         cogs,
+        unitCostOverride,
         freightAllocated,
         otherRevenueAllocated,
         returnsAmount,
@@ -209,6 +215,7 @@ export function buildWeeklyProductMarginModel(params: {
     existing.units += units;
     existing.netRevenue += netRevenue;
     existing.cogs += cogs;
+    if (unitCostOverride != null) existing.unitCostOverride = unitCostOverride;
     existing.freightAllocated += freightAllocated;
     existing.otherRevenueAllocated += otherRevenueAllocated;
     existing.returnsAmount += returnsAmount;
@@ -367,6 +374,7 @@ export function buildWeeklyProductMarginModel(params: {
         units: 0,
         netRevenue: 0,
         cogs: 0,
+        unitCostOverride: row.unitCostOverride,
         freightAllocated: 0,
         otherRevenueAllocated: 0,
         returnsAmount: 0,
@@ -378,6 +386,7 @@ export function buildWeeklyProductMarginModel(params: {
     acc.units += row.units;
     acc.netRevenue += row.netRevenue;
     acc.cogs += row.cogs;
+    if (row.unitCostOverride != null) acc.unitCostOverride = row.unitCostOverride;
     acc.freightAllocated += row.freightAllocated;
     acc.otherRevenueAllocated += row.otherRevenueAllocated;
     acc.returnsAmount += row.returnsAmount;
@@ -521,6 +530,7 @@ export function buildWeeklyProductMarginModel(params: {
       };
       const unitCostOrFallback = (row?: ItemWeekRow): number | null => {
         if (!row) return null;
+        if (row.unitCostOverride != null) return row.unitCostOverride;
         if (row.units >= MIN_UNITS_FOR_UNIT_METRICS && row.cogs !== 0) return row.cogs / row.units;
         if (row.units > 0 && row.cogs !== 0 && fallback.weightedCost != null) return fallback.weightedCost;
         if (row.units > 0 && row.cogs !== 0) return row.cogs / row.units;

@@ -3590,9 +3590,42 @@ export async function GET(request: NextRequest) {
             if (itemName && itemName.toLowerCase() !== 'unknown item' && !qbdLooksLikeListId(itemName)) return itemName;
             return 'Unknown Product';
           };
+          const bakersCogsProductRows = await prisma.$queryRaw<Array<{ productId: string; productName: string }>>`
+            SELECT DISTINCT ON ("productId")
+              "productId",
+              "productName"
+            FROM "BakersCogsFact"
+            WHERE "companyId" = ${companyId}
+              AND "sourceCode" = 'BAKERS_COGS'
+              AND "productName" IS NOT NULL
+            ORDER BY "productId", "formulaDate" DESC, "updatedAt" DESC
+          `;
+          const bakersProductNameByKey = new Map<string, string>();
+          for (const row of bakersCogsProductRows) {
+            const productName = String(row.productName || '').trim();
+            if (!productName) continue;
+            for (const alias of [row.productId, row.productName]) {
+              const key = canonicalProductKey(alias);
+              if (key && !bakersProductNameByKey.has(key)) bakersProductNameByKey.set(key, productName);
+            }
+          }
+          const productTokenAliases = (...values: unknown[]): string[] =>
+            Array.from(
+              new Set(
+                values
+                  .flatMap((value) => String(value || '').split(/[:|,/\\]+/))
+                  .map((value) => canonicalProductKey(value))
+                  .filter(Boolean)
+              )
+            );
+          const bakersProductName = (row: any, label: string): string | null => {
+            const aliases = productTokenAliases(row?.sku, row?.itemId, row?.itemName, label);
+            return aliases.map((alias) => bakersProductNameByKey.get(alias)).find(Boolean) || null;
+          };
 
           const monthMap = new Map<string, { monthKey: string; monthLabel: string; revenue: number; cogs: number; grossMargin: number }>();
-          const categoryMap = new Map<string, { label: string; values: Record<string, number>; total: number }>();
+          const categoryMap = new Map<string, { label: string; itemName: string | null; values: Record<string, number>; total: number }>();
+          const volumeCategoryMap = new Map<string, { label: string; itemName: string | null; values: Record<string, number>; total: number }>();
           const ytdStart = startOfBusinessYear(endDate);
           const mtdStart = startOfBusinessMonth(endDate);
           const priorMtdStart = new Date(Date.UTC(mtdStart.getUTCFullYear() - 1, mtdStart.getUTCMonth(), 1));
@@ -3608,6 +3641,7 @@ export async function GET(request: NextRequest) {
             const snapshot = new Date(row.snapshotDate);
             if (Number.isNaN(snapshot.getTime())) continue;
             const revenue = Number(row.revenue || 0);
+            const quantitySold = Math.max(0, Number(row.quantitySold || 0));
             const cogs = Number(row.cogs || 0);
             const rawGrossMargin = Number(row.grossMargin ?? NaN);
             const grossMargin = Number.isFinite(rawGrossMargin) ? rawGrossMargin : revenue - cogs;
@@ -3620,10 +3654,18 @@ export async function GET(request: NextRequest) {
             monthMap.set(monthKey, monthBucket);
 
             const categoryLabel = productDisplayName(row);
-            const categoryBucket = categoryMap.get(categoryLabel) || { label: categoryLabel, values: {}, total: 0 };
+            const categoryBucket = categoryMap.get(categoryLabel) || { label: categoryLabel, itemName: null, values: {}, total: 0 };
             categoryBucket.values[monthKey] = Number(categoryBucket.values[monthKey] || 0) + revenue;
             categoryBucket.total += revenue;
             categoryMap.set(categoryLabel, categoryBucket);
+            const uploadedProductName = bakersProductName(row, categoryLabel);
+            if (uploadedProductName) categoryBucket.itemName = uploadedProductName;
+
+            const volumeBucket = volumeCategoryMap.get(categoryLabel) || { label: categoryLabel, itemName: null, values: {}, total: 0 };
+            volumeBucket.values[monthKey] = Number(volumeBucket.values[monthKey] || 0) + quantitySold;
+            volumeBucket.total += quantitySold;
+            if (uploadedProductName) volumeBucket.itemName = uploadedProductName;
+            volumeCategoryMap.set(categoryLabel, volumeBucket);
 
             if (snapshot >= mtdStart && snapshot <= endDate) mtdValue += revenue;
             if (snapshot >= ytdStart && snapshot <= endDate) totalValue += revenue;
@@ -3635,10 +3677,24 @@ export async function GET(request: NextRequest) {
           const categoryRows = Array.from(categoryMap.values())
             .sort((a, b) => Number(b.total || 0) - Number(a.total || 0))
             .slice(0, 15);
+          const allVolumeRows = Array.from(volumeCategoryMap.values());
+          const volumeRows = allVolumeRows
+            .sort((a, b) => Number(b.total || 0) - Number(a.total || 0))
+            .slice(0, 15);
           const totalRow = {
             label: 'Total Sales',
             values: Object.fromEntries(months.map((month) => [month.monthKey, Number(month.revenue || 0)])),
             total: months.reduce((sum, month) => sum + Number(month.revenue || 0), 0),
+          };
+          const volumeTotalRow = {
+            label: 'Total Sales Volume',
+            values: Object.fromEntries(
+              months.map((month) => [
+                month.monthKey,
+                allVolumeRows.reduce((sum, row) => sum + Number(row.values?.[month.monthKey] || 0), 0),
+              ])
+            ),
+            total: allVolumeRows.reduce((sum, row) => sum + Number(row.total || 0), 0),
           };
           const grossMarginRows = months.map((month) => ({
             monthKey: month.monthKey,
@@ -3659,6 +3715,13 @@ export async function GET(request: NextRequest) {
                 months,
                 rows: categoryRows,
                 totalRow,
+                valueFormat: 'currency',
+              },
+              volumeHistory: {
+                months,
+                rows: volumeRows,
+                totalRow: volumeTotalRow,
+                valueFormat: 'number',
               },
             },
             grossMarginHistory: {
@@ -6946,29 +7009,27 @@ export async function GET(request: NextRequest) {
           }
         }
 
-        const bakersCogsRows = productWindowTruncated
-          ? []
-          : await prisma.$queryRaw<
-              Array<{
-                productId: string;
-                productName: string;
-                formulaDateKey: string;
-                valueNumber: number | null;
-              }>
-            >`
-              SELECT DISTINCT ON ("productId")
-                "productId",
-                "productName",
-                "formulaDateKey",
-                "valueNumber"::double precision AS "valueNumber"
-              FROM "BakersCogsFact"
-              WHERE "companyId" = ${companyId}
-                AND "sourceCode" = 'BAKERS_COGS'
-                AND "lineType" = 'SUMMARY'
-                AND "metricName" = 'totalCogs'
-                AND "valueNumber" IS NOT NULL
-              ORDER BY "productId", "formulaDate" DESC, "updatedAt" DESC
-            `;
+        const bakersCogsRows = await prisma.$queryRaw<
+          Array<{
+            productId: string;
+            productName: string;
+            formulaDateKey: string;
+            valueNumber: number | null;
+          }>
+        >`
+          SELECT DISTINCT ON ("productId")
+            "productId",
+            "productName",
+            "formulaDateKey",
+            "valueNumber"::double precision AS "valueNumber"
+          FROM "BakersCogsFact"
+          WHERE "companyId" = ${companyId}
+            AND "sourceCode" = 'BAKERS_COGS'
+            AND "lineType" = 'SUMMARY'
+            AND "metricName" = 'totalCogs'
+            AND "valueNumber" IS NOT NULL
+          ORDER BY "productId", "formulaDate" DESC, "updatedAt" DESC
+        `;
         const bakersCogsByKey = new Map<string, { unitCost: number; productName: string; formulaDateKey: string }>();
         for (const row of bakersCogsRows) {
           const unitCost = Number(row.valueNumber || 0);
@@ -7001,6 +7062,9 @@ export async function GET(request: NextRequest) {
             const qty = Math.max(0, Number(row.quantitySold || 0));
             if (bakersCogs.productName) row.itemName = bakersCogs.productName;
             row.bakersCogsMatched = true;
+            row.unitCostOverride = bakersCogs.unitCost;
+            row.unitCostSource = 'BAKERS_COGS';
+            row.unitCostSourceFormulaDate = bakersCogs.formulaDateKey || null;
             if (qty > 0) {
               row.cogs = bakersCogs.unitCost * qty;
               row.isEstimatedCost = false;

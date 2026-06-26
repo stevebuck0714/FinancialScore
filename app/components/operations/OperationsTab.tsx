@@ -3840,6 +3840,10 @@ export default function OperationsTab({
       }
       const displayedHistory = buildDisplayedCategoryHistory(categoryHistory);
       const months = displayedHistory.months;
+      const formatHistoryValue = (value: unknown): string =>
+        displayedHistory.valueFormat === 'number'
+          ? Math.round(Number(value || 0)).toLocaleString('en-US')
+          : formatCurrency(Number(value || 0));
       return (
         <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '16px' }}>
           <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: '12px', flexWrap: 'wrap', marginBottom: '12px' }}>
@@ -3900,10 +3904,11 @@ export default function OperationsTab({
             </div>
           </div>
           <div style={{ maxWidth: '100%', overflowX: 'auto', paddingBottom: '8px' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: `${Math.max(960, 360 + months.length * 112)}px` }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: `${Math.max(1120, 520 + months.length * 112)}px` }}>
               <thead>
                 <tr>
                   <th style={{ padding: '8px', textAlign: 'left', fontSize: '12px', color: '#475569', borderBottom: '1px solid #e2e8f0', whiteSpace: 'nowrap', minWidth: '240px' }}>Category</th>
+                  <th style={{ padding: '8px', textAlign: 'left', fontSize: '12px', color: '#475569', borderBottom: '1px solid #e2e8f0', whiteSpace: 'nowrap', minWidth: '220px' }}>Item Name</th>
                   {months.map((month: any) => (
                     <th key={month.monthKey} style={{ padding: '8px', textAlign: 'right', fontSize: '12px', color: '#475569', borderBottom: '1px solid #e2e8f0', whiteSpace: 'nowrap', minWidth: '104px' }}>
                       {month.monthLabel || month.monthKey}
@@ -3936,13 +3941,14 @@ export default function OperationsTab({
                       {displayedHistory.rows.length.toLocaleString()} categories
                     </span>
                   </td>
+                  <td style={{ padding: '8px', fontSize: '13px', color: '#64748b', borderBottom: '1px solid #cbd5e1' }} />
                   {months.map((month: any) => (
                     <td key={month.monthKey} style={{ padding: '8px', textAlign: 'right', fontSize: '13px', color: '#16a34a', fontWeight: 700 }}>
-                      {formatCurrency(Number(displayedHistory.totalRow?.values?.[month.monthKey] || 0))}
+                      {formatHistoryValue(displayedHistory.totalRow?.values?.[month.monthKey])}
                     </td>
                   ))}
                   <td style={{ padding: '8px', textAlign: 'right', fontSize: '13px', color: '#16a34a', fontWeight: 700 }}>
-                    {formatCurrency(Number(displayedHistory.totalRow?.total || 0))}
+                    {formatHistoryValue(displayedHistory.totalRow?.total)}
                   </td>
                 </tr>
                 {salesHistoryCategoriesExpanded &&
@@ -3984,13 +3990,16 @@ export default function OperationsTab({
                               </span>
                             )}
                           </td>
+                          <td style={{ padding: '8px', fontSize: '13px', color: '#334155', borderBottom: '1px solid #e2e8f0', whiteSpace: 'nowrap' }}>
+                            {String(row?.itemName || '')}
+                          </td>
                           {months.map((month: any) => (
                             <td key={month.monthKey} style={{ padding: '8px', textAlign: 'right', fontSize: '13px', color: '#334155', borderBottom: '1px solid #e2e8f0', fontWeight: 700 }}>
-                              {formatCurrency(Number(row?.values?.[month.monthKey] || 0))}
+                              {formatHistoryValue(row?.values?.[month.monthKey])}
                             </td>
                           ))}
                           <td style={{ padding: '8px', textAlign: 'right', fontSize: '13px', color: '#334155', borderBottom: '1px solid #e2e8f0', fontWeight: 700 }}>
-                            {formatCurrency(Number(row?.total || 0))}
+                            {formatHistoryValue(row?.total)}
                           </td>
                         </tr>
                         {isCategoryExpanded &&
@@ -3999,13 +4008,16 @@ export default function OperationsTab({
                               <td style={{ padding: '8px 8px 8px 76px', fontSize: '13px', fontWeight: 500, color: '#334155', borderBottom: '1px solid #f1f5f9', whiteSpace: 'nowrap' }}>
                                 {String(item?.label || 'Unknown Item')}
                               </td>
+                              <td style={{ padding: '8px', fontSize: '13px', fontWeight: 500, color: '#475569', borderBottom: '1px solid #f1f5f9', whiteSpace: 'nowrap' }}>
+                                {String(item?.itemName || '')}
+                              </td>
                               {months.map((month: any) => (
                                 <td key={month.monthKey} style={{ padding: '8px', textAlign: 'right', fontSize: '13px', color: '#475569', borderBottom: '1px solid #f1f5f9' }}>
-                                  {formatCurrency(Number(item?.values?.[month.monthKey] || 0))}
+                                  {formatHistoryValue(item?.values?.[month.monthKey])}
                                 </td>
                               ))}
                               <td style={{ padding: '8px', textAlign: 'right', fontSize: '13px', color: '#475569', borderBottom: '1px solid #f1f5f9', fontWeight: 600 }}>
-                                {formatCurrency(Number(item?.total || 0))}
+                                {formatHistoryValue(item?.total)}
                               </td>
                             </tr>
                           ))}
@@ -4604,6 +4616,7 @@ export default function OperationsTab({
                     {renderSalesReportEmptyState()}
                   </div>
                 )}
+                {renderCategorySalesHistoryTable('Sales Volume History', { categoryHistory: salesReportPayload.sales?.volumeHistory }) || null}
                 {!isSourceSystemSalesPage && (renderWorkbookHistoryTable('Buys History', salesReportPayload.buys) || (
                   <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '16px' }}>
                     <h3 style={{ margin: '0 0 12px 0', fontSize: '16px', color: '#1e293b' }}>Buys History</h3>
