@@ -4,6 +4,9 @@ import {
   getOperationalSystemConnection,
   saveOperationalSystemConnection,
 } from '@/lib/operational/operational-system-connections';
+import { DEFAULT_RAMQUEST_TITLE_DATA_DOMAINS, RAMQUEST_TITLE_SOURCE_CODE } from '@/lib/operational/ramquest-title';
+import { DEFAULT_RSMEANS_PM_DATA_DOMAINS, RSMEANS_PM_SOURCE_CODE } from '@/lib/operational/rsmeans-pm';
+import { DEFAULT_BUILDOUT_CRE_DATA_DOMAINS, BUILDOUT_CRE_SOURCE_CODE } from '@/lib/operational/buildout-cre';
 
 export const dynamic = 'force-dynamic';
 
@@ -16,6 +19,9 @@ type EditableDataDomain = {
 const SOURCE_PROVIDERS: Record<string, string> = {
   ICE_ENCOMPASS: 'SPREADSHEET_UPLOAD',
   LANTRAX_PROFIT_POWER: 'SPREADSHEET_UPLOAD',
+  [RAMQUEST_TITLE_SOURCE_CODE]: 'SPREADSHEET_UPLOAD',
+  [RSMEANS_PM_SOURCE_CODE]: 'SPREADSHEET_UPLOAD',
+  [BUILDOUT_CRE_SOURCE_CODE]: 'SPREADSHEET_UPLOAD',
 };
 
 const DEFAULT_DATA_DOMAINS: Record<string, EditableDataDomain[]> = {
@@ -48,6 +54,9 @@ const DEFAULT_DATA_DOMAINS: Record<string, EditableDataDomain[]> = {
     { dataDomain: 'SSO', sourceObject: 'OAuth / SSO integration metadata', enabled: false },
     { dataDomain: 'Paging', sourceObject: 'Pagination controls for large API result sets', enabled: true },
   ],
+  [RAMQUEST_TITLE_SOURCE_CODE]: DEFAULT_RAMQUEST_TITLE_DATA_DOMAINS,
+  [RSMEANS_PM_SOURCE_CODE]: DEFAULT_RSMEANS_PM_DATA_DOMAINS,
+  [BUILDOUT_CRE_SOURCE_CODE]: DEFAULT_BUILDOUT_CRE_DATA_DOMAINS,
 };
 
 function normalizeSourceCode(value: unknown) {

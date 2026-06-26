@@ -9,6 +9,9 @@ import {
 } from '@/lib/operational/operational-system-connections';
 import { BAKERS_COGS_LABEL, BAKERS_COGS_SOURCE_CODE } from '@/lib/operational/bakers-cogs';
 import { COGENT_RATE_CARD_LABEL, COGENT_RATE_CARD_SOURCE_CODE } from '@/lib/operational/cogent-rate-card';
+import { RAMQUEST_TITLE_LABEL, RAMQUEST_TITLE_SOURCE_CODE } from '@/lib/operational/ramquest-title';
+import { RSMEANS_PM_LABEL, RSMEANS_PM_SOURCE_CODE } from '@/lib/operational/rsmeans-pm';
+import { BUILDOUT_CRE_LABEL, BUILDOUT_CRE_SOURCE_CODE } from '@/lib/operational/buildout-cre';
 import { resolveCompanyIndustrySectorCategory } from '@/lib/industry-sector-resolver';
 
 export const dynamic = 'force-dynamic';
@@ -26,6 +29,9 @@ const SOURCE_DEFINITIONS: SourceDefinition[] = [
   { provider: 'SPREADSHEET_UPLOAD', sourceCode: BAKERS_COGS_SOURCE_CODE, label: BAKERS_COGS_LABEL, sectorCategories: ['32'] },
   { provider: 'SPREADSHEET_UPLOAD', sourceCode: 'ICE_ENCOMPASS', label: 'ICE Encompass', sectorCategories: ['53'] },
   { provider: 'SPREADSHEET_UPLOAD', sourceCode: 'LANTRAX_PROFIT_POWER', label: 'Profit Power Enterprise', sectorCategories: ['53'] },
+  { provider: 'SPREADSHEET_UPLOAD', sourceCode: RAMQUEST_TITLE_SOURCE_CODE, label: RAMQUEST_TITLE_LABEL, sectorCategories: ['53'] },
+  { provider: 'SPREADSHEET_UPLOAD', sourceCode: RSMEANS_PM_SOURCE_CODE, label: RSMEANS_PM_LABEL, sectorCategories: ['53'] },
+  { provider: 'SPREADSHEET_UPLOAD', sourceCode: BUILDOUT_CRE_SOURCE_CODE, label: BUILDOUT_CRE_LABEL, sectorCategories: ['53'] },
   { provider: 'BAMBOOHR', sourceCode: 'BAMBOOHR_STANDARD', label: 'BambooHR', sectorCategories: ['56'] },
   { provider: 'SPREADSHEET_UPLOAD', sourceCode: COGENT_RATE_CARD_SOURCE_CODE, label: COGENT_RATE_CARD_LABEL, sectorCategories: ['56'] },
   { provider: 'SPREADSHEET_UPLOAD', sourceCode: 'PLATOS_CLOSET_STORE_VISIT', label: 'MONTHLY STORE VISIT REPORT', sectorCategories: ['45'] },

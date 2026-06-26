@@ -4,6 +4,9 @@ import { requireAuth, validateCompanyAccess } from '@/lib/tenant-security';
 import { listOperationalSystemConnections } from '@/lib/operational/operational-system-connections';
 import { BAKERS_COGS_LABEL, BAKERS_COGS_SOURCE_CODE } from '@/lib/operational/bakers-cogs';
 import { COGENT_RATE_CARD_LABEL, COGENT_RATE_CARD_SOURCE_CODE } from '@/lib/operational/cogent-rate-card';
+import { RAMQUEST_TITLE_LABEL, RAMQUEST_TITLE_SOURCE_CODE } from '@/lib/operational/ramquest-title';
+import { RSMEANS_PM_LABEL, RSMEANS_PM_SOURCE_CODE } from '@/lib/operational/rsmeans-pm';
+import { BUILDOUT_CRE_LABEL, BUILDOUT_CRE_SOURCE_CODE } from '@/lib/operational/buildout-cre';
 
 export const dynamic = 'force-dynamic';
 
@@ -17,6 +20,9 @@ const SOURCE_LABELS: Record<string, string> = {
   HILTI: 'Hilti',
   ICE_ENCOMPASS: 'ICE Encompass',
   LANTRAX_PROFIT_POWER: 'Profit Power Enterprise',
+  [RAMQUEST_TITLE_SOURCE_CODE]: RAMQUEST_TITLE_LABEL,
+  [RSMEANS_PM_SOURCE_CODE]: RSMEANS_PM_LABEL,
+  [BUILDOUT_CRE_SOURCE_CODE]: BUILDOUT_CRE_LABEL,
 };
 
 export async function GET(request: NextRequest) {

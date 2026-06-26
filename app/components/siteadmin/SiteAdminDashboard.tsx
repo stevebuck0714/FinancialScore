@@ -17,6 +17,9 @@ import AccountingSystemPanel from '@/app/components/accounting-systems/Accountin
 import { isPluginAccountingSystem } from '@/lib/accounting-systems/registry';
 import { getQuickBooksDesktopFamilyLabel, isQuickBooksDesktopFamily } from '@/lib/quickbooks-desktop/family';
 import { companiesApi, consultantsApi, ApiError } from '@/lib/api-client';
+import { DEFAULT_RAMQUEST_TITLE_DATA_DOMAINS, RAMQUEST_TITLE_LABEL, RAMQUEST_TITLE_SOURCE_CODE } from '@/lib/operational/ramquest-title';
+import { DEFAULT_RSMEANS_PM_DATA_DOMAINS, RSMEANS_PM_LABEL, RSMEANS_PM_SOURCE_CODE } from '@/lib/operational/rsmeans-pm';
+import { DEFAULT_BUILDOUT_CRE_DATA_DOMAINS, BUILDOUT_CRE_LABEL, BUILDOUT_CRE_SOURCE_CODE } from '@/lib/operational/buildout-cre';
 
 const OPERATIONAL_HUB_SECTION_OPTIONS: Array<{ key: string; label: string; group: string }> = [
   { key: 'productsProductMarginAnalysis', label: 'Product Margin Analysis', group: 'Products' },
@@ -3430,6 +3433,15 @@ export default function SiteAdminDashboard(props: any) {
       if (selected.some((source: any) => String(source?.sourceCode || '') === 'LANTRAX_PROFIT_POWER')) {
         loadOperationalSourceDataDomains(companyId, 'LANTRAX_PROFIT_POWER');
       }
+      if (selected.some((source: any) => String(source?.sourceCode || '') === RAMQUEST_TITLE_SOURCE_CODE)) {
+        loadOperationalSourceDataDomains(companyId, RAMQUEST_TITLE_SOURCE_CODE);
+      }
+      if (selected.some((source: any) => String(source?.sourceCode || '') === RSMEANS_PM_SOURCE_CODE)) {
+        loadOperationalSourceDataDomains(companyId, RSMEANS_PM_SOURCE_CODE);
+      }
+      if (selected.some((source: any) => String(source?.sourceCode || '') === BUILDOUT_CRE_SOURCE_CODE)) {
+        loadOperationalSourceDataDomains(companyId, BUILDOUT_CRE_SOURCE_CODE);
+      }
     } catch (error) {
       console.error('Failed to load operational sources:', error);
     }
@@ -4250,6 +4262,24 @@ export default function SiteAdminDashboard(props: any) {
         { dataDomain: 'Paging', sourceObject: 'Pagination controls for large API result sets', enabled: true },
       ],
     },
+    [RAMQUEST_TITLE_SOURCE_CODE]: {
+      label: RAMQUEST_TITLE_LABEL,
+      description: 'Title, escrow, settlement, workflow, document, and production reporting data from RamQuest / Qualia title operations.',
+      credentialFields: ['Environment / Instance URL', 'Client ID', 'Client Secret', 'API Key', 'OAuth Token URL', 'OAuth Redirect URI', 'Webhook Secret'],
+      domains: DEFAULT_RAMQUEST_TITLE_DATA_DOMAINS,
+    },
+    [RSMEANS_PM_SOURCE_CODE]: {
+      label: RSMEANS_PM_LABEL,
+      description: 'Gordian RSMeans cost catalogs, unit costs, assembly costs, labor rates, equipment rates, location factors, and estimating models for property management analytics.',
+      credentialFields: ['API Base URL', 'Subscriber Account ID', 'Client ID', 'Client Secret', 'API Key', 'Cost Data Version', 'Default Location / City Index'],
+      domains: DEFAULT_RSMEANS_PM_DATA_DOMAINS,
+    },
+    [BUILDOUT_CRE_SOURCE_CODE]: {
+      label: BUILDOUT_CRE_LABEL,
+      description: 'Buildout commercial real estate listing inventory, property marketing, broker activity, deal pipeline, syndication, and commission forecast data.',
+      credentialFields: ['API Base URL', 'Account / Tenant ID', 'Client ID', 'Client Secret', 'API Key', 'OAuth Redirect URI', 'Webhook Secret'],
+      domains: DEFAULT_BUILDOUT_CRE_DATA_DOMAINS,
+    },
   };
 
   const getConstructionOperationalSourceDetail = (sourceCode: string) =>
@@ -4260,7 +4290,10 @@ export default function SiteAdminDashboard(props: any) {
     if (normalizedSourceCode === 'HILTI') return 10 + offset;
     if (normalizedSourceCode === 'ICE_ENCOMPASS') return 12 + offset;
     if (normalizedSourceCode === 'LANTRAX_PROFIT_POWER') return 14 + offset;
-    return 20 + offset;
+    if (normalizedSourceCode === RAMQUEST_TITLE_SOURCE_CODE) return 16 + offset;
+    if (normalizedSourceCode === RSMEANS_PM_SOURCE_CODE) return 18 + offset;
+    if (normalizedSourceCode === BUILDOUT_CRE_SOURCE_CODE) return 20 + offset;
+    return 22 + offset;
   };
 
   const renderConstructionOperationalIntegrationCard = (companyId: string, companyName: string, sourceCode: string) => {
@@ -7988,6 +8021,12 @@ export default function SiteAdminDashboard(props: any) {
                                             {isOperationalSourceSelected(company.id, 'ICE_ENCOMPASS') && renderConstructionOperationalDataDomainsCard(company.id, 'ICE_ENCOMPASS')}
                                             {isOperationalSourceSelected(company.id, 'LANTRAX_PROFIT_POWER') && renderConstructionOperationalIntegrationCard(company.id, company.name, 'LANTRAX_PROFIT_POWER')}
                                             {isOperationalSourceSelected(company.id, 'LANTRAX_PROFIT_POWER') && renderConstructionOperationalDataDomainsCard(company.id, 'LANTRAX_PROFIT_POWER')}
+                                            {isOperationalSourceSelected(company.id, RAMQUEST_TITLE_SOURCE_CODE) && renderConstructionOperationalIntegrationCard(company.id, company.name, RAMQUEST_TITLE_SOURCE_CODE)}
+                                            {isOperationalSourceSelected(company.id, RAMQUEST_TITLE_SOURCE_CODE) && renderConstructionOperationalDataDomainsCard(company.id, RAMQUEST_TITLE_SOURCE_CODE)}
+                                            {isOperationalSourceSelected(company.id, RSMEANS_PM_SOURCE_CODE) && renderConstructionOperationalIntegrationCard(company.id, company.name, RSMEANS_PM_SOURCE_CODE)}
+                                            {isOperationalSourceSelected(company.id, RSMEANS_PM_SOURCE_CODE) && renderConstructionOperationalDataDomainsCard(company.id, RSMEANS_PM_SOURCE_CODE)}
+                                            {isOperationalSourceSelected(company.id, BUILDOUT_CRE_SOURCE_CODE) && renderConstructionOperationalIntegrationCard(company.id, company.name, BUILDOUT_CRE_SOURCE_CODE)}
+                                            {isOperationalSourceSelected(company.id, BUILDOUT_CRE_SOURCE_CODE) && renderConstructionOperationalDataDomainsCard(company.id, BUILDOUT_CRE_SOURCE_CODE)}
                                             <div style={{ gridColumn: '1 / -1', order: 3, display: 'none' }}>
                                               {renderOperationalHubCustomizationCard(company)}
                                             </div>
@@ -11291,6 +11330,12 @@ export default function SiteAdminDashboard(props: any) {
                                   {isOperationalSourceSelected(businessCompany.id, 'ICE_ENCOMPASS') && renderConstructionOperationalDataDomainsCard(businessCompany.id, 'ICE_ENCOMPASS')}
                                   {isOperationalSourceSelected(businessCompany.id, 'LANTRAX_PROFIT_POWER') && renderConstructionOperationalIntegrationCard(businessCompany.id, businessCompany.name, 'LANTRAX_PROFIT_POWER')}
                                   {isOperationalSourceSelected(businessCompany.id, 'LANTRAX_PROFIT_POWER') && renderConstructionOperationalDataDomainsCard(businessCompany.id, 'LANTRAX_PROFIT_POWER')}
+                                  {isOperationalSourceSelected(businessCompany.id, RAMQUEST_TITLE_SOURCE_CODE) && renderConstructionOperationalIntegrationCard(businessCompany.id, businessCompany.name, RAMQUEST_TITLE_SOURCE_CODE)}
+                                  {isOperationalSourceSelected(businessCompany.id, RAMQUEST_TITLE_SOURCE_CODE) && renderConstructionOperationalDataDomainsCard(businessCompany.id, RAMQUEST_TITLE_SOURCE_CODE)}
+                                  {isOperationalSourceSelected(businessCompany.id, RSMEANS_PM_SOURCE_CODE) && renderConstructionOperationalIntegrationCard(businessCompany.id, businessCompany.name, RSMEANS_PM_SOURCE_CODE)}
+                                  {isOperationalSourceSelected(businessCompany.id, RSMEANS_PM_SOURCE_CODE) && renderConstructionOperationalDataDomainsCard(businessCompany.id, RSMEANS_PM_SOURCE_CODE)}
+                                  {isOperationalSourceSelected(businessCompany.id, BUILDOUT_CRE_SOURCE_CODE) && renderConstructionOperationalIntegrationCard(businessCompany.id, businessCompany.name, BUILDOUT_CRE_SOURCE_CODE)}
+                                  {isOperationalSourceSelected(businessCompany.id, BUILDOUT_CRE_SOURCE_CODE) && renderConstructionOperationalDataDomainsCard(businessCompany.id, BUILDOUT_CRE_SOURCE_CODE)}
                                 </div>
 
                                 <div
