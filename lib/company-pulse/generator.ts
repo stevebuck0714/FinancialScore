@@ -12,6 +12,11 @@ import {
   type PulseAlertRow,
 } from '@/lib/pulse-alerts';
 import { resolveCompanyIndustrySectorCategory } from '@/lib/industry-sector-resolver';
+import {
+  buildSectorExceptionAlerts,
+  getSectorMetricCoverage,
+  loadSectorMetricRows,
+} from '@/lib/company-pulse/sector-exceptions';
 
 export type PulseReadinessStatus = 'ready' | 'partial' | 'missing';
 
@@ -475,7 +480,7 @@ export async function generateCompanyPulse(companyId: string, options: GenerateO
   const lookbackStart = addUtcDays(startOfUtcDay(new Date()), -EXECUTIVE_LOOKBACK_DAYS);
   const salesLookbackStart = addUtcDays(startOfUtcDay(new Date()), -SALES_LOOKBACK_DAYS);
 
-  const [arRows, apRows, cashDates, dailyFinancialRows, customerRows, productRows, findings] = await Promise.all([
+  const [arRows, apRows, cashDates, dailyFinancialRows, customerRows, productRows, sectorMetricRows, findings] = await Promise.all([
     prisma.aRAgingSnapshot.findMany({
       where: { companyId, frequency: 'daily' },
       orderBy: { snapshotDate: 'desc' },
@@ -502,6 +507,7 @@ export async function generateCompanyPulse(companyId: string, options: GenerateO
       orderBy: { snapshotDate: 'desc' },
       take: 500,
     }),
+    loadSectorMetricRows(companyId, salesLookbackStart),
     loadCriticalFindings(companyId),
   ]);
 
@@ -514,6 +520,8 @@ export async function generateCompanyPulse(companyId: string, options: GenerateO
   const latestDaily = dailyFinancialRows[0];
   const latestCustomer = customerRows[0];
   const latestProduct = productRows[0];
+  const sectorMetricCoverage = getSectorMetricCoverage(sectorMetricRows);
+  const latestSectorMetricDate = sectorMetricCoverage.latestDate ? new Date(sectorMetricCoverage.latestDate) : null;
 
   const readinessItems: PulseReadinessItem[] = [
     {
@@ -559,6 +567,15 @@ export async function generateCompanyPulse(companyId: string, options: GenerateO
       lastUpdated: iso(latestProduct?.snapshotDate),
     },
     {
+      key: 'sector-operating-metrics',
+      label: 'Sector operating metrics',
+      status: freshnessStatus(latestSectorMetricDate),
+      reason: sectorMetricCoverage.latestDate
+        ? `${sectorMetricCoverage.count} sector operating metric snapshot(s) are available.`
+        : 'No sector operating metric snapshots found.',
+      lastUpdated: sectorMetricCoverage.latestDate || undefined,
+    },
+    {
       key: 'findings',
       label: 'Critical findings feed',
       status: findings.length > 0 ? 'ready' : 'partial',
@@ -569,6 +586,14 @@ export async function generateCompanyPulse(companyId: string, options: GenerateO
 
   const alerts: PulseAlertInput[] = [];
   const nowIso = new Date().toISOString();
+  alerts.push(
+    ...buildSectorExceptionAlerts({
+      companyId,
+      sectorCategory: resolvedSectorCategory,
+      rows: sectorMetricRows,
+      nowIso,
+    })
+  );
 
   if (latestAr && priorAr) {
     const latestOver30 = agingOver30(latestAr, 'totalAR');
@@ -938,6 +963,7 @@ export async function generateCompanyPulse(companyId: string, options: GenerateO
         latestDaily: iso(latestDaily?.snapshotDate),
         latestCustomer: iso(latestCustomer?.snapshotDate),
         latestProduct: iso(latestProduct?.snapshotDate),
+        sectorMetricCoverage,
         latestCompletedMonthKey,
         priorCompletedMonthKey,
         findings: findings.map((finding) => `${finding.id}:${iso(finding.updatedAt)}`),
@@ -955,6 +981,9 @@ export async function generateCompanyPulse(companyId: string, options: GenerateO
     });
     const sourceNotes = [
       `Generated from persisted daily snapshots for ${company.name}.`,
+      sectorMetricCoverage.count > 0
+        ? `Included ${sectorMetricCoverage.count} sector operating metric snapshot(s).`
+        : 'No sector operating metric snapshots were available.',
       'Company Pulse is cached after generation and loaded from PulseAlert/PulseCompanyCache for users.',
     ];
     await writePulseCompanyCache({

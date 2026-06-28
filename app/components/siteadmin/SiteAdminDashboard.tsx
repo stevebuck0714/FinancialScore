@@ -4152,18 +4152,38 @@ export default function SiteAdminDashboard(props: any) {
     }
   };
   const removeOperationalSource = async (companyId: string, sourceCode: string) => {
+    const normalizedSourceCode = String(sourceCode || '').trim().toUpperCase();
+    const source = getSelectedOperationalSources(companyId).find(
+      (selectedSource) => String(selectedSource.sourceCode || '').trim().toUpperCase() === normalizedSourceCode
+    );
+    const sourceLabel = source?.label || normalizedSourceCode || 'this operational source';
+    const sourceStatus = String(source?.status || '').trim().toUpperCase();
+    const hasLoadedOperationalData = Boolean(source?.lastSyncAt) || ['ACTIVE', 'CONNECTED', 'READY', 'SYNCED'].includes(sourceStatus);
+    const confirmMessage = hasLoadedOperationalData
+      ? [
+          `Warning: ${sourceLabel} appears to have loaded operational data for this company.`,
+          '',
+          'Removing it will disconnect the source and stop future operational syncs for this source. Existing dashboards, Daily Pulse, and Executive Briefing inputs that depend on this source may stop refreshing or may no longer have current data.',
+          '',
+          'Do you want to remove this loaded operational data source?',
+        ].join('\n')
+      : `Remove ${sourceLabel} from this company?`;
+    if (!confirm(confirmMessage)) {
+      return;
+    }
     try {
       setSavingOperationalSourceCompanyId(companyId);
       const response = await fetch('/api/operational-system-integrations/sources', {
         method: 'DELETE',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ companyId, sourceCode }),
+        body: JSON.stringify({ companyId, sourceCode: normalizedSourceCode }),
       });
       const data = await response.json();
       if (!response.ok || !data?.ok) {
         throw new Error(data?.details || data?.error || 'Failed to remove operational source');
       }
       await loadOperationalSources(companyId);
+      alert(`${sourceLabel} was removed from this company.`);
     } catch (error: any) {
       alert(`Failed to remove operational source: ${error?.message || 'Unknown error'}`);
     } finally {
