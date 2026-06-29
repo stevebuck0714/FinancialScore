@@ -21,12 +21,14 @@ import {
   buildCustomersSitesMock,
 } from '@/lib/operations/staffing-mock-data';
 import {
+  buildAndSaveBambooHrWorkforceReportSnapshot,
   getBambooHrHiringPayload,
   getBambooHrLaborSchedulingPayload,
   getBambooHrRevenueBillablesPayload,
   getBambooHrUnitEconomicsPayload,
   readBambooHrWorkforceReportSnapshot,
 } from '@/lib/operations/bamboohr-workforce-reports';
+import { readCogentRateCard } from '@/lib/operational/cogent-rate-card';
 import { getInforM3CredentialsWithOptionalEnvFallback } from '@/lib/infor-m3/credentials';
 import { callInforIonApi } from '@/lib/infor-m3/client';
 import { getApBalanceSheetAnchorConfig } from '@/lib/financial/ap-balance-sheet-anchor';
@@ -495,6 +497,26 @@ function parseDateParamBoundary(value: string | null, boundary: 'start' | 'end',
   const parsed = new Date(trimmed);
   if (Number.isNaN(parsed.getTime())) return fallback;
   return parsed;
+}
+
+async function getFreshBambooHrWorkforceSnapshot(companyId: string) {
+  const snapshot = await readBambooHrWorkforceReportSnapshot(companyId);
+  const rateCard = await readCogentRateCard(companyId).catch(() => null);
+  if (!snapshot || !rateCard?.rows?.length) return snapshot;
+
+  const snapshotGeneratedAt = Date.parse(String(snapshot.generatedAt || ''));
+  const rateCardParsedAt = Date.parse(String(rateCard.parsedAt || ''));
+  const matchedEmployees = Array.isArray(snapshot.revenueBillables?.estimatedBillableEconomicsByEmployee)
+    ? snapshot.revenueBillables.estimatedBillableEconomicsByEmployee.length
+    : 0;
+  const rateCardIsNewer =
+    Number.isFinite(rateCardParsedAt) &&
+    (!Number.isFinite(snapshotGeneratedAt) || rateCardParsedAt > snapshotGeneratedAt);
+
+  if (rateCardIsNewer || matchedEmployees === 0) {
+    return buildAndSaveBambooHrWorkforceReportSnapshot(companyId);
+  }
+  return snapshot;
 }
 
 function dateKeyUtc(date: Date): string {
@@ -9388,7 +9410,7 @@ export async function GET(request: NextRequest) {
       }
 
       case 'revenue-billables': {
-        const bambooSnapshot = await readBambooHrWorkforceReportSnapshot(companyId);
+        const bambooSnapshot = await getFreshBambooHrWorkforceSnapshot(companyId);
         if (bambooSnapshot) {
           return NextResponse.json(getBambooHrRevenueBillablesPayload(bambooSnapshot));
         }
@@ -9398,7 +9420,7 @@ export async function GET(request: NextRequest) {
       }
 
       case 'unit-economics': {
-        const bambooSnapshot = await readBambooHrWorkforceReportSnapshot(companyId);
+        const bambooSnapshot = await getFreshBambooHrWorkforceSnapshot(companyId);
         if (bambooSnapshot) {
           return NextResponse.json(getBambooHrUnitEconomicsPayload(bambooSnapshot));
         }
@@ -9418,7 +9440,7 @@ export async function GET(request: NextRequest) {
       }
 
       case 'hiring': {
-        return NextResponse.json(await getBambooHrHiringPayload(companyId));
+        return NextResponse.json(await getBambooHrHiringPayload(companyId, { startDate, endDate }));
       }
 
       case 'customers-sites': {

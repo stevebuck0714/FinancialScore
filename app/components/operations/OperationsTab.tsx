@@ -1776,7 +1776,7 @@ export default function OperationsTab({
     const timeoutMs = apiType === 'customers' && options?.refreshConcentration
       ? 120000
       : apiType === 'hiring'
-      ? 90000
+      ? 45000
       : apiType === 'customers' || apiType === 'products'
       ? 45000
       : 25000;
@@ -2989,7 +2989,7 @@ export default function OperationsTab({
         </div>
 
         <div style={{ display: 'flex', gap: '8px', marginLeft: 'auto', alignItems: 'center' }}>
-          {activeDataType === 'revenue-billables' && renderOperationalClientSelector()}
+          {(activeDataType === 'revenue-billables' || activeDataType === 'unit-economics') && renderOperationalClientSelector()}
           {customerDateRangeSaveStatus && (
             <span style={{ fontSize: '12px', color: customerDateRangeSaveStatus.includes('failed') ? '#dc2626' : '#16a34a', fontWeight: 600 }}>
               {customerDateRangeSaveStatus}
@@ -20693,11 +20693,21 @@ Strategies to Improve the CCC
         row?.status,
       ].map((value) => String(value || '').trim().toLowerCase()).join('||');
     };
+    const isExcludedHiringRollupTitle = (value: any) => (
+      String(value || '')
+        .trim()
+        .replace(/[^a-z0-9]+/gi, ' ')
+        .replace(/\s+/g, ' ')
+        .toLowerCase()
+        .includes('general consideration')
+    );
     const jobs: any[] = Array.from(new Map((Array.isArray(hiringData.jobs) ? hiringData.jobs : [])
       .filter((row: any) => matchesSelectedOperationalClient(row.clientName))
+      .filter((row: any) => !isExcludedHiringRollupTitle(row.title || row.jobTitle))
       .map((row: any) => [hiringJobDedupeKey(row), row])).values());
     const allApplications: any[] = Array.from(new Map((Array.isArray(hiringData.applications) ? hiringData.applications : [])
       .filter((row: any) => matchesSelectedOperationalClient(row.clientName))
+      .filter((row: any) => !isExcludedHiringRollupTitle(row.jobTitle || row.title))
       .map((row: any) => [hiringApplicationDedupeKey(row), row])).values());
     const cardStyle: React.CSSProperties = { background: '#fff', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '20px' };
     const cardTitleStyle: React.CSSProperties = { margin: '0 0 12px 0', fontSize: '13px', fontWeight: 700, color: '#0f172a', textTransform: 'uppercase', letterSpacing: '0.04em' };
@@ -21259,12 +21269,12 @@ Strategies to Improve the CCC
           <div style={cardStyle}>
             <div style={cardTitleStyle}>Funnel by Role</div>
             <ResponsiveContainer width="100%" height={360}>
-              <BarChart data={funnelByRoleRows.slice(0, 12)} margin={{ top: 110, right: 8, left: 8, bottom: 24 }}>
+              <BarChart data={funnelByRoleRows.slice(0, 12)} margin={{ top: 32, right: 8, left: 8, bottom: 90 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-                <XAxis dataKey="role" angle={-30} textAnchor="start" height={110} orientation="top" tick={chartLabelStyle} interval={0} />
+                <XAxis dataKey="role" angle={-30} textAnchor="end" height={110} tick={chartLabelStyle} interval={0} />
                 <YAxis tick={chartLabelStyle} />
                 <Tooltip formatter={(value: any, name: any) => [Number(value || 0).toLocaleString('en-US'), String(name)]} />
-                <Legend />
+                <Legend verticalAlign="top" align="center" wrapperStyle={{ top: 0 }} />
                 <Bar dataKey="screened" name="Screened" stackId="funnel" fill="#2563eb" radius={0} />
                 <Bar dataKey="interviewed" name="Interviewed" stackId="funnel" fill="#0f766e" radius={0} />
                 <Bar dataKey="offered" name="Offered" stackId="funnel" fill="#b45309" radius={0} />
@@ -22015,7 +22025,6 @@ Strategies to Improve the CCC
 
       return (
         <div style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
-          {renderOperationalClientSelector()}
           {isSectionEnabled('ueUnitEconomicsInputs') && (
             <div style={{ ...cardStyle, paddingBottom: '16px' }}>
               <div style={{ ...cardTitleStyle, marginBottom: '14px' }}>Unit Economics Inputs</div>
@@ -22182,7 +22191,6 @@ Strategies to Improve the CCC
 
     return (
       <div style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
-        {renderOperationalClientSelector()}
         <div style={{ ...cardStyle, paddingBottom: '16px' }}>
           <div style={{ ...cardTitleStyle, marginBottom: '14px' }}>Unit Economics Summary</div>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, minmax(0, 1fr))', gap: '12px' }}>

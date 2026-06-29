@@ -62,10 +62,16 @@ type HiringApplicationRow = {
 };
 
 const HIRING_APPLICATION_PAGE_LIMIT = 10;
-const EXCLUDED_HIRING_JOB_TITLES = new Set(['scientist - general consideration']);
+const HIRING_HIRED_DETAIL_LIMIT = 75;
+const EXCLUDED_HIRING_JOB_TITLE_PHRASES = ['general consideration'];
 const HIRED_APPLICATION_STATUS_QUERY = {
   applicationStatus: 'HIRED',
   jobStatusGroups: 'ALL',
+};
+
+type HiringPayloadOptions = {
+  startDate?: Date | null;
+  endDate?: Date | null;
 };
 
 type CurrentEmployee = {
@@ -677,12 +683,12 @@ function currentBambooHrClientName(): string {
 }
 
 function normalizedHiringTitleForExclusion(value: unknown): string {
-  return String(value || '').trim().replace(/\s+/g, ' ').toLowerCase();
+  return String(value || '').trim().replace(/[^a-z0-9]+/gi, ' ').replace(/\s+/g, ' ').toLowerCase();
 }
 
 function isExcludedHiringRollupTitle(value: unknown): boolean {
   const normalized = normalizedHiringTitleForExclusion(value);
-  return normalized ? EXCLUDED_HIRING_JOB_TITLES.has(normalized) : false;
+  return normalized ? EXCLUDED_HIRING_JOB_TITLE_PHRASES.some((phrase) => normalized.includes(phrase)) : false;
 }
 
 function normalizeHiringJob(row: TableRow, departmentDivisionMap: Map<string, string> = new Map()): HiringJobRow {
@@ -813,6 +819,29 @@ function countRows<T extends Record<string, unknown>>(rows: T[], key: keyof T, l
     .sort((a, b) => Number(b.count || 0) - Number(a.count || 0));
 }
 
+function formatBambooHrNewSince(value: Date | null | undefined): string {
+  if (!value || Number.isNaN(value.getTime())) return '';
+  const year = value.getUTCFullYear();
+  const month = String(value.getUTCMonth() + 1).padStart(2, '0');
+  const day = String(value.getUTCDate()).padStart(2, '0');
+  return `${year}-${month}-${day} 00:00:00`;
+}
+
+function parseHiringDateMs(value: unknown): number | null {
+  const raw = asString(value);
+  if (!raw) return null;
+  const parsed = Date.parse(raw);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function isHiringApplicationAppliedInRange(application: HiringApplicationRow, options: HiringPayloadOptions): boolean {
+  const appliedTime = parseHiringDateMs(application.appliedDate);
+  if (appliedTime == null) return !options.startDate && !options.endDate;
+  if (options.startDate && appliedTime < options.startDate.getTime()) return false;
+  if (options.endDate && appliedTime > options.endDate.getTime()) return false;
+  return true;
+}
+
 async function fetchBambooHrHiringApplicationPages(
   settings: BambooHrSettings,
   query: Record<string, string> = {}
@@ -851,19 +880,29 @@ async function fetchBambooHrApplicationDetail(settings: BambooHrSettings, applic
   }
 }
 
-async function fetchBambooHrHiringApplications(settings: BambooHrSettings): Promise<TableRow[]> {
+async function fetchBambooHrHiringApplications(settings: BambooHrSettings, options: HiringPayloadOptions = {}): Promise<TableRow[]> {
+  const newSince = formatBambooHrNewSince(options.startDate);
+  const dateQuery = newSince ? { newSince, sortBy: 'created_date', sortOrder: 'ASC' } : {};
   const [defaultRows, hiredRows] = await Promise.all([
-    fetchBambooHrHiringApplicationPages(settings),
-    fetchBambooHrHiringApplicationPages(settings, HIRED_APPLICATION_STATUS_QUERY),
+    fetchBambooHrHiringApplicationPages(settings, dateQuery),
+    fetchBambooHrHiringApplicationPages(settings, { ...HIRED_APPLICATION_STATUS_QUERY, ...dateQuery }),
   ]);
+  const hiredRowsForDetail = hiredRows
+    .sort((a, b) => Date.parse(asString(b.appliedDate)) - Date.parse(asString(a.appliedDate)))
+    .slice(0, HIRING_HIRED_DETAIL_LIMIT);
   const enrichedHiredRows = await mapWithConcurrency(
-    hiredRows,
+    hiredRowsForDetail,
     MAX_CONCURRENCY,
     (row) => fetchBambooHrApplicationDetail(settings, row)
   );
+  const enrichedIds = new Set(enrichedHiredRows.map((row) => asString(row.id) || asString(row.applicationId)).filter(Boolean));
+  const remainingHiredRows = hiredRows.filter((row) => {
+    const id = asString(row.id) || asString(row.applicationId);
+    return !id || !enrichedIds.has(id);
+  });
   return Array.from(
     new Map(
-      [...defaultRows, ...enrichedHiredRows].map((row) => [
+      [...defaultRows, ...enrichedHiredRows, ...remainingHiredRows].map((row) => [
         asString(row.id) || asString(row.applicationId) || JSON.stringify(row),
         row,
       ])
@@ -871,12 +910,12 @@ async function fetchBambooHrHiringApplications(settings: BambooHrSettings): Prom
   );
 }
 
-export async function getBambooHrHiringPayload(companyId: string) {
+export async function getBambooHrHiringPayload(companyId: string, options: HiringPayloadOptions = {}) {
   const { settings, metadata } = await readBambooHrSettings(companyId);
   const departmentDivisionMap = buildDepartmentDivisionMap(metadata);
   const [jobsResponse, applicationRows] = await Promise.all([
     fetchBambooHrJson(settings, 'applicant_tracking/jobs'),
-    fetchBambooHrHiringApplications(settings),
+    fetchBambooHrHiringApplications(settings, options),
   ]);
   const jobRows = readCollection(jobsResponse.json, ['jobs']);
   const normalizedJobPairs = jobRows.map((row) => ({
@@ -903,7 +942,8 @@ export async function getBambooHrHiringPayload(companyId: string) {
     .map((row) => normalizeHiringApplication(row, jobsByKey, jobs, departmentDivisionMap))
     .filter((application) => (
       !isExcludedHiringRollupTitle(application.jobTitle) &&
-      !excludedJobIds.has(String(application.jobId || '').trim())
+      !excludedJobIds.has(String(application.jobId || '').trim()) &&
+      isHiringApplicationAppliedInRange(application, options)
     ));
   const applicationsByStatus = countRows(applications, 'status', 'status');
   const applicantsByJob = jobs
@@ -972,7 +1012,12 @@ export async function getBambooHrHiringPayload(companyId: string) {
   ).sort((a, b) => a.division.localeCompare(b.division) || a.department.localeCompare(b.department));
 
   return {
-    meta: { source: 'BAMBOOHR_HIRING', generatedAt: new Date().toISOString(), applicationsPageLimit: HIRING_APPLICATION_PAGE_LIMIT },
+    meta: {
+      source: 'BAMBOOHR_HIRING',
+      generatedAt: new Date().toISOString(),
+      applicationsPageLimit: HIRING_APPLICATION_PAGE_LIMIT,
+      hiredDetailLimit: HIRING_HIRED_DETAIL_LIMIT,
+    },
     summary: {
       asOfDate: todayIso(),
       openJobs: jobs.filter((job) => job.status.toLowerCase() === 'open').length,
