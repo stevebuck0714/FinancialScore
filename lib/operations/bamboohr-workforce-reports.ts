@@ -62,7 +62,6 @@ type HiringApplicationRow = {
 };
 
 const HIRING_APPLICATION_PAGE_LIMIT = 10;
-const HIRING_HIRED_DETAIL_LIMIT = 75;
 const EXCLUDED_HIRING_JOB_TITLE_PHRASES = ['general consideration'];
 const HIRED_APPLICATION_STATUS_QUERY = {
   applicationStatus: 'HIRED',
@@ -234,7 +233,7 @@ export type BambooHrWorkforceReportSnapshot = {
 };
 
 const SNAPSHOT_METADATA_KEY = 'bambooHrWorkforceReportSnapshot';
-export const BAMBOOHR_WORKFORCE_RATE_MATCH_VERSION = 2;
+export const BAMBOOHR_WORKFORCE_RATE_MATCH_VERSION = 3;
 const MAX_CONCURRENCY = 8;
 const CURRENT_BAMBOOHR_CLIENT_NAME = 'Eli Lilly';
 const ESTIMATED_ANNUAL_BILLABLE_HOURS = 1920;
@@ -889,22 +888,14 @@ async function fetchBambooHrHiringApplications(settings: BambooHrSettings, optio
     fetchBambooHrHiringApplicationPages(settings, dateQuery),
     fetchBambooHrHiringApplicationPages(settings, { ...HIRED_APPLICATION_STATUS_QUERY, ...dateQuery }),
   ]);
-  const hiredRowsForDetail = hiredRows
-    .sort((a, b) => Date.parse(asString(b.appliedDate)) - Date.parse(asString(a.appliedDate)))
-    .slice(0, HIRING_HIRED_DETAIL_LIMIT);
   const enrichedHiredRows = await mapWithConcurrency(
-    hiredRowsForDetail,
+    hiredRows,
     MAX_CONCURRENCY,
     (row) => fetchBambooHrApplicationDetail(settings, row)
   );
-  const enrichedIds = new Set(enrichedHiredRows.map((row) => asString(row.id) || asString(row.applicationId)).filter(Boolean));
-  const remainingHiredRows = hiredRows.filter((row) => {
-    const id = asString(row.id) || asString(row.applicationId);
-    return !id || !enrichedIds.has(id);
-  });
   return Array.from(
     new Map(
-      [...defaultRows, ...enrichedHiredRows, ...remainingHiredRows].map((row) => [
+      [...defaultRows, ...enrichedHiredRows].map((row) => [
         asString(row.id) || asString(row.applicationId) || JSON.stringify(row),
         row,
       ])
@@ -1018,7 +1009,6 @@ export async function getBambooHrHiringPayload(companyId: string, options: Hirin
       source: 'BAMBOOHR_HIRING',
       generatedAt: new Date().toISOString(),
       applicationsPageLimit: HIRING_APPLICATION_PAGE_LIMIT,
-      hiredDetailLimit: HIRING_HIRED_DETAIL_LIMIT,
     },
     summary: {
       asOfDate: todayIso(),
@@ -1126,10 +1116,7 @@ function buildPayload(
       billRateLevelByMarketRows: buildBillRateLevelByMarketRows(employees),
       estimatedBillableEconomicsByEmployee,
       unavailableReports: numericBillRatesAvailable
-        ? [
-            `Estimated employee billings use the rate card multiplied by ${ESTIMATED_ANNUAL_BILLABLE_HOURS.toLocaleString('en-US')} annual billable hours; actual recognized revenue still requires billed hours or assignment-level revenue.`,
-            'Actual customer profitability requires billed hours or recognized assignment revenue in addition to the rate card.',
-          ]
+        ? []
         : [
             'Customer revenue by employee requires customer billed compensation rates or recognized revenue by employee.',
             'Customer revenue rollups require a client rate-card mapping for each compensation / bill-rate level.',

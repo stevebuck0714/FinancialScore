@@ -778,6 +778,8 @@ export default function OperationsTab({
   const [hiringTimeToFillSortDir, setHiringTimeToFillSortDir] = useState<'asc' | 'desc'>('desc');
   const [customersSitesData, setCustomersSitesData] = useState<any>(null);
   const [revenueBillablesData, setRevenueBillablesData] = useState<any>(null);
+  const [estimatedBillableSortKey, setEstimatedBillableSortKey] = useState<'employeeName' | 'role' | 'market' | 'billRateLevel' | 'payRate' | 'rateCardBillRate' | 'billToPayRatio' | 'estimatedAnnualBillings' | 'estimatedAnnualPay' | 'estimatedAnnualSpread'>('employeeName');
+  const [estimatedBillableSortDir, setEstimatedBillableSortDir] = useState<'asc' | 'desc'>('asc');
   const [unitEconomicsData, setUnitEconomicsData] = useState<any>(null);
   const [selectedOperationalClient, setSelectedOperationalClient] = useState<string>('__ALL__');
   const [expandedUnitBillRateLevels, setExpandedUnitBillRateLevels] = useState<Record<string, boolean>>({});
@@ -1776,7 +1778,7 @@ export default function OperationsTab({
     const timeoutMs = apiType === 'customers' && options?.refreshConcentration
       ? 120000
       : apiType === 'hiring'
-      ? 45000
+      ? 90000
       : apiType === 'customers' || apiType === 'products'
       ? 45000
       : 25000;
@@ -21659,6 +21661,60 @@ Strategies to Improve the CCC
         : [];
       const unavailableReports: string[] = Array.isArray(revenueBillablesData.unavailableReports) ? revenueBillablesData.unavailableReports : [];
       const sourceNote = String(revenueBillablesData?.meta?.note || summary.note || '');
+      const estimatedBillableNumericSortKeys = new Set(['payRate', 'rateCardBillRate', 'billToPayRatio', 'estimatedAnnualBillings', 'estimatedAnnualPay', 'estimatedAnnualSpread']);
+      const estimatedBillableSortValue = (row: any) => {
+        if (estimatedBillableNumericSortKeys.has(estimatedBillableSortKey)) {
+          const value = Number(row[estimatedBillableSortKey]);
+          return Number.isFinite(value) ? value : Number.NEGATIVE_INFINITY;
+        }
+        if (estimatedBillableSortKey === 'billRateLevel') return String(row.billRateLevel || row.normalizedBillRateLevel || '').toLowerCase();
+        return String(row[estimatedBillableSortKey] || '').toLowerCase();
+      };
+      const sortedEstimatedBillableEconomicsRows = [...estimatedBillableEconomicsRows].sort((a, b) => {
+        const aValue = estimatedBillableSortValue(a);
+        const bValue = estimatedBillableSortValue(b);
+        const comparison = typeof aValue === 'number' && typeof bValue === 'number'
+          ? aValue - bValue
+          : String(aValue).localeCompare(String(bValue), undefined, { sensitivity: 'base', numeric: true });
+        if (comparison !== 0) return comparison * (estimatedBillableSortDir === 'asc' ? 1 : -1);
+        return String(a.employeeName || '').localeCompare(String(b.employeeName || ''));
+      });
+      const renderEstimatedBillableSortHeader = (
+        key: typeof estimatedBillableSortKey,
+        label: string,
+        align: 'left' | 'right' = 'left'
+      ) => {
+        const active = estimatedBillableSortKey === key;
+        return (
+          <th style={{ ...thStyle, textAlign: align }}>
+            <button
+              type="button"
+              onClick={() => {
+                if (active) {
+                  setEstimatedBillableSortDir((current) => (current === 'asc' ? 'desc' : 'asc'));
+                } else {
+                  setEstimatedBillableSortKey(key);
+                  setEstimatedBillableSortDir(estimatedBillableNumericSortKeys.has(key) ? 'desc' : 'asc');
+                }
+              }}
+              style={{
+                border: 0,
+                background: 'transparent',
+                padding: 0,
+                color: 'inherit',
+                font: 'inherit',
+                fontWeight: 700,
+                cursor: 'pointer',
+                textTransform: 'inherit',
+                letterSpacing: 'inherit',
+                textAlign: align,
+              }}
+            >
+              {label}{active ? (estimatedBillableSortDir === 'asc' ? ' ^' : ' v') : ''}
+            </button>
+          </th>
+        );
+      };
       const billableEmployeeCount = Number(
         summary.billableEmployeeCount ??
         billRateLevelRows
@@ -21758,20 +21814,20 @@ Strategies to Improve the CCC
                   <table style={{ width: '100%', minWidth: '1180px', borderCollapse: 'collapse' }}>
                     <thead>
                       <tr>
-                        <th style={thStyle}>Employee</th>
-                        <th style={thStyle}>Role</th>
-                        <th style={thStyle}>Market</th>
-                        <th style={thStyle}>Bill Rate Level</th>
-                        <th style={{ ...thStyle, textAlign: 'right' }}>Pay Rate</th>
-                        <th style={{ ...thStyle, textAlign: 'right' }}>Bill Rate</th>
-                        <th style={{ ...thStyle, textAlign: 'right' }}>Bill-to-Pay</th>
-                        <th style={{ ...thStyle, textAlign: 'right' }}>Est. Annual Billings</th>
-                        <th style={{ ...thStyle, textAlign: 'right' }}>Annual Pay</th>
-                        <th style={{ ...thStyle, textAlign: 'right' }}>Est. Spread</th>
+                        {renderEstimatedBillableSortHeader('employeeName', 'Employee')}
+                        {renderEstimatedBillableSortHeader('role', 'Role')}
+                        {renderEstimatedBillableSortHeader('market', 'Market')}
+                        {renderEstimatedBillableSortHeader('billRateLevel', 'Bill Rate Level')}
+                        {renderEstimatedBillableSortHeader('payRate', 'Pay Rate', 'right')}
+                        {renderEstimatedBillableSortHeader('rateCardBillRate', 'Bill Rate', 'right')}
+                        {renderEstimatedBillableSortHeader('billToPayRatio', 'Bill-to-Pay', 'right')}
+                        {renderEstimatedBillableSortHeader('estimatedAnnualBillings', 'Est. Annual Billings', 'right')}
+                        {renderEstimatedBillableSortHeader('estimatedAnnualPay', 'Annual Pay', 'right')}
+                        {renderEstimatedBillableSortHeader('estimatedAnnualSpread', 'Est. Spread', 'right')}
                       </tr>
                     </thead>
                     <tbody>
-                      {estimatedBillableEconomicsRows.map((row) => {
+                      {sortedEstimatedBillableEconomicsRows.map((row) => {
                         const key = row.employeeId || `${row.employeeName}-${row.market}-${row.billRateLevel}`;
                         return (
                           <tr key={key}>
@@ -21801,7 +21857,7 @@ Strategies to Improve the CCC
             </div>
           )}
 
-          {isSectionEnabled('rbUnavailableRateInputs') && <div style={cardStyle}>
+          {isSectionEnabled('rbUnavailableRateInputs') && unavailableReports.length > 0 && <div style={cardStyle}>
             <div style={cardTitleStyle}>Reports Awaiting Client Rate Card</div>
             <ul style={{ margin: 0, paddingLeft: '18px', color: '#475569', fontSize: '13px', lineHeight: 1.6 }}>
               {unavailableReports.map((item) => <li key={item}>{item}</li>)}
