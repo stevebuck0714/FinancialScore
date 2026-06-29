@@ -61,7 +61,7 @@ type HiringApplicationRow = {
   rating: number | null;
 };
 
-const HIRING_APPLICATION_PAGE_LIMIT = 10;
+const HIRING_APPLICATION_PAGE_SAFETY_LIMIT = 1000;
 const EXCLUDED_HIRING_JOB_TITLE_PHRASES = ['general consideration'];
 const HIRED_APPLICATION_STATUS_QUERY = {
   applicationStatus: 'HIRED',
@@ -845,14 +845,22 @@ function isHiringApplicationAppliedInRange(application: HiringApplicationRow, op
 
 async function fetchBambooHrHiringApplicationPages(
   settings: BambooHrSettings,
-  query: Record<string, string> = {}
+  query: Record<string, string> = {},
+  options: HiringPayloadOptions = {}
 ): Promise<TableRow[]> {
   const rows: TableRow[] = [];
-  for (let page = 1; page <= HIRING_APPLICATION_PAGE_LIMIT; page += 1) {
+  const endTime = options.endDate?.getTime() ?? null;
+  for (let page = 1; page <= HIRING_APPLICATION_PAGE_SAFETY_LIMIT; page += 1) {
     const response = await fetchBambooHrJson(settings, 'applicant_tracking/applications', { ...query, page: String(page) });
     const pageRows = readCollection(response.json, ['applications']);
     if (pageRows.length === 0) break;
     rows.push(...pageRows);
+    if (endTime != null) {
+      const pageTimes = pageRows
+        .map((row) => parseHiringDateMs(asString(row.appliedDate) || asString(row.createdDate)))
+        .filter((time): time is number => time != null);
+      if (pageTimes.some((time) => time > endTime)) break;
+    }
   }
   return rows;
 }
@@ -885,8 +893,8 @@ async function fetchBambooHrHiringApplications(settings: BambooHrSettings, optio
   const newSince = formatBambooHrNewSince(options.startDate);
   const dateQuery = newSince ? { newSince, sortBy: 'created_date', sortOrder: 'ASC' } : {};
   const [defaultRows, hiredRows] = await Promise.all([
-    fetchBambooHrHiringApplicationPages(settings, dateQuery),
-    fetchBambooHrHiringApplicationPages(settings, { ...HIRED_APPLICATION_STATUS_QUERY, ...dateQuery }),
+    fetchBambooHrHiringApplicationPages(settings, dateQuery, options),
+    fetchBambooHrHiringApplicationPages(settings, { ...HIRED_APPLICATION_STATUS_QUERY, ...dateQuery }, options),
   ]);
   const enrichedHiredRows = await mapWithConcurrency(
     hiredRows,
@@ -1008,7 +1016,7 @@ export async function getBambooHrHiringPayload(companyId: string, options: Hirin
     meta: {
       source: 'BAMBOOHR_HIRING',
       generatedAt: new Date().toISOString(),
-      applicationsPageLimit: HIRING_APPLICATION_PAGE_LIMIT,
+      applicationsPageSafetyLimit: HIRING_APPLICATION_PAGE_SAFETY_LIMIT,
     },
     summary: {
       asOfDate: todayIso(),

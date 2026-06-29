@@ -20931,6 +20931,9 @@ Strategies to Improve the CCC
     const applicantsByJob: any[] = jobs
       .map((job) => {
         const rows = applicationsForJob(job);
+        const activeApplications = rows.filter((row) => isActiveHiringStatus(row.status)).length;
+        const newApplications = rows.filter((row) => isNewHiringStatus(row.status)).length;
+        const totalApplications = rows.length;
         return {
           jobId: job.id || job.jobId,
           title: job.title,
@@ -20938,9 +20941,9 @@ Strategies to Improve the CCC
           clientName: job.clientName,
           division: job.division,
           department: job.department,
-          activeApplicantsCount: rows.filter((row) => isActiveHiringStatus(row.status)).length,
-          newApplicantsCount: rows.filter((row) => isNewHiringStatus(row.status)).length,
-          totalApplicantsCount: rows.length,
+          activeApplicantsCount: Math.max(activeApplications, Number(job.activeApplicantsCount || 0)),
+          newApplicantsCount: Math.max(newApplications, Number(job.newApplicantsCount || 0)),
+          totalApplicantsCount: Math.max(totalApplications, Number(job.totalApplicantsCount || 0)),
         };
       })
       .sort((a, b) => b.activeApplicantsCount - a.activeApplicantsCount || b.totalApplicantsCount - a.totalApplicantsCount);
@@ -21754,31 +21757,36 @@ Strategies to Improve the CCC
             </div>
           )}
 
-          <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)', gap: '16px' }}>
-            {isSectionEnabled('rbEmployeesByBillRateLevel') && <div style={cardStyle}>
-              <div style={cardTitleStyle}>Employees by Bill Rate Level</div>
-              <ResponsiveContainer width="100%" height={360}>
-                <BarChart data={billRateLevelRows.slice(0, 14)} margin={{ top: 8, right: 8, left: 8, bottom: 90 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-                  <XAxis dataKey="key" angle={-30} textAnchor="end" height={110} tick={chartLabelStyle} interval={0} />
-                  <YAxis tick={chartLabelStyle} />
-                  <Tooltip formatter={(value: any) => [Number(value || 0).toLocaleString('en-US'), 'Employees']} />
-                  <Bar dataKey="headcount" fill="#7c3aed" radius={0} />
-                </BarChart>
-              </ResponsiveContainer>
-            </div>}
+          <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 3fr) minmax(0, 2fr)', gap: '16px' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              {isSectionEnabled('rbEmployeesByBillRateLevel') && <div style={cardStyle}>
+                <div style={cardTitleStyle}>Employees by Bill Rate Level</div>
+                <ResponsiveContainer width="100%" height={360}>
+                  <BarChart data={billRateLevelRows.slice(0, 14)} margin={{ top: 8, right: 8, left: 8, bottom: 90 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                    <XAxis dataKey="key" angle={-30} textAnchor="end" height={110} tick={chartLabelStyle} interval={0} />
+                    <YAxis tick={chartLabelStyle} />
+                    <Tooltip formatter={(value: any) => [Number(value || 0).toLocaleString('en-US'), 'Employees']} />
+                    <Bar dataKey="headcount" fill="#7c3aed" radius={0} />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>}
+              {isSectionEnabled('rbEmployeesByMarketBillRateLevel') && <div style={cardStyle}>
+                <div style={cardTitleStyle}>Employees by Market + Bill Rate Level</div>
+                <ResponsiveContainer width="100%" height={360}>
+                  <BarChart data={billRateLevelByMarketRows.slice(0, 18)} margin={{ top: 8, right: 8, left: 8, bottom: 120 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                    <XAxis dataKey="key" angle={-30} textAnchor="end" height={140} tick={chartLabelStyle} interval={0} />
+                    <YAxis tick={chartLabelStyle} />
+                    <Tooltip formatter={(value: any) => [Number(value || 0).toLocaleString('en-US'), 'Employees']} />
+                    <Bar dataKey="headcount" fill="#2563eb" radius={0} />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>}
+            </div>
             {isSectionEnabled('rbEmployeesByMarketBillRateLevel') && <div style={cardStyle}>
               <div style={cardTitleStyle}>Employees by Market + Bill Rate Level</div>
-              <ResponsiveContainer width="100%" height={360}>
-                <BarChart data={billRateLevelByMarketRows.slice(0, 18)} margin={{ top: 8, right: 8, left: 8, bottom: 120 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-                  <XAxis dataKey="key" angle={-30} textAnchor="end" height={140} tick={chartLabelStyle} interval={0} />
-                  <YAxis tick={chartLabelStyle} />
-                  <Tooltip formatter={(value: any) => [Number(value || 0).toLocaleString('en-US'), 'Employees']} />
-                  <Bar dataKey="headcount" fill="#2563eb" radius={0} />
-                </BarChart>
-              </ResponsiveContainer>
-              <div style={{ overflowX: 'auto', maxHeight: '320px', overflowY: 'auto', marginTop: '12px' }}>
+              <div style={{ overflowX: 'auto', maxHeight: '720px', overflowY: 'auto' }}>
                 <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                   <thead><tr><th style={thStyle}>Market</th><th style={thStyle}>Bill Rate Level</th><th style={{ ...thStyle, textAlign: 'right' }}>Employees</th></tr></thead>
                   <tbody>{billRateLevelByMarketRows.map((row) => (

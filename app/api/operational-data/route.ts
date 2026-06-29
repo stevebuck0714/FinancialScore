@@ -60,6 +60,7 @@ const CUSTOMER_CONCENTRATION_CACHE_TTL_SECONDS = 30 * 24 * 60 * 60;
 const CUSTOMER_CONCENTRATION_CACHE_VERSION = 'customer-concentration-exposure-v10';
 const CUSTOMER_REVENUE_SOURCE_VERSION = 'customer-revenue-source-v6-bakers-raw-child-id';
 const CUSTOMER_WIP_SOURCE_VERSION = 'customer-backlog-source-v4';
+const HIRING_SOURCE_VERSION = 'bamboohr-hiring-full-pagination-v2';
 const CUSTOMER_BACKLOG_MIN_ORDER_DATE = '2023-06-01';
 const WHOLESALE_PRODUCTS_REPORT_START_DATE = '2023-01-01';
 const WHOLESALE_PRODUCTS_REPORT_CACHE_TTL_SECONDS = 30 * 24 * 60 * 60;
@@ -2804,6 +2805,7 @@ export async function GET(request: NextRequest) {
               cacheType === 'customers' ? CUSTOMER_CONCENTRATION_CACHE_VERSION : null,
               cacheType === 'customers' ? CUSTOMER_REVENUE_SOURCE_VERSION : null,
               cacheType === 'customers' ? CUSTOMER_WIP_SOURCE_VERSION : null,
+              cacheType === 'hiring' ? HIRING_SOURCE_VERSION : null,
               isWholesaleProductsReportRequest ? CUSTOMER_WIP_SOURCE_VERSION : null,
               cacheType === 'products' && usesSourceSystemProductSnapshots ? 'products-source-system-bakers-raw-child-id-v3' : null,
             ]),
@@ -9443,7 +9445,7 @@ export async function GET(request: NextRequest) {
       }
 
       case 'hiring': {
-        return NextResponse.json(await getBambooHrHiringPayload(companyId, { startDate, endDate }));
+        return cacheOperationalPayload(await getBambooHrHiringPayload(companyId, { startDate, endDate }));
       }
 
       case 'customers-sites': {
