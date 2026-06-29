@@ -1337,6 +1337,7 @@ export default function CompanyDetailsTab({
                                     display: "grid",
                                     gridTemplateColumns:
                                       "minmax(140px, 0.7fr) minmax(150px, 0.8fr) minmax(220px, 0.9fr) minmax(340px, 1.8fr)",
+                                    alignItems: "center",
                                     borderBottom: "1px solid #e2e8f0",
                                     background: isSelected ? "#ecfeff" : "white",
                                     boxShadow: isSelected
@@ -1347,12 +1348,12 @@ export default function CompanyDetailsTab({
                                 >
                                   <div
                                     style={{
-                                      padding: "10px 8px",
+                                      padding: "4px 8px",
                                     }}
                                   >
                                     <div
                                       style={{
-                                        fontSize: "13px",
+                                        fontSize: "12px",
                                         fontWeight: "700",
                                         color: "#1e293b",
                                       }}
@@ -1362,8 +1363,8 @@ export default function CompanyDetailsTab({
                                   </div>
                                   <div
                                     style={{
-                                      padding: "10px 8px",
-                                      fontSize: "13px",
+                                      padding: "4px 8px",
+                                      fontSize: "12px",
                                       fontWeight: "600",
                                       color: "#1e293b",
                                       wordBreak: "break-word",
@@ -1373,12 +1374,12 @@ export default function CompanyDetailsTab({
                                   </div>
                                   <div
                                     style={{
-                                      padding: "10px 8px",
-                                      fontSize: "13px",
+                                      padding: "4px 8px",
+                                      fontSize: "12px",
                                       fontWeight: "600",
                                       color: "#1e293b",
                                       display: "flex",
-                                      alignItems: "flex-start",
+                                      alignItems: "center",
                                       justifyContent: "space-between",
                                       gap: "8px",
                                       whiteSpace: "nowrap",
@@ -1410,11 +1411,11 @@ export default function CompanyDetailsTab({
                                   </div>
                                   <div
                                     style={{
-                                      padding: "10px 8px",
+                                      padding: "4px 8px",
                                       borderLeft: "1px solid #e2e8f0",
                                       color: "#1e293b",
                                       position: "relative",
-                                      minHeight: "42px",
+                                      minHeight: "28px",
                                     }}
                                     onClick={(event) => event.stopPropagation()}
                                   >
