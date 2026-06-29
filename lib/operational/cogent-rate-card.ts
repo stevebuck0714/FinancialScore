@@ -42,14 +42,15 @@ function normalizeWorksheetMatrixValue(value: unknown): string {
 export function normalizeRateCardMarket(value: unknown): string {
   const raw = asString(value);
   const normalized = raw.toLowerCase().replace(/\s+/g, ' ').trim();
+  const tokenized = normalized.replace(/[^a-z0-9]+/g, ' ');
   if (!normalized) return 'Unassigned';
   if (normalized.includes('san francisco') || normalized.includes('south san francisco') || normalized === 'ca-sf' || normalized === 'ca sf' || normalized === 'sf' || normalized.includes('bay area')) return 'CA - SF';
-  if (normalized.includes('san diego') || normalized === 'ca-sd' || normalized === 'ca sd' || normalized === 'sd') return 'CA - SD';
+  if (normalized.includes('san diego') || normalized.includes('la jolla') || normalized.includes('campus point') || normalized === 'ca-sd' || normalized === 'ca sd' || normalized === 'sd') return 'CA - SD';
   if (normalized === 'ca' || normalized.includes('california')) return 'CA';
-  if (normalized === 'in' || normalized.includes('indiana')) return 'IN';
-  if (normalized === 'co' || normalized.includes('colorado')) return 'CO';
-  if (normalized === 'ny' || normalized.includes('new york')) return 'NY';
-  if (normalized === 'ma' || normalized.includes('massachusetts')) return 'MA';
+  if (normalized === 'in' || normalized.includes('indiana') || normalized.includes('indianapolis') || /\bin\b/.test(tokenized)) return 'IN';
+  if (normalized === 'co' || normalized.includes('colorado') || normalized.includes('boulder') || normalized.includes('louisville') || /\bco\b/.test(tokenized)) return 'CO';
+  if (normalized === 'ny' || normalized.includes('new york') || /\bny\b/.test(tokenized)) return 'NY';
+  if (normalized === 'ma' || normalized.includes('massachusetts') || normalized.includes('boston') || normalized.includes('necco') || /\bma\b/.test(tokenized)) return 'MA';
   return raw;
 }
 

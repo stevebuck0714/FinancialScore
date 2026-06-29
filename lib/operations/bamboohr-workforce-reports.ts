@@ -62,6 +62,11 @@ type HiringApplicationRow = {
 };
 
 const HIRING_APPLICATION_PAGE_LIMIT = 10;
+const EXCLUDED_HIRING_JOB_TITLES = new Set(['scientist - general consideration']);
+const HIRED_APPLICATION_STATUS_QUERY = {
+  applicationStatus: 'HIRED',
+  jobStatusGroups: 'ALL',
+};
 
 type CurrentEmployee = {
   id: string;
@@ -503,17 +508,26 @@ function buildEmployeeBillRateMatches(
   const snapshotYear = Number.parseInt(generatedAt.slice(0, 4), 10) || new Date().getFullYear();
   return employees
     .map((employee) => {
-      const market = normalizeBillRateMarket(employee.location);
+      const marketCandidates = Array.from(new Set([
+        normalizeBillRateMarket(employee.location),
+        normalizeBillRateMarket(employee.billRateLevel),
+      ].filter((market) => market && market !== 'Unassigned')));
       const normalizedBillRateLevel = normalizeRateCardLevel(employee.billRateLevel);
-      const rate = findCogentRate(rateCard.rows, {
-        year: snapshotYear,
-        market,
-        billRateLevel: normalizedBillRateLevel,
-      });
+      const matched = marketCandidates
+        .map((market) => ({
+          market,
+          rate: findCogentRate(rateCard.rows, {
+            year: snapshotYear,
+            market,
+            billRateLevel: normalizedBillRateLevel,
+          }),
+        }))
+        .find((candidate) => candidate.rate);
+      const rate = matched?.rate || null;
       if (!rate) return null;
       return {
         employee,
-        market,
+        market: matched?.market || normalizeBillRateMarket(employee.location),
         normalizedBillRateLevel,
         billRate: rate.billRate,
       };
@@ -662,6 +676,15 @@ function currentBambooHrClientName(): string {
   return CURRENT_BAMBOOHR_CLIENT_NAME;
 }
 
+function normalizedHiringTitleForExclusion(value: unknown): string {
+  return String(value || '').trim().replace(/\s+/g, ' ').toLowerCase();
+}
+
+function isExcludedHiringRollupTitle(value: unknown): boolean {
+  const normalized = normalizedHiringTitleForExclusion(value);
+  return normalized ? EXCLUDED_HIRING_JOB_TITLES.has(normalized) : false;
+}
+
 function normalizeHiringJob(row: TableRow, departmentDivisionMap: Map<string, string> = new Map()): HiringJobRow {
   const titleRecord = asRecord(row.title);
   const status = labelValue(row.status) || 'Unknown';
@@ -729,6 +752,9 @@ function normalizeHiringApplication(
       }) || null;
     })();
   const applicant = asRecord(row.applicant);
+  const statusRecord = asRecord(row.status);
+  const normalizedStatus = labelValue(row.status) || 'Unknown';
+  const hiredStatusDate = normalizedStatus.toLowerCase() === 'hired' ? asString(statusRecord.dateChanged) : '';
   const firstName = asString(row.firstName) || asString(applicant.firstName);
   const lastName = asString(row.lastName) || asString(applicant.lastName);
   const applicantName = (
@@ -761,14 +787,14 @@ function normalizeHiringApplication(
     applicantName: applicantName || 'Applicant',
     email: asString(row.email) || asString(row.emailAddress) || asString(applicant.email) || null,
     phone: asString(row.phone) || asString(row.phoneNumber) || asString(applicant.phone) || null,
-    status: labelValue(row.status) || 'Unknown',
+    status: normalizedStatus,
     jobStage: labelValue(row.jobStage) || labelValue(row.stage) || labelValue(row.applicationStage) || labelValue(row.workflowStage) || labelValue(row.status) || 'Unknown',
     applicationCount: 1,
     jobPostedDate: matchedJob?.postedDate || null,
     acceptedOfferDate: asString(row.acceptedOfferDate) || asString(row.offerAcceptedDate) || asString(row.offerAcceptanceDate) || asString(row.acceptedDate) || null,
     appliedDate: asString(row.appliedDate) || asString(row.createdDate) || null,
-    hiredDate: asString(row.hiredDate) || asString(row.hireDate) || null,
-    startDate: asString(row.startDate) || asString(row.employeeStartDate) || asString(row.hireStartDate) || null,
+    hiredDate: asString(row.hiredDate) || asString(row.hireDate) || hiredStatusDate || null,
+    startDate: asString(row.startDate) || asString(row.employeeStartDate) || asString(row.hireStartDate) || asString(applicant.availableStartDate) || null,
     lastUpdated: asString(row.lastUpdated) || asString(row.updatedDate) || asString(row.updatedAt) || null,
     source: labelValue(row.source) || asString(row.referralSource) || asString(row.applicationSource) || asString(row.sourceName) || null,
     location: labelValue(row.location) || labelValue(job.location) || matchedJob?.location || null,
@@ -787,15 +813,62 @@ function countRows<T extends Record<string, unknown>>(rows: T[], key: keyof T, l
     .sort((a, b) => Number(b.count || 0) - Number(a.count || 0));
 }
 
-async function fetchBambooHrHiringApplications(settings: BambooHrSettings): Promise<TableRow[]> {
+async function fetchBambooHrHiringApplicationPages(
+  settings: BambooHrSettings,
+  query: Record<string, string> = {}
+): Promise<TableRow[]> {
   const rows: TableRow[] = [];
   for (let page = 1; page <= HIRING_APPLICATION_PAGE_LIMIT; page += 1) {
-    const response = await fetchBambooHrJson(settings, 'applicant_tracking/applications', { page: String(page) });
+    const response = await fetchBambooHrJson(settings, 'applicant_tracking/applications', { ...query, page: String(page) });
     const pageRows = readCollection(response.json, ['applications']);
     if (pageRows.length === 0) break;
     rows.push(...pageRows);
   }
   return rows;
+}
+
+async function fetchBambooHrApplicationDetail(settings: BambooHrSettings, application: TableRow): Promise<TableRow> {
+  const applicationId = asString(application.id) || asString(application.applicationId);
+  if (!applicationId) return application;
+  try {
+    const response = await fetchBambooHrJson(settings, `applicant_tracking/applications/${encodeURIComponent(applicationId)}`);
+    const detail = asRecord(asRecord(response.json).application || response.json);
+    return {
+      ...application,
+      ...detail,
+      applicant: {
+        ...asRecord(application.applicant),
+        ...asRecord(detail.applicant),
+      },
+      job: {
+        ...asRecord(application.job),
+        ...asRecord(detail.job),
+      },
+      status: detail.status || application.status,
+    };
+  } catch {
+    return application;
+  }
+}
+
+async function fetchBambooHrHiringApplications(settings: BambooHrSettings): Promise<TableRow[]> {
+  const [defaultRows, hiredRows] = await Promise.all([
+    fetchBambooHrHiringApplicationPages(settings),
+    fetchBambooHrHiringApplicationPages(settings, HIRED_APPLICATION_STATUS_QUERY),
+  ]);
+  const enrichedHiredRows = await mapWithConcurrency(
+    hiredRows,
+    MAX_CONCURRENCY,
+    (row) => fetchBambooHrApplicationDetail(settings, row)
+  );
+  return Array.from(
+    new Map(
+      [...defaultRows, ...enrichedHiredRows].map((row) => [
+        asString(row.id) || asString(row.applicationId) || JSON.stringify(row),
+        row,
+      ])
+    ).values()
+  );
 }
 
 export async function getBambooHrHiringPayload(companyId: string) {
@@ -806,16 +879,32 @@ export async function getBambooHrHiringPayload(companyId: string) {
     fetchBambooHrHiringApplications(settings),
   ]);
   const jobRows = readCollection(jobsResponse.json, ['jobs']);
-  const jobs = jobRows.map((row) => normalizeHiringJob(row, departmentDivisionMap));
+  const normalizedJobPairs = jobRows.map((row) => ({
+    raw: row,
+    job: normalizeHiringJob(row, departmentDivisionMap),
+  }));
+  const excludedJobIds = new Set(
+    normalizedJobPairs
+      .filter(({ job }) => isExcludedHiringRollupTitle(job.title))
+      .map(({ job }) => String(job.id || '').trim())
+      .filter(Boolean)
+  );
+  const includedJobPairs = normalizedJobPairs.filter(({ job }) => !isExcludedHiringRollupTitle(job.title));
+  const jobs = includedJobPairs.map(({ job }) => job);
   const jobsByKey = new Map<string, HiringJobRow>();
   jobs.forEach((job, index) => {
-    hiringJobLookupKeys(jobRows[index] || {}).forEach((key) => jobsByKey.set(key, job));
+    hiringJobLookupKeys(includedJobPairs[index]?.raw || {}).forEach((key) => jobsByKey.set(key, job));
     const normalizedJobId = hiringLookupKey(job.id);
     if (normalizedJobId) jobsByKey.set(`id:${normalizedJobId}`, job);
     const normalizedTitle = hiringLookupKey(job.title);
     if (normalizedTitle) jobsByKey.set(`title:${normalizedTitle}`, job);
   });
-  const applications = applicationRows.map((row) => normalizeHiringApplication(row, jobsByKey, jobs, departmentDivisionMap));
+  const applications = applicationRows
+    .map((row) => normalizeHiringApplication(row, jobsByKey, jobs, departmentDivisionMap))
+    .filter((application) => (
+      !isExcludedHiringRollupTitle(application.jobTitle) &&
+      !excludedJobIds.has(String(application.jobId || '').trim())
+    ));
   const applicationsByStatus = countRows(applications, 'status', 'status');
   const applicantsByJob = jobs
     .map((job) => ({

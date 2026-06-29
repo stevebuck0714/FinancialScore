@@ -1775,6 +1775,8 @@ export default function OperationsTab({
     const typeLimit = type === 'sales' ? 5000 : apiType === 'customers' || apiType === 'products' ? 500 : 1000;
     const timeoutMs = apiType === 'customers' && options?.refreshConcentration
       ? 120000
+      : apiType === 'hiring'
+      ? 90000
       : apiType === 'customers' || apiType === 'products'
       ? 45000
       : 25000;
@@ -2039,17 +2041,20 @@ export default function OperationsTab({
     const handleOperationalDataUpdated = (event: Event) => {
       const detail = (event as CustomEvent<{ companyId?: string; types?: string[] }>).detail || {};
       if (detail.companyId && detail.companyId !== selectedCompanyId) return;
-      if (Array.isArray(detail.types) && !detail.types.includes('products')) return;
-      const productCacheKeys = Array.from(operationalDataCacheRef.current.keys()).filter((key) => key.split('|')[1] === 'products');
-      productCacheKeys.forEach((key) => operationalDataCacheRef.current.delete(key));
-      void fetchOperationalTypeWithCache('products', { forceRefresh: true })
-        .then((fresh) => {
-          if (fresh) setProductData(fresh);
-        })
-        .catch((error) => {
-          console.warn('Failed to refresh Products data after operational upload:', error);
-        });
-      if (industrySectorCategory === '42') {
+      const requestedTypes = Array.isArray(detail.types) && detail.types.length > 0 ? detail.types : ['products'];
+      requestedTypes.forEach((rawType) => {
+        const type = rawType as OpsDataType;
+        const matchingCacheKeys = Array.from(operationalDataCacheRef.current.keys()).filter((key) => key.split('|')[1] === type);
+        matchingCacheKeys.forEach((key) => operationalDataCacheRef.current.delete(key));
+        void fetchOperationalTypeWithCache(type, { forceRefresh: true })
+          .then((fresh) => {
+            if (fresh) applyOperationalTypeData(type, fresh);
+          })
+          .catch((error) => {
+            console.warn(`Failed to refresh ${type} data after operational upload:`, error);
+          });
+      });
+      if (requestedTypes.includes('products') && industrySectorCategory === '42') {
         void fetchWholesaleProductsReportData({ forceRefresh: true })
           .then((fresh) => {
             if (fresh) setWholesaleProductsData(fresh);
@@ -2892,13 +2897,14 @@ export default function OperationsTab({
   };
 
   const renderFilters = () => {
+    const activeDataType = mapModuleToDataType(activeTab);
     if (
       isOverviewOnly ||
       activeTab === 'overview' ||
       activeTab === 'dashboard' ||
       activeTab === 'forecast' ||
       activeTab === 'loans' ||
-      mapModuleToDataType(activeTab) === 'hiring' ||
+      activeDataType === 'hiring' ||
       activeTab === 'working_capital_forecast' ||
       activeTab === 'working-capital-forecast'
     ) {
@@ -2983,6 +2989,7 @@ export default function OperationsTab({
         </div>
 
         <div style={{ display: 'flex', gap: '8px', marginLeft: 'auto', alignItems: 'center' }}>
+          {activeDataType === 'revenue-billables' && renderOperationalClientSelector()}
           {customerDateRangeSaveStatus && (
             <span style={{ fontSize: '12px', color: customerDateRangeSaveStatus.includes('failed') ? '#dc2626' : '#16a34a', fontWeight: 600 }}>
               {customerDateRangeSaveStatus}
@@ -20738,6 +20745,15 @@ Strategies to Improve the CCC
       if (selectedHiringEndTime != null && appliedTime > selectedHiringEndTime) return false;
       return true;
     });
+    const openJobsInSelectedHiringRange = jobs.filter((job) => {
+      if (String(job.status || '').toLowerCase() !== 'open') return false;
+      const posted = parseDateValue(job.postedDate);
+      if (!posted) return selectedHiringStartTime == null && selectedHiringEndTime == null;
+      const postedTime = posted.getTime();
+      if (selectedHiringStartTime != null && postedTime < selectedHiringStartTime) return false;
+      if (selectedHiringEndTime != null && postedTime > selectedHiringEndTime) return false;
+      return true;
+    });
     const applicationsByStatus: any[] = Array.from(
       applications.reduce((counts: Map<string, number>, application) => {
         const status = normalizeHiringStatus(application.status);
@@ -21144,11 +21160,11 @@ Strategies to Improve the CCC
             <div style={{ ...cardTitleStyle, marginBottom: '14px' }}>Hiring Summary</div>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '12px' }}>
               {[
-                { label: 'Open Jobs', value: Number(summary.openJobs || 0).toLocaleString('en-US'), color: '#1d4ed8' },
+                { label: 'Open Jobs Posted', value: Number(openJobsInSelectedHiringRange.length || 0).toLocaleString('en-US'), color: '#1d4ed8' },
                 { label: 'New Applications', value: Number(applications.filter((row) => isNewHiringStatus(row.status)).length || 0).toLocaleString('en-US'), color: '#7c3aed' },
                 { label: 'Interviewed', value: Number(applications.filter((row) => hasHiringStatusKeyword(row.status, 'interview')).length || 0).toLocaleString('en-US'), color: '#0f766e' },
                 { label: 'Meet & Greet', value: Number(applications.filter((row) => hasHiringStatusKeyword(row.status, 'meet') || hasHiringStatusKeyword(row.status, 'greet')).length || 0).toLocaleString('en-US'), color: '#b45309' },
-                { label: 'Applications Sampled', value: Number(applications.length || 0).toLocaleString('en-US'), color: '#0f172a' },
+                { label: 'Applications in Range', value: Number(applications.length || 0).toLocaleString('en-US'), color: '#0f172a' },
                 { label: 'Avg Time to Fill', value: formatHiringDays(avgTimeToFillDays), color: '#1d4ed8' },
                 { label: 'Avg Time Open', value: formatHiringDays(avgTimeOpenDays), color: '#7c3aed' },
               ].map((kpi) => (
@@ -21183,7 +21199,7 @@ Strategies to Improve the CCC
             )}
             {isSectionEnabled('hiringApplicationsByStatus') && (
               <div style={cardStyle}>
-                <div style={cardTitleStyle}>Applications by Status</div>
+                <div style={cardTitleStyle}>Job Stage</div>
                 <ResponsiveContainer width="100%" height={340}>
                   <BarChart data={applicationsByStatus} margin={{ top: 8, right: 8, left: 8, bottom: 40 }}>
                     <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
@@ -21243,9 +21259,9 @@ Strategies to Improve the CCC
           <div style={cardStyle}>
             <div style={cardTitleStyle}>Funnel by Role</div>
             <ResponsiveContainer width="100%" height={360}>
-              <BarChart data={funnelByRoleRows.slice(0, 12)} margin={{ top: 8, right: 8, left: 8, bottom: 90 }}>
+              <BarChart data={funnelByRoleRows.slice(0, 12)} margin={{ top: 110, right: 8, left: 8, bottom: 24 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-                <XAxis dataKey="role" angle={-30} textAnchor="end" height={110} tick={chartLabelStyle} interval={0} />
+                <XAxis dataKey="role" angle={-30} textAnchor="start" height={110} orientation="top" tick={chartLabelStyle} interval={0} />
                 <YAxis tick={chartLabelStyle} />
                 <Tooltip formatter={(value: any, name: any) => [Number(value || 0).toLocaleString('en-US'), String(name)]} />
                 <Legend />
@@ -21651,7 +21667,6 @@ Strategies to Improve the CCC
 
       return (
         <div style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
-          {renderOperationalClientSelector()}
           {isSectionEnabled('rbBillRateLevelSummary') && (
             <div style={{ ...cardStyle, paddingBottom: '16px' }}>
               <div style={{ ...cardTitleStyle, marginBottom: '14px' }}>Bill Rate Level Coverage</div>
@@ -21788,7 +21803,6 @@ Strategies to Improve the CCC
 
     return (
       <div style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
-        {renderOperationalClientSelector()}
         <div style={{ ...cardStyle, paddingBottom: '16px' }}>
           <div style={{ ...cardTitleStyle, marginBottom: '14px' }}>Revenue &amp; Billables Summary</div>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: '12px' }}>
@@ -22023,7 +22037,7 @@ Strategies to Improve the CCC
           )}
 
           <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)', gap: '16px' }}>
-            {isSectionEnabled('ueCostByBillRateLevel') && <div style={cardStyle}>
+            {isSectionEnabled('ueCostByBillRateLevel') && <div style={{ ...cardStyle, gridColumn: '1 / -1' }}>
               <div style={cardTitleStyle}>Cost by Bill Rate Level</div>
               <div style={{ overflowX: 'auto', maxHeight: '420px', overflowY: 'auto' }}>
                 <table style={{ width: '100%', borderCollapse: 'collapse' }}>
