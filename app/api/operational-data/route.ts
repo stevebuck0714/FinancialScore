@@ -21,6 +21,7 @@ import {
   buildCustomersSitesMock,
 } from '@/lib/operations/staffing-mock-data';
 import {
+  BAMBOOHR_WORKFORCE_RATE_MATCH_VERSION,
   buildAndSaveBambooHrWorkforceReportSnapshot,
   getBambooHrHiringPayload,
   getBambooHrLaborSchedulingPayload,
@@ -509,11 +510,13 @@ async function getFreshBambooHrWorkforceSnapshot(companyId: string) {
   const matchedEmployees = Array.isArray(snapshot.revenueBillables?.estimatedBillableEconomicsByEmployee)
     ? snapshot.revenueBillables.estimatedBillableEconomicsByEmployee.length
     : 0;
+  const snapshotRateMatchVersion = Number((snapshot as { rateMatchVersion?: unknown }).rateMatchVersion || 0);
   const rateCardIsNewer =
     Number.isFinite(rateCardParsedAt) &&
     (!Number.isFinite(snapshotGeneratedAt) || rateCardParsedAt > snapshotGeneratedAt);
+  const rateMatcherIsStale = snapshotRateMatchVersion < BAMBOOHR_WORKFORCE_RATE_MATCH_VERSION;
 
-  if (rateCardIsNewer || matchedEmployees === 0) {
+  if (rateCardIsNewer || rateMatcherIsStale || matchedEmployees === 0) {
     return buildAndSaveBambooHrWorkforceReportSnapshot(companyId);
   }
   return snapshot;

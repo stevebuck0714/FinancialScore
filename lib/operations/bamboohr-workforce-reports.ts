@@ -162,6 +162,7 @@ export type BambooHrWorkforceReportSnapshot = {
   source: 'BAMBOOHR_WORKFORCE';
   generatedAt: string;
   companyId: string;
+  rateMatchVersion?: number;
   employeesSampled: number;
   summary: {
     asOfDate: string;
@@ -233,6 +234,7 @@ export type BambooHrWorkforceReportSnapshot = {
 };
 
 const SNAPSHOT_METADATA_KEY = 'bambooHrWorkforceReportSnapshot';
+export const BAMBOOHR_WORKFORCE_RATE_MATCH_VERSION = 2;
 const MAX_CONCURRENCY = 8;
 const CURRENT_BAMBOOHR_CLIENT_NAME = 'Eli Lilly';
 const ESTIMATED_ANNUAL_BILLABLE_HOURS = 1920;
@@ -1071,6 +1073,7 @@ function buildPayload(
     source: 'BAMBOOHR_WORKFORCE',
     generatedAt,
     companyId,
+    rateMatchVersion: BAMBOOHR_WORKFORCE_RATE_MATCH_VERSION,
     employeesSampled: employees.length,
     summary: {
       asOfDate: generatedAt.slice(0, 10),
