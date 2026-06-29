@@ -299,11 +299,10 @@ export default function CompanyDetailsTab({
       if (currentUserId && companyUsers.some((u) => u.id === currentUserId)) {
         return prev;
       }
-      if (!companyUsers[0]) return prev;
-      return {
-        ...prev,
-        [selectedCompanyId]: companyUsers[0].id,
-      };
+      if (!currentUserId) return prev;
+      const next = { ...prev };
+      delete next[selectedCompanyId];
+      return next;
     });
   }, [users, selectedCompanyId, companies]);
 
@@ -503,6 +502,11 @@ export default function CompanyDetailsTab({
         }
       }
 
+      setSelectedCompanyUsers((prev) => {
+        const next = { ...prev };
+        delete next[selectedCompanyId];
+        return next;
+      });
       alert("User permissions updated successfully!");
     } catch (error) {
       alert(
@@ -779,11 +783,9 @@ export default function CompanyDetailsTab({
                             String(u.consultantId || "") ===
                               String(comp.consultantId || ""))),
                     );
-                    const selectedUserId =
-                      selectedCompanyUsers[comp.id] || companyUsers[0]?.id || "";
+                    const selectedUserId = selectedCompanyUsers[comp.id] || "";
                     const selectedUser =
-                      companyUsers.find((u) => u.id === selectedUserId) ||
-                      companyUsers[0];
+                      companyUsers.find((u) => u.id === selectedUserId) || null;
                     const selectedUserPerm = selectedUser
                       ? userPermissions[selectedUser.id] || {
                           role: "user" as const,
@@ -1183,7 +1185,7 @@ export default function CompanyDetailsTab({
                           style={{
                             border: "1px solid #e2e8f0",
                             borderRadius: "8px",
-                            overflow: "hidden",
+                            overflow: "visible",
                           }}
                         >
                           <div
@@ -1336,7 +1338,10 @@ export default function CompanyDetailsTab({
                                     gridTemplateColumns:
                                       "minmax(140px, 0.7fr) minmax(150px, 0.8fr) minmax(220px, 0.9fr) minmax(340px, 1.8fr)",
                                     borderBottom: "1px solid #e2e8f0",
-                                    background: isSelected ? "#f8fafc" : "white",
+                                    background: isSelected ? "#ecfeff" : "white",
+                                    boxShadow: isSelected
+                                      ? "inset 0 0 0 2px #0f766e"
+                                      : "none",
                                     cursor: "pointer",
                                   }}
                                 >
@@ -1408,6 +1413,8 @@ export default function CompanyDetailsTab({
                                       padding: "10px 8px",
                                       borderLeft: "1px solid #e2e8f0",
                                       color: "#1e293b",
+                                      position: "relative",
+                                      minHeight: "42px",
                                     }}
                                     onClick={(event) => event.stopPropagation()}
                                   >
@@ -1415,16 +1422,23 @@ export default function CompanyDetailsTab({
                                     !selectedUser ||
                                     !selectedUserPerm ||
                                     !selectedDataRoomRule ? (
+                                      null
+                                    ) : (
                                       <div
                                         style={{
-                                          fontSize: "12px",
-                                          color: "#334155",
+                                          position: "absolute",
+                                          top: "8px",
+                                          left: "8px",
+                                          right: "8px",
+                                          zIndex: 5,
+                                          background: "white",
+                                          border: "1px solid #e2e8f0",
+                                          borderRadius: "8px",
+                                          boxShadow:
+                                            "0 8px 24px rgba(15, 23, 42, 0.12)",
+                                          padding: "10px",
                                         }}
                                       >
-                                        Select this user to manage access.
-                                      </div>
-                                    ) : (
-                                      <>
                                         <div
                                           style={{
                                             display: "flex",
@@ -1892,7 +1906,7 @@ export default function CompanyDetailsTab({
                                             );
                                           })}
                                         </div>
-                                      </>
+                                      </div>
                                     )}
                                   </div>
                                 </div>
