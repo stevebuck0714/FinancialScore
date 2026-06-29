@@ -170,6 +170,22 @@ export default function CompanyManagementTab(props: CompanyManagementTabProps) {
         >
           Documentation
         </button>
+        <button
+          onClick={() => props.setCompanyManagementSubTab('team-assessment')}
+          style={{
+            padding: '10px 20px',
+            background: 'none',
+            color: props.companyManagementSubTab === 'team-assessment' ? '#2751d0' : '#64748b',
+            border: 'none',
+            borderBottom: props.companyManagementSubTab === 'team-assessment' ? '3px solid #2751d0' : '3px solid transparent',
+            fontSize: '14px',
+            fontWeight: '600',
+            cursor: 'pointer',
+            transition: 'all 0.2s'
+          }}
+        >
+          Team Assessment
+        </button>
       </div>
       
       {/* Profile Sub-tab */}
@@ -297,6 +313,64 @@ export default function CompanyManagementTab(props: CompanyManagementTabProps) {
           grantExistingUserAccess={props.grantExistingUserAccess}
           onUserPermissionsUpdated={props.onUserPermissionsUpdated}
           setSelectedCompanyId={props.setSelectedCompanyId}
+          userSection="company-users"
+        />
+      )}
+
+      {/* Team Assessment Sub-tab */}
+      {props.companyManagementSubTab === 'team-assessment' && (
+        <CompanyDetailsTab
+          currentUser={props.currentUser}
+          selectedCompanyId={props.selectedCompanyId}
+          companies={props.companies}
+          users={props.users}
+          assessmentRecords={props.assessmentRecords}
+          isLoading={props.isLoading}
+          newCompanyName={props.newCompanyName}
+          selectedAffiliateCodeForNewCompany={props.selectedAffiliateCodeForNewCompany}
+          setSelectedAffiliateCodeForNewCompany={props.setSelectedAffiliateCodeForNewCompany}
+          setNewCompanyName={props.setNewCompanyName}
+          addCompany={props.addCompany}
+          setEditingCompanyId={props.setEditingCompanyId}
+          setCompanyAddressStreet={props.setCompanyAddressStreet}
+          setCompanyAddressCity={props.setCompanyAddressCity}
+          setCompanyAddressState={props.setCompanyAddressState}
+          setCompanyAddressZip={props.setCompanyAddressZip}
+          setCompanyAddressCountry={props.setCompanyAddressCountry}
+          setCompanyIndustrySector={props.setCompanyIndustrySector}
+          setShowCompanyDetailsModal={props.setShowCompanyDetailsModal}
+          deleteUser={props.deleteUser}
+          newCompanyUserName={props.newCompanyUserName}
+          setNewCompanyUserName={props.setNewCompanyUserName}
+          newCompanyUserTitle={props.newCompanyUserTitle}
+          setNewCompanyUserTitle={props.setNewCompanyUserTitle}
+          newCompanyUserEmail={props.newCompanyUserEmail}
+          setNewCompanyUserEmail={props.setNewCompanyUserEmail}
+          newCompanyUserPhone={props.newCompanyUserPhone}
+          setNewCompanyUserPhone={props.setNewCompanyUserPhone}
+          newCompanyUserPassword={props.newCompanyUserPassword}
+          setNewCompanyUserPassword={props.setNewCompanyUserPassword}
+          addUser={props.addUser}
+          existingCompanyUserName={props.existingCompanyUserName}
+          setExistingCompanyUserName={props.setExistingCompanyUserName}
+          existingCompanyUserEmail={props.existingCompanyUserEmail}
+          setExistingCompanyUserEmail={props.setExistingCompanyUserEmail}
+          newAssessmentUserName={props.newAssessmentUserName}
+          setNewAssessmentUserName={props.setNewAssessmentUserName}
+          newAssessmentUserTitle={props.newAssessmentUserTitle}
+          setNewAssessmentUserTitle={props.setNewAssessmentUserTitle}
+          newAssessmentUserEmail={props.newAssessmentUserEmail}
+          setNewAssessmentUserEmail={props.setNewAssessmentUserEmail}
+          newAssessmentUserPassword={props.newAssessmentUserPassword}
+          setNewAssessmentUserPassword={props.setNewAssessmentUserPassword}
+          existingAssessmentUserName={props.existingAssessmentUserName}
+          setExistingAssessmentUserName={props.setExistingAssessmentUserName}
+          existingAssessmentUserEmail={props.existingAssessmentUserEmail}
+          setExistingAssessmentUserEmail={props.setExistingAssessmentUserEmail}
+          grantExistingUserAccess={props.grantExistingUserAccess}
+          onUserPermissionsUpdated={props.onUserPermissionsUpdated}
+          setSelectedCompanyId={props.setSelectedCompanyId}
+          userSection="team-assessment"
         />
       )}
 

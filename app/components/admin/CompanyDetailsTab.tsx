@@ -12,6 +12,8 @@ interface User {
   phone?: string | null;
   title?: string | null;
   companyId?: string;
+  homeCompanyId?: string | null;
+  isExternalCompanyUser?: boolean;
   consultantId?: string | null;
   role?: string;
   userType?: string;
@@ -144,6 +146,7 @@ interface CompanyDetailsTabProps {
   ) => void;
   onUserPermissionsUpdated?: (user: User) => void;
   setSelectedCompanyId: (id: string) => void;
+  userSection?: "company-users" | "team-assessment" | "all";
 }
 
 export default function CompanyDetailsTab({
@@ -197,6 +200,7 @@ export default function CompanyDetailsTab({
   grantExistingUserAccess,
   onUserPermissionsUpdated,
   setSelectedCompanyId,
+  userSection = "all",
 }: CompanyDetailsTabProps) {
   // State for user permissions
   const [userPermissions, setUserPermissions] = React.useState<{
@@ -205,9 +209,13 @@ export default function CompanyDetailsTab({
       sidebarAccess: string[];
     };
   }>({});
-  const [expandedCompanyUsers, setExpandedCompanyUsers] = React.useState<
-    Record<string, boolean>
+  const [selectedCompanyUsers, setSelectedCompanyUsers] = React.useState<
+    Record<string, string>
   >({});
+  const [expandedUserSections, setExpandedUserSections] = React.useState({
+    company: true,
+    external: true,
+  });
   const [savingUserId, setSavingUserId] = React.useState<string | null>(null);
   const [dataRoomPermissionsByUser, setDataRoomPermissionsByUser] =
     React.useState<Record<string, DataRoomPermissionRule>>({});
@@ -222,6 +230,26 @@ export default function CompanyDetailsTab({
     React.useState<string | null>(null);
   const [expandedDataRoomOverridesByUser, setExpandedDataRoomOverridesByUser] =
     React.useState<Record<string, boolean>>({});
+
+  const splitName = (name: string) => {
+    const parts = name.trim().split(/\s+/).filter(Boolean);
+    return {
+      firstName: parts[0] || "",
+      lastName: parts.slice(1).join(" "),
+    };
+  };
+
+  const updateCombinedName = (
+    currentName: string,
+    field: "first" | "last",
+    value: string,
+    setter: (name: string) => void,
+  ) => {
+    const { firstName, lastName } = splitName(currentName);
+    const nextFirst = field === "first" ? value : firstName;
+    const nextLast = field === "last" ? value : lastName;
+    setter([nextFirst.trim(), nextLast.trim()].filter(Boolean).join(" "));
+  };
 
   // Initialize permissions from users
   React.useEffect(() => {
@@ -251,6 +279,32 @@ export default function CompanyDetailsTab({
         };
       });
     setUserPermissions(permissions);
+  }, [users, selectedCompanyId, companies]);
+
+  React.useEffect(() => {
+    if (!selectedCompanyId) return;
+
+    const company = companies.find((c) => c.id === selectedCompanyId);
+    const companyUsers = users.filter(
+      (u) =>
+        u.companyId === selectedCompanyId &&
+        (u.userType === "company" ||
+          (String(u.role || "").toUpperCase() === "CONSULTANT" &&
+            Boolean(company?.consultantId) &&
+            String(u.consultantId || "") === String(company?.consultantId || ""))),
+    );
+
+    setSelectedCompanyUsers((prev) => {
+      const currentUserId = prev[selectedCompanyId];
+      if (currentUserId && companyUsers.some((u) => u.id === currentUserId)) {
+        return prev;
+      }
+      if (!companyUsers[0]) return prev;
+      return {
+        ...prev,
+        [selectedCompanyId]: companyUsers[0].id,
+      };
+    });
   }, [users, selectedCompanyId, companies]);
 
   React.useEffect(() => {
@@ -406,6 +460,7 @@ export default function CompanyDetailsTab({
 
   const saveUserPermissions = async (userId: string) => {
     setSavingUserId(userId);
+    setSavingDataRoomPermissionsUserId(userId);
     try {
       const response = await fetch("/api/users/permissions", {
         method: "PATCH",
@@ -426,6 +481,28 @@ export default function CompanyDetailsTab({
       if (data?.user) {
         onUserPermissionsUpdated?.(data.user);
       }
+
+      if (!dataRoomPermissionsError) {
+        const rule = getDataRoomRule(userId);
+        const dataRoomResponse = await fetch("/api/dataroom/permissions", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            companyId: selectedCompanyId,
+            userId,
+            default: rule.default,
+            folders: rule.folders,
+            documents: rule.documents,
+          }),
+        });
+        const dataRoomData = await dataRoomResponse.json();
+        if (!dataRoomResponse.ok) {
+          throw new Error(
+            dataRoomData?.error || "Failed to save DataRoom permissions",
+          );
+        }
+      }
+
       alert("User permissions updated successfully!");
     } catch (error) {
       alert(
@@ -435,6 +512,7 @@ export default function CompanyDetailsTab({
       );
     } finally {
       setSavingUserId(null);
+      setSavingDataRoomPermissionsUserId(null);
     }
   };
 
@@ -462,13 +540,6 @@ export default function CompanyDetailsTab({
         ...prev[userId],
         role,
       },
-    }));
-  };
-
-  const toggleCompanyUserExpanded = (userId: string) => {
-    setExpandedCompanyUsers((prev) => ({
-      ...prev,
-      [userId]: !prev[userId],
     }));
   };
 
@@ -532,36 +603,6 @@ export default function CompanyDetailsTab({
     });
   };
 
-  const saveDataRoomPermissions = async (userId: string) => {
-    setSavingDataRoomPermissionsUserId(userId);
-    try {
-      const rule = getDataRoomRule(userId);
-      const response = await fetch("/api/dataroom/permissions", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          companyId: selectedCompanyId,
-          userId,
-          default: rule.default,
-          folders: rule.folders,
-          documents: rule.documents,
-        }),
-      });
-      const data = await response.json();
-      if (!response.ok) {
-        throw new Error(data?.error || "Failed to save DataRoom permissions");
-      }
-      alert("DataRoom permissions updated successfully!");
-    } catch (error) {
-      alert(
-        error instanceof Error
-          ? error.message
-          : "Failed to update DataRoom permissions",
-      );
-    } finally {
-      setSavingDataRoomPermissionsUserId(null);
-    }
-  };
   // For business users, auto-select their company if not already selected
   React.useEffect(() => {
     if (
@@ -708,26 +749,17 @@ export default function CompanyDetailsTab({
         companies
           .filter((c) => c.id === selectedCompanyId)
           .map((comp) => (
-            <div
-              key={comp.id}
-              style={{
-                background: "#f8fafc",
-                borderRadius: "8px",
-                padding: "24px",
-                border: "2px solid #667eea",
-              }}
-            >
-              {/* Users Section - Side by Side */}
+            <React.Fragment key={comp.id}>
+              {/* Users Section */}
               <div
                 style={{
                   display: "grid",
-                  gridTemplateColumns: "1fr 1fr",
+                  gridTemplateColumns: userSection === "all" ? "1fr 1fr" : "1fr",
                   gap: "16px",
-                  borderTop: "2px solid #cbd5e1",
-                  paddingTop: "16px",
                 }}
               >
                 {/* Company Users (Management Team) */}
+                {userSection !== "team-assessment" && (
                 <div
                   style={{
                     background: "white",
@@ -736,18 +768,8 @@ export default function CompanyDetailsTab({
                     border: "2px solid #10b981",
                   }}
                 >
-                  <h4
-                    style={{
-                      fontSize: "15px",
-                      fontWeight: "600",
-                      color: "#475569",
-                      margin: "0 0 6px 0",
-                    }}
-                  >
-                    Company Users
-                  </h4>
-                  {users
-                    .filter(
+                  {(() => {
+                    const companyUsers = users.filter(
                       (u) =>
                         u.companyId === comp.id &&
                         (u.userType === "company" ||
@@ -756,834 +778,1139 @@ export default function CompanyDetailsTab({
                             Boolean(comp.consultantId) &&
                             String(u.consultantId || "") ===
                               String(comp.consultantId || ""))),
+                    );
+                    const selectedUserId =
+                      selectedCompanyUsers[comp.id] || companyUsers[0]?.id || "";
+                    const selectedUser =
+                      companyUsers.find((u) => u.id === selectedUserId) ||
+                      companyUsers[0];
+                    const selectedUserPerm = selectedUser
+                      ? userPermissions[selectedUser.id] || {
+                          role: "user" as const,
+                          sidebarAccess: DEFAULT_ALLOWED_SECTIONS,
+                        }
+                      : null;
+                    const selectedAllowedSections = Array.isArray(
+                      selectedUserPerm?.sidebarAccess,
                     )
-                    .map((u) => {
-                      const userPerm = userPermissions[u.id] || {
-                        role: "user",
-                        sidebarAccess: DEFAULT_ALLOWED_SECTIONS,
-                      };
-                      const isAdmin = userPerm.role === "admin";
-                      const allowedSections = Array.isArray(userPerm.sidebarAccess)
-                        ? userPerm.sidebarAccess
-                        : DEFAULT_ALLOWED_SECTIONS;
-                      const isExpanded = Boolean(expandedCompanyUsers[u.id]);
-                      const dataRoomRule = getDataRoomRule(u.id);
-                      const showDataRoomOverrides = Boolean(
-                        expandedDataRoomOverridesByUser[u.id],
-                      );
+                      ? selectedUserPerm.sidebarAccess
+                      : DEFAULT_ALLOWED_SECTIONS;
+                    const selectedDataRoomRule = selectedUser
+                      ? getDataRoomRule(selectedUser.id)
+                      : null;
+                    const showDataRoomOverrides = selectedUser
+                      ? Boolean(expandedDataRoomOverridesByUser[selectedUser.id])
+                      : false;
+                    const selectedUserIsConsultant =
+                      String(selectedUser?.role || "").toUpperCase() ===
+                      "CONSULTANT";
+                    const isExternalUser = (user: User) =>
+                      Boolean(user.isExternalCompanyUser) ||
+                      (Boolean(user.homeCompanyId) &&
+                        String(user.homeCompanyId) !== String(comp.id));
+                    const directCompanyUsers = companyUsers.filter(
+                      (user) => !isExternalUser(user),
+                    );
+                    const externalCompanyUsers = companyUsers.filter(isExternalUser);
+                    const userGroups = [
+                      {
+                        id: "company" as const,
+                        label: "Company Users",
+                        users: directCompanyUsers,
+                      },
+                      {
+                        id: "external" as const,
+                        label: "External Users",
+                        users: externalCompanyUsers,
+                      },
+                    ];
 
-                      return (
+                    return (
+                      <>
                         <div
-                          key={u.id}
                           style={{
-                            background: "#f0fdf4",
-                            borderRadius: "6px",
-                            padding: "6px",
-                            marginBottom: "4px",
-                            border: "1px solid #86efac",
+                            display: "grid",
+                            gridTemplateColumns: "2fr 1.5fr",
+                            gap: "10px",
+                            marginBottom: "12px",
+                            alignItems: "start",
                           }}
                         >
                           <div
                             style={{
-                              display: "flex",
-                              justifyContent: "space-between",
-                              alignItems: "start",
-                              marginBottom: "6px",
+                              background: "white",
+                              border: "1px solid #e2e8f0",
+                              borderRadius: "8px",
+                              padding: "10px",
                             }}
                           >
-                            <div style={{ flex: 1 }}>
-                              <div
-                                style={{
-                                  fontSize: "13px",
-                                  fontWeight: "600",
-                                  color: "#1e293b",
-                                  marginBottom: "2px",
-                                  display: "flex",
-                                  alignItems: "center",
-                                  gap: "6px",
-                                  flexWrap: "wrap",
-                                }}
-                              >
-                                <span>{u.name}</span>
-                                {u.title && (
-                                  <span
-                                    style={{
-                                      fontSize: "11px",
-                                      fontWeight: "500",
-                                      color: "#059669",
-                                      background: "#d1fae5",
-                                      padding: "1px 6px",
-                                      borderRadius: "4px",
-                                    }}
-                                  >
-                                    {u.title}
-                                  </span>
-                                )}
-                              </div>
-                              <div
-                                style={{
-                                  fontSize: "11px",
-                                  color: "#64748b",
-                                  display: "flex",
-                                  alignItems: "center",
-                                  gap: "6px",
-                                  flexWrap: "wrap",
-                                }}
-                              >
-                                <div>
-                                  <span style={{ fontWeight: "600" }}>
-                                    Email:
-                                  </span>{" "}
-                                  {u.email}
-                                </div>
-                                {u.phone && (
-                                  <div>
-                                    <span style={{ fontWeight: "600" }}>
-                                      Phone:
-                                    </span>{" "}
-                                    {u.phone}
-                                  </div>
-                                )}
-                              </div>
-                            </div>
                             <div
                               style={{
                                 display: "flex",
                                 alignItems: "center",
-                                gap: "4px",
-                              }}
-                            >
-                              <button
-                                onClick={() => toggleCompanyUserExpanded(u.id)}
-                                style={{
-                                  padding: "3px 6px",
-                                  background: "white",
-                                  color: "#1e293b",
-                                  border: "1px solid #cbd5e1",
-                                  borderRadius: "4px",
-                                  fontSize: "9px",
-                                  cursor: "pointer",
-                                  fontWeight: "700",
-                                }}
-                              >
-                                {isExpanded ? "Collapse" : "Expand"}
-                              </button>
-                              <button
-                                onClick={() => deleteUser(u.id, comp.id)}
-                                disabled={String(u.role || "").toUpperCase() === "CONSULTANT"}
-                                style={{
-                                  padding: "3px 6px",
-                                  background:
-                                    String(u.role || "").toUpperCase() ===
-                                    "CONSULTANT"
-                                      ? "#cbd5e1"
-                                      : "#ef4444",
-                                  color: "white",
-                                  border: "none",
-                                  borderRadius: "4px",
-                                  fontSize: "9px",
-                                  cursor:
-                                    String(u.role || "").toUpperCase() ===
-                                    "CONSULTANT"
-                                      ? "not-allowed"
-                                      : "pointer",
-                                  fontWeight: "600",
-                                }}
-                              >
-                                Delete
-                              </button>
-                            </div>
-                          </div>
-
-                          {/* Role Selection */}
-                          {isExpanded && (
-                            <div
-                              style={{
-                                borderTop: "1px solid #d1fae5",
-                                paddingTop: "6px",
-                              }}
-                            >
-                            <div
-                              style={{
-                                fontSize: "12px",
-                                fontWeight: "600",
-                                color: "#475569",
+                                justifyContent: "space-between",
+                                gap: "8px",
                                 marginBottom: "8px",
                               }}
                             >
-                              User Role:
+                              <h5
+                                style={{
+                                  fontSize: "12px",
+                                  fontWeight: "700",
+                                  color: "#475569",
+                                  margin: 0,
+                                }}
+                              >
+                                Create New Company User
+                              </h5>
+                              <div
+                                style={{
+                                  fontSize: "10px",
+                                  color: "#1e293b",
+                                  fontWeight: "600",
+                                  lineHeight: "1.3",
+                                  textAlign: "right",
+                                }}
+                              >
+                                Password is required for new users. 8+ chars with uppercase, lowercase, number, and special character.
+                              </div>
                             </div>
+                            <div
+                              style={{
+                                display: "grid",
+                                gridTemplateColumns:
+                                  "repeat(3, minmax(0, 1fr))",
+                                gap: "6px",
+                              }}
+                            >
+                              <input
+                                type="text"
+                                name={`company_user_first_name_${Date.now()}`}
+                                placeholder="First Name"
+                                value={splitName(newCompanyUserName).firstName}
+                                onChange={(e) =>
+                                  updateCombinedName(
+                                    newCompanyUserName,
+                                    "first",
+                                    e.target.value,
+                                    setNewCompanyUserName,
+                                  )
+                                }
+                                autoComplete="off"
+                                style={{
+                                  padding: "8px",
+                                  borderRadius: "6px",
+                                  border: "1px solid #cbd5e1",
+                                  fontSize: "12px",
+                                }}
+                              />
+                              <input
+                                type="text"
+                                name={`company_user_last_name_${Date.now()}`}
+                                placeholder="Last Name"
+                                value={splitName(newCompanyUserName).lastName}
+                                onChange={(e) =>
+                                  updateCombinedName(
+                                    newCompanyUserName,
+                                    "last",
+                                    e.target.value,
+                                    setNewCompanyUserName,
+                                  )
+                                }
+                                autoComplete="off"
+                                style={{
+                                  padding: "8px",
+                                  borderRadius: "6px",
+                                  border: "1px solid #cbd5e1",
+                                  fontSize: "12px",
+                                }}
+                              />
+                              <input
+                                type="text"
+                                name={`company_user_title_${Date.now()}`}
+                                placeholder="Title"
+                                value={newCompanyUserTitle}
+                                onChange={(e) =>
+                                  setNewCompanyUserTitle(e.target.value)
+                                }
+                                autoComplete="off"
+                                style={{
+                                  padding: "8px",
+                                  borderRadius: "6px",
+                                  border: "1px solid #cbd5e1",
+                                  fontSize: "12px",
+                                }}
+                              />
+                            </div>
+                            <div
+                              style={{
+                                display: "grid",
+                                gridTemplateColumns:
+                                  "repeat(3, minmax(0, 1fr))",
+                                gap: "6px",
+                                marginTop: "6px",
+                              }}
+                            >
+                              <input
+                                type="text"
+                                name={`company_user_email_${Date.now()}`}
+                                placeholder="Email"
+                                value={newCompanyUserEmail}
+                                onChange={(e) =>
+                                  setNewCompanyUserEmail(e.target.value)
+                                }
+                                autoComplete="off"
+                                style={{
+                                  padding: "8px",
+                                  borderRadius: "6px",
+                                  border: "1px solid #cbd5e1",
+                                  fontSize: "12px",
+                                }}
+                              />
+                              <input
+                                type="tel"
+                                name={`company_user_phone_${Date.now()}`}
+                                placeholder="(555) 777-1212"
+                                value={newCompanyUserPhone}
+                                onChange={(e) =>
+                                  setNewCompanyUserPhone(
+                                    formatPhoneNumber(e.target.value),
+                                  )
+                                }
+                                autoComplete="off"
+                                style={{
+                                  padding: "8px",
+                                  borderRadius: "6px",
+                                  border: "1px solid #cbd5e1",
+                                  fontSize: "12px",
+                                }}
+                              />
+                              <PasswordInput
+                                name={`company_user_password_${Date.now()}`}
+                                placeholder="Password"
+                                value={newCompanyUserPassword}
+                                onChange={setNewCompanyUserPassword}
+                                autoComplete="new-password"
+                                style={{
+                                  padding: "8px",
+                                  borderRadius: "6px",
+                                  border: "1px solid #cbd5e1",
+                                  fontSize: "12px",
+                                }}
+                              />
+                            </div>
+                            <button
+                              onClick={() => addUser(comp.id, "company")}
+                              style={{
+                                marginTop: "6px",
+                                padding: "8px 10px",
+                                background: "#0f766e",
+                                color: "white",
+                                border: "none",
+                                borderRadius: "6px",
+                                fontSize: "12px",
+                                fontWeight: "700",
+                                cursor: "pointer",
+                                minWidth: "150px",
+                                width: "150px",
+                                height: "34px",
+                              }}
+                            >
+                              Add Company User
+                            </button>
+                          </div>
+
+                          <div
+                            style={{
+                              background: "white",
+                              border: "1px solid #e2e8f0",
+                              borderRadius: "8px",
+                              padding: "10px",
+                            }}
+                          >
                             <div
                               style={{
                                 display: "flex",
+                                alignItems: "center",
+                                justifyContent: "space-between",
                                 gap: "8px",
-                                marginBottom: "6px",
+                                marginBottom: "8px",
                               }}
                             >
-                              <label
+                              <h5
                                 style={{
-                                  display: "flex",
-                                  alignItems: "center",
-                                  gap: "6px",
-                                  cursor: "pointer",
                                   fontSize: "12px",
-                                }}
-                              >
-                                <input
-                                  type="radio"
-                                  name={`role-${u.id}`}
-                                  checked={userPerm.role === "user"}
-                                  onChange={() => setUserRole(u.id, "user")}
-                                  style={{ cursor: "pointer" }}
-                                />
-                                <span>User</span>
-                              </label>
-                              <label
-                                style={{
-                                  display: "flex",
-                                  alignItems: "center",
-                                  gap: "6px",
-                                  cursor: "pointer",
-                                  fontSize: "12px",
-                                }}
-                              >
-                                <input
-                                  type="radio"
-                                  name={`role-${u.id}`}
-                                  checked={userPerm.role === "admin"}
-                                  onChange={() => setUserRole(u.id, "admin")}
-                                  style={{ cursor: "pointer" }}
-                                />
-                                <span>Company Admin</span>
-                              </label>
-                            </div>
-
-                            {/* Sidebar Access - Only show for non-admin users */}
-                            {isAdmin ? (
-                              <div
-                                style={{
-                                  padding: "5px 8px",
-                                  background: "#d1fae5",
-                                  borderRadius: "6px",
-                                  fontSize: "11px",
-                                  color: "#059669",
-                                  display: "flex",
-                                  alignItems: "center",
-                                  gap: "6px",
-                                }}
-                              >
-                                <span>🔓</span>
-                                <span>
-                                  Full Access - Can access all sidebar sections
-                                </span>
-                              </div>
-                            ) : (
-                              <>
-                                <div
-                                  style={{
-                                    fontSize: "10px",
-                                    fontWeight: "600",
-                                    color: "#475569",
-                                    marginBottom: "3px",
-                                  }}
-                                >
-                                  Access Rights (check sections to allow):
-                                </div>
-                                <div
-                                  style={{
-                                    display: "grid",
-                                    gridTemplateColumns: "1fr 1fr",
-                                    gap: "3px",
-                                    fontSize: "10px",
-                                  }}
-                                >
-                                  {ACCESSIBLE_SECTIONS.map((section) => {
-                                    const isAllowed = allowedSections.includes(section.id);
-                                    return (
-                                    <label
-                                      key={section.id}
-                                      style={{
-                                        display: "flex",
-                                        alignItems: "center",
-                                        gap: "4px",
-                                        cursor: "pointer",
-                                      }}
-                                    >
-                                      <input
-                                        type="checkbox"
-                                        checked={isAllowed}
-                                        onChange={() =>
-                                          toggleAllowedSection(u.id, section.id)
-                                        }
-                                        style={{ cursor: "pointer" }}
-                                      />
-                                      <span>{section.label}</span>
-                                    </label>
-                                  );
-                                  })}
-                                </div>
-                              </>
-                            )}
-
-                            <div
-                              style={{
-                                marginTop: "6px",
-                                borderTop: "1px solid #d1fae5",
-                                paddingTop: "6px",
-                              }}
-                            >
-                              <div
-                                style={{
-                                  fontSize: "11px",
                                   fontWeight: "700",
-                                  color: "#0f766e",
-                                  marginBottom: "8px",
+                                  color: "#475569",
+                                  margin: 0,
                                 }}
                               >
-                                DataRoom Permissions
+                                Invite External User
+                              </h5>
+                              <div
+                                style={{
+                                  fontSize: "11px",
+                                  color: "#1e293b",
+                                  fontWeight: "600",
+                                  textAlign: "right",
+                                }}
+                              >
+                                New users receive an invite link.
                               </div>
-                              {loadingDataRoomPermissions ? (
-                                <div
-                                  style={{
-                                    fontSize: "11px",
-                                    color: "#64748b",
-                                    marginBottom: "8px",
-                                  }}
-                                >
-                                  Loading DataRoom permissions...
-                                </div>
-                              ) : dataRoomPermissionsError ? (
-                                <div
-                                  style={{
-                                    fontSize: "11px",
-                                    color: "#b91c1c",
-                                    marginBottom: "8px",
-                                  }}
-                                >
-                                  {dataRoomPermissionsError}
-                                </div>
-                              ) : (
-                                <>
-                                  <div
-                                    style={{
-                                      fontSize: "11px",
-                                      color: "#64748b",
-                                      marginBottom: "6px",
-                                    }}
-                                  >
-                                    Default capabilities (applies across DataRoom):
-                                  </div>
-                                  <div
-                                    style={{
-                                      display: "grid",
-                                      gridTemplateColumns: "repeat(5, minmax(0, 1fr))",
-                                      gap: "6px",
-                                      fontSize: "11px",
-                                    }}
-                                  >
-                                    {DATAROOM_CAPABILITIES.map((capability) => (
-                                      <label
-                                        key={`${u.id}-dataroom-default-${capability.id}`}
-                                        style={{
-                                          display: "flex",
-                                          alignItems: "center",
-                                          gap: "6px",
-                                          cursor: "pointer",
-                                        }}
-                                      >
-                                        <input
-                                          type="checkbox"
-                                          checked={Boolean(
-                                            dataRoomRule.default[capability.id],
-                                          )}
-                                          onChange={() =>
-                                            toggleDataRoomCapability(
-                                              u.id,
-                                              "default",
-                                              null,
-                                              capability.id,
-                                            )
-                                          }
-                                        />
-                                        <span>{capability.label}</span>
-                                      </label>
-                                    ))}
-                                  </div>
-
-                                  <button
-                                    type="button"
-                                    onClick={() => toggleDataRoomOverrideExpanded(u.id)}
-                                    style={{
-                                      marginTop: "4px",
-                                      padding: "4px 7px",
-                                      background: "white",
-                                      color: "#0f766e",
-                                      border: "1px solid #99f6e4",
-                                      borderRadius: "6px",
-                                      fontSize: "10px",
-                                      fontWeight: "700",
-                                      cursor: "pointer",
-                                    }}
-                                  >
-                                    {showDataRoomOverrides
-                                      ? "Hide Folder/Document Overrides"
-                                      : "Show Folder/Document Overrides"}
-                                  </button>
-
-                                  {showDataRoomOverrides && (
-                                    <div style={{ marginTop: "6px", display: "grid", gap: "4px" }}>
-                                      {dataRoomFolders.length === 0 ? (
-                                        <div
-                                          style={{
-                                            fontSize: "11px",
-                                            color: "#64748b",
-                                          }}
-                                        >
-                                          No DataRoom folders available yet. Enable DataRoom and add documents to configure overrides.
-                                        </div>
-                                      ) : (
-                                        dataRoomFolders.map((folder) => (
-                                          <div
-                                            key={`${u.id}-folder-override-${folder.id}`}
-                                            style={{
-                                              border: "1px solid #d1fae5",
-                                              borderRadius: "6px",
-                                              padding: "5px",
-                                              background: "#f8fffc",
-                                            }}
-                                          >
-                                            <div
-                                              style={{
-                                                fontSize: "11px",
-                                                fontWeight: "700",
-                                                color: "#166534",
-                                                marginBottom: "6px",
-                                              }}
-                                            >
-                                              Folder: {folder.name}
-                                            </div>
-                                            <div
-                                              style={{
-                                                display: "grid",
-                                                gridTemplateColumns:
-                                                  "repeat(5, minmax(0, 1fr))",
-                                                gap: "6px",
-                                                fontSize: "11px",
-                                              }}
-                                            >
-                                              {DATAROOM_CAPABILITIES.map((capability) => {
-                                                const currentCaps =
-                                                  dataRoomRule.folders[folder.id] ||
-                                                  dataRoomRule.default;
-                                                return (
-                                                  <label
-                                                    key={`${u.id}-folder-${folder.id}-${capability.id}`}
-                                                    style={{
-                                                      display: "flex",
-                                                      alignItems: "center",
-                                                      gap: "6px",
-                                                      cursor: "pointer",
-                                                    }}
-                                                  >
-                                                    <input
-                                                      type="checkbox"
-                                                      checked={Boolean(
-                                                        currentCaps[capability.id],
-                                                      )}
-                                                      onChange={() =>
-                                                        toggleDataRoomCapability(
-                                                          u.id,
-                                                          "folder",
-                                                          folder.id,
-                                                          capability.id,
-                                                        )
-                                                      }
-                                                    />
-                                                    <span>{capability.label}</span>
-                                                  </label>
-                                                );
-                                              })}
-                                            </div>
-
-                                            {folder.documents.length > 0 && (
-                                              <div style={{ marginTop: "8px", display: "grid", gap: "6px" }}>
-                                                {folder.documents.map((doc) => {
-                                                  const docCaps =
-                                                    dataRoomRule.documents[doc.id] ||
-                                                    dataRoomRule.folders[folder.id] ||
-                                                    dataRoomRule.default;
-                                                  return (
-                                                    <div
-                                                      key={`${u.id}-document-${doc.id}`}
-                                                      style={{
-                                                        borderTop: "1px dashed #bbf7d0",
-                                                        paddingTop: "6px",
-                                                      }}
-                                                    >
-                                                      <div
-                                                        style={{
-                                                          fontSize: "11px",
-                                                          color: "#166534",
-                                                          marginBottom: "4px",
-                                                        }}
-                                                      >
-                                                        Document: {doc.name}
-                                                      </div>
-                                                      <div
-                                                        style={{
-                                                          display: "grid",
-                                                          gridTemplateColumns:
-                                                            "repeat(5, minmax(0, 1fr))",
-                                                          gap: "6px",
-                                                          fontSize: "11px",
-                                                        }}
-                                                      >
-                                                        {DATAROOM_CAPABILITIES.map(
-                                                          (capability) => (
-                                                            <label
-                                                              key={`${u.id}-document-${doc.id}-${capability.id}`}
-                                                              style={{
-                                                                display: "flex",
-                                                                alignItems: "center",
-                                                                gap: "6px",
-                                                                cursor: "pointer",
-                                                              }}
-                                                            >
-                                                              <input
-                                                                type="checkbox"
-                                                                checked={Boolean(
-                                                                  docCaps[
-                                                                    capability.id
-                                                                  ],
-                                                                )}
-                                                                onChange={() =>
-                                                                  toggleDataRoomCapability(
-                                                                    u.id,
-                                                                    "document",
-                                                                    doc.id,
-                                                                    capability.id,
-                                                                  )
-                                                                }
-                                                              />
-                                                              <span>
-                                                                {capability.label}
-                                                              </span>
-                                                            </label>
-                                                          ),
-                                                        )}
-                                                      </div>
-                                                    </div>
-                                                  );
-                                                })}
-                                              </div>
-                                            )}
-                                          </div>
-                                        ))
-                                      )}
-                                    </div>
-                                  )}
-                                </>
-                              )}
                             </div>
-
-                            {/* Save Button */}
-                            <button
-                              onClick={() => saveUserPermissions(u.id)}
-                              disabled={savingUserId === u.id}
-                              style={{
-                                marginTop: "6px",
-                                padding: "5px 10px",
-                                background:
-                                  savingUserId === u.id ? "#94a3b8" : "#10b981",
-                                color: "white",
-                                border: "none",
-                                borderRadius: "6px",
-                                fontSize: "10px",
-                                fontWeight: "600",
-                                cursor:
-                                  savingUserId === u.id
-                                    ? "not-allowed"
-                                    : "pointer",
-                                width: "100%",
-                              }}
-                            >
-                              {savingUserId === u.id
-                                ? "Saving..."
-                                : "Save Access Rights"}
-                            </button>
-                            <button
-                              onClick={() => saveDataRoomPermissions(u.id)}
-                              disabled={
-                                savingDataRoomPermissionsUserId === u.id ||
-                                Boolean(dataRoomPermissionsError)
-                              }
-                              style={{
-                                marginTop: "4px",
-                                padding: "5px 10px",
-                                background:
-                                  savingDataRoomPermissionsUserId === u.id
-                                    ? "#94a3b8"
-                                    : "#0f766e",
-                                color: "white",
-                                border: "none",
-                                borderRadius: "6px",
-                                fontSize: "10px",
-                                fontWeight: "600",
-                                cursor:
-                                  savingDataRoomPermissionsUserId === u.id ||
-                                  Boolean(dataRoomPermissionsError)
-                                    ? "not-allowed"
-                                    : "pointer",
-                                width: "100%",
-                                opacity: dataRoomPermissionsError ? 0.6 : 1,
-                              }}
-                            >
-                              {savingDataRoomPermissionsUserId === u.id
-                                ? "Saving..."
-                                : "Save DataRoom Permissions"}
-                            </button>
+                            <div style={{ display: "grid", gap: "6px" }}>
+                              <div
+                                style={{
+                                  display: "grid",
+                                  gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+                                  gap: "6px",
+                                }}
+                              >
+                                <input
+                                  type="text"
+                                  name="existing_company_user_first_name"
+                                  placeholder="First Name"
+                                  value={
+                                    splitName(existingCompanyUserName).firstName
+                                  }
+                                  onChange={(e) =>
+                                    updateCombinedName(
+                                      existingCompanyUserName,
+                                      "first",
+                                      e.target.value,
+                                      setExistingCompanyUserName,
+                                    )
+                                  }
+                                  autoComplete="off"
+                                  style={{
+                                    padding: "8px",
+                                    borderRadius: "6px",
+                                    border: "1px solid #cbd5e1",
+                                    fontSize: "12px",
+                                  }}
+                                />
+                                <input
+                                  type="text"
+                                  name="existing_company_user_last_name"
+                                  placeholder="Last Name"
+                                  value={
+                                    splitName(existingCompanyUserName).lastName
+                                  }
+                                  onChange={(e) =>
+                                    updateCombinedName(
+                                      existingCompanyUserName,
+                                      "last",
+                                      e.target.value,
+                                      setExistingCompanyUserName,
+                                    )
+                                  }
+                                  autoComplete="off"
+                                  style={{
+                                    padding: "8px",
+                                    borderRadius: "6px",
+                                    border: "1px solid #cbd5e1",
+                                    fontSize: "12px",
+                                  }}
+                                />
+                              </div>
+                              <div
+                                style={{
+                                  display: "grid",
+                                  gridTemplateColumns:
+                                    "repeat(2, minmax(0, 1fr))",
+                                  gap: "6px",
+                                }}
+                              >
+                                <input
+                                  type="text"
+                                  name="existing_company_user_email"
+                                  placeholder="Email Address"
+                                  value={existingCompanyUserEmail}
+                                  onChange={(e) =>
+                                    setExistingCompanyUserEmail(e.target.value)
+                                  }
+                                  autoComplete="off"
+                                  style={{
+                                    padding: "8px",
+                                    borderRadius: "6px",
+                                    border: "1px solid #cbd5e1",
+                                    fontSize: "12px",
+                                  }}
+                                />
+                                <input
+                                  type="text"
+                                  name="existing_company_user_company"
+                                  placeholder="Company Name"
+                                  value=""
+                                  readOnly
+                                  autoComplete="off"
+                                  style={{
+                                    padding: "8px",
+                                    borderRadius: "6px",
+                                    border: "1px solid #cbd5e1",
+                                    fontSize: "12px",
+                                    background: "#f8fafc",
+                                    color: "#475569",
+                                  }}
+                                />
+                              </div>
+                              <button
+                                onClick={() =>
+                                  grantExistingUserAccess(comp.id, "company")
+                                }
+                                style={{
+                                  padding: "8px 10px",
+                                  background: "#0f766e",
+                                  color: "white",
+                                  border: "none",
+                                  borderRadius: "6px",
+                                  fontSize: "12px",
+                                  fontWeight: "700",
+                                  cursor: "pointer",
+                                  minWidth: "150px",
+                                  width: "150px",
+                                  height: "34px",
+                                  justifySelf: "start",
+                                }}
+                              >
+                                Invite User
+                              </button>
                             </div>
-                          )}
+                          </div>
                         </div>
-                      );
-                    })}
 
-                  <div
-                    style={{
-                      borderTop: "1px solid #d1fae5",
-                      paddingTop: "6px",
-                      marginTop: "6px",
-                    }}
-                  >
-                    <h5
-                      style={{
-                        fontSize: "13px",
-                        fontWeight: "600",
-                        color: "#475569",
-                        marginBottom: "8px",
-                      }}
-                    >
-                      Create New Company User
-                    </h5>
-                    <div
-                      style={{
-                        display: "flex",
-                        flexDirection: "column",
-                        gap: "6px",
-                      }}
-                    >
-                      <div
-                        style={{
-                          display: "grid",
-                          gridTemplateColumns: "1fr 1fr",
-                          gap: "6px",
-                        }}
-                      >
-                        <input
-                          type="text"
-                          name={`company_user_name_${Date.now()}`}
-                          placeholder="Name"
-                          value={newCompanyUserName}
-                          onChange={(e) =>
-                            setNewCompanyUserName(e.target.value)
-                          }
-                          autoComplete="off"
-                          style={{
-                            padding: "8px",
-                            borderRadius: "6px",
-                            border: "1px solid #cbd5e1",
-                            fontSize: "12px",
-                          }}
-                        />
-                        <input
-                          type="text"
-                          name={`company_user_title_${Date.now()}`}
-                          placeholder="Title"
-                          value={newCompanyUserTitle}
-                          onChange={(e) =>
-                            setNewCompanyUserTitle(e.target.value)
-                          }
-                          autoComplete="off"
-                          style={{
-                            padding: "8px",
-                            borderRadius: "6px",
-                            border: "1px solid #cbd5e1",
-                            fontSize: "12px",
-                          }}
-                        />
-                      </div>
-                      <div
-                        style={{
-                          display: "grid",
-                          gridTemplateColumns: "1fr 1fr",
-                          gap: "6px",
-                        }}
-                      >
-                        <input
-                          type="text"
-                          name={`company_user_email_${Date.now()}`}
-                          placeholder="Email"
-                          value={newCompanyUserEmail}
-                          onChange={(e) =>
-                            setNewCompanyUserEmail(e.target.value)
-                          }
-                          autoComplete="off"
-                          style={{
-                            padding: "8px",
-                            borderRadius: "6px",
-                            border: "1px solid #cbd5e1",
-                            fontSize: "12px",
-                          }}
-                        />
-                        <input
-                          type="tel"
-                          name={`company_user_phone_${Date.now()}`}
-                          placeholder="(555) 777-1212"
-                          value={newCompanyUserPhone}
-                          onChange={(e) =>
-                            setNewCompanyUserPhone(
-                              formatPhoneNumber(e.target.value),
-                            )
-                          }
-                          autoComplete="off"
-                          style={{
-                            padding: "8px",
-                            borderRadius: "6px",
-                            border: "1px solid #cbd5e1",
-                            fontSize: "12px",
-                          }}
-                        />
-                      </div>
-                      <div style={{ gridColumn: "span 2" }}>
-                        <PasswordInput
-                          name={`company_user_password_${Date.now()}`}
-                          placeholder="Password"
-                          value={newCompanyUserPassword}
-                          onChange={setNewCompanyUserPassword}
-                          autoComplete="new-password"
-                          style={{
-                            padding: "8px",
-                            borderRadius: "6px",
-                            border: "1px solid #cbd5e1",
-                            fontSize: "12px",
-                          }}
-                        />
                         <div
                           style={{
-                            fontSize: "10px",
-                            color: "#64748b",
-                            marginTop: "2px",
-                            lineHeight: "1.3",
+                            border: "1px solid #e2e8f0",
+                            borderRadius: "8px",
+                            overflow: "hidden",
                           }}
                         >
-                          Password is required for new users. 8+ chars with
-                          uppercase, lowercase, number, and special character.
-                        </div>
-                      </div>
-                      <button
-                        onClick={() => addUser(comp.id, "company")}
-                        style={{
-                          padding: "8px",
-                          background: "#10b981",
-                          color: "white",
-                          border: "none",
-                          borderRadius: "6px",
-                          fontSize: "12px",
-                          fontWeight: "600",
-                          cursor: "pointer",
-                        }}
-                      >
-                        Add Company User
-                      </button>
-                    </div>
-                  </div>
+                          <div
+                            style={{
+                              display: "grid",
+                              gridTemplateColumns:
+                                "minmax(140px, 0.7fr) minmax(150px, 0.8fr) minmax(220px, 0.9fr) minmax(340px, 1.8fr)",
+                              gap: "0",
+                              background: "#f8fafc",
+                              borderBottom: "1px solid #e2e8f0",
+                              fontSize: "11px",
+                              fontWeight: "700",
+                              color: "#1e293b",
+                              textTransform: "uppercase",
+                              letterSpacing: "0.03em",
+                            }}
+                          >
+                            <div style={{ padding: "8px" }}>User Name</div>
+                            <div style={{ padding: "8px" }}>User Email</div>
+                            <div style={{ padding: "8px" }}>Company</div>
+                            <div
+                              style={{
+                                padding: "8px",
+                                display: "flex",
+                                alignItems: "center",
+                                justifyContent: "space-between",
+                                gap: "8px",
+                              }}
+                            >
+                              <span>Role & Access</span>
+                              {selectedUser && (
+                                <button
+                                  onClick={() =>
+                                    saveUserPermissions(selectedUser.id)
+                                  }
+                                  disabled={
+                                    savingUserId === selectedUser.id ||
+                                    savingDataRoomPermissionsUserId ===
+                                      selectedUser.id
+                                  }
+                                  style={{
+                                    padding: "8px 10px",
+                                    background:
+                                      savingUserId === selectedUser.id ||
+                                      savingDataRoomPermissionsUserId ===
+                                        selectedUser.id
+                                        ? "#94a3b8"
+                                        : "#0f766e",
+                                    color: "white",
+                                    border: "none",
+                                    borderRadius: "6px",
+                                    fontSize: "12px",
+                                    fontWeight: "700",
+                                    cursor:
+                                      savingUserId === selectedUser.id ||
+                                      savingDataRoomPermissionsUserId ===
+                                        selectedUser.id
+                                        ? "not-allowed"
+                                        : "pointer",
+                                    whiteSpace: "nowrap",
+                                    minWidth: "150px",
+                                    height: "34px",
+                                  }}
+                                >
+                                  {savingUserId === selectedUser.id ||
+                                  savingDataRoomPermissionsUserId ===
+                                    selectedUser.id
+                                    ? "Saving..."
+                                    : "Save Access Rights"}
+                                </button>
+                              )}
+                            </div>
+                          </div>
 
-                  <div
-                    style={{
-                      borderTop: "1px solid #d1fae5",
-                      paddingTop: "12px",
-                      marginTop: "12px",
-                    }}
-                  >
-                    <h5
-                      style={{
-                        fontSize: "13px",
-                        fontWeight: "600",
-                        color: "#475569",
-                        marginBottom: "8px",
-                      }}
-                    >
-                      Invite External User
-                    </h5>
-                    <div
-                      style={{
-                        fontSize: "11px",
-                        color: "#64748b",
-                        marginBottom: "8px",
-                      }}
-                    >
-                      Invite an outside user to this company. Existing accounts
-                      get access immediately; new users receive an invite link
-                      to create credentials, then authenticate via normal login
-                      (including MFA in production).
-                    </div>
-                    <div style={{ display: "grid", gap: "6px" }}>
-                      <input
-                        type="text"
-                        name="existing_company_user_name"
-                        placeholder="External user name"
-                        value={existingCompanyUserName}
-                        onChange={(e) =>
-                          setExistingCompanyUserName(e.target.value)
-                        }
-                        autoComplete="off"
-                        style={{
-                          padding: "8px",
-                          borderRadius: "6px",
-                          border: "1px solid #cbd5e1",
-                          fontSize: "12px",
-                        }}
-                      />
-                      <div style={{ display: "flex", gap: "6px" }}>
-                      <input
-                        type="text"
-                        name="existing_company_user_email"
-                        placeholder="External user email"
-                        value={existingCompanyUserEmail}
-                        onChange={(e) =>
-                          setExistingCompanyUserEmail(e.target.value)
-                        }
-                        autoComplete="off"
-                        style={{
-                          flex: 1,
-                          padding: "8px",
-                          borderRadius: "6px",
-                          border: "1px solid #cbd5e1",
-                          fontSize: "12px",
-                        }}
-                      />
-                      <button
-                        onClick={() => grantExistingUserAccess(comp.id, "company")}
-                        style={{
-                          padding: "8px 12px",
-                          background: "#0f766e",
-                          color: "white",
-                          border: "none",
-                          borderRadius: "6px",
-                          fontSize: "12px",
-                          fontWeight: "600",
-                          cursor: "pointer",
-                          whiteSpace: "nowrap",
-                        }}
-                      >
-                        Invite User
-                      </button>
-                      </div>
-                    </div>
-                  </div>
+                          {companyUsers.length === 0 ? (
+                            <div
+                              style={{
+                                fontSize: "12px",
+                                color: "#64748b",
+                                padding: "14px",
+                              }}
+                            >
+                              No company users yet.
+                            </div>
+                          ) : (
+                            userGroups.map((group) => (
+                              <React.Fragment key={group.id}>
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    setExpandedUserSections((prev) => ({
+                                      ...prev,
+                                      [group.id]: !prev[group.id],
+                                    }))
+                                  }
+                                  style={{
+                                    width: "100%",
+                                    display: "flex",
+                                    justifyContent: "space-between",
+                                    alignItems: "center",
+                                    padding: "9px 10px",
+                                    background: "#f8fafc",
+                                    border: "none",
+                                    borderBottom: "1px solid #e2e8f0",
+                                    color: "#1e293b",
+                                    cursor: "pointer",
+                                    fontSize: "12px",
+                                    fontWeight: "700",
+                                    textAlign: "left",
+                                  }}
+                                >
+                                  <span>
+                                    {expandedUserSections[group.id] ? "v" : ">"}{" "}
+                                    {group.label}
+                                  </span>
+                                  <span style={{ color: "#334155" }}>
+                                    {group.users.length}
+                                  </span>
+                                </button>
+                                {expandedUserSections[group.id] &&
+                                  (group.users.length === 0 ? (
+                                    <div
+                                      style={{
+                                        fontSize: "12px",
+                                        color: "#334155",
+                                        padding: "12px",
+                                        borderBottom: "1px solid #e2e8f0",
+                                      }}
+                                    >
+                                      No {group.label.toLowerCase()} yet.
+                                    </div>
+                                  ) : (
+                                    group.users.map((u) => {
+                              const isSelected = selectedUser?.id === u.id;
+                              const isConsultant =
+                                String(u.role || "").toUpperCase() ===
+                                "CONSULTANT";
+
+                              return (
+                                <div
+                                  key={u.id}
+                                  onClick={() =>
+                                    setSelectedCompanyUsers((prev) => ({
+                                      ...prev,
+                                      [comp.id]: u.id,
+                                    }))
+                                  }
+                                  style={{
+                                    display: "grid",
+                                    gridTemplateColumns:
+                                      "minmax(140px, 0.7fr) minmax(150px, 0.8fr) minmax(220px, 0.9fr) minmax(340px, 1.8fr)",
+                                    borderBottom: "1px solid #e2e8f0",
+                                    background: isSelected ? "#f8fafc" : "white",
+                                    cursor: "pointer",
+                                  }}
+                                >
+                                  <div
+                                    style={{
+                                      padding: "10px 8px",
+                                    }}
+                                  >
+                                    <div
+                                      style={{
+                                        fontSize: "13px",
+                                        fontWeight: "700",
+                                        color: "#1e293b",
+                                      }}
+                                    >
+                                      {u.name || u.email}
+                                    </div>
+                                  </div>
+                                  <div
+                                    style={{
+                                      padding: "10px 8px",
+                                      fontSize: "13px",
+                                      fontWeight: "600",
+                                      color: "#1e293b",
+                                      wordBreak: "break-word",
+                                    }}
+                                  >
+                                    {u.email}
+                                  </div>
+                                  <div
+                                    style={{
+                                      padding: "10px 8px",
+                                      fontSize: "13px",
+                                      fontWeight: "600",
+                                      color: "#1e293b",
+                                      display: "flex",
+                                      alignItems: "flex-start",
+                                      justifyContent: "space-between",
+                                      gap: "8px",
+                                      whiteSpace: "nowrap",
+                                    }}
+                                  >
+                                    <span>{comp.name || "Selected Company"}</span>
+                                    <button
+                                      onClick={(event) => {
+                                        event.stopPropagation();
+                                        deleteUser(u.id, comp.id);
+                                      }}
+                                      disabled={isConsultant}
+                                      style={{
+                                        padding: "3px 7px",
+                                        background: "#dc2626",
+                                        color: "white",
+                                        border: "none",
+                                        borderRadius: "4px",
+                                        fontSize: "10px",
+                                        cursor: isConsultant
+                                          ? "not-allowed"
+                                          : "pointer",
+                                        fontWeight: "800",
+                                        whiteSpace: "nowrap",
+                                      }}
+                                    >
+                                      Delete
+                                    </button>
+                                  </div>
+                                  <div
+                                    style={{
+                                      padding: "10px 8px",
+                                      borderLeft: "1px solid #e2e8f0",
+                                      color: "#1e293b",
+                                    }}
+                                    onClick={(event) => event.stopPropagation()}
+                                  >
+                                    {!isSelected ||
+                                    !selectedUser ||
+                                    !selectedUserPerm ||
+                                    !selectedDataRoomRule ? (
+                                      <div
+                                        style={{
+                                          fontSize: "12px",
+                                          color: "#334155",
+                                        }}
+                                      >
+                                        Select this user to manage access.
+                                      </div>
+                                    ) : (
+                                      <>
+                                        <div
+                                          style={{
+                                            display: "flex",
+                                            gap: "12px",
+                                            marginBottom: "10px",
+                                          }}
+                                        >
+                                          <label
+                                            style={{
+                                              display: "flex",
+                                              alignItems: "center",
+                                              gap: "6px",
+                                              cursor: selectedUserIsConsultant
+                                                ? "not-allowed"
+                                                : "pointer",
+                                              fontSize: "12px",
+                                              color: "#1e293b",
+                                              fontWeight: "700",
+                                            }}
+                                          >
+                                            <input
+                                              type="radio"
+                                              name={`role-${selectedUser.id}`}
+                                              checked={
+                                                selectedUserPerm.role === "user"
+                                              }
+                                              disabled={selectedUserIsConsultant}
+                                              onChange={() =>
+                                                setUserRole(selectedUser.id, "user")
+                                              }
+                                            />
+                                            <span>User</span>
+                                          </label>
+                                          <label
+                                            style={{
+                                              display: "flex",
+                                              alignItems: "center",
+                                              gap: "6px",
+                                              cursor: selectedUserIsConsultant
+                                                ? "not-allowed"
+                                                : "pointer",
+                                              fontSize: "12px",
+                                              color: "#1e293b",
+                                              fontWeight: "700",
+                                            }}
+                                          >
+                                            <input
+                                              type="radio"
+                                              name={`role-${selectedUser.id}`}
+                                              checked={
+                                                selectedUserPerm.role === "admin"
+                                              }
+                                              disabled={selectedUserIsConsultant}
+                                              onChange={() =>
+                                                setUserRole(selectedUser.id, "admin")
+                                              }
+                                            />
+                                            <span>Company Admin</span>
+                                          </label>
+                                        </div>
+
+                                        {selectedUserPerm.role === "admin" && (
+                                          <div
+                                            style={{
+                                              fontSize: "11px",
+                                              color: "#047857",
+                                              fontWeight: "700",
+                                              marginBottom: "8px",
+                                            }}
+                                          >
+                                            Full access is granted for company admins.
+                                          </div>
+                                        )}
+
+                                        <div
+                                          style={{
+                                            display: "grid",
+                                            gap: "6px",
+                                            fontSize: "11px",
+                                          }}
+                                        >
+                                          {ACCESSIBLE_SECTIONS.map((section) => {
+                                            const isAdmin =
+                                              selectedUserPerm.role === "admin";
+                                            const isAllowed =
+                                              isAdmin ||
+                                              selectedAllowedSections.includes(
+                                                section.id,
+                                              );
+                                            const isDataRoom =
+                                              section.id === "dataroom";
+                                            return (
+                                              <div key={section.id}>
+                                                <label
+                                                  style={{
+                                                    display: "flex",
+                                                    alignItems: "center",
+                                                    gap: "6px",
+                                                    color: "#1e293b",
+                                                    fontWeight: "700",
+                                                    fontSize: "12px",
+                                                    cursor: isAdmin
+                                                      ? "not-allowed"
+                                                      : "pointer",
+                                                  }}
+                                                >
+                                                  <input
+                                                    type="checkbox"
+                                                    checked={isAllowed}
+                                                    disabled={isAdmin}
+                                                    onChange={() =>
+                                                      toggleAllowedSection(
+                                                        selectedUser.id,
+                                                        section.id,
+                                                      )
+                                                    }
+                                                  />
+                                                  <span>{section.label}</span>
+                                                </label>
+
+                                                {isDataRoom && isAllowed && (
+                                                  <div
+                                                    style={{
+                                                      margin: "6px 0 0 20px",
+                                                      paddingLeft: "10px",
+                                                      borderLeft:
+                                                        "2px solid #e2e8f0",
+                                                      display: "grid",
+                                                      gap: "6px",
+                                                    }}
+                                                  >
+                                                    {loadingDataRoomPermissions ? (
+                                                      <div
+                                                        style={{
+                                                          color: "#334155",
+                                                        }}
+                                                      >
+                                                        Loading DataRoom permissions...
+                                                      </div>
+                                                    ) : dataRoomPermissionsError ? (
+                                                      <div
+                                                        style={{
+                                                          color: "#b91c1c",
+                                                        }}
+                                                      >
+                                                        {dataRoomPermissionsError}
+                                                      </div>
+                                                    ) : (
+                                                      <>
+                                                        <div
+                                                          style={{
+                                                            color: "#1e293b",
+                                                            fontWeight: "700",
+                                                          }}
+                                                        >
+                                                          DataRoom Permissions
+                                                        </div>
+                                                        <div
+                                                          style={{
+                                                            display: "grid",
+                                                            gridTemplateColumns:
+                                                              "repeat(5, minmax(0, 1fr))",
+                                                            gap: "6px",
+                                                          }}
+                                                        >
+                                                          {DATAROOM_CAPABILITIES.map(
+                                                            (capability) => (
+                                                              <label
+                                                                key={`${selectedUser.id}-dataroom-default-${capability.id}`}
+                                                                style={{
+                                                                  display: "flex",
+                                                                  alignItems:
+                                                                    "center",
+                                                                  gap: "6px",
+                                                                  color:
+                                                                    "#1e293b",
+                                                                  fontWeight:
+                                                                    "700",
+                                                                  fontSize:
+                                                                    "12px",
+                                                                  cursor:
+                                                                    "pointer",
+                                                                }}
+                                                              >
+                                                                <input
+                                                                  type="checkbox"
+                                                                  checked={Boolean(
+                                                                    selectedDataRoomRule
+                                                                      .default[
+                                                                      capability
+                                                                        .id
+                                                                    ],
+                                                                  )}
+                                                                  onChange={() =>
+                                                                    toggleDataRoomCapability(
+                                                                      selectedUser.id,
+                                                                      "default",
+                                                                      null,
+                                                                      capability.id,
+                                                                    )
+                                                                  }
+                                                                />
+                                                                <span>
+                                                                  {capability.label}
+                                                                </span>
+                                                              </label>
+                                                            ),
+                                                          )}
+                                                        </div>
+
+                                                        <button
+                                                          type="button"
+                                                          onClick={() =>
+                                                            toggleDataRoomOverrideExpanded(
+                                                              selectedUser.id,
+                                                            )
+                                                          }
+                                                          style={{
+                                                            justifySelf: "start",
+                                                            padding: "4px 7px",
+                                                            background: "white",
+                                                            color: "#0f172a",
+                                                            border:
+                                                              "1px solid #0f766e",
+                                                            borderRadius: "6px",
+                                                            fontSize: "11px",
+                                                            fontWeight: "800",
+                                                            cursor: "pointer",
+                                                          }}
+                                                        >
+                                                          {showDataRoomOverrides
+                                                            ? "Hide Folder/Document Overrides"
+                                                            : "Show Folder/Document Overrides"}
+                                                        </button>
+
+                                                        {showDataRoomOverrides && (
+                                                          <div
+                                                            style={{
+                                                              display: "grid",
+                                                              gap: "6px",
+                                                            }}
+                                                          >
+                                                            {dataRoomFolders.length ===
+                                                            0 ? (
+                                                              <div
+                                                                style={{
+                                                                  color: "#334155",
+                                                                }}
+                                                              >
+                                                                No DataRoom folders available yet.
+                                                              </div>
+                                                            ) : (
+                                                              dataRoomFolders.map(
+                                                                (folder) => (
+                                                                  <div
+                                                                    key={`${selectedUser.id}-folder-override-${folder.id}`}
+                                                                    style={{
+                                                                      border:
+                                                                        "1px solid #e2e8f0",
+                                                                      borderRadius:
+                                                                        "6px",
+                                                                      padding: "6px",
+                                                                    }}
+                                                                  >
+                                                                    <div
+                                                                      style={{
+                                                                        fontWeight:
+                                                                          "700",
+                                                                        color:
+                                                                          "#1e293b",
+                                                                        marginBottom:
+                                                                          "6px",
+                                                                      }}
+                                                                    >
+                                                                      Folder: {folder.name}
+                                                                    </div>
+                                                                    <div
+                                                                      style={{
+                                                                        display:
+                                                                          "grid",
+                                                                        gridTemplateColumns:
+                                                                          "repeat(5, minmax(0, 1fr))",
+                                                                        gap: "6px",
+                                                                      }}
+                                                                    >
+                                                                      {DATAROOM_CAPABILITIES.map(
+                                                                        (
+                                                                          capability,
+                                                                        ) => {
+                                                                          const currentCaps =
+                                                                            selectedDataRoomRule
+                                                                              .folders[
+                                                                              folder
+                                                                                .id
+                                                                            ] ||
+                                                                            selectedDataRoomRule.default;
+                                                                          return (
+                                                                            <label
+                                                                              key={`${selectedUser.id}-folder-${folder.id}-${capability.id}`}
+                                                                              style={{
+                                                                                display:
+                                                                                  "flex",
+                                                                                alignItems:
+                                                                                  "center",
+                                                                                gap: "6px",
+                                                                                color:
+                                                                                  "#1e293b",
+                                                                                fontWeight:
+                                                                                  "700",
+                                                                                fontSize:
+                                                                                  "12px",
+                                                                                cursor:
+                                                                                  "pointer",
+                                                                              }}
+                                                                            >
+                                                                              <input
+                                                                                type="checkbox"
+                                                                                checked={Boolean(
+                                                                                  currentCaps[
+                                                                                    capability
+                                                                                      .id
+                                                                                  ],
+                                                                                )}
+                                                                                onChange={() =>
+                                                                                  toggleDataRoomCapability(
+                                                                                    selectedUser.id,
+                                                                                    "folder",
+                                                                                    folder.id,
+                                                                                    capability.id,
+                                                                                  )
+                                                                                }
+                                                                              />
+                                                                              <span>
+                                                                                {
+                                                                                  capability.label
+                                                                                }
+                                                                              </span>
+                                                                            </label>
+                                                                          );
+                                                                        },
+                                                                      )}
+                                                                    </div>
+                                                                    {folder.documents
+                                                                      .length >
+                                                                      0 && (
+                                                                      <div
+                                                                        style={{
+                                                                          marginTop:
+                                                                            "8px",
+                                                                          display:
+                                                                            "grid",
+                                                                          gap: "6px",
+                                                                        }}
+                                                                      >
+                                                                        {folder.documents.map(
+                                                                          (
+                                                                            doc,
+                                                                          ) => {
+                                                                            const docCaps =
+                                                                              selectedDataRoomRule
+                                                                                .documents[
+                                                                                doc
+                                                                                  .id
+                                                                              ] ||
+                                                                              selectedDataRoomRule
+                                                                                .folders[
+                                                                                folder
+                                                                                  .id
+                                                                              ] ||
+                                                                              selectedDataRoomRule.default;
+                                                                            return (
+                                                                              <div
+                                                                                key={`${selectedUser.id}-document-${doc.id}`}
+                                                                                style={{
+                                                                                  borderTop:
+                                                                                    "1px dashed #e2e8f0",
+                                                                                  paddingTop:
+                                                                                    "6px",
+                                                                                }}
+                                                                              >
+                                                                                <div
+                                                                                  style={{
+                                                                                    color:
+                                                                                      "#1e293b",
+                                                                                    marginBottom:
+                                                                                      "4px",
+                                                                                  }}
+                                                                                >
+                                                                                  Document: {doc.name}
+                                                                                </div>
+                                                                                <div
+                                                                                  style={{
+                                                                                    display:
+                                                                                      "grid",
+                                                                                    gridTemplateColumns:
+                                                                                      "repeat(5, minmax(0, 1fr))",
+                                                                                    gap: "6px",
+                                                                                  }}
+                                                                                >
+                                                                                  {DATAROOM_CAPABILITIES.map(
+                                                                                    (
+                                                                                      capability,
+                                                                                    ) => (
+                                                                                      <label
+                                                                                        key={`${selectedUser.id}-document-${doc.id}-${capability.id}`}
+                                                                                        style={{
+                                                                                          display:
+                                                                                            "flex",
+                                                                                          alignItems:
+                                                                                            "center",
+                                                                                          gap: "6px",
+                                                                                         color:
+                                                                                           "#1e293b",
+                                                                                         fontWeight:
+                                                                                           "700",
+                                                                                         fontSize:
+                                                                                           "12px",
+                                                                                          cursor:
+                                                                                            "pointer",
+                                                                                        }}
+                                                                                      >
+                                                                                        <input
+                                                                                          type="checkbox"
+                                                                                          checked={Boolean(
+                                                                                            docCaps[
+                                                                                              capability
+                                                                                                .id
+                                                                                            ],
+                                                                                          )}
+                                                                                          onChange={() =>
+                                                                                            toggleDataRoomCapability(
+                                                                                              selectedUser.id,
+                                                                                              "document",
+                                                                                              doc.id,
+                                                                                              capability.id,
+                                                                                            )
+                                                                                          }
+                                                                                        />
+                                                                                        <span>
+                                                                                          {
+                                                                                            capability.label
+                                                                                          }
+                                                                                        </span>
+                                                                                      </label>
+                                                                                    ),
+                                                                                  )}
+                                                                                </div>
+                                                                              </div>
+                                                                            );
+                                                                          },
+                                                                        )}
+                                                                      </div>
+                                                                    )}
+                                                                  </div>
+                                                                ),
+                                                              )
+                                                            )}
+                                                          </div>
+                                                        )}
+                                                      </>
+                                                    )}
+                                                  </div>
+                                                )}
+                                              </div>
+                                            );
+                                          })}
+                                        </div>
+                                      </>
+                                    )}
+                                  </div>
+                                </div>
+                              );
+                                    })
+                                  ))}
+                              </React.Fragment>
+                            ))
+                          )}
+                        </div>
+                      </>
+                    );
+                  })()}
                 </div>
+                )}
 
                 {/* Team Assessment Users */}
+                {userSection !== "company-users" && (
                 <div
                   style={{
                     background: "white",
@@ -1874,8 +2201,9 @@ export default function CompanyDetailsTab({
                     </div>
                   )}
                 </div>
+                )}
               </div>
-            </div>
+            </React.Fragment>
           ))}
     </>
   );

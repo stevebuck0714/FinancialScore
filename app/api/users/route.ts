@@ -7,6 +7,7 @@ import { auditUserOperation, auditForbiddenAccess } from '@/lib/audit-logger';
 import { createUserSchema, validateInput } from '@/lib/validation-schemas';
 import { grantUserCompanyAccess } from '@/lib/user-company-access';
 import { sendWelcomeUserEmail } from '@/lib/email';
+import { getCompanyInvites } from '@/lib/company-invites';
 
 const DEFAULT_ALLOWED_SECTIONS = [
   'ask-corelytics',
@@ -126,6 +127,8 @@ export async function GET(request: NextRequest) {
       sidebarAccess: any;
       companyId: string | null;
       createdAt: Date;
+      homeCompanyId?: string | null;
+      isExternalCompanyUser?: boolean;
     }> = [];
 
     if (companyId) {
@@ -157,18 +160,29 @@ export async function GET(request: NextRequest) {
         orderBy: { createdAt: 'asc' },
       });
 
-      users = memberships.map((m) => ({
-        ...m.user,
-        companyId,
-        companyRole: m.companyRole || m.user.companyRole,
-        sidebarAccess: (m.sidebarAccess ?? m.user.sidebarAccess) as any,
-      }));
-
       // Ensure consultant primary + team members are visible in Manage Users for consultant-owned companies.
       const company = await prisma.company.findUnique({
         where: { id: companyId },
-        select: { consultantId: true },
+        select: { consultantId: true, userDefinedAllocations: true },
       });
+      const acceptedInviteUserIds = new Set(
+        getCompanyInvites(company?.userDefinedAllocations)
+          .filter((invite) => String(invite?.status || '') === 'accepted')
+          .map((invite) => String(invite?.acceptedByUserId || ''))
+          .filter(Boolean),
+      );
+
+      users = memberships.map((m) => ({
+        ...m.user,
+        companyId,
+        homeCompanyId: m.user.companyId,
+        companyRole: m.companyRole || m.user.companyRole,
+        sidebarAccess: (m.sidebarAccess ?? m.user.sidebarAccess) as any,
+        isExternalCompanyUser:
+          acceptedInviteUserIds.has(String(m.user.id)) ||
+          (Boolean(m.user.companyId) && String(m.user.companyId) !== String(companyId)),
+      }));
+
       if (company?.consultantId) {
         const consultantTeam = await prisma.user.findMany({
           where: {
@@ -198,8 +212,10 @@ export async function GET(request: NextRequest) {
           .map((u) => ({
             ...u,
             companyId,
+            homeCompanyId: u.companyId,
             companyRole: 'admin',
             sidebarAccess: Array.isArray(u.sidebarAccess) ? u.sidebarAccess : DEFAULT_ALLOWED_SECTIONS,
+            isExternalCompanyUser: Boolean(u.companyId) && String(u.companyId) !== String(companyId),
           }));
         users = [...users, ...consultantUsers];
       }

@@ -2105,7 +2105,7 @@ function FinancialScorePage() {
 
   // Master data for dynamic goals
   const [masterDataCategories, setMasterDataCategories] = useState<any[]>([]);
-  const [companyManagementSubTab, setCompanyManagementSubTab] = useState<'details' | 'profile' | 'payments' | 'documentation' | 'dataroom'>('profile');
+  const [companyManagementSubTab, setCompanyManagementSubTab] = useState<'details' | 'profile' | 'payments' | 'documentation' | 'team-assessment' | 'dataroom'>('profile');
   const [consultantDashboardTab, setConsultantDashboardTab] = useState<'team-management' | 'company-list' | 'documentation'>('company-list');
   const [siteAdminTab, setSiteAdminTab] = useState<'consultants' | 'businesses' | 'affiliates' | 'default-pricing' | 'billing' | 'siteadmins'>('consultants');
   const [siteAdminBusinessesLoading, setSiteAdminBusinessesLoading] = useState(false);
@@ -8717,8 +8717,12 @@ function FinancialScorePage() {
       // Normalize role and userType to lowercase
       const normalizedUser = {
         ...user,
+        homeCompanyId: user.companyId || companyId,
+        companyId,
         role: user.role.toLowerCase(),
-        userType: user.userType?.toLowerCase()
+        userType: user.userType?.toLowerCase(),
+        isExternalCompanyUser:
+          Boolean(user.companyId) && String(user.companyId) !== String(companyId),
       };
       console.log('Normalized user:', normalizedUser);
       
@@ -8826,9 +8830,12 @@ function FinancialScorePage() {
       if (linkedExistingUser && user) {
         const normalizedUser = {
           ...user,
+          homeCompanyId: user.companyId || null,
           companyId,
           role: String(user.role || '').toLowerCase(),
           userType: userType.toLowerCase(),
+          isExternalCompanyUser:
+            Boolean(user.companyId) && String(user.companyId) !== String(companyId),
         };
         setUsers((prev) => {
           const existingIndex = prev.findIndex(
