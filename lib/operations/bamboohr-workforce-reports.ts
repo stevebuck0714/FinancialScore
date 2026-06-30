@@ -551,7 +551,7 @@ function buildEstimatedBillableEconomicsRows(matches: EmployeeBillRateMatch[]): 
       const estimatedAnnualBillings = round2(match.billRate * ESTIMATED_ANNUAL_BILLABLE_HOURS);
       const estimatedAnnualPay = annualPay == null ? null : round2(annualPay);
       const estimatedAnnualSpread = estimatedAnnualPay == null ? null : round2(estimatedAnnualBillings - estimatedAnnualPay);
-      const billToPayRatio = payRate != null && payRate > 0 ? round2(match.billRate / payRate) : null;
+      const billToPayRatio = payRate != null && match.billRate > 0 ? round2(payRate / match.billRate) : null;
       return {
         employeeId: employee.id,
         employeeName: employee.name,
