@@ -115,6 +115,7 @@ export default function DocumentsTab(props: { selectedCompanyId: string }) {
           companyId: selectedCompanyId,
           category,
           originalFileName: file.name,
+          sizeBytes: file.size,
         }),
       });
 
@@ -136,7 +137,12 @@ export default function DocumentsTab(props: { selectedCompanyId: string }) {
       if (input) input.value = '';
       await load();
     } catch (e: any) {
-      setError(e?.message || 'Upload failed');
+      const message = String(e?.message || '');
+      setError(
+        message.includes('Failed to retrieve the client token')
+          ? 'Document upload storage is not configured or the upload token request was rejected. Confirm BLOB_READ_WRITE_TOKEN is set and restart the dev server.'
+          : message || 'Upload failed',
+      );
     } finally {
       setUploading(false);
     }
