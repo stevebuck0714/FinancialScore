@@ -690,19 +690,48 @@ export async function POST(request: NextRequest) {
     const sectorCategory = resolveCompanyIndustrySectorCategory(company);
     const allowedTargetFields = getAllowedTargetFieldSet(sectorCategory);
     const accountingSystem = String((company as any)?.accountingSystem || "").toUpperCase();
-    const quickBooksSnapshot =
-      accountingSystem === "QUICKBOOKS"
-        ? await loadQuickBooksSnapshotFromLatestFinancialRecord(companyId)
-        : [];
-    const quickBooksByName = new Map(
-      quickBooksSnapshot.map((row) => [normalize(row.accountName), row]),
+    const sourceSnapshot =
+      isQuickBooksDesktopFamily(accountingSystem)
+        ? parseAccountSnapshot(await loadSeedSnapshotFromMetadataPath(companyId, accountingSystem))
+        : accountingSystem === "QUICKBOOKS"
+          ? await loadQuickBooksSnapshotFromLatestFinancialRecord(companyId)
+          : [];
+    const sourceByName = new Map(
+      sourceSnapshot.map((row) => [normalize(row.accountName), row]),
     );
-    const quickBooksById = new Map(
-      quickBooksSnapshot.map((row) => [normalize(row.accountId), row]),
+    const sourceByComparableName = new Map(
+      sourceSnapshot.map((row) => [normalizeForCompare(row.accountName), row]),
     );
+    const sourceById = new Map(
+      sourceSnapshot.map((row) => [normalize(row.accountId), row]),
+    );
+    const sourceByNormalizedCode = new Map<number, AccountSnapshotRow>();
+    for (const row of sourceSnapshot) {
+      const normalizedCode = extractNormalizedAccountCode(row.accountCode, row.accountId, row.accountName);
+      if (normalizedCode !== null && !sourceByNormalizedCode.has(normalizedCode)) {
+        sourceByNormalizedCode.set(normalizedCode, row);
+      }
+    }
+    const findAccountingSourceMatch = (mapping: any): AccountSnapshotRow | undefined => {
+      const byId = sourceById.get(normalize(mapping?.accountId));
+      if (byId) return byId;
+      const byName = sourceByName.get(normalize(mapping?.accountName));
+      if (byName) return byName;
+      const byComparableName = sourceByComparableName.get(normalizeForCompare(String(mapping?.accountName || "")));
+      if (byComparableName) return byComparableName;
+      const normalizedCode = extractNormalizedAccountCode(
+        mapping?.accountCode,
+        mapping?.accountId,
+        mapping?.accountName,
+      );
+      return normalizedCode !== null ? sourceByNormalizedCode.get(normalizedCode) : undefined;
+    };
 
     const seenIdentity = new Set<string>();
-    const uniqueMappings = mappings.filter((mapping: any) => {
+    const sourceScopedMappings = sourceSnapshot.length > 0
+      ? mappings.filter((mapping: any) => findAccountingSourceMatch(mapping))
+      : mappings;
+    const uniqueMappings = sourceScopedMappings.filter((mapping: any) => {
       const key = buildMappingIdentityKey(mapping);
       if (!key) return false;
       if (seenIdentity.has(key)) return false;
@@ -831,9 +860,7 @@ export async function POST(request: NextRequest) {
         !existing && incomingNormalizedCode !== null
           ? existingByNormalizedCode.get(incomingNormalizedCode)
           : null;
-      const sourceMatch =
-        quickBooksById.get(normalize(m.accountId)) ||
-        quickBooksByName.get(normalize(m.accountName));
+      const sourceMatch = findAccountingSourceMatch(m);
       const sourceAccountId = sourceMatch?.accountId ? String(sourceMatch.accountId).trim() : null;
       const accountIdOwner =
         (incomingAccountId ? existingByAccountId.get(normalize(incomingAccountId)) : null) ||
