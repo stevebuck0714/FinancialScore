@@ -510,10 +510,13 @@ export async function GET(request: NextRequest) {
       }
       return undefined;
     };
+    const accountingSourceMappings = snapshot.length > 0
+      ? mappings.filter((m: any) => findSourceMatch(m))
+      : mappings;
 
     const sectorCategory = resolveCompanyIndustrySectorCategory(company);
     const allowedTargetFields = getAllowedTargetFieldSet(sectorCategory);
-    const invalidMappings = mappings.filter((m: any) => {
+    const invalidMappings = accountingSourceMappings.filter((m: any) => {
       const sourceMatch = findSourceMatch(m);
       const effectiveClassification = isManualClassification(m.accountClassification)
         ? m.accountClassification
@@ -534,14 +537,14 @@ export async function GET(request: NextRequest) {
       return invalidForSector || semanticallyInvalid;
     });
     const statusCounts = {
-      total: mappings.length,
+      total: accountingSourceMappings.length,
       new: 0,
       changed: 0,
       inactive: 0,
       unmapped: 0,
       ignored: 0,
     };
-    const sanitizedMappings = mappings.map((m: any) => {
+    const sanitizedMappings = accountingSourceMappings.map((m: any) => {
       const sourceMatch = findSourceMatch(m);
       const hasManualClassification = isManualClassification(m.accountClassification);
       const effectiveClassification = isManualClassification(m.accountClassification)
@@ -613,7 +616,7 @@ export async function GET(request: NextRequest) {
     });
 
     console.log(
-      `Retrieved ${mappings.length} mappings for company ${companyId}`,
+      `Retrieved ${accountingSourceMappings.length} accounting-source mappings for company ${companyId}`,
     );
     if (mappings.length > 0) {
       console.log("First mapping:", mappings[0]);

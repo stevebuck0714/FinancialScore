@@ -96,7 +96,15 @@ function extractAccounts(payload: unknown): SourceAccount[] {
     ? (payload as Record<string, unknown>)
     : {};
   const accountQuery = root.AccountQuery || root.accountQuery;
-  const queue: unknown[] = [accountQuery ?? root];
+  if (!accountQuery) {
+    return [];
+  }
+
+  const accountRoot = accountQuery && typeof accountQuery === 'object' && !Array.isArray(accountQuery)
+    ? (accountQuery as Record<string, unknown>)
+    : {};
+  const accountRet = accountRoot.AccountRet || accountRoot.accountRet;
+  const queue: unknown[] = Array.isArray(accountRet) ? [...accountRet] : accountRet ? [accountRet] : [];
   const accounts: SourceAccount[] = [];
   let guard = 0;
 
@@ -112,31 +120,8 @@ function extractAccounts(payload: unknown): SourceAccount[] {
     if (typeof node !== 'object') continue;
     const record = node as Record<string, unknown>;
 
-    if (
-      record.AccountRet ||
-      record.accountRet ||
-      record.ListID ||
-      record.listId ||
-      record.FullName ||
-      record.Name
-    ) {
-      if (Array.isArray(record.AccountRet)) {
-        for (const item of record.AccountRet) queue.push(item);
-      } else if (record.AccountRet && typeof record.AccountRet === 'object') {
-        queue.push(record.AccountRet);
-      }
-      if (Array.isArray(record.accountRet)) {
-        for (const item of record.accountRet) queue.push(item);
-      } else if (record.accountRet && typeof record.accountRet === 'object') {
-        queue.push(record.accountRet);
-      }
-      const parsed = maybeFromRecord(record);
-      if (parsed) accounts.push(parsed);
-    }
-
-    for (const value of Object.values(record)) {
-      if (value && typeof value === 'object') queue.push(value);
-    }
+    const parsed = maybeFromRecord(record);
+    if (parsed) accounts.push(parsed);
   }
 
   const deduped = new Map<string, SourceAccount>();
