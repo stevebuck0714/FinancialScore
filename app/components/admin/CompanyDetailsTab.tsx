@@ -4,6 +4,10 @@ import React from "react";
 import { INDUSTRY_SECTORS } from "@/data/industrySectors";
 import { formatPhoneNumber } from "@/app/utils/phone";
 import PasswordInput from "@/app/components/common/PasswordInput";
+import {
+  getOperationalDashboardModulesForSector,
+  normalizeOperationalDashboardAccess,
+} from "@/lib/operations/operational-dashboard-access";
 
 interface User {
   id: string;
@@ -19,6 +23,7 @@ interface User {
   userType?: string;
   companyRole?: "user" | "admin" | null;
   sidebarAccess?: string[] | null;
+  operationalDashboardAccess?: string[] | null;
 }
 
 interface Company {
@@ -30,6 +35,7 @@ interface Company {
   addressZip?: string | null;
   addressCountry?: string | null;
   industrySector?: string | null;
+  industrySectorCategory?: string | null;
   consultantId?: string;
 }
 
@@ -207,6 +213,7 @@ export default function CompanyDetailsTab({
     [userId: string]: {
       role: "user" | "admin";
       sidebarAccess: string[];
+      operationalDashboardAccess: string[] | null;
     };
   }>({});
   const [selectedCompanyUsers, setSelectedCompanyUsers] = React.useState<
@@ -276,6 +283,9 @@ export default function CompanyDetailsTab({
             ? "admin"
             : (u as any).companyRole || "user",
           sidebarAccess: (u as any).sidebarAccess || DEFAULT_ALLOWED_SECTIONS,
+          operationalDashboardAccess: normalizeOperationalDashboardAccess(
+            (u as any).operationalDashboardAccess,
+          ),
         };
       });
     setUserPermissions(permissions);
@@ -469,6 +479,8 @@ export default function CompanyDetailsTab({
           companyId: selectedCompanyId,
           companyRole: userPermissions[userId].role,
           sidebarAccess: userPermissions[userId].sidebarAccess,
+          operationalDashboardAccess:
+            userPermissions[userId].operationalDashboardAccess,
         }),
       });
 
@@ -532,6 +544,27 @@ export default function CompanyDetailsTab({
         [userId]: {
           ...prev[userId],
           sidebarAccess: updatedAllowed,
+        },
+      };
+    });
+  };
+
+  const toggleOperationalDashboardModule = (userId: string, moduleKey: string, sectorCategory?: string | null) => {
+    setUserPermissions((prev) => {
+      const modules = getOperationalDashboardModulesForSector(sectorCategory);
+      const defaultAccess = modules.map((module) => module.key);
+      const currentAllowed =
+        normalizeOperationalDashboardAccess(prev[userId]?.operationalDashboardAccess) ||
+        defaultAccess;
+      const updatedAllowed = currentAllowed.includes(moduleKey)
+        ? currentAllowed.filter((key) => key !== moduleKey)
+        : [...currentAllowed, moduleKey];
+
+      return {
+        ...prev,
+        [userId]: {
+          ...prev[userId],
+          operationalDashboardAccess: updatedAllowed,
         },
       };
     });
@@ -790,6 +823,7 @@ export default function CompanyDetailsTab({
                       ? userPermissions[selectedUser.id] || {
                           role: "user" as const,
                           sidebarAccess: DEFAULT_ALLOWED_SECTIONS,
+                          operationalDashboardAccess: null,
                         }
                       : null;
                     const selectedAllowedSections = Array.isArray(
@@ -797,6 +831,14 @@ export default function CompanyDetailsTab({
                     )
                       ? selectedUserPerm.sidebarAccess
                       : DEFAULT_ALLOWED_SECTIONS;
+                    const operationalDashboardModules =
+                      getOperationalDashboardModulesForSector(
+                        comp.industrySectorCategory || comp.industrySector,
+                      );
+                    const selectedOperationalDashboardAccess =
+                      normalizeOperationalDashboardAccess(
+                        selectedUserPerm?.operationalDashboardAccess,
+                      ) || operationalDashboardModules.map((module) => module.key);
                     const selectedDataRoomRule = selectedUser
                       ? getDataRoomRule(selectedUser.id)
                       : null;
@@ -1531,6 +1573,8 @@ export default function CompanyDetailsTab({
                                               );
                                             const isDataRoom =
                                               section.id === "dataroom";
+                                            const isOperationalDashboard =
+                                              section.id === "operational-dashboard";
                                             return (
                                               <div key={section.id}>
                                                 <label
@@ -1559,6 +1603,73 @@ export default function CompanyDetailsTab({
                                                   />
                                                   <span>{section.label}</span>
                                                 </label>
+
+                                                {isOperationalDashboard && isAllowed && (
+                                                  <div
+                                                    style={{
+                                                      margin: "6px 0 0 20px",
+                                                      paddingLeft: "10px",
+                                                      borderLeft:
+                                                        "2px solid #e2e8f0",
+                                                      display: "grid",
+                                                      gap: "6px",
+                                                    }}
+                                                  >
+                                                    <div
+                                                      style={{
+                                                        color: "#64748b",
+                                                        fontSize: "11px",
+                                                        fontWeight: "600",
+                                                      }}
+                                                    >
+                                                      Operational Dashboard pages for this company sector
+                                                    </div>
+                                                    {operationalDashboardModules.map(
+                                                      (module) => {
+                                                        const moduleAllowed =
+                                                          isAdmin ||
+                                                          selectedOperationalDashboardAccess.includes(
+                                                            module.key,
+                                                          );
+                                                        return (
+                                                          <label
+                                                            key={module.key}
+                                                            style={{
+                                                              display: "flex",
+                                                              alignItems:
+                                                                "center",
+                                                              gap: "6px",
+                                                              color: "#334155",
+                                                              fontWeight: "600",
+                                                              cursor: isAdmin
+                                                                ? "not-allowed"
+                                                                : "pointer",
+                                                            }}
+                                                          >
+                                                            <input
+                                                              type="checkbox"
+                                                              checked={
+                                                                moduleAllowed
+                                                              }
+                                                              disabled={isAdmin}
+                                                              onChange={() =>
+                                                                toggleOperationalDashboardModule(
+                                                                  selectedUser.id,
+                                                                  module.key,
+                                                                  comp.industrySectorCategory ||
+                                                                    comp.industrySector,
+                                                                )
+                                                              }
+                                                            />
+                                                            <span>
+                                                              {module.label}
+                                                            </span>
+                                                          </label>
+                                                        );
+                                                      },
+                                                    )}
+                                                  </div>
+                                                )}
 
                                                 {isDataRoom && isAllowed && (
                                                   <div

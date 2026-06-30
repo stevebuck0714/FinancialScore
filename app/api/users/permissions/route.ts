@@ -7,11 +7,14 @@ export async function PATCH(req: NextRequest) {
     const context = await requireAuth(); // Get authenticated user context
     
     const body = await req.json();
-    const { userId, companyId, companyRole, sidebarAccess } = body;
+    const { userId, companyId, companyRole, sidebarAccess, operationalDashboardAccess } = body;
     const normalizedCompanyRole = companyRole === 'admin' ? 'admin' : 'user';
     const normalizedSidebarAccess = Array.isArray(sidebarAccess)
       ? sidebarAccess.filter((section) => typeof section === 'string')
       : [];
+    const normalizedOperationalDashboardAccess = Array.isArray(operationalDashboardAccess)
+      ? operationalDashboardAccess.filter((moduleKey) => typeof moduleKey === 'string')
+      : null;
 
     if (!userId) {
       return NextResponse.json(
@@ -73,12 +76,14 @@ export async function PATCH(req: NextRequest) {
       update: {
         companyRole: normalizedCompanyRole,
         sidebarAccess: normalizedSidebarAccess,
+        operationalDashboardAccess: normalizedOperationalDashboardAccess,
       },
       create: {
         userId,
         companyId: targetCompanyId,
         companyRole: normalizedCompanyRole,
         sidebarAccess: normalizedSidebarAccess,
+        operationalDashboardAccess: normalizedOperationalDashboardAccess,
       },
     });
 
@@ -88,6 +93,7 @@ export async function PATCH(req: NextRequest) {
       data: {
         companyRole: normalizedCompanyRole,
         sidebarAccess: normalizedSidebarAccess,
+        operationalDashboardAccess: normalizedOperationalDashboardAccess,
       },
       select: {
         id: true,
@@ -102,6 +108,7 @@ export async function PATCH(req: NextRequest) {
         createdAt: true,
         companyRole: true,
         sidebarAccess: true,
+        operationalDashboardAccess: true,
       },
     });
 
@@ -112,6 +119,7 @@ export async function PATCH(req: NextRequest) {
         companyId: targetCompanyId,
         companyRole: normalizedCompanyRole,
         sidebarAccess: normalizedSidebarAccess,
+        operationalDashboardAccess: normalizedOperationalDashboardAccess,
       },
     });
   } catch (error) {

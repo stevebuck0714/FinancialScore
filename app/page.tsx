@@ -1950,6 +1950,7 @@ function FinancialScorePage() {
             consultantCompanyName: user.consultantCompanyName, // Preserve consultant company name
             consultantId: user.consultantId, // Preserve consultant ID
             sidebarAccess: user.sidebarAccess ?? null,
+            operationalDashboardAccess: user.operationalDashboardAccess ?? null,
           };
           
           setCurrentUser(normalizedUser);
@@ -6260,6 +6261,7 @@ function FinancialScorePage() {
         consultantId: user.consultantId, // Preserve consultant ID
         isPrimaryContact: user.isPrimaryContact, // Preserve primary contact status
         sidebarAccess: user.sidebarAccess ?? null,
+        operationalDashboardAccess: user.operationalDashboardAccess ?? null,
       };
       
       setCurrentUser(normalizedUser);
@@ -6405,6 +6407,7 @@ function FinancialScorePage() {
         consultantId: user.consultantId,
         isPrimaryContact: user.isPrimaryContact,
         sidebarAccess: user.sidebarAccess ?? null,
+        operationalDashboardAccess: user.operationalDashboardAccess ?? null,
       };
       
       setCurrentUser(normalizedUser);
@@ -6499,6 +6502,7 @@ function FinancialScorePage() {
         consultantId: user.consultantId,
         isPrimaryContact: user.isPrimaryContact,
         sidebarAccess: user.sidebarAccess ?? null,
+        operationalDashboardAccess: user.operationalDashboardAccess ?? null,
       };
       
       setCurrentUser(normalizedUser);
@@ -6672,6 +6676,7 @@ function FinancialScorePage() {
         consultantCompanyName: loginUser.consultantCompanyName,
         consultantId: loginUser.consultantId,
         sidebarAccess: (loginUser as any).sidebarAccess ?? null,
+        operationalDashboardAccess: (loginUser as any).operationalDashboardAccess ?? null,
       };
 
       setCurrentUser(normalizedUser);
@@ -8578,6 +8583,8 @@ function FinancialScorePage() {
         activeCompanyId: companyId,
         companyRole: (membership?.companyRole as any) ?? prev.companyRole,
         sidebarAccess: (membership?.sidebarAccess as any) ?? prev.sidebarAccess,
+        operationalDashboardAccess:
+          (membership?.operationalDashboardAccess as any) ?? prev.operationalDashboardAccess,
       };
     });
   };

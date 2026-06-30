@@ -5,6 +5,7 @@ export type AccessibleCompany = {
   name: string;
   companyRole: string | null;
   sidebarAccess: unknown;
+  operationalDashboardAccess: unknown;
 };
 
 function getUserCompanyAccessDelegate():
@@ -35,6 +36,7 @@ export async function listAccessibleCompaniesForUser(userId: string): Promise<Ac
       role: true,
       companyRole: true,
       sidebarAccess: true,
+      operationalDashboardAccess: true,
     },
   });
   if (!userContext) return [];
@@ -47,6 +49,7 @@ export async function listAccessibleCompaniesForUser(userId: string): Promise<Ac
         companyId: true,
         companyRole: true,
         sidebarAccess: true,
+        operationalDashboardAccess: true,
         company: {
           select: {
             name: true,
@@ -65,6 +68,7 @@ export async function listAccessibleCompaniesForUser(userId: string): Promise<Ac
           {
             companyRole: m.companyRole,
             sidebarAccess: m.sidebarAccess,
+            operationalDashboardAccess: m.operationalDashboardAccess,
           },
         ])
       );
@@ -81,6 +85,8 @@ export async function listAccessibleCompaniesForUser(userId: string): Promise<Ac
           name: company.name,
           companyRole: membership?.companyRole || userContext.companyRole || 'admin',
           sidebarAccess: membership?.sidebarAccess ?? userContext.sidebarAccess,
+          operationalDashboardAccess:
+            membership?.operationalDashboardAccess ?? userContext.operationalDashboardAccess,
         };
       });
     }
@@ -90,6 +96,7 @@ export async function listAccessibleCompaniesForUser(userId: string): Promise<Ac
       name: m.company.name,
       companyRole: m.companyRole,
       sidebarAccess: m.sidebarAccess,
+      operationalDashboardAccess: m.operationalDashboardAccess,
     }));
   }
 
@@ -101,6 +108,7 @@ export async function listAccessibleCompaniesForUser(userId: string): Promise<Ac
       companyId: true,
       companyRole: true,
       sidebarAccess: true,
+      operationalDashboardAccess: true,
       consultantId: true,
       role: true,
       consultantFirm: {
@@ -133,6 +141,7 @@ export async function listAccessibleCompaniesForUser(userId: string): Promise<Ac
       name: company.name,
       companyRole: user.companyRole || 'admin',
       sidebarAccess: user.sidebarAccess,
+      operationalDashboardAccess: user.operationalDashboardAccess,
     }));
   }
 
@@ -146,6 +155,7 @@ export async function listAccessibleCompaniesForUser(userId: string): Promise<Ac
       name,
       companyRole: user.companyRole || 'user',
       sidebarAccess: user.sidebarAccess,
+      operationalDashboardAccess: user.operationalDashboardAccess,
     });
   };
 
@@ -175,6 +185,7 @@ export async function ensureLegacyCompanyAccess(userId: string): Promise<void> {
       companyId: true,
       companyRole: true,
       sidebarAccess: true,
+      operationalDashboardAccess: true,
     },
   });
 
@@ -193,6 +204,7 @@ export async function ensureLegacyCompanyAccess(userId: string): Promise<void> {
       companyId: user.companyId,
       companyRole: user.companyRole || 'user',
       sidebarAccess: user.sidebarAccess ?? undefined,
+      operationalDashboardAccess: user.operationalDashboardAccess ?? undefined,
     },
   });
 }
@@ -202,6 +214,7 @@ export async function grantUserCompanyAccess(params: {
   companyId: string;
   companyRole?: string;
   sidebarAccess?: unknown;
+  operationalDashboardAccess?: unknown;
 }): Promise<{ created: boolean }> {
   const userCompanyAccess = getUserCompanyAccessDelegate();
   if (!userCompanyAccess) {
@@ -229,6 +242,10 @@ export async function grantUserCompanyAccess(params: {
       companyRole: params.companyRole || 'user',
       sidebarAccess:
         params.sidebarAccess === undefined ? undefined : (params.sidebarAccess as any),
+      operationalDashboardAccess:
+        params.operationalDashboardAccess === undefined
+          ? undefined
+          : (params.operationalDashboardAccess as any),
     },
   });
 

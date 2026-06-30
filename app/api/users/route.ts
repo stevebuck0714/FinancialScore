@@ -125,6 +125,7 @@ export async function GET(request: NextRequest) {
       role: any;
       companyRole: string | null;
       sidebarAccess: any;
+      operationalDashboardAccess: any;
       companyId: string | null;
       createdAt: Date;
       homeCompanyId?: string | null;
@@ -152,10 +153,12 @@ export async function GET(request: NextRequest) {
               createdAt: true,
               companyRole: true,
               sidebarAccess: true,
+              operationalDashboardAccess: true,
             },
           },
           companyRole: true,
           sidebarAccess: true,
+          operationalDashboardAccess: true,
         },
         orderBy: { createdAt: 'asc' },
       });
@@ -178,6 +181,8 @@ export async function GET(request: NextRequest) {
         homeCompanyId: m.user.companyId,
         companyRole: m.companyRole || m.user.companyRole,
         sidebarAccess: (m.sidebarAccess ?? m.user.sidebarAccess) as any,
+        operationalDashboardAccess:
+          (m.operationalDashboardAccess ?? m.user.operationalDashboardAccess) as any,
         isExternalCompanyUser:
           acceptedInviteUserIds.has(String(m.user.id)) ||
           (Boolean(m.user.companyId) && String(m.user.companyId) !== String(companyId)),
@@ -200,8 +205,9 @@ export async function GET(request: NextRequest) {
             consultantId: true,
             companyId: true,
             createdAt: true,
-            companyRole: true,
-            sidebarAccess: true,
+          companyRole: true,
+          sidebarAccess: true,
+          operationalDashboardAccess: true,
           },
           orderBy: [{ isPrimaryContact: 'desc' }, { name: 'asc' }],
         });
@@ -215,6 +221,7 @@ export async function GET(request: NextRequest) {
             homeCompanyId: u.companyId,
             companyRole: 'admin',
             sidebarAccess: Array.isArray(u.sidebarAccess) ? u.sidebarAccess : DEFAULT_ALLOWED_SECTIONS,
+            operationalDashboardAccess: u.operationalDashboardAccess,
             isExternalCompanyUser: Boolean(u.companyId) && String(u.companyId) !== String(companyId),
           }));
         users = [...users, ...consultantUsers];
@@ -237,6 +244,7 @@ export async function GET(request: NextRequest) {
             consultantId: true,
             companyRole: true,
             sidebarAccess: true,
+            operationalDashboardAccess: true,
             companyId: true,
             createdAt: true,
           },
@@ -258,6 +266,7 @@ export async function GET(request: NextRequest) {
           consultantId: true,
           companyRole: true,
           sidebarAccess: true,
+            operationalDashboardAccess: true,
           companyId: true,
           createdAt: true,
         },
@@ -387,6 +396,7 @@ export async function POST(request: NextRequest) {
             consultantId: company?.consultantId || null,
             companyRole: null,
             sidebarAccess: null,
+            operationalDashboardAccess: null,
           },
           select: {
             id: true,
@@ -662,7 +672,7 @@ export async function DELETE(request: NextRequest) {
     // Only Consultants, Site Admins, and Company Admins can delete users
     const memberships = await prisma.userCompanyAccess.findMany({
       where: { userId: id },
-      select: { companyId: true, companyRole: true, sidebarAccess: true },
+      select: { companyId: true, companyRole: true, sidebarAccess: true, operationalDashboardAccess: true },
       orderBy: { createdAt: 'asc' },
     });
 
@@ -789,7 +799,7 @@ export async function DELETE(request: NextRequest) {
       // Recompute remaining memberships after disconnect for canonical user fields.
       const remainingMemberships = await prisma.userCompanyAccess.findMany({
         where: { userId: id },
-        select: { companyId: true, companyRole: true, sidebarAccess: true },
+        select: { companyId: true, companyRole: true, sidebarAccess: true, operationalDashboardAccess: true },
         orderBy: { createdAt: 'asc' },
       });
       const firstRemaining = remainingMemberships[0];
@@ -802,6 +812,8 @@ export async function DELETE(request: NextRequest) {
               companyId: firstRemaining?.companyId || null,
               companyRole: firstRemaining?.companyRole || null,
               sidebarAccess: (firstRemaining?.sidebarAccess as any) ?? null,
+              operationalDashboardAccess:
+                (firstRemaining?.operationalDashboardAccess as any) ?? null,
             }
           : {},
       });

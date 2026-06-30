@@ -51,6 +51,7 @@ import {
 import { hashCacheParts, readDerivedApiCache, writeDerivedApiCache } from '@/lib/derived-api-cache';
 import { privateCacheHeaders } from '@/lib/http-cache';
 import { resolveCompanyIndustrySectorCategory } from '@/lib/industry-sector-resolver';
+import { isOperationalDataTypeAllowed } from '@/lib/operations/operational-dashboard-access';
 
 export const dynamic = 'force-dynamic';
 
@@ -2658,8 +2659,13 @@ export async function GET(request: NextRequest) {
 
     // SECURITY: Require normal user auth unless this is the tightly scoped cron
     // warmup that rebuilds wholesale product caches after snapshot hydration.
-    if (!isCronOperationalCacheWarmup) {
-      await requireAuth();
+    const authContext = !isCronOperationalCacheWarmup ? await requireAuth() : null;
+
+    if (!isCronOperationalCacheWarmup && !authContext) {
+      return NextResponse.json(
+        { error: 'Unauthorized: Authentication required' },
+        { status: 401 }
+      );
     }
 
     if (!companyId) {
@@ -2679,6 +2685,68 @@ export async function GET(request: NextRequest) {
           { error: 'Forbidden: Access to this company denied' },
           { status: 403 }
         );
+      }
+
+      if (authContext?.role === 'USER') {
+        const membership = await prisma.userCompanyAccess.findUnique({
+          where: {
+            userId_companyId: {
+              userId: authContext.userId,
+              companyId,
+            },
+          },
+          select: {
+            companyRole: true,
+            sidebarAccess: true,
+            operationalDashboardAccess: true,
+            user: {
+              select: {
+                companyRole: true,
+                sidebarAccess: true,
+                operationalDashboardAccess: true,
+              },
+            },
+          },
+        });
+        const legacyUser = membership
+          ? null
+          : await prisma.user.findUnique({
+              where: { id: authContext.userId },
+              select: {
+                companyRole: true,
+                sidebarAccess: true,
+                operationalDashboardAccess: true,
+              },
+            });
+        const companyRole = String(
+          membership?.companyRole ||
+            membership?.user?.companyRole ||
+            legacyUser?.companyRole ||
+            ''
+        ).toLowerCase();
+        const sidebarAccess =
+          membership?.sidebarAccess ??
+          membership?.user?.sidebarAccess ??
+          legacyUser?.sidebarAccess;
+        const canAccessOperationalDashboard =
+          companyRole === 'admin' ||
+          !Array.isArray(sidebarAccess) ||
+          sidebarAccess.includes('operational-dashboard');
+        const operationalDashboardAccess =
+          membership?.operationalDashboardAccess ??
+          membership?.user?.operationalDashboardAccess ??
+          legacyUser?.operationalDashboardAccess;
+
+        if (
+          !canAccessOperationalDashboard ||
+          !isOperationalDataTypeAllowed(operationalDashboardAccess, type)
+        ) {
+          await auditForbiddenAccess('OperationalData', companyId, `READ:${type || 'summary'}`);
+          return NextResponse.json(
+            { error: 'Forbidden: Operational Dashboard page access denied' },
+            { status: 403 }
+          );
+        }
       }
     }
 

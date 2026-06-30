@@ -201,6 +201,7 @@ model User {
   isPrimaryContact     Boolean            @default(false)
   companyRole          String?            @default("user") // 'user' or 'admin' - for company users only
   sidebarAccess        Json?              // Array of accessible sidebar sections
+  operationalDashboardAccess Json?        // Array of accessible Operational Dashboard module/page keys
   createdAt            DateTime           @default(now())
   updatedAt            DateTime           @updatedAt
   passwordResetExpires DateTime?
@@ -250,6 +251,7 @@ model UserCompanyAccess {
   companyId   String
   companyRole String?  @default("user")
   sidebarAccess Json?
+  operationalDashboardAccess Json?
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 

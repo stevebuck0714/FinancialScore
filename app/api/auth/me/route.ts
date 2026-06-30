@@ -99,6 +99,9 @@ export async function GET(request: NextRequest) {
         sidebarAccess:
           (accessibleCompanies.find((c) => c.companyId === activeCompanyId)?.sidebarAccess as any) ??
           user.sidebarAccess,
+        operationalDashboardAccess:
+          (accessibleCompanies.find((c) => c.companyId === activeCompanyId)?.operationalDashboardAccess as any) ??
+          user.operationalDashboardAccess,
         companyId: activeCompanyId,
         consultantId: consultantId,
         isPrimaryContact: user.isPrimaryContact,

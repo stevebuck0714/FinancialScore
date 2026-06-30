@@ -331,6 +331,7 @@ export interface User {
     name: string;
     companyRole?: string | null;
     sidebarAccess?: any;
+    operationalDashboardAccess?: any;
   }>;
   consultantId?: string;
   consultantType?: string;
@@ -342,6 +343,7 @@ export interface User {
   userType?: 'company' | 'assessment'; // company = management team, assessment = fills questionnaire
   companyRole?: 'user' | 'admin'; // admin = company admin with full access, user = restricted access
   sidebarAccess?: string[]; // Array of sidebar sections the user can access
+  operationalDashboardAccess?: string[]; // Array of Operational Dashboard module/page keys the user can access
 }
 
 export interface FinancialDataRecord {

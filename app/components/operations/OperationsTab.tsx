@@ -33,6 +33,7 @@ import { getSdeSectorBenchmarks } from '@/lib/sde-sector-benchmarks';
 import { getSectorMockProfile } from '@/lib/operations/sector-mock-data';
 import { getModuleLabel, isLoansDefaultEnabledForCompany, mapModuleToDataType, resolveModuleKey, type OpsDataType } from '@/lib/operations/module-registry';
 import { getOperationalHubDefaultModuleKeys, getOperationalHubDefaultReportsForModule } from '@/lib/operations/operational-hub-layout';
+import { isOperationalModuleAllowed } from '@/lib/operations/operational-dashboard-access';
 import { buildWeeklyProductMarginModel } from '@/lib/operations/product-margin-weekly';
 import { getFieldDisplayName } from '@/lib/constants/field-display-names';
 import { formatDateInputLabel, formatDateSafeUtc, parseDateSafeUtc, toLocalInputDate } from '@/app/utils/date';
@@ -1070,10 +1071,19 @@ export default function OperationsTab({
     setExpandedProductMarginCustomers((prev) => ({ ...prev, [key]: !prev[key] }));
   };
   const isCustomersTab = ['customers', 'sales'].includes(String(mapModuleToDataType(activeTab) || '')) || activeTab === 'customers';
+  const shouldApplyOperationalUserAccess =
+    String(currentUser?.role || '').toLowerCase() === 'user' &&
+    String(currentUser?.userType || '').toLowerCase() === 'company' &&
+    String((currentUser as any)?.companyRole || '').toLowerCase() !== 'admin';
+  const hasOperationalModuleAccess = (moduleKey: string): boolean => {
+    if (!shouldApplyOperationalUserAccess) return true;
+    return isOperationalModuleAllowed((currentUser as any)?.operationalDashboardAccess, moduleKey);
+  };
   const isTabModuleEnabled = (moduleKey: string): boolean => {
     const raw = String(moduleKey || '').trim();
     const normalized = raw === 'overview' ? 'dashboard' : raw;
     if (!normalized) return true;
+    if (!hasOperationalModuleAccess(normalized)) return false;
     const value = operationalHubSections[`tab:${normalized}`];
     if (normalized === 'loans' && value === undefined) return isLoansDefaultEnabledForCompany(selectedCompanyId);
     if (mapModuleToDataType(normalized) === 'cap-table' && value === undefined) return false;
@@ -1217,6 +1227,8 @@ export default function OperationsTab({
       })
       .filter(([, label]) => Boolean(label))
   ) as Partial<Record<OpsDataType, string>>;
+  const isDashboardDataTypeAvailable = (type: OpsDataType): boolean =>
+    availableModuleTabs.some((module) => mapModuleToDataType(module) === type);
   const sectorProfile = getSectorMockProfile(industrySectorCategory);
   const sectorCode = sectorProfile.sectorCategory;
   const sectorLabel = SECTOR_NAMES[sectorCode] || 'This Sector';
@@ -1681,18 +1693,24 @@ export default function OperationsTab({
 
   useEffect(() => {
     if (activeTab !== 'overview' && activeTab !== 'dashboard') return;
-    const needsAnyCoreData = !arData || !apData || !cashData || !inventoryData || !customerData || !productData;
+    const needsAnyCoreData =
+      (isDashboardDataTypeAvailable('ar-aging') && !arData) ||
+      (isDashboardDataTypeAvailable('ap-aging') && !apData) ||
+      (isDashboardDataTypeAvailable('cash') && !cashData) ||
+      (isDashboardDataTypeAvailable('inventory') && !inventoryData) ||
+      (isDashboardDataTypeAvailable('customers') && !customerData) ||
+      (isDashboardDataTypeAvailable('products') && !productData);
     if (!needsAnyCoreData) return;
 
     let cancelled = false;
     setSmartCardsLoading(true);
     Promise.allSettled([
-      arData ? Promise.resolve(arData) : fetchOperationalType('ar-aging'),
-      apData ? Promise.resolve(apData) : fetchOperationalType('ap-aging'),
-      cashData ? Promise.resolve(cashData) : fetchOperationalType('cash'),
-      inventoryData ? Promise.resolve(inventoryData) : fetchOperationalType('inventory'),
-      customerData ? Promise.resolve(customerData) : fetchOperationalType('customers'),
-      productData ? Promise.resolve(productData) : fetchOperationalType('products'),
+      arData || !isDashboardDataTypeAvailable('ar-aging') ? Promise.resolve(arData) : fetchOperationalType('ar-aging'),
+      apData || !isDashboardDataTypeAvailable('ap-aging') ? Promise.resolve(apData) : fetchOperationalType('ap-aging'),
+      cashData || !isDashboardDataTypeAvailable('cash') ? Promise.resolve(cashData) : fetchOperationalType('cash'),
+      inventoryData || !isDashboardDataTypeAvailable('inventory') ? Promise.resolve(inventoryData) : fetchOperationalType('inventory'),
+      customerData || !isDashboardDataTypeAvailable('customers') ? Promise.resolve(customerData) : fetchOperationalType('customers'),
+      productData || !isDashboardDataTypeAvailable('products') ? Promise.resolve(productData) : fetchOperationalType('products'),
     ])
       .then((results) => {
         if (cancelled) return;
@@ -25758,6 +25776,26 @@ Strategies to Improve the CCC
       }}>
         <div style={{ height: '20px' }}></div>
         {renderOverview()}
+      </div>
+    );
+  }
+
+  if (safeAvailableTabs.length === 0) {
+    return (
+      <div style={{
+        maxWidth: '1600px',
+        margin: '0 auto',
+        minHeight: '100vh',
+        background: '#f8fafc',
+        padding: '64px 32px',
+        textAlign: 'center',
+      }}>
+        <h2 style={{ fontSize: '24px', fontWeight: 700, color: '#1e293b', marginBottom: '12px' }}>
+          No Operational Dashboard Pages Assigned
+        </h2>
+        <p style={{ fontSize: '14px', color: '#64748b', margin: 0 }}>
+          Please ask a company admin to update this user's Operational Dashboard page access.
+        </p>
       </div>
     );
   }
