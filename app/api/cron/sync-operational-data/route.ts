@@ -218,6 +218,7 @@ export async function GET(request: NextRequest) {
             status: 'ACTIVE',
           },
           data: {
+            status: syncResult.success ? 'ACTIVE' : 'ERROR',
             lastSyncAt: new Date(),
             errorMessage: syncResult.success ? null : (syncResult.errors || []).join(' | ').slice(0, 900),
           },
@@ -260,6 +261,7 @@ export async function GET(request: NextRequest) {
             id: connection.id,
           },
           data: {
+            status: 'ERROR',
             errorMessage: error.message,
           },
         });

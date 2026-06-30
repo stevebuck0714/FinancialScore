@@ -47,6 +47,26 @@ function isSourceAvailableForSector(source: SourceDefinition, industrySectorCate
   return source.sectorCategories.includes(sectorCategory);
 }
 
+function asRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
+}
+
+function normalizeFrequency(value: unknown): string {
+  const normalized = typeof value === 'string' ? value.trim().toLowerCase() : '';
+  if (normalized === 'daily' || normalized === 'weekly' || normalized === 'monthly') return normalized;
+  if (normalized === 'manual' || normalized === 'off') return 'manual';
+  return 'manual';
+}
+
+function normalizePullTime(value: unknown): string {
+  const trimmed = typeof value === 'string' ? value.trim() : '';
+  return /^\d{2}:\d{2}$/.test(trimmed) ? trimmed : '08:00';
+}
+
+function isApiScheduledSource(source: SourceDefinition | null): boolean {
+  return source?.provider === 'BAMBOOHR';
+}
+
 async function getValidatedCompany(companyId: string) {
   const company = await prisma.company.findUnique({
     where: { id: companyId },
@@ -81,6 +101,7 @@ export async function GET(request: NextRequest) {
       availableSources,
       selectedSources: connections.map((connection) => {
         const source = getSourceDefinition(connection.sourceCode);
+        const metadata = asRecord(connection.connectionMetadata);
         return {
           provider: connection.provider,
           sourceCode: connection.sourceCode,
@@ -88,6 +109,10 @@ export async function GET(request: NextRequest) {
           status: connection.status,
           lastSyncAt: connection.lastSyncAt,
           errorMessage: connection.errorMessage,
+          scheduleEnabled: isApiScheduledSource(source),
+          autoSync: connection.autoSync,
+          syncFrequency: connection.syncFrequency || 'manual',
+          syncTime: normalizePullTime(metadata.operationalPullTime),
         };
       }),
     });
@@ -127,11 +152,14 @@ export async function POST(request: NextRequest) {
       tokenExpiresAt: existing?.tokenExpiresAt || null,
       baseUrl: existing?.baseUrl || null,
       lastSyncAt: existing?.lastSyncAt || null,
-      autoSync: existing?.autoSync ?? false,
-      syncFrequency: existing?.syncFrequency || 'manual',
+      autoSync: isApiScheduledSource(source) ? (existing?.autoSync ?? true) : false,
+      syncFrequency: isApiScheduledSource(source) ? (existing?.syncFrequency || 'daily') : 'manual',
       connectionMetadata: {
         ...(existing?.connectionMetadata || {}),
         sourceLabel: source.label,
+        ...(isApiScheduledSource(source)
+          ? { operationalPullTime: asRecord(existing?.connectionMetadata).operationalPullTime || '08:00' }
+          : {}),
         sourceCreatedAt: (existing?.connectionMetadata || {}).sourceCreatedAt || new Date().toISOString(),
       },
       errorMessage: existing?.errorMessage || null,
@@ -140,6 +168,71 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ ok: true, companyId, sourceCode });
   } catch (error: any) {
     const message = error?.message || 'Failed to add operational source';
+    const status =
+      message.includes('Company not found') ? 404 : message.includes('Unauthorized') ? 401 : message.includes('Forbidden') ? 403 : 400;
+    return NextResponse.json({ ok: false, error: message }, { status });
+  }
+}
+
+export async function PATCH(request: NextRequest) {
+  try {
+    const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
+    const { companyId } = await requireSiteAdminAuthorizedInforCompany(request, body);
+    await getValidatedCompany(companyId);
+    const sourceCode = String(body.sourceCode || '').trim().toUpperCase();
+    const source = getSourceDefinition(sourceCode);
+    if (!source) {
+      return NextResponse.json({ ok: false, error: 'Unknown operational source.' }, { status: 400 });
+    }
+
+    const existing = await getOperationalSystemConnection(companyId, source.provider, source.sourceCode);
+    if (!existing) {
+      return NextResponse.json({ ok: false, error: 'Operational source is not selected for this company.' }, { status: 404 });
+    }
+    if (!isApiScheduledSource(source)) {
+      return NextResponse.json(
+        { ok: false, error: `${source.label} is a manual upload source and does not support scheduled sync.` },
+        { status: 400 }
+      );
+    }
+
+    const syncFrequency = normalizeFrequency(body.syncFrequency);
+    const syncTime = normalizePullTime(body.syncTime);
+    const autoSync = Boolean(body.autoSync) && syncFrequency !== 'manual';
+    const metadata = asRecord(existing.connectionMetadata);
+
+    await saveOperationalSystemConnection({
+      companyId,
+      provider: source.provider,
+      sourceCode: source.sourceCode,
+      status: existing.status,
+      authType: existing.authType,
+      accessToken: existing.accessToken,
+      refreshToken: existing.refreshToken,
+      tokenExpiresAt: existing.tokenExpiresAt,
+      baseUrl: existing.baseUrl,
+      lastSyncAt: existing.lastSyncAt,
+      autoSync,
+      syncFrequency,
+      connectionMetadata: {
+        ...metadata,
+        sourceLabel: source.label,
+        operationalPullTime: syncTime,
+        operationalScheduleUpdatedAt: new Date().toISOString(),
+      },
+      errorMessage: existing.errorMessage,
+    });
+
+    return NextResponse.json({
+      ok: true,
+      companyId,
+      sourceCode,
+      autoSync,
+      syncFrequency,
+      syncTime,
+    });
+  } catch (error: any) {
+    const message = error?.message || 'Failed to save operational source schedule';
     const status =
       message.includes('Company not found') ? 404 : message.includes('Unauthorized') ? 401 : message.includes('Forbidden') ? 403 : 400;
     return NextResponse.json({ ok: false, error: message }, { status });

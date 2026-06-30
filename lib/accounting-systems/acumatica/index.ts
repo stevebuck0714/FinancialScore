@@ -80,6 +80,12 @@ const acumatica: AccountingSystemModule<AcumaticaSettings, AcumaticaProgram> = {
   tagline: 'Acumatica Cloud ERP — Contract-Based REST API',
   platform: 'ACUMATICA',
   badge: { initials: 'AC', bg: '#0369a1', fg: '#ffffff' },
+  capabilities: {
+    connect: true,
+    disconnect: true,
+    syncNow: true,
+    backfill: true,
+  },
   defaultSettings: DEFAULT_ACUMATICA_SETTINGS,
   defaultPrograms: DEFAULT_ACUMATICA_PROGRAMS,
   sanitizeSettings,

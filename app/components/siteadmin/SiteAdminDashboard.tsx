@@ -2526,7 +2526,7 @@ export default function SiteAdminDashboard(props: any) {
     Record<string, Array<{ provider: string; sourceCode: string; label: string }>>
   >({});
   const [selectedOperationalSourcesByCompany, setSelectedOperationalSourcesByCompany] = React.useState<
-    Record<string, Array<{ provider: string; sourceCode: string; label: string; status?: string; lastSyncAt?: string | null; errorMessage?: string | null }>>
+    Record<string, Array<{ provider: string; sourceCode: string; label: string; status?: string; lastSyncAt?: string | null; errorMessage?: string | null; scheduleEnabled?: boolean; autoSync?: boolean; syncFrequency?: string; syncTime?: string }>>
   >({});
   const [operationalSourceToAddByCompany, setOperationalSourceToAddByCompany] = React.useState<Record<string, string>>({});
   const [savingOperationalSourceCompanyId, setSavingOperationalSourceCompanyId] = React.useState<string | null>(null);
@@ -4190,6 +4190,51 @@ export default function SiteAdminDashboard(props: any) {
       setSavingOperationalSourceCompanyId((prev) => (prev === companyId ? null : prev));
     }
   };
+  const updateOperationalSourceScheduleState = (
+    companyId: string,
+    sourceCode: string,
+    patch: { autoSync?: boolean; syncFrequency?: string; syncTime?: string }
+  ) => {
+    const normalizedSourceCode = String(sourceCode || '').trim().toUpperCase();
+    setSelectedOperationalSourcesByCompany((prev) => ({
+      ...prev,
+      [companyId]: (prev[companyId] || []).map((source) =>
+        String(source.sourceCode || '').trim().toUpperCase() === normalizedSourceCode
+          ? { ...source, ...patch }
+          : source
+      ),
+    }));
+  };
+  const saveOperationalSourceSchedule = async (companyId: string, sourceCode: string) => {
+    const normalizedSourceCode = String(sourceCode || '').trim().toUpperCase();
+    const source = getSelectedOperationalSources(companyId).find(
+      (selectedSource) => String(selectedSource.sourceCode || '').trim().toUpperCase() === normalizedSourceCode
+    );
+    if (!source) return;
+    try {
+      setSavingOperationalSourceCompanyId(companyId);
+      const response = await fetch('/api/operational-system-integrations/sources', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          companyId,
+          sourceCode: normalizedSourceCode,
+          autoSync: Boolean(source.autoSync),
+          syncFrequency: source.syncFrequency || 'manual',
+          syncTime: source.syncTime || '08:00',
+        }),
+      });
+      const data = await response.json();
+      if (!response.ok || !data?.ok) {
+        throw new Error(data?.details || data?.error || 'Failed to save operational source schedule');
+      }
+      await loadOperationalSources(companyId);
+    } catch (error: any) {
+      alert(`Failed to save operational source schedule: ${error?.message || 'Unknown error'}`);
+    } finally {
+      setSavingOperationalSourceCompanyId((prev) => (prev === companyId ? null : prev));
+    }
+  };
   // See note above — these saves are no-ops; the new AccountingSystemPanel
   // owns persistence for all plugin-native systems via the generic route at
   // /api/accounting-systems/[system]/settings.
@@ -4521,22 +4566,89 @@ export default function SiteAdminDashboard(props: any) {
           </button>
         </div>
         {selectedSources.length > 0 && (
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
-            {selectedSources.map((source) => (
-              <div
-                key={`${companyId}-selected-source-${source.sourceCode}`}
-                style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', background: '#fff', border: '1px solid #cbd5e1', borderRadius: '999px', padding: '6px 10px', fontSize: '12px', color: '#334155' }}
-              >
-                <span>{source.label}</span>
-                <button
-                  onClick={() => removeOperationalSource(companyId, source.sourceCode)}
-                  disabled={savingOperationalSourceCompanyId === companyId}
-                  style={{ background: 'none', border: 'none', color: '#b91c1c', cursor: 'pointer', fontSize: '12px', fontWeight: '600', padding: 0 }}
+          <div style={{ display: 'grid', gap: '8px' }}>
+            {selectedSources.map((source) => {
+              const frequency = String(source.syncFrequency || 'manual');
+              const autoSync = Boolean(source.autoSync) && frequency !== 'manual';
+              const scheduleEnabled = Boolean(source.scheduleEnabled);
+              return (
+                <div
+                  key={`${companyId}-selected-source-${source.sourceCode}`}
+                  style={{ display: 'grid', gridTemplateColumns: scheduleEnabled ? 'minmax(180px, 1.3fr) repeat(4, minmax(110px, auto))' : 'minmax(180px, 1fr) auto', gap: '8px', alignItems: 'end', background: '#fff', border: '1px solid #cbd5e1', borderRadius: '8px', padding: '8px', fontSize: '12px', color: '#334155' }}
                 >
-                  Remove
-                </button>
-              </div>
-            ))}
+                  <div>
+                    <div style={{ fontWeight: 700, color: '#1e293b' }}>{source.label}</div>
+                    <div style={{ color: '#64748b', marginTop: '2px' }}>
+                      {source.lastSyncAt ? `Last sync: ${new Date(source.lastSyncAt).toLocaleString()}` : 'No sync has run yet'}
+                    </div>
+                    {!scheduleEnabled ? <div style={{ color: '#64748b', marginTop: '2px' }}>Manual upload source. Scheduling is handled by user imports.</div> : null}
+                    {source.errorMessage ? <div style={{ color: '#b91c1c', marginTop: '2px' }}>{source.errorMessage}</div> : null}
+                  </div>
+                  {scheduleEnabled && <label style={{ display: 'flex', flexDirection: 'column', gap: '3px', fontSize: '11px', color: '#475569' }}>
+                    <span style={{ fontWeight: 600 }}>Auto Sync</span>
+                    <select
+                      value={autoSync ? 'YES' : 'NO'}
+                      onChange={(e) =>
+                        updateOperationalSourceScheduleState(companyId, source.sourceCode, {
+                          autoSync: e.target.value === 'YES',
+                          syncFrequency: e.target.value === 'YES' && frequency === 'manual' ? 'daily' : frequency,
+                        })
+                      }
+                      disabled={savingOperationalSourceCompanyId === companyId}
+                      style={{ border: '1px solid #cbd5e1', borderRadius: '6px', padding: '7px', fontSize: '12px', background: 'white' }}
+                    >
+                      <option value="YES">On</option>
+                      <option value="NO">Off</option>
+                    </select>
+                  </label>}
+                  {scheduleEnabled && <label style={{ display: 'flex', flexDirection: 'column', gap: '3px', fontSize: '11px', color: '#475569' }}>
+                    <span style={{ fontWeight: 600 }}>Frequency</span>
+                    <select
+                      value={frequency}
+                      onChange={(e) =>
+                        updateOperationalSourceScheduleState(companyId, source.sourceCode, {
+                          syncFrequency: e.target.value,
+                          autoSync: e.target.value !== 'manual',
+                        })
+                      }
+                      disabled={savingOperationalSourceCompanyId === companyId}
+                      style={{ border: '1px solid #cbd5e1', borderRadius: '6px', padding: '7px', fontSize: '12px', background: 'white' }}
+                    >
+                      <option value="daily">Daily</option>
+                      <option value="weekly">Weekly</option>
+                      <option value="monthly">Monthly</option>
+                      <option value="manual">Manual</option>
+                    </select>
+                  </label>}
+                  {scheduleEnabled && <label style={{ display: 'flex', flexDirection: 'column', gap: '3px', fontSize: '11px', color: '#475569' }}>
+                    <span style={{ fontWeight: 600 }}>Time</span>
+                    <input
+                      type="time"
+                      value={source.syncTime || '08:00'}
+                      onChange={(e) => updateOperationalSourceScheduleState(companyId, source.sourceCode, { syncTime: e.target.value })}
+                      disabled={savingOperationalSourceCompanyId === companyId}
+                      style={{ border: '1px solid #cbd5e1', borderRadius: '6px', padding: '7px', fontSize: '12px', background: 'white' }}
+                    />
+                  </label>}
+                  <div style={{ display: 'flex', gap: '6px', justifyContent: 'flex-end' }}>
+                    {scheduleEnabled && <button
+                      onClick={() => saveOperationalSourceSchedule(companyId, source.sourceCode)}
+                      disabled={savingOperationalSourceCompanyId === companyId}
+                      style={{ padding: '8px 10px', background: '#334155', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: savingOperationalSourceCompanyId === companyId ? 'not-allowed' : 'pointer' }}
+                    >
+                      Save Schedule
+                    </button>}
+                    <button
+                      onClick={() => removeOperationalSource(companyId, source.sourceCode)}
+                      disabled={savingOperationalSourceCompanyId === companyId}
+                      style={{ padding: '8px 10px', background: 'white', color: '#b91c1c', border: '1px solid #fecaca', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: savingOperationalSourceCompanyId === companyId ? 'not-allowed' : 'pointer' }}
+                    >
+                      Remove
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
           </div>
         )}
       </div>
@@ -8028,6 +8140,8 @@ export default function SiteAdminDashboard(props: any) {
                                                 )}
                                               </div>
                                             </div>
+                                          </div>
+                                          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '8px', marginBottom: '8px' }}>
                                             {renderOperationalSourceSelectorCard(company.id)}
                                             {isOperationalSourceSelected(company.id, 'BAMBOOHR_STANDARD') && renderBambooHrOperationalIntegrationCard(company.id, company.name)}
                                             {isOperationalSourceSelected(company.id, 'BAMBOOHR_STANDARD') && renderBambooHrDataDomainsCard(company.id)}

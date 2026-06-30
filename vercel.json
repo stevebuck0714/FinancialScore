@@ -18,6 +18,10 @@
       "memory": 3008,
       "maxDuration": 300
     },
+    "app/api/cron/sync-operational-system-integrations/route.ts": {
+      "memory": 3008,
+      "maxDuration": 300
+    },
     "app/api/cron/process-company-documents/route.ts": {
       "memory": 3008,
       "maxDuration": 300
@@ -31,6 +35,10 @@
     {
       "path": "/api/cron/sync-operational-data",
       "schedule": "0 * * * *"
+    },
+    {
+      "path": "/api/cron/sync-operational-system-integrations",
+      "schedule": "5 * * * *"
     },
     {
       "path": "/api/cron/process-infor-sync-runs",

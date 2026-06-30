@@ -7,6 +7,7 @@ import { normalizeInforSystem } from '@/lib/infor-m3/system';
 import { syncQuickBooksDesktopOperationalPayload, type QbDesktopOperationalPayload } from '@/lib/quickbooks-desktop/operational-sync';
 import { loadQuickBooksDesktopBackfillPayloads } from '@/lib/quickbooks-desktop/backfill-payloads';
 import type { AccountingConnection, AccountingPlatform } from '@prisma/client';
+import { syncPluginErpConnection } from '@/lib/operational-sync/plugin-erp-adapters';
 
 export type SyncFrequency = 'daily' | 'weekly' | 'monthly';
 
@@ -306,10 +307,10 @@ export async function runOperationalSyncForConnection(
     };
   }
 
-  // Dynamics 365, Acumatica, Odoo, and Sage Intacct currently have no live
-  // API-pull implementation. Their old "push payload" routes were removed when
-  // we migrated these systems onto the plugin framework. They fall through to
-  // notImplementedResult below so the caller gets a clear, truthful message.
+  const pluginResult = await syncPluginErpConnection(connection, frequency);
+  if (pluginResult) {
+    return pluginResult;
+  }
 
   return notImplementedResult(connection.platform);
 }

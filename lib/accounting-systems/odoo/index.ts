@@ -72,6 +72,12 @@ const odoo: AccountingSystemModule<OdooSettings, OdooProgram> = {
   tagline: 'Odoo ERP — XML-RPC / JSON-RPC API',
   platform: 'ODOO',
   badge: { initials: 'OD', bg: '#7c3aed', fg: '#ffffff' },
+  capabilities: {
+    connect: true,
+    disconnect: true,
+    syncNow: true,
+    backfill: true,
+  },
   defaultSettings: DEFAULT_ODOO_SETTINGS,
   defaultPrograms: DEFAULT_ODOO_PROGRAMS,
   sanitizeSettings,

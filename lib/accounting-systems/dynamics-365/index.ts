@@ -75,6 +75,12 @@ const dynamics365: AccountingSystemModule<Dynamics365Settings, Dynamics365Progra
   tagline: 'Dynamics 365 Business Central / Finance & Operations — OAuth 2.0',
   platform: 'DYNAMICS365',
   badge: { initials: 'D365', bg: '#1d4ed8', fg: '#ffffff' },
+  capabilities: {
+    connect: true,
+    disconnect: true,
+    syncNow: true,
+    backfill: true,
+  },
   defaultSettings: DEFAULT_DYNAMICS_365_SETTINGS,
   defaultPrograms: DEFAULT_DYNAMICS_365_PROGRAMS,
   sanitizeSettings,
