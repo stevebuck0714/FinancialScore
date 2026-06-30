@@ -233,7 +233,7 @@ export type BambooHrWorkforceReportSnapshot = {
 };
 
 const SNAPSHOT_METADATA_KEY = 'bambooHrWorkforceReportSnapshot';
-export const BAMBOOHR_WORKFORCE_RATE_MATCH_VERSION = 3;
+export const BAMBOOHR_WORKFORCE_RATE_MATCH_VERSION = 4;
 const MAX_CONCURRENCY = 8;
 const CURRENT_BAMBOOHR_CLIENT_NAME = 'Eli Lilly';
 const ESTIMATED_ANNUAL_BILLABLE_HOURS = 1920;
@@ -1052,7 +1052,7 @@ function buildPayload(
   const billRateMatchesWithPay = billRateMatches.filter((match) => match.employee.hourlyCost != null && Number(match.employee.hourlyCost) > 0);
   const avgBillRate = average(billRateMatches.map((match) => match.billRate));
   const avgPayRate = average(billRateMatchesWithPay.map((match) => match.employee.hourlyCost));
-  const overallBillToPayRate = avgBillRate != null && avgPayRate != null && avgPayRate > 0 ? round2(avgBillRate / avgPayRate) : null;
+  const overallBillToPayRate = avgBillRate != null && avgBillRate > 0 && avgPayRate != null ? round2(avgPayRate / avgBillRate) : null;
   const numericBillRatesAvailable = billRateMatches.length > 0;
   const estimatedBillableEconomicsByEmployee = buildEstimatedBillableEconomicsRows(billRateMatches);
   const missingBillRateLevel = employees
@@ -1225,13 +1225,29 @@ export function getBambooHrLaborSchedulingPayload(snapshot: BambooHrWorkforceRep
 }
 
 export function getBambooHrRevenueBillablesPayload(snapshot: BambooHrWorkforceReportSnapshot) {
+  const summary = snapshot.revenueBillables.summary;
+  const normalizedSummary = {
+    ...summary,
+    overallBillToPayRate:
+      summary.avgBillRate != null && summary.avgBillRate > 0 && summary.avgPayRate != null
+        ? round2(summary.avgPayRate / summary.avgBillRate)
+        : null,
+  };
+  const estimatedBillableEconomicsByEmployee = snapshot.revenueBillables.estimatedBillableEconomicsByEmployee.map((row) => ({
+    ...row,
+    billToPayRatio:
+      row.payRate != null && row.rateCardBillRate > 0
+        ? round2(row.payRate / row.rateCardBillRate)
+        : null,
+  }));
+
   return {
-    meta: { source: snapshot.source, generatedAt: snapshot.generatedAt, note: snapshot.revenueBillables.summary.note },
-    summary: snapshot.revenueBillables.summary,
+    meta: { source: snapshot.source, generatedAt: snapshot.generatedAt, note: normalizedSummary.note },
+    summary: normalizedSummary,
     billRateLevelByRole: snapshot.revenueBillables.billRateLevelByRole,
     billRateLevelRows: snapshot.revenueBillables.billRateLevelRows,
     billRateLevelByMarketRows: snapshot.revenueBillables.billRateLevelByMarketRows,
-    estimatedBillableEconomicsByEmployee: snapshot.revenueBillables.estimatedBillableEconomicsByEmployee,
+    estimatedBillableEconomicsByEmployee,
     unavailableReports: snapshot.revenueBillables.unavailableReports,
     records: snapshot.revenueBillables.billRateLevelRows,
   };
