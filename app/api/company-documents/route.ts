@@ -3,6 +3,7 @@ import prisma from '@/lib/prisma';
 import { requireAuth, validateCompanyAccess } from '@/lib/tenant-security';
 import { sanitizeTextForPostgres } from '@/lib/company-documents/extract-text';
 import { validateCompanyDocumentFilePolicy } from '@/lib/company-documents/file-policy';
+import { processPendingCompanyDocuments } from '@/lib/company-documents/process-pending';
 
 export const dynamic = 'force-dynamic';
 
@@ -156,6 +157,16 @@ export async function POST(req: NextRequest) {
         createdAt: true,
       },
     });
+
+    try {
+      await processPendingCompanyDocuments({
+        companyId,
+        documentId: doc.id,
+        limit: 1,
+      });
+    } catch (processError) {
+      console.warn('Immediate company document processing failed; cron will retry:', processError);
+    }
 
     const refreshed = await prisma.companyDocument.findUnique({
       where: { id: doc.id },

@@ -4,6 +4,7 @@ import { indexCompanyDocument } from '@/lib/company-documents/index-document';
 
 type ProcessPendingParams = {
   companyId?: string;
+  documentId?: string;
   limit?: number;
 };
 
@@ -18,6 +19,7 @@ export async function processPendingCompanyDocuments(params: ProcessPendingParam
 }> {
   const limit = Math.min(Math.max(Math.trunc(Number(params.limit || 3)), 1), 10);
   const where: any = {
+    ...(params.documentId ? { id: params.documentId } : {}),
     ...(params.companyId ? { companyId: params.companyId } : {}),
     OR: [
       { extractionStatus: 'PENDING' },
