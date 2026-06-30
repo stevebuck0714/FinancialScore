@@ -21828,7 +21828,7 @@ Strategies to Improve the CCC
                         {renderEstimatedBillableSortHeader('billRateLevel', 'Bill Rate Level')}
                         {renderEstimatedBillableSortHeader('payRate', 'Pay Rate', 'right')}
                         {renderEstimatedBillableSortHeader('rateCardBillRate', 'Bill Rate', 'right')}
-                        {renderEstimatedBillableSortHeader('billToPayRatio', 'Bill-to-Pay', 'right')}
+                        {renderEstimatedBillableSortHeader('billToPayRatio', 'Pay-to-Bill', 'right')}
                         {renderEstimatedBillableSortHeader('estimatedAnnualBillings', 'Est. Annual Billings', 'right')}
                         {renderEstimatedBillableSortHeader('estimatedAnnualPay', 'Annual Pay', 'right')}
                         {renderEstimatedBillableSortHeader('estimatedAnnualSpread', 'Est. Spread', 'right')}
