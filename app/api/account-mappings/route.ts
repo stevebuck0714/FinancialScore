@@ -323,6 +323,12 @@ function isTargetFieldIncompatibleWithClassification(
   ) {
     return false;
   }
+  if (
+    targetFamily === "nonOperating" &&
+    (classificationFamily === "revenue" || classificationFamily === "expense")
+  ) {
+    return false;
+  }
   if (classificationFamily === "expense") return targetFamily !== "expense";
   return targetFamily !== classificationFamily;
 }

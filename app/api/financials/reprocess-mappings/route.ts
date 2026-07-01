@@ -733,6 +733,10 @@ function createQbdMappedDailySnapshot(dateKey: string): QbdMappedMonthlyRow {
 
 function qbdAddMappedAmount(row: QbdMappedMonthlyRow, targetField: string, amount: number) {
   if (!targetField || targetField === 'unmapped' || amount === 0) return;
+  if (targetField === 'nonOperatingIncome') {
+    row.nonOperatingIncome = Number(row.nonOperatingIncome || 0) + amount;
+    return;
+  }
   if (targetField === 'revenue' || targetField.startsWith('rev_')) {
     row.revenue += amount;
     if (targetField.startsWith('rev_')) {
@@ -761,6 +765,7 @@ function qbdIsIncomeStatementExpenseTarget(targetField: string): boolean {
     targetField === 'cogsTotal' ||
     targetField === 'costOfGoodsSold' ||
     targetField.startsWith('cogs') ||
+    targetField === 'nonOperatingIncome' ||
     QBD_EXPENSE_TARGET_FIELDS.has(targetField)
   );
 }
