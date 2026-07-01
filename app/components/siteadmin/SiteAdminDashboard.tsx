@@ -3611,6 +3611,15 @@ export default function SiteAdminDashboard(props: any) {
       const status = String(job?.status || '').toLowerCase();
       return status === 'running' || status === 'failed' || status === 'queued';
     }).slice(0, 8);
+    const hasActiveBackfillJobs = visibleBackfillJobs.some((job) => {
+      const status = String(job?.status || '').toLowerCase();
+      return status === 'running' || status === 'queued';
+    });
+    const hasActiveDetailBackfillJobs = visibleDetailBackfillJobs.some((job) => {
+      const status = String(job?.status || '').toLowerCase();
+      return status === 'running' || status === 'queued';
+    });
+    const hasActiveBackfillWork = hasActiveBackfillJobs || hasActiveDetailBackfillJobs;
     const activeSession = syncStatus.webConnectorActiveSession;
     const lastRun = syncStatus.webConnectorLastRun;
     const activeSessionRange = activeSession?.dateRange && typeof activeSession.dateRange === 'object' ? activeSession.dateRange as Record<string, any> : null;
@@ -3637,14 +3646,18 @@ export default function SiteAdminDashboard(props: any) {
         : 'Running - Web Connector is pulling data'
       : queuedRange
       ? 'Queued - waiting for Web Connector'
+      : hasActiveDetailBackfillJobs
+        ? 'Line-item detail jobs in progress'
+      : hasActiveBackfillJobs
+        ? 'Header backfill jobs in progress'
       : lastRunCompletedAt
         ? 'Completed'
         : syncStatus.lastSyncAt
           ? 'Synced'
           : 'Not run yet';
-    const statusColor = syncStatus.errorMessage || lastRunError || activeSessionError ? '#b91c1c' : activeSessionLooksStale ? '#92400e' : activeSession ? '#1d4ed8' : queuedRange ? '#92400e' : lastRunCompletedAt || syncStatus.lastSyncAt ? '#166534' : '#475569';
-    const statusBg = syncStatus.errorMessage || lastRunError || activeSessionError ? '#fef2f2' : activeSessionLooksStale ? '#fffbeb' : activeSession ? '#eff6ff' : queuedRange ? '#fffbeb' : lastRunCompletedAt || syncStatus.lastSyncAt ? '#f0fdf4' : '#f8fafc';
-    const statusBorder = syncStatus.errorMessage || lastRunError || activeSessionError ? '#fecaca' : activeSessionLooksStale ? '#fde68a' : activeSession ? '#bfdbfe' : queuedRange ? '#fde68a' : lastRunCompletedAt || syncStatus.lastSyncAt ? '#bbf7d0' : '#e2e8f0';
+    const statusColor = syncStatus.errorMessage || lastRunError || activeSessionError ? '#b91c1c' : activeSessionLooksStale ? '#92400e' : activeSession || hasActiveBackfillWork ? '#1d4ed8' : queuedRange ? '#92400e' : lastRunCompletedAt || syncStatus.lastSyncAt ? '#166534' : '#475569';
+    const statusBg = syncStatus.errorMessage || lastRunError || activeSessionError ? '#fef2f2' : activeSessionLooksStale ? '#fffbeb' : activeSession || hasActiveBackfillWork ? '#eff6ff' : queuedRange ? '#fffbeb' : lastRunCompletedAt || syncStatus.lastSyncAt ? '#f0fdf4' : '#f8fafc';
+    const statusBorder = syncStatus.errorMessage || lastRunError || activeSessionError ? '#fecaca' : activeSessionLooksStale ? '#fde68a' : activeSession || hasActiveBackfillWork ? '#bfdbfe' : queuedRange ? '#fde68a' : lastRunCompletedAt || syncStatus.lastSyncAt ? '#bbf7d0' : '#e2e8f0';
 
     return (
       <div style={{ marginTop: '10px', padding: '10px', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '6px', overflow: 'hidden' }}>
@@ -3756,6 +3769,10 @@ export default function SiteAdminDashboard(props: any) {
               </>
             ) : queuedRange ? (
               <div>Queued range: {queuedRange.startDate || '—'} to {queuedRange.endDate || '—'}{queuedRange.requestedAt ? ` (queued ${new Date(String(queuedRange.requestedAt)).toLocaleString()})` : ''}</div>
+            ) : hasActiveBackfillWork ? (
+              <div>
+                Current queued/running work is shown below. Previous completed pull details are separated so they do not look like the active sync.
+              </div>
             ) : lastRunCompletedAt ? (
               <div>Last completed: {new Date(lastRunCompletedAt).toLocaleString()}{lastRunRange ? ` for ${lastRunRange.startDate || '—'} to ${lastRunRange.endDate || '—'}` : ''}</div>
             ) : syncStatus.lastSyncAt ? (
@@ -3763,7 +3780,7 @@ export default function SiteAdminDashboard(props: any) {
             ) : (
               <div>No QuickBooks Desktop Web Connector run has completed yet.</div>
             )}
-            {recordCounts && !activeSession && !queuedRange ? (
+            {recordCounts && !activeSession && !queuedRange && !hasActiveBackfillWork ? (
               <div>
                 Records pulled: {Object.entries(recordCounts).map(([name, count]) => `${name.replace(/Query$/, '')}: ${Number(count || 0).toLocaleString('en-US')}`).join(', ')}
               </div>
@@ -3776,7 +3793,7 @@ export default function SiteAdminDashboard(props: any) {
             {backfillJobs.length > 0 ? (
               <div style={{ marginTop: '8px', paddingTop: '8px', borderTop: `1px solid ${statusBorder}` }}>
                 <div style={{ fontWeight: 700 }}>
-                  Backfill jobs: {backfillJobs.length.toLocaleString('en-US')}
+                  Header backfill jobs: {backfillJobs.length.toLocaleString('en-US')}
                   {` | queued: ${Number(backfillJobCounts.queued || 0).toLocaleString('en-US')}`}
                   {` | running: ${Number(backfillJobCounts.running || 0).toLocaleString('en-US')}`}
                   {` | completed: ${Number(backfillJobCounts.completed || 0).toLocaleString('en-US')}`}
@@ -3796,7 +3813,7 @@ export default function SiteAdminDashboard(props: any) {
             {detailBackfillJobs.length > 0 ? (
               <div style={{ marginTop: '8px', paddingTop: '8px', borderTop: `1px solid ${statusBorder}` }}>
                 <div style={{ fontWeight: 700 }}>
-                  Detail jobs: {detailBackfillJobs.length.toLocaleString('en-US')}
+                  Line-item detail jobs: {detailBackfillJobs.length.toLocaleString('en-US')}
                   {` | queued: ${Number(detailBackfillJobCounts.queued || 0).toLocaleString('en-US')}`}
                   {` | running: ${Number(detailBackfillJobCounts.running || 0).toLocaleString('en-US')}`}
                   {` | completed: ${Number(detailBackfillJobCounts.completed || 0).toLocaleString('en-US')}`}
@@ -3812,6 +3829,20 @@ export default function SiteAdminDashboard(props: any) {
                     {job.lastError ? `, error: ${String(job.lastError)}` : ''}
                   </div>
                 ))}
+              </div>
+            ) : null}
+            {hasActiveBackfillWork && lastRunCompletedAt ? (
+              <div style={{ marginTop: '8px', paddingTop: '8px', borderTop: `1px solid ${statusBorder}`, color: '#64748b' }}>
+                <div style={{ fontWeight: 700 }}>Previous completed pull</div>
+                <div>
+                  Completed: {new Date(lastRunCompletedAt).toLocaleString()}
+                  {lastRunRange ? ` for ${lastRunRange.startDate || '—'} to ${lastRunRange.endDate || '—'}` : ''}
+                </div>
+                {recordCounts ? (
+                  <div>
+                    Records pulled: {Object.entries(recordCounts).map(([name, count]) => `${name.replace(/Query$/, '')}: ${Number(count || 0).toLocaleString('en-US')}`).join(', ')}
+                  </div>
+                ) : null}
               </div>
             ) : null}
             {syncStatus.errorMessage || lastRunError || activeSessionError ? (
