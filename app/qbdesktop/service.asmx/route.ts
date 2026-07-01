@@ -302,6 +302,50 @@ function formatDate(date: Date): string {
   return date.toISOString().slice(0, 10);
 }
 
+function formatDateInTimeZone(date: Date, timeZone: string): string {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(date);
+  const year = parts.find((part) => part.type === 'year')?.value || '';
+  const month = parts.find((part) => part.type === 'month')?.value || '';
+  const day = parts.find((part) => part.type === 'day')?.value || '';
+  return year && month && day ? `${year}-${month}-${day}` : formatDate(date);
+}
+
+function getHourInTimeZone(date: Date, timeZone: string): number {
+  const hour = new Intl.DateTimeFormat('en-US', {
+    timeZone,
+    hour: '2-digit',
+    hour12: false,
+  }).formatToParts(date).find((part) => part.type === 'hour')?.value;
+  const parsed = Number(hour);
+  return Number.isFinite(parsed) ? parsed : date.getUTCHours();
+}
+
+function addDaysToDateKey(dateKey: string, days: number): string {
+  const parsed = new Date(`${dateKey}T00:00:00.000Z`);
+  if (Number.isNaN(parsed.getTime())) return dateKey;
+  return formatDate(addDays(parsed, days));
+}
+
+function addYearsToDateKey(dateKey: string, years: number): string {
+  const parsed = new Date(`${dateKey}T00:00:00.000Z`);
+  if (Number.isNaN(parsed.getTime())) return dateKey;
+  return formatDate(addYears(parsed, years));
+}
+
+function getLatestAvailableQuickBooksDate(now = new Date()): string {
+  const easternTimeZone = 'America/New_York';
+  const easternDate = formatDateInTimeZone(now, easternTimeZone);
+  const easternHour = getHourInTimeZone(now, easternTimeZone);
+  // QuickBooks daily data is expected after 2:00 AM Eastern the following day.
+  // Before that cutoff, do not request yesterday's incomplete business day.
+  return addDaysToDateKey(easternDate, easternHour < 2 ? -2 : -1);
+}
+
 function parseDateString(value: unknown): string {
   if (typeof value !== 'string') return '';
   const trimmed = value.trim();
@@ -604,7 +648,7 @@ function getCompanyFilePath(metadata: QbDesktopMetadata): string {
 
 function getRunDateRange(metadata: QbDesktopMetadata): QbwcDateRange {
   const today = new Date();
-  const endDate = formatDate(today);
+  const endDate = getLatestAvailableQuickBooksDate(today);
   const queued = metadata.quickbooksDesktopQueuedDateRange;
   const queuedStartDate = parseDateString(queued?.startDate);
   const queuedEndDate = parseDateString(queued?.endDate);
@@ -622,7 +666,7 @@ function getRunDateRange(metadata: QbDesktopMetadata): QbwcDateRange {
     const configuredStartDate = parseDateString(metadata.quickbooksDesktopSettings?.initialSyncStartDate);
     return {
       mode: 'INITIAL_3Y',
-      startDate: configuredStartDate || formatDate(addYears(today, -3)),
+      startDate: configuredStartDate || addYearsToDateKey(endDate, -3),
       endDate,
     };
   }
@@ -631,9 +675,15 @@ function getRunDateRange(metadata: QbDesktopMetadata): QbwcDateRange {
     typeof metadata.quickbooksDesktopLastWebConnectorSyncAt === 'string'
       ? new Date(metadata.quickbooksDesktopLastWebConnectorSyncAt)
       : null;
-  const incrementalStart = lastSyncAt && !Number.isNaN(lastSyncAt.getTime())
-    ? formatDate(addDays(lastSyncAt, -2))
-    : formatDate(addDays(today, -2));
+  const lastSyncDate = lastSyncAt && !Number.isNaN(lastSyncAt.getTime())
+    ? formatDateInTimeZone(lastSyncAt, 'America/New_York')
+    : null;
+  const computedIncrementalStart = lastSyncDate
+    ? addDaysToDateKey(lastSyncDate, -2)
+    : addDaysToDateKey(endDate, -2);
+  const incrementalStart = computedIncrementalStart > endDate
+    ? addDaysToDateKey(endDate, -2)
+    : computedIncrementalStart;
 
   return {
     mode: 'INCREMENTAL',
