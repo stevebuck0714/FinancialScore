@@ -79,6 +79,10 @@ function normalize(v: unknown): string {
   return "";
 }
 
+function isCodeLikeAccountIdentity(value: unknown): boolean {
+  return /^\d{4,}$/.test(String(value || "").trim());
+}
+
 function buildMappingIdentityKey(mapping: {
   accountName?: string | null;
   accountId?: string | null;
@@ -712,25 +716,38 @@ export async function POST(request: NextRequest) {
       sourceSnapshot.map((row) => [normalize(row.accountId), row]),
     );
     const sourceByNormalizedCode = new Map<number, AccountSnapshotRow>();
+    const sourceCodeCounts = new Map<number, number>();
     for (const row of sourceSnapshot) {
       const normalizedCode = extractNormalizedAccountCode(row.accountCode, row.accountId, row.accountName);
+      if (normalizedCode !== null) {
+        sourceCodeCounts.set(normalizedCode, (sourceCodeCounts.get(normalizedCode) || 0) + 1);
+      }
       if (normalizedCode !== null && !sourceByNormalizedCode.has(normalizedCode)) {
         sourceByNormalizedCode.set(normalizedCode, row);
       }
     }
     const findAccountingSourceMatch = (mapping: any): AccountSnapshotRow | undefined => {
-      const byId = sourceById.get(normalize(mapping?.accountId));
-      if (byId) return byId;
+      const accountIdLooksLikeCode = isQuickBooksDesktopFamily(accountingSystem) && isCodeLikeAccountIdentity(mapping?.accountId);
+      if (!accountIdLooksLikeCode) {
+        const byId = sourceById.get(normalize(mapping?.accountId));
+        if (byId) return byId;
+      }
       const byName = sourceByName.get(normalize(mapping?.accountName));
       if (byName) return byName;
       const byComparableName = sourceByComparableName.get(normalizeForCompare(String(mapping?.accountName || "")));
       if (byComparableName) return byComparableName;
+      if (accountIdLooksLikeCode) {
+        const byId = sourceById.get(normalize(mapping?.accountId));
+        if (byId && sourceCodeCounts.get(extractNormalizedAccountCode(mapping?.accountId) || -1) === 1) return byId;
+      }
       const normalizedCode = extractNormalizedAccountCode(
         mapping?.accountCode,
         mapping?.accountId,
         mapping?.accountName,
       );
-      return normalizedCode !== null ? sourceByNormalizedCode.get(normalizedCode) : undefined;
+      return normalizedCode !== null && sourceCodeCounts.get(normalizedCode) === 1
+        ? sourceByNormalizedCode.get(normalizedCode)
+        : undefined;
     };
 
     const seenIdentity = new Set<string>();
@@ -824,8 +841,12 @@ export async function POST(request: NextRequest) {
       existingMappingsAll.map((row) => [normalizeForCompare(String(row.accountName || "")), row]),
     );
     const existingByNormalizedCode = new Map<number, (typeof existingMappingsAll)[number]>();
+    const existingCodeCounts = new Map<number, number>();
     for (const row of existingMappingsAll) {
       const normalizedCode = extractNormalizedAccountCode(row.accountCode, row.accountId, row.accountName);
+      if (normalizedCode !== null) {
+        existingCodeCounts.set(normalizedCode, (existingCodeCounts.get(normalizedCode) || 0) + 1);
+      }
       if (normalizedCode !== null && !existingByNormalizedCode.has(normalizedCode)) {
         existingByNormalizedCode.set(normalizedCode, row);
       }
@@ -840,13 +861,15 @@ export async function POST(request: NextRequest) {
         incomingAccountId,
         incomingAccountName,
       );
+      const incomingAccountIdLooksLikeCode =
+        isQuickBooksDesktopFamily(accountingSystem) && isCodeLikeAccountIdentity(incomingAccountId);
       const existing = await prisma.accountMapping.findFirst({
         where: {
           companyId,
           OR: [
-            ...(incomingAccountId ? [{ accountId: incomingAccountId }] : []),
+            ...(incomingAccountId && !incomingAccountIdLooksLikeCode ? [{ accountId: incomingAccountId }] : []),
             ...(incomingAccountCode ? [{ accountCode: incomingAccountCode, accountName: incomingAccountName }] : []),
-            ...(!incomingAccountId && !incomingAccountCode && incomingAccountName ? [{ accountName: incomingAccountName }] : []),
+            ...(incomingAccountName ? [{ accountName: incomingAccountName }] : []),
           ],
         },
         select: {
@@ -863,14 +886,16 @@ export async function POST(request: NextRequest) {
           ? existingByComparableName.get(normalizeForCompare(incomingAccountName))
           : null;
       const codeFallbackExisting =
-        !existing && incomingNormalizedCode !== null
+        !existing && incomingNormalizedCode !== null && existingCodeCounts.get(incomingNormalizedCode) === 1
           ? existingByNormalizedCode.get(incomingNormalizedCode)
           : null;
       const sourceMatch = findAccountingSourceMatch(m);
       const sourceAccountId = sourceMatch?.accountId ? String(sourceMatch.accountId).trim() : null;
+      const sourceAccountIdLooksLikeCode =
+        isQuickBooksDesktopFamily(accountingSystem) && isCodeLikeAccountIdentity(sourceAccountId);
       const accountIdOwner =
-        (incomingAccountId ? existingByAccountId.get(normalize(incomingAccountId)) : null) ||
-        (sourceAccountId ? existingByAccountId.get(normalize(sourceAccountId)) : null) ||
+        (!incomingAccountIdLooksLikeCode && incomingAccountId ? existingByAccountId.get(normalize(incomingAccountId)) : null) ||
+        (!sourceAccountIdLooksLikeCode && sourceAccountId ? existingByAccountId.get(normalize(sourceAccountId)) : null) ||
         null;
       // AccountMapping has a unique companyId + accountId constraint. If the
       // incoming/source ID already belongs to a different saved row, update that

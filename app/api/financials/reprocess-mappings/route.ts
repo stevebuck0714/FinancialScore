@@ -830,6 +830,11 @@ async function buildQuickBooksDesktopMappedMonthlyPayload(companyId: string, bas
   });
   const targetByKey = new Map<string, string>();
   const mappingByKey = new Map<string, QbdMappedAccount>();
+  const accountCodeCounts = new Map<string, number>();
+  for (const mapping of mappings) {
+    const code = qbdString(mapping.accountCode).toLowerCase();
+    if (code) accountCodeCounts.set(code, Number(accountCodeCounts.get(code) || 0) + 1);
+  }
   for (const mapping of mappings) {
     const target = qbdString(mapping.targetField);
     const mappedAccount = {
@@ -838,7 +843,14 @@ async function buildQuickBooksDesktopMappedMonthlyPayload(companyId: string, bas
       accountCode: qbdString(mapping.accountCode),
       targetField: target,
     };
-    for (const key of [mapping.accountId, mapping.accountName, mapping.accountCode].map(qbdString).filter(Boolean)) {
+    const keyValues = [mapping.accountId, mapping.accountName]
+      .map(qbdString)
+      .filter(Boolean);
+    const accountCode = qbdString(mapping.accountCode);
+    if (accountCode && accountCodeCounts.get(accountCode.toLowerCase()) === 1) {
+      keyValues.push(accountCode);
+    }
+    for (const key of keyValues) {
       const normalized = key.toLowerCase();
       targetByKey.set(normalized, target);
       mappingByKey.set(normalized, mappedAccount);
