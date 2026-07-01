@@ -177,11 +177,11 @@ function isRevenueTargetField(targetField: string): boolean {
   return normalized === "revenue" || normalized === "otherrevenue" || normalized.startsWith("rev_");
 }
 
-function getTargetFieldFamily(targetField: string): "revenue" | "cogs" | "expense" | "asset" | "liability" | "equity" | "other" {
+function getTargetFieldFamily(targetField: string): "revenue" | "cogs" | "expense" | "nonOperating" | "asset" | "liability" | "equity" | "other" {
   const normalized = String(targetField || "").trim().toLowerCase();
   if (isExcludedTargetField(normalized)) return "other";
   if (normalized === "revenue" || normalized.startsWith("rev_")) return "revenue";
-  if (normalized === "nonoperatingincome") return "revenue";
+  if (normalized === "nonoperatingincome" || normalized === "nonoperatingexpense") return "nonOperating";
   if (
     normalized === "costofgoodssold" ||
     normalized === "cogstotal" ||
@@ -215,7 +215,6 @@ function getTargetFieldFamily(targetField: string): "revenue" | "cogs" | "expens
       "otherexpense",
       "expense",
       "operatingexpensetotal",
-      "nonoperatingexpense",
       "extraordinaryitems",
     ].includes(normalized)
   ) {
@@ -259,10 +258,11 @@ function getTargetFieldFamily(targetField: string): "revenue" | "cogs" | "expens
   return "other";
 }
 
-function getClassificationFamily(classification: unknown): "revenue" | "cogs" | "expense" | "asset" | "liability" | "equity" | "other" {
+function getClassificationFamily(classification: unknown): "revenue" | "cogs" | "expense" | "nonOperating" | "asset" | "liability" | "equity" | "other" {
   const normalized = stripManualClassificationPrefix(classification).toLowerCase();
   if (!normalized) return "other";
   const compact = normalized.replace(/[^a-z0-9]+/g, "");
+  if (compact.includes("nonoperating")) return "nonOperating";
   if (normalized === "r") return "revenue";
   if (normalized === "e") return "expense";
   if (normalized === "a") return "asset";
