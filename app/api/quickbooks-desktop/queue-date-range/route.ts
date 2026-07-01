@@ -192,16 +192,27 @@ export async function POST(request: NextRequest) {
     const chunkByMonth = body.chunkByMonth === true;
     const allowBulkExcludedRequests = body.allowBulkExcludedRequests === true || chunkByMonth;
     const hasSelectedRequestNames = Array.isArray(body.requestNames);
+    const hasProfileRequestNames = Array.isArray(body.staticRequestNames) || Array.isArray(body.monthlyRequestNames);
     const selectedRequests = parseRequestNames(body.requestNames, allowBulkExcludedRequests);
+    const staticRequests = parseRequestNames(body.staticRequestNames, true);
+    const monthlyRequests = parseRequestNames(body.monthlyRequestNames, allowBulkExcludedRequests);
     if (hasSelectedRequestNames && selectedRequests.length === 0) {
       return NextResponse.json(
         { ok: false, error: 'No valid requestNames were provided for the targeted QuickBooks Desktop pull.' },
         { status: 400 },
       );
     }
-    const enabledRequests = hasSelectedRequestNames
-      ? selectedRequests
-      : getEnabledQbDesktopRequests(metadata, allowBulkExcludedRequests);
+    if (hasProfileRequestNames && staticRequests.length === 0 && monthlyRequests.length === 0) {
+      return NextResponse.json(
+        { ok: false, error: 'No valid staticRequestNames or monthlyRequestNames were provided for the targeted QuickBooks Desktop pull.' },
+        { status: 400 },
+      );
+    }
+    const enabledRequests = hasProfileRequestNames
+      ? Array.from(new Set([...staticRequests, ...monthlyRequests]))
+      : hasSelectedRequestNames
+        ? selectedRequests
+        : getEnabledQbDesktopRequests(metadata, allowBulkExcludedRequests);
     const dateRanges = chunkByMonth
       ? buildMonthlyDateRanges(startDate, endDate)
       : [{ startDate, endDate, windowIndex: 0 }];
@@ -211,8 +222,27 @@ export async function POST(request: NextRequest) {
         { status: 400 },
       );
     }
-    const jobSpecs = dateRanges.flatMap((range) =>
-      enabledRequests.map((requestName) => ({
+    const jobSpecs = hasProfileRequestNames
+      ? [
+          ...staticRequests.map((requestName) => ({
+            requestName,
+            dateRange: queuedDateRange,
+            windowIndex: 0,
+          })),
+          ...dateRanges.flatMap((range) =>
+            monthlyRequests.map((requestName) => ({
+              requestName,
+              dateRange: {
+                ...queuedDateRange,
+                startDate: range.startDate,
+                endDate: range.endDate,
+              },
+              windowIndex: range.windowIndex,
+            })),
+          ),
+        ]
+      : dateRanges.flatMap((range) =>
+        enabledRequests.map((requestName) => ({
         requestName,
         dateRange: {
           ...queuedDateRange,

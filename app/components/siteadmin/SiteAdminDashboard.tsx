@@ -3546,6 +3546,22 @@ export default function SiteAdminDashboard(props: any) {
           endDate: range.endDate,
           chunkByMonth: true,
           allowBulkExcludedRequests: true,
+          staticRequestNames: [
+            'AccountQuery',
+            'ItemQuery',
+            'BalanceSheetStandardReportQuery',
+            'CheckQuery',
+            'SalesReceiptQuery',
+            'DepositQuery',
+            'JournalEntryQuery',
+            'VendorCreditQuery',
+            'BillPaymentCheckQuery',
+            'BillPaymentCreditCardQuery',
+            'ReceivePaymentQuery',
+          ],
+          monthlyRequestNames: [
+            'GeneralDetailReportQuery',
+          ],
         }),
       });
       const headerData = await headerResponse.json().catch(() => ({}));
