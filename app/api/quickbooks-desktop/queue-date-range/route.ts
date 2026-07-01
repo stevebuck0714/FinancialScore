@@ -245,21 +245,11 @@ export async function POST(request: NextRequest) {
       }),
     );
 
-    if (hasSelectedRequestNames) {
-      for (const requestName of selectedRequests) {
-        await prisma.$executeRaw`
-          DELETE FROM "QuickBooksDesktopBackfillPage"
-          WHERE "companyId" = ${companyId}
-            AND "requestName" = ${requestName}
-        `;
-      }
-    } else {
-      await prisma.$executeRaw`
-        DELETE FROM "QuickBooksDesktopBackfillPage"
-        WHERE "companyId" = ${companyId}
-      `;
-    }
-
+    // Do not delete QuickBooksDesktopBackfillPage rows here. They are raw QBD
+    // source archives keyed by batchId/jobId and are needed for audit,
+    // historical remapping, and recovery. The active processing batch is scoped
+    // by quickbooksDesktopBackfillJobs below, so older archive rows will not be
+    // mixed into the current run.
     await prisma.accountingConnection.update({
       where: {
         companyId_platform: {

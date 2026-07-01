@@ -107,20 +107,9 @@ export async function POST(request: NextRequest) {
       existing.connectionMetadata && typeof existing.connectionMetadata === 'object' && !Array.isArray(existing.connectionMetadata)
         ? (existing.connectionMetadata as Record<string, unknown>)
         : {};
-    const previousDetailJobs =
-      metadata.quickbooksDesktopDetailBackfillJobs &&
-      typeof metadata.quickbooksDesktopDetailBackfillJobs === 'object' &&
-      !Array.isArray(metadata.quickbooksDesktopDetailBackfillJobs)
-        ? (metadata.quickbooksDesktopDetailBackfillJobs as Record<string, unknown>)
-        : {};
-    for (const jobId of Object.keys(previousDetailJobs)) {
-      await prisma.$executeRaw`
-        DELETE FROM "QuickBooksDesktopBackfillPage"
-        WHERE "companyId" = ${companyId}
-          AND "jobId" = ${jobId}
-      `;
-    }
-
+    // Preserve prior QuickBooksDesktopBackfillPage rows as raw source archives.
+    // New detail jobs receive a fresh batchId/jobId, and processing reads only
+    // the active jobs stored in quickbooksDesktopDetailBackfillJobs below.
     const batchId = randomUUID();
     const now = new Date().toISOString();
     const requestedAt = now;
