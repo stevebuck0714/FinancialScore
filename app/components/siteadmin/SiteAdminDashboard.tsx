@@ -3544,6 +3544,8 @@ export default function SiteAdminDashboard(props: any) {
           companyId,
           startDate: range.startDate,
           endDate: range.endDate,
+          chunkByMonth: true,
+          allowBulkExcludedRequests: true,
         }),
       });
       const headerData = await headerResponse.json().catch(() => ({}));
@@ -3568,11 +3570,16 @@ export default function SiteAdminDashboard(props: any) {
       await loadQbDesktopSettings(companyId);
       const headerJobCount = Number(headerData?.jobCount || 0);
       const detailJobCount = Number(detailData?.jobCount || 0);
+      const queuedRequestNames = Array.isArray(headerData?.requestNames) ? headerData.requestNames : [];
+      const glJobCount = queuedRequestNames.includes('GeneralDetailReportQuery')
+        ? Number(headerData?.dateWindowCount || 1)
+        : 0;
       alert(
         `QuickBooks Desktop financial resync queued: ${range.startDate} to ${range.endDate}.\n` +
-        `Header/report jobs: ${headerJobCount.toLocaleString('en-US')}\n` +
+        `Header/report/GL jobs: ${headerJobCount.toLocaleString('en-US')}\n` +
+        `GL detail jobs: ${glJobCount.toLocaleString('en-US')}\n` +
         `Line-item detail jobs: ${detailJobCount.toLocaleString('en-US')}\n\n` +
-        `Run QuickBooks Web Connector Update Selected until both job groups complete, then click Rebuild Daily Financials.`
+        `Run QuickBooks Web Connector Update Selected until all job groups complete, then click Rebuild Daily Financials.`
       );
     } catch (error: any) {
       alert(`Failed to queue QuickBooks Desktop financial resync: ${error?.message || 'Unknown error'}`);
@@ -3726,7 +3733,7 @@ export default function SiteAdminDashboard(props: any) {
       <div style={{ marginTop: '10px', padding: '10px', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '6px', overflow: 'hidden' }}>
         <div style={{ fontSize: '12px', fontWeight: 700, color: '#334155', marginBottom: '4px' }}>QuickBooks Desktop Resync</div>
         <div style={{ fontSize: '11px', color: '#64748b', marginBottom: '8px' }}>
-          For normal financial refreshes, use the recommended resync. It queues both summary/report data and invoice/bill line-item detail needed for daily P&L. The range runs the next time Web Connector updates this app.
+          For normal financial refreshes, use the recommended resync. It queues summary/report data, GL detail for daily balance sheet movement, and invoice/bill line-item detail for daily P&L. The range runs the next time Web Connector updates this app.
         </div>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '8px', alignItems: 'end' }}>
           <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', minWidth: 0, fontSize: '12px', color: '#334155' }}>
@@ -3751,9 +3758,18 @@ export default function SiteAdminDashboard(props: any) {
             onClick={() => queueQbDesktopFullFinancialResync(companyId)}
             disabled={isQueuing || isQueuingDetail}
             style={{ width: '100%', minWidth: 0, boxSizing: 'border-box', padding: '8px 12px', background: isQueuing || isQueuingDetail ? '#94a3b8' : '#0f766e', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '700', cursor: isQueuing || isQueuingDetail ? 'not-allowed' : 'pointer' }}
-            title="Recommended. Queues the header/report pull plus invoice and bill line-item detail for daily financials."
+            title="Recommended. Queues headers/reports, GL detail, and invoice/bill line-item detail for daily financials."
           >
             {isQueuing || isQueuingDetail ? 'Queuing...' : 'Queue Full Financial Resync'}
+          </button>
+          <button
+            type="button"
+            onClick={() => refreshQbDesktopStatus(companyId)}
+            disabled={isRefreshingStatus}
+            style={{ width: '100%', minWidth: 0, boxSizing: 'border-box', padding: '8px 12px', background: 'white', color: '#334155', border: '1px solid #cbd5e1', borderRadius: '6px', fontSize: '12px', fontWeight: 700, cursor: isRefreshingStatus ? 'not-allowed' : 'pointer' }}
+            title="Refresh the latest QuickBooks Desktop queue and Web Connector status."
+          >
+            {isRefreshingStatus ? 'Refreshing...' : 'Refresh Status'}
           </button>
         </div>
         <div style={{ marginTop: '10px', padding: '10px', background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: '6px', display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) auto', gap: '8px', alignItems: 'center' }}>
@@ -3839,16 +3855,8 @@ export default function SiteAdminDashboard(props: any) {
           </div>
         </details>
         <div style={{ marginTop: '10px', padding: '10px', background: statusBg, border: `1px solid ${statusBorder}`, borderRadius: '6px' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', gap: '8px', alignItems: 'center', marginBottom: '4px' }}>
+          <div style={{ marginBottom: '4px' }}>
             <div style={{ fontSize: '12px', fontWeight: 700, color: statusColor }}>{statusLabel}</div>
-            <button
-              type="button"
-              onClick={() => refreshQbDesktopStatus(companyId)}
-              disabled={isRefreshingStatus}
-              style={{ padding: '4px 8px', background: 'white', color: '#334155', border: '1px solid #cbd5e1', borderRadius: '6px', fontSize: '11px', fontWeight: 600, cursor: 'pointer' }}
-            >
-              {isRefreshingStatus ? 'Refreshing...' : 'Refresh Status'}
-            </button>
           </div>
           <div style={{ fontSize: '11px', color: statusColor, lineHeight: 1.5 }}>
             {activeSession ? (

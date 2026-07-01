@@ -99,7 +99,7 @@ const DEFAULT_QBD_REQUESTS = [
   'BillPaymentCreditCardQuery',
 ];
 
-function getEnabledQbDesktopRequests(metadata: Record<string, unknown>): string[] {
+function getEnabledQbDesktopRequests(metadata: Record<string, unknown>, allowBulkExcluded = false): string[] {
   const programs = Array.isArray(metadata.quickbooksDesktopPrograms)
     ? metadata.quickbooksDesktopPrograms
     : [];
@@ -118,8 +118,12 @@ function getEnabledQbDesktopRequests(metadata: Record<string, unknown>): string[
           return typeof row.qbEntity === 'string' ? row.qbEntity.trim() : '';
         })
     : DEFAULT_QBD_REQUESTS;
-  return Array.from(new Set([...requests, ...REQUIRED_QBD_REPORT_REQUESTS]))
-    .filter((requestName) => !BULK_EXCLUDED_QBD_REQUESTS.has(requestName))
+  return Array.from(new Set([
+    ...requests,
+    ...REQUIRED_QBD_REPORT_REQUESTS,
+    ...(allowBulkExcluded ? Array.from(BULK_EXCLUDED_QBD_REQUESTS) : []),
+  ]))
+    .filter((requestName) => allowBulkExcluded || !BULK_EXCLUDED_QBD_REQUESTS.has(requestName))
     .filter((requestName) => /^[A-Za-z][A-Za-z0-9]*Query$/.test(requestName));
 }
 
@@ -197,7 +201,7 @@ export async function POST(request: NextRequest) {
     }
     const enabledRequests = hasSelectedRequestNames
       ? selectedRequests
-      : getEnabledQbDesktopRequests(metadata);
+      : getEnabledQbDesktopRequests(metadata, allowBulkExcludedRequests);
     const dateRanges = chunkByMonth
       ? buildMonthlyDateRanges(startDate, endDate)
       : [{ startDate, endDate, windowIndex: 0 }];

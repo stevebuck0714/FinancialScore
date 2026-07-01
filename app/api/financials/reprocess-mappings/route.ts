@@ -1232,14 +1232,14 @@ async function persistQuickBooksDesktopDailyFinancialSnapshots(companyId: string
   const startDate = sortedDates[0];
   const endDate = sortedDates[sortedDates.length - 1];
 
-  await prisma.dailyFinancialSnapshot.deleteMany({
+  // QBD daily snapshots are regenerated from the current backfill pages and
+  // account mappings. Remove the prior QBD-derived set so stale mapped balances
+  // from older rebuilds cannot survive outside the newly generated date range.
+  const deletedExisting = await prisma.dailyFinancialSnapshot.deleteMany({
     where: {
       companyId,
       frequency: 'daily',
-      snapshotDate: {
-        gte: startDate,
-        lte: endDate,
-      },
+      sourcePlatform: QBD_DAILY_FINANCIAL_SOURCE,
     },
   });
 
@@ -1265,6 +1265,7 @@ async function persistQuickBooksDesktopDailyFinancialSnapshots(companyId: string
       metadata: {
         source: QBD_DAILY_FINANCIAL_SOURCE,
         rowsBuilt: parsedRows.length,
+        staleQbdRowsDeleted: deletedExisting.count,
         startDate: startDate.toISOString(),
         endDate: endDate.toISOString(),
       },
@@ -1274,6 +1275,7 @@ async function persistQuickBooksDesktopDailyFinancialSnapshots(companyId: string
 
   return {
     rowsWritten,
+    rowsDeleted: deletedExisting.count,
     startDate: startDate.toISOString(),
     endDate: endDate.toISOString(),
   };
