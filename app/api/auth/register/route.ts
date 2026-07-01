@@ -5,6 +5,7 @@ import { validatePassword } from '@/lib/password-validator';
 import { sendConsultantRegistrationNotification, sendBusinessRegistrationNotification } from '@/lib/email';
 import { getDemoAffiliateCode, getDemoDurationDays, getDemoExpiryDate, isDemoAffiliateCode } from '@/lib/demo-access';
 import { provisionDemoWorkspace } from '@/lib/demo-provisioning';
+import { buildCompanyAddOnAllocations } from '@/lib/affiliate-add-ons';
 
 export async function POST(request: NextRequest) {
   try {
@@ -59,6 +60,7 @@ export async function POST(request: NextRequest) {
     // Get pricing - either from affiliate code/demo code or default
     let pricingToUse = null;
     let resolvedAffiliateId = affiliateId;
+    let affiliateAddOnDefaults: unknown = null;
 
     if (isDemoSignup) {
       pricingToUse = {
@@ -97,6 +99,7 @@ export async function POST(request: NextRequest) {
           businessAnnualPrice: affiliateCodeRecord.annualPrice,
           businessSetupFee: affiliateCodeRecord.setupFee
         };
+        affiliateAddOnDefaults = affiliateCodeRecord.addOnDefaults || null;
         // Store the affiliate ID from the code record
         resolvedAffiliateId = affiliateCodeRecord.affiliateId;
       }
@@ -160,6 +163,14 @@ export async function POST(request: NextRequest) {
                           (pricingToUse?.businessAnnualPrice ?? 1750) > 0 ||
                           (pricingToUse?.businessSetupFee ?? 0) > 0
         };
+        const addOnAllocations = buildCompanyAddOnAllocations({
+          addOnDefaults: affiliateAddOnDefaults,
+          dataRoomPricing: {
+            monthly: Number(dataRoomPricingToUse.businessMonthlyPrice ?? 195),
+            quarterly: Number(dataRoomPricingToUse.businessQuarterlyPrice ?? 500),
+            annual: Number(dataRoomPricingToUse.businessAnnualPrice ?? 1750),
+          },
+        });
 
         // STORE FINAL PRICING PERMANENTLY - This is the pricing the company was registered with
         // New companies get CURRENT default pricing from SystemSettings (or affiliate code pricing)
@@ -181,17 +192,7 @@ export async function POST(request: NextRequest) {
           nextBillingDate: isDemoSignup ? demoExpiresAt : undefined,
           affiliateCode: normalizedAffiliateCode || undefined,
           userDefinedAllocations: {
-            dataRoom: {
-              enabledByAdmin: false,
-              pricing: {
-                monthly: Number(dataRoomPricingToUse.businessMonthlyPrice ?? 195),
-                quarterly: Number(dataRoomPricingToUse.businessQuarterlyPrice ?? 500),
-                annual: Number(dataRoomPricingToUse.businessAnnualPrice ?? 1750),
-              },
-              subscription: {
-                status: 'inactive',
-              },
-            },
+            ...addOnAllocations,
             demo: isDemoSignup
               ? {
                   enabled: true,

@@ -2829,7 +2829,7 @@ function FinancialScorePage() {
   const [editingAffiliate, setEditingAffiliate] = useState<any>(null);
   const [showAddAffiliateForm, setShowAddAffiliateForm] = useState(false);
   const [expandedAffiliateId, setExpandedAffiliateId] = useState<string | null>(null);
-  const [newAffiliateCode, setNewAffiliateCode] = useState({code: '', description: '', maxUses: '', expiresAt: '', monthlyPrice: '', quarterlyPrice: '', annualPrice: '', setupFee: ''});
+  const [newAffiliateCode, setNewAffiliateCode] = useState({code: '', description: '', maxUses: '', expiresAt: '', monthlyPrice: '', quarterlyPrice: '', annualPrice: '', setupFee: '', addOnDefaults: {}});
   const [editingAffiliateCode, setEditingAffiliateCode] = useState<any>(null);
   
   // Team management state

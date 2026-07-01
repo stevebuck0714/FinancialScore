@@ -21,6 +21,65 @@ import { DEFAULT_RAMQUEST_TITLE_DATA_DOMAINS, RAMQUEST_TITLE_LABEL, RAMQUEST_TIT
 import { DEFAULT_RSMEANS_PM_DATA_DOMAINS, RSMEANS_PM_LABEL, RSMEANS_PM_SOURCE_CODE } from '@/lib/operational/rsmeans-pm';
 import { DEFAULT_BUILDOUT_CRE_DATA_DOMAINS, BUILDOUT_CRE_LABEL, BUILDOUT_CRE_SOURCE_CODE } from '@/lib/operational/buildout-cre';
 
+const AFFILIATE_ADD_ON_OPTIONS = [
+  { key: 'dataRoom', label: 'Data Room' },
+  { key: 'valuation', label: 'Valuation' },
+  { key: 'digitalPresence', label: 'Digital Presence' },
+  { key: 'customReports', label: 'Custom Reports' },
+];
+
+const EMPTY_AFFILIATE_CODE_FORM = {
+  code: '',
+  description: '',
+  maxUses: '',
+  expiresAt: '',
+  monthlyPrice: '',
+  quarterlyPrice: '',
+  annualPrice: '',
+  setupFee: '',
+  addOnDefaults: {},
+};
+
+const getAffiliateAddOnDefaults = (code: any) => {
+  const source = code?.addOnDefaults && typeof code.addOnDefaults === 'object' ? code.addOnDefaults : {};
+  return AFFILIATE_ADD_ON_OPTIONS.reduce((acc, option) => {
+    const item = source[option.key] && typeof source[option.key] === 'object' ? source[option.key] : {};
+    acc[option.key] = {
+      enabledByAdmin: Boolean(item.enabledByAdmin),
+      includedInCore: Boolean(item.includedInCore),
+      pricing: {
+        monthly: Number(item.pricing?.monthly ?? 0),
+        quarterly: Number(item.pricing?.quarterly ?? 0),
+        annual: Number(item.pricing?.annual ?? 0),
+      },
+    };
+    return acc;
+  }, {} as Record<string, any>);
+};
+
+const updateAffiliateAddOnDefault = (code: any, key: string, patch: Record<string, any>) => {
+  const addOnDefaults = getAffiliateAddOnDefaults(code);
+  return {
+    ...code,
+    addOnDefaults: {
+      ...addOnDefaults,
+      [key]: {
+        ...addOnDefaults[key],
+        ...patch,
+      },
+    },
+  };
+};
+
+const getAffiliateAddOnSummary = (code: any) => {
+  const addOnDefaults = getAffiliateAddOnDefaults(code);
+  const enabled = AFFILIATE_ADD_ON_OPTIONS.filter((option) => addOnDefaults[option.key]?.enabledByAdmin);
+  if (enabled.length === 0) return 'Add-ons: all disabled';
+  return `Add-ons: ${enabled
+    .map((option) => `${option.label}${addOnDefaults[option.key]?.includedInCore ? ' included' : ' available'}`)
+    .join(', ')}`;
+};
+
 const OPERATIONAL_HUB_SECTION_OPTIONS: Array<{ key: string; label: string; group: string }> = [
   { key: 'productsProductMarginAnalysis', label: 'Product Margin Analysis', group: 'Products' },
   { key: 'productsWholesaleRawData', label: 'Raw Data', group: 'Products' },
@@ -12797,6 +12856,7 @@ export default function SiteAdminDashboard(props: any) {
                                               quarterlyPrice: parseFloat(newAffiliateCode.quarterlyPrice),
                                               annualPrice: parseFloat(newAffiliateCode.annualPrice),
                                               setupFee: newAffiliateCode.setupFee === '' ? 0 : parseFloat(newAffiliateCode.setupFee),
+                                              addOnDefaults: getAffiliateAddOnDefaults(newAffiliateCode),
                                               maxUses: newAffiliateCode.maxUses ? parseInt(newAffiliateCode.maxUses) : null,
                                               expiresAt: newAffiliateCode.expiresAt || null
                                             })
@@ -12815,7 +12875,7 @@ export default function SiteAdminDashboard(props: any) {
                                             setAffiliates(affiliatesData.affiliates);
                                           }
 
-                                          setNewAffiliateCode({code: '', description: '', maxUses: '', expiresAt: '', monthlyPrice: '', quarterlyPrice: '', annualPrice: '', setupFee: ''});
+                                          setNewAffiliateCode({ ...EMPTY_AFFILIATE_CODE_FORM });
                                           alert('Code created successfully!');
                                         } catch (error) {
                                           console.error('Error creating code:', error);
@@ -12826,6 +12886,44 @@ export default function SiteAdminDashboard(props: any) {
                                     >
                                       + Add Code
                                     </button>
+                                  </div>
+                                  <div style={{ marginTop: '10px', padding: '10px', background: 'white', border: '1px solid #e2e8f0', borderRadius: '6px' }}>
+                                    <div style={{ fontSize: '11px', fontWeight: '700', color: '#475569', marginBottom: '8px' }}>
+                                      Optional add-ons for new companies using this code
+                                    </div>
+                                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: '8px' }}>
+                                      {AFFILIATE_ADD_ON_OPTIONS.map((option) => {
+                                        const defaults = getAffiliateAddOnDefaults(newAffiliateCode);
+                                        const item = defaults[option.key];
+                                        return (
+                                          <div key={option.key} style={{ border: '1px solid #e2e8f0', borderRadius: '6px', padding: '8px', background: item.enabledByAdmin ? '#f0fdf4' : '#f8fafc' }}>
+                                            <label style={{ display: 'flex', gap: '6px', alignItems: 'center', fontSize: '11px', fontWeight: '600', color: '#334155', marginBottom: '6px' }}>
+                                              <input
+                                                type="checkbox"
+                                                checked={item.enabledByAdmin}
+                                                onChange={(e) => setNewAffiliateCode(updateAffiliateAddOnDefault(newAffiliateCode, option.key, {
+                                                  enabledByAdmin: e.target.checked,
+                                                  includedInCore: e.target.checked ? item.includedInCore : false,
+                                                }))}
+                                              />
+                                              {option.label}
+                                            </label>
+                                            <label style={{ display: 'flex', gap: '6px', alignItems: 'center', fontSize: '11px', color: item.enabledByAdmin ? '#475569' : '#94a3b8' }}>
+                                              <input
+                                                type="checkbox"
+                                                disabled={!item.enabledByAdmin}
+                                                checked={item.enabledByAdmin && item.includedInCore}
+                                                onChange={(e) => setNewAffiliateCode(updateAffiliateAddOnDefault(newAffiliateCode, option.key, { includedInCore: e.target.checked }))}
+                                              />
+                                              Included in package
+                                            </label>
+                                          </div>
+                                        );
+                                      })}
+                                    </div>
+                                    <div style={{ fontSize: '11px', color: '#64748b', marginTop: '8px' }}>
+                                      Unchecked add-ons stay disabled and require admin approval later.
+                                    </div>
                                   </div>
                                 </div>
 
@@ -12958,6 +13056,41 @@ export default function SiteAdminDashboard(props: any) {
                                                 />
                                               </div>
                                             </div>
+                                            <div style={{ marginBottom: '10px', padding: '10px', background: 'white', border: '1px solid #e2e8f0', borderRadius: '6px' }}>
+                                              <div style={{ fontSize: '11px', fontWeight: '700', color: '#475569', marginBottom: '8px' }}>
+                                                Optional add-ons for new companies using this code
+                                              </div>
+                                              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: '8px' }}>
+                                                {AFFILIATE_ADD_ON_OPTIONS.map((option) => {
+                                                  const defaults = getAffiliateAddOnDefaults(editingAffiliateCode);
+                                                  const item = defaults[option.key];
+                                                  return (
+                                                    <div key={option.key} style={{ border: '1px solid #e2e8f0', borderRadius: '6px', padding: '8px', background: item.enabledByAdmin ? '#f0fdf4' : '#f8fafc' }}>
+                                                      <label style={{ display: 'flex', gap: '6px', alignItems: 'center', fontSize: '11px', fontWeight: '600', color: '#334155', marginBottom: '6px' }}>
+                                                        <input
+                                                          type="checkbox"
+                                                          checked={item.enabledByAdmin}
+                                                          onChange={(e) => setEditingAffiliateCode(updateAffiliateAddOnDefault(editingAffiliateCode, option.key, {
+                                                            enabledByAdmin: e.target.checked,
+                                                            includedInCore: e.target.checked ? item.includedInCore : false,
+                                                          }))}
+                                                        />
+                                                        {option.label}
+                                                      </label>
+                                                      <label style={{ display: 'flex', gap: '6px', alignItems: 'center', fontSize: '11px', color: item.enabledByAdmin ? '#475569' : '#94a3b8' }}>
+                                                        <input
+                                                          type="checkbox"
+                                                          disabled={!item.enabledByAdmin}
+                                                          checked={item.enabledByAdmin && item.includedInCore}
+                                                          onChange={(e) => setEditingAffiliateCode(updateAffiliateAddOnDefault(editingAffiliateCode, option.key, { includedInCore: e.target.checked }))}
+                                                        />
+                                                        Included in package
+                                                      </label>
+                                                    </div>
+                                                  );
+                                                })}
+                                              </div>
+                                            </div>
                                             <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
                                               <button
                                                 onClick={() => setEditingAffiliateCode(null)}
@@ -13029,10 +13162,16 @@ export default function SiteAdminDashboard(props: any) {
                                               <div style={{ fontSize: '11px', color: '#1e40af', marginTop: '4px', fontWeight: '600' }}>
                                                 Pricing: ${code.monthlyPrice}/mo | ${code.quarterlyPrice}/qtr | ${code.annualPrice}/yr | ${code.setupFee ?? 0} setup
                                               </div>
+                                              <div style={{ fontSize: '11px', color: '#475569', marginTop: '4px' }}>
+                                                {getAffiliateAddOnSummary(code)}
+                                              </div>
                                             </div>
                                             <div style={{ display: 'flex', gap: '6px' }}>
                                               <button
-                                                onClick={() => setEditingAffiliateCode(code)}
+                                                onClick={() => setEditingAffiliateCode({
+                                                  ...code,
+                                                  addOnDefaults: getAffiliateAddOnDefaults(code),
+                                                })}
                                                 style={{ padding: '4px 8px', background: '#eff6ff', color: '#1e40af', border: '1px solid #93c5fd', borderRadius: '4px', fontSize: '11px', fontWeight: '600', cursor: 'pointer' }}
                                               >
                                                 Edit

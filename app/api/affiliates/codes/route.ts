@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
+import { normalizeAffiliateAddOnDefaults } from '@/lib/affiliate-add-ons';
 
 // GET - Get affiliate code details by code
 export async function GET(request: NextRequest) {
@@ -57,7 +58,7 @@ export async function GET(request: NextRequest) {
 // POST - Create new affiliate code
 export async function POST(request: NextRequest) {
   try {
-    const { affiliateId, code, description, maxUses, expiresAt, monthlyPrice, quarterlyPrice, annualPrice, setupFee } = await request.json();
+    const { affiliateId, code, description, maxUses, expiresAt, monthlyPrice, quarterlyPrice, annualPrice, setupFee, addOnDefaults } = await request.json();
 
     if (!affiliateId || !code) {
       return NextResponse.json(
@@ -87,6 +88,7 @@ export async function POST(request: NextRequest) {
         quarterlyPrice: quarterlyPrice ? parseFloat(quarterlyPrice) : 0,
         annualPrice: annualPrice ? parseFloat(annualPrice) : 0,
         setupFee: setupFee ? parseFloat(setupFee) : 0,
+        addOnDefaults: normalizeAffiliateAddOnDefaults(addOnDefaults) as any,
         maxUses: maxUses ? parseInt(maxUses) : null,
         expiresAt: expiresAt ? new Date(expiresAt) : null
       }
@@ -105,7 +107,7 @@ export async function POST(request: NextRequest) {
 // PUT - Update affiliate code
 export async function PUT(request: NextRequest) {
   try {
-    const { id, description, maxUses, expiresAt, monthlyPrice, quarterlyPrice, annualPrice, setupFee, isActive } = await request.json();
+    const { id, description, maxUses, expiresAt, monthlyPrice, quarterlyPrice, annualPrice, setupFee, isActive, addOnDefaults } = await request.json();
 
     if (!id) {
       return NextResponse.json(
@@ -122,6 +124,7 @@ export async function PUT(request: NextRequest) {
         quarterlyPrice: quarterlyPrice ? parseFloat(quarterlyPrice.toString()) : 0,
         annualPrice: annualPrice ? parseFloat(annualPrice.toString()) : 0,
         setupFee: setupFee ? parseFloat(setupFee.toString()) : 0,
+        ...(addOnDefaults !== undefined ? { addOnDefaults: normalizeAffiliateAddOnDefaults(addOnDefaults) as any } : {}),
         maxUses: maxUses ? parseInt(maxUses.toString()) : null,
         expiresAt: expiresAt ? new Date(expiresAt) : null,
         isActive: isActive !== undefined ? isActive : true

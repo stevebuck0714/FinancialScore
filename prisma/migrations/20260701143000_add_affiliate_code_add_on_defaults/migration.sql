@@ -1,0 +1,2 @@
+ALTER TABLE "AffiliateCode"
+ADD COLUMN IF NOT EXISTS "addOnDefaults" JSONB;

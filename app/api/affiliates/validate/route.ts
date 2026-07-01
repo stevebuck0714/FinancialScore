@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
+import { normalizeAffiliateAddOnDefaults } from '@/lib/affiliate-add-ons';
 
 // POST - Validate affiliate code
 export async function POST(request: NextRequest) {
@@ -73,6 +74,7 @@ export async function POST(request: NextRequest) {
       quarterlyPrice: code.quarterlyPrice,
       annualPrice: code.annualPrice,
       setupFee: code.setupFee ?? 0,
+      addOnDefaults: normalizeAffiliateAddOnDefaults(code.addOnDefaults),
       affiliateName: affiliate.name
     });
   } catch (error) {

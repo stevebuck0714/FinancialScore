@@ -7,6 +7,7 @@ import { listAccessibleCompaniesForUser } from "@/lib/user-company-access";
 import { DATAROOM_DEFAULT_FOLDERS } from "@/lib/dataroom/constants";
 import { privateCacheHeaders } from "@/lib/http-cache";
 import { resolveCompanyIndustrySectorCategory } from "@/lib/industry-sector-resolver";
+import { buildCompanyAddOnAllocations } from "@/lib/affiliate-add-ons";
 
 async function hasCompanyColumn(columnName: string): Promise<boolean> {
   // Guard against generated Prisma client drift:
@@ -422,6 +423,7 @@ export async function POST(request: NextRequest) {
     let affiliateId: string | undefined;
     let validatedAffiliateCode: string | undefined;
     let useAffiliatePricing = false;
+    let affiliateAddOnDefaults: unknown = null;
 
     // If affiliate code is provided, validate and use affiliate pricing
     if (affiliateCode) {
@@ -541,6 +543,7 @@ export async function POST(request: NextRequest) {
         affiliateId = affiliateCodeBasic.affiliateId;
         validatedAffiliateCode = affiliateCodeBasic.code;
         useAffiliatePricing = true;
+        affiliateAddOnDefaults = affiliateCodeBasic.addOnDefaults || null;
 
         console.log("🔍 Using affiliate pricing:", {
           monthlyPrice,
@@ -781,6 +784,14 @@ export async function POST(request: NextRequest) {
             },
           }
         : {};
+      const addOnAllocations = buildCompanyAddOnAllocations({
+        addOnDefaults: affiliateAddOnDefaults,
+        dataRoomPricing: {
+          monthly: dataRoomMonthlyPrice,
+          quarterly: dataRoomQuarterlyPrice,
+          annual: dataRoomAnnualPrice,
+        },
+      });
       const company = await prisma.company.create({
         data: {
           name: nameTrimmed,
@@ -821,29 +832,8 @@ export async function POST(request: NextRequest) {
             : {}),
           userDefinedAllocations: {
             ...baseUserDefinedAllocations,
-            dataRoom: {
-              enabledByAdmin: false,
-              pricing: {
-                monthly: dataRoomMonthlyPrice,
-                quarterly: dataRoomQuarterlyPrice,
-                annual: dataRoomAnnualPrice,
-              },
-              subscription: {
-                status: "inactive",
-              },
-            },
-            digitalPresence: {
-              enabledByAdmin: false,
-              pricing: {
-                monthly: 0,
-                quarterly: 0,
-                annual: 0,
-              },
-              subscription: {
-                status: "inactive",
-              },
-            },
-          },
+            ...addOnAllocations,
+          } as any,
           // DO NOT store affiliate code or affiliate ID with company
           // Affiliate codes are used ONLY to determine pricing, then discarded
         },
@@ -879,7 +869,7 @@ export async function POST(request: NextRequest) {
       // Transform the response to include consultantId (pricing is now stored in DB)
       const transformedCompany = {
         ...company,
-        consultantId: company.consultant?.id ?? null,
+        consultantId: (company as any).consultant?.id ?? null,
         // Pricing is now stored permanently in database fields
       };
 

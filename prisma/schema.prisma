@@ -1128,6 +1128,7 @@ model AffiliateCode {
   monthlyPrice   Float     @default(0)
   quarterlyPrice Float     @default(0)
   setupFee       Float     @default(0)
+  addOnDefaults  Json?
   affiliate      Affiliate @relation(fields: [affiliateId], references: [id], onDelete: Cascade)
 
   @@index([affiliateId])
