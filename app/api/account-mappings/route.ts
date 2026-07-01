@@ -599,7 +599,9 @@ export async function GET(request: NextRequest) {
         const storedCode = m.accountCode && m.accountCode !== m.accountId ? m.accountCode : null;
         return {
           ...m,
-          accountId: m.accountId || sourceMatch?.accountId || null,
+          accountId: isQuickBooksDesktopFamily(accountingSystem)
+            ? sourceMatch?.accountId || m.accountId || null
+            : m.accountId || sourceMatch?.accountId || null,
           accountName: sourceMatch?.accountName || m.accountName,
           accountCode: sourceCode || storedCode || null,
           accountClassification: effectiveClassification,
@@ -614,7 +616,9 @@ export async function GET(request: NextRequest) {
       const storedCode = m.accountCode && m.accountCode !== m.accountId ? m.accountCode : null;
       return {
         ...m,
-        accountId: m.accountId || sourceMatch?.accountId || null,
+        accountId: isQuickBooksDesktopFamily(accountingSystem)
+          ? sourceMatch?.accountId || m.accountId || null
+          : m.accountId || sourceMatch?.accountId || null,
         accountName: sourceMatch?.accountName || m.accountName,
         accountCode: sourceCode || storedCode || null,
         accountClassification: effectiveClassification,
@@ -912,7 +916,9 @@ export async function POST(request: NextRequest) {
       const incomingUsableCode =
         incomingAccountCode && incomingAccountCode !== incomingAccountId ? incomingAccountCode : null;
       const resolvedAccountName = sourceMatch?.accountName || incomingAccountName;
-      const resolvedAccountId = incomingAccountId || existingAccountId || sourceAccountId;
+      const resolvedAccountId = isQuickBooksDesktopFamily(accountingSystem)
+        ? sourceAccountId || existingAccountId || incomingAccountId
+        : incomingAccountId || existingAccountId || sourceAccountId;
       const incomingAccountClassification =
         m.accountClassification || matchedExisting?.accountClassification || null;
       const existingHasManualClassification = isManualClassification(matchedExisting?.accountClassification);

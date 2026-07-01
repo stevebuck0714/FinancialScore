@@ -2470,7 +2470,7 @@ function FinancialScorePage() {
 
   const getDisplayAccountCode = (mapping: any): string => {
     const embeddedCode = normalizeAccountCodeForMatch(mapping?.accountName);
-    const preferred = [mapping?.accountCode, mapping?.accountId, embeddedCode];
+    const preferred = [mapping?.accountId, mapping?.accountCode, embeddedCode];
     for (const value of preferred) {
       const raw = String(value || '').trim();
       if (raw) return raw;
@@ -2479,6 +2479,8 @@ function FinancialScorePage() {
   };
 
   const getMappingMatchKey = (mapping: any): string => {
+    const id = String(mapping?.accountId || '').trim().toLowerCase();
+    if (id) return `id:${id}`;
     const code =
       normalizeAccountCodeForMatch(mapping?.accountCode) ||
       normalizeAccountCodeForMatch(mapping?.accountName);

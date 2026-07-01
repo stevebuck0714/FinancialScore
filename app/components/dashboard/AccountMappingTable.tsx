@@ -379,8 +379,10 @@ export default function AccountMappingTable({
     );
   };
 
-  const getClassId = (mapping: AccountMapping): string => {
+  const getAccountIdentity = (mapping: AccountMapping): string => {
     const rawMapping = mapping as any;
+    const accountId = String(mapping.accountId || rawMapping.accountId || '').trim();
+    if (accountId) return accountId;
     const extractNumericCode = (...values: unknown[]): string => {
       for (const value of values) {
         const raw = String(value || '').trim();
@@ -397,16 +399,14 @@ export default function AccountMappingTable({
       mapping.accountName,
       rawMapping.accountCode,
       rawMapping.accountName,
-      mapping.accountId,
-      rawMapping.accountId,
       rawMapping.acctId,
     );
   };
 
-  const sortMappingsByClassId = (rows: AccountMapping[]): AccountMapping[] =>
+  const sortMappingsByAccountIdentity = (rows: AccountMapping[]): AccountMapping[] =>
     [...rows].sort((a, b) => {
-      const aId = getClassId(a);
-      const bId = getClassId(b);
+      const aId = getAccountIdentity(a);
+      const bId = getAccountIdentity(b);
       const aNum = Number(aId);
       const bNum = Number(bId);
       const aHasNum = Number.isFinite(aNum) && aId.length > 0;
@@ -420,14 +420,14 @@ export default function AccountMappingTable({
 
   // Group mappings by normalized classification
   const groupedMappings = {
-    revenue: sortMappingsByClassId(mappings.filter(m => getGroupingClassification(m) === 'revenue' && isActionable(m))),
-    cogs: sortMappingsByClassId(mappings.filter(m => getGroupingClassification(m) === 'cogs' && isActionable(m))),
-    expense: sortMappingsByClassId(mappings.filter(m => getGroupingClassification(m) === 'expense' && isActionable(m))),
-    nonOperating: sortMappingsByClassId(mappings.filter(m => getGroupingClassification(m) === 'nonOperating' && isActionable(m))),
-    asset: sortMappingsByClassId(mappings.filter(m => getGroupingClassification(m) === 'asset' && isActionable(m))),
-    liability: sortMappingsByClassId(mappings.filter(m => getGroupingClassification(m) === 'liability' && isActionable(m))),
-    equity: sortMappingsByClassId(mappings.filter(m => getGroupingClassification(m) === 'equity' && isActionable(m))),
-    other: sortMappingsByClassId(mappings.filter(m => getGroupingClassification(m) === 'other' && isActionable(m)))
+    revenue: sortMappingsByAccountIdentity(mappings.filter(m => getGroupingClassification(m) === 'revenue' && isActionable(m))),
+    cogs: sortMappingsByAccountIdentity(mappings.filter(m => getGroupingClassification(m) === 'cogs' && isActionable(m))),
+    expense: sortMappingsByAccountIdentity(mappings.filter(m => getGroupingClassification(m) === 'expense' && isActionable(m))),
+    nonOperating: sortMappingsByAccountIdentity(mappings.filter(m => getGroupingClassification(m) === 'nonOperating' && isActionable(m))),
+    asset: sortMappingsByAccountIdentity(mappings.filter(m => getGroupingClassification(m) === 'asset' && isActionable(m))),
+    liability: sortMappingsByAccountIdentity(mappings.filter(m => getGroupingClassification(m) === 'liability' && isActionable(m))),
+    equity: sortMappingsByAccountIdentity(mappings.filter(m => getGroupingClassification(m) === 'equity' && isActionable(m))),
+    other: sortMappingsByAccountIdentity(mappings.filter(m => getGroupingClassification(m) === 'other' && isActionable(m)))
   };
 
   const sections = [
@@ -517,7 +517,7 @@ export default function AccountMappingTable({
           )}
         </td>
         <td style={{ padding: '8px 10px', color: '#64748b', fontSize: '12px', fontFamily: 'monospace' }}>
-          {getClassId(mapping) || 'N/A'}
+          {getAccountIdentity(mapping) || 'N/A'}
         </td>
         <td style={{ padding: '8px 10px', position: 'relative' }}>
           {/* Target Field Dropdown */}
@@ -790,7 +790,7 @@ export default function AccountMappingTable({
                   <thead style={{ background: '#f8fafc', position: 'sticky', top: 0 }}>
                     <tr style={{ borderBottom: '2px solid #e2e8f0' }}>
                       <th style={{ textAlign: 'left', padding: '8px', fontWeight: '600', color: '#475569' }}>Account Name</th>
-                      <th style={{ textAlign: 'left', padding: '8px', fontWeight: '600', color: '#475569' }}>Class ID</th>
+                      <th style={{ textAlign: 'left', padding: '8px', fontWeight: '600', color: '#475569' }}>Account ID</th>
                       <th style={{ textAlign: 'left', padding: '8px', fontWeight: '600', color: '#475569' }}>→ Target Field</th>
                       <th style={{ textAlign: 'center', padding: '8px', fontWeight: '600', color: '#475569' }}>Allocation Method</th>
                       {activeLOBs.length > 0 && (
@@ -869,7 +869,7 @@ export default function AccountMappingTable({
                   <thead style={{ background: '#f8fafc', position: 'sticky', top: 0 }}>
                     <tr style={{ borderBottom: '2px solid #e2e8f0' }}>
                       <th style={{ textAlign: 'left', padding: '8px', fontWeight: '600', color: '#475569' }}>Account Name</th>
-                      <th style={{ textAlign: 'left', padding: '8px', fontWeight: '600', color: '#475569' }}>Class ID</th>
+                      <th style={{ textAlign: 'left', padding: '8px', fontWeight: '600', color: '#475569' }}>Account ID</th>
                       <th style={{ textAlign: 'left', padding: '8px', fontWeight: '600', color: '#475569' }}>→ Target Field</th>
                       <th style={{ textAlign: 'center', padding: '8px', fontWeight: '600', color: '#475569' }}>Allocation Method</th>
                       {activeLOBs.length > 0 && (
