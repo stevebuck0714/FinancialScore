@@ -803,23 +803,24 @@ function qbdApplyBalance(row: QbdMappedMonthlyRow, targetField: string, balance:
 }
 
 async function loadQbdPageRecords(companyId: string, requestName: string, detailOnly = false): Promise<Record<string, unknown>[]> {
-  const rows = detailOnly
-    ? await prisma.$queryRaw<Array<{ payload: unknown }>>`
-        SELECT "payload"
-        FROM "QuickBooksDesktopBackfillPage"
-        WHERE "companyId" = ${companyId}
-          AND "requestName" = ${requestName}
-          AND "jobId" LIKE '%:detail:%'
-        ORDER BY "jobId", "pageNumber" ASC
-      `
-    : await prisma.$queryRaw<Array<{ payload: unknown }>>`
-        SELECT "payload"
-        FROM "QuickBooksDesktopBackfillPage"
-        WHERE "companyId" = ${companyId}
-          AND "requestName" = ${requestName}
-          AND "jobId" NOT LIKE '%:detail:%'
-        ORDER BY "jobId", "pageNumber" ASC
-      `;
+  const rows = await prisma.$queryRaw<Array<{ payload: unknown }>>`
+    WITH latest_batch AS (
+      SELECT "batchId"
+      FROM "QuickBooksDesktopBackfillPage"
+      WHERE "companyId" = ${companyId}
+        AND "requestName" = ${requestName}
+        AND (${detailOnly}::boolean = ("jobId" LIKE '%:detail:%'))
+      ORDER BY "createdAt" DESC
+      LIMIT 1
+    )
+    SELECT p."payload"
+    FROM "QuickBooksDesktopBackfillPage" p
+    JOIN latest_batch lb ON lb."batchId" = p."batchId"
+    WHERE p."companyId" = ${companyId}
+      AND p."requestName" = ${requestName}
+      AND (${detailOnly}::boolean = (p."jobId" LIKE '%:detail:%'))
+    ORDER BY p."jobId", p."pageNumber" ASC
+  `;
   return rows.flatMap((row) => (Array.isArray(row.payload) ? row.payload.map(qbdAsRecord) : []));
 }
 
