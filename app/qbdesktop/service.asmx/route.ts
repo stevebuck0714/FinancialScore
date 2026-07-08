@@ -165,7 +165,7 @@ const REPORT_REQUESTS = new Set([
 ]);
 
 const QBD_TRANSACTION_PAGE_SIZE = 100;
-const QBD_INCLUDE_TRANSACTION_LINE_ITEMS = false;
+const QBD_INCLUDE_TRANSACTION_LINE_ITEMS = true;
 const QBD_BACKFILL_JOBS_PER_SESSION = 6;
 const QBD_DETAIL_TRANSACTION_PAGE_SIZE = 25;
 const QBD_DETAIL_BACKFILL_JOBS_PER_SESSION = 6;
@@ -418,6 +418,10 @@ function buildReportChildren(requestName: string, dateRange: QbwcDateRange): str
   return `${period}${basis}`;
 }
 
+function isLineItemTransactionRequest(requestName: string): boolean {
+  return requestName === 'InvoiceQuery' || requestName === 'BillQuery';
+}
+
 function buildQbxmlRequest(requestName: string, dateRange: QbwcDateRange, context: QbwcRequestContext = {}): string {
   const childrenByRequest: Record<string, string> = {
     AccountQuery: '<ActiveStatus>All</ActiveStatus>',
@@ -445,7 +449,7 @@ function buildQbxmlRequest(requestName: string, dateRange: QbwcDateRange, contex
   }
   const useIterator = TRANSACTION_REQUESTS.has(requestName);
   const dateFilter = TRANSACTION_REQUESTS.has(requestName) ? buildTransactionDateFilter(dateRange) : '';
-  const includeLineItems = (context.includeLineItems || QBD_INCLUDE_TRANSACTION_LINE_ITEMS) && ['InvoiceQuery', 'BillQuery'].includes(requestName)
+  const includeLineItems = (context.includeLineItems || QBD_INCLUDE_TRANSACTION_LINE_ITEMS) && isLineItemTransactionRequest(requestName)
     ? '<IncludeLineItems>true</IncludeLineItems>'
     : '';
   const pageSize = Math.max(1, Math.min(1000, Number(context.pageSize || QBD_TRANSACTION_PAGE_SIZE)));
@@ -1417,12 +1421,13 @@ export async function POST(request: NextRequest) {
         const responseKey = currentJobId || requestName;
         const iteratorID = found.session.iterators?.[responseKey]?.iteratorID;
         const isDetailBackfill = found.session.backfillJobKind === 'detail';
+        const includeLineItems = isDetailBackfill || isLineItemTransactionRequest(requestName);
         const requestDateRange = getCurrentRequestDateRange(found.session, requestName);
 
         await saveSession(found.session.companyId, found.session);
         return soapString('sendRequestXML', buildQbxmlRequest(requestName, requestDateRange, {
           iteratorID,
-          includeLineItems: isDetailBackfill,
+          includeLineItems,
           pageSize: isDetailBackfill ? QBD_DETAIL_TRANSACTION_PAGE_SIZE : QBD_TRANSACTION_PAGE_SIZE,
         }));
       }

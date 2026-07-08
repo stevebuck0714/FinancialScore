@@ -526,6 +526,40 @@ const QBD_BALANCE_SHEET_TARGET_FIELDS = new Set([
   'totalLAndE',
 ]);
 
+const QBD_MONTHLY_BS_PRESERVE_FIELDS = [
+  'cash',
+  'ar',
+  'retainageReceivables',
+  'contractAssets',
+  'inventory',
+  'otherCA',
+  'tca',
+  'fixedAssets',
+  'constructionEquipment',
+  'officeEquipment',
+  'shopEquipment',
+  'investments',
+  'rightOfUseLeases',
+  'otherAssets',
+  'totalAssets',
+  'ap',
+  'loc',
+  'contractLiabilities',
+  'otherCL',
+  'tcl',
+  'ltd',
+  'totalLiab',
+  'ownersCapital',
+  'ownersDraw',
+  'commonStock',
+  'preferredStock',
+  'retainedEarnings',
+  'additionalPaidInCapital',
+  'treasuryStock',
+  'totalEquity',
+  'totalLAndE',
+] as const;
+
 const QBD_BALANCE_SHEET_ANCHOR_FIELDS = [
   'cash',
   'ar',
@@ -1251,13 +1285,18 @@ async function persistQuickBooksDesktopDailyFinancialSnapshots(companyId: string
   const endDate = sortedDates[sortedDates.length - 1];
 
   // QBD daily snapshots are regenerated from the current backfill pages and
-  // account mappings. Remove the prior QBD-derived set so stale mapped balances
-  // from older rebuilds cannot survive outside the newly generated date range.
+  // account mappings for the rebuilt date window only. Never delete historical
+  // QBD snapshots outside that window; short corrective pulls must not erase
+  // previously rebuilt balance-sheet history.
   const deletedExisting = await prisma.dailyFinancialSnapshot.deleteMany({
     where: {
       companyId,
       frequency: 'daily',
       sourcePlatform: QBD_DAILY_FINANCIAL_SOURCE,
+      snapshotDate: {
+        gte: startDate,
+        lte: endDate,
+      },
     },
   });
 
@@ -1283,7 +1322,7 @@ async function persistQuickBooksDesktopDailyFinancialSnapshots(companyId: string
       metadata: {
         source: QBD_DAILY_FINANCIAL_SOURCE,
         rowsBuilt: parsedRows.length,
-        staleQbdRowsDeleted: deletedExisting.count,
+        qbdRowsDeletedInWindow: deletedExisting.count,
         startDate: startDate.toISOString(),
         endDate: endDate.toISOString(),
       },
@@ -1297,6 +1336,68 @@ async function persistQuickBooksDesktopDailyFinancialSnapshots(companyId: string
     startDate: startDate.toISOString(),
     endDate: endDate.toISOString(),
   };
+}
+
+async function preserveQuickBooksDesktopHistoricalMonthlyBalanceSheet(
+  companyId: string,
+  payload: Record<string, unknown>,
+): Promise<{ monthsPreserved: number; coverageStartMonth: string | null }> {
+  const metadata = qbdAsRecord(payload.metadata);
+  const build = qbdAsRecord(metadata.qbdMappedMonthlyBuild);
+  const coverageStartDate = qbdDateKey(build.dailyBalanceSheetStartDate);
+  if (!coverageStartDate) {
+    return { monthsPreserved: 0, coverageStartMonth: null };
+  }
+
+  const coverageStartMonth = coverageStartDate.slice(0, 7);
+  const monthlyRows = Array.isArray(payload.monthlyData)
+    ? (payload.monthlyData as Array<Record<string, unknown>>)
+    : [];
+  const monthsNeedingPreservation = monthlyRows
+    .map((row) => qbdMonthKey(row.monthDate || row.month || row.date))
+    .filter((monthKey): monthKey is string => Boolean(monthKey && monthKey < coverageStartMonth));
+
+  if (monthsNeedingPreservation.length === 0) {
+    return { monthsPreserved: 0, coverageStartMonth };
+  }
+
+  const latestFinancialRecord = await prisma.financialRecord.findFirst({
+    where: { companyId },
+    orderBy: { createdAt: 'desc' },
+    include: {
+      monthlyData: {
+        where: {
+          monthDate: {
+            lt: new Date(`${coverageStartMonth}-01T00:00:00.000Z`),
+          },
+        },
+      },
+    },
+  });
+  if (!latestFinancialRecord?.monthlyData?.length) {
+    return { monthsPreserved: 0, coverageStartMonth };
+  }
+
+  const existingByMonth = new Map<string, Record<string, unknown>>();
+  for (const existingRow of latestFinancialRecord.monthlyData as Array<Record<string, unknown>>) {
+    const key = qbdMonthKey(existingRow.monthDate);
+    if (key) existingByMonth.set(key, existingRow);
+  }
+
+  let monthsPreserved = 0;
+  for (const row of monthlyRows) {
+    const key = qbdMonthKey(row.monthDate || row.month || row.date);
+    if (!key || key >= coverageStartMonth) continue;
+    const existing = existingByMonth.get(key);
+    if (!existing) continue;
+
+    for (const field of QBD_MONTHLY_BS_PRESERVE_FIELDS) {
+      row[field] = qbdNumber(existing[field]);
+    }
+    monthsPreserved += 1;
+  }
+
+  return { monthsPreserved, coverageStartMonth };
 }
 
 async function persistQuickBooksDesktopBalanceSheetAnchor(companyId: string, payload: Record<string, unknown>) {
@@ -1876,6 +1977,11 @@ export async function POST(request: NextRequest) {
       qbdDiagnostics.rebuiltCoverage = summarizeMonthlyRowsCoverage(
         Array.isArray(financialPayload.monthlyData) ? (financialPayload.monthlyData as Array<Record<string, unknown>>) : [],
       );
+      const qbdHistoricalBsPreservation = await preserveQuickBooksDesktopHistoricalMonthlyBalanceSheet(
+        String(companyId),
+        financialPayload,
+      );
+      qbdDiagnostics.historicalBalanceSheetPreservation = qbdHistoricalBsPreservation;
 
       const result = await ingestFinancialPayload({
         companyId: String(companyId),
