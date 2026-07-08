@@ -2143,6 +2143,7 @@ function FinancialScorePage() {
       INFOR_CSI: 'infor_csi',
       DYNAMICS: 'dynamics',
       DYNAMICS365: 'dynamics365',
+      SAP_S4HANA: 'sap_s4hana',
     };
     return bySystem[system] || null;
   };
@@ -12538,6 +12539,8 @@ function FinancialScorePage() {
         return 'Sage';
       case 'SAGE_INTACCT':
         return 'Sage Intacct';
+      case 'SAP_S4HANA':
+        return 'SAP S/4HANA';
       case 'VISTA_CLOUD':
         return 'Viewpoint Vista Cloud';
       case 'XERO':
@@ -14478,14 +14481,14 @@ function FinancialScorePage() {
               )}
 
               {selectedAccountingSystem &&
-                !['QUICKBOOKS', 'QUICKBOOKS_DESKTOP', 'QUICKBOOKS_ENTERPRISE', 'XERO', 'INFOR_M3', 'INFOR_CSI', 'SAGE', 'SAGE_INTACCT', 'NETSUITE', 'DYNAMICS', 'DYNAMICS365', 'ACUMATICA', 'ODOO', 'VISTA_CLOUD', 'CSV_FILE'].includes(selectedAccountingSystem) && (
+                !['QUICKBOOKS', 'QUICKBOOKS_DESKTOP', 'QUICKBOOKS_ENTERPRISE', 'XERO', 'INFOR_M3', 'INFOR_CSI', 'SAGE', 'SAGE_INTACCT', 'NETSUITE', 'DYNAMICS', 'DYNAMICS365', 'ACUMATICA', 'ODOO', 'SAP_S4HANA', 'VISTA_CLOUD', 'CSV_FILE'].includes(selectedAccountingSystem) && (
                   <div style={{ marginBottom: '16px', padding: '12px', background: '#fff7ed', border: '1px solid #fed7aa', borderRadius: '8px', fontSize: '13px', color: '#9a3412' }}>
                     {selectedAccountingSystemLabel} is not supported yet.
                   </div>
                 )}
 
               {selectedAccountingSystem &&
-                ['QUICKBOOKS_DESKTOP', 'QUICKBOOKS_ENTERPRISE', 'DYNAMICS', 'DYNAMICS365', 'ACUMATICA', 'ODOO', 'SAGE_INTACCT', 'VISTA_CLOUD'].includes(selectedAccountingSystem) && (
+                ['QUICKBOOKS_DESKTOP', 'QUICKBOOKS_ENTERPRISE', 'DYNAMICS', 'DYNAMICS365', 'ACUMATICA', 'ODOO', 'SAGE_INTACCT', 'SAP_S4HANA', 'VISTA_CLOUD'].includes(selectedAccountingSystem) && (
                   <div style={{ marginBottom: '16px', padding: '12px', background: '#f0f9ff', border: '1px solid #bae6fd', borderRadius: '8px', fontSize: '13px', color: '#0c4a6e' }}>
                     {String(currentUser?.role || '').toUpperCase() === 'SITEADMIN' ? (
                       <>

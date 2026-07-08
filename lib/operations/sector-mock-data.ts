@@ -11,6 +11,145 @@ type SectorProfile = {
   cashAccounts: string[];
   scale: number;
 };
+type CompanyProductServiceCategory = {
+  category: string;
+  productsServices: string;
+  primaryCustomers: string[];
+};
+type CompanyProductServiceProfile = {
+  categories: CompanyProductServiceCategory[];
+};
+type CompanyReportingProfile = {
+  managementHierarchy: {
+    corporate: string;
+    geographies: string[];
+    countryMetrics: string[];
+  };
+  dimensions: Array<{
+    name: string;
+    levels: string[];
+  }>;
+  businessLines: Array<{
+    name: string;
+    offerings: string[];
+  }>;
+  customerSegments: string[];
+  operationalKpis: string[];
+  exampleQuestions: string[];
+};
+
+const COMPANY_PRODUCT_SERVICE_PROFILES: Record<string, CompanyProductServiceProfile> = {
+  cmrc86g8l0001qhbkgcq6wrf9: {
+    categories: [
+      {
+        category: 'Cancer Screening',
+        productsServices: 'SPOT-MAS multi-cancer early detection blood test, SPOT-MAS Lung, SPOT-MAS Colorectal',
+        primaryCustomers: ['Hospitals', 'cancer centers', 'health systems'],
+      },
+      {
+        category: 'Precision Oncology',
+        productsServices: 'K-TRACK, K-4CARE, oncoGS targeted gene panels, ctDNA monitoring, Minimal Residual Disease (MRD) testing',
+        primaryCustomers: ['Oncologists', 'cancer hospitals'],
+      },
+      {
+        category: "Women's Health",
+        productsServices: 'TriSure non-invasive prenatal testing (NIPT), TriSure Procare, TriSure Carrier',
+        primaryCustomers: ['OB/GYNs', 'fertility clinics'],
+      },
+      {
+        category: 'Genetic Diagnostics',
+        productsServices: 'Carrier screening, newborn screening, pediatric genetic testing, whole exome sequencing (WES), gene panels',
+        primaryCustomers: ['Hospitals', 'diagnostic labs'],
+      },
+      {
+        category: 'Biopharma Services',
+        productsServices: 'Biomarker discovery, companion diagnostics, genomic profiling, clinical trial support',
+        primaryCustomers: ['Pharmaceutical companies', 'biotech companies'],
+      },
+      {
+        category: 'AI & Bioinformatics',
+        productsServices: 'AI-powered genomic analysis, genomic profiling platforms, multi-omics analytics',
+        primaryCustomers: ['Research organizations', 'pharma'],
+      },
+    ],
+  },
+};
+
+const COMPANY_REPORTING_PROFILES: Record<string, CompanyReportingProfile> = {
+  cmrc86g8l0001qhbkgcq6wrf9: {
+    managementHierarchy: {
+      corporate: 'Corporate (Vietnam)',
+      geographies: [
+        'Vietnam',
+        'Singapore',
+        'Thailand',
+        'Malaysia',
+        'Indonesia',
+        'Philippines',
+        'Taiwan',
+        'India',
+        'Emerging Markets',
+      ],
+      countryMetrics: [
+        'Revenue',
+        'Gross Margin',
+        'Test Volumes',
+        'Hospital Accounts',
+        'Sales Pipeline',
+        'Operating Expenses',
+        'EBITDA',
+        'Cash Collections',
+      ],
+    },
+    dimensions: [
+      { name: 'Geography', levels: ['Corporate', 'Region', 'Country', 'Office/Lab'] },
+      { name: 'Product Line', levels: ['Clinical Oncology', "Women's Health", 'Biopharma', 'AI Solutions'] },
+      { name: 'Customer Type', levels: ['Hospital', 'Lab', 'Government', 'Pharma', 'Research'] },
+      { name: 'Sales', levels: ['Regional Director', 'Country Manager', 'Sales Manager', 'Sales Rep'] },
+      { name: 'Laboratory Operations', levels: ['Laboratory', 'Instrument', 'Sequencing Platform', 'Testing Department'] },
+      { name: 'Financial', levels: ['Legal Entity', 'Business Unit', 'Cost Center', 'Department', 'Project'] },
+    ],
+    businessLines: [
+      { name: 'Clinical Oncology', offerings: ['SPOT-MAS', 'K-TRACK', 'K-4CARE', 'oncoGS'] },
+      { name: "Women's Health", offerings: ['TriSure', 'Carrier Screening', 'NIPT'] },
+      { name: 'Biopharma Services', offerings: ['Biomarker discovery', 'companion diagnostics', 'genomic profiling', 'clinical trial support'] },
+      { name: 'AI / Bioinformatics', offerings: ['AI-powered genomic analysis', 'genomic profiling platforms', 'multi-omics analytics'] },
+    ],
+    customerSegments: [
+      'Hospitals',
+      'Diagnostic Laboratories',
+      'Physician Groups',
+      'Cancer Centers',
+      'Government Screening Programs',
+      'Pharmaceutical Companies',
+      'Research Institutions',
+    ],
+    operationalKpis: [
+      'Number of tests ordered',
+      'Number of tests completed',
+      'Turnaround time (TAT)',
+      'Sample rejection rate',
+      'Laboratory utilization',
+      'Sequencing capacity',
+      'Revenue per test',
+      'Cost per test',
+      'Positive detection rates',
+      'Backlog',
+    ],
+    exampleQuestions: [
+      'SPOT-MAS revenue by country',
+      'Gross margin by laboratory',
+      'Revenue by hospital network',
+      'Test volume by assay',
+      'Sales by country manager',
+      'EBITDA by legal entity',
+      'Cost per sequencing run',
+      'Turnaround time by laboratory',
+      'Biopharma revenue by region',
+      "Oncology revenue versus Women's Health revenue",
+    ],
+  },
+};
 
 const TOP_LINE_BUCKETS_BY_SECTOR: Record<string, Bucket[]> = {
   '01': [
@@ -255,6 +394,61 @@ function normalizeSectorCategory(sectorCategory?: string | null): string {
     OTHER_SERVICES: '81',
   };
   return fromNormalized[normalized] || '01';
+}
+
+function getCompanyProductServiceProfile(companyId: string): CompanyProductServiceProfile | null {
+  return COMPANY_PRODUCT_SERVICE_PROFILES[String(companyId || '').trim()] || null;
+}
+
+function getCompanyReportingProfile(companyId: string): CompanyReportingProfile | null {
+  return COMPANY_REPORTING_PROFILES[String(companyId || '').trim()] || null;
+}
+
+function getCompanyRegions(companyId: string): string[] {
+  return getCompanyReportingProfile(companyId)?.managementHierarchy.geographies || [];
+}
+
+function withCompanyReportingProfile<T extends { summary?: Record<string, unknown> }>(
+  req: Pick<MockRequest, 'companyId'>,
+  payload: T,
+): T {
+  const reportingProfile = getCompanyReportingProfile(req.companyId);
+  if (!reportingProfile) return payload;
+  return {
+    ...payload,
+    summary: {
+      ...(payload.summary || {}),
+      reportingProfile,
+    },
+  };
+}
+
+function uniqueCompanyCustomerGroups(profile: CompanyProductServiceProfile): string[] {
+  const customers = new Set<string>();
+  for (const category of profile.categories) {
+    for (const customer of category.primaryCustomers) {
+      const normalized = String(customer || '').trim();
+      if (normalized) customers.add(normalized);
+    }
+  }
+  return Array.from(customers);
+}
+
+function summarizeByDimension<T extends Record<string, any>>(
+  rows: T[],
+  dimensionKey: keyof T,
+  metricKeys: string[],
+): Array<Record<string, unknown>> {
+  const byDimension = new Map<string, Record<string, number>>();
+  for (const row of rows) {
+    const dimension = String(row[dimensionKey] || 'Unassigned');
+    const current = byDimension.get(dimension) || {};
+    for (const metricKey of metricKeys) {
+      current[metricKey] = (current[metricKey] || 0) + Number(row[metricKey] || 0);
+    }
+    byDimension.set(dimension, current);
+  }
+  return Array.from(byDimension.entries()).map(([name, metrics]) => ({ name, ...metrics }));
 }
 
 export function getSectorMockProfile(sectorCategory?: string | null): SectorProfile & { sectorCategory: string } {
@@ -1047,6 +1241,57 @@ export function getSectorArApFallbacks(sectorCategory?: string | null) {
 }
 
 function buildCustomersResponse(req: MockRequest, profile: SectorProfile) {
+  const companyProductProfile = getCompanyProductServiceProfile(req.companyId);
+  if (companyProductProfile) {
+    const customers = uniqueCompanyCustomerGroups(companyProductProfile);
+    const regions = getCompanyRegions(req.companyId);
+    const dates = listDates(req.startDate, req.endDate, req.frequency);
+    const records = dates.flatMap((date, i) =>
+      customers.map((name, idx) => {
+        const region = regions.length ? regions[(idx + i) % regions.length] : 'Unassigned';
+        const revenue = metric(7800 + idx * 925, i + idx + 1, profile.scale);
+        const invoiceCount = Math.max(1, Math.round(metric(5 + (idx % 4), i + 1, 1)));
+        const categoryMatches = companyProductProfile.categories
+          .filter((category) => category.primaryCustomers.includes(name))
+          .map((category) => category.category);
+        return {
+          companyId: req.companyId,
+          snapshotDate: date.toISOString(),
+          frequency: req.frequency,
+          customerName: name,
+          region,
+          country: region,
+          revenue,
+          invoiceCount,
+          categoryMix: categoryMatches.join(', '),
+          productServiceCategories: categoryMatches,
+        };
+      })
+    );
+    const limited = records.slice(0, req.limit || 1000);
+    const totals = customers.map((name) => {
+      const rows = limited.filter((row) => row.customerName === name);
+      return {
+        name,
+        totalRevenue: rows.reduce((sum, row) => sum + row.revenue, 0),
+        totalInvoices: rows.reduce((sum, row) => sum + row.invoiceCount, 0),
+        categoryMix: companyProductProfile.categories
+          .filter((category) => category.primaryCustomers.includes(name))
+          .map((category) => category.category)
+          .join(', '),
+      };
+    });
+    return {
+      records: limited,
+      summary: {
+        topCustomers: totals.sort((a, b) => b.totalRevenue - a.totalRevenue).slice(0, 10),
+        revenueByRegion: summarizeByDimension(limited, 'region', ['revenue', 'invoiceCount']),
+        productServiceCategories: companyProductProfile.categories,
+        topLineBuckets: getTopLineBucketsForSector(req.sectorCategory),
+      },
+    };
+  }
+
   if (normalizeSectorCategory(req.sectorCategory) === '32' && req.frequency === 'monthly') {
     const customers = [
       { name: 'Regional Grocery Distributor', share: 0.24 },
@@ -1221,27 +1466,144 @@ function buildApResponse(req: MockRequest, profile: SectorProfile) {
 }
 
 function buildProductResponse(req: MockRequest, profile: SectorProfile) {
-  const items = topLineNames(profile.productPrefix, 7);
+  const companyProductProfile = getCompanyProductServiceProfile(req.companyId);
+  const companyCategories = companyProductProfile?.categories || [];
+  const items = companyCategories.length > 0
+    ? companyCategories.map((category) => category.category)
+    : topLineNames(profile.productPrefix, 7);
   const dates = listDates(req.startDate, req.endDate, req.frequency);
+  const customers = companyProductProfile
+    ? uniqueCompanyCustomerGroups(companyProductProfile)
+    : topLineNames(profile.customerPrefix, 6);
+  const regions = getCompanyRegions(req.companyId);
   const records = dates.flatMap((date, i) =>
     items.map((item, idx) => {
+      const categoryMeta = companyCategories[idx];
+      const region = regions.length ? regions[(idx + i) % regions.length] : 'Unassigned';
       const quantitySold = metric(42 + idx * 7, i + 1, profile.scale);
       const revenue = metric(4200 + idx * 750, i + idx + 1, profile.scale);
-      const cogs = revenue * (0.58 + ((idx % 3) * 0.04));
+      const cogs = revenue * (companyProductProfile ? 0.38 + ((idx % 3) * 0.035) : 0.58 + ((idx % 3) * 0.04));
       return {
         companyId: req.companyId,
         snapshotDate: date.toISOString(),
         frequency: req.frequency,
         itemName: item,
-        sku: `SKU-${idx + 100}`,
+        category: item,
+        productServiceCategory: item,
+        region,
+        country: region,
+        sku: companyProductProfile ? `GSL-${idx + 100}` : `SKU-${idx + 100}`,
         quantitySold,
         revenue,
         cogs,
+        grossMargin: revenue - cogs,
+        grossMarginPct: revenue ? ((revenue - cogs) / revenue) * 100 : 0,
+        testVolume: Math.round(quantitySold),
+        testsOrdered: Math.round(quantitySold * 1.04),
+        testsCompleted: Math.round(quantitySold * 0.97),
+        turnaroundTimeDays: Number((2.2 + (idx % 4) * 0.35 + (i % 3) * 0.08).toFixed(2)),
+        sampleRejectionRatePct: Number((1.1 + (idx % 3) * 0.25).toFixed(2)),
+        labUtilizationPct: Number((72 + (idx % 4) * 4 + (i % 5)).toFixed(1)),
+        sequencingCapacity: Math.round(quantitySold * 1.25),
+        productsServices: categoryMeta?.productsServices,
+        primaryCustomers: categoryMeta?.primaryCustomers.join(', '),
       };
     })
   );
+  const latestWholesaleDates = dates.slice(0, Math.min(dates.length, 10));
+  const wholesaleOrderLines = latestWholesaleDates.flatMap((date, dateIndex) =>
+    items.flatMap((item, itemIndex) =>
+      customers.slice(0, 4).map((customer, customerIndex) => {
+        const region = regions.length ? regions[(customerIndex + dateIndex + itemIndex) % regions.length] : 'Unassigned';
+        const qty = Math.round(metric(18 + itemIndex * 4 + customerIndex * 2, dateIndex + itemIndex + 1, profile.scale));
+        const unitPrice = Number((86 + itemIndex * 7.5 + customerIndex * 2.25).toFixed(2));
+        const materialCostPerPiece = Number((unitPrice * (0.52 + (itemIndex % 3) * 0.035)).toFixed(2));
+        const tariffPerPiece = Number((unitPrice * 0.018).toFixed(2));
+        const dutiesPerPiece = Number((unitPrice * 0.012).toFixed(2));
+        const freightPerPiece = Number((2.15 + itemIndex * 0.28).toFixed(2));
+        const operatingExpensesPerPiece = Number((unitPrice * 0.075).toFixed(2));
+        const orderNumber = 41000 + dateIndex * 100 + itemIndex * 10 + customerIndex;
+        const customerId = `C${String(1200 + customerIndex).padStart(4, '0')}`;
+        const sku = `SKU-${itemIndex + 100}`;
+        const revenue = Number((qty * unitPrice).toFixed(2));
+        return {
+          key: `mock-wholesale-${dateIndex}-${itemIndex}-${customerIndex}`,
+          source: 'mock-customer-order-line',
+          snapshotDate: date.toISOString(),
+          date: date.toISOString(),
+          orderDate: date.toISOString(),
+          isoDate: date.toISOString().slice(0, 10),
+          monthLabel: date.toLocaleDateString('en-US', { month: 'short', year: 'numeric', timeZone: 'UTC' }),
+          quarter: `Q${Math.floor(date.getUTCMonth() / 3) + 1}`,
+          year: date.getUTCFullYear(),
+          customerId,
+          customerName: customer,
+          customer,
+          region,
+          country: region,
+          customerGroup: ['Strategic', 'Regional', 'Program', 'Spot'][customerIndex % 4],
+          customerPartNumber: `CPN-${customerIndex + 1}${itemIndex + 100}`,
+          order: `SO-${orderNumber}`,
+          orderId: `SO-${orderNumber}`,
+          lineId: String(itemIndex + 1),
+          itemId: sku,
+          sku,
+          item,
+          itemName: item,
+          productServiceCategory: item,
+          partNote: companyCategories[itemIndex]?.productsServices || `${item} mock margin profile for operations demo mode.`,
+          quantitySold: qty,
+          qty,
+          qtyOrdered: qty + (customerIndex % 2),
+          qtyShipped: qty,
+          qtyInvoiced: qty,
+          unitPrice,
+          revenue,
+          cogs: Number((qty * materialCostPerPiece).toFixed(2)),
+          materialCost: Number((qty * materialCostPerPiece).toFixed(2)),
+          currentImpactOfTariffPerPiece: tariffPerPiece,
+          currentImpactOfDutiesPerPiece: dutiesPerPiece,
+          costOfFreightPerPiece: freightPerPiece,
+          currentOperatingExpenses: operatingExpensesPerPiece,
+          contractValue: revenue,
+          invoicedAmount: revenue,
+          remainingAmount: 0,
+          team: ['North', 'South', 'Key Accounts', 'Inside Sales'][customerIndex % 4],
+        };
+      })
+    )
+  ).slice(0, req.limit || 1000);
+  const wholesaleVendorPricingRows = items.flatMap((item, itemIndex) => {
+    const sku = `SKU-${itemIndex + 100}`;
+    return [0, 1].map((vendorIndex) => {
+      const actualNoAdj = Number((45 + itemIndex * 4.15 + vendorIndex * 1.8).toFixed(4));
+      const formalContracts = Number((actualNoAdj * (vendorIndex === 0 ? 0.985 : 1.015)).toFixed(4));
+      const vendorPricingSheet = formalContracts;
+      const difference = Number((actualNoAdj - vendorPricingSheet).toFixed(4));
+      return {
+        source: 'mock-vendor-pricing',
+        snapshotDate: latestWholesaleDates[0]?.toISOString() || req.endDate.toISOString(),
+        item: sku,
+        vendorId: `V${String(500 + vendorIndex).padStart(4, '0')}`,
+        vendorName: `${profile.vendorPrefix} ${vendorIndex + 1}`,
+        rank: vendorIndex + 1,
+        effectiveDate: (latestWholesaleDates[0] || req.endDate).toISOString().slice(0, 10),
+        breakQty1: vendorIndex === 0 ? 1 : 250,
+        actualNoAdj,
+        formalContracts,
+        vendorPricingSheet,
+        difference,
+        updatedDiff: difference,
+        vendorItem: `${sku}-V${vendorIndex + 1}`,
+        unitDutyCost: Number((actualNoAdj * 0.012).toFixed(4)),
+        unitFreightCost: Number((2.15 + itemIndex * 0.28 + vendorIndex * 0.15).toFixed(4)),
+        unitInsuranceCost: Number((actualNoAdj * 0.004).toFixed(4)),
+      };
+    });
+  });
   const totals = items.map((name) => {
     const rows = records.filter((r) => r.itemName === name);
+    const categoryMeta = companyCategories.find((category) => category.category === name);
     const totalRevenue = rows.reduce((sum, row) => sum + row.revenue, 0);
     const totalCogs = rows.reduce((sum, row) => sum + row.cogs, 0);
     const totalQuantity = rows.reduce((sum, row) => sum + row.quantitySold, 0);
@@ -1253,12 +1615,19 @@ function buildProductResponse(req: MockRequest, profile: SectorProfile) {
       totalQuantity,
       grossMargin: totalRevenue - totalCogs,
       grossMarginPct: totalRevenue ? ((totalRevenue - totalCogs) / totalRevenue) * 100 : 0,
+      productsServices: categoryMeta?.productsServices,
+      primaryCustomers: categoryMeta?.primaryCustomers.join(', '),
     };
   });
   return {
     records: records.slice(0, req.limit || 1000),
     summary: {
       topProducts: totals.sort((a, b) => b.totalRevenue - a.totalRevenue).slice(0, 10),
+      revenueByRegion: summarizeByDimension(records, 'region', ['revenue', 'quantitySold', 'testVolume']),
+      revenueByProductService: summarizeByDimension(records, 'productServiceCategory', ['revenue', 'quantitySold', 'testVolume']),
+      wholesaleOrderLines,
+      wholesaleVendorPricingRows,
+      productServiceCategories: companyProductProfile?.categories,
       topLineBuckets: getTopLineBucketsForSector(req.sectorCategory),
       ...(normalizeSectorCategory(req.sectorCategory) === '53'
         ? { realEstateReports: buildRealEstateOperationalHubMockData(req, profile) }
@@ -1396,16 +1765,16 @@ function buildApBalanceResponse(req: MockRequest, profile: SectorProfile) {
 export function buildOperationalMockResponse(req: MockRequest) {
   const code = normalizeSectorCategory(req.sectorCategory);
   const profile = SECTOR_PROFILES[code] || SECTOR_PROFILES['01'];
-  if (req.type === 'customers') return buildCustomersResponse(req, profile);
-  if (req.type === 'ar-aging') return buildArResponse(req, profile);
-  if (req.type === 'ap-aging') return buildApResponse(req, profile);
-  if (req.type === 'products') return buildProductResponse(req, profile);
-  if (req.type === 'inventory') return buildInventoryResponse(req, profile);
-  if (req.type === 'ap') return buildApBalanceResponse(req, profile);
-  return buildCashResponse(req, profile);
+  if (req.type === 'customers') return withCompanyReportingProfile(req, buildCustomersResponse(req, profile));
+  if (req.type === 'ar-aging') return withCompanyReportingProfile(req, buildArResponse(req, profile));
+  if (req.type === 'ap-aging') return withCompanyReportingProfile(req, buildApResponse(req, profile));
+  if (req.type === 'products') return withCompanyReportingProfile(req, buildProductResponse(req, profile));
+  if (req.type === 'inventory') return withCompanyReportingProfile(req, buildInventoryResponse(req, profile));
+  if (req.type === 'ap') return withCompanyReportingProfile(req, buildApBalanceResponse(req, profile));
+  return withCompanyReportingProfile(req, buildCashResponse(req, profile));
 }
 
-export function buildOperationalMockSummaryCounts(sectorCategory?: string | null) {
+export function buildOperationalMockSummaryCounts(sectorCategory?: string | null, companyId?: string | null) {
   return {
     customerSalesRecords: 96,
     arAgingRecords: 12,
@@ -1414,5 +1783,6 @@ export function buildOperationalMockSummaryCounts(sectorCategory?: string | null
     inventoryRecords: 96,
     cashRecords: 24,
     topLineBuckets: getTopLineBucketsForSector(sectorCategory),
+    reportingProfile: companyId ? getCompanyReportingProfile(companyId) : null,
   };
 }

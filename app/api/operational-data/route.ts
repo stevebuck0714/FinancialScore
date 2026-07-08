@@ -65,6 +65,8 @@ const HIRING_SOURCE_VERSION = 'bamboohr-hiring-full-pagination-v2';
 const CUSTOMER_BACKLOG_MIN_ORDER_DATE = '2023-06-01';
 const WHOLESALE_PRODUCTS_REPORT_START_DATE = '2023-01-01';
 const WHOLESALE_PRODUCTS_REPORT_CACHE_TTL_SECONDS = 30 * 24 * 60 * 60;
+const GENE_SOLUTIONS_COMPANY_ID = 'cmrc86g8l0001qhbkgcq6wrf9';
+const GENE_SOLUTIONS_MOCK_FINANCIAL_SOURCE = 'GENE_SOLUTIONS_MOCK';
 const OPERATIONAL_CACHEABLE_TYPES = new Set([
   'customers',
   'ar-aging',
@@ -563,6 +565,123 @@ function computeDailyApTotalsByDate(
   return Array.from(map.entries())
     .sort((a, b) => a[0].localeCompare(b[0]))
     .map(([date, totalAp]) => ({ date, totalAp }));
+}
+
+function buildDailyFinancialMockPayload(params: {
+  companyId: string;
+  startDate: Date;
+  endDate: Date;
+  limit: number;
+  statementRollup: StatementRollup;
+}) {
+  const start = startOfUtcDay(params.startDate);
+  const end = startOfUtcDay(params.endDate);
+  const maxRows = Math.max(1, Math.min(Number(params.limit || 140), 5000));
+  const records: any[] = [];
+
+  for (
+    let cursor = new Date(end);
+    cursor >= start && records.length < maxRows;
+    cursor = new Date(Date.UTC(cursor.getUTCFullYear(), cursor.getUTCMonth(), cursor.getUTCDate() - 1))
+  ) {
+    if (isWeekendUtc(cursor)) continue;
+    const index = records.length;
+    const weekday = cursor.getUTCDay();
+    const seasonality = 1 + Math.sin((cursor.getUTCMonth() / 12) * Math.PI * 2) * 0.08;
+    const revenue = Math.round((18500 + weekday * 950 + (index % 9) * 420) * seasonality);
+    const cogsTotal = Math.round(revenue * (0.58 + ((index % 4) * 0.015)));
+    const expense = Math.round(5200 + (index % 6) * 375);
+    const netIncome = revenue - cogsTotal - expense;
+    const cash = Math.round(245000 + index * 1150 + Math.sin(index / 4) * 8500);
+    const ar = Math.round(132000 + revenue * 1.8 + (index % 7) * 2300);
+    const inventory = Math.round(186000 + cogsTotal * 1.15 + (index % 5) * 1800);
+    const ap = Math.round(86000 + cogsTotal * 0.72 + (index % 6) * 1250);
+    const loc = Math.round(42000 + (index % 10) * 900);
+    const otherCA = Math.round(26000 + (index % 4) * 1200);
+    const tca = cash + ar + inventory + otherCA;
+    const fixedAssets = 310000;
+    const totalAssets = tca + fixedAssets;
+    const otherCL = 28000;
+    const tcl = ap + loc + otherCL;
+    const ltd = 175000;
+    const totalLiab = tcl + ltd;
+    const retainedEarnings = 185000;
+    const ownersCapital = totalAssets - totalLiab - retainedEarnings - netIncome;
+    const totalEquity = ownersCapital + retainedEarnings + netIncome;
+
+    records.push({
+      id: `mock-daily-financial:${params.companyId}:${dateKeyUtc(cursor)}`,
+      companyId: params.companyId,
+      snapshotDate: cursor.toISOString(),
+      frequency: 'daily',
+      revenue,
+      cogsTotal,
+      expense,
+      cash,
+      ar,
+      ap,
+      retainageReceivables: 0,
+      contractAssets: 0,
+      inventory,
+      otherCA,
+      tca,
+      fixedAssets,
+      constructionEquipment: 0,
+      officeEquipment: 0,
+      shopEquipment: 0,
+      investments: 0,
+      rightOfUseLeases: 0,
+      otherAssets: 0,
+      loc,
+      contractLiabilities: 0,
+      otherCL,
+      tcl,
+      ltd,
+      ownersCapital,
+      ownersDraw: 0,
+      commonStock: 0,
+      preferredStock: 0,
+      retainedEarnings,
+      currentYearNetIncome: netIncome,
+      additionalPaidInCapital: 0,
+      treasuryStock: 0,
+      totalAssets,
+      totalLiab,
+      totalEquity,
+      totalLAndE: totalLiab + totalEquity,
+      sourcePlatform: 'mock',
+      createdAt: cursor.toISOString(),
+      updatedAt: cursor.toISOString(),
+    });
+  }
+
+  const latestDaily = records[0] || {};
+  const previousDaily = records[1] || latestDaily;
+  const latestNet = Number(latestDaily.revenue || 0) - Number(latestDaily.cogsTotal || 0) - Number(latestDaily.expense || 0);
+  const previousNet = Number(previousDaily.revenue || 0) - Number(previousDaily.cogsTotal || 0) - Number(previousDaily.expense || 0);
+  const mappedLines = appendDailyFinancialSnapshotMappedLines([], records);
+  const statementRecords = aggregateDailyStatementRows(records, params.statementRollup);
+
+  return {
+    records,
+    mappedLines,
+    statementRecords,
+    summary: {
+      latestRevenue: Number(latestDaily.revenue || 0),
+      latestExpense: Number(latestDaily.expense || 0),
+      latestNet,
+      latestCash: Number(latestDaily.cash || 0),
+      latestAR: Number(latestDaily.ar || 0),
+      latestAP: Number(latestDaily.ap || 0),
+      netChange: latestNet - previousNet,
+      days: records.length,
+      statementPeriods: statementRecords.length,
+      statementCurrency: 'USD',
+      statementRollup: params.statementRollup,
+      statementBasis: 'mock_daily_activity',
+      mappedLineCount: mappedLines.length,
+    },
+  };
 }
 
 // UTC-only month/quarter/year bucketing.
@@ -2869,6 +2988,7 @@ export async function GET(request: NextRequest) {
               statementRollup,
               boundedLimit,
               'qbd-current-year-net-income-v1',
+              shouldUseMockData ? 'mock-operational-data-v2' : 'real-operational-data-v1',
               shouldApplyHydratedDateFilter ? hydratedInforDates : null,
               cacheType === 'customers' ? CUSTOMER_CONCENTRATION_CACHE_VERSION : null,
               cacheType === 'customers' ? CUSTOMER_REVENUE_SOURCE_VERSION : null,
@@ -2907,6 +3027,58 @@ export async function GET(request: NextRequest) {
       },
       { status: 409 }
     );
+
+    const genericMockTypes = new Set(['customers', 'ar-aging', 'ap-aging', 'products', 'inventory', 'cash', 'ap']);
+    if (shouldUseMockData && genericMockTypes.has(String(type || ''))) {
+      return cacheOperationalPayload(
+        buildOperationalMockResponse({
+          type: type as any,
+          companyId,
+          sectorCategory,
+          frequency,
+          startDate,
+          endDate,
+          limit: boundedLimit,
+        })
+      );
+    }
+
+    const shouldUseSeededGeneSolutionsFinancials =
+      shouldUseMockData &&
+      type === 'daily-financials' &&
+      companyId === GENE_SOLUTIONS_COMPANY_ID &&
+      (await prisma.dailyFinancialSnapshot.count({
+        where: {
+          companyId,
+          frequency: 'daily',
+          sourcePlatform: GENE_SOLUTIONS_MOCK_FINANCIAL_SOURCE,
+          snapshotDate: { gte: startDate, lte: endDate },
+        },
+      })) > 0;
+
+    if (shouldUseMockData && type === 'daily-financials' && !shouldUseSeededGeneSolutionsFinancials) {
+      if (statementCurrency !== 'USD') {
+        return NextResponse.json(
+          { error: `Unsupported currency "${statementCurrency}". Daily financial statements currently support USD only.` },
+          { status: 400 }
+        );
+      }
+      return cacheOperationalPayload(
+        buildDailyFinancialMockPayload({
+          companyId,
+          startDate,
+          endDate,
+          limit: boundedLimit,
+          statementRollup,
+        })
+      );
+    }
+
+    if (shouldUseMockData && (!type || type === 'summary')) {
+      return cacheOperationalPayload({
+        summary: buildOperationalMockSummaryCounts(sectorCategory, companyId),
+      });
+    }
 
     const hasPlatosFacts =
       (type === 'products' || type === 'inventory') &&

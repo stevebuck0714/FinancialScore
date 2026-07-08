@@ -16,6 +16,7 @@ export const ACCOUNTING_SYSTEMS = [
   { value: 'QUICKBOOKS_ENTERPRISE', label: 'QuickBooks Enterprise' },
   { value: 'SAGE', label: 'Sage' },
   { value: 'SAGE_INTACCT', label: 'Sage Intacct' },
+  { value: 'SAP_S4HANA', label: 'SAP S/4HANA' },
   { value: 'VISTA_CLOUD', label: 'Viewpoint Vista Cloud' },
   { value: 'XERO', label: 'Xero' },
 ] as const;

@@ -15,6 +15,7 @@ import sageIntacct from './sage-intacct';
 import acumatica from './acumatica';
 import odoo from './odoo';
 import dynamics365 from './dynamics-365';
+import sapS4Hana from './sap-s4hana';
 
 const modules: AccountingSystemModule<any, any>[] = [
   vistaCloud,
@@ -22,6 +23,7 @@ const modules: AccountingSystemModule<any, any>[] = [
   acumatica,
   odoo,
   dynamics365,
+  sapS4Hana,
 ];
 
 export const ACCOUNTING_SYSTEM_MODULES: ReadonlyArray<AccountingSystemModule<any, any>> = modules;

@@ -102,6 +102,48 @@ const SECTOR_32_REPORTS_BY_MODULE: Record<string, OperationalHubReportDefinition
   ],
 };
 
+const SECTOR_62_REPORTS_BY_MODULE: Record<string, OperationalHubReportDefinition[]> = {
+  patients_encounters: [
+    { key: 'patientsTestOrdersByRegion', label: 'Test Orders by Region', group: 'Patients / Encounters' },
+    { key: 'patientsTestOrdersByProductService', label: 'Test Orders by Product / Service', group: 'Patients / Encounters' },
+    { key: 'patientsCompletedTestsByRegion', label: 'Completed Tests by Region', group: 'Patients / Encounters' },
+    { key: 'patientsCompletedTestsByProductService', label: 'Completed Tests by Product / Service', group: 'Patients / Encounters' },
+    { key: 'patientsTatByRegionAndProduct', label: 'Turnaround Time by Region and Product / Service', group: 'Patients / Encounters' },
+    { key: 'patientsBacklogByRegionAndProduct', label: 'Open Test Backlog by Region and Product / Service', group: 'Patients / Encounters' },
+    { key: 'patientsRejectionRateByRegion', label: 'Sample Rejection Rate by Region', group: 'Patients / Encounters' },
+    { key: 'patientsPositiveDetectionByProduct', label: 'Positive Detection Rate by Product / Service', group: 'Patients / Encounters' },
+  ],
+  services_procedures: [
+    { key: 'servicesRevenueByRegionAndProduct', label: 'Revenue by Region and Product / Service', group: 'Services / Procedures' },
+    { key: 'servicesGrossMarginByRegionAndProduct', label: 'Gross Margin by Region and Product / Service', group: 'Services / Procedures' },
+    { key: 'servicesCostPerTestByProduct', label: 'Cost per Test by Product / Service', group: 'Services / Procedures' },
+    { key: 'servicesVolumeByRegionAndProduct', label: 'Test Volume by Region and Product / Service', group: 'Services / Procedures' },
+    { key: 'servicesOncologyVsWomensHealthByRegion', label: "Oncology vs Women's Health by Region", group: 'Services / Procedures' },
+    { key: 'servicesBiopharmaRevenueByRegion', label: 'Biopharma Revenue by Region', group: 'Services / Procedures' },
+    { key: 'servicesAiBioinformaticsRevenueByRegion', label: 'AI / Bioinformatics Revenue by Region', group: 'Services / Procedures' },
+    { key: 'servicesAssayTrendByRegion', label: 'Assay Trend by Region', group: 'Services / Procedures' },
+  ],
+  staffing_providers: [
+    { key: 'staffingLabUtilizationByRegion', label: 'Laboratory Utilization by Region', group: 'Staffing / Providers' },
+    { key: 'staffingLabUtilizationByProductService', label: 'Laboratory Utilization by Product / Service', group: 'Staffing / Providers' },
+    { key: 'staffingSequencingCapacityByRegion', label: 'Sequencing Capacity by Region', group: 'Staffing / Providers' },
+    { key: 'staffingSequencingCapacityByProduct', label: 'Sequencing Capacity by Product / Service', group: 'Staffing / Providers' },
+    { key: 'staffingTestsPerFteByRegion', label: 'Tests per FTE by Region', group: 'Staffing / Providers' },
+    { key: 'staffingTatByLabAndRegion', label: 'TAT by Laboratory and Region', group: 'Staffing / Providers' },
+    { key: 'staffingThroughputByDepartmentProduct', label: 'Testing Department Throughput by Product / Service', group: 'Staffing / Providers' },
+    { key: 'staffingUtilizationExceptionsByRegion', label: 'Utilization Exceptions by Region', group: 'Staffing / Providers' },
+  ],
+  payors_customers: [
+    { key: 'customersRevenueByHospitalNetwork', label: 'Revenue by Hospital Network', group: 'Payors / Customers' },
+    { key: 'customersAccountsByCountry', label: 'Hospital Accounts by Country', group: 'Payors / Customers' },
+    { key: 'customersPipelineBySegment', label: 'Sales Pipeline by Customer Segment', group: 'Payors / Customers' },
+    { key: 'customersConcentrationBySegment', label: 'Customer Concentration by Segment', group: 'Payors / Customers' },
+    { key: 'customersCollectionsBySegment', label: 'Cash Collections by Segment', group: 'Payors / Customers' },
+    { key: 'customersGovernmentPrograms', label: 'Government Screening Programs', group: 'Payors / Customers' },
+    { key: 'customersPharmaResearchAccounts', label: 'Pharma / Research Accounts', group: 'Payors / Customers' },
+  ],
+};
+
 const SECTOR_53_REPORTS_BY_MODULE: Record<string, OperationalHubReportDefinition[]> = {
   firm: [
     { key: 'firmDivisionScorecard', label: 'Division Scorecard', group: 'Firm' },
@@ -219,6 +261,9 @@ export function getOperationalHubDefaultReportsForModule(
   }
   if (sector === '32' && SECTOR_32_REPORTS_BY_MODULE[moduleKey]) {
     return SECTOR_32_REPORTS_BY_MODULE[moduleKey];
+  }
+  if (sector === '62' && SECTOR_62_REPORTS_BY_MODULE[moduleKey]) {
+    return SECTOR_62_REPORTS_BY_MODULE[moduleKey];
   }
   if (sector === '53' && SECTOR_53_REPORTS_BY_MODULE[moduleKey]) {
     return SECTOR_53_REPORTS_BY_MODULE[moduleKey];
