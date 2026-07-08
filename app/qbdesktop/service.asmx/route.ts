@@ -8,7 +8,7 @@ import {
   buildQuickBooksDesktopFinancialPayload,
   buildQuickBooksDesktopOperationalPayload,
 } from '@/lib/quickbooks-desktop/backfill-payloads';
-import { scheduleDailyExecutiveBriefingWarmup } from '@/lib/pulse/exec-briefing-warmup';
+import { scheduleQuickBooksDesktopPostSyncReprocess } from '@/lib/quickbooks-desktop/post-sync-reprocess';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -174,6 +174,17 @@ const QBD_INCLUDE_TRANSACTION_LINE_ITEMS = true;
 const QBD_BACKFILL_JOBS_PER_SESSION = 6;
 const QBD_DETAIL_TRANSACTION_PAGE_SIZE = 25;
 const QBD_DETAIL_BACKFILL_JOBS_PER_SESSION = 6;
+
+const QBD_LINE_ITEM_TRANSACTION_REQUESTS = new Set([
+  'InvoiceQuery',
+  'BillQuery',
+  'SalesReceiptQuery',
+  'CreditMemoQuery',
+  'CheckQuery',
+  'DepositQuery',
+  'VendorCreditQuery',
+  'JournalEntryQuery',
+]);
 
 const RET_TAG_BY_REQUEST: Record<string, string> = {
   AccountQuery: 'AccountRet',
@@ -432,7 +443,7 @@ function buildReportChildren(requestName: string, dateRange: QbwcDateRange): str
 }
 
 function isLineItemTransactionRequest(requestName: string): boolean {
-  return requestName === 'InvoiceQuery' || requestName === 'BillQuery';
+  return QBD_LINE_ITEM_TRANSACTION_REQUESTS.has(requestName);
 }
 
 function buildQbxmlRequest(requestName: string, dateRange: QbwcDateRange, context: QbwcRequestContext = {}): string {
@@ -532,7 +543,7 @@ function parseSimpleRecord(xml: string): Record<string, unknown> {
     if (value) record[field] = value;
   }
 
-  for (const refTag of ['AccountRef', 'CustomerRef', 'VendorRef', 'ItemRef', 'ClassRef']) {
+  for (const refTag of ['AccountRef', 'CustomerRef', 'VendorRef', 'ItemRef', 'ClassRef', 'PayeeEntityRef']) {
     const refXml = getInnerXml(xml, refTag);
     if (!refXml) continue;
     record[refTag] = {
@@ -621,6 +632,25 @@ function parseResponseRecords(requestName: string, xml: string): Array<Record<st
     if (requestName === 'BillQuery') {
       record.ExpenseLineRet = getXmlRecords(recordXml, 'ExpenseLineRet').map(parseSimpleRecord);
       record.ItemLineRet = getXmlRecords(recordXml, 'ItemLineRet').map(parseSimpleRecord);
+    }
+    if (requestName === 'SalesReceiptQuery') {
+      record.SalesReceiptLineRet = getXmlRecords(recordXml, 'SalesReceiptLineRet').map(parseSimpleRecord);
+    }
+    if (requestName === 'CreditMemoQuery') {
+      record.CreditMemoLineRet = getXmlRecords(recordXml, 'CreditMemoLineRet').map(parseSimpleRecord);
+    }
+    if (requestName === 'CheckQuery' || requestName === 'VendorCreditQuery') {
+      record.ExpenseLineRet = getXmlRecords(recordXml, 'ExpenseLineRet').map(parseSimpleRecord);
+      record.ItemLineRet = getXmlRecords(recordXml, 'ItemLineRet').map(parseSimpleRecord);
+    }
+    if (requestName === 'DepositQuery') {
+      record.DepositLineRet = getXmlRecords(recordXml, 'DepositLineRet').map(parseSimpleRecord);
+    }
+    if (requestName === 'JournalEntryQuery') {
+      record.JournalDebitLine = getXmlRecords(recordXml, 'JournalDebitLine').map(parseSimpleRecord);
+      record.JournalCreditLine = getXmlRecords(recordXml, 'JournalCreditLine').map(parseSimpleRecord);
+      record.JournalDebitLineRet = getXmlRecords(recordXml, 'JournalDebitLineRet').map(parseSimpleRecord);
+      record.JournalCreditLineRet = getXmlRecords(recordXml, 'JournalCreditLineRet').map(parseSimpleRecord);
     }
 
     return record;
@@ -1301,7 +1331,7 @@ async function finalizeSession(connection: NonNullable<Awaited<ReturnType<typeof
   });
 
   if (!lastError) {
-    scheduleDailyExecutiveBriefingWarmup({
+    scheduleQuickBooksDesktopPostSyncReprocess({
       companyId,
       source: 'qbd-web-connector-finalize',
     });

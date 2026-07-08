@@ -6,7 +6,16 @@ import { isQuickBooksDesktopFamily } from '@/lib/quickbooks-desktop/family';
 
 export const dynamic = 'force-dynamic';
 
-const DETAIL_REQUESTS = ['InvoiceQuery', 'BillQuery'];
+const DETAIL_REQUESTS = [
+  'InvoiceQuery',
+  'BillQuery',
+  'SalesReceiptQuery',
+  'CreditMemoQuery',
+  'CheckQuery',
+  'DepositQuery',
+  'VendorCreditQuery',
+  'JournalEntryQuery',
+];
 
 function parseDate(value: unknown): string {
   if (typeof value !== 'string') return '';
