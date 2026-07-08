@@ -123,8 +123,31 @@ function qbdTxnNumber(record: Record<string, unknown>, fallbackPrefix: string, i
   return firstString(record.RefNumber, record.TxnNumber, record.TxnID) || `${fallbackPrefix}-${index + 1}`;
 }
 
-function openBalance(record: Record<string, unknown>): number {
-  return toNumber(record.BalanceRemaining || record.OpenAmount || record.AmountDue);
+function isExplicitlyPaid(record: Record<string, unknown>): boolean {
+  return firstString(record.IsPaid).toLowerCase() === 'true';
+}
+
+function isExplicitlyUnpaid(record: Record<string, unknown>): boolean {
+  return firstString(record.IsPaid).toLowerCase() === 'false';
+}
+
+function hasField(record: Record<string, unknown>, field: string): boolean {
+  const value = record[field];
+  return value !== null && value !== undefined && String(value).trim() !== '';
+}
+
+function invoiceOpenBalance(record: Record<string, unknown>): number {
+  if (isExplicitlyPaid(record)) return 0;
+  if (hasField(record, 'BalanceRemaining')) return toNumber(record.BalanceRemaining);
+  if (isExplicitlyUnpaid(record) && hasField(record, 'AmountDue')) return toNumber(record.AmountDue);
+  return 0;
+}
+
+function billOpenBalance(record: Record<string, unknown>): number {
+  if (isExplicitlyPaid(record)) return 0;
+  if (hasField(record, 'BalanceRemaining')) return toNumber(record.BalanceRemaining);
+  if (isExplicitlyUnpaid(record) && hasField(record, 'AmountDue')) return toNumber(record.AmountDue);
+  return 0;
 }
 
 function buildSourceTransaction(record: Record<string, unknown>, fallback: string): string {
@@ -134,6 +157,37 @@ function buildSourceTransaction(record: Record<string, unknown>, fallback: strin
 function reportColNumber(record: Record<string, unknown>, index: number): number {
   const colData = Array.isArray(record.colData) ? record.colData.map(asRecord) : [];
   return toNumber(colData[index]?.value);
+}
+
+function reconcileAgingBucketsToTotal(
+  rawBuckets: Record<string, number>,
+  explicitTotal: number,
+): Record<string, number> {
+  const buckets = Object.fromEntries(
+    Object.entries(rawBuckets).map(([key, value]) => [key, Math.max(0, value)])
+  ) as Record<string, number>;
+
+  if (explicitTotal <= 0) return buckets;
+
+  let bucketTotal = Object.values(buckets).reduce((sum, value) => sum + value, 0);
+  let excess = bucketTotal - explicitTotal;
+  if (excess > 0) {
+    const bucketNamesBySize = Object.keys(buckets).sort((a, b) => buckets[b] - buckets[a]);
+    for (const bucketName of bucketNamesBySize) {
+      if (excess <= 0) break;
+      const reduction = Math.min(buckets[bucketName], excess);
+      buckets[bucketName] -= reduction;
+      excess -= reduction;
+    }
+  }
+
+  bucketTotal = Object.values(buckets).reduce((sum, value) => sum + value, 0);
+  const shortfall = explicitTotal - bucketTotal;
+  if (shortfall > 0) {
+    buckets.days90plus = (buckets.days90plus || 0) + shortfall;
+  }
+
+  return buckets;
 }
 
 function buildAgingSummaryFromReport(
@@ -147,14 +201,19 @@ function buildAgingSummaryFromReport(
   if (!selected) return null;
 
   // QBD aging summary report columns are: label, Current, 1-30, 31-60, 61-90, >90, Total.
-  const current = reportColNumber(selected, 1);
-  const days1to30 = reportColNumber(selected, 2);
-  const days31to60 = reportColNumber(selected, 3);
-  const days61to90 = reportColNumber(selected, 4);
-  const days90plus = reportColNumber(selected, 5);
+  const rawBuckets = {
+    current: reportColNumber(selected, 1),
+    days1to30: reportColNumber(selected, 2),
+    days31to60: reportColNumber(selected, 3),
+    days61to90: reportColNumber(selected, 4),
+    days90plus: reportColNumber(selected, 5),
+  };
   const explicitTotal = reportColNumber(selected, 6);
+  const buckets = reconcileAgingBucketsToTotal(rawBuckets, explicitTotal);
+  const { current, days1to30, days31to60, days90plus } = buckets;
+  const days61to90 = buckets.days61to90 || 0;
   const summedTotal = current + days1to30 + days31to60 + days61to90 + days90plus;
-  const total = explicitTotal || summedTotal;
+  const total = explicitTotal > 0 ? explicitTotal : summedTotal;
   if (total === 0 && summedTotal === 0) return null;
 
   return {
@@ -301,7 +360,7 @@ export function buildQuickBooksDesktopOperationalPayload(session: QbdPayloadSess
     const customerName = customer.name || 'Unknown Customer';
     const customerId = customer.id || customerName;
     const revenue = toNumber(invoice.Subtotal || invoice.TotalAmount || invoice.Amount);
-    const arBalance = toNumber(invoice.BalanceRemaining || invoice.OpenAmount);
+    const arBalance = invoiceOpenBalance(invoice);
     totalAR += arBalance;
     if (arBalance > 0) {
       arOpenInvoices.push({
@@ -351,7 +410,7 @@ export function buildQuickBooksDesktopOperationalPayload(session: QbdPayloadSess
   const apOpenBills = bills
     .map((bill, index) => {
       const vendor = getRef(bill, 'VendorRef');
-      const amountDue = openBalance(bill);
+      const amountDue = billOpenBalance(bill);
       return {
         vendorId: vendor.id,
         vendorName: vendor.name || 'Unknown Vendor',
