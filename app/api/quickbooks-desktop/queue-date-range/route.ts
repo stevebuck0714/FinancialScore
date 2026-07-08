@@ -9,6 +9,8 @@ export const dynamic = 'force-dynamic';
 const REQUIRED_QBD_REPORT_REQUESTS = [
   'BalanceSheetStandardReportQuery',
   'TrialBalanceReportQuery',
+  'ARAgingSummaryReportQuery',
+  'APAgingSummaryReportQuery',
   'OtherNameQuery',
   'EntityQuery',
 ];

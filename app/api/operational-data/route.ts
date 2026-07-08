@@ -4667,7 +4667,7 @@ export async function GET(request: NextRequest) {
         let arFrequencyForQuery: 'daily' | 'weekly' | 'monthly' = frequency;
         // QBO operational enrichment is month-end keyed. When the UI is not on
         // monthly frequency, prefer monthly snapshots so AR/AP tabs do not appear empty.
-        if (isQuickBooksCompany && frequency !== 'monthly') {
+        if (isQuickBooksCompany && !isQuickBooksDesktopCompany && frequency !== 'monthly') {
           arFrequencyForQuery = 'monthly';
         }
         // Open AR is derived strictly from invoice-level open rows.
@@ -6092,7 +6092,7 @@ export async function GET(request: NextRequest) {
         // See docs/AP_RECONCILIATION_KNOWN_LIMITATIONS.md
         // Get AP aging data
         const apFrequencyForQuery: 'daily' | 'weekly' | 'monthly' =
-          isQuickBooksCompany && frequency !== 'monthly' ? 'monthly' : frequency;
+          isQuickBooksCompany && !isQuickBooksDesktopCompany && frequency !== 'monthly' ? 'monthly' : frequency;
         const apOpenRowCap = Math.max(limit * 50, 5000);
         data = await prisma.aPAgingSnapshot.findMany({
           where: {

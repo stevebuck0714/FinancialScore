@@ -3,6 +3,7 @@ import prisma from '@/lib/prisma';
 import { runOperationalSyncForConnection } from '@/lib/operational-sync/runner';
 import { extractDailyFinancialMappedLinesFromMetadata, extractDailyFinancialRecordsFromMetadata, ingestDailyFinancialSnapshots } from '@/lib/financial/daily-financial-ingest';
 import { notifyAdminsOfSyncFailure } from '@/lib/sync-alerts';
+import { warmDailyExecutiveBriefingCache } from '@/lib/pulse/exec-briefing-warmup';
 
 export const maxDuration = 300;
 
@@ -175,6 +176,8 @@ export async function GET(request: NextRequest) {
         let dailyFinancialIngested = 0;
         let dailyFinancialSkipped = 0;
         let dailyFinancialError: string | null = null;
+        let executiveBriefingWarmed = false;
+        let executiveBriefingError: string | null = null;
 
         if (dailyRecords.length > 0) {
           const ingestResult = await ingestDailyFinancialSnapshots({
@@ -223,6 +226,19 @@ export async function GET(request: NextRequest) {
             errorMessage: syncResult.success ? null : (syncResult.errors || []).join(' | ').slice(0, 900),
           },
         });
+
+        if (syncResult.success) {
+          const briefingWarmup = await warmDailyExecutiveBriefingCache({
+            companyId: connection.companyId,
+            baseUrl: request.nextUrl.origin,
+            source: `nightly-${String(connection.platform).toLowerCase()}-sync`,
+          });
+          executiveBriefingWarmed = briefingWarmup.ok;
+          executiveBriefingError = briefingWarmup.error || null;
+          if (!briefingWarmup.ok) {
+            console.warn(`⚠️ ${connection.company?.name}: Daily Executive Briefing warm-up failed: ${briefingWarmup.error || 'unknown error'}`);
+          }
+        }
         
         results.push({
           companyId: connection.companyId,
@@ -234,6 +250,8 @@ export async function GET(request: NextRequest) {
           dailyFinancialRecordsIngested: dailyFinancialIngested,
           dailyFinancialRecordsSkipped: dailyFinancialSkipped,
           dailyFinancialError,
+          executiveBriefingWarmed,
+          executiveBriefingError,
         });
         
       } catch (error: any) {

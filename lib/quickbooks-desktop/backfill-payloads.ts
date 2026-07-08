@@ -71,6 +71,8 @@ const RET_TAG_BY_REQUEST: Record<string, string> = {
   BalanceSheetStandardReportQuery: 'ReportRet',
   TrialBalanceReportQuery: 'ReportRet',
   GeneralDetailReportQuery: 'ReportRet',
+  ARAgingSummaryReportQuery: 'ReportRet',
+  APAgingSummaryReportQuery: 'ReportRet',
 };
 
 function asRecord(value: unknown): Record<string, unknown> {
@@ -82,7 +84,7 @@ function asRecord(value: unknown): Record<string, unknown> {
 function toNumber(value: unknown): number {
   if (typeof value === 'number') return Number.isFinite(value) ? value : 0;
   if (typeof value === 'string') {
-    const parsed = Number(value.replace(/,/g, '').trim());
+    const parsed = Number(value.replace(/,/g, '').replace(/\(([^)]+)\)/, '-$1').trim());
     return Number.isFinite(parsed) ? parsed : 0;
   }
   return 0;
@@ -95,6 +97,73 @@ function getRef(record: Record<string, unknown>, refName: string): { id: string;
   return {
     id: typeof src.ListID === 'string' ? src.ListID : '',
     name: typeof src.FullName === 'string' ? src.FullName : '',
+  };
+}
+
+function asArray(value: unknown): Array<Record<string, unknown>> {
+  if (!value) return [];
+  return (Array.isArray(value) ? value : [value]).map(asRecord);
+}
+
+function qbdDate(value: unknown): string | null {
+  if (typeof value !== 'string') return null;
+  const trimmed = value.trim();
+  return /^\d{4}-\d{2}-\d{2}/.test(trimmed) ? trimmed.slice(0, 10) : null;
+}
+
+function firstString(...values: unknown[]): string {
+  for (const value of values) {
+    if (typeof value === 'string' && value.trim()) return value.trim();
+    if (typeof value === 'number' && Number.isFinite(value)) return String(value);
+  }
+  return '';
+}
+
+function qbdTxnNumber(record: Record<string, unknown>, fallbackPrefix: string, index: number): string {
+  return firstString(record.RefNumber, record.TxnNumber, record.TxnID) || `${fallbackPrefix}-${index + 1}`;
+}
+
+function openBalance(record: Record<string, unknown>): number {
+  return toNumber(record.BalanceRemaining || record.OpenAmount || record.AmountDue);
+}
+
+function buildSourceTransaction(record: Record<string, unknown>, fallback: string): string {
+  return firstString(record.TxnID, record.EditSequence, record.RefNumber) || fallback;
+}
+
+function reportColNumber(record: Record<string, unknown>, index: number): number {
+  const colData = Array.isArray(record.colData) ? record.colData.map(asRecord) : [];
+  return toNumber(colData[index]?.value);
+}
+
+function buildAgingSummaryFromReport(
+  records: Array<Record<string, unknown>>,
+  totalKey: 'totalAR' | 'totalAP',
+): Record<string, number> | null {
+  if (!records.length) return null;
+  const totalRows = records.filter((record) => String(record.rowKind || '') === 'TotalRow');
+  const candidateRows = totalRows.length ? totalRows : records;
+  const selected = candidateRows[candidateRows.length - 1];
+  if (!selected) return null;
+
+  // QBD aging summary report columns are: label, Current, 1-30, 31-60, 61-90, >90, Total.
+  const current = reportColNumber(selected, 1);
+  const days1to30 = reportColNumber(selected, 2);
+  const days31to60 = reportColNumber(selected, 3);
+  const days61to90 = reportColNumber(selected, 4);
+  const days90plus = reportColNumber(selected, 5);
+  const explicitTotal = reportColNumber(selected, 6);
+  const summedTotal = current + days1to30 + days31to60 + days61to90 + days90plus;
+  const total = explicitTotal || summedTotal;
+  if (total === 0 && summedTotal === 0) return null;
+
+  return {
+    [totalKey]: total,
+    current,
+    days1to30,
+    days31to60,
+    days61to90,
+    days90plus,
   };
 }
 
@@ -200,7 +269,14 @@ export function buildQuickBooksDesktopFinancialPayload(session: QbdPayloadSessio
 export function buildQuickBooksDesktopOperationalPayload(session: QbdPayloadSession): QbDesktopOperationalPayload {
   const accounts = session.responses.AccountQuery?.records || [];
   const invoices = session.responses.InvoiceQuery?.records || [];
+  const bills = session.responses.BillQuery?.records || [];
+  const receivePayments = session.responses.ReceivePaymentQuery?.records || [];
+  const billPaymentChecks = session.responses.BillPaymentCheckQuery?.records || [];
+  const billPaymentCreditCards = session.responses.BillPaymentCreditCardQuery?.records || [];
   const items = session.responses.ItemQuery?.records || [];
+  const arAgingReport = session.responses.ARAgingSummaryReportQuery?.records || [];
+  const apAgingReport = session.responses.APAgingSummaryReportQuery?.records || [];
+  const asOfDate = qbdDate(session.dateRange.endDate) || new Date().toISOString().slice(0, 10);
 
   const cash = accounts
     .filter((account) => {
@@ -217,15 +293,31 @@ export function buildQuickBooksDesktopOperationalPayload(session: QbdPayloadSess
 
   const customerSalesById = new Map<string, { customerId: string; customerName: string; revenue: number; invoiceCount: number }>();
   const productSalesById = new Map<string, { itemId: string; itemName: string; quantitySold: number; revenue: number }>();
+  const arOpenInvoices: Array<Record<string, unknown>> = [];
   let totalAR = 0;
 
-  for (const invoice of invoices) {
+  for (const [index, invoice] of invoices.entries()) {
     const customer = getRef(invoice, 'CustomerRef');
     const customerName = customer.name || 'Unknown Customer';
     const customerId = customer.id || customerName;
     const revenue = toNumber(invoice.Subtotal || invoice.TotalAmount || invoice.Amount);
     const arBalance = toNumber(invoice.BalanceRemaining || invoice.OpenAmount);
     totalAR += arBalance;
+    if (arBalance > 0) {
+      arOpenInvoices.push({
+        customerId,
+        customerName,
+        invoiceNo: qbdTxnNumber(invoice, 'QBD-INVOICE', index),
+        invoiceDate: qbdDate(invoice.TxnDate),
+        dueDate: qbdDate(invoice.DueDate),
+        status: firstString(invoice.IsPaid).toLowerCase() === 'true' ? 'PAID' : 'OPEN',
+        currencyCode: firstString(asRecord(invoice.CurrencyRef).FullName) || 'USD',
+        amountCurrency: revenue,
+        amountHome: toNumber(invoice.TotalAmount || invoice.Amount || revenue),
+        amountDueHome: arBalance,
+        sourceTransaction: buildSourceTransaction(invoice, `invoice:${index}`),
+      });
+    }
 
     const current = customerSalesById.get(customerId) || {
       customerId,
@@ -256,12 +348,95 @@ export function buildQuickBooksDesktopOperationalPayload(session: QbdPayloadSess
     }
   }
 
+  const apOpenBills = bills
+    .map((bill, index) => {
+      const vendor = getRef(bill, 'VendorRef');
+      const amountDue = openBalance(bill);
+      return {
+        vendorId: vendor.id,
+        vendorName: vendor.name || 'Unknown Vendor',
+        billNo: qbdTxnNumber(bill, 'QBD-BILL', index),
+        billDate: qbdDate(bill.TxnDate),
+        dueDate: qbdDate(bill.DueDate),
+        status: firstString(bill.IsPaid).toLowerCase() === 'true' ? 'PAID' : 'OPEN',
+        currencyCode: firstString(asRecord(bill.CurrencyRef).FullName) || 'USD',
+        amountCurrency: toNumber(bill.AmountDue || bill.Amount || bill.TotalAmount || amountDue),
+        amountHome: toNumber(bill.Amount || bill.TotalAmount || bill.AmountDue || amountDue),
+        amountDueHome: amountDue,
+        sourceTransaction: buildSourceTransaction(bill, `bill:${index}`),
+      };
+    })
+    .filter((row) => Number(row.amountDueHome || 0) > 0);
+
+  const arPayments = receivePayments.flatMap((payment, paymentIndex) => {
+    const customer = getRef(payment, 'CustomerRef');
+    const paymentDate = qbdDate(payment.TxnDate);
+    const currencyCode = firstString(asRecord(payment.CurrencyRef).FullName) || 'USD';
+    const sourceTransaction = buildSourceTransaction(payment, `receive-payment:${paymentIndex}`);
+    const applied = asArray(payment.AppliedToTxnRet).filter((row) => String(row.TxnType || '').toLowerCase().includes('invoice'));
+    if (applied.length === 0) {
+      return [{
+        paymentDate,
+        customerId: customer.id,
+        customerName: customer.name || 'Unknown Customer',
+        invoiceNo: null,
+        currencyCode,
+        paidAmountCurrency: toNumber(payment.TotalAmount),
+        paidAmountHome: toNumber(payment.TotalAmount),
+        sourceTransaction,
+      }];
+    }
+    return applied.map((appliedTxn, appliedIndex) => ({
+      paymentDate,
+      customerId: customer.id,
+      customerName: customer.name || 'Unknown Customer',
+      invoiceNo: firstString(appliedTxn.RefNumber, appliedTxn.TxnID) || null,
+      currencyCode,
+      paidAmountCurrency: toNumber(appliedTxn.Amount) || toNumber(payment.TotalAmount),
+      paidAmountHome: toNumber(appliedTxn.Amount) || toNumber(payment.TotalAmount),
+      sourceTransaction: `${sourceTransaction}:${appliedIndex}`,
+    }));
+  });
+
+  const apPayments = [...billPaymentChecks, ...billPaymentCreditCards].flatMap((payment, paymentIndex) => {
+    const vendor = getRef(payment, 'PayeeEntityRef');
+    const vendorFallback = vendor.id || vendor.name ? vendor : getRef(payment, 'VendorRef');
+    const paymentDate = qbdDate(payment.TxnDate);
+    const currencyCode = firstString(asRecord(payment.CurrencyRef).FullName) || 'USD';
+    const sourceTransaction = buildSourceTransaction(payment, `bill-payment:${paymentIndex}`);
+    const applied = asArray(payment.AppliedToTxnRet).filter((row) => String(row.TxnType || '').toLowerCase().includes('bill'));
+    if (applied.length === 0) {
+      return [{
+        paymentDate,
+        vendorId: vendorFallback.id,
+        vendorName: vendorFallback.name || 'Unknown Vendor',
+        billNo: null,
+        currencyCode,
+        paidAmountCurrency: toNumber(payment.Amount || payment.TotalAmount),
+        paidAmountHome: toNumber(payment.Amount || payment.TotalAmount),
+        sourceTransaction,
+        sourceItemId: `qbd|ap-payment|${sourceTransaction}`,
+      }];
+    }
+    return applied.map((appliedTxn, appliedIndex) => ({
+      paymentDate,
+      vendorId: vendorFallback.id,
+      vendorName: vendorFallback.name || 'Unknown Vendor',
+      billNo: firstString(appliedTxn.RefNumber, appliedTxn.TxnID) || null,
+      currencyCode,
+      paidAmountCurrency: toNumber(appliedTxn.Amount) || toNumber(payment.Amount || payment.TotalAmount),
+      paidAmountHome: toNumber(appliedTxn.Amount) || toNumber(payment.Amount || payment.TotalAmount),
+      sourceTransaction: `${sourceTransaction}:${appliedIndex}`,
+      sourceItemId: `qbd|ap-payment|${sourceTransaction}|${appliedIndex}`,
+    }));
+  });
+
   return {
-    asOfDate: new Date().toISOString().slice(0, 10),
+    asOfDate,
     cash,
-    arAging: totalAR > 0 ? { totalAR, current: totalAR, days1to30: 0, days31to60: 0, days61to90: 0, days90plus: 0 } : null,
-    // BillQuery headers do not expose reliable per-bill open AP; OpenAmount repeats across unrelated bills.
-    apAging: null,
+    arAging: buildAgingSummaryFromReport(arAgingReport, 'totalAR') ||
+      (totalAR > 0 ? { totalAR, current: totalAR, days1to30: 0, days31to60: 0, days61to90: 0, days90plus: 0 } : null),
+    apAging: buildAgingSummaryFromReport(apAgingReport, 'totalAP'),
     customerSales: Array.from(customerSalesById.values()).map((row) => ({
       ...row,
       avgInvoiceSize: row.invoiceCount > 0 ? row.revenue / row.invoiceCount : 0,
@@ -283,5 +458,9 @@ export function buildQuickBooksDesktopOperationalPayload(session: QbdPayloadSess
       avgCost: toNumber(item.AverageCost || item.PurchaseCost),
       assetValue: toNumber(item.TotalValue),
     })),
+    arOpenInvoices,
+    arPayments,
+    apOpenBills,
+    apPayments,
   };
 }

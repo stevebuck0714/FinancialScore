@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import { generateCompanyPulse } from '@/lib/company-pulse/generator';
+import { warmDailyExecutiveBriefingCache } from '@/lib/pulse/exec-briefing-warmup';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 300;
@@ -75,40 +76,6 @@ async function resolveCompanyIds(request: NextRequest): Promise<string[]> {
   return rows.map((row) => row.companyId);
 }
 
-async function warmDailyExecutiveBriefing(request: NextRequest, companyId: string): Promise<{
-  ok: boolean;
-  error?: string;
-}> {
-  const cronSecret = String(process.env.CRON_SECRET || '').trim();
-  if (!cronSecret) {
-    return { ok: false, error: 'CRON_SECRET is required to warm Daily Executive Briefing cache.' };
-  }
-
-  const url = new URL('/api/pulse/exec-briefing', request.url);
-  url.searchParams.set('companyId', companyId);
-  url.searchParams.set('force', 'true');
-
-  const vercelBypass = String(process.env.VERCEL_AUTOMATION_BYPASS_SECRET || '').trim();
-  const response = await fetch(url, {
-    headers: {
-      authorization: `Bearer ${cronSecret}`,
-      ...(vercelBypass ? { 'x-vercel-protection-bypass': vercelBypass } : {}),
-    },
-    cache: 'no-store',
-  });
-
-  if (response.ok) return { ok: true };
-
-  let details = response.statusText || `HTTP ${response.status}`;
-  try {
-    const payload = await response.json();
-    details = String(payload?.error || payload?.details || details);
-  } catch {
-    // Keep the status text when the response is not JSON.
-  }
-  return { ok: false, error: details.slice(0, 500) };
-}
-
 export async function GET(request: NextRequest) {
   const startedAt = Date.now();
   if (!isAuthorized(request)) {
@@ -135,7 +102,11 @@ export async function GET(request: NextRequest) {
         const generated = await generateCompanyPulse(companyId, {
           actorEmail: 'company-pulse-cron',
         });
-        const briefingWarmup = await warmDailyExecutiveBriefing(request, companyId);
+        const briefingWarmup = await warmDailyExecutiveBriefingCache({
+          companyId,
+          baseUrl: request.nextUrl.origin,
+          source: 'company-pulse-cron',
+        });
         results.push({
           companyId,
           ok: briefingWarmup.ok,

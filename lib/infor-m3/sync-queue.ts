@@ -12,6 +12,7 @@ import { notifyAdminsOfSyncFailure } from '@/lib/sync-alerts';
 import { orchestrateQuickBooksOnlineOperationalSync } from '@/lib/quickbooks-online/operational-orchestrator';
 import { syncErpDailyFinancialsFromGL } from '@/lib/financial/sync-erp-daily-financials';
 import { rebuildDailyFinancialSnapshotsFromGL } from '@/lib/financial/daily-bs-from-gl';
+import { warmDailyExecutiveBriefingCache } from '@/lib/pulse/exec-briefing-warmup';
 
 const LEASE_SECONDS = 120;
 const DEFAULT_MAX_ATTEMPTS = 6;
@@ -1790,6 +1791,20 @@ async function processTask(
       const details = errorToMessage(error, 'Monthly financial report sync failed');
       await markRunPostProcessingFailure(task, 'monthly financial report sync', details);
       return { runId: task.runId, taskId: task.id, status: 'failed', details };
+    }
+  }
+
+  if (runCompletedInThisTask) {
+    const briefingWarmup = await warmDailyExecutiveBriefingCache({
+      companyId: task.companyId,
+      source: `sync-queue-${String(task.run.platform || 'erp').toLowerCase()}-complete`,
+    });
+    if (!briefingWarmup.ok) {
+      console.warn('Daily Executive Briefing warm-up failed after sync queue completion:', {
+        companyId: task.companyId,
+        runId: task.runId,
+        error: briefingWarmup.error,
+      });
     }
   }
 

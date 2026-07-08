@@ -8,6 +8,7 @@ import {
   buildQuickBooksDesktopFinancialPayload,
   buildQuickBooksDesktopOperationalPayload,
 } from '@/lib/quickbooks-desktop/backfill-payloads';
+import { scheduleDailyExecutiveBriefingWarmup } from '@/lib/pulse/exec-briefing-warmup';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -119,6 +120,8 @@ const REQUIRED_QBD_REPORT_REQUESTS = [
   'BalanceSheetStandardReportQuery',
   'TrialBalanceReportQuery',
   'GeneralDetailReportQuery',
+  'ARAgingSummaryReportQuery',
+  'APAgingSummaryReportQuery',
   'OtherNameQuery',
   'EntityQuery',
 ];
@@ -162,6 +165,8 @@ const REPORT_REQUESTS = new Set([
   'BalanceSheetStandardReportQuery',
   'TrialBalanceReportQuery',
   'GeneralDetailReportQuery',
+  'ARAgingSummaryReportQuery',
+  'APAgingSummaryReportQuery',
 ]);
 
 const QBD_TRANSACTION_PAGE_SIZE = 100;
@@ -207,6 +212,8 @@ const RET_TAG_BY_REQUEST: Record<string, string> = {
   BalanceSheetStandardReportQuery: 'ReportRet',
   TrialBalanceReportQuery: 'ReportRet',
   GeneralDetailReportQuery: 'ReportRet',
+  ARAgingSummaryReportQuery: 'ReportRet',
+  APAgingSummaryReportQuery: 'ReportRet',
 };
 
 const ITEM_RET_TAGS = [
@@ -406,6 +413,12 @@ function buildReportPeriod(dateRange: QbwcDateRange): string {
 function buildReportChildren(requestName: string, dateRange: QbwcDateRange): string {
   const period = buildReportPeriod(dateRange);
   const basis = '<ReportBasis>Accrual</ReportBasis>';
+  if (requestName === 'ARAgingSummaryReportQuery') {
+    return '<AgingReportType>ARAgingSummary</AgingReportType><ReportAgingAsOf>ReportEndDate</ReportAgingAsOf>';
+  }
+  if (requestName === 'APAgingSummaryReportQuery') {
+    return '<AgingReportType>APAgingSummary</AgingReportType><ReportAgingAsOf>ReportEndDate</ReportAgingAsOf>';
+  }
   if (requestName === 'BalanceSheetStandardReportQuery') {
     return `<GeneralSummaryReportType>BalanceSheetStandard</GeneralSummaryReportType>${period}${basis}`;
   }
@@ -434,8 +447,11 @@ function buildQbxmlRequest(requestName: string, dateRange: QbwcDateRange, contex
   const requestTag = `${requestName}Rq`;
   const requestId = xmlEscape(requestName);
   if (REPORT_REQUESTS.has(requestName)) {
-    const reportRequestTag = requestName === 'TrialBalanceReportQuery' || requestName === 'BalanceSheetStandardReportQuery'
+    const reportRequestTag =
+      requestName === 'TrialBalanceReportQuery' || requestName === 'BalanceSheetStandardReportQuery'
       ? 'GeneralSummaryReportQueryRq'
+      : requestName === 'ARAgingSummaryReportQuery' || requestName === 'APAgingSummaryReportQuery'
+        ? 'AgingReportQueryRq'
       : requestTag;
     return `<?xml version="1.0" encoding="utf-8"?>
 <?qbxml version="13.0"?>
@@ -1283,6 +1299,13 @@ async function finalizeSession(connection: NonNullable<Awaited<ReturnType<typeof
       errorMessage: lastError ? lastError.slice(0, 900) : null,
     },
   });
+
+  if (!lastError) {
+    scheduleDailyExecutiveBriefingWarmup({
+      companyId,
+      source: 'qbd-web-connector-finalize',
+    });
+  }
 }
 
 async function authenticateWebConnector(username: string, password: string): Promise<{ companyId: string; metadata: QbDesktopMetadata } | null> {

@@ -56,6 +56,57 @@ type InventoryRow = {
   avgCost?: number | string | null;
 };
 
+type AROpenInvoiceRow = {
+  customerId?: string | null;
+  customerName?: string | null;
+  invoiceNo?: string | null;
+  invoiceDate?: string | Date | null;
+  dueDate?: string | Date | null;
+  status?: string | null;
+  currencyCode?: string | null;
+  amountCurrency?: number | string | null;
+  amountHome?: number | string | null;
+  amountDueHome?: number | string | null;
+  sourceTransaction?: string | null;
+};
+
+type ARPaymentRow = {
+  paymentDate?: string | Date | null;
+  customerId?: string | null;
+  customerName?: string | null;
+  invoiceNo?: string | null;
+  currencyCode?: string | null;
+  paidAmountCurrency?: number | string | null;
+  paidAmountHome?: number | string | null;
+  sourceTransaction?: string | null;
+};
+
+type APOpenBillRow = {
+  vendorId?: string | null;
+  vendorName?: string | null;
+  billNo?: string | null;
+  billDate?: string | Date | null;
+  dueDate?: string | Date | null;
+  status?: string | null;
+  currencyCode?: string | null;
+  amountCurrency?: number | string | null;
+  amountHome?: number | string | null;
+  amountDueHome?: number | string | null;
+  sourceTransaction?: string | null;
+};
+
+type APPaymentRow = {
+  paymentDate?: string | Date | null;
+  vendorId?: string | null;
+  vendorName?: string | null;
+  billNo?: string | null;
+  currencyCode?: string | null;
+  paidAmountCurrency?: number | string | null;
+  paidAmountHome?: number | string | null;
+  sourceTransaction?: string | null;
+  sourceItemId?: string | null;
+};
+
 export type QbDesktopOperationalPayload = {
   asOfDate?: string | null;
   cash?: CashRow[];
@@ -64,6 +115,10 @@ export type QbDesktopOperationalPayload = {
   customerSales?: CustomerSalesRow[];
   productSales?: ProductSalesRow[];
   inventory?: InventoryRow[];
+  arOpenInvoices?: AROpenInvoiceRow[];
+  arPayments?: ARPaymentRow[];
+  apOpenBills?: APOpenBillRow[];
+  apPayments?: APPaymentRow[];
 };
 
 export type QbDesktopSyncResult = {
@@ -101,6 +156,30 @@ function normalizeDate(value: unknown): Date {
   const now = new Date();
   now.setHours(0, 0, 0, 0);
   return now;
+}
+
+function normalizeOptionalDate(value: unknown): Date | null {
+  if (!value) return null;
+  const date = value instanceof Date ? new Date(value) : new Date(String(value));
+  if (Number.isNaN(date.getTime())) return null;
+  date.setHours(0, 0, 0, 0);
+  return date;
+}
+
+function bucketOpenAmount(amount: number, snapshotDate: Date, dueDate: Date | null, fallbackDate: Date | null) {
+  const buckets = { current: 0, days1to30: 0, days31to60: 0, days61to90: 0, days90plus: 0 };
+  const basisDate = dueDate || fallbackDate;
+  if (!basisDate) {
+    buckets.days90plus = amount;
+    return buckets;
+  }
+  const ageDays = Math.floor((snapshotDate.getTime() - basisDate.getTime()) / (24 * 60 * 60 * 1000));
+  if (ageDays < 0) buckets.current = amount;
+  else if (ageDays <= 30) buckets.days1to30 = amount;
+  else if (ageDays <= 60) buckets.days31to60 = amount;
+  else if (ageDays <= 90) buckets.days61to90 = amount;
+  else buckets.days90plus = amount;
+  return buckets;
 }
 
 function toArray<T>(value: T | T[] | null | undefined): T[] {
@@ -286,6 +365,161 @@ async function saveInventory(companyId: string, snapshotDate: Date, frequency: F
   return data.length;
 }
 
+async function saveAROpenInvoices(companyId: string, snapshotDate: Date, frequency: Frequency, rows: AROpenInvoiceRow[]): Promise<number> {
+  await prisma.aROpenInvoiceSnapshot.deleteMany({
+    where: { companyId, snapshotDate, frequency, sourcePlatform: 'QUICKBOOKS_DESKTOP' },
+  });
+  const data = rows
+    .map((row, index) => {
+      const invoiceDate = normalizeOptionalDate(row.invoiceDate);
+      const dueDate = normalizeOptionalDate(row.dueDate);
+      const amountDueHome = toNumber(row.amountDueHome);
+      const buckets = bucketOpenAmount(amountDueHome, snapshotDate, dueDate, invoiceDate);
+      return {
+        companyId,
+        snapshotDate,
+        frequency,
+        customerId: asString(row.customerId),
+        customerName: asString(row.customerName) || 'Unknown Customer',
+        invoiceNo: asString(row.invoiceNo) || `QBD-INVOICE-${index + 1}`,
+        invoiceDate,
+        dueDate,
+        status: asString(row.status) || 'OPEN',
+        currencyCode: asString(row.currencyCode) || 'USD',
+        amountCurrency: toNumber(row.amountCurrency) || toNumber(row.amountHome) || amountDueHome,
+        amountHome: toNumber(row.amountHome) || toNumber(row.amountCurrency) || amountDueHome,
+        amountDueHome,
+        ...buckets,
+        sourcePlatform: 'QUICKBOOKS_DESKTOP',
+        sourceProgram: 'InvoiceQuery',
+        sourceTransaction: asString(row.sourceTransaction),
+      };
+    })
+    .filter((row) => row.amountDueHome > 0);
+
+  if (data.length === 0) return 0;
+  await prisma.aROpenInvoiceSnapshot.createMany({ data, skipDuplicates: true });
+  return data.length;
+}
+
+async function saveAPOpenBills(companyId: string, snapshotDate: Date, frequency: Frequency, rows: APOpenBillRow[]): Promise<number> {
+  await prisma.aPOpenBillSnapshot.deleteMany({
+    where: { companyId, snapshotDate, frequency, sourcePlatform: 'QUICKBOOKS_DESKTOP' },
+  });
+  const data = rows
+    .map((row, index) => {
+      const billDate = normalizeOptionalDate(row.billDate);
+      const dueDate = normalizeOptionalDate(row.dueDate);
+      const amountDueHome = toNumber(row.amountDueHome);
+      const buckets = bucketOpenAmount(amountDueHome, snapshotDate, dueDate, billDate);
+      return {
+        companyId,
+        snapshotDate,
+        frequency,
+        vendorId: asString(row.vendorId),
+        vendorName: asString(row.vendorName) || 'Unknown Vendor',
+        billNo: asString(row.billNo) || `QBD-BILL-${index + 1}`,
+        billDate,
+        dueDate,
+        status: asString(row.status) || 'OPEN',
+        currencyCode: asString(row.currencyCode) || 'USD',
+        amountCurrency: toNumber(row.amountCurrency) || toNumber(row.amountHome) || amountDueHome,
+        amountHome: toNumber(row.amountHome) || toNumber(row.amountCurrency) || amountDueHome,
+        amountDueHome,
+        ...buckets,
+        sourcePlatform: 'QUICKBOOKS_DESKTOP',
+        sourceProgram: 'BillQuery',
+        sourceTransaction: asString(row.sourceTransaction),
+      };
+    })
+    .filter((row) => row.amountDueHome > 0);
+
+  if (data.length === 0) return 0;
+  await prisma.aPOpenBillSnapshot.createMany({ data, skipDuplicates: true });
+  return data.length;
+}
+
+async function saveARPayments(companyId: string, rows: ARPaymentRow[]): Promise<number> {
+  const data = rows
+    .map((row) => {
+      const paymentDate = normalizeOptionalDate(row.paymentDate);
+      return paymentDate
+        ? {
+            companyId,
+            paymentDate,
+            customerId: asString(row.customerId),
+            customerName: asString(row.customerName) || 'Unknown Customer',
+            invoiceNo: asString(row.invoiceNo),
+            currencyCode: asString(row.currencyCode) || 'USD',
+            paidAmountCurrency: toNumber(row.paidAmountCurrency) || toNumber(row.paidAmountHome),
+            paidAmountHome: toNumber(row.paidAmountHome) || toNumber(row.paidAmountCurrency),
+            sourcePlatform: 'QUICKBOOKS_DESKTOP',
+            sourceProgram: 'ReceivePaymentQuery',
+            sourceTransaction: asString(row.sourceTransaction),
+          }
+        : null;
+    })
+    .filter((row): row is NonNullable<typeof row> => Boolean(row && row.paidAmountHome !== 0));
+
+  if (data.length === 0) return 0;
+  const dates = data.map((row) => row.paymentDate.getTime());
+  await prisma.aRPaymentFact.deleteMany({
+    where: {
+      companyId,
+      sourcePlatform: 'QUICKBOOKS_DESKTOP',
+      paymentDate: {
+        gte: new Date(Math.min(...dates)),
+        lte: new Date(Math.max(...dates)),
+      },
+    },
+  });
+  await prisma.aRPaymentFact.createMany({ data });
+  return data.length;
+}
+
+async function saveAPPayments(companyId: string, rows: APPaymentRow[]): Promise<number> {
+  const data = rows
+    .map((row, index) => {
+      const paymentDate = normalizeOptionalDate(row.paymentDate);
+      const paidAmountHome = toNumber(row.paidAmountHome) || toNumber(row.paidAmountCurrency);
+      const vendorName = asString(row.vendorName) || 'Unknown Vendor';
+      const billNo = asString(row.billNo);
+      const sourceTransaction = asString(row.sourceTransaction);
+      return paymentDate
+        ? {
+            companyId,
+            paymentDate,
+            vendorId: asString(row.vendorId),
+            vendorName,
+            billNo,
+            currencyCode: asString(row.currencyCode) || 'USD',
+            paidAmountCurrency: toNumber(row.paidAmountCurrency) || paidAmountHome,
+            paidAmountHome,
+            sourcePlatform: 'QUICKBOOKS_DESKTOP',
+            sourceItemId: asString(row.sourceItemId) || `qbd|${sourceTransaction || index}|${paymentDate.toISOString()}|${vendorName}|${billNo || ''}|${paidAmountHome}`,
+            sourceProgram: 'BillPaymentQuery',
+            sourceTransaction,
+          }
+        : null;
+    })
+    .filter((row): row is NonNullable<typeof row> => Boolean(row && row.paidAmountHome !== 0));
+
+  if (data.length === 0) return 0;
+  const dates = data.map((row) => row.paymentDate.getTime());
+  await prisma.aPPaymentFact.deleteMany({
+    where: {
+      companyId,
+      sourcePlatform: 'QUICKBOOKS_DESKTOP',
+      paymentDate: {
+        gte: new Date(Math.min(...dates)),
+        lte: new Date(Math.max(...dates)),
+      },
+    },
+  });
+  await prisma.aPPaymentFact.createMany({ data, skipDuplicates: true });
+  return data.length;
+}
+
 export async function syncQuickBooksDesktopOperationalPayload(
   companyId: string,
   frequency: Frequency,
@@ -339,6 +573,26 @@ export async function syncQuickBooksDesktopOperationalPayload(
     );
   } catch (error) {
     errors.push(`inventory: ${error instanceof Error ? error.message : 'failed to persist'}`);
+  }
+  try {
+    recordsCreated += await saveAROpenInvoices(companyId, snapshotDate, frequency, Array.isArray(payload.arOpenInvoices) ? payload.arOpenInvoices : []);
+  } catch (error) {
+    errors.push(`arOpenInvoices: ${error instanceof Error ? error.message : 'failed to persist'}`);
+  }
+  try {
+    recordsCreated += await saveAPOpenBills(companyId, snapshotDate, frequency, Array.isArray(payload.apOpenBills) ? payload.apOpenBills : []);
+  } catch (error) {
+    errors.push(`apOpenBills: ${error instanceof Error ? error.message : 'failed to persist'}`);
+  }
+  try {
+    recordsCreated += await saveARPayments(companyId, Array.isArray(payload.arPayments) ? payload.arPayments : []);
+  } catch (error) {
+    errors.push(`arPayments: ${error instanceof Error ? error.message : 'failed to persist'}`);
+  }
+  try {
+    recordsCreated += await saveAPPayments(companyId, Array.isArray(payload.apPayments) ? payload.apPayments : []);
+  } catch (error) {
+    errors.push(`apPayments: ${error instanceof Error ? error.message : 'failed to persist'}`);
   }
 
   await pruneCompanyOperationalData(companyId);

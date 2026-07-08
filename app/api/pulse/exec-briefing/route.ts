@@ -288,6 +288,16 @@ function agingSummary(row: any, totalKey: 'totalAR' | 'totalAP') {
   };
 }
 
+function agingTotalReconcilesToBalanceSheet(aging: ReturnType<typeof agingSummary>, balanceSheetTotal: number | null): boolean {
+  if (!aging || balanceSheetTotal == null) return Boolean(aging);
+  const agingTotal = Math.abs(asNumber(aging.total));
+  const bsTotal = Math.abs(asNumber(balanceSheetTotal));
+  if (agingTotal === 0 && bsTotal === 0) return true;
+  if (agingTotal === 0 || bsTotal === 0) return false;
+  const variance = Math.abs(agingTotal - bsTotal);
+  return variance <= Math.max(5000, bsTotal * 0.25);
+}
+
 function safeJsonParse(text: string): any | null {
   try {
     return JSON.parse(text.trim());
@@ -863,8 +873,14 @@ export async function GET(request: NextRequest) {
     const latestLoc = asNumber(latestDailyFinancial?.loc || latestFinancial?.loc);
     const latestBalanceSheetAR = asNullableNumber(latestDailyFinancial?.ar ?? latestFinancial?.ar);
     const latestBalanceSheetAP = asNullableNumber(latestDailyFinancial?.ap ?? latestFinancial?.ap);
-    const latestARAging = agingSummary(latestArSnapshot, 'totalAR');
-    const latestAPAging = agingSummary(latestApSnapshot, 'totalAP');
+    const latestARAgingRaw = agingSummary(latestArSnapshot, 'totalAR');
+    const latestAPAgingRaw = agingSummary(latestApSnapshot, 'totalAP');
+    const latestARAging = isQuickBooksCompany && !agingTotalReconcilesToBalanceSheet(latestARAgingRaw, latestBalanceSheetAR)
+      ? null
+      : latestARAgingRaw;
+    const latestAPAging = isQuickBooksCompany && !agingTotalReconcilesToBalanceSheet(latestAPAgingRaw, latestBalanceSheetAP)
+      ? null
+      : latestAPAgingRaw;
 
     const productAgg = aggregateSales(productSnapshots, 'itemName').sort((a, b) => b.recentRevenue - a.recentRevenue);
     const customerAgg = aggregateSales(customerSnapshots, 'customerName').sort((a, b) => b.recentRevenue - a.recentRevenue);
@@ -1046,6 +1062,8 @@ export async function GET(request: NextRequest) {
 Write like a practical CFO/operator briefing the leadership team. Use concise bullet narrative, not technical jargon. Be forward-looking and action-oriented.
 
 Use plain language. Avoid consultant, investor, or SaaS jargon such as "logos", "motion", "levers", "runway" without explanation, "unlock", "optimize", "right-size", "deep dive", or "synergy". Say "customers", "new customers", "cash remaining", "actions", "reduce", "increase", or "analyze" instead.
+
+Write every currency value in actual dollars with commas, such as "$1,234,567". Never abbreviate currency as K, M, MM, million, or thousand.
 
 Use only the facts below. Never invent facts, channels, activity, owners, budgets, customer behavior, causes, or recommendations. If the company does not use, track, or report a topic, do not mention that topic. Do not include "no data" bullets. Only mention a data gap when the site has an active alert/finding saying the data gap itself is a leadership issue.
 

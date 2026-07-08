@@ -3609,6 +3609,8 @@ export default function SiteAdminDashboard(props: any) {
             'AccountQuery',
             'ItemQuery',
             'BalanceSheetStandardReportQuery',
+            'ARAgingSummaryReportQuery',
+            'APAgingSummaryReportQuery',
             'CheckQuery',
             'SalesReceiptQuery',
             'DepositQuery',

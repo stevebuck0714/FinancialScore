@@ -6,6 +6,7 @@ import { publishMonthsFromMonthlyFinancialDirect } from '@/lib/financial/publish
 import { syncErpDailyFinancialsFromGL } from '@/lib/financial/sync-erp-daily-financials';
 import { buildCsiMonthlyDataFromGlResponses } from '@/lib/infor-m3/csi-monthly-financial-builder';
 import { isQuickBooksDesktopFamily } from '@/lib/quickbooks-desktop/family';
+import { scheduleDailyExecutiveBriefingWarmup } from '@/lib/pulse/exec-briefing-warmup';
 
 export const dynamic = 'force-dynamic';
 const CSI_REBUILD_MAX_MONTHS = 36;
@@ -2016,6 +2017,12 @@ export async function POST(request: NextRequest) {
           missingMonths: qbdPublishResult.missingMonths.length,
           error: qbdPublishResult.error || null,
         };
+      }
+      if (result.ok) {
+        scheduleDailyExecutiveBriefingWarmup({
+          companyId: String(companyId),
+          source: 'qbd-reprocess-mappings-complete',
+        });
       }
 
       return NextResponse.json(
