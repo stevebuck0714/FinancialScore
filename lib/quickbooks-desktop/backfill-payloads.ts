@@ -226,6 +226,13 @@ function buildAgingSummaryFromReport(
   };
 }
 
+export function buildQuickBooksDesktopAgingSummaryFromReport(
+  records: Array<Record<string, unknown>>,
+  totalKey: 'totalAR' | 'totalAP',
+): Record<string, number> | null {
+  return buildAgingSummaryFromReport(records, totalKey);
+}
+
 function normalizeDateRange(value: unknown): QbdPayloadSession['dateRange'] {
   const src = asRecord(value);
   const mode = src.mode === 'INITIAL_3Y' || src.mode === 'INCREMENTAL' || src.mode === 'MANUAL'

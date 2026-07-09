@@ -2716,6 +2716,8 @@ export default function SiteAdminDashboard(props: any) {
     { dataDomain: 'Balance Sheet Standard Report', qbEntity: 'BalanceSheetStandardReportQuery', enabled: true },
     { dataDomain: 'Trial Balance Report', qbEntity: 'TrialBalanceReportQuery', enabled: true },
     { dataDomain: 'General Ledger Detail Report', qbEntity: 'GeneralDetailReportQuery', enabled: true },
+    { dataDomain: 'AR Aging Summary Report', qbEntity: 'ARAgingSummaryReportQuery', enabled: true },
+    { dataDomain: 'AP Aging Summary Report', qbEntity: 'APAgingSummaryReportQuery', enabled: true },
     { dataDomain: 'Other Names', qbEntity: 'OtherNameQuery', enabled: true },
     { dataDomain: 'Entities', qbEntity: 'EntityQuery', enabled: true },
     { dataDomain: 'Offices / Divisions', qbEntity: 'ClassQuery', enabled: true },
@@ -3666,6 +3668,78 @@ export default function SiteAdminDashboard(props: any) {
     }
   };
 
+  const queueQbDesktopSelectedProgramResync = async (companyId: string) => {
+    const range = getQbDesktopDateRange(companyId);
+    if (!range.startDate || !range.endDate) {
+      alert('Select both Start Date and End Date for the QuickBooks Desktop selected-domain resync.');
+      return;
+    }
+    if (new Date(range.startDate).getTime() > new Date(range.endDate).getTime()) {
+      alert('QuickBooks Desktop selected-domain resync range is invalid: Start Date must be before End Date.');
+      return;
+    }
+
+    const enabledEntities = Array.from(new Set(
+      getQbDesktopPrograms(companyId)
+        .filter((program) => program.enabled !== false)
+        .map((program) => String(program.qbEntity || '').trim())
+        .filter((qbEntity) => /^[A-Za-z][A-Za-z0-9]*Query$/.test(qbEntity))
+    ));
+    const agingSnapshotRequestNames = enabledEntities.filter((qbEntity) =>
+      qbEntity === 'ARAgingSummaryReportQuery' || qbEntity === 'APAgingSummaryReportQuery'
+    );
+    const monthlyRequestNames = enabledEntities.filter((qbEntity) => qbEntity === 'GeneralDetailReportQuery');
+    const staticRequestNames = enabledEntities.filter((qbEntity) =>
+      qbEntity !== 'GeneralDetailReportQuery' &&
+      qbEntity !== 'ARAgingSummaryReportQuery' &&
+      qbEntity !== 'APAgingSummaryReportQuery'
+    );
+
+    if (staticRequestNames.length === 0 && monthlyRequestNames.length === 0 && agingSnapshotRequestNames.length === 0) {
+      alert('Enable at least one QuickBooks Desktop Accounting Program before queuing a selected-domain resync.');
+      return;
+    }
+
+    const agingMessage = agingSnapshotRequestNames.length > 0
+      ? '\n\nAR/AP Aging Summary domains will be queued as one business-day as-of snapshot per date in the selected range.'
+      : '';
+    if (!confirm(`Queue QuickBooks Desktop resync for ${enabledEntities.length} enabled Accounting Program domain(s) from ${range.startDate} to ${range.endDate}?${agingMessage}`)) {
+      return;
+    }
+
+    try {
+      setQueuingQbDesktopDateRangeCompanyId(companyId);
+      const response = await fetch('/api/quickbooks-desktop/queue-date-range', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          companyId,
+          startDate: range.startDate,
+          endDate: range.endDate,
+          staticRequestNames,
+          monthlyRequestNames,
+          agingSnapshotRequestNames,
+          agingSnapshotGranularity: 'businessDay',
+          allowBulkExcludedRequests: monthlyRequestNames.length > 0,
+          chunkByMonth: monthlyRequestNames.length > 0,
+        }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok || !data?.ok) {
+        throw new Error(data?.details || data?.error || 'Failed to queue QuickBooks Desktop selected-domain resync');
+      }
+      await loadQbDesktopSettings(companyId);
+      const jobCount = Number(data?.jobCount || 0);
+      const agingWindowCount = Number(data?.agingSnapshotDateWindowCount || 0);
+      alert(`QuickBooks Desktop selected-domain resync queued: ${range.startDate} to ${range.endDate}${jobCount ? ` (${jobCount} jobs)` : ''}${agingWindowCount ? `, including ${agingWindowCount} AR/AP aging as-of date(s)` : ''}.`);
+    } catch (error: any) {
+      alert(`Failed to queue QuickBooks Desktop selected-domain resync: ${error?.message || 'Unknown error'}`);
+    } finally {
+      setQueuingQbDesktopDateRangeCompanyId(null);
+    }
+  };
+
+
   const queueQbDesktopDetailBackfill = async (companyId: string) => {
     const range = getQbDesktopDateRange(companyId);
     if (!range.startDate || !range.endDate) {
@@ -3810,7 +3884,7 @@ export default function SiteAdminDashboard(props: any) {
       <div style={{ marginTop: '10px', padding: '10px', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '6px', overflow: 'hidden' }}>
         <div style={{ fontSize: '12px', fontWeight: 700, color: '#334155', marginBottom: '4px' }}>QuickBooks Desktop Resync</div>
         <div style={{ fontSize: '11px', color: '#64748b', marginBottom: '8px' }}>
-          For normal financial refreshes, use the recommended resync. It queues summary/report data, GL detail for daily balance sheet movement, and invoice/bill line-item detail for daily P&L. The range runs the next time Web Connector updates this app.
+          Select the Accounting Programs to sync below, choose a range here, then queue the selected domains. AR/AP aging summary domains are queued as as-of snapshots for each business day in the range.
         </div>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '8px', alignItems: 'end' }}>
           <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', minWidth: 0, fontSize: '12px', color: '#334155' }}>
@@ -3832,12 +3906,12 @@ export default function SiteAdminDashboard(props: any) {
             />
           </label>
           <button
-            onClick={() => queueQbDesktopFullFinancialResync(companyId)}
+            onClick={() => queueQbDesktopSelectedProgramResync(companyId)}
             disabled={isQueuing || isQueuingDetail}
             style={{ width: '100%', minWidth: 0, boxSizing: 'border-box', padding: '8px 12px', background: isQueuing || isQueuingDetail ? '#94a3b8' : '#0f766e', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '700', cursor: isQueuing || isQueuingDetail ? 'not-allowed' : 'pointer' }}
-            title="Recommended. Queues headers/reports, GL detail, and invoice/bill line-item detail for daily financials."
+            title="Queues the enabled QuickBooks Desktop Accounting Programs. AR/AP aging reports are queued as daily as-of snapshots."
           >
-            {isQueuing || isQueuingDetail ? 'Queuing...' : 'Queue Full Financial Resync'}
+            {isQueuing || isQueuingDetail ? 'Queuing...' : 'Queue Selected Domains'}
           </button>
           <button
             type="button"
@@ -3853,7 +3927,7 @@ export default function SiteAdminDashboard(props: any) {
           <div style={{ minWidth: 0 }}>
             <div style={{ fontSize: '12px', fontWeight: 700, color: '#166534' }}>After Web Connector finishes</div>
             <div style={{ fontSize: '11px', color: '#166534', lineHeight: 1.5 }}>
-              Rebuild Daily Financials from the pulled QBD data. The product/customer detail processor in Advanced is optional and is not required for the financial statements.
+              Rebuild Daily Financials when the selected domains affect financial statements. AR/AP aging charts update directly from aging snapshot rows after Web Connector completes.
             </div>
           </div>
           <button
@@ -3866,71 +3940,6 @@ export default function SiteAdminDashboard(props: any) {
             {isRunningFinancialImport ? 'Rebuilding...' : 'Rebuild Daily Financials'}
           </button>
         </div>
-        <details style={{ marginTop: '10px' }}>
-          <summary style={{ cursor: 'pointer', fontSize: '11px', fontWeight: 700, color: '#475569' }}>
-            Advanced one-off pulls
-          </summary>
-          <div style={{ marginTop: '8px', padding: '8px', background: 'white', border: '1px solid #e2e8f0', borderRadius: '6px' }}>
-            <div style={{ fontSize: '11px', color: '#64748b', marginBottom: '8px' }}>
-              Use these only when you need a specific subsystem. Daily financial refreshes should use the recommended full resync above.
-            </div>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(145px, 1fr))', gap: '8px' }}>
-              <button
-                onClick={() => queueQbDesktopDateRange(companyId)}
-                disabled={isQueuing}
-                style={{ width: '100%', minWidth: 0, boxSizing: 'border-box', padding: '8px 12px', background: isQueuing ? '#94a3b8' : '#7c3aed', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: isQueuing ? 'not-allowed' : 'pointer' }}
-                title="Queues the standard header/report pull without line-item detail."
-              >
-                {isQueuing ? 'Queuing...' : 'Headers + Reports Only'}
-              </button>
-              <button
-                onClick={() => queueQbDesktopDetailBackfill(companyId)}
-                disabled={isQueuingDetail}
-                style={{ width: '100%', minWidth: 0, boxSizing: 'border-box', padding: '8px 12px', background: isQueuingDetail ? '#94a3b8' : '#0f766e', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: isQueuingDetail ? 'not-allowed' : 'pointer' }}
-                title="Queues Invoice and Bill line-item detail only. Use when headers/reports already exist."
-              >
-                {isQueuingDetail ? 'Queuing Detail...' : 'Invoice/Bill Line Items Only'}
-              </button>
-              <button
-                onClick={() =>
-                  queueQbDesktopDateRange(
-                    companyId,
-                    ['BillPaymentCreditCardQuery', 'BalanceSheetStandardReportQuery'],
-                    'BS + credit card payment pull'
-                  )
-                }
-                disabled={isQueuing}
-                style={{ width: '100%', minWidth: 0, boxSizing: 'border-box', padding: '8px 12px', background: isQueuing ? '#94a3b8' : '#9333ea', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: isQueuing ? 'not-allowed' : 'pointer' }}
-                title="Queues only BillPaymentCreditCardQuery and BalanceSheetStandardReportQuery for the selected range."
-              >
-                {isQueuing ? 'Queuing...' : 'Balance Sheet + CC Only'}
-              </button>
-              <button
-                onClick={() =>
-                  queueQbDesktopDateRange(
-                    companyId,
-                    ['GeneralDetailReportQuery'],
-                    'monthly GL detail pull',
-                    { chunkByMonth: true, allowBulkExcludedRequests: true }
-                  )
-                }
-                disabled={isQueuing}
-                style={{ width: '100%', minWidth: 0, boxSizing: 'border-box', padding: '8px 12px', background: isQueuing ? '#94a3b8' : '#a16207', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: isQueuing ? 'not-allowed' : 'pointer' }}
-                title="Queues GeneralDetailReportQuery in one-month windows for the selected range."
-              >
-                {isQueuing ? 'Queuing...' : 'GL Monthly Detail'}
-              </button>
-              <button
-                onClick={() => processQbDesktopDetailBackfill(companyId)}
-                disabled={isProcessingDetail}
-                style={{ width: '100%', minWidth: 0, boxSizing: 'border-box', padding: '8px 12px', background: isProcessingDetail ? '#94a3b8' : '#2563eb', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: isProcessingDetail ? 'not-allowed' : 'pointer' }}
-                title="Optional. Transforms saved invoice line-item detail pages into product/customer operational snapshots."
-              >
-                {isProcessingDetail ? 'Processing...' : 'Update Product/Customer Detail'}
-              </button>
-            </div>
-          </div>
-        </details>
         <div style={{ marginTop: '10px', padding: '10px', background: statusBg, border: `1px solid ${statusBorder}`, borderRadius: '6px' }}>
           <div style={{ marginBottom: '4px' }}>
             <div style={{ fontSize: '12px', fontWeight: 700, color: statusColor }}>{statusLabel}</div>

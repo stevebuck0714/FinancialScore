@@ -5,6 +5,7 @@ import { decryptOAuthToken } from '@/lib/encryption';
 import { seedQuickBooksDesktopAccountMappings } from '@/lib/quickbooks-desktop/account-mapping-seed';
 import { syncQuickBooksDesktopOperationalPayload } from '@/lib/quickbooks-desktop/operational-sync';
 import {
+  buildQuickBooksDesktopAgingSummaryFromReport,
   buildQuickBooksDesktopFinancialPayload,
   buildQuickBooksDesktopOperationalPayload,
 } from '@/lib/quickbooks-desktop/backfill-payloads';
@@ -74,6 +75,7 @@ type QbdBackfillJob = {
   status: 'queued' | 'running' | 'completed' | 'failed';
   requestName: string;
   detailType?: 'line_items';
+  processingMode?: 'aging_snapshot';
   windowIndex?: number;
   dateRange: QbwcDateRange;
   createdAt: string;
@@ -790,7 +792,7 @@ function buildCombinedBackfillSession(
   responses: Record<string, QbwcResponseSet>,
 ): QbwcSession {
   const completedJobs = Object.values(jobs)
-    .filter((job) => job.status === 'completed')
+    .filter((job) => job.status === 'completed' && job.processingMode !== 'aging_snapshot')
     .sort((a, b) => String(a.createdAt).localeCompare(String(b.createdAt)));
   const firstJob = completedJobs[0];
   const requests = completedJobs.map((job) => job.requestName);
@@ -814,6 +816,12 @@ function buildCombinedBackfillSession(
     },
     lastError: null,
   };
+}
+
+function parseSnapshotDate(value: string | undefined): Date | null {
+  if (!value || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return null;
+  const date = new Date(`${value}T00:00:00.000Z`);
+  return Number.isNaN(date.getTime()) ? null : date;
 }
 
 function getBatchIdFromJobId(jobId: string): string {
@@ -1096,6 +1104,7 @@ async function completeBackfillJob(
   let shouldFinalize = false;
   let combinedSession: QbwcSession | null = null;
   let completedJobsSnapshot: Record<string, QbdBackfillJob> | null = null;
+  let completedJobSnapshot: QbdBackfillJob | null = null;
 
   await updateMetadata(connection.companyId, (metadata) => {
     const jobs = metadata.quickbooksDesktopBackfillJobs || {};
@@ -1120,6 +1129,7 @@ async function completeBackfillJob(
       iteratorRemainingCount: null,
       lastError: null,
     };
+    completedJobSnapshot = completedJob;
     const nextJobs: Record<string, QbdBackfillJob> = {
       ...jobs,
       [jobId]: completedJob,
@@ -1134,11 +1144,89 @@ async function completeBackfillJob(
     };
   });
 
+  if (completedJobSnapshot?.processingMode === 'aging_snapshot') {
+    await persistAgingSnapshotJob(connection.companyId, completedJobSnapshot, response);
+  }
+
   if (shouldFinalize && completedJobsSnapshot) {
     const fullResponses = await loadBackfillResponses(completedJobsSnapshot);
     combinedSession = buildCombinedBackfillSession(session.ticket, connection.companyId, completedJobsSnapshot, fullResponses);
     await finalizeSession(connection, combinedSession);
   }
+}
+
+async function persistAgingSnapshotJob(
+  companyId: string,
+  job: QbdBackfillJob,
+  response: QbwcResponseSet,
+): Promise<void> {
+  const snapshotDate = parseSnapshotDate(job.dateRange?.endDate);
+  if (!snapshotDate) return;
+
+  const frequency = normalizeFrequency(
+    (await prisma.accountingConnection.findUnique({
+      where: { companyId_platform: { companyId, platform: 'QUICKBOOKS' } },
+      select: { syncFrequency: true },
+    }))?.syncFrequency,
+  );
+  const isAr = job.requestName === 'ARAgingSummaryReportQuery';
+  const isAp = job.requestName === 'APAgingSummaryReportQuery';
+  if (!isAr && !isAp) return;
+
+  const summary = buildQuickBooksDesktopAgingSummaryFromReport(
+    response.records || [],
+    isAr ? 'totalAR' : 'totalAP',
+  );
+  if (!summary) return;
+
+  if (isAr) {
+    await prisma.aRAgingSnapshot.upsert({
+      where: { companyId_snapshotDate_frequency: { companyId, snapshotDate, frequency } },
+      update: {
+        totalAR: Number(summary.totalAR || 0),
+        current: Number(summary.current || 0),
+        days1to30: Number(summary.days1to30 || 0),
+        days31to60: Number(summary.days31to60 || 0),
+        days61to90: Number(summary.days61to90 || 0),
+        days90plus: Number(summary.days90plus || 0),
+      },
+      create: {
+        companyId,
+        snapshotDate,
+        frequency,
+        totalAR: Number(summary.totalAR || 0),
+        current: Number(summary.current || 0),
+        days1to30: Number(summary.days1to30 || 0),
+        days31to60: Number(summary.days31to60 || 0),
+        days61to90: Number(summary.days61to90 || 0),
+        days90plus: Number(summary.days90plus || 0),
+      },
+    });
+    return;
+  }
+
+  await prisma.aPAgingSnapshot.upsert({
+    where: { companyId_snapshotDate_frequency: { companyId, snapshotDate, frequency } },
+    update: {
+      totalAP: Number(summary.totalAP || 0),
+      current: Number(summary.current || 0),
+      days1to30: Number(summary.days1to30 || 0),
+      days31to60: Number(summary.days31to60 || 0),
+      days61to90: Number(summary.days61to90 || 0),
+      days90plus: Number(summary.days90plus || 0),
+    },
+    create: {
+      companyId,
+      snapshotDate,
+      frequency,
+      totalAP: Number(summary.totalAP || 0),
+      current: Number(summary.current || 0),
+      days1to30: Number(summary.days1to30 || 0),
+      days31to60: Number(summary.days31to60 || 0),
+      days61to90: Number(summary.days61to90 || 0),
+      days90plus: Number(summary.days90plus || 0),
+    },
+  });
 }
 
 async function completeDetailBackfillJob(

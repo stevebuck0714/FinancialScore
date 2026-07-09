@@ -19,6 +19,11 @@ const BULK_EXCLUDED_QBD_REQUESTS = new Set([
   'GeneralDetailReportQuery',
 ]);
 
+const QBD_AGING_SNAPSHOT_REQUESTS = new Set([
+  'ARAgingSummaryReportQuery',
+  'APAgingSummaryReportQuery',
+]);
+
 function parseDate(value: unknown): string {
   if (typeof value !== 'string') return '';
   const trimmed = value.trim();
@@ -79,6 +84,34 @@ function buildMonthlyDateRanges(startDate: string, endDate: string) {
   }
 
   return ranges;
+}
+
+function buildBusinessDayDateRanges(startDate: string, endDate: string) {
+  const start = new Date(`${startDate}T00:00:00.000Z`);
+  const end = new Date(`${endDate}T00:00:00.000Z`);
+  const ranges: Array<{ startDate: string; endDate: string; windowIndex: number }> = [];
+  const cursor = new Date(start);
+  let windowIndex = 0;
+
+  while (cursor.getTime() <= end.getTime()) {
+    const day = cursor.getUTCDay();
+    if (day !== 0 && day !== 6) {
+      const key = dateKey(cursor);
+      ranges.push({ startDate: key, endDate: key, windowIndex });
+      windowIndex += 1;
+    }
+    cursor.setUTCDate(cursor.getUTCDate() + 1);
+  }
+
+  return ranges;
+}
+
+function buildMonthEndDateRanges(startDate: string, endDate: string) {
+  return buildMonthlyDateRanges(startDate, endDate).map((range) => ({
+    startDate: range.endDate,
+    endDate: range.endDate,
+    windowIndex: range.windowIndex,
+  }));
 }
 
 const DEFAULT_QBD_REQUESTS = [
@@ -194,30 +227,47 @@ export async function POST(request: NextRequest) {
     const chunkByMonth = body.chunkByMonth === true;
     const allowBulkExcludedRequests = body.allowBulkExcludedRequests === true || chunkByMonth;
     const hasSelectedRequestNames = Array.isArray(body.requestNames);
-    const hasProfileRequestNames = Array.isArray(body.staticRequestNames) || Array.isArray(body.monthlyRequestNames);
+    const hasAgingSnapshotRequestNames =
+      Array.isArray(body.agingSnapshotRequestNames) && body.agingSnapshotRequestNames.length > 0;
+    const hasProfileRequestNames =
+      Array.isArray(body.staticRequestNames) ||
+      Array.isArray(body.monthlyRequestNames) ||
+      hasAgingSnapshotRequestNames;
     const selectedRequests = parseRequestNames(body.requestNames, allowBulkExcludedRequests);
     const staticRequests = parseRequestNames(body.staticRequestNames, true);
     const monthlyRequests = parseRequestNames(body.monthlyRequestNames, allowBulkExcludedRequests);
+    const agingSnapshotRequests = parseRequestNames(body.agingSnapshotRequestNames, true)
+      .filter((requestName) => QBD_AGING_SNAPSHOT_REQUESTS.has(requestName));
     if (hasSelectedRequestNames && selectedRequests.length === 0) {
       return NextResponse.json(
         { ok: false, error: 'No valid requestNames were provided for the targeted QuickBooks Desktop pull.' },
         { status: 400 },
       );
     }
-    if (hasProfileRequestNames && staticRequests.length === 0 && monthlyRequests.length === 0) {
+    if (hasProfileRequestNames && staticRequests.length === 0 && monthlyRequests.length === 0 && agingSnapshotRequests.length === 0) {
       return NextResponse.json(
-        { ok: false, error: 'No valid staticRequestNames or monthlyRequestNames were provided for the targeted QuickBooks Desktop pull.' },
+        { ok: false, error: 'No valid staticRequestNames, monthlyRequestNames, or agingSnapshotRequestNames were provided for the targeted QuickBooks Desktop pull.' },
+        { status: 400 },
+      );
+    }
+    if (hasAgingSnapshotRequestNames && agingSnapshotRequests.length === 0) {
+      return NextResponse.json(
+        { ok: false, error: 'No valid agingSnapshotRequestNames were provided for the targeted QuickBooks Desktop pull.' },
         { status: 400 },
       );
     }
     const enabledRequests = hasProfileRequestNames
-      ? Array.from(new Set([...staticRequests, ...monthlyRequests]))
+      ? Array.from(new Set([...staticRequests, ...monthlyRequests, ...agingSnapshotRequests]))
       : hasSelectedRequestNames
         ? selectedRequests
         : getEnabledQbDesktopRequests(metadata, allowBulkExcludedRequests);
     const dateRanges = chunkByMonth
       ? buildMonthlyDateRanges(startDate, endDate)
       : [{ startDate, endDate, windowIndex: 0 }];
+    const agingSnapshotGranularity = body.agingSnapshotGranularity === 'monthEnd' ? 'monthEnd' : 'businessDay';
+    const agingSnapshotDateRanges = agingSnapshotGranularity === 'monthEnd'
+      ? buildMonthEndDateRanges(startDate, endDate)
+      : buildBusinessDayDateRanges(startDate, endDate);
     if (dateRanges.length === 0) {
       return NextResponse.json(
         { ok: false, error: 'No valid date windows were generated for the QuickBooks Desktop pull.' },
@@ -234,6 +284,18 @@ export async function POST(request: NextRequest) {
           ...dateRanges.flatMap((range) =>
             monthlyRequests.map((requestName) => ({
               requestName,
+              dateRange: {
+                ...queuedDateRange,
+                startDate: range.startDate,
+                endDate: range.endDate,
+              },
+              windowIndex: range.windowIndex,
+            })),
+          ),
+          ...agingSnapshotDateRanges.flatMap((range) =>
+            agingSnapshotRequests.map((requestName) => ({
+              requestName,
+              processingMode: 'aging_snapshot' as const,
               dateRange: {
                 ...queuedDateRange,
                 startDate: range.startDate,
@@ -264,6 +326,7 @@ export async function POST(request: NextRequest) {
             batchId,
             status: 'queued',
             requestName: job.requestName,
+            ...(job.processingMode ? { processingMode: job.processingMode } : {}),
             windowIndex: job.windowIndex,
             dateRange: job.dateRange,
             createdAt: now,
@@ -298,6 +361,7 @@ export async function POST(request: NextRequest) {
           quickbooksDesktopBackfillResponses: {},
           quickbooksDesktopBackfillRequestNames: hasSelectedRequestNames ? selectedRequests : null,
           quickbooksDesktopBackfillChunkByMonth: chunkByMonth,
+          quickbooksDesktopBackfillAgingSnapshotGranularity: hasAgingSnapshotRequestNames ? agingSnapshotGranularity : null,
         } as any,
       },
     });
@@ -310,6 +374,7 @@ export async function POST(request: NextRequest) {
       jobCount: jobSpecs.length,
       requestNames: enabledRequests,
       dateWindowCount: dateRanges.length,
+      agingSnapshotDateWindowCount: hasAgingSnapshotRequestNames ? agingSnapshotDateRanges.length : 0,
       message: 'The requested QuickBooks Desktop date range will run on the next Web Connector update.',
     });
   } catch (error: any) {
