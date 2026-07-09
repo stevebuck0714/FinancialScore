@@ -2510,6 +2510,7 @@ export default function SiteAdminDashboard(props: any) {
   const [queuingQbDesktopDetailCompanyId, setQueuingQbDesktopDetailCompanyId] = React.useState<string | null>(null);
   const [processingQbDesktopDetailCompanyId, setProcessingQbDesktopDetailCompanyId] = React.useState<string | null>(null);
   const [refreshingQbDesktopStatusCompanyId, setRefreshingQbDesktopStatusCompanyId] = React.useState<string | null>(null);
+  const [resettingQbDesktopStaleRunCompanyId, setResettingQbDesktopStaleRunCompanyId] = React.useState<string | null>(null);
   const [qboSettingsByCompany, setQboSettingsByCompany] = React.useState<
     Record<
       string,
@@ -3376,6 +3377,31 @@ export default function SiteAdminDashboard(props: any) {
     }
   };
 
+  const resetStaleQbDesktopRun = async (companyId: string) => {
+    if (!confirm('Reset the stale QuickBooks Desktop Web Connector run? This clears the abandoned active ticket and moves its running jobs back to queued. Completed jobs are preserved.')) {
+      return;
+    }
+
+    try {
+      setResettingQbDesktopStaleRunCompanyId(companyId);
+      const response = await fetch('/api/quickbooks-desktop/reset-stale-run', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ companyId }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok || !data?.ok) {
+        throw new Error(data?.details || data?.error || 'Failed to reset stale QuickBooks Desktop run');
+      }
+      await loadQbDesktopSettings(companyId);
+      alert(`Stale QuickBooks Desktop run reset. Requeued ${Number(data?.headerJobsRequeued || 0).toLocaleString('en-US')} header job(s) and ${Number(data?.detailJobsRequeued || 0).toLocaleString('en-US')} detail job(s).`);
+    } catch (error: any) {
+      alert(`Failed to reset stale QuickBooks Desktop run: ${error?.message || 'Unknown error'}`);
+    } finally {
+      setResettingQbDesktopStaleRunCompanyId(null);
+    }
+  };
+
   React.useEffect(() => {
     const companyIdsToRefresh = Object.entries(qbDesktopSyncStatusByCompany)
       .filter(([, status]) => Boolean(status.webConnectorActiveSession || status.queuedDateRange))
@@ -3855,6 +3881,7 @@ export default function SiteAdminDashboard(props: any) {
       : null;
     const activeSessionLooksStale = Boolean(activeSession && activeSessionAgeMinutes !== null && activeSessionAgeMinutes >= 5);
     const isRefreshingStatus = refreshingQbDesktopStatusCompanyId === companyId;
+    const isResettingStaleRun = resettingQbDesktopStaleRunCompanyId === companyId;
     const lastRunRange = lastRun?.dateRange && typeof lastRun.dateRange === 'object' ? lastRun.dateRange as Record<string, any> : null;
     const lastRunCompletedAt = typeof lastRun?.completedAt === 'string' ? lastRun.completedAt : '';
     const lastRunError = typeof lastRun?.lastError === 'string' ? lastRun.lastError : '';
@@ -3954,6 +3981,17 @@ export default function SiteAdminDashboard(props: any) {
                 {activeSessionLooksStale ? (
                   <div style={{ fontWeight: 600 }}>
                     No backend update for {activeSessionAgeMinutes} minutes. Check whether QuickBooks Web Connector is still running or waiting on QuickBooks Desktop.
+                    <div style={{ marginTop: '8px' }}>
+                      <button
+                        type="button"
+                        onClick={() => resetStaleQbDesktopRun(companyId)}
+                        disabled={isResettingStaleRun}
+                        style={{ padding: '7px 10px', background: isResettingStaleRun ? '#94a3b8' : '#b45309', color: 'white', border: 'none', borderRadius: '6px', fontSize: '11px', fontWeight: 700, cursor: isResettingStaleRun ? 'not-allowed' : 'pointer' }}
+                        title="Clears the stale Web Connector ticket and moves abandoned running jobs back to queued."
+                      >
+                        {isResettingStaleRun ? 'Resetting...' : 'Reset Stale Run'}
+                      </button>
+                    </div>
                   </div>
                 ) : null}
                 <div>
