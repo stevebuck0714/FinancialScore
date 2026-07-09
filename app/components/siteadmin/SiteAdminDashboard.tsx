@@ -3882,6 +3882,9 @@ export default function SiteAdminDashboard(props: any) {
     const activeSessionLooksStale = Boolean(activeSession && activeSessionAgeMinutes !== null && activeSessionAgeMinutes >= 5);
     const isRefreshingStatus = refreshingQbDesktopStatusCompanyId === companyId;
     const isResettingStaleRun = resettingQbDesktopStaleRunCompanyId === companyId;
+    const orphanedRunningJobCount = !activeSession
+      ? Number(backfillJobCounts.running || 0) + Number(detailBackfillJobCounts.running || 0)
+      : 0;
     const lastRunRange = lastRun?.dateRange && typeof lastRun.dateRange === 'object' ? lastRun.dateRange as Record<string, any> : null;
     const lastRunCompletedAt = typeof lastRun?.completedAt === 'string' ? lastRun.completedAt : '';
     const lastRunError = typeof lastRun?.lastError === 'string' ? lastRun.lastError : '';
@@ -4001,7 +4004,25 @@ export default function SiteAdminDashboard(props: any) {
                 </div>
               </>
             ) : queuedRange ? (
-              <div>Queued range: {queuedRange.startDate || '—'} to {queuedRange.endDate || '—'}{queuedRange.requestedAt ? ` (queued ${new Date(String(queuedRange.requestedAt)).toLocaleString()})` : ''}</div>
+              <div>
+                <div>Queued range: {queuedRange.startDate || '—'} to {queuedRange.endDate || '—'}{queuedRange.requestedAt ? ` (queued ${new Date(String(queuedRange.requestedAt)).toLocaleString()})` : ''}</div>
+                {orphanedRunningJobCount > 0 ? (
+                  <div style={{ marginTop: '8px', fontWeight: 600 }}>
+                    {orphanedRunningJobCount.toLocaleString('en-US')} job(s) are still marked running without an active Web Connector session.
+                    <div style={{ marginTop: '8px' }}>
+                      <button
+                        type="button"
+                        onClick={() => resetStaleQbDesktopRun(companyId)}
+                        disabled={isResettingStaleRun}
+                        style={{ padding: '7px 10px', background: isResettingStaleRun ? '#94a3b8' : '#b45309', color: 'white', border: 'none', borderRadius: '6px', fontSize: '11px', fontWeight: 700, cursor: isResettingStaleRun ? 'not-allowed' : 'pointer' }}
+                        title="Moves orphaned running jobs back to queued."
+                      >
+                        {isResettingStaleRun ? 'Resetting...' : 'Reset Running Jobs'}
+                      </button>
+                    </div>
+                  </div>
+                ) : null}
+              </div>
             ) : hasActiveBackfillWork ? (
               <div>
                 Current queued/running work is shown below. Previous completed pull details are separated so they do not look like the active sync.

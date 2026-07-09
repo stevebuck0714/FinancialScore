@@ -54,11 +54,20 @@ function getActiveJobIds(session: JsonRecord): Set<string> {
   return ids;
 }
 
+function getAgeMinutes(value: unknown): number | null {
+  const timestamp = asString(value);
+  if (!timestamp) return null;
+  const timestampMs = new Date(timestamp).getTime();
+  return Number.isFinite(timestampMs) ? Math.floor((Date.now() - timestampMs) / 60000) : null;
+}
+
 function requeueStaleJobs(
   jobsValue: unknown,
   staleTicket: string,
   activeJobIds: Set<string>,
   now: string,
+  minStaleMinutes: number,
+  allowOrphanedRunningJobs: boolean,
 ): { jobs: JsonRecord | undefined; requeuedCount: number } {
   const jobs = asRecord(jobsValue);
   if (!jobs) return { jobs: undefined, requeuedCount: 0 };
@@ -68,9 +77,14 @@ function requeueStaleJobs(
     Object.entries(jobs).map(([id, value]) => {
       const job = asRecord(value);
       if (!job) return [id, value];
+      const staleJobAgeMinutes = getAgeMinutes(job.updatedAt || job.startedAt);
       const shouldRequeue =
         asString(job.status).toLowerCase() === 'running' &&
-        (asString(job.ticket) === staleTicket || activeJobIds.has(asString(job.id) || id));
+        (
+          asString(job.ticket) === staleTicket ||
+          activeJobIds.has(asString(job.id) || id) ||
+          (allowOrphanedRunningJobs && staleJobAgeMinutes !== null && staleJobAgeMinutes >= minStaleMinutes)
+        );
 
       if (!shouldRequeue) return [id, job];
 
@@ -133,15 +147,10 @@ export async function POST(request: NextRequest) {
 
     const metadata = asRecord(connection.connectionMetadata) || {};
     const activeSession = asSessionList(metadata)[0];
-    if (!activeSession) {
-      return NextResponse.json({ ok: false, error: 'No active QuickBooks Desktop Web Connector session was found.' }, { status: 400 });
-    }
-
-    const staleTicket = asString(activeSession.ticket);
-    const updatedAt = asString(activeSession.updatedAt);
-    const updatedAtMs = updatedAt ? new Date(updatedAt).getTime() : NaN;
-    const staleAgeMinutes = Number.isFinite(updatedAtMs) ? Math.floor((Date.now() - updatedAtMs) / 60000) : null;
-    if (!staleTicket || staleAgeMinutes === null || staleAgeMinutes < minStaleMinutes) {
+    const staleTicket = asString(activeSession?.ticket);
+    const staleAgeMinutes = activeSession ? getAgeMinutes(activeSession.updatedAt) : null;
+    const hasStaleActiveSession = Boolean(staleTicket && staleAgeMinutes !== null && staleAgeMinutes >= minStaleMinutes);
+    if (activeSession && !hasStaleActiveSession) {
       return NextResponse.json(
         {
           ok: false,
@@ -154,11 +163,38 @@ export async function POST(request: NextRequest) {
     }
 
     const now = new Date().toISOString();
-    const activeJobIds = getActiveJobIds(activeSession);
-    const headerReset = requeueStaleJobs(metadata.quickbooksDesktopBackfillJobs, staleTicket, activeJobIds, now);
-    const detailReset = requeueStaleJobs(metadata.quickbooksDesktopDetailBackfillJobs, staleTicket, activeJobIds, now);
+    const activeJobIds = activeSession ? getActiveJobIds(activeSession) : new Set<string>();
+    const headerReset = requeueStaleJobs(
+      metadata.quickbooksDesktopBackfillJobs,
+      staleTicket,
+      activeJobIds,
+      now,
+      minStaleMinutes,
+      !activeSession,
+    );
+    const detailReset = requeueStaleJobs(
+      metadata.quickbooksDesktopDetailBackfillJobs,
+      staleTicket,
+      activeJobIds,
+      now,
+      minStaleMinutes,
+      !activeSession,
+    );
+    if (headerReset.requeuedCount === 0 && detailReset.requeuedCount === 0) {
+      return NextResponse.json(
+        {
+          ok: false,
+          error: activeSession
+            ? 'No running jobs were tied to the stale QuickBooks Desktop Web Connector session.'
+            : `No orphaned running jobs older than ${minStaleMinutes} minute(s) were found.`,
+          staleAgeMinutes,
+          minStaleMinutes,
+        },
+        { status: 400 },
+      );
+    }
     const sessions = asRecord(metadata.quickbooksDesktopWebConnectorSessions) || {};
-    const { [staleTicket]: _removedSession, ...remainingSessions } = sessions;
+    const { [staleTicket]: _removedSession, ...remainingSessions } = staleTicket ? sessions : { ...sessions };
 
     await prisma.accountingConnection.update({
       where: {
@@ -174,11 +210,12 @@ export async function POST(request: NextRequest) {
           quickbooksDesktopBackfillJobs: headerReset.jobs || metadata.quickbooksDesktopBackfillJobs,
           quickbooksDesktopDetailBackfillJobs: detailReset.jobs || metadata.quickbooksDesktopDetailBackfillJobs,
           quickbooksDesktopWebConnectorLastRecovery: {
-            ticket: staleTicket,
+            ticket: staleTicket || null,
             resetAt: now,
             staleAgeMinutes,
             headerJobsRequeued: headerReset.requeuedCount,
             detailJobsRequeued: detailReset.requeuedCount,
+            mode: activeSession ? 'stale_session' : 'orphaned_running_jobs',
           },
         } as any,
         errorMessage: null,
@@ -188,7 +225,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       ok: true,
       companyId,
-      ticket: staleTicket,
+      ticket: staleTicket || null,
       staleAgeMinutes,
       headerJobsRequeued: headerReset.requeuedCount,
       detailJobsRequeued: detailReset.requeuedCount,
