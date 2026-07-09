@@ -174,6 +174,7 @@ const REPORT_REQUESTS = new Set([
 const QBD_TRANSACTION_PAGE_SIZE = 100;
 const QBD_INCLUDE_TRANSACTION_LINE_ITEMS = true;
 const QBD_BACKFILL_JOBS_PER_SESSION = 6;
+const QBD_AGING_SNAPSHOT_JOBS_PER_SESSION = 200;
 const QBD_DETAIL_TRANSACTION_PAGE_SIZE = 25;
 const QBD_DETAIL_BACKFILL_JOBS_PER_SESSION = 6;
 
@@ -751,10 +752,16 @@ function getRunDateRange(metadata: QbDesktopMetadata): QbwcDateRange {
 
 function getNextBackfillJobs(metadata: QbDesktopMetadata): QbdBackfillJob[] {
   const jobs = metadata.quickbooksDesktopBackfillJobs || {};
-  return Object.values(jobs)
+  const pendingJobs = Object.values(jobs)
     .filter((job) => job.status === 'queued' || job.status === 'running')
-    .sort((a, b) => String(a.createdAt).localeCompare(String(b.createdAt)))
+    .sort((a, b) => String(a.createdAt).localeCompare(String(b.createdAt)));
+  const standardJobs = pendingJobs
+    .filter((job) => job.processingMode !== 'aging_snapshot')
     .slice(0, QBD_BACKFILL_JOBS_PER_SESSION);
+  const agingSnapshotJobs = pendingJobs
+    .filter((job) => job.processingMode === 'aging_snapshot')
+    .slice(0, QBD_AGING_SNAPSHOT_JOBS_PER_SESSION);
+  return [...standardJobs, ...agingSnapshotJobs];
 }
 
 function getNextDetailBackfillJobs(metadata: QbDesktopMetadata): QbdBackfillJob[] {
