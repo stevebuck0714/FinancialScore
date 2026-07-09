@@ -761,6 +761,9 @@ function getNextBackfillJobs(metadata: QbDesktopMetadata): QbdBackfillJob[] {
   const agingSnapshotJobs = pendingJobs
     .filter((job) => job.processingMode === 'aging_snapshot')
     .slice(0, QBD_AGING_SNAPSHOT_JOBS_PER_SESSION);
+  if (agingSnapshotJobs.length > 0) {
+    return agingSnapshotJobs;
+  }
   return [...standardJobs, ...agingSnapshotJobs];
 }
 
