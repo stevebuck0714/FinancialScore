@@ -561,6 +561,38 @@ const QBD_MONTHLY_BS_PRESERVE_FIELDS = [
   'totalLAndE',
 ] as const;
 
+const QBD_DAILY_PNL_UPDATE_FIELDS = MONTHLY_FINANCIAL_NUMERIC_FIELDS.filter(
+  (field) => !(QBD_MONTHLY_BS_PRESERVE_FIELDS as readonly string[]).includes(field),
+);
+
+const QBD_PNL_REBUILD_REQUESTS = new Set([
+  'InvoiceQuery',
+  'BillQuery',
+  'CheckQuery',
+  'CreditMemoQuery',
+  'SalesReceiptQuery',
+  'JournalEntryQuery',
+  'DepositQuery',
+  'VendorCreditQuery',
+  'GeneralDetailReportQuery',
+]);
+
+const QBD_BALANCE_SHEET_REBUILD_REQUESTS = new Set([
+  'BalanceSheetStandardReportQuery',
+  'GeneralDetailReportQuery',
+  'AccountQuery',
+  'JournalEntryQuery',
+  'DepositQuery',
+  'CheckQuery',
+  'BillPaymentCheckQuery',
+  'BillPaymentCreditCardQuery',
+]);
+
+const QBD_FINANCIAL_REBUILD_REQUESTS = new Set([
+  ...Array.from(QBD_PNL_REBUILD_REQUESTS),
+  ...Array.from(QBD_BALANCE_SHEET_REBUILD_REQUESTS),
+]);
+
 const QBD_BALANCE_SHEET_ANCHOR_FIELDS = [
   'cash',
   'ar',
@@ -835,6 +867,39 @@ function qbdCopyExpenseAndCogs(source: QbdMappedMonthlyRow, target: QbdMappedMon
 function qbdApplyBalance(row: QbdMappedMonthlyRow, targetField: string, balance: number) {
   if (!QBD_BALANCE_SHEET_TARGET_FIELDS.has(targetField) || balance === 0) return;
   row[targetField] = Number(row[targetField] || 0) + balance;
+}
+
+function getQuickBooksDesktopDomainScope(metadata: Record<string, unknown>) {
+  const requestNames = new Set<string>();
+  const configuredRequestNames = Array.isArray(metadata.quickbooksDesktopBackfillRequestNames)
+    ? metadata.quickbooksDesktopBackfillRequestNames
+    : [];
+  for (const requestName of configuredRequestNames) {
+    const normalized = qbdString(requestName);
+    if (normalized) requestNames.add(normalized);
+  }
+
+  const jobs = metadata.quickbooksDesktopBackfillJobs && typeof metadata.quickbooksDesktopBackfillJobs === 'object' && !Array.isArray(metadata.quickbooksDesktopBackfillJobs)
+    ? (metadata.quickbooksDesktopBackfillJobs as Record<string, Record<string, unknown>>)
+    : {};
+  for (const job of Object.values(jobs)) {
+    const normalized = qbdString(job?.requestName);
+    if (normalized) requestNames.add(normalized);
+  }
+
+  const hasExplicitScope = requestNames.size > 0;
+  const requestNameList = Array.from(requestNames).sort();
+  const canUpdatePnl = !hasExplicitScope || requestNameList.some((requestName) => QBD_PNL_REBUILD_REQUESTS.has(requestName));
+  const canUpdateBalanceSheet = !hasExplicitScope || requestNameList.some((requestName) => QBD_BALANCE_SHEET_REBUILD_REQUESTS.has(requestName));
+  const canUpdateFinancials = !hasExplicitScope || requestNameList.some((requestName) => QBD_FINANCIAL_REBUILD_REQUESTS.has(requestName));
+
+  return {
+    hasExplicitScope,
+    requestNames: requestNameList,
+    canUpdatePnl,
+    canUpdateBalanceSheet,
+    canUpdateFinancials,
+  };
 }
 
 async function loadQbdPageRecords(companyId: string, requestName: string, detailOnly = false): Promise<Record<string, unknown>[]> {
@@ -1251,7 +1316,11 @@ async function buildQuickBooksDesktopMappedMonthlyPayload(companyId: string, bas
   };
 }
 
-async function persistQuickBooksDesktopDailyFinancialSnapshots(companyId: string, payload: Record<string, unknown>) {
+async function persistQuickBooksDesktopDailyFinancialSnapshots(
+  companyId: string,
+  payload: Record<string, unknown>,
+  scope: { canUpdatePnl: boolean; canUpdateBalanceSheet: boolean },
+) {
   const rows = Array.isArray(payload.qbdDailyFinancialSnapshots)
     ? (payload.qbdDailyFinancialSnapshots as Array<Record<string, unknown>>)
     : [];
@@ -1266,6 +1335,7 @@ async function persistQuickBooksDesktopDailyFinancialSnapshots(companyId: string
       const numericFields = Object.fromEntries(
         MONTHLY_FINANCIAL_NUMERIC_FIELDS.map((field) => [field, qbdNumber(row[field])])
       );
+      const hasBalanceSheetSignal = QBD_MONTHLY_BS_PRESERVE_FIELDS.some((field) => qbdNumber(row[field]) !== 0);
       return {
         companyId,
         snapshotDate,
@@ -1273,6 +1343,7 @@ async function persistQuickBooksDesktopDailyFinancialSnapshots(companyId: string
         ...numericFields,
         sourcePlatform: QBD_DAILY_FINANCIAL_SOURCE,
         sourceRunId,
+        hasBalanceSheetSignal,
       };
     })
     .filter((row): row is NonNullable<typeof row> => row !== null);
@@ -1285,31 +1356,42 @@ async function persistQuickBooksDesktopDailyFinancialSnapshots(companyId: string
   const startDate = sortedDates[0];
   const endDate = sortedDates[sortedDates.length - 1];
 
-  // QBD daily snapshots are regenerated from the current backfill pages and
-  // account mappings for the rebuilt date window only. Never delete historical
-  // QBD snapshots outside that window; short corrective pulls must not erase
-  // previously rebuilt balance-sheet history.
-  const deletedExisting = await prisma.dailyFinancialSnapshot.deleteMany({
-    where: {
-      companyId,
-      frequency: 'daily',
-      sourcePlatform: QBD_DAILY_FINANCIAL_SOURCE,
-      snapshotDate: {
-        gte: startDate,
-        lte: endDate,
-      },
-    },
-  });
-
-  const batchSize = 1000;
   let rowsWritten = 0;
-  for (let index = 0; index < parsedRows.length; index += batchSize) {
-    const batch = parsedRows.slice(index, index + batchSize);
-    const result = await prisma.dailyFinancialSnapshot.createMany({
-      data: batch,
-      skipDuplicates: true,
+  for (const row of parsedRows) {
+    const { hasBalanceSheetSignal, ...data } = row;
+    const pnlUpdate = scope.canUpdatePnl
+      ? Object.fromEntries(QBD_DAILY_PNL_UPDATE_FIELDS.map((field) => [field, Number(data[field as keyof typeof data] || 0)]))
+      : {};
+    const balanceSheetUpdate = scope.canUpdateBalanceSheet && hasBalanceSheetSignal
+      ? Object.fromEntries(QBD_MONTHLY_BS_PRESERVE_FIELDS.map((field) => [field, Number(data[field] || 0)]))
+      : {};
+    const updatePayload = {
+      ...pnlUpdate,
+      ...balanceSheetUpdate,
+      sourcePlatform: QBD_DAILY_FINANCIAL_SOURCE,
+      sourceRunId,
+    };
+    const createData = {
+      ...data,
+      ...(!scope.canUpdatePnl
+        ? Object.fromEntries(QBD_DAILY_PNL_UPDATE_FIELDS.map((field) => [field, 0]))
+        : {}),
+      ...(!scope.canUpdateBalanceSheet
+        ? Object.fromEntries(QBD_MONTHLY_BS_PRESERVE_FIELDS.map((field) => [field, 0]))
+        : {}),
+    };
+    await prisma.dailyFinancialSnapshot.upsert({
+      where: {
+        companyId_snapshotDate_frequency: {
+          companyId,
+          snapshotDate: data.snapshotDate,
+          frequency: data.frequency,
+        },
+      },
+      create: createData,
+      update: updatePayload,
     });
-    rowsWritten += result.count;
+    rowsWritten += 1;
   }
 
   await prisma.dailyFinancialImportRun.create({
@@ -1323,7 +1405,8 @@ async function persistQuickBooksDesktopDailyFinancialSnapshots(companyId: string
       metadata: {
         source: QBD_DAILY_FINANCIAL_SOURCE,
         rowsBuilt: parsedRows.length,
-        qbdRowsDeletedInWindow: deletedExisting.count,
+        qbdRowsDeletedInWindow: 0,
+        writeMode: 'upsert_preserve_balance_sheet_without_signal',
         startDate: startDate.toISOString(),
         endDate: endDate.toISOString(),
       },
@@ -1333,7 +1416,7 @@ async function persistQuickBooksDesktopDailyFinancialSnapshots(companyId: string
 
   return {
     rowsWritten,
-    rowsDeleted: deletedExisting.count,
+    rowsDeleted: 0,
     startDate: startDate.toISOString(),
     endDate: endDate.toISOString(),
   };
@@ -1342,24 +1425,25 @@ async function persistQuickBooksDesktopDailyFinancialSnapshots(companyId: string
 async function preserveQuickBooksDesktopHistoricalMonthlyBalanceSheet(
   companyId: string,
   payload: Record<string, unknown>,
-): Promise<{ monthsPreserved: number; coverageStartMonth: string | null }> {
+  options: { preserveAllBalanceSheet?: boolean } = {},
+): Promise<{ monthsPreserved: number; coverageStartMonth: string | null; preserveAllBalanceSheet: boolean }> {
   const metadata = qbdAsRecord(payload.metadata);
   const build = qbdAsRecord(metadata.qbdMappedMonthlyBuild);
   const coverageStartDate = qbdDateKey(build.dailyBalanceSheetStartDate);
-  if (!coverageStartDate) {
-    return { monthsPreserved: 0, coverageStartMonth: null };
+  if (!coverageStartDate && !options.preserveAllBalanceSheet) {
+    return { monthsPreserved: 0, coverageStartMonth: null, preserveAllBalanceSheet: false };
   }
 
-  const coverageStartMonth = coverageStartDate.slice(0, 7);
+  const coverageStartMonth = coverageStartDate ? coverageStartDate.slice(0, 7) : null;
   const monthlyRows = Array.isArray(payload.monthlyData)
     ? (payload.monthlyData as Array<Record<string, unknown>>)
     : [];
   const monthsNeedingPreservation = monthlyRows
     .map((row) => qbdMonthKey(row.monthDate || row.month || row.date))
-    .filter((monthKey): monthKey is string => Boolean(monthKey && monthKey < coverageStartMonth));
+    .filter((monthKey): monthKey is string => Boolean(monthKey && (options.preserveAllBalanceSheet || (coverageStartMonth && monthKey < coverageStartMonth))));
 
   if (monthsNeedingPreservation.length === 0) {
-    return { monthsPreserved: 0, coverageStartMonth };
+    return { monthsPreserved: 0, coverageStartMonth, preserveAllBalanceSheet: Boolean(options.preserveAllBalanceSheet) };
   }
 
   const latestFinancialRecord = await prisma.financialRecord.findFirst({
@@ -1367,16 +1451,18 @@ async function preserveQuickBooksDesktopHistoricalMonthlyBalanceSheet(
     orderBy: { createdAt: 'desc' },
     include: {
       monthlyData: {
-        where: {
-          monthDate: {
-            lt: new Date(`${coverageStartMonth}-01T00:00:00.000Z`),
-          },
-        },
+        where: options.preserveAllBalanceSheet || !coverageStartMonth
+          ? {}
+          : {
+              monthDate: {
+                lt: new Date(`${coverageStartMonth}-01T00:00:00.000Z`),
+              },
+            },
       },
     },
   });
   if (!latestFinancialRecord?.monthlyData?.length) {
-    return { monthsPreserved: 0, coverageStartMonth };
+    return { monthsPreserved: 0, coverageStartMonth, preserveAllBalanceSheet: Boolean(options.preserveAllBalanceSheet) };
   }
 
   const existingByMonth = new Map<string, Record<string, unknown>>();
@@ -1388,7 +1474,7 @@ async function preserveQuickBooksDesktopHistoricalMonthlyBalanceSheet(
   let monthsPreserved = 0;
   for (const row of monthlyRows) {
     const key = qbdMonthKey(row.monthDate || row.month || row.date);
-    if (!key || key >= coverageStartMonth) continue;
+    if (!key || (!options.preserveAllBalanceSheet && coverageStartMonth && key >= coverageStartMonth)) continue;
     const existing = existingByMonth.get(key);
     if (!existing) continue;
 
@@ -1398,7 +1484,7 @@ async function preserveQuickBooksDesktopHistoricalMonthlyBalanceSheet(
     monthsPreserved += 1;
   }
 
-  return { monthsPreserved, coverageStartMonth };
+  return { monthsPreserved, coverageStartMonth, preserveAllBalanceSheet: Boolean(options.preserveAllBalanceSheet) };
 }
 
 async function persistQuickBooksDesktopBalanceSheetAnchor(companyId: string, payload: Record<string, unknown>) {
@@ -1943,6 +2029,7 @@ export async function POST(request: NextRequest) {
         connection?.connectionMetadata && typeof connection.connectionMetadata === 'object' && !Array.isArray(connection.connectionMetadata)
           ? (connection.connectionMetadata as Record<string, unknown>)
           : {};
+      const qbdDomainScope = getQuickBooksDesktopDomainScope(metadata);
       let financialPayload =
         metadata.quickbooksDesktopFinancialPayload && typeof metadata.quickbooksDesktopFinancialPayload === 'object'
           ? (metadata.quickbooksDesktopFinancialPayload as Record<string, unknown>)
@@ -1971,7 +2058,18 @@ export async function POST(request: NextRequest) {
         targetMonth: targetMonth || null,
         mode,
         hadMonthlyDataRows: hasMonthlyDataRows(financialPayload),
+        domainScope: qbdDomainScope,
       };
+      if (!qbdDomainScope.canUpdateFinancials) {
+        return NextResponse.json(
+          {
+            success: true,
+            message: 'QuickBooks Desktop reprocess skipped financial rebuild because the selected sync domains do not own financial statement data.',
+            diagnostics: qbdDiagnostics,
+          },
+          { status: 200 },
+        );
+      }
       financialPayload = await buildQuickBooksDesktopMappedMonthlyPayload(String(companyId), financialPayload);
       qbdDiagnostics.rebuiltMappedMonthlyData = true;
       qbdDiagnostics.rebuiltMonthlyRows = Array.isArray(financialPayload.monthlyData) ? financialPayload.monthlyData.length : 0;
@@ -1981,6 +2079,7 @@ export async function POST(request: NextRequest) {
       const qbdHistoricalBsPreservation = await preserveQuickBooksDesktopHistoricalMonthlyBalanceSheet(
         String(companyId),
         financialPayload,
+        { preserveAllBalanceSheet: !qbdDomainScope.canUpdateBalanceSheet },
       );
       qbdDiagnostics.historicalBalanceSheetPreservation = qbdHistoricalBsPreservation;
 
@@ -1994,13 +2093,15 @@ export async function POST(request: NextRequest) {
         mode,
       });
       const qbdDailyFinancialSnapshots = result.ok
-        ? await persistQuickBooksDesktopDailyFinancialSnapshots(String(companyId), financialPayload)
+        ? await persistQuickBooksDesktopDailyFinancialSnapshots(String(companyId), financialPayload, qbdDomainScope)
         : null;
       if (qbdDailyFinancialSnapshots) {
         qbdDiagnostics.dailyFinancialSnapshots = qbdDailyFinancialSnapshots;
       }
       const qbdBalanceSheetAnchor = result.ok
-        ? await persistQuickBooksDesktopBalanceSheetAnchor(String(companyId), financialPayload)
+        ? qbdDomainScope.canUpdateBalanceSheet
+          ? await persistQuickBooksDesktopBalanceSheetAnchor(String(companyId), financialPayload)
+          : null
         : null;
       if (qbdBalanceSheetAnchor) {
         qbdDiagnostics.balanceSheetAnchor = qbdBalanceSheetAnchor;

@@ -359,7 +359,7 @@ export async function POST(request: NextRequest) {
           quickbooksDesktopBackfillBatchId: batchId,
           quickbooksDesktopBackfillJobs: backfillJobs,
           quickbooksDesktopBackfillResponses: {},
-          quickbooksDesktopBackfillRequestNames: hasSelectedRequestNames ? selectedRequests : null,
+          quickbooksDesktopBackfillRequestNames: enabledRequests,
           quickbooksDesktopBackfillChunkByMonth: chunkByMonth,
           quickbooksDesktopBackfillAgingSnapshotGranularity: hasAgingSnapshotRequestNames ? agingSnapshotGranularity : null,
         } as any,
