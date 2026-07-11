@@ -1762,6 +1762,10 @@ export async function POST(request: NextRequest) {
       const diagnostics: Record<string, unknown> = {
         companyId: String(companyId),
         configuredPlatform,
+        configuredPlatformRaw,
+        shouldUseQuickBooksDesktopReprocess,
+        hasQbdBackfillPages,
+        hasQbdConnectionMetadata,
         targetMonth: targetMonth || null,
         mode,
         useHistoricalSlLedgersRequested,

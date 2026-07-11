@@ -3646,6 +3646,11 @@ function FinancialScorePage() {
   const [userDefinedAllocations, setUserDefinedAllocations] = useState<{ lobName: string; percentage: number }[]>([]);
   const [showMappingSection, setShowMappingSection] = useState(false);
   const [isProcessingMonthlyData, setIsProcessingMonthlyData] = useState(false);
+  const [lastReprocessError, setLastReprocessError] = useState<{
+    summary: string;
+    details: string;
+    createdAt: string;
+  } | null>(null);
   const [csiPipelineStatus, setCsiPipelineStatus] = useState<{
     state: 'idle' | 'running' | 'success' | 'error';
     trigger?: 'save' | 'apply';
@@ -17217,6 +17222,49 @@ function FinancialScorePage() {
                           </div>
                         </div>
                       )}
+                      {lastReprocessError && (
+                        <div style={{ marginBottom: '16px', padding: '12px 14px', background: '#fef2f2', borderRadius: '8px', border: '1px solid #fecaca' }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', alignItems: 'flex-start', marginBottom: '8px' }}>
+                            <div>
+                              <div style={{ fontSize: '13px', fontWeight: 700, color: '#991b1b', marginBottom: '4px' }}>
+                                Last Reprocess Error Captured
+                              </div>
+                              <div style={{ fontSize: '12px', color: '#7f1d1d' }}>{lastReprocessError.summary}</div>
+                              <div style={{ fontSize: '11px', color: '#991b1b', marginTop: '4px' }}>
+                                Captured {lastReprocessError.createdAt}
+                              </div>
+                            </div>
+                            <div style={{ display: 'flex', gap: '8px', flexShrink: 0 }}>
+                              <button
+                                type="button"
+                                onClick={async () => {
+                                  try {
+                                    await navigator.clipboard.writeText(lastReprocessError.details);
+                                    alert('Reprocess error copied.');
+                                  } catch {
+                                    alert('Unable to copy automatically. Select the text in the error box and copy it manually.');
+                                  }
+                                }}
+                                style={{ padding: '6px 10px', background: '#991b1b', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: 700, cursor: 'pointer' }}
+                              >
+                                Copy Error
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setLastReprocessError(null)}
+                                style={{ padding: '6px 10px', background: 'white', color: '#991b1b', border: '1px solid #fecaca', borderRadius: '6px', fontSize: '12px', fontWeight: 700, cursor: 'pointer' }}
+                              >
+                                Clear
+                              </button>
+                            </div>
+                          </div>
+                          <textarea
+                            readOnly
+                            value={lastReprocessError.details}
+                            style={{ width: '100%', minHeight: '120px', fontSize: '11px', fontFamily: 'monospace', color: '#7f1d1d', background: 'white', border: '1px solid #fecaca', borderRadius: '6px', padding: '8px', boxSizing: 'border-box' }}
+                          />
+                        </div>
+                      )}
                       <div style={{ display: 'flex', gap: '12px', alignItems: 'center', justifyContent: 'space-between' }}>
                         <div>
                           <h3 style={{ fontSize: '16px', fontWeight: '600', color: '#1e293b', marginBottom: '4px' }}>Save Account Mappings</h3>
@@ -17628,6 +17676,7 @@ function FinancialScorePage() {
                               if (!confirmed) return;
 
                               setIsProcessingMonthlyData(true);
+                              setLastReprocessError(null);
                               try {
                                 console.log('?? Reprocessing API data with mappings...');
                                 const selectedSystemNormalized = String(selectedAccountingSystem || '').toUpperCase();
@@ -17657,6 +17706,34 @@ function FinancialScorePage() {
                                     );
                                   }
                                   return { result, vercelRequestId, raw };
+                                };
+                                const captureReprocessError = (params: {
+                                  status?: number;
+                                  requestId?: string;
+                                  error?: unknown;
+                                  result?: unknown;
+                                  raw?: string;
+                                  targetMonth?: string;
+                                  mode?: string;
+                                }) => {
+                                  const summary = `Failed to reprocess${params.targetMonth ? ` ${params.targetMonth}` : ''}${params.status ? ` (status ${params.status})` : ''}. ${String(params.error || 'Unknown error')}`;
+                                  setLastReprocessError({
+                                    summary,
+                                    createdAt: new Date().toLocaleString(),
+                                    details: JSON.stringify({
+                                      summary,
+                                      companyId: selectedCompanyId,
+                                      companyName: currentCompany?.name || '',
+                                      accountingSystem: selectedAccountingSystem,
+                                      targetMonth: params.targetMonth || apiFinancialTargetMonth,
+                                      mode: params.mode || requestedMode,
+                                      status: params.status || null,
+                                      requestId: params.requestId || null,
+                                      error: params.error || null,
+                                      result: params.result || null,
+                                      raw: params.raw || null,
+                                    }, null, 2),
+                                  });
                                 };
 
                                 if (useSafeInforThroughRunner) {
@@ -17762,9 +17839,17 @@ function FinancialScorePage() {
 
                                   if (failed.length > 0) {
                                     const firstFailure = failed[0];
+                                    captureReprocessError({
+                                      status: firstFailure.status,
+                                      requestId: firstFailure.requestId,
+                                      error: firstFailure.error,
+                                      targetMonth: firstFailure.month,
+                                      mode: 'only',
+                                      result: failed,
+                                    });
                                     alert(
                                       `Failed to reprocess ${firstFailure.month} (status ${firstFailure.status}). ${firstFailure.error}\n` +
-                                        `Request ID: ${firstFailure.requestId}`
+                                        `Request ID: ${firstFailure.requestId}\n\nThe full error has been captured on the page.`
                                     );
                                   } else {
                                     invalidateAccountReviewValuesCache(selectedCompanyId);
@@ -17816,16 +17901,30 @@ function FinancialScorePage() {
                                     setQbLastSync(new Date());
                                   } else {
                                     const details = result?.details ? `\nDetails: ${result.details}` : '';
+                                    captureReprocessError({
+                                      status: response.status,
+                                      requestId: vercelRequestId,
+                                      error: result.error || result.message || 'Unknown error.',
+                                      result,
+                                      targetMonth: apiFinancialTargetMonth,
+                                      mode: requestedMode,
+                                    });
                                     alert(
                                       `Failed to reprocess (status ${response.status}). ${result.error || result.message || 'Unknown error.'}` +
                                         details +
-                                        (vercelRequestId ? `\nRequest ID: ${vercelRequestId}` : '')
+                                        (vercelRequestId ? `\nRequest ID: ${vercelRequestId}` : '') +
+                                        `\n\nThe full error has been captured on the page.`
                                     );
                                   }
                                 }
                               } catch (error: any) {
                                 console.error('Reprocess error:', error);
-                                alert('Failed to reprocess data: ' + error.message);
+                                captureReprocessError({
+                                  error: error?.message || 'Unknown error',
+                                  targetMonth: apiFinancialTargetMonth,
+                                  mode: requestedMode,
+                                });
+                                alert('Failed to reprocess data: ' + error.message + '\n\nThe full error has been captured on the page.');
                               } finally {
                                 setIsProcessingMonthlyData(false);
                               }
