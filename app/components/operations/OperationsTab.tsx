@@ -1921,7 +1921,7 @@ export default function OperationsTab({
   };
 
   const buildOperationalDataCacheKey = (type: OpsDataType): string => {
-    const requestFrequency = type === 'daily-financials' ? 'daily' : frequency;
+    const requestFrequency = frequency;
     const rollupToken = type === 'daily-financials' ? dailyFinancialStatementRollup : 'n/a';
     const cacheFamily = type === 'sales' ? 'customers' : type;
     const requestStartDate = startDate;

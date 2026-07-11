@@ -442,7 +442,7 @@ function buildReportChildren(requestName: string, dateRange: QbwcDateRange): str
     return `<GeneralSummaryReportType>TrialBalance</GeneralSummaryReportType>${period}${basis}`;
   }
   if (requestName === 'GeneralDetailReportQuery') {
-    return `<GeneralDetailReportType>GeneralLedger</GeneralDetailReportType>${period}${basis}`;
+    return `<GeneralDetailReportType>GeneralLedger</GeneralDetailReportType>${period}${basis}<IncludeColumn>TxnDate</IncludeColumn><IncludeColumn>Account</IncludeColumn><IncludeColumn>Amount</IncludeColumn><IncludeColumn>Balance</IncludeColumn>`;
   }
   return `${period}${basis}`;
 }
@@ -573,12 +573,18 @@ function parseNestedSimpleRecord(xml: string, tagName: string): Record<string, u
   return Object.keys(record).length > 0 ? record : null;
 }
 
-function parseReportRow(rowXml: string, rowType: string, index: number): Record<string, unknown> {
+function parseReportRow(
+  rowXml: string,
+  rowType: string,
+  index: number,
+  columnTitlesById: Record<string, string>,
+): Record<string, unknown> {
   const rowDataTag = getXmlOpenTags(rowXml, 'RowData')[0] || '';
   const rowValue = getAttributeFromTagXml(rowDataTag, 'value') || getXmlText(rowXml, 'RowData');
   const rowTypeAttr = getAttributeFromTagXml(rowDataTag, 'rowType');
   const colData = getXmlOpenTags(rowXml, 'ColData').map((tag) => ({
     colID: getAttributeFromTagXml(tag, 'colID'),
+    colTitle: columnTitlesById[getAttributeFromTagXml(tag, 'colID')] || '',
     value: getAttributeFromTagXml(tag, 'value'),
   }));
   return {
@@ -602,6 +608,18 @@ function parseReportRecords(requestName: string, xml: string): Array<Record<stri
     numRows: getXmlText(reportXml, 'NumRows'),
     numColumns: getXmlText(reportXml, 'NumColumns'),
   };
+  const columnTitlesById = Object.fromEntries(
+    getXmlRecords(reportXml, 'ColDesc').map((colXml) => {
+      const colDescTag = getXmlOpenTags(colXml, 'ColDesc')[0] || '';
+      const colID = getAttributeFromTagXml(colDescTag, 'colID');
+      const title = getXmlOpenTags(colXml, 'ColTitle')
+        .map((tag) => getAttributeFromTagXml(tag, 'value'))
+        .filter(Boolean)
+        .join(' ')
+        .trim();
+      return [colID, title];
+    }).filter(([colID]) => Boolean(colID)),
+  );
   const rows: Array<Record<string, unknown>> = [];
   for (const rowType of ['TextRow', 'DataRow', 'SubtotalRow', 'TotalRow']) {
     const rowXmls = getXmlRecords(reportXml, rowType);
@@ -609,7 +627,7 @@ function parseReportRecords(requestName: string, xml: string): Array<Record<stri
       rows.push({
         requestName,
         ...header,
-        ...parseReportRow(rowXml, rowType, rows.length),
+        ...parseReportRow(rowXml, rowType, rows.length, columnTitlesById),
       });
     }
   }

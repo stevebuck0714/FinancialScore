@@ -9325,6 +9325,8 @@ export async function GET(request: NextRequest) {
           requestedFinancialFrequency === 'weekly' || requestedFinancialFrequency === 'monthly'
             ? (requestedFinancialFrequency as 'weekly' | 'monthly')
             : 'daily';
+        const effectiveStatementRollup: StatementRollup =
+          isQuickBooksDesktopCompany && statementRollup === 'daily' ? 'monthly' : statementRollup;
         if (isQuickBooksDesktopCompany && financialFrequencyForQuery === 'daily') {
           financialFrequencyForQuery = 'monthly';
         }
@@ -9452,7 +9454,7 @@ export async function GET(request: NextRequest) {
         mappedLines = appendDailyFinancialSnapshotMappedLines(mappedLines, data);
         const statementRecords = aggregateDailyStatementRows(
           financialFrequencyForQuery === 'daily' ? dailyDataForAggregator : data,
-          statementRollup
+          effectiveStatementRollup
         );
 
         return cacheOperationalPayload({
@@ -9470,7 +9472,7 @@ export async function GET(request: NextRequest) {
             days: data.length,
             statementPeriods: statementRecords.length,
             statementCurrency: 'USD',
-            statementRollup,
+            statementRollup: effectiveStatementRollup,
             statementBasis: isQuickBooksDesktopCompany ? 'monthly_financial' : 'daily_activity',
             mappedLineCount: mappedLines.length,
           },

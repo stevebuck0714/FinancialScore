@@ -682,6 +682,30 @@ function qbdReportColValue(record: Record<string, unknown>, colID: string): stri
   return qbdString(column?.value);
 }
 
+function qbdReportColValueByTitle(
+  record: Record<string, unknown>,
+  titleCandidates: string[],
+  fallbackColIDs: string[] = [],
+): string {
+  const normalize = (value: string) => qbdString(value).toLowerCase().replace(/[^a-z0-9]/g, '');
+  const candidates = new Set(titleCandidates.map(normalize).filter(Boolean));
+  const colData = Array.isArray(record.colData) ? record.colData.map(qbdAsRecord) : [];
+  const titledColumn = colData.find((col) => candidates.has(normalize(qbdString(col.colTitle))));
+  if (titledColumn) return qbdString(titledColumn.value);
+  for (const colID of fallbackColIDs) {
+    const value = qbdReportColValue(record, colID);
+    if (value) return value;
+  }
+  return '';
+}
+
+function qbdGeneralLedgerPnlAmount(targetField: string, rawAmount: number): number {
+  if (targetField === 'revenue' || targetField.startsWith('rev_') || targetField === 'nonOperatingIncome') {
+    return rawAmount * -1;
+  }
+  return rawAmount;
+}
+
 function qbdBalanceSheetReportDateKey(records: Record<string, unknown>[]): string | null {
   for (const record of records) {
     const subtitle = qbdString(record.reportSubtitle);
@@ -1112,9 +1136,10 @@ async function buildQuickBooksDesktopMappedMonthlyPayload(companyId: string, bas
     if (qbdString(glRow.rowKind) !== 'DataRow') continue;
     const accountName = qbdString(glRow.accountName || glRow.rowValue);
     const target = getTarget({ name: accountName });
-    const dateKey = qbdDateKey(qbdReportColValue(glRow, '3'));
+    const dateKey = qbdDateKey(qbdReportColValueByTitle(glRow, ['Txn Date', 'Date'], ['3']));
     if (!dateKey) continue;
-    const amount = qbdNumber(qbdReportColValue(glRow, '8'));
+    const rawAmount = qbdNumber(qbdReportColValueByTitle(glRow, ['Amount'], ['8']));
+    const amount = qbdGeneralLedgerPnlAmount(target, rawAmount);
     if (amount === 0) continue;
     if (qbdIsIncomeStatementExpenseTarget(target)) {
       const monthKey = dateKey.slice(0, 7);

@@ -180,13 +180,11 @@ export async function POST(request: NextRequest) {
       minStaleMinutes,
       !activeSession,
     );
-    if (headerReset.requeuedCount === 0 && detailReset.requeuedCount === 0) {
+    if (!activeSession && headerReset.requeuedCount === 0 && detailReset.requeuedCount === 0) {
       return NextResponse.json(
         {
           ok: false,
-          error: activeSession
-            ? 'No running jobs were tied to the stale QuickBooks Desktop Web Connector session.'
-            : `No orphaned running jobs older than ${minStaleMinutes} minute(s) were found.`,
+          error: `No orphaned running jobs older than ${minStaleMinutes} minute(s) were found.`,
           staleAgeMinutes,
           minStaleMinutes,
         },
