@@ -52,7 +52,17 @@ async function hasQuickBooksDesktopBackfillPages(companyId: string): Promise<boo
     SELECT COUNT(*)::bigint AS count
     FROM "QuickBooksDesktopBackfillPage"
     WHERE "companyId" = ${companyId}
-      AND "requestName" = 'AccountQuery'
+      AND "requestName" IN (
+        'AccountQuery',
+        'BalanceSheetStandardReportQuery',
+        'TrialBalanceReportQuery',
+        'GeneralDetailReportQuery',
+        'InvoiceQuery',
+        'BillQuery',
+        'ReceivePaymentQuery',
+        'BillPaymentCheckQuery',
+        'BillPaymentCreditCardQuery'
+      )
   `;
   return Number(rows[0]?.count || 0) > 0;
 }
