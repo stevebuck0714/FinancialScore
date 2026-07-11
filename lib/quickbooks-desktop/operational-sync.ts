@@ -230,7 +230,13 @@ async function saveCash(companyId: string, snapshotDate: Date, frequency: Freque
   return data.length;
 }
 
-async function saveARAging(companyId: string, snapshotDate: Date, frequency: Frequency, rows: ARAgingRow[]): Promise<number> {
+async function saveARAging(
+  companyId: string,
+  snapshotDate: Date,
+  frequency: Frequency,
+  rows: ARAgingRow[],
+  options: { clearWhenEmpty?: boolean } = {},
+): Promise<number> {
   const total = rows.reduce(
     (acc, row) => ({
       totalAR: acc.totalAR + toNumber(row.totalAR),
@@ -244,6 +250,9 @@ async function saveARAging(companyId: string, snapshotDate: Date, frequency: Fre
   );
 
   if (total.totalAR === 0 && total.current === 0 && total.days1to30 === 0 && total.days31to60 === 0 && total.days61to90 === 0 && total.days90plus === 0) {
+    if (options.clearWhenEmpty) {
+      await prisma.aRAgingSnapshot.deleteMany({ where: { companyId, snapshotDate, frequency } });
+    }
     return 0;
   }
 
@@ -255,7 +264,13 @@ async function saveARAging(companyId: string, snapshotDate: Date, frequency: Fre
   return 1;
 }
 
-async function saveAPAging(companyId: string, snapshotDate: Date, frequency: Frequency, rows: APAgingRow[]): Promise<number> {
+async function saveAPAging(
+  companyId: string,
+  snapshotDate: Date,
+  frequency: Frequency,
+  rows: APAgingRow[],
+  options: { clearWhenEmpty?: boolean } = {},
+): Promise<number> {
   const total = rows.reduce(
     (acc, row) => ({
       totalAP: acc.totalAP + toNumber(row.totalAP),
@@ -269,6 +284,9 @@ async function saveAPAging(companyId: string, snapshotDate: Date, frequency: Fre
   );
 
   if (total.totalAP === 0 && total.current === 0 && total.days1to30 === 0 && total.days31to60 === 0 && total.days61to90 === 0 && total.days90plus === 0) {
+    if (options.clearWhenEmpty) {
+      await prisma.aPAgingSnapshot.deleteMany({ where: { companyId, snapshotDate, frequency } });
+    }
     return 0;
   }
 
@@ -780,8 +798,8 @@ export async function saveQuickBooksDesktopDetailOpenSnapshots(
       },
       { totalAP: 0, current: 0, days1to30: 0, days31to60: 0, days90plus: 0, days61to90: 0 },
     );
-    recordsCreated += await saveARAging(companyId, snapshotDate, frequency, arTotals.totalAR > 0 ? [arTotals] : []);
-    recordsCreated += await saveAPAging(companyId, snapshotDate, frequency, apTotals.totalAP > 0 ? [apTotals] : []);
+    recordsCreated += await saveARAging(companyId, snapshotDate, frequency, arTotals.totalAR > 0 ? [arTotals] : [], { clearWhenEmpty: true });
+    recordsCreated += await saveAPAging(companyId, snapshotDate, frequency, apTotals.totalAP > 0 ? [apTotals] : [], { clearWhenEmpty: true });
   }
 
   return recordsCreated;
