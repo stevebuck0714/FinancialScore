@@ -583,54 +583,57 @@ function businessDayKeys(startDate: Date, endDate: Date): string[] {
 }
 
 function addAppliedAmount(
-  index: Map<string, Array<{ paymentDate: Date; amount: number }>>,
+  index: Map<string, Array<{ paymentDate: Date; amount: number; sourceId: string }>>,
   keys: Array<string | null>,
   paymentDate: Date | null,
   amount: number,
+  sourceId: string,
 ): void {
   if (!paymentDate || amount <= 0) return;
   for (const key of keys) {
     if (!key) continue;
     const rows = index.get(key) || [];
-    rows.push({ paymentDate, amount });
+    rows.push({ paymentDate, amount, sourceId });
     index.set(key, rows);
   }
 }
 
 function buildAppliedPaymentIndex(records: Array<Record<string, unknown>>, appliedType: 'invoice' | 'bill') {
-  const index = new Map<string, Array<{ paymentDate: Date; amount: number }>>();
-  for (const payment of records) {
+  const index = new Map<string, Array<{ paymentDate: Date; amount: number; sourceId: string }>>();
+  records.forEach((payment, paymentIndex) => {
     const paymentDate = normalizeOptionalDate(payment.TxnDate);
+    const paymentSourceId = asString(payment.TxnID) || asString(payment.RefNumber) || `payment:${paymentIndex}`;
     const appliedRows = Array.isArray(payment.AppliedToTxnRet) ? payment.AppliedToTxnRet : [];
-    for (const applied of appliedRows) {
+    appliedRows.forEach((applied, appliedIndex) => {
       const appliedRecord = applied && typeof applied === 'object' && !Array.isArray(applied)
         ? (applied as Record<string, unknown>)
         : {};
       const txnType = String(appliedRecord.TxnType || '').toLowerCase();
-      if (txnType && !txnType.includes(appliedType)) continue;
+      if (txnType && !txnType.includes(appliedType)) return;
       const amount = qbdRecordAmount(appliedRecord, 'AppliedAmount', 'Amount');
       addAppliedAmount(
         index,
         [asString(appliedRecord.TxnID), asString(appliedRecord.RefNumber)],
         paymentDate,
         amount,
+        `${paymentSourceId}:${appliedIndex}`,
       );
-    }
-  }
+    });
+  });
   for (const rows of index.values()) {
     rows.sort((a, b) => a.paymentDate.getTime() - b.paymentDate.getTime());
   }
   return index;
 }
 
-function paidThroughDate(index: Map<string, Array<{ paymentDate: Date; amount: number }>>, keys: Array<string | null>, asOfDate: Date): number {
+function paidThroughDate(index: Map<string, Array<{ paymentDate: Date; amount: number; sourceId: string }>>, keys: Array<string | null>, asOfDate: Date): number {
   const seen = new Set<string>();
   let total = 0;
   for (const key of keys) {
     if (!key) continue;
     const rows = index.get(key) || [];
     for (const row of rows) {
-      const signature = `${row.paymentDate.toISOString()}|${row.amount}`;
+      const signature = `${row.sourceId}|${row.paymentDate.toISOString()}|${row.amount}`;
       if (seen.has(signature)) continue;
       if (row.paymentDate <= asOfDate) {
         total += row.amount;
@@ -641,11 +644,27 @@ function paidThroughDate(index: Map<string, Array<{ paymentDate: Date; amount: n
   return total;
 }
 
-function hasAppliedPayments(index: Map<string, Array<{ paymentDate: Date; amount: number }>>, keys: Array<string | null>): boolean {
+function totalAppliedAmount(index: Map<string, Array<{ paymentDate: Date; amount: number; sourceId: string }>>, keys: Array<string | null>): number {
+  const seen = new Set<string>();
+  let total = 0;
+  for (const key of keys) {
+    if (!key) continue;
+    const rows = index.get(key) || [];
+    for (const row of rows) {
+      const signature = `${row.sourceId}|${row.paymentDate.toISOString()}|${row.amount}`;
+      if (seen.has(signature)) continue;
+      total += row.amount;
+      seen.add(signature);
+    }
+  }
+  return total;
+}
+
+function hasAppliedPayments(index: Map<string, Array<{ paymentDate: Date; amount: number; sourceId: string }>>, keys: Array<string | null>): boolean {
   return keys.some((key) => Boolean(key && (index.get(key)?.length || 0) > 0));
 }
 
-async function saveQuickBooksDesktopDetailOpenSnapshots(
+export async function saveQuickBooksDesktopDetailOpenSnapshots(
   companyId: string,
   frequency: Frequency,
   payload: QbDesktopOperationalPayload,
@@ -670,12 +689,15 @@ async function saveQuickBooksDesktopDetailOpenSnapshots(
     invoices.forEach((invoice, index) => {
       const invoiceDate = normalizeOptionalDate(invoice.TxnDate);
       if (!invoiceDate || invoiceDate > snapshotDate) return;
-      const totalAmount = qbdRecordAmount(invoice, 'TotalAmount', 'Amount', 'Subtotal');
-      if (totalAmount <= 0) return;
       const invoiceNo = qbdRecordNumber(invoice, 'QBD-INVOICE', index);
       const txnId = asString(invoice.TxnID);
       const matchKeys = [txnId, invoiceNo];
       if (String(invoice.IsPaid || '').toLowerCase() === 'true' && !hasAppliedPayments(arPaymentIndex, matchKeys)) return;
+      const currentBalance = qbdRecordAmount(invoice, 'BalanceRemaining');
+      const appliedTotal = totalAppliedAmount(arPaymentIndex, matchKeys);
+      const reportedTotal = qbdRecordAmount(invoice, 'TotalAmount', 'Subtotal', 'Amount');
+      const totalAmount = Math.max(currentBalance + appliedTotal, reportedTotal);
+      if (totalAmount <= 0) return;
       const paidAmount = paidThroughDate(arPaymentIndex, matchKeys, snapshotDate);
       const remaining = Math.max(0, totalAmount - paidAmount);
       if (remaining <= 0) return;
@@ -698,12 +720,15 @@ async function saveQuickBooksDesktopDetailOpenSnapshots(
     bills.forEach((bill, index) => {
       const billDate = normalizeOptionalDate(bill.TxnDate);
       if (!billDate || billDate > snapshotDate) return;
-      const totalAmount = qbdRecordAmount(bill, 'TotalAmount', 'Amount', 'AmountDue');
-      if (totalAmount <= 0) return;
       const billNo = qbdRecordNumber(bill, 'QBD-BILL', index);
       const txnId = asString(bill.TxnID);
       const matchKeys = [txnId, billNo];
       if (String(bill.IsPaid || '').toLowerCase() === 'true' && !hasAppliedPayments(apPaymentIndex, matchKeys)) return;
+      const currentBalance = qbdRecordAmount(bill, 'AmountDue', 'OpenAmount');
+      const appliedTotal = totalAppliedAmount(apPaymentIndex, matchKeys);
+      const reportedTotal = qbdRecordAmount(bill, 'TotalAmount', 'Amount', 'OpenAmount', 'AmountDue');
+      const totalAmount = Math.max(currentBalance + appliedTotal, reportedTotal);
+      if (totalAmount <= 0) return;
       const paidAmount = paidThroughDate(apPaymentIndex, matchKeys, snapshotDate);
       const remaining = Math.max(0, totalAmount - paidAmount);
       if (remaining <= 0) return;

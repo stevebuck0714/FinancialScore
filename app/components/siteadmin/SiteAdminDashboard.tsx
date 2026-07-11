@@ -2497,6 +2497,7 @@ export default function SiteAdminDashboard(props: any) {
     Record<string, Array<{ dataDomain: string; qbEntity: string; enabled: boolean }>>
   >({});
   const qbDesktopProgramsDirtyRef = React.useRef<Record<string, boolean>>({});
+  const [rebuildingQbDesktopArApAgingByCompany, setRebuildingQbDesktopArApAgingByCompany] = React.useState<Record<string, boolean>>({});
   const [qbDesktopDateRangeByCompany, setQbDesktopDateRangeByCompany] = React.useState<
     Record<string, { startDate: string; endDate: string }>
   >({});
@@ -3420,6 +3421,74 @@ export default function SiteAdminDashboard(props: any) {
     }
   };
 
+  const rebuildQbDesktopArApAging = async (companyId: string, companyName: string) => {
+    const range = getQbDesktopDateRange(companyId);
+    if (!range.startDate || !range.endDate) {
+      alert('Select both Start Date and End Date before rebuilding QBD AR/AP Aging.');
+      return;
+    }
+    if (new Date(range.startDate).getTime() > new Date(range.endDate).getTime()) {
+      alert('QBD AR/AP Aging rebuild range is invalid: Start Date must be before End Date.');
+      return;
+    }
+    if (!confirm(`Rebuild QBD AR/AP Aging snapshots for ${companyName} from ${range.startDate} to ${range.endDate}? This updates AR/AP aging and open invoice/bill snapshots only.`)) {
+      return;
+    }
+
+    try {
+      setRebuildingQbDesktopArApAgingByCompany((prev) => ({ ...prev, [companyId]: true }));
+      const monthKeys = buildMonthKeysInclusive(range.startDate, range.endDate);
+      if (!monthKeys.length) {
+        throw new Error('No valid months found for the selected QBD AR/AP Aging rebuild range.');
+      }
+      let recordsCreated = 0;
+      let arAppliedLinks = 0;
+      let apAppliedLinks = 0;
+      const failedMonths: string[] = [];
+      for (const monthKey of monthKeys) {
+        const monthStart = `${monthKey}-01`;
+        const monthEnd = new Date(`${monthStart}T00:00:00.000Z`);
+        monthEnd.setUTCMonth(monthEnd.getUTCMonth() + 1);
+        monthEnd.setUTCDate(0);
+        const boundedStartDate = monthKey === range.startDate.slice(0, 7) ? range.startDate : monthStart;
+        const boundedEndDate = monthKey === range.endDate.slice(0, 7) ? range.endDate : monthEnd.toISOString().slice(0, 10);
+        const response = await fetch('/api/quickbooks-desktop/rebuild-ar-ap-aging', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            companyId,
+            startDate: boundedStartDate,
+            endDate: boundedEndDate,
+          }),
+        });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok || !data?.ok) {
+          failedMonths.push(`${monthKey}: ${data?.details || data?.error || 'failed'}`);
+          continue;
+        }
+        recordsCreated += Number(data?.recordsCreated || 0);
+        arAppliedLinks = Math.max(arAppliedLinks, Number(data?.appliedLinkCounts?.ReceivePaymentQuery || 0));
+        apAppliedLinks = Math.max(apAppliedLinks, Number(data?.appliedLinkCounts?.BillPaymentCheckQuery || 0));
+      }
+      if (failedMonths.length > 0) {
+        throw new Error(`QBD AR/AP Aging rebuild failed for ${failedMonths.length} month(s): ${failedMonths.join('; ')}`);
+      }
+      await loadQbDesktopSettings(companyId);
+      alert(
+        `QBD AR/AP Aging rebuilt for ${companyName}.\n` +
+        `Range: ${range.startDate} to ${range.endDate}\n` +
+        `Months processed: ${monthKeys.length.toLocaleString('en-US')}\n` +
+        `Rows written: ${recordsCreated.toLocaleString('en-US')}\n` +
+        `AR applied links: ${arAppliedLinks.toLocaleString('en-US')}\n` +
+        `AP applied links: ${apAppliedLinks.toLocaleString('en-US')}`
+      );
+    } catch (error: any) {
+      alert(`Failed to rebuild QBD AR/AP Aging: ${error?.message || 'Unknown error'}`);
+    } finally {
+      setRebuildingQbDesktopArApAgingByCompany((prev) => ({ ...prev, [companyId]: false }));
+    }
+  };
+
   React.useEffect(() => {
     const companyIdsToRefresh = Object.entries(qbDesktopSyncStatusByCompany)
       .filter(([, status]) => Boolean(status.webConnectorActiveSession || status.queuedDateRange))
@@ -3901,6 +3970,7 @@ export default function SiteAdminDashboard(props: any) {
     const activeSessionLooksStale = Boolean(activeSession && activeSessionAgeMinutes !== null && activeSessionAgeMinutes >= 5);
     const isRefreshingStatus = refreshingQbDesktopStatusCompanyId === companyId;
     const isResettingStaleRun = resettingQbDesktopStaleRunCompanyId === companyId;
+    const isRebuildingArApAging = !!rebuildingQbDesktopArApAgingByCompany[companyId];
     const orphanedRunningJobCount = !activeSession
       ? Number(backfillJobCounts.running || 0) + Number(detailBackfillJobCounts.running || 0)
       : 0;
@@ -3970,6 +4040,23 @@ export default function SiteAdminDashboard(props: any) {
             title="Refresh the latest QuickBooks Desktop queue and Web Connector status."
           >
             {isRefreshingStatus ? 'Refreshing...' : 'Refresh Status'}
+          </button>
+        </div>
+        <div style={{ marginTop: '10px', padding: '10px', background: '#eef2ff', border: '1px solid #c7d2fe', borderRadius: '6px', display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) auto', gap: '8px', alignItems: 'center' }}>
+          <div style={{ minWidth: 0 }}>
+            <div style={{ fontSize: '12px', fontWeight: 700, color: '#3730a3' }}>After payment-domain sync finishes</div>
+            <div style={{ fontSize: '11px', color: '#3730a3', lineHeight: 1.5 }}>
+              Rebuild AR/AP Aging from saved QBD invoices, bills, and applied payment links. This does not touch Daily Financials.
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => rebuildQbDesktopArApAging(companyId, companyName)}
+            disabled={isRebuildingArApAging}
+            style={{ padding: '8px 12px', background: isRebuildingArApAging ? '#94a3b8' : '#3730a3', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: 700, cursor: isRebuildingArApAging ? 'not-allowed' : 'pointer', whiteSpace: 'nowrap' }}
+            title="Rebuilds QBD AR/AP aging and open invoice/bill snapshots from saved invoice, bill, and applied payment payloads."
+          >
+            {isRebuildingArApAging ? 'Rebuilding...' : 'Rebuild AR/AP Aging'}
           </button>
         </div>
         <div style={{ marginTop: '10px', padding: '10px', background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: '6px', display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) auto', gap: '8px', alignItems: 'center' }}>
