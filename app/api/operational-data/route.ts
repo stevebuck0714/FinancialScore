@@ -9321,10 +9321,13 @@ export async function GET(request: NextRequest) {
         const requestedFinancialFrequency = String(searchParams.get('frequency') || '')
           .trim()
           .toLowerCase();
-        const financialFrequencyForQuery: 'daily' | 'weekly' | 'monthly' =
+        let financialFrequencyForQuery: 'daily' | 'weekly' | 'monthly' =
           requestedFinancialFrequency === 'weekly' || requestedFinancialFrequency === 'monthly'
             ? (requestedFinancialFrequency as 'weekly' | 'monthly')
             : 'daily';
+        if (isQuickBooksDesktopCompany && financialFrequencyForQuery === 'daily') {
+          financialFrequencyForQuery = 'monthly';
+        }
         // Daily Financials is GL-derived: it must include every day with GL
         // activity, even days that never received an operational raw sync
         // (e.g., MLK Day 2026-01-19 for Atlantic Precision — a company
@@ -9339,15 +9342,32 @@ export async function GET(request: NextRequest) {
         // weekends are still filtered out below because those carry forward
         // stale prior-day balances rather than reflecting any GL activity.
         const dailyFinancialsDateFilter = { gte: startDate, lte: endDate };
-        data = await dailySnapshotDelegate.findMany({
-          where: {
-            companyId,
-            frequency: financialFrequencyForQuery,
-            snapshotDate: dailyFinancialsDateFilter,
-          },
-          orderBy: { snapshotDate: 'desc' },
-          take: limit,
-        });
+        if (isQuickBooksDesktopCompany) {
+          const monthlyRows = await prisma.monthlyFinancial.findMany({
+            where: {
+              companyId,
+              monthDate: { gte: startOfMonth(startDate), lte: endDate },
+            },
+            orderBy: { monthDate: 'desc' },
+            take: limit,
+          });
+          data = monthlyRows.map((row) => ({
+            ...row,
+            snapshotDate: row.monthDate,
+            frequency: 'monthly',
+            sourcePlatform: 'MONTHLY_FINANCIAL',
+          }));
+        } else {
+          data = await dailySnapshotDelegate.findMany({
+            where: {
+              companyId,
+              frequency: financialFrequencyForQuery,
+              snapshotDate: dailyFinancialsDateFilter,
+            },
+            orderBy: { snapshotDate: 'desc' },
+            take: limit,
+          });
+        }
 
         // Daily Financials is a business-day view in the per-day table: a
         // weekend row whose only signal is carry-forward BS values from the
@@ -9451,7 +9471,7 @@ export async function GET(request: NextRequest) {
             statementPeriods: statementRecords.length,
             statementCurrency: 'USD',
             statementRollup,
-            statementBasis: 'daily_activity',
+            statementBasis: isQuickBooksDesktopCompany ? 'monthly_financial' : 'daily_activity',
             mappedLineCount: mappedLines.length,
           },
         });

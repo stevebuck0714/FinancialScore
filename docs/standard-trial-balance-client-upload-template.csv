@@ -1,0 +1,71 @@
+Acct Type,Acct ID,Description,12/31/2024,01/31/2025,02/28/2025
+Income,4000,Product Revenue,125000,132500,141000
+Income,4010,Service Revenue,85000,88000,92000
+Income,4020,Rental Revenue,45000,45500,46000
+Income,4030,Management Fee Revenue,12000,12500,13000
+Income,4090,Sales Returns and Allowances,-2500,-2100,-2400
+Income,4100,Discounts Given,-900,-800,-950
+CostOfGoodsSold,5000,Cost of Sales,62000,64250,69000
+CostOfGoodsSold,5010,Direct Materials,21000,22500,24000
+CostOfGoodsSold,5020,Direct Labor,18000,18500,19200
+CostOfGoodsSold,5030,Subcontractor Costs,9500,10100,10800
+CostOfGoodsSold,5040,Commissions in COGS,3200,3450,3700
+CostOfGoodsSold,5090,Other Cost of Goods Sold,5200,5300,5500
+Expense,6000,Payroll Expense,42000,43000,44500
+Expense,6010,Owner Base Pay,12000,12000,12000
+Expense,6020,Employee Benefits,7800,7900,8100
+Expense,6030,Insurance Expense,3600,3600,3650
+Expense,6040,Professional Fees,5200,4300,4800
+Expense,6050,Subcontractors Expense,6400,6900,7200
+Expense,6060,Rent Expense,8000,8000,8000
+Expense,6070,Taxes and Licenses,1200,1350,1100
+Expense,6080,Phone and Communications,950,970,980
+Expense,6090,Software and Infrastructure,4100,4200,4250
+Expense,6100,Auto and Travel,2800,3100,2950
+Expense,6110,Sales Expense,3600,3800,4000
+Expense,6120,Marketing Expense,5400,5100,5600
+Expense,6130,Training and Certifications,800,950,700
+Expense,6140,Meals and Entertainment,650,700,720
+Expense,6150,Interest Expense,2400,2350,2300
+Expense,6160,Depreciation and Amortization,4500,4500,4500
+Expense,6170,State Income Taxes,1800,1900,2000
+Expense,6180,Federal Income Taxes,5600,5800,6100
+Expense,6990,Other Operating Expense,3900,4100,4200
+NonOperatingIncome,8010,Interest Income,300,325,350
+NonOperatingIncome,8020,Gain on Sale of Assets,0,0,2500
+NonOperatingExpense,9010,Loss on Sale of Assets,0,0,0
+NonOperatingExpense,9020,Other Non Operating Expense,0,1200,0
+Bank,1000,Operating Cash,95000,102000,110000
+Bank,1010,Payroll Cash,12000,15000,14000
+Bank,1020,Savings Account,85000,86000,87000
+AccountsReceivable,1200,Accounts Receivable,45000,47000,43000
+OtherCurrentAsset,1210,Retainage Receivable,0,0,0
+OtherCurrentAsset,1220,Contract Assets,0,0,0
+OtherCurrentAsset,1300,Inventory,52000,53500,54800
+OtherCurrentAsset,1400,Prepaid Expenses,18000,16500,15000
+OtherCurrentAsset,1490,Other Current Assets,7500,7200,7100
+FixedAsset,1500,Furniture and Fixtures,24000,24000,24000
+FixedAsset,1510,Office Equipment,18000,18500,19000
+FixedAsset,1520,Shop Equipment,35000,35000,36000
+FixedAsset,1530,Construction Equipment,0,0,0
+FixedAsset,1540,Vehicles,68000,68000,68000
+FixedAsset,1590,Accumulated Depreciation,-22000,-26500,-31000
+OtherAsset,1600,Investments,50000,50000,50000
+OtherAsset,1700,Right of Use Leases Asset,0,0,0
+OtherAsset,1800,Deposits and Other Assets,9000,9000,9000
+AccountsPayable,2000,Accounts Payable,31000,29000,33000
+CreditCard,2100,Credit Card Payable,9500,10200,9800
+OtherCurrentLiability,2200,Accrued Expenses,18000,19000,19500
+OtherCurrentLiability,2210,Payroll Liabilities,12500,13100,12800
+OtherCurrentLiability,2220,Sales Tax Payable,4200,4600,4800
+OtherCurrentLiability,2300,Contract Liabilities,0,0,0
+OtherCurrentLiability,2400,Line of Credit,75000,72000,69000
+LongTermLiability,2500,Term Loan,400000,395000,390000
+LongTermLiability,2600,Long Term Lease Liability,0,0,0
+Equity,3000,Owners Capital,125000,125000,125000
+Equity,3010,Owners Draw,12000,15000,18000
+Equity,3020,Common Stock,10000,10000,10000
+Equity,3030,Preferred Stock,0,0,0
+Equity,3040,Additional Paid In Capital,0,0,0
+Equity,3050,Treasury Stock,0,0,0
+Equity,3900,Retained Earnings,210000,218000,229000

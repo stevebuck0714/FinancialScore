@@ -39,6 +39,7 @@ const DETAIL_SNAPSHOT_ROW_CAP = 300;
 const PRIVATE_DAILY_CACHE_HEADERS = {
   'Cache-Control': 'private, max-age=300, stale-while-revalidate=1800',
 };
+const GENE_SOLUTIONS_COMPANY_ID = 'cmrc86g8l0001qhbkgcq6wrf9';
 
 let pulseCacheTablesPromise: Promise<void> | null = null;
 
@@ -382,6 +383,101 @@ function sourceNote(label: string, count: number): string {
   return `${label} available`;
 }
 
+function formatMoney(value: unknown): string {
+  return new Intl.NumberFormat('en-US', {
+    style: 'currency',
+    currency: 'USD',
+    maximumFractionDigits: 0,
+  }).format(asNumber(value));
+}
+
+function formatPercent(value: unknown): string {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return '0.0%';
+  return `${(n * 100).toFixed(1)}%`;
+}
+
+function formatPercentPoints(value: unknown): string {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return '0.0 pts';
+  const sign = n > 0 ? '+' : '';
+  return `${sign}${(n * 100).toFixed(1)} pts`;
+}
+
+function buildMockExecBriefingResponse(facts: any, sourceNotes: string[]): BriefingResponse {
+  const financials = facts?.financials || {};
+  const workingCapital = facts?.workingCapital || {};
+  const customers = facts?.customers || {};
+  const products = facts?.products || {};
+  const sections: BriefingSection[] = [];
+
+  const topTakeawayBullets = [
+    `Recent revenue is ${formatMoney(financials.recentRevenue)} versus ${formatMoney(financials.priorRevenue)}, a ${formatMoney(financials.revenueDelta)} change (${formatPercent(financials.revenueDeltaPct)}).`,
+    `Gross profit is ${formatMoney(financials.recentGrossProfit)} versus ${formatMoney(financials.priorGrossProfit)}, with gross margin at ${formatPercent(financials.grossMarginPct)} (${formatPercentPoints(financials.grossMarginDeltaPct)} versus the prior window).`,
+  ];
+  if (financials.latestCash || financials.balanceSheetAR || financials.balanceSheetAP) {
+    topTakeawayBullets.push(
+      `Latest cash is ${formatMoney(financials.latestCash)}, with balance sheet AR of ${formatMoney(financials.balanceSheetAR)} and AP of ${formatMoney(financials.balanceSheetAP)}.`
+    );
+  }
+  sections.push({ title: 'Top Takeaway', bullets: topTakeawayBullets });
+
+  const workingCapitalBullets: string[] = [];
+  if (workingCapital.arAging) {
+    workingCapitalBullets.push(
+      `AR aging shows ${formatMoney(workingCapital.arAging.over30)} over 30 days (${formatPercent(workingCapital.arAging.over30Pct)}) and ${formatMoney(workingCapital.arAging.over60)} over 60 days (${formatPercent(workingCapital.arAging.over60Pct)}).`
+    );
+  }
+  if (workingCapital.apAging) {
+    workingCapitalBullets.push(
+      `AP aging shows ${formatMoney(workingCapital.apAging.over30)} over 30 days (${formatPercent(workingCapital.apAging.over30Pct)}) and ${formatMoney(workingCapital.apAging.over60)} over 60 days (${formatPercent(workingCapital.apAging.over60Pct)}).`
+    );
+  }
+  if (workingCapitalBullets.length) {
+    sections.push({ title: 'Working Capital', bullets: workingCapitalBullets });
+  }
+
+  const operatingBullets: string[] = [];
+  if (customers.topCustomers?.length) {
+    const topCustomer = customers.topCustomers[0];
+    operatingBullets.push(
+      `${topCustomer.name} is the largest recent customer exposure at ${formatMoney(topCustomer.recentRevenue)} of revenue (${formatPercent(topCustomer.revenueShare)} of the customer snapshot).`
+    );
+  }
+  if (products.topMarginWatch?.length) {
+    const topProduct = products.topMarginWatch[0];
+    operatingBullets.push(
+      `${topProduct.name} has the largest product/service margin watch item, with gross profit moving ${formatMoney(topProduct.grossProfitDelta)} and margin moving ${formatPercentPoints(topProduct.marginPctDelta)}; likely driver is ${topProduct.likelyDriver}.`
+    );
+  }
+  if (operatingBullets.length) {
+    sections.push({ title: 'Operating Watch Items', bullets: operatingBullets });
+  }
+
+  if (facts?.dataCoverage) {
+    sections.push({
+      title: 'Data Coverage',
+      bullets: [
+        `Mock briefing uses available financial, cash, AR, AP, customer sales, product/service sales, and benchmark data for ${facts.company?.name || 'this company'}.`,
+      ],
+    });
+  }
+
+  return {
+    generatedAt: new Date().toISOString(),
+    aiGenerated: false,
+    sections: sections.length
+      ? sections
+      : [
+          {
+            title: 'No Material Exceptions',
+            bullets: ['No material exceptions were identified in the available mock financial and sector operating data for today.'],
+          },
+        ],
+    sourceNotes,
+  };
+}
+
 function isStoredArApAlert(alert: any): boolean {
   const text = `${alert?.source || ''} ${alert?.bucket || ''} ${alert?.title || ''} ${alert?.detail || ''}`;
   return /\b(AR|AP|accounts receivable|accounts payable|receivable|payable)\b/i.test(text);
@@ -684,9 +780,22 @@ export async function GET(request: NextRequest) {
     monthlyStartDate.setMonth(monthlyStartDate.getMonth() - MONTHLY_BRIEFING_LOOKBACK_MONTHS);
     const cacheKey = todayCacheKey(companyId);
     const cacheDate = cacheKey.split(':').pop() || new Date().toISOString().slice(0, 10);
+    const company = await prisma.company.findUnique({
+      where: { id: companyId },
+      select: {
+        id: true,
+        name: true,
+        accountingSystem: true,
+        industrySector: true,
+        industrySectorCategory: true,
+        forceOperationalMockData: true,
+      },
+    } as any);
+    const shouldUseGeneSolutionsMockBriefing =
+      companyId === GENE_SOLUTIONS_COMPANY_ID && company?.forceOperationalMockData === true;
     await ensurePulseCacheTables();
     const latestCacheKey = `${cacheKey}:latest`;
-    if (!forceRefresh) {
+    if (!forceRefresh && !shouldUseGeneSolutionsMockBriefing) {
       const cached = dailyBriefingCache.get(latestCacheKey);
       if (cached) return NextResponse.json(cached, { headers: PRIVATE_DAILY_CACHE_HEADERS });
       const persistedLatest = await readLatestBriefingCache(companyId, cacheDate);
@@ -695,10 +804,6 @@ export async function GET(request: NextRequest) {
         return NextResponse.json(persistedLatest, { headers: PRIVATE_DAILY_CACHE_HEADERS });
       }
     }
-    const company = await prisma.company.findUnique({
-      where: { id: companyId },
-      select: { id: true, name: true, accountingSystem: true, industrySector: true, industrySectorCategory: true },
-    } as any);
     const isQuickBooksCompany = ['QUICKBOOKS', 'QUICKBOOKS_DESKTOP', 'QUICKBOOKS_ENTERPRISE'].includes(
       String(company?.accountingSystem || '').trim().toUpperCase()
     );
@@ -726,7 +831,7 @@ export async function GET(request: NextRequest) {
     const dataVersion = await buildPulseDataVersion(companyId, startDate, monthlyStartDate, moduleProfile);
     const versionedCacheKey = `${cacheKey}:${dataVersion.slice(0, 12)}`;
 
-    if (!forceRefresh) {
+    if (!forceRefresh && !shouldUseGeneSolutionsMockBriefing) {
       const cached = dailyBriefingCache.get(versionedCacheKey);
       if (cached) return NextResponse.json(cached, { headers: PRIVATE_DAILY_CACHE_HEADERS });
       const persistedCached = await readBriefingCache(companyId, cacheDate, dataVersion);
@@ -1047,6 +1152,16 @@ export async function GET(request: NextRequest) {
     await writeDailySummary(companyId, cacheDate, dataVersion, facts, sourceNotes).catch((summaryError) => {
       console.warn('Pulse daily summary cache write failed:', summaryError);
     });
+    }
+
+    if (shouldUseGeneSolutionsMockBriefing) {
+      const response = buildMockExecBriefingResponse(facts, sourceNotes);
+      dailyBriefingCache.set(`${cacheKey}:latest`, response);
+      dailyBriefingCache.set(versionedCacheKey, response);
+      await writeBriefingCache(companyId, cacheDate, dataVersion, response).catch((cacheError) => {
+        console.warn('Pulse mock exec briefing cache write failed:', cacheError);
+      });
+      return NextResponse.json(response, { headers: PRIVATE_DAILY_CACHE_HEADERS });
     }
 
     if (getAiTransport() === 'unconfigured') {

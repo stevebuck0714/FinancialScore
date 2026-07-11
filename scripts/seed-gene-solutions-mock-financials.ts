@@ -118,11 +118,9 @@ function daysInYear(year: number): number {
 
 function seasonality(date: Date): number {
   const month = date.getUTCMonth();
-  const factors = [0.92, 0.94, 0.98, 1.0, 1.02, 1.05, 1.08, 1.06, 1.04, 1.08, 1.1, 1.16];
-  const weekday = date.getUTCDay();
-  const weekdayFactor = weekday === 0 ? 0.62 : weekday === 6 ? 0.72 : 1.07;
-  const wave = 1 + Math.sin((date.getTime() / 86_400_000) / 23) * 0.035;
-  return factors[month] * weekdayFactor * wave;
+  const factors = [0.96, 0.97, 0.99, 1.0, 1.01, 1.025, 1.035, 1.03, 1.02, 1.035, 1.045, 1.06];
+  const wave = 1 + Math.sin((date.getTime() / 86_400_000) / 23) * 0.008;
+  return factors[month] * wave;
 }
 
 function allocate(amount: number, parts: Array<{ name: string; share: number }>): Record<string, number> {
@@ -140,6 +138,9 @@ function buildDailyRows(startDate: Date, endDate: Date, sourceRunId: string): Da
   const rows: DailyRow[] = [];
 
   for (let cursor = startDate; cursor <= endDate; cursor = addDays(cursor, 1)) {
+    const weekday = cursor.getUTCDay();
+    if (weekday === 0 || weekday === 6) continue;
+
     const year = cursor.getUTCFullYear();
     const annualTarget = annualRevenueTarget(year);
     const baseDailyRevenue = annualTarget / daysInYear(year);

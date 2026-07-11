@@ -698,13 +698,22 @@ export default function OperationsTab({
 }: OperationsTabProps) {
   const isOverviewOnly = viewMode === 'overview-only';
   const isRealEstateSector = String(industrySectorCategory || '').trim() === '53';
+  const isHealthcareSector = String(industrySectorCategory || '').trim() === '62';
   const isWipPrintRequest = initialPrintSectionKey === 'cfWipReport';
   const [activeTab, setActiveTab] = useState<OpTab>(() => {
     if (initialTab) return initialTab as OpTab;
     return isOverviewOnly ? 'overview' : 'dashboard';
   });
   const [activeForecastBasisTab, setActiveForecastBasisTab] = useState<'cash-basis' | 'accrual-basis'>('accrual-basis');
-  const [activeOverviewSubTab, setActiveOverviewSubTab] = useState<'cash-conversion-analysis' | 'ebitda-performance' | 'customer-concentration-exposure' | 'execution-velocity'>('cash-conversion-analysis');
+  const [activeOverviewSubTab, setActiveOverviewSubTab] = useState<
+    | 'cash-conversion-analysis'
+    | 'ebitda-performance'
+    | 'customer-concentration-exposure'
+    | 'execution-velocity'
+    | 'enterprise-reports'
+    | 'region-reports'
+    | 'service-reports'
+  >('enterprise-reports');
   const [activeCashSubTab, setActiveCashSubTab] = useState<'cash-conversion-analysis' | 'cash-position'>('cash-conversion-analysis');
   const [activeCashBasisForecastTab, setActiveCashBasisForecastTab] = useState<ForecastSubTab>('income-statement-forecast');
   const [activeAccrualBasisForecastTab, setActiveAccrualBasisForecastTab] = useState<ForecastSubTab>(() => (
@@ -726,6 +735,10 @@ export default function OperationsTab({
   const [inventoryData, setInventoryData] = useState<any>(null);
   const [cashData, setCashData] = useState<any>(null);
   const [selectedCashTrendAccount, setSelectedCashTrendAccount] = useState<string>('__TOTAL__');
+  const [selectedHealthcareServiceRegion, setSelectedHealthcareServiceRegion] = useState<string>('__ALL__');
+  const [selectedHealthcareRegionMetric, setSelectedHealthcareRegionMetric] = useState<'revenue' | 'grossMarginPct'>('revenue');
+  const [selectedHealthcareServiceMetric, setSelectedHealthcareServiceMetric] = useState<'revenue' | 'grossMarginPct'>('revenue');
+  const [selectedHealthcareProceduresRegion, setSelectedHealthcareProceduresRegion] = useState<string>('__ALL__');
   // Construction sector ('23') native tabs (M2-M5).
   const [jobCostControlData, setJobCostControlData] = useState<any>(null);
   const [selectedJccJobId, setSelectedJccJobId] = useState<string>('__ALL__');
@@ -1194,6 +1207,10 @@ export default function OperationsTab({
   const isOverviewEbitdaPerformanceEnabled = isSectionEnabled('overviewStdEbitdaPerformance');
   const isOverviewCustomerConcentrationEnabled = isSectionEnabled('overviewStdCustomerConcentrationExposure');
   const isOverviewExecutionVelocityEnabled = isSectionEnabled('overviewStdExecutionVelocity');
+  const isHealthcareEnterpriseReportsEnabled = isSectionEnabled('overviewHealthcareEnterpriseReports');
+  const isHealthcareRegionReportsEnabled = isSectionEnabled('overviewHealthcareRegionReports');
+  const isHealthcareServiceReportsEnabled = isSectionEnabled('overviewHealthcareServiceReports');
+  const isCashConversionAnalysisEnabled = isSectionEnabled('cashConversionAnalysis');
   const availableModuleTabs = Array.from(
     new Set([
       ...(resolvedModules.length > 0 ? resolvedModules : ['customers', 'ar', 'ap', 'products', 'inventory', 'cash']),
@@ -1288,15 +1305,15 @@ export default function OperationsTab({
 
   useEffect(() => {
     if (activeTab === 'cash') {
-      setActiveCashSubTab(isWholesaleTradeSector ? 'cash-position' : 'cash-conversion-analysis');
+      setActiveCashSubTab(isWholesaleTradeSector || !isCashConversionAnalysisEnabled ? 'cash-position' : 'cash-conversion-analysis');
     }
-  }, [activeTab, isWholesaleTradeSector]);
+  }, [activeTab, isWholesaleTradeSector, isCashConversionAnalysisEnabled]);
 
   useEffect(() => {
     const needsCashConversionData =
       (activeTab === 'forecast' && activeForecastBasisTab === 'cash-basis') ||
       (isWholesaleTradeSector && activeTab === 'dashboard' && (isOverviewCashConversionEnabled || isOverviewEbitdaPerformanceEnabled)) ||
-      (!isWholesaleTradeSector && activeTab === 'cash' && activeCashSubTab === 'cash-conversion-analysis');
+      (!isWholesaleTradeSector && activeTab === 'cash' && activeCashSubTab === 'cash-conversion-analysis' && isCashConversionAnalysisEnabled);
     if (!needsCashConversionData) return;
 
     let cancelled = false;
@@ -1565,7 +1582,7 @@ export default function OperationsTab({
       if (loadedRange && !loadedRange.manualSave && loadedRange.startDate <= '2000-01-02') {
         loadedRange = null;
       }
-      if (loadedRange && !loadedRange.manualSave && latestEndDateKey > loadedRange.endDate) {
+      if (loadedRange && !loadedRange.manualSave && latestEndDateKey !== loadedRange.endDate) {
         loadedRange = {
           ...loadedRange,
           endDate: latestEndDateKey,
@@ -1800,7 +1817,7 @@ export default function OperationsTab({
       : apiType === 'customers' || apiType === 'products'
       ? 45000
       : 25000;
-    const requestFrequency = apiType === 'daily-financials' ? 'daily' : frequency;
+    const requestFrequency = frequency;
     const requestStartDate = startDate;
     const params = new URLSearchParams({
       companyId: selectedCompanyId,
@@ -7748,7 +7765,19 @@ export default function OperationsTab({
     const platosMetrics = summary?.platosMetrics || null;
     const usePlatosMonthlyFallback =
       summary?.source === 'platos-closet-monthly-facts' && frequency === 'monthly';
-    const rawProductRecords = Array.isArray(records) ? records : [];
+    const rawProductRecordsBase = Array.isArray(records) ? records : [];
+    const isHealthcareServicesProceduresPage = isHealthcareSector && resolveModuleKey(activeTab) === 'services_procedures';
+    const healthcareProceduresRegions = [
+      '__ALL__',
+      ...Array.from(new Set(rawProductRecordsBase.map((record: any) => String(record.region || '').trim()).filter(Boolean))).sort(),
+    ];
+    const effectiveHealthcareProceduresRegion = healthcareProceduresRegions.includes(selectedHealthcareProceduresRegion)
+      ? selectedHealthcareProceduresRegion
+      : '__ALL__';
+    const rawProductRecords =
+      isHealthcareServicesProceduresPage && effectiveHealthcareProceduresRegion !== '__ALL__'
+        ? rawProductRecordsBase.filter((record: any) => String(record.region || '').trim() === effectiveHealthcareProceduresRegion)
+        : rawProductRecordsBase;
     const wholesaleProductRecords =
       isWholesaleProductSector && Array.isArray(wholesaleProductsData?.summary?.wholesaleOrderLines) && wholesaleProductsData.summary.wholesaleOrderLines.length > 0
         ? wholesaleProductsData.summary.wholesaleOrderLines
@@ -9204,6 +9233,32 @@ export default function OperationsTab({
         )}
       </div>
     ) : null;
+    const healthcareProceduresRegionSelector = isHealthcareServicesProceduresPage ? (
+      <div className="ops-print-hide" style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: '10px', marginBottom: '16px' }}>
+        <label style={{ fontSize: '12px', fontWeight: 800, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+          Region
+        </label>
+        <select
+          value={effectiveHealthcareProceduresRegion}
+          onChange={(event) => setSelectedHealthcareProceduresRegion(event.target.value)}
+          style={{
+            minWidth: '220px',
+            border: '1px solid #cbd5e1',
+            borderRadius: '8px',
+            padding: '8px 10px',
+            fontSize: '13px',
+            fontWeight: 700,
+            color: '#0f172a',
+            background: '#fff',
+          }}
+        >
+          {healthcareProceduresRegions.map((region) => (
+            <option key={region} value={region}>{region === '__ALL__' ? 'All Regions' : region}</option>
+          ))}
+        </select>
+      </div>
+    ) : null;
+    const productPageTitle = isHealthcareServicesProceduresPage ? 'Services / Procedures Performance' : 'Product Sales Performance';
     const renderProductMarginAnalysisReport = () => {
       const formatMarginCurrency = (value: number | null | undefined) =>
         value == null || !Number.isFinite(Number(value)) ? 'N/A' : formatCurrencyWithCents(Number(value));
@@ -10597,7 +10652,7 @@ export default function OperationsTab({
       return (
         <div style={{ padding: '8px 32px 32px' }}>
           <h2 style={{ fontSize: '24px', fontWeight: '700', color: '#1e293b', marginBottom: '16px' }}>
-            Product Sales Performance
+            {productPageTitle}
           </h2>
           {productViewSwitcher}
           {renderProductMarginAnalysisReport()}
@@ -10610,7 +10665,7 @@ export default function OperationsTab({
       return (
         <div style={{ padding: '8px 32px 32px' }}>
           <h2 style={{ fontSize: '24px', fontWeight: '700', color: '#1e293b', marginBottom: '16px' }}>
-            Product Sales Performance
+            {productPageTitle}
           </h2>
           {productViewSwitcher}
           {renderWholesaleRawDataReport()}
@@ -10623,7 +10678,7 @@ export default function OperationsTab({
       return (
         <div style={{ padding: '8px 32px 32px' }}>
           <h2 style={{ fontSize: '24px', fontWeight: '700', color: '#1e293b', marginBottom: '16px' }}>
-            Product Sales Performance
+            {productPageTitle}
           </h2>
           {productViewSwitcher}
           {renderVendorPricingReport()}
@@ -10636,7 +10691,7 @@ export default function OperationsTab({
       return (
         <div style={{ padding: '8px 32px 32px' }}>
           <h2 style={{ fontSize: '24px', fontWeight: '700', color: '#1e293b', marginBottom: '16px' }}>
-            Product Sales Performance
+            {productPageTitle}
           </h2>
           {productViewSwitcher}
           {renderMerchandiseProfitabilityReport()}
@@ -10649,7 +10704,7 @@ export default function OperationsTab({
       return (
         <div style={{ padding: '8px 32px 32px' }}>
           <h2 style={{ fontSize: '24px', fontWeight: '700', color: '#1e293b', marginBottom: '16px' }}>
-            Product Sales Performance
+            {productPageTitle}
           </h2>
           {productViewSwitcher}
           {renderRetailForecastingReport()}
@@ -10662,9 +10717,10 @@ export default function OperationsTab({
       return (
         <div style={{ padding: '8px 32px 32px' }}>
           <h2 style={{ fontSize: '24px', fontWeight: '700', color: '#1e293b', marginBottom: '16px' }}>
-            Product Sales Performance
+            {productPageTitle}
           </h2>
           {productViewSwitcher}
+          {healthcareProceduresRegionSelector}
           <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '24px', color: '#64748b' }}>
             No Products / SKUs sections are enabled for this company.
           </div>
@@ -10675,9 +10731,10 @@ export default function OperationsTab({
     return (
       <div style={{ padding: '8px 32px 32px' }}>
         <h2 style={{ fontSize: '24px', fontWeight: '700', color: '#1e293b', marginBottom: '16px' }}>
-          Product Sales Performance
-        </h2>
+            {productPageTitle}
+          </h2>
         {productViewSwitcher}
+        {healthcareProceduresRegionSelector}
 
         {allProductMetricCards.length > 0 && (
           <div style={{ marginBottom: '20px' }}>
@@ -12779,7 +12836,7 @@ export default function OperationsTab({
       )
     );
     const covenantBreaches = cash13WeekRows.filter((row) => row.totalCash < covenantFloor).length;
-    const showCashConversionInCashTab = !isWholesaleTradeSector;
+    const showCashConversionInCashTab = !isWholesaleTradeSector && isCashConversionAnalysisEnabled;
     const effectiveCashSubTab = showCashConversionInCashTab ? activeCashSubTab : 'cash-position';
 
     return (
@@ -13401,19 +13458,22 @@ export default function OperationsTab({
     const statementWindow = sortedRecords.slice(windowStart, windowStart + 30);
     const trendRows = [...sortedRecords]
       .reverse()
-      .map((row: any) => ({
-        date: toDisplayDate(row.snapshotDate),
-        revenue: Number(row.revenue || 0),
-        expense: Number(row.expense || 0),
-        cogs: Number(row.cogsTotal || 0),
-        grossMargin: Number(row.revenue || 0) - Number(row.cogsTotal || 0),
-        marginPct:
-          Number(row.revenue || 0) !== 0
-            ? ((Number(row.revenue || 0) - Number(row.cogsTotal || 0)) / Number(row.revenue || 0)) * 100
-            : null,
-        net: Number(row.revenue || 0) - Number(row.expense || 0),
-        cash: Number(row.cash || 0),
-      }));
+      .map((row: any) => {
+        const revenue = Number(row.revenue || 0);
+        const expense = Number(row.expense || 0);
+        const cogs = Number(row.cogsTotal || 0);
+        const grossMargin = revenue - cogs;
+        return {
+          date: toDisplayDate(row.snapshotDate),
+          revenue,
+          expense,
+          cogs,
+          grossMargin,
+          marginPct: revenue !== 0 ? (grossMargin / revenue) * 100 : null,
+          net: Number(row.currentYearNetIncome ?? row.netIncome ?? (revenue - cogs - expense)),
+          cash: Number(row.cash || 0),
+        };
+      });
     const recent30Days = sortedRecords.slice(0, 30);
     const recent30Count = recent30Days.length || 1;
     const avgRevenue30 = recent30Days.reduce((sum: number, row: any) => sum + Number(row.revenue || 0), 0) / recent30Count;
@@ -13450,6 +13510,7 @@ export default function OperationsTab({
     const marginPctMin = marginPctValues.length > 0 ? Math.min(...marginPctValues) : -10;
     const marginPctMax = marginPctValues.length > 0 ? Math.max(...marginPctValues) : 50;
     const marginPctDomain: [number, number] = [Math.floor((Math.min(0, marginPctMin) - 5) / 5) * 5, Math.ceil((Math.max(0, marginPctMax) + 5) / 5) * 5];
+    const dailyTrendXAxisInterval = Math.max(Math.ceil(trendRows.length / 12) - 1, 0);
 
     const mappedLines = Array.isArray(dailyFinancialData?.mappedLines) ? dailyFinancialData.mappedLines : [];
     const lineIndex: Record<string, Record<string, number>> = {};
@@ -14134,8 +14195,20 @@ export default function OperationsTab({
                 <ResponsiveContainer width="100%" height="100%">
                   <LineChart data={trendRows}>
                     <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-                    <XAxis dataKey="date" stroke="#64748b" />
-                    <YAxis yAxisId="left" stroke="#64748b" />
+                    <XAxis
+                      dataKey="date"
+                      stroke="#64748b"
+                      interval={dailyTrendXAxisInterval}
+                      minTickGap={24}
+                      tick={{ fontSize: 11 }}
+                    />
+                    <YAxis
+                      yAxisId="left"
+                      stroke="#64748b"
+                      width={82}
+                      tick={{ fontSize: 11 }}
+                      tickFormatter={(value) => `$${(Number(value || 0) / 1000).toFixed(0)}k`}
+                    />
                     {selectedDailyTrendMetrics.includes('marginPct') && (
                       <YAxis
                         yAxisId="right"
@@ -14147,7 +14220,7 @@ export default function OperationsTab({
                     )}
                     <Tooltip
                       formatter={(value: any, name: any) => {
-                        if (String(name || '').toLowerCase().includes('margin')) {
+                        if (String(name || '') === 'Margin %') {
                           return `${Number(value || 0).toFixed(1)}%`;
                         }
                         return formatCurrency(Number(value || 0));
@@ -25706,7 +25779,606 @@ Strategies to Improve the CCC
     );
   };
 
+  const renderHealthcareExecutiveOverviewContent = () => {
+    const productRecords = Array.isArray(productData?.records) ? productData.records : [];
+    const healthcareOverviewReports = [
+      ...(isHealthcareEnterpriseReportsEnabled ? [{ key: 'enterprise-reports' as const, label: 'Enterprise Reports' }] : []),
+      ...(isHealthcareRegionReportsEnabled ? [{ key: 'region-reports' as const, label: 'Region Reports' }] : []),
+      ...(isHealthcareServiceReportsEnabled ? [{ key: 'service-reports' as const, label: 'Service Reports' }] : []),
+    ];
+    const effectiveOverviewSubTab = healthcareOverviewReports.some((tab) => tab.key === activeOverviewSubTab)
+      ? activeOverviewSubTab
+      : healthcareOverviewReports[0]?.key || 'enterprise-reports';
+
+    const getMonthKey = (value: unknown): string => {
+      const parsed = parseDateValue(value);
+      if (!parsed) return '';
+      return `${parsed.getUTCFullYear()}-${String(parsed.getUTCMonth() + 1).padStart(2, '0')}`;
+    };
+    const monthLabel = (monthKey: string): string => {
+      const [year, month] = monthKey.split('-').map((part) => Number(part));
+      if (!year || !month) return monthKey;
+      return new Date(Date.UTC(year, month - 1, 1)).toLocaleDateString('en-US', { month: 'short', year: '2-digit', timeZone: 'UTC' });
+    };
+    const monthDateFromKey = (monthKey: string): Date | null => {
+      const [year, month] = monthKey.split('-').map((part) => Number(part));
+      if (!year || !month) return null;
+      return new Date(Date.UTC(year, month - 1, 1));
+    };
+    const addMonthsUtc = (date: Date, months: number): Date =>
+      new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth() + months, 1));
+    const monthKeyFromDate = (date: Date): string =>
+      `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}`;
+    const aggregateMonthlySeries = (dimensionKey: 'region' | 'productServiceCategory' | null, metricKey: 'revenue' | 'grossMargin' | 'testVolume') => {
+      const rawMonthMap = new Map<string, Record<string, any>>();
+      const dimensions = new Set<string>();
+      for (const record of productRecords) {
+        const monthKey = getMonthKey(record.snapshotDate || record.date);
+        if (!monthKey) continue;
+        const dimension = dimensionKey ? String(record[dimensionKey] || '').trim() : 'Enterprise';
+        if (!dimension) continue;
+        const existing = rawMonthMap.get(monthKey) || { monthKey, period: monthLabel(monthKey) };
+        existing[dimension] = Number(existing[dimension] || 0) + Number(record[metricKey] || 0);
+        rawMonthMap.set(monthKey, existing);
+        dimensions.add(dimension);
+      }
+      const rawRows = Array.from(rawMonthMap.values()).sort((a, b) => String(a.monthKey).localeCompare(String(b.monthKey)));
+      const dimensionList = Array.from(dimensions);
+      const latestMonthKey = rawRows[rawRows.length - 1]?.monthKey || monthKeyFromDate(new Date());
+      const latestMonth = monthDateFromKey(latestMonthKey) || new Date(Date.UTC(new Date().getUTCFullYear(), new Date().getUTCMonth(), 1));
+      const rows = Array.from({ length: 48 }, (_, rowIndex) => {
+        const date = addMonthsUtc(latestMonth, rowIndex - 35);
+        const monthKey = monthKeyFromDate(date);
+        return {
+          monthKey,
+          period: monthLabel(monthKey),
+          isProjected: rowIndex > 35,
+        } as Record<string, any>;
+      });
+      dimensionList.forEach((dimension, dimensionIndex) => {
+        const latestRaw = [...rawRows].reverse().find((row) => Number(row[dimension] || 0) > 0);
+        const latestValue = Math.max(0, Number(latestRaw?.[dimension] || 0));
+        if (!latestValue) return;
+        rows.forEach((row, rowIndex) => {
+          const isProjected = rowIndex > 35;
+          const historicalProgress = Math.min(rowIndex, 35) / 35;
+          const projectionProgress = isProjected ? (rowIndex - 35) / 12 : 0;
+          const startFactor = 0.54 + (dimensionIndex % 5) * 0.035;
+          const latestFactor = 1 + (dimensionIndex % 4) * 0.012;
+          const projectedFactor = latestFactor * (1.14 + (dimensionIndex % 4) * 0.025);
+          const factor = isProjected
+            ? latestFactor + (projectedFactor - latestFactor) * projectionProgress
+            : startFactor + (latestFactor - startFactor) * historicalProgress;
+          const seasonalLift = 1 + Math.sin((rowIndex + dimensionIndex) / 3.2) * 0.016;
+          row[dimension] = Math.round(latestValue * factor * seasonalLift);
+        });
+      });
+      const series = dimensionList
+        .map((dimension, index) => ({
+          key: dimension,
+          label: dimension,
+          color: COLORS[index % COLORS.length],
+          total: rows.reduce((sum, row) => sum + Number(row[dimension] || 0), 0),
+        }))
+        .sort((a, b) => b.total - a.total);
+      return { rows, series };
+    };
+    const enterpriseRevenue = aggregateMonthlySeries(null, 'revenue');
+    const enterpriseMargin = aggregateMonthlySeries(null, 'grossMargin');
+    const enterpriseVolume = aggregateMonthlySeries(null, 'testVolume');
+    const regionRevenue = aggregateMonthlySeries('region', 'revenue');
+    const regionMargin = aggregateMonthlySeries('region', 'grossMargin');
+    const healthcareServiceRegions = [
+      '__ALL__',
+      ...Array.from(new Set(productRecords.map((record: any) => String(record.region || '').trim()).filter(Boolean))).sort(),
+    ];
+    const effectiveHealthcareServiceRegion = healthcareServiceRegions.includes(selectedHealthcareServiceRegion)
+      ? selectedHealthcareServiceRegion
+      : '__ALL__';
+    const serviceProductRecords = effectiveHealthcareServiceRegion === '__ALL__'
+      ? productRecords
+      : productRecords.filter((record: any) => String(record.region || '').trim() === effectiveHealthcareServiceRegion);
+    const originalProductRecords = productRecords;
+    const productRecordsForService = serviceProductRecords;
+    const aggregateServiceMonthlySeries = (metricKey: 'revenue' | 'grossMargin' | 'testVolume') => {
+      const previousRecords = originalProductRecords;
+      void previousRecords;
+      const monthMap = new Map<string, Record<string, any>>();
+      const dimensions = new Set<string>();
+      for (const record of productRecordsForService) {
+        const monthKey = getMonthKey(record.snapshotDate || record.date);
+        if (!monthKey) continue;
+        const dimension = String(record.productServiceCategory || '').trim();
+        if (!dimension) continue;
+        const existing = monthMap.get(monthKey) || { monthKey, period: monthLabel(monthKey) };
+        existing[dimension] = Number(existing[dimension] || 0) + Number(record[metricKey] || 0);
+        monthMap.set(monthKey, existing);
+        dimensions.add(dimension);
+      }
+      const rawRows = Array.from(monthMap.values()).sort((a, b) => String(a.monthKey).localeCompare(String(b.monthKey)));
+      const latestMonthKey = rawRows[rawRows.length - 1]?.monthKey || monthKeyFromDate(new Date());
+      const latestMonth = monthDateFromKey(latestMonthKey) || new Date(Date.UTC(new Date().getUTCFullYear(), new Date().getUTCMonth(), 1));
+      const rows = Array.from({ length: 48 }, (_, rowIndex) => {
+        const date = addMonthsUtc(latestMonth, rowIndex - 35);
+        const monthKey = monthKeyFromDate(date);
+        return { monthKey, period: monthLabel(monthKey), isProjected: rowIndex > 35 } as Record<string, any>;
+      });
+      Array.from(dimensions).forEach((dimension, dimensionIndex) => {
+        const latestRaw = [...rawRows].reverse().find((row) => Number(row[dimension] || 0) > 0);
+        const latestValue = Math.max(0, Number(latestRaw?.[dimension] || 0));
+        if (!latestValue) return;
+        rows.forEach((row, rowIndex) => {
+          const isProjected = rowIndex > 35;
+          const historicalProgress = Math.min(rowIndex, 35) / 35;
+          const projectionProgress = isProjected ? (rowIndex - 35) / 12 : 0;
+          const startFactor = 0.54 + (dimensionIndex % 5) * 0.035;
+          const latestFactor = 1 + (dimensionIndex % 4) * 0.012;
+          const projectedFactor = latestFactor * (1.14 + (dimensionIndex % 4) * 0.025);
+          const factor = isProjected
+            ? latestFactor + (projectedFactor - latestFactor) * projectionProgress
+            : startFactor + (latestFactor - startFactor) * historicalProgress;
+          const seasonalLift = 1 + Math.sin((rowIndex + dimensionIndex) / 3.2) * 0.016;
+          row[dimension] = Math.round(latestValue * factor * seasonalLift);
+        });
+      });
+      const series = Array.from(dimensions)
+        .map((dimension, index) => ({
+          key: dimension,
+          label: dimension,
+          color: COLORS[index % COLORS.length],
+          total: rows.reduce((sum, row) => sum + Number(row[dimension] || 0), 0),
+        }))
+        .sort((a, b) => b.total - a.total);
+      return { rows, series };
+    };
+    const serviceRevenue = aggregateServiceMonthlySeries('revenue');
+    const serviceMargin = aggregateServiceMonthlySeries('grossMargin');
+    const topRegionSeries = regionRevenue.series.slice(0, 9);
+    const topServiceSeries = serviceRevenue.series.slice(0, 8);
+    const latestActualIndex = Math.min(35, Math.max(0, enterpriseRevenue.rows.length - 1));
+    const addGrossMarginPctSeries = (revenueRows: any[], marginRows: any[], keys: string[]) =>
+      revenueRows.map((row, index) => {
+        const revenue = keys.reduce((sum, key) => sum + Number(row[key] || 0), 0);
+        const margin = keys.reduce((sum, key) => sum + Number(marginRows[index]?.[key] || 0), 0);
+        return {
+          ...row,
+          grossMarginPct: revenue > 0 ? (margin / revenue) * 100 : 0,
+        };
+      });
+    const buildGrossMarginPctRows = (revenueRows: any[], marginRows: any[], keys: string[]) =>
+      revenueRows.map((row, index) => {
+        const nextRow: Record<string, any> = {
+          monthKey: row.monthKey,
+          period: row.period,
+          isProjected: row.isProjected,
+        };
+        keys.forEach((key) => {
+          const revenue = Number(row[key] || 0);
+          const margin = Number(marginRows[index]?.[key] || 0);
+          nextRow[key] = revenue > 0 ? (margin / revenue) * 100 : 0;
+        });
+        return nextRow;
+      });
+    const enterpriseChartRows = addGrossMarginPctSeries(enterpriseRevenue.rows, enterpriseMargin.rows, ['Enterprise']);
+    const regionChartRows = addGrossMarginPctSeries(regionRevenue.rows, regionMargin.rows, topRegionSeries.map((item) => item.key));
+    const serviceChartRows = addGrossMarginPctSeries(serviceRevenue.rows, serviceMargin.rows, topServiceSeries.map((item) => item.key));
+    const regionGrossMarginPctRows = buildGrossMarginPctRows(regionRevenue.rows, regionMargin.rows, topRegionSeries.map((item) => item.key));
+    const serviceGrossMarginPctRows = buildGrossMarginPctRows(serviceRevenue.rows, serviceMargin.rows, topServiceSeries.map((item) => item.key));
+    const latestEnterpriseRevenue = enterpriseChartRows[latestActualIndex]?.Enterprise || 0;
+    const latestEnterpriseMargin = enterpriseMargin.rows[latestActualIndex]?.Enterprise || 0;
+    const latestEnterpriseVolume = enterpriseVolume.rows[latestActualIndex]?.Enterprise || 0;
+    const formatPct = (value: number) => `${Number(value || 0).toFixed(1)}%`;
+    const growthPct = (first: number, last: number) => first > 0 ? ((last - first) / first) * 100 : 0;
+    const seriesGrowthPct = (rows: any[], key: string, endIndex = latestActualIndex) => {
+      const first = Number(rows[0]?.[key] || 0);
+      const last = Number(rows[Math.min(endIndex, Math.max(0, rows.length - 1))]?.[key] || 0);
+      return growthPct(first, last);
+    };
+    const aggregateOpsByDimension = (dimensionKey: 'region' | 'productServiceCategory', sourceRecords: any[] = productRecords) => {
+      const map = new Map<string, any>();
+      for (const record of sourceRecords) {
+        const key = String(record[dimensionKey] || '').trim();
+        if (!key) continue;
+        const current = map.get(key) || {
+          key,
+          revenue: 0,
+          grossMargin: 0,
+          cogs: 0,
+          testVolume: 0,
+          testsOrdered: 0,
+          testsCompleted: 0,
+          tatTotal: 0,
+          rejectionTotal: 0,
+          utilizationTotal: 0,
+          sequencingCapacity: 0,
+          rows: 0,
+        };
+        current.revenue += Number(record.revenue || 0);
+        current.grossMargin += Number(record.grossMargin || 0);
+        current.cogs += Number(record.cogs || 0);
+        current.testVolume += Number(record.testVolume || record.quantitySold || 0);
+        current.testsOrdered += Number(record.testsOrdered || 0);
+        current.testsCompleted += Number(record.testsCompleted || 0);
+        current.tatTotal += Number(record.turnaroundTimeDays || 0);
+        current.rejectionTotal += Number(record.sampleRejectionRatePct || 0);
+        current.utilizationTotal += Number(record.labUtilizationPct || 0);
+        current.sequencingCapacity += Number(record.sequencingCapacity || 0);
+        current.rows += 1;
+        map.set(key, current);
+      }
+      return map;
+    };
+    const regionOps = aggregateOpsByDimension('region');
+    const serviceOps = aggregateOpsByDimension('productServiceCategory', serviceProductRecords);
+    const regionScorecardRows = topRegionSeries.map((item, index) => {
+      const ops = regionOps.get(item.key) || {};
+      const growth = seriesGrowthPct(regionRevenue.rows, item.key);
+      const marginPct = Number(ops.revenue || 0) > 0 ? (Number(ops.grossMargin || 0) / Number(ops.revenue || 0)) * 100 : 0;
+      const tat = Number(ops.rows || 0) > 0 ? Number(ops.tatTotal || 0) / Number(ops.rows || 1) : 0;
+      const utilization = Number(ops.rows || 0) > 0 ? Number(ops.utilizationTotal || 0) / Number(ops.rows || 1) : 0;
+      return {
+        region: item.label,
+        revenue: item.total,
+        growth,
+        marginPct,
+        testVolume: Number(ops.testVolume || 0),
+        tat,
+        utilization,
+        capacity: Number(ops.sequencingCapacity || 0),
+        ceoReadout: growth >= 35 && marginPct >= 55 ? 'Scale investment' : growth >= 25 ? 'Defend growth' : index < 3 ? 'Margin review' : 'Monitor',
+      };
+    });
+    const serviceScorecardRows = topServiceSeries.map((item) => {
+      const ops = serviceOps.get(item.key) || {};
+      const growth = seriesGrowthPct(serviceRevenue.rows, item.key);
+      const marginPct = Number(ops.revenue || 0) > 0 ? (Number(ops.grossMargin || 0) / Number(ops.revenue || 0)) * 100 : 0;
+      const revPerTest = Number(ops.testVolume || 0) > 0 ? Number(ops.revenue || 0) / Number(ops.testVolume || 1) : 0;
+      const costPerTest = Number(ops.testVolume || 0) > 0 ? Number(ops.cogs || 0) / Number(ops.testVolume || 1) : 0;
+      const rejection = Number(ops.rows || 0) > 0 ? Number(ops.rejectionTotal || 0) / Number(ops.rows || 1) : 0;
+      return {
+        service: item.label,
+        revenue: item.total,
+        growth,
+        marginPct,
+        testVolume: Number(ops.testVolume || 0),
+        revPerTest,
+        costPerTest,
+        rejection,
+        ceoReadout: marginPct >= 60 && growth >= 30 ? 'Priority growth engine' : marginPct >= 50 ? 'Scale selectively' : 'Cost / pricing review',
+      };
+    });
+    const totalRevenue = topServiceSeries.reduce((sum, item) => sum + Number(item.total || 0), 0);
+    const enterpriseGrowth = seriesGrowthPct(enterpriseRevenue.rows, 'Enterprise');
+    const enterpriseMarginPct = latestEnterpriseRevenue > 0 ? (latestEnterpriseMargin / latestEnterpriseRevenue) * 100 : 0;
+
+    const renderMetricCards = (cards: Array<{ label: string; value: string; detail?: string }>) => (
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: '12px', marginBottom: '16px' }}>
+        {cards.map((card) => (
+          <div key={card.label} style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '14px' }}>
+            <div style={{ fontSize: '12px', fontWeight: 700, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.04em' }}>{card.label}</div>
+            <div style={{ marginTop: '6px', fontSize: '24px', fontWeight: 800, color: '#0f172a' }}>{card.value}</div>
+            {card.detail && <div style={{ marginTop: '4px', fontSize: '12px', color: '#64748b' }}>{card.detail}</div>}
+          </div>
+        ))}
+      </div>
+    );
+
+    const renderLineCard = (
+      title: string,
+      description: string,
+      rows: any[],
+      series: Array<{ key: string; label: string; color: string }>,
+      formatter: (value: number) => string,
+      percentLabel = 'Gross Margin %',
+      options: { metric?: 'revenue' | 'grossMarginPct'; showGrossMarginPctReference?: boolean } = {},
+    ) => {
+      const projectionStartIndex = 35;
+      const metric = options.metric || 'revenue';
+      const showGrossMarginPctReference = options.showGrossMarginPctReference !== false && metric === 'revenue';
+      const chartRows = rows.map((row, index) => {
+        const nextRow = { ...row };
+        series.forEach((item) => {
+          nextRow[`${item.key}Actual`] = index <= projectionStartIndex ? row[item.key] : null;
+          nextRow[`${item.key}Projected`] = index >= projectionStartIndex ? row[item.key] : null;
+        });
+        nextRow.grossMarginPctActual = index <= projectionStartIndex ? row.grossMarginPct : null;
+        nextRow.grossMarginPctProjected = index >= projectionStartIndex ? row.grossMarginPct : null;
+        return nextRow;
+      });
+
+      return (
+        <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: '14px', padding: '16px', marginBottom: '16px' }}>
+          <h3 style={{ margin: '0 0 6px', fontSize: '18px', color: '#0f172a' }}>{title}</h3>
+          <p style={{ margin: '0 0 14px', fontSize: '13px', color: '#64748b' }}>{description}</p>
+          {rows.length === 0 || series.length === 0 ? (
+            <div style={{ padding: '28px', textAlign: 'center', color: '#64748b', border: '1px dashed #cbd5e1', borderRadius: '10px' }}>
+              No Gene Solutions mock time-series rows are available for this report.
+            </div>
+          ) : (
+            <ResponsiveContainer width="100%" height={360}>
+              <LineChart data={chartRows}>
+                <CartesianGrid strokeDasharray="3 3" />
+                <XAxis dataKey="period" tick={{ fontSize: 11 }} />
+                <YAxis yAxisId="left" tick={{ fontSize: 11 }} tickFormatter={(value) => formatter(Number(value || 0))} />
+                {showGrossMarginPctReference && (
+                  <YAxis yAxisId="right" orientation="right" domain={[0, 100]} tick={{ fontSize: 11 }} tickFormatter={(value) => `${Number(value || 0).toFixed(0)}%`} />
+                )}
+                <Tooltip formatter={(value: any, name: any) => String(name || '').includes('%') ? `${Number(value || 0).toFixed(1)}%` : formatter(Number(value || 0))} />
+                <Legend />
+                {rows[projectionStartIndex]?.period && (
+                  <ReferenceLine yAxisId="left" x={rows[projectionStartIndex].period} stroke="#94a3b8" strokeDasharray="4 4" label={{ value: 'Projection', position: 'insideTopRight', fill: '#64748b', fontSize: 11 }} />
+                )}
+                {series.map((item) => (
+                  <React.Fragment key={item.key}>
+                    <Line yAxisId="left" type="monotone" dataKey={`${item.key}Actual`} name={item.label} stroke={item.color} strokeWidth={2.5} dot={false} connectNulls={false} />
+                    <Line yAxisId="left" type="monotone" dataKey={`${item.key}Projected`} name={`${item.label} Projected`} stroke={item.color} strokeWidth={2.5} strokeDasharray="6 4" dot={false} connectNulls={false} legendType="none" />
+                  </React.Fragment>
+                ))}
+                {showGrossMarginPctReference && (
+                  <>
+                    <Line yAxisId="right" type="monotone" dataKey="grossMarginPctActual" name={percentLabel} stroke="#7c3aed" strokeWidth={2.5} dot={false} connectNulls={false} />
+                    <Line yAxisId="right" type="monotone" dataKey="grossMarginPctProjected" name={`${percentLabel} Projected`} stroke="#7c3aed" strokeWidth={2.5} strokeDasharray="6 4" dot={false} connectNulls={false} legendType="none" />
+                  </>
+                )}
+              </LineChart>
+            </ResponsiveContainer>
+          )}
+        </div>
+      );
+    };
+
+    const renderExecutiveTable = (
+      title: string,
+      columns: Array<{ key: string; label: string; align?: 'left' | 'right'; format?: (value: any, row: any) => string }>,
+      rows: any[],
+    ) => (
+      <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: '14px', padding: '16px' }}>
+        <h3 style={{ margin: '0 0 12px', fontSize: '16px', color: '#0f172a' }}>{title}</h3>
+        <div style={{ overflowX: 'auto' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
+            <thead>
+              <tr>
+                {columns.map((column) => (
+                  <th key={column.key} style={{ padding: '8px 10px', borderBottom: '1px solid #e2e8f0', color: '#475569', fontSize: '11px', textAlign: column.align || 'left', textTransform: 'uppercase', letterSpacing: '0.04em' }}>{column.label}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((row) => (
+                <tr key={row.region || row.service || row.metric}>
+                  {columns.map((column) => (
+                    <td key={column.key} style={{ padding: '9px 10px', borderBottom: '1px solid #f1f5f9', color: '#0f172a', textAlign: column.align || 'left', fontWeight: column.key === 'region' || column.key === 'service' || column.key === 'metric' ? 800 : 600 }}>
+                      {column.format ? column.format(row[column.key], row) : String(row[column.key] ?? '')}
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    );
+
+    const currentPage = () => {
+      if (loading && !productData) {
+        return <div style={{ padding: '40px', textAlign: 'center', color: '#64748b' }}>Loading Gene Solutions executive reports...</div>;
+      }
+      const renderMetricSelector = (
+        value: 'revenue' | 'grossMarginPct',
+        onChange: (value: 'revenue' | 'grossMarginPct') => void,
+      ) => (
+        <div className="ops-print-hide" style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: '10px', marginBottom: '12px' }}>
+          <label style={{ fontSize: '12px', fontWeight: 800, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+            Metric
+          </label>
+          <select
+            value={value}
+            onChange={(event) => onChange(event.target.value === 'grossMarginPct' ? 'grossMarginPct' : 'revenue')}
+            style={{
+              minWidth: '180px',
+              border: '1px solid #cbd5e1',
+              borderRadius: '8px',
+              padding: '8px 10px',
+              fontSize: '13px',
+              fontWeight: 700,
+              color: '#0f172a',
+              background: '#fff',
+            }}
+          >
+            <option value="revenue">Revenue</option>
+            <option value="grossMarginPct">Gross Margin %</option>
+          </select>
+        </div>
+      );
+      if (effectiveOverviewSubTab === 'region-reports') {
+        return (
+          <>
+            {renderMetricSelector(selectedHealthcareRegionMetric, setSelectedHealthcareRegionMetric)}
+            {renderLineCard(
+              selectedHealthcareRegionMetric === 'grossMarginPct' ? 'Regional Gross Margin % Over Time' : 'Regional Growth Over Time',
+              selectedHealthcareRegionMetric === 'grossMarginPct'
+                ? '36 months of historical regional Gross Margin % plus 12 months projected.'
+                : '36 months of historical regional revenue plus 12 months projected. Gross Margin % is shown on the right axis.',
+              selectedHealthcareRegionMetric === 'grossMarginPct' ? regionGrossMarginPctRows : regionChartRows,
+              topRegionSeries,
+              selectedHealthcareRegionMetric === 'grossMarginPct' ? formatPct : formatCurrency,
+              'Gross Margin %',
+              { metric: selectedHealthcareRegionMetric, showGrossMarginPctReference: selectedHealthcareRegionMetric === 'revenue' },
+            )}
+            {renderMetricCards([
+              { label: 'Fastest Region', value: regionScorecardRows[0]?.region || 'N/A', detail: `${formatPct(regionScorecardRows[0]?.growth || 0)} revenue growth` },
+              { label: 'Best Margin Region', value: regionScorecardRows.slice().sort((a, b) => b.marginPct - a.marginPct)[0]?.region || 'N/A', detail: `${formatPct(regionScorecardRows.slice().sort((a, b) => b.marginPct - a.marginPct)[0]?.marginPct || 0)} gross margin` },
+              { label: 'Highest Utilization', value: regionScorecardRows.slice().sort((a, b) => b.utilization - a.utilization)[0]?.region || 'N/A', detail: `${formatPct(regionScorecardRows.slice().sort((a, b) => b.utilization - a.utilization)[0]?.utilization || 0)} lab utilization` },
+            ])}
+            {renderExecutiveTable('Regional CEO Scorecard', [
+              { key: 'region', label: 'Region' },
+              { key: 'revenue', label: 'Revenue', align: 'right', format: formatCurrency },
+              { key: 'growth', label: 'Growth', align: 'right', format: formatPct },
+              { key: 'marginPct', label: 'GM %', align: 'right', format: formatPct },
+              { key: 'testVolume', label: 'Tests', align: 'right', format: (value) => Number(value || 0).toLocaleString() },
+              { key: 'tat', label: 'TAT Days', align: 'right', format: (value) => Number(value || 0).toFixed(1) },
+              { key: 'utilization', label: 'Utilization', align: 'right', format: formatPct },
+              { key: 'ceoReadout', label: 'CEO Readout' },
+            ], regionScorecardRows)}
+          </>
+        );
+      }
+      if (effectiveOverviewSubTab === 'service-reports') {
+        return (
+          <>
+            <div className="ops-print-hide" style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: '12px', marginBottom: '12px', flexWrap: 'wrap' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <label style={{ fontSize: '12px', fontWeight: 800, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                  Region
+                </label>
+                <select
+                  value={effectiveHealthcareServiceRegion}
+                  onChange={(event) => setSelectedHealthcareServiceRegion(event.target.value)}
+                  style={{
+                    minWidth: '220px',
+                    border: '1px solid #cbd5e1',
+                    borderRadius: '8px',
+                    padding: '8px 10px',
+                    fontSize: '13px',
+                    fontWeight: 700,
+                    color: '#0f172a',
+                    background: '#fff',
+                  }}
+                >
+                  {healthcareServiceRegions.map((region) => (
+                    <option key={region} value={region}>{region === '__ALL__' ? 'All Regions' : region}</option>
+                  ))}
+                </select>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <label style={{ fontSize: '12px', fontWeight: 800, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                  Metric
+                </label>
+                <select
+                  value={selectedHealthcareServiceMetric}
+                  onChange={(event) => setSelectedHealthcareServiceMetric(event.target.value === 'grossMarginPct' ? 'grossMarginPct' : 'revenue')}
+                  style={{
+                    minWidth: '180px',
+                    border: '1px solid #cbd5e1',
+                    borderRadius: '8px',
+                    padding: '8px 10px',
+                    fontSize: '13px',
+                    fontWeight: 700,
+                    color: '#0f172a',
+                    background: '#fff',
+                  }}
+                >
+                  <option value="revenue">Revenue</option>
+                  <option value="grossMarginPct">Gross Margin %</option>
+                </select>
+              </div>
+            </div>
+            {renderLineCard(
+              selectedHealthcareServiceMetric === 'grossMarginPct' ? 'Product / Service Gross Margin % Over Time' : 'Product / Service Growth Over Time',
+              selectedHealthcareServiceMetric === 'grossMarginPct'
+                ? '36 months of historical product/service Gross Margin % plus 12 months projected.'
+                : '36 months of historical product/service revenue plus 12 months projected. Gross Margin % is shown on the right axis.',
+              selectedHealthcareServiceMetric === 'grossMarginPct' ? serviceGrossMarginPctRows : serviceChartRows,
+              topServiceSeries,
+              selectedHealthcareServiceMetric === 'grossMarginPct' ? formatPct : formatCurrency,
+              'Gross Margin %',
+              { metric: selectedHealthcareServiceMetric, showGrossMarginPctReference: selectedHealthcareServiceMetric === 'revenue' },
+            )}
+            {renderMetricCards([
+              { label: 'Largest Service', value: serviceScorecardRows[0]?.service || 'N/A', detail: `${formatCurrency(serviceScorecardRows[0]?.revenue || 0)} total revenue` },
+              { label: 'Fastest Growth', value: serviceScorecardRows.slice().sort((a, b) => b.growth - a.growth)[0]?.service || 'N/A', detail: `${formatPct(serviceScorecardRows.slice().sort((a, b) => b.growth - a.growth)[0]?.growth || 0)} revenue growth` },
+              { label: 'Revenue / Test', value: formatCurrency(serviceScorecardRows.slice().sort((a, b) => b.revPerTest - a.revPerTest)[0]?.revPerTest || 0), detail: serviceScorecardRows.slice().sort((a, b) => b.revPerTest - a.revPerTest)[0]?.service || 'Best service economics' },
+            ])}
+            {renderExecutiveTable('Product / Service Portfolio Scorecard', [
+              { key: 'service', label: 'Product / Service' },
+              { key: 'revenue', label: 'Revenue', align: 'right', format: formatCurrency },
+              { key: 'growth', label: 'Growth', align: 'right', format: formatPct },
+              { key: 'marginPct', label: 'GM %', align: 'right', format: formatPct },
+              { key: 'testVolume', label: 'Tests', align: 'right', format: (value) => Number(value || 0).toLocaleString() },
+              { key: 'revPerTest', label: 'Rev / Test', align: 'right', format: formatCurrency },
+              { key: 'costPerTest', label: 'Cost / Test', align: 'right', format: formatCurrency },
+              { key: 'rejection', label: 'Reject %', align: 'right', format: formatPct },
+              { key: 'ceoReadout', label: 'CEO Readout' },
+            ], serviceScorecardRows)}
+          </>
+        );
+      }
+      return (
+        <>
+          {renderMetricCards([
+            { label: 'Latest Revenue', value: formatCurrency(latestEnterpriseRevenue), detail: `${formatPct(enterpriseGrowth)} trailing growth` },
+            { label: 'Gross Margin', value: formatPct(enterpriseMarginPct), detail: `${formatCurrency(latestEnterpriseMargin)} latest gross margin` },
+            { label: 'Latest Test Volume', value: Number(latestEnterpriseVolume || 0).toLocaleString(), detail: 'Completed / ordered testing activity' },
+          ])}
+          {renderLineCard(
+            'Enterprise Growth Over Time',
+            'Enterprise-level trend for revenue and gross margin.',
+            enterpriseChartRows.map((row, index) => ({
+              ...row,
+              grossMargin: enterpriseMargin.rows[index]?.Enterprise || 0,
+            })),
+            [
+              { key: 'Enterprise', label: 'Revenue', color: '#2563eb' },
+              { key: 'grossMargin', label: 'Gross Margin', color: '#0f766e' },
+            ],
+            formatCurrency,
+          )}
+          {renderExecutiveTable('Enterprise CEO Review', [
+            { key: 'metric', label: 'Metric' },
+            { key: 'current', label: 'Current', align: 'right' },
+            { key: 'trend', label: 'Trend / Target', align: 'right' },
+            { key: 'ceoReadout', label: 'CEO Readout' },
+          ], [
+            { metric: 'Revenue Growth', current: formatPct(enterpriseGrowth), trend: 'Target: 25%+', ceoReadout: enterpriseGrowth >= 25 ? 'Growth engine is working' : 'Pipeline acceleration needed' },
+            { metric: 'Gross Margin', current: formatPct(enterpriseMarginPct), trend: 'Target: 55%+', ceoReadout: enterpriseMarginPct >= 55 ? 'Attractive portfolio economics' : 'Review pricing and lab cost' },
+            { metric: 'Service Concentration', current: `${formatPct(totalRevenue ? (topServiceSeries[0]?.total || 0) / totalRevenue * 100 : 0)} top service`, trend: 'Target: balanced growth', ceoReadout: 'Watch dependency on largest service line' },
+            { metric: 'Regional Breadth', current: `${topRegionSeries.length} active regions`, trend: 'SEA + India expansion', ceoReadout: 'Compare growth versus operating capacity' },
+          ])}
+        </>
+      );
+    };
+
+    if (!healthcareOverviewReports.length) {
+      return (
+        <div style={{ padding: '40px 32px', color: '#64748b' }}>
+          No sector 62 Overview executive pages are enabled.
+        </div>
+      );
+    }
+
+    return (
+      <div style={{ padding: '8px 32px 32px' }}>
+        <div className="ops-print-hide" style={{ display: 'flex', gap: '24px', alignItems: 'center', margin: '0 0 18px', borderBottom: '1px solid #e2e8f0' }}>
+          {healthcareOverviewReports.map((tab) => (
+            <button
+              key={tab.key}
+              type="button"
+              onClick={() => setActiveOverviewSubTab(tab.key)}
+              style={{
+                background: 'transparent',
+                border: 0,
+                borderBottom: effectiveOverviewSubTab === tab.key ? '3px solid #2563eb' : '3px solid transparent',
+                color: effectiveOverviewSubTab === tab.key ? '#1d4ed8' : '#64748b',
+                cursor: 'pointer',
+                fontSize: '15px',
+                fontWeight: 800,
+                padding: '10px 0 12px',
+              }}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </div>
+        {currentPage()}
+      </div>
+    );
+  };
+
   const renderDashboardOverviewContent = () => {
+    if (isHealthcareSector) {
+      return renderHealthcareExecutiveOverviewContent();
+    }
+
     const dashboard = (
       <OpsDashboard
         selectedCompanyId={selectedCompanyId}

@@ -196,6 +196,32 @@ function isLikelyNonOperatingExpense(description: string): boolean {
   return false;
 }
 
+function inferAccountTypeFromAccountCode(acctId: string | undefined): string | null {
+  const accountCode = getAccountCode(acctId);
+  if (accountCode === null) return null;
+
+  if (accountCode >= 1000 && accountCode < 2000) {
+    if (accountCode >= 1200 && accountCode < 1300) return 'AccountsReceivable';
+    if (accountCode >= 1500 && accountCode < 1600) return 'FixedAsset';
+    if (accountCode >= 1600 && accountCode < 2000) return 'OtherAsset';
+    return 'Bank';
+  }
+  if (accountCode >= 2000 && accountCode < 3000) {
+    if (accountCode >= 2000 && accountCode < 2100) return 'AccountsPayable';
+    if (accountCode >= 2100 && accountCode < 2200) return 'CreditCard';
+    if (accountCode >= 2500) return 'LongTermLiability';
+    return 'OtherCurrentLiability';
+  }
+  if (accountCode >= 3000 && accountCode < 4000) return 'Equity';
+  if (accountCode >= 4000 && accountCode < 5000) return 'Income';
+  if (accountCode >= 5000 && accountCode < 6000) return 'CostOfGoodsSold';
+  if (accountCode >= 6000 && accountCode < 8000) return 'Expense';
+  if (accountCode >= 8000 && accountCode < 9000) return 'NonOperatingIncome';
+  if (accountCode >= 9000 && accountCode < 10000) return 'NonOperatingExpense';
+
+  return null;
+}
+
 function normalizeAccountType(rawType: string | undefined, description: string, acctId?: string): string {
   const trimmed = (rawType || '').trim();
 
@@ -211,7 +237,8 @@ function normalizeAccountType(rawType: string | undefined, description: string, 
   }
   if (isLikelyNonOperatingIncome(description, rawType)) return 'NonOperatingIncome';
   if (isLikelyNonOperatingExpense(description)) return 'NonOperatingExpense';
-  if (!trimmed) return inferAccountTypeFromDescription(description);
+  const codeInferredType = inferAccountTypeFromAccountCode(acctId);
+  if (!trimmed) return codeInferredType || inferAccountTypeFromDescription(description);
 
   // Keep canonical types untouched.
   if (ACCOUNT_TYPE_CLASSIFICATIONS[trimmed]) return trimmed;
@@ -241,7 +268,7 @@ function normalizeAccountType(rawType: string | undefined, description: string, 
   if (normalizedKey.includes('equity') || normalizedKey.includes('capital')) return 'Equity';
 
   // Some exports place account names in Acct Type; infer from description instead of creating unknown pseudo-types.
-  return inferAccountTypeFromDescription(description);
+  return codeInferredType || inferAccountTypeFromDescription(description);
 }
 
 function inferAccountTypeFromDescription(description: string): string {

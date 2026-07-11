@@ -1,0 +1,71 @@
+Acct Type,Acct ID,Description,Statement,Corelytics Target Field,Upload Amount Basis,12/31/2024,01/31/2025,02/28/2025
+Income,4000,Product Revenue,Income Statement,revenue,Monthly activity amount replace sample values,125000,132500,141000
+Income,4010,Service Revenue,Income Statement,revenue,Monthly activity amount replace sample values,85000,88000,92000
+Income,4020,Rental Revenue,Income Statement,revenue,Monthly activity amount replace sample values,45000,45500,46000
+Income,4030,Management Fee Revenue,Income Statement,revenue,Monthly activity amount replace sample values,12000,12500,13000
+Income,4090,Sales Returns and Allowances,Income Statement,revenue,Monthly activity amount use negative for contra revenue,-2500,-2100,-2400
+Income,4100,Discounts Given,Income Statement,revenue,Monthly activity amount use negative for contra revenue,-900,-800,-950
+CostOfGoodsSold,5000,Cost of Sales,Income Statement,cogsTotal,Monthly activity amount replace sample values,62000,64250,69000
+CostOfGoodsSold,5010,Direct Materials,Income Statement,cogsMaterials,Monthly activity amount replace sample values,21000,22500,24000
+CostOfGoodsSold,5020,Direct Labor,Income Statement,cogsPayroll,Monthly activity amount replace sample values,18000,18500,19200
+CostOfGoodsSold,5030,Subcontractor Costs,Income Statement,cogsContractors,Monthly activity amount replace sample values,9500,10100,10800
+CostOfGoodsSold,5040,Commissions in COGS,Income Statement,cogsCommissions,Monthly activity amount replace sample values,3200,3450,3700
+CostOfGoodsSold,5090,Other Cost of Goods Sold,Income Statement,cogsOther,Monthly activity amount replace sample values,5200,5300,5500
+Expense,6000,Payroll Expense,Income Statement,payroll,Monthly activity amount replace sample values,42000,43000,44500
+Expense,6010,Owner Base Pay,Income Statement,ownerBasePay,Monthly activity amount replace sample values,12000,12000,12000
+Expense,6020,Employee Benefits,Income Statement,benefits,Monthly activity amount replace sample values,7800,7900,8100
+Expense,6030,Insurance Expense,Income Statement,insurance,Monthly activity amount replace sample values,3600,3600,3650
+Expense,6040,Professional Fees,Income Statement,professionalFees,Monthly activity amount replace sample values,5200,4300,4800
+Expense,6050,Subcontractors Expense,Income Statement,subcontractors,Monthly activity amount replace sample values,6400,6900,7200
+Expense,6060,Rent Expense,Income Statement,rent,Monthly activity amount replace sample values,8000,8000,8000
+Expense,6070,Taxes and Licenses,Income Statement,taxLicense,Monthly activity amount replace sample values,1200,1350,1100
+Expense,6080,Phone and Communications,Income Statement,phoneComm,Monthly activity amount replace sample values,950,970,980
+Expense,6090,Software and Infrastructure,Income Statement,infrastructure,Monthly activity amount replace sample values,4100,4200,4250
+Expense,6100,Auto and Travel,Income Statement,autoTravel,Monthly activity amount replace sample values,2800,3100,2950
+Expense,6110,Sales Expense,Income Statement,salesExpense,Monthly activity amount replace sample values,3600,3800,4000
+Expense,6120,Marketing Expense,Income Statement,marketing,Monthly activity amount replace sample values,5400,5100,5600
+Expense,6130,Training and Certifications,Income Statement,trainingCert,Monthly activity amount replace sample values,800,950,700
+Expense,6140,Meals and Entertainment,Income Statement,mealsEntertainment,Monthly activity amount replace sample values,650,700,720
+Expense,6150,Interest Expense,Income Statement,interestExpense,Monthly activity amount replace sample values,2400,2350,2300
+Expense,6160,Depreciation and Amortization,Income Statement,depreciationAmortization,Monthly activity amount replace sample values,4500,4500,4500
+Expense,6170,State Income Taxes,Income Statement,stateIncomeTaxes,Monthly activity amount replace sample values,1800,1900,2000
+Expense,6180,Federal Income Taxes,Income Statement,federalIncomeTaxes,Monthly activity amount replace sample values,5600,5800,6100
+Expense,6990,Other Operating Expense,Income Statement,otherExpense,Monthly activity amount replace sample values,3900,4100,4200
+NonOperatingIncome,8010,Interest Income,Income Statement,nonOperatingIncome,Monthly activity amount replace sample values,300,325,350
+NonOperatingIncome,8020,Gain on Sale of Assets,Income Statement,nonOperatingIncome,Monthly activity amount replace sample values,0,0,2500
+NonOperatingExpense,9010,Loss on Sale of Assets,Income Statement,nonOperatingExpense,Monthly activity amount replace sample values,0,0,0
+NonOperatingExpense,9020,Other Non Operating Expense,Income Statement,nonOperatingExpense,Monthly activity amount replace sample values,0,1200,0
+Bank,1000,Operating Cash,Balance Sheet,cash,Ending balance as of date replace sample values,95000,102000,110000
+Bank,1010,Payroll Cash,Balance Sheet,cash,Ending balance as of date replace sample values,12000,15000,14000
+Bank,1020,Savings Account,Balance Sheet,cash,Ending balance as of date replace sample values,85000,86000,87000
+AccountsReceivable,1200,Accounts Receivable,Balance Sheet,ar,Ending balance as of date replace sample values,45000,47000,43000
+OtherCurrentAsset,1210,Retainage Receivable,Balance Sheet,retainageReceivables,Ending balance as of date replace sample values,0,0,0
+OtherCurrentAsset,1220,Contract Assets,Balance Sheet,contractAssets,Ending balance as of date replace sample values,0,0,0
+OtherCurrentAsset,1300,Inventory,Balance Sheet,inventory,Ending balance as of date replace sample values,52000,53500,54800
+OtherCurrentAsset,1400,Prepaid Expenses,Balance Sheet,otherCA,Ending balance as of date replace sample values,18000,16500,15000
+OtherCurrentAsset,1490,Other Current Assets,Balance Sheet,otherCA,Ending balance as of date replace sample values,7500,7200,7100
+FixedAsset,1500,Furniture and Fixtures,Balance Sheet,officeEquipment,Ending balance as of date replace sample values,24000,24000,24000
+FixedAsset,1510,Office Equipment,Balance Sheet,officeEquipment,Ending balance as of date replace sample values,18000,18500,19000
+FixedAsset,1520,Shop Equipment,Balance Sheet,shopEquipment,Ending balance as of date replace sample values,35000,35000,36000
+FixedAsset,1530,Construction Equipment,Balance Sheet,constructionEquipment,Ending balance as of date replace sample values,0,0,0
+FixedAsset,1540,Vehicles,Balance Sheet,fixedAssets,Ending balance as of date replace sample values,68000,68000,68000
+FixedAsset,1590,Accumulated Depreciation,Balance Sheet,fixedAssets,Ending balance as of date use negative contra asset,-22000,-26500,-31000
+OtherAsset,1600,Investments,Balance Sheet,investments,Ending balance as of date replace sample values,50000,50000,50000
+OtherAsset,1700,Right of Use Leases Asset,Balance Sheet,rightOfUseLeases,Ending balance as of date replace sample values,0,0,0
+OtherAsset,1800,Deposits and Other Assets,Balance Sheet,otherAssets,Ending balance as of date replace sample values,9000,9000,9000
+AccountsPayable,2000,Accounts Payable,Balance Sheet,ap,Ending balance as of date replace sample values,31000,29000,33000
+CreditCard,2010,Credit Card Payable,Balance Sheet,otherCL,Ending balance as of date replace sample values,9500,10200,9800
+OtherCurrentLiability,2100,Line of Credit,Balance Sheet,loc,Ending balance as of date replace sample values,75000,72000,69000
+OtherCurrentLiability,2200,Accrued Expenses,Balance Sheet,otherCL,Ending balance as of date replace sample values,18000,19000,19500
+OtherCurrentLiability,2210,Payroll Liabilities,Balance Sheet,otherCL,Ending balance as of date replace sample values,12500,13100,12800
+OtherCurrentLiability,2220,Sales Tax Payable,Balance Sheet,otherCL,Ending balance as of date replace sample values,4200,4600,4800
+OtherCurrentLiability,2300,Contract Liabilities,Balance Sheet,contractLiabilities,Ending balance as of date replace sample values,0,0,0
+LongTermLiability,2500,Term Loan,Balance Sheet,ltd,Ending balance as of date replace sample values,400000,395000,390000
+LongTermLiability,2600,Long Term Lease Liability,Balance Sheet,ltd,Ending balance as of date replace sample values,0,0,0
+Equity,3000,Owners Capital,Balance Sheet,ownersCapital,Ending balance as of date replace sample values,125000,125000,125000
+Equity,3010,Owners Draw,Balance Sheet,ownersDraw,Ending balance as of date use positive amount for draws,12000,15000,18000
+Equity,3020,Common Stock,Balance Sheet,commonStock,Ending balance as of date replace sample values,10000,10000,10000
+Equity,3030,Preferred Stock,Balance Sheet,preferredStock,Ending balance as of date replace sample values,0,0,0
+Equity,3040,Additional Paid In Capital,Balance Sheet,additionalPaidInCapital,Ending balance as of date replace sample values,0,0,0
+Equity,3050,Treasury Stock,Balance Sheet,treasuryStock,Ending balance as of date use positive amount for treasury stock,0,0,0
+Equity,3900,Retained Earnings,Balance Sheet,retainedEarnings,Ending balance as of date replace sample values,210000,218000,229000

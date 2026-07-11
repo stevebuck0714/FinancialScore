@@ -104,6 +104,7 @@ const OPERATIONAL_HUB_SECTION_OPTIONS: Array<{ key: string; label: string; group
   { key: 'inventoryDistribution', label: 'Value Distribution', group: 'Inventory' },
   { key: 'inventoryAgingObsolescenceV1', label: 'Inventory Aging & Obsolescence', group: 'Inventory' },
   { key: 'inventoryRetailProductAging', label: 'Retail Product Aging', group: 'Inventory' },
+  { key: 'cashConversionAnalysis', label: 'Cash Conversion Analysis', group: 'Cash' },
   { key: 'cashBankAccounts', label: 'Bank Accounts Table', group: 'Cash' },
   { key: 'cashDistributionByAccount', label: 'Distribution by Account', group: 'Cash' },
   { key: 'loansInstrumentTable', label: 'Loan Instruments Table', group: 'Loans' },
@@ -307,6 +308,12 @@ const OVERVIEW_STANDARD_REPORT_OPTIONS: Array<{ key: string; label: string; grou
 
 const REAL_ESTATE_OVERVIEW_REPORT_OPTIONS: Array<{ key: string; label: string; group: string }> = [
   { key: 'realEstateExecutiveReport', label: 'Executive Report', group: 'Overview' },
+];
+
+const HEALTHCARE_OVERVIEW_REPORT_OPTIONS: Array<{ key: string; label: string; group: string }> = [
+  { key: 'overviewHealthcareEnterpriseReports', label: 'Enterprise Reports', group: 'Overview' },
+  { key: 'overviewHealthcareRegionReports', label: 'Region Reports', group: 'Overview' },
+  { key: 'overviewHealthcareServiceReports', label: 'Service Reports', group: 'Overview' },
 ];
 
 type OperationalHubCustomReport = {
@@ -1187,6 +1194,8 @@ export default function SiteAdminDashboard(props: any) {
         const overviewOptions =
           companySectorCategory === '53'
             ? REAL_ESTATE_OVERVIEW_REPORT_OPTIONS
+            : companySectorCategory === '62'
+            ? HEALTHCARE_OVERVIEW_REPORT_OPTIONS
             : OVERVIEW_STANDARD_REPORT_OPTIONS;
         return overviewOptions.map((item) => ({
           ...item,
@@ -1201,7 +1210,7 @@ export default function SiteAdminDashboard(props: any) {
       }
       const companySectorCategory = String(company?.industrySectorCategory || '').trim();
       const defaultReports = getOperationalHubDefaultReportsForModule(moduleKey, companySectorCategory);
-      if (defaultReports.length > 0 && ['23', '32', '53'].includes(companySectorCategory)) {
+      if (defaultReports.length > 0 && ['23', '32', '53', '62'].includes(companySectorCategory)) {
         return defaultReports.map((item) => ({
           ...item,
           group: option.label,
@@ -3764,7 +3773,6 @@ export default function SiteAdminDashboard(props: any) {
       setQueuingQbDesktopDateRangeCompanyId(null);
     }
   };
-
 
   const queueQbDesktopDetailBackfill = async (companyId: string) => {
     const range = getQbDesktopDateRange(companyId);

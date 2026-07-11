@@ -855,6 +855,8 @@ function qbdAddMappedAmount(row: QbdMappedMonthlyRow, targetField: string, amoun
 
 function qbdIsIncomeStatementExpenseTarget(targetField: string): boolean {
   return (
+    targetField === 'revenue' ||
+    targetField.startsWith('rev_') ||
     targetField === 'cogsTotal' ||
     targetField === 'costOfGoodsSold' ||
     targetField.startsWith('cogs') ||
@@ -863,7 +865,9 @@ function qbdIsIncomeStatementExpenseTarget(targetField: string): boolean {
   );
 }
 
-function qbdResetExpenseAndCogs(row: QbdMappedMonthlyRow) {
+function qbdResetPnl(row: QbdMappedMonthlyRow) {
+  row.revenue = 0;
+  row.revenueBreakdown = {};
   row.expense = 0;
   row.cogsTotal = 0;
   row.cogsBreakdown = {};
@@ -876,8 +880,10 @@ function qbdResetExpenseAndCogs(row: QbdMappedMonthlyRow) {
   }
 }
 
-function qbdCopyExpenseAndCogs(source: QbdMappedMonthlyRow, target: QbdMappedMonthlyRow) {
-  qbdResetExpenseAndCogs(target);
+function qbdCopyPnl(source: QbdMappedMonthlyRow, target: QbdMappedMonthlyRow) {
+  qbdResetPnl(target);
+  target.revenue = Number(source.revenue || 0);
+  target.revenueBreakdown = { ...(source.revenueBreakdown || {}) };
   target.expense = Number(source.expense || 0);
   target.cogsTotal = Number(source.cogsTotal || 0);
   target.cogsBreakdown = { ...(source.cogsBreakdown || {}) };
@@ -1030,52 +1036,12 @@ async function buildQuickBooksDesktopMappedMonthlyPayload(companyId: string, bas
     mappingByKey.get(qbdString(ref.code).toLowerCase()) ||
     null;
 
-  const [accounts, items, invoiceRowsRaw, invoiceDetailRowsRaw, billRowsRaw, billDetailRowsRaw, checkRowsRaw, creditMemoRowsRaw, creditMemoDetailRowsRaw, salesReceiptRowsRaw, journalRowsRaw, depositRowsRaw, vendorCreditRowsRaw, balanceSheetReportRows, generalLedgerReportRows] =
+  const [accounts, balanceSheetReportRows, generalLedgerReportRows] =
     await Promise.all([
       loadQbdPageRecords(companyId, 'AccountQuery'),
-      loadQbdPageRecords(companyId, 'ItemQuery'),
-      loadQbdPageRecords(companyId, 'InvoiceQuery', false, true),
-      loadQbdPageRecords(companyId, 'InvoiceQuery', true, true),
-      loadQbdPageRecords(companyId, 'BillQuery', false, true),
-      loadQbdPageRecords(companyId, 'BillQuery', true, true),
-      loadQbdPageRecords(companyId, 'CheckQuery', false, true),
-      loadQbdPageRecords(companyId, 'CreditMemoQuery', false, true),
-      loadQbdPageRecords(companyId, 'CreditMemoQuery', true, true),
-      loadQbdPageRecords(companyId, 'SalesReceiptQuery', false, true),
-      loadQbdPageRecords(companyId, 'JournalEntryQuery', false, true),
-      loadQbdPageRecords(companyId, 'DepositQuery', false, true),
-      loadQbdPageRecords(companyId, 'VendorCreditQuery', false, true),
       loadQbdPageRecords(companyId, 'BalanceSheetStandardReportQuery'),
       loadQbdPageRecords(companyId, 'GeneralDetailReportQuery', false, true),
     ]);
-  const invoiceDetail = qbdDedupeTransactionRecords([...invoiceRowsRaw, ...invoiceDetailRowsRaw], 'invoice');
-  const billDetail = qbdDedupeTransactionRecords([...billRowsRaw, ...billDetailRowsRaw], 'bill');
-  const checkRows = qbdDedupeTransactionRecords(checkRowsRaw, 'check');
-  const creditMemoDetail = qbdDedupeTransactionRecords([...creditMemoRowsRaw, ...creditMemoDetailRowsRaw], 'credit-memo');
-  const salesReceiptRows = qbdDedupeTransactionRecords(salesReceiptRowsRaw, 'sales-receipt');
-  const journalRows = qbdDedupeTransactionRecords(journalRowsRaw, 'journal');
-  const depositRows = qbdDedupeTransactionRecords(depositRowsRaw, 'deposit');
-  const vendorCreditRows = qbdDedupeTransactionRecords(vendorCreditRowsRaw, 'vendor-credit');
-
-  const itemAccountByKey = new Map<string, { incomeTarget: string; cogsTarget: string; expenseTarget: string; assetTarget: string }>();
-  for (const item of items) {
-    const salesOrPurchase = qbdAsRecord(item.SalesOrPurchase);
-    const salesAndPurchase = qbdAsRecord(item.SalesAndPurchase);
-    const income = qbdRef(salesAndPurchase, 'IncomeAccountRef');
-    const cogs = qbdRef(salesAndPurchase, 'COGSAccountRef');
-    const asset = qbdRef(item, 'AssetAccountRef');
-    const purchase = qbdRef(salesAndPurchase, 'ExpenseAccountRef');
-    const salesOrPurchaseAccount = qbdRef(salesOrPurchase, 'AccountRef');
-    const value = {
-      incomeTarget: getTarget(income) || getTarget(salesOrPurchaseAccount),
-      cogsTarget: getTarget(cogs),
-      expenseTarget: getTarget(purchase) || getTarget(salesOrPurchaseAccount),
-      assetTarget: getTarget(asset),
-    };
-    for (const key of [item.ListID, item.FullName, item.Name].map(qbdString).filter(Boolean)) {
-      itemAccountByKey.set(key.toLowerCase(), value);
-    }
-  }
 
   const months = new Map<string, QbdMappedMonthlyRow>();
   const getMonth = (monthKey: string) => {
@@ -1089,95 +1055,22 @@ async function buildQuickBooksDesktopMappedMonthlyPayload(companyId: string, bas
     dailySnapshots.set(dateKey, row);
     return row;
   };
-  const itemTargets = (ref: { id: string; name: string }) =>
-    itemAccountByKey.get(qbdString(ref.id).toLowerCase()) ||
-    itemAccountByKey.get(qbdString(ref.name).toLowerCase()) ||
-    null;
-
-  const addItemRevenueLines = (records: Record<string, unknown>[], multiplier: number) => {
-    for (const txn of records) {
-      const month = qbdMonthKey(txn.TxnDate);
-      const day = qbdDateKey(txn.TxnDate);
-      if (!month || !day) continue;
-      const row = getMonth(month);
-      const dailyRow = getDailySnapshot(day);
-      for (const line of qbdAsArray(txn.InvoiceLineRet || txn.SalesReceiptLineRet || txn.CreditMemoLineRet)) {
-        const item = qbdRef(line, 'ItemRef');
-        const targets = itemTargets(item);
-        const target = targets?.incomeTarget || 'revenue';
-        const amount = qbdNumber(line.Amount) * multiplier;
-        qbdAddMappedAmount(row, target, amount);
-        qbdAddMappedAmount(dailyRow, target, amount);
-      }
+  const seedMonthlyRows = Array.isArray(basePayload.monthlyData)
+    ? (basePayload.monthlyData as Array<Record<string, unknown>>)
+    : [];
+  for (const sourceRow of seedMonthlyRows) {
+    const monthKey = qbdMonthKey(sourceRow.monthDate || sourceRow.month || sourceRow.date);
+    if (!monthKey) continue;
+    const row = getMonth(monthKey);
+    for (const field of MONTHLY_FINANCIAL_NUMERIC_FIELDS) {
+      row[field] = qbdNumber(sourceRow[field]);
     }
-  };
-
-  addItemRevenueLines(invoiceDetail, 1);
-  addItemRevenueLines(salesReceiptRows, 1);
-  addItemRevenueLines(creditMemoDetail, -1);
-
-  const addExpenseLines = (records: Record<string, unknown>[], multiplier: number) => {
-    for (const txn of records) {
-      const month = qbdMonthKey(txn.TxnDate);
-      const day = qbdDateKey(txn.TxnDate);
-      if (!month || !day) continue;
-      const row = getMonth(month);
-      const dailyRow = getDailySnapshot(day);
-      for (const line of qbdAsArray(txn.ExpenseLineRet)) {
-        const target = getTarget(qbdRef(line, 'AccountRef'));
-        const amount = qbdNumber(line.Amount) * multiplier;
-        qbdAddMappedAmount(row, target, amount);
-        qbdAddMappedAmount(dailyRow, target, amount);
-      }
-      for (const line of qbdAsArray(txn.ItemLineRet)) {
-        const item = qbdRef(line, 'ItemRef');
-        const targets = itemTargets(item);
-        const target = targets?.expenseTarget || targets?.cogsTarget || '';
-        const amount = qbdNumber(line.Amount) * multiplier;
-        qbdAddMappedAmount(row, target, amount);
-        qbdAddMappedAmount(dailyRow, target, amount);
-      }
-    }
-  };
-
-  addExpenseLines(billDetail, 1);
-  addExpenseLines(checkRows, 1);
-  addExpenseLines(vendorCreditRows, -1);
-
-  for (const deposit of depositRows) {
-    const month = qbdMonthKey(deposit.TxnDate);
-    const day = qbdDateKey(deposit.TxnDate);
-    if (!month || !day) continue;
-    const row = getMonth(month);
-    const dailyRow = getDailySnapshot(day);
-    for (const line of qbdAsArray(deposit.DepositLineRet)) {
-      const target = getTarget(qbdRef(line, 'AccountRef'));
-      const amount = qbdNumber(line.Amount);
-      qbdAddMappedAmount(row, target, amount);
-      qbdAddMappedAmount(dailyRow, target, amount);
-    }
-  }
-
-  for (const journal of journalRows) {
-    const month = qbdMonthKey(journal.TxnDate);
-    const day = qbdDateKey(journal.TxnDate);
-    if (!month || !day) continue;
-    const row = getMonth(month);
-    const dailyRow = getDailySnapshot(day);
-    for (const line of qbdAsArray(journal.JournalDebitLine || journal.JournalDebitLineRet)) {
-      const target = getTarget(qbdRef(line, 'AccountRef'));
-      const amount = qbdNumber(line.Amount);
-      qbdAddMappedAmount(row, target, amount);
-      qbdAddMappedAmount(dailyRow, target, amount);
-      qbdApplyBalance(row, target, amount);
-    }
-    for (const line of qbdAsArray(journal.JournalCreditLine || journal.JournalCreditLineRet)) {
-      const target = getTarget(qbdRef(line, 'AccountRef'));
-      const amount = qbdNumber(line.Amount) * -1;
-      qbdAddMappedAmount(row, target, amount);
-      qbdAddMappedAmount(dailyRow, target, amount);
-      qbdApplyBalance(row, target, amount);
-    }
+    const revenueBreakdown = qbdAsRecord(sourceRow.revenueBreakdown);
+    const cogsBreakdown = qbdAsRecord(sourceRow.cogsBreakdown);
+    const expenseBreakdown = qbdAsRecord(sourceRow.expenseBreakdown);
+    if (Object.keys(revenueBreakdown).length) row.revenueBreakdown = revenueBreakdown as Record<string, number>;
+    if (Object.keys(cogsBreakdown).length) row.cogsBreakdown = cogsBreakdown as Record<string, number>;
+    if (Object.keys(expenseBreakdown).length) row.expenseBreakdown = expenseBreakdown as Record<string, number>;
   }
 
   const balanceSheetReportDate = qbdBalanceSheetReportDateKey(balanceSheetReportRows);
@@ -1212,8 +1105,8 @@ async function buildQuickBooksDesktopMappedMonthlyPayload(companyId: string, bas
 
   const glMovementsByDate = new Map<string, Map<string, number>>();
   const accountMovementsByDate = new Map<string, Map<string, number>>();
-  const glExpenseAndCogsByMonth = new Map<string, QbdMappedMonthlyRow>();
-  const glExpenseAndCogsByDate = new Map<string, QbdMappedMonthlyRow>();
+  const glPnlByMonth = new Map<string, QbdMappedMonthlyRow>();
+  const glPnlByDate = new Map<string, QbdMappedMonthlyRow>();
   let earliestGlDate: string | null = null;
   for (const glRow of generalLedgerReportRows) {
     if (qbdString(glRow.rowKind) !== 'DataRow') continue;
@@ -1225,12 +1118,12 @@ async function buildQuickBooksDesktopMappedMonthlyPayload(companyId: string, bas
     if (amount === 0) continue;
     if (qbdIsIncomeStatementExpenseTarget(target)) {
       const monthKey = dateKey.slice(0, 7);
-      const monthRow = glExpenseAndCogsByMonth.get(monthKey) || createQbdMappedMonth(monthKey);
-      const dayRow = glExpenseAndCogsByDate.get(dateKey) || createQbdMappedDailySnapshot(dateKey);
+      const monthRow = glPnlByMonth.get(monthKey) || createQbdMappedMonth(monthKey);
+      const dayRow = glPnlByDate.get(dateKey) || createQbdMappedDailySnapshot(dateKey);
       qbdAddMappedAmount(monthRow, target, amount);
       qbdAddMappedAmount(dayRow, target, amount);
-      glExpenseAndCogsByMonth.set(monthKey, monthRow);
-      glExpenseAndCogsByDate.set(dateKey, dayRow);
+      glPnlByMonth.set(monthKey, monthRow);
+      glPnlByDate.set(dateKey, dayRow);
     }
     if (!QBD_BALANCE_SHEET_TARGET_FIELDS.has(target)) continue;
     if (balanceSheetReportDate && dateKey > balanceSheetReportDate) continue;
@@ -1246,11 +1139,11 @@ async function buildQuickBooksDesktopMappedMonthlyPayload(companyId: string, bas
     earliestGlDate = earliestGlDate && earliestGlDate < dateKey ? earliestGlDate : dateKey;
   }
 
-  for (const [monthKey, glRow] of glExpenseAndCogsByMonth.entries()) {
-    qbdCopyExpenseAndCogs(glRow, getMonth(monthKey));
+  for (const [monthKey, glRow] of glPnlByMonth.entries()) {
+    qbdCopyPnl(glRow, getMonth(monthKey));
   }
-  for (const [dateKey, glRow] of glExpenseAndCogsByDate.entries()) {
-    qbdCopyExpenseAndCogs(glRow, getDailySnapshot(dateKey));
+  for (const [dateKey, glRow] of glPnlByDate.entries()) {
+    qbdCopyPnl(glRow, getDailySnapshot(dateKey));
   }
 
   const qbdBalanceSheetAccountAnchors: Array<{
@@ -1371,16 +1264,14 @@ async function buildQuickBooksDesktopMappedMonthlyPayload(companyId: string, bas
         mappings: mappings.length,
         months: monthlyData.length,
         dailySnapshots: qbdDailyFinancialSnapshots.length,
-        invoiceDetailRows: invoiceDetail.length,
-        billDetailRows: billDetail.length,
-        checkRows: checkRows.length,
-        itemRows: items.length,
+        monthlyReportRowsSeeded: seedMonthlyRows.length,
+        transactionDetailRowsUsedForPnl: 0,
         balanceSheetReportRows: balanceSheetReportRows.length,
         balanceSheetAccountAnchors: qbdBalanceSheetAccountAnchors.length,
         balanceSheetReportDate,
         generalLedgerReportRows: generalLedgerReportRows.length,
-        generalLedgerExpenseCogsMonths: glExpenseAndCogsByMonth.size,
-        generalLedgerExpenseCogsDays: glExpenseAndCogsByDate.size,
+        generalLedgerPnlMonths: glPnlByMonth.size,
+        generalLedgerPnlDays: glPnlByDate.size,
         generalLedgerMovementDays: glMovementsByDate.size,
         dailyBalanceSheetStartDate: earliestGlDate,
       },
@@ -1489,6 +1380,47 @@ async function persistQuickBooksDesktopDailyFinancialSnapshots(
   return {
     rowsWritten,
     rowsDeleted: 0,
+    startDate: startDate.toISOString(),
+    endDate: endDate.toISOString(),
+  };
+}
+
+async function clearQuickBooksDesktopReprocessDailyPnl(companyId: string, payload: Record<string, unknown>) {
+  const rows = Array.isArray(payload.qbdDailyFinancialSnapshots)
+    ? (payload.qbdDailyFinancialSnapshots as Array<Record<string, unknown>>)
+    : [];
+  const dates = rows
+    .map((row) => qbdDateKey(row.snapshotDate))
+    .filter((dateKey): dateKey is string => Boolean(dateKey))
+    .map((dateKey) => new Date(`${dateKey}T00:00:00.000Z`))
+    .filter((date) => !Number.isNaN(date.getTime()))
+    .sort((a, b) => a.getTime() - b.getTime());
+
+  if (!dates.length) {
+    return { rowsCleared: 0, startDate: null, endDate: null };
+  }
+
+  const startDate = dates[0];
+  const endDate = dates[dates.length - 1];
+  const pnlZeroes = Object.fromEntries(QBD_DAILY_PNL_UPDATE_FIELDS.map((field) => [field, 0]));
+  const result = await prisma.dailyFinancialSnapshot.updateMany({
+    where: {
+      companyId,
+      frequency: 'daily',
+      sourcePlatform: QBD_DAILY_FINANCIAL_SOURCE,
+      snapshotDate: {
+        gte: startDate,
+        lte: endDate,
+      },
+    },
+    data: {
+      ...pnlZeroes,
+      sourceRunId: `qbd-reprocess-pnl-cleared-${Date.now()}`,
+    },
+  });
+
+  return {
+    rowsCleared: result.count,
     startDate: startDate.toISOString(),
     endDate: endDate.toISOString(),
   };
@@ -2171,8 +2103,18 @@ export async function POST(request: NextRequest) {
         targetMonth: targetMonth || undefined,
         mode,
       });
+      const qbdDailyPnlClear = result.ok
+        ? await clearQuickBooksDesktopReprocessDailyPnl(String(companyId), financialPayload)
+        : null;
+      if (qbdDailyPnlClear) {
+        qbdDiagnostics.dailyPnlClear = qbdDailyPnlClear;
+      }
+      const qbdDailyBalanceSheetScope = {
+        canUpdatePnl: false,
+        canUpdateBalanceSheet: qbdDomainScope.canUpdateBalanceSheet,
+      };
       const qbdDailyFinancialSnapshots = result.ok
-        ? await persistQuickBooksDesktopDailyFinancialSnapshots(String(companyId), financialPayload, qbdDomainScope)
+        ? await persistQuickBooksDesktopDailyFinancialSnapshots(String(companyId), financialPayload, qbdDailyBalanceSheetScope)
         : null;
       if (qbdDailyFinancialSnapshots) {
         qbdDiagnostics.dailyFinancialSnapshots = qbdDailyFinancialSnapshots;
