@@ -478,6 +478,7 @@ export default function SiteAdminDashboard(props: any) {
   >({});
   const [savingDigitalPresencePricingCompanyId, setSavingDigitalPresencePricingCompanyId] = React.useState<string | null>(null);
   const [runningFinancialImportByCompany, setRunningFinancialImportByCompany] = React.useState<Record<string, boolean>>({});
+  const [financialImportProgressByCompany, setFinancialImportProgressByCompany] = React.useState<Record<string, string>>({});
   const [companyDetailTabByCompany, setCompanyDetailTabByCompany] = React.useState<
     Record<string, 'accounting' | 'report-customization' | 'service-pricing'>
   >({});
@@ -3853,6 +3854,7 @@ export default function SiteAdminDashboard(props: any) {
     const companyName = String(company?.name || 'this company');
     const isRunningFinancialImport = !!runningFinancialImportByCompany[companyId];
     const financialImportTargetMonth = getCompanyFinancialImportSettings(companyId).targetMonth;
+    const financialImportProgress = financialImportProgressByCompany[companyId] || '';
     const syncStatus = getQbDesktopSyncStatus(companyId);
     const queuedRange = syncStatus.queuedDateRange;
     const backfillJobs = Array.isArray(syncStatus.backfillJobs) ? syncStatus.backfillJobs : [];
@@ -3987,6 +3989,11 @@ export default function SiteAdminDashboard(props: any) {
             {isRunningFinancialImport ? 'Rebuilding...' : 'Rebuild Daily Financials'}
           </button>
         </div>
+        {financialImportProgress ? (
+          <div style={{ marginTop: '6px', fontSize: '11px', color: '#166534' }}>
+            {financialImportProgress}
+          </div>
+        ) : null}
         <div style={{ marginTop: '10px', padding: '10px', background: statusBg, border: `1px solid ${statusBorder}`, borderRadius: '6px' }}>
           <div style={{ marginBottom: '4px' }}>
             <div style={{ fontSize: '12px', fontWeight: 700, color: statusColor }}>{statusLabel}</div>
@@ -5681,6 +5688,81 @@ export default function SiteAdminDashboard(props: any) {
     }
   };
 
+  const buildMonthKeysInclusive = (startDate: string, endDate: string): string[] => {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(startDate) || !/^\d{4}-\d{2}-\d{2}$/.test(endDate)) return [];
+    const start = new Date(`${startDate.slice(0, 7)}-01T00:00:00.000Z`);
+    const end = new Date(`${endDate.slice(0, 7)}-01T00:00:00.000Z`);
+    if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || start > end) return [];
+    const months: string[] = [];
+    const cursor = new Date(start);
+    while (cursor <= end) {
+      months.push(`${cursor.getUTCFullYear()}-${String(cursor.getUTCMonth() + 1).padStart(2, '0')}`);
+      cursor.setUTCMonth(cursor.getUTCMonth() + 1);
+    }
+    return months;
+  };
+
+  const runQuickBooksDesktopDailyPnlRebuild = async (
+    companyId: string,
+    companyName: string,
+    fallbackTargetMonth: string,
+  ) => {
+    const selectedRange = getQbDesktopDateRange(companyId);
+    const months = buildMonthKeysInclusive(selectedRange.startDate, selectedRange.endDate);
+    const rebuildMonths = months.length > 0 ? months : [fallbackTargetMonth];
+    if (!rebuildMonths.every((month) => /^\d{4}-\d{2}$/.test(month))) {
+      throw new Error('Select a valid QBD date range or target month before rebuilding Daily Financials.');
+    }
+
+    const failedMonths: string[] = [];
+    let rowsWritten = 0;
+    for (let index = 0; index < rebuildMonths.length; index += 1) {
+      const month = rebuildMonths[index];
+      setFinancialImportProgressByCompany((prev) => ({
+        ...prev,
+        [companyId]: `Rebuilding QBD daily P&L ${index + 1}/${rebuildMonths.length}: ${month}`,
+      }));
+      const response = await fetch('/api/financials/reprocess-mappings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          companyId,
+          targetMonth: month,
+          mode: 'single',
+          dailyOnly: true,
+        }),
+      });
+      const raw = await response.text();
+      const requestId = response.headers.get('x-vercel-id') || '';
+      const data = (() => {
+        try {
+          return raw ? JSON.parse(raw) : {};
+        } catch {
+          return { error: `Non-JSON response: ${String(raw || '').slice(0, 240)}` };
+        }
+      })();
+      if (!response.ok || !data?.ok) {
+        failedMonths.push(`${month}${data?.error ? ` (${data.error})` : ''}${requestId ? ` Request ID: ${requestId}` : ''}`);
+        continue;
+      }
+      rowsWritten += Number(data?.qbdDailyFinancialSnapshots?.rowsWritten || 0);
+    }
+
+    if (failedMonths.length > 0) {
+      throw new Error(`QBD daily P&L rebuild failed for ${failedMonths.length} month(s): ${failedMonths.join('; ')}`);
+    }
+
+    setFinancialImportProgressByCompany((prev) => ({
+      ...prev,
+      [companyId]: `Completed QBD daily P&L rebuild for ${rebuildMonths.length} month(s). Rows written: ${rowsWritten}.`,
+    }));
+    alert(
+      `Daily Financials rebuilt for ${companyName}. ` +
+        `Processed ${rebuildMonths.length} month(s) from ${rebuildMonths[0]} through ${rebuildMonths[rebuildMonths.length - 1]}. ` +
+        `Rows written: ${rowsWritten}.`
+    );
+  };
+
   const runMappedFinancialImport = async (companyId: string, companyName: string) => {
     if (runningFinancialImportByCompany[companyId]) {
       alert('Financial import is already running for this company.');
@@ -5698,6 +5780,12 @@ export default function SiteAdminDashboard(props: any) {
 
     setRunningFinancialImportByCompany((prev) => ({ ...prev, [companyId]: true }));
     try {
+      if (isQuickBooksDesktop) {
+        await runQuickBooksDesktopDailyPnlRebuild(companyId, companyName, financialImportSettings.targetMonth);
+        await checkInforM3Status?.(companyId);
+        return;
+      }
+
       const response = await fetch(isCsi ? '/api/financials/publish-month' : '/api/financials/reprocess-mappings', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -5705,7 +5793,7 @@ export default function SiteAdminDashboard(props: any) {
           companyId,
           ...(isCsi
             ? { month: financialImportSettings.targetMonth, force: true }
-            : { targetMonth: financialImportSettings.targetMonth, mode: 'through', ...(isQuickBooksDesktop ? { dailyOnly: true } : {}) }),
+            : { targetMonth: financialImportSettings.targetMonth, mode: 'through' }),
         }),
       });
       const raw = await response.text();

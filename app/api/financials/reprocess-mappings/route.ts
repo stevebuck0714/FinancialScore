@@ -989,6 +989,41 @@ async function loadQbdPageRecords(companyId: string, requestName: string, detail
   return rows.flatMap((row) => (Array.isArray(row.payload) ? row.payload.map(qbdAsRecord) : []));
 }
 
+async function loadQbdLatestGlRowsForMonth(companyId: string, monthKey: string): Promise<Record<string, unknown>[]> {
+  const monthStart = `${monthKey}-01`;
+  const monthEndDate = new Date(`${monthStart}T00:00:00.000Z`);
+  monthEndDate.setUTCMonth(monthEndDate.getUTCMonth() + 1);
+  const nextMonthStart = monthEndDate.toISOString().slice(0, 10);
+  const rows = await prisma.$queryRaw<Array<{ row: unknown }>>`
+    WITH latest_batch AS (
+      SELECT "batchId"
+      FROM "QuickBooksDesktopBackfillPage"
+      WHERE "companyId" = ${companyId}
+        AND "requestName" = 'GeneralDetailReportQuery'
+      ORDER BY "createdAt" DESC
+      LIMIT 1
+    ),
+    gl_rows AS (
+      SELECT jsonb_array_elements(p."payload"::jsonb) AS row
+      FROM "QuickBooksDesktopBackfillPage" p
+      JOIN latest_batch lb ON lb."batchId" = p."batchId"
+      WHERE p."companyId" = ${companyId}
+        AND p."requestName" = 'GeneralDetailReportQuery'
+    )
+    SELECT row
+    FROM gl_rows
+    WHERE row->>'rowKind' = 'DataRow'
+      AND EXISTS (
+        SELECT 1
+        FROM jsonb_array_elements(row->'colData') AS col
+        WHERE col->>'colID' = '3'
+          AND col->>'value' >= ${monthStart}
+          AND col->>'value' < ${nextMonthStart}
+      )
+  `;
+  return rows.map((entry) => qbdAsRecord(entry.row)).filter((row) => Object.keys(row).length > 0);
+}
+
 function qbdTransactionIdentity(record: Record<string, unknown>, fallbackPrefix: string, index: number): string {
   return qbdString(record.TxnID) ||
     [
@@ -1407,6 +1442,95 @@ async function persistQuickBooksDesktopDailyFinancialSnapshots(
     rowsDeleted: 0,
     startDate: startDate.toISOString(),
     endDate: endDate.toISOString(),
+  };
+}
+
+async function rebuildQuickBooksDesktopDailyPnlMonth(companyId: string, monthKey: string) {
+  if (!/^\d{4}-\d{2}$/.test(monthKey)) {
+    throw new Error('Valid targetMonth is required for QBD daily P&L month rebuild.');
+  }
+
+  const mappings = await prisma.accountMapping.findMany({
+    where: { companyId },
+    select: { accountId: true, accountName: true, accountCode: true, targetField: true },
+  });
+  const targetByKey = new Map<string, string>();
+  const accountCodeCounts = new Map<string, number>();
+  for (const mapping of mappings) {
+    const code = qbdString(mapping.accountCode).toLowerCase();
+    if (code) accountCodeCounts.set(code, Number(accountCodeCounts.get(code) || 0) + 1);
+  }
+  for (const mapping of mappings) {
+    const target = qbdString(mapping.targetField);
+    const keyValues = [mapping.accountId, mapping.accountName].map(qbdString).filter(Boolean);
+    const accountCode = qbdString(mapping.accountCode);
+    if (accountCode && accountCodeCounts.get(accountCode.toLowerCase()) === 1) keyValues.push(accountCode);
+    for (const key of keyValues) {
+      targetByKey.set(key.toLowerCase(), target);
+    }
+  }
+
+  const glRows = await loadQbdLatestGlRowsForMonth(companyId, monthKey);
+  const dailySnapshots = new Map<string, QbdMappedMonthlyRow>();
+  const getDailySnapshot = (dateKey: string) => {
+    const row = dailySnapshots.get(dateKey) || createQbdMappedDailySnapshot(dateKey);
+    dailySnapshots.set(dateKey, row);
+    return row;
+  };
+  const getTarget = (accountName: unknown) => targetByKey.get(qbdString(accountName).toLowerCase()) || '';
+  let pnlRowsUsed = 0;
+  let unmappedRows = 0;
+  let nonPnlRows = 0;
+  let zeroAmountRows = 0;
+
+  for (const glRow of glRows) {
+    const dateKey = qbdDateKey(qbdReportColValueByTitle(glRow, ['Txn Date', 'Date'], ['3']));
+    if (!dateKey || dateKey.slice(0, 7) !== monthKey) continue;
+    const target = getTarget(glRow.accountName || glRow.rowValue);
+    if (!target) {
+      unmappedRows += 1;
+      continue;
+    }
+    if (!qbdIsIncomeStatementExpenseTarget(target)) {
+      nonPnlRows += 1;
+      continue;
+    }
+    const rawAmount = qbdNumber(qbdReportColValueByTitle(glRow, ['Amount'], ['8']));
+    const amount = qbdGeneralLedgerPnlAmount(target, rawAmount);
+    if (amount === 0) {
+      zeroAmountRows += 1;
+      continue;
+    }
+    qbdAddMappedAmount(getDailySnapshot(dateKey), target, amount);
+    pnlRowsUsed += 1;
+  }
+
+  const qbdDailyFinancialSnapshots = Array.from(dailySnapshots.values()).sort((a, b) => String(a.snapshotDate).localeCompare(String(b.snapshotDate)));
+  const result = await persistQuickBooksDesktopDailyFinancialSnapshots(
+    companyId,
+    { qbdDailyFinancialSnapshots },
+    { canUpdatePnl: true, canUpdateBalanceSheet: false },
+  );
+  const totals = qbdDailyFinancialSnapshots.reduce(
+    (acc, row) => {
+      acc.revenue += Number(row.revenue || 0);
+      acc.cogsTotal += Number(row.cogsTotal || 0);
+      acc.expense += Number(row.expense || 0);
+      return acc;
+    },
+    { revenue: 0, cogsTotal: 0, expense: 0 },
+  );
+
+  return {
+    month: monthKey,
+    glRowsScanned: glRows.length,
+    pnlRowsUsed,
+    unmappedRows,
+    nonPnlRows,
+    zeroAmountRows,
+    dailyRowsBuilt: qbdDailyFinancialSnapshots.length,
+    ...result,
+    totals,
   };
 }
 
@@ -2033,6 +2157,9 @@ export async function POST(request: NextRequest) {
         const { loadQuickBooksDesktopBackfillPayloads } = await import('@/lib/quickbooks-desktop/backfill-payloads');
         financialPayload = (await loadQuickBooksDesktopBackfillPayloads(String(companyId), metadata))?.financialPayload || null;
       }
+      if (!financialPayload && dailyOnly) {
+        financialPayload = {};
+      }
 
       if (!financialPayload) {
         return NextResponse.json(
@@ -2066,23 +2193,23 @@ export async function POST(request: NextRequest) {
           { status: 200 },
         );
       }
+      if (dailyOnly) {
+        const qbdDailyFinancialSnapshots = await rebuildQuickBooksDesktopDailyPnlMonth(String(companyId), targetMonth || '');
+        qbdDiagnostics.dailyFinancialSnapshots = qbdDailyFinancialSnapshots;
+        return NextResponse.json({
+          success: true,
+          ok: true,
+          message: `QuickBooks Desktop daily P&L rebuilt for ${targetMonth}.`,
+          diagnostics: qbdDiagnostics,
+          qbdDailyFinancialSnapshots,
+        });
+      }
       financialPayload = await buildQuickBooksDesktopMappedMonthlyPayload(String(companyId), financialPayload);
       qbdDiagnostics.rebuiltMappedMonthlyData = true;
       qbdDiagnostics.rebuiltMonthlyRows = Array.isArray(financialPayload.monthlyData) ? financialPayload.monthlyData.length : 0;
       qbdDiagnostics.rebuiltCoverage = summarizeMonthlyRowsCoverage(
         Array.isArray(financialPayload.monthlyData) ? (financialPayload.monthlyData as Array<Record<string, unknown>>) : [],
       );
-      if (dailyOnly) {
-        const qbdDailyFinancialSnapshots = await persistQuickBooksDesktopDailyFinancialSnapshots(String(companyId), financialPayload, qbdDomainScope);
-        qbdDiagnostics.dailyFinancialSnapshots = qbdDailyFinancialSnapshots;
-        return NextResponse.json({
-          success: true,
-          ok: true,
-          message: 'QuickBooks Desktop daily financial snapshots rebuilt successfully.',
-          diagnostics: qbdDiagnostics,
-          qbdDailyFinancialSnapshots,
-        });
-      }
       const qbdHistoricalBsPreservation = await preserveQuickBooksDesktopHistoricalMonthlyBalanceSheet(
         String(companyId),
         financialPayload,
