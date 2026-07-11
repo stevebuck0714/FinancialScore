@@ -5694,6 +5694,7 @@ export default function SiteAdminDashboard(props: any) {
     const company = Array.isArray(companies) ? companies.find((entry: any) => entry.id === companyId) : null;
     const accountingSystem = String(company?.accountingSystem || '').trim().toUpperCase();
     const isCsi = accountingSystem === 'INFOR_CSI';
+    const isQuickBooksDesktop = accountingSystem === 'QUICKBOOKS_DESKTOP' || accountingSystem === 'QUICKBOOKS_ENTERPRISE';
 
     setRunningFinancialImportByCompany((prev) => ({ ...prev, [companyId]: true }));
     try {
@@ -5704,7 +5705,7 @@ export default function SiteAdminDashboard(props: any) {
           companyId,
           ...(isCsi
             ? { month: financialImportSettings.targetMonth, force: true }
-            : { targetMonth: financialImportSettings.targetMonth, mode: 'through' }),
+            : { targetMonth: financialImportSettings.targetMonth, mode: 'through', ...(isQuickBooksDesktop ? { dailyOnly: true } : {}) }),
         }),
       });
       const raw = await response.text();
@@ -5726,6 +5727,8 @@ export default function SiteAdminDashboard(props: any) {
       alert(
         isCsi
           ? `CSI month publish complete for ${companyName} (${financialImportSettings.targetMonth}).`
+          : isQuickBooksDesktop
+            ? `Daily Financials rebuilt for ${companyName} through ${financialImportSettings.targetMonth}.`
           : recordsImported !== null
             ? `Financial import complete for ${companyName}. ${recordsImported} records processed through ${financialImportSettings.targetMonth}.`
             : `Financial import complete for ${companyName} through ${financialImportSettings.targetMonth}.`

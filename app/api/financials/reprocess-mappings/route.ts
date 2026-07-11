@@ -1574,6 +1574,7 @@ export async function POST(request: NextRequest) {
     const companyId = body?.companyId;
     const targetMonth = normalizeTargetMonth(body?.targetMonth);
     const mode = normalizeFinancialImportMode(body?.mode);
+    const dailyOnly = body?.dailyOnly === true;
     const useHistoricalSlLedgersRequested = body?.useHistoricalSlLedgers === true;
     const persistRebuiltPayload = body?.persistRebuiltPayload === true;
 
@@ -2071,6 +2072,17 @@ export async function POST(request: NextRequest) {
       qbdDiagnostics.rebuiltCoverage = summarizeMonthlyRowsCoverage(
         Array.isArray(financialPayload.monthlyData) ? (financialPayload.monthlyData as Array<Record<string, unknown>>) : [],
       );
+      if (dailyOnly) {
+        const qbdDailyFinancialSnapshots = await persistQuickBooksDesktopDailyFinancialSnapshots(String(companyId), financialPayload, qbdDomainScope);
+        qbdDiagnostics.dailyFinancialSnapshots = qbdDailyFinancialSnapshots;
+        return NextResponse.json({
+          success: true,
+          ok: true,
+          message: 'QuickBooks Desktop daily financial snapshots rebuilt successfully.',
+          diagnostics: qbdDiagnostics,
+          qbdDailyFinancialSnapshots,
+        });
+      }
       const qbdHistoricalBsPreservation = await preserveQuickBooksDesktopHistoricalMonthlyBalanceSheet(
         String(companyId),
         financialPayload,
