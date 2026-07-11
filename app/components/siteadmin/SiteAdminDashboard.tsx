@@ -2495,6 +2495,7 @@ export default function SiteAdminDashboard(props: any) {
   const [qbDesktopProgramsByCompany, setQbDesktopProgramsByCompany] = React.useState<
     Record<string, Array<{ dataDomain: string; qbEntity: string; enabled: boolean }>>
   >({});
+  const qbDesktopProgramsDirtyRef = React.useRef<Record<string, boolean>>({});
   const [qbDesktopDateRangeByCompany, setQbDesktopDateRangeByCompany] = React.useState<
     Record<string, { startDate: string; endDate: string }>
   >({});
@@ -3004,11 +3005,18 @@ export default function SiteAdminDashboard(props: any) {
     }));
   };
 
-  const setQbDesktopPrograms = (companyId: string, programs: Array<{ dataDomain: string; qbEntity: string; enabled?: boolean }>) => {
+  const setQbDesktopPrograms = (
+    companyId: string,
+    programs: Array<{ dataDomain: string; qbEntity: string; enabled?: boolean }>,
+    options?: { markDirty?: boolean },
+  ) => {
     setQbDesktopProgramsByCompany((prev) => ({
       ...prev,
       [companyId]: programs.map((row) => ({ ...row, enabled: row.enabled !== false })),
     }));
+    if (options?.markDirty) {
+      qbDesktopProgramsDirtyRef.current = { ...qbDesktopProgramsDirtyRef.current, [companyId]: true };
+    }
   };
   const setQbDesktopDateRange = (companyId: string, next: Partial<{ startDate: string; endDate: string }>) => {
     setQbDesktopDateRangeByCompany((prev) => ({
@@ -3170,12 +3178,12 @@ export default function SiteAdminDashboard(props: any) {
   ) => {
     const current = getQbDesktopPrograms(companyId);
     const next = current.map((row, i) => (i === index ? { ...row, [field]: value } : row));
-    setQbDesktopPrograms(companyId, next);
+    setQbDesktopPrograms(companyId, next, { markDirty: true });
   };
 
   const addQbDesktopProgram = (companyId: string) => {
     const current = getQbDesktopPrograms(companyId);
-    setQbDesktopPrograms(companyId, [...current, { dataDomain: '', qbEntity: '', enabled: true }]);
+    setQbDesktopPrograms(companyId, [...current, { dataDomain: '', qbEntity: '', enabled: true }], { markDirty: true });
   };
   const updateQboProgram = (
     companyId: string,
@@ -3319,7 +3327,7 @@ export default function SiteAdminDashboard(props: any) {
   const deleteQbDesktopProgram = (companyId: string, index: number) => {
     const current = getQbDesktopPrograms(companyId);
     const next = current.filter((_, i) => i !== index);
-    setQbDesktopPrograms(companyId, next.length > 0 ? next : [{ dataDomain: '', qbEntity: '', enabled: true }]);
+    setQbDesktopPrograms(companyId, next.length > 0 ? next : [{ dataDomain: '', qbEntity: '', enabled: true }], { markDirty: true });
   };
   const deleteQboProgram = (companyId: string, index: number) => {
     const current = getQboPrograms(companyId);
@@ -3354,7 +3362,7 @@ export default function SiteAdminDashboard(props: any) {
           [companyId]: { ...defaultQbDesktopSettings, ...data.settings },
         }));
       }
-      if (Array.isArray(data?.programs)) {
+      if (Array.isArray(data?.programs) && !qbDesktopProgramsDirtyRef.current[companyId]) {
         setQbDesktopPrograms(companyId, data.programs);
       }
       setQbDesktopSyncStatusByCompany((prev) => ({
@@ -3567,6 +3575,7 @@ export default function SiteAdminDashboard(props: any) {
       if (!response.ok || !data?.ok) {
         throw new Error(data?.details || data?.error || 'Failed to save QuickBooks Desktop settings');
       }
+      qbDesktopProgramsDirtyRef.current = { ...qbDesktopProgramsDirtyRef.current, [companyId]: false };
       await loadQbDesktopSettings(companyId);
       alert('QuickBooks Desktop settings saved for this company.');
     } catch (error: any) {
