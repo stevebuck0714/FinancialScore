@@ -442,7 +442,7 @@ function buildReportChildren(requestName: string, dateRange: QbwcDateRange): str
     return `<GeneralSummaryReportType>TrialBalance</GeneralSummaryReportType>${period}${basis}`;
   }
   if (requestName === 'GeneralDetailReportQuery') {
-    return `<GeneralDetailReportType>GeneralLedger</GeneralDetailReportType>${period}${basis}<IncludeColumn>TxnDate</IncludeColumn><IncludeColumn>Account</IncludeColumn><IncludeColumn>Amount</IncludeColumn><IncludeColumn>Balance</IncludeColumn>`;
+    return `<GeneralDetailReportType>GeneralLedger</GeneralDetailReportType>${period}${basis}<IncludeColumn>Date</IncludeColumn><IncludeColumn>Account</IncludeColumn><IncludeColumn>Amount</IncludeColumn><IncludeColumn>Balance</IncludeColumn>`;
   }
   return `${period}${basis}`;
 }

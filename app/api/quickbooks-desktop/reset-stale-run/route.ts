@@ -78,11 +78,12 @@ function requeueStaleJobs(
       const job = asRecord(value);
       if (!job) return [id, value];
       const staleJobAgeMinutes = getAgeMinutes(job.updatedAt || job.startedAt);
+      const status = asString(job.status).toLowerCase();
+      const isSessionJob = asString(job.ticket) === staleTicket || activeJobIds.has(asString(job.id) || id);
       const shouldRequeue =
-        asString(job.status).toLowerCase() === 'running' &&
+        (status === 'running' || (status === 'failed' && isSessionJob)) &&
         (
-          asString(job.ticket) === staleTicket ||
-          activeJobIds.has(asString(job.id) || id) ||
+          isSessionJob ||
           (allowOrphanedRunningJobs && staleJobAgeMinutes !== null && staleJobAgeMinutes >= minStaleMinutes)
         );
 
