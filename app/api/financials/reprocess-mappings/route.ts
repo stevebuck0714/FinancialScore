@@ -1138,7 +1138,7 @@ async function buildQuickBooksDesktopMappedMonthlyPayload(companyId: string, bas
     const target = getTarget({ name: accountName });
     const dateKey = qbdDateKey(qbdReportColValueByTitle(glRow, ['Txn Date', 'Date'], ['3']));
     if (!dateKey) continue;
-    const rawAmount = qbdNumber(qbdReportColValueByTitle(glRow, ['Amount']));
+    const rawAmount = qbdNumber(qbdReportColValueByTitle(glRow, ['Amount'], ['8']));
     const amount = qbdGeneralLedgerPnlAmount(target, rawAmount);
     if (amount === 0) continue;
     if (qbdIsIncomeStatementExpenseTarget(target)) {
