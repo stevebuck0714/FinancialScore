@@ -928,26 +928,61 @@ function getQuickBooksDesktopDomainScope(metadata: Record<string, unknown>) {
   };
 }
 
-async function loadQbdPageRecords(companyId: string, requestName: string, detailOnly = false): Promise<Record<string, unknown>[]> {
-  const rows = await prisma.$queryRaw<Array<{ payload: unknown }>>`
-    WITH latest_batch AS (
-      SELECT "batchId"
-      FROM "QuickBooksDesktopBackfillPage"
-      WHERE "companyId" = ${companyId}
-        AND "requestName" = ${requestName}
-        AND (${detailOnly}::boolean = ("jobId" LIKE '%:detail:%'))
-      ORDER BY "createdAt" DESC
-      LIMIT 1
-    )
-    SELECT p."payload"
-    FROM "QuickBooksDesktopBackfillPage" p
-    JOIN latest_batch lb ON lb."batchId" = p."batchId"
-    WHERE p."companyId" = ${companyId}
-      AND p."requestName" = ${requestName}
-      AND (${detailOnly}::boolean = (p."jobId" LIKE '%:detail:%'))
-    ORDER BY p."jobId", p."pageNumber" ASC
-  `;
+async function loadQbdPageRecords(companyId: string, requestName: string, detailOnly = false, allBatches = false): Promise<Record<string, unknown>[]> {
+  const rows = allBatches
+    ? await prisma.$queryRaw<Array<{ payload: unknown }>>`
+      SELECT p."payload"
+      FROM "QuickBooksDesktopBackfillPage" p
+      WHERE p."companyId" = ${companyId}
+        AND p."requestName" = ${requestName}
+        AND (${detailOnly}::boolean = (p."jobId" LIKE '%:detail:%'))
+      ORDER BY p."createdAt" ASC, p."jobId" ASC, p."pageNumber" ASC
+    `
+    : await prisma.$queryRaw<Array<{ payload: unknown }>>`
+      WITH latest_batch AS (
+        SELECT "batchId"
+        FROM "QuickBooksDesktopBackfillPage"
+        WHERE "companyId" = ${companyId}
+          AND "requestName" = ${requestName}
+          AND (${detailOnly}::boolean = ("jobId" LIKE '%:detail:%'))
+        ORDER BY "createdAt" DESC
+        LIMIT 1
+      )
+      SELECT p."payload"
+      FROM "QuickBooksDesktopBackfillPage" p
+      JOIN latest_batch lb ON lb."batchId" = p."batchId"
+      WHERE p."companyId" = ${companyId}
+        AND p."requestName" = ${requestName}
+        AND (${detailOnly}::boolean = (p."jobId" LIKE '%:detail:%'))
+      ORDER BY p."jobId", p."pageNumber" ASC
+    `;
   return rows.flatMap((row) => (Array.isArray(row.payload) ? row.payload.map(qbdAsRecord) : []));
+}
+
+function qbdTransactionIdentity(record: Record<string, unknown>, fallbackPrefix: string, index: number): string {
+  return qbdString(record.TxnID) ||
+    [
+      fallbackPrefix,
+      qbdString(record.TxnDate),
+      qbdString(record.RefNumber),
+      qbdString(record.EditSequence),
+      qbdString(record.TotalAmount || record.Amount || record.Subtotal),
+      index,
+    ].join('|');
+}
+
+function qbdDedupeTransactionRecords(records: Record<string, unknown>[], fallbackPrefix: string): Record<string, unknown>[] {
+  const byKey = new Map<string, Record<string, unknown>>();
+  records.forEach((record, index) => {
+    const key = qbdTransactionIdentity(record, fallbackPrefix, index);
+    const current = byKey.get(key);
+    const currentModified = qbdString(current?.TimeModified);
+    const nextModified = qbdString(record.TimeModified);
+    if (!current || nextModified >= currentModified) {
+      byKey.set(key, record);
+    }
+  });
+  return Array.from(byKey.values());
 }
 
 async function buildQuickBooksDesktopMappedMonthlyPayload(companyId: string, basePayload: Record<string, unknown>) {
@@ -995,21 +1030,32 @@ async function buildQuickBooksDesktopMappedMonthlyPayload(companyId: string, bas
     mappingByKey.get(qbdString(ref.code).toLowerCase()) ||
     null;
 
-  const [accounts, items, invoiceDetail, billDetail, checkRows, creditMemoDetail, salesReceiptRows, journalRows, depositRows, vendorCreditRows, balanceSheetReportRows, generalLedgerReportRows] =
+  const [accounts, items, invoiceRowsRaw, invoiceDetailRowsRaw, billRowsRaw, billDetailRowsRaw, checkRowsRaw, creditMemoRowsRaw, creditMemoDetailRowsRaw, salesReceiptRowsRaw, journalRowsRaw, depositRowsRaw, vendorCreditRowsRaw, balanceSheetReportRows, generalLedgerReportRows] =
     await Promise.all([
       loadQbdPageRecords(companyId, 'AccountQuery'),
       loadQbdPageRecords(companyId, 'ItemQuery'),
-      loadQbdPageRecords(companyId, 'InvoiceQuery', true),
-      loadQbdPageRecords(companyId, 'BillQuery', true),
-      loadQbdPageRecords(companyId, 'CheckQuery'),
-      loadQbdPageRecords(companyId, 'CreditMemoQuery', true),
-      loadQbdPageRecords(companyId, 'SalesReceiptQuery'),
-      loadQbdPageRecords(companyId, 'JournalEntryQuery'),
-      loadQbdPageRecords(companyId, 'DepositQuery'),
-      loadQbdPageRecords(companyId, 'VendorCreditQuery'),
+      loadQbdPageRecords(companyId, 'InvoiceQuery', false, true),
+      loadQbdPageRecords(companyId, 'InvoiceQuery', true, true),
+      loadQbdPageRecords(companyId, 'BillQuery', false, true),
+      loadQbdPageRecords(companyId, 'BillQuery', true, true),
+      loadQbdPageRecords(companyId, 'CheckQuery', false, true),
+      loadQbdPageRecords(companyId, 'CreditMemoQuery', false, true),
+      loadQbdPageRecords(companyId, 'CreditMemoQuery', true, true),
+      loadQbdPageRecords(companyId, 'SalesReceiptQuery', false, true),
+      loadQbdPageRecords(companyId, 'JournalEntryQuery', false, true),
+      loadQbdPageRecords(companyId, 'DepositQuery', false, true),
+      loadQbdPageRecords(companyId, 'VendorCreditQuery', false, true),
       loadQbdPageRecords(companyId, 'BalanceSheetStandardReportQuery'),
-      loadQbdPageRecords(companyId, 'GeneralDetailReportQuery'),
+      loadQbdPageRecords(companyId, 'GeneralDetailReportQuery', false, true),
     ]);
+  const invoiceDetail = qbdDedupeTransactionRecords([...invoiceRowsRaw, ...invoiceDetailRowsRaw], 'invoice');
+  const billDetail = qbdDedupeTransactionRecords([...billRowsRaw, ...billDetailRowsRaw], 'bill');
+  const checkRows = qbdDedupeTransactionRecords(checkRowsRaw, 'check');
+  const creditMemoDetail = qbdDedupeTransactionRecords([...creditMemoRowsRaw, ...creditMemoDetailRowsRaw], 'credit-memo');
+  const salesReceiptRows = qbdDedupeTransactionRecords(salesReceiptRowsRaw, 'sales-receipt');
+  const journalRows = qbdDedupeTransactionRecords(journalRowsRaw, 'journal');
+  const depositRows = qbdDedupeTransactionRecords(depositRowsRaw, 'deposit');
+  const vendorCreditRows = qbdDedupeTransactionRecords(vendorCreditRowsRaw, 'vendor-credit');
 
   const itemAccountByKey = new Map<string, { incomeTarget: string; cogsTarget: string; expenseTarget: string; assetTarget: string }>();
   for (const item of items) {
