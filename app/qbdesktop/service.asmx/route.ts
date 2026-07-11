@@ -1591,6 +1591,20 @@ export async function POST(request: NextRequest) {
           requestName: job.requestName,
           dateRange: job.dateRange,
         }));
+        if (selectedJobs.length === 0 && auth.metadata.quickbooksDesktopQueuedDateRange) {
+          await updateMetadata(auth.companyId, (metadata) => ({
+            ...metadata,
+            quickbooksDesktopQueuedDateRange: null,
+            quickbooksDesktopWebConnectorSessions: {},
+            quickbooksDesktopWebConnectorLastRecovery: {
+              ticket: null,
+              resetAt: new Date().toISOString(),
+              mode: 'clear_completed_manual_backfill',
+              reason: 'Manual QBD backfill had no pending jobs; suppress default incremental fallback.',
+            },
+          }));
+          return authenticateResponse('', 'none');
+        }
         const session: QbwcSession = {
           ticket,
           companyId: auth.companyId,
