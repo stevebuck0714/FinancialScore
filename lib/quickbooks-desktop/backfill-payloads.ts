@@ -499,6 +499,11 @@ export function buildQuickBooksDesktopOperationalPayload(session: QbdPayloadSess
 
   return {
     asOfDate,
+    __qbdSourceDateRange: session.dateRange,
+    __qbdInvoices: invoices,
+    __qbdBills: bills,
+    __qbdReceivePayments: receivePayments,
+    __qbdBillPayments: [...billPaymentChecks, ...billPaymentCreditCards],
     cash,
     arAging: buildAgingSummaryFromReport(arAgingReport, 'totalAR') ||
       (totalAR > 0 ? { totalAR, current: totalAR, days1to30: 0, days31to60: 0, days61to90: 0, days90plus: 0 } : null),

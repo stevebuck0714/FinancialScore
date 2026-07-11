@@ -274,7 +274,12 @@ export async function POST(request: NextRequest) {
         { status: 400 },
       );
     }
-    const jobSpecs = hasProfileRequestNames
+    const jobSpecs: Array<{
+      requestName: string;
+      processingMode?: 'aging_snapshot';
+      dateRange: typeof queuedDateRange;
+      windowIndex: number;
+    }> = hasProfileRequestNames
       ? [
           ...staticRequests.map((requestName) => ({
             requestName,

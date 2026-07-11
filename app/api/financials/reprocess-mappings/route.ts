@@ -57,6 +57,22 @@ async function hasQuickBooksDesktopBackfillPages(companyId: string): Promise<boo
   return Number(rows[0]?.count || 0) > 0;
 }
 
+async function hasQuickBooksDesktopConnectionMetadata(companyId: string): Promise<boolean> {
+  const rows = await prisma.$queryRaw<Array<{ count: bigint }>>`
+    SELECT COUNT(*)::bigint AS count
+    FROM "AccountingConnection"
+    WHERE "companyId" = ${companyId}
+      AND platform = 'QUICKBOOKS'
+      AND (
+        "connectionMetadata" ? 'quickbooksDesktopSettings'
+        OR "connectionMetadata" ? 'quickbooksDesktopCredentials'
+        OR "connectionMetadata" ? 'quickbooksDesktopBackfillJobs'
+        OR "connectionMetadata" ? 'quickbooksDesktopFinancialPayload'
+      )
+  `;
+  return Number(rows[0]?.count || 0) > 0;
+}
+
 function looksLikeCoaOnlyPayloadStub(payload: Record<string, unknown> | null): boolean {
   if (!payload) return false;
   const metadata =
@@ -1600,12 +1616,14 @@ export async function POST(request: NextRequest) {
 
     const configuredPlatformRaw = String(company?.accountingSystem || '');
     const configuredPlatform = normalizeConfiguredPlatform(configuredPlatformRaw);
-    const hasQbdBackfillPages =
-      configuredPlatform === 'QUICKBOOKS' || isQuickBooksDesktopFamily(configuredPlatform)
-        ? await hasQuickBooksDesktopBackfillPages(String(companyId))
-        : false;
+    const [hasQbdBackfillPages, hasQbdConnectionMetadata] = await Promise.all([
+      hasQuickBooksDesktopBackfillPages(String(companyId)),
+      hasQuickBooksDesktopConnectionMetadata(String(companyId)),
+    ]);
     const shouldUseQuickBooksDesktopReprocess =
-      isQuickBooksDesktopFamily(configuredPlatform) || (configuredPlatform === 'QUICKBOOKS' && hasQbdBackfillPages);
+      isQuickBooksDesktopFamily(configuredPlatform) ||
+      (configuredPlatform === 'QUICKBOOKS' && hasQbdBackfillPages) ||
+      (hasQbdConnectionMetadata && hasQbdBackfillPages);
 
     if (!configuredPlatform) {
       return NextResponse.json(
@@ -1672,7 +1690,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(payload, { status: qboResponse.status });
     }
 
-    if (configuredPlatform === 'INFOR_M3' || configuredPlatform === 'INFOR_CSI') {
+    if (!shouldUseQuickBooksDesktopReprocess && (configuredPlatform === 'INFOR_M3' || configuredPlatform === 'INFOR_CSI')) {
       const isInforCsi = configuredPlatform === 'INFOR_CSI';
       const payloadRows = await prisma.$queryRaw<Array<{ csi: unknown; m3: unknown }>>`
         SELECT
@@ -2055,6 +2073,7 @@ export async function POST(request: NextRequest) {
         configuredPlatform,
         configuredPlatformRaw,
         hasQbdBackfillPages,
+        hasQbdConnectionMetadata,
         targetMonth: targetMonth || null,
         mode,
         hadMonthlyDataRows: hasMonthlyDataRows(financialPayload),

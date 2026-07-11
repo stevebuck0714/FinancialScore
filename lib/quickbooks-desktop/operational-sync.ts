@@ -109,6 +109,11 @@ type APPaymentRow = {
 
 export type QbDesktopOperationalPayload = {
   asOfDate?: string | null;
+  __qbdSourceDateRange?: Record<string, any> | null;
+  __qbdInvoices?: Array<Record<string, any>>;
+  __qbdBills?: Array<Record<string, any>>;
+  __qbdReceivePayments?: Array<Record<string, any>>;
+  __qbdBillPayments?: Array<Record<string, any>>;
   cash?: CashRow[];
   arAging?: ARAgingRow | ARAgingRow[] | null;
   apAging?: APAgingRow | APAgingRow[] | null;
@@ -520,6 +525,243 @@ async function saveAPPayments(companyId: string, rows: APPaymentRow[]): Promise<
   return data.length;
 }
 
+function qbdRef(record: Record<string, unknown>, refName: string): { id: string | null; name: string | null } {
+  const ref = record[refName];
+  if (!ref || typeof ref !== 'object' || Array.isArray(ref)) return { id: null, name: null };
+  const src = ref as Record<string, unknown>;
+  return { id: asString(src.ListID), name: asString(src.FullName) };
+}
+
+function qbdFirstString(record: Record<string, unknown>, ...fields: string[]): string | null {
+  for (const field of fields) {
+    const value = asString(record[field]);
+    if (value) return value;
+  }
+  return null;
+}
+
+function qbdRecordKey(record: Record<string, unknown>, fallbackPrefix: string, index: number): string {
+  return qbdFirstString(record, 'TxnID', 'RefNumber', 'EditSequence') || `${fallbackPrefix}:${index}`;
+}
+
+function qbdRecordNumber(record: Record<string, unknown>, fallbackPrefix: string, index: number): string {
+  return qbdFirstString(record, 'RefNumber', 'TxnID') || `${fallbackPrefix}-${index + 1}`;
+}
+
+function qbdRecordAmount(record: Record<string, unknown>, ...fields: string[]): number {
+  for (const field of fields) {
+    const value = toNumber(record[field]);
+    if (value !== 0) return Math.abs(value);
+  }
+  return 0;
+}
+
+function dedupeQbdRecords(records: Array<Record<string, unknown>>, fallbackPrefix: string): Array<Record<string, unknown>> {
+  const byKey = new Map<string, Record<string, unknown>>();
+  records.forEach((record, index) => {
+    const key = qbdRecordKey(record, fallbackPrefix, index);
+    const current = byKey.get(key);
+    const currentModified = asString(current?.TimeModified) || '';
+    const nextModified = asString(record.TimeModified) || '';
+    if (!current || nextModified >= currentModified) byKey.set(key, record);
+  });
+  return Array.from(byKey.values());
+}
+
+function businessDayKeys(startDate: Date, endDate: Date): string[] {
+  const keys: string[] = [];
+  const cursor = new Date(startDate);
+  cursor.setHours(0, 0, 0, 0);
+  const end = new Date(endDate);
+  end.setHours(0, 0, 0, 0);
+  while (cursor <= end) {
+    const day = cursor.getDay();
+    if (day !== 0 && day !== 6) keys.push(cursor.toISOString().slice(0, 10));
+    cursor.setDate(cursor.getDate() + 1);
+  }
+  return keys;
+}
+
+function addAppliedAmount(
+  index: Map<string, Array<{ paymentDate: Date; amount: number }>>,
+  keys: Array<string | null>,
+  paymentDate: Date | null,
+  amount: number,
+): void {
+  if (!paymentDate || amount <= 0) return;
+  for (const key of keys) {
+    if (!key) continue;
+    const rows = index.get(key) || [];
+    rows.push({ paymentDate, amount });
+    index.set(key, rows);
+  }
+}
+
+function buildAppliedPaymentIndex(records: Array<Record<string, unknown>>, appliedType: 'invoice' | 'bill') {
+  const index = new Map<string, Array<{ paymentDate: Date; amount: number }>>();
+  for (const payment of records) {
+    const paymentDate = normalizeOptionalDate(payment.TxnDate);
+    const appliedRows = Array.isArray(payment.AppliedToTxnRet) ? payment.AppliedToTxnRet : [];
+    for (const applied of appliedRows) {
+      const appliedRecord = applied && typeof applied === 'object' && !Array.isArray(applied)
+        ? (applied as Record<string, unknown>)
+        : {};
+      const txnType = String(appliedRecord.TxnType || '').toLowerCase();
+      if (txnType && !txnType.includes(appliedType)) continue;
+      const amount = qbdRecordAmount(appliedRecord, 'AppliedAmount', 'Amount');
+      addAppliedAmount(
+        index,
+        [asString(appliedRecord.TxnID), asString(appliedRecord.RefNumber)],
+        paymentDate,
+        amount,
+      );
+    }
+  }
+  for (const rows of index.values()) {
+    rows.sort((a, b) => a.paymentDate.getTime() - b.paymentDate.getTime());
+  }
+  return index;
+}
+
+function paidThroughDate(index: Map<string, Array<{ paymentDate: Date; amount: number }>>, keys: Array<string | null>, asOfDate: Date): number {
+  const seen = new Set<string>();
+  let total = 0;
+  for (const key of keys) {
+    if (!key) continue;
+    const rows = index.get(key) || [];
+    for (const row of rows) {
+      const signature = `${row.paymentDate.toISOString()}|${row.amount}`;
+      if (seen.has(signature)) continue;
+      if (row.paymentDate <= asOfDate) {
+        total += row.amount;
+        seen.add(signature);
+      }
+    }
+  }
+  return total;
+}
+
+function hasAppliedPayments(index: Map<string, Array<{ paymentDate: Date; amount: number }>>, keys: Array<string | null>): boolean {
+  return keys.some((key) => Boolean(key && (index.get(key)?.length || 0) > 0));
+}
+
+async function saveQuickBooksDesktopDetailOpenSnapshots(
+  companyId: string,
+  frequency: Frequency,
+  payload: QbDesktopOperationalPayload,
+): Promise<number> {
+  const range = payload.__qbdSourceDateRange || {};
+  const startDate = normalizeOptionalDate(range.startDate);
+  const endDate = normalizeOptionalDate(range.endDate || payload.asOfDate);
+  if (!startDate || !endDate || startDate > endDate) return 0;
+
+  const invoices = dedupeQbdRecords(Array.isArray(payload.__qbdInvoices) ? payload.__qbdInvoices : [], 'invoice');
+  const bills = dedupeQbdRecords(Array.isArray(payload.__qbdBills) ? payload.__qbdBills : [], 'bill');
+  const arPaymentIndex = buildAppliedPaymentIndex(Array.isArray(payload.__qbdReceivePayments) ? payload.__qbdReceivePayments : [], 'invoice');
+  const apPaymentIndex = buildAppliedPaymentIndex(Array.isArray(payload.__qbdBillPayments) ? payload.__qbdBillPayments : [], 'bill');
+  if (invoices.length === 0 && bills.length === 0) return 0;
+
+  let recordsCreated = 0;
+  for (const dateKey of businessDayKeys(startDate, endDate)) {
+    const snapshotDate = normalizeDate(dateKey);
+    const arRows: AROpenInvoiceRow[] = [];
+    const apRows: APOpenBillRow[] = [];
+
+    invoices.forEach((invoice, index) => {
+      const invoiceDate = normalizeOptionalDate(invoice.TxnDate);
+      if (!invoiceDate || invoiceDate > snapshotDate) return;
+      const totalAmount = qbdRecordAmount(invoice, 'TotalAmount', 'Amount', 'Subtotal');
+      if (totalAmount <= 0) return;
+      const invoiceNo = qbdRecordNumber(invoice, 'QBD-INVOICE', index);
+      const txnId = asString(invoice.TxnID);
+      const matchKeys = [txnId, invoiceNo];
+      if (String(invoice.IsPaid || '').toLowerCase() === 'true' && !hasAppliedPayments(arPaymentIndex, matchKeys)) return;
+      const paidAmount = paidThroughDate(arPaymentIndex, matchKeys, snapshotDate);
+      const remaining = Math.max(0, totalAmount - paidAmount);
+      if (remaining <= 0) return;
+      const customer = qbdRef(invoice, 'CustomerRef');
+      arRows.push({
+        customerId: customer.id || customer.name || null,
+        customerName: customer.name || 'Unknown Customer',
+        invoiceNo,
+        invoiceDate,
+        dueDate: normalizeOptionalDate(invoice.DueDate),
+        status: 'OPEN',
+        currencyCode: asString((invoice.CurrencyRef as any)?.FullName) || 'USD',
+        amountCurrency: totalAmount,
+        amountHome: totalAmount,
+        amountDueHome: remaining,
+        sourceTransaction: txnId || qbdRecordKey(invoice, 'invoice', index),
+      });
+    });
+
+    bills.forEach((bill, index) => {
+      const billDate = normalizeOptionalDate(bill.TxnDate);
+      if (!billDate || billDate > snapshotDate) return;
+      const totalAmount = qbdRecordAmount(bill, 'TotalAmount', 'Amount', 'AmountDue');
+      if (totalAmount <= 0) return;
+      const billNo = qbdRecordNumber(bill, 'QBD-BILL', index);
+      const txnId = asString(bill.TxnID);
+      const matchKeys = [txnId, billNo];
+      if (String(bill.IsPaid || '').toLowerCase() === 'true' && !hasAppliedPayments(apPaymentIndex, matchKeys)) return;
+      const paidAmount = paidThroughDate(apPaymentIndex, matchKeys, snapshotDate);
+      const remaining = Math.max(0, totalAmount - paidAmount);
+      if (remaining <= 0) return;
+      const vendor = qbdRef(bill, 'VendorRef');
+      apRows.push({
+        vendorId: vendor.id || vendor.name || null,
+        vendorName: vendor.name || 'Unknown Vendor',
+        billNo,
+        billDate,
+        dueDate: normalizeOptionalDate(bill.DueDate),
+        status: 'OPEN',
+        currencyCode: asString((bill.CurrencyRef as any)?.FullName) || 'USD',
+        amountCurrency: totalAmount,
+        amountHome: totalAmount,
+        amountDueHome: remaining,
+        sourceTransaction: txnId || qbdRecordKey(bill, 'bill', index),
+      });
+    });
+
+    recordsCreated += await saveAROpenInvoices(companyId, snapshotDate, frequency, arRows);
+    recordsCreated += await saveAPOpenBills(companyId, snapshotDate, frequency, apRows);
+    const arTotals = arRows.reduce(
+      (acc, row) => {
+        const amount = toNumber(row.amountDueHome);
+        const buckets = bucketOpenAmount(amount, snapshotDate, normalizeOptionalDate(row.dueDate), normalizeOptionalDate(row.invoiceDate));
+        return {
+          totalAR: acc.totalAR + amount,
+          current: acc.current + buckets.current,
+          days1to30: acc.days1to30 + buckets.days1to30,
+          days31to60: acc.days31to60 + buckets.days31to60,
+          days61to90: acc.days61to90 + buckets.days61to90,
+          days90plus: acc.days90plus + buckets.days90plus,
+        };
+      },
+      { totalAR: 0, current: 0, days1to30: 0, days31to60: 0, days61to90: 0, days90plus: 0 },
+    );
+    const apTotals = apRows.reduce(
+      (acc, row) => {
+        const amount = toNumber(row.amountDueHome);
+        const buckets = bucketOpenAmount(amount, snapshotDate, normalizeOptionalDate(row.dueDate), normalizeOptionalDate(row.billDate));
+        return {
+          totalAP: acc.totalAP + amount,
+          current: acc.current + buckets.current,
+          days1to30: acc.days1to30 + buckets.days1to30,
+          days31to60: acc.days31to60 + buckets.days31to60,
+          days61to90: acc.days61to90 + buckets.days61to90,
+          days90plus: acc.days90plus + buckets.days90plus,
+        };
+      },
+      { totalAP: 0, current: 0, days1to30: 0, days31to60: 0, days90plus: 0, days61to90: 0 },
+    );
+    recordsCreated += await saveARAging(companyId, snapshotDate, frequency, arTotals.totalAR > 0 ? [arTotals] : []);
+    recordsCreated += await saveAPAging(companyId, snapshotDate, frequency, apTotals.totalAP > 0 ? [apTotals] : []);
+  }
+
+  return recordsCreated;
+}
+
 export async function syncQuickBooksDesktopOperationalPayload(
   companyId: string,
   frequency: Frequency,
@@ -575,12 +817,18 @@ export async function syncQuickBooksDesktopOperationalPayload(
     errors.push(`inventory: ${error instanceof Error ? error.message : 'failed to persist'}`);
   }
   try {
-    recordsCreated += await saveAROpenInvoices(companyId, snapshotDate, frequency, Array.isArray(payload.arOpenInvoices) ? payload.arOpenInvoices : []);
+    if (payload.__qbdSourceDateRange && (payload.__qbdInvoices?.length || payload.__qbdBills?.length)) {
+      recordsCreated += await saveQuickBooksDesktopDetailOpenSnapshots(companyId, frequency, payload);
+    } else {
+      recordsCreated += await saveAROpenInvoices(companyId, snapshotDate, frequency, Array.isArray(payload.arOpenInvoices) ? payload.arOpenInvoices : []);
+    }
   } catch (error) {
     errors.push(`arOpenInvoices: ${error instanceof Error ? error.message : 'failed to persist'}`);
   }
   try {
-    recordsCreated += await saveAPOpenBills(companyId, snapshotDate, frequency, Array.isArray(payload.apOpenBills) ? payload.apOpenBills : []);
+    if (!payload.__qbdSourceDateRange || (!payload.__qbdInvoices?.length && !payload.__qbdBills?.length)) {
+      recordsCreated += await saveAPOpenBills(companyId, snapshotDate, frequency, Array.isArray(payload.apOpenBills) ? payload.apOpenBills : []);
+    }
   } catch (error) {
     errors.push(`apOpenBills: ${error instanceof Error ? error.message : 'failed to persist'}`);
   }

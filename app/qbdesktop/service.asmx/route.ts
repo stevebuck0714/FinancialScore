@@ -174,6 +174,8 @@ const REPORT_REQUESTS = new Set([
 const QBD_TRANSACTION_PAGE_SIZE = 100;
 const QBD_INCLUDE_TRANSACTION_LINE_ITEMS = true;
 const QBD_BACKFILL_JOBS_PER_SESSION = 6;
+const QBD_SHORT_WINDOW_BACKFILL_JOBS_PER_SESSION = 25;
+const QBD_SHORT_WINDOW_MAX_DAYS = 7;
 const QBD_AGING_SNAPSHOT_JOBS_PER_SESSION = 25;
 const QBD_DETAIL_TRANSACTION_PAGE_SIZE = 25;
 const QBD_DETAIL_BACKFILL_JOBS_PER_SESSION = 6;
@@ -428,10 +430,10 @@ function buildReportChildren(requestName: string, dateRange: QbwcDateRange): str
   const period = buildReportPeriod(dateRange);
   const basis = '<ReportBasis>Accrual</ReportBasis>';
   if (requestName === 'ARAgingSummaryReportQuery') {
-    return '<AgingReportType>ARAgingSummary</AgingReportType><ReportAgingAsOf>ReportEndDate</ReportAgingAsOf>';
+    return `<AgingReportType>ARAgingSummary</AgingReportType>${period}<ReportAgingAsOf>ReportEndDate</ReportAgingAsOf>${basis}`;
   }
   if (requestName === 'APAgingSummaryReportQuery') {
-    return '<AgingReportType>APAgingSummary</AgingReportType><ReportAgingAsOf>ReportEndDate</ReportAgingAsOf>';
+    return `<AgingReportType>APAgingSummary</AgingReportType>${period}<ReportAgingAsOf>ReportEndDate</ReportAgingAsOf>${basis}`;
   }
   if (requestName === 'BalanceSheetStandardReportQuery') {
     return `<GeneralSummaryReportType>BalanceSheetStandard</GeneralSummaryReportType>${period}${basis}`;
@@ -509,6 +511,7 @@ function parseSimpleRecord(xml: string): Record<string, unknown> {
     'TimeCreated',
     'TimeModified',
     'EditSequence',
+    'TxnType',
     'Name',
     'FullName',
     'CompanyName',
@@ -641,6 +644,13 @@ function parseResponseRecords(requestName: string, xml: string): Array<Record<st
       record.ExpenseLineRet = getXmlRecords(recordXml, 'ExpenseLineRet').map(parseSimpleRecord);
       record.ItemLineRet = getXmlRecords(recordXml, 'ItemLineRet').map(parseSimpleRecord);
     }
+    if (
+      requestName === 'ReceivePaymentQuery' ||
+      requestName === 'BillPaymentCheckQuery' ||
+      requestName === 'BillPaymentCreditCardQuery'
+    ) {
+      record.AppliedToTxnRet = getXmlRecords(recordXml, 'AppliedToTxnRet').map(parseSimpleRecord);
+    }
     if (requestName === 'SalesReceiptQuery') {
       record.SalesReceiptLineRet = getXmlRecords(recordXml, 'SalesReceiptLineRet').map(parseSimpleRecord);
     }
@@ -750,14 +760,35 @@ function getRunDateRange(metadata: QbDesktopMetadata): QbwcDateRange {
   };
 }
 
+function dateRangeDayCount(dateRange?: QbwcDateRange): number | null {
+  const start = parseDateString(dateRange?.startDate);
+  const end = parseDateString(dateRange?.endDate);
+  if (!start || !end || start > end) return null;
+  const startDate = new Date(`${start}T00:00:00.000Z`);
+  const endDate = new Date(`${end}T00:00:00.000Z`);
+  if (Number.isNaN(startDate.getTime()) || Number.isNaN(endDate.getTime())) return null;
+  return Math.floor((endDate.getTime() - startDate.getTime()) / 86400000) + 1;
+}
+
+function getStandardBackfillJobsPerSession(pendingJobs: QbdBackfillJob[]): number {
+  const dayCounts = pendingJobs
+    .map((job) => dateRangeDayCount(job.dateRange))
+    .filter((count): count is number => typeof count === 'number');
+  if (dayCounts.length > 0 && Math.max(...dayCounts) <= QBD_SHORT_WINDOW_MAX_DAYS) {
+    return QBD_SHORT_WINDOW_BACKFILL_JOBS_PER_SESSION;
+  }
+  return QBD_BACKFILL_JOBS_PER_SESSION;
+}
+
 function getNextBackfillJobs(metadata: QbDesktopMetadata): QbdBackfillJob[] {
   const jobs = metadata.quickbooksDesktopBackfillJobs || {};
   const pendingJobs = Object.values(jobs)
     .filter((job) => job.status === 'queued' || job.status === 'running')
     .sort((a, b) => String(a.createdAt).localeCompare(String(b.createdAt)));
+  const standardJobsPerSession = getStandardBackfillJobsPerSession(pendingJobs);
   const standardJobs = pendingJobs
     .filter((job) => job.processingMode !== 'aging_snapshot')
-    .slice(0, QBD_BACKFILL_JOBS_PER_SESSION);
+    .slice(0, standardJobsPerSession);
   const agingSnapshotJobs = pendingJobs
     .filter((job) => job.processingMode === 'aging_snapshot')
     .slice(0, QBD_AGING_SNAPSHOT_JOBS_PER_SESSION);
