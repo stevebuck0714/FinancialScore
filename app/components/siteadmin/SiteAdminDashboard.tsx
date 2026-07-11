@@ -3461,9 +3461,16 @@ export default function SiteAdminDashboard(props: any) {
             endDate: boundedEndDate,
           }),
         });
-        const data = await response.json().catch(() => ({}));
+        const raw = await response.text();
+        const data = (() => {
+          try {
+            return raw ? JSON.parse(raw) : {};
+          } catch {
+            return { error: `Non-JSON response (${response.status}): ${String(raw || '').slice(0, 240)}` };
+          }
+        })();
         if (!response.ok || !data?.ok) {
-          failedMonths.push(`${monthKey}: ${data?.details || data?.error || 'failed'}`);
+          failedMonths.push(`${monthKey}: ${data?.details || data?.error || `status ${response.status}`}`);
           continue;
         }
         recordsCreated += Number(data?.recordsCreated || 0);

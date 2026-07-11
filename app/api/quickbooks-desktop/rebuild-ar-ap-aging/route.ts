@@ -35,15 +35,17 @@ function countApplied(records: Record<string, unknown>[]): number {
   return records.reduce((sum, record) => sum + asArray(record.AppliedToTxnRet).length, 0);
 }
 
-async function loadQbdRecords(companyId: string, requestName: string): Promise<Record<string, unknown>[]> {
-  const rows = await prisma.$queryRaw<Array<{ payload: unknown }>>`
-    SELECT "payload"
+async function loadQbdRecords(companyId: string, requestName: string, endDate: string): Promise<Record<string, unknown>[]> {
+  const rows = await prisma.$queryRaw<Array<{ record: unknown }>>`
+    SELECT record
     FROM "QuickBooksDesktopBackfillPage"
+    CROSS JOIN LATERAL jsonb_array_elements("payload"::jsonb) AS record
     WHERE "companyId" = ${companyId}
       AND "requestName" = ${requestName}
+      AND NULLIF(record->>'TxnDate', '')::date <= ${endDate}::date
     ORDER BY "createdAt" ASC, "pageNumber" ASC
   `;
-  return rows.flatMap((row) => asArray(row.payload));
+  return rows.map((row) => asRecord(row.record)).filter((row) => Object.keys(row).length > 0);
 }
 
 export async function POST(request: NextRequest) {
@@ -74,11 +76,11 @@ export async function POST(request: NextRequest) {
       billPaymentChecks,
       billPaymentCreditCards,
     ] = await Promise.all([
-      loadQbdRecords(companyId, 'InvoiceQuery'),
-      loadQbdRecords(companyId, 'BillQuery'),
-      loadQbdRecords(companyId, 'ReceivePaymentQuery'),
-      loadQbdRecords(companyId, 'BillPaymentCheckQuery'),
-      loadQbdRecords(companyId, 'BillPaymentCreditCardQuery'),
+      loadQbdRecords(companyId, 'InvoiceQuery', endDate),
+      loadQbdRecords(companyId, 'BillQuery', endDate),
+      loadQbdRecords(companyId, 'ReceivePaymentQuery', endDate),
+      loadQbdRecords(companyId, 'BillPaymentCheckQuery', endDate),
+      loadQbdRecords(companyId, 'BillPaymentCreditCardQuery', endDate),
     ]);
 
     if (!invoices.length && !bills.length) {
