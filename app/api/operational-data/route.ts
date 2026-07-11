@@ -9321,15 +9321,10 @@ export async function GET(request: NextRequest) {
         const requestedFinancialFrequency = String(searchParams.get('frequency') || '')
           .trim()
           .toLowerCase();
-        let financialFrequencyForQuery: 'daily' | 'weekly' | 'monthly' =
+        const financialFrequencyForQuery: 'daily' | 'weekly' | 'monthly' =
           requestedFinancialFrequency === 'weekly' || requestedFinancialFrequency === 'monthly'
             ? (requestedFinancialFrequency as 'weekly' | 'monthly')
             : 'daily';
-        const effectiveStatementRollup: StatementRollup =
-          isQuickBooksDesktopCompany && statementRollup === 'daily' ? 'monthly' : statementRollup;
-        if (isQuickBooksDesktopCompany && financialFrequencyForQuery === 'daily') {
-          financialFrequencyForQuery = 'monthly';
-        }
         // Daily Financials is GL-derived: it must include every day with GL
         // activity, even days that never received an operational raw sync
         // (e.g., MLK Day 2026-01-19 for Atlantic Precision — a company
@@ -9344,32 +9339,15 @@ export async function GET(request: NextRequest) {
         // weekends are still filtered out below because those carry forward
         // stale prior-day balances rather than reflecting any GL activity.
         const dailyFinancialsDateFilter = { gte: startDate, lte: endDate };
-        if (isQuickBooksDesktopCompany) {
-          const monthlyRows = await prisma.monthlyFinancial.findMany({
-            where: {
-              companyId,
-              monthDate: { gte: startOfMonth(startDate), lte: endDate },
-            },
-            orderBy: { monthDate: 'desc' },
-            take: limit,
-          });
-          data = monthlyRows.map((row) => ({
-            ...row,
-            snapshotDate: row.monthDate,
-            frequency: 'monthly',
-            sourcePlatform: 'MONTHLY_FINANCIAL',
-          }));
-        } else {
-          data = await dailySnapshotDelegate.findMany({
-            where: {
-              companyId,
-              frequency: financialFrequencyForQuery,
-              snapshotDate: dailyFinancialsDateFilter,
-            },
-            orderBy: { snapshotDate: 'desc' },
-            take: limit,
-          });
-        }
+        data = await dailySnapshotDelegate.findMany({
+          where: {
+            companyId,
+            frequency: financialFrequencyForQuery,
+            snapshotDate: dailyFinancialsDateFilter,
+          },
+          orderBy: { snapshotDate: 'desc' },
+          take: limit,
+        });
 
         // Daily Financials is a business-day view in the per-day table: a
         // weekend row whose only signal is carry-forward BS values from the
@@ -9421,9 +9399,10 @@ export async function GET(request: NextRequest) {
         const latestDaily = data[0] || dailyDataForAggregator[0];
         const previousDaily = data[1] || latestDaily;
         const latestRevenue = Number(latestDaily?.revenue || 0);
+        const latestCogs = Number(latestDaily?.cogsTotal || 0);
         const latestExpense = Number(latestDaily?.expense || 0);
-        const latestNet = latestRevenue - latestExpense;
-        const previousNet = Number(previousDaily?.revenue || 0) - Number(previousDaily?.expense || 0);
+        const latestNet = latestRevenue - latestCogs - latestExpense;
+        const previousNet = Number(previousDaily?.revenue || 0) - Number(previousDaily?.cogsTotal || 0) - Number(previousDaily?.expense || 0);
         const netChange = latestNet - previousNet;
         let mappedLines: any[] = dailyMappedLineDelegate
           ? await dailyMappedLineDelegate.findMany({
@@ -9454,7 +9433,7 @@ export async function GET(request: NextRequest) {
         mappedLines = appendDailyFinancialSnapshotMappedLines(mappedLines, data);
         const statementRecords = aggregateDailyStatementRows(
           financialFrequencyForQuery === 'daily' ? dailyDataForAggregator : data,
-          effectiveStatementRollup
+          statementRollup
         );
 
         return cacheOperationalPayload({
@@ -9472,8 +9451,8 @@ export async function GET(request: NextRequest) {
             days: data.length,
             statementPeriods: statementRecords.length,
             statementCurrency: 'USD',
-            statementRollup: effectiveStatementRollup,
-            statementBasis: isQuickBooksDesktopCompany ? 'monthly_financial' : 'daily_activity',
+            statementRollup,
+            statementBasis: 'daily_activity',
             mappedLineCount: mappedLines.length,
           },
         });

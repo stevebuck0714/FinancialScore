@@ -1064,7 +1064,7 @@ async function buildQuickBooksDesktopMappedMonthlyPayload(companyId: string, bas
     await Promise.all([
       loadQbdPageRecords(companyId, 'AccountQuery'),
       loadQbdPageRecords(companyId, 'BalanceSheetStandardReportQuery'),
-      loadQbdPageRecords(companyId, 'GeneralDetailReportQuery', false, true),
+      loadQbdPageRecords(companyId, 'GeneralDetailReportQuery'),
     ]);
 
   const months = new Map<string, QbdMappedMonthlyRow>();
@@ -1138,7 +1138,7 @@ async function buildQuickBooksDesktopMappedMonthlyPayload(companyId: string, bas
     const target = getTarget({ name: accountName });
     const dateKey = qbdDateKey(qbdReportColValueByTitle(glRow, ['Txn Date', 'Date'], ['3']));
     if (!dateKey) continue;
-    const rawAmount = qbdNumber(qbdReportColValueByTitle(glRow, ['Amount'], ['8']));
+    const rawAmount = qbdNumber(qbdReportColValueByTitle(glRow, ['Amount']));
     const amount = qbdGeneralLedgerPnlAmount(target, rawAmount);
     if (amount === 0) continue;
     if (qbdIsIncomeStatementExpenseTarget(target)) {
@@ -1405,47 +1405,6 @@ async function persistQuickBooksDesktopDailyFinancialSnapshots(
   return {
     rowsWritten,
     rowsDeleted: 0,
-    startDate: startDate.toISOString(),
-    endDate: endDate.toISOString(),
-  };
-}
-
-async function clearQuickBooksDesktopReprocessDailyPnl(companyId: string, payload: Record<string, unknown>) {
-  const rows = Array.isArray(payload.qbdDailyFinancialSnapshots)
-    ? (payload.qbdDailyFinancialSnapshots as Array<Record<string, unknown>>)
-    : [];
-  const dates = rows
-    .map((row) => qbdDateKey(row.snapshotDate))
-    .filter((dateKey): dateKey is string => Boolean(dateKey))
-    .map((dateKey) => new Date(`${dateKey}T00:00:00.000Z`))
-    .filter((date) => !Number.isNaN(date.getTime()))
-    .sort((a, b) => a.getTime() - b.getTime());
-
-  if (!dates.length) {
-    return { rowsCleared: 0, startDate: null, endDate: null };
-  }
-
-  const startDate = dates[0];
-  const endDate = dates[dates.length - 1];
-  const pnlZeroes = Object.fromEntries(QBD_DAILY_PNL_UPDATE_FIELDS.map((field) => [field, 0]));
-  const result = await prisma.dailyFinancialSnapshot.updateMany({
-    where: {
-      companyId,
-      frequency: 'daily',
-      sourcePlatform: QBD_DAILY_FINANCIAL_SOURCE,
-      snapshotDate: {
-        gte: startDate,
-        lte: endDate,
-      },
-    },
-    data: {
-      ...pnlZeroes,
-      sourceRunId: `qbd-reprocess-pnl-cleared-${Date.now()}`,
-    },
-  });
-
-  return {
-    rowsCleared: result.count,
     startDate: startDate.toISOString(),
     endDate: endDate.toISOString(),
   };
@@ -2128,18 +2087,8 @@ export async function POST(request: NextRequest) {
         targetMonth: targetMonth || undefined,
         mode,
       });
-      const qbdDailyPnlClear = result.ok
-        ? await clearQuickBooksDesktopReprocessDailyPnl(String(companyId), financialPayload)
-        : null;
-      if (qbdDailyPnlClear) {
-        qbdDiagnostics.dailyPnlClear = qbdDailyPnlClear;
-      }
-      const qbdDailyBalanceSheetScope = {
-        canUpdatePnl: false,
-        canUpdateBalanceSheet: qbdDomainScope.canUpdateBalanceSheet,
-      };
       const qbdDailyFinancialSnapshots = result.ok
-        ? await persistQuickBooksDesktopDailyFinancialSnapshots(String(companyId), financialPayload, qbdDailyBalanceSheetScope)
+        ? await persistQuickBooksDesktopDailyFinancialSnapshots(String(companyId), financialPayload, qbdDomainScope)
         : null;
       if (qbdDailyFinancialSnapshots) {
         qbdDiagnostics.dailyFinancialSnapshots = qbdDailyFinancialSnapshots;
