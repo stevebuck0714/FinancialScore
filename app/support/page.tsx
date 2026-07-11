@@ -6,126 +6,83 @@ export default function SupportPage() {
   const [activeTab, setActiveTab] = useState<'getting-started' | 'privacy' | 'license' | 'request-support'>('getting-started');
 
   const tabs = [
-    { id: 'getting-started' as const, label: 'ℹ️ Getting Started', emoji: 'ℹ️' },
-    { id: 'privacy' as const, label: '🔒 Privacy Policy', emoji: '🔒' },
-    { id: 'license' as const, label: '📄 License Agreement', emoji: '📄' },
-    { id: 'request-support' as const, label: '🎫 Request Support', emoji: '🎫' },
+    { id: 'getting-started' as const, label: 'Getting Started', description: 'Onboarding, login, and setup' },
+    { id: 'privacy' as const, label: 'Privacy Policy', description: 'Data handling and privacy' },
+    { id: 'license' as const, label: 'License Agreement', description: 'Product terms and usage' },
+    { id: 'request-support' as const, label: 'Request Support', description: 'Submit a support ticket' },
   ];
 
+  const activeTopic = tabs.find((tab) => tab.id === activeTab) || tabs[0];
+
   return (
-    <div style={{ 
-      minHeight: '100vh', 
-      background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-      padding: '40px 20px'
-    }}>
-      <div style={{ 
-        maxWidth: '1200px', 
-        margin: '0 auto', 
-        background: 'white', 
-        borderRadius: '16px', 
-        boxShadow: '0 20px 60px rgba(0,0,0,0.3)',
-        overflow: 'hidden'
-      }}>
-        {/* Header */}
-        <div style={{ 
-          background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)', 
-          padding: '32px 40px',
-          color: 'white',
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center'
-        }}>
-          <h1 style={{ fontSize: '32px', fontWeight: '700', margin: 0 }}>
+    <div style={{ minHeight: '100vh', background: '#f6f8fb', color: '#0f172a' }}>
+      <header style={{ background: 'white', borderBottom: '1px solid #dbe3ee', boxShadow: '0 2px 10px rgba(15, 23, 42, 0.04)', padding: '18px 32px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '20px' }}>
+        <div>
+          <div style={{ fontSize: '26px', fontWeight: 800, color: '#1F70C1', letterSpacing: '-0.4px' }}>
+            Corelytics<sup style={{ fontSize: '11px', fontWeight: 500 }}>TM</sup>
+          </div>
+          <div style={{ fontSize: '13px', fontWeight: 700, color: '#64748b', letterSpacing: '0.08em', textTransform: 'uppercase', marginTop: '4px' }}>
             Support Center
-          </h1>
-          <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
-            <a
-              href="/?view=ma-welcome"
-              style={{
-                display: 'inline-block',
-                padding: '10px 20px',
-                background: 'rgba(255,255,255,0.2)',
-                color: 'white',
-                textDecoration: 'none',
-                borderRadius: '8px',
-                fontWeight: '600',
-                transition: 'all 0.2s',
-                border: '1px solid rgba(255,255,255,0.3)'
-              }}
-              onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.3)'; }}
-              onMouseLeave={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.2)'; }}
-            >
-              Team Assessment
-            </a>
-            <a
-              href="/"
-              style={{
-                display: 'inline-block',
-                padding: '10px 20px',
-                background: 'rgba(255,255,255,0.2)',
-                color: 'white',
-                textDecoration: 'none',
-                borderRadius: '8px',
-                fontWeight: '600',
-                transition: 'all 0.2s',
-                border: '1px solid rgba(255,255,255,0.3)'
-              }}
-              onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.3)'}
-              onMouseLeave={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.2)'}
-            >
-              ← Back to Dashboard
-            </a>
           </div>
         </div>
-
-        {/* Tabs */}
-        <div style={{ 
-          background: '#f8fafc', 
-          borderBottom: '2px solid #e2e8f0',
-          display: 'flex',
-          padding: '0 40px'
-        }}>
-          {tabs.map((tab) => (
-            <button
-              key={tab.id}
-              onClick={() => setActiveTab(tab.id)}
-              style={{
-                padding: '16px 24px',
-                border: 'none',
-                background: activeTab === tab.id ? 'white' : 'transparent',
-                color: activeTab === tab.id ? '#667eea' : '#64748b',
-                fontWeight: activeTab === tab.id ? '600' : '500',
-                fontSize: '15px',
-                cursor: 'pointer',
-                borderBottom: activeTab === tab.id ? '3px solid #667eea' : '3px solid transparent',
-                transition: 'all 0.2s',
-                marginBottom: '-2px'
-              }}
-              onMouseEnter={(e) => {
-                if (activeTab !== tab.id) {
-                  e.currentTarget.style.color = '#667eea';
-                  e.currentTarget.style.background = '#f0f9ff';
-                }
-              }}
-              onMouseLeave={(e) => {
-                if (activeTab !== tab.id) {
-                  e.currentTarget.style.color = '#64748b';
-                  e.currentTarget.style.background = 'transparent';
-                }
-              }}
-            >
-              {tab.label}
-            </button>
-          ))}
+        <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+          <a href="/?view=ma-welcome" style={{ padding: '9px 14px', background: '#f8fafc', color: '#334155', textDecoration: 'none', borderRadius: '8px', fontWeight: 700, fontSize: '13px', border: '1px solid #dbe3ee' }}>
+            Team Assessment
+          </a>
+          <a href="/" style={{ padding: '9px 14px', background: '#0f172a', color: 'white', textDecoration: 'none', borderRadius: '8px', fontWeight: 700, fontSize: '13px', border: '1px solid #0f172a' }}>
+            Back to Dashboard
+          </a>
         </div>
+      </header>
 
-        {/* Tab Content */}
-        <div style={{ padding: activeTab === 'request-support' ? '20px 24px' : '40px' }}>
-          {activeTab === 'getting-started' && <GettingStartedContent />}
-          {activeTab === 'privacy' && <PrivacyPolicyContent />}
-          {activeTab === 'license' && <LicenseAgreementContent />}
-          {activeTab === 'request-support' && <RequestSupportContent />}
-        </div>
+      <div style={{ maxWidth: '1280px', margin: '0 auto', padding: '28px 24px 48px', display: 'grid', gridTemplateColumns: '280px minmax(0, 1fr)', gap: '24px' }}>
+        <aside style={{ background: 'white', border: '1px solid #dbe3ee', borderRadius: '14px', boxShadow: '0 8px 24px rgba(15, 23, 42, 0.05)', alignSelf: 'start', overflow: 'hidden' }}>
+          <div style={{ padding: '20px', borderBottom: '1px solid #e2e8f0' }}>
+            <div style={{ fontSize: '12px', fontWeight: 800, color: '#64748b', letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: '6px' }}>
+              Help Topics
+            </div>
+            <div style={{ fontSize: '20px', fontWeight: 800, color: '#0f172a' }}>
+              How can we help?
+            </div>
+          </div>
+
+          <nav style={{ padding: '10px' }} aria-label="Support topics">
+            {tabs.map((tab) => {
+              const isActive = activeTab === tab.id;
+              return (
+                <button
+                  key={tab.id}
+                  onClick={() => setActiveTab(tab.id)}
+                  style={{ width: '100%', display: 'block', textAlign: 'left', padding: '13px 14px', marginBottom: '6px', border: '1px solid', borderColor: isActive ? '#bfdbfe' : 'transparent', borderRadius: '10px', background: isActive ? '#eff6ff' : 'transparent', color: isActive ? '#1F70C1' : '#334155', cursor: 'pointer' }}
+                >
+                  <span style={{ display: 'block', fontSize: '14px', fontWeight: 800 }}>{tab.label}</span>
+                  <span style={{ display: 'block', fontSize: '12px', color: isActive ? '#1d4ed8' : '#64748b', marginTop: '3px', lineHeight: 1.35 }}>
+                    {tab.description}
+                  </span>
+                </button>
+              );
+            })}
+          </nav>
+        </aside>
+
+        <main style={{ background: 'white', border: '1px solid #dbe3ee', borderRadius: '14px', boxShadow: '0 8px 24px rgba(15, 23, 42, 0.05)', overflow: 'hidden' }}>
+          <div style={{ padding: '26px 32px', borderBottom: '1px solid #e2e8f0', background: '#fbfdff', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '16px' }}>
+            <div>
+              <h1 style={{ fontSize: '28px', fontWeight: 800, color: '#0f172a', margin: 0 }}>{activeTopic.label}</h1>
+              <p style={{ fontSize: '14px', color: '#64748b', margin: '6px 0 0' }}>{activeTopic.description}</p>
+            </div>
+            <a href="mailto:support@corelytics.com" style={{ padding: '9px 14px', background: '#f8fafc', color: '#334155', textDecoration: 'none', borderRadius: '8px', fontWeight: 700, fontSize: '13px', border: '1px solid #dbe3ee', whiteSpace: 'nowrap' }}>
+              support@corelytics.com
+            </a>
+          </div>
+
+          <div style={{ padding: activeTab === 'request-support' ? '24px 28px' : '32px' }}>
+            {activeTab === 'getting-started' && <GettingStartedContent />}
+            {activeTab === 'privacy' && <PrivacyPolicyContent />}
+            {activeTab === 'license' && <LicenseAgreementContent />}
+            {activeTab === 'request-support' && <RequestSupportContent />}
+          </div>
+        </main>
       </div>
     </div>
   );
@@ -168,7 +125,7 @@ function GettingStartedContent() {
               key={item.num}
               href={`#section-${item.num}`}
               style={{ 
-                color: '#667eea', 
+                color: '#1F70C1', 
                 textDecoration: 'none',
                 fontSize: '14px',
                 padding: '8px 12px',
@@ -186,12 +143,37 @@ function GettingStartedContent() {
 
       {/* Section 1: Initial Login */}
       <section id="section-1" style={{ marginBottom: '48px' }}>
-        <h3 style={{ fontSize: '24px', fontWeight: '700', color: '#1e293b', marginBottom: '20px', borderBottom: '3px solid #667eea', paddingBottom: '12px' }}>
+        <h3 style={{ fontSize: '24px', fontWeight: '700', color: '#1e293b', marginBottom: '20px', borderBottom: '3px solid #1F70C1', paddingBottom: '12px' }}>
           1. Initial Login
         </h3>
         
         <p style={{ marginBottom: '20px', lineHeight: '1.8', color: '#475569' }}>
-          After Registering, you'll see your main Dashboard with the following sections, your User type will be Admin.
+          After your account is created, sign in with your email address and password. Corelytics may require multi-factor authentication (MFA) before opening the dashboard. MFA protects company financial data by requiring a second verification step in addition to your password.
+        </p>
+
+        <h4 style={{ fontSize: '18px', fontWeight: '600', color: '#475569', marginBottom: '12px' }}>
+          First-Time MFA Setup
+        </h4>
+        <ol style={{ marginLeft: '24px', marginBottom: '20px', lineHeight: '1.8', color: '#475569' }}>
+          <li>Enter your email address and password on the login page.</li>
+          <li>If MFA is not enrolled yet, Corelytics will prompt you to set it up.</li>
+          <li>Open an authenticator app such as Microsoft Authenticator, Google Authenticator, Authy, or 1Password.</li>
+          <li>Scan the QR code shown by Corelytics, then enter the 6-digit code from the app.</li>
+          <li>Save your backup codes in a secure place. Backup codes can be used if you lose access to your authenticator device.</li>
+        </ol>
+
+        <h4 style={{ fontSize: '18px', fontWeight: '600', color: '#475569', marginBottom: '12px' }}>
+          Returning Login
+        </h4>
+        <ol style={{ marginLeft: '24px', marginBottom: '20px', lineHeight: '1.8', color: '#475569' }}>
+          <li>Enter your email address and password.</li>
+          <li>Enter the current 6-digit code from your authenticator app when prompted.</li>
+          <li>If available, choose to trust the device only on a private computer you control.</li>
+          <li>If you cannot access your authenticator app, use a backup code or contact your administrator to reset MFA.</li>
+        </ol>
+
+        <p style={{ marginBottom: '20px', lineHeight: '1.8', color: '#475569' }}>
+          After successful login and MFA verification, you'll see your main dashboard. Admin users can manage company setup, users, integrations, and reporting access from the dashboard.
         </p>
 
         <h4 style={{ fontSize: '18px', fontWeight: '600', color: '#475569', marginBottom: '12px' }}>
@@ -217,7 +199,7 @@ function GettingStartedContent() {
 
       {/* Section 2: Profile Tab */}
       <section id="section-2" style={{ marginBottom: '48px' }}>
-        <h3 style={{ fontSize: '24px', fontWeight: '700', color: '#1e293b', marginBottom: '20px', borderBottom: '3px solid #667eea', paddingBottom: '12px' }}>
+        <h3 style={{ fontSize: '24px', fontWeight: '700', color: '#1e293b', marginBottom: '20px', borderBottom: '3px solid #1F70C1', paddingBottom: '12px' }}>
           2. Profile Tab
         </h3>
         
@@ -245,7 +227,7 @@ function GettingStartedContent() {
 
       {/* Section 3: Connecting Accounting Systems */}
       <section id="section-3" style={{ marginBottom: '48px' }}>
-        <h3 style={{ fontSize: '24px', fontWeight: '700', color: '#1e293b', marginBottom: '20px', borderBottom: '3px solid #667eea', paddingBottom: '12px' }}>
+        <h3 style={{ fontSize: '24px', fontWeight: '700', color: '#1e293b', marginBottom: '20px', borderBottom: '3px solid #1F70C1', paddingBottom: '12px' }}>
           3. Connecting Accounting Systems
         </h3>
         
@@ -270,7 +252,7 @@ function GettingStartedContent() {
 
       {/* Section 4: Lines of Business */}
       <section id="section-4" style={{ marginBottom: '48px' }}>
-        <h3 style={{ fontSize: '24px', fontWeight: '700', color: '#1e293b', marginBottom: '20px', borderBottom: '3px solid #667eea', paddingBottom: '12px' }}>
+        <h3 style={{ fontSize: '24px', fontWeight: '700', color: '#1e293b', marginBottom: '20px', borderBottom: '3px solid #1F70C1', paddingBottom: '12px' }}>
           4. Lines of Business (LOB Settings tab)
         </h3>
         
@@ -295,7 +277,7 @@ function GettingStartedContent() {
 
       {/* Section 5: Mapping Accounts */}
       <section id="section-5" style={{ marginBottom: '48px' }}>
-        <h3 style={{ fontSize: '24px', fontWeight: '700', color: '#1e293b', marginBottom: '20px', borderBottom: '3px solid #667eea', paddingBottom: '12px' }}>
+        <h3 style={{ fontSize: '24px', fontWeight: '700', color: '#1e293b', marginBottom: '20px', borderBottom: '3px solid #1F70C1', paddingBottom: '12px' }}>
           5. Mapping Accounts (Data Mapping tab)
         </h3>
         
@@ -335,7 +317,7 @@ function GettingStartedContent() {
 
       {/* Section 6: Reviewing Monthly Data */}
       <section id="section-6" style={{ marginBottom: '48px' }}>
-        <h3 style={{ fontSize: '24px', fontWeight: '700', color: '#1e293b', marginBottom: '20px', borderBottom: '3px solid #667eea', paddingBottom: '12px' }}>
+        <h3 style={{ fontSize: '24px', fontWeight: '700', color: '#1e293b', marginBottom: '20px', borderBottom: '3px solid #1F70C1', paddingBottom: '12px' }}>
           6. Reviewing Monthly Data
         </h3>
         
@@ -347,7 +329,7 @@ function GettingStartedContent() {
 
       {/* Section 7: Analyzing Financial Reports */}
       <section id="section-7" style={{ marginBottom: '48px' }}>
-        <h3 style={{ fontSize: '24px', fontWeight: '700', color: '#1e293b', marginBottom: '20px', borderBottom: '3px solid #667eea', paddingBottom: '12px' }}>
+        <h3 style={{ fontSize: '24px', fontWeight: '700', color: '#1e293b', marginBottom: '20px', borderBottom: '3px solid #1F70C1', paddingBottom: '12px' }}>
           7. Analyzing Financial Reports
         </h3>
         
@@ -390,7 +372,7 @@ function GettingStartedContent() {
         </div>
 
         <div style={{ marginBottom: '20px' }}>
-          <h4 style={{ fontSize: '16px', fontWeight: '600', color: '#667eea', marginBottom: '12px' }}>📊 Projections</h4>
+          <h4 style={{ fontSize: '16px', fontWeight: '600', color: '#1F70C1', marginBottom: '12px' }}>📊 Projections</h4>
           <ul style={{ marginLeft: '24px', fontSize: '14px', color: '#475569', lineHeight: '1.8' }}>
             <li>Revenue forecasting</li>
             <li>Expense projections</li>
@@ -400,11 +382,11 @@ function GettingStartedContent() {
         </div>
 
         <div style={{ marginBottom: '20px' }}>
-          <h4 style={{ fontSize: '16px', fontWeight: '600', color: '#667eea', marginBottom: '12px' }}>📝 Trend Analysis</h4>
+          <h4 style={{ fontSize: '16px', fontWeight: '600', color: '#1F70C1', marginBottom: '12px' }}>📝 Trend Analysis</h4>
         </div>
 
         <div style={{ marginBottom: '20px' }}>
-          <h4 style={{ fontSize: '16px', fontWeight: '600', color: '#667eea', marginBottom: '12px' }}>💵 Cash Flow Analysis</h4>
+          <h4 style={{ fontSize: '16px', fontWeight: '600', color: '#1F70C1', marginBottom: '12px' }}>💵 Cash Flow Analysis</h4>
           <ul style={{ marginLeft: '24px', fontSize: '14px', color: '#475569', lineHeight: '1.8' }}>
             <li>Operating cash flow</li>
             <li>Investing activities</li>
@@ -414,7 +396,7 @@ function GettingStartedContent() {
         </div>
 
         <div style={{ marginBottom: '20px' }}>
-          <h4 style={{ fontSize: '16px', fontWeight: '600', color: '#667eea', marginBottom: '12px' }}>🎯 Financial Score</h4>
+          <h4 style={{ fontSize: '16px', fontWeight: '600', color: '#1F70C1', marginBottom: '12px' }}>🎯 Financial Score</h4>
           <ul style={{ marginLeft: '24px', fontSize: '14px', color: '#475569', lineHeight: '1.8' }}>
             <li>Overall health score (0-100)</li>
             <li>Breakdown by category</li>
@@ -431,7 +413,7 @@ function GettingStartedContent() {
 
       {/* Section 8: Operations */}
       <section id="section-8" style={{ marginBottom: '48px' }}>
-        <h3 style={{ fontSize: '24px', fontWeight: '700', color: '#1e293b', marginBottom: '20px', borderBottom: '3px solid #667eea', paddingBottom: '12px' }}>
+        <h3 style={{ fontSize: '24px', fontWeight: '700', color: '#1e293b', marginBottom: '20px', borderBottom: '3px solid #1F70C1', paddingBottom: '12px' }}>
           8. Operations
         </h3>
         
@@ -452,7 +434,7 @@ function GettingStartedContent() {
       </section>
 
       {/* Need Help */}
-      <section style={{ background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)', padding: '32px', borderRadius: '12px', textAlign: 'center' }}>
+      <section style={{ background: '#0f172a', padding: '32px', borderRadius: '12px', textAlign: 'center' }}>
         <h3 style={{ color: 'white', fontSize: '24px', marginBottom: '16px' }}>Need Help?</h3>
         <p style={{ color: 'rgba(255,255,255,0.9)', marginBottom: '24px' }}>
           If you encounter any issues or have questions, we're here to help!
@@ -462,7 +444,7 @@ function GettingStartedContent() {
           style={{
             display: 'inline-block',
             background: 'white',
-            color: '#667eea',
+            color: '#1F70C1',
             padding: '14px 32px',
             borderRadius: '8px',
             textDecoration: 'none',
@@ -769,7 +751,7 @@ function RequestSupportContent() {
             fontSize: '14px',
             fontWeight: '600',
             color: 'white',
-            background: isSubmitting ? '#94a3b8' : 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+            background: isSubmitting ? '#94a3b8' : '#0f172a',
             border: 'none',
             borderRadius: '8px',
             cursor: isSubmitting ? 'not-allowed' : 'pointer',

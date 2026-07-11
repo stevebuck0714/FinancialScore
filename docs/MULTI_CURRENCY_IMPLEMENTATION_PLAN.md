@@ -2,45 +2,201 @@
 
 **Owner:** Engineering
 **Status:** Draft / Not Started
-**Last updated:** 2026-04-30
-**Trigger:** Customers need optional alternate-currency reporting while FinancialScore remains USD-canonical.
+**Last updated:** 2026-07-10
+**Trigger:** Customers need optional alternate-currency reporting while source financials remain stored in the company's accounting/base currency.
 
 ---
 
 ## Current Product Direction
 
-FinancialScore will remain **USD-canonical**. All companies default to USD,
-and existing company data remains stored and reported in USD unless a viewer
-chooses an optional reporting currency.
+FinancialScore should remain **source-canonical**. Each company's imported
+financial data is stored in the accounting/base currency used by the source
+system, such as QBD/QBE/QBO/Xero/Sage. Reporting currency conversion is a
+read-side presentation layer, not a mutation of imported accounting data.
 
 The near-term multi-currency scope is:
 
-- Every company defaults to USD.
+- Every company has a configured `baseCurrency`, defaulting to `USD` for
+  existing companies.
 - Site Admins can configure **one additional reporting currency** per company.
-- Customer-facing pages can switch between USD and the configured alternate
-  currency.
+- Customer-facing pages can switch between the base currency and the configured
+  alternate reporting currency.
 - The alternate currency is for **display and reporting translation only**,
   not accounting remeasurement.
-- The app stores **three years of daily EOD FX rates** for each active USD
-  reporting pair and refreshes rates daily going forward.
+- The app stores **three years of daily EOD FX rates** for each active
+  base/reporting pair and refreshes rates daily going forward.
 - Historical reports use historical FX rates based on the business date,
   not the current FX rate.
 
-This supersedes the older "tenant home currency" emphasis below for the
-initial implementation. Phase 3 transaction-level multi-currency remains a
-future capability and should not be mixed into the first reporting-currency
-release.
+The first implementation is reporting-currency translation only. Phase 3
+transaction-level multi-currency remains a future capability and should not be
+mixed into the first reporting-currency release.
 
 ---
 
-## USD Reporting Currency Implementation Plan
+## Daily FX Reporting Plan
+
+### Core Design
+
+Keep imported financial values in the company's `baseCurrency`. When a viewer
+chooses another reporting currency, convert values on the read side using
+cached historical FX rates.
+
+Required company settings:
+
+- `baseCurrency`: ISO 4217 code used by the source accounting system.
+- `reportingCurrency`: optional ISO 4217 code enabled by Site Admin.
+- `currencyDisplayMode`: optional view preference such as `base`, `reporting`,
+  or `both`.
+
+Do not rewrite source records into the reporting currency. QBD/QBE/Xero/Sage
+resyncs, account mappings, reconciliation, and audit trails should continue to
+operate in source/base currency.
+
+### Company-Level Enablement And User Selection
+
+Currency availability is controlled at the company level by Site Admin. End
+users do not add arbitrary currencies from the dashboard.
+
+Site Admin flow:
+
+1. Open Site Admin for the target company.
+2. Set `baseCurrency` to the currency used by the accounting source.
+3. Optionally set `reportingCurrency` to one enabled alternate currency.
+4. Saving a new `reportingCurrency` triggers the FX readiness workflow:
+   backfill the last three years of daily rates for `baseCurrency ->
+   reportingCurrency`, verify coverage, and surface missing/stale dates.
+5. The company is marked FX-ready only after required rate coverage exists.
+
+Company dashboard flow:
+
+1. If no `reportingCurrency` is configured, hide the selector and show values
+   in `baseCurrency`.
+2. If `reportingCurrency` is configured and FX-ready, show a global selector
+   in the company dashboard shell/sidebar/header.
+3. The selector offers only two options: `baseCurrency` and the configured
+   `reportingCurrency`.
+4. The user selection is view state/user preference, not company configuration.
+5. APIs receive the selected currency and return converted values plus FX
+   metadata when selected currency differs from `baseCurrency`.
+6. Reports, exports, charts, and AI narratives use the same active selection.
+
+This keeps control centralized for admins while still letting each viewer
+toggle the dashboard between source currency and the approved reporting
+currency.
+
+### FX Provider And Cache
+
+Use a provider abstraction so the app can start with one FX API and change
+providers later without touching report logic.
+
+Recommended first provider:
+
+- **Open Exchange Rates** for broad currency coverage and historical daily
+  endpoints.
+
+Acceptable alternatives:
+
+- Frankfurter/ECB for EUR-centered, lower-cost coverage.
+- Fixer, CurrencyLayer, OANDA, or XE if pricing/compliance requirements favor
+  them.
+- ERP/accounting-system exchange rates when the source system provides a
+  trusted transaction or home-currency rate.
+
+Store every rate used in the database:
+
+| Field | Purpose |
+|-------|---------|
+| `fromCurrency` | Source/base currency |
+| `toCurrency` | Selected reporting currency |
+| `rateDate` | Business date for the rate |
+| `rate` | Conversion multiplier from source to reporting currency |
+| `provider` | FX provider or source system |
+| `rateType` | `daily_eod`, `provider_transaction`, or future rate type |
+| `retrievedAt` | When Corelytics fetched the rate |
+| `sourceTimestamp` | Provider timestamp, if available |
+| `isFallback` | Whether the rate came from a prior available date |
+| `fallbackFromDate` | Original requested date if fallback was used |
+
+Uniqueness should be enforced on provider, from currency, to currency, rate
+date, and rate type. Report rendering should use cached rates first, fetch
+missing rates server-side, store them, and then render.
+
+### Conversion Rules
+
+Use the data grain we actually have. Do not use monthly average rates when
+reliable daily activity exists.
+
+| Reporting area | FX rule |
+|----------------|---------|
+| Daily P&L activity | Convert each daily value using that day's FX rate, then sum |
+| Monthly P&L built from daily data | Sum already-converted daily values |
+| Monthly-only P&L imports | Use monthly average only when daily source data does not exist |
+| Balance sheet snapshots | Use closing/EOD rate for the snapshot date |
+| AR/AP aging snapshots | Use snapshot-date EOD rate |
+| AR/AP transaction detail | Use transaction/business-date rate, or source-system rate if provided |
+| Cash flow | Daily conversion when daily source exists; monthly fallback otherwise |
+| Ratios and percentages | Usually unchanged |
+
+Weekend/holiday policy: use the most recent prior available FX date and mark
+the conversion metadata as fallback. This rule should live in the server-side
+conversion service, not in React components.
+
+### Implementation Phases
+
+1. **Schema and settings**
+   Add `baseCurrency` and `reportingCurrency` configuration, plus an `FxRate`
+   table for cached historical rates.
+
+2. **FX loader**
+   Add a daily cron job and a backfill job. When Site Admin enables a reporting
+   currency, backfill three years of daily rates for that pair.
+
+3. **Conversion service**
+   Add a single server-side conversion module that converts point-in-time
+   values, daily series, and period totals while returning rate provenance.
+
+4. **API response metadata**
+   Financial APIs should accept a selected reporting currency and return
+   converted values plus metadata: base currency, reporting currency, rate
+   dates, provider, and fallback indicators.
+
+5. **UI formatting**
+   Replace hardcoded `$` and ad hoc `toLocaleString('en-US')` currency paths
+   with shared currency formatting based on the active reporting currency.
+
+6. **Reports, exports, and AI narratives**
+   Ensure exported reports and AI-generated commentary label the active
+   currency clearly and disclose when values are converted.
+
+7. **Operational controls**
+   Surface FX coverage, missing dates, stale rates, and provider failures in
+   Site Admin.
+
+### Validation
+
+Required tests:
+
+- Base-currency companies render unchanged when no reporting currency is
+  selected.
+- Daily P&L converts each daily row first, then sums to the month.
+- Balance sheet values use snapshot-date closing rates.
+- Weekend and holiday dates use the previous available rate and expose fallback
+  metadata.
+- Exports and AI narratives match on-screen currency.
+- Re-rendering a historical period uses the same cached rate unless an admin
+  explicitly refreshes rates.
+
+---
+
+## Base-Currency Reporting Implementation Plan
 
 ### Product Rules
 
 | Rule | Decision |
 |------|----------|
-| Canonical stored currency | USD |
-| Default company behavior | USD only |
+| Canonical stored currency | Source/base currency |
+| Default company behavior | Base currency only; existing companies default to USD |
 | Additional currency count | One optional reporting currency per company |
 | Who configures it | Site Admin |
 | Where users switch | Customer-facing global currency selector, likely left sidebar |
@@ -55,12 +211,13 @@ Add company-level configuration for the optional reporting currency:
 - `baseCurrency`: defaults to `USD`
 - `reportingCurrency`: nullable ISO 4217 code such as `CAD`, `EUR`, or `GBP`
 
-If `reportingCurrency` is empty, the customer sees USD only. If it is set,
-the customer can switch between USD and the alternate reporting currency.
+If `reportingCurrency` is empty, the customer sees base currency only. If it
+is set, the customer can switch between base currency and the alternate
+reporting currency.
 
 The accounting/admin container should expose the setting only to Site Admins.
 Changing the reporting currency should trigger a three-year FX backfill for
-the new USD pair.
+the new base/reporting pair.
 
 ### Customer-Facing Currency Selector
 
@@ -70,7 +227,7 @@ in the left sidebar because it affects the whole reporting context.
 Selector behavior:
 
 - Hide or disable the selector when no alternate reporting currency is set.
-- Show exactly two options when configured: `USD` and the alternate currency.
+- Show exactly two options when configured: base currency and the alternate currency.
 - Persist the user's selected currency as view preference, not company data.
 - Apply the selection consistently to dashboards, reports, charts, exports,
   AI narratives, and operational pages.
@@ -79,7 +236,7 @@ UI copy should make clear that alternate-currency reporting is presentation
 translation:
 
 > Reporting currency conversion is for presentation only. Source financials
-> remain stored in USD.
+> remain stored in the company's accounting/base currency.
 
 ### FX Rate Storage
 
@@ -90,10 +247,10 @@ Suggested FX rate fields:
 | Field | Purpose |
 |-------|---------|
 | `provider` | Source such as `open_exchange_rates`, `oanda`, or `xe` |
-| `baseCurrency` | `USD` |
+| `baseCurrency` | Company source/base currency, defaulting to `USD` for existing companies |
 | `quoteCurrency` | Alternate reporting currency |
 | `rateDate` | Historical EOD date |
-| `rate` | USD-to-quote conversion rate |
+| `rate` | Base-to-quote conversion rate |
 | `rateType` | `eod` initially |
 | `retrievedAt` | When the app loaded the rate |
 | `sourceTimestamp` | Provider timestamp, if available |
@@ -254,8 +411,8 @@ phases**:
 
 | Phase | Scope | Risk to existing USD tenants | Effort |
 |------|------|------------------------------|--------|
-| **1. Tenant-aware display formatting** | Render every tenant in its own currency/locale label. No FX conversion. | Zero (defaults preserve current behavior byte-for-byte) | ~4 days |
-| **2. FX rates + reporting-currency toggle** | Pull daily FX from openexchangerates.org. Let users view a tenant's reports in a *different* currency. | Low (additive feature, gated by toggle) | ~5 days |
+| **1. Tenant-aware display formatting** | Render every tenant in its own base currency/locale label. No FX conversion. | Zero (defaults preserve current behavior byte-for-byte) | ~4 days |
+| **2. FX rates + reporting-currency toggle** | Pull daily FX rates through a provider-backed cache. Let users view a tenant's reports in a different reporting currency. | Low (additive feature, gated by toggle) | ~5 days |
 | **3. Multi-currency at the transaction level** | Mixed-currency AR/AP within a single tenant. Per-line FX gain/loss. | Medium (touches ingestion + accounting logic) | ~10–15 days |
 
 **Strategy:** All work lands on `main` behind a per-company configuration
@@ -266,7 +423,7 @@ field — no long-lived "international" branch. Default values (`USD` /
 
 ## Guiding Principles
 
-1. **Default = current behavior.** Every migration sets `homeCurrency='USD'`
+1. **Default = current behavior.** Every migration sets `baseCurrency='USD'`
    and `locale='en-US'`. Existing tenants render identically post-deploy.
 2. **One central formatter.** Replace the two duplicated `formatCurrency`
    helpers (`app/covenants/calculations/utils.ts`, `lib/billing/billingHelpers.ts`)
@@ -287,15 +444,17 @@ field — no long-lived "international" branch. Default values (`USD` /
 ```prisma
 model Company {
   // ...existing fields...
-  homeCurrency  String  @default("USD")  // ISO 4217 code
-  locale        String  @default("en-US") // BCP 47 locale tag
+  baseCurrency      String  @default("USD")  // ISO 4217 code used by source books
+  reportingCurrency String?                 // optional alternate reporting currency
+  locale            String  @default("en-US") // BCP 47 locale tag
 }
 ```
 
-- `homeCurrency` = the currency the company keeps its books in.
+- `baseCurrency` = the currency the company keeps its books in.
+- `reportingCurrency` = optional alternate display/reporting currency.
 - `locale` = number/date formatting (`1,234.56` vs `1.234,56`).
-- No separate `multiCurrencyEnabled` boolean. The presence of a non-USD
-  `homeCurrency` *is* the flag.
+- No separate `multiCurrencyEnabled` boolean. The presence of
+  `reportingCurrency` is the reporting-currency flag.
 
 A single migration adds two columns with defaults; zero behavior change at
 deploy time.
@@ -309,9 +468,10 @@ end-to-end. No FX conversion. Existing USD tenants are unaffected.
 
 ### Step 1.1 — Schema + Site Admin UI (~0.5 day)
 
-- Migration: add `homeCurrency` and `locale` to `Company`.
+- Migration: add `baseCurrency`, `reportingCurrency`, and `locale` to `Company`.
 - Site Admin → Company Settings: two dropdowns.
-  - **Home Currency** (curated ISO 4217 list, default `USD`).
+  - **Base Currency** (curated ISO 4217 list, default `USD`).
+  - **Reporting Currency** (optional curated ISO 4217 list).
   - **Locale** (curated BCP 47 list, default `en-US`).
 - Confirmation modal on change of a non-default value:
   > "This changes how all financial data displays for **{Company Name}**.
@@ -330,6 +490,7 @@ end-to-end. No FX conversion. Existing USD tenants are unaffected.
 | EUR - Euro | de-DE / fr-FR / es-ES |
 | GBP - British Pound | en-GB |
 | AUD - Australian Dollar | en-AU |
+| HKD - Hong Kong Dollar | zh-HK / en-HK |
 | MXN - Mexican Peso | es-MX |
 | JPY - Japanese Yen | ja-JP |
 
@@ -356,7 +517,7 @@ Create `app/hooks/useCurrencyFormatter.ts`:
 ```ts
 export function useCurrencyFormatter() {
   const { company } = useFinancialData();
-  const currency = company?.homeCurrency ?? 'USD';
+  const currency = company?.activeReportingCurrency ?? company?.baseCurrency ?? 'USD';
   const locale = company?.locale ?? 'en-US';
   return useMemo(() => ({
     fmt: (v: number) => formatCurrency(v, { currency, locale }),
@@ -366,7 +527,8 @@ export function useCurrencyFormatter() {
 ```
 
 `FinancialDataContext` (`app/contexts/FinancialDataContext.tsx`) is updated
-to expose `homeCurrency` and `locale` on the company object.
+to expose `baseCurrency`, `reportingCurrency`, active reporting currency, and
+`locale` on the company object.
 
 **Delete the duplicate helpers:**
 - `app/covenants/calculations/utils.ts` line 165 → re-export from
@@ -442,8 +604,8 @@ const { fmt } = useCurrencyFormatter();
 <div>{fmt(value)}</div>
 ```
 
-For server-side (API routes, email, AI prompts): pass the company's
-`homeCurrency` and `locale` into `formatCurrency()` directly.
+For server-side (API routes, email, AI prompts): pass the active reporting
+currency, `baseCurrency`, and `locale` into `formatCurrency()` directly.
 
 **Excluded from Phase 1:**
 - `tmp/**` — diagnostic scripts.
@@ -466,7 +628,7 @@ For server-side (API routes, email, AI prompts): pass the company's
 
 ### Step 1.5 — QA on a non-USD demo company (~0.5 day)
 
-- Provision a demo company on staging with `homeCurrency='CAD'`, `locale='en-CA'`.
+- Provision a demo company on staging with `baseCurrency='CAD'`, `locale='en-CA'`.
 - Verify rendering in: dashboard, operations, billing, covenants, valuation
   previews, forecasts, performance analytics, MDA, AI narratives, weekly
   emails, exports.
@@ -475,7 +637,7 @@ For server-side (API routes, email, AI prompts): pass the company's
 ### Phase 1 Definition of Done
 
 - [ ] Migration applied; every existing company defaults to `USD` / `en-US`.
-- [ ] Site Admin Company Settings exposes Home Currency and Locale dropdowns
+- [ ] Site Admin Company Settings exposes Base Currency, Reporting Currency, and Locale dropdowns
       with confirmation modal and audit log.
 - [ ] Single `formatCurrency` helper in `lib/format/currency.ts`; both
       duplicates removed.
@@ -501,7 +663,7 @@ For server-side (API routes, email, AI prompts): pass the company's
 ## Phase 2 — FX Rates and Reporting-Currency Toggle
 
 **Goal:** Allow a viewer to see a tenant's reports in a *different*
-currency than the tenant's home currency (e.g. portfolio view of a CAD
+currency than the tenant's base currency (e.g. portfolio view of a CAD
 tenant in USD; or a USD tenant rendering in EUR for an investor pitch).
 
 This is the first phase that introduces actual currency *conversion*, not
@@ -516,8 +678,10 @@ model FxRate {
   fromCurrency   String   // ISO 4217
   toCurrency     String   // ISO 4217
   rateSpot       Float    // close-of-day spot rate
-  rateAverage    Float?   // optional period average (computed)
-  source         String   // 'openexchangerates' | 'manual' | 'erp'
+  provider       String   // 'open_exchange_rates' | 'manual' | 'erp'
+  rateType       String   // 'daily_eod' | 'provider_transaction'
+  isFallback     Boolean  @default(false)
+  fallbackFromDate DateTime?
   createdAt      DateTime @default(now())
   @@unique([rateDate, fromCurrency, toCurrency])
   @@index([fromCurrency, toCurrency, rateDate])
@@ -526,12 +690,12 @@ model FxRate {
 
 ### Step 2.2 — FX feed integration (~1 day)
 
-**Provider: openexchangerates.org**
+**Provider: start with Open Exchange Rates behind a provider abstraction**
 
 Reasoning vs. ECB:
 - ECB is EUR-base only (need triangulation for non-EUR pairs).
 - ECB has no weekend rates.
-- openexchangerates.org gives 170+ currencies, daily historical endpoint,
+- Open Exchange Rates gives 170+ currencies and daily historical endpoints.
   free tier supports 1,000 requests/month (sufficient for daily cron).
 - Paid tier (~$12/mo) gives hourly rates and more pairs if needed.
 
@@ -544,11 +708,13 @@ Reasoning vs. ECB:
 - Env: `OPENEXCHANGERATES_APP_ID`.
 
 **FX rate type policy:**
-- **P&L / cash flow** = period average rate (sum of spot ÷ N days in
-  the reporting period).
-- **Balance sheet** = period-end (last business day of period) spot rate.
-- **AR/AP detail** = transaction-date spot rate, falling back to most
-  recent prior business day.
+- **Daily P&L / cash flow** = convert each daily value using that day's EOD
+  rate, then sum.
+- **Monthly-only P&L** = monthly average only when daily source data is not
+  available.
+- **Balance sheet** = snapshot-date or period-end EOD rate.
+- **AR/AP detail** = transaction-date rate, falling back to most recent prior
+  available rate when the market date is missing.
 - **Ratios / percentages** = unitless, no conversion.
 
 ### Step 2.3 — Conversion helper (~0.5 day)
@@ -582,18 +748,18 @@ Cache rates per (from, to, date) in-memory per request.
 ### Step 2.4 — Reporting-currency toggle UI (~1 day)
 
 - Header dropdown: "View in: **[CAD]** ▾  USD | EUR | GBP | …"
-- Defaults to the company's `homeCurrency`.
+- Defaults to the company's `baseCurrency`.
 - Selection stored in user preference per company (so a viewer can pick a
   default reporting currency for portfolio tenants).
-- A subtle "as-of FX: 2026-04-24, source: openexchangerates" note in the
-  report footer when the active currency != home currency.
-- A banner "Showing values converted from CAD at period-average rates"
+- A subtle "as-of FX: 2026-04-24, source: Open Exchange Rates" note in the
+  report footer when the active currency != base currency.
+- A banner "Showing values converted from CAD using historical daily FX rates"
   when conversion is active.
 
 ### Step 2.5 — Wire conversion into report read paths (~1.5 days)
 
 Touch the read-side of each major report to:
-1. Detect if reporting currency != home currency.
+1. Detect if reporting currency != base currency.
 2. If so, convert each amount using the appropriate rate type.
 3. Emit a meta block with the rate(s) used so the UI can show provenance.
 
@@ -604,11 +770,11 @@ Affected read paths (rough list — finalize during Step 2.5):
 - `app/components/operations/*` (data fetch hooks)
 - `app/components/billing/*` (data fetch hooks)
 - `app/covenants/calculations/index.ts` (decide policy: convert covenant
-  thresholds too, or keep covenants in home currency only?)
+  thresholds too, or keep covenants in base currency only?)
 
-**Recommendation:** Covenants stay in home currency (lender contracts are
+**Recommendation:** Covenants stay in base currency (lender contracts are
 denominated in a specific currency). Add an explicit indicator if the
-viewer toggles to a non-home currency on a covenant page.
+viewer toggles to a non-base currency on a covenant page.
 
 ### Step 2.6 — QA (~0.5 day)
 
@@ -760,7 +926,7 @@ This requires:
   walks the full ingest → revalue → publish → render path.
 
 ### Observability
-- New `Company.homeCurrency` distribution surfaced on Site Admin overview
+- New `Company.baseCurrency` distribution surfaced on Site Admin overview
   (count of tenants per currency).
 - FX cron job emits a metric (rates fetched, errors, last successful run).
 - Report renders log the active reporting currency for traceability in

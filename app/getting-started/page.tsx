@@ -128,7 +128,32 @@ export default function GettingStartedPage() {
             </h2>
             
             <p style={{ marginBottom: '20px', lineHeight: '1.8', color: '#475569' }}>
-              After logging in, you'll see your main Consultant Dashboard with the following sections:
+              After your account is created, sign in with your email address and password. Corelytics may require multi-factor authentication (MFA) before opening the dashboard. MFA protects company financial data by requiring a second verification step in addition to your password.
+            </p>
+
+            <h3 style={{ fontSize: '18px', fontWeight: '600', color: '#475569', marginBottom: '12px' }}>
+              First-Time MFA Setup
+            </h3>
+            <ol style={{ marginLeft: '24px', marginBottom: '20px', lineHeight: '1.8', color: '#475569' }}>
+              <li>Enter your email address and password on the login page.</li>
+              <li>If MFA is not enrolled yet, Corelytics will prompt you to set it up.</li>
+              <li>Open an authenticator app such as Microsoft Authenticator, Google Authenticator, Authy, or 1Password.</li>
+              <li>Scan the QR code shown by Corelytics, then enter the 6-digit code from the app.</li>
+              <li>Save your backup codes in a secure place. Backup codes can be used if you lose access to your authenticator device.</li>
+            </ol>
+
+            <h3 style={{ fontSize: '18px', fontWeight: '600', color: '#475569', marginBottom: '12px' }}>
+              Returning Login
+            </h3>
+            <ol style={{ marginLeft: '24px', marginBottom: '20px', lineHeight: '1.8', color: '#475569' }}>
+              <li>Enter your email address and password.</li>
+              <li>Enter the current 6-digit code from your authenticator app when prompted.</li>
+              <li>If available, choose to trust the device only on a private computer you control.</li>
+              <li>If you cannot access your authenticator app, use a backup code or contact your administrator to reset MFA.</li>
+            </ol>
+
+            <p style={{ marginBottom: '20px', lineHeight: '1.8', color: '#475569' }}>
+              After successful login and MFA verification, you'll see your main Consultant Dashboard with the following sections:
             </p>
 
             <h3 style={{ fontSize: '18px', fontWeight: '600', color: '#475569', marginBottom: '12px' }}>
