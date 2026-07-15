@@ -426,14 +426,20 @@ function buildReportPeriod(dateRange: QbwcDateRange): string {
   return `<ReportPeriod><FromReportDate>${xmlEscape(dateRange.startDate)}</FromReportDate><ToReportDate>${xmlEscape(dateRange.endDate)}</ToReportDate></ReportPeriod>`;
 }
 
+function buildAgingReportPeriod(dateRange: QbwcDateRange): string {
+  const asOfDate = dateRange.endDate || dateRange.startDate;
+  if (!asOfDate) return '';
+  return `<ReportPeriod><ToReportDate>${xmlEscape(asOfDate)}</ToReportDate></ReportPeriod>`;
+}
+
 function buildReportChildren(requestName: string, dateRange: QbwcDateRange): string {
   const period = buildReportPeriod(dateRange);
   const basis = '<ReportBasis>Accrual</ReportBasis>';
   if (requestName === 'ARAgingSummaryReportQuery') {
-    return `<AgingReportType>ARAgingSummary</AgingReportType>${period}<ReportAgingAsOf>ReportEndDate</ReportAgingAsOf>${basis}`;
+    return `<AgingReportType>ARAgingSummary</AgingReportType>${buildAgingReportPeriod(dateRange)}<ReportAgingAsOf>ReportEndDate</ReportAgingAsOf>`;
   }
   if (requestName === 'APAgingSummaryReportQuery') {
-    return `<AgingReportType>APAgingSummary</AgingReportType>${period}<ReportAgingAsOf>ReportEndDate</ReportAgingAsOf>${basis}`;
+    return `<AgingReportType>APAgingSummary</AgingReportType>${buildAgingReportPeriod(dateRange)}<ReportAgingAsOf>ReportEndDate</ReportAgingAsOf>`;
   }
   if (requestName === 'BalanceSheetStandardReportQuery') {
     return `<GeneralSummaryReportType>BalanceSheetStandard</GeneralSummaryReportType>${period}${basis}`;
