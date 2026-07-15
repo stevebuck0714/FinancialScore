@@ -2363,6 +2363,20 @@ function isPostgresDeadlockError(error: unknown): boolean {
   return message.includes('40P01') || message.toLowerCase().includes('deadlock detected');
 }
 
+function isTransientPostgresWriteError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error || '');
+  const lower = message.toLowerCase();
+  return (
+    isPostgresDeadlockError(error) ||
+    lower.includes('server has closed the connection') ||
+    lower.includes('connection terminated') ||
+    lower.includes('terminating connection') ||
+    lower.includes('connection reset') ||
+    lower.includes('socket hang up') ||
+    lower.includes('timeout')
+  );
+}
+
 async function retryOnDeadlock<T>(operationName: string, fn: () => Promise<T>, maxAttempts = 3): Promise<T> {
   let lastError: unknown;
   for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
@@ -2374,6 +2388,27 @@ async function retryOnDeadlock<T>(operationName: string, fn: () => Promise<T>, m
         throw error;
       }
       const backoffMs = 150 * attempt + Math.floor(Math.random() * 75);
+      await new Promise((resolve) => setTimeout(resolve, backoffMs));
+    }
+  }
+  throw lastError instanceof Error ? lastError : new Error(`${operationName} failed`);
+}
+
+async function retryOnTransientPostgresWrite<T>(
+  operationName: string,
+  fn: () => Promise<T>,
+  maxAttempts = 4
+): Promise<T> {
+  let lastError: unknown;
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    try {
+      return await fn();
+    } catch (error) {
+      lastError = error;
+      if (!isTransientPostgresWriteError(error) || attempt >= maxAttempts) {
+        throw error;
+      }
+      const backoffMs = 250 * attempt + Math.floor(Math.random() * 150);
       await new Promise((resolve) => setTimeout(resolve, backoffMs));
     }
   }
@@ -9757,10 +9792,21 @@ export async function syncInforM3OperationalData(
                   fetchedAt: new Date(),
                 };
               });
-              await (prisma as any).inforRawRecord.createMany({
-                data: rawRows,
-                skipDuplicates: true,
-              });
+              const rawWriteBatchSize = Math.min(
+                250,
+                Math.max(25, Number(process.env.INFOR_RAW_RECORD_WRITE_BATCH_SIZE || 100))
+              );
+              for (let rawOffset = 0; rawOffset < rawRows.length; rawOffset += rawWriteBatchSize) {
+                const rawBatch = rawRows.slice(rawOffset, rawOffset + rawWriteBatchSize);
+                await retryOnTransientPostgresWrite(
+                  `inforRawRecord.createMany.${row.miProgram || 'unknown'}.${rawOffset}`,
+                  () =>
+                    (prisma as any).inforRawRecord.createMany({
+                      data: rawBatch,
+                      skipDuplicates: true,
+                    })
+                );
+              }
             }
           }
           const sourceKey = resolveRawCompletenessSourceKey(moduleType);

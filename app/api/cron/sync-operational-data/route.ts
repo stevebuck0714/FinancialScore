@@ -8,6 +8,7 @@ import { warmDailyExecutiveBriefingCache } from '@/lib/pulse/exec-briefing-warmu
 export const maxDuration = 300;
 
 const OPERATIONAL_SYNC_TIME_ZONE = 'America/New_York';
+const DUE_LOOKBACK_HOURS = 36;
 
 function normalizePullTime(value: unknown): string {
   if (typeof value !== 'string') return '08:00';
@@ -16,6 +17,9 @@ function normalizePullTime(value: unknown): string {
 }
 
 function getTimeZoneNowParts(timeZone: string): {
+  year: number;
+  month: number;
+  day: number;
   hour: number;
   minute: number;
   dayOfWeek: number; // 0=Sun, 1=Mon ... 6=Sat
@@ -24,6 +28,8 @@ function getTimeZoneNowParts(timeZone: string): {
   const formatter = new Intl.DateTimeFormat('en-US', {
     timeZone,
     hour12: false,
+    year: 'numeric',
+    month: '2-digit',
     hour: '2-digit',
     minute: '2-digit',
     weekday: 'short',
@@ -42,6 +48,9 @@ function getTimeZoneNowParts(timeZone: string): {
     Sat: 6,
   };
   return {
+    year: Number.parseInt(String(map.year || '0'), 10) || 0,
+    month: Number.parseInt(String(map.month || '0'), 10) || 0,
+    day: Number.parseInt(String(map.day || '0'), 10) || 0,
     hour: Number.parseInt(String(map.hour || '0'), 10) || 0,
     minute: Number.parseInt(String(map.minute || '0'), 10) || 0,
     dayOfWeek: weekdayToNumber[weekday] ?? 0,
@@ -77,17 +86,90 @@ function readOperationalPullTime(metadata: unknown): string {
   return '08:00';
 }
 
-function shouldRunForFrequency(frequency: string, pullTime: string): boolean {
+function addLocalDays(parts: { year: number; month: number; day: number }, days: number) {
+  const date = new Date(Date.UTC(parts.year, parts.month - 1, parts.day + days, 0, 0, 0));
+  return {
+    year: date.getUTCFullYear(),
+    month: date.getUTCMonth() + 1,
+    day: date.getUTCDate(),
+  };
+}
+
+function zonedLocalTimeToUtc(local: { year: number; month: number; day: number; hour: number; minute: number }): Date {
+  const desiredWallClockMs = Date.UTC(local.year, local.month - 1, local.day, local.hour, local.minute, 0);
+  const guess = new Date(desiredWallClockMs);
+  const actualAtGuess = new Intl.DateTimeFormat('en-US', {
+    timeZone: OPERATIONAL_SYNC_TIME_ZONE,
+    hour12: false,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).formatToParts(guess);
+  const actualMap = Object.fromEntries(actualAtGuess.map((part) => [part.type, part.value]));
+  const actualWallClockMs = Date.UTC(
+    Number(actualMap.year),
+    Number(actualMap.month) - 1,
+    Number(actualMap.day),
+    Number(actualMap.hour),
+    Number(actualMap.minute),
+    0
+  );
+  return new Date(guess.getTime() - (actualWallClockMs - desiredWallClockMs));
+}
+
+function latestExpectedRunAt(frequency: string, pullTime: string, now = new Date()): Date | null {
   const normalized = String(frequency || 'daily').toLowerCase();
   const [scheduledHour, scheduledMinute] = normalizePullTime(pullTime).split(':').map((value) => Number(value));
-  const now = getTimeZoneNowParts(OPERATIONAL_SYNC_TIME_ZONE);
-  if (now.hour !== scheduledHour || now.minute !== scheduledMinute) {
-    return false;
+  const nowParts = getTimeZoneNowParts(OPERATIONAL_SYNC_TIME_ZONE);
+  let localDate = { year: nowParts.year, month: nowParts.month, day: nowParts.day };
+
+  if (normalized === 'weekly') {
+    localDate = addLocalDays(localDate, -nowParts.dayOfWeek);
+  } else if (normalized === 'monthly') {
+    localDate = { ...localDate, day: 1 };
+  } else if (normalized !== 'daily') {
+    return null;
   }
-  if (normalized === 'daily') return true;
-  if (normalized === 'weekly') return now.dayOfWeek === 0; // Sunday in OPERATIONAL_SYNC_TIME_ZONE
-  if (normalized === 'monthly') return now.dayOfMonth === 1; // first day in OPERATIONAL_SYNC_TIME_ZONE
-  return false;
+
+  let expected = zonedLocalTimeToUtc({
+    ...localDate,
+    hour: scheduledHour,
+    minute: scheduledMinute,
+  });
+
+  if (expected.getTime() > now.getTime()) {
+    if (normalized === 'daily') {
+      localDate = addLocalDays(localDate, -1);
+    } else if (normalized === 'weekly') {
+      localDate = addLocalDays(localDate, -7);
+    } else {
+      const previousMonth = new Date(Date.UTC(localDate.year, localDate.month - 2, 1));
+      localDate = {
+        year: previousMonth.getUTCFullYear(),
+        month: previousMonth.getUTCMonth() + 1,
+        day: 1,
+      };
+    }
+    expected = zonedLocalTimeToUtc({
+      ...localDate,
+      hour: scheduledHour,
+      minute: scheduledMinute,
+    });
+  }
+
+  return expected;
+}
+
+function isConnectionDue(connection: { syncFrequency: string | null; connectionMetadata: unknown; lastSyncAt: Date | null }): boolean {
+  const expected = latestExpectedRunAt(
+    connection.syncFrequency || 'daily',
+    readOperationalPullTime(connection.connectionMetadata)
+  );
+  if (!expected) return false;
+  if (Date.now() - expected.getTime() > DUE_LOOKBACK_HOURS * 60 * 60 * 1000) return false;
+  return !connection.lastSyncAt || connection.lastSyncAt.getTime() < expected.getTime();
 }
 
 /**
@@ -128,6 +210,7 @@ export async function GET(request: NextRequest) {
         accessToken: true,
         connectionMetadata: true,
         syncFrequency: true,
+        lastSyncAt: true,
         company: {
           select: {
             name: true,
@@ -139,12 +222,26 @@ export async function GET(request: NextRequest) {
       },
     });
 
-    const runnableConnections = connections.filter((connection) =>
-      shouldRunForFrequency(
-        connection.syncFrequency || 'daily',
-        readOperationalPullTime(connection.connectionMetadata)
-      )
+    const activeInforRuns = await prisma.inforSyncRun.findMany({
+      where: {
+        status: { in: ['queued', 'running'] },
+        companyId: { in: connections.map((connection) => connection.companyId) },
+      },
+      select: { companyId: true, platform: true },
+    });
+    const activeInforRunKeys = new Set(
+      activeInforRuns.map((run) => `${run.companyId}:${run.platform || 'INFOR_M3'}`)
     );
+    const runnableConnections = connections.filter((connection) => {
+      if (!isConnectionDue(connection)) return false;
+      if (
+        connection.platform === 'INFOR_M3' &&
+        activeInforRunKeys.has(`${connection.companyId}:INFOR_M3`)
+      ) {
+        return false;
+      }
+      return true;
+    });
     
     console.log(
       `📊 Found ${connections.length} auto-sync connections (${runnableConnections.length} runnable now) in ${OPERATIONAL_SYNC_TIME_ZONE}`

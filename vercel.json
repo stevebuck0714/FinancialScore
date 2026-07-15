@@ -29,6 +29,10 @@
     "app/api/cron/run-company-pulse/route.ts": {
       "memory": 3008,
       "maxDuration": 300
+    },
+    "app/api/cron/data-load-watchdog/route.ts": {
+      "memory": 3008,
+      "maxDuration": 300
     }
   },
   "crons": [
@@ -71,6 +75,10 @@
     {
       "path": "/api/cron/run-company-pulse",
       "schedule": "30 10 * * *"
+    },
+    {
+      "path": "/api/cron/data-load-watchdog",
+      "schedule": "*/5 * * * *"
     }
   ]
 }

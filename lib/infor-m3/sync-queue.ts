@@ -14,7 +14,7 @@ import { syncErpDailyFinancialsFromGL } from '@/lib/financial/sync-erp-daily-fin
 import { rebuildDailyFinancialSnapshotsFromGL } from '@/lib/financial/daily-bs-from-gl';
 import { warmDailyExecutiveBriefingCache } from '@/lib/pulse/exec-briefing-warmup';
 
-const LEASE_SECONDS = 120;
+const DEFAULT_LEASE_SECONDS = 420;
 const DEFAULT_MAX_ATTEMPTS = 6;
 const MAX_LEASE_ROUNDS_PER_TICK = 12;
 const TICK_TIME_BUDGET_MS = 55_000;
@@ -246,6 +246,14 @@ function resolveRunMaxAgeHours(): number {
   const raw = Number(process.env.INFOR_SYNC_RUN_MAX_AGE_HOURS || DEFAULT_RUN_MAX_AGE_HOURS);
   if (!Number.isFinite(raw) || raw <= 0) return DEFAULT_RUN_MAX_AGE_HOURS;
   return Math.min(72, Math.max(1, Math.floor(raw)));
+}
+
+function resolveLeaseSeconds(): number {
+  const raw = Number(process.env.INFOR_SYNC_TASK_LEASE_SECONDS || DEFAULT_LEASE_SECONDS);
+  if (Number.isFinite(raw) && raw > 0) {
+    return Math.min(1800, Math.max(120, Math.floor(raw)));
+  }
+  return Math.ceil(resolveTaskExecutionTimeoutMs() / 1000) + 90;
 }
 
 function resolveTaskFetchTimeoutMs(): number {
@@ -500,6 +508,36 @@ function joinErrorDetails(errors: unknown, fallback: string): string {
   return fallback;
 }
 
+async function recordTaskAttemptStarted(
+  task: QueueTaskRecord & { run: QueueRunRecord },
+  attemptNo: number,
+  taskPayload: Record<string, unknown>
+): Promise<void> {
+  try {
+    await db().inforSyncTaskAttempt.create({
+      data: {
+        taskId: task.id,
+        runId: task.runId,
+        companyId: task.companyId,
+        attemptNo,
+        status: 'running',
+        httpStatus: null,
+        errorMessage: null,
+        responseSnippet: describeTaskPayload(taskPayload).slice(0, 280),
+        recordsCreated: 0,
+        warningCount: 0,
+        durationMs: null,
+      },
+    });
+  } catch (error) {
+    console.warn('Failed to record queue task attempt start', {
+      taskId: task.id,
+      runId: task.runId,
+      error,
+    });
+  }
+}
+
 async function markRunPostProcessingFailure(
   task: QueueTaskRecord & { run: QueueRunRecord },
   stage: string,
@@ -555,6 +593,25 @@ async function markRunPostProcessingFailure(
       truncated
     );
   }
+}
+
+async function quarantineHistoricalHydrationFailure(
+  task: QueueTaskRecord & { run: QueueRunRecord },
+  stage: string,
+  details: string
+): Promise<void> {
+  const message = `Historical ${stage} issue quarantined outside current run completion: ${String(details || 'Unknown failure').slice(0, 1000)}`;
+  await notifyQueueRunFailure(
+    task.companyId,
+    (String(task.run.platform || 'INFOR_M3') as AccountingPlatform),
+    `Infor historical hydration issue quarantined: ${stage}`,
+    message
+  );
+  console.warn(message, {
+    companyId: task.companyId,
+    runId: task.runId,
+    taskId: task.id,
+  });
 }
 
 export function mapQueueRunToLegacy(run: QueueRunRecord): InforOperationalAsyncRun {
@@ -966,7 +1023,7 @@ async function leasePendingTasks(limit: number): Promise<Array<QueueTaskRecord &
       data: {
         status: 'leased',
         leaseOwner,
-        leaseExpiresAt: new Date(Date.now() + LEASE_SECONDS * 1000),
+        leaseExpiresAt: new Date(Date.now() + resolveLeaseSeconds() * 1000),
       },
     });
     if (Number(updated?.count || 0) === 1) {
@@ -1077,6 +1134,7 @@ async function processTask(
   }
   if (String(task.run.mode || '') === FINANCIAL_MAPPING_REBUILD_MODE) {
     const startedAt = Date.now();
+    const attemptNo = Math.max(0, Number(task.attemptCount || 0)) + 1;
     const startDate = new Date(String(taskPayload.startDate || task.run.startDate || ''));
     const endDate = new Date(String(taskPayload.endDate || task.run.endDate || ''));
     const snapshotDates = Array.isArray(taskPayload.snapshotDates)
@@ -1085,6 +1143,7 @@ async function processTask(
           .filter((date) => !Number.isNaN(date.getTime()))
       : [];
     try {
+      await recordTaskAttemptStarted(task, attemptNo, taskPayload);
       const rebuilt = await rebuildDailyFinancialSnapshotsFromGL({
         companyId: task.companyId,
         startDate,
@@ -1101,7 +1160,7 @@ async function processTask(
           where: { id: task.id, status: 'leased' },
           data: {
             status: 'done',
-            attemptCount: Math.max(0, Number(task.attemptCount || 0)) + 1,
+            attemptCount: attemptNo,
             finishedAt: now,
             updatedAt: now,
             lastError: null,
@@ -1117,7 +1176,7 @@ async function processTask(
             taskId: task.id,
             runId: task.runId,
             companyId: task.companyId,
-            attemptNo: Math.max(0, Number(task.attemptCount || 0)) + 1,
+            attemptNo,
             status: 'success',
             httpStatus: null,
             errorMessage: null,
@@ -1174,6 +1233,7 @@ async function processTask(
     }
   }
   const start = Date.now();
+  const attemptNo = Math.max(0, Number(task.attemptCount || 0)) + 1;
   const isBusinessDayFanoutTask = taskPayload.businessDayFanout === true;
   const isGlBackfillGuardEnabled =
     String(task.run.platform || '') === 'INFOR_M3' &&
@@ -1184,6 +1244,7 @@ async function processTask(
   let data: Record<string, unknown> = {};
   let rawText = '';
   let responseStatus = 200;
+  await recordTaskAttemptStarted(task, attemptNo, taskPayload);
   if (String(task.run.platform) === 'INFOR_M3') {
     if (isInforSyncInProcessWorkerEnabled()) {
       // Phase 2 in-process path: bypass HTTP/Vercel entirely and call the same
@@ -1290,7 +1351,6 @@ async function processTask(
         (data?.error as string) ||
         (textSnippet ? `HTTP ${responseStatus}: ${textSnippet}` : `HTTP ${responseStatus}: Async sync chunk failed`);
 
-  const attemptNo = Math.max(0, Number(task.attemptCount || 0)) + 1;
   let runCompletedInThisTask = false;
 
   if (responseStatus >= 400 || !data?.ok) {
@@ -1615,8 +1675,8 @@ async function processTask(
     const businessDateIso =
       /^\d{4}-\d{2}-\d{2}$/.test(businessDateIsoRaw) ? businessDateIsoRaw : null;
     if (businessDateIso) {
+      const isBusinessDayFanoutTask = taskPayload.businessDayFanout === true;
       try {
-        const isBusinessDayFanoutTask = taskPayload.businessDayFanout === true;
         if (isBusinessDayFanoutTask) {
           const dayStatusRows = await db().$queryRaw<Array<{ pendingOrLeased: bigint; failed: bigint }>>`
             SELECT
@@ -1664,15 +1724,17 @@ async function processTask(
                 pending.results.flatMap((result) => result.errors),
                 `Pending raw transform failed for ${pending.failedDays} day(s)`
               );
-              await markRunPostProcessingFailure(task, 'pending snapshot hydration', details);
-              return { runId: task.runId, taskId: task.id, status: 'failed', details };
+              await quarantineHistoricalHydrationFailure(task, 'pending snapshot hydration', details);
             }
           }
         }
       } catch (error) {
         const details = errorToMessage(error, 'Snapshot hydration failed');
-        await markRunPostProcessingFailure(task, `snapshot hydration ${businessDateIso}`, details);
-        return { runId: task.runId, taskId: task.id, status: 'failed', details };
+        if (isBusinessDayFanoutTask) {
+          await markRunPostProcessingFailure(task, `snapshot hydration ${businessDateIso}`, details);
+          return { runId: task.runId, taskId: task.id, status: 'failed', details };
+        }
+        await quarantineHistoricalHydrationFailure(task, `snapshot hydration ${businessDateIso}`, details);
       }
     } else {
       // Ingest finished this chunk but no single businessDateIso on the task (e.g. multi-day window).
@@ -1684,13 +1746,11 @@ async function processTask(
             pending.results.flatMap((result) => result.errors),
             `Pending raw transform failed for ${pending.failedDays} day(s)`
           );
-          await markRunPostProcessingFailure(task, 'pending snapshot hydration', details);
-          return { runId: task.runId, taskId: task.id, status: 'failed', details };
+          await quarantineHistoricalHydrationFailure(task, 'pending snapshot hydration', details);
         }
       } catch (error) {
         const details = errorToMessage(error, 'Pending snapshot hydration failed');
-        await markRunPostProcessingFailure(task, 'pending snapshot hydration', details);
-        return { runId: task.runId, taskId: task.id, status: 'failed', details };
+        await quarantineHistoricalHydrationFailure(task, 'pending snapshot hydration', details);
       }
     }
   }
@@ -1755,13 +1815,11 @@ async function processTask(
           pending.results.flatMap((result) => result.errors),
           `Catch-all pending raw transform failed for ${pending.failedDays} day(s)`
         );
-        await markRunPostProcessingFailure(task, 'catch-all snapshot hydration', details);
-        return { runId: task.runId, taskId: task.id, status: 'failed', details };
+        await quarantineHistoricalHydrationFailure(task, 'catch-all snapshot hydration', details);
       }
     } catch (error) {
       const details = errorToMessage(error, 'Catch-all snapshot hydration failed');
-      await markRunPostProcessingFailure(task, 'catch-all snapshot hydration', details);
-      return { runId: task.runId, taskId: task.id, status: 'failed', details };
+      await quarantineHistoricalHydrationFailure(task, 'catch-all snapshot hydration', details);
     }
   }
 
