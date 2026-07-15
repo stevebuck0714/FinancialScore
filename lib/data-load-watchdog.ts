@@ -254,6 +254,16 @@ function getAccountingLastSuccess(row: AccountingWatchRow): Date | null {
   return row.lastSyncAt;
 }
 
+function isUserInitiatedAccountingSource(row: AccountingWatchRow): boolean {
+  const accountingSystem = String(row.company.accountingSystem || '').trim().toUpperCase();
+  const platform = String(row.platform || '').trim().toUpperCase();
+
+  if (accountingSystem === 'CSV_FILE') return true;
+  if (platform === 'QUICKBOOKS' && !isQuickBooksDesktopFamily(accountingSystem)) return true;
+
+  return false;
+}
+
 function shouldAlertOverdue(params: {
   now: Date;
   lastSuccessAt: Date | null;
@@ -335,6 +345,7 @@ async function evaluateAccountingConnection(
 ): Promise<WatchdogAlertResult | null> {
   const frequency = normalizeFrequency(row.syncFrequency);
   if (!row.autoSync || frequency === 'manual') return null;
+  if (isUserInitiatedAccountingSource(row)) return null;
 
   const sourceKey = String(row.platform);
   const companyName = row.company.name || row.companyId;
