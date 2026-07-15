@@ -7,6 +7,7 @@ export const dynamic = 'force-dynamic';
 export const maxDuration = 300;
 
 const OPERATIONAL_SYNC_TIME_ZONE = 'America/New_York';
+const DUE_LOOKBACK_HOURS = 36;
 
 type OperationalConnectionRow = {
   id: string;
@@ -16,6 +17,8 @@ type OperationalConnectionRow = {
   status: string;
   autoSync: boolean;
   syncFrequency: string;
+  lastSyncAt: Date | null;
+  createdAt: Date;
   connectionMetadata: unknown;
   company?: { name?: string | null } | null;
 };
@@ -30,21 +33,25 @@ function normalizePullTime(value: unknown): string {
   return /^\d{2}:\d{2}$/.test(trimmed) ? trimmed : '08:00';
 }
 
-function getTimeZoneNowParts(timeZone: string): {
+function getTimeZoneNowParts(timeZone: string, date = new Date()): {
+  year: number;
+  month: number;
+  day: number;
   hour: number;
   minute: number;
   dayOfWeek: number;
-  dayOfMonth: number;
 } {
   const formatter = new Intl.DateTimeFormat('en-US', {
     timeZone,
     hour12: false,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
     hour: '2-digit',
     minute: '2-digit',
     weekday: 'short',
-    day: '2-digit',
   });
-  const parts = formatter.formatToParts(new Date());
+  const parts = formatter.formatToParts(date);
   const map = Object.fromEntries(parts.map((part) => [part.type, part.value]));
   const weekday = String(map.weekday || '').slice(0, 3);
   const weekdayToNumber: Record<string, number> = {
@@ -57,22 +64,99 @@ function getTimeZoneNowParts(timeZone: string): {
     Sat: 6,
   };
   return {
+    year: Number.parseInt(String(map.year || '0'), 10) || 0,
+    month: Number.parseInt(String(map.month || '0'), 10) || 0,
+    day: Number.parseInt(String(map.day || '0'), 10) || 0,
     hour: Number.parseInt(String(map.hour || '0'), 10) || 0,
     minute: Number.parseInt(String(map.minute || '0'), 10) || 0,
     dayOfWeek: weekdayToNumber[weekday] ?? 0,
-    dayOfMonth: Number.parseInt(String(map.day || '1'), 10) || 1,
   };
 }
 
-function shouldRunForFrequency(frequency: string, pullTime: string): boolean {
+function addLocalDays(parts: { year: number; month: number; day: number }, days: number) {
+  const date = new Date(Date.UTC(parts.year, parts.month - 1, parts.day + days, 0, 0, 0));
+  return {
+    year: date.getUTCFullYear(),
+    month: date.getUTCMonth() + 1,
+    day: date.getUTCDate(),
+  };
+}
+
+function zonedLocalTimeToUtc(local: { year: number; month: number; day: number; hour: number; minute: number }): Date {
+  const desiredWallClockMs = Date.UTC(local.year, local.month - 1, local.day, local.hour, local.minute, 0);
+  const guess = new Date(desiredWallClockMs);
+  const actualAtGuess = new Intl.DateTimeFormat('en-US', {
+    timeZone: OPERATIONAL_SYNC_TIME_ZONE,
+    hour12: false,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).formatToParts(guess);
+  const actualMap = Object.fromEntries(actualAtGuess.map((part) => [part.type, part.value]));
+  const actualWallClockMs = Date.UTC(
+    Number(actualMap.year),
+    Number(actualMap.month) - 1,
+    Number(actualMap.day),
+    Number(actualMap.hour),
+    Number(actualMap.minute),
+    0
+  );
+  return new Date(guess.getTime() - (actualWallClockMs - desiredWallClockMs));
+}
+
+function latestExpectedRunAt(frequency: string, pullTime: string, now = new Date()): Date | null {
   const normalized = String(frequency || 'daily').toLowerCase();
   const [scheduledHour, scheduledMinute] = normalizePullTime(pullTime).split(':').map((value) => Number(value));
-  const now = getTimeZoneNowParts(OPERATIONAL_SYNC_TIME_ZONE);
-  if (now.hour !== scheduledHour || now.minute !== scheduledMinute) return false;
-  if (normalized === 'daily') return true;
-  if (normalized === 'weekly') return now.dayOfWeek === 0;
-  if (normalized === 'monthly') return now.dayOfMonth === 1;
-  return false;
+  const nowParts = getTimeZoneNowParts(OPERATIONAL_SYNC_TIME_ZONE, now);
+  let localDate = { year: nowParts.year, month: nowParts.month, day: nowParts.day };
+
+  if (normalized === 'weekly') {
+    localDate = addLocalDays(localDate, -nowParts.dayOfWeek);
+  } else if (normalized === 'monthly') {
+    localDate = { ...localDate, day: 1 };
+  } else if (normalized !== 'daily') {
+    return null;
+  }
+
+  let expected = zonedLocalTimeToUtc({
+    ...localDate,
+    hour: scheduledHour,
+    minute: scheduledMinute,
+  });
+
+  if (expected.getTime() > now.getTime()) {
+    if (normalized === 'daily') {
+      localDate = addLocalDays(localDate, -1);
+    } else if (normalized === 'weekly') {
+      localDate = addLocalDays(localDate, -7);
+    } else {
+      const previousMonth = new Date(Date.UTC(localDate.year, localDate.month - 2, 1));
+      localDate = {
+        year: previousMonth.getUTCFullYear(),
+        month: previousMonth.getUTCMonth() + 1,
+        day: 1,
+      };
+    }
+    expected = zonedLocalTimeToUtc({
+      ...localDate,
+      hour: scheduledHour,
+      minute: scheduledMinute,
+    });
+  }
+
+  return expected;
+}
+
+function isConnectionDue(connection: OperationalConnectionRow, now = new Date()): boolean {
+  const expected = latestExpectedRunAt(connection.syncFrequency || 'daily', readSourcePullTime(connection), now);
+  if (!expected) return false;
+  if (now.getTime() - expected.getTime() > DUE_LOOKBACK_HOURS * 60 * 60 * 1000) return false;
+  if (!connection.lastSyncAt) {
+    return connection.createdAt.getTime() < expected.getTime();
+  }
+  return connection.lastSyncAt.getTime() < expected.getTime();
 }
 
 function readSourcePullTime(row: OperationalConnectionRow): string {
@@ -157,9 +241,10 @@ export async function GET(request: NextRequest) {
 
     const connections = (await delegate.findMany({
       where: {
-        status: 'ACTIVE',
+        status: { in: ['ACTIVE', 'ERROR'] },
         autoSync: true,
         provider: 'BAMBOOHR',
+        syncFrequency: { not: 'manual' },
       },
       select: {
         id: true,
@@ -169,15 +254,16 @@ export async function GET(request: NextRequest) {
         status: true,
         autoSync: true,
         syncFrequency: true,
+        lastSyncAt: true,
+        createdAt: true,
         connectionMetadata: true,
         company: { select: { name: true } },
       },
       orderBy: { companyId: 'asc' },
     })) as OperationalConnectionRow[];
 
-    const runnableConnections = connections.filter((connection) =>
-      shouldRunForFrequency(connection.syncFrequency || 'daily', readSourcePullTime(connection))
-    );
+    const now = new Date();
+    const runnableConnections = connections.filter((connection) => isConnectionDue(connection, now));
 
     const results = [];
     let successCount = 0;
@@ -190,6 +276,11 @@ export async function GET(request: NextRequest) {
       try {
         const result = await runOperationalSource(connection);
         const now = new Date();
+        const latestConnection = await delegate.findUnique({
+          where: { id: connection.id },
+          select: { connectionMetadata: true },
+        });
+        const latestMetadata = asRecord(latestConnection?.connectionMetadata);
         totalRecords += result.recordsCreated;
         successCount += 1;
         await delegate.update({
@@ -199,7 +290,7 @@ export async function GET(request: NextRequest) {
             lastSyncAt: now,
             errorMessage: null,
             connectionMetadata: {
-              ...metadata,
+              ...latestMetadata,
               lastSyncSummary: {
                 mode: 'scheduled',
                 provider: connection.provider,
