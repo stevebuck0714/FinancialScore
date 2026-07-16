@@ -670,8 +670,48 @@ function qbdNumber(value: unknown): number {
   return 0;
 }
 
+function qbdLookupKey(value: unknown): string {
+  return qbdString(value).toLowerCase().replace(/\s+/g, ' ').trim();
+}
+
+function qbdAccountLookupKeys(value: unknown): string[] {
+  const raw = qbdString(value);
+  if (!raw) return [];
+  const keys = new Set<string>();
+  const add = (candidate: unknown) => {
+    const key = qbdLookupKey(candidate);
+    if (key) keys.add(key);
+  };
+  add(raw);
+
+  // Balance Sheet report labels often include account numbers while stored
+  // mappings may carry only the account name, or vice versa.
+  const leadingCode = raw.match(/^\s*([0-9][0-9.\-]*)\s+(.+)$/);
+  if (leadingCode) {
+    add(leadingCode[1]);
+    add(leadingCode[2]);
+  }
+  const parenCode = raw.match(/^(.+?)\s+\(([0-9][0-9.\-]*)\)\s*$/);
+  if (parenCode) {
+    add(parenCode[1]);
+    add(parenCode[2]);
+  }
+  const colonParts = raw.split(':').map((part) => part.trim()).filter(Boolean);
+  if (colonParts.length > 1) {
+    add(colonParts[colonParts.length - 1]);
+  }
+
+  return Array.from(keys);
+}
+
 function qbdReportAmount(record: Record<string, unknown>): number {
   const colData = Array.isArray(record.colData) ? record.colData.map(qbdAsRecord) : [];
+  const normalize = (value: string) => qbdString(value).toLowerCase().replace(/[^a-z0-9]/g, '');
+  const titledColumn = colData.find((col) => {
+    const title = normalize(qbdString(col.colTitle));
+    return title === 'amount' || title === 'balance' || title === 'total';
+  });
+  if (titledColumn) return qbdNumber(titledColumn.value);
   const amountColumn = colData.find((col) => qbdString(col.colID) === '2') || colData[colData.length - 1];
   return qbdNumber(amountColumn?.value);
 }
@@ -701,7 +741,7 @@ function qbdReportColValueByTitle(
 
 function qbdReportAccountName(record: Record<string, unknown>): string {
   return qbdString(record.accountName || record.rowValue || record.label) ||
-    qbdReportColValueByTitle(record, ['Account', 'Name'], ['1']) ||
+    qbdReportColValueByTitle(record, ['Account', 'Name'], ['1', '0']) ||
     qbdReportColValue(record, '1');
 }
 
@@ -1084,22 +1124,31 @@ async function buildQuickBooksDesktopMappedMonthlyPayload(companyId: string, bas
       keyValues.push(accountCode);
     }
     for (const key of keyValues) {
-      const normalized = key.toLowerCase();
-      targetByKey.set(normalized, target);
-      mappingByKey.set(normalized, mappedAccount);
+      for (const normalized of qbdAccountLookupKeys(key)) {
+        targetByKey.set(normalized, target);
+        mappingByKey.set(normalized, mappedAccount);
+      }
     }
   }
 
-  const getTarget = (ref: { id?: string; name?: string; code?: string }) =>
-    targetByKey.get(qbdString(ref.id).toLowerCase()) ||
-    targetByKey.get(qbdString(ref.name).toLowerCase()) ||
-    targetByKey.get(qbdString(ref.code).toLowerCase()) ||
-    '';
-  const getMapping = (ref: { id?: string; name?: string; code?: string }) =>
-    mappingByKey.get(qbdString(ref.id).toLowerCase()) ||
-    mappingByKey.get(qbdString(ref.name).toLowerCase()) ||
-    mappingByKey.get(qbdString(ref.code).toLowerCase()) ||
-    null;
+  const getTarget = (ref: { id?: string; name?: string; code?: string }) => {
+    for (const candidate of [ref.id, ref.name, ref.code]) {
+      for (const key of qbdAccountLookupKeys(candidate)) {
+        const target = targetByKey.get(key);
+        if (target) return target;
+      }
+    }
+    return '';
+  };
+  const getMapping = (ref: { id?: string; name?: string; code?: string }) => {
+    for (const candidate of [ref.id, ref.name, ref.code]) {
+      for (const key of qbdAccountLookupKeys(candidate)) {
+        const mapping = mappingByKey.get(key);
+        if (mapping) return mapping;
+      }
+    }
+    return null;
+  };
 
   const [accounts, balanceSheetReportRows, generalLedgerReportRows] =
     await Promise.all([
