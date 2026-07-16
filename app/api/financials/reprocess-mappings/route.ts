@@ -699,6 +699,12 @@ function qbdReportColValueByTitle(
   return '';
 }
 
+function qbdReportAccountName(record: Record<string, unknown>): string {
+  return qbdString(record.accountName || record.rowValue || record.label) ||
+    qbdReportColValueByTitle(record, ['Account', 'Name'], ['1']) ||
+    qbdReportColValue(record, '1');
+}
+
 function qbdGeneralLedgerPnlAmount(targetField: string, rawAmount: number): number {
   if (targetField === 'revenue' || targetField.startsWith('rev_') || targetField === 'nonOperatingIncome') {
     return rawAmount * -1;
@@ -1137,8 +1143,11 @@ async function buildQuickBooksDesktopMappedMonthlyPayload(companyId: string, bas
   const accountBalancesAtReportDate = new Map<string, { accountId: string; accountName: string; balance: number }>();
   if (balanceSheetAnchor) {
     for (const reportRow of balanceSheetReportRows) {
-      if (qbdString(reportRow.rowType).toLowerCase() !== 'account') continue;
-      const accountName = qbdString(reportRow.accountName || reportRow.rowValue);
+      const rowType = qbdString(reportRow.rowType).toLowerCase();
+      const rowKind = qbdString(reportRow.rowKind);
+      if (rowType && rowType !== 'account') continue;
+      if (!rowType && rowKind !== 'DataRow') continue;
+      const accountName = qbdReportAccountName(reportRow);
       const target = getTarget({ name: accountName });
       const amount = qbdReportAmount(reportRow);
       qbdApplyBalance(balanceSheetAnchor, target, amount);
