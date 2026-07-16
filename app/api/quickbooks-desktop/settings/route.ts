@@ -299,6 +299,26 @@ function sanitizePrograms(value: unknown, fallbackPrograms: QuickBooksDesktopPro
   return [...cleaned, ...missingDefaults];
 }
 
+function hasRequiredQuickBooksDesktopSetup(
+  settings: QuickBooksDesktopSettings,
+  credentials: Record<string, unknown>
+): boolean {
+  const requiredKeys: Array<keyof QuickBooksDesktopSettings> = [
+    'integrationType',
+    'applicationName',
+    'ownerId',
+    'fileId',
+    'webConnectorUsername',
+    'desktopEditionYear',
+    'countryVersion',
+    'companyFilePath',
+    'hostMachineName',
+  ];
+  if (requiredKeys.some((key) => !asString(settings[key]))) return false;
+  if (settings.integrationType === 'WEB_CONNECTOR' && !asString(settings.soapEndpointUrl)) return false;
+  return Boolean(asString(credentials.webConnectorPasswordEncrypted));
+}
+
 export async function GET(request: NextRequest) {
   try {
     const { companyId } = await requireSiteAdminAuthorizedInforCompany(request);
@@ -360,11 +380,15 @@ export async function GET(request: NextRequest) {
     const webConnectorPasswordSet = Boolean(asString(existingCredentials.webConnectorPasswordEncrypted));
     const fallbackPrograms = getDefaultPrograms(company.accountingSystem);
     const programs = sanitizePrograms(metadata.quickbooksDesktopPrograms || fallbackPrograms, fallbackPrograms);
+    const effectiveStatus =
+      connection?.status === 'ACTIVE' && !hasRequiredQuickBooksDesktopSetup(settings, existingCredentials)
+        ? 'INACTIVE'
+        : connection?.status || 'NOT_CONNECTED';
 
     return NextResponse.json({
       ok: true,
       companyId,
-      status: connection?.status || 'NOT_CONNECTED',
+      status: effectiveStatus,
       lastSyncAt: connection?.lastSyncAt || null,
       errorMessage: connection?.errorMessage || null,
       queuedDateRange: asRecord(metadata.quickbooksDesktopQueuedDateRange),
@@ -467,6 +491,7 @@ export async function POST(request: NextRequest) {
     };
     const scheduleFrequency = settingsToStore.syncFrequency || 'daily';
     const platformVersion = existing?.platformVersion || (variant === 'ENTERPRISE' ? 'qb-enterprise-1.0' : 'qb-desktop-1.0');
+    const isCurrentlyConnected = existing?.status === 'ACTIVE';
 
     await prisma.accountingConnection.upsert({
       where: {
@@ -478,8 +503,8 @@ export async function POST(request: NextRequest) {
       update: {
         connectionMetadata: mergedMetadata,
         platformVersion,
-        status: existing?.status || 'INACTIVE',
-        autoSync: true,
+        status: isCurrentlyConnected ? 'ACTIVE' : 'INACTIVE',
+        autoSync: isCurrentlyConnected,
         syncFrequency: scheduleFrequency,
         errorMessage: null,
       },
@@ -488,7 +513,7 @@ export async function POST(request: NextRequest) {
         platform: 'QUICKBOOKS',
         status: 'INACTIVE',
         platformVersion,
-        autoSync: true,
+        autoSync: false,
         syncFrequency: scheduleFrequency,
         connectionMetadata: mergedMetadata,
       },

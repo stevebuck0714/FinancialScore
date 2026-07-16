@@ -99,16 +99,17 @@ export async function POST(request: NextRequest) {
       bambooHrLastUpdatedAt: new Date().toISOString(),
     };
     const scheduleFrequency = settings.syncFrequency || 'daily';
+    const isCurrentlyConnected = existing?.status === 'ACTIVE';
 
     await saveOperationalSystemConnection({
       companyId,
       provider: 'BAMBOOHR',
       sourceCode: SOURCE_CODE,
       authType: settings.authType || 'API_KEY',
-      status: existing?.status || 'INACTIVE',
+      status: isCurrentlyConnected ? 'ACTIVE' : 'INACTIVE',
       accessToken: submittedApiKey || existing?.accessToken || settings.apiKey || null,
       baseUrl: settings.baseUrl || null,
-      autoSync: true,
+      autoSync: isCurrentlyConnected,
       syncFrequency: scheduleFrequency,
       connectionMetadata: mergedMetadata,
       errorMessage: null,

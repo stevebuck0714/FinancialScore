@@ -5,11 +5,40 @@ import { extractDailyFinancialMappedLinesFromMetadata, extractDailyFinancialReco
 import { notifyAdminsOfSyncFailure } from '@/lib/sync-alerts';
 import { warmDailyExecutiveBriefingCache } from '@/lib/pulse/exec-briefing-warmup';
 import { autoQueueDueQuickBooksDesktopFinancialJobs } from '@/lib/quickbooks-desktop/auto-queue';
+import { isQuickBooksDesktopFamily } from '@/lib/quickbooks-desktop/family';
 
 export const maxDuration = 300;
 
 const OPERATIONAL_SYNC_TIME_ZONE = 'America/New_York';
 const DUE_LOOKBACK_HOURS = 36;
+
+function asRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
+}
+
+function asString(value: unknown): string {
+  return typeof value === 'string' ? value.trim() : '';
+}
+
+function hasQuickBooksDesktopRequiredSetup(metadataValue: unknown): boolean {
+  const metadata = asRecord(metadataValue);
+  const settings = asRecord(metadata.quickbooksDesktopSettings);
+  const credentials = asRecord(metadata.quickbooksDesktopCredentials);
+  const requiredKeys = [
+    'integrationType',
+    'applicationName',
+    'ownerId',
+    'fileId',
+    'webConnectorUsername',
+    'desktopEditionYear',
+    'countryVersion',
+    'companyFilePath',
+    'hostMachineName',
+  ];
+  if (requiredKeys.some((key) => !asString(settings[key]))) return false;
+  if (asString(settings.integrationType) === 'WEB_CONNECTOR' && !asString(settings.soapEndpointUrl)) return false;
+  return Boolean(asString(credentials.webConnectorPasswordEncrypted));
+}
 
 function normalizePullTime(value: unknown): string {
   if (typeof value !== 'string') return '08:00';
@@ -221,6 +250,7 @@ export async function GET(request: NextRequest) {
         company: {
           select: {
             name: true,
+            accountingSystem: true,
           },
         },
       },
@@ -241,6 +271,12 @@ export async function GET(request: NextRequest) {
     );
     const runnableConnections = connections.filter((connection) => {
       if (!isConnectionDue(connection)) return false;
+      if (
+        isQuickBooksDesktopFamily(connection.company?.accountingSystem) &&
+        !hasQuickBooksDesktopRequiredSetup(connection.connectionMetadata)
+      ) {
+        return false;
+      }
       if (
         connection.platform === 'INFOR_M3' &&
         activeInforRunKeys.has(`${connection.companyId}:INFOR_M3`)

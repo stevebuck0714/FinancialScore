@@ -14783,7 +14783,7 @@ function FinancialScorePage() {
                         background: String(bambooSource.status || '').toUpperCase() === 'ACTIVE' ? '#dcfce7' : '#fef3c7',
                         color: String(bambooSource.status || '').toUpperCase() === 'ACTIVE' ? '#166534' : '#92400e'
                       }}>
-                        {String(bambooSource.status || 'INACTIVE').toUpperCase() === 'ACTIVE' ? 'Connected' : 'Configured'}
+                        {String(bambooSource.status || 'INACTIVE').toUpperCase() === 'ACTIVE' ? 'Connected' : 'Not connected'}
                       </div>
                     </div>
                     <div style={{ fontSize: '12px', color: '#475569' }}>

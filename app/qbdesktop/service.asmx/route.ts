@@ -1043,6 +1043,29 @@ function getMetadata(value: unknown): QbDesktopMetadata {
   return value && typeof value === 'object' && !Array.isArray(value) ? (value as QbDesktopMetadata) : {};
 }
 
+function asMetadataString(value: unknown): string {
+  return typeof value === 'string' ? value.trim() : '';
+}
+
+function hasRequiredQuickBooksDesktopSetup(metadata: QbDesktopMetadata): boolean {
+  const settings = metadata.quickbooksDesktopSettings || {};
+  const credentials = metadata.quickbooksDesktopCredentials || {};
+  const requiredKeys = [
+    'integrationType',
+    'applicationName',
+    'ownerId',
+    'fileId',
+    'webConnectorUsername',
+    'desktopEditionYear',
+    'countryVersion',
+    'companyFilePath',
+    'hostMachineName',
+  ];
+  if (requiredKeys.some((key) => !asMetadataString(settings[key]))) return false;
+  if (asMetadataString(settings.integrationType) === 'WEB_CONNECTOR' && !asMetadataString(settings.soapEndpointUrl)) return false;
+  return Boolean(asMetadataString(credentials.webConnectorPasswordEncrypted));
+}
+
 async function loadConnection(companyId: string) {
   return prisma.accountingConnection.findUnique({
     where: {
@@ -1500,7 +1523,10 @@ async function authenticateWebConnector(username: string, password: string): Pro
   if (!username || !password) return null;
 
   const connections = await prisma.accountingConnection.findMany({
-    where: { platform: 'QUICKBOOKS' },
+    where: {
+      platform: 'QUICKBOOKS',
+      status: 'ACTIVE',
+    },
     select: {
       companyId: true,
       connectionMetadata: true,
@@ -1509,6 +1535,7 @@ async function authenticateWebConnector(username: string, password: string): Pro
 
   for (const connection of connections) {
     const metadata = getMetadata(connection.connectionMetadata);
+    if (!hasRequiredQuickBooksDesktopSetup(metadata)) continue;
     const credentials = metadata.quickbooksDesktopCredentials;
     const storedUsername =
       typeof credentials?.webConnectorUsername === 'string'

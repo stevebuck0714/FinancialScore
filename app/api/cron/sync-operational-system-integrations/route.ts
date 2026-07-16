@@ -241,7 +241,7 @@ export async function GET(request: NextRequest) {
 
     const connections = (await delegate.findMany({
       where: {
-        status: { in: ['ACTIVE', 'ERROR'] },
+        status: 'ACTIVE',
         autoSync: true,
         provider: 'BAMBOOHR',
         syncFrequency: { not: 'manual' },

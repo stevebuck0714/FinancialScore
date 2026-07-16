@@ -46,6 +46,29 @@ function asRecord(value: unknown): Record<string, unknown> {
     : {};
 }
 
+function asString(value: unknown): string {
+  return typeof value === 'string' ? value.trim() : '';
+}
+
+function hasQuickBooksDesktopRequiredSetup(metadata: Record<string, unknown>): boolean {
+  const settings = asRecord(metadata.quickbooksDesktopSettings);
+  const credentials = asRecord(metadata.quickbooksDesktopCredentials);
+  const requiredKeys = [
+    'integrationType',
+    'applicationName',
+    'ownerId',
+    'fileId',
+    'webConnectorUsername',
+    'desktopEditionYear',
+    'countryVersion',
+    'companyFilePath',
+    'hostMachineName',
+  ];
+  if (requiredKeys.some((key) => !asString(settings[key]))) return false;
+  if (asString(settings.integrationType) === 'WEB_CONNECTOR' && !asString(settings.soapEndpointUrl)) return false;
+  return Boolean(asString(credentials.webConnectorPasswordEncrypted));
+}
+
 function dateKey(date: Date): string {
   return date.toISOString().slice(0, 10);
 }
@@ -304,6 +327,15 @@ export async function autoQueueDueQuickBooksDesktopFinancialJobs(now = new Date(
       continue;
     }
     const metadata = asRecord(connection.connectionMetadata);
+    if (!hasQuickBooksDesktopRequiredSetup(metadata)) {
+      results.push({
+        companyId: connection.companyId,
+        companyName: connection.company?.name,
+        queued: false,
+        skippedReason: 'QuickBooks Desktop setup is incomplete; auto-queue requires an explicit connected setup.',
+      });
+      continue;
+    }
     const previousAutoQueuedDate = typeof metadata.quickbooksDesktopAutoQueuedDate === 'string'
       ? metadata.quickbooksDesktopAutoQueuedDate
       : '';

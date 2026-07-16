@@ -2523,6 +2523,8 @@ export default function SiteAdminDashboard(props: any) {
   const [processingQbDesktopDetailCompanyId, setProcessingQbDesktopDetailCompanyId] = React.useState<string | null>(null);
   const [refreshingQbDesktopStatusCompanyId, setRefreshingQbDesktopStatusCompanyId] = React.useState<string | null>(null);
   const [resettingQbDesktopStaleRunCompanyId, setResettingQbDesktopStaleRunCompanyId] = React.useState<string | null>(null);
+  const [connectingQbDesktopCompanyId, setConnectingQbDesktopCompanyId] = React.useState<string | null>(null);
+  const [disconnectingQbDesktopCompanyId, setDisconnectingQbDesktopCompanyId] = React.useState<string | null>(null);
   const [qboSettingsByCompany, setQboSettingsByCompany] = React.useState<
     Record<
       string,
@@ -3637,26 +3639,78 @@ export default function SiteAdminDashboard(props: any) {
   const loadSageIntacctSettings = async (_companyId: string) => {};
   const loadOdooSettings = async (_companyId: string) => {};
 
+  const persistQbDesktopSettings = async (companyId: string) => {
+    const response = await fetch('/api/quickbooks-desktop/settings', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        companyId,
+        settings: getQbDesktopSettings(companyId),
+        programs: getQbDesktopPrograms(companyId),
+      }),
+    });
+    const data = await response.json();
+    if (!response.ok || !data?.ok) {
+      throw new Error(data?.details || data?.error || 'Failed to save QuickBooks Desktop settings');
+    }
+    qbDesktopProgramsDirtyRef.current = { ...qbDesktopProgramsDirtyRef.current, [companyId]: false };
+    return data;
+  };
+
   const saveQbDesktopSettings = async (companyId: string) => {
     try {
-      const response = await fetch('/api/quickbooks-desktop/settings', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          companyId,
-          settings: getQbDesktopSettings(companyId),
-          programs: getQbDesktopPrograms(companyId),
-        }),
-      });
-      const data = await response.json();
-      if (!response.ok || !data?.ok) {
-        throw new Error(data?.details || data?.error || 'Failed to save QuickBooks Desktop settings');
-      }
-      qbDesktopProgramsDirtyRef.current = { ...qbDesktopProgramsDirtyRef.current, [companyId]: false };
+      await persistQbDesktopSettings(companyId);
       await loadQbDesktopSettings(companyId);
       alert('QuickBooks Desktop settings saved for this company.');
     } catch (error: any) {
       alert(`Failed to save QuickBooks Desktop settings: ${error?.message || 'Unknown error'}`);
+    }
+  };
+
+  const connectQbDesktopConnection = async (companyId: string) => {
+    try {
+      setConnectingQbDesktopCompanyId(companyId);
+      await persistQbDesktopSettings(companyId);
+      const response = await fetch('/api/quickbooks-desktop/connect', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ companyId }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok || !data?.ok) {
+        throw new Error(data?.details || data?.error || 'Failed to connect QuickBooks Desktop');
+      }
+      await loadQbDesktopSettings(companyId);
+      alert(data?.message || 'QuickBooks Desktop connected for this company.');
+    } catch (error: any) {
+      await loadQbDesktopSettings(companyId);
+      alert(`QuickBooks Desktop connection failed: ${error?.message || 'Unknown error'}`);
+    } finally {
+      setConnectingQbDesktopCompanyId((prev) => (prev === companyId ? null : prev));
+    }
+  };
+
+  const disconnectQbDesktopConnection = async (companyId: string) => {
+    if (!confirm('Disconnect QuickBooks Desktop for this company? This stops scheduled QuickBooks Desktop syncs and removes the stored Web Connector password.')) {
+      return;
+    }
+    try {
+      setDisconnectingQbDesktopCompanyId(companyId);
+      const response = await fetch('/api/quickbooks-desktop/disconnect', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ companyId }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok || !data?.ok) {
+        throw new Error(data?.details || data?.error || 'Failed to disconnect QuickBooks Desktop');
+      }
+      await loadQbDesktopSettings(companyId);
+      alert(data?.message || 'QuickBooks Desktop disconnected for this company.');
+    } catch (error: any) {
+      alert(`Failed to disconnect QuickBooks Desktop: ${error?.message || 'Unknown error'}`);
+    } finally {
+      setDisconnectingQbDesktopCompanyId((prev) => (prev === companyId ? null : prev));
     }
   };
 
@@ -4660,6 +4714,55 @@ export default function SiteAdminDashboard(props: any) {
           : { bg: '#fef3c7', border: '#fbbf24', fg: '#92400e', label: 'Not Connected' };
   };
 
+  const renderQbDesktopConnectionStatus = (companyId: string) => {
+    const syncStatus = qbDesktopSyncStatusByCompany[companyId] || {};
+    const status = String(syncStatus.status || 'NOT_CONNECTED').toUpperCase();
+    const statusTheme = getOperationalSourceStatusTheme(status);
+    const isConnected = status === 'ACTIVE';
+    const isConnecting = connectingQbDesktopCompanyId === companyId;
+    const isDisconnecting = disconnectingQbDesktopCompanyId === companyId;
+    const isBusy = isConnecting || isDisconnecting;
+
+    return (
+      <div style={{ marginBottom: '8px', padding: '8px', background: statusTheme.bg, border: `1px solid ${statusTheme.border}`, borderRadius: '6px' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px', marginBottom: '2px' }}>
+          <div style={{ fontSize: '12px', fontWeight: '600', color: statusTheme.fg }}>{statusTheme.label}</div>
+          {isConnected ? (
+            <button
+              type="button"
+              onClick={() => disconnectQbDesktopConnection(companyId)}
+              disabled={isBusy}
+              style={{
+                padding: '5px 9px',
+                background: isBusy ? '#cbd5e1' : 'white',
+                color: isBusy ? '#334155' : '#b91c1c',
+                border: `1px solid ${isBusy ? '#cbd5e1' : '#fecaca'}`,
+                borderRadius: '6px',
+                fontSize: '11px',
+                fontWeight: '700',
+                cursor: isBusy ? 'not-allowed' : 'pointer',
+              }}
+            >
+              {isDisconnecting ? 'Disconnecting...' : 'Disconnect'}
+            </button>
+          ) : null}
+        </div>
+        <div style={{ fontSize: '12px', color: statusTheme.fg }}>
+          {syncStatus.lastWebConnectorSyncAt
+            ? `Last Web Connector sync: ${new Date(syncStatus.lastWebConnectorSyncAt).toLocaleString()}`
+            : syncStatus.lastSyncAt
+              ? `Last sync: ${new Date(syncStatus.lastSyncAt).toLocaleString()}`
+              : 'Saved settings are not connected until Connect succeeds.'}
+        </div>
+        {syncStatus.errorMessage ? (
+          <div style={{ fontSize: '12px', color: statusTheme.fg, marginTop: '4px' }}>
+            {syncStatus.errorMessage}
+          </div>
+        ) : null}
+      </div>
+    );
+  };
+
   const CONSTRUCTION_OPERATIONAL_SOURCE_DETAILS: Record<
     string,
     {
@@ -5095,7 +5198,7 @@ export default function SiteAdminDashboard(props: any) {
               disabled={isBusy}
               style={{ padding: '8px 12px', background: isBusy ? '#cbd5e1' : '#0ea5e9', color: isBusy ? '#334155' : 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: isBusy ? 'not-allowed' : 'pointer' }}
             >
-              {isValidating ? 'Validating...' : 'Validate Connection'}
+              {isValidating ? 'Validating...' : isConnected ? 'Revalidate' : 'Connect'}
             </button>
             <button
               onClick={() => runBambooHrSyncTest(companyId)}
@@ -5157,7 +5260,7 @@ export default function SiteAdminDashboard(props: any) {
         <div style={{ marginBottom: '8px', padding: '8px', background: '#ecfeff', border: '1px solid #a5f3fc', borderRadius: '6px' }}>
           <div style={{ fontSize: '12px', fontWeight: '600', color: '#155e75' }}>BambooHR operational connection</div>
           <div style={{ fontSize: '12px', color: '#155e75' }}>
-            Configure the BambooHR connection and sync schedule here. Validate checks the employee directory; sync test reads enabled domains and reports counts without importing employee records.
+            Configure the BambooHR connection and sync schedule here. Connect checks the employee directory and enables scheduled syncs; sync test reads enabled domains and reports counts without importing employee records.
           </div>
         </div>
 
@@ -10977,24 +11080,50 @@ export default function SiteAdminDashboard(props: any) {
                                             Save
                                           </button>
                                           <button
-                                            disabled
-                                            style={{ padding: '8px 12px', background: '#cbd5e1', color: '#334155', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: 'not-allowed' }}
+                                            onClick={() => connectQbDesktopConnection(businessCompany.id)}
+                                            disabled={connectingQbDesktopCompanyId === businessCompany.id || disconnectingQbDesktopCompanyId === businessCompany.id}
+                                            style={{
+                                              padding: '8px 12px',
+                                              background: connectingQbDesktopCompanyId === businessCompany.id || disconnectingQbDesktopCompanyId === businessCompany.id ? '#cbd5e1' : '#0ea5e9',
+                                              color: connectingQbDesktopCompanyId === businessCompany.id || disconnectingQbDesktopCompanyId === businessCompany.id ? '#334155' : 'white',
+                                              border: 'none',
+                                              borderRadius: '6px',
+                                              fontSize: '12px',
+                                              fontWeight: '600',
+                                              cursor: connectingQbDesktopCompanyId === businessCompany.id || disconnectingQbDesktopCompanyId === businessCompany.id ? 'not-allowed' : 'pointer',
+                                            }}
                                           >
-                                            Validate Connection
+                                            {connectingQbDesktopCompanyId === businessCompany.id
+                                              ? 'Connecting...'
+                                              : String(qbDesktopSyncStatusByCompany[businessCompany.id]?.status || '').toUpperCase() === 'ACTIVE'
+                                                ? 'Revalidate'
+                                                : 'Connect'}
                                           </button>
                                           <button
                                             onClick={() => runPlatformOperationalSync?.(businessCompany.id, operationalSettings.frequency)}
-                                            style={{ padding: '8px 12px', background: '#0f766e', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: 'pointer' }}
+                                            disabled={String(qbDesktopSyncStatusByCompany[businessCompany.id]?.status || '').toUpperCase() !== 'ACTIVE'}
+                                            style={{
+                                              padding: '8px 12px',
+                                              background: String(qbDesktopSyncStatusByCompany[businessCompany.id]?.status || '').toUpperCase() === 'ACTIVE' ? '#0f766e' : '#cbd5e1',
+                                              color: String(qbDesktopSyncStatusByCompany[businessCompany.id]?.status || '').toUpperCase() === 'ACTIVE' ? 'white' : '#334155',
+                                              border: 'none',
+                                              borderRadius: '6px',
+                                              fontSize: '12px',
+                                              fontWeight: '600',
+                                              cursor: String(qbDesktopSyncStatusByCompany[businessCompany.id]?.status || '').toUpperCase() === 'ACTIVE' ? 'pointer' : 'not-allowed',
+                                            }}
                                           >
                                             Run Ops Sync Now
                                           </button>
                                         </div>
                                       </div>
 
+                                      {renderQbDesktopConnectionStatus(businessCompany.id)}
+
                                       <div style={{ marginBottom: '8px', padding: '8px', background: '#fef3c7', border: '1px solid #fbbf24', borderRadius: '6px' }}>
                                         <div style={{ fontSize: '12px', fontWeight: '600', color: '#92400e' }}>QuickBooks Desktop configuration</div>
                                         <div style={{ fontSize: '12px', color: '#78350f' }}>
-                                          Enter required Web Connector/SDK setup values, then click Save.
+                                          Enter required Web Connector/SDK setup values, then click Save. Click Connect only when this company should run live QuickBooks Desktop syncs.
                                         </div>
                                       </div>
 

@@ -116,7 +116,7 @@ export async function POST(request: NextRequest) {
           status: 'ERROR',
           accessToken: existing.accessToken,
           baseUrl: existing.baseUrl,
-          autoSync: existing.autoSync,
+          autoSync: false,
           syncFrequency: existing.syncFrequency || 'daily',
           connectionMetadata: existing.connectionMetadata,
           errorMessage: message.slice(0, 900),
