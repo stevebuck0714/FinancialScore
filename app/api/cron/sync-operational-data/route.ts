@@ -4,6 +4,7 @@ import { runOperationalSyncForConnection } from '@/lib/operational-sync/runner';
 import { extractDailyFinancialMappedLinesFromMetadata, extractDailyFinancialRecordsFromMetadata, ingestDailyFinancialSnapshots } from '@/lib/financial/daily-financial-ingest';
 import { notifyAdminsOfSyncFailure } from '@/lib/sync-alerts';
 import { warmDailyExecutiveBriefingCache } from '@/lib/pulse/exec-briefing-warmup';
+import { autoQueueDueQuickBooksDesktopFinancialJobs } from '@/lib/quickbooks-desktop/auto-queue';
 
 export const maxDuration = 300;
 
@@ -196,6 +197,12 @@ export async function GET(request: NextRequest) {
     
     console.log('🕐 Starting daily operational data sync...');
     const startTime = Date.now();
+    const qbdAutoQueue = await autoQueueDueQuickBooksDesktopFinancialJobs();
+    if (qbdAutoQueue.queued > 0) {
+      console.log(
+        `📚 Queued QuickBooks Desktop Web Connector jobs for ${qbdAutoQueue.queued} companies (target ${qbdAutoQueue.targetDate})`
+      );
+    }
     
     // Get all active connections with auto-sync enabled.
     const connections = await prisma.accountingConnection.findMany({
@@ -253,6 +260,7 @@ export async function GET(request: NextRequest) {
         message: 'No connections due for auto-sync at this time',
         companiesSynced: 0,
         totalRecords: 0,
+        qbdAutoQueue,
         duration: Date.now() - startTime
       });
     }
@@ -394,6 +402,7 @@ export async function GET(request: NextRequest) {
       companiesSynced: successCount,
       companiesWithErrors: errorCount,
       totalRecords,
+      qbdAutoQueue,
       duration,
       results
     });
