@@ -5814,7 +5814,7 @@ export default function SiteAdminDashboard(props: any) {
       const month = rebuildMonths[index];
       setFinancialImportProgressByCompany((prev) => ({
         ...prev,
-        [companyId]: `Rebuilding QBD daily P&L ${index + 1}/${rebuildMonths.length}: ${month}`,
+        [companyId]: `Rebuilding QBD daily financials ${index + 1}/${rebuildMonths.length}: ${month}`,
       }));
       const response = await fetch('/api/financials/reprocess-mappings', {
         method: 'POST',
@@ -5843,7 +5843,7 @@ export default function SiteAdminDashboard(props: any) {
     }
 
     if (failedMonths.length > 0) {
-      throw new Error(`QBD daily P&L rebuild failed for ${failedMonths.length} month(s): ${failedMonths.join('; ')}`);
+      throw new Error(`QBD daily financials rebuild failed for ${failedMonths.length} month(s): ${failedMonths.join('; ')}`);
     }
 
     setFinancialImportProgressByCompany((prev) => ({

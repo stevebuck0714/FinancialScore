@@ -2252,14 +2252,35 @@ export async function POST(request: NextRequest) {
         );
       }
       if (dailyOnly) {
-        const qbdDailyFinancialSnapshots = await rebuildQuickBooksDesktopDailyPnlMonth(String(companyId), targetMonth || '');
+        financialPayload = await buildQuickBooksDesktopMappedMonthlyPayload(String(companyId), financialPayload);
+        if (targetMonth) {
+          financialPayload = {
+            ...financialPayload,
+            qbdDailyFinancialSnapshots: Array.isArray(financialPayload.qbdDailyFinancialSnapshots)
+              ? (financialPayload.qbdDailyFinancialSnapshots as Array<Record<string, unknown>>)
+                  .filter((row) => qbdDateKey(row.snapshotDate)?.startsWith(`${targetMonth}-`))
+              : [],
+          };
+        }
+        const qbdDailyFinancialSnapshots = await persistQuickBooksDesktopDailyFinancialSnapshots(
+          String(companyId),
+          financialPayload,
+          qbdDomainScope,
+        );
+        const qbdBalanceSheetAnchor = qbdDomainScope.canUpdateBalanceSheet
+          ? await persistQuickBooksDesktopBalanceSheetAnchor(String(companyId), financialPayload)
+          : null;
         qbdDiagnostics.dailyFinancialSnapshots = qbdDailyFinancialSnapshots;
+        qbdDiagnostics.balanceSheetAnchor = qbdBalanceSheetAnchor;
+        qbdDiagnostics.rebuiltMappedMonthlyData = true;
+        qbdDiagnostics.rebuiltMonthlyRows = Array.isArray(financialPayload.monthlyData) ? financialPayload.monthlyData.length : 0;
         return NextResponse.json({
           success: true,
           ok: true,
-          message: `QuickBooks Desktop daily P&L rebuilt for ${targetMonth}.`,
+          message: `QuickBooks Desktop daily financials rebuilt for ${targetMonth}.`,
           diagnostics: qbdDiagnostics,
           qbdDailyFinancialSnapshots,
+          qbdBalanceSheetAnchor,
         });
       }
       financialPayload = await buildQuickBooksDesktopMappedMonthlyPayload(String(companyId), financialPayload);
