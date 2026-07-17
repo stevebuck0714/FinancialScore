@@ -5,7 +5,7 @@ import { notifyAdminsOfSyncFailure } from '@/lib/sync-alerts';
 import { isQuickBooksDesktopFamily } from '@/lib/quickbooks-desktop/family';
 
 const WATCHDOG_TIME_ZONE = 'America/New_York';
-const DEFAULT_GRACE_MINUTES = 0;
+const DEFAULT_GRACE_MINUTES = 15;
 const DEFAULT_DEDUPE_HOURS = 12;
 
 type WatchdogAlertReason = 'error_state' | 'overdue';
@@ -242,13 +242,19 @@ function parseDate(value: unknown): Date | null {
   return Number.isNaN(parsed.getTime()) ? null : parsed;
 }
 
+function latestDate(...values: Array<Date | null | undefined>): Date | null {
+  const dates = values.filter((value): value is Date => Boolean(value && !Number.isNaN(value.getTime())));
+  if (dates.length === 0) return null;
+  return dates.reduce((latest, value) => (value.getTime() > latest.getTime() ? value : latest), dates[0]);
+}
+
 function getAccountingLastSuccess(row: AccountingWatchRow): Date | null {
   const metadata = asRecord(row.connectionMetadata);
   if (isQuickBooksDesktopFamily(row.company.accountingSystem)) {
-    return (
-      parseDate(metadata.quickbooksDesktopLastWebConnectorSyncAt) ||
-      parseDate(asRecord(metadata.quickbooksDesktopWebConnectorLastRun).completedAt) ||
-      row.lastSyncAt
+    return latestDate(
+      parseDate(metadata.quickbooksDesktopLastWebConnectorSyncAt),
+      parseDate(asRecord(metadata.quickbooksDesktopWebConnectorLastRun).completedAt),
+      row.lastSyncAt,
     );
   }
   return row.lastSyncAt;
@@ -280,6 +286,10 @@ function shouldAlertOverdue(params: {
 
 function formatIso(value: Date | null): string {
   return value ? value.toISOString() : 'never';
+}
+
+function describeGraceWindow(graceMinutes: number): string {
+  return graceMinutes > 0 ? `${graceMinutes} minute grace window applied.` : 'No grace window is applied.';
 }
 
 async function notifyOperationalSystemAlert(params: {
@@ -373,7 +383,7 @@ async function evaluateAccountingConnection(
   const errorDetails =
     reason === 'error_state'
       ? errorMessage || `Connection status is ${status || 'unknown'}.`
-      : `Expected run: ${formatIso(expectedAt)} (${pullTime} ${WATCHDOG_TIME_ZONE}, ${frequency}). Last successful load: ${formatIso(lastSuccessAt)}. No grace window is applied.`;
+      : `Expected run: ${formatIso(expectedAt)} (${pullTime} ${WATCHDOG_TIME_ZONE}, ${frequency}). Last successful load: ${formatIso(lastSuccessAt)}. ${describeGraceWindow(graceMinutes)}`;
 
   const result = await notifyAdminsOfSyncFailure({
     companyId: row.companyId,
@@ -431,7 +441,7 @@ async function evaluateOperationalConnection(
   const errorDetails =
     reason === 'error_state'
       ? errorMessage || `Connection status is ${status || 'unknown'}.`
-      : `Expected run: ${formatIso(expectedAt)} (${pullTime} ${WATCHDOG_TIME_ZONE}, ${frequency}). Last successful load: ${formatIso(lastSuccessAt)}. No grace window is applied.`;
+      : `Expected run: ${formatIso(expectedAt)} (${pullTime} ${WATCHDOG_TIME_ZONE}, ${frequency}). Last successful load: ${formatIso(lastSuccessAt)}. ${describeGraceWindow(graceMinutes)}`;
   const alertKey = `${row.companyId}|${sourceKey}|${reason}|${errorSummary.toLowerCase()}`;
   const result = await notifyOperationalSystemAlert({
     row,
