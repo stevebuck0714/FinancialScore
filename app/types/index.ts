@@ -248,19 +248,7 @@ export interface CompanyProfile {
   aiResearchAliases?: string[];
   aiResearchExcludedNames?: string[];
   aiResearchIdentityAnchors?: string[];
-  disclosures: {
-    bankruptcies: string;
-    liens: string;
-    contracts: string;
-    lawsuits: string;
-    mostFavoredNation: string;
-    equityControl: string;
-    rightOfFirstRefusal: string;
-    shareholderProtections: string;
-    changeInControl: string;
-    regulatoryApprovals: string;
-    auditedFinancials: string;
-  };
+  disclosures: Record<string, string | { status?: string; notes?: string }>;
 }
 
 export interface AssessmentResponses {

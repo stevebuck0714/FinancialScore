@@ -251,6 +251,18 @@ function buildBusinessDayDateRanges(startDate: string, endDate: string) {
   return ranges;
 }
 
+type AutoFinancialJobSpec = {
+  requestName: string;
+  processingMode?: 'aging_snapshot';
+  dateRange: {
+    mode: string;
+    startDate: string;
+    endDate: string;
+    requestedAt: string;
+  };
+  windowIndex: number;
+};
+
 function buildAutoFinancialJobSpecs(startDate: string, endDate: string, requestNames: string[]) {
   const unique = Array.from(new Set(requestNames));
   const monthlyRequests = unique.filter((requestName) => requestName === 'GeneralDetailReportQuery');
@@ -266,34 +278,35 @@ function buildAutoFinancialJobSpecs(startDate: string, endDate: string, requestN
     requestedAt: new Date().toISOString(),
   };
   const agingSnapshotDateRanges = buildBusinessDayDateRanges(startDate, endDate);
+  const jobSpecs: AutoFinancialJobSpec[] = [
+    ...staticRequests.map((requestName) => ({
+      requestName,
+      dateRange: queuedDateRange,
+      windowIndex: 0,
+    })),
+    ...monthlyRequests.map((requestName) => ({
+      requestName,
+      dateRange: queuedDateRange,
+      windowIndex: 0,
+    })),
+    ...agingSnapshotDateRanges.flatMap((range) =>
+      agingSnapshotRequests.map((requestName) => ({
+        requestName,
+        processingMode: 'aging_snapshot' as const,
+        dateRange: {
+          ...queuedDateRange,
+          startDate: range.startDate,
+          endDate: range.endDate,
+        },
+        windowIndex: range.windowIndex,
+      }))
+    ),
+  ];
 
   return {
     queuedDateRange,
     enabledRequests: unique,
-    jobSpecs: [
-      ...staticRequests.map((requestName) => ({
-        requestName,
-        dateRange: queuedDateRange,
-        windowIndex: 0,
-      })),
-      ...monthlyRequests.map((requestName) => ({
-        requestName,
-        dateRange: queuedDateRange,
-        windowIndex: 0,
-      })),
-      ...agingSnapshotDateRanges.flatMap((range) =>
-        agingSnapshotRequests.map((requestName) => ({
-          requestName,
-          processingMode: 'aging_snapshot' as const,
-          dateRange: {
-            ...queuedDateRange,
-            startDate: range.startDate,
-            endDate: range.endDate,
-          },
-          windowIndex: range.windowIndex,
-        }))
-      ),
-    ],
+    jobSpecs,
   };
 }
 

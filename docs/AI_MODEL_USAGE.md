@@ -41,10 +41,12 @@ The `/api/test-openai` endpoint is the health check for this setup. It reports t
 | `OPENAI_MODEL_ASK` | `OPENAI_MODEL` | Ask Corelytics internal-data Q&A. Also used as a fallback by Daily Exec Briefing. |
 | `OPENAI_MODEL_DOCS` | `OPENAI_MODEL_ASK` | Ask Corelytics document mode. |
 | `OPENAI_MODEL_EXEC_BRIEFING` | `OPENAI_MODEL_ASK`, then `OPENAI_MODEL`, then `gpt-4o` | Daily Exec Briefing generation. |
+| `OPENAI_MODEL_INDUSTRY_BRIEF_FINAL` | Required | Final company-specific Industry Brief narrative and growth-opportunity ranking step. No model fallback is used. |
+| `OPENAI_MODEL_INDUSTRY_BRIEF_SCAN` | Required | Source scanning, headline classification, competitor/opportunity extraction, and signal categorization. No model fallback is used. |
 | `OPENAI_MODEL_WEB_RESEARCH` | `OPENAI_MODEL`, then `gpt-4o` | Ask Corelytics web-research synthesis after live web research. |
 | `OPENAI_MODEL_BUSINESS_CONTEXT` | `OPENAI_MODEL`, then `gpt-4o` | Business overview and market-position synthesis. |
 | `OPENAI_EMBEDDING_MODEL` | `text-embedding-3-small` | Company document vector embeddings for document search / retrieval. |
-| `PERPLEXITY_MODEL` | `sonar-pro` | Ask Corelytics web research route only. |
+| `PERPLEXITY_MODEL` | `sonar-pro` | Ask Corelytics web research and Daily Industry Brief live market/competitor scan. |
 
 When traffic goes through Vercel AI Gateway, these defaults resolve to provider-prefixed gateway model names, for example `openai/gpt-4o`, `openai/gpt-5.1`, or `openai/text-embedding-3-small`.
 
@@ -57,6 +59,7 @@ When traffic goes through Vercel AI Gateway, these defaults resolve to provider-
 | Ask Corelytics JSON repair retry | `app/api/ai-analysis/ask/route.ts` | Same model selected for Ask Corelytics | If the first Ask Corelytics response is malformed or too large, the route retries in compact mode and can repair output into the expected JSON shape. |
 | Daily Exec Briefing | `app/api/pulse/exec-briefing/route.ts` | `OPENAI_MODEL_EXEC_BRIEFING || OPENAI_MODEL_ASK || OPENAI_MODEL || 'gpt-4o'` | Creates the Daily Exec Briefing from financial facts, liquidity, AR/AP, covenants, Pulse alerts, performance findings, benchmarks, and sector-appropriate operational modules. |
 | Daily Exec Briefing formatter retry | `app/api/pulse/exec-briefing/route.ts` | Same model selected for Daily Exec Briefing | Converts an unusable briefing draft into strict JSON sections, with a "No Material Exceptions" fallback if the model still does not return usable sections. |
+| Daily Industry Brief | `app/api/industry-brief/route.ts` + `lib/industry-brief/*` | Final: `OPENAI_MODEL_INDUSTRY_BRIEF_FINAL`; Scan: `OPENAI_MODEL_INDUSTRY_BRIEF_SCAN` | Produces a company-specific market/industry brief and ranked growth-opportunity cards from live FRED, BLS, and Perplexity source records. If company profile, live source scan, scan-model classification, or final AI synthesis fails, the route returns an explicit unavailable status instead of generated fallback content. |
 | Period Review | `app/api/ai-analysis/period-review/route.ts` | `OPENAI_MODEL || 'gpt-4o'` | Generates a structured period review covering executive summary, performance vs goals, market context, negative operational trend alerts, drivers, risks, and opportunities. |
 | Ask Corelytics Web Research, live search | `app/api/ai-analysis/web-research/route.ts` | `PERPLEXITY_MODEL || 'sonar-pro'` | Performs source-backed live web research across selected scopes for Ask Corelytics external-source mode. This is not OpenAI; it calls Perplexity directly. |
 | Ask Corelytics Web Research, synthesis | `app/api/ai-analysis/web-research/route.ts` | `OPENAI_MODEL_WEB_RESEARCH || OPENAI_MODEL || 'gpt-4o'` | Synthesizes Perplexity research notes, citations, Firecrawl extracts, and conversation context into the structured Ask Corelytics web-research answer. |

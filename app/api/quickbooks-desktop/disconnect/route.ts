@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import type { Prisma } from '@prisma/client';
 import prisma from '@/lib/prisma';
 import { requireSiteAdminAuthorizedInforCompany } from '@/lib/infor-m3/route-guards';
 import { getQuickBooksDesktopFamilyLabel, isQuickBooksDesktopFamily } from '@/lib/quickbooks-desktop/family';
@@ -46,7 +47,7 @@ export async function POST(request: NextRequest) {
           ...metadata,
           quickbooksDesktopCredentials: credentialsWithoutPassword,
           quickbooksDesktopDisconnectedAt: new Date().toISOString(),
-        },
+        } as Prisma.InputJsonObject,
       },
     });
 

@@ -31,6 +31,48 @@ interface ProfileTabProps {
   setShowCompanyDetailsModal?: (show: boolean) => void;
 }
 
+type DisclosureStatus = 'NONE' | 'YES';
+type DisclosureValue = string | { status?: string; notes?: string };
+
+const DISCLOSURE_ITEMS: Array<{ key: string; label: string }> = [
+  { key: 'bankruptcies', label: 'Bankruptcies' },
+  { key: 'liens', label: 'Liens or Judgements (business, equipment)' },
+  { key: 'contracts', label: 'Material Contract Covenants (e.g. on loans)' },
+  { key: 'lawsuits', label: 'Lawsuits (as plaintiff a/o defendant)' },
+  { key: 'mostFavoredNation', label: 'Most Favored Nation on contracts' },
+  { key: 'equityControl', label: 'Equity Control (who/how many needed)' },
+  { key: 'rightOfFirstRefusal', label: 'Right of First Refusal on sale' },
+  { key: 'shareholderProtections', label: 'Shareholder Protections (i.e. blocking/approvals)' },
+  { key: 'changeInControl', label: 'Change-in-Control triggers (i.e. with customers and/or suppliers)' },
+  { key: 'regulatoryApprovals', label: 'Regulatory Approvals (local/State/Federal)' },
+  { key: 'auditedFinancials', label: 'Audited Financial Statements' },
+];
+
+function normalizeDisclosureValue(raw: DisclosureValue | undefined): { status: DisclosureStatus; notes: string } {
+  if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
+    return {
+      status: String(raw.status || '').trim().toUpperCase() === 'YES' ? 'YES' : 'NONE',
+      notes: typeof raw.notes === 'string' ? raw.notes : '',
+    };
+  }
+
+  const value = typeof raw === 'string' ? raw.trim() : '';
+  const normalized = value.toUpperCase();
+  if (!value || normalized === 'NONE' || normalized === 'NO') {
+    return { status: 'NONE', notes: '' };
+  }
+  if (normalized === 'YES') {
+    return { status: 'YES', notes: '' };
+  }
+  return { status: 'YES', notes: value };
+}
+
+function createDefaultDisclosures(): Record<string, { status: DisclosureStatus; notes: string }> {
+  return Object.fromEntries(
+    DISCLOSURE_ITEMS.map((item) => [item.key, { status: 'NONE' as DisclosureStatus, notes: '' }])
+  );
+}
+
 export default function ProfileTab({
   selectedCompanyId,
   currentUser,
@@ -117,19 +159,7 @@ export default function ProfileTab({
       aiResearchAliases: [],
       aiResearchExcludedNames: [],
       aiResearchIdentityAnchors: [],
-      disclosures: {
-        bankruptcies: 'None',
-        liens: 'None',
-        contracts: 'None',
-        lawsuits: 'None',
-        mostFavoredNation: 'None',
-        equityControl: 'None',
-        rightOfFirstRefusal: 'None',
-        shareholderProtections: 'None',
-        changeInControl: 'None',
-        regulatoryApprovals: 'None',
-        auditedFinancials: 'No'
-      }
+      disclosures: createDefaultDisclosures()
     };
   }
   
@@ -146,11 +176,27 @@ export default function ProfileTab({
   if (!profile.aiResearchIdentityAnchors) {
     profile.aiResearchIdentityAnchors = [];
   }
+  if (!profile.disclosures) {
+    profile.disclosures = createDefaultDisclosures();
+  }
 
   const updateProfile = (updates: Partial<CompanyProfile>) => {
     const updatedProfiles = companyProfiles.filter(p => p.companyId !== selectedCompanyId);
     updatedProfiles.push({ ...profile!, ...updates });
     setCompanyProfiles(updatedProfiles);
+  };
+
+  const updateDisclosure = (key: string, updates: Partial<{ status: DisclosureStatus; notes: string }>) => {
+    const current = normalizeDisclosureValue((profile!.disclosures as Record<string, DisclosureValue>)[key]);
+    updateProfile({
+      disclosures: {
+        ...profile!.disclosures,
+        [key]: {
+          ...current,
+          ...updates,
+        },
+      },
+    });
   };
 
   // Get company data
@@ -732,101 +778,52 @@ export default function ProfileTab({
               {isLoading ? 'Saving...' : 'Save'}
             </button>
           </div>
+          <div style={{ margin: '-8px 0 18px 0', padding: '10px 12px', background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: '8px', color: '#1e40af', fontSize: '13px', lineHeight: 1.5 }}>
+            If you answer YES to any questions add relevant notes and then upload relevant documents to the legal section of the Data Room.
+          </div>
         
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 200px', gap: '12px' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) 160px', gap: '12px', alignItems: 'start' }}>
           <div style={{ fontWeight: '600', color: '#475569' }}>DISCLOSURE</div>
           <div style={{ fontWeight: '600', color: '#475569' }}>STATUS</div>
-          
-          <div style={{ fontSize: '14px', color: '#1e293b' }}>Bankruptcies</div>
-          <input 
-            type="text" 
-            value={profile.disclosures.bankruptcies} 
-            onChange={(e) => updateProfile({ disclosures: { ...profile.disclosures, bankruptcies: e.target.value } })}
-            style={{ padding: '8px 12px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '14px' }}
-          />
-          
-          <div style={{ fontSize: '14px', color: '#1e293b' }}>Liens or Judgements (business, equipment)</div>
-          <input 
-            type="text" 
-            value={profile.disclosures.liens} 
-            onChange={(e) => updateProfile({ disclosures: { ...profile.disclosures, liens: e.target.value } })}
-            style={{ padding: '8px 12px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '14px' }}
-          />
-          
-          <div style={{ fontSize: '14px', color: '#1e293b' }}>Material Contract Covenants (e.g. on loans)</div>
-          <input 
-            type="text" 
-            value={profile.disclosures.contracts} 
-            onChange={(e) => updateProfile({ disclosures: { ...profile.disclosures, contracts: e.target.value } })}
-            style={{ padding: '8px 12px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '14px' }}
-          />
-          
-          <div style={{ fontSize: '14px', color: '#1e293b' }}>Lawsuits (as plaintiff a/o defendant)</div>
-          <input 
-            type="text" 
-            value={profile.disclosures.lawsuits} 
-            onChange={(e) => updateProfile({ disclosures: { ...profile.disclosures, lawsuits: e.target.value } })}
-            style={{ padding: '8px 12px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '14px' }}
-          />
-          
-          <div style={{ fontSize: '14px', color: '#1e293b' }}>Most Favored Nation on contracts</div>
-          <input 
-            type="text" 
-            value={profile.disclosures.mostFavoredNation} 
-            onChange={(e) => updateProfile({ disclosures: { ...profile.disclosures, mostFavoredNation: e.target.value } })}
-            style={{ padding: '8px 12px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '14px' }}
-          />
-          
-          <div style={{ fontSize: '14px', color: '#1e293b' }}>Equity Control (who/how many needed)</div>
-          <input 
-            type="text" 
-            value={profile.disclosures.equityControl} 
-            onChange={(e) => updateProfile({ disclosures: { ...profile.disclosures, equityControl: e.target.value } })}
-            style={{ padding: '8px 12px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '14px' }}
-          />
-          
-          <div style={{ fontSize: '14px', color: '#1e293b' }}>Right of First Refusal on sale</div>
-          <input 
-            type="text" 
-            value={profile.disclosures.rightOfFirstRefusal} 
-            onChange={(e) => updateProfile({ disclosures: { ...profile.disclosures, rightOfFirstRefusal: e.target.value } })}
-            style={{ padding: '8px 12px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '14px' }}
-          />
-          
-          <div style={{ fontSize: '14px', color: '#1e293b' }}>Shareholder Protections (i.e. blocking/approvals)</div>
-          <input 
-            type="text" 
-            value={profile.disclosures.shareholderProtections} 
-            onChange={(e) => updateProfile({ disclosures: { ...profile.disclosures, shareholderProtections: e.target.value } })}
-            style={{ padding: '8px 12px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '14px' }}
-          />
-          
-          <div style={{ fontSize: '14px', color: '#1e293b' }}>Change-in-Control triggers (i.e. with customers and/or suppliers)</div>
-          <input 
-            type="text" 
-            value={profile.disclosures.changeInControl} 
-            onChange={(e) => updateProfile({ disclosures: { ...profile.disclosures, changeInControl: e.target.value } })}
-            style={{ padding: '8px 12px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '14px' }}
-          />
-          
-          <div style={{ fontSize: '14px', color: '#1e293b' }}>Regulatory Approvals (local/State/Federal)</div>
-          <input 
-            type="text" 
-            value={profile.disclosures.regulatoryApprovals} 
-            onChange={(e) => updateProfile({ disclosures: { ...profile.disclosures, regulatoryApprovals: e.target.value } })}
-            style={{ padding: '8px 12px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '14px' }}
-          />
-          
-          <div style={{ fontSize: '14px', color: '#1e293b' }}>Audited Financial Statements</div>
-          <select
-            value={profile.disclosures.auditedFinancials}
-            onChange={(e) => updateProfile({ disclosures: { ...profile.disclosures, auditedFinancials: e.target.value } })}
-            style={{ padding: '8px 12px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '14px' }}
-          >
-            <option value="Yes">Yes</option>
-            <option value="No">No</option>
-            <option value="Partial">Partial</option>
-          </select>
+
+          {DISCLOSURE_ITEMS.map((item) => {
+            const disclosure = normalizeDisclosureValue((profile!.disclosures as Record<string, DisclosureValue>)[item.key]);
+            return (
+              <React.Fragment key={item.key}>
+                <div style={{ fontSize: '14px', color: '#1e293b', paddingTop: '8px' }}>{item.label}</div>
+                <select
+                  value={disclosure.status}
+                  onChange={(e) => updateDisclosure(item.key, { status: e.target.value as DisclosureStatus })}
+                  style={{ padding: '8px 12px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '14px', background: 'white' }}
+                >
+                  <option value="NONE">NONE</option>
+                  <option value="YES">YES</option>
+                </select>
+                {disclosure.status === 'YES' ? (
+                  <div style={{ gridColumn: '1 / -1', marginTop: '-4px', marginBottom: '4px' }}>
+                    <label style={{ display: 'block', fontSize: '12px', fontWeight: 600, color: '#475569', marginBottom: '4px' }}>
+                      Notes for {item.label}
+                    </label>
+                    <textarea
+                      value={disclosure.notes}
+                      onChange={(e) => updateDisclosure(item.key, { notes: e.target.value })}
+                      placeholder="Add relevant details, sources, dates, parties, or document references."
+                      rows={3}
+                      style={{
+                        width: '100%',
+                        padding: '10px 12px',
+                        borderRadius: '6px',
+                        border: '1px solid #cbd5e1',
+                        fontSize: '14px',
+                        resize: 'vertical',
+                        minHeight: '76px',
+                      }}
+                    />
+                  </div>
+                ) : null}
+              </React.Fragment>
+            );
+          })}
         </div>
         </div>
       

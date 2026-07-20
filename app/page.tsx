@@ -10418,48 +10418,51 @@ function FinancialScorePage() {
       };
     });
   }, [selectedCompanyProfile]);
+  const businessOverviewDisclosureLabelMap = useMemo<Record<string, string>>(
+    () => ({
+      bankruptcies: 'Bankruptcies',
+      liens: 'Liens',
+      contracts: 'Contracts',
+      lawsuits: 'Lawsuits',
+      mostFavoredNation: 'Most Favored Nation',
+      equityControl: 'Equity Control',
+      rightOfFirstRefusal: 'Right of First Refusal',
+      shareholderProtections: 'Shareholder Protections',
+      changeInControl: 'Change in Control',
+      regulatoryApprovals: 'Regulatory Approvals',
+      auditedFinancials: 'Audited Financials',
+    }),
+    []
+  );
+  const formatBusinessOverviewDisclosureValue = useCallback((raw: unknown): string => {
+    if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
+      const entry = raw as { status?: unknown; notes?: unknown };
+      const status = String(entry.status || '').trim().toUpperCase() === 'YES' ? 'YES' : 'NONE';
+      const notes = typeof entry.notes === 'string' ? entry.notes.trim() : '';
+      return notes ? `${status} - ${notes}` : status;
+    }
+    const value = String(raw ?? '').trim();
+    if (!value) return 'N/A';
+    const normalized = value.toUpperCase();
+    if (normalized === 'NO') return 'NONE';
+    return normalized === 'YES' || normalized === 'NONE' ? normalized : value;
+  }, []);
   const businessOverviewDisclosuresSummary = useMemo(() => {
     const disclosures = selectedCompanyProfile?.disclosures;
     if (!disclosures || typeof disclosures !== 'object') return 'No disclosures have been saved.';
-    const labelMap: Record<string, string> = {
-      bankruptcies: 'Bankruptcies',
-      liens: 'Liens',
-      contracts: 'Contracts',
-      lawsuits: 'Lawsuits',
-      mostFavoredNation: 'Most Favored Nation',
-      equityControl: 'Equity Control',
-      rightOfFirstRefusal: 'Right of First Refusal',
-      shareholderProtections: 'Shareholder Protections',
-      changeInControl: 'Change in Control',
-      regulatoryApprovals: 'Regulatory Approvals',
-      auditedFinancials: 'Audited Financials',
-    };
     const allResponses = Object.entries(disclosures as Record<string, unknown>)
-      .map(([key, value]) => `${labelMap[key] || key}: ${String(value ?? '').trim() || 'N/A'}`);
+      .map(([key, value]) => `${businessOverviewDisclosureLabelMap[key] || key}: ${formatBusinessOverviewDisclosureValue(value)}`);
     return allResponses.length > 0 ? allResponses.join(' | ') : 'No disclosures have been saved.';
-  }, [selectedCompanyProfile]);
+  }, [businessOverviewDisclosureLabelMap, formatBusinessOverviewDisclosureValue, selectedCompanyProfile]);
   const businessOverviewDisclosureItems = useMemo(() => {
     const disclosures = selectedCompanyProfile?.disclosures;
     if (!disclosures || typeof disclosures !== 'object') return [] as Array<{ label: string; value: string }>;
-    const labelMap: Record<string, string> = {
-      bankruptcies: 'Bankruptcies',
-      liens: 'Liens',
-      contracts: 'Contracts',
-      lawsuits: 'Lawsuits',
-      mostFavoredNation: 'Most Favored Nation',
-      equityControl: 'Equity Control',
-      rightOfFirstRefusal: 'Right of First Refusal',
-      shareholderProtections: 'Shareholder Protections',
-      changeInControl: 'Change in Control',
-      regulatoryApprovals: 'Regulatory Approvals',
-      auditedFinancials: 'Audited Financials',
-    };
     return Object.entries(disclosures as Record<string, unknown>)
       .map(([key, raw]) => ({
-        label: labelMap[key] || key,
-        value: String(raw ?? '').trim() || 'N/A',
+        label: businessOverviewDisclosureLabelMap[key] || key,
+        value: formatBusinessOverviewDisclosureValue(raw),
       }));
-  }, [selectedCompanyProfile]);
+  }, [businessOverviewDisclosureLabelMap, formatBusinessOverviewDisclosureValue, selectedCompanyProfile]);
   const businessOverviewRevenueMix = useMemo(() => {
     const totals = {
       recurring: 0,

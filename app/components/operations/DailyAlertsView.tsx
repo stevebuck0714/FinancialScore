@@ -14,6 +14,7 @@ import {
   type PulsePolicyValues,
 } from '@/lib/company-pulse/policy';
 import { toLocalInputDate } from '@/app/utils/date';
+import IndustryBriefPanel from '@/app/components/industry-brief/IndustryBriefPanel';
 
 type AlertItem = {
   id: string;
@@ -152,7 +153,7 @@ const OPERATIONAL_FOCUS_KEY = '__focusWatchlist';
 const AR_TOP_CUSTOMER_MATERIALITY_LIMIT = 5;
 const AP_TOP_VENDOR_MATERIALITY_LIMIT = 5;
 const COMPANY_PULSE_ALERTS_ENABLED = true;
-type PulseTab = 'company-pulse' | 'briefing';
+type PulseTab = 'company-pulse' | 'briefing' | 'industry-brief';
 
 type PolicyExplainer = {
   what: string;
@@ -2637,6 +2638,7 @@ export default function DailyAlertsView({ companyId, companyName, onNavigate }: 
           {[
             { id: 'company-pulse' as PulseTab, label: 'Company Pulse' },
             { id: 'briefing' as PulseTab, label: 'Daily Executive Briefing' },
+            { id: 'industry-brief' as PulseTab, label: 'Daily Industry Brief' },
           ].map((tab) => (
             <button
               key={tab.id}
@@ -2953,6 +2955,10 @@ export default function DailyAlertsView({ companyId, companyName, onNavigate }: 
             )}
           </div>
         </div>
+      )}
+
+      {activeTab === 'industry-brief' && (
+        <IndustryBriefPanel companyId={companyId} />
       )}
 
       {COMPANY_PULSE_ALERTS_ENABLED && activeTab === 'company-pulse' && showPolicySettings && (
