@@ -14,15 +14,17 @@ const cardStyle: React.CSSProperties = {
   padding: '16px',
 };
 
-function statusTone(status: IndustryBriefStatus) {
-  if (status === 'stable') return { label: 'Stable', bg: '#dcfce7', fg: '#166534', border: '#bbf7d0' };
-  if (status === 'watch') return { label: 'Watch', bg: '#fef3c7', fg: '#92400e', border: '#fde68a' };
+function statusTone(status: IndustryBriefStatus | unknown) {
+  const normalized = renderText(status).toLowerCase();
+  if (normalized === 'stable') return { label: 'Stable', bg: '#dcfce7', fg: '#166534', border: '#bbf7d0' };
+  if (normalized === 'watch') return { label: 'Watch', bg: '#fef3c7', fg: '#92400e', border: '#fde68a' };
   return { label: 'Risk', bg: '#fee2e2', fg: '#991b1b', border: '#fecaca' };
 }
 
-function impactTone(impact: IndustryBriefImpact) {
-  if (impact === 'positive') return { bg: '#dcfce7', fg: '#166534', label: 'Positive' };
-  if (impact === 'negative') return { bg: '#fee2e2', fg: '#991b1b', label: 'Negative' };
+function impactTone(impact: IndustryBriefImpact | unknown) {
+  const normalized = renderText(impact).toLowerCase();
+  if (normalized === 'positive') return { bg: '#dcfce7', fg: '#166534', label: 'Positive' };
+  if (normalized === 'negative') return { bg: '#fee2e2', fg: '#991b1b', label: 'Negative' };
   return { bg: '#f1f5f9', fg: '#475569', label: 'Neutral' };
 }
 
@@ -32,6 +34,27 @@ function scoreColor(score: number): string {
   return '#dc2626';
 }
 
+function renderText(value: unknown): string {
+  if (typeof value === 'string') return value;
+  if (typeof value === 'number' || typeof value === 'boolean') return String(value);
+  if (Array.isArray(value)) return value.map(renderText).filter(Boolean).join(', ');
+  if (value && typeof value === 'object') {
+    return Object.entries(value as Record<string, unknown>)
+      .map(([key, item]) => {
+        const text = renderText(item);
+        return text ? `${key}: ${text}` : '';
+      })
+      .filter(Boolean)
+      .join('; ');
+  }
+  return '';
+}
+
+function renderScore(value: unknown): number {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? Math.max(0, Math.min(100, Math.round(parsed))) : 0;
+}
+
 function urgencyLabel(value: GrowthOpportunity['urgency']): string {
   const labels: Record<GrowthOpportunity['urgency'], string> = {
     today: 'Today',
@@ -39,7 +62,7 @@ function urgencyLabel(value: GrowthOpportunity['urgency']): string {
     '30_days': '30 days',
     '90_days': '90 days',
   };
-  return labels[value] || value;
+  return labels[value] || renderText(value);
 }
 
 function formatDateTime(value?: string): string {
@@ -114,9 +137,9 @@ export default function IndustryBriefPanel({ companyId }: Props) {
         <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', alignItems: 'flex-start', flexWrap: 'wrap' }}>
           <div>
             <div style={{ fontSize: '13px', fontWeight: 800, color: '#2751d0', textTransform: 'uppercase' }}>Daily Industry Brief</div>
-            <div style={{ fontSize: '22px', fontWeight: 800, color: '#0f172a', marginTop: '4px' }}>{brief.company.name}</div>
+            <div style={{ fontSize: '22px', fontWeight: 800, color: '#0f172a', marginTop: '4px' }}>{renderText(brief.company.name)}</div>
             <div style={{ fontSize: '13px', color: '#64748b', marginTop: '3px' }}>
-              {brief.company.revenueLabel} revenue | {brief.company.industry} | {brief.company.segment} | {brief.company.location}
+              {renderText(brief.company.revenueLabel)} revenue | {renderText(brief.company.industry)} | {renderText(brief.company.segment)} | {renderText(brief.company.location)}
             </div>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
@@ -136,14 +159,14 @@ export default function IndustryBriefPanel({ companyId }: Props) {
         <div style={{ marginTop: '14px', display: 'grid', gridTemplateColumns: '170px minmax(0, 1fr)', gap: '16px', alignItems: 'center' }}>
           <div style={{ border: '1px solid #e2e8f0', borderRadius: '12px', padding: '14px', textAlign: 'center', background: '#f8fafc' }}>
             <div style={{ fontSize: '12px', color: '#64748b', fontWeight: 800, textTransform: 'uppercase' }}>Industry Score</div>
-            <div style={{ fontSize: '38px', fontWeight: 900, color: scoreColor(brief.overallScore), lineHeight: 1 }}>{brief.overallScore}</div>
+            <div style={{ fontSize: '38px', fontWeight: 900, color: scoreColor(renderScore(brief.overallScore)), lineHeight: 1 }}>{renderScore(brief.overallScore)}</div>
             <div style={{ fontSize: '12px', color: '#64748b' }}>out of 100</div>
           </div>
           <div>
-            <div style={{ fontSize: '17px', color: '#0f172a', fontWeight: 800 }}>{brief.executiveSummary.headline}</div>
+            <div style={{ fontSize: '17px', color: '#0f172a', fontWeight: 800 }}>{renderText(brief.executiveSummary.headline)}</div>
             <div style={{ marginTop: '8px', display: 'grid', gap: '5px' }}>
               {brief.executiveSummary.bullets.map((bullet) => (
-                <div key={bullet} style={{ fontSize: '14px', color: '#334155' }}>- {bullet}</div>
+                <div key={renderText(bullet)} style={{ fontSize: '14px', color: '#334155' }}>- {renderText(bullet)}</div>
               ))}
             </div>
             <div style={{ fontSize: '12px', color: '#64748b', marginTop: '8px' }}>
@@ -155,13 +178,13 @@ export default function IndustryBriefPanel({ companyId }: Props) {
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '12px' }}>
         {brief.healthIndicators.map((indicator) => (
-          <div key={indicator.key} style={cardStyle}>
+          <div key={renderText(indicator.key)} style={cardStyle}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px' }}>
-              <div style={{ fontSize: '13px', color: '#475569', fontWeight: 800 }}>{indicator.label}</div>
-              <div style={{ fontSize: '20px', color: scoreColor(indicator.score), fontWeight: 900 }}>{indicator.score}</div>
+              <div style={{ fontSize: '13px', color: '#475569', fontWeight: 800 }}>{renderText(indicator.label)}</div>
+              <div style={{ fontSize: '20px', color: scoreColor(renderScore(indicator.score)), fontWeight: 900 }}>{renderScore(indicator.score)}</div>
             </div>
-            <div style={{ fontSize: '12px', color: '#64748b', marginTop: '5px', textTransform: 'capitalize' }}>{indicator.trend}</div>
-            <div style={{ fontSize: '13px', color: '#334155', marginTop: '7px' }}>{indicator.note}</div>
+            <div style={{ fontSize: '12px', color: '#64748b', marginTop: '5px', textTransform: 'capitalize' }}>{renderText(indicator.trend)}</div>
+            <div style={{ fontSize: '13px', color: '#334155', marginTop: '7px' }}>{renderText(indicator.note)}</div>
           </div>
         ))}
       </div>
@@ -173,28 +196,28 @@ export default function IndustryBriefPanel({ companyId }: Props) {
         </div>
         <div style={{ marginTop: '12px', display: 'grid', gap: '12px' }}>
           {topOpportunities.map((opportunity) => (
-            <div key={opportunity.id} style={{ border: '1px solid #dbeafe', background: '#f8fbff', borderRadius: '12px', padding: '14px' }}>
+            <div key={renderText(opportunity.id)} style={{ border: '1px solid #dbeafe', background: '#f8fbff', borderRadius: '12px', padding: '14px' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', gap: '10px', flexWrap: 'wrap' }}>
                 <div>
-                  <div style={{ fontSize: '16px', fontWeight: 800, color: '#1e3a8a' }}>{opportunity.title}</div>
-                  <div style={{ fontSize: '13px', color: '#334155', marginTop: '5px' }}>{opportunity.whyNow}</div>
+                  <div style={{ fontSize: '16px', fontWeight: 800, color: '#1e3a8a' }}>{renderText(opportunity.title)}</div>
+                  <div style={{ fontSize: '13px', color: '#334155', marginTop: '5px' }}>{renderText(opportunity.whyNow)}</div>
                 </div>
                 <div style={{ minWidth: '90px', textAlign: 'right' }}>
-                  <div style={{ fontSize: '28px', fontWeight: 900, color: scoreColor(opportunity.score), lineHeight: 1 }}>{opportunity.score}</div>
+                  <div style={{ fontSize: '28px', fontWeight: 900, color: scoreColor(renderScore(opportunity.score)), lineHeight: 1 }}>{renderScore(opportunity.score)}</div>
                   <div style={{ fontSize: '11px', color: '#64748b', fontWeight: 800 }}>Opportunity</div>
                 </div>
               </div>
               <div style={{ marginTop: '10px', display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-                <span style={{ fontSize: '11px', fontWeight: 800, color: '#1d4ed8', background: '#dbeafe', borderRadius: '999px', padding: '4px 8px' }}>Revenue: {opportunity.revenuePotential}</span>
-                <span style={{ fontSize: '11px', fontWeight: 800, color: '#166534', background: '#dcfce7', borderRadius: '999px', padding: '4px 8px' }}>Margin: {opportunity.marginPotential}</span>
+                <span style={{ fontSize: '11px', fontWeight: 800, color: '#1d4ed8', background: '#dbeafe', borderRadius: '999px', padding: '4px 8px' }}>Revenue: {renderText(opportunity.revenuePotential)}</span>
+                <span style={{ fontSize: '11px', fontWeight: 800, color: '#166534', background: '#dcfce7', borderRadius: '999px', padding: '4px 8px' }}>Margin: {renderText(opportunity.marginPotential)}</span>
                 <span style={{ fontSize: '11px', fontWeight: 800, color: '#92400e', background: '#fef3c7', borderRadius: '999px', padding: '4px 8px' }}>Urgency: {urgencyLabel(opportunity.urgency)}</span>
-                <span style={{ fontSize: '11px', fontWeight: 800, color: '#475569', background: '#f1f5f9', borderRadius: '999px', padding: '4px 8px' }}>Confidence: {opportunity.confidence}</span>
+                <span style={{ fontSize: '11px', fontWeight: 800, color: '#475569', background: '#f1f5f9', borderRadius: '999px', padding: '4px 8px' }}>Confidence: {renderText(opportunity.confidence)}</span>
               </div>
               <div style={{ marginTop: '10px', fontSize: '14px', color: '#0f172a' }}>
-                <strong>Recommended action:</strong> {opportunity.recommendedAction}
+                <strong>Recommended action:</strong> {renderText(opportunity.recommendedAction)}
               </div>
               <div style={{ marginTop: '6px', fontSize: '13px', color: '#475569' }}>
-                <strong>Owner:</strong> {opportunity.owner} | <strong>Estimated impact:</strong> {opportunity.estimatedImpact}
+                <strong>Owner:</strong> {renderText(opportunity.owner)} | <strong>Estimated impact:</strong> {renderText(opportunity.estimatedImpact)}
               </div>
             </div>
           ))}
@@ -208,13 +231,13 @@ export default function IndustryBriefPanel({ companyId }: Props) {
             {brief.marketSignals.map((signal) => {
               const impact = impactTone(signal.impact);
               return (
-                <div key={`${signal.category}-${signal.title}`} style={{ borderBottom: '1px solid #f1f5f9', paddingBottom: '10px' }}>
+                <div key={`${renderText(signal.category)}-${renderText(signal.title)}`} style={{ borderBottom: '1px solid #f1f5f9', paddingBottom: '10px' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', gap: '8px', flexWrap: 'wrap' }}>
-                    <div style={{ fontSize: '14px', fontWeight: 800, color: '#1e293b' }}>{signal.category}: {signal.title}</div>
+                    <div style={{ fontSize: '14px', fontWeight: 800, color: '#1e293b' }}>{renderText(signal.category)}: {renderText(signal.title)}</div>
                     <span style={{ fontSize: '11px', fontWeight: 800, color: impact.fg, background: impact.bg, borderRadius: '999px', padding: '3px 8px' }}>{impact.label}</span>
                   </div>
-                  <div style={{ fontSize: '13px', color: '#64748b', marginTop: '3px' }}>{signal.currentValue} | {signal.trend}</div>
-                  <div style={{ fontSize: '13px', color: '#334155', marginTop: '4px' }}>{signal.companyImplication}</div>
+                  <div style={{ fontSize: '13px', color: '#64748b', marginTop: '3px' }}>{renderText(signal.currentValue)} | {renderText(signal.trend)}</div>
+                  <div style={{ fontSize: '13px', color: '#334155', marginTop: '4px' }}>{renderText(signal.companyImplication)}</div>
                 </div>
               );
             })}
@@ -226,11 +249,11 @@ export default function IndustryBriefPanel({ companyId }: Props) {
           <div style={{ marginTop: '10px', display: 'grid', gap: '12px' }}>
             <div>
               <div style={{ fontSize: '12px', color: '#475569', fontWeight: 900, textTransform: 'uppercase' }}>Today</div>
-              {brief.recommendedActions.today.map((action) => <div key={action} style={{ fontSize: '13px', color: '#334155', marginTop: '5px' }}>- {action}</div>)}
+              {brief.recommendedActions.today.map((action) => <div key={renderText(action)} style={{ fontSize: '13px', color: '#334155', marginTop: '5px' }}>- {renderText(action)}</div>)}
             </div>
             <div>
               <div style={{ fontSize: '12px', color: '#475569', fontWeight: 900, textTransform: 'uppercase' }}>Next 30 Days</div>
-              {brief.recommendedActions.next30Days.map((action) => <div key={action} style={{ fontSize: '13px', color: '#334155', marginTop: '5px' }}>- {action}</div>)}
+              {brief.recommendedActions.next30Days.map((action) => <div key={renderText(action)} style={{ fontSize: '13px', color: '#334155', marginTop: '5px' }}>- {renderText(action)}</div>)}
             </div>
           </div>
         </div>
@@ -238,16 +261,16 @@ export default function IndustryBriefPanel({ companyId }: Props) {
 
       <div style={cardStyle}>
         <div style={{ fontSize: '18px', fontWeight: 800, color: '#0f172a' }}>AI Insight</div>
-        <div style={{ fontSize: '14px', color: '#334155', marginTop: '8px' }}>{brief.aiInsight}</div>
+        <div style={{ fontSize: '14px', color: '#334155', marginTop: '8px' }}>{renderText(brief.aiInsight)}</div>
         <div style={{ marginTop: '12px', display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
           {brief.aiMetadata && (
             <span title={`Scan model: ${brief.aiMetadata.scanModel}`} style={{ fontSize: '11px', color: '#1d4ed8', background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: '999px', padding: '4px 8px' }}>
-              AI model: {brief.aiMetadata.finalModel}
+              AI model: {renderText(brief.aiMetadata.finalModel)}
             </span>
           )}
           {brief.sourceNotes.map((source) => (
-            <span key={source.name} title={source.note} style={{ fontSize: '11px', color: '#475569', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '999px', padding: '4px 8px' }}>
-              {source.name}: {source.status}
+            <span key={renderText(source.name)} title={renderText(source.note)} style={{ fontSize: '11px', color: '#475569', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '999px', padding: '4px 8px' }}>
+              {renderText(source.name)}: {renderText(source.status)}
             </span>
           ))}
         </div>

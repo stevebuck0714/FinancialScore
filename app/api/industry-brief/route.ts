@@ -12,7 +12,7 @@ export const dynamic = 'force-dynamic';
 export const maxDuration = 90;
 
 const CACHE_NAMESPACE = 'daily-industry-brief';
-const DATA_VERSION = 'v3-live-source-scan';
+const DATA_VERSION = 'v4-render-safe-brief';
 const CACHE_TTL_SECONDS = 6 * 60 * 60;
 
 function asNumber(value: unknown): number {
