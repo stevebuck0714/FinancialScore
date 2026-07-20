@@ -67,6 +67,10 @@ const BLS_SERIES: BlsSeriesDefinition[] = [
   },
 ];
 
+const FRED_FETCH_TIMEOUT_MS = 8000;
+const BLS_FETCH_TIMEOUT_MS = 8000;
+const PERPLEXITY_FETCH_TIMEOUT_MS = 15000;
+
 function fredApiKey(): string {
   return process.env.FRED_API_KEY || process.env.NEXT_PUBLIC_FRED_API_KEY || '';
 }
@@ -92,6 +96,24 @@ function extractUrls(text: string): string[] {
   return Array.from(new Set(matches.map((url) => url.replace(/[.,;]+$/, ''))));
 }
 
+async function fetchWithTimeout(url: string, init: RequestInit, timeoutMs: number, label: string): Promise<Response> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, {
+      ...init,
+      signal: controller.signal,
+    });
+  } catch (error) {
+    if (error instanceof Error && error.name === 'AbortError') {
+      throw new Error(`${label} timed out after ${timeoutMs}ms.`);
+    }
+    throw error;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 async function collectFredSources(): Promise<IndustryBriefSourceRecord[]> {
   const apiKey = fredApiKey();
   if (!apiKey) throw new Error('FRED_API_KEY is required for Daily Industry Brief source scan.');
@@ -104,9 +126,12 @@ async function collectFredSources(): Promise<IndustryBriefSourceRecord[]> {
       sort_order: 'asc',
       observation_start: oneYearAgo(),
     });
-    const response = await fetch(`https://api.stlouisfed.org/fred/series/observations?${params.toString()}`, {
-      next: { revalidate: 60 * 60 * 6 },
-    });
+    const response = await fetchWithTimeout(
+      `https://api.stlouisfed.org/fred/series/observations?${params.toString()}`,
+      { next: { revalidate: 60 * 60 * 6 } },
+      FRED_FETCH_TIMEOUT_MS,
+      `FRED source ${series.seriesId}`,
+    );
     if (!response.ok) {
       throw new Error(`FRED source ${series.seriesId} failed with HTTP ${response.status}.`);
     }
@@ -146,16 +171,21 @@ function latestBlsObservation(series: any): { periodName: string; year: string; 
 
 async function collectBlsSources(): Promise<IndustryBriefSourceRecord[]> {
   const year = new Date().getUTCFullYear();
-  const response = await fetch('https://api.bls.gov/publicAPI/v2/timeseries/data/', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      seriesid: BLS_SERIES.map((series) => series.seriesId),
-      startyear: String(year - 1),
-      endyear: String(year),
-    }),
-    next: { revalidate: 60 * 60 * 6 },
-  });
+  const response = await fetchWithTimeout(
+    'https://api.bls.gov/publicAPI/v2/timeseries/data/',
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        seriesid: BLS_SERIES.map((series) => series.seriesId),
+        startyear: String(year - 1),
+        endyear: String(year),
+      }),
+      next: { revalidate: 60 * 60 * 6 },
+    },
+    BLS_FETCH_TIMEOUT_MS,
+    'BLS source scan',
+  );
   if (!response.ok) throw new Error(`BLS source scan failed with HTTP ${response.status}.`);
   const data = await response.json();
   if (String(data?.status || '').toUpperCase() !== 'REQUEST_SUCCEEDED') {
@@ -194,22 +224,27 @@ async function collectPerplexitySource(context: CompanySourceContext): Promise<I
     'Prioritize sources with direct relevance to the company industry, segment, and geography. Include citations. Do not estimate private company revenue or employee counts unless an authoritative source states them.',
   ].join('\n');
 
-  const response = await fetch('https://api.perplexity.ai/chat/completions', {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      'Content-Type': 'application/json',
+  const response = await fetchWithTimeout(
+    'https://api.perplexity.ai/chat/completions',
+    {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: process.env.PERPLEXITY_MODEL || 'sonar-pro',
+        messages: [
+          { role: 'system', content: 'You are a source-first business research analyst. Return concise notes with citations and uncertainty labels.' },
+          { role: 'user', content: prompt },
+        ],
+        temperature: 0.1,
+        max_tokens: 1400,
+      }),
     },
-    body: JSON.stringify({
-      model: process.env.PERPLEXITY_MODEL || 'sonar-pro',
-      messages: [
-        { role: 'system', content: 'You are a source-first business research analyst. Return concise notes with citations and uncertainty labels.' },
-        { role: 'user', content: prompt },
-      ],
-      temperature: 0.1,
-      max_tokens: 1400,
-    }),
-  });
+    PERPLEXITY_FETCH_TIMEOUT_MS,
+    'Perplexity source scan',
+  );
   const data = await response.json();
   if (!response.ok) {
     throw new Error(data?.error?.message || `Perplexity source scan failed with HTTP ${response.status}.`);

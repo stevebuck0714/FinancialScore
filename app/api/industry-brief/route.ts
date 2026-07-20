@@ -9,6 +9,7 @@ import type { DailyIndustryBrief } from '@/lib/industry-brief/types';
 import { requireAuth, validateCompanyAccess } from '@/lib/tenant-security';
 
 export const dynamic = 'force-dynamic';
+export const maxDuration = 60;
 
 const CACHE_NAMESPACE = 'daily-industry-brief';
 const DATA_VERSION = 'v3-live-source-scan';

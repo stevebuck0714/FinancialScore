@@ -16,6 +16,27 @@ type FinancialFactInput = {
   latestRevenueTrendPct: number | null;
 };
 
+function industryBriefAiTimeoutMs(): number {
+  const parsed = Number(process.env.INDUSTRY_BRIEF_AI_TIMEOUT_MS || 22000);
+  if (!Number.isFinite(parsed)) return 22000;
+  return Math.max(5000, Math.min(30000, Math.floor(parsed)));
+}
+
+async function withIndustryBriefTimeout<T>(promise: Promise<T>, label: string): Promise<T> {
+  const timeoutMs = industryBriefAiTimeoutMs();
+  let timer: NodeJS.Timeout | null = null;
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<T>((_, reject) => {
+        timer = setTimeout(() => reject(new Error(`${label} timed out after ${timeoutMs}ms.`)), timeoutMs);
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
 function extractJsonObject(text: string): Record<string, unknown> | null {
   const trimmed = String(text || '').trim();
   if (!trimmed) return null;
@@ -215,16 +236,19 @@ export async function synthesizeIndustryBriefWithAi(params: {
   }
 
   const openai = getOpenAiClient();
-  const result = await createModelText({
-    openai,
-    model: params.config.finalModel,
-    messages: [
-      { role: 'system', content: buildFinalSystemPrompt() },
-      { role: 'user', content: buildFinalUserPrompt(params.baseBrief, params.sourceRecords) },
-    ],
-    temperature: 0.2,
-    maxTokens: 5000,
-  });
+  const result = await withIndustryBriefTimeout(
+    createModelText({
+      openai,
+      model: params.config.finalModel,
+      messages: [
+        { role: 'system', content: buildFinalSystemPrompt() },
+        { role: 'user', content: buildFinalUserPrompt(params.baseBrief, params.sourceRecords) },
+      ],
+      temperature: 0.2,
+      maxTokens: 5000,
+    }),
+    'Industry Brief final AI synthesis',
+  );
   const parsed = extractJsonObject(result.text);
   if (!parsed) {
     throw new Error('Industry Brief AI returned non-JSON output.');
@@ -248,16 +272,19 @@ export async function scanIndustryBriefSourcesWithAi(params: {
   }
 
   const openai = getOpenAiClient();
-  const result = await createModelText({
-    openai,
-    model: params.config.scanModel,
-    messages: [
-      { role: 'system', content: buildScanSystemPrompt() },
-      { role: 'user', content: buildScanUserPrompt(params) },
-    ],
-    temperature: 0.1,
-    maxTokens: 5000,
-  });
+  const result = await withIndustryBriefTimeout(
+    createModelText({
+      openai,
+      model: params.config.scanModel,
+      messages: [
+        { role: 'system', content: buildScanSystemPrompt() },
+        { role: 'user', content: buildScanUserPrompt(params) },
+      ],
+      temperature: 0.1,
+      maxTokens: 5000,
+    }),
+    'Industry Brief source classification',
+  );
   const parsed = extractJsonObject(result.text);
   if (!parsed) {
     throw new Error('Industry Brief source scan returned non-JSON output.');
