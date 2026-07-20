@@ -76,10 +76,16 @@ const BLS_SERIES: BlsSeriesDefinition[] = [
 
 const FRED_FETCH_TIMEOUT_MS = 8000;
 const BLS_FETCH_TIMEOUT_MS = 8000;
-const PERPLEXITY_FETCH_TIMEOUT_MS = 15000;
+const DEFAULT_PERPLEXITY_FETCH_TIMEOUT_MS = 30000;
 
 function fredApiKey(): string {
   return process.env.FRED_API_KEY || process.env.NEXT_PUBLIC_FRED_API_KEY || '';
+}
+
+function perplexityFetchTimeoutMs(): number {
+  const parsed = Number(process.env.INDUSTRY_BRIEF_PERPLEXITY_TIMEOUT_MS || DEFAULT_PERPLEXITY_FETCH_TIMEOUT_MS);
+  if (!Number.isFinite(parsed)) return DEFAULT_PERPLEXITY_FETCH_TIMEOUT_MS;
+  return Math.max(10000, Math.min(45000, Math.floor(parsed)));
 }
 
 function oneYearAgo(): string {
@@ -227,8 +233,8 @@ async function collectPerplexitySource(context: CompanySourceContext): Promise<I
     `Segment: ${context.segment}`,
     `Location: ${context.location}`,
     '',
-    'Find current source-backed market, competitor, customer-channel, regulatory, or local economic developments that could affect revenue growth, pricing, cost, or EBITDA over the next 90 days.',
-    'Prioritize sources with direct relevance to the company industry, segment, and geography. Include citations. Do not estimate private company revenue or employee counts unless an authoritative source states them.',
+    'Find the 5 most relevant current, source-backed market, competitor, customer-channel, regulatory, or local economic developments that could affect revenue growth, pricing, cost, or EBITDA over the next 90 days.',
+    'Prioritize direct relevance to the company industry, segment, and geography. Include citations. Keep notes concise. Do not estimate private company revenue or employee counts unless an authoritative source states them.',
   ].join('\n');
 
   const response = await fetchWithTimeout(
@@ -246,10 +252,10 @@ async function collectPerplexitySource(context: CompanySourceContext): Promise<I
           { role: 'user', content: prompt },
         ],
         temperature: 0.1,
-        max_tokens: 1400,
+        max_tokens: 900,
       }),
     },
-    PERPLEXITY_FETCH_TIMEOUT_MS,
+    perplexityFetchTimeoutMs(),
     'Perplexity source scan',
   );
   const data = await response.json();
