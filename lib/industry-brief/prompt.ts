@@ -69,6 +69,95 @@ function validArray(value: unknown, fallback: unknown[]): unknown[] {
   return Array.isArray(value) ? value : fallback;
 }
 
+function textValue(value: unknown): string {
+  if (typeof value === 'string') return value.trim();
+  if (typeof value === 'number' || typeof value === 'boolean') return String(value);
+  if (Array.isArray(value)) return value.map(textValue).filter(Boolean).join(', ');
+  if (value && typeof value === 'object') {
+    return Object.entries(value as Record<string, unknown>)
+      .map(([key, item]) => {
+        const text = textValue(item);
+        return text ? `${key}: ${text}` : '';
+      })
+      .filter(Boolean)
+      .join('; ');
+  }
+  return '';
+}
+
+function stringList(value: unknown, fallback: unknown[] = []): string[] {
+  return validArray(value, fallback).map(textValue).filter(Boolean);
+}
+
+function clampScore(value: unknown, fallback = 50): number {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? Math.max(0, Math.min(100, Math.round(parsed))) : fallback;
+}
+
+function oneOf<T extends string>(value: unknown, allowed: readonly T[], fallback: T): T {
+  const normalized = String(value || '').trim().toLowerCase();
+  return allowed.find((item) => item === normalized) || fallback;
+}
+
+function normalizeHealthIndicators(value: unknown, fallback: DailyIndustryBrief['healthIndicators']): DailyIndustryBrief['healthIndicators'] {
+  return validArray(value, fallback).map((item, index) => {
+    const row = asObject(item);
+    return {
+      key: textValue(row.key) || `indicator-${index + 1}`,
+      label: textValue(row.label) || 'Industry Indicator',
+      score: clampScore(row.score, fallback[index]?.score || 50),
+      trend: oneOf(row.trend, ['improving', 'stable', 'tight', 'worsening'] as const, fallback[index]?.trend || 'stable'),
+      note: textValue(row.note) || fallback[index]?.note || 'Source-backed industry signal.',
+    };
+  });
+}
+
+function normalizeMarketSignals(value: unknown, fallback: DailyIndustryBrief['marketSignals']): DailyIndustryBrief['marketSignals'] {
+  return validArray(value, fallback).map((item, index) => {
+    const row = asObject(item);
+    return {
+      category: textValue(row.category) || fallback[index]?.category || 'Market Signal',
+      title: textValue(row.title) || fallback[index]?.title || 'Source-backed signal',
+      currentValue: textValue(row.currentValue) || fallback[index]?.currentValue || 'See source notes',
+      trend: textValue(row.trend) || fallback[index]?.trend || 'Stable',
+      impact: oneOf(row.impact, ['positive', 'neutral', 'negative'] as const, fallback[index]?.impact || 'neutral'),
+      companyImplication: textValue(row.companyImplication) || fallback[index]?.companyImplication || 'Review for company-specific implications.',
+      sources: stringList(row.sources, fallback[index]?.sources || []),
+    };
+  });
+}
+
+function normalizeGrowthOpportunities(value: unknown, fallback: DailyIndustryBrief['growthOpportunities']): DailyIndustryBrief['growthOpportunities'] {
+  return validArray(value, fallback).map((item, index) => {
+    const row = asObject(item);
+    return {
+      id: textValue(row.id) || fallback[index]?.id || `opportunity-${index + 1}`,
+      title: textValue(row.title) || fallback[index]?.title || 'Source-backed growth opportunity',
+      score: clampScore(row.score, fallback[index]?.score || 50),
+      revenuePotential: oneOf(row.revenuePotential, ['low', 'medium', 'high'] as const, fallback[index]?.revenuePotential || 'medium'),
+      marginPotential: oneOf(row.marginPotential, ['low', 'medium', 'high'] as const, fallback[index]?.marginPotential || 'medium'),
+      urgency: oneOf(row.urgency, ['today', 'this_week', '30_days', '90_days'] as const, fallback[index]?.urgency || '30_days'),
+      confidence: oneOf(row.confidence, ['low', 'medium', 'high'] as const, fallback[index]?.confidence || 'medium'),
+      whyNow: textValue(row.whyNow) || fallback[index]?.whyNow || 'Supported by current live source signals.',
+      recommendedAction: textValue(row.recommendedAction) || fallback[index]?.recommendedAction || 'Review the source-backed opportunity and assign an owner.',
+      owner: textValue(row.owner) || fallback[index]?.owner || 'Leadership',
+      estimatedImpact: textValue(row.estimatedImpact) || fallback[index]?.estimatedImpact || 'Potential impact requires management validation.',
+      evidence: stringList(row.evidence, fallback[index]?.evidence || []),
+    };
+  });
+}
+
+function normalizeRiskMonitor(value: unknown, fallback: DailyIndustryBrief['riskMonitor']): DailyIndustryBrief['riskMonitor'] {
+  return validArray(value, fallback).map((item, index) => {
+    const row = asObject(item);
+    return {
+      risk: textValue(row.risk) || fallback[index]?.risk || 'Industry risk',
+      level: oneOf(row.level, ['low', 'medium', 'high'] as const, fallback[index]?.level || 'medium'),
+      note: textValue(row.note) || fallback[index]?.note || 'Monitor using live source updates.',
+    };
+  });
+}
+
 function sourceNotesFromRecords(sourceRecords: IndustryBriefSourceRecord[]): IndustryBriefSourceNote[] {
   return sourceRecords.map((record) => ({
     name: `${record.provider}: ${record.title}`,
@@ -119,26 +208,28 @@ function mergeAiBrief(
     executiveSummary: {
       ...base.executiveSummary,
       ...executiveSummary,
-      bullets: validArray(executiveSummary.bullets, base.executiveSummary.bullets).map(String).slice(0, 5),
+      status: oneOf(executiveSummary.status, ['stable', 'watch', 'risk'] as const, base.executiveSummary.status),
+      headline: textValue(executiveSummary.headline) || base.executiveSummary.headline,
+      bullets: stringList(executiveSummary.bullets, base.executiveSummary.bullets).slice(0, 5),
       expectedImpact60Days: validArray(
         executiveSummary.expectedImpact60Days,
         base.executiveSummary.expectedImpact60Days,
-      ).map(String).slice(0, 6),
+      ).map(textValue).filter(Boolean).slice(0, 6),
     },
     overallScore: Number.isFinite(Number(candidate.overallScore))
       ? Math.max(0, Math.min(100, Math.round(Number(candidate.overallScore))))
       : base.overallScore,
-    healthIndicators: validArray(candidate.healthIndicators, base.healthIndicators) as DailyIndustryBrief['healthIndicators'],
-    marketSignals: validArray(candidate.marketSignals, base.marketSignals) as DailyIndustryBrief['marketSignals'],
-    growthOpportunities: validArray(candidate.growthOpportunities, base.growthOpportunities) as DailyIndustryBrief['growthOpportunities'],
+    healthIndicators: normalizeHealthIndicators(candidate.healthIndicators, base.healthIndicators),
+    marketSignals: normalizeMarketSignals(candidate.marketSignals, base.marketSignals),
+    growthOpportunities: normalizeGrowthOpportunities(candidate.growthOpportunities, base.growthOpportunities),
     recommendedActions: {
-      today: validArray(recommendedActions.today, base.recommendedActions.today).map(String).slice(0, 6),
-      next30Days: validArray(recommendedActions.next30Days, base.recommendedActions.next30Days).map(String).slice(0, 6),
-      next90Days: validArray(recommendedActions.next90Days, base.recommendedActions.next90Days).map(String).slice(0, 6),
+      today: stringList(recommendedActions.today, base.recommendedActions.today).slice(0, 6),
+      next30Days: stringList(recommendedActions.next30Days, base.recommendedActions.next30Days).slice(0, 6),
+      next90Days: stringList(recommendedActions.next90Days, base.recommendedActions.next90Days).slice(0, 6),
     },
-    riskMonitor: validArray(candidate.riskMonitor, base.riskMonitor) as DailyIndustryBrief['riskMonitor'],
-    aiInsight: typeof candidate.aiInsight === 'string' && candidate.aiInsight.trim()
-      ? candidate.aiInsight.trim()
+    riskMonitor: normalizeRiskMonitor(candidate.riskMonitor, base.riskMonitor),
+    aiInsight: textValue(candidate.aiInsight)
+      ? textValue(candidate.aiInsight)
       : base.aiInsight,
     sourceNotes: [
       ...requiredSourceNotes,
