@@ -49,6 +49,21 @@ function formatDateTime(value?: string): string {
   return date.toLocaleString();
 }
 
+async function readErrorMessage(response: Response): Promise<string> {
+  const text = await response.text().catch(() => '');
+  if (text) {
+    try {
+      const payload = JSON.parse(text);
+      if (payload?.error) return String(payload.error);
+      if (payload?.message) return String(payload.message);
+    } catch {
+      const snippet = text.replace(/\s+/g, ' ').trim().slice(0, 240);
+      if (snippet) return `Failed to load industry brief (${response.status} ${response.statusText}): ${snippet}`;
+    }
+  }
+  return `Failed to load industry brief (${response.status} ${response.statusText})`;
+}
+
 export default function IndustryBriefPanel({ companyId }: Props) {
   const [brief, setBrief] = useState<DailyIndustryBrief | null>(null);
   const [loading, setLoading] = useState(false);
@@ -63,8 +78,7 @@ export default function IndustryBriefPanel({ companyId }: Props) {
       if (force) params.set('force', 'true');
       const response = await fetch(`/api/industry-brief?${params}`, { cache: 'no-store' });
       if (!response.ok) {
-        const payload = await response.json().catch(() => ({}));
-        throw new Error(payload?.error || 'Failed to load industry brief');
+        throw new Error(await readErrorMessage(response));
       }
       setBrief(await response.json());
     } catch (err: any) {
