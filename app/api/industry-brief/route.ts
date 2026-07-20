@@ -3,7 +3,7 @@ import prisma from '@/lib/prisma';
 import { hashCacheParts, readDerivedApiCache, writeDerivedApiCache } from '@/lib/derived-api-cache';
 import { getIndustryBriefAiConfig } from '@/lib/industry-brief/ai-config';
 import { buildDailyIndustryBriefShell } from '@/lib/industry-brief/generator';
-import { scanIndustryBriefSourcesWithAi, synthesizeIndustryBriefWithAi } from '@/lib/industry-brief/prompt';
+import { synthesizeIndustryBriefWithAi } from '@/lib/industry-brief/prompt';
 import { collectIndustryBriefSources } from '@/lib/industry-brief/sources';
 import type { DailyIndustryBrief } from '@/lib/industry-brief/types';
 import { requireAuth, validateCompanyAccess } from '@/lib/tenant-security';
@@ -12,7 +12,7 @@ export const dynamic = 'force-dynamic';
 export const maxDuration = 90;
 
 const CACHE_NAMESPACE = 'daily-industry-brief';
-const DATA_VERSION = 'v7-scan-final-boundary';
+const DATA_VERSION = 'v8-single-final-synthesis';
 const CACHE_TTL_SECONDS = 6 * 60 * 60;
 
 function isCronAuthorized(request: NextRequest): boolean {
@@ -130,7 +130,6 @@ export async function GET(request: NextRequest) {
     };
 
     let sourceRecords;
-    let scannedBrief: DailyIndustryBrief;
     try {
       sourceRecords = await collectIndustryBriefSources({
         name: shell.company.name,
@@ -150,33 +149,13 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    try {
-      scannedBrief = await scanIndustryBriefSourcesWithAi({
-        shell,
-        sourceRecords,
-        financialFacts,
-        config: aiConfig,
-      });
-    } catch (scanError) {
-      const scanMessage = scanError instanceof Error ? scanError.message : String(scanError);
-      console.error('Daily Industry Brief source classification failed.', {
-        companyId,
-        scanModel: aiConfig.scanModel,
-        sourceCount: sourceRecords.length,
-        error: scanMessage,
-      });
-      return NextResponse.json(
-        { error: scanMessage || 'Industry Brief unavailable: source classification failed.' },
-        { status: 503 },
-      );
-    }
-
     let brief: DailyIndustryBrief;
     try {
       brief = await synthesizeIndustryBriefWithAi({
-        baseBrief: scannedBrief,
+        baseBrief: shell,
         sourceRecords,
         config: aiConfig,
+        financialFacts,
       });
     } catch (aiError) {
       const aiMessage = aiError instanceof Error ? aiError.message : String(aiError);

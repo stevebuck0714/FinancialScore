@@ -354,35 +354,57 @@ function buildFinalSystemPrompt(): string {
   ].join('\n');
 }
 
-function finalSourceReferences(sourceRecords: IndustryBriefSourceRecord[]): Array<Record<string, unknown>> {
+function compactFinalEvidence(sourceRecords: IndustryBriefSourceRecord[]): Array<Record<string, unknown>> {
   return sourceRecords.map((record) => ({
     provider: record.provider,
     category: record.category,
     title: record.title,
     value: record.value,
     publishedAt: record.publishedAt,
+    summary: record.summary.slice(0, 900),
     url: record.url,
-    citations: record.citations?.slice(0, 3),
+    citations: record.citations?.slice(0, 2),
   }));
 }
 
-function buildFinalUserPrompt(base: DailyIndustryBrief, sourceRecords: IndustryBriefSourceRecord[]): string {
+function buildFinalUserPrompt(
+  base: DailyIndustryBrief,
+  sourceRecords: IndustryBriefSourceRecord[],
+  financialFacts?: FinancialFactInput,
+): string {
   return JSON.stringify({
-    task: 'Return a complete DailyIndustryBrief JSON object from the source-backed base brief and live source records.',
+    task: 'Return a compact JSON object with the dashboard analysis fields for a DailyIndustryBrief.',
     constraints: [
       'Do not fabricate live commodity/news values beyond the provided base brief.',
       'Make growth opportunities specific to the company, industry, location, and financial context in the base brief.',
       'Always include executiveSummary.headline and executiveSummary.bullets.',
-      'Include at least 5 healthIndicators.',
-      'Include at least 6 marketSignals.',
-      'Keep growthOpportunities to 2-5 items.',
-      'Keep recommendedActions practical and near-term.',
+      'Include exactly 5 healthIndicators.',
+      'Include exactly 6 marketSignals.',
+      'Include exactly 3 growthOpportunities.',
+      'Keep recommendedActions practical and near-term with 2 today, 2 next30Days, and 2 next90Days.',
       'Include at least 3 riskMonitor items.',
       'Include aiInsight as a concise source-backed paragraph.',
-      'Keep the response compact enough for an interactive dashboard request.',
+      'Do not include industryOutlook or sourceNotes; the application attaches those directly from live source records.',
     ],
-    baseBrief: base,
-    liveSourceReferences: finalSourceReferences(sourceRecords),
+    requiredShape: {
+      executiveSummary: {
+        status: 'stable | watch | risk',
+        headline: 'string',
+        bullets: ['string'],
+        expectedImpact60Days: ['string'],
+      },
+      overallScore: 'number 0-100',
+      healthIndicators: [{ key: 'string', label: 'string', score: 'number 0-100', trend: 'improving | stable | tight | worsening', note: 'string' }],
+      marketSignals: [{ category: 'string', title: 'string', currentValue: 'string', trend: 'string', impact: 'positive | neutral | negative', companyImplication: 'string', sources: ['string'] }],
+      growthOpportunities: [{ id: 'string', title: 'string', score: 'number 0-100', revenuePotential: 'low | medium | high', marginPotential: 'low | medium | high', urgency: 'today | this_week | 30_days | 90_days', confidence: 'low | medium | high', whyNow: 'string', recommendedAction: 'string', owner: 'string', estimatedImpact: 'string', evidence: ['string'] }],
+      recommendedActions: { today: ['string'], next30Days: ['string'], next90Days: ['string'] },
+      riskMonitor: [{ risk: 'string', level: 'low | medium | high', note: 'string' }],
+      aiInsight: 'string',
+    },
+    company: base.company,
+    briefDate: base.briefDate,
+    financialFacts: financialFacts || null,
+    liveEvidence: compactFinalEvidence(sourceRecords),
   });
 }
 
@@ -428,6 +450,7 @@ export async function synthesizeIndustryBriefWithAi(params: {
   baseBrief: DailyIndustryBrief;
   sourceRecords: IndustryBriefSourceRecord[];
   config: IndustryBriefAiConfig;
+  financialFacts?: FinancialFactInput;
 }): Promise<DailyIndustryBrief> {
   if (params.config.transport === 'unconfigured') {
     throw new Error('Industry Brief AI synthesis is unavailable because AI transport is not configured.');
@@ -440,10 +463,10 @@ export async function synthesizeIndustryBriefWithAi(params: {
       model: params.config.finalModel,
       messages: [
         { role: 'system', content: buildFinalSystemPrompt() },
-        { role: 'user', content: buildFinalUserPrompt(params.baseBrief, params.sourceRecords) },
+        { role: 'user', content: buildFinalUserPrompt(params.baseBrief, params.sourceRecords, params.financialFacts) },
       ],
       temperature: 0.2,
-      maxTokens: 3000,
+      maxTokens: 2600,
     }),
     'Industry Brief final AI synthesis',
     'final',

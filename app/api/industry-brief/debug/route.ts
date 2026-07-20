@@ -193,7 +193,7 @@ export async function GET(request: NextRequest) {
 
     const final = await timedStep(
       'final-model-synthesis',
-      () => synthesizeIndustryBriefWithAi({ baseBrief: scan.value as DailyIndustryBrief, sourceRecords, config: aiConfig }),
+      () => synthesizeIndustryBriefWithAi({ baseBrief: scan.value as DailyIndustryBrief, sourceRecords, config: aiConfig, financialFacts }),
       summarizeBrief,
     );
     steps.push(final.step);
