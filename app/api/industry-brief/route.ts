@@ -12,7 +12,7 @@ export const dynamic = 'force-dynamic';
 export const maxDuration = 90;
 
 const CACHE_NAMESPACE = 'daily-industry-brief';
-const DATA_VERSION = 'v6-industry-outlook-tab';
+const DATA_VERSION = 'v7-scan-final-boundary';
 const CACHE_TTL_SECONDS = 6 * 60 * 60;
 
 function isCronAuthorized(request: NextRequest): boolean {

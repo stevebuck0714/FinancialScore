@@ -313,12 +313,12 @@ function validateCompleteBrief(brief: DailyIndustryBrief, stage: 'scan' | 'final
   const missing: string[] = [];
   if (stage === 'final' && !brief.executiveSummary.headline.trim()) missing.push('executiveSummary.headline');
   if (stage === 'final' && brief.executiveSummary.bullets.length === 0) missing.push('executiveSummary.bullets');
-  if (brief.healthIndicators.length === 0) missing.push('healthIndicators');
-  if (brief.marketSignals.length === 0) missing.push('marketSignals');
-  if (brief.growthOpportunities.length === 0) missing.push('growthOpportunities');
-  if (brief.recommendedActions.today.length === 0) missing.push('recommendedActions.today');
-  if (brief.riskMonitor.length === 0) missing.push('riskMonitor');
-  if (!brief.aiInsight.trim()) missing.push('aiInsight');
+  if (stage === 'final' && brief.healthIndicators.length === 0) missing.push('healthIndicators');
+  if (stage === 'final' && brief.marketSignals.length === 0) missing.push('marketSignals');
+  if (stage === 'final' && brief.growthOpportunities.length === 0) missing.push('growthOpportunities');
+  if (stage === 'final' && brief.recommendedActions.today.length === 0) missing.push('recommendedActions.today');
+  if (stage === 'final' && brief.riskMonitor.length === 0) missing.push('riskMonitor');
+  if (stage === 'final' && !brief.aiInsight.trim()) missing.push('aiInsight');
   if (brief.industryOutlook.length === 0) missing.push('industryOutlook');
   if (brief.sourceNotes.length === 0) missing.push('sourceNotes');
   const placeholderFields = [
@@ -345,9 +345,9 @@ function validateCompleteBrief(brief: DailyIndustryBrief, stage: 'scan' | 'final
 function buildFinalSystemPrompt(): string {
   return [
     'You are Corelytics Daily Industry Brief, a CFO-grade market analyst and growth strategist for small and mid-market businesses.',
-    'You receive a source-backed base brief created from live source records. Improve the wording, prioritization, and growth-opportunity ranking without inventing unverifiable facts.',
+    'You receive a source-backed base brief created from live source records. Complete the dashboard brief without inventing unverifiable facts.',
     'Return JSON only. Do not add markdown. Do not include prose outside JSON.',
-    'You may return only the fields you improve. Unchanged source-backed fields from the base brief will be preserved by the application.',
+    'Return a complete DailyIndustryBrief object with all required dashboard sections populated from the provided live sources.',
     'Rank opportunities by revenue potential, margin potential, fit with company capabilities, urgency, required investment, and confidence.',
     'Every opportunity must be actionable: include why now, recommended action, owner, estimated impact, and evidence.',
     'Only use provided live sources and Corelytics financial facts. If evidence is weak, lower confidence instead of filling gaps.',
@@ -368,13 +368,17 @@ function finalSourceReferences(sourceRecords: IndustryBriefSourceRecord[]): Arra
 
 function buildFinalUserPrompt(base: DailyIndustryBrief, sourceRecords: IndustryBriefSourceRecord[]): string {
   return JSON.stringify({
-    task: 'Return a compact JSON patch that improves the DailyIndustryBrief. Include executiveSummary, growthOpportunities, recommendedActions, and aiInsight when useful. You do not need to repeat unchanged fields.',
+    task: 'Return a complete DailyIndustryBrief JSON object from the source-backed base brief and live source records.',
     constraints: [
       'Do not fabricate live commodity/news values beyond the provided base brief.',
       'Make growth opportunities specific to the company, industry, location, and financial context in the base brief.',
       'Always include executiveSummary.headline and executiveSummary.bullets.',
+      'Include at least 5 healthIndicators.',
+      'Include at least 6 marketSignals.',
       'Keep growthOpportunities to 2-5 items.',
       'Keep recommendedActions practical and near-term.',
+      'Include at least 3 riskMonitor items.',
+      'Include aiInsight as a concise source-backed paragraph.',
       'Keep the response compact enough for an interactive dashboard request.',
     ],
     baseBrief: base,
@@ -385,11 +389,10 @@ function buildFinalUserPrompt(base: DailyIndustryBrief, sourceRecords: IndustryB
 function buildScanSystemPrompt(): string {
   return [
     'You are Corelytics Daily Industry Brief source scanner.',
-    'You classify real external source records and Corelytics company facts into an actionable DailyIndustryBrief JSON object.',
+    'You classify real external source records and Corelytics company facts for a downstream final synthesis model.',
     'Do not invent source values, competitors, local developments, regulations, or commodity movements.',
-    'If a statement is not supported by the provided source records or company facts, omit it; however every required schema array must contain source-backed items.',
-    'Growth opportunities must be specific, revenue-oriented, and tied to evidence.',
-    'Return JSON only. Preserve the DailyIndustryBrief schema exactly. Include every top-level field from the shell.',
+    'If a statement is not supported by the provided source records or company facts, omit it.',
+    'Return JSON only. You may return a partial DailyIndustryBrief object; the final model will complete dashboard sections.',
   ].join('\n');
 }
 
@@ -407,17 +410,12 @@ function buildScanUserPrompt(params: {
   financialFacts: FinancialFactInput;
 }): string {
   return JSON.stringify({
-    task: 'Create a complete DailyIndustryBrief JSON object from the provided shell, live source records, and financial facts.',
+    task: 'Classify the provided live source records for later DailyIndustryBrief synthesis. Return only source-backed fields you can support.',
     constraints: [
       'Use the shell company identity and date fields exactly.',
       'Set sourceNotes only for live source records and AI source processing.',
-      'Create at least 6 healthIndicators covering national industry demand, input costs/commodities, labor, transportation/freight, regulation or operating risk, and local economy.',
-      'Create at least 8 marketSignals. Include at least 5 broader industry signals and at least 2 local/company-market signals.',
-      'Market signal categories must cover demand, commodity/input costs, labor, transportation/freight, regulation, competitor/capacity, local economy, and revenue opportunity when source-backed.',
-      'Create at least 2 growthOpportunities with evidence from liveSourceRecords and Corelytics financial facts.',
-      'recommendedActions.today, recommendedActions.next30Days, and recommendedActions.next90Days must each contain at least 1 item.',
-      'riskMonitor must contain at least 3 items.',
-      'aiInsight must be a concise paragraph.',
+      'Prefer marketSignals and riskMonitor only when directly source-backed.',
+      'Growth opportunities are optional at scan stage; include them only if evidence is strong.',
       'Do not fill missing data with modeled assumptions.',
     ],
     shell: params.shell,
