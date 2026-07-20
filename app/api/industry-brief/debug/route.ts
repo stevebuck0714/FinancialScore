@@ -9,7 +9,7 @@ import {
   collectPerplexityIndustryBriefSource,
 } from '@/lib/industry-brief/sources';
 import type { DailyIndustryBrief, IndustryBriefSourceRecord } from '@/lib/industry-brief/types';
-import { requireAuth, validateCompanyAccess } from '@/lib/tenant-security';
+import { requireSiteAdmin } from '@/lib/tenant-security';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 90;
@@ -124,12 +124,9 @@ function summarizeBrief(brief: DailyIndustryBrief): Record<string, unknown> {
 export async function GET(request: NextRequest) {
   const steps: DiagnosticStep[] = [];
   try {
-    await requireAuth();
+    await requireSiteAdmin();
     const companyId = String(request.nextUrl.searchParams.get('companyId') || '').trim();
     if (!companyId) return NextResponse.json({ error: 'companyId is required' }, { status: 400 });
-
-    const allowed = await validateCompanyAccess(companyId);
-    if (!allowed) return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
 
     const companyStep = await timedStep('company-profile', async () => {
       const company = await prisma.company.findUnique({

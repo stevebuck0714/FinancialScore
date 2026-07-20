@@ -113,7 +113,6 @@ export async function POST(request: NextRequest) {
         undefined, // contactIDs
         undefined, // statuses
         1, // page
-        100, // pageSize
         undefined, // includeArchived
         false, // createdByMyApp
         undefined, // unitdp
@@ -180,7 +179,6 @@ export async function POST(request: NextRequest) {
         undefined,
         undefined,
         1,
-        100,
         undefined,
         false,
         undefined,
