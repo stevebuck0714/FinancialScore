@@ -168,13 +168,14 @@ export async function GET(request: NextRequest) {
         config: aiConfig,
       });
     } catch (aiError) {
+      const aiMessage = aiError instanceof Error ? aiError.message : String(aiError);
       console.error('Daily Industry Brief AI synthesis failed.', {
         companyId,
         model: aiConfig.finalModel,
-        error: aiError instanceof Error ? aiError.message : String(aiError),
+        error: aiMessage,
       });
       return NextResponse.json(
-        { error: 'Industry Brief unavailable: AI synthesis failed.' },
+        { error: aiMessage || 'Industry Brief unavailable: AI synthesis failed.' },
         { status: 503 },
       );
     }

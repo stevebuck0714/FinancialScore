@@ -16,14 +16,18 @@ type FinancialFactInput = {
   latestRevenueTrendPct: number | null;
 };
 
-function industryBriefAiTimeoutMs(): number {
-  const parsed = Number(process.env.INDUSTRY_BRIEF_AI_TIMEOUT_MS || 22000);
-  if (!Number.isFinite(parsed)) return 22000;
-  return Math.max(5000, Math.min(30000, Math.floor(parsed)));
+function industryBriefAiTimeoutMs(stage: 'scan' | 'final'): number {
+  const envName = stage === 'scan'
+    ? 'INDUSTRY_BRIEF_SCAN_TIMEOUT_MS'
+    : 'INDUSTRY_BRIEF_FINAL_TIMEOUT_MS';
+  const fallback = stage === 'scan' ? 22000 : 30000;
+  const parsed = Number(process.env[envName] || process.env.INDUSTRY_BRIEF_AI_TIMEOUT_MS || fallback);
+  if (!Number.isFinite(parsed)) return fallback;
+  return Math.max(5000, Math.min(45000, Math.floor(parsed)));
 }
 
-async function withIndustryBriefTimeout<T>(promise: Promise<T>, label: string): Promise<T> {
-  const timeoutMs = industryBriefAiTimeoutMs();
+async function withIndustryBriefTimeout<T>(promise: Promise<T>, label: string, stage: 'scan' | 'final'): Promise<T> {
+  const timeoutMs = industryBriefAiTimeoutMs(stage);
   let timer: NodeJS.Timeout | null = null;
   try {
     return await Promise.race([
@@ -258,6 +262,7 @@ export async function synthesizeIndustryBriefWithAi(params: {
       maxTokens: 5000,
     }),
     'Industry Brief final AI synthesis',
+    'final',
   );
   const parsed = extractJsonObject(result.text);
   if (!parsed) {
@@ -294,6 +299,7 @@ export async function scanIndustryBriefSourcesWithAi(params: {
       maxTokens: 6500,
     }),
     'Industry Brief source classification',
+    'scan',
   );
   const parsed = extractJsonObject(result.text);
   if (!parsed) {
