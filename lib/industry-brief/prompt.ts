@@ -175,25 +175,39 @@ function buildFinalSystemPrompt(): string {
   return [
     'You are Corelytics Daily Industry Brief, a CFO-grade market analyst and growth strategist for small and mid-market businesses.',
     'You receive a source-backed base brief created from live source records. Improve the wording, prioritization, and growth-opportunity ranking without inventing unverifiable facts.',
-    'Preserve the JSON schema exactly. Do not add markdown. Do not include prose outside JSON.',
+    'Return JSON only. Do not add markdown. Do not include prose outside JSON.',
+    'You may return only the fields you improve. Unchanged source-backed fields from the base brief will be preserved by the application.',
     'Rank opportunities by revenue potential, margin potential, fit with company capabilities, urgency, required investment, and confidence.',
     'Every opportunity must be actionable: include why now, recommended action, owner, estimated impact, and evidence.',
     'Only use provided live sources and Corelytics financial facts. If evidence is weak, lower confidence instead of filling gaps.',
   ].join('\n');
 }
 
+function finalSourceReferences(sourceRecords: IndustryBriefSourceRecord[]): Array<Record<string, unknown>> {
+  return sourceRecords.map((record) => ({
+    provider: record.provider,
+    category: record.category,
+    title: record.title,
+    value: record.value,
+    publishedAt: record.publishedAt,
+    url: record.url,
+    citations: record.citations?.slice(0, 3),
+  }));
+}
+
 function buildFinalUserPrompt(base: DailyIndustryBrief, sourceRecords: IndustryBriefSourceRecord[]): string {
   return JSON.stringify({
-    task: 'Return an improved DailyIndustryBrief JSON object. Keep the exact top-level shape and field meanings.',
+    task: 'Return a compact JSON patch that improves the DailyIndustryBrief. Include executiveSummary, growthOpportunities, recommendedActions, and aiInsight when useful. You do not need to repeat unchanged fields.',
     constraints: [
       'Do not fabricate live commodity/news values beyond the provided base brief.',
       'Make growth opportunities specific to the company, industry, location, and financial context in the base brief.',
-      'Keep executiveSummary concise.',
+      'Always include executiveSummary.headline and executiveSummary.bullets.',
       'Keep growthOpportunities to 2-5 items.',
       'Keep recommendedActions practical and near-term.',
+      'Keep the response compact enough for an interactive dashboard request.',
     ],
     baseBrief: base,
-    liveSourceRecords: sourceRecords,
+    liveSourceReferences: finalSourceReferences(sourceRecords),
   });
 }
 
@@ -259,7 +273,7 @@ export async function synthesizeIndustryBriefWithAi(params: {
         { role: 'user', content: buildFinalUserPrompt(params.baseBrief, params.sourceRecords) },
       ],
       temperature: 0.2,
-      maxTokens: 5000,
+      maxTokens: 3000,
     }),
     'Industry Brief final AI synthesis',
     'final',
