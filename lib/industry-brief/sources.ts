@@ -127,7 +127,7 @@ async function fetchWithTimeout(url: string, init: RequestInit, timeoutMs: numbe
   }
 }
 
-async function collectFredSources(): Promise<IndustryBriefSourceRecord[]> {
+export async function collectFredIndustryBriefSources(): Promise<IndustryBriefSourceRecord[]> {
   const apiKey = fredApiKey();
   if (!apiKey) throw new Error('FRED_API_KEY is required for Daily Industry Brief source scan.');
 
@@ -182,7 +182,7 @@ function latestBlsObservation(series: any): { periodName: string; year: string; 
   return null;
 }
 
-async function collectBlsSources(): Promise<IndustryBriefSourceRecord[]> {
+export async function collectBlsIndustryBriefSources(): Promise<IndustryBriefSourceRecord[]> {
   const year = new Date().getUTCFullYear();
   const response = await fetchWithTimeout(
     'https://api.bls.gov/publicAPI/v2/timeseries/data/',
@@ -223,7 +223,7 @@ async function collectBlsSources(): Promise<IndustryBriefSourceRecord[]> {
   });
 }
 
-async function collectPerplexitySource(context: CompanySourceContext): Promise<IndustryBriefSourceRecord> {
+export async function collectPerplexityIndustryBriefSource(context: CompanySourceContext): Promise<IndustryBriefSourceRecord> {
   const apiKey = process.env.PERPLEXITY_API_KEY || '';
   if (!apiKey) throw new Error('PERPLEXITY_API_KEY is required for Daily Industry Brief competitor/news scan.');
 
@@ -283,9 +283,9 @@ async function collectPerplexitySource(context: CompanySourceContext): Promise<I
 
 export async function collectIndustryBriefSources(context: CompanySourceContext): Promise<IndustryBriefSourceRecord[]> {
   const results = await Promise.allSettled([
-    collectFredSources(),
-    collectBlsSources(),
-    collectPerplexitySource(context),
+    collectFredIndustryBriefSources(),
+    collectBlsIndustryBriefSources(),
+    collectPerplexityIndustryBriefSource(context),
   ]);
   const labels = ['FRED', 'BLS', 'Perplexity'];
   const failures = results.flatMap((result, index) => {

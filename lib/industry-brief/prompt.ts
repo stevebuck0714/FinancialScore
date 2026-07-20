@@ -153,8 +153,8 @@ function mergeAiBrief(
 
 function validateCompleteBrief(brief: DailyIndustryBrief, stage: 'scan' | 'final') {
   const missing: string[] = [];
-  if (!brief.executiveSummary.headline.trim()) missing.push('executiveSummary.headline');
-  if (brief.executiveSummary.bullets.length === 0) missing.push('executiveSummary.bullets');
+  if (stage === 'final' && !brief.executiveSummary.headline.trim()) missing.push('executiveSummary.headline');
+  if (stage === 'final' && brief.executiveSummary.bullets.length === 0) missing.push('executiveSummary.bullets');
   if (brief.healthIndicators.length === 0) missing.push('healthIndicators');
   if (brief.marketSignals.length === 0) missing.push('marketSignals');
   if (brief.growthOpportunities.length === 0) missing.push('growthOpportunities');
