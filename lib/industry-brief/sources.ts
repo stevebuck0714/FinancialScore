@@ -233,8 +233,10 @@ export async function collectPerplexityIndustryBriefSource(context: CompanySourc
     `Segment: ${context.segment}`,
     `Location: ${context.location}`,
     '',
-    'Find the 5 most relevant current, source-backed market, competitor, customer-channel, regulatory, or local economic developments that could affect revenue growth, pricing, cost, or EBITDA over the next 90 days.',
-    'Prioritize direct relevance to the company industry, segment, and geography. Include citations. Keep notes concise. Do not estimate private company revenue or employee counts unless an authoritative source states them.',
+    'Find current, source-backed developments for BOTH the broader U.S. industry outlook and the company-local market.',
+    'Required broad industry coverage: industry demand, input commodities or ingredients, energy/fuel, freight/transportation, labor, regulation, consumer/channel trends, and competitor or capacity signals.',
+    'Required local coverage: metro/state economic conditions, customer-channel demand, local labor availability, weather or operating risks, and nearby competitor/customer expansion where source-backed.',
+    'Return concise cited notes organized by category. Do not estimate private company revenue or employee counts unless an authoritative source states them.',
   ].join('\n');
 
   const response = await fetchWithTimeout(

@@ -28,7 +28,8 @@ function impactTone(impact: IndustryBriefImpact | unknown) {
   return { bg: '#f1f5f9', fg: '#475569', label: 'Neutral' };
 }
 
-function scoreColor(score: number): string {
+function scoreColor(score: number | null): string {
+  if (score == null) return '#64748b';
   if (score >= 75) return '#16a34a';
   if (score >= 55) return '#d97706';
   return '#dc2626';
@@ -50,9 +51,14 @@ function renderText(value: unknown): string {
   return '';
 }
 
-function renderScore(value: unknown): number {
+function renderScore(value: unknown): number | null {
   const parsed = Number(value);
-  return Number.isFinite(parsed) ? Math.max(0, Math.min(100, Math.round(parsed))) : 0;
+  return Number.isFinite(parsed) ? Math.max(0, Math.min(100, Math.round(parsed))) : null;
+}
+
+function renderScoreLabel(value: unknown): string {
+  const score = renderScore(value);
+  return score == null ? 'N/A' : String(score);
 }
 
 function urgencyLabel(value: GrowthOpportunity['urgency']): string {
@@ -116,7 +122,7 @@ export default function IndustryBriefPanel({ companyId }: Props) {
   }, [loadBrief]);
 
   const topOpportunities = useMemo(
-    () => [...(brief?.growthOpportunities || [])].sort((a, b) => b.score - a.score),
+    () => [...(brief?.growthOpportunities || [])].sort((a, b) => (renderScore(b.score) ?? -1) - (renderScore(a.score) ?? -1)),
     [brief],
   );
 
@@ -159,7 +165,7 @@ export default function IndustryBriefPanel({ companyId }: Props) {
         <div style={{ marginTop: '14px', display: 'grid', gridTemplateColumns: '170px minmax(0, 1fr)', gap: '16px', alignItems: 'center' }}>
           <div style={{ border: '1px solid #e2e8f0', borderRadius: '12px', padding: '14px', textAlign: 'center', background: '#f8fafc' }}>
             <div style={{ fontSize: '12px', color: '#64748b', fontWeight: 800, textTransform: 'uppercase' }}>Industry Score</div>
-            <div style={{ fontSize: '38px', fontWeight: 900, color: scoreColor(renderScore(brief.overallScore)), lineHeight: 1 }}>{renderScore(brief.overallScore)}</div>
+            <div style={{ fontSize: '38px', fontWeight: 900, color: scoreColor(renderScore(brief.overallScore)), lineHeight: 1 }}>{renderScoreLabel(brief.overallScore)}</div>
             <div style={{ fontSize: '12px', color: '#64748b' }}>out of 100</div>
           </div>
           <div>
@@ -181,7 +187,7 @@ export default function IndustryBriefPanel({ companyId }: Props) {
           <div key={renderText(indicator.key)} style={cardStyle}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px' }}>
               <div style={{ fontSize: '13px', color: '#475569', fontWeight: 800 }}>{renderText(indicator.label)}</div>
-              <div style={{ fontSize: '20px', color: scoreColor(renderScore(indicator.score)), fontWeight: 900 }}>{renderScore(indicator.score)}</div>
+              <div style={{ fontSize: '20px', color: scoreColor(renderScore(indicator.score)), fontWeight: 900 }}>{renderScoreLabel(indicator.score)}</div>
             </div>
             <div style={{ fontSize: '12px', color: '#64748b', marginTop: '5px', textTransform: 'capitalize' }}>{renderText(indicator.trend)}</div>
             <div style={{ fontSize: '13px', color: '#334155', marginTop: '7px' }}>{renderText(indicator.note)}</div>
@@ -203,7 +209,7 @@ export default function IndustryBriefPanel({ companyId }: Props) {
                   <div style={{ fontSize: '13px', color: '#334155', marginTop: '5px' }}>{renderText(opportunity.whyNow)}</div>
                 </div>
                 <div style={{ minWidth: '90px', textAlign: 'right' }}>
-                  <div style={{ fontSize: '28px', fontWeight: 900, color: scoreColor(renderScore(opportunity.score)), lineHeight: 1 }}>{renderScore(opportunity.score)}</div>
+                  <div style={{ fontSize: '28px', fontWeight: 900, color: scoreColor(renderScore(opportunity.score)), lineHeight: 1 }}>{renderScoreLabel(opportunity.score)}</div>
                   <div style={{ fontSize: '11px', color: '#64748b', fontWeight: 800 }}>Opportunity</div>
                 </div>
               </div>
