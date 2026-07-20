@@ -128,12 +128,13 @@ export async function GET(request: NextRequest) {
         location: shell.company.location,
       });
     } catch (sourceError) {
+      const sourceMessage = sourceError instanceof Error ? sourceError.message : String(sourceError);
       console.error('Daily Industry Brief live source collection failed.', {
         companyId,
-        error: sourceError instanceof Error ? sourceError.message : String(sourceError),
+        error: sourceMessage,
       });
       return NextResponse.json(
-        { error: 'Industry Brief unavailable: live source collection failed.' },
+        { error: sourceMessage || 'Industry Brief unavailable: live source collection failed.' },
         { status: 503 },
       );
     }

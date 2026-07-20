@@ -24,6 +24,13 @@ type BlsSeriesDefinition = {
   url: string;
 };
 
+class IndustryBriefSourceCollectionError extends Error {
+  constructor(public readonly failures: string[]) {
+    super(`Daily Industry Brief live source collection failed: ${failures.join(' | ')}`);
+    this.name = 'IndustryBriefSourceCollectionError';
+  }
+}
+
 const FRED_SERIES: FredSeriesDefinition[] = [
   {
     id: 'fred-industrial-production',
@@ -269,12 +276,25 @@ async function collectPerplexitySource(context: CompanySourceContext): Promise<I
 }
 
 export async function collectIndustryBriefSources(context: CompanySourceContext): Promise<IndustryBriefSourceRecord[]> {
-  const [fredSources, blsSources, perplexitySource] = await Promise.all([
+  const results = await Promise.allSettled([
     collectFredSources(),
     collectBlsSources(),
     collectPerplexitySource(context),
   ]);
-  const sources = [...fredSources, ...blsSources, perplexitySource];
+  const labels = ['FRED', 'BLS', 'Perplexity'];
+  const failures = results.flatMap((result, index) => {
+    if (result.status === 'fulfilled') return [];
+    const message = result.reason instanceof Error ? result.reason.message : String(result.reason);
+    return [`${labels[index]}: ${message}`];
+  });
+  if (failures.length > 0) {
+    throw new IndustryBriefSourceCollectionError(failures);
+  }
+
+  const fredSources = results[0].status === 'fulfilled' ? results[0].value : [];
+  const blsSources = results[1].status === 'fulfilled' ? results[1].value : [];
+  const perplexitySource = results[2].status === 'fulfilled' ? results[2].value : null;
+  const sources = [...fredSources, ...blsSources, ...(perplexitySource ? [perplexitySource] : [])];
   if (sources.length < 3) throw new Error('Daily Industry Brief source scan returned too few live sources.');
   return sources;
 }
