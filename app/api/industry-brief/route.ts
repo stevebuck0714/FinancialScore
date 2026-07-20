@@ -147,14 +147,15 @@ export async function GET(request: NextRequest) {
         config: aiConfig,
       });
     } catch (scanError) {
+      const scanMessage = scanError instanceof Error ? scanError.message : String(scanError);
       console.error('Daily Industry Brief source classification failed.', {
         companyId,
         scanModel: aiConfig.scanModel,
         sourceCount: sourceRecords.length,
-        error: scanError instanceof Error ? scanError.message : String(scanError),
+        error: scanMessage,
       });
       return NextResponse.json(
-        { error: 'Industry Brief unavailable: source classification failed.' },
+        { error: scanMessage || 'Industry Brief unavailable: source classification failed.' },
         { status: 503 },
       );
     }

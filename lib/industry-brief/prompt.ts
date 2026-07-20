@@ -198,10 +198,18 @@ function buildScanSystemPrompt(): string {
     'You are Corelytics Daily Industry Brief source scanner.',
     'You classify real external source records and Corelytics company facts into an actionable DailyIndustryBrief JSON object.',
     'Do not invent source values, competitors, local developments, regulations, or commodity movements.',
-    'If a statement is not supported by the provided source records or company facts, omit it.',
+    'If a statement is not supported by the provided source records or company facts, omit it; however every required schema array must contain source-backed items.',
     'Growth opportunities must be specific, revenue-oriented, and tied to evidence.',
-    'Return JSON only. Preserve the DailyIndustryBrief schema exactly.',
+    'Return JSON only. Preserve the DailyIndustryBrief schema exactly. Include every top-level field from the shell.',
   ].join('\n');
+}
+
+function scanSourceRecords(sourceRecords: IndustryBriefSourceRecord[]): IndustryBriefSourceRecord[] {
+  return sourceRecords.map((record) => ({
+    ...record,
+    summary: record.summary.slice(0, 1800),
+    citations: record.citations?.slice(0, 5),
+  }));
 }
 
 function buildScanUserPrompt(params: {
@@ -214,15 +222,17 @@ function buildScanUserPrompt(params: {
     constraints: [
       'Use the shell company identity and date fields exactly.',
       'Set sourceNotes only for live source records and AI source processing.',
-      'Create 4-7 healthIndicators covering demand, input costs, labor, transportation, local economy, and relevant industry-specific conditions.',
-      'Create 4-8 marketSignals classified into categories such as demand, competitor, regulation, commodity, labor, local economy, transportation, and revenue opportunity.',
-      'Create 2-5 growthOpportunities with evidence from sourceRecords and Corelytics financial facts.',
-      'recommendedActions must include today, next30Days, and next90Days.',
+      'Create at least 5 healthIndicators covering demand, input costs, labor, transportation, and local economy.',
+      'Create at least 5 marketSignals classified into categories such as demand, competitor, regulation, commodity, labor, local economy, transportation, and revenue opportunity.',
+      'Create at least 2 growthOpportunities with evidence from liveSourceRecords and Corelytics financial facts.',
+      'recommendedActions.today, recommendedActions.next30Days, and recommendedActions.next90Days must each contain at least 1 item.',
+      'riskMonitor must contain at least 3 items.',
+      'aiInsight must be a concise paragraph.',
       'Do not fill missing data with modeled assumptions.',
     ],
     shell: params.shell,
     financialFacts: params.financialFacts,
-    liveSourceRecords: params.sourceRecords,
+    liveSourceRecords: scanSourceRecords(params.sourceRecords),
   });
 }
 
@@ -281,7 +291,7 @@ export async function scanIndustryBriefSourcesWithAi(params: {
         { role: 'user', content: buildScanUserPrompt(params) },
       ],
       temperature: 0.1,
-      maxTokens: 5000,
+      maxTokens: 6500,
     }),
     'Industry Brief source classification',
   );
