@@ -87,6 +87,11 @@ function latestNumericObservation(rows: any[]): { date: string; value: number } 
   return null;
 }
 
+function extractUrls(text: string): string[] {
+  const matches = text.match(/https?:\/\/[^\s)\]}>"]+/g) || [];
+  return Array.from(new Set(matches.map((url) => url.replace(/[.,;]+$/, ''))));
+}
+
 async function collectFredSources(): Promise<IndustryBriefSourceRecord[]> {
   const apiKey = fredApiKey();
   if (!apiKey) throw new Error('FRED_API_KEY is required for Daily Industry Brief source scan.');
@@ -213,7 +218,8 @@ async function collectPerplexitySource(context: CompanySourceContext): Promise<I
   const citations = Array.isArray(data?.citations)
     ? data.citations.map((citation: unknown) => String(citation || '').trim()).filter(Boolean)
     : [];
-  if (!content || citations.length === 0) {
+  const sourceUrls = citations.length > 0 ? citations : extractUrls(content);
+  if (!content || sourceUrls.length === 0) {
     throw new Error('Perplexity source scan returned no cited research.');
   }
   return {
@@ -223,7 +229,7 @@ async function collectPerplexitySource(context: CompanySourceContext): Promise<I
     title: 'Live market, competitor, and opportunity scan',
     publishedAt: new Date().toISOString(),
     summary: content,
-    citations,
+    citations: sourceUrls,
   };
 }
 

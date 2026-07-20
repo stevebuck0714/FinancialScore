@@ -126,20 +126,33 @@ export async function GET(request: NextRequest) {
         segment: shell.company.segment,
         location: shell.company.location,
       });
+    } catch (sourceError) {
+      console.error('Daily Industry Brief live source collection failed.', {
+        companyId,
+        error: sourceError instanceof Error ? sourceError.message : String(sourceError),
+      });
+      return NextResponse.json(
+        { error: 'Industry Brief unavailable: live source collection failed.' },
+        { status: 503 },
+      );
+    }
+
+    try {
       scannedBrief = await scanIndustryBriefSourcesWithAi({
         shell,
         sourceRecords,
         financialFacts,
         config: aiConfig,
       });
-    } catch (sourceError) {
-      console.error('Daily Industry Brief source scan failed.', {
+    } catch (scanError) {
+      console.error('Daily Industry Brief source classification failed.', {
         companyId,
         scanModel: aiConfig.scanModel,
-        error: sourceError instanceof Error ? sourceError.message : String(sourceError),
+        sourceCount: sourceRecords.length,
+        error: scanError instanceof Error ? scanError.message : String(scanError),
       });
       return NextResponse.json(
-        { error: 'Industry Brief unavailable: source scan failed.' },
+        { error: 'Industry Brief unavailable: source classification failed.' },
         { status: 503 },
       );
     }
