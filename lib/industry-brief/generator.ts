@@ -92,6 +92,7 @@ export function buildDailyIndustryBriefShell(context: BriefContext): DailyIndust
     },
     riskMonitor: [],
     aiInsight: '',
+    industryOutlook: [],
     sourceNotes: [],
   };
 }

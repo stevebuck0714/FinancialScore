@@ -12,8 +12,14 @@ export const dynamic = 'force-dynamic';
 export const maxDuration = 90;
 
 const CACHE_NAMESPACE = 'daily-industry-brief';
-const DATA_VERSION = 'v5-no-placeholder-brief';
+const DATA_VERSION = 'v6-industry-outlook-tab';
 const CACHE_TTL_SECONDS = 6 * 60 * 60;
+
+function isCronAuthorized(request: NextRequest): boolean {
+  const cronSecret = String(process.env.CRON_SECRET || '').trim();
+  const authHeader = String(request.headers.get('authorization') || '').trim();
+  return Boolean(cronSecret && authHeader === `Bearer ${cronSecret}`);
+}
 
 function asNumber(value: unknown): number {
   const n = Number(value ?? 0);
@@ -64,16 +70,21 @@ async function loadFinancialFacts(companyId: string) {
 
 export async function GET(request: NextRequest) {
   try {
-    await requireAuth();
+    const authorizedByCron = isCronAuthorized(request);
+    if (!authorizedByCron) {
+      await requireAuth();
+    }
     const companyId = String(request.nextUrl.searchParams.get('companyId') || '').trim();
     const force = request.nextUrl.searchParams.get('force') === 'true';
     if (!companyId) {
       return NextResponse.json({ error: 'companyId is required' }, { status: 400 });
     }
 
-    const allowed = await validateCompanyAccess(companyId);
-    if (!allowed) {
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+    if (!authorizedByCron) {
+      const allowed = await validateCompanyAccess(companyId);
+      if (!allowed) {
+        return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+      }
     }
 
     const cacheKey = hashCacheParts([companyId, todayKey()]);

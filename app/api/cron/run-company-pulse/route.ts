@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import { generateCompanyPulse } from '@/lib/company-pulse/generator';
 import { warmDailyExecutiveBriefingCache } from '@/lib/pulse/exec-briefing-warmup';
+import { warmDailyIndustryBriefCache } from '@/lib/industry-brief/warmup';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 300;
@@ -14,6 +15,8 @@ type PulseCronResult = {
   alerts?: number;
   executiveBriefingWarmed?: boolean;
   executiveBriefingError?: string;
+  industryBriefWarmed?: boolean;
+  industryBriefError?: string;
   error?: string;
 };
 
@@ -107,12 +110,19 @@ export async function GET(request: NextRequest) {
           baseUrl: request.nextUrl.origin,
           source: 'company-pulse-cron',
         });
+        const industryBriefWarmup = await warmDailyIndustryBriefCache({
+          companyId,
+          baseUrl: request.nextUrl.origin,
+          source: 'company-pulse-cron',
+        });
         results.push({
           companyId,
-          ok: briefingWarmup.ok,
+          ok: briefingWarmup.ok && industryBriefWarmup.ok,
           alerts: generated.alerts.filter((alert) => alert.status !== 'resolved' && alert.isActive !== false).length,
           executiveBriefingWarmed: briefingWarmup.ok,
           executiveBriefingError: briefingWarmup.error,
+          industryBriefWarmed: industryBriefWarmup.ok,
+          industryBriefError: industryBriefWarmup.error,
         });
       } catch (error: any) {
         results.push({

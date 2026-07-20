@@ -4,6 +4,7 @@ import { runOperationalSyncForConnection } from '@/lib/operational-sync/runner';
 import { extractDailyFinancialMappedLinesFromMetadata, extractDailyFinancialRecordsFromMetadata, ingestDailyFinancialSnapshots } from '@/lib/financial/daily-financial-ingest';
 import { notifyAdminsOfSyncFailure } from '@/lib/sync-alerts';
 import { warmDailyExecutiveBriefingCache } from '@/lib/pulse/exec-briefing-warmup';
+import { warmDailyIndustryBriefCache } from '@/lib/industry-brief/warmup';
 import { autoQueueDueQuickBooksDesktopFinancialJobs } from '@/lib/quickbooks-desktop/auto-queue';
 import { isQuickBooksDesktopFamily } from '@/lib/quickbooks-desktop/family';
 
@@ -319,6 +320,8 @@ export async function GET(request: NextRequest) {
         let dailyFinancialError: string | null = null;
         let executiveBriefingWarmed = false;
         let executiveBriefingError: string | null = null;
+        let industryBriefWarmed = false;
+        let industryBriefError: string | null = null;
 
         if (dailyRecords.length > 0) {
           const ingestResult = await ingestDailyFinancialSnapshots({
@@ -379,6 +382,16 @@ export async function GET(request: NextRequest) {
           if (!briefingWarmup.ok) {
             console.warn(`⚠️ ${connection.company?.name}: Daily Executive Briefing warm-up failed: ${briefingWarmup.error || 'unknown error'}`);
           }
+          const industryBriefWarmup = await warmDailyIndustryBriefCache({
+            companyId: connection.companyId,
+            baseUrl: request.nextUrl.origin,
+            source: `nightly-${String(connection.platform).toLowerCase()}-sync`,
+          });
+          industryBriefWarmed = industryBriefWarmup.ok;
+          industryBriefError = industryBriefWarmup.error || null;
+          if (!industryBriefWarmup.ok) {
+            console.warn(`⚠️ ${connection.company?.name}: Daily Industry Brief warm-up failed: ${industryBriefWarmup.error || 'unknown error'}`);
+          }
         }
         
         results.push({
@@ -393,6 +406,8 @@ export async function GET(request: NextRequest) {
           dailyFinancialError,
           executiveBriefingWarmed,
           executiveBriefingError,
+          industryBriefWarmed,
+          industryBriefError,
         });
         
       } catch (error: any) {

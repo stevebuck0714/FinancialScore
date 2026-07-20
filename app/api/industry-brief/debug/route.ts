@@ -117,6 +117,7 @@ function summarizeBrief(brief: DailyIndustryBrief): Record<string, unknown> {
     todayActionCount: brief.recommendedActions.today.length,
     riskCount: brief.riskMonitor.length,
     aiInsightPresent: Boolean(brief.aiInsight.trim()),
+    industryOutlookCount: brief.industryOutlook.length,
     sourceNoteCount: brief.sourceNotes.length,
   };
 }

@@ -13,6 +13,7 @@ import { orchestrateQuickBooksOnlineOperationalSync } from '@/lib/quickbooks-onl
 import { syncErpDailyFinancialsFromGL } from '@/lib/financial/sync-erp-daily-financials';
 import { rebuildDailyFinancialSnapshotsFromGL } from '@/lib/financial/daily-bs-from-gl';
 import { warmDailyExecutiveBriefingCache } from '@/lib/pulse/exec-briefing-warmup';
+import { warmDailyIndustryBriefCache } from '@/lib/industry-brief/warmup';
 
 const DEFAULT_LEASE_SECONDS = 420;
 const DEFAULT_MAX_ATTEMPTS = 6;
@@ -1862,6 +1863,17 @@ async function processTask(
         companyId: task.companyId,
         runId: task.runId,
         error: briefingWarmup.error,
+      });
+    }
+    const industryBriefWarmup = await warmDailyIndustryBriefCache({
+      companyId: task.companyId,
+      source: `sync-queue-${String(task.run.platform || 'erp').toLowerCase()}-complete`,
+    });
+    if (!industryBriefWarmup.ok) {
+      console.warn('Daily Industry Brief warm-up failed after sync queue completion:', {
+        companyId: task.companyId,
+        runId: task.runId,
+        error: industryBriefWarmup.error,
       });
     }
   }

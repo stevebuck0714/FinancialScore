@@ -212,6 +212,19 @@ function sourceNotesFromRecords(sourceRecords: IndustryBriefSourceRecord[]): Ind
   }));
 }
 
+function industryOutlookFromRecords(sourceRecords: IndustryBriefSourceRecord[]): DailyIndustryBrief['industryOutlook'] {
+  return sourceRecords.map((record) => ({
+    id: record.id,
+    provider: record.provider,
+    category: record.category,
+    title: record.title,
+    value: record.value,
+    publishedAt: record.publishedAt,
+    summary: record.summary,
+    citations: record.citations || [],
+  })).filter((item) => item.category && item.title && item.summary);
+}
+
 function normalizeLiveSourceNotes(value: unknown): IndustryBriefSourceNote[] {
   if (!Array.isArray(value)) return [];
   return value.map((item) => {
@@ -242,6 +255,7 @@ function mergeAiBrief(
   };
   const candidateSourceNotes = normalizeLiveSourceNotes(candidate.sourceNotes);
   const requiredSourceNotes = sourceNotesFromRecords(sourceRecords);
+  const industryOutlook = industryOutlookFromRecords(sourceRecords);
   const healthIndicators = normalizeHealthIndicators(candidate.healthIndicators, base.healthIndicators);
   const marketSignals = normalizeMarketSignals(candidate.marketSignals, base.marketSignals);
   const growthOpportunities = normalizeGrowthOpportunities(candidate.growthOpportunities, base.growthOpportunities);
@@ -279,6 +293,7 @@ function mergeAiBrief(
     aiInsight: textValue(candidate.aiInsight)
       ? textValue(candidate.aiInsight)
       : base.aiInsight,
+    industryOutlook,
     sourceNotes: [
       ...requiredSourceNotes,
       ...candidateSourceNotes,
@@ -304,6 +319,7 @@ function validateCompleteBrief(brief: DailyIndustryBrief, stage: 'scan' | 'final
   if (brief.recommendedActions.today.length === 0) missing.push('recommendedActions.today');
   if (brief.riskMonitor.length === 0) missing.push('riskMonitor');
   if (!brief.aiInsight.trim()) missing.push('aiInsight');
+  if (brief.industryOutlook.length === 0) missing.push('industryOutlook');
   if (brief.sourceNotes.length === 0) missing.push('sourceNotes');
   const placeholderFields = [
     ...brief.healthIndicators.flatMap((item, index) => [

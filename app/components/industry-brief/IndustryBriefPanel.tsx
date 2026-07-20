@@ -97,6 +97,7 @@ export default function IndustryBriefPanel({ companyId }: Props) {
   const [brief, setBrief] = useState<DailyIndustryBrief | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<'brief' | 'outlook'>('brief');
 
   const loadBrief = useCallback(async (force = false) => {
     if (!companyId) return;
@@ -136,6 +137,24 @@ export default function IndustryBriefPanel({ companyId }: Props) {
 
   if (!brief) return null;
   const tone = statusTone(brief.executiveSummary.status);
+  const tabButton = (tab: 'brief' | 'outlook', label: string) => (
+    <button
+      type="button"
+      onClick={() => setActiveTab(tab)}
+      style={{
+        border: 'none',
+        borderBottom: activeTab === tab ? '3px solid #2751d0' : '3px solid transparent',
+        background: 'transparent',
+        color: activeTab === tab ? '#1e40af' : '#64748b',
+        padding: '10px 4px',
+        fontSize: '13px',
+        fontWeight: 900,
+        cursor: 'pointer',
+      }}
+    >
+      {label}
+    </button>
+  );
 
   return (
     <div style={{ marginTop: '14px', display: 'grid', gap: '14px' }}>
@@ -181,6 +200,74 @@ export default function IndustryBriefPanel({ companyId }: Props) {
           </div>
         </div>
       </div>
+        <div style={{ display: 'flex', gap: '18px', borderTop: '1px solid #e2e8f0', marginTop: '14px', paddingTop: '2px' }}>
+          {tabButton('brief', 'Brief & Actions')}
+          {tabButton('outlook', 'Industry Outlook')}
+        </div>
+
+      {activeTab === 'outlook' ? (
+        <>
+          <div style={cardStyle}>
+            <div style={{ fontSize: '18px', fontWeight: 800, color: '#0f172a' }}>Industry Outlook</div>
+            <div style={{ fontSize: '13px', color: '#64748b', marginTop: '4px' }}>
+              Live source records used by the AI brief. If a category is not shown, it was not included in today&apos;s live source set.
+            </div>
+            <div style={{ marginTop: '12px', display: 'grid', gap: '12px' }}>
+              {brief.industryOutlook.map((item) => (
+                <div key={renderText(item.id)} style={{ border: '1px solid #e2e8f0', borderRadius: '12px', padding: '14px', background: '#f8fafc' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', gap: '10px', flexWrap: 'wrap' }}>
+                    <div>
+                      <div style={{ fontSize: '12px', color: '#2751d0', fontWeight: 900, textTransform: 'uppercase' }}>{renderText(item.category)}</div>
+                      <div style={{ fontSize: '15px', color: '#0f172a', fontWeight: 850, marginTop: '3px' }}>{renderText(item.title)}</div>
+                    </div>
+                    <span style={{ alignSelf: 'flex-start', fontSize: '11px', color: '#166534', background: '#dcfce7', border: '1px solid #bbf7d0', borderRadius: '999px', padding: '4px 8px', fontWeight: 900 }}>
+                      Live: {renderText(item.provider)}
+                    </span>
+                  </div>
+                  {(item.value || item.publishedAt) && (
+                    <div style={{ fontSize: '12px', color: '#64748b', marginTop: '7px' }}>
+                      {item.value ? `Value: ${renderText(item.value)}` : ''}{item.value && item.publishedAt ? ' | ' : ''}{item.publishedAt ? `As of ${renderText(item.publishedAt)}` : ''}
+                    </div>
+                  )}
+                  <div style={{ fontSize: '13px', color: '#334155', marginTop: '8px', whiteSpace: 'pre-wrap' }}>{renderText(item.summary)}</div>
+                  {item.citations.length > 0 && (
+                    <div style={{ marginTop: '8px', display: 'grid', gap: '4px' }}>
+                      {item.citations.slice(0, 5).map((citation) => (
+                        <a key={renderText(citation)} href={renderText(citation)} target="_blank" rel="noreferrer" style={{ fontSize: '12px', color: '#1d4ed8', overflowWrap: 'anywhere' }}>
+                          {renderText(citation)}
+                        </a>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div style={cardStyle}>
+            <div style={{ fontSize: '18px', fontWeight: 800, color: '#0f172a' }}>AI-Classified Market Signals</div>
+            <div style={{ fontSize: '13px', color: '#64748b', marginTop: '4px' }}>
+              Broader industry and local signals extracted from the live source set.
+            </div>
+            <div style={{ marginTop: '12px', display: 'grid', gap: '10px' }}>
+              {brief.marketSignals.map((signal) => {
+                const impact = impactTone(signal.impact);
+                return (
+                  <div key={`${renderText(signal.category)}-${renderText(signal.title)}`} style={{ borderBottom: '1px solid #f1f5f9', paddingBottom: '10px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', gap: '8px', flexWrap: 'wrap' }}>
+                      <div style={{ fontSize: '14px', fontWeight: 800, color: '#1e293b' }}>{renderText(signal.category)}: {renderText(signal.title)}</div>
+                      <span style={{ fontSize: '11px', fontWeight: 800, color: impact.fg, background: impact.bg, borderRadius: '999px', padding: '3px 8px' }}>{impact.label}</span>
+                    </div>
+                    <div style={{ fontSize: '13px', color: '#64748b', marginTop: '3px' }}>{renderText(signal.currentValue)} | {renderText(signal.trend)}</div>
+                    <div style={{ fontSize: '13px', color: '#334155', marginTop: '4px' }}>{renderText(signal.companyImplication)}</div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </>
+      ) : (
+        <>
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '12px' }}>
         {brief.healthIndicators.map((indicator) => (
@@ -232,25 +319,6 @@ export default function IndustryBriefPanel({ companyId }: Props) {
 
       <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1.2fr) minmax(280px, 0.8fr)', gap: '14px' }}>
         <div style={cardStyle}>
-          <div style={{ fontSize: '18px', fontWeight: 800, color: '#0f172a' }}>Market Signals</div>
-          <div style={{ marginTop: '12px', display: 'grid', gap: '10px' }}>
-            {brief.marketSignals.map((signal) => {
-              const impact = impactTone(signal.impact);
-              return (
-                <div key={`${renderText(signal.category)}-${renderText(signal.title)}`} style={{ borderBottom: '1px solid #f1f5f9', paddingBottom: '10px' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', gap: '8px', flexWrap: 'wrap' }}>
-                    <div style={{ fontSize: '14px', fontWeight: 800, color: '#1e293b' }}>{renderText(signal.category)}: {renderText(signal.title)}</div>
-                    <span style={{ fontSize: '11px', fontWeight: 800, color: impact.fg, background: impact.bg, borderRadius: '999px', padding: '3px 8px' }}>{impact.label}</span>
-                  </div>
-                  <div style={{ fontSize: '13px', color: '#64748b', marginTop: '3px' }}>{renderText(signal.currentValue)} | {renderText(signal.trend)}</div>
-                  <div style={{ fontSize: '13px', color: '#334155', marginTop: '4px' }}>{renderText(signal.companyImplication)}</div>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-
-        <div style={cardStyle}>
           <div style={{ fontSize: '18px', fontWeight: 800, color: '#0f172a' }}>Recommended Actions</div>
           <div style={{ marginTop: '10px', display: 'grid', gap: '12px' }}>
             <div>
@@ -281,6 +349,8 @@ export default function IndustryBriefPanel({ companyId }: Props) {
           ))}
         </div>
       </div>
+        </>
+      )}
     </div>
   );
 }

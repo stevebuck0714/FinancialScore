@@ -61,6 +61,17 @@ export type IndustryBriefSourceRecord = {
   citations?: string[];
 };
 
+export type IndustryOutlookItem = {
+  id: string;
+  provider: IndustryBriefSourceRecord['provider'];
+  category: string;
+  title: string;
+  value?: string;
+  publishedAt?: string;
+  summary: string;
+  citations: string[];
+};
+
 export type DailyIndustryBrief = {
   generatedAt: string;
   briefDate: string;
@@ -95,5 +106,6 @@ export type DailyIndustryBrief = {
   };
   riskMonitor: RiskMonitorItem[];
   aiInsight: string;
+  industryOutlook: IndustryOutlookItem[];
   sourceNotes: IndustryBriefSourceNote[];
 };
