@@ -3,6 +3,7 @@ import prisma from '@/lib/prisma';
 import { isQuickBooksDesktopFamily } from '@/lib/quickbooks-desktop/family';
 
 const QBD_AUTO_QUEUE_TIME_ZONE = 'America/New_York';
+const QBD_AUTO_QUEUE_DUE_LOOKBACK_HOURS = 4;
 
 const QBD_AGING_SNAPSHOT_REQUESTS = new Set([
   'ARAgingSummaryReportQuery',
@@ -79,25 +80,127 @@ function addUtcDays(date: Date, days: number): Date {
   return next;
 }
 
-function getLocalDateParts(date: Date, timeZone: string): { year: number; month: number; day: number } {
+function getLocalDateParts(date: Date, timeZone: string): { year: number; month: number; day: number; hour: number; minute: number } {
   const parts = new Intl.DateTimeFormat('en-US', {
     timeZone,
     year: 'numeric',
     month: '2-digit',
     day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
   }).formatToParts(date);
   const map = Object.fromEntries(parts.map((part) => [part.type, part.value]));
   return {
     year: Number.parseInt(String(map.year || '0'), 10),
     month: Number.parseInt(String(map.month || '0'), 10),
     day: Number.parseInt(String(map.day || '0'), 10),
+    hour: Number.parseInt(String(map.hour || '0'), 10),
+    minute: Number.parseInt(String(map.minute || '0'), 10),
   };
 }
 
-function priorCompletedLocalDateKey(now = new Date()): string {
-  const parts = getLocalDateParts(now, QBD_AUTO_QUEUE_TIME_ZONE);
-  const todayUtc = new Date(Date.UTC(parts.year, parts.month - 1, parts.day));
-  return dateKey(addUtcDays(todayUtc, -1));
+function normalizePullTime(value: unknown): string {
+  if (typeof value !== 'string') return '08:00';
+  const trimmed = value.trim();
+  return /^\d{2}:\d{2}$/.test(trimmed) ? trimmed : '08:00';
+}
+
+function readQuickBooksDesktopPullTime(metadata: Record<string, unknown>): string {
+  const direct = normalizePullTime(metadata.operationalPullTime);
+  if (direct !== '08:00' || metadata.operationalPullTime === '08:00') return direct;
+
+  const settings = asRecord(metadata.quickbooksDesktopSettings);
+  const settingsTime = normalizePullTime(settings.syncTime);
+  if (settingsTime !== '08:00' || settings.syncTime === '08:00') return settingsTime;
+
+  return '08:00';
+}
+
+function localDateToUtc(parts: { year: number; month: number; day: number }): Date {
+  return new Date(Date.UTC(parts.year, parts.month - 1, parts.day));
+}
+
+function priorBusinessDateKey(localDate: { year: number; month: number; day: number }): string {
+  const cursor = addUtcDays(localDateToUtc(localDate), -1);
+  while (cursor.getUTCDay() === 0 || cursor.getUTCDay() === 6) {
+    cursor.setUTCDate(cursor.getUTCDate() - 1);
+  }
+  return dateKey(cursor);
+}
+
+function zonedLocalTimeToUtc(local: { year: number; month: number; day: number; hour: number; minute: number }): Date {
+  const desiredWallClockMs = Date.UTC(local.year, local.month - 1, local.day, local.hour, local.minute, 0);
+  const guess = new Date(desiredWallClockMs);
+  const actualAtGuess = new Intl.DateTimeFormat('en-US', {
+    timeZone: QBD_AUTO_QUEUE_TIME_ZONE,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  }).formatToParts(guess);
+  const actualMap = Object.fromEntries(actualAtGuess.map((part) => [part.type, part.value]));
+  const actualWallClockMs = Date.UTC(
+    Number(actualMap.year),
+    Number(actualMap.month) - 1,
+    Number(actualMap.day),
+    Number(actualMap.hour),
+    Number(actualMap.minute),
+    0,
+  );
+  return new Date(guess.getTime() - (actualWallClockMs - desiredWallClockMs));
+}
+
+function resolveQbdAutoQueueTarget(params: {
+  now: Date;
+  pullTime: string;
+  lastSyncAt?: Date | null;
+}): { due: boolean; targetDate: string; expectedRunAt: Date; skippedReason?: string } {
+  const [scheduledHour, scheduledMinute] = normalizePullTime(params.pullTime).split(':').map((value) => Number(value));
+  const nowParts = getLocalDateParts(params.now, QBD_AUTO_QUEUE_TIME_ZONE);
+  let scheduledLocalDate = { year: nowParts.year, month: nowParts.month, day: nowParts.day };
+  let expectedRunAt = zonedLocalTimeToUtc({
+    ...scheduledLocalDate,
+    hour: scheduledHour,
+    minute: scheduledMinute,
+  });
+
+  if (expectedRunAt.getTime() > params.now.getTime()) {
+    const previousLocalDate = addUtcDays(localDateToUtc(scheduledLocalDate), -1);
+    scheduledLocalDate = {
+      year: previousLocalDate.getUTCFullYear(),
+      month: previousLocalDate.getUTCMonth() + 1,
+      day: previousLocalDate.getUTCDate(),
+    };
+    expectedRunAt = zonedLocalTimeToUtc({
+      ...scheduledLocalDate,
+      hour: scheduledHour,
+      minute: scheduledMinute,
+    });
+  }
+
+  const targetDate = priorBusinessDateKey(scheduledLocalDate);
+  const msSinceExpected = params.now.getTime() - expectedRunAt.getTime();
+  if (msSinceExpected > QBD_AUTO_QUEUE_DUE_LOOKBACK_HOURS * 60 * 60 * 1000) {
+    return {
+      due: false,
+      targetDate,
+      expectedRunAt,
+      skippedReason: `QBD auto-queue window for ${targetDate} has passed.`,
+    };
+  }
+  if (params.lastSyncAt && params.lastSyncAt.getTime() >= expectedRunAt.getTime()) {
+    return {
+      due: false,
+      targetDate,
+      expectedRunAt,
+      skippedReason: `QBD auto-queue already ran for the scheduled ${expectedRunAt.toISOString()} window.`,
+    };
+  }
+
+  return { due: true, targetDate, expectedRunAt };
 }
 
 function parseRequestName(value: unknown): string {
@@ -298,7 +401,7 @@ export async function autoQueueDueQuickBooksDesktopFinancialJobs(now = new Date(
   skipped: number;
   results: QbdAutoQueueResult[];
 }> {
-  const targetDate = priorCompletedLocalDateKey(now);
+  const fallbackTargetDate = priorBusinessDateKey(getLocalDateParts(now, QBD_AUTO_QUEUE_TIME_ZONE));
   const connections = await prisma.accountingConnection.findMany({
     where: {
       platform: 'QUICKBOOKS',
@@ -311,6 +414,7 @@ export async function autoQueueDueQuickBooksDesktopFinancialJobs(now = new Date(
       id: true,
       companyId: true,
       connectionMetadata: true,
+      lastSyncAt: true,
       company: {
         select: {
           name: true,
@@ -327,6 +431,20 @@ export async function autoQueueDueQuickBooksDesktopFinancialJobs(now = new Date(
       continue;
     }
     const metadata = asRecord(connection.connectionMetadata);
+    const queueTarget = resolveQbdAutoQueueTarget({
+      now,
+      pullTime: readQuickBooksDesktopPullTime(metadata),
+      lastSyncAt: connection.lastSyncAt,
+    });
+    if (!queueTarget.due) {
+      results.push({
+        companyId: connection.companyId,
+        companyName: connection.company?.name,
+        queued: false,
+        skippedReason: queueTarget.skippedReason,
+      });
+      continue;
+    }
     if (!hasQuickBooksDesktopRequiredSetup(metadata)) {
       results.push({
         companyId: connection.companyId,
@@ -339,12 +457,12 @@ export async function autoQueueDueQuickBooksDesktopFinancialJobs(now = new Date(
     const previousAutoQueuedDate = typeof metadata.quickbooksDesktopAutoQueuedDate === 'string'
       ? metadata.quickbooksDesktopAutoQueuedDate
       : '';
-    if (previousAutoQueuedDate === targetDate) {
+    if (previousAutoQueuedDate === queueTarget.targetDate) {
       results.push({
         companyId: connection.companyId,
         companyName: connection.company?.name,
         queued: false,
-        skippedReason: `QBD jobs already auto-queued for ${targetDate}.`,
+        skippedReason: `QBD jobs already auto-queued for ${queueTarget.targetDate}.`,
       });
       continue;
     }
@@ -353,12 +471,12 @@ export async function autoQueueDueQuickBooksDesktopFinancialJobs(now = new Date(
       companyId: connection.companyId,
       companyName: connection.company?.name,
       metadata,
-      targetDate,
+      targetDate: queueTarget.targetDate,
     }));
   }
 
   return {
-    targetDate,
+    targetDate: results.find((result) => result.startDate)?.startDate || fallbackTargetDate,
     scanned: connections.length,
     queued: results.filter((result) => result.queued).length,
     skipped: results.filter((result) => !result.queued).length,
