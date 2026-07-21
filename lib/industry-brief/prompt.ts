@@ -69,6 +69,14 @@ function validArray(value: unknown, fallback: unknown[]): unknown[] {
   return Array.isArray(value) ? value : fallback;
 }
 
+function valueList(value: unknown, fallback: unknown[] = []): unknown[] {
+  if (Array.isArray(value)) return value;
+  if (value && typeof value === 'object') {
+    return Object.values(value as Record<string, unknown>).flatMap((item) => Array.isArray(item) ? item : [item]);
+  }
+  return fallback;
+}
+
 function textValue(value: unknown): string {
   if (typeof value === 'string') return value.trim();
   if (typeof value === 'number' || typeof value === 'boolean') return String(value);
@@ -122,7 +130,7 @@ function field(candidate: Record<string, unknown>, keys: string[]): unknown {
 }
 
 function normalizeHealthIndicators(value: unknown, fallback: DailyIndustryBrief['healthIndicators']): DailyIndustryBrief['healthIndicators'] {
-  return validArray(value, fallback).map((item, index) => {
+  return valueList(value, fallback).map((item, index) => {
     const row = asObject(item);
     const label = textValue(row.label) || fallback[index]?.label || '';
     const score = scoreValue(row.score) ?? scoreValue(fallback[index]?.score);
@@ -148,7 +156,7 @@ function normalizeHealthIndicators(value: unknown, fallback: DailyIndustryBrief[
 }
 
 function normalizeMarketSignals(value: unknown, fallback: DailyIndustryBrief['marketSignals']): DailyIndustryBrief['marketSignals'] {
-  return validArray(value, fallback).map((item, index) => {
+  return valueList(value, fallback).map((item, index) => {
     const row = asObject(item);
     const category = textValue(field(row, ['category', 'type', 'signalCategory', 'signal_category'])) || fallback[index]?.category || '';
     const title = textValue(field(row, ['title', 'signal', 'name', 'indicator'])) || fallback[index]?.title || '';
@@ -179,7 +187,7 @@ function normalizeMarketSignals(value: unknown, fallback: DailyIndustryBrief['ma
 }
 
 function normalizeGrowthOpportunities(value: unknown, fallback: DailyIndustryBrief['growthOpportunities']): DailyIndustryBrief['growthOpportunities'] {
-  return validArray(value, fallback).map((item, index) => {
+  return valueList(value, fallback).map((item, index) => {
     const row = asObject(item);
     const title = textValue(row.title) || fallback[index]?.title || '';
     const score = scoreValue(row.score) ?? scoreValue(fallback[index]?.score);
@@ -231,7 +239,7 @@ function normalizeGrowthOpportunities(value: unknown, fallback: DailyIndustryBri
 }
 
 function normalizeRiskMonitor(value: unknown, fallback: DailyIndustryBrief['riskMonitor']): DailyIndustryBrief['riskMonitor'] {
-  return validArray(value, fallback).map((item, index) => {
+  return valueList(value, fallback).map((item, index) => {
     const row = asObject(item);
     const risk = textValue(row.risk) || fallback[index]?.risk || '';
     const level = oneOfAlias(row.level, ['low', 'medium', 'high'] as const, {
