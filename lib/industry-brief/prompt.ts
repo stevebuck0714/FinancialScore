@@ -394,6 +394,35 @@ function buildFinalUserPrompt(
   });
 }
 
+function buildJsonRepairSystemPrompt(): string {
+  return [
+    'You repair Corelytics Daily Industry Brief AI output into valid JSON.',
+    'Return exactly one JSON object and nothing else.',
+    'Do not use markdown fences, comments, ellipses, or prose outside JSON.',
+    'Use the original task and live evidence to produce the same complete dashboard analysis if the prior output was malformed or truncated.',
+    'Do not invent facts outside the supplied original task, company facts, and live evidence.',
+  ].join('\n');
+}
+
+function buildJsonRepairUserPrompt(originalTask: string, priorOutput: string): string {
+  return JSON.stringify({
+    task: 'Return a single valid JSON object for the DailyIndustryBrief dashboard analysis fields.',
+    requiredShape: 'executiveSummary{status,headline,bullets,expectedImpact60Days}, overallScore, healthIndicators[{key,label,score,trend,note}], marketSignals[{category,title,currentValue,trend,impact,companyImplication,sources}], growthOpportunities[{id,title,score,revenuePotential,marginPotential,urgency,confidence,whyNow,recommendedAction,owner,estimatedImpact,evidence}], recommendedActions{today,next30Days,next90Days}, riskMonitor[{risk,level,note}], aiInsight',
+    originalTask: JSON.parse(originalTask),
+    priorMalformedOutput: String(priorOutput || '').slice(0, 12000),
+    constraints: [
+      'Return JSON only.',
+      'Include exactly 4 healthIndicators, 4 marketSignals, 2 growthOpportunities, and 2 riskMonitor items.',
+      'Keep recommendedActions to 1 today, 2 next30Days, and 1 next90Days.',
+      'Do not include industryOutlook or sourceNotes.',
+    ],
+  });
+}
+
+function nonJsonSnippet(text: string): string {
+  return String(text || '').replace(/\s+/g, ' ').trim().slice(0, 300);
+}
+
 function buildScanSystemPrompt(): string {
   return [
     'You are Corelytics Daily Industry Brief source scanner.',
@@ -444,24 +473,43 @@ export async function synthesizeIndustryBriefWithAi(params: {
 
   const openai = getOpenAiClient();
   const timeoutMs = industryBriefAiTimeoutMs('final');
+  const finalUserPrompt = buildFinalUserPrompt(params.baseBrief, params.sourceRecords, params.financialFacts);
   const result = await withIndustryBriefTimeout(
     createModelText({
       openai,
       model: params.config.finalModel,
       messages: [
         { role: 'system', content: buildFinalSystemPrompt() },
-        { role: 'user', content: buildFinalUserPrompt(params.baseBrief, params.sourceRecords, params.financialFacts) },
+        { role: 'user', content: finalUserPrompt },
       ],
       temperature: 0.2,
-      maxTokens: 1800,
+      maxTokens: 3000,
       timeoutMs: timeoutMs + 5000,
     }),
     'Industry Brief final AI synthesis',
     'final',
   );
-  const parsed = extractJsonObject(result.text);
+  let parsed = extractJsonObject(result.text);
   if (!parsed) {
-    throw new Error('Industry Brief AI returned non-JSON output.');
+    const repaired = await withIndustryBriefTimeout(
+      createModelText({
+        openai,
+        model: params.config.finalModel,
+        messages: [
+          { role: 'system', content: buildJsonRepairSystemPrompt() },
+          { role: 'user', content: buildJsonRepairUserPrompt(finalUserPrompt, result.text) },
+        ],
+        temperature: 0.1,
+        maxTokens: 3000,
+        timeoutMs: timeoutMs + 5000,
+      }),
+      'Industry Brief final JSON repair',
+      'final',
+    );
+    parsed = extractJsonObject(repaired.text);
+    if (!parsed) {
+      throw new Error(`Industry Brief AI returned non-JSON output. finishReason=${result.finishReason || 'unknown'} snippet="${nonJsonSnippet(result.text)}"`);
+    }
   }
   const brief = mergeAiBrief(params.baseBrief, parsed, params.config, params.sourceRecords, 'final');
   validateCompleteBrief(brief, 'final');
