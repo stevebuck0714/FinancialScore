@@ -6,7 +6,8 @@ import { publishMonthsFromMonthlyFinancialDirect } from '@/lib/financial/publish
 import { syncErpDailyFinancialsFromGL } from '@/lib/financial/sync-erp-daily-financials';
 import { buildCsiMonthlyDataFromGlResponses } from '@/lib/infor-m3/csi-monthly-financial-builder';
 import { isQuickBooksDesktopFamily } from '@/lib/quickbooks-desktop/family';
-import { scheduleDailyExecutiveBriefingWarmup } from '@/lib/pulse/exec-briefing-warmup';
+import { warmDailyExecutiveBriefingCache } from '@/lib/pulse/exec-briefing-warmup';
+import { warmDailyIndustryBriefCache } from '@/lib/industry-brief/warmup';
 
 export const dynamic = 'force-dynamic';
 const CSI_REBUILD_MAX_MONTHS = 36;
@@ -2333,10 +2334,30 @@ export async function POST(request: NextRequest) {
         };
       }
       if (result.ok) {
-        scheduleDailyExecutiveBriefingWarmup({
-          companyId: String(companyId),
-          source: 'qbd-reprocess-mappings-complete',
-        });
+        setTimeout(async () => {
+          const briefingWarmup = await warmDailyExecutiveBriefingCache({
+            companyId: String(companyId),
+            source: 'qbd-reprocess-mappings-complete',
+          });
+          if (!briefingWarmup.ok) {
+            console.warn('Daily Executive Briefing warm-up failed after QBD reprocess:', {
+              companyId: String(companyId),
+              error: briefingWarmup.error,
+              skipped: briefingWarmup.skipped,
+            });
+          }
+          const industryWarmup = await warmDailyIndustryBriefCache({
+            companyId: String(companyId),
+            source: 'qbd-reprocess-mappings-complete',
+          });
+          if (!industryWarmup.ok) {
+            console.warn('Daily Industry Brief warm-up failed after QBD reprocess:', {
+              companyId: String(companyId),
+              error: industryWarmup.error,
+              skipped: industryWarmup.skipped,
+            });
+          }
+        }, 0);
       }
 
       return NextResponse.json(

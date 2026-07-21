@@ -9,10 +9,11 @@ import {
   buildQuickBooksDesktopFinancialPayload,
   buildQuickBooksDesktopOperationalPayload,
 } from '@/lib/quickbooks-desktop/backfill-payloads';
-import { scheduleQuickBooksDesktopPostSyncReprocess } from '@/lib/quickbooks-desktop/post-sync-reprocess';
+import { runQuickBooksDesktopPostSyncReprocess } from '@/lib/quickbooks-desktop/post-sync-reprocess';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
+export const maxDuration = 300;
 
 const QBWC_NAMESPACE = 'http://developer.intuit.com/';
 
@@ -1447,6 +1448,7 @@ async function finalizeSession(connection: NonNullable<Awaited<ReturnType<typeof
 
   let accountMappingSeed: unknown = null;
   let operationalSync: unknown = null;
+  let postSyncReprocess: unknown = null;
   let lastError: string | null = null;
 
   try {
@@ -1460,6 +1462,32 @@ async function finalizeSession(connection: NonNullable<Awaited<ReturnType<typeof
   } catch (error) {
     const message = `Operational sync failed: ${error instanceof Error ? error.message : 'unknown error'}`;
     lastError = lastError ? `${lastError}; ${message}` : message;
+  }
+
+  if (!lastError) {
+    try {
+      const postSyncResult = await runQuickBooksDesktopPostSyncReprocess({
+        companyId,
+        source: 'qbd-web-connector-finalize',
+        startDate: session.dateRange.startDate,
+        endDate: session.dateRange.endDate,
+      });
+      postSyncReprocess = postSyncResult;
+      const postSyncFailures = [
+        !postSyncResult.dailyFinancials.ok
+          ? `daily financial rebuild: ${postSyncResult.dailyFinancials.error || 'failed'}`
+          : '',
+        postSyncResult.arApAging && !postSyncResult.arApAging.ok
+          ? `AR/AP rebuild: ${postSyncResult.arApAging.error || 'failed'}`
+          : '',
+      ].filter(Boolean);
+      if (postSyncFailures.length > 0) {
+        lastError = `Post-sync reprocess failed: ${postSyncFailures.join('; ')}`;
+      }
+    } catch (error) {
+      const message = `Post-sync reprocess failed: ${error instanceof Error ? error.message : 'unknown error'}`;
+      lastError = lastError ? `${lastError}; ${message}` : message;
+    }
   }
 
   await updateMetadata(companyId, (metadata) => {
@@ -1492,6 +1520,7 @@ async function finalizeSession(connection: NonNullable<Awaited<ReturnType<typeof
         ),
         accountMappingSeed,
         operationalSync,
+        postSyncReprocess,
         lastError,
       },
     };
@@ -1511,12 +1540,6 @@ async function finalizeSession(connection: NonNullable<Awaited<ReturnType<typeof
     },
   });
 
-  if (!lastError) {
-    scheduleQuickBooksDesktopPostSyncReprocess({
-      companyId,
-      source: 'qbd-web-connector-finalize',
-    });
-  }
 }
 
 async function authenticateWebConnector(username: string, password: string): Promise<{ companyId: string; metadata: QbDesktopMetadata } | null> {

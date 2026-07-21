@@ -20,10 +20,10 @@ function industryBriefAiTimeoutMs(stage: 'scan' | 'final'): number {
   const envName = stage === 'scan'
     ? 'INDUSTRY_BRIEF_SCAN_TIMEOUT_MS'
     : 'INDUSTRY_BRIEF_FINAL_TIMEOUT_MS';
-  const fallback = stage === 'scan' ? 22000 : 30000;
+  const fallback = stage === 'scan' ? 22000 : 60000;
   const parsed = Number(process.env[envName] || process.env.INDUSTRY_BRIEF_AI_TIMEOUT_MS || fallback);
   if (!Number.isFinite(parsed)) return fallback;
-  return Math.max(5000, Math.min(45000, Math.floor(parsed)));
+  return Math.max(5000, Math.min(80000, Math.floor(parsed)));
 }
 
 async function withIndustryBriefTimeout<T>(promise: Promise<T>, label: string, stage: 'scan' | 'final'): Promise<T> {
@@ -345,9 +345,9 @@ function validateCompleteBrief(brief: DailyIndustryBrief, stage: 'scan' | 'final
 function buildFinalSystemPrompt(): string {
   return [
     'You are Corelytics Daily Industry Brief, a CFO-grade market analyst and growth strategist for small and mid-market businesses.',
-    'You receive a source-backed base brief created from live source records. Complete the dashboard brief without inventing unverifiable facts.',
+    'You receive compact live evidence and company financial facts. Produce a concise source-backed dashboard brief without inventing unverifiable facts.',
     'Return JSON only. Do not add markdown. Do not include prose outside JSON.',
-    'Return a complete DailyIndustryBrief object with all required dashboard sections populated from the provided live sources.',
+    'Return only the requested dashboard analysis fields. The application attaches source notes and detailed outlook records separately.',
     'Rank opportunities by revenue potential, margin potential, fit with company capabilities, urgency, required investment, and confidence.',
     'Every opportunity must be actionable: include why now, recommended action, owner, estimated impact, and evidence.',
     'Only use provided live sources and Corelytics financial facts. If evidence is weak, lower confidence instead of filling gaps.',
@@ -361,9 +361,9 @@ function compactFinalEvidence(sourceRecords: IndustryBriefSourceRecord[]): Array
     title: record.title,
     value: record.value,
     publishedAt: record.publishedAt,
-    summary: record.summary.slice(0, 900),
+    summary: record.summary.slice(0, 450),
     url: record.url,
-    citations: record.citations?.slice(0, 2),
+    citations: record.citations?.slice(0, 1),
   }));
 }
 
@@ -378,29 +378,15 @@ function buildFinalUserPrompt(
       'Do not fabricate live commodity/news values beyond the provided base brief.',
       'Make growth opportunities specific to the company, industry, location, and financial context in the base brief.',
       'Always include executiveSummary.headline and executiveSummary.bullets.',
-      'Include exactly 5 healthIndicators.',
-      'Include exactly 6 marketSignals.',
-      'Include exactly 3 growthOpportunities.',
-      'Keep recommendedActions practical and near-term with 2 today, 2 next30Days, and 2 next90Days.',
-      'Include at least 3 riskMonitor items.',
-      'Include aiInsight as a concise source-backed paragraph.',
+      'Include exactly 4 healthIndicators.',
+      'Include exactly 4 marketSignals.',
+      'Include exactly 2 growthOpportunities.',
+      'Keep recommendedActions practical and near-term with 1 today, 2 next30Days, and 1 next90Days.',
+      'Include exactly 2 riskMonitor items.',
+      'Keep aiInsight to one short source-backed paragraph.',
       'Do not include industryOutlook or sourceNotes; the application attaches those directly from live source records.',
     ],
-    requiredShape: {
-      executiveSummary: {
-        status: 'stable | watch | risk',
-        headline: 'string',
-        bullets: ['string'],
-        expectedImpact60Days: ['string'],
-      },
-      overallScore: 'number 0-100',
-      healthIndicators: [{ key: 'string', label: 'string', score: 'number 0-100', trend: 'improving | stable | tight | worsening', note: 'string' }],
-      marketSignals: [{ category: 'string', title: 'string', currentValue: 'string', trend: 'string', impact: 'positive | neutral | negative', companyImplication: 'string', sources: ['string'] }],
-      growthOpportunities: [{ id: 'string', title: 'string', score: 'number 0-100', revenuePotential: 'low | medium | high', marginPotential: 'low | medium | high', urgency: 'today | this_week | 30_days | 90_days', confidence: 'low | medium | high', whyNow: 'string', recommendedAction: 'string', owner: 'string', estimatedImpact: 'string', evidence: ['string'] }],
-      recommendedActions: { today: ['string'], next30Days: ['string'], next90Days: ['string'] },
-      riskMonitor: [{ risk: 'string', level: 'low | medium | high', note: 'string' }],
-      aiInsight: 'string',
-    },
+    requiredShape: 'executiveSummary{status,headline,bullets,expectedImpact60Days}, overallScore, healthIndicators[{key,label,score,trend,note}], marketSignals[{category,title,currentValue,trend,impact,companyImplication,sources}], growthOpportunities[{id,title,score,revenuePotential,marginPotential,urgency,confidence,whyNow,recommendedAction,owner,estimatedImpact,evidence}], recommendedActions{today,next30Days,next90Days}, riskMonitor[{risk,level,note}], aiInsight',
     company: base.company,
     briefDate: base.briefDate,
     financialFacts: financialFacts || null,
@@ -466,7 +452,7 @@ export async function synthesizeIndustryBriefWithAi(params: {
         { role: 'user', content: buildFinalUserPrompt(params.baseBrief, params.sourceRecords, params.financialFacts) },
       ],
       temperature: 0.2,
-      maxTokens: 2600,
+      maxTokens: 1800,
     }),
     'Industry Brief final AI synthesis',
     'final',
