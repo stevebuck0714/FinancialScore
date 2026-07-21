@@ -150,11 +150,11 @@ function normalizeHealthIndicators(value: unknown, fallback: DailyIndustryBrief[
 function normalizeMarketSignals(value: unknown, fallback: DailyIndustryBrief['marketSignals']): DailyIndustryBrief['marketSignals'] {
   return validArray(value, fallback).map((item, index) => {
     const row = asObject(item);
-    const category = textValue(row.category) || fallback[index]?.category || '';
-    const title = textValue(row.title) || fallback[index]?.title || '';
-    const currentValue = textValue(row.currentValue) || fallback[index]?.currentValue || '';
-    const trend = textValue(row.trend) || fallback[index]?.trend || '';
-    const impact = oneOfAlias(row.impact, ['positive', 'neutral', 'negative'] as const, {
+    const category = textValue(field(row, ['category', 'type', 'signalCategory', 'signal_category'])) || fallback[index]?.category || '';
+    const title = textValue(field(row, ['title', 'signal', 'name', 'indicator'])) || fallback[index]?.title || '';
+    const currentValue = textValue(field(row, ['currentValue', 'current_value', 'value', 'today', 'latestValue', 'latest_value'])) || fallback[index]?.currentValue || '';
+    const trend = textValue(field(row, ['trend', 'direction', 'change'])) || fallback[index]?.trend || '';
+    const impact = oneOfAlias(field(row, ['impact', 'expectedImpact', 'expected_impact', 'companyImpact', 'company_impact']), ['positive', 'neutral', 'negative'] as const, {
       favorable: 'positive',
       helpful: 'positive',
       opportunity: 'positive',
@@ -164,7 +164,7 @@ function normalizeMarketSignals(value: unknown, fallback: DailyIndustryBrief['ma
       adverse: 'negative',
       unfavorable: 'negative',
     }) || fallback[index]?.impact || null;
-    const companyImplication = textValue(row.companyImplication) || fallback[index]?.companyImplication || '';
+    const companyImplication = textValue(field(row, ['companyImplication', 'company_implication', 'implication', 'businessImplication', 'business_implication', 'whyItMatters', 'why_it_matters'])) || fallback[index]?.companyImplication || '';
     if (!category || !title || !currentValue || !trend || !impact || !companyImplication) return null;
     return {
       category,
@@ -173,7 +173,7 @@ function normalizeMarketSignals(value: unknown, fallback: DailyIndustryBrief['ma
       trend,
       impact,
       companyImplication,
-      sources: stringList(row.sources, fallback[index]?.sources || []),
+      sources: stringList(field(row, ['sources', 'source', 'evidence', 'citations']), fallback[index]?.sources || []),
     };
   }).filter((item): item is DailyIndustryBrief['marketSignals'][number] => Boolean(item));
 }
@@ -211,7 +211,7 @@ function normalizeGrowthOpportunities(value: unknown, fallback: DailyIndustryBri
     const recommendedAction = textValue(row.recommendedAction) || fallback[index]?.recommendedAction || '';
     const owner = textValue(row.owner) || fallback[index]?.owner || '';
     const estimatedImpact = textValue(row.estimatedImpact) || fallback[index]?.estimatedImpact || '';
-    const evidence = stringList(row.evidence, fallback[index]?.evidence || []);
+    const evidence = stringList(field(row, ['evidence', 'sources', 'source', 'citations', 'supportingEvidence', 'supporting_evidence']), fallback[index]?.evidence || []);
     if (!title || score == null || !revenuePotential || !marginPotential || !urgency || !confidence || !whyNow || !recommendedAction || !owner || !estimatedImpact || evidence.length === 0) return null;
     return {
       id: textValue(row.id) || fallback[index]?.id || title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, ''),
@@ -478,12 +478,13 @@ function buildJsonRepairSystemPrompt(): string {
   ].join('\n');
 }
 
-function buildJsonRepairUserPrompt(originalTask: string, priorOutput: string): string {
+function buildJsonRepairUserPrompt(originalTask: string, priorOutput: string, validationError?: string): string {
   return JSON.stringify({
     task: 'Return a single valid JSON object for the DailyIndustryBrief dashboard analysis fields.',
     requiredShape: 'executiveSummary{status,headline,bullets,expectedImpact60Days}, overallScore, healthIndicators[{key,label,score,trend,note}], marketSignals[{category,title,currentValue,trend,impact,companyImplication,sources}], growthOpportunities[{id,title,score,revenuePotential,marginPotential,urgency,confidence,whyNow,recommendedAction,owner,estimatedImpact,evidence}], recommendedActions{today,next30Days,next90Days}, riskMonitor[{risk,level,note}], aiInsight',
     originalTask: JSON.parse(originalTask),
     priorMalformedOutput: String(priorOutput || '').slice(0, 12000),
+    validationError: validationError || null,
     constraints: [
       'Return JSON only.',
       'Include exactly 4 healthIndicators, 4 marketSignals, 2 growthOpportunities, and 2 riskMonitor items.',
@@ -495,6 +496,36 @@ function buildJsonRepairUserPrompt(originalTask: string, priorOutput: string): s
 
 function nonJsonSnippet(text: string): string {
   return String(text || '').replace(/\s+/g, ' ').trim().slice(0, 300);
+}
+
+async function repairFinalJson(params: {
+  openai: ReturnType<typeof getOpenAiClient>;
+  model: string;
+  finalUserPrompt: string;
+  priorOutput: string;
+  timeoutMs: number;
+  validationError?: string;
+}): Promise<Record<string, unknown>> {
+  const repaired = await withIndustryBriefTimeout(
+    createModelText({
+      openai: params.openai,
+      model: params.model,
+      messages: [
+        { role: 'system', content: buildJsonRepairSystemPrompt() },
+        { role: 'user', content: buildJsonRepairUserPrompt(params.finalUserPrompt, params.priorOutput, params.validationError) },
+      ],
+      temperature: 0.1,
+      maxTokens: 3000,
+      timeoutMs: params.timeoutMs + 5000,
+    }),
+    'Industry Brief final JSON repair',
+    'final',
+  );
+  const parsed = extractJsonObject(repaired.text);
+  if (!parsed) {
+    throw new Error(`Industry Brief AI returned non-JSON output after repair. finishReason=${repaired.finishReason || 'unknown'} snippet="${nonJsonSnippet(repaired.text)}"`);
+  }
+  return parsed;
 }
 
 function buildScanSystemPrompt(): string {
@@ -565,28 +596,30 @@ export async function synthesizeIndustryBriefWithAi(params: {
   );
   let parsed = extractJsonObject(result.text);
   if (!parsed) {
-    const repaired = await withIndustryBriefTimeout(
-      createModelText({
+    parsed = await repairFinalJson({
+      openai,
+      model: params.config.finalModel,
+      finalUserPrompt,
+      priorOutput: result.text,
+      timeoutMs,
+    });
+  }
+  let brief = mergeAiBrief(params.baseBrief, parsed, params.config, params.sourceRecords, 'final');
+  try {
+    validateCompleteBrief(brief, 'final');
+  } catch (error) {
+    const validationMessage = error instanceof Error ? error.message : String(error);
+    const repairedParsed = await repairFinalJson({
         openai,
         model: params.config.finalModel,
-        messages: [
-          { role: 'system', content: buildJsonRepairSystemPrompt() },
-          { role: 'user', content: buildJsonRepairUserPrompt(finalUserPrompt, result.text) },
-        ],
-        temperature: 0.1,
-        maxTokens: 3000,
-        timeoutMs: timeoutMs + 5000,
-      }),
-      'Industry Brief final JSON repair',
-      'final',
-    );
-    parsed = extractJsonObject(repaired.text);
-    if (!parsed) {
-      throw new Error(`Industry Brief AI returned non-JSON output. finishReason=${result.finishReason || 'unknown'} snippet="${nonJsonSnippet(result.text)}"`);
-    }
+        finalUserPrompt,
+        priorOutput: JSON.stringify(parsed),
+        timeoutMs,
+        validationError: validationMessage,
+      });
+    brief = mergeAiBrief(params.baseBrief, repairedParsed, params.config, params.sourceRecords, 'final');
+    validateCompleteBrief(brief, 'final');
   }
-  const brief = mergeAiBrief(params.baseBrief, parsed, params.config, params.sourceRecords, 'final');
-  validateCompleteBrief(brief, 'final');
   return brief;
 }
 
