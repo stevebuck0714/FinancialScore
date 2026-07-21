@@ -122,7 +122,10 @@ export async function claimNextIndustryBriefJob(): Promise<IndustryBriefJob | nu
          OR ("status" = 'running' AND "leaseExpiresAt" IS NOT NULL AND "leaseExpiresAt" < CURRENT_TIMESTAMP)
          OR ("status" = 'failed' AND "attemptCount" < "maxAttempts" AND "availableAt" <= CURRENT_TIMESTAMP)
        )
-       ORDER BY "availableAt" ASC, "createdAt" ASC
+       ORDER BY
+         CASE WHEN "source" = 'industry-brief-cache-miss' THEN 0 ELSE 1 END,
+         "availableAt" ASC,
+         "createdAt" ASC
        LIMIT 1
      )
      UPDATE "IndustryBriefGenerationJob" job
@@ -135,6 +138,38 @@ export async function claimNextIndustryBriefJob(): Promise<IndustryBriefJob | nu
      FROM next_job
      WHERE job."id" = next_job."id"
      RETURNING job.*`
+  );
+  return rows[0] ? mapJob(rows[0]) : null;
+}
+
+export async function claimIndustryBriefJobForCompany(companyId: string): Promise<IndustryBriefJob | null> {
+  await ensureIndustryBriefJobTable();
+  const normalizedCompanyId = String(companyId || '').trim();
+  if (!normalizedCompanyId) return null;
+  const rows = await prisma.$queryRawUnsafe<any[]>(
+    `WITH next_job AS (
+       SELECT "id"
+       FROM "IndustryBriefGenerationJob"
+       WHERE "companyId" = $1
+         AND (
+           "status" = 'queued'
+           OR ("status" = 'running' AND "leaseExpiresAt" IS NOT NULL AND "leaseExpiresAt" < CURRENT_TIMESTAMP)
+           OR ("status" = 'failed' AND "attemptCount" < "maxAttempts" AND "availableAt" <= CURRENT_TIMESTAMP)
+         )
+       ORDER BY "availableAt" ASC, "createdAt" ASC
+       LIMIT 1
+     )
+     UPDATE "IndustryBriefGenerationJob" job
+     SET "status" = 'running',
+         "attemptCount" = job."attemptCount" + 1,
+         "startedAt" = CURRENT_TIMESTAMP,
+         "leaseExpiresAt" = CURRENT_TIMESTAMP + INTERVAL '5 minutes',
+         "updatedAt" = CURRENT_TIMESTAMP,
+         "errorMessage" = NULL
+     FROM next_job
+     WHERE job."id" = next_job."id"
+     RETURNING job.*`,
+    normalizedCompanyId,
   );
   return rows[0] ? mapJob(rows[0]) : null;
 }

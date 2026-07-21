@@ -1,4 +1,5 @@
 import {
+  claimIndustryBriefJobForCompany,
   claimNextIndustryBriefJob,
   completeIndustryBriefJob,
   failIndustryBriefJob,
@@ -40,9 +41,9 @@ async function processOne(job: IndustryBriefJob): Promise<IndustryBriefJobProces
   }
 }
 
-export async function processIndustryBriefJobs(limit = 1): Promise<IndustryBriefJobProcessResult> {
+export async function processIndustryBriefJobs(limit = 5): Promise<IndustryBriefJobProcessResult> {
   const jobs: IndustryBriefJobProcessResult['jobs'] = [];
-  const max = Math.max(1, Math.min(5, Math.floor(limit)));
+  const max = Math.max(1, Math.min(10, Math.floor(limit)));
   for (let index = 0; index < max; index += 1) {
     const job = await claimNextIndustryBriefJob();
     if (!job) break;
@@ -53,5 +54,19 @@ export async function processIndustryBriefJobs(limit = 1): Promise<IndustryBrief
     completed: jobs.filter((job) => job.status === 'done').length,
     failed: jobs.filter((job) => job.status === 'failed').length,
     jobs,
+  };
+}
+
+export async function processIndustryBriefJobForCompany(companyId: string): Promise<IndustryBriefJobProcessResult> {
+  const job = await claimIndustryBriefJobForCompany(companyId);
+  if (!job) {
+    return { processed: 0, completed: 0, failed: 0, jobs: [] };
+  }
+  const processed = await processOne(job);
+  return {
+    processed: 1,
+    completed: processed.status === 'done' ? 1 : 0,
+    failed: processed.status === 'failed' ? 1 : 0,
+    jobs: [processed],
   };
 }

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { processIndustryBriefJobs } from '@/lib/industry-brief/job-processor';
+import { processIndustryBriefJobForCompany, processIndustryBriefJobs } from '@/lib/industry-brief/job-processor';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 300;
@@ -16,7 +16,12 @@ export async function GET(request: NextRequest) {
   if (!isAuthorized(request)) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
-  const limit = Number(request.nextUrl.searchParams.get('limit') || 1);
+  const companyId = String(request.nextUrl.searchParams.get('companyId') || '').trim();
+  if (companyId) {
+    const result = await processIndustryBriefJobForCompany(companyId);
+    return NextResponse.json({ ok: true, ...result });
+  }
+  const limit = Number(request.nextUrl.searchParams.get('limit') || 5);
   const result = await processIndustryBriefJobs(limit);
   return NextResponse.json({ ok: true, ...result });
 }

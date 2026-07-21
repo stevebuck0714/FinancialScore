@@ -5,6 +5,7 @@ import {
   readCachedIndustryBrief,
 } from '@/lib/industry-brief/cache';
 import { enqueueIndustryBriefJob, getIndustryBriefJob } from '@/lib/industry-brief/jobs';
+import { processIndustryBriefJobForCompany } from '@/lib/industry-brief/job-processor';
 import { loadIndustryBriefCompany } from '@/lib/industry-brief/service';
 import { warmDailyIndustryBriefCache } from '@/lib/industry-brief/warmup';
 
@@ -55,6 +56,12 @@ export async function GET(request: NextRequest) {
       const job = await enqueueIndustryBriefJob({
         companyId,
         source: 'industry-brief-cache-miss',
+      });
+      processIndustryBriefJobForCompany(companyId).catch((error) => {
+        console.warn('Daily Industry Brief same-company processor kick failed:', {
+          companyId,
+          error: String(error?.message || error).slice(0, 500),
+        });
       });
       return NextResponse.json(
         {
