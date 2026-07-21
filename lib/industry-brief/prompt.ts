@@ -512,9 +512,13 @@ function candidateShape(candidate: Record<string, unknown>): string {
     if (value && typeof value === 'object') return { type: 'object', keys: Object.keys(value as Record<string, unknown>).slice(0, 12) };
     return { type: typeof value };
   };
+  const marketSignals = field(candidate, ['marketSignals', 'market_signals', 'signals']);
+  const marketSignalItems = valueList(marketSignals);
+  const firstMarketSignal = asObject(marketSignalItems[0]);
   return JSON.stringify({
     topLevelKeys: Object.keys(candidate).slice(0, 20),
-    marketSignals: summarize(field(candidate, ['marketSignals', 'market_signals', 'signals'])),
+    marketSignals: summarize(marketSignals),
+    firstMarketSignalKeys: Object.keys(firstMarketSignal).slice(0, 20),
     growthOpportunities: summarize(field(candidate, ['growthOpportunities', 'growth_opportunities', 'opportunities', 'topOpportunities', 'top_opportunities'])),
     healthIndicators: summarize(field(candidate, ['healthIndicators', 'health_indicators', 'industryHealthScore', 'industry_health_score'])),
     riskMonitor: summarize(field(candidate, ['riskMonitor', 'risk_monitor', 'businessRiskMonitor', 'business_risk_monitor', 'risks'])),
