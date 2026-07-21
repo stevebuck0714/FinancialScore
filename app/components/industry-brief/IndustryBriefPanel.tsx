@@ -97,6 +97,7 @@ export default function IndustryBriefPanel({ companyId }: Props) {
   const [brief, setBrief] = useState<DailyIndustryBrief | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [generatingMessage, setGeneratingMessage] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'brief' | 'outlook'>('brief');
 
   const loadBrief = useCallback(async (force = false) => {
@@ -110,7 +111,13 @@ export default function IndustryBriefPanel({ companyId }: Props) {
       if (!response.ok) {
         throw new Error(await readErrorMessage(response));
       }
-      setBrief(await response.json());
+      const payload = await response.json();
+      if (payload?.status === 'generating') {
+        setGeneratingMessage(renderText(payload.message) || 'Daily Industry Brief is being generated. Please check again shortly.');
+        return;
+      }
+      setGeneratingMessage(null);
+      setBrief(payload);
     } catch (err: any) {
       setError(err?.message || 'Failed to load industry brief');
     } finally {
@@ -122,6 +129,14 @@ export default function IndustryBriefPanel({ companyId }: Props) {
     loadBrief();
   }, [loadBrief]);
 
+  useEffect(() => {
+    if (!generatingMessage || brief) return;
+    const timer = setTimeout(() => {
+      loadBrief(false);
+    }, 30000);
+    return () => clearTimeout(timer);
+  }, [brief, generatingMessage, loadBrief]);
+
   const topOpportunities = useMemo(
     () => [...(brief?.growthOpportunities || [])].sort((a, b) => (renderScore(b.score) ?? -1) - (renderScore(a.score) ?? -1)),
     [brief],
@@ -129,6 +144,23 @@ export default function IndustryBriefPanel({ companyId }: Props) {
 
   if (loading && !brief) {
     return <div style={{ ...cardStyle, color: '#475569', marginTop: '14px' }}>Loading Daily Industry Brief...</div>;
+  }
+
+  if (generatingMessage && !brief) {
+    return (
+      <div style={{ ...cardStyle, color: '#475569', marginTop: '14px', display: 'grid', gap: '10px' }}>
+        <div style={{ fontSize: '16px', fontWeight: 800, color: '#0f172a' }}>Daily Industry Brief Is Generating</div>
+        <div>{generatingMessage}</div>
+        <div style={{ fontSize: '12px', color: '#64748b' }}>This page will check again automatically.</div>
+        <button
+          onClick={() => loadBrief(false)}
+          disabled={loading}
+          style={{ justifySelf: 'start', border: '1px solid #cbd5e1', borderRadius: '999px', background: 'white', color: '#334155', padding: '6px 11px', fontSize: '12px', fontWeight: 800, cursor: loading ? 'not-allowed' : 'pointer' }}
+        >
+          {loading ? 'Checking...' : 'Check Again'}
+        </button>
+      </div>
+    );
   }
 
   if (error && !brief) {

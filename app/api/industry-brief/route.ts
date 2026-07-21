@@ -7,9 +7,10 @@ import { synthesizeIndustryBriefWithAi } from '@/lib/industry-brief/prompt';
 import { collectIndustryBriefSources } from '@/lib/industry-brief/sources';
 import type { DailyIndustryBrief } from '@/lib/industry-brief/types';
 import { requireAuth, validateCompanyAccess } from '@/lib/tenant-security';
+import { warmDailyIndustryBriefCache } from '@/lib/industry-brief/warmup';
 
 export const dynamic = 'force-dynamic';
-export const maxDuration = 90;
+export const maxDuration = 120;
 
 const CACHE_NAMESPACE = 'daily-industry-brief';
 const DATA_VERSION = 'v9-compact-final-synthesis';
@@ -33,6 +34,27 @@ function pct(numerator: number, denominator: number): number | null {
 
 function todayKey(): string {
   return new Date().toISOString().slice(0, 10);
+}
+
+function scheduleIndustryBriefWarmup(companyId: string, baseUrl: string): void {
+  warmDailyIndustryBriefCache({
+    companyId,
+    baseUrl,
+    source: 'industry-brief-cache-miss',
+  }).then((warmup) => {
+    if (!warmup.ok) {
+      console.warn('Daily Industry Brief background generation failed:', {
+        companyId,
+        error: warmup.error,
+        skipped: warmup.skipped,
+      });
+    }
+  }).catch((error) => {
+    console.warn('Daily Industry Brief background generation failed:', {
+      companyId,
+      error: String(error?.message || error).slice(0, 500),
+    });
+  });
 }
 
 async function loadFinancialFacts(companyId: string) {
@@ -116,6 +138,18 @@ export async function GET(request: NextRequest) {
       return NextResponse.json(
         { error: 'Industry Brief unavailable: missing company industry/location.' },
         { status: 422 },
+      );
+    }
+
+    if (!force && !authorizedByCron) {
+      scheduleIndustryBriefWarmup(companyId, request.nextUrl.origin);
+      return NextResponse.json(
+        {
+          status: 'generating',
+          message: 'Daily Industry Brief is being generated from live sources. Please check again shortly.',
+          dataVersion: DATA_VERSION,
+        },
+        { status: 202 },
       );
     }
 

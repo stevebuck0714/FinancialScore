@@ -88,12 +88,13 @@ async function createResponsesTextViaFetch(params: {
   input: string;
   temperature: number;
   maxTokens?: number;
+  timeoutMs?: number;
 }): Promise<{ text: string; finishReason?: string | null }> {
   const apiKey = getApiKey();
   const baseUrl = getApiBaseUrl();
   const providerOptions = getAiProviderOptions();
   const resolvedModel = resolveModelName(params.model);
-  const timeoutMs = getOpenAiTimeoutMs();
+  const timeoutMs = Math.max(1000, Math.min(180000, Math.floor(Number(params.timeoutMs || getOpenAiTimeoutMs()))));
 
   const basePayload: Record<string, unknown> = {
     model: resolvedModel,
@@ -299,9 +300,10 @@ export async function createModelText(params: {
   messages: OpenAIChatMessage[];
   temperature?: number;
   maxTokens?: number; // chat max_tokens; mapped to responses max_output_tokens
+  timeoutMs?: number;
 }): Promise<{ text: string; finishReason?: string | null; api: 'responses' | 'chat' }> {
   const { openai, model, messages, temperature = 0.2, maxTokens } = params;
-  const timeoutMs = getOpenAiTimeoutMs();
+  const timeoutMs = Math.max(1000, Math.min(180000, Math.floor(Number(params.timeoutMs || getOpenAiTimeoutMs()))));
 
   // 1) Prefer Responses API (required for gpt-5.x and some newer models).
   // Responses expects `instructions` instead of `system` messages.
@@ -324,6 +326,7 @@ export async function createModelText(params: {
       input,
       temperature,
       maxTokens,
+      timeoutMs,
     });
     return { text: r.text, finishReason: r.finishReason ?? null, api: 'responses' };
   } catch (e: unknown) {

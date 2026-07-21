@@ -443,6 +443,7 @@ export async function synthesizeIndustryBriefWithAi(params: {
   }
 
   const openai = getOpenAiClient();
+  const timeoutMs = industryBriefAiTimeoutMs('final');
   const result = await withIndustryBriefTimeout(
     createModelText({
       openai,
@@ -453,6 +454,7 @@ export async function synthesizeIndustryBriefWithAi(params: {
       ],
       temperature: 0.2,
       maxTokens: 1800,
+      timeoutMs: timeoutMs + 5000,
     }),
     'Industry Brief final AI synthesis',
     'final',
@@ -480,6 +482,7 @@ export async function scanIndustryBriefSourcesWithAi(params: {
   }
 
   const openai = getOpenAiClient();
+  const timeoutMs = industryBriefAiTimeoutMs('scan');
   const result = await withIndustryBriefTimeout(
     createModelText({
       openai,
@@ -490,6 +493,7 @@ export async function scanIndustryBriefSourcesWithAi(params: {
       ],
       temperature: 0.1,
       maxTokens: 6500,
+      timeoutMs: timeoutMs + 5000,
     }),
     'Industry Brief source classification',
     'scan',
