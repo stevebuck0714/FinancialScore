@@ -78,6 +78,59 @@ function formatDateTime(value?: string): string {
   return date.toLocaleString();
 }
 
+function renderFormattedOutlookText(text: unknown): React.ReactNode {
+  const lines = renderText(text)
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+  if (lines.length === 0) return null;
+
+  return (
+    <div style={{ display: 'grid', gap: '8px' }}>
+      {lines.map((line, index) => {
+        const heading = line.match(/^#{1,4}\s+(.+)$/);
+        if (heading) {
+          return (
+            <div key={`${index}-${line}`} style={{ fontSize: index === 0 ? '16px' : '14px', color: '#0f172a', fontWeight: 900, marginTop: index === 0 ? 0 : '8px' }}>
+              {renderText(heading[1])}
+            </div>
+          );
+        }
+        if (/^[-*]\s+/.test(line)) {
+          return (
+            <div key={`${index}-${line}`} style={{ display: 'grid', gridTemplateColumns: '14px minmax(0, 1fr)', gap: '6px', fontSize: '13px', color: '#334155', lineHeight: 1.5 }}>
+              <span style={{ color: '#2751d0', fontWeight: 900 }}>•</span>
+              <span>{line.replace(/^[-*]\s+/, '')}</span>
+            </div>
+          );
+        }
+        if (/^\d+\.\s+/.test(line)) {
+          const marker = line.match(/^(\d+)\.\s+/)?.[1] || '';
+          return (
+            <div key={`${index}-${line}`} style={{ display: 'grid', gridTemplateColumns: '22px minmax(0, 1fr)', gap: '6px', fontSize: '13px', color: '#334155', lineHeight: 1.5 }}>
+              <span style={{ color: '#2751d0', fontWeight: 900 }}>{marker}.</span>
+              <span>{line.replace(/^\d+\.\s+/, '')}</span>
+            </div>
+          );
+        }
+        const label = line.match(/^([A-Z][A-Za-z &/()-]{2,45}):\s+(.+)$/);
+        if (label) {
+          return (
+            <div key={`${index}-${line}`} style={{ fontSize: '13px', color: '#334155', lineHeight: 1.5 }}>
+              <strong style={{ color: '#0f172a' }}>{renderText(label[1])}:</strong> {renderText(label[2])}
+            </div>
+          );
+        }
+        return (
+          <div key={`${index}-${line}`} style={{ fontSize: '13px', color: '#334155', lineHeight: 1.55 }}>
+            {line}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 async function readErrorMessage(response: Response): Promise<string> {
   const text = await response.text().catch(() => '');
   if (text) {
@@ -144,6 +197,19 @@ export default function IndustryBriefPanel({ companyId }: Props) {
     () => [...(brief?.growthOpportunities || [])].sort((a, b) => (renderScore(b.score) ?? -1) - (renderScore(a.score) ?? -1)),
     [brief],
   );
+  const outlookGroups = useMemo(() => {
+    const items = brief?.industryOutlook || [];
+    const news = items.filter((item) => {
+      const provider = renderText(item.provider).toLowerCase();
+      const category = renderText(item.category).toLowerCase();
+      return provider === 'perplexity' || category.includes('news') || category.includes('competitive');
+    });
+    const newsIds = new Set(news.map((item) => renderText(item.id)));
+    return {
+      news,
+      metrics: items.filter((item) => !newsIds.has(renderText(item.id))),
+    };
+  }, [brief]);
 
   if (loading && !brief) {
     return <div style={{ ...cardStyle, color: '#475569', marginTop: '14px' }}>Loading Daily Industry Brief...</div>;
@@ -258,40 +324,82 @@ export default function IndustryBriefPanel({ companyId }: Props) {
       {activeTab === 'outlook' ? (
         <>
           <div style={cardStyle}>
-            <div style={{ fontSize: '18px', fontWeight: 800, color: '#0f172a' }}>Industry Outlook</div>
+            <div style={{ fontSize: '18px', fontWeight: 800, color: '#0f172a' }}>Market & Competitive Outlook</div>
             <div style={{ fontSize: '13px', color: '#64748b', marginTop: '4px' }}>
-              Live source records used by the AI brief. If a category is not shown, it was not included in today&apos;s live source set.
+              Current industry, competitor, channel, and local-market context used by the AI brief.
             </div>
             <div style={{ marginTop: '12px', display: 'grid', gap: '12px' }}>
-              {brief.industryOutlook.map((item) => (
-                <div key={renderText(item.id)} style={{ border: '1px solid #e2e8f0', borderRadius: '12px', padding: '14px', background: '#f8fafc' }}>
+              {outlookGroups.news.length > 0 ? outlookGroups.news.map((item) => (
+                <div key={renderText(item.id)} style={{ border: '1px solid #bfdbfe', borderRadius: '12px', padding: '16px', background: '#f8fbff' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', gap: '10px', flexWrap: 'wrap' }}>
                     <div>
                       <div style={{ fontSize: '12px', color: '#2751d0', fontWeight: 900, textTransform: 'uppercase' }}>{renderText(item.category)}</div>
-                      <div style={{ fontSize: '15px', color: '#0f172a', fontWeight: 850, marginTop: '3px' }}>{renderText(item.title)}</div>
+                      <div style={{ fontSize: '16px', color: '#0f172a', fontWeight: 850, marginTop: '3px' }}>{renderText(item.title)}</div>
                     </div>
                     <span style={{ alignSelf: 'flex-start', fontSize: '11px', color: '#166534', background: '#dcfce7', border: '1px solid #bbf7d0', borderRadius: '999px', padding: '4px 8px', fontWeight: 900 }}>
                       Live: {renderText(item.provider)}
                     </span>
                   </div>
-                  {(item.value || item.publishedAt) && (
-                    <div style={{ fontSize: '12px', color: '#64748b', marginTop: '7px' }}>
-                      {item.value ? `Value: ${renderText(item.value)}` : ''}{item.value && item.publishedAt ? ' | ' : ''}{item.publishedAt ? `As of ${renderText(item.publishedAt)}` : ''}
-                    </div>
-                  )}
-                  <div style={{ fontSize: '13px', color: '#334155', marginTop: '8px', whiteSpace: 'pre-wrap' }}>{renderText(item.summary)}</div>
+                  <div style={{ marginTop: '10px' }}>{renderFormattedOutlookText(item.summary)}</div>
                   {item.citations.length > 0 && (
-                    <div style={{ marginTop: '8px', display: 'grid', gap: '4px' }}>
-                      {item.citations.slice(0, 5).map((citation) => (
-                        <a key={renderText(citation)} href={renderText(citation)} target="_blank" rel="noreferrer" style={{ fontSize: '12px', color: '#1d4ed8', overflowWrap: 'anywhere' }}>
-                          {renderText(citation)}
-                        </a>
-                      ))}
-                    </div>
+                    <details style={{ marginTop: '10px' }}>
+                      <summary style={{ fontSize: '12px', color: '#1d4ed8', fontWeight: 800, cursor: 'pointer' }}>Sources ({item.citations.length})</summary>
+                      <div style={{ marginTop: '8px', display: 'grid', gap: '4px' }}>
+                        {item.citations.slice(0, 12).map((citation) => (
+                          <a key={renderText(citation)} href={renderText(citation)} target="_blank" rel="noreferrer" style={{ fontSize: '12px', color: '#1d4ed8', overflowWrap: 'anywhere' }}>
+                            {renderText(citation)}
+                          </a>
+                        ))}
+                      </div>
+                    </details>
                   )}
+                </div>
+              )) : (
+                <div style={{ fontSize: '13px', color: '#64748b' }}>No news or competitive source records were included in today&apos;s live source set.</div>
+              )}
+            </div>
+          </div>
+
+          <div style={cardStyle}>
+            <div style={{ fontSize: '18px', fontWeight: 800, color: '#0f172a' }}>Key Economic Signals</div>
+            <div style={{ fontSize: '13px', color: '#64748b', marginTop: '4px' }}>
+              Compact live economic values used as evidence by the brief.
+            </div>
+            <div style={{ marginTop: '12px', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))', gap: '10px' }}>
+              {outlookGroups.metrics.map((item) => (
+                <div key={renderText(item.id)} style={{ border: '1px solid #e2e8f0', borderRadius: '12px', padding: '12px', background: '#f8fafc', minHeight: '110px' }}>
+                  <div style={{ fontSize: '11px', color: '#2751d0', fontWeight: 900, textTransform: 'uppercase' }}>{renderText(item.category)}</div>
+                  <div style={{ fontSize: '13px', color: '#0f172a', fontWeight: 850, marginTop: '4px' }}>{renderText(item.title)}</div>
+                  <div style={{ fontSize: '18px', color: '#0f172a', fontWeight: 900, marginTop: '7px' }}>{renderText(item.value) || 'Live source'}</div>
+                  <div style={{ fontSize: '12px', color: '#64748b', marginTop: '4px' }}>
+                    {item.publishedAt ? `As of ${renderText(item.publishedAt)}` : renderText(item.provider)}
+                  </div>
+                  <div style={{ fontSize: '12px', color: '#475569', marginTop: '7px' }}>{renderText(item.summary)}</div>
                 </div>
               ))}
             </div>
+            {brief.industryOutlook.length > 0 && (
+              <details style={{ marginTop: '14px' }}>
+                <summary style={{ fontSize: '12px', color: '#475569', fontWeight: 900, cursor: 'pointer' }}>Source Detail & Citations</summary>
+                <div style={{ marginTop: '10px', display: 'grid', gap: '10px' }}>
+                  {brief.industryOutlook.map((item) => (
+                    <div key={`source-${renderText(item.id)}`} style={{ borderTop: '1px solid #f1f5f9', paddingTop: '10px' }}>
+                      <div style={{ fontSize: '13px', color: '#0f172a', fontWeight: 850 }}>{renderText(item.provider)}: {renderText(item.title)}</div>
+                      <div style={{ fontSize: '12px', color: '#64748b', marginTop: '3px' }}>{renderText(item.category)}{item.publishedAt ? ` | ${renderText(item.publishedAt)}` : ''}</div>
+                      {item.citations.length > 0 && (
+                        <div style={{ marginTop: '5px', display: 'grid', gap: '3px' }}>
+                          {item.citations.slice(0, 5).map((citation) => (
+                            <a key={renderText(citation)} href={renderText(citation)} target="_blank" rel="noreferrer" style={{ fontSize: '12px', color: '#1d4ed8', overflowWrap: 'anywhere' }}>
+                              {renderText(citation)}
+                            </a>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </details>
+            )}
           </div>
 
           <div style={cardStyle}>
