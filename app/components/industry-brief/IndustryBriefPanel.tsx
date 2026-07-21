@@ -98,6 +98,7 @@ export default function IndustryBriefPanel({ companyId }: Props) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [generatingMessage, setGeneratingMessage] = useState<string | null>(null);
+  const [generatingStatus, setGeneratingStatus] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'brief' | 'outlook'>('brief');
 
   const loadBrief = useCallback(async (force = false) => {
@@ -114,9 +115,11 @@ export default function IndustryBriefPanel({ companyId }: Props) {
       const payload = await response.json();
       if (payload?.status === 'generating') {
         setGeneratingMessage(renderText(payload.message) || 'Daily Industry Brief is being generated. Please check again shortly.');
+        setGeneratingStatus(renderText(payload.jobStatus) || null);
         return;
       }
       setGeneratingMessage(null);
+      setGeneratingStatus(null);
       setBrief(payload);
     } catch (err: any) {
       setError(err?.message || 'Failed to load industry brief');
@@ -151,6 +154,9 @@ export default function IndustryBriefPanel({ companyId }: Props) {
       <div style={{ ...cardStyle, color: '#475569', marginTop: '14px', display: 'grid', gap: '10px' }}>
         <div style={{ fontSize: '16px', fontWeight: 800, color: '#0f172a' }}>Daily Industry Brief Is Generating</div>
         <div>{generatingMessage}</div>
+        {generatingStatus && (
+          <div style={{ fontSize: '12px', color: '#64748b' }}>Generation status: {generatingStatus}</div>
+        )}
         <div style={{ fontSize: '12px', color: '#64748b' }}>This page will check again automatically.</div>
         <button
           onClick={() => loadBrief(false)}

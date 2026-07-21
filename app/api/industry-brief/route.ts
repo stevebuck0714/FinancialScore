@@ -1,93 +1,20 @@
 import { NextRequest, NextResponse } from 'next/server';
-import prisma from '@/lib/prisma';
-import { hashCacheParts, readDerivedApiCache, writeDerivedApiCache } from '@/lib/derived-api-cache';
-import { getIndustryBriefAiConfig } from '@/lib/industry-brief/ai-config';
-import { buildDailyIndustryBriefShell } from '@/lib/industry-brief/generator';
-import { synthesizeIndustryBriefWithAi } from '@/lib/industry-brief/prompt';
-import { collectIndustryBriefSources } from '@/lib/industry-brief/sources';
-import type { DailyIndustryBrief } from '@/lib/industry-brief/types';
 import { requireAuth, validateCompanyAccess } from '@/lib/tenant-security';
+import {
+  INDUSTRY_BRIEF_DATA_VERSION,
+  readCachedIndustryBrief,
+} from '@/lib/industry-brief/cache';
+import { enqueueIndustryBriefJob, getIndustryBriefJob } from '@/lib/industry-brief/jobs';
+import { loadIndustryBriefCompany } from '@/lib/industry-brief/service';
 import { warmDailyIndustryBriefCache } from '@/lib/industry-brief/warmup';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 120;
 
-const CACHE_NAMESPACE = 'daily-industry-brief';
-const DATA_VERSION = 'v9-compact-final-synthesis';
-const CACHE_TTL_SECONDS = 6 * 60 * 60;
-
 function isCronAuthorized(request: NextRequest): boolean {
   const cronSecret = String(process.env.CRON_SECRET || '').trim();
   const authHeader = String(request.headers.get('authorization') || '').trim();
   return Boolean(cronSecret && authHeader === `Bearer ${cronSecret}`);
-}
-
-function asNumber(value: unknown): number {
-  const n = Number(value ?? 0);
-  return Number.isFinite(n) ? n : 0;
-}
-
-function pct(numerator: number, denominator: number): number | null {
-  if (!Number.isFinite(denominator) || Math.abs(denominator) < 0.000001) return null;
-  return numerator / denominator;
-}
-
-function todayKey(): string {
-  return new Date().toISOString().slice(0, 10);
-}
-
-function scheduleIndustryBriefWarmup(companyId: string, baseUrl: string): void {
-  warmDailyIndustryBriefCache({
-    companyId,
-    baseUrl,
-    source: 'industry-brief-cache-miss',
-  }).then((warmup) => {
-    if (!warmup.ok) {
-      console.warn('Daily Industry Brief background generation failed:', {
-        companyId,
-        error: warmup.error,
-        skipped: warmup.skipped,
-      });
-    }
-  }).catch((error) => {
-    console.warn('Daily Industry Brief background generation failed:', {
-      companyId,
-      error: String(error?.message || error).slice(0, 500),
-    });
-  });
-}
-
-async function loadFinancialFacts(companyId: string) {
-  const rows = await prisma.monthlyFinancial.findMany({
-    where: { companyId },
-    orderBy: { monthDate: 'desc' },
-    take: 13,
-    select: {
-      revenue: true,
-      cogsTotal: true,
-      payroll: true,
-      cogsPayroll: true,
-      expense: true,
-      monthDate: true,
-    },
-  });
-
-  const ordered = [...rows].sort((a, b) => a.monthDate.getTime() - b.monthDate.getTime());
-  const ltm = ordered.slice(-12);
-  const revenue = ltm.reduce((sum, row) => sum + asNumber(row.revenue), 0);
-  const cogs = ltm.reduce((sum, row) => sum + asNumber(row.cogsTotal), 0);
-  const payroll = ltm.reduce((sum, row) => sum + asNumber(row.payroll) + asNumber(row.cogsPayroll), 0);
-  const grossProfit = revenue - cogs;
-  const latest = ordered[ordered.length - 1];
-  const prior = ordered[ordered.length - 2];
-
-  return {
-    revenueLastTwelveMonths: revenue,
-    grossMarginPct: pct(grossProfit, revenue),
-    cogsPct: pct(cogs, revenue),
-    payrollPct: pct(payroll, revenue),
-    latestRevenueTrendPct: latest && prior ? pct(asNumber(latest.revenue) - asNumber(prior.revenue), asNumber(prior.revenue)) : null,
-  };
 }
 
 export async function GET(request: NextRequest) {
@@ -109,110 +36,69 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    const cacheKey = hashCacheParts([companyId, todayKey()]);
     if (!force) {
-      const cached = await readDerivedApiCache<DailyIndustryBrief>({
-        namespace: CACHE_NAMESPACE,
-        cacheKey,
-        dataVersion: DATA_VERSION,
-      });
+      const cached = await readCachedIndustryBrief(companyId);
       if (cached) return NextResponse.json(cached);
     }
 
-    const company = await prisma.company.findUnique({
-      where: { id: companyId },
-      select: {
-        id: true,
-        name: true,
-        accountingSystem: true,
-        industrySectorCategory: true,
-        addressCity: true,
-        addressState: true,
-        subscriptionMonthlyPrice: true,
-      },
-    });
-    if (!company) {
-      return NextResponse.json({ error: 'Company not found' }, { status: 404 });
-    }
-    if (!String(company.industrySectorCategory || '').trim() || !String(company.addressCity || '').trim() || !String(company.addressState || '').trim()) {
+    try {
+      await loadIndustryBriefCompany(companyId);
+    } catch (companyError) {
+      const message = companyError instanceof Error ? companyError.message : String(companyError);
       return NextResponse.json(
-        { error: 'Industry Brief unavailable: missing company industry/location.' },
-        { status: 422 },
+        { error: message },
+        { status: message === 'Company not found' ? 404 : 422 },
       );
     }
 
     if (!force && !authorizedByCron) {
-      scheduleIndustryBriefWarmup(companyId, request.nextUrl.origin);
+      const job = await enqueueIndustryBriefJob({
+        companyId,
+        source: 'industry-brief-cache-miss',
+      });
       return NextResponse.json(
         {
           status: 'generating',
           message: 'Daily Industry Brief is being generated from live sources. Please check again shortly.',
-          dataVersion: DATA_VERSION,
+          jobStatus: job.status,
+          attempts: job.attemptCount,
+          error: job.errorMessage,
+          dataVersion: INDUSTRY_BRIEF_DATA_VERSION,
         },
         { status: 202 },
       );
     }
 
-    const financialFacts = await loadFinancialFacts(companyId);
-    const aiConfig = getIndustryBriefAiConfig();
-    const shell = buildDailyIndustryBriefShell({ company, financialFacts });
-    shell.aiMetadata = {
-      aiGenerated: true,
-      transport: aiConfig.transport,
-      finalModel: aiConfig.finalModel,
-      scanModel: aiConfig.scanModel,
-    };
-
-    let sourceRecords;
     try {
-      sourceRecords = await collectIndustryBriefSources({
-        name: shell.company.name,
-        industry: shell.company.industry,
-        segment: shell.company.segment,
-        location: shell.company.location,
-      });
-    } catch (sourceError) {
-      const sourceMessage = sourceError instanceof Error ? sourceError.message : String(sourceError);
-      console.error('Daily Industry Brief live source collection failed.', {
+      const warmup = await warmDailyIndustryBriefCache({
         companyId,
-        error: sourceMessage,
+        force,
+        source: authorizedByCron ? 'industry-brief-cron-force' : 'industry-brief-force',
       });
+      if (!warmup.ok) {
+        return NextResponse.json(
+          { error: warmup.error || 'Industry Brief unavailable: generation failed.' },
+          { status: 503 },
+        );
+      }
+      const cached = await readCachedIndustryBrief(companyId);
+      if (cached) return NextResponse.json(cached);
       return NextResponse.json(
-        { error: sourceMessage || 'Industry Brief unavailable: live source collection failed.' },
+        { error: 'Industry Brief generation completed but cache was not available.' },
         { status: 503 },
       );
-    }
-
-    let brief: DailyIndustryBrief;
-    try {
-      brief = await synthesizeIndustryBriefWithAi({
-        baseBrief: shell,
-        sourceRecords,
-        config: aiConfig,
-        financialFacts,
-      });
     } catch (aiError) {
       const aiMessage = aiError instanceof Error ? aiError.message : String(aiError);
       console.error('Daily Industry Brief AI synthesis failed.', {
         companyId,
-        model: aiConfig.finalModel,
         error: aiMessage,
       });
+      const job = await getIndustryBriefJob(companyId).catch(() => null);
       return NextResponse.json(
-        { error: aiMessage || 'Industry Brief unavailable: AI synthesis failed.' },
+        { error: aiMessage || 'Industry Brief unavailable: AI synthesis failed.', jobStatus: job?.status || null },
         { status: 503 },
       );
     }
-
-    await writeDerivedApiCache({
-      namespace: CACHE_NAMESPACE,
-      cacheKey,
-      dataVersion: DATA_VERSION,
-      payload: brief,
-      ttlSeconds: CACHE_TTL_SECONDS,
-    });
-
-    return NextResponse.json(brief);
   } catch (error: any) {
     const message = error?.message || 'Failed to load daily industry brief';
     const status = message.includes('Unauthorized') ? 401 : 500;

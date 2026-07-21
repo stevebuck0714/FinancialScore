@@ -30,6 +30,10 @@
       "memory": 3008,
       "maxDuration": 300
     },
+    "app/api/cron/process-industry-brief-jobs/route.ts": {
+      "memory": 3008,
+      "maxDuration": 300
+    },
     "app/api/cron/data-load-watchdog/route.ts": {
       "memory": 3008,
       "maxDuration": 300
@@ -75,6 +79,10 @@
     {
       "path": "/api/cron/run-company-pulse",
       "schedule": "30 10 * * *"
+    },
+    {
+      "path": "/api/cron/process-industry-brief-jobs",
+      "schedule": "*/5 * * * *"
     },
     {
       "path": "/api/cron/data-load-watchdog",

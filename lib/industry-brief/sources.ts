@@ -233,10 +233,12 @@ export async function collectPerplexityIndustryBriefSource(context: CompanySourc
     `Segment: ${context.segment}`,
     `Location: ${context.location}`,
     '',
-    'Find current, source-backed developments for BOTH the broader U.S. industry outlook and the company-local market.',
+    'Research current, source-backed developments for BOTH the broader U.S. industry outlook and the company-local market.',
     'Required broad industry coverage: industry demand, input commodities or ingredients, energy/fuel, freight/transportation, labor, regulation, consumer/channel trends, and competitor or capacity signals.',
     'Required local coverage: metro/state economic conditions, customer-channel demand, local labor availability, weather or operating risks, and nearby competitor/customer expansion where source-backed.',
-    'Return concise cited notes organized by category. Do not estimate private company revenue or employee counts unless an authoritative source states them.',
+    'Return research evidence only: concise cited notes organized by category, with source URLs or citations.',
+    'Do not recommend actions, score opportunities, write an executive summary, or infer what the company should do.',
+    'Do not estimate private company revenue or employee counts unless an authoritative source states them.',
   ].join('\n');
 
   const response = await fetchWithTimeout(
@@ -250,7 +252,7 @@ export async function collectPerplexityIndustryBriefSource(context: CompanySourc
       body: JSON.stringify({
         model: process.env.PERPLEXITY_MODEL || 'sonar-pro',
         messages: [
-          { role: 'system', content: 'You are a source-first business research analyst. Return concise notes with citations and uncertainty labels.' },
+          { role: 'system', content: 'You are a source-first business research analyst. Return concise evidence notes with citations and uncertainty labels. Do not provide strategic recommendations.' },
           { role: 'user', content: prompt },
         ],
         temperature: 0.1,
