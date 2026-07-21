@@ -53,6 +53,20 @@ export async function GET(request: NextRequest) {
     }
 
     if (!force && !authorizedByCron) {
+      const existingJob = await getIndustryBriefJob(companyId).catch(() => null);
+      if (existingJob?.status === 'failed') {
+        return NextResponse.json(
+          {
+            status: 'failed',
+            message: 'Daily Industry Brief generation failed.',
+            jobStatus: existingJob.status,
+            attempts: existingJob.attemptCount,
+            error: existingJob.errorMessage || 'Generation failed.',
+            dataVersion: INDUSTRY_BRIEF_DATA_VERSION,
+          },
+          { status: 503 },
+        );
+      }
       const job = await enqueueIndustryBriefJob({
         companyId,
         source: 'industry-brief-cache-miss',

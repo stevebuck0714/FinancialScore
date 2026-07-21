@@ -170,7 +170,19 @@ export default function IndustryBriefPanel({ companyId }: Props) {
   }
 
   if (error && !brief) {
-    return <div style={{ ...cardStyle, color: '#b91c1c', marginTop: '14px' }}>{error}</div>;
+    return (
+      <div style={{ ...cardStyle, color: '#b91c1c', marginTop: '14px', display: 'grid', gap: '10px' }}>
+        <div style={{ fontSize: '16px', fontWeight: 800 }}>Daily Industry Brief Failed</div>
+        <div>{error}</div>
+        <button
+          onClick={() => loadBrief(true)}
+          disabled={loading}
+          style={{ justifySelf: 'start', border: '1px solid #fecaca', borderRadius: '999px', background: 'white', color: '#991b1b', padding: '6px 11px', fontSize: '12px', fontWeight: 800, cursor: loading ? 'not-allowed' : 'pointer' }}
+        >
+          {loading ? 'Retrying...' : 'Retry Generation'}
+        </button>
+      </div>
+    );
   }
 
   if (!brief) return null;
