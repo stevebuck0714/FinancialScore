@@ -506,6 +506,21 @@ function nonJsonSnippet(text: string): string {
   return String(text || '').replace(/\s+/g, ' ').trim().slice(0, 300);
 }
 
+function candidateShape(candidate: Record<string, unknown>): string {
+  const summarize = (value: unknown) => {
+    if (Array.isArray(value)) return { type: 'array', length: value.length };
+    if (value && typeof value === 'object') return { type: 'object', keys: Object.keys(value as Record<string, unknown>).slice(0, 12) };
+    return { type: typeof value };
+  };
+  return JSON.stringify({
+    topLevelKeys: Object.keys(candidate).slice(0, 20),
+    marketSignals: summarize(field(candidate, ['marketSignals', 'market_signals', 'signals'])),
+    growthOpportunities: summarize(field(candidate, ['growthOpportunities', 'growth_opportunities', 'opportunities', 'topOpportunities', 'top_opportunities'])),
+    healthIndicators: summarize(field(candidate, ['healthIndicators', 'health_indicators', 'industryHealthScore', 'industry_health_score'])),
+    riskMonitor: summarize(field(candidate, ['riskMonitor', 'risk_monitor', 'businessRiskMonitor', 'business_risk_monitor', 'risks'])),
+  });
+}
+
 async function repairFinalJson(params: {
   openai: ReturnType<typeof getOpenAiClient>;
   model: string;
@@ -626,7 +641,12 @@ export async function synthesizeIndustryBriefWithAi(params: {
         validationError: validationMessage,
       });
     brief = mergeAiBrief(params.baseBrief, repairedParsed, params.config, params.sourceRecords, 'final');
-    validateCompleteBrief(brief, 'final');
+    try {
+      validateCompleteBrief(brief, 'final');
+    } catch (repairedError) {
+      const repairedMessage = repairedError instanceof Error ? repairedError.message : String(repairedError);
+      throw new Error(`${repairedMessage} candidateShape=${candidateShape(repairedParsed)}`);
+    }
   }
   return brief;
 }
