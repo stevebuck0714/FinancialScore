@@ -86,6 +86,8 @@ function textValue(value: unknown): string {
 }
 
 function stringList(value: unknown, fallback: unknown[] = []): string[] {
+  if (typeof value === 'string') return value.trim() ? [value.trim()] : [];
+  if (typeof value === 'number' || typeof value === 'boolean') return [String(value)];
   return validArray(value, fallback).map(textValue).filter(Boolean);
 }
 
@@ -95,8 +97,28 @@ function scoreValue(value: unknown): number | null {
 }
 
 function oneOf<T extends string>(value: unknown, allowed: readonly T[]): T | null {
-  const normalized = String(value || '').trim().toLowerCase();
+  const normalized = String(value || '').trim().toLowerCase().replace(/[\s-]+/g, '_');
   return allowed.find((item) => item === normalized) || null;
+}
+
+function oneOfAlias<T extends string>(
+  value: unknown,
+  allowed: readonly T[],
+  aliases: Record<string, T>,
+): T | null {
+  const normalized = String(value || '').trim().toLowerCase().replace(/[\s-]+/g, '_');
+  return allowed.find((item) => item === normalized) || aliases[normalized] || null;
+}
+
+function firstDefined(row: Record<string, unknown>, keys: string[]): unknown {
+  for (const key of keys) {
+    if (row[key] !== undefined && row[key] !== null && String(row[key]).trim() !== '') return row[key];
+  }
+  return undefined;
+}
+
+function field(candidate: Record<string, unknown>, keys: string[]): unknown {
+  return firstDefined(candidate, keys);
 }
 
 function normalizeHealthIndicators(value: unknown, fallback: DailyIndustryBrief['healthIndicators']): DailyIndustryBrief['healthIndicators'] {
@@ -104,7 +126,15 @@ function normalizeHealthIndicators(value: unknown, fallback: DailyIndustryBrief[
     const row = asObject(item);
     const label = textValue(row.label) || fallback[index]?.label || '';
     const score = scoreValue(row.score) ?? scoreValue(fallback[index]?.score);
-    const trend = oneOf(row.trend, ['improving', 'stable', 'tight', 'worsening'] as const) || fallback[index]?.trend || null;
+    const trend = oneOfAlias(row.trend, ['improving', 'stable', 'tight', 'worsening'] as const, {
+      better: 'improving',
+      favorable: 'improving',
+      flat: 'stable',
+      mixed: 'stable',
+      constrained: 'tight',
+      pressure: 'worsening',
+      deteriorating: 'worsening',
+    }) || fallback[index]?.trend || null;
     const note = textValue(row.note) || fallback[index]?.note || '';
     if (!label || score == null || !trend || !note) return null;
     return {
@@ -124,7 +154,16 @@ function normalizeMarketSignals(value: unknown, fallback: DailyIndustryBrief['ma
     const title = textValue(row.title) || fallback[index]?.title || '';
     const currentValue = textValue(row.currentValue) || fallback[index]?.currentValue || '';
     const trend = textValue(row.trend) || fallback[index]?.trend || '';
-    const impact = oneOf(row.impact, ['positive', 'neutral', 'negative'] as const) || fallback[index]?.impact || null;
+    const impact = oneOfAlias(row.impact, ['positive', 'neutral', 'negative'] as const, {
+      favorable: 'positive',
+      helpful: 'positive',
+      opportunity: 'positive',
+      mixed: 'neutral',
+      watch: 'neutral',
+      pressure: 'negative',
+      adverse: 'negative',
+      unfavorable: 'negative',
+    }) || fallback[index]?.impact || null;
     const companyImplication = textValue(row.companyImplication) || fallback[index]?.companyImplication || '';
     if (!category || !title || !currentValue || !trend || !impact || !companyImplication) return null;
     return {
@@ -144,10 +183,30 @@ function normalizeGrowthOpportunities(value: unknown, fallback: DailyIndustryBri
     const row = asObject(item);
     const title = textValue(row.title) || fallback[index]?.title || '';
     const score = scoreValue(row.score) ?? scoreValue(fallback[index]?.score);
-    const revenuePotential = oneOf(row.revenuePotential, ['low', 'medium', 'high'] as const) || fallback[index]?.revenuePotential || null;
-    const marginPotential = oneOf(row.marginPotential, ['low', 'medium', 'high'] as const) || fallback[index]?.marginPotential || null;
-    const urgency = oneOf(row.urgency, ['today', 'this_week', '30_days', '90_days'] as const) || fallback[index]?.urgency || null;
-    const confidence = oneOf(row.confidence, ['low', 'medium', 'high'] as const) || fallback[index]?.confidence || null;
+    const potentialAliases = {
+      moderate: 'medium',
+      mid: 'medium',
+      medium_high: 'high',
+      significant: 'high',
+      large: 'high',
+    } as const;
+    const revenuePotential = oneOfAlias(row.revenuePotential, ['low', 'medium', 'high'] as const, potentialAliases) || fallback[index]?.revenuePotential || null;
+    const marginPotential = oneOfAlias(row.marginPotential, ['low', 'medium', 'high'] as const, potentialAliases) || fallback[index]?.marginPotential || null;
+    const urgency = oneOfAlias(row.urgency, ['today', 'this_week', '30_days', '90_days'] as const, {
+      now: 'today',
+      immediate: 'today',
+      this_week: 'this_week',
+      week: 'this_week',
+      next_30_days: '30_days',
+      thirty_days: '30_days',
+      next_90_days: '90_days',
+      ninety_days: '90_days',
+    }) || fallback[index]?.urgency || null;
+    const confidence = oneOfAlias(row.confidence, ['low', 'medium', 'high'] as const, {
+      moderate: 'medium',
+      medium_high: 'high',
+      strong: 'high',
+    }) || fallback[index]?.confidence || null;
     const whyNow = textValue(row.whyNow) || fallback[index]?.whyNow || '';
     const recommendedAction = textValue(row.recommendedAction) || fallback[index]?.recommendedAction || '';
     const owner = textValue(row.owner) || fallback[index]?.owner || '';
@@ -175,7 +234,10 @@ function normalizeRiskMonitor(value: unknown, fallback: DailyIndustryBrief['risk
   return validArray(value, fallback).map((item, index) => {
     const row = asObject(item);
     const risk = textValue(row.risk) || fallback[index]?.risk || '';
-    const level = oneOf(row.level, ['low', 'medium', 'high'] as const) || fallback[index]?.level || null;
+    const level = oneOfAlias(row.level, ['low', 'medium', 'high'] as const, {
+      moderate: 'medium',
+      elevated: 'high',
+    }) || fallback[index]?.level || null;
     const note = textValue(row.note) || fallback[index]?.note || '';
     if (!risk || !level || !note) return null;
     return {
@@ -256,10 +318,22 @@ function mergeAiBrief(
   const candidateSourceNotes = normalizeLiveSourceNotes(candidate.sourceNotes);
   const requiredSourceNotes = sourceNotesFromRecords(sourceRecords);
   const industryOutlook = industryOutlookFromRecords(sourceRecords);
-  const healthIndicators = normalizeHealthIndicators(candidate.healthIndicators, base.healthIndicators);
-  const marketSignals = normalizeMarketSignals(candidate.marketSignals, base.marketSignals);
-  const growthOpportunities = normalizeGrowthOpportunities(candidate.growthOpportunities, base.growthOpportunities);
-  const riskMonitor = normalizeRiskMonitor(candidate.riskMonitor, base.riskMonitor);
+  const healthIndicators = normalizeHealthIndicators(
+    field(candidate, ['healthIndicators', 'health_indicators', 'industryHealthScore', 'industry_health_score']),
+    base.healthIndicators,
+  );
+  const marketSignals = normalizeMarketSignals(
+    field(candidate, ['marketSignals', 'market_signals', 'signals']),
+    base.marketSignals,
+  );
+  const growthOpportunities = normalizeGrowthOpportunities(
+    field(candidate, ['growthOpportunities', 'growth_opportunities', 'opportunities', 'topOpportunities', 'top_opportunities']),
+    base.growthOpportunities,
+  );
+  const riskMonitor = normalizeRiskMonitor(
+    field(candidate, ['riskMonitor', 'risk_monitor', 'businessRiskMonitor', 'business_risk_monitor', 'risks']),
+    base.riskMonitor,
+  );
   const computedOverallScore = healthIndicators.length > 0
     ? Math.round(healthIndicators.reduce((sum, indicator) => sum + indicator.score, 0) / healthIndicators.length)
     : null;
