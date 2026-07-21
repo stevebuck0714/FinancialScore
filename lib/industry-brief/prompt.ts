@@ -1,6 +1,12 @@
 import { getOpenAiClient } from '@/lib/ai-gateway';
 import { createModelText } from '@/lib/openai-helpers';
-import type { DailyIndustryBrief, IndustryBriefSourceNote, IndustryBriefSourceRecord } from '@/lib/industry-brief/types';
+import type {
+  DailyIndustryBrief,
+  GrowthOpportunity,
+  IndustryBriefImpact,
+  IndustryBriefSourceNote,
+  IndustryBriefSourceRecord,
+} from '@/lib/industry-brief/types';
 
 type IndustryBriefAiConfig = {
   transport: string;
@@ -118,6 +124,85 @@ function oneOfAlias<T extends string>(
   return allowed.find((item) => item === normalized) || aliases[normalized] || null;
 }
 
+function impactValue(value: unknown): IndustryBriefImpact | null {
+  const direct = oneOfAlias(value, ['positive', 'neutral', 'negative'] as const, {
+    favorable: 'positive',
+    helpful: 'positive',
+    opportunity: 'positive',
+    upside: 'positive',
+    tailwind: 'positive',
+    mixed: 'neutral',
+    watch: 'neutral',
+    moderate: 'neutral',
+    pressure: 'negative',
+    headwind: 'negative',
+    adverse: 'negative',
+    unfavorable: 'negative',
+  });
+  if (direct) return direct;
+  const text = textValue(value).toLowerCase();
+  if (!text) return null;
+  if (/(positive|favorable|helpful|opportun|upside|tailwind|improv|growth|lower cost|cost relief)/.test(text)) return 'positive';
+  if (/(negative|unfavorable|adverse|risk|pressure|headwind|worsen|higher cost|cost increase|margin pressure)/.test(text)) return 'negative';
+  return 'neutral';
+}
+
+function potentialValue(value: unknown): 'low' | 'medium' | 'high' | null {
+  const direct = oneOfAlias(value, ['low', 'medium', 'high'] as const, {
+    moderate: 'medium',
+    mid: 'medium',
+    medium_high: 'high',
+    significant: 'high',
+    large: 'high',
+    strong: 'high',
+    limited: 'low',
+    small: 'low',
+  });
+  if (direct) return direct;
+  const text = textValue(value).toLowerCase();
+  if (!text) return null;
+  if (/(high|strong|significant|large|material|major)/.test(text)) return 'high';
+  if (/(low|limited|small|minor)/.test(text)) return 'low';
+  return 'medium';
+}
+
+function urgencyValue(value: unknown): GrowthOpportunity['urgency'] | null {
+  const direct = oneOfAlias(value, ['today', 'this_week', '30_days', '90_days'] as const, {
+    now: 'today',
+    immediate: 'today',
+    this_week: 'this_week',
+    week: 'this_week',
+    next_30_days: '30_days',
+    thirty_days: '30_days',
+    next_month: '30_days',
+    next_90_days: '90_days',
+    ninety_days: '90_days',
+    quarter: '90_days',
+  });
+  if (direct) return direct;
+  const text = textValue(value).toLowerCase();
+  if (!text) return null;
+  if (/(today|now|immediate)/.test(text)) return 'today';
+  if (/week/.test(text)) return 'this_week';
+  if (/(90|quarter)/.test(text)) return '90_days';
+  return '30_days';
+}
+
+function confidenceValue(value: unknown): 'low' | 'medium' | 'high' | null {
+  const direct = oneOfAlias(value, ['low', 'medium', 'high'] as const, {
+    moderate: 'medium',
+    mid: 'medium',
+    medium_high: 'high',
+    strong: 'high',
+  });
+  if (direct) return direct;
+  const text = textValue(value).toLowerCase();
+  if (!text) return null;
+  if (/(high|strong)/.test(text)) return 'high';
+  if (/(low|weak)/.test(text)) return 'low';
+  return 'medium';
+}
+
 function firstDefined(row: Record<string, unknown>, keys: string[]): unknown {
   for (const key of keys) {
     if (row[key] !== undefined && row[key] !== null && String(row[key]).trim() !== '') return row[key];
@@ -162,16 +247,7 @@ function normalizeMarketSignals(value: unknown, fallback: DailyIndustryBrief['ma
     const title = textValue(field(row, ['title', 'signal', 'name', 'indicator'])) || fallback[index]?.title || '';
     const currentValue = textValue(field(row, ['currentValue', 'current_value', 'value', 'today', 'latestValue', 'latest_value'])) || fallback[index]?.currentValue || '';
     const trend = textValue(field(row, ['trend', 'direction', 'change'])) || fallback[index]?.trend || '';
-    const impact = oneOfAlias(field(row, ['impact', 'expectedImpact', 'expected_impact', 'companyImpact', 'company_impact']), ['positive', 'neutral', 'negative'] as const, {
-      favorable: 'positive',
-      helpful: 'positive',
-      opportunity: 'positive',
-      mixed: 'neutral',
-      watch: 'neutral',
-      pressure: 'negative',
-      adverse: 'negative',
-      unfavorable: 'negative',
-    }) || fallback[index]?.impact || null;
+    const impact = impactValue(field(row, ['impact', 'expectedImpact', 'expected_impact', 'companyImpact', 'company_impact'])) || fallback[index]?.impact || null;
     const companyImplication = textValue(field(row, ['companyImplication', 'company_implication', 'implication', 'businessImplication', 'business_implication', 'whyItMatters', 'why_it_matters'])) || fallback[index]?.companyImplication || '';
     if (!category || !title || !currentValue || !trend || !impact || !companyImplication) return null;
     return {
@@ -191,30 +267,10 @@ function normalizeGrowthOpportunities(value: unknown, fallback: DailyIndustryBri
     const row = asObject(item);
     const title = textValue(row.title) || fallback[index]?.title || '';
     const score = scoreValue(row.score) ?? scoreValue(fallback[index]?.score);
-    const potentialAliases = {
-      moderate: 'medium',
-      mid: 'medium',
-      medium_high: 'high',
-      significant: 'high',
-      large: 'high',
-    } as const;
-    const revenuePotential = oneOfAlias(row.revenuePotential, ['low', 'medium', 'high'] as const, potentialAliases) || fallback[index]?.revenuePotential || null;
-    const marginPotential = oneOfAlias(row.marginPotential, ['low', 'medium', 'high'] as const, potentialAliases) || fallback[index]?.marginPotential || null;
-    const urgency = oneOfAlias(row.urgency, ['today', 'this_week', '30_days', '90_days'] as const, {
-      now: 'today',
-      immediate: 'today',
-      this_week: 'this_week',
-      week: 'this_week',
-      next_30_days: '30_days',
-      thirty_days: '30_days',
-      next_90_days: '90_days',
-      ninety_days: '90_days',
-    }) || fallback[index]?.urgency || null;
-    const confidence = oneOfAlias(row.confidence, ['low', 'medium', 'high'] as const, {
-      moderate: 'medium',
-      medium_high: 'high',
-      strong: 'high',
-    }) || fallback[index]?.confidence || null;
+    const revenuePotential = potentialValue(row.revenuePotential) || fallback[index]?.revenuePotential || null;
+    const marginPotential = potentialValue(row.marginPotential) || fallback[index]?.marginPotential || null;
+    const urgency = urgencyValue(row.urgency) || fallback[index]?.urgency || null;
+    const confidence = confidenceValue(row.confidence) || fallback[index]?.confidence || null;
     const whyNow = textValue(row.whyNow) || fallback[index]?.whyNow || '';
     const recommendedAction = textValue(row.recommendedAction) || fallback[index]?.recommendedAction || '';
     const owner = textValue(row.owner) || fallback[index]?.owner || '';
