@@ -8,13 +8,28 @@ const AI_RESEARCH_FIELDS = [
   'aiResearchIdentityAnchors',
 ] as const;
 
+const INDUSTRY_BRIEF_FIELDS = [
+  'industryBriefProductFocus',
+  'industryBriefBrands',
+  'industryBriefCustomerChannels',
+  'industryBriefCompetitors',
+  'industryBriefLocalMarketEvents',
+  'industryBriefKnownOpportunities',
+] as const;
+
 async function ensureAiResearchProfileColumns() {
   await prisma.$executeRawUnsafe(`
     ALTER TABLE "CompanyProfile"
       ADD COLUMN IF NOT EXISTS "aiResearchSearchName" TEXT,
       ADD COLUMN IF NOT EXISTS "aiResearchAliases" JSONB,
       ADD COLUMN IF NOT EXISTS "aiResearchExcludedNames" JSONB,
-      ADD COLUMN IF NOT EXISTS "aiResearchIdentityAnchors" JSONB
+      ADD COLUMN IF NOT EXISTS "aiResearchIdentityAnchors" JSONB,
+      ADD COLUMN IF NOT EXISTS "industryBriefProductFocus" TEXT,
+      ADD COLUMN IF NOT EXISTS "industryBriefBrands" JSONB,
+      ADD COLUMN IF NOT EXISTS "industryBriefCustomerChannels" TEXT,
+      ADD COLUMN IF NOT EXISTS "industryBriefCompetitors" TEXT,
+      ADD COLUMN IF NOT EXISTS "industryBriefLocalMarketEvents" TEXT,
+      ADD COLUMN IF NOT EXISTS "industryBriefKnownOpportunities" TEXT
   `);
 }
 
@@ -37,7 +52,16 @@ function splitAiResearchFields(profileData: Record<string, unknown>) {
   };
   const baseProfileData = { ...profileData };
   AI_RESEARCH_FIELDS.forEach((field) => delete baseProfileData[field]);
-  return { baseProfileData, aiResearch };
+  const industryBrief = {
+    industryBriefProductFocus: String(profileData.industryBriefProductFocus || '').trim(),
+    industryBriefBrands: normalizeStringList(profileData.industryBriefBrands),
+    industryBriefCustomerChannels: String(profileData.industryBriefCustomerChannels || '').trim(),
+    industryBriefCompetitors: String(profileData.industryBriefCompetitors || '').trim(),
+    industryBriefLocalMarketEvents: String(profileData.industryBriefLocalMarketEvents || '').trim(),
+    industryBriefKnownOpportunities: String(profileData.industryBriefKnownOpportunities || '').trim(),
+  };
+  INDUSTRY_BRIEF_FIELDS.forEach((field) => delete baseProfileData[field]);
+  return { baseProfileData, aiResearch, industryBrief };
 }
 
 async function getAiResearchFields(companyId: string) {
@@ -48,13 +72,25 @@ async function getAiResearchFields(companyId: string) {
       aiResearchAliases: unknown;
       aiResearchExcludedNames: unknown;
       aiResearchIdentityAnchors: unknown;
+      industryBriefProductFocus: string | null;
+      industryBriefBrands: unknown;
+      industryBriefCustomerChannels: string | null;
+      industryBriefCompetitors: string | null;
+      industryBriefLocalMarketEvents: string | null;
+      industryBriefKnownOpportunities: string | null;
     }>
   >`
     SELECT
       "aiResearchSearchName",
       "aiResearchAliases",
       "aiResearchExcludedNames",
-      "aiResearchIdentityAnchors"
+      "aiResearchIdentityAnchors",
+      "industryBriefProductFocus",
+      "industryBriefBrands",
+      "industryBriefCustomerChannels",
+      "industryBriefCompetitors",
+      "industryBriefLocalMarketEvents",
+      "industryBriefKnownOpportunities"
     FROM "CompanyProfile"
     WHERE "companyId" = ${companyId}
     LIMIT 1
@@ -65,6 +101,12 @@ async function getAiResearchFields(companyId: string) {
     aiResearchAliases: normalizeStringList(row?.aiResearchAliases),
     aiResearchExcludedNames: normalizeStringList(row?.aiResearchExcludedNames),
     aiResearchIdentityAnchors: normalizeStringList(row?.aiResearchIdentityAnchors),
+    industryBriefProductFocus: row?.industryBriefProductFocus || '',
+    industryBriefBrands: normalizeStringList(row?.industryBriefBrands),
+    industryBriefCustomerChannels: row?.industryBriefCustomerChannels || '',
+    industryBriefCompetitors: row?.industryBriefCompetitors || '',
+    industryBriefLocalMarketEvents: row?.industryBriefLocalMarketEvents || '',
+    industryBriefKnownOpportunities: row?.industryBriefKnownOpportunities || '',
   };
 }
 
@@ -115,7 +157,7 @@ export async function POST(request: NextRequest) {
     }
 
     await ensureAiResearchProfileColumns();
-    const { baseProfileData, aiResearch } = splitAiResearchFields(profileData);
+    const { baseProfileData, aiResearch, industryBrief } = splitAiResearchFields(profileData);
 
     const profile = await (prisma.companyProfile as any).upsert({
       where: { companyId },
@@ -131,16 +173,28 @@ export async function POST(request: NextRequest) {
        SET "aiResearchSearchName" = $1,
            "aiResearchAliases" = $2::jsonb,
            "aiResearchExcludedNames" = $3::jsonb,
-           "aiResearchIdentityAnchors" = $4::jsonb
-       WHERE "companyId" = $5`,
+           "aiResearchIdentityAnchors" = $4::jsonb,
+           "industryBriefProductFocus" = $5,
+           "industryBriefBrands" = $6::jsonb,
+           "industryBriefCustomerChannels" = $7,
+           "industryBriefCompetitors" = $8,
+           "industryBriefLocalMarketEvents" = $9,
+           "industryBriefKnownOpportunities" = $10
+       WHERE "companyId" = $11`,
       aiResearch.aiResearchSearchName || null,
       JSON.stringify(aiResearch.aiResearchAliases),
       JSON.stringify(aiResearch.aiResearchExcludedNames),
       JSON.stringify(aiResearch.aiResearchIdentityAnchors),
+      industryBrief.industryBriefProductFocus || null,
+      JSON.stringify(industryBrief.industryBriefBrands),
+      industryBrief.industryBriefCustomerChannels || null,
+      industryBrief.industryBriefCompetitors || null,
+      industryBrief.industryBriefLocalMarketEvents || null,
+      industryBrief.industryBriefKnownOpportunities || null,
       companyId,
     );
 
-    return NextResponse.json({ profile: { ...profile, ...aiResearch } });
+    return NextResponse.json({ profile: { ...profile, ...aiResearch, ...industryBrief } });
   } catch (error) {
     console.error('Error saving profile:', error);
     return NextResponse.json(

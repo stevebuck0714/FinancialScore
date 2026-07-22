@@ -51,7 +51,7 @@ export type IndustryBriefSourceNote = {
 
 export type IndustryBriefSourceRecord = {
   id: string;
-  provider: 'FRED' | 'BLS' | 'Perplexity';
+  provider: 'FRED' | 'BLS' | 'Perplexity' | 'Corelytics Company Profile';
   category: string;
   title: string;
   value?: string;

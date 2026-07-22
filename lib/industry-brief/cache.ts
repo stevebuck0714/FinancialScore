@@ -3,11 +3,11 @@ import { collectIndustryBriefSources } from '@/lib/industry-brief/sources';
 import type { DailyIndustryBrief, IndustryBriefSourceRecord } from '@/lib/industry-brief/types';
 
 export const INDUSTRY_BRIEF_CACHE_NAMESPACE = 'daily-industry-brief';
-export const INDUSTRY_BRIEF_DATA_VERSION = 'v16-targeted-source-profile-cache';
+export const INDUSTRY_BRIEF_DATA_VERSION = 'v18-company-intelligence-cache';
 export const INDUSTRY_BRIEF_CACHE_TTL_SECONDS = 36 * 60 * 60;
 
 const SOURCE_CACHE_NAMESPACE = 'daily-industry-brief-sources';
-const SOURCE_DATA_VERSION = 'v7-targeted-source-profile-bundle';
+const SOURCE_DATA_VERSION = 'v9-company-intelligence-source-bundle';
 const SOURCE_CACHE_TTL_SECONDS = 36 * 60 * 60;
 
 export type IndustryBriefSourceContext = {

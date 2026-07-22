@@ -248,6 +248,12 @@ export interface CompanyProfile {
   aiResearchAliases?: string[];
   aiResearchExcludedNames?: string[];
   aiResearchIdentityAnchors?: string[];
+  industryBriefProductFocus?: string;
+  industryBriefBrands?: string[];
+  industryBriefCustomerChannels?: string;
+  industryBriefCompetitors?: string;
+  industryBriefLocalMarketEvents?: string;
+  industryBriefKnownOpportunities?: string;
   disclosures: Record<string, string | { status?: string; notes?: string }>;
 }
 

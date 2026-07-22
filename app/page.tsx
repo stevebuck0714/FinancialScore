@@ -12237,33 +12237,53 @@ function FinancialScorePage() {
           .replace(/`+/g, '')
           .replace(/\s+/g, ' ')
           .trim();
+      const isIncompleteBriefFragment = (value: string): boolean => {
+        const text = value.trim();
+        if (!text) return true;
+        if (/^(industry reports since|reports since|since)$/i.test(text)) return true;
+        if (text.length < 28 && !/[.!?)]$/.test(text) && !/\[\d+\]/.test(text)) return true;
+        return false;
+      };
       const appendFormattedMarketScan = (summary: unknown) => {
         const rawLines = briefText(summary)
           .split(/\r?\n/)
           .map((line) => line.trim())
           .filter(Boolean);
-        rawLines.forEach((line) => {
-          if (/^[-_*]{3,}$/.test(line)) return;
+        const sections: Array<{ heading: string | null; items: string[] }> = [];
+        let current: { heading: string | null; items: string[] } = { heading: null, items: [] };
+        const pushCurrent = () => {
+          const items = current.items.filter((item) => !isIncompleteBriefFragment(item));
+          if (items.length > 0) sections.push({ heading: current.heading, items });
+          current = { heading: null, items: [] };
+        };
+        for (const line of rawLines) {
+          if (/^[-_*]{3,}$/.test(line)) continue;
           const heading = line.match(/^#{1,6}\s+(.+)$/);
           if (heading) {
+            pushCurrent();
             const headingText = cleanBriefMarkdown(heading[1]);
-            if (headingText) lines.push(`${headingText}:`);
-            return;
+            current = { heading: headingText || null, items: [] };
+            continue;
           }
           const bullet = line.match(/^[-*•]\s+(.+)$/);
           if (bullet) {
             const bulletText = cleanBriefMarkdown(bullet[1]);
-            if (bulletText) lines.push(`- ${bulletText}`);
-            return;
+            if (bulletText) current.items.push(bulletText);
+            continue;
           }
           const numbered = line.match(/^\d+\.\s+(.+)$/);
           if (numbered) {
             const numberedText = cleanBriefMarkdown(numbered[1]);
-            if (numberedText) lines.push(`- ${numberedText}`);
-            return;
+            if (numberedText) current.items.push(numberedText);
+            continue;
           }
           const cleanLine = cleanBriefMarkdown(line);
-          if (cleanLine) lines.push(`- ${cleanLine}`);
+          if (cleanLine) current.items.push(cleanLine);
+        }
+        pushCurrent();
+        sections.forEach((section) => {
+          if (section.heading) lines.push(`${section.heading}:`);
+          section.items.forEach((item) => lines.push(`- ${item}`));
         });
       };
       const outlookItems = Array.isArray(valuationIndustryBrief?.industryOutlook) ? valuationIndustryBrief.industryOutlook : [];

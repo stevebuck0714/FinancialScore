@@ -56,6 +56,9 @@ const BAKERY_FRED_SERIES: FredSeriesDefinition[] = [
   { id: 'fred-industrial-production', title: 'Industrial production index', category: 'Manufacturing', seriesId: 'INDPRO', url: 'https://fred.stlouisfed.org/series/INDPRO' },
   { id: 'fred-grocery-spending', title: 'Food and beverage store sales', category: 'Demand', seriesId: 'MRTSSM445USN', url: 'https://fred.stlouisfed.org/series/MRTSSM445USN' },
   { id: 'fred-commercial-bakery-ppi', title: 'Commercial bakery producer price index', category: 'Input Costs', seriesId: 'PCU311812311812', url: 'https://fred.stlouisfed.org/series/PCU311812311812' },
+  { id: 'fred-diesel-price', title: 'U.S. diesel price', category: 'Transportation Costs', seriesId: 'GASDESW', url: 'https://fred.stlouisfed.org/series/GASDESW' },
+  { id: 'fred-electricity-price', title: 'Average electricity price', category: 'Energy Costs', seriesId: 'APU000072610', url: 'https://fred.stlouisfed.org/series/APU000072610' },
+  { id: 'fred-natural-gas-price', title: 'Henry Hub natural gas spot price', category: 'Energy Costs', seriesId: 'MHHNGSP', url: 'https://fred.stlouisfed.org/series/MHHNGSP' },
 ];
 
 const FRED_CANDIDATES: Array<MetricCandidate<FredSeriesDefinition>> = [
@@ -175,6 +178,20 @@ function contextSectorKey(context: CompanySourceContext) {
 function isBakeryContext(context: CompanySourceContext): boolean {
   const combined = `${context.name} ${context.segment}`.toLowerCase();
   return /baker|bakery|bread/.test(combined);
+}
+
+function isEnergyFuelRelevantContext(context: CompanySourceContext): boolean {
+  const combined = [
+    context.name,
+    context.industry,
+    context.segment,
+    context.industryGroupName,
+    context.industryGroupDescription,
+    context.profileText,
+    context.productContext,
+    context.customerContext,
+  ].join(' ').toLowerCase();
+  return /(baker|bakery|bread|manufactur|distribution|distributor|delivery|deliver|fleet|freight|transport|logistics|warehouse|wholesale|route)/.test(combined);
 }
 
 function isMedicalScienceStaffingContext(context: CompanySourceContext): boolean {
@@ -453,12 +470,17 @@ export async function collectPerplexityIndustryBriefSource(context: CompanySourc
     context.industryGroupName ? `Detailed industry: ${context.industryGroupName}` : '',
     context.productContext ? `Known products/items: ${context.productContext}` : '',
     context.customerContext ? `Known customers/channels: ${context.customerContext}` : '',
+    context.profileText ? `Company intelligence/setup notes: ${context.profileText}` : '',
     `Location: ${context.location}`,
     '',
     retry
       ? 'Return 6 current, cited evidence bullets only: 3 industry/customer-demand bullets, 2 local-market bullets, and 1 competitor/regulatory/labor bullet.'
       : 'Return 8 current, cited evidence bullets only: industry demand, customer/channel demand, input or operating cost, labor, regulation, local market, and competitor/capacity signals.',
+    isEnergyFuelRelevantContext(context)
+      ? 'Include one cited energy/fuel/transportation-cost bullet when source-backed, especially electricity/power, diesel, fleet fuel, natural gas, utility, or local delivery cost signals relevant to manufacturing/distribution.'
+      : '',
     'Use only source-backed facts from authoritative or clearly identified sources.',
+    'Use company intelligence to focus searches, but verify external claims such as competitor exits, local capacity changes, or market developments with cited sources when possible.',
     'Each bullet must include the source name or URL/citation. Prefer recent sources from the last 30 days when available.',
     'Do not recommend actions, score opportunities, write an executive summary, or infer what the company should do.',
     'Do not estimate private company revenue or employee counts unless an authoritative source states them.',

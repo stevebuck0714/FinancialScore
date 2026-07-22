@@ -9,7 +9,7 @@ import {
 } from '@/lib/industry-brief/cache';
 import { normalizeIndustrySectorCategory } from '@/lib/performance-analytics/industry-sector-category';
 import { INDUSTRY_SECTORS } from '@/data/industrySectors';
-import type { DailyIndustryBrief } from '@/lib/industry-brief/types';
+import type { DailyIndustryBrief, IndustryBriefSourceRecord } from '@/lib/industry-brief/types';
 
 type FinancialFactInput = {
   revenueLastTwelveMonths: number;
@@ -41,6 +41,29 @@ function uniqueText(values: unknown[], limit: number): string {
     if (result.length >= limit) break;
   }
   return result.join(', ');
+}
+
+async function ensureIndustryBriefProfileColumns() {
+  await prisma.$executeRawUnsafe(`
+    ALTER TABLE "CompanyProfile"
+      ADD COLUMN IF NOT EXISTS "industryBriefProductFocus" TEXT,
+      ADD COLUMN IF NOT EXISTS "industryBriefBrands" JSONB,
+      ADD COLUMN IF NOT EXISTS "industryBriefCustomerChannels" TEXT,
+      ADD COLUMN IF NOT EXISTS "industryBriefCompetitors" TEXT,
+      ADD COLUMN IF NOT EXISTS "industryBriefLocalMarketEvents" TEXT,
+      ADD COLUMN IF NOT EXISTS "industryBriefKnownOpportunities" TEXT
+  `);
+}
+
+function stringList(value: unknown): string[] {
+  if (Array.isArray(value)) return value.map((item) => String(item || '').trim()).filter(Boolean);
+  if (typeof value === 'string') return value.split(/\r?\n|,/).map((item) => item.trim()).filter(Boolean);
+  return [];
+}
+
+function labeledText(label: string, value: unknown): string {
+  const text = Array.isArray(value) ? stringList(value).join(', ') : String(value || '').trim();
+  return text ? `${label}: ${text}` : '';
 }
 
 export async function loadIndustryBriefFinancialFacts(companyId: string): Promise<FinancialFactInput> {
@@ -77,7 +100,8 @@ export async function loadIndustryBriefFinancialFacts(companyId: string): Promis
 }
 
 export async function loadIndustryBriefCompany(companyId: string) {
-  const [company, productRows, inventoryRows, customerRows] = await Promise.all([
+  await ensureIndustryBriefProfileColumns();
+  const [company, productRows, inventoryRows, customerRows, intelligenceRows] = await Promise.all([
     prisma.company.findUnique({
       where: { id: companyId },
       select: {
@@ -116,6 +140,26 @@ export async function loadIndustryBriefCompany(companyId: string) {
       take: 15,
       select: { customerName: true },
     }).catch(() => []),
+    prisma.$queryRawUnsafe<Array<{
+      industryBriefProductFocus: string | null;
+      industryBriefBrands: unknown;
+      industryBriefCustomerChannels: string | null;
+      industryBriefCompetitors: string | null;
+      industryBriefLocalMarketEvents: string | null;
+      industryBriefKnownOpportunities: string | null;
+    }>>(
+      `SELECT
+         "industryBriefProductFocus",
+         "industryBriefBrands",
+         "industryBriefCustomerChannels",
+         "industryBriefCompetitors",
+         "industryBriefLocalMarketEvents",
+         "industryBriefKnownOpportunities"
+       FROM "CompanyProfile"
+       WHERE "companyId" = $1
+       LIMIT 1`,
+      companyId,
+    ).catch(() => []),
   ]);
   if (!company) {
     throw new Error('Company not found');
@@ -124,16 +168,29 @@ export async function loadIndustryBriefCompany(companyId: string) {
     throw new Error('Industry Brief unavailable: missing company industry/location.');
   }
   const industryGroup = INDUSTRY_SECTORS.find((sector) => String(sector.id) === String(company.industrySector || ''));
+  const intelligence = intelligenceRows[0] || null;
+  const intelligenceBrands = stringList(intelligence?.industryBriefBrands);
   const profileText = [
     company.profile?.workforce,
     company.profile?.specialNotes,
     company.profile?.qoeNotes,
+    labeledText('Product/capability focus', intelligence?.industryBriefProductFocus),
+    labeledText('Brands/product lines', intelligenceBrands),
+    labeledText('Customer channels', intelligence?.industryBriefCustomerChannels),
+    labeledText('Competitors/local market events', intelligence?.industryBriefCompetitors),
+    labeledText('Known local developments', intelligence?.industryBriefLocalMarketEvents),
+    labeledText('Known opportunity themes', intelligence?.industryBriefKnownOpportunities),
   ].map((part) => String(part || '').trim()).filter(Boolean).join('\n');
   const productContext = uniqueText([
+    intelligence?.industryBriefProductFocus,
+    ...intelligenceBrands,
     ...productRows.flatMap((row) => [row.itemName, row.sku]),
     ...inventoryRows.flatMap((row) => [row.itemName, row.sku]),
   ], 30);
-  const customerContext = uniqueText(customerRows.map((row) => row.customerName), 20);
+  const customerContext = uniqueText([
+    intelligence?.industryBriefCustomerChannels,
+    ...customerRows.map((row) => row.customerName),
+  ], 20);
   return {
     ...company,
     industryGroupName: industryGroup?.name || null,
@@ -141,6 +198,20 @@ export async function loadIndustryBriefCompany(companyId: string) {
     profileText,
     productContext,
     customerContext,
+  };
+}
+
+function companyIntelligenceSource(company: { profileText?: string | null }): IndustryBriefSourceRecord | null {
+  const summary = String(company.profileText || '').trim();
+  if (!summary) return null;
+  return {
+    id: 'corelytics-company-intelligence',
+    provider: 'Corelytics Company Profile',
+    category: 'Company Intelligence',
+    title: 'First-party company setup intelligence',
+    publishedAt: new Date().toISOString(),
+    summary,
+    citations: ['Corelytics company profile'],
   };
 }
 
@@ -179,9 +250,14 @@ export async function generateAndCacheDailyIndustryBrief(params: {
     force: params.forceSources,
   });
 
+  const sourceRecords = [
+    ...sourceBundle.records,
+    ...[companyIntelligenceSource(company)].filter((record): record is IndustryBriefSourceRecord => Boolean(record)),
+  ];
+
   const brief = await synthesizeIndustryBriefWithAi({
     baseBrief: shell,
-    sourceRecords: sourceBundle.records,
+    sourceRecords,
     config: aiConfig,
     financialFacts,
   });
