@@ -6,7 +6,7 @@ import { scanIndustryBriefSourcesWithAi, synthesizeIndustryBriefWithAi } from '@
 import {
   collectBlsIndustryBriefSources,
   collectFredIndustryBriefSources,
-  collectPerplexityIndustryBriefSource,
+  collectPerplexityIndustryBriefSources,
 } from '@/lib/industry-brief/sources';
 import { loadIndustryBriefCompany } from '@/lib/industry-brief/service';
 import { normalizeIndustrySectorCategory } from '@/lib/performance-analytics/industry-sector-category';
@@ -162,14 +162,14 @@ export async function GET(request: NextRequest) {
     const [fred, bls, perplexity] = await Promise.all([
       timedStep('fred-sources', () => collectFredIndustryBriefSources(sourceContext), summarizeSources),
       timedStep('bls-sources', () => collectBlsIndustryBriefSources(sourceContext), summarizeSources),
-      timedStep('perplexity-source', () => collectPerplexityIndustryBriefSource(sourceContext), (record) => summarizeSources([record])),
+      timedStep('perplexity-sources', () => collectPerplexityIndustryBriefSources(sourceContext), summarizeSources),
     ]);
     steps.push(fred.step, bls.step, perplexity.step);
 
     const sourceRecords = [
       ...(fred.value || []),
       ...(bls.value || []),
-      ...(perplexity.value ? [perplexity.value] : []),
+      ...(perplexity.value || []),
     ];
     if (!fred.value || !bls.value || !perplexity.value) {
       return NextResponse.json({ ok: false, aiConfig, sourceCount: sourceRecords.length, steps }, { status: 503 });

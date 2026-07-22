@@ -66,6 +66,27 @@ function labeledText(label: string, value: unknown): string {
   return text ? `${label}: ${text}` : '';
 }
 
+function inferProductThemes(productText: string): string[] {
+  const text = productText.toLowerCase();
+  const themes: string[] = [];
+  if (/(breakfast|cinnamon|swirl|raisin|toast|morning)/.test(text)) themes.push('breakfast breads');
+  if (/(frozen|freezer|thaw|bake[- ]?off|par[- ]?baked)/.test(text)) themes.push('frozen or bake-off bread');
+  if (/(bun|roll|sandwich|hoagie|sub|hamburger|hot dog)/.test(text)) themes.push('sandwich buns and rolls');
+  if (/(artisan|specialty|premium|craft)/.test(text)) themes.push('specialty bakery products');
+  if (/(private label|store brand|grocery)/.test(text)) themes.push('grocery/private-label bakery channel');
+  return Array.from(new Set(themes));
+}
+
+function inferCustomerChannels(customerText: string): string[] {
+  const text = customerText.toLowerCase();
+  const channels: string[] = [];
+  if (/(grocery|market|supermarket|kroger|giant eagle|walmart|aldi|meijer|shop|store)/.test(text)) channels.push('grocery retail');
+  if (/(restaurant|cafe|diner|foodservice|food service|hospitality|hotel|club)/.test(text)) channels.push('foodservice');
+  if (/(school|university|college|hospital|health|institution|correction|jail|senior|nursing)/.test(text)) channels.push('institutional foodservice');
+  if (/(distributor|distribution|wholesale|warehouse|sysco|us foods)/.test(text)) channels.push('wholesale/distributor');
+  return Array.from(new Set(channels));
+}
+
 export async function loadIndustryBriefFinancialFacts(companyId: string): Promise<FinancialFactInput> {
   const rows = await prisma.monthlyFinancial.findMany({
     where: { companyId },
@@ -191,13 +212,22 @@ export async function loadIndustryBriefCompany(companyId: string) {
     intelligence?.industryBriefCustomerChannels,
     ...customerRows.map((row) => row.customerName),
   ], 20);
+  const inferredProductThemes = inferProductThemes(productContext);
+  const inferredCustomerChannels = inferCustomerChannels(customerContext);
+  const operationalProfileText = [
+    labeledText('Top products/items from operational data', productContext),
+    labeledText('Inferred product themes from operational data', inferredProductThemes),
+    labeledText('Top customers/channels from operational data', customerContext),
+    labeledText('Inferred customer channels from operational data', inferredCustomerChannels),
+  ].filter(Boolean).join('\n');
   return {
     ...company,
     industryGroupName: industryGroup?.name || null,
     industryGroupDescription: industryGroup?.description || null,
-    profileText,
+    profileText: [profileText, operationalProfileText].filter(Boolean).join('\n'),
     productContext,
     customerContext,
+    operationalProfileText,
   };
 }
 
@@ -212,6 +242,20 @@ function companyIntelligenceSource(company: { profileText?: string | null }): In
     publishedAt: new Date().toISOString(),
     summary,
     citations: ['Corelytics company profile'],
+  };
+}
+
+function operationalProductMixSource(company: { operationalProfileText?: string | null }): IndustryBriefSourceRecord | null {
+  const summary = String(company.operationalProfileText || '').trim();
+  if (!summary) return null;
+  return {
+    id: 'corelytics-operational-product-mix',
+    provider: 'Corelytics Company Profile',
+    category: 'Operational Product and Channel Evidence',
+    title: 'Operational product and customer mix',
+    publishedAt: new Date().toISOString(),
+    summary,
+    citations: ['Corelytics operational product and customer snapshots'],
   };
 }
 
@@ -253,6 +297,7 @@ export async function generateAndCacheDailyIndustryBrief(params: {
   const sourceRecords = [
     ...sourceBundle.records,
     ...[companyIntelligenceSource(company)].filter((record): record is IndustryBriefSourceRecord => Boolean(record)),
+    ...[operationalProductMixSource(company)].filter((record): record is IndustryBriefSourceRecord => Boolean(record)),
   ];
 
   const brief = await synthesizeIndustryBriefWithAi({

@@ -459,9 +459,31 @@ export async function collectBlsIndustryBriefSources(context: CompanySourceConte
   return records;
 }
 
-export async function collectPerplexityIndustryBriefSource(context: CompanySourceContext): Promise<IndustryBriefSourceRecord> {
+type PerplexityScanKind = 'product-channel' | 'competitor-opportunity';
+
+function perplexityScanConfig(kind: PerplexityScanKind) {
+  if (kind === 'competitor-opportunity') {
+    return {
+      id: 'perplexity-competitor-opportunity-scan',
+      category: 'Local Competitor and Opportunity Data',
+      title: 'Focused competitor and opportunity scan',
+      instruction: 'Search for source-backed local competitor changes, closures, capacity shifts, pricing moves, distribution changes, and product/category opportunity signals. Include competitor exits or "out of business" events when found. Connect findings to the company location, exact products/items, brands, customer channels, and known opportunity themes.',
+      retryInstruction: 'Return 4 cited bullets about local competitors, capacity changes, distribution changes, or product opportunity evidence. If no competitor change is found, use cited local/industry evidence that most directly affects the company-specific product/channel opportunity.',
+    };
+  }
+  return {
+    id: 'perplexity-product-channel-scan',
+    category: 'Product and Channel Demand',
+    title: 'Focused product and customer channel scan',
+    instruction: 'Search for source-backed demand, pricing, channel, customer, and category evidence tied to the company-specific products/items, brands, customer channels, and location. Do not settle for generic sector commentary if product or customer detail is available.',
+    retryInstruction: 'Return 4 cited bullets about company-specific product/category demand, customer/channel demand, pricing, or local market evidence.',
+  };
+}
+
+async function collectPerplexityScan(context: CompanySourceContext, kind: PerplexityScanKind): Promise<IndustryBriefSourceRecord> {
   const apiKey = process.env.PERPLEXITY_API_KEY || '';
   if (!apiKey) throw new Error('PERPLEXITY_API_KEY is required for Daily Industry Brief competitor/news scan.');
+  const scan = perplexityScanConfig(kind);
 
   const buildPrompt = (retry = false) => [
     `Company: ${context.name}`,
@@ -474,8 +496,8 @@ export async function collectPerplexityIndustryBriefSource(context: CompanySourc
     `Location: ${context.location}`,
     '',
     retry
-      ? 'Return 6 current, cited evidence bullets only: 3 industry/customer-demand bullets, 2 local-market bullets, and 1 competitor/regulatory/labor bullet.'
-      : 'Return 8 current, cited evidence bullets only: industry demand, customer/channel demand, input or operating cost, labor, regulation, local market, and competitor/capacity signals.',
+      ? scan.retryInstruction
+      : scan.instruction,
     isEnergyFuelRelevantContext(context)
       ? 'Include one cited energy/fuel/transportation-cost bullet when source-backed, especially electricity/power, diesel, fleet fuel, natural gas, utility, or local delivery cost signals relevant to manufacturing/distribution.'
       : '',
@@ -484,6 +506,7 @@ export async function collectPerplexityIndustryBriefSource(context: CompanySourc
     'Each bullet must include the source name or URL/citation. Prefer recent sources from the last 30 days when available.',
     'Do not recommend actions, score opportunities, write an executive summary, or infer what the company should do.',
     'Do not estimate private company revenue or employee counts unless an authoritative source states them.',
+    retry ? 'Return 4 concise cited bullets.' : 'Return 5 concise cited bullets.',
   ].filter(Boolean).join('\n');
 
   const requestPerplexity = async (retry = false) => {
@@ -502,11 +525,11 @@ export async function collectPerplexityIndustryBriefSource(context: CompanySourc
             { role: 'user', content: buildPrompt(retry) },
           ],
           temperature: 0.1,
-          max_tokens: retry ? 450 : 650,
+          max_tokens: retry ? 450 : 550,
         }),
       },
       perplexityFetchTimeoutMs(),
-      retry ? 'Perplexity focused retry source scan' : 'Perplexity source scan',
+      retry ? `Perplexity ${kind} focused retry source scan` : `Perplexity ${kind} source scan`,
     );
     return response;
   };
@@ -533,21 +556,34 @@ export async function collectPerplexityIndustryBriefSource(context: CompanySourc
     throw new Error('Perplexity source scan returned no cited research.');
   }
   return {
-    id: 'perplexity-market-competitor-news',
+    id: scan.id,
     provider: 'Perplexity',
-    category: 'News and Competitive Data',
-    title: 'Live market, competitor, and opportunity scan',
+    category: scan.category,
+    title: scan.title,
     publishedAt: new Date().toISOString(),
     summary: content,
     citations: sourceUrls,
   };
 }
 
+export async function collectPerplexityIndustryBriefSources(context: CompanySourceContext): Promise<IndustryBriefSourceRecord[]> {
+  const results = await Promise.allSettled([
+    collectPerplexityScan(context, 'product-channel'),
+    collectPerplexityScan(context, 'competitor-opportunity'),
+  ]);
+  const records = results.flatMap((result) => result.status === 'fulfilled' ? [result.value] : []);
+  if (records.length > 0) return records;
+  const failures = results.flatMap((result) => result.status === 'rejected'
+    ? [result.reason instanceof Error ? result.reason.message : String(result.reason)]
+    : []);
+  throw new Error(failures.join(' | ') || 'Perplexity focused scans returned no cited research.');
+}
+
 export async function collectIndustryBriefSources(context: CompanySourceContext): Promise<IndustryBriefSourceRecord[]> {
   const results = await Promise.allSettled([
     collectFredIndustryBriefSources(context),
     collectBlsIndustryBriefSources(context),
-    collectPerplexityIndustryBriefSource(context),
+    collectPerplexityIndustryBriefSources(context),
   ]);
   const labels = ['FRED', 'BLS', 'Perplexity'];
   const failures = results.flatMap((result, index) => {
@@ -557,8 +593,8 @@ export async function collectIndustryBriefSources(context: CompanySourceContext)
   });
   const fredSources = results[0].status === 'fulfilled' ? results[0].value : [];
   const blsSources = results[1].status === 'fulfilled' ? results[1].value : [];
-  const perplexitySource = results[2].status === 'fulfilled' ? results[2].value : null;
-  const sources = [...fredSources, ...blsSources, ...(perplexitySource ? [perplexitySource] : [])];
+  const perplexitySources = results[2].status === 'fulfilled' ? results[2].value : [];
+  const sources = [...fredSources, ...blsSources, ...perplexitySources];
   const providerCount = new Set(sources.map((source) => source.provider)).size;
   if (sources.length >= 3 && providerCount >= 2) return sources;
   if (failures.length > 0) {
