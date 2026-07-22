@@ -34,6 +34,10 @@
       "memory": 3008,
       "maxDuration": 300
     },
+    "app/api/cron/process-qbd-post-sync-jobs/route.ts": {
+      "memory": 3008,
+      "maxDuration": 300
+    },
     "app/api/cron/enqueue-daily-industry-briefs/route.ts": {
       "memory": 3008,
       "maxDuration": 300
@@ -90,6 +94,10 @@
     },
     {
       "path": "/api/cron/process-industry-brief-jobs",
+      "schedule": "*/5 * * * *"
+    },
+    {
+      "path": "/api/cron/process-qbd-post-sync-jobs",
       "schedule": "*/5 * * * *"
     },
     {

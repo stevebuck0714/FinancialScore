@@ -9,7 +9,7 @@ import {
   buildQuickBooksDesktopFinancialPayload,
   buildQuickBooksDesktopOperationalPayload,
 } from '@/lib/quickbooks-desktop/backfill-payloads';
-import { runQuickBooksDesktopPostSyncReprocess } from '@/lib/quickbooks-desktop/post-sync-reprocess';
+import { enqueueQuickBooksDesktopPostSyncJob } from '@/lib/quickbooks-desktop/post-sync-jobs';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -1466,26 +1466,21 @@ async function finalizeSession(connection: NonNullable<Awaited<ReturnType<typeof
 
   if (!lastError) {
     try {
-      const postSyncResult = await runQuickBooksDesktopPostSyncReprocess({
+      const postSyncJob = await enqueueQuickBooksDesktopPostSyncJob({
         companyId,
         source: 'qbd-web-connector-finalize',
         startDate: session.dateRange.startDate,
         endDate: session.dateRange.endDate,
       });
-      postSyncReprocess = postSyncResult;
-      const postSyncFailures = [
-        !postSyncResult.dailyFinancials.ok
-          ? `daily financial rebuild: ${postSyncResult.dailyFinancials.error || 'failed'}`
-          : '',
-        postSyncResult.arApAging && !postSyncResult.arApAging.ok
-          ? `AR/AP rebuild: ${postSyncResult.arApAging.error || 'failed'}`
-          : '',
-      ].filter(Boolean);
-      if (postSyncFailures.length > 0) {
-        lastError = `Post-sync reprocess failed: ${postSyncFailures.join('; ')}`;
-      }
+      postSyncReprocess = {
+        queued: true,
+        jobId: postSyncJob.id,
+        status: postSyncJob.status,
+        startDate: postSyncJob.startDate,
+        endDate: postSyncJob.endDate,
+      };
     } catch (error) {
-      const message = `Post-sync reprocess failed: ${error instanceof Error ? error.message : 'unknown error'}`;
+      const message = `Post-sync reprocess enqueue failed: ${error instanceof Error ? error.message : 'unknown error'}`;
       lastError = lastError ? `${lastError}; ${message}` : message;
     }
   }
