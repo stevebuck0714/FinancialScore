@@ -89,8 +89,36 @@
       "schedule": "30 10 * * *"
     },
     {
-      "path": "/api/cron/enqueue-daily-industry-briefs",
-      "schedule": "0 11 * * *"
+      "path": "/api/cron/enqueue-daily-industry-briefs?limit=100&offset=0",
+      "schedule": "15 6 * * *"
+    },
+    {
+      "path": "/api/cron/enqueue-daily-industry-briefs?limit=100&offset=100",
+      "schedule": "45 6 * * *"
+    },
+    {
+      "path": "/api/cron/enqueue-daily-industry-briefs?limit=100&offset=200",
+      "schedule": "15 7 * * *"
+    },
+    {
+      "path": "/api/cron/enqueue-daily-industry-briefs?limit=100&offset=300",
+      "schedule": "45 7 * * *"
+    },
+    {
+      "path": "/api/cron/enqueue-daily-industry-briefs?limit=100&offset=400",
+      "schedule": "15 8 * * *"
+    },
+    {
+      "path": "/api/cron/enqueue-daily-industry-briefs?limit=100&offset=500",
+      "schedule": "45 8 * * *"
+    },
+    {
+      "path": "/api/cron/enqueue-daily-industry-briefs?limit=100&offset=600",
+      "schedule": "15 9 * * *"
+    },
+    {
+      "path": "/api/cron/enqueue-daily-industry-briefs?limit=100&offset=700",
+      "schedule": "45 9 * * *"
     },
     {
       "path": "/api/cron/process-industry-brief-jobs",
