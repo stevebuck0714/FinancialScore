@@ -1,10 +1,12 @@
 import type { IndustryBriefSourceRecord } from '@/lib/industry-brief/types';
+import { normalizeIndustrySectorCategory } from '@/lib/performance-analytics/industry-sector-category';
 
 type CompanySourceContext = {
   name: string;
   industry: string;
   segment: string;
   location: string;
+  sectorKey?: string | null;
 };
 
 type FredSeriesDefinition = {
@@ -31,48 +33,83 @@ class IndustryBriefSourceCollectionError extends Error {
   }
 }
 
-const FRED_SERIES: FredSeriesDefinition[] = [
-  {
-    id: 'fred-industrial-production',
-    title: 'Industrial production index',
-    category: 'Manufacturing',
-    seriesId: 'INDPRO',
-    url: 'https://fred.stlouisfed.org/series/INDPRO',
-  },
-  {
-    id: 'fred-grocery-spending',
-    title: 'Food and beverage store sales',
-    category: 'Demand',
-    seriesId: 'MRTSSM445USN',
-    url: 'https://fred.stlouisfed.org/series/MRTSSM445USN',
-  },
-  {
-    id: 'fred-commercial-bakery-ppi',
-    title: 'Commercial bakery producer price index',
-    category: 'Input Costs',
-    seriesId: 'PCU311812311812',
-    url: 'https://fred.stlouisfed.org/series/PCU311812311812',
-  },
+const DEFAULT_FRED_SERIES: FredSeriesDefinition[] = [
+  { id: 'fred-real-gdp', title: 'Real gross domestic product', category: 'Macro Demand', seriesId: 'GDPC1', url: 'https://fred.stlouisfed.org/series/GDPC1' },
+  { id: 'fred-prime-rate', title: 'Bank prime loan rate', category: 'Interest Rates', seriesId: 'DPRIME', url: 'https://fred.stlouisfed.org/series/DPRIME' },
+  { id: 'fred-small-business-optimism', title: 'Small business optimism index', category: 'Business Conditions', seriesId: 'NFCI', url: 'https://fred.stlouisfed.org/series/NFCI' },
 ];
 
-const BLS_SERIES: BlsSeriesDefinition[] = [
-  {
-    id: 'bls-manufacturing-hourly-earnings',
-    title: 'Manufacturing production worker hourly earnings',
-    category: 'Labor',
-    seriesId: 'CEU3000000008',
-    unit: 'USD/hour',
-    url: 'https://data.bls.gov/timeseries/CEU3000000008',
-  },
-  {
-    id: 'bls-manufacturing-employment',
-    title: 'Manufacturing employment',
-    category: 'Labor',
-    seriesId: 'CEU3000000001',
-    unit: 'thousands of employees',
-    url: 'https://data.bls.gov/timeseries/CEU3000000001',
-  },
+const BAKERY_FRED_SERIES: FredSeriesDefinition[] = [
+  { id: 'fred-industrial-production', title: 'Industrial production index', category: 'Manufacturing', seriesId: 'INDPRO', url: 'https://fred.stlouisfed.org/series/INDPRO' },
+  { id: 'fred-grocery-spending', title: 'Food and beverage store sales', category: 'Demand', seriesId: 'MRTSSM445USN', url: 'https://fred.stlouisfed.org/series/MRTSSM445USN' },
+  { id: 'fred-commercial-bakery-ppi', title: 'Commercial bakery producer price index', category: 'Input Costs', seriesId: 'PCU311812311812', url: 'https://fred.stlouisfed.org/series/PCU311812311812' },
 ];
+
+const FRED_SERIES_BY_SECTOR: Partial<Record<ReturnType<typeof normalizeIndustrySectorCategory>, FredSeriesDefinition[]>> = {
+  MANUFACTURING: [
+    { id: 'fred-industrial-production', title: 'Industrial production index', category: 'Manufacturing', seriesId: 'INDPRO', url: 'https://fred.stlouisfed.org/series/INDPRO' },
+    { id: 'fred-manufacturing-pmi', title: 'ISM manufacturing PMI', category: 'Manufacturing Demand', seriesId: 'NAPM', url: 'https://fred.stlouisfed.org/series/NAPM' },
+    { id: 'fred-manufacturing-ppi', title: 'Manufacturing producer price index', category: 'Input Costs', seriesId: 'PCUOMFGOMFG', url: 'https://fred.stlouisfed.org/series/PCUOMFGOMFG' },
+  ],
+  CONSTRUCTION: [
+    { id: 'fred-housing-starts', title: 'Housing starts', category: 'Construction Demand', seriesId: 'HOUST', url: 'https://fred.stlouisfed.org/series/HOUST' },
+    { id: 'fred-construction-spending', title: 'Total construction spending', category: 'Construction Demand', seriesId: 'TTLCONS', url: 'https://fred.stlouisfed.org/series/TTLCONS' },
+    { id: 'fred-construction-materials-ppi', title: 'Construction materials producer price index', category: 'Input Costs', seriesId: 'WPUSI012011', url: 'https://fred.stlouisfed.org/series/WPUSI012011' },
+  ],
+  RETAIL_TRADE: [
+    { id: 'fred-retail-sales', title: 'Retail and food services sales', category: 'Retail Demand', seriesId: 'RSAFS', url: 'https://fred.stlouisfed.org/series/RSAFS' },
+    { id: 'fred-consumer-sentiment', title: 'Consumer sentiment', category: 'Consumer Demand', seriesId: 'UMCSENT', url: 'https://fred.stlouisfed.org/series/UMCSENT' },
+    { id: 'fred-retail-inventories', title: 'Retail inventories', category: 'Inventory', seriesId: 'RETAILIRSA', url: 'https://fred.stlouisfed.org/series/RETAILIRSA' },
+  ],
+  PROFESSIONAL_SERVICES: [
+    { id: 'fred-services-pmi', title: 'ISM services PMI', category: 'Services Demand', seriesId: 'NMFCI', url: 'https://fred.stlouisfed.org/series/NMFCI' },
+    { id: 'fred-real-gdp', title: 'Real gross domestic product', category: 'Macro Demand', seriesId: 'GDPC1', url: 'https://fred.stlouisfed.org/series/GDPC1' },
+    { id: 'fred-prime-rate', title: 'Bank prime loan rate', category: 'Interest Rates', seriesId: 'DPRIME', url: 'https://fred.stlouisfed.org/series/DPRIME' },
+  ],
+  HEALTH_CARE_SOCIAL_ASSISTANCE: [
+    { id: 'fred-health-care-spending', title: 'Health care services PCE', category: 'Health Care Demand', seriesId: 'DHLCRG3Q086SBEA', url: 'https://fred.stlouisfed.org/series/DHLCRG3Q086SBEA' },
+    { id: 'fred-health-care-cpi', title: 'Medical care CPI', category: 'Pricing', seriesId: 'CPIMEDSL', url: 'https://fred.stlouisfed.org/series/CPIMEDSL' },
+    { id: 'fred-prime-rate', title: 'Bank prime loan rate', category: 'Interest Rates', seriesId: 'DPRIME', url: 'https://fred.stlouisfed.org/series/DPRIME' },
+  ],
+  ACCOMMODATION_FOOD_SERVICES: [
+    { id: 'fred-food-services-sales', title: 'Food services and drinking places sales', category: 'Restaurant Demand', seriesId: 'MRTSSM722USN', url: 'https://fred.stlouisfed.org/series/MRTSSM722USN' },
+    { id: 'fred-food-away-from-home-cpi', title: 'Food away from home CPI', category: 'Pricing', seriesId: 'CUSR0000SEFV', url: 'https://fred.stlouisfed.org/series/CUSR0000SEFV' },
+    { id: 'fred-leisure-hospitality-employment', title: 'Leisure and hospitality employment', category: 'Labor', seriesId: 'USLAH', url: 'https://fred.stlouisfed.org/series/USLAH' },
+  ],
+  REAL_ESTATE: [
+    { id: 'fred-existing-home-sales', title: 'Existing home sales', category: 'Real Estate Demand', seriesId: 'EXHOSLUSM495S', url: 'https://fred.stlouisfed.org/series/EXHOSLUSM495S' },
+    { id: 'fred-mortgage-rate', title: '30-year fixed mortgage rate', category: 'Interest Rates', seriesId: 'MORTGAGE30US', url: 'https://fred.stlouisfed.org/series/MORTGAGE30US' },
+    { id: 'fred-housing-starts', title: 'Housing starts', category: 'Supply', seriesId: 'HOUST', url: 'https://fred.stlouisfed.org/series/HOUST' },
+  ],
+};
+
+const DEFAULT_BLS_SERIES: BlsSeriesDefinition[] = [
+  { id: 'bls-private-hourly-earnings', title: 'Private-sector hourly earnings', category: 'Labor', seriesId: 'CES0500000003', unit: 'USD/hour', url: 'https://data.bls.gov/timeseries/CES0500000003' },
+  { id: 'bls-private-employment', title: 'Total private employment', category: 'Labor', seriesId: 'CES0500000001', unit: 'thousands of employees', url: 'https://data.bls.gov/timeseries/CES0500000001' },
+];
+
+const BLS_SERIES_BY_SECTOR: Partial<Record<ReturnType<typeof normalizeIndustrySectorCategory>, BlsSeriesDefinition[]>> = {
+  MANUFACTURING: [
+    { id: 'bls-manufacturing-hourly-earnings', title: 'Manufacturing production worker hourly earnings', category: 'Labor', seriesId: 'CEU3000000008', unit: 'USD/hour', url: 'https://data.bls.gov/timeseries/CEU3000000008' },
+    { id: 'bls-manufacturing-employment', title: 'Manufacturing employment', category: 'Labor', seriesId: 'CEU3000000001', unit: 'thousands of employees', url: 'https://data.bls.gov/timeseries/CEU3000000001' },
+  ],
+  CONSTRUCTION: [
+    { id: 'bls-construction-hourly-earnings', title: 'Construction hourly earnings', category: 'Labor', seriesId: 'CES2000000003', unit: 'USD/hour', url: 'https://data.bls.gov/timeseries/CES2000000003' },
+    { id: 'bls-construction-employment', title: 'Construction employment', category: 'Labor', seriesId: 'CES2000000001', unit: 'thousands of employees', url: 'https://data.bls.gov/timeseries/CES2000000001' },
+  ],
+  RETAIL_TRADE: [
+    { id: 'bls-retail-hourly-earnings', title: 'Retail trade hourly earnings', category: 'Labor', seriesId: 'CES4200000003', unit: 'USD/hour', url: 'https://data.bls.gov/timeseries/CES4200000003' },
+    { id: 'bls-retail-employment', title: 'Retail trade employment', category: 'Labor', seriesId: 'CES4200000001', unit: 'thousands of employees', url: 'https://data.bls.gov/timeseries/CES4200000001' },
+  ],
+  PROFESSIONAL_SERVICES: [
+    { id: 'bls-professional-services-hourly-earnings', title: 'Professional and business services hourly earnings', category: 'Labor', seriesId: 'CES6000000003', unit: 'USD/hour', url: 'https://data.bls.gov/timeseries/CES6000000003' },
+    { id: 'bls-professional-services-employment', title: 'Professional and business services employment', category: 'Labor', seriesId: 'CES6000000001', unit: 'thousands of employees', url: 'https://data.bls.gov/timeseries/CES6000000001' },
+  ],
+  HEALTH_CARE_SOCIAL_ASSISTANCE: [
+    { id: 'bls-health-care-hourly-earnings', title: 'Health care hourly earnings', category: 'Labor', seriesId: 'CES6500000003', unit: 'USD/hour', url: 'https://data.bls.gov/timeseries/CES6500000003' },
+    { id: 'bls-health-care-employment', title: 'Education and health services employment', category: 'Labor', seriesId: 'CES6500000001', unit: 'thousands of employees', url: 'https://data.bls.gov/timeseries/CES6500000001' },
+  ],
+};
 
 const FRED_FETCH_TIMEOUT_MS = 8000;
 const BLS_FETCH_TIMEOUT_MS = 8000;
@@ -109,6 +146,37 @@ function extractUrls(text: string): string[] {
   return Array.from(new Set(matches.map((url) => url.replace(/[.,;]+$/, ''))));
 }
 
+function contextSectorKey(context: CompanySourceContext) {
+  if (context.sectorKey) return normalizeIndustrySectorCategory(context.sectorKey);
+  const combined = `${context.industry} ${context.segment}`.toUpperCase();
+  return normalizeIndustrySectorCategory(
+    combined.includes('CONSTRUCTION') ? 'CONSTRUCTION'
+      : combined.includes('RETAIL') ? 'RETAIL_TRADE'
+        : combined.includes('HEALTH') ? 'HEALTH_CARE_SOCIAL_ASSISTANCE'
+          : combined.includes('REAL ESTATE') ? 'REAL_ESTATE'
+            : combined.includes('FOOD SERVICE') || combined.includes('RESTAURANT') ? 'ACCOMMODATION_FOOD_SERVICES'
+              : combined.includes('MANUFACTUR') ? 'MANUFACTURING'
+                : combined.includes('PROFESSIONAL') || combined.includes('SERVICES') ? 'PROFESSIONAL_SERVICES'
+                  : context.industry
+  );
+}
+
+function isBakeryContext(context: CompanySourceContext): boolean {
+  const combined = `${context.name} ${context.segment}`.toLowerCase();
+  return /baker|bakery|bread/.test(combined);
+}
+
+function fredSeriesForContext(context: CompanySourceContext): FredSeriesDefinition[] {
+  if (isBakeryContext(context)) return BAKERY_FRED_SERIES;
+  const sector = contextSectorKey(context);
+  return FRED_SERIES_BY_SECTOR[sector] || DEFAULT_FRED_SERIES;
+}
+
+function blsSeriesForContext(context: CompanySourceContext): BlsSeriesDefinition[] {
+  const sector = contextSectorKey(context);
+  return BLS_SERIES_BY_SECTOR[sector] || DEFAULT_BLS_SERIES;
+}
+
 async function fetchWithTimeout(url: string, init: RequestInit, timeoutMs: number, label: string): Promise<Response> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
@@ -127,11 +195,12 @@ async function fetchWithTimeout(url: string, init: RequestInit, timeoutMs: numbe
   }
 }
 
-export async function collectFredIndustryBriefSources(): Promise<IndustryBriefSourceRecord[]> {
+export async function collectFredIndustryBriefSources(context: CompanySourceContext): Promise<IndustryBriefSourceRecord[]> {
   const apiKey = fredApiKey();
   if (!apiKey) throw new Error('FRED_API_KEY is required for Daily Industry Brief source scan.');
+  const seriesDefinitions = fredSeriesForContext(context);
 
-  return Promise.all(FRED_SERIES.map(async (series) => {
+  return Promise.all(seriesDefinitions.map(async (series) => {
     const params = new URLSearchParams({
       series_id: series.seriesId,
       api_key: apiKey,
@@ -182,15 +251,16 @@ function latestBlsObservation(series: any): { periodName: string; year: string; 
   return null;
 }
 
-export async function collectBlsIndustryBriefSources(): Promise<IndustryBriefSourceRecord[]> {
+export async function collectBlsIndustryBriefSources(context: CompanySourceContext): Promise<IndustryBriefSourceRecord[]> {
   const year = new Date().getUTCFullYear();
+  const seriesDefinitions = blsSeriesForContext(context);
   const response = await fetchWithTimeout(
     'https://api.bls.gov/publicAPI/v2/timeseries/data/',
     {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        seriesid: BLS_SERIES.map((series) => series.seriesId),
+        seriesid: seriesDefinitions.map((series) => series.seriesId),
         startyear: String(year - 1),
         endyear: String(year),
       }),
@@ -205,7 +275,7 @@ export async function collectBlsIndustryBriefSources(): Promise<IndustryBriefSou
     throw new Error(`BLS source scan failed: ${Array.isArray(data?.message) ? data.message.join('; ') : 'request did not succeed'}`);
   }
   const seriesRows = Array.isArray(data?.Results?.series) ? data.Results.series : [];
-  return BLS_SERIES.map((definition) => {
+  return seriesDefinitions.map((definition) => {
     const row = seriesRows.find((item: any) => String(item?.seriesID || '') === definition.seriesId);
     const latest = latestBlsObservation(row);
     if (!latest) throw new Error(`BLS source ${definition.seriesId} returned no observations.`);
@@ -287,8 +357,8 @@ export async function collectPerplexityIndustryBriefSource(context: CompanySourc
 
 export async function collectIndustryBriefSources(context: CompanySourceContext): Promise<IndustryBriefSourceRecord[]> {
   const results = await Promise.allSettled([
-    collectFredIndustryBriefSources(),
-    collectBlsIndustryBriefSources(),
+    collectFredIndustryBriefSources(context),
+    collectBlsIndustryBriefSources(context),
     collectPerplexityIndustryBriefSource(context),
   ]);
   const labels = ['FRED', 'BLS', 'Perplexity'];

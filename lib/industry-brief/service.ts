@@ -7,6 +7,7 @@ import {
   readCachedIndustryBrief,
   writeCachedIndustryBrief,
 } from '@/lib/industry-brief/cache';
+import { normalizeIndustrySectorCategory } from '@/lib/performance-analytics/industry-sector-category';
 import type { DailyIndustryBrief } from '@/lib/industry-brief/types';
 
 type FinancialFactInput = {
@@ -107,6 +108,7 @@ export async function generateAndCacheDailyIndustryBrief(params: {
       industry: shell.company.industry,
       segment: shell.company.segment,
       location: shell.company.location,
+      sectorKey: normalizeIndustrySectorCategory(company.industrySectorCategory),
     },
     force: params.forceSources,
   });

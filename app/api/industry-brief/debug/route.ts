@@ -8,6 +8,7 @@ import {
   collectFredIndustryBriefSources,
   collectPerplexityIndustryBriefSource,
 } from '@/lib/industry-brief/sources';
+import { normalizeIndustrySectorCategory } from '@/lib/performance-analytics/industry-sector-category';
 import type { DailyIndustryBrief, IndustryBriefSourceRecord } from '@/lib/industry-brief/types';
 import { requireSiteAdmin } from '@/lib/tenant-security';
 
@@ -165,11 +166,12 @@ export async function GET(request: NextRequest) {
       industry: shell.company.industry,
       segment: shell.company.segment,
       location: shell.company.location,
+      sectorKey: normalizeIndustrySectorCategory(companyStep.value.industrySectorCategory),
     };
 
     const [fred, bls, perplexity] = await Promise.all([
-      timedStep('fred-sources', collectFredIndustryBriefSources, summarizeSources),
-      timedStep('bls-sources', collectBlsIndustryBriefSources, summarizeSources),
+      timedStep('fred-sources', () => collectFredIndustryBriefSources(sourceContext), summarizeSources),
+      timedStep('bls-sources', () => collectBlsIndustryBriefSources(sourceContext), summarizeSources),
       timedStep('perplexity-source', () => collectPerplexityIndustryBriefSource(sourceContext), (record) => summarizeSources([record])),
     ]);
     steps.push(fred.step, bls.step, perplexity.step);
