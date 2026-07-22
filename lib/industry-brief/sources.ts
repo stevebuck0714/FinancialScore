@@ -71,6 +71,7 @@ const FRED_CANDIDATES: Array<MetricCandidate<FredSeriesDefinition>> = [
   { id: 'fred-housing-starts', title: 'Housing starts', category: 'Construction Demand', seriesId: 'HOUST', url: 'https://fred.stlouisfed.org/series/HOUST', sectors: ['CONSTRUCTION', 'REAL_ESTATE', 'WHOLESALE_TRADE'], industryKeywords: ['construction', 'building'], productKeywords: ['construction', 'building', 'hardware', 'lumber'], priority: 6 },
   { id: 'fred-construction-materials-ppi', title: 'Construction materials producer price index', category: 'Input Costs', seriesId: 'WPUSI012011', url: 'https://fred.stlouisfed.org/series/WPUSI012011', sectors: ['CONSTRUCTION', 'WHOLESALE_TRADE'], industryKeywords: ['construction', 'building', 'materials'], productKeywords: ['construction', 'building', 'lumber', 'pipe', 'hardware'], priority: 6 },
   { id: 'fred-retail-sales', title: 'Retail and food services sales', category: 'Retail Demand', seriesId: 'RSAFS', url: 'https://fred.stlouisfed.org/series/RSAFS', sectors: ['RETAIL_TRADE', 'WHOLESALE_TRADE'], industryKeywords: ['retail', 'consumer'], productKeywords: ['apparel', 'clothing', 'consumer', 'retail'], priority: 7 },
+  { id: 'fred-clothing-store-sales', title: 'Clothing and clothing accessories store sales', category: 'Apparel Demand', seriesId: 'MRTSSM448USN', url: 'https://fred.stlouisfed.org/series/MRTSSM448USN', sectors: ['RETAIL_TRADE'], industryKeywords: ['clothing', 'apparel', 'resale', 'consignment', 'used merchandise', 'thrift'], productKeywords: ['clothing', 'apparel', 'shoes', 'fashion', 'resale', 'used'], priority: 9 },
   { id: 'fred-consumer-sentiment', title: 'Consumer sentiment', category: 'Consumer Demand', seriesId: 'UMCSENT', url: 'https://fred.stlouisfed.org/series/UMCSENT', sectors: ['RETAIL_TRADE'], industryKeywords: ['retail', 'consumer'], productKeywords: ['apparel', 'clothing', 'consumer'], priority: 6 },
   { id: 'fred-food-services-sales', title: 'Food services and drinking places sales', category: 'Restaurant Demand', seriesId: 'MRTSSM722USN', url: 'https://fred.stlouisfed.org/series/MRTSSM722USN', sectors: ['ACCOMMODATION_FOOD_SERVICES'], industryKeywords: ['restaurant', 'food service', 'hospitality'], productKeywords: ['restaurant', 'food', 'beverage'], priority: 8 },
   { id: 'fred-food-away-from-home-cpi', title: 'Food away from home CPI', category: 'Pricing', seriesId: 'CUSR0000SEFV', url: 'https://fred.stlouisfed.org/series/CUSR0000SEFV', sectors: ['ACCOMMODATION_FOOD_SERVICES'], industryKeywords: ['restaurant', 'food service', 'hospitality'], productKeywords: ['restaurant', 'food', 'beverage'], priority: 7 },
@@ -207,14 +208,23 @@ function keywordScore(text: string, keywords: string[] | undefined, weight: numb
   }, 0);
 }
 
-function scoreCandidate<T>(candidate: MetricCandidate<T>, context: CompanySourceContext): number {
+function candidateTargetScore<T>(candidate: MetricCandidate<T>, context: CompanySourceContext): number {
   const sector = contextSectorKey(context);
-  let score = candidate.priority || 0;
+  let score = 0;
   if (candidate.sectors?.includes(sector)) score += 20;
   score += keywordScore(contextText(context, 'industry'), candidate.industryKeywords, 10);
   score += keywordScore(contextText(context, 'product'), candidate.productKeywords, 14);
   score += keywordScore(contextText(context, 'customer'), candidate.customerKeywords, 8);
   return score;
+}
+
+function hasCandidateTarget<T>(candidate: MetricCandidate<T>): boolean {
+  return Boolean(
+    candidate.sectors?.length
+    || candidate.industryKeywords?.length
+    || candidate.productKeywords?.length
+    || candidate.customerKeywords?.length
+  );
 }
 
 function selectRankedCandidates<T extends { seriesId: string }>(
@@ -223,7 +233,15 @@ function selectRankedCandidates<T extends { seriesId: string }>(
   limit: number,
 ): T[] {
   const ranked = candidates
-    .map((candidate) => ({ candidate, score: scoreCandidate(candidate, context) }))
+    .map((candidate) => {
+      const targetScore = candidateTargetScore(candidate, context);
+      return {
+        candidate,
+        targetScore,
+        score: targetScore + (candidate.priority || 0),
+      };
+    })
+    .filter(({ candidate, targetScore }) => !hasCandidateTarget(candidate) || targetScore > 0)
     .sort((a, b) => b.score - a.score);
   const selected: T[] = [];
   const seen = new Set<string>();
