@@ -348,6 +348,8 @@ function industryOutlookFromRecords(sourceRecords: IndustryBriefSourceRecord[]):
     publishedAt: record.publishedAt,
     summary: record.summary,
     citations: record.citations || [],
+    unit: record.unit,
+    history: record.history,
   })).filter((item) => item.category && item.title && item.summary);
 }
 
@@ -502,6 +504,7 @@ function compactFinalEvidence(sourceRecords: IndustryBriefSourceRecord[]): Array
     summary: record.summary.slice(0, 450),
     url: record.url,
     citations: record.citations?.slice(0, 1),
+    historyPointCount: record.history?.length || 0,
   }));
 }
 
@@ -630,6 +633,7 @@ function scanSourceRecords(sourceRecords: IndustryBriefSourceRecord[]): Industry
     ...record,
     summary: record.summary.slice(0, 1800),
     citations: record.citations?.slice(0, 5),
+    history: undefined,
   }));
 }
 

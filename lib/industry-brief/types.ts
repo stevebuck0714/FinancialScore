@@ -59,6 +59,12 @@ export type IndustryBriefSourceRecord = {
   url?: string;
   summary: string;
   citations?: string[];
+  unit?: string;
+  history?: Array<{
+    date: string;
+    value: number;
+    label?: string;
+  }>;
 };
 
 export type IndustryOutlookItem = {
@@ -70,6 +76,8 @@ export type IndustryOutlookItem = {
   publishedAt?: string;
   summary: string;
   citations: string[];
+  unit?: string;
+  history?: IndustryBriefSourceRecord['history'];
 };
 
 export type DailyIndustryBrief = {

@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import type { DailyIndustryBrief, GrowthOpportunity, IndustryBriefImpact, IndustryBriefStatus } from '@/lib/industry-brief/types';
+import type { DailyIndustryBrief, GrowthOpportunity, IndustryBriefImpact, IndustryBriefStatus, IndustryOutlookItem } from '@/lib/industry-brief/types';
 
 type Props = {
   companyId: string;
@@ -76,6 +76,76 @@ function formatDateTime(value?: string): string {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
   return date.toLocaleString();
+}
+
+function formatMonthLabel(value: string): string {
+  const date = new Date(`${value.slice(0, 10)}T00:00:00.000Z`);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleDateString(undefined, { month: 'short', year: '2-digit', timeZone: 'UTC' });
+}
+
+function formatMetricValue(value: number, unit?: string): string {
+  const formatted = Math.abs(value) >= 1000 ? value.toLocaleString(undefined, { maximumFractionDigits: 1 }) : value.toLocaleString(undefined, { maximumFractionDigits: 2 });
+  return unit ? `${formatted} ${unit}` : formatted;
+}
+
+function SignalTrendChart({ item }: { item: IndustryOutlookItem }) {
+  const history = (item.history || []).filter((point) => Number.isFinite(Number(point.value)));
+  if (history.length < 2) {
+    return <div style={{ fontSize: '13px', color: '#64748b' }}>Not enough historical observations are available for this signal.</div>;
+  }
+  const values = history.map((point) => Number(point.value));
+  const min = Math.min(...values);
+  const max = Math.max(...values);
+  const range = Math.abs(max - min) < 0.000001 ? 1 : max - min;
+  const width = 720;
+  const height = 260;
+  const padding = { top: 20, right: 24, bottom: 42, left: 58 };
+  const innerWidth = width - padding.left - padding.right;
+  const innerHeight = height - padding.top - padding.bottom;
+  const points = history.map((point, index) => {
+    const x = padding.left + (history.length === 1 ? 0 : (index / (history.length - 1)) * innerWidth);
+    const y = padding.top + ((max - Number(point.value)) / range) * innerHeight;
+    return { ...point, x, y, value: Number(point.value) };
+  });
+  const path = points.map((point, index) => `${index === 0 ? 'M' : 'L'} ${point.x.toFixed(2)} ${point.y.toFixed(2)}`).join(' ');
+  const first = points[0];
+  const last = points[points.length - 1];
+
+  return (
+    <div style={{ display: 'grid', gap: '10px' }}>
+      <svg viewBox={`0 0 ${width} ${height}`} role="img" aria-label={`${renderText(item.title)} 12-month trend`} style={{ width: '100%', maxHeight: '320px', border: '1px solid #e2e8f0', borderRadius: '12px', background: '#f8fafc' }}>
+        <line x1={padding.left} y1={padding.top} x2={padding.left} y2={padding.top + innerHeight} stroke="#cbd5e1" />
+        <line x1={padding.left} y1={padding.top + innerHeight} x2={padding.left + innerWidth} y2={padding.top + innerHeight} stroke="#cbd5e1" />
+        {[min, max].map((tick) => {
+          const y = padding.top + ((max - tick) / range) * innerHeight;
+          return (
+            <g key={`tick-${tick}`}>
+              <line x1={padding.left} y1={y} x2={padding.left + innerWidth} y2={y} stroke="#e2e8f0" />
+              <text x={padding.left - 8} y={y + 4} textAnchor="end" fontSize="11" fill="#64748b">{formatMetricValue(tick, item.unit)}</text>
+            </g>
+          );
+        })}
+        <path d={path} fill="none" stroke="#2751d0" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
+        {points.map((point, index) => (
+          <g key={`${point.date}-${index}`}>
+            <circle cx={point.x} cy={point.y} r="4" fill="#2751d0" />
+            <title>{`${formatMonthLabel(point.date)}: ${formatMetricValue(point.value, item.unit)}`}</title>
+          </g>
+        ))}
+        {first && <text x={first.x} y={height - 14} textAnchor="middle" fontSize="11" fill="#64748b">{formatMonthLabel(first.date)}</text>}
+        {last && <text x={last.x} y={height - 14} textAnchor="middle" fontSize="11" fill="#64748b">{formatMonthLabel(last.date)}</text>}
+      </svg>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: '8px' }}>
+        {points.map((point) => (
+          <div key={point.date} style={{ border: '1px solid #e2e8f0', borderRadius: '10px', padding: '8px', background: 'white' }}>
+            <div style={{ fontSize: '11px', color: '#64748b', fontWeight: 800 }}>{formatMonthLabel(point.date)}</div>
+            <div style={{ fontSize: '13px', color: '#0f172a', fontWeight: 900, marginTop: '2px' }}>{formatMetricValue(point.value, item.unit)}</div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
 }
 
 function renderInlineMarkdown(text: string): React.ReactNode {
@@ -201,6 +271,7 @@ export default function IndustryBriefPanel({ companyId }: Props) {
   const [generatingMessage, setGeneratingMessage] = useState<string | null>(null);
   const [generatingStatus, setGeneratingStatus] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'brief' | 'outlook'>('brief');
+  const [activeSignalChart, setActiveSignalChart] = useState<IndustryOutlookItem | null>(null);
 
   const loadBrief = useCallback(async (force = false) => {
     if (!companyId) return;
@@ -322,6 +393,40 @@ export default function IndustryBriefPanel({ companyId }: Props) {
 
   return (
     <div style={{ marginTop: '14px', display: 'grid', gap: '14px' }}>
+      {activeSignalChart && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-label={`${renderText(activeSignalChart.title)} trend`}
+          onClick={() => setActiveSignalChart(null)}
+          style={{ position: 'fixed', inset: 0, background: 'rgba(15, 23, 42, 0.58)', zIndex: 1000, display: 'grid', placeItems: 'center', padding: '18px' }}
+        >
+          <div
+            onClick={(event) => event.stopPropagation()}
+            style={{ width: 'min(880px, 96vw)', maxHeight: '88vh', overflow: 'auto', borderRadius: '16px', background: 'white', boxShadow: '0 24px 80px rgba(15,23,42,0.35)', padding: '18px' }}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', alignItems: 'flex-start' }}>
+              <div>
+                <div style={{ fontSize: '12px', color: '#2751d0', fontWeight: 900, textTransform: 'uppercase' }}>{renderText(activeSignalChart.category)}</div>
+                <div style={{ fontSize: '20px', color: '#0f172a', fontWeight: 900, marginTop: '4px' }}>{renderText(activeSignalChart.title)}</div>
+                <div style={{ fontSize: '13px', color: '#64748b', marginTop: '4px' }}>
+                  {renderText(activeSignalChart.provider)} | Latest: {renderText(activeSignalChart.value) || 'Live source'}{activeSignalChart.publishedAt ? ` | As of ${renderText(activeSignalChart.publishedAt)}` : ''}
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setActiveSignalChart(null)}
+                style={{ border: '1px solid #cbd5e1', borderRadius: '999px', background: 'white', color: '#334155', padding: '6px 11px', fontSize: '12px', fontWeight: 900, cursor: 'pointer' }}
+              >
+                Close
+              </button>
+            </div>
+            <div style={{ marginTop: '14px' }}>
+              <SignalTrendChart item={activeSignalChart} />
+            </div>
+          </div>
+        </div>
+      )}
       <div style={cardStyle}>
         <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', alignItems: 'flex-start', flexWrap: 'wrap' }}>
           <div>
@@ -423,6 +528,15 @@ export default function IndustryBriefPanel({ companyId }: Props) {
                     {item.publishedAt ? `As of ${renderText(item.publishedAt)}` : renderText(item.provider)}
                   </div>
                   <div style={{ fontSize: '12px', color: '#475569', marginTop: '7px' }}>{renderText(item.summary)}</div>
+                  {(item.history?.length || 0) >= 2 && (
+                    <button
+                      type="button"
+                      onClick={() => setActiveSignalChart(item)}
+                      style={{ marginTop: '9px', border: 'none', background: 'transparent', color: '#1d4ed8', padding: 0, fontSize: '12px', fontWeight: 900, cursor: 'pointer' }}
+                    >
+                      View 12-month trend
+                    </button>
+                  )}
                 </div>
               ))}
             </div>

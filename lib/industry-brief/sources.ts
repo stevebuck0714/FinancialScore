@@ -158,6 +158,16 @@ function latestNumericObservation(rows: any[]): { date: string; value: number } 
   return null;
 }
 
+function latestNumericHistory(rows: any[], limit = 12): Array<{ date: string; value: number }> {
+  return rows
+    .map((row) => ({
+      date: String(row?.date || ''),
+      value: Number(row?.value),
+    }))
+    .filter((row) => row.date && Number.isFinite(row.value))
+    .slice(-limit);
+}
+
 function extractUrls(text: string): string[] {
   const matches = text.match(/https?:\/\/[^\s)\]}>"]+/g) || [];
   return Array.from(new Set(matches.map((url) => url.replace(/[.,;]+$/, ''))));
@@ -267,8 +277,17 @@ export async function collectFredIndustryBriefSources(context: CompanySourceCont
       url: series.url,
       summary: `${series.title}: ${latest.value} as of ${latest.date}.`,
       citations: [series.url],
+      history: latestNumericHistory(observations),
     };
   }));
+}
+
+function blsObservationDate(row: any): string {
+  const year = String(row?.year || '').trim();
+  const period = String(row?.period || '').trim();
+  const month = Number(period.replace(/^M/i, ''));
+  if (!/^\d{4}$/.test(year) || !Number.isFinite(month) || month < 1 || month > 12) return '';
+  return `${year}-${String(month).padStart(2, '0')}-01`;
 }
 
 function latestBlsObservation(series: any): { periodName: string; year: string; value: string } | null {
@@ -285,6 +304,29 @@ function latestBlsObservation(series: any): { periodName: string; year: string; 
     }
   }
   return null;
+}
+
+function blsHistory(series: any, unit: string): Array<{ date: string; value: number; label: string }> {
+  const rows = Array.isArray(series?.data) ? series.data : [];
+  return rows
+    .map((row) => {
+      const date = blsObservationDate(row);
+      const value = Number(String(row?.value || '').trim());
+      const periodName = String(row?.periodName || row?.period || '').trim();
+      const year = String(row?.year || '').trim();
+      return {
+        date,
+        value,
+        label: [periodName, year].filter(Boolean).join(' '),
+      };
+    })
+    .filter((row) => row.date && Number.isFinite(row.value))
+    .sort((a, b) => a.date.localeCompare(b.date))
+    .slice(-12)
+    .map((row) => ({
+      ...row,
+      label: unit ? `${row.label} (${unit})` : row.label,
+    }));
 }
 
 export async function collectBlsIndustryBriefSources(context: CompanySourceContext): Promise<IndustryBriefSourceRecord[]> {
@@ -325,6 +367,8 @@ export async function collectBlsIndustryBriefSources(context: CompanySourceConte
       url: definition.url,
       summary: `${definition.title}: ${latest.value} ${definition.unit} for ${latest.periodName} ${latest.year}.`,
       citations: [definition.url],
+      unit: definition.unit,
+      history: blsHistory(row, definition.unit),
     };
   });
 }
