@@ -78,11 +78,32 @@ function formatDateTime(value?: string): string {
   return date.toLocaleString();
 }
 
+function renderInlineMarkdown(text: string): React.ReactNode {
+  const parts = text.split(/(\*\*[^*]+\*\*)/g).filter(Boolean);
+  return parts.map((part, index) => {
+    const bold = part.match(/^\*\*([^*]+)\*\*$/);
+    if (bold) {
+      return <strong key={`${index}-${part}`} style={{ color: '#0f172a' }}>{bold[1]}</strong>;
+    }
+    return <React.Fragment key={`${index}-${part}`}>{part.replace(/\*\*/g, '')}</React.Fragment>;
+  });
+}
+
 function renderFormattedOutlookText(text: unknown): React.ReactNode {
-  const lines = renderText(text)
+  const rawLines = renderText(text)
     .split(/\r?\n/)
     .map((line) => line.trim())
     .filter(Boolean);
+  const lines: string[] = [];
+  for (let index = 0; index < rawLines.length; index += 1) {
+    const line = rawLines[index];
+    if (/^[-*•]$/.test(line) && rawLines[index + 1]) {
+      lines.push(`- ${rawLines[index + 1]}`);
+      index += 1;
+    } else {
+      lines.push(line);
+    }
+  }
   if (lines.length === 0) return null;
 
   return (
@@ -92,15 +113,23 @@ function renderFormattedOutlookText(text: unknown): React.ReactNode {
         if (heading) {
           return (
             <div key={`${index}-${line}`} style={{ fontSize: index === 0 ? '16px' : '14px', color: '#0f172a', fontWeight: 900, marginTop: index === 0 ? 0 : '8px' }}>
-              {renderText(heading[1])}
+              {renderInlineMarkdown(renderText(heading[1]))}
             </div>
           );
         }
-        if (/^[-*]\s+/.test(line)) {
+        const boldHeading = line.match(/^\*\*([^*]+)\*\*$/);
+        if (boldHeading) {
+          return (
+            <div key={`${index}-${line}`} style={{ fontSize: index === 0 ? '16px' : '14px', color: '#0f172a', fontWeight: 900, marginTop: index === 0 ? 0 : '8px' }}>
+              {renderText(boldHeading[1])}
+            </div>
+          );
+        }
+        if (/^[-*•]\s+/.test(line)) {
           return (
             <div key={`${index}-${line}`} style={{ display: 'grid', gridTemplateColumns: '14px minmax(0, 1fr)', gap: '6px', fontSize: '13px', color: '#334155', lineHeight: 1.5 }}>
               <span style={{ color: '#2751d0', fontWeight: 900 }}>•</span>
-              <span>{line.replace(/^[-*]\s+/, '')}</span>
+              <span>{renderInlineMarkdown(line.replace(/^[-*•]\s+/, ''))}</span>
             </div>
           );
         }
@@ -109,7 +138,7 @@ function renderFormattedOutlookText(text: unknown): React.ReactNode {
           return (
             <div key={`${index}-${line}`} style={{ display: 'grid', gridTemplateColumns: '22px minmax(0, 1fr)', gap: '6px', fontSize: '13px', color: '#334155', lineHeight: 1.5 }}>
               <span style={{ color: '#2751d0', fontWeight: 900 }}>{marker}.</span>
-              <span>{line.replace(/^\d+\.\s+/, '')}</span>
+              <span>{renderInlineMarkdown(line.replace(/^\d+\.\s+/, ''))}</span>
             </div>
           );
         }
@@ -117,13 +146,13 @@ function renderFormattedOutlookText(text: unknown): React.ReactNode {
         if (label) {
           return (
             <div key={`${index}-${line}`} style={{ fontSize: '13px', color: '#334155', lineHeight: 1.5 }}>
-              <strong style={{ color: '#0f172a' }}>{renderText(label[1])}:</strong> {renderText(label[2])}
+              <strong style={{ color: '#0f172a' }}>{renderInlineMarkdown(renderText(label[1]))}:</strong> {renderInlineMarkdown(renderText(label[2]))}
             </div>
           );
         }
         return (
           <div key={`${index}-${line}`} style={{ fontSize: '13px', color: '#334155', lineHeight: 1.55 }}>
-            {line}
+            {renderInlineMarkdown(line)}
           </div>
         );
       })}

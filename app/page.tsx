@@ -1417,13 +1417,17 @@ function FinancialScorePage() {
   ] as const;
   const isCompanyUser = currentUser?.role === 'user' && currentUser?.userType === 'company';
   const isCompanyAdmin = isCompanyUser && (currentUser as any)?.companyRole === 'admin';
+  const hasSiteAdminOverride =
+    String(currentUser?.role || '').toLowerCase() === 'siteadmin' ||
+    String(siteAdminSessionUser?.role || '').toLowerCase() === 'siteadmin' ||
+    String(siteAdminViewingAs?.role || '').toLowerCase() === 'siteadmin';
   const allowedSectionsForCompanyUser = useMemo(() => {
     const raw = (currentUser as any)?.sidebarAccess;
-    if (!isCompanyUser || isCompanyAdmin) return null;
+    if (hasSiteAdminOverride || !isCompanyUser || isCompanyAdmin) return null;
     // If missing, default to full access to avoid locking out users due to legacy data.
     if (!Array.isArray(raw)) return COMPANY_USER_SECTIONS as unknown as string[];
     return raw as string[];
-  }, [currentUser, isCompanyUser, isCompanyAdmin]);
+  }, [currentUser, hasSiteAdminOverride, isCompanyUser, isCompanyAdmin]);
 
   const viewToCompanySection = (view: string): string | null => {
     if (view === 'ai-analysis') return 'ask-corelytics';
@@ -1449,6 +1453,7 @@ function FinancialScorePage() {
   };
 
   const hasCompanySectionAccess = (section: string) => {
+    if (hasSiteAdminOverride) return true;
     if (!isCompanyUser || isCompanyAdmin) return true;
     const allowed = allowedSectionsForCompanyUser || (COMPANY_USER_SECTIONS as unknown as string[]);
     if (allowed.includes(section)) return true;
