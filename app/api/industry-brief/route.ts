@@ -56,6 +56,29 @@ export async function GET(request: NextRequest) {
     if (!authorizedByCron && refreshStatus) {
       const existingJob = await getIndustryBriefJob(companyId).catch(() => null);
       if (existingJob?.status === 'failed') {
+        if (existingJob.attemptCount < existingJob.maxAttempts) {
+          const job = await enqueueIndustryBriefJob({
+            companyId,
+            source: 'industry-brief-refresh-retry',
+          });
+          processIndustryBriefJobForCompany(companyId).catch((error) => {
+            console.warn('Daily Industry Brief refresh retry processor kick failed:', {
+              companyId,
+              error: String(error?.message || error).slice(0, 500),
+            });
+          });
+          return NextResponse.json(
+            {
+              status: 'generating',
+              message: 'Daily Industry Brief refresh is retrying after a live source timeout.',
+              jobStatus: job.status,
+              attempts: job.attemptCount,
+              error: job.errorMessage,
+              dataVersion: INDUSTRY_BRIEF_DATA_VERSION,
+            },
+            { status: 202 },
+          );
+        }
         return NextResponse.json(
           {
             status: 'failed',
@@ -123,6 +146,29 @@ export async function GET(request: NextRequest) {
     if (!force && !authorizedByCron) {
       const existingJob = await getIndustryBriefJob(companyId).catch(() => null);
       if (existingJob?.status === 'failed') {
+        if (existingJob.attemptCount < existingJob.maxAttempts) {
+          const job = await enqueueIndustryBriefJob({
+            companyId,
+            source: 'industry-brief-cache-miss-retry',
+          });
+          processIndustryBriefJobForCompany(companyId).catch((error) => {
+            console.warn('Daily Industry Brief cache-miss retry processor kick failed:', {
+              companyId,
+              error: String(error?.message || error).slice(0, 500),
+            });
+          });
+          return NextResponse.json(
+            {
+              status: 'generating',
+              message: 'Daily Industry Brief is retrying after a live source timeout.',
+              jobStatus: job.status,
+              attempts: job.attemptCount,
+              error: job.errorMessage,
+              dataVersion: INDUSTRY_BRIEF_DATA_VERSION,
+            },
+            { status: 202 },
+          );
+        }
         return NextResponse.json(
           {
             status: 'failed',

@@ -420,45 +420,58 @@ export async function collectPerplexityIndustryBriefSource(context: CompanySourc
   const apiKey = process.env.PERPLEXITY_API_KEY || '';
   if (!apiKey) throw new Error('PERPLEXITY_API_KEY is required for Daily Industry Brief competitor/news scan.');
 
-  const prompt = [
+  const buildPrompt = (retry = false) => [
     `Company: ${context.name}`,
     `Industry: ${context.industry}`,
     `Segment: ${context.segment}`,
     context.industryGroupName ? `Detailed industry: ${context.industryGroupName}` : '',
-    context.industryGroupDescription ? `Detailed industry description: ${context.industryGroupDescription}` : '',
     context.productContext ? `Known products/items: ${context.productContext}` : '',
     context.customerContext ? `Known customers/channels: ${context.customerContext}` : '',
     `Location: ${context.location}`,
     '',
-    'Research current, source-backed developments for BOTH the broader U.S. industry outlook and the company-local market.',
-    'Required broad industry coverage: industry demand, input commodities or ingredients, energy/fuel, freight/transportation, labor, regulation, consumer/channel trends, and competitor or capacity signals.',
-    'Required local coverage: metro/state economic conditions, customer-channel demand, local labor availability, weather or operating risks, and nearby competitor/customer expansion where source-backed.',
-    'Return research evidence only: concise cited notes organized by category, with source URLs or citations.',
+    retry
+      ? 'Return 6 current, cited evidence bullets only: 3 industry/customer-demand bullets, 2 local-market bullets, and 1 competitor/regulatory/labor bullet.'
+      : 'Return 8 current, cited evidence bullets only: industry demand, customer/channel demand, input or operating cost, labor, regulation, local market, and competitor/capacity signals.',
+    'Use only source-backed facts from authoritative or clearly identified sources.',
+    'Each bullet must include the source name or URL/citation. Prefer recent sources from the last 30 days when available.',
     'Do not recommend actions, score opportunities, write an executive summary, or infer what the company should do.',
     'Do not estimate private company revenue or employee counts unless an authoritative source states them.',
-  ].join('\n');
+  ].filter(Boolean).join('\n');
 
-  const response = await fetchWithTimeout(
-    'https://api.perplexity.ai/chat/completions',
-    {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        'Content-Type': 'application/json',
+  const requestPerplexity = async (retry = false) => {
+    const response = await fetchWithTimeout(
+      'https://api.perplexity.ai/chat/completions',
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          model: process.env.PERPLEXITY_MODEL || 'sonar-pro',
+          messages: [
+            { role: 'system', content: 'You retrieve source-backed business evidence. Return concise cited facts only. Do not provide strategy or recommendations.' },
+            { role: 'user', content: buildPrompt(retry) },
+          ],
+          temperature: 0.1,
+          max_tokens: retry ? 450 : 650,
+        }),
       },
-      body: JSON.stringify({
-        model: process.env.PERPLEXITY_MODEL || 'sonar-pro',
-        messages: [
-          { role: 'system', content: 'You are a source-first business research analyst. Return concise evidence notes with citations and uncertainty labels. Do not provide strategic recommendations.' },
-          { role: 'user', content: prompt },
-        ],
-        temperature: 0.1,
-        max_tokens: 900,
-      }),
-    },
-    perplexityFetchTimeoutMs(),
-    'Perplexity source scan',
-  );
+      perplexityFetchTimeoutMs(),
+      retry ? 'Perplexity focused retry source scan' : 'Perplexity source scan',
+    );
+    return response;
+  };
+
+  let response: Response;
+  try {
+    response = await requestPerplexity(false);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (!/timed out/i.test(message)) throw error;
+    response = await requestPerplexity(true);
+  }
+
   const data = await response.json();
   if (!response.ok) {
     throw new Error(data?.error?.message || `Perplexity source scan failed with HTTP ${response.status}.`);
