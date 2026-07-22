@@ -1252,6 +1252,8 @@ function FinancialScorePage() {
   >([]);
   const [valuationDataRoomLoading, setValuationDataRoomLoading] = useState(false);
   const [valuationDataRoomError, setValuationDataRoomError] = useState<string | null>(null);
+  const [valuationIndustryBrief, setValuationIndustryBrief] = useState<any | null>(null);
+  const [valuationIndustryBriefGrowthOpportunities, setValuationIndustryBriefGrowthOpportunities] = useState<any[]>([]);
   const [valuationSectionExpanded, setValuationSectionExpanded] = useState<Record<string, boolean>>({
     '1': false,
     '2': false,
@@ -1379,6 +1381,34 @@ function FinancialScorePage() {
       })
       .finally(() => {
         if (!cancelled) setValuationDataRoomLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedCompanyId]);
+
+  useEffect(() => {
+    if (!selectedCompanyId) {
+      setValuationIndustryBrief(null);
+      setValuationIndustryBriefGrowthOpportunities([]);
+      return;
+    }
+    let cancelled = false;
+    fetch(`/api/industry-brief?companyId=${encodeURIComponent(selectedCompanyId)}`, { cache: 'no-store' })
+      .then(async (response) => {
+        if (!response.ok) return null;
+        return response.json();
+      })
+      .then((payload) => {
+        if (cancelled) return;
+        const opportunities = Array.isArray(payload?.growthOpportunities) ? payload.growthOpportunities : [];
+        setValuationIndustryBrief(payload && typeof payload === 'object' ? payload : null);
+        setValuationIndustryBriefGrowthOpportunities(opportunities);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setValuationIndustryBrief(null);
+        setValuationIndustryBriefGrowthOpportunities([]);
       });
     return () => {
       cancelled = true;
@@ -10828,10 +10858,10 @@ function FinancialScorePage() {
     },
     {
       id: '10',
-      title: '8. Risk Analysis',
+      title: '8. Market, Competitor, and Opportunity Scan',
       rows: [
-        { key: 'ra_keyRisks', label: 'Key Risks' },
-        { key: 'ra_mitigation', label: 'Mitigation' },
+        { key: 'ra_keyRisks', label: 'Market, Competitor, and Opportunity Scan' },
+        { key: 'ra_mitigation', label: 'Economic Signals' },
       ],
     },
     {
@@ -12184,37 +12214,130 @@ function FinancialScorePage() {
     }
 
     if (sectionId === '10') {
-      if (valuationBuilderSelections.ra_keyRisks) {
-        const riskItems: string[] = [];
-        if (businessOverviewCustomerConcentration) {
-          riskItems.push(`Customer concentration remains elevated at Top 1 ${pct(businessOverviewCustomerConcentration.top1Pct)} and Top 5 ${pct(businessOverviewCustomerConcentration.top5Pct)}.`);
+      const briefText = (value: unknown): string => {
+        if (typeof value === 'string') return value.trim();
+        if (typeof value === 'number' || typeof value === 'boolean') return String(value);
+        if (Array.isArray(value)) return value.map(briefText).filter(Boolean).join(', ');
+        if (value && typeof value === 'object') {
+          return Object.entries(value as Record<string, unknown>)
+            .map(([key, item]) => {
+              const text = briefText(item);
+              return text ? `${key}: ${text}` : '';
+            })
+            .filter(Boolean)
+            .join('; ');
         }
-        riskItems.push(`Valuation sensitivity is meaningful to DCF assumptions (discount ${Number(dcfDiscountRate).toFixed(2)}%, terminal ${Number(dcfTerminalGrowth).toFixed(2)}%).`);
-        lines.push(`${rowLabel('ra_keyRisks', 'Key Risks')}:`);
-        riskItems.forEach((item) => lines.push(`- ${item}`));
+        return '';
+      };
+      const outlookItems = Array.isArray(valuationIndustryBrief?.industryOutlook) ? valuationIndustryBrief.industryOutlook : [];
+      const marketScanItems = outlookItems.filter((item: any) => {
+        const provider = briefText(item?.provider).toLowerCase();
+        const category = briefText(item?.category).toLowerCase();
+        return provider === 'perplexity' || category.includes('news') || category.includes('competitive') || category.includes('market');
+      });
+      const economicSignalItems = outlookItems.filter((item: any) => {
+        const provider = briefText(item?.provider).toLowerCase();
+        return provider === 'fred' || provider === 'bls';
+      });
+      const marketSignals = Array.isArray(valuationIndustryBrief?.marketSignals) ? valuationIndustryBrief.marketSignals : [];
+      const unavailableLine = '- Daily Industry Brief Industry Outlook is not available yet for this company. Generate the Daily Industry Brief before finalizing this valuation section.';
+      if (valuationBuilderSelections.ra_keyRisks) {
+        lines.push(`${rowLabel('ra_keyRisks', 'Market, Competitor, and Opportunity Scan')}:`);
+        if (marketScanItems.length === 0 && marketSignals.length === 0) {
+          lines.push(unavailableLine);
+        } else {
+          marketScanItems.slice(0, 2).forEach((item: any) => {
+            const title = briefText(item?.title) || briefText(item?.category) || 'Industry Outlook';
+            const summary = briefText(item?.summary);
+            const citations = Array.isArray(item?.citations) ? item.citations.map(briefText).filter(Boolean).slice(0, 2) : [];
+            lines.push(`- ${title}: ${summary || 'No summary provided.'}`);
+            if (citations.length > 0) lines.push(`  Sources: ${citations.join('; ')}`);
+          });
+          marketSignals.slice(0, 4).forEach((signal: any) => {
+            const title = briefText(signal?.title) || briefText(signal?.category) || 'Market signal';
+            const currentValue = briefText(signal?.currentValue);
+            const trend = briefText(signal?.trend);
+            const implication = briefText(signal?.companyImplication);
+            lines.push(`- ${title}${currentValue ? ` (${currentValue})` : ''}${trend ? `, trend: ${trend}` : ''}. ${implication}`);
+          });
+        }
         lines.push('');
       }
       if (valuationBuilderSelections.ra_mitigation) {
-        lines.push(`${rowLabel('ra_mitigation', 'Mitigation')}:`);
-        lines.push('- Diversify revenue concentration, tighten customer retention metrics, and document renewal visibility for major accounts.');
-        lines.push('- Run diligence-ready valuation sensitivities quarterly using the current SDE/EBITDA/DCF assumptions.');
+        lines.push(`${rowLabel('ra_mitigation', 'Economic Signals')}:`);
+        if (economicSignalItems.length === 0) {
+          lines.push(unavailableLine);
+        } else {
+          economicSignalItems.slice(0, 6).forEach((item: any) => {
+            const title = briefText(item?.title) || briefText(item?.category) || 'Economic signal';
+            const value = briefText(item?.value);
+            const publishedAt = briefText(item?.publishedAt);
+            const summary = briefText(item?.summary);
+            lines.push(`- ${title}${value ? `: ${value}` : ''}${publishedAt ? ` as of ${publishedAt}` : ''}. ${summary}`);
+          });
+        }
       }
       return lines.join('\n');
     }
 
     if (sectionId === '11') {
-      const growthPct = Number(growth_24mo) || 0;
-      const latestEbitdaMargin = historicalFinancialSummaryData.ebitdaMarginByQuarter.at(-1) || 0;
+      const briefOpportunities = [...(valuationIndustryBriefGrowthOpportunities || [])]
+        .sort((a, b) => (Number(b?.score) || -1) - (Number(a?.score) || -1))
+        .slice(0, 3);
+      const opportunityText = (value: unknown): string => {
+        if (typeof value === 'string') return value.trim();
+        if (typeof value === 'number' || typeof value === 'boolean') return String(value);
+        if (Array.isArray(value)) return value.map(opportunityText).filter(Boolean).join(', ');
+        if (value && typeof value === 'object') {
+          return Object.entries(value as Record<string, unknown>)
+            .map(([key, item]) => {
+              const text = opportunityText(item);
+              return text ? `${key}: ${text}` : '';
+            })
+            .filter(Boolean)
+            .join('; ');
+        }
+        return '';
+      };
+      const opportunityLabel = (value: unknown): string => opportunityText(value).replace(/_/g, ' ');
+      const pushIndustryBriefUnavailable = () => {
+        lines.push('- Daily Industry Brief growth opportunities are not available yet for this company. Generate the Daily Industry Brief before finalizing this valuation section.');
+      };
       if (valuationBuilderSelections.go_expansionOpportunities) {
         lines.push(`${rowLabel('go_expansionOpportunities', 'Expansion Opportunities')}:`);
-        lines.push(`- 24-month growth trend currently tracks ${pct(growthPct)}; prioritize highest-margin accounts and recurring revenue offers.`);
-        lines.push('- Evaluate pricing and cross-sell opportunities within existing customer cohorts to lift value-driver stability.');
+        if (briefOpportunities.length === 0) {
+          pushIndustryBriefUnavailable();
+        } else {
+          briefOpportunities.forEach((opportunity, index) => {
+            const title = opportunityText(opportunity?.title) || `Growth Opportunity ${index + 1}`;
+            const score = Number(opportunity?.score);
+            const scoreText = Number.isFinite(score) ? `${Math.round(score)}/100` : 'N/A';
+            const whyNow = opportunityText(opportunity?.whyNow);
+            const estimatedImpact = opportunityText(opportunity?.estimatedImpact);
+            const evidence = Array.isArray(opportunity?.evidence)
+              ? opportunity.evidence.map(opportunityText).filter(Boolean).slice(0, 2)
+              : [];
+            lines.push(`- ${title} (score ${scoreText}; revenue potential ${opportunityLabel(opportunity?.revenuePotential) || 'N/A'}; margin potential ${opportunityLabel(opportunity?.marginPotential) || 'N/A'}; urgency ${opportunityLabel(opportunity?.urgency) || 'N/A'}).`);
+            if (whyNow) lines.push(`  Why now: ${whyNow}`);
+            if (estimatedImpact) lines.push(`  Estimated impact: ${estimatedImpact}`);
+            evidence.forEach((item) => lines.push(`  Evidence: ${item}`));
+          });
+        }
         lines.push('');
       }
       if (valuationBuilderSelections.go_operationalImprovements) {
         lines.push(`${rowLabel('go_operationalImprovements', 'Operational Improvements')}:`);
-        lines.push(`- Current trailing EBITDA margin is ${pct(latestEbitdaMargin)}; margin expansion roadmap should focus on COGS mix and operating leverage.`);
-        lines.push('- Working-capital release opportunities should be documented as a post-close value creation plan.');
+        if (briefOpportunities.length === 0) {
+          pushIndustryBriefUnavailable();
+        } else {
+          briefOpportunities.forEach((opportunity) => {
+            const title = opportunityText(opportunity?.title) || 'Growth opportunity';
+            const action = opportunityText(opportunity?.recommendedAction);
+            const owner = opportunityText(opportunity?.owner);
+            const confidence = opportunityLabel(opportunity?.confidence);
+            lines.push(`- ${title}: ${action || 'Recommended action not provided by the Daily Industry Brief.'}${owner ? ` Owner: ${owner}.` : ''}${confidence ? ` Confidence: ${confidence}.` : ''}`);
+          });
+        }
       }
       return lines.join('\n');
     }
@@ -12231,7 +12354,7 @@ function FinancialScorePage() {
     }
 
     return lines.join('\n');
-  }, [buildExecutiveSummaryReportText, buildBusinessOverviewReportText, buildHistoricalFinancialSummaryReportText, valuationSectionDefinitions, valuationBuilderSelections, indexToLetterLabel, valuationReportSectionDisplayTitle, sdeAnalysisTotalsState, valuationExecutiveOverview, businessOverviewCustomerConcentration, businessOverviewRevenueMix, monthly, trendData, sdeMultiplier, ebitdaMultiplier, dcfDiscountRate, dcfTerminalGrowth, growth_24mo, historicalFinancialSummaryData]);
+  }, [buildExecutiveSummaryReportText, buildBusinessOverviewReportText, buildHistoricalFinancialSummaryReportText, valuationSectionDefinitions, valuationBuilderSelections, indexToLetterLabel, valuationReportSectionDisplayTitle, sdeAnalysisTotalsState, valuationExecutiveOverview, businessOverviewCustomerConcentration, businessOverviewRevenueMix, monthly, trendData, sdeMultiplier, ebitdaMultiplier, dcfDiscountRate, dcfTerminalGrowth, growth_24mo, historicalFinancialSummaryData, valuationIndustryBrief, valuationIndustryBriefGrowthOpportunities]);
   const buildStyledValuationReportHtml = useCallback((content: string): string => {
     const escapeHtml = (value: string) =>
       value
