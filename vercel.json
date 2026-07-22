@@ -30,6 +30,10 @@
       "memory": 3008,
       "maxDuration": 300
     },
+    "app/api/industry-brief/route.ts": {
+      "memory": 3008,
+      "maxDuration": 300
+    },
     "app/api/cron/process-industry-brief-jobs/route.ts": {
       "memory": 3008,
       "maxDuration": 300

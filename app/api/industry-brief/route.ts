@@ -10,7 +10,7 @@ import { loadIndustryBriefCompany } from '@/lib/industry-brief/service';
 import { warmDailyIndustryBriefCache } from '@/lib/industry-brief/warmup';
 
 export const dynamic = 'force-dynamic';
-export const maxDuration = 120;
+export const maxDuration = 300;
 
 function isCronAuthorized(request: NextRequest): boolean {
   const cronSecret = String(process.env.CRON_SECRET || '').trim();

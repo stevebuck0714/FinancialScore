@@ -112,9 +112,9 @@ const BLS_CANDIDATES: Array<MetricCandidate<BlsSeriesDefinition>> = [
   { id: 'bls-financial-activities-employment', title: 'Financial activities employment', category: 'Labor', seriesId: 'CES5500000001', unit: 'thousands of employees', url: 'https://data.bls.gov/timeseries/CES5500000001', sectors: ['FINANCE_INSURANCE'], industryKeywords: ['bank', 'finance', 'insurance', 'credit'], priority: 6 },
 ];
 
-const FRED_FETCH_TIMEOUT_MS = 8000;
-const BLS_FETCH_TIMEOUT_MS = 8000;
-const DEFAULT_PERPLEXITY_FETCH_TIMEOUT_MS = 30000;
+const FRED_FETCH_TIMEOUT_MS = 30000;
+const BLS_FETCH_TIMEOUT_MS = 30000;
+const DEFAULT_PERPLEXITY_FETCH_TIMEOUT_MS = 60000;
 
 function fredApiKey(): string {
   return process.env.FRED_API_KEY || process.env.NEXT_PUBLIC_FRED_API_KEY || '';
@@ -123,7 +123,7 @@ function fredApiKey(): string {
 function perplexityFetchTimeoutMs(): number {
   const parsed = Number(process.env.INDUSTRY_BRIEF_PERPLEXITY_TIMEOUT_MS || DEFAULT_PERPLEXITY_FETCH_TIMEOUT_MS);
   if (!Number.isFinite(parsed)) return DEFAULT_PERPLEXITY_FETCH_TIMEOUT_MS;
-  return Math.max(10000, Math.min(45000, Math.floor(parsed)));
+  return Math.max(30000, Math.min(90000, Math.floor(parsed)));
 }
 
 function oneYearAgo(): string {
@@ -284,45 +284,69 @@ async function fetchWithTimeout(url: string, init: RequestInit, timeoutMs: numbe
   }
 }
 
+async function retrySource<T>(label: string, attempts: number, work: (attempt: number) => Promise<T>): Promise<T> {
+  let lastError: unknown = null;
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    try {
+      return await work(attempt);
+    } catch (error) {
+      lastError = error;
+      const message = error instanceof Error ? error.message : String(error);
+      if (attempt >= attempts || !/(timed out|HTTP 429|HTTP 5\d\d|request did not succeed)/i.test(message)) break;
+      await new Promise((resolve) => setTimeout(resolve, 500 * attempt));
+    }
+  }
+  throw lastError instanceof Error ? lastError : new Error(`${label} failed.`);
+}
+
+async function collectFredSeries(series: FredSeriesDefinition): Promise<IndustryBriefSourceRecord> {
+  const apiKey = fredApiKey();
+  const params = new URLSearchParams({
+    series_id: series.seriesId,
+    api_key: apiKey,
+    file_type: 'json',
+    sort_order: 'asc',
+    observation_start: oneYearAgo(),
+  });
+  const response = await retrySource(`FRED source ${series.seriesId}`, 2, () => fetchWithTimeout(
+    `https://api.stlouisfed.org/fred/series/observations?${params.toString()}`,
+    { next: { revalidate: 60 * 60 * 6 } },
+    FRED_FETCH_TIMEOUT_MS,
+    `FRED source ${series.seriesId}`,
+  ));
+  if (!response.ok) {
+    throw new Error(`FRED source ${series.seriesId} failed with HTTP ${response.status}.`);
+  }
+  const data = await response.json();
+  const observations = Array.isArray(data?.observations) ? data.observations : [];
+  const latest = latestNumericObservation(observations);
+  if (!latest) throw new Error(`FRED source ${series.seriesId} returned no numeric observations.`);
+  return {
+    id: series.id,
+    provider: 'FRED',
+    category: series.category,
+    title: series.title,
+    value: String(latest.value),
+    publishedAt: latest.date,
+    url: series.url,
+    summary: `${series.title}: ${latest.value} as of ${latest.date}.`,
+    citations: [series.url],
+    history: latestNumericHistory(observations),
+  };
+}
+
 export async function collectFredIndustryBriefSources(context: CompanySourceContext): Promise<IndustryBriefSourceRecord[]> {
   const apiKey = fredApiKey();
   if (!apiKey) throw new Error('FRED_API_KEY is required for Daily Industry Brief source scan.');
   const seriesDefinitions = fredSeriesForContext(context);
 
-  return Promise.all(seriesDefinitions.map(async (series) => {
-    const params = new URLSearchParams({
-      series_id: series.seriesId,
-      api_key: apiKey,
-      file_type: 'json',
-      sort_order: 'asc',
-      observation_start: oneYearAgo(),
-    });
-    const response = await fetchWithTimeout(
-      `https://api.stlouisfed.org/fred/series/observations?${params.toString()}`,
-      { next: { revalidate: 60 * 60 * 6 } },
-      FRED_FETCH_TIMEOUT_MS,
-      `FRED source ${series.seriesId}`,
-    );
-    if (!response.ok) {
-      throw new Error(`FRED source ${series.seriesId} failed with HTTP ${response.status}.`);
-    }
-    const data = await response.json();
-    const observations = Array.isArray(data?.observations) ? data.observations : [];
-    const latest = latestNumericObservation(observations);
-    if (!latest) throw new Error(`FRED source ${series.seriesId} returned no numeric observations.`);
-    return {
-      id: series.id,
-      provider: 'FRED',
-      category: series.category,
-      title: series.title,
-      value: String(latest.value),
-      publishedAt: latest.date,
-      url: series.url,
-      summary: `${series.title}: ${latest.value} as of ${latest.date}.`,
-      citations: [series.url],
-      history: latestNumericHistory(observations),
-    };
-  }));
+  const results = await Promise.allSettled(seriesDefinitions.map((series) => collectFredSeries(series)));
+  const records = results.flatMap((result) => result.status === 'fulfilled' ? [result.value] : []);
+  if (records.length > 0) return records;
+  const failures = results.flatMap((result) => result.status === 'rejected'
+    ? [result.reason instanceof Error ? result.reason.message : String(result.reason)]
+    : []);
+  throw new Error(failures.join(' | ') || 'FRED source scan returned no live sources.');
 }
 
 function blsObservationDate(row: any): string {
@@ -375,7 +399,7 @@ function blsHistory(series: any, unit: string): Array<{ date: string; value: num
 export async function collectBlsIndustryBriefSources(context: CompanySourceContext): Promise<IndustryBriefSourceRecord[]> {
   const year = new Date().getUTCFullYear();
   const seriesDefinitions = blsSeriesForContext(context);
-  const response = await fetchWithTimeout(
+  const response = await retrySource('BLS source scan', 2, () => fetchWithTimeout(
     'https://api.bls.gov/publicAPI/v2/timeseries/data/',
     {
       method: 'POST',
@@ -389,18 +413,18 @@ export async function collectBlsIndustryBriefSources(context: CompanySourceConte
     },
     BLS_FETCH_TIMEOUT_MS,
     'BLS source scan',
-  );
+  ));
   if (!response.ok) throw new Error(`BLS source scan failed with HTTP ${response.status}.`);
   const data = await response.json();
   if (String(data?.status || '').toUpperCase() !== 'REQUEST_SUCCEEDED') {
     throw new Error(`BLS source scan failed: ${Array.isArray(data?.message) ? data.message.join('; ') : 'request did not succeed'}`);
   }
   const seriesRows = Array.isArray(data?.Results?.series) ? data.Results.series : [];
-  return seriesDefinitions.map((definition) => {
+  const records: IndustryBriefSourceRecord[] = seriesDefinitions.flatMap((definition) => {
     const row = seriesRows.find((item: any) => String(item?.seriesID || '') === definition.seriesId);
     const latest = latestBlsObservation(row);
-    if (!latest) throw new Error(`BLS source ${definition.seriesId} returned no observations.`);
-    return {
+    if (!latest) return [];
+    return [{
       id: definition.id,
       provider: 'BLS',
       category: definition.category,
@@ -412,8 +436,10 @@ export async function collectBlsIndustryBriefSources(context: CompanySourceConte
       citations: [definition.url],
       unit: definition.unit,
       history: blsHistory(row, definition.unit),
-    };
+    }];
   });
+  if (records.length === 0) throw new Error(`BLS source scan returned no observations for ${seriesDefinitions.map((series) => series.seriesId).join(', ')}.`);
+  return records;
 }
 
 export async function collectPerplexityIndustryBriefSource(context: CompanySourceContext): Promise<IndustryBriefSourceRecord> {
@@ -507,14 +533,16 @@ export async function collectIndustryBriefSources(context: CompanySourceContext)
     const message = result.reason instanceof Error ? result.reason.message : String(result.reason);
     return [`${labels[index]}: ${message}`];
   });
-  if (failures.length > 0) {
-    throw new IndustryBriefSourceCollectionError(failures);
-  }
-
   const fredSources = results[0].status === 'fulfilled' ? results[0].value : [];
   const blsSources = results[1].status === 'fulfilled' ? results[1].value : [];
   const perplexitySource = results[2].status === 'fulfilled' ? results[2].value : null;
   const sources = [...fredSources, ...blsSources, ...(perplexitySource ? [perplexitySource] : [])];
+  const providerCount = new Set(sources.map((source) => source.provider)).size;
+  if (sources.length >= 3 && providerCount >= 2) return sources;
+  if (failures.length > 0) {
+    throw new IndustryBriefSourceCollectionError(failures);
+  }
   if (sources.length < 3) throw new Error('Daily Industry Brief source scan returned too few live sources.');
+  if (providerCount < 2) throw new Error('Daily Industry Brief source scan returned too few live source providers.');
   return sources;
 }
