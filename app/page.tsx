@@ -1388,6 +1388,8 @@ function FinancialScorePage() {
   // State - Dashboard Customization
   const [selectedDashboardWidgets, setSelectedDashboardWidgets] = useState<string[]>([]);
   const [showDashboardCustomizer, setShowDashboardCustomizer] = useState(false);
+  const [siteAdminViewingAs, setSiteAdminViewingAs] = useState<any>(null);
+  const [siteAdminSessionUser, setSiteAdminSessionUser] = useState<any>(null);
 
 
   // Check if current view is allowed for assessment users
@@ -2784,8 +2786,6 @@ function FinancialScorePage() {
   const [companyToDelete, setCompanyToDelete] = useState<{companyId: string, businessId: string, companyName: string} | null>(null);
   const [showDeleteConfirmation, setShowDeleteConfirmation] = useState(false);
   const [deleteCompanyConfirmText, setDeleteCompanyConfirmText] = useState('');
-  const [siteAdminViewingAs, setSiteAdminViewingAs] = useState<any>(null);
-  const [siteAdminSessionUser, setSiteAdminSessionUser] = useState<any>(null);
   const [showAddConsultantForm, setShowAddConsultantForm] = useState(false);
 
   useEffect(() => {
