@@ -75,12 +75,14 @@ export async function enqueueIndustryBriefJob(params: {
   companyId: string;
   source?: string;
   briefDate?: string;
+  requeueDone?: boolean;
 }): Promise<IndustryBriefJob> {
   await ensureIndustryBriefJobTable();
   const companyId = String(params.companyId || '').trim();
   if (!companyId) throw new Error('companyId is required');
   const briefDate = params.briefDate || industryBriefDateKey();
   const id = jobId(companyId, briefDate);
+  const requeueDone = params.requeueDone !== false;
   const rows = await prisma.$queryRawUnsafe<any[]>(
     `INSERT INTO "IndustryBriefGenerationJob" (
        "id", "companyId", "briefDate", "status", "source", "availableAt", "updatedAt", "errorMessage"
@@ -90,16 +92,19 @@ export async function enqueueIndustryBriefJob(params: {
      DO UPDATE SET
        "status" = CASE
          WHEN "IndustryBriefGenerationJob"."status" = 'running' THEN "IndustryBriefGenerationJob"."status"
+         WHEN "IndustryBriefGenerationJob"."status" = 'done' AND $5 = FALSE THEN "IndustryBriefGenerationJob"."status"
          ELSE 'queued'
        END,
        "source" = EXCLUDED."source",
        "availableAt" = CASE
          WHEN "IndustryBriefGenerationJob"."status" = 'running' THEN "IndustryBriefGenerationJob"."availableAt"
+         WHEN "IndustryBriefGenerationJob"."status" = 'done' AND $5 = FALSE THEN "IndustryBriefGenerationJob"."availableAt"
          ELSE CURRENT_TIMESTAMP
        END,
        "updatedAt" = CURRENT_TIMESTAMP,
        "errorMessage" = CASE
          WHEN "IndustryBriefGenerationJob"."status" = 'running' THEN "IndustryBriefGenerationJob"."errorMessage"
+         WHEN "IndustryBriefGenerationJob"."status" = 'done' AND $5 = FALSE THEN "IndustryBriefGenerationJob"."errorMessage"
          ELSE NULL
        END
      RETURNING *`,
@@ -107,6 +112,7 @@ export async function enqueueIndustryBriefJob(params: {
     companyId,
     briefDate,
     params.source || null,
+    requeueDone,
   );
   return mapJob(rows[0]);
 }

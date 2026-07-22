@@ -4,11 +4,11 @@ import type { DailyIndustryBrief, IndustryBriefSourceRecord } from '@/lib/indust
 
 export const INDUSTRY_BRIEF_CACHE_NAMESPACE = 'daily-industry-brief';
 export const INDUSTRY_BRIEF_DATA_VERSION = 'v13-staffing-labor-source-cache';
-export const INDUSTRY_BRIEF_CACHE_TTL_SECONDS = 6 * 60 * 60;
+export const INDUSTRY_BRIEF_CACHE_TTL_SECONDS = 36 * 60 * 60;
 
 const SOURCE_CACHE_NAMESPACE = 'daily-industry-brief-sources';
 const SOURCE_DATA_VERSION = 'v4-staffing-labor-live-source-bundle';
-const SOURCE_CACHE_TTL_SECONDS = 12 * 60 * 60;
+const SOURCE_CACHE_TTL_SECONDS = 36 * 60 * 60;
 
 export type IndustryBriefSourceContext = {
   name: string;
