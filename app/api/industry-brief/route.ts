@@ -26,6 +26,7 @@ export async function GET(request: NextRequest) {
     }
     const companyId = String(request.nextUrl.searchParams.get('companyId') || '').trim();
     const force = request.nextUrl.searchParams.get('force') === 'true';
+    const refreshStatus = request.nextUrl.searchParams.get('refreshStatus') === 'true';
     if (!companyId) {
       return NextResponse.json({ error: 'companyId is required' }, { status: 400 });
     }
@@ -37,7 +38,7 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    if (!force) {
+    if (!force && !refreshStatus) {
       const cached = await readCachedIndustryBrief(companyId);
       if (cached) return NextResponse.json(cached);
     }
@@ -49,6 +50,73 @@ export async function GET(request: NextRequest) {
       return NextResponse.json(
         { error: message },
         { status: message === 'Company not found' ? 404 : 422 },
+      );
+    }
+
+    if (!authorizedByCron && refreshStatus) {
+      const existingJob = await getIndustryBriefJob(companyId).catch(() => null);
+      if (existingJob?.status === 'failed') {
+        return NextResponse.json(
+          {
+            status: 'failed',
+            message: 'Daily Industry Brief refresh failed.',
+            jobStatus: existingJob.status,
+            attempts: existingJob.attemptCount,
+            error: existingJob.errorMessage || 'Refresh failed.',
+            dataVersion: INDUSTRY_BRIEF_DATA_VERSION,
+          },
+          { status: 503 },
+        );
+      }
+      if (existingJob?.status === 'queued' || existingJob?.status === 'running') {
+        return NextResponse.json(
+          {
+            status: 'generating',
+            message: 'Daily Industry Brief refresh is still running.',
+            jobStatus: existingJob.status,
+            attempts: existingJob.attemptCount,
+            error: existingJob.errorMessage,
+            dataVersion: INDUSTRY_BRIEF_DATA_VERSION,
+          },
+          { status: 202 },
+        );
+      }
+      const cached = await readCachedIndustryBrief(companyId);
+      if (cached) return NextResponse.json(cached);
+      return NextResponse.json(
+        {
+          status: 'generating',
+          message: 'Daily Industry Brief refresh is queued or waiting for cached output.',
+          jobStatus: existingJob?.status || null,
+          dataVersion: INDUSTRY_BRIEF_DATA_VERSION,
+        },
+        { status: 202 },
+      );
+    }
+
+    if (!authorizedByCron && force) {
+      const job = await enqueueIndustryBriefJob({
+        companyId,
+        source: 'industry-brief-manual-refresh',
+        requeueDone: true,
+        forceSources: true,
+      });
+      processIndustryBriefJobForCompany(companyId).catch((error) => {
+        console.warn('Daily Industry Brief manual refresh processor kick failed:', {
+          companyId,
+          error: String(error?.message || error).slice(0, 500),
+        });
+      });
+      return NextResponse.json(
+        {
+          status: 'generating',
+          message: 'Daily Industry Brief refresh is running in the background. The current cached brief will remain available until refresh completes.',
+          jobStatus: job.status,
+          attempts: job.attemptCount,
+          error: job.errorMessage,
+          dataVersion: INDUSTRY_BRIEF_DATA_VERSION,
+        },
+        { status: 202 },
       );
     }
 

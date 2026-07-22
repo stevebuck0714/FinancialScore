@@ -8,6 +8,7 @@ export type IndustryBriefJob = {
   briefDate: string;
   status: 'queued' | 'running' | 'done' | 'failed';
   source: string | null;
+  forceSources: boolean;
   attemptCount: number;
   maxAttempts: number;
   errorMessage: string | null;
@@ -25,6 +26,7 @@ async function ensureIndustryBriefJobTable(): Promise<void> {
           "briefDate" TEXT NOT NULL,
           "status" TEXT NOT NULL DEFAULT 'queued',
           "source" TEXT,
+          "forceSources" BOOLEAN NOT NULL DEFAULT FALSE,
           "attemptCount" INTEGER NOT NULL DEFAULT 0,
           "maxAttempts" INTEGER NOT NULL DEFAULT 3,
           "availableAt" TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -37,6 +39,10 @@ async function ensureIndustryBriefJobTable(): Promise<void> {
           "updatedAt" TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
           CONSTRAINT "IndustryBriefGenerationJob_company_date_unique" UNIQUE ("companyId", "briefDate")
         )
+      `);
+      await prisma.$executeRawUnsafe(`
+        ALTER TABLE "IndustryBriefGenerationJob"
+        ADD COLUMN IF NOT EXISTS "forceSources" BOOLEAN NOT NULL DEFAULT FALSE
       `);
       await prisma.$executeRawUnsafe(`
         CREATE INDEX IF NOT EXISTS "IndustryBriefGenerationJob_status_available_idx"
@@ -65,6 +71,7 @@ function mapJob(row: any): IndustryBriefJob {
     briefDate: String(row.briefDate || ''),
     status: String(row.status || 'queued') as IndustryBriefJob['status'],
     source: row.source == null ? null : String(row.source),
+    forceSources: Boolean(row.forceSources),
     attemptCount: Number(row.attemptCount || 0),
     maxAttempts: Number(row.maxAttempts || 3),
     errorMessage: row.errorMessage == null ? null : String(row.errorMessage),
@@ -76,6 +83,7 @@ export async function enqueueIndustryBriefJob(params: {
   source?: string;
   briefDate?: string;
   requeueDone?: boolean;
+  forceSources?: boolean;
 }): Promise<IndustryBriefJob> {
   await ensureIndustryBriefJobTable();
   const companyId = String(params.companyId || '').trim();
@@ -83,28 +91,34 @@ export async function enqueueIndustryBriefJob(params: {
   const briefDate = params.briefDate || industryBriefDateKey();
   const id = jobId(companyId, briefDate);
   const requeueDone = params.requeueDone !== false;
+  const forceSources = params.forceSources === true;
   const rows = await prisma.$queryRawUnsafe<any[]>(
     `INSERT INTO "IndustryBriefGenerationJob" (
-       "id", "companyId", "briefDate", "status", "source", "availableAt", "updatedAt", "errorMessage"
+       "id", "companyId", "briefDate", "status", "source", "forceSources", "availableAt", "updatedAt", "errorMessage"
      )
-     VALUES ($1, $2, $3, 'queued', $4, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, NULL)
+     VALUES ($1, $2, $3, 'queued', $4, $5, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, NULL)
      ON CONFLICT ("companyId", "briefDate")
      DO UPDATE SET
        "status" = CASE
          WHEN "IndustryBriefGenerationJob"."status" = 'running' THEN "IndustryBriefGenerationJob"."status"
-         WHEN "IndustryBriefGenerationJob"."status" = 'done' AND $5 = FALSE THEN "IndustryBriefGenerationJob"."status"
+         WHEN "IndustryBriefGenerationJob"."status" = 'done' AND $6 = FALSE THEN "IndustryBriefGenerationJob"."status"
          ELSE 'queued'
        END,
        "source" = EXCLUDED."source",
+       "forceSources" = CASE
+         WHEN "IndustryBriefGenerationJob"."status" = 'running' THEN "IndustryBriefGenerationJob"."forceSources"
+         WHEN "IndustryBriefGenerationJob"."status" = 'done' AND $6 = FALSE THEN "IndustryBriefGenerationJob"."forceSources"
+         ELSE EXCLUDED."forceSources"
+       END,
        "availableAt" = CASE
          WHEN "IndustryBriefGenerationJob"."status" = 'running' THEN "IndustryBriefGenerationJob"."availableAt"
-         WHEN "IndustryBriefGenerationJob"."status" = 'done' AND $5 = FALSE THEN "IndustryBriefGenerationJob"."availableAt"
+         WHEN "IndustryBriefGenerationJob"."status" = 'done' AND $6 = FALSE THEN "IndustryBriefGenerationJob"."availableAt"
          ELSE CURRENT_TIMESTAMP
        END,
        "updatedAt" = CURRENT_TIMESTAMP,
        "errorMessage" = CASE
          WHEN "IndustryBriefGenerationJob"."status" = 'running' THEN "IndustryBriefGenerationJob"."errorMessage"
-         WHEN "IndustryBriefGenerationJob"."status" = 'done' AND $5 = FALSE THEN "IndustryBriefGenerationJob"."errorMessage"
+         WHEN "IndustryBriefGenerationJob"."status" = 'done' AND $6 = FALSE THEN "IndustryBriefGenerationJob"."errorMessage"
          ELSE NULL
        END
      RETURNING *`,
@@ -112,6 +126,7 @@ export async function enqueueIndustryBriefJob(params: {
     companyId,
     briefDate,
     params.source || null,
+    forceSources,
     requeueDone,
   );
   return mapJob(rows[0]);
@@ -129,7 +144,11 @@ export async function claimNextIndustryBriefJob(): Promise<IndustryBriefJob | nu
          OR ("status" = 'failed' AND "attemptCount" < "maxAttempts" AND "availableAt" <= CURRENT_TIMESTAMP)
        )
        ORDER BY
-         CASE WHEN "source" = 'industry-brief-cache-miss' THEN 0 ELSE 1 END,
+         CASE
+           WHEN "forceSources" = TRUE THEN 0
+           WHEN "source" = 'industry-brief-cache-miss' THEN 1
+           ELSE 2
+         END,
          "availableAt" ASC,
          "createdAt" ASC
        LIMIT 1

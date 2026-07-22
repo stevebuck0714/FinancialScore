@@ -23,6 +23,7 @@ async function processOne(job: IndustryBriefJob): Promise<IndustryBriefJobProces
   try {
     const brief = await generateAndCacheDailyIndustryBrief({
       companyId: job.companyId,
+      forceSources: job.forceSources,
     });
     await completeIndustryBriefJob(job, {
       generatedAt: brief.generatedAt,

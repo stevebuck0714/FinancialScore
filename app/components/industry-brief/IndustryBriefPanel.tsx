@@ -273,28 +273,35 @@ export default function IndustryBriefPanel({ companyId }: Props) {
   const [activeTab, setActiveTab] = useState<'brief' | 'outlook'>('brief');
   const [activeSignalChart, setActiveSignalChart] = useState<IndustryOutlookItem | null>(null);
 
-  const loadBrief = useCallback(async (force = false) => {
+  const loadBrief = useCallback(async (force = false, refreshStatus = false) => {
     if (!companyId) return;
     setLoading(true);
-    setError(null);
+    if (!refreshStatus) setError(null);
     try {
       const params = new URLSearchParams({ companyId });
       if (force) params.set('force', 'true');
+      if (refreshStatus) params.set('refreshStatus', 'true');
       const response = await fetch(`/api/industry-brief?${params}`, { cache: 'no-store' });
       if (!response.ok) {
         throw new Error(await readErrorMessage(response));
       }
       const payload = await response.json();
       if (payload?.status === 'generating') {
+        setError(null);
         setGeneratingMessage(renderText(payload.message) || 'Daily Industry Brief is being generated. Please check again shortly.');
         setGeneratingStatus(renderText(payload.jobStatus) || null);
         return;
       }
+      setError(null);
       setGeneratingMessage(null);
       setGeneratingStatus(null);
       setBrief(payload);
     } catch (err: any) {
       setError(err?.message || 'Failed to load industry brief');
+      if (refreshStatus) {
+        setGeneratingMessage(null);
+        setGeneratingStatus(null);
+      }
     } finally {
       setLoading(false);
     }
@@ -305,9 +312,9 @@ export default function IndustryBriefPanel({ companyId }: Props) {
   }, [loadBrief]);
 
   useEffect(() => {
-    if (!generatingMessage || brief) return;
+    if (!generatingMessage) return;
     const timer = setTimeout(() => {
-      loadBrief(false);
+      loadBrief(false, Boolean(brief));
     }, 30000);
     return () => clearTimeout(timer);
   }, [brief, generatingMessage, loadBrief]);
@@ -469,6 +476,21 @@ export default function IndustryBriefPanel({ companyId }: Props) {
           </div>
         </div>
       </div>
+      {generatingMessage && brief && (
+        <div style={{ ...cardStyle, borderColor: '#bfdbfe', background: '#eff6ff', color: '#1e3a8a', display: 'grid', gap: '4px' }}>
+          <div style={{ fontSize: '14px', fontWeight: 900 }}>Daily Industry Brief refresh is running</div>
+          <div style={{ fontSize: '13px' }}>{generatingMessage}</div>
+          {generatingStatus && <div style={{ fontSize: '12px', color: '#475569' }}>Generation status: {generatingStatus}</div>}
+          <div style={{ fontSize: '12px', color: '#475569' }}>Current cached brief remains visible until the refresh completes.</div>
+        </div>
+      )}
+      {error && brief && (
+        <div style={{ ...cardStyle, borderColor: '#fecaca', background: '#fff7f7', color: '#991b1b', display: 'grid', gap: '4px' }}>
+          <div style={{ fontSize: '14px', fontWeight: 900 }}>Daily Industry Brief refresh failed</div>
+          <div style={{ fontSize: '13px' }}>{error}</div>
+          <div style={{ fontSize: '12px', color: '#7f1d1d' }}>The previous cached brief is still shown below.</div>
+        </div>
+      )}
         <div style={{ display: 'flex', gap: '18px', borderTop: '1px solid #e2e8f0', marginTop: '14px', paddingTop: '2px' }}>
           {tabButton('brief', 'Brief & Actions')}
           {tabButton('outlook', 'Industry Outlook')}
