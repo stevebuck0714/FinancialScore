@@ -9,6 +9,7 @@ import {
   collectPerplexityIndustryBriefSource,
 } from '@/lib/industry-brief/sources';
 import { normalizeIndustrySectorCategory } from '@/lib/performance-analytics/industry-sector-category';
+import { INDUSTRY_SECTORS } from '@/data/industrySectors';
 import type { DailyIndustryBrief, IndustryBriefSourceRecord } from '@/lib/industry-brief/types';
 import { requireSiteAdmin } from '@/lib/tenant-security';
 
@@ -136,18 +137,37 @@ export async function GET(request: NextRequest) {
         select: {
           id: true,
           name: true,
+          industrySector: true,
           accountingSystem: true,
           industrySectorCategory: true,
           addressCity: true,
           addressState: true,
           subscriptionMonthlyPrice: true,
+          profile: {
+            select: {
+              workforce: true,
+              specialNotes: true,
+              qoeNotes: true,
+            },
+          },
         },
       });
       if (!company) throw new Error('Company not found.');
       if (!String(company.industrySectorCategory || '').trim() || !String(company.addressCity || '').trim() || !String(company.addressState || '').trim()) {
         throw new Error('Missing company industry/location.');
       }
-      return company;
+      const industryGroup = INDUSTRY_SECTORS.find((sector) => String(sector.id) === String(company.industrySector || ''));
+      const profileText = [
+        company.profile?.workforce,
+        company.profile?.specialNotes,
+        company.profile?.qoeNotes,
+      ].map((part) => String(part || '').trim()).filter(Boolean).join('\n');
+      return {
+        ...company,
+        industryGroupName: industryGroup?.name || null,
+        industryGroupDescription: industryGroup?.description || null,
+        profileText,
+      };
     }, (company) => ({
       companyId: company.id,
       companyName: company.name,
@@ -167,6 +187,9 @@ export async function GET(request: NextRequest) {
       segment: shell.company.segment,
       location: shell.company.location,
       sectorKey: normalizeIndustrySectorCategory(companyStep.value.industrySectorCategory),
+      industryGroupName: companyStep.value.industryGroupName,
+      industryGroupDescription: companyStep.value.industryGroupDescription,
+      profileText: companyStep.value.profileText,
     };
 
     const [fred, bls, perplexity] = await Promise.all([

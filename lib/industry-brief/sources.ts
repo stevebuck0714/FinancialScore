@@ -7,6 +7,9 @@ type CompanySourceContext = {
   segment: string;
   location: string;
   sectorKey?: string | null;
+  industryGroupName?: string | null;
+  industryGroupDescription?: string | null;
+  profileText?: string | null;
 };
 
 type FredSeriesDefinition = {
@@ -81,6 +84,11 @@ const FRED_SERIES_BY_SECTOR: Partial<Record<ReturnType<typeof normalizeIndustryS
     { id: 'fred-mortgage-rate', title: '30-year fixed mortgage rate', category: 'Interest Rates', seriesId: 'MORTGAGE30US', url: 'https://fred.stlouisfed.org/series/MORTGAGE30US' },
     { id: 'fred-housing-starts', title: 'Housing starts', category: 'Supply', seriesId: 'HOUST', url: 'https://fred.stlouisfed.org/series/HOUST' },
   ],
+  ADMIN_SUPPORT_WASTE: [
+    { id: 'fred-unemployment-rate', title: 'U.S. unemployment rate', category: 'Labor Availability', seriesId: 'UNRATE', url: 'https://fred.stlouisfed.org/series/UNRATE' },
+    { id: 'fred-professional-business-job-openings', title: 'Professional and business services job openings', category: 'Labor Demand', seriesId: 'JTS540099JOL', url: 'https://fred.stlouisfed.org/series/JTS540099JOL' },
+    { id: 'fred-temp-help-employment', title: 'Temporary help services employment', category: 'Staffing Demand', seriesId: 'TEMPHELPS', url: 'https://fred.stlouisfed.org/series/TEMPHELPS' },
+  ],
 };
 
 const DEFAULT_BLS_SERIES: BlsSeriesDefinition[] = [
@@ -109,7 +117,16 @@ const BLS_SERIES_BY_SECTOR: Partial<Record<ReturnType<typeof normalizeIndustrySe
     { id: 'bls-health-care-hourly-earnings', title: 'Health care hourly earnings', category: 'Labor', seriesId: 'CES6500000003', unit: 'USD/hour', url: 'https://data.bls.gov/timeseries/CES6500000003' },
     { id: 'bls-health-care-employment', title: 'Education and health services employment', category: 'Labor', seriesId: 'CES6500000001', unit: 'thousands of employees', url: 'https://data.bls.gov/timeseries/CES6500000001' },
   ],
+  ADMIN_SUPPORT_WASTE: [
+    { id: 'bls-admin-support-waste-hourly-earnings', title: 'Admin and support services hourly earnings', category: 'Labor', seriesId: 'CES6056000003', unit: 'USD/hour', url: 'https://data.bls.gov/timeseries/CES6056000003' },
+    { id: 'bls-admin-support-waste-employment', title: 'Admin and support services employment', category: 'Labor', seriesId: 'CES6056000001', unit: 'thousands of employees', url: 'https://data.bls.gov/timeseries/CES6056000001' },
+  ],
 };
+
+const MEDICAL_SCIENCE_FRED_SERIES: FredSeriesDefinition[] = [
+  { id: 'fred-health-care-employment', title: 'Health care employment', category: 'Medical Labor Demand', seriesId: 'CES6562000001', url: 'https://fred.stlouisfed.org/series/CES6562000001' },
+  { id: 'fred-professional-scientific-employment', title: 'Professional, scientific, and technical services employment', category: 'Scientific Labor Demand', seriesId: 'CES6054000001', url: 'https://fred.stlouisfed.org/series/CES6054000001' },
+];
 
 const FRED_FETCH_TIMEOUT_MS = 8000;
 const BLS_FETCH_TIMEOUT_MS = 8000;
@@ -166,10 +183,29 @@ function isBakeryContext(context: CompanySourceContext): boolean {
   return /baker|bakery|bread/.test(combined);
 }
 
+function isMedicalScienceStaffingContext(context: CompanySourceContext): boolean {
+  const combined = [
+    context.name,
+    context.industry,
+    context.segment,
+    context.industryGroupName,
+    context.industryGroupDescription,
+    context.profileText,
+  ].join(' ').toLowerCase();
+  return /(medical|health ?care|clinical|laborator|scientist|scientific|biotech|pharma|research)/.test(combined)
+    && /(staff|recruit|employment|professional employer|peo|sourcing|talent)/.test(combined);
+}
+
 function fredSeriesForContext(context: CompanySourceContext): FredSeriesDefinition[] {
   if (isBakeryContext(context)) return BAKERY_FRED_SERIES;
   const sector = contextSectorKey(context);
-  return FRED_SERIES_BY_SECTOR[sector] || DEFAULT_FRED_SERIES;
+  const baseSeries = FRED_SERIES_BY_SECTOR[sector] || DEFAULT_FRED_SERIES;
+  if (!isMedicalScienceStaffingContext(context)) return baseSeries;
+  const seen = new Set(baseSeries.map((series) => series.seriesId));
+  return [
+    ...baseSeries,
+    ...MEDICAL_SCIENCE_FRED_SERIES.filter((series) => !seen.has(series.seriesId)),
+  ];
 }
 
 function blsSeriesForContext(context: CompanySourceContext): BlsSeriesDefinition[] {
@@ -301,6 +337,8 @@ export async function collectPerplexityIndustryBriefSource(context: CompanySourc
     `Company: ${context.name}`,
     `Industry: ${context.industry}`,
     `Segment: ${context.segment}`,
+    context.industryGroupName ? `Detailed industry: ${context.industryGroupName}` : '',
+    context.industryGroupDescription ? `Detailed industry description: ${context.industryGroupDescription}` : '',
     `Location: ${context.location}`,
     '',
     'Research current, source-backed developments for BOTH the broader U.S. industry outlook and the company-local market.',

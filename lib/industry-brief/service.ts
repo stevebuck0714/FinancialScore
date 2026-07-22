@@ -8,6 +8,7 @@ import {
   writeCachedIndustryBrief,
 } from '@/lib/industry-brief/cache';
 import { normalizeIndustrySectorCategory } from '@/lib/performance-analytics/industry-sector-category';
+import { INDUSTRY_SECTORS } from '@/data/industrySectors';
 import type { DailyIndustryBrief } from '@/lib/industry-brief/types';
 
 type FinancialFactInput = {
@@ -67,11 +68,19 @@ export async function loadIndustryBriefCompany(companyId: string) {
     select: {
       id: true,
       name: true,
+      industrySector: true,
       accountingSystem: true,
       industrySectorCategory: true,
       addressCity: true,
       addressState: true,
       subscriptionMonthlyPrice: true,
+      profile: {
+        select: {
+          workforce: true,
+          specialNotes: true,
+          qoeNotes: true,
+        },
+      },
     },
   });
   if (!company) {
@@ -80,7 +89,18 @@ export async function loadIndustryBriefCompany(companyId: string) {
   if (!String(company.industrySectorCategory || '').trim() || !String(company.addressCity || '').trim() || !String(company.addressState || '').trim()) {
     throw new Error('Industry Brief unavailable: missing company industry/location.');
   }
-  return company;
+  const industryGroup = INDUSTRY_SECTORS.find((sector) => String(sector.id) === String(company.industrySector || ''));
+  const profileText = [
+    company.profile?.workforce,
+    company.profile?.specialNotes,
+    company.profile?.qoeNotes,
+  ].map((part) => String(part || '').trim()).filter(Boolean).join('\n');
+  return {
+    ...company,
+    industryGroupName: industryGroup?.name || null,
+    industryGroupDescription: industryGroup?.description || null,
+    profileText,
+  };
 }
 
 export async function generateAndCacheDailyIndustryBrief(params: {
@@ -109,6 +129,9 @@ export async function generateAndCacheDailyIndustryBrief(params: {
       segment: shell.company.segment,
       location: shell.company.location,
       sectorKey: normalizeIndustrySectorCategory(company.industrySectorCategory),
+      industryGroupName: company.industryGroupName,
+      industryGroupDescription: company.industryGroupDescription,
+      profileText: company.profileText,
     },
     force: params.forceSources,
   });

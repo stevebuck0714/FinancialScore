@@ -4,6 +4,10 @@ import type { DailyIndustryBrief } from '@/lib/industry-brief/types';
 type CompanyInput = {
   id: string;
   name: string;
+  industrySector?: number | null;
+  industryGroupName?: string | null;
+  industryGroupDescription?: string | null;
+  profileText?: string | null;
   accountingSystem?: string | null;
   industrySectorCategory?: string | null;
   addressCity?: string | null;
@@ -42,6 +46,10 @@ function locationLabel(company: CompanyInput): string {
 function resolveIndustry(company: CompanyInput): { industry: string; segment: string; sectorKey: string } {
   const sectorKey = normalizeIndustrySectorCategory(company.industrySectorCategory || company.accountingSystem || '');
   const name = company.name.toLowerCase();
+  const industryGroupName = String(company.industryGroupName || '').trim();
+  const profileText = `${industryGroupName} ${company.industryGroupDescription || ''} ${company.profileText || ''}`.toLowerCase();
+  const segment = industryGroupName || 'Core operating segment';
+
   if (sectorKey === 'MANUFACTURING' || /baker|bread|bakery/.test(name)) {
     return {
       industry: 'Manufacturing',
@@ -54,6 +62,25 @@ function resolveIndustry(company: CompanyInput): { industry: string; segment: st
   }
   if (sectorKey === 'RETAIL_TRADE') {
     return { industry: 'Retail Trade', segment: 'Regional retail operations', sectorKey };
+  }
+  if (sectorKey === 'ADMIN_SUPPORT_WASTE') {
+    return {
+      industry: 'Administration, Business Support and Waste Management Services',
+      segment: /professional employer|peo|staff|recruit|employment/.test(profileText) ? segment : 'Business support services',
+      sectorKey,
+    };
+  }
+  if (sectorKey === 'PROFESSIONAL_SERVICES') {
+    return { industry: 'Professional Services', segment, sectorKey };
+  }
+  if (sectorKey === 'HEALTH_CARE_SOCIAL_ASSISTANCE') {
+    return { industry: 'Health Care and Social Assistance', segment, sectorKey };
+  }
+  if (sectorKey === 'REAL_ESTATE') {
+    return { industry: 'Real Estate', segment, sectorKey };
+  }
+  if (sectorKey === 'ACCOMMODATION_FOOD_SERVICES') {
+    return { industry: 'Accommodation and Food Services', segment, sectorKey };
   }
   return { industry: 'Business Services', segment: 'Core operating segment', sectorKey };
 }
