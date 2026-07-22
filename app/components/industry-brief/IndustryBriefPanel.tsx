@@ -528,7 +528,7 @@ export default function IndustryBriefPanel({ companyId }: Props) {
                     {item.publishedAt ? `As of ${renderText(item.publishedAt)}` : renderText(item.provider)}
                   </div>
                   <div style={{ fontSize: '12px', color: '#475569', marginTop: '7px' }}>{renderText(item.summary)}</div>
-                  {(item.history?.length || 0) >= 2 && (
+                  {(item.history?.length || 0) >= 2 ? (
                     <button
                       type="button"
                       onClick={() => setActiveSignalChart(item)}
@@ -536,6 +536,10 @@ export default function IndustryBriefPanel({ companyId }: Props) {
                     >
                       View 12-month trend
                     </button>
+                  ) : (
+                    <div style={{ fontSize: '11px', color: '#94a3b8', marginTop: '9px', fontWeight: 800 }}>
+                      Trend available after next refresh
+                    </div>
                   )}
                 </div>
               ))}
