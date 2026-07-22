@@ -12229,6 +12229,43 @@ function FinancialScorePage() {
         }
         return '';
       };
+      const cleanBriefMarkdown = (value: unknown): string =>
+        briefText(value)
+          .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '$1')
+          .replace(/\*\*\s*(.+?)\s*\*\*/g, '$1')
+          .replace(/__\s*(.+?)\s*__/g, '$1')
+          .replace(/`+/g, '')
+          .replace(/\s+/g, ' ')
+          .trim();
+      const appendFormattedMarketScan = (summary: unknown) => {
+        const rawLines = briefText(summary)
+          .split(/\r?\n/)
+          .map((line) => line.trim())
+          .filter(Boolean);
+        rawLines.forEach((line) => {
+          if (/^[-_*]{3,}$/.test(line)) return;
+          const heading = line.match(/^#{1,6}\s+(.+)$/);
+          if (heading) {
+            const headingText = cleanBriefMarkdown(heading[1]);
+            if (headingText) lines.push(`${headingText}:`);
+            return;
+          }
+          const bullet = line.match(/^[-*•]\s+(.+)$/);
+          if (bullet) {
+            const bulletText = cleanBriefMarkdown(bullet[1]);
+            if (bulletText) lines.push(`- ${bulletText}`);
+            return;
+          }
+          const numbered = line.match(/^\d+\.\s+(.+)$/);
+          if (numbered) {
+            const numberedText = cleanBriefMarkdown(numbered[1]);
+            if (numberedText) lines.push(`- ${numberedText}`);
+            return;
+          }
+          const cleanLine = cleanBriefMarkdown(line);
+          if (cleanLine) lines.push(`- ${cleanLine}`);
+        });
+      };
       const outlookItems = Array.isArray(valuationIndustryBrief?.industryOutlook) ? valuationIndustryBrief.industryOutlook : [];
       const marketScanItems = outlookItems.filter((item: any) => {
         const provider = briefText(item?.provider).toLowerCase();
@@ -12247,17 +12284,17 @@ function FinancialScorePage() {
           lines.push(unavailableLine);
         } else {
           marketScanItems.slice(0, 2).forEach((item: any) => {
-            const title = briefText(item?.title) || briefText(item?.category) || 'Industry Outlook';
-            const summary = briefText(item?.summary);
-            const citations = Array.isArray(item?.citations) ? item.citations.map(briefText).filter(Boolean).slice(0, 2) : [];
-            lines.push(`- ${title}: ${summary || 'No summary provided.'}`);
-            if (citations.length > 0) lines.push(`  Sources: ${citations.join('; ')}`);
+            const title = cleanBriefMarkdown(item?.title) || cleanBriefMarkdown(item?.category) || 'Industry Outlook';
+            const citations = Array.isArray(item?.citations) ? item.citations.map(cleanBriefMarkdown).filter(Boolean).slice(0, 2) : [];
+            lines.push(`${title}:`);
+            appendFormattedMarketScan(item?.summary || 'No summary provided.');
+            if (citations.length > 0) lines.push(`- Sources: ${citations.join('; ')}`);
           });
           marketSignals.slice(0, 4).forEach((signal: any) => {
-            const title = briefText(signal?.title) || briefText(signal?.category) || 'Market signal';
-            const currentValue = briefText(signal?.currentValue);
-            const trend = briefText(signal?.trend);
-            const implication = briefText(signal?.companyImplication);
+            const title = cleanBriefMarkdown(signal?.title) || cleanBriefMarkdown(signal?.category) || 'Market signal';
+            const currentValue = cleanBriefMarkdown(signal?.currentValue);
+            const trend = cleanBriefMarkdown(signal?.trend);
+            const implication = cleanBriefMarkdown(signal?.companyImplication);
             lines.push(`- ${title}${currentValue ? ` (${currentValue})` : ''}${trend ? `, trend: ${trend}` : ''}. ${implication}`);
           });
         }
@@ -12269,10 +12306,10 @@ function FinancialScorePage() {
           lines.push(unavailableLine);
         } else {
           economicSignalItems.slice(0, 6).forEach((item: any) => {
-            const title = briefText(item?.title) || briefText(item?.category) || 'Economic signal';
-            const value = briefText(item?.value);
-            const publishedAt = briefText(item?.publishedAt);
-            const summary = briefText(item?.summary);
+            const title = cleanBriefMarkdown(item?.title) || cleanBriefMarkdown(item?.category) || 'Economic signal';
+            const value = cleanBriefMarkdown(item?.value);
+            const publishedAt = cleanBriefMarkdown(item?.publishedAt);
+            const summary = cleanBriefMarkdown(item?.summary);
             lines.push(`- ${title}${value ? `: ${value}` : ''}${publishedAt ? ` as of ${publishedAt}` : ''}. ${summary}`);
           });
         }
