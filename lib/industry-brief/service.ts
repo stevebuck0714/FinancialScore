@@ -29,6 +29,20 @@ function pct(numerator: number, denominator: number): number | null {
   return numerator / denominator;
 }
 
+function uniqueText(values: unknown[], limit: number): string {
+  const seen = new Set<string>();
+  const result: string[] = [];
+  for (const value of values) {
+    const text = String(value || '').trim();
+    const key = text.toLowerCase();
+    if (!text || seen.has(key)) continue;
+    seen.add(key);
+    result.push(text);
+    if (result.length >= limit) break;
+  }
+  return result.join(', ');
+}
+
 export async function loadIndustryBriefFinancialFacts(companyId: string): Promise<FinancialFactInput> {
   const rows = await prisma.monthlyFinancial.findMany({
     where: { companyId },
@@ -63,26 +77,46 @@ export async function loadIndustryBriefFinancialFacts(companyId: string): Promis
 }
 
 export async function loadIndustryBriefCompany(companyId: string) {
-  const company = await prisma.company.findUnique({
-    where: { id: companyId },
-    select: {
-      id: true,
-      name: true,
-      industrySector: true,
-      accountingSystem: true,
-      industrySectorCategory: true,
-      addressCity: true,
-      addressState: true,
-      subscriptionMonthlyPrice: true,
-      profile: {
-        select: {
-          workforce: true,
-          specialNotes: true,
-          qoeNotes: true,
+  const [company, productRows, inventoryRows, customerRows] = await Promise.all([
+    prisma.company.findUnique({
+      where: { id: companyId },
+      select: {
+        id: true,
+        name: true,
+        industrySector: true,
+        accountingSystem: true,
+        industrySectorCategory: true,
+        addressCity: true,
+        addressState: true,
+        subscriptionMonthlyPrice: true,
+        profile: {
+          select: {
+            workforce: true,
+            specialNotes: true,
+            qoeNotes: true,
+          },
         },
       },
-    },
-  });
+    }),
+    prisma.productSalesSnapshot.findMany({
+      where: { companyId },
+      orderBy: [{ snapshotDate: 'desc' }, { revenue: 'desc' }],
+      take: 20,
+      select: { itemName: true, sku: true },
+    }).catch(() => []),
+    prisma.inventorySnapshot.findMany({
+      where: { companyId },
+      orderBy: [{ snapshotDate: 'desc' }, { assetValue: 'desc' }],
+      take: 20,
+      select: { itemName: true, sku: true },
+    }).catch(() => []),
+    prisma.customerSalesSnapshot.findMany({
+      where: { companyId },
+      orderBy: [{ snapshotDate: 'desc' }, { revenue: 'desc' }],
+      take: 15,
+      select: { customerName: true },
+    }).catch(() => []),
+  ]);
   if (!company) {
     throw new Error('Company not found');
   }
@@ -95,11 +129,18 @@ export async function loadIndustryBriefCompany(companyId: string) {
     company.profile?.specialNotes,
     company.profile?.qoeNotes,
   ].map((part) => String(part || '').trim()).filter(Boolean).join('\n');
+  const productContext = uniqueText([
+    ...productRows.flatMap((row) => [row.itemName, row.sku]),
+    ...inventoryRows.flatMap((row) => [row.itemName, row.sku]),
+  ], 30);
+  const customerContext = uniqueText(customerRows.map((row) => row.customerName), 20);
   return {
     ...company,
     industryGroupName: industryGroup?.name || null,
     industryGroupDescription: industryGroup?.description || null,
     profileText,
+    productContext,
+    customerContext,
   };
 }
 
@@ -132,6 +173,8 @@ export async function generateAndCacheDailyIndustryBrief(params: {
       industryGroupName: company.industryGroupName,
       industryGroupDescription: company.industryGroupDescription,
       profileText: company.profileText,
+      productContext: company.productContext,
+      customerContext: company.customerContext,
     },
     force: params.forceSources,
   });

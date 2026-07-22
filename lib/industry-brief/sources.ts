@@ -10,6 +10,8 @@ type CompanySourceContext = {
   industryGroupName?: string | null;
   industryGroupDescription?: string | null;
   profileText?: string | null;
+  productContext?: string | null;
+  customerContext?: string | null;
 };
 
 type FredSeriesDefinition = {
@@ -27,6 +29,14 @@ type BlsSeriesDefinition = {
   seriesId: string;
   unit: string;
   url: string;
+};
+
+type MetricCandidate<T> = T & {
+  sectors?: Array<ReturnType<typeof normalizeIndustrySectorCategory>>;
+  industryKeywords?: string[];
+  productKeywords?: string[];
+  customerKeywords?: string[];
+  priority?: number;
 };
 
 class IndustryBriefSourceCollectionError extends Error {
@@ -48,84 +58,57 @@ const BAKERY_FRED_SERIES: FredSeriesDefinition[] = [
   { id: 'fred-commercial-bakery-ppi', title: 'Commercial bakery producer price index', category: 'Input Costs', seriesId: 'PCU311812311812', url: 'https://fred.stlouisfed.org/series/PCU311812311812' },
 ];
 
-const FRED_SERIES_BY_SECTOR: Partial<Record<ReturnType<typeof normalizeIndustrySectorCategory>, FredSeriesDefinition[]>> = {
-  MANUFACTURING: [
-    { id: 'fred-industrial-production', title: 'Industrial production index', category: 'Manufacturing', seriesId: 'INDPRO', url: 'https://fred.stlouisfed.org/series/INDPRO' },
-    { id: 'fred-manufacturing-pmi', title: 'ISM manufacturing PMI', category: 'Manufacturing Demand', seriesId: 'NAPM', url: 'https://fred.stlouisfed.org/series/NAPM' },
-    { id: 'fred-manufacturing-ppi', title: 'Manufacturing producer price index', category: 'Input Costs', seriesId: 'PCUOMFGOMFG', url: 'https://fred.stlouisfed.org/series/PCUOMFGOMFG' },
-  ],
-  CONSTRUCTION: [
-    { id: 'fred-housing-starts', title: 'Housing starts', category: 'Construction Demand', seriesId: 'HOUST', url: 'https://fred.stlouisfed.org/series/HOUST' },
-    { id: 'fred-construction-spending', title: 'Total construction spending', category: 'Construction Demand', seriesId: 'TTLCONS', url: 'https://fred.stlouisfed.org/series/TTLCONS' },
-    { id: 'fred-construction-materials-ppi', title: 'Construction materials producer price index', category: 'Input Costs', seriesId: 'WPUSI012011', url: 'https://fred.stlouisfed.org/series/WPUSI012011' },
-  ],
-  RETAIL_TRADE: [
-    { id: 'fred-retail-sales', title: 'Retail and food services sales', category: 'Retail Demand', seriesId: 'RSAFS', url: 'https://fred.stlouisfed.org/series/RSAFS' },
-    { id: 'fred-consumer-sentiment', title: 'Consumer sentiment', category: 'Consumer Demand', seriesId: 'UMCSENT', url: 'https://fred.stlouisfed.org/series/UMCSENT' },
-    { id: 'fred-retail-inventories', title: 'Retail inventories', category: 'Inventory', seriesId: 'RETAILIRSA', url: 'https://fred.stlouisfed.org/series/RETAILIRSA' },
-  ],
-  PROFESSIONAL_SERVICES: [
-    { id: 'fred-services-pmi', title: 'ISM services PMI', category: 'Services Demand', seriesId: 'NMFCI', url: 'https://fred.stlouisfed.org/series/NMFCI' },
-    { id: 'fred-real-gdp', title: 'Real gross domestic product', category: 'Macro Demand', seriesId: 'GDPC1', url: 'https://fred.stlouisfed.org/series/GDPC1' },
-    { id: 'fred-prime-rate', title: 'Bank prime loan rate', category: 'Interest Rates', seriesId: 'DPRIME', url: 'https://fred.stlouisfed.org/series/DPRIME' },
-  ],
-  HEALTH_CARE_SOCIAL_ASSISTANCE: [
-    { id: 'fred-health-care-spending', title: 'Health care services PCE', category: 'Health Care Demand', seriesId: 'DHLCRG3Q086SBEA', url: 'https://fred.stlouisfed.org/series/DHLCRG3Q086SBEA' },
-    { id: 'fred-health-care-cpi', title: 'Medical care CPI', category: 'Pricing', seriesId: 'CPIMEDSL', url: 'https://fred.stlouisfed.org/series/CPIMEDSL' },
-    { id: 'fred-prime-rate', title: 'Bank prime loan rate', category: 'Interest Rates', seriesId: 'DPRIME', url: 'https://fred.stlouisfed.org/series/DPRIME' },
-  ],
-  ACCOMMODATION_FOOD_SERVICES: [
-    { id: 'fred-food-services-sales', title: 'Food services and drinking places sales', category: 'Restaurant Demand', seriesId: 'MRTSSM722USN', url: 'https://fred.stlouisfed.org/series/MRTSSM722USN' },
-    { id: 'fred-food-away-from-home-cpi', title: 'Food away from home CPI', category: 'Pricing', seriesId: 'CUSR0000SEFV', url: 'https://fred.stlouisfed.org/series/CUSR0000SEFV' },
-    { id: 'fred-leisure-hospitality-employment', title: 'Leisure and hospitality employment', category: 'Labor', seriesId: 'USLAH', url: 'https://fred.stlouisfed.org/series/USLAH' },
-  ],
-  REAL_ESTATE: [
-    { id: 'fred-existing-home-sales', title: 'Existing home sales', category: 'Real Estate Demand', seriesId: 'EXHOSLUSM495S', url: 'https://fred.stlouisfed.org/series/EXHOSLUSM495S' },
-    { id: 'fred-mortgage-rate', title: '30-year fixed mortgage rate', category: 'Interest Rates', seriesId: 'MORTGAGE30US', url: 'https://fred.stlouisfed.org/series/MORTGAGE30US' },
-    { id: 'fred-housing-starts', title: 'Housing starts', category: 'Supply', seriesId: 'HOUST', url: 'https://fred.stlouisfed.org/series/HOUST' },
-  ],
-  ADMIN_SUPPORT_WASTE: [
-    { id: 'fred-unemployment-rate', title: 'U.S. unemployment rate', category: 'Labor Availability', seriesId: 'UNRATE', url: 'https://fred.stlouisfed.org/series/UNRATE' },
-    { id: 'fred-professional-business-job-openings', title: 'Professional and business services job openings', category: 'Labor Demand', seriesId: 'JTS540099JOL', url: 'https://fred.stlouisfed.org/series/JTS540099JOL' },
-    { id: 'fred-temp-help-employment', title: 'Temporary help services employment', category: 'Staffing Demand', seriesId: 'TEMPHELPS', url: 'https://fred.stlouisfed.org/series/TEMPHELPS' },
-  ],
-};
+const FRED_CANDIDATES: Array<MetricCandidate<FredSeriesDefinition>> = [
+  { id: 'fred-real-gdp', title: 'Real gross domestic product', category: 'Macro Demand', seriesId: 'GDPC1', url: 'https://fred.stlouisfed.org/series/GDPC1', priority: 5 },
+  { id: 'fred-prime-rate', title: 'Bank prime loan rate', category: 'Interest Rates', seriesId: 'DPRIME', url: 'https://fred.stlouisfed.org/series/DPRIME', sectors: ['FINANCE_INSURANCE', 'REAL_ESTATE'], industryKeywords: ['bank', 'lending', 'finance', 'insurance', 'real estate'], priority: 4 },
+  { id: 'fred-financial-conditions', title: 'National financial conditions index', category: 'Credit Conditions', seriesId: 'NFCI', url: 'https://fred.stlouisfed.org/series/NFCI', sectors: ['FINANCE_INSURANCE'], industryKeywords: ['bank', 'lending', 'finance', 'insurance', 'credit'], priority: 7 },
+  { id: 'fred-diesel-price', title: 'U.S. diesel price', category: 'Transportation Costs', seriesId: 'GASDESW', url: 'https://fred.stlouisfed.org/series/GASDESW', sectors: ['TRANSPORTATION', 'WHOLESALE_TRADE', 'MANUFACTURING'], industryKeywords: ['transport', 'freight', 'logistics', 'wholesale', 'distribution'], productKeywords: ['freight', 'shipping', 'delivery'], priority: 7 },
+  { id: 'fred-industrial-production', title: 'Industrial production index', category: 'Industrial Demand', seriesId: 'INDPRO', url: 'https://fred.stlouisfed.org/series/INDPRO', sectors: ['MANUFACTURING', 'WHOLESALE_TRADE'], industryKeywords: ['industrial', 'manufacturing', 'machinery', 'equipment', 'supplies'], productKeywords: ['industrial', 'tool', 'bearing', 'fastener', 'hose', 'safety', 'mro', 'maintenance', 'machinery'], priority: 9 },
+  { id: 'fred-manufacturing-pmi', title: 'ISM manufacturing PMI', category: 'Manufacturing Demand', seriesId: 'NAPM', url: 'https://fred.stlouisfed.org/series/NAPM', sectors: ['MANUFACTURING', 'WHOLESALE_TRADE'], industryKeywords: ['industrial', 'manufacturing', 'machinery', 'supplies'], productKeywords: ['industrial', 'tool', 'bearing', 'fastener', 'machinery', 'mro'], priority: 9 },
+  { id: 'fred-capacity-utilization', title: 'Capacity utilization: total industry', category: 'Industrial Activity', seriesId: 'TCU', url: 'https://fred.stlouisfed.org/series/TCU', sectors: ['MANUFACTURING', 'WHOLESALE_TRADE'], industryKeywords: ['industrial', 'manufacturing', 'machinery', 'supplies'], productKeywords: ['industrial', 'tool', 'bearing', 'fastener', 'machinery', 'mro'], priority: 8 },
+  { id: 'fred-durable-goods-orders', title: 'Manufacturers new orders: durable goods', category: 'Customer Demand', seriesId: 'DGORDER', url: 'https://fred.stlouisfed.org/series/DGORDER', sectors: ['MANUFACTURING', 'WHOLESALE_TRADE'], industryKeywords: ['industrial', 'machinery', 'equipment', 'durable'], productKeywords: ['industrial', 'tool', 'bearing', 'fastener', 'machinery', 'equipment'], customerKeywords: ['manufacturer', 'industrial', 'machine'], priority: 8 },
+  { id: 'fred-construction-spending', title: 'Total construction spending', category: 'Construction Demand', seriesId: 'TTLCONS', url: 'https://fred.stlouisfed.org/series/TTLCONS', sectors: ['CONSTRUCTION', 'WHOLESALE_TRADE'], industryKeywords: ['construction', 'building', 'contractor'], productKeywords: ['construction', 'building', 'hardware', 'lumber', 'pipe', 'electrical', 'plumbing'], priority: 7 },
+  { id: 'fred-housing-starts', title: 'Housing starts', category: 'Construction Demand', seriesId: 'HOUST', url: 'https://fred.stlouisfed.org/series/HOUST', sectors: ['CONSTRUCTION', 'REAL_ESTATE', 'WHOLESALE_TRADE'], industryKeywords: ['construction', 'building'], productKeywords: ['construction', 'building', 'hardware', 'lumber'], priority: 6 },
+  { id: 'fred-construction-materials-ppi', title: 'Construction materials producer price index', category: 'Input Costs', seriesId: 'WPUSI012011', url: 'https://fred.stlouisfed.org/series/WPUSI012011', sectors: ['CONSTRUCTION', 'WHOLESALE_TRADE'], industryKeywords: ['construction', 'building', 'materials'], productKeywords: ['construction', 'building', 'lumber', 'pipe', 'hardware'], priority: 6 },
+  { id: 'fred-retail-sales', title: 'Retail and food services sales', category: 'Retail Demand', seriesId: 'RSAFS', url: 'https://fred.stlouisfed.org/series/RSAFS', sectors: ['RETAIL_TRADE', 'WHOLESALE_TRADE'], industryKeywords: ['retail', 'consumer'], productKeywords: ['apparel', 'clothing', 'consumer', 'retail'], priority: 7 },
+  { id: 'fred-consumer-sentiment', title: 'Consumer sentiment', category: 'Consumer Demand', seriesId: 'UMCSENT', url: 'https://fred.stlouisfed.org/series/UMCSENT', sectors: ['RETAIL_TRADE'], industryKeywords: ['retail', 'consumer'], productKeywords: ['apparel', 'clothing', 'consumer'], priority: 6 },
+  { id: 'fred-food-services-sales', title: 'Food services and drinking places sales', category: 'Restaurant Demand', seriesId: 'MRTSSM722USN', url: 'https://fred.stlouisfed.org/series/MRTSSM722USN', sectors: ['ACCOMMODATION_FOOD_SERVICES'], industryKeywords: ['restaurant', 'food service', 'hospitality'], productKeywords: ['restaurant', 'food', 'beverage'], priority: 8 },
+  { id: 'fred-food-away-from-home-cpi', title: 'Food away from home CPI', category: 'Pricing', seriesId: 'CUSR0000SEFV', url: 'https://fred.stlouisfed.org/series/CUSR0000SEFV', sectors: ['ACCOMMODATION_FOOD_SERVICES'], industryKeywords: ['restaurant', 'food service', 'hospitality'], productKeywords: ['restaurant', 'food', 'beverage'], priority: 7 },
+  { id: 'fred-leisure-hospitality-employment', title: 'Leisure and hospitality employment', category: 'Labor', seriesId: 'USLAH', url: 'https://fred.stlouisfed.org/series/USLAH', sectors: ['ACCOMMODATION_FOOD_SERVICES'], industryKeywords: ['restaurant', 'food service', 'hospitality'], priority: 6 },
+  { id: 'fred-existing-home-sales', title: 'Existing home sales', category: 'Real Estate Demand', seriesId: 'EXHOSLUSM495S', url: 'https://fred.stlouisfed.org/series/EXHOSLUSM495S', sectors: ['REAL_ESTATE'], industryKeywords: ['real estate', 'broker', 'property', 'housing'], productKeywords: ['property', 'housing', 'home'], priority: 8 },
+  { id: 'fred-mortgage-rate', title: '30-year fixed mortgage rate', category: 'Interest Rates', seriesId: 'MORTGAGE30US', url: 'https://fred.stlouisfed.org/series/MORTGAGE30US', sectors: ['REAL_ESTATE'], industryKeywords: ['real estate', 'broker', 'property', 'housing'], productKeywords: ['property', 'housing', 'home'], priority: 8 },
+  { id: 'fred-information-employment', title: 'Information services employment', category: 'Sector Demand', seriesId: 'USINFO', url: 'https://fred.stlouisfed.org/series/USINFO', sectors: ['INFORMATION'], industryKeywords: ['software', 'information', 'media', 'telecom', 'technology'], productKeywords: ['software', 'data', 'media', 'telecom'], priority: 7 },
+  { id: 'fred-education-health-employment', title: 'Education and health services employment', category: 'Sector Demand', seriesId: 'USEHS', url: 'https://fred.stlouisfed.org/series/USEHS', sectors: ['EDUCATIONAL_SERVICES', 'HEALTH_CARE_SOCIAL_ASSISTANCE'], industryKeywords: ['education', 'school', 'training', 'health'], productKeywords: ['education', 'training', 'school'], priority: 6 },
+  { id: 'fred-grocery-spending', title: 'Food and beverage store sales', category: 'Demand', seriesId: 'MRTSSM445USN', url: 'https://fred.stlouisfed.org/series/MRTSSM445USN', industryKeywords: ['bakery', 'food', 'grocery'], productKeywords: ['bread', 'bakery', 'food'], priority: 8 },
+  { id: 'fred-commercial-bakery-ppi', title: 'Commercial bakery producer price index', category: 'Input Costs', seriesId: 'PCU311812311812', url: 'https://fred.stlouisfed.org/series/PCU311812311812', industryKeywords: ['bakery', 'bread'], productKeywords: ['bread', 'bakery'], priority: 9 },
+  { id: 'fred-health-care-spending', title: 'Health care services PCE', category: 'Health Care Demand', seriesId: 'DHLCRG3Q086SBEA', url: 'https://fred.stlouisfed.org/series/DHLCRG3Q086SBEA', sectors: ['HEALTH_CARE_SOCIAL_ASSISTANCE'], industryKeywords: ['health', 'medical', 'clinical'], productKeywords: ['medical', 'clinical', 'health'], priority: 8 },
+  { id: 'fred-health-care-employment', title: 'Health care employment', category: 'Medical Labor Demand', seriesId: 'CES6562000001', url: 'https://fred.stlouisfed.org/series/CES6562000001', sectors: ['HEALTH_CARE_SOCIAL_ASSISTANCE', 'ADMIN_SUPPORT_WASTE'], industryKeywords: ['health', 'medical', 'clinical', 'staff', 'scientist'], productKeywords: ['medical', 'clinical', 'scientist', 'lab'], priority: 7 },
+  { id: 'fred-professional-scientific-employment', title: 'Professional, scientific, and technical services employment', category: 'Scientific Labor Demand', seriesId: 'CES6054000001', url: 'https://fred.stlouisfed.org/series/CES6054000001', sectors: ['PROFESSIONAL_SERVICES', 'ADMIN_SUPPORT_WASTE'], industryKeywords: ['scientific', 'technical', 'research', 'staff'], productKeywords: ['scientist', 'research', 'lab', 'technical'], priority: 7 },
+  { id: 'fred-unemployment-rate', title: 'U.S. unemployment rate', category: 'Labor Availability', seriesId: 'UNRATE', url: 'https://fred.stlouisfed.org/series/UNRATE', sectors: ['ADMIN_SUPPORT_WASTE'], industryKeywords: ['staff', 'employment', 'recruit', 'professional employer', 'peo'], priority: 7 },
+  { id: 'fred-professional-business-job-openings', title: 'Professional and business services job openings', category: 'Labor Demand', seriesId: 'JTS540099JOL', url: 'https://fred.stlouisfed.org/series/JTS540099JOL', sectors: ['ADMIN_SUPPORT_WASTE', 'PROFESSIONAL_SERVICES'], industryKeywords: ['staff', 'employment', 'recruit', 'professional employer', 'peo'], priority: 8 },
+  { id: 'fred-temp-help-employment', title: 'Temporary help services employment', category: 'Staffing Demand', seriesId: 'TEMPHELPS', url: 'https://fred.stlouisfed.org/series/TEMPHELPS', sectors: ['ADMIN_SUPPORT_WASTE'], industryKeywords: ['staff', 'employment', 'recruit', 'temporary', 'peo'], priority: 9 },
+];
 
 const DEFAULT_BLS_SERIES: BlsSeriesDefinition[] = [
   { id: 'bls-private-hourly-earnings', title: 'Private-sector hourly earnings', category: 'Labor', seriesId: 'CES0500000003', unit: 'USD/hour', url: 'https://data.bls.gov/timeseries/CES0500000003' },
   { id: 'bls-private-employment', title: 'Total private employment', category: 'Labor', seriesId: 'CES0500000001', unit: 'thousands of employees', url: 'https://data.bls.gov/timeseries/CES0500000001' },
 ];
 
-const BLS_SERIES_BY_SECTOR: Partial<Record<ReturnType<typeof normalizeIndustrySectorCategory>, BlsSeriesDefinition[]>> = {
-  MANUFACTURING: [
-    { id: 'bls-manufacturing-hourly-earnings', title: 'Manufacturing production worker hourly earnings', category: 'Labor', seriesId: 'CEU3000000008', unit: 'USD/hour', url: 'https://data.bls.gov/timeseries/CEU3000000008' },
-    { id: 'bls-manufacturing-employment', title: 'Manufacturing employment', category: 'Labor', seriesId: 'CEU3000000001', unit: 'thousands of employees', url: 'https://data.bls.gov/timeseries/CEU3000000001' },
-  ],
-  CONSTRUCTION: [
-    { id: 'bls-construction-hourly-earnings', title: 'Construction hourly earnings', category: 'Labor', seriesId: 'CES2000000003', unit: 'USD/hour', url: 'https://data.bls.gov/timeseries/CES2000000003' },
-    { id: 'bls-construction-employment', title: 'Construction employment', category: 'Labor', seriesId: 'CES2000000001', unit: 'thousands of employees', url: 'https://data.bls.gov/timeseries/CES2000000001' },
-  ],
-  RETAIL_TRADE: [
-    { id: 'bls-retail-hourly-earnings', title: 'Retail trade hourly earnings', category: 'Labor', seriesId: 'CES4200000003', unit: 'USD/hour', url: 'https://data.bls.gov/timeseries/CES4200000003' },
-    { id: 'bls-retail-employment', title: 'Retail trade employment', category: 'Labor', seriesId: 'CES4200000001', unit: 'thousands of employees', url: 'https://data.bls.gov/timeseries/CES4200000001' },
-  ],
-  PROFESSIONAL_SERVICES: [
-    { id: 'bls-professional-services-hourly-earnings', title: 'Professional and business services hourly earnings', category: 'Labor', seriesId: 'CES6000000003', unit: 'USD/hour', url: 'https://data.bls.gov/timeseries/CES6000000003' },
-    { id: 'bls-professional-services-employment', title: 'Professional and business services employment', category: 'Labor', seriesId: 'CES6000000001', unit: 'thousands of employees', url: 'https://data.bls.gov/timeseries/CES6000000001' },
-  ],
-  HEALTH_CARE_SOCIAL_ASSISTANCE: [
-    { id: 'bls-health-care-hourly-earnings', title: 'Health care hourly earnings', category: 'Labor', seriesId: 'CES6500000003', unit: 'USD/hour', url: 'https://data.bls.gov/timeseries/CES6500000003' },
-    { id: 'bls-health-care-employment', title: 'Education and health services employment', category: 'Labor', seriesId: 'CES6500000001', unit: 'thousands of employees', url: 'https://data.bls.gov/timeseries/CES6500000001' },
-  ],
-  ADMIN_SUPPORT_WASTE: [
-    { id: 'bls-admin-support-waste-hourly-earnings', title: 'Admin and support services hourly earnings', category: 'Labor', seriesId: 'CES6056000003', unit: 'USD/hour', url: 'https://data.bls.gov/timeseries/CES6056000003' },
-    { id: 'bls-admin-support-waste-employment', title: 'Admin and support services employment', category: 'Labor', seriesId: 'CES6056000001', unit: 'thousands of employees', url: 'https://data.bls.gov/timeseries/CES6056000001' },
-  ],
-};
-
-const MEDICAL_SCIENCE_FRED_SERIES: FredSeriesDefinition[] = [
-  { id: 'fred-health-care-employment', title: 'Health care employment', category: 'Medical Labor Demand', seriesId: 'CES6562000001', url: 'https://fred.stlouisfed.org/series/CES6562000001' },
-  { id: 'fred-professional-scientific-employment', title: 'Professional, scientific, and technical services employment', category: 'Scientific Labor Demand', seriesId: 'CES6054000001', url: 'https://fred.stlouisfed.org/series/CES6054000001' },
+const BLS_CANDIDATES: Array<MetricCandidate<BlsSeriesDefinition>> = [
+  { id: 'bls-private-hourly-earnings', title: 'Private-sector hourly earnings', category: 'Labor', seriesId: 'CES0500000003', unit: 'USD/hour', url: 'https://data.bls.gov/timeseries/CES0500000003', priority: 1 },
+  { id: 'bls-wholesale-employment', title: 'Wholesale trade employment', category: 'Labor', seriesId: 'CES4142000001', unit: 'thousands of employees', url: 'https://data.bls.gov/timeseries/CES4142000001', sectors: ['WHOLESALE_TRADE'], industryKeywords: ['wholesale', 'distribution', 'industrial supplies'], productKeywords: ['industrial', 'supplies', 'mro'], priority: 7 },
+  { id: 'bls-transportation-warehousing-employment', title: 'Transportation and warehousing employment', category: 'Labor', seriesId: 'CES4300000001', unit: 'thousands of employees', url: 'https://data.bls.gov/timeseries/CES4300000001', sectors: ['TRANSPORTATION'], industryKeywords: ['transport', 'freight', 'logistics', 'warehouse'], productKeywords: ['freight', 'shipping', 'delivery'], priority: 7 },
+  { id: 'bls-manufacturing-hourly-earnings', title: 'Manufacturing production worker hourly earnings', category: 'Labor', seriesId: 'CEU3000000008', unit: 'USD/hour', url: 'https://data.bls.gov/timeseries/CEU3000000008', sectors: ['MANUFACTURING', 'WHOLESALE_TRADE'], industryKeywords: ['industrial', 'manufacturing'], productKeywords: ['industrial', 'tool', 'machinery', 'mro'], priority: 5 },
+  { id: 'bls-manufacturing-employment', title: 'Manufacturing employment', category: 'Labor', seriesId: 'CEU3000000001', unit: 'thousands of employees', url: 'https://data.bls.gov/timeseries/CEU3000000001', sectors: ['MANUFACTURING', 'WHOLESALE_TRADE'], industryKeywords: ['industrial', 'manufacturing'], productKeywords: ['industrial', 'tool', 'machinery', 'mro'], priority: 6 },
+  { id: 'bls-construction-employment', title: 'Construction employment', category: 'Labor', seriesId: 'CES2000000001', unit: 'thousands of employees', url: 'https://data.bls.gov/timeseries/CES2000000001', sectors: ['CONSTRUCTION', 'WHOLESALE_TRADE'], industryKeywords: ['construction', 'building'], productKeywords: ['construction', 'building', 'hardware', 'lumber'], priority: 6 },
+  { id: 'bls-retail-employment', title: 'Retail trade employment', category: 'Labor', seriesId: 'CES4200000001', unit: 'thousands of employees', url: 'https://data.bls.gov/timeseries/CES4200000001', sectors: ['RETAIL_TRADE'], industryKeywords: ['retail'], productKeywords: ['retail', 'apparel', 'clothing'], priority: 6 },
+  { id: 'bls-professional-services-employment', title: 'Professional and business services employment', category: 'Labor', seriesId: 'CES6000000001', unit: 'thousands of employees', url: 'https://data.bls.gov/timeseries/CES6000000001', sectors: ['PROFESSIONAL_SERVICES', 'ADMIN_SUPPORT_WASTE'], industryKeywords: ['professional', 'staff', 'employment'], priority: 6 },
+  { id: 'bls-health-care-employment', title: 'Education and health services employment', category: 'Labor', seriesId: 'CES6500000001', unit: 'thousands of employees', url: 'https://data.bls.gov/timeseries/CES6500000001', sectors: ['HEALTH_CARE_SOCIAL_ASSISTANCE', 'ADMIN_SUPPORT_WASTE'], industryKeywords: ['health', 'medical', 'clinical'], productKeywords: ['medical', 'clinical', 'lab'], priority: 6 },
+  { id: 'bls-admin-support-waste-hourly-earnings', title: 'Admin and support services hourly earnings', category: 'Labor', seriesId: 'CES6056000003', unit: 'USD/hour', url: 'https://data.bls.gov/timeseries/CES6056000003', sectors: ['ADMIN_SUPPORT_WASTE'], industryKeywords: ['staff', 'employment', 'peo'], priority: 6 },
+  { id: 'bls-leisure-hospitality-employment', title: 'Leisure and hospitality employment', category: 'Labor', seriesId: 'CES7000000001', unit: 'thousands of employees', url: 'https://data.bls.gov/timeseries/CES7000000001', sectors: ['ACCOMMODATION_FOOD_SERVICES'], industryKeywords: ['restaurant', 'food service', 'hospitality'], priority: 6 },
+  { id: 'bls-real-estate-employment', title: 'Real estate employment', category: 'Labor', seriesId: 'CES5553000001', unit: 'thousands of employees', url: 'https://data.bls.gov/timeseries/CES5553000001', sectors: ['REAL_ESTATE'], industryKeywords: ['real estate', 'broker', 'property'], priority: 6 },
+  { id: 'bls-information-employment', title: 'Information employment', category: 'Labor', seriesId: 'CES5000000001', unit: 'thousands of employees', url: 'https://data.bls.gov/timeseries/CES5000000001', sectors: ['INFORMATION'], industryKeywords: ['software', 'information', 'media', 'telecom', 'technology'], productKeywords: ['software', 'data', 'media', 'telecom'], priority: 6 },
+  { id: 'bls-financial-activities-employment', title: 'Financial activities employment', category: 'Labor', seriesId: 'CES5500000001', unit: 'thousands of employees', url: 'https://data.bls.gov/timeseries/CES5500000001', sectors: ['FINANCE_INSURANCE'], industryKeywords: ['bank', 'finance', 'insurance', 'credit'], priority: 6 },
 ];
 
 const FRED_FETCH_TIMEOUT_MS = 8000;
@@ -206,21 +189,63 @@ function isMedicalScienceStaffingContext(context: CompanySourceContext): boolean
     && /(staff|recruit|employment|professional employer|peo|sourcing|talent)/.test(combined);
 }
 
+function contextText(context: CompanySourceContext, scope: 'industry' | 'product' | 'customer' | 'all' = 'all'): string {
+  const industry = [context.name, context.industry, context.segment, context.industryGroupName, context.industryGroupDescription, context.profileText].join(' ');
+  const product = String(context.productContext || '');
+  const customer = String(context.customerContext || '');
+  if (scope === 'industry') return industry.toLowerCase();
+  if (scope === 'product') return product.toLowerCase();
+  if (scope === 'customer') return customer.toLowerCase();
+  return [industry, product, customer].join(' ').toLowerCase();
+}
+
+function keywordScore(text: string, keywords: string[] | undefined, weight: number): number {
+  if (!keywords?.length) return 0;
+  return keywords.reduce((score, keyword) => {
+    const normalized = keyword.toLowerCase();
+    return text.includes(normalized) ? score + weight : score;
+  }, 0);
+}
+
+function scoreCandidate<T>(candidate: MetricCandidate<T>, context: CompanySourceContext): number {
+  const sector = contextSectorKey(context);
+  let score = candidate.priority || 0;
+  if (candidate.sectors?.includes(sector)) score += 20;
+  score += keywordScore(contextText(context, 'industry'), candidate.industryKeywords, 10);
+  score += keywordScore(contextText(context, 'product'), candidate.productKeywords, 14);
+  score += keywordScore(contextText(context, 'customer'), candidate.customerKeywords, 8);
+  return score;
+}
+
+function selectRankedCandidates<T extends { seriesId: string }>(
+  candidates: Array<MetricCandidate<T>>,
+  context: CompanySourceContext,
+  limit: number,
+): T[] {
+  const ranked = candidates
+    .map((candidate) => ({ candidate, score: scoreCandidate(candidate, context) }))
+    .sort((a, b) => b.score - a.score);
+  const selected: T[] = [];
+  const seen = new Set<string>();
+  for (const { candidate, score } of ranked) {
+    if (score <= 1 && selected.length >= Math.min(2, limit)) continue;
+    if (seen.has(candidate.seriesId)) continue;
+    seen.add(candidate.seriesId);
+    selected.push(candidate);
+    if (selected.length >= limit) break;
+  }
+  return selected;
+}
+
 function fredSeriesForContext(context: CompanySourceContext): FredSeriesDefinition[] {
   if (isBakeryContext(context)) return BAKERY_FRED_SERIES;
-  const sector = contextSectorKey(context);
-  const baseSeries = FRED_SERIES_BY_SECTOR[sector] || DEFAULT_FRED_SERIES;
-  if (!isMedicalScienceStaffingContext(context)) return baseSeries;
-  const seen = new Set(baseSeries.map((series) => series.seriesId));
-  return [
-    ...baseSeries,
-    ...MEDICAL_SCIENCE_FRED_SERIES.filter((series) => !seen.has(series.seriesId)),
-  ];
+  const selected = selectRankedCandidates(FRED_CANDIDATES, context, isMedicalScienceStaffingContext(context) ? 5 : 4);
+  return selected.length > 0 ? selected : DEFAULT_FRED_SERIES;
 }
 
 function blsSeriesForContext(context: CompanySourceContext): BlsSeriesDefinition[] {
-  const sector = contextSectorKey(context);
-  return BLS_SERIES_BY_SECTOR[sector] || DEFAULT_BLS_SERIES;
+  const selected = selectRankedCandidates(BLS_CANDIDATES, context, 2);
+  return selected.length > 0 ? selected : DEFAULT_BLS_SERIES;
 }
 
 async function fetchWithTimeout(url: string, init: RequestInit, timeoutMs: number, label: string): Promise<Response> {
@@ -383,6 +408,8 @@ export async function collectPerplexityIndustryBriefSource(context: CompanySourc
     `Segment: ${context.segment}`,
     context.industryGroupName ? `Detailed industry: ${context.industryGroupName}` : '',
     context.industryGroupDescription ? `Detailed industry description: ${context.industryGroupDescription}` : '',
+    context.productContext ? `Known products/items: ${context.productContext}` : '',
+    context.customerContext ? `Known customers/channels: ${context.customerContext}` : '',
     `Location: ${context.location}`,
     '',
     'Research current, source-backed developments for BOTH the broader U.S. industry outlook and the company-local market.',
