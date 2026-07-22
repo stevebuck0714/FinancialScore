@@ -79,14 +79,27 @@ function formatDateTime(value?: string): string {
 }
 
 function renderInlineMarkdown(text: string): React.ReactNode {
-  const parts = text.split(/(\*\*[^*]+\*\*)/g).filter(Boolean);
+  const parts = text.split(/(\*\*.+?\*\*)/g).filter(Boolean);
   return parts.map((part, index) => {
-    const bold = part.match(/^\*\*([^*]+)\*\*$/);
+    const bold = part.match(/^\*\*\s*(.+?)\s*\*\*$/);
     if (bold) {
       return <strong key={`${index}-${part}`} style={{ color: '#0f172a' }}>{bold[1]}</strong>;
     }
     return <React.Fragment key={`${index}-${part}`}>{part.replace(/\*\*/g, '')}</React.Fragment>;
   });
+}
+
+function stripMarkdownDelimiters(text: string): string {
+  return text
+    .replace(/\*\*\s*(.+?)\s*\*\*/g, '$1')
+    .replace(/^[-_*]{3,}$/, '')
+    .trim();
+}
+
+function isAllCapsHeading(line: string): boolean {
+  const letters = line.replace(/[^A-Za-z]/g, '');
+  if (letters.length < 8) return false;
+  return line === line.toUpperCase() && /[A-Z]/.test(line);
 }
 
 function renderFormattedOutlookText(text: unknown): React.ReactNode {
@@ -100,6 +113,8 @@ function renderFormattedOutlookText(text: unknown): React.ReactNode {
     if (/^[-*•]$/.test(line) && rawLines[index + 1]) {
       lines.push(`- ${rawLines[index + 1]}`);
       index += 1;
+    } else if (/^[-_*]{3,}$/.test(line)) {
+      continue;
     } else {
       lines.push(line);
     }
@@ -111,38 +126,42 @@ function renderFormattedOutlookText(text: unknown): React.ReactNode {
       {lines.map((line, index) => {
         const heading = line.match(/^#{1,4}\s+(.+)$/);
         if (heading) {
+          const headingText = stripMarkdownDelimiters(renderText(heading[1]));
           return (
             <div key={`${index}-${line}`} style={{ fontSize: index === 0 ? '16px' : '14px', color: '#0f172a', fontWeight: 900, marginTop: index === 0 ? 0 : '8px' }}>
-              {renderInlineMarkdown(renderText(heading[1]))}
+              {headingText}
             </div>
           );
         }
-        const boldHeading = line.match(/^\*\*([^*]+)\*\*$/);
-        if (boldHeading) {
+        const boldHeading = line.match(/^\*\*\s*(.+?)\s*\*\*$/);
+        const cleanedLine = stripMarkdownDelimiters(line);
+        if (boldHeading || isAllCapsHeading(cleanedLine)) {
           return (
             <div key={`${index}-${line}`} style={{ fontSize: index === 0 ? '16px' : '14px', color: '#0f172a', fontWeight: 900, marginTop: index === 0 ? 0 : '8px' }}>
-              {renderText(boldHeading[1])}
+              {cleanedLine}
             </div>
           );
         }
         if (/^[-*•]\s+/.test(line)) {
+          const itemText = stripMarkdownDelimiters(line.replace(/^[-*•]\s+/, ''));
           return (
             <div key={`${index}-${line}`} style={{ display: 'grid', gridTemplateColumns: '14px minmax(0, 1fr)', gap: '6px', fontSize: '13px', color: '#334155', lineHeight: 1.5 }}>
               <span style={{ color: '#2751d0', fontWeight: 900 }}>•</span>
-              <span>{renderInlineMarkdown(line.replace(/^[-*•]\s+/, ''))}</span>
+              <span>{renderInlineMarkdown(itemText)}</span>
             </div>
           );
         }
         if (/^\d+\.\s+/.test(line)) {
           const marker = line.match(/^(\d+)\.\s+/)?.[1] || '';
+          const itemText = stripMarkdownDelimiters(line.replace(/^\d+\.\s+/, ''));
           return (
             <div key={`${index}-${line}`} style={{ display: 'grid', gridTemplateColumns: '22px minmax(0, 1fr)', gap: '6px', fontSize: '13px', color: '#334155', lineHeight: 1.5 }}>
               <span style={{ color: '#2751d0', fontWeight: 900 }}>{marker}.</span>
-              <span>{renderInlineMarkdown(line.replace(/^\d+\.\s+/, ''))}</span>
+              <span>{renderInlineMarkdown(itemText)}</span>
             </div>
           );
         }
-        const label = line.match(/^([A-Z][A-Za-z &/()-]{2,45}):\s+(.+)$/);
+        const label = cleanedLine.match(/^([A-Z][A-Za-z &/()-]{2,45}):\s+(.+)$/);
         if (label) {
           return (
             <div key={`${index}-${line}`} style={{ fontSize: '13px', color: '#334155', lineHeight: 1.5 }}>
@@ -152,7 +171,7 @@ function renderFormattedOutlookText(text: unknown): React.ReactNode {
         }
         return (
           <div key={`${index}-${line}`} style={{ fontSize: '13px', color: '#334155', lineHeight: 1.55 }}>
-            {renderInlineMarkdown(line)}
+            {renderInlineMarkdown(cleanedLine)}
           </div>
         );
       })}
