@@ -39,6 +39,50 @@ type CompanyReportingProfile = {
 };
 
 const COMPANY_PRODUCT_SERVICE_PROFILES: Record<string, CompanyProductServiceProfile> = {
+  cmm21v70k0004kz04h9khgd8l: {
+    categories: [
+      {
+        category: 'Commercial Rooftop Units',
+        productsServices: 'Packaged rooftop HVAC units for light commercial buildings, schools, retail centers, and office properties',
+        primaryCustomers: ['Mechanical contractors', 'HVAC distributors', 'commercial builders'],
+      },
+      {
+        category: 'Air Handling Units',
+        productsServices: 'Custom and semi-custom air handlers, blower assemblies, cabinet assemblies, and filtration sections',
+        primaryCustomers: ['Mechanical contractors', 'facility managers', 'institutional accounts'],
+      },
+      {
+        category: 'Heat Pump Systems',
+        productsServices: 'Packaged heat pump systems, split-system assemblies, and electrification retrofit equipment',
+        primaryCustomers: ['HVAC distributors', 'commercial builders', 'energy retrofit contractors'],
+      },
+      {
+        category: 'Compressors & Condensing Units',
+        productsServices: 'Condensing units, compressor assemblies, refrigerant circuit components, and OEM replacement modules',
+        primaryCustomers: ['OEM/private-label accounts', 'HVAC distributors', 'service contractors'],
+      },
+      {
+        category: 'Coils & Heat Exchangers',
+        productsServices: 'Evaporator coils, condenser coils, heat exchangers, coil assemblies, and custom replacement coils',
+        primaryCustomers: ['OEM/private-label accounts', 'mechanical contractors', 'service contractors'],
+      },
+      {
+        category: 'Controls & Economizers',
+        productsServices: 'Unit controls, economizer kits, sensors, dampers, control boards, and building automation interface kits',
+        primaryCustomers: ['facility managers', 'HVAC distributors', 'service contractors'],
+      },
+      {
+        category: 'Replacement & Warranty Parts',
+        productsServices: 'Warranty parts, field replacement kits, motors, fans, valves, filters, and service inventory',
+        primaryCustomers: ['service contractors', 'HVAC distributors', 'institutional accounts'],
+      },
+      {
+        category: 'Custom OEM Assemblies',
+        productsServices: 'Private-label HVAC assemblies, engineered cabinet packages, and configured production runs for OEM partners',
+        primaryCustomers: ['OEM/private-label accounts', 'commercial builders', 'mechanical contractors'],
+      },
+    ],
+  },
   cmrc86g8l0001qhbkgcq6wrf9: {
     categories: [
       {
@@ -76,6 +120,78 @@ const COMPANY_PRODUCT_SERVICE_PROFILES: Record<string, CompanyProductServiceProf
 };
 
 const COMPANY_REPORTING_PROFILES: Record<string, CompanyReportingProfile> = {
+  cmm21v70k0004kz04h9khgd8l: {
+    managementHierarchy: {
+      corporate: 'Corporate',
+      geographies: [
+        'Northeast',
+        'Midwest',
+        'Southeast',
+        'Texas / South Central',
+        'Mountain West',
+        'West Coast',
+        'Canada',
+      ],
+      countryMetrics: [
+        'Revenue',
+        'Gross Margin',
+        'Units Shipped',
+        'Bookings',
+        'Backlog',
+        'On-Time Shipment Rate',
+        'Warranty Claims',
+        'Cash Collections',
+      ],
+    },
+    dimensions: [
+      { name: 'Product Line', levels: ['Rooftop Units', 'Air Handlers', 'Heat Pumps', 'Condensing Units', 'Coils', 'Controls', 'Aftermarket Parts'] },
+      { name: 'Manufacturing', levels: ['Plant', 'Production Cell', 'Assembly Line', 'Work Center'] },
+      { name: 'Channel', levels: ['Distributor', 'Mechanical Contractor', 'OEM / Private Label', 'Direct Institutional', 'Service Parts'] },
+      { name: 'Region', levels: ['Territory', 'Region', 'Country'] },
+      { name: 'Service / Warranty', levels: ['Warranty', 'Aftermarket', 'Field Service', 'Replacement Parts'] },
+      { name: 'Financial', levels: ['Legal Entity', 'Business Unit', 'Cost Center', 'Product Line'] },
+    ],
+    businessLines: [
+      { name: 'Packaged Equipment', offerings: ['Commercial Rooftop Units', 'Packaged Heat Pump Systems', 'Condensing Units'] },
+      { name: 'Engineered Air Systems', offerings: ['Air Handling Units', 'Coils & Heat Exchangers', 'Custom OEM Assemblies'] },
+      { name: 'Controls & Accessories', offerings: ['Controls & Economizers', 'Sensors', 'Damper Kits', 'Automation Interface Kits'] },
+      { name: 'Aftermarket & Warranty', offerings: ['Replacement & Warranty Parts', 'Field Replacement Kits', 'Service Inventory'] },
+    ],
+    customerSegments: [
+      'HVAC Distributors',
+      'Mechanical Contractors',
+      'Commercial Builders',
+      'Facility Managers',
+      'OEM / Private-Label Accounts',
+      'Service Contractors',
+      'Institutional Accounts',
+      'Energy Retrofit Contractors',
+    ],
+    operationalKpis: [
+      'Units produced',
+      'Units shipped',
+      'Bookings',
+      'Backlog',
+      'On-time shipment rate',
+      'Production cycle time',
+      'Material cost variance',
+      'Inventory turns',
+      'Warranty claim rate',
+      'Gross margin by product line',
+    ],
+    exampleQuestions: [
+      'Rooftop unit revenue by region',
+      'Gross margin by product line',
+      'Backlog by production cell',
+      'On-time shipment rate by plant',
+      'Warranty claims by product family',
+      'Inventory value by component category',
+      'Distributor revenue versus contractor revenue',
+      'Material cost variance for compressors and coils',
+      'Aftermarket parts sales by territory',
+      'Bookings versus shipments by month',
+    ],
+  },
   cmrc86g8l0001qhbkgcq6wrf9: {
     managementHierarchy: {
       corporate: 'Corporate (Vietnam)',
@@ -402,6 +518,10 @@ function getCompanyProductServiceProfile(companyId: string): CompanyProductServi
 
 function getCompanyReportingProfile(companyId: string): CompanyReportingProfile | null {
   return COMPANY_REPORTING_PROFILES[String(companyId || '').trim()] || null;
+}
+
+function getCompanySkuPrefix(companyId: string): string {
+  return String(companyId || '').trim() === 'cmm21v70k0004kz04h9khgd8l' ? 'HVAC' : 'GSL';
 }
 
 function getCompanyRegions(companyId: string): string[] {
@@ -1492,7 +1612,7 @@ function buildProductResponse(req: MockRequest, profile: SectorProfile) {
         productServiceCategory: item,
         region,
         country: region,
-        sku: companyProductProfile ? `GSL-${idx + 100}` : `SKU-${idx + 100}`,
+        sku: companyProductProfile ? `${getCompanySkuPrefix(req.companyId)}-${idx + 100}` : `SKU-${idx + 100}`,
         quantitySold,
         revenue,
         cogs,
@@ -1524,7 +1644,7 @@ function buildProductResponse(req: MockRequest, profile: SectorProfile) {
         const operatingExpensesPerPiece = Number((unitPrice * 0.075).toFixed(2));
         const orderNumber = 41000 + dateIndex * 100 + itemIndex * 10 + customerIndex;
         const customerId = `C${String(1200 + customerIndex).padStart(4, '0')}`;
-        const sku = `SKU-${itemIndex + 100}`;
+        const sku = companyProductProfile ? `${getCompanySkuPrefix(req.companyId)}-${itemIndex + 100}` : `SKU-${itemIndex + 100}`;
         const revenue = Number((qty * unitPrice).toFixed(2));
         return {
           key: `mock-wholesale-${dateIndex}-${itemIndex}-${customerIndex}`,
@@ -1574,7 +1694,7 @@ function buildProductResponse(req: MockRequest, profile: SectorProfile) {
     )
   ).slice(0, req.limit || 1000);
   const wholesaleVendorPricingRows = items.flatMap((item, itemIndex) => {
-    const sku = `SKU-${itemIndex + 100}`;
+    const sku = companyProductProfile ? `${getCompanySkuPrefix(req.companyId)}-${itemIndex + 100}` : `SKU-${itemIndex + 100}`;
     return [0, 1].map((vendorIndex) => {
       const actualNoAdj = Number((45 + itemIndex * 4.15 + vendorIndex * 1.8).toFixed(4));
       const formalContracts = Number((actualNoAdj * (vendorIndex === 0 ? 0.985 : 1.015)).toFixed(4));
@@ -1637,7 +1757,10 @@ function buildProductResponse(req: MockRequest, profile: SectorProfile) {
 }
 
 function buildInventoryResponse(req: MockRequest, profile: SectorProfile) {
-  const items = topLineNames(profile.productPrefix, 8);
+  const companyProductProfile = getCompanyProductServiceProfile(req.companyId);
+  const items = companyProductProfile?.categories.length
+    ? companyProductProfile.categories.map((category) => category.category)
+    : topLineNames(profile.productPrefix, 8);
   const dates = listDates(req.startDate, req.endDate, req.frequency);
   const records = dates.flatMap((date, i) =>
     items.map((item, idx) => {
@@ -1649,7 +1772,7 @@ function buildInventoryResponse(req: MockRequest, profile: SectorProfile) {
         snapshotDate: date.toISOString(),
         frequency: req.frequency,
         itemName: item,
-        sku: `INV-${idx + 200}`,
+        sku: companyProductProfile ? `${getCompanySkuPrefix(req.companyId)}-INV-${idx + 200}` : `INV-${idx + 200}`,
         qtyOnHand,
         avgCost,
         assetValue,
