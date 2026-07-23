@@ -110,6 +110,118 @@ function formatMetricValue(value: number, unit?: string): string {
   return unit ? `${formatted} ${unit}` : formatted;
 }
 
+function isCorelyticsOperatingContext(item: IndustryOutlookItem): boolean {
+  return renderText(item.provider).toLowerCase() === 'corelytics company profile';
+}
+
+function parseLabeledSummary(value: unknown): Array<{ label: string; value: string }> {
+  const sections: Array<{ label: string; value: string }> = [];
+  const lines = renderText(value)
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+
+  for (const line of lines) {
+    const labeled = line.match(/^([^:]{3,90}):\s*(.+)$/);
+    if (labeled) {
+      sections.push({ label: labeled[1].trim(), value: labeled[2].trim() });
+      continue;
+    }
+    const last = sections[sections.length - 1];
+    if (last) {
+      last.value = `${last.value}\n${line}`;
+    } else {
+      sections.push({ label: 'Context', value: line });
+    }
+  }
+
+  return sections;
+}
+
+function operatingContextLabel(label: string): string {
+  const normalized = label.toLowerCase();
+  if (normalized.includes('top products')) return 'Product Mix';
+  if (normalized.includes('theme mix')) return 'Product Theme Mix';
+  if (normalized.includes('inferred product')) return 'Inferred Product Themes';
+  if (normalized.includes('top customers')) return 'Customer & Channel Mix';
+  if (normalized.includes('inferred customer')) return 'Inferred Customer Channels';
+  if (normalized.includes('strategic market')) return 'Strategic Market Read';
+  return label;
+}
+
+function splitOperatingEvidence(value: string, limit = 8): string[] {
+  const primaryParts = value.includes(';') ? value.split(';') : value.split(',');
+  return primaryParts
+    .map((part) => part.replace(/\s+/g, ' ').trim())
+    .filter((part) => {
+      const normalized = part.toLowerCase();
+      return part
+        && !normalized.includes('unknown item')
+        && !normalized.includes('*** revised ***')
+        && !normalized.includes('*** frozen ***')
+        && !/:\s*\$0(?:\D|$)/.test(part);
+    })
+    .slice(0, limit);
+}
+
+function CorelyticsOperatingContextSection({ items }: { items: IndustryOutlookItem[] }) {
+  if (items.length === 0) return null;
+
+  const operationalItems = items.filter((item) => renderText(item.id) === 'corelytics-operational-product-mix');
+  const companyItems = items.filter((item) => renderText(item.id) !== 'corelytics-operational-product-mix');
+  const operationalSections = operationalItems.flatMap((item) => parseLabeledSummary(item.summary));
+
+  return (
+    <div style={cardStyle}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', flexWrap: 'wrap', alignItems: 'flex-start' }}>
+        <div>
+          <div style={{ fontSize: '18px', fontWeight: 800, color: '#0f172a' }}>Company Operating Context</div>
+          <div style={{ fontSize: '13px', color: '#64748b', marginTop: '4px' }}>
+            First-party product, customer, and setup evidence used to interpret the market outlook.
+          </div>
+        </div>
+        <span style={{ alignSelf: 'flex-start', fontSize: '11px', color: '#166534', background: '#dcfce7', border: '1px solid #bbf7d0', borderRadius: '999px', padding: '4px 8px', fontWeight: 900 }}>
+          Corelytics data
+        </span>
+      </div>
+
+      {operationalSections.length > 0 && (
+        <div style={{ marginTop: '14px', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '12px' }}>
+          {operationalSections.map((section) => {
+            const evidenceItems = splitOperatingEvidence(section.value, section.label.toLowerCase().includes('strategic') ? 5 : 7);
+            return (
+              <div key={`${section.label}-${section.value.slice(0, 24)}`} style={{ border: '1px solid #e2e8f0', borderRadius: '12px', background: '#f8fafc', padding: '12px' }}>
+                <div style={{ fontSize: '12px', color: '#2751d0', fontWeight: 900, textTransform: 'uppercase' }}>{operatingContextLabel(section.label)}</div>
+                <div style={{ marginTop: '8px', display: 'grid', gap: '6px' }}>
+                  {evidenceItems.length > 1 ? evidenceItems.map((evidence, evidenceIndex) => (
+                    <div key={`${evidence}-${evidenceIndex}`} style={{ fontSize: '13px', color: '#334155', lineHeight: 1.45 }}>{evidence}</div>
+                  )) : (
+                    <div style={{ fontSize: '13px', color: '#334155', lineHeight: 1.5 }}>{renderFormattedOutlookText(section.value)}</div>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {companyItems.length > 0 && (
+        <details style={{ marginTop: '14px' }}>
+          <summary style={{ fontSize: '12px', color: '#475569', fontWeight: 900, cursor: 'pointer' }}>Company Setup Notes</summary>
+          <div style={{ marginTop: '10px', display: 'grid', gap: '10px' }}>
+            {companyItems.map((item) => (
+              <div key={renderText(item.id)} style={{ borderTop: '1px solid #f1f5f9', paddingTop: '10px' }}>
+                <div style={{ fontSize: '13px', color: '#0f172a', fontWeight: 850 }}>{renderText(item.title)}</div>
+                <div style={{ marginTop: '6px' }}>{renderFormattedOutlookText(item.summary)}</div>
+              </div>
+            ))}
+          </div>
+        </details>
+      )}
+    </div>
+  );
+}
+
 function SignalTrendChart({ item }: { item: IndustryOutlookItem }) {
   const history = (item.history || []).filter((point) => Number.isFinite(Number(point.value)));
   if (history.length < 2) {
@@ -346,15 +458,18 @@ export default function IndustryBriefPanel({ companyId }: Props) {
   );
   const outlookGroups = useMemo(() => {
     const items = brief?.industryOutlook || [];
+    const context = items.filter(isCorelyticsOperatingContext);
+    const contextIds = new Set(context.map((item) => renderText(item.id)));
     const news = items.filter((item) => {
       const provider = renderText(item.provider).toLowerCase();
       const category = renderText(item.category).toLowerCase();
-      return provider === 'perplexity' || category.includes('news') || category.includes('competitive');
+      return !contextIds.has(renderText(item.id)) && (provider === 'perplexity' || category.includes('news') || category.includes('competitive'));
     });
     const newsIds = new Set(news.map((item) => renderText(item.id)));
     return {
+      context,
       news,
-      metrics: items.filter((item) => !newsIds.has(renderText(item.id))),
+      metrics: items.filter((item) => !contextIds.has(renderText(item.id)) && !newsIds.has(renderText(item.id))),
     };
   }, [brief]);
 
@@ -522,6 +637,8 @@ export default function IndustryBriefPanel({ companyId }: Props) {
 
       {activeTab === 'outlook' ? (
         <>
+          <CorelyticsOperatingContextSection items={outlookGroups.context} />
+
           <div style={cardStyle}>
             <div style={{ fontSize: '18px', fontWeight: 800, color: '#0f172a' }}>Market & Competitive Outlook</div>
             <div style={{ fontSize: '13px', color: '#64748b', marginTop: '4px' }}>

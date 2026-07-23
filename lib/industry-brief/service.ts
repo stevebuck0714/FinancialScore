@@ -336,7 +336,7 @@ export async function loadIndustryBriefCompany(companyId: string) {
     ...company,
     industryGroupName: industryGroup?.name || null,
     industryGroupDescription: industryGroup?.description || null,
-    profileText: [profileText, operationalProfileText].filter(Boolean).join('\n'),
+    profileText,
     productContext,
     customerContext,
     marketThesisContext,
