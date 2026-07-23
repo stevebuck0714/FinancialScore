@@ -637,8 +637,6 @@ export default function IndustryBriefPanel({ companyId }: Props) {
 
       {activeTab === 'outlook' ? (
         <>
-          <CorelyticsOperatingContextSection items={outlookGroups.context} />
-
           <div style={cardStyle}>
             <div style={{ fontSize: '18px', fontWeight: 800, color: '#0f172a' }}>Market & Competitive Outlook</div>
             <div style={{ fontSize: '13px', color: '#64748b', marginTop: '4px' }}>
@@ -752,6 +750,8 @@ export default function IndustryBriefPanel({ companyId }: Props) {
               })}
             </div>
           </div>
+
+          <CorelyticsOperatingContextSection items={outlookGroups.context} />
         </>
       ) : (
         <>
