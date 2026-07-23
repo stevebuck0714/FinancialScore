@@ -306,9 +306,17 @@ function CustomReportPreview({ config, rows, tableRows = [], tableColumns = [] }
   return (
     <div style={{ marginTop: '18px', height: '380px', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '14px', background: '#fff' }}>
       <ResponsiveContainer width="100%" height="100%">
-        <ComposedChart data={chartRows} margin={{ top: 16, right: rightSeries.length ? 54 : 24, bottom: 18, left: 22 }}>
+        <ComposedChart data={chartRows} margin={{ top: 16, right: rightSeries.length ? 54 : 24, bottom: 64, left: 22 }}>
           <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-          <XAxis dataKey="month" tick={{ fontSize: 12, fill: '#64748b' }} />
+          <XAxis
+            dataKey="month"
+            tick={{ fontSize: 11, fill: '#64748b' }}
+            interval={0}
+            angle={-45}
+            textAnchor="end"
+            height={64}
+            tickMargin={10}
+          />
           <YAxis
             yAxisId="left"
             tick={{ fontSize: 12, fill: '#64748b' }}
@@ -322,7 +330,11 @@ function CustomReportPreview({ config, rows, tableRows = [], tableColumns = [] }
               tickFormatter={(value) => formatValue(Number(value || 0), rightAxisFormat)}
             />
           )}
-          <Tooltip formatter={(value: any, name: any, props: any) => formatTooltipValue(value, name, props, series)} labelStyle={{ color: '#0f172a', fontWeight: 700 }} />
+          <Tooltip
+            formatter={(value: any, name: any, props: any) => formatTooltipValue(value, name, props, series)}
+            labelFormatter={(label) => String(label || '')}
+            labelStyle={{ color: '#0f172a', fontWeight: 700 }}
+          />
           <Legend />
           {barSeries.map((item: any, index: number) => (
             <Bar
