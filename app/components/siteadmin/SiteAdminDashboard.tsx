@@ -11099,6 +11099,26 @@ export default function SiteAdminDashboard(props: any) {
                                                 ? 'Revalidate'
                                                 : 'Connect'}
                                           </button>
+                                          {['ACTIVE', 'ERROR', 'EXPIRED'].includes(String(qbDesktopSyncStatusByCompany[businessCompany.id]?.status || '').toUpperCase()) ? (
+                                            <button
+                                              type="button"
+                                              onClick={() => disconnectQbDesktopConnection(businessCompany.id)}
+                                              disabled={connectingQbDesktopCompanyId === businessCompany.id || disconnectingQbDesktopCompanyId === businessCompany.id}
+                                              style={{
+                                                padding: '8px 12px',
+                                                background: connectingQbDesktopCompanyId === businessCompany.id || disconnectingQbDesktopCompanyId === businessCompany.id ? '#cbd5e1' : 'white',
+                                                color: connectingQbDesktopCompanyId === businessCompany.id || disconnectingQbDesktopCompanyId === businessCompany.id ? '#334155' : '#b91c1c',
+                                                border: `1px solid ${connectingQbDesktopCompanyId === businessCompany.id || disconnectingQbDesktopCompanyId === businessCompany.id ? '#cbd5e1' : '#fecaca'}`,
+                                                borderRadius: '6px',
+                                                fontSize: '12px',
+                                                fontWeight: '600',
+                                                cursor: connectingQbDesktopCompanyId === businessCompany.id || disconnectingQbDesktopCompanyId === businessCompany.id ? 'not-allowed' : 'pointer',
+                                              }}
+                                              title="Disconnects QuickBooks Desktop/Enterprise account syncs and removes the stored Web Connector password."
+                                            >
+                                              {disconnectingQbDesktopCompanyId === businessCompany.id ? 'Disconnecting...' : 'Disconnect'}
+                                            </button>
+                                          ) : null}
                                           <button
                                             onClick={() => runPlatformOperationalSync?.(businessCompany.id, operationalSettings.frequency)}
                                             disabled={String(qbDesktopSyncStatusByCompany[businessCompany.id]?.status || '').toUpperCase() !== 'ACTIVE'}
