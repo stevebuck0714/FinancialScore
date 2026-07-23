@@ -263,7 +263,13 @@ function CustomReportPreview({ config, rows, tableRows = [], tableColumns = [] }
                 : formatTooltipValue(value, name, props, values)
             )} />
             <Legend />
-            <Pie data={values} dataKey="value" nameKey="name" outerRadius={110} label={(entry: any) => `${entry.name}`}>
+            <Pie
+              data={values}
+              dataKey="value"
+              nameKey="name"
+              outerRadius={110}
+              label={(entry: any) => formatValue(Number(entry.value || 0), entry.format || primarySeries?.format)}
+            >
               {values.map((item: any) => (
                 <Cell key={item.field} fill={item.color} />
               ))}

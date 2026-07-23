@@ -1113,6 +1113,50 @@ function getDatasetDimensionColumn(dataset: ReportDataset, config: any): ReportD
   return requestedColumn || null;
 }
 
+function canonicalProductKey(value: unknown): string {
+  return String(value || '')
+    .trim()
+    .replace(/\s+/g, '')
+    .replace(/[^A-Za-z0-9]/g, '')
+    .toUpperCase();
+}
+
+async function loadProductDisplayNameMap(companyId: string) {
+  const rows = await prisma.$queryRaw<Array<{ productId: string; productName: string }>>`
+    SELECT DISTINCT ON ("productId")
+      "productId",
+      "productName"
+    FROM "BakersCogsFact"
+    WHERE "companyId" = ${companyId}
+      AND "sourceCode" = 'BAKERS_COGS'
+      AND "productName" IS NOT NULL
+    ORDER BY "productId", "formulaDate" DESC, "updatedAt" DESC
+  `;
+  const displayNameByKey = new Map<string, string>();
+  for (const row of rows) {
+    const productName = String(row.productName || '').trim();
+    if (!productName) continue;
+    for (const value of [row.productId, row.productName]) {
+      const key = canonicalProductKey(value);
+      if (key && !displayNameByKey.has(key)) displayNameByKey.set(key, productName);
+    }
+  }
+  return displayNameByKey;
+}
+
+function resolveProductDisplayName(rawName: unknown, displayNameByKey: Map<string, string>): string {
+  const raw = String(rawName || '').trim();
+  const candidates = [
+    raw,
+    ...raw.split(/[:|,/\\]+/).map((part) => part.trim()).filter(Boolean).reverse(),
+  ];
+  for (const candidate of candidates) {
+    const displayName = displayNameByKey.get(canonicalProductKey(candidate));
+    if (displayName) return displayName;
+  }
+  return raw || 'Unassigned';
+}
+
 async function buildDatasetDimensionChartPreview(config: any) {
   const dataset = getReportDataset(config?.dataset || config?.datasetId);
   if (!dataset) return null;
@@ -1159,6 +1203,7 @@ async function buildDatasetDimensionChartPreview(config: any) {
 
   const aggregate = metricConfig.aggregation === 'average' || metricConfig.aggregation === 'avg' ? 'AVG' : 'SUM';
   const limit = Math.min(Math.max(Number(config?.limit) || 10, 1), 50);
+  const queryLimit = dataset.tableName === 'ProductSalesSnapshot' ? Math.max(limit * 3, limit) : limit;
   const rows = await prisma.$queryRaw<Array<Record<string, unknown>>>(Prisma.sql`
     SELECT
       COALESCE(NULLIF(${datasetColumnSql(dimensionColumn)}::text, ''), 'Unassigned') AS "name",
@@ -1169,26 +1214,42 @@ async function buildDatasetDimensionChartPreview(config: any) {
     GROUP BY 1
     HAVING ${Prisma.raw(aggregate)}(${datasetColumnSql(metricConfig.column)}) IS NOT NULL
     ORDER BY "value" DESC
-    LIMIT ${limit}
+    LIMIT ${queryLimit}
   `);
+  const displayNameByKey = dataset.tableName === 'ProductSalesSnapshot'
+    ? await loadProductDisplayNameMap(String(config.companyId))
+    : new Map<string, string>();
+  const displayRows = rows.reduce<Array<{ name: string; value: number }>>((acc, row) => {
+    const name = displayNameByKey.size > 0
+      ? resolveProductDisplayName(row.name, displayNameByKey)
+      : String(row.name || 'Unassigned');
+    const value = toNumber(row.value);
+    const existing = acc.find((item) => item.name === name);
+    if (existing) {
+      existing.value += value;
+    } else {
+      acc.push({ name, value });
+    }
+    return acc;
+  }, []).sort((a, b) => b.value - a.value).slice(0, limit);
 
   return {
-    rows: rows.map((row) => ({
-      name: String(row.name || 'Unassigned'),
-      dimension: String(row.name || 'Unassigned'),
-      value: toNumber(row.value),
+    rows: displayRows.map((row) => ({
+      name: row.name,
+      dimension: row.name,
+      value: row.value,
       values: {
-        [metricConfig.column.key]: toNumber(row.value),
+        [metricConfig.column.key]: row.value,
       },
     })),
     tableColumns: [
       { key: 'name', label: dimensionColumn.label, type: 'text' },
       { key: metricConfig.column.key, label: metricConfig.label, type: 'metric', format: metricConfig.format },
     ],
-    tableRows: rows.map((row) => ({
-      name: String(row.name || 'Unassigned'),
+    tableRows: displayRows.map((row) => ({
+      name: row.name,
       values: {
-        [metricConfig.column.key]: toNumber(row.value),
+        [metricConfig.column.key]: row.value,
       },
     })),
     fields: [metricConfig.column.key],
