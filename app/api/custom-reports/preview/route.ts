@@ -1095,8 +1095,22 @@ function getDatasetDimensionColumn(dataset: ReportDataset, config: any): ReportD
     config?.xAxis?.dimension ||
     config?.xAxis?.category;
   if (!rawDimension) return null;
-  if (typeof rawDimension === 'string') return getDatasetColumn(dataset, rawDimension) || null;
-  return getDatasetColumn(dataset, rawDimension?.field || rawDimension?.key) || null;
+  const requestedColumn = typeof rawDimension === 'string'
+    ? getDatasetColumn(dataset, rawDimension)
+    : getDatasetColumn(dataset, rawDimension?.field || rawDimension?.key);
+  const promptContext = [
+    config?.sourcePrompt,
+    config?.aiReportRequest,
+    config?.prompt,
+    config?.title,
+    config?.description,
+  ].map((item) => String(item || '')).join(' ').toLowerCase();
+  const asksProduct = /\b(product|products|item|items|part|parts)\b/.test(promptContext);
+  const explicitlyAsksIdOrSku = /\b(sku|skus|product id|item id|part number|item code)\b/.test(promptContext);
+  if (asksProduct && !explicitlyAsksIdOrSku && ['itemId', 'productId', 'sku'].includes(String(requestedColumn?.key || ''))) {
+    return getDatasetColumn(dataset, 'itemName') || getDatasetColumn(dataset, 'productName') || requestedColumn || null;
+  }
+  return requestedColumn || null;
 }
 
 async function buildDatasetDimensionChartPreview(config: any) {

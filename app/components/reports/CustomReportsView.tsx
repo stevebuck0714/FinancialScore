@@ -453,7 +453,6 @@ export default function CustomReportsView({ selectedCompanyId }: CustomReportsVi
         ? withReportRequest(data.reportConfig, trimmedPrompt)
         : null;
       setGeneratedConfig(reportConfig);
-      setSelectedSavedReportId(null);
       if (reportConfig) {
         await loadPreview(reportConfig);
       }
@@ -484,10 +483,12 @@ export default function CustomReportsView({ selectedCompanyId }: CustomReportsVi
       if (!response.ok) {
         throw new Error(data?.error || 'Failed to save report');
       }
-      setGeneratedConfig(data?.report?.config || reportConfigToSave);
+      const savedConfig = data?.report?.config || reportConfigToSave;
+      setGeneratedConfig(savedConfig);
       setSelectedSavedReportId(data?.report?.id || selectedSavedReportId || null);
       await loadSavedReports();
-      setActiveTab('saved');
+      await loadPreview(savedConfig);
+      setActiveTab('view');
     } catch (error: any) {
       setGenerationError(error?.message || 'Failed to save report');
     } finally {

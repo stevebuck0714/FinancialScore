@@ -73,6 +73,24 @@ function inferDimensionColumnKey(dataset: ReportDataset, prompt: string): string
   return null;
 }
 
+function normalizeDimensionColumnKey(dataset: ReportDataset, prompt: string, rawDimension: unknown): string | null {
+  const rawKey = typeof rawDimension === 'string'
+    ? rawDimension
+    : typeof rawDimension === 'object' && rawDimension
+      ? String((rawDimension as any).field || (rawDimension as any).key || '')
+      : '';
+  const requestedKey = rawKey ? datasetColumnKey(dataset, rawKey) : null;
+  const inferredKey = inferDimensionColumnKey(dataset, prompt);
+  const normalized = normalizePromptText(prompt).toLowerCase();
+  const asksProduct = /\b(product|products|item|items|part|parts)\b/.test(normalized);
+  const explicitlyAsksIdOrSku = /\b(sku|skus|product id|item id|part number|item code)\b/.test(normalized);
+  if (asksProduct && !explicitlyAsksIdOrSku) {
+    const itemNameKey = datasetColumnKey(dataset, 'itemName') || datasetColumnKey(dataset, 'productName');
+    if (itemNameKey) return itemNameKey;
+  }
+  return requestedKey || inferredKey;
+}
+
 function inferTopLimit(prompt: string): number | null {
   const normalized = normalizePromptText(prompt).toLowerCase();
   const numeric = normalized.match(/\btop\s+(\d{1,2})\b/);
@@ -230,7 +248,11 @@ function buildDatasetReportConfig(prompt: string, requestedType: ReportChartType
   if (!datasetConfig) return null;
   const dataset = getReportDataset(datasetConfig.dataset) as ReportDataset;
   const entityName = extractEntityNameFromPrompt(prompt);
-  const dimension = rawConfig?.dimension || rawConfig?.groupBy || rawConfig?.categoryField || inferDimensionColumnKey(dataset, prompt);
+  const dimension = normalizeDimensionColumnKey(
+    dataset,
+    prompt,
+    rawConfig?.dimension || rawConfig?.groupBy || rawConfig?.categoryField
+  );
   const topLimit = inferTopLimit(prompt);
   const exactDateRange = inferExactDateRangeFromPrompt(dataset, prompt);
   const metricColumns = datasetConfig.columns.filter((column: any) => (
