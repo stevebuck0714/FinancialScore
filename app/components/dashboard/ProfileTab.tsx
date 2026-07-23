@@ -207,9 +207,6 @@ export default function ProfileTab({
       },
     });
   };
-  const textListValue = (value: unknown): string => Array.isArray(value) ? value.join('\n') : String(value || '');
-  const parseTextList = (value: string): string[] => value.split(/\r?\n|,/).map((item) => item.trim()).filter(Boolean);
-
   // Get company data
   const ltmData = monthly.length >= 12 ? monthly.slice(-12) : monthly;
   const ltmRev = ltmData.reduce((sum, m) => sum + m.revenue, 0);
@@ -760,103 +757,6 @@ export default function ProfileTab({
             </div>
           )}
         </div>
-        </div>
-
-        {/* Container 2: Industry Brief Intelligence */}
-        <div style={{ background: 'white', borderRadius: '12px', padding: '4px 32px 32px 32px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', borderBottom: '2px solid #e2e8f0', paddingBottom: '12px' }}>
-            <div>
-              <h2 style={{ fontSize: '24px', fontWeight: '600', color: '#1e293b', margin: 0 }}>
-                Industry Brief Intelligence
-              </h2>
-              <div style={{ fontSize: '13px', color: '#64748b', marginTop: '6px', lineHeight: 1.45 }}>
-                First-party company context used to focus Daily Industry Brief research, competitors, economic signals, and growth opportunities.
-              </div>
-            </div>
-            <button
-              className="no-print"
-              onClick={handleSaveProfile}
-              disabled={isLoading}
-              style={{
-                padding: '8px 16px',
-                background: isLoading ? '#94a3b8' : '#10b981',
-                color: 'white',
-                border: 'none',
-                borderRadius: '6px',
-                fontSize: '13px',
-                fontWeight: '700',
-                cursor: isLoading ? 'not-allowed' : 'pointer',
-                boxShadow: '0 2px 4px rgba(16, 185, 129, 0.25)',
-                whiteSpace: 'nowrap',
-                opacity: isLoading ? 0.8 : 1
-              }}
-            >
-              {isLoading ? 'Saving...' : 'Save'}
-            </button>
-          </div>
-
-          <div style={{ display: 'grid', gap: '14px' }}>
-            <div>
-              <label style={{ display: 'block', fontSize: '12px', fontWeight: 700, color: '#475569', marginBottom: '5px' }}>PRODUCT / CAPABILITY FOCUS</label>
-              <textarea
-                value={profile.industryBriefProductFocus || ''}
-                onChange={(e) => updateProfile({ industryBriefProductFocus: e.target.value })}
-                placeholder="Example: Breakfast breads, cinnamon swirl, specialty bakery products, local delivery routes, frozen bread capabilities."
-                rows={3}
-                style={{ width: '100%', padding: '10px 12px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '14px', resize: 'vertical' }}
-              />
-            </div>
-            <div>
-              <label style={{ display: 'block', fontSize: '12px', fontWeight: 700, color: '#475569', marginBottom: '5px' }}>BRANDS / PRODUCT LINES</label>
-              <textarea
-                value={textListValue(profile.industryBriefBrands)}
-                onChange={(e) => updateProfile({ industryBriefBrands: parseTextList(e.target.value) })}
-                placeholder="One per line or comma-separated. Example: Jenny Lee, Cinnamon Swirl, Breakfast Breads."
-                rows={3}
-                style={{ width: '100%', padding: '10px 12px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '14px', resize: 'vertical' }}
-              />
-            </div>
-            <div>
-              <label style={{ display: 'block', fontSize: '12px', fontWeight: 700, color: '#475569', marginBottom: '5px' }}>CUSTOMERS / CHANNELS</label>
-              <textarea
-                value={profile.industryBriefCustomerChannels || ''}
-                onChange={(e) => updateProfile({ industryBriefCustomerChannels: e.target.value })}
-                placeholder="Example: Regional grocery, local foodservice, school/institutional accounts, direct local delivery."
-                rows={3}
-                style={{ width: '100%', padding: '10px 12px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '14px', resize: 'vertical' }}
-              />
-            </div>
-            <div>
-              <label style={{ display: 'block', fontSize: '12px', fontWeight: 700, color: '#475569', marginBottom: '5px' }}>COMPETITORS / LOCAL MARKET EVENTS</label>
-              <textarea
-                value={profile.industryBriefCompetitors || ''}
-                onChange={(e) => updateProfile({ industryBriefCompetitors: e.target.value })}
-                placeholder="Example: Track Schwebel's local market exit, regional bakery capacity changes, new local competitors, pricing pressure."
-                rows={3}
-                style={{ width: '100%', padding: '10px 12px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '14px', resize: 'vertical' }}
-              />
-            </div>
-            <div>
-              <label style={{ display: 'block', fontSize: '12px', fontWeight: 700, color: '#475569', marginBottom: '5px' }}>KNOWN LOCAL DEVELOPMENTS</label>
-              <textarea
-                value={profile.industryBriefLocalMarketEvents || ''}
-                onChange={(e) => updateProfile({ industryBriefLocalMarketEvents: e.target.value })}
-                placeholder="Example: Competitor plant closures, grocery expansion, distributor changes, regional labor/utility developments."
-                rows={3}
-                style={{ width: '100%', padding: '10px 12px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '14px', resize: 'vertical' }}
-              />
-            </div>
-            <div>
-              <label style={{ display: 'block', fontSize: '12px', fontWeight: 700, color: '#475569', marginBottom: '5px' }}>KNOWN OPPORTUNITY THEMES</label>
-              <textarea
-                value={profile.industryBriefKnownOpportunities || ''}
-                onChange={(e) => updateProfile({ industryBriefKnownOpportunities: e.target.value })}
-                placeholder="Example: Frozen bread, breakfast bread distribution expansion, grocery private label, route-density margin improvement."
-                rows={3}
-                style={{ width: '100%', padding: '10px 12px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '14px', resize: 'vertical' }}
-              />
-            </div>
-          </div>
         </div>
 
         {/* Container 2: Company Disclosures */}
