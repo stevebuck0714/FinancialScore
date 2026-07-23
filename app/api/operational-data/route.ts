@@ -2996,6 +2996,7 @@ export async function GET(request: NextRequest) {
               cacheType === 'hiring' ? HIRING_SOURCE_VERSION : null,
               isWholesaleProductsReportRequest ? CUSTOMER_WIP_SOURCE_VERSION : null,
               cacheType === 'products' && usesSourceSystemProductSnapshots ? 'products-source-system-bakers-raw-child-id-v3' : null,
+              cacheType === 'sales' && usesSourceSystemProductSnapshots ? 'sales-source-system-product-name-outlier-v1' : null,
             ]),
             dataVersion: await buildOperationalDataVersion(companyId, cacheType, startDate, endDate),
           }
@@ -3757,7 +3758,18 @@ export async function GET(request: NextRequest) {
             orderBy: { snapshotDate: 'asc' },
             take: 100000,
           });
-          const rowsForPayload = productRows.length > 0 || frequency === 'monthly'
+          const monthlyProductRows = frequency === 'daily'
+            ? await prisma.productSalesSnapshot.findMany({
+                where: {
+                  companyId,
+                  frequency: 'monthly',
+                  snapshotDate: { gte: startOfMonth(startDate), lte: endDate },
+                },
+                orderBy: { snapshotDate: 'asc' },
+                take: 100000,
+              })
+            : [];
+          const rawRowsForPayload = productRows.length > 0 || frequency === 'monthly'
             ? productRows
             : await prisma.productSalesSnapshot.findMany({
                 where: {
@@ -3768,6 +3780,42 @@ export async function GET(request: NextRequest) {
                 orderBy: { snapshotDate: 'asc' },
                 take: 100000,
               });
+          const monthRevenueReference = new Map<string, number>();
+          for (const row of monthlyProductRows as any[]) {
+            const snapshot = new Date(row.snapshotDate);
+            if (Number.isNaN(snapshot.getTime())) continue;
+            const monthKey = businessMonthKey(snapshot);
+            monthRevenueReference.set(monthKey, Number(monthRevenueReference.get(monthKey) || 0) + Number(row.revenue || 0));
+          }
+          const monthlyRevenueValues = Array.from(monthRevenueReference.values())
+            .filter((value) => Number.isFinite(value) && value > 0)
+            .sort((a, b) => a - b);
+          const monthlyMedianRevenue = monthlyRevenueValues.length
+            ? monthlyRevenueValues[Math.floor(monthlyRevenueValues.length / 2)]
+            : 0;
+          const dailyBuckets = new Map<string, { revenue: number; rowCount: number }>();
+          if (frequency === 'daily' && monthlyMedianRevenue > 0) {
+            for (const row of rawRowsForPayload as any[]) {
+              const snapshot = new Date(row.snapshotDate);
+              if (Number.isNaN(snapshot.getTime())) continue;
+              const dayKey = snapshot.toISOString().slice(0, 10);
+              const bucket = dailyBuckets.get(dayKey) || { revenue: 0, rowCount: 0 };
+              bucket.revenue += Number(row.revenue || 0);
+              bucket.rowCount += 1;
+              dailyBuckets.set(dayKey, bucket);
+            }
+          }
+          const outlierDailyDates = new Set(
+            Array.from(dailyBuckets.entries())
+              .filter(([, bucket]) => bucket.rowCount >= 50 && bucket.revenue > monthlyMedianRevenue * 2)
+              .map(([dayKey]) => dayKey)
+          );
+          const rowsForPayload = outlierDailyDates.size > 0
+            ? rawRowsForPayload.filter((row: any) => {
+                const snapshot = new Date(row.snapshotDate);
+                return Number.isNaN(snapshot.getTime()) || !outlierDailyDates.has(snapshot.toISOString().slice(0, 10));
+              })
+            : rawRowsForPayload;
           if (rowsForPayload.length === 0) return null;
 
           const canonicalProductKey = (value: unknown): string =>
@@ -3945,12 +3993,12 @@ export async function GET(request: NextRequest) {
 
             const categoryLabel = productDisplayName(row);
             const uploadedProduct = bakersProductMatch(row, categoryLabel);
-            const displayCategoryLabel = uploadedProduct?.productId || displayProductCode(String(row?.sku || row?.itemId || categoryLabel));
+            const uploadedProductName = uploadedProduct?.productName || null;
+            const displayCategoryLabel = uploadedProductName || categoryLabel || displayProductCode(String(row?.sku || row?.itemId || 'Unknown Product'));
             const categoryBucket = categoryMap.get(displayCategoryLabel) || { label: displayCategoryLabel, itemName: null, values: {}, total: 0 };
             categoryBucket.values[monthKey] = Number(categoryBucket.values[monthKey] || 0) + revenue;
             categoryBucket.total += revenue;
             categoryMap.set(displayCategoryLabel, categoryBucket);
-            const uploadedProductName = uploadedProduct?.productName || null;
             if (uploadedProductName) categoryBucket.itemName = uploadedProductName;
 
             const volumeBucket = volumeCategoryMap.get(displayCategoryLabel) || { label: displayCategoryLabel, itemName: null, values: {}, total: 0 };
