@@ -490,6 +490,7 @@ function buildFinalSystemPrompt(): string {
     'Return only the requested dashboard analysis fields. The application attaches source notes and detailed outlook records separately.',
     'Rank opportunities by revenue potential, margin potential, fit with company capabilities, urgency, required investment, and confidence.',
     'Every opportunity must be actionable: include why now, recommended action, owner, estimated impact, and evidence.',
+    'When evidence includes competitor exits, closures, liquidations, plant shutdowns, route/distribution exits, shelf-space changes, pricing moves, or similar regional operators, treat those as potential growth opportunities, including acquisition, merger, route/brand absorption, co-manufacturing, or partnership ideas when source-backed.',
     'Only use provided live sources and Corelytics financial facts. If evidence is weak, lower confidence instead of filling gaps.',
   ].join('\n');
 }
@@ -518,6 +519,9 @@ function buildFinalUserPrompt(
     constraints: [
       'Do not fabricate live commodity/news values beyond the provided base brief.',
       'Make growth opportunities specific to the company, industry, location, and financial context in the base brief.',
+      'Use the company product thesis: distinguish primary product markets from secondary products when the evidence gives mix/share. Do not treat a secondary product line as the whole business.',
+      'If cited evidence shows a competitor exit, closure, liquidation, plant shutdown, route/distribution exit, shelf-space change, pricing move, or similar regional operator opportunity, include that in marketSignals and consider it for growthOpportunities.',
+      'Growth opportunities may include acquisition, merger, route or brand absorption, customer/channel takeover, co-manufacturing, or strategic partnership ideas only when supported by supplied evidence.',
       'Always include executiveSummary.headline and executiveSummary.bullets.',
       'Include exactly 4 healthIndicators.',
       'Include exactly 4 marketSignals.',

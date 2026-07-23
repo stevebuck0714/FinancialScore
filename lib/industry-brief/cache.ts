@@ -3,11 +3,11 @@ import { collectIndustryBriefSources } from '@/lib/industry-brief/sources';
 import type { DailyIndustryBrief, IndustryBriefSourceRecord } from '@/lib/industry-brief/types';
 
 export const INDUSTRY_BRIEF_CACHE_NAMESPACE = 'daily-industry-brief';
-export const INDUSTRY_BRIEF_DATA_VERSION = 'v19-ops-thesis-focused-scan-cache';
+export const INDUSTRY_BRIEF_DATA_VERSION = 'v20-commercial-market-thesis-cache';
 export const INDUSTRY_BRIEF_CACHE_TTL_SECONDS = 36 * 60 * 60;
 
 const SOURCE_CACHE_NAMESPACE = 'daily-industry-brief-sources';
-const SOURCE_DATA_VERSION = 'v10-ops-thesis-focused-scan-bundle';
+const SOURCE_DATA_VERSION = 'v11-commercial-market-thesis-bundle';
 const SOURCE_CACHE_TTL_SECONDS = 36 * 60 * 60;
 
 export type IndustryBriefSourceContext = {
@@ -21,6 +21,7 @@ export type IndustryBriefSourceContext = {
   profileText?: string | null;
   productContext?: string | null;
   customerContext?: string | null;
+  marketThesisContext?: string | null;
 };
 
 export type IndustryBriefSourceBundle = {

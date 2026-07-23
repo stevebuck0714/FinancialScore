@@ -12,6 +12,7 @@ type CompanySourceContext = {
   profileText?: string | null;
   productContext?: string | null;
   customerContext?: string | null;
+  marketThesisContext?: string | null;
 };
 
 type FredSeriesDefinition = {
@@ -190,6 +191,7 @@ function isEnergyFuelRelevantContext(context: CompanySourceContext): boolean {
     context.profileText,
     context.productContext,
     context.customerContext,
+    context.marketThesisContext,
   ].join(' ').toLowerCase();
   return /(baker|bakery|bread|manufactur|distribution|distributor|delivery|deliver|fleet|freight|transport|logistics|warehouse|wholesale|route)/.test(combined);
 }
@@ -467,8 +469,14 @@ function perplexityScanConfig(kind: PerplexityScanKind) {
       id: 'perplexity-competitor-opportunity-scan',
       category: 'Local Competitor and Opportunity Data',
       title: 'Focused competitor and opportunity scan',
-      instruction: 'Search for source-backed local competitor changes, closures, capacity shifts, pricing moves, distribution changes, and product/category opportunity signals. Include competitor exits or "out of business" events when found. Connect findings to the company location, exact products/items, brands, customer channels, and known opportunity themes.',
-      retryInstruction: 'Return 4 cited bullets about local competitors, capacity changes, distribution changes, or product opportunity evidence. If no competitor change is found, use cited local/industry evidence that most directly affects the company-specific product/channel opportunity.',
+      instruction: [
+        'Search for source-backed competitor changes, closures, liquidations, plant shutdowns, capacity shifts, pricing moves, distribution/route exits, shelf-space changes, brand exits, and product/category opportunity signals.',
+        'Use the strategic market thesis to define the competitor set. For commercial bakers, focus on commercial/regional bakery supply, not neighborhood retail bakeries.',
+        'For commercial bakers, include commercial bread and breakfast bread manufacturers, grocery/private-label suppliers, wholesale bakery distributors, regional branded bread companies, and foodservice/institutional bakery suppliers.',
+        'Also look for similar regional operators that may be credible merger partners, acquisition targets, route/brand absorption targets, co-manufacturing partners, or customer/channel expansion targets.',
+        'Include competitor exits or "out of business" events when found. Connect findings to company location, products/items, brands, customer channels, and known opportunity themes.',
+      ].join(' '),
+      retryInstruction: 'Return 4 cited bullets about competitor closures/liquidations, capacity or route/distribution changes, shelf-space/pricing moves, or source-backed M&A/partnership/product opportunity evidence. If no competitor change is found, use cited local/industry evidence that most directly affects the company-specific product/channel opportunity.',
     };
   }
   return {
@@ -492,6 +500,7 @@ async function collectPerplexityScan(context: CompanySourceContext, kind: Perple
     context.industryGroupName ? `Detailed industry: ${context.industryGroupName}` : '',
     context.productContext ? `Known products/items: ${context.productContext}` : '',
     context.customerContext ? `Known customers/channels: ${context.customerContext}` : '',
+    context.marketThesisContext ? `Strategic market thesis and targeted searches: ${context.marketThesisContext}` : '',
     context.profileText ? `Company intelligence/setup notes: ${context.profileText}` : '',
     `Location: ${context.location}`,
     '',
@@ -502,8 +511,8 @@ async function collectPerplexityScan(context: CompanySourceContext, kind: Perple
       ? 'Include one cited energy/fuel/transportation-cost bullet when source-backed, especially electricity/power, diesel, fleet fuel, natural gas, utility, or local delivery cost signals relevant to manufacturing/distribution.'
       : '',
     'Use only source-backed facts from authoritative or clearly identified sources.',
-    'Use company intelligence to focus searches, but verify external claims such as competitor exits, local capacity changes, or market developments with cited sources when possible.',
-    'Each bullet must include the source name or URL/citation. Prefer recent sources from the last 30 days when available.',
+    'Use company intelligence and the strategic market thesis to focus searches, but verify external claims such as competitor exits, local capacity changes, route exits, shelf-space changes, merger/acquisition opportunities, or market developments with cited sources when possible.',
+    'Each bullet must include the source name or URL/citation. Prefer recent sources from the last 30 days when available, but include older source-backed competitor exits, closures, route exits, or plant shutdowns when the market impact is still current.',
     'Do not recommend actions, score opportunities, write an executive summary, or infer what the company should do.',
     'Do not estimate private company revenue or employee counts unless an authoritative source states them.',
     retry ? 'Return 4 concise cited bullets.' : 'Return 5 concise cited bullets.',
