@@ -52,6 +52,66 @@ function normalizeChartType(value: unknown, fallback: ReportChartType): ReportCh
   return allowedChartTypes.has(normalized as ReportChartType) ? (normalized as ReportChartType) : fallback;
 }
 
+function datasetColumnKey(dataset: ReportDataset, key: string): string | null {
+  const normalized = String(key || '').trim().toLowerCase();
+  return dataset.columns.find((column) => column.key.toLowerCase() === normalized)?.key || null;
+}
+
+function inferDimensionColumnKey(dataset: ReportDataset, prompt: string): string | null {
+  const normalized = normalizePromptText(prompt).toLowerCase();
+  const candidates: string[] = [];
+  if (/\b(product|products|item|items|sku|skus|part|parts)\b/.test(normalized)) candidates.push('itemName', 'sku', 'productName');
+  if (/\b(customer|customers|client|clients|account|accounts)\b/.test(normalized)) candidates.push('customerName', 'clientName');
+  if (/\b(vendor|vendors|supplier|suppliers)\b/.test(normalized)) candidates.push('vendorName');
+  if (/\b(category|categories|mix)\b/.test(normalized)) candidates.push('category', 'productServiceCategory', 'department');
+  if (/\b(location|locations|warehouse|warehouses|site|sites)\b/.test(normalized)) candidates.push('warehouse', 'location', 'locationName', 'site');
+  if (/\b(division|divisions)\b/.test(normalized)) candidates.push('division');
+  for (const candidate of candidates) {
+    const key = datasetColumnKey(dataset, candidate);
+    if (key) return key;
+  }
+  return null;
+}
+
+function inferTopLimit(prompt: string): number | null {
+  const normalized = normalizePromptText(prompt).toLowerCase();
+  const numeric = normalized.match(/\btop\s+(\d{1,2})\b/);
+  if (numeric) return Math.min(Math.max(Number(numeric[1]), 1), 50);
+  const wordMap: Record<string, number> = { one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10 };
+  const word = normalized.match(/\btop\s+(one|two|three|four|five|six|seven|eight|nine|ten)\b/);
+  return word ? wordMap[word[1]] : null;
+}
+
+function inferExactDateRangeFromPrompt(dataset: ReportDataset, prompt: string): any | null {
+  const normalized = normalizePromptText(prompt).toLowerCase();
+  const monthNames = [
+    'january',
+    'february',
+    'march',
+    'april',
+    'may',
+    'june',
+    'july',
+    'august',
+    'september',
+    'october',
+    'november',
+    'december',
+  ];
+  const monthMatch = normalized.match(/\b(january|february|march|april|may|june|july|august|september|october|november|december)\s+(20\d{2})\b/);
+  if (!monthMatch || !dataset.dateField) return null;
+  const monthIndex = monthNames.indexOf(monthMatch[1]);
+  const year = Number(monthMatch[2]);
+  if (monthIndex < 0 || !Number.isFinite(year)) return null;
+  const start = new Date(Date.UTC(year, monthIndex, 1));
+  const end = new Date(Date.UTC(year, monthIndex + 1, 0));
+  return {
+    field: dataset.dateField,
+    startDate: start.toISOString().slice(0, 10),
+    endDate: end.toISOString().slice(0, 10),
+  };
+}
+
 function normalizeSeries(config: any, chartType: ReportChartType, fieldCatalog: ReportFieldCatalogItem[]) {
   const allowedFields = new Set<string>(fieldCatalog.map((item) => item.field));
   const rawSeries = Array.isArray(config?.series) ? config.series : [];
@@ -170,6 +230,9 @@ function buildDatasetReportConfig(prompt: string, requestedType: ReportChartType
   if (!datasetConfig) return null;
   const dataset = getReportDataset(datasetConfig.dataset) as ReportDataset;
   const entityName = extractEntityNameFromPrompt(prompt);
+  const dimension = rawConfig?.dimension || rawConfig?.groupBy || rawConfig?.categoryField || inferDimensionColumnKey(dataset, prompt);
+  const topLimit = inferTopLimit(prompt);
+  const exactDateRange = inferExactDateRangeFromPrompt(dataset, prompt);
   const metricColumns = datasetConfig.columns.filter((column: any) => (
     column.type === 'number' || column.type === 'currency' || column.type === 'percent'
   ));
@@ -179,22 +242,29 @@ function buildDatasetReportConfig(prompt: string, requestedType: ReportChartType
         .map((key) => dataset.columns.find((column) => column.key === key))
         .filter((column: any) => column?.type === 'number' || column?.type === 'currency' || column?.type === 'percent')
         .slice(0, 2);
-  const normalizedChartType = chartType === 'table' || !dataset.dateField ? 'table' : chartType;
+  const isDimensionReport = Boolean(dimension) && (
+    chartType === 'pie' ||
+    /\b(top|by|mix|ranking|rank|distribution|share|slice|slices)\b/i.test(prompt)
+  );
+  const primaryMetric = chartSeries[0] as any;
+  const normalizedChartType = chartType === 'table' || (!dataset.dateField && !isDimensionReport) ? 'table' : chartType;
   return {
     title: String(rawConfig?.title || (entityName ? `${entityName} ${dataset.label}` : dataset.label)).slice(0, 120),
     description: String(rawConfig?.description || `${dataset.description} Filtered and bounded by the report request.`).slice(0, 500),
     chartType: normalizedChartType as ReportChartType,
     dataSource: 'operational',
-    timeGrain: String(rawConfig?.timeGrain || (normalizedChartType === 'table' ? 'detail' : 'month')),
+    timeGrain: String(rawConfig?.timeGrain || (isDimensionReport ? 'category' : normalizedChartType === 'table' ? 'detail' : 'month')),
     xAxis: {
-      field: dataset.dateField || 'snapshotDate',
-      label: normalizedChartType === 'table' ? 'Date' : 'Month',
+      field: isDimensionReport ? dimension : dataset.dateField || 'snapshotDate',
+      label: isDimensionReport
+        ? dataset.columns.find((column) => column.key === dimension)?.label || 'Category'
+        : normalizedChartType === 'table' ? 'Date' : 'Month',
     },
     yAxes: {
       left: 'Value',
       right: 'Percent',
     },
-    series: normalizedChartType === 'table'
+    series: normalizedChartType === 'table' && !isDimensionReport
       ? []
       : chartSeries.map((column: any, index: number) => ({
           field: column.key,
@@ -205,11 +275,14 @@ function buildDatasetReportConfig(prompt: string, requestedType: ReportChartType
           format: datasetColumnFormat(column),
         })),
     filters: datasetConfig.filters,
-    dateRange: datasetConfig.dateRange,
+    dateRange: exactDateRange || datasetConfig.dateRange,
     dataset: datasetConfig.dataset,
+    dimension: isDimensionReport ? dimension : undefined,
     columns: datasetConfig.columns,
-    sort: datasetConfig.sort,
-    limit: datasetConfig.limit,
+    sort: isDimensionReport && primaryMetric?.key
+      ? [{ field: String(primaryMetric.key), direction: 'desc' as const }]
+      : datasetConfig.sort,
+    limit: topLimit || (isDimensionReport ? Math.min(datasetConfig.limit || 10, 10) : datasetConfig.limit),
     notes: [],
   };
 }
@@ -603,6 +676,7 @@ export async function POST(request: NextRequest) {
               'If the user names a specific entity such as a project, customer, product, vendor, or location, include it in scope and as a filter before applying metrics.',
               'Operational fields are prefixed with op.<module>.<metric>; use them when the user asks for sector, project, customer, product, inventory, cash, AR, AP, or other operational reporting.',
               'For detail/table requests, prefer a reportDataset over metric series. Pick the best dataset from the provided reportDatasetCatalog and return dataset, columns, filters, sort, and limit.',
+              'For category, Top-N, ranking, distribution, product mix, customer mix, vendor mix, and pie chart requests, include a reportDataset plus dimension or groupBy using an allowlisted dataset column.',
               'Users do not know database or snapshot table names. Infer datasets from business language such as orders, invoices, payments, inventory, products, vendors, cash, AR, AP, and financials.',
               'Never return SQL. Only return dataset ids, column keys, filters, sort fields, and metric series from the provided catalogs.',
               'When a prompt names an operational slice such as job, project, customer, product, vendor, cost type, or location, express it as a filter instead of inventing a field.',
@@ -647,7 +721,8 @@ export async function POST(request: NextRequest) {
                     format: 'currency | percent | number',
                   },
                 ],
-                dataset: 'optional reportDatasetCatalog id for detail/table reports',
+                dataset: 'optional reportDatasetCatalog id for detail/table and category reports',
+                dimension: 'optional dataset column key for category/pie/top-N reports such as itemName, customerName, vendorName, category',
                 columns: [
                   {
                     key: 'optional allowlisted dataset column key',
@@ -671,15 +746,11 @@ export async function POST(request: NextRequest) {
         api: aiResult.api,
       };
     } catch (aiError: any) {
-      if (process.env.NODE_ENV === 'production' || !isAiAuthOrConfigError(aiError)) {
-        throw aiError;
-      }
-
-      reportConfig = buildDevFallbackConfig(prompt, requestedType, fieldCatalog);
+      reportConfig = buildDatasetReportConfig(prompt, requestedType, {}) || buildDevFallbackConfig(prompt, requestedType, fieldCatalog);
       generatedBy = {
-        model: 'local-dev-fallback',
+        model: 'deterministic-fallback',
         api: 'fallback',
-        reason: 'AI credentials are not configured for local development.',
+        reason: `AI generation failed: ${aiError instanceof Error ? aiError.message : 'unknown error'}`,
       };
     }
     reportConfig = buildDatasetReportConfig(prompt, requestedType, reportConfig) || enhanceConfigFromPrompt(reportConfig, prompt, fieldCatalog);

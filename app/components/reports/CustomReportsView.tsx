@@ -151,6 +151,14 @@ function CustomReportPreview({ config, rows, tableRows = [], tableColumns = [] }
   const series = Array.isArray(config?.series) ? config.series : [];
   const chartType = String(config?.chartType || 'line');
   const hasRows = (chartType === 'table' && tableRows.length > 0) || (rows.length > 0 && series.length > 0);
+  const isDimensionRows = rows.length > 0 && rows.some((row) => row?.name || row?.dimension);
+  const primarySeries = series[0];
+  const dimensionChartRows = isDimensionRows
+    ? rows.map((row, index) => ({
+        name: String(row?.name || row?.dimension || `Item ${index + 1}`),
+        value: Number(row?.value ?? row?.values?.[primarySeries?.field] ?? 0),
+      }))
+    : [];
 
   if (!hasRows) {
     return (
@@ -227,19 +235,33 @@ function CustomReportPreview({ config, rows, tableRows = [], tableColumns = [] }
   }
 
   if (chartType === 'pie') {
-    const latest = rows[rows.length - 1];
-    const values = series.map((item: any, index: number) => ({
-      ...item,
-      name: item.label || item.field,
-      value: Math.max(0, getSeriesValue(latest, item.field)),
-      color: seriesColors[index % seriesColors.length],
-    }));
+    const values = isDimensionRows
+      ? dimensionChartRows.map((row, index) => ({
+          field: row.name,
+          name: row.name,
+          value: Math.max(0, row.value),
+          color: seriesColors[index % seriesColors.length],
+          format: primarySeries?.format,
+        }))
+      : (() => {
+          const latest = rows[rows.length - 1];
+          return series.map((item: any, index: number) => ({
+            ...item,
+            name: item.label || item.field,
+            value: Math.max(0, getSeriesValue(latest, item.field)),
+            color: seriesColors[index % seriesColors.length],
+          }));
+        })();
 
     return (
       <div style={{ marginTop: '18px', height: '340px', padding: '12px', border: '1px solid #e2e8f0', borderRadius: '12px', background: '#fff' }}>
         <ResponsiveContainer width="100%" height="100%">
           <PieChart>
-            <Tooltip formatter={(value: any, name: any, props: any) => formatTooltipValue(value, name, props, values)} />
+            <Tooltip formatter={(value: any, name: any, props: any) => (
+              isDimensionRows
+                ? [formatValue(Number(value || 0), primarySeries?.format), String(name)]
+                : formatTooltipValue(value, name, props, values)
+            )} />
             <Legend />
             <Pie data={values} dataKey="value" nameKey="name" outerRadius={110} label={(entry: any) => `${entry.name}`}>
               {values.map((item: any) => (
@@ -247,6 +269,22 @@ function CustomReportPreview({ config, rows, tableRows = [], tableColumns = [] }
               ))}
             </Pie>
           </PieChart>
+        </ResponsiveContainer>
+      </div>
+    );
+  }
+
+  if (isDimensionRows && (chartType === 'bar' || chartType === 'grouped_bar')) {
+    return (
+      <div style={{ marginTop: '18px', height: '380px', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '14px', background: '#fff' }}>
+        <ResponsiveContainer width="100%" height="100%">
+          <ComposedChart data={dimensionChartRows} margin={{ top: 16, right: 24, bottom: 72, left: 22 }}>
+            <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+            <XAxis dataKey="name" tick={{ fontSize: 11, fill: '#64748b' }} angle={-35} textAnchor="end" interval={0} height={84} />
+            <YAxis tick={{ fontSize: 12, fill: '#64748b' }} tickFormatter={(value) => formatValue(Number(value || 0), primarySeries?.format)} />
+            <Tooltip formatter={(value: any) => [formatValue(Number(value || 0), primarySeries?.format), primarySeries?.label || primarySeries?.field || 'Value']} />
+            <Bar dataKey="value" name={primarySeries?.label || primarySeries?.field || 'Value'} fill={seriesColors[0]} radius={[4, 4, 0, 0]} />
+          </ComposedChart>
         </ResponsiveContainer>
       </div>
     );
@@ -515,12 +553,13 @@ export default function CustomReportsView({ selectedCompanyId }: CustomReportsVi
     }
 
     const series = Array.isArray(generatedConfig?.series) ? generatedConfig.series : [];
-    const headers = ['Month', ...series.map((item: any) => item.label || item.field)];
+    const isDimensionRows = previewRows.some((row) => row?.name || row?.dimension);
+    const headers = [isDimensionRows ? 'Category' : 'Month', ...series.map((item: any) => item.label || item.field)];
     const lines = [
       headers,
       ...previewRows.map((row) => [
-        row.month || row.monthDate || '',
-        ...series.map((item: any) => String(row?.values?.[item.field] ?? '')),
+        isDimensionRows ? (row.name || row.dimension || '') : (row.month || row.monthDate || ''),
+        ...series.map((item: any) => String(row?.value ?? row?.values?.[item.field] ?? '')),
       ]),
     ];
     const csv = lines
@@ -753,7 +792,7 @@ export default function CustomReportsView({ selectedCompanyId }: CustomReportsVi
                     cursor: isGenerating ? 'not-allowed' : 'pointer',
                   }}
                 >
-                  {isGenerating ? 'Generating...' : 'Generate Report Config'}
+                  {isGenerating ? 'Generating...' : 'Generate Report'}
                 </button>
                 <span style={{ alignSelf: 'center', fontSize: '12px', color: '#64748b' }}>
                   AI generation will create a validated report config before data is queried.

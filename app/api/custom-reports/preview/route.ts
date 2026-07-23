@@ -589,6 +589,25 @@ function resolveDatasetDateRange(dateRange: ReportDatasetDateRangeConfig): { sta
 }
 
 function addDatasetDateRangeClause(dataset: ReportDataset, rawDateRange: any, whereClauses: Prisma.Sql[]) {
+  const exactField = getDatasetColumn(dataset, rawDateRange?.field)?.key || dataset.dateField;
+  const exactColumn = exactField ? getDatasetColumn(dataset, exactField) : null;
+  const rawStart = rawDateRange?.startDate || rawDateRange?.start || rawDateRange?.from;
+  const rawEnd = rawDateRange?.endDate || rawDateRange?.end || rawDateRange?.to;
+  if (exactColumn && (rawStart || rawEnd)) {
+    const field = datasetColumnSql(exactColumn);
+    if (rawStart) {
+      const start = new Date(String(rawStart));
+      if (!Number.isNaN(start.getTime())) whereClauses.push(Prisma.sql`${field} >= ${start}`);
+    }
+    if (rawEnd) {
+      const end = new Date(String(rawEnd));
+      if (!Number.isNaN(end.getTime())) {
+        end.setUTCHours(23, 59, 59, 999);
+        whereClauses.push(Prisma.sql`${field} <= ${end}`);
+      }
+    }
+    return;
+  }
   const dateRange = normalizeDatasetDateRange(dataset, rawDateRange);
   if (!dateRange) return;
   const column = getDatasetColumn(dataset, dateRange.field);
@@ -1066,6 +1085,111 @@ async function buildDatasetChartPreview(config: any) {
   };
 }
 
+function getDatasetDimensionColumn(dataset: ReportDataset, config: any): ReportDatasetColumn | null {
+  const rawDimension =
+    config?.dimension ||
+    config?.dimensionField ||
+    config?.groupBy ||
+    config?.categoryField ||
+    config?.category?.field ||
+    config?.xAxis?.dimension ||
+    config?.xAxis?.category;
+  if (!rawDimension) return null;
+  if (typeof rawDimension === 'string') return getDatasetColumn(dataset, rawDimension) || null;
+  return getDatasetColumn(dataset, rawDimension?.field || rawDimension?.key) || null;
+}
+
+async function buildDatasetDimensionChartPreview(config: any) {
+  const dataset = getReportDataset(config?.dataset || config?.datasetId);
+  if (!dataset) return null;
+  const dimensionColumn = getDatasetDimensionColumn(dataset, config);
+  if (!dimensionColumn) return null;
+
+  const metricConfig = (Array.isArray(config?.series) ? config.series : [])
+    .map((item: any) => {
+      const column = getDatasetColumn(dataset, item?.field);
+      if (!column || (column.type !== 'number' && column.type !== 'currency' && column.type !== 'percent')) return null;
+      return {
+        column,
+        aggregation: String(item?.aggregation || (column.type === 'percent' ? 'average' : 'sum')).toLowerCase(),
+        label: String(item?.label || column.label || column.key),
+        format: String(item?.format || (column.type === 'currency' ? 'currency' : column.type === 'percent' ? 'percent' : 'number')),
+      };
+    })
+    .filter(Boolean)[0] as { column: ReportDatasetColumn; aggregation: string; label: string; format: string } | undefined;
+  if (!metricConfig) return null;
+
+  const filters = normalizeDatasetFilters(dataset, Array.isArray(config?.filters) ? config.filters : []);
+  const whereClauses: Prisma.Sql[] = [Prisma.sql`"companyId" = ${String(config.companyId)}`];
+  addDatasetDateRangeClause(dataset, config?.dateRange, whereClauses);
+  filters.forEach((filter) => {
+    const column = getDatasetColumn(dataset, filter.field);
+    if (!column) return;
+    const field = datasetColumnSql(column);
+    if (filter.operator === 'containsany' && Array.isArray(filter.fields) && filter.fields.length > 0) {
+      const orClauses = filter.fields
+        .map((fieldKey) => getDatasetColumn(dataset, fieldKey))
+        .filter((item): item is ReportDatasetColumn => Boolean(item))
+        .map((item) => Prisma.sql`${datasetColumnSql(item)}::text ILIKE ${`%${filter.value}%`}`);
+      if (orClauses.length > 0) whereClauses.push(Prisma.sql`(${Prisma.join(orClauses, ' OR ')})`);
+    } else if (filter.operator === 'equals') {
+      whereClauses.push(Prisma.sql`${field}::text = ${filter.value}`);
+    } else if (filter.operator === 'gte') {
+      whereClauses.push(Prisma.sql`${field} >= ${filter.value}::timestamp`);
+    } else if (filter.operator === 'lte') {
+      whereClauses.push(Prisma.sql`${field} <= ${filter.value}::timestamp`);
+    } else {
+      whereClauses.push(Prisma.sql`${field}::text ILIKE ${`%${filter.value}%`}`);
+    }
+  });
+
+  const aggregate = metricConfig.aggregation === 'average' || metricConfig.aggregation === 'avg' ? 'AVG' : 'SUM';
+  const limit = Math.min(Math.max(Number(config?.limit) || 10, 1), 50);
+  const rows = await prisma.$queryRaw<Array<Record<string, unknown>>>(Prisma.sql`
+    SELECT
+      COALESCE(NULLIF(${datasetColumnSql(dimensionColumn)}::text, ''), 'Unassigned') AS "name",
+      ${Prisma.raw(aggregate)}(${datasetColumnSql(metricConfig.column)})::double precision AS "value"
+    FROM ${datasetIdentifier(dataset.tableName)}
+    WHERE ${Prisma.join(whereClauses, ' AND ')}
+      AND ${datasetColumnSql(dimensionColumn)} IS NOT NULL
+    GROUP BY 1
+    HAVING ${Prisma.raw(aggregate)}(${datasetColumnSql(metricConfig.column)}) IS NOT NULL
+    ORDER BY "value" DESC
+    LIMIT ${limit}
+  `);
+
+  return {
+    rows: rows.map((row) => ({
+      name: String(row.name || 'Unassigned'),
+      dimension: String(row.name || 'Unassigned'),
+      value: toNumber(row.value),
+      values: {
+        [metricConfig.column.key]: toNumber(row.value),
+      },
+    })),
+    tableColumns: [
+      { key: 'name', label: dimensionColumn.label, type: 'text' },
+      { key: metricConfig.column.key, label: metricConfig.label, type: 'metric', format: metricConfig.format },
+    ],
+    tableRows: rows.map((row) => ({
+      name: String(row.name || 'Unassigned'),
+      values: {
+        [metricConfig.column.key]: toNumber(row.value),
+      },
+    })),
+    fields: [metricConfig.column.key],
+    fieldCatalog: [],
+    dataset: {
+      id: dataset.id,
+      label: dataset.label,
+      tableName: dataset.tableName,
+      dimension: dimensionColumn.key,
+      metric: metricConfig.column.key,
+      limit,
+    },
+  };
+}
+
 export async function POST(request: NextRequest) {
   try {
     await requireAuth();
@@ -1100,11 +1224,15 @@ export async function POST(request: NextRequest) {
       ...(Array.isArray(previewConfig?.notes) ? previewConfig.notes : []),
     ].map((item) => String(item || '')).join(' ');
     if (String(previewConfig?.chartType || '').toLowerCase() === 'table' && previewConfig?.dataset) {
-      const datasetPreview = await buildDatasetTablePreview({ ...previewConfig, companyId });
+      const datasetPreview =
+        (await buildDatasetDimensionChartPreview({ ...previewConfig, companyId })) ||
+        (await buildDatasetTablePreview({ ...previewConfig, companyId }));
       if (datasetPreview) return NextResponse.json(datasetPreview);
     }
     if (previewConfig?.dataset) {
-      const datasetPreview = await buildDatasetChartPreview({ ...previewConfig, companyId });
+      const datasetPreview =
+        (await buildDatasetDimensionChartPreview({ ...previewConfig, companyId })) ||
+        (await buildDatasetChartPreview({ ...previewConfig, companyId }));
       if (datasetPreview) return NextResponse.json(datasetPreview);
     }
 
