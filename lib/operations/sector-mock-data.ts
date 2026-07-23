@@ -44,42 +44,42 @@ const COMPANY_PRODUCT_SERVICE_PROFILES: Record<string, CompanyProductServiceProf
       {
         category: 'Commercial Rooftop Units',
         productsServices: 'Packaged rooftop HVAC units for light commercial buildings, schools, retail centers, and office properties',
-        primaryCustomers: ['Mechanical contractors', 'HVAC distributors', 'commercial builders'],
+        primaryCustomers: ['Keystone Mechanical Supply', 'Summit HVAC Distribution', 'Northstar Commercial Builders'],
       },
       {
         category: 'Air Handling Units',
         productsServices: 'Custom and semi-custom air handlers, blower assemblies, cabinet assemblies, and filtration sections',
-        primaryCustomers: ['Mechanical contractors', 'facility managers', 'institutional accounts'],
+        primaryCustomers: ['Metro Facilities Group', 'TriState Mechanical Contractors', 'Civic Campus Services'],
       },
       {
         category: 'Heat Pump Systems',
         productsServices: 'Packaged heat pump systems, split-system assemblies, and electrification retrofit equipment',
-        primaryCustomers: ['HVAC distributors', 'commercial builders', 'energy retrofit contractors'],
+        primaryCustomers: ['Evergreen Retrofit Partners', 'Blue Ridge Building Systems', 'Summit HVAC Distribution'],
       },
       {
         category: 'Compressors & Condensing Units',
         productsServices: 'Condensing units, compressor assemblies, refrigerant circuit components, and OEM replacement modules',
-        primaryCustomers: ['OEM/private-label accounts', 'HVAC distributors', 'service contractors'],
+        primaryCustomers: ['Pioneer OEM Equipment', 'Keystone Mechanical Supply', 'Allied Service Contractors'],
       },
       {
         category: 'Coils & Heat Exchangers',
         productsServices: 'Evaporator coils, condenser coils, heat exchangers, coil assemblies, and custom replacement coils',
-        primaryCustomers: ['OEM/private-label accounts', 'mechanical contractors', 'service contractors'],
+        primaryCustomers: ['Pioneer OEM Equipment', 'TriState Mechanical Contractors', 'Allied Service Contractors'],
       },
       {
         category: 'Controls & Economizers',
         productsServices: 'Unit controls, economizer kits, sensors, dampers, control boards, and building automation interface kits',
-        primaryCustomers: ['facility managers', 'HVAC distributors', 'service contractors'],
+        primaryCustomers: ['Metro Facilities Group', 'Summit HVAC Distribution', 'Precision Controls Integrators'],
       },
       {
         category: 'Replacement & Warranty Parts',
         productsServices: 'Warranty parts, field replacement kits, motors, fans, valves, filters, and service inventory',
-        primaryCustomers: ['service contractors', 'HVAC distributors', 'institutional accounts'],
+        primaryCustomers: ['Allied Service Contractors', 'Keystone Mechanical Supply', 'Civic Campus Services'],
       },
       {
         category: 'Custom OEM Assemblies',
         productsServices: 'Private-label HVAC assemblies, engineered cabinet packages, and configured production runs for OEM partners',
-        primaryCustomers: ['OEM/private-label accounts', 'commercial builders', 'mechanical contractors'],
+        primaryCustomers: ['Pioneer OEM Equipment', 'Northstar Commercial Builders', 'TriState Mechanical Contractors'],
       },
     ],
   },
@@ -552,6 +552,134 @@ function uniqueCompanyCustomerGroups(profile: CompanyProductServiceProfile): str
     }
   }
   return Array.from(customers);
+}
+
+function mockMonthKey(date: Date): string {
+  return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}`;
+}
+
+function mockMonthLabel(date: Date): string {
+  return date.toLocaleDateString('en-US', { month: 'short', year: 'numeric', timeZone: 'UTC' });
+}
+
+function buildCompanyMockSalesPage(
+  req: MockRequest,
+  profile: SectorProfile,
+  companyProductProfile: CompanyProductServiceProfile,
+) {
+  const months = listMonthlyDatesAscending(req.startDate, req.endDate, 36);
+  const monthDefs = months.map((date) => ({ monthKey: mockMonthKey(date), monthLabel: mockMonthLabel(date) }));
+  const categoryRows = companyProductProfile.categories.map((category, categoryIndex) => {
+    const values: Record<string, number> = {};
+    monthDefs.forEach((month, monthIndex) => {
+      const seasonal = 0.94 + ((monthIndex + categoryIndex) % 6) * 0.025;
+      values[month.monthKey] = Math.round(metric(78000 - categoryIndex * 5200, monthIndex + categoryIndex + 1, profile.scale) * seasonal);
+    });
+    return {
+      label: category.category,
+      values,
+      total: Object.values(values).reduce((sum, value) => sum + Number(value || 0), 0),
+    };
+  });
+  const totalRow = {
+    label: 'Total Sales',
+    values: monthDefs.reduce((acc: Record<string, number>, month) => {
+      acc[month.monthKey] = categoryRows.reduce((sum, row) => sum + Number(row.values[month.monthKey] || 0), 0);
+      return acc;
+    }, {}),
+    total: 0,
+  };
+  totalRow.total = Object.values(totalRow.values).reduce((sum, value) => sum + Number(value || 0), 0);
+
+  const latestMonth = monthDefs[monthDefs.length - 1];
+  const priorMonth = monthDefs[monthDefs.length - 2];
+  const latestSales = latestMonth ? Number(totalRow.values[latestMonth.monthKey] || 0) : 0;
+  const priorSales = priorMonth ? Number(totalRow.values[priorMonth.monthKey] || 0) : latestSales * 0.96;
+  const currentYear = req.endDate.getUTCFullYear();
+  const currentYearTotal = monthDefs
+    .filter((month) => month.monthKey.startsWith(`${currentYear}-`))
+    .reduce((sum, month) => sum + Number(totalRow.values[month.monthKey] || 0), 0);
+  const grossMarginRows = monthDefs.map((month, monthIndex) => {
+    const sales = Number(totalRow.values[month.monthKey] || 0);
+    const gmPct = 31.5 + (monthIndex % 5) * 0.7;
+    return {
+      monthKey: month.monthKey,
+      monthLabel: month.monthLabel,
+      gmDollars: Math.round(sales * (gmPct / 100)),
+      gmPct,
+    };
+  });
+
+  return {
+    sales: {
+      mtdValue: latestSales,
+      mtdCompPct: priorSales > 0 ? latestSales / priorSales - 1 : 0,
+      totalValue: currentYearTotal,
+      indexPct: 1.08,
+      currentYearLabel: String(currentYear),
+      categoryHistory: {
+        months: monthDefs,
+        rows: categoryRows,
+        totalRow,
+        valueFormat: 'currency',
+      },
+      chartData: monthDefs.map((month) => ({
+        month: month.monthLabel,
+        [String(currentYear)]: Number(totalRow.values[month.monthKey] || 0),
+      })),
+    },
+    grossMarginHistory: {
+      rows: grossMarginRows,
+      chartData: grossMarginRows.map((row) => ({
+        month: row.monthLabel,
+        gmDollars: row.gmDollars,
+        gmPct: row.gmPct,
+      })),
+    },
+  };
+}
+
+function buildCompanyInventoryMovement(
+  req: MockRequest,
+  profile: SectorProfile,
+  companyProductProfile: CompanyProductServiceProfile,
+) {
+  const months = listMonthlyDatesAscending(req.startDate, req.endDate, 18);
+  const rows = months.flatMap((date, monthIndex) => {
+    const monthKey = mockMonthKey(date);
+    return companyProductProfile.categories.map((category, categoryIndex) => {
+      const currentSales = Math.round(metric(76000 - categoryIndex * 4800, monthIndex + categoryIndex + 1, profile.scale));
+      const priorSales = Math.round(currentSales * (0.91 + (categoryIndex % 4) * 0.025));
+      const inventoryOnHandDollars = Math.round(metric(188000 - categoryIndex * 9400, monthIndex + categoryIndex + 3, profile.scale));
+      const grossMarginPct = 30.5 + (categoryIndex % 5) * 1.2;
+      const grossMarginDollars = Math.round(currentSales * (grossMarginPct / 100));
+      const department = category.category.includes('Part') || category.category.includes('Warranty')
+        ? 'Aftermarket & Warranty'
+        : category.category.includes('Control')
+          ? 'Controls & Accessories'
+          : category.category.includes('Air') || category.category.includes('Coil') || category.category.includes('OEM')
+            ? 'Engineered Air Systems'
+            : 'Packaged Equipment';
+      return {
+        monthKey,
+        monthLabel: mockMonthLabel(date),
+        department,
+        category: category.category,
+        currentSales,
+        priorSales,
+        compPct: priorSales > 0 ? ((currentSales - priorSales) / priorSales) * 100 : 0,
+        deltaDollars: currentSales - priorSales,
+        salesMixPct: 0,
+        inventoryMixPct: 0,
+        inventoryOnHandDollars,
+        imuPct: 42 + (categoryIndex % 4) * 1.5,
+        grossMarginPct,
+        grossMarginDollars,
+      };
+    });
+  });
+
+  return { rows };
 }
 
 function summarizeByDimension<T extends Record<string, any>>(
@@ -1407,6 +1535,7 @@ function buildCustomersResponse(req: MockRequest, profile: SectorProfile) {
         topCustomers: totals.sort((a, b) => b.totalRevenue - a.totalRevenue).slice(0, 10),
         revenueByRegion: summarizeByDimension(limited, 'region', ['revenue', 'invoiceCount']),
         productServiceCategories: companyProductProfile.categories,
+        sourceSystemSalesPage: buildCompanyMockSalesPage(req, profile, companyProductProfile),
         topLineBuckets: getTopLineBucketsForSector(req.sectorCategory),
       },
     };
@@ -1787,6 +1916,7 @@ function buildInventoryResponse(req: MockRequest, profile: SectorProfile) {
       totalValue: latest.reduce((sum, row) => sum + row.assetValue, 0),
       itemCount: latest.length,
       topItems: [...latest].sort((a, b) => b.assetValue - a.assetValue).slice(0, 10),
+      ...(companyProductProfile ? { inventoryMovement: buildCompanyInventoryMovement(req, profile, companyProductProfile) } : {}),
       topLineBuckets: getTopLineBucketsForSector(req.sectorCategory),
     },
   };

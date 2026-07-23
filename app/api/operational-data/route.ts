@@ -2988,7 +2988,7 @@ export async function GET(request: NextRequest) {
               statementRollup,
               boundedLimit,
               'qbd-current-year-net-income-v1',
-              shouldUseMockData ? 'mock-operational-data-v3' : 'real-operational-data-v1',
+              shouldUseMockData ? 'mock-operational-data-v4' : 'real-operational-data-v1',
               shouldApplyHydratedDateFilter ? hydratedInforDates : null,
               cacheType === 'customers' ? CUSTOMER_CONCENTRATION_CACHE_VERSION : null,
               cacheType === 'customers' ? CUSTOMER_REVENUE_SOURCE_VERSION : null,
