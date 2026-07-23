@@ -4842,7 +4842,6 @@ function FinancialScorePage() {
   // Load all companies and users when Businesses tab is opened in site admin
   useEffect(() => {
     let cancelled = false;
-    let retryTimeout: ReturnType<typeof setTimeout> | null = null;
 
     const loadBusinessesData = async () => {
       if (cancelled) return;
@@ -4855,11 +4854,19 @@ function FinancialScorePage() {
             try {
               const res = await fetch(url, { cache: 'no-store' });
               if (!res.ok) {
+                if (res.status === 401 || res.status === 403) {
+                  const authError = new Error(`Auth failed (${res.status}) for ${url}`);
+                  (authError as any).status = res.status;
+                  throw authError;
+                }
                 throw new Error(`Request failed (${res.status}) for ${url}`);
               }
               return await res.json();
             } catch (error: any) {
               lastError = error instanceof Error ? error : new Error(String(error));
+              if (lastError && ((lastError as any).status === 401 || (lastError as any).status === 403)) {
+                throw lastError;
+              }
               if (attempt < maxAttempts) {
                 await new Promise(resolve => setTimeout(resolve, Math.min(1500 * attempt, 4000)));
               }
@@ -4885,12 +4892,9 @@ function FinancialScorePage() {
         setUsers(usersData.users);
         setSiteAdminBusinessesLoading(false);
       } catch (err) {
-        console.error('? Error loading businesses tab data, retrying:', err);
-        if (!cancelled) {
-          // Keep previous data rendered and retry again shortly.
-          setSiteAdminBusinessesLoading(true);
-          retryTimeout = setTimeout(loadBusinessesData, 3000);
-        }
+        console.error('Error loading businesses tab data:', err);
+        if (cancelled) return;
+        setSiteAdminBusinessesLoading(false);
       }
     };
 
@@ -4901,12 +4905,9 @@ function FinancialScorePage() {
 
     return () => {
       cancelled = true;
-      if (retryTimeout) {
-        clearTimeout(retryTimeout);
-      }
       setSiteAdminBusinessesLoading(false);
     };
-  }, [siteAdminTab, currentView, currentUser?.role]);
+  }, [siteAdminTab, currentView, currentUser?.id, currentUser?.role]);
 
   // Load default pricing on page load and when Default Pricing tab is opened
   useEffect(() => {
@@ -6796,16 +6797,18 @@ function FinancialScorePage() {
 
   const exitSiteAdminPreview = () => {
     if (!siteAdminReturnUser) return;
-    setCurrentUser(siteAdminReturnUser);
+    const { companyId: _omitCompanyId, ...restoredSiteAdminUser } = siteAdminReturnUser as any;
+    setCurrentUser(restoredSiteAdminUser);
     setSiteAdminViewingAs(null);
-    setSiteAdminSessionUser(siteAdminReturnUser);
+    setSiteAdminSessionUser(restoredSiteAdminUser);
     if (typeof window !== 'undefined') {
-      localStorage.setItem('fs_siteAdminSessionUser', JSON.stringify(siteAdminReturnUser));
+      localStorage.setItem('fs_currentUser', JSON.stringify(restoredSiteAdminUser));
+      localStorage.setItem('fs_siteAdminSessionUser', JSON.stringify(restoredSiteAdminUser));
+      localStorage.removeItem('fs_selectedCompanyId');
     }
     setCurrentView('siteadmin');
     setLoadedConsultantId(null);
     setSelectedCompanyId('');
-    safeSetCompanies([]); // Clear companies to prevent cross-account data leakage
   };
 
   // Load master data and extract categories for dynamic goals
