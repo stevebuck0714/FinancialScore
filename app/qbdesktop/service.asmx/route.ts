@@ -785,6 +785,34 @@ function getRunDateRange(metadata: QbDesktopMetadata): QbwcDateRange {
   };
 }
 
+function combineDateRanges(
+  ranges: Array<QbwcDateRange | undefined>,
+  fallback: QbwcDateRange = { mode: 'MANUAL', startDate: '', endDate: '' },
+): QbwcDateRange {
+  const validRanges: Array<{ mode: QbwcDateRange['mode']; startDate: string; endDate: string; requestedAt?: string }> = [];
+  for (const range of ranges) {
+    const startDate = parseDateString(range?.startDate);
+    const endDate = parseDateString(range?.endDate);
+    if (!startDate || !endDate || startDate > endDate) continue;
+    validRanges.push({
+      mode: range?.mode || fallback.mode,
+      startDate,
+      endDate,
+      requestedAt: typeof range?.requestedAt === 'string' ? range.requestedAt : undefined,
+    });
+  }
+
+  if (validRanges.length === 0) return fallback;
+  const startDate = validRanges.reduce((min, range) => range.startDate < min ? range.startDate : min, validRanges[0].startDate);
+  const endDate = validRanges.reduce((max, range) => range.endDate > max ? range.endDate : max, validRanges[0].endDate);
+  return {
+    mode: validRanges.some((range) => range.mode === 'MANUAL') ? 'MANUAL' : validRanges[0].mode,
+    startDate,
+    endDate,
+    requestedAt: validRanges.find((range) => range.requestedAt)?.requestedAt,
+  };
+}
+
 function dateRangeDayCount(dateRange?: QbwcDateRange): number | null {
   const start = parseDateString(dateRange?.startDate);
   const end = parseDateString(dateRange?.endDate);
@@ -860,7 +888,6 @@ function buildCombinedBackfillSession(
   const completedJobs = Object.values(jobs)
     .filter((job) => job.status === 'completed' && job.processingMode !== 'aging_snapshot')
     .sort((a, b) => String(a.createdAt).localeCompare(String(b.createdAt)));
-  const firstJob = completedJobs[0];
   const requests = completedJobs.map((job) => job.requestName);
 
   return {
@@ -875,11 +902,7 @@ function buildCombinedBackfillSession(
         .map((job) => [job.requestName, responses[job.requestName]] as const)
         .filter(([, response]) => Boolean(response)),
     ),
-    dateRange: firstJob?.dateRange || {
-      mode: 'MANUAL',
-      startDate: '',
-      endDate: '',
-    },
+    dateRange: combineDateRanges(completedJobs.map((job) => job.dateRange)),
     lastError: null,
   };
 }
@@ -1328,25 +1351,28 @@ async function completeDetailBackfillJob(
   if (!jobId) return;
 
   const response = await loadBackfillJobResponse(jobId, requestName);
+  let completedJobsSnapshot: Record<string, QbdBackfillJob> | null = null;
   await updateMetadata(companyId, (metadata) => {
     const jobs = metadata.quickbooksDesktopDetailBackfillJobs || {};
     const job = jobs[jobId];
     if (!job) return metadata;
     const now = new Date().toISOString();
+    const completedJob = {
+      ...job,
+      status: 'completed' as const,
+      completedAt: now,
+      updatedAt: now,
+      recordCount: response.records.length,
+      pageCount: Math.max(1, Math.ceil((response.records.length || 0) / QBD_DETAIL_TRANSACTION_PAGE_SIZE)),
+      iteratorRemainingCount: null,
+      lastError: null,
+    };
     const nextJobs: Record<string, QbdBackfillJob> = {
       ...jobs,
-      [jobId]: {
-        ...job,
-        status: 'completed',
-        completedAt: now,
-        updatedAt: now,
-        recordCount: response.records.length,
-        pageCount: Math.max(1, Math.ceil((response.records.length || 0) / QBD_DETAIL_TRANSACTION_PAGE_SIZE)),
-        iteratorRemainingCount: null,
-        lastError: null,
-      },
+      [jobId]: completedJob,
     };
     const allComplete = Object.values(nextJobs).every((nextJob) => nextJob.status === 'completed');
+    completedJobsSnapshot = allComplete ? nextJobs : null;
 
     return {
       ...metadata,
@@ -1368,6 +1394,18 @@ async function completeDetailBackfillJob(
         : metadata.quickbooksDesktopDetailBackfillLastRun,
     };
   });
+
+  if (completedJobsSnapshot) {
+    const dateRange = combineDateRanges(Object.values(completedJobsSnapshot).map((job) => job.dateRange), session.dateRange);
+    if (dateRange.startDate && dateRange.endDate) {
+      await enqueueQuickBooksDesktopPostSyncJob({
+        companyId,
+        source: 'qbd-raw-detail-import-complete',
+        startDate: dateRange.startDate,
+        endDate: dateRange.endDate,
+      });
+    }
+  }
 }
 
 async function markBackfillJobRunning(
@@ -1464,25 +1502,23 @@ async function finalizeSession(connection: NonNullable<Awaited<ReturnType<typeof
     lastError = lastError ? `${lastError}; ${message}` : message;
   }
 
-  if (!lastError) {
-    try {
-      const postSyncJob = await enqueueQuickBooksDesktopPostSyncJob({
-        companyId,
-        source: 'qbd-web-connector-finalize',
-        startDate: session.dateRange.startDate,
-        endDate: session.dateRange.endDate,
-      });
-      postSyncReprocess = {
-        queued: true,
-        jobId: postSyncJob.id,
-        status: postSyncJob.status,
-        startDate: postSyncJob.startDate,
-        endDate: postSyncJob.endDate,
-      };
-    } catch (error) {
-      const message = `Post-sync reprocess enqueue failed: ${error instanceof Error ? error.message : 'unknown error'}`;
-      lastError = lastError ? `${lastError}; ${message}` : message;
-    }
+  try {
+    const postSyncJob = await enqueueQuickBooksDesktopPostSyncJob({
+      companyId,
+      source: 'qbd-raw-import-complete',
+      startDate: session.dateRange.startDate,
+      endDate: session.dateRange.endDate,
+    });
+    postSyncReprocess = {
+      queued: true,
+      jobId: postSyncJob.id,
+      status: postSyncJob.status,
+      startDate: postSyncJob.startDate,
+      endDate: postSyncJob.endDate,
+    };
+  } catch (error) {
+    const message = `Post-sync reprocess enqueue failed: ${error instanceof Error ? error.message : 'unknown error'}`;
+    lastError = lastError ? `${lastError}; ${message}` : message;
   }
 
   await updateMetadata(companyId, (metadata) => {
@@ -1669,7 +1705,9 @@ export async function POST(request: NextRequest) {
           requests: backfillRequests.length > 0 ? backfillRequests : buildRequestList(auth.metadata),
           responses: {},
           iterators: {},
-          dateRange: selectedJobs[0]?.dateRange || getRunDateRange(auth.metadata),
+          dateRange: selectedJobs.length > 0
+            ? combineDateRanges(selectedJobs.map((job) => job.dateRange))
+            : getRunDateRange(auth.metadata),
           backfillJobId: selectedJobs[0]?.id,
           backfillJobIds: backfillRequests.length > 0 ? backfillJobIds : undefined,
           backfillJobSequence: backfillRequests.length > 0 ? backfillJobSequence : undefined,
