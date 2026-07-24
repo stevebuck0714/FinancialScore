@@ -57,6 +57,7 @@ export const dynamic = 'force-dynamic';
 
 const OPERATIONAL_DATA_CACHE_TTL_SECONDS = 120;
 const OPERATIONAL_HEAVY_DATA_CACHE_TTL_SECONDS = 30 * 60;
+const PRODUCT_OPERATIONAL_CACHE_TTL_SECONDS = 30 * 24 * 60 * 60;
 const CUSTOMER_CONCENTRATION_CACHE_TTL_SECONDS = 30 * 24 * 60 * 60;
 const CUSTOMER_CONCENTRATION_CACHE_VERSION = 'customer-concentration-exposure-v10';
 const CUSTOMER_REVENUE_SOURCE_VERSION = 'customer-revenue-source-v6-bakers-raw-child-id';
@@ -2987,7 +2988,9 @@ export async function GET(request: NextRequest) {
       (wholesaleProductsReportMode === 'all' || wholesaleProductsReportMode === 'margin' || wholesaleProductsReportMode === 'vendor');
     const operationalCacheTtlSeconds = isWholesaleProductsReportRequest
       ? WHOLESALE_PRODUCTS_REPORT_CACHE_TTL_SECONDS
-      : cacheType === 'products' || cacheType === 'customers'
+      : cacheType === 'products'
+      ? PRODUCT_OPERATIONAL_CACHE_TTL_SECONDS
+      : cacheType === 'customers'
       ? OPERATIONAL_HEAVY_DATA_CACHE_TTL_SECONDS
       : OPERATIONAL_DATA_CACHE_TTL_SECONDS;
     const cacheableRequest =
@@ -3015,7 +3018,7 @@ export async function GET(request: NextRequest) {
               cacheType === 'customers' ? CUSTOMER_CONCENTRATION_CACHE_VERSION : null,
               cacheType === 'customers' ? CUSTOMER_REVENUE_SOURCE_VERSION : null,
               cacheType === 'customers' ? CUSTOMER_WIP_SOURCE_VERSION : null,
-              cacheType === 'customers' ? 'customers-display-names-items-v2' : null,
+              cacheType === 'customers' ? 'customers-display-names-items-v3' : null,
               cacheType === 'hiring' ? HIRING_SOURCE_VERSION : null,
               isWholesaleProductsReportRequest ? CUSTOMER_WIP_SOURCE_VERSION : null,
               isWholesaleProductsReportRequest ? `wholesale-report-mode:${wholesaleProductsReportMode}` : null,
@@ -3976,6 +3979,43 @@ export async function GET(request: NextRequest) {
               if (key && !bakersProductByKey.has(key)) bakersProductByKey.set(key, product);
             }
           }
+          const inforProductDescriptionRows = await prisma.$queryRaw<Array<{ itemCode: string; itemName: string }>>`
+            WITH raw_items AS (
+              SELECT
+                COALESCE(
+                  NULLIF("payload"->>'item', ''),
+                  NULLIF("payload"->>'Item', ''),
+                  NULLIF("payload"->>'ItmItem', '')
+                ) AS "itemCode",
+                COALESCE(
+                  NULLIF("payload"->>'Itemdescription', ''),
+                  NULLIF("payload"->>'ItmDescription', ''),
+                  NULLIF("payload"->>'DerItemDescription', ''),
+                  NULLIF("payload"->>'NonInvItemDescription', '')
+                ) AS "itemName",
+                COALESCE("businessDate", "fetchedAt") AS "sourceDate"
+              FROM "InforRawRecord"
+              WHERE "companyId" = ${companyId}
+                AND "miProgram" IN ('SLLedgers', 'SLItemlocs')
+            )
+            SELECT DISTINCT ON ("itemCode")
+              "itemCode",
+              "itemName"
+            FROM raw_items
+            WHERE NULLIF(TRIM("itemCode"), '') IS NOT NULL
+              AND NULLIF(TRIM("itemName"), '') IS NOT NULL
+            ORDER BY "itemCode", "sourceDate" DESC NULLS LAST
+          `;
+          const inforProductNameByKey = new Map<string, string>();
+          for (const row of inforProductDescriptionRows) {
+            const itemCode = String(row.itemCode || '').trim();
+            const itemName = String(row.itemName || '').trim();
+            if (!itemCode || !itemName) continue;
+            for (const alias of [itemCode, itemCode.replace(/^T-/, ''), itemName]) {
+              const key = canonicalProductKey(alias);
+              if (key && !inforProductNameByKey.has(key)) inforProductNameByKey.set(key, itemName);
+            }
+          }
           const productTokenAliases = (...values: unknown[]): string[] => {
             const aliases: string[] = [];
             const rawValues = values.map((value) => String(value || '').trim()).filter(Boolean);
@@ -4040,9 +4080,14 @@ export async function GET(request: NextRequest) {
             const uploadedProduct = bakersProductMatch(row, categoryLabel);
             const uploadedProductName = uploadedProduct?.productName || null;
             const displayCategoryLabel = uploadedProductName || categoryLabel || displayProductCode(String(row?.sku || row?.itemId || 'Unknown Product'));
-            const rawItemName = String(row?.productName || row?.itemName || '').trim();
+            const inforProductName =
+              productTokenAliases(row?.itemName, row?.sku, row?.itemId, displayCategoryLabel)
+                .map((alias) => inforProductNameByKey.get(alias))
+                .find(Boolean) || null;
+            const rawItemName = String(inforProductName || row?.productName || row?.itemName || '').trim();
             const resolvedItemName =
               uploadedProductName ||
+              inforProductName ||
               (
                 rawItemName &&
                 rawItemName.toLowerCase() !== 'unknown product' &&
