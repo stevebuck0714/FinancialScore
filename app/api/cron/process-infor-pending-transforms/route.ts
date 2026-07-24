@@ -5,6 +5,8 @@ export const runtime = 'nodejs';
 export const maxDuration = 300;
 
 const OPERATIONAL_REPORT_MIN_DATE = '2024-01-01';
+const WHOLESALE_PRODUCTS_REPORT_START_DATE = '2023-01-01';
+type WholesaleProductsReportMode = 'margin' | 'raw' | 'vendor';
 
 async function hasPendingInforTransformsForCompany(prisma: any, companyId: string): Promise<boolean> {
   const rows = await prisma.$queryRaw<Array<{ id: string }>>`
@@ -35,6 +37,19 @@ function defaultProductsStartIsoUtc(): string {
   return startDate < OPERATIONAL_REPORT_MIN_DATE ? OPERATIONAL_REPORT_MIN_DATE : startDate;
 }
 
+async function latestDailyProductsEndIsoUtc(prisma: any, companyId: string): Promise<string> {
+  const fallback = yesterdayIsoUtc();
+  const latest = await prisma.productSalesSnapshot.findFirst({
+    where: { companyId, frequency: 'daily' },
+    orderBy: { snapshotDate: 'desc' },
+    select: { snapshotDate: true },
+  }).catch(() => null);
+  const snapshotDate = latest?.snapshotDate instanceof Date
+    ? latest.snapshotDate.toISOString().slice(0, 10)
+    : '';
+  return snapshotDate && snapshotDate <= fallback ? snapshotDate : fallback;
+}
+
 async function fetchOperationalCacheWarmup(params: {
   origin: string;
   cronSecret: string;
@@ -45,6 +60,7 @@ async function fetchOperationalCacheWarmup(params: {
   limit: string;
   sectorCategory?: string | null;
   refreshWholesaleProducts?: boolean;
+  reportMode?: WholesaleProductsReportMode;
 }): Promise<any> {
   const url = new URL('/api/operational-data', params.origin);
   url.searchParams.set('companyId', params.companyId);
@@ -59,6 +75,9 @@ async function fetchOperationalCacheWarmup(params: {
   }
   if (params.refreshWholesaleProducts) {
     url.searchParams.set('refreshWholesaleProducts', '1');
+  }
+  if (params.reportMode) {
+    url.searchParams.set('reportMode', params.reportMode);
   }
 
   const response = await fetch(url, {
@@ -94,6 +113,7 @@ async function fetchOperationalCacheWarmup(params: {
     wholesaleVendorPricingRows: Array.isArray(payload?.summary?.wholesaleVendorPricingRows)
       ? payload.summary.wholesaleVendorPricingRows.length
       : null,
+    wholesaleReportMode: payload?.summary?.wholesaleReportMode || params.reportMode || null,
   };
 }
 
@@ -140,7 +160,7 @@ async function warmReportCachesForCompany(params: {
     select: { industrySectorCategory: true },
   });
 
-  const endDate = yesterdayIsoUtc();
+  const endDate = await latestDailyProductsEndIsoUtc(params.prisma, params.companyId);
   const sectorCategory = String(company?.industrySectorCategory || '').trim() || null;
   const customers = await fetchOperationalCacheWarmup({
     origin: params.origin,
@@ -163,17 +183,21 @@ async function warmReportCachesForCompany(params: {
     sectorCategory,
   });
   const wholesaleReport = sectorCategory === '42'
-    ? await fetchOperationalCacheWarmup({
-        origin: params.origin,
-        cronSecret: params.cronSecret,
-        companyId: params.companyId,
-        type: 'products',
-        startDate: OPERATIONAL_REPORT_MIN_DATE,
-        endDate,
-        limit: '5000',
-        sectorCategory,
-        refreshWholesaleProducts: true,
-      })
+    ? Object.fromEntries(await Promise.all((['margin', 'raw', 'vendor'] as const).map(async (reportMode) => [
+        reportMode,
+        await fetchOperationalCacheWarmup({
+          origin: params.origin,
+          cronSecret: params.cronSecret,
+          companyId: params.companyId,
+          type: 'products',
+          startDate: WHOLESALE_PRODUCTS_REPORT_START_DATE,
+          endDate,
+          limit: '5000',
+          sectorCategory,
+          refreshWholesaleProducts: true,
+          reportMode,
+        }),
+      ])))
     : {
         ok: true,
         skipped: true,
@@ -186,7 +210,16 @@ async function warmReportCachesForCompany(params: {
 
   return {
     companyId: params.companyId,
-    ok: Boolean(customers?.ok && performanceProducts?.ok && wholesaleReport?.ok && masterData?.ok),
+    ok: Boolean(
+      customers?.ok &&
+      performanceProducts?.ok &&
+      masterData?.ok &&
+      (
+        sectorCategory === '42'
+          ? Object.values(wholesaleReport as Record<string, any>).every((result: any) => result?.ok)
+          : (wholesaleReport as any)?.ok
+      )
+    ),
     customers,
     performanceProducts,
     wholesaleReport,

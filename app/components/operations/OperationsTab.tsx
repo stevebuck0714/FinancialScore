@@ -193,6 +193,7 @@ type WipLineItemSortKey =
   | 'contractValue'
   | 'invoicedValue';
 type ProductReportView = 'productMarginAnalysis' | 'wholesaleRawData' | 'vendorPricing' | 'performance' | 'retailForecast' | 'merchandiseProfitability';
+type WholesaleProductsReportMode = 'margin' | 'raw' | 'vendor';
 type ForecastSubTab = 'income-statement-forecast' | 'cash-forecast' | 'graphs' | 'residential-revenue-forecast';
 
 const WHOLESALE_PRODUCTS_REPORT_START_DATE = '2023-01-01';
@@ -897,6 +898,7 @@ export default function OperationsTab({
   const operationalDataInflightRef = useRef<Map<string, Promise<any>>>(new Map());
   const wholesaleProductsReportCacheRef = useRef<Map<string, { fetchedAt: number; data: any }>>(new Map());
   const wholesaleProductsReportInflightRef = useRef<Map<string, Promise<any>>>(new Map());
+  const productTransformCacheRef = useRef<Map<string, { deps: any[]; value: any }>>(new Map());
   const [inventoryAgingSearchTerm, setInventoryAgingSearchTerm] = useState('');
   const [inventoryAgingTableExpanded, setInventoryAgingTableExpanded] = useState(true);
   const [inventoryAgingSortKey, setInventoryAgingSortKey] = useState<
@@ -1392,7 +1394,7 @@ export default function OperationsTab({
 
   useEffect(() => {
     if (activeTab !== 'overview' && activeTab !== 'dashboard' && mapModuleToDataType(activeTab)) {
-      loadTabData(activeTab);
+      loadTabData(activeTab, { forceRefresh: true });
     }
   }, [activeTab, selectedCompanyId, industrySectorCategory, frequency, startDate, endDate, dailyFinancialStatementRollup]);
 
@@ -1856,11 +1858,21 @@ export default function OperationsTab({
     }
   };
 
-  const buildWholesaleProductsReportCacheKey = () =>
+  const resolveWholesaleProductsReportMode = (): WholesaleProductsReportMode => {
+    if (mapModuleToDataType(activeTab) === 'products') {
+      if (productReportView === 'vendorPricing') return 'vendor';
+      if (productReportView === 'wholesaleRawData') return 'raw';
+      return 'margin';
+    }
+    return 'raw';
+  };
+
+  const buildWholesaleProductsReportCacheKey = (reportMode: WholesaleProductsReportMode) =>
     [
       selectedCompanyId,
       'products',
       'wholesale-report',
+      reportMode,
       'daily',
       WHOLESALE_PRODUCTS_REPORT_START_DATE,
       effectiveMaxSelectableEndDate,
@@ -1868,8 +1880,8 @@ export default function OperationsTab({
       CUSTOMER_WIP_CLIENT_CACHE_VERSION,
     ].join('|');
 
-  const getCachedWholesaleProductsReportData = () => {
-    const key = buildWholesaleProductsReportCacheKey();
+  const getCachedWholesaleProductsReportData = (reportMode: WholesaleProductsReportMode) => {
+    const key = buildWholesaleProductsReportCacheKey(reportMode);
     const cached = wholesaleProductsReportCacheRef.current.get(key);
     if (!cached) return null;
     if (Date.now() - cached.fetchedAt > WHOLESALE_PRODUCTS_REPORT_CACHE_TTL_MS) {
@@ -1879,14 +1891,15 @@ export default function OperationsTab({
     return cached.data ?? null;
   };
 
-  const setCachedWholesaleProductsReportData = (data: any) => {
-    wholesaleProductsReportCacheRef.current.set(buildWholesaleProductsReportCacheKey(), { fetchedAt: Date.now(), data });
+  const setCachedWholesaleProductsReportData = (reportMode: WholesaleProductsReportMode, data: any) => {
+    wholesaleProductsReportCacheRef.current.set(buildWholesaleProductsReportCacheKey(reportMode), { fetchedAt: Date.now(), data });
   };
 
-  const fetchWholesaleProductsReportData = async (options?: { forceRefresh?: boolean }) => {
-    const key = buildWholesaleProductsReportCacheKey();
+  const fetchWholesaleProductsReportData = async (options?: { forceRefresh?: boolean; reportMode?: WholesaleProductsReportMode }) => {
+    const reportMode = options?.reportMode || resolveWholesaleProductsReportMode();
+    const key = buildWholesaleProductsReportCacheKey(reportMode);
     if (!options?.forceRefresh) {
-      const cached = getCachedWholesaleProductsReportData();
+      const cached = getCachedWholesaleProductsReportData(reportMode);
       if (cached) return cached;
       const inflight = wholesaleProductsReportInflightRef.current.get(key);
       if (inflight) return inflight;
@@ -1902,6 +1915,7 @@ export default function OperationsTab({
       endDate: effectiveMaxSelectableEndDate,
       limit: '5000',
       sectorCategory: '42',
+      reportMode,
       ...(options?.forceRefresh ? { refreshWholesaleProducts: '1' } : {}),
     });
     const request = fetch(`/api/operational-data?${params}`, {
@@ -1911,7 +1925,7 @@ export default function OperationsTab({
         throw new Error('Failed to load wholesale product report data');
       }
       const payload = await response.json();
-      setCachedWholesaleProductsReportData(payload);
+      setCachedWholesaleProductsReportData(reportMode, payload);
       return payload;
     }).finally(() => {
       wholesaleProductsReportInflightRef.current.delete(key);
@@ -2074,6 +2088,17 @@ export default function OperationsTab({
     return request;
   };
 
+  const activeWholesaleModuleDataType = mapModuleToDataType(activeTab);
+  const shouldLoadWholesaleProductsReport =
+    Boolean(selectedCompanyId) &&
+    industrySectorCategory === '42' &&
+    (
+      activeWholesaleModuleDataType === 'customers' ||
+      (activeWholesaleModuleDataType === 'products' &&
+        (productReportView === 'productMarginAnalysis' || productReportView === 'wholesaleRawData' || productReportView === 'vendorPricing')) ||
+      ((activeTab === 'overview' || activeTab === 'dashboard') && activeOverviewSubTab === 'execution-velocity')
+    );
+
   useEffect(() => {
     const handleOperationalDataUpdated = (event: Event) => {
       const detail = (event as CustomEvent<{ companyId?: string; types?: string[] }>).detail || {};
@@ -2091,8 +2116,8 @@ export default function OperationsTab({
             console.warn(`Failed to refresh ${type} data after operational upload:`, error);
           });
       });
-      if (requestedTypes.includes('products') && industrySectorCategory === '42') {
-        void fetchWholesaleProductsReportData({ forceRefresh: true })
+      if (requestedTypes.includes('products') && shouldLoadWholesaleProductsReport) {
+        void fetchWholesaleProductsReportData({ forceRefresh: true, reportMode: resolveWholesaleProductsReportMode() })
           .then((fresh) => {
             if (fresh) setWholesaleProductsData(fresh);
           })
@@ -2104,17 +2129,7 @@ export default function OperationsTab({
 
     window.addEventListener('operational-data-updated', handleOperationalDataUpdated);
     return () => window.removeEventListener('operational-data-updated', handleOperationalDataUpdated);
-  }, [selectedCompanyId, industrySectorCategory, frequency, startDate, endDate]);
-
-  const shouldLoadWholesaleProductsReport =
-    Boolean(selectedCompanyId) &&
-    industrySectorCategory === '42' &&
-    (
-      mapModuleToDataType(activeTab) === 'customers' ||
-      (mapModuleToDataType(activeTab) === 'products' &&
-        (productReportView === 'productMarginAnalysis' || productReportView === 'wholesaleRawData' || productReportView === 'vendorPricing')) ||
-      ((activeTab === 'overview' || activeTab === 'dashboard') && activeOverviewSubTab === 'execution-velocity')
-    );
+  }, [selectedCompanyId, industrySectorCategory, frequency, startDate, endDate, shouldLoadWholesaleProductsReport, activeTab, productReportView]);
 
   useEffect(() => {
     if (!shouldLoadWholesaleProductsReport) {
@@ -2129,7 +2144,8 @@ export default function OperationsTab({
     let cancelled = false;
     setWholesaleProductsLoading(true);
     setWholesaleProductsError(null);
-    void fetchWholesaleProductsReportData()
+    const reportMode = resolveWholesaleProductsReportMode();
+    void fetchWholesaleProductsReportData({ reportMode })
       .then((data) => {
         if (!cancelled) setWholesaleProductsData(data);
       })
@@ -2146,7 +2162,7 @@ export default function OperationsTab({
     return () => {
       cancelled = true;
     };
-  }, [shouldLoadWholesaleProductsReport, industrySectorCategory, effectiveMaxSelectableEndDate]);
+  }, [shouldLoadWholesaleProductsReport, industrySectorCategory, effectiveMaxSelectableEndDate, activeTab, productReportView]);
 
   const prefetchTabData = (tab: string) => {
     const type = mapModuleToDataType(tab) || null;
@@ -2156,6 +2172,20 @@ export default function OperationsTab({
       .catch(() => {
         // Best-effort prefetch.
       });
+  };
+
+  const getCachedProductTransform = (key: string, deps: any[], build: () => any) => {
+    const cached = productTransformCacheRef.current.get(key);
+    if (
+      cached &&
+      cached.deps.length === deps.length &&
+      cached.deps.every((dep, index) => Object.is(dep, deps[index]))
+    ) {
+      return cached.value;
+    }
+    const value = build();
+    productTransformCacheRef.current.set(key, { deps, value });
+    return value;
   };
 
   const fetchInventoryUnitCostHistory = async (sku: string) => {
@@ -2211,14 +2241,15 @@ export default function OperationsTab({
     };
   };
 
-  const loadTabData = async (tab: string) => {
+  const loadTabData = async (tab: string, options?: { forceRefresh?: boolean }) => {
     try {
       const type = mapModuleToDataType(tab) || null;
       if (!type) {
         return;
       }
-      const cached = getCachedOperationalData(type);
-      if (cached) {
+      const forceRefresh = options?.forceRefresh === true;
+      const cached = forceRefresh ? null : getCachedOperationalData(type);
+      if (!forceRefresh && cached) {
         applyOperationalTypeData(type, cached);
         setError(null);
         setLoading(false);
@@ -2226,7 +2257,7 @@ export default function OperationsTab({
       }
       setLoading(true);
       setError(null);
-      const data = await fetchOperationalTypeWithCache(type, { preferCache: true });
+      const data = await fetchOperationalTypeWithCache(type, { preferCache: true, forceRefresh });
       applyOperationalTypeData(type, data);
     } catch (err: any) {
       setError(err.message);
@@ -7753,7 +7784,7 @@ export default function OperationsTab({
         : productReportView === 'retailForecast' && !isRetailForecastingEnabled
         ? fallbackProductReportView
         : productReportView;
-    const shouldRenderProductPerformance = isProductPerformanceEnabled;
+    const shouldRenderProductPerformance = effectiveProductReportView === 'performance' && isProductPerformanceEnabled;
     const shouldRenderProductMargin = effectiveProductReportView === 'productMarginAnalysis' && isProductMarginAnalysisEnabled;
     const shouldRenderWholesaleRaw = effectiveProductReportView === 'wholesaleRawData' && isWholesaleRawDataEnabled;
     const shouldRenderVendorPricing = effectiveProductReportView === 'vendorPricing' && isVendorPricingEnabled;
@@ -7789,18 +7820,22 @@ export default function OperationsTab({
       shouldRenderProductPerformance ||
       shouldRenderRetailForecast ||
       shouldRenderMerchandiseProfitability;
-    const weeklyMarginModel = shouldBuildWeeklyMarginModel
-      ? buildWeeklyProductMarginModel({
-          records: rawProductRecords,
-          topProducts: Array.isArray(summary?.topProducts) ? summary.topProducts : [],
-          rangeStart: startDate,
-          rangeEnd: endDate,
-        })
-      : {
-          weeks: [],
-          productWeekly: [],
-          comparisonRows: [],
-        };
+    const weeklyMarginModel = getCachedProductTransform(
+      'products-weekly-margin-model',
+      [shouldBuildWeeklyMarginModel, rawProductRecords, summary?.topProducts, startDate, endDate],
+      () => shouldBuildWeeklyMarginModel
+        ? buildWeeklyProductMarginModel({
+            records: rawProductRecords,
+            topProducts: Array.isArray(summary?.topProducts) ? summary.topProducts : [],
+            rangeStart: startDate,
+            rangeEnd: endDate,
+          })
+        : {
+            weeks: [],
+            productWeekly: [],
+            comparisonRows: [],
+          }
+    );
     const latestPlatosMonthRows =
       usePlatosMonthlyFallback && platosMetrics?.latestMonthKey
         ? rawProductRecords.filter((row: any) => String(row?.snapshotDate || '').slice(0, 7) === platosMetrics.latestMonthKey)
@@ -8417,7 +8452,7 @@ export default function OperationsTab({
     const vendorPricingSortLabel = (key: VendorPricingSortKey) =>
       vendorPricingSortKey === key ? (vendorPricingSortDir === 'asc' ? ' ▲' : ' ▼') : ' ↕';
     const vendorPricingVisibleRows = sortedVendorPricingRows.slice(0, 1000);
-    const vendorPricingByItem = (() => {
+    const vendorPricingByItem = getCachedProductTransform('products-vendor-pricing-by-item', [vendorPricingRows], () => {
       const byItem = new Map<string, any[]>();
       const parseEffectiveMs = (value: unknown) => {
         const raw = String(value || '').trim();
@@ -8454,7 +8489,7 @@ export default function OperationsTab({
         });
       });
       return byItem;
-    })();
+    });
     const getVendorMaterialCostForItem = (item: string, asOfMs: number) => {
       const rows = vendorPricingByItem.get(String(item || '').trim()) || [];
       if (!rows.length) return null;
@@ -8479,7 +8514,7 @@ export default function OperationsTab({
           .sort((a, b) => a.localeCompare(b))
           .slice(-1)[0] || ''
       : '';
-    const productMarginRows = (() => {
+    const productMarginRows = getCachedProductTransform('products-margin-rows', [shouldRenderProductMargin, wholesaleProductRecords, vendorPricingByItem], () => {
       if (!shouldRenderProductMargin) return [];
       const latestRowsByItem = new Map<string, { latestMs: number; rows: any[] }>();
       for (const row of wholesaleProductRecords as any[]) {
@@ -8593,7 +8628,7 @@ export default function OperationsTab({
           String(a.customerName).localeCompare(String(b.customerName), undefined, { sensitivity: 'base', numeric: true }) ||
           String(a.aprPartNumber).localeCompare(String(b.aprPartNumber), undefined, { sensitivity: 'base', numeric: true })
         );
-    })();
+    });
     const productMarginCustomerGroups = (() => {
       const groups = new Map<string, any>();
       for (const row of productMarginRows) {
@@ -8750,45 +8785,49 @@ export default function OperationsTab({
         setProductMarginNoteLoadingKey((current) => (current === rowKey ? null : current));
       }
     };
-    const wholesaleRawBaseRows = (shouldRenderWholesaleRaw ? (wholesaleProductRecords as any[]) : [])
-      .filter((row) => !row?.isPlaceholderRow)
-      .map((row, index) => {
-        const parsedDate = parseCoverageUtcDay(String(row?.snapshotDate || row?.date || row?.orderDate || ''));
-        const isoDate = parsedDate ? parsedDate.toISOString().slice(0, 10) : '';
-        const monthLabel = parsedDate ? parsedDate.toLocaleDateString('en-US', { month: 'long', timeZone: 'UTC' }).toUpperCase() : '';
-        const year = parsedDate ? String(parsedDate.getUTCFullYear()) : '';
-        const quarter = parsedDate ? Math.floor(parsedDate.getUTCMonth() / 3) + 1 : null;
-        const qty = Number(row?.qty ?? row?.quantity ?? row?.quantitySold ?? row?.qtyInvoiced ?? 0);
-        const revenue = Number(row?.revenue ?? row?.invoicedAmount ?? row?.contractValue ?? 0);
-        const unitPrice =
-          Number(row?.unitPrice ?? row?.price ?? 0) ||
-          (qty !== 0 && Number.isFinite(revenue) ? Math.abs(revenue / qty) : 0);
-        const customerName = String(row?.customer || row?.customerName || 'N/A').trim() || 'N/A';
-        const customerId = String(row?.customerId || row?.customerNumber || row?.custNum || '').trim();
-        const customerGroup = String(row?.customerGroup || '').trim();
-        const customerPartNumber = String(row?.customerPartNumber || row?.customerPn || row?.customerPN || row?.customerItem || row?.customerSku || row?.custItem || row?.CustItem || '').trim();
-        return {
-          key: `${index}-${isoDate}-${String(row?.sku || row?.itemId || row?.itemName || '')}-${String(row?.orderId || row?.sourceTransaction || '')}`,
-          item: String(row?.sku || row?.itemId || row?.itemName || 'N/A').trim() || 'N/A',
-          order: String(row?.orderId || row?.orderNo || row?.coNum || row?.sourceTransaction || '').trim(),
-          quarter,
-          customerName,
-          customerId,
-          customerPartNumber,
-          isoDate,
-          monthLabel,
-          qty,
-          unitPrice,
-          reasonDescription: String(row?.reasonDescription || row?.reason || row?.status || '').trim(),
-          code: String(row?.reasonCode || row?.code || row?.itemCode || '').trim(),
-          transaction: String(row?.transaction || row?.transactionId || row?.invoiceNo || row?.sourceTransaction || '').trim(),
-          year,
-          customerGroup,
-          revenue: Number.isFinite(revenue) && revenue !== 0 ? revenue : Math.abs(qty * unitPrice),
-          team: String(row?.team || '').trim(),
-        };
-      })
-      .filter((row) => row.isoDate);
+    const wholesaleRawBaseRows = getCachedProductTransform(
+      'products-wholesale-raw-base-rows',
+      [shouldRenderWholesaleRaw, wholesaleProductRecords],
+      () => (shouldRenderWholesaleRaw ? (wholesaleProductRecords as any[]) : [])
+        .filter((row) => !row?.isPlaceholderRow)
+        .map((row, index) => {
+          const parsedDate = parseCoverageUtcDay(String(row?.snapshotDate || row?.date || row?.orderDate || ''));
+          const isoDate = parsedDate ? parsedDate.toISOString().slice(0, 10) : '';
+          const monthLabel = parsedDate ? parsedDate.toLocaleDateString('en-US', { month: 'long', timeZone: 'UTC' }).toUpperCase() : '';
+          const year = parsedDate ? String(parsedDate.getUTCFullYear()) : '';
+          const quarter = parsedDate ? Math.floor(parsedDate.getUTCMonth() / 3) + 1 : null;
+          const qty = Number(row?.qty ?? row?.quantity ?? row?.quantitySold ?? row?.qtyInvoiced ?? 0);
+          const revenue = Number(row?.revenue ?? row?.invoicedAmount ?? row?.contractValue ?? 0);
+          const unitPrice =
+            Number(row?.unitPrice ?? row?.price ?? 0) ||
+            (qty !== 0 && Number.isFinite(revenue) ? Math.abs(revenue / qty) : 0);
+          const customerName = String(row?.customer || row?.customerName || 'N/A').trim() || 'N/A';
+          const customerId = String(row?.customerId || row?.customerNumber || row?.custNum || '').trim();
+          const customerGroup = String(row?.customerGroup || '').trim();
+          const customerPartNumber = String(row?.customerPartNumber || row?.customerPn || row?.customerPN || row?.customerItem || row?.customerSku || row?.custItem || row?.CustItem || '').trim();
+          return {
+            key: `${index}-${isoDate}-${String(row?.sku || row?.itemId || row?.itemName || '')}-${String(row?.orderId || row?.sourceTransaction || '')}`,
+            item: String(row?.sku || row?.itemId || row?.itemName || 'N/A').trim() || 'N/A',
+            order: String(row?.orderId || row?.orderNo || row?.coNum || row?.sourceTransaction || '').trim(),
+            quarter,
+            customerName,
+            customerId,
+            customerPartNumber,
+            isoDate,
+            monthLabel,
+            qty,
+            unitPrice,
+            reasonDescription: String(row?.reasonDescription || row?.reason || row?.status || '').trim(),
+            code: String(row?.reasonCode || row?.code || row?.itemCode || '').trim(),
+            transaction: String(row?.transaction || row?.transactionId || row?.invoiceNo || row?.sourceTransaction || '').trim(),
+            year,
+            customerGroup,
+            revenue: Number.isFinite(revenue) && revenue !== 0 ? revenue : Math.abs(qty * unitPrice),
+            team: String(row?.team || '').trim(),
+          };
+        })
+        .filter((row) => row.isoDate)
+    );
     const wholesaleRawLatestDate = wholesaleRawBaseRows
       .map((row) => row.isoDate)
       .sort((a, b) => a.localeCompare(b))
@@ -11794,8 +11833,8 @@ export default function OperationsTab({
       `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`;
     const formatInventoryDay = (d: Date) =>
       d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' });
-    const formatInventoryMonth = (d: Date) =>
-      d.toLocaleDateString('en-US', { month: 'short', year: 'numeric', timeZone: 'UTC' });
+    const formatInventoryPeriodEndDate = (d: Date) =>
+      d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' });
     const weekStartUtc = (date: Date): Date => {
       const day = date.getUTCDay(); // 0=Sun ... 6=Sat
       const diffToMonday = day === 0 ? -6 : 1 - day;
@@ -11861,7 +11900,7 @@ export default function OperationsTab({
                   byMonth.set(key, {
                     utcDay: row.utcDay,
                     dateKey: row.dateKey,
-                    label: formatInventoryMonth(row.utcDay),
+                    label: formatInventoryPeriodEndDate(row.utcDay),
                     value: row.value,
                   });
                 }

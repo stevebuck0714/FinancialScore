@@ -65,6 +65,7 @@ const HIRING_SOURCE_VERSION = 'bamboohr-hiring-full-pagination-v2';
 const CUSTOMER_BACKLOG_MIN_ORDER_DATE = '2023-06-01';
 const WHOLESALE_PRODUCTS_REPORT_START_DATE = '2023-01-01';
 const WHOLESALE_PRODUCTS_REPORT_CACHE_TTL_SECONDS = 30 * 24 * 60 * 60;
+type WholesaleProductsReportMode = 'all' | 'margin' | 'raw' | 'vendor';
 const GENE_SOLUTIONS_COMPANY_ID = 'cmrc86g8l0001qhbkgcq6wrf9';
 const GENE_SOLUTIONS_MOCK_FINANCIAL_SOURCE = 'GENE_SOLUTIONS_MOCK';
 const OPERATIONAL_CACHEABLE_TYPES = new Set([
@@ -2728,6 +2729,15 @@ export async function GET(request: NextRequest) {
         .trim()
         .toLowerCase()
     );
+    const wholesaleProductsReportModeParam = String(searchParams.get('reportMode') || 'all')
+      .trim()
+      .toLowerCase();
+    const wholesaleProductsReportMode: WholesaleProductsReportMode =
+      wholesaleProductsReportModeParam === 'margin' ||
+      wholesaleProductsReportModeParam === 'raw' ||
+      wholesaleProductsReportModeParam === 'vendor'
+        ? wholesaleProductsReportModeParam
+        : 'all';
     const skuParam = String(searchParams.get('sku') || '').trim();
     const includeCostHistory = ['1', 'true', 'yes'].includes(
       String(searchParams.get('includeCostHistory') || '')
@@ -2963,6 +2973,12 @@ export async function GET(request: NextRequest) {
       frequency === 'daily' &&
       dateKeyUtc(startDate) === WHOLESALE_PRODUCTS_REPORT_START_DATE &&
       boundedLimit >= 5000;
+    const shouldBuildWholesaleOrderLines =
+      isWholesaleProductsReportRequest &&
+      (wholesaleProductsReportMode === 'all' || wholesaleProductsReportMode === 'margin' || wholesaleProductsReportMode === 'raw');
+    const shouldBuildWholesaleVendorPricingRows =
+      isWholesaleProductsReportRequest &&
+      (wholesaleProductsReportMode === 'all' || wholesaleProductsReportMode === 'margin' || wholesaleProductsReportMode === 'vendor');
     const operationalCacheTtlSeconds = isWholesaleProductsReportRequest
       ? WHOLESALE_PRODUCTS_REPORT_CACHE_TTL_SECONDS
       : cacheType === 'products' || cacheType === 'customers'
@@ -2995,6 +3011,7 @@ export async function GET(request: NextRequest) {
               cacheType === 'customers' ? CUSTOMER_WIP_SOURCE_VERSION : null,
               cacheType === 'hiring' ? HIRING_SOURCE_VERSION : null,
               isWholesaleProductsReportRequest ? CUSTOMER_WIP_SOURCE_VERSION : null,
+              isWholesaleProductsReportRequest ? `wholesale-report-mode:${wholesaleProductsReportMode}` : null,
               cacheType === 'products' && usesSourceSystemProductSnapshots ? 'products-source-system-bakers-raw-child-id-v3' : null,
               cacheType === 'sales' && usesSourceSystemProductSnapshots ? 'sales-source-system-product-name-outlier-v1' : null,
             ]),
@@ -7815,7 +7832,7 @@ export async function GET(request: NextRequest) {
               .slice(0, 10);
 
         const wholesaleOrderLines =
-          isWholesaleProductsReportRequest && productOrderLineDelegate?.findMany
+          shouldBuildWholesaleOrderLines && productOrderLineDelegate?.findMany
             ? await (async () => {
                 const normalizeOrderLineToken = (value: unknown): string => {
                   const raw = String(value ?? '').trim();
@@ -8173,7 +8190,7 @@ export async function GET(request: NextRequest) {
             : [];
 
         const wholesaleVendorPricingRows =
-          isWholesaleProductsReportRequest
+          shouldBuildWholesaleVendorPricingRows
             ? await (async () => {
                 const rawRows = await prisma.inforRawRecord.findMany({
                   where: {
@@ -8283,6 +8300,7 @@ export async function GET(request: NextRequest) {
           records: data,
           summary: {
             topProducts: topProductsSummary,
+            wholesaleReportMode: wholesaleProductsReportMode,
             wholesaleOrderLines,
             wholesaleVendorPricingRows,
             realEstateReports: getRealEstateReportsForSummary(),
