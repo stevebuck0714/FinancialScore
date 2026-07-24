@@ -710,6 +710,18 @@ export type AnchorRecord = {
   treasuryStock: number;
 };
 
+type AccountAnchorAccount = {
+  accountId: string;
+  accountCode: string | null;
+  accountName: string | null;
+  openingBalance: number;
+};
+
+export type AccountAnchorRecord = {
+  anchorDate: Date;
+  accounts: AccountAnchorAccount[];
+};
+
 /**
  * Resolve the anchor that applies to this snapshotDate, if any.
  *
@@ -760,6 +772,35 @@ async function findAnchorForDate(
   };
 }
 
+function targetLookupKeyForAccountAnchor(
+  account: AccountAnchorAccount,
+  accountIdToTarget: Map<string, AccountTarget>
+): string | null {
+  for (const candidate of [account.accountId, account.accountCode, account.accountName]) {
+    const key = String(candidate || '').trim();
+    if (key && accountIdToTarget.has(key)) return key;
+  }
+  return null;
+}
+
+function mergeAccountAnchorWithDeltas(
+  accountAnchor: AccountAnchorRecord,
+  deltaByAccountId: Map<string, number>,
+  accountIdToTarget: Map<string, AccountTarget>
+): Map<string, number> {
+  const out = new Map<string, number>();
+  for (const account of accountAnchor.accounts) {
+    const accountId = String(account.accountId || '').trim();
+    if (!accountId) continue;
+    const targetKey = targetLookupKeyForAccountAnchor(account, accountIdToTarget);
+    if (!targetKey) continue;
+    const balance =
+      (Number(account.openingBalance) || 0) + (deltaByAccountId.get(accountId) || 0);
+    out.set(targetKey, (out.get(targetKey) || 0) + balance);
+  }
+  return out;
+}
+
 /**
  * Compute one DailyFinancialSnapshot row for a single (companyId, snapshotDate).
  *
@@ -789,18 +830,43 @@ export async function computeDailyBalanceSheetFromGL(
   fiscalYearStart: Date,
   accountIdToTarget: Map<string, AccountTarget>,
   anchor: AnchorRecord | null = null,
-  pnlPeriodStart: Date | null = null
+  pnlPeriodStart: Date | null = null,
+  accountAnchor: AccountAnchorRecord | null = null
 ): Promise<ComputedSnapshot> {
   const accountIds = Array.from(accountIdToTarget.keys());
   if (accountIds.length === 0) return emptySnapshot();
 
-  const useAnchor = anchor !== null && anchor.anchorDate.getTime() <= snapshotDate.getTime();
+  const useAccountAnchor =
+    accountAnchor !== null &&
+    accountAnchor.accounts.length > 0 &&
+    accountAnchor.anchorDate.getTime() <= snapshotDate.getTime();
+  const useFieldAnchor =
+    !useAccountAnchor &&
+    anchor !== null &&
+    anchor.anchorDate.getTime() <= snapshotDate.getTime();
+  const activeAnchorDate = useAccountAnchor
+    ? accountAnchor!.anchorDate
+    : useFieldAnchor
+      ? anchor!.anchorDate
+      : null;
+  const accountAnchorAccountIds = useAccountAnchor
+    ? Array.from(
+        new Set(
+          accountAnchor!.accounts
+            .map((account) => String(account.accountId || '').trim())
+            .filter(Boolean)
+        )
+      )
+    : [];
 
   // BS source-of-truth aggregation:
-  //   - anchored:   sum GL deltas in (anchorDate, snapshotDate]
-  //   - unanchored: sum all GL through snapshotDate (running balance)
-  const bsRawPromise = useAnchor
-    ? sumGLByAccount(companyId, accountIds, null, snapshotDate, anchor!.anchorDate)
+  //   - account-anchored: account opening balances + GL deltas by account
+  //   - field-anchored:   field rollup anchor + GL deltas by mapped account
+  //   - unanchored:       sum all GL through snapshotDate (running balance)
+  const bsRawPromise = useAccountAnchor
+    ? sumGLByAccount(companyId, accountAnchorAccountIds, null, snapshotDate, activeAnchorDate)
+    : useFieldAnchor
+    ? sumGLByAccount(companyId, accountIds, null, snapshotDate, activeAnchorDate)
     : sumGLByAccount(companyId, accountIds, null, snapshotDate);
 
   // YTD P&L aggregation:
@@ -811,8 +877,8 @@ export async function computeDailyBalanceSheetFromGL(
   //                                                   give the same window)
   //   - unanchored:                                 start from fyStart inclusive
   const ytdRawPromise =
-    useAnchor && anchor!.anchorDate.getTime() > fiscalYearStart.getTime()
-      ? sumGLByAccount(companyId, accountIds, null, snapshotDate, anchor!.anchorDate)
+    activeAnchorDate && activeAnchorDate.getTime() > fiscalYearStart.getTime()
+      ? sumGLByAccount(companyId, accountIds, null, snapshotDate, activeAnchorDate)
       : sumGLByAccount(companyId, accountIds, fiscalYearStart, snapshotDate);
 
   // Prior-period P&L aggregation (anchorDate, fiscalYearStart):
@@ -833,14 +899,14 @@ export async function computeDailyBalanceSheetFromGL(
   // Window upper bound = (fiscalYearStart - 1ms) — strictly before
   // fiscalYearStart so we don't double-count current-FY YTD activity.
   const needsPriorPeriodNI =
-    useAnchor && anchor!.anchorDate.getTime() < fiscalYearStart.getTime();
+    activeAnchorDate !== null && activeAnchorDate.getTime() < fiscalYearStart.getTime();
   const priorPeriodRawPromise = needsPriorPeriodNI
     ? sumGLByAccount(
         companyId,
         accountIds,
         null,
         new Date(fiscalYearStart.getTime() - 1),
-        anchor!.anchorDate
+        activeAnchorDate
       )
     : Promise.resolve(new Map<string, number>());
 
@@ -886,7 +952,12 @@ export async function computeDailyBalanceSheetFromGL(
     dailyPnlRawPromise,
   ]);
 
-  const bsByField = aggregateByTargetField(bsRaw, accountIdToTarget);
+  const bsByField = aggregateByTargetField(
+    useAccountAnchor
+      ? mergeAccountAnchorWithDeltas(accountAnchor!, bsRaw, accountIdToTarget)
+      : bsRaw,
+    accountIdToTarget
+  );
   const ytdByField = aggregateByTargetField(ytdRaw, accountIdToTarget);
   const priorPeriodByField = aggregateByTargetField(
     priorPeriodRaw,
@@ -901,7 +972,7 @@ export async function computeDailyBalanceSheetFromGL(
 
   // Anchor base value for a BS field (zero when unanchored or field not in anchor).
   const anchorVal = (field: string): number => {
-    if (!useAnchor || !anchor) return 0;
+    if (!useFieldAnchor || !anchor) return 0;
     return (anchor as unknown as Record<string, number>)[field] || 0;
   };
 
@@ -1125,10 +1196,13 @@ const REBUILD_BS_UPDATE_FIELDS: ReadonlyArray<keyof ComputedSnapshot> = [
  * existing snapshots for each (companyId, snapshotDate, frequency) are
  * upserted with current GL state.
  *
- * If the company has any `BalanceSheetAnchor` rows, the rebuild uses the
- * most-recent anchor with `anchorDate <= snapshotDate` as a starting point
- * (anchor + GL deltas). Dates strictly before the earliest anchor fall back
- * to the all-time-GL-sum behavior.
+ * If the company has any `BalanceSheetAccountAnchor` rows, the rebuild uses
+ * the most-recent account-level anchor with `anchorDate <= snapshotDate` as
+ * the starting point (per-account opening balance + account GL deltas), then
+ * rolls those account balances up through AccountMapping.targetField. Legacy
+ * `BalanceSheetAnchor` rollups are used only when no account-level anchor is
+ * available for the snapshot date. Dates before any anchor fall back to the
+ * all-time-GL-sum behavior.
  */
 export async function rebuildDailyFinancialSnapshotsFromGL(
   opts: RebuildDailyBSOptions
@@ -1138,6 +1212,11 @@ export async function rebuildDailyFinancialSnapshotsFromGL(
   mappedAccountCount: number;
   unmappedTargetFields: string[];
   anchorsApplied: number;
+  accountAnchorsApplied: number;
+  fieldAnchorsApplied: number;
+  accountAnchorDatesApplied: string[];
+  fieldAnchorDatesApplied: string[];
+  accountAnchorCount: number;
 }> {
   const companyId = String(opts.companyId || '').trim();
   if (!companyId) throw new Error('rebuildDailyFinancialSnapshotsFromGL: companyId required');
@@ -1195,8 +1274,57 @@ export async function rebuildDailyFinancialSnapshotsFromGL(
     )
   );
 
+  // Normalize the iteration cursor to UTC midnight so snapshotDate values
+  // collide cleanly with the unique index (companyId, snapshotDate, frequency).
+  const startUtc = new Date(
+    Date.UTC(
+      opts.startDate.getUTCFullYear(),
+      opts.startDate.getUTCMonth(),
+      opts.startDate.getUTCDate()
+    )
+  );
+  const endUtc = new Date(
+    Date.UTC(
+      opts.endDate.getUTCFullYear(),
+      opts.endDate.getUTCMonth(),
+      opts.endDate.getUTCDate()
+    )
+  );
+
   // Pre-load all anchors for this company (typically a handful of rows) so
   // every iteration can pick the right one without an extra DB round-trip.
+  const allAccountAnchorRows = await prisma.balanceSheetAccountAnchor.findMany({
+    where: {
+      companyId,
+      anchorDate: { lte: endUtc },
+    },
+    orderBy: [{ anchorDate: 'desc' }, { accountId: 'asc' }],
+  });
+  const accountAnchorsByDate = new Map<number, AccountAnchorRecord>();
+  for (const row of allAccountAnchorRows) {
+    const accountId = String(row.accountId || '').trim();
+    if (!accountId) continue;
+    const key = row.anchorDate.getTime();
+    const existing = accountAnchorsByDate.get(key);
+    const account = {
+      accountId,
+      accountCode: row.accountCode || null,
+      accountName: row.accountName || null,
+      openingBalance: Number(row.openingBalance) || 0,
+    };
+    if (existing) {
+      existing.accounts.push(account);
+    } else {
+      accountAnchorsByDate.set(key, {
+        anchorDate: row.anchorDate,
+        accounts: [account],
+      });
+    }
+  }
+  const allAccountAnchors = Array.from(accountAnchorsByDate.values()).sort(
+    (a, b) => b.anchorDate.getTime() - a.anchorDate.getTime()
+  );
+
   const allAnchorRows = await prisma.balanceSheetAnchor.findMany({
     where: { companyId },
     orderBy: { anchorDate: 'desc' },
@@ -1238,37 +1366,42 @@ export async function rebuildDailyFinancialSnapshotsFromGL(
     return null;
   }
 
-  // Normalize the iteration cursor to UTC midnight so snapshotDate values
-  // collide cleanly with the unique index (companyId, snapshotDate, frequency).
-  const startUtc = new Date(
-    Date.UTC(
-      opts.startDate.getUTCFullYear(),
-      opts.startDate.getUTCMonth(),
-      opts.startDate.getUTCDate()
-    )
-  );
-  const endUtc = new Date(
-    Date.UTC(
-      opts.endDate.getUTCFullYear(),
-      opts.endDate.getUTCMonth(),
-      opts.endDate.getUTCDate()
-    )
-  );
+  function accountAnchorForDate(d: Date): AccountAnchorRecord | null {
+    for (const a of allAccountAnchors) {
+      if (a.anchorDate.getTime() <= d.getTime()) return a;
+    }
+    return null;
+  }
 
   let datesProcessed = 0;
   let rowsWritten = 0;
   let anchorsApplied = 0;
+  let accountAnchorsApplied = 0;
+  let fieldAnchorsApplied = 0;
+  const accountAnchorDatesApplied = new Set<string>();
+  const fieldAnchorDatesApplied = new Set<string>();
   const processDate = async (snapshotDate: Date) => {
     const fiscalYearStart = computeFiscalYearStart(snapshotDate, fyMonth, fyDay);
-    const anchor = anchorForDate(snapshotDate);
-    if (anchor) anchorsApplied++;
+    const accountAnchor = accountAnchorForDate(snapshotDate);
+    const anchor = accountAnchor ? null : anchorForDate(snapshotDate);
+    if (accountAnchor) {
+      anchorsApplied++;
+      accountAnchorsApplied++;
+      accountAnchorDatesApplied.add(accountAnchor.anchorDate.toISOString().slice(0, 10));
+    } else if (anchor) {
+      anchorsApplied++;
+      fieldAnchorsApplied++;
+      fieldAnchorDatesApplied.add(anchor.anchorDate.toISOString().slice(0, 10));
+    }
 
     const snapshot = await computeDailyBalanceSheetFromGL(
       companyId,
       snapshotDate,
       fiscalYearStart,
       accountIdToTarget,
-      anchor
+      anchor,
+      null,
+      accountAnchor
     );
 
     // Always upsert — even when accountIdToTarget is empty we still write a
@@ -1343,6 +1476,11 @@ export async function rebuildDailyFinancialSnapshotsFromGL(
     mappedAccountCount: accountIdToTarget.size,
     unmappedTargetFields,
     anchorsApplied,
+    accountAnchorsApplied,
+    fieldAnchorsApplied,
+    accountAnchorDatesApplied: Array.from(accountAnchorDatesApplied).sort(),
+    fieldAnchorDatesApplied: Array.from(fieldAnchorDatesApplied).sort(),
+    accountAnchorCount: allAccountAnchorRows.length,
   };
 }
 

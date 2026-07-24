@@ -176,6 +176,12 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       rowsWritten: result.rowsWritten,
       mappedAccountCount: result.mappedAccountCount,
       unmappedTargetFields: result.unmappedTargetFields,
+      anchorsApplied: result.anchorsApplied,
+      accountAnchorsApplied: result.accountAnchorsApplied,
+      fieldAnchorsApplied: result.fieldAnchorsApplied,
+      accountAnchorDatesApplied: result.accountAnchorDatesApplied,
+      fieldAnchorDatesApplied: result.fieldAnchorDatesApplied,
+      accountAnchorCount: result.accountAnchorCount,
       monthlySync,
       elapsedMs,
     });

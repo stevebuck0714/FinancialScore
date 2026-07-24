@@ -1842,7 +1842,12 @@ function classifyModuleFromProgramId(
   const programId = String(programIdRaw || '').trim().toUpperCase();
   if (!programId) return null;
 
-  if (programId === 'SLGLTRANS' || programId === 'SLLEDGERS' || GL_ACCOUNT_MASTER_PROGRAM_IDS.has(programId)) return 'gl';
+  if (
+    programId === 'SLGLTRANS' ||
+    programId === 'SLLEDGERS' ||
+    programId === 'GLACCTPERIODBALANCES' ||
+    GL_ACCOUNT_MASTER_PROGRAM_IDS.has(programId)
+  ) return 'gl';
   if (programId === 'SLARTRANS' || programId === 'SLCUSTDRFTS') return 'ar';
   if (programId === 'SLAPTRX' || programId === 'SLVCHHDRS' || programId === 'SLAPPMTS' || programId === 'SLAPTRXP')
     return 'ap';
@@ -2189,6 +2194,208 @@ const parseGlAccountMasterEntry = (record: Record<string, unknown>): GlAccountMa
     accountCategory,
   };
 };
+
+function looksLikeLedgerPayloadInsteadOfProgram(
+  record: Record<string, unknown>,
+  expectedProgram: 'accountMaster' | 'periodBalance'
+): boolean {
+  const hasLedgerShape = Boolean(
+    pickString(record, ['TransDate', 'transDate', 'Ref', 'ref', 'PBT', 'TransNum', 'transNum']) ||
+      pickNumberIfPresent(record, ['DomAmount', 'DerSumDomAmount', 'Amount']) !== undefined
+  );
+  if (!hasLedgerShape) return false;
+
+  if (expectedProgram === 'accountMaster') {
+    return !Boolean(
+      pickString(record, ['Type', 'AcctType', 'AccountType', 'Category', 'AcctClass'])
+    );
+  }
+
+  return !Boolean(
+    pickString(record, ['FiscalYear', 'FiscalPeriod', 'PeriodEnd', 'PeriodEndDate']) ||
+      pickNumberIfPresent(record, ['BegBalance', 'Debit', 'Credit', 'EndBalance']) !== undefined
+  );
+}
+
+function warnIfUnexpectedLedgerPayload(
+  companyId: string,
+  programId: string,
+  records: Record<string, unknown>[],
+  expectedProgram: 'accountMaster' | 'periodBalance'
+): void {
+  if (records.length === 0) return;
+  const ledgerShapedCount = records.reduce(
+    (count, record) => count + (looksLikeLedgerPayloadInsteadOfProgram(record, expectedProgram) ? 1 : 0),
+    0
+  );
+  if (ledgerShapedCount === 0) return;
+
+  console.warn('[infor-csi] GL IDO returned ledger-shaped rows for non-ledger program', {
+    companyId,
+    programId,
+    expectedProgram,
+    rowsChecked: records.length,
+    ledgerShapedCount,
+    action:
+      'Leaving rows as raw diagnostics only; balance sheet anchors must come from a trusted account-balance source.',
+  });
+}
+
+type PeriodBalanceAnchorRow = {
+  anchorDate: Date;
+  accountId: string;
+  accountName: string | null;
+  accountCode: string | null;
+  openingBalance: number;
+};
+
+function periodEndDateFromBalanceRecord(record: Record<string, unknown>): Date | null {
+  const explicitDate = parseMaybeDate(
+    pickString(record, ['PeriodEndDate', 'periodEndDate', 'PeriodEnd', 'periodEnd', 'EndDate', 'endDate'])
+  );
+  if (explicitDate) return startOfUtcDay(explicitDate);
+
+  const year = pickNumberIfPresent(record, ['FiscalYear', 'fiscalYear', 'ControlYear', 'controlYear']);
+  const period = pickNumberIfPresent(record, ['FiscalPeriod', 'fiscalPeriod', 'ControlPeriod', 'controlPeriod']);
+  if (
+    year === undefined ||
+    period === undefined ||
+    !Number.isFinite(year) ||
+    !Number.isFinite(period) ||
+    year < 1900 ||
+    period < 1 ||
+    period > 12
+  ) {
+    return null;
+  }
+
+  return new Date(Date.UTC(Math.trunc(year), Math.trunc(period), 0));
+}
+
+function signedEndingBalanceFromPeriodRecord(record: Record<string, unknown>): number | null {
+  const explicitEnding = pickNumberIfPresent(record, [
+    'EndBalance',
+    'endBalance',
+    'EndingBalance',
+    'endingBalance',
+    'PeriodEndBalance',
+    'periodEndBalance',
+    'YtdBalance',
+    'ytdBalance',
+  ]);
+  if (explicitEnding !== undefined && Number.isFinite(explicitEnding)) return explicitEnding;
+
+  const beginning = pickNumberIfPresent(record, ['BegBalance', 'begBalance', 'BeginningBalance', 'beginningBalance']);
+  const debit = pickNumberIfPresent(record, ['Debit', 'debit', 'DebitAmount', 'debitAmount']);
+  const credit = pickNumberIfPresent(record, ['Credit', 'credit', 'CreditAmount', 'creditAmount']);
+  if (beginning === undefined && debit === undefined && credit === undefined) return null;
+
+  return Number(beginning || 0) + Number(debit || 0) - Number(credit || 0);
+}
+
+function parsePeriodBalanceAnchorRows(
+  records: Record<string, unknown>[],
+  glAccountMasterById?: Map<string, GlAccountMasterEntry>
+): PeriodBalanceAnchorRow[] {
+  const rowsByKey = new Map<string, PeriodBalanceAnchorRow>();
+
+  for (const record of records) {
+    const anchorDate = periodEndDateFromBalanceRecord(record);
+    if (!anchorDate) continue;
+
+    const accountId =
+      pickString(record, ['Acct', 'AcctNum', 'Account', 'AccountNo', 'GLAccount', 'ACNO', 'ACID']) ||
+      pickString(record, ['accountId', 'accountCode', 'accountNumber']);
+    if (!accountId) continue;
+
+    const openingBalance = signedEndingBalanceFromPeriodRecord(record);
+    if (openingBalance === null || !Number.isFinite(openingBalance)) continue;
+
+    const accountMaster = glAccountMasterById?.get(normalizeGlAccountKey(accountId)) || null;
+    const accountName =
+      pickString(record, ['Description', 'AcctDesc', 'Name', 'accountName', 'description', 'name', 'ACNM']) ||
+      accountMaster?.accountName ||
+      null;
+    const key = `${anchorDate.toISOString().slice(0, 10)}|${accountId}`;
+    const existing = rowsByKey.get(key);
+    if (existing) {
+      existing.openingBalance += openingBalance;
+      existing.accountName = existing.accountName || accountName;
+      existing.accountCode = existing.accountCode || accountId;
+      continue;
+    }
+
+    rowsByKey.set(key, {
+      anchorDate,
+      accountId,
+      accountName,
+      accountCode: accountId,
+      openingBalance,
+    });
+  }
+
+  return Array.from(rowsByKey.values());
+}
+
+async function saveBalanceSheetAccountAnchorsFromPeriodBalances(
+  companyId: string,
+  records: Record<string, unknown>[],
+  context: { miProgram: string; transaction: string },
+  glAccountMasterById?: Map<string, GlAccountMasterEntry>
+): Promise<number> {
+  const rows = parsePeriodBalanceAnchorRows(records, glAccountMasterById);
+  if (rows.length === 0) return 0;
+
+  const source = `INFOR_CSI_${String(context.miProgram || 'GLAcctPeriodBalances').toUpperCase()}_PERIOD_BALANCE`;
+  const notes = `Imported from ${context.miProgram || 'GLAcctPeriodBalances'} ${context.transaction || 'CSI_LOAD'} on ${new Date().toISOString()}`;
+  const batchSize = 200;
+  let written = 0;
+
+  for (let index = 0; index < rows.length; index += batchSize) {
+    const batch = rows.slice(index, index + batchSize);
+    await prisma.$transaction(
+      batch.map((row) =>
+        prisma.balanceSheetAccountAnchor.upsert({
+          where: {
+            companyId_anchorDate_accountId: {
+              companyId,
+              anchorDate: row.anchorDate,
+              accountId: row.accountId,
+            },
+          },
+          update: {
+            accountName: row.accountName,
+            accountCode: row.accountCode,
+            openingBalance: row.openingBalance,
+            source,
+            notes,
+          },
+          create: {
+            companyId,
+            anchorDate: row.anchorDate,
+            accountId: row.accountId,
+            accountName: row.accountName,
+            accountCode: row.accountCode,
+            openingBalance: row.openingBalance,
+            source,
+            notes,
+          },
+        })
+      )
+    );
+    written += batch.length;
+  }
+
+  if (written > 0) {
+    await prisma.$executeRawUnsafe(
+      `DELETE FROM "LoanActivityCache" WHERE "companyId" = $1`,
+      companyId
+    ).catch(() => undefined);
+  }
+
+  return written;
+}
+
 const extractSignedGlAmount = (
   record: Record<string, unknown>
 ): { signedAmount: number; debitAmount: number; creditAmount: number; drCrToken: string } => {
@@ -9291,6 +9498,7 @@ export async function syncInforM3OperationalData(
               {
                 const glProgram = String(programId || row.miProgram || '').trim().toUpperCase();
                 if (GL_ACCOUNT_MASTER_PROGRAM_IDS.has(glProgram)) {
+                  warnIfUnexpectedLedgerPayload(companyId, glProgram, records, 'accountMaster');
                   for (const record of records) {
                     const parsed = parseGlAccountMasterEntry(record);
                     if (!parsed) continue;
@@ -9308,6 +9516,16 @@ export async function syncInforM3OperationalData(
                       accountCategory: existing.accountCategory || parsed.accountCategory,
                     });
                   }
+                }
+                if (glProgram === 'GLACCTPERIODBALANCES') {
+                  warnIfUnexpectedLedgerPayload(companyId, glProgram, records, 'periodBalance');
+                  const periodAnchorRowsCreated = await saveBalanceSheetAccountAnchorsFromPeriodBalances(
+                    companyId,
+                    records,
+                    { miProgram: row.miProgram || row.module, transaction: req.transaction },
+                    glAccountMasterById
+                  );
+                  moduleRecordsCreated += periodAnchorRowsCreated;
                 }
                 const glContext = {
                   miProgram: row.miProgram || row.module,
@@ -9329,7 +9547,7 @@ export async function syncInforM3OperationalData(
                     glAccountMasterById
                   ));
                 } else {
-                  moduleRecordsCreated = records.length;
+                  moduleRecordsCreated += records.length;
                 }
               }
               break;
@@ -10370,6 +10588,18 @@ export async function transformInforM3RawRun(options: {
           glAccountMasterById
         );
         recordsCreated += await saveBalanceMovementsFromGl(companyId, frequency, glLedgers, glAccountMasterById);
+      }
+
+      const glPeriodBalances = Array.from(rawByModuleProgram.values())
+        .filter((item) => item.moduleType === 'gl' && item.miProgram.toUpperCase() === 'GLACCTPERIODBALANCES')
+        .flatMap((item) => item.records);
+      if (glPeriodBalances.length > 0) {
+        recordsCreated += await saveBalanceSheetAccountAnchorsFromPeriodBalances(
+          companyId,
+          glPeriodBalances,
+          { miProgram: 'GLAcctPeriodBalances', transaction: 'RAW_REPLAY' },
+          glAccountMasterById
+        );
       }
 
       const inventoryRecords = Array.from(rawByModuleProgram.values())

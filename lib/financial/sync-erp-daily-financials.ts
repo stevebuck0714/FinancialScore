@@ -23,6 +23,11 @@ export type SyncErpDailyFinancialsFromGLOutcome = {
     mappedAccountCount: number;
     unmappedTargetFields: string[];
     anchorsApplied: number;
+    accountAnchorsApplied: number;
+    fieldAnchorsApplied: number;
+    accountAnchorDatesApplied: string[];
+    fieldAnchorDatesApplied: string[];
+    accountAnchorCount: number;
   };
   cashSnapshots?: {
     datesProcessed: number;
@@ -169,6 +174,11 @@ export async function syncErpDailyFinancialsFromGL(
       mappedAccountCount: rebuilt.mappedAccountCount,
       unmappedTargetFields: rebuilt.unmappedTargetFields,
       anchorsApplied: rebuilt.anchorsApplied,
+      accountAnchorsApplied: rebuilt.accountAnchorsApplied,
+      fieldAnchorsApplied: rebuilt.fieldAnchorsApplied,
+      accountAnchorDatesApplied: rebuilt.accountAnchorDatesApplied,
+      fieldAnchorDatesApplied: rebuilt.fieldAnchorDatesApplied,
+      accountAnchorCount: rebuilt.accountAnchorCount,
     };
     outcome.cashSnapshots = await rebuildCashSnapshotsFromGL({
       companyId,

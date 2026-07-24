@@ -58,6 +58,7 @@ export const dynamic = 'force-dynamic';
 const OPERATIONAL_DATA_CACHE_TTL_SECONDS = 120;
 const OPERATIONAL_HEAVY_DATA_CACHE_TTL_SECONDS = 30 * 60;
 const PRODUCT_OPERATIONAL_CACHE_TTL_SECONDS = 30 * 24 * 60 * 60;
+const CUSTOMER_OPERATIONAL_CACHE_TTL_SECONDS = 30 * 24 * 60 * 60;
 const CUSTOMER_CONCENTRATION_CACHE_TTL_SECONDS = 30 * 24 * 60 * 60;
 const CUSTOMER_CONCENTRATION_CACHE_VERSION = 'customer-concentration-exposure-v10';
 const CUSTOMER_REVENUE_SOURCE_VERSION = 'customer-revenue-source-v6-bakers-raw-child-id';
@@ -2991,7 +2992,7 @@ export async function GET(request: NextRequest) {
       : cacheType === 'products'
       ? PRODUCT_OPERATIONAL_CACHE_TTL_SECONDS
       : cacheType === 'customers'
-      ? OPERATIONAL_HEAVY_DATA_CACHE_TTL_SECONDS
+      ? CUSTOMER_OPERATIONAL_CACHE_TTL_SECONDS
       : OPERATIONAL_DATA_CACHE_TTL_SECONDS;
     const cacheableRequest =
       OPERATIONAL_CACHEABLE_TYPES.has(cacheType) &&
