@@ -207,11 +207,23 @@ function isLocInstrument(instrument: LoanInstrument): boolean {
 
 function hasLoanInstrumentBalance(instrument: LoanInstrument): boolean {
   const priorMonthBalance = Number(instrument.priorMonthBalance);
-  const currentBalance = Number(instrument.derivedCurrentBalance);
+  const currentBalance = getLoanCurrentBalance(instrument);
+  const termsCurrentBalance = toFiniteNumber(instrument.terms?.currentBalance);
+  const termsOriginalBalance = toFiniteNumber(instrument.terms?.originalBalance);
   return (
     (Number.isFinite(priorMonthBalance) && Math.abs(priorMonthBalance) > 0.005) ||
-    (Number.isFinite(currentBalance) && Math.abs(currentBalance) > 0.005)
+    (currentBalance !== null && Math.abs(currentBalance) > 0.005) ||
+    (termsCurrentBalance !== null && Math.abs(termsCurrentBalance) > 0.005) ||
+    (isLocInstrument(instrument) && termsOriginalBalance !== null && Math.abs(termsOriginalBalance) > 0.005)
   );
+}
+
+function getLoanCurrentBalance(instrument: LoanInstrument): number | null {
+  const derivedCurrentBalance = toFiniteNumber(instrument.derivedCurrentBalance);
+  if (derivedCurrentBalance !== null) return Math.abs(derivedCurrentBalance);
+  const termsCurrentBalance = toFiniteNumber(instrument.terms?.currentBalance);
+  if (termsCurrentBalance !== null) return Math.abs(termsCurrentBalance);
+  return null;
 }
 
 function sumNullableCurrency(
@@ -373,7 +385,7 @@ export default function LoansTab({ selectedCompanyId, companyName, currentUser =
       priorMonthBalance: sumNullableCurrency(rows, (instrument) => instrument.priorMonthBalance),
       principalChange: sumNullableCurrency(rows, (instrument) => instrument.principalChange),
       currentMonthInterestPaid: sumNullableCurrency(rows, (instrument) => instrument.currentMonthInterestPaid),
-      derivedCurrentBalance: sumNullableCurrency(rows, (instrument) => instrument.derivedCurrentBalance),
+      derivedCurrentBalance: sumNullableCurrency(rows, getLoanCurrentBalance),
     });
     const locTotals = totalsFor(locRows);
     const longTermDebtTotals = totalsFor(longTermDebtRows);
@@ -577,6 +589,7 @@ export default function LoansTab({ selectedCompanyId, companyName, currentUser =
   };
   const renderLoanInstrumentRow = (instrument: LoanInstrument) => {
     const selected = instrument.instrumentKey === selectedInstrument?.instrumentKey;
+    const currentBalance = getLoanCurrentBalance(instrument);
     return (
       <tr
         key={instrument.instrumentKey}
@@ -601,9 +614,9 @@ export default function LoansTab({ selectedCompanyId, companyName, currentUser =
         <td style={{ ...tdStyle, textAlign: 'right', fontWeight: 700 }}>{formatOptionalCurrency(instrument.principalChange)}</td>
         <td style={{ ...tdStyle, textAlign: 'right' }}>{formatOptionalCurrency(instrument.currentMonthInterestPaid)}</td>
         <td style={{ ...tdStyle, textAlign: 'right' }}>
-          {instrument.derivedCurrentBalance == null
+          {currentBalance == null
             ? '-'
-            : formatCurrency(instrument.derivedCurrentBalance)}
+            : formatCurrency(currentBalance)}
         </td>
         <td style={tdStyle}>{formatDate(instrument.lastDate)}</td>
         <td style={tdStyle}>{instrument.terms?.maturityDate ? formatDate(instrument.terms.maturityDate) : '-'}</td>

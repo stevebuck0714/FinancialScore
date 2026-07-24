@@ -1394,7 +1394,7 @@ export default function OperationsTab({
 
   useEffect(() => {
     if (activeTab !== 'overview' && activeTab !== 'dashboard' && mapModuleToDataType(activeTab)) {
-      loadTabData(activeTab, { forceRefresh: true });
+      loadTabData(activeTab);
     }
   }, [activeTab, selectedCompanyId, industrySectorCategory, frequency, startDate, endDate, dailyFinancialStatementRollup]);
 
@@ -2241,15 +2241,14 @@ export default function OperationsTab({
     };
   };
 
-  const loadTabData = async (tab: string, options?: { forceRefresh?: boolean }) => {
+  const loadTabData = async (tab: string) => {
     try {
       const type = mapModuleToDataType(tab) || null;
       if (!type) {
         return;
       }
-      const forceRefresh = options?.forceRefresh === true;
-      const cached = forceRefresh ? null : getCachedOperationalData(type);
-      if (!forceRefresh && cached) {
+      const cached = getCachedOperationalData(type);
+      if (cached) {
         applyOperationalTypeData(type, cached);
         setError(null);
         setLoading(false);
@@ -2257,7 +2256,7 @@ export default function OperationsTab({
       }
       setLoading(true);
       setError(null);
-      const data = await fetchOperationalTypeWithCache(type, { preferCache: true, forceRefresh });
+      const data = await fetchOperationalTypeWithCache(type, { preferCache: true });
       applyOperationalTypeData(type, data);
     } catch (err: any) {
       setError(err.message);
@@ -3423,23 +3422,85 @@ export default function OperationsTab({
     }, {});
 
     const trendData = Object.values(periodTrend);
-    const customerTrendEndDate = selectedEndForCustomer || parseDateValue(endDate) || new Date();
-    const customerTrendStartDate = new Date(Date.UTC(
-      customerTrendEndDate.getUTCFullYear(),
-      customerTrendEndDate.getUTCMonth() - 35,
-      1,
-    ));
-    const customerTrendRecords = records
+    const toCustomerTrendDay = (value: string | Date | null | undefined): Date | null => {
+      const parsed = value instanceof Date ? value : parseDateValue(value);
+      if (!parsed) return null;
+      return new Date(Date.UTC(parsed.getUTCFullYear(), parsed.getUTCMonth(), parsed.getUTCDate()));
+    };
+    const toCustomerTrendIsoDay = (date: Date) =>
+      `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}-${String(date.getUTCDate()).padStart(2, '0')}`;
+    const customerTrendWeekStart = (date: Date): Date => {
+      const day = date.getUTCDay();
+      const offset = day === 0 ? -6 : 1 - day;
+      return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate() + offset));
+    };
+    const customerTrendPeriodAnchor = (date: Date): Date => {
+      if (frequency === 'monthly') return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), 1));
+      if (frequency === 'weekly') return customerTrendWeekStart(date);
+      return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
+    };
+    const customerTrendPeriodKey = (date: Date): string => {
+      const anchor = customerTrendPeriodAnchor(date);
+      if (frequency === 'monthly') return `${anchor.getUTCFullYear()}-${String(anchor.getUTCMonth() + 1).padStart(2, '0')}`;
+      return toCustomerTrendIsoDay(anchor);
+    };
+    const customerTrendPeriodLabel = (date: Date): string => {
+      if (frequency === 'monthly') {
+        return date.toLocaleDateString('en-US', { month: 'short', year: '2-digit', timeZone: 'UTC' });
+      }
+      if (frequency === 'weekly') {
+        return `Week of ${date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' })}`;
+      }
+      return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' });
+    };
+    const customerTrendRecordDates = recordsInSelectedDateRange
+      .map((record: any) => toCustomerTrendDay(record?.snapshotDate))
+      .filter((date): date is Date => Boolean(date))
+      .sort((a, b) => a.getTime() - b.getTime());
+    const customerTrendStartDate = toCustomerTrendDay(startDate) || customerTrendRecordDates[0] || null;
+    const customerTrendEndDate = toCustomerTrendDay(endDate) || customerTrendRecordDates[customerTrendRecordDates.length - 1] || null;
+    const customerTrendPeriods: Array<{ monthKey: string; monthLabel: string }> = [];
+    if (customerTrendStartDate && customerTrendEndDate && customerTrendStartDate <= customerTrendEndDate) {
+      if (frequency === 'monthly') {
+        for (
+          let cursor = new Date(Date.UTC(customerTrendStartDate.getUTCFullYear(), customerTrendStartDate.getUTCMonth(), 1));
+          cursor <= customerTrendEndDate;
+          cursor = new Date(Date.UTC(cursor.getUTCFullYear(), cursor.getUTCMonth() + 1, 1))
+        ) {
+          const anchor = customerTrendPeriodAnchor(cursor);
+          customerTrendPeriods.push({ monthKey: customerTrendPeriodKey(anchor), monthLabel: customerTrendPeriodLabel(anchor) });
+        }
+      } else if (frequency === 'weekly') {
+        for (
+          let cursor = customerTrendPeriodAnchor(customerTrendStartDate);
+          cursor <= customerTrendEndDate;
+          cursor = new Date(Date.UTC(cursor.getUTCFullYear(), cursor.getUTCMonth(), cursor.getUTCDate() + 7))
+        ) {
+          const anchor = customerTrendPeriodAnchor(cursor);
+          customerTrendPeriods.push({ monthKey: customerTrendPeriodKey(anchor), monthLabel: customerTrendPeriodLabel(anchor) });
+        }
+      } else {
+        for (
+          let cursor = customerTrendStartDate;
+          cursor <= customerTrendEndDate;
+          cursor = new Date(Date.UTC(cursor.getUTCFullYear(), cursor.getUTCMonth(), cursor.getUTCDate() + 1))
+        ) {
+          const anchor = customerTrendPeriodAnchor(cursor);
+          customerTrendPeriods.push({ monthKey: customerTrendPeriodKey(anchor), monthLabel: customerTrendPeriodLabel(anchor) });
+        }
+      }
+    }
+    const customerTrendRecords = recordsInSelectedDateRange
       .map((record: any) => {
-        const parsed = parseDateValue(record?.snapshotDate);
-        if (!parsed) return null;
-        const monthStart = new Date(Date.UTC(parsed.getUTCFullYear(), parsed.getUTCMonth(), 1));
-        if (monthStart < customerTrendStartDate || monthStart > customerTrendEndDate) return null;
+        const snapshotDay = toCustomerTrendDay(record?.snapshotDate);
+        if (!snapshotDay || !customerTrendStartDate || !customerTrendEndDate) return null;
+        if (snapshotDay < customerTrendStartDate || snapshotDay > customerTrendEndDate) return null;
+        const periodAnchor = customerTrendPeriodAnchor(snapshotDay);
         const customerName = String(record?.customerName || 'Unknown Customer').trim() || 'Unknown Customer';
         return {
           customerName,
-          monthKey: `${monthStart.getUTCFullYear()}-${String(monthStart.getUTCMonth() + 1).padStart(2, '0')}`,
-          monthLabel: monthStart.toLocaleDateString('en-US', { month: 'short', year: '2-digit', timeZone: 'UTC' }),
+          monthKey: customerTrendPeriodKey(periodAnchor),
+          monthLabel: customerTrendPeriodLabel(periodAnchor),
           revenue: Number(record?.revenue || 0),
         };
       })
@@ -3457,23 +3518,15 @@ export default function OperationsTab({
         key: `customer_${index}`,
       }));
     const customerTrendKeyByName = new Map(topTrendCustomers.map((row) => [row.customerName, row.key]));
-    const customerTrendMonths = Array.from({ length: 36 }, (_, index) => {
-      const date = new Date(Date.UTC(customerTrendStartDate.getUTCFullYear(), customerTrendStartDate.getUTCMonth() + index, 1));
-      const monthKey = `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}`;
-      return {
-        monthKey,
-        monthLabel: date.toLocaleDateString('en-US', { month: 'short', year: '2-digit', timeZone: 'UTC' }),
-      };
-    });
     const customerTrendRowsByMonth = new Map<string, any>(
-      customerTrendMonths.map((month) => [
-        month.monthKey,
+      customerTrendPeriods.map((period) => [
+        period.monthKey,
         topTrendCustomers.reduce(
           (acc: any, customer) => ({
             ...acc,
             [customer.key]: 0,
           }),
-          { monthKey: month.monthKey, monthLabel: month.monthLabel }
+          { monthKey: period.monthKey, monthLabel: period.monthLabel }
         ),
       ])
     );
@@ -3485,6 +3538,12 @@ export default function OperationsTab({
       monthRow[customerKey] = Number(monthRow[customerKey] || 0) + Number(row.revenue || 0);
     }
     const customerTrendRows = Array.from(customerTrendRowsByMonth.values());
+    const customerTrendXAxisInterval =
+      frequency === 'daily'
+        ? Math.max(Math.ceil(customerTrendRows.length / 16) - 1, 0)
+        : frequency === 'weekly'
+          ? Math.max(Math.ceil(customerTrendRows.length / 20) - 1, 0)
+          : Math.max(Math.ceil(customerTrendRows.length / 24) - 1, 0);
     const customerTrendColors = ['#2563eb', '#16a34a', '#f97316', '#7c3aed', '#dc2626', '#0f766e', '#0891b2', '#9333ea', '#ca8a04', '#475569'];
     const visibleTopTrendCustomers = topTrendCustomers.filter((customer) => !hiddenCustomerTrendSeries[customer.customerName]);
     const customerCoverageDates = recordsInSelectedDateRange
@@ -4362,13 +4421,13 @@ export default function OperationsTab({
         sections: [
           {
             body:
-              'Shows monthly sales for the ten largest customers over the trailing 36 months ending on the current Ops To date.',
+              'Shows sales for the ten largest customers over the selected date range, grouped by the current frequency control.',
           },
           {
             heading: 'How to read it',
             body: [
-              'Each line is one customer, ranked by total sales across the 36-month window.',
-              'The y-axis is monthly sales dollars.',
+              'Each line is one customer, ranked by total sales across the selected trend window.',
+              'The y-axis is sales dollars for each daily, weekly, or monthly period.',
               'Use the chart to spot seasonality, customer growth, and customer revenue drop-offs that are hidden in a single-period top-customer table.',
             ],
           },
@@ -4602,6 +4661,133 @@ export default function OperationsTab({
       setCustomerMetricModalNames(names);
       setCustomerMetricModalOpen(true);
     };
+    const renderCategorySalesHistoryPanel = () =>
+      isSectionEnabled('customersPlatoSalesHistoryChart') ? (
+        <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '16px', marginBottom: '16px' }}>
+          <h3 style={{ margin: '0 0 12px 0', fontSize: '16px', color: '#1e293b' }}>Category Sales by Month</h3>
+          <ResponsiveContainer width="100%" height={300}>
+            {renderCategorySalesHistoryChart(salesReportPayload.sales)}
+          </ResponsiveContainer>
+        </div>
+      ) : null;
+    const renderTopCustomerTrendPanel = () =>
+      isSectionEnabled('customersTop10MonthlyTrend') ? (
+        <div style={{ background: 'white', padding: '16px 20px 20px', borderRadius: '12px', border: '1px solid #e2e8f0', marginBottom: '24px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px', gap: '12px', flexWrap: 'wrap' }}>
+            <div style={{ display: 'flex', alignItems: 'center' }}>
+              <h3 style={{ fontSize: '18px', fontWeight: '700', color: '#1e293b', margin: 0 }}>
+                {retailizeCustomerText('Top 10 Customers Monthly Trend')}
+              </h3>
+              {renderCustomerChartInfoLink('customersTop10MonthlyTrend')}
+            </div>
+            <div style={{ fontSize: '11px', color: '#64748b' }}>
+              {frequency === 'daily' ? 'Daily' : frequency === 'weekly' ? 'Weekly' : 'Monthly'} trend for {selectedDateRangeLabel}
+            </div>
+          </div>
+          {topTrendCustomers.length === 0 ? (
+            <div style={{ fontSize: '12px', color: '#64748b' }}>
+              No customer sales rows found for the selected trend window.
+            </div>
+          ) : (
+            <>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px', flexWrap: 'wrap', marginBottom: '12px' }}>
+                <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                  {topTrendCustomers.map((customer, index) => {
+                    const isVisible = !hiddenCustomerTrendSeries[customer.customerName];
+                    const color = customerTrendColors[index % customerTrendColors.length];
+                    return (
+                      <button
+                        key={customer.key}
+                        type="button"
+                        onClick={() => toggleCustomerTrendSeries(customer.customerName)}
+                        style={{
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '6px',
+                          border: `1px solid ${isVisible ? color : '#cbd5e1'}`,
+                          borderRadius: '999px',
+                          background: isVisible ? '#f8fafc' : '#f1f5f9',
+                          color: isVisible ? '#0f172a' : '#64748b',
+                          padding: '5px 9px',
+                          fontSize: '11px',
+                          fontWeight: 700,
+                          cursor: 'pointer',
+                        }}
+                        title={isVisible ? `Hide ${customer.customerName}` : `Show ${customer.customerName}`}
+                      >
+                        <span style={{ width: '8px', height: '8px', borderRadius: '999px', background: isVisible ? color : '#94a3b8', display: 'inline-block' }} />
+                        <span>{customer.customerName}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+                <div style={{ display: 'flex', gap: '6px' }}>
+                  <button
+                    type="button"
+                    onClick={() => setHiddenCustomerTrendSeries({})}
+                    style={{ border: '1px solid #cbd5e1', borderRadius: '8px', background: 'white', color: '#2563eb', padding: '5px 8px', fontSize: '11px', fontWeight: 700, cursor: 'pointer' }}
+                  >
+                    Show all
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setHiddenCustomerTrendSeries(
+                        topTrendCustomers.reduce((acc: Record<string, boolean>, customer) => {
+                          acc[customer.customerName] = true;
+                          return acc;
+                        }, {})
+                      );
+                    }}
+                    style={{ border: '1px solid #cbd5e1', borderRadius: '8px', background: 'white', color: '#475569', padding: '5px 8px', fontSize: '11px', fontWeight: 700, cursor: 'pointer' }}
+                  >
+                    Hide all
+                  </button>
+                </div>
+              </div>
+              {visibleTopTrendCustomers.length === 0 ? (
+                <div style={{ fontSize: '12px', color: '#64748b', padding: '24px 0' }}>
+                  All customers are hidden. Select at least one customer to display the line chart.
+                </div>
+              ) : (
+                <ResponsiveContainer width="100%" height={360}>
+                  <LineChart data={customerTrendRows}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                    <XAxis dataKey="monthLabel" stroke="#64748b" style={{ fontSize: '11px' }} interval={customerTrendXAxisInterval} />
+                    <YAxis stroke="#64748b" style={{ fontSize: '12px' }} tickFormatter={(value) => `$${(Number(value || 0) / 1000).toFixed(0)}k`} />
+                    <Tooltip
+                      formatter={(value: any, name: any) => [
+                        formatCurrency(Number(value || 0)),
+                        topTrendCustomers.find((customer) => customer.key === String(name))?.customerName || String(name),
+                      ]}
+                      labelFormatter={(label) => String(label)}
+                    />
+                    <Legend
+                      formatter={(value) => topTrendCustomers.find((customer) => customer.key === String(value))?.customerName || String(value)}
+                      wrapperStyle={{ fontSize: '11px' }}
+                    />
+                    {visibleTopTrendCustomers.map((customer) => {
+                      const customerIndex = topTrendCustomers.findIndex((row) => row.key === customer.key);
+                      return (
+                        <Line
+                          key={customer.key}
+                          type="monotone"
+                          dataKey={customer.key}
+                          name={customer.key}
+                          stroke={customerTrendColors[Math.max(customerIndex, 0) % customerTrendColors.length]}
+                          strokeWidth={2}
+                          dot={false}
+                          connectNulls
+                        />
+                      );
+                    })}
+                  </LineChart>
+                </ResponsiveContainer>
+              )}
+            </>
+          )}
+        </div>
+      ) : null;
 
     return (
       <div style={{ padding: '8px 32px 32px' }}>
@@ -4648,14 +4834,7 @@ export default function OperationsTab({
               </div>
             )}
 
-            {isSectionEnabled('customersPlatoSalesHistoryChart') && (
-              <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '16px', marginBottom: '16px' }}>
-                <h3 style={{ margin: '0 0 12px 0', fontSize: '16px', color: '#1e293b' }}>Category Sales by Month</h3>
-                <ResponsiveContainer width="100%" height={300}>
-                  {renderCategorySalesHistoryChart(salesReportPayload.sales)}
-                </ResponsiveContainer>
-              </div>
-            )}
+            {renderTopCustomerTrendPanel()}
 
             {isSectionEnabled('customersGrossMarginHistoryChart') && (
               <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '16px', marginBottom: '16px' }}>
@@ -5054,123 +5233,7 @@ export default function OperationsTab({
                   </div>
                 </div>
               )}
-              {isSectionEnabled('customersTop10MonthlyTrend') && (
-              <div style={{ background: 'white', padding: '16px 20px 20px', borderRadius: '12px', border: '1px solid #e2e8f0', marginBottom: '24px' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px', gap: '12px', flexWrap: 'wrap' }}>
-                  <div style={{ display: 'flex', alignItems: 'center' }}>
-                    <h3 style={{ fontSize: '18px', fontWeight: '700', color: '#1e293b', margin: 0 }}>
-                      {retailizeCustomerText('Top 10 Customers Monthly Trend')}
-                    </h3>
-                    {renderCustomerChartInfoLink('customersTop10MonthlyTrend')}
-                  </div>
-                  <div style={{ fontSize: '11px', color: '#64748b' }}>
-                    Trailing 36 months ending {formatDateInputLabel(endDate)}
-                  </div>
-                </div>
-                {topTrendCustomers.length === 0 ? (
-                  <div style={{ fontSize: '12px', color: '#64748b' }}>
-                    No customer sales rows found for the trailing 36-month trend window.
-                  </div>
-                ) : (
-                  <>
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px', flexWrap: 'wrap', marginBottom: '12px' }}>
-                    <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-                      {topTrendCustomers.map((customer, index) => {
-                        const isVisible = !hiddenCustomerTrendSeries[customer.customerName];
-                        const color = customerTrendColors[index % customerTrendColors.length];
-                        return (
-                          <button
-                            key={customer.key}
-                            type="button"
-                            onClick={() => toggleCustomerTrendSeries(customer.customerName)}
-                            style={{
-                              display: 'inline-flex',
-                              alignItems: 'center',
-                              gap: '6px',
-                              border: `1px solid ${isVisible ? color : '#cbd5e1'}`,
-                              borderRadius: '999px',
-                              background: isVisible ? '#f8fafc' : '#f1f5f9',
-                              color: isVisible ? '#0f172a' : '#64748b',
-                              padding: '5px 9px',
-                              fontSize: '11px',
-                              fontWeight: 700,
-                              cursor: 'pointer',
-                            }}
-                            title={isVisible ? `Hide ${customer.customerName}` : `Show ${customer.customerName}`}
-                          >
-                            <span style={{ width: '8px', height: '8px', borderRadius: '999px', background: isVisible ? color : '#94a3b8', display: 'inline-block' }} />
-                            <span>{customer.customerName}</span>
-                          </button>
-                        );
-                      })}
-                    </div>
-                    <div style={{ display: 'flex', gap: '6px' }}>
-                      <button
-                        type="button"
-                        onClick={() => setHiddenCustomerTrendSeries({})}
-                        style={{ border: '1px solid #cbd5e1', borderRadius: '8px', background: 'white', color: '#2563eb', padding: '5px 8px', fontSize: '11px', fontWeight: 700, cursor: 'pointer' }}
-                      >
-                        Show all
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setHiddenCustomerTrendSeries(
-                            topTrendCustomers.reduce((acc: Record<string, boolean>, customer) => {
-                              acc[customer.customerName] = true;
-                              return acc;
-                            }, {})
-                          );
-                        }}
-                        style={{ border: '1px solid #cbd5e1', borderRadius: '8px', background: 'white', color: '#475569', padding: '5px 8px', fontSize: '11px', fontWeight: 700, cursor: 'pointer' }}
-                      >
-                        Hide all
-                      </button>
-                    </div>
-                  </div>
-                  {visibleTopTrendCustomers.length === 0 ? (
-                    <div style={{ fontSize: '12px', color: '#64748b', padding: '24px 0' }}>
-                      All customers are hidden. Select at least one customer to display the line chart.
-                    </div>
-                  ) : (
-                  <ResponsiveContainer width="100%" height={360}>
-                    <LineChart data={customerTrendRows}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-                      <XAxis dataKey="monthLabel" stroke="#64748b" style={{ fontSize: '11px' }} interval={2} />
-                      <YAxis stroke="#64748b" style={{ fontSize: '12px' }} tickFormatter={(value) => `$${(Number(value || 0) / 1000).toFixed(0)}k`} />
-                      <Tooltip
-                        formatter={(value: any, name: any) => [
-                          formatCurrency(Number(value || 0)),
-                          topTrendCustomers.find((customer) => customer.key === String(name))?.customerName || String(name),
-                        ]}
-                        labelFormatter={(label) => String(label)}
-                      />
-                      <Legend
-                        formatter={(value) => topTrendCustomers.find((customer) => customer.key === String(value))?.customerName || String(value)}
-                        wrapperStyle={{ fontSize: '11px' }}
-                      />
-                      {visibleTopTrendCustomers.map((customer) => {
-                        const customerIndex = topTrendCustomers.findIndex((row) => row.key === customer.key);
-                        return (
-                        <Line
-                          key={customer.key}
-                          type="monotone"
-                          dataKey={customer.key}
-                          name={customer.key}
-                          stroke={customerTrendColors[Math.max(customerIndex, 0) % customerTrendColors.length]}
-                          strokeWidth={2}
-                          dot={false}
-                          connectNulls
-                        />
-                        );
-                      })}
-                    </LineChart>
-                  </ResponsiveContainer>
-                  )}
-                  </>
-                )}
-              </div>
-              )}
+              {renderCategorySalesHistoryPanel()}
               {!isManufacturingSector && isSectionEnabled('customersWipByCustomer') && (
               <div style={{ background: 'white', padding: '16px 20px 20px', borderRadius: '12px', border: '1px solid #e2e8f0', marginBottom: '24px' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px', gap: '12px', flexWrap: 'wrap' }}>

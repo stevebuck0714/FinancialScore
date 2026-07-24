@@ -6,7 +6,7 @@ import { requireAuth, validateCompanyAccess } from '@/lib/tenant-security';
 export const dynamic = 'force-dynamic';
 export const maxDuration = 120;
 
-const LOAN_ACTIVITY_CACHE_VERSION = 22;
+const LOAN_ACTIVITY_CACHE_VERSION = 24;
 const STALE_LOAN_ACTIVITY_MONTHS = 13;
 
 type LoanTermInput = {
@@ -1224,12 +1224,27 @@ async function loadLoanActivity(companyId: string) {
       ? Number(rawInforActivity.activityTotal || 0)
       : Number(row.activityTotal || 0);
     const accountBalanceSnapshot = accountBalanceSnapshots.get(accountId) || null;
-    const derivedCurrentBalance = accountBalanceSnapshot?.currentBalance == null
+    const snapshotCurrentBalance = accountBalanceSnapshot?.currentBalance == null
       ? null
       : Math.abs(Number(accountBalanceSnapshot.currentBalance || 0));
-    let derivedCurrentBalanceSource = null as string | null;
-    if (accountBalanceSnapshot?.currentSource) derivedCurrentBalanceSource = accountBalanceSnapshot.currentSource;
-    const derivedCurrentBalanceAsOf = accountBalanceSnapshot?.currentAsOfDate || null as Date | null;
+    let derivedCurrentBalance = snapshotCurrentBalance;
+    let derivedCurrentBalanceSource = accountBalanceSnapshot?.currentSource || null as string | null;
+    let derivedCurrentBalanceAsOf = accountBalanceSnapshot?.currentAsOfDate || null as Date | null;
+    if (derivedCurrentBalance === null) {
+      if (targetField === 'loc' && activeLocAccountIds.has(accountId) && latestLocBalance > 0) {
+        derivedCurrentBalance = latestLocBalance;
+        derivedCurrentBalanceSource = `${debtSnapshotSource} LOC`;
+        derivedCurrentBalanceAsOf = latestSnapshotDate;
+      } else if (targetField === 'ltd' && activeLtdAccountIds.size === 1 && activeLtdAccountIds.has(accountId) && latestLtdBalance > 0) {
+        derivedCurrentBalance = latestLtdBalance;
+        derivedCurrentBalanceSource = `${debtSnapshotSource} LTD`;
+        derivedCurrentBalanceAsOf = latestSnapshotDate;
+      } else if ((targetField !== 'loc' || latestLocBalance <= 0) && Math.abs(principalActivityTotal) > 0.005) {
+        derivedCurrentBalance = Math.abs(principalActivityTotal);
+        derivedCurrentBalanceSource = `${useRawActivity ? 'ApiSyncLog:INFOR_M3' : 'GLTransactionFact'} activity total`;
+        derivedCurrentBalanceAsOf = maxValidDate([rawInforActivity?.lastDate, row.lastDate]);
+      }
+    }
     let instrumentStatus: 'active' | 'inactive' | 'unknown' = 'unknown';
     let statusReason: string | null = null;
     if (derivedCurrentBalance !== null && Math.abs(derivedCurrentBalance) > 0.005) {

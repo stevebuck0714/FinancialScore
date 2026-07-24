@@ -531,6 +531,12 @@ function dateKeyUtc(date: Date): string {
   return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}-${String(date.getUTCDate()).padStart(2, '0')}`;
 }
 
+function looksLikeCustomerCode(value: unknown): boolean {
+  const text = String(value || '').trim();
+  if (!text || /\s/.test(text)) return false;
+  return /^[A-Z0-9._/-]+$/i.test(text) && /\d/.test(text);
+}
+
 function parseIsoDayKey(dayKey: string): Date {
   const [yearRaw, monthRaw, dayRaw] = dayKey.split('-');
   const year = Number(yearRaw);
@@ -3009,6 +3015,7 @@ export async function GET(request: NextRequest) {
               cacheType === 'customers' ? CUSTOMER_CONCENTRATION_CACHE_VERSION : null,
               cacheType === 'customers' ? CUSTOMER_REVENUE_SOURCE_VERSION : null,
               cacheType === 'customers' ? CUSTOMER_WIP_SOURCE_VERSION : null,
+              cacheType === 'customers' ? 'customers-display-names-items-v1' : null,
               cacheType === 'hiring' ? HIRING_SOURCE_VERSION : null,
               isWholesaleProductsReportRequest ? CUSTOMER_WIP_SOURCE_VERSION : null,
               isWholesaleProductsReportRequest ? `wholesale-report-mode:${wholesaleProductsReportMode}` : null,
@@ -3298,6 +3305,22 @@ export async function GET(request: NextRequest) {
               }
             }
           }
+          const customerNameById = new Map<string, string>();
+          for (const row of salesData as any[]) {
+            const customerId = String(row?.customerId || '').trim();
+            const customerName = String(row?.customerName || '').trim();
+            if (customerId && customerName && !looksLikeCustomerCode(customerName)) {
+              customerNameById.set(customerId.toLowerCase(), customerName);
+            }
+          }
+          salesData = salesData.map((row: any) => {
+            const customerId = String(row?.customerId || '').trim();
+            const customerName = String(row?.customerName || '').trim();
+            const mappedName = customerId ? customerNameById.get(customerId.toLowerCase()) : '';
+            return mappedName && (!customerName || looksLikeCustomerCode(customerName))
+              ? { ...row, customerName: mappedName }
+              : row;
+          });
           const concentrationCache = {
             namespace: 'customer-concentration-exposure',
             cacheKey: hashCacheParts([
@@ -4012,16 +4035,17 @@ export async function GET(request: NextRequest) {
             const uploadedProduct = bakersProductMatch(row, categoryLabel);
             const uploadedProductName = uploadedProduct?.productName || null;
             const displayCategoryLabel = uploadedProductName || categoryLabel || displayProductCode(String(row?.sku || row?.itemId || 'Unknown Product'));
-            const categoryBucket = categoryMap.get(displayCategoryLabel) || { label: displayCategoryLabel, itemName: null, values: {}, total: 0 };
+            const resolvedItemName = uploadedProductName || categoryLabel || String(row?.itemName || row?.productName || '').trim() || null;
+            const categoryBucket = categoryMap.get(displayCategoryLabel) || { label: displayCategoryLabel, itemName: resolvedItemName, values: {}, total: 0 };
             categoryBucket.values[monthKey] = Number(categoryBucket.values[monthKey] || 0) + revenue;
             categoryBucket.total += revenue;
+            if (!categoryBucket.itemName && resolvedItemName) categoryBucket.itemName = resolvedItemName;
             categoryMap.set(displayCategoryLabel, categoryBucket);
-            if (uploadedProductName) categoryBucket.itemName = uploadedProductName;
 
-            const volumeBucket = volumeCategoryMap.get(displayCategoryLabel) || { label: displayCategoryLabel, itemName: null, values: {}, total: 0 };
+            const volumeBucket = volumeCategoryMap.get(displayCategoryLabel) || { label: displayCategoryLabel, itemName: resolvedItemName, values: {}, total: 0 };
             volumeBucket.values[monthKey] = Number(volumeBucket.values[monthKey] || 0) + quantitySold;
             volumeBucket.total += quantitySold;
-            if (uploadedProductName) volumeBucket.itemName = uploadedProductName;
+            if (!volumeBucket.itemName && resolvedItemName) volumeBucket.itemName = resolvedItemName;
             volumeCategoryMap.set(displayCategoryLabel, volumeBucket);
 
             if (snapshot >= mtdStart && snapshot <= endDate) mtdValue += revenue;
