@@ -17,6 +17,7 @@ import {
 } from '@/lib/custom-reports/report-datasets';
 import { buildOperationalMockResponse } from '@/lib/operations/sector-mock-data';
 import { resolveCompanyIndustrySectorCategory } from '@/lib/industry-sector-resolver';
+import { loadMonthlyFromDfs } from '@/lib/performance-analytics/monthly-from-dfs';
 import {
   buildBillingCashMock,
   buildCommitmentsForecastMock,
@@ -1265,6 +1266,40 @@ async function buildDatasetDimensionChartPreview(config: any) {
   };
 }
 
+async function loadMonthlyFinancialContextRows(companyId: string) {
+  const endDate = new Date();
+  const startDate = new Date(Date.UTC(endDate.getUTCFullYear() - 3, endDate.getUTCMonth(), 1));
+  const dfsMonthly = await loadMonthlyFromDfs(companyId, startDate, endDate);
+  if (dfsMonthly?.rows?.length) {
+    return dfsMonthly.rows
+      .slice()
+      .sort((a, b) => b.monthDate.getTime() - a.monthDate.getTime())
+      .slice(0, 36);
+  }
+
+  return prisma.monthlyFinancial.findMany({
+    where: { companyId },
+    orderBy: { monthDate: 'desc' },
+    take: 36,
+    select: {
+      monthDate: true,
+      revenue: true,
+      cogsTotal: true,
+      expense: true,
+      cash: true,
+      ar: true,
+      ap: true,
+      inventory: true,
+      loc: true,
+      totalAssets: true,
+      totalLiab: true,
+      totalEquity: true,
+      nonOperatingIncome: true,
+      nonOperatingExpense: true,
+    },
+  });
+}
+
 export async function POST(request: NextRequest) {
   try {
     await requireAuth();
@@ -1324,27 +1359,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const rows = await prisma.monthlyFinancial.findMany({
-      where: { companyId },
-      orderBy: { monthDate: 'desc' },
-      take: 36,
-      select: {
-        monthDate: true,
-        revenue: true,
-        cogsTotal: true,
-        expense: true,
-        cash: true,
-        ar: true,
-        ap: true,
-        inventory: true,
-        loc: true,
-        totalAssets: true,
-        totalLiab: true,
-        totalEquity: true,
-        nonOperatingIncome: true,
-        nonOperatingExpense: true,
-      },
-    });
+    const rows = await loadMonthlyFinancialContextRows(companyId);
 
     const previewRowsByMonth = new Map<string, { month: string; monthDate: string; values: Record<string, number> }>();
     const financialFields = fields.filter((field) => !field.startsWith('op.'));
