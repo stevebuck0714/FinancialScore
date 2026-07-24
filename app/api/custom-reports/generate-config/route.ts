@@ -309,6 +309,51 @@ function buildDatasetReportConfig(prompt: string, requestedType: ReportChartType
   };
 }
 
+function buildFinancialTrendReportConfig(prompt: string, requestedType: ReportChartType, fieldCatalog: ReportFieldCatalogItem[]) {
+  const lowerPrompt = normalizePromptText(prompt).toLowerCase();
+  const hasField = (field: string) => fieldCatalog.some((item) => item.field === field);
+  const series: Array<{ field: string; label: string; chartType: ReportChartType; axis: 'left' | 'right'; aggregation: string; format: string }> = [];
+  const addSeries = (field: string, label: string, format = 'currency') => {
+    if (!hasField(field) || series.some((item) => item.field === field)) return;
+    series.push({
+      field,
+      label,
+      chartType: 'line',
+      axis: 'left',
+      aggregation: 'sum',
+      format,
+    });
+  };
+
+  if (/\b(revenue|sales)\b/.test(lowerPrompt)) addSeries('revenue', 'Total Revenue');
+  if (/\b(cogs|cost of goods sold)\b/.test(lowerPrompt)) addSeries('cogsTotal', 'Total COGS');
+  if (/\bebitda\b/.test(lowerPrompt)) addSeries('ebitda', 'EBITDA');
+  if (/\bgross profit\b/.test(lowerPrompt)) addSeries('grossProfit', 'Gross Profit');
+  if (/\b(expense|expenses|opex|operating expense)\b/.test(lowerPrompt)) addSeries('expense', 'Operating Expense');
+  if (series.length === 0 || !/\b(month|monthly|year|years|trend|line|graph|chart)\b/.test(lowerPrompt)) return null;
+
+  const chartType: ReportChartType = series.length > 1 && (requestedType === 'line' || requestedType === 'multi_line')
+    ? 'multi_line'
+    : requestedType;
+  const yearsMatch = lowerPrompt.match(/\b(\d{1,2})\s+years?\b/);
+  const years = yearsMatch ? Math.min(Math.max(Number(yearsMatch[1]), 1), 10) : 3;
+
+  return validateReportConfig({
+    title: series.length > 1
+      ? `${series.map((item) => item.label.replace(/^Total /, '')).join(', ')} Over ${years} Years`
+      : `${series[0].label} Over ${years} Years`,
+    description: `Monthly ${series.map((item) => item.label.toLowerCase()).join(', ')} for the last ${years} years.`,
+    chartType,
+    dataSource: 'monthlyFinancial',
+    timeGrain: 'month',
+    xAxis: { field: 'monthDate', label: 'Month' },
+    yAxes: { left: 'Dollars', right: 'Percent' },
+    series,
+    filters: [],
+    notes: [`Generated deterministically from monthly financial data for the last ${years * 12} months.`],
+  }, chartType, fieldCatalog, prompt);
+}
+
 function titleFromPrompt(prompt: string, fallback: string): string {
   const cleaned = String(prompt || '')
     .trim()
@@ -653,6 +698,19 @@ export async function POST(request: NextRequest) {
     const sectorCategory = resolveCompanyIndustrySectorCategory(company);
     const fieldCatalog = getReportDataCatalog(sectorCategory);
     const datasetCatalog = getReportDatasetCatalog();
+    const deterministicFinancialConfig = buildFinancialTrendReportConfig(prompt, requestedType, fieldCatalog);
+    if (deterministicFinancialConfig) {
+      return NextResponse.json({
+        reportConfig: deterministicFinancialConfig,
+        fieldCatalog,
+        sourceRowCount: 0,
+        generatedBy: {
+          model: 'deterministic-financial-config',
+          api: 'fallback',
+          reason: 'Prompt matched a supported monthly financial trend report.',
+        },
+      });
+    }
 
     const recentRows = await prisma.monthlyFinancial.findMany({
       where: { companyId },

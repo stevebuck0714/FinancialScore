@@ -124,6 +124,23 @@ function withReportRequest(config: any, request: string) {
   };
 }
 
+async function readJsonResponse(response: Response, fallbackMessage: string) {
+  const text = await response.text();
+  if (!text) return {};
+  try {
+    return JSON.parse(text);
+  } catch {
+    const readableText = text
+      .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+      .replace(/<style[\s\S]*?<\/style>/gi, ' ')
+      .replace(/<[^>]+>/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .slice(0, 240);
+    throw new Error(readableText || fallbackMessage);
+  }
+}
+
 function getSeriesValue(row: any, field: string) {
   return Number(row?.values?.[field] ?? 0);
 }
@@ -395,7 +412,7 @@ export default function CustomReportsView({ selectedCompanyId }: CustomReportsVi
       const response = await fetch(`/api/custom-reports?companyId=${encodeURIComponent(selectedCompanyId)}`, {
         cache: 'no-store',
       });
-      const data = await response.json();
+      const data = await readJsonResponse(response, 'Failed to load saved reports');
       if (!response.ok) {
         throw new Error(data?.error || 'Failed to load saved reports');
       }
@@ -432,7 +449,7 @@ export default function CustomReportsView({ selectedCompanyId }: CustomReportsVi
           reportConfig,
         }),
       });
-      const data = await response.json();
+      const data = await readJsonResponse(response, 'Failed to build report preview');
       if (!response.ok) {
         throw new Error(data?.error || 'Failed to build report preview');
       }
@@ -463,7 +480,7 @@ export default function CustomReportsView({ selectedCompanyId }: CustomReportsVi
           prompt: trimmedPrompt,
         }),
       });
-      const data = await response.json();
+      const data = await readJsonResponse(response, 'Failed to generate report config');
       if (!response.ok) {
         throw new Error(data?.error || 'Failed to generate report config');
       }
