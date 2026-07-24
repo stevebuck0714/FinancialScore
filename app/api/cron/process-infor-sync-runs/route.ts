@@ -13,6 +13,9 @@ export const maxDuration = 300;
 
 const MAX_RUNS_PER_TICK = 2;
 const MAX_RETRIES_PER_RUN = 6;
+const PRODUCTS_REPORT_START_DATE = '2024-01-01';
+const WHOLESALE_PRODUCTS_REPORT_START_DATE = '2023-01-01';
+type WholesaleProductsReportMode = 'margin' | 'raw' | 'vendor';
 
 function envTrue(name: string): boolean {
   const value = String(process.env[name] || '').trim().toLowerCase();
@@ -23,6 +26,195 @@ function resolveRawTransformDaysPerTick(): number {
   const raw = Number(process.env.INFOR_RAW_TRANSFORM_DAYS_PER_TICK || 1);
   if (!Number.isFinite(raw) || raw <= 0) return 1;
   return Math.min(50, Math.max(1, Math.floor(raw)));
+}
+
+function yesterdayIsoUtc(): string {
+  const now = new Date();
+  const yesterday = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - 1));
+  return yesterday.toISOString().slice(0, 10);
+}
+
+function defaultProductsStartIsoUtc(): string {
+  const now = new Date();
+  const start = new Date(Date.UTC(now.getUTCFullYear() - 3, now.getUTCMonth(), now.getUTCDate() - 1));
+  const startDate = start.toISOString().slice(0, 10);
+  return startDate < PRODUCTS_REPORT_START_DATE ? PRODUCTS_REPORT_START_DATE : startDate;
+}
+
+async function latestDailyProductsEndIsoUtc(companyId: string): Promise<string> {
+  const fallback = yesterdayIsoUtc();
+  const latest = await prisma.productSalesSnapshot.findFirst({
+    where: { companyId, frequency: 'daily' },
+    orderBy: { snapshotDate: 'desc' },
+    select: { snapshotDate: true },
+  }).catch(() => null);
+  const snapshotDate = latest?.snapshotDate instanceof Date
+    ? latest.snapshotDate.toISOString().slice(0, 10)
+    : '';
+  return snapshotDate && snapshotDate <= fallback ? snapshotDate : fallback;
+}
+
+async function hasPendingInforTransformsForCompany(companyId: string): Promise<boolean> {
+  const rows = await prisma.$queryRaw<Array<{ id: string }>>`
+    SELECT rc."id"
+    FROM "InforRawCompleteness" rc
+    INNER JOIN "InforSyncRun" sr
+      ON sr.id = rc."syncRunId"
+      AND sr.status IN ('done', 'failed', 'cancelled')
+    WHERE rc.platform = 'INFOR_M3'
+      AND rc."companyId" = ${companyId}
+      AND rc."isComplete" = false
+      AND COALESCE(rc."statusMessage", '') NOT LIKE 'raw_missing:%'
+    LIMIT 1
+  `;
+  return rows.length > 0;
+}
+
+async function fetchProductsCacheWarmup(params: {
+  origin: string;
+  cronSecret: string;
+  companyId: string;
+  startDate: string;
+  endDate: string;
+  limit: string;
+  sectorCategory?: string | null;
+  refreshWholesaleProducts?: boolean;
+  reportMode?: WholesaleProductsReportMode;
+}): Promise<Record<string, unknown>> {
+  const url = new URL('/api/operational-data', params.origin);
+  url.searchParams.set('companyId', params.companyId);
+  url.searchParams.set('type', 'products');
+  url.searchParams.set('frequency', 'daily');
+  url.searchParams.set('startDate', params.startDate);
+  url.searchParams.set('endDate', params.endDate);
+  url.searchParams.set('limit', params.limit);
+  url.searchParams.set('cacheWarmup', '1');
+  if (params.sectorCategory) url.searchParams.set('sectorCategory', params.sectorCategory);
+  if (params.refreshWholesaleProducts) url.searchParams.set('refreshWholesaleProducts', '1');
+  if (params.reportMode) url.searchParams.set('reportMode', params.reportMode);
+
+  const response = await fetch(url, {
+    headers: { authorization: `Bearer ${params.cronSecret}` },
+    cache: 'no-store',
+  });
+  let payload: any = null;
+  try {
+    payload = await response.json();
+  } catch {
+    payload = null;
+  }
+  if (!response.ok) {
+    return {
+      ok: false,
+      status: response.status,
+      error: String(payload?.error || payload?.details || response.statusText || 'Products cache warmup failed').slice(0, 500),
+    };
+  }
+  return {
+    ok: true,
+    status: response.status,
+    records: Array.isArray(payload?.records) ? payload.records.length : null,
+    wholesaleOrderLines: Array.isArray(payload?.summary?.wholesaleOrderLines) ? payload.summary.wholesaleOrderLines.length : null,
+    wholesaleVendorPricingRows: Array.isArray(payload?.summary?.wholesaleVendorPricingRows) ? payload.summary.wholesaleVendorPricingRows.length : null,
+    wholesaleReportMode: payload?.summary?.wholesaleReportMode || params.reportMode || null,
+  };
+}
+
+async function warmProductCachesAfterCompletedSnapshots(params: {
+  origin: string;
+  cronSecret: string;
+  companyId: string;
+}): Promise<Record<string, unknown>> {
+  const hasPendingTransforms = await hasPendingInforTransformsForCompany(params.companyId);
+  if (hasPendingTransforms) {
+    return {
+      companyId: params.companyId,
+      ok: true,
+      skipped: true,
+      reason: 'pending_transforms_remaining',
+    };
+  }
+
+  const company = await prisma.company.findUnique({
+    where: { id: params.companyId },
+    select: { industrySectorCategory: true },
+  });
+  const sectorCategory = String(company?.industrySectorCategory || '').trim() || null;
+  const endDate = await latestDailyProductsEndIsoUtc(params.companyId);
+  const performanceProducts = await fetchProductsCacheWarmup({
+    origin: params.origin,
+    cronSecret: params.cronSecret,
+    companyId: params.companyId,
+    startDate: defaultProductsStartIsoUtc(),
+    endDate,
+    limit: '500',
+    sectorCategory,
+  });
+  const wholesaleReport = sectorCategory === '42'
+    ? Object.fromEntries(await Promise.all((['margin', 'raw', 'vendor'] as const).map(async (reportMode) => [
+        reportMode,
+        await fetchProductsCacheWarmup({
+          origin: params.origin,
+          cronSecret: params.cronSecret,
+          companyId: params.companyId,
+          startDate: WHOLESALE_PRODUCTS_REPORT_START_DATE,
+          endDate,
+          limit: '5000',
+          sectorCategory,
+          refreshWholesaleProducts: true,
+          reportMode,
+        }),
+      ])))
+    : {
+        ok: true,
+        skipped: true,
+        reason: 'not_wholesale_trade',
+      };
+
+  return {
+    companyId: params.companyId,
+    ok: Boolean(
+      performanceProducts?.ok &&
+      (
+        sectorCategory === '42'
+          ? Object.values(wholesaleReport as Record<string, any>).every((result: any) => result?.ok)
+          : (wholesaleReport as any)?.ok
+      )
+    ),
+    performanceProducts,
+    wholesaleReport,
+  };
+}
+
+async function warmProductCachesForTransformResults(params: {
+  origin: string;
+  cronSecret: string;
+  rawTransforms: Awaited<ReturnType<typeof processPendingInforRawTransforms>>;
+}): Promise<Array<Record<string, unknown>>> {
+  if (!params.cronSecret) return [];
+  const companyIds = Array.from(new Set(
+    params.rawTransforms.results
+      .filter((result) => result.ok)
+      .map((result) => String(result.companyId || '').trim())
+      .filter(Boolean)
+  ));
+  const results: Array<Record<string, unknown>> = [];
+  for (const companyId of companyIds) {
+    try {
+      results.push(await warmProductCachesAfterCompletedSnapshots({
+        origin: params.origin,
+        cronSecret: params.cronSecret,
+        companyId,
+      }));
+    } catch (error) {
+      results.push({
+        companyId,
+        ok: false,
+        error: error instanceof Error ? error.message.slice(0, 500) : 'Unknown products cache warmup error',
+      });
+    }
+  }
+  return results;
 }
 
 function asRecord(value: unknown): Record<string, unknown> {
@@ -192,9 +384,15 @@ export async function GET(request: NextRequest) {
       const rawTransforms = await processPendingInforRawTransforms({
         maxDaysPerTick: resolveRawTransformDaysPerTick(),
       });
+      const productCacheWarmups = await warmProductCachesForTransformResults({
+        origin: request.nextUrl.origin,
+        cronSecret,
+        rawTransforms,
+      });
       return NextResponse.json({
         ...queued,
         rawTransforms,
+        productCacheWarmups,
       });
     }
 

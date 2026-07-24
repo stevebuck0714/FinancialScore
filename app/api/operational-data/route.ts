@@ -3015,7 +3015,7 @@ export async function GET(request: NextRequest) {
               cacheType === 'customers' ? CUSTOMER_CONCENTRATION_CACHE_VERSION : null,
               cacheType === 'customers' ? CUSTOMER_REVENUE_SOURCE_VERSION : null,
               cacheType === 'customers' ? CUSTOMER_WIP_SOURCE_VERSION : null,
-              cacheType === 'customers' ? 'customers-display-names-items-v1' : null,
+              cacheType === 'customers' ? 'customers-display-names-items-v2' : null,
               cacheType === 'hiring' ? HIRING_SOURCE_VERSION : null,
               isWholesaleProductsReportRequest ? CUSTOMER_WIP_SOURCE_VERSION : null,
               isWholesaleProductsReportRequest ? `wholesale-report-mode:${wholesaleProductsReportMode}` : null,
@@ -3950,6 +3950,11 @@ export async function GET(request: NextRequest) {
             const parts = raw.split(':').map((part) => part.trim()).filter(Boolean);
             return parts[parts.length - 1] || raw;
           };
+          const isSameProductIdentifier = (left: unknown, right: unknown): boolean => {
+            const leftKey = canonicalProductKey(left);
+            const rightKey = canonicalProductKey(right);
+            return Boolean(leftKey && rightKey && leftKey === rightKey);
+          };
           const bakersCogsProductRows = await prisma.$queryRaw<Array<{ productId: string; productName: string }>>`
             SELECT DISTINCT ON ("productId")
               "productId",
@@ -4035,7 +4040,17 @@ export async function GET(request: NextRequest) {
             const uploadedProduct = bakersProductMatch(row, categoryLabel);
             const uploadedProductName = uploadedProduct?.productName || null;
             const displayCategoryLabel = uploadedProductName || categoryLabel || displayProductCode(String(row?.sku || row?.itemId || 'Unknown Product'));
-            const resolvedItemName = uploadedProductName || categoryLabel || String(row?.itemName || row?.productName || '').trim() || null;
+            const rawItemName = String(row?.productName || row?.itemName || '').trim();
+            const resolvedItemName =
+              uploadedProductName ||
+              (
+                rawItemName &&
+                rawItemName.toLowerCase() !== 'unknown product' &&
+                rawItemName.toLowerCase() !== 'unknown item' &&
+                !isSameProductIdentifier(rawItemName, displayCategoryLabel)
+                  ? rawItemName
+                  : null
+              );
             const categoryBucket = categoryMap.get(displayCategoryLabel) || { label: displayCategoryLabel, itemName: resolvedItemName, values: {}, total: 0 };
             categoryBucket.values[monthKey] = Number(categoryBucket.values[monthKey] || 0) + revenue;
             categoryBucket.total += revenue;

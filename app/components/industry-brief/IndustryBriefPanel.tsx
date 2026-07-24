@@ -61,27 +61,6 @@ function renderScoreLabel(value: unknown): string {
   return score == null ? 'N/A' : String(score);
 }
 
-function industryScoreExplanation(brief: DailyIndustryBrief): string {
-  const scoredIndicators = (brief.healthIndicators || [])
-    .map((indicator) => ({
-      label: renderText(indicator.label) || renderText(indicator.key) || 'Indicator',
-      score: renderScore(indicator.score),
-      trend: renderText(indicator.trend),
-      note: renderText(indicator.note),
-    }))
-    .filter((indicator): indicator is { label: string; score: number; trend: string; note: string } => indicator.score != null);
-  if (scoredIndicators.length === 0) {
-    return 'The score is unavailable because the brief did not return scored health indicators.';
-  }
-  const average = Math.round(scoredIndicators.reduce((sum, indicator) => sum + indicator.score, 0) / scoredIndicators.length);
-  const driverText = scoredIndicators
-    .sort((a, b) => a.score - b.score)
-    .slice(0, 2)
-    .map((indicator) => `${indicator.label} ${indicator.score}/100${indicator.trend ? ` (${indicator.trend})` : ''}`)
-    .join('; ');
-  return `Calculated as the average of ${scoredIndicators.length} health indicators (${average}/100). Lowest current drivers: ${driverText}.`;
-}
-
 function urgencyLabel(value: GrowthOpportunity['urgency']): string {
   const labels: Record<GrowthOpportunity['urgency'], string> = {
     today: 'Today',
@@ -593,25 +572,15 @@ export default function IndustryBriefPanel({ companyId }: Props) {
           </div>
         </div>
 
-        <div style={{ marginTop: '14px', display: 'grid', gridTemplateColumns: '170px minmax(0, 1fr)', gap: '16px', alignItems: 'center' }}>
-          <div style={{ border: '1px solid #e2e8f0', borderRadius: '12px', padding: '14px', textAlign: 'center', background: '#f8fafc' }}>
-            <div style={{ fontSize: '12px', color: '#64748b', fontWeight: 800, textTransform: 'uppercase' }}>Industry Score</div>
-            <div style={{ fontSize: '38px', fontWeight: 900, color: scoreColor(renderScore(brief.overallScore)), lineHeight: 1 }}>{renderScoreLabel(brief.overallScore)}</div>
-            <div style={{ fontSize: '12px', color: '#64748b' }}>out of 100</div>
+        <div style={{ marginTop: '14px' }}>
+          <div style={{ fontSize: '17px', color: '#0f172a', fontWeight: 800 }}>{renderText(brief.executiveSummary.headline)}</div>
+          <div style={{ marginTop: '8px', display: 'grid', gap: '5px' }}>
+            {brief.executiveSummary.bullets.map((bullet) => (
+              <div key={renderText(bullet)} style={{ fontSize: '14px', color: '#334155' }}>- {renderText(bullet)}</div>
+            ))}
           </div>
-          <div>
-            <div style={{ fontSize: '17px', color: '#0f172a', fontWeight: 800 }}>{renderText(brief.executiveSummary.headline)}</div>
-            <div style={{ marginTop: '8px', fontSize: '13px', color: '#475569', lineHeight: 1.5 }}>
-              {industryScoreExplanation(brief)}
-            </div>
-            <div style={{ marginTop: '8px', display: 'grid', gap: '5px' }}>
-              {brief.executiveSummary.bullets.map((bullet) => (
-                <div key={renderText(bullet)} style={{ fontSize: '14px', color: '#334155' }}>- {renderText(bullet)}</div>
-              ))}
-            </div>
-            <div style={{ fontSize: '12px', color: '#64748b', marginTop: '8px' }}>
-              Generated {formatDateTime(brief.generatedAt)}
-            </div>
+          <div style={{ fontSize: '12px', color: '#64748b', marginTop: '8px' }}>
+            Generated {formatDateTime(brief.generatedAt)}
           </div>
         </div>
       </div>
