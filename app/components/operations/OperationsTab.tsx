@@ -8587,7 +8587,7 @@ export default function OperationsTab({
         const customerName = String(row?.customer || row?.customerName || 'N/A').trim() || 'N/A';
         const customerId = String(row?.customerId || row?.customerNumber || row?.custNum || '').trim();
         const customerGroup = String(row?.customerGroup || '').trim();
-        const customerPartNumber = String(row?.customerPartNumber || row?.customerPn || row?.customerPN || row?.customerItem || row?.customerSku || row?.custItem || row?.CustItem || '').trim();
+        const customerPartNumber = String(row?.customerPartNumber || row?.aprSgpCustomerPartNumber || row?.customerPn || row?.customerPN || row?.customerItem || row?.customerSku || row?.custItem || row?.CustItem || '').trim();
         const item = String(row?.itemName || aprPartNumber).trim() || aprPartNumber;
         const key = [customerGroup, customerId, customerName, aprPartNumber, customerPartNumber, item].join('||');
         const parsedDate = parseCoverageUtcDay(String(row?.snapshotDate || row?.date || row?.orderDate || ''));
@@ -8611,7 +8611,7 @@ export default function OperationsTab({
         const customerName = String(row?.customer || row?.customerName || 'N/A').trim() || 'N/A';
         const customerId = String(row?.customerId || row?.customerNumber || row?.custNum || '').trim();
         const customerGroup = String(row?.customerGroup || '').trim();
-        const customerPartNumber = String(row?.customerPartNumber || row?.customerPn || row?.customerPN || row?.customerItem || row?.customerSku || row?.custItem || row?.CustItem || '').trim();
+        const customerPartNumber = String(row?.customerPartNumber || row?.aprSgpCustomerPartNumber || row?.customerPn || row?.customerPN || row?.customerItem || row?.customerSku || row?.custItem || row?.CustItem || '').trim();
         const partNote = String(row?.partNote || row?.productNote || row?.overview || '').trim();
         const item = String(row?.itemName || aprPartNumber).trim() || aprPartNumber;
         const key = [customerGroup, customerId, customerName, aprPartNumber, customerPartNumber, item].join('||');
@@ -8632,8 +8632,11 @@ export default function OperationsTab({
           duties: 0,
           freight: 0,
           operatingExpenses: 0,
+          purchaseOrderIds: new Set<string>(),
         };
         if (!bucket.partNote && partNote) bucket.partNote = partNote;
+        const purchaseOrderId = String(row?.orderId || row?.purchaseOrderId || row?.purchaseOrderNumber || row?.poNumber || '').trim();
+        if (purchaseOrderId) bucket.purchaseOrderIds.add(purchaseOrderId);
         bucket.quantity += qty;
         bucket.revenue += Number(row?.revenue || row?.currentPriceTotal || 0);
         const explicitMaterialCost = Number(row?.cogs || row?.materialCost || row?.currentCostOfMaterial || 0);
@@ -8688,6 +8691,7 @@ export default function OperationsTab({
             netProfit,
             netProfitPct: currentPrice && currentPrice !== 0 && netProfit != null ? (netProfit / currentPrice) * 100 : null,
             grossMarginPct: currentPrice && currentPrice !== 0 && grossMargin != null ? (grossMargin / currentPrice) * 100 : null,
+            purchaseOrderCount: row.purchaseOrderIds instanceof Set ? row.purchaseOrderIds.size : 0,
           };
         })
         .sort((a, b) =>
@@ -8711,9 +8715,13 @@ export default function OperationsTab({
           duties: 0,
           freight: 0,
           operatingExpenses: 0,
+          purchaseOrderIds: new Set<string>(),
         };
         group.customerId = group.customerId || row.customerId;
         group.rows.push(row);
+        if (row.purchaseOrderIds instanceof Set) {
+          row.purchaseOrderIds.forEach((purchaseOrderId: string) => group.purchaseOrderIds.add(purchaseOrderId));
+        }
         group.quantity += Number(row.quantity || 0);
         group.revenue += Number(row.revenue || 0);
         group.materialCost += Number(row.materialCostTotal || 0);
@@ -8750,6 +8758,7 @@ export default function OperationsTab({
             netProfit,
             netProfitPct: currentPrice && currentPrice !== 0 && netProfit != null ? (netProfit / currentPrice) * 100 : null,
             grossMarginPct: currentPrice && currentPrice !== 0 && grossMargin != null ? (grossMargin / currentPrice) * 100 : null,
+            purchaseOrderCount: group.purchaseOrderIds instanceof Set ? group.purchaseOrderIds.size : 0,
           };
         })
         .sort((a, b) => String(a.customerName).localeCompare(String(b.customerName), undefined, { sensitivity: 'base', numeric: true }));
@@ -8872,7 +8881,7 @@ export default function OperationsTab({
           const customerName = String(row?.customer || row?.customerName || 'N/A').trim() || 'N/A';
           const customerId = String(row?.customerId || row?.customerNumber || row?.custNum || '').trim();
           const customerGroup = String(row?.customerGroup || '').trim();
-          const customerPartNumber = String(row?.customerPartNumber || row?.customerPn || row?.customerPN || row?.customerItem || row?.customerSku || row?.custItem || row?.CustItem || '').trim();
+          const customerPartNumber = String(row?.customerPartNumber || row?.aprSgpCustomerPartNumber || row?.customerPn || row?.customerPN || row?.customerItem || row?.customerSku || row?.custItem || row?.CustItem || '').trim();
           return {
             key: `${index}-${isoDate}-${String(row?.sku || row?.itemId || row?.itemName || '')}-${String(row?.orderId || row?.sourceTransaction || '')}`,
             item: String(row?.sku || row?.itemId || row?.itemName || 'N/A').trim() || 'N/A',
@@ -9381,21 +9390,21 @@ export default function OperationsTab({
         width?: string;
         maxWidth?: string;
       }> = [
-        { key: 'aprPartNumber', label: 'APR P/N', summaryColumn: true },
+        { key: 'aprPartNumber', label: 'Item #', summaryColumn: true },
         { key: 'customerId', label: 'Customer ID', width: '76px', maxWidth: '84px' },
         { key: 'customerName', label: 'Customer Name', width: '150px', maxWidth: '170px' },
         { key: 'customerPartNumber', label: 'Customer P/N', width: '92px', maxWidth: '108px' },
-        { key: 'currentPrice', label: ['Current', 'Price'], compact: true },
-        { key: 'materialCost', label: ['Current', 'Cost', 'of', 'Material'], compact: true },
-        { key: 'tariffPerPiece', label: ['Current', 'Tariff', 'Impact per', 'Piece'], compact: true },
-        { key: 'dutiesPerPiece', label: ['Current', 'Duties', 'Impact per', 'Piece'], compact: true },
-        { key: 'freightPerPiece', label: ['Freight', 'Cost per', 'Piece'], compact: true },
-        { key: 'currentCostOfSales', label: ['Current', 'Cost', 'of', 'Sales'], compact: true },
-        { key: 'operatingExpensesPerPiece', label: ['Current', 'Operating', 'Expenses'], compact: true },
-        { key: 'fullyLoadedCost', label: ['Current', 'Fully', 'Loaded', 'Cost'], compact: true },
-        { key: 'netProfit', label: ['Current', 'Net', 'Profit'], compact: true },
-        { key: 'netProfitPct', label: ['Current Net', 'Profit', '(%)'], compact: true },
-        { key: 'grossMarginPct', label: ['Current Gross', 'Margin', '(%)'], compact: true },
+        { key: 'currentPrice', label: ['SGP Price', '($)'], compact: true },
+        { key: 'materialCost', label: ['SGP Cost', 'of Material', '($)'], compact: true },
+        { key: 'tariffPerPiece', label: ['SGP Impact', 'of Tariff', 'per Piece'], compact: true },
+        { key: 'dutiesPerPiece', label: ['SGP Impact', 'of Duties', 'per Piece ($)'], compact: true },
+        { key: 'freightPerPiece', label: ['SGP Cost', 'of Freight', 'per Piece ($)'], compact: true },
+        { key: 'currentCostOfSales', label: ['SGP Cost', 'of Sales', '($)'], compact: true },
+        { key: 'operatingExpensesPerPiece', label: ['SGP Operating', 'Expenses', '($)'], compact: true },
+        { key: 'fullyLoadedCost', label: ['SGP Fully', 'Loaded Cost', '($)'], compact: true },
+        { key: 'netProfit', label: ['SGP Net', 'Profit', '($)'], compact: true },
+        { key: 'netProfitPct', label: ['SGP Net', 'Profit', '(%)'], compact: true },
+        { key: 'grossMarginPct', label: ['SGP Gross', 'Margin %'], compact: true },
       ];
       const setVisibleCustomersExpanded = (expanded: boolean) => {
         setExpandedProductMarginCustomers((prev) => {
@@ -9559,8 +9568,8 @@ export default function OperationsTab({
                         </td>
                         <td style={productMarginTextCellStyle('customerId', { color: '#475569', fontWeight: 700 })} title={group.customerId || 'N/A'}>{group.customerId || 'N/A'}</td>
                         <td style={productMarginTextCellStyle('customerName', { color: '#0f172a', fontWeight: 800 })} title={group.customerName}>{group.customerName}</td>
-                        <td style={productMarginTextCellStyle('customerPartNumber', { color: '#64748b' })} title={`${Number(group.quantity || 0).toLocaleString()} qty`}>
-                          {Number(group.quantity || 0).toLocaleString()} qty
+                        <td style={productMarginTextCellStyle('customerPartNumber', { color: '#64748b' })} title={`${Number(group.purchaseOrderCount || 0).toLocaleString()} purchase orders`}>
+                          {Number(group.purchaseOrderCount || 0).toLocaleString()}
                         </td>
                         {renderBlankMarginCell()}
                         {renderBlankMarginCell()}

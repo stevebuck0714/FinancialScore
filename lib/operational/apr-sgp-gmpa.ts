@@ -126,6 +126,18 @@ export function buildAprSgpMatchKeys(row: {
   ].filter(Boolean);
 }
 
+export function buildAprSgpItemCustomerPartKeys(row: {
+  itemId?: unknown;
+  sku?: unknown;
+  itemName?: unknown;
+  customerPartNumber?: unknown;
+  aprSgpCustomerPartNumber?: unknown;
+}): string[] {
+  const item = normalizeAprSgpMatchToken(row.itemId || row.sku || row.itemName);
+  const customerPartNumber = normalizeAprSgpMatchToken(row.customerPartNumber || row.aprSgpCustomerPartNumber);
+  return item && customerPartNumber ? [`ITEM:${item}|CUSTOMER_PART:${customerPartNumber}`] : [];
+}
+
 export function parseAprSgpGmpaWorkbook(workbook: XLSX.WorkBook): ParsedAprSgpGmpaWorkbook {
   const sheetName = workbook.SheetNames.find((name) => /annual by customer/i.test(name)) || workbook.SheetNames[0];
   if (!sheetName) throw new Error(`${APR_SGP_GMPA_LABEL} has no worksheets.`);

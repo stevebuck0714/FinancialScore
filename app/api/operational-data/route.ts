@@ -48,7 +48,7 @@ import {
   getRetailSubcategoryTurnsSummary,
   hasRetailSubcategoryHistoryFacts,
 } from '@/lib/operational/retail-subcategory-history';
-import { buildAprSgpMatchKeys, readAprSgpGmpaWorkbook } from '@/lib/operational/apr-sgp-gmpa';
+import { buildAprSgpItemCustomerPartKeys, buildAprSgpMatchKeys, readAprSgpGmpaWorkbook } from '@/lib/operational/apr-sgp-gmpa';
 import { hashCacheParts, readDerivedApiCache, writeDerivedApiCache } from '@/lib/derived-api-cache';
 import { privateCacheHeaders } from '@/lib/http-cache';
 import { resolveCompanyIndustrySectorCategory } from '@/lib/industry-sector-resolver';
@@ -3035,7 +3035,7 @@ export async function GET(request: NextRequest) {
               cacheType === 'hiring' ? HIRING_SOURCE_VERSION : null,
               isWholesaleProductsReportRequest ? CUSTOMER_WIP_SOURCE_VERSION : null,
               isWholesaleProductsReportRequest ? `wholesale-report-mode:${wholesaleProductsReportMode}` : null,
-              cacheType === 'products' && usesSourceSystemProductSnapshots ? 'products-source-system-bakers-raw-child-id-v3' : null,
+              cacheType === 'products' && usesSourceSystemProductSnapshots ? 'products-source-system-bakers-raw-child-id-apr-cpn-v4' : null,
               cacheType === 'sales' && usesSourceSystemProductSnapshots ? 'sales-source-system-product-name-outlier-v1' : null,
             ]),
             dataVersion: await buildOperationalDataVersion(companyId, cacheType, startDate, endDate),
@@ -8382,40 +8382,86 @@ export async function GET(request: NextRequest) {
         const aprSgpWorkbook = shouldBuildWholesaleOrderLines
           ? await readAprSgpGmpaWorkbook(companyId).catch(() => null)
           : null;
+        const canonicalizeWholesaleCustomerParts = (rows: any[]) => {
+          const customerPartByCustomerItem = new Map<string, string>();
+          for (const row of rows) {
+            const customerPartNumber = String(row?.customerPartNumber || row?.aprSgpCustomerPartNumber || '').trim();
+            if (!customerPartNumber) continue;
+            for (const key of buildAprSgpMatchKeys({
+              customerId: row?.customerId,
+              customerName: row?.customerName || row?.customer,
+              itemId: row?.itemId || row?.sku || row?.itemName,
+            })) {
+              if (key && !customerPartByCustomerItem.has(key)) customerPartByCustomerItem.set(key, customerPartNumber);
+            }
+          }
+          if (customerPartByCustomerItem.size === 0) return rows;
+          return rows.map((row) => {
+            const existingCustomerPart = String(row?.customerPartNumber || '').trim();
+            if (existingCustomerPart) return row;
+            const canonicalCustomerPart = buildAprSgpMatchKeys({
+              customerId: row?.customerId,
+              customerName: row?.customerName || row?.customer,
+              itemId: row?.itemId || row?.sku || row?.itemName,
+            })
+              .map((key) => customerPartByCustomerItem.get(key))
+              .find(Boolean);
+            return canonicalCustomerPart ? { ...row, customerPartNumber: canonicalCustomerPart } : row;
+          });
+        };
         const aprSgpRowsByKey = new Map<string, any>();
+        const aprSgpRowsByCustomerItemKey = new Map<string, any>();
         if (aprSgpWorkbook?.rows?.length) {
           for (const row of aprSgpWorkbook.rows as any[]) {
+            for (const key of buildAprSgpItemCustomerPartKeys({
+              itemId: row.itemId,
+              customerPartNumber: row.customerPartNumber,
+            })) {
+              if (key && !aprSgpRowsByKey.has(key)) aprSgpRowsByKey.set(key, row);
+            }
             for (const key of buildAprSgpMatchKeys({
               customerId: row.customerId,
               customerName: row.customerName,
               itemId: row.itemId,
             })) {
-              if (key && !aprSgpRowsByKey.has(key)) aprSgpRowsByKey.set(key, row);
+              if (key && !aprSgpRowsByCustomerItemKey.has(key)) aprSgpRowsByCustomerItemKey.set(key, row);
             }
           }
         }
+        const wholesaleOrderLinesWithCanonicalParts = canonicalizeWholesaleCustomerParts(wholesaleOrderLines as any[]);
         const wholesaleOrderLinesWithAprSgp =
-          aprSgpRowsByKey.size > 0
-            ? (wholesaleOrderLines as any[]).map((row) => {
-                const match = buildAprSgpMatchKeys({
+          aprSgpRowsByKey.size > 0 || aprSgpRowsByCustomerItemKey.size > 0
+            ? (wholesaleOrderLinesWithCanonicalParts as any[]).map((row) => {
+                const itemCustomerPartMatch = buildAprSgpItemCustomerPartKeys({
+                  itemId: row.itemId || row.sku || row.itemName,
+                  customerPartNumber: row.customerPartNumber || row.aprSgpCustomerPartNumber,
+                })
+                  .map((key) => aprSgpRowsByKey.get(key))
+                  .find(Boolean);
+                const customerItemFallbackMatch = itemCustomerPartMatch
+                  ? null
+                  : buildAprSgpMatchKeys({
                   customerId: row.customerId,
                   customerName: row.customerName || row.customer,
                   itemId: row.itemId || row.sku || row.itemName,
                 })
-                  .map((key) => aprSgpRowsByKey.get(key))
+                  .map((key) => aprSgpRowsByCustomerItemKey.get(key))
                   .find(Boolean);
+                const match = itemCustomerPartMatch || customerItemFallbackMatch;
                 if (!match) return row;
                 return {
                   ...row,
                   aprSgpGmpaSourceDate: aprSgpWorkbook?.sourceDateIso || null,
                   aprSgpCustomerPartNumber: match.customerPartNumber || null,
+                  customerPartNumber: row.customerPartNumber || match.customerPartNumber || null,
                   currentImpactOfTariffPerPiece: match.projectedTariffPerPiece ?? row.currentImpactOfTariffPerPiece ?? row.tariffPerPiece ?? null,
                   currentImpactOfDutiesPerPiece: match.projectedDutiesPerPiece ?? row.currentImpactOfDutiesPerPiece ?? row.dutiesPerPiece ?? row.dutyPerPiece ?? null,
                   costOfFreightPerPiece: match.projectedFreightPerPiece ?? row.costOfFreightPerPiece ?? row.freightPerPiece ?? null,
                   currentOperatingExpenses: match.projectedOperatingExpensesPerPiece ?? row.currentOperatingExpenses ?? row.operatingExpensesPerPiece ?? null,
                 };
               })
-            : wholesaleOrderLines;
+            : wholesaleOrderLinesWithCanonicalParts;
+        const canonicalWholesaleOrderLines = canonicalizeWholesaleCustomerParts(wholesaleOrderLinesWithAprSgp as any[]);
 
         if (shouldUseMockData) {
           return NextResponse.json(
@@ -8436,7 +8482,7 @@ export async function GET(request: NextRequest) {
           summary: {
             topProducts: topProductsSummary,
             wholesaleReportMode: wholesaleProductsReportMode,
-            wholesaleOrderLines: wholesaleOrderLinesWithAprSgp,
+            wholesaleOrderLines: canonicalWholesaleOrderLines,
             wholesaleVendorPricingRows,
             aprSgpGmpa: aprSgpWorkbook
               ? {
