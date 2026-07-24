@@ -3524,7 +3524,7 @@ export default function OperationsTab({
         topTrendCustomers.reduce(
           (acc: any, customer) => ({
             ...acc,
-            [customer.key]: 0,
+            [customer.key]: null,
           }),
           { monthKey: period.monthKey, monthLabel: period.monthLabel }
         ),
@@ -3535,7 +3535,7 @@ export default function OperationsTab({
       if (!customerKey) continue;
       const monthRow = customerTrendRowsByMonth.get(row.monthKey);
       if (!monthRow) continue;
-      monthRow[customerKey] = Number(monthRow[customerKey] || 0) + Number(row.revenue || 0);
+      monthRow[customerKey] = Number(monthRow[customerKey] ?? 0) + Number(row.revenue || 0);
     }
     const customerTrendRows = Array.from(customerTrendRowsByMonth.values());
     const customerTrendXAxisInterval =
