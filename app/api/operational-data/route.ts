@@ -48,6 +48,7 @@ import {
   getRetailSubcategoryTurnsSummary,
   hasRetailSubcategoryHistoryFacts,
 } from '@/lib/operational/retail-subcategory-history';
+import { buildAprSgpMatchKeys, readAprSgpGmpaWorkbook } from '@/lib/operational/apr-sgp-gmpa';
 import { hashCacheParts, readDerivedApiCache, writeDerivedApiCache } from '@/lib/derived-api-cache';
 import { privateCacheHeaders } from '@/lib/http-cache';
 import { resolveCompanyIndustrySectorCategory } from '@/lib/industry-sector-resolver';
@@ -310,6 +311,17 @@ async function buildOperationalDataVersion(companyId: string, type: string | nul
           endDate
         )
       : Promise.resolve({ label: 'InforRawRecordProducts', skipped: true }),
+    (includeAll || type === 'products')
+      ? safeOperationalVersionPart(
+          'OperationalSystemConnectionProducts',
+          `SELECT COUNT(*)::text AS count, MAX("updatedAt") AS "maxUpdatedAt", MAX("lastSyncAt") AS "maxLastSyncAt"
+           FROM "OperationalSystemConnection"
+           WHERE "companyId" = $1
+             AND "provider" = 'SPREADSHEET_UPLOAD'::"OperationalSystemProvider"
+             AND "sourceCode" IN ('APR_SGP_GMPA_FORECAST', 'BAKERS_COGS', 'PLATOS_INVENTORY')`,
+          companyId
+        )
+      : Promise.resolve({ label: 'OperationalSystemConnectionProducts', skipped: true }),
     (includeAll || type === 'inventory')
       ? safeOperationalVersionPart(
           'InventorySnapshot',
@@ -8367,6 +8379,44 @@ export async function GET(request: NextRequest) {
               })()
             : [];
 
+        const aprSgpWorkbook = shouldBuildWholesaleOrderLines
+          ? await readAprSgpGmpaWorkbook(companyId).catch(() => null)
+          : null;
+        const aprSgpRowsByKey = new Map<string, any>();
+        if (aprSgpWorkbook?.rows?.length) {
+          for (const row of aprSgpWorkbook.rows as any[]) {
+            for (const key of buildAprSgpMatchKeys({
+              customerId: row.customerId,
+              customerName: row.customerName,
+              itemId: row.itemId,
+            })) {
+              if (key && !aprSgpRowsByKey.has(key)) aprSgpRowsByKey.set(key, row);
+            }
+          }
+        }
+        const wholesaleOrderLinesWithAprSgp =
+          aprSgpRowsByKey.size > 0
+            ? (wholesaleOrderLines as any[]).map((row) => {
+                const match = buildAprSgpMatchKeys({
+                  customerId: row.customerId,
+                  customerName: row.customerName || row.customer,
+                  itemId: row.itemId || row.sku || row.itemName,
+                })
+                  .map((key) => aprSgpRowsByKey.get(key))
+                  .find(Boolean);
+                if (!match) return row;
+                return {
+                  ...row,
+                  aprSgpGmpaSourceDate: aprSgpWorkbook?.sourceDateIso || null,
+                  aprSgpCustomerPartNumber: match.customerPartNumber || null,
+                  currentImpactOfTariffPerPiece: match.projectedTariffPerPiece ?? row.currentImpactOfTariffPerPiece ?? row.tariffPerPiece ?? null,
+                  currentImpactOfDutiesPerPiece: match.projectedDutiesPerPiece ?? row.currentImpactOfDutiesPerPiece ?? row.dutiesPerPiece ?? row.dutyPerPiece ?? null,
+                  costOfFreightPerPiece: match.projectedFreightPerPiece ?? row.costOfFreightPerPiece ?? row.freightPerPiece ?? null,
+                  currentOperatingExpenses: match.projectedOperatingExpensesPerPiece ?? row.currentOperatingExpenses ?? row.operatingExpensesPerPiece ?? null,
+                };
+              })
+            : wholesaleOrderLines;
+
         if (shouldUseMockData) {
           return NextResponse.json(
             buildOperationalMockResponse({
@@ -8386,8 +8436,16 @@ export async function GET(request: NextRequest) {
           summary: {
             topProducts: topProductsSummary,
             wholesaleReportMode: wholesaleProductsReportMode,
-            wholesaleOrderLines,
+            wholesaleOrderLines: wholesaleOrderLinesWithAprSgp,
             wholesaleVendorPricingRows,
+            aprSgpGmpa: aprSgpWorkbook
+              ? {
+                  sourceDateIso: aprSgpWorkbook.sourceDateIso,
+                  rowCount: aprSgpWorkbook.rowCount,
+                  customerCount: aprSgpWorkbook.customerCount,
+                  itemCount: aprSgpWorkbook.itemCount,
+                }
+              : null,
             realEstateReports: getRealEstateReportsForSummary(),
           },
         });

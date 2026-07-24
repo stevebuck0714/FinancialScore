@@ -9,6 +9,7 @@ import {
 } from '@/lib/operational/operational-system-connections';
 import { BAKERS_COGS_LABEL, BAKERS_COGS_SOURCE_CODE } from '@/lib/operational/bakers-cogs';
 import { COGENT_RATE_CARD_LABEL, COGENT_RATE_CARD_SOURCE_CODE } from '@/lib/operational/cogent-rate-card';
+import { APR_SGP_GMPA_LABEL, APR_SGP_GMPA_SOURCE_CODE } from '@/lib/operational/apr-sgp-gmpa';
 import { RAMQUEST_TITLE_LABEL, RAMQUEST_TITLE_SOURCE_CODE } from '@/lib/operational/ramquest-title';
 import { RSMEANS_PM_LABEL, RSMEANS_PM_SOURCE_CODE } from '@/lib/operational/rsmeans-pm';
 import { BUILDOUT_CRE_LABEL, BUILDOUT_CRE_SOURCE_CODE } from '@/lib/operational/buildout-cre';
@@ -27,6 +28,7 @@ const SOURCE_DEFINITIONS: SourceDefinition[] = [
   { provider: 'SPREADSHEET_UPLOAD', sourceCode: 'CREWTRACKS', label: 'Crewtracks', sectorCategories: ['23'] },
   { provider: 'SPREADSHEET_UPLOAD', sourceCode: 'HILTI', label: 'Hilti', sectorCategories: ['23'] },
   { provider: 'SPREADSHEET_UPLOAD', sourceCode: BAKERS_COGS_SOURCE_CODE, label: BAKERS_COGS_LABEL, sectorCategories: ['32'] },
+  { provider: 'SPREADSHEET_UPLOAD', sourceCode: APR_SGP_GMPA_SOURCE_CODE, label: APR_SGP_GMPA_LABEL, sectorCategories: ['32', '33', '42'] },
   { provider: 'SPREADSHEET_UPLOAD', sourceCode: 'ICE_ENCOMPASS', label: 'ICE Encompass', sectorCategories: ['53'] },
   { provider: 'SPREADSHEET_UPLOAD', sourceCode: 'LANTRAX_PROFIT_POWER', label: 'Profit Power Enterprise', sectorCategories: ['53'] },
   { provider: 'SPREADSHEET_UPLOAD', sourceCode: RAMQUEST_TITLE_SOURCE_CODE, label: RAMQUEST_TITLE_LABEL, sectorCategories: ['53'] },

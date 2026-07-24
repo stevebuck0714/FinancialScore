@@ -128,7 +128,8 @@ type ProductMarginSortKey =
   | 'operatingExpensesPerPiece'
   | 'fullyLoadedCost'
   | 'netProfit'
-  | 'netProfitPct';
+  | 'netProfitPct'
+  | 'grossMarginPct';
 type WholesaleRawSortKey =
   | 'item'
   | 'order'
@@ -8668,6 +8669,7 @@ export default function OperationsTab({
             (materialCost || 0) + (tariffPerPiece || 0) + (dutiesPerPiece || 0) + (freightPerPiece || 0);
           const fullyLoadedCost = currentCostOfSales + (operatingExpensesPerPiece || 0);
           const netProfit = currentPrice == null ? null : currentPrice - fullyLoadedCost;
+          const grossMargin = currentPrice == null ? null : currentPrice - currentCostOfSales;
           return {
             ...row,
             materialCostTotal: row.materialCost,
@@ -8685,6 +8687,7 @@ export default function OperationsTab({
             fullyLoadedCost,
             netProfit,
             netProfitPct: currentPrice && currentPrice !== 0 && netProfit != null ? (netProfit / currentPrice) * 100 : null,
+            grossMarginPct: currentPrice && currentPrice !== 0 && grossMargin != null ? (grossMargin / currentPrice) * 100 : null,
           };
         })
         .sort((a, b) =>
@@ -8733,6 +8736,7 @@ export default function OperationsTab({
             (materialCost || 0) + (tariffPerPiece || 0) + (dutiesPerPiece || 0) + (freightPerPiece || 0);
           const fullyLoadedCost = currentCostOfSales + (operatingExpensesPerPiece || 0);
           const netProfit = currentPrice == null ? null : currentPrice - fullyLoadedCost;
+          const grossMargin = currentPrice == null ? null : currentPrice - currentCostOfSales;
           return {
             ...group,
             currentPrice,
@@ -8745,6 +8749,7 @@ export default function OperationsTab({
             fullyLoadedCost,
             netProfit,
             netProfitPct: currentPrice && currentPrice !== 0 && netProfit != null ? (netProfit / currentPrice) * 100 : null,
+            grossMarginPct: currentPrice && currentPrice !== 0 && grossMargin != null ? (grossMargin / currentPrice) * 100 : null,
           };
         })
         .sort((a, b) => String(a.customerName).localeCompare(String(b.customerName), undefined, { sensitivity: 'base', numeric: true }));
@@ -9362,10 +9367,12 @@ export default function OperationsTab({
     ) : null;
     const productPageTitle = isHealthcareServicesProceduresPage ? 'Services / Procedures Performance' : 'Product Sales Performance';
     const renderProductMarginAnalysisReport = () => {
-      const formatMarginCurrency = (value: number | null | undefined) =>
-        value == null || !Number.isFinite(Number(value)) ? 'N/A' : formatCurrencyWithCents(Number(value));
+      const formatMarginNumber = (value: number | null | undefined) =>
+        value == null || !Number.isFinite(Number(value))
+          ? 'N/A'
+          : new Intl.NumberFormat('en-US', { minimumFractionDigits: 4, maximumFractionDigits: 4 }).format(Number(value));
       const formatMarginPct = (value: number | null | undefined) =>
-        value == null || !Number.isFinite(Number(value)) ? 'N/A' : `${Number(value).toFixed(1)}%`;
+        value == null || !Number.isFinite(Number(value)) ? 'N/A' : `${Number(value).toFixed(2)}%`;
       const productMarginColumns: Array<{
         key: ProductMarginSortKey;
         label: string | string[];
@@ -9388,6 +9395,7 @@ export default function OperationsTab({
         { key: 'fullyLoadedCost', label: ['Current', 'Fully', 'Loaded', 'Cost'], compact: true },
         { key: 'netProfit', label: ['Current', 'Net', 'Profit'], compact: true },
         { key: 'netProfitPct', label: ['Current Net', 'Profit', '(%)'], compact: true },
+        { key: 'grossMarginPct', label: ['Current Gross', 'Margin', '(%)'], compact: true },
       ];
       const setVisibleCustomersExpanded = (expanded: boolean) => {
         setExpandedProductMarginCustomers((prev) => {
@@ -9400,13 +9408,16 @@ export default function OperationsTab({
       };
       const renderMoneyCell = (value: number | null | undefined, emphasize = false) => (
         <td style={{ padding: '6px 5px', fontSize: '11.5px', color: Number(value || 0) < 0 ? '#b91c1c' : '#334155', textAlign: 'right', fontWeight: emphasize ? 700 : 500, whiteSpace: 'nowrap', width: '64px', maxWidth: '70px' }}>
-          {formatMarginCurrency(value)}
+          {formatMarginNumber(value)}
         </td>
       );
       const renderPctCell = (value: number | null | undefined) => (
         <td style={{ padding: '6px 5px', fontSize: '11.5px', color: Number(value || 0) < 0 ? '#b91c1c' : '#334155', textAlign: 'right', fontWeight: 700, whiteSpace: 'nowrap', width: '64px', maxWidth: '70px' }}>
           {formatMarginPct(value)}
         </td>
+      );
+      const renderBlankMarginCell = () => (
+        <td style={{ padding: '6px 5px', fontSize: '11.5px', color: '#334155', textAlign: 'right', fontWeight: 500, whiteSpace: 'nowrap', width: '64px', maxWidth: '70px' }} />
       );
       const productMarginTextCellStyle = (column: ProductMarginSortKey, emphasis: React.CSSProperties = {}): React.CSSProperties => {
         const columnConfig = productMarginColumns.find((candidate) => candidate.key === column);
@@ -9494,7 +9505,7 @@ export default function OperationsTab({
           </div>
 
           <div style={{ overflowX: 'auto', maxHeight: '620px', overflowY: 'auto' }}>
-            <table style={{ width: '100%', minWidth: '1410px', borderCollapse: 'collapse', tableLayout: 'fixed' }}>
+            <table style={{ width: '100%', minWidth: '1480px', borderCollapse: 'collapse', tableLayout: 'fixed' }}>
               <colgroup>
                 {productMarginColumns.map((column) => (
                   <col
@@ -9548,17 +9559,20 @@ export default function OperationsTab({
                         </td>
                         <td style={productMarginTextCellStyle('customerId', { color: '#475569', fontWeight: 700 })} title={group.customerId || 'N/A'}>{group.customerId || 'N/A'}</td>
                         <td style={productMarginTextCellStyle('customerName', { color: '#0f172a', fontWeight: 800 })} title={group.customerName}>{group.customerName}</td>
-                        <td style={productMarginTextCellStyle('customerPartNumber', { color: '#64748b' })}>{group.rows.length.toLocaleString()} items</td>
-                        {renderMoneyCell(group.currentPrice)}
-                        {renderMoneyCell(group.materialCost)}
-                        {renderMoneyCell(group.tariffPerPiece)}
-                        {renderMoneyCell(group.dutiesPerPiece)}
-                        {renderMoneyCell(group.freightPerPiece)}
-                        {renderMoneyCell(group.currentCostOfSales)}
-                        {renderMoneyCell(group.operatingExpensesPerPiece)}
-                        {renderMoneyCell(group.fullyLoadedCost)}
-                        {renderMoneyCell(group.netProfit, true)}
-                        {renderPctCell(group.netProfitPct)}
+                        <td style={productMarginTextCellStyle('customerPartNumber', { color: '#64748b' })} title={`${Number(group.quantity || 0).toLocaleString()} qty`}>
+                          {Number(group.quantity || 0).toLocaleString()} qty
+                        </td>
+                        {renderBlankMarginCell()}
+                        {renderBlankMarginCell()}
+                        {renderBlankMarginCell()}
+                        {renderBlankMarginCell()}
+                        {renderBlankMarginCell()}
+                        {renderBlankMarginCell()}
+                        {renderBlankMarginCell()}
+                        {renderBlankMarginCell()}
+                        {renderBlankMarginCell()}
+                        {renderBlankMarginCell()}
+                        {renderBlankMarginCell()}
                       </tr>
                       {expanded && group.rows.map((row: any) => (
                         <tr key={row.key} style={{ borderBottom: '1px solid #f1f5f9' }}>
@@ -9595,6 +9609,7 @@ export default function OperationsTab({
                           {renderMoneyCell(row.fullyLoadedCost)}
                           {renderMoneyCell(row.netProfit, true)}
                           {renderPctCell(row.netProfitPct)}
+                          {renderPctCell(row.grossMarginPct)}
                         </tr>
                       ))}
                     </React.Fragment>

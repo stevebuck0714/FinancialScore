@@ -3728,6 +3728,7 @@ function FinancialScorePage() {
   const platosInventoryWorkbookFileInputRef = useRef<HTMLInputElement | null>(null);
   const cogentRateCardFileInputRef = useRef<HTMLInputElement | null>(null);
   const bakersCogsFileInputRef = useRef<HTMLInputElement | null>(null);
+  const aprSgpGmpaFileInputRef = useRef<HTMLInputElement | null>(null);
   const [companyOperationalSources, setCompanyOperationalSources] = useState<
     Array<{
       provider: string;
@@ -3741,6 +3742,7 @@ function FinancialScorePage() {
         originalFileName?: string;
         blobUrl?: string;
         uploadedAt?: string;
+        sourceDateIso?: string;
         sheetNames?: string[];
         requiredSheets?: string[];
       } | null;
@@ -3758,6 +3760,9 @@ function FinancialScorePage() {
         productCount?: number;
         subcategoryCount?: number;
         rowCount?: number;
+        sourceDateIso?: string;
+        customerCount?: number;
+        itemCount?: number;
         products?: Array<{
           sheetName?: string;
           productName?: string;
@@ -3783,6 +3788,7 @@ function FinancialScorePage() {
   const [uploadingPlatosInventoryWorkbook, setUploadingPlatosInventoryWorkbook] = useState(false);
   const [uploadingCogentRateCard, setUploadingCogentRateCard] = useState(false);
   const [uploadingBakersCogs, setUploadingBakersCogs] = useState(false);
+  const [uploadingAprSgpGmpa, setUploadingAprSgpGmpa] = useState(false);
   
 
   // State - API Loading & Errors
@@ -7427,6 +7433,78 @@ function FinancialScorePage() {
       alert(`Failed to upload Bakers COGS: ${message}`);
     } finally {
       setUploadingBakersCogs(false);
+    }
+  };
+
+  const uploadAprSgpGmpaWorkbook = async () => {
+    if (!selectedCompanyId) {
+      alert('Please select a company first');
+      return;
+    }
+    const input = aprSgpGmpaFileInputRef.current;
+    const file = input?.files?.[0];
+    if (!file) {
+      alert('Choose an APR SGP GMPA workbook first.');
+      return;
+    }
+
+    setUploadingAprSgpGmpa(true);
+    setOperationalSourcesError(null);
+    try {
+      const blob = await upload(file.name, file, {
+        access: 'public',
+        handleUploadUrl: '/api/company-documents/upload',
+        clientPayload: JSON.stringify({
+          companyId: selectedCompanyId,
+          category: 'OTHER',
+          originalFileName: file.name,
+          sizeBytes: file.size,
+        }),
+      });
+
+      const docResponse = await fetch('/api/company-documents', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          companyId: selectedCompanyId,
+          category: 'OTHER',
+          originalFileName: file.name,
+          blob,
+        }),
+      });
+      const docData = await docResponse.json();
+      if (!docResponse.ok || !docData?.document?.id) {
+        throw new Error(docData?.error || 'Failed to register APR SGP GMPA workbook document');
+      }
+
+      const workbookResponse = await fetch('/api/operational-system-integrations/apr-sgp-gmpa/workbook', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          companyId: selectedCompanyId,
+          documentId: docData.document.id,
+          originalFileName: file.name,
+          blob,
+        }),
+      });
+      const workbookData = await workbookResponse.json();
+      if (!workbookResponse.ok || !workbookData?.ok) {
+        throw new Error(workbookData?.error || 'APR SGP GMPA workbook validation failed');
+      }
+
+      if (input) input.value = '';
+      await loadCompanyOperationalSources(selectedCompanyId);
+      window.dispatchEvent(new CustomEvent('operational-data-updated', {
+        detail: { companyId: selectedCompanyId, types: ['products'], sourceCode: 'APR_SGP_GMPA_FORECAST' },
+      }));
+      alert(`APR SGP GMPA workbook uploaded successfully (${workbookData.rowCount || 0} rows).`);
+    } catch (error: any) {
+      console.error('Failed to upload APR SGP GMPA workbook:', error);
+      const message = error?.message || 'Upload failed';
+      setOperationalSourcesError(message);
+      alert(`Failed to upload APR SGP GMPA workbook: ${message}`);
+    } finally {
+      setUploadingAprSgpGmpa(false);
     }
   };
 
@@ -14810,6 +14888,111 @@ function FinancialScorePage() {
 
                     {bakersCogsSource.errorMessage ? (
                       <div style={{ fontSize: '12px', color: '#991b1b', marginTop: '8px' }}>{bakersCogsSource.errorMessage}</div>
+                    ) : null}
+                  </div>
+                );
+              })()}
+
+              {(() => {
+                const aprSgpGmpaSource = companyOperationalSources.find((source) => source.sourceCode === 'APR_SGP_GMPA_FORECAST') || null;
+                if (!aprSgpGmpaSource) return null;
+                return (
+                  <div style={{ background: '#f8fafc', borderRadius: '12px', padding: '24px', marginBottom: '20px', border: '2px solid #e2e8f0' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px', marginBottom: '16px' }}>
+                      <div>
+                        <h3 style={{ fontSize: '18px', fontWeight: '600', color: '#1e293b', marginBottom: '4px' }}>{aprSgpGmpaSource.label}</h3>
+                        <p style={{ fontSize: '13px', color: '#64748b', margin: 0 }}>Atlantic Precision product margin forecast workbook upload</p>
+                      </div>
+                      <div style={{
+                        padding: '4px 8px',
+                        borderRadius: '999px',
+                        fontSize: '11px',
+                        fontWeight: '700',
+                        background: aprSgpGmpaSource.workbookUpload ? '#dcfce7' : '#fef3c7',
+                        color: aprSgpGmpaSource.workbookUpload ? '#166534' : '#92400e'
+                      }}>
+                        {aprSgpGmpaSource.workbookUpload ? 'Forecast uploaded' : 'Awaiting forecast workbook'}
+                      </div>
+                    </div>
+
+                    <div style={{ marginBottom: '10px', padding: '10px', background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: '8px', fontSize: '12px', color: '#1d4ed8' }}>
+                      Expected workbook: <strong>2026 SGP GMPA Forecast Worksheet</strong>. The workbook should include the Annual by Customer sheet with Item, Customer ID, Customer, Customer P/N, tariff, duties, freight, and operating expense columns. Cell B2 is used as the data date.
+                    </div>
+
+                    <input
+                      ref={aprSgpGmpaFileInputRef}
+                      type="file"
+                      accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                      disabled={uploadingAprSgpGmpa}
+                      style={{ marginBottom: '10px', width: '100%' }}
+                    />
+
+                    <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap', marginBottom: '12px' }}>
+                      <button
+                        onClick={uploadAprSgpGmpaWorkbook}
+                        disabled={uploadingAprSgpGmpa}
+                        style={{
+                          padding: '10px 14px',
+                          borderRadius: '10px',
+                          border: 'none',
+                          background: uploadingAprSgpGmpa ? '#94a3b8' : '#0f766e',
+                          color: 'white',
+                          fontWeight: 800,
+                          cursor: uploadingAprSgpGmpa ? 'not-allowed' : 'pointer',
+                        }}
+                      >
+                        {uploadingAprSgpGmpa ? 'Uploading…' : 'Upload APR SGP GMPA Forecast'}
+                      </button>
+                      <button
+                        onClick={() => selectedCompanyId && loadCompanyOperationalSources(selectedCompanyId)}
+                        disabled={loadingOperationalSources || uploadingAprSgpGmpa}
+                        style={{
+                          padding: '10px 14px',
+                          borderRadius: '10px',
+                          border: '1px solid #e2e8f0',
+                          background: 'white',
+                          color: '#0f172a',
+                          fontWeight: 800,
+                          cursor: loadingOperationalSources || uploadingAprSgpGmpa ? 'not-allowed' : 'pointer',
+                        }}
+                      >
+                        Refresh
+                      </button>
+                    </div>
+
+                    {aprSgpGmpaSource.workbookUpload ? (
+                      <div style={{ fontSize: '12px', color: '#475569', lineHeight: 1.6 }}>
+                        <div><strong>File:</strong> {aprSgpGmpaSource.workbookUpload.originalFileName || 'APR SGP GMPA workbook'}</div>
+                        <div><strong>Uploaded:</strong> {aprSgpGmpaSource.workbookUpload.uploadedAt ? new Date(aprSgpGmpaSource.workbookUpload.uploadedAt).toLocaleString() : 'Unknown'}</div>
+                        <div><strong>Data date:</strong> {aprSgpGmpaSource.workbookUpload.sourceDateIso ? new Date(aprSgpGmpaSource.workbookUpload.sourceDateIso).toLocaleDateString() : 'Unknown'}</div>
+                        <div><strong>Sheets found:</strong> {Array.isArray(aprSgpGmpaSource.workbookUpload.sheetNames) ? aprSgpGmpaSource.workbookUpload.sheetNames.join(', ') : 'Unknown'}</div>
+                        {aprSgpGmpaSource.workbookUpload.blobUrl ? (
+                          <div>
+                            <a href={aprSgpGmpaSource.workbookUpload.blobUrl} target="_blank" rel="noreferrer" style={{ color: '#2563eb', fontWeight: 600 }}>
+                              Open uploaded APR SGP GMPA workbook
+                            </a>
+                          </div>
+                        ) : null}
+                      </div>
+                    ) : (
+                      <div style={{ fontSize: '12px', color: '#64748b' }}>
+                        No APR SGP GMPA forecast workbook uploaded yet.
+                      </div>
+                    )}
+
+                    {aprSgpGmpaSource.parsedWorkbook && (
+                      <div style={{ marginTop: '12px', padding: '10px', background: 'white', border: '1px solid #e2e8f0', borderRadius: '8px', fontSize: '12px', color: '#334155' }}>
+                        <div style={{ fontWeight: '700', color: '#1e293b', marginBottom: '6px' }}>Parsed forecast summary</div>
+                        <div><strong>Parsed:</strong> {aprSgpGmpaSource.parsedWorkbook.parsedAt ? new Date(aprSgpGmpaSource.parsedWorkbook.parsedAt).toLocaleString() : 'Unknown'}</div>
+                        <div><strong>Data date:</strong> {aprSgpGmpaSource.parsedWorkbook.sourceDateIso ? new Date(aprSgpGmpaSource.parsedWorkbook.sourceDateIso).toLocaleDateString() : 'Unknown'}</div>
+                        <div><strong>Rows parsed:</strong> {aprSgpGmpaSource.parsedWorkbook.rowCount ?? 0}</div>
+                        <div><strong>Customers parsed:</strong> {aprSgpGmpaSource.parsedWorkbook.customerCount ?? 0}</div>
+                        <div><strong>Items parsed:</strong> {aprSgpGmpaSource.parsedWorkbook.itemCount ?? 0}</div>
+                      </div>
+                    )}
+
+                    {aprSgpGmpaSource.errorMessage ? (
+                      <div style={{ fontSize: '12px', color: '#991b1b', marginTop: '8px' }}>{aprSgpGmpaSource.errorMessage}</div>
                     ) : null}
                   </div>
                 );
