@@ -122,7 +122,6 @@ export async function runQuickBooksDesktopPostSyncReprocess(
     {
       companyId,
       mode: targetMonth ? 'only' : 'through',
-      dailyOnly: true,
       ...(targetMonth ? { targetMonth } : {}),
       source: options.source || 'qbd-web-connector-finalize',
     },
