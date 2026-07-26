@@ -788,10 +788,11 @@ function buildSlLedgersPeriodFilter(window?: SyncWindow, site?: string): string 
           and
           (ControlYear < '${endYear}' or (ControlYear='${endYear}' and ControlPeriod <= '${endPeriodToken}'))
         )`;
-  const startDate = formatCsiDateLiteral(window.startDate);
-  const endDate = formatCsiDateLiteral(window.endDate);
-  const transDateClause = `(TransDate >= '${startDate}' and TransDate <= '${endDate}')`;
-  const clauses = [periodClause, transDateClause];
+  // SLLedgers is the accounting ledger source. Period-close/posting workflows can
+  // create entries for a ControlYear/ControlPeriod after the calendar month end,
+  // so adding a TransDate window here drops late-posted period activity. Filter by
+  // accounting period only and let downstream transforms use TransDate for facts.
+  const clauses = [periodClause];
   const siteValue = String(site || '').trim();
   if (siteValue) {
     const safeSite = siteValue.replace(/'/g, "''");
