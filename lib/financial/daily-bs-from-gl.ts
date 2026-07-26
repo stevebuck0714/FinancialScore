@@ -42,6 +42,15 @@ import { BS_LAST_DAY_FIELDS, PNL_SUM_FIELDS } from '@/lib/financial/month-publis
 
 type Frequency = 'daily' | 'weekly' | 'monthly';
 
+const ATLANTIC_PRECISION_COMPANY_ID = 'cmmcp278j0002kz0439rlixdj';
+
+function shouldBlockPollutedGlFinancialRebuild(companyId: string): boolean {
+  return (
+    companyId === ATLANTIC_PRECISION_COMPANY_ID &&
+    process.env.ALLOW_ATLANTIC_POLLUTED_GL_REBUILD !== '1'
+  );
+}
+
 const ASSET_TARGET_FIELDS = new Set<string>([
   'cash',
   'ar',
@@ -1220,6 +1229,11 @@ export async function rebuildDailyFinancialSnapshotsFromGL(
 }> {
   const companyId = String(opts.companyId || '').trim();
   if (!companyId) throw new Error('rebuildDailyFinancialSnapshotsFromGL: companyId required');
+  if (shouldBlockPollutedGlFinancialRebuild(companyId)) {
+    throw new Error(
+      'Atlantic Precision financial rebuild blocked: GLTransactionFact contains overlapping BACKFILL/RAW_REPLAY/CSI_LOAD sources and cannot be used as the DailyFinancialSnapshot source of truth.'
+    );
+  }
   if (!(opts.startDate instanceof Date) || Number.isNaN(opts.startDate.getTime())) {
     throw new Error('rebuildDailyFinancialSnapshotsFromGL: invalid startDate');
   }
