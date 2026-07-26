@@ -615,6 +615,14 @@ async function quarantineHistoricalHydrationFailure(
   });
 }
 
+function isUnsafeSnapshotRewriteGuard(details: unknown): boolean {
+  const text = String(details || '');
+  return (
+    text.includes('AR snapshot guard refused unsafe rewrite') ||
+    text.includes('ar_snapshot_guard_skipped_unsafe_rewrite')
+  );
+}
+
 export function mapQueueRunToLegacy(run: QueueRunRecord): InforOperationalAsyncRun {
   return {
     syncRunId: run.id,
@@ -1703,6 +1711,10 @@ async function processTask(
                 transformed.errors,
                 `Transform failed for business date ${businessDateIso}`
               );
+              if (isUnsafeSnapshotRewriteGuard(details)) {
+                await quarantineHistoricalHydrationFailure(task, `snapshot hydration ${businessDateIso}`, details);
+                return { runId: task.runId, taskId: task.id, status: 'skipped', details };
+              }
               await markRunPostProcessingFailure(task, `snapshot hydration ${businessDateIso}`, details);
               return { runId: task.runId, taskId: task.id, status: 'failed', details };
             }
@@ -1732,6 +1744,10 @@ async function processTask(
       } catch (error) {
         const details = errorToMessage(error, 'Snapshot hydration failed');
         if (isBusinessDayFanoutTask) {
+          if (isUnsafeSnapshotRewriteGuard(details)) {
+            await quarantineHistoricalHydrationFailure(task, `snapshot hydration ${businessDateIso}`, details);
+            return { runId: task.runId, taskId: task.id, status: 'skipped', details };
+          }
           await markRunPostProcessingFailure(task, `snapshot hydration ${businessDateIso}`, details);
           return { runId: task.runId, taskId: task.id, status: 'failed', details };
         }
@@ -1791,14 +1807,22 @@ async function processTask(
             transformed.errors,
             `Completion hydration failed for business date ${businessDateIso}`
           );
+          if (isUnsafeSnapshotRewriteGuard(details)) {
+            await quarantineHistoricalHydrationFailure(task, `completion hydration ${businessDateIso}`, details);
+            continue;
+          }
           await markRunPostProcessingFailure(task, `completion hydration ${businessDateIso}`, details);
           return { runId: task.runId, taskId: task.id, status: 'failed', details };
         }
       }
     } catch (error) {
       const details = errorToMessage(error, 'Completion hydration failed');
+      if (isUnsafeSnapshotRewriteGuard(details)) {
+        await quarantineHistoricalHydrationFailure(task, 'completion hydration', details);
+      } else {
       await markRunPostProcessingFailure(task, 'completion hydration', details);
       return { runId: task.runId, taskId: task.id, status: 'failed', details };
+      }
     }
   }
 

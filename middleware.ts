@@ -150,6 +150,14 @@ export async function middleware(request: NextRequest) {
     !!cronSecret &&
     !!workerSecret &&
     workerSecret === cronSecret
+  const isTrustedQbdPostSyncWorker =
+    (
+      pathname === '/api/financials/reprocess-mappings' ||
+      pathname === '/api/quickbooks-desktop/rebuild-ar-ap-aging'
+    ) &&
+    !!cronSecret &&
+    !!workerSecret &&
+    workerSecret === cronSecret
   // Server-to-server admin/operational endpoints (rebuild-cash-snapshots,
   // rebuild-daily-bs, etc.) authenticate via the same CRON_SECRET passed as
   // the `x-cron-secret` header. The route handler still enforces the secret
@@ -270,6 +278,7 @@ export async function middleware(request: NextRequest) {
     pathname.startsWith('/api') &&
     !isPublicRoute &&
     !isTrustedInternalSyncWorker &&
+    !isTrustedQbdPostSyncWorker &&
     !isTrustedAdminCronCall &&
     !isDevBambooHrPayloadProbe &&
     !DISABLE_AUTH_SIGNIN
