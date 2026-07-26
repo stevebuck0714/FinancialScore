@@ -90,6 +90,27 @@ async function markUnsafeSnapshotRewriteGuardSkipped(
   return Number(result?.count || 0);
 }
 
+async function repairGuardFailedRawCompleteness(prisma: any, companyId: string): Promise<number> {
+  const result = await prisma.inforRawCompleteness.updateMany({
+    where: {
+      companyId,
+      platform: 'INFOR_M3',
+      isComplete: false,
+      OR: [
+        { statusMessage: { contains: 'AR snapshot guard refused unsafe rewrite' } },
+        { statusMessage: { contains: 'ar_snapshot_guard_skipped_unsafe_rewrite' } },
+      ],
+    },
+    data: {
+      isComplete: true,
+      statusMessage: 'transform_skipped:ar_snapshot_guard_unsafe_rewrite',
+      lastSeenAt: new Date(),
+      updatedAt: new Date(),
+    },
+  });
+  return Number(result?.count || 0);
+}
+
 async function repairPreviouslySkippedGuardCompleteness(prisma: any, runId: string, companyId: string): Promise<number> {
   const skippedTasks = await prisma.inforSyncTask.findMany({
     where: {
@@ -119,6 +140,50 @@ async function repairPreviouslySkippedGuardCompleteness(prisma: any, runId: stri
     repairedRows += await markUnsafeSnapshotRewriteGuardSkipped(prisma, companyId, payload);
   }
   return repairedRows;
+}
+
+async function completeTasksWithNoPendingCompleteness(prisma: any, runId: string, companyId: string): Promise<number> {
+  const tasks = await prisma.inforSyncTask.findMany({
+    where: {
+      runId,
+      companyId,
+      status: { in: ['pending', 'leased'] },
+    },
+    select: {
+      id: true,
+      payload: true,
+    },
+    take: 5000,
+  });
+
+  let completedTasks = 0;
+  for (const task of tasks) {
+    const payload = parseTaskPayload(task.payload);
+    if (!payload) continue;
+    const remainingRows = await prisma.$queryRaw<Array<{ pending: number }>>`
+      SELECT COUNT(*)::int AS pending
+      FROM "InforRawCompleteness"
+      WHERE platform = 'INFOR_M3'
+        AND "companyId" = ${companyId}
+        AND "syncRunId" = ${payload.sourceSyncRunId}
+        AND "businessDate" = ${new Date(`${payload.businessDateIso}T00:00:00.000Z`)}
+        AND "isComplete" = false
+        AND COALESCE("statusMessage", '') NOT LIKE 'raw_missing:%'
+    `;
+    if (Number(remainingRows[0]?.pending || 0) > 0) continue;
+    await prisma.inforSyncTask.updateMany({
+      where: { id: task.id, status: { in: ['pending', 'leased'] } },
+      data: {
+        status: 'done',
+        finishedAt: new Date(),
+        lastError: null,
+        leaseOwner: null,
+        leaseExpiresAt: null,
+      },
+    });
+    completedTasks += 1;
+  }
+  return completedTasks;
 }
 
 async function resolveAuthorizedCompany(
@@ -348,7 +413,9 @@ export async function POST(request: NextRequest) {
 
     const run = await getOrCreateActiveRun(prisma, companyId);
     await seedPendingTransformTasks(prisma, run.id, companyId, maxAttempts);
+    await repairGuardFailedRawCompleteness(prisma, companyId);
     await repairPreviouslySkippedGuardCompleteness(prisma, run.id, companyId);
+    await completeTasksWithNoPendingCompleteness(prisma, run.id, companyId);
       // Self-heal stale leased tasks from interrupted worker executions.
       await prisma.inforSyncTask.updateMany({
         where: {
