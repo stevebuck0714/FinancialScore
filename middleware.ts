@@ -146,7 +146,10 @@ export async function middleware(request: NextRequest) {
   const cronSecret = String(process.env.CRON_SECRET || '').trim()
   const workerSecret = String(request.headers.get('x-infor-sync-worker-secret') || '').trim()
   const isTrustedInternalSyncWorker =
-    pathname.startsWith('/api/infor-m3/operational-sync') &&
+    (
+      pathname.startsWith('/api/infor-m3/operational-sync') ||
+      pathname.startsWith('/api/infor-m3/operational-transform-pending')
+    ) &&
     !!cronSecret &&
     !!workerSecret &&
     workerSecret === cronSecret
