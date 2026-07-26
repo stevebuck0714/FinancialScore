@@ -67,6 +67,60 @@ function isUnsafeSnapshotRewriteGuard(details: unknown): boolean {
   );
 }
 
+async function markUnsafeSnapshotRewriteGuardSkipped(
+  prisma: any,
+  companyId: string,
+  payload: PendingTaskPayload
+): Promise<number> {
+  const result = await prisma.inforRawCompleteness.updateMany({
+    where: {
+      companyId,
+      platform: 'INFOR_M3',
+      syncRunId: payload.sourceSyncRunId,
+      businessDate: new Date(`${payload.businessDateIso}T00:00:00.000Z`),
+      isComplete: false,
+    },
+    data: {
+      isComplete: true,
+      statusMessage: 'transform_skipped:ar_snapshot_guard_unsafe_rewrite',
+      lastSeenAt: new Date(),
+      updatedAt: new Date(),
+    },
+  });
+  return Number(result?.count || 0);
+}
+
+async function repairPreviouslySkippedGuardCompleteness(prisma: any, runId: string, companyId: string): Promise<number> {
+  const skippedTasks = await prisma.inforSyncTask.findMany({
+    where: {
+      runId,
+      companyId,
+      status: 'done',
+      attempts: {
+        some: {
+          status: 'skipped',
+          OR: [
+            { errorMessage: { contains: 'AR snapshot guard refused unsafe rewrite' } },
+            { errorMessage: { contains: 'ar_snapshot_guard_skipped_unsafe_rewrite' } },
+          ],
+        },
+      },
+    },
+    select: {
+      payload: true,
+    },
+    take: 5000,
+  });
+
+  let repairedRows = 0;
+  for (const task of skippedTasks) {
+    const payload = parseTaskPayload(task.payload);
+    if (!payload) continue;
+    repairedRows += await markUnsafeSnapshotRewriteGuardSkipped(prisma, companyId, payload);
+  }
+  return repairedRows;
+}
+
 async function resolveAuthorizedCompany(
   request: NextRequest,
   body: Record<string, unknown>,
@@ -294,6 +348,7 @@ export async function POST(request: NextRequest) {
 
     const run = await getOrCreateActiveRun(prisma, companyId);
     await seedPendingTransformTasks(prisma, run.id, companyId, maxAttempts);
+    await repairPreviouslySkippedGuardCompleteness(prisma, run.id, companyId);
       // Self-heal stale leased tasks from interrupted worker executions.
       await prisma.inforSyncTask.updateMany({
         where: {
@@ -508,6 +563,21 @@ export async function POST(request: NextRequest) {
                 details: errorDetails.slice(0, 500),
               });
               await prisma.$transaction([
+                prisma.inforRawCompleteness.updateMany({
+                  where: {
+                    companyId,
+                    platform: 'INFOR_M3',
+                    syncRunId: payload.sourceSyncRunId,
+                    businessDate: new Date(`${payload.businessDateIso}T00:00:00.000Z`),
+                    isComplete: false,
+                  },
+                  data: {
+                    isComplete: true,
+                    statusMessage: 'transform_skipped:ar_snapshot_guard_unsafe_rewrite',
+                    lastSeenAt: new Date(),
+                    updatedAt: new Date(),
+                  },
+                }),
                 prisma.inforSyncTask.update({
                   where: { id: task.id },
                   data: {
