@@ -59,6 +59,14 @@ function getBackoffMs(attemptNo: number): number {
   return Math.min(30_000, 1_000 * Math.max(2, 2 ** attemptNo));
 }
 
+function isUnsafeSnapshotRewriteGuard(details: unknown): boolean {
+  const text = String(details || '');
+  return (
+    text.includes('AR snapshot guard refused unsafe rewrite') ||
+    text.includes('ar_snapshot_guard_skipped_unsafe_rewrite')
+  );
+}
+
 async function resolveAuthorizedCompany(
   request: NextRequest,
   body: Record<string, unknown>,
@@ -490,6 +498,54 @@ export async function POST(request: NextRequest) {
             }
 
             const errorDetails = transformed.errors.join(' | ') || 'Transform day failed.';
+            if (isUnsafeSnapshotRewriteGuard(errorDetails)) {
+              processedDays += 1;
+              results.push({
+                businessDateIso: payload.businessDateIso,
+                syncRunId: payload.sourceSyncRunId,
+                ok: true,
+                status: 'skipped',
+                details: errorDetails.slice(0, 500),
+              });
+              await prisma.$transaction([
+                prisma.inforSyncTask.update({
+                  where: { id: task.id },
+                  data: {
+                    status: 'done',
+                    attemptCount: attemptNo,
+                    finishedAt: new Date(),
+                    leaseOwner: null,
+                    leaseExpiresAt: null,
+                    lastError: errorDetails.slice(0, 1200),
+                  },
+                }),
+                prisma.inforSyncTaskAttempt.create({
+                  data: {
+                    taskId: task.id,
+                    runId: run.id,
+                    companyId,
+                    attemptNo,
+                    status: 'skipped',
+                    errorMessage: errorDetails.slice(0, 1200),
+                    finishedAt: new Date(),
+                  },
+                }),
+                prisma.inforSyncRun.update({
+                  where: { id: run.id },
+                  data: {
+                    chunkCount: { increment: 1 },
+                    warningCount: { increment: 1 },
+                    retryCount: 0,
+                    updatedAt: new Date(),
+                    lastChunkAt: new Date(),
+                    lastError: null,
+                    message: `Skipped guarded historical AR rewrite for ${payload.businessDateIso}.`,
+                  },
+                }),
+              ]);
+              finalized = true;
+              continue;
+            }
             const reachedMax = attemptNo >= Math.max(1, Number(task.maxAttempts || maxAttempts));
             if (reachedMax) {
               failedDays += 1;
