@@ -7,6 +7,12 @@ import {
   signForDfsColumn,
 } from '@/lib/financial/daily-bs-from-gl';
 
+const ATLANTIC_PRECISION_COMPANY_ID = 'cmmcp278j0002kz0439rlixdj';
+
+function shouldUseAtlanticCleanSLLedgersOnly(companyId: string): boolean {
+  return companyId === ATLANTIC_PRECISION_COMPANY_ID;
+}
+
 /**
  * Monthly P&L aggregation from GL truth, used to backfill the legacy
  * `MonthlyFinancial` table that powers `Data Review`, `Goals`, `Cash Flow`,
@@ -100,18 +106,33 @@ async function sumMonthlyPnlGLByAccount(
   const out = new Map<string, number>();
   if (accountIds.length === 0) return out;
 
-  const rows = await prisma.$queryRaw<GlSumRow[]>`
-    SELECT
-      "accountId",
-      SUM("signedAmount")::float AS balance
-    FROM "GLTransactionFact"
-    WHERE "companyId" = ${companyId}
-      AND "accountId" = ANY(${accountIds}::text[])
-      AND "transDate" >= ${monthStart}
-      AND "transDate" <= ${monthEnd}
-      AND LOWER(BTRIM(COALESCE("ref", ''))) <> 'income summary'
-    GROUP BY "accountId"
-  `;
+  const rows = shouldUseAtlanticCleanSLLedgersOnly(companyId)
+    ? await prisma.$queryRaw<GlSumRow[]>`
+        SELECT
+          "accountId",
+          SUM("signedAmount")::float AS balance
+        FROM "GLTransactionFact"
+        WHERE "companyId" = ${companyId}
+          AND "accountId" = ANY(${accountIds}::text[])
+          AND "sourceProgram" = 'SLLedgers'
+          AND "sourceTransaction" = 'RAW_REPLAY'
+          AND "transDate" >= ${monthStart}
+          AND "transDate" <= ${monthEnd}
+          AND LOWER(BTRIM(COALESCE("ref", ''))) <> 'income summary'
+        GROUP BY "accountId"
+      `
+    : await prisma.$queryRaw<GlSumRow[]>`
+        SELECT
+          "accountId",
+          SUM("signedAmount")::float AS balance
+        FROM "GLTransactionFact"
+        WHERE "companyId" = ${companyId}
+          AND "accountId" = ANY(${accountIds}::text[])
+          AND "transDate" >= ${monthStart}
+          AND "transDate" <= ${monthEnd}
+          AND LOWER(BTRIM(COALESCE("ref", ''))) <> 'income summary'
+        GROUP BY "accountId"
+      `;
 
   for (const row of rows) {
     out.set(row.accountId, Number(row.balance || 0));
