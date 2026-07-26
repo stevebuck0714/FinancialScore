@@ -498,6 +498,43 @@ export default function ValuationSdeSection5Preview(props: Props) {
                 </div>
               ))}
             </div>
+            <div style={{ fontSize: '16px', fontWeight: 700, color: '#1e293b', marginBottom: '8px' }}>Revenue Quality Graphs</div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '10px' }}>
+              <LineChart
+                title="Revenue-to-Cash Gap (Last 12 Months)"
+                data={model.revenueQualityInsights.revenueToCashGapSeries}
+                color="#ef4444"
+                compact
+                formatter={(v) => `${v.toFixed(1)}%`}
+                showTrendLine
+              />
+              <LineChart
+                title="DSO Trend (Last 12 Months)"
+                data={model.revenueQualityInsights.dsoMiniSeries}
+                color="#0ea5e9"
+                compact
+                formatter={(v) => `${v.toFixed(1)} days`}
+                benchmarkValue={model.sdeSectorBenchmarks.benchmarkTargets.dso}
+                showTrendLine
+              />
+              <LineChart
+                title="AR Growth vs Revenue Growth Spread"
+                data={model.revenueQualityInsights.arRevenueSpreadSeries.filter((row) => row.hasData)}
+                color="#f59e0b"
+                compact
+                formatter={(v) => `${v.toFixed(1)} pts`}
+                showTrendLine
+              />
+              <LineChart
+                title="Revenue Volatility (12M Coefficient of Variation)"
+                data={model.revenueQualityInsights.volatilitySeries.filter((row) => row.hasData)}
+                color="#8b5cf6"
+                compact
+                formatter={(v) => v.toFixed(2)}
+                benchmarkValue={model.sdeSectorBenchmarks.dso.volatilityWarn}
+                showTrendLine
+              />
+            </div>
             <div style={{ border: '1px solid #e2e8f0', borderRadius: '8px', overflow: 'hidden' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
                 <thead>
@@ -544,7 +581,12 @@ export default function ValuationSdeSection5Preview(props: Props) {
         {selections.sde_customerQuality && (
           <div className="valuation-print-category">
             {sectionTitle('Customer Quality')}
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0,1fr))', gap: '10px', marginBottom: '10px' }}>
+            {!model.customerQualityInsights.hasData && (
+              <div style={{ border: '1px solid #fbbf24', borderRadius: '8px', padding: '10px', background: '#fffbeb', color: '#92400e', fontSize: '13px', lineHeight: 1.5, marginBottom: '10px' }}>
+                Customer-level monthly sales records are not available for this report yet. Open the Customer Quality tab or generate/load customer sales data to populate this section.
+              </div>
+            )}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, minmax(0,1fr))', gap: '10px', marginBottom: '10px' }}>
               <div style={{ border: '1px solid #e2e8f0', borderRadius: '8px', padding: '10px', background: '#f8fafc' }}>
                 <div style={{ fontSize: '12px', color: '#64748b' }}>Top 1 %</div>
                 <div style={{ fontSize: '18px', fontWeight: 800, color: '#1e293b' }}>{model.customerQualityInsights.hasData ? `${model.customerQualityInsights.top1Pct.toFixed(1)}%` : 'N/A'}</div>
@@ -556,6 +598,14 @@ export default function ValuationSdeSection5Preview(props: Props) {
               <div style={{ border: '1px solid #e2e8f0', borderRadius: '8px', padding: '10px', background: '#f8fafc' }}>
                 <div style={{ fontSize: '12px', color: '#64748b' }}>HHI</div>
                 <div style={{ fontSize: '18px', fontWeight: 800, color: '#1e293b' }}>{model.customerQualityInsights.hasData ? Math.round(model.customerQualityInsights.hhi).toLocaleString() : 'N/A'}</div>
+              </div>
+              <div style={{ border: '1px solid #e2e8f0', borderRadius: '8px', padding: '10px', background: '#f8fafc' }}>
+                <div style={{ fontSize: '12px', color: '#64748b' }}>Customers</div>
+                <div style={{ fontSize: '18px', fontWeight: 800, color: '#1e293b' }}>{model.customerQualityInsights.hasData ? model.customerQualityInsights.customerCount.toLocaleString() : 'N/A'}</div>
+              </div>
+              <div style={{ border: '1px solid #e2e8f0', borderRadius: '8px', padding: '10px', background: '#f8fafc' }}>
+                <div style={{ fontSize: '12px', color: '#64748b' }}>TTM Customer Revenue</div>
+                <div style={{ fontSize: '18px', fontWeight: 800, color: '#1e293b' }}>{model.customerQualityInsights.hasData ? fmt(model.customerQualityInsights.totalTtmRevenue) : 'N/A'}</div>
               </div>
             </div>
             <div style={{ fontSize: '15px', fontWeight: 700, color: '#1e293b', marginBottom: '8px' }}>Customer Quality Flags</div>
@@ -574,6 +624,8 @@ export default function ValuationSdeSection5Preview(props: Props) {
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
                 <LineChart title="Top 1 Customer % (Last 36 Months)" data={model.customerQualityInsights.top1Series} color="#f59e0b" compact formatter={(v) => `${v.toFixed(1)}%`} />
                 <LineChart title="Top 5 Customers % (Last 36 Months)" data={model.customerQualityInsights.top5Series} color="#ef4444" compact formatter={(v) => `${v.toFixed(1)}%`} />
+                <LineChart title="Customer Concentration HHI (Last 36 Months)" data={model.customerQualityInsights.hhiSeries} color="#8b5cf6" compact formatter={(v) => Math.round(v).toLocaleString()} />
+                <LineChart title="Customer Count (Last 36 Months)" data={model.customerQualityInsights.customerCountSeries} color="#0ea5e9" compact formatter={(v) => Math.round(v).toLocaleString()} />
               </div>
             )}
           </div>

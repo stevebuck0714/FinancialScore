@@ -365,6 +365,258 @@ const stripBusinessContextMarkdown = (value: string): string =>
     .replace(/\n{3,}/g, '\n\n')
     .trim();
 
+const escapeBusinessOverviewHtml = (value: string): string =>
+  String(value || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+
+const cleanBusinessOverviewInlineText = (value: string): string =>
+  String(value || '')
+    .replace(/^\s{0,3}#{1,6}\s+/, '')
+    .replace(/^\*\*(.*?)\*\*$/, '$1')
+    .replace(/^__(.*?)__$/, '$1')
+    .replace(/\*\*(.*?)\*\*/g, '$1')
+    .replace(/__(.*?)__/g, '$1')
+    .trim();
+
+type BusinessOverviewNarrativeSegment =
+  | { type: 'heading'; text: string }
+  | { type: 'paragraph'; text: string }
+  | { type: 'bullet'; text: string }
+  | { type: 'numbered'; marker: string; text: string }
+  | { type: 'label'; label: string; text: string }
+  | { type: 'table'; rows: string[][] };
+
+const businessOverviewListLeadPattern =
+  /^(strengths?|weakness(?:es)?(?:\s+versus\s+.+)?|major inputs include|growth requires|current strategic initiatives include expanding into|primary regional competitors include|regional competitors include|national category competitors|premium bread|breakfast foods|frozen breakfast|baking mixes|direct-to-consumer gourmet food)$/i;
+
+const businessOverviewSentenceLeadPattern =
+  /^(instead|current|typical|major|the company|this creates|these brands|from an investment perspective|through qvc|because|although|unlike)\b/i;
+
+const splitBusinessOverviewTableCells = (line: string): string[] | null => {
+  const trimmed = line.trim();
+  if (!trimmed) return null;
+  const cells = trimmed
+    .split(/\t+| {2,}/)
+    .map((cell) => cleanBusinessOverviewInlineText(cell))
+    .filter(Boolean);
+  return cells.length >= 2 ? cells : null;
+};
+
+const isBusinessOverviewHeadingLine = (line: string): boolean => {
+  const cleaned = cleanBusinessOverviewInlineText(line);
+  if (!cleaned || /^[-*•]\s+/.test(cleaned) || /^\d+\.\s+/.test(cleaned)) return false;
+  if (/^\*\*.+\*\*$/.test(line.trim()) || /^#{1,6}\s+/.test(line.trim())) return true;
+  if (cleaned.length > 92) return false;
+  if (/[.!?]$/.test(cleaned)) return false;
+  if (businessOverviewSentenceLeadPattern.test(cleaned)) return false;
+  const words = cleaned.split(/\s+/).filter(Boolean);
+  if (cleaned.endsWith(':')) return words.length <= 6;
+  if (cleaned.includes(':')) return words.length <= 9;
+  if (words.length <= 5) return /^[A-Z0-9]/.test(cleaned);
+  return /^[A-Z][A-Za-z0-9'&/(), -]+$/.test(cleaned) && words.length <= 8;
+};
+
+const parseBusinessOverviewNarrative = (value: string, emptyText: string): BusinessOverviewNarrativeSegment[] => {
+  const rawLines = String(value || emptyText)
+    .replace(/\r\n/g, '\n')
+    .split(/\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+  const lines: string[] = [];
+  for (let index = 0; index < rawLines.length; index += 1) {
+    const line = rawLines[index];
+    if (/^[-*•]$/.test(line) && rawLines[index + 1]) {
+      lines.push(`- ${rawLines[index + 1]}`);
+      index += 1;
+    } else if (/^[-_*]{3,}$/.test(line)) {
+      continue;
+    } else {
+      lines.push(line);
+    }
+  }
+
+  const segments: BusinessOverviewNarrativeSegment[] = [];
+  let listLeadActive = false;
+
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index];
+    const tableCells = splitBusinessOverviewTableCells(line);
+    const nextTableCells = index + 1 < lines.length ? splitBusinessOverviewTableCells(lines[index + 1]) : null;
+    if (tableCells && nextTableCells) {
+      const rows: string[][] = [tableCells];
+      index += 1;
+      while (index < lines.length) {
+        const rowCells = splitBusinessOverviewTableCells(lines[index]);
+        if (!rowCells) {
+          index -= 1;
+          break;
+        }
+        rows.push(rowCells);
+        index += 1;
+      }
+      segments.push({ type: 'table', rows });
+      listLeadActive = false;
+      continue;
+    }
+
+    const cleaned = cleanBusinessOverviewInlineText(line);
+    const bulletMatch = cleaned.match(/^[-*•]\s+(.+)$/);
+    if (bulletMatch) {
+      segments.push({ type: 'bullet', text: cleanBusinessOverviewInlineText(bulletMatch[1]) });
+      listLeadActive = true;
+      continue;
+    }
+
+    const numberedMatch = cleaned.match(/^(\d+)\.\s+(.+)$/);
+    if (numberedMatch) {
+      segments.push({ type: 'numbered', marker: numberedMatch[1], text: cleanBusinessOverviewInlineText(numberedMatch[2]) });
+      listLeadActive = false;
+      continue;
+    }
+
+    const nextCleaned = index + 1 < lines.length ? cleanBusinessOverviewInlineText(lines[index + 1]) : '';
+    const nextLooksLikeParagraph = Boolean(nextCleaned && /[.!?]$/.test(nextCleaned) && nextCleaned.split(/\s+/).length > 8);
+    const cleanedListLead = businessOverviewListLeadPattern.test(cleaned.replace(/:$/, ''));
+    if (listLeadActive && cleaned.length <= 90 && !/[.!?]$/.test(cleaned) && !nextLooksLikeParagraph && !cleanedListLead) {
+      segments.push({ type: 'bullet', text: cleaned });
+      continue;
+    }
+
+    if (isBusinessOverviewHeadingLine(line)) {
+      const headingText = cleaned.replace(/:$/, '');
+      segments.push({ type: 'heading', text: headingText });
+      listLeadActive = businessOverviewListLeadPattern.test(headingText);
+      continue;
+    }
+
+    const labelMatch = cleaned.match(/^([A-Z][A-Za-z &/()-]{2,48}):\s+(.+)$/);
+    if (labelMatch) {
+      segments.push({
+        type: 'label',
+        label: cleanBusinessOverviewInlineText(labelMatch[1]),
+        text: cleanBusinessOverviewInlineText(labelMatch[2]),
+      });
+      listLeadActive = false;
+      continue;
+    }
+
+    segments.push({ type: 'paragraph', text: cleaned });
+    listLeadActive = businessOverviewListLeadPattern.test(cleaned.replace(/:$/, ''));
+  }
+
+  return segments.length > 0 ? segments : [{ type: 'paragraph', text: emptyText }];
+};
+
+const renderBusinessOverviewNarrative = (value: string, emptyText: string): React.ReactNode => {
+  const segments = parseBusinessOverviewNarrative(value, emptyText);
+  return (
+    <div style={{ display: 'grid', gap: '8px' }}>
+      {segments.map((segment, index) => {
+        const key = `${segment.type}-${index}`;
+        if (segment.type === 'heading') {
+          return (
+            <div key={key} style={{ fontSize: index === 0 ? '15px' : '14px', color: '#0f172a', fontWeight: 850, marginTop: index === 0 ? 0 : '8px' }}>
+              {segment.text}
+            </div>
+          );
+        }
+        if (segment.type === 'bullet') {
+          return (
+            <div key={key} style={{ display: 'grid', gridTemplateColumns: '14px minmax(0, 1fr)', gap: '7px', fontSize: '13px', color: '#334155', lineHeight: 1.55 }}>
+              <span style={{ color: '#1f70c1', fontWeight: 900 }}>•</span>
+              <span>{segment.text}</span>
+            </div>
+          );
+        }
+        if (segment.type === 'numbered') {
+          return (
+            <div key={key} style={{ display: 'grid', gridTemplateColumns: '24px minmax(0, 1fr)', gap: '7px', fontSize: '13px', color: '#334155', lineHeight: 1.55 }}>
+              <span style={{ color: '#1f70c1', fontWeight: 900 }}>{segment.marker}.</span>
+              <span>{segment.text}</span>
+            </div>
+          );
+        }
+        if (segment.type === 'label') {
+          return (
+            <div key={key} style={{ fontSize: '13px', color: '#334155', lineHeight: 1.55 }}>
+              <strong style={{ color: '#0f172a' }}>{segment.label}:</strong> {segment.text}
+            </div>
+          );
+        }
+        if (segment.type === 'table') {
+          const columnCount = Math.max(...segment.rows.map((row) => row.length));
+          return (
+            <div key={key} style={{ marginTop: '4px', overflowX: 'auto' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px', color: '#334155' }}>
+                <tbody>
+                  {segment.rows.map((row, rowIndex) => (
+                    <tr key={`${key}-row-${rowIndex}`} style={{ background: rowIndex === 0 ? '#f8fafc' : '#fff' }}>
+                      {Array.from({ length: columnCount }).map((_, colIndex) => (
+                        <td
+                          key={`${key}-cell-${rowIndex}-${colIndex}`}
+                          style={{
+                            padding: '7px 8px',
+                            border: '1px solid #e2e8f0',
+                            fontWeight: rowIndex === 0 ? 800 : 500,
+                            color: rowIndex === 0 ? '#1e293b' : '#334155',
+                          }}
+                        >
+                          {row[colIndex] || ''}
+                        </td>
+                      ))}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          );
+        }
+        return (
+          <div key={key} style={{ fontSize: '13px', color: '#334155', lineHeight: 1.65 }}>
+            {segment.text}
+          </div>
+        );
+      })}
+    </div>
+  );
+};
+
+const renderBusinessOverviewNarrativeHtml = (value: string, emptyText: string): string =>
+  `<div style="display: grid; gap: 8px;">${parseBusinessOverviewNarrative(value, emptyText)
+    .map((segment, index) => {
+      if (segment.type === 'heading') {
+        return `<div style="font-size: ${index === 0 ? '15px' : '14px'}; color: #0f172a; font-weight: 850; margin-top: ${index === 0 ? '0' : '8px'};">${escapeBusinessOverviewHtml(segment.text)}</div>`;
+      }
+      if (segment.type === 'bullet') {
+        return `<div style="display: grid; grid-template-columns: 14px minmax(0, 1fr); gap: 7px; font-size: 13px; color: #334155; line-height: 1.55;"><span style="color: #1f70c1; font-weight: 900;">•</span><span>${escapeBusinessOverviewHtml(segment.text)}</span></div>`;
+      }
+      if (segment.type === 'numbered') {
+        return `<div style="display: grid; grid-template-columns: 24px minmax(0, 1fr); gap: 7px; font-size: 13px; color: #334155; line-height: 1.55;"><span style="color: #1f70c1; font-weight: 900;">${escapeBusinessOverviewHtml(segment.marker)}.</span><span>${escapeBusinessOverviewHtml(segment.text)}</span></div>`;
+      }
+      if (segment.type === 'label') {
+        return `<div style="font-size: 13px; color: #334155; line-height: 1.55;"><strong style="color: #0f172a;">${escapeBusinessOverviewHtml(segment.label)}:</strong> ${escapeBusinessOverviewHtml(segment.text)}</div>`;
+      }
+      if (segment.type === 'table') {
+        const columnCount = Math.max(...segment.rows.map((row) => row.length));
+        return `<div style="margin-top: 4px; overflow-x: auto;"><table style="width: 100%; border-collapse: collapse; font-size: 12px; color: #334155;"><tbody>${segment.rows
+          .map(
+            (row, rowIndex) =>
+              `<tr style="background: ${rowIndex === 0 ? '#f8fafc' : '#fff'};">${Array.from({ length: columnCount })
+                .map(
+                  (_, colIndex) =>
+                    `<td style="padding: 7px 8px; border: 1px solid #e2e8f0; font-weight: ${rowIndex === 0 ? '800' : '500'}; color: ${rowIndex === 0 ? '#1e293b' : '#334155'};">${escapeBusinessOverviewHtml(row[colIndex] || '')}</td>`,
+                )
+                .join('')}</tr>`,
+          )
+          .join('')}</tbody></table></div>`;
+      }
+      return `<div style="font-size: 13px; color: #334155; line-height: 1.65;">${escapeBusinessOverviewHtml(segment.text)}</div>`;
+    })
+    .join('')}</div>`;
+
 const getIndustryGroupMeta = (industryGroupId?: number | null) => {
   const id = Number(industryGroupId || 0);
   if (!Number.isFinite(id) || id <= 0) return null;
@@ -4473,15 +4725,21 @@ function FinancialScorePage() {
     currentUser?.demoExpired,
   ]);
 
-  // Load customer-level operational sales for Customer Quality tab
+  // Load customer-level operational sales for Customer Quality tab and valuation report previews
   useEffect(() => {
     const shouldLoadCustomerQuality =
-      currentView === 'valuation' &&
-      valuationMethodTab === 'sde' &&
-      sdeModuleTab === 'customer-quality';
+      currentView === 'valuation-reports' ||
+      (currentView === 'valuation' &&
+        valuationMethodTab === 'sde' &&
+        sdeModuleTab === 'customer-quality');
 
-    if (!selectedCompanyId || !shouldLoadCustomerQuality) {
+    if (!selectedCompanyId) {
       setCustomerQualityRecords([]);
+      setCustomerQualityError(null);
+      setCustomerQualityLoading(false);
+      return;
+    }
+    if (!shouldLoadCustomerQuality) {
       setCustomerQualityError(null);
       setCustomerQualityLoading(false);
       return;
@@ -4494,9 +4752,19 @@ function FinancialScorePage() {
     setCustomerQualityLoading(true);
     setCustomerQualityError(null);
 
-    fetch(
-      `/api/operational-data?companyId=${selectedCompanyId}&type=customers&frequency=monthly&limit=1000&startDate=${encodeURIComponent(startDate.toISOString())}&endDate=${encodeURIComponent(endDate.toISOString())}`,
-    )
+    const customerQualityParams = new URLSearchParams({
+      companyId: selectedCompanyId,
+      type: 'customers',
+      frequency: 'monthly',
+      limit: '5000',
+      startDate: startDate.toISOString(),
+      endDate: endDate.toISOString(),
+    });
+    if (currentView === 'valuation-reports') {
+      customerQualityParams.set('refreshConcentration', '1');
+    }
+
+    fetch(`/api/operational-data?${customerQualityParams.toString()}`)
       .then(async (res) => {
         const data = await res.json();
         if (!res.ok) {
@@ -4505,10 +4773,29 @@ function FinancialScorePage() {
         return data;
       })
       .then((data) => {
-        setCustomerQualityRecords(Array.isArray(data?.records) ? data.records : []);
+        const concentrationRows = Array.isArray(data?.summary?.customerConcentration?.customerMonthly)
+          ? data.summary.customerConcentration.customerMonthly
+          : [];
+        const normalizedConcentrationRows = concentrationRows
+          .map((row: any) => {
+            const monthKey = String(row?.monthKey || '').trim();
+            return {
+              ...row,
+              snapshotDate: row?.snapshotDate || (monthKey ? `${monthKey}-01T00:00:00.000Z` : null),
+              customerName: String(row?.customerName || row?.name || '').trim(),
+              revenue: Number(row?.revenue || 0),
+            };
+          })
+          .filter((row: any) => row.snapshotDate && row.customerName && Number.isFinite(row.revenue) && row.revenue > 0);
+        setCustomerQualityRecords(
+          normalizedConcentrationRows.length > 0
+            ? normalizedConcentrationRows
+            : Array.isArray(data?.records)
+              ? data.records
+              : []
+        );
       })
       .catch((err) => {
-        setCustomerQualityRecords([]);
         setCustomerQualityError(err instanceof Error ? err.message : 'Failed to load customer quality data');
       })
       .finally(() => {
@@ -11052,13 +11339,11 @@ function FinancialScorePage() {
     const sel = valuationBuilderSelections;
     const pctOrNA = (value: number | null | undefined) =>
       Number.isFinite(Number(value)) ? `${Number(value).toFixed(1)}%` : 'N/A';
-    const textBlockHtml = (value: string, emptyText: string) =>
-      esc(value.trim() || emptyText).replace(/\n/g, '<br />');
 
     const backgroundHistoryHtml = sel.bo_companyBackgroundHistory
       ? `<div style="border: 1px solid #e2e8f0; border-radius: 8px; padding: 12px 14px;">
         <div style="font-size: 14px; font-weight: 800; color: #1e293b; margin-bottom: 8px;">Company Background & History</div>
-        <div style="font-size: 13px; color: #334155; line-height: 1.6;">${textBlockHtml(companyBackgroundHistory, 'No company background and history narrative has been saved.')}</div>
+        ${renderBusinessOverviewNarrativeHtml(companyBackgroundHistory, 'No company background and history narrative has been saved.')}
       </div>`
       : '';
 
@@ -11069,7 +11354,7 @@ function FinancialScorePage() {
     const marketPositionHtml = sel.bo_marketPositionCompetitiveLandscape
       ? `<div style="border: 1px solid #e2e8f0; border-radius: 8px; padding: 12px 14px;">
         <div style="font-size: 14px; font-weight: 800; color: #1e293b; margin-bottom: 8px;">Market Position & Competitive Landscape</div>
-        <div style="font-size: 13px; color: #334155; line-height: 1.6;">${textBlockHtml(marketPositionCompetitiveLandscape, 'No market position and competitive landscape narrative has been saved.')}</div>
+        ${renderBusinessOverviewNarrativeHtml(marketPositionCompetitiveLandscape, 'No market position and competitive landscape narrative has been saved.')}
         <div style="font-size: 12px; color: #64748b; margin-top: 10px;"><strong>Competitor search scopes:</strong> ${esc(competitorSearchScopes.map((scope) => scope.toUpperCase()).join(', '))}</div>
         ${competitorTable.length > 0 ? `<div style="margin-top: 12px; overflow-x: auto;"><table style="width: 100%; border-collapse: collapse; font-size: 11px; color: #334155;"><thead><tr style="background: #f8fafc;">${['Competitor', 'NAICS', 'Location', 'Type', 'Revenue', 'Employees', 'Years', 'Threat'].map((h) => `<th style="text-align:left;padding:6px;border:1px solid #e2e8f0;">${esc(h)}</th>`).join('')}</tr></thead><tbody>${competitorTable.map((row) => `<tr><td style="padding:6px;border:1px solid #e2e8f0;font-weight:700;">${esc(row.name)}</td><td style="padding:6px;border:1px solid #e2e8f0;">${esc(formatCompetitorNaics(row.sector, row.scope))}</td><td style="padding:6px;border:1px solid #e2e8f0;">${esc(row.location)}</td><td style="padding:6px;border:1px solid #e2e8f0;">${esc(row.competitorType)}</td><td style="padding:6px;border:1px solid #e2e8f0;">${esc(row.revenueEstimate)}</td><td style="padding:6px;border:1px solid #e2e8f0;">${esc(row.employeeEstimate)}</td><td style="padding:6px;border:1px solid #e2e8f0;">${esc(row.yearsInBusiness)}</td><td style="padding:6px;border:1px solid #e2e8f0;">${esc(row.threatLevel)}</td></tr>`).join('')}</tbody></table></div>` : ''}
         ${sourceListHtml}
@@ -12575,6 +12860,101 @@ function FinancialScorePage() {
     `;
   }, [companyName]);
 
+  const buildMarketOpportunityScanReportHtml = useCallback((): string => {
+    const escapeHtml = (value: string) =>
+      String(value || '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;');
+    const content = buildValuationSectionReportText('10', '8. Market, Competitor, and Opportunity Scan');
+    const lines = content.split(/\r?\n/).map((line) => line.trim());
+    const title = (lines.find(Boolean) || 'Market, Competitor, and Opportunity Scan').replace(/^\d+\.\s*/, '');
+    type ScanLine = { type: 'subheading' | 'bullet' | 'paragraph'; text: string };
+    type ScanCard = { title: string; lines: ScanLine[] };
+    const cards: ScanCard[] = [];
+    let current: ScanCard | null = null;
+    const pushCurrent = () => {
+      if (current && current.lines.length > 0) cards.push(current);
+      current = null;
+    };
+    const ensureCurrent = () => {
+      if (!current) current = { title: 'Market Scan', lines: [] };
+      return current;
+    };
+
+    for (const line of lines.slice(1)) {
+      if (!line) continue;
+      const rowHeading = line.match(/^[a-z]\.\s+(.+):$/i);
+      if (rowHeading) {
+        pushCurrent();
+        current = { title: rowHeading[1], lines: [] };
+        continue;
+      }
+      const subsection = line.match(/^[^-].+:$/);
+      if (subsection) {
+        ensureCurrent().lines.push({ type: 'subheading', text: line.replace(/:$/, '') });
+        continue;
+      }
+      const bullet = line.match(/^-\s+(.+)$/);
+      if (bullet) {
+        ensureCurrent().lines.push({ type: 'bullet', text: bullet[1] });
+        continue;
+      }
+      ensureCurrent().lines.push({ type: 'paragraph', text: line });
+    }
+    pushCurrent();
+
+    const renderInline = (text: string) => {
+      const clean = String(text || '').replace(/\s+/g, ' ').trim();
+      const colonIndex = clean.indexOf(':');
+      if (colonIndex > 0 && colonIndex < 56) {
+        const label = clean.slice(0, colonIndex).trim();
+        const value = clean.slice(colonIndex + 1).trim();
+        return `<strong style="color:#0f172a;">${escapeHtml(label)}:</strong> ${escapeHtml(value)}`;
+      }
+      return escapeHtml(clean);
+    };
+
+    const cardHtml = cards.length > 0
+      ? cards
+          .map((card) => {
+            const body = card.lines
+              .map((line) => {
+                if (line.type === 'subheading') {
+                  return `<div style="font-size: 13px; color: #1e293b; font-weight: 850; margin: 12px 0 4px 0;">${escapeHtml(line.text)}</div>`;
+                }
+                if (line.type === 'bullet') {
+                  const isSources = /^sources?:/i.test(line.text);
+                  return `<div style="display: grid; grid-template-columns: 16px minmax(0, 1fr); gap: 8px; align-items: start; padding: 7px 0; border-top: 1px solid #f1f5f9; font-size: 13px; color: ${isSources ? '#64748b' : '#334155'}; line-height: 1.55; overflow-wrap: ${isSources ? 'anywhere' : 'break-word'};">
+                    <span style="color: #1f70c1; font-weight: 900;">•</span>
+                    <span>${renderInline(line.text)}</span>
+                  </div>`;
+                }
+                return `<div style="font-size: 13px; color: #334155; line-height: 1.6; padding: 6px 0;">${renderInline(line.text)}</div>`;
+              })
+              .join('');
+            return `<div style="border: 1px solid #e2e8f0; border-radius: 10px; padding: 14px 16px; background: #fff; break-inside: avoid; page-break-inside: avoid;">
+              <div style="font-size: 15px; color: #0f172a; font-weight: 850; margin-bottom: 8px;">${escapeHtml(card.title)}</div>
+              ${body || `<div style="font-size: 13px; color: #64748b;">No content available.</div>`}
+            </div>`;
+          })
+          .join('')
+      : `<div style="border: 1px solid #e2e8f0; border-radius: 10px; padding: 14px 16px; background: #fff; font-size: 13px; color: #64748b;">No Market, Competitor, and Opportunity Scan content is available.</div>`;
+
+    return `
+      <div style="border: 1px solid #e2e8f0; border-radius: 10px; overflow: hidden; background: #fff;">
+        <div style="padding: 18px 20px; border-bottom: 1px solid #e2e8f0; background: #f8fafc;">
+          <div style="font-size: 20px; color: #0f172a; font-weight: 800; letter-spacing: -0.02em;">Corelytics Valuation Report</div>
+          <div style="font-size: 18px; color: #1e293b; font-weight: 800; margin-top: 6px;">${escapeHtml(title)}</div>
+          <div style="font-size: 16px; color: #475569; margin-top: 4px; line-height: 1.45;">Prepared for: <strong>${escapeHtml(companyName || 'Selected Company')}</strong> | Generated: ${escapeHtml(new Date().toLocaleDateString('en-US'))}</div>
+        </div>
+        <div style="padding: 16px 18px; display: grid; gap: 12px;">
+          ${cardHtml}
+        </div>
+      </div>
+    `;
+  }, [buildValuationSectionReportText, companyName]);
+
   const VALUATION_PAGE_BREAK_MARKER = '__VALUATION_PAGE_BREAK__';
   const buildStyledValuationReportPaginatedHtml = useCallback(
     (content: string): string => {
@@ -12714,11 +13094,13 @@ function FinancialScorePage() {
           ? buildHistoricalFinancialSummaryReportHtml()
           : sectionId === '2'
             ? buildBusinessOverviewReportHtml()
-            : sectionId === '12'
-              ? buildDataRoomReportHtml()
-              : content.includes(VALUATION_PAGE_BREAK_MARKER)
-                ? buildStyledValuationReportPaginatedHtml(content)
-                : buildStyledValuationReportHtml(content);
+            : sectionId === '10'
+              ? buildMarketOpportunityScanReportHtml()
+              : sectionId === '12'
+                ? buildDataRoomReportHtml()
+                : content.includes(VALUATION_PAGE_BREAK_MARKER)
+                  ? buildStyledValuationReportPaginatedHtml(content)
+                  : buildStyledValuationReportHtml(content);
       const pageCss =
         sectionId === '3' || sectionId === '12'
           ? `@page { size: letter landscape; margin: 0.4in; }`
@@ -12738,6 +13120,7 @@ function FinancialScorePage() {
       buildStyledValuationReportPaginatedHtml,
       buildHistoricalFinancialSummaryReportHtml,
       buildBusinessOverviewReportHtml,
+      buildMarketOpportunityScanReportHtml,
       buildDataRoomReportHtml,
       sdeValuationReportPreviewModel,
     ]
@@ -19982,17 +20365,13 @@ function FinancialScorePage() {
                   {valuationBuilderSelections.bo_companyBackgroundHistory && (
                     <div style={{ border: '1px solid #e2e8f0', borderRadius: '8px', padding: '12px 14px' }}>
                       <div style={{ fontSize: '14px', fontWeight: 800, color: '#1e293b', marginBottom: '8px' }}>Company Background & History</div>
-                      <div style={{ fontSize: '13px', color: '#334155', lineHeight: 1.6, whiteSpace: 'pre-wrap' }}>
-                        {companyBackgroundHistory.trim() || 'No company background and history narrative has been saved.'}
-                      </div>
+                      {renderBusinessOverviewNarrative(companyBackgroundHistory, 'No company background and history narrative has been saved.')}
                     </div>
                   )}
                   {valuationBuilderSelections.bo_marketPositionCompetitiveLandscape && (
                     <div style={{ border: '1px solid #e2e8f0', borderRadius: '8px', padding: '12px 14px' }}>
                       <div style={{ fontSize: '14px', fontWeight: 800, color: '#1e293b', marginBottom: '8px' }}>Market Position & Competitive Landscape</div>
-                      <div style={{ fontSize: '13px', color: '#334155', lineHeight: 1.6, whiteSpace: 'pre-wrap' }}>
-                        {marketPositionCompetitiveLandscape.trim() || 'No market position and competitive landscape narrative has been saved.'}
-                      </div>
+                      {renderBusinessOverviewNarrative(marketPositionCompetitiveLandscape, 'No market position and competitive landscape narrative has been saved.')}
                       <div style={{ fontSize: '12px', color: '#64748b', marginTop: '10px' }}>
                         <strong>Competitor search scopes:</strong> {competitorSearchScopes.map((scope) => scope.toUpperCase()).join(', ')}
                       </div>
@@ -20150,6 +20529,11 @@ function FinancialScorePage() {
               <div
                 style={{ marginTop: '10px' }}
                 dangerouslySetInnerHTML={{ __html: buildHistoricalFinancialSummaryReportHtml() }}
+              />
+            ) : valuationSectionPreview.id === '10' ? (
+              <div
+                style={{ marginTop: '10px' }}
+                dangerouslySetInnerHTML={{ __html: buildMarketOpportunityScanReportHtml() }}
               />
             ) : valuationSectionPreview.id === '12' ? (
               <div

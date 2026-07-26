@@ -401,6 +401,42 @@ function buildRevenueQualityInsights(
     };
   });
 
+  const growthComparisonSeries = revenueQualitySeries.map((row, idx) => {
+    if (idx < 23) {
+      return { month: row.month, revenueGrowth: 0, arGrowth: 0, spread: 0, hasData: false };
+    }
+    const currRev = revenueQualitySeries.slice(idx - 11, idx + 1).reduce((s, r) => s + r.revenue, 0);
+    const prevRev = revenueQualitySeries.slice(idx - 23, idx - 11).reduce((s, r) => s + r.revenue, 0);
+    const revGrowthPct = prevRev !== 0 ? ((currRev - prevRev) / Math.abs(prevRev)) * 100 : 0;
+    const currAr = row.ar;
+    const prevAr = revenueQualitySeries[idx - 12].ar;
+    const arGrowthPct = prevAr !== 0 ? ((currAr - prevAr) / Math.abs(prevAr)) * 100 : 0;
+    const spread = arGrowthPct - revGrowthPct;
+    return {
+      month: row.month,
+      revenueGrowth: revGrowthPct,
+      arGrowth: arGrowthPct,
+      spread,
+      hasData: true,
+    };
+  });
+
+  const revenueToCashGapSeries = revenueQualitySeries.slice(-12).map((row) => ({
+    month: row.month,
+    value: row.gapPct,
+  }));
+
+  const dsoMiniSeries = revenueQualitySeries.slice(-12).map((row) => ({
+    month: row.month,
+    value: row.dso,
+  }));
+
+  const arRevenueSpreadSeries = growthComparisonSeries.map((row) => ({
+    month: row.month,
+    value: row.spread,
+    hasData: row.hasData,
+  }));
+
   const flags = [
     {
       id: 'dso-spike',
@@ -443,6 +479,10 @@ function buildRevenueQualityInsights(
     arGrowth,
     arRevenueSpread,
     topBucketSharePct,
+    revenueToCashGapSeries,
+    dsoMiniSeries,
+    arRevenueSpreadSeries,
+    growthComparisonSeries,
     volatilitySeries,
     flags,
   };
@@ -478,11 +518,16 @@ function buildCustomerQualityInsights(
     if (!parsed || isNaN(parsed.getTime())) return null;
     return `${parsed.getFullYear()}-${String(parsed.getMonth() + 1).padStart(2, '0')}`;
   };
+  const monthKeyFromRow = (row: any): string | null => {
+    const explicitMonthKey = String(row?.monthKey || '').trim();
+    if (/^\d{4}-\d{2}$/.test(explicitMonthKey)) return explicitMonthKey;
+    return monthKey(row?.snapshotDate || row?.monthStart || row?.month || row?.periodStart || row?.date);
+  };
 
   const normalized = customerQualityRecords
     .map((r) => ({
-      month: monthKey((r as any).snapshotDate),
-      customerName: String((r as any).customerName || '').trim(),
+      month: monthKeyFromRow(r),
+      customerName: String((r as any).customerName || (r as any).name || '').trim(),
       revenue: Number((r as any).revenue) || 0,
     }))
     .filter((r) => !!r.month && !!r.customerName);
