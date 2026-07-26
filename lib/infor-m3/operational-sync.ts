@@ -3085,6 +3085,13 @@ async function saveGLTransactionFacts(
       const distDateRaw = parseMaybeDate(pickString(record, ['DistDate', 'distDate']));
       const controlPeriodRaw = pickNumber(record, ['ControlPeriod', 'controlPeriod', 'FiscalPeriod', 'fiscalPeriod']);
       const controlYearRaw = pickNumber(record, ['ControlYear', 'controlYear', 'FiscalYear', 'fiscalYear']);
+      const sourceProgram = context.miProgram || null;
+      const rawTransNum = pickString(record, ['TransNum', 'transNum']) || null;
+      const rowIdentity = pickString(record, ['RowPointer', 'rowPointer', '_ItemId']);
+      const factIdentity =
+        String(sourceProgram || '').trim().toUpperCase() === 'SLLEDGERS' && rowIdentity
+          ? [rawTransNum, rowIdentity].filter(Boolean).join(':')
+          : rawTransNum;
       return {
         companyId,
         transDate,
@@ -3100,12 +3107,12 @@ async function saveGLTransactionFacts(
         debitAmount: Number.isFinite(debitAmount) && debitAmount !== 0 ? debitAmount : null,
         creditAmount: Number.isFinite(creditAmount) && creditAmount !== 0 ? creditAmount : null,
         drCr: drCrToken || null,
-        transNum: pickString(record, ['TransNum', 'transNum']) || null,
+        transNum: factIdentity || null,
         ref: pickString(record, ['Ref', 'ref', 'reference']) || null,
         description: pickString(record, ['Description', 'description', 'TransDesc']) ?? '',
         site: pickString(record, ['Site', 'site']) || null,
         sourcePlatform: 'INFOR_M3',
-        sourceProgram: context.miProgram || null,
+        sourceProgram,
         sourceTransaction: context.transaction || null,
         controlPeriod: Number.isFinite(controlPeriodRaw) && controlPeriodRaw > 0 ? controlPeriodRaw : null,
         controlYear: Number.isFinite(controlYearRaw) && controlYearRaw > 0 ? controlYearRaw : null,
