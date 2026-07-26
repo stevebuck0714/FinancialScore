@@ -148,7 +148,8 @@ export async function middleware(request: NextRequest) {
   const isTrustedInternalSyncWorker =
     (
       pathname.startsWith('/api/infor-m3/operational-sync') ||
-      pathname.startsWith('/api/infor-m3/operational-transform-pending')
+      pathname.startsWith('/api/infor-m3/operational-transform-pending') ||
+      pathname.startsWith('/api/infor-m3/operational-transform-raw')
     ) &&
     !!cronSecret &&
     !!workerSecret &&
