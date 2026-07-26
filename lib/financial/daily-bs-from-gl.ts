@@ -43,12 +43,22 @@ import { BS_LAST_DAY_FIELDS, PNL_SUM_FIELDS } from '@/lib/financial/month-publis
 type Frequency = 'daily' | 'weekly' | 'monthly';
 
 const ATLANTIC_PRECISION_COMPANY_ID = 'cmmcp278j0002kz0439rlixdj';
+const ATLANTIC_PRECISION_BS_ANCHOR_DATE = new Date('2026-06-30T00:00:00.000Z');
 
-function shouldBlockPollutedGlFinancialRebuild(companyId: string): boolean {
+function shouldBlockPollutedGlFinancialRebuild(companyId: string, startDate?: Date | null): boolean {
+  const startsAtOrAfterTrustedAnchor =
+    startDate instanceof Date &&
+    !Number.isNaN(startDate.getTime()) &&
+    startDate.getTime() >= ATLANTIC_PRECISION_BS_ANCHOR_DATE.getTime();
   return (
     companyId === ATLANTIC_PRECISION_COMPANY_ID &&
+    !startsAtOrAfterTrustedAnchor &&
     process.env.ALLOW_ATLANTIC_POLLUTED_GL_REBUILD !== '1'
   );
+}
+
+function shouldUseAtlanticCleanSLLedgersOnly(companyId: string): boolean {
+  return companyId === ATLANTIC_PRECISION_COMPANY_ID;
 }
 
 const ASSET_TARGET_FIELDS = new Set<string>([
@@ -460,40 +470,81 @@ export async function sumGLByAccount(
   // and keep the SQL trivially auditable.
   let rows: GlSumRow[];
   if (lowerBoundExclusive) {
-    rows = await prisma.$queryRaw<GlSumRow[]>`
-      SELECT
-        "accountId",
-        SUM("signedAmount")::float AS balance
-      FROM "GLTransactionFact"
-      WHERE "companyId" = ${companyId}
-        AND "accountId" = ANY(${accountIds}::text[])
-        AND "transDate" > ${lowerBoundExclusive}
-        AND "transDate" <= ${endInclusive}
-      GROUP BY "accountId"
-    `;
+    rows = shouldUseAtlanticCleanSLLedgersOnly(companyId)
+      ? await prisma.$queryRaw<GlSumRow[]>`
+          SELECT
+            "accountId",
+            SUM("signedAmount")::float AS balance
+          FROM "GLTransactionFact"
+          WHERE "companyId" = ${companyId}
+            AND "accountId" = ANY(${accountIds}::text[])
+            AND "sourceProgram" = 'SLLedgers'
+            AND "sourceTransaction" = 'RAW_REPLAY'
+            AND "transDate" > ${lowerBoundExclusive}
+            AND "transDate" <= ${endInclusive}
+          GROUP BY "accountId"
+        `
+      : await prisma.$queryRaw<GlSumRow[]>`
+          SELECT
+            "accountId",
+            SUM("signedAmount")::float AS balance
+          FROM "GLTransactionFact"
+          WHERE "companyId" = ${companyId}
+            AND "accountId" = ANY(${accountIds}::text[])
+            AND "transDate" > ${lowerBoundExclusive}
+            AND "transDate" <= ${endInclusive}
+          GROUP BY "accountId"
+        `;
   } else if (lowerBoundInclusive) {
-    rows = await prisma.$queryRaw<GlSumRow[]>`
-      SELECT
-        "accountId",
-        SUM("signedAmount")::float AS balance
-      FROM "GLTransactionFact"
-      WHERE "companyId" = ${companyId}
-        AND "accountId" = ANY(${accountIds}::text[])
-        AND "transDate" >= ${lowerBoundInclusive}
-        AND "transDate" <= ${endInclusive}
-      GROUP BY "accountId"
-    `;
+    rows = shouldUseAtlanticCleanSLLedgersOnly(companyId)
+      ? await prisma.$queryRaw<GlSumRow[]>`
+          SELECT
+            "accountId",
+            SUM("signedAmount")::float AS balance
+          FROM "GLTransactionFact"
+          WHERE "companyId" = ${companyId}
+            AND "accountId" = ANY(${accountIds}::text[])
+            AND "sourceProgram" = 'SLLedgers'
+            AND "sourceTransaction" = 'RAW_REPLAY'
+            AND "transDate" >= ${lowerBoundInclusive}
+            AND "transDate" <= ${endInclusive}
+          GROUP BY "accountId"
+        `
+      : await prisma.$queryRaw<GlSumRow[]>`
+          SELECT
+            "accountId",
+            SUM("signedAmount")::float AS balance
+          FROM "GLTransactionFact"
+          WHERE "companyId" = ${companyId}
+            AND "accountId" = ANY(${accountIds}::text[])
+            AND "transDate" >= ${lowerBoundInclusive}
+            AND "transDate" <= ${endInclusive}
+          GROUP BY "accountId"
+        `;
   } else {
-    rows = await prisma.$queryRaw<GlSumRow[]>`
-      SELECT
-        "accountId",
-        SUM("signedAmount")::float AS balance
-      FROM "GLTransactionFact"
-      WHERE "companyId" = ${companyId}
-        AND "accountId" = ANY(${accountIds}::text[])
-        AND "transDate" <= ${endInclusive}
-      GROUP BY "accountId"
-    `;
+    rows = shouldUseAtlanticCleanSLLedgersOnly(companyId)
+      ? await prisma.$queryRaw<GlSumRow[]>`
+          SELECT
+            "accountId",
+            SUM("signedAmount")::float AS balance
+          FROM "GLTransactionFact"
+          WHERE "companyId" = ${companyId}
+            AND "accountId" = ANY(${accountIds}::text[])
+            AND "sourceProgram" = 'SLLedgers'
+            AND "sourceTransaction" = 'RAW_REPLAY'
+            AND "transDate" <= ${endInclusive}
+          GROUP BY "accountId"
+        `
+      : await prisma.$queryRaw<GlSumRow[]>`
+          SELECT
+            "accountId",
+            SUM("signedAmount")::float AS balance
+          FROM "GLTransactionFact"
+          WHERE "companyId" = ${companyId}
+            AND "accountId" = ANY(${accountIds}::text[])
+            AND "transDate" <= ${endInclusive}
+          GROUP BY "accountId"
+        `;
   }
 
   for (const row of rows) {
@@ -1229,11 +1280,6 @@ export async function rebuildDailyFinancialSnapshotsFromGL(
 }> {
   const companyId = String(opts.companyId || '').trim();
   if (!companyId) throw new Error('rebuildDailyFinancialSnapshotsFromGL: companyId required');
-  if (shouldBlockPollutedGlFinancialRebuild(companyId)) {
-    throw new Error(
-      'Atlantic Precision financial rebuild blocked: GLTransactionFact contains overlapping BACKFILL/RAW_REPLAY/CSI_LOAD sources and cannot be used as the DailyFinancialSnapshot source of truth.'
-    );
-  }
   if (!(opts.startDate instanceof Date) || Number.isNaN(opts.startDate.getTime())) {
     throw new Error('rebuildDailyFinancialSnapshotsFromGL: invalid startDate');
   }
@@ -1242,6 +1288,11 @@ export async function rebuildDailyFinancialSnapshotsFromGL(
   }
   if (opts.startDate.getTime() > opts.endDate.getTime()) {
     throw new Error('rebuildDailyFinancialSnapshotsFromGL: startDate must be <= endDate');
+  }
+  if (shouldBlockPollutedGlFinancialRebuild(companyId, opts.startDate)) {
+    throw new Error(
+      'Atlantic Precision financial rebuild blocked before trusted 2026-06-30 anchor: GLTransactionFact contains overlapping BACKFILL/RAW_REPLAY/CSI_LOAD sources and cannot be used as the DailyFinancialSnapshot source of truth.'
+    );
   }
 
   const frequency: Frequency = opts.frequency || 'daily';
