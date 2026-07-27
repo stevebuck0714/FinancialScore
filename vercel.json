@@ -49,6 +49,10 @@
     "app/api/cron/data-load-watchdog/route.ts": {
       "memory": 3008,
       "maxDuration": 300
+    },
+    "app/api/cron/qbo-monthly-upload-reminders/route.ts": {
+      "memory": 3008,
+      "maxDuration": 300
     }
   },
   "crons": [
@@ -135,6 +139,10 @@
     {
       "path": "/api/cron/data-load-watchdog",
       "schedule": "*/5 * * * *"
+    },
+    {
+      "path": "/api/cron/qbo-monthly-upload-reminders",
+      "schedule": "0 14 7 * *"
     }
   ]
 }

@@ -75,6 +75,14 @@ interface DataRoomPastDueNotificationProps {
   reason?: string;
 }
 
+interface QboMonthlyUploadReminderProps {
+  recipients: string[];
+  companyName: string;
+  companyId: string;
+  missingMonthLabel: string;
+  uploadUrl?: string;
+}
+
 interface CompanyUserInviteEmailProps {
   to: string;
   inviteeName: string;
@@ -1233,6 +1241,84 @@ export async function sendSupportTicket(ticket: SupportTicketProps) {
 
   console.log('Support ticket sent to', toRecipients.join(', '), data);
   return { success: true, data };
+}
+
+export async function sendQboMonthlyUploadReminder({
+  recipients,
+  companyName,
+  companyId,
+  missingMonthLabel,
+  uploadUrl,
+}: QboMonthlyUploadReminderProps) {
+  const client = getResendClient();
+  if (!client) {
+    console.warn('⚠️ RESEND_API_KEY not configured - skipping QBO monthly upload reminder');
+    return { success: false, reason: 'Email service not configured' };
+  }
+
+  const uniqueRecipients = Array.from(
+    new Set(recipients.map((email) => email.trim().toLowerCase()).filter(Boolean))
+  );
+  if (uniqueRecipients.length === 0) {
+    return { success: false, reason: 'No recipients' };
+  }
+
+  const safeCompany = escapeHtml(companyName);
+  const safeCompanyId = escapeHtml(companyId);
+  const safeMonth = escapeHtml(missingMonthLabel);
+  const safeUploadUrl = uploadUrl ? escapeHtml(uploadUrl) : '';
+
+  try {
+    const { data, error } = await client.emails.send({
+      from: DEFAULT_FROM,
+      to: uniqueRecipients,
+      subject: `Reminder: upload ${missingMonthLabel} QBO data for ${companyName}`,
+      html: `
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>QBO Monthly Upload Reminder</title></head>
+<body style="margin:0;padding:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Helvetica Neue',Arial,sans-serif;background:#f3f4f6;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="padding:24px;">
+    <tr><td align="center">
+      <table width="640" cellpadding="0" cellspacing="0" style="background:#fff;border-radius:10px;border:1px solid #e2e8f0;">
+        <tr><td style="padding:24px 28px;border-bottom:1px solid #e2e8f0;">
+          <h2 style="margin:0;font-size:20px;color:#1e293b;">Monthly QBO Data Upload Reminder</h2>
+          <p style="margin:8px 0 0;color:#64748b;font-size:14px;">Corelytics has not received the latest monthly QuickBooks Online data for this company.</p>
+        </td></tr>
+        <tr><td style="padding:24px 28px;">
+          <p style="margin:0 0 10px;color:#334155;font-size:14px;"><strong>Company:</strong> ${safeCompany}</p>
+          <p style="margin:0 0 10px;color:#334155;font-size:14px;"><strong>Company ID:</strong> ${safeCompanyId}</p>
+          <p style="margin:0 0 18px;color:#334155;font-size:14px;"><strong>Missing month:</strong> ${safeMonth}</p>
+          <p style="margin:0 0 18px;color:#475569;font-size:14px;line-height:1.6;">
+            Please upload the monthly QBO financial data so dashboards, financial reporting, alerts, forecasts, and custom reports stay current.
+          </p>
+          ${
+            safeUploadUrl
+              ? `<p style="margin:0 0 18px;"><a href="${safeUploadUrl}" style="display:inline-block;background:#1F70C1;color:#fff;text-decoration:none;padding:10px 16px;border-radius:8px;font-weight:700;font-size:14px;">Open Corelytics Upload</a></p>`
+              : ''
+          }
+          <p style="margin:0;color:#64748b;font-size:13px;line-height:1.6;">
+            In Corelytics, open Company Management &gt; Import Financials and upload the missing QBO monthly data.
+          </p>
+        </td></tr>
+      </table>
+    </td></tr>
+  </table>
+</body>
+</html>
+      `.trim(),
+    });
+
+    if (error) {
+      throw new Error(`Failed to send email: ${error.message}`);
+    }
+
+    console.log('✅ QBO monthly upload reminder sent:', data);
+    return { success: true, data };
+  } catch (error) {
+    console.error('❌ Error sending QBO monthly upload reminder:', error);
+    return { success: false, error };
+  }
 }
 
 function escapeHtml(text: string): string {
