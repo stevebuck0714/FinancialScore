@@ -77,6 +77,44 @@ function compactMoney(value: number): string {
   return `$${Math.round(value)}`;
 }
 
+function productKey(value: unknown): string {
+  return String(value || '').trim().toLowerCase().replace(/[^a-z0-9]/g, '');
+}
+
+function looksLikeProductCode(value: unknown): boolean {
+  const text = String(value || '').trim();
+  if (!text) return false;
+  return /^[A-Za-z0-9_.\/-]+$/.test(text) && /\d/.test(text);
+}
+
+function productDescriptionMap(
+  rows: Array<{ itemId?: string | null; itemName: string; sku: string | null }>,
+): Map<string, string> {
+  const descriptions = new Map<string, string>();
+  for (const row of rows) {
+    const description = String(row.itemName || '').trim();
+    if (!description || looksLikeProductCode(description) || description.toLowerCase() === 'unknown item') continue;
+    for (const alias of [row.itemId, row.itemName, row.sku]) {
+      const key = productKey(alias);
+      if (key && !descriptions.has(key)) descriptions.set(key, description);
+    }
+  }
+  return descriptions;
+}
+
+function productDisplayName(
+  row: { itemId?: string | null; itemName: string; sku: string | null },
+  descriptions: Map<string, string>,
+): string {
+  const directName = String(row.itemName || '').trim();
+  if (directName && !looksLikeProductCode(directName) && directName.toLowerCase() !== 'unknown item') return directName;
+  for (const alias of [row.itemId, row.itemName, row.sku]) {
+    const description = descriptions.get(productKey(alias));
+    if (description) return description;
+  }
+  return '';
+}
+
 function inferProductThemes(productText: string): string[] {
   const text = productText.toLowerCase();
   const themes: string[] = [];
@@ -96,19 +134,18 @@ function productThemeBuckets(text: string): string[] {
   if (/(bun|roll|sandwich|hoagie|sub|hamburger|hot dog)/.test(normalized)) buckets.push('sandwich buns and rolls');
   if (/(private label|store brand)/.test(normalized)) buckets.push('private-label bakery');
   if (/(loaf|white bread|wheat bread|italian bread|rye bread)/.test(normalized)) buckets.push('loaf bread');
-  return buckets.length ? buckets : ['other bakery products'];
+  return buckets;
 }
 
-function revenueWeightedProductContext(rows: Array<{ itemName: string; sku: string | null; revenue: number; quantitySold: number }>): string {
+function revenueWeightedProductContext(rows: Array<{ displayName: string; revenue: number; quantitySold: number }>): string {
   const totalRevenue = rows.reduce((sum, row) => sum + Math.max(0, asNumber(row.revenue)), 0);
   return rows
     .slice(0, 20)
     .map((row) => {
       const revenue = Math.max(0, asNumber(row.revenue));
       const share = totalRevenue > 0 ? `, ${percentLabel(revenue / totalRevenue)} of top-product revenue` : '';
-      const sku = row.sku ? ` (${row.sku})` : '';
       const quantity = asNumber(row.quantitySold) > 0 ? `, qty ${Math.round(asNumber(row.quantitySold))}` : '';
-      return `${row.itemName}${sku}: ${compactMoney(revenue)}${share}${quantity}`;
+      return `${row.displayName}: ${compactMoney(revenue)}${share}${quantity}`;
     })
     .join('; ');
 }
@@ -125,14 +162,14 @@ function revenueWeightedCustomerContext(rows: Array<{ customerName: string; reve
     .join('; ');
 }
 
-function revenueWeightedProductThemeMix(rows: Array<{ itemName: string; sku: string | null; revenue: number }>): string {
+function revenueWeightedProductThemeMix(rows: Array<{ displayName: string; revenue: number }>): string {
   const totals = new Map<string, number>();
   let totalRevenue = 0;
   rows.forEach((row) => {
     const revenue = Math.max(0, asNumber(row.revenue));
     if (revenue <= 0) return;
     totalRevenue += revenue;
-    const buckets = productThemeBuckets(`${row.itemName} ${row.sku || ''}`);
+    const buckets = productThemeBuckets(row.displayName);
     buckets.forEach((bucket) => {
       totals.set(bucket, (totals.get(bucket) || 0) + revenue / buckets.length);
     });
@@ -142,36 +179,6 @@ function revenueWeightedProductThemeMix(rows: Array<{ itemName: string; sku: str
     .sort((a, b) => b[1] - a[1])
     .map(([theme, revenue]) => `${theme}: ${percentLabel(revenue / totalRevenue)} of classified top-product revenue`)
     .join('; ');
-}
-
-function isCommercialBakeryContext(value: string): boolean {
-  const text = value.toLowerCase();
-  return /(baker|bakery|bread)/.test(text)
-    && /(commercial|manufactur|wholesale|distribution|distributor|grocery|private label|foodservice|institution|route|regional|brand)/.test(text);
-}
-
-function strategicMarketThesis(params: {
-  companyName: string;
-  industryText: string;
-  productContext: string;
-  customerContext: string;
-  profileText: string;
-}): string {
-  const combined = [
-    params.companyName,
-    params.industryText,
-    params.productContext,
-    params.customerContext,
-    params.profileText,
-  ].join(' ');
-  if (!isCommercialBakeryContext(combined)) return '';
-  return [
-    'Competitive frame: commercial/regional bakery supply, not neighborhood retail bakery.',
-    'Relevant competitor set: commercial bread and breakfast bread manufacturers; grocery/private-label suppliers; wholesale bakery distributors; regional branded bread companies; foodservice/institutional bakery suppliers.',
-    'Competitive change signals to research: capacity closures, plant shutdowns, route/distribution exits, pricing moves, shelf-space changes, supplier distress, and successor/acquirer activity.',
-    'Growth/M&A signals to research: similar regional commercial bakers, complementary breakfast/specialty/frozen or bake-off product lines, routes, brands, grocery/customer relationships, co-manufacturing partners, merger partners, and acquisition targets.',
-    'Targeted search examples for source collection: Schwebel Baking Company closing Pittsburgh bakery bread competitor; western Pennsylvania bakery closing bread grocery Schwebel; breakfast bread bakery competitor Pittsburgh grocery channel.',
-  ].join('\n');
 }
 
 function inferCustomerChannels(customerText: string): string[] {
@@ -244,13 +251,13 @@ export async function loadIndustryBriefCompany(companyId: string) {
       where: { companyId },
       orderBy: [{ snapshotDate: 'desc' }, { revenue: 'desc' }],
       take: 20,
-      select: { itemName: true, sku: true, quantitySold: true, revenue: true },
+      select: { itemId: true, itemName: true, sku: true, quantitySold: true, revenue: true },
     }).catch(() => []),
     prisma.inventorySnapshot.findMany({
       where: { companyId },
       orderBy: [{ snapshotDate: 'desc' }, { assetValue: 'desc' }],
       take: 20,
-      select: { itemName: true, sku: true },
+      select: { itemId: true, itemName: true, sku: true },
     }).catch(() => []),
     prisma.customerSalesSnapshot.findMany({
       where: { companyId },
@@ -299,16 +306,27 @@ export async function loadIndustryBriefCompany(companyId: string) {
     labeledText('Known local developments', intelligence?.industryBriefLocalMarketEvents),
     labeledText('Known opportunity themes', intelligence?.industryBriefKnownOpportunities),
   ].map((part) => String(part || '').trim()).filter(Boolean).join('\n');
-  const weightedProductContext = revenueWeightedProductContext(productRows);
+  const productDescriptions = productDescriptionMap(inventoryRows);
+  const productRowsWithDisplayNames = productRows
+    .map((row) => ({
+      displayName: productDisplayName(row, productDescriptions),
+      revenue: row.revenue,
+      quantitySold: row.quantitySold,
+    }))
+    .filter((row) => row.displayName);
+  const inventoryProductNames = inventoryRows
+    .map((row) => String(row.itemName || '').trim())
+    .filter((name) => name && !looksLikeProductCode(name) && name.toLowerCase() !== 'unknown item');
+  const weightedProductContext = revenueWeightedProductContext(productRowsWithDisplayNames);
   const weightedCustomerContext = revenueWeightedCustomerContext(customerRows);
-  const productThemeMix = revenueWeightedProductThemeMix(productRows);
+  const productThemeMix = revenueWeightedProductThemeMix(productRowsWithDisplayNames);
   const productContext = uniqueText([
     intelligence?.industryBriefProductFocus,
     ...intelligenceBrands,
     weightedProductContext,
     productThemeMix,
-    ...productRows.flatMap((row) => [row.itemName, row.sku]),
-    ...inventoryRows.flatMap((row) => [row.itemName, row.sku]),
+    ...productRowsWithDisplayNames.map((row) => row.displayName),
+    ...inventoryProductNames,
   ], 30);
   const customerContext = uniqueText([
     intelligence?.industryBriefCustomerChannels,
@@ -317,20 +335,12 @@ export async function loadIndustryBriefCompany(companyId: string) {
   ], 20);
   const inferredProductThemes = inferProductThemes(productContext);
   const inferredCustomerChannels = inferCustomerChannels(customerContext);
-  const marketThesisContext = strategicMarketThesis({
-    companyName: company.name,
-    industryText: [company.industrySectorCategory, industryGroup?.name, industryGroup?.description].filter(Boolean).join(' '),
-    productContext,
-    customerContext,
-    profileText,
-  });
   const operationalProfileText = [
     labeledText('Top products/items from operational data', productContext),
     labeledText('Revenue-weighted product theme mix from operational data', productThemeMix),
     labeledText('Inferred product themes from operational data', inferredProductThemes),
     labeledText('Top customers/channels from operational data', customerContext),
     labeledText('Inferred customer channels from operational data', inferredCustomerChannels),
-    labeledText('Strategic market and competitor thesis', marketThesisContext),
   ].filter(Boolean).join('\n');
   return {
     ...company,
@@ -339,7 +349,7 @@ export async function loadIndustryBriefCompany(companyId: string) {
     profileText,
     productContext,
     customerContext,
-    marketThesisContext,
+    marketThesisContext: '',
     operationalProfileText,
   };
 }
