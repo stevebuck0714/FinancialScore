@@ -6,7 +6,7 @@ import { requireAuth, validateCompanyAccess } from '@/lib/tenant-security';
 export const dynamic = 'force-dynamic';
 export const maxDuration = 120;
 
-const LOAN_ACTIVITY_CACHE_VERSION = 24;
+const LOAN_ACTIVITY_CACHE_VERSION = 25;
 const STALE_LOAN_ACTIVITY_MONTHS = 13;
 
 type LoanTermInput = {
@@ -130,10 +130,83 @@ async function readLoanActivityCache(companyId: string): Promise<{ payload: any;
   const row = rows[0];
   if (!row?.payload) return null;
   if (Number(row.payload?.cacheVersion || 0) !== LOAN_ACTIVITY_CACHE_VERSION) return null;
+  const generatedAt = row.generatedAt instanceof Date ? row.generatedAt : new Date(row.generatedAt);
+  if (Number.isNaN(generatedAt.getTime())) return null;
+  const todayUtc = new Date();
+  todayUtc.setUTCHours(0, 0, 0, 0);
+  if (generatedAt.getTime() < todayUtc.getTime()) return null;
+  const latestSourceUpdatedAt = await loadLatestLoanSourceUpdatedAt(companyId);
+  if (latestSourceUpdatedAt && latestSourceUpdatedAt.getTime() > generatedAt.getTime() + 1000) return null;
   return {
     payload: row.payload,
-    generatedAt: row.generatedAt?.toISOString?.() || new Date().toISOString(),
+    generatedAt: generatedAt.toISOString(),
   };
+}
+
+async function loadLatestLoanSourceUpdatedAt(companyId: string): Promise<Date | null> {
+  const rows = await prisma.$queryRawUnsafe<Array<{ sourceUpdatedAt: Date | null }>>(
+    `
+      SELECT MAX("sourceUpdatedAt") AS "sourceUpdatedAt"
+      FROM (
+        SELECT MAX(GREATEST("updatedAt", "createdAt")) AS "sourceUpdatedAt"
+        FROM "DailyFinancialSnapshot"
+        WHERE "companyId" = $1
+
+        UNION ALL
+
+        SELECT MAX(GREATEST(mf."createdAt", fr."createdAt", fr."updatedAt")) AS "sourceUpdatedAt"
+        FROM "MonthlyFinancial" mf
+        JOIN "FinancialRecord" fr ON fr.id = mf."financialRecordId"
+        WHERE mf."companyId" = $1
+
+        UNION ALL
+
+        SELECT MAX("createdAt") AS "sourceUpdatedAt"
+        FROM "GLTransactionFact"
+        WHERE "companyId" = $1
+
+        UNION ALL
+
+        SELECT MAX(GREATEST("createdAt", "fetchedAt")) AS "sourceUpdatedAt"
+        FROM "InforRawRecord"
+        WHERE "companyId" = $1
+          AND (
+            "miProgram" IN ('GLS210MI', 'SLLedgers', 'SLGls')
+            OR COALESCE("module", '') ~* 'ledger|gl|finance'
+          )
+
+        UNION ALL
+
+        SELECT MAX("createdAt") AS "sourceUpdatedAt"
+        FROM "ApiSyncLog"
+        WHERE "companyId" = $1
+          AND platform = 'INFOR_M3'
+          AND status = 'success'
+
+        UNION ALL
+
+        SELECT MAX("updatedAt") AS "sourceUpdatedAt"
+        FROM "BalanceSheetAccountAnchor"
+        WHERE "companyId" = $1
+
+        UNION ALL
+
+        SELECT MAX("updatedAt") AS "sourceUpdatedAt"
+        FROM "AccountMapping"
+        WHERE "companyId" = $1
+          AND (
+            COALESCE("targetField", '') IN ('loc', 'ltd')
+            OR COALESCE("accountName", '') ~* $2
+          )
+      ) source_updates
+    `,
+    companyId,
+    DEBT_ACCOUNT_NAME_PATTERN
+  );
+  const value = rows[0]?.sourceUpdatedAt;
+  if (!value) return null;
+  const parsed = value instanceof Date ? value : new Date(value);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
 }
 
 async function loadLoanAccountMetadata(companyId: string, accountIds: string[]): Promise<Map<string, {
@@ -1170,6 +1243,23 @@ async function loadLoanActivity(companyId: string) {
         activeLocAccountIds.add(accountId);
       }
     });
+    if (activeLocAccountIds.size === 0) {
+      const staleBefore = subtractMonths(reportAsOfDate, STALE_LOAN_ACTIVITY_MONTHS).getTime();
+      const bestRecentLoc = locAccountIds
+        .map((accountId) => {
+          const row = principalRows.find((item) => String(item.accountId || '').trim() === accountId);
+          const rawInforActivity = rawInforActivityByAccount.get(accountId) || null;
+          const lastActivityTime = Math.max(dateToTime(row?.lastDate) || 0, dateToTime(rawInforActivity?.lastDate) || 0);
+          const accountBalanceSnapshot = accountBalanceSnapshots.get(accountId) || null;
+          const currentBalance = accountBalanceSnapshot?.currentBalance == null
+            ? Math.abs(Number(baseSignedBalanceByAccount.get(accountId) || 0))
+            : Math.abs(Number(accountBalanceSnapshot.currentBalance || 0));
+          return { accountId, lastActivityTime, currentBalance };
+        })
+        .filter((candidate) => candidate.lastActivityTime >= staleBefore && candidate.currentBalance > 0.005)
+        .sort((a, b) => b.lastActivityTime - a.lastActivityTime || b.currentBalance - a.currentBalance)[0];
+      if (bestRecentLoc) activeLocAccountIds.add(bestRecentLoc.accountId);
+    }
   }
   if (latestLtdBalance > 0) {
     if (ltdAccountIds.length === 1) {
@@ -1230,19 +1320,27 @@ async function loadLoanActivity(companyId: string) {
     let derivedCurrentBalance = snapshotCurrentBalance;
     let derivedCurrentBalanceSource = accountBalanceSnapshot?.currentSource || null as string | null;
     let derivedCurrentBalanceAsOf = accountBalanceSnapshot?.currentAsOfDate || null as Date | null;
-    if (derivedCurrentBalance === null) {
-      if (targetField === 'loc' && activeLocAccountIds.has(accountId) && latestLocBalance > 0) {
-        derivedCurrentBalance = latestLocBalance;
-        derivedCurrentBalanceSource = `${debtSnapshotSource} LOC`;
-        derivedCurrentBalanceAsOf = latestSnapshotDate;
-      } else if (targetField === 'ltd' && activeLtdAccountIds.size === 1 && activeLtdAccountIds.has(accountId) && latestLtdBalance > 0) {
-        derivedCurrentBalance = latestLtdBalance;
-        derivedCurrentBalanceSource = `${debtSnapshotSource} LTD`;
-        derivedCurrentBalanceAsOf = latestSnapshotDate;
-      } else if ((targetField !== 'loc' || latestLocBalance <= 0) && Math.abs(principalActivityTotal) > 0.005) {
-        derivedCurrentBalance = Math.abs(principalActivityTotal);
-        derivedCurrentBalanceSource = `${useRawActivity ? 'ApiSyncLog:INFOR_M3' : 'GLTransactionFact'} activity total`;
-        derivedCurrentBalanceAsOf = maxValidDate([rawInforActivity?.lastDate, row.lastDate]);
+    if (targetField === 'loc' && activeLocAccountIds.has(accountId) && latestLocBalance > 0) {
+      derivedCurrentBalance = latestLocBalance;
+      derivedCurrentBalanceSource = `${debtSnapshotSource} LOC`;
+      derivedCurrentBalanceAsOf = latestSnapshotDate;
+    } else {
+      const lastActivityTime = Math.max(dateToTime(rawInforActivity?.lastDate) || 0, dateToTime(row.lastDate) || 0);
+      const staleBefore = subtractMonths(reportAsOfDate, STALE_LOAN_ACTIVITY_MONTHS).getTime();
+      if (targetField === 'loc' && latestLocBalance > 0 && lastActivityTime > 0 && lastActivityTime < staleBefore) {
+        derivedCurrentBalance = null;
+        derivedCurrentBalanceSource = null;
+        derivedCurrentBalanceAsOf = null;
+      } else if (derivedCurrentBalance === null) {
+        if (targetField === 'ltd' && activeLtdAccountIds.size === 1 && activeLtdAccountIds.has(accountId) && latestLtdBalance > 0) {
+          derivedCurrentBalance = latestLtdBalance;
+          derivedCurrentBalanceSource = `${debtSnapshotSource} LTD`;
+          derivedCurrentBalanceAsOf = latestSnapshotDate;
+        } else if ((targetField !== 'loc' || latestLocBalance <= 0) && Math.abs(principalActivityTotal) > 0.005) {
+          derivedCurrentBalance = Math.abs(principalActivityTotal);
+          derivedCurrentBalanceSource = `${useRawActivity ? 'ApiSyncLog:INFOR_M3' : 'GLTransactionFact'} activity total`;
+          derivedCurrentBalanceAsOf = maxValidDate([rawInforActivity?.lastDate, row.lastDate]);
+        }
       }
     }
     let instrumentStatus: 'active' | 'inactive' | 'unknown' = 'unknown';
