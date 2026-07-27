@@ -124,17 +124,28 @@ export async function GET(request: NextRequest) {
         requeueDone: true,
         forceSources: true,
       });
-      processIndustryBriefJobForCompany(companyId).catch((error) => {
-        console.warn('Daily Industry Brief manual refresh processor kick failed:', {
-          companyId,
-          error: String(error?.message || error).slice(0, 500),
-        });
-      });
+      const result = await processIndustryBriefJobForCompany(companyId);
+      const failedJob = result.jobs.find((item) => item.status === 'failed');
+      if (failedJob) {
+        return NextResponse.json(
+          {
+            status: 'failed',
+            message: 'Daily Industry Brief refresh failed.',
+            jobStatus: 'failed',
+            attempts: job.attemptCount,
+            error: failedJob.error || job.errorMessage || 'Refresh failed.',
+            dataVersion: INDUSTRY_BRIEF_DATA_VERSION,
+          },
+          { status: 503 },
+        );
+      }
+      const cached = await readCachedIndustryBrief(companyId);
+      if (cached) return NextResponse.json(cached);
       return NextResponse.json(
         {
           status: 'generating',
-          message: 'Daily Industry Brief refresh is running in the background. The current cached brief will remain available until refresh completes.',
-          jobStatus: job.status,
+          message: 'Daily Industry Brief refresh started, but the regenerated cache is not available yet. Please check again shortly.',
+          jobStatus: result.jobs[0]?.status || job.status,
           attempts: job.attemptCount,
           error: job.errorMessage,
           dataVersion: INDUSTRY_BRIEF_DATA_VERSION,
