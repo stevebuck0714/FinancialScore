@@ -15,8 +15,11 @@ import { resolveCompanyIndustrySectorCategory } from '@/lib/industry-sector-reso
 export const dynamic = 'force-dynamic';
 
 type BriefingSection = { title: string; bullets: string[] };
+type BriefingPeriod = 'daily' | 'monthly' | 'quarterly' | 'annual';
 type BriefingResponse = {
   generatedAt: string;
+  period: BriefingPeriod;
+  asOfDate: string;
   model?: string;
   aiGenerated: boolean;
   sections: BriefingSection[];
@@ -31,8 +34,8 @@ const MATERIAL_FINANCIAL_PCT = 0.03;
 const MIN_MTD_COMPARISON_DAYS = 10;
 const PERSISTED_CACHE_TTL_DAYS = 2;
 const DAILY_BRIEFING_LOOKBACK_DAYS = 90;
-const MONTHLY_BRIEFING_LOOKBACK_MONTHS = 12;
-const MONTHLY_FINANCIAL_ROW_CAP = 12;
+const MONTHLY_BRIEFING_LOOKBACK_MONTHS = 48;
+const MONTHLY_FINANCIAL_ROW_CAP = 60;
 const DAILY_FINANCIAL_ROW_CAP = 100;
 const CORE_SNAPSHOT_ROW_CAP = 150;
 const DETAIL_SNAPSHOT_ROW_CAP = 300;
@@ -75,6 +78,22 @@ function todayCacheKey(companyId: string): string {
   return `${companyId}:${new Date().toISOString().slice(0, 10)}`;
 }
 
+function normalizeBriefingPeriod(value: string | null): BriefingPeriod {
+  if (value === 'monthly' || value === 'quarterly' || value === 'annual') return value;
+  return 'daily';
+}
+
+function periodDisplayName(period: BriefingPeriod): string {
+  if (period === 'monthly') return 'Monthly';
+  if (period === 'quarterly') return 'Quarterly';
+  if (period === 'annual') return 'Annual';
+  return 'Daily';
+}
+
+function periodCacheDate(cacheDate: string, period: BriefingPeriod): string {
+  return `${cacheDate}:${period}`;
+}
+
 function sortByDate<T extends { snapshotDate?: Date; monthDate?: Date }>(rows: T[]): T[] {
   return [...rows].sort((a, b) => {
     const ad = (a.snapshotDate || a.monthDate || new Date(0)).getTime();
@@ -106,6 +125,18 @@ function periodLabel(rows: Array<{ monthDate?: Date; snapshotDate?: Date }>): st
   const start = dates[0].toISOString().slice(0, 10);
   const end = dates[dates.length - 1].toISOString().slice(0, 10);
   return start === end ? start : `${start} to ${end}`;
+}
+
+function latestDateKey(...values: unknown[]): string | null {
+  const dates = values
+    .map((value) => {
+      if (!value) return null;
+      const date = value instanceof Date ? value : new Date(String(value));
+      return Number.isNaN(date.getTime()) ? null : date;
+    })
+    .filter((date): date is Date => Boolean(date))
+    .sort((a, b) => b.getTime() - a.getTime());
+  return dates[0]?.toISOString().slice(0, 10) || null;
 }
 
 function addUtcDays(date: Date, days: number): Date {
@@ -143,7 +174,7 @@ function summarizeFinancialRows(rows: any[]) {
 function buildFinancialComparison(params: {
   key: string;
   label: string;
-  cadence: 'daily' | 'monthly';
+  cadence: BriefingPeriod;
   currentRows: any[];
   priorRows: any[];
   note?: string;
@@ -181,6 +212,137 @@ function buildFinancialComparison(params: {
       expenseMoveIsMaterial: isMaterialAmount(current.expense - prior.expense, prior.expense),
     },
   };
+}
+
+function groupCompleteMonthsByQuarter(rows: any[]): any[][] {
+  const groups = new Map<string, any[]>();
+  for (const row of rows) {
+    const monthDate = row?.monthDate instanceof Date ? row.monthDate : new Date(row?.monthDate || '');
+    if (Number.isNaN(monthDate.getTime())) continue;
+    const quarter = Math.floor(monthDate.getUTCMonth() / 3) + 1;
+    const key = `${monthDate.getUTCFullYear()}-Q${quarter}`;
+    const group = groups.get(key) || [];
+    group.push(row);
+    groups.set(key, group);
+  }
+  return Array.from(groups.values())
+    .map((group) => sortByDate(group))
+    .filter((group) => group.length === 3)
+    .sort((a, b) => {
+      const ad = a[0]?.monthDate?.getTime?.() || 0;
+      const bd = b[0]?.monthDate?.getTime?.() || 0;
+      return ad - bd;
+    });
+}
+
+function groupCompleteMonthsByYear(rows: any[]): any[][] {
+  const groups = new Map<string, any[]>();
+  for (const row of rows) {
+    const monthDate = row?.monthDate instanceof Date ? row.monthDate : new Date(row?.monthDate || '');
+    if (Number.isNaN(monthDate.getTime())) continue;
+    const key = String(monthDate.getUTCFullYear());
+    const group = groups.get(key) || [];
+    group.push(row);
+    groups.set(key, group);
+  }
+  return Array.from(groups.values())
+    .map((group) => sortByDate(group))
+    .filter((group) => group.length === 12)
+    .sort((a, b) => {
+      const ad = a[0]?.monthDate?.getTime?.() || 0;
+      const bd = b[0]?.monthDate?.getTime?.() || 0;
+      return ad - bd;
+    });
+}
+
+function buildFinancialComparisonsForPeriod(params: {
+  period: BriefingPeriod;
+  sortedDailyFinancials: any[];
+  completeMonthlyFinancials: any[];
+}) {
+  const { period, sortedDailyFinancials, completeMonthlyFinancials } = params;
+  const latestDailyFinancial = last(sortedDailyFinancials);
+  const latestDailyDate = latestDailyFinancial?.snapshotDate || null;
+  const currentMtdStart = latestDailyDate
+    ? new Date(Date.UTC(latestDailyDate.getUTCFullYear(), latestDailyDate.getUTCMonth(), 1))
+    : null;
+  const currentMtdEnd = latestDailyDate;
+  const priorMtdStart = currentMtdStart ? addUtcMonths(currentMtdStart, -1) : null;
+  const priorMtdEnd = priorMtdStart && latestDailyDate ? addUtcDays(priorMtdStart, latestDailyDate.getUTCDate() - 1) : null;
+  const currentMtdRows =
+    currentMtdStart && currentMtdEnd
+      ? sortedDailyFinancials.filter((row) => row.snapshotDate >= currentMtdStart && row.snapshotDate <= currentMtdEnd)
+      : [];
+  const priorMtdRows =
+    priorMtdStart && priorMtdEnd
+      ? sortedDailyFinancials.filter((row) => row.snapshotDate >= priorMtdStart && row.snapshotDate <= priorMtdEnd)
+      : [];
+
+  if (period === 'daily') {
+    return [
+      buildFinancialComparison({
+        key: 'latest_day_vs_prior_day',
+        label: 'Latest day vs prior day',
+        cadence: 'daily',
+        currentRows: sortedDailyFinancials.slice(-1),
+        priorRows: sortedDailyFinancials.slice(-2, -1),
+        note: 'Use only for material day-over-day movement.',
+      }),
+      buildFinancialComparison({
+        key: 'current_mtd_vs_same_elapsed_prior_month',
+        label: 'Current month-to-date vs same elapsed days last month',
+        cadence: 'daily',
+        currentRows:
+          currentMtdRows.length >= MIN_MTD_COMPARISON_DAYS && priorMtdRows.length >= MIN_MTD_COMPARISON_DAYS
+            ? currentMtdRows
+            : [],
+        priorRows:
+          currentMtdRows.length >= MIN_MTD_COMPARISON_DAYS && priorMtdRows.length >= MIN_MTD_COMPARISON_DAYS
+            ? priorMtdRows
+            : [],
+        note: `Same elapsed calendar days only; requires at least ${MIN_MTD_COMPARISON_DAYS} days in each period.`,
+      }),
+    ].filter((comparison) => comparison.comparable);
+  }
+
+  if (period === 'quarterly') {
+    const quarters = groupCompleteMonthsByQuarter(completeMonthlyFinancials);
+    return [
+      buildFinancialComparison({
+        key: 'latest_completed_quarter_vs_prior_quarter',
+        label: 'Latest completed quarter vs prior completed quarter',
+        cadence: 'quarterly',
+        currentRows: quarters.slice(-1).flat(),
+        priorRows: quarters.slice(-2, -1).flat(),
+        note: 'Use completed quarters only.',
+      }),
+    ].filter((comparison) => comparison.comparable);
+  }
+
+  if (period === 'annual') {
+    const years = groupCompleteMonthsByYear(completeMonthlyFinancials);
+    return [
+      buildFinancialComparison({
+        key: 'latest_completed_year_vs_prior_year',
+        label: 'Latest completed year vs prior completed year',
+        cadence: 'annual',
+        currentRows: years.slice(-1).flat(),
+        priorRows: years.slice(-2, -1).flat(),
+        note: 'Use completed years only.',
+      }),
+    ].filter((comparison) => comparison.comparable);
+  }
+
+  return [
+    buildFinancialComparison({
+      key: 'latest_completed_month_vs_prior_month',
+      label: 'Latest completed month vs prior completed month',
+      cadence: 'monthly',
+      currentRows: completeMonthlyFinancials.slice(-1),
+      priorRows: completeMonthlyFinancials.slice(-2, -1),
+      note: 'Use completed months only.',
+    }),
+  ].filter((comparison) => comparison.comparable);
 }
 
 function buildPeriodSets(rows: Array<{ snapshotDate: Date }>): { recentDates: Set<string>; priorDates: Set<string> } {
@@ -404,7 +566,7 @@ function formatPercentPoints(value: unknown): string {
   return `${sign}${(n * 100).toFixed(1)} pts`;
 }
 
-function buildMockExecBriefingResponse(facts: any, sourceNotes: string[]): BriefingResponse {
+function buildMockExecBriefingResponse(facts: any, sourceNotes: string[], period: BriefingPeriod, asOfDate: string): BriefingResponse {
   const financials = facts?.financials || {};
   const workingCapital = facts?.workingCapital || {};
   const customers = facts?.customers || {};
@@ -465,6 +627,8 @@ function buildMockExecBriefingResponse(facts: any, sourceNotes: string[]): Brief
 
   return {
     generatedAt: new Date().toISOString(),
+    period,
+    asOfDate,
     aiGenerated: false,
     sections: sections.length
       ? sections
@@ -765,6 +929,7 @@ export async function GET(request: NextRequest) {
     const companyId = request.nextUrl.searchParams.get('companyId') || '';
     if (!companyId) return NextResponse.json({ error: 'Company ID is required' }, { status: 400 });
     const forceRefresh = request.nextUrl.searchParams.get('force') === 'true';
+    const period = normalizeBriefingPeriod(request.nextUrl.searchParams.get('period'));
 
     if (!authorizedByCron) {
       const hasAccess = await validateCompanyAccess(companyId);
@@ -778,8 +943,10 @@ export async function GET(request: NextRequest) {
     const startDate = new Date(endDate.getTime() - DAILY_BRIEFING_LOOKBACK_DAYS * MS_IN_DAY);
     const monthlyStartDate = new Date();
     monthlyStartDate.setMonth(monthlyStartDate.getMonth() - MONTHLY_BRIEFING_LOOKBACK_MONTHS);
-    const cacheKey = todayCacheKey(companyId);
-    const cacheDate = cacheKey.split(':').pop() || new Date().toISOString().slice(0, 10);
+    const baseCacheKey = todayCacheKey(companyId);
+    const cacheDate = baseCacheKey.split(':').pop() || new Date().toISOString().slice(0, 10);
+    const persistedCacheDate = periodCacheDate(cacheDate, period);
+    const cacheKey = `${baseCacheKey}:${period}`;
     const company = await prisma.company.findUnique({
       where: { id: companyId },
       select: {
@@ -798,7 +965,7 @@ export async function GET(request: NextRequest) {
     if (!forceRefresh && !shouldUseGeneSolutionsMockBriefing) {
       const cached = dailyBriefingCache.get(latestCacheKey);
       if (cached) return NextResponse.json(cached, { headers: PRIVATE_DAILY_CACHE_HEADERS });
-      const persistedLatest = await readLatestBriefingCache(companyId, cacheDate);
+      const persistedLatest = await readLatestBriefingCache(companyId, persistedCacheDate);
       if (persistedLatest) {
         dailyBriefingCache.set(latestCacheKey, persistedLatest);
         return NextResponse.json(persistedLatest, { headers: PRIVATE_DAILY_CACHE_HEADERS });
@@ -814,11 +981,13 @@ export async function GET(request: NextRequest) {
         await prisma.$executeRawUnsafe(`DELETE FROM "PulseExecBriefingCache" WHERE "companyId" = $1`, companyId).catch(() => {});
         const response = {
           generatedAt: new Date().toISOString(),
+          period,
+          asOfDate: cacheDate,
           aiGenerated: false,
           sections: [
             {
               title: 'Financial Master Not Processed',
-              bullets: ['QuickBooks data has been loaded, but it has not been processed into the financial master yet. Daily Exec Briefing is paused until processed financial data is available.'],
+              bullets: ['QuickBooks data has been loaded, but it has not been processed into the financial master yet. Executive Briefing is paused until processed financial data is available.'],
             },
           ],
           sourceNotes: ['QuickBooks loaded data is not used for briefing until MonthlyFinancial master rows exist.'],
@@ -834,7 +1003,7 @@ export async function GET(request: NextRequest) {
     if (!forceRefresh && !shouldUseGeneSolutionsMockBriefing) {
       const cached = dailyBriefingCache.get(versionedCacheKey);
       if (cached) return NextResponse.json(cached, { headers: PRIVATE_DAILY_CACHE_HEADERS });
-      const persistedCached = await readBriefingCache(companyId, cacheDate, dataVersion);
+      const persistedCached = await readBriefingCache(companyId, persistedCacheDate, dataVersion);
       if (persistedCached) {
         dailyBriefingCache.set(versionedCacheKey, persistedCached);
         return NextResponse.json(persistedCached, { headers: PRIVATE_DAILY_CACHE_HEADERS });
@@ -843,7 +1012,7 @@ export async function GET(request: NextRequest) {
 
     let facts: any;
     let sourceNotes: string[];
-    const cachedSummary = !forceRefresh ? await readDailySummary(companyId, cacheDate, dataVersion) : null;
+    const cachedSummary = !forceRefresh ? await readDailySummary(companyId, persistedCacheDate, dataVersion) : null;
     if (cachedSummary) {
       facts = cachedSummary.facts;
       sourceNotes = cachedSummary.sourceNotes;
@@ -915,63 +1084,32 @@ export async function GET(request: NextRequest) {
 
     const monthlyFinancials = sortByDate(dfsMonthly ? dfsMonthly.rows : monthlyFinancialsRaw);
     const completeMonthlyFinancials = monthlyFinancials.filter(isCompleteMonthlyPeriod);
-    const comparisonMonthlyFinancials = completeMonthlyFinancials.length >= 6 ? completeMonthlyFinancials : monthlyFinancials;
-    const recentFinancials = comparisonMonthlyFinancials.slice(-3);
-    const priorFinancials = comparisonMonthlyFinancials.slice(-6, -3);
     const latestFinancial = last(completeMonthlyFinancials) || last(monthlyFinancials);
     const sortedDailyFinancials = sortByDate(dailyFinancials);
     const latestDailyFinancial = last(sortedDailyFinancials);
-    const latestDailyDate = latestDailyFinancial?.snapshotDate || null;
-    const currentMtdStart = latestDailyDate
-      ? new Date(Date.UTC(latestDailyDate.getUTCFullYear(), latestDailyDate.getUTCMonth(), 1))
-      : null;
-    const currentMtdEnd = latestDailyDate;
-    const priorMtdStart = currentMtdStart ? addUtcMonths(currentMtdStart, -1) : null;
-    const priorMtdEnd = priorMtdStart && latestDailyDate ? addUtcDays(priorMtdStart, latestDailyDate.getUTCDate() - 1) : null;
-    const currentMtdRows =
-      currentMtdStart && currentMtdEnd
-        ? sortedDailyFinancials.filter((row) => row.snapshotDate >= currentMtdStart && row.snapshotDate <= currentMtdEnd)
-        : [];
-    const priorMtdRows =
-      priorMtdStart && priorMtdEnd
-        ? sortedDailyFinancials.filter((row) => row.snapshotDate >= priorMtdStart && row.snapshotDate <= priorMtdEnd)
-        : [];
-    const financialComparisons = [
-      buildFinancialComparison({
-        key: 'current_mtd_vs_same_elapsed_prior_month',
-        label: 'Current month-to-date vs same elapsed days last month',
-        cadence: 'daily',
-        currentRows:
-          currentMtdRows.length >= MIN_MTD_COMPARISON_DAYS && priorMtdRows.length >= MIN_MTD_COMPARISON_DAYS
-            ? currentMtdRows
-            : [],
-        priorRows:
-          currentMtdRows.length >= MIN_MTD_COMPARISON_DAYS && priorMtdRows.length >= MIN_MTD_COMPARISON_DAYS
-            ? priorMtdRows
-            : [],
-        note: `Use for in-month deterioration or acceleration. Same elapsed calendar days only; requires at least ${MIN_MTD_COMPARISON_DAYS} days in each period.`,
-      }),
-      buildFinancialComparison({
-        key: 'latest_completed_month_vs_prior_month',
-        label: 'Latest completed month vs prior completed month',
-        cadence: 'monthly',
-        currentRows: completeMonthlyFinancials.slice(-1),
-        priorRows: completeMonthlyFinancials.slice(-2, -1),
-        note: 'Use for month-over-month changes after month close.',
-      }),
-    ].filter((comparison) => comparison.comparable);
+    const financialComparisons = buildFinancialComparisonsForPeriod({
+      period,
+      sortedDailyFinancials,
+      completeMonthlyFinancials,
+    });
+    const primaryFinancialComparison = financialComparisons[0] || null;
     const latestCashSnapshot = last(sortByDate(cashSnapshots));
     const latestArSnapshot = last(sortByDate(arSnapshots));
     const latestApSnapshot = last(sortByDate(apSnapshots));
+    const asOfDate = latestDateKey(
+      latestDailyFinancial?.snapshotDate,
+      latestCashSnapshot?.snapshotDate,
+      latestArSnapshot?.snapshotDate,
+      latestApSnapshot?.snapshotDate,
+      latestFinancial?.monthDate
+    ) || cacheDate;
 
-    const recentRevenue = recentFinancials.reduce((sum, row: any) => sum + asNumber(row.revenue), 0);
-    const priorRevenue = priorFinancials.reduce((sum, row: any) => sum + asNumber(row.revenue), 0);
-    const recentCogs = recentFinancials.reduce((sum, row: any) => sum + asNumber(row.cogsTotal), 0);
-    const priorCogs = priorFinancials.reduce((sum, row: any) => sum + asNumber(row.cogsTotal), 0);
-    const recentGrossProfit = recentRevenue - recentCogs;
-    const priorGrossProfit = priorRevenue - priorCogs;
-    const recentEbitda = recentFinancials.reduce((sum, row: any) => sum + ebitda(row), 0);
-    const priorEbitda = priorFinancials.reduce((sum, row: any) => sum + ebitda(row), 0);
+    const recentRevenue = asNumber(primaryFinancialComparison?.current?.revenue);
+    const priorRevenue = asNumber(primaryFinancialComparison?.prior?.revenue);
+    const recentGrossProfit = asNumber(primaryFinancialComparison?.current?.grossProfit);
+    const priorGrossProfit = asNumber(primaryFinancialComparison?.prior?.grossProfit);
+    const recentEbitda = asNumber(primaryFinancialComparison?.current?.ebitda);
+    const priorEbitda = asNumber(primaryFinancialComparison?.prior?.ebitda);
     const latestRevenue = asNumber(latestFinancial?.revenue);
     const latestEbitdaMargin = pct(ebitda(latestFinancial), latestRevenue);
     const latestCash = asNumber(latestDailyFinancial?.cash || latestFinancial?.cash || latestCashSnapshot?.cashBalance);
@@ -1049,6 +1187,12 @@ export async function GET(request: NextRequest) {
 
     facts = {
       company: { name: company?.name || 'Company', industryGroupId, industryName: benchmarks[0]?.industryName || null, industrySectorCategory: sectorCategory },
+      briefing: {
+        period,
+        periodLabel: periodDisplayName(period),
+        asOfDate,
+        hasComparableFinancialWindow: financialComparisons.length > 0,
+      },
       operationalModules: {
         sectorCategory: moduleProfile.sectorCategory,
         sectorKey: moduleProfile.sectorKey,
@@ -1061,7 +1205,7 @@ export async function GET(request: NextRequest) {
         monthsLoaded: monthlyFinancials.length,
         completeMonthsLoaded: completeMonthlyFinancials.length,
         comparisons: financialComparisons,
-        revenueTrend: recentRevenue >= priorRevenue ? 'increasing' : 'declining',
+        revenueTrend: primaryFinancialComparison ? (recentRevenue >= priorRevenue ? 'increasing' : 'declining') : null,
         recentRevenue,
         priorRevenue,
         revenueDelta: recentRevenue - priorRevenue,
@@ -1149,16 +1293,18 @@ export async function GET(request: NextRequest) {
       sourceNote('Industry benchmark data', benchmarks.length),
       sourceNote('Covenant data', covenantWatchlist.length),
     ].filter(Boolean);
-    await writeDailySummary(companyId, cacheDate, dataVersion, facts, sourceNotes).catch((summaryError) => {
+    await writeDailySummary(companyId, persistedCacheDate, dataVersion, facts, sourceNotes).catch((summaryError) => {
       console.warn('Pulse daily summary cache write failed:', summaryError);
     });
     }
 
+    const responseAsOfDate = String(facts?.briefing?.asOfDate || cacheDate);
+
     if (shouldUseGeneSolutionsMockBriefing) {
-      const response = buildMockExecBriefingResponse(facts, sourceNotes);
+      const response = buildMockExecBriefingResponse(facts, sourceNotes, period, responseAsOfDate);
       dailyBriefingCache.set(`${cacheKey}:latest`, response);
       dailyBriefingCache.set(versionedCacheKey, response);
-      await writeBriefingCache(companyId, cacheDate, dataVersion, response).catch((cacheError) => {
+      await writeBriefingCache(companyId, persistedCacheDate, dataVersion, response).catch((cacheError) => {
         console.warn('Pulse mock exec briefing cache write failed:', cacheError);
       });
       return NextResponse.json(response, { headers: PRIVATE_DAILY_CACHE_HEADERS });
@@ -1172,7 +1318,7 @@ export async function GET(request: NextRequest) {
     }
 
     const model = process.env.OPENAI_MODEL_EXEC_BRIEFING || process.env.OPENAI_MODEL_ASK || process.env.OPENAI_MODEL || 'gpt-4o';
-    const prompt = `Create a Daily Exec Briefing for ${facts.company.name}.
+    const prompt = `Create a ${periodDisplayName(period)} Exec Briefing for ${facts.company.name}.
 
 Write like a practical CFO/operator briefing the leadership team. Use concise bullet narrative, not technical jargon. Be forward-looking and action-oriented.
 
@@ -1198,7 +1344,7 @@ Blocked operating topics for this company: ${facts.operationalModules.promptRule
 
 For total accounts receivable and total accounts payable balances, use financials.balanceSheetAR and financials.balanceSheetAP. Do not use financials.arAging.total, financials.apAging.total, workingCapital.arAging.total, or workingCapital.apAging.total as the company's total balance sheet AR/AP if those differ; aging snapshots are only for aging mix, overdue percentages, and days sales outstanding.
 
-Only compare like-for-like periods. Do not compare days to weeks, weeks to months, or a partial current month to completed months. This is a daily briefing, so use current month-to-date vs the same elapsed days last month only when each period has at least ${MIN_MTD_COMPARISON_DAYS} days of daily ERP financial data; otherwise use latest completed month vs prior completed month. Do not use 3-month or 6-month trend analysis for this daily briefing. State the window used when a financial movement is material. If no comparable window supports an issue, do not draw a trend conclusion.
+Only compare like-for-like periods. Do not compare days to weeks, weeks to months, or a partial current month to completed months. This is a ${periodDisplayName(period).toLowerCase()} briefing; use only the comparison windows in facts.financials.comparisons. For the Daily tab, discuss material latest-day vs prior-day movement and current month-to-date vs the same elapsed days last month when available; never fall back to month-over-month analysis in the Daily tab. For Monthly, Quarterly, and Annual tabs, use completed periods only. State the window used when a financial movement is material. If no comparable window supports an issue, do not draw a trend conclusion.
 
 When revenue and margin rate move in different directions, explicitly state the end result to gross profit dollars only if the movement is material or decision-useful. Example: if revenue is declining but gross margin rate is improving, say whether gross profit dollars increased or decreased and by how much; if both are normal/immaterial, omit the topic entirely.
 
@@ -1280,6 +1426,8 @@ ${JSON.stringify(facts, null, 2)}`;
 
     const response = {
       generatedAt: new Date().toISOString(),
+      period,
+      asOfDate: responseAsOfDate,
       model,
       aiGenerated: true,
       sections,
@@ -1287,7 +1435,7 @@ ${JSON.stringify(facts, null, 2)}`;
     } satisfies BriefingResponse;
     dailyBriefingCache.set(`${cacheKey}:latest`, response);
     dailyBriefingCache.set(versionedCacheKey, response);
-    await writeBriefingCache(companyId, cacheDate, dataVersion, response).catch((cacheError) => {
+    await writeBriefingCache(companyId, persistedCacheDate, dataVersion, response).catch((cacheError) => {
       console.warn('Pulse exec briefing cache write failed:', cacheError);
     });
     return NextResponse.json(response, { headers: PRIVATE_DAILY_CACHE_HEADERS });

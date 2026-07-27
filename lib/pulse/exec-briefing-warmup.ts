@@ -1,9 +1,12 @@
+type BriefingPeriod = 'daily' | 'monthly' | 'quarterly' | 'annual';
+
 type WarmDailyExecutiveBriefingOptions = {
   companyId: string;
   baseUrl?: string | null;
   force?: boolean;
   source?: string;
   timeoutMs?: number;
+  periods?: BriefingPeriod[];
 };
 
 export type WarmDailyExecutiveBriefingResult = {
@@ -51,46 +54,60 @@ export async function warmDailyExecutiveBriefingCache(
     return { ok: false, skipped: true, error: 'App base URL is required to warm Daily Executive Briefing cache.' };
   }
 
-  const url = new URL('/api/pulse/exec-briefing', baseUrl);
-  url.searchParams.set('companyId', companyId);
-  if (options.force !== false) url.searchParams.set('force', 'true');
-  if (options.source) url.searchParams.set('source', options.source);
-
   const timeoutMs = Math.max(1000, Number(options.timeoutMs || 240000));
-  const controller = new AbortController();
-  const timeoutHandle = setTimeout(() => controller.abort(), timeoutMs);
-  try {
+  const defaultPeriods: BriefingPeriod[] = ['daily', 'monthly', 'quarterly', 'annual'];
+  const periods: BriefingPeriod[] = options.periods?.length ? options.periods : defaultPeriods;
+  const warmPeriod = async (period: BriefingPeriod): Promise<WarmDailyExecutiveBriefingResult> => {
+    const url = new URL('/api/pulse/exec-briefing', baseUrl);
+    url.searchParams.set('companyId', companyId);
+    url.searchParams.set('period', period);
+    if (options.force !== false) url.searchParams.set('force', 'true');
+    if (options.source) url.searchParams.set('source', options.source);
+
+    const controller = new AbortController();
+    const timeoutHandle = setTimeout(() => controller.abort(), timeoutMs);
     const vercelBypass = String(process.env.VERCEL_AUTOMATION_BYPASS_SECRET || '').trim();
-    const response = await fetch(url, {
-      headers: {
-        authorization: `Bearer ${cronSecret}`,
-        ...(vercelBypass ? { 'x-vercel-protection-bypass': vercelBypass } : {}),
-      },
-      cache: 'no-store',
-      signal: controller.signal,
-    });
-
-    if (response.ok) return { ok: true, status: response.status };
-
-    let details = response.statusText || `HTTP ${response.status}`;
     try {
-      const payload = await response.json();
-      details = String(payload?.error || payload?.details || details);
-    } catch {
-      // Keep the HTTP status text when the response is not JSON.
+      const response = await fetch(url, {
+        headers: {
+          authorization: `Bearer ${cronSecret}`,
+          ...(vercelBypass ? { 'x-vercel-protection-bypass': vercelBypass } : {}),
+        },
+        cache: 'no-store',
+        signal: controller.signal,
+      });
+
+      if (response.ok) return { ok: true, status: response.status };
+
+      let details = response.statusText || `HTTP ${response.status}`;
+      try {
+        const payload = await response.json();
+        details = String(payload?.error || payload?.details || details);
+      } catch {
+        // Keep the HTTP status text when the response is not JSON.
+      }
+      return { ok: false, status: response.status, error: `${period}: ${details.slice(0, 500)}` };
+    } catch (error: any) {
+      const timedOut = error?.name === 'AbortError';
+      return {
+        ok: false,
+        error: timedOut
+          ? `${period}: Executive Briefing warm-up timed out after ${timeoutMs}ms.`
+          : `${period}: ${String(error?.message || error).slice(0, 500)}`,
+      };
+    } finally {
+      clearTimeout(timeoutHandle);
     }
-    return { ok: false, status: response.status, error: details.slice(0, 500) };
-  } catch (error: any) {
-    const timedOut = error?.name === 'AbortError';
-    return {
-      ok: false,
-      error: timedOut
-        ? `Daily Executive Briefing warm-up timed out after ${timeoutMs}ms.`
-        : String(error?.message || error).slice(0, 500),
-    };
-  } finally {
-    clearTimeout(timeoutHandle);
-  }
+  };
+
+  const results = await Promise.all(periods.map((period) => warmPeriod(period)));
+  const failed = results.filter((result) => !result.ok);
+  if (failed.length === 0) return { ok: true, status: 200 };
+  return {
+    ok: false,
+    status: failed[0].status,
+    error: failed.map((result) => result.error || `HTTP ${result.status || 'unknown'}`).join(' | ').slice(0, 500),
+  };
 }
 
 export function scheduleDailyExecutiveBriefingWarmup(

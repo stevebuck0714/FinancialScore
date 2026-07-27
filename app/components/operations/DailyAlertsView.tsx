@@ -111,8 +111,12 @@ type ExecBriefingSection = {
   bullets: string[];
 };
 
+type BriefingPeriod = 'daily' | 'monthly' | 'quarterly' | 'annual';
+
 type ExecBriefing = {
   generatedAt: string;
+  period?: BriefingPeriod;
+  asOfDate?: string;
   model?: string;
   aiGenerated: boolean;
   sections: ExecBriefingSection[];
@@ -274,8 +278,17 @@ function formatReportDate(value?: string | null): string {
   return t.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
 }
 
-function dailyCacheKey(kind: 'alerts' | 'exec-briefing', companyId: string): string {
-  return `company-pulse:${kind}:${DAILY_CACHE_VERSION}:${companyId}:${toLocalInputDate(new Date())}`;
+function formatAsOfDate(value?: string | null): string {
+  if (!value) return '';
+  const [year, month, day] = String(value).slice(0, 10).split('-').map(Number);
+  const date = year && month && day ? new Date(year, month - 1, day) : new Date(value);
+  if (!Number.isFinite(date.getTime())) return '';
+  return date.toLocaleDateString(undefined, { month: 'long', day: 'numeric' });
+}
+
+function dailyCacheKey(kind: 'alerts' | 'exec-briefing', companyId: string, suffix?: string): string {
+  const extra = suffix ? `:${suffix}` : '';
+  return `company-pulse:${kind}:${DAILY_CACHE_VERSION}:${companyId}:${toLocalInputDate(new Date())}${extra}`;
 }
 
 function readDailyCache<T>(key: string): T | null {
@@ -297,10 +310,10 @@ function writeDailyCache<T>(key: string, value: T): void {
   }
 }
 
-function clearDailyCache(kind: 'alerts' | 'exec-briefing', companyId: string): void {
+function clearDailyCache(kind: 'alerts' | 'exec-briefing', companyId: string, suffix?: string): void {
   if (typeof window === 'undefined' || !companyId) return;
   try {
-    window.localStorage.removeItem(dailyCacheKey(kind, companyId));
+    window.localStorage.removeItem(dailyCacheKey(kind, companyId, suffix));
   } catch {
     // Ignore storage failures.
   }
@@ -410,6 +423,8 @@ export default function DailyAlertsView({ companyId, companyName, onNavigate }: 
   const [execBriefing, setExecBriefing] = useState<ExecBriefing | null>(null);
   const [execBriefingLoading, setExecBriefingLoading] = useState(false);
   const [execBriefingError, setExecBriefingError] = useState<string | null>(null);
+  const [briefingPeriod, setBriefingPeriod] = useState<BriefingPeriod>('daily');
+  const [isQuickBooksCompany, setIsQuickBooksCompany] = useState(false);
   const [pulseRefreshing, setPulseRefreshing] = useState(false);
   const [pulseGeneratedAt, setPulseGeneratedAt] = useState<string | null>(null);
   const [showPolicySettings, setShowPolicySettings] = useState(false);
@@ -1892,11 +1907,38 @@ export default function DailyAlertsView({ companyId, companyName, onNavigate }: 
     };
   }, [companyId]);
 
+  useEffect(() => {
+    let cancelled = false;
+    const loadCompanyMeta = async () => {
+      if (!companyId) return;
+      try {
+        const params = new URLSearchParams({ companyId, limit: '1' });
+        const response = await fetch(`/api/companies?${params}`, { cache: 'no-store' });
+        if (!response.ok) return;
+        const data = await response.json();
+        const company = Array.isArray(data?.companies) ? data.companies[0] : null;
+        const qbo = ['QUICKBOOKS', 'QUICKBOOKS_DESKTOP', 'QUICKBOOKS_ENTERPRISE'].includes(
+          String(company?.accountingSystem || '').trim().toUpperCase()
+        );
+        if (!cancelled) {
+          setIsQuickBooksCompany(qbo);
+          setBriefingPeriod(qbo ? 'monthly' : 'daily');
+        }
+      } catch {
+        if (!cancelled) setIsQuickBooksCompany(false);
+      }
+    };
+    loadCompanyMeta();
+    return () => {
+      cancelled = true;
+    };
+  }, [companyId]);
+
   const loadExecBriefing = useCallback(async (force = false) => {
     if (!companyId) return;
     if (execBriefingLoading) return;
-    if (!force && execBriefing) return;
-    const briefingCacheKey = dailyCacheKey('exec-briefing', companyId);
+    if (!force && execBriefing?.period === briefingPeriod) return;
+    const briefingCacheKey = dailyCacheKey('exec-briefing', companyId, briefingPeriod);
     if (!force) {
       const cachedBriefing = readDailyCache<ExecBriefing>(briefingCacheKey);
       if (cachedBriefing) {
@@ -1905,12 +1947,12 @@ export default function DailyAlertsView({ companyId, companyName, onNavigate }: 
         return;
       }
     } else {
-      clearDailyCache('exec-briefing', companyId);
+      clearDailyCache('exec-briefing', companyId, briefingPeriod);
     }
     setExecBriefingLoading(true);
     setExecBriefingError(null);
     try {
-      const params = new URLSearchParams({ companyId });
+      const params = new URLSearchParams({ companyId, period: briefingPeriod });
       if (force) params.set('force', 'true');
       const response = await fetchWithTimeout(`/api/pulse/exec-briefing?${params}`, undefined, 45000);
       if (!response.ok) {
@@ -1934,12 +1976,12 @@ export default function DailyAlertsView({ companyId, companyName, onNavigate }: 
     } finally {
       setExecBriefingLoading(false);
     }
-  }, [companyId, execBriefing, execBriefingLoading]);
+  }, [companyId, briefingPeriod, execBriefing, execBriefingLoading]);
 
   useEffect(() => {
     setExecBriefing(null);
     setExecBriefingError(null);
-  }, [companyId]);
+  }, [companyId, briefingPeriod]);
 
   useEffect(() => {
     if (activeTab === 'briefing') {
@@ -2888,7 +2930,12 @@ export default function DailyAlertsView({ companyId, companyName, onNavigate }: 
           <div style={{ border: '1px solid #e2e8f0', borderRadius: '12px', background: 'white', padding: '16px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px', flexWrap: 'wrap' }}>
               <div>
-                <div style={{ fontSize: '20px', fontWeight: 800, color: '#0f172a' }}>Daily Exec Briefing</div>
+                <div style={{ fontSize: '20px', fontWeight: 800, color: '#0f172a' }}>Executive Briefing</div>
+                {execBriefing?.asOfDate && (
+                  <div style={{ marginTop: '4px', fontSize: '13px', color: '#64748b', fontWeight: 700 }}>
+                    As of {formatAsOfDate(execBriefing.asOfDate)}
+                  </div>
+                )}
               </div>
               <button
                 onClick={() => loadExecBriefing(true)}
@@ -2908,6 +2955,32 @@ export default function DailyAlertsView({ companyId, companyName, onNavigate }: 
               </button>
             </div>
 
+            <div style={{ marginTop: '14px', display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+              {([
+                ...(!isQuickBooksCompany ? [{ id: 'daily' as BriefingPeriod, label: 'Daily' }] : []),
+                { id: 'monthly' as BriefingPeriod, label: 'Monthly' },
+                { id: 'quarterly' as BriefingPeriod, label: 'Quarterly' },
+                { id: 'annual' as BriefingPeriod, label: 'Annual' },
+              ]).map((tab) => (
+                <button
+                  key={tab.id}
+                  onClick={() => setBriefingPeriod(tab.id)}
+                  style={{
+                    fontSize: '13px',
+                    fontWeight: 800,
+                    color: briefingPeriod === tab.id ? '#1d4ed8' : '#475569',
+                    background: briefingPeriod === tab.id ? '#eff6ff' : 'white',
+                    border: `1px solid ${briefingPeriod === tab.id ? '#bfdbfe' : '#e2e8f0'}`,
+                    borderRadius: '999px',
+                    padding: '7px 12px',
+                    cursor: 'pointer',
+                  }}
+                >
+                  {tab.label}
+                </button>
+              ))}
+            </div>
+
             {execBriefingError && (
               <div style={{ marginTop: '16px', border: '1px solid #fecaca', borderRadius: '10px', background: '#fff7f7', padding: '10px', fontSize: '13px', color: '#991b1b' }}>
                 {execBriefingError}
@@ -2916,12 +2989,6 @@ export default function DailyAlertsView({ companyId, companyName, onNavigate }: 
 
             {execBriefing && (
               <>
-                <div style={{ marginTop: '12px', display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
-                  <span style={{ fontSize: '12px', color: '#475569', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '999px', padding: '4px 9px' }}>
-                    Generated {formatDateTime(execBriefing.generatedAt)}
-                  </span>
-                </div>
-
                 <div style={{ marginTop: '16px', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '12px' }}>
                   {execBriefing.sections.map((section) => (
                     <div key={section.title} style={{ border: '1px solid #e2e8f0', borderRadius: '12px', background: '#ffffff', padding: '14px' }}>
