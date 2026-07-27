@@ -208,21 +208,15 @@ function isLocInstrument(instrument: LoanInstrument): boolean {
 function hasLoanInstrumentBalance(instrument: LoanInstrument): boolean {
   const priorMonthBalance = Number(instrument.priorMonthBalance);
   const currentBalance = getLoanCurrentBalance(instrument);
-  const termsCurrentBalance = toFiniteNumber(instrument.terms?.currentBalance);
-  const termsOriginalBalance = toFiniteNumber(instrument.terms?.originalBalance);
   return (
     (Number.isFinite(priorMonthBalance) && Math.abs(priorMonthBalance) > 0.005) ||
-    (currentBalance !== null && Math.abs(currentBalance) > 0.005) ||
-    (termsCurrentBalance !== null && Math.abs(termsCurrentBalance) > 0.005) ||
-    (isLocInstrument(instrument) && termsOriginalBalance !== null && Math.abs(termsOriginalBalance) > 0.005)
+    (currentBalance !== null && Math.abs(currentBalance) > 0.005)
   );
 }
 
 function getLoanCurrentBalance(instrument: LoanInstrument): number | null {
   const derivedCurrentBalance = toFiniteNumber(instrument.derivedCurrentBalance);
   if (derivedCurrentBalance !== null) return Math.abs(derivedCurrentBalance);
-  const termsCurrentBalance = toFiniteNumber(instrument.terms?.currentBalance);
-  if (termsCurrentBalance !== null) return Math.abs(termsCurrentBalance);
   return null;
 }
 
