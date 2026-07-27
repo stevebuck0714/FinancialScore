@@ -120,9 +120,25 @@ function productDisplayName(
   return '';
 }
 
+function isHvacComponentContext(value: string): boolean {
+  return /(hvac|furnace|compressor|condenser|air condition|air-condition|daikin|lennox|modine|capacitor|orifice|manifold|drain pan|suction|liquid tube)/i.test(value);
+}
+
+function isIndustrialComponentTerm(value: string): boolean {
+  return /(gasket|o[- ]?ring|oring|grommet|rubber|epdm|seal|sealing|hose|tube|manifold|orifice|valve|brass nut|fitting|elbow|trap|capacitor|electrical|connector|terminal|wire|wiring|assembly|plate|limiter|cap|bracket|cushion|custom|bearing)/i.test(value);
+}
+
+function hasImportedSupplyContext(value: string): boolean {
+  return /(asia|asian|china|chinese|taiwan|taiwanese|vietnam|vietnamese|thailand|thai|malaysia|malaysian|import|imported|offshore|outsourc|contract manufactur)/i.test(value);
+}
+
 function inferProductThemes(productText: string): string[] {
   const text = productText.toLowerCase();
   const themes: string[] = [];
+  if (isHvacComponentContext(text) || (text.includes('hvac') && isIndustrialComponentTerm(text))) themes.push('HVAC components');
+  if (/(gasket|o[- ]?ring|oring|grommet|rubber|epdm|seal|sealing)/.test(text)) themes.push('sealing and vibration-control components');
+  if (/(hose|tube|manifold|orifice|valve|brass nut|fitting|elbow|trap)/.test(text)) themes.push('fluid and gas handling components');
+  if (/(capacitor|electrical|connector|terminal|wire|wiring)/.test(text)) themes.push('electrical components');
   if (/(breakfast|cinnamon|swirl|raisin|toast|morning|danish|coffee cake|sweet bread|banana|nut bread|muffin)/.test(text)) themes.push('breakfast breads');
   if (/(frozen|freezer|thaw|bake[- ]?off|par[- ]?baked)/.test(text)) themes.push('frozen or bake-off bread');
   if (/(bun|roll|sandwich|hoagie|sub|hamburger|hot dog)/.test(text)) themes.push('sandwich buns and rolls');
@@ -134,7 +150,7 @@ function inferProductThemes(productText: string): string[] {
 function productThemeBuckets(text: string): string[] {
   const normalized = text.toLowerCase();
   const buckets: string[] = [];
-  if (/(hvac|furnace|compressor|condenser|air condition|air-condition|daikin|lennox|modine|capacitor|orifice|manifold|drain pan|suction|liquid tube)/.test(normalized)) buckets.push('HVAC components');
+  if (isHvacComponentContext(normalized)) buckets.push('HVAC components');
   if (/(gasket|o[- ]?ring|oring|grommet|rubber|epdm|seal|sealing)/.test(normalized)) buckets.push('sealing and vibration-control components');
   if (/(hose|tube|manifold|orifice|valve|brass nut|fitting|elbow|trap)/.test(normalized)) buckets.push('fluid and gas handling components');
   if (/(capacitor|electrical|connector|terminal|wire|wiring)/.test(normalized)) buckets.push('electrical components');
@@ -173,18 +189,24 @@ function revenueWeightedCustomerContext(rows: Array<{ customerName: string; reve
     .join('; ');
 }
 
-function revenueWeightedProductThemeMix(rows: Array<{ displayName: string; revenue: number }>): string {
+function revenueWeightedProductThemeMix(rows: Array<{ displayName: string; revenue: number }>, contextText: string): string {
   const totals = new Map<string, number>();
   let totalRevenue = 0;
+  const hvacContext = isHvacComponentContext(contextText);
   rows.forEach((row) => {
     const revenue = Math.max(0, asNumber(row.revenue));
     if (revenue <= 0) return;
     totalRevenue += revenue;
-    const buckets = productThemeBuckets(row.displayName);
+    const buckets = hvacContext && isIndustrialComponentTerm(row.displayName)
+      ? ['HVAC components']
+      : productThemeBuckets(row.displayName);
     buckets.forEach((bucket) => {
       totals.set(bucket, (totals.get(bucket) || 0) + revenue / buckets.length);
     });
   });
+  if (hvacContext && totals.size === 0) {
+    return 'HVAC components: primary theme indicated by the current monthly product mix and company product context';
+  }
   if (totalRevenue <= 0 || totals.size === 0) return '';
   return Array.from(totals.entries())
     .sort((a, b) => b[1] - a[1])
@@ -209,7 +231,7 @@ function sectorCompanyMarketRead(params: {
   productContext: string;
   customerContext: string;
 }): string {
-  const industryFrame = [params.industryGroupName, params.industryGroupDescription, params.sectorCategory]
+  const industryFrame = [params.industryGroupName, params.sectorCategory]
     .map((part) => String(part || '').trim())
     .filter(Boolean)
     .join(' - ');
@@ -222,15 +244,16 @@ function sectorCompanyMarketRead(params: {
     params.customerContext,
   ].join(' ').toLowerCase();
   const marketNotes: string[] = [];
-  if (/(hvac|furnace|compressor|condenser|air condition|daikin|lennox|modine|capacitor|orifice|manifold|grommet|o[- ]?ring)/.test(combinedContext)) {
-    marketNotes.push('Market scope: HVAC and industrial component supply, with competition more likely national or global than only local.');
+  if (isHvacComponentContext(combinedContext) || (combinedContext.includes('hvac') && isIndustrialComponentTerm(combinedContext))) {
+    marketNotes.push('Company-specific market frame: HVAC and industrial component supply.');
+    marketNotes.push('Competitive scope: national and global HVAC component suppliers, importers, distributors, and contract manufacturing supply chains.');
   }
-  if (/(asia|asian|china|chinese|taiwan|taiwanese|vietnam|vietnamese|thailand|thai|malaysia|malaysian|import|imported|offshore|outsourc|contract manufactur)/.test(combinedContext)) {
+  if (hasImportedSupplyContext(combinedContext)) {
     marketNotes.push('Supply model: imported or outsourced manufacturing is part of the company context.');
   }
   return [
-    labeledText('Industry frame', industryFrame || 'Company industry metadata is not configured.'),
     ...marketNotes,
+    labeledText('Industry setup', industryFrame || 'Company industry metadata is not configured.'),
     'Market interpretation: read external market signals in the context of this company\'s product mix and customer/channel mix shown above.',
   ].filter(Boolean).join('\n');
 }
@@ -307,7 +330,7 @@ export async function loadIndustryBriefCompany(companyId: string) {
       select: { snapshotDate: true },
     }).catch(() => null),
     prisma.inventorySnapshot.findMany({
-      where: { companyId, frequency: 'monthly' },
+      where: { companyId },
       orderBy: [{ snapshotDate: 'desc' }, { assetValue: 'desc' }],
       take: 20,
       select: { itemId: true, itemName: true, sku: true },
@@ -384,7 +407,13 @@ export async function loadIndustryBriefCompany(companyId: string) {
     .filter((name) => name && !looksLikeProductCode(name) && name.toLowerCase() !== 'unknown item');
   const weightedProductContext = revenueWeightedProductContext(productRowsWithDisplayNames, productPeriodLabel);
   const weightedCustomerContext = revenueWeightedCustomerContext(customerRows);
-  const productThemeMix = revenueWeightedProductThemeMix(productRowsWithDisplayNames);
+  const themeContextText = uniqueText([
+    company.name,
+    profileText,
+    ...productRowsWithDisplayNames.map((row) => row.displayName),
+    ...inventoryProductNames,
+  ], 60);
+  const productThemeMix = revenueWeightedProductThemeMix(productRowsWithDisplayNames, themeContextText);
   const productContext = uniqueText([
     intelligence?.industryBriefProductFocus,
     ...intelligenceBrands,
