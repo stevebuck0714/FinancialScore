@@ -19,6 +19,7 @@ interface HeaderProps {
   selectedCompanyId?: string;
   dataRoomEnabledByAdmin?: boolean;
   customReportsEnabledByAdmin?: boolean;
+  hasSiteAdminOverride?: boolean;
   // currentView is a large union in app/page.tsx; keep this flexible for reuse.
   setCurrentView: (view: any) => void;
   handleLogout: () => void;
@@ -33,6 +34,7 @@ export default function Header({
   selectedCompanyId = '',
   dataRoomEnabledByAdmin = false,
   customReportsEnabledByAdmin = false,
+  hasSiteAdminOverride = false,
   setCurrentView,
   handleLogout,
   handleNavigation
@@ -48,6 +50,7 @@ export default function Header({
     : null;
 
   const canAccess = (sectionId: string) => {
+    if (hasSiteAdminOverride) return true;
     if (!isCompanyUser) return true;
     if (isCompanyAdmin) return true;
     // If permissions are missing, default to full access rather than locking people out.

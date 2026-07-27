@@ -13630,6 +13630,7 @@ function FinancialScorePage() {
           currentView={currentView}
           dataRoomEnabledByAdmin={isDataRoomEnabledByAdmin}
           customReportsEnabledByAdmin={isCustomReportsEnabledByAdmin}
+          hasSiteAdminOverride={hasSiteAdminOverride}
           setCurrentView={setCurrentView as any}
           handleLogout={handleLogout}
           handleNavigation={handleNavigation}
