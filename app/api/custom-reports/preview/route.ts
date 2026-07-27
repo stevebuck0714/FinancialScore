@@ -28,6 +28,9 @@ import {
   buildProjectPortfolioMock,
 } from '@/lib/operations/construction-mock-data';
 import { getBambooHrHiringPayload } from '@/lib/operations/bamboohr-workforce-reports';
+import { ensurePlatosClosetMonthlyFacts } from '@/lib/operational/platos-closet-monthly-facts';
+
+const PLATOS_CLOSET_SOURCE_CODE = 'PLATOS_CLOSET_STORE_VISIT';
 
 function toNumber(value: unknown): number {
   const n = Number(value ?? 0);
@@ -587,6 +590,24 @@ function resolveDatasetDateRange(dateRange: ReportDatasetDateRangeConfig): { sta
     start: new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - (days - 1))),
     end,
   };
+}
+
+function resolveDatasetDateBounds(dataset: ReportDataset, rawDateRange: any): { start: Date | null; end: Date | null } | null {
+  const exactField = getDatasetColumn(dataset, rawDateRange?.field)?.key || dataset.dateField;
+  const rawStart = rawDateRange?.startDate || rawDateRange?.start || rawDateRange?.from;
+  const rawEnd = rawDateRange?.endDate || rawDateRange?.end || rawDateRange?.to;
+  if (exactField && (rawStart || rawEnd)) {
+    const start = rawStart ? new Date(String(rawStart)) : null;
+    const end = rawEnd ? new Date(String(rawEnd)) : null;
+    if (end && !Number.isNaN(end.getTime())) end.setUTCHours(23, 59, 59, 999);
+    return {
+      start: start && !Number.isNaN(start.getTime()) ? start : null,
+      end: end && !Number.isNaN(end.getTime()) ? end : null,
+    };
+  }
+  const dateRange = normalizeDatasetDateRange(dataset, rawDateRange);
+  if (!dateRange) return null;
+  return resolveDatasetDateRange(dateRange);
 }
 
 function addDatasetDateRangeClause(dataset: ReportDataset, rawDateRange: any, whereClauses: Prisma.Sql[]) {
@@ -1158,6 +1179,153 @@ function resolveProductDisplayName(rawName: unknown, displayNameByKey: Map<strin
   return raw || 'Unassigned';
 }
 
+function isProductSalesDataset(dataset: ReportDataset): boolean {
+  return dataset.tableName === 'ProductSalesSnapshot' && (dataset.id === 'products' || dataset.id === 'product_unit_economics');
+}
+
+function isProductDimensionColumn(column: ReportDatasetColumn): boolean {
+  return ['itemName', 'sku', 'itemId'].includes(column.key);
+}
+
+function platosMetricSql(metricKey: string, aggregation: string): Prisma.Sql | null {
+  if (metricKey === 'revenue') {
+    return aggregation === 'average' || aggregation === 'avg'
+      ? Prisma.sql`AVG(COALESCE("valueNumber", 0))::double precision`
+      : Prisma.sql`SUM(COALESCE("valueNumber", 0))::double precision`;
+  }
+  if (metricKey === 'grossMargin') {
+    return aggregation === 'average' || aggregation === 'avg'
+      ? Prisma.sql`AVG(COALESCE("auxNumber", 0))::double precision`
+      : Prisma.sql`SUM(COALESCE("auxNumber", 0))::double precision`;
+  }
+  if (metricKey === 'cogs') {
+    return aggregation === 'average' || aggregation === 'avg'
+      ? Prisma.sql`AVG(COALESCE("valueNumber", 0) - COALESCE("auxNumber", 0))::double precision`
+      : Prisma.sql`SUM(COALESCE("valueNumber", 0) - COALESCE("auxNumber", 0))::double precision`;
+  }
+  return null;
+}
+
+function platosFilterClauses(filters: ReportDatasetFilterConfig[]): Prisma.Sql[] {
+  return filters
+    .map((filter) => {
+      if (!['itemName', 'sku', 'itemId'].includes(filter.field)) return null;
+      if (filter.operator === 'equals') {
+        return Prisma.sql`(COALESCE("dimensionLabel", '') = ${filter.value} OR COALESCE("dimensionKey", '') = ${filter.value})`;
+      }
+      return Prisma.sql`(COALESCE("dimensionLabel", '') ILIKE ${`%${filter.value}%`} OR COALESCE("dimensionKey", '') ILIKE ${`%${filter.value}%`})`;
+    })
+    .filter(Boolean) as Prisma.Sql[];
+}
+
+async function buildPlatosProductDimensionChartPreview(
+  dataset: ReportDataset,
+  config: any,
+  dimensionColumn: ReportDatasetColumn,
+  metricConfig: { column: ReportDatasetColumn; aggregation: string; label: string; format: string }
+) {
+  if (!isProductSalesDataset(dataset) || !isProductDimensionColumn(dimensionColumn)) return null;
+  const metricSql = platosMetricSql(metricConfig.column.key, metricConfig.aggregation);
+  if (!metricSql) return null;
+
+  const hasFacts = await ensurePlatosClosetMonthlyFacts(String(config.companyId));
+  if (!hasFacts) return null;
+
+  const filters = normalizeDatasetFilters(dataset, Array.isArray(config?.filters) ? config.filters : []);
+  const filterClauses = platosFilterClauses(filters);
+  const bounds = resolveDatasetDateBounds(dataset, config?.dateRange);
+  const limit = Math.min(Math.max(Number(config?.limit) || 10, 1), 50);
+  const dateClauses: Prisma.Sql[] = [];
+  if (bounds?.start) dateClauses.push(Prisma.sql`"monthStart" >= ${bounds.start}`);
+  if (bounds?.end) dateClauses.push(Prisma.sql`"monthStart" <= ${bounds.end}`);
+  const extraClauses = [...dateClauses, ...filterClauses];
+
+  const rows = bounds
+    ? await prisma.$queryRaw<Array<{ name: string; value: number }>>(Prisma.sql`
+        SELECT
+          COALESCE(NULLIF("dimensionLabel", ''), NULLIF("dimensionKey", ''), 'Unassigned') AS "name",
+          ${metricSql} AS "value"
+        FROM "PlatosClosetMonthlyFact"
+        WHERE "companyId" = ${String(config.companyId)}
+          AND "sourceCode" = ${PLATOS_CLOSET_SOURCE_CODE}
+          AND "factType" = 'category_metric'
+          AND "metricName" = 'net_sales'
+          AND "dimensionType" = 'category'
+          ${extraClauses.length > 0 ? Prisma.sql`AND ${Prisma.join(extraClauses, ' AND ')}` : Prisma.empty}
+        GROUP BY 1
+        HAVING ${metricSql} IS NOT NULL
+        ORDER BY "value" DESC
+        LIMIT ${limit}
+      `)
+    : await prisma.$queryRaw<Array<{ name: string; value: number }>>(Prisma.sql`
+        WITH month_scope AS (
+          SELECT DISTINCT "monthStart"
+          FROM "PlatosClosetMonthlyFact"
+          WHERE "companyId" = ${String(config.companyId)}
+            AND "sourceCode" = ${PLATOS_CLOSET_SOURCE_CODE}
+            AND "factType" = 'category_metric'
+            AND "metricName" = 'net_sales'
+            AND "dimensionType" = 'category'
+          ORDER BY "monthStart" DESC
+          LIMIT 12
+        )
+        SELECT
+          COALESCE(NULLIF(f."dimensionLabel", ''), NULLIF(f."dimensionKey", ''), 'Unassigned') AS "name",
+          ${metricSql} AS "value"
+        FROM "PlatosClosetMonthlyFact" f
+        INNER JOIN month_scope ms ON ms."monthStart" = f."monthStart"
+        WHERE f."companyId" = ${String(config.companyId)}
+          AND f."sourceCode" = ${PLATOS_CLOSET_SOURCE_CODE}
+          AND f."factType" = 'category_metric'
+          AND f."metricName" = 'net_sales'
+          AND f."dimensionType" = 'category'
+          ${filterClauses.length > 0 ? Prisma.sql`AND ${Prisma.join(filterClauses, ' AND ')}` : Prisma.empty}
+        GROUP BY 1
+        HAVING ${metricSql} IS NOT NULL
+        ORDER BY "value" DESC
+        LIMIT ${limit}
+      `);
+
+  const displayRows = rows
+    .map((row) => ({ name: String(row.name || 'Unassigned'), value: toNumber(row.value) }))
+    .filter((row) => row.value > 0)
+    .sort((a, b) => b.value - a.value)
+    .slice(0, limit);
+  if (displayRows.length === 0) return null;
+
+  return {
+    rows: displayRows.map((row) => ({
+      name: row.name,
+      dimension: row.name,
+      value: row.value,
+      values: {
+        [metricConfig.column.key]: row.value,
+      },
+    })),
+    tableColumns: [
+      { key: 'name', label: dimensionColumn.label, type: 'text' },
+      { key: metricConfig.column.key, label: metricConfig.label, type: 'metric', format: metricConfig.format },
+    ],
+    tableRows: displayRows.map((row) => ({
+      name: row.name,
+      values: {
+        [metricConfig.column.key]: row.value,
+      },
+    })),
+    fields: [metricConfig.column.key],
+    fieldCatalog: [],
+    dataset: {
+      id: dataset.id,
+      label: dataset.label,
+      tableName: 'PlatosClosetMonthlyFact',
+      dimension: dimensionColumn.key,
+      metric: metricConfig.column.key,
+      limit,
+      source: 'platos-closet-monthly-facts',
+    },
+  };
+}
+
 async function buildDatasetDimensionChartPreview(config: any) {
   const dataset = getReportDataset(config?.dataset || config?.datasetId);
   if (!dataset) return null;
@@ -1217,6 +1385,10 @@ async function buildDatasetDimensionChartPreview(config: any) {
     ORDER BY "value" DESC
     LIMIT ${queryLimit}
   `);
+  if (rows.length === 0) {
+    const platosPreview = await buildPlatosProductDimensionChartPreview(dataset, config, dimensionColumn, metricConfig);
+    if (platosPreview) return platosPreview;
+  }
   const displayNameByKey = dataset.tableName === 'ProductSalesSnapshot'
     ? await loadProductDisplayNameMap(String(config.companyId))
     : new Map<string, string>();

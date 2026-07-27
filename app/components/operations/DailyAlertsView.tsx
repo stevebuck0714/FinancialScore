@@ -2673,10 +2673,7 @@ export default function DailyAlertsView({ companyId, companyName, onNavigate }: 
   return (
     <div style={{ maxWidth: '1400px', margin: '0 auto', padding: '32px' }}>
       <div style={{ marginTop: '4px', borderBottom: '1px solid #e2e8f0', paddingBottom: '10px' }}>
-        <div style={{ fontSize: '17px', fontWeight: 700, color: '#2751d0' }}>
-          Daily Alerts
-        </div>
-        <div style={{ marginTop: '14px', display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
           {[
             { id: 'company-pulse' as PulseTab, label: 'Company Pulse' },
             { id: 'briefing' as PulseTab, label: 'Daily Executive Briefing' },
@@ -2928,14 +2925,39 @@ export default function DailyAlertsView({ companyId, companyName, onNavigate }: 
       {activeTab === 'briefing' && (
         <div style={{ marginTop: '14px', display: 'grid', gap: '14px' }}>
           <div style={{ border: '1px solid #e2e8f0', borderRadius: '12px', background: 'white', padding: '16px' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px', flexWrap: 'wrap' }}>
-              <div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap', minWidth: 0 }}>
                 <div style={{ fontSize: '20px', fontWeight: 800, color: '#0f172a' }}>Executive Briefing</div>
                 {execBriefing?.asOfDate && (
-                  <div style={{ marginTop: '4px', fontSize: '13px', color: '#64748b', fontWeight: 700 }}>
+                  <div style={{ fontSize: '13px', color: '#64748b', fontWeight: 700, whiteSpace: 'nowrap' }}>
                     As of {formatAsOfDate(execBriefing.asOfDate)}
                   </div>
                 )}
+                <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                  {([
+                    ...(!isQuickBooksCompany ? [{ id: 'daily' as BriefingPeriod, label: 'Daily' }] : []),
+                    { id: 'monthly' as BriefingPeriod, label: 'Monthly' },
+                    { id: 'quarterly' as BriefingPeriod, label: 'Quarterly' },
+                    { id: 'annual' as BriefingPeriod, label: 'Annual' },
+                  ]).map((tab) => (
+                    <button
+                      key={tab.id}
+                      onClick={() => setBriefingPeriod(tab.id)}
+                      style={{
+                        fontSize: '13px',
+                        fontWeight: 800,
+                        color: briefingPeriod === tab.id ? '#1d4ed8' : '#475569',
+                        background: briefingPeriod === tab.id ? '#eff6ff' : 'white',
+                        border: `1px solid ${briefingPeriod === tab.id ? '#bfdbfe' : '#e2e8f0'}`,
+                        borderRadius: '999px',
+                        padding: '7px 12px',
+                        cursor: 'pointer',
+                      }}
+                    >
+                      {tab.label}
+                    </button>
+                  ))}
+                </div>
               </div>
               <button
                 onClick={() => loadExecBriefing(true)}
@@ -2953,32 +2975,6 @@ export default function DailyAlertsView({ companyId, companyName, onNavigate }: 
               >
                 {execBriefingLoading ? 'Generating...' : 'Refresh Briefing'}
               </button>
-            </div>
-
-            <div style={{ marginTop: '14px', display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-              {([
-                ...(!isQuickBooksCompany ? [{ id: 'daily' as BriefingPeriod, label: 'Daily' }] : []),
-                { id: 'monthly' as BriefingPeriod, label: 'Monthly' },
-                { id: 'quarterly' as BriefingPeriod, label: 'Quarterly' },
-                { id: 'annual' as BriefingPeriod, label: 'Annual' },
-              ]).map((tab) => (
-                <button
-                  key={tab.id}
-                  onClick={() => setBriefingPeriod(tab.id)}
-                  style={{
-                    fontSize: '13px',
-                    fontWeight: 800,
-                    color: briefingPeriod === tab.id ? '#1d4ed8' : '#475569',
-                    background: briefingPeriod === tab.id ? '#eff6ff' : 'white',
-                    border: `1px solid ${briefingPeriod === tab.id ? '#bfdbfe' : '#e2e8f0'}`,
-                    borderRadius: '999px',
-                    padding: '7px 12px',
-                    cursor: 'pointer',
-                  }}
-                >
-                  {tab.label}
-                </button>
-              ))}
             </div>
 
             {execBriefingError && (

@@ -914,12 +914,22 @@ export function inferDatasetFiltersFromPrompt(dataset: ReportDataset, prompt: st
 export function inferDatasetDateRangeFromPrompt(dataset: ReportDataset, prompt: string): ReportDatasetDateRangeConfig | null {
   const normalizedPrompt = normalizeReportText(prompt);
   const match = normalizedPrompt.match(/\b(?:last|past|previous)\s+(\d{1,3})\s+(day|days|week|weeks|month|months|quarter|quarters|year|years)\b/);
-  if (!match) return null;
+  const field = dataset.dateField || dataset.columns.find((column) => column.type === 'date')?.key;
+  if (!field) return null;
+  if (!match) {
+    if (/\b(annual|annually|yearly|this year|current year|ytd|year to date)\b/.test(normalizedPrompt)) {
+      return {
+        field,
+        preset: 'last',
+        amount: 1,
+        unit: 'year',
+      };
+    }
+    return null;
+  }
   const amount = Number(match[1]);
   if (!Number.isFinite(amount) || amount <= 0) return null;
   const unitRaw = match[2].replace(/s$/, '') as ReportDatasetDateRangeConfig['unit'];
-  const field = dataset.dateField || dataset.columns.find((column) => column.type === 'date')?.key;
-  if (!field) return null;
   return {
     field,
     preset: 'last',
