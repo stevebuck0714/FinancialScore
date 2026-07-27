@@ -98,6 +98,7 @@ export default function ProfileTab({
   const [companyAddressState, setCompanyAddressState] = React.useState('');
   const [companyAddressZip, setCompanyAddressZip] = React.useState('');
   const [companyAddressCountry, setCompanyAddressCountry] = React.useState('USA');
+  const [industryBriefBrandsDraft, setIndustryBriefBrandsDraft] = React.useState('');
 
   // Load LOB data when component mounts or company changes
   React.useEffect(() => {
@@ -209,7 +210,12 @@ export default function ProfileTab({
   };
 
   const textListValue = (value: unknown): string => Array.isArray(value) ? value.join('\n') : String(value || '');
-  const parseTextList = (value: string): string[] => value.split(/\r?\n|,/).map((item) => item.trim()).filter(Boolean);
+  const parseTextLines = (value: string): string[] => value.split(/\r?\n/).map((item) => item.trim()).filter(Boolean);
+  const industryBriefBrandsValue = profile.industryBriefBrands;
+
+  React.useEffect(() => {
+    setIndustryBriefBrandsDraft(textListValue(industryBriefBrandsValue));
+  }, [selectedCompanyId, industryBriefBrandsValue]);
 
   // Get company data
   const ltmData = monthly.length >= 12 ? monthly.slice(-12) : monthly;
@@ -255,6 +261,10 @@ export default function ProfileTab({
     }
     setIsLoading(true);
     try {
+      const profileToSave: CompanyProfile = {
+        ...profile!,
+        industryBriefBrands: parseTextLines(industryBriefBrandsDraft),
+      };
       const companyUpdatePayload: any = {
         addressStreet: companyAddressStreet || '',
         addressCity: companyAddressCity || '',
@@ -268,9 +278,12 @@ export default function ProfileTab({
       };
 
       const [, companyUpdateResult] = await Promise.all([
-        profilesApi.save(selectedCompanyId, profile!),
+        profilesApi.save(selectedCompanyId, profileToSave),
         companiesApi.update(selectedCompanyId, companyUpdatePayload)
       ]);
+      const updatedProfiles = companyProfiles.filter(p => p.companyId !== selectedCompanyId);
+      updatedProfiles.push(profileToSave);
+      setCompanyProfiles(updatedProfiles);
       if (companyUpdateResult?.company) {
         onCompanyUpdated?.(companyUpdateResult.company as Company);
       }
@@ -810,9 +823,9 @@ export default function ProfileTab({
             <div>
               <label style={{ display: 'block', fontSize: '12px', fontWeight: 700, color: '#475569', marginBottom: '5px' }}>BRANDS / PRODUCT LINES</label>
               <textarea
-                value={textListValue(profile.industryBriefBrands)}
-                onChange={(e) => updateProfile({ industryBriefBrands: parseTextList(e.target.value) })}
-                placeholder="One per line or comma-separated. Example: HVAC components, grommets, capacitors, manifolds, hoses."
+                value={industryBriefBrandsDraft}
+                onChange={(e) => setIndustryBriefBrandsDraft(e.target.value)}
+                placeholder="One per line. Example: HVAC components, grommets, capacitors, manifolds, hoses."
                 rows={3}
                 style={{ width: '100%', padding: '10px 12px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '14px', resize: 'vertical' }}
               />
