@@ -1867,7 +1867,9 @@ export default function OperationsTab({
 
   const resolveWholesaleProductsReportMode = (): WholesaleProductsReportMode => {
     if (mapModuleToDataType(activeTab) === 'products') {
-      return 'all';
+      if (productReportView === 'vendorPricing') return 'vendor';
+      if (productReportView === 'wholesaleRawData') return 'raw';
+      return 'margin';
     }
     return 'raw';
   };
