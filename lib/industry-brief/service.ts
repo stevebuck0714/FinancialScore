@@ -181,6 +181,34 @@ function revenueWeightedProductThemeMix(rows: Array<{ displayName: string; reven
     .join('; ');
 }
 
+function productThemeMixFallback(params: { classifiedThemeMix: string; namedProductRowsCount: number }): string {
+  if (params.classifiedThemeMix) return params.classifiedThemeMix;
+  if (params.namedProductRowsCount > 0) {
+    return 'No sector-specific product theme classification is available from the current named product mix.';
+  }
+  return 'Named product descriptions are not available in current product snapshots; SKU-only rows are excluded from product mix evidence.';
+}
+
+function sectorCompanyMarketRead(params: {
+  companyName: string;
+  industryGroupName?: string | null;
+  industryGroupDescription?: string | null;
+  sectorCategory?: string | null;
+  productContext: string;
+  customerContext: string;
+}): string {
+  const industryFrame = [params.industryGroupName, params.industryGroupDescription, params.sectorCategory]
+    .map((part) => String(part || '').trim())
+    .filter(Boolean)
+    .join(' - ');
+  return [
+    labeledText('Industry frame', industryFrame || 'Company industry metadata is not configured.'),
+    labeledText('Company product evidence', params.productContext || 'No named company product evidence is available.'),
+    labeledText('Company customer/channel evidence', params.customerContext || 'No company customer/channel evidence is available.'),
+    'Data boundary: first-party company profile fields and companyId-scoped operational snapshots only; no hardcoded competitor examples or product themes are injected.',
+  ].filter(Boolean).join('\n');
+}
+
 function inferCustomerChannels(customerText: string): string[] {
   const text = customerText.toLowerCase();
   const channels: string[] = [];
@@ -335,12 +363,25 @@ export async function loadIndustryBriefCompany(companyId: string) {
   ], 20);
   const inferredProductThemes = inferProductThemes(productContext);
   const inferredCustomerChannels = inferCustomerChannels(customerContext);
+  const productThemeMixDisplay = productThemeMixFallback({
+    classifiedThemeMix: productThemeMix,
+    namedProductRowsCount: productRowsWithDisplayNames.length,
+  });
+  const marketThesisContext = sectorCompanyMarketRead({
+    companyName: company.name,
+    industryGroupName: industryGroup?.name || null,
+    industryGroupDescription: industryGroup?.description || null,
+    sectorCategory: company.industrySectorCategory,
+    productContext,
+    customerContext,
+  });
   const operationalProfileText = [
     labeledText('Top products/items from operational data', productContext),
-    labeledText('Revenue-weighted product theme mix from operational data', productThemeMix),
+    labeledText('Revenue-weighted product theme mix from operational data', productThemeMixDisplay),
     labeledText('Inferred product themes from operational data', inferredProductThemes),
     labeledText('Top customers/channels from operational data', customerContext),
     labeledText('Inferred customer channels from operational data', inferredCustomerChannels),
+    labeledText('Strategic market and competitor thesis', marketThesisContext),
   ].filter(Boolean).join('\n');
   return {
     ...company,
@@ -349,7 +390,7 @@ export async function loadIndustryBriefCompany(companyId: string) {
     profileText,
     productContext,
     customerContext,
-    marketThesisContext: '',
+    marketThesisContext,
     operationalProfileText,
   };
 }
