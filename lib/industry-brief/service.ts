@@ -77,6 +77,11 @@ function compactMoney(value: number): string {
   return `$${Math.round(value)}`;
 }
 
+function monthPeriodLabel(value: Date | null | undefined): string {
+  if (!value || Number.isNaN(value.getTime())) return 'latest monthly period';
+  return value.toLocaleDateString('en-US', { month: 'long', year: 'numeric', timeZone: 'UTC' });
+}
+
 function productKey(value: unknown): string {
   return String(value || '').trim().toLowerCase().replace(/[^a-z0-9]/g, '');
 }
@@ -129,6 +134,11 @@ function inferProductThemes(productText: string): string[] {
 function productThemeBuckets(text: string): string[] {
   const normalized = text.toLowerCase();
   const buckets: string[] = [];
+  if (/(hvac|furnace|compressor|condenser|air condition|air-condition|daikin|lennox|modine|capacitor|orifice|manifold|drain pan|suction|liquid tube)/.test(normalized)) buckets.push('HVAC components');
+  if (/(gasket|o[- ]?ring|oring|grommet|rubber|epdm|seal|sealing)/.test(normalized)) buckets.push('sealing and vibration-control components');
+  if (/(hose|tube|manifold|orifice|valve|brass nut|fitting|elbow|trap)/.test(normalized)) buckets.push('fluid and gas handling components');
+  if (/(capacitor|electrical|connector|terminal|wire|wiring)/.test(normalized)) buckets.push('electrical components');
+  if (/(assembly|plate|limiter|cap|bracket|cushion|custom)/.test(normalized)) buckets.push('custom component assemblies');
   if (/(breakfast|cinnamon|swirl|raisin|toast|morning|danish|coffee cake|sweet bread|banana|nut bread|muffin)/.test(normalized)) buckets.push('breakfast breads');
   if (/(frozen|freezer|thaw|bake[- ]?off|par[- ]?baked)/.test(normalized)) buckets.push('frozen or bake-off bread');
   if (/(bun|roll|sandwich|hoagie|sub|hamburger|hot dog)/.test(normalized)) buckets.push('sandwich buns and rolls');
@@ -137,17 +147,18 @@ function productThemeBuckets(text: string): string[] {
   return buckets;
 }
 
-function revenueWeightedProductContext(rows: Array<{ displayName: string; revenue: number; quantitySold: number }>): string {
+function revenueWeightedProductContext(rows: Array<{ displayName: string; revenue: number; quantitySold: number }>, periodLabel: string): string {
   const totalRevenue = rows.reduce((sum, row) => sum + Math.max(0, asNumber(row.revenue)), 0);
-  return rows
+  const productLines = rows
     .slice(0, 20)
     .map((row) => {
       const revenue = Math.max(0, asNumber(row.revenue));
-      const share = totalRevenue > 0 ? `, ${percentLabel(revenue / totalRevenue)} of top-product revenue` : '';
+      const share = totalRevenue > 0 ? `, ${percentLabel(revenue / totalRevenue)} of listed monthly product sales` : '';
       const quantity = asNumber(row.quantitySold) > 0 ? `, qty ${Math.round(asNumber(row.quantitySold))}` : '';
       return `${row.displayName}: ${compactMoney(revenue)}${share}${quantity}`;
     })
     .join('; ');
+  return productLines ? `Period: ${periodLabel}; ${productLines}` : '';
 }
 
 function revenueWeightedCustomerContext(rows: Array<{ customerName: string; revenue: number }>): string {
@@ -177,16 +188,16 @@ function revenueWeightedProductThemeMix(rows: Array<{ displayName: string; reven
   if (totalRevenue <= 0 || totals.size === 0) return '';
   return Array.from(totals.entries())
     .sort((a, b) => b[1] - a[1])
-    .map(([theme, revenue]) => `${theme}: ${percentLabel(revenue / totalRevenue)} of classified top-product revenue`)
+    .map(([theme, revenue]) => `${theme}: ${percentLabel(revenue / totalRevenue)} of classified monthly product sales shown`)
     .join('; ');
 }
 
 function productThemeMixFallback(params: { classifiedThemeMix: string; namedProductRowsCount: number }): string {
   if (params.classifiedThemeMix) return params.classifiedThemeMix;
   if (params.namedProductRowsCount > 0) {
-    return 'No sector-specific product theme classification is available from the current named product mix.';
+    return 'Product theme classification is not available for the current named monthly product mix.';
   }
-  return 'Named product descriptions are not available in current product snapshots; SKU-only rows are excluded from product mix evidence.';
+  return 'Product descriptions are not available for the current monthly product mix.';
 }
 
 function sectorCompanyMarketRead(params: {
@@ -194,6 +205,7 @@ function sectorCompanyMarketRead(params: {
   industryGroupName?: string | null;
   industryGroupDescription?: string | null;
   sectorCategory?: string | null;
+  profileText: string;
   productContext: string;
   customerContext: string;
 }): string {
@@ -201,11 +213,25 @@ function sectorCompanyMarketRead(params: {
     .map((part) => String(part || '').trim())
     .filter(Boolean)
     .join(' - ');
+  const combinedContext = [
+    params.companyName,
+    params.industryGroupName,
+    params.industryGroupDescription,
+    params.profileText,
+    params.productContext,
+    params.customerContext,
+  ].join(' ').toLowerCase();
+  const marketNotes: string[] = [];
+  if (/(hvac|furnace|compressor|condenser|air condition|daikin|lennox|modine|capacitor|orifice|manifold|grommet|o[- ]?ring)/.test(combinedContext)) {
+    marketNotes.push('Market scope: HVAC and industrial component supply, with competition more likely national or global than only local.');
+  }
+  if (/(asia|asian|china|chinese|taiwan|taiwanese|vietnam|vietnamese|thailand|thai|malaysia|malaysian|import|imported|offshore|outsourc|contract manufactur)/.test(combinedContext)) {
+    marketNotes.push('Supply model: imported or outsourced manufacturing is part of the company context.');
+  }
   return [
     labeledText('Industry frame', industryFrame || 'Company industry metadata is not configured.'),
-    labeledText('Company product evidence', params.productContext || 'No named company product evidence is available.'),
-    labeledText('Company customer/channel evidence', params.customerContext || 'No company customer/channel evidence is available.'),
-    'Data boundary: first-party company profile fields and companyId-scoped operational snapshots only; no hardcoded competitor examples or product themes are injected.',
+    ...marketNotes,
+    'Market interpretation: read external market signals in the context of this company\'s product mix and customer/channel mix shown above.',
   ].filter(Boolean).join('\n');
 }
 
@@ -254,7 +280,7 @@ export async function loadIndustryBriefFinancialFacts(companyId: string): Promis
 
 export async function loadIndustryBriefCompany(companyId: string) {
   await ensureIndustryBriefProfileColumns();
-  const [company, productRows, inventoryRows, customerRows, intelligenceRows] = await Promise.all([
+  const [company, latestMonthlyProductSnapshot, inventoryRows, customerRows, intelligenceRows] = await Promise.all([
     prisma.company.findUnique({
       where: { id: companyId },
       select: {
@@ -275,14 +301,13 @@ export async function loadIndustryBriefCompany(companyId: string) {
         },
       },
     }),
-    prisma.productSalesSnapshot.findMany({
-      where: { companyId },
-      orderBy: [{ snapshotDate: 'desc' }, { revenue: 'desc' }],
-      take: 20,
-      select: { itemId: true, itemName: true, sku: true, quantitySold: true, revenue: true },
-    }).catch(() => []),
+    prisma.productSalesSnapshot.findFirst({
+      where: { companyId, frequency: 'monthly' },
+      orderBy: { snapshotDate: 'desc' },
+      select: { snapshotDate: true },
+    }).catch(() => null),
     prisma.inventorySnapshot.findMany({
-      where: { companyId },
+      where: { companyId, frequency: 'monthly' },
       orderBy: [{ snapshotDate: 'desc' }, { assetValue: 'desc' }],
       take: 20,
       select: { itemId: true, itemName: true, sku: true },
@@ -320,6 +345,18 @@ export async function loadIndustryBriefCompany(companyId: string) {
   if (!String(company.industrySectorCategory || '').trim() || !String(company.addressCity || '').trim() || !String(company.addressState || '').trim()) {
     throw new Error('Industry Brief unavailable: missing company industry/location.');
   }
+  const productPeriodDate = latestMonthlyProductSnapshot && 'snapshotDate' in latestMonthlyProductSnapshot
+    ? latestMonthlyProductSnapshot.snapshotDate
+    : null;
+  const productRows = productPeriodDate
+    ? await prisma.productSalesSnapshot.findMany({
+        where: { companyId, frequency: 'monthly', snapshotDate: productPeriodDate },
+        orderBy: { revenue: 'desc' },
+        take: 20,
+        select: { itemId: true, itemName: true, sku: true, quantitySold: true, revenue: true },
+      }).catch(() => [])
+    : [];
+  const productPeriodLabel = monthPeriodLabel(productPeriodDate);
   const industryGroup = INDUSTRY_SECTORS.find((sector) => String(sector.id) === String(company.industrySector || ''));
   const intelligence = intelligenceRows[0] || null;
   const intelligenceBrands = stringList(intelligence?.industryBriefBrands);
@@ -345,7 +382,7 @@ export async function loadIndustryBriefCompany(companyId: string) {
   const inventoryProductNames = inventoryRows
     .map((row) => String(row.itemName || '').trim())
     .filter((name) => name && !looksLikeProductCode(name) && name.toLowerCase() !== 'unknown item');
-  const weightedProductContext = revenueWeightedProductContext(productRowsWithDisplayNames);
+  const weightedProductContext = revenueWeightedProductContext(productRowsWithDisplayNames, productPeriodLabel);
   const weightedCustomerContext = revenueWeightedCustomerContext(customerRows);
   const productThemeMix = revenueWeightedProductThemeMix(productRowsWithDisplayNames);
   const productContext = uniqueText([
@@ -372,6 +409,7 @@ export async function loadIndustryBriefCompany(companyId: string) {
     industryGroupName: industryGroup?.name || null,
     industryGroupDescription: industryGroup?.description || null,
     sectorCategory: company.industrySectorCategory,
+    profileText,
     productContext,
     customerContext,
   });
