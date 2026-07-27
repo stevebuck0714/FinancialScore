@@ -6,7 +6,7 @@ import { requireAuth, validateCompanyAccess } from '@/lib/tenant-security';
 export const dynamic = 'force-dynamic';
 export const maxDuration = 120;
 
-const LOAN_ACTIVITY_CACHE_VERSION = 27;
+const LOAN_ACTIVITY_CACHE_VERSION = 28;
 const STALE_LOAN_ACTIVITY_MONTHS = 13;
 
 type LoanTermInput = {
@@ -154,37 +154,6 @@ async function loadLatestLoanSourceUpdatedAt(companyId: string): Promise<Date | 
 
         UNION ALL
 
-        SELECT MAX(GREATEST(mf."createdAt", fr."createdAt", fr."updatedAt")) AS "sourceUpdatedAt"
-        FROM "MonthlyFinancial" mf
-        JOIN "FinancialRecord" fr ON fr.id = mf."financialRecordId"
-        WHERE mf."companyId" = $1
-
-        UNION ALL
-
-        SELECT MAX("createdAt") AS "sourceUpdatedAt"
-        FROM "GLTransactionFact"
-        WHERE "companyId" = $1
-
-        UNION ALL
-
-        SELECT MAX(GREATEST("createdAt", "fetchedAt")) AS "sourceUpdatedAt"
-        FROM "InforRawRecord"
-        WHERE "companyId" = $1
-          AND (
-            "miProgram" IN ('GLS210MI', 'SLLedgers', 'SLGls')
-            OR COALESCE("module", '') ~* 'ledger|gl|finance'
-          )
-
-        UNION ALL
-
-        SELECT MAX("createdAt") AS "sourceUpdatedAt"
-        FROM "ApiSyncLog"
-        WHERE "companyId" = $1
-          AND platform = 'INFOR_M3'
-          AND status = 'success'
-
-        UNION ALL
-
         SELECT MAX("updatedAt") AS "sourceUpdatedAt"
         FROM "BalanceSheetAccountAnchor"
         WHERE "companyId" = $1
@@ -198,6 +167,12 @@ async function loadLatestLoanSourceUpdatedAt(companyId: string): Promise<Date | 
             COALESCE("targetField", '') IN ('loc', 'ltd')
             OR COALESCE("accountName", '') ~* $2
           )
+
+        UNION ALL
+
+        SELECT MAX("updatedAt") AS "sourceUpdatedAt"
+        FROM "LoanInstrumentTerm"
+        WHERE "companyId" = $1
       ) source_updates
     `,
     companyId,
