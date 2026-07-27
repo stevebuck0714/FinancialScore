@@ -557,6 +557,12 @@ const REAL_ESTATE_REPORT_CLIENT_CACHE_VERSION = 'real-estate-sector-53-reports-v
 const CUSTOMER_BACKLOG_MIN_ORDER_DATE = '2023-06-01';
 const WHOLESALE_PRODUCTS_REPORT_CACHE_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 
+const operationalDataCacheStore = new Map<string, { fetchedAt: number; data: any }>();
+const operationalDataInflightStore = new Map<string, Promise<any>>();
+const wholesaleProductsReportCacheStore = new Map<string, { fetchedAt: number; data: any }>();
+const wholesaleProductsReportInflightStore = new Map<string, Promise<any>>();
+const productTransformCacheStore = new Map<string, { deps: any[]; value: any }>();
+
 type InvestigatePlaybook = {
   title: string;
   path: string;
@@ -895,11 +901,11 @@ export default function OperationsTab({
   const [customerMetricModalTitle, setCustomerMetricModalTitle] = useState('');
   const [customerMetricModalNames, setCustomerMetricModalNames] = useState<string[]>([]);
   const [customerConcentrationMetricChart, setCustomerConcentrationMetricChart] = useState<any | null>(null);
-  const operationalDataCacheRef = useRef<Map<string, { fetchedAt: number; data: any }>>(new Map());
-  const operationalDataInflightRef = useRef<Map<string, Promise<any>>>(new Map());
-  const wholesaleProductsReportCacheRef = useRef<Map<string, { fetchedAt: number; data: any }>>(new Map());
-  const wholesaleProductsReportInflightRef = useRef<Map<string, Promise<any>>>(new Map());
-  const productTransformCacheRef = useRef<Map<string, { deps: any[]; value: any }>>(new Map());
+  const operationalDataCacheRef = useRef(operationalDataCacheStore);
+  const operationalDataInflightRef = useRef(operationalDataInflightStore);
+  const wholesaleProductsReportCacheRef = useRef(wholesaleProductsReportCacheStore);
+  const wholesaleProductsReportInflightRef = useRef(wholesaleProductsReportInflightStore);
+  const productTransformCacheRef = useRef(productTransformCacheStore);
   const [inventoryAgingSearchTerm, setInventoryAgingSearchTerm] = useState('');
   const [inventoryAgingTableExpanded, setInventoryAgingTableExpanded] = useState(true);
   const [inventoryAgingSortKey, setInventoryAgingSortKey] = useState<
@@ -1861,9 +1867,7 @@ export default function OperationsTab({
 
   const resolveWholesaleProductsReportMode = (): WholesaleProductsReportMode => {
     if (mapModuleToDataType(activeTab) === 'products') {
-      if (productReportView === 'vendorPricing') return 'vendor';
-      if (productReportView === 'wholesaleRawData') return 'raw';
-      return 'margin';
+      return 'all';
     }
     return 'raw';
   };
@@ -2143,9 +2147,17 @@ export default function OperationsTab({
     }
 
     let cancelled = false;
+    const reportMode = resolveWholesaleProductsReportMode();
+    const cached = getCachedWholesaleProductsReportData(reportMode);
+    if (cached) {
+      setWholesaleProductsData(cached);
+      setWholesaleProductsError(null);
+      setWholesaleProductsLoading(false);
+      return;
+    }
+
     setWholesaleProductsLoading(true);
     setWholesaleProductsError(null);
-    const reportMode = resolveWholesaleProductsReportMode();
     void fetchWholesaleProductsReportData({ reportMode })
       .then((data) => {
         if (!cancelled) setWholesaleProductsData(data);
