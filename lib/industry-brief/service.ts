@@ -8,7 +8,7 @@ import {
   writeCachedIndustryBrief,
 } from '@/lib/industry-brief/cache';
 import { normalizeIndustrySectorCategory } from '@/lib/performance-analytics/industry-sector-category';
-import { INDUSTRY_SECTORS } from '@/data/industrySectors';
+import { INDUSTRY_SECTORS, SECTOR_CATEGORIES } from '@/data/industrySectors';
 import type { DailyIndustryBrief, IndustryBriefSourceRecord } from '@/lib/industry-brief/types';
 
 type FinancialFactInput = {
@@ -64,6 +64,10 @@ function stringList(value: unknown): string[] {
 function labeledText(label: string, value: unknown): string {
   const text = Array.isArray(value) ? stringList(value).join(', ') : String(value || '').trim();
   return text ? `${label}: ${text}` : '';
+}
+
+function compactLabeledText(label: string, value: unknown): string {
+  return labeledText(label, value).replace(/\s+/g, ' ').trim();
 }
 
 function percentLabel(value: number): string {
@@ -214,8 +218,13 @@ function revenueWeightedProductThemeMix(rows: Array<{ displayName: string; reven
     .join('; ');
 }
 
-function productThemeMixFallback(params: { classifiedThemeMix: string; namedProductRowsCount: number }): string {
+function productThemeMixFallback(params: { classifiedThemeMix: string; inferredThemes: string[]; namedProductRowsCount: number }): string {
   if (params.classifiedThemeMix) return params.classifiedThemeMix;
+  if (params.inferredThemes.length > 0) {
+    return params.inferredThemes
+      .map((theme) => `${theme}: theme indicated by company-specific product context`)
+      .join('; ');
+  }
   if (params.namedProductRowsCount > 0) {
     return 'Product theme classification is not available for the current named monthly product mix.';
   }
@@ -224,26 +233,42 @@ function productThemeMixFallback(params: { classifiedThemeMix: string; namedProd
 
 function sectorCompanyMarketRead(params: {
   companyName: string;
+  sectorName?: string | null;
   industryGroupName?: string | null;
   industryGroupDescription?: string | null;
   sectorCategory?: string | null;
-  profileText: string;
+  manualInputText: string;
+  profileSetupText: string;
+  productThemeMix: string;
   productContext: string;
   customerContext: string;
 }): string {
-  const industryFrame = [params.industryGroupName, params.sectorCategory]
+  const sectorFrame = [params.sectorCategory, params.sectorName]
     .map((part) => String(part || '').trim())
     .filter(Boolean)
     .join(' - ');
+  const industryFrame = [params.industryGroupName, params.industryGroupDescription]
+    .map((part) => String(part || '').trim())
+    .filter(Boolean)
+    .join(': ');
   const combinedContext = [
     params.companyName,
+    params.sectorName,
     params.industryGroupName,
     params.industryGroupDescription,
-    params.profileText,
+    params.manualInputText,
+    params.profileSetupText,
+    params.productThemeMix,
     params.productContext,
     params.customerContext,
   ].join(' ').toLowerCase();
   const marketNotes: string[] = [];
+  if (params.manualInputText) {
+    marketNotes.push(compactLabeledText('Company-specific inputs', params.manualInputText));
+  }
+  if (params.productThemeMix) {
+    marketNotes.push(compactLabeledText('Product mix read', params.productThemeMix));
+  }
   if (isHvacComponentContext(combinedContext) || (combinedContext.includes('hvac') && isIndustrialComponentTerm(combinedContext))) {
     marketNotes.push('Company-specific market frame: HVAC and industrial component supply.');
     marketNotes.push('Competitive scope: national and global HVAC component suppliers, importers, distributors, and contract manufacturing supply chains.');
@@ -253,8 +278,9 @@ function sectorCompanyMarketRead(params: {
   }
   return [
     ...marketNotes,
-    labeledText('Industry setup', industryFrame || 'Company industry metadata is not configured.'),
-    'Market interpretation: read external market signals in the context of this company\'s product mix and customer/channel mix shown above.',
+    labeledText('Sector setup', sectorFrame || 'Company sector metadata is not configured.'),
+    labeledText('Industry setup', industryFrame || params.industryGroupName || 'Company industry metadata is not configured.'),
+    'Market interpretation: company-specific inputs and product mix refine the broader sector and industry backdrop.',
   ].filter(Boolean).join('\n');
 }
 
@@ -381,18 +407,25 @@ export async function loadIndustryBriefCompany(companyId: string) {
     : [];
   const productPeriodLabel = monthPeriodLabel(productPeriodDate);
   const industryGroup = INDUSTRY_SECTORS.find((sector) => String(sector.id) === String(company.industrySector || ''));
+  const sector = SECTOR_CATEGORIES.find((item) => String(item.code) === String(company.industrySectorCategory || '')) || null;
   const intelligence = intelligenceRows[0] || null;
   const intelligenceBrands = stringList(intelligence?.industryBriefBrands);
-  const profileText = [
+  const profileSetupText = [
     company.profile?.workforce,
     company.profile?.specialNotes,
     company.profile?.qoeNotes,
+  ].map((part) => String(part || '').trim()).filter(Boolean).join('\n');
+  const manualInputText = [
     labeledText('Product/capability focus', intelligence?.industryBriefProductFocus),
     labeledText('Brands/product lines', intelligenceBrands),
     labeledText('Customer channels', intelligence?.industryBriefCustomerChannels),
     labeledText('Competitors/local market events', intelligence?.industryBriefCompetitors),
     labeledText('Known local developments', intelligence?.industryBriefLocalMarketEvents),
     labeledText('Known opportunity themes', intelligence?.industryBriefKnownOpportunities),
+  ].map((part) => String(part || '').trim()).filter(Boolean).join('\n');
+  const profileText = [
+    profileSetupText,
+    manualInputText,
   ].map((part) => String(part || '').trim()).filter(Boolean).join('\n');
   const productDescriptions = productDescriptionMap(inventoryRows);
   const productRowsWithDisplayNames = productRows
@@ -409,7 +442,8 @@ export async function loadIndustryBriefCompany(companyId: string) {
   const weightedCustomerContext = revenueWeightedCustomerContext(customerRows);
   const themeContextText = uniqueText([
     company.name,
-    profileText,
+    manualInputText,
+    profileSetupText,
     ...productRowsWithDisplayNames.map((row) => row.displayName),
     ...inventoryProductNames,
   ], 60);
@@ -431,18 +465,25 @@ export async function loadIndustryBriefCompany(companyId: string) {
   const inferredCustomerChannels = inferCustomerChannels(customerContext);
   const productThemeMixDisplay = productThemeMixFallback({
     classifiedThemeMix: productThemeMix,
+    inferredThemes: inferredProductThemes,
     namedProductRowsCount: productRowsWithDisplayNames.length,
   });
   const marketThesisContext = sectorCompanyMarketRead({
     companyName: company.name,
+    sectorName: sector?.name || null,
     industryGroupName: industryGroup?.name || null,
     industryGroupDescription: industryGroup?.description || null,
     sectorCategory: company.industrySectorCategory,
-    profileText,
+    manualInputText,
+    profileSetupText,
+    productThemeMix: productThemeMixDisplay,
     productContext,
     customerContext,
   });
   const operationalProfileText = [
+    labeledText('Sector context', sector ? `${company.industrySectorCategory} - ${sector.name}` : company.industrySectorCategory),
+    labeledText('Industry context', industryGroup?.name),
+    labeledText('Company-specific inputs', manualInputText),
     labeledText('Top products/items from operational data', productContext),
     labeledText('Revenue-weighted product theme mix from operational data', productThemeMixDisplay),
     labeledText('Inferred product themes from operational data', inferredProductThemes),

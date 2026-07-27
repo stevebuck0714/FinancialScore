@@ -207,6 +207,10 @@ export default function ProfileTab({
       },
     });
   };
+
+  const textListValue = (value: unknown): string => Array.isArray(value) ? value.join('\n') : String(value || '');
+  const parseTextList = (value: string): string[] => value.split(/\r?\n|,/).map((item) => item.trim()).filter(Boolean);
+
   // Get company data
   const ltmData = monthly.length >= 12 ? monthly.slice(-12) : monthly;
   const ltmRev = ltmData.reduce((sum, m) => sum + m.revenue, 0);
@@ -759,7 +763,104 @@ export default function ProfileTab({
         </div>
         </div>
 
-        {/* Container 2: Company Disclosures */}
+        {/* Container 2: Industry Brief Company Context */}
+        <div className="no-print" style={{ background: 'white', borderRadius: '12px', padding: '4px 32px 32px 32px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', borderBottom: '2px solid #e2e8f0', paddingBottom: '12px' }}>
+            <div>
+              <h2 style={{ fontSize: '24px', fontWeight: '600', color: '#1e293b', margin: 0 }}>
+                Industry Brief Company Context
+              </h2>
+              <div style={{ fontSize: '13px', color: '#64748b', marginTop: '6px', lineHeight: 1.45 }}>
+                Internal implementation inputs used to tailor Industry Brief research to this company&apos;s products, channels, competitors, and opportunity themes.
+              </div>
+            </div>
+            <button
+              className="no-print"
+              onClick={handleSaveProfile}
+              disabled={isLoading}
+              style={{
+                padding: '8px 16px',
+                background: isLoading ? '#94a3b8' : '#10b981',
+                color: 'white',
+                border: 'none',
+                borderRadius: '6px',
+                fontSize: '13px',
+                fontWeight: '700',
+                cursor: isLoading ? 'not-allowed' : 'pointer',
+                boxShadow: '0 2px 4px rgba(16, 185, 129, 0.25)',
+                whiteSpace: 'nowrap',
+                opacity: isLoading ? 0.8 : 1
+              }}
+            >
+              {isLoading ? 'Saving...' : 'Save'}
+            </button>
+          </div>
+
+          <div style={{ display: 'grid', gap: '14px' }}>
+            <div>
+              <label style={{ display: 'block', fontSize: '12px', fontWeight: 700, color: '#475569', marginBottom: '5px' }}>PRODUCT / CAPABILITY FOCUS</label>
+              <textarea
+                value={profile.industryBriefProductFocus || ''}
+                onChange={(e) => updateProfile({ industryBriefProductFocus: e.target.value })}
+                placeholder="Example: HVAC components, outsourced manufacturing, recurring service parts, specialty distribution capabilities."
+                rows={3}
+                style={{ width: '100%', padding: '10px 12px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '14px', resize: 'vertical' }}
+              />
+            </div>
+            <div>
+              <label style={{ display: 'block', fontSize: '12px', fontWeight: 700, color: '#475569', marginBottom: '5px' }}>BRANDS / PRODUCT LINES</label>
+              <textarea
+                value={textListValue(profile.industryBriefBrands)}
+                onChange={(e) => updateProfile({ industryBriefBrands: parseTextList(e.target.value) })}
+                placeholder="One per line or comma-separated. Example: HVAC components, grommets, capacitors, manifolds, hoses."
+                rows={3}
+                style={{ width: '100%', padding: '10px 12px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '14px', resize: 'vertical' }}
+              />
+            </div>
+            <div>
+              <label style={{ display: 'block', fontSize: '12px', fontWeight: 700, color: '#475569', marginBottom: '5px' }}>CUSTOMERS / CHANNELS</label>
+              <textarea
+                value={profile.industryBriefCustomerChannels || ''}
+                onChange={(e) => updateProfile({ industryBriefCustomerChannels: e.target.value })}
+                placeholder="Example: OEMs, national distributors, regional wholesalers, replacement-part supply channels."
+                rows={3}
+                style={{ width: '100%', padding: '10px 12px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '14px', resize: 'vertical' }}
+              />
+            </div>
+            <div>
+              <label style={{ display: 'block', fontSize: '12px', fontWeight: 700, color: '#475569', marginBottom: '5px' }}>COMPETITORS / MARKET EVENTS</label>
+              <textarea
+                value={profile.industryBriefCompetitors || ''}
+                onChange={(e) => updateProfile({ industryBriefCompetitors: e.target.value })}
+                placeholder="Example: National competitors, global suppliers, importers, distributor consolidation, supplier exits."
+                rows={3}
+                style={{ width: '100%', padding: '10px 12px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '14px', resize: 'vertical' }}
+              />
+            </div>
+            <div>
+              <label style={{ display: 'block', fontSize: '12px', fontWeight: 700, color: '#475569', marginBottom: '5px' }}>KNOWN LOCAL DEVELOPMENTS</label>
+              <textarea
+                value={profile.industryBriefLocalMarketEvents || ''}
+                onChange={(e) => updateProfile({ industryBriefLocalMarketEvents: e.target.value })}
+                placeholder="Example: Customer expansion, supplier changes, facility moves, regional demand shifts, freight or tariff changes."
+                rows={3}
+                style={{ width: '100%', padding: '10px 12px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '14px', resize: 'vertical' }}
+              />
+            </div>
+            <div>
+              <label style={{ display: 'block', fontSize: '12px', fontWeight: 700, color: '#475569', marginBottom: '5px' }}>KNOWN OPPORTUNITY THEMES</label>
+              <textarea
+                value={profile.industryBriefKnownOpportunities || ''}
+                onChange={(e) => updateProfile({ industryBriefKnownOpportunities: e.target.value })}
+                placeholder="Example: Product-line expansion, customer cross-sell, supplier diversification, acquisition targets, channel expansion."
+                rows={3}
+                style={{ width: '100%', padding: '10px 12px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '14px', resize: 'vertical' }}
+              />
+            </div>
+          </div>
+        </div>
+
+        {/* Container 3: Company Disclosures */}
         <div style={{ background: 'white', borderRadius: '12px', padding: '4px 32px 32px 32px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', borderBottom: '2px solid #e2e8f0', paddingBottom: '12px' }}>
             <h2 style={{ fontSize: '24px', fontWeight: '600', color: '#1e293b', margin: 0 }}>
