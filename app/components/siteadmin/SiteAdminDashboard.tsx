@@ -383,6 +383,8 @@ export default function SiteAdminDashboard(props: any) {
   } = props;
   const businessesLoading = Boolean(props.businessesLoading);
   const [referralPartners, setReferralPartners] = React.useState<any[]>([]);
+  const [siteAdminCreateBusy, setSiteAdminCreateBusy] = React.useState(false);
+  const [siteAdminCreateError, setSiteAdminCreateError] = React.useState<string | null>(null);
   React.useEffect(() => {
     let isMounted = true;
     fetch('/api/referral-partners')
@@ -14045,28 +14047,41 @@ export default function SiteAdminDashboard(props: any) {
                       </div>
                     </div>
 
+                    {siteAdminCreateError && (
+                      <div style={{ marginBottom: '10px', padding: '8px 10px', borderRadius: '6px', background: '#fef2f2', color: '#991b1b', fontSize: '12px', border: '1px solid #fecaca' }}>
+                        {siteAdminCreateError}
+                      </div>
+                    )}
+
                     <button
+                      type="button"
                       onClick={async () => {
-                        if (!newSiteAdminFirstName || !newSiteAdminLastName || !newSiteAdminEmail || !newSiteAdminPassword) {
-                          alert('Please fill in all required fields');
+                        const firstName = String(newSiteAdminFirstName || '').trim();
+                        const lastName = String(newSiteAdminLastName || '').trim();
+                        const email = String(newSiteAdminEmail || '').trim().toLowerCase();
+                        const password = String(newSiteAdminPassword || '');
+                        setSiteAdminCreateError(null);
+                        if (!firstName || !lastName || !email || !password) {
+                          setSiteAdminCreateError('Please fill in all required fields.');
                           return;
                         }
                         
-                        setIsLoading(true);
+                        setSiteAdminCreateBusy(true);
                         try {
                           const response = await fetch('/api/siteadmins', {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify({
-                              firstName: newSiteAdminFirstName,
-                              lastName: newSiteAdminLastName,
-                              email: newSiteAdminEmail,
-                              password: newSiteAdminPassword,
+                              firstName,
+                              lastName,
+                              email,
+                              password,
                             }),
                           });
 
+                          const payload = await response.json().catch(() => ({}));
                           if (response.ok) {
-                            const newAdmin = await response.json();
+                            const newAdmin = payload;
                             setSiteAdmins([...siteAdmins, newAdmin]);
                             setNewSiteAdminFirstName('');
                             setNewSiteAdminLastName('');
@@ -14075,34 +14090,33 @@ export default function SiteAdminDashboard(props: any) {
                             setShowAddSiteAdminForm(false);
                             alert('Site administrator added successfully!');
                           } else {
-                            const error = await response.json();
-                            if (error.error && error.error.includes('Password does not meet requirements')) {
-                              alert('❌ Password does not meet requirements:\n\n• At least 8 characters\n• One uppercase letter (A-Z)\n• One lowercase letter (a-z)\n• One number (0-9)\n• One special character (!@#$%^&*)\n\nPlease create a stronger password.');
+                            if (payload.error && payload.error.includes('Password does not meet requirements')) {
+                              setSiteAdminCreateError('Password does not meet requirements: use 8+ characters with uppercase, lowercase, number, and special character.');
                             } else {
-                              alert(`❌ Failed to add site administrator: ${error.error || 'Unknown error'}`);
+                              setSiteAdminCreateError(`Failed to add site administrator: ${payload.error || 'Unknown error'}`);
                             }
                           }
                         } catch (error) {
                           console.error('Error adding site administrator:', error);
-                          alert('❌ Error adding site administrator. Please try again.');
+                          setSiteAdminCreateError('Error adding site administrator. Please try again.');
                         } finally {
-                          setIsLoading(false);
+                          setSiteAdminCreateBusy(false);
                         }
                       }}
-                      disabled={isLoading}
+                      disabled={siteAdminCreateBusy}
                       style={{ 
                         padding: '8px 20px', 
-                        background: isLoading ? '#94a3b8' : '#10b981', 
+                        background: siteAdminCreateBusy ? '#94a3b8' : '#10b981', 
                         color: 'white', 
                         border: 'none', 
                         borderRadius: '6px', 
                         fontSize: '13px', 
                         fontWeight: '600', 
-                        cursor: isLoading ? 'not-allowed' : 'pointer',
-                        opacity: isLoading ? 0.6 : 1
+                        cursor: siteAdminCreateBusy ? 'not-allowed' : 'pointer',
+                        opacity: siteAdminCreateBusy ? 0.6 : 1
                       }}
                     >
-                      {isLoading ? 'Adding...' : 'Add Site Administrator'}
+                      {siteAdminCreateBusy ? 'Adding...' : 'Add Site Administrator'}
                     </button>
                   </>
                 )}
