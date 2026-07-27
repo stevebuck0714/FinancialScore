@@ -698,6 +698,20 @@ export async function POST(request: NextRequest) {
     const sectorCategory = resolveCompanyIndustrySectorCategory(company);
     const fieldCatalog = getReportDataCatalog(sectorCategory);
     const datasetCatalog = getReportDatasetCatalog();
+    const deterministicDatasetConfig = buildDatasetReportConfig(prompt, requestedType, {});
+    if (deterministicDatasetConfig?.dataset) {
+      return NextResponse.json({
+        reportConfig: deterministicDatasetConfig,
+        fieldCatalog,
+        sourceRowCount: 0,
+        generatedBy: {
+          model: 'deterministic-dataset-config',
+          api: 'fallback',
+          reason: 'Prompt matched a supported dataset report.',
+        },
+      });
+    }
+
     const deterministicFinancialConfig = buildFinancialTrendReportConfig(prompt, requestedType, fieldCatalog);
     if (deterministicFinancialConfig) {
       return NextResponse.json({

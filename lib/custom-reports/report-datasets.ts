@@ -878,6 +878,13 @@ export function inferDatasetFiltersFromPrompt(dataset: ReportDataset, prompt: st
     return filterMeta ? [{ field: filterMeta.field, operator: 'contains', value: explicitRoleName, entityType: 'role' }] : [];
   }
   const hasProductFilterCue = /\b(for|of|where|with)\s+(item|sku|product|part)\b/.test(normalizedPrompt);
+  const productOnlyDataset =
+    dataset.entityFilters.some((filter) => filter.entityType === 'product') &&
+    !dataset.entityFilters.some((filter) => filter.entityType !== 'product');
+  const asksProductRanking =
+    productOnlyDataset &&
+    /\b(top|rank|ranking|by|mix|distribution|share|chart|products|items|skus)\b/.test(normalizedPrompt);
+  if (productOnlyDataset && !explicitProductName && asksProductRanking) return [];
   const preferredEntityType = explicitVendorName || normalizedPrompt.includes('vendor') || normalizedPrompt.includes('supplier')
     ? 'vendor'
     : explicitProductName && hasProductFilterCue
