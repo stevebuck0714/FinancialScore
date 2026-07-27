@@ -6,7 +6,7 @@ import { requireAuth, validateCompanyAccess } from '@/lib/tenant-security';
 export const dynamic = 'force-dynamic';
 export const maxDuration = 120;
 
-const LOAN_ACTIVITY_CACHE_VERSION = 25;
+const LOAN_ACTIVITY_CACHE_VERSION = 26;
 const STALE_LOAN_ACTIVITY_MONTHS = 13;
 
 type LoanTermInput = {
@@ -363,6 +363,13 @@ function shouldHideInactiveLoanFromReport(instrument: any) {
   if (String(instrument?.targetField || '').toLowerCase() === 'ltd') return isStale;
   if (derivedCurrentBalance !== null && Math.abs(derivedCurrentBalance) > 0.005) return false;
   return isStale;
+}
+
+function isLocLoanAccount(accountId: unknown, accountName: unknown, targetField: unknown): boolean {
+  const normalizedTarget = String(targetField || '').trim().toLowerCase();
+  if (normalizedTarget === 'loc') return true;
+  const haystack = `${accountId || ''} ${accountName || ''}`.toLowerCase();
+  return /\bloc\b|line of credit/.test(haystack);
 }
 
 function sumActivityForMonth(activity: any[], month: string) {
@@ -1203,10 +1210,11 @@ async function loadLoanActivity(companyId: string) {
     const rawLast = rawInforActivity?.lastDate ? new Date(rawInforActivity.lastDate).getTime() : 0;
     const glLast = row.lastDate ? new Date(row.lastDate).getTime() : 0;
     const targetField = (accountMetadata.get(accountId)?.targetField || '').toLowerCase();
+    const isLocAccount = isLocLoanAccount(accountId, row.accountName, targetField);
     const useRawActivity =
       rawInforActivity &&
       rawTxCount > glTxCount &&
-      (targetField !== 'loc' || rawLast >= glLast);
+      (!isLocAccount || rawLast >= glLast);
     const principalActivityTotal = useRawActivity
       ? Number(rawInforActivity.activityTotal || 0)
       : Number(row.activityTotal || 0);
@@ -1215,8 +1223,12 @@ async function loadLoanActivity(companyId: string) {
   });
 
   const locAccountIds = principalRows
-    .map((row) => String(row.accountId || '').trim())
-    .filter((accountId) => (accountMetadata.get(accountId)?.targetField || '').toLowerCase() === 'loc');
+    .filter((row) => {
+      const accountId = String(row.accountId || '').trim();
+      const metadata = accountMetadata.get(accountId);
+      return isLocLoanAccount(accountId, row.accountName, metadata?.targetField);
+    })
+    .map((row) => String(row.accountId || '').trim());
   const ltdAccountIds = principalRows
     .map((row) => String(row.accountId || '').trim())
     .filter((accountId) => (accountMetadata.get(accountId)?.targetField || '').toLowerCase() === 'ltd');
@@ -1300,14 +1312,15 @@ async function loadLoanActivity(companyId: string) {
     const rawLast = rawInforActivity?.lastDate ? new Date(rawInforActivity.lastDate).getTime() : 0;
     const glLast = row.lastDate ? new Date(row.lastDate).getTime() : 0;
     const targetField = (accountMetadata.get(accountId)?.targetField || '').toLowerCase();
+    const isLocAccount = isLocLoanAccount(accountId, name, targetField);
     let useRawActivity =
       rawInforActivity &&
       rawTxCount > glTxCount &&
-      (targetField !== 'loc' || rawLast >= glLast);
+      (!isLocAccount || rawLast >= glLast);
     if (targetField === 'ltd' && glTxCount > 0) {
       useRawActivity = false;
     }
-    if ((targetField === 'loc' && activeLocAccountIds.has(accountId)) || (targetField === 'ltd' && activeLtdAccountIds.has(accountId))) {
+    if ((isLocAccount && activeLocAccountIds.has(accountId)) || (targetField === 'ltd' && activeLtdAccountIds.has(accountId))) {
       useRawActivity = false;
     }
     const principalActivityTotal = useRawActivity
@@ -1320,14 +1333,14 @@ async function loadLoanActivity(companyId: string) {
     let derivedCurrentBalance = snapshotCurrentBalance;
     let derivedCurrentBalanceSource = accountBalanceSnapshot?.currentSource || null as string | null;
     let derivedCurrentBalanceAsOf = accountBalanceSnapshot?.currentAsOfDate || null as Date | null;
-    if (targetField === 'loc' && activeLocAccountIds.has(accountId) && latestLocBalance > 0) {
+    if (isLocAccount && activeLocAccountIds.has(accountId) && latestLocBalance > 0) {
       derivedCurrentBalance = latestLocBalance;
       derivedCurrentBalanceSource = `${debtSnapshotSource} LOC`;
       derivedCurrentBalanceAsOf = latestSnapshotDate;
     } else {
       const lastActivityTime = Math.max(dateToTime(rawInforActivity?.lastDate) || 0, dateToTime(row.lastDate) || 0);
       const staleBefore = subtractMonths(reportAsOfDate, STALE_LOAN_ACTIVITY_MONTHS).getTime();
-      if (targetField === 'loc' && latestLocBalance > 0 && lastActivityTime > 0 && lastActivityTime < staleBefore) {
+      if (isLocAccount && latestLocBalance > 0 && lastActivityTime > 0 && lastActivityTime < staleBefore) {
         derivedCurrentBalance = null;
         derivedCurrentBalanceSource = null;
         derivedCurrentBalanceAsOf = null;
@@ -1336,7 +1349,7 @@ async function loadLoanActivity(companyId: string) {
           derivedCurrentBalance = latestLtdBalance;
           derivedCurrentBalanceSource = `${debtSnapshotSource} LTD`;
           derivedCurrentBalanceAsOf = latestSnapshotDate;
-        } else if ((targetField !== 'loc' || latestLocBalance <= 0) && Math.abs(principalActivityTotal) > 0.005) {
+        } else if ((!isLocAccount || latestLocBalance <= 0) && Math.abs(principalActivityTotal) > 0.005) {
           derivedCurrentBalance = Math.abs(principalActivityTotal);
           derivedCurrentBalanceSource = `${useRawActivity ? 'ApiSyncLog:INFOR_M3' : 'GLTransactionFact'} activity total`;
           derivedCurrentBalanceAsOf = maxValidDate([rawInforActivity?.lastDate, row.lastDate]);
