@@ -1158,7 +1158,7 @@ export default function OperationsTab({
   const maxSelectableEndDate = toLocalInputDate(yesterdayLocal);
   const [startDate, setStartDate] = useState<string>(() => {
     const date = new Date(yesterdayLocal);
-    date.setFullYear(date.getFullYear() - 3);
+    date.setDate(date.getDate() - 90);
     return toLocalInputDate(date);
   });
   const [endDate, setEndDate] = useState<string>(() => {

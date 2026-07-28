@@ -7,6 +7,7 @@ export const maxDuration = 300;
 
 const OPERATIONAL_REPORT_MIN_DATE = '2024-01-01';
 const WHOLESALE_PRODUCTS_REPORT_START_DATE = '2023-01-01';
+const PRODUCTS_PERFORMANCE_LOOKBACK_DAYS = 90;
 type WholesaleProductsReportMode = 'margin' | 'raw' | 'vendor';
 
 async function hasPendingInforTransformsForCompany(prisma: any, companyId: string): Promise<boolean> {
@@ -33,9 +34,8 @@ function yesterdayIsoUtc(): string {
 
 function defaultProductsStartIsoUtc(): string {
   const now = new Date();
-  const start = new Date(Date.UTC(now.getUTCFullYear() - 3, now.getUTCMonth(), now.getUTCDate() - 1));
-  const startDate = start.toISOString().slice(0, 10);
-  return startDate < OPERATIONAL_REPORT_MIN_DATE ? OPERATIONAL_REPORT_MIN_DATE : startDate;
+  const start = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - 1 - PRODUCTS_PERFORMANCE_LOOKBACK_DAYS));
+  return start.toISOString().slice(0, 10);
 }
 
 async function latestDailyProductsEndIsoUtc(prisma: any, companyId: string): Promise<string> {
