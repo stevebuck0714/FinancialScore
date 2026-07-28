@@ -284,33 +284,7 @@ async function buildOperationalDataVersion(companyId: string, type: string | nul
           endDate
         )
       : Promise.resolve({ label: 'CustomerOrderLineSnapshot', skipped: true }),
-    (includeAll || type === 'products')
-      ? safeOperationalVersionPart(
-          'InforRawRecordProducts',
-          `SELECT COUNT(*)::text AS count, MAX("createdAt") AS "maxCreatedAt", MAX("fetchedAt") AS "maxFetchedAt", MAX("businessDate") AS "maxBusinessDate"
-           FROM "InforRawRecord"
-           WHERE "companyId" = $1
-             AND "miProgram" IN (
-               'SLCoitems',
-               'SLCOITEMS',
-               'SLItems',
-               'SLItemVends',
-               'SLItemVendPrices',
-               'SLCustomerItems',
-               'SLCustItems',
-               'SLCustItem',
-               'SLItemCusts',
-               'SLItemCust',
-               'SLCustItemXrefs',
-               'SLCustItemCrossRefs',
-               'SLCustomerItemCrossRefs'
-             )
-             AND ("businessDate" IS NULL OR ("businessDate" >= $2 AND "businessDate" <= $3))`,
-          companyId,
-          startDate,
-          endDate
-        )
-      : Promise.resolve({ label: 'InforRawRecordProducts', skipped: true }),
+    Promise.resolve({ label: 'InforRawRecordProducts', skipped: true }),
     (includeAll || type === 'products')
       ? safeOperationalVersionPart(
           'OperationalSystemConnectionProducts',
@@ -3001,9 +2975,11 @@ export async function GET(request: NextRequest) {
       boundedLimit >= 5000;
     const shouldBuildWholesaleOrderLines =
       isWholesaleProductsReportRequest &&
+      hasCronCacheWarmupAuth &&
       (wholesaleProductsReportMode === 'all' || wholesaleProductsReportMode === 'margin' || wholesaleProductsReportMode === 'raw');
     const shouldBuildWholesaleVendorPricingRows =
       isWholesaleProductsReportRequest &&
+      hasCronCacheWarmupAuth &&
       (wholesaleProductsReportMode === 'all' || wholesaleProductsReportMode === 'margin' || wholesaleProductsReportMode === 'vendor');
     const operationalCacheTtlSeconds = isWholesaleProductsReportRequest
       ? WHOLESALE_PRODUCTS_REPORT_CACHE_TTL_SECONDS
@@ -3056,7 +3032,8 @@ export async function GET(request: NextRequest) {
     }
 
     const cacheOperationalPayload = async (payload: unknown) => {
-      if (operationalCache) {
+      const shouldWriteOperationalCache = operationalCache && !(isWholesaleProductsReportRequest && !hasCronCacheWarmupAuth);
+      if (shouldWriteOperationalCache) {
         await writeDerivedApiCache({
           ...operationalCache,
           payload,
@@ -3998,43 +3975,7 @@ export async function GET(request: NextRequest) {
               if (key && !bakersProductByKey.has(key)) bakersProductByKey.set(key, product);
             }
           }
-          const inforProductDescriptionRows = await prisma.$queryRaw<Array<{ itemCode: string; itemName: string }>>`
-            WITH raw_items AS (
-              SELECT
-                COALESCE(
-                  NULLIF("payload"->>'item', ''),
-                  NULLIF("payload"->>'Item', ''),
-                  NULLIF("payload"->>'ItmItem', '')
-                ) AS "itemCode",
-                COALESCE(
-                  NULLIF("payload"->>'Itemdescription', ''),
-                  NULLIF("payload"->>'ItmDescription', ''),
-                  NULLIF("payload"->>'DerItemDescription', ''),
-                  NULLIF("payload"->>'NonInvItemDescription', '')
-                ) AS "itemName",
-                COALESCE("businessDate", "fetchedAt") AS "sourceDate"
-              FROM "InforRawRecord"
-              WHERE "companyId" = ${companyId}
-                AND "miProgram" IN ('SLLedgers', 'SLItemlocs')
-            )
-            SELECT DISTINCT ON ("itemCode")
-              "itemCode",
-              "itemName"
-            FROM raw_items
-            WHERE NULLIF(TRIM("itemCode"), '') IS NOT NULL
-              AND NULLIF(TRIM("itemName"), '') IS NOT NULL
-            ORDER BY "itemCode", "sourceDate" DESC NULLS LAST
-          `;
           const inforProductNameByKey = new Map<string, string>();
-          for (const row of inforProductDescriptionRows) {
-            const itemCode = String(row.itemCode || '').trim();
-            const itemName = String(row.itemName || '').trim();
-            if (!itemCode || !itemName) continue;
-            for (const alias of [itemCode, itemCode.replace(/^T-/, ''), itemName]) {
-              const key = canonicalProductKey(alias);
-              if (key && !inforProductNameByKey.has(key)) inforProductNameByKey.set(key, itemName);
-            }
-          }
           const productTokenAliases = (...values: unknown[]): string[] => {
             const aliases: string[] = [];
             const rawValues = values.map((value) => String(value || '').trim()).filter(Boolean);
