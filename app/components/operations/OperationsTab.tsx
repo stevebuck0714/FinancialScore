@@ -1400,6 +1400,7 @@ export default function OperationsTab({
   }, [selectedJccJobId]);
 
   useEffect(() => {
+    if (!hasHydratedDateRangeRef.current) return;
     if (activeTab !== 'overview' && activeTab !== 'dashboard' && mapModuleToDataType(activeTab)) {
       loadTabData(activeTab);
     }
@@ -1588,10 +1589,13 @@ export default function OperationsTab({
           loadedRange = null;
         }
       }
-      if (loadedRange && !loadedRange.manualSave && loadedRange.startDate <= '2000-01-02') {
+      if (loadedRange && !loadedRange.manualSave) {
         loadedRange = null;
       }
-      if (loadedRange && !loadedRange.manualSave && latestEndDateKey !== loadedRange.endDate) {
+      if (loadedRange && loadedRange.startDate <= '2000-01-02') {
+        loadedRange = null;
+      }
+      if (loadedRange && latestEndDateKey !== loadedRange.endDate) {
         loadedRange = {
           ...loadedRange,
           endDate: latestEndDateKey,

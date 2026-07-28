@@ -35,9 +35,12 @@ function yesterdayIsoUtc(): string {
   return yesterday.toISOString().slice(0, 10);
 }
 
-function defaultProductsStartIsoUtc(): string {
-  const now = new Date();
-  const start = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - 1 - PRODUCTS_PERFORMANCE_LOOKBACK_DAYS));
+function productsStartIsoFromEndDate(endDateIso: string): string {
+  const end = /^\d{4}-\d{2}-\d{2}$/.test(endDateIso)
+    ? new Date(`${endDateIso}T00:00:00.000Z`)
+    : new Date();
+  const start = new Date(end);
+  start.setUTCDate(start.getUTCDate() - PRODUCTS_PERFORMANCE_LOOKBACK_DAYS);
   return start.toISOString().slice(0, 10);
 }
 
@@ -145,7 +148,7 @@ async function warmProductCachesAfterCompletedSnapshots(params: {
     origin: params.origin,
     cronSecret: params.cronSecret,
     companyId: params.companyId,
-    startDate: defaultProductsStartIsoUtc(),
+    startDate: productsStartIsoFromEndDate(endDate),
     endDate,
     limit: '500',
     sectorCategory,
