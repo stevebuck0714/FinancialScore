@@ -1822,7 +1822,7 @@ export default function OperationsTab({
 
   const fetchOperationalType = async (type: OpsDataType, options?: { refreshConcentration?: boolean }) => {
     const apiType = type === 'sales' ? 'customers' : type;
-    const typeLimit = type === 'sales' ? 5000 : apiType === 'customers' || apiType === 'products' ? 500 : 1000;
+    const typeLimit = type === 'sales' ? '5000' : apiType === 'products' ? 'all' : apiType === 'customers' ? '500' : '1000';
     const timeoutMs = apiType === 'customers' && options?.refreshConcentration
       ? 120000
       : apiType === 'hiring'
@@ -1838,7 +1838,7 @@ export default function OperationsTab({
       frequency: requestFrequency,
       startDate: requestStartDate,
       endDate,
-      limit: String(typeLimit),
+      limit: typeLimit,
       ...(industrySectorCategory ? { sectorCategory: industrySectorCategory } : {}),
       ...(apiType === 'daily-financials'
         ? {
@@ -1924,7 +1924,7 @@ export default function OperationsTab({
       frequency: 'daily',
       startDate: WHOLESALE_PRODUCTS_REPORT_START_DATE,
       endDate: effectiveMaxSelectableEndDate,
-      limit: '5000',
+      limit: 'all',
       sectorCategory: '42',
       reportMode,
       ...(options?.forceRefresh ? { refreshWholesaleProducts: '1' } : {}),

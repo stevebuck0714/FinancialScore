@@ -2775,8 +2775,14 @@ export async function GET(request: NextRequest) {
         ? (rawStatementRollup as StatementRollup)
         : 'daily';
     const frequency = (searchParams.get('frequency') || 'monthly') as 'daily' | 'weekly' | 'monthly';
+    const rawLimitParam = String(searchParams.get('limit') || '').trim().toLowerCase();
+    const productsLimitIsAll = type === 'products' && ['all', 'none', 'uncapped', '0'].includes(rawLimitParam);
     const limit = parseInt(searchParams.get('limit') || '1000');
-    const boundedLimit = Number.isFinite(limit) ? Math.min(Math.max(limit, 100), 5000) : 1000;
+    const boundedLimit = productsLimitIsAll
+      ? 100000
+      : Number.isFinite(limit)
+      ? Math.min(Math.max(limit, 100), 5000)
+      : 1000;
     const dashboardRowCap = Math.min(Math.max(boundedLimit * 5, 5000), 25000);
     const factRowCap = Math.min(Math.max(boundedLimit * 10, 5000), 25000);
     const rawPayloadRowCap = Math.min(Math.max(boundedLimit * 10, 10000), 50000);
@@ -2797,7 +2803,7 @@ export async function GET(request: NextRequest) {
       hasCronCacheWarmupAuth &&
       type === 'products' &&
       frequency === 'daily' &&
-      boundedLimit === 500;
+      (productsLimitIsAll || boundedLimit === 500);
     const isCronCustomersWarmup =
       hasCronCacheWarmupAuth &&
       type === 'customers' &&
@@ -3024,7 +3030,7 @@ export async function GET(request: NextRequest) {
               sectorCategory,
               statementCurrency,
               statementRollup,
-              boundedLimit,
+              productsLimitIsAll ? 'all' : boundedLimit,
               'qbd-current-year-net-income-v1',
               shouldUseMockData ? 'mock-operational-data-v4' : 'real-operational-data-v1',
               shouldApplyHydratedDateFilter ? hydratedInforDates : null,
@@ -7216,33 +7222,35 @@ export async function GET(request: NextRequest) {
           normalizedAccountingSystem === 'INFOR_M3' || normalizedAccountingSystem === 'INFOR_CSI';
         const productFrequencyForQuery: 'daily' | 'weekly' | 'monthly' =
           isInforForProducts && frequency !== 'daily' ? 'daily' : frequency;
-        const productRowCap = Math.max(Math.min(boundedLimit * 10, 12000), 3000);
-        data = await prisma.productSalesSnapshot.findMany({
+        const productRowCap = productsLimitIsAll ? null : Math.max(Math.min(boundedLimit * 10, 12000), 3000);
+        const productFindArgs: any = {
           where: {
             companyId,
             frequency: productFrequencyForQuery,
             snapshotDate: dateFilter,
           },
           orderBy: [{ snapshotDate: 'desc' }, { itemName: 'asc' }],
-          take: productRowCap,
-        });
+        };
+        if (productRowCap != null) productFindArgs.take = productRowCap;
+        data = await prisma.productSalesSnapshot.findMany(productFindArgs);
         if (isQuickBooksCompany && data.length === 0 && productFrequencyForQuery !== 'monthly') {
-          data = await prisma.productSalesSnapshot.findMany({
+          const monthlyProductFindArgs: any = {
             where: {
               companyId,
               frequency: 'monthly',
               snapshotDate: { gte: startOfMonth(startDate), lte: endDate },
             },
             orderBy: [{ snapshotDate: 'desc' }, { itemName: 'asc' }],
-            take: productRowCap,
-          });
+          };
+          if (productRowCap != null) monthlyProductFindArgs.take = productRowCap;
+          data = await prisma.productSalesSnapshot.findMany(monthlyProductFindArgs);
         }
         data = data.sort(
           (a, b) =>
             new Date(a.snapshotDate).getTime() - new Date(b.snapshotDate).getTime() ||
             String(a.itemName || '').localeCompare(String(b.itemName || ''))
         );
-        const productWindowTruncated = data.length >= productRowCap;
+        const productWindowTruncated = productRowCap != null && data.length >= productRowCap;
 
         // Use the full selected window for product analytics. If we have any
         // meaningful rows, drop pure placeholder rows (Unknown Item + zero metrics)

@@ -150,7 +150,7 @@ async function warmProductCachesAfterCompletedSnapshots(params: {
     companyId: params.companyId,
     startDate: productsStartIsoFromEndDate(endDate),
     endDate,
-    limit: '500',
+    limit: 'all',
     sectorCategory,
   });
   const wholesaleReport = sectorCategory === '42'
@@ -162,7 +162,7 @@ async function warmProductCachesAfterCompletedSnapshots(params: {
           companyId: params.companyId,
           startDate: WHOLESALE_PRODUCTS_REPORT_START_DATE,
           endDate,
-          limit: '5000',
+          limit: 'all',
           sectorCategory,
           refreshWholesaleProducts: true,
           reportMode,
