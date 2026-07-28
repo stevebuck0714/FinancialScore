@@ -328,7 +328,7 @@ type OperationalHubCustomReport = {
 
 export default function SiteAdminDashboard(props: any) {
   const {
-    siteAdminTab, setSiteAdminTab, consultants, companies, siteAdmins,
+    siteAdminTab, setSiteAdminTab, consultants, companies, siteAdmins, setSiteAdmins,
     selectedConsultantId, setSelectedConsultantId, expandedCompanyIds, setExpandedCompanyIds,
     isLoading, expandedBusinessIds, setExpandedBusinessIds,
     editingPricing, setEditingPricing,

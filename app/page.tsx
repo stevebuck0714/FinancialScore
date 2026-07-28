@@ -14403,6 +14403,7 @@ function FinancialScorePage() {
               consultants={consultants}
               companies={companies}
               siteAdmins={siteAdmins}
+              setSiteAdmins={setSiteAdmins}
               isLoading={isLoading}
               expandedBusinessIds={expandedBusinessIds}
               setExpandedBusinessIds={setExpandedBusinessIds}
