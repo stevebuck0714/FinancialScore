@@ -67,6 +67,7 @@ const CUSTOMER_WIP_SOURCE_VERSION = 'customer-backlog-source-v4';
 const HIRING_SOURCE_VERSION = 'bamboohr-hiring-full-pagination-v2';
 const CUSTOMER_BACKLOG_MIN_ORDER_DATE = '2023-06-01';
 const WHOLESALE_PRODUCTS_REPORT_CACHE_TTL_SECONDS = 30 * 24 * 60 * 60;
+const WHOLESALE_PRODUCTS_REPORT_SOURCE_VERSION = 'wholesale-products-report-90-day-v1';
 type WholesaleProductsReportMode = 'all' | 'margin' | 'raw' | 'vendor';
 const GENE_SOLUTIONS_COMPANY_ID = 'cmrc86g8l0001qhbkgcq6wrf9';
 const GENE_SOLUTIONS_MOCK_FINANCIAL_SOURCE = 'GENE_SOLUTIONS_MOCK';
@@ -2975,11 +2976,9 @@ export async function GET(request: NextRequest) {
       boundedLimit >= 5000;
     const shouldBuildWholesaleOrderLines =
       isWholesaleProductsReportRequest &&
-      hasCronCacheWarmupAuth &&
       (wholesaleProductsReportMode === 'all' || wholesaleProductsReportMode === 'margin' || wholesaleProductsReportMode === 'raw');
     const shouldBuildWholesaleVendorPricingRows =
       isWholesaleProductsReportRequest &&
-      hasCronCacheWarmupAuth &&
       (wholesaleProductsReportMode === 'all' || wholesaleProductsReportMode === 'margin' || wholesaleProductsReportMode === 'vendor');
     const operationalCacheTtlSeconds = isWholesaleProductsReportRequest
       ? WHOLESALE_PRODUCTS_REPORT_CACHE_TTL_SECONDS
@@ -3015,7 +3014,7 @@ export async function GET(request: NextRequest) {
               cacheType === 'customers' ? CUSTOMER_WIP_SOURCE_VERSION : null,
               cacheType === 'customers' ? 'customers-display-names-items-v3' : null,
               cacheType === 'hiring' ? HIRING_SOURCE_VERSION : null,
-              isWholesaleProductsReportRequest ? CUSTOMER_WIP_SOURCE_VERSION : null,
+              isWholesaleProductsReportRequest ? WHOLESALE_PRODUCTS_REPORT_SOURCE_VERSION : null,
               isWholesaleProductsReportRequest ? `wholesale-report-mode:${wholesaleProductsReportMode}` : null,
               cacheType === 'products' && usesSourceSystemProductSnapshots ? 'products-source-system-bakers-raw-child-id-apr-cpn-v4' : null,
               cacheType === 'sales' && usesSourceSystemProductSnapshots ? 'sales-source-system-product-name-outlier-v1' : null,
@@ -3032,7 +3031,7 @@ export async function GET(request: NextRequest) {
     }
 
     const cacheOperationalPayload = async (payload: unknown) => {
-      const shouldWriteOperationalCache = operationalCache && !(isWholesaleProductsReportRequest && !hasCronCacheWarmupAuth);
+      const shouldWriteOperationalCache = Boolean(operationalCache);
       if (shouldWriteOperationalCache) {
         await writeDerivedApiCache({
           ...operationalCache,

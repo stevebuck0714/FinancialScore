@@ -552,6 +552,7 @@ const PRODUCT_DATA_CACHE_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 const CUSTOMER_DATA_CACHE_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 const CUSTOMER_CONCENTRATION_CLIENT_CACHE_VERSION = 'customer-concentration-exposure-v10';
 const CUSTOMER_WIP_CLIENT_CACHE_VERSION = 'customer-backlog-source-v6';
+const WHOLESALE_PRODUCTS_REPORT_CLIENT_CACHE_VERSION = 'wholesale-products-report-90-day-v1';
 const REAL_ESTATE_REPORT_CLIENT_CACHE_VERSION = 'real-estate-sector-53-reports-v1';
 const CUSTOMER_BACKLOG_MIN_ORDER_DATE = '2023-06-01';
 const WHOLESALE_PRODUCTS_REPORT_CACHE_TTL_MS = 30 * 24 * 60 * 60 * 1000;
@@ -1887,7 +1888,7 @@ export default function OperationsTab({
       startDate,
       endDate,
       '42',
-      CUSTOMER_WIP_CLIENT_CACHE_VERSION,
+      WHOLESALE_PRODUCTS_REPORT_CLIENT_CACHE_VERSION,
     ].join('|');
 
   const getCachedWholesaleProductsReportData = (reportMode: WholesaleProductsReportMode) => {
