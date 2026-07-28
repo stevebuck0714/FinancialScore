@@ -89,12 +89,6 @@ export async function POST(request: Request) {
           name: `${firstName} ${lastName}`,
           passwordHash: hashedPassword,
           role: 'SITEADMIN',
-          userType: null,
-          companyId: null,
-          consultantId: null,
-          companyRole: 'user',
-          sidebarAccess: null,
-          operationalDashboardAccess: null,
         },
         select: {
           id: true,

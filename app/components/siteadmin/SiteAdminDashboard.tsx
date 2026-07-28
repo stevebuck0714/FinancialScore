@@ -14098,7 +14098,8 @@ export default function SiteAdminDashboard(props: any) {
                           }
                         } catch (error) {
                           console.error('Error adding site administrator:', error);
-                          setSiteAdminCreateError('Error adding site administrator. Please try again.');
+                          const message = error instanceof Error ? error.message : 'Unknown error';
+                          setSiteAdminCreateError(`Error adding site administrator: ${message}`);
                         } finally {
                           setSiteAdminCreateBusy(false);
                         }
