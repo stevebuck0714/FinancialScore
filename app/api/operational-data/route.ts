@@ -2978,8 +2978,7 @@ export async function GET(request: NextRequest) {
       isWholesaleProductsReportRequest &&
       (wholesaleProductsReportMode === 'all' || wholesaleProductsReportMode === 'margin' || wholesaleProductsReportMode === 'raw');
     const shouldBuildWholesaleVendorPricingRows =
-      isWholesaleProductsReportRequest &&
-      (wholesaleProductsReportMode === 'all' || wholesaleProductsReportMode === 'margin' || wholesaleProductsReportMode === 'vendor');
+      false;
     const operationalCacheTtlSeconds = isWholesaleProductsReportRequest
       ? WHOLESALE_PRODUCTS_REPORT_CACHE_TTL_SECONDS
       : cacheType === 'products'
@@ -7974,20 +7973,7 @@ export async function GET(request: NextRequest) {
                 const rawCustomerPartByOrderLineNoRelease = new Map<string, string>();
                 const rawCustomerPartByCustomerItem = new Map<string, string>();
                 const rawItemOverviewByAprPart = new Map<string, string>();
-                const rawOrderRows = await prisma.inforRawRecord.findMany({
-                  where: {
-                    companyId,
-                    miProgram: 'SLCoitems',
-                    businessDate: { gte: startDate, lte: endDate },
-                  },
-                  select: {
-                    payload: true,
-                    businessDate: true,
-                    fetchedAt: true,
-                  },
-                  orderBy: [{ businessDate: 'desc' }, { fetchedAt: 'desc' }],
-                  take: Math.min(rawPayloadRowCap, 50000),
-                });
+                const rawOrderRows: any[] = [];
                 for (const rawRow of rawOrderRows as any[]) {
                   const payload = rawRow?.payload;
                   if (!payload || typeof payload !== 'object' || Array.isArray(payload)) continue;
@@ -8043,57 +8029,6 @@ export async function GET(request: NextRequest) {
                   orderBy: [{ snapshotDate: 'desc' }, { customerName: 'asc' }, { orderId: 'asc' }],
                   take: Math.min(rawPayloadRowCap, 50000),
                 });
-                const orderIdsForDueDateLookup = Array.from(
-                  new Set((orderRows as any[]).map((row) => String(row?.orderId || '').trim()).filter(Boolean))
-                ).slice(0, 1000);
-                if (orderIdsForDueDateLookup.length > 0) {
-                  const targetedRawOrderRows = await prisma.$queryRaw<Array<{ payload: any }>>(Prisma.sql`
-                    SELECT "payload"
-                    FROM "InforRawRecord"
-                    WHERE "companyId" = ${companyId}
-                      AND "miProgram" = 'SLCoitems'
-                      AND TRIM(COALESCE(
-                        "payload"->>'CoNum',
-                        "payload"->>'coNum',
-                        "payload"->>'CONUM',
-                        "payload"->>'OrderNum',
-                        "payload"->>'orderNo',
-                        "payload"->>'orderNumber',
-                        "payload"->>'Order',
-                        "payload"->>'orderId'
-                      )) IN (${Prisma.join(orderIdsForDueDateLookup)})
-                    ORDER BY "businessDate" DESC NULLS LAST, "fetchedAt" DESC
-                    LIMIT ${Math.min(rawPayloadRowCap, 50000)}
-                  `);
-                  for (const rawRow of targetedRawOrderRows as any[]) {
-                    const payload = rawRow?.payload;
-                    if (!payload || typeof payload !== 'object' || Array.isArray(payload)) continue;
-                    const orderId = payload['CoNum'] ?? payload['coNum'] ?? payload['CONUM'] ?? payload['OrderNum'] ?? payload['orderNo'] ?? payload['orderNumber'] ?? payload['Order'] ?? payload['orderId'];
-                    const lineId = payload['CoLine'] ?? payload['coLine'] ?? payload['COLINE'] ?? payload['Line'] ?? payload['lineId'];
-                    const releaseId = payload['CoRelease'] ?? payload['coRelease'] ?? payload['CORELEASE'] ?? payload['Release'];
-                    const dueDateRaw = String(payload['DueDate'] ?? payload['dueDate'] ?? payload['DUEDATE'] ?? '').trim();
-                    const qtyShippedRaw = Number(payload['QtyShipped'] ?? payload['qtyShipped'] ?? payload['QTYSHIPPED'] ?? 0);
-                    const customerPartNumber = readRawCustomerPartNumber(payload);
-                    if (!orderId || !lineId || (!dueDateRaw && !customerPartNumber && qtyShippedRaw <= 0)) continue;
-                    const key = buildRawOrderLineKey(orderId, lineId, releaseId);
-                    const noReleaseKey = buildRawOrderLineNoReleaseKey(orderId, lineId);
-                    if (!key.replace(/\|/g, '').trim()) continue;
-                    if (dueDateRaw && !rawDueDateByOrderLine.has(key)) {
-                      const parsedDueDate = parseInforDateValue(dueDateRaw);
-                      const dueDate = parsedDueDate ? parsedDueDate.toISOString() : dueDateRaw;
-                      rawDueDateByOrderLine.set(key, dueDate);
-                      if (!rawDueDateByOrderLineNoRelease.has(noReleaseKey)) rawDueDateByOrderLineNoRelease.set(noReleaseKey, dueDate);
-                    }
-                    if (qtyShippedRaw > 0 && !rawQtyShippedByOrderLine.has(key)) {
-                      rawQtyShippedByOrderLine.set(key, qtyShippedRaw);
-                      if (!rawQtyShippedByOrderLineNoRelease.has(noReleaseKey)) rawQtyShippedByOrderLineNoRelease.set(noReleaseKey, qtyShippedRaw);
-                    }
-                    if (customerPartNumber && !rawCustomerPartByOrderLine.has(key)) {
-                      rawCustomerPartByOrderLine.set(key, customerPartNumber);
-                      if (!rawCustomerPartByOrderLineNoRelease.has(noReleaseKey)) rawCustomerPartByOrderLineNoRelease.set(noReleaseKey, customerPartNumber);
-                    }
-                  }
-                }
                 const customerIdsForPartLookup = Array.from(
                   new Set((orderRows as any[]).map((row) => String(row?.customerId || '').trim()).filter(Boolean))
                 ).slice(0, 1000);
@@ -8105,52 +8040,6 @@ export async function GET(request: NextRequest) {
                       .filter(Boolean)
                   )
                 ).slice(0, 2000);
-                if (customerIdsForPartLookup.length > 0 && aprPartsForPartLookup.length > 0) {
-                  const customerItemRows = await prisma.$queryRaw<Array<{ payload: any }>>(Prisma.sql`
-                    SELECT "payload"
-                    FROM "InforRawRecord"
-                    WHERE "companyId" = ${companyId}
-                      AND "miProgram" IN (
-                        'SLCustomerItems',
-                        'SLCustItems',
-                        'SLCustItem',
-                        'SLItemCusts',
-                        'SLItemCust',
-                        'SLCustItemXrefs',
-                        'SLCustItemCrossRefs',
-                        'SLCustomerItemCrossRefs'
-                      )
-                      AND TRIM(COALESCE(
-                        "payload"->>'CustNum',
-                        "payload"->>'custNum',
-                        "payload"->>'CUSTNUM',
-                        "payload"->>'CustomerNumber',
-                        "payload"->>'customerNumber',
-                        "payload"->>'CustomerId',
-                        "payload"->>'customerId'
-                      )) IN (${Prisma.join(customerIdsForPartLookup)})
-                      AND TRIM(COALESCE(
-                        "payload"->>'Item',
-                        "payload"->>'item',
-                        "payload"->>'ITEM',
-                        "payload"->>'DerItem',
-                        "payload"->>'derItem',
-                        "payload"->>'ItemNumber',
-                        "payload"->>'itemNumber'
-                      )) IN (${Prisma.join(aprPartsForPartLookup)})
-                    ORDER BY "businessDate" DESC NULLS LAST, "fetchedAt" DESC
-                    LIMIT ${Math.min(rawPayloadRowCap, 50000)}
-                  `);
-                  for (const rawRow of customerItemRows as any[]) {
-                    const payload = rawRow?.payload;
-                    if (!payload || typeof payload !== 'object' || Array.isArray(payload)) continue;
-                    const customerPartNumber = readRawCustomerPartNumber(payload);
-                    if (!customerPartNumber) continue;
-                    const key = buildCustomerItemKey(readRawCustomerId(payload), readRawAprPartNumber(payload));
-                    if (!key.replace(/\|/g, '').trim() || rawCustomerPartByCustomerItem.has(key)) continue;
-                    rawCustomerPartByCustomerItem.set(key, customerPartNumber);
-                  }
-                }
                 if (aprPartsForPartLookup.length > 0) {
                   const cachedItemOverviewRows = await prisma.$queryRaw<Array<{ itemNumber: string; overview: string | null; partNotes: string | null }>>(Prisma.sql`
                     SELECT "itemNumber", "overview", "partNotes"
@@ -8168,30 +8057,6 @@ export async function GET(request: NextRequest) {
                     if (key && overview && !rawItemOverviewByAprPart.has(key)) rawItemOverviewByAprPart.set(key, overview);
                   }
 
-                  const aprPartsMissingCachedOverview = aprPartsForPartLookup.filter(
-                    (partNumber) => !rawItemOverviewByAprPart.has(normalizeOrderLineToken(partNumber))
-                  );
-                  if (aprPartsMissingCachedOverview.length > 0) {
-                  const itemOverviewRows = await prisma.$queryRaw<Array<{ payload: any }>>(Prisma.sql`
-                    SELECT DISTINCT ON (TRIM(COALESCE("payload"->>'Item', "payload"->>'item', "payload"->>'ITEM')))
-                      "payload"
-                    FROM "InforRawRecord"
-                    WHERE "companyId" = ${companyId}
-                      AND "miProgram" = 'SLItems'
-                        AND TRIM(COALESCE("payload"->>'Item', "payload"->>'item', "payload"->>'ITEM')) IN (${Prisma.join(aprPartsMissingCachedOverview)})
-                      AND NULLIF(TRIM(COALESCE("payload"->>'Overview', "payload"->>'overview', "payload"->>'itmUf_PartNotes')), '') IS NOT NULL
-                    ORDER BY TRIM(COALESCE("payload"->>'Item', "payload"->>'item', "payload"->>'ITEM')), "businessDate" DESC NULLS LAST, "fetchedAt" DESC
-                      LIMIT ${Math.min(aprPartsMissingCachedOverview.length, 2000)}
-                  `);
-                  for (const rawRow of itemOverviewRows as any[]) {
-                    const payload = rawRow?.payload;
-                    if (!payload || typeof payload !== 'object' || Array.isArray(payload)) continue;
-                    const aprPartNumber = readRawAprPartNumber(payload);
-                    const overview = String(payload['Overview'] ?? payload['overview'] ?? payload['itmUf_PartNotes'] ?? '').trim();
-                    const key = normalizeOrderLineToken(aprPartNumber);
-                    if (key && overview && !rawItemOverviewByAprPart.has(key)) rawItemOverviewByAprPart.set(key, overview);
-                  }
-                  }
                 }
                 return (orderRows as any[]).map((row) => ({
                   source: 'customer-order-line',
@@ -8234,98 +8099,7 @@ export async function GET(request: NextRequest) {
               })()
             : [];
 
-        const wholesaleVendorPricingRows =
-          shouldBuildWholesaleVendorPricingRows
-            ? await (async () => {
-                const rawRows = await prisma.inforRawRecord.findMany({
-                  where: {
-                    companyId,
-                    miProgram: { in: ['SLItemVends', 'SLItemVendPrices'] },
-                  },
-                  select: {
-                    miProgram: true,
-                    businessDate: true,
-                    payload: true,
-                    fetchedAt: true,
-                  },
-                  orderBy: [{ fetchedAt: 'desc' }, { createdAt: 'desc' }],
-                  take: Math.min(rawPayloadRowCap, 50000),
-                });
-                const latestByKey = new Map<string, any>();
-                const read = (payload: any, keys: string[]) => {
-                  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return '';
-                  for (const key of keys) {
-                    const value = payload[key];
-                    if (value !== undefined && value !== null && String(value).trim()) return String(value).trim();
-                  }
-                  return '';
-                };
-                const asNumber = (value: string) => {
-                  const normalized = String(value || '').replace(/,/g, '').trim();
-                  const parsed = Number(normalized);
-                  return Number.isFinite(parsed) ? parsed : null;
-                };
-                const asIsoDate = (value: string) => {
-                  const raw = String(value || '').trim();
-                  if (!raw) return null;
-                  const compact = raw.match(/^(\d{4})(\d{2})(\d{2})/);
-                  if (compact) return `${compact[1]}-${compact[2]}-${compact[3]}`;
-                  const parsed = new Date(raw);
-                  return Number.isNaN(parsed.getTime()) ? raw : parsed.toISOString().slice(0, 10);
-                };
-                for (const rawRow of rawRows as any[]) {
-                  const payload = rawRow?.payload;
-                  const miProgram = String(rawRow?.miProgram || '').trim();
-                  const item = read(payload, ['Item', 'DerItem']);
-                  const vendorId = read(payload, ['VendNum']);
-                  if (!item || !vendorId) continue;
-                  const effectiveDateRaw = read(payload, ['EffectDate']);
-                  const breakQty1 = asNumber(read(payload, ['BrkQty_1']));
-                  const breakCost1 = asNumber(read(payload, ['BrkCost_1']));
-                  const breakCostConv1 = asNumber(read(payload, ['BrkCostConv_1']));
-                  const vendorPricingSheet = breakCostConv1 ?? breakCost1;
-                  const difference = breakCost1 != null && vendorPricingSheet != null ? breakCost1 - vendorPricingSheet : null;
-                  const key = [
-                    miProgram,
-                    item,
-                    vendorId,
-                    effectiveDateRaw || read(payload, ['RecordDate']),
-                    read(payload, ['BrkQty_1']),
-                    read(payload, ['BrkCost_1']),
-                  ].join('||');
-                  if (latestByKey.has(key)) continue;
-                  latestByKey.set(key, {
-                    source: miProgram,
-                    snapshotDate: rawRow.businessDate || null,
-                    fetchedAt: rawRow.fetchedAt || null,
-                    item,
-                    vendorId,
-                    vendorName: read(payload, ['VendAddrName', 'VendaddrName']) || `Vendor ${vendorId}`,
-                    rank: asNumber(read(payload, ['ItemvendRank', 'Rank', 'NewRank'])),
-                    effectiveDate: asIsoDate(effectiveDateRaw),
-                    effectiveDateRaw,
-                    breakQty1,
-                    actualNoAdj: breakCost1,
-                    formalContracts: breakCostConv1,
-                    vendorPricingSheet,
-                    difference,
-                    updatedDiff: difference,
-                    vendorItem: read(payload, ['ItemVendVendItem', 'VendItem']),
-                    masterBuyAgreement: read(payload, ['ItemVendMasterBuyAgreement', 'MasterBuyAgreement']),
-                    status: read(payload, ['Stat', 'ItemStat']),
-                    recordDate: asIsoDate(read(payload, ['RecordDate'])),
-                    unitDutyCost: asNumber(read(payload, ['UnitDutyCost'])),
-                    unitFreightCost: asNumber(read(payload, ['UnitFreightCost'])),
-                    unitInsuranceCost: asNumber(read(payload, ['UnitInsuranceCost'])),
-                  });
-                }
-                return Array.from(latestByKey.values()).sort((a, b) =>
-                  String(a.vendorName || '').localeCompare(String(b.vendorName || ''), undefined, { sensitivity: 'base', numeric: true }) ||
-                  String(a.item || '').localeCompare(String(b.item || ''), undefined, { sensitivity: 'base', numeric: true }) ||
-                  String(b.effectiveDate || '').localeCompare(String(a.effectiveDate || ''))
-                );
-              })()
-            : [];
+        const wholesaleVendorPricingRows: any[] = [];
 
         const aprSgpWorkbook = shouldBuildWholesaleOrderLines
           ? await readAprSgpGmpaWorkbook(companyId).catch(() => null)
