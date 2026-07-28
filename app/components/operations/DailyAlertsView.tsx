@@ -424,7 +424,7 @@ export default function DailyAlertsView({ companyId, companyName, onNavigate }: 
   const [execBriefingLoading, setExecBriefingLoading] = useState(false);
   const [execBriefingError, setExecBriefingError] = useState<string | null>(null);
   const [briefingPeriod, setBriefingPeriod] = useState<BriefingPeriod>('daily');
-  const [isQuickBooksCompany, setIsQuickBooksCompany] = useState(false);
+  const [isQuickBooksOnlineCompany, setIsQuickBooksOnlineCompany] = useState(false);
   const [pulseRefreshing, setPulseRefreshing] = useState(false);
   const [pulseGeneratedAt, setPulseGeneratedAt] = useState<string | null>(null);
   const [showPolicySettings, setShowPolicySettings] = useState(false);
@@ -1917,15 +1917,15 @@ export default function DailyAlertsView({ companyId, companyName, onNavigate }: 
         if (!response.ok) return;
         const data = await response.json();
         const company = Array.isArray(data?.companies) ? data.companies[0] : null;
-        const qbo = ['QUICKBOOKS', 'QUICKBOOKS_DESKTOP', 'QUICKBOOKS_ENTERPRISE'].includes(
+        const qbo = ['QUICKBOOKS', 'QUICKBOOKS_ONLINE', 'QBO'].includes(
           String(company?.accountingSystem || '').trim().toUpperCase()
         );
         if (!cancelled) {
-          setIsQuickBooksCompany(qbo);
+          setIsQuickBooksOnlineCompany(qbo);
           setBriefingPeriod(qbo ? 'monthly' : 'daily');
         }
       } catch {
-        if (!cancelled) setIsQuickBooksCompany(false);
+        if (!cancelled) setIsQuickBooksOnlineCompany(false);
       }
     };
     loadCompanyMeta();
@@ -2935,7 +2935,7 @@ export default function DailyAlertsView({ companyId, companyName, onNavigate }: 
                 )}
                 <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
                   {([
-                    ...(!isQuickBooksCompany ? [{ id: 'daily' as BriefingPeriod, label: 'Daily' }] : []),
+                    ...(!isQuickBooksOnlineCompany ? [{ id: 'daily' as BriefingPeriod, label: 'Daily' }] : []),
                     { id: 'monthly' as BriefingPeriod, label: 'Monthly' },
                     { id: 'quarterly' as BriefingPeriod, label: 'Quarterly' },
                     { id: 'annual' as BriefingPeriod, label: 'Annual' },

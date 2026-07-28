@@ -3,7 +3,7 @@ import prisma from '@/lib/prisma';
 import { runOperationalSyncForConnection } from '@/lib/operational-sync/runner';
 import { extractDailyFinancialMappedLinesFromMetadata, extractDailyFinancialRecordsFromMetadata, ingestDailyFinancialSnapshots } from '@/lib/financial/daily-financial-ingest';
 import { notifyAdminsOfSyncFailure } from '@/lib/sync-alerts';
-import { warmDailyExecutiveBriefingCache } from '@/lib/pulse/exec-briefing-warmup';
+import { shouldWarmDailyExecutiveBriefingForAccountingSystem, warmDailyExecutiveBriefingCache } from '@/lib/pulse/exec-briefing-warmup';
 import { warmDailyIndustryBriefCache } from '@/lib/industry-brief/warmup';
 import { autoQueueDueQuickBooksDesktopFinancialJobs } from '@/lib/quickbooks-desktop/auto-queue';
 import { isQuickBooksDesktopFamily } from '@/lib/quickbooks-desktop/family';
@@ -372,15 +372,17 @@ export async function GET(request: NextRequest) {
         });
 
         if (syncResult.success) {
-          const briefingWarmup = await warmDailyExecutiveBriefingCache({
-            companyId: connection.companyId,
-            baseUrl: request.nextUrl.origin,
-            source: `nightly-${String(connection.platform).toLowerCase()}-sync`,
-          });
-          executiveBriefingWarmed = briefingWarmup.ok;
-          executiveBriefingError = briefingWarmup.error || null;
-          if (!briefingWarmup.ok) {
-            console.warn(`⚠️ ${connection.company?.name}: Daily Executive Briefing warm-up failed: ${briefingWarmup.error || 'unknown error'}`);
+          if (shouldWarmDailyExecutiveBriefingForAccountingSystem(connection.company?.accountingSystem)) {
+            const briefingWarmup = await warmDailyExecutiveBriefingCache({
+              companyId: connection.companyId,
+              baseUrl: request.nextUrl.origin,
+              source: `nightly-${String(connection.platform).toLowerCase()}-sync`,
+            });
+            executiveBriefingWarmed = briefingWarmup.ok;
+            executiveBriefingError = briefingWarmup.error || null;
+            if (!briefingWarmup.ok) {
+              console.warn(`⚠️ ${connection.company?.name}: Daily Executive Briefing warm-up failed: ${briefingWarmup.error || 'unknown error'}`);
+            }
           }
           const industryBriefWarmup = await warmDailyIndustryBriefCache({
             companyId: connection.companyId,

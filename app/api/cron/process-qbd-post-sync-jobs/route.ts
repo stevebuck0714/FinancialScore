@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { processQuickBooksDesktopPostSyncJobs } from '@/lib/quickbooks-desktop/post-sync-jobs';
+import { warmDailyExecutiveBriefingCache } from '@/lib/pulse/exec-briefing-warmup';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 300;
@@ -20,5 +21,26 @@ export async function GET(request: NextRequest) {
   const companyId = String(request.nextUrl.searchParams.get('companyId') || '').trim() || undefined;
   const limit = Math.min(Math.max(Number(request.nextUrl.searchParams.get('limit') || 3), 1), 10);
   const result = await processQuickBooksDesktopPostSyncJobs(limit, companyId);
-  return NextResponse.json({ ok: true, ...result });
+  const completedCompanyIds = Array.from(new Set(
+    result.jobs
+      .filter((job) => job.status === 'done')
+      .map((job) => job.companyId)
+      .filter(Boolean)
+  ));
+  const executiveBriefingWarmups = [];
+  for (const completedCompanyId of completedCompanyIds) {
+    const warmup = await warmDailyExecutiveBriefingCache({
+      companyId: completedCompanyId,
+      baseUrl: request.nextUrl.origin,
+      source: 'qbd-post-sync-snapshot-complete',
+    });
+    executiveBriefingWarmups.push({
+      companyId: completedCompanyId,
+      ok: warmup.ok,
+      skipped: warmup.skipped,
+      error: warmup.error,
+      status: warmup.status,
+    });
+  }
+  return NextResponse.json({ ok: true, ...result, executiveBriefingWarmups });
 }

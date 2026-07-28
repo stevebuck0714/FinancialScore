@@ -7,6 +7,7 @@ import {
 } from '@/lib/infor-m3/async-run-state';
 import { hasPendingFinancialMappingRebuildRuns, isInforSyncQueueEnabled, processQueueTick } from '@/lib/infor-m3/sync-queue';
 import { processPendingInforRawTransforms } from '@/lib/infor-m3/operational-sync';
+import { warmDailyExecutiveBriefingCache } from '@/lib/pulse/exec-briefing-warmup';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 300;
@@ -170,11 +171,17 @@ async function warmProductCachesAfterCompletedSnapshots(params: {
         skipped: true,
         reason: 'not_wholesale_trade',
       };
+  const executiveBriefing = await warmDailyExecutiveBriefingCache({
+    companyId: params.companyId,
+    baseUrl: params.origin,
+    source: 'infor-sync-run-snapshot-complete',
+  });
 
   return {
     companyId: params.companyId,
     ok: Boolean(
       performanceProducts?.ok &&
+      executiveBriefing?.ok &&
       (
         sectorCategory === '42'
           ? Object.values(wholesaleReport as Record<string, any>).every((result: any) => result?.ok)
@@ -183,6 +190,7 @@ async function warmProductCachesAfterCompletedSnapshots(params: {
     ),
     performanceProducts,
     wholesaleReport,
+    executiveBriefing,
   };
 }
 

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import { generateCompanyPulse } from '@/lib/company-pulse/generator';
-import { warmDailyExecutiveBriefingCache } from '@/lib/pulse/exec-briefing-warmup';
+import { shouldWarmDailyExecutiveBriefingForAccountingSystem, warmDailyExecutiveBriefingCache } from '@/lib/pulse/exec-briefing-warmup';
 import { warmDailyIndustryBriefCache } from '@/lib/industry-brief/warmup';
 
 export const dynamic = 'force-dynamic';
@@ -14,6 +14,7 @@ type PulseCronResult = {
   reason?: string;
   alerts?: number;
   executiveBriefingWarmed?: boolean;
+  executiveBriefingSkipped?: boolean;
   executiveBriefingError?: string;
   industryBriefWarmed?: boolean;
   industryBriefError?: string;
@@ -105,11 +106,18 @@ export async function GET(request: NextRequest) {
         const generated = await generateCompanyPulse(companyId, {
           actorEmail: 'company-pulse-cron',
         });
-        const briefingWarmup = await warmDailyExecutiveBriefingCache({
-          companyId,
-          baseUrl: request.nextUrl.origin,
-          source: 'company-pulse-cron',
+        const company = await prisma.company.findUnique({
+          where: { id: companyId },
+          select: { accountingSystem: true },
         });
+        const shouldWarmExecutiveBriefing = shouldWarmDailyExecutiveBriefingForAccountingSystem(company?.accountingSystem);
+        const briefingWarmup = shouldWarmExecutiveBriefing
+          ? await warmDailyExecutiveBriefingCache({
+              companyId,
+              baseUrl: request.nextUrl.origin,
+              source: 'company-pulse-cron',
+            })
+          : { ok: true, skipped: true as const };
         const industryBriefWarmup = await warmDailyIndustryBriefCache({
           companyId,
           baseUrl: request.nextUrl.origin,
@@ -119,7 +127,8 @@ export async function GET(request: NextRequest) {
           companyId,
           ok: briefingWarmup.ok && industryBriefWarmup.ok,
           alerts: generated.alerts.filter((alert) => alert.status !== 'resolved' && alert.isActive !== false).length,
-          executiveBriefingWarmed: briefingWarmup.ok,
+          executiveBriefingWarmed: shouldWarmExecutiveBriefing && briefingWarmup.ok,
+          executiveBriefingSkipped: Boolean(briefingWarmup.skipped),
           executiveBriefingError: briefingWarmup.error,
           industryBriefWarmed: industryBriefWarmup.ok,
           industryBriefError: industryBriefWarmup.error,

@@ -16,6 +16,15 @@ export type WarmDailyExecutiveBriefingResult = {
   status?: number;
 };
 
+export function isQuickBooksOnlineAccountingSystem(value: unknown): boolean {
+  const normalized = String(value || '').trim().toUpperCase();
+  return normalized === 'QUICKBOOKS' || normalized === 'QUICKBOOKS_ONLINE' || normalized === 'QBO';
+}
+
+export function shouldWarmDailyExecutiveBriefingForAccountingSystem(value: unknown): boolean {
+  return !isQuickBooksOnlineAccountingSystem(value);
+}
+
 function normalizeBaseUrl(value: string): string {
   const trimmed = value.trim().replace(/\/+$/, '');
   if (!trimmed) return '';

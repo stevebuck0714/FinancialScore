@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { warmDailyExecutiveBriefingCache } from '@/lib/pulse/exec-briefing-warmup';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -207,6 +208,11 @@ async function warmReportCachesForCompany(params: {
     origin: params.origin,
     companyId: params.companyId,
   });
+  const executiveBriefing = await warmDailyExecutiveBriefingCache({
+    companyId: params.companyId,
+    baseUrl: params.origin,
+    source: 'infor-pending-transform-snapshot-complete',
+  });
 
   return {
     companyId: params.companyId,
@@ -214,6 +220,7 @@ async function warmReportCachesForCompany(params: {
       customers?.ok &&
       performanceProducts?.ok &&
       masterData?.ok &&
+      executiveBriefing?.ok &&
       (
         sectorCategory === '42'
           ? Object.values(wholesaleReport as Record<string, any>).every((result: any) => result?.ok)
@@ -224,6 +231,7 @@ async function warmReportCachesForCompany(params: {
     performanceProducts,
     wholesaleReport,
     masterData,
+    executiveBriefing,
   };
 }
 

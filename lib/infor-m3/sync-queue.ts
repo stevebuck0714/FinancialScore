@@ -12,7 +12,7 @@ import { notifyAdminsOfSyncFailure } from '@/lib/sync-alerts';
 import { orchestrateQuickBooksOnlineOperationalSync } from '@/lib/quickbooks-online/operational-orchestrator';
 import { syncErpDailyFinancialsFromGL } from '@/lib/financial/sync-erp-daily-financials';
 import { rebuildDailyFinancialSnapshotsFromGL } from '@/lib/financial/daily-bs-from-gl';
-import { warmDailyExecutiveBriefingCache } from '@/lib/pulse/exec-briefing-warmup';
+import { shouldWarmDailyExecutiveBriefingForAccountingSystem, warmDailyExecutiveBriefingCache } from '@/lib/pulse/exec-briefing-warmup';
 import { warmDailyIndustryBriefCache } from '@/lib/industry-brief/warmup';
 
 const DEFAULT_LEASE_SECONDS = 420;
@@ -1878,16 +1878,22 @@ async function processTask(
   }
 
   if (runCompletedInThisTask) {
-    const briefingWarmup = await warmDailyExecutiveBriefingCache({
-      companyId: task.companyId,
-      source: `sync-queue-${String(task.run.platform || 'erp').toLowerCase()}-complete`,
-    });
-    if (!briefingWarmup.ok) {
-      console.warn('Daily Executive Briefing warm-up failed after sync queue completion:', {
+    const company = await db().company.findUnique({
+      where: { id: task.companyId },
+      select: { accountingSystem: true },
+    }).catch(() => null);
+    if (shouldWarmDailyExecutiveBriefingForAccountingSystem(company?.accountingSystem)) {
+      const briefingWarmup = await warmDailyExecutiveBriefingCache({
         companyId: task.companyId,
-        runId: task.runId,
-        error: briefingWarmup.error,
+        source: `sync-queue-${String(task.run.platform || 'erp').toLowerCase()}-complete`,
       });
+      if (!briefingWarmup.ok) {
+        console.warn('Daily Executive Briefing warm-up failed after sync queue completion:', {
+          companyId: task.companyId,
+          runId: task.runId,
+          error: briefingWarmup.error,
+        });
+      }
     }
     const industryBriefWarmup = await warmDailyIndustryBriefCache({
       companyId: task.companyId,
