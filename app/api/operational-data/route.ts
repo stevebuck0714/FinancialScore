@@ -66,7 +66,6 @@ const CUSTOMER_REVENUE_SOURCE_VERSION = 'customer-revenue-source-v6-bakers-raw-c
 const CUSTOMER_WIP_SOURCE_VERSION = 'customer-backlog-source-v4';
 const HIRING_SOURCE_VERSION = 'bamboohr-hiring-full-pagination-v2';
 const CUSTOMER_BACKLOG_MIN_ORDER_DATE = '2023-06-01';
-const WHOLESALE_PRODUCTS_REPORT_START_DATE = '2023-01-01';
 const WHOLESALE_PRODUCTS_REPORT_CACHE_TTL_SECONDS = 30 * 24 * 60 * 60;
 type WholesaleProductsReportMode = 'all' | 'margin' | 'raw' | 'vendor';
 const GENE_SOLUTIONS_COMPANY_ID = 'cmrc86g8l0001qhbkgcq6wrf9';
@@ -2723,6 +2722,7 @@ export async function GET(request: NextRequest) {
         .trim()
         .toLowerCase()
     );
+    const hasWholesaleProductsReportModeParam = searchParams.has('reportMode');
     const wholesaleProductsReportModeParam = String(searchParams.get('reportMode') || 'all')
       .trim()
       .toLowerCase();
@@ -2770,8 +2770,8 @@ export async function GET(request: NextRequest) {
       hasCronCacheWarmupAuth &&
       type === 'products' &&
       frequency === 'daily' &&
-      String(startDateParam || '') === WHOLESALE_PRODUCTS_REPORT_START_DATE &&
       String(sectorCategoryParam || '').trim() === '42' &&
+      hasWholesaleProductsReportModeParam &&
       boundedLimit >= 5000;
     const isCronProductsPerformanceWarmup =
       hasCronCacheWarmupAuth &&
@@ -2971,7 +2971,7 @@ export async function GET(request: NextRequest) {
       cacheType === 'products' &&
       String(sectorCategory || '').trim() === '42' &&
       frequency === 'daily' &&
-      dateKeyUtc(startDate) === WHOLESALE_PRODUCTS_REPORT_START_DATE &&
+      hasWholesaleProductsReportModeParam &&
       boundedLimit >= 5000;
     const shouldBuildWholesaleOrderLines =
       isWholesaleProductsReportRequest &&

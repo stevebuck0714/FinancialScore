@@ -197,7 +197,6 @@ type ProductReportView = 'productMarginAnalysis' | 'wholesaleRawData' | 'vendorP
 type WholesaleProductsReportMode = 'margin' | 'raw' | 'vendor';
 type ForecastSubTab = 'income-statement-forecast' | 'cash-forecast' | 'graphs' | 'residential-revenue-forecast';
 
-const WHOLESALE_PRODUCTS_REPORT_START_DATE = '2023-01-01';
 const WHOLESALE_INVENTORY_EXCLUDED_SECTION_KEYS = new Set([
   'inventoryRetailTurns',
   'inventoryRetailProductAging',
@@ -1885,8 +1884,8 @@ export default function OperationsTab({
       'wholesale-report',
       reportMode,
       'daily',
-      WHOLESALE_PRODUCTS_REPORT_START_DATE,
-      effectiveMaxSelectableEndDate,
+      startDate,
+      endDate,
       '42',
       CUSTOMER_WIP_CLIENT_CACHE_VERSION,
     ].join('|');
@@ -1922,8 +1921,8 @@ export default function OperationsTab({
       companyId: selectedCompanyId,
       type: 'products',
       frequency: 'daily',
-      startDate: WHOLESALE_PRODUCTS_REPORT_START_DATE,
-      endDate: effectiveMaxSelectableEndDate,
+      startDate,
+      endDate,
       limit: 'all',
       sectorCategory: '42',
       reportMode,
@@ -2181,7 +2180,7 @@ export default function OperationsTab({
     return () => {
       cancelled = true;
     };
-  }, [shouldLoadWholesaleProductsReport, industrySectorCategory, effectiveMaxSelectableEndDate, activeTab, productReportView]);
+  }, [shouldLoadWholesaleProductsReport, industrySectorCategory, startDate, endDate, activeTab, productReportView]);
 
   const prefetchTabData = (tab: string) => {
     const type = mapModuleToDataType(tab) || null;

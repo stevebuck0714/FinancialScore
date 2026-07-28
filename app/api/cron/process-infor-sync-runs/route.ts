@@ -14,7 +14,6 @@ export const maxDuration = 300;
 
 const MAX_RUNS_PER_TICK = 2;
 const MAX_RETRIES_PER_RUN = 6;
-const WHOLESALE_PRODUCTS_REPORT_START_DATE = '2023-01-01';
 const PRODUCTS_PERFORMANCE_LOOKBACK_DAYS = 90;
 type WholesaleProductsReportMode = 'margin' | 'raw' | 'vendor';
 
@@ -160,7 +159,7 @@ async function warmProductCachesAfterCompletedSnapshots(params: {
           origin: params.origin,
           cronSecret: params.cronSecret,
           companyId: params.companyId,
-          startDate: WHOLESALE_PRODUCTS_REPORT_START_DATE,
+          startDate: productsStartIsoFromEndDate(endDate),
           endDate,
           limit: 'all',
           sectorCategory,

@@ -6,7 +6,6 @@ export const runtime = 'nodejs';
 export const maxDuration = 300;
 
 const OPERATIONAL_REPORT_MIN_DATE = '2024-01-01';
-const WHOLESALE_PRODUCTS_REPORT_START_DATE = '2023-01-01';
 const PRODUCTS_PERFORMANCE_LOOKBACK_DAYS = 90;
 type WholesaleProductsReportMode = 'margin' | 'raw' | 'vendor';
 
@@ -194,7 +193,7 @@ async function warmReportCachesForCompany(params: {
           cronSecret: params.cronSecret,
           companyId: params.companyId,
           type: 'products',
-          startDate: WHOLESALE_PRODUCTS_REPORT_START_DATE,
+          startDate: productsStartIsoFromEndDate(endDate),
           endDate,
           limit: 'all',
           sectorCategory,
