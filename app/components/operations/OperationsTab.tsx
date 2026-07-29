@@ -551,6 +551,7 @@ const OPERATIONAL_DATA_CACHE_TTL_MS = 2 * 60 * 1000;
 const PRODUCT_DATA_CACHE_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 const CUSTOMER_DATA_CACHE_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 const CUSTOMER_CONCENTRATION_CLIENT_CACHE_VERSION = 'customer-concentration-exposure-v10';
+const CUSTOMER_REVENUE_CLIENT_CACHE_VERSION = 'customer-revenue-source-v11-monthly-customer-history';
 const CUSTOMER_WIP_CLIENT_CACHE_VERSION = 'customer-backlog-source-v6';
 const WHOLESALE_PRODUCTS_REPORT_CLIENT_CACHE_VERSION = 'wholesale-products-report-90-day-v2-vendor-pricing';
 const REAL_ESTATE_REPORT_CLIENT_CACHE_VERSION = 'real-estate-sector-53-reports-v1';
@@ -1975,6 +1976,13 @@ export default function OperationsTab({
     if (
       (type === 'customers' || type === 'sales') &&
       cached.data?.summary?.customerConcentration?.cacheVersion !== CUSTOMER_CONCENTRATION_CLIENT_CACHE_VERSION
+    ) {
+      operationalDataCacheRef.current.delete(key);
+      return null;
+    }
+    if (
+      (type === 'customers' || type === 'sales') &&
+      cached.data?.summary?.customerRevenueSourceVersion !== CUSTOMER_REVENUE_CLIENT_CACHE_VERSION
     ) {
       operationalDataCacheRef.current.delete(key);
       return null;
@@ -3471,8 +3479,8 @@ export default function OperationsTab({
         valueFormat: metric === 'revenue' ? 'currency' : 'number',
       };
     };
-    const customerSalesHistory = buildCustomerHistoryFromRecords('revenue');
-    const customerInvoiceVolumeHistory = buildCustomerHistoryFromRecords('invoiceCount');
+    const customerSalesHistory = summary?.customerHistory?.sales || buildCustomerHistoryFromRecords('revenue');
+    const customerInvoiceVolumeHistory = summary?.customerHistory?.invoiceVolume || buildCustomerHistoryFromRecords('invoiceCount');
 
     // Aggregate data by period for trend chart
     const periodTrend = recordsInSelectedDateRange.reduce((acc: any, record: any) => {

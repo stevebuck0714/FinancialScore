@@ -62,7 +62,7 @@ const PRODUCT_OPERATIONAL_CACHE_TTL_SECONDS = 30 * 24 * 60 * 60;
 const CUSTOMER_OPERATIONAL_CACHE_TTL_SECONDS = 30 * 24 * 60 * 60;
 const CUSTOMER_CONCENTRATION_CACHE_TTL_SECONDS = 30 * 24 * 60 * 60;
 const CUSTOMER_CONCENTRATION_CACHE_VERSION = 'customer-concentration-exposure-v10';
-const CUSTOMER_REVENUE_SOURCE_VERSION = 'customer-revenue-source-v10-product-history-item-names';
+const CUSTOMER_REVENUE_SOURCE_VERSION = 'customer-revenue-source-v11-monthly-customer-history';
 const CUSTOMER_WIP_SOURCE_VERSION = 'customer-backlog-source-v4';
 const HIRING_SOURCE_VERSION = 'bamboohr-hiring-full-pagination-v2';
 const CUSTOMER_BACKLOG_MIN_ORDER_DATE = '2023-06-01';
@@ -3252,9 +3252,11 @@ export async function GET(request: NextRequest) {
           }
           let basis: 'raw_slartrans_invoice' | 'orderline_delta' | 'customer_sales_snapshot' = salesData.length > 0 ? 'customer_sales_snapshot' : 'orderline_delta';
           let bookingsSourceData: any[] = salesData;
+          let orderLineSalesData: any[] = [];
+          let rawInvoiceSalesData: any[] = [];
           if (isInforCompany) {
-            const orderLineSalesData = await deriveCustomerSalesFromOrderLineDeltas(companyId, orderLineFrequencyForQuery, startDate, endDate);
-            const rawInvoiceSalesData = await deriveCustomerSalesFromRawInvoices(companyId, startDate, endDate);
+            orderLineSalesData = await deriveCustomerSalesFromOrderLineDeltas(companyId, orderLineFrequencyForQuery, startDate, endDate);
+            rawInvoiceSalesData = await deriveCustomerSalesFromRawInvoices(companyId, startDate, endDate);
             if (orderLineSalesData.length > 0) {
               bookingsSourceData = orderLineSalesData;
             }
@@ -3328,6 +3330,85 @@ export async function GET(request: NextRequest) {
               ? { ...row, customerName: mappedName }
               : row;
           });
+          const normalizeCustomerHistoryRows = (rows: any[]) => rows.map((row: any) => {
+            const customerId = String(row?.customerId || '').trim();
+            const customerName = String(row?.customerName || '').trim();
+            const mappedName = customerId ? customerNameById.get(customerId.toLowerCase()) : '';
+            return mappedName && (!customerName || looksLikeCustomerCode(customerName))
+              ? { ...row, customerName: mappedName }
+              : row;
+          });
+          const buildCustomerHistory = (rows: any[], metric: 'revenue' | 'invoiceCount') => {
+            const monthMap = new Map<string, { monthKey: string; monthLabel: string; date: Date }>();
+            const customerMap = new Map<string, { label: string; itemName: string; values: Record<string, number>; total: number }>();
+            for (const row of rows as any[]) {
+              const snapshot = new Date(row?.snapshotDate);
+              if (Number.isNaN(snapshot.getTime())) continue;
+              const monthKey = businessMonthKey(snapshot);
+              const monthLabel = snapshot.toLocaleDateString('en-US', { month: 'short', year: 'numeric', timeZone: 'UTC' });
+              if (!monthMap.has(monthKey)) {
+                monthMap.set(monthKey, {
+                  monthKey,
+                  monthLabel,
+                  date: new Date(Date.UTC(snapshot.getUTCFullYear(), snapshot.getUTCMonth(), 1)),
+                });
+              }
+              const customerId = String(row?.customerId || '').trim();
+              const customerName = String(row?.customerName || 'Unknown Customer').trim() || 'Unknown Customer';
+              const key = customerId ? `id:${customerId}` : `name:${customerName.toLowerCase().replace(/\s+/g, ' ')}`;
+              const value = Number(row?.[metric] || 0);
+              const bucket = customerMap.get(key) || { label: customerName, itemName: customerId, values: {}, total: 0 };
+              if (!bucket.itemName && customerId) bucket.itemName = customerId;
+              bucket.values[monthKey] = Number(bucket.values[monthKey] || 0) + value;
+              bucket.total += value;
+              customerMap.set(key, bucket);
+            }
+            const months = Array.from(monthMap.values()).sort((a, b) => a.date.getTime() - b.date.getTime());
+            const rowsOut = Array.from(customerMap.values()).sort((a, b) => Number(b.total || 0) - Number(a.total || 0));
+            const totalValues = months.reduce((acc: Record<string, number>, month) => {
+              acc[month.monthKey] = rowsOut.reduce((sum, row) => sum + Number(row.values?.[month.monthKey] || 0), 0);
+              return acc;
+            }, {});
+            return {
+              months,
+              rows: rowsOut,
+              totalRow: {
+                label: metric === 'revenue' ? 'Total Customer Sales' : 'Total Customer Invoice Volume',
+                values: totalValues,
+                total: Object.values(totalValues).reduce((sum, value) => sum + Number(value || 0), 0),
+              },
+              valueFormat: metric === 'revenue' ? 'currency' : 'number',
+            };
+          };
+          const monthlyCustomerSnapshotRows = await prisma.customerSalesSnapshot.findMany({
+            where: {
+              companyId,
+              frequency: 'monthly',
+              snapshotDate: { gte: startOfMonth(startDate), lte: endDate },
+            },
+            orderBy: { snapshotDate: 'asc' },
+            take: 100000,
+          });
+          const customerHistorySourceRows = normalizeCustomerHistoryRows(
+            rawInvoiceSalesData.length > 0
+              ? rawInvoiceSalesData
+              : monthlyCustomerSnapshotRows.length > 0
+                ? monthlyCustomerSnapshotRows
+                : orderLineSalesData.length > 0
+                  ? orderLineSalesData
+                  : salesData
+          );
+          const customerHistory = {
+            source: rawInvoiceSalesData.length > 0
+              ? 'raw_slartrans_invoice'
+              : monthlyCustomerSnapshotRows.length > 0
+                ? 'customer_sales_snapshot_monthly'
+                : orderLineSalesData.length > 0
+                  ? 'orderline_delta'
+                  : basis,
+            sales: buildCustomerHistory(customerHistorySourceRows, 'revenue'),
+            invoiceVolume: buildCustomerHistory(customerHistorySourceRows, 'invoiceCount'),
+          };
           const concentrationCache = {
             namespace: 'customer-concentration-exposure',
             cacheKey: hashCacheParts([
@@ -3784,6 +3865,7 @@ export async function GET(request: NextRequest) {
             bookingsVsRevenueBridge,
             backlogSeries,
             topCustomersSummary,
+            customerHistory,
             customerConcentration: {
               executiveMonthly: customerConcentrationExecutiveMonthly,
               customerMonthly: customerConcentrationMonthlyCustomers,
@@ -5097,6 +5179,8 @@ export async function GET(request: NextRequest) {
           summary: {
             topCustomers: salesResult.topCustomersSummary,
             customerDataBasis: salesResult.basis,
+            customerRevenueSourceVersion: CUSTOMER_REVENUE_SOURCE_VERSION,
+            customerHistory: salesResult.customerHistory,
             customerConcentration: salesResult.customerConcentration,
             revenueLabel: 'Revenue',
             customerOverview: arResult.customerOverview,

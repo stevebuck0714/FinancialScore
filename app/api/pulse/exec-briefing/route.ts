@@ -39,6 +39,7 @@ const MONTHLY_FINANCIAL_ROW_CAP = 60;
 const DAILY_FINANCIAL_ROW_CAP = 100;
 const CORE_SNAPSHOT_ROW_CAP = 150;
 const DETAIL_SNAPSHOT_ROW_CAP = 300;
+const EXEC_BRIEFING_LOGIC_VERSION = 'exec-briefing-v2-trim-trailing-zero-income-days';
 const PRIVATE_DAILY_CACHE_HEADERS = {
   'Cache-Control': 'private, max-age=300, stale-while-revalidate=1800',
 };
@@ -151,6 +152,24 @@ function addUtcMonths(date: Date, months: number): Date {
 
 function ebitda(row: any): number {
   return asNumber(row?.revenue) - asNumber(row?.cogsTotal) - asNumber(row?.expense) + asNumber(row?.depreciationAmortization);
+}
+
+function isZeroIncomeActivityRow(row: any): boolean {
+  return Math.abs(asNumber(row?.revenue)) < 0.005 &&
+    Math.abs(asNumber(row?.cogsTotal)) < 0.005 &&
+    Math.abs(asNumber(row?.expense)) < 0.005;
+}
+
+function trimTrailingZeroIncomeDailyRows(rows: any[]): any[] {
+  const sortedRows = sortByDate(rows);
+  let end = sortedRows.length;
+  while (end > 1 && isZeroIncomeActivityRow(sortedRows[end - 1])) {
+    const priorRows = sortedRows.slice(0, end - 1);
+    const hasPriorIncomeActivity = priorRows.some((row) => !isZeroIncomeActivityRow(row));
+    if (!hasPriorIncomeActivity) break;
+    end -= 1;
+  }
+  return sortedRows.slice(0, end);
 }
 
 function summarizeFinancialRows(rows: any[]) {
@@ -760,6 +779,10 @@ async function buildPulseDataVersion(companyId: string, startDate: Date, monthly
       modules: moduleProfile.moduleKeys,
       dataTypes: moduleProfile.dataTypes,
     }),
+    Promise.resolve({
+      label: 'execBriefingLogic',
+      version: EXEC_BRIEFING_LOGIC_VERSION,
+    }),
   ];
 
   const parts = await Promise.all([
@@ -1060,7 +1083,7 @@ export async function GET(request: NextRequest) {
     const monthlyFinancials = sortByDate(dfsMonthly ? dfsMonthly.rows : monthlyFinancialsRaw);
     const completeMonthlyFinancials = monthlyFinancials.filter(isCompleteMonthlyPeriod);
     const latestFinancial = last(completeMonthlyFinancials) || last(monthlyFinancials);
-    const sortedDailyFinancials = sortByDate(dailyFinancials);
+    const sortedDailyFinancials = trimTrailingZeroIncomeDailyRows(dailyFinancials);
     const latestDailyFinancial = last(sortedDailyFinancials);
     const financialComparisons = buildFinancialComparisonsForPeriod({
       period,
