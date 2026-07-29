@@ -117,7 +117,39 @@ function inferExactDateRangeFromPrompt(dataset: ReportDataset, prompt: string): 
     'december',
   ];
   const monthMatch = normalized.match(/\b(january|february|march|april|may|june|july|august|september|october|november|december)\s+(20\d{2})\b/);
-  if (!monthMatch || !dataset.dateField) return null;
+  if (!dataset.dateField) return null;
+  if (!monthMatch) {
+    const quarterMatch =
+      normalized.match(/\bq([1-4])\s*(20\d{2})\b/) ||
+      normalized.match(/\b(20\d{2})\s*q([1-4])\b/) ||
+      normalized.match(/\b(first|second|third|fourth)\s+quarter\s+(20\d{2})\b/);
+    if (quarterMatch) {
+      const quarterWordMap: Record<string, number> = { first: 1, second: 2, third: 3, fourth: 4 };
+      const firstToken = quarterMatch[1];
+      const secondToken = quarterMatch[2];
+      const quarter = quarterWordMap[firstToken] || (String(firstToken).length === 4 ? Number(secondToken) : Number(firstToken));
+      const year = String(firstToken).length === 4 ? Number(firstToken) : Number(secondToken);
+      if (Number.isFinite(year) && Number.isFinite(quarter) && quarter >= 1 && quarter <= 4) {
+        const startMonth = (quarter - 1) * 3;
+        const start = new Date(Date.UTC(year, startMonth, 1));
+        const end = new Date(Date.UTC(year, startMonth + 3, 0));
+        return {
+          field: dataset.dateField,
+          startDate: start.toISOString().slice(0, 10),
+          endDate: end.toISOString().slice(0, 10),
+        };
+      }
+    }
+    const yearMatch = normalized.match(/\b(?:annual|annually|year|calendar year|cy|for|in|during)?\s*(20\d{2})\b/);
+    if (!yearMatch) return null;
+    const year = Number(yearMatch[1]);
+    if (!Number.isFinite(year)) return null;
+    return {
+      field: dataset.dateField,
+      startDate: `${year}-01-01`,
+      endDate: `${year}-12-31`,
+    };
+  }
   const monthIndex = monthNames.indexOf(monthMatch[1]);
   const year = Number(monthMatch[2]);
   if (monthIndex < 0 || !Number.isFinite(year)) return null;

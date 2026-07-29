@@ -293,6 +293,71 @@ function inferEntityFiltersFromPayload(context: string, payload: any, field: Rep
   }];
 }
 
+function inferExactDatasetDateRangeFromPrompt(dataset: ReportDataset, prompt: string): any | null {
+  if (!dataset.dateField) return null;
+  const normalized = normalizeFilterText(prompt);
+  const monthNames = [
+    'january',
+    'february',
+    'march',
+    'april',
+    'may',
+    'june',
+    'july',
+    'august',
+    'september',
+    'october',
+    'november',
+    'december',
+  ];
+  const monthMatch = normalized.match(/\b(january|february|march|april|may|june|july|august|september|october|november|december)\s+(20\d{2})\b/);
+  if (monthMatch) {
+    const monthIndex = monthNames.indexOf(monthMatch[1]);
+    const year = Number(monthMatch[2]);
+    if (monthIndex >= 0 && Number.isFinite(year)) {
+      const start = new Date(Date.UTC(year, monthIndex, 1));
+      const end = new Date(Date.UTC(year, monthIndex + 1, 0));
+      return {
+        field: dataset.dateField,
+        startDate: start.toISOString().slice(0, 10),
+        endDate: end.toISOString().slice(0, 10),
+      };
+    }
+  }
+
+  const quarterMatch =
+    normalized.match(/\bq([1-4])\s*(20\d{2})\b/) ||
+    normalized.match(/\b(20\d{2})\s*q([1-4])\b/) ||
+    normalized.match(/\b(first|second|third|fourth)\s+quarter\s+(20\d{2})\b/);
+  if (quarterMatch) {
+    const quarterWordMap: Record<string, number> = { first: 1, second: 2, third: 3, fourth: 4 };
+    const firstToken = quarterMatch[1];
+    const secondToken = quarterMatch[2];
+    const quarter = quarterWordMap[firstToken] || (String(firstToken).length === 4 ? Number(secondToken) : Number(firstToken));
+    const year = String(firstToken).length === 4 ? Number(firstToken) : Number(secondToken);
+    if (Number.isFinite(year) && Number.isFinite(quarter) && quarter >= 1 && quarter <= 4) {
+      const startMonth = (quarter - 1) * 3;
+      const start = new Date(Date.UTC(year, startMonth, 1));
+      const end = new Date(Date.UTC(year, startMonth + 3, 0));
+      return {
+        field: dataset.dateField,
+        startDate: start.toISOString().slice(0, 10),
+        endDate: end.toISOString().slice(0, 10),
+      };
+    }
+  }
+
+  const yearMatch = normalized.match(/\b(?:annual|annually|year|calendar year|cy|for|in|during)?\s*(20\d{2})\b/);
+  if (!yearMatch) return null;
+  const year = Number(yearMatch[1]);
+  if (!Number.isFinite(year)) return null;
+  return {
+    field: dataset.dateField,
+    startDate: `${year}-01-01`,
+    endDate: `${year}-12-31`,
+  };
+}
+
 function enhancePreviewConfig(config: any, fieldCatalog: ReportFieldCatalogItem[]) {
   const context = [
     config?.sourcePrompt,
@@ -334,7 +399,7 @@ function enhancePreviewConfig(config: any, fieldCatalog: ReportFieldCatalogItem[
 
   const dataset = getReportDataset(config?.dataset || config?.datasetId);
   const inferredDateRange = !config?.dateRange && dataset
-    ? inferDatasetDateRangeFromPrompt(dataset, context)
+    ? inferExactDatasetDateRangeFromPrompt(dataset, context) || inferDatasetDateRangeFromPrompt(dataset, context)
     : null;
 
   return {
@@ -1441,6 +1506,143 @@ async function buildPlatosProductDimensionChartPreview(
   };
 }
 
+async function buildProductOrderLineRevenueDimensionPreview(
+  dataset: ReportDataset,
+  config: any,
+  dimensionColumn: ReportDatasetColumn,
+  metricConfig: { column: ReportDatasetColumn; aggregation: string; label: string; format: string }
+) {
+  if (!isProductSalesDataset(dataset) || !isProductDimensionColumn(dimensionColumn) || metricConfig.column.key !== 'revenue') return null;
+  const companyId = String(config.companyId);
+  const dateRange = normalizeDatasetDateRange(dataset, config?.dateRange);
+  const exactStartRaw = config?.dateRange?.startDate || config?.dateRange?.start || config?.dateRange?.from;
+  const exactEndRaw = config?.dateRange?.endDate || config?.dateRange?.end || config?.dateRange?.to;
+  const dateClauses: Prisma.Sql[] = [];
+
+  if (exactStartRaw || exactEndRaw) {
+    const start = exactStartRaw ? new Date(String(exactStartRaw)) : null;
+    const end = exactEndRaw ? new Date(String(exactEndRaw)) : null;
+    if (start && !Number.isNaN(start.getTime())) dateClauses.push(Prisma.sql`COALESCE("orderDate", "snapshotDate") >= ${start}`);
+    if (end && !Number.isNaN(end.getTime())) {
+      end.setUTCHours(23, 59, 59, 999);
+      dateClauses.push(Prisma.sql`COALESCE("orderDate", "snapshotDate") <= ${end}`);
+    }
+  } else if (dateRange) {
+    const maxRows = await prisma.$queryRaw<Array<{ maxDate: Date | null }>>(Prisma.sql`
+      SELECT MAX(COALESCE("orderDate", "snapshotDate")) AS "maxDate"
+      FROM "CustomerOrderLineSnapshot"
+      WHERE "companyId" = ${companyId}
+    `);
+    const anchor = maxRows[0]?.maxDate ? new Date(maxRows[0].maxDate) : new Date();
+    const { start, end } = resolveDatasetDateRange(dateRange, anchor);
+    dateClauses.push(Prisma.sql`COALESCE("orderDate", "snapshotDate") >= ${start}`);
+    dateClauses.push(Prisma.sql`COALESCE("orderDate", "snapshotDate") <= ${end}`);
+  }
+
+  const filters = normalizeDatasetFilters(dataset, Array.isArray(config?.filters) ? config.filters : []);
+  const filterClauses = filters
+    .map((filter) => {
+      if (!['itemName', 'sku', 'itemId'].includes(filter.field)) return null;
+      if (filter.operator === 'equals') {
+        return Prisma.sql`(
+          COALESCE("itemName", '') = ${filter.value}
+          OR COALESCE("sku", '') = ${filter.value}
+          OR COALESCE("itemId", '') = ${filter.value}
+        )`;
+      }
+      return Prisma.sql`(
+        COALESCE("itemName", '') ILIKE ${`%${filter.value}%`}
+        OR COALESCE("sku", '') ILIKE ${`%${filter.value}%`}
+        OR COALESCE("itemId", '') ILIKE ${`%${filter.value}%`}
+      )`;
+    })
+    .filter(Boolean) as Prisma.Sql[];
+  const limit = Math.min(Math.max(Number(config?.limit) || 10, 1), 50);
+  const rows = await prisma.$queryRaw<Array<{ name: string; value: number }>>(Prisma.sql`
+    WITH latest_lines AS (
+      SELECT DISTINCT ON ("orderId", "lineId", "customerName")
+        "itemId",
+        "itemName",
+        "sku",
+        "invoicedAmount",
+        "contractValue",
+        "remainingAmount",
+        "snapshotDate"
+      FROM "CustomerOrderLineSnapshot"
+      WHERE "companyId" = ${companyId}
+        ${dateClauses.length > 0 ? Prisma.sql`AND ${Prisma.join(dateClauses, ' AND ')}` : Prisma.empty}
+        ${filterClauses.length > 0 ? Prisma.sql`AND ${Prisma.join(filterClauses, ' AND ')}` : Prisma.empty}
+      ORDER BY "orderId", "lineId", "customerName", "snapshotDate" DESC
+    )
+    SELECT
+      COALESCE(NULLIF(TRIM("itemName"), ''), NULLIF(TRIM("sku"), ''), NULLIF(TRIM("itemId"), ''), 'Unassigned') AS "name",
+      SUM(
+        CASE
+          WHEN COALESCE("invoicedAmount", 0) <> 0 THEN COALESCE("invoicedAmount", 0)
+          WHEN COALESCE("contractValue", 0) <> 0 THEN COALESCE("contractValue", 0)
+          ELSE COALESCE("remainingAmount", 0)
+        END
+      )::double precision AS "value"
+    FROM latest_lines
+    GROUP BY 1
+    HAVING SUM(
+      CASE
+        WHEN COALESCE("invoicedAmount", 0) <> 0 THEN COALESCE("invoicedAmount", 0)
+        WHEN COALESCE("contractValue", 0) <> 0 THEN COALESCE("contractValue", 0)
+        ELSE COALESCE("remainingAmount", 0)
+      END
+    ) > 0
+    ORDER BY "value" DESC
+    LIMIT ${limit}
+  `);
+  if (rows.length === 0) return null;
+
+  const displayNameByKey = await loadCompanyScopedProductDisplayNameMap(companyId);
+  const displayRows = rows
+    .map((row) => ({
+      name: displayNameByKey.size > 0 ? resolveProductDisplayName(row.name, displayNameByKey) : String(row.name || 'Unassigned'),
+      value: toNumber(row.value),
+    }))
+    .filter((row) => row.value > 0)
+    .reduce<Array<{ name: string; value: number }>>((acc, row) => {
+      const existing = acc.find((item) => item.name === row.name);
+      if (existing) existing.value += row.value;
+      else acc.push(row);
+      return acc;
+    }, [])
+    .sort((a, b) => b.value - a.value)
+    .slice(0, limit);
+  if (displayRows.length === 0) return null;
+
+  return {
+    rows: displayRows.map((row) => ({
+      name: row.name,
+      dimension: row.name,
+      value: row.value,
+      values: { [metricConfig.column.key]: row.value },
+    })),
+    tableColumns: [
+      { key: 'name', label: dimensionColumn.label, type: 'text' },
+      { key: metricConfig.column.key, label: metricConfig.label, type: 'metric', format: metricConfig.format },
+    ],
+    tableRows: displayRows.map((row) => ({
+      name: row.name,
+      values: { [metricConfig.column.key]: row.value },
+    })),
+    fields: [metricConfig.column.key],
+    fieldCatalog: [],
+    dataset: {
+      id: dataset.id,
+      label: dataset.label,
+      tableName: 'CustomerOrderLineSnapshot',
+      dimension: dimensionColumn.key,
+      metric: metricConfig.column.key,
+      limit,
+      source: 'customer-order-lines',
+    },
+  };
+}
+
 async function buildDatasetDimensionChartPreview(config: any) {
   const dataset = getReportDataset(config?.dataset || config?.datasetId);
   if (!dataset) return null;
@@ -1460,6 +1662,9 @@ async function buildDatasetDimensionChartPreview(config: any) {
     })
     .filter(Boolean)[0] as { column: ReportDatasetColumn; aggregation: string; label: string; format: string } | undefined;
   if (!metricConfig) return null;
+
+  const orderLineProductPreview = await buildProductOrderLineRevenueDimensionPreview(dataset, config, dimensionColumn, metricConfig);
+  if (orderLineProductPreview) return orderLineProductPreview;
 
   const filters = normalizeDatasetFilters(dataset, Array.isArray(config?.filters) ? config.filters : []);
   const whereClauses: Prisma.Sql[] = [Prisma.sql`"companyId" = ${String(config.companyId)}`];
