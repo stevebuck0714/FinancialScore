@@ -3474,82 +3474,15 @@ export default function OperationsTab({
     }, {});
 
     const trendData = Object.values(periodTrend);
-    const toCustomerTrendDay = (value: string | Date | null | undefined): Date | null => {
-      const parsed = value instanceof Date ? value : parseDateValue(value);
-      if (!parsed) return null;
-      return new Date(Date.UTC(parsed.getUTCFullYear(), parsed.getUTCMonth(), parsed.getUTCDate()));
-    };
-    const customerTrendRollup: 'daily' | 'monthly' = 'daily';
-    const toCustomerTrendIsoDay = (date: Date) =>
-      `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}-${String(date.getUTCDate()).padStart(2, '0')}`;
-    const customerTrendPeriodAnchor = (date: Date): Date => {
-      if (customerTrendRollup === 'monthly') return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), 1));
-      return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
-    };
-    const customerTrendPeriodKey = (date: Date): string => {
-      const anchor = customerTrendPeriodAnchor(date);
-      if (customerTrendRollup === 'monthly') return `${anchor.getUTCFullYear()}-${String(anchor.getUTCMonth() + 1).padStart(2, '0')}`;
-      return toCustomerTrendIsoDay(anchor);
-    };
-    const customerTrendPeriodLabel = (date: Date): string => {
-      if (customerTrendRollup === 'monthly') {
-        return date.toLocaleDateString('en-US', { month: 'short', year: '2-digit', timeZone: 'UTC' });
-      }
-      return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' });
-    };
-    const customerTrendRecordDates = recordsInSelectedDateRange
-      .map((record: any) => toCustomerTrendDay(record?.snapshotDate))
-      .filter((date): date is Date => Boolean(date))
-      .sort((a, b) => a.getTime() - b.getTime());
-    const customerTrendStartDate = toCustomerTrendDay(startDate) || customerTrendRecordDates[0] || null;
-    const customerTrendEndDate = toCustomerTrendDay(endDate) || customerTrendRecordDates[customerTrendRecordDates.length - 1] || null;
-    const customerTrendPeriods: Array<{ monthKey: string; monthLabel: string }> = [];
-    if (customerTrendStartDate && customerTrendEndDate && customerTrendStartDate <= customerTrendEndDate) {
-      if (customerTrendRollup === 'monthly') {
-        for (
-          let cursor = new Date(Date.UTC(customerTrendStartDate.getUTCFullYear(), customerTrendStartDate.getUTCMonth(), 1));
-          cursor <= customerTrendEndDate;
-          cursor = new Date(Date.UTC(cursor.getUTCFullYear(), cursor.getUTCMonth() + 1, 1))
-        ) {
-          const anchor = customerTrendPeriodAnchor(cursor);
-          customerTrendPeriods.push({ monthKey: customerTrendPeriodKey(anchor), monthLabel: customerTrendPeriodLabel(anchor) });
-        }
-      } else {
-        for (
-          let cursor = customerTrendStartDate;
-          cursor <= customerTrendEndDate;
-          cursor = new Date(Date.UTC(cursor.getUTCFullYear(), cursor.getUTCMonth(), cursor.getUTCDate() + 1))
-        ) {
-          const anchor = customerTrendPeriodAnchor(cursor);
-          customerTrendPeriods.push({ monthKey: customerTrendPeriodKey(anchor), monthLabel: customerTrendPeriodLabel(anchor) });
-        }
-      }
-    }
-    const customerTrendRecords = recordsInSelectedDateRange
-      .map((record: any) => {
-        const snapshotDay = toCustomerTrendDay(record?.snapshotDate);
-        if (!snapshotDay || !customerTrendStartDate || !customerTrendEndDate) return null;
-        if (snapshotDay < customerTrendStartDate || snapshotDay > customerTrendEndDate) return null;
-        const periodAnchor = customerTrendPeriodAnchor(snapshotDay);
-        const customerName = String(record?.customerName || 'Unknown Customer').trim() || 'Unknown Customer';
-        return {
-          customerName,
-          monthKey: customerTrendPeriodKey(periodAnchor),
-          monthLabel: customerTrendPeriodLabel(periodAnchor),
-          revenue: Number(record?.revenue || 0),
-        };
-      })
-      .filter(Boolean) as Array<{ customerName: string; monthKey: string; monthLabel: string; revenue: number }>;
-    const topTrendCustomers = Array.from(
-      customerTrendRecords.reduce((acc: Map<string, number>, row) => {
-        acc.set(row.customerName, Number(acc.get(row.customerName) || 0) + Number(row.revenue || 0));
-        return acc;
-      }, new Map<string, number>()).entries()
-    )
-      .sort(([, a], [, b]) => Number(b || 0) - Number(a || 0))
+    const customerTrendPeriods: Array<{ monthKey: string; monthLabel: string }> = customerSalesHistoryMonths.map((month: any) => ({
+      monthKey: String(month?.monthKey || ''),
+      monthLabel: String(month?.monthLabel || month?.monthKey || ''),
+    })).filter((month) => Boolean(month.monthKey));
+    const topTrendCustomers = (Array.isArray(customerSalesHistory?.rows) ? customerSalesHistory.rows : [])
+      .sort((a: any, b: any) => Number(b?.total || 0) - Number(a?.total || 0))
       .slice(0, 10)
-      .map(([customerName], index) => ({
-        customerName,
+      .map((row: any, index: number) => ({
+        customerName: String(row?.label || 'Unknown Customer'),
         key: `customer_${index}`,
       }));
     const customerTrendKeyByName = new Map(topTrendCustomers.map((row) => [row.customerName, row.key]));
@@ -3565,18 +3498,19 @@ export default function OperationsTab({
         ),
       ])
     );
-    for (const row of customerTrendRecords) {
-      const customerKey = customerTrendKeyByName.get(row.customerName);
+    for (const row of (Array.isArray(customerSalesHistory?.rows) ? customerSalesHistory.rows : [])) {
+      const customerName = String(row?.label || 'Unknown Customer');
+      const customerKey = customerTrendKeyByName.get(customerName);
       if (!customerKey) continue;
-      const monthRow = customerTrendRowsByMonth.get(row.monthKey);
-      if (!monthRow) continue;
-      monthRow[customerKey] = Number(monthRow[customerKey] ?? 0) + Number(row.revenue || 0);
+      for (const period of customerTrendPeriods) {
+        const monthRow = customerTrendRowsByMonth.get(period.monthKey);
+        if (!monthRow) continue;
+        const value = Number(row?.values?.[period.monthKey] || 0);
+        monthRow[customerKey] = value > 0 ? value : null;
+      }
     }
     const customerTrendRows = Array.from(customerTrendRowsByMonth.values());
-    const customerTrendXAxisInterval =
-      customerTrendRollup === 'daily'
-        ? Math.max(Math.ceil(customerTrendRows.length / 16) - 1, 0)
-        : Math.max(Math.ceil(customerTrendRows.length / 24) - 1, 0);
+    const customerTrendXAxisInterval = Math.max(Math.ceil(customerTrendRows.length / 24) - 1, 0);
     const customerTrendColors = ['#2563eb', '#16a34a', '#f97316', '#7c3aed', '#dc2626', '#0f766e', '#0891b2', '#9333ea', '#ca8a04', '#475569'];
     const visibleTopTrendCustomers = topTrendCustomers.filter((customer) => !hiddenCustomerTrendSeries[customer.customerName]);
     const customerCoverageDates = recordsInSelectedDateRange
@@ -4725,12 +4659,12 @@ export default function OperationsTab({
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px', gap: '12px', flexWrap: 'wrap' }}>
             <div style={{ display: 'flex', alignItems: 'center' }}>
               <h3 style={{ fontSize: '18px', fontWeight: '700', color: '#1e293b', margin: 0 }}>
-                {retailizeCustomerText('Top 10 Customers Daily Sales Stack')}
+                {retailizeCustomerText('Top 10 Customers Monthly Sales Stack')}
               </h3>
               {renderCustomerChartInfoLink('customersTop10MonthlyTrend')}
             </div>
             <div style={{ fontSize: '11px', color: '#64748b' }}>
-              Daily stacked sales for {selectedDateRangeLabel}
+              Monthly stacked sales for {selectedDateRangeLabel}; current month is MTD
             </div>
           </div>
           {topTrendCustomers.length === 0 ? (

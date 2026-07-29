@@ -39,7 +39,7 @@ const MONTHLY_FINANCIAL_ROW_CAP = 60;
 const DAILY_FINANCIAL_ROW_CAP = 100;
 const CORE_SNAPSHOT_ROW_CAP = 150;
 const DETAIL_SNAPSHOT_ROW_CAP = 300;
-const EXEC_BRIEFING_LOGIC_VERSION = 'exec-briefing-v2-trim-trailing-zero-income-days';
+const EXEC_BRIEFING_LOGIC_VERSION = 'exec-briefing-v4-use-latest-daily-financial-row';
 const PRIVATE_DAILY_CACHE_HEADERS = {
   'Cache-Control': 'private, max-age=300, stale-while-revalidate=1800',
 };
@@ -160,16 +160,11 @@ function isZeroIncomeActivityRow(row: any): boolean {
     Math.abs(asNumber(row?.expense)) < 0.005;
 }
 
-function trimTrailingZeroIncomeDailyRows(rows: any[]): any[] {
-  const sortedRows = sortByDate(rows);
-  let end = sortedRows.length;
-  while (end > 1 && isZeroIncomeActivityRow(sortedRows[end - 1])) {
-    const priorRows = sortedRows.slice(0, end - 1);
-    const hasPriorIncomeActivity = priorRows.some((row) => !isZeroIncomeActivityRow(row));
-    if (!hasPriorIncomeActivity) break;
-    end -= 1;
-  }
-  return sortedRows.slice(0, end);
+function isWeekendZeroIncomeActivityRow(row: any): boolean {
+  const snapshot = row?.snapshotDate ? new Date(row.snapshotDate) : null;
+  if (!snapshot || Number.isNaN(snapshot.getTime())) return false;
+  const weekday = snapshot.getUTCDay();
+  return (weekday === 0 || weekday === 6) && isZeroIncomeActivityRow(row);
 }
 
 function summarizeFinancialRows(rows: any[]) {
@@ -1083,7 +1078,7 @@ export async function GET(request: NextRequest) {
     const monthlyFinancials = sortByDate(dfsMonthly ? dfsMonthly.rows : monthlyFinancialsRaw);
     const completeMonthlyFinancials = monthlyFinancials.filter(isCompleteMonthlyPeriod);
     const latestFinancial = last(completeMonthlyFinancials) || last(monthlyFinancials);
-    const sortedDailyFinancials = trimTrailingZeroIncomeDailyRows(dailyFinancials);
+    const sortedDailyFinancials = sortByDate(dailyFinancials.filter((row: any) => !isWeekendZeroIncomeActivityRow(row)));
     const latestDailyFinancial = last(sortedDailyFinancials);
     const financialComparisons = buildFinancialComparisonsForPeriod({
       period,
@@ -1094,13 +1089,7 @@ export async function GET(request: NextRequest) {
     const latestCashSnapshot = last(sortByDate(cashSnapshots));
     const latestArSnapshot = last(sortByDate(arSnapshots));
     const latestApSnapshot = last(sortByDate(apSnapshots));
-    const asOfDate = latestDateKey(
-      latestDailyFinancial?.snapshotDate,
-      latestCashSnapshot?.snapshotDate,
-      latestArSnapshot?.snapshotDate,
-      latestApSnapshot?.snapshotDate,
-      latestFinancial?.monthDate
-    ) || cacheDate;
+    const asOfDate = latestDateKey(latestDailyFinancial?.snapshotDate, latestFinancial?.monthDate) || cacheDate;
 
     const recentRevenue = asNumber(primaryFinancialComparison?.current?.revenue);
     const priorRevenue = asNumber(primaryFinancialComparison?.prior?.revenue);
@@ -1342,7 +1331,7 @@ Blocked operating topics for this company: ${facts.operationalModules.promptRule
 
 For total accounts receivable and total accounts payable balances, use financials.balanceSheetAR and financials.balanceSheetAP. Do not use financials.arAging.total, financials.apAging.total, workingCapital.arAging.total, or workingCapital.apAging.total as the company's total balance sheet AR/AP if those differ; aging snapshots are only for aging mix, overdue percentages, and days sales outstanding.
 
-Only compare like-for-like periods. Do not compare days to weeks, weeks to months, or a partial current month to completed months. This is a ${periodDisplayName(period).toLowerCase()} briefing; use only the comparison windows in facts.financials.comparisons. For the Daily tab, discuss material latest-day vs prior-day movement and current month-to-date vs the same elapsed days last month when available; never fall back to month-over-month analysis in the Daily tab. For Monthly, Quarterly, and Annual tabs, use completed periods only. State the window used when a financial movement is material. If no comparable window supports an issue, do not draw a trend conclusion.
+Only compare like-for-like periods. Do not compare days to weeks, weeks to months, or a partial current month to completed months. This is a ${periodDisplayName(period).toLowerCase()} briefing; use only the comparison windows in facts.financials.comparisons. For the Daily tab, discuss material latest-day vs prior-day movement and current month-to-date vs the same elapsed days last month when available; never fall back to month-over-month analysis in the Daily tab. For Daily comparisons, state the actual dates from currentPeriod and priorPeriod; do not say "yesterday", "today", or "latest day" as a substitute for dates. For Monthly, Quarterly, and Annual tabs, use completed periods only. State the window used when a financial movement is material. If no comparable window supports an issue, do not draw a trend conclusion.
 
 When revenue and margin rate move in different directions, explicitly state the end result to gross profit dollars only if the movement is material or decision-useful. Example: if revenue is declining but gross margin rate is improving, say whether gross profit dollars increased or decreased and by how much; if both are normal/immaterial, omit the topic entirely.
 
