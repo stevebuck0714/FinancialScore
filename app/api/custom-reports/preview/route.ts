@@ -650,6 +650,15 @@ function addDatasetDateRangeClause(dataset: ReportDataset, rawDateRange: any, wh
   whereClauses.push(Prisma.sql`${field} <= ${end}`);
 }
 
+function addDatasetFrequencyClause(dataset: ReportDataset, config: any, whereClauses: Prisma.Sql[]) {
+  if (!dataset.frequencyField) return;
+  const column = getDatasetColumn(dataset, dataset.frequencyField);
+  if (!column) return;
+  const requested = String(config?.frequency || config?.snapshotFrequency || '').trim().toLowerCase();
+  const frequency = ['daily', 'weekly', 'monthly'].includes(requested) ? requested : 'monthly';
+  whereClauses.push(Prisma.sql`${datasetColumnSql(column)} = ${frequency}`);
+}
+
 function datasetColumnToTableColumn(column: ReportDatasetColumn) {
   const isMetric = column.type === 'number' || column.type === 'currency' || column.type === 'percent';
   const isUnitCurrency = ['unitPrice', 'unitCost', 'avgCost'].includes(column.key);
@@ -949,6 +958,7 @@ async function buildDatasetTablePreview(config: any) {
   const selectFields = columns.map((column) => Prisma.sql`${datasetColumnSql(column)} AS ${datasetIdentifier(column.key)}`);
   const whereClauses: Prisma.Sql[] = [Prisma.sql`"companyId" = ${String(config.companyId)}`];
   addDatasetDateRangeClause(dataset, config?.dateRange, whereClauses);
+  addDatasetFrequencyClause(dataset, config, whereClauses);
 
   filters.forEach((filter) => {
     const column = getDatasetColumn(dataset, filter.field);
@@ -1054,6 +1064,7 @@ async function buildDatasetChartPreview(config: any) {
   const filters = normalizeDatasetFilters(dataset, Array.isArray(config?.filters) ? config.filters : []);
   const whereClauses: Prisma.Sql[] = [Prisma.sql`"companyId" = ${String(config.companyId)}`];
   addDatasetDateRangeClause(dataset, config?.dateRange, whereClauses);
+  addDatasetFrequencyClause(dataset, config, whereClauses);
   filters.forEach((filter) => {
     const column = getDatasetColumn(dataset, filter.field);
     if (!column) return;
@@ -1155,9 +1166,13 @@ function canonicalProductKey(value: unknown): string {
 
 async function loadCompanyScopedProductDisplayNameMap(companyId: string) {
   const displayNameByKey = new Map<string, string>();
+  const looksLikeProductCode = (value: unknown) => {
+    const text = String(value || '').trim();
+    return Boolean(text && /\d/.test(text) && !/[a-z]/.test(text) && /^[A-Z0-9\-_.\/: ]+$/.test(text));
+  };
   const setDisplayName = (aliases: unknown[], displayName: unknown) => {
     const name = String(displayName || '').trim();
-    if (!name) return;
+    if (!name || looksLikeProductCode(name)) return;
     for (const alias of aliases) {
       const key = canonicalProductKey(alias);
       if (key && !displayNameByKey.has(key)) displayNameByKey.set(key, name);
@@ -1194,6 +1209,26 @@ async function loadCompanyScopedProductDisplayNameMap(companyId: string) {
   for (const row of inforRows) {
     const description = String(row.description || '').trim();
     setDisplayName([row.itemNumber, row.description], description);
+  }
+
+  const operationalRows = await prisma.$queryRaw<Array<{ itemId: string | null; sku: string | null; itemName: string | null }>>(Prisma.sql`
+    SELECT "itemId", "sku", "itemName"
+    FROM "ProductSalesSnapshot"
+    WHERE "companyId" = ${companyId}
+      AND NULLIF(TRIM(COALESCE("itemName", '')), '') IS NOT NULL
+    UNION ALL
+    SELECT "itemId", "sku", "itemName"
+    FROM "CustomerOrderLineSnapshot"
+    WHERE "companyId" = ${companyId}
+      AND NULLIF(TRIM(COALESCE("itemName", '')), '') IS NOT NULL
+    UNION ALL
+    SELECT "itemId", "sku", "itemName"
+    FROM "InventorySnapshot"
+    WHERE "companyId" = ${companyId}
+      AND NULLIF(TRIM(COALESCE("itemName", '')), '') IS NOT NULL
+  `);
+  for (const row of operationalRows) {
+    setDisplayName([row.itemId, row.sku, row.itemName], row.itemName);
   }
 
   return displayNameByKey;
@@ -1382,6 +1417,7 @@ async function buildDatasetDimensionChartPreview(config: any) {
   const filters = normalizeDatasetFilters(dataset, Array.isArray(config?.filters) ? config.filters : []);
   const whereClauses: Prisma.Sql[] = [Prisma.sql`"companyId" = ${String(config.companyId)}`];
   addDatasetDateRangeClause(dataset, config?.dateRange, whereClauses);
+  addDatasetFrequencyClause(dataset, config, whereClauses);
   filters.forEach((filter) => {
     const column = getDatasetColumn(dataset, filter.field);
     if (!column) return;
