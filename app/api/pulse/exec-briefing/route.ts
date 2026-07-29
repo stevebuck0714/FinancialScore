@@ -39,7 +39,7 @@ const MONTHLY_FINANCIAL_ROW_CAP = 60;
 const DAILY_FINANCIAL_ROW_CAP = 100;
 const CORE_SNAPSHOT_ROW_CAP = 150;
 const DETAIL_SNAPSHOT_ROW_CAP = 300;
-const EXEC_BRIEFING_LOGIC_VERSION = 'exec-briefing-v6-daily-financial-scope';
+const EXEC_BRIEFING_LOGIC_VERSION = 'exec-briefing-v7-balance-movement-income';
 const PRIVATE_DAILY_CACHE_HEADERS = {
   'Cache-Control': 'private, max-age=300, stale-while-revalidate=1800',
 };
@@ -197,8 +197,9 @@ function applyMappedIncomeTotalsToDailyRows(rows: any[], mappedLines: any[]): an
     if (!snapshot || Number.isNaN(snapshot.getTime())) continue;
     const dateKey = snapshot.toISOString().slice(0, 10);
     const rawTarget = String(line?.targetField || '').trim();
-    const normalizedTarget = rawTarget.replace(/[^A-Za-z0-9]/g, '').toLowerCase();
-    const lowerTarget = rawTarget.toLowerCase();
+    const targetWithoutMovementPrefix = rawTarget.replace(/^balance_movement:/i, '').trim();
+    const normalizedTarget = targetWithoutMovementPrefix.replace(/[^A-Za-z0-9]/g, '').toLowerCase();
+    const lowerTarget = targetWithoutMovementPrefix.toLowerCase();
     const amount = asNumber(line?.amount);
     const bucket = totalsByDate.get(dateKey) || { revenue: 0, cogsTotal: 0, expense: 0, lineCount: 0 };
     if (normalizedTarget === 'revenue' || lowerTarget.startsWith('rev_')) {
