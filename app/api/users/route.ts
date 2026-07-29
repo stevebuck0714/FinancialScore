@@ -2,7 +2,13 @@ import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import { hashPassword } from '@/lib/auth';
 import { validatePassword } from '@/lib/password-validator';
-import { requireAuth, validateCompanyAccess, isSiteAdmin, requireCompanyAccess } from '@/lib/tenant-security';
+import {
+  requireAuth,
+  validateCompanyAccess,
+  isSiteAdmin,
+  requireCompanyAccess,
+  isCompanyAdminForCompany,
+} from '@/lib/tenant-security';
 import { auditUserOperation, auditForbiddenAccess } from '@/lib/audit-logger';
 import { createUserSchema, validateInput } from '@/lib/validation-schemas';
 import { grantUserCompanyAccess } from '@/lib/user-company-access';
@@ -319,22 +325,8 @@ export async function POST(request: NextRequest) {
     // SECURITY: Check if user has permission to add users
     // Only Consultants, Site Admins, and Company Admins can add users
     if (userContext.role === 'USER') {
-      // Regular company users must be Company Admins to add users
-      const membership = await prisma.userCompanyAccess.findUnique({
-        where: {
-          userId_companyId: {
-            userId: userContext.userId,
-            companyId,
-          },
-        },
-        select: { companyRole: true },
-      });
-      const requestingUser = membership || (await prisma.user.findUnique({
-        where: { id: userContext.userId },
-        select: { companyRole: true }
-      }));
-
-      if (requestingUser?.companyRole !== 'admin') {
+      // Regular company users must be Company Admins to add users.
+      if (!(await isCompanyAdminForCompany(userContext.userId, companyId))) {
         await auditForbiddenAccess('User', companyId, 'CREATE');
         return NextResponse.json(
           { error: 'Forbidden: Only Company Admins can add users' },
@@ -697,18 +689,10 @@ export async function DELETE(request: NextRequest) {
     }
 
     if (userContext.role === 'USER') {
-      const callerMembership = targetCompanyForAction
-        ? await prisma.userCompanyAccess.findUnique({
-        where: {
-          userId_companyId: {
-            userId: userContext.userId,
-            companyId: targetCompanyForAction,
-          },
-        },
-        select: { companyRole: true },
-      })
-        : null;
-      if (callerMembership?.companyRole !== 'admin') {
+      if (
+        !targetCompanyForAction ||
+        !(await isCompanyAdminForCompany(userContext.userId, targetCompanyForAction))
+      ) {
         await auditForbiddenAccess('User', id, 'DELETE');
         return NextResponse.json(
           { error: 'Forbidden: Only Company Admins can delete users' },

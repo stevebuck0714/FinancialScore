@@ -336,6 +336,53 @@ export async function requireCompanyAccess(companyId: string): Promise<UserConte
 }
 
 /**
+ * Resolve a user's company-scoped role for one company.
+ * Membership rows are preferred; legacy User.companyRole only applies when the
+ * legacy User.companyId points at the same company.
+ */
+export async function getCompanyRoleForUser(userId: string, companyId: string): Promise<string | null> {
+  const targetCompanyId = String(companyId || '').trim()
+  if (!userId || !targetCompanyId) return null
+
+  await ensureLegacyCompanyAccess(userId)
+
+  const userCompanyAccess = getUserCompanyAccessDelegate()
+  const membership = userCompanyAccess
+    ? await userCompanyAccess.findUnique({
+        where: {
+          userId_companyId: {
+            userId,
+            companyId: targetCompanyId,
+          },
+        },
+        select: { companyRole: true },
+      })
+    : null
+
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { companyId: true, companyRole: true },
+  })
+
+  const membershipRole =
+    membership && typeof membership === 'object'
+      ? String((membership as { companyRole?: unknown }).companyRole || '').trim().toLowerCase()
+      : ''
+  if (membershipRole) return membershipRole
+
+  if (user?.companyId === targetCompanyId) {
+    const legacyRole = String(user.companyRole || '').trim().toLowerCase()
+    if (legacyRole) return legacyRole
+  }
+
+  return null
+}
+
+export async function isCompanyAdminForCompany(userId: string, companyId: string): Promise<boolean> {
+  return (await getCompanyRoleForUser(userId, companyId)) === 'admin'
+}
+
+/**
  * Get companies that the current user has access to (for filtering queries)
  */
 export async function getAccessibleCompanyIds(): Promise<string[]> {

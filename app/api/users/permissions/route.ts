@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
-import { requireAuth, validateCompanyAccess } from '@/lib/tenant-security';
+import { requireAuth, validateCompanyAccess, isCompanyAdminForCompany } from '@/lib/tenant-security';
 
 export async function PATCH(req: NextRequest) {
   try {
@@ -53,9 +53,9 @@ export async function PATCH(req: NextRequest) {
       hasPermission = true;
     } else if (context.role === 'CONSULTANT') {
       hasPermission = await validateCompanyAccess(targetCompanyId);
-    } else if (context.role === 'USER' && context.companyRole === 'admin') {
+    } else if (context.role === 'USER' && await isCompanyAdminForCompany(context.userId, targetCompanyId)) {
       // Company Admins can only modify users within their own company
-      hasPermission = context.companyId === targetCompanyId;
+      hasPermission = await validateCompanyAccess(targetCompanyId);
     }
 
     if (!hasPermission) {

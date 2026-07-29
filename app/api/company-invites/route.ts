@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
-import { requireAuth, validateCompanyAccess } from '@/lib/tenant-security';
+import { requireAuth, validateCompanyAccess, isCompanyAdminForCompany } from '@/lib/tenant-security';
 import {
   createInviteToken,
   getCompanyInvites,
@@ -43,24 +43,7 @@ export async function POST(request: NextRequest) {
 
     // USER role requires company-admin membership to invite.
     if (context.role === 'USER') {
-      const membership = await (prisma as any).userCompanyAccess?.findUnique?.({
-        where: {
-          userId_companyId: {
-            userId: context.userId,
-            companyId,
-          },
-        },
-        select: { companyRole: true },
-      });
-      const user = await prisma.user.findUnique({
-        where: { id: context.userId },
-        select: { companyRole: true, companyId: true },
-      });
-      const role = String(
-        membership?.companyRole ||
-          (user?.companyId === companyId ? user?.companyRole : ''),
-      ).toLowerCase();
-      if (role !== 'admin') {
+      if (!(await isCompanyAdminForCompany(context.userId, companyId))) {
         return NextResponse.json(
           { error: 'Forbidden: Only company admins can invite users' },
           { status: 403 },
