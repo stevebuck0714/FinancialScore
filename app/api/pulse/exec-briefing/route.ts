@@ -39,7 +39,7 @@ const MONTHLY_FINANCIAL_ROW_CAP = 60;
 const DAILY_FINANCIAL_ROW_CAP = 100;
 const CORE_SNAPSHOT_ROW_CAP = 150;
 const DETAIL_SNAPSHOT_ROW_CAP = 300;
-const EXEC_BRIEFING_LOGIC_VERSION = 'exec-briefing-v4-use-latest-daily-financial-row';
+const EXEC_BRIEFING_LOGIC_VERSION = 'exec-briefing-v5-mapped-line-income-totals';
 const PRIVATE_DAILY_CACHE_HEADERS = {
   'Cache-Control': 'private, max-age=300, stale-while-revalidate=1800',
 };
@@ -165,6 +165,66 @@ function isWeekendZeroIncomeActivityRow(row: any): boolean {
   if (!snapshot || Number.isNaN(snapshot.getTime())) return false;
   const weekday = snapshot.getUTCDay();
   return (weekday === 0 || weekday === 6) && isZeroIncomeActivityRow(row);
+}
+
+const EXEC_BRIEFING_EXPENSE_FIELDS = new Set([
+  'expense',
+  'payroll',
+  'ownerbasepay',
+  'benefits',
+  'insurance',
+  'professionalfees',
+  'subcontractors',
+  'rent',
+  'taxlicense',
+  'phonecomm',
+  'infrastructure',
+  'autotravel',
+  'salesexpense',
+  'marketing',
+  'trainingcert',
+  'mealsentertainment',
+  'interestexpense',
+  'depreciationamortization',
+  'otherexpense',
+]);
+
+function applyMappedIncomeTotalsToDailyRows(rows: any[], mappedLines: any[]): any[] {
+  if (!Array.isArray(rows) || !rows.length || !Array.isArray(mappedLines) || !mappedLines.length) return rows;
+  const totalsByDate = new Map<string, { revenue: number; cogsTotal: number; expense: number; lineCount: number }>();
+  for (const line of mappedLines) {
+    const snapshot = line?.snapshotDate ? new Date(line.snapshotDate) : null;
+    if (!snapshot || Number.isNaN(snapshot.getTime())) continue;
+    const dateKey = snapshot.toISOString().slice(0, 10);
+    const rawTarget = String(line?.targetField || '').trim();
+    const normalizedTarget = rawTarget.replace(/[^A-Za-z0-9]/g, '').toLowerCase();
+    const lowerTarget = rawTarget.toLowerCase();
+    const amount = asNumber(line?.amount);
+    const bucket = totalsByDate.get(dateKey) || { revenue: 0, cogsTotal: 0, expense: 0, lineCount: 0 };
+    if (normalizedTarget === 'revenue' || lowerTarget.startsWith('rev_')) {
+      bucket.revenue += amount;
+      bucket.lineCount += 1;
+    } else if (normalizedTarget === 'cogstotal' || lowerTarget.startsWith('cogs_')) {
+      bucket.cogsTotal += amount;
+      bucket.lineCount += 1;
+    } else if (EXEC_BRIEFING_EXPENSE_FIELDS.has(normalizedTarget)) {
+      bucket.expense += amount;
+      bucket.lineCount += 1;
+    }
+    totalsByDate.set(dateKey, bucket);
+  }
+  return rows.map((row) => {
+    const snapshot = row?.snapshotDate ? new Date(row.snapshotDate) : null;
+    if (!snapshot || Number.isNaN(snapshot.getTime())) return row;
+    const totals = totalsByDate.get(snapshot.toISOString().slice(0, 10));
+    if (!totals || totals.lineCount === 0) return row;
+    return {
+      ...row,
+      revenue: totals.revenue,
+      cogsTotal: totals.cogsTotal,
+      expense: totals.expense,
+    };
+  });
 }
 
 function summarizeFinancialRows(rows: any[]) {
@@ -803,6 +863,14 @@ async function buildPulseDataVersion(companyId: string, startDate: Date, monthly
       startDate
     ),
     safeVersionPart(
+      'dailyFinancialMappedLine',
+      `SELECT COUNT(*)::text AS count, MAX("updatedAt") AS "maxUpdatedAt", MAX("snapshotDate") AS "maxSnapshotDate"
+       FROM "DailyFinancialMappedLine"
+       WHERE "companyId" = $1 AND "snapshotDate" >= $2`,
+      companyId,
+      startDate
+    ),
+    safeVersionPart(
       'cashSnapshot',
       `SELECT COUNT(*)::text AS count, MAX("createdAt") AS "maxCreatedAt", MAX("snapshotDate") AS "maxSnapshotDate"
        FROM "CashSnapshot"
@@ -1030,6 +1098,7 @@ export async function GET(request: NextRequest) {
     const [
       monthlyFinancialsRaw,
       dailyFinancials,
+      dailyFinancialMappedLines,
       cashSnapshots,
       arSnapshots,
       apSnapshots,
@@ -1044,6 +1113,22 @@ export async function GET(request: NextRequest) {
     ] = await Promise.all([
       dfsMonthly ? Promise.resolve([]) : prisma.monthlyFinancial.findMany({ where: monthlyWhere, orderBy: { monthDate: 'asc' }, take: MONTHLY_FINANCIAL_ROW_CAP }),
       prisma.dailyFinancialSnapshot.findMany({ where: { companyId, frequency: 'daily', snapshotDate: { gte: startDate, lte: endDate } }, orderBy: { snapshotDate: 'asc' }, take: DAILY_FINANCIAL_ROW_CAP }),
+      (prisma as any).dailyFinancialMappedLine?.findMany
+        ? (prisma as any).dailyFinancialMappedLine.findMany({
+            where: {
+              companyId,
+              frequency: 'daily',
+              snapshotDate: { gte: startDate, lte: endDate },
+            },
+            select: {
+              snapshotDate: true,
+              targetField: true,
+              amount: true,
+            },
+            orderBy: [{ snapshotDate: 'asc' }],
+            take: 5000,
+          })
+        : Promise.resolve([]),
       prisma.cashSnapshot.findMany({ where: { companyId, snapshotDate: { gte: startDate, lte: endDate } }, orderBy: { snapshotDate: 'asc' }, take: CORE_SNAPSHOT_ROW_CAP }),
       prisma.aRAgingSnapshot.findMany({ where: { companyId, snapshotDate: { gte: startDate, lte: endDate } }, orderBy: { snapshotDate: 'asc' }, take: CORE_SNAPSHOT_ROW_CAP }),
       prisma.aPAgingSnapshot.findMany({ where: { companyId, snapshotDate: { gte: startDate, lte: endDate } }, orderBy: { snapshotDate: 'asc' }, take: CORE_SNAPSHOT_ROW_CAP }),
@@ -1078,7 +1163,8 @@ export async function GET(request: NextRequest) {
     const monthlyFinancials = sortByDate(dfsMonthly ? dfsMonthly.rows : monthlyFinancialsRaw);
     const completeMonthlyFinancials = monthlyFinancials.filter(isCompleteMonthlyPeriod);
     const latestFinancial = last(completeMonthlyFinancials) || last(monthlyFinancials);
-    const sortedDailyFinancials = sortByDate(dailyFinancials.filter((row: any) => !isWeekendZeroIncomeActivityRow(row)));
+    const dailyFinancialsWithMappedIncome = applyMappedIncomeTotalsToDailyRows(dailyFinancials, dailyFinancialMappedLines);
+    const sortedDailyFinancials = sortByDate(dailyFinancialsWithMappedIncome.filter((row: any) => !isWeekendZeroIncomeActivityRow(row)));
     const latestDailyFinancial = last(sortedDailyFinancials);
     const financialComparisons = buildFinancialComparisonsForPeriod({
       period,
