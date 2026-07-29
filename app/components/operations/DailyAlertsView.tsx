@@ -132,7 +132,7 @@ type DailyAlertsCache = {
 };
 
 const DAILY_ALERTS_FETCH_TIMEOUT_MS = 20000;
-const DAILY_CACHE_VERSION = 'v8-exec-briefing-mapped-income';
+const DAILY_CACHE_VERSION = 'v9-exec-briefing-daily-financial-scope';
 
 async function fetchWithTimeout(
   input: RequestInfo | URL,

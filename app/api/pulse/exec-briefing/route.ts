@@ -39,7 +39,7 @@ const MONTHLY_FINANCIAL_ROW_CAP = 60;
 const DAILY_FINANCIAL_ROW_CAP = 100;
 const CORE_SNAPSHOT_ROW_CAP = 150;
 const DETAIL_SNAPSHOT_ROW_CAP = 300;
-const EXEC_BRIEFING_LOGIC_VERSION = 'exec-briefing-v5-mapped-line-income-totals';
+const EXEC_BRIEFING_LOGIC_VERSION = 'exec-briefing-v6-daily-financial-scope';
 const PRIVATE_DAILY_CACHE_HEADERS = {
   'Cache-Control': 'private, max-age=300, stale-while-revalidate=1800',
 };
@@ -1257,6 +1257,7 @@ export async function GET(request: NextRequest) {
       dsoBenchmark && latestArSnapshot ? { metric: dsoBenchmark.metricName, actual: asNumber((latestArSnapshot as any).dso), benchmark: asNumber(dsoBenchmark.fiveYearValue), variance: asNumber((latestArSnapshot as any).dso) - asNumber(dsoBenchmark.fiveYearValue) } : null,
     ].filter(Boolean);
     const briefingPulseAlerts = (pulseAlerts || []).filter((alert: any) => !isStoredArApAlert(alert));
+    const includeOperatingDetailInBriefing = period !== 'daily';
 
     facts = {
       company: { name: company?.name || 'Company', industryGroupId, industryName: benchmarks[0]?.industryName || null, industrySectorCategory: sectorCategory },
@@ -1322,10 +1323,14 @@ export async function GET(request: NextRequest) {
         inventoryDataAvailable: moduleProfile.genericSnapshots.inventory && inventorySnapshots.length > 0,
       },
       covenants: { activeLoans: (loans as any[]).length, watchlist: covenantWatchlist },
-      customers: moduleProfile.genericSnapshots.customers ? { totalRecentRevenue: totalRecentCustomerRevenue, top3Share, topCustomers } : null,
-      products: moduleProfile.genericSnapshots.products ? { topMarginWatch } : null,
+      customers: includeOperatingDetailInBriefing && moduleProfile.genericSnapshots.customers ? { totalRecentRevenue: totalRecentCustomerRevenue, top3Share, topCustomers } : null,
+      products: includeOperatingDetailInBriefing && moduleProfile.genericSnapshots.products ? { topMarginWatch } : null,
       constructionOperations,
-      benchmarks: { loaded: benchmarks.length, comparisons: benchmarkComparisons, sample: benchmarks.slice(0, 25) },
+      benchmarks: {
+        loaded: includeOperatingDetailInBriefing ? benchmarks.length : 0,
+        comparisons: includeOperatingDetailInBriefing ? benchmarkComparisons : [],
+        sample: includeOperatingDetailInBriefing ? benchmarks.slice(0, 25) : [],
+      },
       goals: { expense: expenseGoals[0]?.goals || {}, operational: operationalGoals[0]?.goals || {} },
       unsupportedTopicRules: {
         marketingChannelsAllowed: allowMarketingLanguage,
@@ -1341,8 +1346,8 @@ export async function GET(request: NextRequest) {
         cashDataAvailable: cashSnapshots.length > 0,
         arAgingAvailable: arSnapshots.length > 0,
         apAgingAvailable: apSnapshots.length > 0,
-        customerSalesAvailable: moduleProfile.genericSnapshots.customers && customerSnapshots.length > 0,
-        productServiceSalesAvailable: moduleProfile.genericSnapshots.products && productSnapshots.length > 0,
+        customerSalesAvailable: includeOperatingDetailInBriefing && moduleProfile.genericSnapshots.customers && customerSnapshots.length > 0,
+        productServiceSalesAvailable: includeOperatingDetailInBriefing && moduleProfile.genericSnapshots.products && productSnapshots.length > 0,
         inventoryDataAvailable: moduleProfile.genericSnapshots.inventory && inventorySnapshots.length > 0,
         constructionOperationsAvailable: Boolean(constructionOperations),
         benchmarkDataAvailable: benchmarks.length > 0,
@@ -1417,7 +1422,7 @@ Blocked operating topics for this company: ${facts.operationalModules.promptRule
 
 For total accounts receivable and total accounts payable balances, use financials.balanceSheetAR and financials.balanceSheetAP. Do not use financials.arAging.total, financials.apAging.total, workingCapital.arAging.total, or workingCapital.apAging.total as the company's total balance sheet AR/AP if those differ; aging snapshots are only for aging mix, overdue percentages, and days sales outstanding.
 
-Only compare like-for-like periods. Do not compare days to weeks, weeks to months, or a partial current month to completed months. This is a ${periodDisplayName(period).toLowerCase()} briefing; use only the comparison windows in facts.financials.comparisons. For the Daily tab, discuss material latest-day vs prior-day movement and current month-to-date vs the same elapsed days last month when available; never fall back to month-over-month analysis in the Daily tab. For Daily comparisons, state the actual dates from currentPeriod and priorPeriod; do not say "yesterday", "today", or "latest day" as a substitute for dates. For Monthly, Quarterly, and Annual tabs, use completed periods only. State the window used when a financial movement is material. If no comparable window supports an issue, do not draw a trend conclusion.
+Only compare like-for-like periods. Do not compare days to weeks, weeks to months, or a partial current month to completed months. This is a ${periodDisplayName(period).toLowerCase()} briefing; use only the comparison windows in facts.financials.comparisons. For the Daily tab, discuss material latest-day vs prior-day movement and current month-to-date vs the same elapsed days last month when available; never fall back to month-over-month analysis in the Daily tab. For Daily comparisons, state the actual dates from currentPeriod and priorPeriod; do not say "yesterday", "today", or "latest day" as a substitute for dates. In the Daily tab, do not include customer concentration, customer gross-profit trend, product/SKU gross-profit drivers, benchmarks, or operating recommendations unless those facts are explicitly provided as the same currentPeriod vs priorPeriod daily comparison. For Monthly, Quarterly, and Annual tabs, use completed periods only. State the window used when a financial movement is material. If no comparable window supports an issue, do not draw a trend conclusion.
 
 When revenue and margin rate move in different directions, explicitly state the end result to gross profit dollars only if the movement is material or decision-useful. Example: if revenue is declining but gross margin rate is improving, say whether gross profit dollars increased or decreased and by how much; if both are normal/immaterial, omit the topic entirely.
 
