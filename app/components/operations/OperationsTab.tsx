@@ -3436,51 +3436,31 @@ export default function OperationsTab({
       return acc;
     }, {});
     const rankedCustomers = Object.values(customerTotalsFromRecords).sort((a: any, b: any) => b.totalRevenue - a.totalRevenue);
-    const buildCustomerHistoryFromRecords = (metric: 'revenue' | 'invoiceCount') => {
-      const monthMap = new Map<string, { monthKey: string; monthLabel: string; date: Date }>();
-      const customerMap = new Map<string, { label: string; itemName: string; values: Record<string, number>; total: number }>();
-      for (const record of recordsInSelectedDateRange as any[]) {
-        const parsed = parseDateValue(record?.snapshotDate);
-        if (!parsed) continue;
-        const monthKey = `${parsed.getUTCFullYear()}-${String(parsed.getUTCMonth() + 1).padStart(2, '0')}`;
-        const monthLabel = parsed.toLocaleDateString('en-US', { timeZone: 'UTC', month: 'short', year: 'numeric' });
-        if (!monthMap.has(monthKey)) {
-          monthMap.set(monthKey, {
-            monthKey,
-            monthLabel,
-            date: new Date(Date.UTC(parsed.getUTCFullYear(), parsed.getUTCMonth(), 1)),
-          });
-        }
-        const customerName = String(record?.customerName || 'Unknown Customer').trim() || 'Unknown Customer';
-        const customerId = String(record?.customerId || '').trim();
-        const key = customerId ? `id:${customerId}` : `name:${customerName.toLowerCase().replace(/\s+/g, ' ')}`;
-        const value = Number(record?.[metric] || 0);
-        const bucket = customerMap.get(key) || { label: customerName, itemName: customerId, values: {}, total: 0 };
-        if (!bucket.itemName && customerId) bucket.itemName = customerId;
-        bucket.values[monthKey] = Number(bucket.values[monthKey] || 0) + value;
-        bucket.total += value;
-        customerMap.set(key, bucket);
-      }
-      const months = Array.from(monthMap.values()).sort((a, b) => a.date.getTime() - b.date.getTime());
-      const rows = Array.from(customerMap.values())
-        .sort((a, b) => Number(b.total || 0) - Number(a.total || 0));
-      const totalValues = months.reduce((acc: Record<string, number>, month) => {
-        acc[month.monthKey] = rows.reduce((sum, row) => sum + Number(row.values?.[month.monthKey] || 0), 0);
-        return acc;
-      }, {});
-      return {
-        months,
-        rows,
-        totalRow: {
-          label: metric === 'revenue' ? 'Total Customer Sales' : 'Total Customer Invoice Volume',
-          values: totalValues,
-          total: Object.values(totalValues).reduce((sum, value) => sum + Number(value || 0), 0),
-        },
-        valueFormat: metric === 'revenue' ? 'currency' : 'number',
-      };
-    };
-    const customerSalesHistory = summary?.customerHistory?.sales || buildCustomerHistoryFromRecords('revenue');
-    const customerInvoiceVolumeHistory = summary?.customerHistory?.invoiceVolume || buildCustomerHistoryFromRecords('invoiceCount');
+    const emptyCustomerHistory = { months: [], rows: [], totalRow: { label: 'No Customer History', values: {}, total: 0 }, valueFormat: 'currency' };
+    const customerSalesHistory = summary?.customerHistory?.sales || emptyCustomerHistory;
+    const customerInvoiceVolumeHistory = summary?.customerHistory?.invoiceVolume || { ...emptyCustomerHistory, valueFormat: 'number' };
+    const customerSalesHistoryMonths = Array.isArray(customerSalesHistory?.months) ? customerSalesHistory.months : [];
+    const customerSalesHistoryValues = customerSalesHistory?.totalRow?.values || {};
+    const customerSalesCurrentMonthKey =
+      selectedEndForCustomer
+        ? `${selectedEndForCustomer.getUTCFullYear()}-${String(selectedEndForCustomer.getUTCMonth() + 1).padStart(2, '0')}`
+        : customerSalesHistoryMonths[customerSalesHistoryMonths.length - 1]?.monthKey;
+    const customerSalesCurrentYear = customerSalesCurrentMonthKey ? String(customerSalesCurrentMonthKey).slice(0, 4) : String(new Date().getUTCFullYear());
+    const customerSalesPriorMonthKey = customerSalesCurrentMonthKey
+      ? `${Number(customerSalesCurrentMonthKey.slice(0, 4)) - 1}-${customerSalesCurrentMonthKey.slice(5, 7)}`
+      : null;
+    const customerSalesCardMtdValue = Number(customerSalesHistoryValues?.[customerSalesCurrentMonthKey || ''] || 0);
+    const customerSalesCardPriorMtdValue = customerSalesPriorMonthKey ? Number(customerSalesHistoryValues?.[customerSalesPriorMonthKey] || 0) : 0;
+    const customerSalesCardTotalValue = customerSalesHistoryMonths
+      .filter((month: any) => String(month?.monthKey || '').slice(0, 4) === customerSalesCurrentYear)
+      .reduce((sum: number, month: any) => sum + Number(customerSalesHistoryValues?.[month.monthKey] || 0), 0);
+    const customerSalesCardPriorYtdValue = customerSalesHistoryMonths
+      .filter((month: any) => {
+        const monthKey = String(month?.monthKey || '');
+        return monthKey.slice(0, 4) === String(Number(customerSalesCurrentYear) - 1) &&
+          (!customerSalesCurrentMonthKey || monthKey.slice(5, 7) <= customerSalesCurrentMonthKey.slice(5, 7));
+      })
+      .reduce((sum: number, month: any) => sum + Number(customerSalesHistoryValues?.[month.monthKey] || 0), 0);
 
     // Aggregate data by period for trend chart
     const periodTrend = recordsInSelectedDateRange.reduce((acc: any, record: any) => {
@@ -4745,12 +4725,12 @@ export default function OperationsTab({
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px', gap: '12px', flexWrap: 'wrap' }}>
             <div style={{ display: 'flex', alignItems: 'center' }}>
               <h3 style={{ fontSize: '18px', fontWeight: '700', color: '#1e293b', margin: 0 }}>
-                {retailizeCustomerText('Top 10 Customers Daily Trend')}
+                {retailizeCustomerText('Top 10 Customers Daily Sales Stack')}
               </h3>
               {renderCustomerChartInfoLink('customersTop10MonthlyTrend')}
             </div>
             <div style={{ fontSize: '11px', color: '#64748b' }}>
-              Daily trend for {selectedDateRangeLabel}
+              Daily stacked sales for {selectedDateRangeLabel}
             </div>
           </div>
           {topTrendCustomers.length === 0 ? (
@@ -4816,11 +4796,11 @@ export default function OperationsTab({
               </div>
               {visibleTopTrendCustomers.length === 0 ? (
                 <div style={{ fontSize: '12px', color: '#64748b', padding: '24px 0' }}>
-                  All customers are hidden. Select at least one customer to display the line chart.
+                  All customers are hidden. Select at least one customer to display the stacked bar chart.
                 </div>
               ) : (
                 <ResponsiveContainer width="100%" height={360}>
-                  <LineChart data={customerTrendRows}>
+                  <BarChart data={customerTrendRows}>
                     <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
                     <XAxis dataKey="monthLabel" stroke="#64748b" style={{ fontSize: '11px' }} interval={customerTrendXAxisInterval} />
                     <YAxis stroke="#64748b" style={{ fontSize: '12px' }} tickFormatter={(value) => `$${(Number(value || 0) / 1000).toFixed(0)}k`} />
@@ -4838,19 +4818,16 @@ export default function OperationsTab({
                     {visibleTopTrendCustomers.map((customer) => {
                       const customerIndex = topTrendCustomers.findIndex((row) => row.key === customer.key);
                       return (
-                        <Line
+                        <Bar
                           key={customer.key}
-                          type="monotone"
                           dataKey={customer.key}
                           name={customer.key}
-                          stroke={customerTrendColors[Math.max(customerIndex, 0) % customerTrendColors.length]}
-                          strokeWidth={2}
-                          dot={false}
-                          connectNulls
+                          stackId="customer-sales"
+                          fill={customerTrendColors[Math.max(customerIndex, 0) % customerTrendColors.length]}
                         />
                       );
                     })}
-                  </LineChart>
+                  </BarChart>
                 </ResponsiveContainer>
               )}
             </>
@@ -4870,13 +4847,13 @@ export default function OperationsTab({
               {[
                 {
                   title: 'Sales MTD',
-                  value: formatCurrency(Number(salesReportPayload.sales?.mtdValue || 0)),
-                  detail: `${isManufacturingSalesFallback ? 'MoM' : 'YoY'} ${formatPct(Number(salesReportPayload.sales?.mtdCompPct || 0) * 100)}`,
+                  value: formatCurrency(customerSalesCardMtdValue),
+                  detail: `${isManufacturingSalesFallback ? 'MoM' : 'YoY'} ${formatPct(customerSalesCardPriorMtdValue > 0 ? ((customerSalesCardMtdValue - customerSalesCardPriorMtdValue) / customerSalesCardPriorMtdValue) * 100 : null)}`,
                 },
                 {
                   title: 'Sales Total',
-                  value: formatCurrency(Number(salesReportPayload.sales?.totalValue || 0)),
-                  detail: `${salesReportPayload.sales?.currentYearLabel || 'Current year'} total | Index ${formatPct(Number(salesReportPayload.sales?.indexPct || 0) * 100)}`,
+                  value: formatCurrency(customerSalesCardTotalValue),
+                  detail: `${customerSalesCurrentYear || 'Current year'} total | Index ${formatPct(customerSalesCardPriorYtdValue > 0 ? (customerSalesCardTotalValue / customerSalesCardPriorYtdValue) * 100 : null)}`,
                 },
                 {
                   title: 'Gross Margin $',
