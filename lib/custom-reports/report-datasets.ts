@@ -924,6 +924,14 @@ export function inferDatasetDateRangeFromPrompt(dataset: ReportDataset, prompt: 
   const field = dataset.dateField || dataset.columns.find((column) => column.type === 'date')?.key;
   if (!field) return null;
   if (!match) {
+    if (/\b(?:last|past|previous)\s+year\b/.test(normalizedPrompt)) {
+      return {
+        field,
+        preset: 'last',
+        amount: 12,
+        unit: 'month',
+      };
+    }
     if (/\b(annual|annually|yearly|this year|current year|ytd|year to date)\b/.test(normalizedPrompt)) {
       return {
         field,

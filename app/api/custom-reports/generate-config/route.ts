@@ -273,6 +273,7 @@ function buildDatasetReportConfig(prompt: string, requestedType: ReportChartType
   return {
     title: String(rawConfig?.title || (entityName ? `${entityName} ${dataset.label}` : dataset.label)).slice(0, 120),
     description: String(rawConfig?.description || `${dataset.description} Filtered and bounded by the report request.`).slice(0, 500),
+    sourcePrompt: prompt,
     chartType: normalizedChartType as ReportChartType,
     dataSource: 'operational',
     timeGrain: String(rawConfig?.timeGrain || (isDimensionReport ? 'category' : normalizedChartType === 'table' ? 'detail' : 'month')),
@@ -492,6 +493,7 @@ function enhanceConfigFromPrompt(config: ReturnType<typeof validateReportConfig>
 
   return {
     ...config,
+    sourcePrompt: prompt,
     scope,
     description: wantsDatedJobCost
       ? `${inferredCostType?.value || 'Job'} cost by date for the requested project or job.`

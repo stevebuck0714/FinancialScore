@@ -7,6 +7,7 @@ import { getReportDataCatalog, type ReportFieldCatalogItem } from '@/lib/custom-
 import {
   getDatasetColumn,
   getReportDataset,
+  inferDatasetDateRangeFromPrompt,
   normalizeDatasetColumns,
   normalizeDatasetLimit,
   normalizeDatasetSort,
@@ -294,6 +295,9 @@ function inferEntityFiltersFromPayload(context: string, payload: any, field: Rep
 
 function enhancePreviewConfig(config: any, fieldCatalog: ReportFieldCatalogItem[]) {
   const context = [
+    config?.sourcePrompt,
+    config?.aiReportRequest,
+    config?.prompt,
     config?.scope?.entityName,
     config?.title,
     config?.description,
@@ -328,9 +332,15 @@ function enhancePreviewConfig(config: any, fieldCatalog: ReportFieldCatalogItem[
       ))
     : config?.series;
 
+  const dataset = getReportDataset(config?.dataset || config?.datasetId);
+  const inferredDateRange = !config?.dateRange && dataset
+    ? inferDatasetDateRangeFromPrompt(dataset, context)
+    : null;
+
   return {
     ...config,
     series,
+    dateRange: config?.dateRange || inferredDateRange || undefined,
     filters: mergeInferredFilters(
       Array.isArray(config?.filters) ? config.filters : [],
       [
@@ -1143,8 +1153,20 @@ function canonicalProductKey(value: unknown): string {
     .toUpperCase();
 }
 
-async function loadProductDisplayNameMap(companyId: string) {
-  const rows = await prisma.$queryRaw<Array<{ productId: string; productName: string }>>`
+async function loadCompanyScopedProductDisplayNameMap(companyId: string) {
+  const displayNameByKey = new Map<string, string>();
+  const setDisplayName = (aliases: unknown[], displayName: unknown) => {
+    const name = String(displayName || '').trim();
+    if (!name) return;
+    for (const alias of aliases) {
+      const key = canonicalProductKey(alias);
+      if (key && !displayNameByKey.has(key)) displayNameByKey.set(key, name);
+    }
+  };
+
+  // Keep each product-name source scoped to the selected company. Do not use
+  // cross-company or cross-source product-name fallbacks in report previews.
+  const bakersRows = await prisma.$queryRaw<Array<{ productId: string; productName: string }>>`
     SELECT DISTINCT ON ("productId")
       "productId",
       "productName"
@@ -1154,15 +1176,26 @@ async function loadProductDisplayNameMap(companyId: string) {
       AND "productName" IS NOT NULL
     ORDER BY "productId", "formulaDate" DESC, "updatedAt" DESC
   `;
-  const displayNameByKey = new Map<string, string>();
-  for (const row of rows) {
+  for (const row of bakersRows) {
     const productName = String(row.productName || '').trim();
-    if (!productName) continue;
-    for (const value of [row.productId, row.productName]) {
-      const key = canonicalProductKey(value);
-      if (key && !displayNameByKey.has(key)) displayNameByKey.set(key, productName);
-    }
+    setDisplayName([row.productId, row.productName], productName);
   }
+
+  const inforRows = await prisma.$queryRaw<Array<{ itemNumber: string; description: string | null }>>`
+    SELECT DISTINCT ON ("itemNumber")
+      "itemNumber",
+      "description"
+    FROM "InforItemOverviewCache"
+    WHERE "companyId" = ${companyId}
+      AND "platform" IN ('INFOR_M3', 'INFOR_CSI')
+      AND NULLIF(TRIM(COALESCE("description", '')), '') IS NOT NULL
+    ORDER BY "itemNumber", "recordDate" DESC NULLS LAST, "updatedAt" DESC
+  `;
+  for (const row of inforRows) {
+    const description = String(row.description || '').trim();
+    setDisplayName([row.itemNumber, row.description], description);
+  }
+
   return displayNameByKey;
 }
 
@@ -1390,7 +1423,7 @@ async function buildDatasetDimensionChartPreview(config: any) {
     if (platosPreview) return platosPreview;
   }
   const displayNameByKey = dataset.tableName === 'ProductSalesSnapshot'
-    ? await loadProductDisplayNameMap(String(config.companyId))
+    ? await loadCompanyScopedProductDisplayNameMap(String(config.companyId))
     : new Map<string, string>();
   const displayRows = rows.reduce<Array<{ name: string; value: number }>>((acc, row) => {
     const name = displayNameByKey.size > 0
