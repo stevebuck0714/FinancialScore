@@ -572,32 +572,32 @@ function startOfUtcMonth(date: Date): Date {
   return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), 1, 0, 0, 0, 0));
 }
 
-function resolveDatasetDateRange(dateRange: ReportDatasetDateRangeConfig): { start: Date; end: Date } {
-  const now = new Date();
-  const end = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 23, 59, 59, 999));
+function resolveDatasetDateRange(dateRange: ReportDatasetDateRangeConfig, anchorDate = new Date()): { start: Date; end: Date } {
+  const anchor = Number.isNaN(anchorDate.getTime()) ? new Date() : anchorDate;
+  const end = new Date(Date.UTC(anchor.getUTCFullYear(), anchor.getUTCMonth(), anchor.getUTCDate(), 23, 59, 59, 999));
   if (dateRange.unit === 'month') {
-    const currentMonth = startOfUtcMonth(now);
+    const currentMonth = startOfUtcMonth(anchor);
     return {
       start: new Date(Date.UTC(currentMonth.getUTCFullYear(), currentMonth.getUTCMonth() - (dateRange.amount - 1), 1)),
       end,
     };
   }
   if (dateRange.unit === 'quarter') {
-    const quarterStartMonth = Math.floor(now.getUTCMonth() / 3) * 3;
+    const quarterStartMonth = Math.floor(anchor.getUTCMonth() / 3) * 3;
     return {
-      start: new Date(Date.UTC(now.getUTCFullYear(), quarterStartMonth - ((dateRange.amount - 1) * 3), 1)),
+      start: new Date(Date.UTC(anchor.getUTCFullYear(), quarterStartMonth - ((dateRange.amount - 1) * 3), 1)),
       end,
     };
   }
   if (dateRange.unit === 'year') {
     return {
-      start: new Date(Date.UTC(now.getUTCFullYear() - (dateRange.amount - 1), 0, 1)),
+      start: new Date(Date.UTC(anchor.getUTCFullYear() - (dateRange.amount - 1), 0, 1)),
       end,
     };
   }
   const days = dateRange.unit === 'week' ? dateRange.amount * 7 : dateRange.amount;
   return {
-    start: new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - (days - 1))),
+    start: new Date(Date.UTC(anchor.getUTCFullYear(), anchor.getUTCMonth(), anchor.getUTCDate() - (days - 1))),
     end,
   };
 }
@@ -620,7 +620,30 @@ function resolveDatasetDateBounds(dataset: ReportDataset, rawDateRange: any): { 
   return resolveDatasetDateRange(dateRange);
 }
 
-function addDatasetDateRangeClause(dataset: ReportDataset, rawDateRange: any, whereClauses: Prisma.Sql[]) {
+async function resolveDatasetMaxDate(
+  dataset: ReportDataset,
+  dateColumn: ReportDatasetColumn,
+  companyId: string,
+  frequency: string | null
+): Promise<Date | null> {
+  const frequencyColumn = dataset.frequencyField ? getDatasetColumn(dataset, dataset.frequencyField) : null;
+  const rows = await prisma.$queryRaw<Array<{ maxDate: Date | null }>>(Prisma.sql`
+    SELECT MAX(${datasetColumnSql(dateColumn)}) AS "maxDate"
+    FROM ${datasetIdentifier(dataset.tableName)}
+    WHERE "companyId" = ${companyId}
+      ${frequency && frequencyColumn ? Prisma.sql`AND ${datasetColumnSql(frequencyColumn)} = ${frequency}` : Prisma.empty}
+  `);
+  const maxDate = rows[0]?.maxDate ? new Date(rows[0].maxDate) : null;
+  return maxDate && !Number.isNaN(maxDate.getTime()) ? maxDate : null;
+}
+
+async function addDatasetDateRangeClause(
+  dataset: ReportDataset,
+  rawDateRange: any,
+  whereClauses: Prisma.Sql[],
+  companyId: string,
+  frequency: string | null
+) {
   const exactField = getDatasetColumn(dataset, rawDateRange?.field)?.key || dataset.dateField;
   const exactColumn = exactField ? getDatasetColumn(dataset, exactField) : null;
   const rawStart = rawDateRange?.startDate || rawDateRange?.start || rawDateRange?.from;
@@ -644,18 +667,40 @@ function addDatasetDateRangeClause(dataset: ReportDataset, rawDateRange: any, wh
   if (!dateRange) return;
   const column = getDatasetColumn(dataset, dateRange.field);
   if (!column) return;
-  const { start, end } = resolveDatasetDateRange(dateRange);
+  const anchorDate = await resolveDatasetMaxDate(dataset, column, companyId, frequency);
+  const { start, end } = resolveDatasetDateRange(dateRange, anchorDate || new Date());
   const field = datasetColumnSql(column);
   whereClauses.push(Prisma.sql`${field} >= ${start}`);
   whereClauses.push(Prisma.sql`${field} <= ${end}`);
 }
 
-function addDatasetFrequencyClause(dataset: ReportDataset, config: any, whereClauses: Prisma.Sql[]) {
-  if (!dataset.frequencyField) return;
+async function resolveDatasetFrequency(dataset: ReportDataset, companyId: string, config: any): Promise<string | null> {
+  if (!dataset.frequencyField) return null;
+  const column = getDatasetColumn(dataset, dataset.frequencyField);
+  if (!column) return null;
+  const requested = String(config?.frequency || config?.snapshotFrequency || '').trim().toLowerCase();
+  if (['daily', 'weekly', 'monthly'].includes(requested)) return requested;
+  const rows = await prisma.$queryRaw<Array<{ frequency: string }>>(Prisma.sql`
+    SELECT ${datasetColumnSql(column)}::text AS "frequency"
+    FROM ${datasetIdentifier(dataset.tableName)}
+    WHERE "companyId" = ${companyId}
+      AND ${datasetColumnSql(column)} IS NOT NULL
+    GROUP BY 1
+    ORDER BY CASE ${datasetColumnSql(column)}::text
+      WHEN 'monthly' THEN 1
+      WHEN 'weekly' THEN 2
+      WHEN 'daily' THEN 3
+      ELSE 4
+    END
+    LIMIT 1
+  `);
+  return rows[0]?.frequency || null;
+}
+
+function addDatasetFrequencyClause(dataset: ReportDataset, frequency: string | null, whereClauses: Prisma.Sql[]) {
+  if (!dataset.frequencyField || !frequency) return;
   const column = getDatasetColumn(dataset, dataset.frequencyField);
   if (!column) return;
-  const requested = String(config?.frequency || config?.snapshotFrequency || '').trim().toLowerCase();
-  const frequency = ['daily', 'weekly', 'monthly'].includes(requested) ? requested : 'monthly';
   whereClauses.push(Prisma.sql`${datasetColumnSql(column)} = ${frequency}`);
 }
 
@@ -957,8 +1002,9 @@ async function buildDatasetTablePreview(config: any) {
 
   const selectFields = columns.map((column) => Prisma.sql`${datasetColumnSql(column)} AS ${datasetIdentifier(column.key)}`);
   const whereClauses: Prisma.Sql[] = [Prisma.sql`"companyId" = ${String(config.companyId)}`];
-  addDatasetDateRangeClause(dataset, config?.dateRange, whereClauses);
-  addDatasetFrequencyClause(dataset, config, whereClauses);
+  const frequency = await resolveDatasetFrequency(dataset, String(config.companyId), config);
+  await addDatasetDateRangeClause(dataset, config?.dateRange, whereClauses, String(config.companyId), frequency);
+  addDatasetFrequencyClause(dataset, frequency, whereClauses);
 
   filters.forEach((filter) => {
     const column = getDatasetColumn(dataset, filter.field);
@@ -1063,8 +1109,9 @@ async function buildDatasetChartPreview(config: any) {
 
   const filters = normalizeDatasetFilters(dataset, Array.isArray(config?.filters) ? config.filters : []);
   const whereClauses: Prisma.Sql[] = [Prisma.sql`"companyId" = ${String(config.companyId)}`];
-  addDatasetDateRangeClause(dataset, config?.dateRange, whereClauses);
-  addDatasetFrequencyClause(dataset, config, whereClauses);
+  const frequency = await resolveDatasetFrequency(dataset, String(config.companyId), config);
+  await addDatasetDateRangeClause(dataset, config?.dateRange, whereClauses, String(config.companyId), frequency);
+  addDatasetFrequencyClause(dataset, frequency, whereClauses);
   filters.forEach((filter) => {
     const column = getDatasetColumn(dataset, filter.field);
     if (!column) return;
@@ -1416,8 +1463,9 @@ async function buildDatasetDimensionChartPreview(config: any) {
 
   const filters = normalizeDatasetFilters(dataset, Array.isArray(config?.filters) ? config.filters : []);
   const whereClauses: Prisma.Sql[] = [Prisma.sql`"companyId" = ${String(config.companyId)}`];
-  addDatasetDateRangeClause(dataset, config?.dateRange, whereClauses);
-  addDatasetFrequencyClause(dataset, config, whereClauses);
+  const frequency = await resolveDatasetFrequency(dataset, String(config.companyId), config);
+  await addDatasetDateRangeClause(dataset, config?.dateRange, whereClauses, String(config.companyId), frequency);
+  addDatasetFrequencyClause(dataset, frequency, whereClauses);
   filters.forEach((filter) => {
     const column = getDatasetColumn(dataset, filter.field);
     if (!column) return;
