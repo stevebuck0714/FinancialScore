@@ -557,6 +557,18 @@ export default function CustomReportsView({ selectedCompanyId }: CustomReportsVi
     await loadPreview(config);
   };
 
+  const startNewReportBuilder = () => {
+    setPrompt('');
+    setGenerationError('');
+    setGeneratedConfig(null);
+    setPreviewRows([]);
+    setPreviewTableRows([]);
+    setPreviewTableColumns([]);
+    setPreviewError('');
+    setSelectedSavedReportId(null);
+    setActiveTab('builder');
+  };
+
   const duplicateSavedReport = async (report: SavedCustomReport) => {
     const config = {
       ...(report.config || {}),
@@ -753,7 +765,7 @@ export default function CustomReportsView({ selectedCompanyId }: CustomReportsVi
           <div className="custom-report-no-print" style={{ display: 'flex', gap: '8px', marginBottom: '16px', borderBottom: '1px solid #e2e8f0' }}>
             <button
               type="button"
-              onClick={() => setActiveTab('builder')}
+              onClick={startNewReportBuilder}
               style={{
                 padding: '0 4px 10px',
                 border: 'none',

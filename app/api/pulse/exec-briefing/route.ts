@@ -844,21 +844,6 @@ async function readBriefingCache(companyId: string, cacheDate: string, dataVersi
   return rows[0]?.response || null;
 }
 
-async function readLatestBriefingCache(companyId: string, cacheDate: string): Promise<BriefingResponse | null> {
-  const rows = await prisma.$queryRawUnsafe<Array<{ response: BriefingResponse }>>(
-    `SELECT "response"
-     FROM "PulseExecBriefingCache"
-     WHERE "companyId" = $1
-       AND "cacheDate" = $2
-       AND "expiresAt" > CURRENT_TIMESTAMP
-     ORDER BY "updatedAt" DESC
-     LIMIT 1`,
-    companyId,
-    cacheDate
-  );
-  return rows[0]?.response || null;
-}
-
 async function writeBriefingCache(companyId: string, cacheDate: string, dataVersion: string, response: BriefingResponse): Promise<void> {
   await prisma.$executeRawUnsafe(
     `INSERT INTO "PulseExecBriefingCache" ("id", "companyId", "cacheDate", "dataVersion", "response", "updatedAt", "expiresAt")
@@ -961,16 +946,6 @@ export async function GET(request: NextRequest) {
     const shouldUseGeneSolutionsMockBriefing =
       companyId === GENE_SOLUTIONS_COMPANY_ID && company?.forceOperationalMockData === true;
     await ensurePulseCacheTables();
-    const latestCacheKey = `${cacheKey}:latest`;
-    if (!forceRefresh && !shouldUseGeneSolutionsMockBriefing) {
-      const cached = dailyBriefingCache.get(latestCacheKey);
-      if (cached) return NextResponse.json(cached, { headers: PRIVATE_DAILY_CACHE_HEADERS });
-      const persistedLatest = await readLatestBriefingCache(companyId, persistedCacheDate);
-      if (persistedLatest) {
-        dailyBriefingCache.set(latestCacheKey, persistedLatest);
-        return NextResponse.json(persistedLatest, { headers: PRIVATE_DAILY_CACHE_HEADERS });
-      }
-    }
     const isQuickBooksCompany = ['QUICKBOOKS', 'QUICKBOOKS_DESKTOP', 'QUICKBOOKS_ENTERPRISE'].includes(
       String(company?.accountingSystem || '').trim().toUpperCase()
     );

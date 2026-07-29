@@ -62,7 +62,7 @@ const PRODUCT_OPERATIONAL_CACHE_TTL_SECONDS = 30 * 24 * 60 * 60;
 const CUSTOMER_OPERATIONAL_CACHE_TTL_SECONDS = 30 * 24 * 60 * 60;
 const CUSTOMER_CONCENTRATION_CACHE_TTL_SECONDS = 30 * 24 * 60 * 60;
 const CUSTOMER_CONCENTRATION_CACHE_VERSION = 'customer-concentration-exposure-v10';
-const CUSTOMER_REVENUE_SOURCE_VERSION = 'customer-revenue-source-v6-bakers-raw-child-id';
+const CUSTOMER_REVENUE_SOURCE_VERSION = 'customer-revenue-source-v10-product-history-item-names';
 const CUSTOMER_WIP_SOURCE_VERSION = 'customer-backlog-source-v4';
 const HIRING_SOURCE_VERSION = 'bamboohr-hiring-full-pagination-v2';
 const CUSTOMER_BACKLOG_MIN_ORDER_DATE = '2023-06-01';
@@ -3258,7 +3258,7 @@ export async function GET(request: NextRequest) {
             if (orderLineSalesData.length > 0) {
               bookingsSourceData = orderLineSalesData;
             }
-            if (rawInvoiceSalesData.length > 0) {
+            if (rawInvoiceSalesData.length > 0 && customerFrequencyForQuery === 'monthly') {
               const rawInvoiceMonths = new Set(
                 rawInvoiceSalesData
                   .map((row) => {
@@ -3299,7 +3299,7 @@ export async function GET(request: NextRequest) {
                   })
                   .filter(Boolean)
               );
-              if (rawInvoiceSalesData.length === 0) {
+              if (rawInvoiceSalesData.length === 0 || customerFrequencyForQuery !== 'monthly') {
                 salesData = [
                   ...salesData.filter((row) => {
                     const snapshot = new Date(row?.snapshotDate);
@@ -3794,6 +3794,140 @@ export async function GET(request: NextRequest) {
           };
         };
 
+        const buildFinancialSalesMetricSummary = async () => {
+          const ytdStart = startOfBusinessYear(endDate);
+          const mtdStart = startOfBusinessMonth(endDate);
+          const priorMtdStart = new Date(Date.UTC(mtdStart.getUTCFullYear() - 1, mtdStart.getUTCMonth(), 1));
+          const priorMtdEnd = new Date(Date.UTC(endDate.getUTCFullYear() - 1, endDate.getUTCMonth(), endDate.getUTCDate(), 23, 59, 59, 999));
+          const priorYtdStart = new Date(Date.UTC(ytdStart.getUTCFullYear() - 1, 0, 1));
+          const priorYtdEnd = new Date(Date.UTC(endDate.getUTCFullYear() - 1, endDate.getUTCMonth(), endDate.getUTCDate(), 23, 59, 59, 999));
+          const queryStart = new Date(Math.min(startDate.getTime(), priorYtdStart.getTime()));
+
+          const aggregateFinancialRows = (
+            rows: Array<{ snapshotDate: Date; revenue: number; cogsTotal: number }>,
+            source: string
+          ) => {
+            if (!rows.length) return null;
+            let mtdValue = 0;
+            let priorMtdValue = 0;
+            let totalValue = 0;
+            let priorYtdValue = 0;
+            const monthMap = new Map<string, { monthKey: string; monthLabel: string; revenue: number; grossMargin: number }>();
+
+            for (const row of rows) {
+              const snapshot = new Date(row.snapshotDate);
+              if (Number.isNaN(snapshot.getTime())) continue;
+              const revenue = Number(row.revenue || 0);
+              const cogsTotal = Number(row.cogsTotal || 0);
+              const grossMargin = revenue - cogsTotal;
+
+              if (snapshot >= mtdStart && snapshot <= endDate) mtdValue += revenue;
+              if (snapshot >= ytdStart && snapshot <= endDate) totalValue += revenue;
+              if (snapshot >= priorMtdStart && snapshot <= priorMtdEnd) priorMtdValue += revenue;
+              if (snapshot >= priorYtdStart && snapshot <= priorYtdEnd) priorYtdValue += revenue;
+
+              if (snapshot >= startDate && snapshot <= endDate) {
+                const monthKey = businessMonthKey(snapshot);
+                const monthLabel = snapshot.toLocaleDateString('en-US', { month: 'short', year: 'numeric', timeZone: 'UTC' });
+                const monthBucket = monthMap.get(monthKey) || { monthKey, monthLabel, revenue: 0, grossMargin: 0 };
+                monthBucket.revenue += revenue;
+                monthBucket.grossMargin += grossMargin;
+                monthMap.set(monthKey, monthBucket);
+              }
+            }
+
+            const grossMarginRows = Array.from(monthMap.values())
+              .sort((a, b) => a.monthKey.localeCompare(b.monthKey))
+              .map((month) => ({
+                monthKey: month.monthKey,
+                monthLabel: month.monthLabel,
+                gmDollars: Number(month.grossMargin || 0),
+                gmPct: Number(month.revenue || 0) > 0 ? (Number(month.grossMargin || 0) / Number(month.revenue || 0)) * 100 : 0,
+              }));
+
+            return {
+              source,
+              sales: {
+                mtdValue,
+                mtdCompPct: priorMtdValue > 0 ? (mtdValue - priorMtdValue) / priorMtdValue : 0,
+                totalValue,
+                indexPct: priorYtdValue > 0 ? totalValue / priorYtdValue : 0,
+                currentYearLabel: String(endDate.getUTCFullYear()),
+              },
+              grossMarginHistory: {
+                rows: grossMarginRows,
+                chartData: grossMarginRows.map((row) => ({
+                  month: row.monthLabel,
+                  monthKey: row.monthKey,
+                  gmDollars: row.gmDollars,
+                  gmPct: row.gmPct,
+                })),
+              },
+            };
+          };
+
+          const dailyRows = await prisma.dailyFinancialSnapshot.findMany({
+            where: {
+              companyId,
+              frequency: 'daily',
+              snapshotDate: { gte: queryStart, lte: endDate },
+            },
+            select: {
+              snapshotDate: true,
+              revenue: true,
+              cogsTotal: true,
+            },
+            orderBy: { snapshotDate: 'asc' },
+            take: 2000,
+          });
+          const dailySummary = aggregateFinancialRows(
+            dailyRows.map((row) => ({
+              snapshotDate: row.snapshotDate,
+              revenue: Number(row.revenue || 0),
+              cogsTotal: Number(row.cogsTotal || 0),
+            })),
+            'daily-financial-snapshot'
+          );
+          if (dailySummary && (dailySummary.sales.totalValue !== 0 || dailySummary.sales.mtdValue !== 0 || dailySummary.grossMarginHistory.rows.length > 0)) {
+            return dailySummary;
+          }
+
+          const monthlyRows = await prisma.monthlyFinancial.findMany({
+            where: {
+              companyId,
+              monthDate: { gte: queryStart, lte: endDate },
+            },
+            select: {
+              monthDate: true,
+              revenue: true,
+              cogsTotal: true,
+            },
+            orderBy: { monthDate: 'asc' },
+            take: 240,
+          });
+          return aggregateFinancialRows(
+            monthlyRows.map((row) => ({
+              snapshotDate: row.monthDate,
+              revenue: Number(row.revenue || 0),
+              cogsTotal: Number(row.cogsTotal || 0),
+            })),
+            'monthly-financial'
+          );
+        };
+
+        const applyFinancialSalesMetricSummary = (salesPage: any, financialSummary: any) => {
+          if (!salesPage || !financialSummary) return salesPage;
+          return {
+            ...salesPage,
+            sales: {
+              ...(salesPage.sales || {}),
+              ...(financialSummary.sales || {}),
+              metricSource: financialSummary.source,
+            },
+            grossMarginHistory: financialSummary.grossMarginHistory || salesPage.grossMarginHistory,
+          };
+        };
+
         const buildSourceSystemSalesPage = async () => {
           if (!usesSourceSystemProductSnapshots) return null;
           const productRows = await prisma.productSalesSnapshot.findMany({
@@ -3816,17 +3950,21 @@ export async function GET(request: NextRequest) {
                 take: 100000,
               })
             : [];
-          const rawRowsForPayload = productRows.length > 0 || frequency === 'monthly'
-            ? productRows
-            : await prisma.productSalesSnapshot.findMany({
-                where: {
-                  companyId,
-                  frequency: 'monthly',
-                  snapshotDate: { gte: startOfMonth(startDate), lte: endDate },
-                },
-                orderBy: { snapshotDate: 'asc' },
-                take: 100000,
-              });
+          const monthlyRowsForPayload = monthlyProductRows.length > 0
+            ? monthlyProductRows
+            : frequency === 'monthly'
+              ? productRows
+              : await prisma.productSalesSnapshot.findMany({
+                  where: {
+                    companyId,
+                    frequency: 'monthly',
+                    snapshotDate: { gte: startOfMonth(startDate), lte: endDate },
+                  },
+                  orderBy: { snapshotDate: 'asc' },
+                  take: 100000,
+                });
+          const rawRowsForPayload = monthlyRowsForPayload.length > 0 ? monthlyRowsForPayload : productRows;
+          const rowsForPayloadFrequency = monthlyRowsForPayload.length > 0 ? 'monthly' : frequency;
           const monthRevenueReference = new Map<string, number>();
           for (const row of monthlyProductRows as any[]) {
             const snapshot = new Date(row.snapshotDate);
@@ -3841,7 +3979,7 @@ export async function GET(request: NextRequest) {
             ? monthlyRevenueValues[Math.floor(monthlyRevenueValues.length / 2)]
             : 0;
           const dailyBuckets = new Map<string, { revenue: number; rowCount: number }>();
-          if (frequency === 'daily' && monthlyMedianRevenue > 0) {
+          if (rowsForPayloadFrequency === 'daily' && monthlyMedianRevenue > 0) {
             for (const row of rawRowsForPayload as any[]) {
               const snapshot = new Date(row.snapshotDate);
               if (Number.isNaN(snapshot.getTime())) continue;
@@ -4009,6 +4147,39 @@ export async function GET(request: NextRequest) {
             }
             return Array.from(new Set(aliases));
           };
+          const inforItemNumberCandidates = Array.from(
+            new Set(
+              (rowsForPayload as any[])
+                .flatMap((row) => [row?.itemId, row?.sku, row?.itemName])
+                .flatMap((value) => {
+                  const text = String(value || '').trim();
+                  if (!text) return [];
+                  const parts = text.split(/[:|,/\\]+/).map((part) => part.trim()).filter(Boolean);
+                  return [text, ...parts];
+                })
+                .filter(Boolean)
+            )
+          ).slice(0, 2000);
+          if (inforItemNumberCandidates.length > 0) {
+            const cachedItemOverviewRows = await prisma.$queryRaw<
+              Array<{ itemNumber: string; description: string | null; overview: string | null; partNotes: string | null }>
+            >(Prisma.sql`
+              SELECT "itemNumber", "description", "overview", "partNotes"
+              FROM "InforItemOverviewCache"
+              WHERE "companyId" = ${companyId}
+                AND "itemNumber" IN (${Prisma.join(inforItemNumberCandidates)})
+                AND COALESCE(NULLIF(TRIM("description"), ''), NULLIF(TRIM("overview"), ''), NULLIF(TRIM("partNotes"), '')) IS NOT NULL
+              LIMIT ${Math.min(inforItemNumberCandidates.length, 2000)}
+            `);
+            for (const cacheRow of cachedItemOverviewRows as any[]) {
+              const itemNumber = String(cacheRow?.itemNumber || '').trim();
+              const displayName = String(cacheRow?.description || cacheRow?.overview || cacheRow?.partNotes || '').trim();
+              if (!itemNumber || !displayName) continue;
+              for (const alias of productTokenAliases(itemNumber)) {
+                if (alias && !inforProductNameByKey.has(alias)) inforProductNameByKey.set(alias, displayName);
+              }
+            }
+          }
           const bakersProductMatch = (row: any, label: string): { productId: string; productName: string } | null => {
             const aliases = productTokenAliases(row?.itemName, row?.sku, row?.itemId, label);
             return aliases.map((alias) => bakersProductByKey.get(alias)).find(Boolean) || null;
@@ -4910,12 +5081,13 @@ export async function GET(request: NextRequest) {
         }
 
         // Run all three tracks in parallel
-        const [salesResult, wipResult, arResult, platosSalesPage, sourceSystemSalesPage] = await Promise.all([
+        const [salesResult, wipResult, arResult, platosSalesPage, sourceSystemSalesPage, financialSalesMetricSummary] = await Promise.all([
           fetchSalesAndBookings(),
           fetchWip(),
           fetchArOverview(),
           getPlatosClosetSalesPageSummary({ companyId, startDate, endDate }),
           buildSourceSystemSalesPage(),
+          buildFinancialSalesMetricSummary(),
         ]);
 
         data = salesResult.salesData;
@@ -4944,8 +5116,8 @@ export async function GET(request: NextRequest) {
             },
             customerOpenArByCustomer: arResult.customerOpenArByCustomer,
             customerOpenArComplete: arResult.customerOpenArComplete,
-            platosSalesPage,
-            sourceSystemSalesPage,
+            platosSalesPage: applyFinancialSalesMetricSummary(platosSalesPage, financialSalesMetricSummary),
+            sourceSystemSalesPage: applyFinancialSalesMetricSummary(sourceSystemSalesPage, financialSalesMetricSummary),
             realEstateReports: getRealEstateReportsForSummary(),
           },
         });

@@ -3428,6 +3428,51 @@ export default function OperationsTab({
       return acc;
     }, {});
     const rankedCustomers = Object.values(customerTotalsFromRecords).sort((a: any, b: any) => b.totalRevenue - a.totalRevenue);
+    const buildCustomerHistoryFromRecords = (metric: 'revenue' | 'invoiceCount') => {
+      const monthMap = new Map<string, { monthKey: string; monthLabel: string; date: Date }>();
+      const customerMap = new Map<string, { label: string; itemName: string; values: Record<string, number>; total: number }>();
+      for (const record of recordsInSelectedDateRange as any[]) {
+        const parsed = parseDateValue(record?.snapshotDate);
+        if (!parsed) continue;
+        const monthKey = `${parsed.getUTCFullYear()}-${String(parsed.getUTCMonth() + 1).padStart(2, '0')}`;
+        const monthLabel = parsed.toLocaleDateString('en-US', { timeZone: 'UTC', month: 'short', year: 'numeric' });
+        if (!monthMap.has(monthKey)) {
+          monthMap.set(monthKey, {
+            monthKey,
+            monthLabel,
+            date: new Date(Date.UTC(parsed.getUTCFullYear(), parsed.getUTCMonth(), 1)),
+          });
+        }
+        const customerName = String(record?.customerName || 'Unknown Customer').trim() || 'Unknown Customer';
+        const customerId = String(record?.customerId || '').trim();
+        const key = customerId ? `id:${customerId}` : `name:${customerName.toLowerCase().replace(/\s+/g, ' ')}`;
+        const value = Number(record?.[metric] || 0);
+        const bucket = customerMap.get(key) || { label: customerName, itemName: customerId, values: {}, total: 0 };
+        if (!bucket.itemName && customerId) bucket.itemName = customerId;
+        bucket.values[monthKey] = Number(bucket.values[monthKey] || 0) + value;
+        bucket.total += value;
+        customerMap.set(key, bucket);
+      }
+      const months = Array.from(monthMap.values()).sort((a, b) => a.date.getTime() - b.date.getTime());
+      const rows = Array.from(customerMap.values())
+        .sort((a, b) => Number(b.total || 0) - Number(a.total || 0));
+      const totalValues = months.reduce((acc: Record<string, number>, month) => {
+        acc[month.monthKey] = rows.reduce((sum, row) => sum + Number(row.values?.[month.monthKey] || 0), 0);
+        return acc;
+      }, {});
+      return {
+        months,
+        rows,
+        totalRow: {
+          label: metric === 'revenue' ? 'Total Customer Sales' : 'Total Customer Invoice Volume',
+          values: totalValues,
+          total: Object.values(totalValues).reduce((sum, value) => sum + Number(value || 0), 0),
+        },
+        valueFormat: metric === 'revenue' ? 'currency' : 'number',
+      };
+    };
+    const customerSalesHistory = buildCustomerHistoryFromRecords('revenue');
+    const customerInvoiceVolumeHistory = buildCustomerHistoryFromRecords('invoiceCount');
 
     // Aggregate data by period for trend chart
     const periodTrend = recordsInSelectedDateRange.reduce((acc: any, record: any) => {
@@ -3446,29 +3491,21 @@ export default function OperationsTab({
       if (!parsed) return null;
       return new Date(Date.UTC(parsed.getUTCFullYear(), parsed.getUTCMonth(), parsed.getUTCDate()));
     };
+    const customerTrendRollup: 'daily' | 'monthly' = 'daily';
     const toCustomerTrendIsoDay = (date: Date) =>
       `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}-${String(date.getUTCDate()).padStart(2, '0')}`;
-    const customerTrendWeekStart = (date: Date): Date => {
-      const day = date.getUTCDay();
-      const offset = day === 0 ? -6 : 1 - day;
-      return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate() + offset));
-    };
     const customerTrendPeriodAnchor = (date: Date): Date => {
-      if (frequency === 'monthly') return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), 1));
-      if (frequency === 'weekly') return customerTrendWeekStart(date);
+      if (customerTrendRollup === 'monthly') return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), 1));
       return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
     };
     const customerTrendPeriodKey = (date: Date): string => {
       const anchor = customerTrendPeriodAnchor(date);
-      if (frequency === 'monthly') return `${anchor.getUTCFullYear()}-${String(anchor.getUTCMonth() + 1).padStart(2, '0')}`;
+      if (customerTrendRollup === 'monthly') return `${anchor.getUTCFullYear()}-${String(anchor.getUTCMonth() + 1).padStart(2, '0')}`;
       return toCustomerTrendIsoDay(anchor);
     };
     const customerTrendPeriodLabel = (date: Date): string => {
-      if (frequency === 'monthly') {
+      if (customerTrendRollup === 'monthly') {
         return date.toLocaleDateString('en-US', { month: 'short', year: '2-digit', timeZone: 'UTC' });
-      }
-      if (frequency === 'weekly') {
-        return `Week of ${date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' })}`;
       }
       return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' });
     };
@@ -3480,20 +3517,11 @@ export default function OperationsTab({
     const customerTrendEndDate = toCustomerTrendDay(endDate) || customerTrendRecordDates[customerTrendRecordDates.length - 1] || null;
     const customerTrendPeriods: Array<{ monthKey: string; monthLabel: string }> = [];
     if (customerTrendStartDate && customerTrendEndDate && customerTrendStartDate <= customerTrendEndDate) {
-      if (frequency === 'monthly') {
+      if (customerTrendRollup === 'monthly') {
         for (
           let cursor = new Date(Date.UTC(customerTrendStartDate.getUTCFullYear(), customerTrendStartDate.getUTCMonth(), 1));
           cursor <= customerTrendEndDate;
           cursor = new Date(Date.UTC(cursor.getUTCFullYear(), cursor.getUTCMonth() + 1, 1))
-        ) {
-          const anchor = customerTrendPeriodAnchor(cursor);
-          customerTrendPeriods.push({ monthKey: customerTrendPeriodKey(anchor), monthLabel: customerTrendPeriodLabel(anchor) });
-        }
-      } else if (frequency === 'weekly') {
-        for (
-          let cursor = customerTrendPeriodAnchor(customerTrendStartDate);
-          cursor <= customerTrendEndDate;
-          cursor = new Date(Date.UTC(cursor.getUTCFullYear(), cursor.getUTCMonth(), cursor.getUTCDate() + 7))
         ) {
           const anchor = customerTrendPeriodAnchor(cursor);
           customerTrendPeriods.push({ monthKey: customerTrendPeriodKey(anchor), monthLabel: customerTrendPeriodLabel(anchor) });
@@ -3558,11 +3586,9 @@ export default function OperationsTab({
     }
     const customerTrendRows = Array.from(customerTrendRowsByMonth.values());
     const customerTrendXAxisInterval =
-      frequency === 'daily'
+      customerTrendRollup === 'daily'
         ? Math.max(Math.ceil(customerTrendRows.length / 16) - 1, 0)
-        : frequency === 'weekly'
-          ? Math.max(Math.ceil(customerTrendRows.length / 20) - 1, 0)
-          : Math.max(Math.ceil(customerTrendRows.length / 24) - 1, 0);
+        : Math.max(Math.ceil(customerTrendRows.length / 24) - 1, 0);
     const customerTrendColors = ['#2563eb', '#16a34a', '#f97316', '#7c3aed', '#dc2626', '#0f766e', '#0891b2', '#9333ea', '#ca8a04', '#475569'];
     const visibleTopTrendCustomers = topTrendCustomers.filter((customer) => !hiddenCustomerTrendSeries[customer.customerName]);
     const customerCoverageDates = recordsInSelectedDateRange
@@ -3879,8 +3905,16 @@ export default function OperationsTab({
         </div>
       );
     };
-    const renderCategorySalesHistoryTable = (title: string, section: any) => {
+    const renderCategorySalesHistoryTable = (
+      title: string,
+      section: any,
+      options: { rowHeaderLabel?: string; itemHeaderLabel?: string; countLabel?: string; showItemNameColumn?: boolean } = {}
+    ) => {
       const categoryHistory = section?.categoryHistory;
+      const rowHeaderLabel = options.rowHeaderLabel || 'Category';
+      const itemHeaderLabel = options.itemHeaderLabel || 'Item Name';
+      const countLabel = options.countLabel || 'categories';
+      const showItemNameColumn = options.showItemNameColumn !== false;
       const parseSalesHistoryPeriodDate = (period: any): Date | null => {
         const raw = String(period?.monthKey || period?.dateKey || period?.periodKey || '').trim();
         if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return parseDateValue(raw);
@@ -4057,11 +4091,13 @@ export default function OperationsTab({
             </div>
           </div>
           <div style={{ maxWidth: '100%', overflowX: 'auto', paddingBottom: '8px' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: `${Math.max(1120, 520 + months.length * 112)}px` }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: `${Math.max(showItemNameColumn ? 1120 : 900, (showItemNameColumn ? 520 : 300) + months.length * 112)}px` }}>
               <thead>
                 <tr>
-                  <th style={{ padding: '8px', textAlign: 'left', fontSize: '12px', color: '#475569', borderBottom: '1px solid #e2e8f0', whiteSpace: 'nowrap', minWidth: '240px' }}>Category</th>
-                  <th style={{ padding: '8px', textAlign: 'left', fontSize: '12px', color: '#475569', borderBottom: '1px solid #e2e8f0', whiteSpace: 'nowrap', minWidth: '220px' }}>Item Name</th>
+                  <th style={{ padding: '8px', textAlign: 'left', fontSize: '12px', color: '#475569', borderBottom: '1px solid #e2e8f0', whiteSpace: 'nowrap', minWidth: '240px' }}>{rowHeaderLabel}</th>
+                  {showItemNameColumn && (
+                    <th style={{ padding: '8px', textAlign: 'left', fontSize: '12px', color: '#475569', borderBottom: '1px solid #e2e8f0', whiteSpace: 'nowrap', minWidth: '220px' }}>{itemHeaderLabel}</th>
+                  )}
                   {months.map((month: any) => (
                     <th key={month.monthKey} style={{ padding: '8px', textAlign: 'right', fontSize: '12px', color: '#475569', borderBottom: '1px solid #e2e8f0', whiteSpace: 'nowrap', minWidth: '104px' }}>
                       {month.monthLabel || month.monthKey}
@@ -4091,10 +4127,12 @@ export default function OperationsTab({
                     </button>
                     {displayedHistory.totalRow?.label || 'Total Sales'}
                     <span style={{ marginLeft: '8px', color: '#64748b', fontSize: '12px', fontWeight: 500 }}>
-                      {displayedHistory.rows.length.toLocaleString()} categories
+                      {displayedHistory.rows.length.toLocaleString()} {countLabel}
                     </span>
                   </td>
-                  <td style={{ padding: '8px', fontSize: '13px', color: '#64748b', borderBottom: '1px solid #cbd5e1' }} />
+                  {showItemNameColumn && (
+                    <td style={{ padding: '8px', fontSize: '13px', color: '#64748b', borderBottom: '1px solid #cbd5e1' }} />
+                  )}
                   {months.map((month: any) => (
                     <td key={month.monthKey} style={{ padding: '8px', textAlign: 'right', fontSize: '13px', color: '#16a34a', fontWeight: 700 }}>
                       {formatHistoryValue(displayedHistory.totalRow?.values?.[month.monthKey])}
@@ -4143,9 +4181,11 @@ export default function OperationsTab({
                               </span>
                             )}
                           </td>
-                          <td style={{ padding: '8px', fontSize: '13px', color: '#334155', borderBottom: '1px solid #e2e8f0', whiteSpace: 'nowrap' }}>
-                            {String(row?.itemName || '')}
-                          </td>
+                          {showItemNameColumn && (
+                            <td style={{ padding: '8px', fontSize: '13px', color: '#334155', borderBottom: '1px solid #e2e8f0', whiteSpace: 'nowrap' }}>
+                              {String(row?.itemName || '')}
+                            </td>
+                          )}
                           {months.map((month: any) => (
                             <td key={month.monthKey} style={{ padding: '8px', textAlign: 'right', fontSize: '13px', color: '#334155', borderBottom: '1px solid #e2e8f0', fontWeight: 700 }}>
                               {formatHistoryValue(row?.values?.[month.monthKey])}
@@ -4161,9 +4201,11 @@ export default function OperationsTab({
                               <td style={{ padding: '8px 8px 8px 76px', fontSize: '13px', fontWeight: 500, color: '#334155', borderBottom: '1px solid #f1f5f9', whiteSpace: 'nowrap' }}>
                                 {String(item?.label || 'Unknown Item')}
                               </td>
-                              <td style={{ padding: '8px', fontSize: '13px', fontWeight: 500, color: '#475569', borderBottom: '1px solid #f1f5f9', whiteSpace: 'nowrap' }}>
-                                {String(item?.itemName || '')}
-                              </td>
+                              {showItemNameColumn && (
+                                <td style={{ padding: '8px', fontSize: '13px', fontWeight: 500, color: '#475569', borderBottom: '1px solid #f1f5f9', whiteSpace: 'nowrap' }}>
+                                  {String(item?.itemName || '')}
+                                </td>
+                              )}
                               {months.map((month: any) => (
                                 <td key={month.monthKey} style={{ padding: '8px', textAlign: 'right', fontSize: '13px', color: '#475569', borderBottom: '1px solid #f1f5f9' }}>
                                   {formatHistoryValue(item?.values?.[month.monthKey])}
@@ -4695,12 +4737,12 @@ export default function OperationsTab({
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px', gap: '12px', flexWrap: 'wrap' }}>
             <div style={{ display: 'flex', alignItems: 'center' }}>
               <h3 style={{ fontSize: '18px', fontWeight: '700', color: '#1e293b', margin: 0 }}>
-                {retailizeCustomerText('Top 10 Customers Monthly Trend')}
+                {retailizeCustomerText('Top 10 Customers Daily Trend')}
               </h3>
               {renderCustomerChartInfoLink('customersTop10MonthlyTrend')}
             </div>
             <div style={{ fontSize: '11px', color: '#64748b' }}>
-              {frequency === 'daily' ? 'Daily' : frequency === 'weekly' ? 'Weekly' : 'Monthly'} trend for {selectedDateRangeLabel}
+              Daily trend for {selectedDateRangeLabel}
             </div>
           </div>
           {topTrendCustomers.length === 0 ? (
@@ -4883,13 +4925,13 @@ export default function OperationsTab({
 
             {isSectionEnabled('customersPlatoSalesHistoryTables') && (
               <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '16px', marginBottom: '20px' }}>
-                {renderCategorySalesHistoryTable('Sales History', salesReportPayload.sales) || (
+                {renderCategorySalesHistoryTable('Customer Sales History', { categoryHistory: customerSalesHistory }, { rowHeaderLabel: 'Customer Name', itemHeaderLabel: 'Customer ID', countLabel: 'customers' }) || (
                   <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '16px' }}>
-                    <h3 style={{ margin: '0 0 12px 0', fontSize: '16px', color: '#1e293b' }}>Sales History</h3>
+                    <h3 style={{ margin: '0 0 12px 0', fontSize: '16px', color: '#1e293b' }}>Customer Sales History</h3>
                     {renderSalesReportEmptyState()}
                   </div>
                 )}
-                {renderCategorySalesHistoryTable('Sales Volume History', { categoryHistory: salesReportPayload.sales?.volumeHistory }) || null}
+                {renderCategorySalesHistoryTable('Customer Invoice Volume History', { categoryHistory: customerInvoiceVolumeHistory }, { rowHeaderLabel: 'Customer Name', itemHeaderLabel: 'Customer ID', countLabel: 'customers' }) || null}
                 {!isSourceSystemSalesPage && (renderWorkbookHistoryTable('Buys History', salesReportPayload.buys) || (
                   <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '16px' }}>
                     <h3 style={{ margin: '0 0 12px 0', fontSize: '16px', color: '#1e293b' }}>Buys History</h3>
