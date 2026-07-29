@@ -124,6 +124,16 @@ function withReportRequest(config: any, request: string) {
   };
 }
 
+function shouldShowReportDescription(value: unknown): boolean {
+  const description = String(value || '').trim();
+  if (!description) return false;
+  const normalized = description.toLowerCase();
+  return !(
+    normalized.includes('filtered and bounded by the report request') ||
+    normalized.includes('product sales, quantity sold, revenue, cogs, and gross margin by item/sku')
+  );
+}
+
 async function readJsonResponse(response: Response, fallbackMessage: string) {
   const text = await response.text();
   if (!text) return {};
@@ -456,6 +466,9 @@ export default function CustomReportsView({ selectedCompanyId }: CustomReportsVi
       setPreviewRows(Array.isArray(data?.rows) ? data.rows : []);
       setPreviewTableRows(Array.isArray(data?.tableRows) ? data.tableRows : []);
       setPreviewTableColumns(Array.isArray(data?.tableColumns) ? data.tableColumns : []);
+      if (data?.previewError) {
+        setPreviewError(String(data.previewError));
+      }
     } catch (error: any) {
       setPreviewError(error?.message || 'Failed to build report preview');
     }
@@ -843,8 +856,26 @@ export default function CustomReportsView({ selectedCompanyId }: CustomReportsVi
                 <div style={{ marginTop: '18px', border: '1px solid #cbd5e1', borderRadius: '12px', overflow: 'hidden' }}>
                   <div style={{ padding: '12px 14px', background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px', flexWrap: 'wrap' }}>
-                      <div>
-                        <div style={{ fontSize: '15px', fontWeight: 800, color: '#1e293b' }}>{generatedConfig.title || 'Generated Report'}</div>
+                      <div style={{ minWidth: '260px', flex: '1 1 360px' }}>
+                        <label style={{ display: 'block', fontSize: '11px', color: '#64748b', fontWeight: 800, textTransform: 'uppercase', marginBottom: '4px' }}>
+                          Report Name
+                        </label>
+                        <input
+                          type="text"
+                          value={generatedConfig.title || ''}
+                          onChange={(event) => setGeneratedConfig((prev: any) => prev ? { ...prev, title: event.target.value } : prev)}
+                          placeholder="Report name"
+                          style={{
+                            width: '100%',
+                            border: '1px solid #cbd5e1',
+                            borderRadius: '8px',
+                            padding: '8px 10px',
+                            fontSize: '15px',
+                            fontWeight: 800,
+                            color: '#1e293b',
+                            background: '#fff',
+                          }}
+                        />
                         <div style={{ fontSize: '12px', color: '#64748b', marginTop: '4px' }}>
                           Type: {String(generatedConfig.chartType || '').replace('_', ' ')} | Source: {generatedConfig.dataSource || 'monthlyFinancial'}
                         </div>
@@ -869,7 +900,9 @@ export default function CustomReportsView({ selectedCompanyId }: CustomReportsVi
                     </div>
                   </div>
                   <div style={{ padding: '14px' }}>
-                    <div style={{ fontSize: '13px', color: '#475569', marginBottom: '12px' }}>{generatedConfig.description}</div>
+                    {shouldShowReportDescription(generatedConfig.description) && (
+                      <div style={{ fontSize: '13px', color: '#475569', marginBottom: '12px' }}>{generatedConfig.description}</div>
+                    )}
                     {Array.isArray(generatedConfig.notes) && generatedConfig.notes.length > 0 && (
                       <div style={{ marginTop: '12px', fontSize: '12px', color: '#64748b' }}>
                         {generatedConfig.notes.join(' ')}
@@ -976,6 +1009,15 @@ export default function CustomReportsView({ selectedCompanyId }: CustomReportsVi
                 >
                   Edit
                 </button>
+                {selectedSavedReport && (
+                  <button
+                    type="button"
+                    onClick={() => renameSavedReport(selectedSavedReport)}
+                    style={{ border: '1px solid #cbd5e1', borderRadius: '8px', background: '#fff', color: '#475569', padding: '8px 10px', fontSize: '12px', fontWeight: 800, cursor: 'pointer' }}
+                  >
+                    Rename
+                  </button>
+                )}
                 {selectedSavedReport && (
                   <button type="button" onClick={() => duplicateSavedReport(selectedSavedReport)} style={{ border: '1px solid #cbd5e1', borderRadius: '8px', background: '#fff', color: '#475569', padding: '8px 10px', fontSize: '12px', fontWeight: 800, cursor: 'pointer' }}>
                     Duplicate

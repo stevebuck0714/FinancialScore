@@ -1276,8 +1276,11 @@ function canonicalProductKey(value: unknown): string {
     .toUpperCase();
 }
 
-async function loadCompanyScopedProductDisplayNameMap(companyId: string) {
+async function loadCompanyScopedProductDisplayNameMap(companyId: string, aliases: unknown[] = []) {
   const displayNameByKey = new Map<string, string>();
+  const scopedAliases = Array.from(
+    new Set(aliases.map((alias) => String(alias || '').trim()).filter(Boolean))
+  ).slice(0, 100);
   const looksLikeProductCode = (value: unknown) => {
     const text = String(value || '').trim();
     return Boolean(text && /\d/.test(text) && !/[a-z]/.test(text) && /^[A-Z0-9\-_.\/: ]+$/.test(text));
@@ -1301,6 +1304,7 @@ async function loadCompanyScopedProductDisplayNameMap(companyId: string) {
     WHERE "companyId" = ${companyId}
       AND "sourceCode" = 'BAKERS_COGS'
       AND "productName" IS NOT NULL
+      ${scopedAliases.length > 0 ? Prisma.sql`AND ("productId" IN (${Prisma.join(scopedAliases)}) OR "productName" IN (${Prisma.join(scopedAliases)}))` : Prisma.empty}
     ORDER BY "productId", "formulaDate" DESC, "updatedAt" DESC
   `;
   for (const row of bakersRows) {
@@ -1316,6 +1320,7 @@ async function loadCompanyScopedProductDisplayNameMap(companyId: string) {
     WHERE "companyId" = ${companyId}
       AND "platform" IN ('INFOR_M3', 'INFOR_CSI')
       AND NULLIF(TRIM(COALESCE("description", '')), '') IS NOT NULL
+      ${scopedAliases.length > 0 ? Prisma.sql`AND ("itemNumber" IN (${Prisma.join(scopedAliases)}) OR "description" IN (${Prisma.join(scopedAliases)}))` : Prisma.empty}
     ORDER BY "itemNumber", "recordDate" DESC NULLS LAST, "updatedAt" DESC
   `;
   for (const row of inforRows) {
@@ -1328,16 +1333,19 @@ async function loadCompanyScopedProductDisplayNameMap(companyId: string) {
     FROM "ProductSalesSnapshot"
     WHERE "companyId" = ${companyId}
       AND NULLIF(TRIM(COALESCE("itemName", '')), '') IS NOT NULL
+      ${scopedAliases.length > 0 ? Prisma.sql`AND ("itemId" IN (${Prisma.join(scopedAliases)}) OR "sku" IN (${Prisma.join(scopedAliases)}) OR "itemName" IN (${Prisma.join(scopedAliases)}))` : Prisma.empty}
     UNION ALL
     SELECT "itemId", "sku", "itemName"
     FROM "CustomerOrderLineSnapshot"
     WHERE "companyId" = ${companyId}
       AND NULLIF(TRIM(COALESCE("itemName", '')), '') IS NOT NULL
+      ${scopedAliases.length > 0 ? Prisma.sql`AND ("itemId" IN (${Prisma.join(scopedAliases)}) OR "sku" IN (${Prisma.join(scopedAliases)}) OR "itemName" IN (${Prisma.join(scopedAliases)}))` : Prisma.empty}
     UNION ALL
     SELECT "itemId", "sku", "itemName"
     FROM "InventorySnapshot"
     WHERE "companyId" = ${companyId}
       AND NULLIF(TRIM(COALESCE("itemName", '')), '') IS NOT NULL
+      ${scopedAliases.length > 0 ? Prisma.sql`AND ("itemId" IN (${Prisma.join(scopedAliases)}) OR "sku" IN (${Prisma.join(scopedAliases)}) OR "itemName" IN (${Prisma.join(scopedAliases)}))` : Prisma.empty}
   `);
   for (const row of operationalRows) {
     setDisplayName([row.itemId, row.sku, row.itemName], row.itemName);
@@ -1597,7 +1605,7 @@ async function buildProductOrderLineRevenueDimensionPreview(
   `);
   if (rows.length === 0) return null;
 
-  const displayNameByKey = await loadCompanyScopedProductDisplayNameMap(companyId);
+  const displayNameByKey = await loadCompanyScopedProductDisplayNameMap(companyId, rows.map((row) => row.name));
   const displayRows = rows
     .map((row) => ({
       name: displayNameByKey.size > 0 ? resolveProductDisplayName(row.name, displayNameByKey) : String(row.name || 'Unassigned'),
@@ -1663,8 +1671,12 @@ async function buildDatasetDimensionChartPreview(config: any) {
     .filter(Boolean)[0] as { column: ReportDatasetColumn; aggregation: string; label: string; format: string } | undefined;
   if (!metricConfig) return null;
 
-  const orderLineProductPreview = await buildProductOrderLineRevenueDimensionPreview(dataset, config, dimensionColumn, metricConfig);
-  if (orderLineProductPreview) return orderLineProductPreview;
+  try {
+    const orderLineProductPreview = await buildProductOrderLineRevenueDimensionPreview(dataset, config, dimensionColumn, metricConfig);
+    if (orderLineProductPreview) return orderLineProductPreview;
+  } catch (error) {
+    console.error('Custom Reports product order-line preview skipped:', error);
+  }
 
   const filters = normalizeDatasetFilters(dataset, Array.isArray(config?.filters) ? config.filters : []);
   const whereClauses: Prisma.Sql[] = [Prisma.sql`"companyId" = ${String(config.companyId)}`];
@@ -1712,7 +1724,7 @@ async function buildDatasetDimensionChartPreview(config: any) {
     if (platosPreview) return platosPreview;
   }
   const displayNameByKey = dataset.tableName === 'ProductSalesSnapshot'
-    ? await loadCompanyScopedProductDisplayNameMap(String(config.companyId))
+    ? await loadCompanyScopedProductDisplayNameMap(String(config.companyId), rows.map((row) => row.name))
     : new Map<string, string>();
   const displayRows = rows.reduce<Array<{ name: string; value: number }>>((acc, row) => {
     const name = displayNameByKey.size > 0
@@ -1920,6 +1932,16 @@ export async function POST(request: NextRequest) {
     const message = String(error?.message || 'Failed to build report preview');
     const status = message.toLowerCase().includes('unauthorized') ? 401 : 500;
     console.error('Custom Reports preview error:', error);
+    if (status !== 401) {
+      return NextResponse.json({
+        rows: [],
+        tableColumns: [],
+        tableRows: [],
+        fields: [],
+        fieldCatalog: [],
+        previewError: message,
+      });
+    }
     return NextResponse.json({ error: message }, { status });
   }
 }
