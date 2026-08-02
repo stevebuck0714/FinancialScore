@@ -136,6 +136,17 @@ export async function GET(request: NextRequest) {
       createdAt: Date;
       homeCompanyId?: string | null;
       isExternalCompanyUser?: boolean;
+      companyAccess?: Array<{
+        companyId: string;
+        companyRole: string | null;
+        sidebarAccess: any;
+        operationalDashboardAccess: any;
+        company: {
+          id: string;
+          name: string;
+          consultantId: string | null;
+        };
+      }>;
     }> = [];
 
     if (companyId) {
@@ -253,6 +264,22 @@ export async function GET(request: NextRequest) {
             operationalDashboardAccess: true,
             companyId: true,
             createdAt: true,
+          companyAccess: {
+            select: {
+              companyId: true,
+              companyRole: true,
+              sidebarAccess: true,
+              operationalDashboardAccess: true,
+              company: {
+                select: {
+                  id: true,
+                  name: true,
+                  consultantId: true,
+                },
+              },
+            },
+            orderBy: { createdAt: 'asc' },
+          },
           },
           orderBy: { name: 'asc' },
         });

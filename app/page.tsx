@@ -2397,7 +2397,7 @@ function FinancialScorePage() {
   const [masterDataCategories, setMasterDataCategories] = useState<any[]>([]);
   const [companyManagementSubTab, setCompanyManagementSubTab] = useState<'details' | 'profile' | 'payments' | 'documentation' | 'team-assessment' | 'dataroom'>('profile');
   const [consultantDashboardTab, setConsultantDashboardTab] = useState<'team-management' | 'company-list' | 'documentation'>('company-list');
-  const [siteAdminTab, setSiteAdminTab] = useState<'consultants' | 'businesses' | 'affiliates' | 'default-pricing' | 'billing' | 'siteadmins'>('consultants');
+  const [siteAdminTab, setSiteAdminTab] = useState<'consultants' | 'businesses' | 'user-access' | 'affiliates' | 'default-pricing' | 'billing' | 'siteadmins'>('consultants');
   const [siteAdminBusinessesLoading, setSiteAdminBusinessesLoading] = useState(false);
 
   const normalizeFinancialSourceLabel = (value: unknown): string | null => {
@@ -5191,7 +5191,7 @@ function FinancialScorePage() {
       }
     };
 
-    if (siteAdminTab === 'businesses' && currentView === 'siteadmin' && currentUser?.role === 'siteadmin') {
+    if ((siteAdminTab === 'businesses' || siteAdminTab === 'user-access') && currentView === 'siteadmin' && currentUser?.role === 'siteadmin') {
       console.log('?? Loading all companies and users for site admin businesses tab...');
       loadBusinessesData();
     }
@@ -14453,6 +14453,7 @@ function FinancialScorePage() {
               editingConsultantInfo={editingConsultantInfo}
               setEditingConsultantInfo={setEditingConsultantInfo}
               users={users}
+              setUsers={setUsers}
               getCompanyUsers={getCompanyUsers}
               selectedConsultantId={selectedConsultantId}
               setSelectedConsultantId={setSelectedConsultantId}
