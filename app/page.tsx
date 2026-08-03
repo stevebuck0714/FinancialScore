@@ -1755,14 +1755,13 @@ function FinancialScorePage() {
   }, [currentView]);
 
   useEffect(() => {
-    if (currentView === 'valuation') {
+    if (currentView === 'valuation' || currentView === 'valuation-reports') {
       setIsValuationExpanded(true);
     }
   }, [currentView]);
 
   useEffect(() => {
-    const reportViews = ['custom-print', 'valuation-reports'];
-    if (reportViews.includes(currentView)) {
+    if (currentView === 'custom-print') {
       setIsReportsExpanded(true);
     }
   }, [currentView]);
@@ -13885,7 +13884,7 @@ function FinancialScorePage() {
                     style={{
                       fontSize: '14px',
                       fontWeight: '700',
-                      color: currentView === 'valuation' ? '#1F70C1' : '#334155',
+                      color: currentView === 'valuation' || currentView === 'valuation-reports' ? '#1F70C1' : '#334155',
                       textTransform: 'uppercase',
                       letterSpacing: '0.5px',
                       padding: '1px 32px',
@@ -13899,10 +13898,11 @@ function FinancialScorePage() {
                       e.currentTarget.style.color = '#1F70C1';
                     }}
                     onMouseLeave={(e) => {
-                      e.currentTarget.style.color = currentView === 'valuation' ? '#1F70C1' : '#334155';
+                      e.currentTarget.style.color =
+                        currentView === 'valuation' || currentView === 'valuation-reports' ? '#1F70C1' : '#334155';
                     }}
                   >
-                    {currentView === 'valuation' && '› '}VALUATION {isValuationExpanded ? '▾' : '▸'}
+                    {(currentView === 'valuation' || currentView === 'valuation-reports') && '› '}VALUATION {isValuationExpanded ? '▾' : '▸'}
                   </h3>
                   {isValuationExpanded && (
                     <div style={{ paddingLeft: '36px' }}>
@@ -13945,6 +13945,36 @@ function FinancialScorePage() {
                           {currentView === 'valuation' && valuationMethodTab === item.id && '› '}{item.label}
                         </div>
                       ))}
+                      {hasCompanySectionAccess('valuation-reports') && isValuationReportsEnabledByAdmin && (
+                        <div
+                          onClick={() => handleNavigation('valuation-reports')}
+                          style={{
+                            fontSize: '13px',
+                            color: currentView === 'valuation-reports' ? '#1F70C1' : '#475569',
+                            padding: '5px 12px',
+                            cursor: 'pointer',
+                            borderRadius: '6px',
+                            marginBottom: '4px',
+                            background: currentView === 'valuation-reports' ? '#e0f2fe' : 'transparent',
+                            fontWeight: currentView === 'valuation-reports' ? '600' : '400',
+                            transition: 'all 0.2s'
+                          }}
+                          onMouseEnter={(e) => {
+                            if (currentView !== 'valuation-reports') {
+                              e.currentTarget.style.background = '#f8fafc';
+                              e.currentTarget.style.color = '#1F70C1';
+                            }
+                          }}
+                          onMouseLeave={(e) => {
+                            if (currentView !== 'valuation-reports') {
+                              e.currentTarget.style.background = 'transparent';
+                              e.currentTarget.style.color = '#475569';
+                            }
+                          }}
+                        >
+                          {currentView === 'valuation-reports' && '› '}VALUATION REPORTS
+                        </div>
+                      )}
                     </div>
                   )}
                 </>
@@ -13977,8 +14007,7 @@ function FinancialScorePage() {
                 </h3>
               )}
 
-              {(hasCompanySectionAccess('standard-reports') ||
-                hasCompanySectionAccess('valuation-reports')) && (
+              {hasCompanySectionAccess('standard-reports') && (
                 <div style={{ marginTop: '16px' }}>
                   <h3
                     onClick={() => setIsReportsExpanded((prev) => !prev)}
@@ -14004,67 +14033,34 @@ function FinancialScorePage() {
                   </h3>
                   {isReportsExpanded && (
                     <div style={{ paddingLeft: '36px' }}>
-                      {hasCompanySectionAccess('standard-reports') && (
-                        <div
-                          onClick={() => handleNavigation('custom-print')}
-                          style={{
-                            fontSize: '13px',
-                            color: currentView === 'custom-print' ? '#1F70C1' : '#475569',
-                            padding: '5px 12px',
-                            cursor: 'pointer',
-                            borderRadius: '6px',
-                            marginBottom: '4px',
-                            background: currentView === 'custom-print' ? '#e0f2fe' : 'transparent',
-                            fontWeight: currentView === 'custom-print' ? '600' : '400',
-                            transition: 'all 0.2s'
-                          }}
-                          onMouseEnter={(e) => {
-                            if (currentView !== 'custom-print') {
-                              e.currentTarget.style.background = '#f8fafc';
-                              e.currentTarget.style.color = '#1F70C1';
-                            }
-                          }}
-                          onMouseLeave={(e) => {
-                            if (currentView !== 'custom-print') {
-                              e.currentTarget.style.background = 'transparent';
-                              e.currentTarget.style.color = '#475569';
-                            }
-                          }}
-                        >
-                          {currentView === 'custom-print' && '› '}STANDARD REPORTS
-                        </div>
-                      )}
-                      {hasCompanySectionAccess('valuation-reports') && isValuationReportsEnabledByAdmin && (
-                        <div
-                          onClick={() => handleNavigation('valuation-reports')}
-                          style={{
-                            fontSize: '13px',
-                            color: currentView === 'valuation-reports' ? '#1F70C1' : '#475569',
-                            padding: '5px 12px',
-                            cursor: 'pointer',
-                            borderRadius: '6px',
-                            marginTop: '6px',
-                            marginBottom: '4px',
-                            background: currentView === 'valuation-reports' ? '#e0f2fe' : 'transparent',
-                            fontWeight: currentView === 'valuation-reports' ? '600' : '400',
-                            transition: 'all 0.2s'
-                          }}
-                          onMouseEnter={(e) => {
-                            if (currentView !== 'valuation-reports') {
-                              e.currentTarget.style.background = '#f8fafc';
-                              e.currentTarget.style.color = '#1F70C1';
-                            }
-                          }}
-                          onMouseLeave={(e) => {
-                            if (currentView !== 'valuation-reports') {
-                              e.currentTarget.style.background = 'transparent';
-                              e.currentTarget.style.color = '#475569';
-                            }
-                          }}
-                        >
-                          {currentView === 'valuation-reports' && '› '}VALUATION REPORTS
-                        </div>
-                      )}
+                      <div
+                        onClick={() => handleNavigation('custom-print')}
+                        style={{
+                          fontSize: '13px',
+                          color: currentView === 'custom-print' ? '#1F70C1' : '#475569',
+                          padding: '5px 12px',
+                          cursor: 'pointer',
+                          borderRadius: '6px',
+                          marginBottom: '4px',
+                          background: currentView === 'custom-print' ? '#e0f2fe' : 'transparent',
+                          fontWeight: currentView === 'custom-print' ? '600' : '400',
+                          transition: 'all 0.2s'
+                        }}
+                        onMouseEnter={(e) => {
+                          if (currentView !== 'custom-print') {
+                            e.currentTarget.style.background = '#f8fafc';
+                            e.currentTarget.style.color = '#1F70C1';
+                          }
+                        }}
+                        onMouseLeave={(e) => {
+                          if (currentView !== 'custom-print') {
+                            e.currentTarget.style.background = 'transparent';
+                            e.currentTarget.style.color = '#475569';
+                          }
+                        }}
+                      >
+                        {currentView === 'custom-print' && '› '}STANDARD REPORTS
+                      </div>
                     </div>
                   )}
                 </div>
