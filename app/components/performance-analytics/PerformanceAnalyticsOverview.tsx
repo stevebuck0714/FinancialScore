@@ -26,13 +26,13 @@ type ContextResponse = {
      suggestedGoals: string[];
    };
    ranges: {
-     financials: { count: number; start: string | null; end: string | null };
-     cash: { count: number; start: string | null; end: string | null };
-     ar: { count: number; start: string | null; end: string | null };
-     ap: { count: number; start: string | null; end: string | null };
-     customers: { count: number; start: string | null; end: string | null };
-     products: { count: number; start: string | null; end: string | null };
-     inventory: { count: number; start: string | null; end: string | null };
+     financials: { count: number; start: string | null; end: string | null; frequency?: string | null };
+     cash: { count: number; start: string | null; end: string | null; frequency?: string | null };
+     ar: { count: number; start: string | null; end: string | null; frequency?: string | null };
+     ap: { count: number; start: string | null; end: string | null; frequency?: string | null };
+     customers: { count: number; start: string | null; end: string | null; frequency?: string | null };
+     products: { count: number; start: string | null; end: string | null; frequency?: string | null };
+     inventory: { count: number; start: string | null; end: string | null; frequency?: string | null };
    };
  };
  
@@ -325,6 +325,7 @@ function sanitizeFocusValues(raw: any): Record<string, string> {
               <div style={{ fontSize: '13px', fontWeight: '600', color: '#1e293b' }}>{item.label}</div>
               <div style={{ fontSize: '12px', color: '#64748b', marginTop: '4px' }}>
                 {item.range.count} records • {formatDate(item.range.start)} → {formatDate(item.range.end)}
+                {item.range.frequency ? ` (${item.range.frequency})` : ''}
               </div>
             </div>
           ))}

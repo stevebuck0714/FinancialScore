@@ -34,6 +34,66 @@ function summarizeRange<T extends { snapshotDate?: Date; monthDate?: Date }>(rec
   return { count: records.length, start: dates[0], end: dates[dates.length - 1] };
 }
 
+type OpsCoverageSummary = {
+  count: number;
+  start: Date | null;
+  end: Date | null;
+  frequency: string | null;
+};
+
+/**
+ * Ops modules (esp. Infor CSI tenants like Atlantic Precision) write mostly
+ * daily snapshots. Data Coverage previously filtered frequency=monthly only,
+ * so Cash/AR/AP/etc. showed 0 even when daily data was present. Prefer the
+ * densest frequency series in the window (daily → weekly → monthly).
+ */
+async function summarizeOpsCoverage(
+  label: string,
+  groupBy: (args: any) => Promise<
+    Array<{
+      frequency: string;
+      _count: { _all: number };
+      _min: { snapshotDate: Date | null };
+      _max: { snapshotDate: Date | null };
+    }>
+  >,
+  companyId: string,
+  startDate: Date,
+  endDate: Date
+): Promise<OpsCoverageSummary> {
+  try {
+    const groups = await groupBy({
+      by: ['frequency'],
+      where: {
+        companyId,
+        frequency: { in: ['daily', 'weekly', 'monthly'] },
+        snapshotDate: { gte: startDate, lte: endDate },
+      },
+      _count: { _all: true },
+      _min: { snapshotDate: true },
+      _max: { snapshotDate: true },
+    });
+    if (!groups.length) return { count: 0, start: null, end: null, frequency: null };
+
+    const preferredOrder = ['daily', 'weekly', 'monthly'];
+    const ranked = [...groups].sort((a, b) => {
+      const countDiff = (b._count?._all || 0) - (a._count?._all || 0);
+      if (countDiff !== 0) return countDiff;
+      return preferredOrder.indexOf(a.frequency) - preferredOrder.indexOf(b.frequency);
+    });
+    const best = ranked[0];
+    return {
+      count: best._count?._all || 0,
+      start: best._min?.snapshotDate || null,
+      end: best._max?.snapshotDate || null,
+      frequency: best.frequency || null,
+    };
+  } catch (error) {
+    console.warn(`Performance analytics: failed to summarize ${label} coverage`, error);
+    return { count: 0, start: null, end: null, frequency: null };
+  }
+}
+
 async function loadGoals(table: 'ExpenseGoal' | 'OperationalGoal', companyId: string) {
   try {
     return table === 'ExpenseGoal'
@@ -170,6 +230,12 @@ export async function GET(request: NextRequest) {
       customerSnapshots,
       productSnapshots,
       inventorySnapshots,
+      cashCoverage,
+      arCoverage,
+      apCoverage,
+      customerCoverage,
+      productCoverage,
+      inventoryCoverage,
     ] = await Promise.all([
       dfsMonthly
         ? Promise.resolve([])
@@ -181,10 +247,16 @@ export async function GET(request: NextRequest) {
               take: limit,
             })
           ),
+      // Sample rows for downstream consumers — include all snapshot frequencies
+      // (Infor CSI tenants primarily write daily).
       safeFindMany(
         'cash snapshots',
         prisma.cashSnapshot.findMany({
-          where: { companyId, frequency, snapshotDate: { gte: startDate, lte: endDate } },
+          where: {
+            companyId,
+            frequency: { in: ['daily', 'weekly', 'monthly'] },
+            snapshotDate: { gte: startDate, lte: endDate },
+          },
           orderBy: { snapshotDate: 'asc' },
           take: limit,
         })
@@ -192,7 +264,11 @@ export async function GET(request: NextRequest) {
       safeFindMany(
         'ar snapshots',
         prisma.aRAgingSnapshot.findMany({
-          where: { companyId, frequency, snapshotDate: { gte: startDate, lte: endDate } },
+          where: {
+            companyId,
+            frequency: { in: ['daily', 'weekly', 'monthly'] },
+            snapshotDate: { gte: startDate, lte: endDate },
+          },
           orderBy: { snapshotDate: 'asc' },
           take: limit,
         })
@@ -200,7 +276,11 @@ export async function GET(request: NextRequest) {
       safeFindMany(
         'ap snapshots',
         prisma.aPAgingSnapshot.findMany({
-          where: { companyId, frequency, snapshotDate: { gte: startDate, lte: endDate } },
+          where: {
+            companyId,
+            frequency: { in: ['daily', 'weekly', 'monthly'] },
+            snapshotDate: { gte: startDate, lte: endDate },
+          },
           orderBy: { snapshotDate: 'asc' },
           take: limit,
         })
@@ -208,7 +288,11 @@ export async function GET(request: NextRequest) {
       safeFindMany(
         'customer snapshots',
         prisma.customerSalesSnapshot.findMany({
-          where: { companyId, frequency, snapshotDate: { gte: startDate, lte: endDate } },
+          where: {
+            companyId,
+            frequency: { in: ['daily', 'weekly', 'monthly'] },
+            snapshotDate: { gte: startDate, lte: endDate },
+          },
           orderBy: { snapshotDate: 'asc' },
           take: limit,
         })
@@ -216,7 +300,11 @@ export async function GET(request: NextRequest) {
       safeFindMany(
         'product snapshots',
         prisma.productSalesSnapshot.findMany({
-          where: { companyId, frequency, snapshotDate: { gte: startDate, lte: endDate } },
+          where: {
+            companyId,
+            frequency: { in: ['daily', 'weekly', 'monthly'] },
+            snapshotDate: { gte: startDate, lte: endDate },
+          },
           orderBy: { snapshotDate: 'asc' },
           take: limit,
         })
@@ -224,10 +312,38 @@ export async function GET(request: NextRequest) {
       safeFindMany(
         'inventory snapshots',
         prisma.inventorySnapshot.findMany({
-          where: { companyId, frequency, snapshotDate: { gte: startDate, lte: endDate } },
+          where: {
+            companyId,
+            frequency: { in: ['daily', 'weekly', 'monthly'] },
+            snapshotDate: { gte: startDate, lte: endDate },
+          },
           orderBy: { snapshotDate: 'asc' },
           take: limit,
         })
+      ),
+      summarizeOpsCoverage('cash', (args) => prisma.cashSnapshot.groupBy(args as any), companyId, startDate, endDate),
+      summarizeOpsCoverage('ar', (args) => prisma.aRAgingSnapshot.groupBy(args as any), companyId, startDate, endDate),
+      summarizeOpsCoverage('ap', (args) => prisma.aPAgingSnapshot.groupBy(args as any), companyId, startDate, endDate),
+      summarizeOpsCoverage(
+        'customers',
+        (args) => prisma.customerSalesSnapshot.groupBy(args as any),
+        companyId,
+        startDate,
+        endDate
+      ),
+      summarizeOpsCoverage(
+        'products',
+        (args) => prisma.productSalesSnapshot.groupBy(args as any),
+        companyId,
+        startDate,
+        endDate
+      ),
+      summarizeOpsCoverage(
+        'inventory',
+        (args) => prisma.inventorySnapshot.groupBy(args as any),
+        companyId,
+        startDate,
+        endDate
       ),
     ]);
 
@@ -279,12 +395,12 @@ export async function GET(request: NextRequest) {
       },
       ranges: {
         financials: summarizeRange(monthlyFinancials as any),
-        cash: summarizeRange(cashSnapshots),
-        ar: summarizeRange(arSnapshots),
-        ap: summarizeRange(apSnapshots),
-        customers: summarizeRange(customerSnapshots),
-        products: summarizeRange(productSnapshots),
-        inventory: summarizeRange(inventorySnapshots),
+        cash: cashCoverage,
+        ar: arCoverage,
+        ap: apCoverage,
+        customers: customerCoverage,
+        products: productCoverage,
+        inventory: inventoryCoverage,
       },
       data: {
         monthlyFinancials,
