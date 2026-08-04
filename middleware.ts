@@ -173,6 +173,16 @@ export async function middleware(request: NextRequest) {
     !!cronSecret &&
     !!adminCronHeader &&
     adminCronHeader === cronSecret
+  // Post-sync Daily Alerts / Executive Briefing warmup authenticates with
+  // Bearer CRON_SECRET (see lib/pulse/exec-briefing-warmup.ts). Middleware must
+  // allow that call through so the route-level cron auth can run; otherwise
+  // production returns 401 and briefing caches are never written after sync.
+  const authHeader = String(request.headers.get('authorization') || '').trim()
+  const isTrustedPulseCronCall =
+    pathname.startsWith('/api/pulse/') &&
+    !!cronSecret &&
+    (authHeader === `Bearer ${cronSecret}` ||
+      (!!adminCronHeader && adminCronHeader === cronSecret))
   const isDevBambooHrPayloadProbe =
     process.env.NODE_ENV === 'development' &&
     (pathname === '/api/operational-system-integrations/bamboohr/payload-sample' ||
@@ -284,6 +294,7 @@ export async function middleware(request: NextRequest) {
     !isTrustedInternalSyncWorker &&
     !isTrustedQbdPostSyncWorker &&
     !isTrustedAdminCronCall &&
+    !isTrustedPulseCronCall &&
     !isDevBambooHrPayloadProbe &&
     !DISABLE_AUTH_SIGNIN
   ) {

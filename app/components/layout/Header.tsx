@@ -58,7 +58,7 @@ export default function Header({
     return allowedSections.includes(sectionId);
   };
 
-  // Items shown in the header "Reports" dropdown. Standard Reports and
+  // Items shown in the header "Reports" dropdown. Report Packages and
   // Valuation Reports are intentionally omitted here per product direction —
   // they remain reachable from the left sidebar but should not appear in the
   // header dropdown.

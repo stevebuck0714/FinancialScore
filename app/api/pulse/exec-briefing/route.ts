@@ -13,6 +13,7 @@ import {
 import { resolveCompanyIndustrySectorCategory } from '@/lib/industry-sector-resolver';
 
 export const dynamic = 'force-dynamic';
+export const maxDuration = 300;
 
 type BriefingSection = { title: string; bullets: string[] };
 type BriefingPeriod = 'daily' | 'monthly' | 'quarterly' | 'annual';

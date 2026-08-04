@@ -13,6 +13,7 @@ interface CashFlowTabProps {
   statementPeriod?: 'current-month' | 'current-quarter' | 'last-12-months' | 'ytd' | 'last-year' | 'last-3-years';
   prefetchedMonthlyData?: MonthlyDataRow[];
   embeddedInStatements?: boolean;
+  printOrientation?: 'portrait' | 'landscape';
 }
 
 export default function CashFlowTab({
@@ -22,13 +23,13 @@ export default function CashFlowTab({
   statementPeriod,
   prefetchedMonthlyData,
   embeddedInStatements = false,
+  printOrientation = 'portrait',
 }: CashFlowTabProps) {
   const { monthlyData, loading, error } = useMasterData(selectedCompanyId);
   const hasPrefetchedData = Array.isArray(prefetchedMonthlyData) && prefetchedMonthlyData.length > 0;
   const monthly = hasPrefetchedData ? prefetchedMonthlyData : (monthlyData || []);
   
   const [cashFlowDisplay, setCashFlowDisplay] = useState<'monthly' | 'quarterly' | 'annual'>(initialDisplay);
-  const [printOrientation] = useState<'portrait' | 'landscape'>('portrait');
 
   React.useEffect(() => {
     setCashFlowDisplay(initialDisplay);
@@ -312,7 +313,7 @@ export default function CashFlowTab({
       <style>{`
         @media print {
           @page {
-            ${embeddedInStatements ? '' : `size: ${printOrientation};`}
+            ${embeddedInStatements ? '' : `size: letter ${printOrientation};`}
             margin: 0.3in;
           }
           

@@ -80,6 +80,7 @@ export async function warmDailyExecutiveBriefingCache(
       const response = await fetch(url, {
         headers: {
           authorization: `Bearer ${cronSecret}`,
+          'x-cron-secret': cronSecret,
           ...(vercelBypass ? { 'x-vercel-protection-bypass': vercelBypass } : {}),
         },
         cache: 'no-store',

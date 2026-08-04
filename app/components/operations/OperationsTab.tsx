@@ -50,6 +50,7 @@ interface OperationsTabProps {
   initialTab?: string;
   initialForecastBasisTab?: 'cash-basis' | 'accrual-basis';
   initialForecastSubTab?: ForecastSubTab;
+  initialOverviewSubTab?: string;
   initialPrintSectionKey?: string;
 }
 
@@ -703,6 +704,7 @@ export default function OperationsTab({
   initialTab,
   initialForecastBasisTab,
   initialForecastSubTab,
+  initialOverviewSubTab,
   initialPrintSectionKey
 }: OperationsTabProps) {
   const isOverviewOnly = viewMode === 'overview-only';
@@ -1296,22 +1298,20 @@ export default function OperationsTab({
   }, [isRealEstateSector, initialForecastSubTab]);
 
   useEffect(() => {
+    if (!initialOverviewSubTab) return;
+    setActiveOverviewSubTab(initialOverviewSubTab as typeof activeOverviewSubTab);
+  }, [initialOverviewSubTab]);
+
+  useEffect(() => {
     if (!initialForecastSubTab) return;
+    // Forecast tab UI always renders from activeAccrualBasisForecastTab
+    // (13 Week Cash Forecast / Income Statement / Graphs). Always drive that
+    // state for print packages, even when the package label says "Cash Basis".
+    setActiveAccrualBasisForecastTab(initialForecastSubTab);
     if (initialForecastBasisTab === 'cash-basis') {
       setActiveCashBasisForecastTab(initialForecastSubTab);
-      return;
     }
-    if (initialForecastBasisTab === 'accrual-basis') {
-      setActiveAccrualBasisForecastTab(initialForecastSubTab);
-      return;
-    }
-    // Fallback when basis isn't explicitly provided: apply to current basis tab.
-    if (activeForecastBasisTab === 'cash-basis') {
-      setActiveCashBasisForecastTab(initialForecastSubTab);
-    } else {
-      setActiveAccrualBasisForecastTab(initialForecastSubTab);
-    }
-  }, [initialForecastSubTab, initialForecastBasisTab, activeForecastBasisTab]);
+  }, [initialForecastSubTab, initialForecastBasisTab]);
 
   useEffect(() => {
     if (activeTab === 'cash') {
@@ -3404,9 +3404,12 @@ export default function OperationsTab({
   // Customer Analytics Tab
   const renderCustomers = () => {
     if (loading) {
-      return <div style={{ padding: '40px', textAlign: 'center', color: '#64748b' }}>Loading customer data...</div>;
+      return <div data-print-ready="loading" style={{ padding: '40px', textAlign: 'center', color: '#64748b' }}>Loading customer data...</div>;
     }
 
+    if (!customerData) {
+      return <div data-print-ready="loading" style={{ padding: '40px', textAlign: 'center', color: '#64748b' }}>Loading customer data...</div>;
+    }
     const isSalesAnalyticsTab = mapModuleToDataType(activeTab) === 'sales';
     const { records = [], summary = {} } = customerData ?? {};
     const platosSalesPage = summary?.platosSalesPage || null;
@@ -5790,11 +5793,9 @@ export default function OperationsTab({
 
   // AR Aging Tab
   const renderARaging = () => {
-    if (loading) {
-      return <div style={{ padding: '40px', textAlign: 'center', color: '#64748b' }}>Loading AR data...</div>;
+    if (loading || !arData) {
+      return <div data-print-ready="loading" style={{ padding: '40px', textAlign: 'center', color: '#64748b' }}>Loading AR data...</div>;
     }
-
-    if (!arData) return null;
 
     const { records, summary } = arData;
     const arCurrentPct = Number(summary?.currentPct ?? 0);
@@ -6982,11 +6983,9 @@ export default function OperationsTab({
 
   // AP Aging Tab
   const renderAPaging = () => {
-    if (loading) {
-      return <div style={{ padding: '40px', textAlign: 'center', color: '#64748b' }}>Loading AP data...</div>;
+    if (loading || !apData) {
+      return <div data-print-ready="loading" style={{ padding: '40px', textAlign: 'center', color: '#64748b' }}>Loading AP data...</div>;
     }
-
-    if (!apData) return null;
 
     const { records, summary } = apData;
     const apCurrentPct = Number(summary?.currentPct ?? 0);
@@ -7771,11 +7770,9 @@ export default function OperationsTab({
 
   // Product Sales Tab  
   const renderProducts = () => {
-    if (loading && !productData) {
-      return <div style={{ padding: '40px', textAlign: 'center', color: '#64748b' }}>Loading product data...</div>;
+    if (loading || !productData) {
+      return <div data-print-ready="loading" style={{ padding: '40px', textAlign: 'center', color: '#64748b' }}>Loading product data...</div>;
     }
-
-    if (!productData) return null;
 
     const { records, summary } = productData;
     const isRetailProductSector = industrySectorCategory === '45';
@@ -11519,11 +11516,9 @@ export default function OperationsTab({
 
   // Inventory Tab
   const renderInventory = () => {
-    if (loading) {
-      return <div style={{ padding: '40px', textAlign: 'center', color: '#64748b' }}>Loading inventory data...</div>;
+    if (loading || !inventoryData) {
+      return <div data-print-ready="loading" style={{ padding: '40px', textAlign: 'center', color: '#64748b' }}>Loading inventory data...</div>;
     }
-
-    if (!inventoryData) return null;
 
     const { records, summary, trend, departmentTrend, agingReport } = inventoryData;
 
@@ -25848,15 +25843,18 @@ Strategies to Improve the CCC
       );
     }
     const dataType = mapModuleToDataType(moduleKey);
-    if (dataType === 'sales') return renderCustomers();
-    if (dataType === 'customers') return renderCustomers();
-    if (dataType === 'customers-sites') return renderCustomersSites();
-    if (dataType === 'ar-aging') return renderARaging();
-    if (dataType === 'ap-aging') return renderAPaging();
-    if (dataType === 'products') return renderProducts();
+    const withPrintReady = (id: string, node: React.ReactNode) => (
+      <div data-print-ready={id}>{node}</div>
+    );
+    if (dataType === 'sales') return withPrintReady('customers', renderCustomers());
+    if (dataType === 'customers') return withPrintReady('customers', renderCustomers());
+    if (dataType === 'customers-sites') return withPrintReady('customers-sites', renderCustomersSites());
+    if (dataType === 'ar-aging') return withPrintReady('ar-aging', renderARaging());
+    if (dataType === 'ap-aging') return withPrintReady('ap-aging', renderAPaging());
+    if (dataType === 'products') return withPrintReady('products', renderProducts());
     if (dataType === 'labor-scheduling') return renderLaborScheduling();
     if (dataType === 'hiring') return renderHiring();
-    if (dataType === 'inventory') return renderInventory();
+    if (dataType === 'inventory') return withPrintReady('inventory', renderInventory());
     if (dataType === 'cash') return renderCash();
     if (dataType === 'cap-table') {
       return (
@@ -26492,6 +26490,7 @@ Strategies to Improve the CCC
         activeModules={enabledDashboardModules}
         moduleTitlesByType={moduleTitlesByType}
         operationalHubSections={operationalHubSections}
+        printSectionKey={initialPrintSectionKey || null}
       />
     );
 

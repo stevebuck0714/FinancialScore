@@ -24,6 +24,8 @@ interface OpsDashboardProps {
   activeModules?: string[];
   moduleTitlesByType?: Partial<Record<OpsDataType, string>>;
   operationalHubSections?: Record<string, any>;
+  /** When set (print package), only render this Overview section/widget. */
+  printSectionKey?: string | null;
 }
 
 const COLORS = ['#0f2b4b', '#1f4e79', '#2e6f9e', '#3e8db5', '#5aa5a7', '#7d8f6a', '#8b6a3d', '#7a4e8a'];
@@ -38,6 +40,7 @@ export default function OpsDashboard({
   activeModules,
   moduleTitlesByType,
   operationalHubSections,
+  printSectionKey = null,
 }: OpsDashboardProps) {
   // Individual frequency state for each widget
   const [customerFreq, setCustomerFreq] = useState<'daily' | 'weekly' | 'monthly'>('daily');
@@ -626,7 +629,10 @@ export default function OpsDashboard({
 
   const isOverviewReportEnabled = (sectionKey: string): boolean => {
     const value = operationalHubSections?.[sectionKey];
-    return value === undefined ? true : value !== false;
+    const enabled = value === undefined ? true : value !== false;
+    if (!enabled) return false;
+    if (printSectionKey) return printSectionKey === sectionKey;
+    return true;
   };
 
   const configuredModules = (activeModules || [])
@@ -678,11 +684,21 @@ export default function OpsDashboard({
   const showCustomerWidget = customerLabels.length > 0 && isOverviewReportEnabled('overviewStdRevenue');
   const showArWidget = arLabels.length > 0 && isOverviewReportEnabled('overviewStdArAging');
   const showApWidget = apLabels.length > 0 && isOverviewReportEnabled('overviewStdApAging');
-  const showProductWidget = productLabels.length > 0;
+  const showProductWidget = productLabels.length > 0 && !printSectionKey;
   const showInventoryWidget = inventoryLabels.length > 0 && isOverviewReportEnabled('overviewStdInventory');
   const showCashWidget = cashLabels.length > 0 && isOverviewReportEnabled('overviewStdCashTrend');
   const showEbitdaWidget = isOverviewReportEnabled('overviewStdEbitda');
   const isRealEstateSector = String(industrySectorCategory || '').trim() === '53';
+  const showStandardDashboardGrid =
+    !printSectionKey ||
+    [
+      'overviewStdRevenue',
+      'overviewStdArAging',
+      'overviewStdApAging',
+      'overviewStdCashTrend',
+      'overviewStdInventory',
+      'overviewStdEbitda',
+    ].includes(printSectionKey);
 
   const firmDivisions = [
     { key: 'residential-real-estate', label: 'Residential Real Estate', revenue: 18400000, ebitda: 3220000, offices: 56, producers: 212, pipeline: 42800000, marginPct: 17.5 },
@@ -2204,8 +2220,8 @@ export default function OpsDashboard({
   return (
     <div style={{ padding: '24px', background: '#f8fafc', minHeight: '100vh' }}>
       <div style={{ maxWidth: '1600px', margin: '0 auto' }}>
-        {!isRealEstateSector && (
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
+        {!isRealEstateSector && !printSectionKey && (
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }} className="ops-print-hide">
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
             <span style={{ fontSize: '13px', color: '#64748b' }}>Drag cards to reorder</span>
             {saveMessage && (
@@ -2241,10 +2257,10 @@ export default function OpsDashboard({
         </div>
         )}
 
-        {renderRealEstateExecutiveReport()}
+        {(!printSectionKey || printSectionKey === 'realEstateExecutiveReport') && renderRealEstateExecutiveReport()}
 
         {/* Dashboard Grid */}
-        {!(isRealEstateSector && ['regional', 'division', 'office'].includes(activeRealEstateExecutiveTab)) && (
+        {showStandardDashboardGrid && !(isRealEstateSector && ['regional', 'division', 'office'].includes(activeRealEstateExecutiveTab)) && (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(500px, 1fr))', gap: '24px' }}>
           
           {/* Customer Sales Widget */}
