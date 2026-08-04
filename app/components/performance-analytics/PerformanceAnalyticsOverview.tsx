@@ -41,6 +41,38 @@ type ContextResponse = {
  }
  
 const OPERATIONAL_FOCUS_KEY = '__focusWatchlist';
+const OPERATIONAL_FOCUS_AREAS = [
+  {
+    name: 'Liquidity',
+    description: 'Near-term cash availability and ability to meet obligations.',
+    examples: 'Examples: cash runway, minimum cash, debt service, cash conversion.',
+    usedFor: 'The agents use these terms to prioritize findings about cash pressure, funding needs, and near-term payment capacity.',
+  },
+  {
+    name: 'Working Capital',
+    description: 'How receivables, payables, and inventory move cash through the business.',
+    examples: 'Examples: DSO, collections, overdue AR, vendor terms, inventory turns.',
+    usedFor: 'The agents use these terms to prioritize findings about collections, payment timing, inventory investment, and cash tied up in operations.',
+  },
+  {
+    name: 'Demand',
+    description: 'Sales activity and customer demand that drive future revenue.',
+    examples: 'Examples: bookings, backlog, pipeline, churn, customer concentration.',
+    usedFor: 'The agents use these terms to prioritize findings about revenue momentum, customer activity, demand risk, and growth opportunities.',
+  },
+  {
+    name: 'Fulfillment',
+    description: 'The ability to deliver products or services reliably and profitably.',
+    examples: 'Examples: fill rate, stockouts, on-time delivery, capacity, service levels.',
+    usedFor: 'The agents use these terms to prioritize findings about delivery constraints, operational bottlenecks, inventory availability, and execution risk.',
+  },
+  {
+    name: 'Unit Economics',
+    description: 'Profitability and cost performance at the customer, product, order, or service level.',
+    examples: 'Examples: gross margin, contribution margin, price/mix, cost per unit, CAC.',
+    usedFor: 'The agents use these terms to prioritize findings about pricing, margins, cost drivers, and whether growth is creating value.',
+  },
+];
 
 function sanitizeFocusValues(raw: any): Record<string, string> {
   if (!raw || typeof raw !== 'object') return {};
@@ -68,6 +100,7 @@ function sanitizeFocusValues(raw: any): Record<string, string> {
   const [monthsWindow, setMonthsWindow] = useState(24);
   const [operationalFocusValues, setOperationalFocusValues] = useState<Record<string, string>>({});
   const [focusLoaded, setFocusLoaded] = useState(false);
+  const [expandedFocusArea, setExpandedFocusArea] = useState<string | null>(null);
   const lastSavedFocusJsonRef = React.useRef<string>('');
 
   const persistOperationalFocusValues = async () => {
@@ -213,7 +246,7 @@ function sanitizeFocusValues(raw: any): Record<string, string> {
      <div style={{ maxWidth: '1400px', margin: '0 auto', padding: '32px' }}>
       <h1 style={{ fontSize: '32px', fontWeight: '700', color: '#1e293b', margin: 0 }}>Operational Data</h1>
       <p style={{ marginTop: '12px', fontSize: '15px', color: '#475569' }}>
-        Benchmarks and analysis use Industry Group data. Operational profile is shown separately.
+        Use this page to review the data available for your company, tell the Performance Agents what to watch, and run an analysis that highlights the most important financial and operational issues.
       </p>
 
       <div style={{ marginTop: '16px', display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
@@ -282,22 +315,43 @@ function sanitizeFocusValues(raw: any): Record<string, string> {
  
        <div style={{ marginTop: '32px' }}>
          <h2 style={{ fontSize: '20px', fontWeight: '700', color: '#1e293b', marginBottom: '12px' }}>Operational Focus Areas</h2>
-         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '12px' }}>
-           {[
-            'Liquidity',
-            'Working Capital',
-            'Demand',
-            'Fulfillment',
-            'Unit Economics',
-           ].map((group) => (
-            <div key={group} style={{ padding: '12px', borderRadius: '10px', border: '1px solid #e2e8f0', background: 'white' }}>
+        <p style={{ margin: '0 0 12px', fontSize: '13px', color: '#475569' }}>
+          Add terms you want the Performance Agents to watch. Matching findings are marked as priority focus items; blank fields leave the normal analysis unchanged.
+        </p>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '12px' }}>
+          {OPERATIONAL_FOCUS_AREAS.map((area) => {
+            const group = area.name;
+            const isExpanded = expandedFocusArea === group;
+            return (
+           <div key={group} style={{ padding: '12px', borderRadius: '10px', border: '1px solid #e2e8f0', background: 'white' }}>
                <div style={{ fontSize: '12px', fontWeight: '700', color: '#64748b', textTransform: 'uppercase', marginBottom: '8px' }}>
                 {group}
                </div>
+              <div style={{ fontSize: '12px', lineHeight: 1.4, color: '#475569', marginBottom: '6px' }}>
+                {area.description}
+              </div>
+              <div style={{ fontSize: '11px', lineHeight: 1.4, color: '#64748b', marginBottom: '8px' }}>
+                {area.examples}
+              </div>
+              <button
+                type="button"
+                onClick={() => setExpandedFocusArea(isExpanded ? null : group)}
+                aria-expanded={isExpanded}
+                style={{ padding: 0, border: 0, background: 'none', color: '#1d4ed8', fontSize: '12px', textDecoration: 'underline', cursor: 'pointer', marginBottom: isExpanded ? '8px' : '10px' }}
+              >
+                {isExpanded ? 'Hide what this is used for' : 'What is this used for?'}
+              </button>
+              {isExpanded && (
+                <div style={{ padding: '8px', marginBottom: '8px', borderRadius: '6px', background: '#eff6ff', color: '#1e3a8a', fontSize: '12px', lineHeight: 1.4 }}>
+                  {area.usedFor}
+                </div>
+              )}
               {[1, 2].map((row) => (
                 <div key={row} style={{ marginBottom: row === 1 ? '6px' : 0 }}>
                   <input
                     type="text"
+                    aria-label={`${group} focus term ${row}`}
+                    placeholder={row === 1 ? 'Enter a focus term' : 'Optional second term'}
                     value={operationalFocusValues[`${group}_row${row}`] || ''}
                     onChange={(e) => setOperationalFocusValues(prev => ({ ...prev, [`${group}_row${row}`]: e.target.value }))}
                     style={{ width: '100%', padding: '6px 8px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '13px', boxSizing: 'border-box', backgroundColor: '#f8fafc' }}
@@ -305,7 +359,8 @@ function sanitizeFocusValues(raw: any): Record<string, string> {
                 </div>
               ))}
              </div>
-           ))}
+            );
+          })}
          </div>
        </div>
 

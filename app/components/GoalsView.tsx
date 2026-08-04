@@ -2,7 +2,7 @@
 'use client';
 
 import React from 'react';
-import { useMasterData, masterDataStore } from '@/lib/master-data-store';
+import { useMasterData } from '@/lib/master-data-store';
 import toast from 'react-hot-toast';
 
 interface GoalsViewProps {
@@ -27,22 +27,23 @@ export default function GoalsView({
   const [activeTab, setActiveTab] = React.useState<'expense' | 'operational'>('expense');
   const [isSaving, setIsSaving] = React.useState(false);
   const [operationalGoals, setOperationalGoals] = React.useState<{ [key: string]: number }>({});
-  const [operationalData, setOperationalData] = React.useState<any>(null);
+  const [operationalData, setOperationalData] = React.useState<any>({
+    arAging: [],
+    apAging: [],
+    cash: [],
+    inventory: [],
+  });
   const [loadingOperational, setLoadingOperational] = React.useState(false);
+  const [operationalLoadError, setOperationalLoadError] = React.useState<string | null>(null);
   
   // Use the master data store hook
   const { data: masterData, loading, error } = useMasterData(selectedCompanyId);
 
-  // Clear cache on component mount to ensure updated filtering
-  React.useEffect(() => {
-    if (selectedCompanyId) {
-      masterDataStore.clearCompanyCache(selectedCompanyId);
-    }
-  }, [selectedCompanyId]);
-
   // Load operational goals when component mounts or company changes
   React.useEffect(() => {
     if (selectedCompanyId) {
+      setOperationalData({ arAging: [], apAging: [], cash: [], inventory: [] });
+      setOperationalLoadError(null);
       loadOperationalGoals();
     }
   }, [selectedCompanyId]);
@@ -85,6 +86,7 @@ export default function GoalsView({
 
   const loadOperationalData = async () => {
     setLoadingOperational(true);
+    setOperationalLoadError(null);
     try {
       // Get last 6 months of data
       const endDate = new Date();
@@ -98,23 +100,49 @@ export default function GoalsView({
         endDate: endDate.toISOString().split('T')[0],
       });
 
-      // Fetch all operational data types
-      const [arData, apData, cashData, inventoryData] = await Promise.all([
-        fetch(`/api/operational-data?${params}&type=ar-aging`).then(r => r.json()),
-        fetch(`/api/operational-data?${params}&type=ap-aging`).then(r => r.json()),
-        fetch(`/api/operational-data?${params}&type=cash`).then(r => r.json()),
-        fetch(`/api/operational-data?${params}&type=inventory`).then(r => r.json()),
+      const fetchOperationalType = async (type: string) => {
+        const controller = new AbortController();
+        const timeoutId = window.setTimeout(() => controller.abort(), 15000);
+        try {
+          const response = await fetch(`/api/operational-data?${params}&type=${type}`, {
+            signal: controller.signal,
+            cache: 'no-store',
+          });
+          if (!response.ok) throw new Error(`${type} request failed (${response.status})`);
+          return await response.json();
+        } finally {
+          window.clearTimeout(timeoutId);
+        }
+      };
+
+      // Metrics are optional context for the goals form. Do not let one slow
+      // production endpoint block the other metrics or the goals themselves.
+      const results = await Promise.allSettled([
+        fetchOperationalType('ar-aging'),
+        fetchOperationalType('ap-aging'),
+        fetchOperationalType('cash'),
+        fetchOperationalType('inventory'),
       ]);
+      const [arResult, apResult, cashResult, inventoryResult] = results;
+      const failedCount = results.filter(result => result.status === 'rejected').length;
 
       setOperationalData({
-        arAging: arData.records || [],
-        apAging: apData.records || [],
-        cash: cashData.records || [],
-        inventory: inventoryData.records || [],
+        arAging: arResult.status === 'fulfilled' ? arResult.value.records || [] : [],
+        apAging: apResult.status === 'fulfilled' ? apResult.value.records || [] : [],
+        cash: cashResult.status === 'fulfilled' ? cashResult.value.records || [] : [],
+        inventory: inventoryResult.status === 'fulfilled' ? inventoryResult.value.records || [] : [],
       });
+      if (failedCount > 0) {
+        setOperationalLoadError(
+          failedCount === results.length
+            ? 'Operational metrics could not be loaded. Your goals are still available.'
+            : `${failedCount} operational metric${failedCount === 1 ? '' : 's'} could not be loaded.`
+        );
+      }
     } catch (error) {
       console.error('Error loading operational data:', error);
-      toast.error('Failed to load operational data');
+      setOperationalData({ arAging: [], apAging: [], cash: [], inventory: [] });
+      setOperationalLoadError('Operational metrics could not be loaded. Your goals are still available.');
     } finally {
       setLoadingOperational(false);
     }
@@ -554,18 +582,10 @@ export default function GoalsView({
       {activeTab === 'operational' && (() => {
   // Render operational goals
 
-  if (loadingOperational) {
-    return (
-      <div style={{ background: 'white', borderRadius: '12px', padding: '48px', textAlign: 'center', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
-        <div style={{ fontSize: '16px', color: '#64748b' }}>Loading operational data...</div>
-      </div>
-    );
-  }
-
   if (!operationalData) {
     return (
-      <div style={{ background: 'white', borderRadius: '12px', padding: '48px', textAlign: 'center', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
-        <div style={{ fontSize: '16px', color: '#64748b' }}>No operational data available</div>
+      <div style={{ background: 'white', borderRadius: '12px', padding: '24px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
+        <div style={{ fontSize: '14px', color: '#64748b' }}>Preparing operational goals…</div>
       </div>
     );
   }
@@ -638,9 +658,28 @@ export default function GoalsView({
   const inventoryProcessed = processMetrics(inventoryMetrics, inventoryRecords as any[]);
 
   const months = operationalMonthLabels;
+  const operationalStatusMessage = loadingOperational
+    ? 'Loading optional operational metrics… Your goals remain available.'
+    : operationalLoadError;
 
   return (
-    <div style={{ background: 'white', borderRadius: '12px', padding: '24px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', overflowX: 'auto' }}>
+    <div>
+      {operationalStatusMessage && (
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', marginBottom: '16px', padding: '10px 12px', borderRadius: '8px', background: operationalLoadError ? '#fff7ed' : '#eff6ff', color: operationalLoadError ? '#9a3412' : '#1e40af', fontSize: '13px' }}>
+          <span>{operationalStatusMessage}</span>
+          {operationalLoadError && (
+            <button
+              type="button"
+              onClick={loadOperationalData}
+              disabled={loadingOperational}
+              style={{ border: '1px solid currentColor', borderRadius: '6px', padding: '5px 10px', background: 'white', color: 'inherit', cursor: loadingOperational ? 'not-allowed' : 'pointer', whiteSpace: 'nowrap' }}
+            >
+              Retry
+            </button>
+          )}
+        </div>
+      )}
+      <div style={{ background: 'white', borderRadius: '12px', padding: '24px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', overflowX: 'auto' }}>
       <table className="goals-table" style={{ width: '100%', borderCollapse: 'collapse' }}>
         <thead>
           <tr style={{ borderBottom: '2px solid #e2e8f0' }}>
@@ -1084,6 +1123,7 @@ export default function GoalsView({
         >
           {isSaving ? 'Saving...' : 'Save Goals'}
         </button>
+      </div>
       </div>
     </div>
   );
