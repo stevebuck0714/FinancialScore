@@ -19803,20 +19803,6 @@ function FinancialScorePage() {
         />
       )}
 
-      {/* Trend Analysis View */}
-      {currentView === 'trend-analysis' && selectedCompanyId && monthly.length > 0 && (
-        <TrendAnalysisView
-          selectedCompanyId={selectedCompanyId}
-          companyName={companyName}
-          monthly={monthly}
-          expenseGoals={expenseGoals}
-          selectedExpenseItems={selectedExpenseItems}
-          setSelectedExpenseItems={setSelectedExpenseItems}
-          selectedItemTrends={selectedTrendItems}
-          setSelectedItemTrends={setSelectedTrendItems}
-        />
-      )}
-
       {/* Legacy Introduction View - DISABLED (commented out) */}
       {/* {currentView === 'fs-intro' && (
         <div style={{ maxWidth: '1200px', margin: '0 auto', padding: '32px' }}>
@@ -20047,6 +20033,20 @@ function FinancialScorePage() {
           worstCaseRevMultiplier={worstCaseRevMultiplier}
           worstCaseExpMultiplier={worstCaseExpMultiplier}
           onExportToWord={handleExportMdaToWord}
+        />
+      )}
+
+      {/* Trend Analysis View — must render after Financial Reporting submenu */}
+      {currentView === 'trend-analysis' && selectedCompanyId && monthly.length > 0 && (
+        <TrendAnalysisView
+          selectedCompanyId={selectedCompanyId}
+          companyName={companyName}
+          monthly={monthly}
+          expenseGoals={expenseGoals}
+          selectedExpenseItems={selectedExpenseItems}
+          setSelectedExpenseItems={setSelectedExpenseItems}
+          selectedItemTrends={selectedTrendItems}
+          setSelectedItemTrends={setSelectedTrendItems}
         />
       )}
 
