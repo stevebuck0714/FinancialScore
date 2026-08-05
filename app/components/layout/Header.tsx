@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 
 interface User {
   name: string | null;
@@ -18,7 +18,6 @@ interface HeaderProps {
   /** When set, site admins in company admin workspace get full nav chrome (sidebar/header parity). */
   selectedCompanyId?: string;
   dataRoomEnabledByAdmin?: boolean;
-  customReportsEnabledByAdmin?: boolean;
   hasSiteAdminOverride?: boolean;
   // currentView is a large union in app/page.tsx; keep this flexible for reuse.
   setCurrentView: (view: any) => void;
@@ -33,13 +32,12 @@ export default function Header({
   previewAdminName,
   selectedCompanyId = '',
   dataRoomEnabledByAdmin = false,
-  customReportsEnabledByAdmin = false,
   hasSiteAdminOverride = false,
   setCurrentView,
   handleLogout,
   handleNavigation
 }: HeaderProps) {
-  const [showFinancialReportsMenu, setShowFinancialReportsMenu] = useState(false);
+  const [currentDate, setCurrentDate] = useState('');
   const isCompanyUser = currentUser?.role === 'user' && currentUser?.userType === 'company';
   const isCompanyAdmin = isCompanyUser && currentUser?.companyRole === 'admin';
   const displayedUserName =
@@ -57,28 +55,28 @@ export default function Header({
     if (!allowedSections) return true;
     return allowedSections.includes(sectionId);
   };
+  const isFinancialReportsView = [
+    'dashboard',
+    'kpis',
+    'mda',
+    'trend-analysis',
+    'goals',
+    'projections',
+    'cash-flow',
+    'working-capital',
+    'financial-statements',
+  ].includes(currentView);
 
-  // Items shown in the header "Reports" dropdown. Report Packages and
-  // Valuation Reports are intentionally omitted here per product direction —
-  // they remain reachable from the left sidebar but should not appear in the
-  // header dropdown.
-  const financialReportsViews = [
-    { id: 'dashboard', label: "Financial KPI's", section: 'financial-reports' },
-    { id: 'kpis', label: 'Key Ratios', section: 'financial-reports' },
-    { id: 'mda', label: 'MD&A', section: 'financial-reports' },
-    { id: 'trend-analysis', label: 'Performance Trends', section: 'financial-reports' },
-    { id: 'goals', label: 'Targets and Goals', section: 'financial-reports' },
-    { id: 'projections', label: 'Projections', section: 'financial-reports' },
-    { id: 'cash-flow', label: 'Cash Flow', section: 'financial-reports' },
-    { id: 'working-capital', label: 'Working Capital', section: 'financial-reports' },
-    { id: 'financial-statements', label: 'Financial Statements', section: 'financial-reports' },
-  ];
-  // Views that should still light up the header "Reports" tab when active,
-  // even if they don't appear in the dropdown (sidebar-only entries).
-  const sidebarOnlyReportViews = ['custom-print', 'valuation-reports'];
-  const isFinancialReportsView =
-    financialReportsViews.some((item) => item.id === currentView) ||
-    sidebarOnlyReportViews.includes(currentView);
+  useEffect(() => {
+    setCurrentDate(
+      new Intl.DateTimeFormat('en-US', {
+        weekday: 'long',
+        month: 'long',
+        day: 'numeric',
+        year: 'numeric',
+      }).format(new Date())
+    );
+  }, []);
 
   if (!currentUser) return null;
 
@@ -197,168 +195,35 @@ export default function Header({
         </div>
         <div style={{ width: '28px', minWidth: '28px', flexShrink: 0 }} />
         <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minWidth: 0 }}>
-          <nav style={{ display: 'flex', gap: '24px', alignItems: 'center', flexWrap: 'nowrap' }}>
+          <nav data-financial-reports-view={isFinancialReportsView ? 'true' : 'false'} style={{ display: 'flex', gap: '24px', alignItems: 'center', flexWrap: 'nowrap' }}>
             <div style={{ display: 'flex', gap: '24px', alignItems: 'center' }}>
-              <button
-                onClick={() => handleNavigation('daily-alerts')}
-                style={{
-                  background: currentView === 'daily-alerts' ? '#eef2ff' : 'none',
-                  border: 'none',
-                  fontSize: '16px',
-                  fontWeight: '600',
-                  color: '#000',
-                  cursor: 'pointer',
-                  padding: '8px 12px',
-                  borderRadius: '6px',
-                  borderBottom: currentView === 'daily-alerts' ? '3px solid #000' : '3px solid transparent',
-                  lineHeight: '1.1',
-                  textAlign: 'center'
-                }}
-              >
-                DAILY ALERTS
-              </button>
-              <button
-                onClick={() => handleNavigation('operations')}
-                style={{
-                  background: currentView === 'operations' ? '#eef2ff' : 'none',
-                  border: 'none',
-                  fontSize: '16px',
-                  fontWeight: '600',
-                  color: '#000',
-                  cursor: 'pointer',
-                  padding: '8px 12px',
-                  borderRadius: '6px',
-                  borderBottom: currentView === 'operations' ? '3px solid #000' : '3px solid transparent',
-                  lineHeight: '1.1',
-                  textAlign: 'center'
-                }}
-              >
-                OPERATIONAL PERFORMANCE
-              </button>
             </div>
             <div style={{ display: 'flex', gap: '24px', alignItems: 'center' }}>
-            <div style={{ position: 'relative' }}>
-              <button
-                onClick={() => setShowFinancialReportsMenu((prev) => !prev)}
-                style={{
-                  background: isFinancialReportsView ? '#eef2ff' : 'none',
-                  border: 'none',
-                  fontSize: '16px',
-                  fontWeight: '600',
-                  color: '#000',
-                  cursor: 'pointer',
-                  padding: '8px 12px',
-                  paddingRight: '26px',
-                  borderRadius: '6px',
-                  borderBottom: isFinancialReportsView ? '3px solid #000' : '3px solid transparent',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '6px',
-                  whiteSpace: 'nowrap'
-                }}
-                aria-haspopup="menu"
-                aria-expanded={showFinancialReportsMenu}
-              >
-                <span>FINANCIAL REPORTING</span>
-                <span style={{ fontSize: '12px' }}>▾</span>
-              </button>
-              {showFinancialReportsMenu && (
-                <div
-                  style={{
-                    position: 'absolute',
-                    top: 'calc(100% + 6px)',
-                    left: 0,
-                    background: 'white',
-                    border: '1px solid #e2e8f0',
-                    borderRadius: '8px',
-                    boxShadow: '0 4px 12px rgba(0,0,0,0.08)',
-                    padding: '6px',
-                    minWidth: '200px',
-                    zIndex: 1100
-                  }}
-                  onMouseLeave={() => setShowFinancialReportsMenu(false)}
-                >
-                  {financialReportsViews.map((item) => (
-                    <button
-                      key={item.id}
-                      onClick={() => {
-                        if (!canAccess(item.section)) return;
-                        handleNavigation(item.id);
-                        setShowFinancialReportsMenu(false);
-                      }}
-                      title={!canAccess(item.section) ? 'Access restricted' : undefined}
-                      style={{
-                        width: '100%',
-                        textAlign: 'left',
-                        background: 'transparent',
-                        border: 'none',
-                        fontSize: '14px',
-                        fontWeight: '600',
-                        color: '#000',
-                        padding: '8px 10px',
-                        borderRadius: '6px',
-                        cursor: !canAccess(item.section) ? 'not-allowed' : 'pointer',
-                        opacity: !canAccess(item.section) ? 0.4 : 1
-                      }}
-                      onMouseEnter={(e) => {
-                        if (!canAccess(item.section)) return;
-                        e.currentTarget.style.background = '#f1f5f9';
-                      }}
-                      onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
-                    >
-                      {item.label}
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-            {dataRoomEnabledByAdmin && (
-              <button
-                onClick={() => canAccess('dataroom') && handleNavigation('dataroom')}
-                title={!canAccess('dataroom') ? 'Access restricted' : undefined}
-                style={{
-                  background: currentView === 'dataroom' ? '#eef2ff' : 'none',
-                  border: 'none',
-                  fontSize: '16px',
-                  fontWeight: '600',
-                  color: '#000',
-                  cursor: canAccess('dataroom') ? 'pointer' : 'not-allowed',
-                  padding: '8px 12px',
-                  borderRadius: '6px',
-                  borderBottom: currentView === 'dataroom' ? '3px solid #000' : '3px solid transparent',
-                  whiteSpace: 'nowrap',
-                  opacity: canAccess('dataroom') ? 1 : 0.4
-                }}
-              >
-                DATA ROOM
-              </button>
-            )}
-            {customReportsEnabledByAdmin && (
-              <button
-                onClick={() => canAccess('custom-reports') && handleNavigation('custom-reports')}
-                title={!canAccess('custom-reports') ? 'Access restricted' : undefined}
-                style={{
-                  background: currentView === 'custom-reports' ? '#eef2ff' : 'none',
-                  border: 'none',
-                  fontSize: '16px',
-                  fontWeight: '600',
-                  color: '#000',
-                  cursor: canAccess('custom-reports') ? 'pointer' : 'not-allowed',
-                  padding: '8px 12px',
-                  borderRadius: '6px',
-                  borderBottom: currentView === 'custom-reports' ? '3px solid #000' : '3px solid transparent',
-                  whiteSpace: 'nowrap',
-                  opacity: canAccess('custom-reports') ? 1 : 0.4
-                }}
-              >
-                CUSTOM REPORTS
-              </button>
-            )}
             </div>
           </nav>
         </div>
         </div>
-        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '8px', flexShrink: 0 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '16px', flexShrink: 0 }}>
+          <span style={{ color: '#475569', fontSize: '14px', fontWeight: '600', whiteSpace: 'nowrap' }}>
+            {currentDate}
+          </span>
+          <a
+            href="/support"
+            target="_blank"
+            rel="noopener noreferrer"
+            style={{
+              color: '#1F70C1',
+              fontSize: '14px',
+              fontWeight: '700',
+              textDecoration: 'none',
+              padding: '8px 10px',
+              borderRadius: '6px',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            📞 SUPPORT
+          </a>
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '8px' }}>
           <span style={{ fontSize: '14px', fontWeight: '600', color: '#1e293b' }}>{displayedUserName}</span>
           <button
             onClick={handleLogout}
@@ -387,6 +252,7 @@ export default function Header({
             Log out
           </button>
         </div>
+      </div>
       </div>
     </header>
   );

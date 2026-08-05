@@ -23,6 +23,32 @@ import { addMonthsClamped, billingIntervalMonths } from '@/lib/billing/dateMath'
 import { resolveCompanyIndustrySectorCategory } from '@/lib/industry-sector-resolver';
 import { getOverviewPrintOptions } from '@/lib/operations/overview-print-options';
 import { mapModuleToDataType } from '@/lib/operations/module-registry';
+const PERFORMANCE_ANALYSIS_TABS = [
+  { id: 'pa-overview', label: 'Overview' },
+  { id: 'pa-critical-issues', label: 'Critical Issues' },
+  { id: 'pa-focus-board', label: 'Major Trends' },
+  { id: 'pa-trend-explorer', label: 'Trend Explorer' },
+  { id: 'pa-anomaly-inbox', label: 'Anomaly Inbox' },
+  { id: 'pa-opportunity-workspace', label: 'Actions & Monitoring' },
+] as const;
+const VALUATION_TABS = [
+  { id: 'sde', label: 'SDE' },
+  { id: 'ebitda', label: 'EBITDA ANALYSIS' },
+  { id: 'dcf', label: 'DCF ANALYSIS' },
+  { id: 'business-overview', label: 'BUSINESS OVERVIEW / MARKET POSITION' },
+  { id: 'valuation-reports', label: 'VALUATION REPORTS' },
+] as const;
+const FINANCIAL_REPORTING_TABS = [
+  { id: 'dashboard', label: "Financial KPI's" },
+  { id: 'kpis', label: 'Key Ratios' },
+  { id: 'mda', label: 'MD&A' },
+  { id: 'trend-analysis', label: 'Performance Trends' },
+  { id: 'goals', label: 'Targets and Goals' },
+  { id: 'projections', label: 'Projections' },
+  { id: 'cash-flow', label: 'Cash Flow' },
+  { id: 'working-capital', label: 'Working Capital' },
+  { id: 'financial-statements', label: 'Financial Statements' },
+] as const;
 const LoginView = dynamic(() => import('./components/auth/LoginView'), { ssr: false });
 const MFAEnrollmentModal = dynamic(() => import('./components/auth/MFAEnrollmentModal'), { ssr: false });
 const MFAVerificationModal = dynamic(() => import('./components/auth/MFAVerificationModal'), { ssr: false });
@@ -1258,6 +1284,14 @@ function FinancialScorePage() {
           
           if (!session) {
             console.log('?? No NextAuth session found - user will need to re-login');
+            if (process.env.NEXT_PUBLIC_DISABLE_INACTIVITY_TIMEOUT === '1') {
+              // Local development can briefly return null during a hot reload
+              // or server recompilation. Preserve the local user state when
+              // inactivity protection is explicitly disabled.
+              setCurrentUser(user);
+              setIsLoggedIn(true);
+              return;
+            }
             // Clear localStorage since session expired
             localStorage.removeItem('fs_currentUser');
             setIsLoggedIn(false);
@@ -1321,6 +1355,11 @@ function FinancialScorePage() {
       try {
         const session = await nextAuthGetSession();
         if (!session) {
+          if (process.env.NEXT_PUBLIC_DISABLE_INACTIVITY_TIMEOUT === '1') {
+            // Do not hard-kick local development sessions when NextAuth
+            // briefly returns null during a rebuild or HMR transition.
+            return;
+          }
           clearExpiredClientSession();
           // In local dev, server recompiles often and getSession can briefly
           // return null — don't hard-kick the user for that.
@@ -1412,7 +1451,6 @@ function FinancialScorePage() {
   const [industrySectorCategory, setIndustrySectorCategory] = useState('');
   const [expandedCompanyInfoId, setExpandedCompanyInfoId] = useState('');
   const [isManagementAssessmentExpanded, setIsManagementAssessmentExpanded] = useState(false);
-  const [isExpertAnalysisExpanded, setIsExpertAnalysisExpanded] = useState(false);
   const [isValuationExpanded, setIsValuationExpanded] = useState(false);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   // const [isFinancialHealthExpanded, setIsFinancialHealthExpanded] = useState(false); // Legacy section removed from sidebar
@@ -1755,12 +1793,6 @@ function FinancialScorePage() {
   };
 
   useEffect(() => {
-    if (currentView.startsWith('pa-')) {
-      setIsExpertAnalysisExpanded(true);
-    }
-  }, [currentView]);
-
-  useEffect(() => {
     if (currentView === 'valuation' || currentView === 'valuation-reports') {
       setIsValuationExpanded(true);
     }
@@ -1783,9 +1815,7 @@ function FinancialScorePage() {
   }, [isSidebarCollapsed]);
 
   const handleExpertAnalysisClick = () => {
-    const shouldCollapse = currentView === 'pa-overview' && isExpertAnalysisExpanded;
     handleNavigation('pa-overview');
-    setIsExpertAnalysisExpanded(!shouldCollapse);
   };
 
   const handleValuationClick = () => {
@@ -4385,7 +4415,6 @@ function FinancialScorePage() {
     if (typeof window === 'undefined') return;
     const saved = {
       consultants: localStorage.getItem('fs_consultants'),
-      companies: localStorage.getItem('fs_companies'),
       users: localStorage.getItem('fs_users'),
       currentUser: localStorage.getItem('fs_currentUser'),
       records: localStorage.getItem('fs_financialDataRecords'),
@@ -4403,10 +4432,10 @@ function FinancialScorePage() {
     const isAssessmentUser = savedUser?.userType === 'assessment';
     
     if (saved.consultants) setConsultants(JSON.parse(saved.consultants));
-    if (saved.companies) {
-      const parsed = JSON.parse(saved.companies);
-      safeSetCompanies(Array.isArray(parsed) ? parsed : []);
-    }
+    // Company lists are server-authoritative. Do not restore fs_companies from
+    // localStorage because deleted records can otherwise reappear temporarily
+    // until the authenticated API refresh completes.
+    localStorage.removeItem('fs_companies');
     if (saved.users) setUsers(JSON.parse(saved.users));
     if (saved.records) setFinancialDataRecords(JSON.parse(saved.records));
     if (saved.selectedCompany) setSelectedCompanyId(saved.selectedCompany);
@@ -4455,7 +4484,6 @@ function FinancialScorePage() {
   }, []);
 
   useEffect(() => { if (typeof window !== 'undefined' && consultants.length > 0) localStorage.setItem('fs_consultants', JSON.stringify(consultants)); }, [consultants]);
-  useEffect(() => { if (typeof window !== 'undefined' && companies.length > 0) localStorage.setItem('fs_companies', JSON.stringify(companies)); }, [companies]);
   useEffect(() => { if (typeof window !== 'undefined' && users.length > 0) localStorage.setItem('fs_users', JSON.stringify(users)); }, [users]);
   useEffect(() => { if (typeof window !== 'undefined' && currentUser) localStorage.setItem('fs_currentUser', JSON.stringify(currentUser)); }, [currentUser]);
   useEffect(() => { if (typeof window !== 'undefined' && financialDataRecords.length > 0) localStorage.setItem('fs_financialDataRecords', JSON.stringify(financialDataRecords)); }, [financialDataRecords]);
@@ -5191,7 +5219,7 @@ function FinancialScorePage() {
       }
     };
 
-    if ((siteAdminTab === 'businesses' || siteAdminTab === 'user-access') && currentView === 'siteadmin' && currentUser?.role === 'siteadmin') {
+    if (currentView === 'siteadmin' && currentUser?.role === 'siteadmin') {
       console.log('?? Loading all companies and users for site admin businesses tab...');
       loadBusinessesData();
     }
@@ -13731,7 +13759,6 @@ function FinancialScorePage() {
           selectedCompanyId={selectedCompanyId}
           currentView={currentView}
           dataRoomEnabledByAdmin={isDataRoomEnabledByAdmin}
-          customReportsEnabledByAdmin={isCustomReportsEnabledByAdmin}
           hasSiteAdminOverride={hasSiteAdminOverride}
           setCurrentView={setCurrentView as any}
           handleLogout={handleLogout}
@@ -13888,6 +13915,62 @@ function FinancialScorePage() {
               ‹
             </button>
             {currentUser?.userType !== 'assessment' && null}
+            <div style={{ marginBottom: '16px' }}>
+              <h3
+                onClick={() => handleNavigation('daily-alerts')}
+                style={{
+                  fontSize: '14px',
+                  fontWeight: '700',
+                  color: currentView === 'daily-alerts' ? '#1F70C1' : '#334155',
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.5px',
+                  padding: '1px 32px',
+                  margin: '0',
+                  cursor: 'pointer',
+                  whiteSpace: 'nowrap'
+                }}
+              >
+                {currentView === 'daily-alerts' && '› '}DAILY ALERTS
+              </h3>
+            </div>
+
+            <div style={{ marginBottom: '16px' }}>
+              <h3
+                onClick={() => handleNavigation('operations')}
+                style={{
+                  fontSize: '14px',
+                  fontWeight: '700',
+                  color: currentView === 'operations' ? '#1F70C1' : '#334155',
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.5px',
+                  padding: '1px 32px',
+                  margin: '0',
+                  cursor: 'pointer',
+                  whiteSpace: 'nowrap'
+                }}
+              >
+                {currentView === 'operations' && '› '}OPERATIONAL REPORTING
+              </h3>
+            </div>
+
+            <div style={{ marginBottom: '16px' }}>
+              <h3
+                onClick={() => handleNavigation('dashboard')}
+                style={{
+                  fontSize: '14px',
+                  fontWeight: '700',
+                  color: FINANCIAL_REPORTING_TABS.some((tab) => tab.id === currentView) ? '#1F70C1' : '#334155',
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.5px',
+                  padding: '1px 32px',
+                  margin: '0',
+                  cursor: 'pointer',
+                  whiteSpace: 'nowrap'
+                }}
+              >
+                {FINANCIAL_REPORTING_TABS.some((tab) => tab.id === currentView) && '› '}FINANCIAL REPORTING
+              </h3>
+            </div>
 
             <div style={{ marginBottom: '16px' }}>
               <h3
@@ -13915,7 +13998,7 @@ function FinancialScorePage() {
               </h3>
             </div>
 
-            {/* Analysis Section */}
+            {/* Expert Analysis */}
             <div style={{ marginBottom: '16px' }}>
               <h3
                 onClick={handleExpertAnalysisClick}
@@ -13926,7 +14009,7 @@ function FinancialScorePage() {
                   textTransform: 'uppercase',
                   letterSpacing: '0.5px',
                   padding: '1px 32px',
-                  margin: isExpertAnalysisExpanded ? '0 0 8px 0' : '0',
+                  margin: '0',
                   cursor: 'pointer',
                   transition: 'color 0.2s'
                 }}
@@ -13937,150 +14020,44 @@ function FinancialScorePage() {
                   e.currentTarget.style.color = currentView.startsWith('pa-') ? '#1F70C1' : '#334155';
                 }}
               >
-                {currentView === 'pa-overview' && '› '}Expert Analysis {isExpertAnalysisExpanded ? '▾' : '▸'}
+                {currentView.startsWith('pa-') && '› '}Expert Analysis
               </h3>
-              {hasCompanySectionAccess('expert-analysis') && isExpertAnalysisExpanded && (
-                <div style={{ paddingLeft: '28px' }}>
-                  {[
-                    { id: 'pa-critical-issues', label: 'Critical Issues' },
-                    { id: 'pa-focus-board', label: 'Major Trends' },
-                    { id: 'pa-trend-explorer', label: 'Trend Explorer' },
-                    { id: 'pa-anomaly-inbox', label: 'Anomaly Inbox' },
-                    { id: 'pa-opportunity-workspace', label: 'Actions/Monitor' }
-                  ].map((item) => (
-                    <div
-                      key={item.id}
-                      onClick={() => handleNavigation(item.id)}
-                      style={{
-                        fontSize: '16px',
-                        color: currentView === item.id ? '#1F70C1' : '#475569',
-                        padding: '6px 12px',
-                        cursor: 'pointer',
-                        borderRadius: '6px',
-                        marginBottom: '4px',
-                        background: currentView === item.id ? '#e0f2fe' : 'transparent',
-                        fontWeight: currentView === item.id ? '600' : '400',
-                        transition: 'all 0.2s'
-                      }}
-                      onMouseEnter={(e) => {
-                        if (currentView !== item.id) {
-                          e.currentTarget.style.background = '#f8fafc';
-                          e.currentTarget.style.color = '#1F70C1';
-                        }
-                      }}
-                      onMouseLeave={(e) => {
-                        if (currentView !== item.id) {
-                          e.currentTarget.style.background = 'transparent';
-                          e.currentTarget.style.color = '#475569';
-                        }
-                      }}
-                    >
-                      {currentView === item.id && '› '}{item.label}
-                    </div>
-                  ))}
-                </div>
-              )}
               {hasCompanySectionAccess('valuation') && (
-                <>
-                  <h3
-                    onClick={handleValuationClick}
-                    style={{
-                      fontSize: '14px',
-                      fontWeight: '700',
-                      color: currentView === 'valuation' || currentView === 'valuation-reports' ? '#1F70C1' : '#334155',
-                      textTransform: 'uppercase',
-                      letterSpacing: '0.5px',
-                      padding: '1px 32px',
-                      margin: isValuationExpanded ? '16px 0 8px 0' : '16px 0 0 0',
-                      cursor: 'pointer',
-                      transition: 'color 0.2s',
-                      whiteSpace: 'normal',
-                      lineHeight: '1.25'
-                    }}
-                    onMouseEnter={(e) => {
-                      e.currentTarget.style.color = '#1F70C1';
-                    }}
-                    onMouseLeave={(e) => {
-                      e.currentTarget.style.color =
-                        currentView === 'valuation' || currentView === 'valuation-reports' ? '#1F70C1' : '#334155';
-                    }}
-                  >
-                    {(currentView === 'valuation' || currentView === 'valuation-reports') && '› '}VALUATION {isValuationExpanded ? '▾' : '▸'}
-                  </h3>
-                  {isValuationExpanded && (
-                    <div style={{ paddingLeft: '36px' }}>
-                      {[
-                        { id: 'sde' as const, label: 'SDE' },
-                        { id: 'ebitda' as const, label: 'EBITDA ANALYSIS' },
-                        { id: 'dcf' as const, label: 'DCF ANALYSIS' },
-                        { id: 'business-overview' as const, label: 'BUSINESS OVERVIEW / MARKET POSITION' }
-                      ].map((item) => (
-                        <div
-                          key={item.id}
-                          onClick={() => {
-                            setValuationMethodTab(item.id);
-                            handleNavigation('valuation');
-                          }}
-                          style={{
-                            fontSize: '13px',
-                            color: currentView === 'valuation' && valuationMethodTab === item.id ? '#1F70C1' : '#475569',
-                            padding: '5px 12px',
-                            cursor: 'pointer',
-                            borderRadius: '6px',
-                            marginBottom: '4px',
-                            background: currentView === 'valuation' && valuationMethodTab === item.id ? '#e0f2fe' : 'transparent',
-                            fontWeight: currentView === 'valuation' && valuationMethodTab === item.id ? '600' : '400',
-                            transition: 'all 0.2s'
-                          }}
-                          onMouseEnter={(e) => {
-                            if (!(currentView === 'valuation' && valuationMethodTab === item.id)) {
-                              e.currentTarget.style.background = '#f8fafc';
-                              e.currentTarget.style.color = '#1F70C1';
-                            }
-                          }}
-                          onMouseLeave={(e) => {
-                            if (!(currentView === 'valuation' && valuationMethodTab === item.id)) {
-                              e.currentTarget.style.background = 'transparent';
-                              e.currentTarget.style.color = '#475569';
-                            }
-                          }}
-                        >
-                          {currentView === 'valuation' && valuationMethodTab === item.id && '› '}{item.label}
-                        </div>
-                      ))}
-                      {hasCompanySectionAccess('valuation-reports') && isValuationReportsEnabledByAdmin && (
-                        <div
-                          onClick={() => handleNavigation('valuation-reports')}
-                          style={{
-                            fontSize: '13px',
-                            color: currentView === 'valuation-reports' ? '#1F70C1' : '#475569',
-                            padding: '5px 12px',
-                            cursor: 'pointer',
-                            borderRadius: '6px',
-                            marginBottom: '4px',
-                            background: currentView === 'valuation-reports' ? '#e0f2fe' : 'transparent',
-                            fontWeight: currentView === 'valuation-reports' ? '600' : '400',
-                            transition: 'all 0.2s'
-                          }}
-                          onMouseEnter={(e) => {
-                            if (currentView !== 'valuation-reports') {
-                              e.currentTarget.style.background = '#f8fafc';
-                              e.currentTarget.style.color = '#1F70C1';
-                            }
-                          }}
-                          onMouseLeave={(e) => {
-                            if (currentView !== 'valuation-reports') {
-                              e.currentTarget.style.background = 'transparent';
-                              e.currentTarget.style.color = '#475569';
-                            }
-                          }}
-                        >
-                          {currentView === 'valuation-reports' && '› '}VALUATION REPORTS
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </>
+                <h3
+                  onClick={() => handleNavigation('valuation')}
+                  style={{
+                    fontSize: '14px',
+                    fontWeight: '700',
+                    color: currentView === 'valuation' || currentView === 'valuation-reports' ? '#1F70C1' : '#334155',
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.5px',
+                    padding: '1px 32px',
+                    margin: '16px 0 0 0',
+                    cursor: 'pointer',
+                    whiteSpace: 'nowrap',
+                  }}
+                >
+                  {(currentView === 'valuation' || currentView === 'valuation-reports') && '› '}VALUATION
+                </h3>
+              )}
+
+              {isDataRoomEnabledByAdmin && hasCompanySectionAccess('dataroom') && (
+                <h3
+                  onClick={() => handleNavigation('dataroom')}
+                  style={{
+                    fontSize: '14px',
+                    fontWeight: '700',
+                    color: currentView === 'dataroom' ? '#1F70C1' : '#334155',
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.5px',
+                    padding: '1px 32px',
+                    margin: '16px 0 0 0',
+                    cursor: 'pointer',
+                    whiteSpace: 'nowrap'
+                  }}
+                >
+                  {currentView === 'dataroom' && '› '}DATA ROOM
+                </h3>
               )}
 
               {hasCompanySectionAccess('digital-presence') && isDigitalPresenceEnabledByAdmin && (
@@ -14107,6 +14084,32 @@ function FinancialScorePage() {
                   }}
                 >
                   DIGITAL PRESENCE ↗
+                </h3>
+              )}
+
+              {hasCompanySectionAccess('custom-reports') && isCustomReportsEnabledByAdmin && (
+                <h3
+                  onClick={() => handleNavigation('custom-reports')}
+                  style={{
+                    fontSize: '14px',
+                    fontWeight: '700',
+                    color: currentView === 'custom-reports' ? '#1F70C1' : '#334155',
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.5px',
+                    padding: '1px 32px',
+                    margin: '16px 0 0 0',
+                    cursor: 'pointer',
+                    transition: 'color 0.2s',
+                    whiteSpace: 'nowrap',
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.color = '#1F70C1';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.color = currentView === 'custom-reports' ? '#1F70C1' : '#334155';
+                  }}
+                >
+                  {currentView === 'custom-reports' && '› '}CUSTOM REPORTS
                 </h3>
               )}
 
@@ -14211,35 +14214,8 @@ function FinancialScorePage() {
             </div>
             </div>
 
-            {/* Support Section */}
-            <div style={{ marginTop: '0', paddingTop: '16px', borderTop: '1px solid #e2e8f0' }}>
-              <a
-                href="/support"
-                target="_blank"
-                rel="noopener noreferrer"
-                style={{
-                  display: 'block',
-                  fontSize: '14px',
-                  fontWeight: '600',
-                  color: '#1F70C1',
-                  textDecoration: 'none',
-                  padding: '12px 24px',
-                  transition: 'all 0.2s',
-                  borderRadius: '6px',
-                  margin: '0 12px'
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.background = '#e0f2fe';
-                  e.currentTarget.style.color = '#1F70C1';
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.background = 'transparent';
-                  e.currentTarget.style.color = '#1F70C1';
-                }}
-              >
-                📞 SUPPORT
-              </a>
-              <div
+            {/* Powered by Corelytics */}
+            <div
                 style={{
                   fontSize: '16px',
                   fontWeight: '700',
@@ -14250,7 +14226,6 @@ function FinancialScorePage() {
               >
                 Powered by Corelytics
               </div>
-            </div>
           </nav>
           )}
         </aside>
@@ -14389,77 +14364,12 @@ function FinancialScorePage() {
               )}
             </div>
 
-            {/* Support Section */}
-            <div style={{ marginTop: '0', paddingTop: '16px', borderTop: '1px solid #e2e8f0' }}>
-              <a
-                href="/support"
-                target="_blank"
-                rel="noopener noreferrer"
-                style={{
-                  display: 'block',
-                  fontSize: '14px',
-                  fontWeight: '600',
-                  color: '#1F70C1',
-                  textDecoration: 'none',
-                  padding: '12px 24px',
-                  transition: 'all 0.2s',
-                  borderRadius: '6px',
-                  margin: '0 12px'
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.background = '#e0f2fe';
-                  e.currentTarget.style.color = '#1F70C1';
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.background = 'transparent';
-                  e.currentTarget.style.color = '#1F70C1';
-                }}
-              >
-                📞 SUPPORT
-              </a>
-            </div>
           </nav>
         </aside>
         )}
 
         {/* Main Content Area */}
         <main className="app-shell-main" style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden', paddingTop: '8px' }}>
-          {canReturnToSiteAdmin && (
-            <div style={{ maxWidth: '1400px', margin: '0 auto', padding: '8px 24px 0 24px' }}>
-              <div
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  gap: '12px',
-                  background: '#fffbeb',
-                  border: '1px solid #fcd34d',
-                  borderRadius: '10px',
-                  padding: '10px 12px',
-                }}
-              >
-                <div style={{ fontSize: '13px', fontWeight: '600', color: '#92400e' }}>
-                  Preview mode active. Return to Site Administration at any time.
-                </div>
-                <button
-                  onClick={exitSiteAdminPreview}
-                  style={{
-                    padding: '8px 12px',
-                    background: '#f59e0b',
-                    color: 'white',
-                    border: 'none',
-                    borderRadius: '8px',
-                    fontSize: '12px',
-                    fontWeight: '700',
-                    cursor: 'pointer',
-                  }}
-                >
-                  Return to Site Admin
-                </button>
-              </div>
-            </div>
-          )}
-
           {/* Restrict access for assessment users - only show Team Assessment views */}
           {(!(currentUser?.userType === 'assessment') || currentView === 'ma-welcome' || currentView === 'ma-questionnaire' || currentView === 'ma-your-results' || currentView === 'ma-scores-summary' || currentView === 'ma-charts' || currentView === 'ma-scoring-guide') && (
           <>
@@ -14634,28 +14544,32 @@ function FinancialScorePage() {
 
           {/* Admin Dashboard */}
           {currentView === 'admin' && (currentUser?.role === 'siteadmin' || currentUser?.role === 'consultant' || (currentUser?.role === 'user' && currentUser?.userType === 'company')) && (
-        <div style={{ maxWidth: '1400px', margin: '0 auto', padding: '32px' }}>
+        <div style={{ maxWidth: '1600px', margin: '0 auto', padding: '16px 24px 0' }}>
 
           {/* Tab Navigation */}
           <div
             className="dashboard-tabs-print-hide"
             style={{
               display: 'flex',
-              gap: '8px',
+              gap: '4px',
+              overflowX: 'auto',
               // Data Mapping needs to sit tight to the content below.
               marginBottom: (adminDashboardTab === 'data-mapping' || adminDashboardTab === 'data-review') ? '2px' : '12px',
-              borderBottom: '2px solid #e2e8f0'
+              borderBottom: '1px solid #cbd5e1',
+              whiteSpace: 'nowrap'
             }}
           >
             <button
               onClick={() => handleAdminTabNavigation('company-management')}
               style={{
-                padding: '12px 24px',
-                background: 'none',
-                color: adminDashboardTab === 'company-management' ? '#2751d0' : '#64748b',
+                padding: '10px 14px',
+                background: adminDashboardTab === 'company-management' ? '#eff6ff' : 'transparent',
+                color: adminDashboardTab === 'company-management' ? '#1F70C1' : '#475569',
                 border: 'none',
-                borderBottom: adminDashboardTab === 'company-management' ? '3px solid #2751d0' : '3px solid transparent',
-                fontSize: '16px',
+                borderBottom: adminDashboardTab === 'company-management' ? '3px solid #1F70C1' : '3px solid transparent',
+                marginBottom: '-1px',
+                fontSize: '14px',
+                textTransform: 'uppercase',
                 fontWeight: '600',
                 cursor: 'pointer',
                 transition: 'all 0.2s'
@@ -14666,12 +14580,14 @@ function FinancialScorePage() {
             <button
               onClick={() => handleAdminTabNavigation('api-connections')}
               style={{
-                padding: '12px 24px',
-                background: 'none',
-                color: adminDashboardTab === 'api-connections' ? '#2751d0' : '#64748b',
+                padding: '10px 14px',
+                background: adminDashboardTab === 'api-connections' ? '#eff6ff' : 'transparent',
+                color: adminDashboardTab === 'api-connections' ? '#1F70C1' : '#475569',
                 border: 'none',
-                borderBottom: adminDashboardTab === 'api-connections' ? '3px solid #2751d0' : '3px solid transparent',
-                fontSize: '16px',
+                borderBottom: adminDashboardTab === 'api-connections' ? '3px solid #1F70C1' : '3px solid transparent',
+                marginBottom: '-1px',
+                fontSize: '14px',
+                textTransform: 'uppercase',
                 fontWeight: '600',
                 cursor: 'pointer',
                 transition: 'all 0.2s'
@@ -14682,12 +14598,14 @@ function FinancialScorePage() {
             <button
               onClick={() => handleAdminTabNavigation('company-settings')}
               style={{
-                padding: '12px 24px',
-                background: 'none',
-                color: adminDashboardTab === 'company-settings' ? '#2751d0' : '#64748b',
+                padding: '10px 14px',
+                background: adminDashboardTab === 'company-settings' ? '#eff6ff' : 'transparent',
+                color: adminDashboardTab === 'company-settings' ? '#1F70C1' : '#475569',
                 border: 'none',
-                borderBottom: adminDashboardTab === 'company-settings' ? '3px solid #2751d0' : '3px solid transparent',
-                fontSize: '16px',
+                borderBottom: adminDashboardTab === 'company-settings' ? '3px solid #1F70C1' : '3px solid transparent',
+                marginBottom: '-1px',
+                fontSize: '14px',
+                textTransform: 'uppercase',
                 fontWeight: '600',
                 cursor: 'pointer',
                 transition: 'all 0.2s'
@@ -14698,12 +14616,14 @@ function FinancialScorePage() {
             <button
               onClick={() => handleAdminTabNavigation('data-mapping')}
               style={{
-                padding: '12px 24px',
-                background: 'none',
-                color: adminDashboardTab === 'data-mapping' ? '#2751d0' : '#64748b',
+                padding: '10px 14px',
+                background: adminDashboardTab === 'data-mapping' ? '#eff6ff' : 'transparent',
+                color: adminDashboardTab === 'data-mapping' ? '#1F70C1' : '#475569',
                 border: 'none',
-                borderBottom: adminDashboardTab === 'data-mapping' ? '3px solid #2751d0' : '3px solid transparent',
-                fontSize: '16px',
+                borderBottom: adminDashboardTab === 'data-mapping' ? '3px solid #1F70C1' : '3px solid transparent',
+                marginBottom: '-1px',
+                fontSize: '14px',
+                textTransform: 'uppercase',
                 fontWeight: '600',
                 cursor: 'pointer',
                 transition: 'all 0.2s'
@@ -14714,12 +14634,14 @@ function FinancialScorePage() {
             <button
               onClick={() => handleAdminTabNavigation('data-review')}
               style={{
-                padding: '12px 24px',
-                background: 'none',
-                color: adminDashboardTab === 'data-review' ? '#2751d0' : '#64748b',
+                padding: '10px 14px',
+                background: adminDashboardTab === 'data-review' ? '#eff6ff' : 'transparent',
+                color: adminDashboardTab === 'data-review' ? '#1F70C1' : '#475569',
                 border: 'none',
-                borderBottom: adminDashboardTab === 'data-review' ? '3px solid #2751d0' : '3px solid transparent',
-                fontSize: '16px',
+                borderBottom: adminDashboardTab === 'data-review' ? '3px solid #1F70C1' : '3px solid transparent',
+                marginBottom: '-1px',
+                fontSize: '14px',
+                textTransform: 'uppercase',
                 fontWeight: '600',
                 cursor: 'pointer',
                 transition: 'all 0.2s'
@@ -14730,12 +14652,14 @@ function FinancialScorePage() {
             <button
               onClick={() => handleAdminTabNavigation('documents')}
               style={{
-                padding: '12px 24px',
-                background: 'none',
-                color: adminDashboardTab === 'documents' ? '#2751d0' : '#64748b',
+                padding: '10px 14px',
+                background: adminDashboardTab === 'documents' ? '#eff6ff' : 'transparent',
+                color: adminDashboardTab === 'documents' ? '#1F70C1' : '#475569',
                 border: 'none',
-                borderBottom: adminDashboardTab === 'documents' ? '3px solid #2751d0' : '3px solid transparent',
-                fontSize: '16px',
+                borderBottom: adminDashboardTab === 'documents' ? '3px solid #1F70C1' : '3px solid transparent',
+                marginBottom: '-1px',
+                fontSize: '14px',
+                textTransform: 'uppercase',
                 fontWeight: '600',
                 cursor: 'pointer',
                 transition: 'all 0.2s'
@@ -17338,7 +17262,7 @@ function FinancialScorePage() {
           )}
 
           {adminDashboardTab === 'data-mapping' && selectedCompanyId && selectedAccountingSystem === 'CSV_FILE' && (
-            <div style={{ maxWidth: '1280px', margin: '-18px auto 6px auto', padding: '0 16px', display: 'flex', justifyContent: 'flex-end' }}>
+            <div style={{ maxWidth: '1280px', margin: '0 auto 6px auto', padding: '0 16px', display: 'flex', justifyContent: 'flex-end' }}>
               <div style={{ background: '#fff7ed', borderRadius: '12px', padding: '10px 12px', width: '52%', minWidth: '520px', maxWidth: '640px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', border: '1px solid #fed7aa', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', flexWrap: 'nowrap' }}>
                 <div style={{ minWidth: 0 }}>
                   <div style={{ fontSize: '14px', fontWeight: '700', color: '#9a3412', marginBottom: '4px' }}>Publish Monthly Financials</div>
@@ -17627,8 +17551,6 @@ function FinancialScorePage() {
                 style={{
                   maxWidth: '1280px',
                   margin: '0 auto',
-                  // Pull the section up to reduce the large perceived gap under the admin tabs.
-                  marginTop: '-54px',
                   padding: '0px 16px 16px'
                 }}
               >
@@ -19996,6 +19918,37 @@ function FinancialScorePage() {
       )}
 
       {/* Custom Dashboard View */}
+      {FINANCIAL_REPORTING_TABS.some((tab) => tab.id === currentView) && selectedCompanyId && hasCompanySectionAccess('financial-reports') && (
+        <div style={{ maxWidth: '1600px', margin: '0 auto', padding: '16px 24px 0' }}>
+          <nav
+            aria-label="Financial Reporting"
+            style={{ display: 'flex', gap: '4px', overflowX: 'auto', borderBottom: '1px solid #cbd5e1', whiteSpace: 'nowrap' }}
+          >
+            {FINANCIAL_REPORTING_TABS.map((tab) => (
+              <button
+                key={tab.id}
+                type="button"
+                onClick={() => handleNavigation(tab.id)}
+                style={{
+                  padding: '10px 14px',
+                  border: 0,
+                  borderBottom: currentView === tab.id ? '3px solid #1F70C1' : '3px solid transparent',
+                  marginBottom: '-1px',
+                  background: currentView === tab.id ? '#eff6ff' : 'transparent',
+                  color: currentView === tab.id ? '#1F70C1' : '#475569',
+                  fontSize: '14px',
+                  textTransform: 'uppercase',
+                  fontWeight: currentView === tab.id ? '700' : '500',
+                  cursor: 'pointer',
+                }}
+              >
+                {tab.label}
+              </button>
+            ))}
+          </nav>
+        </div>
+      )}
+
       {currentView === 'dashboard' && selectedCompanyId && (
         <DashboardView
           monthly={monthly}
@@ -20130,6 +20083,82 @@ function FinancialScorePage() {
           companyName={companyName || ''}
           prefetchedMonthlyData={monthly as any}
         />
+      )}
+
+      {(currentView === 'valuation' || currentView === 'valuation-reports') && selectedCompanyId && hasCompanySectionAccess('valuation') && (
+        <div style={{ maxWidth: '1600px', margin: '0 auto', padding: '16px 24px 0' }}>
+          <nav
+            aria-label="Valuation"
+            style={{ display: 'flex', gap: '4px', overflowX: 'auto', borderBottom: '1px solid #cbd5e1', whiteSpace: 'nowrap' }}
+          >
+            {VALUATION_TABS
+              .filter((tab) => tab.id !== 'valuation-reports' || (hasCompanySectionAccess('valuation-reports') && isValuationReportsEnabledByAdmin))
+              .map((tab) => {
+                const active = tab.id === 'valuation-reports'
+                  ? currentView === 'valuation-reports'
+                  : currentView === 'valuation' && valuationMethodTab === tab.id;
+                return (
+                  <button
+                    key={tab.id}
+                    type="button"
+                    onClick={() => {
+                      if (tab.id === 'valuation-reports') {
+                        handleNavigation('valuation-reports');
+                      } else {
+                        setValuationMethodTab(tab.id);
+                        handleNavigation('valuation');
+                      }
+                    }}
+                    style={{
+                      padding: '10px 14px',
+                      border: 0,
+                      borderBottom: active ? '3px solid #1F70C1' : '3px solid transparent',
+                      marginBottom: '-1px',
+                      background: active ? '#eff6ff' : 'transparent',
+                      color: active ? '#1F70C1' : '#475569',
+                      fontSize: '14px',
+                      textTransform: 'uppercase',
+                      fontWeight: active ? '700' : '500',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    {tab.label}
+                  </button>
+                );
+              })}
+          </nav>
+        </div>
+      )}
+
+      {currentView.startsWith('pa-') && selectedCompanyId && hasCompanySectionAccess('expert-analysis') && (
+        <div style={{ maxWidth: '1600px', margin: '0 auto', padding: '16px 24px 0' }}>
+          <nav
+            aria-label="Expert Analysis"
+            style={{ display: 'flex', gap: '4px', overflowX: 'auto', borderBottom: '1px solid #cbd5e1', whiteSpace: 'nowrap' }}
+          >
+            {PERFORMANCE_ANALYSIS_TABS.map((tab) => (
+              <button
+                key={tab.id}
+                type="button"
+                onClick={() => handleNavigation(tab.id)}
+                style={{
+                  padding: '10px 14px',
+                  border: 0,
+                  borderBottom: currentView === tab.id ? '3px solid #1F70C1' : '3px solid transparent',
+                  marginBottom: '-1px',
+                  background: currentView === tab.id ? '#eff6ff' : 'transparent',
+                  color: currentView === tab.id ? '#1F70C1' : '#475569',
+                  fontSize: '14px',
+                  textTransform: 'uppercase',
+                  fontWeight: currentView === tab.id ? '700' : '500',
+                  cursor: 'pointer',
+                }}
+              >
+                {tab.label}
+              </button>
+            ))}
+          </nav>
+        </div>
       )}
 
       {currentView === 'pa-overview' && selectedCompanyId && (

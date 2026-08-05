@@ -6570,13 +6570,29 @@ export default function SiteAdminDashboard(props: any) {
                           <div style={{ flex: 1 }}>
                             <div>
                               <h3 
-                                onClick={() => {
+                                onClick={async () => {
                                   // Save original site-admin identity once per preview session.
                                   // Do not overwrite with consultant/user identities while drilling deeper.
                                   setSiteAdminViewingAs((prev: any) => prev || currentUser);
-                                  // Seed preview with this consultant's companies while background reload runs.
-                                  setCompanies(consultantCompanies);
+                                  // Fetch the consultant's current companies before switching
+                                  // context so the preview opens on a real company.
+                                  let previewCompanies = consultantCompanies;
+                                  try {
+                                    const response = await fetch(`/api/companies?consultantId=${encodeURIComponent(consultant.id)}`, {
+                                      cache: 'no-store',
+                                    });
+                                    const data = await response.json();
+                                    if (response.ok && Array.isArray(data?.companies)) {
+                                      previewCompanies = data.companies;
+                                    }
+                                  } catch (error) {
+                                    console.warn('Could not refresh consultant companies for preview:', error);
+                                  }
+                                  setCompanies(previewCompanies);
                                   setLoadedConsultantId(null);
+                                  if (previewCompanies.length > 0) {
+                                    setSelectedCompanyId(previewCompanies[0].id);
+                                  }
                                   // Switch to viewing this consultant's dashboard
                                   setCurrentUser({
                                     ...consultant.user,

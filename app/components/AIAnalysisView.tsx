@@ -721,23 +721,24 @@ export default function AIAnalysisView(props: {
   }, [documents, selectedDocumentId]);
 
   return (
-    <div style={{ maxWidth: '1400px', margin: '0 auto', padding: '32px' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', gap: '16px', marginBottom: '20px' }}>
-        <div />
-      </div>
-
+    <div style={{ maxWidth: '1600px', margin: '0 auto', padding: '16px 24px 0' }}>
       {/* Tab Navigation */}
-      <div style={{ display: 'flex', gap: '8px', marginBottom: '16px', borderBottom: '2px solid #e2e8f0' }}>
+      <nav
+        aria-label="Ask Corelytics"
+        style={{ display: 'flex', gap: '4px', overflowX: 'auto', marginBottom: '16px', borderBottom: '1px solid #cbd5e1', whiteSpace: 'nowrap' }}
+      >
         <button
           onClick={() => setTab('ask')}
           style={{
-            padding: '12px 20px',
-            background: 'none',
-            color: tab === 'ask' ? '#2751d0' : '#64748b',
-            border: 'none',
-            borderBottom: tab === 'ask' ? '3px solid #2751d0' : '3px solid transparent',
-            fontSize: '16px',
-            fontWeight: '700',
+            padding: '10px 14px',
+            border: 0,
+            borderBottom: tab === 'ask' ? '3px solid #1F70C1' : '3px solid transparent',
+            marginBottom: '-1px',
+            background: tab === 'ask' ? '#eff6ff' : 'transparent',
+            color: tab === 'ask' ? '#1F70C1' : '#475569',
+            fontSize: '14px',
+            textTransform: 'uppercase',
+            fontWeight: tab === 'ask' ? '700' : '500',
             cursor: 'pointer',
           }}
         >
@@ -746,13 +747,15 @@ export default function AIAnalysisView(props: {
         <button
           onClick={() => setTab('search-documents')}
           style={{
-            padding: '12px 20px',
-            background: 'none',
-            color: tab === 'search-documents' ? '#2751d0' : '#64748b',
-            border: 'none',
-            borderBottom: tab === 'search-documents' ? '3px solid #2751d0' : '3px solid transparent',
-            fontSize: '16px',
-            fontWeight: '700',
+            padding: '10px 14px',
+            border: 0,
+            borderBottom: tab === 'search-documents' ? '3px solid #1F70C1' : '3px solid transparent',
+            marginBottom: '-1px',
+            background: tab === 'search-documents' ? '#eff6ff' : 'transparent',
+            color: tab === 'search-documents' ? '#1F70C1' : '#475569',
+            fontSize: '14px',
+            textTransform: 'uppercase',
+            fontWeight: tab === 'search-documents' ? '700' : '500',
             cursor: 'pointer',
           }}
         >
@@ -761,19 +764,21 @@ export default function AIAnalysisView(props: {
         <button
           onClick={() => setTab('web-research')}
           style={{
-            padding: '12px 20px',
-            background: 'none',
-            color: tab === 'web-research' ? '#2751d0' : '#64748b',
-            border: 'none',
-            borderBottom: tab === 'web-research' ? '3px solid #2751d0' : '3px solid transparent',
-            fontSize: '16px',
-            fontWeight: '700',
+            padding: '10px 14px',
+            border: 0,
+            borderBottom: tab === 'web-research' ? '3px solid #1F70C1' : '3px solid transparent',
+            marginBottom: '-1px',
+            background: tab === 'web-research' ? '#eff6ff' : 'transparent',
+            color: tab === 'web-research' ? '#1F70C1' : '#475569',
+            fontSize: '14px',
+            textTransform: 'uppercase',
+            fontWeight: tab === 'web-research' ? '700' : '500',
             cursor: 'pointer',
           }}
         >
           Web Research
         </button>
-      </div>
+      </nav>
 
       <div style={{ display: 'grid', gridTemplateColumns: tab === 'ask' ? '380px 1fr' : '1fr', gap: '16px' }}>
         {/* Presets (Ask only) */}

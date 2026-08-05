@@ -470,11 +470,18 @@ export default function DailyAlertsView({ companyId, companyName, onNavigate }: 
         }
         return;
       } catch (serverError: any) {
+        // The cached Company Pulse endpoint may be unavailable while a
+        // production warmup is running. Fall through to the direct-data
+        // fallback below instead of exposing a raw AbortError to the user.
         if (!cancelled) {
-          setError(serverError?.message || 'Failed to load Company Pulse');
-          setLoading(false);
+          const isAbort = serverError?.name === 'AbortError';
+          console.warn(
+            isAbort
+              ? 'Company Pulse request timed out; loading direct alert data.'
+              : 'Company Pulse request failed; loading direct alert data.',
+            serverError
+          );
         }
-        return;
       }
       try {
         const end = new Date();
@@ -2672,8 +2679,8 @@ export default function DailyAlertsView({ companyId, companyName, onNavigate }: 
 
   return (
     <div style={{ maxWidth: '1400px', margin: '0 auto', padding: '32px' }}>
-      <div style={{ marginTop: '4px', borderBottom: '1px solid #e2e8f0', paddingBottom: '10px' }}>
-        <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+      <div style={{ marginTop: '-16px', marginLeft: '-8px', marginRight: '-8px', borderBottom: '1px solid #cbd5e1' }}>
+        <div style={{ display: 'flex', gap: '4px', overflowX: 'auto', whiteSpace: 'nowrap' }}>
           {[
             { id: 'company-pulse' as PulseTab, label: 'Company Pulse' },
             { id: 'briefing' as PulseTab, label: 'Daily Executive Briefing' },
@@ -2683,13 +2690,15 @@ export default function DailyAlertsView({ companyId, companyName, onNavigate }: 
               key={tab.id}
               onClick={() => setActiveTab(tab.id)}
               style={{
-                fontSize: '13px',
-                fontWeight: 800,
-                color: activeTab === tab.id ? '#1d4ed8' : '#475569',
-                background: activeTab === tab.id ? '#eff6ff' : 'white',
-                border: `1px solid ${activeTab === tab.id ? '#bfdbfe' : '#e2e8f0'}`,
-                borderRadius: '999px',
-                padding: '7px 12px',
+                padding: '10px 14px',
+                border: 0,
+                borderBottom: activeTab === tab.id ? '3px solid #1F70C1' : '3px solid transparent',
+                marginBottom: '-1px',
+                background: activeTab === tab.id ? '#eff6ff' : 'transparent',
+                color: activeTab === tab.id ? '#1F70C1' : '#475569',
+                fontSize: '14px',
+                textTransform: 'uppercase',
+                fontWeight: activeTab === tab.id ? '700' : '500',
                 cursor: 'pointer',
               }}
             >

@@ -133,28 +133,53 @@ export async function GET(request: NextRequest) {
       where.id = companyId;
     }
 
-    const includeIndustrySectorCategory = await hasCompanyColumn("industrySectorCategory");
-    const includeAccountingSystem = await hasCompanyColumn("accountingSystem");
-    const includeCompanySizeCategory = await hasCompanyColumn("companySizeCategory");
-    const includeSetupFee = await hasCompanyColumn("subscriptionSetupFee");
-    const includeTier1SupportOwner = await hasCompanyColumn("tier1SupportOwner");
-    const includeTier1SupportConsultantId = await hasCompanyColumn("tier1SupportConsultantId");
-    const includeTier1SupportContactEmail = await hasCompanyColumn("tier1SupportContactEmail");
-    const includeHasRealOperationalData = await hasCompanyColumn("hasRealOperationalData");
-    const includeRealDataActivatedAt = await hasCompanyColumn("realDataActivatedAt");
-    const includeForceOperationalMockData = await hasCompanyColumn("forceOperationalMockData");
-    const includeReferralPartnerConsultantId = await hasCompanyColumn("referralPartnerConsultantId");
-    const includeReferralPartnerId = await hasCompanyColumn("referralPartnerId");
-    const includeReferralSetupFeePercentage = await hasCompanyColumn("referralSetupFeePercentage");
-    const includeReferralRecurringFeePercentage = await hasCompanyColumn("referralRecurringFeePercentage");
-    const includeCommercialBillingMethod = await hasCompanyColumn("commercialBillingMethod");
-    const includeCommercialPaymentStatus = await hasCompanyColumn("commercialPaymentStatus");
-    const includeCommercialInvoiceNumber = await hasCompanyColumn("commercialInvoiceNumber");
-    const includeCommercialInvoiceUrl = await hasCompanyColumn("commercialInvoiceUrl");
-    const includeCommercialInvoiceDate = await hasCompanyColumn("commercialInvoiceDate");
-    const includeCommercialPaymentDate = await hasCompanyColumn("commercialPaymentDate");
-    const includeCommercialNextDueDate = await hasCompanyColumn("commercialNextDueDate");
-    const includeCommercialTermsNotes = await hasCompanyColumn("commercialTermsNotes");
+    const [
+      includeIndustrySectorCategory,
+      includeAccountingSystem,
+      includeCompanySizeCategory,
+      includeSetupFee,
+      includeTier1SupportOwner,
+      includeTier1SupportConsultantId,
+      includeTier1SupportContactEmail,
+      includeHasRealOperationalData,
+      includeRealDataActivatedAt,
+      includeForceOperationalMockData,
+      includeReferralPartnerConsultantId,
+      includeReferralPartnerId,
+      includeReferralSetupFeePercentage,
+      includeReferralRecurringFeePercentage,
+      includeCommercialBillingMethod,
+      includeCommercialPaymentStatus,
+      includeCommercialInvoiceNumber,
+      includeCommercialInvoiceUrl,
+      includeCommercialInvoiceDate,
+      includeCommercialPaymentDate,
+      includeCommercialNextDueDate,
+      includeCommercialTermsNotes,
+    ] = await Promise.all([
+      hasCompanyColumn("industrySectorCategory"),
+      hasCompanyColumn("accountingSystem"),
+      hasCompanyColumn("companySizeCategory"),
+      hasCompanyColumn("subscriptionSetupFee"),
+      hasCompanyColumn("tier1SupportOwner"),
+      hasCompanyColumn("tier1SupportConsultantId"),
+      hasCompanyColumn("tier1SupportContactEmail"),
+      hasCompanyColumn("hasRealOperationalData"),
+      hasCompanyColumn("realDataActivatedAt"),
+      hasCompanyColumn("forceOperationalMockData"),
+      hasCompanyColumn("referralPartnerConsultantId"),
+      hasCompanyColumn("referralPartnerId"),
+      hasCompanyColumn("referralSetupFeePercentage"),
+      hasCompanyColumn("referralRecurringFeePercentage"),
+      hasCompanyColumn("commercialBillingMethod"),
+      hasCompanyColumn("commercialPaymentStatus"),
+      hasCompanyColumn("commercialInvoiceNumber"),
+      hasCompanyColumn("commercialInvoiceUrl"),
+      hasCompanyColumn("commercialInvoiceDate"),
+      hasCompanyColumn("commercialPaymentDate"),
+      hasCompanyColumn("commercialNextDueDate"),
+      hasCompanyColumn("commercialTermsNotes"),
+    ]);
     let companies;
     try {
       companies = await prisma.company.findMany({

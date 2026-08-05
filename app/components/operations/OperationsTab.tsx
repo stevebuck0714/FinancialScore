@@ -2374,11 +2374,11 @@ export default function OperationsTab({
       };
     }
 
-    const arSummary = arData.summary || {};
-    const apSummary = apData.summary || {};
-    const cashSummary = cashData.summary || {};
-    const arRecords = Array.isArray(arData.records) ? arData.records : [];
-    const apRecords = Array.isArray(apData.records) ? apData.records : [];
+    const arSummary = arData?.summary || {};
+    const apSummary = apData?.summary || {};
+    const cashSummary = cashData?.summary || {};
+    const arRecords = Array.isArray(arData?.records) ? arData.records : [];
+    const apRecords = Array.isArray(apData?.records) ? apData.records : [];
     const inventorySummary = inventoryData?.summary || {};
     const productRecords = Array.isArray(productData?.records) ? productData.records : [];
     const productCostSignals = (() => {
@@ -2663,9 +2663,9 @@ export default function OperationsTab({
       };
     }
 
-    const arSummary = arData.summary || {};
-    const apSummary = apData.summary || {};
-    const cashSummary = cashData.summary || {};
+    const arSummary = arData?.summary || {};
+    const apSummary = apData?.summary || {};
+    const cashSummary = cashData?.summary || {};
     const inventorySummary = inventoryData?.summary || {};
     const productsSummary = productData?.summary || {};
     const customersSummary = customerData?.summary || {};
@@ -26520,6 +26520,7 @@ Strategies to Improve the CCC
                 border: 'none',
                 borderBottom: effectiveOverviewSubTab === tab.key ? '3px solid #2751d0' : '3px solid transparent',
                 fontSize: '14px',
+                textTransform: 'uppercase',
                 fontWeight: 600,
                 cursor: 'pointer',
                 transition: 'all 0.2s',
@@ -26591,15 +26592,16 @@ Strategies to Improve the CCC
         }
       `}</style>
       {/* Spacer for main nav */}
-      <div style={{ height: '20px' }}></div>
+      <div style={{ height: '16px' }}></div>
 
       {/* Tabs */}
       <div className="ops-print-hide" style={{ 
-        background: 'white', 
-        borderBottom: '1px solid #e2e8f0',
+        borderBottom: '1px solid #cbd5e1',
         padding: '0 24px',
         display: 'flex',
-        gap: '20px'
+        gap: '4px',
+        overflowX: 'auto',
+        whiteSpace: 'nowrap'
       }}>
         {availableTabs.map((tab) => (
           <button
@@ -26607,14 +26609,16 @@ Strategies to Improve the CCC
             onClick={() => setActiveTab(tab as any)}
             onMouseEnter={() => prefetchTabData(tab)}
             style={{
-              background: 'none',
-              border: 'none',
-              padding: '10px 0',
-              fontSize: '19px',
-              fontWeight: '600',
-              color: activeTab === tab ? '#2751d0' : '#64748b',
+              background: activeTab === tab ? '#eff6ff' : 'transparent',
+              border: 0,
+              borderBottom: activeTab === tab ? '3px solid #1F70C1' : '3px solid transparent',
+              marginBottom: '-1px',
+              padding: '10px 14px',
+              fontSize: '14px',
+              textTransform: 'uppercase',
+              fontWeight: activeTab === tab ? '700' : '500',
+              color: activeTab === tab ? '#1F70C1' : '#475569',
               cursor: 'pointer',
-              borderBottom: activeTab === tab ? '3px solid #2751d0' : '3px solid transparent',
               transition: 'all 0.2s'
             }}
           >
