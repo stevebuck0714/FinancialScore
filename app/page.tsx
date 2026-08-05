@@ -4458,6 +4458,18 @@ function FinancialScorePage() {
       String(savedSiteAdmin.role || '').toLowerCase() === 'siteadmin'
         ? savedSiteAdmin
         : savedUser;
+    const isRestoredSiteAdmin = String(restoredUser?.role || '').toLowerCase() === 'siteadmin';
+    const savedSiteAdminLocationRaw = localStorage.getItem('fs_siteAdminLastLocation');
+    const savedSiteAdminLocation =
+      (() => {
+        if (!savedSiteAdminLocationRaw) return null;
+        try {
+          const parsed = JSON.parse(savedSiteAdminLocationRaw);
+          return parsed && typeof parsed === 'object' ? parsed : null;
+        } catch {
+          return null;
+        }
+      })();
     const isAssessmentUser = savedUser?.userType === 'assessment';
     
     if (saved.consultants) setConsultants(JSON.parse(saved.consultants));
@@ -4468,11 +4480,42 @@ function FinancialScorePage() {
     localStorage.removeItem('fs_siteAdminPreview');
     if (saved.users) setUsers(JSON.parse(saved.users));
     if (saved.records) setFinancialDataRecords(JSON.parse(saved.records));
-    if (
-      saved.selectedCompany &&
-      String(restoredUser?.role || '').toLowerCase() !== 'siteadmin'
-    ) {
+    if (saved.selectedCompany && !isRestoredSiteAdmin) {
       setSelectedCompanyId(saved.selectedCompany);
+    } else if (isRestoredSiteAdmin) {
+      const candidateCompanyId = String(
+        (savedSiteAdminLocation as any)?.selectedCompanyId || saved.selectedCompany || ''
+      ).trim();
+      if (candidateCompanyId) {
+        setSelectedCompanyId(candidateCompanyId);
+      }
+      const candidateAdminTab = String((savedSiteAdminLocation as any)?.adminDashboardTab || '').trim();
+      const allowedAdminTabs = new Set([
+        'company-management',
+        'company-settings',
+        'import-financials',
+        'api-connections',
+        'data-review',
+        'documents',
+        'data-mapping',
+        'goals',
+        'payments',
+      ]);
+      if (allowedAdminTabs.has(candidateAdminTab)) {
+        setAdminDashboardTab(candidateAdminTab as any);
+      }
+      const candidateCompanySubTab = String((savedSiteAdminLocation as any)?.companyManagementSubTab || '').trim();
+      const allowedCompanySubTabs = new Set([
+        'details',
+        'profile',
+        'payments',
+        'documentation',
+        'team-assessment',
+        'dataroom',
+      ]);
+      if (allowedCompanySubTabs.has(candidateCompanySubTab)) {
+        setCompanyManagementSubTab(candidateCompanySubTab as any);
+      }
     }
     // Don't load assessment responses from localStorage for assessment users - they'll load from DB
     if (saved.assessmentResponses && !isAssessmentUser) setAssessmentResponses(JSON.parse(saved.assessmentResponses));
@@ -4507,7 +4550,18 @@ function FinancialScorePage() {
       
       // Set appropriate default view based on user type
       if (String(user.role || '').toLowerCase() === 'siteadmin') {
-        setCurrentView('siteadmin');
+        const restoredCompanyId = String(
+          (savedSiteAdminLocation as any)?.selectedCompanyId || saved.selectedCompany || ''
+        ).trim();
+        const candidateView = String((savedSiteAdminLocation as any)?.currentView || '').trim();
+        const allowedViews = new Set(['admin', 'operations', 'daily-alerts', 'dataroom', 'custom-reports', 'siteadmin']);
+        if (candidateView && allowedViews.has(candidateView)) {
+          setCurrentView(candidateView as any);
+        } else if (restoredCompanyId) {
+          setCurrentView('admin');
+        } else {
+          setCurrentView('siteadmin');
+        }
       } else if (user.role === 'consultant') {
         setCurrentView('consultant-dashboard');
       } else if ((user.userType || '').toLowerCase() === 'company') {
@@ -4555,6 +4609,25 @@ function FinancialScorePage() {
       }
     }
   }, [selectedCompanyId, financialDataRecords]);
+
+  // Persist last Site Admin location so refresh returns to same company/page.
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    if (String(currentUser?.role || '').toLowerCase() !== 'siteadmin') return;
+    if (!selectedCompanyId) return;
+    try {
+      localStorage.setItem('fs_siteAdminLastLocation', JSON.stringify({
+        selectedCompanyId,
+        currentView,
+        adminDashboardTab,
+        companyManagementSubTab,
+        siteAdminTab,
+        updatedAt: new Date().toISOString(),
+      }));
+    } catch {
+      // Ignore storage access issues.
+    }
+  }, [adminDashboardTab, companyManagementSubTab, currentUser?.role, currentView, selectedCompanyId, siteAdminTab]);
 
   // Load expense goals when Goals, Trend Analysis, or MD&A view is accessed
   useEffect(() => {
