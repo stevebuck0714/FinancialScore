@@ -1366,7 +1366,7 @@ export default function OperationsTab({
     }
 
     const controller = new AbortController();
-    fetch(`/api/ops-sector-layouts?sectorCategory=${industrySectorCategory}`, { signal: controller.signal })
+    fetch(`/api/ops-sector-layouts?sectorCategory=${industrySectorCategory}`, { signal: controller.signal, cache: 'no-store' })
       .then((response) => response.json())
       .then((data) => {
         setOpsSectorLayoutConfig(data?.config?.config || null);
@@ -1432,7 +1432,7 @@ export default function OperationsTab({
   useEffect(() => {
     if (!selectedCompanyId) return;
     const controller = new AbortController();
-    fetch(`/api/companies?companyId=${encodeURIComponent(selectedCompanyId)}`, { signal: controller.signal })
+    fetch(`/api/companies?companyId=${encodeURIComponent(selectedCompanyId)}`, { signal: controller.signal, cache: 'no-store' })
       .then((response) => response.json())
       .then((data) => {
         const company = Array.isArray(data?.companies) ? data.companies[0] : null;
