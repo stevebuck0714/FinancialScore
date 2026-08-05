@@ -10,6 +10,7 @@ import { warmDailyExecutiveBriefingCache } from '@/lib/pulse/exec-briefing-warmu
 import { warmDailyIndustryBriefCache } from '@/lib/industry-brief/warmup';
 
 export const dynamic = 'force-dynamic';
+export const maxDuration = 300;
 const CSI_REBUILD_MAX_MONTHS = 36;
 const CSI_LEDGER_PROGRAMS = new Set(['SLGLTRANS']);
 const QBD_DAILY_FINANCIAL_SOURCE = 'QUICKBOOKS_DESKTOP_REPROCESS';
