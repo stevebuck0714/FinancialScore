@@ -41,7 +41,9 @@ export default function Header({
   const isCompanyUser = currentUser?.role === 'user' && currentUser?.userType === 'company';
   const isCompanyAdmin = isCompanyUser && currentUser?.companyRole === 'admin';
   const displayedUserName =
-    previewAdminName && previewAdminName.trim() ? previewAdminName : currentUser?.name;
+    currentUser?.role === 'siteadmin'
+      ? currentUser.name
+      : (previewAdminName && previewAdminName.trim() ? previewAdminName : currentUser?.name);
 
   const allowedSections = (isCompanyUser && !isCompanyAdmin && Array.isArray(currentUser?.sidebarAccess))
     ? currentUser.sidebarAccess

@@ -4417,6 +4417,8 @@ function FinancialScorePage() {
       consultants: localStorage.getItem('fs_consultants'),
       users: localStorage.getItem('fs_users'),
       currentUser: localStorage.getItem('fs_currentUser'),
+      siteAdminSessionUser: localStorage.getItem('fs_siteAdminSessionUser'),
+      siteAdminPreview: localStorage.getItem('fs_siteAdminPreview'),
       records: localStorage.getItem('fs_financialDataRecords'),
       selectedCompany: localStorage.getItem('fs_selectedCompanyId'),
       defaults: localStorage.getItem('fs_projectionDefaults'),
@@ -4429,6 +4431,14 @@ function FinancialScorePage() {
     
     // Check user type first to determine if we should load assessment data
     const savedUser = saved.currentUser ? JSON.parse(saved.currentUser) : null;
+    const savedSiteAdmin = saved.siteAdminSessionUser ? JSON.parse(saved.siteAdminSessionUser) : null;
+    const savedPreview = saved.siteAdminPreview ? JSON.parse(saved.siteAdminPreview) : null;
+    const restoredUser =
+      savedSiteAdmin &&
+      String(savedSiteAdmin.role || '').toLowerCase() === 'siteadmin' &&
+      savedPreview?.companyId
+        ? savedSiteAdmin
+        : savedUser;
     const isAssessmentUser = savedUser?.userType === 'assessment';
     
     if (saved.consultants) setConsultants(JSON.parse(saved.consultants));
@@ -4439,6 +4449,10 @@ function FinancialScorePage() {
     if (saved.users) setUsers(JSON.parse(saved.users));
     if (saved.records) setFinancialDataRecords(JSON.parse(saved.records));
     if (saved.selectedCompany) setSelectedCompanyId(saved.selectedCompany);
+    if (savedPreview?.companyId) {
+      setSelectedCompanyId(String(savedPreview.companyId));
+      setCurrentView('admin');
+    }
     // Don't load assessment responses from localStorage for assessment users - they'll load from DB
     if (saved.assessmentResponses && !isAssessmentUser) setAssessmentResponses(JSON.parse(saved.assessmentResponses));
     if (saved.assessmentNotes && !isAssessmentUser) setAssessmentNotes(JSON.parse(saved.assessmentNotes));
@@ -4458,8 +4472,8 @@ function FinancialScorePage() {
       setWorstCaseExpMultiplier(d.worstCaseExp || 1.3);
     }
     
-    if (saved.currentUser) {
-      const user = JSON.parse(saved.currentUser);
+    if (restoredUser) {
+      const user = restoredUser;
       
       // Don't auto-login assessment users from localStorage - they should login fresh each time
       if (user.userType === 'assessment') {
@@ -7107,6 +7121,7 @@ function FinancialScorePage() {
     setColumns([]);
     localStorage.removeItem('fs_currentUser');
     localStorage.removeItem('fs_siteAdminSessionUser');
+    localStorage.removeItem('fs_siteAdminPreview');
     localStorage.removeItem('fs_selectedCompanyId');
     setSiteAdminViewingAs(null);
     setSiteAdminSessionUser(null);
@@ -7126,6 +7141,7 @@ function FinancialScorePage() {
       localStorage.setItem('fs_currentUser', JSON.stringify(restoredSiteAdminUser));
       localStorage.setItem('fs_siteAdminSessionUser', JSON.stringify(restoredSiteAdminUser));
       localStorage.removeItem('fs_selectedCompanyId');
+      localStorage.removeItem('fs_siteAdminPreview');
     }
     setCurrentView('siteadmin');
     setLoadedConsultantId(null);

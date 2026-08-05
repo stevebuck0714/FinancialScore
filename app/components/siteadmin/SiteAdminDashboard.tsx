@@ -6592,6 +6592,12 @@ export default function SiteAdminDashboard(props: any) {
                                   setLoadedConsultantId(null);
                                   if (previewCompanies.length > 0) {
                                     setSelectedCompanyId(previewCompanies[0].id);
+                                    if (typeof window !== 'undefined') {
+                                      localStorage.setItem('fs_siteAdminPreview', JSON.stringify({
+                                        consultantId: consultant.id,
+                                        companyId: previewCompanies[0].id,
+                                      }));
+                                    }
                                   }
                                   // Keep the authenticated Site Administrator context.
                                   // The selected consultant/company is preview state,
@@ -10087,37 +10093,14 @@ export default function SiteAdminDashboard(props: any) {
                               <div style={{ flex: 1 }}>
                                 <h5
                                   onClick={async () => {
-                                      let resolvedBusinessUser = businessUser;
-                                      if (!resolvedBusinessUser) {
-                                        try {
-                                          const userRes = await fetch(`/api/users?companyId=${businessCompany.id}`);
-                                          const userData = await userRes.json();
-                                          if (userRes.ok && Array.isArray(userData?.users) && userData.users.length > 0) {
-                                            resolvedBusinessUser = userData.users.find((u: any) => String(u?.role || '').toUpperCase() === 'USER') || userData.users[0];
-                                          }
-                                        } catch (err) {
-                                          console.error('Error resolving business user from API:', err);
-                                        }
-                                      }
-
                                       const goAdminForCompany = (companyRecord: any) => {
                                         setCompanies([companyRecord]);
                                         setLoadedConsultantId(null);
                                         setSelectedCompanyId(businessCompany.id);
                                         setCurrentView('admin');
-                                        if (resolvedBusinessUser) {
-                                          setSiteAdminViewingAs((prev: any) => prev || currentUser);
-                                          const normalizedUserType = resolvedBusinessUser.userType?.toLowerCase() === 'company' ? 'company' : 'company';
-                                          setCurrentUser({
-                                            ...resolvedBusinessUser,
-                                            role: 'user',
-                                            userType: normalizedUserType,
-                                            companyId: businessCompany.id,
-                                          });
-                                        } else {
-                                          setSiteAdminViewingAs(null);
-                                          setCurrentUser((prev: any) => ({
-                                            ...prev,
+                                        setSiteAdminViewingAs((prev: any) => prev || currentUser);
+                                        if (typeof window !== 'undefined') {
+                                          localStorage.setItem('fs_siteAdminPreview', JSON.stringify({
                                             companyId: businessCompany.id,
                                           }));
                                         }
