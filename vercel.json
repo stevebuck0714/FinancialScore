@@ -93,6 +93,10 @@
       "schedule": "0 3 * * *"
     },
     {
+      "path": "/api/cron/warm-operational-products-cache",
+      "schedule": "15 4 * * *"
+    },
+    {
       "path": "/api/cron/publish-financial-month",
       "schedule": "0 6 1 * *"
     },

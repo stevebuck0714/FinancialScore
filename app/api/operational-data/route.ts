@@ -2914,7 +2914,7 @@ export async function GET(request: NextRequest) {
       );
     }
     const resolvedCompanySectorCategory = resolveCompanyIndustrySectorCategory(company);
-    if (isCronProductsCacheWarmup && resolvedCompanySectorCategory !== '42') {
+    if (isCronWholesaleProductsWarmup && resolvedCompanySectorCategory !== '42') {
       return NextResponse.json(
         { error: 'Cron product cache warmup is limited to wholesale trade companies.' },
         { status: 403 }
