@@ -52,6 +52,9 @@ async function buildMasterDataVersion(companyId: string, scope: 'published' | 'a
          COUNT(*)::text AS count,
          MAX("createdAt") AS "maxCreatedAt",
          MAX("monthDate") AS "maxMonthDate",
+         SUM(revenue)::text AS "revenueChecksum",
+         SUM("cogsTotal")::text AS "cogsChecksum",
+         SUM(expense)::text AS "expenseChecksum",
          SUM("commonStock")::text AS "commonStockChecksum",
          SUM("totalEquity")::text AS "totalEquityChecksum",
          SUM("totalLAndE")::text AS "totalLAndEChecksum"

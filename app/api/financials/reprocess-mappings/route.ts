@@ -1036,6 +1036,120 @@ async function loadQbdPageRecords(companyId: string, requestName: string, detail
   return rows.flatMap((row) => (Array.isArray(row.payload) ? row.payload.map(qbdAsRecord) : []));
 }
 
+async function loadQbdPageRecordsForBatch(params: {
+  companyId: string;
+  requestName: string;
+  batchId: string;
+  detailOnly?: boolean;
+}): Promise<Record<string, unknown>[]> {
+  const detailOnly = Boolean(params.detailOnly);
+  const rows = await prisma.$queryRaw<Array<{ payload: unknown }>>`
+    SELECT p."payload"
+    FROM "QuickBooksDesktopBackfillPage" p
+    WHERE p."companyId" = ${params.companyId}
+      AND p."requestName" = ${params.requestName}
+      AND p."batchId" = ${params.batchId}
+      AND (${detailOnly}::boolean = (p."jobId" LIKE '%:detail:%'))
+    ORDER BY p."jobId" ASC, p."pageNumber" ASC
+  `;
+  return rows.flatMap((row) => (Array.isArray(row.payload) ? row.payload.map(qbdAsRecord) : []));
+}
+
+async function loadQbdLatestBatchId(params: {
+  companyId: string;
+  requestName: string;
+  detailOnly?: boolean;
+}): Promise<string | null> {
+  const detailOnly = Boolean(params.detailOnly);
+  const rows = await prisma.$queryRaw<Array<{ batchId: string }>>`
+    SELECT "batchId"
+    FROM "QuickBooksDesktopBackfillPage"
+    WHERE "companyId" = ${params.companyId}
+      AND "requestName" = ${params.requestName}
+      AND (${detailOnly}::boolean = ("jobId" LIKE '%:detail:%'))
+    ORDER BY "createdAt" DESC
+    LIMIT 1
+  `;
+  const batchId = qbdString(rows[0]?.batchId);
+  return batchId || null;
+}
+
+async function loadQbdLatestBaselineBatchId(params: {
+  companyId: string;
+  requestName: string;
+  minPages?: number;
+  detailOnly?: boolean;
+}): Promise<string | null> {
+  const minPages = Math.max(1, Number(params.minPages || 10));
+  const detailOnly = Boolean(params.detailOnly);
+  const rows = await prisma.$queryRaw<Array<{ batchId: string }>>`
+    WITH batches AS (
+      SELECT
+        "batchId",
+        COUNT(*)::int AS pages,
+        MAX("createdAt") AS last_seen
+      FROM "QuickBooksDesktopBackfillPage"
+      WHERE "companyId" = ${params.companyId}
+        AND "requestName" = ${params.requestName}
+        AND (${detailOnly}::boolean = ("jobId" LIKE '%:detail:%'))
+      GROUP BY "batchId"
+    )
+    SELECT "batchId"
+    FROM batches
+    WHERE pages >= ${minPages}
+    ORDER BY last_seen DESC
+    LIMIT 1
+  `;
+  const batchId = qbdString(rows[0]?.batchId);
+  return batchId || null;
+}
+
+function qbdReportTxnDateKey(row: Record<string, unknown>): string {
+  return qbdDateKey(qbdReportColValueByTitle(row, ['Txn Date', 'Date'], ['3']));
+}
+
+function qbdMaxTxnDateKey(rows: Array<Record<string, unknown>>): string {
+  let maxKey = '';
+  for (const row of rows) {
+    if (qbdString(row.rowKind) !== 'DataRow') continue;
+    const dateKey = qbdReportTxnDateKey(row);
+    if (dateKey && dateKey > maxKey) maxKey = dateKey;
+  }
+  return maxKey;
+}
+
+async function loadQbdGeneralLedgerRowsForMonthlyBuild(companyId: string): Promise<Record<string, unknown>[]> {
+  // Monthly build must NOT depend on the most recent incremental batch (often 1-2 days).
+  // Prefer the most recent large baseline batch, then append any newer incremental rows
+  // strictly after the baseline max txn date to avoid double counting overlaps.
+  const requestName = 'GeneralDetailReportQuery';
+  const [latestBatchId, baselineBatchId] = await Promise.all([
+    loadQbdLatestBatchId({ companyId, requestName }),
+    loadQbdLatestBaselineBatchId({ companyId, requestName, minPages: 10 }),
+  ]);
+
+  if (!latestBatchId) return [];
+  if (!baselineBatchId || baselineBatchId === latestBatchId) {
+    return loadQbdPageRecordsForBatch({ companyId, requestName, batchId: latestBatchId });
+  }
+
+  const [baselineRows, latestRows] = await Promise.all([
+    loadQbdPageRecordsForBatch({ companyId, requestName, batchId: baselineBatchId }),
+    loadQbdPageRecordsForBatch({ companyId, requestName, batchId: latestBatchId }),
+  ]);
+
+  const baselineMax = qbdMaxTxnDateKey(baselineRows);
+  const appendRows = baselineMax
+    ? latestRows.filter((row) => {
+        if (qbdString(row.rowKind) !== 'DataRow') return true;
+        const dateKey = qbdReportTxnDateKey(row);
+        return !dateKey || dateKey > baselineMax;
+      })
+    : latestRows;
+
+  return [...baselineRows, ...appendRows];
+}
+
 async function loadQbdLatestGlRowsForMonth(companyId: string, monthKey: string): Promise<Record<string, unknown>[]> {
   const monthStart = `${monthKey}-01`;
   const monthEndDate = new Date(`${monthStart}T00:00:00.000Z`);
@@ -1155,7 +1269,7 @@ async function buildQuickBooksDesktopMappedMonthlyPayload(companyId: string, bas
     await Promise.all([
       loadQbdPageRecords(companyId, 'AccountQuery'),
       loadQbdPageRecords(companyId, 'BalanceSheetStandardReportQuery'),
-      loadQbdPageRecords(companyId, 'GeneralDetailReportQuery'),
+      loadQbdGeneralLedgerRowsForMonthlyBuild(companyId),
     ]);
 
   const months = new Map<string, QbdMappedMonthlyRow>();

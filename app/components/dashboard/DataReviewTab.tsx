@@ -47,9 +47,15 @@ export default function DataReviewTab({ selectedCompanyId, companyName, accountM
       const bKey = getMonthKey(b?.month ?? b?.date);
       return monthKeyToSortValue(aKey) - monthKeyToSortValue(bKey);
     });
+    const now = new Date();
+    const currentMonthKey = `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, "0")}`;
+    const closedMonthRows = rows.filter((row: any) => {
+      const key = getMonthKey(row?.month ?? row?.date);
+      return !key || key !== currentMonthKey;
+    });
     return {
-      monthly: rows.slice(-36).reverse(),
-      totalMonths: rows.length,
+      monthly: closedMonthRows.slice(-36).reverse(),
+      totalMonths: closedMonthRows.length,
     };
   }, [monthlyData]);
   const displayedMonths = monthly;
