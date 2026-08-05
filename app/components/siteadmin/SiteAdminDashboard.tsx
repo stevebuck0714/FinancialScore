@@ -6593,16 +6593,10 @@ export default function SiteAdminDashboard(props: any) {
                                   if (previewCompanies.length > 0) {
                                     setSelectedCompanyId(previewCompanies[0].id);
                                   }
-                                  // Switch to viewing this consultant's dashboard
-                                  setCurrentUser({
-                                    ...consultant.user,
-                                    role: 'consultant',
-                                    consultantId: consultant.id,
-                                    consultantType: consultant.type,
-                                    consultantCompanyName: consultant.companyName || consultant.fullName,
-                                    isPrimaryContact: true // Site admin viewing as primary consultant
-                                  });
-                                  setCurrentView('consultant-dashboard');
+                                  // Keep the authenticated Site Administrator context.
+                                  // The selected consultant/company is preview state,
+                                  // not a replacement user identity.
+                                  setCurrentView('admin');
                                   // Scroll main content to top
                                   setTimeout(() => {
                                     const mainElement = document.querySelector('main');
