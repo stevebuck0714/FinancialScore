@@ -904,7 +904,8 @@ export const EbitdaHelperBar: React.FC = () => {
 // adjustment buckets (or unassign).
 // -----------------------------------------------------------------------------
 
-const CATEGORY_ORDER: AccountCategory[] = ['Revenue', 'Expense', 'Asset', 'Liability', 'Equity'];
+const CATEGORY_ORDER: AccountCategory[] = ['Revenue', 'Expense'];
+const ACCOUNTS_RAIL_ALLOWED_CATEGORIES = new Set<AccountCategory>(['Revenue', 'Expense']);
 
 const BUCKET_CHIP_LABELS: Record<SdeBucket, string> = {
   OWNER_COMP: 'Owner Comp',
@@ -926,9 +927,6 @@ export const EbitdaAccountList: React.FC = () => {
   const [collapsed, setCollapsed] = useState<Record<AccountCategory, boolean>>({
     Revenue: false,
     Expense: false,
-    Asset: false,
-    Liability: false,
-    Equity: false,
     Other: true,
   });
   const [pickerForRow, setPickerForRow] = useState<string | null>(null);
@@ -936,8 +934,9 @@ export const EbitdaAccountList: React.FC = () => {
   const accounts = ctx.api?.allAccounts ?? [];
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
-    if (!q) return accounts;
-    return accounts.filter(
+    const base = accounts.filter((a) => ACCOUNTS_RAIL_ALLOWED_CATEGORIES.has((a.category || 'Other') as AccountCategory));
+    if (!q) return base;
+    return base.filter(
       (a) =>
         a.accountName.toLowerCase().includes(q) ||
         (a.accountCode || '').toLowerCase().includes(q) ||
@@ -951,7 +950,7 @@ export const EbitdaAccountList: React.FC = () => {
     for (const c of CATEGORY_ORDER) map.set(c, []);
     for (const a of filtered) {
       const cat = (a.category || 'Other') as AccountCategory;
-      if (!map.has(cat)) map.set(cat, []);
+      if (!ACCOUNTS_RAIL_ALLOWED_CATEGORIES.has(cat)) continue;
       map.get(cat)!.push(a);
     }
     return map;
@@ -961,9 +960,6 @@ export const EbitdaAccountList: React.FC = () => {
     const out: Record<AccountCategory, { count: number; total: number }> = {
       Revenue: { count: 0, total: 0 },
       Expense: { count: 0, total: 0 },
-      Asset: { count: 0, total: 0 },
-      Liability: { count: 0, total: 0 },
-      Equity: { count: 0, total: 0 },
       Other: { count: 0, total: 0 },
     };
     for (const [cat, list] of grouped.entries()) {
@@ -1037,6 +1033,7 @@ export const EbitdaAccountList: React.FC = () => {
             if (list.length === 0) return null;
             const t = totals[cat];
             const isCollapsed = collapsed[cat];
+            const displayCategory = cat === 'Revenue' ? 'Income' : cat;
             return (
               <div key={cat} style={{ borderBottom: '1px solid #e2e8f0' }}>
                 <button
@@ -1056,7 +1053,7 @@ export const EbitdaAccountList: React.FC = () => {
                 >
                   <span style={{ fontSize: '11px', fontWeight: 700, color: '#1e293b' }}>
                     <span style={{ color: '#64748b', marginRight: '4px' }}>{isCollapsed ? '▸' : '▾'}</span>
-                    {cat} <span style={{ color: '#64748b', fontWeight: 500 }}>({t.count})</span>
+                    {displayCategory} <span style={{ color: '#64748b', fontWeight: 500 }}>({t.count})</span>
                   </span>
                   <span style={{ fontSize: '10px', fontFamily: 'monospace', color: '#475569', fontWeight: 700 }}>
                     {fmtMoney(t.total)}
@@ -1097,28 +1094,28 @@ export const EbitdaAccountList: React.FC = () => {
                           >
                             <span
                               style={{
-                                fontSize: '11px',
+                                fontSize: '13px',
                                 color: '#1e293b',
                                 overflow: 'hidden',
                                 textOverflow: 'ellipsis',
                                 whiteSpace: 'nowrap',
                               }}
                             >
-                              <span style={{ color: '#94a3b8', fontFamily: 'monospace', marginRight: '4px' }}>
+                              <span style={{ color: '#94a3b8', fontFamily: 'monospace', marginRight: '4px', fontSize: '12px' }}>
                                 {a.accountCode || a.accountId || ''}
                               </span>
                               {a.accountName}
                             </span>
-                            <span style={{ fontSize: '11px', fontFamily: 'monospace', fontWeight: 700, color: '#0f172a' }}>
+                            <span style={{ fontSize: '13px', fontFamily: 'monospace', fontWeight: 700, color: '#0f172a' }}>
                               {fmtMoney(a.ltm)}
                             </span>
                           </button>
                           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '2px' }}>
-                            <span style={{ fontSize: '9px', color: '#64748b' }}>{a.targetField}</span>
+                            <span style={{ fontSize: '10px', color: '#64748b' }}>{a.targetField}</span>
                             {eff && (
                               <span
                                 style={{
-                                  fontSize: '9px',
+                                  fontSize: '10px',
                                   fontWeight: 700,
                                   padding: '1px 6px',
                                   borderRadius: '8px',
@@ -1162,7 +1159,7 @@ export const EbitdaAccountList: React.FC = () => {
                                   >
                                     <div
                                       style={{
-                                        fontSize: '9px',
+                                        fontSize: '10px',
                                         fontWeight: 700,
                                         color: BUCKET_CHIP_COLORS[b].fg,
                                         textTransform: 'uppercase',
@@ -1192,7 +1189,7 @@ export const EbitdaAccountList: React.FC = () => {
                                             title={`${SDE_BUCKET_SHORT_LABELS[b]} → ${li.label}`}
                                             style={{
                                               padding: '2px 5px',
-                                              fontSize: '9px',
+                                              fontSize: '11px',
                                               fontWeight: 600,
                                               color: isCurrent ? '#94a3b8' : BUCKET_CHIP_COLORS[b].fg,
                                               background: isCurrent ? '#f1f5f9' : BUCKET_CHIP_COLORS[b].bg,

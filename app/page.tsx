@@ -217,6 +217,11 @@ const formatCompetitorNaics = (value: string, fallback?: string): string => {
   return raw || fallbackRaw;
 };
 
+const VALUATION_PAGE_CONTAINER_STYLE: Record<'standard' | 'wide', React.CSSProperties> = {
+  standard: { maxWidth: '1400px', margin: '0 auto', padding: '16px' },
+  wide: { maxWidth: '1600px', margin: '0 auto', padding: '16px' },
+};
+
 const COMPETITOR_SEARCH_SCOPE_OPTIONS: Array<{ id: CompetitorSearchScope; label: string; description: string }> = [
   { id: 'local', label: 'Local', description: 'City or metro-area competitors and alternatives.' },
   { id: 'state', label: 'State', description: 'Companies across the same state.' },
@@ -1927,7 +1932,7 @@ function FinancialScorePage() {
         return;
       }
 
-      if (currentUser.role === 'siteadmin') {
+      if (String(currentUser.role || '').toLowerCase() === 'siteadmin') {
         const response = await fetch('/api/companies');
         const data = await response.json();
         safeSetCompanies(data.companies || []);
@@ -2315,7 +2320,7 @@ function FinancialScorePage() {
                 safeSetCompanies([]); // Set empty array on error
               });
             }
-          } else if (normalizedUser.role === 'siteadmin') {
+          } else if (String(normalizedUser.role || '').toLowerCase() === 'siteadmin') {
             setCurrentView('siteadmin');
           } else if (normalizedUser.userType === 'assessment') {
             setCurrentView('ma-welcome');
@@ -3141,6 +3146,23 @@ function FinancialScorePage() {
   );
 
   const siteAdminReturnUser = siteAdminViewingAs || siteAdminSessionUser;
+
+  // A Site Admin preview must never land on an empty company-management page.
+  // If a state update or fresh company load temporarily clears the selection,
+  // restore it from the preview company list before rendering the admin view.
+  useEffect(() => {
+    if (
+      currentView === 'admin' &&
+      String(currentUser?.role || '').toLowerCase() === 'siteadmin' &&
+      siteAdminViewingAs &&
+      !selectedCompanyId &&
+      Array.isArray(companies) &&
+      companies.length > 0
+    ) {
+      const previewCompany = companies.find((company: any) => company?.id);
+      if (previewCompany?.id) setSelectedCompanyId(previewCompany.id);
+    }
+  }, [companies, currentUser?.role, currentView, selectedCompanyId, siteAdminViewingAs]);
 
   
   // Affiliate management state
@@ -4418,7 +4440,6 @@ function FinancialScorePage() {
       users: localStorage.getItem('fs_users'),
       currentUser: localStorage.getItem('fs_currentUser'),
       siteAdminSessionUser: localStorage.getItem('fs_siteAdminSessionUser'),
-      siteAdminPreview: localStorage.getItem('fs_siteAdminPreview'),
       records: localStorage.getItem('fs_financialDataRecords'),
       selectedCompany: localStorage.getItem('fs_selectedCompanyId'),
       defaults: localStorage.getItem('fs_projectionDefaults'),
@@ -4432,11 +4453,9 @@ function FinancialScorePage() {
     // Check user type first to determine if we should load assessment data
     const savedUser = saved.currentUser ? JSON.parse(saved.currentUser) : null;
     const savedSiteAdmin = saved.siteAdminSessionUser ? JSON.parse(saved.siteAdminSessionUser) : null;
-    const savedPreview = saved.siteAdminPreview ? JSON.parse(saved.siteAdminPreview) : null;
     const restoredUser =
       savedSiteAdmin &&
-      String(savedSiteAdmin.role || '').toLowerCase() === 'siteadmin' &&
-      savedPreview?.companyId
+      String(savedSiteAdmin.role || '').toLowerCase() === 'siteadmin'
         ? savedSiteAdmin
         : savedUser;
     const isAssessmentUser = savedUser?.userType === 'assessment';
@@ -4446,12 +4465,14 @@ function FinancialScorePage() {
     // localStorage because deleted records can otherwise reappear temporarily
     // until the authenticated API refresh completes.
     localStorage.removeItem('fs_companies');
+    localStorage.removeItem('fs_siteAdminPreview');
     if (saved.users) setUsers(JSON.parse(saved.users));
     if (saved.records) setFinancialDataRecords(JSON.parse(saved.records));
-    if (saved.selectedCompany) setSelectedCompanyId(saved.selectedCompany);
-    if (savedPreview?.companyId) {
-      setSelectedCompanyId(String(savedPreview.companyId));
-      setCurrentView('admin');
+    if (
+      saved.selectedCompany &&
+      String(restoredUser?.role || '').toLowerCase() !== 'siteadmin'
+    ) {
+      setSelectedCompanyId(saved.selectedCompany);
     }
     // Don't load assessment responses from localStorage for assessment users - they'll load from DB
     if (saved.assessmentResponses && !isAssessmentUser) setAssessmentResponses(JSON.parse(saved.assessmentResponses));
@@ -4485,7 +4506,7 @@ function FinancialScorePage() {
       setIsLoggedIn(true);
       
       // Set appropriate default view based on user type
-      if (user.role === 'siteadmin') {
+      if (String(user.role || '').toLowerCase() === 'siteadmin') {
         setCurrentView('siteadmin');
       } else if (user.role === 'consultant') {
         setCurrentView('consultant-dashboard');
@@ -5233,7 +5254,7 @@ function FinancialScorePage() {
       }
     };
 
-    if (currentView === 'siteadmin' && currentUser?.role === 'siteadmin') {
+    if (currentView === 'siteadmin' && String(currentUser?.role || '').toLowerCase() === 'siteadmin') {
       console.log('?? Loading all companies and users for site admin businesses tab...');
       loadBusinessesData();
     }
@@ -6655,7 +6676,7 @@ function FinancialScorePage() {
       }
       
       // Set appropriate default view based on user type
-      if (normalizedUser.role === 'siteadmin') {
+      if (String(normalizedUser.role || '').toLowerCase() === 'siteadmin') {
         setCurrentView('siteadmin');
       } else if (normalizedUser.role === 'consultant') {
         setCurrentView('consultant-dashboard');
@@ -6801,7 +6822,7 @@ function FinancialScorePage() {
       }
       
       // Set appropriate view
-      if (normalizedUser.role === 'siteadmin') {
+      if (String(normalizedUser.role || '').toLowerCase() === 'siteadmin') {
         setCurrentView('siteadmin');
       } else if (normalizedUser.role === 'consultant') {
         setCurrentView('consultant-dashboard');
@@ -6896,7 +6917,7 @@ function FinancialScorePage() {
       }
       
       // Set appropriate view
-      if (normalizedUser.role === 'siteadmin') {
+      if (String(normalizedUser.role || '').toLowerCase() === 'siteadmin') {
         setCurrentView('siteadmin');
       } else if (normalizedUser.role === 'consultant') {
         setCurrentView('consultant-dashboard');
@@ -14390,7 +14411,7 @@ function FinancialScorePage() {
           {(!(currentUser?.userType === 'assessment') || currentView === 'ma-welcome' || currentView === 'ma-questionnaire' || currentView === 'ma-your-results' || currentView === 'ma-scores-summary' || currentView === 'ma-charts' || currentView === 'ma-scoring-guide') && (
           <>
           {/* Site Administration */}
-          {currentView === 'siteadmin' && currentUser?.role === 'siteadmin' && (
+          {currentView === 'siteadmin' && String(currentUser?.role || '').toLowerCase() === 'siteadmin' && (
             <SiteAdminDashboard
               siteAdminTab={siteAdminTab}
               setSiteAdminTab={setSiteAdminTab}
@@ -14559,7 +14580,11 @@ function FinancialScorePage() {
           )}
 
           {/* Admin Dashboard */}
-          {currentView === 'admin' && (currentUser?.role === 'siteadmin' || currentUser?.role === 'consultant' || (currentUser?.role === 'user' && currentUser?.userType === 'company')) && (
+          {currentView === 'admin' && (
+            String(currentUser?.role || '').toLowerCase() === 'siteadmin' ||
+            String(currentUser?.role || '').toLowerCase() === 'consultant' ||
+            (String(currentUser?.role || '').toLowerCase() === 'user' && currentUser?.userType === 'company')
+          ) && (
         <div style={{ maxWidth: '1600px', margin: '0 auto', padding: '16px 24px 0' }}>
 
           {/* Tab Navigation */}
@@ -20678,7 +20703,7 @@ function FinancialScorePage() {
 
       {/* Valuation View */}
       {currentView === 'valuation' && selectedCompanyId && (monthly.length > 0 || valuationMethodTab === 'business-overview') && (
-        <div style={{ maxWidth: '1400px', margin: '0 auto', padding: '16px' }}>
+        <div style={valuationMethodTab === 'sde' ? VALUATION_PAGE_CONTAINER_STYLE.wide : VALUATION_PAGE_CONTAINER_STYLE.standard}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
             <h1 style={{ fontSize: '32px', fontWeight: '700', color: '#1e293b', margin: 0 }}>
               {valuationMethodTab === 'sde' ? 'SDE Valuation' : valuationMethodTab === 'ebitda' ? 'EBITDA Valuation' : valuationMethodTab === 'dcf' ? 'DCF Valuation' : 'Business Overview / Market Position'}
@@ -22236,7 +22261,7 @@ function FinancialScorePage() {
                     </h2>
                   </div>
 
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '12px', alignItems: 'start' }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: '0.95fr 0.95fr 0.95fr 1.15fr', gap: '12px', alignItems: 'start' }}>
                     <div style={{ border: '1px solid #e2e8f0', borderRadius: '8px', padding: '10px' }}>
                       <div style={{ fontSize: '13px', fontWeight: '700', color: '#334155', marginBottom: '8px' }}>EBITDA, Trailing 12 Months</div>
                       {[
@@ -29494,12 +29519,22 @@ function FinancialScorePage() {
       )}
 
       {/* Custom Print View - For Consultants and Company Users */}
-      {currentView === 'custom-print' && (currentUser?.role === 'consultant' || (currentUser?.role === 'user' && currentUser?.userType === 'company')) && (
-        <div style={{ maxWidth: '1000px', margin: '0 auto', padding: '20px' }}>
-          <div style={{ background: 'white', borderRadius: '12px', padding: '24px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
-            <p style={{ fontSize: '30px', color: '#64748b', marginBottom: '20px' }}>
-              Select the reports you want to include in your custom print package
+      {currentView === 'custom-print' && (
+        String(currentUser?.role || '').toLowerCase() === 'siteadmin' ||
+        String(currentUser?.role || '').toLowerCase() === 'consultant' ||
+        (String(currentUser?.role || '').toLowerCase() === 'user' && currentUser?.userType === 'company')
+      ) && (
+        <div style={{ maxWidth: '1400px', margin: '0 auto', padding: '24px 32px 48px' }}>
+          <div style={{ marginBottom: '20px' }}>
+            <div style={{ fontSize: '18px', fontWeight: 800, color: '#1F70C1', textTransform: 'uppercase', letterSpacing: '0.08em', whiteSpace: 'nowrap' }}>
+              Report Packages
+            </div>
+            <p style={{ fontSize: '16px', fontWeight: 700, color: '#475569', margin: '8px 0 0', lineHeight: 1.45 }}>
+              Select the reports you want to include in a print-ready package.
             </p>
+          </div>
+
+          <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '14px', padding: '20px', boxShadow: '0 2px 8px rgba(15, 23, 42, 0.04)' }}>
 
             <div style={{ marginBottom: '20px', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', alignItems: 'start' }}>
               <div style={{ padding: '10px', background: '#f8fafc', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
