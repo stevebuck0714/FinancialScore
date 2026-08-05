@@ -1167,13 +1167,11 @@ export default function OperationsTab({
   const [endDate, setEndDate] = useState<string>(() => {
     return maxSelectableEndDate;
   });
-  const [latestOperationalEndDate, setLatestOperationalEndDate] = useState<string | null>(null);
-  const effectiveMaxSelectableEndDate =
-    latestOperationalEndDate &&
-    /^\d{4}-\d{2}-\d{2}$/.test(latestOperationalEndDate) &&
-    latestOperationalEndDate <= maxSelectableEndDate
-      ? latestOperationalEndDate
-      : maxSelectableEndDate;
+  // Operational sources such as BambooHR can update daily even when the
+  // company's financial source (for example QBO) only updates monthly.
+  // Keep the picker available through yesterday instead of capping it at the
+  // latest financial import date.
+  const effectiveMaxSelectableEndDate = maxSelectableEndDate;
   const hasHydratedDateRangeRef = useRef(false);
   const dateRangeSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const hasHydratedEbitdaEmployeeInputsRef = useRef(false);
@@ -1560,8 +1558,6 @@ export default function OperationsTab({
           const data = await response.json();
           const latestImportDate = String(data?.summary?.latestImportDate || '').slice(0, 10);
           if (/^\d{4}-\d{2}-\d{2}$/.test(latestImportDate) && latestImportDate <= maxSelectableEndDate) {
-            latestEndDateKey = latestImportDate;
-            setLatestOperationalEndDate(latestImportDate);
           }
           if (data?.summary) setSummary(data.summary);
         }
