@@ -938,6 +938,9 @@ export default function SiteAdminDashboard(props: any) {
     return consultant?.companyName || consultant?.fullName || 'Consultant portfolio';
   };
 
+  const isStandaloneBusiness = (company: any) =>
+    !String(company?.consultantId ?? '').trim();
+
   const isCorelyticsCompany = (company: any) => {
     const name = String(company?.name || '').trim().toLowerCase();
     return name.includes('financialscore') || name.includes('corelytics');
@@ -6574,8 +6577,7 @@ export default function SiteAdminDashboard(props: any) {
                                   // Save original site-admin identity once per preview session.
                                   // Do not overwrite with consultant/user identities while drilling deeper.
                                   setSiteAdminViewingAs((prev: any) => prev || currentUser);
-                                  // Fetch the consultant's current companies before switching
-                                  // context so the preview opens on a real company.
+                                  // Fetch the consultant's companies so the dashboard list is ready.
                                   let previewCompanies = consultantCompanies;
                                   try {
                                     const response = await fetch(`/api/companies?consultantId=${encodeURIComponent(consultant.id)}`, {
@@ -6590,19 +6592,17 @@ export default function SiteAdminDashboard(props: any) {
                                   }
                                   setCompanies(previewCompanies);
                                   setLoadedConsultantId(null);
-                                  if (previewCompanies.length > 0) {
-                                    setSelectedCompanyId(previewCompanies[0].id);
-                                    if (typeof window !== 'undefined') {
-                                      localStorage.setItem('fs_siteAdminPreview', JSON.stringify({
-                                        consultantId: consultant.id,
-                                        companyId: previewCompanies[0].id,
-                                      }));
-                                    }
-                                  }
-                                  // Keep the authenticated Site Administrator context.
-                                  // The selected consultant/company is preview state,
-                                  // not a replacement user identity.
-                                  setCurrentView('admin');
+                                  setSelectedCompanyId('');
+                                  // Switch to viewing this consultant's dashboard
+                                  setCurrentUser({
+                                    ...consultant.user,
+                                    role: 'consultant',
+                                    consultantId: consultant.id,
+                                    consultantType: consultant.type,
+                                    consultantCompanyName: consultant.companyName || consultant.fullName,
+                                    isPrimaryContact: true, // Site admin viewing as primary consultant
+                                  });
+                                  setCurrentView('consultant-dashboard');
                                   // Scroll main content to top
                                   setTimeout(() => {
                                     const mainElement = document.querySelector('main');
@@ -9968,7 +9968,7 @@ export default function SiteAdminDashboard(props: any) {
                   {/* Businesses List */}
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
                     <div style={{ fontSize: '14px', fontWeight: '600', color: '#64748b' }}>
-                      Total Businesses: {Array.isArray(companies) ? companies.filter(comp => comp.consultantId === null).length : 0}
+                      Total Businesses: {Array.isArray(companies) ? companies.filter(isStandaloneBusiness).length : 0}
                     </div>
                     <button
                       onClick={async () => {
@@ -10043,7 +10043,7 @@ export default function SiteAdminDashboard(props: any) {
                       <div style={{ fontSize: '16px', fontWeight: '600', color: '#64748b', marginBottom: '6px' }}>Loading businesses...</div>
                       <p style={{ fontSize: '13px', color: '#94a3b8' }}>Please wait while company data is retrieved.</p>
                     </div>
-                  ) : Array.isArray(companies) && companies.filter(comp => comp.consultantId === null).length === 0 ? (
+                  ) : Array.isArray(companies) && companies.filter(isStandaloneBusiness).length === 0 ? (
                     <div style={{ background: 'white', borderRadius: '8px', padding: '40px', textAlign: 'center', boxShadow: '0 1px 3px rgba(0,0,0,0.08)' }}>
                       <div style={{ fontSize: '36px', marginBottom: '12px' }}>🏢</div>
                       <h3 style={{ fontSize: '16px', fontWeight: '600', color: '#64748b', marginBottom: '6px' }}>No businesses in the list yet</h3>
@@ -10052,7 +10052,7 @@ export default function SiteAdminDashboard(props: any) {
                   ) : (
                     <div style={{ display: 'grid', gap: '8px' }}>
                       {Array.isArray(companies) && companies
-                        .filter(comp => comp.consultantId === null)
+                        .filter(isStandaloneBusiness)
                         .sort((a: any, b: any) =>
                           (a.name || '').localeCompare(
                             b.name || '',
@@ -10094,16 +10094,9 @@ export default function SiteAdminDashboard(props: any) {
                                 <h5
                                   onClick={async () => {
                                       const goAdminForCompany = (companyRecord: any) => {
-                                        setCompanies([companyRecord]);
-                                        setLoadedConsultantId(null);
-                                        setSelectedCompanyId(businessCompany.id);
+                                        setSelectedCompanyId(companyRecord?.id || businessCompany.id);
                                         setCurrentView('admin');
                                         setSiteAdminViewingAs((prev: any) => prev || currentUser);
-                                        if (typeof window !== 'undefined') {
-                                          localStorage.setItem('fs_siteAdminPreview', JSON.stringify({
-                                            companyId: businessCompany.id,
-                                          }));
-                                        }
                                       };
 
                                       fetch(`/api/companies?companyId=${businessCompany.id}`)
