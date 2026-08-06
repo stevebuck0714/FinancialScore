@@ -1151,26 +1151,72 @@ async function loadQbdGeneralLedgerRowsForMonthlyBuild(companyId: string): Promi
   return [...baselineRows, ...appendRows];
 }
 
-async function loadQbdLatestGlRowsForMonth(companyId: string, monthKey: string): Promise<Record<string, unknown>[]> {
+async function loadQbdBestBatchIdForMonth(companyId: string, monthKey: string): Promise<string | null> {
+  const monthStart = `${monthKey}-01`;
+  const monthEndDate = new Date(`${monthStart}T00:00:00.000Z`);
+  if (Number.isNaN(monthEndDate.getTime())) return null;
+  monthEndDate.setUTCMonth(monthEndDate.getUTCMonth() + 1);
+  const nextMonthStart = monthEndDate.toISOString().slice(0, 10);
+
+  const rows = await prisma.$queryRaw<
+    Array<{ batchId: string | null }>
+  >`
+    WITH recent_batches AS (
+      SELECT "batchId", MAX("createdAt") AS "lastSeen"
+      FROM "QuickBooksDesktopBackfillPage"
+      WHERE "companyId" = ${companyId}
+        AND "requestName" = 'GeneralDetailReportQuery'
+      GROUP BY "batchId"
+      ORDER BY "lastSeen" DESC
+      LIMIT 25
+    ),
+    batch_rows AS (
+      SELECT
+        p."batchId" AS "batchId",
+        col->>'value' AS "txnDate",
+        p."createdAt" AS "createdAt"
+      FROM "QuickBooksDesktopBackfillPage" p
+      JOIN recent_batches rb ON rb."batchId" = p."batchId"
+      CROSS JOIN LATERAL jsonb_array_elements(p."payload"::jsonb) AS row
+      CROSS JOIN LATERAL jsonb_array_elements(row->'colData') AS col
+      WHERE p."companyId" = ${companyId}
+        AND p."requestName" = 'GeneralDetailReportQuery'
+        AND row->>'rowKind' = 'DataRow'
+        AND col->>'colID' = '3'
+        AND col->>'value' >= ${monthStart}
+        AND col->>'value' < ${nextMonthStart}
+    )
+    SELECT "batchId"
+    FROM (
+      SELECT
+        "batchId",
+        COUNT(*)::int AS "rowsInMonth",
+        MAX("createdAt") AS "lastSeen"
+      FROM batch_rows
+      GROUP BY "batchId"
+    ) ranked
+    ORDER BY "rowsInMonth" DESC, "lastSeen" DESC
+    LIMIT 1
+  `;
+
+  const batchId = qbdString(rows[0]?.batchId);
+  return batchId || null;
+}
+
+async function loadQbdBestGlRowsForMonth(companyId: string, monthKey: string): Promise<Record<string, unknown>[]> {
   const monthStart = `${monthKey}-01`;
   const monthEndDate = new Date(`${monthStart}T00:00:00.000Z`);
   monthEndDate.setUTCMonth(monthEndDate.getUTCMonth() + 1);
   const nextMonthStart = monthEndDate.toISOString().slice(0, 10);
+  const bestBatchId = await loadQbdBestBatchIdForMonth(companyId, monthKey);
+  if (!bestBatchId) return [];
   const rows = await prisma.$queryRaw<Array<{ row: unknown }>>`
-    WITH latest_batch AS (
-      SELECT "batchId"
-      FROM "QuickBooksDesktopBackfillPage"
-      WHERE "companyId" = ${companyId}
-        AND "requestName" = 'GeneralDetailReportQuery'
-      ORDER BY "createdAt" DESC
-      LIMIT 1
-    ),
-    gl_rows AS (
+    WITH gl_rows AS (
       SELECT jsonb_array_elements(p."payload"::jsonb) AS row
       FROM "QuickBooksDesktopBackfillPage" p
-      JOIN latest_batch lb ON lb."batchId" = p."batchId"
       WHERE p."companyId" = ${companyId}
         AND p."requestName" = 'GeneralDetailReportQuery'
+        AND p."batchId" = ${bestBatchId}
     )
     SELECT row
     FROM gl_rows
@@ -1640,18 +1686,26 @@ async function rebuildQuickBooksDesktopDailyPnlMonth(companyId: string, monthKey
     const accountCode = qbdString(mapping.accountCode);
     if (accountCode && accountCodeCounts.get(accountCode.toLowerCase()) === 1) keyValues.push(accountCode);
     for (const key of keyValues) {
-      targetByKey.set(key.toLowerCase(), target);
+      for (const normalized of qbdAccountLookupKeys(key)) {
+        targetByKey.set(normalized, target);
+      }
     }
   }
 
-  const glRows = await loadQbdLatestGlRowsForMonth(companyId, monthKey);
+  const glRows = await loadQbdBestGlRowsForMonth(companyId, monthKey);
   const dailySnapshots = new Map<string, QbdMappedMonthlyRow>();
   const getDailySnapshot = (dateKey: string) => {
     const row = dailySnapshots.get(dateKey) || createQbdMappedDailySnapshot(dateKey);
     dailySnapshots.set(dateKey, row);
     return row;
   };
-  const getTarget = (accountName: unknown) => targetByKey.get(qbdString(accountName).toLowerCase()) || '';
+  const getTarget = (accountName: unknown) => {
+    for (const key of qbdAccountLookupKeys(accountName)) {
+      const target = targetByKey.get(key);
+      if (target) return target;
+    }
+    return '';
+  };
   let pnlRowsUsed = 0;
   let unmappedRows = 0;
   let nonPnlRows = 0;
@@ -2368,28 +2422,36 @@ export async function POST(request: NextRequest) {
         );
       }
       if (dailyOnly) {
-        financialPayload = await buildQuickBooksDesktopMappedMonthlyPayload(String(companyId), financialPayload);
-        if (targetMonth) {
-          financialPayload = {
-            ...financialPayload,
-            qbdDailyFinancialSnapshots: Array.isArray(financialPayload.qbdDailyFinancialSnapshots)
-              ? (financialPayload.qbdDailyFinancialSnapshots as Array<Record<string, unknown>>)
-                  .filter((row) => qbdDateKey(row.snapshotDate)?.startsWith(`${targetMonth}-`))
-              : [],
-          };
+        if (!targetMonth) {
+          return NextResponse.json(
+            {
+              ok: false,
+              error: 'targetMonth is required when dailyOnly=true for QuickBooks Desktop.',
+              diagnostics: qbdDiagnostics,
+            },
+            { status: 400 },
+          );
         }
-        const qbdDailyFinancialSnapshots = await persistQuickBooksDesktopDailyFinancialSnapshots(
-          String(companyId),
-          financialPayload,
-          qbdDomainScope,
-        );
-        const qbdBalanceSheetAnchor = qbdDomainScope.canUpdateBalanceSheet
-          ? await persistQuickBooksDesktopBalanceSheetAnchor(String(companyId), financialPayload)
-          : null;
+
+        // Critical: daily-only rebuild must not reuse the monthly payload builder because it
+        // synthesizes balance sheet anchor rows for every day (and leaves P&L at 0 when the
+        // selected GL batches lack coverage). That path can overwrite previously-correct
+        // daily P&L with zeros. Instead, rebuild only the per-day P&L rows derived from
+        // the best available GL batch for the requested month.
+        const dailyPnlResult = await rebuildQuickBooksDesktopDailyPnlMonth(String(companyId), targetMonth);
+        const qbdDailyFinancialSnapshots = {
+          rowsWritten: dailyPnlResult.rowsWritten,
+          rowsDeleted: dailyPnlResult.rowsDeleted,
+          startDate: dailyPnlResult.startDate,
+          endDate: dailyPnlResult.endDate,
+        };
+        // Daily-only rebuild should not touch balance sheet anchors; those are derived from
+        // BalanceSheetStandardReportQuery + GL movement logic and require the full mapped payload.
+        // More importantly: touching BS anchors here is unnecessary for the daily P&L recovery path.
+        const qbdBalanceSheetAnchor = null;
         qbdDiagnostics.dailyFinancialSnapshots = qbdDailyFinancialSnapshots;
         qbdDiagnostics.balanceSheetAnchor = qbdBalanceSheetAnchor;
-        qbdDiagnostics.rebuiltMappedMonthlyData = true;
-        qbdDiagnostics.rebuiltMonthlyRows = Array.isArray(financialPayload.monthlyData) ? financialPayload.monthlyData.length : 0;
+        qbdDiagnostics.qbdDailyPnlMonthRebuild = dailyPnlResult;
         return NextResponse.json({
           success: true,
           ok: true,
