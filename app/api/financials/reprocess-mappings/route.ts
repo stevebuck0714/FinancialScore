@@ -1119,6 +1119,60 @@ function qbdMaxTxnDateKey(rows: Array<Record<string, unknown>>): string {
   return maxKey;
 }
 
+async function loadQbdBestSupplementalBatchId(params: {
+  companyId: string;
+  requestName: string;
+  afterTxnDateKey: string;
+  recentBatchLimit?: number;
+}): Promise<string | null> {
+  const companyId = String(params.companyId || '').trim();
+  const requestName = String(params.requestName || '').trim();
+  const afterTxnDateKey = String(params.afterTxnDateKey || '').trim();
+  const recentBatchLimit = Math.max(5, Math.min(50, Math.floor(Number(params.recentBatchLimit || 25))));
+  if (!companyId || !requestName || !/^\d{4}-\d{2}-\d{2}$/.test(afterTxnDateKey)) return null;
+
+  const rows = await prisma.$queryRaw<Array<{ batchId: string | null }>>`
+    WITH recent_batches AS (
+      SELECT "batchId", MAX("createdAt") AS "lastSeen"
+      FROM "QuickBooksDesktopBackfillPage"
+      WHERE "companyId" = ${companyId}
+        AND "requestName" = ${requestName}
+      GROUP BY "batchId"
+      ORDER BY "lastSeen" DESC
+      LIMIT ${recentBatchLimit}
+    ),
+    batch_rows AS (
+      SELECT
+        p."batchId" AS "batchId",
+        p."createdAt" AS "createdAt",
+        col->>'value' AS "txnDate"
+      FROM "QuickBooksDesktopBackfillPage" p
+      JOIN recent_batches rb ON rb."batchId" = p."batchId"
+      CROSS JOIN LATERAL jsonb_array_elements(p."payload"::jsonb) AS row
+      CROSS JOIN LATERAL jsonb_array_elements(row->'colData') AS col
+      WHERE p."companyId" = ${companyId}
+        AND p."requestName" = ${requestName}
+        AND row->>'rowKind' = 'DataRow'
+        AND col->>'colID' = '3'
+        AND col->>'value' > ${afterTxnDateKey}
+    )
+    SELECT "batchId"
+    FROM (
+      SELECT
+        "batchId",
+        COUNT(*)::int AS "rowsAfter",
+        MAX("createdAt") AS "lastSeen"
+      FROM batch_rows
+      GROUP BY "batchId"
+    ) ranked
+    ORDER BY "rowsAfter" DESC, "lastSeen" DESC
+    LIMIT 1
+  `;
+
+  const batchId = qbdString(rows[0]?.batchId);
+  return batchId || null;
+}
+
 async function loadQbdGeneralLedgerRowsForMonthlyBuild(companyId: string): Promise<Record<string, unknown>[]> {
   // Monthly build must NOT depend on the most recent incremental batch (often 1-2 days).
   // Prefer the most recent large baseline batch, then append any newer incremental rows
@@ -1134,20 +1188,28 @@ async function loadQbdGeneralLedgerRowsForMonthlyBuild(companyId: string): Promi
     return loadQbdPageRecordsForBatch({ companyId, requestName, batchId: latestBatchId });
   }
 
-  const [baselineRows, latestRows] = await Promise.all([
-    loadQbdPageRecordsForBatch({ companyId, requestName, batchId: baselineBatchId }),
-    loadQbdPageRecordsForBatch({ companyId, requestName, batchId: latestBatchId }),
-  ]);
-
+  const baselineRows = await loadQbdPageRecordsForBatch({ companyId, requestName, batchId: baselineBatchId });
   const baselineMax = qbdMaxTxnDateKey(baselineRows);
-  const appendRows = baselineMax
-    ? latestRows.filter((row) => {
-        if (qbdString(row.rowKind) !== 'DataRow') return true;
-        const dateKey = qbdReportTxnDateKey(row);
-        return !dateKey || dateKey > baselineMax;
-      })
-    : latestRows;
 
+  if (!baselineMax) {
+    // Fallback: if we couldn't derive a max date from the baseline batch, revert to the latest batch.
+    return loadQbdPageRecordsForBatch({ companyId, requestName, batchId: latestBatchId });
+  }
+
+  // Important: the "latest" batch is often tiny (ex: a single-day nightly pull) and may not contain
+  // the backfilled range needed to repair a month. Pick the best recent batch by coverage *after*
+  // the baseline max txn date so we pull from the large manual backfill when present.
+  const supplementalBatchId =
+    (await loadQbdBestSupplementalBatchId({ companyId, requestName, afterTxnDateKey: baselineMax })) ||
+    latestBatchId;
+  if (!supplementalBatchId || supplementalBatchId === baselineBatchId) return baselineRows;
+
+  const supplementalRows = await loadQbdPageRecordsForBatch({ companyId, requestName, batchId: supplementalBatchId });
+  const appendRows = supplementalRows.filter((row) => {
+    if (qbdString(row.rowKind) !== 'DataRow') return true;
+    const dateKey = qbdReportTxnDateKey(row);
+    return !dateKey || dateKey > baselineMax;
+  });
   return [...baselineRows, ...appendRows];
 }
 
@@ -2484,11 +2546,8 @@ export async function POST(request: NextRequest) {
         mode,
       });
       const qbdDailyFinancialSnapshots = result.ok
-        ? await persistQuickBooksDesktopDailyFinancialSnapshots(String(companyId), financialPayload, qbdDomainScope)
+        ? null
         : null;
-      if (qbdDailyFinancialSnapshots) {
-        qbdDiagnostics.dailyFinancialSnapshots = qbdDailyFinancialSnapshots;
-      }
       const qbdBalanceSheetAnchor = result.ok
         ? qbdDomainScope.canUpdateBalanceSheet
           ? await persistQuickBooksDesktopBalanceSheetAnchor(String(companyId), financialPayload)
