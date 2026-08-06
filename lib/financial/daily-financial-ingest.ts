@@ -141,6 +141,14 @@ export async function ingestDailyFinancialSnapshots(params: DailyFinancialIngest
   let linesIngested = 0;
   const dates: Date[] = [];
 
+  const shouldUpdateNumericField = (record: RawRecord, field: string): boolean => {
+    if (!Object.prototype.hasOwnProperty.call(record, field)) return false;
+    const value = record[field];
+    if (value == null) return false;
+    if (typeof value === 'string' && value.trim() === '') return false;
+    return true;
+  };
+
   for (const rawRecord of inputRecords) {
     const snapshotDate = toDate(rawRecord?.snapshotDate || rawRecord?.date);
     if (!snapshotDate) {
@@ -149,7 +157,7 @@ export async function ingestDailyFinancialSnapshots(params: DailyFinancialIngest
     }
 
     const recordFrequency = String(rawRecord?.frequency || frequency || 'daily').toLowerCase();
-    const normalized: Record<string, unknown> = {
+    const base: Record<string, unknown> = {
       companyId,
       snapshotDate,
       frequency: recordFrequency,
@@ -157,8 +165,15 @@ export async function ingestDailyFinancialSnapshots(params: DailyFinancialIngest
       sourceRunId: runId,
     };
 
+    const createData: Record<string, unknown> = { ...base };
     for (const field of NUMERIC_FIELDS) {
-      normalized[field] = safeNumber(rawRecord?.[field]);
+      createData[field] = safeNumber(rawRecord?.[field]);
+    }
+
+    const updateData: Record<string, unknown> = { ...base };
+    for (const field of NUMERIC_FIELDS) {
+      if (!shouldUpdateNumericField(rawRecord, field)) continue;
+      updateData[field] = safeNumber(rawRecord?.[field]);
     }
 
     await dailySnapshotDelegate.upsert({
@@ -169,8 +184,8 @@ export async function ingestDailyFinancialSnapshots(params: DailyFinancialIngest
           frequency: recordFrequency,
         },
       },
-      create: normalized,
-      update: normalized,
+      create: createData,
+      update: updateData,
     });
 
     ingested += 1;

@@ -313,8 +313,15 @@ export async function GET(request: NextRequest) {
         console.log(`\n💼 Syncing company: ${connection.companyId} (${connection.platform})`);
 
         const syncResult = await runOperationalSyncForConnection(connection, connection.syncFrequency || 'daily');
-        const dailyRecords = extractDailyFinancialRecordsFromMetadata(connection.connectionMetadata);
-        const dailyMappedLines = extractDailyFinancialMappedLinesFromMetadata(connection.connectionMetadata);
+        const isQuickBooksDesktop =
+          isQuickBooksDesktopFamily(connection.company?.accountingSystem) && !connection.accessToken;
+        const refreshedConnection = await prisma.accountingConnection.findUnique({
+          where: { id: connection.id },
+          select: { connectionMetadata: true },
+        });
+        const metadataForIngest = refreshedConnection?.connectionMetadata ?? connection.connectionMetadata;
+        const dailyRecords = extractDailyFinancialRecordsFromMetadata(metadataForIngest);
+        const dailyMappedLines = extractDailyFinancialMappedLinesFromMetadata(metadataForIngest);
         let dailyFinancialIngested = 0;
         let dailyFinancialSkipped = 0;
         let dailyFinancialError: string | null = null;
@@ -323,7 +330,7 @@ export async function GET(request: NextRequest) {
         let industryBriefWarmed = false;
         let industryBriefError: string | null = null;
 
-        if (dailyRecords.length > 0) {
+        if (!isQuickBooksDesktop && dailyRecords.length > 0) {
           const ingestResult = await ingestDailyFinancialSnapshots({
             companyId: connection.companyId,
             platform: String(connection.platform),
