@@ -738,7 +738,7 @@ export default function AIAnalysisView(props: {
             color: tab === 'ask' ? '#1F70C1' : '#475569',
             fontSize: '14px',
             textTransform: 'uppercase',
-            fontWeight: tab === 'ask' ? '700' : '500',
+            fontWeight: '700',
             cursor: 'pointer',
           }}
         >
@@ -755,7 +755,7 @@ export default function AIAnalysisView(props: {
             color: tab === 'search-documents' ? '#1F70C1' : '#475569',
             fontSize: '14px',
             textTransform: 'uppercase',
-            fontWeight: tab === 'search-documents' ? '700' : '500',
+            fontWeight: '700',
             cursor: 'pointer',
           }}
         >
@@ -772,7 +772,7 @@ export default function AIAnalysisView(props: {
             color: tab === 'web-research' ? '#1F70C1' : '#475569',
             fontSize: '14px',
             textTransform: 'uppercase',
-            fontWeight: tab === 'web-research' ? '700' : '500',
+            fontWeight: '700',
             cursor: 'pointer',
           }}
         >

@@ -1281,7 +1281,12 @@ function FinancialScorePage() {
       
       if (storedUser) {
         try {
-          const user = JSON.parse(storedUser);
+          const parsedUser = JSON.parse(storedUser);
+          const user = {
+            ...parsedUser,
+            role: String(parsedUser.role || '').toLowerCase(),
+            userType: parsedUser.userType ? String(parsedUser.userType).toLowerCase() : parsedUser.userType,
+          };
           console.log('? User loaded from localStorage:', user.email);
           
           // Check if NextAuth session exists
@@ -1322,6 +1327,16 @@ function FinancialScorePage() {
               }
             } catch (loadError) {
               console.error('❌ Error loading company for restored session:', loadError);
+            }
+          } else if (user.role === 'siteadmin') {
+            try {
+              const response = await fetch('/api/companies', { cache: 'no-store' });
+              const data = await response.json();
+              if (response.ok && Array.isArray(data.companies)) {
+                safeSetCompanies(data.companies);
+              }
+            } catch (loadError) {
+              console.error('❌ Error loading companies for restored site admin session:', loadError);
             }
           }
         } catch (error) {
@@ -4537,7 +4552,13 @@ function FinancialScorePage() {
     }
     
     if (restoredUser) {
-      const user = restoredUser;
+      const user = {
+        ...restoredUser,
+        role: String(restoredUser.role || '').toLowerCase(),
+        userType: restoredUser.userType
+          ? String(restoredUser.userType).toLowerCase()
+          : restoredUser.userType,
+      };
       
       // Don't auto-login assessment users from localStorage - they should login fresh each time
       if (user.userType === 'assessment') {
@@ -4549,7 +4570,7 @@ function FinancialScorePage() {
       setIsLoggedIn(true);
       
       // Set appropriate default view based on user type
-      if (String(user.role || '').toLowerCase() === 'siteadmin') {
+      if (user.role === 'siteadmin') {
         const restoredCompanyId = String(
           (savedSiteAdminLocation as any)?.selectedCompanyId || saved.selectedCompany || ''
         ).trim();
@@ -6205,10 +6226,10 @@ function FinancialScorePage() {
     loadConsultantCompanies();
   }, [currentUser?.consultantId, currentUser?.role, loadedConsultantId]);
 
-  // Load consultants for site admin
+  // Load consultants + all companies for site admin
   useEffect(() => {
     const loadConsultants = async () => {
-      if (!currentUser || currentUser.role !== 'siteadmin') return;
+      if (!currentUser || String(currentUser.role || '').toLowerCase() !== 'siteadmin') return;
       
       try {
         const { consultants: loadedConsultants } = await consultantsApi.getAll();
@@ -6222,12 +6243,14 @@ function FinancialScorePage() {
         
         // Always load full company records so consultant cards have complete fields
         // (e.g., accountingSystem) required by Site Admin integration containers.
-        const companiesRes = await fetch('/api/companies');
+        const companiesRes = await fetch('/api/companies', { cache: 'no-store' });
         if (companiesRes.ok) {
           const companiesData = await companiesRes.json();
           if (Array.isArray(companiesData?.companies)) {
             safeSetCompanies(companiesData.companies);
           }
+        } else {
+          console.error('Error loading companies for site admin:', companiesRes.status);
         }
       } catch (error) {
         console.error('Error loading consultants:', error);
@@ -14684,7 +14707,7 @@ function FinancialScorePage() {
                 marginBottom: '-1px',
                 fontSize: '14px',
                 textTransform: 'uppercase',
-                fontWeight: '600',
+                fontWeight: '700',
                 cursor: 'pointer',
                 transition: 'all 0.2s'
               }}
@@ -14702,7 +14725,7 @@ function FinancialScorePage() {
                 marginBottom: '-1px',
                 fontSize: '14px',
                 textTransform: 'uppercase',
-                fontWeight: '600',
+                fontWeight: '700',
                 cursor: 'pointer',
                 transition: 'all 0.2s'
               }}
@@ -14720,7 +14743,7 @@ function FinancialScorePage() {
                 marginBottom: '-1px',
                 fontSize: '14px',
                 textTransform: 'uppercase',
-                fontWeight: '600',
+                fontWeight: '700',
                 cursor: 'pointer',
                 transition: 'all 0.2s'
               }}
@@ -14738,7 +14761,7 @@ function FinancialScorePage() {
                 marginBottom: '-1px',
                 fontSize: '14px',
                 textTransform: 'uppercase',
-                fontWeight: '600',
+                fontWeight: '700',
                 cursor: 'pointer',
                 transition: 'all 0.2s'
               }}
@@ -14756,7 +14779,7 @@ function FinancialScorePage() {
                 marginBottom: '-1px',
                 fontSize: '14px',
                 textTransform: 'uppercase',
-                fontWeight: '600',
+                fontWeight: '700',
                 cursor: 'pointer',
                 transition: 'all 0.2s'
               }}
@@ -14774,7 +14797,7 @@ function FinancialScorePage() {
                 marginBottom: '-1px',
                 fontSize: '14px',
                 textTransform: 'uppercase',
-                fontWeight: '600',
+                fontWeight: '700',
                 cursor: 'pointer',
                 transition: 'all 0.2s'
               }}
@@ -20038,7 +20061,7 @@ function FinancialScorePage() {
                   color: currentView === tab.id ? '#1F70C1' : '#475569',
                   fontSize: '14px',
                   textTransform: 'uppercase',
-                  fontWeight: currentView === tab.id ? '700' : '500',
+                  fontWeight: '700',
                   cursor: 'pointer',
                 }}
               >
@@ -20232,7 +20255,7 @@ function FinancialScorePage() {
                       color: active ? '#1F70C1' : '#475569',
                       fontSize: '14px',
                       textTransform: 'uppercase',
-                      fontWeight: active ? '700' : '500',
+                      fontWeight: '700',
                       cursor: 'pointer',
                     }}
                   >
@@ -20264,7 +20287,7 @@ function FinancialScorePage() {
                   color: currentView === tab.id ? '#1F70C1' : '#475569',
                   fontSize: '14px',
                   textTransform: 'uppercase',
-                  fontWeight: currentView === tab.id ? '700' : '500',
+                  fontWeight: '700',
                   cursor: 'pointer',
                 }}
               >
@@ -20778,7 +20801,7 @@ function FinancialScorePage() {
       {currentView === 'valuation' && selectedCompanyId && (monthly.length > 0 || valuationMethodTab === 'business-overview') && (
         <div style={valuationMethodTab === 'sde' ? VALUATION_PAGE_CONTAINER_STYLE.wide : VALUATION_PAGE_CONTAINER_STYLE.standard}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-            <h1 style={{ fontSize: '32px', fontWeight: '700', color: '#1e293b', margin: 0 }}>
+            <h1 style={{ fontSize: '32px', fontWeight: '700', color: '#1F70C1', margin: 0 }}>
               {valuationMethodTab === 'sde' ? 'SDE Valuation' : valuationMethodTab === 'ebitda' ? 'EBITDA Valuation' : valuationMethodTab === 'dcf' ? 'DCF Valuation' : 'Business Overview / Market Position'}
             </h1>
             <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>

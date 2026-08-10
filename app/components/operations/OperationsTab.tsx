@@ -26612,7 +26612,7 @@ Strategies to Improve the CCC
               padding: '10px 14px',
               fontSize: '14px',
               textTransform: 'uppercase',
-              fontWeight: activeTab === tab ? '700' : '500',
+              fontWeight: '700',
               color: activeTab === tab ? '#1F70C1' : '#475569',
               cursor: 'pointer',
               transition: 'all 0.2s'

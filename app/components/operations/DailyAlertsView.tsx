@@ -2698,7 +2698,7 @@ export default function DailyAlertsView({ companyId, companyName, onNavigate }: 
                 color: activeTab === tab.id ? '#1F70C1' : '#475569',
                 fontSize: '14px',
                 textTransform: 'uppercase',
-                fontWeight: activeTab === tab.id ? '700' : '500',
+                fontWeight: '700',
                 cursor: 'pointer',
               }}
             >

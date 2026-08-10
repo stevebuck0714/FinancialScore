@@ -543,7 +543,13 @@ export default function DataRoomView({ selectedCompanyId, companyName }: DataRoo
   };
 
   return (
-    <div style={{ maxWidth: '1400px', margin: '0 auto', padding: '32px' }}>
+    <div style={{ maxWidth: '1400px', margin: '0 auto', padding: '24px 32px 48px' }}>
+      <div style={{ marginBottom: '20px' }}>
+        <div style={{ fontSize: '18px', fontWeight: 800, color: '#1F70C1', textTransform: 'uppercase', letterSpacing: '0.08em', whiteSpace: 'nowrap' }}>
+          Corelytics Data Room
+        </div>
+      </div>
+
       <div
         style={{
           background: 'white',
@@ -553,10 +559,7 @@ export default function DataRoomView({ selectedCompanyId, companyName }: DataRoo
           border: '1px solid #e2e8f0',
         }}
       >
-        <h1 style={{ fontSize: '28px', fontWeight: 700, color: '#1e293b', margin: 0 }}>
-          Corelytics Data Room
-        </h1>
-        <div style={{ display: 'grid', gridTemplateColumns: '280px 1fr', gap: '16px', marginTop: '20px' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: '280px 1fr', gap: '16px' }}>
           <div style={{ border: '1px solid #e2e8f0', borderRadius: '10px', overflow: 'hidden' }}>
             <div style={{ background: '#f8fafc', borderBottom: '1px solid #e2e8f0', padding: '10px 12px', fontSize: '12px', fontWeight: 800, color: '#334155' }}>
               Diligence Folders
