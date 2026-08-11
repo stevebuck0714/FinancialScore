@@ -409,6 +409,51 @@ const toOptionalRoundedCurrency = (value: unknown): number | null => {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? Math.round(parsed) : null;
 };
+const startOfUtcDay = (date: Date): Date =>
+  new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
+const dateKeyUtc = (date: Date): string => startOfUtcDay(date).toISOString().slice(0, 10);
+const mostRecentFridayUtc = (reference: Date): Date => {
+  const d = startOfUtcDay(reference);
+  // 0=Sun ... 5=Fri ... 6=Sat
+  const day = d.getUTCDay();
+  const diff = (day - 5 + 7) % 7;
+  d.setUTCDate(d.getUTCDate() - diff);
+  return d;
+};
+const pickLatestRecordAtOrBeforeDay = (records: any[], dayUtc: Date): any | null => {
+  const list = Array.isArray(records) ? records : [];
+  if (list.length === 0) return null;
+  const cutoff = startOfUtcDay(dayUtc).getTime();
+  let best: any | null = null;
+  let bestTs = Number.NEGATIVE_INFINITY;
+  for (const row of list) {
+    const raw = row?.snapshotDate;
+    if (!raw) continue;
+    const ts = startOfUtcDay(new Date(raw)).getTime();
+    if (!Number.isFinite(ts) || ts > cutoff) continue;
+    if (ts >= bestTs) {
+      bestTs = ts;
+      best = row;
+    }
+  }
+  return best;
+};
+const pickLatestRecordDay = (records: any[]): Date | null => {
+  const list = Array.isArray(records) ? records : [];
+  let bestTs = Number.NEGATIVE_INFINITY;
+  let bestDate: Date | null = null;
+  for (const row of list) {
+    const raw = row?.snapshotDate;
+    if (!raw) continue;
+    const ts = startOfUtcDay(new Date(raw)).getTime();
+    if (!Number.isFinite(ts)) continue;
+    if (ts >= bestTs) {
+      bestTs = ts;
+      bestDate = new Date(raw);
+    }
+  }
+  return bestDate;
+};
 
 const toWeeklyWeights = (w1: number, w2: number, w3: number, w4: number): number[] => {
   const raw = [w1, w2, w3, w4].map((value) => Math.max(0, Number(value) || 0));
@@ -685,6 +730,7 @@ export default function WorkingCapitalForecastTab({ selectedCompanyId, basisMode
         };
 
         const fetchLatestDailyFinancialSnapshot = async (): Promise<{
+          asOfDay: string;
           cash: number;
           ar: number;
           ap: number;
@@ -695,38 +741,43 @@ export default function WorkingCapitalForecastTab({ selectedCompanyId, basisMode
           if (!response.ok) return null;
           const data = await response.json();
           if (!Array.isArray(data?.records) || data.records.length === 0) return null;
-          let latest: any = null;
-          let latestTs = Number.NEGATIVE_INFINITY;
-          for (const row of data.records) {
-            const ts = row?.snapshotDate ? new Date(row.snapshotDate).getTime() : Number.NEGATIVE_INFINITY;
-            if (Number.isFinite(ts) && ts >= latestTs) {
-              latestTs = ts;
-              latest = row;
-            }
-          }
-          if (!latest) return null;
+          const latestDate = pickLatestRecordDay(data.records);
+          const asOfFriday = latestDate ? mostRecentFridayUtc(latestDate) : null;
+          const asOfRow = asOfFriday ? pickLatestRecordAtOrBeforeDay(data.records, asOfFriday) : null;
+          if (!asOfRow || !asOfFriday) return null;
           return {
-            cash: Number(latest?.cash || 0),
-            ar: Number(latest?.ar || 0),
-            ap: Number(latest?.ap || 0),
-            inventory: toOptionalRoundedCurrency(latest?.inventory),
-            loc: toOptionalRoundedCurrency(latest?.loc),
+            asOfDay: dateKeyUtc(asOfFriday),
+            cash: Number(asOfRow?.cash || 0),
+            ar: Number(asOfRow?.ar || 0),
+            ap: Number(asOfRow?.ap || 0),
+            inventory: toOptionalRoundedCurrency(asOfRow?.inventory),
+            loc: toOptionalRoundedCurrency(asOfRow?.loc),
           };
         };
 
-        let latestCash = Number(cashResult?.data?.summary?.totalCash || 0);
         const latestDailySnapshot = await fetchLatestDailyFinancialSnapshot();
-        if (!latestCash) {
-          latestCash = latestDailySnapshot?.cash || (await fetchLatestDailyFinancialCash());
-        }
+        // Starting balances should be the most recent closed week-end (Friday),
+        // not "latest imported day" (e.g. Monday). For example, if the newest
+        // daily financial record is 2026-08-10, we use 2026-08-07.
+        const asOfDay = latestDailySnapshot?.asOfDay || null;
+        let latestCash = Number(latestDailySnapshot?.cash || 0);
+        if (!latestCash) latestCash = Number(cashResult?.data?.summary?.totalCash || 0);
+        if (!latestCash) latestCash = await fetchLatestDailyFinancialCash();
         const latestAr = Number(latestDailySnapshot?.ar || 0);
         const latestAp = Number(latestDailySnapshot?.ap || 0);
         let latestInventory = latestDailySnapshot?.inventory ?? null;
         let hasImportedInventoryBalance = latestInventory !== null && latestInventory > 0;
         const latestLocBalance = latestDailySnapshot?.loc ?? null;
         const hasImportedLocBalance = latestLocBalance !== null;
-        const latestArSnapshot = Array.isArray(arResult?.data?.records) ? arResult?.data?.records?.[0] : null;
-        const latestApSnapshot = Array.isArray(apResult?.data?.records) ? apResult?.data?.records?.[0] : null;
+        const asOfDate = asOfDay ? new Date(`${asOfDay}T00:00:00.000Z`) : null;
+        const latestArSnapshot =
+          asOfDate && Array.isArray(arResult?.data?.records)
+            ? pickLatestRecordAtOrBeforeDay(arResult.data.records, asOfDate)
+            : (Array.isArray(arResult?.data?.records) ? arResult.data.records?.[0] : null);
+        const latestApSnapshot =
+          asOfDate && Array.isArray(apResult?.data?.records)
+            ? pickLatestRecordAtOrBeforeDay(apResult.data.records, asOfDate)
+            : (Array.isArray(apResult?.data?.records) ? apResult.data.records?.[0] : null);
         const derivedArBuckets = mapSnapshotToBuckets(latestArSnapshot, latestAr);
         const derivedApBuckets = mapSnapshotToBuckets(latestApSnapshot, latestAp);
 
@@ -999,13 +1050,20 @@ export default function WorkingCapitalForecastTab({ selectedCompanyId, basisMode
               locLoanAmount > 0
                 ? { ...mergedInputs, locLimit: locLoanAmount }
                 : mergedInputs;
+            const shouldUseImportedWeekEndingBalances = Boolean(asOfDay);
             const savedStartingBalances: StartingBalances = {
               ...derivedStartingBalances,
               ...(savedSettings?.startingBalances && typeof savedSettings.startingBalances === 'object'
                 ? {
-                    cash: Math.max(0, toRoundedCurrency((savedSettings.startingBalances as any).cash, derivedStartingBalances.cash)),
-                    ar: Math.max(0, toRoundedCurrency((savedSettings.startingBalances as any).ar, derivedStartingBalances.ar)),
-                    ap: Math.max(0, toRoundedCurrency((savedSettings.startingBalances as any).ap, derivedStartingBalances.ap)),
+                    cash: shouldUseImportedWeekEndingBalances
+                      ? derivedStartingBalances.cash
+                      : Math.max(0, toRoundedCurrency((savedSettings.startingBalances as any).cash, derivedStartingBalances.cash)),
+                    ar: shouldUseImportedWeekEndingBalances
+                      ? derivedStartingBalances.ar
+                      : Math.max(0, toRoundedCurrency((savedSettings.startingBalances as any).ar, derivedStartingBalances.ar)),
+                    ap: shouldUseImportedWeekEndingBalances
+                      ? derivedStartingBalances.ap
+                      : Math.max(0, toRoundedCurrency((savedSettings.startingBalances as any).ap, derivedStartingBalances.ap)),
                     inventory: Math.max(0, toRoundedCurrency((savedSettings.startingBalances as any).inventory, derivedStartingBalances.inventory)),
                     loc: Math.max(0, toRoundedCurrency((savedSettings.startingBalances as any).loc, derivedStartingBalances.loc)),
                   }

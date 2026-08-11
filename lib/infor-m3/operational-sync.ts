@@ -2405,27 +2405,42 @@ const extractSignedGlAmount = (
     normalizeToken(record['drCr']) ||
     normalizeToken(record['drcr']) ||
     '';
-  const debitAmount = pickNumber(record, ['DerDomAmountDebit', 'DomAmountDebit', 'Debit', 'debit']);
-  const creditAmount = pickNumber(record, ['DerDomAmountCredit', 'DomAmountCredit', 'Credit', 'credit']);
+  const debitAmountRaw = pickNumber(record, ['DerDomAmountDebit', 'DomAmountDebit', 'Debit', 'debit']);
+  const creditAmountRaw = pickNumber(record, ['DerDomAmountCredit', 'DomAmountCredit', 'Credit', 'credit']);
   const explicitSigned = pickNumber(record, ['DomAmount', 'DerSumDomAmount', 'domAmount']);
   const unsignedAmount = pickNumber(record, ['Amount', 'amount', 'ForAmount', 'forAmount']);
   const signedAmount = (() => {
     if (Number.isFinite(explicitSigned) && explicitSigned !== 0) return explicitSigned;
     if (
-      (Number.isFinite(debitAmount) && debitAmount !== 0) ||
-      (Number.isFinite(creditAmount) && creditAmount !== 0)
+      (Number.isFinite(debitAmountRaw) && debitAmountRaw !== 0) ||
+      (Number.isFinite(creditAmountRaw) && creditAmountRaw !== 0)
     ) {
-      return debitAmount - creditAmount;
+      return debitAmountRaw - creditAmountRaw;
     }
     if (!Number.isFinite(unsignedAmount) || unsignedAmount === 0) return 0;
     if (drCrToken.startsWith('c')) return -Math.abs(unsignedAmount);
     if (drCrToken.startsWith('d')) return Math.abs(unsignedAmount);
     return unsignedAmount;
   })();
+  // Some CSI IDOs (notably SLGLTRANS in certain configs) provide only a signed
+  // amount and omit explicit debit/credit columns. Downstream cash/BS rebuilds
+  // frequently sum debit-credit, so ensure those are available when possible.
+  const derivedDebitAmount =
+    Number.isFinite(debitAmountRaw) && debitAmountRaw !== 0
+      ? debitAmountRaw
+      : Number.isFinite(signedAmount) && signedAmount > 0
+        ? signedAmount
+        : 0;
+  const derivedCreditAmount =
+    Number.isFinite(creditAmountRaw) && creditAmountRaw !== 0
+      ? creditAmountRaw
+      : Number.isFinite(signedAmount) && signedAmount < 0
+        ? Math.abs(signedAmount)
+        : 0;
   return {
     signedAmount,
-    debitAmount,
-    creditAmount,
+    debitAmount: derivedDebitAmount,
+    creditAmount: derivedCreditAmount,
     drCrToken,
   };
 };
