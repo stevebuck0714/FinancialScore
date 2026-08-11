@@ -5,6 +5,8 @@ export const dynamic = 'force-dynamic';
 
 type BasisMode = 'cash' | 'accrual';
 
+let ensureTableOnce: Promise<void> | null = null;
+
 function asBasisMode(value: unknown): BasisMode {
   return value === 'accrual' ? 'accrual' : 'cash';
 }
@@ -32,6 +34,8 @@ function mergeBasisPayload(existingRaw: unknown, incoming: unknown, basisMode: B
 }
 
 async function ensureWorkingCapitalForecastSettingsTable() {
+  if (ensureTableOnce) return ensureTableOnce;
+  ensureTableOnce = (async () => {
   try {
     await prisma.$executeRawUnsafe(`
       CREATE TABLE IF NOT EXISTS "WorkingCapitalForecastSettings" (
@@ -62,6 +66,8 @@ async function ensureWorkingCapitalForecastSettingsTable() {
       console.warn('WorkingCapitalForecastSettings table ensure warning:', error?.message || error);
     }
   }
+  })();
+  return ensureTableOnce;
 }
 
 export async function GET(request: NextRequest) {

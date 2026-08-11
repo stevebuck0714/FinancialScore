@@ -641,54 +641,26 @@ export default function WorkingCapitalForecastTab({ selectedCompanyId, basisMode
       try {
         type Frequency = 'daily' | 'weekly' | 'monthly';
         const annualPeriods: Record<Frequency, number> = { daily: 365, weekly: 52, monthly: 12 };
-        const buildUrl = (type: string, frequency: Frequency, limit = 30) => {
-          const params = new URLSearchParams({
-            companyId: selectedCompanyId,
-            type,
-            frequency,
-            limit: String(limit),
-          });
-          return `/api/operational-data?${params.toString()}`;
-        };
+        const bootstrapResponse = await fetch(
+          `/api/working-capital-forecast/bootstrap?companyId=${encodeURIComponent(selectedCompanyId)}&basisMode=${basisMode}`,
+          { cache: 'no-store' },
+        );
+        if (!bootstrapResponse.ok) {
+          const err = await bootstrapResponse.json().catch(() => ({}));
+          throw new Error(err?.error || 'Unable to load cash forecast inputs');
+        }
+        const bootstrap = await bootstrapResponse.json();
 
-        const fetchLatestForType = async (type: 'cash' | 'ar-aging' | 'ap-aging' | 'inventory') => {
-          const frequencies: Frequency[] = ['daily', 'weekly', 'monthly'];
-          for (const frequency of frequencies) {
-            const response = await fetch(buildUrl(type, frequency));
-            if (!response.ok) continue;
-            const data = await response.json();
-            if (Array.isArray(data?.records) && data.records.length > 0) {
-              return { data, frequency };
-            }
-          }
-          return null;
-        };
-
-        const fetchHistoryForType = async (
-          type: 'inventory' | 'products',
-          preferredOrder: Frequency[] = ['monthly', 'weekly', 'daily']
-        ) => {
-          for (const frequency of preferredOrder) {
-            const response = await fetch(buildUrl(type, frequency, 180));
-            if (!response.ok) continue;
-            const data = await response.json();
-            if (Array.isArray(data?.records) && data.records.length > 0) {
-              return { data, frequency };
-            }
-          }
-          return null;
-        };
-
-        const [savedSettingsResponse, financialForecastInputsResponse, cashResult, arResult, apResult, loansResponse] = await Promise.all([
-          fetch(`/api/working-capital-forecast/settings?companyId=${encodeURIComponent(selectedCompanyId)}&basisMode=${basisMode}`),
-          fetch(`/api/financial-forecast/inputs?companyId=${encodeURIComponent(selectedCompanyId)}&basisMode=${basisMode}`),
-          fetchLatestForType('cash'),
-          fetchLatestForType('ar-aging'),
-          fetchLatestForType('ap-aging'),
-          fetch(`/api/loans?companyId=${encodeURIComponent(selectedCompanyId)}`),
-        ]);
-        const savedPayload = savedSettingsResponse.ok ? await savedSettingsResponse.json() : null;
-        const financialForecastPayload = financialForecastInputsResponse.ok ? await financialForecastInputsResponse.json() : null;
+        const savedPayload = bootstrap?.savedSettings || null;
+        const financialForecastPayload = bootstrap?.financialForecastInputs || null;
+        const loansPayload = bootstrap?.loans || null;
+        const dailyFinancial = bootstrap?.operational?.dailyFinancials || null;
+        const cashResult = bootstrap?.operational?.cashResult || null;
+        const arResult = bootstrap?.operational?.arAgingResult || null;
+        const apResult = bootstrap?.operational?.apAgingResult || null;
+        const inventoryHistory = bootstrap?.operational?.inventoryHistory || null;
+        const productHistory = bootstrap?.operational?.productHistory || null;
+        const productMarginHistory = bootstrap?.operational?.productMarginHistory || null;
         const loadedOpexAmountByRow =
           financialForecastPayload?.settings?.opexPctByRow?.__amountByRow &&
           typeof financialForecastPayload.settings.opexPctByRow.__amountByRow === 'object'
@@ -704,7 +676,6 @@ export default function WorkingCapitalForecastTab({ selectedCompanyId, basisMode
           DEFAULT_ACCRUAL_OPEX_PAYMENT_TREATMENT_BY_KEY,
         );
         const savedSettings = savedPayload?.settings || null;
-        const loansPayload = loansResponse.ok ? await loansResponse.json() : null;
         const loans = Array.isArray(loansPayload?.loans) ? loansPayload.loans : [];
         const activeLocLoan =
           loans.find((loan: any) => loan?.loanType === 'LINE_OF_CREDIT' && loan?.status === 'ACTIVE') ||
@@ -713,18 +684,12 @@ export default function WorkingCapitalForecastTab({ selectedCompanyId, basisMode
         const locLoanAmount = Math.max(0, Math.round(Number(activeLocLoan?.loanAmount || 0)));
 
         const fetchLatestDailyFinancialCash = async (): Promise<number> => {
-          const frequencies: Frequency[] = ['daily', 'weekly', 'monthly'];
-          for (const frequency of frequencies) {
-            const response = await fetch(buildUrl('daily-financials', frequency, 30));
-            if (!response.ok) continue;
-            const data = await response.json();
-            const summaryCash = Number(data?.summary?.latestCash || 0);
-            if (summaryCash !== 0) return summaryCash;
-            if (Array.isArray(data?.records) && data.records.length > 0) {
-              const latest = data.records[0];
-              const recordCash = Number(latest?.cash || 0);
-              if (recordCash !== 0) return recordCash;
-            }
+          const summaryCash = Number(dailyFinancial?.summary?.latestCash || 0);
+          if (summaryCash !== 0) return summaryCash;
+          if (Array.isArray(dailyFinancial?.records) && dailyFinancial.records.length > 0) {
+            const latest = dailyFinancial.records[0];
+            const recordCash = Number(latest?.cash || 0);
+            if (recordCash !== 0) return recordCash;
           }
           return 0;
         };
@@ -737,13 +702,10 @@ export default function WorkingCapitalForecastTab({ selectedCompanyId, basisMode
           inventory: number | null;
           loc: number | null;
         } | null> => {
-          const response = await fetch(buildUrl('daily-financials', 'daily', 60));
-          if (!response.ok) return null;
-          const data = await response.json();
-          if (!Array.isArray(data?.records) || data.records.length === 0) return null;
-          const latestDate = pickLatestRecordDay(data.records);
+          if (!Array.isArray(dailyFinancial?.records) || dailyFinancial.records.length === 0) return null;
+          const latestDate = pickLatestRecordDay(dailyFinancial.records);
           const asOfFriday = latestDate ? mostRecentFridayUtc(latestDate) : null;
-          const asOfRow = asOfFriday ? pickLatestRecordAtOrBeforeDay(data.records, asOfFriday) : null;
+          const asOfRow = asOfFriday ? pickLatestRecordAtOrBeforeDay(dailyFinancial.records, asOfFriday) : null;
           if (!asOfRow || !asOfFriday) return null;
           return {
             asOfDay: dateKeyUtc(asOfFriday),
@@ -780,11 +742,6 @@ export default function WorkingCapitalForecastTab({ selectedCompanyId, basisMode
             : (Array.isArray(apResult?.data?.records) ? apResult.data.records?.[0] : null);
         const derivedArBuckets = mapSnapshotToBuckets(latestArSnapshot, latestAr);
         const derivedApBuckets = mapSnapshotToBuckets(latestApSnapshot, latestAp);
-
-        const inventoryHistory = await fetchHistoryForType('inventory', ['monthly', 'weekly', 'daily']);
-        const productHistory = inventoryHistory
-          ? await fetchHistoryForType('products', [inventoryHistory.frequency, 'monthly', 'weekly', 'daily'])
-          : await fetchHistoryForType('products', ['monthly', 'weekly', 'daily']);
 
         if ((!hasImportedInventoryBalance || latestInventory === null) && inventoryHistory?.data?.records) {
           const latestInventorySnapshot = inventoryHistory.data.records[0];
@@ -825,7 +782,6 @@ export default function WorkingCapitalForecastTab({ selectedCompanyId, basisMode
 
         let avgWeeklySales = DEFAULT_WEEKLY_DRIVER.sales;
         let avgWeeklyGrossMargin = DEFAULT_WEEKLY_DRIVER.grossMarginPct;
-        const productMarginHistory = await fetchHistoryForType('products', ['weekly', 'monthly', 'daily']);
         if (productMarginHistory?.data?.records) {
           const totalsByPeriod = new Map<string, { revenue: number; cogs: number }>();
           for (const row of productMarginHistory.data.records) {
@@ -850,16 +806,13 @@ export default function WorkingCapitalForecastTab({ selectedCompanyId, basisMode
           }
         }
 
-        const dailyFinancialResponse = await fetch(buildUrl('daily-financials', 'daily', 140));
         let avgWeeklyOpex = DEFAULT_WEEKLY_DRIVER.opex;
         let inventoryToSalesRatio = DEFAULT_FLOW_PROFILE.inventoryToSalesRatio;
         let arRunoffRate = DEFAULT_FLOW_PROFILE.arRunoffRate;
         let apRunoffRate = DEFAULT_FLOW_PROFILE.apRunoffRate;
         let recentHistoricalSales: number[] = [];
         let hasImportedDailyFinancialValues = false;
-        if (dailyFinancialResponse.ok) {
-          const dailyFinancial = await dailyFinancialResponse.json();
-          if (Array.isArray(dailyFinancial?.records) && dailyFinancial.records.length > 0) {
+        if (Array.isArray(dailyFinancial?.records) && dailyFinancial.records.length > 0) {
             const weekly = new Map<string, { revenue: number; expense: number; ar: number; ap: number; latestTs: number }>();
             const inventoryRatioSamples: number[] = [];
             for (const row of dailyFinancial.records) {
@@ -954,7 +907,6 @@ export default function WorkingCapitalForecastTab({ selectedCompanyId, basisMode
                 3
               );
             }
-          }
         }
 
         if (!cancelled) {
