@@ -1321,8 +1321,104 @@ export async function sendQboMonthlyUploadReminder({
   }
 }
 
+export async function sendMorningSmokeReport(params: {
+  to: string;
+  ok: boolean;
+  ranAt: string;
+  durationMs: number;
+  baseUrl: string;
+  checks: Array<{
+    id: string;
+    name: string;
+    status: 'pass' | 'fail' | 'warn';
+    detail: string;
+    durationMs: number;
+  }>;
+  summary: { passed: number; failed: number; warned: number };
+}) {
+  const client = getResendClient();
+  if (!client) {
+    console.warn('⚠️ RESEND_API_KEY not configured - skipping morning smoke report email');
+    return { success: false, reason: 'Email service not configured' };
+  }
+
+  const to = String(params.to || '').trim().toLowerCase();
+  if (!to) {
+    return { success: false, reason: 'No recipients' };
+  }
+
+  const statusLabel = params.ok ? 'PASS' : 'FAIL';
+  const statusColor = params.ok ? '#15803d' : '#b91c1c';
+  const rows = params.checks
+    .map((check) => {
+      const color =
+        check.status === 'pass' ? '#15803d' : check.status === 'warn' ? '#a16207' : '#b91c1c';
+      return `
+        <tr>
+          <td style="padding:10px 12px;border-bottom:1px solid #e2e8f0;color:#0f172a;font-size:13px;">${escapeHtml(check.name)}</td>
+          <td style="padding:10px 12px;border-bottom:1px solid #e2e8f0;color:${color};font-size:13px;font-weight:700;text-transform:uppercase;">${escapeHtml(check.status)}</td>
+          <td style="padding:10px 12px;border-bottom:1px solid #e2e8f0;color:#334155;font-size:13px;">${escapeHtml(check.detail)}</td>
+          <td style="padding:10px 12px;border-bottom:1px solid #e2e8f0;color:#64748b;font-size:12px;">${check.durationMs}ms</td>
+        </tr>`;
+    })
+    .join('');
+
+  try {
+    const { data, error } = await client.emails.send({
+      from: DEFAULT_FROM,
+      to: [to],
+      subject: `${params.ok ? '✅' : '🚨'} Morning smoke ${statusLabel} — Corelytics (${params.summary.failed} failed)`,
+      html: `
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>Morning Smoke Report</title></head>
+<body style="margin:0;padding:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Helvetica Neue',Arial,sans-serif;background:#f3f4f6;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="padding:24px;">
+    <tr><td align="center">
+      <table width="760" cellpadding="0" cellspacing="0" style="background:#fff;border-radius:10px;border:1px solid #e2e8f0;">
+        <tr><td style="padding:24px 28px;border-bottom:1px solid #e2e8f0;">
+          <h2 style="margin:0;font-size:20px;color:#1e293b;">Daily Morning Smoke Report</h2>
+          <p style="margin:8px 0 0;color:#64748b;font-size:14px;">Automated API health check for Corelytics production.</p>
+        </td></tr>
+        <tr><td style="padding:24px 28px;">
+          <p style="margin:0 0 10px;color:#334155;font-size:14px;"><strong>Result:</strong> <span style="color:${statusColor};font-weight:700;">${statusLabel}</span></p>
+          <p style="margin:0 0 10px;color:#334155;font-size:14px;"><strong>Ran at (UTC):</strong> ${escapeHtml(params.ranAt)}</p>
+          <p style="margin:0 0 10px;color:#334155;font-size:14px;"><strong>Duration:</strong> ${params.durationMs}ms</p>
+          <p style="margin:0 0 10px;color:#334155;font-size:14px;"><strong>Base URL:</strong> ${escapeHtml(params.baseUrl || '(not set)')}</p>
+          <p style="margin:0 0 18px;color:#334155;font-size:14px;"><strong>Summary:</strong> ${params.summary.passed} passed, ${params.summary.failed} failed, ${params.summary.warned} warned</p>
+          <table width="100%" cellpadding="0" cellspacing="0" style="border:1px solid #e2e8f0;border-radius:8px;overflow:hidden;">
+            <tr style="background:#f8fafc;">
+              <th align="left" style="padding:10px 12px;font-size:12px;color:#64748b;text-transform:uppercase;">Check</th>
+              <th align="left" style="padding:10px 12px;font-size:12px;color:#64748b;text-transform:uppercase;">Status</th>
+              <th align="left" style="padding:10px 12px;font-size:12px;color:#64748b;text-transform:uppercase;">Detail</th>
+              <th align="left" style="padding:10px 12px;font-size:12px;color:#64748b;text-transform:uppercase;">Time</th>
+            </tr>
+            ${rows}
+          </table>
+        </td></tr>
+      </table>
+    </td></tr>
+  </table>
+</body>
+</html>
+      `.trim(),
+    });
+
+    if (error) {
+      throw new Error(`Failed to send email: ${error.message}`);
+    }
+
+    console.log('✅ Morning smoke report emailed:', data);
+    return { success: true, data };
+  } catch (error) {
+    console.error('❌ Error sending morning smoke report:', error);
+    return { success: false, error };
+  }
+}
+
 function escapeHtml(text: string): string {
   const map: Record<string, string> = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' };
   return String(text).replace(/[&<>"']/g, (m) => map[m]);
 }
+
 
