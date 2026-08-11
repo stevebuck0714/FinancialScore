@@ -3275,6 +3275,34 @@ async function saveGLTransactionFacts(
       WHERE x."transNum" IS NOT NULL AND x."transNum" <> ''
       ON CONFLICT ("companyId", "transDate", "accountId", "transNum") DO UPDATE
         SET
+          -- Backfills must be able to repair earlier partial GL rows (for example
+          -- SLGLTRANS rows that arrived without debit/credit columns populated).
+          -- Only fill when the existing value is missing/zero and the incoming
+          -- value is non-zero.
+          "signedAmount" = CASE
+                            WHEN (COALESCE("GLTransactionFact"."signedAmount", 0) = 0)
+                              AND (COALESCE(EXCLUDED."signedAmount", 0) <> 0)
+                              THEN EXCLUDED."signedAmount"
+                            ELSE "GLTransactionFact"."signedAmount"
+                          END,
+          "debitAmount" = CASE
+                            WHEN (COALESCE("GLTransactionFact"."debitAmount", 0) = 0)
+                              AND (COALESCE(EXCLUDED."debitAmount", 0) <> 0)
+                              THEN EXCLUDED."debitAmount"
+                            ELSE "GLTransactionFact"."debitAmount"
+                          END,
+          "creditAmount" = CASE
+                             WHEN (COALESCE("GLTransactionFact"."creditAmount", 0) = 0)
+                               AND (COALESCE(EXCLUDED."creditAmount", 0) <> 0)
+                               THEN EXCLUDED."creditAmount"
+                             ELSE "GLTransactionFact"."creditAmount"
+                           END,
+          "drCr" = CASE
+                     WHEN COALESCE("GLTransactionFact"."drCr", '') = ''
+                       AND COALESCE(EXCLUDED."drCr", '') <> ''
+                       THEN EXCLUDED."drCr"
+                     ELSE "GLTransactionFact"."drCr"
+                   END,
           -- Enrich existing rows with fiscal-period stamps when SLLedgers fills
           -- in fields that an earlier SLGLTRANS row left null. Never overwrite
           -- an already-populated value with NULL.
