@@ -557,6 +557,1026 @@ function buildExternalQueryResultsOnlyResponse(params: {
   };
 }
 
+function isMarginQuestion(question: string): boolean {
+  const q = String(question || '').toLowerCase();
+  return /\b(margin|gross\s*profit|gross\s*margin|ebitda|ebit)\b/.test(q);
+}
+
+function isWeakAskAnswer(parsed: AskOutput | null | undefined, question: string): boolean {
+  if (!parsed) return true;
+  const bulletText = (Array.isArray(parsed.citedBullets) ? parsed.citedBullets : [])
+    .map((b: any) => String(b?.text || ''))
+    .join(' ');
+  const blob = `${parsed.shortAnswer || ''} ${parsed.longAnswer || ''} ${bulletText}`.toLowerCase();
+  if (!blob.trim()) return true;
+
+  const looksGeneric =
+    /sector-specific issue|customer\/account module signal|sector-appropriate customer|product\/service module signal|please review the linked|could not synthesize a reliable answer|review this page for relevant/.test(
+      blob
+    );
+  if (looksGeneric) return true;
+
+  if (isMarginQuestion(question)) {
+    const hasMarginEvidence =
+      /\b(gross margin|gross profit|cogs|margin rate|margin %|percentage points|pts)\b/.test(blob) ||
+      /\d+(\.\d+)?\s*%/.test(blob);
+    const looksLikeCustomerDump =
+      /\btenant\s+\d+\b/.test(blob) && !/\bgross (margin|profit)\b/.test(blob);
+    return looksLikeCustomerDump || !hasMarginEvidence;
+  }
+
+  if (/\bkpi|peer group|benchmark/i.test(question)) {
+    return !/\b(below|under|versus|vs\.?|benchmark|peer|ratio|kpi)\b/.test(blob);
+  }
+  if (/\bconcentration\b/i.test(question)) {
+    return !/\b(share|concentration|top customer|% of)\b/.test(blob);
+  }
+  if (/\bnegative trends?|14 and 30|sustained negative/i.test(question)) {
+    return !/\b(14|30|declin|decreas|worsen|negative|trend)\b/.test(blob);
+  }
+  if (/\bcoa\b|expense categor|cost creep|run-rate|run rate/i.test(question)) {
+    return !/\b(expense|payroll|rent|marketing|cogs|variance|month|creep|run-?rate)\b/.test(blob);
+  }
+  if (/\brisks?\b/i.test(question)) {
+    return !/\b(risk|cash|ar|ap|margin|concentration|covenant|collections|watch)\b/.test(blob);
+  }
+  return false;
+}
+
+function signedMoney(value: number): string {
+  const n = Number(value) || 0;
+  const abs = `$${Math.abs(n).toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
+  if (n > 0) return `+${abs}`;
+  if (n < 0) return `-${abs}`;
+  return abs;
+}
+
+function signedPctPoints(value: number): string {
+  const n = Number(value) || 0;
+  const abs = `${Math.abs(n).toFixed(1)} pts`;
+  if (n > 0) return `+${abs}`;
+  if (n < 0) return `-${abs}`;
+  return abs;
+}
+
+function monthLabel(value: unknown): string {
+  const d = value instanceof Date ? value : new Date(String(value || ''));
+  if (Number.isNaN(d.getTime())) return 'the latest month';
+  return d.toLocaleString('en-US', { month: 'short', year: 'numeric', timeZone: 'UTC' });
+}
+
+function buildMarginDriversFromSummary(internalSummary?: Record<string, any>) {
+  const latest = internalSummary?.monthlySnapshot?.latest;
+  const previous = internalSummary?.monthlySnapshot?.previous;
+  if (!latest || !previous) return null;
+
+  const latestRevenue = Number(latest.revenue || 0);
+  const prevRevenue = Number(previous.revenue || 0);
+  const latestCogs = Number(latest.cogsTotal || 0);
+  const prevCogs = Number(previous.cogsTotal || 0);
+  const latestExpense = Number(latest.expense || 0);
+  const prevExpense = Number(previous.expense || 0);
+  const latestGp = latestRevenue - latestCogs;
+  const prevGp = prevRevenue - prevCogs;
+  const gpDelta = latestGp - prevGp;
+  const revenueDelta = latestRevenue - prevRevenue;
+  const cogsDelta = latestCogs - prevCogs;
+  const expenseDelta = latestExpense - prevExpense;
+  const latestGm = latestRevenue > 0 ? latestGp / latestRevenue : null;
+  const prevGm = prevRevenue > 0 ? prevGp / prevRevenue : null;
+  const gmDeltaPts =
+    latestGm != null && prevGm != null ? (latestGm - prevGm) * 100 : null;
+
+  // Decomposition: GP change ≈ revenue impact − COGS impact.
+  // Holding prior margin, revenue growth contributes priorGm * revenueDelta.
+  // COGS change at constant revenue contributes −cogsDelta.
+  const revenueMixImpact = prevGm != null ? prevGm * revenueDelta : revenueDelta;
+  const cogsImpact = -cogsDelta;
+
+  const cogsComponents = [
+    { name: 'Materials COGS', delta: Number(latest.cogsMaterials || 0) - Number(previous.cogsMaterials || 0) },
+    { name: 'Payroll COGS', delta: Number(latest.cogsPayroll || 0) - Number(previous.cogsPayroll || 0) },
+    { name: 'Owner pay COGS', delta: Number(latest.cogsOwnerPay || 0) - Number(previous.cogsOwnerPay || 0) },
+    { name: 'Contractor COGS', delta: Number(latest.cogsContractors || 0) - Number(previous.cogsContractors || 0) },
+    { name: 'Commissions COGS', delta: Number(latest.cogsCommissions || 0) - Number(previous.cogsCommissions || 0) },
+    { name: 'Other COGS', delta: Number(latest.cogsOther || 0) - Number(previous.cogsOther || 0) },
+  ]
+    .filter((row) => Math.abs(row.delta) >= 1)
+    .sort((a, b) => Math.abs(b.delta) - Math.abs(a.delta))
+    .slice(0, 4);
+
+  const products = ((internalSummary?.sectorOperationalContext?.genericOperationalData as any)?.products?.topProducts ||
+    []) as Array<{
+    name?: string;
+    itemName?: string;
+    totalRevenue?: number;
+    totalCogs?: number;
+    grossMargin?: number;
+    grossMarginPct?: number;
+  }>;
+  const productMarginDrivers = products
+    .map((row) => {
+      const revenue = Number(row.totalRevenue || 0);
+      const cogs = Number(row.totalCogs || 0);
+      const gp = Number(row.grossMargin != null ? row.grossMargin : revenue - cogs);
+      const gmPct = Number(
+        row.grossMarginPct != null ? row.grossMarginPct : revenue > 0 ? (gp / revenue) * 100 : 0
+      );
+      return {
+        name: String(row.name || row.itemName || '').trim(),
+        revenue,
+        cogs,
+        grossProfit: gp,
+        grossMarginPct: gmPct,
+      };
+    })
+    .filter((row) => row.name && row.revenue > 0 && Math.abs(row.cogs) > 0)
+    .sort((a, b) => a.grossMarginPct - b.grossMarginPct)
+    .slice(0, 3);
+
+  const customers = ((internalSummary?.sectorOperationalContext?.genericOperationalData as any)?.customers?.topCustomers ||
+    []) as Array<{
+    name?: string;
+    customerName?: string;
+    totalRevenue?: number;
+    totalCogs?: number;
+    grossMargin?: number;
+    grossMarginPct?: number;
+  }>;
+  const customerMarginDrivers = customers
+    .map((row) => {
+      const revenue = Number(row.totalRevenue || 0);
+      const cogs = Number(row.totalCogs || 0);
+      const gp = Number(row.grossMargin != null ? row.grossMargin : revenue - cogs);
+      const gmPct = Number(
+        row.grossMarginPct != null ? row.grossMarginPct : revenue > 0 ? (gp / revenue) * 100 : 0
+      );
+      return {
+        name: String(row.name || row.customerName || '').trim(),
+        revenue,
+        cogs,
+        grossProfit: gp,
+        grossMarginPct: gmPct,
+      };
+    })
+    .filter((row) => row.name && row.revenue > 0 && Math.abs(row.cogs) > 0)
+    .sort((a, b) => a.grossMarginPct - b.grossMarginPct)
+    .slice(0, 3);
+
+  return {
+    latestMonthLabel: monthLabel(latest.monthDate),
+    previousMonthLabel: monthLabel(previous.monthDate),
+    latestRevenue,
+    prevRevenue,
+    revenueDelta,
+    latestCogs,
+    prevCogs,
+    cogsDelta,
+    latestExpense,
+    prevExpense,
+    expenseDelta,
+    latestGp,
+    prevGp,
+    gpDelta,
+    latestGmPct: latestGm != null ? latestGm * 100 : null,
+    prevGmPct: prevGm != null ? prevGm * 100 : null,
+    gmDeltaPts,
+    revenueMixImpact,
+    cogsImpact,
+    cogsComponents,
+    productMarginDrivers,
+    customerMarginDrivers,
+  };
+}
+
+function buildMarginDriversFallback(params: {
+  sources: Array<{ url: string; title?: string; publishedDate?: string | null; snippet?: string }>;
+  question: string;
+  internalSummary?: Record<string, any>;
+}): AskOutput | null {
+  const drivers = buildMarginDriversFromSummary(params.internalSummary);
+  if (!drivers) return null;
+
+  const financialSource =
+    params.sources.find((s) => String(s.title || '').toLowerCase().includes('data review')) || params.sources[0];
+  if (!financialSource) return null;
+  const citation = {
+    url: financialSource.url,
+    title: financialSource.title,
+    publishedDate: financialSource.publishedDate,
+  };
+
+  const asksEbitda = /\b(ebitda|ebit|operating\s*margin)\b/i.test(params.question);
+  const bullets: Array<{ text: string; citations: typeof citation[] }> = [];
+
+  if (drivers.gmDeltaPts != null) {
+    bullets.push({
+      text: `Gross margin moved from ${drivers.prevGmPct!.toFixed(1)}% in ${drivers.previousMonthLabel} to ${drivers.latestGmPct!.toFixed(1)}% in ${drivers.latestMonthLabel} (${signedPctPoints(drivers.gmDeltaPts)}).`,
+      citations: [citation],
+    });
+  }
+  bullets.push({
+    text: `Gross profit dollars ${drivers.gpDelta >= 0 ? 'increased' : 'decreased'} ${signedMoney(drivers.gpDelta)} (${formatMoneyBrief(drivers.prevGp)} → ${formatMoneyBrief(drivers.latestGp)}).`,
+    citations: [citation],
+  });
+
+  const rankedImpacts = [
+    { name: 'Revenue / mix impact on gross profit', amount: drivers.revenueMixImpact },
+    { name: 'COGS impact on gross profit', amount: drivers.cogsImpact },
+  ].sort((a, b) => Math.abs(b.amount) - Math.abs(a.amount));
+
+  for (const impact of rankedImpacts) {
+    if (Math.abs(impact.amount) < 1) continue;
+    bullets.push({
+      text: `${impact.name}: ${signedMoney(impact.amount)} (revenue ${signedMoney(drivers.revenueDelta)}; COGS ${signedMoney(drivers.cogsDelta)}).`,
+      citations: [citation],
+    });
+  }
+
+  for (const component of drivers.cogsComponents.slice(0, 2)) {
+    bullets.push({
+      text: `${component.name} ${component.delta >= 0 ? 'rose' : 'fell'} ${signedMoney(component.delta)}, contributing to the COGS-driven margin move.`,
+      citations: [citation],
+    });
+  }
+
+  if (asksEbitda) {
+    bullets.push({
+      text: `Operating expense ${drivers.expenseDelta >= 0 ? 'increased' : 'decreased'} ${signedMoney(drivers.expenseDelta)}, which ${drivers.expenseDelta > 0 ? 'pressures' : 'supports'} EBITDA/operating margin beyond gross margin.`,
+      citations: [citation],
+    });
+  }
+
+  for (const product of drivers.productMarginDrivers.slice(0, 2)) {
+    bullets.push({
+      text: `Product/service margin pressure: ${product.name} at ${product.grossMarginPct.toFixed(1)}% gross margin on ${signedMoney(product.revenue)} revenue (GP ${signedMoney(product.grossProfit)}).`,
+      citations: [citation],
+    });
+  }
+
+  for (const customer of drivers.customerMarginDrivers.slice(0, 1)) {
+    bullets.push({
+      text: `Account margin pressure: ${customer.name} at ${customer.grossMarginPct.toFixed(1)}% gross margin on ${signedMoney(customer.revenue)} revenue (GP ${signedMoney(customer.grossProfit)}).`,
+      citations: [citation],
+    });
+  }
+
+  const topDriver =
+    Math.abs(drivers.cogsImpact) >= Math.abs(drivers.revenueMixImpact)
+      ? `COGS movement (${signedMoney(drivers.cogsDelta)})`
+      : `revenue/mix movement (${signedMoney(drivers.revenueDelta)})`;
+
+  const shortAnswer =
+    drivers.gmDeltaPts != null
+      ? `Gross margin ${drivers.gmDeltaPts >= 0 ? 'improved' : 'declined'} ${signedPctPoints(drivers.gmDeltaPts)} from ${drivers.previousMonthLabel} to ${drivers.latestMonthLabel}. The largest driver is ${topDriver}, with gross profit ${signedMoney(drivers.gpDelta)}.`
+      : `Gross profit ${drivers.gpDelta >= 0 ? 'increased' : 'decreased'} ${signedMoney(drivers.gpDelta)} from ${drivers.previousMonthLabel} to ${drivers.latestMonthLabel}. The largest driver is ${topDriver}.`;
+
+  return {
+    shortAnswer,
+    longAnswer: bullets.map((b) => `- ${b.text}`).join('\n'),
+    citedBullets: bullets.slice(0, 8),
+    howThisImpactsUs:
+      Math.abs(drivers.gpDelta) < 1 && Math.abs(drivers.gmDeltaPts || 0) < 0.1
+        ? 'Margin is effectively flat period-over-period; no material action is required from this comparison alone.'
+        : `Focus corrective action on the largest quantified driver (${topDriver}). Use pricing, mix, and COGS controls where that driver is adverse.`,
+    sources: params.sources,
+  };
+}
+
+const COA_EXPENSE_FIELDS: Array<{ key: string; label: string }> = [
+  { key: 'payroll', label: 'Payroll' },
+  { key: 'ownerBasePay', label: 'Owner base pay' },
+  { key: 'benefits', label: 'Benefits' },
+  { key: 'insurance', label: 'Insurance' },
+  { key: 'professionalFees', label: 'Professional fees' },
+  { key: 'subcontractors', label: 'Subcontractors' },
+  { key: 'rent', label: 'Rent' },
+  { key: 'taxLicense', label: 'Tax & license' },
+  { key: 'phoneComm', label: 'Phone & communications' },
+  { key: 'infrastructure', label: 'Infrastructure' },
+  { key: 'autoTravel', label: 'Auto & travel' },
+  { key: 'salesExpense', label: 'Sales expense' },
+  { key: 'marketing', label: 'Marketing' },
+  { key: 'trainingCert', label: 'Training & certification' },
+  { key: 'mealsEntertainment', label: 'Meals & entertainment' },
+  { key: 'otherExpense', label: 'Other expense' },
+  { key: 'interestExpense', label: 'Interest expense' },
+  { key: 'depreciationAmortization', label: 'Depreciation & amortization' },
+];
+
+type AskIntent =
+  | 'margin'
+  | 'kpi_peers'
+  | 'risks'
+  | 'daily_negative_trends'
+  | 'cash_ar_indicators'
+  | 'concentration'
+  | 'coa_expense_variance'
+  | 'cost_creep'
+  | 'expense_shift_start'
+  | 'construction_ops'
+  | 'competitor'
+  | 'general';
+
+function classifyAskIntent(question: string): AskIntent {
+  const q = String(question || '').toLowerCase();
+  if (isMarginQuestion(q)) return 'margin';
+  if (/\b(kpi|kpis|peer group|benchmark)\b/.test(q) && /\b(below|under|versus|vs|gap|peer|benchmark)\b/.test(q)) {
+    return 'kpi_peers';
+  }
+  if (/\brisks?\b/.test(q) || /\bnext 90 days\b/.test(q)) return 'risks';
+  if (/\b(sustained negative|negative trends?|14 and 30|last 14 and 30)\b/.test(q)) return 'daily_negative_trends';
+  if (/\b(leading indicators?|cash\/?\s*ar|deteriorating cash|ar performance)\b/.test(q)) return 'cash_ar_indicators';
+  if (/\bconcentration\b/.test(q)) return 'concentration';
+  if (/\b(coa|expense categor)/.test(q) && /\b(variance|month-over-month|month over month|mom)\b/.test(q)) {
+    return 'coa_expense_variance';
+  }
+  if (/\b(cost creep|run-?rate cost|run rate)\b/.test(q)) return 'cost_creep';
+  if (/\b(earliest month|run-?rate shift began|expense run-?rate shift)\b/.test(q)) return 'expense_shift_start';
+  if (/\b(job|project|change order|underbill|eac|retainage)\b/.test(q)) return 'construction_ops';
+  if (isCompetitorQuestion(question)) return 'competitor';
+  if (/\b(acquisition|m&a|capital deployment|reinvestment|debt paydown|distributions)\b/.test(q)) {
+    return 'general';
+  }
+  return 'general';
+}
+
+function pickCitation(
+  sources: Array<{ url: string; title?: string; publishedDate?: string | null; snippet?: string }>,
+  prefer: 'financial' | 'operations' = 'financial'
+) {
+  const financial = sources.find((s) => String(s.title || '').toLowerCase().includes('data review'));
+  const operations = sources.find((s) => String(s.title || '').toLowerCase().includes('operations'));
+  const chosen = prefer === 'operations' ? operations || financial || sources[0] : financial || operations || sources[0];
+  if (!chosen) return null;
+  return { url: chosen.url, title: chosen.title, publishedDate: chosen.publishedDate };
+}
+
+function makeAskOutput(params: {
+  shortAnswer: string;
+  bullets: string[];
+  citation: { url: string; title?: string; publishedDate?: string | null };
+  sources: Array<{ url: string; title?: string; publishedDate?: string | null; snippet?: string }>;
+  howThisImpactsUs: string;
+}): AskOutput {
+  const citedBullets = params.bullets.filter(Boolean).slice(0, 8).map((text) => ({
+    text,
+    citations: [params.citation],
+  }));
+  return {
+    shortAnswer: params.shortAnswer,
+    longAnswer: citedBullets.map((b) => `- ${b.text}`).join('\n'),
+    citedBullets,
+    howThisImpactsUs: params.howThisImpactsUs,
+    sources: params.sources,
+  };
+}
+
+function serializeMonthlyAskRow(month: any) {
+  if (!month) return null;
+  const revenue = Number(month.revenue || 0);
+  const cogsTotal = Number(month.cogsTotal || 0);
+  const row: Record<string, unknown> = {
+    monthDate: month.monthDate,
+    revenue,
+    expense: Number(month.expense || 0),
+    cogsTotal,
+    cogsMaterials: Number(month.cogsMaterials || 0),
+    cogsPayroll: Number(month.cogsPayroll || 0),
+    cogsOwnerPay: Number(month.cogsOwnerPay || 0),
+    cogsContractors: Number(month.cogsContractors || 0),
+    cogsCommissions: Number(month.cogsCommissions || 0),
+    cogsOther: Number(month.cogsOther || 0),
+    grossProfit: revenue - cogsTotal,
+    grossMarginPct: revenue > 0 ? ((revenue - cogsTotal) / revenue) * 100 : null,
+    cash: Number(month.cash || 0),
+    ar: Number(month.ar || 0),
+    ap: Number(month.ap || 0),
+  };
+  for (const field of COA_EXPENSE_FIELDS) {
+    row[field.key] = Number(month?.[field.key] || 0);
+  }
+  return row;
+}
+
+function extractExpenseCategories(month: any): Array<{ key: string; label: string; amount: number }> {
+  if (!month) return [];
+  return COA_EXPENSE_FIELDS.map((field) => ({
+    key: field.key,
+    label: field.label,
+    amount: Number(month?.[field.key] || 0),
+  })).filter((row) => Number.isFinite(row.amount));
+}
+
+function buildExpenseVarianceAnswer(params: {
+  sources: Array<{ url: string; title?: string; publishedDate?: string | null; snippet?: string }>;
+  internalSummary?: Record<string, any>;
+}): AskOutput | null {
+  const latest = params.internalSummary?.monthlySnapshot?.latest;
+  const previous = params.internalSummary?.monthlySnapshot?.previous;
+  const citation = pickCitation(params.sources, 'financial');
+  if (!latest || !previous || !citation) return null;
+
+  const latestCats = extractExpenseCategories(latest);
+  const prevByKey = new Map(extractExpenseCategories(previous).map((row) => [row.key, row.amount]));
+  const variances = latestCats
+    .map((row) => {
+      const prior = prevByKey.get(row.key) || 0;
+      const delta = row.amount - prior;
+      const pct = prior !== 0 ? delta / Math.abs(prior) : null;
+      return { ...row, prior, delta, pct };
+    })
+    .filter((row) => Math.abs(row.delta) >= 250)
+    .sort((a, b) => Math.abs(b.delta) - Math.abs(a.delta))
+    .slice(0, 5);
+
+  if (!variances.length) {
+    return makeAskOutput({
+      shortAnswer: `No material COA expense category variances were found between ${monthLabel(previous.monthDate)} and ${monthLabel(latest.monthDate)}.`,
+      bullets: [
+        `Compared expense categories month-over-month using mapped COA fields; none moved by $250 or more.`,
+        `Total operating expense changed ${signedMoney(Number(latest.expense || 0) - Number(previous.expense || 0))}.`,
+      ],
+      citation,
+      sources: params.sources,
+      howThisImpactsUs: 'Expense run-rate looks stable in the mapped categories for this comparison window.',
+    });
+  }
+
+  const bullets = variances.map((row) => {
+    const structural =
+      Math.abs(row.pct || 0) >= 0.15 && Math.abs(row.prior) >= 1000
+        ? 'likely structural/run-rate'
+        : Math.abs(row.prior) < 500 && Math.abs(row.delta) >= 1000
+          ? 'likely one-time / timing'
+          : 'monitor for persistence';
+    return `${row.label}: ${signedMoney(row.delta)} (${formatMoneyBrief(row.prior)} → ${formatMoneyBrief(row.amount)}${
+      row.pct != null ? `, ${(row.pct >= 0 ? '+' : '')}${(row.pct * 100).toFixed(1)}%` : ''
+    }); ${structural}.`;
+  });
+
+  return makeAskOutput({
+    shortAnswer: `Largest COA expense variances from ${monthLabel(previous.monthDate)} to ${monthLabel(latest.monthDate)} are led by ${variances[0].label} (${signedMoney(variances[0].delta)}).`,
+    bullets,
+    citation,
+    sources: params.sources,
+    howThisImpactsUs:
+      'Treat categories labeled structural/run-rate as ongoing cost-base changes; isolate one-time/timing items before changing forecasts.',
+  });
+}
+
+function buildCostCreepAnswer(params: {
+  sources: Array<{ url: string; title?: string; publishedDate?: string | null; snippet?: string }>;
+  internalSummary?: Record<string, any>;
+  mode: 'creep' | 'shift_start';
+}): AskOutput | null {
+  const history = (params.internalSummary?.monthlyHistory || []) as any[];
+  const citation = pickCitation(params.sources, 'financial');
+  if (!citation || history.length < 3) return null;
+
+  const chronological = [...history].sort(
+    (a, b) => new Date(a.monthDate).getTime() - new Date(b.monthDate).getTime()
+  );
+  const categorySeries = COA_EXPENSE_FIELDS.map((field) => {
+    const points = chronological.map((month) => ({
+      monthDate: month.monthDate,
+      amount: Number(month?.[field.key] || 0),
+    }));
+    const first = points[0]?.amount || 0;
+    const last = points[points.length - 1]?.amount || 0;
+    const delta = last - first;
+    let risingStreak = 0;
+    for (let i = 1; i < points.length; i += 1) {
+      if (points[i].amount >= points[i - 1].amount) risingStreak += 1;
+      else risingStreak = 0;
+    }
+    let shiftStart: string | null = null;
+    for (let i = 1; i < points.length; i += 1) {
+      const prior = points[i - 1].amount;
+      const cur = points[i].amount;
+      if (prior > 0 && (cur - prior) / Math.abs(prior) >= 0.1 && cur - prior >= 500) {
+        shiftStart = monthLabel(points[i].monthDate);
+        break;
+      }
+    }
+    return {
+      label: field.label,
+      first,
+      last,
+      delta,
+      risingStreak,
+      shiftStart,
+      latest: last,
+    };
+  })
+    .filter((row) => Math.abs(row.delta) >= 500 || row.risingStreak >= 2)
+    .sort((a, b) => Math.abs(b.delta) - Math.abs(a.delta));
+
+  if (params.mode === 'shift_start') {
+    const withStart = categorySeries.filter((row) => row.shiftStart).slice(0, 5);
+    if (!withStart.length) {
+      return makeAskOutput({
+        shortAnswer: 'No clear expense run-rate shift start month was detected in the available monthly history.',
+        bullets: [
+          `Reviewed ${chronological.length} months of mapped COA expense categories for a >=10% and >=$500 step-up.`,
+          'No category met that shift threshold in the loaded history.',
+        ],
+        citation,
+        sources: params.sources,
+        howThisImpactsUs: 'Without a detected step-change, treat current expense levels as the working run-rate baseline.',
+      });
+    }
+    return makeAskOutput({
+      shortAnswer: `Earliest detected expense run-rate shift is ${withStart[0].shiftStart} in ${withStart[0].label}.`,
+      bullets: withStart.map(
+        (row) =>
+          `${row.label}: shift begins ${row.shiftStart}; now ${formatMoneyBrief(row.latest)} (change ${signedMoney(row.delta)} over the window).`
+      ),
+      citation,
+      sources: params.sources,
+      howThisImpactsUs: 'Anchor budget/forecast resets to the earliest confirmed step-up month for the affected categories.',
+    });
+  }
+
+  const creepers = categorySeries.filter((row) => row.delta > 0 && (row.risingStreak >= 2 || row.delta / Math.max(row.first, 1) >= 0.1)).slice(0, 5);
+  if (!creepers.length) {
+    return makeAskOutput({
+      shortAnswer: 'No clear run-rate cost creep was detected across mapped COA categories in the available months.',
+      bullets: [
+        `Reviewed ${chronological.length} months of expense categories for sustained increases.`,
+        'No category showed a material multi-month upward run-rate pattern.',
+      ],
+      citation,
+      sources: params.sources,
+      howThisImpactsUs: 'Expense categories look stable; keep monitoring monthly for new step-ups.',
+    });
+  }
+
+  return makeAskOutput({
+    shortAnswer: `Run-rate cost creep is most evident in ${creepers[0].label} (${signedMoney(creepers[0].delta)} over the loaded months).`,
+    bullets: creepers.map(
+      (row) =>
+        `${row.label}: ${formatMoneyBrief(row.first)} → ${formatMoneyBrief(row.last)} (${signedMoney(row.delta)}); rising streak ${row.risingStreak} month-step${row.risingStreak === 1 ? '' : 's'}.`
+    ),
+    citation,
+    sources: params.sources,
+    howThisImpactsUs: 'Prioritize the rising categories for owner review before they permanently reset the cost base.',
+  });
+}
+
+function buildKpiPeersAnswer(params: {
+  sources: Array<{ url: string; title?: string; publishedDate?: string | null; snippet?: string }>;
+  internalSummary?: Record<string, any>;
+}): AskOutput | null {
+  const ratios = (params.internalSummary?.kpiDefinitions?.ratios || []) as RatioSnapshot[];
+  const citation = pickCitation(params.sources, 'financial');
+  if (!citation || !ratios.length) return null;
+
+  const below = ratios
+    .filter((row) => row.value != null && row.benchmark != null && Number.isFinite(row.value) && Number.isFinite(row.benchmark))
+    .map((row) => {
+      const value = Number(row.value);
+      const benchmark = Number(row.benchmark);
+      // For days metrics and leverage-like ratios, higher can be worse; use name heuristics.
+      const higherIsWorse = /days|debt|leverage|liab/i.test(row.name);
+      const worse = higherIsWorse ? value > benchmark : value < benchmark;
+      const gap = higherIsWorse ? value - benchmark : benchmark - value;
+      return { ...row, value, benchmark, worse, gap, higherIsWorse };
+    })
+    .filter((row) => row.worse && Math.abs(row.gap) > 0)
+    .sort((a, b) => Math.abs(b.gap) - Math.abs(a.gap))
+    .slice(0, 6);
+
+  if (!below.length) {
+    return makeAskOutput({
+      shortAnswer: 'No KPI/ratio gaps versus peer benchmarks were identified from the available ratio snapshot.',
+      bullets: [
+        `Compared ${ratios.length} ratio KPIs to industry peer benchmarks.`,
+        'None were materially below (or worse than) peer values in this snapshot.',
+      ],
+      citation,
+      sources: params.sources,
+      howThisImpactsUs: 'Peer-relative KPI posture looks acceptable; monitor next month for emerging gaps.',
+    });
+  }
+
+  const formatRatio = (row: (typeof below)[number]) => {
+    if (row.unit === 'percent') return `${(row.value * 100).toFixed(1)}% vs peer ${(row.benchmark * 100).toFixed(1)}%`;
+    if (row.unit === 'days') return `${row.value.toFixed(1)} days vs peer ${row.benchmark.toFixed(1)} days`;
+    return `${row.value.toFixed(2)} vs peer ${row.benchmark.toFixed(2)}`;
+  };
+
+  return makeAskOutput({
+    shortAnswer: `${below.length} KPI${below.length === 1 ? '' : 's'} are worse than peer benchmarks, led by ${below[0].name}.`,
+    bullets: below.map((row) => {
+      const cause =
+        /receivable|ar|dso/i.test(row.name)
+          ? 'Likely collections/aging pressure.'
+          : /inventory/i.test(row.name)
+            ? 'Likely inventory turns or stocking mix.'
+            : /margin|ebit|roe|roa/i.test(row.name)
+              ? 'Likely pricing, mix, or cost structure versus peers.'
+              : /current|quick|working capital/i.test(row.name)
+                ? 'Likely liquidity / working-capital timing.'
+                : 'Review drivers in financials and operations for this ratio.';
+      return `${row.name}: ${formatRatio(row)}. ${cause}`;
+    }),
+    citation,
+    sources: params.sources,
+    howThisImpactsUs: 'Close the largest peer gaps first; they are the clearest underperformance signals versus the industry set.',
+  });
+}
+
+function trendDirection(change: any): 'up' | 'down' | 'flat' | 'unknown' {
+  const absolute = Number(change?.absolute);
+  if (!Number.isFinite(absolute)) return 'unknown';
+  if (Math.abs(absolute) < 0.0001) return 'flat';
+  return absolute > 0 ? 'up' : 'down';
+}
+
+function formatTrendChange(change: any, unit: string): string {
+  const absolute = Number(change?.absolute);
+  const percent = Number(change?.percent);
+  if (!Number.isFinite(absolute)) return 'insufficient history';
+  const absText =
+    unit === 'percent'
+      ? `${absolute >= 0 ? '+' : ''}${absolute.toFixed(1)} pts`
+      : signedMoney(absolute);
+  const pctText = Number.isFinite(percent) ? ` (${percent >= 0 ? '+' : ''}${percent.toFixed(1)}%)` : '';
+  return `${absText}${pctText}`;
+}
+
+function buildDailyTrendsAnswer(params: {
+  sources: Array<{ url: string; title?: string; publishedDate?: string | null; snippet?: string }>;
+  internalSummary?: Record<string, any>;
+}): AskOutput | null {
+  const metrics = (params.internalSummary?.operationalTrends?.metrics || []) as any[];
+  const citation = pickCitation(params.sources, 'operations');
+  if (!citation || !metrics.length) return null;
+
+  const negativePreferredUp = /share|aging|90\+|over 30|top customer share/i;
+  const rows = metrics
+    .map((metric) => {
+      const c14 = trendDirection(metric.change14Days?.change);
+      const c30 = trendDirection(metric.change30Days?.change);
+      const upIsBad = negativePreferredUp.test(metric.name);
+      const bad14 = upIsBad ? c14 === 'up' : c14 === 'down';
+      const bad30 = upIsBad ? c30 === 'up' : c30 === 'down';
+      return {
+        name: metric.name,
+        unit: metric.unit,
+        bad14,
+        bad30,
+        sustained: bad14 && bad30,
+        c14,
+        c30,
+        change14: metric.change14Days?.change,
+        change30: metric.change30Days?.change,
+      };
+    })
+    .filter((row) => row.sustained || row.bad14 || row.bad30)
+    .sort((a, b) => Number(b.sustained) - Number(a.sustained));
+
+  const sustained = rows.filter((row) => row.sustained);
+  if (!sustained.length && !rows.length) {
+    return makeAskOutput({
+      shortAnswer: 'No sustained negative daily operational trends were detected over the last 14 and 30 days.',
+      bullets: metrics.slice(0, 5).map(
+        (metric) =>
+          `${metric.name}: 14d ${formatTrendChange(metric.change14Days?.change, metric.unit)}; 30d ${formatTrendChange(metric.change30Days?.change, metric.unit)}.`
+      ),
+      citation,
+      sources: params.sources,
+      howThisImpactsUs: 'Daily cash/AR/AP/customer metrics are not showing a sustained adverse pattern in this window.',
+    });
+  }
+
+  const focus = sustained.length ? sustained : rows;
+  return makeAskOutput({
+    shortAnswer: sustained.length
+      ? `${sustained.length} daily metric${sustained.length === 1 ? '' : 's'} show sustained negative trends over both 14 and 30 days.`
+      : `${focus.length} daily metric${focus.length === 1 ? '' : 's'} show negative movement in the recent windows.`,
+    bullets: focus.slice(0, 6).map(
+      (row) =>
+        `${row.name}: 14d ${formatTrendChange(row.change14, row.unit)}; 30d ${formatTrendChange(row.change30, row.unit)}${
+          row.sustained ? ' (sustained across both windows)' : ''
+        }.`
+    ),
+    citation,
+    sources: params.sources,
+    howThisImpactsUs: 'Investigate the sustained metrics first; they are the strongest near-term operating warning signs.',
+  });
+}
+
+function buildCashArIndicatorAnswer(params: {
+  sources: Array<{ url: string; title?: string; publishedDate?: string | null; snippet?: string }>;
+  internalSummary?: Record<string, any>;
+}): AskOutput | null {
+  const metrics = (params.internalSummary?.operationalTrends?.metrics || []) as any[];
+  const citation = pickCitation(params.sources, 'operations');
+  if (!citation || !metrics.length) return null;
+  const byName = (needle: RegExp) => metrics.find((m) => needle.test(String(m.name || '')));
+  const cash = byName(/cash balance/i);
+  const ar = byName(/^ar total/i);
+  const arAging = byName(/ar >30|ar over 30|ar >30 days share/i);
+  const customerRev = byName(/customer revenue total/i);
+  const concentration = byName(/top customer share/i);
+
+  const bullets: string[] = [];
+  const cashDown = trendDirection(cash?.change30Days?.change) === 'down';
+  const arUp = trendDirection(ar?.change30Days?.change) === 'up';
+  const agingUp = trendDirection(arAging?.change30Days?.change) === 'up';
+  const salesDown = trendDirection(customerRev?.change30Days?.change) === 'down';
+  const concentrationUp = trendDirection(concentration?.change30Days?.change) === 'up';
+
+  if (cash) bullets.push(`Cash (30d): ${formatTrendChange(cash.change30Days?.change, cash.unit)}.`);
+  if (ar) bullets.push(`AR total (30d): ${formatTrendChange(ar.change30Days?.change, ar.unit)}.`);
+  if (arAging) bullets.push(`AR >30 days share (30d): ${formatTrendChange(arAging.change30Days?.change, arAging.unit)}.`);
+  if (customerRev) bullets.push(`Customer revenue (30d): ${formatTrendChange(customerRev.change30Days?.change, customerRev.unit)}.`);
+  if (concentration) {
+    bullets.push(`Top customer share (30d): ${formatTrendChange(concentration.change30Days?.change, concentration.unit)}.`);
+  }
+
+  const correlations: string[] = [];
+  if (cashDown && arUp) correlations.push('Rising AR alongside falling cash is a collections/working-capital warning.');
+  if (cashDown && agingUp) correlations.push('Worsening AR aging correlates with cash pressure.');
+  if (cashDown && salesDown) correlations.push('Lower customer revenue can explain weaker cash inflows.');
+  if (arUp && agingUp) correlations.push('AR growth with rising >30 share points to slower collections, not just billing volume.');
+  if (concentrationUp && (cashDown || agingUp)) {
+    correlations.push('Rising customer concentration can amplify cash/AR volatility if a large account slows payments.');
+  }
+
+  if (!bullets.length) return null;
+  return makeAskOutput({
+    shortAnswer: correlations[0]
+      ? correlations[0]
+      : 'Cash/AR leading indicators over the last 30 days do not show a clear adverse correlation pattern.',
+    bullets: [...correlations.slice(0, 3), ...bullets].slice(0, 7),
+    citation,
+    sources: params.sources,
+    howThisImpactsUs:
+      'Use the correlated indicators to prioritize collections, credit limits, and near-term cash planning.',
+  });
+}
+
+function buildConcentrationAnswer(params: {
+  sources: Array<{ url: string; title?: string; publishedDate?: string | null; snippet?: string }>;
+  internalSummary?: Record<string, any>;
+}): AskOutput | null {
+  const metrics = (params.internalSummary?.operationalTrends?.metrics || []) as any[];
+  const customers = ((params.internalSummary?.sectorOperationalContext?.genericOperationalData as any)?.customers
+    ?.topCustomers || []) as any[];
+  const citation = pickCitation(params.sources, 'operations');
+  if (!citation) return null;
+
+  const shareMetric = metrics.find((m) => /top customer share/i.test(String(m.name || '')));
+  const bullets: string[] = [];
+  if (shareMetric) {
+    bullets.push(
+      `Top customer share: 14d ${formatTrendChange(shareMetric.change14Days?.change, shareMetric.unit)}; 30d ${formatTrendChange(shareMetric.change30Days?.change, shareMetric.unit)}.`
+    );
+  }
+  const totalRevenue = customers.reduce((sum, row) => sum + Number(row.totalRevenue || 0), 0);
+  for (const row of customers.slice(0, 3)) {
+    const revenue = Number(row.totalRevenue || 0);
+    const share = totalRevenue > 0 ? (revenue / totalRevenue) * 100 : null;
+    bullets.push(
+      `${row.name || row.customerName}: ${formatMoneyBrief(revenue)} recent revenue${
+        share != null ? ` (${share.toFixed(1)}% of customer snapshot)` : ''
+      }.`
+    );
+  }
+
+  const worsening =
+    trendDirection(shareMetric?.change14Days?.change) === 'up' ||
+    trendDirection(shareMetric?.change30Days?.change) === 'up';
+
+  if (!bullets.length) return null;
+  return makeAskOutput({
+    shortAnswer: worsening
+      ? 'Customer concentration risk is worsening: top-customer share has increased in the recent daily windows.'
+      : 'Customer concentration is visible in the top accounts, but top-customer share is not clearly worsening in the recent daily windows.',
+    bullets,
+    citation,
+    sources: params.sources,
+    howThisImpactsUs: worsening
+      ? 'Reduce dependency on the largest accounts through collections terms, diversification, and pipeline coverage.'
+      : 'Keep watching top-account share; concentration remains a structural risk even when not currently worsening.',
+  });
+}
+
+function buildRisksAnswer(params: {
+  sources: Array<{ url: string; title?: string; publishedDate?: string | null; snippet?: string }>;
+  question: string;
+  internalSummary?: Record<string, any>;
+}): AskOutput | null {
+  const citation = pickCitation(params.sources, 'financial');
+  if (!citation) return null;
+  const risks: Array<{ severity: number; text: string }> = [];
+
+  const margin = buildMarginDriversFromSummary(params.internalSummary);
+  if (margin && ((margin.gmDeltaPts != null && margin.gmDeltaPts <= -1) || margin.gpDelta < -1000)) {
+    risks.push({
+      severity: 3,
+      text: `Margin risk: gross margin ${margin.gmDeltaPts != null ? signedPctPoints(margin.gmDeltaPts) : 'moved'} with gross profit ${signedMoney(margin.gpDelta)} versus prior month.`,
+    });
+  }
+
+  const trends = (params.internalSummary?.operationalTrends?.metrics || []) as any[];
+  const cash = trends.find((m) => /cash balance/i.test(String(m.name || '')));
+  const arAging = trends.find((m) => /ar >30|ar over 30/i.test(String(m.name || '')));
+  if (trendDirection(cash?.change30Days?.change) === 'down') {
+    risks.push({
+      severity: 3,
+      text: `Liquidity risk: cash declined ${formatTrendChange(cash.change30Days?.change, cash.unit)} over 30 days.`,
+    });
+  }
+  if (trendDirection(arAging?.change30Days?.change) === 'up') {
+    risks.push({
+      severity: 2,
+      text: `Collections risk: AR >30 days share rose ${formatTrendChange(arAging.change30Days?.change, arAging.unit)} over 30 days.`,
+    });
+  }
+
+  const shareMetric = trends.find((m) => /top customer share/i.test(String(m.name || '')));
+  if (trendDirection(shareMetric?.change30Days?.change) === 'up') {
+    risks.push({
+      severity: 2,
+      text: `Concentration risk: top customer share increased ${formatTrendChange(shareMetric.change30Days?.change, shareMetric.unit)} over 30 days.`,
+    });
+  }
+
+  const kpi = buildKpiPeersAnswer(params);
+  const kpiBullets = kpi?.citedBullets?.slice(0, 1) || [];
+  for (const bullet of kpiBullets) {
+    risks.push({ severity: 1, text: `Peer KPI risk: ${bullet.text}` });
+  }
+
+  const issues = (params.internalSummary?.sectorOperationalContext?.issueSummaries || []) as any[];
+  for (const issue of issues.slice(0, 2)) {
+    risks.push({ severity: 2, text: `Operating risk: ${issue.issue}` });
+  }
+
+  const top = risks.sort((a, b) => b.severity - a.severity).slice(0, 3);
+  if (!top.length) {
+    return makeAskOutput({
+      shortAnswer: 'No material top risks were identified from current margin, liquidity, concentration, and peer KPI signals.',
+      bullets: [
+        'Checked margin movement, cash/AR trends, customer concentration, peer KPI gaps, and sector operating issues.',
+        'None crossed a material adverse threshold in the available data.',
+      ],
+      citation,
+      sources: params.sources,
+      howThisImpactsUs: 'Maintain normal monitoring; no urgent 90-day performance risk stood out in the current snapshot.',
+    });
+  }
+
+  return makeAskOutput({
+    shortAnswer: `Top ${top.length} performance risk${top.length === 1 ? '' : 's'} over the next 90 days are ${top
+      .map((r) => r.text.split(':')[0].toLowerCase())
+      .join(', ')}.`,
+    bullets: top.map((r) => r.text),
+    citation,
+    sources: params.sources,
+    howThisImpactsUs: 'Address the highest-severity risks first over the next 90 days; they are the clearest threats to near-term performance.',
+  });
+}
+
+function buildConstructionOpsAnswer(params: {
+  sources: Array<{ url: string; title?: string; publishedDate?: string | null; snippet?: string }>;
+  question: string;
+  internalSummary?: Record<string, any>;
+}): AskOutput | null {
+  const sectorContext = params.internalSummary?.sectorOperationalContext as SectorOperationalContext | undefined;
+  const citation = pickCitation(params.sources, 'operations');
+  if (!sectorContext || !citation) return null;
+  const issues = sectorContext.issueSummaries || [];
+  const matched = issues.filter((issue) => includesQuestionEntity(params.question, [issue.entityName, issue.entityId]));
+  const selected = (matched.length ? matched : issues).slice(0, 6);
+  if (!selected.length) return null;
+  return makeAskOutput({
+    shortAnswer: `Found ${selected.length} construction operating issue${selected.length === 1 ? '' : 's'} tied to jobs/projects.`,
+    bullets: selected.map((issue) => `${issue.issue} Action: ${issue.action}`),
+    citation,
+    sources: params.sources,
+    howThisImpactsUs: 'Resolve the named job issues before the next project review to protect margin and cash timing.',
+  });
+}
+
+function buildInsufficientDataAnswer(params: {
+  sources: Array<{ url: string; title?: string; publishedDate?: string | null; snippet?: string }>;
+  question: string;
+  intent: AskIntent;
+}): AskOutput {
+  const citation = pickCitation(params.sources, 'financial') || {
+    url: params.sources[0]?.url || '',
+    title: params.sources[0]?.title,
+    publishedDate: params.sources[0]?.publishedDate ?? null,
+  };
+  const strategyQuestion = /\b(acquisition|m&a|capital deployment|industry trends|peers in our industry)\b/i.test(
+    params.question
+  );
+  return makeAskOutput({
+    shortAnswer: strategyQuestion
+      ? 'This question needs grounded market/external context, and the current internal-only dataset does not support a specific answer.'
+      : `I do not have enough specific internal data yet to answer this ${params.intent.replace(/_/g, ' ')} question with quantified results.`,
+    bullets: strategyQuestion
+      ? [
+          `Question asked: ${params.question}`,
+          'Internal financial/operational snapshots alone are not sufficient for acquisition archetypes, capital-deployment strategy, or peer-market narrative.',
+          'Turn on external web sources (or provide market materials) and ask again for a sourced answer.',
+        ]
+      : [
+          `Question asked: ${params.question}`,
+          'Checked the available financial snapshots, operational trends, KPI/ratio set, and sector operating context.',
+          'Import or refresh the missing monthly/daily data, then ask again for a quantified answer.',
+        ],
+    citation,
+    sources: params.sources,
+    howThisImpactsUs: strategyQuestion
+      ? 'Avoid strategy decisions from generic internal dumps; use sourced market evidence before acting.'
+      : 'Without the underlying period data, any answer would be speculative; refresh source data before making decisions.',
+  });
+}
+
+function buildQuestionSpecificAnswer(params: {
+  sources: Array<{ url: string; title?: string; publishedDate?: string | null; snippet?: string }>;
+  companyName: string;
+  question: string;
+  requestedCount: number | null;
+  internalSummary?: Record<string, any>;
+}): AskOutput {
+  const intent = classifyAskIntent(params.question);
+
+  if (intent === 'margin') {
+    return (
+      buildMarginDriversFallback(params) ||
+      buildInsufficientDataAnswer({ ...params, intent })
+    );
+  }
+  if (intent === 'kpi_peers') {
+    return buildKpiPeersAnswer(params) || buildInsufficientDataAnswer({ ...params, intent });
+  }
+  if (intent === 'risks') {
+    return buildRisksAnswer(params) || buildInsufficientDataAnswer({ ...params, intent });
+  }
+  if (intent === 'daily_negative_trends') {
+    return buildDailyTrendsAnswer(params) || buildInsufficientDataAnswer({ ...params, intent });
+  }
+  if (intent === 'cash_ar_indicators') {
+    return buildCashArIndicatorAnswer(params) || buildInsufficientDataAnswer({ ...params, intent });
+  }
+  if (intent === 'concentration') {
+    return buildConcentrationAnswer(params) || buildInsufficientDataAnswer({ ...params, intent });
+  }
+  if (intent === 'coa_expense_variance') {
+    return buildExpenseVarianceAnswer(params) || buildInsufficientDataAnswer({ ...params, intent });
+  }
+  if (intent === 'cost_creep') {
+    return buildCostCreepAnswer({ ...params, mode: 'creep' }) || buildInsufficientDataAnswer({ ...params, intent });
+  }
+  if (intent === 'expense_shift_start') {
+    return (
+      buildCostCreepAnswer({ ...params, mode: 'shift_start' }) || buildInsufficientDataAnswer({ ...params, intent })
+    );
+  }
+  if (intent === 'construction_ops') {
+    return buildConstructionOpsAnswer(params) || buildInsufficientDataAnswer({ ...params, intent });
+  }
+  if (intent === 'competitor') {
+    const candidates = extractCompanyCandidates(params.sources);
+    const targetCount = params.requestedCount ?? Math.min(5, candidates.length);
+    const picks = candidates.slice(0, targetCount);
+    if (!picks.length) return buildInsufficientDataAnswer({ ...params, intent });
+    return {
+      shortAnswer: `Here are ${picks.length} competitors related to ${params.companyName || 'the company'} based on available sources.`,
+      longAnswer: `Sources identify: ${picks.map((c) => c.name).join(', ')}.`,
+      citedBullets: picks.map((c) => ({
+        text: `${c.name} — Listed in source results; verify services and location on the cited source.`,
+        citations: [{ url: c.sourceUrl, title: c.sourceTitle }],
+      })),
+      howThisImpactsUs:
+        'Use this list for initial outreach or benchmarking; confirm scope and capabilities directly with each firm.',
+      sources: params.sources,
+    };
+  }
+
+  // General internal questions: prefer margin/risks/trends synthesis over generic dumps.
+  // Opportunity / strategy questions need grounded external context — do not invent from ops dumps.
+  if (/\b(acquisition|m&a|capital deployment|reinvestment|debt paydown|distributions|industry trends|peers in our industry)\b/i.test(params.question)) {
+    return buildInsufficientDataAnswer({
+      ...params,
+      intent,
+    });
+  }
+  return (
+    buildRisksAnswer(params) ||
+    buildDailyTrendsAnswer(params) ||
+    buildMarginDriversFallback(params) ||
+    buildInsufficientDataAnswer({ ...params, intent })
+  );
+}
+
 function buildFallbackFromSources(params: {
   sources: Array<{ url: string; title?: string; publishedDate?: string | null; snippet?: string }>;
   companyName: string;
@@ -564,12 +1584,8 @@ function buildFallbackFromSources(params: {
   requestedCount: number | null;
   internalSummary?: Record<string, any>;
 }): AskOutput {
-  const { sources, companyName, question, requestedCount, internalSummary } = params;
+  const { sources, question, internalSummary } = params;
   const hasDoc = !!internalSummary?.documentContext;
-  const q = question.toLowerCase();
-  const isMarginQuestion = ['margin', 'gross margin', 'ebitda', 'ebit'].some((term) => q.includes(term));
-  const latest = internalSummary?.monthlySnapshot?.latest;
-  const previous = internalSummary?.monthlySnapshot?.previous;
 
   if (hasDoc) {
     const docName = internalSummary?.documentContext?.fileName || 'the selected document';
@@ -589,80 +1605,8 @@ function buildFallbackFromSources(params: {
     };
   }
 
-  if (!isCompetitorQuestion(question)) {
-    const sectorFallback = buildSectorAwareFallback({ sources, question, internalSummary });
-    if (sectorFallback) return sectorFallback;
-  }
-
-  if (isMarginQuestion && latest && previous) {
-    const latestRevenue = latest.revenue || 0;
-    const prevRevenue = previous.revenue || 0;
-    const latestCogs = latest.cogsTotal || 0;
-    const prevCogs = previous.cogsTotal || 0;
-    const latestExpense = latest.expense || 0;
-    const prevExpense = previous.expense || 0;
-
-    const latestGrossMargin = latestRevenue > 0 ? (latestRevenue - latestCogs) / latestRevenue : 0;
-    const prevGrossMargin = prevRevenue > 0 ? (prevRevenue - prevCogs) / prevRevenue : 0;
-    const marginDelta = (latestGrossMargin - prevGrossMargin) * 100;
-
-    const formatCurrency = (value: number) => `$${Math.abs(value).toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
-    const formatPct = (value: number) => `${Math.abs(value).toFixed(1)}%`;
-
-    const citedBullets = sources.map((s) => ({
-      text: `${s.title || 'Internal data source'} — Evidence for revenue, COGS, and expense trends.`,
-      citations: [{ url: s.url, title: s.title, publishedDate: s.publishedDate }],
-    }));
-
-    return {
-      shortAnswer: `Gross margin moved ${marginDelta >= 0 ? 'up' : 'down'} ${formatPct(marginDelta)} versus the prior month. The biggest drivers are revenue, COGS, and operating expense shifts.`,
-      longAnswer: `Revenue changed by ${formatCurrency(latestRevenue - prevRevenue)}, COGS changed by ${formatCurrency(latestCogs - prevCogs)}, and operating expense changed by ${formatCurrency(latestExpense - prevExpense)}. Gross margin is ${marginDelta >= 0 ? 'higher' : 'lower'} by ${formatPct(marginDelta)} versus the prior month. Review Data Review for line-item detail and Operations for cash/AR impacts.`,
-      citedBullets,
-      howThisImpactsUs: 'Margin change is primarily driven by revenue mix and COGS/expense movement; use this to target pricing, cost control, and mix improvements.',
-      sources,
-    };
-  }
-
-  if (!isCompetitorQuestion(question)) {
-    const citedBullets = sources.map((s) => ({
-      text: `${s.title || 'Internal data source'} — Review this page for relevant financial/operational data.`,
-      citations: [{ url: s.url, title: s.title, publishedDate: s.publishedDate }],
-    }));
-    return {
-      shortAnswer:
-        'I could not synthesize a reliable answer from internal data. Please review the linked financial and operational data sources.',
-      longAnswer:
-        'Please review the Data Review (financials) and Operations (operational snapshots) pages. If more context is needed, ensure recent data has been imported and operational snapshots are up to date.',
-      citedBullets,
-      howThisImpactsUs:
-        'Rely on internal data for operational diagnostics. External sources are not appropriate for company-specific cash/AR performance.',
-      sources,
-    };
-  }
-  const candidates = extractCompanyCandidates(sources);
-  const targetCount = requestedCount ?? Math.min(5, candidates.length);
-  const picks = candidates.slice(0, targetCount);
-  const citedBullets = picks.map((c) => ({
-    text: `${c.name} — Listed in source results; verify services and location on the cited source.`,
-    citations: [{ url: c.sourceUrl, title: c.sourceTitle }],
-  }));
-  const sourceTitles = picks.map((c) => c.name).join(', ');
-  return {
-    shortAnswer:
-      picks.length > 0
-        ? `Here are ${picks.length} competitors related to ${companyName || 'the company'} based on available sources.`
-        : `No competitors could be confirmed from the available sources for: ${question}`,
-    longAnswer:
-      picks.length > 0
-        ? `Sources identify these companies as related competitors or peer fabricators: ${sourceTitles}. Use the cited links for addresses and capabilities.`
-        : 'The available sources did not list identifiable competitors. Try a more specific query or location.',
-    citedBullets,
-    howThisImpactsUs:
-      picks.length > 0
-        ? 'Use this list for initial outreach or benchmarking; confirm scope and capabilities directly with each firm.'
-        : 'No sourced competitor list was available; broaden the query or add a location qualifier.',
-    sources,
-  };
+  // Always answer the specific question with quantified internal results — never generic module dumps.
+  return buildQuestionSpecificAnswer(params);
 }
 
 function formatMoneyBrief(value: unknown): string {
@@ -777,109 +1721,14 @@ function buildConstructionIssueSummaries(construction: ReturnType<typeof buildCo
   return summaries.slice(0, 20);
 }
 
-function buildSectorAwareFallback(params: {
+function buildSectorAwareFallback(_params: {
   sources: Array<{ url: string; title?: string; publishedDate?: string | null; snippet?: string }>;
   question: string;
   internalSummary?: Record<string, any>;
 }): AskOutput | null {
-  const { sources, question, internalSummary } = params;
-  const sectorContext = internalSummary?.sectorOperationalContext as SectorOperationalContext | undefined;
-  if (!sectorContext) return null;
-
-  const operationsSource = sources.find((s) => String(s.title || '').toLowerCase().includes('operations')) || sources[0];
-  if (!operationsSource) return null;
-  const citation = { url: operationsSource.url, title: operationsSource.title, publishedDate: operationsSource.publishedDate };
-  const bullets: Array<{ text: string; citations: Array<{ url: string; title?: string; publishedDate?: string | null }> }> = [];
-  const profile = sectorContext.profile;
-  const construction = sectorContext.constructionOperations;
-  const matchedIssues = (sectorContext.issueSummaries || []).filter((issue) =>
-    includesQuestionEntity(question, [issue.entityName, issue.entityId])
-  );
-  const selectedIssues = (matchedIssues.length ? matchedIssues : sectorContext.issueSummaries || []).slice(0, 6);
-  for (const issue of selectedIssues) {
-    bullets.push({
-      text: `${issue.issue} Action: ${issue.action}`,
-      citations: [citation],
-    });
-  }
-
-  if (construction && bullets.length === 0) {
-    const constructionRows = [
-      ...(construction.jobCostControl?.marginWatch || []).map((row: any) => ({
-        kind: 'Job cost',
-        name: row.jobName,
-        id: row.jobId,
-        text: `${row.jobName} (${row.jobId}) has projected profit ${formatMoneyBrief(row.projectedProfit)} at ${formatPctBrief(row.marginPct)} margin, with cost-to-date ${formatMoneyBrief(row.costToDate)} and EAC ${formatMoneyBrief(row.eac)}.`,
-      })),
-      ...(construction.commitmentsForecast?.changeOrders || []).map((row: any) => ({
-        kind: 'Change order',
-        name: row.jobName,
-        id: row.jobId,
-        text: `${row.jobName || row.jobId} has pending/change-order exposure of ${formatMoneyBrief(row.pendingCOs || row.approvedCOs)} that can move forecast margin.`,
-      })),
-      ...(construction.billingCash?.billingCash || []).map((row: any) => ({
-        kind: 'Billing/cash',
-        name: row.jobName,
-        id: row.jobId,
-        text: `${row.jobName || row.jobId} shows billing/cash exposure of ${formatMoneyBrief(row.netCashExposure || row.underOverBilled || row.arBalance)}.`,
-      })),
-      ...(construction.constructionAr?.byProject || []).map((row: any) => ({
-        kind: 'Project AR',
-        name: row.jobName,
-        id: row.jobId,
-        text: `${row.jobName || row.jobId} has project AR of ${formatMoneyBrief(row.totalAr || row.arBalance)} with 90+ exposure ${formatMoneyBrief(row.d90Plus || row.days90plus)}.`,
-      })),
-    ];
-
-    const matches = constructionRows.filter((row) => includesQuestionEntity(question, [row.name, row.id]));
-    const selected = (matches.length ? matches : constructionRows).slice(0, 6);
-    for (const row of selected) {
-      if (!row.text || !row.text.includes('$')) continue;
-      bullets.push({ text: `${row.kind}: ${row.text}`, citations: [citation] });
-    }
-  }
-
-  const generic = sectorContext.genericOperationalData || {};
-  if (bullets.length === 0 && generic.customers) {
-    const rows = (generic.customers as any)?.topCustomers || [];
-    for (const row of rows.slice(0, 3)) {
-      bullets.push({
-        text: `Customer/account module signal: ${row.name || row.customerName} generated ${formatMoneyBrief(row.totalRevenue || row.revenue)} revenue in the sector-appropriate customer/account module.`,
-        citations: [citation],
-      });
-    }
-  }
-  if (bullets.length === 0 && generic.products) {
-    const rows = (generic.products as any)?.topProducts || [];
-    for (const row of rows.slice(0, 3)) {
-      bullets.push({
-        text: `Product/service module signal: ${row.name || row.itemName} generated ${formatMoneyBrief(row.totalRevenue || row.revenue)} revenue at ${formatPctBrief(row.grossMarginPct)} gross margin.`,
-        citations: [citation],
-      });
-    }
-  }
-  if (bullets.length === 0 && generic.inventory) {
-    const summary = generic.inventory as any;
-    bullets.push({
-      text: `Inventory module signal: sector inventory value is ${formatMoneyBrief(summary.totalValue)} across ${summary.itemCount || 0} tracked items.`,
-      citations: [citation],
-    });
-  }
-
-  const cleanBullets = bullets.filter((b) => b.text && !/undefined|null/.test(b.text)).slice(0, 8);
-  if (cleanBullets.length === 0) return null;
-
-  return {
-    shortAnswer: cleanBullets.length === 1
-      ? cleanBullets[0].text
-      : `Yes. I found ${cleanBullets.length} sector-specific issue${cleanBullets.length === 1 ? '' : 's'} to watch.`,
-    longAnswer:
-      cleanBullets.map((b) => `- ${b.text}`).join('\n'),
-    citedBullets: cleanBullets,
-    howThisImpactsUs:
-      'These items can affect project margin, cash timing, collections, and forecast accuracy. Prioritize the named actions before the next project review.',
-    sources,
-  };
+  // Intentionally disabled: generic sector dumps caused off-topic Ask answers.
+  // Question-specific handlers in buildQuestionSpecificAnswer own this path now.
+  return null;
 }
 
 function summarizeProductRows(rows: any[]): { topProducts: any[] } | null {
@@ -932,17 +1781,28 @@ function summarizeInventoryRows(rows: any[]): { totalValue: number; itemCount: n
 
 function summarizeCustomerRows(rows: any[]): { topCustomers: any[] } | null {
   if (!Array.isArray(rows) || rows.length === 0) return null;
-  const byName = new Map<string, { name: string; totalRevenue: number; totalInvoices: number }>();
+  const byName = new Map<
+    string,
+    { name: string; totalRevenue: number; totalCogs: number; totalInvoices: number }
+  >();
   for (const row of rows) {
     const name = String(row?.customerName || row?.name || '').trim();
     if (!name) continue;
-    const current = byName.get(name) || { name, totalRevenue: 0, totalInvoices: 0 };
+    const current = byName.get(name) || { name, totalRevenue: 0, totalCogs: 0, totalInvoices: 0 };
     current.totalRevenue += Number(row?.revenue || 0);
+    current.totalCogs += Number(row?.cogs || 0);
     current.totalInvoices += Number(row?.invoiceCount || 0);
     byName.set(name, current);
   }
   return {
-    topCustomers: Array.from(byName.values()).sort((a, b) => b.totalRevenue - a.totalRevenue).slice(0, 8),
+    topCustomers: Array.from(byName.values())
+      .map((row) => ({
+        ...row,
+        grossMargin: row.totalRevenue - row.totalCogs,
+        grossMarginPct: row.totalRevenue > 0 ? ((row.totalRevenue - row.totalCogs) / row.totalRevenue) * 100 : 0,
+      }))
+      .sort((a, b) => b.totalRevenue - a.totalRevenue)
+      .slice(0, 8),
   };
 }
 
@@ -1089,6 +1949,11 @@ async function generateAskJson(params: {
         'For questions asking whether there are issues, problems, risks, or things to watch, answer directly with the specific issues and recommended actions. Do not lead with source provenance, module names, or instructions to review other pages.',
         'Never quote internal sector guidance, allowed/blocked topic rules, or module-selection instructions in the user-facing answer.',
         'When describing month-over-month changes, use internalSummary.monthlyChanges.direction and values.',
+        'Answer the exact question asked with quantified results from internalSummary. Never substitute unrelated top-customer revenue lists, tenant/account dumps, or generic "sector-specific issues" language.',
+        'For margin / gross profit / EBITDA driver questions: answer ONLY with quantified margin drivers from monthlySnapshot, monthlyChanges, and marginDrivers. Do not answer with top-customer revenue lists, tenant/account names, or generic sector module signals unless those rows include gross profit and gross margin percent that explain the margin change.',
+        'For KPI/peer questions: use kpiDefinitions.ratios and explicitly compare company value versus benchmark.',
+        'For daily trend / cash-AR / concentration questions: use operationalTrends metrics with 14-day and 30-day changes.',
+        'For COA/expense questions: use monthlySnapshot expense categories and monthlyHistory.',
         'If the user asks for a list of N items, provide N items directly (no referrals to other sites).',
         'Use conversation context for follow-up questions (for example: "that", "it", "compare this to last answer").',
         'When prior context conflicts with new grounded sources, prioritize current grounded sources and mention the change.',
@@ -1185,13 +2050,15 @@ async function generateAskJson(params: {
         ...requirements.map((r) => `- ${r}`),
         '- Be concise and action-oriented. Avoid generic filler or high-level fluff.',
         '- Use internal summary for company-specific metrics when applicable.',
-        '- For sector-specific operating questions, infer the answer from sectorOperationalContext and issueSummaries. Lead with the actual issue/action, not where the data came from.',
+        '- Answer the specific question with specific numbers, names, dates, and deltas from the data. Do not invent a generic operating-module dump.',
+        '- For margin / gross profit / EBITDA questions: lead with the quantified period change in gross margin % and gross profit $, then rank drivers (revenue/mix vs COGS vs expense). Use marginDrivers when present. Never substitute top-customer or tenant revenue for a margin-driver answer.',
+        '- For sector-specific operating questions, infer the answer from sectorOperationalContext and issueSummaries only when those facts directly answer the asked question. Lead with the actual issue/action, not where the data came from.',
         '- If the question names a specific operating entity, prioritize issueSummaries and matching entitySearchHints for that entity.',
         '- Do not include internal sector guidance text, allowed/blocked topic rules, or module-selection instructions in shortAnswer, longAnswer, citedBullets, or howThisImpactsUs.',
         '- For peer/market questions, explicitly reference the company industry in the answer.',
         '- Avoid generic statements; cite specific peer commentary from sources when available.',
         '- If the query is marked as externalQuery and no external sources are available, say so clearly and avoid speculation.',
-        '- If internal data is insufficient to answer, say so clearly and avoid speculation.',
+        '- If internal data is insufficient to answer, say exactly what data is missing and avoid speculation.',
         '- Exclude internal Payments tab data or subscription/billing plan terms.',
         '- Do not tell the user to visit Yelp/Angi/etc; synthesize the list directly from allowed sources.',
         '- Use source titles/snippets to identify specific companies; do not invent names.',
@@ -1410,14 +2277,13 @@ export async function runAskCorelyticsLegacy(request: NextRequest) {
       customerTopShareByDay.set(key, total > 0 && top ? (top.revenue / total) * 100 : 0);
     }
 
-    const latestMonth = await prisma.monthlyFinancial.findFirst({
+    const monthlyHistory = await prisma.monthlyFinancial.findMany({
       where: { companyId },
       orderBy: { monthDate: 'desc' },
+      take: 8,
     });
-    const prevMonth = await prisma.monthlyFinancial.findFirst({
-      where: { companyId, monthDate: { lt: latestMonth?.monthDate ?? now } },
-      orderBy: { monthDate: 'desc' },
-    });
+    const latestMonth = monthlyHistory[0] || null;
+    const prevMonth = monthlyHistory[1] || null;
 
     const company = await prisma.company.findUnique({
       where: { id: companyId },
@@ -1502,6 +2368,10 @@ export async function runAskCorelyticsLegacy(request: NextRequest) {
           revenue: buildChangeSummary(latestMonth.revenue, prevMonth.revenue),
           expense: buildChangeSummary(latestMonth.expense, prevMonth.expense),
           cogsTotal: buildChangeSummary(latestMonth.cogsTotal, prevMonth.cogsTotal),
+          grossProfit: buildChangeSummary(
+            Number(latestMonth.revenue || 0) - Number(latestMonth.cogsTotal || 0),
+            Number(prevMonth.revenue || 0) - Number(prevMonth.cogsTotal || 0)
+          ),
           cash: buildChangeSummary(latestMonth.cash, prevMonth.cash),
           ar: buildChangeSummary(latestMonth.ar, prevMonth.ar),
           ap: buildChangeSummary(latestMonth.ap, prevMonth.ap),
@@ -1712,30 +2582,18 @@ export async function runAskCorelyticsLegacy(request: NextRequest) {
               ],
             },
             monthlySnapshot: {
-              latest: latestMonth
-                ? {
-                    monthDate: latestMonth.monthDate,
-                    revenue: latestMonth.revenue,
-                    expense: latestMonth.expense,
-                    cogsTotal: latestMonth.cogsTotal,
-                    cash: latestMonth.cash,
-                    ar: latestMonth.ar,
-                    ap: latestMonth.ap,
-                  }
-                : null,
-              previous: prevMonth
-                ? {
-                    monthDate: prevMonth.monthDate,
-                    revenue: prevMonth.revenue,
-                    expense: prevMonth.expense,
-                    cogsTotal: prevMonth.cogsTotal,
-                    cash: prevMonth.cash,
-                    ar: prevMonth.ar,
-                    ap: prevMonth.ap,
-                  }
-                : null,
+              latest: serializeMonthlyAskRow(latestMonth),
+              previous: serializeMonthlyAskRow(prevMonth),
             },
+            monthlyHistory: monthlyHistory.map((month) => serializeMonthlyAskRow(month)).filter(Boolean),
             monthlyChanges,
+            marginDrivers: buildMarginDriversFromSummary({
+              monthlySnapshot: {
+                latest: serializeMonthlyAskRow(latestMonth),
+                previous: serializeMonthlyAskRow(prevMonth),
+              },
+              sectorOperationalContext: { genericOperationalData },
+            }),
             kpiDefinitions: {
               alias: ['kpi', 'kpis', 'ratios'],
               note: 'In this app, KPIs are the ratio metrics shown in the Ratios view.',
@@ -1754,6 +2612,9 @@ export async function runAskCorelyticsLegacy(request: NextRequest) {
               'If dataPoints are low or change values are null, there may be insufficient daily history to assess trends.',
               'KPI requests should be interpreted as ratio metrics; use kpiDefinitions.ratios when available.',
               'Use monthlyChanges.direction to describe increase/decrease; do not invert directions.',
+              'For margin-driver questions, use marginDrivers and monthlySnapshot/monthlyChanges. Do not answer with customer revenue lists that lack gross-profit impact.',
+              'For KPI questions use kpiDefinitions.ratios. For daily trend/concentration/cash-AR questions use operationalTrends. For COA/expense questions use monthlyHistory.',
+              'Never answer with generic sector module dumps that do not address the asked question.',
               'If operationalWorkbookData.platosCloset is present, use it for Plato spreadsheet-derived sales, inventory, and retail product aging analysis.',
             ],
           };
@@ -1988,6 +2849,26 @@ export async function runAskCorelyticsLegacy(request: NextRequest) {
           { error: 'Unable to build a cited list from available sources. Try a more specific query or location.' },
           { status: 422 },
         );
+      }
+    }
+
+    // Prefer question-specific quantified answers for internal Ask (no generic dumps).
+    if (uiMode !== 'document' && !externalResultsOnly) {
+      const intent = classifyAskIntent(question);
+      const preferDeterministic =
+        intent !== 'general' && intent !== 'competitor'
+          ? true
+          : isWeakAskAnswer({ ...parsed, citedBullets } as AskOutput, question);
+      if (preferDeterministic) {
+        const specific = buildQuestionSpecificAnswer({
+          sources: sourcesWithDoc,
+          companyName,
+          question,
+          requestedCount,
+          internalSummary,
+        });
+        parsed = specific;
+        citedBullets = Array.isArray(parsed.citedBullets) ? parsed.citedBullets : [];
       }
     }
 
