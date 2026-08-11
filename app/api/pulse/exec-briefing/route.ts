@@ -8,6 +8,7 @@ import { requireAuth, validateCompanyAccess } from '@/lib/tenant-security';
 import { loadMonthlyFromDfs } from '@/lib/performance-analytics/monthly-from-dfs';
 import {
   buildConstructionBriefingFacts,
+  buildDailyOperationsFacts,
   getExecBriefingModuleProfile,
 } from '@/lib/pulse/exec-briefing-modules';
 import { resolveCompanyIndustrySectorCategory } from '@/lib/industry-sector-resolver';
@@ -40,7 +41,7 @@ const MONTHLY_FINANCIAL_ROW_CAP = 60;
 const DAILY_FINANCIAL_ROW_CAP = 100;
 const CORE_SNAPSHOT_ROW_CAP = 150;
 const DETAIL_SNAPSHOT_ROW_CAP = 300;
-const EXEC_BRIEFING_LOGIC_VERSION = 'exec-briefing-v7-balance-movement-income';
+const EXEC_BRIEFING_LOGIC_VERSION = 'exec-briefing-v8-daily-ops';
 const PRIVATE_DAILY_CACHE_HEADERS = {
   'Cache-Control': 'private, max-age=300, stale-while-revalidate=1800',
 };
@@ -676,6 +677,11 @@ function buildMockExecBriefingResponse(facts: any, sourceNotes: string[], period
   }
 
   const operatingBullets: string[] = [];
+  if (period === 'daily' && facts?.dailyOperations?.notableExceptions?.length) {
+    for (const exception of facts.dailyOperations.notableExceptions.slice(0, 3)) {
+      operatingBullets.push(`${exception.title}: ${exception.detail}.`);
+    }
+  }
   if (customers.topCustomers?.length) {
     const topCustomer = customers.topCustomers[0];
     operatingBullets.push(
@@ -1260,6 +1266,31 @@ export async function GET(request: NextRequest) {
     ].filter(Boolean);
     const briefingPulseAlerts = (pulseAlerts || []).filter((alert: any) => !isStoredArApAlert(alert));
     const includeOperatingDetailInBriefing = period !== 'daily';
+    const dailyOpsCurrentDate =
+      period === 'daily'
+        ? dateKey(latestDailyFinancial?.snapshotDate) || dateKey(primaryFinancialComparison?.currentPeriod) || asOfDate
+        : '';
+    const dailyOpsPriorDate =
+      period === 'daily'
+        ? dateKey(sortedDailyFinancials.slice(-2, -1)[0]?.snapshotDate) ||
+          (typeof primaryFinancialComparison?.priorPeriod === 'string' &&
+          !String(primaryFinancialComparison.priorPeriod).includes(' to ')
+            ? String(primaryFinancialComparison.priorPeriod)
+            : '')
+        : '';
+    const dailyOperations =
+      period === 'daily'
+        ? buildDailyOperationsFacts({
+            sectorKey: moduleProfile.sectorKey,
+            currentDate: dailyOpsCurrentDate,
+            priorDate: dailyOpsPriorDate || null,
+            dayRevenue: recentRevenue,
+            productRows: productSnapshots,
+            customerRows: customerSnapshots,
+            includeProducts: moduleProfile.genericSnapshots.products,
+            includeCustomers: moduleProfile.genericSnapshots.customers,
+          })
+        : null;
 
     facts = {
       company: { name: company?.name || 'Company', industryGroupId, industryName: benchmarks[0]?.industryName || null, industrySectorCategory: sectorCategory },
@@ -1327,6 +1358,7 @@ export async function GET(request: NextRequest) {
       covenants: { activeLoans: (loans as any[]).length, watchlist: covenantWatchlist },
       customers: includeOperatingDetailInBriefing && moduleProfile.genericSnapshots.customers ? { totalRecentRevenue: totalRecentCustomerRevenue, top3Share, topCustomers } : null,
       products: includeOperatingDetailInBriefing && moduleProfile.genericSnapshots.products ? { topMarginWatch } : null,
+      dailyOperations,
       constructionOperations,
       benchmarks: {
         loaded: includeOperatingDetailInBriefing ? benchmarks.length : 0,
@@ -1350,6 +1382,8 @@ export async function GET(request: NextRequest) {
         apAgingAvailable: apSnapshots.length > 0,
         customerSalesAvailable: includeOperatingDetailInBriefing && moduleProfile.genericSnapshots.customers && customerSnapshots.length > 0,
         productServiceSalesAvailable: includeOperatingDetailInBriefing && moduleProfile.genericSnapshots.products && productSnapshots.length > 0,
+        dailyOperationsAvailable: Boolean(dailyOperations),
+        dailyOperationsNotableCount: dailyOperations?.notableExceptions?.length || 0,
         inventoryDataAvailable: moduleProfile.genericSnapshots.inventory && inventorySnapshots.length > 0,
         constructionOperationsAvailable: Boolean(constructionOperations),
         benchmarkDataAvailable: benchmarks.length > 0,
@@ -1363,8 +1397,13 @@ export async function GET(request: NextRequest) {
       sourceNote('Cash data', cashSnapshots.length),
       sourceNote('Accounts receivable aging data', arSnapshots.length),
       sourceNote('Accounts payable aging data', apSnapshots.length),
-      moduleProfile.genericSnapshots.customers ? sourceNote('Customer sales data', customerSnapshots.length) : '',
-      moduleProfile.genericSnapshots.products ? sourceNote('Product/service sales data', productSnapshots.length) : '',
+      includeOperatingDetailInBriefing && moduleProfile.genericSnapshots.customers
+        ? sourceNote('Customer sales data', customerSnapshots.length)
+        : '',
+      includeOperatingDetailInBriefing && moduleProfile.genericSnapshots.products
+        ? sourceNote('Product/service sales data', productSnapshots.length)
+        : '',
+      dailyOperations ? sourceNote('Same-day operational sales data', dailyOperations.notableExceptions.length || 1) : '',
       moduleProfile.genericSnapshots.inventory ? sourceNote('Inventory data', inventorySnapshots.length) : '',
       constructionOperations ? sourceNote('Construction job cost control data', constructionOperations.jobCostControl?.summary?.jobCount || 1) : '',
       constructionOperations ? sourceNote('Construction project portfolio data', constructionOperations.projectPortfolio?.summary?.jobCount || 1) : '',
@@ -1416,7 +1455,7 @@ This is an exception-based leadership briefing. Only include analysis if it matt
 
 Do not turn a normal or favorable metric into commentary. For example, do not mention low accounts receivable or no overdue balances unless there is a material related issue in cash, revenue, collections, or a Pulse alert. Do not infer future cash inflow from the accounts receivable balance alone.
 
-Analyze the full company picture using only the sector-appropriate operating modules listed in facts.operationalModules. Always include financial performance, gross profit dollars, margin rate, liquidity, working capital, AR, AP, LOC/debt, covenants, benchmarks, Pulse alerts, performance findings, goals/watchlists, and data coverage when material. Only mention inventory, customer sales, product/service sales, job cost control, project portfolio, commitments/forecast, billing/cash by job, or other operating topics when those topics are included in facts.operationalModules.promptRules.allowedOperationalTopics and supported by facts.
+Analyze the full company picture using only the sector-appropriate operating modules listed in facts.operationalModules. Always include financial performance, gross profit dollars, margin rate, liquidity, working capital, AR, AP, LOC/debt, covenants, benchmarks, Pulse alerts, performance findings, goals/watchlists, and data coverage when material. Only mention inventory, customer sales, product/service sales, job cost control, project portfolio, commitments/forecast, billing/cash by job, or other operating topics when those topics are included in facts.operationalModules.promptRules.allowedOperationalTopics and supported by facts. For the Daily tab, operational sales commentary must come from facts.dailyOperations (same-day windows only), not from multi-day customers/products aggregates.
 
 Sector operating guidance: ${facts.operationalModules.promptRules.sectorGuidance}
 
@@ -1424,7 +1463,7 @@ Blocked operating topics for this company: ${facts.operationalModules.promptRule
 
 For total accounts receivable and total accounts payable balances, use financials.balanceSheetAR and financials.balanceSheetAP. Do not use financials.arAging.total, financials.apAging.total, workingCapital.arAging.total, or workingCapital.apAging.total as the company's total balance sheet AR/AP if those differ; aging snapshots are only for aging mix, overdue percentages, and days sales outstanding.
 
-Only compare like-for-like periods. Do not compare days to weeks, weeks to months, or a partial current month to completed months. This is a ${periodDisplayName(period).toLowerCase()} briefing; use only the comparison windows in facts.financials.comparisons. For the Daily tab, discuss material latest-day vs prior-day movement and current month-to-date vs the same elapsed days last month when available; never fall back to month-over-month analysis in the Daily tab. For Daily comparisons, state the actual dates from currentPeriod and priorPeriod; do not say "yesterday", "today", or "latest day" as a substitute for dates. In the Daily tab, do not include customer concentration, customer gross-profit trend, product/SKU gross-profit drivers, benchmarks, or operating recommendations unless those facts are explicitly provided as the same currentPeriod vs priorPeriod daily comparison. For Monthly, Quarterly, and Annual tabs, use completed periods only. State the window used when a financial movement is material. If no comparable window supports an issue, do not draw a trend conclusion.
+Only compare like-for-like periods. Do not compare days to weeks, weeks to months, or a partial current month to completed months. This is a ${periodDisplayName(period).toLowerCase()} briefing; use only the comparison windows in facts.financials.comparisons. For the Daily tab, discuss material latest-day vs prior-day movement and current month-to-date vs the same elapsed days last month when available; never fall back to month-over-month analysis in the Daily tab. For Daily comparisons, state the actual dates from currentPeriod and priorPeriod; do not say "yesterday", "today", or "latest day" as a substitute for dates. In the Daily tab, use facts.dailyOperations only for operational commentary, and only when notableExceptions are present or a listed top product/customer/volume move is material for that same asOfDate vs priorDate. Allowed Daily ops topics: top revenue product/SKU for the day, largest customer/order for the day, and day volume (sales closed / units sold / contracts) with day-over-day deltas when provided. Do not use multi-day customer concentration, multi-day product margin watchlists, or benchmarks in the Daily tab. For Monthly, Quarterly, and Annual tabs, use completed periods only and the broader customers/products/benchmarks facts when present. State the window used when a financial or daily-ops movement is material. If no comparable window supports an issue, do not draw a trend conclusion.
 
 When revenue and margin rate move in different directions, explicitly state the end result to gross profit dollars only if the movement is material or decision-useful. Example: if revenue is declining but gross margin rate is improving, say whether gross profit dollars increased or decreased and by how much; if both are normal/immaterial, omit the topic entirely.
 
