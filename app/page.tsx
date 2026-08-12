@@ -1300,6 +1300,21 @@ function FinancialScorePage() {
   // Load user from localStorage and verify NextAuth session on mount
   useEffect(() => {
     if (typeof window === 'undefined' || currentUser) return;
+
+    const getSessionWithRetry = async (attempts = 3, delayMs = 300) => {
+      for (let attempt = 0; attempt < attempts; attempt += 1) {
+        try {
+          const session = await nextAuthGetSession();
+          if (session) return session;
+        } catch (error) {
+          console.warn('NextAuth getSession attempt failed:', error);
+        }
+        if (attempt < attempts - 1) {
+          await new Promise((resolve) => setTimeout(resolve, delayMs * (attempt + 1)));
+        }
+      }
+      return null;
+    };
     
     const restoreSession = async () => {
       const storedUser = localStorage.getItem('fs_currentUser');
@@ -1315,8 +1330,9 @@ function FinancialScorePage() {
           };
           console.log('? User loaded from localStorage:', user.email);
           
-          // Check if NextAuth session exists
-          const session = await nextAuthGetSession();
+          // Retry briefly — a single null/failed /api/auth/session on refresh
+          // was clearing local login state and forcing a re-login.
+          const session = await getSessionWithRetry();
           
           if (!session) {
             console.log('?? No NextAuth session found - user will need to re-login');
@@ -1395,11 +1411,26 @@ function FinancialScorePage() {
       localStorage.removeItem('fs_selectedCompanyId');
     };
 
+    const getSessionWithRetry = async (attempts = 3, delayMs = 300) => {
+      for (let attempt = 0; attempt < attempts; attempt += 1) {
+        try {
+          const session = await nextAuthGetSession();
+          if (session) return session;
+        } catch (error) {
+          console.warn('NextAuth getSession refresh attempt failed:', error);
+        }
+        if (attempt < attempts - 1) {
+          await new Promise((resolve) => setTimeout(resolve, delayMs * (attempt + 1)));
+        }
+      }
+      return null;
+    };
+
     const refreshSession = async (redirectOnMissing = false) => {
       if (inFlight) return;
       inFlight = true;
       try {
-        const session = await nextAuthGetSession();
+        const session = await getSessionWithRetry();
         if (!session) {
           if (process.env.NEXT_PUBLIC_DISABLE_INACTIVITY_TIMEOUT === '1') {
             // Do not hard-kick local development sessions when NextAuth

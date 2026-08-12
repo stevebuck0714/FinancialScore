@@ -113,12 +113,15 @@ async function resolveAuthToken(request: NextRequest) {
 }
 
 function applyIdleActivityCookie(response: NextResponse) {
+  // Keep the cookie around longer than the idle window so middleware can
+  // still read a stale timestamp and decide idle-expiry correctly, instead of
+  // the browser dropping the cookie at the same moment as the idle cutoff.
   response.cookies.set(LAST_ACTIVITY_COOKIE, String(Date.now()), {
     httpOnly: true,
     sameSite: 'lax',
     secure: process.env.NODE_ENV === 'production',
     path: '/',
-    maxAge: Math.floor(IDLE_TIMEOUT_MS / 1000),
+    maxAge: 60 * 60 * 8,
   })
 }
 
@@ -196,8 +199,14 @@ export async function middleware(request: NextRequest) {
   
   // Apply API rate limiting in production only.
   // Dev/staging testing flows can generate many auth/session calls quickly.
+  // Never rate-limit NextAuth session/csrf probes — a 429 here makes the
+  // client treat the user as logged out on refresh/tab focus.
   const shouldApplyRateLimit = process.env.NODE_ENV === 'production'
-  if (pathname.startsWith('/api') && shouldApplyRateLimit) {
+  const isAuthSessionProbe =
+    pathname.startsWith('/api/auth/session') ||
+    pathname.startsWith('/api/auth/csrf') ||
+    pathname.startsWith('/api/auth/providers')
+  if (pathname.startsWith('/api') && shouldApplyRateLimit && !isAuthSessionProbe) {
     const rateLimit = checkRateLimit(clientIp, pathname)
     
     if (!rateLimit.allowed) {
@@ -223,11 +232,8 @@ export async function middleware(request: NextRequest) {
       )
     }
     
-    // Only log rate limit for non-session endpoints (session checks are very frequent)
-    if (!pathname.includes('/api/auth/session')) {
-      if (DEBUG_MIDDLEWARE) {
-        console.log('✅ Rate limit passed for:', pathname, 'Remaining:', rateLimit.remaining)
-      }
+    if (DEBUG_MIDDLEWARE) {
+      console.log('✅ Rate limit passed for:', pathname, 'Remaining:', rateLimit.remaining)
     }
   }
   

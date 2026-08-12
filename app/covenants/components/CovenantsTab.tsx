@@ -546,27 +546,119 @@ export default function CovenantsTab({
   const [serverCovenantsLoading, setServerCovenantsLoading] = useState(false);
   const [serverCovenantsError, setServerCovenantsError] = useState<string | null>(null);
 
-  // Fetch loans for this company
-  useEffect(() => {
-    const fetchLoans = async () => {
+  const normalizeLoanName = (value: unknown) =>
+    String(value || '')
+      .trim()
+      .toLowerCase()
+      .replace(/\s+/g, ' ');
+
+  const mapInstrumentLoanType = (instrument: any): string => {
+    const raw = `${instrument?.terms?.loanType || ''} ${instrument?.targetField || ''} ${instrument?.displayName || ''}`.toUpperCase();
+    if (raw.includes('LOC') || raw.includes('LINE OF CREDIT') || raw.includes('REVOLVER')) return 'LINE_OF_CREDIT';
+    if (raw.includes('MORTGAGE')) return 'MORTGAGE';
+    if (raw.includes('BRIDGE')) return 'BRIDGE';
+    return 'TERM';
+  };
+
+  const findMatchingLoan = (loanList: Loan[], instrument: any): Loan | undefined => {
+    const instrumentKey = String(instrument?.instrumentKey || '').trim();
+    const accountId = String(instrument?.accountId || '').trim();
+    const displayName = String(instrument?.terms?.displayName || instrument?.displayName || '').trim();
+    return loanList.find((loan) => {
+      const idNum = String(loan.loanIdNumber || '').trim();
+      if (instrumentKey && idNum === instrumentKey) return true;
+      if (accountId && idNum === accountId) return true;
+      if (displayName && normalizeLoanName(loan.loanName) === normalizeLoanName(displayName)) return true;
+      return false;
+    });
+  };
+
+  const ensureLoansFromInstruments = async (existingLoans: Loan[], instruments: any[]): Promise<Loan[]> => {
+    const nextLoans = [...existingLoans];
+    for (const instrument of instruments) {
+      if (findMatchingLoan(nextLoans, instrument)) continue;
+      const instrumentKey = String(instrument?.instrumentKey || '').trim();
+      const accountId = String(instrument?.accountId || '').trim();
+      const displayName = String(instrument?.terms?.displayName || instrument?.displayName || '').trim();
+      if (!displayName && !instrumentKey && !accountId) continue;
       try {
-        const response = await fetch(`/api/loans?companyId=${selectedCompanyId}`);
-        if (response.ok) {
-          const data = await response.json();
-          setLoans(data.loans || []);
-          // Auto-select first active loan if available
-          if (data.loans && data.loans.length > 0 && !selectedLoan) {
-            const firstActive = data.loans.find((l: Loan) => l.status === 'ACTIVE') || data.loans[0];
-            setSelectedLoan(firstActive);
-          } else if (!data.loans || data.loans.length === 0) {
-            // No loans, default to add-loan tab
-            setActiveTab('add-loan');
-          }
-        }
+        const response = await fetch('/api/loans', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            companyId: selectedCompanyId,
+            loanName: displayName || instrumentKey || accountId,
+            loanIdNumber: instrumentKey || accountId || null,
+            lenderName: String(instrument?.terms?.lender || 'Unknown').trim() || 'Unknown',
+            loanAmount: Number(
+              instrument?.terms?.originalBalance ??
+                Math.abs(Number(instrument?.derivedCurrentBalance || instrument?.activityTotal || 0)) ||
+                0
+            ),
+            interestRate:
+              instrument?.terms?.interestRatePct != null && instrument?.terms?.interestRatePct !== ''
+                ? Number(instrument.terms.interestRatePct)
+                : null,
+            loanType: mapInstrumentLoanType(instrument),
+            status: instrument?.instrumentStatus === 'inactive' ? 'INACTIVE' : 'ACTIVE',
+          }),
+        });
+        if (!response.ok) continue;
+        const data = await response.json().catch(() => null);
+        if (data?.loan) nextLoans.push(data.loan);
       } catch (err) {
-        console.error('Error fetching loans:', err);
+        console.warn('Unable to sync loan instrument into covenants loan list', err);
       }
-    };
+    }
+    return nextLoans;
+  };
+
+  const loadLoansForCovenants = async (preferLoanId?: string | null) => {
+    if (!selectedCompanyId) return;
+    try {
+      const [loansResponse, instrumentsResponse] = await Promise.all([
+        fetch(`/api/loans?companyId=${encodeURIComponent(selectedCompanyId)}`),
+        fetch(`/api/operations/loans?companyId=${encodeURIComponent(selectedCompanyId)}`, { cache: 'no-store' }),
+      ]);
+
+      const loansPayload = loansResponse.ok ? await loansResponse.json().catch(() => ({ loans: [] })) : { loans: [] };
+      const instrumentsPayload = instrumentsResponse.ok
+        ? await instrumentsResponse.json().catch(() => ({ instruments: [] }))
+        : { instruments: [] };
+
+      const existingLoans: Loan[] = Array.isArray(loansPayload?.loans) ? loansPayload.loans : [];
+      const instruments = Array.isArray(instrumentsPayload?.instruments) ? instrumentsPayload.instruments : [];
+      const syncedLoans = await ensureLoansFromInstruments(existingLoans, instruments);
+
+      // Keep a stable, readable order: active first, then by name.
+      syncedLoans.sort((a, b) => {
+        const statusRank = (status: string) => (String(status).toUpperCase() === 'ACTIVE' ? 0 : 1);
+        const byStatus = statusRank(a.status) - statusRank(b.status);
+        if (byStatus !== 0) return byStatus;
+        return String(a.loanName || '').localeCompare(String(b.loanName || ''));
+      });
+
+      setLoans(syncedLoans);
+
+      if (syncedLoans.length === 0) {
+        setSelectedLoan(null);
+        setActiveTab('add-loan');
+        return;
+      }
+
+      const preferred =
+        (preferLoanId && syncedLoans.find((loan) => loan.id === preferLoanId)) ||
+        (selectedLoan && syncedLoans.find((loan) => loan.id === selectedLoan.id)) ||
+        syncedLoans.find((loan) => String(loan.status).toUpperCase() === 'ACTIVE') ||
+        syncedLoans[0];
+      setSelectedLoan(preferred);
+    } catch (err) {
+      console.error('Error fetching loans for covenants:', err);
+    }
+  };
+
+  // Fetch loans for this company (manual loans + loan instruments)
+  useEffect(() => {
     const fetchAlerts = async () => {
       try {
         setAlertsLoading(true);
@@ -583,7 +675,7 @@ export default function CovenantsTab({
       }
     };
     if (selectedCompanyId) {
-      fetchLoans();
+      void loadLoansForCovenants();
       fetchAlerts();
     }
   }, [selectedCompanyId]);
@@ -638,6 +730,7 @@ export default function CovenantsTab({
   const handleLoanSelected = (loan: Loan) => {
     setSelectedLoan(loan);
     setActiveTab('overview');
+    void loadLoansForCovenants(loan.id);
   };
   const [alertFilter, setAlertFilter] = useState<'all' | 'critical' | 'warning'>('all');
   const [alerts, setAlerts] = useState<CovenantAlert[]>([]);
@@ -1168,12 +1261,15 @@ export default function CovenantsTab({
                 fontSize: '13px',
                 background: 'white',
                 cursor: 'pointer',
-                minWidth: '220px'
+                minWidth: '260px',
+                maxWidth: '420px',
               }}
             >
               {loans.map(loan => (
                 <option key={loan.id} value={loan.id}>
-                  {loan.loanName} {loan.loanIdNumber ? `(${loan.loanIdNumber})` : ''}
+                  {loan.loanName}
+                  {loan.lenderName ? ` — ${loan.lenderName}` : ''}
+                  {loan.loanIdNumber ? ` (${loan.loanIdNumber})` : ''}
                 </option>
               ))}
             </select>
