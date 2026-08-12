@@ -3,6 +3,8 @@
 
 import { useMemo, useState } from 'react';
 import TextToSpeech from './common/TextToSpeech';
+import { formatMoneyCompact } from '@/lib/format/currency';
+import { resolveDisplayCurrency, localeForCurrency } from '@/lib/constants/currencies';
 
 interface MonthlyData {
   date: Date;
@@ -77,6 +79,9 @@ interface MDAViewProps {
   worstCaseRevMultiplier: number;
   worstCaseExpMultiplier: number;
   onExportToWord?: (executiveSummaryText: string, mdaAnalysis: MDAAnalysis) => void;
+  baseCurrency?: string | null;
+  reportingCurrency?: string | null;
+  locale?: string | null;
 }
 
 export default function MDAView({
@@ -100,19 +105,20 @@ export default function MDAView({
   bestCaseExpMultiplier,
   worstCaseRevMultiplier,
   worstCaseExpMultiplier,
-  onExportToWord
+  onExportToWord,
+  baseCurrency,
+  reportingCurrency,
+  locale,
 }: MDAViewProps) {
   const [mdaTab, setMdaTab] = useState<'executive-summary' | 'strengths-insights' | 'key-metrics'>('executive-summary');
   const [printOrientation] = useState<'portrait' | 'landscape'>('portrait');
 
+  const displayCurrency = resolveDisplayCurrency({ baseCurrency, reportingCurrency });
+  const displayLocale = locale || localeForCurrency(displayCurrency);
+
   // Helper function to format currency
   const formatDollar = (value: number): string => {
-    if (value >= 1000000) {
-      return `$${(value / 1000000).toFixed(2)}M`;
-    } else if (value >= 1000) {
-      return `$${(value / 1000).toFixed(1)}K`;
-    }
-    return `$${value.toFixed(0)}`;
+    return formatMoneyCompact(value, { currency: displayCurrency, locale: displayLocale });
   };
 
   // MD&A Analysis - comprehensive analysis based on financial data
@@ -167,7 +173,7 @@ export default function MDAView({
       const avgMonthlyRev = last12Months.reduce((s, m) => s + m.revenue, 0) / 12;
       const projectedAnnualRev = avgMonthlyRev * 12;
       
-      if (recentRevGrowth > 15) insights.push(`Strong growth trajectory projects annual revenue of approximately $${(projectedAnnualRev / 1000).toFixed(0)}K with continued momentum.`);
+      if (recentRevGrowth > 15) insights.push(`Strong growth trajectory projects annual revenue of approximately ${formatDollar(projectedAnnualRev)} with continued momentum.`);
       else if (recentRevGrowth < 0) insights.push(`Declining revenue trend requires strategic intervention to stabilize and restore growth.`);
       
       // Equity trend analysis
@@ -196,9 +202,9 @@ export default function MDAView({
     const wcRatioMDA = currentLiab > 0 ? currentAssets / currentLiab : 0;
     
     if (workingCapital > 0 && wcRatioMDA >= 1.5) {
-      strengths.push(`Positive working capital of $${(workingCapital / 1000).toFixed(1)}K with strong WC ratio of ${wcRatioMDA.toFixed(1)} supports operational flexibility.`);
+      strengths.push(`Positive working capital of ${formatDollar(workingCapital)} with strong WC ratio of ${wcRatioMDA.toFixed(1)} supports operational flexibility.`);
     } else if (workingCapital < 0) {
-      weaknesses.push(`Negative working capital of $${(Math.abs(workingCapital) / 1000).toFixed(1)}K indicates potential short-term funding challenges.`);
+      weaknesses.push(`Negative working capital of ${formatDollar(Math.abs(workingCapital))} indicates potential short-term funding challenges.`);
     } else if (wcRatioMDA < 1.0) {
       weaknesses.push(`Working capital ratio of ${wcRatioMDA.toFixed(1)} is below optimal levels - consider improving liquidity.`);
     }
@@ -238,8 +244,8 @@ export default function MDAView({
       const priorYearCash = monthly[monthly.length - 13].cash;
       const cashChange = currentCash - priorYearCash;
       
-      if (cashChange > ltmRev * 0.1) strengths.push(`Cash position improved by $${(cashChange / 1000).toFixed(1)}K over the past year, strengthening financial resilience.`);
-      else if (cashChange < -ltmRev * 0.05) weaknesses.push(`Cash declined by $${(Math.abs(cashChange) / 1000).toFixed(1)}K - monitor cash flow and consider working capital improvements.`);
+      if (cashChange > ltmRev * 0.1) strengths.push(`Cash position improved by ${formatDollar(cashChange)} over the past year, strengthening financial resilience.`);
+      else if (cashChange < -ltmRev * 0.05) weaknesses.push(`Cash declined by ${formatDollar(Math.abs(cashChange))} - monitor cash flow and consider working capital improvements.`);
     }
     
     // Benchmark Comparison
@@ -303,7 +309,7 @@ export default function MDAView({
     }
     
     return { strengths, weaknesses, insights };
-  }, [trendData, monthly, finalScore, profitabilityScore, growth_24mo, expenseAdjustment, revExpSpread, assetDevScore, ltmRev, benchmarks]);
+  }, [trendData, monthly, finalScore, profitabilityScore, growth_24mo, expenseAdjustment, revExpSpread, assetDevScore, ltmRev, benchmarks, displayCurrency, displayLocale]);
 
   const handleExportToWord = () => {
     if (onExportToWord) {
@@ -1057,13 +1063,13 @@ function ExecutiveSummaryTab({
               
               return (
                 <span>
-                  <strong> SDE method</strong> values the business at <strong style={{ color: '#10b981' }}>${(sdeVal / 1000000).toFixed(2)}M</strong> 
-                  (applying {sdeMultiplier.toFixed(1)}x to TTM SDE of ${(ttmSDE / 1000).toFixed(1)}K).
-                  <strong> EBITDA multiple</strong> indicates <strong style={{ color: '#667eea' }}>${(ebitdaVal / 1000000).toFixed(2)}M</strong> 
-                  (using {ebitdaMultiplier.toFixed(1)}x on EBITDA of ${(ttmEBITDA / 1000).toFixed(1)}K).
-                  <strong> DCF analysis</strong> projects <strong style={{ color: '#8b5cf6' }}>${(dcfVal / 1000000).toFixed(2)}M</strong> 
+                  <strong> SDE method</strong> values the business at <strong style={{ color: '#10b981' }}>{formatDollar(sdeVal)}</strong> 
+                  (applying {sdeMultiplier.toFixed(1)}x to TTM SDE of {formatDollar(ttmSDE)}).
+                  <strong> EBITDA multiple</strong> indicates <strong style={{ color: '#667eea' }}>{formatDollar(ebitdaVal)}</strong> 
+                  (using {ebitdaMultiplier.toFixed(1)}x on EBITDA of {formatDollar(ttmEBITDA)}).
+                  <strong> DCF analysis</strong> projects <strong style={{ color: '#8b5cf6' }}>{formatDollar(dcfVal)}</strong> 
                   (discounting 5-year projections at {dcfDiscountRate.toFixed(1)}% with {dcfTerminalGrowth.toFixed(1)}% terminal growth).
-                  The valuation range of <strong>${(minValuation / 1000000).toFixed(2)}M - ${(maxValuation / 1000000).toFixed(2)}M</strong> (average: ${(avgValuation / 1000000).toFixed(2)}M) provides comprehensive perspective
+                  The valuation range of <strong>{formatDollar(minValuation)} - {formatDollar(maxValuation)}</strong> (average: {formatDollar(avgValuation)}) provides comprehensive perspective
                   {(maxValuation - minValuation) / avgValuation > 0.5 ? <span style={{ color: '#f59e0b' }}>, though significant variance suggests need for additional validation</span> :
                    ', with reasonable consistency across methodologies'}.
                 </span>

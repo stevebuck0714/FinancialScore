@@ -3,6 +3,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import CovenantsTab from '@/app/covenants/components/CovenantsTab';
 import type { MonthlyDataRow, User } from '@/app/types';
+import { useCompanyMoneyFormatter } from '@/app/hooks/useCompanyMoneyFormatter';
 
 type LoanTerms = {
   instrumentKey: string;
@@ -85,20 +86,20 @@ const emptyTerms: LoanTerms = {
   notes: '',
 };
 
-function formatCurrency(value: unknown): string {
+function formatCurrency(value: unknown, currency: string = 'USD'): string {
   const number = Number(value || 0);
-  return number.toLocaleString('en-US', {
+  return number.toLocaleString(currency === 'CAD' ? 'en-CA' : 'en-US', {
     style: 'currency',
-    currency: 'USD',
+    currency,
     maximumFractionDigits: 0,
   });
 }
 
-function formatScheduleAmount(value: unknown): string {
+function formatScheduleAmount(value: unknown, currency: string = 'USD'): string {
   const number = Number(value || 0);
-  const formatted = Math.abs(number).toLocaleString('en-US', {
+  const formatted = Math.abs(number).toLocaleString(currency === 'CAD' ? 'en-CA' : 'en-US', {
     style: 'currency',
-    currency: 'USD',
+    currency,
     maximumFractionDigits: 0,
   });
   return number < 0 ? `(${formatted})` : formatted;
@@ -235,6 +236,9 @@ function sumNullableCurrency(
 }
 
 export default function LoansTab({ selectedCompanyId, companyName, currentUser = null, monthly = [], operationalHubSections }: LoansTabProps) {
+  const money = useCompanyMoneyFormatter(selectedCompanyId);
+  const formatMoneyAmount = (value: unknown) => formatCurrency(value, money.currency);
+  const formatScheduleMoney = (value: unknown) => formatScheduleAmount(value, money.currency);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -539,7 +543,7 @@ export default function LoansTab({ selectedCompanyId, companyName, currentUser =
   const formatOptionalCurrency = (value: unknown) => {
     if (value === null || value === undefined || value === '') return '-';
     const parsed = Number(value);
-    return Number.isFinite(parsed) ? formatCurrency(parsed) : '-';
+    return Number.isFinite(parsed) ? formatMoneyAmount(parsed) : '-';
   };
   const formatOptionalPercent = (value: unknown) => {
     const parsed = Number(value);
@@ -602,7 +606,7 @@ export default function LoansTab({ selectedCompanyId, companyName, currentUser =
           {instrument.accountId || '-'}
         </td>
         <td style={{ ...tdStyle, textAlign: 'right' }}>
-          {instrument.terms?.originalBalance ? formatCurrency(instrument.terms.originalBalance) : '-'}
+          {instrument.terms?.originalBalance ? formatMoneyAmount(instrument.terms.originalBalance) : '-'}
         </td>
         <td style={{ ...tdStyle, textAlign: 'right' }}>{formatOptionalCurrency(instrument.priorMonthBalance)}</td>
         <td style={{ ...tdStyle, textAlign: 'right', fontWeight: 700 }}>{formatOptionalCurrency(instrument.principalChange)}</td>
@@ -610,7 +614,7 @@ export default function LoansTab({ selectedCompanyId, companyName, currentUser =
         <td style={{ ...tdStyle, textAlign: 'right' }}>
           {currentBalance == null
             ? '-'
-            : formatCurrency(currentBalance)}
+            : formatMoneyAmount(currentBalance)}
         </td>
         <td style={tdStyle}>{formatDate(instrument.lastDate)}</td>
         <td style={tdStyle}>{instrument.terms?.maturityDate ? formatDate(instrument.terms.maturityDate) : '-'}</td>
@@ -837,8 +841,8 @@ export default function LoansTab({ selectedCompanyId, companyName, currentUser =
                       <tr key={row.scheduleKey}>
                         <td style={tdStyle}>{formatDate(row.transDate)}</td>
                         <td style={tdStyle}>{classifyLoanTransaction(row)}</td>
-                        <td style={{ ...tdStyle, textAlign: 'right', fontWeight: 700 }}>{formatScheduleAmount(row.signedAmount)}</td>
-                        <td style={{ ...tdStyle, textAlign: 'right', fontWeight: 700 }}>{row.scheduleBalance == null ? '-' : formatScheduleAmount(row.scheduleBalance)}</td>
+                        <td style={{ ...tdStyle, textAlign: 'right', fontWeight: 700 }}>{formatScheduleMoney(row.signedAmount)}</td>
+                        <td style={{ ...tdStyle, textAlign: 'right', fontWeight: 700 }}>{row.scheduleBalance == null ? '-' : formatScheduleMoney(row.scheduleBalance)}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -850,12 +854,12 @@ export default function LoansTab({ selectedCompanyId, companyName, currentUser =
       ) : activePageTab === 'liquidity' && showLiquidityTab ? (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))', gap: '12px' }}>
-            {renderKpiCard('Credit Limit', liquidityData.creditLimit > 0 ? formatCurrency(liquidityData.creditLimit) : '-', 'Total facility size')}
-            {renderKpiCard('Outstanding Balance', formatCurrency(liquidityData.outstandingBalance), 'Current amount borrowed')}
-            {renderKpiCard('Available Credit', liquidityData.availableCredit === null ? '-' : formatCurrency(liquidityData.availableCredit), 'Remaining borrowing capacity')}
+            {renderKpiCard('Credit Limit', liquidityData.creditLimit > 0 ? formatMoneyAmount(liquidityData.creditLimit) : '-', 'Total facility size')}
+            {renderKpiCard('Outstanding Balance', formatMoneyAmount(liquidityData.outstandingBalance), 'Current amount borrowed')}
+            {renderKpiCard('Available Credit', liquidityData.availableCredit === null ? '-' : formatMoneyAmount(liquidityData.availableCredit), 'Remaining borrowing capacity')}
             {renderKpiCard('Utilization %', formatOptionalPercent(liquidityData.utilizationPct), 'Balance / limit')}
-            {renderKpiCard('Interest Expense YTD', formatCurrency(liquidityData.interestYtd), 'LOC interest detected in loan activity')}
-            {renderKpiCard('Net Draws YTD', formatCurrency(liquidityData.netDrawsYtd), 'Draws less repayments')}
+            {renderKpiCard('Interest Expense YTD', formatMoneyAmount(liquidityData.interestYtd), 'LOC interest detected in loan activity')}
+            {renderKpiCard('Net Draws YTD', formatMoneyAmount(liquidityData.netDrawsYtd), 'Draws less repayments')}
           </div>
 
           {liquidityData.locInstruments.length === 0 && (
@@ -884,9 +888,9 @@ export default function LoansTab({ selectedCompanyId, companyName, currentUser =
                   }) : <div style={{ color: '#64748b', fontSize: '13px' }}>No monthly LOC trend data available.</div>}
                 </div>
                 {renderMetricRows([
-                  ['Credit Limit', liquidityData.creditLimit > 0 ? formatCurrency(liquidityData.creditLimit) : '-'],
-                  ['Outstanding Balance', formatCurrency(liquidityData.outstandingBalance)],
-                  ['Available Credit', liquidityData.availableCredit === null ? '-' : formatCurrency(liquidityData.availableCredit)],
+                  ['Credit Limit', liquidityData.creditLimit > 0 ? formatMoneyAmount(liquidityData.creditLimit) : '-'],
+                  ['Outstanding Balance', formatMoneyAmount(liquidityData.outstandingBalance)],
+                  ['Available Credit', liquidityData.availableCredit === null ? '-' : formatMoneyAmount(liquidityData.availableCredit)],
                   ['Utilization %', formatOptionalPercent(liquidityData.utilizationPct)],
                   ['Highest Utilization (12 months)', formatOptionalPercent(liquidityData.highestUtilization)],
                 ], true)}
@@ -895,10 +899,10 @@ export default function LoansTab({ selectedCompanyId, companyName, currentUser =
               <div style={{ ...cardStyle, padding: 0, overflow: 'hidden' }}>
                 <div style={{ padding: '12px 14px', borderBottom: '1px solid #e2e8f0', fontWeight: 900 }}>6. Cash Flow vs LOC Usage</div>
                 {renderMetricRows([
-                  ['Operating Cash Flow', liquidityData.operatingCashFlow === null ? '-' : formatCurrency(liquidityData.operatingCashFlow)],
-                  ['LOC Balance', formatCurrency(liquidityData.outstandingBalance)],
-                  ['Cash on Hand', liquidityData.cashOnHand === null ? '-' : formatCurrency(liquidityData.cashOnHand)],
-                  ['Burn Rate', formatCurrency(liquidityData.burnRate)],
+                  ['Operating Cash Flow', liquidityData.operatingCashFlow === null ? '-' : formatMoneyAmount(liquidityData.operatingCashFlow)],
+                  ['LOC Balance', formatMoneyAmount(liquidityData.outstandingBalance)],
+                  ['Cash on Hand', liquidityData.cashOnHand === null ? '-' : formatMoneyAmount(liquidityData.cashOnHand)],
+                  ['Burn Rate', formatMoneyAmount(liquidityData.burnRate)],
                   ['Months of Liquidity', liquidityData.monthsOfLiquidity === null ? '-' : liquidityData.monthsOfLiquidity.toFixed(1)],
                 ], true)}
               </div>
@@ -908,18 +912,18 @@ export default function LoansTab({ selectedCompanyId, companyName, currentUser =
               <div style={{ ...cardStyle, padding: 0, overflow: 'hidden' }}>
                 <div style={{ padding: '12px 14px', borderBottom: '1px solid #e2e8f0', fontWeight: 900 }}>2. Draws vs Repayments</div>
                 {renderMetricRows([
-                  ['Total Draws YTD', formatCurrency(liquidityData.drawsYtd)],
-                  ['Total Repayments YTD', formatCurrency(liquidityData.repaymentsYtd)],
-                  ['Net Change in Balance', formatCurrency(liquidityData.netDrawsYtd)],
-                  ['Average Draw Size', liquidityData.averageDraw === null ? '-' : formatCurrency(liquidityData.averageDraw)],
-                  ['Average Repayment Size', liquidityData.averageRepayment === null ? '-' : formatCurrency(liquidityData.averageRepayment)],
+                  ['Total Draws YTD', formatMoneyAmount(liquidityData.drawsYtd)],
+                  ['Total Repayments YTD', formatMoneyAmount(liquidityData.repaymentsYtd)],
+                  ['Net Change in Balance', formatMoneyAmount(liquidityData.netDrawsYtd)],
+                  ['Average Draw Size', liquidityData.averageDraw === null ? '-' : formatMoneyAmount(liquidityData.averageDraw)],
+                  ['Average Repayment Size', liquidityData.averageRepayment === null ? '-' : formatMoneyAmount(liquidityData.averageRepayment)],
                 ], true)}
               </div>
 
               <div style={{ ...cardStyle, padding: 0, overflow: 'hidden' }}>
                 <div style={{ padding: '12px 14px', borderBottom: '1px solid #e2e8f0', fontWeight: 900 }}>3. Available Credit Remaining</div>
                 {renderMetricRows([
-                  ['Available Credit $', liquidityData.availableCredit === null ? '-' : formatCurrency(liquidityData.availableCredit)],
+                  ['Available Credit $', liquidityData.availableCredit === null ? '-' : formatMoneyAmount(liquidityData.availableCredit)],
                   ['% Remaining', formatOptionalPercent(liquidityData.percentRemaining)],
                   ['Days Since Last Draw', formatOptionalDays(liquidityData.daysSinceLastDraw)],
                   ['Days Since Last Payment', formatOptionalDays(liquidityData.daysSinceLastPayment)],
@@ -931,7 +935,7 @@ export default function LoansTab({ selectedCompanyId, companyName, currentUser =
               <div style={{ ...cardStyle, padding: 0, overflow: 'hidden' }}>
                 <div style={{ padding: '12px 14px', borderBottom: '1px solid #e2e8f0', fontWeight: 900 }}>4. Interest Expense Trend</div>
                 {renderMetricRows([
-                  ['Interest Paid YTD', formatCurrency(liquidityData.interestYtd)],
+                  ['Interest Paid YTD', formatMoneyAmount(liquidityData.interestYtd)],
                   ['Effective Interest Rate', formatOptionalPercent(liquidityData.interestRatePct)],
                   ['Weighted Average Rate', formatOptionalPercent(liquidityData.interestRatePct)],
                   ['Interest as % of Revenue', formatOptionalPercent(liquidityData.interestAsRevenuePct)],

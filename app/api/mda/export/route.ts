@@ -7,6 +7,8 @@ interface MdaExportPayload {
   strengths?: string[];
   weaknesses?: string[];
   insights?: string[];
+  currencyCode?: string;
+  currencyNote?: string;
 }
 
 export async function POST(request: NextRequest) {
@@ -17,6 +19,12 @@ export async function POST(request: NextRequest) {
     const strengths = body.strengths || [];
     const weaknesses = body.weaknesses || [];
     const insights = body.insights || [];
+    const currencyCode = String(body.currencyCode || '').trim().toUpperCase();
+    const currencyNote =
+      body.currencyNote ||
+      (currencyCode
+        ? `All currency amounts are expressed in ${currencyCode}.`
+        : '');
 
     const paragraphs: Paragraph[] = [];
 
@@ -34,6 +42,14 @@ export async function POST(request: NextRequest) {
         heading: HeadingLevel.HEADING_1,
       }),
     );
+
+    if (currencyNote) {
+      paragraphs.push(
+        new Paragraph({
+          text: currencyNote,
+        }),
+      );
+    }
 
     paragraphs.push(new Paragraph({ text: '' }));
 

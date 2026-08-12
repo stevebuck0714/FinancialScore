@@ -16,6 +16,8 @@ import {
 } from 'recharts';
 import { getModuleLabel, mapModuleToDataType, type OpsDataType } from '@/lib/operations/module-registry';
 import { formatDateSafeUtc, parseDateSafeUtc, toLocalInputDate } from '@/app/utils/date';
+import { formatMoney, formatMoneyCompact } from '@/lib/format/currency';
+import { resolveDisplayCurrency, localeForCurrency } from '@/lib/constants/currencies';
 
 interface OpsDashboardProps {
   selectedCompanyId: string;
@@ -26,6 +28,9 @@ interface OpsDashboardProps {
   operationalHubSections?: Record<string, any>;
   /** When set (print package), only render this Overview section/widget. */
   printSectionKey?: string | null;
+  baseCurrency?: string | null;
+  reportingCurrency?: string | null;
+  locale?: string | null;
 }
 
 const COLORS = ['#0f2b4b', '#1f4e79', '#2e6f9e', '#3e8db5', '#5aa5a7', '#7d8f6a', '#8b6a3d', '#7a4e8a'];
@@ -41,7 +46,13 @@ export default function OpsDashboard({
   moduleTitlesByType,
   operationalHubSections,
   printSectionKey = null,
+  baseCurrency,
+  reportingCurrency,
+  locale,
 }: OpsDashboardProps) {
+  const displayCurrency = resolveDisplayCurrency({ baseCurrency, reportingCurrency });
+  const displayLocale = locale || localeForCurrency(displayCurrency);
+
   // Individual frequency state for each widget
   const [customerFreq, setCustomerFreq] = useState<'daily' | 'weekly' | 'monthly'>('daily');
   const [arFreq, setArFreq] = useState<'daily' | 'weekly' | 'monthly'>('daily');
@@ -164,14 +175,12 @@ export default function OpsDashboard({
     return annotated.slice(-windowDays).map(({ rec }) => rec);
   };
 
-  // Format currency
+  const formatAxisMoney = (value: number) =>
+    formatMoneyCompact(Number(value || 0), { currency: displayCurrency, locale: displayLocale });
+
+  // Format currency using company display currency (base or reporting)
   const formatCurrency = (value: number) => {
-    return new Intl.NumberFormat('en-US', {
-      style: 'currency',
-      currency: 'USD',
-      minimumFractionDigits: 0,
-      maximumFractionDigits: 0,
-    }).format(value);
+    return formatMoney(value, { currency: displayCurrency, locale: displayLocale, decimals: 0 });
   };
 
   // Format date based on frequency
@@ -1165,7 +1174,7 @@ export default function OpsDashboard({
           <LineChart data={selectedExecutiveTrendRows}>
             <CartesianGrid strokeDasharray="3 3" />
             <XAxis dataKey="period" interval={2} tick={{ fontSize: 11 }} />
-            <YAxis yAxisId="money" tickFormatter={(value) => `$${(Number(value || 0) / 1000).toFixed(0)}K`} tick={{ fontSize: 11 }} />
+            <YAxis yAxisId="money" tickFormatter={formatAxisMoney} tick={{ fontSize: 11 }} />
             <YAxis yAxisId="percent" orientation="right" tickFormatter={(value) => `${Number(value || 0).toFixed(0)}%`} tick={{ fontSize: 11 }} />
             <Tooltip
               content={({ active, payload, label }: any) => {
@@ -1290,7 +1299,7 @@ export default function OpsDashboard({
             <LineChart data={selectedProfitabilityOfficeTrendRows}>
               <CartesianGrid strokeDasharray="3 3" />
               <XAxis dataKey="period" interval={2} tick={{ fontSize: 11 }} />
-              <YAxis yAxisId="money" tickFormatter={(value) => `$${(Number(value || 0) / 1000).toFixed(0)}K`} tick={{ fontSize: 11 }} />
+              <YAxis yAxisId="money" tickFormatter={formatAxisMoney} tick={{ fontSize: 11 }} />
               <YAxis yAxisId="percent" orientation="right" tickFormatter={(value) => `${Number(value || 0).toFixed(0)}%`} tick={{ fontSize: 11 }} />
               <Tooltip
                 content={({ active, payload, label }: any) => {
@@ -1607,7 +1616,7 @@ export default function OpsDashboard({
                   <BarChart data={residentialAttachRevenueChartRows}>
                     <CartesianGrid strokeDasharray="3 3" />
                     <XAxis dataKey="region" tick={{ fontSize: 11 }} />
-                    <YAxis tickFormatter={(value) => selectedAttachRevenueMetric === 'margin' ? `${Number(value).toFixed(0)}%` : `$${(Number(value) / 1000000).toFixed(1)}M`} />
+                    <YAxis tickFormatter={(value) => selectedAttachRevenueMetric === 'margin' ? `${Number(value).toFixed(0)}%` : formatAxisMoney(Number(value))} />
                     <Tooltip formatter={(value: any) => selectedAttachRevenueMetric === 'margin' ? `${Number(value || 0).toFixed(1)}%` : formatCurrency(Number(value || 0))} />
                     <Legend />
                     <Bar dataKey="mortgage" fill="#2563eb" name="Mortgage" />
@@ -2050,7 +2059,7 @@ export default function OpsDashboard({
             <LineChart data={prepareCustomerChartData()}>
               <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
               <XAxis dataKey="period" stroke="#64748b" style={{ fontSize: '12px' }} />
-              <YAxis stroke="#64748b" style={{ fontSize: '12px' }} tickFormatter={(value) => `$${(value / 1000).toFixed(0)}k`} />
+              <YAxis stroke="#64748b" style={{ fontSize: '12px' }} tickFormatter={formatAxisMoney} />
               <Tooltip formatter={(value: any) => [formatCurrency(value), 'Revenue']} />
               <Line type="monotone" dataKey="revenue" stroke={CUSTOMER_CHART_COLOR} strokeWidth={2} dot={{ fill: CUSTOMER_CHART_COLOR, r: 3 }} />
             </LineChart>
@@ -2069,7 +2078,7 @@ export default function OpsDashboard({
             <BarChart data={prepareArChartData()}>
               <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
               <XAxis dataKey="period" stroke="#64748b" style={{ fontSize: '12px' }} />
-              <YAxis stroke="#64748b" style={{ fontSize: '12px' }} tickFormatter={(value) => `$${(value / 1000).toFixed(0)}k`} />
+              <YAxis stroke="#64748b" style={{ fontSize: '12px' }} tickFormatter={formatAxisMoney} />
               <Tooltip formatter={(value: any) => formatCurrency(value)} />
               <Bar dataKey="current" stackId="a" fill={AGING_COLORS[0]} name="Current" />
               <Bar dataKey="over30" stackId="a" fill={AGING_COLORS[1]} name="Over 30 Days" />
@@ -2089,7 +2098,7 @@ export default function OpsDashboard({
             <BarChart data={prepareApChartData()}>
               <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
               <XAxis dataKey="period" stroke="#64748b" style={{ fontSize: '12px' }} />
-              <YAxis stroke="#64748b" style={{ fontSize: '12px' }} tickFormatter={(value) => `$${(value / 1000).toFixed(0)}k`} />
+              <YAxis stroke="#64748b" style={{ fontSize: '12px' }} tickFormatter={formatAxisMoney} />
               <Tooltip formatter={(value: any) => formatCurrency(value)} />
               <Bar dataKey="current" stackId="a" fill={AGING_COLORS[0]} name="Current" />
               <Bar dataKey="over30" stackId="a" fill={AGING_COLORS[1]} name="Over 30 Days" />
@@ -2109,7 +2118,7 @@ export default function OpsDashboard({
             <LineChart data={prepareProductChartData()}>
               <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
               <XAxis dataKey="period" stroke="#64748b" style={{ fontSize: '12px' }} />
-              <YAxis stroke="#64748b" style={{ fontSize: '12px' }} tickFormatter={(value) => `$${(value / 1000).toFixed(0)}k`} />
+              <YAxis stroke="#64748b" style={{ fontSize: '12px' }} tickFormatter={formatAxisMoney} />
               <Tooltip formatter={(value: any) => [formatCurrency(value), 'Revenue']} />
               <Line type="monotone" dataKey="revenue" stroke="#ec4899" strokeWidth={2} dot={{ fill: '#ec4899', r: 3 }} />
             </LineChart>
@@ -2128,7 +2137,7 @@ export default function OpsDashboard({
             <LineChart data={prepareInventoryChartData()}>
               <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
               <XAxis dataKey="period" stroke="#64748b" style={{ fontSize: '12px' }} />
-              <YAxis stroke="#64748b" style={{ fontSize: '12px' }} tickFormatter={(value) => `$${(value / 1000).toFixed(0)}k`} />
+              <YAxis stroke="#64748b" style={{ fontSize: '12px' }} tickFormatter={formatAxisMoney} />
               <Tooltip formatter={(value: any) => [formatCurrency(value), 'Value']} />
               <Line type="monotone" dataKey="value" stroke="#6366f1" strokeWidth={2} dot={{ fill: '#6366f1', r: 3 }} />
             </LineChart>
@@ -2146,7 +2155,7 @@ export default function OpsDashboard({
           <BarChart data={prepareCashChartData()}>
             <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
             <XAxis dataKey="period" stroke="#64748b" style={{ fontSize: '12px' }} />
-            <YAxis stroke="#64748b" style={{ fontSize: '12px' }} tickFormatter={(value) => `$${(value / 1000).toFixed(0)}k`} />
+            <YAxis stroke="#64748b" style={{ fontSize: '12px' }} tickFormatter={formatAxisMoney} />
             <Tooltip formatter={(value: any) => [formatCurrency(value), 'Total Cash']} />
             <Bar dataKey="totalCash" fill={CASH_CHART_COLOR} name="Total Cash" />
           </BarChart>
@@ -2284,7 +2293,7 @@ export default function OpsDashboard({
                 <LineChart data={prepareCustomerChartData()}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
                   <XAxis dataKey="period" stroke="#64748b" style={{ fontSize: '12px' }} />
-                  <YAxis stroke="#64748b" style={{ fontSize: '12px' }} tickFormatter={(value) => `$${(value / 1000).toFixed(0)}k`} />
+                  <YAxis stroke="#64748b" style={{ fontSize: '12px' }} tickFormatter={formatAxisMoney} />
                   <Tooltip formatter={(value: any) => [formatCurrency(value), 'Revenue']} />
                   {operationalGoals.customer_revenue && (
                     <ReferenceLine 
@@ -2323,7 +2332,7 @@ export default function OpsDashboard({
                 <BarChart data={prepareArChartData()}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
                   <XAxis dataKey="period" stroke="#64748b" style={{ fontSize: '12px' }} />
-                  <YAxis stroke="#64748b" style={{ fontSize: '12px' }} tickFormatter={(value) => `$${(value / 1000).toFixed(0)}k`} />
+                  <YAxis stroke="#64748b" style={{ fontSize: '12px' }} tickFormatter={formatAxisMoney} />
                   <Tooltip formatter={(value: any) => formatCurrency(value)} />
                   {operationalGoals.total_ar && (
                     <ReferenceLine 
@@ -2363,7 +2372,7 @@ export default function OpsDashboard({
                 <BarChart data={prepareApChartData()}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
                   <XAxis dataKey="period" stroke="#64748b" style={{ fontSize: '12px' }} />
-                  <YAxis stroke="#64748b" style={{ fontSize: '12px' }} tickFormatter={(value) => `$${(value / 1000).toFixed(0)}k`} />
+                  <YAxis stroke="#64748b" style={{ fontSize: '12px' }} tickFormatter={formatAxisMoney} />
                   <Tooltip formatter={(value: any) => formatCurrency(value)} />
                   {operationalGoals.total_ap && (
                     <ReferenceLine 
@@ -2403,7 +2412,7 @@ export default function OpsDashboard({
                 <LineChart data={prepareProductChartData()}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
                   <XAxis dataKey="period" stroke="#64748b" style={{ fontSize: '12px' }} />
-                  <YAxis stroke="#64748b" style={{ fontSize: '12px' }} tickFormatter={(value) => `$${(value / 1000).toFixed(0)}k`} />
+                  <YAxis stroke="#64748b" style={{ fontSize: '12px' }} tickFormatter={formatAxisMoney} />
                   <Tooltip formatter={(value: any) => [formatCurrency(value), 'Revenue']} />
                   {operationalGoals.product_revenue && (
                     <ReferenceLine 
@@ -2442,7 +2451,7 @@ export default function OpsDashboard({
                 <LineChart data={prepareInventoryChartData()}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
                   <XAxis dataKey="period" stroke="#64748b" style={{ fontSize: '12px' }} />
-                  <YAxis stroke="#64748b" style={{ fontSize: '12px' }} tickFormatter={(value) => `$${(value / 1000).toFixed(0)}k`} />
+                  <YAxis stroke="#64748b" style={{ fontSize: '12px' }} tickFormatter={formatAxisMoney} />
                   <Tooltip formatter={(value: any) => [formatCurrency(value), 'Value']} />
                   {operationalGoals.inventory_value && (
                     <ReferenceLine 
@@ -2481,7 +2490,7 @@ export default function OpsDashboard({
                 <BarChart data={prepareCashChartData()}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
                   <XAxis dataKey="period" stroke="#64748b" style={{ fontSize: '12px' }} />
-                  <YAxis stroke="#64748b" style={{ fontSize: '12px' }} tickFormatter={(value) => `$${(value / 1000).toFixed(0)}k`} />
+                  <YAxis stroke="#64748b" style={{ fontSize: '12px' }} tickFormatter={formatAxisMoney} />
                   <Tooltip formatter={(value: any) => [formatCurrency(value), 'Total Cash']} />
                   {operationalGoals.total_cash && (
                     <ReferenceLine 
@@ -2520,7 +2529,7 @@ export default function OpsDashboard({
                 <BarChart data={prepareEbitdaChartData()}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
                   <XAxis dataKey="period" stroke="#64748b" style={{ fontSize: '12px' }} />
-                  <YAxis stroke="#64748b" style={{ fontSize: '12px' }} tickFormatter={(value) => `$${(value / 1000).toFixed(0)}k`} />
+                  <YAxis stroke="#64748b" style={{ fontSize: '12px' }} tickFormatter={formatAxisMoney} />
                   <Tooltip formatter={(value: any) => [formatCurrency(Number(value || 0)), 'EBITDA']} />
                   <Bar dataKey="ebitda" fill="#7c3aed" name="EBITDA" />
                 </BarChart>

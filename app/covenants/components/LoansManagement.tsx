@@ -2,6 +2,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
+import { useCompanyMoneyFormatter } from '@/app/hooks/useCompanyMoneyFormatter';
 
 interface Loan {
   id: string;
@@ -89,6 +90,8 @@ function FormRow(props: {
 }
 
 export default function LoansManagement({ companyId, onLoanSelected }: LoansManagementProps) {
+  const money = useCompanyMoneyFormatter(companyId);
+  const formatCurrency = (amount: number) => money.fmt(amount, 0);
   const [loans, setLoans] = useState<Loan[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -309,10 +312,6 @@ export default function LoansManagement({ companyId, onLoanSelected }: LoansMana
     setLoanDocAskResponse(null);
   };
 
-  const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 0 }).format(amount);
-  };
-
   const formatDate = (date: Date | string | undefined) => {
     if (!date) return 'N/A';
     return new Date(date).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
@@ -415,7 +414,7 @@ export default function LoansManagement({ companyId, onLoanSelected }: LoansMana
                   type="text"
                   inputMode="numeric"
                   required
-                  value={`$${Math.round(Number(formData.loanAmount || 0)).toLocaleString('en-US')}`}
+                  value={money.fmt(Math.round(Number(formData.loanAmount || 0)), 0)}
                   onChange={(e) => {
                     const digitsOnly = e.target.value.replace(/[^\d]/g, '');
                     setFormData({ ...formData, loanAmount: Math.round(parseFloat(digitsOnly) || 0) });

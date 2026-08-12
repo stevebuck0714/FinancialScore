@@ -577,11 +577,13 @@ function buildDailyFinancialMockPayload(params: {
   endDate: Date;
   limit: number;
   statementRollup: StatementRollup;
+  statementCurrency?: string;
 }) {
   const start = startOfUtcDay(params.startDate);
   const end = startOfUtcDay(params.endDate);
   const maxRows = Math.max(1, Math.min(Number(params.limit || 140), 5000));
   const records: any[] = [];
+  const mockCurrency = String(params.statementCurrency || 'USD').toUpperCase();
 
   for (
     let cursor = new Date(end);
@@ -680,7 +682,7 @@ function buildDailyFinancialMockPayload(params: {
       netChange: latestNet - previousNet,
       days: records.length,
       statementPeriods: statementRecords.length,
-      statementCurrency: 'USD',
+      statementCurrency: mockCurrency,
       statementRollup: params.statementRollup,
       statementBasis: 'mock_daily_activity',
       mappedLineCount: mappedLines.length,
@@ -2748,9 +2750,10 @@ export async function GET(request: NextRequest) {
         .trim()
         .toLowerCase()
     );
-    const statementCurrency = String(searchParams.get('currency') || 'USD')
+    const statementCurrencyParam = String(searchParams.get('currency') || '')
       .trim()
       .toUpperCase();
+    let statementCurrency = statementCurrencyParam || 'USD';
     const rawStatementRollup = String(searchParams.get('statementRollup') || 'daily')
       .trim()
       .toLowerCase();
@@ -2812,6 +2815,28 @@ export async function GET(request: NextRequest) {
         { error: 'Company ID is required' },
         { status: 400 }
       );
+    }
+
+    // Resolve statement currency from company base/reporting (or validated query override).
+    // Default is display currency (reporting if set, else base) so reporting mode is automatic.
+    const { getCompanyCurrencySettings, assertSupportedStatementCurrency } = await import(
+      '@/lib/currency/company-currency'
+    );
+    const { withCurrencyPresentation } = await import('@/lib/currency/api-response');
+    const companyCurrency = await getCompanyCurrencySettings(companyId);
+    if (statementCurrencyParam) {
+      const validated = assertSupportedStatementCurrency(statementCurrencyParam);
+      if (!validated) {
+        return NextResponse.json(
+          {
+            error: `Unsupported currency "${statementCurrencyParam}". Use a supported ISO 4217 code (e.g. USD, CAD).`,
+          },
+          { status: 400 }
+        );
+      }
+      statementCurrency = validated;
+    } else {
+      statementCurrency = companyCurrency.displayCurrency;
     }
 
     // SECURITY: Validate access to company data. Cron warmups are authorized by
@@ -3032,25 +3057,66 @@ export async function GET(request: NextRequest) {
           }
         : null;
 
+    const stripCurrencyPresentation = (payload: Record<string, unknown>) => {
+      const { currency: _currency, fx: _fx, ...rest } = payload;
+      return rest;
+    };
+
+    const presentOperationalPayload = async (payload: unknown) => {
+      if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+        return payload;
+      }
+      const existing = payload as Record<string, unknown>;
+      const meta =
+        existing.currency && typeof existing.currency === 'object'
+          ? (existing.currency as { statementCurrency?: string; converted?: boolean })
+          : null;
+      // Legacy caches may already include presented currency. Reuse only when the
+      // statement currency matches so we never double-apply FX.
+      if (
+        meta &&
+        String(meta.statementCurrency || '').toUpperCase() === String(statementCurrency).toUpperCase()
+      ) {
+        return payload;
+      }
+      const basePayload = meta ? stripCurrencyPresentation(existing) : existing;
+      return withCurrencyPresentation(basePayload, {
+        companyId,
+        requestedCurrency: statementCurrency,
+        asOf: endDate,
+        convert: statementCurrency !== companyCurrency.baseCurrency,
+      });
+    };
+
     if (operationalCache && !(isWholesaleProductsReportRequest && refreshWholesaleProducts)) {
       const cachedPayload = await readDerivedApiCache<any>(operationalCache);
       if (cachedPayload) {
-        return NextResponse.json(cachedPayload, { headers: privateCacheHeaders(operationalCacheTtlSeconds, 300) });
+        const presentedCached = await presentOperationalPayload(cachedPayload);
+        return NextResponse.json(presentedCached, {
+          headers: privateCacheHeaders(operationalCacheTtlSeconds, 300),
+        });
       }
     }
 
     const cacheOperationalPayload = async (payload: unknown) => {
+      // Cache base-currency amounts; apply FX presentation on every response so
+      // reporting-currency changes and fresh rates are not stuck behind TTL.
+      const rawPayload =
+        payload && typeof payload === 'object' && !Array.isArray(payload)
+          ? stripCurrencyPresentation(payload as Record<string, unknown>)
+          : payload;
+      const presented = await presentOperationalPayload(rawPayload);
       const shouldWriteOperationalCache = Boolean(operationalCache);
       if (shouldWriteOperationalCache) {
         await writeDerivedApiCache({
           ...operationalCache,
-          payload,
+          payload: rawPayload,
           ttlSeconds: operationalCacheTtlSeconds,
         }).catch((error) => {
           console.warn('Operational data cache write failed:', error);
         });
       }
-      return NextResponse.json(payload, { headers: privateCacheHeaders(operationalCacheTtlSeconds, 300) });
+      return NextResponse.json(presented, { headers: privateCacheHeaders(operationalCacheTtlSeconds, 300) });
     };
     const mockDataDisabledResponse = (dataType: string) => NextResponse.json(
       {
@@ -3089,12 +3155,6 @@ export async function GET(request: NextRequest) {
       })) > 0;
 
     if (shouldUseMockData && type === 'daily-financials' && !shouldUseSeededGeneSolutionsFinancials) {
-      if (statementCurrency !== 'USD') {
-        return NextResponse.json(
-          { error: `Unsupported currency "${statementCurrency}". Daily financial statements currently support USD only.` },
-          { status: 400 }
-        );
-      }
       return cacheOperationalPayload(
         buildDailyFinancialMockPayload({
           companyId,
@@ -3102,6 +3162,7 @@ export async function GET(request: NextRequest) {
           endDate,
           limit: boundedLimit,
           statementRollup,
+          statementCurrency,
         })
       );
     }
@@ -9691,12 +9752,6 @@ export async function GET(request: NextRequest) {
         // Financial snapshots used by Operations (daily/weekly/monthly).
         const dailySnapshotDelegate = (prisma as any).dailyFinancialSnapshot;
         const dailyMappedLineDelegate = (prisma as any).dailyFinancialMappedLine;
-        if (statementCurrency !== 'USD') {
-          return NextResponse.json(
-            { error: `Unsupported currency "${statementCurrency}". Daily financial statements currently support USD only.` },
-            { status: 400 }
-          );
-        }
         if (!dailySnapshotDelegate) {
           return cacheOperationalPayload({
             records: [],
@@ -9706,7 +9761,7 @@ export async function GET(request: NextRequest) {
               latestExpense: 0,
               latestNet: 0,
               latestCash: 0,
-              statementCurrency: 'USD',
+              statementCurrency,
               statementRollup,
               message: 'Daily financial snapshots model not available yet.',
             },
@@ -9785,7 +9840,7 @@ export async function GET(request: NextRequest) {
               latestNet: 0,
               latestCash: 0,
               days: 0,
-              statementCurrency: 'USD',
+              statementCurrency,
               statementRollup,
             },
           });
@@ -9831,7 +9886,7 @@ export async function GET(request: NextRequest) {
           statementRollup
         );
 
-        return cacheOperationalPayload({
+        const dailyFinancialPayload = {
           records: data,
           mappedLines,
           statementRecords,
@@ -9845,12 +9900,14 @@ export async function GET(request: NextRequest) {
             netChange,
             days: data.length,
             statementPeriods: statementRecords.length,
-            statementCurrency: 'USD',
+            statementCurrency,
             statementRollup,
             statementBasis: 'daily_activity',
             mappedLineCount: mappedLines.length,
           },
-        });
+        };
+
+        return cacheOperationalPayload(dailyFinancialPayload);
 
       case 'cash-flow-map':
         {

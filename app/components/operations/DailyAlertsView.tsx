@@ -119,6 +119,7 @@ type ExecBriefing = {
   asOfDate?: string;
   model?: string;
   aiGenerated: boolean;
+  dailyMode?: 'full' | 'ops-only' | 'none';
   sections: ExecBriefingSection[];
   sourceNotes?: string[];
 };
@@ -132,7 +133,7 @@ type DailyAlertsCache = {
 };
 
 const DAILY_ALERTS_FETCH_TIMEOUT_MS = 20000;
-const DAILY_CACHE_VERSION = 'v10-exec-briefing-balance-movement-income';
+const DAILY_CACHE_VERSION = 'v11-qbo-daily-ops-capability';
 
 async function fetchWithTimeout(
   input: RequestInfo | URL,
@@ -425,6 +426,8 @@ export default function DailyAlertsView({ companyId, companyName, onNavigate }: 
   const [execBriefingError, setExecBriefingError] = useState<string | null>(null);
   const [briefingPeriod, setBriefingPeriod] = useState<BriefingPeriod>('daily');
   const [isQuickBooksOnlineCompany, setIsQuickBooksOnlineCompany] = useState(false);
+  const [showDailyBriefingTab, setShowDailyBriefingTab] = useState(true);
+  const [dailyBriefingMode, setDailyBriefingMode] = useState<'full' | 'ops-only' | 'none' | null>(null);
   const [pulseRefreshing, setPulseRefreshing] = useState(false);
   const [pulseGeneratedAt, setPulseGeneratedAt] = useState<string | null>(null);
   const [showPolicySettings, setShowPolicySettings] = useState(false);
@@ -1920,19 +1923,39 @@ export default function DailyAlertsView({ companyId, companyName, onNavigate }: 
       if (!companyId) return;
       try {
         const params = new URLSearchParams({ companyId, limit: '1' });
-        const response = await fetch(`/api/companies?${params}`, { cache: 'no-store' });
-        if (!response.ok) return;
-        const data = await response.json();
+        const [companyResponse, capabilityResponse] = await Promise.all([
+          fetch(`/api/companies?${params}`, { cache: 'no-store' }),
+          fetch(`/api/pulse/exec-briefing/capability?companyId=${encodeURIComponent(companyId)}`, {
+            cache: 'no-store',
+          }),
+        ]);
+        if (!companyResponse.ok) return;
+        const data = await companyResponse.json();
         const company = Array.isArray(data?.companies) ? data.companies[0] : null;
         const qbo = ['QUICKBOOKS', 'QUICKBOOKS_ONLINE', 'QBO'].includes(
           String(company?.accountingSystem || '').trim().toUpperCase()
         );
+        let showDaily = !qbo;
+        let mode: 'full' | 'ops-only' | 'none' | null = null;
+        if (capabilityResponse.ok) {
+          const capability = await capabilityResponse.json();
+          showDaily = Boolean(capability?.showDailyTab ?? !qbo);
+          mode = capability?.mode || null;
+        } else if (!qbo) {
+          showDaily = true;
+        }
         if (!cancelled) {
           setIsQuickBooksOnlineCompany(qbo);
-          setBriefingPeriod(qbo ? 'monthly' : 'daily');
+          setShowDailyBriefingTab(showDaily);
+          setDailyBriefingMode(mode);
+          setBriefingPeriod(showDaily ? 'daily' : 'monthly');
         }
       } catch {
-        if (!cancelled) setIsQuickBooksOnlineCompany(false);
+        if (!cancelled) {
+          setIsQuickBooksOnlineCompany(false);
+          setShowDailyBriefingTab(true);
+          setDailyBriefingMode(null);
+        }
       }
     };
     loadCompanyMeta();
@@ -2944,7 +2967,7 @@ export default function DailyAlertsView({ companyId, companyName, onNavigate }: 
                 )}
                 <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
                   {([
-                    ...(!isQuickBooksOnlineCompany ? [{ id: 'daily' as BriefingPeriod, label: 'Daily' }] : []),
+                    ...(showDailyBriefingTab ? [{ id: 'daily' as BriefingPeriod, label: 'Daily' }] : []),
                     { id: 'monthly' as BriefingPeriod, label: 'Monthly' },
                     { id: 'quarterly' as BriefingPeriod, label: 'Quarterly' },
                     { id: 'annual' as BriefingPeriod, label: 'Annual' },
@@ -2985,6 +3008,25 @@ export default function DailyAlertsView({ companyId, companyName, onNavigate }: 
                 {execBriefingLoading ? 'Generating...' : 'Refresh Briefing'}
               </button>
             </div>
+
+            {briefingPeriod === 'daily' &&
+              (execBriefing?.dailyMode === 'ops-only' || dailyBriefingMode === 'ops-only') &&
+              isQuickBooksOnlineCompany && (
+              <div
+                style={{
+                  marginTop: '12px',
+                  border: '1px solid #bfdbfe',
+                  borderRadius: '10px',
+                  background: '#eff6ff',
+                  padding: '10px 12px',
+                  fontSize: '13px',
+                  color: '#1e3a8a',
+                  lineHeight: 1.45,
+                }}
+              >
+                Daily briefing is driven by operational API feeds. QuickBooks books remain monthly—day-over-day P&amp;L is not inferred from the ledger.
+              </div>
+            )}
 
             {execBriefingError && (
               <div style={{ marginTop: '16px', border: '1px solid #fecaca', borderRadius: '10px', background: '#fff7f7', padding: '10px', fontSize: '13px', color: '#991b1b' }}>

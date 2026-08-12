@@ -76,6 +76,17 @@ export async function provisionDemoWorkspace(params: ProvisionDemoWorkspaceParam
       tx.financialRecord.deleteMany({ where: { companyId } }),
     ]);
 
+    // Mock / demo workspaces are CAD single-currency for multi-currency QA.
+    await tx.company.update({
+      where: { id: companyId },
+      data: {
+        baseCurrency: 'CAD',
+        reportingCurrency: null,
+        locale: 'en-CA',
+        addressCountry: 'Canada',
+      },
+    });
+
     const financialRecord = await tx.financialRecord.create({
       data: {
         companyId,

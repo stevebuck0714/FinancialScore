@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useEffect, useMemo, useState } from 'react';
+import { useCompanyMoneyFormatter } from '@/app/hooks/useCompanyMoneyFormatter';
 
 type Finding = {
    id: string;
@@ -22,20 +23,6 @@ const OPPORTUNITY_STATUSES = ['Discover', 'Validate', 'Plan', 'Execute', 'Realiz
    if (!value) return 'Unrated';
    return value.charAt(0).toUpperCase() + value.slice(1);
  };
- 
-const formatCurrency = (value: number | null | undefined) => {
-  if (value == null || Number.isNaN(value)) return 'N/A';
-  return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(value);
-};
-
-const formatImpactRange = (impact?: { unit?: string; low?: number | null; high?: number | null }) => {
-  if (!impact) return 'N/A';
-  if (impact.low == null && impact.high == null) return 'N/A';
-  const low = formatCurrency(impact.low ?? null);
-  const high = formatCurrency(impact.high ?? null);
-  const unit = impact.unit ? ` ${impact.unit}` : '';
-  return `${low} to ${high}${unit}`;
-};
 
 const evidenceLevel = (confidence?: number | null) => {
   if (confidence == null) return 'Weak';
@@ -45,6 +32,19 @@ const evidenceLevel = (confidence?: number | null) => {
 };
 
  export default function OpportunityWorkspace({ companyId }: OpportunityWorkspaceProps) {
+   const money = useCompanyMoneyFormatter(companyId);
+   const formatCurrency = (value: number | null | undefined) => {
+     if (value == null || Number.isNaN(value)) return 'N/A';
+     return money.fmt(value, 0);
+   };
+   const formatImpactRange = (impact?: { unit?: string; low?: number | null; high?: number | null }) => {
+     if (!impact) return 'N/A';
+     if (impact.low == null && impact.high == null) return 'N/A';
+     const low = formatCurrency(impact.low ?? null);
+     const high = formatCurrency(impact.high ?? null);
+     const unit = impact.unit ? ` ${impact.unit}` : '';
+     return `${low} to ${high}${unit}`;
+   };
    const [findings, setFindings] = useState<Finding[]>([]);
    const [loading, setLoading] = useState(true);
    const [error, setError] = useState<string | null>(null);
@@ -407,7 +407,7 @@ const evidenceLevel = (confidence?: number | null) => {
                           let text = '—';
                           if (v != null && v !== '') {
                             if (typeof v === 'number') {
-                              if (fmt === 'money') text = `$${v.toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
+                              if (fmt === 'money') text = money.fmt(v, 0);
                               else if (fmt === 'pct') text = `${(v * 100).toFixed(0)}%`;
                               else if (fmt === 'days') text = `${v.toFixed(0)}d`;
                               else text = v.toLocaleString(undefined, { maximumFractionDigits: 1 });

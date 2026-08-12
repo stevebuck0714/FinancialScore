@@ -4,6 +4,7 @@
 
 import React, { useState } from 'react';
 import { useMasterData } from '@/lib/master-data-store';
+import { useCompanyMoneyFormatter } from '@/app/hooks/useCompanyMoneyFormatter';
 import type { MonthlyDataRow } from '../types';
 
 interface CashFlowTabProps {
@@ -26,6 +27,8 @@ export default function CashFlowTab({
   printOrientation = 'portrait',
 }: CashFlowTabProps) {
   const { monthlyData, loading, error } = useMasterData(selectedCompanyId);
+  const money = useCompanyMoneyFormatter(selectedCompanyId);
+  const formatCurrency = (value: number) => money.fmt(Number(value || 0), 0);
   const hasPrefetchedData = Array.isArray(prefetchedMonthlyData) && prefetchedMonthlyData.length > 0;
   const monthly = hasPrefetchedData ? prefetchedMonthlyData : (monthlyData || []);
   
@@ -748,7 +751,7 @@ export default function CashFlowTab({
         <div style={{ background: 'white', borderRadius: '12px', padding: '20px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', border: '2px solid #10b981' }}>
           <div style={{ fontSize: '12px', fontWeight: '600', color: '#64748b', marginBottom: '4px' }}>Operating Cash Flow (12mo)</div>
           <div style={{ fontSize: '28px', fontWeight: '700', color: '#10b981' }}>
-            ${totalOperatingCF.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+            {formatCurrency(totalOperatingCF)}
           </div>
           <div style={{ fontSize: '11px', color: '#64748b', marginTop: '4px' }}>Cash from operations</div>
         </div>
@@ -756,7 +759,7 @@ export default function CashFlowTab({
         <div style={{ background: 'white', borderRadius: '12px', padding: '20px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', border: '2px solid #ef4444' }}>
           <div style={{ fontSize: '12px', fontWeight: '600', color: '#64748b', marginBottom: '4px' }}>Investing Cash Flow (12mo)</div>
           <div style={{ fontSize: '28px', fontWeight: '700', color: '#ef4444' }}>
-            ${totalInvestingCF.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+            {formatCurrency(totalInvestingCF)}
           </div>
           <div style={{ fontSize: '11px', color: '#64748b', marginTop: '4px' }}>CapEx & investments</div>
         </div>
@@ -764,7 +767,7 @@ export default function CashFlowTab({
         <div style={{ background: 'white', borderRadius: '12px', padding: '20px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', border: '2px solid #3b82f6' }}>
           <div style={{ fontSize: '12px', fontWeight: '600', color: '#64748b', marginBottom: '4px' }}>Financing Cash Flow (12mo)</div>
           <div style={{ fontSize: '28px', fontWeight: '700', color: '#3b82f6' }}>
-            ${totalFinancingCF.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+            {formatCurrency(totalFinancingCF)}
           </div>
           <div style={{ fontSize: '11px', color: '#64748b', marginTop: '4px' }}>Debt & equity changes</div>
         </div>
@@ -772,7 +775,7 @@ export default function CashFlowTab({
         <div style={{ background: 'white', borderRadius: '12px', padding: '20px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', border: '2px solid #667eea' }}>
           <div style={{ fontSize: '12px', fontWeight: '600', color: '#64748b', marginBottom: '4px' }}>Free Cash Flow (12mo)</div>
           <div style={{ fontSize: '28px', fontWeight: '700', color: totalFreeCF >= 0 ? '#10b981' : '#ef4444' }}>
-            ${totalFreeCF.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+            {formatCurrency(totalFreeCF)}
           </div>
           <div style={{ fontSize: '11px', color: '#64748b', marginTop: '4px' }}>OCF - CapEx</div>
         </div>
@@ -814,7 +817,7 @@ export default function CashFlowTab({
                 <td style={{ padding: '8px 10px', fontSize: '12px', color: statementTextColor('#475569'), paddingLeft: '24px' }}>Net Income</td>
                 {displayData.map((cf, i) => (
                   <td key={i} style={{ padding: '8px 10px', fontSize: '12px', color: statementTextColor('#1e293b'), textAlign: 'right' }}>
-                    ${Math.round(cf.netIncome).toLocaleString()}
+                    {formatCurrency(cf.netIncome)}
                   </td>
                 ))}
               </tr>
@@ -822,7 +825,7 @@ export default function CashFlowTab({
                 <td style={{ padding: '8px 10px', fontSize: '12px', color: statementTextColor('#475569'), paddingLeft: '24px' }}>+ Depreciation</td>
                 {displayData.map((cf, i) => (
                   <td key={i} style={{ padding: '8px 10px', fontSize: '12px', color: statementTextColor('#1e293b'), textAlign: 'right' }}>
-                    ${Math.round(cf.depreciation).toLocaleString()}
+                    {formatCurrency(cf.depreciation)}
                   </td>
                 ))}
               </tr>
@@ -830,7 +833,7 @@ export default function CashFlowTab({
                 <td style={{ padding: '8px 10px', fontSize: '12px', color: statementTextColor('#475569'), paddingLeft: '24px' }}>+ Change in Working Capital</td>
                 {displayData.map((cf, i) => (
                   <td key={i} style={{ padding: '8px 10px', fontSize: '12px', color: statementTextColor(cf.changeInWorkingCapital >= 0 ? '#10b981' : '#ef4444'), textAlign: 'right' }}>
-                    ${Math.round(cf.changeInWorkingCapital).toLocaleString()}
+                    {formatCurrency(cf.changeInWorkingCapital)}
                   </td>
                 ))}
               </tr>
@@ -838,7 +841,7 @@ export default function CashFlowTab({
                 <td style={{ padding: '10px', fontSize: '13px', fontWeight: '700', color: statementTextColor('#065f46') }}>Operating Cash Flow</td>
                 {displayData.map((cf, i) => (
                   <td key={i} style={{ padding: '10px', fontSize: '13px', fontWeight: '700', color: statementTextColor('#065f46'), textAlign: 'right' }}>
-                    ${Math.round(cf.operatingCashFlow).toLocaleString()}
+                    {formatCurrency(cf.operatingCashFlow)}
                   </td>
                 ))}
               </tr>
@@ -853,7 +856,7 @@ export default function CashFlowTab({
                 <td style={{ padding: '8px 10px', fontSize: '12px', color: statementTextColor('#475569'), paddingLeft: '24px' }}>Capital Expenditures</td>
                 {displayData.map((cf, i) => (
                   <td key={i} style={{ padding: '8px 10px', fontSize: '12px', color: statementTextColor('#ef4444'), textAlign: 'right' }}>
-                    (${Math.round(cf.capitalExpenditures).toLocaleString()})
+                    ({formatCurrency(cf.capitalExpenditures)})
                   </td>
                 ))}
               </tr>
@@ -861,7 +864,7 @@ export default function CashFlowTab({
                 <td style={{ padding: '10px', fontSize: '13px', fontWeight: '700', color: statementTextColor('#991b1b') }}>Investing Cash Flow</td>
                 {displayData.map((cf, i) => (
                   <td key={i} style={{ padding: '10px', fontSize: '13px', fontWeight: '700', color: statementTextColor('#991b1b'), textAlign: 'right' }}>
-                    ${Math.round(cf.investingCashFlow).toLocaleString()}
+                    {formatCurrency(cf.investingCashFlow)}
                   </td>
                 ))}
               </tr>
@@ -876,7 +879,7 @@ export default function CashFlowTab({
                 <td style={{ padding: '8px 10px', fontSize: '12px', color: statementTextColor('#475569'), paddingLeft: '24px' }}>Change in Long-Term Debt</td>
                 {displayData.map((cf, i) => (
                   <td key={i} style={{ padding: '8px 10px', fontSize: '12px', color: statementTextColor(cf.changeInDebt >= 0 ? '#10b981' : '#ef4444'), textAlign: 'right' }}>
-                    ${Math.round(cf.changeInDebt).toLocaleString()}
+                    {formatCurrency(cf.changeInDebt)}
                   </td>
                 ))}
               </tr>
@@ -884,7 +887,7 @@ export default function CashFlowTab({
                 <td style={{ padding: '8px 10px', fontSize: '12px', color: statementTextColor('#475569'), paddingLeft: '24px' }}>Change in Line of Credit</td>
                 {displayData.map((cf, i) => (
                   <td key={i} style={{ padding: '8px 10px', fontSize: '12px', color: statementTextColor(cf.changeInLOC >= 0 ? '#10b981' : '#ef4444'), textAlign: 'right' }}>
-                    ${Math.round(cf.changeInLOC).toLocaleString()}
+                    {formatCurrency(cf.changeInLOC)}
                   </td>
                 ))}
               </tr>
@@ -892,7 +895,7 @@ export default function CashFlowTab({
                 <td style={{ padding: '8px 10px', fontSize: '12px', color: statementTextColor('#475569'), paddingLeft: '24px' }}>Change in Equity</td>
                 {displayData.map((cf, i) => (
                   <td key={i} style={{ padding: '8px 10px', fontSize: '12px', color: statementTextColor(cf.changeInEquity >= 0 ? '#10b981' : '#ef4444'), textAlign: 'right' }}>
-                    ${Math.round(cf.changeInEquity).toLocaleString()}
+                    {formatCurrency(cf.changeInEquity)}
                   </td>
                 ))}
               </tr>
@@ -900,7 +903,7 @@ export default function CashFlowTab({
                 <td style={{ padding: '10px', fontSize: '13px', fontWeight: '700', color: statementTextColor('#1e40af') }}>Financing Cash Flow</td>
                 {displayData.map((cf, i) => (
                   <td key={i} style={{ padding: '10px', fontSize: '13px', fontWeight: '700', color: statementTextColor('#1e40af'), textAlign: 'right' }}>
-                    ${Math.round(cf.financingCashFlow).toLocaleString()}
+                    {formatCurrency(cf.financingCashFlow)}
                   </td>
                 ))}
               </tr>
@@ -910,7 +913,7 @@ export default function CashFlowTab({
                 <td style={{ padding: '12px 10px', fontSize: '14px', fontWeight: '700', color: statementTextColor('#1e293b') }}>Net Change in Cash</td>
                 {displayData.map((cf, i) => (
                   <td key={i} style={{ padding: '12px 10px', fontSize: '14px', fontWeight: '700', color: statementTextColor(cf.netCashChange >= 0 ? '#10b981' : '#ef4444'), textAlign: 'right' }}>
-                    ${Math.round(cf.netCashChange).toLocaleString()}
+                    {formatCurrency(cf.netCashChange)}
                   </td>
                 ))}
               </tr>
@@ -918,7 +921,7 @@ export default function CashFlowTab({
                 <td style={{ padding: '10px', fontSize: '13px', fontWeight: '700', color: statementTextColor('#92400e') }}>Free Cash Flow</td>
                 {displayData.map((cf, i) => (
                   <td key={i} style={{ padding: '10px', fontSize: '13px', fontWeight: '700', color: statementTextColor(cf.freeCashFlow >= 0 ? '#065f46' : '#991b1b'), textAlign: 'right' }}>
-                    ${Math.round(cf.freeCashFlow).toLocaleString()}
+                    {formatCurrency(cf.freeCashFlow)}
                   </td>
                 ))}
               </tr>
@@ -926,7 +929,7 @@ export default function CashFlowTab({
                 <td style={{ padding: '10px', fontSize: '13px', fontWeight: '600', color: statementTextColor('#475569') }}>Ending Cash Balance</td>
                 {displayData.map((cf, i) => (
                   <td key={i} style={{ padding: '10px', fontSize: '13px', fontWeight: '600', color: statementTextColor('#1e293b'), textAlign: 'right' }}>
-                    ${Math.round(cf.endingCash).toLocaleString()}
+                    {formatCurrency(cf.endingCash)}
                   </td>
                 ))}
               </tr>

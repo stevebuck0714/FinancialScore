@@ -12,6 +12,7 @@ import {
   type PulseAlertRow,
 } from '@/lib/pulse-alerts';
 import { resolveCompanyIndustrySectorCategory } from '@/lib/industry-sector-resolver';
+import { formatMoney as formatMoneyShared } from '@/lib/format/currency';
 import {
   buildSectorExceptionAlerts,
   getSectorMetricCoverage,
@@ -170,12 +171,8 @@ function freshnessStatus(latest?: Date | null): PulseReadinessStatus {
   return 'missing';
 }
 
-function formatMoney(value: number): string {
-  return new Intl.NumberFormat('en-US', {
-    style: 'currency',
-    currency: 'USD',
-    maximumFractionDigits: 0,
-  }).format(value);
+function formatMoney(value: number, currency: string = 'USD'): string {
+  return formatMoneyShared(value, { currency, decimals: 0 });
 }
 
 function formatPct(value: number): string {
@@ -469,9 +466,22 @@ export async function generateCompanyPulse(companyId: string, options: GenerateO
 }> {
   const company = await prisma.company.findUnique({
     where: { id: companyId },
-    select: { id: true, name: true, industrySector: true, industrySectorCategory: true, accountingSystem: true },
+    select: {
+      id: true,
+      name: true,
+      industrySector: true,
+      industrySectorCategory: true,
+      accountingSystem: true,
+      baseCurrency: true,
+      reportingCurrency: true,
+    },
   });
   if (!company) throw new Error('Company not found');
+
+  const pulseCurrency = String(
+    company.reportingCurrency || company.baseCurrency || 'USD'
+  ).toUpperCase();
+  const money = (value: number) => formatMoney(value, pulseCurrency);
 
   const goals = await loadOperationalGoals(companyId);
   const policyOverrides = sanitizePulsePolicyOverrides(goals[PULSE_POLICY_OVERRIDE_KEY]);
@@ -592,6 +602,7 @@ export async function generateCompanyPulse(companyId: string, options: GenerateO
       sectorCategory: resolvedSectorCategory,
       rows: sectorMetricRows,
       nowIso,
+      currency: pulseCurrency,
     })
   );
 
@@ -719,7 +730,7 @@ export async function generateCompanyPulse(companyId: string, options: GenerateO
         fingerprint: `cash-daily-change:${latestCash.snapshotDate.toISOString().slice(0, 10)}`,
         source: 'daily-change',
         title: 'Cash balance dropped materially',
-        detail: `Total cash decreased ${formatMoney(Math.abs(cashDelta))} (${cashDeltaPct.toFixed(1)}%) from the prior snapshot.`,
+        detail: `Total cash decreased ${money(Math.abs(cashDelta))} (${cashDeltaPct.toFixed(1)}%) from the prior snapshot.`,
         owner: 'Finance Owner',
         drillView: 'cash-flow',
         deltaText: `${cashDeltaPct.toFixed(1)}%`,
@@ -731,7 +742,7 @@ export async function generateCompanyPulse(companyId: string, options: GenerateO
           triggerName: 'Cash Daily Deterioration',
           formula: 'Cash DoD % = (latest total cash - prior total cash) / prior total cash * 100',
           threshold: `cash DoD % <= ${policy['cash_daily_change.max_total_dod_pct']} or cash change <= ${policy['cash_daily_change.max_total_dod_amount']}`,
-          reasonNow: `Latest ${formatMoney(latestCash.totalCash)}; previous ${formatMoney(priorCash.totalCash)}; delta ${cashDeltaPct.toFixed(1)}%`,
+          reasonNow: `Latest ${money(latestCash.totalCash)}; previous ${money(priorCash.totalCash)}; delta ${cashDeltaPct.toFixed(1)}%`,
           policySource: 'Company Pulse policy',
           dataRefs: ['CashSnapshot'],
           sourceTimestamp: latestCash.snapshotDate.toISOString(),
@@ -765,7 +776,7 @@ export async function generateCompanyPulse(companyId: string, options: GenerateO
         fingerprint: `monthly-financial-deterioration:${latestCompletedMonthKey}`,
         source: 'open-critical',
         title: 'Monthly revenue and gross profit deteriorated',
-        detail: `${monthLabel(latestCompletedMonthKey)} revenue was ${formatMoney(latestMonth.revenue)}, ${formatPct(revenueDeltaPct)} vs ${monthLabel(priorCompletedMonthKey)}; gross profit changed ${formatMoney(grossProfitDelta)} (${formatPct(grossProfitDeltaPct)}).`,
+        detail: `${monthLabel(latestCompletedMonthKey)} revenue was ${money(latestMonth.revenue)}, ${formatPct(revenueDeltaPct)} vs ${monthLabel(priorCompletedMonthKey)}; gross profit changed ${money(grossProfitDelta)} (${formatPct(grossProfitDeltaPct)}).`,
         owner: 'Finance Owner',
         drillView: 'performance-analytics',
         deltaText: `Revenue ${formatPct(revenueDeltaPct)}`,
@@ -776,8 +787,8 @@ export async function generateCompanyPulse(companyId: string, options: GenerateO
         explainability: {
           triggerName: 'Monthly Financial Deterioration',
           formula: 'Aggregate DailyFinancialSnapshot by completed month; compare latest completed month to prior completed month for revenue % and gross profit dollar movement',
-          threshold: `revenueDeltaPct <= ${MATERIAL_REVENUE_DROP_PCT}% OR grossProfitDelta <= ${formatMoney(MATERIAL_GROSS_PROFIT_DROP_AMOUNT)}`,
-          reasonNow: `Revenue delta ${formatMoney(revenueDelta)} (${formatPct(revenueDeltaPct)}); gross profit delta ${formatMoney(grossProfitDelta)} (${formatPct(grossProfitDeltaPct)})`,
+          threshold: `revenueDeltaPct <= ${MATERIAL_REVENUE_DROP_PCT}% OR grossProfitDelta <= ${money(MATERIAL_GROSS_PROFIT_DROP_AMOUNT)}`,
+          reasonNow: `Revenue delta ${money(revenueDelta)} (${formatPct(revenueDeltaPct)}); gross profit delta ${money(grossProfitDelta)} (${formatPct(grossProfitDeltaPct)})`,
           policySource: 'Company Pulse executive-risk rule',
           dataRefs: ['DailyFinancialSnapshot'],
           sourceTimestamp: latestDaily?.snapshotDate.toISOString(),
@@ -802,7 +813,7 @@ export async function generateCompanyPulse(companyId: string, options: GenerateO
         fingerprint: `balance-sheet-liquidity:${latestDaily.snapshotDate.toISOString().slice(0, 10)}`,
         source: 'open-critical',
         title: 'Balance sheet liquidity is thin',
-        detail: `Cash is ${formatMoney(balanceSheetCash)} vs AR ${formatMoney(balanceSheetAr)}, AP ${formatMoney(balanceSheetAp)}, and line of credit ${formatMoney(loc)}.`,
+        detail: `Cash is ${money(balanceSheetCash)} vs AR ${money(balanceSheetAr)}, AP ${money(balanceSheetAp)}, and line of credit ${money(loc)}.`,
         owner: 'Finance Owner',
         drillView: 'cash-flow',
         deltaText: loc > 0 ? `Cash/LOC ${formatPct(cashToLocPct)}` : `Cash/AR ${formatPct(cashToArPct)}`,
@@ -814,7 +825,7 @@ export async function generateCompanyPulse(companyId: string, options: GenerateO
           triggerName: 'Balance Sheet Liquidity / LOC Pressure',
           formula: 'Compare balance-sheet cash to AR and line-of-credit exposure from latest DailyFinancialSnapshot',
           threshold: `cash / LOC < ${LIQUIDITY_MIN_CASH_TO_LOC_PCT}% OR cash / AR < ${LIQUIDITY_MIN_CASH_TO_AR_PCT}%`,
-          reasonNow: `Cash/LOC ${formatPct(cashToLocPct)}; Cash/AR ${formatPct(cashToArPct)}; AP ${formatMoney(balanceSheetAp)}`,
+          reasonNow: `Cash/LOC ${formatPct(cashToLocPct)}; Cash/AR ${formatPct(cashToArPct)}; AP ${money(balanceSheetAp)}`,
           policySource: 'Company Pulse executive-risk rule',
           dataRefs: ['DailyFinancialSnapshot.cash', 'DailyFinancialSnapshot.ar', 'DailyFinancialSnapshot.ap', 'DailyFinancialSnapshot.loc'],
           sourceTimestamp: latestDaily.snapshotDate.toISOString(),
@@ -852,7 +863,7 @@ export async function generateCompanyPulse(companyId: string, options: GenerateO
         triggerName: 'Customer Concentration Risk',
         formula: 'Recent top customer revenue / total recent customer revenue; top-3 revenue / total recent customer revenue',
         threshold: `top customer share >= ${CUSTOMER_CONCENTRATION_TOP1_PCT}% OR top 3 share >= ${CUSTOMER_CONCENTRATION_TOP3_PCT}%`,
-        reasonNow: `Top customer ${formatPct(topCustomerShare)}; top 3 ${formatPct(top3CustomerShare)}; total recent revenue ${formatMoney(totalCustomerRevenue)}`,
+        reasonNow: `Top customer ${formatPct(topCustomerShare)}; top 3 ${formatPct(top3CustomerShare)}; total recent revenue ${money(totalCustomerRevenue)}`,
         policySource: 'Company Pulse executive-risk rule',
         dataRefs: ['CustomerSalesSnapshot'],
         sourceTimestamp: latestCustomer?.snapshotDate.toISOString(),
@@ -890,7 +901,7 @@ export async function generateCompanyPulse(companyId: string, options: GenerateO
         triggerName: 'SKU Concentration / Margin Mix Risk',
         formula: 'Recent top SKU revenue / total recent product revenue; top-5 SKU revenue / total recent product revenue',
         threshold: `top SKU share >= ${SKU_CONCENTRATION_TOP1_PCT}% OR top 5 share >= ${SKU_CONCENTRATION_TOP5_PCT}%`,
-        reasonNow: `Top SKU ${formatPct(topProductShare)} at ${formatMoney(topProduct.revenue)} revenue and ${formatPct(topProduct.grossMarginPct)} gross margin; top 5 ${formatPct(top5ProductShare)}`,
+        reasonNow: `Top SKU ${formatPct(topProductShare)} at ${money(topProduct.revenue)} revenue and ${formatPct(topProduct.grossMarginPct)} gross margin; top 5 ${formatPct(top5ProductShare)}`,
         policySource: 'Company Pulse executive-risk rule',
         dataRefs: ['ProductSalesSnapshot'],
         sourceTimestamp: latestProduct?.snapshotDate.toISOString(),

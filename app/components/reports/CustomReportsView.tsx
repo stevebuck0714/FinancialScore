@@ -15,6 +15,8 @@ import {
   XAxis,
   YAxis,
 } from 'recharts';
+import { useCompanyMoneyFormatter } from '@/app/hooks/useCompanyMoneyFormatter';
+import { formatMoney, formatMoneyCompact } from '@/lib/format/currency';
 
 type ReportType = 'line' | 'multi_line' | 'bar' | 'grouped_bar' | 'stacked_bar' | 'combo' | 'table' | 'pie';
 
@@ -52,21 +54,13 @@ const reportTypes: Array<{ id: ReportType; label: string; description: string }>
 
 const seriesColors = ['#1F70C1', '#16a34a', '#f97316', '#7c3aed', '#dc2626', '#0891b2'];
 
-function formatValue(value: number, format?: string) {
+function formatValue(value: number, format?: string, currency: string = 'USD', locale?: string) {
   if (format === 'percent') return `${(value * 100).toFixed(1)}%`;
   if (format === 'unitCurrency') {
-    return Number(value || 0).toLocaleString(undefined, {
-      style: 'currency',
-      currency: 'USD',
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2,
-    });
+    return formatMoney(Number(value || 0), { currency, locale, decimals: 2 });
   }
   if (format === 'currency') {
-    const abs = Math.abs(value);
-    const suffix = abs >= 1_000_000 ? 'M' : abs >= 1_000 ? 'K' : '';
-    const divisor = suffix === 'M' ? 1_000_000 : suffix === 'K' ? 1_000 : 1;
-    return `${value < 0 ? '-' : ''}$${(abs / divisor).toFixed(suffix ? 1 : 0)}${suffix}`;
+    return formatMoneyCompact(Number(value || 0), { currency, locale });
   }
   return Number(value || 0).toLocaleString(undefined, { maximumFractionDigits: 1 });
 }
@@ -168,13 +162,35 @@ function buildChartRows(rows: any[], series: any[]) {
   });
 }
 
-function formatTooltipValue(value: unknown, name: unknown, props: any, series: any[]) {
+function formatTooltipValue(
+  value: unknown,
+  name: unknown,
+  props: any,
+  series: any[],
+  currency: string = 'USD',
+  locale?: string
+) {
   const field = props?.dataKey ? String(props.dataKey) : '';
   const meta = series.find((item: any) => item.field === field);
-  return [formatValue(Number(value || 0), meta?.format), meta?.label || String(name || field)];
+  return [formatValue(Number(value || 0), meta?.format, currency, locale), meta?.label || String(name || field)];
 }
 
-function CustomReportPreview({ config, rows, tableRows = [], tableColumns = [] }: { config: any; rows: any[]; tableRows?: any[]; tableColumns?: any[] }) {
+function CustomReportPreview({
+  config,
+  rows,
+  tableRows = [],
+  tableColumns = [],
+  currency = 'USD',
+  locale,
+}: {
+  config: any;
+  rows: any[];
+  tableRows?: any[];
+  tableColumns?: any[];
+  currency?: string;
+  locale?: string;
+}) {
+  const fmt = (value: number, format?: string) => formatValue(value, format, currency, locale);
   const series = Array.isArray(config?.series) ? config.series : [];
   const chartType = String(config?.chartType || 'line');
   const hasRows = (chartType === 'table' && tableRows.length > 0) || (rows.length > 0 && series.length > 0);
@@ -215,7 +231,7 @@ function CustomReportPreview({ config, rows, tableRows = [], tableColumns = [] }
                   {tableColumns.map((column: any) => {
                     const rawValue = column.type === 'metric' ? row?.values?.[column.key] : row?.[column.key];
                     const value = column.type === 'metric'
-                      ? formatValue(Number(rawValue || 0), column.format)
+                      ? fmt(Number(rawValue || 0), column.format)
                       : column.type === 'date'
                         ? formatDate(String(rawValue || ''))
                         : String(rawValue || '');
@@ -250,7 +266,7 @@ function CustomReportPreview({ config, rows, tableRows = [], tableColumns = [] }
                 <td style={{ padding: '9px 10px', borderBottom: '1px solid #f1f5f9', color: '#334155', fontWeight: 700 }}>{row.month}</td>
                 {series.map((item: any) => (
                   <td key={item.field} style={{ padding: '9px 10px', borderBottom: '1px solid #f1f5f9', textAlign: 'right', color: '#334155' }}>
-                    {formatValue(getSeriesValue(row, item.field), item.format)}
+                    {fmt(getSeriesValue(row, item.field), item.format)}
                   </td>
                 ))}
               </tr>
@@ -286,7 +302,7 @@ function CustomReportPreview({ config, rows, tableRows = [], tableColumns = [] }
           <PieChart>
             <Tooltip formatter={(value: any, name: any, props: any) => (
               isDimensionRows
-                ? [formatValue(Number(value || 0), primarySeries?.format), String(name)]
+                ? [fmt(Number(value || 0), primarySeries?.format), String(name)]
                 : formatTooltipValue(value, name, props, values)
             )} />
             <Legend />
@@ -295,7 +311,7 @@ function CustomReportPreview({ config, rows, tableRows = [], tableColumns = [] }
               dataKey="value"
               nameKey="name"
               outerRadius={110}
-              label={(entry: any) => formatValue(Number(entry.value || 0), entry.format || primarySeries?.format)}
+              label={(entry: any) => fmt(Number(entry.value || 0), entry.format || primarySeries?.format)}
             >
               {values.map((item: any) => (
                 <Cell key={item.field} fill={item.color} />
@@ -314,8 +330,8 @@ function CustomReportPreview({ config, rows, tableRows = [], tableColumns = [] }
           <ComposedChart data={dimensionChartRows} margin={{ top: 16, right: 24, bottom: 72, left: 22 }}>
             <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
             <XAxis dataKey="name" tick={{ fontSize: 11, fill: '#64748b' }} angle={-35} textAnchor="end" interval={0} height={84} />
-            <YAxis tick={{ fontSize: 12, fill: '#64748b' }} tickFormatter={(value) => formatValue(Number(value || 0), primarySeries?.format)} />
-            <Tooltip formatter={(value: any) => [formatValue(Number(value || 0), primarySeries?.format), primarySeries?.label || primarySeries?.field || 'Value']} />
+            <YAxis tick={{ fontSize: 12, fill: '#64748b' }} tickFormatter={(value) => fmt(Number(value || 0), primarySeries?.format)} />
+            <Tooltip formatter={(value: any) => [fmt(Number(value || 0), primarySeries?.format), primarySeries?.label || primarySeries?.field || 'Value']} />
             <Bar dataKey="value" name={primarySeries?.label || primarySeries?.field || 'Value'} fill={seriesColors[0]} radius={[4, 4, 0, 0]} />
           </ComposedChart>
         </ResponsiveContainer>
@@ -347,18 +363,18 @@ function CustomReportPreview({ config, rows, tableRows = [], tableColumns = [] }
           <YAxis
             yAxisId="left"
             tick={{ fontSize: 12, fill: '#64748b' }}
-            tickFormatter={(value) => formatValue(Number(value || 0), leftAxisFormat)}
+            tickFormatter={(value) => fmt(Number(value || 0), leftAxisFormat)}
           />
           {rightSeries.length > 0 && (
             <YAxis
               yAxisId="right"
               orientation="right"
               tick={{ fontSize: 12, fill: '#64748b' }}
-              tickFormatter={(value) => formatValue(Number(value || 0), rightAxisFormat)}
+              tickFormatter={(value) => fmt(Number(value || 0), rightAxisFormat)}
             />
           )}
           <Tooltip
-            formatter={(value: any, name: any, props: any) => formatTooltipValue(value, name, props, series)}
+            formatter={(value: any, name: any, props: any) => formatTooltipValue(value, name, props, series, currency, locale)}
             labelFormatter={(label) => String(label || '')}
             labelStyle={{ color: '#0f172a', fontWeight: 700 }}
           />
@@ -394,6 +410,7 @@ function CustomReportPreview({ config, rows, tableRows = [], tableColumns = [] }
 }
 
 export default function CustomReportsView({ selectedCompanyId }: CustomReportsViewProps) {
+  const money = useCompanyMoneyFormatter(selectedCompanyId);
   const reportOutputRef = useRef<HTMLDivElement | null>(null);
   const [selectedReportType, setSelectedReportType] = useState<ReportType>('line');
   const [prompt, setPrompt] = useState('');
@@ -926,7 +943,7 @@ export default function CustomReportsView({ selectedCompanyId }: CustomReportsVi
                       </div>
                     )}
                     {!previewError && (
-                      <CustomReportPreview config={generatedConfig} rows={previewRows} tableRows={previewTableRows} tableColumns={previewTableColumns} />
+                      <CustomReportPreview config={generatedConfig} rows={previewRows} tableRows={previewTableRows} tableColumns={previewTableColumns} currency={money.currency} locale={money.locale} />
                     )}
                   </div>
                 </div>
@@ -1096,7 +1113,7 @@ export default function CustomReportsView({ selectedCompanyId }: CustomReportsVi
                   </div>
                 )}
                 {!previewError && (
-                  <CustomReportPreview config={generatedConfig} rows={previewRows} tableRows={previewTableRows} tableColumns={previewTableColumns} />
+                  <CustomReportPreview config={generatedConfig} rows={previewRows} tableRows={previewTableRows} tableColumns={previewTableColumns} currency={money.currency} locale={money.locale} />
                 )}
               </div>
 

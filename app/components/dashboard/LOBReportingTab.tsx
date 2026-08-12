@@ -6,6 +6,7 @@ import { applyLOBAllocations, AccountValue, AccountMapping, CompanyLOB } from '@
 import type { MonthlyDataRow } from '../../types';
 import { useMasterData } from '@/lib/master-data-store';
 import { getFieldDisplayName } from '@/lib/constants/field-display-names';
+import { useCompanyMoneyFormatter } from '@/app/hooks/useCompanyMoneyFormatter';
 
 interface LOBReportingTabProps {
   company: any;
@@ -38,6 +39,7 @@ export default function LOBReportingTab({
 }: LOBReportingTabProps) {
   // Use master data store instead of receiving monthly data as prop
   const { data: masterData, monthlyData, loading: masterDataLoading, error: masterDataError } = useMasterData(selectedCompanyId);
+  const money = useCompanyMoneyFormatter(selectedCompanyId);
   
   // Get Lines of Business from company
   const linesOfBusiness = company?.linesOfBusiness || [];
@@ -980,8 +982,8 @@ export default function LOBReportingTab({
   
   // Format currency
   const fmt = (value: number) => {
-    const formatted = Math.abs(value).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-    return value < 0 ? `($${formatted})` : `$${formatted}`;
+    const formatted = money.fmt(Math.abs(value), 2);
+    return value < 0 ? `(${formatted})` : formatted;
   };
   
   return (

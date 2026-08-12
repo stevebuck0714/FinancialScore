@@ -5,6 +5,13 @@ import { INDUSTRY_SECTORS } from '../../../data/industrySectors';
 import { profilesApi, companiesApi, ApiError } from '@/lib/api-client';
 import { ACCOUNTING_SYSTEMS, COMPANY_SIZES, INDUSTRY_SECTORS as INDUSTRY_SECTOR_OPTIONS } from '../../../lib/constants/company-options';
 import { US_STATES } from '../../constants';
+import CompanyCurrencySettings, { type CurrencyDraft } from '../company/CompanyCurrencySettings';
+import {
+  DEFAULT_BASE_CURRENCY,
+  localeForCurrency,
+  normalizeCurrencyCode,
+} from '@/lib/constants/currencies';
+import { invalidateCompanyMoneyFormatterCache } from '@/app/hooks/useCompanyMoneyFormatter';
 import type { Company, CompanyProfile, MonthlyDataRow, User } from '../../types';
 
 interface ProfileTabProps {
@@ -99,6 +106,10 @@ export default function ProfileTab({
   const [companyAddressZip, setCompanyAddressZip] = React.useState('');
   const [companyAddressCountry, setCompanyAddressCountry] = React.useState('USA');
   const [industryBriefBrandsDraft, setIndustryBriefBrandsDraft] = React.useState('');
+  const [currencyDraft, setCurrencyDraft] = React.useState<CurrencyDraft>({
+    baseCurrency: DEFAULT_BASE_CURRENCY,
+    reportingCurrency: '',
+  });
 
   // Load LOB data when component mounts or company changes
   React.useEffect(() => {
@@ -130,6 +141,12 @@ export default function ProfileTab({
     setCompanyAddressState(company?.addressState || '');
     setCompanyAddressZip(company?.addressZip || '');
     setCompanyAddressCountry(company?.addressCountry || 'USA');
+    setCurrencyDraft({
+      baseCurrency: normalizeCurrencyCode(company?.baseCurrency),
+      reportingCurrency: company?.reportingCurrency
+        ? normalizeCurrencyCode(company.reportingCurrency)
+        : '',
+    });
   }, [
     company?.industrySector,
     company?.accountingSystem,
@@ -140,6 +157,8 @@ export default function ProfileTab({
     company?.addressState,
     company?.addressZip,
     company?.addressCountry,
+    company?.baseCurrency,
+    company?.reportingCurrency,
   ]);
 
   // Get or create profile for this company
@@ -265,6 +284,16 @@ export default function ProfileTab({
         ...profile!,
         industryBriefBrands: parseTextLines(industryBriefBrandsDraft),
       };
+      const nextBase = normalizeCurrencyCode(currencyDraft.baseCurrency);
+      const nextReporting = currencyDraft.reportingCurrency
+        ? normalizeCurrencyCode(currencyDraft.reportingCurrency)
+        : null;
+      if (nextReporting && nextReporting === nextBase) {
+        alert('Reporting currency must differ from base currency, or leave blank.');
+        setIsLoading(false);
+        return;
+      }
+
       const companyUpdatePayload: any = {
         addressStreet: companyAddressStreet || '',
         addressCity: companyAddressCity || '',
@@ -274,7 +303,10 @@ export default function ProfileTab({
         accountingSystem: companyAccountingSystem,
         companySizeCategory: companySize || null,
         industrySectorCategory: companyIndustrySectorCode || null,
-        industrySector: Number(companyIndustryGroup)
+        industrySector: Number(companyIndustryGroup),
+        baseCurrency: nextBase,
+        reportingCurrency: nextReporting,
+        locale: localeForCurrency(nextBase),
       };
 
       const [, companyUpdateResult] = await Promise.all([
@@ -285,6 +317,7 @@ export default function ProfileTab({
       updatedProfiles.push(profileToSave);
       setCompanyProfiles(updatedProfiles);
       if (companyUpdateResult?.company) {
+        invalidateCompanyMoneyFormatterCache(selectedCompanyId);
         onCompanyUpdated?.(companyUpdateResult.company as Company);
       }
       alert('Profile saved successfully!');
@@ -499,6 +532,15 @@ export default function ProfileTab({
                 ))}
               </select>
             </div>
+            <CompanyCurrencySettings
+              company={company}
+              selectedCompanyId={selectedCompanyId}
+              onCompanyUpdated={onCompanyUpdated}
+              variant="profile"
+              standaloneSave={false}
+              value={currencyDraft}
+              onChange={setCurrencyDraft}
+            />
             <div>
               <span style={{ fontWeight: '600' }}>Company Size:</span>
             </div>

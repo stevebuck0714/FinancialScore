@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useEffect, useMemo, useState } from 'react';
+import { useCompanyMoneyFormatter } from '@/app/hooks/useCompanyMoneyFormatter';
 
 type ForecastInputs = {
   inventoryTurns: number;
@@ -183,8 +184,6 @@ const DEFAULT_AGING_BUCKETS: AgingBuckets = { current: 0, bucket30to60: 0, bucke
 const hasAnyPositiveValue = (values: Array<unknown>): boolean =>
   values.some((value) => Number.isFinite(Number(value)) && Number(value) > 0);
 
-const formatCurrency = (value: number): string =>
-  `$${Math.round(Number(value || 0)).toLocaleString('en-US')}`;
 const formatCurrencyInput = (value: number): string =>
   `$${Math.round(Number(value || 0)).toLocaleString('en-US')}`;
 const formatPercentInput = (value: number): string => `${Number(value || 0).toFixed(2)}%`;
@@ -606,6 +605,8 @@ const normalizeInputs = (raw: any, fallback: ForecastInputs): ForecastInputs => 
 });
 
 export default function WorkingCapitalForecastTab({ selectedCompanyId, basisMode = 'cash', viewMode = 'full' }: WorkingCapitalForecastTabProps) {
+  const money = useCompanyMoneyFormatter(selectedCompanyId);
+  const formatCurrency = (value: number) => money.fmt(Number(value || 0), 0);
   const isInputsOnly = viewMode === 'inputs-only';
   const isAccrualFullCashForecast = basisMode === 'accrual' && !isInputsOnly;
   const [inputs, setInputs] = useState<ForecastInputs>(EMPTY_INPUTS);

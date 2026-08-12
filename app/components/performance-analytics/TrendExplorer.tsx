@@ -3,6 +3,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { LineChart } from '../charts/Charts';
 import { getBenchmarkValue } from '../../utils/data-processing';
+import { useCompanyMoneyFormatter } from '@/app/hooks/useCompanyMoneyFormatter';
 
 type BenchmarkItem = {
    metricName: string;
@@ -42,7 +43,6 @@ type Finding = {
    companyId: string;
  }
  
-const formatCurrency = (value: number) => `$${(value / 1000).toFixed(0)}k`;
 const formatPercent = (value: number) => `${value.toFixed(1)}%`;
 const formatRatio = (value: number) => `${value.toFixed(2)}x`;
 
@@ -51,6 +51,8 @@ const formatRatio = (value: number) => `${value.toFixed(2)}x`;
 const EQUITY_NEAR_ZERO_THRESHOLD = 1000;
  
  export default function TrendExplorer({ companyId }: TrendExplorerProps) {
+   const money = useCompanyMoneyFormatter(companyId);
+   const formatCurrency = (value: number) => money.fmtCompact(value);
    const [context, setContext] = useState<ContextResponse | null>(null);
   const [findings, setFindings] = useState<Finding[]>([]);
    const [loading, setLoading] = useState(true);
@@ -287,7 +289,7 @@ const EQUITY_NEAR_ZERO_THRESHOLD = 1000;
     const top = drivers[0];
     const second = drivers[1];
     const direction = netDelta > 0 ? 'up' : 'down';
-    const formatDollar = (value: number) => `$${Math.abs(value).toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
+    const formatDollar = (value: number) => money.fmt(Math.abs(value), 0);
     const formatPercent = (value: number) => `${(value * 100).toFixed(1)}%`;
 
     return {
@@ -313,7 +315,7 @@ const EQUITY_NEAR_ZERO_THRESHOLD = 1000;
     const prior = trendMonthly.slice(-6, -3);
     const recent = trendMonthly.slice(-3);
     const avg = (values: number[]) => values.reduce((sum, v) => sum + v, 0) / (values.length || 1);
-    const formatDollar = (value: number) => `$${Math.abs(value).toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
+    const formatDollar = (value: number) => money.fmt(Math.abs(value), 0);
 
     const priorRevenue = avg(prior.map((m: any) => m.revenue || 0));
     const recentRevenue = avg(recent.map((m: any) => m.revenue || 0));

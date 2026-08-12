@@ -156,6 +156,9 @@ export async function GET(request: NextRequest) {
       includeCommercialPaymentDate,
       includeCommercialNextDueDate,
       includeCommercialTermsNotes,
+      includeBaseCurrency,
+      includeReportingCurrency,
+      includeLocale,
     ] = await Promise.all([
       hasCompanyColumn("industrySectorCategory"),
       hasCompanyColumn("accountingSystem"),
@@ -179,6 +182,9 @@ export async function GET(request: NextRequest) {
       hasCompanyColumn("commercialPaymentDate"),
       hasCompanyColumn("commercialNextDueDate"),
       hasCompanyColumn("commercialTermsNotes"),
+      hasCompanyColumn("baseCurrency"),
+      hasCompanyColumn("reportingCurrency"),
+      hasCompanyColumn("locale"),
     ]);
     let companies;
     try {
@@ -197,6 +203,9 @@ export async function GET(request: NextRequest) {
           ...(includeIndustrySectorCategory ? { industrySectorCategory: true } : {}),
           ...(includeAccountingSystem ? { accountingSystem: true } : {}),
           ...(includeCompanySizeCategory ? { companySizeCategory: true } : {}),
+          ...(includeBaseCurrency ? { baseCurrency: true } : {}),
+          ...(includeReportingCurrency ? { reportingCurrency: true } : {}),
+          ...(includeLocale ? { locale: true } : {}),
           linesOfBusiness: true,
           userDefinedAllocations: true,
           createdAt: true,
@@ -246,6 +255,9 @@ export async function GET(request: NextRequest) {
           ...(includeIndustrySectorCategory ? { industrySectorCategory: true } : {}),
           ...(includeAccountingSystem ? { accountingSystem: true } : {}),
           ...(includeCompanySizeCategory ? { companySizeCategory: true } : {}),
+          ...(includeBaseCurrency ? { baseCurrency: true } : {}),
+          ...(includeReportingCurrency ? { reportingCurrency: true } : {}),
+          ...(includeLocale ? { locale: true } : {}),
           linesOfBusiness: true,
           userDefinedAllocations: true,
           createdAt: true,
@@ -1099,6 +1111,75 @@ export async function PATCH(request: NextRequest) {
       }
     }
 
+    // Multi-currency: base (home) + optional reporting currency
+    const {
+      isSupportedCurrency,
+      normalizeCurrencyCode,
+      localeForCurrency,
+      DEFAULT_BASE_CURRENCY,
+    } = await import('@/lib/constants/currencies');
+
+    if (updateFields.baseCurrency !== undefined) {
+      if (!(await hasCompanyColumn('baseCurrency'))) {
+        return NextResponse.json(
+          { error: 'baseCurrency column is not available in this environment' },
+          { status: 400 }
+        );
+      }
+      const nextBase = normalizeCurrencyCode(updateFields.baseCurrency, DEFAULT_BASE_CURRENCY);
+      if (!isSupportedCurrency(nextBase)) {
+        return NextResponse.json({ error: 'Unsupported baseCurrency' }, { status: 400 });
+      }
+      updateData.baseCurrency = nextBase;
+      if (updateFields.locale === undefined && (await hasCompanyColumn('locale'))) {
+        updateData.locale = localeForCurrency(nextBase);
+      }
+    }
+
+    if (updateFields.reportingCurrency !== undefined) {
+      if (!(await hasCompanyColumn('reportingCurrency'))) {
+        return NextResponse.json(
+          { error: 'reportingCurrency column is not available in this environment' },
+          { status: 400 }
+        );
+      }
+      if (updateFields.reportingCurrency === null || updateFields.reportingCurrency === '') {
+        updateData.reportingCurrency = null;
+      } else {
+        const nextReporting = normalizeCurrencyCode(String(updateFields.reportingCurrency));
+        if (!isSupportedCurrency(nextReporting)) {
+          return NextResponse.json({ error: 'Unsupported reportingCurrency' }, { status: 400 });
+        }
+        updateData.reportingCurrency = nextReporting;
+      }
+    }
+
+    // Guard: reporting must differ from effective base
+    if (updateData.reportingCurrency) {
+      const effectiveBase =
+        updateData.baseCurrency ||
+        (await hasCompanyColumn('baseCurrency')
+          ? (
+              await prisma.company.findUnique({
+                where: { id: targetCompanyId },
+                select: { baseCurrency: true },
+              })
+            )?.baseCurrency
+          : null) ||
+        DEFAULT_BASE_CURRENCY;
+      if (String(updateData.reportingCurrency).toUpperCase() === String(effectiveBase).toUpperCase()) {
+        return NextResponse.json(
+          { error: 'reportingCurrency must differ from baseCurrency (or leave blank)' },
+          { status: 400 }
+        );
+      }
+    }
+
+    if (updateFields.locale !== undefined && (await hasCompanyColumn('locale'))) {
+      const locale = String(updateFields.locale || '').trim();
+      if (locale) updateData.locale = locale;
+    }
+
     // Tier 1 support routing
     const tier1SupportOwnerColumnExists = await hasCompanyColumn('tier1SupportOwner');
     const tier1SupportConsultantIdColumnExists = await hasCompanyColumn('tier1SupportConsultantId');
@@ -1596,6 +1677,15 @@ export async function PATCH(request: NextRequest) {
     if (await columnExists('forceOperationalMockData')) {
       selectFields.forceOperationalMockData = true;
     }
+    if (await columnExists('baseCurrency')) {
+      selectFields.baseCurrency = true;
+    }
+    if (await columnExists('reportingCurrency')) {
+      selectFields.reportingCurrency = true;
+    }
+    if (await columnExists('locale')) {
+      selectFields.locale = true;
+    }
 
     // Select headcountAllocations if it exists (now that database column is added)
     if (process.env.NODE_ENV !== "development") {
@@ -1614,6 +1704,17 @@ export async function PATCH(request: NextRequest) {
     
     // AUDIT: Log company update
     await auditCompanyOperation('COMPANY_UPDATED', targetCompanyId);
+
+    let fxBackfill: Record<string, unknown> | null = null;
+    if (updateData.reportingCurrency) {
+      try {
+        const { ensureCompanyReportingRates } = await import('@/lib/fx');
+        fxBackfill = (await ensureCompanyReportingRates(targetCompanyId)) as Record<string, unknown>;
+      } catch (fxError: any) {
+        console.warn('FX backfill after currency update failed:', fxError?.message || fxError);
+        fxBackfill = { error: fxError?.message || String(fxError) };
+      }
+    }
 
     const requestedAccountingSystem =
       typeof updateFields.accountingSystem === 'string'
@@ -1652,7 +1753,10 @@ export async function PATCH(request: NextRequest) {
       industrySectorCategory: resolveCompanyIndustrySectorCategory(company),
     };
 
-    return NextResponse.json({ company: companyWithResolvedSector }, { status: 200 });
+    return NextResponse.json({
+      company: companyWithResolvedSector,
+      ...(fxBackfill ? { fxBackfill } : {}),
+    }, { status: 200 });
   } catch (error: any) {
     console.error("❌ ===== PATCH ERROR =====");
     console.error("❌ Error updating company:", error);

@@ -191,6 +191,10 @@ export async function POST(request: NextRequest) {
           subscriptionStartDate: isDemoSignup ? demoStartsAt : undefined,
           nextBillingDate: isDemoSignup ? demoExpiresAt : undefined,
           affiliateCode: normalizedAffiliateCode || undefined,
+          // Demo mock companies use CAD for multi-currency QA
+          ...(isDemoSignup
+            ? { baseCurrency: 'CAD', locale: 'en-CA', addressCountry: 'Canada' }
+            : {}),
           userDefinedAllocations: {
             ...addOnAllocations,
             demo: isDemoSignup

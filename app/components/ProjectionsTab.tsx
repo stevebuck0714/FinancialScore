@@ -4,6 +4,7 @@
 import React, { useMemo } from 'react';
 import { useMasterData } from '@/lib/master-data-store';
 import dynamic from 'next/dynamic';
+import { useCompanyMoneyFormatter } from '@/app/hooks/useCompanyMoneyFormatter';
 
 const ProjectionChart = dynamic(() => import('./charts/Charts').then(mod => mod.ProjectionChart), { ssr: false });
 
@@ -18,6 +19,8 @@ export default function ProjectionsTab({
 }: ProjectionsTabProps) {
   const { monthlyData, loading, error } = useMasterData(selectedCompanyId);
   const monthly = monthlyData || [];
+  const money = useCompanyMoneyFormatter(selectedCompanyId);
+  const formatProjectionValue = (v: number) => money.fmtCompact(v);
 
   // Projections calculation
   const projections = useMemo(() => {
@@ -371,42 +374,42 @@ export default function ProjectionsTab({
           historicalData={projections.monthlyWithNetIncome || monthly} 
           projectedData={projections} 
           valueKey="revenue" 
-          formatValue={(v) => `$${(v / 1000).toFixed(0)}K`} 
+          formatValue={formatProjectionValue} 
         />
         <ProjectionChart 
           title="Expense Projection" 
           historicalData={projections.monthlyWithNetIncome || monthly} 
           projectedData={projections} 
           valueKey="expense" 
-          formatValue={(v) => `$${(v / 1000).toFixed(0)}K`} 
+          formatValue={formatProjectionValue} 
         />
         <ProjectionChart 
           title="Net Income Projection" 
           historicalData={projections.monthlyWithNetIncome || monthly} 
           projectedData={projections} 
           valueKey="netIncome" 
-          formatValue={(v) => `$${(v / 1000).toFixed(0)}K`} 
+          formatValue={formatProjectionValue} 
         />
         <ProjectionChart 
           title="Total Assets Projection" 
           historicalData={monthly} 
           projectedData={projections} 
           valueKey="totalAssets" 
-          formatValue={(v) => `$${(v / 1000).toFixed(0)}K`} 
+          formatValue={formatProjectionValue} 
         />
         <ProjectionChart 
           title="Total Liabilities Projection" 
           historicalData={monthly} 
           projectedData={projections} 
           valueKey="totalLiab" 
-          formatValue={(v) => `$${(v / 1000).toFixed(0)}K`} 
+          formatValue={formatProjectionValue} 
         />
         <ProjectionChart 
           title="Equity Projection" 
           historicalData={monthly} 
           projectedData={projections} 
           valueKey="totalEquity" 
-          formatValue={(v) => `$${(v / 1000).toFixed(0)}K`} 
+          formatValue={formatProjectionValue} 
         />
       </div>
     </div>

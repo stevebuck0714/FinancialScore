@@ -116,6 +116,9 @@ export async function publishMonthFromDailySnapshots(params: PublishMonthParams)
     };
   }
 
+  const { getCompanyCurrencySettings } = await import('@/lib/currency/company-currency');
+  const { baseCurrency: statementCurrency } = await getCompanyCurrencySettings(companyId);
+
   // UTC-only. See lib/date-utils.ts. Local-TZ accessors here used to
   // mis-classify boundary snapshots (eg. 2026-03-01T00:00:00Z) into the
   // previous month when the writer ran on a developer's laptop in PT.
@@ -264,7 +267,7 @@ export async function publishMonthFromDailySnapshots(params: PublishMonthParams)
           rawData: {
             source: 'DAILY_FINANCIAL_MONTH_END',
             sourceBasis,
-            statementCurrency: 'USD',
+            statementCurrency,
             rollupPolicy: {
               incomeStatement: incomeStatementPolicy,
               balanceSheet: 'month_end_snapshot',
@@ -308,7 +311,7 @@ export async function publishMonthFromDailySnapshots(params: PublishMonthParams)
       )
     );
 
-    const publishBasisNote = `basis=${sourceBasis} | currency=USD | IS=${incomeStatementPolicy} | BS=month_end_snapshot`;
+    const publishBasisNote = `basis=${sourceBasis} | currency=${statementCurrency} | IS=${incomeStatementPolicy} | BS=month_end_snapshot`;
     const publishNotes = force ? `Force publish | ${publishBasisNote}` : publishBasisNote;
     await publishDelegate.upsert({
       where: { companyId_monthStart: { companyId, monthStart: targetMonthStart } },
@@ -541,6 +544,9 @@ export async function publishMonthsFromMonthlyFinancialDirect(
     };
   }
 
+  const { getCompanyCurrencySettings } = await import('@/lib/currency/company-currency');
+  const { baseCurrency: statementCurrency } = await getCompanyCurrencySettings(companyId);
+
   // Normalize requested months. Empty -> publish every month present in
   // MonthlyFinancial (for the latest FinancialRecord).
   const requestedRaw: string[] = [];
@@ -622,8 +628,8 @@ export async function publishMonthsFromMonthlyFinancialDirect(
     }
 
     const notes = force
-      ? 'Force publish | basis=monthly_financial_direct | currency=USD | IS=monthly_activity | BS=month_end_balance'
-      : 'basis=monthly_financial_direct | currency=USD | IS=monthly_activity | BS=month_end_balance';
+      ? `Force publish | basis=monthly_financial_direct | currency=${statementCurrency} | IS=monthly_activity | BS=month_end_balance`
+      : `basis=monthly_financial_direct | currency=${statementCurrency} | IS=monthly_activity | BS=month_end_balance`;
     try {
       await publishDelegate.upsert({
         where: { companyId_monthStart: { companyId, monthStart } },

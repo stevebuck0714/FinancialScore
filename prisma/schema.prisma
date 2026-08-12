@@ -89,6 +89,12 @@ model Company {
   addressState               String?
   addressZip                 String?
   addressCountry             String?
+  // ISO 4217 books/home currency for synced financials (default USD)
+  baseCurrency               String                 @default("USD")
+  // Optional alternate reporting currency for presentation (FX convert on read)
+  reportingCurrency          String?
+  // BCP 47 locale for money/number formatting (derived from currency when unset in UI)
+  locale                     String                 @default("en-US")
   industrySector             Int?                   // Existing industry classification for benchmarks (keep as "Industry Group" in UI)
   accountingSystem           String?                // QuickBooks, Xero, NetSuite, Sage, etc.
   companySizeCategory        String?                // DEFAULT, SMB, MID_MARKET, ENTERPRISE
@@ -2185,4 +2191,24 @@ model BalanceSheetAccountAnchor {
   @@unique([companyId, anchorDate, accountId])
   @@index([companyId, anchorDate(sort: Desc)])
   @@index([companyId, accountId])
+}
+
+// Cached daily EOD FX rates (shared across companies; not per-tenant).
+// Rate dates follow America/New_York calendar days for EST EOD jobs.
+model FxRate {
+  id               String    @id @default(cuid())
+  provider         String    // e.g. frankfurter
+  fromCurrency     String    // ISO 4217
+  toCurrency       String    // ISO 4217
+  rateDate         DateTime  // UTC midnight for the EST calendar date
+  rate             Float     // multiplier: amount_to = amount_from * rate
+  rateType         String    @default("daily_eod")
+  isFallback       Boolean   @default(false)
+  fallbackFromDate DateTime?
+  retrievedAt      DateTime  @default(now())
+  sourceTimestamp  DateTime?
+  createdAt        DateTime  @default(now())
+
+  @@unique([provider, fromCurrency, toCurrency, rateDate, rateType])
+  @@index([fromCurrency, toCurrency, rateDate])
 }

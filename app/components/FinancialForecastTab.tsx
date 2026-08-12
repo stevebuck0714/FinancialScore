@@ -4,6 +4,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { getFieldDisplayName } from '@/lib/constants/field-display-names';
 import { getSectorSchema, getTargetFieldOptions } from '@/lib/constants/sector-target-fields';
+import { useCompanyMoneyFormatter } from '@/app/hooks/useCompanyMoneyFormatter';
 
 interface FinancialForecastTabProps {
   selectedCompanyId: string;
@@ -172,6 +173,8 @@ export default function FinancialForecastTab({
   displayMode = 'full',
   basisMode = 'cash',
 }: FinancialForecastTabProps) {
+  const money = useCompanyMoneyFormatter(selectedCompanyId);
+  const formatCurrency = (value: number) => money.fmt(Number(value || 0), 0);
   const toplineLabel = basisMode === 'accrual' ? 'Sales' : 'Revenue';
   const isAccrualWeeklyMode = false;
   const [accrualSalesInputMode] = useState<'growth' | 'amount'>('growth');
@@ -1579,7 +1582,7 @@ export default function FinancialForecastTab({
                   const fill = colorByKey.get(rowKey) || '#94a3b8';
                   return (
                     <rect key={`seg-${pointIdx}-${rowKey}`} x={x} y={y} width={barWidth} height={segHeight} fill={fill}>
-                      <title>{`${point.label} • ${getFieldDisplayName(rowKey)}: $${segmentValue.toLocaleString(undefined, { maximumFractionDigits: 0 })}`}</title>
+                      <title>{`${point.label} • ${getFieldDisplayName(rowKey)}: ${formatCurrency(segmentValue)}`}</title>
                     </rect>
                   );
                 })}
@@ -1716,7 +1719,7 @@ export default function FinancialForecastTab({
                 <path d={path} fill="none" stroke={s.color} strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round" />
                 {points.map((p, idx) => (
                   <circle key={`pt-${s.key}-${idx}`} cx={toX(idx)} cy={toY(Number(p[s.key]) || 0)} r={3.2} fill={s.color}>
-                    <title>{`${p.label} • ${s.label}: $${(Number(p[s.key]) || 0).toLocaleString(undefined, { maximumFractionDigits: 0 })}`}</title>
+                    <title>{`${p.label} • ${s.label}: ${formatCurrency((Number(p[s.key]) || 0))}`}</title>
                   </circle>
                 ))}
               </g>
@@ -1837,7 +1840,7 @@ export default function FinancialForecastTab({
                 fill={point.endingCash >= 0 ? '#16a34a' : '#dc2626'}
                 opacity={0.9}
               >
-                <title>{`${point.label} • Ending Cash: $${point.endingCash.toLocaleString(undefined, { maximumFractionDigits: 0 })}`}</title>
+                <title>{`${point.label} • Ending Cash: ${formatCurrency(point.endingCash)}`}</title>
               </rect>
             );
           })}
@@ -1847,12 +1850,12 @@ export default function FinancialForecastTab({
           <path d={unleveredCashPath} fill="none" stroke="#f59e0b" strokeWidth="2.5" />
           {points.map((point, idx) => (
             <circle key={`cash-loc-pt-${point.label}-${idx}`} cx={toX(idx)} cy={toY(point.availableLoc)} r="3.2" fill="#0ea5e9">
-              <title>{`${point.label} • Available LOC: $${point.availableLoc.toLocaleString(undefined, { maximumFractionDigits: 0 })}`}</title>
+              <title>{`${point.label} • Available LOC: ${formatCurrency(point.availableLoc)}`}</title>
             </circle>
           ))}
           {points.map((point, idx) => (
             <circle key={`cash-unlev-pt-${point.label}-${idx}`} cx={toX(idx)} cy={toY(point.unleveredEndingCash)} r="3.2" fill="#f59e0b">
-              <title>{`${point.label} • Unlevered Cash: $${point.unleveredEndingCash.toLocaleString(undefined, { maximumFractionDigits: 0 })}`}</title>
+              <title>{`${point.label} • Unlevered Cash: ${formatCurrency(point.unleveredEndingCash)}`}</title>
             </circle>
           ))}
 
@@ -2121,7 +2124,7 @@ export default function FinancialForecastTab({
                     <td className="name-col" style={{ borderBottom: '1px solid #f1f5f9', color: '#334155' }}>{getFieldDisplayName(rowKey)}</td>
                     {displayedActualMonths.map((q) => (
                       <td key={`${rowKey}-a-${q.key}`} style={{ padding: '6px 8px', textAlign: 'right', borderBottom: '1px solid #f1f5f9' }}>
-                        ${(Number(q.revenueDetails?.[rowKey]) || 0).toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                        {formatCurrency((Number(q.revenueDetails?.[rowKey]) || 0))}
                       </td>
                     ))}
                     {monthlyForecastPeriods.map((q, idx) => (
@@ -2231,7 +2234,7 @@ export default function FinancialForecastTab({
                   <td style={{ padding: '6px 8px' }}>{`Total ${toplineLabel}`}</td>
                   {displayedActualMonths.map((q) => (
                     <td key={`tot-rev-a-${q.key}`} style={{ padding: '6px 8px', textAlign: 'right' }}>
-                      ${Number(q.revenue).toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                      {formatCurrency(Number(q.revenue))}
                     </td>
                   ))}
                   <td colSpan={monthlyForecastCount + futureSectionCount} style={{ padding: '6px 8px' }} />
@@ -2465,7 +2468,7 @@ export default function FinancialForecastTab({
                       return (
                         <td key={`${key}-oa-${q.key}`} style={{ padding: '6px 8px', textAlign: 'right', borderBottom: '1px solid #f1f5f9' }}>
                           {canUseAccrualOpexAmountInput
-                            ? `$${amount.toLocaleString(undefined, { maximumFractionDigits: 0 })}`
+                            ? `${formatCurrency(amount)}`
                             : `${pct.toFixed(2)}%`}
                         </td>
                       );
@@ -2642,7 +2645,7 @@ export default function FinancialForecastTab({
                     return (
                       <td key={`tax-a-${q.key}`} style={{ padding: '6px 8px', textAlign: 'right', borderBottom: '1px solid #f1f5f9' }}>
                         {canUseAccrualOpexAmountInput
-                          ? `$${taxAmount.toLocaleString(undefined, { maximumFractionDigits: 0 })}`
+                          ? `${formatCurrency(taxAmount)}`
                           : `${pct.toFixed(2)}%`}
                       </td>
                     );
@@ -2875,7 +2878,7 @@ export default function FinancialForecastTab({
                     <td style={{ padding: '8px', color: '#334155' }}>{getFieldDisplayName(rowKey)}</td>
                     {incomeStatementColumns.map((col) => (
                       <td key={`rev-detail-${rowKey}-${col.key}`} style={{ textAlign: 'right', padding: '8px' }}>
-                        ${Number(col.rowIndices.reduce((sum, idx) => sum + (Number(incomeStatementRows[idx]?.revenueDetails?.[rowKey]) || 0), 0)).toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                        {formatCurrency(Number(col.rowIndices.reduce((sum, idx) => sum + (Number(incomeStatementRows[idx]?.revenueDetails?.[rowKey]) || 0), 0)))}
                       </td>
                     ))}
                   </tr>
@@ -2884,7 +2887,7 @@ export default function FinancialForecastTab({
                   <td style={{ padding: '8px', fontWeight: 700, background: '#eff6ff' }}>{`Total ${toplineLabel}`}</td>
                   {incomeStatementColumns.map((col) => (
                     <td key={`rev-${col.key}`} style={{ textAlign: 'right', padding: '8px', fontWeight: 700, background: '#eff6ff' }}>
-                      ${Number(col.rowIndices.reduce((sum, idx) => sum + (Number(incomeStatementRows[idx]?.totalRevenue) || 0), 0)).toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                      {formatCurrency(Number(col.rowIndices.reduce((sum, idx) => sum + (Number(incomeStatementRows[idx]?.totalRevenue) || 0), 0)))}
                     </td>
                   ))}
                 </tr>
@@ -2899,7 +2902,7 @@ export default function FinancialForecastTab({
                     <td style={{ padding: '8px', color: '#334155' }}>{getFieldDisplayName(rowKey)}</td>
                     {incomeStatementColumns.map((col) => (
                       <td key={`cogs-detail-${rowKey}-${col.key}`} style={{ textAlign: 'right', padding: '8px' }}>
-                        ${Number(col.rowIndices.reduce((sum, idx) => sum + (Number(incomeStatementRows[idx]?.cogsDetails?.[rowKey]) || 0), 0)).toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                        {formatCurrency(Number(col.rowIndices.reduce((sum, idx) => sum + (Number(incomeStatementRows[idx]?.cogsDetails?.[rowKey]) || 0), 0)))}
                       </td>
                     ))}
                   </tr>
@@ -2908,7 +2911,7 @@ export default function FinancialForecastTab({
                   <td style={{ padding: '8px', fontWeight: 700, background: '#fef3c7' }}>Total COGS</td>
                   {incomeStatementColumns.map((col) => (
                     <td key={`cogs-${col.key}`} style={{ textAlign: 'right', padding: '8px', fontWeight: 700, background: '#fef3c7' }}>
-                      ${Number(col.rowIndices.reduce((sum, idx) => sum + (Number(incomeStatementRows[idx]?.totalCogs) || 0), 0)).toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                      {formatCurrency(Number(col.rowIndices.reduce((sum, idx) => sum + (Number(incomeStatementRows[idx]?.totalCogs) || 0), 0)))}
                     </td>
                   ))}
                 </tr>
@@ -2916,7 +2919,7 @@ export default function FinancialForecastTab({
                   <td style={{ padding: '8px', fontWeight: 700, background: '#dbeafe' }}>Gross Profit</td>
                   {incomeStatementColumns.map((col) => (
                     <td key={`gp-${col.key}`} style={{ textAlign: 'right', padding: '8px', background: '#dbeafe', fontWeight: 700 }}>
-                      ${Number(col.rowIndices.reduce((sum, idx) => sum + (Number(incomeStatementRows[idx]?.grossProfit) || 0), 0)).toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                      {formatCurrency(Number(col.rowIndices.reduce((sum, idx) => sum + (Number(incomeStatementRows[idx]?.grossProfit) || 0), 0)))}
                     </td>
                   ))}
                 </tr>
@@ -2931,7 +2934,7 @@ export default function FinancialForecastTab({
                     <td style={{ padding: '8px', color: '#334155' }}>{label}</td>
                     {incomeStatementColumns.map((col) => (
                       <td key={`opex-detail-${key}-${col.key}`} style={{ textAlign: 'right', padding: '8px' }}>
-                        ${Number(col.rowIndices.reduce((sum, idx) => sum + (Number(incomeStatementRows[idx]?.opexDetails?.[key]) || 0), 0)).toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                        {formatCurrency(Number(col.rowIndices.reduce((sum, idx) => sum + (Number(incomeStatementRows[idx]?.opexDetails?.[key]) || 0), 0)))}
                       </td>
                     ))}
                   </tr>
@@ -2940,7 +2943,7 @@ export default function FinancialForecastTab({
                   <td style={{ padding: '8px', fontWeight: 700, background: '#fde68a' }}>Total Operating Expenses</td>
                   {incomeStatementColumns.map((col) => (
                     <td key={`opex-${col.key}`} style={{ textAlign: 'right', padding: '8px', fontWeight: 700, background: '#fde68a' }}>
-                      ${Number(col.rowIndices.reduce((sum, idx) => sum + (Number(incomeStatementRows[idx]?.totalOpex) || 0), 0)).toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                      {formatCurrency(Number(col.rowIndices.reduce((sum, idx) => sum + (Number(incomeStatementRows[idx]?.totalOpex) || 0), 0)))}
                     </td>
                   ))}
                 </tr>
@@ -2948,7 +2951,7 @@ export default function FinancialForecastTab({
                   <td style={{ padding: '8px', fontWeight: 700, background: '#dcfce7' }}>Operating Income</td>
                   {incomeStatementColumns.map((col) => (
                     <td key={`oi-${col.key}`} style={{ textAlign: 'right', padding: '8px', background: '#dcfce7', fontWeight: 700 }}>
-                      ${Number(col.rowIndices.reduce((sum, idx) => sum + (Number(incomeStatementRows[idx]?.operatingIncome) || 0), 0)).toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                      {formatCurrency(Number(col.rowIndices.reduce((sum, idx) => sum + (Number(incomeStatementRows[idx]?.operatingIncome) || 0), 0)))}
                     </td>
                   ))}
                 </tr>
@@ -2956,7 +2959,7 @@ export default function FinancialForecastTab({
                   <td style={{ padding: '8px', fontWeight: 600 }}>Income Taxes</td>
                   {incomeStatementColumns.map((col) => (
                     <td key={`tax-${col.key}`} style={{ textAlign: 'right', padding: '8px' }}>
-                      ${Number(col.rowIndices.reduce((sum, idx) => sum + (Number(incomeStatementRows[idx]?.totalIncomeTaxes) || 0), 0)).toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                      {formatCurrency(Number(col.rowIndices.reduce((sum, idx) => sum + (Number(incomeStatementRows[idx]?.totalIncomeTaxes) || 0), 0)))}
                     </td>
                   ))}
                 </tr>
@@ -2964,7 +2967,7 @@ export default function FinancialForecastTab({
                   <td style={{ padding: '8px', fontWeight: 700, background: '#f1f5f9' }}>Net Income</td>
                   {incomeStatementColumns.map((col) => (
                     <td key={`ni-${col.key}`} style={{ textAlign: 'right', padding: '8px', background: '#f1f5f9', fontWeight: 700 }}>
-                      ${Number(col.rowIndices.reduce((sum, idx) => sum + (Number(incomeStatementRows[idx]?.netIncome) || 0), 0)).toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                      {formatCurrency(Number(col.rowIndices.reduce((sum, idx) => sum + (Number(incomeStatementRows[idx]?.netIncome) || 0), 0)))}
                     </td>
                   ))}
                 </tr>

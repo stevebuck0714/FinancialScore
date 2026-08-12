@@ -5,6 +5,7 @@ import React, { useState, useEffect } from 'react';
 import { CheckCircle, AlertTriangle, XCircle, TrendingUp, Settings, Target, Building2 } from 'lucide-react';
 import type { MonthlyDataRow, User } from '../../types';
 import LoansManagement from './LoansManagement';
+import { useCompanyMoneyFormatter } from '@/app/hooks/useCompanyMoneyFormatter';
 
 interface Loan {
   id: string;
@@ -535,6 +536,8 @@ export default function CovenantsTab({
   monthly,
   companyName
 }: CovenantsTabProps) {
+  const money = useCompanyMoneyFormatter(selectedCompanyId);
+  const formatLoanAmount = (amount: number) => money.fmt(amount, 0);
   const [activeTab, setActiveTab] = useState<'overview' | 'details' | 'alerts' | 'settings' | 'add-loan'>('overview');
   const [selectedLoan, setSelectedLoan] = useState<Loan | null>(null);
   const [loans, setLoans] = useState<Loan[]>([]);
@@ -1144,7 +1147,7 @@ export default function CovenantsTab({
           </h2>
           {selectedLoan && activeTab !== 'add-loan' && (
             <p style={{ fontSize: '12px', color: '#64748b', margin: 0 }}>
-              {selectedLoan.lenderName} • {new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 0 }).format(selectedLoan.loanAmount)}
+              {selectedLoan.lenderName} • {formatLoanAmount(selectedLoan.loanAmount)}
             </p>
           )}
         </div>

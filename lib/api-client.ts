@@ -114,6 +114,9 @@ export const companiesApi = {
     industrySectorCategory?: string | null;
     accountingSystem?: string | null;
     companySizeCategory?: string | null;
+    baseCurrency?: string;
+    reportingCurrency?: string | null;
+    locale?: string;
     tier1SupportOwner?: 'CORELYTICS' | 'CONSULTANT';
     tier1SupportConsultantId?: string | null;
     tier1SupportContactEmail?: string | null;

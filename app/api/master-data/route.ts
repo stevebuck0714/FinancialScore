@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import { privateCacheHeaders } from '@/lib/http-cache';
 import { hashCacheParts, readDerivedApiCache, writeDerivedApiCache } from '@/lib/derived-api-cache';
+import { readRequestedCurrency, withCurrencyPresentation } from '@/lib/currency/api-response';
 
 const MASTER_DATA_CACHE_TTL_SECONDS = 120;
 const MASTER_DATA_REPORT_MIN_DATE = '2024-01-01';
@@ -102,6 +103,8 @@ export async function GET(request: NextRequest) {
       );
     }
 
+    const requestedCurrency = readRequestedCurrency(searchParams);
+
     const cacheContext = {
       namespace: 'master-data',
       cacheKey: hashCacheParts([companyId, scope, MASTER_DATA_REPORT_MIN_DATE, 'qbd-current-year-net-income-v1']),
@@ -109,7 +112,13 @@ export async function GET(request: NextRequest) {
     };
     const cachedPayload = await readDerivedApiCache<any>(cacheContext);
     if (cachedPayload) {
-      return NextResponse.json(cachedPayload, { headers: privateCacheHeaders(scope === 'published' ? 120 : 30, 300) });
+      const presented = await withCurrencyPresentation(cachedPayload, {
+        companyId,
+        requestedCurrency,
+        // Convert when client asks OR company has a reporting currency (display ≠ base).
+        convert: true,
+      });
+      return NextResponse.json(presented, { headers: privateCacheHeaders(scope === 'published' ? 120 : 30, 300) });
     }
 
     // Fetch the latest financial record for this company
@@ -152,7 +161,12 @@ export async function GET(request: NextRequest) {
       }).catch((error) => {
         console.warn('Master data cache write failed:', error);
       });
-      return NextResponse.json(emptyPayload, { headers: privateCacheHeaders(60, 300) });
+      const presentedEmpty = await withCurrencyPresentation(emptyPayload, {
+        companyId,
+        requestedCurrency,
+        convert: true,
+      });
+      return NextResponse.json(presentedEmpty, { headers: privateCacheHeaders(60, 300) });
     }
 
     // Apply the publish gate when scope === 'published'.
@@ -402,7 +416,12 @@ export async function GET(request: NextRequest) {
     }).catch((cacheError) => {
       console.warn('Master data cache write failed:', cacheError);
     });
-    return NextResponse.json(payload, { headers: privateCacheHeaders(scope === 'published' ? 120 : 30, 300) });
+    const presented = await withCurrencyPresentation(payload, {
+      companyId,
+      requestedCurrency,
+      convert: true,
+    });
+    return NextResponse.json(presented, { headers: privateCacheHeaders(scope === 'published' ? 120 : 30, 300) });
   } catch (error: any) {
     console.error('Error loading master data:', error);
     return NextResponse.json(

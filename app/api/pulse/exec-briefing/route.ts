@@ -11,7 +11,16 @@ import {
   buildDailyOperationsFacts,
   getExecBriefingModuleProfile,
 } from '@/lib/pulse/exec-briefing-modules';
+import {
+  resolveDailyBriefingCapability,
+  type DailyBriefingMode,
+} from '@/lib/pulse/daily-briefing-readiness';
 import { resolveCompanyIndustrySectorCategory } from '@/lib/industry-sector-resolver';
+import { formatMoney as formatMoneyShared } from '@/lib/format/currency';
+import {
+  DEFAULT_BASE_CURRENCY,
+  resolveDisplayCurrency,
+} from '@/lib/constants/currencies';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 300;
@@ -26,6 +35,12 @@ type BriefingResponse = {
   aiGenerated: boolean;
   sections: BriefingSection[];
   sourceNotes: string[];
+  dailyMode?: DailyBriefingMode;
+  currency?: {
+    baseCurrency: string;
+    reportingCurrency: string | null;
+    displayCurrency: string;
+  };
 };
 
 const dailyBriefingCache = new Map<string, BriefingResponse>();
@@ -41,7 +56,7 @@ const MONTHLY_FINANCIAL_ROW_CAP = 60;
 const DAILY_FINANCIAL_ROW_CAP = 100;
 const CORE_SNAPSHOT_ROW_CAP = 150;
 const DETAIL_SNAPSHOT_ROW_CAP = 300;
-const EXEC_BRIEFING_LOGIC_VERSION = 'exec-briefing-v8-daily-ops';
+const EXEC_BRIEFING_LOGIC_VERSION = 'exec-briefing-v10-multi-section';
 const PRIVATE_DAILY_CACHE_HEADERS = {
   'Cache-Control': 'private, max-age=300, stale-while-revalidate=1800',
 };
@@ -75,6 +90,30 @@ function dateKey(value: unknown): string {
   const d = value instanceof Date ? value : new Date(String(value || ''));
   if (Number.isNaN(d.getTime())) return '';
   return d.toISOString().slice(0, 10);
+}
+
+function preferDailyFrequencyRows<T extends { frequency?: string | null }>(rows: T[], preferDaily: boolean): T[] {
+  if (!preferDaily || !rows.length) return rows;
+  const daily = rows.filter((row) => String(row.frequency || '').toLowerCase() === 'daily');
+  return daily.length ? daily : rows;
+}
+
+function latestSnapshotDateKey(rows: Array<{ snapshotDate?: Date | string | null }>): string {
+  const keys = rows.map((row) => dateKey(row.snapshotDate)).filter(Boolean).sort();
+  return keys.length ? keys[keys.length - 1] : '';
+}
+
+function priorSnapshotDateKey(
+  rows: Array<{ snapshotDate?: Date | string | null }>,
+  currentKey: string
+): string {
+  const keys = Array.from(new Set(rows.map((row) => dateKey(row.snapshotDate)).filter(Boolean))).sort();
+  if (!keys.length) return '';
+  if (currentKey) {
+    const idx = keys.lastIndexOf(currentKey);
+    if (idx > 0) return keys[idx - 1];
+  }
+  return keys.length >= 2 ? keys[keys.length - 2] : '';
 }
 
 function todayCacheKey(companyId: string): string {
@@ -622,12 +661,11 @@ function sourceNote(label: string, count: number): string {
   return `${label} available`;
 }
 
-function formatMoney(value: unknown): string {
-  return new Intl.NumberFormat('en-US', {
-    style: 'currency',
-    currency: 'USD',
-    maximumFractionDigits: 0,
-  }).format(asNumber(value));
+/** Set per-request from company base/reporting currency before formatting briefing amounts. */
+let briefingMoneyCurrency = DEFAULT_BASE_CURRENCY;
+
+function formatMoney(value: unknown, currency: string = briefingMoneyCurrency): string {
+  return formatMoneyShared(asNumber(value), { currency, decimals: 0 });
 }
 
 function formatPercent(value: unknown): string {
@@ -1024,8 +1062,6 @@ export async function GET(request: NextRequest) {
     monthlyStartDate.setMonth(monthlyStartDate.getMonth() - MONTHLY_BRIEFING_LOOKBACK_MONTHS);
     const baseCacheKey = todayCacheKey(companyId);
     const cacheDate = baseCacheKey.split(':').pop() || new Date().toISOString().slice(0, 10);
-    const persistedCacheDate = periodCacheDate(cacheDate, period);
-    const cacheKey = `${baseCacheKey}:${period}`;
     const company = await prisma.company.findUnique({
       where: { id: companyId },
       select: {
@@ -1035,14 +1071,62 @@ export async function GET(request: NextRequest) {
         industrySector: true,
         industrySectorCategory: true,
         forceOperationalMockData: true,
+        baseCurrency: true,
+        reportingCurrency: true,
+        locale: true,
       },
     } as any);
     const shouldUseGeneSolutionsMockBriefing =
       companyId === GENE_SOLUTIONS_COMPANY_ID && company?.forceOperationalMockData === true;
+    briefingMoneyCurrency = resolveDisplayCurrency({
+      baseCurrency: company?.baseCurrency,
+      reportingCurrency: company?.reportingCurrency,
+    });
     await ensurePulseCacheTables();
-    const isQuickBooksCompany = ['QUICKBOOKS', 'QUICKBOOKS_DESKTOP', 'QUICKBOOKS_ENTERPRISE'].includes(
+    const isQuickBooksCompany = ['QUICKBOOKS', 'QUICKBOOKS_DESKTOP', 'QUICKBOOKS_ENTERPRISE', 'QUICKBOOKS_ONLINE', 'QBO'].includes(
       String(company?.accountingSystem || '').trim().toUpperCase()
     );
+    const dailyCapability = await resolveDailyBriefingCapability(companyId, {
+      accountingSystem: company?.accountingSystem,
+    });
+    // Non-QBO companies historically always offered Daily; keep attempting the full path
+    // when capability is none. QBO requires explicit daily books or daily ops feeds.
+    const effectiveDailyMode: DailyBriefingMode =
+      period !== 'daily'
+        ? 'none'
+        : dailyCapability.mode !== 'none'
+          ? dailyCapability.mode
+          : dailyCapability.isQuickBooksOnline
+            ? 'none'
+            : 'full';
+    const cacheKey = `${baseCacheKey}:${period}:${period === 'daily' ? effectiveDailyMode : 'n/a'}`;
+    const persistedCacheDate =
+      period === 'daily'
+        ? `${periodCacheDate(cacheDate, period)}:${effectiveDailyMode}`
+        : periodCacheDate(cacheDate, period);
+
+    if (period === 'daily' && dailyCapability.isQuickBooksOnline && effectiveDailyMode === 'none') {
+      const response = {
+        generatedAt: new Date().toISOString(),
+        period,
+        asOfDate: cacheDate,
+        aiGenerated: false,
+        dailyMode: 'none' as DailyBriefingMode,
+        sections: [
+          {
+            title: 'Daily Briefing Not Available',
+            bullets: [
+              'This QuickBooks Online company does not have fresh daily operational data sources synced yet.',
+              'Monthly, Quarterly, and Annual briefings remain available from processed QuickBooks books.',
+              'Daily unlocks automatically when a non-Excel operational API source syncs daily snapshots (sales, customers, cash, AR/AP, or inventory).',
+            ],
+          },
+        ],
+        sourceNotes: [dailyCapability.reason],
+      } satisfies BriefingResponse;
+      return NextResponse.json(response, { headers: PRIVATE_DAILY_CACHE_HEADERS });
+    }
+
     if (isQuickBooksCompany) {
       const processedRows = await prisma.monthlyFinancial.count({ where: { companyId } });
       if (processedRows === 0) {
@@ -1053,6 +1137,7 @@ export async function GET(request: NextRequest) {
           period,
           asOfDate: cacheDate,
           aiGenerated: false,
+          dailyMode: effectiveDailyMode === 'none' ? undefined : effectiveDailyMode,
           sections: [
             {
               title: 'Financial Master Not Processed',
@@ -1174,16 +1259,34 @@ export async function GET(request: NextRequest) {
     const dailyFinancialsWithMappedIncome = applyMappedIncomeTotalsToDailyRows(dailyFinancials, dailyFinancialMappedLines);
     const sortedDailyFinancials = sortByDate(dailyFinancialsWithMappedIncome.filter((row: any) => !isWeekendZeroIncomeActivityRow(row)));
     const latestDailyFinancial = last(sortedDailyFinancials);
-    const financialComparisons = buildFinancialComparisonsForPeriod({
-      period,
-      sortedDailyFinancials,
-      completeMonthlyFinancials,
-    });
+    const productSnapshotsForPeriod = preferDailyFrequencyRows(productSnapshots as any[], period === 'daily');
+    const customerSnapshotsForPeriod = preferDailyFrequencyRows(customerSnapshots as any[], period === 'daily');
+    const financialComparisons =
+      period === 'daily' && effectiveDailyMode === 'ops-only'
+        ? []
+        : buildFinancialComparisonsForPeriod({
+            period,
+            sortedDailyFinancials,
+            completeMonthlyFinancials,
+          });
     const primaryFinancialComparison = financialComparisons[0] || null;
     const latestCashSnapshot = last(sortByDate(cashSnapshots));
     const latestArSnapshot = last(sortByDate(arSnapshots));
     const latestApSnapshot = last(sortByDate(apSnapshots));
-    const asOfDate = latestDateKey(latestDailyFinancial?.snapshotDate, latestFinancial?.monthDate) || cacheDate;
+    const opsAsOfDate =
+      period === 'daily'
+        ? latestSnapshotDateKey([
+            ...productSnapshotsForPeriod,
+            ...customerSnapshotsForPeriod,
+            ...cashSnapshots,
+            ...arSnapshots,
+            ...apSnapshots,
+          ]) || dailyCapability.latestDailyOpsDate || ''
+        : '';
+    const asOfDate =
+      (period === 'daily' && effectiveDailyMode === 'ops-only'
+        ? opsAsOfDate || latestDateKey(latestFinancial?.monthDate) || cacheDate
+        : latestDateKey(latestDailyFinancial?.snapshotDate, latestFinancial?.monthDate) || cacheDate) || cacheDate;
 
     const recentRevenue = asNumber(primaryFinancialComparison?.current?.revenue);
     const priorRevenue = asNumber(primaryFinancialComparison?.prior?.revenue);
@@ -1206,8 +1309,8 @@ export async function GET(request: NextRequest) {
       ? null
       : latestAPAgingRaw;
 
-    const productAgg = aggregateSales(productSnapshots, 'itemName').sort((a, b) => b.recentRevenue - a.recentRevenue);
-    const customerAgg = aggregateSales(customerSnapshots, 'customerName').sort((a, b) => b.recentRevenue - a.recentRevenue);
+    const productAgg = aggregateSales(productSnapshotsForPeriod, 'itemName').sort((a, b) => b.recentRevenue - a.recentRevenue);
+    const customerAgg = aggregateSales(customerSnapshotsForPeriod, 'customerName').sort((a, b) => b.recentRevenue - a.recentRevenue);
     const totalRecentCustomerRevenue = customerAgg.reduce((sum, row) => sum + row.recentRevenue, 0);
     const topCustomers = customerAgg
       .filter((row) => row.recentRevenue > MATERIAL_AMOUNT || Math.abs(row.recentGrossProfit) > MATERIAL_AMOUNT)
@@ -1268,11 +1371,18 @@ export async function GET(request: NextRequest) {
     const includeOperatingDetailInBriefing = period !== 'daily';
     const dailyOpsCurrentDate =
       period === 'daily'
-        ? dateKey(latestDailyFinancial?.snapshotDate) || dateKey(primaryFinancialComparison?.currentPeriod) || asOfDate
+        ? dateKey(latestDailyFinancial?.snapshotDate) ||
+          opsAsOfDate ||
+          dateKey(primaryFinancialComparison?.currentPeriod) ||
+          asOfDate
         : '';
     const dailyOpsPriorDate =
       period === 'daily'
         ? dateKey(sortedDailyFinancials.slice(-2, -1)[0]?.snapshotDate) ||
+          priorSnapshotDateKey(
+            [...productSnapshotsForPeriod, ...customerSnapshotsForPeriod],
+            dailyOpsCurrentDate
+          ) ||
           (typeof primaryFinancialComparison?.priorPeriod === 'string' &&
           !String(primaryFinancialComparison.priorPeriod).includes(' to ')
             ? String(primaryFinancialComparison.priorPeriod)
@@ -1285,8 +1395,8 @@ export async function GET(request: NextRequest) {
             currentDate: dailyOpsCurrentDate,
             priorDate: dailyOpsPriorDate || null,
             dayRevenue: recentRevenue,
-            productRows: productSnapshots,
-            customerRows: customerSnapshots,
+            productRows: productSnapshotsForPeriod,
+            customerRows: customerSnapshotsForPeriod,
             includeProducts: moduleProfile.genericSnapshots.products,
             includeCustomers: moduleProfile.genericSnapshots.customers,
           })
@@ -1298,7 +1408,18 @@ export async function GET(request: NextRequest) {
         period,
         periodLabel: periodDisplayName(period),
         asOfDate,
+        dailyMode: effectiveDailyMode,
+        booksCadence:
+          effectiveDailyMode === 'ops-only' || (dailyCapability.isQuickBooksOnline && effectiveDailyMode !== 'full')
+            ? 'monthly'
+            : effectiveDailyMode === 'full'
+              ? 'daily'
+              : period === 'daily'
+                ? 'daily'
+                : 'monthly',
         hasComparableFinancialWindow: financialComparisons.length > 0,
+        dailyOpsFeeds: dailyCapability.dailyOpsFeeds,
+        dailyApiSources: dailyCapability.dailyApiSources.map((source) => source.sourceCode),
       },
       operationalModules: {
         sectorCategory: moduleProfile.sectorCategory,
@@ -1380,28 +1501,38 @@ export async function GET(request: NextRequest) {
         cashDataAvailable: cashSnapshots.length > 0,
         arAgingAvailable: arSnapshots.length > 0,
         apAgingAvailable: apSnapshots.length > 0,
-        customerSalesAvailable: includeOperatingDetailInBriefing && moduleProfile.genericSnapshots.customers && customerSnapshots.length > 0,
-        productServiceSalesAvailable: includeOperatingDetailInBriefing && moduleProfile.genericSnapshots.products && productSnapshots.length > 0,
+        customerSalesAvailable: includeOperatingDetailInBriefing && moduleProfile.genericSnapshots.customers && customerSnapshotsForPeriod.length > 0,
+        productServiceSalesAvailable: includeOperatingDetailInBriefing && moduleProfile.genericSnapshots.products && productSnapshotsForPeriod.length > 0,
         dailyOperationsAvailable: Boolean(dailyOperations),
         dailyOperationsNotableCount: dailyOperations?.notableExceptions?.length || 0,
         inventoryDataAvailable: moduleProfile.genericSnapshots.inventory && inventorySnapshots.length > 0,
         constructionOperationsAvailable: Boolean(constructionOperations),
         benchmarkDataAvailable: benchmarks.length > 0,
+        dailyMode: effectiveDailyMode,
       },
       alerts: briefingPulseAlerts.slice(0, 12),
       findings: (findings || []).slice(0, 20),
     };
 
     sourceNotes = [
+      effectiveDailyMode === 'ops-only'
+        ? 'Daily mode: operations (books remain monthly from QuickBooks / accounting master)'
+        : '',
+      effectiveDailyMode === 'ops-only' && dailyCapability.dailyOpsFeeds.length
+        ? `Daily operational feeds: ${dailyCapability.dailyOpsFeeds.join(', ')}`
+        : '',
+      effectiveDailyMode === 'ops-only' && dailyCapability.dailyApiSources.length
+        ? `Daily API sources: ${dailyCapability.dailyApiSources.map((s) => s.sourceCode).join(', ')}`
+        : '',
       sourceNote('Financial statement data', monthlyFinancials.length + dailyFinancials.length),
       sourceNote('Cash data', cashSnapshots.length),
       sourceNote('Accounts receivable aging data', arSnapshots.length),
       sourceNote('Accounts payable aging data', apSnapshots.length),
       includeOperatingDetailInBriefing && moduleProfile.genericSnapshots.customers
-        ? sourceNote('Customer sales data', customerSnapshots.length)
+        ? sourceNote('Customer sales data', customerSnapshotsForPeriod.length)
         : '',
       includeOperatingDetailInBriefing && moduleProfile.genericSnapshots.products
-        ? sourceNote('Product/service sales data', productSnapshots.length)
+        ? sourceNote('Product/service sales data', productSnapshotsForPeriod.length)
         : '',
       dailyOperations ? sourceNote('Same-day operational sales data', dailyOperations.notableExceptions.length || 1) : '',
       moduleProfile.genericSnapshots.inventory ? sourceNote('Inventory data', inventorySnapshots.length) : '',
@@ -1443,7 +1574,7 @@ Write like a practical CFO/operator briefing the leadership team. Use concise bu
 
 Use plain language. Avoid consultant, investor, or SaaS jargon such as "logos", "motion", "levers", "runway" without explanation, "unlock", "optimize", "right-size", "deep dive", or "synergy". Say "customers", "new customers", "cash remaining", "actions", "reduce", "increase", or "analyze" instead.
 
-Write every currency value in actual dollars with commas, such as "$1,234,567". Never abbreviate currency as K, M, MM, million, or thousand.
+Write every currency value in the company's display currency (${briefingMoneyCurrency}) with commas (for example ${formatMoney(1234567)}). Never abbreviate currency as K, M, MM, million, or thousand.
 
 Use only the facts below. Never invent facts, channels, activity, owners, budgets, customer behavior, causes, or recommendations. If the company does not use, track, or report a topic, do not mention that topic. Do not include "no data" bullets. Only mention a data gap when the site has an active alert/finding saying the data gap itself is a leadership issue.
 
@@ -1455,7 +1586,11 @@ This is an exception-based leadership briefing. Only include analysis if it matt
 
 Do not turn a normal or favorable metric into commentary. For example, do not mention low accounts receivable or no overdue balances unless there is a material related issue in cash, revenue, collections, or a Pulse alert. Do not infer future cash inflow from the accounts receivable balance alone.
 
-Analyze the full company picture using only the sector-appropriate operating modules listed in facts.operationalModules. Always include financial performance, gross profit dollars, margin rate, liquidity, working capital, AR, AP, LOC/debt, covenants, benchmarks, Pulse alerts, performance findings, goals/watchlists, and data coverage when material. Only mention inventory, customer sales, product/service sales, job cost control, project portfolio, commitments/forecast, billing/cash by job, or other operating topics when those topics are included in facts.operationalModules.promptRules.allowedOperationalTopics and supported by facts. For the Daily tab, operational sales commentary must come from facts.dailyOperations (same-day windows only), not from multi-day customers/products aggregates.
+Analyze the full company picture using only the sector-appropriate operating modules listed in facts.operationalModules. ${
+      effectiveDailyMode === 'ops-only'
+        ? 'For this ops-only Daily briefing, prioritize same-day operational exceptions, Pulse alerts, and daily liquidity/AR/AP when those feeds exist. Do not force a full P&L narrative from monthly books.'
+        : 'Always include financial performance, gross profit dollars, margin rate, liquidity, working capital, AR, AP, LOC/debt, covenants, benchmarks, Pulse alerts, performance findings, goals/watchlists, and data coverage when material.'
+    } Only mention inventory, customer sales, product/service sales, job cost control, project portfolio, commitments/forecast, billing/cash by job, or other operating topics when those topics are included in facts.operationalModules.promptRules.allowedOperationalTopics and supported by facts. For the Daily tab, operational sales commentary must come from facts.dailyOperations (same-day windows only), not from multi-day customers/products aggregates.
 
 Sector operating guidance: ${facts.operationalModules.promptRules.sectorGuidance}
 
@@ -1463,7 +1598,11 @@ Blocked operating topics for this company: ${facts.operationalModules.promptRule
 
 For total accounts receivable and total accounts payable balances, use financials.balanceSheetAR and financials.balanceSheetAP. Do not use financials.arAging.total, financials.apAging.total, workingCapital.arAging.total, or workingCapital.apAging.total as the company's total balance sheet AR/AP if those differ; aging snapshots are only for aging mix, overdue percentages, and days sales outstanding.
 
-Only compare like-for-like periods. Do not compare days to weeks, weeks to months, or a partial current month to completed months. This is a ${periodDisplayName(period).toLowerCase()} briefing; use only the comparison windows in facts.financials.comparisons. For the Daily tab, discuss material latest-day vs prior-day movement and current month-to-date vs the same elapsed days last month when available; never fall back to month-over-month analysis in the Daily tab. For Daily comparisons, state the actual dates from currentPeriod and priorPeriod; do not say "yesterday", "today", or "latest day" as a substitute for dates. In the Daily tab, use facts.dailyOperations only for operational commentary, and only when notableExceptions are present or a listed top product/customer/volume move is material for that same asOfDate vs priorDate. Allowed Daily ops topics: top revenue product/SKU for the day, largest customer/order for the day, and day volume (sales closed / units sold / contracts) with day-over-day deltas when provided. Do not use multi-day customer concentration, multi-day product margin watchlists, or benchmarks in the Daily tab. For Monthly, Quarterly, and Annual tabs, use completed periods only and the broader customers/products/benchmarks facts when present. State the window used when a financial or daily-ops movement is material. If no comparable window supports an issue, do not draw a trend conclusion.
+Only compare like-for-like periods. Do not compare days to weeks, weeks to months, or a partial current month to completed months. This is a ${periodDisplayName(period).toLowerCase()} briefing; use only the comparison windows in facts.financials.comparisons. ${
+      effectiveDailyMode === 'ops-only'
+        ? `IMPORTANT: facts.briefing.dailyMode is ops-only. Books/accounting are monthly (QuickBooks or equivalent). Do NOT invent day-over-day P&L, revenue, gross profit, EBITDA, or MTD financial statement movement. facts.financials.comparisons is empty by design. Lead with facts.dailyOperations (same-day sales/customer/SKU/volume), Pulse alerts, and liquidity/AR/AP only when those daily feeds are present. You may mention the latest closed month from books as static context only—never as a day-over-day financial trend.`
+        : `For the Daily tab, discuss material latest-day vs prior-day movement and current month-to-date vs the same elapsed days last month when available; never fall back to month-over-month analysis in the Daily tab. For Daily comparisons, state the actual dates from currentPeriod and priorPeriod; do not say "yesterday", "today", or "latest day" as a substitute for dates.`
+    } In the Daily tab, use facts.dailyOperations only for operational commentary, and only when notableExceptions are present or a listed top product/customer/volume move is material for that same asOfDate vs priorDate. Allowed Daily ops topics: top revenue product/SKU for the day, largest customer/order for the day, and day volume (sales closed / units sold / contracts) with day-over-day deltas when provided. Do not use multi-day customer concentration, multi-day product margin watchlists, or benchmarks in the Daily tab. For Monthly, Quarterly, and Annual tabs, use completed periods only and the broader customers/products/benchmarks facts when present. State the window used when a financial or daily-ops movement is material. If no comparable window supports an issue, do not draw a trend conclusion.
 
 When revenue and margin rate move in different directions, explicitly state the end result to gross profit dollars only if the movement is material or decision-useful. Example: if revenue is declining but gross margin rate is improving, say whether gross profit dollars increased or decreased and by how much; if both are normal/immaterial, omit the topic entirely.
 
@@ -1471,12 +1610,14 @@ For product/service margin, do the diagnosis yourself only when product/service 
 
 Recommendations must be specific and measurable. Include the actual metric, customer/product/covenant/account name, dollar amount, percentage, threshold, time window, or target from the facts whenever available. Do not write generic recommendations like "review covenant headroom", "pull margin detail", "assign owners", "monitor closely", "review performance", "improve margins", or "watch cash" unless the same bullet discusses the underlying values driving the issue and the measurable next action.
 
-Choose the 3-8 sections that best tell leadership what they need to pay attention to today. Include topics only when they are material, abnormal, worsening, tied to a Pulse alert/performance finding/goal/benchmark gap, or directly decision-useful. If there are no material exceptions, return one short section titled "No Material Exceptions".
+Choose 3-8 separate titled sections (not one mega-section). Always start with "Top Takeaway", then add distinct topic sections such as "Cash and Liquidity", "Revenue and Customer Concentration", "Gross Margin", "EBITDA and Expense Control", or other material themes supported by the facts. Do not put every issue only under Top Takeaway—split material topics into their own sections with 2-5 bullets each, including specific measurable Actions. Include a topic only when it is material, abnormal, worsening, tied to a Pulse alert/performance finding/goal/benchmark gap, or directly decision-useful. If there are truly no material exceptions, return one short section titled "No Material Exceptions".
 
-Return JSON only in this shape:
+Return JSON only in this shape (example shows multiple sections—follow that pattern whenever more than one topic is material):
 {
   "sections": [
-    { "title": "Top Takeaway", "bullets": ["..."] }
+    { "title": "Top Takeaway", "bullets": ["...", "..."] },
+    { "title": "Cash and Liquidity", "bullets": ["...", "Actions: ..."] },
+    { "title": "Revenue and Customer Concentration", "bullets": ["...", "Actions: ..."] }
   ]
 }
 
@@ -1487,12 +1628,12 @@ ${JSON.stringify(facts, null, 2)}`;
       openai: getOpenAiClient(),
       model,
       temperature: 0.2,
-      maxTokens: 2800,
+      maxTokens: 4500,
       messages: [
         {
           role: 'system',
           content:
-            'You produce concise executive operating briefings from financial and operational data. Identify the highest-priority issues yourself. Always evaluate gross profit dollars, not just revenue or margin rate. Recommendations must be specific, measurable, and tied to observed facts. Use bullets. Keep language plain and board-ready.',
+            'You produce concise executive operating briefings from financial and operational data. Identify the highest-priority issues yourself. Always evaluate gross profit dollars, not just revenue or margin rate. Recommendations must be specific, measurable, and tied to observed facts. Use bullets. Keep language plain and board-ready. Return multiple titled sections whenever more than one material topic exists—never collapse an entire briefing into a single Top Takeaway section.',
         },
         { role: 'user', content: prompt },
       ],
@@ -1502,12 +1643,19 @@ ${JSON.stringify(facts, null, 2)}`;
       allowMarketingLanguage: Boolean(facts?.unsupportedTopicRules?.marketingChannelsAllowed),
     });
 
-    if (!sections.length) {
-      console.warn('Pulse exec briefing AI response did not match expected sections shape; retrying formatter', {
+    const isCollapsedTopTakeawayOnly =
+      sections.length === 1 &&
+      /^top takeaway$/i.test(sections[0].title) &&
+      sections[0].bullets.length >= 3;
+
+    if (!sections.length || isCollapsedTopTakeawayOnly) {
+      console.warn('Pulse exec briefing AI response needs multi-section formatter', {
         companyId,
         model,
         api: ai.api,
         finishReason: ai.finishReason,
+        sectionCount: sections.length,
+        collapsedTopTakeaway: isCollapsedTopTakeawayOnly,
         responsePreview: ai.text.slice(0, 500),
       });
 
@@ -1515,16 +1663,27 @@ ${JSON.stringify(facts, null, 2)}`;
         openai: getOpenAiClient(),
         model,
         temperature: 0,
-        maxTokens: 1800,
+        maxTokens: 4000,
         messages: [
           {
             role: 'system',
             content:
-              'You convert an executive briefing draft into strict JSON. Return only valid JSON with a non-empty sections array. Each section needs a title and 1-6 bullet strings.',
+              'You convert an executive briefing draft into strict JSON with multiple titled sections. Return only valid JSON. Prefer 3-8 sections. Never collapse material cash, revenue, margin, EBITDA, concentration, or covenant issues into a single Top Takeaway section.',
           },
           {
             role: 'user',
-            content: `Convert this briefing draft into exactly this JSON shape: {"sections":[{"title":"Top Takeaway","bullets":["..."]}]}. If the draft is empty or unusable, return {"sections":[{"title":"No Material Exceptions","bullets":["No material exceptions were identified in the available financial and sector operating data for today."]}]}.\n\nDraft:\n${ai.text.slice(0, 6000)}`,
+            content: `Rewrite this briefing into JSON with this shape:
+{"sections":[{"title":"Top Takeaway","bullets":["..."]},{"title":"Cash and Liquidity","bullets":["...","Actions: ..."]},{"title":"Revenue and Customer Concentration","bullets":["...","Actions: ..."]}]}
+
+Rules:
+- Keep every material fact and dollar/percent figure from the draft.
+- Use 3-8 sections whenever the draft covers more than one topic.
+- Top Takeaway is a short synthesis only (2-4 bullets). Put detail and Actions in topic sections.
+- Each section needs a title and 1-6 bullet strings.
+- If the draft is empty or unusable, return {"sections":[{"title":"No Material Exceptions","bullets":["No material exceptions were identified in the available financial and sector operating data for today."]}]}.
+
+Draft:
+${ai.text.slice(0, 12000)}`,
           },
         ],
       });
@@ -1549,8 +1708,16 @@ ${JSON.stringify(facts, null, 2)}`;
       asOfDate: responseAsOfDate,
       model,
       aiGenerated: true,
+      dailyMode: period === 'daily' ? effectiveDailyMode : undefined,
       sections,
       sourceNotes,
+      currency: {
+        baseCurrency: String(company?.baseCurrency || DEFAULT_BASE_CURRENCY).toUpperCase(),
+        reportingCurrency: company?.reportingCurrency
+          ? String(company.reportingCurrency).toUpperCase()
+          : null,
+        displayCurrency: briefingMoneyCurrency,
+      },
     } satisfies BriefingResponse;
     dailyBriefingCache.set(`${cacheKey}:latest`, response);
     dailyBriefingCache.set(versionedCacheKey, response);

@@ -161,12 +161,16 @@ function isPercentageType(type: CovenantType): boolean {
 }
 
 /**
- * Format currency value
+ * Format currency value (defaults to USD; pass company currency when available)
  */
-export function formatCurrency(value: number): string {
-  return new Intl.NumberFormat('en-US', {
+export function formatCurrency(
+  value: number,
+  currency: string = 'USD',
+  locale?: string
+): string {
+  return new Intl.NumberFormat(locale || (currency === 'CAD' ? 'en-CA' : 'en-US'), {
     style: 'currency',
-    currency: 'USD',
+    currency,
     minimumFractionDigits: 0,
     maximumFractionDigits: 0
   }).format(value);

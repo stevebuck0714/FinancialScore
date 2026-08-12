@@ -2,6 +2,7 @@
 
 import React, { useEffect, useMemo, useState } from 'react';
 import { LineChart } from '../charts/Charts';
+import { useCompanyMoneyFormatter } from '@/app/hooks/useCompanyMoneyFormatter';
 
 type Finding = {
    id: string;
@@ -31,7 +32,6 @@ const BUCKET_PRIORITY: Record<string, number> = {
   opportunities: 0,
 };
 
-const formatCurrency = (value: number) => `$${(value / 1000).toFixed(0)}k`;
 const formatPercent = (value: number) => `${value.toFixed(1)}%`;
 const normalizeMetric = (value: string) => value.toLowerCase().replace(/[^a-z0-9]/g, '');
 
@@ -73,7 +73,11 @@ const findMatchingKey = (metricName: string, sample: any) => {
   return null;
 };
 
-const resolveChartConfig = (metricName: string, monthly: any[]) => {
+const resolveChartConfig = (
+  metricName: string,
+  monthly: any[],
+  formatCurrency: (value: number) => string
+) => {
   if (!metricName || monthly.length === 0) return null;
   const normalized = normalizeMetric(metricName);
 
@@ -226,6 +230,8 @@ const getBucketId = (finding: Finding) => {
 };
  
  export default function FocusBoard({ companyId }: FocusBoardProps) {
+   const money = useCompanyMoneyFormatter(companyId);
+   const formatCurrency = (value: number) => money.fmtCompact(value);
    const [findings, setFindings] = useState<Finding[]>([]);
    const [loading, setLoading] = useState(true);
    const [error, setError] = useState<string | null>(null);
@@ -323,7 +329,7 @@ const getBucketId = (finding: Finding) => {
   const chartMetricName = chartFinding?.metric || chartFinding?.payload?.title || '';
   const chartConfig = useMemo(() => {
     if (!chartMetricName) return null;
-    return resolveChartConfig(chartMetricName, monthly);
+    return resolveChartConfig(chartMetricName, monthly, formatCurrency);
   }, [chartMetricName, monthly]);
  
   const findingsByBucket = useMemo(() => {

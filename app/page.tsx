@@ -66,6 +66,7 @@ const DocumentsTab = dynamic(() => import('./components/dashboard/DocumentsTab')
 const ConsultantDashboard = dynamic(() => import('./components/consultant/ConsultantDashboard'), { ssr: false });
 const CompanyManagementTab = dynamic(() => import('./components/admin/CompanyManagementTab'), { ssr: false });
 const CompanySettingsTab = dynamic(() => import('./components/admin/CompanySettingsTab'), { ssr: false });
+const CompanyCurrencySettings = dynamic(() => import('./components/company/CompanyCurrencySettings'), { ssr: false });
 
 // Feature flag for covenants module
 const COVENANTS_ENABLED = process.env.NEXT_PUBLIC_COVENANTS_ENABLED === 'true' || true; // Default to enabled for development
@@ -167,6 +168,8 @@ import GoalsView from './components/GoalsView';
 import TrendAnalysisView from './components/TrendAnalysisView';
 import SimpleChart from './components/SimpleChart';
 import toast, { Toaster } from 'react-hot-toast';
+import { formatMoney } from '@/lib/format/currency';
+import { resolveDisplayCurrency } from '@/lib/constants/currencies';
 
 // Constants (now imported from ./constants)
 
@@ -175,9 +178,9 @@ import toast, { Toaster } from 'react-hot-toast';
 
 // Helper functions (now imported from ./utils/*)
 
-// Format currency as $1,234,567 (no decimals, with commas)
-const formatDollar = (value: number): string => {
-  return '$' + Math.round(Math.abs(value)).toLocaleString('en-US');
+// Format currency (defaults USD; pass company base/reporting currency when available)
+const formatDollar = (value: number, currency: string = 'USD'): string => {
+  return formatMoney(Math.round(Math.abs(value)), { currency, decimals: 0 });
 };
 
 const resolveCompanyLandingView = (user: any, company?: any): 'operations' | 'daily-alerts' => {
@@ -920,6 +923,7 @@ const getRevenueQualityExecutiveNarrative = (params: {
   hasOpsData: boolean;
   hasQualifierOverrides: boolean;
   contractTimingReceivablesLikely: boolean;
+  formatMoney?: (value: number) => string;
 }) => {
   const {
     topRevenueBucketPct,
@@ -930,6 +934,7 @@ const getRevenueQualityExecutiveNarrative = (params: {
     hasOpsData,
     hasQualifierOverrides,
     contractTimingReceivablesLikely,
+    formatMoney = formatDollar,
   } = params;
   const highConcentration = topRevenueBucketPct >= 90;
   const contractBackedModel =
@@ -942,7 +947,7 @@ const getRevenueQualityExecutiveNarrative = (params: {
     return {
       outcome: `Revenue is concentrated, with the top revenue bucket at ${topRevenueBucketPct.toFixed(1)}%, primarily tied to multi-period contract flow.`,
       meaning: `${sectorLabel} contract revenue can support valuation stability when counterparties are strong and renewal durability is visible; concentration becomes risk if contract economics or renewals weaken.`,
-      impact: `Quality signal is constructive for valuation narrative, while dependency risk must be managed through renewal coverage and margin durability. Estimated pricing/mix upside remains $${Math.round(pricingImprovement).toLocaleString()}.`,
+      impact: `Quality signal is constructive for valuation narrative, while dependency risk must be managed through renewal coverage and margin durability. Estimated pricing/mix upside remains ${formatMoney(pricingImprovement)}.`,
       action: 'Track top-contract renewal calendar, backlog coverage, gross margin by contract cohort, and customer dependency thresholds each quarter.',
       confidenceLabel: confidence,
     };
@@ -952,7 +957,7 @@ const getRevenueQualityExecutiveNarrative = (params: {
     return {
       outcome: `Revenue is concentrated, with the top revenue bucket at ${topRevenueBucketPct.toFixed(1)}%.`,
       meaning: `In ${sectorLabel}, this can pressure forecast resilience and buyer confidence unless concentration is supported by durable contracts and strong collections behavior.`,
-      impact: `Concentration can create diligence pressure and multiple sensitivity if renewal visibility is limited. Estimated pricing/mix upside: $${Math.round(pricingImprovement).toLocaleString()}.`,
+      impact: `Concentration can create diligence pressure and multiple sensitivity if renewal visibility is limited. Estimated pricing/mix upside: ${formatMoney(pricingImprovement)}.`,
       action: 'Reduce dependency by widening revenue sources, and strengthen renewal/collections discipline for top accounts.',
       confidenceLabel: confidence,
     };
@@ -961,7 +966,7 @@ const getRevenueQualityExecutiveNarrative = (params: {
   return {
     outcome: `Revenue concentration is within a manageable range, with the top revenue bucket at ${topRevenueBucketPct.toFixed(1)}%.`,
     meaning: `Revenue mix currently supports a stable narrative for ${sectorLabel}, subject to continued contract and margin performance.`,
-    impact: `Lower concentration generally supports valuation resilience; pricing/mix improvement still represents an estimated $${Math.round(pricingImprovement).toLocaleString()} opportunity.`,
+    impact: `Lower concentration generally supports valuation resilience; pricing/mix improvement still represents an estimated ${formatMoney(pricingImprovement)} opportunity.`,
     action: contractTimingReceivablesLikely
       ? 'Validate billing-milestone timing and AR conversion by contract cohort to preserve confidence in contracted growth.'
       : 'Maintain diversification momentum and monitor top-account margin and renewal trends.',
@@ -977,6 +982,7 @@ const getWorkingCapitalExecutiveNarrative = (params: {
   qualifiers: RevenueAnalysisQualifiers;
   contractTimingReceivablesLikely: boolean;
   hasOpsData: boolean;
+  formatMoney?: (value: number) => string;
 }) => {
   const {
     wcTotalImpact,
@@ -986,6 +992,7 @@ const getWorkingCapitalExecutiveNarrative = (params: {
     qualifiers,
     contractTimingReceivablesLikely,
     hasOpsData,
+    formatMoney = formatDollar,
   } = params;
   const contractConstrained =
     contractTimingReceivablesLikely ||
@@ -1001,9 +1008,9 @@ const getWorkingCapitalExecutiveNarrative = (params: {
 
   if (contractConstrained) {
     return {
-      outcome: `Working-capital structural opportunity is $${Math.round(wcTotalImpact).toLocaleString()}, with the largest lever in ${primaryWcDriverLabel.toLowerCase()}.`,
+      outcome: `Working-capital structural opportunity is ${formatMoney(wcTotalImpact)}, with the largest lever in ${primaryWcDriverLabel.toLowerCase()}.`,
       meaning: `In ${sectorLabel}, contract/billing structure can limit short-term cash unlock even when model-based opportunity is high.`,
-      impact: `Near-term unlockable (0-90 days): ~${formatDollar(nearTermUnlockableEstimate)}; structural opportunity (90-365+ days): ${formatDollar(wcTotalImpact)}.`,
+      impact: `Near-term unlockable (0-90 days): ~${formatMoney(nearTermUnlockableEstimate)}; structural opportunity (90-365+ days): ${formatMoney(wcTotalImpact)}.`,
       action: 'Sequence actions by horizon: first tighten billing/collection execution on delinquent balances, then renegotiate terms and contract design at renewal to realize structural cash release.',
       confidenceLabel: confidence,
       nearTermUnlockableEstimate,
@@ -1012,9 +1019,9 @@ const getWorkingCapitalExecutiveNarrative = (params: {
   }
 
   return {
-    outcome: `Working-capital opportunity is $${Math.round(wcTotalImpact).toLocaleString()}, led by ${primaryWcDriverLabel.toLowerCase()} optimization.`,
+    outcome: `Working-capital opportunity is ${formatMoney(wcTotalImpact)}, led by ${primaryWcDriverLabel.toLowerCase()} optimization.`,
     meaning: 'Cash can be improved through operating-cycle discipline without requiring top-line growth.',
-    impact: `${primaryWcDriverLabel} is the primary lever at approximately ${formatDollar(primaryWcDriverValue)} potential impact.`,
+    impact: `${primaryWcDriverLabel} is the primary lever at approximately ${formatMoney(primaryWcDriverValue)} potential impact.`,
     action: 'Execute 30/60/90-day cycle improvements across collections cadence, inventory turns, and payables execution.',
     confidenceLabel: confidence,
     nearTermUnlockableEstimate,
@@ -1029,6 +1036,7 @@ const getCashFlowQualityExecutiveNarrative = (params: {
   ebitdaBase: number;
   qualifiers: RevenueAnalysisQualifiers;
   contractTimingReceivablesLikely: boolean;
+  formatMoney?: (value: number) => string;
 }) => {
   const {
     cashConversionPct,
@@ -1037,6 +1045,7 @@ const getCashFlowQualityExecutiveNarrative = (params: {
     ebitdaBase,
     qualifiers,
     contractTimingReceivablesLikely,
+    formatMoney = formatDollar,
   } = params;
   const contractConstrained =
     contractTimingReceivablesLikely ||
@@ -1046,7 +1055,7 @@ const getCashFlowQualityExecutiveNarrative = (params: {
     return {
       outcome: `Cash conversion is ${cashConversionPct.toFixed(1)}% versus a sector target of ${sectorTarget.toFixed(1)}%.`,
       meaning: 'Lower conversion may partially reflect contract-timing and milestone billing dynamics, not only operating weakness.',
-      impact: `Operating cash flow is ${formatDollar(opCashFlow)} on EBITDA of ${formatDollar(ebitdaBase)}; near-term cash conversion gains are likely gradual under current contract terms.`,
+      impact: `Operating cash flow is ${formatMoney(opCashFlow)} on EBITDA of ${formatMoney(ebitdaBase)}; near-term cash conversion gains are likely gradual under current contract terms.`,
       action: 'Separate timing-driven gap from controllable leakage by tracking billing milestone aging, collection velocity, and contract-cohort conversion monthly.',
     };
   }
@@ -1054,7 +1063,7 @@ const getCashFlowQualityExecutiveNarrative = (params: {
   return {
     outcome: `Cash conversion is ${cashConversionPct.toFixed(1)}% versus a sector target of ${sectorTarget.toFixed(1)}%.`,
     meaning: 'Cash realization is lagging earnings performance, creating liquidity drag.',
-    impact: `Operating cash flow is ${formatDollar(opCashFlow)} on EBITDA of ${formatDollar(ebitdaBase)}.`,
+    impact: `Operating cash flow is ${formatMoney(opCashFlow)} on EBITDA of ${formatMoney(ebitdaBase)}.`,
     action: 'Tighten conversion discipline through AR speed, inventory control, and purchasing cadence.',
   };
 };
@@ -1206,6 +1215,23 @@ function FinancialScorePage() {
   const selectedCompany = useMemo(
     () => (Array.isArray(companies) ? companies.find((c: any) => c.id === selectedCompanyId) : undefined),
     [companies, selectedCompanyId]
+  );
+  const companyDisplayCurrency = useMemo(
+    () =>
+      resolveDisplayCurrency({
+        baseCurrency: selectedCompany?.baseCurrency,
+        reportingCurrency: selectedCompany?.reportingCurrency,
+      }),
+    [selectedCompany?.baseCurrency, selectedCompany?.reportingCurrency]
+  );
+  const formatDollar = useCallback(
+    (value: number) =>
+      formatMoney(Math.round(Math.abs(value)), {
+        currency: companyDisplayCurrency,
+        locale: selectedCompany?.locale,
+        decimals: 0,
+      }),
+    [companyDisplayCurrency, selectedCompany?.locale]
   );
   const demoAccessState = useMemo(() => {
     const userDemoCompany = Boolean(currentUser?.demoCompany);
@@ -4213,6 +4239,8 @@ function FinancialScorePage() {
           strengths: mdaAnalysis.strengths,
           weaknesses: mdaAnalysis.weaknesses,
           insights: mdaAnalysis.insights,
+          currencyCode: companyDisplayCurrency,
+          currencyNote: `All currency amounts are expressed in ${companyDisplayCurrency}.`,
         }),
       });
 
@@ -11236,7 +11264,7 @@ function FinancialScorePage() {
     };
     const money = (value: number) => {
       const safe = Number(value);
-      return Number.isFinite(safe) ? `$${Math.round(safe).toLocaleString()}` : 'N/A';
+      return Number.isFinite(safe) ? `${formatDollar(safe)}` : 'N/A';
     };
     const lines: string[] = [valuationReportSectionDisplayTitle('1. Executive Summary'), ''];
     if (valuationBuilderSelections.es_enterpriseValueRange) {
@@ -11647,7 +11675,7 @@ function FinancialScorePage() {
         <div style="padding: 18px 20px; border-bottom: 1px solid #e2e8f0; background: #f8fafc;">
           <div style="font-size: 20px; color: #0f172a; font-weight: 800; letter-spacing: -0.02em;">Corelytics Valuation Report</div>
           <div style="font-size: 18px; color: #1e293b; font-weight: 800; margin-top: 6px;">Business Overview</div>
-          <div style="font-size: 16px; color: #475569; margin-top: 4px; line-height: 1.45;">Prepared for: <strong>${esc(companyName || 'Selected Company')}</strong> | Generated: ${esc(new Date().toLocaleDateString('en-US'))}</div>
+          <div style="font-size: 16px; color: #475569; margin-top: 4px; line-height: 1.45;">Prepared for: <strong>${esc(companyName || 'Selected Company')}</strong> | Generated: ${esc(new Date().toLocaleDateString('en-US'))} | Currency: ${esc(companyDisplayCurrency)}</div>
         </div>
         <div style="padding: 16px 18px; display: grid; gap: 12px;">
           ${backgroundHistoryHtml}
@@ -11662,6 +11690,7 @@ function FinancialScorePage() {
     valuationBuilderSelections,
     company,
     companyName,
+    companyDisplayCurrency,
     companyBackgroundHistory,
     marketPositionCompetitiveLandscape,
     competitorTable,
@@ -11690,7 +11719,7 @@ function FinancialScorePage() {
       <div style="padding: 18px 20px; border-bottom: 1px solid #e2e8f0; background: #f8fafc;">
         <div style="font-size: 20px; color: #0f172a; font-weight: 800; letter-spacing: -0.02em;">Corelytics Valuation Report</div>
         <div style="font-size: 18px; color: #1e293b; font-weight: 800; margin-top: 6px;">${esc(sectionTitle)}</div>
-        <div style="font-size: 16px; color: #475569; margin-top: 4px; line-height: 1.45;">Prepared for: <strong>${esc(companyName || 'Selected Company')}</strong> | Generated: ${esc(new Date().toLocaleDateString('en-US'))}</div>
+        <div style="font-size: 16px; color: #475569; margin-top: 4px; line-height: 1.45;">Prepared for: <strong>${esc(companyName || 'Selected Company')}</strong> | Generated: ${esc(new Date().toLocaleDateString('en-US'))} | Currency: ${esc(companyDisplayCurrency)}</div>
       </div>`;
 
     if (valuationDataRoomLoading) {
@@ -11774,6 +11803,7 @@ function FinancialScorePage() {
     valuationDataRoomError,
     valuationReportSectionDisplayTitle,
     companyName,
+    companyDisplayCurrency,
   ]);
   const historicalFinancialSummaryData = useMemo(() => {
     const asNumber = (value: unknown): number => {
@@ -12028,7 +12058,7 @@ function FinancialScorePage() {
     };
   }, [monthly, trendData, mdaAnalysis]);
   const buildHistoricalFinancialSummaryReportText = useCallback((): string => {
-    const money = (value: number) => `$${Math.round(value).toLocaleString()}`;
+    const money = (value: number) => `${formatDollar(value)}`;
     const fmtPct = (value: number) => `${value.toFixed(1)}%`;
     const lines: string[] = [valuationReportSectionDisplayTitle('3. Historical Financial Summary'), ''];
     if (valuationBuilderSelections.hfs_revenue) {
@@ -12074,7 +12104,7 @@ function FinancialScorePage() {
         .replace(/&/g, '&amp;')
         .replace(/</g, '&lt;')
         .replace(/>/g, '&gt;');
-    const money = (value: number) => `$${Math.round(value).toLocaleString()}`;
+    const money = (value: number) => `${formatDollar(value)}`;
     const pct = (value: number) => `${value.toFixed(1)}%`;
     const quarters = historicalFinancialSummaryData.quarters;
     const chartValues = historicalFinancialSummaryData.totalRevenueByQuarter;
@@ -12296,14 +12326,14 @@ function FinancialScorePage() {
         <div style="padding: 18px 20px; border-bottom: 1px solid #e2e8f0; background: #f8fafc;">
           <div style="font-size: 20px; color: #0f172a; font-weight: 800; letter-spacing: -0.02em;">Corelytics Valuation Report</div>
           <div style="font-size: 18px; color: #1e293b; font-weight: 800; margin-top: 6px;">Historical Financial Summary</div>
-          <div style="font-size: 16px; color: #475569; margin-top: 4px; line-height: 1.45;">Prepared for: <strong>${esc(companyName || 'Selected Company')}</strong> | Generated: ${esc(new Date().toLocaleDateString('en-US'))}</div>
+          <div style="font-size: 16px; color: #475569; margin-top: 4px; line-height: 1.45;">Prepared for: <strong>${esc(companyName || 'Selected Company')}</strong> | Generated: ${esc(new Date().toLocaleDateString('en-US'))} | Currency: ${esc(companyDisplayCurrency)}</div>
         </div>
         <div style="padding: 16px 18px;">
           ${sections.join('')}
         </div>
       </div>
     `;
-  }, [historicalFinancialSummaryData, valuationBuilderSelections, companyName]);
+  }, [historicalFinancialSummaryData, valuationBuilderSelections, companyName, companyDisplayCurrency]);
   const buildValuationSectionReportText = useCallback((sectionId: string, sectionTitle: string): string => {
     if (sectionId === '1') return buildExecutiveSummaryReportText();
     if (sectionId === '2') return buildBusinessOverviewReportText();
@@ -12321,7 +12351,7 @@ function FinancialScorePage() {
 
     const money = (value: number) => {
       const safe = Number(value);
-      return Number.isFinite(safe) ? `$${Math.round(safe).toLocaleString()}` : 'N/A';
+      return Number.isFinite(safe) ? `${formatDollar(safe)}` : 'N/A';
     };
     const pct = (value: number | null | undefined) =>
       Number.isFinite(Number(value)) ? `${Number(value).toFixed(1)}%` : 'N/A';
@@ -13028,12 +13058,12 @@ function FinancialScorePage() {
       <div style="border: 1px solid #e2e8f0; border-radius: 10px; overflow: hidden; background: #ffffff;">
         <div style="padding: 18px 20px; border-bottom: 1px solid #e2e8f0; background: #f8fafc;">
           <div style="font-size: 20px; color: #0f172a; font-weight: 800; letter-spacing: -0.02em;">Corelytics Valuation Report</div>
-          <div style="font-size: 16px; color: #475569; margin-top: 6px; line-height: 1.45;">Prepared for: <strong>${escapeHtml(companyName || 'Selected Company')}</strong> | Generated: ${escapeHtml(new Date().toLocaleDateString('en-US'))}</div>
+          <div style="font-size: 16px; color: #475569; margin-top: 6px; line-height: 1.45;">Prepared for: <strong>${escapeHtml(companyName || 'Selected Company')}</strong> | Generated: ${escapeHtml(new Date().toLocaleDateString('en-US'))} | Currency: ${escapeHtml(companyDisplayCurrency)}</div>
         </div>
         <div style="padding: 20px 22px;">${blocks.join('')}</div>
       </div>
     `;
-  }, [companyName]);
+  }, [companyName, companyDisplayCurrency]);
 
   const buildMarketOpportunityScanReportHtml = useCallback((): string => {
     const escapeHtml = (value: string) =>
@@ -13121,14 +13151,14 @@ function FinancialScorePage() {
         <div style="padding: 18px 20px; border-bottom: 1px solid #e2e8f0; background: #f8fafc;">
           <div style="font-size: 20px; color: #0f172a; font-weight: 800; letter-spacing: -0.02em;">Corelytics Valuation Report</div>
           <div style="font-size: 18px; color: #1e293b; font-weight: 800; margin-top: 6px;">${escapeHtml(title)}</div>
-          <div style="font-size: 16px; color: #475569; margin-top: 4px; line-height: 1.45;">Prepared for: <strong>${escapeHtml(companyName || 'Selected Company')}</strong> | Generated: ${escapeHtml(new Date().toLocaleDateString('en-US'))}</div>
+          <div style="font-size: 16px; color: #475569; margin-top: 4px; line-height: 1.45;">Prepared for: <strong>${escapeHtml(companyName || 'Selected Company')}</strong> | Generated: ${escapeHtml(new Date().toLocaleDateString('en-US'))} | Currency: ${escapeHtml(companyDisplayCurrency)}</div>
         </div>
         <div style="padding: 16px 18px; display: grid; gap: 12px;">
           ${cardHtml}
         </div>
       </div>
     `;
-  }, [buildValuationSectionReportText, companyName]);
+  }, [buildValuationSectionReportText, companyName, companyDisplayCurrency]);
 
   const VALUATION_PAGE_BREAK_MARKER = '__VALUATION_PAGE_BREAK__';
   const buildStyledValuationReportPaginatedHtml = useCallback(
@@ -13237,13 +13267,13 @@ function FinancialScorePage() {
       <div style="border: 1px solid #e2e8f0; border-radius: 10px; overflow: hidden; background: #ffffff;">
         <div style="padding: 18px 20px; border-bottom: 1px solid #e2e8f0; background: #f8fafc;">
           <div style="font-size: 20px; color: #0f172a; font-weight: 800; letter-spacing: -0.02em;">Corelytics Valuation Report</div>
-          <div style="font-size: 16px; color: #475569; margin-top: 6px; line-height: 1.45;">Prepared for: <strong>${escapeHtml(companyName || 'Selected Company')}</strong> | Generated: ${escapeHtml(new Date().toLocaleDateString('en-US'))}</div>
+          <div style="font-size: 16px; color: #475569; margin-top: 6px; line-height: 1.45;">Prepared for: <strong>${escapeHtml(companyName || 'Selected Company')}</strong> | Generated: ${escapeHtml(new Date().toLocaleDateString('en-US'))} | Currency: ${escapeHtml(companyDisplayCurrency)}</div>
         </div>
         <div style="padding: 20px 22px;">${partsHtml.join('')}</div>
       </div>
     `;
     },
-    [companyName, buildStyledValuationReportHtml]
+    [companyName, companyDisplayCurrency, buildStyledValuationReportHtml]
   );
 
   const handleValuationSectionView = useCallback((sectionId: string, sectionTitle: string) => {
@@ -14916,6 +14946,16 @@ function FinancialScorePage() {
           {/* Import Financials Tab */}
           {adminDashboardTab === 'import-financials' && selectedCompanyId && (
             <>
+              <CompanyCurrencySettings
+                company={companies.find((c) => c.id === selectedCompanyId) || null}
+                selectedCompanyId={selectedCompanyId}
+                variant="card"
+                onCompanyUpdated={(updated) => {
+                  setCompanies((prev) =>
+                    prev.map((c) => (c.id === updated.id ? { ...c, ...updated } : c))
+                  );
+                }}
+              />
               {/* QuickBooks Data Verification Section */}
               {loadedMonthlyData && loadedMonthlyData.length > 0 && qbRawData && (
                 <div style={{ background: 'white', borderRadius: '12px', padding: '24px', marginBottom: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', border: '2px solid #10b981' }}>
@@ -14968,11 +15008,11 @@ function FinancialScorePage() {
                           {loadedMonthlyData.slice(-6).map((m, idx) => (
                             <tr key={idx} style={{ borderBottom: '1px solid #f1f5f9' }}>
                               <td style={{ padding: '8px', color: '#1e293b' }}>{formatMonthShort(m.date)}</td>
-                              <td style={{ padding: '8px', textAlign: 'right', color: '#10b981', fontWeight: '600' }}>${m.revenue.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</td>
-                              <td style={{ padding: '8px', textAlign: 'right', color: '#ef4444', fontWeight: '600' }}>${m.expense.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</td>
-                              <td style={{ padding: '8px', textAlign: 'right', color: '#f59e0b' }}>${m.cogsTotal.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</td>
+                              <td style={{ padding: '8px', textAlign: 'right', color: '#10b981', fontWeight: '600' }}>{formatDollar(m.revenue)}</td>
+                              <td style={{ padding: '8px', textAlign: 'right', color: '#ef4444', fontWeight: '600' }}>{formatDollar(m.expense)}</td>
+                              <td style={{ padding: '8px', textAlign: 'right', color: '#f59e0b' }}>{formatDollar(m.cogsTotal)}</td>
                               <td style={{ padding: '8px', textAlign: 'right', color: (m.revenue - m.expense - m.cogsTotal) >= 0 ? '#10b981' : '#ef4444', fontWeight: '600' }}>
-                                ${(m.revenue - m.expense - m.cogsTotal).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+                                {formatDollar((m.revenue - m.expense - m.cogsTotal))}
                               </td>
                             </tr>
                           ))}
@@ -14999,11 +15039,11 @@ function FinancialScorePage() {
                           {loadedMonthlyData.slice(-6).map((m, idx) => (
                             <tr key={idx} style={{ borderBottom: '1px solid #f1f5f9' }}>
                               <td style={{ padding: '8px', color: '#1e293b' }}>{formatMonthShort(m.date)}</td>
-                              <td style={{ padding: '8px', textAlign: 'right', color: '#10b981', fontWeight: '600' }}>${m.cash.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</td>
-                              <td style={{ padding: '8px', textAlign: 'right', color: '#3b82f6' }}>${m.ar.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</td>
-                              <td style={{ padding: '8px', textAlign: 'right', color: '#f59e0b' }}>${m.ap.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</td>
-                              <td style={{ padding: '8px', textAlign: 'right', color: '#8b5cf6', fontWeight: '600' }}>${m.totalAssets.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</td>
-                              <td style={{ padding: '8px', textAlign: 'right', color: '#ec4899', fontWeight: '600' }}>${m.totalEquity.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</td>
+                              <td style={{ padding: '8px', textAlign: 'right', color: '#10b981', fontWeight: '600' }}>{formatDollar(m.cash)}</td>
+                              <td style={{ padding: '8px', textAlign: 'right', color: '#3b82f6' }}>{formatDollar(m.ar)}</td>
+                              <td style={{ padding: '8px', textAlign: 'right', color: '#f59e0b' }}>{formatDollar(m.ap)}</td>
+                              <td style={{ padding: '8px', textAlign: 'right', color: '#8b5cf6', fontWeight: '600' }}>{formatDollar(m.totalAssets)}</td>
+                              <td style={{ padding: '8px', textAlign: 'right', color: '#ec4899', fontWeight: '600' }}>{formatDollar(m.totalEquity)}</td>
                             </tr>
                           ))}
                         </tbody>
@@ -15885,7 +15925,7 @@ function FinancialScorePage() {
                             <strong>Top departments:</strong>{' '}
                             {platosSource.parsedWorkbook.categorySummary!.topDepartmentsBySales!
                               .slice(0, 3)
-                              .map((row) => `${row.department} ($${Math.round(row.currentSales).toLocaleString('en-US')})`)
+                              .map((row) => `${row.department} (${formatDollar(row.currentSales)})`)
                               .join(', ')}
                           </div>
                         ) : null}
@@ -16317,7 +16357,7 @@ function FinancialScorePage() {
                                       color: isIncome ? '#10b981' : '#ef4444', 
                                       fontWeight: val !== 0 ? '600' : '400' 
                                     }}>
-                                      ${val.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+                                      {formatDollar(val)}
                                     </td>
                                   ))}
                                 </tr>
@@ -16347,11 +16387,11 @@ function FinancialScorePage() {
                           {loadedMonthlyData.slice(-6).map((m, idx) => (
                             <tr key={idx} style={{ borderBottom: '1px solid #f1f5f9' }}>
                               <td style={{ padding: '8px', color: '#1e293b' }}>{formatMonthShort(m.date)}</td>
-                              <td style={{ padding: '8px', textAlign: 'right', color: '#10b981', fontWeight: '600' }}>${m.cash.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</td>
-                              <td style={{ padding: '8px', textAlign: 'right', color: '#3b82f6' }}>${m.ar.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</td>
-                              <td style={{ padding: '8px', textAlign: 'right', color: '#f59e0b' }}>${m.ap.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</td>
-                              <td style={{ padding: '8px', textAlign: 'right', color: '#8b5cf6', fontWeight: '600' }}>${m.totalAssets.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</td>
-                              <td style={{ padding: '8px', textAlign: 'right', color: '#ec4899', fontWeight: '600' }}>${m.totalEquity.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</td>
+                              <td style={{ padding: '8px', textAlign: 'right', color: '#10b981', fontWeight: '600' }}>{formatDollar(m.cash)}</td>
+                              <td style={{ padding: '8px', textAlign: 'right', color: '#3b82f6' }}>{formatDollar(m.ar)}</td>
+                              <td style={{ padding: '8px', textAlign: 'right', color: '#f59e0b' }}>{formatDollar(m.ap)}</td>
+                              <td style={{ padding: '8px', textAlign: 'right', color: '#8b5cf6', fontWeight: '600' }}>{formatDollar(m.totalAssets)}</td>
+                              <td style={{ padding: '8px', textAlign: 'right', color: '#ec4899', fontWeight: '600' }}>{formatDollar(m.totalEquity)}</td>
                             </tr>
                           ))}
                         </tbody>
@@ -19448,7 +19488,7 @@ function FinancialScorePage() {
                                     <td style={{ padding: '6px 8px', color: '#64748b', fontSize: '11px', fontFamily: 'monospace' }}>{idColumnDisplay || '—'}</td>
                                     <td style={{ padding: '6px 8px', color: '#1e293b', fontSize: '11px' }}>{account.description}</td>
                                     <td style={{ padding: '6px 8px', textAlign: 'right', color: latestValue >= 0 ? '#10b981' : '#ef4444', fontWeight: '600', fontSize: '11px', fontFamily: 'monospace' }}>
-                                      ${Math.abs(latestValue).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                      {formatDollar(Math.abs(latestValue))}
                                       {latestValue < 0 && ' (CR)'}
                                     </td>
                                   </tr>
@@ -19567,7 +19607,7 @@ function FinancialScorePage() {
                                 <td style={{ padding: '6px 8px', textAlign: 'right', color: latestValue == null ? '#64748b' : latestValue >= 0 ? '#10b981' : '#ef4444', fontWeight: '600', fontSize: '11px', fontFamily: 'monospace' }}>
                                   {latestValue == null
                                     ? 'N/A'
-                                    : `$${Math.abs(latestValue).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}${latestValue < 0 ? ' (CR)' : ''}`}
+                                    : `${formatDollar(Math.abs(latestValue))}${latestValue < 0 ? ' (CR)' : ''}`}
                                 </td>
                               </tr>
                             );
@@ -19757,7 +19797,7 @@ function FinancialScorePage() {
                                       <td style={{ padding: '6px 8px', textAlign: 'right', color: row.numericValue == null ? '#64748b' : row.numericValue >= 0 ? '#10b981' : '#ef4444', fontWeight: 600, fontFamily: 'monospace' }}>
                                         {row.numericValue == null
                                           ? (row.rawValue || 'N/A')
-                                          : `$${Math.abs(row.numericValue).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}${row.numericValue < 0 ? ' (CR)' : ''}`}
+                                          : `${formatDollar(Math.abs(row.numericValue))}${row.numericValue < 0 ? ' (CR)' : ''}`}
                                       </td>
                                     </tr>
                                   ))}
@@ -20129,6 +20169,9 @@ function FinancialScorePage() {
           worstCaseRevMultiplier={worstCaseRevMultiplier}
           worstCaseExpMultiplier={worstCaseExpMultiplier}
           onExportToWord={handleExportMdaToWord}
+          baseCurrency={selectedCompany?.baseCurrency}
+          reportingCurrency={selectedCompany?.reportingCurrency}
+          locale={selectedCompany?.locale}
         />
       )}
 
@@ -20338,6 +20381,7 @@ function FinancialScorePage() {
               </h1>
               <p style={{ margin: 0, fontSize: '20px', color: 'rgba(255,255,255,0.92)' }}>
                 Prepared for: <strong>{companyName || 'Selected Company'}</strong>
+                {companyDisplayCurrency ? ` · Currency: ${companyDisplayCurrency}` : ''}
               </p>
             </div>
 
@@ -20597,7 +20641,7 @@ function FinancialScorePage() {
                   <div style={{ fontSize: '20px', color: '#0f172a', fontWeight: 800, letterSpacing: '-0.02em' }}>Corelytics Valuation Report</div>
                   <div style={{ fontSize: '18px', color: '#1e293b', fontWeight: 800, marginTop: '6px' }}>Business Overview</div>
                   <div style={{ fontSize: '16px', color: '#475569', marginTop: '4px', lineHeight: 1.45 }}>
-                    Prepared for: <strong>{companyName || 'Selected Company'}</strong> | Generated: {new Date().toLocaleDateString('en-US')}
+                    Prepared for: <strong>{companyName || 'Selected Company'}</strong> | Generated: {new Date().toLocaleDateString('en-US')} | Currency: {companyDisplayCurrency}
                   </div>
                 </div>
                 <div style={{ padding: '16px 18px', display: 'grid', gap: '12px' }}>
@@ -21395,15 +21439,23 @@ function FinancialScorePage() {
             };
 
             const formatDollars = (value: number): string => {
-              if (!Number.isFinite(value) || Math.abs(value) < 0.5) return '$-';
-              const roundedAbs = Math.round(Math.abs(value)).toLocaleString();
-              return value < 0 ? `($${roundedAbs})` : `$${roundedAbs}`;
+              if (!Number.isFinite(value) || Math.abs(value) < 0.5) {
+                return formatMoney(0, { currency: companyDisplayCurrency, decimals: 0 }).replace(/[\d.,]+/, '—');
+              }
+              const formatted = formatMoney(Math.round(Math.abs(value)), {
+                currency: companyDisplayCurrency,
+                decimals: 0,
+              });
+              return value < 0 ? `(${formatted})` : formatted;
             };
 
             const formatInputDollars = (value: number): string => {
               const rounded = Math.round(Number(value) || 0);
-              const abs = Math.abs(rounded).toLocaleString();
-              return rounded < 0 ? `-$${abs}` : `$${abs}`;
+              const formatted = formatMoney(Math.abs(rounded), {
+                currency: companyDisplayCurrency,
+                decimals: 0,
+              });
+              return rounded < 0 ? `-${formatted}` : formatted;
             };
 
             const parseInputDollars = (raw: string): number => {
@@ -21924,7 +21976,7 @@ function FinancialScorePage() {
                   id: 'wc-deficit',
                   title: 'WC below normalized target',
                   triggered: wcAdjustment < 0,
-                  detail: `Current vs target: $${Math.round(currentWc).toLocaleString()} vs $${Math.round(normalizedTarget).toLocaleString()}`,
+                  detail: `Current vs target: ${formatDollar(currentWc)} vs ${formatDollar(normalizedTarget)}`,
                   severity: wcAdjustment < -Math.abs(normalizedTarget) * 0.2 ? 'high' : 'medium'
                 },
                 {
@@ -22080,7 +22132,7 @@ function FinancialScorePage() {
                   id: 'capex-gap',
                   title: 'Maintenance CapEx underinvestment',
                   triggered: capexGap > 0,
-                  detail: `Estimated gap: $${Math.round(capexGap).toLocaleString()} (maintenance - reported)`,
+                  detail: `Estimated gap: ${formatDollar(capexGap)} (maintenance - reported)`,
                   severity: capexGap > Math.max(1, Math.abs(ttmEbitda) * sdeSectorBenchmarks.cashFlow.capexGapHighPctOfEbitda) ? 'high' : 'medium'
                 },
                 {
@@ -22096,7 +22148,7 @@ function FinancialScorePage() {
                     ? 'Cash flow trend deterioration'
                     : 'Cash flow trend stable',
                   triggered: cashConversionTrend < -sdeSectorBenchmarks.cashFlow.conversionTrendWarn || fcfTrend < 0 || ocfTrend < 0,
-                  detail: `OCF trend: ${ocfTrend >= 0 ? '+' : ''}$${Math.round(Math.abs(ocfTrend)).toLocaleString()} | FCF trend: ${fcfTrend >= 0 ? '+' : ''}$${Math.round(Math.abs(fcfTrend)).toLocaleString()} | Conversion trend: ${cashConversionTrend >= 0 ? '+' : ''}${cashConversionTrend.toFixed(1)} pts`,
+                  detail: `OCF trend: ${ocfTrend >= 0 ? '+' : ''}${formatDollar(Math.abs(ocfTrend))} | FCF trend: ${fcfTrend >= 0 ? '+' : ''}${formatDollar(Math.abs(fcfTrend))} | Conversion trend: ${cashConversionTrend >= 0 ? '+' : ''}${cashConversionTrend.toFixed(1)} pts`,
                   severity: (cashConversionTrend < -sdeSectorBenchmarks.cashFlow.conversionTrendHigh || (ocfTrend < 0 && fcfTrend < 0)) ? 'high' : 'medium'
                 }
               ];
@@ -22223,7 +22275,7 @@ function FinancialScorePage() {
               'wc-deficit': {
                 title: 'WC Adjustment vs Target',
                 formula: 'Adjustment = Current Operating WC - Normalized WC Target (12M average)',
-                plain: [`Current adjustment is ${workingCapitalInsights.wcAdjustment >= 0 ? '+' : ''}$${Math.round(workingCapitalInsights.wcAdjustment).toLocaleString()}.`],
+                plain: [`Current adjustment is ${workingCapitalInsights.wcAdjustment >= 0 ? '+' : ''}${formatDollar(workingCapitalInsights.wcAdjustment)}.`],
                 why: [
                   'Negative adjustments can reduce seller proceeds in closing true-up mechanics.',
                   'Positive adjustments indicate more cash tied in working capital than baseline.',
@@ -22265,7 +22317,7 @@ function FinancialScorePage() {
               'capex-gap': {
                 title: 'Maintenance CapEx Gap',
                 formula: 'CapEx Gap = Maintenance CapEx estimate - Reported CapEx',
-                plain: [`Current gap is ${cashFlowQualityInsights.capexGap >= 0 ? '+' : ''}$${Math.round(cashFlowQualityInsights.capexGap).toLocaleString()}.`],
+                plain: [`Current gap is ${cashFlowQualityInsights.capexGap >= 0 ? '+' : ''}${formatDollar(cashFlowQualityInsights.capexGap)}.`],
                 why: [
                   'Positive gaps can indicate deferred reinvestment and future cash needs.',
                 ],
@@ -22281,7 +22333,7 @@ function FinancialScorePage() {
               'ocf-deterioration': {
                 title: 'Operating Cash Flow Trend',
                 formula: 'Trend compares current TTM vs prior TTM',
-                plain: [`OCF trend is ${cashFlowQualityInsights.ocfTrend >= 0 ? '+' : '-'}$${Math.round(Math.abs(cashFlowQualityInsights.ocfTrend)).toLocaleString()} over TTM.`],
+                plain: [`OCF trend is ${cashFlowQualityInsights.ocfTrend >= 0 ? '+' : '-'}${formatDollar(Math.abs(cashFlowQualityInsights.ocfTrend))} over TTM.`],
                 why: [
                   'Downward trend can reduce confidence in near-term cash generation.',
                 ],
@@ -22797,7 +22849,7 @@ function FinancialScorePage() {
                                   <g key={pct}>
                                     <line x1={pad.left} y1={y} x2={width - pad.right} y2={y} stroke="#e2e8f0" strokeWidth="1" />
                                     <text x={pad.left - 8} y={y + 4} textAnchor="end" fontSize="10" fill="#64748b">
-                                      {`$${Math.round(val / 1000).toLocaleString()}K`}
+                                      {`${formatDollar(val / 1000)}K`}
                                     </text>
                                   </g>
                                 );
@@ -22836,8 +22888,8 @@ function FinancialScorePage() {
                                       fontWeight="700"
                                     >
                                       {bar.type === 'delta'
-                                        ? `${delta >= 0 ? '+' : '-'}$${Math.round(Math.abs(delta) / 1000).toLocaleString()}K`
-                                        : `$${Math.round(bar.end / 1000).toLocaleString()}K`}
+                                        ? `${delta >= 0 ? '+' : '-'}${formatDollar(Math.abs(delta) / 1000)}K`
+                                        : `${formatDollar(bar.end / 1000)}K`}
                                     </text>
                                     <text x={cx} y={height - pad.bottom + 14} textAnchor="middle" fontSize="9" fill="#475569">
                                       {bar.label}
@@ -23088,7 +23140,7 @@ function FinancialScorePage() {
                   <div style={{ marginTop: '8px', fontSize: '12px', color: '#334155' }}>
                     <strong>Cash improvement opportunity:</strong>{' '}
                     {revenueQualityInsights.dsoCashOpportunity > 0
-                      ? `Reducing DSO to sector benchmark (${revenueQualityInsights.dsoBenchmarkTarget.toFixed(1)} days) could release approximately $${Math.round(revenueQualityInsights.dsoCashOpportunity).toLocaleString()} of cash.`
+                      ? `Reducing DSO to sector benchmark (${revenueQualityInsights.dsoBenchmarkTarget.toFixed(1)} days) could release approximately ${formatDollar(revenueQualityInsights.dsoCashOpportunity)} of cash.`
                       : `DSO is at or below sector benchmark (${revenueQualityInsights.dsoBenchmarkTarget.toFixed(1)} days).`}
                   </div>
                 </div>
@@ -23810,6 +23862,7 @@ function FinancialScorePage() {
                       qualifiers: inferredRevenue.qualifiers,
                       contractTimingReceivablesLikely,
                       hasOpsData: customerQualityInsights.hasData || sdeHasRealOperationalData,
+                      formatMoney: formatDollar,
                     });
                     return (
                       <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '8px', marginBottom: '8px' }}>
@@ -23836,7 +23889,7 @@ function FinancialScorePage() {
                         </button>
                       </div>
                       <div style={{ fontSize: '17px', fontWeight: 700, color: '#1e293b' }}>
-                        ${Math.round(workingCapitalInsights.normalizedTarget).toLocaleString()}
+                        {formatDollar(workingCapitalInsights.normalizedTarget)}
                       </div>
                       <button
                         onClick={() => setWorkingCapitalFlagGraphOpen('wc-deficit')}
@@ -23867,7 +23920,7 @@ function FinancialScorePage() {
                         </button>
                       </div>
                       <div style={{ fontSize: '17px', fontWeight: 700, color: '#1e293b' }}>
-                        ${Math.round(workingCapitalInsights.currentWc).toLocaleString()}
+                        {formatDollar(workingCapitalInsights.currentWc)}
                       </div>
                       <button
                         onClick={() => setWorkingCapitalFlagGraphOpen('wc-deficit')}
@@ -23898,7 +23951,7 @@ function FinancialScorePage() {
                         </button>
                       </div>
                       <div style={{ fontSize: '17px', fontWeight: 700, color: workingCapitalInsights.wcAdjustment < 0 ? '#ef4444' : '#10b981' }}>
-                        {workingCapitalInsights.wcAdjustment >= 0 ? '+' : ''}${Math.round(workingCapitalInsights.wcAdjustment).toLocaleString()}
+                        {workingCapitalInsights.wcAdjustment >= 0 ? '+' : ''}{formatDollar(workingCapitalInsights.wcAdjustment)}
                       </div>
                       <button
                         onClick={() => setWorkingCapitalFlagGraphOpen('wc-deficit')}
@@ -24121,11 +24174,11 @@ function FinancialScorePage() {
                         </div>
                         <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '10px' }}>
                           <div style={{ fontSize: '12px', color: '#64748b' }}>Working Capital Tied Up</div>
-                          <div style={{ fontSize: '18px', fontWeight: 700, color: '#1e293b' }}>${Math.round(workingCapitalInsights.operatingWcFromCcc).toLocaleString()}</div>
+                          <div style={{ fontSize: '18px', fontWeight: 700, color: '#1e293b' }}>{formatDollar(workingCapitalInsights.operatingWcFromCcc)}</div>
                         </div>
                         <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '10px' }}>
                           <div style={{ fontSize: '12px', color: '#64748b' }}>Cash per CCC Day</div>
-                          <div style={{ fontSize: '18px', fontWeight: 700, color: '#1e293b' }}>${Math.round(workingCapitalInsights.cashImpactPerCccDay).toLocaleString()}</div>
+                          <div style={{ fontSize: '18px', fontWeight: 700, color: '#1e293b' }}>{formatDollar(workingCapitalInsights.cashImpactPerCccDay)}</div>
                         </div>
                         <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '10px' }}>
                           <div style={{ fontSize: '12px', color: '#64748b' }}>WC as % of Revenue</div>
@@ -24135,11 +24188,11 @@ function FinancialScorePage() {
                       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '10px' }}>
                         <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '10px' }}>
                           <div style={{ fontSize: '13px', fontWeight: 700, color: '#334155', marginBottom: '6px' }}>Component Conversion to Dollars</div>
-                          <div style={{ fontSize: '12px', color: '#475569', lineHeight: 1.6 }}>AR tied up: ${Math.round(workingCapitalInsights.arTiedUp).toLocaleString()}</div>
-                          <div style={{ fontSize: '12px', color: '#475569', lineHeight: 1.6 }}>Inventory tied up: ${Math.round(workingCapitalInsights.inventoryTiedUp).toLocaleString()}</div>
-                          <div style={{ fontSize: '12px', color: '#475569', lineHeight: 1.6 }}>Supplier financing (AP): ${Math.round(workingCapitalInsights.supplierFinancing).toLocaleString()}</div>
+                          <div style={{ fontSize: '12px', color: '#475569', lineHeight: 1.6 }}>AR tied up: {formatDollar(workingCapitalInsights.arTiedUp)}</div>
+                          <div style={{ fontSize: '12px', color: '#475569', lineHeight: 1.6 }}>Inventory tied up: {formatDollar(workingCapitalInsights.inventoryTiedUp)}</div>
+                          <div style={{ fontSize: '12px', color: '#475569', lineHeight: 1.6 }}>Supplier financing (AP): {formatDollar(workingCapitalInsights.supplierFinancing)}</div>
                           <div style={{ fontSize: '12px', color: '#334155', lineHeight: 1.6, fontWeight: 700, marginTop: '6px' }}>
-                            Operating WC impact: ${Math.round(workingCapitalInsights.operatingWcFromCcc).toLocaleString()}
+                            Operating WC impact: {formatDollar(workingCapitalInsights.operatingWcFromCcc)}
                           </div>
                         </div>
                         <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '10px' }}>
@@ -24148,7 +24201,7 @@ function FinancialScorePage() {
                             Estimated cash needed for growth (CCC x daily revenue growth):
                           </div>
                           <div style={{ fontSize: '20px', fontWeight: 700, color: workingCapitalInsights.cashNeededForGrowth > 0 ? '#ef4444' : '#10b981', marginTop: '6px' }}>
-                            ${Math.round(workingCapitalInsights.cashNeededForGrowth).toLocaleString()}
+                            {formatDollar(workingCapitalInsights.cashNeededForGrowth)}
                           </div>
                         </div>
                       </div>
@@ -24159,7 +24212,7 @@ function FinancialScorePage() {
                             <div key={scenario.days} style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '8px' }}>
                               <div style={{ fontSize: '12px', color: '#64748b' }}>{scenario.days >= 0 ? `+${scenario.days}` : `${scenario.days}`} days</div>
                               <div style={{ fontSize: '15px', fontWeight: 700, color: scenario.cashImpact > 0 ? '#ef4444' : '#10b981' }}>
-                                ${Math.round(Math.abs(scenario.cashImpact)).toLocaleString()} {scenario.cashImpact > 0 ? 'used' : 'freed'}
+                                {formatDollar(Math.abs(scenario.cashImpact))} {scenario.cashImpact > 0 ? 'used' : 'freed'}
                               </div>
                             </div>
                           ))}
@@ -24296,7 +24349,7 @@ function FinancialScorePage() {
                         </button>
                       </div>
                       <div style={{ fontSize: '18px', fontWeight: 700, color: '#1e293b' }}>
-                        ${Math.round(cashFlowQualityInsights.maintenanceCapexEstimate).toLocaleString()}
+                        {formatDollar(cashFlowQualityInsights.maintenanceCapexEstimate)}
                       </div>
                       <button
                         onClick={() => setCashFlowQualityFlagGraphOpen('capex-gap')}
@@ -24319,7 +24372,7 @@ function FinancialScorePage() {
                         </button>
                       </div>
                       <div style={{ fontSize: '18px', fontWeight: 700, color: cashFlowQualityInsights.capexGap > 0 ? '#ef4444' : '#10b981' }}>
-                        {cashFlowQualityInsights.capexGap >= 0 ? '+' : ''}${Math.round(cashFlowQualityInsights.capexGap).toLocaleString()}
+                        {cashFlowQualityInsights.capexGap >= 0 ? '+' : ''}{formatDollar(cashFlowQualityInsights.capexGap)}
                       </div>
                       <button
                         onClick={() => setCashFlowQualityFlagGraphOpen('capex-gap')}
@@ -24801,7 +24854,7 @@ function FinancialScorePage() {
                       <div style={{ background: '#f0fdf4', borderRadius: '8px', padding: '12px' }}>
                         <div style={{ marginBottom: '8px' }}>
                           <div style={{ fontSize: '14px', color: '#64748b', marginBottom: '4px' }}>Trailing 12 Months SDE</div>
-                          <div style={{ fontSize: '28px', fontWeight: '700', color: '#10b981' }}>${Math.round(ttmSDE).toLocaleString()}</div>
+                          <div style={{ fontSize: '28px', fontWeight: '700', color: '#10b981' }}>{formatDollar(ttmSDE)}</div>
                         </div>
                       </div>
                       <div style={{ background: '#ffffff', borderRadius: '8px', padding: '12px', border: '1px solid #e2e8f0' }}>
@@ -24809,7 +24862,7 @@ function FinancialScorePage() {
                           Estimated Business Value (SDE)
                         </div>
                         <div style={{ fontSize: '28px', fontWeight: '700', color: '#10b981' }}>
-                          ${Math.round(sdeValuation).toLocaleString()}
+                          {formatDollar(sdeValuation)}
                         </div>
                       </div>
                       <div style={{ background: '#ecfdf5', borderRadius: '8px', padding: '12px', border: '1px solid #86efac' }}>
@@ -24822,9 +24875,9 @@ function FinancialScorePage() {
                             const topTotalPotentialValue = sdeValuation + topValueOpportunity;
                             return (
                               <>
-                                <div>Adjusted value: ${Math.round(sdeValuation).toLocaleString()}</div>
-                                <div>Estimated improvement opportunity: ${Math.round(topValueOpportunity).toLocaleString()}</div>
-                                <div>Total potential value: ${Math.round(topTotalPotentialValue).toLocaleString()}</div>
+                                <div>Adjusted value: {formatDollar(sdeValuation)}</div>
+                                <div>Estimated improvement opportunity: {formatDollar(topValueOpportunity)}</div>
+                                <div>Total potential value: {formatDollar(topTotalPotentialValue)}</div>
                               </>
                             );
                           })()}
@@ -25037,7 +25090,7 @@ function FinancialScorePage() {
                             : ebitdaAdjustments === 0
                               ? 'moderate_risk'
                               : 'high_risk',
-                        impactValue: `Adjustment opportunity ${ebitdaAdjustments >= 0 ? '+' : ''}$${Math.round(ebitdaAdjustments).toLocaleString()}`,
+                        impactValue: `Adjustment opportunity ${ebitdaAdjustments >= 0 ? '+' : ''}${formatDollar(ebitdaAdjustments)}`,
                       },
                       {
                         area: 'Working Capital Efficiency',
@@ -25047,7 +25100,7 @@ function FinancialScorePage() {
                             : wcTotalImpact > 0
                               ? 'moderate_risk'
                               : 'healthy',
-                        impactValue: `Cash release potential $${Math.round(wcTotalImpact).toLocaleString()}`,
+                        impactValue: `Cash release potential ${formatDollar(wcTotalImpact)}`,
                       },
                       {
                         area: 'Cash Flow Quality',
@@ -25119,6 +25172,7 @@ function FinancialScorePage() {
                       hasOpsData: customerQualityInsights.hasData || sdeHasRealOperationalData,
                       hasQualifierOverrides,
                       contractTimingReceivablesLikely,
+                      formatMoney: formatDollar,
                     });
                     const workingCapitalNarrative = getWorkingCapitalExecutiveNarrative({
                       wcTotalImpact,
@@ -25128,6 +25182,7 @@ function FinancialScorePage() {
                       qualifiers: inferredRevenue.qualifiers,
                       contractTimingReceivablesLikely,
                       hasOpsData: customerQualityInsights.hasData || sdeHasRealOperationalData,
+                      formatMoney: formatDollar,
                     });
                     const cashFlowNarrative = getCashFlowQualityExecutiveNarrative({
                       cashConversionPct,
@@ -25136,6 +25191,7 @@ function FinancialScorePage() {
                       ebitdaBase,
                       qualifiers: inferredRevenue.qualifiers,
                       contractTimingReceivablesLikely,
+                      formatMoney: formatDollar,
                     });
                     const revenueValueImpact = pricingImprovement * valuationMultiple;
                     const cashConversionGapValue = Math.max(
@@ -25155,11 +25211,11 @@ function FinancialScorePage() {
                       },
                       {
                         title: 'EBITDA Quality',
-                        outcome: `Quality-of-earnings review identified ${ebitdaAdjustments >= 0 ? 'add-back' : 'downside'} adjustments of ${ebitdaAdjustments >= 0 ? '+' : ''}$${Math.round(ebitdaAdjustments).toLocaleString()}.`,
+                        outcome: `Quality-of-earnings review identified ${ebitdaAdjustments >= 0 ? 'add-back' : 'downside'} adjustments of ${ebitdaAdjustments >= 0 ? '+' : ''}${formatDollar(ebitdaAdjustments)}.`,
                         meaning: 'Normalized earnings are stronger than reported headline EBITDA, improving valuation credibility.',
                         valueAdjustment: `EBITDA adjustment: ${ebitdaAdjustments >= 0 ? '+' : '-'}${formatDollar(Math.abs(ebitdaAdjustments))}`,
                         valueImpact: `Valuation impact @ ${valuationMultiple.toFixed(1)}x: ${valuationImpactFromAdjustments >= 0 ? '+' : '-'}${formatDollar(Math.abs(valuationImpactFromAdjustments))}`,
-                        impact: `Estimated valuation impact at ${valuationMultiple.toFixed(1)}x: $${Math.round(valuationImpactFromAdjustments).toLocaleString()}.`,
+                        impact: `Estimated valuation impact at ${valuationMultiple.toFixed(1)}x: ${formatDollar(valuationImpactFromAdjustments)}.`,
                         action: 'Document adjustment support and lock in recurring earnings improvements.',
                       },
                       {
@@ -25300,7 +25356,7 @@ function FinancialScorePage() {
                     <div style={{ background: '#ede9fe', borderRadius: '8px', padding: '12px' }}>
                       <div style={{ marginBottom: '8px' }}>
                         <div style={{ fontSize: '13px', color: '#64748b', marginBottom: '4px' }}>Trailing 12 Months EBITDA</div>
-                        <div style={{ fontSize: '24px', fontWeight: '700', color: '#667eea' }}>${Math.round(ttmEBITDA).toLocaleString()}</div>
+                        <div style={{ fontSize: '24px', fontWeight: '700', color: '#667eea' }}>{formatDollar(ttmEBITDA)}</div>
                       </div>
                       
                       <div style={{ fontSize: '13px', color: '#475569', lineHeight: '1.6' }}>
@@ -25317,10 +25373,10 @@ function FinancialScorePage() {
                         Estimated Business Value (EBITDA)
                       </div>
                       <div style={{ fontSize: '28px', fontWeight: '700', color: '#667eea' }}>
-                        ${Math.round(ebitdaValuation).toLocaleString()}
+                        {formatDollar(ebitdaValuation)}
                       </div>
                       <div style={{ fontSize: '13px', color: '#64748b', marginTop: '4px' }}>
-                        Range: ${Math.round(ttmEBITDA * 3.0).toLocaleString()} - ${Math.round(ttmEBITDA * 8.0).toLocaleString()}
+                        Range: {formatDollar(ttmEBITDA * 3.0)} - {formatDollar(ttmEBITDA * 8.0)}
                       </div>
                     </div>
                   </div>
@@ -25385,7 +25441,7 @@ function FinancialScorePage() {
                             <div style={{ fontSize: '12px', color: '#475569', lineHeight: 1.6 }}>
                               <div>Cash conversion: {cashFlowQualityInsights.cashConversionPct.toFixed(1)}%</div>
                               <div>FCF durability: {cashFlowQualityInsights.fcfDurabilityPct.toFixed(1)}%</div>
-                              <div>CapEx gap: {cashFlowQualityInsights.capexGap >= 0 ? '+' : ''}${Math.round(cashFlowQualityInsights.capexGap).toLocaleString()}</div>
+                              <div>CapEx gap: {cashFlowQualityInsights.capexGap >= 0 ? '+' : ''}{formatDollar(cashFlowQualityInsights.capexGap)}</div>
                             </div>
                           </>
                         )}
@@ -25476,7 +25532,7 @@ function FinancialScorePage() {
                         return (
                           <div style={{ fontSize: '13px', color: '#475569', lineHeight: 1.7 }}>
                             <div><strong style={{ color: '#1e293b' }}>Investment view:</strong> EBITDA quality has <strong style={{ color: '#1e293b' }}>{qualityLabel}</strong> from a cash-realization perspective.</div>
-                            <div><strong style={{ color: '#1e293b' }}>Evidence:</strong> Cash conversion {conversion.toFixed(1)}%, FCF durability {durability.toFixed(1)}%, maintenance CapEx gap {cashFlowQualityInsights.capexGap >= 0 ? '+' : ''}${Math.round(cashFlowQualityInsights.capexGap).toLocaleString()}.</div>
+                            <div><strong style={{ color: '#1e293b' }}>Evidence:</strong> Cash conversion {conversion.toFixed(1)}%, FCF durability {durability.toFixed(1)}%, maintenance CapEx gap {cashFlowQualityInsights.capexGap >= 0 ? '+' : ''}{formatDollar(cashFlowQualityInsights.capexGap)}.</div>
                             <div><strong style={{ color: '#1e293b' }}>Valuation implication:</strong> Cash-quality profile implies {impliedMultipleAdj >= 0 ? '+' : ''}{impliedMultipleAdj.toFixed(1)}x adjustment to defendable EBITDA multiple.</div>
                             <div><strong style={{ color: '#1e293b' }}>Diligence focus:</strong> Confirm recurring conversion versus one-off working-capital timing benefits.</div>
                           </div>
@@ -25581,7 +25637,7 @@ function FinancialScorePage() {
                               color="#6366f1"
                               compact
                               labelFormat="m-yy-adaptive"
-                              formatter={(v) => `${Math.round(v).toLocaleString()}`}
+                              formatter={(v) => `{formatDollar(v)}`}
                             />
                           </div>
                         ) : (
@@ -25636,7 +25692,7 @@ function FinancialScorePage() {
                           color="#f97316"
                           compact
                           labelFormat="m-yy-adaptive"
-                          formatter={(v) => `${v < 0 ? '-' : ''}$${Math.round(Math.abs(v)).toLocaleString()}`}
+                          formatter={(v) => `${v < 0 ? '-' : ''}${formatDollar(Math.abs(v))}`}
                         />
                       </div>
                     )}
@@ -25758,7 +25814,7 @@ function FinancialScorePage() {
                           Estimated Business Value (DCF)
                         </div>
                         <div style={{ fontSize: '28px', fontWeight: '700', color: '#f59e0b' }}>
-                          ${Math.round(dcfValue).toLocaleString()}
+                          {formatDollar(dcfValue)}
                         </div>
                         <div style={{ fontSize: '13px', color: '#64748b', marginTop: '8px' }}>
                           <strong>Note:</strong> DCF based on Free Cash Flow (FCF) projections. Valuations are highly sensitive to assumptions about growth rates, discount rates, working capital, and capital expenditures.
@@ -25769,43 +25825,43 @@ function FinancialScorePage() {
                     <div style={{ background: '#ffffff', borderRadius: '10px', padding: '14px', border: '1px solid #fde68a' }}>
                       <div style={{ marginBottom: '10px', paddingBottom: '8px', borderBottom: '1px solid #fde68a' }}>
                         <div style={{ fontSize: '12px', color: '#92400e', marginBottom: '3px', fontWeight: 700 }}>Trailing 12 Months Free Cash Flow</div>
-                        <div style={{ fontSize: '24px', fontWeight: 700, color: '#d97706' }}>${Math.round(ttmFreeCashFlow).toLocaleString()}</div>
+                        <div style={{ fontSize: '24px', fontWeight: 700, color: '#d97706' }}>{formatDollar(ttmFreeCashFlow)}</div>
                       </div>
 
                       <div style={{ fontSize: '12px', color: '#78350f', lineHeight: 1.6 }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '5px' }}>
                           <span>TTM Revenue</span>
-                          <span style={{ fontWeight: 600 }}>${Math.round(ttmRevenue).toLocaleString()}</span>
+                          <span style={{ fontWeight: 600 }}>{formatDollar(ttmRevenue)}</span>
                         </div>
                         <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '5px' }}>
                           <span>- COGS</span>
-                          <span style={{ fontWeight: 600 }}>(${Math.round(ttmCOGS).toLocaleString()})</span>
+                          <span style={{ fontWeight: 600 }}>({formatDollar(ttmCOGS)})</span>
                         </div>
                         <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '5px' }}>
                           <span>- Operating Expenses</span>
-                          <span style={{ fontWeight: 600 }}>(${Math.round(ttmExpense).toLocaleString()})</span>
+                          <span style={{ fontWeight: 600 }}>({formatDollar(ttmExpense)})</span>
                         </div>
                         <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '5px' }}>
                           <span style={{ fontWeight: 600 }}>= Net Income</span>
-                          <span style={{ fontWeight: 600 }}>${Math.round(ttmNetIncomeForDcf).toLocaleString()}</span>
+                          <span style={{ fontWeight: 600 }}>{formatDollar(ttmNetIncomeForDcf)}</span>
                         </div>
                         <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '5px' }}>
                           <span>+ Depreciation/Amortization</span>
-                          <span style={{ fontWeight: 600 }}>${Math.round(ttmDepreciation).toLocaleString()}</span>
+                          <span style={{ fontWeight: 600 }}>{formatDollar(ttmDepreciation)}</span>
                         </div>
                         <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '5px' }}>
                           <span>+ Change in Working Capital</span>
                           <span style={{ fontWeight: 600 }}>
-                            {changeInWC >= 0 ? '+' : '-'}${Math.round(Math.abs(changeInWC)).toLocaleString()}
+                            {changeInWC >= 0 ? '+' : '-'}{formatDollar(Math.abs(changeInWC))}
                           </span>
                         </div>
                         <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px', paddingBottom: '6px', borderBottom: '1px solid #fde68a' }}>
                           <span>- Capital Expenditures</span>
-                          <span style={{ fontWeight: 600 }}>(${Math.round(ttmCapEx).toLocaleString()})</span>
+                          <span style={{ fontWeight: 600 }}>({formatDollar(ttmCapEx)})</span>
                         </div>
                         <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '6px' }}>
                           <span style={{ fontWeight: 700 }}>= Free Cash Flow</span>
-                          <span style={{ fontWeight: 700, color: '#d97706' }}>${Math.round(ttmFreeCashFlow).toLocaleString()}</span>
+                          <span style={{ fontWeight: 700, color: '#d97706' }}>{formatDollar(ttmFreeCashFlow)}</span>
                         </div>
                       </div>
                     </div>
@@ -25864,7 +25920,7 @@ function FinancialScorePage() {
                             <div style={{ fontSize: '12px', color: '#475569', lineHeight: 1.6 }}>
                               <div>Current CCC: {workingCapitalInsights.currentCcc.toFixed(1)} days</div>
                               <div>WC intensity (12M): {workingCapitalInsights.avgWcIntensity12.toFixed(1)}%</div>
-                              <div>Cash needed for growth: ${Math.round(workingCapitalInsights.cashNeededForGrowth).toLocaleString()}</div>
+                              <div>Cash needed for growth: {formatDollar(workingCapitalInsights.cashNeededForGrowth)}</div>
                             </div>
                           </>
                         )}
@@ -25874,7 +25930,7 @@ function FinancialScorePage() {
                             <div style={{ fontSize: '12px', color: '#475569', lineHeight: 1.6 }}>
                               <div>Cash conversion: {cashFlowQualityInsights.cashConversionPct.toFixed(1)}%</div>
                               <div>FCF durability: {cashFlowQualityInsights.fcfDurabilityPct.toFixed(1)}% of EBITDA</div>
-                              <div>CapEx gap: {cashFlowQualityInsights.capexGap >= 0 ? '+' : ''}${Math.round(cashFlowQualityInsights.capexGap).toLocaleString()}</div>
+                              <div>CapEx gap: {cashFlowQualityInsights.capexGap >= 0 ? '+' : ''}{formatDollar(cashFlowQualityInsights.capexGap)}</div>
                             </div>
                           </>
                         )}
@@ -25963,7 +26019,7 @@ function FinancialScorePage() {
                           return (
                             <div style={{ fontSize: '13px', color: '#475569', lineHeight: 1.7 }}>
                               <div><strong style={{ color: '#1e293b' }}>Investment view:</strong> Cash-flow forecast credibility is <strong style={{ color: '#1e293b' }}>{cashQualityLabel}</strong>.</div>
-                              <div><strong style={{ color: '#1e293b' }}>Base / stress:</strong> Year-1 FCF base ${Math.round(year1FcfBase).toLocaleString()} vs conservative case ${Math.round(year1FcfDownside).toLocaleString()}.</div>
+                              <div><strong style={{ color: '#1e293b' }}>Base / stress:</strong> Year-1 FCF base {formatDollar(year1FcfBase)} vs conservative case {formatDollar(year1FcfDownside)}.</div>
                               <div><strong style={{ color: '#1e293b' }}>Valuation implication:</strong> If conversion weakens, DCF downside is immediate through lower projected FCF.</div>
                               <div><strong style={{ color: '#1e293b' }}>Diligence focus:</strong> Validate sustainability of conversion and maintenance reinvestment assumptions.</div>
                             </div>
@@ -26043,7 +26099,7 @@ function FinancialScorePage() {
                           color="#ef4444"
                           compact
                           labelFormat="m-yy-adaptive"
-                          formatter={(v) => `${v < 0 ? '-' : ''}$${Math.round(Math.abs(v)).toLocaleString()}`}
+                          formatter={(v) => `${v < 0 ? '-' : ''}${formatDollar(Math.abs(v))}`}
                         />
                         <LineChart
                           title="Operating Working Capital ($)"
@@ -26051,7 +26107,7 @@ function FinancialScorePage() {
                           color="#0ea5e9"
                           compact
                           labelFormat="m-yy-adaptive"
-                          formatter={(v) => `${v < 0 ? '-' : ''}$${Math.round(Math.abs(v)).toLocaleString()}`}
+                          formatter={(v) => `${v < 0 ? '-' : ''}${formatDollar(Math.abs(v))}`}
                         />
                       </div>
                     )}
@@ -26080,7 +26136,7 @@ function FinancialScorePage() {
                           color="#f97316"
                           compact
                           labelFormat="m-yy-adaptive"
-                          formatter={(v) => `${v < 0 ? '-' : ''}$${Math.round(Math.abs(v)).toLocaleString()}`}
+                          formatter={(v) => `${v < 0 ? '-' : ''}${formatDollar(Math.abs(v))}`}
                         />
                       </div>
                     )}

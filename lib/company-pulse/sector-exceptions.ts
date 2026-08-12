@@ -1,5 +1,6 @@
 import prisma from '@/lib/prisma';
 import type { PulseAlertInput } from '@/lib/pulse-alerts';
+import { formatMoney as formatMoneyShared } from '@/lib/format/currency';
 
 export type SectorMetricRow = {
   companyId: string;
@@ -212,13 +213,9 @@ function pct(numerator: number, denominator: number): number | null {
   return (numerator / denominator) * 100;
 }
 
-function formatMetricValue(value: number, unit?: string | null): string {
+function formatMetricValue(value: number, unit?: string | null, currency: string = 'USD'): string {
   if (unit === '$' || unit === 'currency') {
-    return new Intl.NumberFormat('en-US', {
-      style: 'currency',
-      currency: 'USD',
-      maximumFractionDigits: 0,
-    }).format(value);
+    return formatMoneyShared(value, { currency, decimals: 0 });
   }
   if (unit === '%') return `${value.toFixed(1)}%`;
   if (unit) return `${value.toLocaleString(undefined, { maximumFractionDigits: 1 })} ${unit}`;
@@ -389,10 +386,12 @@ export function buildSectorExceptionAlerts(params: {
   sectorCategory?: string | null;
   rows: SectorMetricRow[];
   nowIso: string;
+  currency?: string | null;
 }): PulseAlertInput[] {
   const sectorCategory = normalizeSectorCategory(params.sectorCategory);
   const rules = SECTOR_RULES[sectorCategory] || SECTOR_RULES['01'];
   if (!params.rows.length || !rules.length) return [];
+  const currency = String(params.currency || 'USD').toUpperCase();
 
   return rules
     .map((ruleDef) => {
@@ -402,8 +401,8 @@ export function buildSectorExceptionAlerts(params: {
 
       const unit = ruleDef.unit || metricRows[0]?.unit;
       const worstEntity = findWorstEntity(metricRows, ruleDef, comparison);
-      const current = formatMetricValue(comparison.currentValue, unit);
-      const prior = formatMetricValue(comparison.priorValue, unit);
+      const current = formatMetricValue(comparison.currentValue, unit, currency);
+      const prior = formatMetricValue(comparison.priorValue, unit, currency);
       const deltaPct = formatDeltaPct(comparison.deltaPct);
       const directionWord = ruleDef.badDirection === 'higher_is_bad' ? 'increased' : 'fell';
       const whereText = worstEntity ? ` The largest issue is ${worstEntity.name}.` : '';
@@ -426,8 +425,8 @@ export function buildSectorExceptionAlerts(params: {
           formula: `Compare ${ruleDef.moduleKey}.${ruleDef.metricKey} latest snapshot to prior snapshot; emit only when movement is material and in the bad direction.`,
           threshold: [
             ruleDef.minDeltaPct != null ? `bad-direction change >= ${ruleDef.minDeltaPct}%` : '',
-            ruleDef.minDeltaAbs != null ? `absolute bad-direction change >= ${formatMetricValue(ruleDef.minDeltaAbs, unit)}` : '',
-            ruleDef.criticalCurrentValue != null ? `critical value ${formatMetricValue(ruleDef.criticalCurrentValue, unit)}` : '',
+            ruleDef.minDeltaAbs != null ? `absolute bad-direction change >= ${formatMetricValue(ruleDef.minDeltaAbs, unit, currency)}` : '',
+            ruleDef.criticalCurrentValue != null ? `critical value ${formatMetricValue(ruleDef.criticalCurrentValue, unit, currency)}` : '',
           ]
             .filter(Boolean)
             .join(' OR '),

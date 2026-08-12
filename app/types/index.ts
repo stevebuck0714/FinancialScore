@@ -197,6 +197,11 @@ export interface Company {
   addressState?: string;
   addressZip?: string;
   addressCountry?: string;
+  /** ISO 4217 books/home currency */
+  baseCurrency?: string;
+  /** Optional reporting currency for FX presentation */
+  reportingCurrency?: string | null;
+  locale?: string;
   industrySector?: number;
   accountingSystem?: string;
   companySizeCategory?: string;

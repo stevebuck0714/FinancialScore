@@ -37,6 +37,8 @@ import { isOperationalModuleAllowed } from '@/lib/operations/operational-dashboa
 import { buildWeeklyProductMarginModel } from '@/lib/operations/product-margin-weekly';
 import { getFieldDisplayName } from '@/lib/constants/field-display-names';
 import { formatDateInputLabel, formatDateSafeUtc, parseDateSafeUtc, toLocalInputDate } from '@/app/utils/date';
+import { formatMoney, formatMoneyCompact } from '@/lib/format/currency';
+import { localeForCurrency } from '@/lib/constants/currencies';
 import type { MonthlyDataRow, User } from '@/app/types';
 
 interface OperationsTabProps {
@@ -829,6 +831,11 @@ export default function OperationsTab({
   const [customerProfitabilityPeriod, setCustomerProfitabilityPeriod] = useState<'lastMonth' | 'last3' | 'last12'>('last12');
   const [customerConcentrationRenderStage, setCustomerConcentrationRenderStage] = useState(1);
   const [companyOperationalHubConfig, setCompanyOperationalHubConfig] = useState<any>(operationalHubConfig || null);
+  const [companyCurrency, setCompanyCurrency] = useState<{
+    baseCurrency: string;
+    reportingCurrency: string | null;
+    locale: string;
+  }>({ baseCurrency: 'USD', reportingCurrency: null, locale: 'en-US' });
   const [dailyFinancialView, setDailyFinancialView] = useState<'summary' | 'income' | 'balance' | 'cashflow'>('summary');
   const [dailyFinancialStatementRollup, setDailyFinancialStatementRollup] = useState<'daily' | 'monthly' | 'quarterly' | 'annual'>('daily');
   const [selectedDailyTrendMetrics, setSelectedDailyTrendMetrics] = useState<Array<'revenue' | 'expense' | 'net' | 'cash' | 'grossMargin' | 'marginPct'>>([
@@ -1449,6 +1456,14 @@ export default function OperationsTab({
             ? uda.operationalHub
             : null;
         setCompanyOperationalHubConfig(nextConfig);
+        const baseCurrency = String(company?.baseCurrency || 'USD').toUpperCase();
+        setCompanyCurrency({
+          baseCurrency,
+          reportingCurrency: company?.reportingCurrency
+            ? String(company.reportingCurrency).toUpperCase()
+            : null,
+          locale: String(company?.locale || localeForCurrency(baseCurrency)),
+        });
       })
       .catch((error) => {
         if (error?.name !== 'AbortError') {
@@ -1840,7 +1855,7 @@ export default function OperationsTab({
       ...(apiType === 'daily-financials'
         ? {
             statementRollup: dailyFinancialStatementRollup,
-            currency: 'USD',
+            currency: companyCurrency.reportingCurrency || companyCurrency.baseCurrency || 'USD',
           }
         : {}),
       ...(apiType === 'customers' && options?.refreshConcentration ? { refreshConcentration: '1' } : {}),
@@ -2893,39 +2908,24 @@ export default function OperationsTab({
     jumpToDataType(playbook.dataType);
   };
 
+  const moneyCurrency = companyCurrency.reportingCurrency || companyCurrency.baseCurrency || 'USD';
+  const moneyLocale = companyCurrency.locale || 'en-US';
+
   const formatCurrency = (value: number) => {
-    return new Intl.NumberFormat('en-US', {
-      style: 'currency',
-      currency: 'USD',
-      minimumFractionDigits: 0,
-      maximumFractionDigits: 0,
-    }).format(value);
+    return formatMoney(Number(value || 0), { currency: moneyCurrency, locale: moneyLocale, decimals: 0 });
   };
   const formatCurrencyWithCents = (value: number) => {
-    return new Intl.NumberFormat('en-US', {
-      style: 'currency',
-      currency: 'USD',
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2,
-    }).format(value);
+    return formatMoney(Number(value || 0), { currency: moneyCurrency, locale: moneyLocale, decimals: 2 });
   };
   const formatUnitCost = (value: number) => {
     const abs = Math.abs(Number(value || 0));
     const decimals = abs >= 100 ? 0 : abs >= 1 ? 2 : abs > 0 ? 4 : 2;
-    return new Intl.NumberFormat('en-US', {
-      style: 'currency',
-      currency: 'USD',
-      minimumFractionDigits: decimals,
-      maximumFractionDigits: decimals,
-    }).format(Number(value || 0));
+    return formatMoney(Number(value || 0), { currency: moneyCurrency, locale: moneyLocale, decimals });
   };
+  const formatAxisMoney = (value: number) =>
+    formatMoneyCompact(Number(value || 0), { currency: moneyCurrency, locale: moneyLocale });
   const formatForeignCurrency = (value: number, currency: string) => {
-    return new Intl.NumberFormat('en-US', {
-      style: 'currency',
-      currency,
-      minimumFractionDigits: 0,
-      maximumFractionDigits: 0,
-    }).format(value);
+    return formatMoney(Number(value || 0), { currency, locale: moneyLocale, decimals: 0 });
   };
 
   const formatDate = (dateString: string) => {
@@ -4167,7 +4167,7 @@ export default function OperationsTab({
           <BarChart data={Array.isArray(section?.chartData) ? section.chartData : []}>
             <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
             <XAxis dataKey="month" stroke="#64748b" style={{ fontSize: '12px' }} />
-            <YAxis stroke="#64748b" style={{ fontSize: '12px' }} tickFormatter={(value) => `$${(Number(value || 0) / 1000).toFixed(0)}k`} />
+            <YAxis stroke="#64748b" style={{ fontSize: '12px' }} tickFormatter={formatAxisMoney} />
             <Tooltip formatter={(value: any, name: any) => [formatCurrency(Number(value || 0)), String(name)]} />
             <Legend />
             {[
@@ -4219,7 +4219,7 @@ export default function OperationsTab({
             height={72}
             tickMargin={12}
           />
-          <YAxis stroke="#64748b" style={{ fontSize: '12px' }} tickFormatter={(value) => `$${(Number(value || 0) / 1000).toFixed(0)}k`} />
+          <YAxis stroke="#64748b" style={{ fontSize: '12px' }} tickFormatter={formatAxisMoney} />
           <Tooltip formatter={(value: any, name: any) => [formatCurrency(Number(value || 0)), String(name)]} />
           <Legend onClick={toggleCategorySalesSeries} wrapperStyle={{ cursor: 'pointer' }} />
           <Line type="monotone" dataKey="Total" name="Total Sales" stroke="#0f172a" strokeWidth={3} dot={{ r: 3 }} connectNulls hide={Boolean(hiddenCategorySalesSeries.Total)} />
@@ -4357,7 +4357,7 @@ export default function OperationsTab({
               <ComposedChart data={chartRows}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
                 <XAxis dataKey="period" stroke="#64748b" style={{ fontSize: '11px' }} />
-                <YAxis yAxisId="left" stroke="#64748b" style={{ fontSize: '12px' }} tickFormatter={(value) => `$${(Number(value || 0) / 1000).toFixed(0)}k`} />
+                <YAxis yAxisId="left" stroke="#64748b" style={{ fontSize: '12px' }} tickFormatter={formatAxisMoney} />
                 <YAxis yAxisId="right" orientation="right" stroke="#64748b" style={{ fontSize: '12px' }} tickFormatter={(value) => `${Number(value || 0).toFixed(0)}%`} />
                 <Tooltip formatter={(value: any, name: any) => [String(name) === 'Gross Margin %' ? formatPct(Number(value)) : formatCurrency(Number(value || 0)), String(name)]} />
                 <Legend />
@@ -4736,7 +4736,7 @@ export default function OperationsTab({
                   <BarChart data={customerTrendRows}>
                     <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
                     <XAxis dataKey="monthLabel" stroke="#64748b" style={{ fontSize: '11px' }} interval={customerTrendXAxisInterval} />
-                    <YAxis stroke="#64748b" style={{ fontSize: '12px' }} tickFormatter={(value) => `$${(Number(value || 0) / 1000).toFixed(0)}k`} />
+                    <YAxis stroke="#64748b" style={{ fontSize: '12px' }} tickFormatter={formatAxisMoney} />
                     <Tooltip
                       formatter={(value: any, name: any) => [
                         formatCurrency(Number(value || 0)),
@@ -4823,7 +4823,7 @@ export default function OperationsTab({
                     <ComposedChart data={salesReportPayload.grossMarginHistory.chartData}>
                       <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
                       <XAxis dataKey="month" stroke="#64748b" style={{ fontSize: '12px' }} />
-                      <YAxis yAxisId="left" stroke="#64748b" style={{ fontSize: '12px' }} tickFormatter={(value) => `$${(Number(value || 0) / 1000).toFixed(0)}k`} />
+                      <YAxis yAxisId="left" stroke="#64748b" style={{ fontSize: '12px' }} tickFormatter={formatAxisMoney} />
                       <YAxis yAxisId="right" orientation="right" stroke="#64748b" style={{ fontSize: '12px' }} tickFormatter={(value) => `${Number(value || 0).toFixed(0)}%`} />
                       <Tooltip
                         formatter={(value: any, name: any) =>
@@ -5603,7 +5603,7 @@ export default function OperationsTab({
                 <ResponsiveContainer width="100%" height={260}>
                   <BarChart data={retentionProxyRows} layout="vertical" margin={{ left: 16 }}>
                     <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-                    <XAxis type="number" stroke="#64748b" tickFormatter={(value) => `$${(Number(value || 0) / 1000).toFixed(0)}k`} />
+                    <XAxis type="number" stroke="#64748b" tickFormatter={formatAxisMoney} />
                     <YAxis type="category" dataKey="customer" stroke="#64748b" width={150} style={{ fontSize: '12px' }} />
                     <Tooltip formatter={(value: any) => formatCurrency(Number(value || 0))} />
                     <Legend />
@@ -5639,8 +5639,8 @@ export default function OperationsTab({
                   <ComposedChart data={invoiceVelocityTrend}>
                     <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
                     <XAxis dataKey="month" stroke="#64748b" style={{ fontSize: '12px' }} />
-                    <YAxis yAxisId="left" stroke="#64748b" style={{ fontSize: '12px' }} tickFormatter={(value) => `$${(Number(value || 0) / 1000).toFixed(0)}k`} />
-                    <YAxis yAxisId="right" orientation="right" stroke="#64748b" style={{ fontSize: '12px' }} tickFormatter={(value) => `$${(Number(value || 0) / 1000).toFixed(0)}k`} />
+                    <YAxis yAxisId="left" stroke="#64748b" style={{ fontSize: '12px' }} tickFormatter={formatAxisMoney} />
+                    <YAxis yAxisId="right" orientation="right" stroke="#64748b" style={{ fontSize: '12px' }} tickFormatter={formatAxisMoney} />
                     <Tooltip formatter={(value: any) => formatCurrency(Number(value || 0))} />
                     <Legend />
                     <Bar yAxisId="left" dataKey="revenue" fill="#1d4ed8" name="Revenue" />
@@ -6245,7 +6245,7 @@ export default function OperationsTab({
                 stroke="#64748b"
                 style={{ fontSize: '12px' }}
               />
-              <YAxis stroke="#64748b" style={{ fontSize: '12px' }} tickFormatter={(value) => `$${(value / 1000).toFixed(0)}k`} />
+              <YAxis stroke="#64748b" style={{ fontSize: '12px' }} tickFormatter={formatAxisMoney} />
               <Tooltip 
                 formatter={(value: any) => formatCurrency(value)}
                 contentStyle={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '8px' }}
@@ -6275,7 +6275,7 @@ export default function OperationsTab({
                 <ResponsiveContainer width="100%" height={280}>
                   <BarChart data={unpaidByCustomer} layout="vertical" margin={{ left: 24 }}>
                     <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-                    <XAxis type="number" stroke="#64748b" tickFormatter={(value) => `$${(value / 1000).toFixed(0)}k`} />
+                    <XAxis type="number" stroke="#64748b" tickFormatter={formatAxisMoney} />
                     <YAxis type="category" dataKey="customerName" stroke="#64748b" style={{ fontSize: '12px' }} width={140} />
                     <Tooltip formatter={(value: any) => formatCurrency(value)} />
                     <Bar dataKey="totalDue" name="Unpaid Amount">
@@ -7208,7 +7208,7 @@ export default function OperationsTab({
             <BarChart data={chartData}>
               <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
               <XAxis dataKey="month" stroke="#64748b" style={{ fontSize: '12px' }} />
-              <YAxis stroke="#64748b" style={{ fontSize: '12px' }} tickFormatter={(value) => `$${(value / 1000).toFixed(0)}k`} />
+              <YAxis stroke="#64748b" style={{ fontSize: '12px' }} tickFormatter={formatAxisMoney} />
               <Tooltip 
                 formatter={(value: any) => formatCurrency(value)}
                 contentStyle={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '8px' }}
@@ -7238,7 +7238,7 @@ export default function OperationsTab({
                 <ResponsiveContainer width="100%" height={280}>
                   <BarChart data={unpaidByVendor} layout="vertical" margin={{ left: 24 }}>
                     <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-                    <XAxis type="number" stroke="#64748b" tickFormatter={(value) => `$${(value / 1000).toFixed(0)}k`} />
+                    <XAxis type="number" stroke="#64748b" tickFormatter={formatAxisMoney} />
                     <YAxis type="category" dataKey="vendorName" stroke="#64748b" style={{ fontSize: '12px' }} width={140} />
                     <Tooltip formatter={(value: any) => formatCurrency(value)} />
                     <Bar dataKey="totalDue" name="Unpaid Amount">
@@ -7717,7 +7717,7 @@ export default function OperationsTab({
                   <BarChart data={vendorSpendCategories}>
                     <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
                     <XAxis dataKey="vendorName" angle={-20} textAnchor="end" height={70} stroke="#64748b" style={{ fontSize: '12px' }} interval={0} />
-                    <YAxis stroke="#64748b" style={{ fontSize: '12px' }} tickFormatter={(value) => `$${(Number(value || 0) / 1000).toFixed(0)}k`} />
+                    <YAxis stroke="#64748b" style={{ fontSize: '12px' }} tickFormatter={formatAxisMoney} />
                     <Tooltip formatter={(value: any) => [formatCurrency(Number(value || 0)), 'Spend']} />
                     <Legend />
                     <Bar dataKey="spend" fill="#2563eb" />
@@ -7737,7 +7737,7 @@ export default function OperationsTab({
                   <LineChart data={payrollLiabilityTrend}>
                     <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
                     <XAxis dataKey="period" stroke="#64748b" style={{ fontSize: '12px' }} />
-                    <YAxis stroke="#64748b" style={{ fontSize: '12px' }} tickFormatter={(value) => `$${(Number(value || 0) / 1000).toFixed(0)}k`} />
+                    <YAxis stroke="#64748b" style={{ fontSize: '12px' }} tickFormatter={formatAxisMoney} />
                     <Tooltip formatter={(value: any) => [formatCurrency(Number(value || 0)), 'Accrued Payroll Liability']} />
                     <Line type="monotone" dataKey="accruedPayrollLiability" stroke="#7c3aed" strokeWidth={2} dot={false} />
                   </LineChart>
@@ -7751,7 +7751,7 @@ export default function OperationsTab({
                   <LineChart data={expenseRunRate}>
                     <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
                     <XAxis dataKey="period" stroke="#64748b" style={{ fontSize: '12px' }} />
-                    <YAxis stroke="#64748b" style={{ fontSize: '12px' }} tickFormatter={(value) => `$${(Number(value || 0) / 1000).toFixed(0)}k`} />
+                    <YAxis stroke="#64748b" style={{ fontSize: '12px' }} tickFormatter={formatAxisMoney} />
                     <Tooltip formatter={(value: any) => [formatCurrency(Number(value || 0)), 'Expense Run Rate']} />
                     <Line type="monotone" dataKey="runRate" stroke="#0f766e" strokeWidth={2} dot={false} />
                   </LineChart>
@@ -10217,7 +10217,7 @@ export default function OperationsTab({
                 <BarChart data={merchandiseProfitability.monthlyBridgeRows}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
                   <XAxis dataKey="monthLabel" stroke="#64748b" style={{ fontSize: '11px' }} />
-                  <YAxis stroke="#64748b" style={{ fontSize: '11px' }} tickFormatter={(value) => `$${(Number(value || 0) / 1000).toFixed(0)}k`} />
+                  <YAxis stroke="#64748b" style={{ fontSize: '11px' }} tickFormatter={formatAxisMoney} />
                   <Tooltip formatter={(value: any, name: any) => [formatSignedCurrency(Number(value || 0)), String(name)]} />
                   <Legend />
                   <Bar dataKey="volumeImpact" name="Volume Impact" fill="#2563eb" />
@@ -10239,7 +10239,7 @@ export default function OperationsTab({
                 <ScatterChart>
                   <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
                   <XAxis type="number" dataKey="gmPct" name="GM %" stroke="#64748b" tickFormatter={(value) => `${Number(value || 0).toFixed(0)}%`} />
-                  <YAxis type="number" dataKey="sales" name="Sales" stroke="#64748b" tickFormatter={(value) => `$${(Number(value || 0) / 1000).toFixed(0)}k`} />
+                  <YAxis type="number" dataKey="sales" name="Sales" stroke="#64748b" tickFormatter={formatAxisMoney} />
                   <ZAxis type="number" dataKey="inventoryOnHand" range={[50, 420]} />
                   <Tooltip
                     cursor={{ strokeDasharray: '3 3' }}
@@ -11045,7 +11045,7 @@ export default function OperationsTab({
               <ComposedChart data={paretoData}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
                 <XAxis dataKey="name" stroke="#64748b" style={{ fontSize: '11px' }} />
-                <YAxis yAxisId="left" stroke="#64748b" style={{ fontSize: '11px' }} tickFormatter={(value) => `$${(Number(value) / 1000).toFixed(0)}k`} />
+                <YAxis yAxisId="left" stroke="#64748b" style={{ fontSize: '11px' }} tickFormatter={formatAxisMoney} />
                 <YAxis yAxisId="right" orientation="right" stroke="#64748b" style={{ fontSize: '11px' }} tickFormatter={(value) => `${Number(value).toFixed(0)}%`} />
                 <Tooltip
                   formatter={(value: any, name: any) => {
@@ -11072,7 +11072,7 @@ export default function OperationsTab({
             <ResponsiveContainer width="100%" height={280}>
               <ScatterChart>
                 <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-                <XAxis type="number" dataKey="revenue" name="Revenue" stroke="#64748b" tickFormatter={(value) => `$${(Number(value) / 1000).toFixed(0)}k`} />
+                <XAxis type="number" dataKey="revenue" name="Revenue" stroke="#64748b" tickFormatter={formatAxisMoney} />
                 <YAxis type="number" dataKey="marginPct" name="Margin %" stroke="#64748b" tickFormatter={(value) => `${Number(value).toFixed(0)}%`} />
                 <ZAxis type="number" dataKey="contribution" range={[40, 320]} />
                 <Tooltip
@@ -11283,7 +11283,7 @@ export default function OperationsTab({
               <BarChart data={waterfallData}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
                 <XAxis dataKey="step" stroke="#64748b" style={{ fontSize: '11px' }} />
-                <YAxis stroke="#64748b" style={{ fontSize: '11px' }} tickFormatter={(value) => `$${(Number(value) / 1000).toFixed(0)}k`} />
+                <YAxis stroke="#64748b" style={{ fontSize: '11px' }} tickFormatter={formatAxisMoney} />
                 <Tooltip
                   formatter={(value: any, name: any) => [
                     formatCurrency(Math.round(Number(value || 0))),
@@ -11391,7 +11391,7 @@ export default function OperationsTab({
                     <LineChart data={scopedSeries}>
                       <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
                       <XAxis dataKey="weekStart" stroke="#64748b" style={{ fontSize: '11px' }} />
-                      <YAxis stroke="#64748b" style={{ fontSize: '11px' }} tickFormatter={(value) => `$${(Number(value) / 1000).toFixed(0)}k`} />
+                      <YAxis stroke="#64748b" style={{ fontSize: '11px' }} tickFormatter={formatAxisMoney} />
                       <Tooltip formatter={(value: any) => formatCurrency(Number(value || 0))} />
                       <Legend />
                       <Line type="monotone" dataKey="freightBilled" stroke="#f59e0b" strokeWidth={2} dot={false} name="Freight (separate)" />
@@ -12070,7 +12070,7 @@ export default function OperationsTab({
                 stroke="#64748b"
                 style={{ fontSize: '12px' }}
               />
-              <YAxis stroke="#64748b" style={{ fontSize: '12px' }} tickFormatter={(value) => `$${(value / 1000).toFixed(0)}k`} />
+              <YAxis stroke="#64748b" style={{ fontSize: '12px' }} tickFormatter={formatAxisMoney} />
               <Tooltip
                 labelFormatter={(value: any) => trendLabelByKey.get(String(value)) || String(value)}
                 formatter={(value: any) => formatCurrency(Number(value || 0))}
@@ -12420,7 +12420,7 @@ export default function OperationsTab({
                 <BarChart data={retailProductAgingChartData}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
                   <XAxis dataKey="monthLabel" stroke="#64748b" style={{ fontSize: '12px' }} />
-                  <YAxis stroke="#64748b" style={{ fontSize: '12px' }} tickFormatter={(value) => `$${(Number(value || 0) / 1000).toFixed(0)}k`} />
+                  <YAxis stroke="#64748b" style={{ fontSize: '12px' }} tickFormatter={formatAxisMoney} />
                   <Tooltip
                     formatter={(value: any, name: string, props: any) => {
                       const key = String(props?.dataKey || '');
@@ -13052,7 +13052,7 @@ export default function OperationsTab({
             <BarChart data={trendData}>
               <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
               <XAxis dataKey="period" stroke="#64748b" style={{ fontSize: '12px' }} />
-              <YAxis stroke="#64748b" style={{ fontSize: '12px' }} tickFormatter={(value) => `$${(value / 1000).toFixed(0)}k`} />
+              <YAxis stroke="#64748b" style={{ fontSize: '12px' }} tickFormatter={formatAxisMoney} />
               <Tooltip 
                 formatter={(value: any) => [formatCurrency(value), cashTrendSeriesLabel]}
                 contentStyle={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '8px' }}
@@ -13084,7 +13084,7 @@ export default function OperationsTab({
               <LineChart data={cash13WeekRows}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
                 <XAxis dataKey="period" stroke="#64748b" style={{ fontSize: '12px' }} />
-                <YAxis stroke="#64748b" style={{ fontSize: '12px' }} tickFormatter={(value) => `$${(Number(value || 0) / 1000).toFixed(0)}k`} />
+                <YAxis stroke="#64748b" style={{ fontSize: '12px' }} tickFormatter={formatAxisMoney} />
                 <Tooltip formatter={(value: any) => formatCurrency(Number(value || 0))} />
                 <Line type="monotone" dataKey="totalCash" stroke="#10b981" strokeWidth={2} dot={false} name="Cash Balance" />
               </LineChart>
@@ -13103,7 +13103,7 @@ export default function OperationsTab({
               <ComposedChart data={cashBridgeRows}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
                 <XAxis dataKey="period" stroke="#64748b" style={{ fontSize: '12px' }} />
-                <YAxis stroke="#64748b" style={{ fontSize: '12px' }} tickFormatter={(value) => `$${(Number(value || 0) / 1000).toFixed(0)}k`} />
+                <YAxis stroke="#64748b" style={{ fontSize: '12px' }} tickFormatter={formatAxisMoney} />
                 <Tooltip formatter={(value: any) => formatCurrency(Number(value || 0))} />
                 <Legend />
                 <Bar dataKey="receipts" fill="#16a34a" name="Receipts Proxy" />
@@ -14303,7 +14303,7 @@ export default function OperationsTab({
                       stroke="#64748b"
                       width={82}
                       tick={{ fontSize: 11 }}
-                      tickFormatter={(value) => `$${(Number(value || 0) / 1000).toFixed(0)}k`}
+                      tickFormatter={formatAxisMoney}
                     />
                     {selectedDailyTrendMetrics.includes('marginPct') && (
                       <YAxis
@@ -16772,7 +16772,7 @@ Strategies to Improve the CCC
                       <LineChart data={dailyCostTrendRows}>
                         <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
                         <XAxis dataKey="periodLabel" stroke="#64748b" style={{ fontSize: '12px' }} />
-                        <YAxis stroke="#64748b" style={{ fontSize: '12px' }} tickFormatter={(value) => `$${(Number(value || 0) / 1000).toFixed(0)}k`} />
+                        <YAxis stroke="#64748b" style={{ fontSize: '12px' }} tickFormatter={formatAxisMoney} />
                         <Tooltip formatter={(value: any, name: any) => [formatCurrency(Number(value || 0)), String(name)]} />
                         <Legend />
                         <Line type="monotone" dataKey="actual" name="Actual" stroke="#dc2626" strokeWidth={2.5} dot={{ r: 3 }} />
@@ -21663,7 +21663,7 @@ Strategies to Improve the CCC
                   <BarChart data={revenueByClient.slice(0, 10)} margin={{ top: 8, right: 8, left: 8, bottom: 40 }}>
                     <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
                     <XAxis dataKey="clientName" angle={-20} textAnchor="end" height={70} tick={chartLabelStyle} interval={0} />
-                    <YAxis tick={chartLabelStyle} tickFormatter={(value) => `$${Math.round(Number(value || 0) / 1000)}k`} />
+                    <YAxis tick={chartLabelStyle} tickFormatter={formatAxisMoney} />
                     <Tooltip formatter={(value: any) => [formatCurrency(Number(value || 0)), 'Revenue']} />
                     <Bar dataKey="revenue" fill="#2563eb" radius={0} />
                   </BarChart>
@@ -21703,7 +21703,7 @@ Strategies to Improve the CCC
                   <BarChart data={(revenueConcentration.topClients || []).slice(0, 10)}>
                     <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
                     <XAxis dataKey="clientName" angle={-20} textAnchor="end" height={70} tick={chartLabelStyle} interval={0} />
-                    <YAxis tick={chartLabelStyle} tickFormatter={(value) => `$${Math.round(Number(value || 0) / 1000)}k`} />
+                    <YAxis tick={chartLabelStyle} tickFormatter={formatAxisMoney} />
                     <Tooltip formatter={(value: any) => [formatCurrency(Number(value || 0)), 'Revenue']} />
                     <Bar dataKey="revenue" fill="#7c3aed" radius={0} />
                   </BarChart>
@@ -22142,7 +22142,7 @@ Strategies to Improve the CCC
                   <BarChart data={revenueByJobType} margin={{ top: 8, right: 8, left: 8, bottom: 20 }}>
                     <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
                     <XAxis dataKey="jobType" tick={chartLabelStyle} />
-                    <YAxis tick={chartLabelStyle} tickFormatter={(value) => `$${Math.round(Number(value || 0) / 1000)}k`} />
+                    <YAxis tick={chartLabelStyle} tickFormatter={formatAxisMoney} />
                     <Tooltip formatter={(value: any) => [formatCurrency(Number(value || 0)), 'Revenue']} />
                     <Bar dataKey="revenue" fill="#0f766e" radius={0} />
                   </BarChart>
@@ -22356,7 +22356,7 @@ Strategies to Improve the CCC
                 <BarChart data={payCostByRole.slice(0, 12)} margin={{ top: 8, right: 8, left: 8, bottom: 90 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
                   <XAxis dataKey="key" angle={-30} textAnchor="end" height={110} tick={chartLabelStyle} interval={0} />
-                  <YAxis tick={chartLabelStyle} tickFormatter={(value) => `$${Math.round(Number(value || 0) / 1000)}k`} />
+                  <YAxis tick={chartLabelStyle} tickFormatter={formatAxisMoney} />
                   <Tooltip formatter={(value: any) => [formatCurrency(Number(value || 0)), 'Total Annual Pay']} />
                   <Bar dataKey="totalAnnualCost" fill="#2563eb" radius={0} />
                 </BarChart>
@@ -24803,7 +24803,7 @@ Strategies to Improve the CCC
             <BarChart data={revenueRegionRows}>
               <CartesianGrid strokeDasharray="3 3" />
               <XAxis dataKey="region" tick={{ fontSize: 11 }} />
-              <YAxis tickFormatter={(value) => `$${(Number(value) / 1000000).toFixed(1)}M`} />
+              <YAxis tickFormatter={formatAxisMoney} />
               <Tooltip formatter={(value: any) => formatCurrency(Number(value || 0))} />
               <Legend />
               <Bar dataKey="revenue" fill="#2563eb" name="Revenue" />
@@ -25050,7 +25050,7 @@ Strategies to Improve the CCC
                   <LineChart data={residentialAveragePriceTrendRows}>
                     <CartesianGrid strokeDasharray="3 3" />
                     <XAxis dataKey="period" interval={2} tick={{ fontSize: 11 }} />
-                    <YAxis domain={['dataMin - 10000', 'dataMax + 10000']} tickFormatter={(value) => `$${(Number(value) / 1000).toFixed(0)}K`} />
+                    <YAxis domain={['dataMin - 10000', 'dataMax + 10000']} tickFormatter={formatAxisMoney} />
                     <Tooltip formatter={(value: any) => formatCurrency(Number(value || 0))} />
                     <Legend />
                     <Line type="monotone" dataKey="averageSalesPrice" stroke="#0f766e" strokeWidth={2} name="Avg Sales Price" dot={false} />
@@ -26487,6 +26487,9 @@ Strategies to Improve the CCC
         moduleTitlesByType={moduleTitlesByType}
         operationalHubSections={operationalHubSections}
         printSectionKey={initialPrintSectionKey || null}
+        baseCurrency={companyCurrency.baseCurrency}
+        reportingCurrency={companyCurrency.reportingCurrency}
+        locale={companyCurrency.locale}
       />
     );
 
