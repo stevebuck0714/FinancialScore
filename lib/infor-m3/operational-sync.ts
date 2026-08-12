@@ -1850,7 +1850,14 @@ function classifyModuleFromProgramId(
     GL_ACCOUNT_MASTER_PROGRAM_IDS.has(programId)
   ) return 'gl';
   if (programId === 'SLARTRANS' || programId === 'SLCUSTDRFTS') return 'ar';
-  if (programId === 'SLAPTRX' || programId === 'SLVCHHDRS' || programId === 'SLAPPMTS' || programId === 'SLAPTRXP')
+  if (
+    programId === 'SLAPTRX' ||
+    programId === 'SLAPTRXPS' ||
+    programId === 'SLAPTRXS' ||
+    programId === 'SLVCHHDRS' ||
+    programId === 'SLAPPMTS' ||
+    programId === 'SLAPTRXP'
+  )
     return 'ap';
   if (programId === 'SLCUSTOMERS') return 'customer';
   if (programId === 'SLBANKHDRS' || programId === 'SLBANKHDR') return 'cash';
@@ -6927,16 +6934,23 @@ async function saveAPOpenBillsNoFullPullsDeltaState(params: {
     );
     if (!vendorName || !billNo) continue;
 
-    const amountDueHomeRaw = pickNumber(record, [
-      'amountDueHome',
-      'amountDue',
-      'openAmount',
-      'openBalance',
-      'balance',
-      'Balance',
-      'DerAmtBal',
-      'UbOpening',
-    ]);
+    const amountDueHomeRaw = (() => {
+      const direct = pickNumber(record, [
+        'amountDueHome',
+        'amountDue',
+        'openAmount',
+        'openBalance',
+        'balance',
+        'Balance',
+        'DerAmtBal',
+        'UbOpening',
+      ]);
+      if (direct !== 0) return direct;
+      const invAmt = pickNumber(record, ['InvAmt', 'invoiceAmount', 'invAmt', 'CUAM']);
+      const amtPaid = pickNumber(record, ['AmtPaid', 'amtPaid', 'amountPaid', 'UbPayment']);
+      if (invAmt > 0) return invAmt - amtPaid;
+      return 0;
+    })();
     const amountDueHome = Number.isFinite(amountDueHomeRaw) ? Math.max(0, Number(amountDueHomeRaw)) : 0;
     const billDate = resolveApBillDateFromRecord(record);
     const dueDate = parseMaybeDate(pickString(record, ['dueDate', 'DUDT', 'DueDate', 'InvDate', 'DistDate'])) || null;
@@ -7101,6 +7115,12 @@ async function saveAPOpenBills(
 
   const rows = records
     .map((record, idx) => {
+      const typeToken = String(pickString(record, ['Type', 'type']) || '').trim().toUpperCase();
+      // Payments are not open bills. Open balance comes from voucher/debit rows
+      // (DerAmtBal) or voucher InvAmt - AmtPaid when DerAmtBal is absent.
+      if (typeToken === 'P') {
+        return null;
+      }
       const vendorName = pickString(record, VENDOR_NAME_KEYS) || `Unknown Vendor ${idx + 1}`;
       const billNo =
         pickString(record, ['billNo', 'billNumber', 'invoiceNo', 'InvNum', 'voucher', 'Voucher', 'SINO']) ||
@@ -7135,6 +7155,7 @@ async function saveAPOpenBills(
         sourceRecordDate: parseMaybeDate(pickString(record, ['RecordDate', 'recordDate', 'DistDate', 'InvDate', 'date'])),
       };
     })
+    .filter((row): row is NonNullable<typeof row> => row !== null)
     .filter((row) => {
       if (!row.vendorName || !row.billNo || !Number.isFinite(row.amountDueHome)) return false;
       if (!isApDateWithinHistoryWindow(row.billDate)) return false;
@@ -7248,6 +7269,7 @@ async function saveAPTransactionFacts(
     v: 1,   // voucher (invoice) → AP increases
     d: 1,   // debit memo → AP increases
     c: -1,  // credit memo → AP decreases
+    p: -1,  // payment → AP decreases (InvAmt is typically positive face amount)
     a: 1,   // adjustment → keep original sign (sign * invAmt preserves negative adjustments)
   };
 
@@ -7278,6 +7300,10 @@ async function saveAPTransactionFacts(
     if (!resolvedDate || resolvedDate.getTime() < Date.UTC(2023, 0, 1)) continue;
     const eventDate = startOfUtcDay(resolvedDate);
 
+    // Payments/credits must reduce AP even when CSI sends a positive InvAmt.
+    const normalizedAmount =
+      transType === 'p' || transType === 'c' ? -Math.abs(invAmt) : sign * invAmt;
+
     rows.push({
       companyId,
       eventDate,
@@ -7290,15 +7316,16 @@ async function saveAPTransactionFacts(
       // journal entry (restricted to AP-class accounts ^3[0-9]+$).
       apAcct: pickString(record, ['ApAcct', 'apAcct']) || null,
       vendorId: pickString(record, ['VendNum', 'vendNum', 'vendorId']) || null,
-      vendorName: pickString(record, ['VadName', 'vadName', 'vendorName']) || null,
+      vendorName:
+        pickString(record, ['VadName', 'vadName', 'VendaddrName', 'UbVendName', 'vendorName']) || null,
       voucher,
       vouchSeq,
       invoiceNum: pickString(record, ['InvNum', 'invNum']) || null,
       invoiceDate: invDateRaw ? startOfUtcDay(invDateRaw) : null,
       distDate: distDateRaw ? startOfUtcDay(distDateRaw) : null,
       transType: transType.toUpperCase(),
-      invoiceAmount: invAmt,
-      normalizedAmount: sign * invAmt,
+      invoiceAmount: Math.abs(invAmt),
+      normalizedAmount,
       exchangeRate: pickNumber(record, ['ExchRate', 'exchRate']) || null,
       termsCode: pickString(record, ['TermsCode', 'termsCode']) || null,
       sourcePlatform: 'INFOR_CSI',
@@ -7443,6 +7470,11 @@ async function saveAPPayments(
   // the natural-key sourceItemId. Drop rows we couldn't normalize.
   const stagedRows = records
     .map((record, idx) => {
+      const typeToken = String(pickString(record, ['Type', 'type']) || '').trim().toUpperCase();
+      // Typed AP feeds (SLAptrx* / SLVchHdrs) carry payments on Type=P (and sometimes A).
+      // Do not treat voucher/debit/credit headers as payment facts even when AmtPaid is
+      // stamped on them — that double-counts against Type=P and overstates paid AP.
+      if (typeToken && ['V', 'D', 'C'].includes(typeToken)) return null;
       const billDate = resolveApBillDateFromRecord(record);
       if (!isApDateWithinHistoryWindow(billDate)) return null;
       const paymentDate = parseMaybeDate(
@@ -7451,22 +7483,40 @@ async function saveAPPayments(
       if (!paymentDate) return null;
       const vendorName =
         pickString(record, ['UbVendName', 'VendaddrName', 'VendorName', ...VENDOR_NAME_KEYS]) || `Unknown Vendor ${idx + 1}`;
-      const paidAmountHome = pickNumber(record, [
-        'paidAmountHome',
-        'paidAmount',
-        'AmtPaid',
-        'UbPayment',
-        'DerDomAmtApplied',
-        'DerForAmtApplied',
-        'DerAmtBal',
-        'DomCheckAmt',
-        'ForCheckAmt',
-        'DerDomCheckAmount',
-        'amount',
-        'ACAM',
-        'PYAM',
-      ]);
-      if (!Number.isFinite(paidAmountHome)) return null;
+      const paidAmountHome = pickNumber(
+        record,
+        typeToken === 'P' || typeToken === 'A'
+          ? [
+              'paidAmountHome',
+              'paidAmount',
+              'AmtPaid',
+              'UbPayment',
+              'InvAmt',
+              'DerDomAmtApplied',
+              'DerForAmtApplied',
+              'DomCheckAmt',
+              'ForCheckAmt',
+              'DerDomCheckAmount',
+              'amount',
+              'ACAM',
+              'PYAM',
+            ]
+          : [
+              'paidAmountHome',
+              'paidAmount',
+              'AmtPaid',
+              'UbPayment',
+              'DerDomAmtApplied',
+              'DerForAmtApplied',
+              'DomCheckAmt',
+              'ForCheckAmt',
+              'DerDomCheckAmount',
+              'amount',
+              'ACAM',
+              'PYAM',
+            ]
+      );
+      if (!Number.isFinite(paidAmountHome) || Math.abs(paidAmountHome) <= 0.0001) return null;
       const billNo = pickString(record, [
         'billNo',
         'billNumber',
@@ -7480,7 +7530,7 @@ async function saveAPPayments(
         paymentDate,
         vendorName,
         billNo,
-        paidAmountHome,
+        paidAmountHome: Math.abs(paidAmountHome),
       });
       return {
         companyId,
@@ -7490,7 +7540,7 @@ async function saveAPPayments(
         billNo,
         currencyCode: pickString(record, ['currencyCode', 'currency', 'CUCD']),
         paidAmountCurrency: pickNumber(record, ['paidAmountCurrency', 'CUAM']) || null,
-        paidAmountHome,
+        paidAmountHome: Math.abs(paidAmountHome),
         sourcePlatform: 'INFOR_M3',
         sourceItemId,
         sourceProgram: context.miProgram,
@@ -9672,18 +9722,32 @@ export async function syncInforM3OperationalData(
                   resetSnapshot: !options?.bookmark,
                 };
                 const apProgramId = String(row.miProgram || '').trim().toUpperCase();
-                const forcePaymentProgram =
-                  apProgramId === 'SLAPPMTS' ||
-                  apProgramId === 'SLAPTRXP';
-                const isSlVchHdrsProgram =
-                  apProgramId === 'SLVCHHDRS';
-                if (isSlVchHdrsProgram) {
+                // SLAptrx* carries both open-item balances (DerAmtBal) and payment
+                // activity (Type=P / AmtPaid). Historically CSI_LOAD was classified
+                // as arApFlow='open', so SLAptrxps only wrote open bills and
+                // APPaymentFact / Type=P event ingest stopped — which inflated the
+                // aging-rule AP trend to multi-million totals. Dual-write both.
+                const isSlAptrxFamily =
+                  apProgramId === 'SLAPTRX' ||
+                  apProgramId === 'SLAPTRXPS' ||
+                  apProgramId === 'SLAPTRXP' ||
+                  apProgramId === 'SLAPTRXS' ||
+                  apProgramId === 'SLAPPMTS';
+                const isSlVchHdrsProgram = apProgramId === 'SLVCHHDRS';
+                const shouldWriteApTransactionFacts = isSlVchHdrsProgram || isSlAptrxFamily;
+                const shouldWriteApPayments =
+                  isSlAptrxFamily || arApFlow === 'payments';
+                const shouldWriteApOpen =
+                  arApFlow === 'open' || isSlAptrxFamily || isSlVchHdrsProgram;
+
+                if (shouldWriteApTransactionFacts) {
                   const apFactRows = await saveAPTransactionFacts(companyId, records);
                   moduleRecordsCreated += apFactRows;
                 }
-                if (forcePaymentProgram || arApFlow === 'payments') {
+                if (shouldWriteApPayments) {
                   moduleRecordsCreated += await saveAPPayments(companyId, records, context);
-                } else if (arApFlow === 'open') {
+                }
+                if (shouldWriteApOpen) {
                   const openRowsCreated = noFullPulls
                     ? await saveAPOpenBillsNoFullPullsDeltaState({
                         companyId,
@@ -9695,7 +9759,7 @@ export async function syncInforM3OperationalData(
                     : await saveAPOpenBills(companyId, snapshotDate, frequency, records, context);
                   const agingRowsCreated = await saveAPAging(companyId, snapshotDate, frequency, records);
                   moduleRecordsCreated += openRowsCreated + agingRowsCreated;
-                } else {
+                } else if (!shouldWriteApPayments) {
                   moduleRecordsCreated += await saveAPAging(companyId, snapshotDate, frequency, records);
                 }
               }
@@ -10569,14 +10633,11 @@ export async function transformInforM3RawRun(options: {
       const apPayments = Array.from(rawByModuleProgram.values())
         .filter((item) =>
           item.moduleType === 'ap' &&
-          ['SLAPPMTS', 'SLAPTRXP'].includes(item.miProgram)
+          ['SLAPPMTS', 'SLAPTRXP', 'SLAPTRXPS', 'SLAPTRX', 'SLAPTRXS'].includes(item.miProgram)
         )
         .flatMap((item) => item.records);
       const apOpen = Array.from(rawByModuleProgram.values())
-        .filter((item) =>
-          item.moduleType === 'ap' &&
-          !['SLAPPMTS', 'SLAPTRXP'].includes(item.miProgram)
-        )
+        .filter((item) => item.moduleType === 'ap')
         .flatMap((item) => item.records);
       const apRecordIdentity = (record: Record<string, unknown>): string => {
         const voucher = pickString(record, ['Voucher', 'voucher', 'billNo', 'billNumber', 'invoiceNo', 'InvNum', 'SINO']) || '';
