@@ -590,10 +590,13 @@ export default function CovenantsTab({
             loanName: displayName || instrumentKey || accountId,
             loanIdNumber: instrumentKey || accountId || null,
             lenderName: String(instrument?.terms?.lender || 'Unknown').trim() || 'Unknown',
-            loanAmount: Number(
-              instrument?.terms?.originalBalance ??
-                Math.abs(Number(instrument?.derivedCurrentBalance || instrument?.activityTotal || 0)) ||
-                0
+            loanAmount: Math.abs(
+              Number(
+                instrument?.terms?.originalBalance ??
+                  instrument?.derivedCurrentBalance ??
+                  instrument?.activityTotal ??
+                  0
+              ) || 0
             ),
             interestRate:
               instrument?.terms?.interestRatePct != null && instrument?.terms?.interestRatePct !== ''
