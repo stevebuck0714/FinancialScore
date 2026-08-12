@@ -2001,6 +2001,52 @@ function isInvoiceLikeArOpenRow(row: { status?: string | null; invoiceNo?: strin
 }
 
 /**
+ * True when APTransactionFact payment events (Type=P) have fallen behind
+ * voucher events (Type=V) by more than `maxGapDays`.
+ *
+ * CSI_LOAD historically classified SLAptrxps as open-only, so Type=P /
+ * APPaymentFact ingest stopped while vouchers kept flowing. The aging-rule
+ * then treats unpaid vouchers as still-open forever and inflates Total AP
+ * into the multi-million range. When this gap is detected, callers should
+ * prefer DerAmtBal open-item snapshots (APAgingSnapshot / APOpenBillSnapshot)
+ * instead of the event-ledger aging rule.
+ */
+async function isApPaymentEventLedgerStale(
+  prismaClient: any,
+  companyId: string,
+  apAcct: string,
+  maxGapDays: number = 14
+): Promise<{ stale: boolean; maxVoucherDate: string | null; maxPaymentDate: string | null; gapDays: number | null }> {
+  const rows: Array<{ max_v: Date | null; max_p: Date | null }> = await prismaClient.$queryRawUnsafe(
+    `SELECT
+       MAX("eventDate") FILTER (WHERE "transType" = 'V') AS max_v,
+       MAX("eventDate") FILTER (WHERE "transType" = 'P') AS max_p
+     FROM "APTransactionFact"
+     WHERE "companyId" = $1
+       AND "apAcct" = $2`,
+    companyId,
+    apAcct
+  );
+  const maxV = rows[0]?.max_v ? startOfUtcDay(new Date(rows[0].max_v)) : null;
+  const maxP = rows[0]?.max_p ? startOfUtcDay(new Date(rows[0].max_p)) : null;
+  const maxVoucherDate = maxV ? dateKeyUtc(maxV) : null;
+  const maxPaymentDate = maxP ? dateKeyUtc(maxP) : null;
+  if (!maxV) {
+    return { stale: false, maxVoucherDate, maxPaymentDate, gapDays: null };
+  }
+  if (!maxP) {
+    return { stale: true, maxVoucherDate, maxPaymentDate, gapDays: null };
+  }
+  const gapDays = Math.floor((maxV.getTime() - maxP.getTime()) / 86400000);
+  return {
+    stale: gapDays > maxGapDays,
+    maxVoucherDate,
+    maxPaymentDate,
+    gapDays,
+  };
+}
+
+/**
  * Compute a daily AP balance series using the customer's stated business rule:
  * "AP rarely if ever goes over N days; assume any voucher older than N days is paid
  *  or written off."
@@ -2024,6 +2070,9 @@ function isInvoiceLikeArOpenRow(row: { status?: string | null; invoiceNo?: strin
  * Validated against the customer's 12/31/2023 TB anchor: returns $723K vs TB
  * $698K (drift +3.6%, well within accounting tolerance). The same window across
  * 9 historical quarter-ends shows a stable, plausible $616K-$999K range.
+ *
+ * Do not call this when isApPaymentEventLedgerStale() is true — missing Type=P
+ * rows make open AP climb without bound.
  */
 async function buildDailyApSeriesByAgingRule(
   prismaClient: any,
@@ -2558,6 +2607,16 @@ async function buildOpenVouchersByAgingRule(
          AND TRIM("termsCode") <> ''
        ORDER BY "vendorId", "snapshotDate" DESC
      ),
+     vendor_names AS (
+       SELECT DISTINCT ON ("vendorId")
+         "vendorId",
+         NULLIF(TRIM("vendorName"), '') AS vendor_name
+       FROM "VendorSnapshot"
+       WHERE "companyId" = $1
+         AND "vendorId" IS NOT NULL
+         AND NULLIF(TRIM("vendorName"), '') IS NOT NULL
+       ORDER BY "vendorId", "snapshotDate" DESC
+     ),
      payment_facts AS (
        SELECT
          UPPER(TRIM("billNo")) AS bill_key,
@@ -2607,7 +2666,11 @@ async function buildOpenVouchersByAgingRule(
        opv.voucher,
        vm.invoice_num,
        vm.vendor_id,
-       COALESCE(NULLIF(TRIM(vm.vendor_name), ''), 'Unknown Vendor') AS vendor_name,
+       COALESCE(
+         NULLIF(TRIM(vm.vendor_name), ''),
+         NULLIF(TRIM(vn.vendor_name), ''),
+         'Unknown Vendor'
+       ) AS vendor_name,
        opv.created_at,
        vm.invoice_date,
        opv.open_balance,
@@ -2616,6 +2679,7 @@ async function buildOpenVouchersByAgingRule(
      FROM open_per_voucher opv
      LEFT JOIN voucher_meta vm ON vm.voucher = opv.voucher
      LEFT JOIN vendor_terms vt ON vt."vendorId" = vm.vendor_id
+     LEFT JOIN vendor_names vn ON vn."vendorId" = vm.vendor_id
      WHERE opv.open_balance > 0`,
     companyId,
     apAcct,
@@ -3183,6 +3247,9 @@ export async function GET(request: NextRequest) {
               productsLimitIsAll ? 'all' : boundedLimit,
               'qbd-current-year-net-income-v1',
               shouldUseMockData ? 'mock-operational-data-v4' : 'real-operational-data-v1',
+              // Bust stale ap-aging payloads that were cached while the
+              // payment-gap guard / DerAmtBal preference was missing.
+              cacheType === 'ap-aging' || cacheType === 'ap' ? 'ap-payment-gap-guard-v1' : null,
               shouldApplyHydratedDateFilter ? hydratedInforDates : null,
               cacheType === 'customers' ? CUSTOMER_CONCENTRATION_CACHE_VERSION : null,
               cacheType === 'customers' ? CUSTOMER_REVENUE_SOURCE_VERSION : null,
@@ -7341,21 +7408,38 @@ export async function GET(request: NextRequest) {
         const apAnchorCfgForTrend = getApBalanceSheetAnchorConfig(companyId);
         if (isInforGlCompany && apAnchorCfgForTrend) {
           const anchorAccountForTrend = apAnchorCfgForTrend.accounts[0];
+          // When Type=P ingest has lagged Type=V (common after CSI_LOAD treated
+          // SLAptrxps as open-only), the aging-rule invents multi-million open
+          // AP. Prefer DerAmtBal snapshots already loaded above until payments
+          // catch up via dual-write re-sync.
+          const paymentLedger = await isApPaymentEventLedgerStale(
+            prisma,
+            companyId,
+            anchorAccountForTrend.accountId
+          );
+          if (paymentLedger.stale) {
+            console.warn(
+              `[ap-aging] skipping aging-rule for ${companyId}: payment ledger stale`,
+              paymentLedger
+            );
+          }
           // Trend uses the same 150-day aging-rule derivation as the main
           // 'ap' case below — see comment there for the rationale and
           // validation evidence. This replaced an anchor-roll-forward that
           // accumulated orphan-payment leakage and produced impossible
           // (negative) AP balances on recent dates.
-          const dailyGlAp = await buildDailyApSeriesByAgingRule(
-            prisma,
-            companyId,
-            anchorAccountForTrend.accountId,
-            anchorAccountForTrend.accountName || 'Accounts Payable',
-            anchorAccountForTrend.accountNumber || anchorAccountForTrend.accountId,
-            startDate,
-            endDate,
-            150
-          );
+          const dailyGlAp = paymentLedger.stale
+            ? []
+            : await buildDailyApSeriesByAgingRule(
+                prisma,
+                companyId,
+                anchorAccountForTrend.accountId,
+                anchorAccountForTrend.accountName || 'Accounts Payable',
+                anchorAccountForTrend.accountNumber || anchorAccountForTrend.accountId,
+                startDate,
+                endDate,
+                150
+              );
           if (dailyGlAp.length > 0) {
             // Hold the full per-day metric record so we can pick the
             // latest day per reporting period (week / month) for the
@@ -9809,16 +9893,46 @@ export async function GET(request: NextRequest) {
         const apSheetAnchorCfg = getApBalanceSheetAnchorConfig(companyId);
         if (apSheetAnchorCfg) {
           const anchorAccount = apSheetAnchorCfg.accounts[0];
-          apData = await buildDailyApSeriesByAgingRule(
+          const paymentLedger = await isApPaymentEventLedgerStale(
             prisma,
             companyId,
-            anchorAccount.accountId,
-            anchorAccount.accountName || 'Accounts Payable',
-            anchorAccount.accountNumber || anchorAccount.accountId,
-            startDate,
-            endDate,
-            150
+            anchorAccount.accountId
           );
+          if (paymentLedger.stale) {
+            console.warn(
+              `[ap] skipping aging-rule for ${companyId}: payment ledger stale`,
+              paymentLedger
+            );
+            // Fall back to DerAmtBal company rollups so the AP card still
+            // shows CSI open-item totals instead of a blank/zero series.
+            const agingRows = await prisma.aPAgingSnapshot.findMany({
+              where: {
+                companyId,
+                frequency: frequency === 'monthly' ? 'monthly' : 'daily',
+                snapshotDate: { gte: startDate, lte: endDate },
+              },
+              orderBy: { snapshotDate: 'asc' },
+              take: Math.max(limit * 10, 1500),
+            });
+            apData = agingRows.map((row) => ({
+              snapshotDate: new Date(row.snapshotDate),
+              accountName: anchorAccount.accountName || 'Accounts Payable',
+              apBalance: Number(row.totalAP || 0),
+              accountId: anchorAccount.accountId,
+              accountNumber: anchorAccount.accountNumber || anchorAccount.accountId,
+            }));
+          } else {
+            apData = await buildDailyApSeriesByAgingRule(
+              prisma,
+              companyId,
+              anchorAccount.accountId,
+              anchorAccount.accountName || 'Accounts Payable',
+              anchorAccount.accountNumber || anchorAccount.accountId,
+              startDate,
+              endDate,
+              150
+            );
+          }
         }
         if (apData.length > 0) {
           apData = aggregateApSeriesByFrequency(apData, frequency);

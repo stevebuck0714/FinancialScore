@@ -7334,6 +7334,36 @@ async function saveAPTransactionFacts(
 
   if (rows.length === 0) return 0;
 
+  // SLAptrx*/SLVchHdrs often omit VadName while VendNum is present. Fill from
+  // VendorSnapshot so aging/vendor tables do not collapse into "Unknown Vendor".
+  const missingVendorIds = Array.from(
+    new Set(
+      rows
+        .filter((row) => !String(row.vendorName || '').trim() && String(row.vendorId || '').trim())
+        .map((row) => String(row.vendorId).trim())
+    )
+  );
+  if (missingVendorIds.length) {
+    const vendorSnapshots = await prisma.vendorSnapshot.findMany({
+      where: { companyId, vendorId: { in: missingVendorIds } },
+      select: { vendorId: true, vendorName: true, snapshotDate: true },
+      orderBy: { snapshotDate: 'desc' },
+    });
+    const nameByVendorId = new Map<string, string>();
+    for (const snap of vendorSnapshots) {
+      const vid = String(snap.vendorId || '').trim();
+      const vname = String(snap.vendorName || '').trim();
+      if (!vid || !vname || nameByVendorId.has(vid)) continue;
+      nameByVendorId.set(vid, vname);
+    }
+    for (const row of rows) {
+      if (String(row.vendorName || '').trim()) continue;
+      const vid = String(row.vendorId || '').trim();
+      const enriched = vid ? nameByVendorId.get(vid) : null;
+      if (enriched) row.vendorName = enriched;
+    }
+  }
+
   let created = 0;
   const BATCH_SIZE = 500;
   for (let i = 0; i < rows.length; i += BATCH_SIZE) {

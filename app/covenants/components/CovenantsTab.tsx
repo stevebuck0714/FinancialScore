@@ -552,8 +552,21 @@ export default function CovenantsTab({
       .toLowerCase()
       .replace(/\s+/g, ' ');
 
+  /** Same label LoansTab renders in the Loan Instruments table. */
+  const getInstrumentDisplayName = (instrument: any): string =>
+    String(instrument?.terms?.displayName || instrument?.displayName || '').trim();
+
+  /** Same membership filter as LoansTab loanInstrumentSections. */
+  const hasLoanInstrumentBalance = (instrument: any): boolean => {
+    const priorMonthBalance = Number(instrument?.priorMonthBalance);
+    const derived = Number(instrument?.derivedCurrentBalance);
+    const hasPrior = Number.isFinite(priorMonthBalance) && Math.abs(priorMonthBalance) > 0.005;
+    const hasCurrent = Number.isFinite(derived) && Math.abs(derived) > 0.005;
+    return hasPrior || hasCurrent;
+  };
+
   const mapInstrumentLoanType = (instrument: any): string => {
-    const raw = `${instrument?.terms?.loanType || ''} ${instrument?.targetField || ''} ${instrument?.displayName || ''}`.toUpperCase();
+    const raw = `${instrument?.terms?.loanType || ''} ${instrument?.targetField || ''} ${getInstrumentDisplayName(instrument)}`.toUpperCase();
     if (raw.includes('LOC') || raw.includes('LINE OF CREDIT') || raw.includes('REVOLVER')) return 'LINE_OF_CREDIT';
     if (raw.includes('MORTGAGE')) return 'MORTGAGE';
     if (raw.includes('BRIDGE')) return 'BRIDGE';
@@ -563,57 +576,119 @@ export default function CovenantsTab({
   const findMatchingLoan = (loanList: Loan[], instrument: any): Loan | undefined => {
     const instrumentKey = String(instrument?.instrumentKey || '').trim();
     const accountId = String(instrument?.accountId || '').trim();
-    const displayName = String(instrument?.terms?.displayName || instrument?.displayName || '').trim();
+    const displayName = getInstrumentDisplayName(instrument);
     return loanList.find((loan) => {
       const idNum = String(loan.loanIdNumber || '').trim();
-      if (instrumentKey && idNum === instrumentKey) return true;
-      if (accountId && idNum === accountId) return true;
+      const idBare = idNum.replace(/^gl:/i, '');
+      if (instrumentKey && (idNum === instrumentKey || idBare === instrumentKey.replace(/^gl:/i, ''))) return true;
+      if (accountId && (idNum === accountId || idBare === accountId || idNum === `gl:${accountId}`)) return true;
       if (displayName && normalizeLoanName(loan.loanName) === normalizeLoanName(displayName)) return true;
       return false;
     });
   };
 
+  /**
+   * Covenants dropdown = Loan Instruments table rows only (balance > 0),
+   * using the same display names rendered on that page. No raw gl: keys,
+   * no "Unknown" lender filler in the selector.
+   */
   const ensureLoansFromInstruments = async (existingLoans: Loan[], instruments: any[]): Promise<Loan[]> => {
-    const nextLoans = [...existingLoans];
-    for (const instrument of instruments) {
-      if (findMatchingLoan(nextLoans, instrument)) continue;
-      const instrumentKey = String(instrument?.instrumentKey || '').trim();
+    const visibleInstruments = (Array.isArray(instruments) ? instruments : []).filter(hasLoanInstrumentBalance);
+    const synced: Loan[] = [];
+
+    for (const instrument of visibleInstruments) {
+      const displayName = getInstrumentDisplayName(instrument);
+      if (!displayName) continue;
+
       const accountId = String(instrument?.accountId || '').trim();
-      const displayName = String(instrument?.terms?.displayName || instrument?.displayName || '').trim();
-      if (!displayName && !instrumentKey && !accountId) continue;
+      const instrumentKey = String(instrument?.instrumentKey || '').trim();
+      const loanIdNumber = accountId || instrumentKey || null;
+      const lenderName = String(instrument?.terms?.lender || '').trim() || displayName;
+      const loanAmount = Math.abs(
+        Number(
+          instrument?.terms?.originalBalance ??
+            instrument?.derivedCurrentBalance ??
+            instrument?.activityTotal ??
+            0
+        ) || 0
+      );
+      const interestRate =
+        instrument?.terms?.interestRatePct != null && instrument?.terms?.interestRatePct !== ''
+          ? Number(instrument.terms.interestRatePct)
+          : null;
+      const loanType = mapInstrumentLoanType(instrument);
+      const status = instrument?.instrumentStatus === 'inactive' ? 'INACTIVE' : 'ACTIVE';
+
+      const existing = findMatchingLoan(existingLoans, instrument) || findMatchingLoan(synced, instrument);
+      if (existing) {
+        const needsUpdate =
+          normalizeLoanName(existing.loanName) !== normalizeLoanName(displayName) ||
+          String(existing.loanIdNumber || '').trim() !== String(loanIdNumber || '').trim() ||
+          (String(existing.lenderName || '').trim().toLowerCase() === 'unknown' &&
+            lenderName.toLowerCase() !== 'unknown');
+        if (needsUpdate) {
+          try {
+            const response = await fetch(`/api/loans/${existing.id}`, {
+              method: 'PUT',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                companyId: selectedCompanyId,
+                loanName: displayName,
+                loanIdNumber,
+                lenderName,
+                loanAmount,
+                interestRate,
+                loanType,
+                status,
+              }),
+            });
+            if (response.ok) {
+              const data = await response.json().catch(() => null);
+              if (data?.loan) {
+                synced.push(data.loan);
+                continue;
+              }
+            }
+          } catch (err) {
+            console.warn('Unable to rename covenant loan to instrument display name', err);
+          }
+        }
+        synced.push({
+          ...existing,
+          loanName: displayName,
+          loanIdNumber: loanIdNumber || existing.loanIdNumber,
+          lenderName:
+            String(existing.lenderName || '').trim().toLowerCase() === 'unknown'
+              ? lenderName
+              : existing.lenderName || lenderName,
+        });
+        continue;
+      }
+
       try {
         const response = await fetch('/api/loans', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             companyId: selectedCompanyId,
-            loanName: displayName || instrumentKey || accountId,
-            loanIdNumber: instrumentKey || accountId || null,
-            lenderName: String(instrument?.terms?.lender || 'Unknown').trim() || 'Unknown',
-            loanAmount: Math.abs(
-              Number(
-                instrument?.terms?.originalBalance ??
-                  instrument?.derivedCurrentBalance ??
-                  instrument?.activityTotal ??
-                  0
-              ) || 0
-            ),
-            interestRate:
-              instrument?.terms?.interestRatePct != null && instrument?.terms?.interestRatePct !== ''
-                ? Number(instrument.terms.interestRatePct)
-                : null,
-            loanType: mapInstrumentLoanType(instrument),
-            status: instrument?.instrumentStatus === 'inactive' ? 'INACTIVE' : 'ACTIVE',
+            loanName: displayName,
+            loanIdNumber,
+            lenderName,
+            loanAmount,
+            interestRate,
+            loanType,
+            status,
           }),
         });
         if (!response.ok) continue;
         const data = await response.json().catch(() => null);
-        if (data?.loan) nextLoans.push(data.loan);
+        if (data?.loan) synced.push(data.loan);
       } catch (err) {
         console.warn('Unable to sync loan instrument into covenants loan list', err);
       }
     }
-    return nextLoans;
+
+    return synced;
   };
 
   const loadLoansForCovenants = async (preferLoanId?: string | null) => {
@@ -631,9 +706,9 @@ export default function CovenantsTab({
 
       const existingLoans: Loan[] = Array.isArray(loansPayload?.loans) ? loansPayload.loans : [];
       const instruments = Array.isArray(instrumentsPayload?.instruments) ? instrumentsPayload.instruments : [];
+      // Dropdown membership follows Loan Instruments (balanced rows only).
       const syncedLoans = await ensureLoansFromInstruments(existingLoans, instruments);
 
-      // Keep a stable, readable order: active first, then by name.
       syncedLoans.sort((a, b) => {
         const statusRank = (status: string) => (String(status).toUpperCase() === 'ACTIVE' ? 0 : 1);
         const byStatus = statusRank(a.status) - statusRank(b.status);
@@ -1239,18 +1314,25 @@ export default function CovenantsTab({
         <div style={{ flex: 1 }}>
           <h2 style={{ fontSize: '18px', fontWeight: 800, color: '#0f172a', margin: '0 0 4px 0' }}>
             {activeTab === 'add-loan' ? 'Loan Management' : (selectedLoan ? selectedLoan.loanName : 'Loan Covenants')}
-            {selectedLoan?.loanIdNumber && activeTab !== 'add-loan' && ` - ${selectedLoan.loanIdNumber}`}
           </h2>
           {selectedLoan && activeTab !== 'add-loan' && (
             <p style={{ fontSize: '12px', color: '#64748b', margin: 0 }}>
-              {selectedLoan.lenderName} • {formatLoanAmount(selectedLoan.loanAmount)}
+              {selectedLoan.lenderName &&
+              normalizeLoanName(selectedLoan.lenderName) !== 'unknown' &&
+              normalizeLoanName(selectedLoan.lenderName) !== normalizeLoanName(selectedLoan.loanName)
+                ? `${selectedLoan.lenderName} • `
+                : ''}
+              {formatLoanAmount(selectedLoan.loanAmount)}
+              {selectedLoan.loanIdNumber && !String(selectedLoan.loanIdNumber).toLowerCase().startsWith('gl:')
+                ? ` • GL ${selectedLoan.loanIdNumber}`
+                : ''}
             </p>
           )}
         </div>
 
         {selectedLoan && activeTab !== 'add-loan' && (
           <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
-            {/* Loan Selector Dropdown */}
+            {/* Loan Selector — same names as Loan Instruments page */}
             <select
               value={selectedLoan.id}
               onChange={(e) => {
@@ -1271,8 +1353,6 @@ export default function CovenantsTab({
               {loans.map(loan => (
                 <option key={loan.id} value={loan.id}>
                   {loan.loanName}
-                  {loan.lenderName ? ` — ${loan.lenderName}` : ''}
-                  {loan.loanIdNumber ? ` (${loan.loanIdNumber})` : ''}
                 </option>
               ))}
             </select>
