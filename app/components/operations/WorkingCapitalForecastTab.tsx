@@ -633,6 +633,9 @@ export default function WorkingCapitalForecastTab({ selectedCompanyId, basisMode
   const [isSaving, setIsSaving] = useState<boolean>(false);
   const [lastSavedAt, setLastSavedAt] = useState<string | null>(null);
   const [saveMessage, setSaveMessage] = useState<string | null>(null);
+  // Free-typing draft for LOC APR. Controlled type="number" collapses "9." → 9 and
+  // "" → 0 on every keystroke; formatPercentInput also forced "0.00%" mid-edit.
+  const [locAprDraft, setLocAprDraft] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -1041,12 +1044,14 @@ export default function WorkingCapitalForecastTab({ selectedCompanyId, basisMode
               monthRefsBase,
             );
             setInputs(resolvedInputs);
+            setLocAprDraft(null);
             setHistoricalAverages(mergedAverages);
             setWeeklyDrivers(seededWeekly);
             setStartingBalances(resolvedStartingBalances);
             setLastSavedAt(savedSettings.updatedAt ? String(savedSettings.updatedAt) : null);
           } else {
             setInputs(seedInputs);
+            setLocAprDraft(null);
             setHistoricalAverages(seedAverages);
             const defaults = Array.from({ length: FORECAST_WEEKS }, () => ({ ...seedAverages }));
             setWeeklyDrivers(
@@ -1396,6 +1401,29 @@ export default function WorkingCapitalForecastTab({ selectedCompanyId, basisMode
     const parsed = Number(value);
     setInputs((prev) => ({ ...prev, [key]: Number.isFinite(parsed) ? parsed : 0 }));
   };
+  const updateLocAprDraft = (rawValue: string) => {
+    // Allow clearing and partial decimals ("", "9.", ".5") without snapping to 0.
+    const cleaned = String(rawValue || '').replace(/[^0-9.]/g, '');
+    const parts = cleaned.split('.');
+    const normalized =
+      parts.length <= 1 ? cleaned : `${parts[0]}.${parts.slice(1).join('').slice(0, 4)}`;
+    setLocAprDraft(normalized);
+    if (normalized === '' || normalized === '.') return;
+    const parsed = Number(normalized);
+    if (!Number.isFinite(parsed)) return;
+    setInputs((prev) => ({
+      ...prev,
+      locAprPct: clampNumber(Math.round(parsed * 100) / 100, 0, 100),
+    }));
+  };
+  const commitLocAprDraft = () => {
+    setLocAprDraft(null);
+    setInputs((prev) => ({
+      ...prev,
+      locAprPct: clampNumber(toRoundedPercent(prev.locAprPct, DEFAULT_INPUTS.locAprPct), 0, 100),
+    }));
+  };
+  const locAprInputValue = locAprDraft !== null ? locAprDraft : String(inputs.locAprPct ?? '');
   const updateCurrencyInput = (key: keyof ForecastInputs, value: string) => {
     const parsed = parseCurrencyInput(value);
     setInputs((prev) => ({ ...prev, [key]: parsed }));
@@ -1671,12 +1699,13 @@ export default function WorkingCapitalForecastTab({ selectedCompanyId, basisMode
                     <div>
                       <label style={{ display: 'block', fontSize: '11px', color: '#475569', marginBottom: '4px' }}>LOC APR (%)</label>
                       <input
-                        type="number"
-                        step="0.01"
-                        min="0"
-                        max="100"
-                        value={inputs.locAprPct}
-                        onChange={(e) => updateNumberInput('locAprPct', e.target.value)}
+                        type="text"
+                        inputMode="decimal"
+                        value={locAprInputValue}
+                        onChange={(e) => updateLocAprDraft(e.target.value)}
+                        onBlur={commitLocAprDraft}
+                        onFocus={() => setLocAprDraft(String(inputs.locAprPct ?? ''))}
+                        placeholder="e.g. 9.5"
                         style={{ ...inputStyle, padding: '7px 8px', fontSize: '12px' }}
                       />
                     </div>
@@ -1828,12 +1857,13 @@ export default function WorkingCapitalForecastTab({ selectedCompanyId, basisMode
                 <div>
                   <label style={{ display: 'block', fontSize: '11px', color: '#475569', marginBottom: '4px' }}>LOC APR (%)</label>
                   <input
-                    type="number"
-                    step="0.01"
-                    min="0"
-                    max="100"
-                    value={inputs.locAprPct}
-                    onChange={(e) => updateNumberInput('locAprPct', e.target.value)}
+                    type="text"
+                    inputMode="decimal"
+                    value={locAprInputValue}
+                    onChange={(e) => updateLocAprDraft(e.target.value)}
+                    onBlur={commitLocAprDraft}
+                    onFocus={() => setLocAprDraft(String(inputs.locAprPct ?? ''))}
+                    placeholder="e.g. 9.5"
                     style={{ ...inputStyle, padding: '7px 8px', fontSize: '12px' }}
                   />
                 </div>
