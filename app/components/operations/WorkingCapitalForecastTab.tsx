@@ -1670,7 +1670,15 @@ export default function WorkingCapitalForecastTab({ selectedCompanyId, basisMode
                     </div>
                     <div>
                       <label style={{ display: 'block', fontSize: '11px', color: '#475569', marginBottom: '4px' }}>LOC APR (%)</label>
-                      <input type="text" inputMode="decimal" value={formatPercentInput(inputs.locAprPct)} onChange={(e) => updatePercentInput('locAprPct', e.target.value)} style={{ ...inputStyle, padding: '7px 8px', fontSize: '12px' }} />
+                      <input
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        max="100"
+                        value={inputs.locAprPct}
+                        onChange={(e) => updateNumberInput('locAprPct', e.target.value)}
+                        style={{ ...inputStyle, padding: '7px 8px', fontSize: '12px' }}
+                      />
                     </div>
                     {inventoryBalanceFromImportedData ? (
                       <div>
@@ -1819,7 +1827,15 @@ export default function WorkingCapitalForecastTab({ selectedCompanyId, basisMode
                 </div>
                 <div>
                   <label style={{ display: 'block', fontSize: '11px', color: '#475569', marginBottom: '4px' }}>LOC APR (%)</label>
-                  <input type="text" inputMode="decimal" value={formatPercentInput(inputs.locAprPct)} onChange={(e) => updatePercentInput('locAprPct', e.target.value)} style={{ ...inputStyle, padding: '7px 8px', fontSize: '12px' }} />
+                  <input
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    max="100"
+                    value={inputs.locAprPct}
+                    onChange={(e) => updateNumberInput('locAprPct', e.target.value)}
+                    style={{ ...inputStyle, padding: '7px 8px', fontSize: '12px' }}
+                  />
                 </div>
                 {inventoryBalanceFromImportedData ? (
                   <div>
