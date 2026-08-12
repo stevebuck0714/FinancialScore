@@ -260,6 +260,24 @@ export async function GET(request: NextRequest) {
       },
     });
 
+    // Heal misconfigured QBO Online rows that still have autoSync=true from older settings saves.
+    const qboOnlineAutoSyncIds = connections
+      .filter(
+        (connection) =>
+          connection.platform === 'QUICKBOOKS' &&
+          !isQuickBooksDesktopFamily(connection.company?.accountingSystem)
+      )
+      .map((connection) => connection.id);
+    if (qboOnlineAutoSyncIds.length > 0) {
+      await prisma.accountingConnection.updateMany({
+        where: { id: { in: qboOnlineAutoSyncIds } },
+        data: { autoSync: false, syncFrequency: 'manual' },
+      });
+      console.log(
+        `🔧 Disabled auto-sync on ${qboOnlineAutoSyncIds.length} QuickBooks Online connection(s) (manual sync only)`
+      );
+    }
+
     const activeInforRuns = await prisma.inforSyncRun.findMany({
       where: {
         status: { in: ['queued', 'running'] },
@@ -271,6 +289,14 @@ export async function GET(request: NextRequest) {
       activeInforRuns.map((run) => `${run.companyId}:${run.platform || 'INFOR_M3'}`)
     );
     const runnableConnections = connections.filter((connection) => {
+      // QuickBooks Online is manual-sync only. Never run auto_operational_sync for QBO
+      // (Desktop/Enterprise use Web Connector auto-queue separately).
+      if (
+        connection.platform === 'QUICKBOOKS' &&
+        !isQuickBooksDesktopFamily(connection.company?.accountingSystem)
+      ) {
+        return false;
+      }
       if (!isConnectionDue(connection)) return false;
       if (
         isQuickBooksDesktopFamily(connection.company?.accountingSystem) &&

@@ -234,7 +234,7 @@ export async function POST(request: NextRequest) {
       operationalScheduleUpdatedAt: new Date().toISOString(),
       quickbooksOnlineLastUpdatedAt: new Date().toISOString(),
     };
-    const scheduleFrequency = settings.syncFrequency || 'daily';
+    const scheduleFrequency = 'manual';
 
     await prisma.accountingConnection.upsert({
       where: {
@@ -247,7 +247,8 @@ export async function POST(request: NextRequest) {
         connectionMetadata: mergedMetadata,
         platformVersion: existing?.platformVersion || 'qbo-1.0',
         status: existing?.status || 'INACTIVE',
-        autoSync: true,
+        // QBO Online is user-initiated / manual sync only — never enable cron auto sync.
+        autoSync: false,
         syncFrequency: scheduleFrequency,
         errorMessage: null,
       },
@@ -256,7 +257,7 @@ export async function POST(request: NextRequest) {
         platform: 'QUICKBOOKS',
         status: 'INACTIVE',
         platformVersion: 'qbo-1.0',
-        autoSync: true,
+        autoSync: false,
         syncFrequency: scheduleFrequency,
         connectionMetadata: mergedMetadata,
       },

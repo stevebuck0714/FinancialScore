@@ -65,6 +65,9 @@ export async function GET(request: NextRequest) {
         realmId,
         platformVersion: 'v3',
         errorMessage: null,
+        // Keep QBO Online on manual sync even after reconnect.
+        autoSync: false,
+        syncFrequency: 'manual',
       },
       create: {
         companyId,
