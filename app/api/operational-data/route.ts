@@ -3249,7 +3249,7 @@ export async function GET(request: NextRequest) {
               shouldUseMockData ? 'mock-operational-data-v4' : 'real-operational-data-v1',
               // Bust stale ap-aging payloads that were cached while the
               // payment-gap guard / DerAmtBal preference was missing.
-              cacheType === 'ap-aging' || cacheType === 'ap' ? 'ap-payment-gap-guard-v1' : null,
+              cacheType === 'ap-aging' || cacheType === 'ap' ? 'ap-payment-gap-guard-v2' : null,
               shouldApplyHydratedDateFilter ? hydratedInforDates : null,
               cacheType === 'customers' ? CUSTOMER_CONCENTRATION_CACHE_VERSION : null,
               cacheType === 'customers' ? CUSTOMER_REVENUE_SOURCE_VERSION : null,
@@ -7410,8 +7410,12 @@ export async function GET(request: NextRequest) {
           const anchorAccountForTrend = apAnchorCfgForTrend.accounts[0];
           // When Type=P ingest has lagged Type=V (common after CSI_LOAD treated
           // SLAptrxps as open-only), the aging-rule invents multi-million open
-          // AP. Prefer DerAmtBal snapshots already loaded above until payments
-          // catch up via dual-write re-sync.
+          // AP after the payment cutoff. Pre-cutoff APAgingSnapshot rows are
+          // also often corrupt (closed vouchers dumped as open — e.g. $33M on
+          // 2026-04-13). Build a hybrid trend:
+          //   • through last Type=P date → aging-rule (payments exist)
+          //   • after that → sanity-filtered DerAmtBal snapshots
+          // Vendor/summary tables still come from latest open bills below.
           const paymentLedger = await isApPaymentEventLedgerStale(
             prisma,
             companyId,
@@ -7419,9 +7423,89 @@ export async function GET(request: NextRequest) {
           );
           if (paymentLedger.stale) {
             console.warn(
-              `[ap-aging] skipping aging-rule for ${companyId}: payment ledger stale`,
+              `[ap-aging] hybrid trend for ${companyId}: payment ledger stale`,
               paymentLedger
             );
+            const maxPayKey = paymentLedger.maxPaymentDate;
+            const AP_SNAPSHOT_SANITY_MAX = 2_000_000;
+            const postPaySnapshots = (Array.isArray(data) ? data : []).filter((row: any) => {
+              const dayKey = dateKeyUtc(new Date(row.snapshotDate));
+              if (maxPayKey && dayKey <= maxPayKey) return false;
+              const total = Math.abs(Number(row.totalAP || 0));
+              return Number.isFinite(total) && total <= AP_SNAPSHOT_SANITY_MAX;
+            });
+
+            let agingPrefix: Awaited<ReturnType<typeof buildDailyApSeriesByAgingRule>> = [];
+            if (maxPayKey) {
+              const payEnd = parseIsoDayKey(maxPayKey);
+              const prefixEnd = payEnd.getTime() <= endDate.getTime() ? payEnd : endDate;
+              if (prefixEnd.getTime() >= startDate.getTime()) {
+                agingPrefix = await buildDailyApSeriesByAgingRule(
+                  prisma,
+                  companyId,
+                  anchorAccountForTrend.accountId,
+                  anchorAccountForTrend.accountName || 'Accounts Payable',
+                  anchorAccountForTrend.accountNumber || anchorAccountForTrend.accountId,
+                  startDate,
+                  prefixEnd,
+                  150
+                );
+              }
+            }
+
+            const byDay = new Map<string, any>();
+            for (const row of agingPrefix) {
+              const dayKey = dateKeyUtc(new Date(row.snapshotDate));
+              const total = Number(row.apBalance || 0);
+              byDay.set(dayKey, {
+                snapshotDate: new Date(row.snapshotDate),
+                frequency: apFrequencyForQuery,
+                totalAP: total,
+                current: Number(row.current || 0),
+                days1to30: Number(row.days1to30 || 0),
+                days31to60: Number(row.days31to60 || 0),
+                days61to90: Number(row.days61to90 || 0),
+                days90plus: Number(row.days90plus || 0),
+                over30Pct: Number(row.over30Pct || 0),
+                over90Pct: Number(row.over90Pct || 0),
+                dpo: Number(row.dpo || 0),
+              });
+            }
+            for (const row of postPaySnapshots) {
+              const dayKey = dateKeyUtc(new Date(row.snapshotDate));
+              byDay.set(dayKey, row);
+            }
+
+            data = Array.from(byDay.values())
+              .sort(
+                (a: any, b: any) =>
+                  new Date(b.snapshotDate).getTime() - new Date(a.snapshotDate).getTime()
+              )
+              .slice(0, limit);
+
+            latestAP = data[0];
+            apMetrics = latestAP
+              ? {
+                  totalAP: Number(latestAP.totalAP || 0),
+                  currentPct:
+                    Number(latestAP.totalAP || 0) > 0
+                      ? (Number(latestAP.current || 0) / Number(latestAP.totalAP || 0)) * 100
+                      : 0,
+                  over30Pct:
+                    Number(latestAP.totalAP || 0) > 0
+                      ? ((Number(latestAP.days31to60 || 0) +
+                          Number(latestAP.days61to90 || 0) +
+                          Number(latestAP.days90plus || 0)) /
+                          Number(latestAP.totalAP || 0)) *
+                        100
+                      : Number(latestAP.over30Pct || 0),
+                  over90Pct:
+                    Number(latestAP.totalAP || 0) > 0
+                      ? (Number(latestAP.days90plus || 0) / Number(latestAP.totalAP || 0)) * 100
+                      : Number(latestAP.over90Pct || 0),
+                  dpo: Number(latestAP.dpo || calculateDPO(data) || 0),
+                }
+              : apMetrics;
           }
           // Trend uses the same 150-day aging-rule derivation as the main
           // 'ap' case below — see comment there for the rationale and

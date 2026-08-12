@@ -556,13 +556,41 @@ export default function CovenantsTab({
   const getInstrumentDisplayName = (instrument: any): string =>
     String(instrument?.terms?.displayName || instrument?.displayName || '').trim();
 
-  /** Same membership filter as LoansTab loanInstrumentSections. */
+  /** Same balance check LoansTab uses for the instruments table body. */
   const hasLoanInstrumentBalance = (instrument: any): boolean => {
     const priorMonthBalance = Number(instrument?.priorMonthBalance);
     const derived = Number(instrument?.derivedCurrentBalance);
     const hasPrior = Number.isFinite(priorMonthBalance) && Math.abs(priorMonthBalance) > 0.005;
     const hasCurrent = Number.isFinite(derived) && Math.abs(derived) > 0.005;
     return hasPrior || hasCurrent;
+  };
+
+  const isLocInstrument = (instrument: any): boolean => {
+    const haystack = [
+      instrument?.targetField,
+      instrument?.displayName,
+      instrument?.accountId,
+      instrument?.terms?.displayName,
+      instrument?.terms?.loanType,
+      instrument?.terms?.lender,
+    ]
+      .join(' ')
+      .toLowerCase();
+    return String(instrument?.targetField || '').toLowerCase() === 'loc' || /\bloc\b|line of credit|revolver/.test(haystack);
+  };
+
+  /**
+   * Covenants need every live facility, including paid-down LOCs that the
+   * Loan Instruments table hides when current balance is $0.
+   */
+  const isCovenantEligibleInstrument = (instrument: any): boolean => {
+    if (hasLoanInstrumentBalance(instrument)) return true;
+    if (!getInstrumentDisplayName(instrument)) return false;
+    if (isLocInstrument(instrument)) return true;
+    // Named facility with a configured commitment / original amount still
+    // needs covenant tracking even when currently paid down.
+    const facilityAmt = Number(instrument?.terms?.originalBalance);
+    return Number.isFinite(facilityAmt) && Math.abs(facilityAmt) > 0.005;
   };
 
   const mapInstrumentLoanType = (instrument: any): string => {
@@ -588,12 +616,11 @@ export default function CovenantsTab({
   };
 
   /**
-   * Covenants dropdown = Loan Instruments table rows only (balance > 0),
-   * using the same display names rendered on that page. No raw gl: keys,
-   * no "Unknown" lender filler in the selector.
+   * Covenants dropdown = Loan Instruments facilities (balances + paid-down LOCs
+   * / committed facilities), using the same display names as that page.
    */
   const ensureLoansFromInstruments = async (existingLoans: Loan[], instruments: any[]): Promise<Loan[]> => {
-    const visibleInstruments = (Array.isArray(instruments) ? instruments : []).filter(hasLoanInstrumentBalance);
+    const visibleInstruments = (Array.isArray(instruments) ? instruments : []).filter(isCovenantEligibleInstrument);
     const synced: Loan[] = [];
 
     for (const instrument of visibleInstruments) {
@@ -604,6 +631,8 @@ export default function CovenantsTab({
       const instrumentKey = String(instrument?.instrumentKey || '').trim();
       const loanIdNumber = accountId || instrumentKey || null;
       const lenderName = String(instrument?.terms?.lender || '').trim() || displayName;
+      const loanType = mapInstrumentLoanType(instrument);
+      // Prefer facility commitment when the line is paid down to $0.
       const loanAmount = Math.abs(
         Number(
           instrument?.terms?.originalBalance ??
@@ -616,8 +645,13 @@ export default function CovenantsTab({
         instrument?.terms?.interestRatePct != null && instrument?.terms?.interestRatePct !== ''
           ? Number(instrument.terms.interestRatePct)
           : null;
-      const loanType = mapInstrumentLoanType(instrument);
-      const status = instrument?.instrumentStatus === 'inactive' ? 'INACTIVE' : 'ACTIVE';
+      // Revolving LOCs stay ACTIVE for covenant setup even at $0 drawn.
+      const status =
+        loanType === 'LINE_OF_CREDIT'
+          ? 'ACTIVE'
+          : instrument?.instrumentStatus === 'inactive'
+            ? 'INACTIVE'
+            : 'ACTIVE';
 
       const existing = findMatchingLoan(existingLoans, instrument) || findMatchingLoan(synced, instrument);
       if (existing) {
@@ -625,7 +659,8 @@ export default function CovenantsTab({
           normalizeLoanName(existing.loanName) !== normalizeLoanName(displayName) ||
           String(existing.loanIdNumber || '').trim() !== String(loanIdNumber || '').trim() ||
           (String(existing.lenderName || '').trim().toLowerCase() === 'unknown' &&
-            lenderName.toLowerCase() !== 'unknown');
+            lenderName.toLowerCase() !== 'unknown') ||
+          (loanType === 'LINE_OF_CREDIT' && String(existing.status || '').toUpperCase() !== 'ACTIVE');
         if (needsUpdate) {
           try {
             const response = await fetch(`/api/loans/${existing.id}`, {
@@ -661,6 +696,8 @@ export default function CovenantsTab({
             String(existing.lenderName || '').trim().toLowerCase() === 'unknown'
               ? lenderName
               : existing.lenderName || lenderName,
+          status: loanType === 'LINE_OF_CREDIT' ? 'ACTIVE' : existing.status,
+          loanAmount: loanAmount || existing.loanAmount,
         });
         continue;
       }
