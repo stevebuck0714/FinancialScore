@@ -547,7 +547,9 @@ export async function GET(request: NextRequest) {
           data: {
             connectionMetadata: withRunStateMetadata(connection.connectionMetadata, timedOutRun),
             errorMessage: reason,
-            lastSyncAt: new Date(),
+            // Do not bump lastSyncAt on timeout — that heartbeat is for successful loads only
+            // (data-load watchdog treats lastSyncAt as last successful scheduled load).
+            status: 'ERROR',
           },
         });
         runMatches = timedOutRun;

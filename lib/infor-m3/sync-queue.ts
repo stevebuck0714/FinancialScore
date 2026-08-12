@@ -539,6 +539,39 @@ async function recordTaskAttemptStarted(
   }
 }
 
+/**
+ * Heartbeat for data-load watchdog / schedule UI.
+ * Queue completion historically marked InforSyncRun done without bumping
+ * AccountingConnection.lastSyncAt, which caused false "overdue" alerts.
+ */
+async function markAccountingConnectionLoadSuccess(params: {
+  companyId: string;
+  platform: string;
+  finishedAt?: Date;
+}): Promise<void> {
+  const platform = String(params.platform || 'INFOR_M3').trim().toUpperCase() || 'INFOR_M3';
+  const finishedAt = params.finishedAt || new Date();
+  try {
+    await db().accountingConnection.updateMany({
+      where: {
+        companyId: params.companyId,
+        platform: platform as AccountingPlatform,
+      },
+      data: {
+        lastSyncAt: finishedAt,
+        status: 'ACTIVE',
+        errorMessage: null,
+      },
+    });
+  } catch (error) {
+    console.warn('Failed to update AccountingConnection lastSyncAt after sync queue completion', {
+      companyId: params.companyId,
+      platform,
+      error,
+    });
+  }
+}
+
 async function markRunPostProcessingFailure(
   task: QueueTaskRecord & { run: QueueRunRecord },
   stage: string,
@@ -1235,6 +1268,10 @@ async function processTask(
           await markRunPostProcessingFailure(task, 'mapping-change monthly financial sync', JSON.stringify(finalizer));
           return { runId: task.runId, taskId: task.id, status: 'failed', details: JSON.stringify(finalizer) };
         }
+        await markAccountingConnectionLoadSuccess({
+          companyId: task.companyId,
+          platform: String(task.run.platform || 'INFOR_M3'),
+        });
       }
       return { runId: task.runId, taskId: task.id, status: 'success' };
     } catch (error) {
@@ -1878,6 +1915,10 @@ async function processTask(
   }
 
   if (runCompletedInThisTask) {
+    await markAccountingConnectionLoadSuccess({
+      companyId: task.companyId,
+      platform: String(task.run.platform || 'INFOR_M3'),
+    });
     const company = await db().company.findUnique({
       where: { id: task.companyId },
       select: { accountingSystem: true },
