@@ -2136,24 +2136,24 @@ async function buildDailyApSeriesByAgingRule(
        JOIN voucher_creates vc ON vc.voucher = vm.voucher
        LEFT JOIN vendor_terms vt ON vt."vendorId" = vm.vendor_id
      ),
-     -- Event ledger (V/P/A/C) already on the voucher.
-     events AS (
-       SELECT voucher, "eventDate"::date AS dt, "normalizedAmount"
+     -- Pre-aggregate to one row per voucher/day so the date×voucher join stays linear
+     -- (no LATERAL, no cartesian product across event/payment streams).
+     event_daily AS (
+       SELECT voucher, "eventDate"::date AS dt, SUM("normalizedAmount")::float8 AS amt
        FROM "APTransactionFact"
        WHERE "companyId" = $1 AND "apAcct" = $2
          AND "eventDate" >= ($3::date - INTERVAL '${aging} days')
          AND "eventDate" <= $4::date
+       GROUP BY voucher, "eventDate"::date
      ),
-     -- Type=P already applied in events (absolute dollars) so we can avoid
-     -- double-counting when also matching APPaymentFact.
-     type_p_applied AS (
-       SELECT voucher, "eventDate"::date AS dt, ABS("normalizedAmount")::float8 AS paid_amt
+     type_p_daily AS (
+       SELECT voucher, "eventDate"::date AS dt, SUM(ABS("normalizedAmount"))::float8 AS amt
        FROM "APTransactionFact"
        WHERE "companyId" = $1 AND "apAcct" = $2 AND "transType" = 'P'
+         AND "eventDate" >= ($3::date - INTERVAL '${aging} days')
          AND "eventDate" <= $4::date
+       GROUP BY voucher, "eventDate"::date
      ),
-     -- APPaymentFact stores vendor invoice numbers in billNo (not CSI voucher ids).
-     -- Dedup natural-key copies, then match to voucher via invoiceNum or voucher.
      payment_facts AS (
        SELECT
          UPPER(TRIM("billNo")) AS bill_key,
@@ -2172,47 +2172,74 @@ async function buildDailyApSeriesByAgingRule(
        ) d
        GROUP BY 1, 2
      ),
+     -- Match billNo → voucher via UNION (avoids slow OR join).
      payment_by_voucher_day AS (
-       SELECT
-         vm.voucher,
-         pf.dt,
-         SUM(pf.paid_amt)::float8 AS paid_amt
-       FROM voucher_meta vm
-       JOIN payment_facts pf
-         ON pf.bill_key = UPPER(TRIM(vm.voucher))
-         OR (vm.invoice_num IS NOT NULL AND pf.bill_key = UPPER(TRIM(vm.invoice_num)))
-       GROUP BY vm.voucher, pf.dt
+       SELECT voucher, dt, SUM(paid_amt)::float8 AS amt
+       FROM (
+         SELECT vm.voucher, pf.dt, pf.paid_amt
+         FROM voucher_meta vm
+         JOIN payment_facts pf ON pf.bill_key = UPPER(TRIM(vm.voucher))
+         UNION ALL
+         SELECT vm.voucher, pf.dt, pf.paid_amt
+         FROM voucher_meta vm
+         JOIN payment_facts pf
+           ON vm.invoice_num IS NOT NULL
+          AND pf.bill_key = UPPER(TRIM(vm.invoice_num))
+       ) matched
+       GROUP BY voucher, dt
      ),
-     daily_voucher AS (
+     event_open AS (
        SELECT
          ds.d AS snapshot_date,
          vc.voucher,
-         GREATEST(
-           COALESCE(ev.event_net, 0)
-           - GREATEST(COALESCE(pay.paid_amt, 0) - COALESCE(tpa.paid_in_events, 0), 0),
-           0
-         ) AS open_per_voucher,
-         (ds.d - vd.due_date::date)::int AS days_past_due
+         COALESCE(SUM(CASE WHEN e.dt <= ds.d THEN e.amt ELSE 0 END), 0)::float8 AS event_net
        FROM date_series ds
        JOIN voucher_creates vc
          ON vc.created_at > (ds.d - INTERVAL '${aging} days')
         AND vc.created_at <= ds.d
-       JOIN voucher_due vd ON vd.voucher = vc.voucher
-       LEFT JOIN LATERAL (
-         SELECT SUM(e."normalizedAmount")::float8 AS event_net
-         FROM events e
-         WHERE e.voucher = vc.voucher AND e.dt <= ds.d
-       ) ev ON true
-       LEFT JOIN LATERAL (
-         SELECT SUM(p.paid_amt)::float8 AS paid_amt
-         FROM payment_by_voucher_day p
-         WHERE p.voucher = vc.voucher AND p.dt <= ds.d
-       ) pay ON true
-       LEFT JOIN LATERAL (
-         SELECT SUM(t.paid_amt)::float8 AS paid_in_events
-         FROM type_p_applied t
-         WHERE t.voucher = vc.voucher AND t.dt <= ds.d
-       ) tpa ON true
+       LEFT JOIN event_daily e ON e.voucher = vc.voucher
+       GROUP BY ds.d, vc.voucher
+     ),
+     pay_open AS (
+       SELECT
+         ds.d AS snapshot_date,
+         vc.voucher,
+         COALESCE(SUM(CASE WHEN p.dt <= ds.d THEN p.amt ELSE 0 END), 0)::float8 AS paid_amt
+       FROM date_series ds
+       JOIN voucher_creates vc
+         ON vc.created_at > (ds.d - INTERVAL '${aging} days')
+        AND vc.created_at <= ds.d
+       LEFT JOIN payment_by_voucher_day p ON p.voucher = vc.voucher
+       GROUP BY ds.d, vc.voucher
+     ),
+     type_p_open AS (
+       SELECT
+         ds.d AS snapshot_date,
+         vc.voucher,
+         COALESCE(SUM(CASE WHEN t.dt <= ds.d THEN t.amt ELSE 0 END), 0)::float8 AS paid_in_events
+       FROM date_series ds
+       JOIN voucher_creates vc
+         ON vc.created_at > (ds.d - INTERVAL '${aging} days')
+        AND vc.created_at <= ds.d
+       LEFT JOIN type_p_daily t ON t.voucher = vc.voucher
+       GROUP BY ds.d, vc.voucher
+     ),
+     daily_voucher AS (
+       SELECT
+         eo.snapshot_date,
+         eo.voucher,
+         GREATEST(
+           eo.event_net
+           - GREATEST(COALESCE(po.paid_amt, 0) - COALESCE(tpo.paid_in_events, 0), 0),
+           0
+         ) AS open_per_voucher,
+         (eo.snapshot_date - vd.due_date::date)::int AS days_past_due
+       FROM event_open eo
+       JOIN voucher_due vd ON vd.voucher = eo.voucher
+       LEFT JOIN pay_open po
+         ON po.snapshot_date = eo.snapshot_date AND po.voucher = eo.voucher
+       LEFT JOIN type_p_open tpo
+         ON tpo.snapshot_date = eo.snapshot_date AND tpo.voucher = eo.voucher
      ),
      daily_buckets AS (
        SELECT
@@ -2227,17 +2254,22 @@ async function buildDailyApSeriesByAgingRule(
        WHERE open_per_voucher > 0
        GROUP BY snapshot_date
      ),
+     purchase_daily AS (
+       SELECT "eventDate"::date AS dt, SUM("normalizedAmount")::float8 AS amt
+       FROM "APTransactionFact"
+       WHERE "companyId" = $1
+         AND "apAcct" = $2
+         AND "transType" = 'V'
+         AND "eventDate" >= ($3::date - INTERVAL '90 days')
+         AND "eventDate" <= $4::date
+       GROUP BY "eventDate"::date
+     ),
      daily_purchases AS (
        SELECT
          ds.d AS snapshot_date,
-         COALESCE(SUM(t."normalizedAmount"), 0) AS purchases_90d
+         COALESCE(SUM(CASE WHEN p.dt > (ds.d - INTERVAL '90 days') AND p.dt <= ds.d THEN p.amt ELSE 0 END), 0) AS purchases_90d
        FROM date_series ds
-       LEFT JOIN "APTransactionFact" t
-         ON t."companyId" = $1
-        AND t."apAcct"    = $2
-        AND t."transType" = 'V'
-        AND t."eventDate" >  (ds.d - INTERVAL '90 days')
-        AND t."eventDate" <= ds.d
+       LEFT JOIN purchase_daily p ON true
        GROUP BY ds.d
      )
      SELECT
@@ -2543,14 +2575,19 @@ async function buildOpenVouchersByAgingRule(
        GROUP BY 1
      ),
      payment_by_voucher AS (
-       SELECT
-         vm.voucher,
-         SUM(pf.paid_amt)::float8 AS paid_amt
-       FROM voucher_meta vm
-       JOIN payment_facts pf
-         ON pf.bill_key = UPPER(TRIM(vm.voucher))
-         OR (vm.invoice_num IS NOT NULL AND pf.bill_key = UPPER(TRIM(vm.invoice_num)))
-       GROUP BY vm.voucher
+       SELECT voucher, SUM(paid_amt)::float8 AS paid_amt
+       FROM (
+         SELECT vm.voucher, pf.paid_amt
+         FROM voucher_meta vm
+         JOIN payment_facts pf ON pf.bill_key = UPPER(TRIM(vm.voucher))
+         UNION ALL
+         SELECT vm.voucher, pf.paid_amt
+         FROM voucher_meta vm
+         JOIN payment_facts pf
+           ON vm.invoice_num IS NOT NULL
+          AND pf.bill_key = UPPER(TRIM(vm.invoice_num))
+       ) matched
+       GROUP BY voucher
      ),
      open_per_voucher AS (
        SELECT
