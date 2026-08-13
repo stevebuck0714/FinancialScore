@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { formatMoney, formatMoneyCompact } from '@/lib/format/currency';
+import { formatMoney, formatMoneyCompact, formatSignedMoney } from '@/lib/format/currency';
 import {
   DEFAULT_BASE_CURRENCY,
   DEFAULT_LOCALE,
@@ -82,6 +82,8 @@ export function useCompanyMoneyFormatter(companyId?: string | null) {
         formatMoney(value, { currency: displayCurrency, locale: currency.locale, decimals }),
       fmtCompact: (value: number) =>
         formatMoneyCompact(value, { currency: displayCurrency, locale: currency.locale }),
+      fmtSigned: (value: number, decimals = 0) =>
+        formatSignedMoney(value, { currency: displayCurrency, locale: currency.locale, decimals }),
     }),
     [displayCurrency, currency.locale, currency.baseCurrency, currency.reportingCurrency]
   );

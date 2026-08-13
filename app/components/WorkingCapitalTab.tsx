@@ -2,18 +2,27 @@
 
 import React, { useState } from 'react';
 import SimpleChart from './SimpleChart';
+import { formatMoneyCompact } from '@/lib/format/currency';
+import { DEFAULT_BASE_CURRENCY } from '@/lib/constants/currencies';
+import PageCurrencyBadge from './PageCurrencyBadge';
 
 interface WorkingCapitalTabProps {
   selectedCompanyId: string;
   companyName: string;
   prefetchedMonthlyData?: any[];
+  displayCurrency?: string | null;
+  locale?: string | null;
 }
 
 export default function WorkingCapitalTab({
   selectedCompanyId,
   companyName,
   prefetchedMonthlyData,
+  displayCurrency,
+  locale,
 }: WorkingCapitalTabProps) {
+  const moneyCurrency = displayCurrency || DEFAULT_BASE_CURRENCY;
+  const compactMoney = (value: number) => formatMoneyCompact(value, { currency: moneyCurrency, locale });
   const formatMonthLabel = (rawMonth: unknown, fallbackIndex: number): string => {
     if (!rawMonth) return `M${fallbackIndex + 1}`;
     const asString = String(rawMonth).trim();
@@ -71,8 +80,9 @@ export default function WorkingCapitalTab({
       `}</style>
 
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '32px' }}>
-        <div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
           <h1 style={{ fontSize: '32px', fontWeight: '700', color: '#1e293b', margin: '0 0 8px 0' }}>Working Capital Analysis</h1>
+          <PageCurrencyBadge currency={moneyCurrency} locale={locale} />
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
           <button
@@ -130,19 +140,19 @@ export default function WorkingCapitalTab({
                   <h3 style={{ fontSize: '16px', fontWeight: '700', color: '#667eea', margin: 0 }}>💼 Current Working Capital</h3>
                 </div>
                 <div style={{ fontSize: '28px', fontWeight: '700', color: '#1e293b', marginBottom: '6px' }}>
-                  ${(workingCapital / 1000).toFixed(0)}K
+                  {compactMoney(workingCapital)}
                 </div>
                 <div style={{ fontSize: '13px', color: wcChange >= 0 ? '#10b981' : '#ef4444', fontWeight: '600', marginBottom: '12px' }}>
-                  {wcChange >= 0 ? '↗️ +' : '↘️ '}${Math.abs(wcChange / 1000).toFixed(0)}K ({wcChangePercent >= 0 ? '+' : ''}{wcChangePercent.toFixed(1)}%)
+                  {wcChange >= 0 ? '↗️ +' : '↘️ '}{compactMoney(Math.abs(wcChange))} ({wcChangePercent >= 0 ? '+' : ''}{wcChangePercent.toFixed(1)}%)
                 </div>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', fontSize: '11px' }}>
                   <div>
                     <div style={{ color: '#64748b', marginBottom: '2px' }}>Current Assets</div>
-                    <div style={{ fontWeight: '600', color: '#1e293b' }}>${(currentAssets / 1000).toFixed(0)}K</div>
+                    <div style={{ fontWeight: '600', color: '#1e293b' }}>{compactMoney(currentAssets)}</div>
                   </div>
                   <div>
                     <div style={{ color: '#64748b', marginBottom: '2px' }}>Current Liabilities</div>
-                    <div style={{ fontWeight: '600', color: '#1e293b' }}>${(currentLiab / 1000).toFixed(0)}K</div>
+                    <div style={{ fontWeight: '600', color: '#1e293b' }}>{compactMoney(currentLiab)}</div>
                   </div>
                 </div>
               </div>
@@ -476,7 +486,7 @@ export default function WorkingCapitalTab({
                   {component.name}
                 </div>
                 <div style={{ fontSize: '18px', fontWeight: '700', color: component.color }}>
-                  ${(component.value / 1000).toFixed(1)}K
+                  {compactMoney(component.value)}
                 </div>
               </div>
             ));
@@ -504,7 +514,7 @@ export default function WorkingCapitalTab({
             })}
             valueKey="workingCapital"
             title=""
-            formatter={(v) => `$${v.toFixed(0)}K`}
+            formatter={(v) => compactMoney(v * 1000)}
             showGrid={true}
             showLegend={false}
             color="#667eea"
@@ -534,7 +544,7 @@ export default function WorkingCapitalTab({
             }))}
             valueKey="cash"
             title=""
-            formatter={(v) => `$${v.toFixed(0)}K`}
+            formatter={(v) => compactMoney(v * 1000)}
             showGrid={true}
             showLegend={false}
             color="#10b981"
@@ -622,7 +632,7 @@ export default function WorkingCapitalTab({
                       fontSize="12"
                       fill="#64748b"
                     >
-                      ${Math.round(line.value)}K
+                      {compactMoney(line.value * 1000)}
                     </text>
                   </g>
                 ))}
@@ -655,7 +665,7 @@ export default function WorkingCapitalTab({
                   <g key={`asset-${i}`}>
                     <circle cx={p.x} cy={p.y} r="8" fill="transparent" style={{ cursor: 'pointer' }} onMouseEnter={() => setAssetsLiabHover({ index: i, x: p.x, y: p.y, month: p.month, assets: p.assets, liabilities: p.liabilities })} onMouseLeave={() => setAssetsLiabHover(null)} />
                     <circle cx={p.x} cy={p.y} r="4" fill="#3b82f6" stroke="white" strokeWidth="2" pointerEvents="none">
-                      <title>{`${p.month}: Assets $${p.assets.toFixed(0)}K`}</title>
+                      <title>{`${p.month}: Assets ${compactMoney(p.assets * 1000)}`}</title>
                     </circle>
                   </g>
                 ))}
@@ -664,7 +674,7 @@ export default function WorkingCapitalTab({
                   <g key={`liab-${i}`}>
                     <circle cx={p.x} cy={p.y} r="8" fill="transparent" style={{ cursor: 'pointer' }} onMouseEnter={() => setAssetsLiabHover({ index: i, x: p.x, y: p.y, month: p.month, assets: p.assets, liabilities: p.liabilities })} onMouseLeave={() => setAssetsLiabHover(null)} />
                     <circle cx={p.x} cy={p.y} r="4" fill="#ef4444" stroke="white" strokeWidth="2" pointerEvents="none">
-                      <title>{`${p.month}: Liabilities $${p.liabilities.toFixed(0)}K`}</title>
+                      <title>{`${p.month}: Liabilities ${compactMoney(p.liabilities * 1000)}`}</title>
                     </circle>
                   </g>
                 ))}
@@ -672,8 +682,8 @@ export default function WorkingCapitalTab({
               {assetsLiabHover && (
                 <div style={{ position: 'absolute', left: `${Math.min((assetsLiabHover.x + 15) / width * 100, 85)}%`, top: `${Math.max((assetsLiabHover.y - 50) / height * 100, 0)}%`, background: 'rgba(30, 41, 59, 0.95)', color: 'white', padding: '8px 12px', borderRadius: '8px', fontSize: '13px', fontWeight: '600', boxShadow: '0 4px 12px rgba(0,0,0,0.15)', pointerEvents: 'none', zIndex: 10 }}>
                   <div style={{ fontSize: '11px', color: '#94a3b8', marginBottom: '4px' }}>{assetsLiabHover.month}</div>
-                  <div style={{ color: '#60a5fa' }}>Assets: ${assetsLiabHover.assets.toFixed(0)}K</div>
-                  <div style={{ color: '#f87171' }}>Liabilities: ${assetsLiabHover.liabilities.toFixed(0)}K</div>
+                  <div style={{ color: '#60a5fa' }}>Assets: {compactMoney(assetsLiabHover.assets * 1000)}</div>
+                  <div style={{ color: '#f87171' }}>Liabilities: {compactMoney(assetsLiabHover.liabilities * 1000)}</div>
                 </div>
               )}
               </div>
@@ -703,7 +713,7 @@ export default function WorkingCapitalTab({
             }))}
             valueKey="inventory"
             title=""
-            formatter={(v) => `$${v.toFixed(0)}K`}
+            formatter={(v) => compactMoney(v * 1000)}
             showGrid={true}
             showLegend={false}
             color="#8b5cf6"

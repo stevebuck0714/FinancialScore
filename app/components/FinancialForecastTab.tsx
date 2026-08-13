@@ -1551,7 +1551,7 @@ export default function FinancialForecastTab({
               <g key={`yt-${idx}`}>
                 <line x1={padding.left} y1={y} x2={width - padding.right} y2={y} stroke="#e2e8f0" strokeWidth="1" />
                 <text x={padding.left - 8} y={y + 4} textAnchor="end" fontSize="11" fill="#64748b">
-                  ${(tick / 1000).toFixed(0)}K
+                  {money.fmtCompact(tick)}
                 </text>
               </g>
             );
@@ -1682,7 +1682,7 @@ export default function FinancialForecastTab({
               <g key={`yt-line-${idx}`}>
                 <line x1={padding.left} y1={y} x2={width - padding.right} y2={y} stroke="#e2e8f0" strokeWidth="1" />
                 <text x={padding.left - 10} y={y + 4} textAnchor="end" fontSize="11" fill="#64748b">
-                  ${(tick / 1000).toFixed(0)}K
+                  {money.fmtCompact(tick)}
                 </text>
               </g>
             );
@@ -1816,7 +1816,7 @@ export default function FinancialForecastTab({
               <g key={`yt-cash-${idx}`}>
                 <line x1={padding.left} y1={y} x2={width - padding.right} y2={y} stroke="#e2e8f0" strokeWidth="1" />
                 <text x={padding.left - 10} y={y + 4} textAnchor="end" fontSize="11" fill="#64748b">
-                  ${(tick / 1000).toFixed(0)}K
+                  {money.fmtCompact(tick)}
                 </text>
               </g>
             );

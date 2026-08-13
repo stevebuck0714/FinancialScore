@@ -1829,12 +1829,12 @@ export default function OpsDashboard({
                 </select>
               </label>
             ))}
-            {renderRegionalTrendChart('Residential Real Estate - 3 Year Monthly', regionalResidentialRealEstateTrendRows, (value) => `$${(Number(value || 0) / 1000).toFixed(0)}K`)}
-            {renderRegionalTrendChart('EBITDA - 3 Year Monthly', regionalEbitdaTrendRows, (value) => `$${(Number(value || 0) / 1000).toFixed(0)}K`)}
-            {renderRegionalTrendChart('Mortgage - 3 Year Monthly', regionalMortgageTrendRows, (value) => `$${(Number(value || 0) / 1000).toFixed(0)}K`)}
-            {renderRegionalTrendChart('Title Company - 3 Year Monthly', regionalTitleCompanyTrendRows, (value) => `$${(Number(value || 0) / 1000).toFixed(0)}K`)}
-            {renderRegionalTrendChart('Insurance Services - 3 Year Monthly', regionalInsuranceServicesTrendRows, (value) => `$${(Number(value || 0) / 1000).toFixed(0)}K`)}
-            {renderRegionalTrendChart('Commercial Real Estate - 3 Year Monthly', regionalCommercialRealEstateTrendRows, (value) => `$${(Number(value || 0) / 1000).toFixed(0)}K`)}
+            {renderRegionalTrendChart('Residential Real Estate - 3 Year Monthly', regionalResidentialRealEstateTrendRows, formatAxisMoney)}
+            {renderRegionalTrendChart('EBITDA - 3 Year Monthly', regionalEbitdaTrendRows, formatAxisMoney)}
+            {renderRegionalTrendChart('Mortgage - 3 Year Monthly', regionalMortgageTrendRows, formatAxisMoney)}
+            {renderRegionalTrendChart('Title Company - 3 Year Monthly', regionalTitleCompanyTrendRows, formatAxisMoney)}
+            {renderRegionalTrendChart('Insurance Services - 3 Year Monthly', regionalInsuranceServicesTrendRows, formatAxisMoney)}
+            {renderRegionalTrendChart('Commercial Real Estate - 3 Year Monthly', regionalCommercialRealEstateTrendRows, formatAxisMoney)}
           </div>
         )}
 
@@ -1916,8 +1916,8 @@ export default function OpsDashboard({
                 </select>
               </label>
             ))}
-            {renderDivisionTrendChart('divisionRevenue', 'Trend Analysis - Revenue', divisionRevenueTrendRows, (value) => `$${(Number(value || 0) / 1000).toFixed(0)}K`)}
-            {renderDivisionTrendChart('divisionEbitda', 'Trend Analysis - EBITDA', divisionEbitdaTrendRows, (value) => `$${(Number(value || 0) / 1000).toFixed(0)}K`)}
+            {renderDivisionTrendChart('divisionRevenue', 'Trend Analysis - Revenue', divisionRevenueTrendRows, formatAxisMoney)}
+            {renderDivisionTrendChart('divisionEbitda', 'Trend Analysis - EBITDA', divisionEbitdaTrendRows, formatAxisMoney)}
             {renderDivisionTrendChart('divisionTransactions', 'Trend Analysis - Transactions', divisionTransactionsTrendRows, (value) => Number(value || 0).toLocaleString())}
             {renderDivisionTrendChart('divisionAttachRates', 'Trend Analysis - Attach Rates', divisionAttachRatesTrendRows, (value) => `${Number(value || 0).toFixed(1)}%`)}
           </div>

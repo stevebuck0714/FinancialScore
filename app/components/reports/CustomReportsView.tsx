@@ -17,6 +17,7 @@ import {
 } from 'recharts';
 import { useCompanyMoneyFormatter } from '@/app/hooks/useCompanyMoneyFormatter';
 import { formatMoney, formatMoneyCompact } from '@/lib/format/currency';
+import PageCurrencyBadge from '../PageCurrencyBadge';
 
 type ReportType = 'line' | 'multi_line' | 'bar' | 'grouped_bar' | 'stacked_bar' | 'combo' | 'table' | 'pie';
 
@@ -768,13 +769,16 @@ export default function CustomReportsView({ selectedCompanyId }: CustomReportsVi
           }
         }
       `}</style>
-      <div style={{ marginBottom: '20px' }}>
-        <div style={{ fontSize: '18px', fontWeight: 800, color: '#1F70C1', textTransform: 'uppercase', letterSpacing: '0.08em', whiteSpace: 'nowrap' }}>
-          Custom Reports
+      <div style={{ marginBottom: '20px', display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '16px', flexWrap: 'wrap' }}>
+        <div>
+          <div style={{ fontSize: '18px', fontWeight: 800, color: '#1F70C1', textTransform: 'uppercase', letterSpacing: '0.08em', whiteSpace: 'nowrap' }}>
+            Custom Reports
+          </div>
+          <p style={{ fontSize: '16px', fontWeight: 700, color: '#475569', margin: '8px 0 0', lineHeight: 1.45 }}>
+            Create reusable charts and tables from financial and operational data.
+          </p>
         </div>
-        <p style={{ fontSize: '16px', fontWeight: 700, color: '#475569', margin: '8px 0 0', lineHeight: 1.45 }}>
-          Create reusable charts and tables from financial and operational data.
-        </p>
+        <PageCurrencyBadge currency={money.currency} locale={money.locale} baseCurrency={money.baseCurrency} />
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: 'minmax(180px, 0.42fr) minmax(0, 1.65fr)', gap: '18px' }}>

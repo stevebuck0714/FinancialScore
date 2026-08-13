@@ -6,6 +6,7 @@ import type { MonthlyDataRow, Mappings } from "../../types";
 import { useAllMasterData } from "@/lib/master-data-store";
 import { getFieldDisplayName } from "@/lib/constants/field-display-names";
 import { getTargetFieldOptions } from "@/lib/constants/sector-target-fields";
+import { useCompanyMoneyFormatter } from "@/app/hooks/useCompanyMoneyFormatter";
 
 interface DataReviewTabProps {
   selectedCompanyId: string;
@@ -15,6 +16,9 @@ interface DataReviewTabProps {
 }
 
 export default function DataReviewTab({ selectedCompanyId, companyName, accountMappings, industrySectorCategory }: DataReviewTabProps) {
+  const money = useCompanyMoneyFormatter(selectedCompanyId);
+  const fmtMoney = (value: number) => money.fmt(Number(value || 0), 0);
+  const fmtSigned = (value: number) => money.fmtSigned(Number(value || 0), 0);
   // Data Review is an import QA surface, so it must show all saved/processed
   // months immediately instead of waiting for the month-publish gate.
   const { monthlyData, loading: masterDataLoading, error: masterDataError } = useAllMasterData(selectedCompanyId);
@@ -96,10 +100,7 @@ export default function DataReviewTab({ selectedCompanyId, companyName, accountM
               fontFamily: "monospace",
             }}
           >
-            ${value.toLocaleString("en-US", {
-              minimumFractionDigits: 0,
-              maximumFractionDigits: 0,
-            })}
+            {fmtMoney(value)}
           </td>
         ))}
       </tr>
@@ -405,11 +406,7 @@ export default function DataReviewTab({ selectedCompanyId, companyName, accountM
                           fontWeight: "700",
                         }}
                       >
-                        $
-                        {(m.revenue || 0).toLocaleString("en-US", {
-                          minimumFractionDigits: 0,
-                          maximumFractionDigits: 0,
-                        })}
+                        {fmtMoney((m.revenue || 0))}
                       </td>
                     ))}
                   </tr>
@@ -438,11 +435,7 @@ export default function DataReviewTab({ selectedCompanyId, companyName, accountM
                             fontFamily: "monospace",
                           }}
                         >
-                          $
-                          {getDynamicFieldValue(m, field).toLocaleString("en-US", {
-                            minimumFractionDigits: 0,
-                            maximumFractionDigits: 0,
-                          })}
+                          {fmtMoney(getDynamicFieldValue(m, field))}
                         </td>
                       ))}
                     </tr>
@@ -494,11 +487,7 @@ export default function DataReviewTab({ selectedCompanyId, companyName, accountM
                             fontFamily: "monospace",
                           }}
                         >
-                          $
-                          {getDynamicFieldValue(m, field).toLocaleString("en-US", {
-                            minimumFractionDigits: 0,
-                            maximumFractionDigits: 0,
-                          })}
+                          {fmtMoney(getDynamicFieldValue(m, field))}
                         </td>
                       ))}
                     </tr>
@@ -531,11 +520,7 @@ export default function DataReviewTab({ selectedCompanyId, companyName, accountM
                           fontWeight: "700",
                         }}
                       >
-                        $
-                        {(m.cogsTotal || 0).toLocaleString("en-US", {
-                          minimumFractionDigits: 0,
-                          maximumFractionDigits: 0,
-                        })}
+                        {fmtMoney((m.cogsTotal || 0))}
                       </td>
                     ))}
                   </tr>
@@ -573,11 +558,7 @@ export default function DataReviewTab({ selectedCompanyId, companyName, accountM
                             fontSize: "14px",
                           }}
                         >
-                          $
-                          {grossProfit.toLocaleString("en-US", {
-                            minimumFractionDigits: 0,
-                            maximumFractionDigits: 0,
-                          })}
+                          {fmtMoney(grossProfit)}
                         </td>
                       );
                     })}
@@ -628,11 +609,7 @@ export default function DataReviewTab({ selectedCompanyId, companyName, accountM
                           fontFamily: "monospace",
                         }}
                       >
-                        $
-                        {(m.payroll || 0).toLocaleString("en-US", {
-                          minimumFractionDigits: 0,
-                          maximumFractionDigits: 0,
-                        })}
+                        {fmtMoney((m.payroll || 0))}
                       </td>
                     ))}
                   </tr>
@@ -658,11 +635,7 @@ export default function DataReviewTab({ selectedCompanyId, companyName, accountM
                           fontFamily: "monospace",
                         }}
                       >
-                        $
-                        {(m.ownerBasePay || 0).toLocaleString("en-US", {
-                          minimumFractionDigits: 0,
-                          maximumFractionDigits: 0,
-                        })}
+                        {fmtMoney((m.ownerBasePay || 0))}
                       </td>
                     ))}
                   </tr>
@@ -688,11 +661,7 @@ export default function DataReviewTab({ selectedCompanyId, companyName, accountM
                           fontFamily: "monospace",
                         }}
                       >
-                        $
-                        {(m.benefits || 0).toLocaleString("en-US", {
-                          minimumFractionDigits: 0,
-                          maximumFractionDigits: 0,
-                        })}
+                        {fmtMoney((m.benefits || 0))}
                       </td>
                     ))}
                   </tr>
@@ -718,11 +687,7 @@ export default function DataReviewTab({ selectedCompanyId, companyName, accountM
                           fontFamily: "monospace",
                         }}
                       >
-                        $
-                        {(m.insurance || 0).toLocaleString("en-US", {
-                          minimumFractionDigits: 0,
-                          maximumFractionDigits: 0,
-                        })}
+                        {fmtMoney((m.insurance || 0))}
                       </td>
                     ))}
                   </tr>
@@ -748,11 +713,7 @@ export default function DataReviewTab({ selectedCompanyId, companyName, accountM
                           fontFamily: "monospace",
                         }}
                       >
-                        $
-                        {(m.professionalFees || 0).toLocaleString("en-US", {
-                          minimumFractionDigits: 0,
-                          maximumFractionDigits: 0,
-                        })}
+                        {fmtMoney((m.professionalFees || 0))}
                       </td>
                     ))}
                   </tr>
@@ -778,11 +739,7 @@ export default function DataReviewTab({ selectedCompanyId, companyName, accountM
                           fontFamily: "monospace",
                         }}
                       >
-                        $
-                        {(m.subcontractors || 0).toLocaleString("en-US", {
-                          minimumFractionDigits: 0,
-                          maximumFractionDigits: 0,
-                        })}
+                        {fmtMoney((m.subcontractors || 0))}
                       </td>
                     ))}
                   </tr>
@@ -808,11 +765,7 @@ export default function DataReviewTab({ selectedCompanyId, companyName, accountM
                           fontFamily: "monospace",
                         }}
                       >
-                        $
-                        {(m.rent || 0).toLocaleString("en-US", {
-                          minimumFractionDigits: 0,
-                          maximumFractionDigits: 0,
-                        })}
+                        {fmtMoney((m.rent || 0))}
                       </td>
                     ))}
                   </tr>
@@ -838,11 +791,7 @@ export default function DataReviewTab({ selectedCompanyId, companyName, accountM
                           fontFamily: "monospace",
                         }}
                       >
-                        $
-                        {(m.taxLicense || 0).toLocaleString("en-US", {
-                          minimumFractionDigits: 0,
-                          maximumFractionDigits: 0,
-                        })}
+                        {fmtMoney((m.taxLicense || 0))}
                       </td>
                     ))}
                   </tr>
@@ -868,11 +817,7 @@ export default function DataReviewTab({ selectedCompanyId, companyName, accountM
                           fontFamily: "monospace",
                         }}
                       >
-                        $
-                        {(m.phoneComm || 0).toLocaleString("en-US", {
-                          minimumFractionDigits: 0,
-                          maximumFractionDigits: 0,
-                        })}
+                        {fmtMoney((m.phoneComm || 0))}
                       </td>
                     ))}
                   </tr>
@@ -898,11 +843,7 @@ export default function DataReviewTab({ selectedCompanyId, companyName, accountM
                           fontFamily: "monospace",
                         }}
                       >
-                        $
-                        {(m.infrastructure || 0).toLocaleString("en-US", {
-                          minimumFractionDigits: 0,
-                          maximumFractionDigits: 0,
-                        })}
+                        {fmtMoney((m.infrastructure || 0))}
                       </td>
                     ))}
                   </tr>
@@ -928,11 +869,7 @@ export default function DataReviewTab({ selectedCompanyId, companyName, accountM
                           fontFamily: "monospace",
                         }}
                       >
-                        $
-                        {(m.autoTravel || 0).toLocaleString("en-US", {
-                          minimumFractionDigits: 0,
-                          maximumFractionDigits: 0,
-                        })}
+                        {fmtMoney((m.autoTravel || 0))}
                       </td>
                     ))}
                   </tr>
@@ -958,11 +895,7 @@ export default function DataReviewTab({ selectedCompanyId, companyName, accountM
                           fontFamily: "monospace",
                         }}
                       >
-                        $
-                        {(m.salesExpense || 0).toLocaleString("en-US", {
-                          minimumFractionDigits: 0,
-                          maximumFractionDigits: 0,
-                        })}
+                        {fmtMoney((m.salesExpense || 0))}
                       </td>
                     ))}
                   </tr>
@@ -988,11 +921,7 @@ export default function DataReviewTab({ selectedCompanyId, companyName, accountM
                           fontFamily: "monospace",
                         }}
                       >
-                        $
-                        {(m.marketing || 0).toLocaleString("en-US", {
-                          minimumFractionDigits: 0,
-                          maximumFractionDigits: 0,
-                        })}
+                        {fmtMoney((m.marketing || 0))}
                       </td>
                     ))}
                   </tr>
@@ -1018,11 +947,7 @@ export default function DataReviewTab({ selectedCompanyId, companyName, accountM
                           fontFamily: "monospace",
                         }}
                       >
-                        $
-                        {(m.trainingCert || 0).toLocaleString("en-US", {
-                          minimumFractionDigits: 0,
-                          maximumFractionDigits: 0,
-                        })}
+                        {fmtMoney((m.trainingCert || 0))}
                       </td>
                     ))}
                   </tr>
@@ -1048,11 +973,7 @@ export default function DataReviewTab({ selectedCompanyId, companyName, accountM
                           fontFamily: "monospace",
                         }}
                       >
-                        $
-                        {(m.mealsEntertainment || 0).toLocaleString("en-US", {
-                          minimumFractionDigits: 0,
-                          maximumFractionDigits: 0,
-                        })}
+                        {fmtMoney((m.mealsEntertainment || 0))}
                       </td>
                     ))}
                   </tr>
@@ -1078,11 +999,7 @@ export default function DataReviewTab({ selectedCompanyId, companyName, accountM
                           fontFamily: "monospace",
                         }}
                       >
-                        $
-                        {(m.interestExpense || 0).toLocaleString("en-US", {
-                          minimumFractionDigits: 0,
-                          maximumFractionDigits: 0,
-                        })}
+                        {fmtMoney((m.interestExpense || 0))}
                       </td>
                     ))}
                   </tr>
@@ -1108,14 +1025,7 @@ export default function DataReviewTab({ selectedCompanyId, companyName, accountM
                           fontFamily: "monospace",
                         }}
                       >
-                        $
-                        {(m.depreciationAmortization || 0).toLocaleString(
-                          "en-US",
-                          {
-                            minimumFractionDigits: 0,
-                            maximumFractionDigits: 0,
-                          },
-                        )}
+                        {fmtMoney((m.depreciationAmortization || 0))}
                       </td>
                     ))}
                   </tr>
@@ -1141,11 +1051,7 @@ export default function DataReviewTab({ selectedCompanyId, companyName, accountM
                           fontFamily: "monospace",
                         }}
                       >
-                        $
-                        {(m.otherExpense || 0).toLocaleString("en-US", {
-                          minimumFractionDigits: 0,
-                          maximumFractionDigits: 0,
-                        })}
+                        {fmtMoney((m.otherExpense || 0))}
                       </td>
                     ))}
                   </tr>
@@ -1199,11 +1105,7 @@ export default function DataReviewTab({ selectedCompanyId, companyName, accountM
                             fontWeight: "700",
                           }}
                         >
-                          $
-                          {totalOpex.toLocaleString("en-US", {
-                            minimumFractionDigits: 0,
-                            maximumFractionDigits: 0,
-                          })}
+                          {fmtMoney(totalOpex)}
                         </td>
                       );
                     })}
@@ -1269,11 +1171,7 @@ export default function DataReviewTab({ selectedCompanyId, companyName, accountM
                             fontWeight: "700",
                           }}
                         >
-                          $
-                          {incomeBeforeTax.toLocaleString("en-US", {
-                            minimumFractionDigits: 0,
-                            maximumFractionDigits: 0,
-                          })}
+                          {fmtMoney(incomeBeforeTax)}
                         </td>
                       );
                     })}
@@ -1303,11 +1201,7 @@ export default function DataReviewTab({ selectedCompanyId, companyName, accountM
                             fontFamily: "monospace",
                           }}
                         >
-                          $
-                          {(m.stateIncomeTaxes || 0).toLocaleString("en-US", {
-                            minimumFractionDigits: 0,
-                            maximumFractionDigits: 0,
-                          })}
+                          {fmtMoney((m.stateIncomeTaxes || 0))}
                         </td>
                       ))}
                     </tr>
@@ -1336,11 +1230,7 @@ export default function DataReviewTab({ selectedCompanyId, companyName, accountM
                             fontFamily: "monospace",
                           }}
                         >
-                          $
-                          {(m.federalIncomeTaxes || 0).toLocaleString("en-US", {
-                            minimumFractionDigits: 0,
-                            maximumFractionDigits: 0,
-                          })}
+                          {fmtMoney((m.federalIncomeTaxes || 0))}
                         </td>
                       ))}
                     </tr>
@@ -1396,11 +1286,7 @@ export default function DataReviewTab({ selectedCompanyId, companyName, accountM
                                 fontFamily: "monospace",
                               }}
                             >
-                              $
-                              {getNonOperatingIncome(m).toLocaleString("en-US", {
-                                minimumFractionDigits: 0,
-                                maximumFractionDigits: 0,
-                              })}
+                              {fmtMoney(getNonOperatingIncome(m))}
                             </td>
                           ))}
                         </tr>
@@ -1428,11 +1314,7 @@ export default function DataReviewTab({ selectedCompanyId, companyName, accountM
                                 fontFamily: "monospace",
                               }}
                             >
-                              $
-                              {getNonOperatingExpense(m).toLocaleString("en-US", {
-                                minimumFractionDigits: 0,
-                                maximumFractionDigits: 0,
-                              })}
+                              {fmtMoney(getNonOperatingExpense(m))}
                             </td>
                           ))}
                         </tr>
@@ -1505,11 +1387,7 @@ export default function DataReviewTab({ selectedCompanyId, companyName, accountM
                             fontSize: "15px",
                           }}
                         >
-                          $
-                          {netIncome.toLocaleString("en-US", {
-                            minimumFractionDigits: 0,
-                            maximumFractionDigits: 0,
-                          })}
+                          {fmtMoney(netIncome)}
                         </td>
                       );
                     })}
@@ -1630,11 +1508,7 @@ export default function DataReviewTab({ selectedCompanyId, companyName, accountM
                           fontFamily: "monospace",
                         }}
                       >
-                        $
-                        {(m.cash || 0).toLocaleString("en-US", {
-                          minimumFractionDigits: 0,
-                          maximumFractionDigits: 0,
-                        })}
+                        {fmtMoney((m.cash || 0))}
                       </td>
                     ))}
                   </tr>
@@ -1660,11 +1534,7 @@ export default function DataReviewTab({ selectedCompanyId, companyName, accountM
                           fontFamily: "monospace",
                         }}
                       >
-                        $
-                        {(m.ar || 0).toLocaleString("en-US", {
-                          minimumFractionDigits: 0,
-                          maximumFractionDigits: 0,
-                        })}
+                        {fmtMoney((m.ar || 0))}
                       </td>
                     ))}
                   </tr>
@@ -1692,11 +1562,7 @@ export default function DataReviewTab({ selectedCompanyId, companyName, accountM
                           fontFamily: "monospace",
                         }}
                       >
-                        $
-                        {(m.inventory || 0).toLocaleString("en-US", {
-                          minimumFractionDigits: 0,
-                          maximumFractionDigits: 0,
-                        })}
+                        {fmtMoney((m.inventory || 0))}
                       </td>
                     ))}
                   </tr>
@@ -1722,11 +1588,7 @@ export default function DataReviewTab({ selectedCompanyId, companyName, accountM
                           fontFamily: "monospace",
                         }}
                       >
-                        $
-                        {(m.otherCA || 0).toLocaleString("en-US", {
-                          minimumFractionDigits: 0,
-                          maximumFractionDigits: 0,
-                        })}
+                        {fmtMoney((m.otherCA || 0))}
                       </td>
                     ))}
                   </tr>
@@ -1758,11 +1620,7 @@ export default function DataReviewTab({ selectedCompanyId, companyName, accountM
                           fontWeight: "700",
                         }}
                       >
-                        $
-                        {(m.tca || 0).toLocaleString("en-US", {
-                          minimumFractionDigits: 0,
-                          maximumFractionDigits: 0,
-                        })}
+                        {fmtMoney((m.tca || 0))}
                       </td>
                     ))}
                   </tr>
@@ -1790,11 +1648,7 @@ export default function DataReviewTab({ selectedCompanyId, companyName, accountM
                           fontFamily: "monospace",
                         }}
                       >
-                        $
-                        {(m.fixedAssets || 0).toLocaleString("en-US", {
-                          minimumFractionDigits: 0,
-                          maximumFractionDigits: 0,
-                        })}
+                        {fmtMoney((m.fixedAssets || 0))}
                       </td>
                     ))}
                   </tr>
@@ -1825,11 +1679,7 @@ export default function DataReviewTab({ selectedCompanyId, companyName, accountM
                           fontFamily: "monospace",
                         }}
                       >
-                        $
-                        {(m.otherAssets || 0).toLocaleString("en-US", {
-                          minimumFractionDigits: 0,
-                          maximumFractionDigits: 0,
-                        })}
+                        {fmtMoney((m.otherAssets || 0))}
                       </td>
                     ))}
                   </tr>
@@ -1863,11 +1713,7 @@ export default function DataReviewTab({ selectedCompanyId, companyName, accountM
                           fontSize: "14px",
                         }}
                       >
-                        $
-                        {(m.totalAssets || 0).toLocaleString("en-US", {
-                          minimumFractionDigits: 0,
-                          maximumFractionDigits: 0,
-                        })}
+                        {fmtMoney((m.totalAssets || 0))}
                       </td>
                     ))}
                   </tr>
@@ -1917,11 +1763,7 @@ export default function DataReviewTab({ selectedCompanyId, companyName, accountM
                           fontFamily: "monospace",
                         }}
                       >
-                        $
-                        {(m.ap || 0).toLocaleString("en-US", {
-                          minimumFractionDigits: 0,
-                          maximumFractionDigits: 0,
-                        })}
+                        {fmtMoney((m.ap || 0))}
                       </td>
                     ))}
                   </tr>
@@ -1947,11 +1789,7 @@ export default function DataReviewTab({ selectedCompanyId, companyName, accountM
                           fontFamily: "monospace",
                         }}
                       >
-                        $
-                        {(m.loc || 0).toLocaleString("en-US", {
-                          minimumFractionDigits: 0,
-                          maximumFractionDigits: 0,
-                        })}
+                        {fmtMoney((m.loc || 0))}
                       </td>
                     ))}
                   </tr>
@@ -1978,11 +1816,7 @@ export default function DataReviewTab({ selectedCompanyId, companyName, accountM
                           fontFamily: "monospace",
                         }}
                       >
-                        $
-                        {(m.otherCL || 0).toLocaleString("en-US", {
-                          minimumFractionDigits: 0,
-                          maximumFractionDigits: 0,
-                        })}
+                        {fmtMoney((m.otherCL || 0))}
                       </td>
                     ))}
                   </tr>
@@ -2014,11 +1848,7 @@ export default function DataReviewTab({ selectedCompanyId, companyName, accountM
                           fontWeight: "700",
                         }}
                       >
-                        $
-                        {(m.tcl || 0).toLocaleString("en-US", {
-                          minimumFractionDigits: 0,
-                          maximumFractionDigits: 0,
-                        })}
+                        {fmtMoney((m.tcl || 0))}
                       </td>
                     ))}
                   </tr>
@@ -2046,11 +1876,7 @@ export default function DataReviewTab({ selectedCompanyId, companyName, accountM
                           fontFamily: "monospace",
                         }}
                       >
-                        $
-                        {(m.ltd || 0).toLocaleString("en-US", {
-                          minimumFractionDigits: 0,
-                          maximumFractionDigits: 0,
-                        })}
+                        {fmtMoney((m.ltd || 0))}
                       </td>
                     ))}
                   </tr>
@@ -2084,11 +1910,7 @@ export default function DataReviewTab({ selectedCompanyId, companyName, accountM
                           fontSize: "14px",
                         }}
                       >
-                        $
-                        {(m.totalLiab || 0).toLocaleString("en-US", {
-                          minimumFractionDigits: 0,
-                          maximumFractionDigits: 0,
-                        })}
+                        {fmtMoney((m.totalLiab || 0))}
                       </td>
                     ))}
                   </tr>
@@ -2138,11 +1960,7 @@ export default function DataReviewTab({ selectedCompanyId, companyName, accountM
                           fontFamily: "monospace",
                         }}
                       >
-                        $
-                        {(m.ownersCapital || 0).toLocaleString("en-US", {
-                          minimumFractionDigits: 0,
-                          maximumFractionDigits: 0,
-                        })}
+                        {fmtMoney((m.ownersCapital || 0))}
                       </td>
                     ))}
                   </tr>
@@ -2168,11 +1986,7 @@ export default function DataReviewTab({ selectedCompanyId, companyName, accountM
                           fontFamily: "monospace",
                         }}
                       >
-                        $
-                        {(m.ownersDraw || 0).toLocaleString("en-US", {
-                          minimumFractionDigits: 0,
-                          maximumFractionDigits: 0,
-                        })}
+                        {fmtMoney((m.ownersDraw || 0))}
                       </td>
                     ))}
                   </tr>
@@ -2198,11 +2012,7 @@ export default function DataReviewTab({ selectedCompanyId, companyName, accountM
                           fontFamily: "monospace",
                         }}
                       >
-                        $
-                        {(m.commonStock || 0).toLocaleString("en-US", {
-                          minimumFractionDigits: 0,
-                          maximumFractionDigits: 0,
-                        })}
+                        {fmtMoney((m.commonStock || 0))}
                       </td>
                     ))}
                   </tr>
@@ -2228,11 +2038,7 @@ export default function DataReviewTab({ selectedCompanyId, companyName, accountM
                           fontFamily: "monospace",
                         }}
                       >
-                        $
-                        {(m.preferredStock || 0).toLocaleString("en-US", {
-                          minimumFractionDigits: 0,
-                          maximumFractionDigits: 0,
-                        })}
+                        {fmtMoney((m.preferredStock || 0))}
                       </td>
                     ))}
                   </tr>
@@ -2258,11 +2064,7 @@ export default function DataReviewTab({ selectedCompanyId, companyName, accountM
                           fontFamily: "monospace",
                         }}
                       >
-                        $
-                        {(m.retainedEarnings || 0).toLocaleString("en-US", {
-                          minimumFractionDigits: 0,
-                          maximumFractionDigits: 0,
-                        })}
+                        {fmtMoney((m.retainedEarnings || 0))}
                       </td>
                     ))}
                   </tr>
@@ -2291,12 +2093,7 @@ export default function DataReviewTab({ selectedCompanyId, companyName, accountM
                               fontFamily: "monospace",
                             }}
                           >
-                            {value >= 0 ? "$" : "($"}
-                            {Math.abs(value).toLocaleString("en-US", {
-                              minimumFractionDigits: 0,
-                              maximumFractionDigits: 0,
-                            })}
-                            {value < 0 ? ")" : ""}
+                            {fmtSigned(value)}
                           </td>
                         );
                       })}
@@ -2324,14 +2121,7 @@ export default function DataReviewTab({ selectedCompanyId, companyName, accountM
                           fontFamily: "monospace",
                         }}
                       >
-                        $
-                        {(m.additionalPaidInCapital || 0).toLocaleString(
-                          "en-US",
-                          {
-                            minimumFractionDigits: 0,
-                            maximumFractionDigits: 0,
-                          },
-                        )}
+                        {fmtMoney((m.additionalPaidInCapital || 0))}
                       </td>
                     ))}
                   </tr>
@@ -2357,11 +2147,7 @@ export default function DataReviewTab({ selectedCompanyId, companyName, accountM
                           fontFamily: "monospace",
                         }}
                       >
-                        $
-                        {(m.treasuryStock || 0).toLocaleString("en-US", {
-                          minimumFractionDigits: 0,
-                          maximumFractionDigits: 0,
-                        })}
+                        {fmtMoney((m.treasuryStock || 0))}
                       </td>
                     ))}
                   </tr>
@@ -2405,11 +2191,7 @@ export default function DataReviewTab({ selectedCompanyId, companyName, accountM
                             fontSize: "14px",
                           }}
                         >
-                          $
-                          {calculatedTotalEquity.toLocaleString("en-US", {
-                            minimumFractionDigits: 0,
-                            maximumFractionDigits: 0,
-                          })}
+                          {fmtMoney(calculatedTotalEquity)}
                         </td>
                       );
                     })}
@@ -2458,11 +2240,7 @@ export default function DataReviewTab({ selectedCompanyId, companyName, accountM
                             fontSize: "15px",
                           }}
                         >
-                          $
-                          {totalLE.toLocaleString("en-US", {
-                            minimumFractionDigits: 0,
-                            maximumFractionDigits: 0,
-                          })}
+                          {fmtMoney(totalLE)}
                         </td>
                       );
                     })}

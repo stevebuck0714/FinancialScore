@@ -5,6 +5,7 @@ import { useMemo, useState } from 'react';
 import TextToSpeech from './common/TextToSpeech';
 import { formatMoneyCompact } from '@/lib/format/currency';
 import { resolveDisplayCurrency, localeForCurrency } from '@/lib/constants/currencies';
+import PageCurrencyBadge from './PageCurrencyBadge';
 
 interface MonthlyData {
   date: Date;
@@ -338,10 +339,11 @@ export default function MDAView({
   return (
     <div className="mda-container" style={{ maxWidth: '1400px', margin: '0 auto', padding: '32px' }}>
       <div className="mda-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '32px' }}>
-        <div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
           <h1 style={{ fontSize: '32px', fontWeight: '700', color: '#1e293b', margin: '0 0 8px 0' }}>
             Management Discussion & Analysis
           </h1>
+          <PageCurrencyBadge currency={displayCurrency} locale={displayLocale} baseCurrency={baseCurrency} />
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
           {onExportToWord && (

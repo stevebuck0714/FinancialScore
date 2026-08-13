@@ -5,6 +5,7 @@
 import React, { useState } from 'react';
 import { useMasterData } from '@/lib/master-data-store';
 import { useCompanyMoneyFormatter } from '@/app/hooks/useCompanyMoneyFormatter';
+import PageCurrencyBadge from './PageCurrencyBadge';
 import type { MonthlyDataRow } from '../types';
 
 interface CashFlowTabProps {
@@ -387,7 +388,10 @@ export default function CashFlowTab({
       {!embeddedInStatements && (
       <>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-        <h1 style={{ fontSize: '32px', fontWeight: '700', color: '#1e293b', margin: 0 }}>Cash Flow Analysis</h1>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+          <h1 style={{ fontSize: '32px', fontWeight: '700', color: '#1e293b', margin: 0 }}>Cash Flow Analysis</h1>
+          <PageCurrencyBadge currency={money.currency} locale={money.locale} baseCurrency={money.baseCurrency} />
+        </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
           {cashFlowDisplay !== 'monthly' && (
             <button 
@@ -1025,14 +1029,14 @@ export default function CashFlowTab({
             <div style={{ padding: '16px', background: '#f0fdf4', border: '1px solid #86efac', borderRadius: '8px' }}>
               <div style={{ fontSize: '14px', fontWeight: '600', color: '#065f46', marginBottom: '4px' }}>✓ Positive Operating Cash Flow</div>
               <div style={{ fontSize: '13px', color: '#047857' }}>
-                The company generated ${(totalOperatingCF / 1000).toFixed(0)}K in cash from operations over the last 12 months, indicating healthy operational performance.
+                The company generated {money.fmtCompact(totalOperatingCF)} in cash from operations over the last 12 months, indicating healthy operational performance.
               </div>
             </div>
           ) : (
             <div style={{ padding: '16px', background: '#fef2f2', border: '1px solid #fca5a5', borderRadius: '8px' }}>
               <div style={{ fontSize: '14px', fontWeight: '600', color: '#991b1b', marginBottom: '4px' }}>⚠️ Negative Operating Cash Flow</div>
               <div style={{ fontSize: '13px', color: '#dc2626' }}>
-                The company consumed ${Math.abs(totalOperatingCF / 1000).toFixed(0)}K in cash from operations, which may indicate operational challenges.
+                The company consumed {money.fmtCompact(Math.abs(totalOperatingCF))} in cash from operations, which may indicate operational challenges.
               </div>
             </div>
           )}
@@ -1041,14 +1045,14 @@ export default function CashFlowTab({
             <div style={{ padding: '16px', background: '#f0fdf4', border: '1px solid #86efac', borderRadius: '8px' }}>
               <div style={{ fontSize: '14px', fontWeight: '600', color: '#065f46', marginBottom: '4px' }}>✓ Positive Free Cash Flow</div>
               <div style={{ fontSize: '13px', color: '#047857' }}>
-                After capital expenditures, the company has ${(totalFreeCF / 1000).toFixed(0)}K in free cash flow available for growth, debt reduction, or distributions.
+                After capital expenditures, the company has {money.fmtCompact(totalFreeCF)} in free cash flow available for growth, debt reduction, or distributions.
               </div>
             </div>
           ) : (
             <div style={{ padding: '16px', background: '#fffbeb', border: '1px solid #fcd34d', borderRadius: '8px' }}>
               <div style={{ fontSize: '14px', fontWeight: '600', color: '#92400e', marginBottom: '4px' }}>⚠️ Negative Free Cash Flow</div>
               <div style={{ fontSize: '13px', color: '#b45309' }}>
-                Capital expenditures exceed operating cash flow by ${Math.abs(totalFreeCF / 1000).toFixed(0)}K, requiring external financing.
+                Capital expenditures exceed operating cash flow by {money.fmtCompact(Math.abs(totalFreeCF))}, requiring external financing.
               </div>
             </div>
           )}

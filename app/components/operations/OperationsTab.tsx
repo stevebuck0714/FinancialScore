@@ -39,6 +39,7 @@ import { getFieldDisplayName } from '@/lib/constants/field-display-names';
 import { formatDateInputLabel, formatDateSafeUtc, parseDateSafeUtc, toLocalInputDate } from '@/app/utils/date';
 import { formatMoney, formatMoneyCompact } from '@/lib/format/currency';
 import { localeForCurrency } from '@/lib/constants/currencies';
+import PageCurrencyBadge from '../PageCurrencyBadge';
 import type { MonthlyDataRow, User } from '@/app/types';
 
 interface OperationsTabProps {
@@ -11293,11 +11294,8 @@ export default function OperationsTab({
               const minMag = plotted.length ? Math.min(...plotted) : 0;
               const tickFormatter = (value: any) => {
                 const n = Number(value || 0);
-                if (minMag === 0) return `$${n.toFixed(2)}`;
-                if (minMag < 1) return `$${n.toFixed(2)}`;
-                if (minMag < 10) return `$${n.toFixed(2)}`;
-                if (minMag < 100) return `$${n.toFixed(1)}`;
-                return `$${n.toFixed(0)}`;
+                const decimals = minMag < 10 ? 2 : minMag < 100 ? 1 : 0;
+                return formatMoney(n, { currency: moneyCurrency, locale: moneyLocale, decimals });
               };
               const gapWeeks = priceCostTrendData
                 .filter((r: any) => r?.cogsLooksMissing)
@@ -15212,7 +15210,7 @@ Strategies to Improve the CCC
         </div>
 
         {isRealEstateSector && activeAccrualBasisForecastTab === 'residential-revenue-forecast' && (
-          <ResidentialRevenueForecast />
+          <ResidentialRevenueForecast companyId={selectedCompanyId} />
         )}
 
         {activeAccrualBasisForecastTab === 'income-statement-forecast' && (
@@ -18494,13 +18492,7 @@ Strategies to Improve the CCC
                     tick={{ fontSize: 11, fill: '#475569' }}
                     tickLine={false}
                     axisLine={{ stroke: '#cbd5e1' }}
-                    tickFormatter={(v: number) =>
-                      Math.abs(v) >= 1_000_000
-                        ? `$${(v / 1_000_000).toFixed(1)}M`
-                        : Math.abs(v) >= 1_000
-                          ? `$${(v / 1_000).toFixed(0)}K`
-                          : `$${v}`
-                    }
+                    tickFormatter={formatAxisMoney}
                   />
                   <Tooltip
                     formatter={(value: any, name: any) => [formatCurrency(Number(value) || 0), name]}
@@ -18536,13 +18528,7 @@ Strategies to Improve the CCC
                     tick={{ fontSize: 11, fill: '#475569' }}
                     tickLine={false}
                     axisLine={{ stroke: '#cbd5e1' }}
-                    tickFormatter={(v: number) =>
-                      Math.abs(v) >= 1_000_000
-                        ? `$${(v / 1_000_000).toFixed(2)}M`
-                        : Math.abs(v) >= 1_000
-                          ? `$${(v / 1_000).toFixed(0)}K`
-                          : `$${v}`
-                    }
+                    tickFormatter={formatAxisMoney}
                   />
                   <Tooltip
                     formatter={(value: any) => [formatCurrency(Number(value) || 0), 'Overhead']}
@@ -26621,6 +26607,13 @@ Strategies to Improve the CCC
         background: '#f8fafc'
       }}>
         <div style={{ height: '20px' }}></div>
+        <div style={{ display: 'flex', justifyContent: 'flex-end', padding: '0 24px 8px' }}>
+          <PageCurrencyBadge
+            currency={moneyCurrency}
+            locale={moneyLocale}
+            baseCurrency={companyCurrency.baseCurrency}
+          />
+        </div>
         {renderOverview()}
       </div>
     );
@@ -26668,6 +26661,7 @@ Strategies to Improve the CCC
         borderBottom: '1px solid #cbd5e1',
         padding: '0 24px',
         display: 'flex',
+        alignItems: 'flex-end',
         gap: '4px',
         overflowX: 'auto',
         whiteSpace: 'nowrap'
@@ -26698,6 +26692,13 @@ Strategies to Improve the CCC
               : getOperationalTabLabel(tab)}
           </button>
         ))}
+        <div style={{ marginLeft: 'auto', padding: '6px 0 8px 16px', flexShrink: 0 }}>
+          <PageCurrencyBadge
+            currency={moneyCurrency}
+            locale={moneyLocale}
+            baseCurrency={companyCurrency.baseCurrency}
+          />
+        </div>
       </div>
 
       {/* Filters */}

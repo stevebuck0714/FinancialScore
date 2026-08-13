@@ -6,6 +6,9 @@ import dynamic from 'next/dynamic';
 import { useMasterData, masterDataStore } from '@/lib/master-data-store';
 import { getBenchmarkValue } from '../utils/data-processing';
 import { buildRatioTrendData } from '../utils/ratio-trend-data';
+import { formatMoneyCompact } from '@/lib/format/currency';
+import { DEFAULT_BASE_CURRENCY } from '@/lib/constants/currencies';
+import PageCurrencyBadge from './PageCurrencyBadge';
 
 // Dynamic imports for charts
 const BaseLineChart = dynamic(() => import('./charts/Charts').then(mod => mod.LineChart), { ssr: false });
@@ -109,6 +112,8 @@ interface DashboardViewProps {
   benchmarks: any[];
   expenseGoals: {[key: string]: number};
   onSaveDashboardPrefs?: () => Promise<void>;
+  displayCurrency?: string | null;
+  locale?: string | null;
 }
 
 export default function DashboardView({
@@ -127,8 +132,12 @@ export default function DashboardView({
   growth_24mo,
   benchmarks,
   expenseGoals,
-  onSaveDashboardPrefs
+  onSaveDashboardPrefs,
+  displayCurrency,
+  locale,
 }: DashboardViewProps) {
+  const moneyCurrency = displayCurrency || DEFAULT_BASE_CURRENCY;
+  const compactMoney = (value: number) => formatMoneyCompact(value, { currency: moneyCurrency, locale });
   const selectedDashboardWidgets = Array.isArray(selectedDashboardWidgetsRaw) ? selectedDashboardWidgetsRaw : [];
   const [isSaving, setIsSaving] = useState(false);
   const [isPreparingPrint, setIsPreparingPrint] = useState(false);
@@ -311,9 +320,12 @@ export default function DashboardView({
           `}</style>
           
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '32px' }}>
-            <h1 style={{ fontSize: '32px', fontWeight: '700', color: '#1e293b', margin: 0 }}>
-              Financial KPI's
-            </h1>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+              <h1 style={{ fontSize: '32px', fontWeight: '700', color: '#1e293b', margin: 0 }}>
+                Financial KPI's
+              </h1>
+              <PageCurrencyBadge currency={moneyCurrency} locale={locale} />
+            </div>
             <div style={{ display: 'flex', gap: '8px' }}>
               <button
                 className="no-print"
@@ -1023,10 +1035,10 @@ export default function DashboardView({
                         <div style={{ background: 'white', borderRadius: '12px', padding: '16px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', border: '2px solid #667eea', minWidth: '200px' }}>
                           <h3 style={{ fontSize: '12px', fontWeight: '600', color: '#64748b', marginBottom: '6px' }}>Current Working Capital</h3>
                           <div style={{ fontSize: '24px', fontWeight: '700', color: '#667eea', marginBottom: '4px' }}>
-                            ${(currentWC / 1000).toFixed(0)}K
+                            {compactMoney(currentWC)}
                           </div>
                           <div style={{ fontSize: '11px', color: wcChange >= 0 ? '#10b981' : '#ef4444', fontWeight: '600' }}>
-                            {wcChange >= 0 ? '?' : '?'} ${Math.abs(wcChange / 1000).toFixed(0)}K ({wcChangePercent >= 0 ? '+' : ''}{wcChangePercent.toFixed(1)}%)
+                            {wcChange >= 0 ? '↗ +' : '↘ '}{compactMoney(Math.abs(wcChange))} ({wcChangePercent >= 0 ? '+' : ''}{wcChangePercent.toFixed(1)}%)
                           </div>
                         </div>
                       )}
@@ -1131,10 +1143,10 @@ export default function DashboardView({
                             <div style={{ padding: '20px', borderRadius: '8px', border: '2px solid #10b981' }}>
                               <h3 style={{ fontSize: '13px', fontWeight: '600', color: '#64748b', marginBottom: '8px' }}>SDE Valuation</h3>
                               <div style={{ fontSize: '32px', fontWeight: '700', color: '#10b981', marginBottom: '8px' }}>
-                                ${(sdeValuation / 1000000).toFixed(2)}M
+                                {compactMoney(sdeValuation)}
                               </div>
                               <div style={{ fontSize: '12px', color: '#64748b' }}>
-                                SDE: ${(ttmSDE / 1000).toFixed(0)}K × {sdeMultiplier.toFixed(1)}x
+                                SDE: {compactMoney(ttmSDE)} × {sdeMultiplier.toFixed(1)}x
                               </div>
                             </div>
                           )}
@@ -1143,10 +1155,10 @@ export default function DashboardView({
                             <div style={{ padding: '20px', borderRadius: '8px', border: '2px solid #06b6d4' }}>
                               <h3 style={{ fontSize: '13px', fontWeight: '600', color: '#64748b', marginBottom: '8px' }}>EBITDA Valuation</h3>
                               <div style={{ fontSize: '32px', fontWeight: '700', color: '#06b6d4', marginBottom: '8px' }}>
-                                ${(ebitdaValuation / 1000000).toFixed(2)}M
+                                {compactMoney(ebitdaValuation)}
                               </div>
                               <div style={{ fontSize: '12px', color: '#64748b' }}>
-                                EBITDA: ${(ttmEBITDA / 1000).toFixed(0)}K × {ebitdaMultiplier.toFixed(1)}x
+                                EBITDA: {compactMoney(ttmEBITDA)} × {ebitdaMultiplier.toFixed(1)}x
                               </div>
                             </div>
                           )}
@@ -1155,7 +1167,7 @@ export default function DashboardView({
                             <div style={{ padding: '20px', borderRadius: '8px', border: '2px solid #8b5cf6' }}>
                               <h3 style={{ fontSize: '13px', fontWeight: '600', color: '#64748b', marginBottom: '8px' }}>DCF Valuation</h3>
                               <div style={{ fontSize: '32px', fontWeight: '700', color: '#8b5cf6', marginBottom: '8px' }}>
-                                ${(dcfValue / 1000000).toFixed(2)}M
+                                {compactMoney(dcfValue)}
                               </div>
                               <div style={{ fontSize: '12px', color: '#64748b' }}>
                                 5-year projection at {dcfDiscountRate}% discount
@@ -1232,19 +1244,19 @@ export default function DashboardView({
                 
                 // Handle new Trend Analysis fields (matching TrendAnalysisView)
                 if (widget === 'Revenue') {
-                  return <LineChart key={widget} title="Revenue" data={monthly.map(m => ({ month: m.month, value: m.revenue || 0 }))} color="#10b981" compact formatter={(v) => '$' + (v / 1000).toFixed(0) + 'K'} />;
+                  return <LineChart key={widget} title="Revenue" data={monthly.map(m => ({ month: m.month, value: m.revenue || 0 }))} color="#10b981" compact formatter={compactMoney} />;
                 }
                 if (widget === 'Gross Profit') {
-                  return <LineChart key={widget} title="Gross Profit" data={monthly.map(m => ({ month: m.month, value: (m.revenue || 0) - (m.cogsTotal || 0) }))} color="#3b82f6" compact formatter={(v) => '$' + (v / 1000).toFixed(0) + 'K'} />;
+                  return <LineChart key={widget} title="Gross Profit" data={monthly.map(m => ({ month: m.month, value: (m.revenue || 0) - (m.cogsTotal || 0) }))} color="#3b82f6" compact formatter={compactMoney} />;
                 }
                 if (widget === 'Total Operating Expenses') {
-                  return <LineChart key={widget} title="Total Operating Expenses" data={monthly.map(m => ({ month: m.month, value: m.expense || 0 }))} color="#ef4444" compact formatter={(v) => '$' + (v / 1000).toFixed(0) + 'K'} />;
+                  return <LineChart key={widget} title="Total Operating Expenses" data={monthly.map(m => ({ month: m.month, value: m.expense || 0 }))} color="#ef4444" compact formatter={compactMoney} />;
                 }
                 if (widget === 'EBIT') {
                   return <LineChart key={widget} title="EBIT" data={monthly.map(m => {
                     const grossProfit = (m.revenue || 0) - (m.cogsTotal || 0);
                     return { month: m.month, value: grossProfit - (m.expense || 0) };
-                  })} color="#8b5cf6" compact formatter={(v) => '$' + (v / 1000).toFixed(0) + 'K'} />;
+                  })} color="#8b5cf6" compact formatter={compactMoney} />;
                 }
                 if (widget === 'EBITDA') {
                   return <LineChart key={widget} title="EBITDA" data={monthly.map(m => {
@@ -1252,34 +1264,34 @@ export default function DashboardView({
                     const ebit = grossProfit - (m.expense || 0);
                     const depreciation = m.depreciationAmortization || 0;
                     return { month: m.month, value: ebit + depreciation };
-                  })} color="#f59e0b" compact formatter={(v) => '$' + (v / 1000).toFixed(0) + 'K'} />;
+                  })} color="#f59e0b" compact formatter={compactMoney} />;
                 }
                 if (widget === 'Net Income') {
-                  return <LineChart key={widget} title="Net Income" data={monthly.map(m => ({ month: m.month, value: m.netProfit || ((m.revenue || 0) - (m.cogsTotal || 0) - (m.expense || 0)) }))} color="#06b6d4" compact formatter={(v) => '$' + (v / 1000).toFixed(0) + 'K'} />;
+                  return <LineChart key={widget} title="Net Income" data={monthly.map(m => ({ month: m.month, value: m.netProfit || ((m.revenue || 0) - (m.cogsTotal || 0) - (m.expense || 0)) }))} color="#06b6d4" compact formatter={compactMoney} />;
                 }
                 if (widget === 'Cash') {
-                  return <LineChart key={widget} title="Cash" data={monthly.map(m => ({ month: m.month, value: m.cash || 0 }))} color="#84cc16" compact formatter={(v) => '$' + (v / 1000).toFixed(0) + 'K'} />;
+                  return <LineChart key={widget} title="Cash" data={monthly.map(m => ({ month: m.month, value: m.cash || 0 }))} color="#84cc16" compact formatter={compactMoney} />;
                 }
                 if (widget === 'Accounts Receivable') {
-                  return <LineChart key={widget} title="Accounts Receivable" data={monthly.map(m => ({ month: m.month, value: m.ar || 0 }))} color="#0ea5e9" compact formatter={(v) => '$' + (v / 1000).toFixed(0) + 'K'} />;
+                  return <LineChart key={widget} title="Accounts Receivable" data={monthly.map(m => ({ month: m.month, value: m.ar || 0 }))} color="#0ea5e9" compact formatter={compactMoney} />;
                 }
                 if (widget === 'Current Assets') {
-                  return <LineChart key={widget} title="Current Assets" data={monthly.map(m => ({ month: m.month, value: m.tca || ((m.cash || 0) + (m.ar || 0) + (m.retainageReceivables || 0) + (m.contractAssets || 0) + (m.inventory || 0) + (m.otherCA || 0)) }))} color="#5eead4" compact formatter={(v) => '$' + (v / 1000).toFixed(0) + 'K'} />;
+                  return <LineChart key={widget} title="Current Assets" data={monthly.map(m => ({ month: m.month, value: m.tca || ((m.cash || 0) + (m.ar || 0) + (m.retainageReceivables || 0) + (m.contractAssets || 0) + (m.inventory || 0) + (m.otherCA || 0)) }))} color="#5eead4" compact formatter={compactMoney} />;
                 }
                 if (widget === 'Fixed Assets') {
-                  return <LineChart key={widget} title="Fixed Assets" data={monthly.map(m => ({ month: m.month, value: m.fixedAssets || 0 }))} color="#a78bfa" compact formatter={(v) => '$' + (v / 1000).toFixed(0) + 'K'} />;
+                  return <LineChart key={widget} title="Fixed Assets" data={monthly.map(m => ({ month: m.month, value: m.fixedAssets || 0 }))} color="#a78bfa" compact formatter={compactMoney} />;
                 }
                 if (widget === 'Total Assets') {
-                  return <LineChart key={widget} title="Total Assets" data={monthly.map(m => ({ month: m.month, value: m.totalAssets || 0 }))} color="#f97316" compact formatter={(v) => '$' + (v / 1000).toFixed(0) + 'K'} />;
+                  return <LineChart key={widget} title="Total Assets" data={monthly.map(m => ({ month: m.month, value: m.totalAssets || 0 }))} color="#f97316" compact formatter={compactMoney} />;
                 }
                 if (widget === 'Accounts Payable') {
-                  return <LineChart key={widget} title="Accounts Payable" data={monthly.map(m => ({ month: m.month, value: m.ap || 0 }))} color="#ec4899" compact formatter={(v) => '$' + (v / 1000).toFixed(0) + 'K'} />;
+                  return <LineChart key={widget} title="Accounts Payable" data={monthly.map(m => ({ month: m.month, value: m.ap || 0 }))} color="#ec4899" compact formatter={compactMoney} />;
                 }
                 if (widget === 'Long Term Debt') {
-                  return <LineChart key={widget} title="Long Term Debt" data={monthly.map(m => ({ month: m.month, value: m.ltd || 0 }))} color="#64748b" compact formatter={(v) => '$' + (v / 1000).toFixed(0) + 'K'} />;
+                  return <LineChart key={widget} title="Long Term Debt" data={monthly.map(m => ({ month: m.month, value: m.ltd || 0 }))} color="#64748b" compact formatter={compactMoney} />;
                 }
                 if (widget === 'Total Equity') {
-                  return <LineChart key={widget} title="Total Equity" data={monthly.map(m => ({ month: m.month, value: m.totalEquity || 0 }))} color="#10b981" compact formatter={(v) => '$' + (v / 1000).toFixed(0) + 'K'} />;
+                  return <LineChart key={widget} title="Total Equity" data={monthly.map(m => ({ month: m.month, value: m.totalEquity || 0 }))} color="#10b981" compact formatter={compactMoney} />;
                 }
                 
                 // Handle old Item Trends from dropdown.
@@ -1292,7 +1304,6 @@ export default function DashboardView({
                 
                 if (itemTrendFields.includes(widget)) {
                   const title = getTrendItemDisplayName(widget);
-                  const isCurrency = !['totalEquity', 'totalLiab', 'totalAssets'].includes(widget) || widget.includes('revenue') || widget.includes('expense') || widget.includes('profit');
                   return (
                     <LineChart 
                       key={widget} 
@@ -1300,7 +1311,7 @@ export default function DashboardView({
                       data={monthly.map(m => ({ month: m.month, value: m[widget as keyof typeof m] as number || 0 }))} 
                       color="#667eea" 
                       compact 
-                      formatter={(v) => isCurrency ? '$' + (v / 1000).toFixed(0) + 'k' : v.toFixed(0)} 
+                      formatter={compactMoney} 
                     />
                   );
                 }
@@ -1350,7 +1361,7 @@ export default function DashboardView({
                     month: m.month,
                     value: (m.netProfit || ((m.revenue || 0) - (m.cogsTotal || 0) - (m.expense || 0))) + (m.depreciationAmortization || 0)
                   }));
-                  return <LineChart key={widget} title="Operating Cash Flow" data={ocfData} color="#10b981" compact formatter={(v) => '$' + (v / 1000).toFixed(0) + 'K'} />;
+                  return <LineChart key={widget} title="Operating Cash Flow" data={ocfData} color="#10b981" compact formatter={compactMoney} />;
                 }
                 if (widget === 'Free Cash Flow') {
                   const fcfData = monthly.map((m, idx) => {
@@ -1364,14 +1375,14 @@ export default function DashboardView({
                       value: ocf - capex
                     };
                   });
-                  return <LineChart key={widget} title="Free Cash Flow" data={fcfData} color="#06b6d4" compact formatter={(v) => '$' + (v / 1000).toFixed(0) + 'K'} />;
+                  return <LineChart key={widget} title="Free Cash Flow" data={fcfData} color="#06b6d4" compact formatter={compactMoney} />;
                 }
                 if (widget === 'Cash Position') {
                   const cashData = monthly.map(m => ({
                     month: m.month,
                     value: m.cash || 0
                   }));
-                  return <LineChart key={widget} title="Cash Position" data={cashData} color="#f59e0b" compact formatter={(v) => '$' + (v / 1000).toFixed(0) + 'K'} />;
+                  return <LineChart key={widget} title="Cash Position" data={cashData} color="#f59e0b" compact formatter={compactMoney} />;
                 }
                 if (widget === 'Working Capital Trend') {
                   // Holt-Winters Exponential Smoothing with Seasonality
@@ -1490,7 +1501,7 @@ export default function DashboardView({
                           worstCase: projectedData.map(d => ({ ...d, value: d.value * 0.9 }))
                         }}
                         valueKey="value"
-                        formatValue={(v) => '$' + (v / 1000).toFixed(0) + 'k'}
+                        formatValue={compactMoney}
                       />
                     </div>
                   );

@@ -20,6 +20,7 @@ import {
   type ResidentialRevenueForecastMacroInput,
   type ResidentialRevenueForecastAssumptions,
 } from '@/lib/operations/real-estate-forecast';
+import { useCompanyMoneyFormatter } from '@/app/hooks/useCompanyMoneyFormatter';
 
 const QUARTERS: ForecastQuarter[] = ['Q1', 'Q2', 'Q3', 'Q4'];
 
@@ -32,14 +33,6 @@ const REVENUE_LINES = [
 ] as const;
 
 type RevenueLineKey = typeof REVENUE_LINES[number]['key'];
-
-function formatCurrency(value: number) {
-  return new Intl.NumberFormat('en-US', {
-    style: 'currency',
-    currency: 'USD',
-    maximumFractionDigits: 0,
-  }).format(Number(value || 0));
-}
 
 function formatNumber(value: number) {
   return new Intl.NumberFormat('en-US', { maximumFractionDigits: 0 }).format(Number(value || 0));
@@ -81,7 +74,9 @@ const tdStyle: React.CSSProperties = {
   whiteSpace: 'nowrap',
 };
 
-export default function ResidentialRevenueForecast() {
+export default function ResidentialRevenueForecast({ companyId }: { companyId?: string }) {
+  const money = useCompanyMoneyFormatter(companyId);
+  const formatCurrency = (value: number) => money.fmt(Number(value || 0), 0);
   const [assumptions, setAssumptions] = useState<ResidentialRevenueForecastAssumptions>(DEFAULT_RESIDENTIAL_REVENUE_FORECAST_ASSUMPTIONS);
   const [macroInputs, setMacroInputs] = useState<ResidentialRevenueForecastMacroInput[]>([]);
   const [macroStatus, setMacroStatus] = useState<'loading' | 'loaded' | 'unavailable'>('loading');
@@ -242,7 +237,7 @@ export default function ResidentialRevenueForecast() {
               <LineChart data={chartRows} margin={{ top: 8, right: 18, left: 8, bottom: 8 }}>
                 <CartesianGrid strokeDasharray="3 3" />
                 <XAxis dataKey="monthLabel" interval={2} tick={{ fontSize: 11 }} orientation="top" />
-                <YAxis tickFormatter={(value) => `$${(Number(value) / 1000000).toFixed(1)}M`} tick={{ fontSize: 11 }} />
+                <YAxis tickFormatter={(value) => money.fmtCompact(Number(value))} tick={{ fontSize: 11 }} />
                 <Tooltip formatter={(value: any) => formatCurrency(Number(value || 0))} />
                 <Legend />
                 {firstForecastMonthLabel && (

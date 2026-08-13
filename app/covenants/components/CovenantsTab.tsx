@@ -1581,7 +1581,7 @@ export default function CovenantsTab({
                                 <div style={{ fontSize: '14px', fontWeight: '700', color: getStatusColor(covenant.status) }}>
                                   {typeof covenant.currentValue === 'number'
                                     ? (covenant.currentValue > 1000
-                                        ? `$${covenant.currentValue.toLocaleString()}`
+                                        ? money.fmt(covenant.currentValue, 0)
                                         : Number(covenant.currentValue).toFixed(1))
                                     : covenant.currentValue
                                   }
@@ -1592,7 +1592,7 @@ export default function CovenantsTab({
                                 <div style={{ fontSize: '14px', fontWeight: '700', color: '#374151' }}>
                                   {typeof (covenantThresholds[covenant.id] ?? covenant.threshold) === 'number'
                                     ? ((covenantThresholds[covenant.id] ?? covenant.threshold) > 1000
-                                        ? `$${(covenantThresholds[covenant.id] ?? covenant.threshold).toLocaleString()}`
+                                        ? money.fmt(covenantThresholds[covenant.id] ?? covenant.threshold, 0)
                                         : Number(covenantThresholds[covenant.id] ?? covenant.threshold).toFixed(1))
                                     : (covenantThresholds[covenant.id] ?? covenant.threshold)
                                   }
@@ -1608,7 +1608,7 @@ export default function CovenantsTab({
                             <div style={{ fontSize: '14px', fontWeight: '700', color: getStatusColor(covenant.status) }}>
                               {typeof covenant.currentValue === 'number'
                                 ? (covenant.currentValue > 1000
-                                    ? `$${covenant.currentValue.toLocaleString()}`
+                                    ? money.fmt(covenant.currentValue, 0)
                                     : Number(covenant.currentValue).toFixed(1))
                                 : covenant.currentValue
                               }
@@ -2188,7 +2188,7 @@ export default function CovenantsTab({
                     <div style={{ fontSize: '14px', fontWeight: '600', color: getStatusColor(covenant.status) }}>
                       {covenant.currentValue !== null ? (
                         typeof covenant.currentValue === 'number' && covenant.currentValue > 1000
-                          ? `$${covenant.currentValue.toLocaleString()}`
+                          ? money.fmt(covenant.currentValue, 0)
                           : typeof covenant.currentValue === 'number' ? covenant.currentValue.toFixed(1) : covenant.currentValue
                       ) : 'N/A'}
                     </div>

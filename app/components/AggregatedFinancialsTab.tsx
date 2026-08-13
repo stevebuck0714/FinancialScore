@@ -4,6 +4,7 @@
 import React from 'react';
 import { useMasterData } from '@/lib/master-data-store';
 import { getFieldDisplayName } from '@/lib/constants/field-display-names';
+import { useCompanyMoneyFormatter } from '@/app/hooks/useCompanyMoneyFormatter';
 
 interface AggregatedFinancialsTabProps {
   selectedCompanyId: string;
@@ -223,8 +224,10 @@ function calculateAggregatedValues(monthly: any[], period: string) {
 }
 
 // Income Statement Component
-function IncomeStatement({ aggregated }: { aggregated: any }) {
-  const fmt = (val: number) => val.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 });
+function IncomeStatement({ aggregated, selectedCompanyId }: { aggregated: any; selectedCompanyId: string }) {
+  const money = useCompanyMoneyFormatter(selectedCompanyId);
+  const fmt = (val: number) => money.fmt(Number(val || 0), 0);
+  const signed = (val: number) => money.fmtSigned(Number(val || 0), 0);
   const revenueDetailEntries = Object.entries(aggregated.revenueDetails || {})
     .filter(([, value]: any) => Number(value) > 0)
     .sort((a: any, b: any) => getFieldDisplayName(String(a[0])).localeCompare(getFieldDisplayName(String(b[0]))));
@@ -243,12 +246,12 @@ function IncomeStatement({ aggregated }: { aggregated: any }) {
       <div style={{ marginBottom: '12px' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderBottom: '1px solid #e2e8f0' }}>
           <span style={{ fontWeight: '600', color: '#1e293b' }}>{getFieldDisplayName('revenue')}</span>
-          <span style={{ fontWeight: '600', color: '#1e293b' }}>${fmt(aggregated.revenue)}</span>
+          <span style={{ fontWeight: '600', color: '#1e293b' }}>{fmt(aggregated.revenue)}</span>
         </div>
         {revenueDetailEntries.map(([field, value]: any) => (
           <div key={field} style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
             <span style={{ color: '#475569' }}>{getFieldDisplayName(String(field))}</span>
-            <span style={{ color: '#475569' }}>${fmt(Number(value) || 0)}</span>
+            <span style={{ color: '#475569' }}>{fmt(Number(value) || 0)}</span>
           </div>
         ))}
       </div>
@@ -259,12 +262,12 @@ function IncomeStatement({ aggregated }: { aggregated: any }) {
         {cogsDetailEntries.map(([field, value]: any) => (
           <div key={field} style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
             <span style={{ color: '#475569' }}>{getFieldDisplayName(String(field))}</span>
-            <span style={{ color: '#475569' }}>${fmt(Number(value) || 0)}</span>
+            <span style={{ color: '#475569' }}>{fmt(Number(value) || 0)}</span>
           </div>
         ))}
         <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderTop: '1px solid #e2e8f0', marginTop: '4px' }}>
           <span style={{ fontWeight: '600', color: '#1e293b' }}>{getFieldDisplayName('cogsTotal')}</span>
-          <span style={{ fontWeight: '600', color: '#1e293b' }}>${fmt(aggregated.cogs)}</span>
+          <span style={{ fontWeight: '600', color: '#1e293b' }}>{fmt(aggregated.cogs)}</span>
         </div>
       </div>
 
@@ -272,7 +275,7 @@ function IncomeStatement({ aggregated }: { aggregated: any }) {
       <div style={{ marginBottom: '12px', background: '#dbeafe', padding: '12px', borderRadius: '8px' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
           <span style={{ fontWeight: '700', color: '#1e40af' }}>{getFieldDisplayName('grossProfit')}</span>
-          <span style={{ fontWeight: '700', color: '#1e40af' }}>${fmt(aggregated.grossProfit)}</span>
+          <span style={{ fontWeight: '700', color: '#1e40af' }}>{fmt(aggregated.grossProfit)}</span>
         </div>
         <div style={{ fontSize: '13px', color: '#1e40af', textAlign: 'right' }}>
           {aggregated.grossMargin.toFixed(1)}% margin
@@ -285,90 +288,90 @@ function IncomeStatement({ aggregated }: { aggregated: any }) {
         {aggregated.payroll > 0 && (
           <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
             <span style={{ color: '#475569' }}>{getFieldDisplayName('payroll')}</span>
-            <span style={{ color: '#475569' }}>${fmt(aggregated.payroll)}</span>
+            <span style={{ color: '#475569' }}>{fmt(aggregated.payroll)}</span>
           </div>
         )}
         {aggregated.benefits > 0 && (
           <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
             <span style={{ color: '#475569' }}>{getFieldDisplayName('benefits')}</span>
-            <span style={{ color: '#475569' }}>${fmt(aggregated.benefits)}</span>
+            <span style={{ color: '#475569' }}>{fmt(aggregated.benefits)}</span>
           </div>
         )}
         {aggregated.insurance > 0 && (
           <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
             <span style={{ color: '#475569' }}>{getFieldDisplayName('insurance')}</span>
-            <span style={{ color: '#475569' }}>${fmt(aggregated.insurance)}</span>
+            <span style={{ color: '#475569' }}>{fmt(aggregated.insurance)}</span>
           </div>
         )}
         {aggregated.professionalFees > 0 && (
           <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
             <span style={{ color: '#475569' }}>{getFieldDisplayName('professionalFees')}</span>
-            <span style={{ color: '#475569' }}>${fmt(aggregated.professionalFees)}</span>
+            <span style={{ color: '#475569' }}>{fmt(aggregated.professionalFees)}</span>
           </div>
         )}
         {aggregated.subcontractors !== 0 && (
           <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
             <span style={{ color: '#475569' }}>{getFieldDisplayName('subcontractors')}</span>
-            <span style={{ color: '#475569' }}>${fmt(aggregated.subcontractors)}</span>
+            <span style={{ color: '#475569' }}>{fmt(aggregated.subcontractors)}</span>
           </div>
         )}
         {aggregated.rent > 0 && (
           <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
             <span style={{ color: '#475569' }}>{getFieldDisplayName('rent')}</span>
-            <span style={{ color: '#475569' }}>${fmt(aggregated.rent)}</span>
+            <span style={{ color: '#475569' }}>{fmt(aggregated.rent)}</span>
           </div>
         )}
         {aggregated.taxLicense > 0 && (
           <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
             <span style={{ color: '#475569' }}>{getFieldDisplayName('taxLicense')}</span>
-            <span style={{ color: '#475569' }}>${fmt(aggregated.taxLicense)}</span>
+            <span style={{ color: '#475569' }}>{fmt(aggregated.taxLicense)}</span>
           </div>
         )}
         {aggregated.phoneComm > 0 && (
           <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
             <span style={{ color: '#475569' }}>{getFieldDisplayName('phoneComm')}</span>
-            <span style={{ color: '#475569' }}>${fmt(aggregated.phoneComm)}</span>
+            <span style={{ color: '#475569' }}>{fmt(aggregated.phoneComm)}</span>
           </div>
         )}
         {aggregated.infrastructure > 0 && (
           <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
             <span style={{ color: '#475569' }}>{getFieldDisplayName('infrastructure')}</span>
-            <span style={{ color: '#475569' }}>${fmt(aggregated.infrastructure)}</span>
+            <span style={{ color: '#475569' }}>{fmt(aggregated.infrastructure)}</span>
           </div>
         )}
         {aggregated.autoTravel > 0 && (
           <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
             <span style={{ color: '#475569' }}>{getFieldDisplayName('autoTravel')}</span>
-            <span style={{ color: '#475569' }}>${fmt(aggregated.autoTravel)}</span>
+            <span style={{ color: '#475569' }}>{fmt(aggregated.autoTravel)}</span>
           </div>
         )}
         {aggregated.salesExpense > 0 && (
           <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
             <span style={{ color: '#475569' }}>{getFieldDisplayName('salesExpense')}</span>
-            <span style={{ color: '#475569' }}>${fmt(aggregated.salesExpense)}</span>
+            <span style={{ color: '#475569' }}>{fmt(aggregated.salesExpense)}</span>
           </div>
         )}
         {(Number(aggregated.marketing) || 0) > 0 && (
           <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
             <span style={{ color: '#475569' }}>{getFieldDisplayName('marketing')}</span>
-            <span style={{ color: '#475569' }}>${fmt(Number(aggregated.marketing) || 0)}</span>
+            <span style={{ color: '#475569' }}>{fmt(Number(aggregated.marketing) || 0)}</span>
           </div>
         )}
         {aggregated.mealsEntertainment > 0 && (
           <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
             <span style={{ color: '#475569' }}>{getFieldDisplayName('mealsEntertainment')}</span>
-            <span style={{ color: '#475569' }}>${fmt(aggregated.mealsEntertainment)}</span>
+            <span style={{ color: '#475569' }}>{fmt(aggregated.mealsEntertainment)}</span>
           </div>
         )}
         {aggregated.otherExpense > 0 && (
           <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
             <span style={{ color: '#475569' }}>{getFieldDisplayName('otherExpense')}</span>
-            <span style={{ color: '#475569' }}>${fmt(aggregated.otherExpense)}</span>
+            <span style={{ color: '#475569' }}>{fmt(aggregated.otherExpense)}</span>
           </div>
         )}
         <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderTop: '1px solid #e2e8f0', marginTop: '4px' }}>
           <span style={{ fontWeight: '600', color: '#1e293b' }}>{getFieldDisplayName('totalOperatingExpenses')}</span>
-          <span style={{ fontWeight: '600', color: '#1e293b' }}>${fmt(aggregated.totalOpex)}</span>
+          <span style={{ fontWeight: '600', color: '#1e293b' }}>{fmt(aggregated.totalOpex)}</span>
         </div>
       </div>
 
@@ -376,7 +379,7 @@ function IncomeStatement({ aggregated }: { aggregated: any }) {
       <div style={{ marginBottom: '12px', background: '#dbeafe', padding: '12px', borderRadius: '8px' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
           <span style={{ fontWeight: '700', color: '#1e40af' }}>Operating Income</span>
-          <span style={{ fontWeight: '700', color: '#1e40af' }}>${fmt(aggregated.operatingIncome)}</span>
+          <span style={{ fontWeight: '700', color: '#1e40af' }}>{fmt(aggregated.operatingIncome)}</span>
         </div>
         <div style={{ fontSize: '13px', color: '#1e40af', textAlign: 'right' }}>
           {aggregated.operatingMargin.toFixed(1)}% margin
@@ -393,14 +396,14 @@ function IncomeStatement({ aggregated }: { aggregated: any }) {
           {aggregated.interestExpense > 0 && (
             <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
               <span style={{ color: '#475569' }}>{getFieldDisplayName('interestExpense')}</span>
-              <span style={{ color: '#475569' }}>(${fmt(aggregated.interestExpense)})</span>
+              <span style={{ color: '#475569' }}>({fmt(aggregated.interestExpense)})</span>
             </div>
           )}
           {aggregated.nonOperatingIncome !== 0 && (
             <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
               <span style={{ color: '#475569' }}>{getFieldDisplayName('nonOperatingIncome')}</span>
               <span style={{ color: aggregated.nonOperatingIncome >= 0 ? '#10b981' : '#ef4444' }}>
-                {aggregated.nonOperatingIncome >= 0 ? '$' : '($'}${fmt(Math.abs(aggregated.nonOperatingIncome))}{aggregated.nonOperatingIncome < 0 ? ')' : ''}
+                {signed(aggregated.nonOperatingIncome)}
               </span>
             </div>
           )}
@@ -408,7 +411,7 @@ function IncomeStatement({ aggregated }: { aggregated: any }) {
             <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
               <span style={{ color: '#475569' }}>{getFieldDisplayName('nonOperatingExpense')}</span>
               <span style={{ color: aggregated.nonOperatingExpense >= 0 ? '#ef4444' : '#10b981' }}>
-                {aggregated.nonOperatingExpense >= 0 ? '($' : '$'}{fmt(Math.abs(aggregated.nonOperatingExpense))}{aggregated.nonOperatingExpense >= 0 ? ')' : ''}
+                {signed(-aggregated.nonOperatingExpense)}
               </span>
             </div>
           )}
@@ -416,7 +419,7 @@ function IncomeStatement({ aggregated }: { aggregated: any }) {
             <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
               <span style={{ color: '#475569' }}>Extraordinary Items</span>
               <span style={{ color: aggregated.extraordinaryItems >= 0 ? '#10b981' : '#ef4444' }}>
-                {aggregated.extraordinaryItems >= 0 ? '$' : '($'}${fmt(Math.abs(aggregated.extraordinaryItems))}{aggregated.extraordinaryItems < 0 ? ')' : ''}
+                {signed(aggregated.extraordinaryItems)}
               </span>
             </div>
           )}
@@ -427,7 +430,7 @@ function IncomeStatement({ aggregated }: { aggregated: any }) {
       <div style={{ marginBottom: '12px', background: '#fef3c7', padding: '12px', borderRadius: '8px' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between' }}>
           <span style={{ fontWeight: '700', color: '#92400e' }}>{getFieldDisplayName('incomeBeforeTax')}</span>
-          <span style={{ fontWeight: '700', color: '#92400e' }}>${fmt(aggregated.incomeBeforeTax)}</span>
+          <span style={{ fontWeight: '700', color: '#92400e' }}>{fmt(aggregated.incomeBeforeTax)}</span>
         </div>
       </div>
 
@@ -447,11 +450,11 @@ function IncomeStatement({ aggregated }: { aggregated: any }) {
             <>
               <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
                 <span style={{ color: '#475569' }}>{getFieldDisplayName('stateIncomeTaxes')}</span>
-                <span style={{ color: '#475569' }}>{stateTax > 0 ? `($${fmt(stateTax)})` : '$0'}</span>
+                <span style={{ color: '#475569' }}>{stateTax > 0 ? `(${fmt(stateTax)})` : fmt(0)}</span>
               </div>
               <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
                 <span style={{ color: '#475569' }}>{getFieldDisplayName('federalIncomeTaxes')}</span>
-                <span style={{ color: '#475569' }}>{federalTax > 0 ? `($${fmt(federalTax)})` : '$0'}</span>
+                <span style={{ color: '#475569' }}>{federalTax > 0 ? `(${fmt(federalTax)})` : fmt(0)}</span>
               </div>
             </>
           );
@@ -462,7 +465,7 @@ function IncomeStatement({ aggregated }: { aggregated: any }) {
       <div style={{ marginBottom: '12px', background: aggregated.netIncome >= 0 ? '#16a34a' : '#ef4444', color: 'white', padding: '12px', borderRadius: '8px' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
           <span style={{ fontWeight: '700' }}>{getFieldDisplayName('netIncome')}</span>
-          <span style={{ fontWeight: '700' }}>${fmt(aggregated.netIncome)}</span>
+          <span style={{ fontWeight: '700' }}>{fmt(aggregated.netIncome)}</span>
         </div>
         <div style={{ fontSize: '13px', textAlign: 'right' }}>
           {aggregated.netMargin.toFixed(1)}% margin
@@ -529,7 +532,7 @@ export default function AggregatedFinancialsTab({
       );
     }
 
-    return <IncomeStatement aggregated={aggregated} />;
+    return <IncomeStatement aggregated={aggregated} selectedCompanyId={selectedCompanyId} />;
   }
 
   // Handle other cases or show not implemented message

@@ -15,6 +15,7 @@ import {
 } from '@/lib/company-pulse/policy';
 import { toLocalInputDate } from '@/app/utils/date';
 import IndustryBriefPanel from '@/app/components/industry-brief/IndustryBriefPanel';
+import { useCompanyMoneyFormatter } from '@/app/hooks/useCompanyMoneyFormatter';
 
 type AlertItem = {
   id: string;
@@ -255,9 +256,17 @@ function scoreAlert(alert: AlertItem): number {
   return Math.max(0, Math.min(100, score));
 }
 
-function formatPolicyNumber(value: number, unit: PulsePolicyUnit): string {
+function formatPolicyNumber(
+  value: number,
+  unit: PulsePolicyUnit,
+  formatCurrency?: (n: number) => string,
+): string {
   if (unit === 'percent') return `${value.toFixed(1)}%`;
-  if (unit === 'currency') return `$${value.toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
+  if (unit === 'currency') {
+    return formatCurrency
+      ? formatCurrency(value)
+      : `$${value.toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
+  }
   if (unit === 'points') return `${value.toFixed(1)} pts`;
   if (unit === 'days') return `${value.toFixed(0)} days`;
   if (unit === 'weeks') return `${value.toFixed(1)} weeks`;
@@ -397,6 +406,7 @@ function buildPolicyExplainer(def: (typeof PULSE_POLICY_DEFINITIONS)[number]): P
 }
 
 export default function DailyAlertsView({ companyId, companyName, onNavigate }: DailyAlertsViewProps) {
+  const money = useCompanyMoneyFormatter(companyId);
   const [activeTab, setActiveTab] = useState<PulseTab>('company-pulse');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -2645,7 +2655,7 @@ export default function DailyAlertsView({ companyId, companyName, onNavigate }: 
     if (unit === 'percent') return `${value.toFixed(1)}%`;
     if (unit === 'days') return `${value.toFixed(1)} days`;
     if (unit === 'weeks') return `${value.toFixed(1)} weeks`;
-    return `$${value.toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
+    return money.fmt(value, 0);
   };
 
   const renderFocusScoreHelp = (alert: AlertItem) => {
@@ -3158,10 +3168,10 @@ export default function DailyAlertsView({ companyId, companyName, onNavigate }: 
                           <div style={{ fontSize: '12px', color: '#64748b', marginTop: '2px' }}>{def.description}</div>
                         </div>
                         <div style={{ fontSize: '12px', color: '#334155', fontWeight: 700 }}>
-                          {formatPolicyNumber(sectorValue, def.unit)}
+                          {formatPolicyNumber(sectorValue, def.unit, (n) => money.fmt(n, 0))}
                         </div>
                         <div style={{ fontSize: '12px', color: '#0f172a', fontWeight: 700 }}>
-                          {formatPolicyNumber(effectiveValue, def.unit)}
+                          {formatPolicyNumber(effectiveValue, def.unit, (n) => money.fmt(n, 0))}
                         </div>
                         <div>
                           <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', color: '#334155', fontWeight: 700 }}>

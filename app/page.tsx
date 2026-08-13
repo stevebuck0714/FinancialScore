@@ -168,8 +168,9 @@ import GoalsView from './components/GoalsView';
 import TrendAnalysisView from './components/TrendAnalysisView';
 import SimpleChart from './components/SimpleChart';
 import toast, { Toaster } from 'react-hot-toast';
-import { formatMoney } from '@/lib/format/currency';
+import { formatMoney, formatMoneyCompact, formatSignedMoney } from '@/lib/format/currency';
 import { resolveDisplayCurrency } from '@/lib/constants/currencies';
+import PageCurrencyBadge from './components/PageCurrencyBadge';
 
 // Constants (now imported from ./constants)
 
@@ -1209,6 +1210,24 @@ function FinancialScorePage() {
       setCompanies([]);
     }
   };
+
+  const mergeCompanyLists = (...lists: any[]) => {
+    const byId = new Map<string, any>();
+    for (const list of lists) {
+      const companiesList = Array.isArray(list)
+        ? list
+        : (list && typeof list === 'object' && Array.isArray(list.companies) ? list.companies : []);
+      for (const company of companiesList) {
+        if (!company?.id) continue;
+        byId.set(company.id, { ...byId.get(company.id), ...company });
+      }
+    }
+    return Array.from(byId.values());
+  };
+
+  const mergeSetCompanies = (...lists: any[]) => {
+    setCompanies((prev) => mergeCompanyLists(Array.isArray(prev) ? prev : [], ...lists));
+  };
   const [users, setUsers] = useState<User[]>([]);
   const [selectedCompanyId, setSelectedCompanyId] = useState('');
   const [customReportsEnabledByCompany, setCustomReportsEnabledByCompany] = useState<Record<string, boolean>>({});
@@ -1230,6 +1249,23 @@ function FinancialScorePage() {
         currency: companyDisplayCurrency,
         locale: selectedCompany?.locale,
         decimals: 0,
+      }),
+    [companyDisplayCurrency, selectedCompany?.locale]
+  );
+  const formatSignedDollar = useCallback(
+    (value: number) =>
+      formatSignedMoney(value, {
+        currency: companyDisplayCurrency,
+        locale: selectedCompany?.locale,
+        decimals: 0,
+      }),
+    [companyDisplayCurrency, selectedCompany?.locale]
+  );
+  const formatCompactDollar = useCallback(
+    (value: number) =>
+      formatMoneyCompact(value, {
+        currency: companyDisplayCurrency,
+        locale: selectedCompany?.locale,
       }),
     [companyDisplayCurrency, selectedCompany?.locale]
   );
@@ -1372,10 +1408,16 @@ function FinancialScorePage() {
             }
           } else if (user.role === 'siteadmin') {
             try {
-              const response = await fetch('/api/companies', { cache: 'no-store' });
-              const data = await response.json();
-              if (response.ok && Array.isArray(data.companies)) {
-                safeSetCompanies(data.companies);
+              const [companiesRes, consultantsData] = await Promise.all([
+                fetch('/api/companies', { cache: 'no-store' }),
+                consultantsApi.getAll().catch(() => null),
+              ]);
+              const data = await companiesRes.json();
+              if (companiesRes.ok && Array.isArray(data.companies) && data.companies.length > 0) {
+                mergeSetCompanies(data.companies);
+              }
+              if (Array.isArray(consultantsData?.standaloneCompanies)) {
+                mergeSetCompanies(consultantsData.standaloneCompanies);
               }
             } catch (loadError) {
               console.error('❌ Error loading companies for restored site admin session:', loadError);
@@ -2802,9 +2844,7 @@ function FinancialScorePage() {
     if (!match) return '';
     const numeric = Number(match[1]);
     if (!Number.isFinite(numeric)) return '';
-    if (numeric >= 10000 && numeric % 10 === 0) return String(Math.floor(numeric / 10));
-    if (numeric >= 10000) return String(Number(String(numeric).slice(0, 4)));
-    return String(numeric);
+    return match[1];
   };
 
   const normalizeAccountReviewApiValues = (values: unknown): Record<string, number> => {
@@ -5384,21 +5424,38 @@ function FinancialScorePage() {
           throw lastError || new Error(`Failed request for ${url}`);
         };
 
-        const [companiesData, usersData] = await Promise.all([
+        const [companiesResult, usersResult] = await Promise.allSettled([
           loadWithRetry('/api/companies'),
           loadWithRetry('/api/users'),
         ]);
 
-        if (!Array.isArray(companiesData?.companies)) {
-          throw new Error('Invalid companies response payload');
-        }
-        if (!Array.isArray(usersData?.users)) {
-          throw new Error('Invalid users response payload');
+        if (cancelled) return;
+
+        if (companiesResult.status === 'fulfilled' && Array.isArray(companiesResult.value?.companies)) {
+          if (companiesResult.value.companies.length > 0) {
+            mergeSetCompanies(companiesResult.value.companies);
+          }
+        } else if (companiesResult.status === 'rejected') {
+          console.error('Error loading companies for businesses tab:', companiesResult.reason);
+        } else {
+          console.error('Invalid companies response payload');
         }
 
-        if (cancelled) return;
-        safeSetCompanies(companiesData.companies);
-        setUsers(usersData.users);
+        try {
+          const consultantsData = await consultantsApi.getAll();
+          if (Array.isArray(consultantsData?.standaloneCompanies)) {
+            mergeSetCompanies(consultantsData.standaloneCompanies);
+          }
+        } catch (standaloneError) {
+          console.error('Error loading standalone businesses:', standaloneError);
+        }
+
+        if (usersResult.status === 'fulfilled' && Array.isArray(usersResult.value?.users)) {
+          setUsers(usersResult.value.users);
+        } else {
+          console.error('Error loading users for businesses tab:', usersResult.status === 'rejected' ? usersResult.reason : 'Invalid users response payload');
+        }
+
         setSiteAdminBusinessesLoading(false);
       } catch (err) {
         console.error('Error loading businesses tab data:', err);
@@ -6291,7 +6348,8 @@ function FinancialScorePage() {
       if (!currentUser || String(currentUser.role || '').toLowerCase() !== 'siteadmin') return;
       
       try {
-        const { consultants: loadedConsultants } = await consultantsApi.getAll();
+        const consultantsData = await consultantsApi.getAll();
+        const loadedConsultants = consultantsData?.consultants;
         // Map the user data to consultant level for easier access in the UI
         const mappedConsultants = (loadedConsultants || []).map((c: any) => ({
           ...c,
@@ -6299,14 +6357,22 @@ function FinancialScorePage() {
           password: '' // Don't expose passwords
         }));
         setConsultants(mappedConsultants);
+
+        const nestedCompanies = mappedConsultants.flatMap((consultant: any) =>
+          Array.isArray(consultant?.companies) ? consultant.companies : []
+        );
+        const standaloneCompanies = Array.isArray(consultantsData?.standaloneCompanies)
+          ? consultantsData.standaloneCompanies
+          : [];
+        mergeSetCompanies(nestedCompanies, standaloneCompanies);
         
-        // Always load full company records so consultant cards have complete fields
+        // Overlay full company records so consultant cards have complete fields
         // (e.g., accountingSystem) required by Site Admin integration containers.
         const companiesRes = await fetch('/api/companies', { cache: 'no-store' });
         if (companiesRes.ok) {
           const companiesData = await companiesRes.json();
-          if (Array.isArray(companiesData?.companies)) {
-            safeSetCompanies(companiesData.companies);
+          if (Array.isArray(companiesData?.companies) && companiesData.companies.length > 0) {
+            mergeSetCompanies(companiesData.companies);
           }
         } else {
           console.error('Error loading companies for site admin:', companiesRes.status);
@@ -9766,8 +9832,19 @@ function FinancialScorePage() {
   };
 
   const getConsultantCompanies = (consultantId: string) => {
-    if (!Array.isArray(companies)) return [];
-    return companies.filter(c => c.consultantId === consultantId).sort((a, b) => a.name.localeCompare(b.name));
+    const fromState = Array.isArray(companies)
+      ? companies.filter((c) => c.consultantId === consultantId)
+      : [];
+    if (fromState.length > 0) {
+      return fromState.sort((a, b) => String(a.name || '').localeCompare(String(b.name || '')));
+    }
+    const consultant = Array.isArray(consultants)
+      ? consultants.find((item: any) => item.id === consultantId)
+      : null;
+    const nested = Array.isArray(consultant?.companies) ? consultant.companies : [];
+    return [...nested].sort((a: any, b: any) =>
+      String(a?.name || '').localeCompare(String(b?.name || ''))
+    );
   };
 
   const handleFile = async (e: ChangeEvent<HTMLInputElement>) => {
@@ -10341,7 +10418,7 @@ function FinancialScorePage() {
       const avgMonthlyRev = last12Months.reduce((s, m) => s + m.revenue, 0) / 12;
       const projectedAnnualRev = avgMonthlyRev * 12;
       
-      if (recentRevGrowth > 15) insights.push(`Strong growth trajectory projects annual revenue of approximately $${(projectedAnnualRev / 1000).toFixed(0)}K with continued momentum.`);
+      if (recentRevGrowth > 15) insights.push(`Strong growth trajectory projects annual revenue of approximately ${formatCompactDollar(projectedAnnualRev)} with continued momentum.`);
       else if (recentRevGrowth < 0) insights.push(`Declining revenue trend requires strategic intervention to stabilize and restore growth.`);
       
       // Equity trend analysis
@@ -10371,9 +10448,9 @@ function FinancialScorePage() {
     const wcRatioMDA = currentLiab > 0 ? currentAssets / currentLiab : (currentAssets > 0 ? 999 : 0);
     
     if (workingCapital > 0 && wcRatioMDA >= 1.5) {
-      strengths.push(`Positive working capital of $${(workingCapital / 1000).toFixed(1)}K with strong WC ratio of ${wcRatioMDA.toFixed(1)} supports operational flexibility.`);
+      strengths.push(`Positive working capital of ${formatCompactDollar(workingCapital)} with strong WC ratio of ${wcRatioMDA.toFixed(1)} supports operational flexibility.`);
     } else if (workingCapital < 0) {
-      weaknesses.push(`Negative working capital of $${(Math.abs(workingCapital) / 1000).toFixed(1)}K indicates potential short-term funding challenges.`);
+      weaknesses.push(`Negative working capital of ${formatCompactDollar(Math.abs(workingCapital))} indicates potential short-term funding challenges.`);
     } else if (wcRatioMDA < 1.0) {
       weaknesses.push(`Working capital ratio of ${wcRatioMDA.toFixed(1)} is below optimal levels - consider improving liquidity.`);
     }
@@ -10413,8 +10490,8 @@ function FinancialScorePage() {
       const priorYearCash = monthly[monthly.length - 13].cash;
       const cashChange = currentCash - priorYearCash;
       
-      if (cashChange > ltmRev * 0.1) strengths.push(`Cash position improved by $${(cashChange / 1000).toFixed(1)}K over the past year, strengthening financial resilience.`);
-      else if (cashChange < -ltmRev * 0.05) weaknesses.push(`Cash declined by $${(Math.abs(cashChange) / 1000).toFixed(1)}K - monitor cash flow and consider working capital improvements.`);
+      if (cashChange > ltmRev * 0.1) strengths.push(`Cash position improved by ${formatCompactDollar(cashChange)} over the past year, strengthening financial resilience.`);
+      else if (cashChange < -ltmRev * 0.05) weaknesses.push(`Cash declined by ${formatCompactDollar(Math.abs(cashChange))} - monitor cash flow and consider working capital improvements.`);
     }
     
     // Benchmark Comparison (if available)
@@ -10560,7 +10637,7 @@ function FinancialScorePage() {
     }
     
     return { strengths, weaknesses, insights };
-  }, [trendData, finalScore, profitabilityScore, assetDevScore, growth_24mo, growth_6mo, expenseAdjustment, revExpSpread, ltmRev, ltmExp, monthly, benchmarks]);
+  }, [trendData, finalScore, profitabilityScore, assetDevScore, growth_24mo, growth_6mo, expenseAdjustment, revExpSpread, ltmRev, ltmExp, monthly, benchmarks, formatCompactDollar]);
 
   // Projections
   const projections = useMemo(() => {
@@ -14749,14 +14826,21 @@ function FinancialScorePage() {
             className="dashboard-tabs-print-hide"
             style={{
               display: 'flex',
-              gap: '4px',
-              overflowX: 'auto',
-              // Data Mapping needs to sit tight to the content below.
+              alignItems: 'flex-end',
               marginBottom: (adminDashboardTab === 'data-mapping' || adminDashboardTab === 'data-review') ? '2px' : '12px',
               borderBottom: '1px solid #cbd5e1',
-              whiteSpace: 'nowrap'
             }}
           >
+            <div
+              style={{
+                display: 'flex',
+                gap: '4px',
+                overflowX: 'auto',
+                flex: 1,
+                minWidth: 0,
+                whiteSpace: 'nowrap',
+              }}
+            >
             <button
               onClick={() => handleAdminTabNavigation('company-management')}
               style={{
@@ -14865,6 +14949,16 @@ function FinancialScorePage() {
             >
               Documents
             </button>
+            </div>
+            {(adminDashboardTab === 'data-mapping' || adminDashboardTab === 'data-review') && selectedCompanyId && (
+              <div style={{ padding: '6px 0 8px 16px', flexShrink: 0 }}>
+                <PageCurrencyBadge
+                  currency={companyDisplayCurrency}
+                  locale={selectedCompany?.locale}
+                  baseCurrency={selectedCompany?.baseCurrency}
+                />
+              </div>
+            )}
           </div>
           
           {/* Company Management Tab */}
@@ -15010,13 +15104,13 @@ function FinancialScorePage() {
                     <div style={{ background: '#dbeafe', borderRadius: '8px', padding: '16px', border: '1px solid #93c5fd' }}>
                       <div style={{ fontSize: '12px', fontWeight: '600', color: '#1e40af', marginBottom: '4px' }}>TOTAL REVENUE</div>
                       <div style={{ fontSize: '18px', fontWeight: '700', color: '#2563eb' }}>
-                        ${(loadedMonthlyData.reduce((sum, m) => sum + (m.revenue || 0), 0) / 1000).toFixed(0)}K
+                        {formatCompactDollar(loadedMonthlyData.reduce((sum, m) => sum + (m.revenue || 0), 0))}
                       </div>
                     </div>
                     <div style={{ background: '#fef3c7', borderRadius: '8px', padding: '16px', border: '1px solid #fcd34d' }}>
                       <div style={{ fontSize: '12px', fontWeight: '600', color: '#92400e', marginBottom: '4px' }}>TOTAL ASSETS</div>
                       <div style={{ fontSize: '18px', fontWeight: '700', color: '#d97706' }}>
-                        ${(loadedMonthlyData[loadedMonthlyData.length - 1].totalAssets / 1000).toFixed(0)}K
+                        {formatCompactDollar(loadedMonthlyData[loadedMonthlyData.length - 1].totalAssets)}
                       </div>
                     </div>
                   </div>
@@ -16287,13 +16381,13 @@ function FinancialScorePage() {
                     <div style={{ background: '#dbeafe', borderRadius: '8px', padding: '16px', border: '1px solid #93c5fd' }}>
                       <div style={{ fontSize: '12px', fontWeight: '600', color: '#1e40af', marginBottom: '4px' }}>TOTAL REVENUE</div>
                       <div style={{ fontSize: '18px', fontWeight: '700', color: '#2563eb' }}>
-                        ${(loadedMonthlyData.reduce((sum, m) => sum + (m.revenue || 0), 0) / 1000).toFixed(0)}K
+                        {formatCompactDollar(loadedMonthlyData.reduce((sum, m) => sum + (m.revenue || 0), 0))}
                       </div>
                     </div>
                     <div style={{ background: '#fef3c7', borderRadius: '8px', padding: '16px', border: '1px solid #fcd34d' }}>
                       <div style={{ fontSize: '12px', fontWeight: '600', color: '#92400e', marginBottom: '4px' }}>TOTAL ASSETS</div>
                       <div style={{ fontSize: '18px', fontWeight: '700', color: '#d97706' }}>
-                        ${(loadedMonthlyData[loadedMonthlyData.length - 1].totalAssets / 1000).toFixed(0)}K
+                        {formatCompactDollar(loadedMonthlyData[loadedMonthlyData.length - 1].totalAssets)}
                       </div>
                     </div>
                   </div>
@@ -17886,8 +17980,8 @@ function FinancialScorePage() {
                             const qbAccountsWithClass = csvAccountsForMapping.map(acc => ({
                               name: acc.name,
                               classification: acc.classification,
-                              accountId: acc.accountId || acc.id || '',
-                              accountCode: acc.acctId,  // Include account code for better AI mapping
+                              accountId: acc.acctId || acc.accountId || acc.id || '',
+                              accountCode: acc.acctId || acc.accountId || '',
                               accountType: acc.acctType,
                             }));
                             const currentSectorCategory = resolveCompanyIndustrySectorCategory(
@@ -20116,7 +20210,7 @@ function FinancialScorePage() {
         <div style={{ maxWidth: '1600px', margin: '0 auto', padding: '16px 24px 0' }}>
           <nav
             aria-label="Financial Reporting"
-            style={{ display: 'flex', gap: '4px', overflowX: 'auto', borderBottom: '1px solid #cbd5e1', whiteSpace: 'nowrap' }}
+            style={{ display: 'flex', alignItems: 'flex-end', gap: '4px', overflowX: 'auto', borderBottom: '1px solid #cbd5e1', whiteSpace: 'nowrap' }}
           >
             {FINANCIAL_REPORTING_TABS.map((tab) => (
               <button
@@ -20139,6 +20233,13 @@ function FinancialScorePage() {
                 {tab.label}
               </button>
             ))}
+            <div style={{ marginLeft: 'auto', padding: '6px 0 8px 16px', flexShrink: 0 }}>
+              <PageCurrencyBadge
+                currency={companyDisplayCurrency}
+                locale={selectedCompany?.locale}
+                baseCurrency={selectedCompany?.baseCurrency}
+              />
+            </div>
           </nav>
         </div>
       )}
@@ -20149,6 +20250,8 @@ function FinancialScorePage() {
           trendData={trendData}
           companyName={companyName || ''}
           selectedCompanyId={selectedCompanyId}
+          displayCurrency={companyDisplayCurrency}
+          locale={selectedCompany?.locale}
           selectedDashboardWidgets={selectedDashboardWidgets}
           setSelectedDashboardWidgets={setSelectedDashboardWidgets}
           showDashboardCustomizer={showDashboardCustomizer}
@@ -20293,6 +20396,8 @@ function FinancialScorePage() {
           selectedCompanyId={selectedCompanyId}
           companyName={companyName || ''}
           prefetchedMonthlyData={monthly as any}
+          displayCurrency={companyDisplayCurrency}
+          locale={selectedCompany?.locale}
         />
       )}
 
@@ -20300,7 +20405,7 @@ function FinancialScorePage() {
         <div style={{ maxWidth: '1600px', margin: '0 auto', padding: '16px 24px 0' }}>
           <nav
             aria-label="Valuation"
-            style={{ display: 'flex', gap: '4px', overflowX: 'auto', borderBottom: '1px solid #cbd5e1', whiteSpace: 'nowrap' }}
+            style={{ display: 'flex', alignItems: 'flex-end', gap: '4px', overflowX: 'auto', borderBottom: '1px solid #cbd5e1', whiteSpace: 'nowrap' }}
           >
             {VALUATION_TABS
               .filter((tab) => tab.id !== 'valuation-reports' || (hasCompanySectionAccess('valuation-reports') && isValuationReportsEnabledByAdmin))
@@ -20337,6 +20442,13 @@ function FinancialScorePage() {
                   </button>
                 );
               })}
+            <div style={{ marginLeft: 'auto', padding: '6px 0 8px 16px', flexShrink: 0 }}>
+              <PageCurrencyBadge
+                currency={companyDisplayCurrency}
+                locale={selectedCompany?.locale}
+                baseCurrency={selectedCompany?.baseCurrency}
+              />
+            </div>
           </nav>
         </div>
       )}
@@ -20345,7 +20457,7 @@ function FinancialScorePage() {
         <div style={{ maxWidth: '1600px', margin: '0 auto', padding: '16px 24px 0' }}>
           <nav
             aria-label="Expert Analysis"
-            style={{ display: 'flex', gap: '4px', overflowX: 'auto', borderBottom: '1px solid #cbd5e1', whiteSpace: 'nowrap' }}
+            style={{ display: 'flex', alignItems: 'flex-end', gap: '4px', overflowX: 'auto', borderBottom: '1px solid #cbd5e1', whiteSpace: 'nowrap' }}
           >
             {PERFORMANCE_ANALYSIS_TABS.map((tab) => (
               <button
@@ -20368,6 +20480,13 @@ function FinancialScorePage() {
                 {tab.label}
               </button>
             ))}
+            <div style={{ marginLeft: 'auto', padding: '6px 0 8px 16px', flexShrink: 0 }}>
+              <PageCurrencyBadge
+                currency={companyDisplayCurrency}
+                locale={selectedCompany?.locale}
+                baseCurrency={selectedCompany?.baseCurrency}
+              />
+            </div>
           </nav>
         </div>
       )}
@@ -20627,6 +20746,8 @@ function FinancialScorePage() {
                 sdeExecutiveSummaryApi={sdeExecutiveSummaryApi}
                 sdeExecutiveFinancialSummaryApi={sdeExecutiveFinancialSummaryApi}
                 sdeRecommendationsApi={sdeRecommendationsApi}
+                currency={companyDisplayCurrency}
+                locale={selectedCompany?.locale}
               />
             ) : valuationSectionPreview.id === '5' && !sdeValuationReportPreviewModel ? (
               <div style={{ marginTop: '10px', padding: '14px', border: '1px solid #fecaca', borderRadius: '10px', background: '#fef2f2', color: '#991b1b', fontSize: '13px' }}>
@@ -20643,6 +20764,8 @@ function FinancialScorePage() {
                 ebitdaMultiplier={ebitdaMultiplier}
                 ebitdaEstimatedValue={valuationExecutiveOverview.ebitdaEstimatedValue}
                 ttmFreeCashFlow={valuationExecutiveOverview.ttmFreeCashFlow}
+                currency={companyDisplayCurrency}
+                locale={selectedCompany?.locale}
               />
             ) : valuationSectionPreview.id === '6' && !sdeValuationReportPreviewModel ? (
               <div style={{ marginTop: '10px', padding: '14px', border: '1px solid #fecaca', borderRadius: '10px', background: '#fef2f2', color: '#991b1b', fontSize: '13px' }}>
@@ -20661,6 +20784,8 @@ function FinancialScorePage() {
                 ttmFreeCashFlow={valuationExecutiveOverview.ttmFreeCashFlow}
                 growth24mo={growth_24mo}
                 revenueMix={businessOverviewRevenueMix}
+                currency={companyDisplayCurrency}
+                locale={selectedCompany?.locale}
               />
             ) : valuationSectionPreview.id === '7' && !sdeValuationReportPreviewModel ? (
               <div style={{ marginTop: '10px', padding: '14px', border: '1px solid #fecaca', borderRadius: '10px', background: '#fef2f2', color: '#991b1b', fontSize: '13px' }}>
@@ -22880,7 +23005,7 @@ function FinancialScorePage() {
                                   <g key={pct}>
                                     <line x1={pad.left} y1={y} x2={width - pad.right} y2={y} stroke="#e2e8f0" strokeWidth="1" />
                                     <text x={pad.left - 8} y={y + 4} textAnchor="end" fontSize="10" fill="#64748b">
-                                      {`${formatDollar(val / 1000)}K`}
+                                      {formatCompactDollar(val)}
                                     </text>
                                   </g>
                                 );
@@ -22919,8 +23044,8 @@ function FinancialScorePage() {
                                       fontWeight="700"
                                     >
                                       {bar.type === 'delta'
-                                        ? `${delta >= 0 ? '+' : '-'}${formatDollar(Math.abs(delta) / 1000)}K`
-                                        : `${formatDollar(bar.end / 1000)}K`}
+                                        ? `${delta >= 0 ? '+' : '-'}${formatCompactDollar(Math.abs(delta))}`
+                                        : formatCompactDollar(bar.end)}
                                     </text>
                                     <text x={cx} y={height - pad.bottom + 14} textAnchor="middle" fontSize="9" fill="#475569">
                                       {bar.label}
@@ -23305,7 +23430,7 @@ function FinancialScorePage() {
                                             <g key={pct}>
                                               <line x1={pad.left} y1={y} x2={width - pad.right} y2={y} stroke="#e2e8f0" strokeWidth="1" />
                                               <text x={pad.left - 8} y={y + 4} textAnchor="end" fontSize="10" fill="#64748b">
-                                                ${Math.round((maxTotal * pct) / 1000)}K
+                                                {formatCompactDollar(maxTotal * pct)}
                                               </text>
                                             </g>
                                           );
@@ -24298,7 +24423,7 @@ function FinancialScorePage() {
                           data={workingCapitalSeries.map((r) => ({ month: r.month, value: r.operatingWc }))}
                           color="#1d76c3"
                           compact
-                          formatter={(v) => `$${Math.round(v / 1000)}K`}
+                          formatter={(v) => formatCompactDollar(v)}
                         />
                       )}
                       {(workingCapitalFlagGraphOpen === 'ccc-deterioration' || workingCapitalFlagGraphOpen === 'ccc-level') && (
@@ -24329,7 +24454,7 @@ function FinancialScorePage() {
                     data={workingCapitalSeries.map((r) => ({ month: r.month, value: r.operatingWc }))}
                     color="#1d76c3"
                     compact
-                    formatter={(v) => `$${Math.round(v / 1000)}K`}
+                    formatter={(v) => formatCompactDollar(v)}
                   />
                   <LineChart
                     title="Cash Conversion Cycle (Last 36 Months)"
@@ -24524,7 +24649,7 @@ function FinancialScorePage() {
                           data={cashFlowQualitySeries.slice(-36).map((r) => ({ month: r.month, value: cashFlowQualityFlagGraphOpen === 'cash-conversion-weak' ? r.cashConversionPct : r.operatingCashFlow }))}
                           color={cashFlowQualityFlagGraphOpen === 'cash-conversion-weak' ? '#0ea5e9' : '#10b981'}
                           compact
-                          formatter={(v) => cashFlowQualityFlagGraphOpen === 'cash-conversion-weak' ? `${v.toFixed(1)}%` : `$${Math.round(v / 1000)}K`}
+                          formatter={(v) => cashFlowQualityFlagGraphOpen === 'cash-conversion-weak' ? `${v.toFixed(1)}%` : formatCompactDollar(v)}
                         />
                       )}
                       {cashFlowQualityFlagGraphOpen === 'fcf-weakness' && (
@@ -24533,7 +24658,7 @@ function FinancialScorePage() {
                           data={cashFlowQualitySeries.slice(-36).map((r) => ({ month: r.month, value: r.freeCashFlow }))}
                           color="#f59e0b"
                           compact
-                          formatter={(v) => `$${Math.round(v / 1000)}K`}
+                          formatter={(v) => formatCompactDollar(v)}
                         />
                       )}
                       {cashFlowQualityFlagGraphOpen === 'capex-gap' && (
@@ -24543,14 +24668,14 @@ function FinancialScorePage() {
                             data={cashFlowQualitySeries.slice(-36).map((r) => ({ month: r.month, value: r.capex }))}
                             color="#8b5cf6"
                             compact
-                            formatter={(v) => `$${Math.round(v / 1000)}K`}
+                            formatter={(v) => formatCompactDollar(v)}
                           />
                           <LineChart
                             title="Depreciation Proxy (Last 36 Months)"
                             data={cashFlowQualitySeries.slice(-36).map((r) => ({ month: r.month, value: r.depreciation }))}
                             color="#ef4444"
                             compact
-                            formatter={(v) => `$${Math.round(v / 1000)}K`}
+                            formatter={(v) => formatCompactDollar(v)}
                           />
                         </div>
                       )}
@@ -24571,7 +24696,7 @@ function FinancialScorePage() {
                     data={cashFlowQualitySeries.slice(-36).map((r) => ({ month: r.month, value: r.freeCashFlow }))}
                     color="#f59e0b"
                     compact
-                    formatter={(v) => `$${Math.round(v / 1000)}K`}
+                    formatter={(v) => formatCompactDollar(v)}
                   />
                 </div>
                 </>
@@ -24784,7 +24909,7 @@ function FinancialScorePage() {
                               color="#16a34a"
                               compact
                               showTrendLine
-                              formatter={(v) => `$${Math.round(v / 1000)}K`}
+                              formatter={(v) => formatCompactDollar(v)}
                             />
                           </div>
                           <div style={{ border: '1px solid #e2e8f0', borderRadius: '8px', padding: '8px' }}>
@@ -24798,7 +24923,7 @@ function FinancialScorePage() {
                               color="#2563eb"
                               compact
                               showTrendLine
-                              formatter={(v) => `$${Math.round(v / 1000)}K`}
+                              formatter={(v) => formatCompactDollar(v)}
                             />
                           </div>
                         </div>
@@ -25393,7 +25518,7 @@ function FinancialScorePage() {
                       <div style={{ fontSize: '13px', color: '#475569', lineHeight: '1.6' }}>
                         <strong>Calculation:</strong> Net Income + Interest + Depreciation & Amortization
                         <br/>
-                        = ${(ttmNetIncome / 1000).toFixed(0)}K + ${(ttmInterest / 1000).toFixed(0)}K + ${(ttmDepreciation / 1000).toFixed(0)}K
+                        = {formatCompactDollar(ttmNetIncome)} + {formatCompactDollar(ttmInterest)} + {formatCompactDollar(ttmDepreciation)}
                         <br/>
                         <em style={{ fontSize: '12px', color: '#64748b' }}>Note: D&A and Interest are added back to Net Income</em>
                       </div>
@@ -26645,7 +26770,14 @@ function FinancialScorePage() {
           `}</style>
           
           <div className="no-print" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-            <h1 style={{ fontSize: '32px', fontWeight: '700', color: '#1e293b', margin: 0 }}>Financial Statements</h1>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+              <h1 style={{ fontSize: '32px', fontWeight: '700', color: '#1e293b', margin: 0 }}>Financial Statements</h1>
+              <PageCurrencyBadge
+                currency={companyDisplayCurrency}
+                locale={selectedCompany?.locale}
+                baseCurrency={selectedCompany?.baseCurrency}
+              />
+            </div>
             {companyName && <div style={{ fontSize: '32px', fontWeight: '700', color: '#1e293b' }}>{companyName}</div>}
           </div>
           <p className="no-print" style={{ fontSize: '14px', color: '#64748b', marginBottom: '12px' }}>
@@ -27170,7 +27302,7 @@ function FinancialScorePage() {
                         <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
                           <span style={{ color: '#475569' }}>Extraordinary Items</span>
                           <span style={{ color: extraordinaryItems >= 0 ? '#10b981' : '#ef4444' }}>
-                            {extraordinaryItems >= 0 ? '$' : '($'}{Math.abs(extraordinaryItems).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}{extraordinaryItems < 0 ? ')' : ''}
+                            {formatSignedDollar(extraordinaryItems)}
                           </span>
                         </div>
                       )}
@@ -27509,7 +27641,7 @@ function FinancialScorePage() {
                         <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', padding: '6px 0', fontSize: '14px' }}>
                           <span style={{ color: '#475569', paddingLeft: '20px' }}>Extraordinary Items</span>
                           <span style={{ color: extraordinaryItems >= 0 ? '#10b981' : '#ef4444', textAlign: 'right' }}>
-                            {extraordinaryItems >= 0 ? '$' : '($'}{Math.abs(extraordinaryItems).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}{extraordinaryItems < 0 ? ')' : ''}
+                            {formatSignedDollar(extraordinaryItems)}
                           </span>
                           <span style={{ color: extraordinaryItems >= 0 ? '#10b981' : '#ef4444', textAlign: 'right' }}>
                             {extraordinaryItems >= 0 ? '' : '('}{pct(Math.abs(extraordinaryItems)).toFixed(1)}%{extraordinaryItems < 0 ? ')' : ''}
@@ -28173,7 +28305,7 @@ function FinancialScorePage() {
                                 <div style={{ color: '#64748b', paddingLeft: '20px' }}>Extraordinary Items</div>
                                 {periodsData.map((p, i) => (
                                   <div key={i} style={{ textAlign: 'right', color: '#64748b' }}>
-                                    {p.extraordinaryItems >= 0 ? '$' : '($'}{Math.abs(p.extraordinaryItems).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}{p.extraordinaryItems < 0 ? ')' : ''}
+                                    {formatSignedDollar(p.extraordinaryItems)}
                                   </div>
                                 ))}
                               </div>
@@ -28230,7 +28362,7 @@ function FinancialScorePage() {
                           <div style={{ color: '#166534' }}>Net Income</div>
                           {periodsData.map((p, i) => (
                             <div key={i} style={{ textAlign: 'right', color: p.netIncome >= 0 ? '#166534' : '#991b1b' }}>
-                              {p.netIncome >= 0 ? '$' : '($'}{Math.abs(p.netIncome).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}{p.netIncome < 0 ? ')' : ''}
+                              {formatSignedDollar(p.netIncome)}
                             </div>
                           ))}
                         </div>
@@ -28390,7 +28522,7 @@ function FinancialScorePage() {
                         {extraordinaryItems !== 0 && (
                           <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
                             <span style={{ color: '#475569' }}>Extraordinary Items</span>
-                            <span style={{ color: '#475569' }}>{extraordinaryItems >= 0 ? '$' : '($'}{Math.abs(extraordinaryItems).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}{extraordinaryItems < 0 ? ')' : ''}</span>
+                            <span style={{ color: '#475569' }}>{formatSignedDollar(extraordinaryItems)}</span>
                           </div>
                         )}
                       </div>
@@ -28431,7 +28563,7 @@ function FinancialScorePage() {
                         <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
                           <span style={{ fontWeight: '700', fontSize: '18px', color: netIncome >= 0 ? '#166534' : '#991b1b' }}>Net Income</span>
                           <span style={{ fontWeight: '700', fontSize: '18px', color: netIncome >= 0 ? '#166534' : '#991b1b' }}>
-                            {netIncome >= 0 ? '$' : '($'}{Math.abs(netIncome).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}{netIncome < 0 ? ')' : ''}
+                            {formatSignedDollar(netIncome)}
                           </span>
                         </div>
                         <div style={{ fontSize: '14px', color: netIncome >= 0 ? '#166534' : '#991b1b', textAlign: 'right' }}>
@@ -28684,7 +28816,7 @@ function FinancialScorePage() {
                             return (
                               <div key={i} style={{ display: 'contents' }}>
                                 <div style={{ textAlign: 'right', color: p.netIncome >= 0 ? '#166534' : '#991b1b' }}>
-                                  {p.netIncome >= 0 ? '$' : '($'}{Math.abs(p.netIncome).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}{p.netIncome < 0 ? ')' : ''}
+                                  {formatSignedDollar(p.netIncome)}
                                 </div>
                                 <div style={{ textAlign: 'right', fontSize: '12px', color: p.netIncome >= 0 ? '#166534' : '#991b1b' }}>{pct.toFixed(1)}%</div>
                               </div>
@@ -28885,7 +29017,7 @@ function FinancialScorePage() {
                             <div style={{ display: 'grid', gridTemplateColumns: '1fr 0.7fr 0.7fr', gap: '16px', padding: '4px 0 4px 20px', fontSize: '13px' }}>
                               <div style={{ color: '#64748b' }}>Extraordinary Items</div>
                               <div style={{ textAlign: 'right', color: '#64748b' }}>
-                                {extraordinaryItems >= 0 ? '$' : '($'}{Math.abs(extraordinaryItems).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}{extraordinaryItems < 0 ? ')' : ''}
+                                {formatSignedDollar(extraordinaryItems)}
                               </div>
                               <div style={{ textAlign: 'right', color: '#64748b' }}>
                                 {extraordinaryItems >= 0 ? calcPercent(extraordinaryItems) : `(${calcPercent(Math.abs(extraordinaryItems))})`}
@@ -28925,7 +29057,7 @@ function FinancialScorePage() {
                       <div style={{ display: 'grid', gridTemplateColumns: '1fr 0.7fr 0.7fr', gap: '16px', padding: '16px 8px', background: netIncome >= 0 ? '#dcfce7' : '#fee2e2', borderRadius: '6px', marginTop: '24px', fontWeight: '700', fontSize: '16px', color: netIncome >= 0 ? '#166534' : '#991b1b' }}>
                         <div>Net Income</div>
                         <div style={{ textAlign: 'right' }}>
-                          {netIncome >= 0 ? '$' : '($'}{Math.abs(netIncome).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}{netIncome < 0 ? ')' : ''}
+                          {formatSignedDollar(netIncome)}
                         </div>
                         <div style={{ textAlign: 'right' }}>{calcPercent(netIncome)}</div>
                       </div>
@@ -29047,7 +29179,7 @@ function FinancialScorePage() {
                             <div style={{ color: '#64748b', paddingLeft: '20px' }}>{getFinancialReportFieldLabel('retainedEarnings')}</div>
                             {balanceData.map((p, i) => (
                               <div key={i} style={{ textAlign: 'right', color: '#64748b' }}>
-                                {p.retainedEarnings >= 0 ? '$' : '($'}{Math.abs(p.retainedEarnings).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}{p.retainedEarnings < 0 ? ')' : ''}
+                                {formatSignedDollar(p.retainedEarnings)}
                               </div>
                             ))}
                           </div>
@@ -29057,7 +29189,7 @@ function FinancialScorePage() {
                             <div style={{ color: '#64748b', paddingLeft: '20px' }}>{getFinancialReportFieldLabel('currentYearNetIncome')}</div>
                             {balanceData.map((p, i) => (
                               <div key={i} style={{ textAlign: 'right', color: '#64748b' }}>
-                                {p.currentYearNetIncome >= 0 ? '$' : '($'}{Math.abs(p.currentYearNetIncome).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}{p.currentYearNetIncome < 0 ? ')' : ''}
+                                {formatSignedDollar(p.currentYearNetIncome)}
                               </div>
                             ))}
                           </div>
@@ -29066,7 +29198,7 @@ function FinancialScorePage() {
                           <div style={{ color: '#166534' }}>TOTAL EQUITY</div>
                           {balanceData.map((p, i) => (
                             <div key={i} style={{ textAlign: 'right', color: p.totalEquity >= 0 ? '#166534' : '#991b1b' }}>
-                              {p.totalEquity >= 0 ? '$' : '($'}{Math.abs(p.totalEquity).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}{p.totalEquity < 0 ? ')' : ''}
+                              {formatSignedDollar(p.totalEquity)}
                             </div>
                           ))}
                         </div>
@@ -29233,7 +29365,7 @@ function FinancialScorePage() {
                           <div key={row.key} style={{ display: 'flex', justifyContent: 'space-between', padding: `4px 0 4px ${row.indent}px`, fontSize: '14px' }}>
                             <span style={{ color: '#64748b' }}>{row.label}</span>
                             <span style={{ color: '#64748b' }}>
-                              {value >= 0 ? '$' : '($'}{Math.abs(value).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}{value < 0 ? ')' : ''}
+                              {formatSignedDollar(value)}
                             </span>
                           </div>
                         );
@@ -29244,7 +29376,7 @@ function FinancialScorePage() {
                         <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                           <span style={{ fontWeight: '700', fontSize: '16px', color: '#166534' }}>TOTAL EQUITY</span>
                           <span style={{ fontWeight: '700', fontSize: '16px', color: '#166534' }}>
-                            {totalEquity >= 0 ? '$' : '($'}{Math.abs(totalEquity).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}{totalEquity < 0 ? ')' : ''}
+                            {formatSignedDollar(totalEquity)}
                           </span>
                         </div>
                       </div>

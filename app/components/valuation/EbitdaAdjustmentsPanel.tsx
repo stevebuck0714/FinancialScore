@@ -15,6 +15,9 @@ import {
   SDE_LINE_ITEMS,
   type SdeBucket as CatalogSdeBucket,
 } from '@/lib/sde/adjustment-line-items';
+import { formatMoney } from '@/lib/format/currency';
+import { DEFAULT_BASE_CURRENCY } from '@/lib/constants/currencies';
+import { useCompanyMoneyFormatter } from '@/app/hooks/useCompanyMoneyFormatter';
 
 // -----------------------------------------------------------------------------
 // Types — kept in sync with /api/sde/ebitda-adjustments and
@@ -97,10 +100,12 @@ export type LineItemAssignmentTotals = Partial<Record<SdeBucket, Record<string, 
 // Formatters
 // -----------------------------------------------------------------------------
 
+let activeMoneyCurrency = DEFAULT_BASE_CURRENCY;
+let activeMoneyLocale: string | null = null;
+
 const fmtMoney = (n: number): string => {
   const v = Number(n) || 0;
-  const sign = v < 0 ? '-' : '';
-  return `${sign}$${Math.abs(v).toLocaleString('en-US', { maximumFractionDigits: 0 })}`;
+  return formatMoney(v, { currency: activeMoneyCurrency, locale: activeMoneyLocale, decimals: 0 });
 };
 
 // -----------------------------------------------------------------------------
@@ -168,6 +173,11 @@ export const EbitdaAdjustmentsProvider: React.FC<{
   onLineItemTotalsChange?: (totals: LineItemAssignmentTotals) => void;
   children: React.ReactNode;
 }> = ({ companyId, onLiveTotalsChange, onLineItemTotalsChange, children }) => {
+  const money = useCompanyMoneyFormatter(companyId);
+  useEffect(() => {
+    activeMoneyCurrency = money.currency;
+    activeMoneyLocale = money.locale;
+  }, [money.currency, money.locale]);
   const [api, setApi] = useState<EbitdaAdjustmentsApiResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);

@@ -5,6 +5,7 @@ import type { MonthlyDataRow } from '@/app/types';
 import type { SdeValuationPreviewModel } from '@/lib/sde-valuation-preview-model';
 import { EbitdaMarginComboChart } from './ValuationSdeSection5Preview';
 import ValuationBalanceSheetQualityPreview from './ValuationBalanceSheetQualityPreview';
+import { formatMoneyCompact } from '@/lib/format/currency';
 
 const LineChart = dynamic(() => import('@/app/components/charts/Charts').then((mod) => mod.LineChart), { ssr: false });
 
@@ -20,6 +21,8 @@ type Props = {
   ebitdaMultiplier: number;
   ebitdaEstimatedValue: number;
   ttmFreeCashFlow: number;
+  currency?: string | null;
+  locale?: string | null;
 };
 
 const sectionTitle = (title: string) => (
@@ -29,8 +32,9 @@ const sectionTitle = (title: string) => (
 );
 
 export default function ValuationEbitdaSection6Preview(props: Props) {
-  const { model, monthly, selections, companyName, latestFinancialSource, ttmEbitda, ebitdaMultiplier, ebitdaEstimatedValue, ttmFreeCashFlow } = props;
+  const { model, monthly, selections, companyName, latestFinancialSource, ttmEbitda, ebitdaMultiplier, ebitdaEstimatedValue, ttmFreeCashFlow, currency, locale } = props;
   const fmt = model.formatDollars;
+  const compact = (value: number) => formatMoneyCompact(value, { currency, locale });
 
   const recent12 = monthly.slice(-12);
   const ttmRevenue = recent12.reduce((s, m) => s + Number((m as any)?.revenue || 0), 0);
@@ -280,7 +284,7 @@ export default function ValuationEbitdaSection6Preview(props: Props) {
             </div>
             <div className="ebitda-chart-block" style={{ border: '1px solid #e2e8f0', borderRadius: '8px', padding: '12px', background: '#f8fafc', marginBottom: '10px' }}>
               <div style={{ fontSize: '14px', fontWeight: 700, color: '#334155', marginBottom: '10px' }}>EBITDA margin and total revenue</div>
-              <EbitdaMarginComboChart data={model.annualRevenueEbitdaData} />
+              <EbitdaMarginComboChart data={model.annualRevenueEbitdaData} currency={currency} locale={locale} />
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
               <div className="ebitda-chart-block">
@@ -298,7 +302,7 @@ export default function ValuationEbitdaSection6Preview(props: Props) {
                   data={model.cashFlowQualitySeries.slice(-36).map((r) => ({ month: r.month, value: r.freeCashFlow }))}
                   color="#f59e0b"
                   compact
-                  formatter={(v) => `$${Math.round(v / 1000)}K`}
+                  formatter={(v) => compact(v)}
                 />
               </div>
             </div>

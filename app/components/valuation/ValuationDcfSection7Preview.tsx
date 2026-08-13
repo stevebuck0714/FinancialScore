@@ -4,6 +4,7 @@ import dynamic from 'next/dynamic';
 import type { MonthlyDataRow } from '@/app/types';
 import type { SdeValuationPreviewModel } from '@/lib/sde-valuation-preview-model';
 import ValuationBalanceSheetQualityPreview from './ValuationBalanceSheetQualityPreview';
+import { formatMoneyCompact } from '@/lib/format/currency';
 
 const LineChart = dynamic(() => import('@/app/components/charts/Charts').then((mod) => mod.LineChart), { ssr: false });
 
@@ -28,6 +29,8 @@ type Props = {
   ttmFreeCashFlow: number;
   growth24mo: number;
   revenueMix: RevenueMix;
+  currency?: string | null;
+  locale?: string | null;
 };
 
 const sectionTitle = (title: string) => (
@@ -37,8 +40,9 @@ const sectionTitle = (title: string) => (
 );
 
 export default function ValuationDcfSection7Preview(props: Props) {
-  const { model, monthly, selections, companyName, latestFinancialSource, dcfEstimatedValue, dcfDiscountRate, dcfTerminalGrowth, ttmFreeCashFlow, growth24mo, revenueMix } = props;
+  const { model, monthly, selections, companyName, latestFinancialSource, dcfEstimatedValue, dcfDiscountRate, dcfTerminalGrowth, ttmFreeCashFlow, growth24mo, revenueMix, currency, locale } = props;
   const fmt = model.formatDollars;
+  const compact = (value: number) => formatMoneyCompact(value, { currency, locale });
   const sensitivityLow = dcfEstimatedValue * 0.9;
   const sensitivityHigh = dcfEstimatedValue * 1.1;
 
@@ -196,7 +200,7 @@ export default function ValuationDcfSection7Preview(props: Props) {
                 data={model.cashFlowQualitySeries.slice(-36).map((r) => ({ month: r.month, value: r.freeCashFlow }))}
                 color="#f59e0b"
                 compact
-                formatter={(v) => `$${Math.round(v / 1000)}K`}
+                formatter={(v) => compact(v)}
               />
             </div>
           </div>

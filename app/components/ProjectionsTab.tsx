@@ -5,6 +5,7 @@ import React, { useMemo } from 'react';
 import { useMasterData } from '@/lib/master-data-store';
 import dynamic from 'next/dynamic';
 import { useCompanyMoneyFormatter } from '@/app/hooks/useCompanyMoneyFormatter';
+import PageCurrencyBadge from './PageCurrencyBadge';
 
 const ProjectionChart = dynamic(() => import('./charts/Charts').then(mod => mod.ProjectionChart), { ssr: false });
 
@@ -365,7 +366,10 @@ export default function ProjectionsTab({
   return (
     <div style={{ maxWidth: '100%', padding: '32px 32px 32px 16px' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '32px' }}>
-        <h1 style={{ fontSize: '32px', fontWeight: '700', color: '#1e293b', margin: 0 }}>Financial Projections</h1>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+          <h1 style={{ fontSize: '32px', fontWeight: '700', color: '#1e293b', margin: 0 }}>Financial Projections</h1>
+          <PageCurrencyBadge currency={money.currency} locale={money.locale} baseCurrency={money.baseCurrency} />
+        </div>
       </div>
 
       <div style={{ display: 'grid', gap: '32px' }}>

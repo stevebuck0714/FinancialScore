@@ -4,6 +4,8 @@ import React, { useState } from 'react';
 import dynamic from 'next/dynamic';
 import { LineChart } from './charts/Charts';
 import { useMasterData, masterDataStore } from '@/lib/master-data-store';
+import { useCompanyMoneyFormatter } from '@/app/hooks/useCompanyMoneyFormatter';
+import PageCurrencyBadge from './PageCurrencyBadge';
 
 interface TrendAnalysisViewProps {
   selectedCompanyId: string;
@@ -26,6 +28,7 @@ export default function TrendAnalysisView({
   selectedItemTrends,
   setSelectedItemTrends
 }: TrendAnalysisViewProps) {
+  const money = useCompanyMoneyFormatter(selectedCompanyId);
   const [trendAnalysisTab, setTrendAnalysisTab] = useState<'item-trends' | 'expense-analysis'>('item-trends');
   const normalizeMonthLabel = (primaryMonthValue: unknown, fallbackMonthValue?: unknown): string => {
     const formatDate = (value: unknown): string | null => {
@@ -138,7 +141,10 @@ export default function TrendAnalysisView({
   return (
     <div style={{ maxWidth: '100%', padding: '32px 32px 32px 16px' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '32px' }}>
-        <h1 style={{ fontSize: '32px', fontWeight: '700', color: '#1e293b', margin: 0 }}>Trend Analysis</h1>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+          <h1 style={{ fontSize: '32px', fontWeight: '700', color: '#1e293b', margin: 0 }}>Trend Analysis</h1>
+          <PageCurrencyBadge currency={money.currency} locale={money.locale} baseCurrency={money.baseCurrency} />
+        </div>
       </div>
 
       {/* Tabs */}
@@ -273,7 +279,7 @@ export default function TrendAnalysisView({
 
               const getFormatter = (metric: string) => {
                 // Balance sheet items use $K format, P&L items use $K format
-                return (val: number) => `$${(val / 1000).toFixed(0)}K`;
+                return (val: number) => money.fmtCompact(val);
               };
 
               const colors = [

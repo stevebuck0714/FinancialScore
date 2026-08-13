@@ -4,6 +4,8 @@
 import React from 'react';
 import { useMasterData } from '@/lib/master-data-store';
 import toast from 'react-hot-toast';
+import { useCompanyMoneyFormatter } from '@/app/hooks/useCompanyMoneyFormatter';
+import PageCurrencyBadge from './PageCurrencyBadge';
 
 interface GoalsViewProps {
   selectedCompanyId: string;
@@ -24,6 +26,7 @@ export default function GoalsView({
   masterDataCategories,
   setMasterDataCategories
 }: GoalsViewProps) {
+  const money = useCompanyMoneyFormatter(selectedCompanyId);
   const [activeTab, setActiveTab] = React.useState<'expense' | 'operational'>('expense');
   const [isSaving, setIsSaving] = React.useState(false);
   const [operationalGoals, setOperationalGoals] = React.useState<{ [key: string]: number }>({});
@@ -297,6 +300,7 @@ export default function GoalsView({
       {/* Tabs */}
       <div style={{ 
         display: 'flex', 
+        alignItems: 'flex-end',
         gap: '8px', 
         borderBottom: '2px solid #e2e8f0',
         marginBottom: '32px'
@@ -335,6 +339,9 @@ export default function GoalsView({
         >
           Operational Goals
         </button>
+        <div style={{ marginLeft: 'auto', padding: '6px 0 10px 16px', flexShrink: 0 }}>
+          <PageCurrencyBadge currency={money.currency} locale={money.locale} baseCurrency={money.baseCurrency} />
+        </div>
       </div>
 
       {/* Expense Goals Tab */}
@@ -603,11 +610,11 @@ export default function GoalsView({
   ];
 
   const cashMetrics = [
-    { key: 'total_cash', label: 'Total Cash Balance', getValue: (r: any) => r.cashBalance || 0, format: (v: number) => '$' + Math.round(v).toLocaleString(), goalType: 'currency' },
+    { key: 'total_cash', label: 'Total Cash Balance', getValue: (r: any) => r.cashBalance || 0, format: (v: number) => money.fmt(Math.round(v), 0), goalType: 'currency' },
   ];
 
   const inventoryMetrics = [
-    { key: 'inventory_value', label: 'Inventory Value', getValue: (r: any) => r.assetValue || 0, format: (v: number) => '$' + Math.round(v).toLocaleString(), goalType: 'currency' },
+    { key: 'inventory_value', label: 'Inventory Value', getValue: (r: any) => r.assetValue || 0, format: (v: number) => money.fmt(Math.round(v), 0), goalType: 'currency' },
   ];
 
   // Process data for each metric

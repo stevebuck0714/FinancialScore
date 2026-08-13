@@ -5,6 +5,7 @@ import type { MonthlyDataRow } from '@/app/types';
 import type { SdeValuationPreviewModel } from '@/lib/sde-valuation-preview-model';
 import type { SdeExecutiveSummary, SdeExecutiveFinancialSummary, SdeRecommendation } from '@/lib/sde-recommendations';
 import ValuationBalanceSheetQualityPreview from './ValuationBalanceSheetQualityPreview';
+import { formatMoneyCompact, getCurrencySymbol } from '@/lib/format/currency';
 
 const LineChart = dynamic(() => import('@/app/components/charts/Charts').then((mod) => mod.LineChart), { ssr: false });
 
@@ -19,6 +20,8 @@ type Props = {
   sdeExecutiveSummaryApi: SdeExecutiveSummary | null;
   sdeExecutiveFinancialSummaryApi: SdeExecutiveFinancialSummary | null;
   sdeRecommendationsApi: SdeRecommendation[];
+  currency?: string | null;
+  locale?: string | null;
 };
 
 const sectionTitle = (title: string) => (
@@ -27,7 +30,16 @@ const sectionTitle = (title: string) => (
   </div>
 );
 
-export function EbitdaMarginComboChart({ data }: { data: Array<{ year: number; revenue: number; ebitdaMargin: number }> }) {
+export function EbitdaMarginComboChart({
+  data,
+  currency,
+  locale,
+}: {
+  data: Array<{ year: number; revenue: number; ebitdaMargin: number }>;
+  currency?: string | null;
+  locale?: string | null;
+}) {
+  const symbol = getCurrencySymbol(currency, locale);
   if (data.length === 0) {
     return <div style={{ fontSize: '12px', color: '#64748b', padding: '24px 0' }}>Not enough data to render chart.</div>;
   }
@@ -64,7 +76,7 @@ export function EbitdaMarginComboChart({ data }: { data: Array<{ year: number; r
                 <g key={pct}>
                   <line x1={pad.left} y1={y} x2={width - pad.right} y2={y} stroke="#e2e8f0" strokeWidth="1" />
                   <text x={pad.left - 8} y={y + 4} textAnchor="end" fontSize="10" fill="#64748b">
-                    ${leftVal}M
+                    {symbol}{leftVal}M
                   </text>
                   <text x={width - pad.right + 8} y={y + 4} textAnchor="start" fontSize="10" fill="#64748b">
                     {rightVal}%
@@ -81,7 +93,7 @@ export function EbitdaMarginComboChart({ data }: { data: Array<{ year: number; r
                 <g key={d.year}>
                   <rect x={centerX - barW / 2} y={barY} width={barW} height={barH} fill="#1d76c3" rx="3" />
                   <text x={centerX} y={barY + 16} textAnchor="middle" fontSize="10" fill="white" fontWeight="700">
-                    ${Math.round(d.revenue / 1_000_000)}
+                    {symbol}{Math.round(d.revenue / 1_000_000)}
                   </text>
                   <circle cx={centerX} cy={marginY} r="4" fill="#5fbcd3" stroke="white" strokeWidth="1.5" />
                   <text x={centerX} y={marginY - 8} textAnchor="middle" fontSize="10" fill="#0f766e" fontWeight="700">
@@ -108,6 +120,8 @@ function QoeWaterfallChart({
   qoeOneTimeExpenses,
   qoeOneTimeRevenue,
   qualityOfEarnings,
+  currency,
+  locale,
 }: {
   ttmEbitdaAnalysis: number;
   qoeOwnerSalaryAdjustment: number;
@@ -115,7 +129,10 @@ function QoeWaterfallChart({
   qoeOneTimeExpenses: number;
   qoeOneTimeRevenue: number;
   qualityOfEarnings: number;
+  currency?: string | null;
+  locale?: string | null;
 }) {
+  const compact = (value: number) => formatMoneyCompact(value, { currency, locale });
   const steps = [
     { label: 'EBITDA', type: 'base' as const, value: ttmEbitdaAnalysis },
     { label: 'Compensation adj.', type: 'delta' as const, value: qoeOwnerSalaryAdjustment },
@@ -166,7 +183,7 @@ function QoeWaterfallChart({
                 <g key={pct}>
                   <line x1={pad.left} y1={y} x2={width - pad.right} y2={y} stroke="#e2e8f0" strokeWidth="1" />
                   <text x={pad.left - 8} y={y + 4} textAnchor="end" fontSize="10" fill="#64748b">
-                    {`$${Math.round(val / 1000).toLocaleString()}K`}
+                    {compact(val)}
                   </text>
                 </g>
               );
@@ -187,8 +204,8 @@ function QoeWaterfallChart({
                   <rect x={cx - barW / 2} y={yTop} width={barW} height={Math.max(2, yBottom - yTop)} fill={fill} rx="3" />
                   <text x={cx} y={yTop - 6} textAnchor="middle" fontSize="10" fill="#334155" fontWeight="700">
                     {bar.type === 'delta'
-                      ? `${delta >= 0 ? '+' : '-'}$${Math.round(Math.abs(delta) / 1000).toLocaleString()}K`
-                      : `$${Math.round(bar.end / 1000).toLocaleString()}K`}
+                      ? `${delta >= 0 ? '+' : '-'}${compact(Math.abs(delta))}`
+                      : compact(bar.end)}
                   </text>
                   <text x={cx} y={height - pad.bottom + 14} textAnchor="middle" fontSize="9" fill="#475569">
                     {bar.label}
@@ -215,8 +232,9 @@ function QoeWaterfallChart({
 }
 
 export default function ValuationSdeSection5Preview(props: Props) {
-  const { model, monthly, selections, companyName, latestFinancialSource, sdeExecutiveSummaryApi, sdeExecutiveFinancialSummaryApi, sdeRecommendationsApi } = props;
+  const { model, monthly, selections, companyName, latestFinancialSource, sdeExecutiveSummaryApi, sdeExecutiveFinancialSummaryApi, sdeRecommendationsApi, currency, locale } = props;
   const fmt = model.formatDollars;
+  const compact = (value: number) => formatMoneyCompact(value, { currency, locale });
 
   const flagBadge = (triggered: boolean, severity: string) => (
     <span
@@ -436,7 +454,7 @@ export default function ValuationSdeSection5Preview(props: Props) {
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginTop: '12px' }}>
               <div style={{ border: '1px solid #e2e8f0', borderRadius: '8px', padding: '12px', background: '#f8fafc' }}>
                 <div style={{ fontSize: '14px', fontWeight: 700, color: '#334155', marginBottom: '10px' }}>EBITDA Margin and Total Revenue</div>
-                <EbitdaMarginComboChart data={model.annualRevenueEbitdaData} />
+                <EbitdaMarginComboChart data={model.annualRevenueEbitdaData} currency={currency} locale={locale} />
               </div>
               <div style={{ border: '1px solid #e2e8f0', borderRadius: '8px', padding: '12px', background: '#f8fafc' }}>
                 <div style={{ fontSize: '14px', fontWeight: 700, color: '#334155', marginBottom: '10px' }}>QoE Waterfall Bridge</div>
@@ -447,6 +465,8 @@ export default function ValuationSdeSection5Preview(props: Props) {
                   qoeOneTimeExpenses={model.qoeOneTimeExpenses}
                   qoeOneTimeRevenue={model.qoeOneTimeRevenue}
                   qualityOfEarnings={model.qualityOfEarnings}
+                  currency={currency}
+                  locale={locale}
                 />
               </div>
             </div>
@@ -715,7 +735,7 @@ export default function ValuationSdeSection5Preview(props: Props) {
                 data={model.cashFlowQualitySeries.slice(-36).map((r) => ({ month: r.month, value: r.freeCashFlow }))}
                 color="#f59e0b"
                 compact
-                formatter={(v) => `$${Math.round(v / 1000)}K`}
+                formatter={(v) => compact(v)}
               />
             </div>
           </div>
