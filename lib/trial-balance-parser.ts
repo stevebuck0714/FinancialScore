@@ -2,8 +2,10 @@
 /**
  * Trial Balance CSV Parser
  * 
- * Parses CSV files in the format:
- * Acct Type, Acct ID, Description, Date1, Date2, Date3, ...
+ * Parses CSV files in these layouts:
+ * - Acct Type, Acct ID, Description, Date1, Date2, Date3, ...
+ * - Account ID, Description, Account Type, Date1, Date2, ...
+ * - Date row on top (month-end dates) and labels on the next row
  * 
  * Account types supported (matching QB types):
  * - Bank, AccountsReceivable, OtherCurrentAsset, FixedAsset, OtherAsset
@@ -167,19 +169,22 @@ function is9000Series(acctId: string | undefined): boolean {
   return accountCode !== null && accountCode >= 9000 && accountCode < 10000;
 }
 
-function isLikelyNonOperatingIncome(description: string, rawType?: string): boolean {
+function isLikelyNonOperatingIncome(description: string): boolean {
   const d = (description || '').toLowerCase();
-  const t = (rawType || '').toLowerCase();
   return (
     d.includes('non-operating income') ||
     d.includes('non operating income') ||
     d.includes('other income') ||
-    d.includes('gain') ||
+    d.includes('gain on') ||
     d.includes('interest income') ||
     d.includes('dividend income') ||
-    d.includes('investment income') ||
-    t.includes('income')
+    d.includes('investment income')
   );
+}
+
+function is9000SeriesIncome(description: string, rawType?: string): boolean {
+  const t = (rawType || '').toLowerCase();
+  return isLikelyNonOperatingIncome(description) || t.includes('income') || t.includes('revenue');
 }
 
 function isLikelyNonOperatingExpense(description: string): boolean {
@@ -219,6 +224,31 @@ function inferAccountTypeFromAccountCode(acctId: string | undefined): string | n
   if (accountCode >= 8000 && accountCode < 9000) return 'NonOperatingIncome';
   if (accountCode >= 9000 && accountCode < 10000) return 'NonOperatingExpense';
 
+  // 5-digit charts (10000 cash, 20000 AP, 40000 income, 50000 COGS, 60000 opex).
+  if (accountCode >= 10000) {
+    const series = Math.floor(accountCode / 10000);
+    const remainder = accountCode % 10000;
+    if (series === 1) {
+      if (remainder >= 1000 && remainder < 2000) return 'AccountsReceivable';
+      if (remainder >= 2000 && remainder < 5000) return 'OtherCurrentAsset';
+      if (remainder >= 5000 && remainder < 7000) return 'FixedAsset';
+      if (remainder >= 7000) return 'OtherAsset';
+      return 'Bank';
+    }
+    if (series === 2) {
+      if (remainder < 1000) return 'AccountsPayable';
+      if (remainder < 2000) return 'CreditCard';
+      if (remainder >= 5000) return 'LongTermLiability';
+      return 'OtherCurrentLiability';
+    }
+    if (series === 3) return 'Equity';
+    if (series === 4) return 'Income';
+    if (series === 5) return 'CostOfGoodsSold';
+    if (series === 6 || series === 7) return 'Expense';
+    if (series === 8) return 'NonOperatingIncome';
+    if (series >= 9) return 'NonOperatingExpense';
+  }
+
   return null;
 }
 
@@ -233,9 +263,9 @@ function normalizeAccountType(rawType: string | undefined, description: string, 
     return 'NonOperatingIncome';
   }
   if (is9000Series(acctId)) {
-    return isLikelyNonOperatingIncome(description, rawType) ? 'NonOperatingIncome' : 'NonOperatingExpense';
+    return is9000SeriesIncome(description, rawType) ? 'NonOperatingIncome' : 'NonOperatingExpense';
   }
-  if (isLikelyNonOperatingIncome(description, rawType)) return 'NonOperatingIncome';
+  if (isLikelyNonOperatingIncome(description)) return 'NonOperatingIncome';
   if (isLikelyNonOperatingExpense(description)) return 'NonOperatingExpense';
   const codeInferredType = inferAccountTypeFromAccountCode(acctId);
   if (!trimmed) return codeInferredType || inferAccountTypeFromDescription(description);
@@ -244,6 +274,14 @@ function normalizeAccountType(rawType: string | undefined, description: string, 
   if (ACCOUNT_TYPE_CLASSIFICATIONS[trimmed]) return trimmed;
 
   const normalizedKey = trimmed.toLowerCase().replace(/[_\s-]+/g, ' ');
+  // Generic "Assets" / "Liabilities" labels should use the account code when present
+  // (10000 cash vs 11000 AR) instead of collapsing every row into OtherAsset.
+  if (
+    (normalizedKey === 'asset' || normalizedKey === 'assets' || normalizedKey === 'liability' || normalizedKey === 'liabilities')
+    && codeInferredType
+  ) {
+    return codeInferredType;
+  }
   if (ACCOUNT_TYPE_ALIASES[normalizedKey]) {
     return ACCOUNT_TYPE_ALIASES[normalizedKey];
   }
@@ -323,13 +361,20 @@ function shouldSkipAccountRow(acctType: string, acctId: string, description: str
     return true;
   }
 
-  // Skip non-account section rows occasionally exported as data lines.
+  // Skip statement/section header rows, not real accounts whose type is Assets/Liabilities.
   if (
     type === 'income statement' ||
     type === 'balance sheet' ||
-    type === 'profit and loss' ||
-    type === 'assets' ||
-    type === 'liabilities'
+    type === 'profit and loss'
+  ) {
+    return true;
+  }
+  const isBareSectionHeader =
+    !id &&
+    (desc === type || desc === 'assets' || desc === 'liabilities' || desc === 'equity' || desc === 'income' || desc === 'expenses');
+  if (
+    isBareSectionHeader &&
+    (type === 'assets' || type === 'liabilities' || type === 'equity' || type === 'income' || type === 'expenses' || !type)
   ) {
     return true;
   }
@@ -462,46 +507,88 @@ export function parseTrialBalanceCSV(csvContent: string, companyId?: string): Pa
     throw new Error('CSV file must have at least a header row and one data row');
   }
   
-  // Find the real header row (some exports include title rows above headers).
-  const detectedHeaderIndex = lines.findIndex((line) => {
-    const cols = parseCSVLine(line);
-    const dateLikeCount = cols.filter((c) => parseColumnDate((c || '').trim()) !== null).length;
-    return cols.length >= 3 && dateLikeCount >= 1;
-  });
-  const headerIndex = detectedHeaderIndex >= 0 ? detectedHeaderIndex : 0;
-  const headerLine = lines[headerIndex];
-  const headers = parseCSVLine(headerLine);
-
   const normalizeHeader = (header: string) =>
     (header || '')
       .toLowerCase()
       .trim()
       .replace(/["']/g, '')
       .replace(/[\s_-]+/g, ' ');
+  const compactHeader = (header: string) => normalizeHeader(header).replace(/\s/g, '');
 
-  const normalizedHeaders = headers.map(normalizeHeader);
-  const findHeaderIndex = (predicates: Array<(header: string) => boolean>): number =>
-    normalizedHeaders.findIndex((header) => predicates.some((predicate) => predicate(header)));
-
-  const acctTypeIndex = findHeaderIndex([
+  const acctTypePredicates: Array<(header: string) => boolean> = [
     (h) => h === 'acct type',
     (h) => h === 'account type',
     (h) => h === 'type',
-  ]);
-  const acctIdIndex = findHeaderIndex([
+    (h) => compactHeader(h) === 'accttype',
+    (h) => compactHeader(h) === 'accounttype',
+  ];
+  const acctIdPredicates: Array<(header: string) => boolean> = [
     (h) => h === 'acct id',
     (h) => h === 'account id',
     (h) => h === 'account number',
     (h) => h === 'account no',
     (h) => h === 'account #',
     (h) => h === 'code',
-  ]);
-  const descriptionIndex = findHeaderIndex([
+    (h) => compactHeader(h) === 'acctid',
+    (h) => compactHeader(h) === 'accountid',
+    (h) => compactHeader(h) === 'accountnumber',
+  ];
+  const descriptionPredicates: Array<(header: string) => boolean> = [
     (h) => h === 'description',
     (h) => h === 'account',
     (h) => h === 'account name',
     (h) => h === 'name',
-  ]);
+    (h) => compactHeader(h) === 'accountname',
+  ];
+  const headerMatches = (value: string, predicates: Array<(header: string) => boolean>) =>
+    predicates.some((predicate) => predicate(normalizeHeader(value)));
+  const isLabelHeaderRow = (cols: string[]) => {
+    const hasId = cols.some((col) => headerMatches(col, acctIdPredicates));
+    const hasDesc = cols.some((col) => headerMatches(col, descriptionPredicates));
+    const hasType = cols.some((col) => headerMatches(col, acctTypePredicates));
+    return (hasId && hasDesc) || (hasType && (hasId || hasDesc));
+  };
+
+  const parsedLines = lines.map((line) => parseCSVLine(line));
+  let dateRowIndex = -1;
+  let bestDateCount = 0;
+  parsedLines.forEach((cols, idx) => {
+    const dateLikeCount = cols.filter((c) => parseColumnDate((c || '').trim()) !== null).length;
+    if (dateLikeCount > bestDateCount) {
+      bestDateCount = dateLikeCount;
+      dateRowIndex = idx;
+    }
+  });
+
+  let labelRowIndex = -1;
+  let bestLabelDistance = Number.POSITIVE_INFINITY;
+  parsedLines.forEach((cols, idx) => {
+    if (!isLabelHeaderRow(cols)) return;
+    const distance = dateRowIndex >= 0 ? Math.abs(idx - dateRowIndex) : idx;
+    if (distance < bestLabelDistance) {
+      bestLabelDistance = distance;
+      labelRowIndex = idx;
+    }
+  });
+
+  const dateCols = dateRowIndex >= 0 ? parsedLines[dateRowIndex] : [];
+  const labelCols = labelRowIndex >= 0 ? parsedLines[labelRowIndex] : dateCols;
+  const headerIndex = Math.max(dateRowIndex, labelRowIndex, 0);
+  const maxHeaderLength = Math.max(dateCols.length, labelCols.length, parsedLines[headerIndex]?.length || 0);
+  const headers: string[] = [];
+  for (let colIdx = 0; colIdx < maxHeaderLength; colIdx++) {
+    const dateHeader = (dateCols[colIdx] || '').trim();
+    const labelHeader = (labelCols[colIdx] || '').trim();
+    headers.push(parseColumnDate(dateHeader) ? dateHeader : (labelHeader || dateHeader));
+  }
+
+  const normalizedHeaders = headers.map(normalizeHeader);
+  const findHeaderIndex = (predicates: Array<(header: string) => boolean>): number =>
+    normalizedHeaders.findIndex((header) => predicates.some((predicate) => predicate(header)));
+
+  const acctTypeIndex = findHeaderIndex(acctTypePredicates);
+  const acctIdIndex = findHeaderIndex(acctIdPredicates);
+  const descriptionIndex = findHeaderIndex(descriptionPredicates);
 
   // Detect date columns by parseable date headers instead of fixed positions.
   const dateColumnIndexes = headers
@@ -518,7 +605,7 @@ export function parseTrialBalanceCSV(csvContent: string, companyId?: string): Pa
   const fallbackDescriptionIndex = descriptionIndex !== -1
     ? descriptionIndex
     : (nonDateColumnIndexes.find((idx) => idx !== acctTypeIndex && idx !== acctIdIndex) ?? nonDateColumnIndexes[0] ?? 0);
-  const isStructuredTrialBalance = acctTypeIndex !== -1;
+  const isStructuredTrialBalance = acctTypeIndex !== -1 || (acctIdIndex !== -1 && descriptionIndex !== -1);
   
   const accounts: TrialBalanceAccount[] = [];
   const accountsByType: { [type: string]: TrialBalanceAccount[] } = {};
@@ -536,8 +623,9 @@ export function parseTrialBalanceCSV(csvContent: string, companyId?: string): Pa
     let description = '';
 
     if (isStructuredTrialBalance) {
-      rawAcctType = values[acctTypeIndex]?.trim() || '';
-      acctId = acctIdIndex >= 0 ? (values[acctIdIndex]?.trim() || '') : '';
+      rawAcctType = acctTypeIndex >= 0 ? (values[acctTypeIndex]?.trim() || '') : '';
+      const rawAcctId = acctIdIndex >= 0 ? (values[acctIdIndex]?.trim() || '') : '';
+      acctId = /^\d+\.0+$/.test(rawAcctId) ? rawAcctId.split('.')[0] : rawAcctId;
       description = values[fallbackDescriptionIndex]?.trim() || '';
       if (!description || isLikelyNumericText(description)) {
         const candidateDescription = nonDateColumnIndexes
@@ -637,8 +725,8 @@ function parseCSVLine(line: string): string[] {
  * Convert parsed trial balance to format compatible with Data Mapping UI
  * Returns accounts array suitable for AI mapping
  */
-export function getAccountsForMapping(parsedData: ParsedTrialBalance): Array<{ name: string; classification: string; acctType: string; acctId: string }> {
-  const accountsForMapping: Array<{ name: string; classification: string; acctType: string; acctId: string }> = [];
+export function getAccountsForMapping(parsedData: ParsedTrialBalance): Array<{ name: string; classification: string; acctType: string; acctId: string; accountId: string }> {
+  const accountsForMapping: Array<{ name: string; classification: string; acctType: string; acctId: string; accountId: string }> = [];
   
   for (const account of parsedData.accounts) {
     const classification = ACCOUNT_TYPE_CLASSIFICATIONS[account.acctType] || ACCOUNT_TYPE_CLASSIFICATIONS[normalizeAccountType(account.acctType, account.description, account.acctId)] || 'Expense';
@@ -648,6 +736,7 @@ export function getAccountsForMapping(parsedData: ParsedTrialBalance): Array<{ n
       classification,
       acctType: account.acctType,
       acctId: account.acctId,
+      accountId: account.acctId,
     });
   }
   

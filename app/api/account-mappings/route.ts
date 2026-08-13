@@ -166,11 +166,6 @@ function extractNormalizedAccountCode(...values: unknown[]): number | null {
     if (!match) continue;
     const numeric = Number(match[1]);
     if (!Number.isFinite(numeric)) continue;
-    if (numeric >= 10000 && numeric % 10 === 0) return Math.floor(numeric / 10);
-    if (numeric >= 10000) {
-      const firstFour = Number(String(numeric).slice(0, 4));
-      if (Number.isFinite(firstFour)) return firstFour;
-    }
     return numeric;
   }
   return null;
@@ -289,7 +284,7 @@ function isLikelyCogsAccount(accountName: unknown, accountCode: unknown, classif
   const compactName = name.replace(/[\s_-]+/g, "");
   const cls = stripManualClassificationPrefix(classification).toLowerCase();
   const code = extractNormalizedAccountCode(accountCode, accountName);
-  const isCogsCode = Number.isFinite(code) && (code as number) >= 5000 && (code as number) < 6000;
+  const isCogsCode = Number.isFinite(code) && (((code as number) >= 5000 && (code as number) < 6000) || ((code as number) >= 50000 && (code as number) < 60000));
   const isCogsLabel =
     name.includes("cost of sales") ||
     name.includes("costs of sales") ||

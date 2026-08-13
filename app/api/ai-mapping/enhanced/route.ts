@@ -126,6 +126,27 @@ const accountCodeRanges = [
   { start: 6700, end: 6799, targetField: 'depreciationAmortization', confidence: 'high', category: 'Depreciation' },
   { start: 6800, end: 6899, targetField: 'interestExpense', confidence: 'high', category: 'Interest' },
   { start: 6900, end: 6999, targetField: 'otherExpense', confidence: 'medium', category: 'Other Expense' },
+
+  // 5-digit charts (10000 cash, 20000 AP, 40000 income, 50000 COGS, 60000 opex)
+  { start: 10000, end: 10999, targetField: 'cash', confidence: 'high', category: 'Cash' },
+  { start: 11000, end: 11999, targetField: 'ar', confidence: 'high', category: 'Accounts Receivable' },
+  { start: 12000, end: 12999, targetField: 'inventory', confidence: 'high', category: 'Inventory' },
+  { start: 13000, end: 14999, targetField: 'otherCA', confidence: 'medium', category: 'Other Current Assets' },
+  { start: 15000, end: 17999, targetField: 'fixedAssets', confidence: 'high', category: 'Fixed Assets' },
+  { start: 18000, end: 19999, targetField: 'otherAssets', confidence: 'medium', category: 'Other Assets' },
+  { start: 20000, end: 20999, targetField: 'ap', confidence: 'high', category: 'Accounts Payable' },
+  { start: 21000, end: 24999, targetField: 'otherCL', confidence: 'medium', category: 'Other Current Liabilities' },
+  { start: 25000, end: 29999, targetField: 'ltd', confidence: 'high', category: 'Long Term Debt' },
+  { start: 30000, end: 30999, targetField: 'ownersCapital', confidence: 'high', category: 'Owner Capital' },
+  { start: 31000, end: 31999, targetField: 'retainedEarnings', confidence: 'high', category: 'Retained Earnings' },
+  { start: 32000, end: 39999, targetField: 'totalEquity', confidence: 'medium', category: 'Equity' },
+  { start: 40000, end: 48999, targetField: 'revenue', confidence: 'high', category: 'Revenue' },
+  { start: 49000, end: 49999, targetField: 'nonOperatingIncome', confidence: 'medium', category: 'Other Income' },
+  { start: 50000, end: 50999, targetField: 'cogsMaterials', confidence: 'high', category: 'COGS Materials' },
+  { start: 51000, end: 51999, targetField: 'cogsPayroll', confidence: 'high', category: 'COGS Labor' },
+  { start: 52000, end: 52999, targetField: 'cogsContractors', confidence: 'high', category: 'COGS Contractors' },
+  { start: 53000, end: 59999, targetField: 'cogsOther', confidence: 'medium', category: 'COGS Other' },
+  { start: 60000, end: 69999, targetField: 'otherExpense', confidence: 'medium', category: 'Operating Expense' },
 ];
 
 function extractNumericCode(accountCode: string): number | null {
@@ -152,18 +173,7 @@ function mapAccountByCode(accountCode: string): { targetField: string; confidenc
   const numericCode = extractNumericCode(accountCode);
   if (numericCode === null) return null;
 
-  // Some COAs export 4-digit families as 5-digit values ending in zero
-  // (e.g., 45000 instead of 4500, 50700 instead of 5070).
   const normalizedCandidates = new Set<number>([numericCode]);
-  if (numericCode >= 10000 && numericCode % 10 === 0) {
-    normalizedCandidates.add(Math.floor(numericCode / 10));
-  }
-  if (numericCode >= 10000) {
-    const firstFourDigits = parseInt(String(numericCode).slice(0, 4), 10);
-    if (!isNaN(firstFourDigits)) {
-      normalizedCandidates.add(firstFourDigits);
-    }
-  }
 
   for (const candidateCode of normalizedCandidates) {
     for (const range of accountCodeRanges) {

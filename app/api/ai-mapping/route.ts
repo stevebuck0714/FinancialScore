@@ -87,11 +87,6 @@ function extractNumericCode(accountCodeOrName: string): number | null {
   if (!match) return null;
   const numeric = Number(match[1]);
   if (!Number.isFinite(numeric)) return null;
-  if (numeric >= 10000 && numeric % 10 === 0) return Math.floor(numeric / 10);
-  if (numeric >= 10000) {
-    const firstFour = Number(String(numeric).slice(0, 4));
-    if (Number.isFinite(firstFour)) return firstFour;
-  }
   return numeric;
 }
 
@@ -101,7 +96,7 @@ function forceCogsOverride(
 ): { targetField: string; confidence: string; reasoning: string } | null {
   const name = String(accountName || '').toLowerCase();
   const code = extractNumericCode(accountCodeOrName || accountName || '');
-  const isCogsCode = Number.isFinite(code) && (code as number) >= 5000 && (code as number) < 6000;
+  const isCogsCode = Number.isFinite(code) && (((code as number) >= 5000 && (code as number) < 6000) || ((code as number) >= 50000 && (code as number) < 60000));
   if (!isCogsCode) return null;
 
   if (

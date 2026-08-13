@@ -136,13 +136,9 @@ export default function AccountMappingTable({
     const accountCodeSource = `${String(accountCodeRaw || '').trim()} ${String(accountName || '').trim()}`;
     const accountCodeMatch = accountCodeSource.match(/(\d{4,})/);
     const accountCode = accountCodeMatch ? Number(accountCodeMatch[1]) : NaN;
-    const normalizedAccountCode =
-      Number.isFinite(accountCode) && accountCode >= 10000
-        ? (accountCode % 10 === 0 ? Math.floor(accountCode / 10) : Number(String(accountCode).slice(0, 4)))
-        : accountCode;
-    const codeCandidates = [accountCode, normalizedAccountCode].filter((n) => Number.isFinite(n)) as number[];
-    const isLikelyCogsCode = codeCandidates.some((n) => n >= 5000 && n < 6000);
-    const isLikelyEquityCode = codeCandidates.some((n) => n >= 3000 && n < 4000);
+    const codeCandidates = Number.isFinite(accountCode) ? [accountCode] : [];
+    const isLikelyCogsCode = codeCandidates.some((n) => (n >= 5000 && n < 6000) || (n >= 50000 && n < 60000));
+    const isLikelyEquityCode = codeCandidates.some((n) => (n >= 3000 && n < 4000) || (n >= 30000 && n < 40000));
     const normalizedTarget = (targetField || '').trim().toLowerCase();
     const compactTarget = normalizedTarget.replace(/[\s_-]+/g, '');
     if (normalizedTarget && normalizedTarget !== 'unmapped' && normalizedTarget !== 'ignored') {
@@ -236,7 +232,7 @@ export default function AccountMappingTable({
     if (normalized === 'l') return 'liability';
     if (normalized === 'q') return 'equity';
     if (normalized === 'c') return 'cogs';
-    const isLikelyNonOperatingCode = codeCandidates.some((n) => n >= 9000 && n < 10000);
+    const isLikelyNonOperatingCode = codeCandidates.some((n) => (n >= 9000 && n < 10000) || (n >= 90000 && n < 100000));
     if (isLikelyEquityCode) return 'equity';
     const isLikelyCogsLabel =
       normalizedAccountName.includes('cost of sales') ||
