@@ -7,13 +7,21 @@
  */
 
 export { EST_TIME_ZONE, formatEstDate, previousEstCalendarDate, previousEstBusinessDate, utcMidnightForEstDate } from './est-dates';
-export { fetchFrankfurterHistoricalRange, fetchFrankfurterRateForDate, FRANKFURTER_PROVIDER } from './frankfurter';
+export {
+  fetchFrankfurterHistoricalRange,
+  fetchFrankfurterHistoricalRangeMany,
+  fetchFrankfurterRateForDate,
+  fetchFrankfurterRatesForDate,
+  FRANKFURTER_PROVIDER,
+} from './frankfurter';
 export { convertAmount, getRateForDate, type ConvertResult } from './convert';
 export {
   backfillCurrencyPair,
+  backfillAllSupportedRates,
   ensureCompanyReportingRates,
   syncLatestEstEodRates,
   listActiveCurrencyPairs,
+  listSupportedCurrencyPairs,
 } from './sync';
 export { applyReportingCurrencyIfNeeded, convertMoneyTree } from './reporting';
 export { getCompanyFxCoverage, type FxCoverageSummary } from './coverage';

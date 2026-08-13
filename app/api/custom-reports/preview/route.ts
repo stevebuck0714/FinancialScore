@@ -30,6 +30,7 @@ import {
 } from '@/lib/operations/construction-mock-data';
 import { getBambooHrHiringPayload } from '@/lib/operations/bamboohr-workforce-reports';
 import { ensurePlatosClosetMonthlyFacts } from '@/lib/operational/platos-closet-monthly-facts';
+import { presentCompanyJson } from '@/lib/currency/api-response';
 
 const PLATOS_CLOSET_SOURCE_CODE = 'PLATOS_CLOSET_STORE_VISIT';
 
@@ -189,7 +190,7 @@ function inferJobFilterFromText(value: string): { field: string; operator: strin
   if (/\bby (customer|client|project|job|product|product category|category|vendor|supplier|location|site|branch|division|department)\b/.test(normalizedValue)) return null;
   const cleaned = String(value || '')
     .split(/\bby\b/i)[0]
-    .replace(/[‚Äì‚Äî]/g, ' ')
+    .replace(/[ùù]/g, ' ')
     .replace(/[^a-zA-Z0-9]+/g, ' ')
     .replace(/\b(line|bar|stacked|grouped|combo|pie|table|chart|graph|report|trend|monthly|daily|date|period|type|source|operational|and|vs|versus)\b/gi, ' ')
     .replace(/\b(revenue|sales|cogs|cost of goods sold|gross profit|gross margin|margin|ebitda|net income|cash|accounts receivable|accounts payable|ar|ap|inventory|expense|expenses)\b/gi, ' ')
@@ -1843,13 +1844,17 @@ export async function POST(request: NextRequest) {
       const datasetPreview =
         (await buildDatasetDimensionChartPreview({ ...previewConfig, companyId })) ||
         (await buildDatasetTablePreview({ ...previewConfig, companyId }));
-      if (datasetPreview) return NextResponse.json(datasetPreview);
+      if (datasetPreview) {
+        return NextResponse.json(await presentCompanyJson(request, companyId, datasetPreview as Record<string, unknown>));
+      }
     }
     if (previewConfig?.dataset) {
       const datasetPreview =
         (await buildDatasetDimensionChartPreview({ ...previewConfig, companyId })) ||
         (await buildDatasetChartPreview({ ...previewConfig, companyId }));
-      if (datasetPreview) return NextResponse.json(datasetPreview);
+      if (datasetPreview) {
+        return NextResponse.json(await presentCompanyJson(request, companyId, datasetPreview as Record<string, unknown>));
+      }
     }
 
     const fields = getRequestedFields(previewConfig, fieldCatalog);
@@ -1921,13 +1926,15 @@ export async function POST(request: NextRequest) {
         )
       : { columns: [], rows: [] };
 
-    return NextResponse.json({
-      rows: previewRows,
-      tableColumns: tablePreview.columns,
-      tableRows: tablePreview.rows,
-      fields,
-      fieldCatalog: fieldCatalog.filter((field) => fields.includes(field.field)),
-    });
+    return NextResponse.json(
+      await presentCompanyJson(request, companyId, {
+        rows: previewRows,
+        tableColumns: tablePreview.columns,
+        tableRows: tablePreview.rows,
+        fields,
+        fieldCatalog: fieldCatalog.filter((field) => fields.includes(field.field)),
+      })
+    );
   } catch (error: any) {
     const message = String(error?.message || 'Failed to build report preview');
     const status = message.toLowerCase().includes('unauthorized') ? 401 : 500;

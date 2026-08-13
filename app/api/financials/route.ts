@@ -6,6 +6,7 @@ import { financialQuerySchema, validateInput } from '@/lib/validation-schemas';
 import { withPrismaReconnectRetry } from '@/lib/prisma-retry';
 import { hashCacheParts, readDerivedApiCache, writeDerivedApiCache } from '@/lib/derived-api-cache';
 import { privateCacheHeaders } from '@/lib/http-cache';
+import { presentCompanyJson } from '@/lib/currency/api-response';
 
 const FINANCIALS_CACHE_TTL_SECONDS = 120;
 
@@ -137,7 +138,8 @@ export async function GET(request: NextRequest) {
         if (cachedPayload.records?.length > 0) {
           await auditFinancialAccess('FINANCIAL_RECORD_VIEWED', cachedPayload.records[0].id, companyId);
         }
-        return NextResponse.json(cachedPayload, { headers: privateCacheHeaders(FINANCIALS_CACHE_TTL_SECONDS, 300) });
+        const presented = await presentCompanyJson(request, companyId, cachedPayload);
+        return NextResponse.json(presented, { headers: privateCacheHeaders(FINANCIALS_CACHE_TTL_SECONDS, 300) });
       }
     }
 
@@ -189,7 +191,8 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    return NextResponse.json(payload, { headers: privateCacheHeaders(FINANCIALS_CACHE_TTL_SECONDS, 300) });
+    const presented = await presentCompanyJson(request, companyId, payload);
+    return NextResponse.json(presented, { headers: privateCacheHeaders(FINANCIALS_CACHE_TTL_SECONDS, 300) });
   } catch (error) {
     console.error('Error fetching financial records:', error);
     return NextResponse.json(

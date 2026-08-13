@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import { requireAuth, validateCompanyAccess } from '@/lib/tenant-security';
+import { presentCompanyJson } from '@/lib/currency/api-response';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
@@ -489,23 +490,25 @@ export async function GET(request: NextRequest) {
           }
         : null;
 
-    return NextResponse.json({
-      ok: true,
-      companyId,
-      basisMode,
-      savedSettings,
-      financialForecastInputs,
-      loans,
-      operational: {
-        dailyFinancials,
-        cashResult,
-        arAgingResult,
-        apAgingResult,
-        inventoryHistory,
-        productHistory,
-        productMarginHistory,
-      },
-    });
+    return NextResponse.json(
+      await presentCompanyJson(request, companyId, {
+        ok: true,
+        companyId,
+        basisMode,
+        savedSettings,
+        financialForecastInputs,
+        loans,
+        operational: {
+          dailyFinancials,
+          cashResult,
+          arAgingResult,
+          apAgingResult,
+          inventoryHistory,
+          productHistory,
+          productMarginHistory,
+        },
+      })
+    );
   } catch (error: any) {
     const message = String(error?.message || 'Unknown error');
     if (message.toLowerCase().includes('unauthorized') || message.toLowerCase().includes('authentication')) {

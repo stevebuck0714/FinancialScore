@@ -1,10 +1,12 @@
 import { randomUUID } from 'crypto';
 import prisma from '@/lib/prisma';
-import { normalizeCurrencyCode } from '@/lib/constants/currencies';
+import { SUPPORTED_CURRENCIES, normalizeCurrencyCode } from '@/lib/constants/currencies';
 import {
   fetchFrankfurterHistoricalRange,
-  fetchFrankfurterRateForDate,
+  fetchFrankfurterHistoricalRangeMany,
+  fetchFrankfurterRatesForDate,
   FRANKFURTER_PROVIDER,
+  type FrankfurterDayRate,
 } from './frankfurter';
 import {
   formatEstDate,
@@ -15,7 +17,9 @@ import {
 
 export type CurrencyPair = { fromCurrency: string; toCurrency: string };
 
-async function upsertRate(row: {
+const SUPPORTED_CODES = SUPPORTED_CURRENCIES.map((c) => c.value);
+
+export async function upsertDailyEodRate(row: {
   fromCurrency: string;
   toCurrency: string;
   dateYmd: string;
@@ -59,32 +63,68 @@ async function upsertRate(row: {
   });
 }
 
-/** Distinct base→reporting pairs currently configured on companies. */
-export async function listActiveCurrencyPairs(): Promise<CurrencyPair[]> {
-  const companies = await prisma.company.findMany({
-    where: {
-      reportingCurrency: { not: null },
-    },
-    select: {
-      baseCurrency: true,
-      reportingCurrency: true,
-    },
-  });
+/** Every directed pair among supported currencies (USD, CAD, EUR, GBP, AUD, MXN). */
+export function listSupportedCurrencyPairs(): CurrencyPair[] {
+  const pairs: CurrencyPair[] = [];
+  for (const from of SUPPORTED_CODES) {
+    for (const to of SUPPORTED_CODES) {
+      if (from === to) continue;
+      pairs.push({ fromCurrency: from, toCurrency: to });
+    }
+  }
+  return pairs;
+}
 
+/** Supported pairs plus any extra company base→reporting pairs. */
+export async function listActiveCurrencyPairs(): Promise<CurrencyPair[]> {
   const seen = new Set<string>();
   const pairs: CurrencyPair[] = [];
+  const add = (fromCurrency: string, toCurrency: string) => {
+    if (!fromCurrency || !toCurrency || fromCurrency === toCurrency) return;
+    const key = `${fromCurrency}->${toCurrency}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    pairs.push({ fromCurrency, toCurrency });
+  };
+
+  for (const pair of listSupportedCurrencyPairs()) {
+    add(pair.fromCurrency, pair.toCurrency);
+  }
+
+  const companies = await prisma.company.findMany({
+    where: { reportingCurrency: { not: null } },
+    select: { baseCurrency: true, reportingCurrency: true },
+  });
   for (const company of companies) {
     const from = normalizeCurrencyCode(company.baseCurrency);
     const to = company.reportingCurrency
       ? normalizeCurrencyCode(company.reportingCurrency, from)
       : null;
-    if (!to || from === to) continue;
-    const key = `${from}->${to}`;
-    if (seen.has(key)) continue;
-    seen.add(key);
-    pairs.push({ fromCurrency: from, toCurrency: to });
+    if (to) add(from, to);
   }
   return pairs;
+}
+
+async function storeRateRows(rows: FrankfurterDayRate[], requestedYmd?: string): Promise<number> {
+  let stored = 0;
+  const chunkSize = 50;
+  for (let i = 0; i < rows.length; i += chunkSize) {
+    const chunk = rows.slice(i, i + chunkSize);
+    await Promise.all(
+      chunk.map((row) =>
+        upsertDailyEodRate({
+          fromCurrency: row.fromCurrency,
+          toCurrency: row.toCurrency,
+          dateYmd: row.date,
+          rate: row.rate,
+          requestedYmd,
+        }).then(() => {
+          stored += 1;
+        })
+      )
+    );
+  }
+  return stored;
 }
 
 export async function backfillCurrencyPair(
@@ -102,26 +142,43 @@ export async function backfillCurrencyPair(
   }
 
   const rows = await fetchFrankfurterHistoricalRange(from, to, startYmd, endYmd);
+  const stored = await storeRateRows(rows);
+  return { stored, fromCurrency: from, toCurrency: to, startYmd, endYmd };
+}
+
+/** Load ~3 years of daily EOD rates for every supported currency pair. */
+export async function backfillAllSupportedRates(opts?: {
+  startYmd?: string;
+  endYmd?: string;
+}): Promise<{
+  stored: number;
+  bases: number;
+  startYmd: string;
+  endYmd: string;
+  errors: Array<{ fromCurrency: string; error: string }>;
+}> {
+  const endYmd = opts?.endYmd || formatEstDate();
+  const startYmd = opts?.startYmd || yearsAgoEstDate(3);
   let stored = 0;
-  // Chunk upserts to avoid huge transactions
-  const chunkSize = 50;
-  for (let i = 0; i < rows.length; i += chunkSize) {
-    const chunk = rows.slice(i, i + chunkSize);
-    await Promise.all(
-      chunk.map((row) =>
-        upsertRate({
-          fromCurrency: from,
-          toCurrency: to,
-          dateYmd: row.date,
-          rate: row.rate,
-        }).then(() => {
-          stored += 1;
-        })
-      )
-    );
+  const errors: Array<{ fromCurrency: string; error: string }> = [];
+
+  for (const from of SUPPORTED_CODES) {
+    const toCurrencies = SUPPORTED_CODES.filter((code) => code !== from);
+    try {
+      const rows = await fetchFrankfurterHistoricalRangeMany(from, toCurrencies, startYmd, endYmd);
+      stored += await storeRateRows(rows);
+    } catch (error: any) {
+      errors.push({ fromCurrency: from, error: error?.message || String(error) });
+    }
   }
 
-  return { stored, fromCurrency: from, toCurrency: to, startYmd, endYmd };
+  return {
+    stored,
+    bases: SUPPORTED_CODES.length,
+    startYmd,
+    endYmd,
+    errors,
+  };
 }
 
 export async function ensureCompanyReportingRates(companyId: string): Promise<{
@@ -150,7 +207,7 @@ export async function ensureCompanyReportingRates(companyId: string): Promise<{
 
 /**
  * Daily EST EOD sync: load rates for the prior EST calendar day
- * for every active company base→reporting pair.
+ * for every supported currency pair.
  */
 export async function syncLatestEstEodRates(now: Date = new Date()): Promise<{
   targetEstDate: string;
@@ -159,38 +216,26 @@ export async function syncLatestEstEodRates(now: Date = new Date()): Promise<{
   errors: Array<{ pair: string; error: string }>;
 }> {
   const targetEstDate = previousEstCalendarDate(now);
-  const pairs = await listActiveCurrencyPairs();
   let stored = 0;
   const errors: Array<{ pair: string; error: string }> = [];
 
-  for (const pair of pairs) {
-    const label = `${pair.fromCurrency}->${pair.toCurrency}`;
+  for (const from of SUPPORTED_CODES) {
+    const toCurrencies = SUPPORTED_CODES.filter((code) => code !== from);
     try {
-      const fetched = await fetchFrankfurterRateForDate(
-        pair.fromCurrency,
-        pair.toCurrency,
-        targetEstDate
-      );
-      if (!fetched) {
-        errors.push({ pair: label, error: `No rate returned for ${targetEstDate}` });
+      const fetched = await fetchFrankfurterRatesForDate(from, toCurrencies, targetEstDate);
+      if (fetched.length === 0) {
+        errors.push({ pair: `${from}->*`, error: `No rates returned for ${targetEstDate}` });
         continue;
       }
-      await upsertRate({
-        fromCurrency: pair.fromCurrency,
-        toCurrency: pair.toCurrency,
-        dateYmd: fetched.date,
-        rate: fetched.rate,
-        requestedYmd: targetEstDate,
-      });
-      stored += 1;
+      stored += await storeRateRows(fetched, targetEstDate);
     } catch (error: any) {
-      errors.push({ pair: label, error: error?.message || String(error) });
+      errors.push({ pair: `${from}->*`, error: error?.message || String(error) });
     }
   }
 
   return {
     targetEstDate,
-    pairs: pairs.length,
+    pairs: listSupportedCurrencyPairs().length,
     stored,
     errors,
   };

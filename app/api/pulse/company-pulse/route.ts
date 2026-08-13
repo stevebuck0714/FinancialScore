@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { auditForbiddenAccess } from '@/lib/audit-logger';
 import { requireAuth, validateCompanyAccess } from '@/lib/tenant-security';
 import { generateCompanyPulse, getCompanyPulseContext, getCompanyPulseSnapshot } from '@/lib/company-pulse/generator';
+import { presentCompanyJson } from '@/lib/currency/api-response';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 300;
@@ -35,7 +36,7 @@ export async function GET(request: NextRequest) {
       getCompanyPulseSnapshot(companyId),
       getCompanyPulseContext(companyId),
     ]);
-    return NextResponse.json({ ...snapshot, ...context });
+    return NextResponse.json(await presentCompanyJson(request, companyId, { ...snapshot, ...context }));
   } catch (error: any) {
     console.error('Company Pulse GET error:', error);
     return NextResponse.json(
@@ -69,7 +70,7 @@ export async function POST(request: NextRequest) {
       }),
       getCompanyPulseContext(companyId),
     ]);
-    return NextResponse.json({ ...result, ...pulseContext });
+    return NextResponse.json(await presentCompanyJson(request, companyId, { ...result, ...pulseContext }));
   } catch (error: any) {
     console.error('Company Pulse POST error:', error);
     return NextResponse.json(

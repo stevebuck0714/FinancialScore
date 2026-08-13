@@ -21,6 +21,8 @@ import {
   DEFAULT_BASE_CURRENCY,
   resolveDisplayCurrency,
 } from '@/lib/constants/currencies';
+import { applyReportingCurrencyIfNeeded } from '@/lib/fx/reporting';
+import { getCompanyCurrencySettings } from '@/lib/currency/company-currency';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 300;
@@ -1546,6 +1548,16 @@ export async function GET(request: NextRequest) {
     await writeDailySummary(companyId, persistedCacheDate, dataVersion, facts, sourceNotes).catch((summaryError) => {
       console.warn('Pulse daily summary cache write failed:', summaryError);
     });
+    }
+
+    if (facts && typeof facts === 'object') {
+      const companyCurrency = await getCompanyCurrencySettings(companyId);
+      const presentedFacts = await applyReportingCurrencyIfNeeded(facts as Record<string, unknown>, {
+        companyCurrency,
+        requestedCurrency: briefingMoneyCurrency,
+      });
+      const { fx: _fx, ...factsWithoutMeta } = presentedFacts;
+      facts = factsWithoutMeta;
     }
 
     const responseAsOfDate = String(facts?.briefing?.asOfDate || cacheDate);

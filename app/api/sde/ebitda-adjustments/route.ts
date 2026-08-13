@@ -3,6 +3,7 @@ import prisma from '@/lib/prisma';
 import { requireAuth, validateCompanyAccess } from '@/lib/tenant-security';
 import { auditForbiddenAccess } from '@/lib/audit-logger';
 import { withPrismaReconnectRetry } from '@/lib/prisma-retry';
+import { presentCompanyJson } from '@/lib/currency/api-response';
 import {
   SDE_BUCKETS,
   SDE_BUCKET_LABELS,
@@ -677,25 +678,27 @@ export async function GET(request: NextRequest) {
       };
     });
 
-    return NextResponse.json({
-      companyId,
-      companyName: company?.name || null,
-      accountingSystem,
-      asOfMonth,
-      ltmWindow: { start: ltmMonths[0], end: ltmMonths[ltmMonths.length - 1], months: ltmMonths },
-      sourceUsed: isRawDataSystem
-        ? 'rawdata_trial_balance'
-        : monthlyByAccount.size > 0
-          ? 'gl_transaction_fact'
-          : 'rawdata_fallback',
-      bsSource: isRawDataSystem
-        ? 'rawdata_period_close'
-        : bsBalancesByAccount.size > 0
-          ? 'balance_sheet_account_anchor'
-          : 'gl_period_activity_fallback',
-      buckets,
-      allAccounts,
-    });
+    return NextResponse.json(
+      await presentCompanyJson(request, companyId, {
+        companyId,
+        companyName: company?.name || null,
+        accountingSystem,
+        asOfMonth,
+        ltmWindow: { start: ltmMonths[0], end: ltmMonths[ltmMonths.length - 1], months: ltmMonths },
+        sourceUsed: isRawDataSystem
+          ? 'rawdata_trial_balance'
+          : monthlyByAccount.size > 0
+            ? 'gl_transaction_fact'
+            : 'rawdata_fallback',
+        bsSource: isRawDataSystem
+          ? 'rawdata_period_close'
+          : bsBalancesByAccount.size > 0
+            ? 'balance_sheet_account_anchor'
+            : 'gl_period_activity_fallback',
+        buckets,
+        allAccounts,
+      })
+    );
   } catch (error: any) {
     console.error('SDE EBITDA adjustments GET failed:', error);
     return NextResponse.json(

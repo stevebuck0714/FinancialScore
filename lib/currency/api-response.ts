@@ -103,8 +103,23 @@ export async function withCurrencyPresentation<T extends Record<string, unknown>
   return {
     ...converted,
     currency: buildCurrencyMeta(settings, statementCurrency, {
-      converted: !converted.fx?.error,
+      converted: Boolean(converted.fx) && !converted.fx?.error,
       asOfYmd: String(converted.fx?.asOfYmd || asOfYmd),
     }),
   };
+}
+
+/** Convert-on-read helper for financial GET handlers. */
+export async function presentCompanyJson<T extends Record<string, unknown>>(
+  request: NextRequest,
+  companyId: string,
+  payload: T,
+  opts?: { asOf?: Date; convert?: boolean }
+): Promise<T & { currency: CurrencyResponseMeta; fx?: Record<string, unknown> }> {
+  return withCurrencyPresentation(payload, {
+    companyId,
+    requestedCurrency: readRequestedCurrency(request),
+    asOf: opts?.asOf,
+    convert: opts?.convert !== false,
+  });
 }

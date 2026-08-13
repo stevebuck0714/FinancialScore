@@ -4,6 +4,7 @@ import { Prisma } from '@prisma/client';
 import { requireAuth, validateCompanyAccess } from '@/lib/tenant-security';
 import { auditForbiddenAccess } from '@/lib/audit-logger';
 import { withPrismaReconnectRetry } from '@/lib/prisma-retry';
+import { presentCompanyJson } from '@/lib/currency/api-response';
 
 export const dynamic = 'force-dynamic';
 
@@ -782,7 +783,7 @@ export async function GET(request: NextRequest) {
     }
     const cached = latestValuesResponseCache.get(cacheKey);
     if (!forceRefresh && cached && Date.now() - cached.cachedAt < LATEST_VALUES_CACHE_TTL_MS) {
-      return NextResponse.json(cached.payload);
+      return NextResponse.json(await presentCompanyJson(request, companyId, cached.payload));
     }
 
     if (!companyId) {
@@ -997,7 +998,7 @@ export async function GET(request: NextRequest) {
       cachedAt: Date.now(),
       payload,
     });
-    return NextResponse.json(payload);
+    return NextResponse.json(await presentCompanyJson(request, companyId, payload));
   } catch (error) {
     const details = error instanceof Error ? error.message : 'Unknown error';
     return NextResponse.json(

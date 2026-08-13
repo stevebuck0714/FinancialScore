@@ -2,13 +2,16 @@ import { NextRequest, NextResponse } from 'next/server';
 import { requireAuth, validateCompanyAccess } from '@/lib/tenant-security';
 import { auditForbiddenAccess } from '@/lib/audit-logger';
 import { getCompanyFxCoverage } from '@/lib/fx/coverage';
-import { ensureCompanyReportingRates } from '@/lib/fx/sync';
+import { backfillAllSupportedRates, ensureCompanyReportingRates } from '@/lib/fx/sync';
+
+export const dynamic = 'force-dynamic';
+export const maxDuration = 120;
 
 /**
  * GET /api/fx/coverage?companyId=...
  * Admin/diagnostics: FX history coverage for the company's reporting pair.
  *
- * POST /api/fx/coverage { companyId } — trigger 3-year backfill for the pair.
+ * POST /api/fx/coverage { companyId } — load 3-year EOD history for all supported currencies.
  */
 export async function GET(request: NextRequest) {
   try {
@@ -48,11 +51,13 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }
 
+    const allSupported = await backfillAllSupportedRates();
     const result = await ensureCompanyReportingRates(companyId);
     const coverage = await getCompanyFxCoverage(companyId);
     return NextResponse.json({
-      success: true,
+      success: allSupported.errors.length === 0,
       backfill: result,
+      allSupported,
       coverage,
     });
   } catch (error: any) {

@@ -1,5 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { syncLatestEstEodRates, listActiveCurrencyPairs, backfillCurrencyPair } from '@/lib/fx';
+import { syncLatestEstEodRates, backfillAllSupportedRates } from '@/lib/fx';
+
+export const dynamic = 'force-dynamic';
+export const maxDuration = 120;
 
 /**
  * Daily FX EOD cron — queued on EST calendar.
@@ -20,16 +23,11 @@ export async function GET(request: NextRequest) {
 
     const backfill = request.nextUrl.searchParams.get('backfill') === 'true';
     if (backfill) {
-      const pairs = await listActiveCurrencyPairs();
-      const results = [];
-      for (const pair of pairs) {
-        results.push(await backfillCurrencyPair(pair.fromCurrency, pair.toCurrency));
-      }
+      const result = await backfillAllSupportedRates();
       return NextResponse.json({
-        success: true,
+        success: result.errors.length === 0,
         mode: 'backfill',
-        pairs: pairs.length,
-        results,
+        ...result,
       });
     }
 

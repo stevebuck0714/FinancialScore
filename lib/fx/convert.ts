@@ -77,15 +77,39 @@ export async function getRateForDate(
     },
     orderBy: { rateDate: 'desc' },
   });
-  if (!prior) return null;
+  if (prior) {
+    return {
+      rate: prior.rate,
+      rateDate: prior.rateDate,
+      provider: prior.provider || FRANKFURTER_PROVIDER,
+      isFallback: prior.rateDate.toISOString().slice(0, 10) !== asOfYmd,
+      fallbackFromDate: prior.rateDate,
+    };
+  }
 
-  return {
-    rate: prior.rate,
-    rateDate: prior.rateDate,
-    provider: prior.provider || FRANKFURTER_PROVIDER,
-    isFallback: prior.rateDate.toISOString().slice(0, 10) !== asOfYmd,
-    fallbackFromDate: prior.rateDate,
-  };
+  try {
+    const { fetchFrankfurterRateForDate } = await import('./frankfurter');
+    const { upsertDailyEodRate } = await import('./sync');
+    const fetched = await fetchFrankfurterRateForDate(from, to, asOfYmd);
+    if (!fetched) return null;
+    await upsertDailyEodRate({
+      fromCurrency: from,
+      toCurrency: to,
+      dateYmd: fetched.date,
+      rate: fetched.rate,
+      requestedYmd: asOfYmd,
+    });
+    return {
+      rate: fetched.rate,
+      rateDate: utcMidnightForEstDate(fetched.date),
+      provider: FRANKFURTER_PROVIDER,
+      isFallback: fetched.date !== asOfYmd,
+      fallbackFromDate: fetched.date !== asOfYmd ? utcMidnightForEstDate(fetched.date) : null,
+    };
+  } catch (error) {
+    console.warn(`FX live fetch failed for ${from}->${to} on ${asOfYmd}:`, error);
+    return null;
+  }
 }
 
 export async function convertAmount(
