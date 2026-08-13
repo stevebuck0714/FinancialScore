@@ -190,7 +190,6 @@ function inferJobFilterFromText(value: string): { field: string; operator: strin
   if (/\bby (customer|client|project|job|product|product category|category|vendor|supplier|location|site|branch|division|department)\b/.test(normalizedValue)) return null;
   const cleaned = String(value || '')
     .split(/\bby\b/i)[0]
-    .replace(/[ùù]/g, ' ')
     .replace(/[^a-zA-Z0-9]+/g, ' ')
     .replace(/\b(line|bar|stacked|grouped|combo|pie|table|chart|graph|report|trend|monthly|daily|date|period|type|source|operational|and|vs|versus)\b/gi, ' ')
     .replace(/\b(revenue|sales|cogs|cost of goods sold|gross profit|gross margin|margin|ebitda|net income|cash|accounts receivable|accounts payable|ar|ap|inventory|expense|expenses)\b/gi, ' ')
