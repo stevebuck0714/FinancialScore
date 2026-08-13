@@ -7287,7 +7287,25 @@ async function saveAPTransactionFacts(
     if (seen.has(dedupKey)) continue;
     seen.add(dedupKey);
 
-    const invAmt = pickNumber(record, ['InvAmt', 'invAmt', 'InvoiceAmount']);
+    // CSI Type=P (and sometimes A) rows often carry InvAmt=0 with the real
+    // payment on AmtPaid. Requiring InvAmt alone dropped every payment after
+    // ~2026-04-20 for Atlantic and left the aging-rule without Type=P events.
+    const invAmtRaw = pickNumber(record, ['InvAmt', 'invAmt', 'InvoiceAmount']);
+    const paidAmtRaw = pickNumber(record, [
+      'AmtPaid',
+      'amtPaid',
+      'paidAmountHome',
+      'paidAmount',
+      'UbPayment',
+      'ACAM',
+      'PYAM',
+    ]);
+    const isPaymentLike = transType === 'p' || transType === 'a';
+    const invAmt = (() => {
+      if (Number.isFinite(invAmtRaw) && invAmtRaw !== 0) return invAmtRaw;
+      if (isPaymentLike && Number.isFinite(paidAmtRaw) && paidAmtRaw !== 0) return paidAmtRaw;
+      return 0;
+    })();
     if (!Number.isFinite(invAmt) || invAmt === 0) continue;
 
     const inWorkflow = pickString(record, ['InWorkflow', 'inWorkflow']);
@@ -7296,11 +7314,15 @@ async function saveAPTransactionFacts(
     const distDateRaw = parseMaybeDate(pickString(record, ['DistDate', 'distDate']));
     const invDateRaw = parseMaybeDate(pickString(record, ['InvDate', 'invDate']));
     const recordDateRaw = parseMaybeDate(pickString(record, ['RecordDate', 'recordDate']));
-    const resolvedDate = distDateRaw || invDateRaw;
+    // Prefer DistDate for payments; fall back to RecordDate when InvDate is the
+    // original voucher date (common on Type=P) so payments land on the pay day.
+    const resolvedDate =
+      distDateRaw ||
+      (isPaymentLike ? recordDateRaw || invDateRaw : invDateRaw || recordDateRaw);
     if (!resolvedDate || resolvedDate.getTime() < Date.UTC(2023, 0, 1)) continue;
     const eventDate = startOfUtcDay(resolvedDate);
 
-    // Payments/credits must reduce AP even when CSI sends a positive InvAmt.
+    // Payments/credits must reduce AP even when CSI sends a positive InvAmt/AmtPaid.
     const normalizedAmount =
       transType === 'p' || transType === 'c' ? -Math.abs(invAmt) : sign * invAmt;
 

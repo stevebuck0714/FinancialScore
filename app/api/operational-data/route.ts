@@ -3249,7 +3249,7 @@ export async function GET(request: NextRequest) {
               shouldUseMockData ? 'mock-operational-data-v4' : 'real-operational-data-v1',
               // Bust stale ap-aging payloads that were cached while the
               // payment-gap guard / DerAmtBal preference was missing.
-              cacheType === 'ap-aging' || cacheType === 'ap' ? 'ap-payment-gap-guard-v3' : null,
+              cacheType === 'ap-aging' || cacheType === 'ap' ? 'ap-payment-gap-guard-v4' : null,
               shouldApplyHydratedDateFilter ? hydratedInforDates : null,
               cacheType === 'customers' ? CUSTOMER_CONCENTRATION_CACHE_VERSION : null,
               cacheType === 'customers' ? CUSTOMER_REVENUE_SOURCE_VERSION : null,
