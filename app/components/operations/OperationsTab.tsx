@@ -7030,6 +7030,18 @@ export default function OperationsTab({
     }))
       .filter((row: any) => Number(row.amountDue || 0) > 0)
       .sort((a: any, b: any) => Number(b.amountDue || 0) - Number(a.amountDue || 0));
+    const apSummaryTotals = apVendors.reduce(
+      (acc, row) => ({
+        current: acc.current + Number(row.current || 0),
+        days1to30: acc.days1to30 + Number(row.days1to30 || 0),
+        days31to60: acc.days31to60 + Number(row.days31to60 || 0),
+        days61to90: acc.days61to90 + Number(row.days61to90 || 0),
+        days90plus: acc.days90plus + Number(row.days90plus || 0),
+        totalDue: acc.totalDue + Number(row.totalDue || 0),
+      }),
+      { current: 0, days1to30: 0, days31to60: 0, days61to90: 0, days90plus: 0, totalDue: 0 }
+    );
+    const unpaidBillsTotalDue = unpaidBills.reduce((sum, row) => sum + Number(row.amountDue || 0), 0);
     const paidBills = (summary?.paidBills || [])
       .map((row: any) => ({
         vendorName: row.vendorName || row.vendor,
@@ -7076,19 +7088,35 @@ export default function OperationsTab({
         return true;
       })
       .sort((a: any, b: any) => a.businessDay.getTime() - b.businessDay.getTime());
-    const chartData = recordsForWindow.map((record: any) => ({
-      month: formatDate(record.businessDay.toISOString()),
-      // Standard 5-bucket scheme: Current = not yet due (age < 0).
-      Current: Number(record.current || 0),
-      '1-30 Days': Number(record.days1to30 || 0),
-      '31-60 Days': Number(record.days31to60 || 0),
-      '61-90 Days': Number(record.days61to90 || 0),
-      '90+ Days': Number(record.days90plus || 0),
-      total: Number(record.totalAP || 0),
-    }));
+    const chartData = recordsForWindow.map((record: any) => {
+      const current = Number(record.current || 0);
+      const d1 = Number(record.days1to30 || 0);
+      const d2 = Number(record.days31to60 || 0);
+      const d3 = Number(record.days61to90 || 0);
+      const d4 = Number(record.days90plus || 0);
+      // Day total is always the sum of the five age buckets (authoritative).
+      const bucketTotal = current + d1 + d2 + d3 + d4;
+      return {
+        month: formatDate(record.businessDay.toISOString()),
+        // Standard 5-bucket scheme: Current = not yet due (age < 0).
+        Current: current,
+        '1-30 Days': d1,
+        '31-60 Days': d2,
+        '61-90 Days': d3,
+        '90+ Days': d4,
+        total: bucketTotal,
+      };
+    });
     const apCoverageLabel = `${formatDateInputLabel(startDate)} - ${formatDateInputLabel(endDate)}`;
     const apAsOfDate = parseDateSafeUtc(endDate) || new Date();
-    const apAsOfLabel = formatDateInputLabel(endDate);
+    // Anchor "today" / As-of to the latest AP datapoint in the chart window —
+    // not the picker endDate. When the payment ledger is stale, data ends at
+    // the last Type=P day even if the user selected a later To date.
+    const latestApSnapshotDate =
+      recordsForWindow.length > 0
+        ? recordsForWindow[recordsForWindow.length - 1].businessDay
+        : apAsOfDate;
+    const apAsOfLabel = `${String(latestApSnapshotDate.getUTCMonth() + 1).padStart(2, '0')}/${String(latestApSnapshotDate.getUTCDate()).padStart(2, '0')}/${latestApSnapshotDate.getUTCFullYear()}`;
     const paymentCadenceTrend = [...recordsForWindow]
       .map((record: any) => ({
         period: formatDate(record.businessDay.toISOString()),
@@ -7113,14 +7141,7 @@ export default function OperationsTab({
       .filter((row) => row.pastDue > 0)
       .sort((a, b) => b.riskScore - a.riskScore)
       .slice(0, 10);
-    // Anchor "today" for the calendar to the latest AP snapshot date
-    // (the date unpaidBills was computed against). Using endDate from the
-    // picker would let daysUntil drift if endDate != latestAP.snapshotDate
-    // (e.g. when the user shifts the window or sync hasn't caught up).
-    const latestApSnapshotDate =
-      recordsForWindow.length > 0
-        ? recordsForWindow[recordsForWindow.length - 1].businessDay
-        : apAsOfDate;
+    // Anchor upcoming-due "today" to the same datapoint as As-of above.
     const upcomingAsOfMs = latestApSnapshotDate.getTime();
     const upcomingDueCalendar = unpaidBills
       .map((row) => {
@@ -7209,9 +7230,29 @@ export default function OperationsTab({
               <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
               <XAxis dataKey="month" stroke="#64748b" style={{ fontSize: '12px' }} />
               <YAxis stroke="#64748b" style={{ fontSize: '12px' }} tickFormatter={formatAxisMoney} />
-              <Tooltip 
-                formatter={(value: any) => formatCurrency(value)}
-                contentStyle={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '8px' }}
+              <Tooltip
+                content={({ active, payload, label }: any) => {
+                  if (!active || !payload?.length) return null;
+                  const total = payload.reduce(
+                    (sum: number, entry: any) => sum + Number(entry?.value || 0),
+                    0
+                  );
+                  return (
+                    <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '10px 12px' }}>
+                      <div style={{ fontSize: '12px', fontWeight: 600, color: '#0f172a', marginBottom: '6px' }}>{label}</div>
+                      {payload.map((entry: any) => (
+                        <div key={String(entry.dataKey)} style={{ fontSize: '12px', color: '#475569', display: 'flex', justifyContent: 'space-between', gap: '16px' }}>
+                          <span style={{ color: entry.color || '#475569' }}>{entry.name}</span>
+                          <span>{formatCurrency(Number(entry.value || 0))}</span>
+                        </div>
+                      ))}
+                      <div style={{ marginTop: '6px', paddingTop: '6px', borderTop: '1px solid #e2e8f0', fontSize: '12px', fontWeight: 700, color: '#0f172a', display: 'flex', justifyContent: 'space-between', gap: '16px' }}>
+                        <span>Total AP</span>
+                        <span>{formatCurrency(total)}</span>
+                      </div>
+                    </div>
+                  );
+                }}
               />
               <Legend />
               <Bar dataKey="Current" stackId="a" fill={AR_TREND_COLORS[0]} />
@@ -7306,6 +7347,27 @@ export default function OperationsTab({
                     </tr>
                   </thead>
                   <tbody>
+                    <tr style={{ borderBottom: '2px solid #cbd5e1', background: '#f8fafc' }}>
+                      <td style={{ padding: '6px 10px', fontSize: '13px', color: '#0f172a', fontWeight: 700 }}>Total</td>
+                      <td style={{ padding: '6px 10px', fontSize: '13px', color: '#0f172a', textAlign: 'right', fontWeight: 700 }}>
+                        {formatCurrency(apSummaryTotals.current)}
+                      </td>
+                      <td style={{ padding: '6px 10px', fontSize: '13px', color: '#0f172a', textAlign: 'right', fontWeight: 700 }}>
+                        {formatCurrency(apSummaryTotals.days1to30)}
+                      </td>
+                      <td style={{ padding: '6px 10px', fontSize: '13px', color: '#0f172a', textAlign: 'right', fontWeight: 700 }}>
+                        {formatCurrency(apSummaryTotals.days31to60)}
+                      </td>
+                      <td style={{ padding: '6px 10px', fontSize: '13px', color: '#0f172a', textAlign: 'right', fontWeight: 700 }}>
+                        {formatCurrency(apSummaryTotals.days61to90)}
+                      </td>
+                      <td style={{ padding: '6px 10px', fontSize: '13px', color: '#0f172a', textAlign: 'right', fontWeight: 700 }}>
+                        {formatCurrency(apSummaryTotals.days90plus)}
+                      </td>
+                      <td style={{ padding: '6px 10px', fontSize: '13px', color: '#0f172a', textAlign: 'right', fontWeight: 700 }}>
+                        {formatCurrency(apSummaryTotals.totalDue)}
+                      </td>
+                    </tr>
                     {apVendors
                       .sort((a, b) => b.totalDue - a.totalDue)
                       .slice((apSummaryPage - 1) * 10, apSummaryPage * 10)
@@ -7395,6 +7457,14 @@ export default function OperationsTab({
                     </tr>
                   </thead>
                   <tbody>
+                    <tr style={{ borderBottom: '2px solid #cbd5e1', background: '#f8fafc' }}>
+                      <td style={{ padding: '6px 10px', fontSize: '13px', color: '#0f172a', fontWeight: 700 }}>Total</td>
+                      <td style={{ padding: '6px 10px', fontSize: '13px', color: '#64748b' }}>—</td>
+                      <td style={{ padding: '6px 10px', fontSize: '13px', color: '#64748b' }}>—</td>
+                      <td style={{ padding: '6px 10px', fontSize: '13px', color: '#0f172a', textAlign: 'right', fontWeight: 700 }}>
+                        {formatCurrency(unpaidBillsTotalDue)}
+                      </td>
+                    </tr>
                     {unpaidBills
                       .slice((unpaidBillsPage - 1) * 8, unpaidBillsPage * 8)
                       .map((row, index) => (

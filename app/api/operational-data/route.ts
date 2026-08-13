@@ -3249,7 +3249,7 @@ export async function GET(request: NextRequest) {
               shouldUseMockData ? 'mock-operational-data-v4' : 'real-operational-data-v1',
               // Bust stale ap-aging payloads that were cached while the
               // payment-gap guard / DerAmtBal preference was missing.
-              cacheType === 'ap-aging' || cacheType === 'ap' ? 'ap-payment-gap-guard-v2' : null,
+              cacheType === 'ap-aging' || cacheType === 'ap' ? 'ap-payment-gap-guard-v3' : null,
               shouldApplyHydratedDateFilter ? hydratedInforDates : null,
               cacheType === 'customers' ? CUSTOMER_CONCENTRATION_CACHE_VERSION : null,
               cacheType === 'customers' ? CUSTOMER_REVENUE_SOURCE_VERSION : null,
@@ -7091,7 +7091,7 @@ export async function GET(request: NextRequest) {
                 "amountDueHome",
                 CASE
                   WHEN "ageBasisDate" IS NULL THEN 99999
-                  ELSE GREATEST(0, (${asOfDateForBuckets}::date - "ageBasisDate"))
+                  ELSE (${asOfDateForBuckets}::date - "ageBasisDate")
                 END::int AS age_days
               FROM bills
             )
@@ -7136,7 +7136,7 @@ export async function GET(request: NextRequest) {
                   "amountDueHome",
                   CASE
                     WHEN "ageBasisDate" IS NULL THEN 99999
-                    ELSE GREATEST(0, (${asOfDateForBuckets}::date - "ageBasisDate"))
+                    ELSE (${asOfDateForBuckets}::date - "ageBasisDate")
                   END::int AS age_days
                 FROM bills
               )
@@ -7412,10 +7412,14 @@ export async function GET(request: NextRequest) {
           // SLAptrxps as open-only), the aging-rule invents multi-million open
           // AP after the payment cutoff. Pre-cutoff APAgingSnapshot rows are
           // also often corrupt (closed vouchers dumped as open — e.g. $33M on
-          // 2026-04-13). Build a hybrid trend:
-          //   • through last Type=P date → aging-rule (payments exist)
-          //   • after that → sanity-filtered DerAmtBal snapshots
-          // Vendor/summary tables still come from latest open bills below.
+          // 2026-04-13). Post-cutoff DerAmtBal / RAW_REPLAY open-bill days are
+          // incomplete daily subsets (e.g. $2.6k on 2026-04-21 vs ~$800k true
+          // open AP) — their bucket sum equals that subset total, not the day's
+          // Total AP. When the payment ledger is stale:
+          //   • trend + KPIs + vendor/unpaid tables = aging-rule through last
+          //     Type=P date only (buckets always sum to that day's totalAP)
+          //   • do not extend past the payment cutoff and do not stitch sparse
+          //     open-bill snapshots onto the series
           const paymentLedger = await isApPaymentEventLedgerStale(
             prisma,
             companyId,
@@ -7423,18 +7427,10 @@ export async function GET(request: NextRequest) {
           );
           if (paymentLedger.stale) {
             console.warn(
-              `[ap-aging] hybrid trend for ${companyId}: payment ledger stale`,
+              `[ap-aging] payment-ledger-stale trend for ${companyId}: ending at last Type=P date`,
               paymentLedger
             );
             const maxPayKey = paymentLedger.maxPaymentDate;
-            const AP_SNAPSHOT_SANITY_MAX = 2_000_000;
-            const postPaySnapshots = (Array.isArray(data) ? data : []).filter((row: any) => {
-              const dayKey = dateKeyUtc(new Date(row.snapshotDate));
-              if (maxPayKey && dayKey <= maxPayKey) return false;
-              const total = Math.abs(Number(row.totalAP || 0));
-              return Number.isFinite(total) && total <= AP_SNAPSHOT_SANITY_MAX;
-            });
-
             let agingPrefix: Awaited<ReturnType<typeof buildDailyApSeriesByAgingRule>> = [];
             if (maxPayKey) {
               const payEnd = parseIsoDayKey(maxPayKey);
@@ -7453,30 +7449,40 @@ export async function GET(request: NextRequest) {
               }
             }
 
-            const byDay = new Map<string, any>();
-            for (const row of agingPrefix) {
-              const dayKey = dateKeyUtc(new Date(row.snapshotDate));
-              const total = Number(row.apBalance || 0);
-              byDay.set(dayKey, {
-                snapshotDate: new Date(row.snapshotDate),
-                frequency: apFrequencyForQuery,
-                totalAP: total,
-                current: Number(row.current || 0),
-                days1to30: Number(row.days1to30 || 0),
-                days31to60: Number(row.days31to60 || 0),
-                days61to90: Number(row.days61to90 || 0),
-                days90plus: Number(row.days90plus || 0),
-                over30Pct: Number(row.over30Pct || 0),
-                over90Pct: Number(row.over90Pct || 0),
-                dpo: Number(row.dpo || 0),
-              });
-            }
-            for (const row of postPaySnapshots) {
-              const dayKey = dateKeyUtc(new Date(row.snapshotDate));
-              byDay.set(dayKey, row);
-            }
-
-            data = Array.from(byDay.values())
+            data = agingPrefix
+              .map((row) => {
+                const total = Number(row.apBalance || 0);
+                const current = Number(row.current || 0);
+                const days1to30 = Number(row.days1to30 || 0);
+                const days31to60 = Number(row.days31to60 || 0);
+                const days61to90 = Number(row.days61to90 || 0);
+                const days90plus = Number(row.days90plus || 0);
+                // Enforce the chart invariant: totalAP is defined as the sum of
+                // the five age buckets for that day (never an independent field).
+                const bucketSum = current + days1to30 + days31to60 + days61to90 + days90plus;
+                if (Math.abs(total - bucketSum) > 0.02) {
+                  console.warn('[ap-aging] bucket sum != open_ap', {
+                    companyId,
+                    day: dateKeyUtc(new Date(row.snapshotDate)),
+                    open_ap: total,
+                    bucketSum,
+                    diff: total - bucketSum,
+                  });
+                }
+                return {
+                  snapshotDate: new Date(row.snapshotDate),
+                  frequency: apFrequencyForQuery,
+                  totalAP: bucketSum,
+                  current,
+                  days1to30,
+                  days31to60,
+                  days61to90,
+                  days90plus,
+                  over30Pct: Number(row.over30Pct || 0),
+                  over90Pct: Number(row.over90Pct || 0),
+                  dpo: Number(row.dpo || 0),
+                };
+              })
               .sort(
                 (a: any, b: any) =>
                   new Date(b.snapshotDate).getTime() - new Date(a.snapshotDate).getTime()
@@ -7484,6 +7490,7 @@ export async function GET(request: NextRequest) {
               .slice(0, limit);
 
             latestAP = data[0];
+            apGlAnchorApplied = true;
             apMetrics = latestAP
               ? {
                   totalAP: Number(latestAP.totalAP || 0),
@@ -7506,6 +7513,100 @@ export async function GET(request: NextRequest) {
                   dpo: Number(latestAP.dpo || calculateDPO(data) || 0),
                 }
               : apMetrics;
+
+            // Same voucher-level source as the last trend day so Summary /
+            // Unpaid Bills / Total AP KPI all tie to that day's bucket sum.
+            if (latestAP) {
+              try {
+                const apAsOfDateForVendors = startOfUtcDay(new Date(latestAP.snapshotDate));
+                const openVouchers = await buildOpenVouchersByAgingRule(
+                  prisma,
+                  companyId,
+                  anchorAccountForTrend.accountId,
+                  apAsOfDateForVendors,
+                  150
+                );
+                if (openVouchers.length > 0) {
+                  const asOfMs = apAsOfDateForVendors.getTime();
+                  type VendorAgg = {
+                    vendorName: string;
+                    current: number;
+                    days1to30: number;
+                    days31to60: number;
+                    days61to90: number;
+                    days90plus: number;
+                    totalDue: number;
+                  };
+                  const vendorMap = new Map<string, VendorAgg>();
+                  for (const v of openVouchers) {
+                    const daysPastDue = Math.floor(
+                      (asOfMs - startOfUtcDay(v.dueDate).getTime()) / 86400000
+                    );
+                    const amt = Number(v.openBalance || 0);
+                    if (!Number.isFinite(amt) || amt <= 0) continue;
+                    const key = v.vendorName || 'Unknown Vendor';
+                    if (!vendorMap.has(key)) {
+                      vendorMap.set(key, {
+                        vendorName: key,
+                        current: 0,
+                        days1to30: 0,
+                        days31to60: 0,
+                        days61to90: 0,
+                        days90plus: 0,
+                        totalDue: 0,
+                      });
+                    }
+                    const agg = vendorMap.get(key)!;
+                    agg.totalDue += amt;
+                    if (daysPastDue < 0) agg.current += amt;
+                    else if (daysPastDue <= 30) agg.days1to30 += amt;
+                    else if (daysPastDue <= 60) agg.days31to60 += amt;
+                    else if (daysPastDue <= 90) agg.days61to90 += amt;
+                    else agg.days90plus += amt;
+                  }
+                  unpaidByVendor = Array.from(vendorMap.values()).sort(
+                    (a, b) => b.totalDue - a.totalDue
+                  );
+
+                  unpaidBills = openVouchers
+                    .filter((v) => Number(v.openBalance || 0) > 0)
+                    .sort((a, b) => Number(b.openBalance || 0) - Number(a.openBalance || 0))
+                    .slice(0, 500)
+                    .map((v) => ({
+                      vendorName: v.vendorName || 'Unknown Vendor',
+                      billNo: v.voucher,
+                      invoiceNum: v.invoiceNum,
+                      date: v.invoiceDate
+                        ? v.invoiceDate.toISOString().slice(0, 10)
+                        : v.voucherCreatedAt.toISOString().slice(0, 10),
+                      dueDate: v.dueDate.toISOString().slice(0, 10),
+                      dueDateSource: v.termsCodeUsed,
+                      amountDue: Number(v.openBalance || 0),
+                    }));
+
+                  vendorBills = openVouchers
+                    .filter((v) => Number(v.openBalance || 0) > 0)
+                    .sort((a, b) => Number(b.openBalance || 0) - Number(a.openBalance || 0))
+                    .slice(0, 500)
+                    .map((v) => ({
+                      vendorName: v.vendorName || 'Unknown Vendor',
+                      billNo: v.voucher,
+                      invoiceNum: v.invoiceNum,
+                      date: v.invoiceDate
+                        ? v.invoiceDate.toISOString().slice(0, 10)
+                        : v.voucherCreatedAt.toISOString().slice(0, 10),
+                      dueDate: v.dueDate.toISOString().slice(0, 10),
+                      dueDateSource: v.termsCodeUsed,
+                      currency: 'USD',
+                      amountCurrency: Number(v.openBalance || 0),
+                      amountHome: Number(v.openBalance || 0),
+                      amountDueHome: Number(v.openBalance || 0),
+                    }));
+                }
+              } catch (err) {
+                console.error('[ap-aging] stale-ledger per-vendor voucher rebuild failed', err);
+              }
+            }
           }
           // Trend uses the same 150-day aging-rule derivation as the main
           // 'ap' case below — see comment there for the rationale and
@@ -7589,19 +7690,28 @@ export async function GET(request: NextRequest) {
                 data = Array.from(periodLatestGl.values())
                   .sort((a, b) => b.snapshotDate.getTime() - a.snapshotDate.getTime())
                   .slice(0, limit)
-                  .map((rec) => ({
-                    snapshotDate: rec.snapshotDate,
-                    frequency: apFrequencyForQuery,
-                    totalAP: rec.apBalance,
-                    current: rec.current,
-                    days1to30: rec.days1to30,
-                    days31to60: rec.days31to60,
-                    days61to90: rec.days61to90,
-                    days90plus: rec.days90plus,
-                    over30Pct: rec.over30Pct,
-                    over90Pct: rec.over90Pct,
-                    dpo: rec.dpo,
-                  })) as any;
+                  .map((rec) => {
+                    const current = Number(rec.current || 0);
+                    const days1to30 = Number(rec.days1to30 || 0);
+                    const days31to60 = Number(rec.days31to60 || 0);
+                    const days61to90 = Number(rec.days61to90 || 0);
+                    const days90plus = Number(rec.days90plus || 0);
+                    const bucketSum =
+                      current + days1to30 + days31to60 + days61to90 + days90plus;
+                    return {
+                      snapshotDate: rec.snapshotDate,
+                      frequency: apFrequencyForQuery,
+                      totalAP: bucketSum,
+                      current,
+                      days1to30,
+                      days31to60,
+                      days61to90,
+                      days90plus,
+                      over30Pct: rec.over30Pct,
+                      over90Pct: rec.over90Pct,
+                      dpo: rec.dpo,
+                    };
+                  }) as any;
                 latestAP = data[0];
                 apMetrics = latestAP
                   ? {
