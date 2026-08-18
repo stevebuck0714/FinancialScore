@@ -1130,14 +1130,12 @@ export default function WorkingCapitalForecastTab({ selectedCompanyId, basisMode
               monthRefsBase,
             );
             setInputs(resolvedInputs);
-            setLocAprDraft(null);
             setHistoricalAverages(mergedAverages);
             setWeeklyDrivers(seededWeekly);
             setStartingBalances(resolvedStartingBalances);
             setLastSavedAt(savedSettings.updatedAt ? String(savedSettings.updatedAt) : null);
           } else {
             setInputs(seedInputs);
-            setLocAprDraft(null);
             setHistoricalAverages(seedAverages);
             const defaults = Array.from({ length: FORECAST_WEEKS }, () => ({ ...seedAverages }));
             setWeeklyDrivers(
