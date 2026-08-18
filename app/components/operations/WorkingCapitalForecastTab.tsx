@@ -184,18 +184,79 @@ const DEFAULT_AGING_BUCKETS: AgingBuckets = { current: 0, bucket30to60: 0, bucke
 const hasAnyPositiveValue = (values: Array<unknown>): boolean =>
   values.some((value) => Number.isFinite(Number(value)) && Number(value) > 0);
 
-const formatPercentInput = (value: number): string => `${Number(value || 0).toFixed(2)}%`;
+const clampNumber = (value: number, min: number, max: number): number => Math.min(max, Math.max(min, value));
+const formatPercentIdle = (value: number): string => {
+  const rounded = Math.round((Number(value) || 0) * 100) / 100;
+  return Number.isInteger(rounded) ? String(rounded) : String(rounded);
+};
+const sanitizePercentDraft = (rawValue: string): string => {
+  const cleaned = String(rawValue || '').replace(/[^0-9.]/g, '');
+  const parts = cleaned.split('.');
+  return parts.length <= 1 ? parts[0] : `${parts[0]}.${parts.slice(1).join('').slice(0, 2)}`;
+};
+const parsePercentDraft = (rawValue: string): number | null => {
+  const normalized = sanitizePercentDraft(rawValue);
+  if (!normalized || normalized === '.') return null;
+  const parsed = Number(normalized);
+  return Number.isFinite(parsed) ? Math.round(parsed * 100) / 100 : null;
+};
+function PercentInput({
+  value,
+  onValueChange,
+  min = 0,
+  max = 100,
+  style,
+}: {
+  value: number;
+  onValueChange: (next: number) => void;
+  min?: number;
+  max?: number;
+  style?: React.CSSProperties;
+}) {
+  const [draft, setDraft] = useState<string | null>(null);
+  const wrapperStyle: React.CSSProperties = {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '4px',
+    width: style?.width || '70%',
+  };
+  const fieldStyle: React.CSSProperties = { ...style, width: '100%' };
+  return (
+    <div style={wrapperStyle}>
+      <input
+        type="text"
+        inputMode="decimal"
+        value={draft !== null ? draft : formatPercentIdle(value)}
+        onFocus={(event) => {
+          setDraft(formatPercentIdle(value));
+          requestAnimationFrame(() => event.currentTarget.select());
+        }}
+        onChange={(event) => {
+          const nextDraft = sanitizePercentDraft(event.target.value);
+          setDraft(nextDraft);
+          const parsed = parsePercentDraft(nextDraft);
+          if (parsed !== null) onValueChange(clampNumber(parsed, min, max));
+        }}
+        onBlur={() => {
+          const parsed = parsePercentDraft(draft ?? '');
+          if (parsed !== null) onValueChange(clampNumber(parsed, min, max));
+          else if (draft === '' || draft === '.') onValueChange(min);
+          setDraft(null);
+        }}
+        onKeyDown={(event) => {
+          if (event.key === 'Enter') event.currentTarget.blur();
+        }}
+        style={fieldStyle}
+      />
+      <span style={{ color: '#64748b', fontSize: '12px', fontWeight: 700, flexShrink: 0 }}>%</span>
+    </div>
+  );
+}
 const parseCurrencyInput = (rawValue: string): number => {
   const normalized = String(rawValue || '').replace(/[^0-9-]/g, '');
   if (!normalized || normalized === '-') return 0;
   const parsed = Number(normalized);
   return Number.isFinite(parsed) ? Math.round(parsed) : 0;
-};
-const parsePercentInput = (rawValue: string): number => {
-  const normalized = String(rawValue || '').replace(/[^0-9.-]/g, '');
-  if (!normalized || normalized === '-' || normalized === '.') return 0;
-  const parsed = Number(normalized);
-  return Number.isFinite(parsed) ? Math.round(parsed * 100) / 100 : 0;
 };
 
 const inputStyle: React.CSSProperties = {
@@ -212,6 +273,11 @@ const compactTableInputStyle: React.CSSProperties = {
   padding: '6px 8px',
   fontSize: '12px',
 };
+const compactPercentInputStyle: React.CSSProperties = {
+  ...inputStyle,
+  padding: '6px 7px',
+  fontSize: '11px',
+};
 
 const cardStyle: React.CSSProperties = {
   background: '#ffffff',
@@ -226,7 +292,6 @@ interface WorkingCapitalForecastTabProps {
   viewMode?: 'full' | 'inputs-only';
 }
 
-const clampNumber = (value: number, min: number, max: number): number => Math.min(max, Math.max(min, value));
 const toRoundedCurrency = (value: unknown, fallback = 0): number => {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? Math.round(parsed) : fallback;
@@ -473,6 +538,31 @@ const mapSnapshotToBuckets = (snapshot: any, totalFallback: number): AgingBucket
   }
   return { ...DEFAULT_AGING_BUCKETS, current: Math.max(0, totalFallback || 0) };
 };
+const reconcileAgingBucketsToTotal = (buckets: AgingBuckets, total: number): AgingBuckets => {
+  const target = Math.max(0, Number(total) || 0);
+  const current = Math.max(0, Number(buckets?.current) || 0);
+  const bucket30to60 = Math.max(0, Number(buckets?.bucket30to60) || 0);
+  const bucket60to90 = Math.max(0, Number(buckets?.bucket60to90) || 0);
+  const bucket90plus = Math.max(0, Number(buckets?.bucket90plus) || 0);
+  const mapped = current + bucket30to60 + bucket60to90 + bucket90plus;
+  if (target <= 0) return { ...DEFAULT_AGING_BUCKETS };
+  if (mapped <= 0) return { ...DEFAULT_AGING_BUCKETS, current: target };
+  if (mapped > target) {
+    const scale = target / mapped;
+    return {
+      current: current * scale,
+      bucket30to60: bucket30to60 * scale,
+      bucket60to90: bucket60to90 * scale,
+      bucket90plus: bucket90plus * scale,
+    };
+  }
+  return {
+    current: current + (target - mapped),
+    bucket30to60,
+    bucket60to90,
+    bucket90plus,
+  };
+};
 const normalizeScheduledExpenseRule = (raw: any, fallback: ScheduledExpenseRule): ScheduledExpenseRule => {
   const allowed: ExpenseTimingRule[] = ['weekly', 'biweekly', 'semi-monthly', 'monthly', 'monthly-eom'];
   const timing = allowed.includes(raw?.timing) ? raw.timing : fallback.timing;
@@ -632,9 +722,6 @@ export default function WorkingCapitalForecastTab({ selectedCompanyId, basisMode
   const [isSaving, setIsSaving] = useState<boolean>(false);
   const [lastSavedAt, setLastSavedAt] = useState<string | null>(null);
   const [saveMessage, setSaveMessage] = useState<string | null>(null);
-  // Free-typing draft for LOC APR. Controlled type="number" collapses "9." → 9 and
-  // "" → 0 on every keystroke; formatPercentInput also forced "0.00%" mid-edit.
-  const [locAprDraft, setLocAprDraft] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -1187,11 +1274,12 @@ export default function WorkingCapitalForecastTab({ selectedCompanyId, basisMode
         }));
       }
     }
+    const apBuckets = reconcileAgingBucketsToTotal(startingApBuckets, startingBalances.ap);
     const apCohorts: Cohort[] = [
-      { remaining: Math.max(0, startingApBuckets.current), ageWeeks: 0 },
-      { remaining: Math.max(0, startingApBuckets.bucket30to60), ageWeeks: 4 },
-      { remaining: Math.max(0, startingApBuckets.bucket60to90), ageWeeks: 8 },
-      { remaining: Math.max(0, startingApBuckets.bucket90plus), ageWeeks: 12 },
+      { remaining: Math.max(0, apBuckets.current), ageWeeks: 0 },
+      { remaining: Math.max(0, apBuckets.bucket30to60), ageWeeks: 4 },
+      { remaining: Math.max(0, apBuckets.bucket60to90), ageWeeks: 8 },
+      { remaining: Math.max(0, apBuckets.bucket90plus), ageWeeks: 12 },
     ];
 
     const salesByWeek: number[] = Array.from({ length: weeks }, (_, idx) => Math.max(0, weeklyDrivers[idx]?.sales || 0));
@@ -1400,35 +1488,11 @@ export default function WorkingCapitalForecastTab({ selectedCompanyId, basisMode
     const parsed = Number(value);
     setInputs((prev) => ({ ...prev, [key]: Number.isFinite(parsed) ? parsed : 0 }));
   };
-  const updateLocAprDraft = (rawValue: string) => {
-    // Allow clearing and partial decimals ("", "9.", ".5") without snapping to 0.
-    const cleaned = String(rawValue || '').replace(/[^0-9.]/g, '');
-    const parts = cleaned.split('.');
-    const normalized =
-      parts.length <= 1 ? cleaned : `${parts[0]}.${parts.slice(1).join('').slice(0, 4)}`;
-    setLocAprDraft(normalized);
-    if (normalized === '' || normalized === '.') return;
-    const parsed = Number(normalized);
-    if (!Number.isFinite(parsed)) return;
-    setInputs((prev) => ({
-      ...prev,
-      locAprPct: clampNumber(Math.round(parsed * 100) / 100, 0, 100),
-    }));
+  const updatePercentField = (key: keyof ForecastInputs, next: number) => {
+    setInputs((prev) => ({ ...prev, [key]: next }));
   };
-  const commitLocAprDraft = () => {
-    setLocAprDraft(null);
-    setInputs((prev) => ({
-      ...prev,
-      locAprPct: clampNumber(toRoundedPercent(prev.locAprPct, DEFAULT_INPUTS.locAprPct), 0, 100),
-    }));
-  };
-  const locAprInputValue = locAprDraft !== null ? locAprDraft : String(inputs.locAprPct ?? '');
   const updateCurrencyInput = (key: keyof ForecastInputs, value: string) => {
     const parsed = parseCurrencyInput(value);
-    setInputs((prev) => ({ ...prev, [key]: parsed }));
-  };
-  const updatePercentInput = (key: keyof ForecastInputs, value: string) => {
-    const parsed = parsePercentInput(value);
     setInputs((prev) => ({ ...prev, [key]: parsed }));
   };
   const updateStartingBalanceCurrency = (key: keyof StartingBalances, value: string) => {
@@ -1441,10 +1505,9 @@ export default function WorkingCapitalForecastTab({ selectedCompanyId, basisMode
       prev.map((week, idx) => (idx === weekIdx ? { ...week, [key]: parsed } : week))
     );
   };
-  const updateWeeklyPercentDriver = (weekIdx: number, value: string) => {
-    const parsed = Math.max(1, Math.min(99, parsePercentInput(value)));
+  const updateWeeklyPercentDriver = (weekIdx: number, next: number) => {
     setWeeklyDrivers((prev) =>
-      prev.map((week, idx) => (idx === weekIdx ? { ...week, grossMarginPct: parsed } : week))
+      prev.map((week, idx) => (idx === weekIdx ? { ...week, grossMarginPct: next } : week))
     );
   };
   const saveSettings = async () => {
@@ -1623,11 +1686,11 @@ export default function WorkingCapitalForecastTab({ selectedCompanyId, basisMode
                       />
                     </td>
                     <td style={{ padding: '4px 8px', borderBottom: '1px solid #f1f5f9' }}>
-                      <input
-                        type="text"
-                        inputMode="decimal"
-                        value={formatPercentInput(week.grossMarginPct)}
-                        onChange={(e) => updateWeeklyPercentDriver(idx, e.target.value)}
+                      <PercentInput
+                        value={week.grossMarginPct}
+                        min={1}
+                        max={99}
+                        onValueChange={(next) => updateWeeklyPercentDriver(idx, next)}
                         style={compactTableInputStyle}
                       />
                     </td>
@@ -1660,7 +1723,7 @@ export default function WorkingCapitalForecastTab({ selectedCompanyId, basisMode
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: '6px' }}>
                   <div>
                     <label style={{ display: 'block', fontSize: '10px', color: '#475569', marginBottom: '3px' }}>Credit Sales %</label>
-                    <input type="text" inputMode="decimal" value={formatPercentInput(inputs.creditSalesPct)} onChange={(e) => updatePercentInput('creditSalesPct', e.target.value)} style={{ ...inputStyle, padding: '6px 7px', fontSize: '11px' }} />
+                    <PercentInput value={inputs.creditSalesPct} onValueChange={(next) => updatePercentField('creditSalesPct', next)} style={compactPercentInputStyle} />
                   </div>
                   <div>
                     <label style={{ display: 'block', fontSize: '10px', color: '#475569', marginBottom: '3px' }}>Lookback Weeks</label>
@@ -1697,16 +1760,7 @@ export default function WorkingCapitalForecastTab({ selectedCompanyId, basisMode
                     </div>
                     <div>
                       <label style={{ display: 'block', fontSize: '11px', color: '#475569', marginBottom: '4px' }}>LOC APR (%)</label>
-                      <input
-                        type="text"
-                        inputMode="decimal"
-                        value={locAprInputValue}
-                        onChange={(e) => updateLocAprDraft(e.target.value)}
-                        onBlur={commitLocAprDraft}
-                        onFocus={() => setLocAprDraft(String(inputs.locAprPct ?? ''))}
-                        placeholder="e.g. 9.5"
-                        style={{ ...inputStyle, padding: '7px 8px', fontSize: '12px' }}
-                      />
+                      <PercentInput value={inputs.locAprPct} onValueChange={(next) => updatePercentField('locAprPct', next)} style={{ ...inputStyle, padding: '7px 8px', fontSize: '12px' }} />
                     </div>
                     {inventoryBalanceFromImportedData ? (
                       <div>
@@ -1752,38 +1806,38 @@ export default function WorkingCapitalForecastTab({ selectedCompanyId, basisMode
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '6px', marginBottom: '6px' }}>
                 <div>
                   <label style={{ display: 'block', fontSize: '10px', color: '#475569', marginBottom: '3px' }}>Current</label>
-                  <input type="text" inputMode="decimal" value={formatPercentInput(inputs.arCurrentCollectPct)} onChange={(e) => updatePercentInput('arCurrentCollectPct', e.target.value)} style={{ ...inputStyle, padding: '6px 7px', fontSize: '11px' }} />
+                  <PercentInput value={inputs.arCurrentCollectPct} onValueChange={(next) => updatePercentField('arCurrentCollectPct', next)} style={compactPercentInputStyle} />
                 </div>
                 <div>
                   <label style={{ display: 'block', fontSize: '10px', color: '#475569', marginBottom: '3px' }}>30-60</label>
-                  <input type="text" inputMode="decimal" value={formatPercentInput(inputs.ar30To60CollectPct)} onChange={(e) => updatePercentInput('ar30To60CollectPct', e.target.value)} style={{ ...inputStyle, padding: '6px 7px', fontSize: '11px' }} />
+                  <PercentInput value={inputs.ar30To60CollectPct} onValueChange={(next) => updatePercentField('ar30To60CollectPct', next)} style={compactPercentInputStyle} />
                 </div>
                 <div>
                   <label style={{ display: 'block', fontSize: '10px', color: '#475569', marginBottom: '3px' }}>60-90</label>
-                  <input type="text" inputMode="decimal" value={formatPercentInput(inputs.ar60To90CollectPct)} onChange={(e) => updatePercentInput('ar60To90CollectPct', e.target.value)} style={{ ...inputStyle, padding: '6px 7px', fontSize: '11px' }} />
+                  <PercentInput value={inputs.ar60To90CollectPct} onValueChange={(next) => updatePercentField('ar60To90CollectPct', next)} style={compactPercentInputStyle} />
                 </div>
                 <div>
                   <label style={{ display: 'block', fontSize: '10px', color: '#475569', marginBottom: '3px' }}>90+</label>
-                  <input type="text" inputMode="decimal" value={formatPercentInput(inputs.ar90PlusCollectPct)} onChange={(e) => updatePercentInput('ar90PlusCollectPct', e.target.value)} style={{ ...inputStyle, padding: '6px 7px', fontSize: '11px' }} />
+                  <PercentInput value={inputs.ar90PlusCollectPct} onValueChange={(next) => updatePercentField('ar90PlusCollectPct', next)} style={compactPercentInputStyle} />
                 </div>
               </div>
               <div style={{ fontSize: '11px', color: '#334155', fontWeight: 600, marginBottom: '4px' }}>AR Weekly Distribution Weights</div>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: '6px', marginBottom: '6px' }}>
                 <div>
                   <label style={{ display: 'block', fontSize: '10px', color: '#475569', marginBottom: '3px' }}>W1</label>
-                  <input type="text" inputMode="decimal" value={formatPercentInput(inputs.arWeek1WeightPct)} onChange={(e) => updatePercentInput('arWeek1WeightPct', e.target.value)} style={{ ...inputStyle, padding: '6px 7px', fontSize: '11px' }} />
+                  <PercentInput value={inputs.arWeek1WeightPct} onValueChange={(next) => updatePercentField('arWeek1WeightPct', next)} style={compactPercentInputStyle} />
                 </div>
                 <div>
                   <label style={{ display: 'block', fontSize: '10px', color: '#475569', marginBottom: '3px' }}>W2</label>
-                  <input type="text" inputMode="decimal" value={formatPercentInput(inputs.arWeek2WeightPct)} onChange={(e) => updatePercentInput('arWeek2WeightPct', e.target.value)} style={{ ...inputStyle, padding: '6px 7px', fontSize: '11px' }} />
+                  <PercentInput value={inputs.arWeek2WeightPct} onValueChange={(next) => updatePercentField('arWeek2WeightPct', next)} style={compactPercentInputStyle} />
                 </div>
                 <div>
                   <label style={{ display: 'block', fontSize: '10px', color: '#475569', marginBottom: '3px' }}>W3</label>
-                  <input type="text" inputMode="decimal" value={formatPercentInput(inputs.arWeek3WeightPct)} onChange={(e) => updatePercentInput('arWeek3WeightPct', e.target.value)} style={{ ...inputStyle, padding: '6px 7px', fontSize: '11px' }} />
+                  <PercentInput value={inputs.arWeek3WeightPct} onValueChange={(next) => updatePercentField('arWeek3WeightPct', next)} style={compactPercentInputStyle} />
                 </div>
                 <div>
                   <label style={{ display: 'block', fontSize: '10px', color: '#475569', marginBottom: '3px' }}>W4</label>
-                  <input type="text" inputMode="decimal" value={formatPercentInput(inputs.arWeek4WeightPct)} onChange={(e) => updatePercentInput('arWeek4WeightPct', e.target.value)} style={{ ...inputStyle, padding: '6px 7px', fontSize: '11px' }} />
+                  <PercentInput value={inputs.arWeek4WeightPct} onValueChange={(next) => updatePercentField('arWeek4WeightPct', next)} style={compactPercentInputStyle} />
                 </div>
               </div>
               <div>
@@ -1798,38 +1852,38 @@ export default function WorkingCapitalForecastTab({ selectedCompanyId, basisMode
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '6px', marginBottom: '6px' }}>
                 <div>
                   <label style={{ display: 'block', fontSize: '10px', color: '#475569', marginBottom: '3px' }}>Current</label>
-                  <input type="text" inputMode="decimal" value={formatPercentInput(inputs.apCurrentPayPct)} onChange={(e) => updatePercentInput('apCurrentPayPct', e.target.value)} style={{ ...inputStyle, padding: '6px 7px', fontSize: '11px' }} />
+                  <PercentInput value={inputs.apCurrentPayPct} onValueChange={(next) => updatePercentField('apCurrentPayPct', next)} style={compactPercentInputStyle} />
                 </div>
                 <div>
                   <label style={{ display: 'block', fontSize: '10px', color: '#475569', marginBottom: '3px' }}>30-60</label>
-                  <input type="text" inputMode="decimal" value={formatPercentInput(inputs.ap30To60PayPct)} onChange={(e) => updatePercentInput('ap30To60PayPct', e.target.value)} style={{ ...inputStyle, padding: '6px 7px', fontSize: '11px' }} />
+                  <PercentInput value={inputs.ap30To60PayPct} onValueChange={(next) => updatePercentField('ap30To60PayPct', next)} style={compactPercentInputStyle} />
                 </div>
                 <div>
                   <label style={{ display: 'block', fontSize: '10px', color: '#475569', marginBottom: '3px' }}>60-90</label>
-                  <input type="text" inputMode="decimal" value={formatPercentInput(inputs.ap60To90PayPct)} onChange={(e) => updatePercentInput('ap60To90PayPct', e.target.value)} style={{ ...inputStyle, padding: '6px 7px', fontSize: '11px' }} />
+                  <PercentInput value={inputs.ap60To90PayPct} onValueChange={(next) => updatePercentField('ap60To90PayPct', next)} style={compactPercentInputStyle} />
                 </div>
                 <div>
                   <label style={{ display: 'block', fontSize: '10px', color: '#475569', marginBottom: '3px' }}>90+</label>
-                  <input type="text" inputMode="decimal" value={formatPercentInput(inputs.ap90PlusPayPct)} onChange={(e) => updatePercentInput('ap90PlusPayPct', e.target.value)} style={{ ...inputStyle, padding: '6px 7px', fontSize: '11px' }} />
+                  <PercentInput value={inputs.ap90PlusPayPct} onValueChange={(next) => updatePercentField('ap90PlusPayPct', next)} style={compactPercentInputStyle} />
                 </div>
               </div>
               <div style={{ fontSize: '11px', color: '#334155', fontWeight: 600, marginBottom: '4px' }}>AP Weekly Distribution Weights</div>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: '6px', marginBottom: '6px' }}>
                 <div>
                   <label style={{ display: 'block', fontSize: '10px', color: '#475569', marginBottom: '3px' }}>W1</label>
-                  <input type="text" inputMode="decimal" value={formatPercentInput(inputs.apWeek1WeightPct)} onChange={(e) => updatePercentInput('apWeek1WeightPct', e.target.value)} style={{ ...inputStyle, padding: '6px 7px', fontSize: '11px' }} />
+                  <PercentInput value={inputs.apWeek1WeightPct} onValueChange={(next) => updatePercentField('apWeek1WeightPct', next)} style={compactPercentInputStyle} />
                 </div>
                 <div>
                   <label style={{ display: 'block', fontSize: '10px', color: '#475569', marginBottom: '3px' }}>W2</label>
-                  <input type="text" inputMode="decimal" value={formatPercentInput(inputs.apWeek2WeightPct)} onChange={(e) => updatePercentInput('apWeek2WeightPct', e.target.value)} style={{ ...inputStyle, padding: '6px 7px', fontSize: '11px' }} />
+                  <PercentInput value={inputs.apWeek2WeightPct} onValueChange={(next) => updatePercentField('apWeek2WeightPct', next)} style={compactPercentInputStyle} />
                 </div>
                 <div>
                   <label style={{ display: 'block', fontSize: '10px', color: '#475569', marginBottom: '3px' }}>W3</label>
-                  <input type="text" inputMode="decimal" value={formatPercentInput(inputs.apWeek3WeightPct)} onChange={(e) => updatePercentInput('apWeek3WeightPct', e.target.value)} style={{ ...inputStyle, padding: '6px 7px', fontSize: '11px' }} />
+                  <PercentInput value={inputs.apWeek3WeightPct} onValueChange={(next) => updatePercentField('apWeek3WeightPct', next)} style={compactPercentInputStyle} />
                 </div>
                 <div>
                   <label style={{ display: 'block', fontSize: '10px', color: '#475569', marginBottom: '3px' }}>W4</label>
-                  <input type="text" inputMode="decimal" value={formatPercentInput(inputs.apWeek4WeightPct)} onChange={(e) => updatePercentInput('apWeek4WeightPct', e.target.value)} style={{ ...inputStyle, padding: '6px 7px', fontSize: '11px' }} />
+                  <PercentInput value={inputs.apWeek4WeightPct} onValueChange={(next) => updatePercentField('apWeek4WeightPct', next)} style={compactPercentInputStyle} />
                 </div>
               </div>
               <div>
@@ -1855,16 +1909,7 @@ export default function WorkingCapitalForecastTab({ selectedCompanyId, basisMode
                 </div>
                 <div>
                   <label style={{ display: 'block', fontSize: '11px', color: '#475569', marginBottom: '4px' }}>LOC APR (%)</label>
-                  <input
-                    type="text"
-                    inputMode="decimal"
-                    value={locAprInputValue}
-                    onChange={(e) => updateLocAprDraft(e.target.value)}
-                    onBlur={commitLocAprDraft}
-                    onFocus={() => setLocAprDraft(String(inputs.locAprPct ?? ''))}
-                    placeholder="e.g. 9.5"
-                    style={{ ...inputStyle, padding: '7px 8px', fontSize: '12px' }}
-                  />
+                  <PercentInput value={inputs.locAprPct} onValueChange={(next) => updatePercentField('locAprPct', next)} style={{ ...inputStyle, padding: '7px 8px', fontSize: '12px' }} />
                 </div>
                 {inventoryBalanceFromImportedData ? (
                   <div>
