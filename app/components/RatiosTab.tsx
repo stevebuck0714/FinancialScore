@@ -16,6 +16,7 @@ interface RatiosTabProps {
   companyName: string;
   benchmarks: any[];
   onFormulaClick: (formula: string) => void;
+  onDescriptionClick: (ratioName: string) => void;
   initialTab?: 'all-ratios' | 'monthly-ratios';
   prefetchedMonthlyData?: MonthlyDataRow[];
 }
@@ -25,6 +26,7 @@ export default function RatiosTab({
   companyName,
   benchmarks,
   onFormulaClick,
+  onDescriptionClick,
   initialTab = 'all-ratios',
   prefetchedMonthlyData,
 }: RatiosTabProps) {
@@ -48,6 +50,13 @@ export default function RatiosTab({
   useEffect(() => {
     setKpiDashboardTab(initialTab === 'monthly-ratios' ? 'monthly-ratios' : 'all-ratios');
   }, [initialTab]);
+
+  const chartHelpProps = (ratioName: string) => ({
+    showFormulaButton: true as const,
+    onFormulaClick: () => onFormulaClick(ratioName),
+    showDescriptionButton: true as const,
+    onDescriptionClick: () => onDescriptionClick(ratioName),
+  });
 
   const trendData = React.useMemo(() => buildRatioTrendData(monthly as MonthlyDataRow[]), [monthly]);
   const recentTrendColumns = React.useMemo(
@@ -248,50 +257,50 @@ export default function RatiosTab({
           <div style={{ marginBottom: '32px' }}>
             <h2 style={{ fontSize: '24px', fontWeight: '600', color: '#1e293b', marginBottom: '16px' }}>Liquidity Ratios</h2>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '20px' }}>
-              <LineChart title="Current Ratio" data={trendData} valueKey="currentRatio" color="#10b981" compact benchmarkValue={getBenchmarkValue(benchmarks, 'Current Ratio')} formatter={(v) => v.toFixed(1)} showFormulaButton onFormulaClick={() => onFormulaClick('Current Ratio')} />
-              <LineChart title="Quick Ratio" data={trendData} valueKey="quickRatio" color="#14b8a6" compact benchmarkValue={getBenchmarkValue(benchmarks, 'Quick Ratio')} formatter={(v) => v.toFixed(1)} showFormulaButton onFormulaClick={() => onFormulaClick('Quick Ratio')} />
+              <LineChart title="Current Ratio" data={trendData} valueKey="currentRatio" color="#10b981" compact benchmarkValue={getBenchmarkValue(benchmarks, 'Current Ratio')} formatter={(v) => v.toFixed(1)} {...chartHelpProps('Current Ratio')} />
+              <LineChart title="Quick Ratio" data={trendData} valueKey="quickRatio" color="#14b8a6" compact benchmarkValue={getBenchmarkValue(benchmarks, 'Quick Ratio')} formatter={(v) => v.toFixed(1)} {...chartHelpProps('Quick Ratio')} />
             </div>
           </div>
 
           <div style={{ marginBottom: '32px' }}>
             <h2 style={{ fontSize: '24px', fontWeight: '600', color: '#1e293b', marginBottom: '16px' }}>Activity Ratios</h2>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '20px' }}>
-              <LineChart title="Inventory Turnover" data={trendData} valueKey="invTurnover" color="#f59e0b" compact benchmarkValue={getBenchmarkValue(benchmarks, 'Inventory Turnover')} formatter={(v) => v.toFixed(1)} showFormulaButton onFormulaClick={() => onFormulaClick('Inventory Turnover')} />
-              <LineChart title="Receivables Turnover" data={trendData} valueKey="arTurnover" color="#f97316" compact benchmarkValue={getBenchmarkValue(benchmarks, 'Receivables Turnover')} formatter={(v) => v.toFixed(1)} showFormulaButton onFormulaClick={() => onFormulaClick('Receivables Turnover')} />
-              <LineChart title="Payables Turnover" data={trendData} valueKey="apTurnover" color="#ef4444" compact benchmarkValue={getBenchmarkValue(benchmarks, 'Payables Turnover')} formatter={(v) => v.toFixed(1)} showFormulaButton onFormulaClick={() => onFormulaClick('Payables Turnover')} />
-              <LineChart title="Days' Inventory" data={trendData} valueKey="daysInv" color="#fbbf24" compact benchmarkValue={getBenchmarkValue(benchmarks, 'Days Inventory')} formatter={(v) => v.toFixed(0)} showFormulaButton onFormulaClick={() => onFormulaClick('Days\' Inventory')} />
-              <LineChart title="Days' Receivables" data={trendData} valueKey="daysAR" color="#fb923c" compact benchmarkValue={getBenchmarkValue(benchmarks, 'Days Receivables')} formatter={(v) => v.toFixed(0)} showFormulaButton onFormulaClick={() => onFormulaClick('Days\' Receivables')} />
-              <LineChart title="Days' Payables" data={trendData} valueKey="daysAP" color="#f87171" compact benchmarkValue={getBenchmarkValue(benchmarks, 'Days Payables')} formatter={(v) => v.toFixed(0)} showFormulaButton onFormulaClick={() => onFormulaClick('Days\' Payables')} />
-              <LineChart title="Sales/Working Capital" data={trendData} valueKey="salesWC" color="#06b6d4" compact benchmarkValue={getBenchmarkValue(benchmarks, 'Sales/Working Capital')} formatter={(v) => v.toFixed(1)} showFormulaButton onFormulaClick={() => onFormulaClick('Sales/Working Capital')} />
+              <LineChart title="Inventory Turnover" data={trendData} valueKey="invTurnover" color="#f59e0b" compact benchmarkValue={getBenchmarkValue(benchmarks, 'Inventory Turnover')} formatter={(v) => v.toFixed(1)} {...chartHelpProps('Inventory Turnover')} />
+              <LineChart title="Receivables Turnover" data={trendData} valueKey="arTurnover" color="#f97316" compact benchmarkValue={getBenchmarkValue(benchmarks, 'Receivables Turnover')} formatter={(v) => v.toFixed(1)} {...chartHelpProps('Receivables Turnover')} />
+              <LineChart title="Payables Turnover" data={trendData} valueKey="apTurnover" color="#ef4444" compact benchmarkValue={getBenchmarkValue(benchmarks, 'Payables Turnover')} formatter={(v) => v.toFixed(1)} {...chartHelpProps('Payables Turnover')} />
+              <LineChart title="Days' Inventory" data={trendData} valueKey="daysInv" color="#fbbf24" compact benchmarkValue={getBenchmarkValue(benchmarks, 'Days Inventory')} formatter={(v) => v.toFixed(0)} {...chartHelpProps("Days' Inventory")} />
+              <LineChart title="Days' Receivables" data={trendData} valueKey="daysAR" color="#fb923c" compact benchmarkValue={getBenchmarkValue(benchmarks, 'Days Receivables')} formatter={(v) => v.toFixed(0)} {...chartHelpProps("Days' Receivables")} />
+              <LineChart title="Days' Payables" data={trendData} valueKey="daysAP" color="#f87171" compact benchmarkValue={getBenchmarkValue(benchmarks, 'Days Payables')} formatter={(v) => v.toFixed(0)} {...chartHelpProps("Days' Payables")} />
+              <LineChart title="Sales/Working Capital" data={trendData} valueKey="salesWC" color="#06b6d4" compact benchmarkValue={getBenchmarkValue(benchmarks, 'Sales/Working Capital')} formatter={(v) => v.toFixed(1)} {...chartHelpProps('Sales/Working Capital')} />
             </div>
           </div>
 
           <div style={{ marginBottom: '32px' }}>
             <h2 style={{ fontSize: '24px', fontWeight: '600', color: '#1e293b', marginBottom: '16px' }}>Coverage Ratios</h2>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '20px' }}>
-              <LineChart title="Interest Coverage" data={trendData} valueKey="interestCov" color="#8b5cf6" compact benchmarkValue={getBenchmarkValue(benchmarks, 'Interest Coverage')} formatter={(v) => v.toFixed(1)} showFormulaButton onFormulaClick={() => onFormulaClick('Interest Coverage')} />
-              <LineChart title="Debt Service Coverage" data={trendData} valueKey="debtSvcCov" color="#a78bfa" compact benchmarkValue={getBenchmarkValue(benchmarks, 'Debt Service Coverage')} formatter={(v) => v.toFixed(1)} showFormulaButton onFormulaClick={() => onFormulaClick('Debt Service Coverage')} />
-              <LineChart title="Cash Flow to Debt" data={trendData} valueKey="cfToDebt" color="#c4b5fd" compact benchmarkValue={getBenchmarkValue(benchmarks, 'Cash Flow to Debt')} formatter={(v) => v.toFixed(1)} showFormulaButton onFormulaClick={() => onFormulaClick('Cash Flow to Debt')} />
+              <LineChart title="Interest Coverage" data={trendData} valueKey="interestCov" color="#8b5cf6" compact benchmarkValue={getBenchmarkValue(benchmarks, 'Interest Coverage')} formatter={(v) => v.toFixed(1)} {...chartHelpProps('Interest Coverage')} />
+              <LineChart title="Debt Service Coverage" data={trendData} valueKey="debtSvcCov" color="#a78bfa" compact benchmarkValue={getBenchmarkValue(benchmarks, 'Debt Service Coverage')} formatter={(v) => v.toFixed(1)} {...chartHelpProps('Debt Service Coverage')} />
+              <LineChart title="Cash Flow to Debt" data={trendData} valueKey="cfToDebt" color="#c4b5fd" compact benchmarkValue={getBenchmarkValue(benchmarks, 'Cash Flow to Debt')} formatter={(v) => v.toFixed(1)} {...chartHelpProps('Cash Flow to Debt')} />
             </div>
           </div>
 
           <div style={{ marginBottom: '32px' }}>
             <h2 style={{ fontSize: '24px', fontWeight: '600', color: '#1e293b', marginBottom: '16px' }}>Leverage Ratios</h2>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '20px' }}>
-              <LineChart title="Debt/Net Worth" data={trendData} valueKey="debtToNW" color="#ec4899" compact benchmarkValue={getBenchmarkValue(benchmarks, 'Debt/Net Worth')} formatter={(v) => v.toFixed(1)} showFormulaButton onFormulaClick={() => onFormulaClick('Debt/Net Worth')} />
-              <LineChart title="Fixed Assets/Net Worth" data={trendData} valueKey="fixedToNW" color="#f472b6" compact benchmarkValue={getBenchmarkValue(benchmarks, 'Fixed Assets/Net Worth')} formatter={(v) => v.toFixed(1)} showFormulaButton onFormulaClick={() => onFormulaClick('Fixed Assets/Net Worth')} />
-              <LineChart title="Leverage Ratio" data={trendData} valueKey="leverage" color="#f9a8d4" compact benchmarkValue={getBenchmarkValue(benchmarks, 'Leverage Ratio')} formatter={(v) => v.toFixed(1)} showFormulaButton onFormulaClick={() => onFormulaClick('Leverage Ratio')} />
+              <LineChart title="Debt/Net Worth" data={trendData} valueKey="debtToNW" color="#ec4899" compact benchmarkValue={getBenchmarkValue(benchmarks, 'Debt/Net Worth')} formatter={(v) => v.toFixed(1)} {...chartHelpProps('Debt/Net Worth')} />
+              <LineChart title="Fixed Assets/Net Worth" data={trendData} valueKey="fixedToNW" color="#f472b6" compact benchmarkValue={getBenchmarkValue(benchmarks, 'Fixed Assets/Net Worth')} formatter={(v) => v.toFixed(1)} {...chartHelpProps('Fixed Assets/Net Worth')} />
+              <LineChart title="Leverage Ratio" data={trendData} valueKey="leverage" color="#f9a8d4" compact benchmarkValue={getBenchmarkValue(benchmarks, 'Leverage Ratio')} formatter={(v) => v.toFixed(1)} {...chartHelpProps('Leverage Ratio')} />
             </div>
           </div>
 
           <div style={{ marginBottom: '32px' }}>
             <h2 style={{ fontSize: '24px', fontWeight: '600', color: '#1e293b', marginBottom: '16px' }}>Operating Ratios</h2>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '20px' }}>
-              <LineChart title="Total Asset Turnover" data={trendData} valueKey="totalAssetTO" color="#3b82f6" compact benchmarkValue={getBenchmarkValue(benchmarks, 'Total Asset Turnover')} formatter={(v) => v.toFixed(1)} showFormulaButton onFormulaClick={() => onFormulaClick('Total Asset Turnover')} />
-              <LineChart title="Return on Equity (ROE)" data={trendData} valueKey="roe" color="#60a5fa" compact benchmarkValue={getBenchmarkValue(benchmarks, 'ROE')} formatter={(v) => (v * 100).toFixed(1) + '%'} showFormulaButton onFormulaClick={() => onFormulaClick('Return on Equity (ROE)')} />
-              <LineChart title="Return on Assets (ROA)" data={trendData} valueKey="roa" color="#93c5fd" compact benchmarkValue={getBenchmarkValue(benchmarks, 'ROA')} formatter={(v) => (v * 100).toFixed(1) + '%'} showFormulaButton onFormulaClick={() => onFormulaClick('Return on Assets (ROA)')} />
-              <LineChart title="EBITDA Margin" data={trendData} valueKey="ebitdaMargin" color="#2563eb" compact benchmarkValue={(() => { const bm = getBenchmarkValue(benchmarks, 'EBITDA/Revenue'); return bm !== null ? bm / 100 : null; })()} formatter={(v) => (v * 100).toFixed(1) + '%'} showFormulaButton onFormulaClick={() => onFormulaClick('EBITDA Margin')} />
-              <LineChart title="EBIT Margin" data={trendData} valueKey="ebitMargin" color="#1e40af" compact benchmarkValue={(() => { const bm = getBenchmarkValue(benchmarks, 'EBIT/Revenue'); return bm !== null ? bm / 100 : null; })()} formatter={(v) => (v * 100).toFixed(1) + '%'} showFormulaButton onFormulaClick={() => onFormulaClick('EBIT Margin')} />
+              <LineChart title="Total Asset Turnover" data={trendData} valueKey="totalAssetTO" color="#3b82f6" compact benchmarkValue={getBenchmarkValue(benchmarks, 'Total Asset Turnover')} formatter={(v) => v.toFixed(1)} {...chartHelpProps('Total Asset Turnover')} />
+              <LineChart title="Return on Equity (ROE)" data={trendData} valueKey="roe" color="#60a5fa" compact benchmarkValue={getBenchmarkValue(benchmarks, 'ROE')} formatter={(v) => (v * 100).toFixed(1) + '%'} {...chartHelpProps('Return on Equity (ROE)')} />
+              <LineChart title="Return on Assets (ROA)" data={trendData} valueKey="roa" color="#93c5fd" compact benchmarkValue={getBenchmarkValue(benchmarks, 'ROA')} formatter={(v) => (v * 100).toFixed(1) + '%'} {...chartHelpProps('Return on Assets (ROA)')} />
+              <LineChart title="EBITDA Margin" data={trendData} valueKey="ebitdaMargin" color="#2563eb" compact benchmarkValue={(() => { const bm = getBenchmarkValue(benchmarks, 'EBITDA/Revenue'); return bm !== null ? bm / 100 : null; })()} formatter={(v) => (v * 100).toFixed(1) + '%'} {...chartHelpProps('EBITDA Margin')} />
+              <LineChart title="EBIT Margin" data={trendData} valueKey="ebitMargin" color="#1e40af" compact benchmarkValue={(() => { const bm = getBenchmarkValue(benchmarks, 'EBIT/Revenue'); return bm !== null ? bm / 100 : null; })()} formatter={(v) => (v * 100).toFixed(1) + '%'} {...chartHelpProps('EBIT Margin')} />
             </div>
           </div>
         </>

@@ -18,6 +18,7 @@ import { exportDataReviewToExcel, exportMonthlyRatiosToExcel } from './utils/exc
 import type { Mappings, NormalRow, MonthlyDataRow, Company, CompanyProfile, AssessmentResponses, AssessmentNotes, AssessmentRecord, Consultant, User, FinancialDataRecord, LOBData } from './types';
 import { US_STATES, KPI_TO_BENCHMARK_MAP } from './constants';
 import { KPI_FORMULAS } from './constants/kpi-formulas';
+import { KPI_DESCRIPTIONS } from './constants/kpi-descriptions';
 import { getFieldDisplayName } from '@/lib/constants/field-display-names';
 import { addMonthsClamped, billingIntervalMonths } from '@/lib/billing/dateMath';
 import { resolveCompanyIndustrySectorCategory } from '@/lib/industry-sector-resolver';
@@ -3997,6 +3998,7 @@ function FinancialScorePage() {
   
   // State - Formula Popup
   const [showFormulaPopup, setShowFormulaPopup] = useState<string | null>(null);
+  const [showDescriptionPopup, setShowDescriptionPopup] = useState<string | null>(null);
 
   // State - AI Mapping
   const [aiMappings, setAiMappings] = useState<any[]>([]);
@@ -20128,6 +20130,104 @@ function FinancialScorePage() {
         </div>
       )}
 
+      {showDescriptionPopup && KPI_DESCRIPTIONS[showDescriptionPopup] && (
+        <div
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            background: 'rgba(0, 0, 0, 0.5)',
+            zIndex: 9999,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '20px'
+          }}
+          onClick={() => setShowDescriptionPopup(null)}
+        >
+          <div
+            style={{
+              background: 'white',
+              borderRadius: '16px',
+              padding: '32px',
+              maxWidth: '640px',
+              width: '100%',
+              boxShadow: '0 20px 60px rgba(0,0,0,0.3)',
+              maxHeight: '90vh',
+              overflowY: 'auto'
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '12px' }}>
+              <h2 style={{ fontSize: '24px', fontWeight: '700', color: '#1e293b', margin: 0 }}>{showDescriptionPopup}</h2>
+              <button
+                onClick={() => setShowDescriptionPopup(null)}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  fontSize: '24px',
+                  cursor: 'pointer',
+                  color: '#94a3b8',
+                  padding: '0',
+                  lineHeight: 1
+                }}
+              >
+                ×
+              </button>
+            </div>
+
+            <div style={{ marginBottom: KPI_DESCRIPTIONS[showDescriptionPopup].typicalFormula || KPI_DESCRIPTIONS[showDescriptionPopup].caution ? '20px' : 0 }}>
+              <h3 style={{ fontSize: '14px', fontWeight: '600', color: '#64748b', marginBottom: '8px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Description</h3>
+              <p style={{ fontSize: '15px', lineHeight: '1.7', color: '#475569', margin: 0 }}>
+                {KPI_DESCRIPTIONS[showDescriptionPopup].definition}
+              </p>
+            </div>
+
+            {KPI_DESCRIPTIONS[showDescriptionPopup].typicalFormula && (
+              <div style={{ marginBottom: KPI_DESCRIPTIONS[showDescriptionPopup].caution ? '20px' : 0 }}>
+                <h3 style={{ fontSize: '14px', fontWeight: '600', color: '#64748b', marginBottom: '8px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Typical Formula</h3>
+                <p style={{ fontSize: '15px', lineHeight: '1.7', color: '#475569', margin: 0 }}>
+                  {KPI_DESCRIPTIONS[showDescriptionPopup].typicalFormula}
+                </p>
+              </div>
+            )}
+
+            {KPI_DESCRIPTIONS[showDescriptionPopup].caution && (
+              <div>
+                <h3 style={{ fontSize: '14px', fontWeight: '600', color: '#64748b', marginBottom: '8px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Caution</h3>
+                <p style={{ fontSize: '15px', lineHeight: '1.7', color: '#475569', margin: 0 }}>
+                  {KPI_DESCRIPTIONS[showDescriptionPopup].caution}
+                </p>
+              </div>
+            )}
+
+            <div style={{ marginTop: '24px', paddingTop: '20px', borderTop: '1px solid #e2e8f0' }}>
+              <button
+                onClick={() => setShowDescriptionPopup(null)}
+                style={{
+                  width: '100%',
+                  padding: '12px',
+                  background: '#0369a1',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '8px',
+                  fontSize: '16px',
+                  fontWeight: '600',
+                  cursor: 'pointer',
+                  transition: 'all 0.2s'
+                }}
+                onMouseOver={(e) => e.currentTarget.style.background = '#075985'}
+                onMouseOut={(e) => e.currentTarget.style.background = '#0369a1'}
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Custom Dashboard View */}
       {FINANCIAL_REPORTING_TABS.some((tab) => tab.id === currentView) && selectedCompanyId && hasCompanySectionAccess('financial-reports') && (
         <div style={{ maxWidth: '1600px', margin: '0 auto', padding: '16px 24px 0' }}>
@@ -20197,6 +20297,7 @@ function FinancialScorePage() {
           companyName={companyName || ''}
           benchmarks={benchmarks}
           onFormulaClick={(formula) => setShowFormulaPopup(formula)}
+          onDescriptionClick={(ratioName) => setShowDescriptionPopup(ratioName)}
           initialTab={kpiDashboardTab}
           prefetchedMonthlyData={monthly as any}
         />

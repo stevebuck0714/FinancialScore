@@ -52,7 +52,73 @@ function niceYScale(dataMin: number, dataMax: number): { yMin: number; yMax: num
 }
 
 // LineChart Component
-export function LineChart({ title, data, valueKey, color, yMax, showTable, compact, formatter, benchmarkValue, showFormulaButton, onFormulaClick, labelFormat, goalLineData, showTrendLine }: { 
+function ChartHeaderLink({
+  label,
+  title,
+  onClick,
+  variant,
+}: {
+  label: string;
+  title: string;
+  onClick: () => void;
+  variant: 'description' | 'formula';
+}) {
+  const palette =
+    variant === 'formula'
+      ? {
+          background: '#ede9fe',
+          border: '#c4b5fd',
+          color: '#667eea',
+          hoverBackground: '#ddd6fe',
+          hoverBorder: '#a78bfa',
+          hoverColor: '#4f46e5',
+        }
+      : {
+          background: '#e0f2fe',
+          border: '#7dd3fc',
+          color: '#0369a1',
+          hoverBackground: '#bae6fd',
+          hoverBorder: '#38bdf8',
+          hoverColor: '#075985',
+        };
+
+  return (
+    <button
+      onClick={onClick}
+      style={{
+        background: palette.background,
+        border: `1px solid ${palette.border}`,
+        borderRadius: '6px',
+        cursor: 'pointer',
+        padding: '6px 12px',
+        color: palette.color,
+        fontSize: '13px',
+        fontWeight: '600',
+        display: 'flex',
+        alignItems: 'center',
+        gap: '6px',
+        transition: 'all 0.2s',
+        boxShadow: '0 1px 2px rgba(0,0,0,0.05)',
+        whiteSpace: 'nowrap',
+      }}
+      onMouseOver={(e) => {
+        e.currentTarget.style.background = palette.hoverBackground;
+        e.currentTarget.style.borderColor = palette.hoverBorder;
+        e.currentTarget.style.color = palette.hoverColor;
+      }}
+      onMouseOut={(e) => {
+        e.currentTarget.style.background = palette.background;
+        e.currentTarget.style.borderColor = palette.border;
+        e.currentTarget.style.color = palette.color;
+      }}
+      title={title}
+    >
+      <span style={{ fontSize: '16px' }}>ℹ️</span> {label}
+    </button>
+  );
+}
+
+export function LineChart({ title, data, valueKey, color, yMax, showTable, compact, formatter, benchmarkValue, showFormulaButton, onFormulaClick, showDescriptionButton, onDescriptionClick, labelFormat, goalLineData, showTrendLine }: { 
   title: string; 
   data: Array<any>;
   valueKey?: string;
@@ -64,6 +130,8 @@ export function LineChart({ title, data, valueKey, color, yMax, showTable, compa
   benchmarkValue?: number | null;
   showFormulaButton?: boolean;
   onFormulaClick?: () => void;
+  showDescriptionButton?: boolean;
+  onDescriptionClick?: () => void;
   labelFormat?: 'monthly' | 'quarterly' | 'semi-annual' | 'm-yy-adaptive';
   goalLineData?: number[];
   showTrendLine?: boolean;
@@ -288,41 +356,28 @@ export function LineChart({ title, data, valueKey, color, yMax, showTable, compa
 
   return (
     <div style={{ background: '#f8fafc', borderRadius: '12px', padding: '20px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', position: 'relative', minWidth: 0, width: '100%', maxWidth: '100%', boxSizing: 'border-box' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
-        <h3 style={{ fontSize: '16px', fontWeight: '700', color: '#1e293b', margin: 0 }}>{title}</h3>
-        {showFormulaButton && onFormulaClick && (
-          <button
-            onClick={onFormulaClick}
-            style={{
-              background: '#ede9fe',
-              border: '1px solid #c4b5fd',
-              borderRadius: '6px',
-              cursor: 'pointer',
-              padding: '6px 12px',
-              color: '#667eea',
-              fontSize: '13px',
-              fontWeight: '600',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '6px',
-              transition: 'all 0.2s',
-              boxShadow: '0 1px 2px rgba(0,0,0,0.05)'
-            }}
-            onMouseOver={(e) => {
-              e.currentTarget.style.background = '#ddd6fe';
-              e.currentTarget.style.borderColor = '#a78bfa';
-              e.currentTarget.style.color = '#4f46e5';
-            }}
-            onMouseOut={(e) => {
-              e.currentTarget.style.background = '#ede9fe';
-              e.currentTarget.style.borderColor = '#c4b5fd';
-              e.currentTarget.style.color = '#667eea';
-            }}
-            title="Click to view formula"
-          >
-            <span style={{ fontSize: '16px' }}>ℹ️</span> Formula
-          </button>
-        )}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px', gap: '8px' }}>
+        <h3 style={{ fontSize: '16px', fontWeight: '700', color: '#1e293b', margin: 0, minWidth: 0 }}>{title}</h3>
+        {(showDescriptionButton && onDescriptionClick) || (showFormulaButton && onFormulaClick) ? (
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
+            {showDescriptionButton && onDescriptionClick && (
+              <ChartHeaderLink
+                label="Description"
+                title="Click to view description"
+                onClick={onDescriptionClick}
+                variant="description"
+              />
+            )}
+            {showFormulaButton && onFormulaClick && (
+              <ChartHeaderLink
+                label="Formula"
+                title="Click to view formula"
+                onClick={onFormulaClick}
+                variant="formula"
+              />
+            )}
+          </div>
+        ) : null}
       </div>
       <svg width="100%" height={height} style={{ maxWidth: '100%', height: 'auto', marginBottom: '5px', display: 'block' }} viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="xMidYMid meet">
         {(() => {
