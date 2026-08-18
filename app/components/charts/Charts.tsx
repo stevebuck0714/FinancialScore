@@ -287,7 +287,7 @@ export function LineChart({ title, data, valueKey, color, yMax, showTable, compa
   const adaptiveLabelIndices = getAdaptiveLabelIndices();
 
   return (
-    <div style={{ background: '#f8fafc', borderRadius: '12px', padding: '20px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', position: 'relative' }}>
+    <div style={{ background: '#f8fafc', borderRadius: '12px', padding: '20px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', position: 'relative', minWidth: 0, width: '100%', maxWidth: '100%', boxSizing: 'border-box' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
         <h3 style={{ fontSize: '16px', fontWeight: '700', color: '#1e293b', margin: 0 }}>{title}</h3>
         {showFormulaButton && onFormulaClick && (
@@ -324,7 +324,7 @@ export function LineChart({ title, data, valueKey, color, yMax, showTable, compa
           </button>
         )}
       </div>
-      <svg width={width} height={height} style={{ maxWidth: '100%', marginBottom: '5px' }} viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="xMidYMid meet">
+      <svg width="100%" height={height} style={{ maxWidth: '100%', height: 'auto', marginBottom: '5px', display: 'block' }} viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="xMidYMid meet">
         {(() => {
           const gridValues: number[] = [];
           const step = Number.isFinite(yStep) && yStep > 0 ? yStep : range / 4;
@@ -531,7 +531,7 @@ export function LineChart({ title, data, valueKey, color, yMax, showTable, compa
       </div>
       
       {showTable && (
-        <div style={{ marginTop: '16px', overflowX: 'auto', maxWidth: '580px' }}>
+        <div style={{ marginTop: '16px', overflowX: 'auto', maxWidth: '100%' }}>
           <table style={{ width: 'max-content', fontSize: '10px', borderCollapse: 'collapse' }}>
             <tbody>
               <tr style={{ background: '#f1f5f9', borderBottom: '2px solid #cbd5e1' }}>

@@ -20243,6 +20243,7 @@ function FinancialScorePage() {
           setSelectedExpenseItems={setSelectedExpenseItems}
           selectedItemTrends={selectedTrendItems}
           setSelectedItemTrends={setSelectedTrendItems}
+          industrySectorCategory={effectiveCompanySectorCategory}
         />
       )}
 

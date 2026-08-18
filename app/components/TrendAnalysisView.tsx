@@ -1,11 +1,21 @@
 'use client';
 
 import React, { useState } from 'react';
-import dynamic from 'next/dynamic';
 import { LineChart } from './charts/Charts';
 import { useMasterData, masterDataStore } from '@/lib/master-data-store';
 import { useCompanyMoneyFormatter } from '@/app/hooks/useCompanyMoneyFormatter';
 import PageCurrencyBadge from './PageCurrencyBadge';
+import { getCogsTargetFieldOptions } from '@/lib/constants/sector-target-fields';
+import { getFieldDisplayName } from '@/lib/constants/field-display-names';
+
+const LEGACY_COGS_KEYS = [
+  'cogsPayroll',
+  'cogsOwnerPay',
+  'cogsContractors',
+  'cogsMaterials',
+  'cogsCommissions',
+  'cogsOther',
+];
 
 interface TrendAnalysisViewProps {
   selectedCompanyId: string;
@@ -16,6 +26,7 @@ interface TrendAnalysisViewProps {
   setSelectedExpenseItems: (items: string[]) => void;
   selectedItemTrends: string[];
   setSelectedItemTrends: (items: string[]) => void;
+  industrySectorCategory?: string | null;
 }
 
 export default function TrendAnalysisView({
@@ -26,10 +37,12 @@ export default function TrendAnalysisView({
   selectedExpenseItems,
   setSelectedExpenseItems,
   selectedItemTrends,
-  setSelectedItemTrends
+  setSelectedItemTrends,
+  industrySectorCategory = null,
 }: TrendAnalysisViewProps) {
   const money = useCompanyMoneyFormatter(selectedCompanyId);
-  const [trendAnalysisTab, setTrendAnalysisTab] = useState<'item-trends' | 'expense-analysis'>('item-trends');
+  const [trendAnalysisTab, setTrendAnalysisTab] = useState<'item-trends' | 'expense-analysis' | 'cogs-analysis'>('item-trends');
+  const [selectedCogsItems, setSelectedCogsItems] = useState<string[]>([]);
   const normalizeMonthLabel = (primaryMonthValue: unknown, fallbackMonthValue?: unknown): string => {
     const formatDate = (value: unknown): string | null => {
       if (!value) return null;
@@ -75,6 +88,60 @@ export default function TrendAnalysisView({
     const parsed = Number(value);
     return Number.isFinite(parsed) ? parsed : 0;
   };
+
+  const getCogsAccountAmount = (m: any, key: string): number => {
+    if (key === 'cogsTotal') return toNumber(m?.cogsTotal);
+    const direct = toNumber(m?.[key]);
+    if (Math.abs(direct) > 0.0001) return direct;
+    return toNumber(m?.cogsBreakdown?.[key]);
+  };
+
+  const cogsAccounts = React.useMemo(() => {
+    const accounts: Array<{ key: string; label: string }> = [];
+    const seen = new Set<string>();
+    const addAccount = (key: string, label?: string) => {
+      if (!key || key === 'cogsBreakdown' || key === 'cogs_total') return;
+      if (seen.has(key)) return;
+      seen.add(key);
+      accounts.push({
+        key,
+        label: label || getFieldDisplayName(key),
+      });
+    };
+
+    getCogsTargetFieldOptions(industrySectorCategory).forEach((option) => {
+      addAccount(option.value, option.label);
+    });
+
+    monthly.forEach((m) => {
+      Object.keys(m || {}).forEach((key) => {
+        if (key === 'cogsTotal' || key === 'cogsBreakdown') return;
+        const isSector = key.startsWith('cogs_');
+        const isLegacy = LEGACY_COGS_KEYS.includes(key);
+        if ((isSector || isLegacy) && Math.abs(toNumber((m as any)[key])) > 0.0001) {
+          addAccount(key);
+        }
+      });
+      const breakdown = (m as any)?.cogsBreakdown;
+      if (breakdown && typeof breakdown === 'object') {
+        Object.entries(breakdown).forEach(([key, value]) => {
+          if (Math.abs(toNumber(value)) > 0.0001) addAccount(key);
+        });
+      }
+    });
+
+    addAccount('cogsTotal', 'Total COGS');
+    return accounts;
+  }, [monthly, industrySectorCategory]);
+
+  React.useEffect(() => {
+    setSelectedCogsItems((prev) => {
+      const available = cogsAccounts.map((account) => account.key);
+      if (prev.length === 0) return available;
+      const kept = prev.filter((key) => available.includes(key));
+      return kept.length > 0 ? kept : available;
+    });
+  }, [cogsAccounts]);
 
   const hasLoadedFinancialData = (m: any): boolean => {
     const keys = [
@@ -139,7 +206,7 @@ export default function TrendAnalysisView({
   }, [selectedCompanyId]);
 
   return (
-    <div style={{ maxWidth: '100%', padding: '32px 32px 32px 16px' }}>
+    <div style={{ maxWidth: '100%', minWidth: 0, padding: '24px 16px 32px 16px', boxSizing: 'border-box' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '32px' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
           <h1 style={{ fontSize: '32px', fontWeight: '700', color: '#1e293b', margin: 0 }}>Trend Analysis</h1>
@@ -183,6 +250,23 @@ export default function TrendAnalysisView({
         >
           Expense Analysis
         </button>
+        <button
+          onClick={() => setTrendAnalysisTab('cogs-analysis')}
+          style={{
+            padding: '12px 24px',
+            background: 'none',
+            border: 'none',
+            fontSize: '16px',
+            fontWeight: '600',
+            color: trendAnalysisTab === 'cogs-analysis' ? '#2751d0' : '#64748b',
+            cursor: 'pointer',
+            borderBottom: trendAnalysisTab === 'cogs-analysis' ? '3px solid #2751d0' : '3px solid transparent',
+            marginBottom: '-2px',
+            transition: 'all 0.2s'
+          }}
+        >
+          COGS Analysis
+        </button>
       </div>
 
       {/* Item Trends Tab */}
@@ -218,7 +302,7 @@ export default function TrendAnalysisView({
             </div>
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '24px' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '16px', width: '100%' }}>
             {/* Dynamic financial metric charts */}
             {selectedItemTrends.map((metric, index) => {
               const getMetricData = (m: any) => {
@@ -340,7 +424,7 @@ export default function TrendAnalysisView({
             </div>
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '24px' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '16px', width: '100%' }}>
             {/* Dynamic expense category charts */}
             {extendedExpenseCategories
               .filter(category => selectedExpenseItems.includes(category.key))
@@ -373,6 +457,65 @@ export default function TrendAnalysisView({
                     labelFormat="m-yy-adaptive"
                     formatter={(val: number) => `${val.toFixed(1)}%`}
                     goalLineData={expenseGoals[category.key] ? monthly.map(() => expenseGoals[category.key]) : undefined}
+                  />
+                );
+              })}
+          </div>
+        </div>
+      )}
+
+      {trendAnalysisTab === 'cogs-analysis' && (
+        <div style={{ background: 'white', borderRadius: '12px', padding: '24px', marginBottom: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
+          <div style={{ marginBottom: '24px' }}>
+            <h3 style={{ fontSize: '18px', fontWeight: '600', color: '#1e293b', marginBottom: '16px' }}>Select COGS Accounts to Analyze</h3>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginBottom: '16px' }}>
+              {cogsAccounts.map((account) => (
+                <label key={account.key} style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer' }}>
+                  <input
+                    type="checkbox"
+                    checked={selectedCogsItems.includes(account.key)}
+                    onChange={(e) => {
+                      if (e.target.checked) {
+                        setSelectedCogsItems([...selectedCogsItems, account.key]);
+                      } else {
+                        setSelectedCogsItems(selectedCogsItems.filter((item) => item !== account.key));
+                      }
+                    }}
+                    style={{ cursor: 'pointer' }}
+                  />
+                  <span style={{ fontSize: '14px', color: '#374151' }}>
+                    {account.label}
+                  </span>
+                </label>
+              ))}
+            </div>
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '16px', width: '100%' }}>
+            {cogsAccounts
+              .filter((account) => selectedCogsItems.includes(account.key))
+              .map((account, index) => {
+                const colors = [
+                  '#0f766e', '#0369a1', '#7c3aed', '#c2410c', '#be185d',
+                  '#15803d', '#1d4ed8', '#a16207', '#6d28d9', '#b91c1c',
+                  '#0e7490', '#4f46e5'
+                ];
+                const color = colors[index % colors.length];
+                return (
+                  <LineChart
+                    key={account.key}
+                    title={account.label}
+                    data={monthly
+                      .map((m) => ({
+                        month: normalizeMonthLabel((m as any).monthDate || (m as any).date, m.month),
+                        value: dataStartIndex >= 0 && hasLoadedFinancialData(m) ? getCogsAccountAmount(m, account.key) : null
+                      }))
+                      .filter((point) => point.month)}
+                    color={color}
+                    compact
+                    showTable={true}
+                    labelFormat="m-yy-adaptive"
+                    formatter={(val: number) => money.fmtCompact(val)}
                   />
                 );
               })}
