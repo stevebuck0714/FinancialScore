@@ -426,9 +426,10 @@ function aggregateForCompanyRollup(
         (acc) => {
           acc.amountCurrency = Number(acc.amountCurrency || 0) + pickNumber(record, ['amountCurrency', 'billAmount', 'CUAM']);
           acc.amountHome = Number(acc.amountHome || 0) + pickNumber(record, ['amountHome', 'homeAmount', 'ACAM']);
-          acc.amountDueHome =
-            Number(acc.amountDueHome || 0) +
-            pickNumber(record, ['amountDueHome', 'amountDue', 'openAmount', 'openBalance', 'balance', 'Balance', 'DerAmtBal', 'UbOpening']);
+          const trueOpen = deriveApTrueOpenBalance(record);
+          if (trueOpen !== null) {
+            acc.amountDueHome = Number(acc.amountDueHome || 0) + trueOpen;
+          }
           acc.current = Number(acc.current || 0) + pickNumber(record, ['current', 'bucket0']);
           acc.days1to30 = Number(acc.days1to30 || 0) + pickNumber(record, ['days1to30', 'bucket1']);
           acc.days31to60 = Number(acc.days31to60 || 0) + pickNumber(record, ['days31to60', 'bucket2']);
@@ -858,6 +859,28 @@ function buildSlCustDrftsAsOfFilter(window?: SyncWindow, site?: string): string 
   if (!window) return null;
   const end = formatCsiCompactDateLiteral(window.endDate);
   const clauses = [`(InvDate <= '${end}')`];
+  return `(${clauses.join(' and ')})`;
+}
+
+/** As-of window for AP open-item / collectible pulls (mirrors SLArtrans as-of). */
+function buildSlAptrxAsOfFilter(window?: SyncWindow, site?: string): string | null {
+  if (!window) return null;
+  const AP_OPEN_COLLECTIBLE_LOOKBACK_DAYS = 150;
+  const collectibleStartDate = new Date(
+    Date.UTC(
+      window.endDate.getUTCFullYear(),
+      window.endDate.getUTCMonth(),
+      window.endDate.getUTCDate() - AP_OPEN_COLLECTIBLE_LOOKBACK_DAYS
+    )
+  );
+  const collectibleStart = formatCsiCompactDateLiteral(collectibleStartDate);
+  const end = formatCsiCompactDateLiteral(window.endDate);
+  const clauses = [`(RecordDate <= '${end}')`, `(RecordDate >= '${collectibleStart}')`];
+  const siteValue = String(site || '').trim();
+  if (siteValue) {
+    const safeSite = siteValue.replace(/'/g, "''");
+    clauses.unshift(`Site='${safeSite}'`);
+  }
   return `(${clauses.join(' and ')})`;
 }
 
@@ -1346,13 +1369,22 @@ function applyCsiSourceWindowAndSort(
     const next = params.toString();
     return { endpointPath: next ? `${path}?${next}` : path, applied: true, allowRetryWithoutSourceWindow: false };
   }
-  if (moduleType === 'ap' && ido === 'SLAPTRX') {
+  if (
+    moduleType === 'ap' &&
+    (ido === 'SLAPTRX' || ido === 'SLAPTRXP' || ido === 'SLAPTRXPS' || ido === 'SLAPTRXS')
+  ) {
     if (window && noFullPulls) {
+      // Daily incremental: activity for the RecordDate window (vouchers/payments that moved).
       const filter = buildCsiRecordDateWindowFilter({ window, field: 'RecordDate', includeSitePredicate: false });
       if (filter) params.set('filter', filter);
+    } else if (window && window.mode !== 'daily_overlap') {
+      // Backfill / as-of: collectible AP window so open-item fields can cover
+      // unpaid bills older than "today" (not just same-day activity).
+      const asOfFilter = buildSlAptrxAsOfFilter(window, row.site);
+      if (asOfFilter) params.set('filter', asOfFilter);
     }
     params.set('recordCap', '1000');
-    if (!params.get('orderby') && !params.get('orderBy')) params.set('orderby', 'RecordDate desc');
+    if (!params.get('orderby') && !params.get('orderBy')) params.set('orderby', 'RecordDate desc, Voucher desc');
     const next = params.toString();
     return { endpointPath: next ? `${path}?${next}` : path, applied: true, allowRetryWithoutSourceWindow: false };
   }
@@ -2091,6 +2123,30 @@ function pickNumberIfPresent(record: Record<string, unknown>, keys: string[]): n
     }
   }
   return undefined;
+}
+
+/** CSI fields that mean "amount still owed" — never InvAmt / invoice total. */
+const AP_TRUE_OPEN_BALANCE_KEYS = [
+  'amountDueHome',
+  'amountDue',
+  'openAmount',
+  'openBalance',
+  'DerAmtBal',
+  'UbOpening',
+  'BalDue',
+  'DomAmtDue',
+];
+
+/**
+ * Remaining AP owed from explicit open-balance fields only.
+ * Returns null when CSI did not send a remaining-balance field so callers
+ * must not invent open AP from InvAmt (activity feeds often have AmtPaid=0
+ * on Type=V creates, which previously stamped every voucher as fully open).
+ */
+function deriveApTrueOpenBalance(record: Record<string, unknown>): number | null {
+  const present = pickNumberIfPresent(record, AP_TRUE_OPEN_BALANCE_KEYS);
+  if (present === undefined || !Number.isFinite(present)) return null;
+  return Math.max(0, Number(present));
 }
 
 function pickString(record: Record<string, unknown>, keys: string[]): string | null {
@@ -6623,21 +6679,10 @@ async function saveAPAging(
   }
 
   const deriveApOutstandingAmount = (record: Record<string, unknown>): number => {
-    const directOpenBalance = pickNumber(record, [
-      'amountDueHome',
-      'amountDue',
-      'openAmount',
-      'openBalance',
-      'balance',
-      'Balance',
-      'DerAmtBal',
-      'UbOpening',
-    ]);
-    if (directOpenBalance !== 0) return directOpenBalance;
-    const invAmt = pickNumber(record, ['InvAmt', 'invoiceAmount', 'invAmt', 'CUAM']);
-    const amtPaid = pickNumber(record, ['AmtPaid', 'amtPaid', 'amountPaid', 'UbPayment']);
-    if (invAmt > 0) return invAmt - amtPaid;
-    return 0;
+    // Company APAgingSnapshot from raw records must use true open balances only.
+    // InvAmt fallback invented multi-million "open" AP from activity feeds.
+    const trueOpen = deriveApTrueOpenBalance(record);
+    return trueOpen === null ? 0 : trueOpen;
   };
 
   // AP aging must be based on open-item rows only. Do not trust summary-level
@@ -6697,45 +6742,8 @@ async function saveAPAging(
   );
 
   if (totals.totalAP === 0) {
-    const lifecycleRows = await deriveApLifecycleOpenRowsFromAvailableData(companyId, snapshotDate, frequency, records);
-    const adjustedLifecycleRows = lifecycleRows.map((row) => ({
-      vendorId: row.vendorId,
-      vendorName: row.vendorName,
-      billNo: row.voucherNo,
-      billDate: row.billDate,
-      dueDate: row.dueDate,
-      amountDueHome: row.outstandingAmount,
-      current: row.current || null,
-      days1to30: row.days1to30 || null,
-      days31to60: row.days31to60 || null,
-      days61to90: row.days61to90 || null,
-      days90plus: row.days90plus || null,
-    }));
-    if (adjustedLifecycleRows.length > 0) {
-      totals = adjustedLifecycleRows.reduce(
-        (acc, row) => {
-          acc.totalAP += Number(row.amountDueHome || 0);
-          acc.current += Number(row.current || 0);
-          acc.days1to30 += Number(row.days1to30 || 0);
-          acc.days31to60 += Number(row.days31to60 || 0);
-          acc.days61to90 += Number(row.days61to90 || 0);
-          acc.days90plus += Number(row.days90plus || 0);
-          return acc;
-        },
-        { totalAP: 0, current: 0, days1to30: 0, days31to60: 0, days61to90: 0, days90plus: 0 }
-      );
-      await prisma.aPAgingSnapshot.upsert({
-        where: { companyId_snapshotDate_frequency: { companyId, snapshotDate, frequency } },
-        update: totals,
-        create: {
-          companyId,
-          snapshotDate,
-          frequency,
-          ...totals,
-        },
-      });
-      return 1;
-    }
+    // Do not invent AP aging from voucher InvAmt lifecycle math when CSI did not
+    // send remaining balances. Empty aging is preferable to a fake multi-million total.
     await prisma.aPAgingSnapshot.deleteMany({ where: { companyId, snapshotDate, frequency } });
     return 0;
   }
@@ -6924,6 +6932,8 @@ async function saveAPOpenBillsNoFullPullsDeltaState(params: {
 
   for (let idx = 0; idx < params.records.length; idx += 1) {
     const record = params.records[idx];
+    const typeToken = String(pickString(record, ['Type', 'type']) || '').trim().toUpperCase();
+    if (typeToken === 'P') continue;
     const vendorId = pickString(record, VENDOR_ID_KEYS) || null;
     const vendorNameRaw =
       pickString(record, ['UbVendName', 'VendaddrName', 'VendorName', ...VENDOR_NAME_KEYS]) ||
@@ -6934,24 +6944,10 @@ async function saveAPOpenBillsNoFullPullsDeltaState(params: {
     );
     if (!vendorName || !billNo) continue;
 
-    const amountDueHomeRaw = (() => {
-      const direct = pickNumber(record, [
-        'amountDueHome',
-        'amountDue',
-        'openAmount',
-        'openBalance',
-        'balance',
-        'Balance',
-        'DerAmtBal',
-        'UbOpening',
-      ]);
-      if (direct !== 0) return direct;
-      const invAmt = pickNumber(record, ['InvAmt', 'invoiceAmount', 'invAmt', 'CUAM']);
-      const amtPaid = pickNumber(record, ['AmtPaid', 'amtPaid', 'amountPaid', 'UbPayment']);
-      if (invAmt > 0) return invAmt - amtPaid;
-      return 0;
-    })();
-    const amountDueHome = Number.isFinite(amountDueHomeRaw) ? Math.max(0, Number(amountDueHomeRaw)) : 0;
+    const amountDueHomeRaw = deriveApTrueOpenBalance(record);
+    // Skip activity rows with no CSI remaining-balance field (do not invent from InvAmt).
+    if (amountDueHomeRaw === null) continue;
+    const amountDueHome = amountDueHomeRaw;
     const billDate = resolveApBillDateFromRecord(record);
     const dueDate = parseMaybeDate(pickString(record, ['dueDate', 'DUDT', 'DueDate', 'InvDate', 'DistDate'])) || null;
     const status = pickString(record, ['status', 'STAT']) || null;
@@ -7095,38 +7091,23 @@ async function saveAPOpenBills(
 ): Promise<number> {
   await (prisma as any).aPOpenBillSnapshot.deleteMany({ where: { companyId, frequency, snapshotDate } });
 
-  const deriveApOutstandingAmount = (record: Record<string, unknown>): number => {
-    const directOpenBalance = pickNumber(record, [
-      'amountDueHome',
-      'amountDue',
-      'openAmount',
-      'openBalance',
-      'balance',
-      'Balance',
-      'DerAmtBal',
-      'UbOpening',
-    ]);
-    if (directOpenBalance !== 0) return directOpenBalance;
-    const invAmt = pickNumber(record, ['InvAmt', 'invoiceAmount', 'invAmt', 'CUAM']);
-    const amtPaid = pickNumber(record, ['AmtPaid', 'amtPaid', 'amountPaid', 'UbPayment']);
-    if (invAmt > 0) return invAmt - amtPaid;
-    return 0;
-  };
-
   const rows = records
     .map((record, idx) => {
       const typeToken = String(pickString(record, ['Type', 'type']) || '').trim().toUpperCase();
-      // Payments are not open bills. Open balance comes from voucher/debit rows
-      // (DerAmtBal) or voucher InvAmt - AmtPaid when DerAmtBal is absent.
+      // Payments are not open bills. Remaining balance must come from CSI open-
+      // balance fields (DerAmtBal / BalDue / etc.) — never InvAmt invent.
       if (typeToken === 'P') {
+        return null;
+      }
+      const trueOpen = deriveApTrueOpenBalance(record);
+      if (trueOpen === null || trueOpen <= 0.0001) {
         return null;
       }
       const vendorName = pickString(record, VENDOR_NAME_KEYS) || `Unknown Vendor ${idx + 1}`;
       const billNo =
         pickString(record, ['billNo', 'billNumber', 'invoiceNo', 'InvNum', 'voucher', 'Voucher', 'SINO']) ||
         `UNKNOWN-${idx + 1}`;
-      // AP open snapshot is unpaid amount only; do not carry negative residuals.
-      const amountDueHome = Math.max(0, deriveApOutstandingAmount(record));
+      const amountDueHome = trueOpen;
       const billDate = resolveApBillDateFromRecord(record);
       return {
         companyId,
@@ -7175,40 +7156,8 @@ async function saveAPOpenBills(
     });
 
   if (!rows.length) {
-    const lifecycleRows = await deriveApLifecycleOpenRowsFromAvailableData(companyId, snapshotDate, frequency, records);
-    if (!lifecycleRows.length) return 0;
-    const derivedRowsRaw = lifecycleRows.map((row, idx) => ({
-      companyId,
-      snapshotDate,
-      frequency,
-      vendorId: row.vendorId,
-      vendorName: row.vendorName || `Unknown Vendor ${idx + 1}`,
-      billNo: row.voucherNo,
-      billDate: row.billDate,
-      dueDate: row.dueDate,
-      status: 'open',
-      currencyCode: null as string | null,
-      amountCurrency: row.bookedAmount || null,
-      amountHome: row.bookedAmount || null,
-      amountDueHome: row.outstandingAmount,
-      current: row.current || null,
-      days1to30: row.days1to30 || null,
-      days31to60: row.days31to60 || null,
-      days61to90: row.days61to90 || null,
-      days90plus: row.days90plus || null,
-      sourcePlatform: 'INFOR_M3',
-      sourceProgram: `${context.miProgram || 'AP'}_LIFECYCLE_DERIVED`,
-      sourceTransaction: `${context.transaction || 'CSI_LOAD'}_DERIVED`,
-      cono: context.cono || null,
-      divi: context.divi || null,
-    }));
-    const derivedRows = derivedRowsRaw;
-    const DERIVED_BATCH_SIZE = 2000;
-    for (let i = 0; i < derivedRows.length; i += DERIVED_BATCH_SIZE) {
-      const batch = derivedRows.slice(i, i + DERIVED_BATCH_SIZE);
-      await (prisma as any).aPOpenBillSnapshot.createMany({ data: batch, skipDuplicates: true });
-    }
-    return derivedRows.length;
+    // No CSI remaining-balance rows — do not invent open bills from InvAmt lifecycle.
+    return 0;
   }
   const deduped = new Map<
     string,
