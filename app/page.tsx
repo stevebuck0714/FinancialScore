@@ -41,7 +41,6 @@ const VALUATION_TABS = [
 const FINANCIAL_REPORTING_TABS = [
   { id: 'dashboard', label: "Financial KPI's" },
   { id: 'kpis', label: 'Key Ratios' },
-  { id: 'mda', label: 'MD&A' },
   { id: 'trend-analysis', label: 'Performance Trends' },
   { id: 'goals', label: 'Targets and Goals' },
   { id: 'projections', label: 'Projections' },
@@ -2340,6 +2339,11 @@ function FinancialScorePage() {
       setCurrentView('admin');
       return;
     }
+    if (view === 'mda') {
+      setFinancialStatementsTab('mda');
+      setCurrentView('financial-statements');
+      return;
+    }
     setCurrentView(view as any);
   };
 
@@ -3290,89 +3294,7 @@ function FinancialScorePage() {
   const [showAddTeamMemberForm, setShowAddTeamMemberForm] = useState(false);
   const [newTeamMember, setNewTeamMember] = useState({name: '', email: '', phone: '', title: '', password: ''});
   
-  const [kpiDashboardTab, setKpiDashboardTab] = useState<'all-ratios' | 'priority-ratios' | 'monthly-ratios'>('all-ratios');
-  const [priorityRatios, setPriorityRatios] = useState<string[]>([
-    'Current Ratio', 'Quick Ratio', 'ROE', 'ROA', 'Interest Coverage', 'Debt/Net Worth'
-  ]);
-
-  // Available ratios by category for Priority Ratios tab
-  const ratioCategories = {
-    'Liquidity': ['Current Ratio', 'Quick Ratio'],
-    'Activity': ['Inventory Turnover', 'Receivables Turnover', 'Payables Turnover', 'Days Inventory', 'Days Receivables', 'Days Payables', 'Sales/Working Capital'],
-    'Coverage': ['Interest Coverage', 'Debt Service Coverage', 'Cash Flow to Debt'],
-    'Leverage': ['Debt/Net Worth', 'Fixed Assets/Net Worth', 'Leverage Ratio'],
-    'Operating': ['Total Asset Turnover', 'ROE', 'ROA', 'EBITDA Margin', 'EBIT Margin']
-  };
-
-  const allAvailableRatios = Object.values(ratioCategories).flat();
-
-  // Helper function to get ratio value key for LineChart
-  const getRatioValueKey = (ratioName: string): string => {
-    const ratioMap: Record<string, string> = {
-      'Current Ratio': 'currentRatio',
-      'Quick Ratio': 'quickRatio',
-      'Inventory Turnover': 'invTurnover',
-      'Receivables Turnover': 'arTurnover',
-      'Payables Turnover': 'apTurnover',
-      'Days Inventory': 'daysInv',
-      'Days Receivables': 'daysAR',
-      'Days Payables': 'daysAP',
-      'Sales/Working Capital': 'salesWC',
-      'Interest Coverage': 'interestCov',
-      'Debt Service Coverage': 'debtSvcCov',
-      'Cash Flow to Debt': 'cfToDebt',
-      'Debt/Net Worth': 'debtToNW',
-      'Fixed Assets/Net Worth': 'fixedToNW',
-      'Leverage Ratio': 'leverage',
-      'Total Asset Turnover': 'totalAssetTO',
-      'ROE': 'roe',
-      'ROA': 'roa',
-      'EBITDA Margin': 'ebitdaMargin',
-      'EBIT Margin': 'ebitMargin'
-    };
-    return ratioMap[ratioName] || '';
-  };
-
-  // Helper function to get ratio color
-  const getRatioColor = (ratioName: string): string => {
-    const colorMap: Record<string, string> = {
-      'Current Ratio': '#10b981',
-      'Quick Ratio': '#14b8a6',
-      'Inventory Turnover': '#f59e0b',
-      'Receivables Turnover': '#f97316',
-      'Payables Turnover': '#ef4444',
-      'Days Inventory': '#fbbf24',
-      'Days Receivables': '#fb923c',
-      'Days Payables': '#f87171',
-      'Sales/Working Capital': '#06b6d4',
-      'Interest Coverage': '#8b5cf6',
-      'Debt Service Coverage': '#a78bfa',
-      'Cash Flow to Debt': '#c4b5fd',
-      'Debt/Net Worth': '#ec4899',
-      'Fixed Assets/Net Worth': '#f472b6',
-      'Leverage Ratio': '#f9a8d4',
-      'Total Asset Turnover': '#3b82f6',
-      'ROE': '#60a5fa',
-      'ROA': '#93c5fd',
-      'EBITDA Margin': '#2563eb',
-      'EBIT Margin': '#1e40af'
-    };
-    return colorMap[ratioName] || '#64748b';
-  };
-
-  // Helper function to get ratio formatter
-  const getRatioFormatter = (ratioName: string): ((v: number) => string) => {
-    if (ratioName.includes('Days')) {
-      return (v: number) => v.toFixed(0);
-    }
-    return (v: number) => v.toFixed(1);
-  };
-
-  // Function to save priority ratios
-  const savePriorityRatios = () => {
-    localStorage.setItem('fs_priorityRatios', JSON.stringify(priorityRatios));
-    alert('Priority ratios saved successfully!');
-  };
+  const [kpiDashboardTab, setKpiDashboardTab] = useState<'all-ratios' | 'monthly-ratios'>('all-ratios');
   
   // State - Subscription Pricing
   const [subscriptionMonthlyPrice, setSubscriptionMonthlyPrice] = useState<number | undefined>();
@@ -4065,7 +3987,7 @@ function FinancialScorePage() {
   // State - Financial Statements
   const [statementType, setStatementType] = useState<'income-statement' | 'balance-sheet' | 'income-statement-percent' | 'cash-flow-statement'>('income-statement');
   const [statementPeriod, setStatementPeriod] = useState<'current-month' | 'current-quarter' | 'last-12-months' | 'ytd' | 'last-year' | 'last-3-years'>('current-month');
-  const [financialStatementsTab, setFinancialStatementsTab] = useState<'aggregated' | 'line-of-business'>('aggregated');
+  const [financialStatementsTab, setFinancialStatementsTab] = useState<'aggregated' | 'line-of-business' | 'mda'>('aggregated');
   const [selectedLineOfBusiness, setSelectedLineOfBusiness] = useState<string>('all');
   const [statementDisplay, setStatementDisplay] = useState<'monthly' | 'quarterly' | 'annual'>('monthly');
   const [cashFlowDisplay, setCashFlowDisplay] = useState<'monthly' | 'quarterly' | 'annual'>('monthly');
@@ -4560,8 +4482,7 @@ function FinancialScorePage() {
       assessmentResponses: localStorage.getItem('fs_assessmentResponses'),
       assessmentNotes: localStorage.getItem('fs_assessmentNotes'),
       assessmentRecords: localStorage.getItem('fs_assessmentRecords'),
-      companyProfiles: localStorage.getItem('fs_companyProfiles'),
-      priorityRatios: localStorage.getItem('fs_priorityRatios')
+      companyProfiles: localStorage.getItem('fs_companyProfiles')
     };
     
     // Check user type first to determine if we should load assessment data
@@ -4636,7 +4557,6 @@ function FinancialScorePage() {
     if (saved.assessmentNotes && !isAssessmentUser) setAssessmentNotes(JSON.parse(saved.assessmentNotes));
     if (saved.assessmentRecords) setAssessmentRecords(JSON.parse(saved.assessmentRecords));
     if (saved.companyProfiles) setCompanyProfiles(JSON.parse(saved.companyProfiles));
-    if (saved.priorityRatios) setPriorityRatios(JSON.parse(saved.priorityRatios));
     
     if (saved.defaults) {
       const d = JSON.parse(saved.defaults);
@@ -4701,7 +4621,6 @@ function FinancialScorePage() {
   useEffect(() => { if (typeof window !== 'undefined' && Object.keys(assessmentNotes).length > 0 && currentUser?.userType !== 'assessment') localStorage.setItem('fs_assessmentNotes', JSON.stringify(assessmentNotes)); }, [assessmentNotes, currentUser]);
   useEffect(() => { if (typeof window !== 'undefined' && assessmentRecords.length > 0) localStorage.setItem('fs_assessmentRecords', JSON.stringify(assessmentRecords)); }, [assessmentRecords]);
   useEffect(() => { if (typeof window !== 'undefined' && companyProfiles.length > 0) localStorage.setItem('fs_companyProfiles', JSON.stringify(companyProfiles)); }, [companyProfiles]);
-  useEffect(() => { if (typeof window !== 'undefined' && priorityRatios.length > 0) localStorage.setItem('fs_priorityRatios', JSON.stringify(priorityRatios)); }, [priorityRatios]);
   
   // Fetch team members when viewing team management tab
   useEffect(() => {
@@ -4751,7 +4670,7 @@ function FinancialScorePage() {
 
   // Load expense goals when Goals, Trend Analysis, or MD&A view is accessed
   useEffect(() => {
-    if (selectedCompanyId && (currentView === 'goals' || currentView === 'trend-analysis' || currentView === 'mda')) {
+    if (selectedCompanyId && (currentView === 'goals' || currentView === 'trend-analysis' || currentView === 'mda' || (currentView === 'financial-statements' && financialStatementsTab === 'mda'))) {
       console.log('?? Loading expense goals for company:', selectedCompanyId);
       // Reset to empty first, so fields are blank while loading
       setExpenseGoals({});
@@ -4780,7 +4699,7 @@ function FinancialScorePage() {
           setExpenseGoals({});
         });
     }
-  }, [selectedCompanyId, currentView]);
+  }, [selectedCompanyId, currentView, financialStatementsTab]);
 
   // Load valuation settings when company changes
   useEffect(() => {
@@ -5549,7 +5468,10 @@ function FinancialScorePage() {
     }
 
     // Set view if specified in URL.
-    if (view && NAVIGABLE_VIEWS.has(view)) {
+    if (view === 'mda') {
+      setFinancialStatementsTab('mda');
+      setCurrentView('financial-statements');
+    } else if (view && NAVIGABLE_VIEWS.has(view)) {
       setCurrentView(view as any);
     }
 
@@ -13837,6 +13759,7 @@ function FinancialScorePage() {
       // Set the appropriate view and parameters
       if (report.view === 'financial-statements') {
         setOperationsPrintConfig(null);
+        setFinancialStatementsTab('aggregated');
         setStatementType(report.type as any);
         setStatementDisplay(report.display as any);
         if (report.period) {
@@ -13858,7 +13781,7 @@ function FinancialScorePage() {
         setCurrentView('cash-flow');
       } else if (report.view === 'kpis' && report.tab) {
         setOperationsPrintConfig(null);
-        setKpiDashboardTab(report.tab as any);
+        setKpiDashboardTab(report.tab === 'monthly-ratios' ? 'monthly-ratios' : 'all-ratios');
         setCurrentView('kpis');
       } else {
         setOperationsPrintConfig(null);
@@ -20361,6 +20284,7 @@ function FinancialScorePage() {
           setExpenseGoals={setExpenseGoals}
           masterDataCategories={masterDataCategories}
           setMasterDataCategories={setMasterDataCategories}
+          benchmarks={benchmarks}
         />
       )}
 
@@ -26672,7 +26596,7 @@ function FinancialScorePage() {
       {/* Financial Statements View - Works with CSV or QB data via monthly array */}
       {currentView === 'financial-statements' && selectedCompanyId && monthly.length > 0 && (
         <div style={{ maxWidth: '1800px', margin: '0 auto', padding: '32px' }}>
-          <style>{`
+          {financialStatementsTab !== 'mda' && <style>{`
             @media print {
               @page {
                 margin: 0.2in 0.3in;
@@ -26767,7 +26691,7 @@ function FinancialScorePage() {
                 page-break-inside: avoid !important;
               }
             }
-          `}</style>
+          `}</style>}
           
           <div className="no-print" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
@@ -26780,9 +26704,6 @@ function FinancialScorePage() {
             </div>
             {companyName && <div style={{ fontSize: '32px', fontWeight: '700', color: '#1e293b' }}>{companyName}</div>}
           </div>
-          <p className="no-print" style={{ fontSize: '14px', color: '#64748b', marginBottom: '12px' }}>
-            Based on imported financial data
-          </p>
 
           {/* Tab Navigation */}
           <div className="no-print" style={{ display: 'flex', gap: '8px', marginBottom: '12px', borderBottom: '2px solid #e2e8f0' }}>
@@ -26824,6 +26745,23 @@ function FinancialScorePage() {
               }}
             >
               Line of Business Reporting
+            </button>
+            <button
+              onClick={() => setFinancialStatementsTab('mda')}
+              style={{
+                padding: '12px 24px',
+                background: financialStatementsTab === 'mda' ? '#667eea' : 'transparent',
+                color: financialStatementsTab === 'mda' ? 'white' : '#64748b',
+                border: 'none',
+                borderBottom: financialStatementsTab === 'mda' ? '3px solid #667eea' : '3px solid transparent',
+                fontSize: '16px',
+                fontWeight: '600',
+                cursor: 'pointer',
+                borderRadius: '8px 8px 0 0',
+                transition: 'all 0.2s'
+              }}
+            >
+              MD&A
             </button>
           </div>
 
@@ -29435,6 +29373,36 @@ function FinancialScorePage() {
                 setCurrentView('admin');
                 setAdminDashboardTab('data-mapping');
               }}
+            />
+          )}
+
+          {financialStatementsTab === 'mda' && (
+            <MDAView
+              monthly={monthly}
+              trendData={trendData}
+              companyName={companyName || ''}
+              finalScore={finalScore}
+              profitabilityScore={profitabilityScore}
+              growth_24mo={growth_24mo}
+              expenseAdjustment={expenseAdjustment}
+              revExpSpread={revExpSpread}
+              assetDevScore={assetDevScore}
+              ltmRev={ltmRev}
+              benchmarks={benchmarks}
+              expenseGoals={expenseGoals}
+              sdeMultiplier={sdeMultiplier}
+              ebitdaMultiplier={ebitdaMultiplier}
+              dcfDiscountRate={dcfDiscountRate}
+              dcfTerminalGrowth={dcfTerminalGrowth}
+              bestCaseRevMultiplier={bestCaseRevMultiplier}
+              bestCaseExpMultiplier={bestCaseExpMultiplier}
+              worstCaseRevMultiplier={worstCaseRevMultiplier}
+              worstCaseExpMultiplier={worstCaseExpMultiplier}
+              onExportToWord={handleExportMdaToWord}
+              baseCurrency={selectedCompany?.baseCurrency}
+              reportingCurrency={selectedCompany?.reportingCurrency}
+              locale={selectedCompany?.locale}
+              embedded
             />
           )}
         </div>

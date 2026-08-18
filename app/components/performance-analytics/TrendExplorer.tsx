@@ -253,9 +253,15 @@ const EQUITY_NEAR_ZERO_THRESHOLD = 1000;
   const debtToEquityBenchmark = getBenchmarkValue(benchmarks as any, 'Debt to Equity');
  
    const operationalGoals = context?.goals?.operational || {};
-   const cashGoal = operationalGoals.total_cash ? monthly.map(() => operationalGoals.total_cash) : undefined;
+   const cashPctGoal = Number(operationalGoals.total_cash);
+   const inventoryPctGoal = Number(operationalGoals.inventory_value);
+   const cashGoal = cashPctGoal > 0 && cashPctGoal <= 100
+     ? monthly.map((m: any) => (cashPctGoal / 100) * (Number(m.totalAssets) || 0))
+     : undefined;
    const arGoal = operationalGoals.total_ar ? monthly.map(() => operationalGoals.total_ar) : undefined;
-   const inventoryGoal = operationalGoals.inventory_value ? monthly.map(() => operationalGoals.inventory_value) : undefined;
+   const inventoryGoal = inventoryPctGoal > 0 && inventoryPctGoal <= 100
+     ? monthly.map((m: any) => (inventoryPctGoal / 100) * (Number(m.totalAssets) || 0))
+     : undefined;
 
   const driverNarrative = useMemo(() => {
     if (trendMonthly.length < 6) return null;

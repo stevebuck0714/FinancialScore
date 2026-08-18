@@ -259,7 +259,19 @@ export class MasterDataStore {
   }
 
   private getLast6Months(monthlyData: MasterDataMonthly[]): { month: string; date: Date }[] {
+    const now = new Date();
+    const currentYear = now.getUTCFullYear();
+    const currentMonth = now.getUTCMonth();
+
     return monthlyData
+      .filter((month) => {
+        const date = month.date || month.month;
+        const dateObj = date instanceof Date ? date : new Date(date as string);
+        if (Number.isNaN(dateObj.getTime())) return false;
+        const year = dateObj.getUTCFullYear();
+        const monthIndex = dateObj.getUTCMonth();
+        return year < currentYear || (year === currentYear && monthIndex < currentMonth);
+      })
       .slice(-6)
       .map(month => {
         const date = month.date || month.month;

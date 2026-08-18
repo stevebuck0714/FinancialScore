@@ -4,6 +4,7 @@
  * CRITICAL: These functions prevent cross-database contamination between:
  * - Production: configured via PRODUCTION_DB_PROJECTS (default: aged-snow,orange-poetry)
  * - Staging: configured via STAGING_DB_PROJECTS (default: cold-frost)
+ * - Dev: configured via DEV_DB_PROJECTS (default: cool-dream)
  *
  * These safeguards ensure:
  * 1. Production databases NEVER connect to staging databases
@@ -14,15 +15,17 @@
 export interface DatabaseInfo {
   isProduction: boolean;
   isStaging: boolean;
+  isDevelopment: boolean;
   databaseName: string;
   label: string;
   isAllowed: boolean;
   productionProjects: string[];
   stagingProjects: string[];
+  developmentProjects: string[];
 }
 
 function getProjectList(envValue: string | undefined, fallback: string[]): string[] {
-  const raw = (envValue ?? fallback.join(',')).split(',');
+  const raw = ((envValue && envValue.trim()) || fallback.join(',')).split(',');
   return raw.map((value) => value.trim()).filter(Boolean);
 }
 
@@ -70,12 +73,15 @@ export function validateDatabaseConnection(): DatabaseInfo {
 
   const productionProjects = getProjectList(process.env.PRODUCTION_DB_PROJECTS, ['orange-poetry', 'aged-snow']);
   const stagingProjects = getProjectList(process.env.STAGING_DB_PROJECTS, ['cold-frost']);
+  const developmentProjects = getProjectList(process.env.DEV_DB_PROJECTS, ['cool-dream']);
 
   const productionMatch = findProject(databaseUrl, productionProjects);
   const stagingMatch = findProject(databaseUrl, stagingProjects);
+  const developmentMatch = findProject(databaseUrl, developmentProjects);
 
   const isProduction = !!productionMatch;
   const isStaging = !!stagingMatch;
+  const isDevelopment = !!developmentMatch;
 
   let databaseName = 'unknown';
   let label = 'UNKNOWN';
@@ -88,6 +94,10 @@ export function validateDatabaseConnection(): DatabaseInfo {
     // (Vercel production or an opted-in Render service).
     // Local dev should NEVER be able to connect to production databases.
     isAllowed = isAllowedProductionRuntime();
+  } else if (isDevelopment) {
+    databaseName = developmentMatch || 'development';
+    label = `DEV (${databaseName})`;
+    isAllowed = true;
   } else if (isStaging) {
     databaseName = stagingMatch || 'staging';
     label = `STAGING (${databaseName})`;
@@ -100,27 +110,25 @@ export function validateDatabaseConnection(): DatabaseInfo {
     label = 'SQLITE (local file)';
     isAllowed = true; // SQLite is always allowed for local development
   } else if (databaseUrl.includes('neon.tech')) {
-    // Generic neon.tech connection
-    databaseName = 'neon-unknown';
-    if (isAllowedProductionRuntime()) {
-      // Emergency safety valve: do not brick production auth/login just because
-      // the Neon hostname does not match configured aliases.
-      label = 'UNKNOWN NEON DATABASE (PRODUCTION RUNTIME ALLOWED)';
-      isAllowed = true;
-    } else {
-      label = 'UNKNOWN NEON DATABASE';
-      isAllowed = false;
-    }
+    // Non-production Neon projects (cool-dream, and any other non-prod host)
+    // are valid local/dev databases. Production Neon is already classified
+    // and blocked above via PRODUCTION_DB_PROJECTS.
+    const host = getDatabaseHost(databaseUrl);
+    databaseName = host;
+    label = `NEON (${host})`;
+    isAllowed = true;
   }
 
   return {
     isProduction,
     isStaging,
+    isDevelopment,
     databaseName,
     label,
     isAllowed,
     productionProjects,
     stagingProjects,
+    developmentProjects,
   };
 }
 
@@ -173,6 +181,7 @@ export function enforceDatabaseSecurity(): void {
         `   RENDER_ALLOW_PRODUCTION_DB: ${process.env.RENDER_ALLOW_PRODUCTION_DB}\n` +
         `   Allowed production projects: ${dbInfo.productionProjects.join(', ') || '(none)'}\n` +
         `   Allowed staging projects: ${dbInfo.stagingProjects.join(', ') || '(none)'}\n` +
+        `   Allowed development projects: ${dbInfo.developmentProjects.join(', ') || '(none)'}\n` +
         `   This connection violates database isolation rules.\n` +
         `   Production databases must ONLY be used on approved production runtimes (Vercel or opted-in Render).\n` +
         `   Local/dev/preview must NEVER connect to production databases.`,

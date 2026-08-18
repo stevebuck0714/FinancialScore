@@ -6,6 +6,12 @@ import { useMasterData } from '@/lib/master-data-store';
 import toast from 'react-hot-toast';
 import { useCompanyMoneyFormatter } from '@/app/hooks/useCompanyMoneyFormatter';
 import PageCurrencyBadge from './PageCurrencyBadge';
+import {
+  COGS_TOTAL_BENCHMARK_METRICS,
+  EXPENSE_CATEGORY_BENCHMARK_METRICS,
+  OPERATIONAL_GOAL_BENCHMARK_METRICS,
+  OPEX_TOTAL_BENCHMARK_METRICS,
+} from '@/app/constants';
 
 interface GoalsViewProps {
   selectedCompanyId: string;
@@ -15,6 +21,116 @@ interface GoalsViewProps {
   setExpenseGoals: (goals: { [key: string]: number }) => void;
   masterDataCategories?: any[];
   setMasterDataCategories?: (categories: any[]) => void;
+  benchmarks?: any[];
+}
+
+function normalizeBenchmarkName(name: string): string {
+  return String(name)
+    .replace(/[\u00a0\u1680\u2000-\u200a\u202f\u205f\u3000]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toLowerCase();
+}
+
+function findExactBenchmarkValue(benchmarks: any[] | undefined, metricName: string): number | null {
+  if (!benchmarks?.length) return null;
+  const needle = normalizeBenchmarkName(metricName);
+  const match = benchmarks.find(
+    (row) => typeof row?.metricName === 'string' && normalizeBenchmarkName(row.metricName) === needle
+  );
+  const value = match?.fiveYearValue;
+  if (value == null || Number.isNaN(Number(value))) return null;
+  return Number(value);
+}
+
+function sumBenchmarkValues(benchmarks: any[] | undefined, metricNames: string[]): number | null {
+  let total = 0;
+  let found = 0;
+  for (const name of metricNames) {
+    const value = findExactBenchmarkValue(benchmarks, name);
+    if (value != null) {
+      total += value;
+      found += 1;
+    }
+  }
+  return found > 0 ? total : null;
+}
+
+function getOperationalBenchmarkValue(benchmarks: any[] | undefined, metricKey: string): number | null {
+  const metricNames = OPERATIONAL_GOAL_BENCHMARK_METRICS[metricKey];
+  if (!metricNames?.length) return null;
+  return sumBenchmarkValues(benchmarks, metricNames);
+}
+
+function operationalBenchmarkFormat(metricKey: string): 'percent' | 'days' | undefined {
+  if (metricKey.startsWith('days_')) return 'days';
+  if (OPERATIONAL_GOAL_BENCHMARK_METRICS[metricKey]) return 'percent';
+  return undefined;
+}
+
+function renderBenchmarkCell(value: number | null, opts?: { bold?: boolean; format?: 'percent' | 'days' }) {
+  const bold = Boolean(opts?.bold);
+  let display = '—';
+  if (value != null) {
+    display = opts?.format === 'days' ? `${Math.round(value)}d` : `${value.toFixed(1)}%`;
+  }
+  return (
+    <td
+      style={{
+        textAlign: 'center',
+        padding: bold ? '16px 12px' : '12px',
+        fontSize: bold ? '16px' : '14px',
+        fontWeight: bold ? '700' : '600',
+        color: value != null ? '#1e293b' : '#94a3b8',
+      }}
+    >
+      {display}
+    </td>
+  );
+}
+
+function utcMonthKey(date: Date): string {
+  return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}`;
+}
+
+function computeDaysOutstanding(sortedMonthly: any[], index: number): { daysAR: number; daysInv: number; daysAP: number } {
+  const cur = sortedMonthly[index];
+  if (!cur) return { daysAR: 0, daysInv: 0, daysAP: 0 };
+
+  const window = sortedMonthly.slice(Math.max(0, index - 11), index + 1);
+  const ltmCogs = window.reduce((sum, row) => sum + (Number(row.cogsTotal) || 0), 0);
+  const ltmSales = window.reduce((sum, row) => sum + (Number(row.revenue) || 0), 0);
+  const yearAgo = index >= 12 ? sortedMonthly[index - 12] : cur;
+  const avgInventory = ((Number(cur.inventory) || 0) + (Number(yearAgo.inventory) || 0)) / 2;
+  const avgAr = ((Number(cur.ar) || 0) + (Number(yearAgo.ar) || 0)) / 2;
+  const avgAp = ((Number(cur.ap) || 0) + (Number(yearAgo.ap) || 0)) / 2;
+  const invTurnover = avgInventory > 0 ? ltmCogs / avgInventory : 0;
+  const arTurnover = avgAr > 0 ? ltmSales / avgAr : 0;
+  const apTurnover = avgAp > 0 ? ltmCogs / avgAp : 0;
+
+  return {
+    daysInv: invTurnover > 0 ? 365 / invTurnover : 0,
+    daysAR: arTurnover > 0 ? 365 / arTurnover : 0,
+    daysAP: apTurnover > 0 ? 365 / apTurnover : 0,
+  };
+}
+
+const PERCENT_OF_ASSETS_GOAL_KEYS = ['total_cash', 'inventory_value'];
+
+function percentOfAssets(amount: number, totalAssets: number): number {
+  return totalAssets > 0 ? (amount / totalAssets) * 100 : 0;
+}
+
+function sanitizeOperationalGoals(goals: { [key: string]: number } | null | undefined): { [key: string]: number } {
+  if (!goals || typeof goals !== 'object') return {};
+  const next = { ...goals };
+  for (const key of PERCENT_OF_ASSETS_GOAL_KEYS) {
+    const value = Number(next[key]);
+    if (!Number.isFinite(value) || value <= 0 || value > 100) {
+      delete next[key];
+    }
+  }
+  return next;
 }
 
 export default function GoalsView({
@@ -24,7 +140,8 @@ export default function GoalsView({
   expenseGoals,
   setExpenseGoals,
   masterDataCategories,
-  setMasterDataCategories
+  setMasterDataCategories,
+  benchmarks = [],
 }: GoalsViewProps) {
   const money = useCompanyMoneyFormatter(selectedCompanyId);
   const [activeTab, setActiveTab] = React.useState<'expense' | 'operational'>('expense');
@@ -51,14 +168,13 @@ export default function GoalsView({
     }
   }, [selectedCompanyId]);
 
-  // Build a stable "last 6 months" timeline for operational goals (oldest -> newest).
-  // UTC bucketing — see lib/date-utils.ts
+  // Last 6 completed calendar months (oldest -> newest). Skip the current
+  // month because a full month of data has not been loaded yet.
   const operationalMonthDates = React.useMemo(() => {
     const now = new Date();
     const months: Date[] = [];
-    for (let i = 5; i >= 0; i--) {
-      const d = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - i, 1));
-      months.push(d);
+    for (let i = 6; i >= 1; i--) {
+      months.push(new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - i, 1)));
     }
     return months;
   }, []);
@@ -80,7 +196,7 @@ export default function GoalsView({
       const response = await fetch(`/api/operational-goals?companyId=${selectedCompanyId}`);
       if (response.ok) {
         const data = await response.json();
-        setOperationalGoals(data.goals || {});
+        setOperationalGoals(sanitizeOperationalGoals(data.goals || {}));
       }
     } catch (error) {
       console.error('Error loading operational goals:', error);
@@ -91,10 +207,10 @@ export default function GoalsView({
     setLoadingOperational(true);
     setOperationalLoadError(null);
     try {
-      // Get last 6 months of data
-      const endDate = new Date();
-      const startDate = new Date();
-      startDate.setMonth(startDate.getMonth() - 6);
+      // Last 6 completed months (exclude the current incomplete month).
+      const now = new Date();
+      const startDate = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 6, 1));
+      const endDate = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 0, 23, 59, 59, 999));
 
       const params = new URLSearchParams({
         companyId: selectedCompanyId,
@@ -223,6 +339,16 @@ export default function GoalsView({
   const expenseGoalTotal = React.useMemo(() => {
     return expenseCategories.reduce((sum, cat) => sum + (expenseGoals[cat.key] || 0), 0);
   }, [expenseCategories, expenseGoals]);
+
+  const cogsTotalBenchmark = React.useMemo(
+    () => sumBenchmarkValues(benchmarks, COGS_TOTAL_BENCHMARK_METRICS),
+    [benchmarks]
+  );
+  const expenseTotalBenchmark = React.useMemo(
+    () => sumBenchmarkValues(benchmarks, OPEX_TOTAL_BENCHMARK_METRICS),
+    [benchmarks]
+  );
+  const expenseColumnCount = last6Months.length + 4;
 
   // Save goals to database
   const handleSave = async () => {
@@ -366,13 +492,17 @@ export default function GoalsView({
                 <strong>Goal %</strong><br />
                 <span style={{ fontSize: '12px', fontWeight: '400' }}>of Revenue</span>
               </th>
+              <th style={{ textAlign: 'center', padding: '12px', fontSize: '14px', fontWeight: '700', color: '#64748b' }}>
+                Benchmark %<br />
+                <span style={{ fontSize: '12px', fontWeight: '400' }}>of Revenue</span>
+              </th>
             </tr>
           </thead>
           <tbody>
             {/* Render COGS categories */}
             {cogsCategories.length > 0 && (
               <tr style={{ backgroundColor: '#f8fafc', borderTop: '2px solid #e2e8f0' }}>
-                <td colSpan={last6Months.length + 3} style={{ padding: '16px 12px 8px 12px', fontSize: '16px', fontWeight: '700', color: '#1e293b' }}>
+                <td colSpan={expenseColumnCount} style={{ padding: '16px 12px 8px 12px', fontSize: '16px', fontWeight: '700', color: '#1e293b' }}>
                   COGS (Cost of Goods Sold)
                 </td>
               </tr>
@@ -436,6 +566,7 @@ export default function GoalsView({
                     <span style={{ position: 'absolute', right: '12px', fontSize: '14px', color: '#64748b', pointerEvents: 'none' }}>%</span>
                   </div>
                 </td>
+                {renderBenchmarkCell(null)}
               </tr>
             ))}
 
@@ -456,13 +587,14 @@ export default function GoalsView({
                 <td style={{ textAlign: 'center', padding: '16px 12px', fontSize: '16px', fontWeight: '700', color: cogsGoalTotal > 0 ? '#667eea' : '#94a3b8' }}>
                   {cogsGoalTotal > 0 ? `${cogsGoalTotal.toFixed(1)}%` : '—'}
                 </td>
+                {renderBenchmarkCell(cogsTotalBenchmark, { bold: true })}
               </tr>
             )}
 
             {/* Render Expense categories */}
             {expenseCategories.length > 0 && (
               <tr style={{ backgroundColor: '#f8fafc', borderTop: '2px solid #e2e8f0' }}>
-                <td colSpan={last6Months.length + 3} style={{ padding: '16px 12px 8px 12px', fontSize: '16px', fontWeight: '700', color: '#1e293b' }}>
+                <td colSpan={expenseColumnCount} style={{ padding: '16px 12px 8px 12px', fontSize: '16px', fontWeight: '700', color: '#1e293b' }}>
                   Operating Expenses
                 </td>
               </tr>
@@ -526,6 +658,7 @@ export default function GoalsView({
                     <span style={{ position: 'absolute', right: '12px', fontSize: '14px', color: '#64748b', pointerEvents: 'none' }}>%</span>
                   </div>
                 </td>
+                {renderBenchmarkCell(sumBenchmarkValues(benchmarks, EXPENSE_CATEGORY_BENCHMARK_METRICS[category.key] || []))}
               </tr>
             ))}
 
@@ -546,6 +679,7 @@ export default function GoalsView({
                 <td style={{ textAlign: 'center', padding: '16px 12px', fontSize: '16px', fontWeight: '700', color: expenseGoalTotal > 0 ? '#667eea' : '#94a3b8' }}>
                   {expenseGoalTotal > 0 ? `${expenseGoalTotal.toFixed(1)}%` : '—'}
                 </td>
+                {renderBenchmarkCell(expenseTotalBenchmark, { bold: true })}
               </tr>
             )}
           </tbody>
@@ -609,14 +743,6 @@ export default function GoalsView({
     { key: 'ap_over90_pct', label: 'AP Over 90 Days %', getValue: (r: any) => r.totalAP > 0 ? (r.days90plus / r.totalAP) * 100 : 0, format: (v: number) => v.toFixed(1) + '%', goalType: 'percentage' },
   ];
 
-  const cashMetrics = [
-    { key: 'total_cash', label: 'Total Cash Balance', getValue: (r: any) => r.cashBalance || 0, format: (v: number) => money.fmt(Math.round(v), 0), goalType: 'currency' },
-  ];
-
-  const inventoryMetrics = [
-    { key: 'inventory_value', label: 'Inventory Value', getValue: (r: any) => r.assetValue || 0, format: (v: number) => money.fmt(Math.round(v), 0), goalType: 'currency' },
-  ];
-
   // Process data for each metric
   const processMetrics = (metrics: any[], records: any[]) => {
     // Keep one record per month (latest snapshot), then project onto fixed 6-month timeline.
@@ -643,26 +769,85 @@ export default function GoalsView({
 
   const arProcessed = processMetrics(arMetrics, operationalData.arAging || []);
   const apProcessed = processMetrics(apMetrics, operationalData.apAging || []);
-  
-  // For cash and inventory, we need to aggregate by month
-  const cashByMonth = (operationalData.cash || []).reduce((acc: any, r: any) => {
-    const month = new Date(r.snapshotDate).toLocaleDateString('en-US', { month: 'short', year: '2-digit', timeZone: 'UTC' });
-    if (!acc[month]) acc[month] = { snapshotDate: r.snapshotDate, cashBalance: 0 };
-    acc[month].cashBalance += r.cashBalance;
+
+  const operationalAmountByMonth = (records: any[], amountKey: string) => {
+    return (records || []).reduce((acc: Record<string, number>, record: any) => {
+      const snapshot = new Date(record.snapshotDate);
+      if (Number.isNaN(snapshot.getTime())) return acc;
+      const monthKey = utcMonthKey(snapshot);
+      acc[monthKey] = (acc[monthKey] || 0) + (Number(record[amountKey]) || 0);
+      return acc;
+    }, {});
+  };
+  const opCashByMonth = operationalAmountByMonth(operationalData.cash, 'cashBalance');
+  const opInventoryByMonth = operationalAmountByMonth(operationalData.inventory, 'assetValue');
+
+  const sortedMonthly = [...(monthly || [])]
+    .map((row) => ({ row, date: new Date(row.date || row.monthDate || row.month) }))
+    .filter((item) => !Number.isNaN(item.date.getTime()))
+    .sort((a, b) => a.date.getTime() - b.date.getTime());
+  const sortedMonthlyRows = sortedMonthly.map((item) => item.row);
+  const monthlyIndexByKey = sortedMonthly.reduce((acc: Record<string, number>, item, index) => {
+    acc[utcMonthKey(item.date)] = index;
     return acc;
   }, {});
-  const cashRecords = Object.values(cashByMonth);
-
-  const inventoryByMonth = (operationalData.inventory || []).reduce((acc: any, r: any) => {
-    const month = new Date(r.snapshotDate).toLocaleDateString('en-US', { month: 'short', year: '2-digit', timeZone: 'UTC' });
-    if (!acc[month]) acc[month] = { snapshotDate: r.snapshotDate, assetValue: 0 };
-    acc[month].assetValue += r.assetValue;
+  const financialByMonthKey = sortedMonthly.reduce((acc: Record<string, any>, item) => {
+    acc[utcMonthKey(item.date)] = item.row;
     return acc;
   }, {});
-  const inventoryRecords = Object.values(inventoryByMonth);
 
-  const cashProcessed = processMetrics(cashMetrics, cashRecords as any[]);
-  const inventoryProcessed = processMetrics(inventoryMetrics, inventoryRecords as any[]);
+  const buildPercentOfAssetsMetric = (
+    key: string,
+    label: string,
+    field: 'cash' | 'inventory',
+    operationalByMonth: Record<string, number>
+  ) => {
+    const values = operationalMonthDates.map((monthDate) => {
+      const monthKey = utcMonthKey(monthDate);
+      const financial = financialByMonthKey[monthKey];
+      const totalAssets = Number(financial?.totalAssets) || 0;
+      const statementAmount = Number(financial?.[field]) || 0;
+      const amount = statementAmount || operationalByMonth[monthKey] || 0;
+      return percentOfAssets(amount, totalAssets);
+    });
+    const avg = values.length > 0 ? values.reduce((sum, value) => sum + value, 0) / values.length : 0;
+    return {
+      key,
+      label,
+      goalType: 'percentage',
+      format: (v: number) => `${(isNaN(v) ? 0 : v).toFixed(1)}%`,
+      values,
+      avg,
+      months: operationalMonthLabels,
+    };
+  };
+
+  const daysByMonth = operationalMonthDates.map((monthDate) => {
+    const index = monthlyIndexByKey[utcMonthKey(monthDate)];
+    if (index == null) return { daysAR: 0, daysInv: 0, daysAP: 0 };
+    return computeDaysOutstanding(sortedMonthlyRows, index);
+  });
+  const buildDaysMetric = (key: string, label: string, field: 'daysAR' | 'daysInv' | 'daysAP') => {
+    const values = daysByMonth.map((row) => row[field]);
+    const avg = values.length > 0 ? values.reduce((sum, value) => sum + value, 0) / values.length : 0;
+    return {
+      key,
+      label,
+      goalType: 'days',
+      format: (v: number) => `${Math.round(v)}d`,
+      values,
+      avg,
+      months: operationalMonthLabels,
+    };
+  };
+
+  const cashProcessed = [buildPercentOfAssetsMetric('total_cash', 'Cash % of Assets', 'cash', opCashByMonth)];
+  const arRows = [...arProcessed, buildDaysMetric('days_receivables', "Days' Receivables", 'daysAR')];
+  const apRows = [...apProcessed, buildDaysMetric('days_payables', "Days' Payables", 'daysAP')];
+  const inventoryRows = [
+    buildPercentOfAssetsMetric('inventory_value', 'Inventory % of Assets', 'inventory', opInventoryByMonth),
+    buildDaysMetric('days_inventory', "Days' Inventory", 'daysInv'),
+  ];
 
   const months = operationalMonthLabels;
   const operationalStatusMessage = loadingOperational
@@ -702,16 +887,19 @@ export default function GoalsView({
             <th style={{ textAlign: 'center', padding: '12px', fontSize: '18px', fontWeight: '700', color: '#667eea' }}>
               <strong>Goal</strong>
             </th>
+            <th style={{ textAlign: 'center', padding: '12px', fontSize: '14px', fontWeight: '700', color: '#64748b' }}>
+              Benchmark
+            </th>
           </tr>
         </thead>
         <tbody>
           {/* AR Aging Section */}
           <tr style={{ backgroundColor: '#f8fafc', borderTop: '2px solid #e2e8f0' }}>
-            <td colSpan={months.length + 3} style={{ padding: '16px 12px 8px 12px', fontSize: '16px', fontWeight: '700', color: '#1e293b' }}>
-              Accounts Receivable Aging
+            <td colSpan={months.length + 4} style={{ padding: '16px 12px 8px 12px', fontSize: '16px', fontWeight: '700', color: '#1e293b' }}>
+              Accounts Receivable
             </td>
           </tr>
-          {arProcessed.map((metric) => (
+          {arRows.map((metric) => (
             <tr key={metric.key} style={{ borderBottom: '1px solid #f1f5f9' }}>
               <td style={{ padding: '12px', fontSize: '14px', color: '#1e293b', fontWeight: '500' }}>
                 {metric.label}
@@ -732,9 +920,9 @@ export default function GoalsView({
                   <input
                     type={metric.goalType === 'currency' ? 'text' : 'number'}
                     className="no-spinner"
-                    min={metric.goalType === 'percentage' ? '0' : undefined}
+                    min={metric.goalType === 'percentage' || metric.goalType === 'days' ? '0' : undefined}
                     max={metric.goalType === 'percentage' ? '100' : undefined}
-                    step={metric.goalType === 'currency' ? undefined : '0.1'}
+                    step={metric.goalType === 'currency' ? undefined : metric.goalType === 'days' ? '1' : '0.1'}
                     value={metric.goalType === 'currency' && operationalGoals[metric.key] ? operationalGoals[metric.key].toLocaleString() : (operationalGoals[metric.key] || '')}
                     onChange={(e) => {
                       const value = metric.goalType === 'currency' ? e.target.value.replace(/,/g, '') : e.target.value;
@@ -783,21 +971,26 @@ export default function GoalsView({
                       backgroundColor: '#fefce8'
                     }}
                   />
-                  {metric.goalType === 'percentage' && (
-                    <span style={{ position: 'absolute', right: '12px', fontSize: '14px', color: '#64748b', pointerEvents: 'none' }}>%</span>
+                  {(metric.goalType === 'percentage' || metric.goalType === 'days') && (
+                    <span style={{ position: 'absolute', right: '12px', fontSize: '14px', color: '#64748b', pointerEvents: 'none' }}>
+                      {metric.goalType === 'days' ? 'd' : '%'}
+                    </span>
                   )}
                 </div>
               </td>
+              {renderBenchmarkCell(getOperationalBenchmarkValue(benchmarks, metric.key), {
+                format: operationalBenchmarkFormat(metric.key),
+              })}
             </tr>
           ))}
 
           {/* AP Aging Section */}
           <tr style={{ backgroundColor: '#f8fafc', borderTop: '2px solid #e2e8f0' }}>
-            <td colSpan={months.length + 3} style={{ padding: '16px 12px 8px 12px', fontSize: '16px', fontWeight: '700', color: '#1e293b' }}>
-              Accounts Payable Aging
+            <td colSpan={months.length + 4} style={{ padding: '16px 12px 8px 12px', fontSize: '16px', fontWeight: '700', color: '#1e293b' }}>
+              Accounts Payable
             </td>
           </tr>
-          {apProcessed.map((metric) => (
+          {apRows.map((metric) => (
             <tr key={metric.key} style={{ borderBottom: '1px solid #f1f5f9' }}>
               <td style={{ padding: '12px', fontSize: '14px', color: '#1e293b', fontWeight: '500' }}>
                 {metric.label}
@@ -818,9 +1011,9 @@ export default function GoalsView({
                   <input
                     type={metric.goalType === 'currency' ? 'text' : 'number'}
                     className="no-spinner"
-                    min={metric.goalType === 'percentage' ? '0' : undefined}
+                    min={metric.goalType === 'percentage' || metric.goalType === 'days' ? '0' : undefined}
                     max={metric.goalType === 'percentage' ? '100' : undefined}
-                    step={metric.goalType === 'currency' ? undefined : '0.1'}
+                    step={metric.goalType === 'currency' ? undefined : metric.goalType === 'days' ? '1' : '0.1'}
                     value={metric.goalType === 'currency' && operationalGoals[metric.key] ? operationalGoals[metric.key].toLocaleString() : (operationalGoals[metric.key] || '')}
                     onChange={(e) => {
                       const value = metric.goalType === 'currency' ? e.target.value.replace(/,/g, '') : e.target.value;
@@ -869,17 +1062,22 @@ export default function GoalsView({
                       backgroundColor: '#fefce8'
                     }}
                   />
-                  {metric.goalType === 'percentage' && (
-                    <span style={{ position: 'absolute', right: '12px', fontSize: '14px', color: '#64748b', pointerEvents: 'none' }}>%</span>
+                  {(metric.goalType === 'percentage' || metric.goalType === 'days') && (
+                    <span style={{ position: 'absolute', right: '12px', fontSize: '14px', color: '#64748b', pointerEvents: 'none' }}>
+                      {metric.goalType === 'days' ? 'd' : '%'}
+                    </span>
                   )}
                 </div>
               </td>
+              {renderBenchmarkCell(getOperationalBenchmarkValue(benchmarks, metric.key), {
+                format: operationalBenchmarkFormat(metric.key),
+              })}
             </tr>
           ))}
 
           {/* Cash Section */}
           <tr style={{ backgroundColor: '#f8fafc', borderTop: '2px solid #e2e8f0' }}>
-            <td colSpan={months.length + 3} style={{ padding: '16px 12px 8px 12px', fontSize: '16px', fontWeight: '700', color: '#1e293b' }}>
+            <td colSpan={months.length + 4} style={{ padding: '16px 12px 8px 12px', fontSize: '16px', fontWeight: '700', color: '#1e293b' }}>
               Cash Management
             </td>
           </tr>
@@ -898,13 +1096,15 @@ export default function GoalsView({
               </td>
               <td style={{ textAlign: 'center', padding: '12px' }}>
                 <div style={{ display: 'inline-flex', alignItems: 'center', position: 'relative' }}>
-                  <span style={{ position: 'absolute', left: '12px', fontSize: '14px', color: '#64748b', pointerEvents: 'none' }}>$</span>
                   <input
-                    type="text"
+                    type="number"
                     className="no-spinner"
-                    value={operationalGoals[metric.key] ? operationalGoals[metric.key].toLocaleString() : ''}
+                    min="0"
+                    max="100"
+                    step="0.1"
+                    value={operationalGoals[metric.key] || ''}
                     onChange={(e) => {
-                      const value = e.target.value.replace(/,/g, '');
+                      const value = e.target.value;
                       setOperationalGoals((prev: any) => {
                         const newGoals = { ...prev };
                         if (value === '' || value === null || value === undefined) {
@@ -920,27 +1120,10 @@ export default function GoalsView({
                         return newGoals;
                       });
                     }}
-                    onKeyDown={(e) => {
-                      // Allow: backspace, delete, tab, escape, enter
-                      if ([8, 9, 27, 13, 46].indexOf(e.keyCode) !== -1 ||
-                        // Allow: Ctrl+A, Ctrl+C, Ctrl+V, Ctrl+X
-                        (e.keyCode === 65 && e.ctrlKey === true) ||
-                        (e.keyCode === 67 && e.ctrlKey === true) ||
-                        (e.keyCode === 86 && e.ctrlKey === true) ||
-                        (e.keyCode === 88 && e.ctrlKey === true) ||
-                        // Allow: home, end, left, right
-                        (e.keyCode >= 35 && e.keyCode <= 39)) {
-                        return;
-                      }
-                      // Ensure that it is a number and stop the keypress
-                      if ((e.shiftKey || (e.keyCode < 48 || e.keyCode > 57)) && (e.keyCode < 96 || e.keyCode > 105)) {
-                        e.preventDefault();
-                      }
-                    }}
                     placeholder=""
                     style={{
-                      width: '140px',
-                      padding: '8px 12px 8px 24px',
+                      width: '80px',
+                      padding: '8px 32px 8px 12px',
                       fontSize: '14px',
                       fontWeight: '700',
                       border: '1px solid #cbd5e1',
@@ -950,8 +1133,12 @@ export default function GoalsView({
                       backgroundColor: '#fefce8'
                     }}
                   />
+                  <span style={{ position: 'absolute', right: '12px', fontSize: '14px', color: '#64748b', pointerEvents: 'none' }}>%</span>
                 </div>
               </td>
+              {renderBenchmarkCell(getOperationalBenchmarkValue(benchmarks, metric.key), {
+                format: operationalBenchmarkFormat(metric.key),
+              })}
             </tr>
           ))}
           <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
@@ -1018,15 +1205,16 @@ export default function GoalsView({
                 />
               </div>
             </td>
+            {renderBenchmarkCell(null)}
           </tr>
 
           {/* Inventory Section */}
           <tr style={{ backgroundColor: '#f8fafc', borderTop: '2px solid #e2e8f0' }}>
-            <td colSpan={months.length + 3} style={{ padding: '16px 12px 8px 12px', fontSize: '16px', fontWeight: '700', color: '#1e293b' }}>
+            <td colSpan={months.length + 4} style={{ padding: '16px 12px 8px 12px', fontSize: '16px', fontWeight: '700', color: '#1e293b' }}>
               Inventory Management
             </td>
           </tr>
-          {inventoryProcessed.map((metric) => (
+          {inventoryRows.map((metric) => (
             <tr key={metric.key} style={{ borderBottom: '1px solid #f1f5f9' }}>
               <td style={{ padding: '12px', fontSize: '14px', color: '#1e293b', fontWeight: '500' }}>
                 {metric.label}
@@ -1041,13 +1229,15 @@ export default function GoalsView({
               </td>
               <td style={{ textAlign: 'center', padding: '12px' }}>
                 <div style={{ display: 'inline-flex', alignItems: 'center', position: 'relative' }}>
-                  <span style={{ position: 'absolute', left: '12px', fontSize: '14px', color: '#64748b', pointerEvents: 'none' }}>$</span>
                   <input
-                    type="text"
+                    type="number"
                     className="no-spinner"
-                    value={operationalGoals[metric.key] ? operationalGoals[metric.key].toLocaleString() : ''}
+                    min="0"
+                    max={metric.goalType === 'percentage' ? '100' : undefined}
+                    step={metric.goalType === 'days' ? '1' : '0.1'}
+                    value={operationalGoals[metric.key] || ''}
                     onChange={(e) => {
-                      const value = e.target.value.replace(/,/g, '');
+                      const value = e.target.value;
                       setOperationalGoals((prev: any) => {
                         const newGoals = { ...prev };
                         if (value === '' || value === null || value === undefined) {
@@ -1063,27 +1253,10 @@ export default function GoalsView({
                         return newGoals;
                       });
                     }}
-                    onKeyDown={(e) => {
-                      // Allow: backspace, delete, tab, escape, enter
-                      if ([8, 9, 27, 13, 46].indexOf(e.keyCode) !== -1 ||
-                        // Allow: Ctrl+A, Ctrl+C, Ctrl+V, Ctrl+X
-                        (e.keyCode === 65 && e.ctrlKey === true) ||
-                        (e.keyCode === 67 && e.ctrlKey === true) ||
-                        (e.keyCode === 86 && e.ctrlKey === true) ||
-                        (e.keyCode === 88 && e.ctrlKey === true) ||
-                        // Allow: home, end, left, right
-                        (e.keyCode >= 35 && e.keyCode <= 39)) {
-                        return;
-                      }
-                      // Ensure that it is a number and stop the keypress
-                      if ((e.shiftKey || (e.keyCode < 48 || e.keyCode > 57)) && (e.keyCode < 96 || e.keyCode > 105)) {
-                        e.preventDefault();
-                      }
-                    }}
                     placeholder=""
                     style={{
-                      width: '140px',
-                      padding: '8px 12px 8px 24px',
+                      width: '80px',
+                      padding: '8px 32px 8px 12px',
                       fontSize: '14px',
                       fontWeight: '700',
                       border: '1px solid #cbd5e1',
@@ -1093,8 +1266,14 @@ export default function GoalsView({
                       backgroundColor: '#fefce8'
                     }}
                   />
+                  <span style={{ position: 'absolute', right: '12px', fontSize: '14px', color: '#64748b', pointerEvents: 'none' }}>
+                    {metric.goalType === 'days' ? 'd' : '%'}
+                  </span>
                 </div>
               </td>
+              {renderBenchmarkCell(getOperationalBenchmarkValue(benchmarks, metric.key), {
+                format: operationalBenchmarkFormat(metric.key),
+              })}
             </tr>
           ))}
         </tbody>

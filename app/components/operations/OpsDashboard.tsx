@@ -2453,7 +2453,7 @@ export default function OpsDashboard({
                   <XAxis dataKey="period" stroke="#64748b" style={{ fontSize: '12px' }} />
                   <YAxis stroke="#64748b" style={{ fontSize: '12px' }} tickFormatter={formatAxisMoney} />
                   <Tooltip formatter={(value: any) => [formatCurrency(value), 'Value']} />
-                  {operationalGoals.inventory_value && (
+                  {Number(operationalGoals.inventory_value) > 100 && (
                     <ReferenceLine 
                       y={operationalGoals.inventory_value} 
                       stroke="#ef4444" 
@@ -2492,7 +2492,7 @@ export default function OpsDashboard({
                   <XAxis dataKey="period" stroke="#64748b" style={{ fontSize: '12px' }} />
                   <YAxis stroke="#64748b" style={{ fontSize: '12px' }} tickFormatter={formatAxisMoney} />
                   <Tooltip formatter={(value: any) => [formatCurrency(value), 'Total Cash']} />
-                  {operationalGoals.total_cash && (
+                  {Number(operationalGoals.total_cash) > 100 && (
                     <ReferenceLine 
                       y={operationalGoals.total_cash} 
                       stroke="#ef4444" 

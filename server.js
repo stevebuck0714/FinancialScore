@@ -54,9 +54,14 @@ const stagingProjects = (process.env.STAGING_DB_PROJECTS || 'cold-frost')
   .split(',')
   .map((value) => value.trim())
   .filter(Boolean);
+const developmentProjects = (process.env.DEV_DB_PROJECTS || 'cool-dream')
+  .split(',')
+  .map((value) => value.trim())
+  .filter(Boolean);
 
 const isProductionDatabase = productionProjects.some((project) => process.env.DATABASE_URL?.includes(project));
 const isStagingDatabase = stagingProjects.some((project) => process.env.DATABASE_URL?.includes(project));
+const isDevelopmentDatabase = developmentProjects.some((project) => process.env.DATABASE_URL?.includes(project));
 const isVercelProductionRuntime = process.env.VERCEL === '1' && process.env.VERCEL_ENV === 'production';
 
 // CRITICAL: Block production database everywhere except Vercel production runtime
@@ -74,7 +79,10 @@ if (isProductionDatabase && !isVercelProductionRuntime) {
 
 // Log which database we're connecting to
 let dbLabel = 'UNKNOWN';
-if (isStagingDatabase) {
+if (isDevelopmentDatabase) {
+  const developmentName = developmentProjects.find((project) => process.env.DATABASE_URL?.includes(project)) || 'development';
+  dbLabel = `DEV (${developmentName})`;
+} else if (isStagingDatabase) {
   const stagingName = stagingProjects.find((project) => process.env.DATABASE_URL?.includes(project)) || 'staging';
   dbLabel = `STAGING (${stagingName})`;
 } else if (isProductionDatabase) {

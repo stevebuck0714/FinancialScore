@@ -83,6 +83,7 @@ interface MDAViewProps {
   baseCurrency?: string | null;
   reportingCurrency?: string | null;
   locale?: string | null;
+  embedded?: boolean;
 }
 
 export default function MDAView({
@@ -110,6 +111,7 @@ export default function MDAView({
   baseCurrency,
   reportingCurrency,
   locale,
+  embedded = false,
 }: MDAViewProps) {
   const [mdaTab, setMdaTab] = useState<'executive-summary' | 'strengths-insights' | 'key-metrics'>('executive-summary');
   const [printOrientation] = useState<'portrait' | 'landscape'>('portrait');
@@ -323,7 +325,7 @@ export default function MDAView({
 
   if (!monthly || monthly.length === 0 || !trendData || trendData.length === 0) {
     return (
-      <div style={{ maxWidth: '1400px', margin: '0 auto', padding: '32px' }}>
+      <div style={{ maxWidth: '1400px', margin: '0 auto', padding: embedded ? '0' : '32px' }}>
         <div style={{ background: 'white', borderRadius: '12px', padding: '48px', textAlign: 'center', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
           <h2 style={{ fontSize: '24px', fontWeight: '600', color: '#64748b', marginBottom: '16px' }}>
             No Financial Data Available
@@ -337,13 +339,17 @@ export default function MDAView({
   }
 
   return (
-    <div className="mda-container" style={{ maxWidth: '1400px', margin: '0 auto', padding: '32px' }}>
-      <div className="mda-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '32px' }}>
+    <div className="mda-container" style={{ maxWidth: '1400px', margin: '0 auto', padding: embedded ? '0' : '32px' }}>
+      <div className="mda-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: embedded ? '16px' : '32px' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
-          <h1 style={{ fontSize: '32px', fontWeight: '700', color: '#1e293b', margin: '0 0 8px 0' }}>
-            Management Discussion & Analysis
-          </h1>
-          <PageCurrencyBadge currency={displayCurrency} locale={displayLocale} baseCurrency={baseCurrency} />
+          {!embedded && (
+            <>
+              <h1 style={{ fontSize: '32px', fontWeight: '700', color: '#1e293b', margin: '0 0 8px 0' }}>
+                Management Discussion & Analysis
+              </h1>
+              <PageCurrencyBadge currency={displayCurrency} locale={displayLocale} baseCurrency={baseCurrency} />
+            </>
+          )}
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
           {onExportToWord && (

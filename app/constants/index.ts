@@ -80,9 +80,33 @@ export const KPI_TO_BENCHMARK_MAP: Record<string, string[]> = {
   'Leverage Ratio': ['Total Debt to Assets', 'Debt to Assets', 'Leverage Ratio'],
   // Operating
   'Total Asset Turnover': ['Sales/Total Assets', 'Total Asset Turnover', 'Asset Turnover'],
-  'ROE': ['Return on Equity', 'Return on Net Worth, %', 'Return on Equity (%)', 'ROE'],
-  'ROA': ['Return on Assets', 'Return on Assets, %', 'Return on Assets (%)', 'ROA'],
+  'ROE': ['Return on Equity', 'Return on Net Worth, %', 'Return on Net Worth %', 'Return on Equity (%)', 'ROE'],
+  'ROA': ['Return on Assets', 'Return on Total Assets %', 'Return on Assets, %', 'Return on Assets (%)', 'ROA'],
   'EBITDA/Revenue': ['EBITDA Margin', 'EBITDA Margin (%)', 'EBITDA/Revenue'],
   'EBIT/Revenue': ['EBIT Margin', 'EBIT Margin (%)', 'EBIT/Revenue']
+};
+
+// Common-size P&L metrics (% of revenue) for Expense Goals rows.
+// Multiple names are summed (e.g. payroll = officers + salaries + benefits).
+export const EXPENSE_CATEGORY_BENCHMARK_METRICS: Record<string, string[]> = {
+  payroll: ['Employee benefit programs', 'Compensation of officers', 'Salaries and wages'],
+  ownerBasePay: ['Compensation of officers'],
+  benefits: ['Employee benefit programs'],
+  rent: ['Rent paid'],
+  marketing: ['Advertising'],
+  salesExpense: ['Advertising'],
+  depreciationAmortization: ['Depreciation', 'Amortization'],
+  taxLicense: ['Taxes paid'],
+};
+
+export const COGS_TOTAL_BENCHMARK_METRICS = ['Cost of goods'];
+export const OPEX_TOTAL_BENCHMARK_METRICS = ['Expenses'];
+
+export const OPERATIONAL_GOAL_BENCHMARK_METRICS: Record<string, string[]> = {
+  total_cash: ['Cash and Equivalents'],
+  inventory_value: ['Inventories'],
+  days_receivables: ["Days' Receivables"],
+  days_inventory: ["Days' Inventory"],
+  days_payables: ["Days' Payables"],
 };
 
