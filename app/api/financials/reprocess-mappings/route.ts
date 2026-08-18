@@ -1213,15 +1213,37 @@ async function loadQbdGeneralLedgerRowsForMonthlyBuild(companyId: string): Promi
   return [...baselineRows, ...appendRows];
 }
 
-async function loadQbdBestBatchIdForMonth(companyId: string, monthKey: string): Promise<string | null> {
+type QbdMonthGlBatchCoverage = {
+  batchId: string;
+  rowsInMonth: number;
+  minTxn: string | null;
+  maxTxn: string | null;
+  lastSeen: Date;
+};
+
+type QbdMonthGlMerge = {
+  batchesConsidered: number;
+  batchesUsed: number;
+  minTxnDate: string | null;
+  maxTxnDate: string | null;
+  coveredDates: number;
+};
+
+async function loadQbdMonthGlBatchCoverage(companyId: string, monthKey: string): Promise<QbdMonthGlBatchCoverage[]> {
   const monthStart = `${monthKey}-01`;
   const monthEndDate = new Date(`${monthStart}T00:00:00.000Z`);
-  if (Number.isNaN(monthEndDate.getTime())) return null;
+  if (Number.isNaN(monthEndDate.getTime())) return [];
   monthEndDate.setUTCMonth(monthEndDate.getUTCMonth() + 1);
   const nextMonthStart = monthEndDate.toISOString().slice(0, 10);
 
   const rows = await prisma.$queryRaw<
-    Array<{ batchId: string | null }>
+    Array<{
+      batchId: string | null;
+      rowsInMonth: number | null;
+      minTxn: string | null;
+      maxTxn: string | null;
+      lastSeen: Date | null;
+    }>
   >`
     WITH recent_batches AS (
       SELECT "batchId", MAX("createdAt") AS "lastSeen"
@@ -1248,50 +1270,85 @@ async function loadQbdBestBatchIdForMonth(companyId: string, monthKey: string): 
         AND col->>'value' >= ${monthStart}
         AND col->>'value' < ${nextMonthStart}
     )
-    SELECT "batchId"
-    FROM (
-      SELECT
-        "batchId",
-        COUNT(*)::int AS "rowsInMonth",
-        MAX("createdAt") AS "lastSeen"
-      FROM batch_rows
-      GROUP BY "batchId"
-    ) ranked
-    ORDER BY "rowsInMonth" DESC, "lastSeen" DESC
-    LIMIT 1
+    SELECT
+      "batchId",
+      COUNT(*)::int AS "rowsInMonth",
+      MIN("txnDate") AS "minTxn",
+      MAX("txnDate") AS "maxTxn",
+      MAX("createdAt") AS "lastSeen"
+    FROM batch_rows
+    GROUP BY "batchId"
+    ORDER BY MAX("createdAt") ASC
   `;
 
-  const batchId = qbdString(rows[0]?.batchId);
-  return batchId || null;
+  return rows
+    .map((row) => {
+      const batchId = qbdString(row.batchId);
+      if (!batchId || !row.lastSeen) return null;
+      return {
+        batchId,
+        rowsInMonth: Number(row.rowsInMonth || 0),
+        minTxn: qbdDateKey(row.minTxn) || null,
+        maxTxn: qbdDateKey(row.maxTxn) || null,
+        lastSeen: row.lastSeen,
+      };
+    })
+    .filter((row): row is QbdMonthGlBatchCoverage => row !== null);
 }
 
-async function loadQbdBestGlRowsForMonth(companyId: string, monthKey: string): Promise<Record<string, unknown>[]> {
-  const monthStart = `${monthKey}-01`;
-  const monthEndDate = new Date(`${monthStart}T00:00:00.000Z`);
-  monthEndDate.setUTCMonth(monthEndDate.getUTCMonth() + 1);
-  const nextMonthStart = monthEndDate.toISOString().slice(0, 10);
-  const bestBatchId = await loadQbdBestBatchIdForMonth(companyId, monthKey);
-  if (!bestBatchId) return [];
-  const rows = await prisma.$queryRaw<Array<{ row: unknown }>>`
-    WITH gl_rows AS (
-      SELECT jsonb_array_elements(p."payload"::jsonb) AS row
-      FROM "QuickBooksDesktopBackfillPage" p
-      WHERE p."companyId" = ${companyId}
-        AND p."requestName" = 'GeneralDetailReportQuery'
-        AND p."batchId" = ${bestBatchId}
-    )
-    SELECT row
-    FROM gl_rows
-    WHERE row->>'rowKind' = 'DataRow'
-      AND EXISTS (
-        SELECT 1
-        FROM jsonb_array_elements(row->'colData') AS col
-        WHERE col->>'colID' = '3'
-          AND col->>'value' >= ${monthStart}
-          AND col->>'value' < ${nextMonthStart}
-      )
-  `;
-  return rows.map((entry) => qbdAsRecord(entry.row)).filter((row) => Object.keys(row).length > 0);
+async function loadQbdBestGlRowsForMonth(
+  companyId: string,
+  monthKey: string,
+): Promise<{ rows: Record<string, unknown>[]; merge: QbdMonthGlMerge }> {
+  const emptyMerge: QbdMonthGlMerge = {
+    batchesConsidered: 0,
+    batchesUsed: 0,
+    minTxnDate: null,
+    maxTxnDate: null,
+    coveredDates: 0,
+  };
+  const coverage = await loadQbdMonthGlBatchCoverage(companyId, monthKey);
+  if (coverage.length === 0) return { rows: [], merge: emptyMerge };
+
+  // Overlay by txn date, oldest batch first. A later 1-day pull replaces only the
+  // days it contains, so it cannot wipe an older month-to-date batch that ends earlier.
+  const sorted = [...coverage].sort((a, b) => a.lastSeen.getTime() - b.lastSeen.getTime());
+  const rowsByDate = new Map<string, Record<string, unknown>[]>();
+  let batchesUsed = 0;
+
+  for (const batch of sorted) {
+    const batchRows = await loadQbdPageRecordsForBatch({
+      companyId,
+      requestName: 'GeneralDetailReportQuery',
+      batchId: batch.batchId,
+    });
+    const grouped = new Map<string, Record<string, unknown>[]>();
+    for (const row of batchRows) {
+      if (qbdString(row.rowKind) !== 'DataRow') continue;
+      const dateKey = qbdReportTxnDateKey(row);
+      if (!dateKey || dateKey.slice(0, 7) !== monthKey) continue;
+      const list = grouped.get(dateKey) || [];
+      list.push(row);
+      grouped.set(dateKey, list);
+    }
+    if (grouped.size === 0) continue;
+    batchesUsed += 1;
+    for (const [dateKey, rows] of grouped) {
+      rowsByDate.set(dateKey, rows);
+    }
+  }
+
+  const coveredDates = [...rowsByDate.keys()].sort();
+  return {
+    rows: coveredDates.flatMap((dateKey) => rowsByDate.get(dateKey) || []),
+    merge: {
+      batchesConsidered: coverage.length,
+      batchesUsed,
+      minTxnDate: coveredDates[0] || null,
+      maxTxnDate: coveredDates[coveredDates.length - 1] || null,
+      coveredDates: coveredDates.length,
+    },
+  };
 }
 
 function qbdTransactionIdentity(record: Record<string, unknown>, fallbackPrefix: string, index: number): string {
@@ -1754,7 +1811,7 @@ async function rebuildQuickBooksDesktopDailyPnlMonth(companyId: string, monthKey
     }
   }
 
-  const glRows = await loadQbdBestGlRowsForMonth(companyId, monthKey);
+  const { rows: glRows, merge: glMerge } = await loadQbdBestGlRowsForMonth(companyId, monthKey);
   const dailySnapshots = new Map<string, QbdMappedMonthlyRow>();
   const getDailySnapshot = (dateKey: string) => {
     const row = dailySnapshots.get(dateKey) || createQbdMappedDailySnapshot(dateKey);
@@ -1814,6 +1871,7 @@ async function rebuildQuickBooksDesktopDailyPnlMonth(companyId: string, monthKey
   return {
     month: monthKey,
     glRowsScanned: glRows.length,
+    glMerge,
     pnlRowsUsed,
     unmappedRows,
     nonPnlRows,
@@ -2499,7 +2557,8 @@ export async function POST(request: NextRequest) {
         // synthesizes balance sheet anchor rows for every day (and leaves P&L at 0 when the
         // selected GL batches lack coverage). That path can overwrite previously-correct
         // daily P&L with zeros. Instead, rebuild only the per-day P&L rows derived from
-        // the best available GL batch for the requested month.
+        // merged GL coverage for the requested month: older month-to-date batches stay,
+        // and later incremental pulls overlay only the txn dates they contain.
         const dailyPnlResult = await rebuildQuickBooksDesktopDailyPnlMonth(String(companyId), targetMonth);
         const qbdDailyFinancialSnapshots = {
           rowsWritten: dailyPnlResult.rowsWritten,
