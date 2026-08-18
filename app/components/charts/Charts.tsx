@@ -3,6 +3,54 @@
 import React, { useState } from 'react';
 import { sum } from '../../utils/financial';
 
+function niceNumber(value: number, round: boolean): number {
+  if (!Number.isFinite(value) || value === 0) return 0;
+  const sign = value < 0 ? -1 : 1;
+  const abs = Math.abs(value);
+  const exp = Math.floor(Math.log10(abs));
+  const mag = 10 ** exp;
+  const f = abs / mag;
+  const nf = round
+    ? (f < 1.5 ? 1 : f < 3 ? 2 : f < 7 ? 5 : 10)
+    : (f <= 1 ? 1 : f <= 2 ? 2 : f <= 5 ? 5 : 10);
+  return sign * nf * mag;
+}
+
+function niceYScale(dataMin: number, dataMax: number): { yMin: number; yMax: number; step: number } {
+  const TICK_INTERVALS = 4;
+  let min = dataMin;
+  let max = dataMax;
+  if (!Number.isFinite(min) || !Number.isFinite(max)) {
+    return { yMin: 0, yMax: 1, step: 0.25 };
+  }
+  if (min === max) {
+    const pad = Math.max(Math.abs(min) * 0.1, 0.01);
+    min -= pad;
+    max += pad;
+  }
+  const span = max - min;
+  const paddedMin = min - span * 0.05;
+  const paddedMax = max + span * 0.15;
+  let step = niceNumber((paddedMax - paddedMin) / TICK_INTERVALS, true);
+  if (!Number.isFinite(step) || step <= 0) step = 1;
+  let yMin = Math.floor(paddedMin / step) * step;
+  let yMax = Math.ceil(paddedMax / step) * step;
+  if ((yMax - yMin) / step < TICK_INTERVALS) {
+    yMax = yMin + step * TICK_INTERVALS;
+  }
+  // Keep a 0 baseline when values sit in the lower part of the range (ratios).
+  // Keep a tight window when the series is clustered away from 0 (margins).
+  if (min >= 0 && yMin > 0 && yMin <= max * 0.35) {
+    yMin = 0;
+    step = niceNumber(yMax / TICK_INTERVALS, true) || step;
+    yMax = Math.ceil(paddedMax / step) * step;
+  }
+  if (min >= 0 && yMin < 0) yMin = 0;
+  if (max <= 0 && yMax > 0) yMax = 0;
+  if (yMax <= yMin) yMax = yMin + step * TICK_INTERVALS;
+  return { yMin, yMax, step };
+}
+
 // LineChart Component
 export function LineChart({ title, data, valueKey, color, yMax, showTable, compact, formatter, benchmarkValue, showFormulaButton, onFormulaClick, labelFormat, goalLineData, showTrendLine }: { 
   title: string; 
@@ -91,17 +139,44 @@ export function LineChart({ title, data, valueKey, color, yMax, showTable, compa
   const rangeValues = useFilteredRange ? filteredValues : values;
   const minValue = Math.min(...rangeValues);
   const maxValue = Math.max(...rangeValues);
-  
-  let yMaxCalc = yMax || Math.ceil(maxValue * 1.1);
-  let yMinCalc = yMax ? 0 : Math.floor(minValue * 0.9);
+
+  let domainMin = minValue;
+  let domainMax = maxValue;
+  if (benchmarkValue != null && Number.isFinite(benchmarkValue)) {
+    domainMin = Math.min(domainMin, benchmarkValue);
+    domainMax = Math.max(domainMax, benchmarkValue);
+  }
+  if (goalLineData) {
+    for (const goalValue of goalLineData) {
+      if (Number.isFinite(goalValue)) {
+        domainMin = Math.min(domainMin, goalValue);
+        domainMax = Math.max(domainMax, goalValue);
+      }
+    }
+  }
+
+  let yMinCalc: number;
+  let yMaxCalc: number;
+  let yStep: number;
+  if (yMax != null && Number.isFinite(yMax)) {
+    yMinCalc = 0;
+    yMaxCalc = Math.max(yMax, domainMax);
+    yStep = niceNumber(yMaxCalc / 4, true) || yMaxCalc / 4;
+  } else {
+    const scaled = niceYScale(domainMin, domainMax);
+    yMinCalc = scaled.yMin;
+    yMaxCalc = scaled.yMax;
+    yStep = scaled.step;
+  }
   let range = yMaxCalc - yMinCalc;
 
   if (range === 0 || !Number.isFinite(range)) {
     const baseline = Number.isFinite(minValue) ? minValue : 0;
-    const pad = Math.max(Math.abs(baseline) * 0.05, 1);
+    const pad = Math.max(Math.abs(baseline) * 0.05, 0.01);
     yMinCalc = baseline - pad;
     yMaxCalc = baseline + pad;
     range = yMaxCalc - yMinCalc;
+    yStep = range / 4;
   }
 
   const width = compact ? 500 : 1100;
@@ -251,9 +326,10 @@ export function LineChart({ title, data, valueKey, color, yMax, showTable, compa
       </div>
       <svg width={width} height={height} style={{ maxWidth: '100%', marginBottom: '5px' }} viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="xMidYMid meet">
         {(() => {
-          const gridValues = [];
-          const step = range / 4;
-          for (let i = 0; i <= 4; i++) {
+          const gridValues: number[] = [];
+          const step = Number.isFinite(yStep) && yStep > 0 ? yStep : range / 4;
+          const tickCount = Math.max(1, Math.round(range / step));
+          for (let i = 0; i <= tickCount; i++) {
             gridValues.push(yMinCalc + step * i);
           }
           return gridValues.map((val, idx) => {

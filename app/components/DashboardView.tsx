@@ -1233,11 +1233,11 @@ export default function DashboardView({
                 }
                 if (widget === 'EBITDA Margin') {
                   const ebitdaBM = getBenchmarkValue(benchmarks, 'EBITDA/Revenue');
-                  return <LineChart key={widget} title="EBITDA Margin" data={ratioTrendData} valueKey="ebitdaMargin" color="#2563eb" compact yMax={0.5} benchmarkValue={ebitdaBM !== null ? ebitdaBM / 100 : null} formatter={(v) => (v * 100).toFixed(1) + '%'} />;
+                  return <LineChart key={widget} title="EBITDA Margin" data={ratioTrendData} valueKey="ebitdaMargin" color="#2563eb" compact benchmarkValue={ebitdaBM !== null ? ebitdaBM / 100 : null} formatter={(v) => (v * 100).toFixed(1) + '%'} />;
                 }
                 if (widget === 'EBIT Margin') {
                   const ebitBM = getBenchmarkValue(benchmarks, 'EBIT/Revenue');
-                  return <LineChart key={widget} title="EBIT Margin" data={ratioTrendData} valueKey="ebitMargin" color="#1e40af" compact yMax={0.5} benchmarkValue={ebitBM !== null ? ebitBM / 100 : null} formatter={(v) => (v * 100).toFixed(1) + '%'} />;
+                  return <LineChart key={widget} title="EBIT Margin" data={ratioTrendData} valueKey="ebitMargin" color="#1e40af" compact benchmarkValue={ebitBM !== null ? ebitBM / 100 : null} formatter={(v) => (v * 100).toFixed(1) + '%'} />;
                 }
                 // Note: Revenue Trend, Expense Trend, Net Profit Trend, and Gross Margin Trend widgets
                 // have been replaced with the Trend Analysis dropdown selections
