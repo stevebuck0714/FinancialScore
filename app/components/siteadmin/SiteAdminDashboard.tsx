@@ -383,6 +383,8 @@ export default function SiteAdminDashboard(props: any) {
   } = props;
   const businessesLoading = Boolean(props.businessesLoading);
   const [referralPartners, setReferralPartners] = React.useState<any[]>([]);
+  const [standaloneBusinesses, setStandaloneBusinesses] = React.useState<any[]>([]);
+  const [standaloneBusinessesLoading, setStandaloneBusinessesLoading] = React.useState(false);
   const [siteAdminCreateBusy, setSiteAdminCreateBusy] = React.useState(false);
   const [siteAdminCreateError, setSiteAdminCreateError] = React.useState<string | null>(null);
   React.useEffect(() => {
@@ -399,6 +401,39 @@ export default function SiteAdminDashboard(props: any) {
       isMounted = false;
     };
   }, []);
+  React.useEffect(() => {
+    let cancelled = false;
+    const loadStandaloneBusinesses = async () => {
+      setStandaloneBusinessesLoading(true);
+      try {
+        const response = await fetch('/api/siteadmin/businesses', { cache: 'no-store', credentials: 'include' });
+        const data = await response.json();
+        if (cancelled) return;
+        const standalones = (Array.isArray(data?.companies) ? data.companies : [])
+          .filter((company: any) => company?.id)
+          .map((company: any) => ({ ...company, consultantId: null }));
+        setStandaloneBusinesses(standalones);
+        if (typeof setCompanies === 'function' && standalones.length > 0) {
+          setCompanies((prev: any) => {
+            const list = Array.isArray(prev) ? prev : [];
+            const byId = new Map(list.filter((company: any) => company?.id).map((company: any) => [company.id, company]));
+            for (const company of standalones) {
+              byId.set(company.id, { ...byId.get(company.id), ...company, consultantId: null });
+            }
+            return Array.from(byId.values());
+          });
+        }
+      } catch (error) {
+        console.error('Failed to load standalone businesses', error);
+      } finally {
+        if (!cancelled) setStandaloneBusinessesLoading(false);
+      }
+    };
+    loadStandaloneBusinesses();
+    return () => {
+      cancelled = true;
+    };
+  }, [setCompanies]);
   const getReferralPartnerName = React.useCallback(
     (referralPartnerId?: string | null) => {
       if (!referralPartnerId) return 'None';
@@ -904,11 +939,13 @@ export default function SiteAdminDashboard(props: any) {
       const aff = newStandaloneBusinessAffiliate.trim();
       if (aff) payload.affiliateCode = aff.toUpperCase();
       const { company } = await companiesApi.create(payload);
+      const created = { ...company, consultantId: company?.consultantId ?? null };
       setCompanies((prev: any[]) =>
-        Array.isArray(prev)
-          ? [...prev, { ...company, consultantId: company?.consultantId ?? null }]
-          : [{ ...company, consultantId: company?.consultantId ?? null }]
+        Array.isArray(prev) ? [...prev, created] : [created]
       );
+      setStandaloneBusinesses((prev) => (
+        prev.some((item) => item.id === created.id) ? prev : [...prev, created]
+      ));
       setNewStandaloneBusinessName('');
       setNewStandaloneBusinessAffiliate('');
       alert('Business created.');
@@ -940,6 +977,25 @@ export default function SiteAdminDashboard(props: any) {
 
   const isStandaloneBusiness = (company: any) =>
     !String(company?.consultantId ?? '').trim();
+
+  const listedStandaloneBusinesses = React.useMemo(() => {
+    const fromState = Array.isArray(companies) ? companies.filter(isStandaloneBusiness) : [];
+    const byId = new Map<string, any>();
+    for (const company of fromState) {
+      if (company?.id) byId.set(company.id, company);
+    }
+    for (const company of standaloneBusinesses) {
+      if (company?.id && !byId.has(company.id)) {
+        byId.set(company.id, { ...company, consultantId: null });
+      }
+    }
+    return Array.from(byId.values()).sort((a: any, b: any) =>
+      String(a?.name || '').localeCompare(String(b?.name || ''), undefined, {
+        numeric: true,
+        sensitivity: 'base',
+      })
+    );
+  }, [companies, standaloneBusinesses]);
 
   const isCorelyticsCompany = (company: any) => {
     const name = String(company?.name || '').trim().toLowerCase();
@@ -4252,7 +4308,7 @@ export default function SiteAdminDashboard(props: any) {
         ? 'Running - no recent Web Connector update'
         : 'Running - Web Connector is pulling data'
       : queuedRange
-      ? 'Queued - waiting for Web Connector'
+      ? 'Queued - waiting for the client QuickBooks Web Connector to check in'
       : hasActiveDetailBackfillJobs
         ? 'Line-item detail jobs in progress'
       : hasActiveBackfillJobs
@@ -9968,7 +10024,7 @@ export default function SiteAdminDashboard(props: any) {
                   {/* Businesses List */}
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
                     <div style={{ fontSize: '14px', fontWeight: '600', color: '#64748b' }}>
-                      Total Businesses: {Array.isArray(companies) ? companies.filter(isStandaloneBusiness).length : 0}
+                      Total Businesses: {listedStandaloneBusinesses.length}
                     </div>
                     <button
                       onClick={async () => {
@@ -10038,12 +10094,12 @@ export default function SiteAdminDashboard(props: any) {
                     </button>
                   </div>
 
-                  {businessesLoading ? (
+                  {listedStandaloneBusinesses.length === 0 && (businessesLoading || standaloneBusinessesLoading) ? (
                     <div style={{ background: 'white', borderRadius: '8px', padding: '40px', textAlign: 'center', boxShadow: '0 1px 3px rgba(0,0,0,0.08)' }}>
                       <div style={{ fontSize: '16px', fontWeight: '600', color: '#64748b', marginBottom: '6px' }}>Loading businesses...</div>
                       <p style={{ fontSize: '13px', color: '#94a3b8' }}>Please wait while company data is retrieved.</p>
                     </div>
-                  ) : Array.isArray(companies) && companies.filter(isStandaloneBusiness).length === 0 ? (
+                  ) : listedStandaloneBusinesses.length === 0 ? (
                     <div style={{ background: 'white', borderRadius: '8px', padding: '40px', textAlign: 'center', boxShadow: '0 1px 3px rgba(0,0,0,0.08)' }}>
                       <div style={{ fontSize: '36px', marginBottom: '12px' }}>🏢</div>
                       <h3 style={{ fontSize: '16px', fontWeight: '600', color: '#64748b', marginBottom: '6px' }}>No businesses in the list yet</h3>
@@ -10051,15 +10107,7 @@ export default function SiteAdminDashboard(props: any) {
                     </div>
                   ) : (
                     <div style={{ display: 'grid', gap: '8px' }}>
-                      {Array.isArray(companies) && companies
-                        .filter(isStandaloneBusiness)
-                        .sort((a: any, b: any) =>
-                          (a.name || '').localeCompare(
-                            b.name || '',
-                            undefined,
-                            { numeric: true, sensitivity: 'base' }
-                          )
-                        )
+                      {listedStandaloneBusinesses
                         .map((businessCompany) => {
                         // Find the user associated with this company
                         const businessUser = users.find(u => u.companyId === businessCompany.id);

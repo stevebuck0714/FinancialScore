@@ -259,7 +259,26 @@ export async function GET(request: NextRequest) {
       orderBy: { fullName: 'asc' }
     });
 
-    return NextResponse.json({ consultants });
+    let standaloneCompanies: any[] = [];
+    try {
+      const rows = await prisma.$queryRaw<Array<{ id: string; name: string; consultantId: string | null }>>`
+        SELECT id, name, "consultantId"
+        FROM "Company"
+        WHERE "consultantId" IS NULL
+          AND COALESCE(name, '') NOT LIKE '% (DELETED)%'
+        ORDER BY name ASC
+      `;
+      standaloneCompanies = (rows || []).map((row) => ({
+        id: row.id,
+        name: row.name,
+        consultantId: null,
+      }));
+    } catch (standaloneError) {
+      console.warn('Could not load standalone companies for site admin', standaloneError);
+      standaloneCompanies = [];
+    }
+
+    return NextResponse.json({ consultants, standaloneCompanies });
   } catch (error) {
     console.error('Error fetching consultants:', error);
     return NextResponse.json(

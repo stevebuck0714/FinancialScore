@@ -73,40 +73,57 @@ export async function getUserContext(): Promise<UserContext | null> {
 
   const headersList = headers()
   
-  const userId = headersList.get('x-user-id')
-  const email = headersList.get('x-user-email')
+  const userIdHeader = headersList.get('x-user-id')
+  const emailHeader = headersList.get('x-user-email')
   const roleFromHeader = normalizeRole(headersList.get('x-user-role'))
   const activeCompanyId = headersList.get('x-active-company-id')
   const companyIdFromHeader = headersList.get('x-company-id')
   const consultantIdFromHeader = headersList.get('x-consultant-id')
-  
-  if (!userId || !email) {
-    return null
-  }
 
+  let userId = userIdHeader
+  let email = emailHeader
   let role = roleFromHeader
   let companyId = activeCompanyId || companyIdFromHeader
   let consultantId = consultantIdFromHeader
 
-  // Backward-compatible fallback: older JWTs may miss role/company claims.
-  // Hydrate from DB so authenticated users do not get rejected by strict header checks.
-  if (!role) {
-    const user = await prisma.user.findUnique({
-      where: { id: userId },
-      select: {
-        role: true,
-        companyId: true,
-        consultantId: true,
-      },
-    })
+  // Older JWTs can omit id and/or role. Hydrate from DB so site admins are
+  // not treated as users with zero company access.
+  if ((!userId || !email || !role) && (userId || email)) {
+    const user = userId
+      ? await prisma.user.findUnique({
+          where: { id: userId },
+          select: {
+            id: true,
+            email: true,
+            role: true,
+            companyId: true,
+            consultantId: true,
+          },
+        })
+      : await prisma.user.findUnique({
+          where: { email: String(email).toLowerCase().trim() },
+          select: {
+            id: true,
+            email: true,
+            role: true,
+            companyId: true,
+            consultantId: true,
+          },
+        })
 
-    const fallbackRole = normalizeRole(user?.role || null)
-    if (!fallbackRole) {
+    if (!user) {
       return null
     }
-    role = fallbackRole
-    companyId = companyId || user?.companyId || null
-    consultantId = consultantId || user?.consultantId || null
+
+    userId = userId || user.id
+    email = email || user.email
+    role = role || normalizeRole(user.role || null)
+    companyId = companyId || user.companyId || null
+    consultantId = consultantId || user.consultantId || null
+  }
+
+  if (!userId || !email || !role) {
+    return null
   }
   
   return {
@@ -443,21 +460,20 @@ export async function getAccessibleCompanyIds(): Promise<string[]> {
  * Build a Prisma where clause for company filtering based on user access
  */
 export async function getCompanyAccessFilter(): Promise<{ id: { in: string[] } } | {}> {
-  const companyIds = await getAccessibleCompanyIds()
-  
-  if (companyIds.length === 0) {
-    // No access - return filter that matches nothing
-    return { id: { in: [] } }
-  }
-  
   const context = await getUserContext()
-  
-  // Site admins get no filter (access all)
+
+  // Site admins see every company. Check this first so an empty personal
+  // membership list cannot hide the whole tenant catalog.
   if (context?.role === 'SITEADMIN') {
     return {}
   }
-  
-  // Everyone else gets filtered list
+
+  const companyIds = await getAccessibleCompanyIds()
+
+  if (companyIds.length === 0) {
+    return { id: { in: [] } }
+  }
+
   return { id: { in: companyIds } }
 }
 
