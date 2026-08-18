@@ -43,6 +43,20 @@ function monthKey(value: string): string {
   return /^\d{4}-\d{2}-\d{2}$/.test(value) ? value.slice(0, 7) : '';
 }
 
+function monthKeysInclusive(startDate: string, endDate: string): string[] {
+  if (!startDate || !endDate || startDate > endDate) return [];
+  const start = new Date(`${startDate.slice(0, 7)}-01T00:00:00.000Z`);
+  const end = new Date(`${endDate.slice(0, 7)}-01T00:00:00.000Z`);
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || start > end) return [];
+  const months: string[] = [];
+  const cursor = new Date(start);
+  while (cursor <= end) {
+    months.push(`${cursor.getUTCFullYear()}-${String(cursor.getUTCMonth() + 1).padStart(2, '0')}`);
+    cursor.setUTCMonth(cursor.getUTCMonth() + 1);
+  }
+  return months;
+}
+
 async function postJson(
   url: URL,
   body: Record<string, unknown>,
@@ -60,14 +74,15 @@ async function postJson(
       signal: controller.signal,
     });
 
-    if (response.ok) return { ok: true, status: response.status };
-
     let details = response.statusText || `HTTP ${response.status}`;
     try {
       const payload = await response.json();
+      const failed = payload?.ok === false || payload?.success === false;
       details = String(payload?.error || payload?.message || payload?.details || details);
+      if (response.ok && !failed) return { ok: true, status: response.status };
+      return { ok: false, status: response.status, error: details.slice(0, 500) };
     } catch {
-      // Keep HTTP status text when the response is not JSON.
+      if (response.ok) return { ok: true, status: response.status };
     }
     return { ok: false, status: response.status, error: details.slice(0, 500) };
   } catch (error: any) {
@@ -107,7 +122,8 @@ export async function runQuickBooksDesktopPostSyncReprocess(
 
   const startDate = parseDate(options.startDate);
   const endDate = parseDate(options.endDate);
-  const targetMonth = monthKey(endDate || startDate);
+  const rebuildMonths = monthKeysInclusive(startDate, endDate);
+  const targetMonth = rebuildMonths[rebuildMonths.length - 1] || monthKey(endDate || startDate);
   const cronSecret = String(process.env.CRON_SECRET || '').trim();
   const vercelBypass = String(process.env.VERCEL_AUTOMATION_BYPASS_SECRET || '').trim();
   const commonHeaders = {
@@ -117,17 +133,24 @@ export async function runQuickBooksDesktopPostSyncReprocess(
   };
 
   const dailyUrl = new URL('/api/financials/reprocess-mappings', baseUrl);
-  const dailyFinancials = await postJson(
-    dailyUrl,
-    {
-      companyId,
-      mode: targetMonth ? 'only' : 'through',
-      ...(targetMonth ? { targetMonth } : {}),
-      source: options.source || 'qbd-web-connector-finalize',
-    },
-    commonHeaders,
-    180000,
-  );
+  let dailyFinancials: PostSyncStepResult = targetMonth
+    ? { ok: true }
+    : { ok: false, error: 'targetMonth is required for QBD daily financial rebuild.' };
+  for (const month of rebuildMonths.length ? rebuildMonths : targetMonth ? [targetMonth] : []) {
+    dailyFinancials = await postJson(
+      dailyUrl,
+      {
+        companyId,
+        targetMonth: month,
+        mode: 'single',
+        dailyOnly: true,
+        source: options.source || 'qbd-web-connector-finalize',
+      },
+      commonHeaders,
+      180000,
+    );
+    if (!dailyFinancials.ok) break;
+  }
   if (!dailyFinancials.ok) {
     console.warn('QBD post-sync daily financial rebuild failed:', {
       companyId,

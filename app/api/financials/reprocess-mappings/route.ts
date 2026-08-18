@@ -1525,7 +1525,6 @@ async function buildQuickBooksDesktopMappedMonthlyPayload(companyId: string, bas
       glPnlByDate.set(dateKey, dayRow);
     }
     if (!QBD_BALANCE_SHEET_TARGET_FIELDS.has(target)) continue;
-    if (balanceSheetReportDate && dateKey > balanceSheetReportDate) continue;
     const dateMovements = glMovementsByDate.get(dateKey) || new Map<string, number>();
     dateMovements.set(target, Number(dateMovements.get(target) || 0) + amount);
     glMovementsByDate.set(dateKey, dateMovements);
@@ -1602,6 +1601,35 @@ async function buildQuickBooksDesktopMappedMonthlyPayload(companyId: string, bas
         }
       }
       cursor = qbdAddDays(cursor, -1);
+    }
+
+    let latestGlDate: string | null = null;
+    for (const dateKey of glMovementsByDate.keys()) {
+      if (!latestGlDate || dateKey > latestGlDate) latestGlDate = dateKey;
+    }
+    for (const dateKey of glPnlByDate.keys()) {
+      if (!latestGlDate || dateKey > latestGlDate) latestGlDate = dateKey;
+    }
+    if (latestGlDate && latestGlDate > balanceSheetReportDate) {
+      const forwardBalances = new Map<string, number>();
+      for (const field of QBD_BALANCE_SHEET_TARGET_FIELDS) {
+        forwardBalances.set(field, Number(balanceSheetAnchor[field] || 0));
+      }
+      let forwardCursor = qbdAddDays(balanceSheetReportDate, 1);
+      while (forwardCursor && forwardCursor <= latestGlDate) {
+        const movements = glMovementsByDate.get(forwardCursor);
+        if (movements) {
+          for (const [field, amount] of movements.entries()) {
+            forwardBalances.set(field, Number(forwardBalances.get(field) || 0) + amount);
+          }
+        }
+        const dailyRow = getDailySnapshot(forwardCursor);
+        for (const field of QBD_BALANCE_SHEET_TARGET_FIELDS) {
+          dailyRow[field] = Number(forwardBalances.get(field) || 0);
+        }
+        recomputeQbdBalanceSheetTotals(dailyRow);
+        forwardCursor = qbdAddDays(forwardCursor, 1);
+      }
     }
 
     const latestDailyByMonth = new Map<string, QbdMappedMonthlyRow>();
@@ -1682,16 +1710,19 @@ async function persistQuickBooksDesktopDailyFinancialSnapshots(
   companyId: string,
   payload: Record<string, unknown>,
   scope: { canUpdatePnl: boolean; canUpdateBalanceSheet: boolean },
+  options: { monthKey?: string | null } = {},
 ) {
   const rows = Array.isArray(payload.qbdDailyFinancialSnapshots)
     ? (payload.qbdDailyFinancialSnapshots as Array<Record<string, unknown>>)
     : [];
+  const monthKey = options.monthKey && /^\d{4}-\d{2}$/.test(options.monthKey) ? options.monthKey : null;
   const sourceRunId = `qbd-reprocess-${Date.now()}`;
   const parsedRows = rows
     .map((row) => {
       const rawDate = qbdString(row.snapshotDate);
       const dateKey = qbdDateKey(rawDate);
       if (!dateKey) return null;
+      if (monthKey && dateKey.slice(0, 7) !== monthKey) return null;
       const snapshotDate = new Date(`${dateKey}T00:00:00.000Z`);
       if (Number.isNaN(snapshotDate.getTime())) return null;
       const numericFields = Object.fromEntries(
@@ -1857,7 +1888,9 @@ async function rebuildQuickBooksDesktopDailyPnlMonth(companyId: string, monthKey
     companyId,
     { qbdDailyFinancialSnapshots },
     { canUpdatePnl: true, canUpdateBalanceSheet: false },
+    { monthKey },
   );
+  const balanceSheetResult = await rebuildQuickBooksDesktopDailyBalanceSheetMonth(companyId, monthKey);
   const totals = qbdDailyFinancialSnapshots.reduce(
     (acc, row) => {
       acc.revenue += Number(row.revenue || 0);
@@ -1878,7 +1911,179 @@ async function rebuildQuickBooksDesktopDailyPnlMonth(companyId: string, monthKey
     zeroAmountRows,
     dailyRowsBuilt: qbdDailyFinancialSnapshots.length,
     ...result,
+    balanceSheet: balanceSheetResult,
     totals,
+  };
+}
+
+async function rebuildQuickBooksDesktopDailyBalanceSheetMonth(companyId: string, monthKey: string) {
+  const monthStart = `${monthKey}-01`;
+  const monthEndDate = new Date(`${monthStart}T00:00:00.000Z`);
+  monthEndDate.setUTCMonth(monthEndDate.getUTCMonth() + 1);
+  monthEndDate.setUTCDate(0);
+  const monthEnd = qbdDateKey(monthEndDate.toISOString());
+  if (!monthEnd) {
+    return { month: monthKey, rowsWritten: 0, seedDate: null, reportDate: null, skipped: 'invalid_month' };
+  }
+
+  const mappings = await prisma.accountMapping.findMany({
+    where: { companyId },
+    select: { accountId: true, accountName: true, accountCode: true, targetField: true },
+  });
+  const targetByKey = new Map<string, string>();
+  const accountCodeCounts = new Map<string, number>();
+  for (const mapping of mappings) {
+    const code = qbdString(mapping.accountCode).toLowerCase();
+    if (code) accountCodeCounts.set(code, Number(accountCodeCounts.get(code) || 0) + 1);
+  }
+  for (const mapping of mappings) {
+    const target = qbdString(mapping.targetField);
+    const keyValues = [mapping.accountId, mapping.accountName].map(qbdString).filter(Boolean);
+    const accountCode = qbdString(mapping.accountCode);
+    if (accountCode && accountCodeCounts.get(accountCode.toLowerCase()) === 1) keyValues.push(accountCode);
+    for (const key of keyValues) {
+      for (const normalized of qbdAccountLookupKeys(key)) {
+        targetByKey.set(normalized, target);
+      }
+    }
+  }
+  const getTarget = (accountName: unknown) => {
+    for (const key of qbdAccountLookupKeys(accountName)) {
+      const target = targetByKey.get(key);
+      if (target) return target;
+    }
+    return '';
+  };
+
+  const { rows: glRows } = await loadQbdBestGlRowsForMonth(companyId, monthKey);
+  const glMovementsByDate = new Map<string, Map<string, number>>();
+  for (const glRow of glRows) {
+    if (qbdString(glRow.rowKind) !== 'DataRow') continue;
+    const dateKey = qbdDateKey(qbdReportColValueByTitle(glRow, ['Txn Date', 'Date'], ['3']));
+    if (!dateKey || dateKey.slice(0, 7) !== monthKey) continue;
+    const target = getTarget(glRow.accountName || glRow.rowValue);
+    if (!QBD_BALANCE_SHEET_TARGET_FIELDS.has(target)) continue;
+    const amount = qbdGeneralLedgerPnlAmount(target, qbdNumber(qbdReportColValueByTitle(glRow, ['Amount'], ['8'])));
+    if (amount === 0) continue;
+    const dateMovements = glMovementsByDate.get(dateKey) || new Map<string, number>();
+    dateMovements.set(target, Number(dateMovements.get(target) || 0) + amount);
+    glMovementsByDate.set(dateKey, dateMovements);
+  }
+
+  const balanceSheetReportRows = await loadQbdPageRecords(companyId, 'BalanceSheetStandardReportQuery');
+  const reportDate = qbdBalanceSheetReportDateKey(balanceSheetReportRows);
+  const reportSnap = reportDate ? createQbdMappedDailySnapshot(reportDate) : null;
+  if (reportSnap) {
+    for (const reportRow of balanceSheetReportRows) {
+      const rowType = qbdString(reportRow.rowType).toLowerCase();
+      const rowKind = qbdString(reportRow.rowKind);
+      if (rowType && rowType !== 'account') continue;
+      if (!rowType && rowKind !== 'DataRow') continue;
+      qbdApplyBalance(reportSnap, getTarget(qbdReportAccountName(reportRow)), qbdReportAmount(reportRow));
+    }
+    recomputeQbdBalanceSheetTotals(reportSnap);
+  }
+
+  const priorSnapshots = await prisma.dailyFinancialSnapshot.findMany({
+    where: {
+      companyId,
+      frequency: 'daily',
+      snapshotDate: { lte: new Date(`${monthEnd}T00:00:00.000Z`) },
+    },
+    orderBy: { snapshotDate: 'desc' },
+    take: 60,
+  });
+  const priorWithBs = priorSnapshots.find((row) =>
+    QBD_MONTHLY_BS_PRESERVE_FIELDS.some((field) => Number((row as Record<string, unknown>)[field] || 0) !== 0),
+  );
+  const priorDate = priorWithBs ? qbdDateKey(priorWithBs.snapshotDate.toISOString()) : null;
+
+  const seedBalances = new Map<string, number>();
+  let seedDate: string | null = null;
+  const reportInMonth = Boolean(reportSnap && reportDate && reportDate >= monthStart && reportDate <= monthEnd);
+  if (reportInMonth && reportSnap && reportDate) {
+    seedDate = reportDate;
+    for (const field of QBD_BALANCE_SHEET_TARGET_FIELDS) {
+      seedBalances.set(field, Number(reportSnap[field] || 0));
+    }
+  } else if (priorDate && priorWithBs) {
+    seedDate = priorDate;
+    for (const field of QBD_BALANCE_SHEET_TARGET_FIELDS) {
+      seedBalances.set(field, Number((priorWithBs as Record<string, unknown>)[field] || 0));
+    }
+  }
+
+  if (!seedDate) {
+    return { month: monthKey, rowsWritten: 0, seedDate: null, reportDate, skipped: 'no_balance_sheet_seed' };
+  }
+
+  let latestTarget = seedDate >= monthStart && seedDate <= monthEnd ? seedDate : monthStart;
+  for (const dateKey of glMovementsByDate.keys()) {
+    if (dateKey <= monthEnd && dateKey > latestTarget) latestTarget = dateKey;
+  }
+  for (const row of priorSnapshots) {
+    const dateKey = qbdDateKey(row.snapshotDate.toISOString());
+    if (dateKey && dateKey >= monthStart && dateKey <= monthEnd && dateKey > latestTarget) {
+      latestTarget = dateKey;
+    }
+  }
+
+  const dailySnapshots = new Map<string, QbdMappedMonthlyRow>();
+  const assign = (dateKey: string, balances: Map<string, number>) => {
+    const row = dailySnapshots.get(dateKey) || createQbdMappedDailySnapshot(dateKey);
+    for (const field of QBD_BALANCE_SHEET_TARGET_FIELDS) {
+      row[field] = Number(balances.get(field) || 0);
+    }
+    recomputeQbdBalanceSheetTotals(row);
+    dailySnapshots.set(dateKey, row);
+  };
+
+  if (seedDate >= monthStart && seedDate <= monthEnd) {
+    assign(seedDate, seedBalances);
+  }
+
+  const forwardBalances = new Map(seedBalances);
+  let cursor = qbdAddDays(seedDate, 1);
+  while (cursor && cursor <= latestTarget && cursor <= monthEnd) {
+    const movements = glMovementsByDate.get(cursor);
+    if (movements) {
+      for (const [field, amount] of movements.entries()) {
+        forwardBalances.set(field, Number(forwardBalances.get(field) || 0) + amount);
+      }
+    }
+    if (cursor >= monthStart) assign(cursor, forwardBalances);
+    cursor = qbdAddDays(cursor, 1);
+  }
+
+  if (seedDate >= monthStart) {
+    const backBalances = new Map(seedBalances);
+    cursor = seedDate;
+    while (cursor && cursor >= monthStart) {
+      if (cursor !== seedDate) assign(cursor, backBalances);
+      const movements = glMovementsByDate.get(cursor);
+      if (movements) {
+        for (const [field, amount] of movements.entries()) {
+          backBalances.set(field, Number(backBalances.get(field) || 0) - amount);
+        }
+      }
+      cursor = qbdAddDays(cursor, -1);
+    }
+  }
+
+  const persistResult = await persistQuickBooksDesktopDailyFinancialSnapshots(
+    companyId,
+    { qbdDailyFinancialSnapshots: Array.from(dailySnapshots.values()) },
+    { canUpdatePnl: false, canUpdateBalanceSheet: true },
+    { monthKey },
+  );
+  return {
+    month: monthKey,
+    seedDate,
+    reportDate,
+    latestTarget,
+    movementDays: glMovementsByDate.size,
+    dailyRowsBuilt: dailySnapshots.size,
+    ...persistResult,
   };
 }
 
@@ -2553,22 +2758,18 @@ export async function POST(request: NextRequest) {
           );
         }
 
-        // Critical: daily-only rebuild must not reuse the monthly payload builder because it
-        // synthesizes balance sheet anchor rows for every day (and leaves P&L at 0 when the
-        // selected GL batches lack coverage). That path can overwrite previously-correct
-        // daily P&L with zeros. Instead, rebuild only the per-day P&L rows derived from
-        // merged GL coverage for the requested month: older month-to-date batches stay,
-        // and later incremental pulls overlay only the txn dates they contain.
+        // Daily-only rebuild must not reuse the monthly payload builder: that path can
+        // overwrite overlay-merged daily P&L with zeros. Rebuild P&L from merged GL, then
+        // fill daily BS from the latest Balance Sheet report (or last stored BS snapshot)
+        // plus GL movements, including days after the report date.
         const dailyPnlResult = await rebuildQuickBooksDesktopDailyPnlMonth(String(companyId), targetMonth);
         const qbdDailyFinancialSnapshots = {
           rowsWritten: dailyPnlResult.rowsWritten,
           rowsDeleted: dailyPnlResult.rowsDeleted,
           startDate: dailyPnlResult.startDate,
           endDate: dailyPnlResult.endDate,
+          balanceSheet: dailyPnlResult.balanceSheet,
         };
-        // Daily-only rebuild should not touch balance sheet anchors; those are derived from
-        // BalanceSheetStandardReportQuery + GL movement logic and require the full mapped payload.
-        // More importantly: touching BS anchors here is unnecessary for the daily P&L recovery path.
         const qbdBalanceSheetAnchor = null;
         qbdDiagnostics.dailyFinancialSnapshots = qbdDailyFinancialSnapshots;
         qbdDiagnostics.balanceSheetAnchor = qbdBalanceSheetAnchor;
@@ -2604,9 +2805,18 @@ export async function POST(request: NextRequest) {
         targetMonth: targetMonth || undefined,
         mode,
       });
-      const qbdDailyFinancialSnapshots = result.ok
-        ? null
+      const qbdDailyFinancialSnapshots = result.ok && qbdDomainScope.canUpdateBalanceSheet
+        ? targetMonth
+          ? await rebuildQuickBooksDesktopDailyBalanceSheetMonth(String(companyId), targetMonth)
+          : await persistQuickBooksDesktopDailyFinancialSnapshots(
+              String(companyId),
+              financialPayload,
+              { canUpdatePnl: false, canUpdateBalanceSheet: true },
+            )
         : null;
+      if (qbdDailyFinancialSnapshots) {
+        qbdDiagnostics.dailyFinancialSnapshots = qbdDailyFinancialSnapshots;
+      }
       const qbdBalanceSheetAnchor = result.ok
         ? qbdDomainScope.canUpdateBalanceSheet
           ? await persistQuickBooksDesktopBalanceSheetAnchor(String(companyId), financialPayload)

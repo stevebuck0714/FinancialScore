@@ -824,6 +824,12 @@ function dateRangeDayCount(dateRange?: QbwcDateRange): number | null {
 }
 
 function getStandardBackfillJobsPerSession(pendingJobs: QbdBackfillJob[]): number {
+  const standardJobs = pendingJobs.filter((job) => job.processingMode !== 'aging_snapshot');
+  // If the leftover set fits in one WC session, drain it. Site Admin cannot start
+  // Web Connector; the next client-machine check-in has to finish the queue.
+  if (standardJobs.length > 0 && standardJobs.length <= QBD_SHORT_WINDOW_BACKFILL_JOBS_PER_SESSION) {
+    return QBD_SHORT_WINDOW_BACKFILL_JOBS_PER_SESSION;
+  }
   const dayCounts = pendingJobs
     .map((job) => dateRangeDayCount(job.dateRange))
     .filter((count): count is number => typeof count === 'number');

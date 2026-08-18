@@ -161,7 +161,7 @@ async function claimNextQuickBooksDesktopPostSyncJob(companyId?: string): Promis
      SET "status" = 'running',
          "attemptCount" = job."attemptCount" + 1,
          "startedAt" = CURRENT_TIMESTAMP,
-         "leaseExpiresAt" = CURRENT_TIMESTAMP + INTERVAL '5 minutes',
+         "leaseExpiresAt" = CURRENT_TIMESTAMP + INTERVAL '15 minutes',
          "updatedAt" = CURRENT_TIMESTAMP,
          "errorMessage" = NULL
      FROM next_job
