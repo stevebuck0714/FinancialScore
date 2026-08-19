@@ -397,7 +397,9 @@ const applyMonthlyBaseCalendarToWeeklyDrivers = (
       marginWeighted += dailyMargin;
     }
     next[idx].sales = Math.max(0, Math.round(salesTotal));
-    next[idx].opex = Math.max(0, Math.round(opexTotal));
+    if (opexTotal > 0) {
+      next[idx].opex = Math.max(0, Math.round(opexTotal));
+    }
     next[idx].grossMarginPct = clampNumber(marginWeighted / 7, 1, 99);
   }
   return next;
