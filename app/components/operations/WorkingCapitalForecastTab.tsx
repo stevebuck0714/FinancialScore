@@ -371,7 +371,6 @@ const resolveMonthIndexForDate = (date: Date, monthRefs: MonthlyBaseRef[]): numb
 const applyMonthlyBaseCalendarToWeeklyDrivers = (
   drivers: WeeklyDriver[],
   monthTotals: number[],
-  opexMonthTotals: number[],
   marginMonthPcts: number[],
   monthRefs: MonthlyBaseRef[],
 ): WeeklyDriver[] => {
@@ -382,7 +381,6 @@ const applyMonthlyBaseCalendarToWeeklyDrivers = (
   for (let idx = 0; idx < Math.min(12, FORECAST_WEEKS); idx += 1) {
     const weekStart = addDays(anchor, idx * 7);
     let salesTotal = 0;
-    let opexTotal = 0;
     let marginWeighted = 0;
     for (let dayOffset = 0; dayOffset < 7; dayOffset += 1) {
       const dayDate = addDays(weekStart, dayOffset);
@@ -390,16 +388,11 @@ const applyMonthlyBaseCalendarToWeeklyDrivers = (
       const ref = refs[monthIdx];
       const dim = Math.max(1, daysInMonth(ref.year, ref.month));
       const dailySales = (Number(monthTotals[monthIdx]) || 0) / dim;
-      const dailyOpex = (Number(opexMonthTotals[monthIdx]) || 0) / dim;
       const dailyMargin = clampNumber(Number(marginMonthPcts[monthIdx]) || 0, 1, 99);
       salesTotal += dailySales;
-      opexTotal += dailyOpex;
       marginWeighted += dailyMargin;
     }
     next[idx].sales = Math.max(0, Math.round(salesTotal));
-    if (opexTotal > 0) {
-      next[idx].opex = Math.max(0, Math.round(opexTotal));
-    }
     next[idx].grossMarginPct = clampNumber(marginWeighted / 7, 1, 99);
   }
   return next;
@@ -1031,7 +1024,6 @@ export default function WorkingCapitalForecastTab({ selectedCompanyId, basisMode
             grossMarginPct: Math.max(1, Math.min(99, Math.round(avgWeeklyGrossMargin * 100) / 100)),
           };
           let revenueMonthlyBase: number[] = [];
-          let opexMonthlyBase: number[] = [];
           let marginMonthlyBase: number[] = [];
           let monthRefsBase: MonthlyBaseRef[] = [];
           try {
@@ -1044,9 +1036,6 @@ export default function WorkingCapitalForecastTab({ selectedCompanyId, basisMode
             revenueMonthlyBase = Array.isArray(parsedBase?.monthTotals)
               ? parsedBase.monthTotals.map((value: unknown) => Number(value) || 0)
               : [];
-            opexMonthlyBase = Array.isArray(parsedBase?.opexMonthTotals)
-              ? parsedBase.opexMonthTotals.map((value: unknown) => Number(value) || 0)
-              : [];
             marginMonthlyBase = Array.isArray(parsedBase?.grossMarginMonthPcts)
               ? parsedBase.grossMarginMonthPcts.map((value: unknown) => Number(value) || 0)
               : [];
@@ -1058,13 +1047,11 @@ export default function WorkingCapitalForecastTab({ selectedCompanyId, basisMode
               : [];
           } catch {
             revenueMonthlyBase = [];
-            opexMonthlyBase = [];
             marginMonthlyBase = [];
             monthRefsBase = [];
           }
           const hasMonthlyBaseData = hasAnyPositiveValue([
             ...revenueMonthlyBase,
-            ...opexMonthlyBase,
           ]);
           const hasAccrualForecastInputs =
             Object.values(loadedOpexAmountByRow).some((values) => Array.isArray(values) && hasAnyPositiveValue(values));
@@ -1123,11 +1110,15 @@ export default function WorkingCapitalForecastTab({ selectedCompanyId, basisMode
                 : savedStartingBalances.loc,
             };
             const mergedAverages = normalizeWeeklyDriver(savedSettings.historicalAverages, seedAverages);
-            const mergedWeekly = normalizeWeeklyDriverList(savedSettings.weeklyDrivers, mergedAverages);
+            const historicalWeeklyOpex = Math.max(0, Number(mergedAverages.opex || seedAverages.opex || 0));
+            const mergedWeekly = normalizeWeeklyDriverList(savedSettings.weeklyDrivers, mergedAverages)
+              .map((driver) => ({
+                ...driver,
+                opex: driver.opex > 0 || historicalWeeklyOpex <= 0 ? driver.opex : historicalWeeklyOpex,
+              }));
             const seededWeekly = applyMonthlyBaseCalendarToWeeklyDrivers(
               mergedWeekly,
               revenueMonthlyBase,
-              opexMonthlyBase,
               marginMonthlyBase,
               monthRefsBase,
             );
@@ -1144,7 +1135,6 @@ export default function WorkingCapitalForecastTab({ selectedCompanyId, basisMode
               applyMonthlyBaseCalendarToWeeklyDrivers(
                 defaults,
                 revenueMonthlyBase,
-                opexMonthlyBase,
                 marginMonthlyBase,
                 monthRefsBase,
               ),
