@@ -17,7 +17,7 @@ export const KPI_DESCRIPTIONS: Record<string, KpiDescription> = {
     definition:
       'The quick ratio is one way to measure a business\'s ability to quickly convert short-term assets into cash. Also known as the "acid test ratio," the quick ratio is an indicator of a company\'s liquidity and financial health. A Quick Ratio that is equal to or greater than 1 means the company has enough liquid assets to meet its short-term obligations.',
     typicalFormula:
-      'All short-term assets including cash, receivables, and product inventories, divided by all short-term liabilities such as accounts payable, payroll payable, credit card debt, short-term bank loans, and other debts that you would generally pay off in less than one year.',
+      'Cash, receivables / all short term liabilities such as accounts payable, payroll payable, credit card debt, short term bank loans and other debts that you would generally pay off in less than one year.',
     caution:
       'When this ratio decreases, it means you are incurring more debt to finance operations. If a business\'s quick ratio is less than 1, it means it doesn\'t have enough quick assets to meet all its short-term obligations. If it suffers an interruption, it may find it difficult to raise the cash to pay its creditors. In addition, the business could have to pay high interest rates if it needs to borrow money.',
   },
