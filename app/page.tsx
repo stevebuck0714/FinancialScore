@@ -49,6 +49,7 @@ const FINANCIAL_REPORTING_TABS = [
   { id: 'working-capital', label: 'Working Capital' },
   { id: 'financial-statements', label: 'Financial Statements' },
 ] as const;
+const DEFAULT_SELECTED_TREND_ITEMS = ['Revenue', 'Gross Profit', 'Total Operating Expenses', 'Net Income'];
 const LoginView = dynamic(() => import('./components/auth/LoginView'), { ssr: false });
 const MFAEnrollmentModal = dynamic(() => import('./components/auth/MFAEnrollmentModal'), { ssr: false });
 const MFAVerificationModal = dynamic(() => import('./components/auth/MFAVerificationModal'), { ssr: false });
@@ -3429,7 +3430,8 @@ function FinancialScorePage() {
   
   // State - Trend Analysis
   const [selectedTrendItem, setSelectedTrendItem] = useState<string>('revenue');
-  const [selectedTrendItems, setSelectedTrendItems] = useState<string[]>(['Revenue', 'Gross Profit', 'Total Operating Expenses', 'Net Income']);
+  const [selectedTrendItems, setSelectedTrendItems] = useState<string[]>(DEFAULT_SELECTED_TREND_ITEMS);
+  const [loadedTrendItemsCompanyId, setLoadedTrendItemsCompanyId] = useState<string | null>(null);
   const [trendAnalysisTab, setTrendAnalysisTab] = useState<'item-trends' | 'expense-analysis'>('item-trends');
 
   // State - Expense Analysis
@@ -5035,6 +5037,44 @@ function FinancialScorePage() {
       loadDashboardPrefs();
     }
   }, [selectedCompanyId]);
+
+  // Load Performance Trends item selections when company changes
+  useEffect(() => {
+    if (!selectedCompanyId || typeof window === 'undefined') {
+      setLoadedTrendItemsCompanyId(null);
+      return;
+    }
+
+    const storageKey = `trendAnalysisItemTrends_${selectedCompanyId}`;
+    try {
+      const savedItems = localStorage.getItem(storageKey);
+      if (savedItems) {
+        const parsedItems = JSON.parse(savedItems);
+        setSelectedTrendItems(Array.isArray(parsedItems) ? parsedItems : DEFAULT_SELECTED_TREND_ITEMS);
+      } else {
+        setSelectedTrendItems(DEFAULT_SELECTED_TREND_ITEMS);
+      }
+    } catch (err) {
+      console.error('Error loading trend item selections:', err);
+      setSelectedTrendItems(DEFAULT_SELECTED_TREND_ITEMS);
+    } finally {
+      setLoadedTrendItemsCompanyId(selectedCompanyId);
+    }
+  }, [selectedCompanyId]);
+
+  // Autosave Performance Trends item selections; this page has no Save button.
+  useEffect(() => {
+    if (!selectedCompanyId || loadedTrendItemsCompanyId !== selectedCompanyId || typeof window === 'undefined') {
+      return;
+    }
+
+    try {
+      const storageKey = `trendAnalysisItemTrends_${selectedCompanyId}`;
+      localStorage.setItem(storageKey, JSON.stringify(selectedTrendItems));
+    } catch (err) {
+      console.error('Error autosaving trend item selections:', err);
+    }
+  }, [loadedTrendItemsCompanyId, selectedCompanyId, selectedTrendItems]);
 
   // Load saved account mappings and CSV data when company changes or data-mapping tab is visited
   useEffect(() => {
