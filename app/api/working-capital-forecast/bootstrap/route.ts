@@ -145,7 +145,28 @@ async function loadLoans(companyId: string) {
       },
       orderBy: { createdAt: 'desc' },
     });
-    return { loans };
+    let operationsLocs: Array<{ loanType: string; status: string; loanAmount: number }> = [];
+    try {
+      const rows = await prisma.$queryRawUnsafe<Array<{ originalBalance: number | null }>>(
+        `SELECT "originalBalance"::float8 AS "originalBalance"
+         FROM "LoanInstrumentTerm"
+         WHERE "companyId" = $1
+           AND (
+             COALESCE("loanType", '') ~* '(line[ _-]*of[ _-]*credit|loc|revolver)'
+             OR COALESCE("displayName", '') ~* '(line[ _-]*of[ _-]*credit|loc|revolver)'
+           )
+           AND COALESCE("originalBalance", 0) > 0`,
+        companyId,
+      );
+      operationsLocs = rows.map((row) => ({
+        loanType: 'LINE_OF_CREDIT',
+        status: 'ACTIVE',
+        loanAmount: Math.max(0, Number(row.originalBalance || 0)),
+      }));
+    } catch {
+      operationsLocs = [];
+    }
+    return { loans: [...loans, ...operationsLocs] };
   } catch {
     return { loans: [] };
   }

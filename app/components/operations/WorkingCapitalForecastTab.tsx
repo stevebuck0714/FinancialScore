@@ -733,11 +733,13 @@ export default function WorkingCapitalForecastTab({ selectedCompanyId, basisMode
         );
         const savedSettings = savedPayload?.settings || null;
         const loans = Array.isArray(loansPayload?.loans) ? loansPayload.loans : [];
-        const activeLocLoan =
-          loans.find((loan: any) => loan?.loanType === 'LINE_OF_CREDIT' && loan?.status === 'ACTIVE') ||
-          loans.find((loan: any) => loan?.loanType === 'LINE_OF_CREDIT') ||
-          null;
-        const locLoanAmount = Math.max(0, Math.round(Number(activeLocLoan?.loanAmount || 0)));
+        const locLoanAmount = loans
+          .filter((loan: any) => String(loan?.loanType || '').toUpperCase() === 'LINE_OF_CREDIT')
+          .filter((loan: any) => {
+            const status = String(loan?.status || '').toUpperCase();
+            return !status || status === 'ACTIVE' || status === 'MATURING';
+          })
+          .reduce((sum: number, loan: any) => sum + Math.max(0, Number(loan?.loanAmount || 0)), 0);
 
         const fetchLatestDailyFinancialCash = async (): Promise<number> => {
           const summaryCash = Number(dailyFinancial?.summary?.latestCash || 0);

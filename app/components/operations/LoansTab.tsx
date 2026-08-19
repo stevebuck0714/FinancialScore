@@ -218,6 +218,7 @@ function hasLoanInstrumentBalance(instrument: LoanInstrument): boolean {
 function getLoanCurrentBalance(instrument: LoanInstrument): number | null {
   const derivedCurrentBalance = toFiniteNumber(instrument.derivedCurrentBalance);
   if (derivedCurrentBalance !== null) return Math.abs(derivedCurrentBalance);
+  if (isLocInstrument(instrument) && toFiniteNumber(instrument.terms?.originalBalance) !== null) return 0;
   return null;
 }
 
@@ -376,9 +377,11 @@ export default function LoansTab({ selectedCompanyId, companyName, currentUser =
   }, [instruments, monthly]);
 
   const loanInstrumentSections = useMemo(() => {
-    const rowsWithBalances = instruments.filter(hasLoanInstrumentBalance);
-    const locRows = rowsWithBalances.filter(isLocInstrument);
-    const longTermDebtRows = rowsWithBalances.filter((instrument) => !isLocInstrument(instrument));
+    const rowsWithBalancesOrLocs = instruments.filter(
+      (instrument) => hasLoanInstrumentBalance(instrument) || isLocInstrument(instrument)
+    );
+    const locRows = rowsWithBalancesOrLocs.filter(isLocInstrument);
+    const longTermDebtRows = rowsWithBalancesOrLocs.filter((instrument) => !isLocInstrument(instrument));
     const totalsFor = (rows: LoanInstrument[]) => ({
       priorMonthBalance: sumNullableCurrency(rows, (instrument) => instrument.priorMonthBalance),
       principalChange: sumNullableCurrency(rows, (instrument) => instrument.principalChange),
@@ -756,7 +759,7 @@ export default function LoansTab({ selectedCompanyId, companyName, currentUser =
                     ['displayName', 'Display Name', 'text'],
                     ['loanType', 'Loan Type', 'text'],
                     ['lender', 'Lender', 'text'],
-                    ['originalBalance', 'Original Balance', 'currency'],
+                    ['originalBalance', isLocInstrument(selectedInstrument) ? 'LOC Limit / Loan Amount' : 'Loan Amount', 'currency'],
                     ['loanOriginationDate', 'Loan Origination Date', 'date'],
                     ['interestRatePct', 'Interest Rate %', 'number'],
                     ['maturityDate', 'Maturity Date', 'date'],
