@@ -368,35 +368,6 @@ const resolveMonthIndexForDate = (date: Date, monthRefs: MonthlyBaseRef[]): numb
   if (dateKey > lastKey) return monthRefs.length - 1;
   return 0;
 };
-const applyMonthlyBaseCalendarToWeeklyDrivers = (
-  drivers: WeeklyDriver[],
-  monthTotals: number[],
-  marginMonthPcts: number[],
-  monthRefs: MonthlyBaseRef[],
-): WeeklyDriver[] => {
-  if (!Array.isArray(monthTotals) || monthTotals.length < 3) return drivers;
-  const next = drivers.map((driver) => ({ ...driver }));
-  const refs = normalizeMonthRefs(monthRefs, Math.min(monthTotals.length, 3));
-  const anchor = getWeekendAnchorDate(new Date());
-  for (let idx = 0; idx < Math.min(12, FORECAST_WEEKS); idx += 1) {
-    const weekStart = addDays(anchor, idx * 7);
-    let salesTotal = 0;
-    let marginWeighted = 0;
-    for (let dayOffset = 0; dayOffset < 7; dayOffset += 1) {
-      const dayDate = addDays(weekStart, dayOffset);
-      const monthIdx = resolveMonthIndexForDate(dayDate, refs);
-      const ref = refs[monthIdx];
-      const dim = Math.max(1, daysInMonth(ref.year, ref.month));
-      const dailySales = (Number(monthTotals[monthIdx]) || 0) / dim;
-      const dailyMargin = clampNumber(Number(marginMonthPcts[monthIdx]) || 0, 1, 99);
-      salesTotal += dailySales;
-      marginWeighted += dailyMargin;
-    }
-    next[idx].sales = Math.max(0, Math.round(salesTotal));
-    next[idx].grossMarginPct = clampNumber(marginWeighted / 7, 1, 99);
-  }
-  return next;
-};
 const allocateMonthlyAmountsToWeeks = (
   monthAmounts: number[],
   monthRefs: MonthlyBaseRef[],
@@ -1023,8 +994,6 @@ export default function WorkingCapitalForecastTab({ selectedCompanyId, basisMode
             opex: Math.max(0, Math.round(avgWeeklyOpex)),
             grossMarginPct: Math.max(1, Math.min(99, Math.round(avgWeeklyGrossMargin * 100) / 100)),
           };
-          let revenueMonthlyBase: number[] = [];
-          let marginMonthlyBase: number[] = [];
           let monthRefsBase: MonthlyBaseRef[] = [];
           try {
             const scopedBaseKey = `financialForecastRevenueMonthlyBase_${basisMode}_${selectedCompanyId}`;
@@ -1033,12 +1002,6 @@ export default function WorkingCapitalForecastTab({ selectedCompanyId, basisMode
               localStorage.getItem(scopedBaseKey) ||
               (basisMode === 'cash' ? localStorage.getItem(legacyCashBaseKey) : null);
             const parsedBase = rawBase ? JSON.parse(rawBase) : null;
-            revenueMonthlyBase = Array.isArray(parsedBase?.monthTotals)
-              ? parsedBase.monthTotals.map((value: unknown) => Number(value) || 0)
-              : [];
-            marginMonthlyBase = Array.isArray(parsedBase?.grossMarginMonthPcts)
-              ? parsedBase.grossMarginMonthPcts.map((value: unknown) => Number(value) || 0)
-              : [];
             monthRefsBase = Array.isArray(parsedBase?.monthRefs)
               ? parsedBase.monthRefs.map((row: any) => ({
                   year: Number(row?.year),
@@ -1046,13 +1009,8 @@ export default function WorkingCapitalForecastTab({ selectedCompanyId, basisMode
                 }))
               : [];
           } catch {
-            revenueMonthlyBase = [];
-            marginMonthlyBase = [];
             monthRefsBase = [];
           }
-          const hasMonthlyBaseData = hasAnyPositiveValue([
-            ...revenueMonthlyBase,
-          ]);
           const hasAccrualForecastInputs =
             Object.values(loadedOpexAmountByRow).some((values) => Array.isArray(values) && hasAnyPositiveValue(values));
           const hasImportedStartingBalances = hasAnyPositiveValue(Object.values(derivedStartingBalances));
@@ -1065,7 +1023,6 @@ export default function WorkingCapitalForecastTab({ selectedCompanyId, basisMode
             hasAgingBalances ||
             hasImportedDailyFinancialValues ||
             hasAnyPositiveValue(recentHistoricalSales) ||
-            hasMonthlyBaseData ||
             hasAccrualForecastInputs ||
             locLoanAmount > 0 ||
             suggestedInventoryTurns > 0;
@@ -1110,35 +1067,24 @@ export default function WorkingCapitalForecastTab({ selectedCompanyId, basisMode
                 : savedStartingBalances.loc,
             };
             const mergedAverages = normalizeWeeklyDriver(savedSettings.historicalAverages, seedAverages);
+            const historicalWeeklySales = Math.max(0, Number(mergedAverages.sales || seedAverages.sales || 0));
             const historicalWeeklyOpex = Math.max(0, Number(mergedAverages.opex || seedAverages.opex || 0));
             const mergedWeekly = normalizeWeeklyDriverList(savedSettings.weeklyDrivers, mergedAverages)
               .map((driver) => ({
                 ...driver,
+                sales: driver.sales > historicalWeeklySales * 0.25 || historicalWeeklySales <= 0 ? driver.sales : historicalWeeklySales,
                 opex: driver.opex > 0 || historicalWeeklyOpex <= 0 ? driver.opex : historicalWeeklyOpex,
               }));
-            const seededWeekly = applyMonthlyBaseCalendarToWeeklyDrivers(
-              mergedWeekly,
-              revenueMonthlyBase,
-              marginMonthlyBase,
-              monthRefsBase,
-            );
             setInputs(resolvedInputs);
             setHistoricalAverages(mergedAverages);
-            setWeeklyDrivers(seededWeekly);
+            setWeeklyDrivers(mergedWeekly);
             setStartingBalances(resolvedStartingBalances);
             setLastSavedAt(savedSettings.updatedAt ? String(savedSettings.updatedAt) : null);
           } else {
             setInputs(seedInputs);
             setHistoricalAverages(seedAverages);
             const defaults = Array.from({ length: FORECAST_WEEKS }, () => ({ ...seedAverages }));
-            setWeeklyDrivers(
-              applyMonthlyBaseCalendarToWeeklyDrivers(
-                defaults,
-                revenueMonthlyBase,
-                marginMonthlyBase,
-                monthRefsBase,
-              ),
-            );
+            setWeeklyDrivers(defaults);
             setStartingBalances(derivedStartingBalances);
             setLastSavedAt(null);
           }
