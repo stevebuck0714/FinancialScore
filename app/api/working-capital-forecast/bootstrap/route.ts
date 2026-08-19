@@ -149,13 +149,23 @@ async function loadLoans(companyId: string) {
     try {
       const rows = await prisma.$queryRawUnsafe<Array<{ originalBalance: number | null }>>(
         `SELECT "originalBalance"::float8 AS "originalBalance"
-         FROM "LoanInstrumentTerm"
-         WHERE "companyId" = $1
+         FROM "LoanInstrumentTerm" terms
+         LEFT JOIN "AccountMapping" mapping
+           ON mapping."companyId" = terms."companyId"
+          AND CONCAT('gl:', TRIM(mapping."accountId")) = terms."instrumentKey"
+         WHERE terms."companyId" = $1
+           AND COALESCE(terms."originalBalance", 0) > 0
+           AND COALESCE(mapping."targetField", '') <> 'ltd'
            AND (
-             COALESCE("loanType", '') ~* '(line[ _-]*of[ _-]*credit|loc|revolver)'
-             OR COALESCE("displayName", '') ~* '(line[ _-]*of[ _-]*credit|loc|revolver)'
+             COALESCE(mapping."targetField", '') = 'loc'
+             OR COALESCE(terms."loanType", '') ~* '^(line[ _-]*of[ _-]*credit|loc|revolver)$'
+             OR (
+               NULLIF(TRIM(COALESCE(terms."loanType", '')), '') IS NULL
+               AND COALESCE(mapping."targetField", '') = ''
+               AND COALESCE(terms."displayName", '') ~* '(line[ _-]*of[ _-]*credit|loc|revolver)'
+             )
            )
-           AND COALESCE("originalBalance", 0) > 0`,
+        `,
         companyId,
       );
       operationsLocs = rows.map((row) => ({
@@ -166,7 +176,10 @@ async function loadLoans(companyId: string) {
     } catch {
       operationsLocs = [];
     }
-    return { loans: [...loans, ...operationsLocs] };
+    const forecastLoans = operationsLocs.length
+      ? loans.filter((loan) => loan.loanType !== 'LINE_OF_CREDIT')
+      : loans;
+    return { loans: [...forecastLoans, ...operationsLocs] };
   } catch {
     return { loans: [] };
   }
