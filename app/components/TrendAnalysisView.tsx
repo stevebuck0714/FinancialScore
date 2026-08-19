@@ -43,6 +43,45 @@ export default function TrendAnalysisView({
   const money = useCompanyMoneyFormatter(selectedCompanyId);
   const [trendAnalysisTab, setTrendAnalysisTab] = useState<'item-trends' | 'expense-analysis' | 'cogs-analysis'>('item-trends');
   const [selectedCogsItems, setSelectedCogsItems] = useState<string[]>([]);
+  const getMonthPeriodIndex = (primaryMonthValue: unknown, fallbackMonthValue?: unknown): number | null => {
+    const fromDate = (value: unknown): number | null => {
+      if (!value) return null;
+      const date = value instanceof Date ? value : new Date(value as string);
+      if (Number.isNaN(date.getTime())) return null;
+      const year = date.getUTCFullYear();
+      const monthIndex = date.getUTCMonth();
+      if (year < 2000 || year > 2100 || monthIndex < 0 || monthIndex > 11) return null;
+      return year * 12 + monthIndex;
+    };
+
+    const primaryPeriod = fromDate(primaryMonthValue);
+    if (primaryPeriod !== null) return primaryPeriod;
+
+    if (typeof fallbackMonthValue === 'string') {
+      const trimmed = fallbackMonthValue.trim();
+      if (!trimmed) return null;
+
+      const mmYYYY = trimmed.match(/^(\d{1,2})[-/](\d{4})$/);
+      if (mmYYYY) {
+        const month = Number(mmYYYY[1]);
+        const year = Number(mmYYYY[2]);
+        if (month >= 1 && month <= 12 && year >= 2000 && year <= 2100) {
+          return year * 12 + (month - 1);
+        }
+      }
+
+      const yyyyMM = trimmed.match(/^(\d{4})-(\d{1,2})$/);
+      if (yyyyMM) {
+        const year = Number(yyyyMM[1]);
+        const month = Number(yyyyMM[2]);
+        if (month >= 1 && month <= 12 && year >= 2000 && year <= 2100) {
+          return year * 12 + (month - 1);
+        }
+      }
+    }
+
+    return null;
+  };
   const normalizeMonthLabel = (primaryMonthValue: unknown, fallbackMonthValue?: unknown): string => {
     const formatDate = (value: unknown): string | null => {
       if (!value) return null;
@@ -84,6 +123,15 @@ export default function TrendAnalysisView({
     return '';
   };
 
+  const completedMonthly = React.useMemo(() => {
+    const now = new Date();
+    const currentMonthPeriod = now.getFullYear() * 12 + now.getMonth();
+    return monthly.filter((m) => {
+      const period = getMonthPeriodIndex((m as any).monthDate || (m as any).date, (m as any).month);
+      return period !== null && period < currentMonthPeriod;
+    });
+  }, [monthly]);
+
   const toNumber = (value: unknown): number => {
     const parsed = Number(value);
     return Number.isFinite(parsed) ? parsed : 0;
@@ -113,7 +161,7 @@ export default function TrendAnalysisView({
       addAccount(option.value, option.label);
     });
 
-    monthly.forEach((m) => {
+    completedMonthly.forEach((m) => {
       Object.keys(m || {}).forEach((key) => {
         if (key === 'cogsTotal' || key === 'cogsBreakdown') return;
         const isSector = key.startsWith('cogs_');
@@ -132,7 +180,7 @@ export default function TrendAnalysisView({
 
     addAccount('cogsTotal', 'Total COGS');
     return accounts;
-  }, [monthly, industrySectorCategory]);
+  }, [completedMonthly, industrySectorCategory]);
 
   React.useEffect(() => {
     setSelectedCogsItems((prev) => {
@@ -173,8 +221,8 @@ export default function TrendAnalysisView({
   }, [expenseCategories]);
 
   const dataStartIndex = React.useMemo(
-    () => monthly.findIndex((m) => hasLoadedFinancialData(m)),
-    [monthly]
+    () => completedMonthly.findIndex((m) => hasLoadedFinancialData(m)),
+    [completedMonthly]
   );
 
   const getOperatingExpenseTotal = (m: any) => {
@@ -377,7 +425,7 @@ export default function TrendAnalysisView({
                 <LineChart
                   key={metric}
                   title={metric}
-                  data={monthly
+                  data={completedMonthly
                     .map(m => ({
                       month: normalizeMonthLabel((m as any).monthDate || (m as any).date, m.month),
                       value: dataStartIndex >= 0 && hasLoadedFinancialData(m) ? getMetricData(m) : null
@@ -440,7 +488,7 @@ export default function TrendAnalysisView({
                   <LineChart
                     key={category.key}
                     title={`${category.label} (% of Revenue)`}
-                    data={monthly
+                    data={completedMonthly
                       .map(m => ({
                         month: normalizeMonthLabel((m as any).monthDate || (m as any).date, m.month),
                         value: dataStartIndex >= 0 && hasLoadedFinancialData(m) && toNumber(m.revenue) > 0
@@ -456,7 +504,7 @@ export default function TrendAnalysisView({
                     showTable={true}
                     labelFormat="m-yy-adaptive"
                     formatter={(val: number) => `${val.toFixed(1)}%`}
-                    goalLineData={expenseGoals[category.key] ? monthly.map(() => expenseGoals[category.key]) : undefined}
+                    goalLineData={expenseGoals[category.key] ? completedMonthly.map(() => expenseGoals[category.key]) : undefined}
                   />
                 );
               })}
@@ -505,7 +553,7 @@ export default function TrendAnalysisView({
                   <LineChart
                     key={account.key}
                     title={account.label}
-                    data={monthly
+                    data={completedMonthly
                       .map((m) => ({
                         month: normalizeMonthLabel((m as any).monthDate || (m as any).date, m.month),
                         value: dataStartIndex >= 0 && hasLoadedFinancialData(m) ? getCogsAccountAmount(m, account.key) : null
