@@ -6,6 +6,12 @@ import { publishMonthsFromMonthlyFinancialDirect } from '@/lib/financial/publish
 import { syncErpDailyFinancialsFromGL } from '@/lib/financial/sync-erp-daily-financials';
 import { buildCsiMonthlyDataFromGlResponses } from '@/lib/infor-m3/csi-monthly-financial-builder';
 import { isQuickBooksDesktopFamily } from '@/lib/quickbooks-desktop/family';
+import {
+  BAKERS_PIN_START,
+  buildBakersAnchoredDailyBalances,
+  isBakersCompany,
+  resolveBakersLocTarget,
+} from '@/lib/financial/qbd-bakers-bs-pins';
 import { warmDailyExecutiveBriefingCache } from '@/lib/pulse/exec-briefing-warmup';
 import { warmDailyIndustryBriefCache } from '@/lib/industry-brief/warmup';
 
@@ -843,36 +849,34 @@ function recomputeQbdBalanceSheetTotals(row: QbdMappedMonthlyRow) {
     number('shopEquipment');
   const fixedAssets = number('fixedAssets') || fixedAssetComponents;
   const totalAssets =
-    number('totalAssets') ||
     tca +
-      fixedAssets +
-      number('investments') +
-      number('rightOfUseLeases') +
-      number('otherAssets');
+    fixedAssets +
+    number('investments') +
+    number('rightOfUseLeases') +
+    number('otherAssets');
   const currentLiabilityComponents =
     number('ap') +
     number('loc') +
     number('contractLiabilities') +
     number('otherCL');
-  const tcl = number('tcl') || currentLiabilityComponents;
-  const totalLiab = number('totalLiab') || tcl + number('ltd');
+  const tcl = currentLiabilityComponents;
+  const totalLiab = tcl + number('ltd');
   const totalEquity =
-    number('totalEquity') ||
     number('ownersCapital') +
-      number('ownersDraw') +
-      number('commonStock') +
-      number('preferredStock') +
-      number('retainedEarnings') +
-      number('additionalPaidInCapital') +
-      number('treasuryStock');
+    number('ownersDraw') +
+    number('commonStock') +
+    number('preferredStock') +
+    number('retainedEarnings') +
+    number('additionalPaidInCapital') +
+    number('treasuryStock');
 
-  if (tca !== 0) row.tca = tca;
+  row.tca = tca;
   if (fixedAssets !== 0 && number('fixedAssets') === 0) row.fixedAssets = fixedAssets;
-  if (totalAssets !== 0) row.totalAssets = totalAssets;
-  if (tcl !== 0) row.tcl = tcl;
-  if (totalLiab !== 0) row.totalLiab = totalLiab;
-  if (totalEquity !== 0) row.totalEquity = totalEquity;
-  if (totalAssets !== 0 || totalLiab !== 0 || totalEquity !== 0) row.totalLAndE = totalLiab + totalEquity;
+  row.totalAssets = totalAssets;
+  row.tcl = tcl;
+  row.totalLiab = totalLiab;
+  row.totalEquity = totalEquity;
+  row.totalLAndE = totalLiab + totalEquity;
 }
 
 function createQbdMappedMonth(monthKey: string): QbdMappedMonthlyRow {
@@ -1377,7 +1381,7 @@ function qbdDedupeTransactionRecords(records: Record<string, unknown>[], fallbac
   return Array.from(byKey.values());
 }
 
-async function buildQuickBooksDesktopMappedMonthlyPayload(companyId: string, basePayload: Record<string, unknown>) {
+export async function buildQuickBooksDesktopMappedMonthlyPayload(companyId: string, basePayload: Record<string, unknown>) {
   const mappings = await prisma.accountMapping.findMany({
     where: { companyId },
     select: { accountId: true, accountName: true, accountCode: true, targetField: true },
@@ -1437,6 +1441,16 @@ async function buildQuickBooksDesktopMappedMonthlyPayload(companyId: string, bas
       loadQbdPageRecords(companyId, 'BalanceSheetStandardReportQuery'),
       loadQbdGeneralLedgerRowsForMonthlyBuild(companyId),
     ]);
+
+  const accountIdByName = new Map<string, string>();
+  for (const account of accounts) {
+    const listId = qbdString(account.ListID);
+    const fullName = qbdString(account.FullName || account.Name);
+    if (!listId || !fullName) continue;
+    for (const key of qbdAccountLookupKeys(fullName)) {
+      accountIdByName.set(key, listId);
+    }
+  }
 
   const months = new Map<string, QbdMappedMonthlyRow>();
   const getMonth = (monthKey: string) => {
@@ -1509,18 +1523,33 @@ async function buildQuickBooksDesktopMappedMonthlyPayload(companyId: string, bas
   for (const glRow of generalLedgerReportRows) {
     if (qbdString(glRow.rowKind) !== 'DataRow') continue;
     const accountName = qbdString(glRow.accountName || glRow.rowValue);
-    const target = getTarget({ name: accountName });
     const dateKey = qbdDateKey(qbdReportColValueByTitle(glRow, ['Txn Date', 'Date'], ['3']));
     if (!dateKey) continue;
+    let accountId = '';
+    for (const key of qbdAccountLookupKeys(accountName)) {
+      const matchedId = accountIdByName.get(key);
+      if (matchedId) {
+        accountId = matchedId;
+        break;
+      }
+    }
+    const mappedTarget = getTarget({ id: accountId, name: accountName });
+    const target = resolveBakersLocTarget({
+      companyId,
+      dateKey,
+      accountId,
+      accountName,
+      mappedTarget,
+    });
     const rawAmount = qbdNumber(qbdReportColValueByTitle(glRow, ['Amount'], ['8']));
-    const amount = qbdGeneralLedgerPnlAmount(target, rawAmount);
+    const amount = qbdGeneralLedgerPnlAmount(mappedTarget, rawAmount);
     if (amount === 0) continue;
-    if (qbdIsIncomeStatementExpenseTarget(target)) {
+    if (qbdIsIncomeStatementExpenseTarget(mappedTarget)) {
       const monthKey = dateKey.slice(0, 7);
       const monthRow = glPnlByMonth.get(monthKey) || createQbdMappedMonth(monthKey);
       const dayRow = glPnlByDate.get(dateKey) || createQbdMappedDailySnapshot(dateKey);
-      qbdAddMappedAmount(monthRow, target, amount);
-      qbdAddMappedAmount(dayRow, target, amount);
+      qbdAddMappedAmount(monthRow, mappedTarget, amount);
+      qbdAddMappedAmount(dayRow, mappedTarget, amount);
       glPnlByMonth.set(monthKey, monthRow);
       glPnlByDate.set(dateKey, dayRow);
     }
@@ -1528,7 +1557,7 @@ async function buildQuickBooksDesktopMappedMonthlyPayload(companyId: string, bas
     const dateMovements = glMovementsByDate.get(dateKey) || new Map<string, number>();
     dateMovements.set(target, Number(dateMovements.get(target) || 0) + amount);
     glMovementsByDate.set(dateKey, dateMovements);
-    const mapping = getMapping({ name: accountName });
+    const mapping = getMapping({ id: accountId, name: accountName });
     if (mapping?.accountId) {
       const accountDateMovements = accountMovementsByDate.get(dateKey) || new Map<string, number>();
       accountDateMovements.set(mapping.accountId, Number(accountDateMovements.get(mapping.accountId) || 0) + amount);
@@ -1636,6 +1665,38 @@ async function buildQuickBooksDesktopMappedMonthlyPayload(companyId: string, bas
     for (const row of dailySnapshots.values()) {
       const dateKey = qbdDateKey(row.snapshotDate);
       if (!dateKey) continue;
+      const monthKey = dateKey.slice(0, 7);
+      const existing = latestDailyByMonth.get(monthKey);
+      if (!existing || String(existing.snapshotDate || '') < dateKey) {
+        latestDailyByMonth.set(monthKey, row);
+      }
+    }
+    for (const [monthKey, row] of latestDailyByMonth.entries()) {
+      copyQbdBalanceSheetFields(row, getMonth(monthKey));
+    }
+  }
+
+  if (isBakersCompany(companyId)) {
+    let throughDate = BAKERS_PIN_START;
+    for (const dateKey of glMovementsByDate.keys()) {
+      if (dateKey > throughDate) throughDate = dateKey;
+    }
+    for (const dateKey of dailySnapshots.keys()) {
+      if (dateKey > throughDate) throughDate = dateKey;
+    }
+    const today = new Date().toISOString().slice(0, 10);
+    if (today > throughDate) throughDate = today;
+    const anchored = buildBakersAnchoredDailyBalances(glMovementsByDate, throughDate);
+    for (const [dateKey, balances] of anchored.entries()) {
+      const dailyRow = getDailySnapshot(dateKey);
+      for (const [field, value] of Object.entries(balances)) {
+        dailyRow[field] = value;
+      }
+    }
+    const latestDailyByMonth = new Map<string, QbdMappedMonthlyRow>();
+    for (const row of dailySnapshots.values()) {
+      const dateKey = qbdDateKey(row.snapshotDate);
+      if (!dateKey || dateKey < BAKERS_PIN_START) continue;
       const monthKey = dateKey.slice(0, 7);
       const existing = latestDailyByMonth.get(monthKey);
       if (!existing || String(existing.snapshotDate || '') < dateKey) {
@@ -1947,10 +2008,30 @@ async function rebuildQuickBooksDesktopDailyBalanceSheetMonth(companyId: string,
       }
     }
   }
-  const getTarget = (accountName: unknown) => {
+  const getTarget = (ref: { id?: string; name?: unknown }) => {
+    for (const candidate of [ref.id, ref.name]) {
+      for (const key of qbdAccountLookupKeys(candidate)) {
+        const target = targetByKey.get(key);
+        if (target) return target;
+      }
+    }
+    return '';
+  };
+
+  const accounts = await loadQbdPageRecords(companyId, 'AccountQuery');
+  const accountIdByName = new Map<string, string>();
+  for (const account of accounts) {
+    const listId = qbdString(account.ListID);
+    const fullName = qbdString(account.FullName || account.Name);
+    if (!listId || !fullName) continue;
+    for (const key of qbdAccountLookupKeys(fullName)) {
+      accountIdByName.set(key, listId);
+    }
+  }
+  const resolveAccountId = (accountName: string) => {
     for (const key of qbdAccountLookupKeys(accountName)) {
-      const target = targetByKey.get(key);
-      if (target) return target;
+      const matchedId = accountIdByName.get(key);
+      if (matchedId) return matchedId;
     }
     return '';
   };
@@ -1961,9 +2042,18 @@ async function rebuildQuickBooksDesktopDailyBalanceSheetMonth(companyId: string,
     if (qbdString(glRow.rowKind) !== 'DataRow') continue;
     const dateKey = qbdDateKey(qbdReportColValueByTitle(glRow, ['Txn Date', 'Date'], ['3']));
     if (!dateKey || dateKey.slice(0, 7) !== monthKey) continue;
-    const target = getTarget(glRow.accountName || glRow.rowValue);
+    const accountName = qbdString(glRow.accountName || glRow.rowValue);
+    const accountId = resolveAccountId(accountName);
+    const mappedTarget = getTarget({ id: accountId, name: accountName });
+    const target = resolveBakersLocTarget({
+      companyId,
+      dateKey,
+      accountId,
+      accountName,
+      mappedTarget,
+    });
     if (!QBD_BALANCE_SHEET_TARGET_FIELDS.has(target)) continue;
-    const amount = qbdGeneralLedgerPnlAmount(target, qbdNumber(qbdReportColValueByTitle(glRow, ['Amount'], ['8'])));
+    const amount = qbdGeneralLedgerPnlAmount(mappedTarget, qbdNumber(qbdReportColValueByTitle(glRow, ['Amount'], ['8'])));
     if (amount === 0) continue;
     const dateMovements = glMovementsByDate.get(dateKey) || new Map<string, number>();
     dateMovements.set(target, Number(dateMovements.get(target) || 0) + amount);
@@ -1979,7 +2069,11 @@ async function rebuildQuickBooksDesktopDailyBalanceSheetMonth(companyId: string,
       const rowKind = qbdString(reportRow.rowKind);
       if (rowType && rowType !== 'account') continue;
       if (!rowType && rowKind !== 'DataRow') continue;
-      qbdApplyBalance(reportSnap, getTarget(qbdReportAccountName(reportRow)), qbdReportAmount(reportRow));
+      qbdApplyBalance(
+        reportSnap,
+        getTarget({ name: qbdReportAccountName(reportRow) }),
+        qbdReportAmount(reportRow),
+      );
     }
     recomputeQbdBalanceSheetTotals(reportSnap);
   }
@@ -2067,6 +2161,44 @@ async function rebuildQuickBooksDesktopDailyBalanceSheetMonth(companyId: string,
         }
       }
       cursor = qbdAddDays(cursor, -1);
+    }
+  }
+
+  if (isBakersCompany(companyId) && monthKey >= '2024-12') {
+    const fullGlRows = await loadQbdGeneralLedgerRowsForMonthlyBuild(companyId);
+    const fullMovements = new Map<string, Map<string, number>>();
+    for (const glRow of fullGlRows) {
+      if (qbdString(glRow.rowKind) !== 'DataRow') continue;
+      const dateKey = qbdDateKey(qbdReportColValueByTitle(glRow, ['Txn Date', 'Date'], ['3']));
+      if (!dateKey || dateKey < BAKERS_PIN_START || dateKey > monthEnd) continue;
+      const accountName = qbdString(glRow.accountName || glRow.rowValue);
+      const accountId = resolveAccountId(accountName);
+      const mappedTarget = getTarget({ id: accountId, name: accountName });
+      const target = resolveBakersLocTarget({
+        companyId,
+        dateKey,
+        accountId,
+        accountName,
+        mappedTarget,
+      });
+      if (!QBD_BALANCE_SHEET_TARGET_FIELDS.has(target)) continue;
+      const amount = qbdGeneralLedgerPnlAmount(
+        mappedTarget,
+        qbdNumber(qbdReportColValueByTitle(glRow, ['Amount'], ['8'])),
+      );
+      if (amount === 0) continue;
+      const dateMovements = fullMovements.get(dateKey) || new Map<string, number>();
+      dateMovements.set(target, Number(dateMovements.get(target) || 0) + amount);
+      fullMovements.set(dateKey, dateMovements);
+    }
+    const anchored = buildBakersAnchoredDailyBalances(fullMovements, monthEnd);
+    for (const [dateKey, balances] of anchored.entries()) {
+      if (dateKey < monthStart || dateKey > monthEnd) continue;
+      const row = createQbdMappedDailySnapshot(dateKey);
+      for (const [field, value] of Object.entries(balances)) {
+        row[field] = value;
+      }
+      dailySnapshots.set(dateKey, row);
     }
   }
 
