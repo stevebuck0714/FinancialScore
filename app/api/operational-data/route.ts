@@ -35,6 +35,10 @@ import { callInforIonApi } from '@/lib/infor-m3/client';
 import { getApBalanceSheetAnchorConfig } from '@/lib/financial/ap-balance-sheet-anchor';
 import { getArBalanceSheetAnchorConfig } from '@/lib/financial/ar-balance-sheet-anchor';
 import { getCashAccountAllowlistSet, isAllowedCashAccount } from '@/lib/financial/cash-balance-sheet-anchor';
+import {
+  qbdCurrentYearNetIncomeFromBalanceSheet,
+  qbdEquityWithoutNetIncome,
+} from '@/lib/financial/qbd-current-year-net-income';
 import { computeDsoSeriesFromDaily } from '@/lib/financials/dso-from-daily';
 import {
   ensurePlatosClosetMonthlyFacts,
@@ -1050,51 +1054,18 @@ function aggregateDailyStatementRows(
     });
 }
 
-function dailyNetIncome(row: any): number {
-  return (
-    Number(row?.revenue || 0) -
-    Number(row?.cogsTotal || 0) -
-    Number(row?.expense || 0) +
-    Number(row?.nonOperatingIncome || 0) -
-    Number(row?.nonOperatingExpense || 0) +
-    Number(row?.extraordinaryItems || 0) -
-    Number(row?.stateIncomeTaxes || 0) -
-    Number(row?.federalIncomeTaxes || 0)
-  );
-}
-
 function annotateCurrentYearNetIncomeForQbdRows(rows: any[]): any[] {
-  const ytdByYear = new Map<number, number>();
-  const annotated = new Map<any, any>();
-  [...rows]
-    .sort((a, b) => new Date(a?.snapshotDate || 0).getTime() - new Date(b?.snapshotDate || 0).getTime())
-    .forEach((row) => {
-      const snapshotDate = row?.snapshotDate ? new Date(row.snapshotDate) : null;
-      if (!snapshotDate || Number.isNaN(snapshotDate.getTime())) {
-        annotated.set(row, row);
-        return;
-      }
-      const year = snapshotDate.getUTCFullYear();
-      const currentYearNetIncome = Number(ytdByYear.get(year) || 0) + dailyNetIncome(row);
-      ytdByYear.set(year, currentYearNetIncome);
-      const totalEquity =
-        Number(row?.ownersCapital || 0) +
-        Number(row?.ownersDraw || 0) +
-        Number(row?.commonStock || 0) +
-        Number(row?.preferredStock || 0) +
-        Number(row?.retainedEarnings || 0) +
-        currentYearNetIncome +
-        Number(row?.additionalPaidInCapital || 0) +
-        Number(row?.treasuryStock || 0);
-      const totalLiab = Number(row?.totalLiab || 0);
-      annotated.set(row, {
-        ...row,
-        currentYearNetIncome,
-        totalEquity,
-        totalLAndE: totalLiab + totalEquity,
-      });
-    });
-  return rows.map((row) => annotated.get(row) || row);
+  return rows.map((row) => {
+    const currentYearNetIncome = qbdCurrentYearNetIncomeFromBalanceSheet(row);
+    const totalEquity = qbdEquityWithoutNetIncome(row) + currentYearNetIncome;
+    const totalLiab = Number(row?.totalLiab || 0);
+    return {
+      ...row,
+      currentYearNetIncome,
+      totalEquity,
+      totalLAndE: totalLiab + totalEquity,
+    };
+  });
 }
 
 async function getHydratedInforBusinessDates(

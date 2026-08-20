@@ -8,6 +8,7 @@ import { buildCsiMonthlyDataFromGlResponses } from '@/lib/infor-m3/csi-monthly-f
 import { isQuickBooksDesktopFamily } from '@/lib/quickbooks-desktop/family';
 import {
   BAKERS_PIN_START,
+  BAKERS_WALK_START,
   buildBakersAnchoredDailyBalances,
   isBakersCompany,
   resolveBakersLocTarget,
@@ -1696,7 +1697,7 @@ export async function buildQuickBooksDesktopMappedMonthlyPayload(companyId: stri
     const latestDailyByMonth = new Map<string, QbdMappedMonthlyRow>();
     for (const row of dailySnapshots.values()) {
       const dateKey = qbdDateKey(row.snapshotDate);
-      if (!dateKey || dateKey < BAKERS_PIN_START) continue;
+      if (!dateKey || dateKey < BAKERS_WALK_START) continue;
       const monthKey = dateKey.slice(0, 7);
       const existing = latestDailyByMonth.get(monthKey);
       if (!existing || String(existing.snapshotDate || '') < dateKey) {
@@ -2164,13 +2165,13 @@ async function rebuildQuickBooksDesktopDailyBalanceSheetMonth(companyId: string,
     }
   }
 
-  if (isBakersCompany(companyId) && monthKey >= '2024-12') {
+  if (isBakersCompany(companyId) && monthKey >= '2024-01') {
     const fullGlRows = await loadQbdGeneralLedgerRowsForMonthlyBuild(companyId);
     const fullMovements = new Map<string, Map<string, number>>();
     for (const glRow of fullGlRows) {
       if (qbdString(glRow.rowKind) !== 'DataRow') continue;
       const dateKey = qbdDateKey(qbdReportColValueByTitle(glRow, ['Txn Date', 'Date'], ['3']));
-      if (!dateKey || dateKey < BAKERS_PIN_START || dateKey > monthEnd) continue;
+      if (!dateKey || dateKey < BAKERS_WALK_START || dateKey > monthEnd) continue;
       const accountName = qbdString(glRow.accountName || glRow.rowValue);
       const accountId = resolveAccountId(accountName);
       const mappedTarget = getTarget({ id: accountId, name: accountName });

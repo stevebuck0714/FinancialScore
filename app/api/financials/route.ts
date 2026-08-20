@@ -7,6 +7,10 @@ import { withPrismaReconnectRetry } from '@/lib/prisma-retry';
 import { hashCacheParts, readDerivedApiCache, writeDerivedApiCache } from '@/lib/derived-api-cache';
 import { privateCacheHeaders } from '@/lib/http-cache';
 import { presentCompanyJson } from '@/lib/currency/api-response';
+import {
+  qbdCurrentYearNetIncomeFromBalanceSheet,
+  qbdEquityWithoutNetIncome,
+} from '@/lib/financial/qbd-current-year-net-income';
 
 const FINANCIALS_CACHE_TTL_SECONDS = 120;
 
@@ -20,39 +24,13 @@ const toNumber = (value: unknown): number => {
   return Number.isFinite(numeric) ? numeric : 0;
 };
 
-function monthlyNetIncome(row: any): number {
-  return (
-    toNumber(row?.revenue) -
-    toNumber(row?.cogsTotal) -
-    toNumber(row?.expense) +
-    toNumber(row?.nonOperatingIncome) -
-    toNumber(row?.nonOperatingExpense) +
-    toNumber(row?.extraordinaryItems) -
-    toNumber(row?.stateIncomeTaxes) -
-    toNumber(row?.federalIncomeTaxes)
-  );
-}
-
 function withQbdCurrentYearNetIncome(records: any[], enabled: boolean): any[] {
   if (!enabled) return records;
   return records.map((record) => {
-    const ytdByYear = new Map<number, number>();
     const monthlyData = Array.isArray(record?.monthlyData)
       ? record.monthlyData.map((row: any) => {
-          const monthDate = row?.monthDate ? new Date(row.monthDate) : null;
-          if (!monthDate || Number.isNaN(monthDate.getTime())) return row;
-          const year = monthDate.getUTCFullYear();
-          const currentYearNetIncome = Number(ytdByYear.get(year) || 0) + monthlyNetIncome(row);
-          ytdByYear.set(year, currentYearNetIncome);
-          const totalEquity =
-            toNumber(row.ownersCapital) +
-            toNumber(row.ownersDraw) +
-            toNumber(row.commonStock) +
-            toNumber(row.preferredStock) +
-            toNumber(row.retainedEarnings) +
-            currentYearNetIncome +
-            toNumber(row.additionalPaidInCapital) +
-            toNumber(row.treasuryStock);
+          const currentYearNetIncome = qbdCurrentYearNetIncomeFromBalanceSheet(row);
+          const totalEquity = qbdEquityWithoutNetIncome(row) + currentYearNetIncome;
           const totalLiab = toNumber(row.totalLiab);
           return {
             ...row,

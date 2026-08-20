@@ -1,6 +1,7 @@
 export const BAKERS_COMPANY_ID = 'cmq6pjenb0001l5049udok08d';
 export const BAKERS_LOC_RECLASS_DATE = '2026-01-01';
 export const BAKERS_PIN_START = '2024-12-31';
+export const BAKERS_WALK_START = '2024-01-01';
 
 /** QBD ListIDs that were current LOCs through 2025 and term loans from 1/1/2026. */
 export const BAKERS_RECLASS_ACCOUNT_IDS = new Set([
@@ -169,14 +170,18 @@ function addDays(dateKey: string, days: number): string | null {
   return date.toISOString().slice(0, 10);
 }
 
-function applyMovements(balances: BakersBsBalances, movements?: Map<string, number>): BakersBsBalances {
+function applyMovements(
+  balances: BakersBsBalances,
+  movements?: Map<string, number>,
+  sign = 1,
+): BakersBsBalances {
   if (!movements) return recomputeBakersBsTotals(balances);
   const next = { ...balances };
   for (const [field, amount] of movements.entries()) {
     if (field === 'totalAssets' || field === 'totalLiab' || field === 'totalEquity' || field === 'totalLAndE' || field === 'tca' || field === 'tcl') {
       continue;
     }
-    next[field] = Number(next[field] || 0) + Number(amount || 0);
+    next[field] = Number(next[field] || 0) + sign * Number(amount || 0);
   }
   return recomputeBakersBsTotals(next);
 }
@@ -191,8 +196,9 @@ function reclassLocsToLtd(balances: BakersBsBalances): BakersBsBalances {
 }
 
 /**
- * Trust the 12/31/2024 and 12/31/2025 PDFs. Walk 2025 GL as loc, reclass remaining
- * LOC balances into ltd on 1/1/2026, then walk 2026 GL as ltd.
+ * Trust the 12/31/2024 and 12/31/2025 PDFs. Walk 2024 backward from the 2024 pin,
+ * walk 2025 GL as loc, reclass remaining LOC balances into ltd on 1/1/2026, then
+ * walk 2026 GL as ltd.
  */
 export function buildBakersAnchoredDailyBalances(
   glMovementsByDate: Map<string, Map<string, number>>,
@@ -203,6 +209,15 @@ export function buildBakersAnchoredDailyBalances(
   let cursor: string | null = BAKERS_PIN_START;
   let balances = clonePin(BAKERS_PIN_2024_12_31);
   out.set(BAKERS_PIN_START, balances);
+
+  let backBalances = clonePin(BAKERS_PIN_2024_12_31);
+  let backCursor: string | null = BAKERS_PIN_START;
+  while (backCursor) {
+    backBalances = applyMovements(backBalances, glMovementsByDate.get(backCursor), -1);
+    backCursor = addDays(backCursor, -1);
+    if (!backCursor || backCursor < BAKERS_WALK_START) break;
+    out.set(backCursor, backBalances);
+  }
 
   cursor = addDays(BAKERS_PIN_START, 1);
   while (cursor && cursor <= end && cursor < '2025-12-31') {

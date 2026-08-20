@@ -4,6 +4,10 @@ import { privateCacheHeaders } from '@/lib/http-cache';
 import { hashCacheParts, readDerivedApiCache, writeDerivedApiCache } from '@/lib/derived-api-cache';
 import { currentMonthKeyUtc } from '@/lib/date-utils';
 import { readRequestedCurrency, withCurrencyPresentation } from '@/lib/currency/api-response';
+import {
+  qbdCurrentYearNetIncomeFromBalanceSheet,
+  qbdEquityWithoutNetIncome,
+} from '@/lib/financial/qbd-current-year-net-income';
 
 const MASTER_DATA_CACHE_TTL_SECONDS = 120;
 const MASTER_DATA_REPORT_MIN_DATE = '2024-01-01';
@@ -215,7 +219,6 @@ export async function GET(request: NextRequest) {
       : sourceRows;
 
     // Format monthly data to match expected structure
-    const ytdNetIncomeByYear = new Map<number, number>();
     const monthlyData = reportingRows.map((month: any) => {
       const cash = month.cash || 0;
       const ar = month.ar || 0;
@@ -274,34 +277,14 @@ export async function GET(request: NextRequest) {
       const revenue = hasSectorRevenue ? sectorRevenueTotal : toNumber(month.revenue);
       const cogsTotal = hasSectorCogs ? sectorCogsTotal : toNumber(month.cogsTotal);
       const expense = toNumber(month.expense);
-      const monthlyNetIncome =
-        revenue -
-        cogsTotal -
-        expense +
-        nonOperatingIncome -
-        nonOperatingExpense +
-        toNumber(month.extraordinaryItems) -
-        toNumber(month.stateIncomeTaxes) -
-        toNumber(month.federalIncomeTaxes);
-      const monthDate = month.monthDate ? new Date(month.monthDate) : null;
-      const fiscalYear = monthDate && !Number.isNaN(monthDate.getTime()) ? monthDate.getUTCFullYear() : 0;
-      const priorYtd = ytdNetIncomeByYear.get(fiscalYear) || 0;
-      const currentYearNetIncome = shouldCalculateCurrentYearNetIncome ? priorYtd + monthlyNetIncome : 0;
-      if (shouldCalculateCurrentYearNetIncome) {
-        ytdNetIncomeByYear.set(fiscalYear, currentYearNetIncome);
-      }
-      const equityWithoutNetIncome =
-        toNumber(month.ownersCapital) +
-        toNumber(month.ownersDraw) +
-        toNumber(month.commonStock) +
-        toNumber(month.preferredStock) +
-        toNumber(month.retainedEarnings) +
-        toNumber(month.additionalPaidInCapital) +
-        toNumber(month.treasuryStock);
+      const equityWithoutNetIncome = qbdEquityWithoutNetIncome(month);
+      const totalLiab = toNumber(month.totalLiab);
+      const currentYearNetIncome = shouldCalculateCurrentYearNetIncome
+        ? qbdCurrentYearNetIncomeFromBalanceSheet(month)
+        : 0;
       const totalEquity = shouldCalculateCurrentYearNetIncome
         ? equityWithoutNetIncome + currentYearNetIncome
         : toNumber(month.totalEquity);
-      const totalLiab = toNumber(month.totalLiab);
 
       return {
       date: month.monthDate,
