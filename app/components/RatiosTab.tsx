@@ -35,14 +35,6 @@ export default function RatiosTab({
   const monthly = hasPrefetchedData ? prefetchedMonthlyData : (Array.isArray(monthlyData) ? (monthlyData as MonthlyDataRow[]) : []);
   const [printOrientation, setPrintOrientation] = useState<'portrait' | 'landscape'>('portrait');
 
-  // Debug: Log benchmarks when component receives them
-  React.useEffect(() => {
-    console.log('[RatiosTab] Benchmarks received:', {
-      count: benchmarks?.length || 0,
-      sample: benchmarks?.slice(0, 3).map((b: any) => ({ metricName: b.metricName, value: b.fiveYearValue }))
-    });
-  }, [benchmarks]);
-
   const [kpiDashboardTab, setKpiDashboardTab] = useState<'all-ratios' | 'monthly-ratios'>(
     initialTab === 'monthly-ratios' ? 'monthly-ratios' : 'all-ratios'
   );

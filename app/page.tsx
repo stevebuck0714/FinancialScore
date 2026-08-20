@@ -5977,34 +5977,9 @@ function FinancialScorePage() {
           console.error('Error loading account mappings:', error);
         }
         
-        // Load industry benchmarks
+        // Industry benchmarks are loaded in a dedicated effect below so they
+        // retry when `companies` arrives after this company-load effect runs.
         const company = Array.isArray(companies) ? companies.find(c => c.id === selectedCompanyId) : undefined;
-        if (company && company.industrySector) {
-          console.log('Company has industry sector:', company.industrySector);
-          // Get the latest Total Assets to determine asset size category
-          let assetCategory = '1m-5m'; // Default to middle range
-          if (records && records.length > 0) {
-            const latestRecord = records[0];
-            const monthlyData = latestRecord.monthlyData || [];
-            if (monthlyData.length > 0) {
-              const mostRecentMonth = monthlyData[monthlyData.length - 1];
-              const totalAssets = mostRecentMonth.totalAssets || 0;
-              assetCategory = getAssetSizeCategory(totalAssets);
-              console.log('Total Assets:', totalAssets, '-> Asset Category:', assetCategory);
-            }
-          }
-          
-          // Fetch benchmarks for this industry and asset size
-          console.log('Fetching benchmarks for industry:', company.industrySector, 'assetSize:', assetCategory);
-          const benchmarkData = await benchmarksApi.get(String(company.industrySector), assetCategory);
-          setBenchmarks(benchmarkData || []);
-          console.log('? Loaded', benchmarkData?.length || 0, 'benchmarks');
-          if (benchmarkData && benchmarkData.length > 0) {
-            console.log('Sample benchmarks:', benchmarkData.slice(0, 3).map((b: any) => b.metricName).join(', '));
-          }
-        } else {
-          console.log('?? Cannot load benchmarks:', !company ? 'Company not found' : 'Industry sector not set');
-        }
 
           // Load subscription pricing for this company (now stored permanently in DB)
           if (company) {
@@ -6135,6 +6110,78 @@ function FinancialScorePage() {
     
     loadCompanyData();
   }, [selectedCompanyId, currentUser, qbLastSync]);
+
+  // Load industry benchmarks independently so they don't depend on the huge
+  // company-load race (companies often arrive after that effect first runs).
+  useEffect(() => {
+    if (!selectedCompanyId) {
+      setBenchmarks([]);
+      return;
+    }
+
+    const company = Array.isArray(companies)
+      ? companies.find((c) => c.id === selectedCompanyId)
+      : undefined;
+    const industryId = company?.industrySector;
+    if (!industryId) {
+      setBenchmarks([]);
+      return;
+    }
+
+    let cancelled = false;
+    const loadBenchmarks = async () => {
+      let assetCategory = '1m-5m';
+      const monthlyRows = Array.isArray(loadedMonthlyData) ? loadedMonthlyData : [];
+      if (monthlyRows.length > 0) {
+        const mostRecentMonth = monthlyRows[monthlyRows.length - 1] as any;
+        const totalAssets = Number(mostRecentMonth?.totalAssets || 0);
+        if (Number.isFinite(totalAssets) && totalAssets > 0) {
+          assetCategory = getAssetSizeCategory(totalAssets);
+        }
+      }
+
+      try {
+        const benchmarkData = await benchmarksApi.get(String(industryId), assetCategory);
+        if (cancelled) return;
+        if (Array.isArray(benchmarkData) && benchmarkData.length > 0) {
+          setBenchmarks(benchmarkData);
+          return;
+        }
+        // Exact size bucket empty — load industry rows and keep one coherent size
+        // bucket so duplicate metric names from multiple sizes don't collide.
+        const allForIndustry = await benchmarksApi.get(String(industryId));
+        if (cancelled) return;
+        const rows = Array.isArray(allForIndustry) ? allForIndustry : [];
+        if (rows.length === 0) {
+          setBenchmarks([]);
+          return;
+        }
+        const bySize = new Map<string, any[]>();
+        for (const row of rows) {
+          const key = String(row?.assetSizeCategory || '');
+          if (!bySize.has(key)) bySize.set(key, []);
+          bySize.get(key)!.push(row);
+        }
+        let best = bySize.get(assetCategory) || [];
+        if (best.length === 0) {
+          for (const list of bySize.values()) {
+            if (list.length > best.length) best = list;
+          }
+        }
+        setBenchmarks(best);
+      } catch (error) {
+        if (!cancelled) {
+          console.error('Error loading industry benchmarks:', error);
+          setBenchmarks([]);
+        }
+      }
+    };
+
+    void loadBenchmarks();
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedCompanyId, companies, loadedMonthlyData]);
 
   useEffect(() => {
     const selectedCompany = Array.isArray(companies)
@@ -10101,8 +10148,10 @@ function FinancialScorePage() {
       if (!value) return null;
       const date = value instanceof Date ? value : new Date(value as string);
       if (Number.isNaN(date.getTime())) return null;
-      const year = date.getFullYear();
-      const month = date.getMonth() + 1;
+      // UTC bucketing — monthDate values are UTC month starts; local getMonth()
+      // turns July into June in US Mountain/Central and breaks Ratios vs Trends.
+      const year = date.getUTCFullYear();
+      const month = date.getUTCMonth() + 1;
       if (year < 2000 || year > 2100 || month < 1 || month > 12) return null;
       return `${String(month).padStart(2, '0')}-${year}`;
     };

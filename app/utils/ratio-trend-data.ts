@@ -49,8 +49,11 @@ const formatMonth = (monthValue: unknown): string => {
   const date = monthValue instanceof Date ? monthValue : new Date(monthValue as string);
   if (Number.isNaN(date.getTime())) return '';
 
-  const month = String(date.getMonth() + 1).padStart(2, '0');
-  const year = date.getFullYear();
+  // UTC bucketing — monthDate values are stored as UTC month starts
+  // (e.g. 2026-07-01T00:00:00.000Z). Local getMonth() turns July into June
+  // in US Mountain/Central timezones and makes ratios lag Trends by a month.
+  const month = String(date.getUTCMonth() + 1).padStart(2, '0');
+  const year = date.getUTCFullYear();
   if (year < 2000 || year > 2100) return '';
   return `${month}-${year}`;
 };
@@ -79,8 +82,13 @@ export function buildRatioTrendData(monthly: MonthlyDataRow[]): RatioTrendPoint[
 
   const populatedMonths = monthly
     .map((row) => {
-      const monthValue = (row as any).monthDate || row.month;
-      const formattedMonth = formatMonth(monthValue);
+      // Same order as Trends: derive from monthDate/date with UTC first.
+      // Preferring row.month is unsafe — page.tsx normalizeMonthLabel still uses
+      // local getMonth() and can already mislabel July as 06-YYYY.
+      const formattedMonth =
+        formatMonth((row as any).monthDate) ||
+        formatMonth((row as any).date) ||
+        formatMonth(row.month);
       return {
         row,
         month: formattedMonth,
@@ -90,12 +98,26 @@ export function buildRatioTrendData(monthly: MonthlyDataRow[]): RatioTrendPoint[
     .filter((entry) =>
       entry.month &&
       hasLoadedFinancialData(entry.row as unknown as Record<string, unknown>)
-    )
+    );
+
+  // Keep the last occurrence of each month key so mislabeled/local-TZ dupes
+  // cannot bury the true latest month. Sort chronologically after dedupe.
+  const monthKeyToSortable = (label: string): number => {
+    const [mm, yyyy] = label.split('-').map(Number);
+    if (!Number.isFinite(mm) || !Number.isFinite(yyyy)) return 0;
+    return yyyy * 12 + mm;
+  };
+  const byMonth = new Map<string, (typeof populatedMonths)[number]>();
+  for (const entry of populatedMonths) {
+    byMonth.set(entry.month, entry);
+  }
+  const dedupedMonths = Array.from(byMonth.values())
+    .sort((a, b) => monthKeyToSortable(a.month) - monthKeyToSortable(b.month))
     .slice(-MAX_RATIO_MONTHS);
 
-  if (populatedMonths.length === 0) return [];
+  if (dedupedMonths.length === 0) return [];
 
-  return populatedMonths.map((entry, index) => {
+  return dedupedMonths.map((entry, index) => {
     const m = entry.row;
     const month = entry.month;
 
@@ -152,7 +174,7 @@ export function buildRatioTrendData(monthly: MonthlyDataRow[]): RatioTrendPoint[
       let assetsSum = 0;
       let equitySum = 0;
       for (let k = index - (LTM_MONTHS - 1); k <= index; k += 1) {
-        const r = populatedMonths[k].row as any;
+        const r = dedupedMonths[k].row as any;
         revSum += toNumber(r.revenue);
         cogsSum += toNumber(r.cogsTotal);
         interestSum += toNumber(r.interestExpense);
