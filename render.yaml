@@ -55,7 +55,7 @@ services:
       - key: INFOR_SYNC_QUEUE_ENABLED
         value: "true"
       - key: INFOR_SYNC_MAX_INFLIGHT_PER_SCOPE
-        value: "10"
+        value: "1"
       - key: INFOR_SYNC_TASK_FETCH_TIMEOUT_MS
         value: "295000"
 
@@ -75,12 +75,11 @@ services:
       - key: INFOR_SYNC_FANOUT_DAY_PROGRAM_SHARD_SIZE
         value: "8"
 
-      # In-process tasks are heavier (each chunk now does the full sync work
-      # the route used to do). Standard is 1 CPU / 2 GB; 3 concurrent chunks
-      # is the default here. Do not run 10 in-flight SLLedgers period pulls
-      # on this worker — that is what OOM'd Starter and skipped raw persist.
+      # Standard is 1 CPU / 2 GB. One in-flight SLLedgers period transform at a
+      # time — 3×4k ledger payloads plus month-to-date DFS rebuild is what OOM'd
+      # the worker after persist started storing children.
       - key: INFOR_SYNC_TICK_CONCURRENCY
-        value: "3"
+        value: "1"
       - key: INFOR_SYNC_MAX_TASKS_PER_TICK
         value: "12"
 

@@ -24,10 +24,10 @@ const MAX_LEASE_ROUNDS_PER_TICK = 12;
 const TICK_TIME_BUDGET_MS = 55_000;
 const DEFAULT_DAILY_OVERLAP_PROGRAM_BATCH_SIZE = 2;
 const DEFAULT_BACKFILL_PROGRAM_BATCH_SIZE = 4;
-const DEFAULT_TICK_CONCURRENCY = 2;
+const DEFAULT_TICK_CONCURRENCY = 1;
 const DEFAULT_MAX_TASKS_PER_TICK = 12;
 const MAX_TASKS_PER_TICK_LIMIT = 50;
-const DEFAULT_MAX_INFLIGHT_PER_SCOPE = 2;
+const DEFAULT_MAX_INFLIGHT_PER_SCOPE = 1;
 const MAX_RETAINED_TICK_RESULTS = 25;
 const DEFAULT_RUN_STALE_MINUTES = 30;
 const DEFAULT_RUN_MAX_AGE_HOURS = 8;
@@ -225,7 +225,8 @@ function resolveDailyOverlapProgramBatchSize(): number {
 function resolveTickConcurrency(): number {
   const raw = Number(process.env.INFOR_SYNC_TICK_CONCURRENCY || DEFAULT_TICK_CONCURRENCY);
   if (!Number.isFinite(raw) || raw <= 0) return DEFAULT_TICK_CONCURRENCY;
-  return Math.min(64, Math.max(1, Math.floor(raw)));
+  // 2 GB worker: SLLedgers transform + month-to-date DFS cannot run 3-wide.
+  return Math.min(2, Math.max(1, Math.floor(raw)));
 }
 
 function resolveMaxTasksPerTick(): number {
@@ -237,7 +238,8 @@ function resolveMaxTasksPerTick(): number {
 function resolveMaxInflightPerScope(): number {
   const raw = Number(process.env.INFOR_SYNC_MAX_INFLIGHT_PER_SCOPE || DEFAULT_MAX_INFLIGHT_PER_SCOPE);
   if (!Number.isFinite(raw) || raw <= 0) return DEFAULT_MAX_INFLIGHT_PER_SCOPE;
-  return Math.min(12, Math.max(1, Math.floor(raw)));
+  // Cap well below the old dashboard "10" — that is what OOM'd this worker.
+  return Math.min(2, Math.max(1, Math.floor(raw)));
 }
 
 function resolveRunStaleMinutes(): number {

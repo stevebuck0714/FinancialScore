@@ -3266,7 +3266,10 @@ async function saveGLTransactionFacts(
     cono: row.cono == null ? null : String(row.cono),
     divi: row.divi == null ? null : String(row.divi),
   }));
-  await prisma.$executeRawUnsafe(
+  const GL_FACT_INSERT_CHUNK = 400;
+  for (let offset = 0; offset < sqlRows.length; offset += GL_FACT_INSERT_CHUNK) {
+    const chunk = sqlRows.slice(offset, offset + GL_FACT_INSERT_CHUNK);
+    await prisma.$executeRawUnsafe(
     `
       INSERT INTO "GLTransactionFact" (
         "id",
@@ -3396,8 +3399,9 @@ async function saveGLTransactionFacts(
                               ELSE "GLTransactionFact"."sourceProgram"
                             END
     `,
-    JSON.stringify(sqlRows)
-  );
+      JSON.stringify(chunk)
+    );
+  }
   if (cleanupStartDate && cleanupEndDate) {
     await dedupeGLTransactionFactsForDateRange(companyId, cleanupStartDate, cleanupEndDate);
   }
@@ -10524,10 +10528,14 @@ export async function transformInforM3RawRun(options: {
     const dedupByProgram = new Map<string, Map<string, Record<string, unknown>>>();
     let cursorId: string | null = null;
     while (true) {
+      // Must filter by this run. After persist started storing SLLedgers
+      // children, loading every historical payload for the calendar day OOM'd
+      // the 2 GB worker (4k CSI rows × N re-pulls).
       const rows = await (prisma as any).inforRawRecord.findMany({
         where: {
           companyId,
           platform: { in: ['INFOR_M3', 'INFOR_CSI'] },
+          syncRunId,
           businessDate: snapshotDate,
         },
         select: {
