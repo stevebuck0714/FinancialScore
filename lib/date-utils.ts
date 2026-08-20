@@ -196,3 +196,52 @@ export function currentMonthIndexUtc(): number {
 export function currentQuarterUtc(): number {
   return Math.floor(new Date().getUTCMonth() / 3) + 1;
 }
+
+/** Stable "YYYY-MM" for the current UTC calendar month. */
+export function currentMonthKeyUtc(now: Date = new Date()): string {
+  return `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, '0')}`;
+}
+
+/**
+ * Parse a reporting month to "YYYY-MM".
+ * Accepts Date/ISO values, "YYYY-MM", "YYYY-MM-DD", and legacy "MM-YYYY" labels.
+ */
+export function reportingMonthKeyUtc(value: MonthInput): string | null {
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    const yyyyMm = trimmed.match(/^(\d{4})-(\d{2})(?!\d)/);
+    if (yyyyMm) return `${yyyyMm[1]}-${yyyyMm[2]}`;
+    const mmYyyy = trimmed.match(/^(\d{1,2})[-/](\d{4})$/);
+    if (mmYyyy) {
+      const month = Number(mmYyyy[1]);
+      if (month >= 1 && month <= 12) {
+        return `${mmYyyy[2]}-${String(month).padStart(2, '0')}`;
+      }
+    }
+  }
+  return monthKey(value);
+}
+
+/** True while the month is still the in-progress UTC calendar month. */
+export function isOpenReportingMonth(value: MonthInput, now: Date = new Date()): boolean {
+  const key = reportingMonthKeyUtc(value);
+  return key !== null && key === currentMonthKeyUtc(now);
+}
+
+/**
+ * Month-end reports (KPIs, Ratios, Trends, published master data) wait until
+ * the first of the following UTC month. August becomes eligible on September 1.
+ */
+export function isClosedReportingMonth(value: MonthInput, now: Date = new Date()): boolean {
+  const key = reportingMonthKeyUtc(value);
+  return key !== null && key !== currentMonthKeyUtc(now);
+}
+
+export function filterClosedReportingMonths<T>(
+  rows: T[],
+  getMonthValue: (row: T) => MonthInput,
+  now: Date = new Date(),
+): T[] {
+  if (!Array.isArray(rows) || rows.length === 0) return [];
+  return rows.filter((row) => isClosedReportingMonth(getMonthValue(row), now));
+}

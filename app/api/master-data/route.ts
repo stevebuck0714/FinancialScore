@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import { privateCacheHeaders } from '@/lib/http-cache';
 import { hashCacheParts, readDerivedApiCache, writeDerivedApiCache } from '@/lib/derived-api-cache';
+import { currentMonthKeyUtc } from '@/lib/date-utils';
 import { readRequestedCurrency, withCurrencyPresentation } from '@/lib/currency/api-response';
 
 const MASTER_DATA_CACHE_TTL_SECONDS = 120;
@@ -107,7 +108,13 @@ export async function GET(request: NextRequest) {
 
     const cacheContext = {
       namespace: 'master-data',
-      cacheKey: hashCacheParts([companyId, scope, MASTER_DATA_REPORT_MIN_DATE, 'qbd-current-year-net-income-v1']),
+      cacheKey: hashCacheParts([
+        companyId,
+        scope,
+        MASTER_DATA_REPORT_MIN_DATE,
+        'closed-reporting-month-v1',
+        scope === 'published' ? currentMonthKeyUtc() : 'all',
+      ]),
       dataVersion: await buildMasterDataVersion(companyId, scope),
     };
     const cachedPayload = await readDerivedApiCache<any>(cacheContext);
@@ -198,10 +205,18 @@ export async function GET(request: NextRequest) {
           return publishedKeys!.has(key);
         })
       : latestRecord.monthlyData);
+    const reportingRows = scope === 'published'
+      ? sourceRows.filter((m: any) => {
+          const d = m?.monthDate ? new Date(m.monthDate) : null;
+          if (!d || Number.isNaN(d.getTime())) return false;
+          const key = `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
+          return key !== currentMonthKeyUtc();
+        })
+      : sourceRows;
 
     // Format monthly data to match expected structure
     const ytdNetIncomeByYear = new Map<number, number>();
-    const monthlyData = sourceRows.map((month: any) => {
+    const monthlyData = reportingRows.map((month: any) => {
       const cash = month.cash || 0;
       const ar = month.ar || 0;
       const retainageReceivables = month.retainageReceivables || 0;

@@ -1,4 +1,5 @@
 import type { MonthlyDataRow } from '../types';
+import { filterClosedReportingMonths } from '@/lib/date-utils';
 
 export type RatioTrendPoint = {
   month: string;
@@ -115,9 +116,10 @@ export function buildRatioTrendData(monthly: MonthlyDataRow[]): RatioTrendPoint[
     .sort((a, b) => monthKeyToSortable(a.month) - monthKeyToSortable(b.month))
     .slice(-MAX_RATIO_MONTHS);
 
-  if (dedupedMonths.length === 0) return [];
+  const closedMonths = filterClosedReportingMonths(dedupedMonths, (entry) => entry.month);
+  if (closedMonths.length === 0) return [];
 
-  return dedupedMonths.map((entry, index) => {
+  return closedMonths.map((entry, index) => {
     const m = entry.row;
     const month = entry.month;
 
@@ -174,7 +176,7 @@ export function buildRatioTrendData(monthly: MonthlyDataRow[]): RatioTrendPoint[
       let assetsSum = 0;
       let equitySum = 0;
       for (let k = index - (LTM_MONTHS - 1); k <= index; k += 1) {
-        const r = dedupedMonths[k].row as any;
+        const r = closedMonths[k].row as any;
         revSum += toNumber(r.revenue);
         cogsSum += toNumber(r.cogsTotal);
         interestSum += toNumber(r.interestExpense);

@@ -1,6 +1,6 @@
 import prisma from '@/lib/prisma';
 import { BS_LAST_DAY_FIELDS, parseMonthInput, PNL_SUM_FIELDS, safeNumber } from '@/lib/financial/month-publish';
-import { monthKey } from '@/lib/date-utils';
+import { currentMonthKeyUtc, monthKey } from '@/lib/date-utils';
 import {
   buildAccountIdToTargetForMonthlySync,
   computeMonthlyPnlBreakdownsFromGL,
@@ -136,6 +136,15 @@ export async function publishMonthFromDailySnapshots(params: PublishMonthParams)
       return { success: false, month: targetMonth, snapshotDays: 0, monthEndSnapshotDate: null, error: 'Invalid month format. Use YYYY-MM.' };
     }
     const { monthStart: targetMonthStart, monthEnd: targetMonthEnd } = targetParsed;
+    if (targetMonth === currentMonthKeyUtc()) {
+      return {
+        success: false,
+        month: targetMonth,
+        snapshotDays: 0,
+        monthEndSnapshotDate: null,
+        error: 'In-progress calendar month cannot be published until the first of the following month.',
+      };
+    }
 
     const existingPublish = await publishDelegate.findUnique({
       where: { companyId_monthStart: { companyId, monthStart: targetMonthStart } },
@@ -619,6 +628,10 @@ export async function publishMonthsFromMonthlyFinancialDirect(
       Date.UTC(monthStart.getUTCFullYear(), monthStart.getUTCMonth() + 1, 0, 23, 59, 59, 999),
     );
 
+    if (ym === currentMonthKeyUtc()) {
+      skippedMonths.push(ym);
+      continue;
+    }
     const existing = await publishDelegate.findUnique({
       where: { companyId_monthStart: { companyId, monthStart } },
     });

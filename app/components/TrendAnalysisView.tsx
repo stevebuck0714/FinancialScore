@@ -7,6 +7,7 @@ import { useCompanyMoneyFormatter } from '@/app/hooks/useCompanyMoneyFormatter';
 import PageCurrencyBadge from './PageCurrencyBadge';
 import { getCogsTargetFieldOptions } from '@/lib/constants/sector-target-fields';
 import { getFieldDisplayName } from '@/lib/constants/field-display-names';
+import { filterClosedReportingMonths } from '@/lib/date-utils';
 
 const LEGACY_COGS_KEYS = [
   'cogsPayroll',
@@ -43,45 +44,6 @@ export default function TrendAnalysisView({
   const money = useCompanyMoneyFormatter(selectedCompanyId);
   const [trendAnalysisTab, setTrendAnalysisTab] = useState<'item-trends' | 'expense-analysis' | 'cogs-analysis'>('item-trends');
   const [selectedCogsItems, setSelectedCogsItems] = useState<string[]>([]);
-  const getMonthPeriodIndex = (primaryMonthValue: unknown, fallbackMonthValue?: unknown): number | null => {
-    const fromDate = (value: unknown): number | null => {
-      if (!value) return null;
-      const date = value instanceof Date ? value : new Date(value as string);
-      if (Number.isNaN(date.getTime())) return null;
-      const year = date.getUTCFullYear();
-      const monthIndex = date.getUTCMonth();
-      if (year < 2000 || year > 2100 || monthIndex < 0 || monthIndex > 11) return null;
-      return year * 12 + monthIndex;
-    };
-
-    const primaryPeriod = fromDate(primaryMonthValue);
-    if (primaryPeriod !== null) return primaryPeriod;
-
-    if (typeof fallbackMonthValue === 'string') {
-      const trimmed = fallbackMonthValue.trim();
-      if (!trimmed) return null;
-
-      const mmYYYY = trimmed.match(/^(\d{1,2})[-/](\d{4})$/);
-      if (mmYYYY) {
-        const month = Number(mmYYYY[1]);
-        const year = Number(mmYYYY[2]);
-        if (month >= 1 && month <= 12 && year >= 2000 && year <= 2100) {
-          return year * 12 + (month - 1);
-        }
-      }
-
-      const yyyyMM = trimmed.match(/^(\d{4})-(\d{1,2})$/);
-      if (yyyyMM) {
-        const year = Number(yyyyMM[1]);
-        const month = Number(yyyyMM[2]);
-        if (month >= 1 && month <= 12 && year >= 2000 && year <= 2100) {
-          return year * 12 + (month - 1);
-        }
-      }
-    }
-
-    return null;
-  };
   const normalizeMonthLabel = (primaryMonthValue: unknown, fallbackMonthValue?: unknown): string => {
     const formatDate = (value: unknown): string | null => {
       if (!value) return null;
@@ -123,14 +85,10 @@ export default function TrendAnalysisView({
     return '';
   };
 
-  const completedMonthly = React.useMemo(() => {
-    const now = new Date();
-    const currentMonthPeriod = now.getFullYear() * 12 + now.getMonth();
-    return monthly.filter((m) => {
-      const period = getMonthPeriodIndex((m as any).monthDate || (m as any).date, (m as any).month);
-      return period !== null && period < currentMonthPeriod;
-    });
-  }, [monthly]);
+  const completedMonthly = React.useMemo(
+    () => filterClosedReportingMonths(monthly, (m) => (m as any)?.monthDate || (m as any)?.date || (m as any)?.month),
+    [monthly]
+  );
 
   const toNumber = (value: unknown): number => {
     const parsed = Number(value);
