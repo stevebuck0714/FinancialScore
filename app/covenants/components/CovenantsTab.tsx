@@ -582,8 +582,15 @@ export default function CovenantsTab({
   /**
    * Covenants need every live facility, including paid-down LOCs that the
    * Loan Instruments table hides when current balance is $0.
+   * User-marked closed facilities are retired and stay out of covenant setup.
    */
+  const isClosedInstrument = (instrument: any): boolean => {
+    const closed = instrument?.terms?.closed;
+    return closed === true || String(closed).toLowerCase() === 'true' || Number(closed) === 1;
+  };
+
   const isCovenantEligibleInstrument = (instrument: any): boolean => {
+    if (isClosedInstrument(instrument)) return false;
     if (hasLoanInstrumentBalance(instrument)) return true;
     if (!getInstrumentDisplayName(instrument)) return false;
     if (isLocInstrument(instrument)) return true;

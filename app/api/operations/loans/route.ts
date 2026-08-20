@@ -6,7 +6,7 @@ import { requireAuth, validateCompanyAccess } from '@/lib/tenant-security';
 export const dynamic = 'force-dynamic';
 export const maxDuration = 120;
 
-const LOAN_ACTIVITY_CACHE_VERSION = 28;
+const LOAN_ACTIVITY_CACHE_VERSION = 29;
 const STALE_LOAN_ACTIVITY_MONTHS = 13;
 
 type LoanTermInput = {
@@ -22,6 +22,7 @@ type LoanTermInput = {
   amortizationTermMonths?: number | null;
   paymentFrequency?: string | null;
   notes?: string | null;
+  closed?: boolean | null;
 };
 
 const DEBT_ACCOUNT_NAME_PATTERN = [
@@ -90,6 +91,7 @@ async function ensureLoanTermsTable() {
       "amortizationTermMonths" INTEGER,
       "paymentFrequency" TEXT,
       "notes" TEXT,
+      "closed" BOOLEAN NOT NULL DEFAULT false,
       "createdAt" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       "updatedAt" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       CONSTRAINT "LoanInstrumentTerm_company_instrument_key" UNIQUE ("companyId", "instrumentKey")
@@ -102,6 +104,10 @@ async function ensureLoanTermsTable() {
   await prisma.$executeRawUnsafe(`
     ALTER TABLE "LoanInstrumentTerm"
       ADD COLUMN IF NOT EXISTS "loanOriginationDate" DATE;
+  `);
+  await prisma.$executeRawUnsafe(`
+    ALTER TABLE "LoanInstrumentTerm"
+      ADD COLUMN IF NOT EXISTS "closed" BOOLEAN NOT NULL DEFAULT false;
   `);
 }
 
@@ -311,6 +317,20 @@ function toNumber(value: unknown): number | null {
   const normalized = typeof value === 'string' ? value.replace(/[$,\s]/g, '') : value;
   const parsed = Number(normalized);
   return Number.isFinite(parsed) ? parsed : null;
+}
+
+function toBooleanFlag(value: unknown): boolean {
+  if (value === true || value === 1) return true;
+  const text = String(value ?? '').trim().toLowerCase();
+  return text === 'true' || text === 't' || text === '1' || text === 'yes' || text === 'on';
+}
+
+function normalizeLoanTerms(row: any) {
+  if (!row) return null;
+  return {
+    ...row,
+    closed: toBooleanFlag(row.closed),
+  };
 }
 
 function dateToTime(value: unknown): number | null {
@@ -592,7 +612,7 @@ function loanMatchTokens(value: string): string[] {
 
 async function loadLoanTerms(companyId: string) {
   await ensureLoanTermsTable();
-  return prisma.$queryRawUnsafe<any[]>(
+  const rows = await prisma.$queryRawUnsafe<any[]>(
     `
       SELECT
         "instrumentKey",
@@ -607,6 +627,7 @@ async function loadLoanTerms(companyId: string) {
         "amortizationTermMonths",
         "paymentFrequency",
         "notes",
+        COALESCE("closed", false) AS "closed",
         "updatedAt"
       FROM "LoanInstrumentTerm"
       WHERE "companyId" = $1
@@ -614,6 +635,7 @@ async function loadLoanTerms(companyId: string) {
     `,
     companyId
   );
+  return rows.map(normalizeLoanTerms);
 }
 
 async function loadAccountNameFallbacks(companyId: string, accountIds: string[]): Promise<Map<string, string>> {
@@ -1379,7 +1401,7 @@ async function buildLoanActivityPayload(companyId: string) {
   const termsByKey = new Map(terms.map((term) => [String(term.instrumentKey), term]));
   const merged = instruments.map((instrument) => ({
     ...instrument,
-    terms: termsByKey.get(instrument.instrumentKey) || null,
+    terms: normalizeLoanTerms(termsByKey.get(instrument.instrumentKey)),
   }));
   const configuredOnly = terms
     .filter((term) => !merged.some((instrument) => instrument.instrumentKey === term.instrumentKey))
@@ -1397,7 +1419,7 @@ async function buildLoanActivityPayload(companyId: string) {
       estimatedInterestPaid: 0,
       monthlyActivity: [],
       recentActivity: [],
-      terms: term,
+      terms: normalizeLoanTerms(term),
     }));
   const reportInstruments = [...merged, ...configuredOnly].filter(
     (instrument) => Boolean(instrument?.instrumentKey)
@@ -1479,6 +1501,8 @@ export async function POST(request: NextRequest) {
     const amortizationTermMonths = toNumber(input.amortizationTermMonths);
     const paymentFrequency = cleanText(input.paymentFrequency, 80);
     const notes = cleanText(input.notes, 2000);
+    const closedProvided = Object.prototype.hasOwnProperty.call(input, 'closed');
+    const closed = closedProvided ? toBooleanFlag(input.closed) : null;
 
     const rows = await prisma.$queryRawUnsafe<any[]>(
       `
@@ -1496,9 +1520,10 @@ export async function POST(request: NextRequest) {
           "amortizationTermMonths",
           "paymentFrequency",
           "notes",
+          "closed",
           "updatedAt"
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7::date, $8, $9, $10::date, $11, $12, $13, NOW())
+        VALUES ($1, $2, $3, $4, $5, $6, $7::date, $8, $9, $10::date, $11, $12, $13, COALESCE($14, false), NOW())
         ON CONFLICT ("companyId", "instrumentKey")
         DO UPDATE SET
           "displayName" = EXCLUDED."displayName",
@@ -1512,6 +1537,7 @@ export async function POST(request: NextRequest) {
           "amortizationTermMonths" = EXCLUDED."amortizationTermMonths",
           "paymentFrequency" = EXCLUDED."paymentFrequency",
           "notes" = EXCLUDED."notes",
+          "closed" = CASE WHEN $14::boolean IS NULL THEN "LoanInstrumentTerm"."closed" ELSE $14::boolean END,
           "updatedAt" = NOW()
         RETURNING *
       `,
@@ -1527,7 +1553,8 @@ export async function POST(request: NextRequest) {
       maturityDate,
       amortizationTermMonths,
       paymentFrequency,
-      notes
+      notes,
+      closed
     );
 
     const payload = await buildLoanActivityPayload(companyId);
@@ -1535,7 +1562,7 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({
       ok: true,
-      term: rows[0] || null,
+      term: normalizeLoanTerms(rows[0]) || null,
       payload,
       updatedBy: authContext.email || authContext.userId || null,
     });

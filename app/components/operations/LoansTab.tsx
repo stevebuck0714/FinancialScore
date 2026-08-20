@@ -18,6 +18,7 @@ type LoanTerms = {
   amortizationTermMonths?: number | string | null;
   paymentFrequency?: string | null;
   notes?: string | null;
+  closed?: boolean | null;
 };
 
 type LoanInstrument = {
@@ -84,6 +85,7 @@ const emptyTerms: LoanTerms = {
   amortizationTermMonths: '',
   paymentFrequency: '',
   notes: '',
+  closed: false,
 };
 
 function formatCurrency(value: unknown, currency: string = 'USD'): string {
@@ -191,7 +193,13 @@ function buildTerms(instrument: LoanInstrument): LoanTerms {
     amortizationTermMonths: normalizeInputValue(instrument.terms?.amortizationTermMonths),
     paymentFrequency: normalizeInputValue(instrument.terms?.paymentFrequency),
     notes: normalizeInputValue(instrument.terms?.notes),
+    closed: isClosedInstrument(instrument),
   };
+}
+
+function isClosedInstrument(instrument: { terms?: { closed?: boolean | string | number | null } | null } | null | undefined): boolean {
+  const closed = instrument?.terms?.closed;
+  return closed === true || String(closed).toLowerCase() === 'true' || Number(closed) === 1;
 }
 
 function isLocInstrument(instrument: LoanInstrument): boolean {
@@ -248,10 +256,22 @@ export default function LoansTab({ selectedCompanyId, companyName, currentUser =
   const [activePageTab, setActivePageTab] = useState<'instruments' | 'covenants' | 'liquidity'>('instruments');
   const [selectedInstrumentKey, setSelectedInstrumentKey] = useState<string>('');
   const [termsDraft, setTermsDraft] = useState<LoanTerms>(emptyTerms);
+  const [showClosedInstruments, setShowClosedInstruments] = useState(false);
 
+  const closedInstrumentCount = useMemo(
+    () => instruments.filter((instrument) => isClosedInstrument(instrument)).length,
+    [instruments]
+  );
+  const visibleInstruments = useMemo(
+    () => (showClosedInstruments ? instruments : instruments.filter((instrument) => !isClosedInstrument(instrument))),
+    [instruments, showClosedInstruments]
+  );
   const selectedInstrument = useMemo(
-    () => instruments.find((instrument) => instrument.instrumentKey === selectedInstrumentKey) || instruments[0] || null,
-    [instruments, selectedInstrumentKey]
+    () =>
+      visibleInstruments.find((instrument) => instrument.instrumentKey === selectedInstrumentKey) ||
+      visibleInstruments[0] ||
+      null,
+    [visibleInstruments, selectedInstrumentKey]
   );
   const selectedLoanSchedule = useMemo(() => {
     if (!selectedInstrument) return [];
@@ -293,6 +313,7 @@ export default function LoansTab({ selectedCompanyId, companyName, currentUser =
 
   const liquidityData = useMemo(() => {
     const locInstruments = instruments.filter((instrument) => {
+      if (isClosedInstrument(instrument)) return false;
       const text = `${instrument.targetField || ''} ${instrument.displayName || ''} ${instrument.accountId || ''}`.toLowerCase();
       return instrument.targetField === 'loc' || text.includes('loc') || text.includes('line of credit');
     });
@@ -377,11 +398,13 @@ export default function LoansTab({ selectedCompanyId, companyName, currentUser =
   }, [instruments, monthly]);
 
   const loanInstrumentSections = useMemo(() => {
-    const rowsWithBalancesOrLocs = instruments.filter(
+    const openInstruments = instruments.filter((instrument) => !isClosedInstrument(instrument));
+    const rowsWithBalancesOrLocs = openInstruments.filter(
       (instrument) => hasLoanInstrumentBalance(instrument) || isLocInstrument(instrument)
     );
     const locRows = rowsWithBalancesOrLocs.filter(isLocInstrument);
     const longTermDebtRows = rowsWithBalancesOrLocs.filter((instrument) => !isLocInstrument(instrument));
+    const closedRows = showClosedInstruments ? instruments.filter((instrument) => isClosedInstrument(instrument)) : [];
     const totalsFor = (rows: LoanInstrument[]) => ({
       priorMonthBalance: sumNullableCurrency(rows, (instrument) => instrument.priorMonthBalance),
       principalChange: sumNullableCurrency(rows, (instrument) => instrument.principalChange),
@@ -390,15 +413,18 @@ export default function LoansTab({ selectedCompanyId, companyName, currentUser =
     });
     const locTotals = totalsFor(locRows);
     const longTermDebtTotals = totalsFor(longTermDebtRows);
+    const closedTotals = totalsFor(closedRows);
     const combinedRows = [...locRows, ...longTermDebtRows];
     return {
       locRows,
       longTermDebtRows,
+      closedRows,
       locTotals,
       longTermDebtTotals,
+      closedTotals,
       combinedTotals: totalsFor(combinedRows),
     };
-  }, [instruments]);
+  }, [instruments, showClosedInstruments]);
 
   const loadLoans = useCallback(async (force = false) => {
     if (!selectedCompanyId) return;
@@ -417,9 +443,12 @@ export default function LoansTab({ selectedCompanyId, companyName, currentUser =
       const nextInstruments = Array.isArray(data?.instruments) ? data.instruments : [];
       setInstruments(nextInstruments);
       setSelectedInstrumentKey((currentKey) => {
+        const selectable = showClosedInstruments
+          ? nextInstruments
+          : nextInstruments.filter((instrument: LoanInstrument) => !isClosedInstrument(instrument));
         const nextSelected =
-          nextInstruments.find((instrument: LoanInstrument) => instrument.instrumentKey === currentKey) ||
-          nextInstruments[0] ||
+          selectable.find((instrument: LoanInstrument) => instrument.instrumentKey === currentKey) ||
+          selectable[0] ||
           null;
         setTermsDraft(nextSelected ? buildTerms(nextSelected) : emptyTerms);
         return nextSelected?.instrumentKey || '';
@@ -429,7 +458,7 @@ export default function LoansTab({ selectedCompanyId, companyName, currentUser =
     } finally {
       setLoading(false);
     }
-  }, [selectedCompanyId]);
+  }, [selectedCompanyId, showClosedInstruments]);
 
   useEffect(() => {
     void loadLoans();
@@ -441,7 +470,7 @@ export default function LoansTab({ selectedCompanyId, companyName, currentUser =
     }
   }, [selectedInstrument]);
 
-  const updateTerms = (key: keyof LoanTerms, value: string) => {
+  const updateTerms = (key: keyof LoanTerms, value: string | boolean) => {
     setTermsDraft((prev) => ({ ...prev, [key]: value }));
   };
 
@@ -459,6 +488,7 @@ export default function LoansTab({ selectedCompanyId, companyName, currentUser =
           terms: {
             ...termsDraft,
             instrumentKey: selectedInstrument.instrumentKey,
+            closed: Boolean(termsDraft.closed),
           },
         }),
       });
@@ -602,7 +632,7 @@ export default function LoansTab({ selectedCompanyId, companyName, currentUser =
           <div style={{ marginTop: '2px', fontSize: '11px', color: '#64748b', fontWeight: 500 }}>
             {instrument.terms?.loanType || 'Loan type not set'}
             {instrument.terms?.lender ? ` | ${instrument.terms.lender}` : ''}
-            {instrument.instrumentStatus === 'inactive' ? ' | Inactive' : ''}
+            {isClosedInstrument(instrument) ? ' | Closed' : instrument.instrumentStatus === 'inactive' ? ' | Undrawn / paid down' : ''}
           </div>
         </td>
         <td style={tdStyle}>
@@ -680,12 +710,22 @@ export default function LoansTab({ selectedCompanyId, companyName, currentUser =
             Liquidity
           </button>
         )}
+        {closedInstrumentCount > 0 && (
+          <label style={{ display: 'flex', alignItems: 'center', gap: '6px', marginLeft: 'auto', fontSize: '12px', color: '#475569', fontWeight: 700, cursor: 'pointer' }}>
+            <input
+              type="checkbox"
+              checked={showClosedInstruments}
+              onChange={(event) => setShowClosedInstruments(event.target.checked)}
+            />
+            Show closed ({closedInstrumentCount})
+          </label>
+        )}
         <button
           type="button"
           onClick={() => void loadLoans(true)}
           disabled={loading}
           style={{
-            marginLeft: 'auto',
+            marginLeft: closedInstrumentCount > 0 ? '8px' : 'auto',
             border: '1px solid #cbd5e1',
             background: 'white',
             borderRadius: '8px',
@@ -729,6 +769,11 @@ export default function LoansTab({ selectedCompanyId, companyName, currentUser =
                 <tbody>
                   {renderLoanSection('Lines of Credit', loanInstrumentSections.locRows, loanInstrumentSections.locTotals)}
                   {renderLoanSection('Long-Term Debt', loanInstrumentSections.longTermDebtRows, loanInstrumentSections.longTermDebtTotals)}
+                  {loanInstrumentSections.closedRows.length > 0 && renderLoanSection(
+                    'Closed Facilities',
+                    loanInstrumentSections.closedRows,
+                    loanInstrumentSections.closedTotals
+                  )}
                   <tr>
                     <td style={{ ...totalCellStyle, textAlign: 'left', background: '#dbeafe', color: '#1e3a8a' }} colSpan={3}>Total Debt</td>
                     <td style={{ ...totalCellStyle, background: '#dbeafe', color: '#1e3a8a' }}>{formatOptionalCurrency(loanInstrumentSections.combinedTotals.priorMonthBalance)}</td>
@@ -748,11 +793,26 @@ export default function LoansTab({ selectedCompanyId, companyName, currentUser =
                   <div>
                     <h3 style={{ margin: 0, color: '#0f172a', fontSize: '18px' }}>Loan Terms</h3>
                     <div style={{ marginTop: '4px', color: '#64748b', fontSize: '12px' }}>
-                      Saved by company and instrument. These fields do not change ERP mapping or the chart of accounts.
+                      Saved by company and instrument. These fields do not change ERP mapping or the chart of accounts. A $0 balance is still an open facility until you mark it closed.
                     </div>
                   </div>
                   {saveMessage && <span style={{ color: '#16a34a', fontSize: '12px', fontWeight: 700 }}>{saveMessage}</span>}
                 </div>
+
+                <label style={{ display: 'flex', alignItems: 'flex-start', gap: '10px', marginBottom: '14px', padding: '10px 12px', border: '1px solid #e2e8f0', borderRadius: '8px', background: termsDraft.closed ? '#f8fafc' : '#fff' }}>
+                  <input
+                    type="checkbox"
+                    checked={Boolean(termsDraft.closed)}
+                    onChange={(event) => updateTerms('closed', event.target.checked)}
+                    style={{ marginTop: '2px' }}
+                  />
+                  <span>
+                    <span style={{ display: 'block', fontSize: '13px', fontWeight: 800, color: '#0f172a' }}>Closed</span>
+                    <span style={{ display: 'block', marginTop: '2px', fontSize: '12px', color: '#64748b' }}>
+                      Retired or converted facility. Closed instruments are hidden from this page, liquidity, and covenant setup. They are not deleted.
+                    </span>
+                  </span>
+                </label>
 
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '12px', alignItems: 'start' }}>
                   {[

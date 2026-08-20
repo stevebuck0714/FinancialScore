@@ -1,0 +1,2 @@
+ALTER TABLE "LoanInstrumentTerm"
+  ADD COLUMN IF NOT EXISTS "closed" BOOLEAN NOT NULL DEFAULT false;

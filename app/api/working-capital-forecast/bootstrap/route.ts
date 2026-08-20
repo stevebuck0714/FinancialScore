@@ -154,6 +154,7 @@ async function loadLoans(companyId: string) {
            ON mapping."companyId" = terms."companyId"
           AND CONCAT('gl:', TRIM(mapping."accountId")) = terms."instrumentKey"
          WHERE terms."companyId" = $1
+           AND COALESCE(terms."closed", false) = false
            AND COALESCE(terms."originalBalance", 0) > 0
            AND COALESCE(mapping."targetField", '') <> 'ltd'
            AND (
