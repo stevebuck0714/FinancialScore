@@ -13,7 +13,7 @@ services:
   - type: worker
     name: financial-score-sync-worker
     runtime: node
-    plan: starter
+    plan: standard
     region: ohio
     branch: dev
     autoDeploy: true
@@ -76,9 +76,9 @@ services:
         value: "8"
 
       # In-process tasks are heavier (each chunk now does the full sync work
-      # the route used to do). Render Starter is 0.5 CPU / 512 MB; running 3
-      # IDOs concurrently fits comfortably and roughly triples throughput vs
-      # the default of 1.
+      # the route used to do). Standard is 1 CPU / 2 GB; 3 concurrent chunks
+      # is the default here. Do not run 10 in-flight SLLedgers period pulls
+      # on this worker — that is what OOM'd Starter and skipped raw persist.
       - key: INFOR_SYNC_TICK_CONCURRENCY
         value: "3"
       - key: INFOR_SYNC_MAX_TASKS_PER_TICK

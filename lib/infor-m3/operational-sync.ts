@@ -2024,6 +2024,14 @@ function shouldPersistGlobalRawSourceRecordId(miProgram: string | null | undefin
     'SLVENDORS',
     'SLCHARTACCTS',
     'SLCHARTS',
+    // Journal IDOs reuse the same _ItemId across re-syncs of the same period.
+    // Persisting it hits the production partial unique index
+    // (companyId, platform, miProgram, sourceRecordId) and createMany
+    // skipDuplicates then stores 0 children. Transform is scoped to the
+    // current syncRunId, so GL never updates (Atlantic April 2026 Cost of
+    // Sales stayed at the old SLLedgers total after a "successful" pull).
+    'SLLEDGERS',
+    'SLGLTRANS',
   ].includes(programId);
 }
 
@@ -10130,9 +10138,10 @@ export async function syncInforM3OperationalData(
                 250,
                 Math.max(25, Number(process.env.INFOR_RAW_RECORD_WRITE_BATCH_SIZE || 100))
               );
+              let persistedRawCount = 0;
               for (let rawOffset = 0; rawOffset < rawRows.length; rawOffset += rawWriteBatchSize) {
                 const rawBatch = rawRows.slice(rawOffset, rawOffset + rawWriteBatchSize);
-                await retryOnTransientPostgresWrite(
+                const written = await retryOnTransientPostgresWrite(
                   `inforRawRecord.createMany.${row.miProgram || 'unknown'}.${rawOffset}`,
                   () =>
                     (prisma as any).inforRawRecord.createMany({
@@ -10140,6 +10149,17 @@ export async function syncInforM3OperationalData(
                       skipDuplicates: true,
                     })
                 );
+                persistedRawCount += Number(written?.count || 0);
+              }
+              if (persistedRawCount === 0) {
+                const existingChildCount = await (prisma as any).inforRawRecord.count({
+                  where: { batchId },
+                });
+                if (Number(existingChildCount || 0) === 0) {
+                  throw new Error(
+                    `Raw ingest saved 0/${eligibleRecords.length} ${row.miProgram || 'unknown'} rows for ${snapshotDate.toISOString().slice(0, 10)} (syncRunId=${syncRunId}). CSI returned rows but persist skipped them.`
+                  );
+                }
               }
             }
           }
