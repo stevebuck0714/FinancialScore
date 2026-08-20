@@ -159,10 +159,6 @@ export default function DashboardView({
   // Get master data for dynamic expense categories
   const masterData = useMasterData(selectedCompanyId);
   const expenseCategories = masterData.data?.expenseCategories || [];
-  const monthlyForRatios = useMemo(() => {
-    const fetchedMonthlyData = Array.isArray(masterData.monthlyData) ? masterData.monthlyData : [];
-    return fetchedMonthlyData.length > 0 ? fetchedMonthlyData : monthly;
-  }, [masterData.monthlyData, monthly]);
 
   // Clear master data cache when component mounts
   useEffect(() => {
@@ -191,7 +187,7 @@ export default function DashboardView({
     setTimeout(() => setIsPreparingPrint(false), 1500);
   };
 
-  const ratioTrendData = useMemo(() => buildRatioTrendData(monthlyForRatios as any), [monthlyForRatios]);
+  const ratioTrendData = useMemo(() => buildRatioTrendData(monthly as any), [monthly]);
   
   return (
         <div className="dashboard-container" style={{ maxWidth: '1400px', margin: '0 auto', padding: '32px' }}>

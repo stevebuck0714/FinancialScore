@@ -28,9 +28,11 @@ export default function RatiosTab({
   onFormulaClick,
   onDescriptionClick,
   initialTab = 'all-ratios',
+  prefetchedMonthlyData,
 }: RatiosTabProps) {
   const { monthlyData, loading, error } = useMasterData(selectedCompanyId);
-  const monthly = Array.isArray(monthlyData) ? (monthlyData as MonthlyDataRow[]) : [];
+  const hasPrefetchedData = Array.isArray(prefetchedMonthlyData) && prefetchedMonthlyData.length > 0;
+  const monthly = hasPrefetchedData ? prefetchedMonthlyData : (Array.isArray(monthlyData) ? (monthlyData as MonthlyDataRow[]) : []);
   const [printOrientation, setPrintOrientation] = useState<'portrait' | 'landscape'>('portrait');
 
   // Debug: Log benchmarks when component receives them
@@ -147,7 +149,7 @@ export default function RatiosTab({
     },
   ];
 
-  if (loading) {
+  if (!hasPrefetchedData && loading) {
     return (
       <div style={{ maxWidth: '1400px', margin: '0 auto', padding: '32px', textAlign: 'center' }}>
         <div style={{ fontSize: '18px', color: '#64748b' }}>Loading ratio data...</div>
