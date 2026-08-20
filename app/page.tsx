@@ -43,7 +43,7 @@ const FINANCIAL_REPORTING_TABS = [
   { id: 'dashboard', label: "KPI's" },
   { id: 'kpis', label: 'Ratios' },
   { id: 'trend-analysis', label: 'Trends' },
-  { id: 'goals', label: 'Targets and Goals' },
+  { id: 'goals', label: 'Goals' },
   { id: 'projections', label: 'Projections' },
   { id: 'cash-flow', label: 'Cash Flow' },
   { id: 'working-capital', label: 'Working Capital' },
