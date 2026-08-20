@@ -46,8 +46,42 @@ export type SyncErpDailyFinancialsFromGLOutcome = {
   };
 };
 
+const ATLANTIC_PRECISION_COMPANY_ID = 'cmmcp278j0002kz0439rlixdj';
+const ATLANTIC_TRUSTED_DFS_START = new Date('2026-06-30T00:00:00.000Z');
+
 function startOfUtcDay(date: Date): Date {
   return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
+}
+
+function utcDayOrNull(value?: Date | null): Date | null {
+  if (!(value instanceof Date) || Number.isNaN(value.getTime())) return null;
+  return startOfUtcDay(value);
+}
+
+/**
+ * Atlantic SLLedgers pulls are period-wide, so a one-day sync can land GL on
+ * many days in the month. Rebuild the whole month-to-date (floored at the
+ * 2026-06-30 trusted DFS start) so daily income statements stay on GL truth.
+ * Returns null when the run's month is entirely before that floor.
+ */
+export function atlanticMonthToDateDailyRebuildWindow(opts: {
+  companyId: string;
+  runStartDate?: Date | null;
+  runEndDate?: Date | null;
+  now?: Date;
+}): { startDate: Date; endDate: Date } | null {
+  if (String(opts.companyId || '').trim() !== ATLANTIC_PRECISION_COMPANY_ID) return null;
+  const now = startOfUtcDay(opts.now || new Date());
+  const periodRef = utcDayOrNull(opts.runStartDate) || utcDayOrNull(opts.runEndDate) || now;
+  const monthStart = new Date(Date.UTC(periodRef.getUTCFullYear(), periodRef.getUTCMonth(), 1));
+  const monthEnd = new Date(Date.UTC(periodRef.getUTCFullYear(), periodRef.getUTCMonth() + 1, 0));
+  const startDate =
+    monthStart.getTime() >= ATLANTIC_TRUSTED_DFS_START.getTime()
+      ? monthStart
+      : new Date(ATLANTIC_TRUSTED_DFS_START.getTime());
+  const endDate = now.getTime() < monthEnd.getTime() ? now : monthEnd;
+  if (endDate.getTime() < startDate.getTime()) return null;
+  return { startDate, endDate };
 }
 
 async function rebuildCashSnapshotsFromGL(params: {

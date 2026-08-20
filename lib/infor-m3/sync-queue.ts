@@ -10,7 +10,10 @@ import {
 } from '@/lib/infor-m3/operational-sync-handler';
 import { notifyAdminsOfSyncFailure } from '@/lib/sync-alerts';
 import { orchestrateQuickBooksOnlineOperationalSync } from '@/lib/quickbooks-online/operational-orchestrator';
-import { syncErpDailyFinancialsFromGL } from '@/lib/financial/sync-erp-daily-financials';
+import {
+  atlanticMonthToDateDailyRebuildWindow,
+  syncErpDailyFinancialsFromGL,
+} from '@/lib/financial/sync-erp-daily-financials';
 import { rebuildDailyFinancialSnapshotsFromGL } from '@/lib/financial/daily-bs-from-gl';
 import { shouldWarmDailyExecutiveBriefingForAccountingSystem, warmDailyExecutiveBriefingCache } from '@/lib/pulse/exec-briefing-warmup';
 import { warmDailyIndustryBriefCache } from '@/lib/industry-brief/warmup';
@@ -1885,18 +1888,25 @@ async function processTask(
     }
   }
 
-  // Phase 2 sync: after any completed INFOR_M3 run, propagate the freshly-built
-  // DailyFinancialSnapshot end-of-month rows into MonthlyFinancial.bs* columns
-  // and re-derive MonthlyFinancial P&L from GL truth. This is part of sync
-  // completion; failures must surface instead of leaving reports stale.
+  // Phase 2 sync: after any completed INFOR_M3 run, keep reports on GL truth.
+  // Atlantic also rebuilds month-to-date DailyFinancialSnapshot rows (from the
+  // 2026-06-30 floor) because SLLedgers period pulls can post into earlier days
+  // in the month. Other tenants still skip the daily rebuild here.
   if (
     runCompletedInThisTask &&
     String(task.run.platform || '') === 'INFOR_M3'
   ) {
     try {
+      const atlanticDailyWindow = atlanticMonthToDateDailyRebuildWindow({
+        companyId: task.companyId,
+        runStartDate: task.run.startDate,
+        runEndDate: task.run.endDate,
+      });
       const finalizer = await syncErpDailyFinancialsFromGL({
         companyId: task.companyId,
-        rebuildDailySnapshots: false,
+        startDate: atlanticDailyWindow?.startDate,
+        endDate: atlanticDailyWindow?.endDate,
+        rebuildDailySnapshots: Boolean(atlanticDailyWindow),
         syncMonthly: true,
       });
       if (!finalizer.ok) {

@@ -553,6 +553,54 @@ export async function sumGLByAccount(
   return out;
 }
 
+/**
+ * Daily income-statement activity. Same Atlantic SLLedgers filter as the
+ * monthly IS, plus Income Summary excluded so year-end closes do not reverse
+ * operating P&L on the close day.
+ */
+async function sumDailyPnlGLByAccount(
+  companyId: string,
+  accountIds: string[],
+  dayStart: Date,
+  dayEnd: Date,
+): Promise<Map<string, number>> {
+  const out = new Map<string, number>();
+  if (accountIds.length === 0) return out;
+
+  const rows = shouldUseAtlanticCleanSLLedgersOnly(companyId)
+    ? await prisma.$queryRaw<GlSumRow[]>`
+        SELECT
+          "accountId",
+          SUM("signedAmount")::float AS balance
+        FROM "GLTransactionFact"
+        WHERE "companyId" = ${companyId}
+          AND "accountId" = ANY(${accountIds}::text[])
+          AND "sourceProgram" = 'SLLedgers'
+          AND "sourceTransaction" = 'RAW_REPLAY'
+          AND "transDate" >= ${dayStart}
+          AND "transDate" <= ${dayEnd}
+          AND LOWER(BTRIM(COALESCE("ref", ''))) <> 'income summary'
+        GROUP BY "accountId"
+      `
+    : await prisma.$queryRaw<GlSumRow[]>`
+        SELECT
+          "accountId",
+          SUM("signedAmount")::float AS balance
+        FROM "GLTransactionFact"
+        WHERE "companyId" = ${companyId}
+          AND "accountId" = ANY(${accountIds}::text[])
+          AND "transDate" >= ${dayStart}
+          AND "transDate" <= ${dayEnd}
+          AND LOWER(BTRIM(COALESCE("ref", ''))) <> 'income summary'
+        GROUP BY "accountId"
+      `;
+
+  for (const row of rows) {
+    out.set(row.accountId, Number(row.balance || 0));
+  }
+  return out;
+}
+
 type ComputedSnapshot = {
   // BS
   cash: number;
@@ -673,7 +721,7 @@ export async function computeDailyPnlMovementsFromGL(
     return { revenue: 0, cogsTotal: 0, expense: 0, byColumn: new Map() };
   }
 
-  const glSums = await sumGLByAccount(companyId, accountIds, dayStart, dayEnd);
+  const glSums = await sumDailyPnlGLByAccount(companyId, accountIds, dayStart, dayEnd);
   const byColumn = aggregateByTargetField(glSums, accountIdToTarget);
 
   // Read the rollup columns directly. `resolveDfsColumnsForTargetField`
@@ -998,7 +1046,7 @@ export async function computeDailyBalanceSheetFromGL(
       23, 59, 59, 999
     )
   );
-  const dailyPnlRawPromise = sumGLByAccount(
+  const dailyPnlRawPromise = sumDailyPnlGLByAccount(
     companyId,
     accountIds,
     dayStart,

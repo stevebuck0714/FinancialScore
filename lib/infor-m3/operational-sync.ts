@@ -8088,6 +8088,7 @@ export async function upsertDailyFinancialSnapshotFromOperationalTables(
   // finalize step writes the same correct snapshot the admin rebuild endpoint
   // and the post-mapping-change hook write. P&L is overwritten from GL truth so
   // monthly income-statement sums cannot retain stale operational daily values.
+  // Atlantic month-to-date rows are also refreshed on sync-queue run completion.
   const targetSnapshotDate = toIsoDayOrNull(snapshotDate) || String(snapshotDate);
   const dailySnapshotDelegate = (prisma as any).dailyFinancialSnapshot;
   if (!dailySnapshotDelegate) {
