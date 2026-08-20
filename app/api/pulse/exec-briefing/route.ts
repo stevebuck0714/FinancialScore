@@ -28,7 +28,7 @@ export const dynamic = 'force-dynamic';
 export const maxDuration = 300;
 
 type BriefingSection = { title: string; bullets: string[] };
-type BriefingPeriod = 'daily' | 'monthly' | 'quarterly' | 'annual';
+type BriefingPeriod = 'daily' | 'weekly' | 'monthly' | 'quarterly' | 'annual';
 type BriefingResponse = {
   generatedAt: string;
   period: BriefingPeriod;
@@ -51,6 +51,7 @@ const MATERIAL_AMOUNT = 1000;
 const MATERIAL_PCT = 0.01;
 const MATERIAL_FINANCIAL_PCT = 0.03;
 const MIN_MTD_COMPARISON_DAYS = 10;
+const MIN_WEEK_COMPARISON_DAYS = 4;
 const PERSISTED_CACHE_TTL_DAYS = 2;
 const DAILY_BRIEFING_LOOKBACK_DAYS = 90;
 const MONTHLY_BRIEFING_LOOKBACK_MONTHS = 48;
@@ -58,7 +59,7 @@ const MONTHLY_FINANCIAL_ROW_CAP = 60;
 const DAILY_FINANCIAL_ROW_CAP = 100;
 const CORE_SNAPSHOT_ROW_CAP = 150;
 const DETAIL_SNAPSHOT_ROW_CAP = 300;
-const EXEC_BRIEFING_LOGIC_VERSION = 'exec-briefing-v10-multi-section';
+const EXEC_BRIEFING_LOGIC_VERSION = 'exec-briefing-v11-weekly';
 const PRIVATE_DAILY_CACHE_HEADERS = {
   'Cache-Control': 'private, max-age=300, stale-while-revalidate=1800',
 };
@@ -123,11 +124,12 @@ function todayCacheKey(companyId: string): string {
 }
 
 function normalizeBriefingPeriod(value: string | null): BriefingPeriod {
-  if (value === 'monthly' || value === 'quarterly' || value === 'annual') return value;
+  if (value === 'weekly' || value === 'monthly' || value === 'quarterly' || value === 'annual') return value;
   return 'daily';
 }
 
 function periodDisplayName(period: BriefingPeriod): string {
+  if (period === 'weekly') return 'Weekly';
   if (period === 'monthly') return 'Monthly';
   if (period === 'quarterly') return 'Quarterly';
   if (period === 'annual') return 'Annual';
@@ -191,6 +193,53 @@ function addUtcDays(date: Date, days: number): Date {
 
 function addUtcMonths(date: Date, months: number): Date {
   return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth() + months, date.getUTCDate()));
+}
+
+function startOfUtcDay(date: Date): Date {
+  return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
+}
+
+function startOfIsoWeekUtc(date: Date): Date {
+  const dayStart = startOfUtcDay(date);
+  const weekday = dayStart.getUTCDay();
+  const daysFromMonday = weekday === 0 ? 6 : weekday - 1;
+  return addUtcDays(dayStart, -daysFromMonday);
+}
+
+function latestCompletedIsoWeekUtc(asOf: Date): { start: Date; end: Date } {
+  const dayStart = startOfUtcDay(asOf);
+  const thisWeekStart = startOfIsoWeekUtc(dayStart);
+  const thisWeekEnd = addUtcDays(thisWeekStart, 6);
+  if (dayStart.getTime() >= thisWeekEnd.getTime()) {
+    return { start: thisWeekStart, end: thisWeekEnd };
+  }
+  const prevStart = addUtcDays(thisWeekStart, -7);
+  return { start: prevStart, end: addUtcDays(thisWeekStart, -1) };
+}
+
+function completedIsoWeekPairUtc(asOf: Date = new Date()): {
+  current: { start: Date; end: Date };
+  prior: { start: Date; end: Date };
+} {
+  const current = latestCompletedIsoWeekUtc(asOf);
+  return {
+    current,
+    prior: {
+      start: addUtcDays(current.start, -7),
+      end: addUtcDays(current.end, -7),
+    },
+  };
+}
+
+function rowsInUtcDateRange(rows: any[], start: Date, end: Date): any[] {
+  const startMs = startOfUtcDay(start).getTime();
+  const endMs = startOfUtcDay(end).getTime() + MS_IN_DAY - 1;
+  return rows.filter((row) => {
+    const snapshot = row?.snapshotDate instanceof Date ? row.snapshotDate : new Date(row?.snapshotDate || '');
+    if (Number.isNaN(snapshot.getTime())) return false;
+    const t = snapshot.getTime();
+    return t >= startMs && t <= endMs;
+  });
 }
 
 function ebitda(row: any): number {
@@ -296,10 +345,13 @@ function buildFinancialComparison(params: {
   currentRows: any[];
   priorRows: any[];
   note?: string;
+  minComparableRows?: number;
 }) {
   const current = summarizeFinancialRows(params.currentRows);
   const prior = summarizeFinancialRows(params.priorRows);
-  const comparable = current.rowCount > 0 && current.rowCount === prior.rowCount;
+  const comparable = params.minComparableRows
+    ? current.rowCount >= params.minComparableRows && prior.rowCount >= params.minComparableRows
+    : current.rowCount > 0 && current.rowCount === prior.rowCount;
   return {
     key: params.key,
     label: params.label,
@@ -419,6 +471,21 @@ function buildFinancialComparisonsForPeriod(params: {
             ? priorMtdRows
             : [],
         note: `Same elapsed calendar days only; requires at least ${MIN_MTD_COMPARISON_DAYS} days in each period.`,
+      }),
+    ].filter((comparison) => comparison.comparable);
+  }
+
+  if (period === 'weekly') {
+    const { current: completedWeek, prior: priorWeek } = completedIsoWeekPairUtc();
+    return [
+      buildFinancialComparison({
+        key: 'latest_completed_week_vs_prior_week',
+        label: 'Latest completed week vs prior completed week',
+        cadence: 'weekly',
+        currentRows: rowsInUtcDateRange(sortedDailyFinancials, completedWeek.start, completedWeek.end),
+        priorRows: rowsInUtcDateRange(sortedDailyFinancials, priorWeek.start, priorWeek.end),
+        note: 'Use completed Monday–Sunday weeks only. Do not mix with day-over-day or month-over-month analysis.',
+        minComparableRows: MIN_WEEK_COMPARISON_DAYS,
       }),
     ].filter((comparison) => comparison.comparable);
   }
@@ -1119,7 +1186,7 @@ export async function GET(request: NextRequest) {
             title: 'Daily Briefing Not Available',
             bullets: [
               'This QuickBooks Online company does not have fresh daily operational data sources synced yet.',
-              'Monthly, Quarterly, and Annual briefings remain available from processed QuickBooks books.',
+              'Weekly, Monthly, Quarterly, and Annual briefings remain available from processed QuickBooks books.',
               'Daily unlocks automatically when a non-Excel operational API source syncs daily snapshots (sales, customers, cash, AR/AP, or inventory).',
             ],
           },
@@ -1261,8 +1328,22 @@ export async function GET(request: NextRequest) {
     const dailyFinancialsWithMappedIncome = applyMappedIncomeTotalsToDailyRows(dailyFinancials, dailyFinancialMappedLines);
     const sortedDailyFinancials = sortByDate(dailyFinancialsWithMappedIncome.filter((row: any) => !isWeekendZeroIncomeActivityRow(row)));
     const latestDailyFinancial = last(sortedDailyFinancials);
-    const productSnapshotsForPeriod = preferDailyFrequencyRows(productSnapshots as any[], period === 'daily');
-    const customerSnapshotsForPeriod = preferDailyFrequencyRows(customerSnapshots as any[], period === 'daily');
+    const weeklyPair = period === 'weekly' ? completedIsoWeekPairUtc() : null;
+    const preferDailySnapshots = period === 'daily' || period === 'weekly';
+    const productSnapshotsPreferred = preferDailyFrequencyRows(productSnapshots as any[], preferDailySnapshots);
+    const customerSnapshotsPreferred = preferDailyFrequencyRows(customerSnapshots as any[], preferDailySnapshots);
+    const productSnapshotsForPeriod = weeklyPair
+      ? [
+          ...rowsInUtcDateRange(productSnapshotsPreferred, weeklyPair.current.start, weeklyPair.current.end),
+          ...rowsInUtcDateRange(productSnapshotsPreferred, weeklyPair.prior.start, weeklyPair.prior.end),
+        ]
+      : productSnapshotsPreferred;
+    const customerSnapshotsForPeriod = weeklyPair
+      ? [
+          ...rowsInUtcDateRange(customerSnapshotsPreferred, weeklyPair.current.start, weeklyPair.current.end),
+          ...rowsInUtcDateRange(customerSnapshotsPreferred, weeklyPair.prior.start, weeklyPair.prior.end),
+        ]
+      : customerSnapshotsPreferred;
     const financialComparisons =
       period === 'daily' && effectiveDailyMode === 'ops-only'
         ? []
@@ -1285,8 +1366,11 @@ export async function GET(request: NextRequest) {
             ...apSnapshots,
           ]) || dailyCapability.latestDailyOpsDate || ''
         : '';
+    const weeklyAsOfDate = weeklyPair ? weeklyPair.current.end.toISOString().slice(0, 10) : '';
     const asOfDate =
-      (period === 'daily' && effectiveDailyMode === 'ops-only'
+      (period === 'weekly'
+        ? weeklyAsOfDate || latestDateKey(latestDailyFinancial?.snapshotDate, latestFinancial?.monthDate) || cacheDate
+        : period === 'daily' && effectiveDailyMode === 'ops-only'
         ? opsAsOfDate || latestDateKey(latestFinancial?.monthDate) || cacheDate
         : latestDateKey(latestDailyFinancial?.snapshotDate, latestFinancial?.monthDate) || cacheDate) || cacheDate;
 
@@ -1416,7 +1500,7 @@ export async function GET(request: NextRequest) {
             ? 'monthly'
             : effectiveDailyMode === 'full'
               ? 'daily'
-              : period === 'daily'
+              : period === 'daily' || period === 'weekly'
                 ? 'daily'
                 : 'monthly',
         hasComparableFinancialWindow: financialComparisons.length > 0,
@@ -1614,7 +1698,7 @@ Only compare like-for-like periods. Do not compare days to weeks, weeks to month
       effectiveDailyMode === 'ops-only'
         ? `IMPORTANT: facts.briefing.dailyMode is ops-only. Books/accounting are monthly (QuickBooks or equivalent). Do NOT invent day-over-day P&L, revenue, gross profit, EBITDA, or MTD financial statement movement. facts.financials.comparisons is empty by design. Lead with facts.dailyOperations (same-day sales/customer/SKU/volume), Pulse alerts, and liquidity/AR/AP only when those daily feeds are present. You may mention the latest closed month from books as static context only—never as a day-over-day financial trend.`
         : `For the Daily tab, discuss material latest-day vs prior-day movement and current month-to-date vs the same elapsed days last month when available; never fall back to month-over-month analysis in the Daily tab. For Daily comparisons, state the actual dates from currentPeriod and priorPeriod; do not say "yesterday", "today", or "latest day" as a substitute for dates.`
-    } In the Daily tab, use facts.dailyOperations only for operational commentary, and only when notableExceptions are present or a listed top product/customer/volume move is material for that same asOfDate vs priorDate. Allowed Daily ops topics: top revenue product/SKU for the day, largest customer/order for the day, and day volume (sales closed / units sold / contracts) with day-over-day deltas when provided. Do not use multi-day customer concentration, multi-day product margin watchlists, or benchmarks in the Daily tab. For Monthly, Quarterly, and Annual tabs, use completed periods only and the broader customers/products/benchmarks facts when present. State the window used when a financial or daily-ops movement is material. If no comparable window supports an issue, do not draw a trend conclusion.
+    } In the Daily tab, use facts.dailyOperations only for operational commentary, and only when notableExceptions are present or a listed top product/customer/volume move is material for that same asOfDate vs priorDate. Allowed Daily ops topics: top revenue product/SKU for the day, largest customer/order for the day, and day volume (sales closed / units sold / contracts) with day-over-day deltas when provided. Do not use multi-day customer concentration, multi-day product margin watchlists, or benchmarks in the Daily tab. For the Weekly tab, use only the latest completed Monday–Sunday week versus the prior completed week from facts.financials.comparisons; never fall back to day-over-day or month-over-month analysis, and do not use a partial current week. For Monthly, Quarterly, and Annual tabs, use completed periods only and the broader customers/products/benchmarks facts when present. State the window used when a financial or daily-ops movement is material. If no comparable window supports an issue, do not draw a trend conclusion.
 
 When revenue and margin rate move in different directions, explicitly state the end result to gross profit dollars only if the movement is material or decision-useful. Example: if revenue is declining but gross margin rate is improving, say whether gross profit dollars increased or decreased and by how much; if both are normal/immaterial, omit the topic entirely.
 

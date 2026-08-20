@@ -112,7 +112,7 @@ type ExecBriefingSection = {
   bullets: string[];
 };
 
-type BriefingPeriod = 'daily' | 'monthly' | 'quarterly' | 'annual';
+type BriefingPeriod = 'daily' | 'weekly' | 'monthly' | 'quarterly' | 'annual';
 
 type ExecBriefing = {
   generatedAt: string;
@@ -2978,6 +2978,7 @@ export default function DailyAlertsView({ companyId, companyName, onNavigate }: 
                 <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
                   {([
                     ...(showDailyBriefingTab ? [{ id: 'daily' as BriefingPeriod, label: 'Daily' }] : []),
+                    { id: 'weekly' as BriefingPeriod, label: 'Weekly' },
                     { id: 'monthly' as BriefingPeriod, label: 'Monthly' },
                     { id: 'quarterly' as BriefingPeriod, label: 'Quarterly' },
                     { id: 'annual' as BriefingPeriod, label: 'Annual' },
