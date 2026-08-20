@@ -40,9 +40,9 @@ const VALUATION_TABS = [
   { id: 'valuation-reports', label: 'VALUATION REPORTS' },
 ] as const;
 const FINANCIAL_REPORTING_TABS = [
-  { id: 'dashboard', label: "Financial KPI's" },
-  { id: 'kpis', label: 'Key Ratios' },
-  { id: 'trend-analysis', label: 'Performance Trends' },
+  { id: 'dashboard', label: "KPI's" },
+  { id: 'kpis', label: 'Ratios' },
+  { id: 'trend-analysis', label: 'Trends' },
   { id: 'goals', label: 'Targets and Goals' },
   { id: 'projections', label: 'Projections' },
   { id: 'cash-flow', label: 'Cash Flow' },
@@ -6365,6 +6365,7 @@ function FinancialScorePage() {
         // (MDA, Valuation, ratios, etc.) will only see closed-month data.
         const response = await fetch(
           `/api/master-data?companyId=${selectedCompanyId}&scope=published`,
+          { cache: 'no-store' },
         );
 
         if (!response.ok) {
@@ -6494,7 +6495,7 @@ function FinancialScorePage() {
     };
     
     loadFinancialData();
-  }, [selectedCompanyId, qbLastSync]);
+  }, [selectedCompanyId, qbLastSync, currentView]);
 
   useEffect(() => {
     const saveFinancialData = async () => {

@@ -110,7 +110,7 @@ export class MasterDataStore {
       const response = await fetch(
         `/api/master-data?companyId=${companyId}&scope=${scope}`,
         {
-          cache: 'default',
+          cache: 'no-store',
           signal: controller.signal,
         },
       ).finally(() => clearTimeout(timeoutId));
