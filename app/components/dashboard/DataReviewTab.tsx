@@ -63,6 +63,7 @@ export default function DataReviewTab({ selectedCompanyId, companyName, accountM
     };
   }, [monthlyData]);
   const displayedMonths = monthly;
+  const [statementView, setStatementView] = React.useState<'income' | 'balance'>('income');
   const allowedBalanceSheetFields = React.useMemo(() => {
     const targetOptions = getTargetFieldOptions(industrySectorCategory || undefined);
     return new Set([
@@ -254,22 +255,26 @@ export default function DataReviewTab({ selectedCompanyId, companyName, accountM
         style={{
           display: "flex",
           justifyContent: "space-between",
-          alignItems: "center",
-          marginBottom: "8px",
+          alignItems: "baseline",
+          gap: "16px",
+          marginBottom: "4px",
         }}
       >
-        <div>
-          <h1
-            style={{
-              fontSize: "32px",
-              fontWeight: "700",
-              color: "#1e293b",
-              margin: 0,
-            }}
-          >
-            📊 Data Review - Financial Data
-          </h1>
-        </div>
+        <h1
+          style={{
+            fontSize: "32px",
+            fontWeight: "700",
+            color: "#1e293b",
+            margin: 0,
+          }}
+        >
+          📊 Data Review - Financial Data
+        </h1>
+        {monthly && monthly.length > 0 && (
+          <div style={{ fontSize: "14px", color: "#64748b", whiteSpace: "nowrap" }}>
+            Total months: {totalMonths} | Displaying: Last {Math.min(36, totalMonths)} months
+          </div>
+        )}
       </div>
       {/* Intentionally omit company name + export button + helper text to reduce clutter */}
 
@@ -295,43 +300,57 @@ export default function DataReviewTab({ selectedCompanyId, companyName, accountM
         <>
           <div
             style={{
-              background: "#f0fdf4",
-              border: "1px solid #86efac",
-              borderRadius: "8px",
-              padding: "16px",
-              marginBottom: "12px",
-              color: "#166534",
+              display: "flex",
+              gap: "8px",
+              marginBottom: "0",
+              borderBottom: "2px solid #e2e8f0",
             }}
           >
-            <strong>✅ Financial data loaded</strong>
-            <p style={{ marginTop: "8px", marginBottom: 0 }}>
-              Total months: {totalMonths} | Displaying: Last{" "}
-              {Math.min(36, totalMonths)} months
-            </p>
-          </div>
-
-          {/* Income Statement - Last 36 months */}
-          <div
-            style={{
-              background: "white",
-              borderRadius: "12px",
-              padding: "24px",
-              marginBottom: "12px",
-              boxShadow: "0 2px 8px rgba(0,0,0,0.06)",
-            }}
-          >
-            <h2
+            <button
+              type="button"
+              onClick={() => setStatementView("income")}
               style={{
-                fontSize: "24px",
+                padding: "10px 20px",
+                background: "none",
+                color: statementView === "income" ? "#2751d0" : "#64748b",
+                border: "none",
+                borderBottom: statementView === "income" ? "3px solid #2751d0" : "3px solid transparent",
+                marginBottom: "-2px",
+                fontSize: "16px",
                 fontWeight: "600",
-                color: "#1e293b",
-                marginBottom: "16px",
-                borderBottom: "3px solid #10b981",
-                paddingBottom: "8px",
+                cursor: "pointer",
               }}
             >
               Income Statement (Last 36 Months)
-            </h2>
+            </button>
+            <button
+              type="button"
+              onClick={() => setStatementView("balance")}
+              style={{
+                padding: "10px 20px",
+                background: "none",
+                color: statementView === "balance" ? "#2751d0" : "#64748b",
+                border: "none",
+                borderBottom: statementView === "balance" ? "3px solid #2751d0" : "3px solid transparent",
+                marginBottom: "-2px",
+                fontSize: "16px",
+                fontWeight: "600",
+                cursor: "pointer",
+              }}
+            >
+              Balance Sheet (Last 36 Months)
+            </button>
+          </div>
+
+          {statementView === "income" && (
+          <div
+            style={{
+              background: "white",
+              borderRadius: "0 0 12px 12px",
+              padding: "16px 24px 24px",
+              boxShadow: "0 2px 8px rgba(0,0,0,0.06)",
+            }}
+          >
             <div style={{ overflowX: "auto" }}>
               <table
                 style={{
@@ -1396,28 +1415,17 @@ export default function DataReviewTab({ selectedCompanyId, companyName, accountM
               </table>
             </div>
           </div>
+          )}
 
-          {/* Balance Sheet - Last 36 months */}
+          {statementView === "balance" && (
           <div
             style={{
               background: "white",
-              borderRadius: "12px",
-              padding: "24px",
+              borderRadius: "0 0 12px 12px",
+              padding: "16px 24px 24px",
               boxShadow: "0 2px 8px rgba(0,0,0,0.06)",
             }}
           >
-            <h2
-              style={{
-                fontSize: "24px",
-                fontWeight: "600",
-                color: "#1e293b",
-                marginBottom: "16px",
-                borderBottom: "3px solid #3b82f6",
-                paddingBottom: "8px",
-              }}
-            >
-              Balance Sheet (Last 36 Months)
-            </h2>
             <div style={{ overflowX: "auto" }}>
               <table
                 style={{
@@ -2249,6 +2257,7 @@ export default function DataReviewTab({ selectedCompanyId, companyName, accountM
               </table>
             </div>
           </div>
+          )}
         </>
       )}
     </div>
