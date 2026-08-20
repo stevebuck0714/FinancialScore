@@ -17,20 +17,6 @@ const AreaChart = dynamic(() => import('./charts/Charts').then(mod => mod.AreaCh
 const ProjectionChart = dynamic(() => import('./charts/Charts').then(mod => mod.ProjectionChart), { ssr: false });
 const LineChart = (props: any) => <BaseLineChart {...props} labelFormat="m-yy-adaptive" />;
 
-const getMonthTime = (row: any): number => {
-  const value = row?.monthDate || row?.month || row?.date;
-  if (!value) return Number.NEGATIVE_INFINITY;
-  if (typeof value === 'string' && /^\d{2}-\d{4}$/.test(value)) {
-    const [month, year] = value.split('-').map(Number);
-    return Date.UTC(year, month - 1, 1);
-  }
-  const date = value instanceof Date ? value : new Date(value);
-  return Number.isNaN(date.getTime()) ? Number.NEGATIVE_INFINITY : date.getTime();
-};
-
-const getLatestMonthTime = (rows: any[] | undefined): number =>
-  Array.isArray(rows) ? rows.reduce((latest, row) => Math.max(latest, getMonthTime(row)), Number.NEGATIVE_INFINITY) : Number.NEGATIVE_INFINITY;
-
 interface MonthlyData {
   date: Date;
   month: string;
@@ -175,11 +161,7 @@ export default function DashboardView({
   const expenseCategories = masterData.data?.expenseCategories || [];
   const monthlyForRatios = useMemo(() => {
     const fetchedMonthlyData = Array.isArray(masterData.monthlyData) ? masterData.monthlyData : [];
-    if (!Array.isArray(monthly) || monthly.length === 0) return fetchedMonthlyData;
-    if (fetchedMonthlyData.length === 0) return monthly;
-    return getLatestMonthTime(fetchedMonthlyData) > getLatestMonthTime(monthly)
-      ? fetchedMonthlyData
-      : monthly;
+    return fetchedMonthlyData.length > 0 ? fetchedMonthlyData : monthly;
   }, [masterData.monthlyData, monthly]);
 
   // Clear master data cache when component mounts

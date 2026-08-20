@@ -11,20 +11,6 @@ import { buildRatioTrendData } from '../utils/ratio-trend-data';
 const BaseLineChart = dynamic(() => import('./charts/Charts').then(mod => mod.LineChart), { ssr: false });
 const LineChart = (props: any) => <BaseLineChart {...props} labelFormat="m-yy-adaptive" />;
 
-const getMonthTime = (row: any): number => {
-  const value = row?.monthDate || row?.month || row?.date;
-  if (!value) return Number.NEGATIVE_INFINITY;
-  if (typeof value === 'string' && /^\d{2}-\d{4}$/.test(value)) {
-    const [month, year] = value.split('-').map(Number);
-    return Date.UTC(year, month - 1, 1);
-  }
-  const date = value instanceof Date ? value : new Date(value);
-  return Number.isNaN(date.getTime()) ? Number.NEGATIVE_INFINITY : date.getTime();
-};
-
-const getLatestMonthTime = (rows: any[] | undefined): number =>
-  Array.isArray(rows) ? rows.reduce((latest, row) => Math.max(latest, getMonthTime(row)), Number.NEGATIVE_INFINITY) : Number.NEGATIVE_INFINITY;
-
 interface RatiosTabProps {
   selectedCompanyId: string;
   companyName: string;
@@ -42,18 +28,9 @@ export default function RatiosTab({
   onFormulaClick,
   onDescriptionClick,
   initialTab = 'all-ratios',
-  prefetchedMonthlyData,
 }: RatiosTabProps) {
   const { monthlyData, loading, error } = useMasterData(selectedCompanyId);
-  const hasPrefetchedData = Array.isArray(prefetchedMonthlyData) && prefetchedMonthlyData.length > 0;
-  const monthly = React.useMemo(() => {
-    const fetchedMonthlyData = Array.isArray(monthlyData) ? (monthlyData as MonthlyDataRow[]) : [];
-    if (!hasPrefetchedData) return fetchedMonthlyData;
-    if (fetchedMonthlyData.length === 0) return prefetchedMonthlyData || [];
-    return getLatestMonthTime(fetchedMonthlyData) > getLatestMonthTime(prefetchedMonthlyData)
-      ? fetchedMonthlyData
-      : prefetchedMonthlyData || [];
-  }, [hasPrefetchedData, monthlyData, prefetchedMonthlyData]);
+  const monthly = Array.isArray(monthlyData) ? (monthlyData as MonthlyDataRow[]) : [];
   const [printOrientation, setPrintOrientation] = useState<'portrait' | 'landscape'>('portrait');
 
   // Debug: Log benchmarks when component receives them
@@ -170,7 +147,7 @@ export default function RatiosTab({
     },
   ];
 
-  if (!hasPrefetchedData && loading) {
+  if (loading) {
     return (
       <div style={{ maxWidth: '1400px', margin: '0 auto', padding: '32px', textAlign: 'center' }}>
         <div style={{ fontSize: '18px', color: '#64748b' }}>Loading ratio data...</div>
