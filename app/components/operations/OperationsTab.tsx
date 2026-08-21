@@ -14184,21 +14184,45 @@ export default function OperationsTab({
       return { rowBg: '#ffffff', textColor: '#334155', weight: 400 };
     };
 
-    const cashFlowRows = statementWindow.map((row: any, index: number) => {
-      const currentCash = Number(row.cash || 0);
-      const previousCash = index + 1 < sortedRecords.length ? Number(sortedRecords[windowStart + index + 1]?.cash || currentCash) : currentCash;
-      const changeCash = currentCash - previousCash;
-      const netIncome = Number(row.revenue || 0) - Number(row.expense || 0);
-      const depreciation = Number(row.depreciationAmortization || 0);
-      const changeAR = index + 1 < sortedRecords.length ? Number(row.ar || 0) - Number(sortedRecords[windowStart + index + 1]?.ar || 0) : 0;
-      const changeAP = index + 1 < sortedRecords.length ? Number(row.ap || 0) - Number(sortedRecords[windowStart + index + 1]?.ap || 0) : 0;
-      const changeRetainageReceivables = index + 1 < sortedRecords.length ? Number(row.retainageReceivables || 0) - Number(sortedRecords[windowStart + index + 1]?.retainageReceivables || 0) : 0;
-      const changeContractAssets = index + 1 < sortedRecords.length ? Number(row.contractAssets || 0) - Number(sortedRecords[windowStart + index + 1]?.contractAssets || 0) : 0;
-      const changeContractLiabilities = index + 1 < sortedRecords.length ? Number(row.contractLiabilities || 0) - Number(sortedRecords[windowStart + index + 1]?.contractLiabilities || 0) : 0;
-      const changeInventory = index + 1 < sortedRecords.length ? Number(row.inventory || 0) - Number(sortedRecords[windowStart + index + 1]?.inventory || 0) : 0;
-      const operatingProxy = netIncome + depreciation - changeAR - changeRetainageReceivables - changeContractAssets + changeAP + changeContractLiabilities - changeInventory;
+    const snapshotIndexByDateKey = new Map(
+      sortedRecords.map((row: any, index: number) => [toDayKey(row.snapshotDate), index] as const)
+    );
+    const cashFlowDays = statementDays.map((day) => {
+      const currentIdx = snapshotIndexByDateKey.get(day.dateKey);
+      const previousRow =
+        currentIdx !== undefined && currentIdx + 1 < sortedRecords.length
+          ? sortedRecords[currentIdx + 1]
+          : null;
+      const netIncome = Number(netIncomeByDate[day.dateKey] ?? day.netIncome ?? 0);
+      const depreciation = expenseFieldByDate('depreciationAmortization', day.dateKey);
+      const changeAR = previousRow ? day.ar - getSnapshotOnlyValue(previousRow, 'ar') : 0;
+      const changeAP = previousRow ? day.ap - getSnapshotOnlyValue(previousRow, 'ap') : 0;
+      const changeRetainageReceivables = previousRow
+        ? day.retainageReceivables - getSnapshotOnlyValue(previousRow, 'retainageReceivables')
+        : 0;
+      const changeContractAssets = previousRow
+        ? day.contractAssets - getSnapshotOnlyValue(previousRow, 'contractAssets')
+        : 0;
+      const changeContractLiabilities = previousRow
+        ? day.contractLiabilities - getSnapshotOnlyValue(previousRow, 'contractLiabilities')
+        : 0;
+      const changeInventory = previousRow
+        ? day.inventory - getSnapshotOnlyValue(previousRow, 'inventory')
+        : 0;
+      const previousCash = previousRow ? getSnapshotOnlyValue(previousRow, 'cash') : day.cash;
+      const changeCash = day.cash - previousCash;
+      const operatingProxy =
+        netIncome +
+        depreciation -
+        changeAR -
+        changeRetainageReceivables -
+        changeContractAssets +
+        changeAP +
+        changeContractLiabilities -
+        changeInventory;
       return {
-        date: toDisplayDate(row.snapshotDate),
+        date: day.dateLabel,
+        dateLabel: day.dateLabel,
         netIncome,
         depreciation,
         changeAR,
@@ -14209,13 +14233,9 @@ export default function OperationsTab({
         changeInventory,
         operatingProxy,
         changeCash,
-        endingCash: currentCash,
+        endingCash: day.cash,
       };
     });
-    const cashFlowDays = cashFlowRows.map((row) => ({
-      ...row,
-      dateLabel: row.date,
-    }));
     const cashFlowRowDefs: Array<{
       key: keyof (typeof cashFlowDays)[number];
       label: string;
@@ -14555,7 +14575,7 @@ export default function OperationsTab({
               </table>
             </div>
             <div style={{ marginTop: '8px', fontSize: '12px', color: '#64748b' }}>
-              Cash Flow Statement currently uses an operating cash flow proxy from available daily mapped fields.
+              Net income matches the daily income statement. Operating cash flow is still a working-capital proxy and will not always equal the change in cash.
             </div>
           </div>
         )}
