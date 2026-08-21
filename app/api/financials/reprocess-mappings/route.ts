@@ -1124,24 +1124,29 @@ function qbdMaxTxnDateKey(rows: Array<Record<string, unknown>>): string {
   return maxKey;
 }
 
-async function loadQbdBestSupplementalBatchId(params: {
+async function loadQbdOverlaidGlRowsAfterDate(params: {
   companyId: string;
-  requestName: string;
   afterTxnDateKey: string;
+  excludeBatchId?: string;
   recentBatchLimit?: number;
-}): Promise<string | null> {
+}): Promise<Record<string, unknown>[]> {
   const companyId = String(params.companyId || '').trim();
-  const requestName = String(params.requestName || '').trim();
   const afterTxnDateKey = String(params.afterTxnDateKey || '').trim();
-  const recentBatchLimit = Math.max(5, Math.min(50, Math.floor(Number(params.recentBatchLimit || 25))));
-  if (!companyId || !requestName || !/^\d{4}-\d{2}-\d{2}$/.test(afterTxnDateKey)) return null;
+  const excludeBatchId = qbdString(params.excludeBatchId);
+  const recentBatchLimit = Math.max(5, Math.min(60, Math.floor(Number(params.recentBatchLimit || 40))));
+  if (!companyId || !/^\d{4}-\d{2}-\d{2}$/.test(afterTxnDateKey)) return [];
 
-  const rows = await prisma.$queryRaw<Array<{ batchId: string | null }>>`
+  const coverage = await prisma.$queryRaw<
+    Array<{
+      batchId: string | null;
+      lastSeen: Date | null;
+    }>
+  >`
     WITH recent_batches AS (
       SELECT "batchId", MAX("createdAt") AS "lastSeen"
       FROM "QuickBooksDesktopBackfillPage"
       WHERE "companyId" = ${companyId}
-        AND "requestName" = ${requestName}
+        AND "requestName" = 'GeneralDetailReportQuery'
       GROUP BY "batchId"
       ORDER BY "lastSeen" DESC
       LIMIT ${recentBatchLimit}
@@ -1149,39 +1154,62 @@ async function loadQbdBestSupplementalBatchId(params: {
     batch_rows AS (
       SELECT
         p."batchId" AS "batchId",
-        p."createdAt" AS "createdAt",
-        col->>'value' AS "txnDate"
+        p."createdAt" AS "createdAt"
       FROM "QuickBooksDesktopBackfillPage" p
       JOIN recent_batches rb ON rb."batchId" = p."batchId"
       CROSS JOIN LATERAL jsonb_array_elements(p."payload"::jsonb) AS row
       CROSS JOIN LATERAL jsonb_array_elements(row->'colData') AS col
       WHERE p."companyId" = ${companyId}
-        AND p."requestName" = ${requestName}
+        AND p."requestName" = 'GeneralDetailReportQuery'
         AND row->>'rowKind' = 'DataRow'
         AND col->>'colID' = '3'
         AND col->>'value' > ${afterTxnDateKey}
     )
-    SELECT "batchId"
-    FROM (
-      SELECT
-        "batchId",
-        COUNT(*)::int AS "rowsAfter",
-        MAX("createdAt") AS "lastSeen"
-      FROM batch_rows
-      GROUP BY "batchId"
-    ) ranked
-    ORDER BY "rowsAfter" DESC, "lastSeen" DESC
-    LIMIT 1
+    SELECT
+      "batchId",
+      MAX("createdAt") AS "lastSeen"
+    FROM batch_rows
+    GROUP BY "batchId"
+    ORDER BY MAX("createdAt") ASC
   `;
 
-  const batchId = qbdString(rows[0]?.batchId);
-  return batchId || null;
+  const batches = coverage
+    .map((row) => {
+      const batchId = qbdString(row.batchId);
+      if (!batchId || !row.lastSeen || batchId === excludeBatchId) return null;
+      return { batchId, lastSeen: row.lastSeen };
+    })
+    .filter((row): row is { batchId: string; lastSeen: Date } => row !== null)
+    .sort((a, b) => a.lastSeen.getTime() - b.lastSeen.getTime());
+
+  const rowsByDate = new Map<string, Record<string, unknown>[]>();
+  for (const batch of batches) {
+    const batchRows = await loadQbdPageRecordsForBatch({
+      companyId,
+      requestName: 'GeneralDetailReportQuery',
+      batchId: batch.batchId,
+    });
+    const grouped = new Map<string, Record<string, unknown>[]>();
+    for (const row of batchRows) {
+      if (qbdString(row.rowKind) !== 'DataRow') continue;
+      const dateKey = qbdReportTxnDateKey(row);
+      if (!dateKey || dateKey <= afterTxnDateKey) continue;
+      const list = grouped.get(dateKey) || [];
+      list.push(row);
+      grouped.set(dateKey, list);
+    }
+    for (const [dateKey, rows] of grouped) {
+      rowsByDate.set(dateKey, rows);
+    }
+  }
+
+  return [...rowsByDate.keys()].sort().flatMap((dateKey) => rowsByDate.get(dateKey) || []);
 }
 
 async function loadQbdGeneralLedgerRowsForMonthlyBuild(companyId: string): Promise<Record<string, unknown>[]> {
-  // Monthly build must NOT depend on the most recent incremental batch (often 1-2 days).
-  // Prefer the most recent large baseline batch, then append any newer incremental rows
-  // strictly after the baseline max txn date to avoid double counting overlaps.
+  // Prefer the most recent large baseline batch, then overlay every later incremental
+  // GL day after that baseline's max txn date. A single later 1-day pull must not win
+  // the whole tail, and a refreshed baseline must not drop already-stored later days.
   const requestName = 'GeneralDetailReportQuery';
   const [latestBatchId, baselineBatchId] = await Promise.all([
     loadQbdLatestBatchId({ companyId, requestName }),
@@ -1189,33 +1217,23 @@ async function loadQbdGeneralLedgerRowsForMonthlyBuild(companyId: string): Promi
   ]);
 
   if (!latestBatchId) return [];
-  if (!baselineBatchId || baselineBatchId === latestBatchId) {
-    return loadQbdPageRecordsForBatch({ companyId, requestName, batchId: latestBatchId });
-  }
-
-  const baselineRows = await loadQbdPageRecordsForBatch({ companyId, requestName, batchId: baselineBatchId });
+  const primaryBatchId = baselineBatchId || latestBatchId;
+  const baselineRows = await loadQbdPageRecordsForBatch({ companyId, requestName, batchId: primaryBatchId });
   const baselineMax = qbdMaxTxnDateKey(baselineRows);
 
   if (!baselineMax) {
-    // Fallback: if we couldn't derive a max date from the baseline batch, revert to the latest batch.
-    return loadQbdPageRecordsForBatch({ companyId, requestName, batchId: latestBatchId });
+    return primaryBatchId === latestBatchId
+      ? baselineRows
+      : loadQbdPageRecordsForBatch({ companyId, requestName, batchId: latestBatchId });
   }
 
-  // Important: the "latest" batch is often tiny (ex: a single-day nightly pull) and may not contain
-  // the backfilled range needed to repair a month. Pick the best recent batch by coverage *after*
-  // the baseline max txn date so we pull from the large manual backfill when present.
-  const supplementalBatchId =
-    (await loadQbdBestSupplementalBatchId({ companyId, requestName, afterTxnDateKey: baselineMax })) ||
-    latestBatchId;
-  if (!supplementalBatchId || supplementalBatchId === baselineBatchId) return baselineRows;
-
-  const supplementalRows = await loadQbdPageRecordsForBatch({ companyId, requestName, batchId: supplementalBatchId });
-  const appendRows = supplementalRows.filter((row) => {
-    if (qbdString(row.rowKind) !== 'DataRow') return true;
-    const dateKey = qbdReportTxnDateKey(row);
-    return !dateKey || dateKey > baselineMax;
+  const overlayRows = await loadQbdOverlaidGlRowsAfterDate({
+    companyId,
+    afterTxnDateKey: baselineMax,
+    excludeBatchId: primaryBatchId,
   });
-  return [...baselineRows, ...appendRows];
+  if (!overlayRows.length) return baselineRows;
+  return [...baselineRows, ...overlayRows];
 }
 
 type QbdMonthGlBatchCoverage = {
@@ -2191,6 +2209,12 @@ async function rebuildQuickBooksDesktopDailyBalanceSheetMonth(companyId: string,
       const dateMovements = fullMovements.get(dateKey) || new Map<string, number>();
       dateMovements.set(target, Number(dateMovements.get(target) || 0) + amount);
       fullMovements.set(dateKey, dateMovements);
+    }
+    // Same month overlay P&L already uses: later 1-day GL batches replace only the
+    // dates they contain, so August cash/AR/AP can move after the baseline ends.
+    for (const [dateKey, movements] of glMovementsByDate.entries()) {
+      if (dateKey < monthStart || dateKey > monthEnd) continue;
+      fullMovements.set(dateKey, movements);
     }
     const anchored = buildBakersAnchoredDailyBalances(fullMovements, monthEnd);
     for (const [dateKey, balances] of anchored.entries()) {
