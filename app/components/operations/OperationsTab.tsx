@@ -14229,7 +14229,11 @@ export default function OperationsTab({
       const changeOwnersDraw = delta('ownersDraw');
       const changeCommonStock = delta('commonStock');
       const changePreferredStock = delta('preferredStock');
-      const changeRetainedEarnings = delta('retainedEarnings');
+      // Earnings already sit in operating NI. Only leftover RE / current-year NI
+      // (distributions, closings, P&L vs BS residual) belongs in financing.
+      const changeRetainedEarnings = roundCash(
+        delta('retainedEarnings') + delta('currentYearNetIncome') - netIncome
+      );
       const changeAdditionalPaidInCapital = delta('additionalPaidInCapital');
       const changeTreasuryStock = delta('treasuryStock');
       const financingCash = roundCash(
@@ -14338,7 +14342,7 @@ export default function OperationsTab({
             { key: 'changeOwnersDraw' as const, label: `  ${getFieldDisplayName('ownersDraw')}` },
             { key: 'changeCommonStock' as const, label: `  ${getFieldDisplayName('commonStock')}` },
             { key: 'changePreferredStock' as const, label: `  ${getFieldDisplayName('preferredStock')}` },
-            { key: 'changeRetainedEarnings' as const, label: `  ${getFieldDisplayName('retainedEarnings')}` },
+            { key: 'changeRetainedEarnings' as const, label: '  Distributions / other retained earnings' },
             { key: 'changeAdditionalPaidInCapital' as const, label: `  ${getFieldDisplayName('additionalPaidInCapital')}` },
             { key: 'changeTreasuryStock' as const, label: `  ${getFieldDisplayName('treasuryStock')}` },
             { key: 'financingCash' as const, label: 'Net cash from financing activities', styleType: 'subtotal' as const, alwaysShow: true },
