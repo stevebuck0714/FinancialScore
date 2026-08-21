@@ -14187,72 +14187,171 @@ export default function OperationsTab({
     const snapshotIndexByDateKey = new Map(
       sortedRecords.map((row: any, index: number) => [toDayKey(row.snapshotDate), index] as const)
     );
+    const roundCash = (value: number): number => Math.round(value * 100) / 100;
     const cashFlowDays = statementDays.map((day) => {
       const currentIdx = snapshotIndexByDateKey.get(day.dateKey);
       const previousRow =
         currentIdx !== undefined && currentIdx + 1 < sortedRecords.length
           ? sortedRecords[currentIdx + 1]
           : null;
+      const delta = (field: string): number =>
+        previousRow ? Number((day as any)[field] || 0) - getSnapshotOnlyValue(previousRow, field) : 0;
       const netIncome = Number(netIncomeByDate[day.dateKey] ?? day.netIncome ?? 0);
       const depreciation = expenseFieldByDate('depreciationAmortization', day.dateKey);
-      const changeAR = previousRow ? day.ar - getSnapshotOnlyValue(previousRow, 'ar') : 0;
-      const changeAP = previousRow ? day.ap - getSnapshotOnlyValue(previousRow, 'ap') : 0;
-      const changeRetainageReceivables = previousRow
-        ? day.retainageReceivables - getSnapshotOnlyValue(previousRow, 'retainageReceivables')
-        : 0;
-      const changeContractAssets = previousRow
-        ? day.contractAssets - getSnapshotOnlyValue(previousRow, 'contractAssets')
-        : 0;
-      const changeContractLiabilities = previousRow
-        ? day.contractLiabilities - getSnapshotOnlyValue(previousRow, 'contractLiabilities')
-        : 0;
-      const changeInventory = previousRow
-        ? day.inventory - getSnapshotOnlyValue(previousRow, 'inventory')
-        : 0;
-      const previousCash = previousRow ? getSnapshotOnlyValue(previousRow, 'cash') : day.cash;
-      const changeCash = day.cash - previousCash;
-      const operatingProxy =
+      const changeAR = -delta('ar');
+      const changeRetainageReceivables = -delta('retainageReceivables');
+      const changeContractAssets = -delta('contractAssets');
+      const changeInventory = -delta('inventory');
+      const changeOtherCA = -delta('otherCA');
+      const changeAP = delta('ap');
+      const changeContractLiabilities = delta('contractLiabilities');
+      const changeOtherCL = delta('otherCL');
+      const operatingCash = roundCash(
         netIncome +
-        depreciation -
-        changeAR -
-        changeRetainageReceivables -
-        changeContractAssets +
-        changeAP +
-        changeContractLiabilities -
-        changeInventory;
+          depreciation +
+          changeAR +
+          changeRetainageReceivables +
+          changeContractAssets +
+          changeInventory +
+          changeOtherCA +
+          changeAP +
+          changeContractLiabilities +
+          changeOtherCL
+      );
+      const capex = -(delta('fixedAssets') + depreciation);
+      const changeInvestments = -delta('investments');
+      const changeRightOfUse = -delta('rightOfUseLeases');
+      const changeOtherAssets = -delta('otherAssets');
+      const investingCash = roundCash(capex + changeInvestments + changeRightOfUse + changeOtherAssets);
+      const changeLoc = delta('loc');
+      const changeLtd = delta('ltd');
+      const changeOwnersCapital = delta('ownersCapital');
+      const changeOwnersDraw = delta('ownersDraw');
+      const changeCommonStock = delta('commonStock');
+      const changePreferredStock = delta('preferredStock');
+      const changeRetainedEarnings = delta('retainedEarnings');
+      const changeAdditionalPaidInCapital = delta('additionalPaidInCapital');
+      const changeTreasuryStock = delta('treasuryStock');
+      const financingCash = roundCash(
+        changeLoc +
+          changeLtd +
+          changeOwnersCapital +
+          changeOwnersDraw +
+          changeCommonStock +
+          changePreferredStock +
+          changeRetainedEarnings +
+          changeAdditionalPaidInCapital +
+          changeTreasuryStock
+      );
+      const previousCash = previousRow ? getSnapshotOnlyValue(previousRow, 'cash') : day.cash;
+      const changeCash = roundCash(day.cash - previousCash);
+      const otherReconciling = roundCash(changeCash - operatingCash - investingCash - financingCash);
       return {
         date: day.dateLabel,
         dateLabel: day.dateLabel,
         netIncome,
         depreciation,
         changeAR,
-        changeAP,
         changeRetainageReceivables,
         changeContractAssets,
-        changeContractLiabilities,
         changeInventory,
-        operatingProxy,
+        changeOtherCA,
+        changeAP,
+        changeContractLiabilities,
+        changeOtherCL,
+        operatingCash,
+        capex,
+        changeInvestments,
+        changeRightOfUse,
+        changeOtherAssets,
+        investingCash,
+        changeLoc,
+        changeLtd,
+        changeOwnersCapital,
+        changeOwnersDraw,
+        changeCommonStock,
+        changePreferredStock,
+        changeRetainedEarnings,
+        changeAdditionalPaidInCapital,
+        changeTreasuryStock,
+        financingCash,
+        otherReconciling,
         changeCash,
         endingCash: day.cash,
       };
     });
-    const cashFlowRowDefs: Array<{
-      key: keyof (typeof cashFlowDays)[number];
+    type CashFlowRowDef = {
+      key?: keyof (typeof cashFlowDays)[number];
       label: string;
       styleType?: 'normal' | 'section' | 'subtotal' | 'total';
-    }> = [
-      { key: 'netIncome', label: getFieldDisplayName('netIncome'), styleType: 'section' },
-      { key: 'depreciation', label: getFieldDisplayName('depreciationAmortization'), styleType: 'normal' },
-      { key: 'changeAR', label: 'Change in Accounts Receivable', styleType: 'normal' },
-      { key: 'changeRetainageReceivables', label: 'Change in Retainage Receivables', styleType: 'normal' },
-      { key: 'changeContractAssets', label: 'Change in Contract Assets', styleType: 'normal' },
-      { key: 'changeAP', label: 'Change in Accounts Payable', styleType: 'normal' },
-      { key: 'changeContractLiabilities', label: 'Change in Contract Liabilities', styleType: 'normal' },
-      { key: 'changeInventory', label: 'Change in Inventory', styleType: 'normal' },
-      { key: 'operatingProxy', label: 'Operating Cash Flow (Proxy)', styleType: 'subtotal' },
-      { key: 'changeCash', label: 'Net Change in Cash', styleType: 'section' },
-      { key: 'endingCash', label: 'Ending Cash', styleType: 'total' },
-    ];
+      suppressValues?: boolean;
+      alwaysShow?: boolean;
+    };
+    const cashFlowHasAny = (key: keyof (typeof cashFlowDays)[number]): boolean =>
+      cashFlowDays.some((day) => Math.abs(Number(day[key] || 0)) > 0.005);
+    const showInvesting =
+      cashFlowHasAny('capex') ||
+      cashFlowHasAny('changeInvestments') ||
+      cashFlowHasAny('changeRightOfUse') ||
+      cashFlowHasAny('changeOtherAssets') ||
+      cashFlowHasAny('investingCash');
+    const showFinancing =
+      cashFlowHasAny('changeLoc') ||
+      cashFlowHasAny('changeLtd') ||
+      cashFlowHasAny('changeOwnersCapital') ||
+      cashFlowHasAny('changeOwnersDraw') ||
+      cashFlowHasAny('changeCommonStock') ||
+      cashFlowHasAny('changePreferredStock') ||
+      cashFlowHasAny('changeRetainedEarnings') ||
+      cashFlowHasAny('changeAdditionalPaidInCapital') ||
+      cashFlowHasAny('changeTreasuryStock') ||
+      cashFlowHasAny('financingCash');
+    const cashFlowRowDefs: CashFlowRowDef[] = [
+      { label: 'Cash flows from operating activities', styleType: 'section', suppressValues: true, alwaysShow: true },
+      { key: 'netIncome', label: `  ${getFieldDisplayName('netIncome')}`, alwaysShow: true },
+      { key: 'depreciation', label: `  ${getFieldDisplayName('depreciationAmortization')}` },
+      { key: 'changeAR', label: `  ${getFieldDisplayName('accountsReceivable')}` },
+      { key: 'changeRetainageReceivables', label: `  ${getFieldDisplayName('retainageReceivables')}` },
+      { key: 'changeContractAssets', label: `  ${getFieldDisplayName('contractAssets')}` },
+      { key: 'changeInventory', label: `  ${getFieldDisplayName('inventory')}` },
+      { key: 'changeOtherCA', label: `  ${getFieldDisplayName('otherCurrentAssets')}` },
+      { key: 'changeAP', label: `  ${getFieldDisplayName('accountsPayable')}` },
+      { key: 'changeContractLiabilities', label: `  ${getFieldDisplayName('contractLiabilities')}` },
+      { key: 'changeOtherCL', label: `  ${getFieldDisplayName('otherCurrentLiabilities')}` },
+      { key: 'operatingCash', label: 'Net cash from operating activities', styleType: 'subtotal', alwaysShow: true },
+      ...(showInvesting
+        ? [
+            { label: 'Cash flows from investing activities', styleType: 'section' as const, suppressValues: true, alwaysShow: true },
+            { key: 'capex' as const, label: '  Purchases of fixed assets' },
+            { key: 'changeInvestments' as const, label: `  ${getFieldDisplayName('investments')}` },
+            { key: 'changeRightOfUse' as const, label: `  ${getFieldDisplayName('rightOfUseLeases')}` },
+            { key: 'changeOtherAssets' as const, label: `  ${getFieldDisplayName('otherAssets')}` },
+            { key: 'investingCash' as const, label: 'Net cash from investing activities', styleType: 'subtotal' as const, alwaysShow: true },
+          ]
+        : []),
+      ...(showFinancing
+        ? [
+            { label: 'Cash flows from financing activities', styleType: 'section' as const, suppressValues: true, alwaysShow: true },
+            { key: 'changeLoc' as const, label: `  ${getFieldDisplayName('loc')}` },
+            { key: 'changeLtd' as const, label: `  ${getFieldDisplayName('longTermDebt')}` },
+            { key: 'changeOwnersCapital' as const, label: `  ${getFieldDisplayName('ownersCapital')}` },
+            { key: 'changeOwnersDraw' as const, label: `  ${getFieldDisplayName('ownersDraw')}` },
+            { key: 'changeCommonStock' as const, label: `  ${getFieldDisplayName('commonStock')}` },
+            { key: 'changePreferredStock' as const, label: `  ${getFieldDisplayName('preferredStock')}` },
+            { key: 'changeRetainedEarnings' as const, label: `  ${getFieldDisplayName('retainedEarnings')}` },
+            { key: 'changeAdditionalPaidInCapital' as const, label: `  ${getFieldDisplayName('additionalPaidInCapital')}` },
+            { key: 'changeTreasuryStock' as const, label: `  ${getFieldDisplayName('treasuryStock')}` },
+            { key: 'financingCash' as const, label: 'Net cash from financing activities', styleType: 'subtotal' as const, alwaysShow: true },
+          ]
+        : []),
+      { key: 'otherReconciling', label: 'Other reconciling items' },
+      { key: 'changeCash', label: 'Net increase (decrease) in cash', styleType: 'section', alwaysShow: true },
+      { key: 'endingCash', label: 'Cash at end of period', styleType: 'total', alwaysShow: true },
+    ].filter((rowDef) => {
+      if (rowDef.alwaysShow || rowDef.suppressValues) return true;
+      if (!rowDef.key) return true;
+      return cashFlowHasAny(rowDef.key);
+    });
 
     const tabButtonStyle = (active: boolean): React.CSSProperties => ({
       background: active ? '#eef2ff' : 'white',
@@ -14548,14 +14647,14 @@ export default function OperationsTab({
                   </tr>
                 </thead>
                 <tbody>
-                  {cashFlowRowDefs.map((rowDef) => (
-                    <tr key={String(rowDef.key)} style={{ background: statementRowStyle(rowDef.styleType).rowBg }}>
+                  {cashFlowRowDefs.map((rowDef, rowIndex) => (
+                    <tr key={`${rowDef.label}-${rowIndex}`} style={{ background: statementRowStyle(rowDef.styleType).rowBg }}>
                       <td style={{ padding: '10px', borderBottom: '1px solid #f1f5f9', fontWeight: statementRowStyle(rowDef.styleType).weight, color: statementRowStyle(rowDef.styleType).textColor, whiteSpace: 'nowrap' }}>
                         {rowDef.label}
                       </td>
                       {cashFlowDays.map((day) => (
                         <td
-                          key={`${String(rowDef.key)}-${day.dateLabel}`}
+                          key={`${rowDef.label}-${day.dateLabel}`}
                           style={{
                             padding: '10px',
                             borderBottom: '1px solid #f1f5f9',
@@ -14566,7 +14665,7 @@ export default function OperationsTab({
                             whiteSpace: 'nowrap',
                           }}
                         >
-                          {formatCurrency(Number(day[rowDef.key] || 0))}
+                          {rowDef.suppressValues ? '' : formatCurrency(Number(rowDef.key ? day[rowDef.key] || 0 : 0))}
                         </td>
                       ))}
                     </tr>
@@ -14575,7 +14674,7 @@ export default function OperationsTab({
               </table>
             </div>
             <div style={{ marginTop: '8px', fontSize: '12px', color: '#64748b' }}>
-              Net income matches the daily income statement. Operating cash flow is still a working-capital proxy and will not always equal the change in cash.
+              Indirect cash flow from daily income-statement net income and balance-sheet movements. Line amounts are cash impact (an increase in AR is negative). Other reconciling items is income-statement NI versus the change in balance-sheet current-year NI.
             </div>
           </div>
         )}
