@@ -199,6 +199,12 @@ type WipLineItemSortKey =
   | 'invoicedValue';
 type ProductReportView = 'productMarginAnalysis' | 'wholesaleRawData' | 'vendorPricing' | 'performance' | 'retailForecast' | 'merchandiseProfitability';
 type WholesaleProductsReportMode = 'margin' | 'raw' | 'vendor';
+type WholesaleRawCustomerOption = {
+  key: string;
+  customerId: string;
+  customerName: string;
+  label: string;
+};
 type ForecastSubTab = 'income-statement-forecast' | 'cash-forecast' | 'graphs' | 'residential-revenue-forecast';
 
 const WHOLESALE_INVENTORY_EXCLUDED_SECTION_KEYS = new Set([
@@ -951,10 +957,19 @@ export default function OperationsTab({
   const [isResidentialOfficeAttachmentTableExpanded, setIsResidentialOfficeAttachmentTableExpanded] = useState(true);
   const [residentialOfficeMonthlyGoals, setResidentialOfficeMonthlyGoals] = useState<Record<string, { salesVolumeGoal: string; unitsGoal: string }>>({});
   const [residentialAttachGoals, setResidentialAttachGoals] = useState({ mortgagePct: '49', titlePct: '58', insurancePct: '35' });
-  const [wholesaleRawCustomerFilter, setWholesaleRawCustomerFilter] = useState('all');
+  const [wholesaleRawCustomerFilter, setWholesaleRawCustomerFilter] = useState('');
+  const [wholesaleRawCustomers, setWholesaleRawCustomers] = useState<WholesaleRawCustomerOption[]>([]);
+  const [wholesaleRawCustomersLoading, setWholesaleRawCustomersLoading] = useState(false);
+  const [wholesaleRawCustomerLines, setWholesaleRawCustomerLines] = useState<any[]>([]);
+  const [wholesaleRawLinesLoading, setWholesaleRawLinesLoading] = useState(false);
+  const [wholesaleRawLinesError, setWholesaleRawLinesError] = useState<string | null>(null);
+  const [wholesaleRawWindowStart, setWholesaleRawWindowStart] = useState('');
+  const [wholesaleRawWindowEnd, setWholesaleRawWindowEnd] = useState('');
+  const [wholesaleRawHasMoreOlder, setWholesaleRawHasMoreOlder] = useState(false);
+  const [wholesaleRawTruncated, setWholesaleRawTruncated] = useState(false);
   const [wholesaleRawSortKey, setWholesaleRawSortKey] = useState<WholesaleRawSortKey>('isoDate');
   const [wholesaleRawSortDir, setWholesaleRawSortDir] = useState<'asc' | 'desc'>('desc');
-  const [wholesaleRawTimeframe, setWholesaleRawTimeframe] = useState<'currentMonth' | 'currentYear' | 'year' | 'custom' | 'allLoaded'>('currentYear');
+  const [wholesaleRawTimeframe, setWholesaleRawTimeframe] = useState<'custom' | 'allLoaded'>('allLoaded');
   const [wholesaleRawYear, setWholesaleRawYear] = useState('');
   const [wholesaleRawStartDate, setWholesaleRawStartDate] = useState('');
   const [wholesaleRawEndDate, setWholesaleRawEndDate] = useState('');
@@ -1958,6 +1973,114 @@ export default function OperationsTab({
     return request;
   };
 
+  const isWholesaleRawViewActive =
+    String(industrySectorCategory || '').trim() === '42' &&
+    mapModuleToDataType(activeTab) === 'products' &&
+    productReportView === 'wholesaleRawData';
+
+  const selectedWholesaleRawCustomer =
+    wholesaleRawCustomers.find((customer) => customer.key === wholesaleRawCustomerFilter) || null;
+
+  const resetWholesaleRawLines = () => {
+    setWholesaleRawCustomerLines([]);
+    setWholesaleRawLinesError(null);
+    setWholesaleRawWindowStart('');
+    setWholesaleRawWindowEnd('');
+    setWholesaleRawHasMoreOlder(false);
+    setWholesaleRawTruncated(false);
+  };
+
+  const fetchWholesaleRawCustomers = async () => {
+    const params = new URLSearchParams({
+      companyId: selectedCompanyId,
+      view: 'customers',
+    });
+    const response = await fetch(`/api/operational-data/product-raw?${params}`, { cache: 'no-store' });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      throw new Error(payload?.error || 'Failed to load customers');
+    }
+    return Array.isArray(payload?.customers) ? payload.customers : [];
+  };
+
+  const fetchWholesaleRawLines = async (options: { window: 'recent' | 'older'; before?: string }) => {
+    if (!selectedWholesaleRawCustomer) {
+      throw new Error('Select a customer before loading raw order lines.');
+    }
+    const params = new URLSearchParams({
+      companyId: selectedCompanyId,
+      view: 'lines',
+      window: options.window,
+      customerId: selectedWholesaleRawCustomer.customerId,
+      customerName: selectedWholesaleRawCustomer.customerName,
+    });
+    if (options.window === 'older' && options.before) {
+      params.set('before', options.before);
+    }
+    const response = await fetch(`/api/operational-data/product-raw?${params}`, { cache: 'no-store' });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      throw new Error(payload?.error || 'Failed to load customer order lines');
+    }
+    return payload;
+  };
+
+  const loadWholesaleRawRecentWindow = async () => {
+    if (!selectedWholesaleRawCustomer) {
+      resetWholesaleRawLines();
+      return;
+    }
+    setWholesaleRawLinesLoading(true);
+    setWholesaleRawLinesError(null);
+    try {
+      const payload = await fetchWholesaleRawLines({ window: 'recent' });
+      setWholesaleRawCustomerLines(Array.isArray(payload?.records) ? payload.records : []);
+      setWholesaleRawWindowStart(String(payload?.window?.startDate || ''));
+      setWholesaleRawWindowEnd(String(payload?.window?.endDate || ''));
+      setWholesaleRawHasMoreOlder(payload?.hasMoreOlder === true);
+      setWholesaleRawTruncated(payload?.truncated === true);
+    } catch (error: any) {
+      resetWholesaleRawLines();
+      setWholesaleRawLinesError(error?.message || 'Failed to load customer order lines');
+    } finally {
+      setWholesaleRawLinesLoading(false);
+    }
+  };
+
+  const loadWholesaleRawOlderWindow = async () => {
+    if (!selectedWholesaleRawCustomer || !wholesaleRawWindowStart || wholesaleRawLinesLoading) return;
+    setWholesaleRawLinesLoading(true);
+    setWholesaleRawLinesError(null);
+    try {
+      const payload = await fetchWholesaleRawLines({ window: 'older', before: wholesaleRawWindowStart });
+      const incoming = Array.isArray(payload?.records) ? payload.records : [];
+      setWholesaleRawCustomerLines((current) => {
+        const byLine = new Map<string, any>();
+        for (const row of [...incoming, ...current]) {
+          const key = `${String(row?.orderId || '')}|${String(row?.lineId || '')}`;
+          if (!key.replace(/\|/g, '')) continue;
+          const existing = byLine.get(key);
+          if (!existing) {
+            byLine.set(key, row);
+            continue;
+          }
+          const existingDate = String(existing?.snapshotDate || existing?.date || '');
+          const nextDate = String(row?.snapshotDate || row?.date || '');
+          if (nextDate > existingDate) byLine.set(key, row);
+        }
+        return Array.from(byLine.values());
+      });
+      setWholesaleRawWindowStart(String(payload?.window?.startDate || wholesaleRawWindowStart));
+      if (!wholesaleRawWindowEnd) setWholesaleRawWindowEnd(String(payload?.window?.endDate || ''));
+      setWholesaleRawHasMoreOlder(payload?.hasMoreOlder === true);
+      setWholesaleRawTruncated(Boolean(wholesaleRawTruncated || payload?.truncated));
+    } catch (error: any) {
+      setWholesaleRawLinesError(error?.message || 'Failed to load older order lines');
+    } finally {
+      setWholesaleRawLinesLoading(false);
+    }
+  };
+
   const buildOperationalDataCacheKey = (type: OpsDataType): string => {
     const requestFrequency = frequency;
     const rollupToken = type === 'daily-financials' ? dailyFinancialStatementRollup : 'n/a';
@@ -2126,7 +2249,7 @@ export default function OperationsTab({
     (
       activeWholesaleModuleDataType === 'customers' ||
       (activeWholesaleModuleDataType === 'products' &&
-        (productReportView === 'productMarginAnalysis' || productReportView === 'wholesaleRawData' || productReportView === 'vendorPricing')) ||
+        (productReportView === 'productMarginAnalysis' || productReportView === 'vendorPricing')) ||
       ((activeTab === 'overview' || activeTab === 'dashboard') && activeOverviewSubTab === 'execution-velocity')
     );
 
@@ -2156,11 +2279,14 @@ export default function OperationsTab({
             console.warn('Failed to refresh wholesale Products report data after operational upload:', error);
           });
       }
+      if (requestedTypes.includes('products') && isWholesaleRawViewActive && selectedWholesaleRawCustomer) {
+        void loadWholesaleRawRecentWindow();
+      }
     };
 
     window.addEventListener('operational-data-updated', handleOperationalDataUpdated);
     return () => window.removeEventListener('operational-data-updated', handleOperationalDataUpdated);
-  }, [selectedCompanyId, industrySectorCategory, frequency, startDate, endDate, shouldLoadWholesaleProductsReport, activeTab, productReportView]);
+  }, [selectedCompanyId, industrySectorCategory, frequency, startDate, endDate, shouldLoadWholesaleProductsReport, activeTab, productReportView, isWholesaleRawViewActive, selectedWholesaleRawCustomer?.key]);
 
   useEffect(() => {
     if (!shouldLoadWholesaleProductsReport) {
@@ -2202,6 +2328,43 @@ export default function OperationsTab({
       cancelled = true;
     };
   }, [shouldLoadWholesaleProductsReport, industrySectorCategory, startDate, endDate, activeTab, productReportView]);
+
+  useEffect(() => {
+    setWholesaleRawCustomerFilter('');
+    setWholesaleRawCustomers([]);
+    resetWholesaleRawLines();
+  }, [selectedCompanyId]);
+
+  useEffect(() => {
+    if (!isWholesaleRawViewActive || !selectedCompanyId) return;
+    let cancelled = false;
+    setWholesaleRawCustomersLoading(true);
+    void fetchWholesaleRawCustomers()
+      .then((customers) => {
+        if (!cancelled) setWholesaleRawCustomers(customers);
+      })
+      .catch((error: any) => {
+        if (!cancelled) {
+          setWholesaleRawCustomers([]);
+          setWholesaleRawLinesError(error?.message || 'Failed to load customers');
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setWholesaleRawCustomersLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [isWholesaleRawViewActive, selectedCompanyId]);
+
+  useEffect(() => {
+    if (!isWholesaleRawViewActive) return;
+    if (!selectedWholesaleRawCustomer) {
+      resetWholesaleRawLines();
+      return;
+    }
+    void loadWholesaleRawRecentWindow();
+  }, [isWholesaleRawViewActive, selectedCompanyId, selectedWholesaleRawCustomer?.key]);
 
   const prefetchTabData = (tab: string) => {
     const type = mapModuleToDataType(tab) || null;
@@ -7837,11 +8000,13 @@ export default function OperationsTab({
 
   // Product Sales Tab  
   const renderProducts = () => {
-    if (loading || !productData) {
+    const canRenderWholesaleRawWithoutProductPayload =
+      String(industrySectorCategory || '').trim() === '42' && productReportView === 'wholesaleRawData';
+    if (!canRenderWholesaleRawWithoutProductPayload && (loading || !productData)) {
       return <div data-print-ready="loading" style={{ padding: '40px', textAlign: 'center', color: '#64748b' }}>Loading product data...</div>;
     }
 
-    const { records, summary } = productData;
+    const { records, summary } = productData || { records: [], summary: {} };
     const isRetailProductSector = industrySectorCategory === '45';
     const isWholesaleProductSector = industrySectorCategory === '42';
     const isProductMarginAnalysisEnabled = isWholesaleProductSector && isSectionEnabled('productsProductMarginAnalysis');
@@ -8907,11 +9072,11 @@ export default function OperationsTab({
     };
     const wholesaleRawBaseRows = getCachedProductTransform(
       'products-wholesale-raw-base-rows',
-      [shouldRenderWholesaleRaw, wholesaleProductRecords],
-      () => (shouldRenderWholesaleRaw ? (wholesaleProductRecords as any[]) : [])
+      [shouldRenderWholesaleRaw, wholesaleRawCustomerLines],
+      () => (shouldRenderWholesaleRaw ? (wholesaleRawCustomerLines as any[]) : [])
         .filter((row) => !row?.isPlaceholderRow)
         .map((row, index) => {
-          const parsedDate = parseCoverageUtcDay(String(row?.snapshotDate || row?.date || row?.orderDate || ''));
+          const parsedDate = parseCoverageUtcDay(String(row?.orderDate || row?.date || row?.snapshotDate || ''));
           const isoDate = parsedDate ? parsedDate.toISOString().slice(0, 10) : '';
           const monthLabel = parsedDate ? parsedDate.toLocaleDateString('en-US', { month: 'long', timeZone: 'UTC' }).toUpperCase() : '';
           const year = parsedDate ? String(parsedDate.getUTCFullYear()) : '';
@@ -8926,7 +9091,7 @@ export default function OperationsTab({
           const customerGroup = String(row?.customerGroup || '').trim();
           const customerPartNumber = String(row?.customerPartNumber || row?.aprSgpCustomerPartNumber || row?.customerPn || row?.customerPN || row?.customerItem || row?.customerSku || row?.custItem || row?.CustItem || '').trim();
           return {
-            key: `${index}-${isoDate}-${String(row?.sku || row?.itemId || row?.itemName || '')}-${String(row?.orderId || row?.sourceTransaction || '')}`,
+            key: `${index}-${isoDate}-${String(row?.sku || row?.itemId || row?.itemName || '')}-${String(row?.orderId || row?.sourceTransaction || '')}-${String(row?.lineId || '')}`,
             item: String(row?.sku || row?.itemId || row?.itemName || 'N/A').trim() || 'N/A',
             order: String(row?.orderId || row?.orderNo || row?.coNum || row?.sourceTransaction || '').trim(),
             quarter,
@@ -8952,40 +9117,17 @@ export default function OperationsTab({
       .map((row) => row.isoDate)
       .sort((a, b) => a.localeCompare(b))
       .slice(-1)[0] || '';
-    const wholesaleRawLatestYear = wholesaleRawLatestDate.slice(0, 4);
-    const wholesaleRawLatestMonth = wholesaleRawLatestDate.slice(0, 7);
-    const wholesaleRawYears = Array.from(
-      new Set([
-        ...wholesaleRawBaseRows.map((row) => row.year).filter(Boolean),
-        '2026',
-        '2025',
-        '2024',
-        '2023',
-      ])
-    ).sort((a, b) => b.localeCompare(a));
-    const effectiveWholesaleRawYear =
-      wholesaleRawYear && wholesaleRawYears.includes(wholesaleRawYear)
-        ? wholesaleRawYear
-        : (wholesaleRawYears[0] || wholesaleRawLatestYear);
-    const wholesaleRawCustomerOptions = Array.from(
-      new Map(
-        wholesaleRawBaseRows
-          .map((row) => [row.customerName, { key: row.customerName, label: row.customerName }])
-      ).values()
-    ).sort((a, b) => a.label.localeCompare(b.label, undefined, { sensitivity: 'base', numeric: true }));
-    const wholesaleRawFilteredRows = wholesaleRawBaseRows
-      .filter((row) => wholesaleRawCustomerFilter === 'all' || row.customerName === wholesaleRawCustomerFilter)
-      .filter((row) => {
-        if (wholesaleRawTimeframe === 'currentMonth') return row.isoDate.slice(0, 7) === wholesaleRawLatestMonth;
-        if (wholesaleRawTimeframe === 'currentYear') return row.year === wholesaleRawLatestYear;
-        if (wholesaleRawTimeframe === 'year') return row.year === effectiveWholesaleRawYear;
-        if (wholesaleRawTimeframe === 'custom') {
-          const afterStart = !wholesaleRawStartDate || row.isoDate >= wholesaleRawStartDate;
-          const beforeEnd = !wholesaleRawEndDate || row.isoDate <= wholesaleRawEndDate;
-          return afterStart && beforeEnd;
-        }
-        return true;
-      });
+    const wholesaleRawOldestDate = wholesaleRawBaseRows
+      .map((row) => row.isoDate)
+      .sort((a, b) => a.localeCompare(b))[0] || '';
+    const wholesaleRawFilteredRows = wholesaleRawBaseRows.filter((row) => {
+      if (wholesaleRawTimeframe === 'custom') {
+        const afterStart = !wholesaleRawStartDate || row.isoDate >= wholesaleRawStartDate;
+        const beforeEnd = !wholesaleRawEndDate || row.isoDate <= wholesaleRawEndDate;
+        return afterStart && beforeEnd;
+      }
+      return true;
+    });
     const wholesaleRawTextSortKeys = new Set<WholesaleRawSortKey>([
       'item',
       'order',
@@ -9739,16 +9881,25 @@ export default function OperationsTab({
         { key: 'team', label: 'TEAM', render: (row) => row.team || 'N/A' },
       ];
 
-      if (wholesaleProductsLoading && !Array.isArray(wholesaleProductsData?.summary?.wholesaleOrderLines)) {
-        return <div style={{ padding: '40px', textAlign: 'center', color: '#64748b' }}>Loading wholesale raw product data...</div>;
+      if (wholesaleRawCustomersLoading && wholesaleRawCustomers.length === 0) {
+        return <div style={{ padding: '40px', textAlign: 'center', color: '#64748b' }}>Loading customers...</div>;
       }
-      if (wholesaleProductsError && !Array.isArray(wholesaleProductsData?.summary?.wholesaleOrderLines)) {
+      if (wholesaleRawLinesError && !selectedWholesaleRawCustomer) {
         return (
           <div style={{ background: 'white', border: '1px solid #fecaca', borderRadius: '12px', padding: '24px', color: '#991b1b' }}>
-            {wholesaleProductsError}
+            {wholesaleRawLinesError}
           </div>
         );
       }
+
+      const formatWindowDate = (isoDate: string) => (isoDate ? formatRawDate(isoDate) : 'N/A');
+      const emptyMessage = !selectedWholesaleRawCustomer
+        ? 'Select a customer to load the last 12 months of order lines.'
+        : wholesaleRawLinesLoading
+        ? 'Loading customer order lines...'
+        : wholesaleRawLinesError
+        ? wholesaleRawLinesError
+        : 'No raw data rows match the selected filters.';
 
       return (
         <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '18px', marginBottom: '20px' }}>
@@ -9756,7 +9907,7 @@ export default function OperationsTab({
             <div>
               <h3 style={{ margin: 0, fontSize: '18px', color: '#0f172a' }}>Raw Data</h3>
               <div style={{ marginTop: '4px', fontSize: '12px', color: '#64748b', lineHeight: 1.4 }}>
-                Filter by customer and timeframe before reviewing the transaction-level table. The view displays the first {wholesaleRawVisibleRowLimit.toLocaleString()} matching rows.
+                Select a customer first. The last 12 months load automatically. Older history is requested in 2-year windows. The table shows the first {wholesaleRawVisibleRowLimit.toLocaleString()} matching rows.
               </div>
             </div>
             <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
@@ -9765,37 +9916,22 @@ export default function OperationsTab({
                 onChange={(event) => setWholesaleRawCustomerFilter(event.target.value)}
                 style={{ border: '1px solid #cbd5e1', borderRadius: '8px', padding: '8px 10px', fontSize: '12px', minWidth: '260px', background: 'white' }}
               >
-                <option value="all">All customers ({wholesaleRawCustomerOptions.length})</option>
-                {wholesaleRawCustomerOptions.map((customer) => (
+                <option value="">Select a customer</option>
+                {wholesaleRawCustomers.map((customer) => (
                   <option key={customer.key} value={customer.key}>
-                    {customer.label}
+                    {customer.label}{customer.customerId ? ` (${customer.customerId})` : ''}
                   </option>
                 ))}
               </select>
               <select
                 value={wholesaleRawTimeframe}
-                onChange={(event) => setWholesaleRawTimeframe(event.target.value as any)}
+                onChange={(event) => setWholesaleRawTimeframe(event.target.value as 'custom' | 'allLoaded')}
+                disabled={!selectedWholesaleRawCustomer}
                 style={{ border: '1px solid #cbd5e1', borderRadius: '8px', padding: '8px 10px', fontSize: '12px', background: 'white' }}
               >
-                <option value="currentMonth">Current month in loaded data</option>
-                <option value="currentYear">Current year in loaded data</option>
-                <option value="year">Previous / selected year</option>
-                <option value="custom">Custom date range</option>
                 <option value="allLoaded">All loaded dates</option>
+                <option value="custom">Narrow loaded dates</option>
               </select>
-              {wholesaleRawTimeframe === 'year' && (
-                <select
-                  value={effectiveWholesaleRawYear}
-                  onChange={(event) => setWholesaleRawYear(event.target.value)}
-                  style={{ border: '1px solid #cbd5e1', borderRadius: '8px', padding: '8px 10px', fontSize: '12px', background: 'white' }}
-                >
-                  {wholesaleRawYears.map((year) => (
-                    <option key={year} value={year}>
-                      {year}
-                    </option>
-                  ))}
-                </select>
-              )}
               {wholesaleRawTimeframe === 'custom' && (
                 <>
                   <input
@@ -9812,6 +9948,23 @@ export default function OperationsTab({
                   />
                 </>
               )}
+              <button
+                type="button"
+                onClick={() => { void loadWholesaleRawOlderWindow(); }}
+                disabled={!selectedWholesaleRawCustomer || !wholesaleRawHasMoreOlder || wholesaleRawLinesLoading}
+                style={{
+                  border: '1px solid #cbd5e1',
+                  borderRadius: '8px',
+                  padding: '8px 10px',
+                  fontSize: '12px',
+                  background: !selectedWholesaleRawCustomer || !wholesaleRawHasMoreOlder || wholesaleRawLinesLoading ? '#f8fafc' : 'white',
+                  color: '#334155',
+                  cursor: !selectedWholesaleRawCustomer || !wholesaleRawHasMoreOlder || wholesaleRawLinesLoading ? 'not-allowed' : 'pointer',
+                  fontWeight: 700,
+                }}
+              >
+                {wholesaleRawLinesLoading ? 'Loading...' : 'Load older (2 years)'}
+              </button>
             </div>
           </div>
 
@@ -9819,11 +9972,20 @@ export default function OperationsTab({
             <span><strong>Loaded rows:</strong> {wholesaleRawBaseRows.length.toLocaleString()}</span>
             <span><strong>Filtered rows:</strong> {wholesaleRawFilteredRows.length.toLocaleString()}</span>
             <span><strong>Displayed:</strong> {wholesaleRawVisibleRows.length.toLocaleString()}</span>
+            {wholesaleRawWindowStart && wholesaleRawWindowEnd && (
+              <span><strong>Loaded window:</strong> {formatWindowDate(wholesaleRawWindowStart)} – {formatWindowDate(wholesaleRawWindowEnd)}</span>
+            )}
+            {wholesaleRawOldestDate && <span><strong>Oldest loaded date:</strong> {formatRawDate(wholesaleRawOldestDate)}</span>}
             {wholesaleRawLatestDate && <span><strong>Latest loaded date:</strong> {formatRawDate(wholesaleRawLatestDate)}</span>}
           </div>
+          {wholesaleRawTruncated && (
+            <div style={{ marginBottom: '12px', padding: '10px', borderRadius: '8px', background: '#fff7ed', border: '1px solid #fed7aa', color: '#9a3412', fontSize: '12px' }}>
+              This customer window has more than 8,000 unique order lines. Narrow the loaded dates or load a smaller older window.
+            </div>
+          )}
           {wholesaleRawFilteredRows.length > wholesaleRawVisibleRowLimit && (
             <div style={{ marginBottom: '12px', padding: '10px', borderRadius: '8px', background: '#fff7ed', border: '1px solid #fed7aa', color: '#9a3412', fontSize: '12px' }}>
-              This filter returns {wholesaleRawFilteredRows.length.toLocaleString()} rows. Narrow the customer or timeframe to see more targeted detail.
+              This filter returns {wholesaleRawFilteredRows.length.toLocaleString()} rows. Narrow the loaded dates to see more targeted detail.
             </div>
           )}
 
@@ -9880,7 +10042,7 @@ export default function OperationsTab({
                 {wholesaleRawVisibleRows.length === 0 && (
                   <tr>
                     <td colSpan={rawColumns.length} style={{ padding: '14px', fontSize: '13px', color: '#64748b' }}>
-                      No raw data rows match the selected filters.
+                      {emptyMessage}
                     </td>
                   </tr>
                 )}
