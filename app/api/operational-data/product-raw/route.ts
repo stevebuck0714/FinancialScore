@@ -191,33 +191,38 @@ export async function GET(request: NextRequest) {
     }
 
     const matchSql = customerMatchSql(customerId, customerName);
+    const activityDateSql = Prisma.sql`COALESCE("orderDate", "snapshotDate")`;
     const rows = await prisma.$queryRaw<any[]>(Prisma.sql`
-      SELECT DISTINCT ON ("orderId", "lineId")
-        "snapshotDate",
-        "customerId",
-        "customerName",
-        "orderId",
-        "lineId",
-        "orderDate",
-        "itemId",
-        "itemName",
-        "sku",
-        "qtyOrdered",
-        "qtyInvoiced",
-        "unitPrice",
-        "contractValue",
-        "invoicedAmount",
-        "remainingAmount",
-        "sourceTransaction"
-      FROM "CustomerOrderLineSnapshot"
-      WHERE "companyId" = ${companyId}
-        AND "frequency" = 'daily'
-        AND ${matchSql}
-        AND (
-          ("orderDate" IS NOT NULL AND "orderDate" >= ${startDate} AND "orderDate" <= ${endDate})
-          OR ("snapshotDate" >= ${startDate} AND "snapshotDate" <= ${endDate})
-        )
-      ORDER BY "orderId", "lineId", "snapshotDate" DESC
+      SELECT *
+      FROM (
+        SELECT DISTINCT ON ("orderId", "lineId")
+          "snapshotDate",
+          "customerId",
+          "customerName",
+          "orderId",
+          "lineId",
+          "orderDate",
+          "itemId",
+          "itemName",
+          "sku",
+          "qtyOrdered",
+          "qtyInvoiced",
+          "unitPrice",
+          "contractValue",
+          "invoicedAmount",
+          "remainingAmount",
+          "sourceTransaction"
+        FROM "CustomerOrderLineSnapshot"
+        WHERE "companyId" = ${companyId}
+          AND "frequency" = 'daily'
+          AND ${matchSql}
+          AND (
+            ("orderDate" IS NOT NULL AND "orderDate" >= ${startDate} AND "orderDate" <= ${endDate})
+            OR ("orderDate" IS NULL AND "snapshotDate" >= ${startDate} AND "snapshotDate" <= ${endDate})
+          )
+        ORDER BY "orderId", "lineId", "snapshotDate" DESC
+      ) unique_lines
+      ORDER BY COALESCE("orderDate", "snapshotDate") DESC, "orderId" DESC, "lineId" DESC
       LIMIT ${MAX_UNIQUE_LINES + 1}
     `);
 
@@ -230,7 +235,7 @@ export async function GET(request: NextRequest) {
         WHERE "companyId" = ${companyId}
           AND "frequency" = 'daily'
           AND ${matchSql}
-          AND COALESCE("orderDate", "snapshotDate") < ${startDate}
+          AND ${activityDateSql} < ${startDate}
         LIMIT 1
       ) AS has_older
     `);

@@ -969,10 +969,6 @@ export default function OperationsTab({
   const [wholesaleRawTruncated, setWholesaleRawTruncated] = useState(false);
   const [wholesaleRawSortKey, setWholesaleRawSortKey] = useState<WholesaleRawSortKey>('isoDate');
   const [wholesaleRawSortDir, setWholesaleRawSortDir] = useState<'asc' | 'desc'>('desc');
-  const [wholesaleRawTimeframe, setWholesaleRawTimeframe] = useState<'custom' | 'allLoaded'>('allLoaded');
-  const [wholesaleRawYear, setWholesaleRawYear] = useState('');
-  const [wholesaleRawStartDate, setWholesaleRawStartDate] = useState('');
-  const [wholesaleRawEndDate, setWholesaleRawEndDate] = useState('');
   const [vendorPricingVendorFilter, setVendorPricingVendorFilter] = useState('all');
   const [vendorPricingSearchTerm, setVendorPricingSearchTerm] = useState('');
   const [vendorPricingSortKey, setVendorPricingSortKey] = useState<VendorPricingSortKey>('item');
@@ -1119,6 +1115,14 @@ export default function OperationsTab({
     setExpandedProductMarginCustomers((prev) => ({ ...prev, [key]: !prev[key] }));
   };
   const isCustomersTab = ['customers', 'sales'].includes(String(mapModuleToDataType(activeTab) || '')) || activeTab === 'customers';
+  const isWholesaleProductsTab =
+    String(industrySectorCategory || '').trim() === '42' &&
+    (mapModuleToDataType(activeTab) === 'products' || activeTab === 'products');
+  const usesWholesaleDedicatedProductView =
+    isWholesaleProductsTab &&
+    (productReportView === 'productMarginAnalysis' ||
+      productReportView === 'wholesaleRawData' ||
+      productReportView === 'vendorPricing');
   const shouldApplyOperationalUserAccess =
     String(currentUser?.role || '').toLowerCase() === 'user' &&
     String(currentUser?.userType || '').toLowerCase() === 'company' &&
@@ -1426,7 +1430,7 @@ export default function OperationsTab({
     if (activeTab !== 'overview' && activeTab !== 'dashboard' && mapModuleToDataType(activeTab)) {
       loadTabData(activeTab);
     }
-  }, [activeTab, selectedCompanyId, industrySectorCategory, frequency, startDate, endDate, dailyFinancialStatementRollup]);
+  }, [activeTab, selectedCompanyId, industrySectorCategory, frequency, startDate, endDate, dailyFinancialStatementRollup, productReportView]);
 
   useEffect(() => {
     if (activeOverviewSubTab !== 'customer-concentration-exposure') return;
@@ -2032,6 +2036,8 @@ export default function OperationsTab({
     }
     setWholesaleRawLinesLoading(true);
     setWholesaleRawLinesError(null);
+    setWholesaleRawSortKey('isoDate');
+    setWholesaleRawSortDir('desc');
     try {
       const payload = await fetchWholesaleRawLines({ window: 'recent' });
       setWholesaleRawCustomerLines(Array.isArray(payload?.records) ? payload.records : []);
@@ -2447,6 +2453,17 @@ export default function OperationsTab({
     try {
       const type = mapModuleToDataType(tab) || null;
       if (!type) {
+        return;
+      }
+      if (
+        type === 'products' &&
+        String(industrySectorCategory || '').trim() === '42' &&
+        (productReportView === 'productMarginAnalysis' ||
+          productReportView === 'wholesaleRawData' ||
+          productReportView === 'vendorPricing')
+      ) {
+        setLoading(false);
+        setError(null);
         return;
       }
       const cached = getCachedOperationalData(type);
@@ -3160,7 +3177,8 @@ export default function OperationsTab({
       activeTab === 'loans' ||
       activeDataType === 'hiring' ||
       activeTab === 'working_capital_forecast' ||
-      activeTab === 'working-capital-forecast'
+      activeTab === 'working-capital-forecast' ||
+      isWholesaleRawViewActive
     ) {
       return null;
     }
@@ -3175,7 +3193,7 @@ export default function OperationsTab({
         alignItems: 'center',
         flexWrap: 'wrap'
       }}>
-        {!isCustomersTab && (
+        {!isCustomersTab && !isWholesaleProductsTab && (
           <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
             <label style={{ fontSize: '13px', fontWeight: '600', color: '#475569' }}>
               Frequency:
@@ -3290,7 +3308,7 @@ export default function OperationsTab({
           >
             Save
           </button>
-          {!isCustomersTab && frequency === 'daily' && (
+          {!isCustomersTab && !isWholesaleProductsTab && frequency === 'daily' && (
             <>
               <button
                 onClick={() => {
@@ -3336,7 +3354,7 @@ export default function OperationsTab({
               </button>
             </>
           )}
-          {!isCustomersTab && frequency === 'weekly' && (
+          {!isCustomersTab && !isWholesaleProductsTab && frequency === 'weekly' && (
             <>
               <button
                 onClick={() => {
@@ -3382,7 +3400,7 @@ export default function OperationsTab({
               </button>
             </>
           )}
-          {!isCustomersTab && frequency === 'monthly' && (
+          {!isCustomersTab && !isWholesaleProductsTab && frequency === 'monthly' && (
             <>
               <button
                 onClick={() => {
@@ -8000,9 +8018,7 @@ export default function OperationsTab({
 
   // Product Sales Tab  
   const renderProducts = () => {
-    const canRenderWholesaleRawWithoutProductPayload =
-      String(industrySectorCategory || '').trim() === '42' && productReportView === 'wholesaleRawData';
-    if (!canRenderWholesaleRawWithoutProductPayload && (loading || !productData)) {
+    if (!usesWholesaleDedicatedProductView && (loading || !productData)) {
       return <div data-print-ready="loading" style={{ padding: '40px', textAlign: 'center', color: '#64748b' }}>Loading product data...</div>;
     }
 
@@ -9121,12 +9137,8 @@ export default function OperationsTab({
       .map((row) => row.isoDate)
       .sort((a, b) => a.localeCompare(b))[0] || '';
     const wholesaleRawFilteredRows = wholesaleRawBaseRows.filter((row) => {
-      if (wholesaleRawTimeframe === 'custom') {
-        const afterStart = !wholesaleRawStartDate || row.isoDate >= wholesaleRawStartDate;
-        const beforeEnd = !wholesaleRawEndDate || row.isoDate <= wholesaleRawEndDate;
-        return afterStart && beforeEnd;
-      }
-      return true;
+      if (!wholesaleRawWindowStart || !wholesaleRawWindowEnd) return true;
+      return row.isoDate >= wholesaleRawWindowStart && row.isoDate <= wholesaleRawWindowEnd;
     });
     const wholesaleRawTextSortKeys = new Set<WholesaleRawSortKey>([
       'item',
@@ -9907,7 +9919,7 @@ export default function OperationsTab({
             <div>
               <h3 style={{ margin: 0, fontSize: '18px', color: '#0f172a' }}>Raw Data</h3>
               <div style={{ marginTop: '4px', fontSize: '12px', color: '#64748b', lineHeight: 1.4 }}>
-                Select a customer first. The last 12 months load automatically. Older history is requested in 2-year windows. The table shows the first {wholesaleRawVisibleRowLimit.toLocaleString()} matching rows.
+                Select a customer first. The last 12 months of order dates load automatically. Older history is requested in 2-year windows by order date. The table shows the newest {wholesaleRawVisibleRowLimit.toLocaleString()} matching rows.
               </div>
             </div>
             <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
@@ -9923,31 +9935,6 @@ export default function OperationsTab({
                   </option>
                 ))}
               </select>
-              <select
-                value={wholesaleRawTimeframe}
-                onChange={(event) => setWholesaleRawTimeframe(event.target.value as 'custom' | 'allLoaded')}
-                disabled={!selectedWholesaleRawCustomer}
-                style={{ border: '1px solid #cbd5e1', borderRadius: '8px', padding: '8px 10px', fontSize: '12px', background: 'white' }}
-              >
-                <option value="allLoaded">All loaded dates</option>
-                <option value="custom">Narrow loaded dates</option>
-              </select>
-              {wholesaleRawTimeframe === 'custom' && (
-                <>
-                  <input
-                    type="date"
-                    value={wholesaleRawStartDate}
-                    onChange={(event) => setWholesaleRawStartDate(event.target.value)}
-                    style={{ border: '1px solid #cbd5e1', borderRadius: '8px', padding: '7px 10px', fontSize: '12px' }}
-                  />
-                  <input
-                    type="date"
-                    value={wholesaleRawEndDate}
-                    onChange={(event) => setWholesaleRawEndDate(event.target.value)}
-                    style={{ border: '1px solid #cbd5e1', borderRadius: '8px', padding: '7px 10px', fontSize: '12px' }}
-                  />
-                </>
-              )}
               <button
                 type="button"
                 onClick={() => { void loadWholesaleRawOlderWindow(); }}
@@ -9975,17 +9962,17 @@ export default function OperationsTab({
             {wholesaleRawWindowStart && wholesaleRawWindowEnd && (
               <span><strong>Loaded window:</strong> {formatWindowDate(wholesaleRawWindowStart)} – {formatWindowDate(wholesaleRawWindowEnd)}</span>
             )}
-            {wholesaleRawOldestDate && <span><strong>Oldest loaded date:</strong> {formatRawDate(wholesaleRawOldestDate)}</span>}
-            {wholesaleRawLatestDate && <span><strong>Latest loaded date:</strong> {formatRawDate(wholesaleRawLatestDate)}</span>}
+            {wholesaleRawOldestDate && <span><strong>Oldest order date:</strong> {formatRawDate(wholesaleRawOldestDate)}</span>}
+            {wholesaleRawLatestDate && <span><strong>Latest order date:</strong> {formatRawDate(wholesaleRawLatestDate)}</span>}
           </div>
           {wholesaleRawTruncated && (
             <div style={{ marginBottom: '12px', padding: '10px', borderRadius: '8px', background: '#fff7ed', border: '1px solid #fed7aa', color: '#9a3412', fontSize: '12px' }}>
-              This customer window has more than 8,000 unique order lines. Narrow the loaded dates or load a smaller older window.
+              This customer window has more than 8,000 unique order lines. Use Load older only when you need an earlier 2-year window.
             </div>
           )}
           {wholesaleRawFilteredRows.length > wholesaleRawVisibleRowLimit && (
             <div style={{ marginBottom: '12px', padding: '10px', borderRadius: '8px', background: '#fff7ed', border: '1px solid #fed7aa', color: '#9a3412', fontSize: '12px' }}>
-              This filter returns {wholesaleRawFilteredRows.length.toLocaleString()} rows. Narrow the loaded dates to see more targeted detail.
+              Showing the newest {wholesaleRawVisibleRowLimit.toLocaleString()} of {wholesaleRawFilteredRows.length.toLocaleString()} rows. Click a column header to sort.
             </div>
           )}
 
