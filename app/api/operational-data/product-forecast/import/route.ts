@@ -1,16 +1,17 @@
 import { NextRequest, NextResponse } from 'next/server';
-import * as XLSX from 'xlsx';
-import { parseProductRevenueForecastWorkbook } from '@/lib/operations/product-revenue-forecast';
+import {
+  parseProductRevenueForecastWorkbook,
+  readProductOperationsWorkbook,
+} from '@/lib/operations/product-revenue-forecast';
 import { parseProductRevenueWorkbook } from '@/lib/operations/product-revenue-actual';
 import {
   assertProductsForecastAccess,
   ensureProductRevenueForecastTables,
-  normalizeForecastLineInput,
-  upsertForecastLines,
 } from '@/lib/operations/product-revenue-forecast-db';
 import {
   ensureProductRevenueTables,
   persistParsedRevenueWorkbook,
+  workbookFromImportPayload,
 } from '@/lib/operations/product-revenue-actual-db';
 
 export const dynamic = 'force-dynamic';
@@ -18,10 +19,67 @@ export const maxDuration = 60;
 
 const MAX_UPLOAD_BYTES = 20 * 1024 * 1024;
 
+function errorMessage(error: unknown, fallback: string): string {
+  if (typeof error === 'string' && error.trim()) return error;
+  if (error && typeof error === 'object' && 'message' in error) {
+    const message = String((error as { message?: unknown }).message || '').trim();
+    if (message) return message;
+  }
+  return fallback;
+}
+
+function isUploadBlob(value: FormDataEntryValue | null): value is Blob {
+  return typeof Blob !== 'undefined' && value instanceof Blob && typeof value.arrayBuffer === 'function';
+}
+
+function canFallbackToForecastOnly(error: unknown): boolean {
+  const message = errorMessage(error, '');
+  return message.includes('Revenue Current Year') || message.includes('No revenue rows found');
+}
+
+async function persistFromRequest(request: NextRequest) {
+  const contentType = request.headers.get('content-type') || '';
+  if (contentType.includes('application/json')) {
+    const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
+    const companyId = String(body.companyId || '').trim();
+    const fallbackYear = Number(body.year) || new Date().getUTCFullYear();
+    return { companyId, parsed: workbookFromImportPayload(body.parsed ?? body, fallbackYear) };
+  }
+
+  const form = await request.formData();
+  const companyId = String(form.get('companyId') || '').trim();
+  const file = form.get('file');
+  if (!isUploadBlob(file)) {
+    throw new Error('Upload an Excel workbook (.xlsx).');
+  }
+  if (file.size > MAX_UPLOAD_BYTES) {
+    throw new Error('Workbook is larger than 20 MB.');
+  }
+  const fallbackYear = Number(form.get('year')) || new Date().getUTCFullYear();
+  const workbook = readProductOperationsWorkbook(await file.arrayBuffer());
+  try {
+    return { companyId, parsed: parseProductRevenueWorkbook(workbook, fallbackYear) };
+  } catch (error) {
+    if (!canFallbackToForecastOnly(error)) throw error;
+    const forecast = parseProductRevenueForecastWorkbook(workbook, fallbackYear);
+    return {
+      companyId,
+      parsed: {
+        sheetName: forecast.sheetName,
+        year: forecast.year,
+        dataThru: forecast.dataThru,
+        rows: [],
+        prices: [],
+        shippingDays: [],
+        forecast,
+      },
+    };
+  }
+}
+
 export async function POST(request: NextRequest) {
   try {
-    const form = await request.formData();
-    const companyId = String(form.get('companyId') || '').trim();
+    const { companyId, parsed } = await persistFromRequest(request);
     if (!companyId) {
       return NextResponse.json({ error: 'Company ID is required' }, { status: 400 });
     }
@@ -29,57 +87,18 @@ export async function POST(request: NextRequest) {
     const denied = await assertProductsForecastAccess(companyId);
     if (denied) return denied;
 
-    const file = form.get('file');
-    if (!(file instanceof File)) {
-      return NextResponse.json({ error: 'Upload an Excel workbook (.xlsx).' }, { status: 400 });
-    }
-    if (file.size > MAX_UPLOAD_BYTES) {
-      return NextResponse.json({ error: 'Workbook is larger than 20 MB.' }, { status: 400 });
-    }
-
     await Promise.all([ensureProductRevenueForecastTables(), ensureProductRevenueTables()]);
+    const result = await persistParsedRevenueWorkbook({ companyId, parsed });
 
-    const fallbackYear = Number(form.get('year')) || new Date().getUTCFullYear();
-    const buffer = Buffer.from(await file.arrayBuffer());
-    const workbook = XLSX.read(buffer, { type: 'buffer', cellDates: true });
-
-    try {
-      const parsed = parseProductRevenueWorkbook(workbook, fallbackYear);
-      const result = await persistParsedRevenueWorkbook({ companyId, parsed });
-      return NextResponse.json({
-        ok: true,
-        ...result,
-        sheetName: parsed.forecast?.sheetName || result.sheetName,
-      });
-    } catch {
-      const parsed = parseProductRevenueForecastWorkbook(workbook, fallbackYear);
-      const lines = parsed.rows.map((row, index) =>
-        normalizeForecastLineInput(row, { customerId: row.customerId, customerName: row.customerName }, index)
-      );
-      const dataThru = parsed.dataThru ? new Date(`${parsed.dataThru}T00:00:00.000Z`) : null;
-      await upsertForecastLines({
-        companyId,
-        year: parsed.year,
-        dataThru,
-        replaceCustomer: null,
-        lines,
-      });
-      const customerCount = new Set(lines.map((line) => `${line.customerId}||${line.customerName}`)).size;
-      return NextResponse.json({
-        ok: true,
-        year: parsed.year,
-        dataThru: parsed.dataThru,
-        sheetName: parsed.sheetName,
-        rowCount: lines.length,
-        customerCount,
-        priceCount: 0,
-        forecastRowCount: lines.length,
-      });
-    }
-  } catch (error: any) {
-    return NextResponse.json(
-      { error: error?.message || 'Failed to import revenue forecast workbook' },
-      { status: 500 }
-    );
+    return NextResponse.json({
+      ok: true,
+      ...result,
+      sheetName: parsed.forecast?.sheetName || result.sheetName,
+    });
+  } catch (error: unknown) {
+    console.error('product-forecast import failed', error);
+    const message = errorMessage(error, 'Failed to import revenue forecast workbook');
+    const status = message.includes('Company ID') || message.includes('Upload') || message.includes('too many') ? 400 : 500;
+    return NextResponse.json({ error: message }, { status });
   }
 }

@@ -12,6 +12,8 @@ import {
   type MonthQtyMap,
 } from '@/lib/operations/product-revenue-forecast';
 import {
+  compactParsedRevenueWorkbook,
+  parseProductOperationsFile,
   pctDaysShippedMonth,
   pctDaysShippedYear,
   pctRevenueShipped,
@@ -20,6 +22,7 @@ import {
   type RevenueTotals,
   type ShippingDay,
 } from '@/lib/operations/product-revenue-actual';
+import { workbookImportErrorMessage } from '@/lib/operations/product-revenue-forecast';
 
 type CustomerOption = {
   customerId: string;
@@ -369,16 +372,22 @@ export default function ProductMonthlyRevenueReport({
     setError(null);
     setNotice(null);
     try {
-      const form = new FormData();
-      form.set('companyId', selectedCompanyId);
-      form.set('year', String(year));
-      form.set('file', file);
+      const parsed = compactParsedRevenueWorkbook(await parseProductOperationsFile(file, year));
       const response = await fetch('/api/operational-data/product-revenue/import', {
         method: 'POST',
-        body: form,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          companyId: selectedCompanyId,
+          year,
+          parsed,
+        }),
       });
       const payload = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(payload.error || 'Failed to import workbook');
+      if (!response.ok) {
+        throw new Error(
+          payload.error || payload.message || `Failed to import workbook (${response.status})`
+        );
+      }
       const importedYear = Number(payload.year) || year;
       setYear(importedYear);
       if (payload.dataThru) setDataThru(String(payload.dataThru).slice(0, 10));
@@ -387,8 +396,8 @@ export default function ProductMonthlyRevenueReport({
       setNotice(
         `Imported ${payload.rowCount || 0} revenue rows and ${payload.priceCount || 0} prices.`
       );
-    } catch (err: any) {
-      setError(err?.message || 'Failed to import workbook');
+    } catch (err: unknown) {
+      setError(workbookImportErrorMessage(err, 'Failed to import workbook'));
     } finally {
       setImporting(false);
       if (fileInputRef.current) fileInputRef.current.value = '';

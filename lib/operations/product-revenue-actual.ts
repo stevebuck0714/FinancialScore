@@ -8,6 +8,7 @@ import {
   monthQtyTotal,
   normalizeMonthQtyMap,
   parseProductRevenueForecastWorkbook,
+  readProductOperationsWorkbook,
   type ForecastMonth,
   type ForecastQuarter,
   type MonthQtyMap,
@@ -347,6 +348,47 @@ function parseShippingDays(workbook: XLSX.WorkBook): ShippingDay[] {
     days.push({ date, ship: shipRaw === 'YES' || shipRaw === 'Y' || shipRaw === 'TRUE' });
   }
   return days.sort((a, b) => a.date.localeCompare(b.date));
+}
+
+export function compactParsedRevenueWorkbook(parsed: ParsedProductRevenueWorkbook) {
+  return {
+    sheetName: parsed.sheetName,
+    year: parsed.year,
+    dataThru: parsed.dataThru,
+    rows: parsed.rows,
+    prices: parsed.prices,
+    forecast: parsed.forecast
+      ? {
+          sheetName: parsed.forecast.sheetName,
+          year: parsed.forecast.year,
+          dataThru: parsed.forecast.dataThru,
+          rows: parsed.forecast.rows,
+        }
+      : null,
+  };
+}
+
+export async function parseProductOperationsFile(
+  file: File,
+  fallbackYear: number,
+  options?: { allowForecastOnly?: boolean }
+): Promise<ParsedProductRevenueWorkbook> {
+  const workbook = readProductOperationsWorkbook(await file.arrayBuffer(), 'all');
+  try {
+    return parseProductRevenueWorkbook(workbook, fallbackYear);
+  } catch (error) {
+    if (!options?.allowForecastOnly) throw error;
+    const forecast = parseProductRevenueForecastWorkbook(workbook, fallbackYear);
+    return {
+      sheetName: forecast.sheetName,
+      year: forecast.year,
+      dataThru: forecast.dataThru,
+      rows: [],
+      prices: [],
+      shippingDays: [],
+      forecast,
+    };
+  }
 }
 
 export function parseProductRevenueWorkbook(

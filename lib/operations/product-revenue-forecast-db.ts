@@ -6,7 +6,6 @@ import { requireAuth, validateCompanyAccess } from '@/lib/tenant-security';
 import { isOperationalDataTypeAllowed } from '@/lib/operations/operational-dashboard-access';
 import {
   normalizeMonthQtyMap,
-  type MonthQtyMap,
   type ProductRevenueForecastLineInput,
 } from '@/lib/operations/product-revenue-forecast';
 
@@ -161,8 +160,21 @@ function asNullableNumber(value: unknown): number | null {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
-function asJsonMap(map: MonthQtyMap): Prisma.InputJsonValue {
-  return map as Prisma.InputJsonValue;
+function newForecastId(): string {
+  return `prf_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
+}
+
+function sqlValues(rowCount: number, columns: Array<{ jsonb?: boolean }>): string {
+  const rows: string[] = [];
+  let index = 1;
+  for (let row = 0; row < rowCount; row += 1) {
+    const cells = columns.map((column) => {
+      const token = `$${index++}`;
+      return column.jsonb ? `${token}::jsonb` : token;
+    });
+    rows.push(`(${cells.join(', ')})`);
+  }
+  return rows.join(', ');
 }
 
 export function serializeForecastLine(row: {
@@ -255,51 +267,77 @@ export async function upsertForecastLines(params: {
     });
   }
 
+  const unique = new Map<string, (typeof lines)[number]>();
   for (const line of lines) {
     if (!line.itemSku) continue;
-    const data = {
-      companyId,
-      year,
-      customerId: line.customerId,
-      customerName: line.customerName,
-      customerGroup: line.customerGroup,
-      customerPartNumber: line.customerPartNumber,
-      itemSku: line.itemSku,
-      team: line.team,
-      csr: line.csr,
-      productionType: line.productionType,
-      statusFlag: line.statusFlag,
-      annualBaseQty: line.annualBaseQty,
-      forecastQty: asJsonMap(line.forecastQty),
-      actualQty: asJsonMap(line.actualQty),
-      sortOrder: line.sortOrder,
-      updatedAt: now,
-    };
-    if (line.id && !line.id.startsWith('tmp-')) {
-      const owned = await prisma.productRevenueForecastLine.findFirst({
-        where: { id: line.id, companyId },
-        select: { id: true },
-      });
-      if (owned) {
-        await prisma.productRevenueForecastLine.update({
-          where: { id: line.id },
-          data,
-        });
-        continue;
-      }
+    unique.set(`${line.customerId}||${line.itemSku}||${line.customerPartNumber}`, line);
+  }
+  const rows = Array.from(unique.values());
+  const columns = [
+    {},
+    {},
+    {},
+    {},
+    {},
+    {},
+    {},
+    {},
+    {},
+    {},
+    {},
+    {},
+    {},
+    { jsonb: true },
+    { jsonb: true },
+    {},
+    {},
+    {},
+  ];
+
+  for (let offset = 0; offset < rows.length; offset += 80) {
+    const chunk = rows.slice(offset, offset + 80);
+    const params: unknown[] = [];
+    for (const line of chunk) {
+      params.push(
+        line.id && !line.id.startsWith('tmp-') ? line.id : newForecastId(),
+        companyId,
+        year,
+        line.customerId,
+        line.customerName,
+        line.customerGroup,
+        line.customerPartNumber,
+        line.itemSku,
+        line.team,
+        line.csr,
+        line.productionType,
+        line.statusFlag,
+        line.annualBaseQty,
+        JSON.stringify(line.forecastQty),
+        JSON.stringify(line.actualQty),
+        line.sortOrder,
+        now,
+        now
+      );
     }
-    await prisma.productRevenueForecastLine.upsert({
-      where: {
-        companyId_year_customerId_itemSku_customerPartNumber: {
-          companyId,
-          year,
-          customerId: line.customerId,
-          itemSku: line.itemSku,
-          customerPartNumber: line.customerPartNumber,
-        },
-      },
-      create: data,
-      update: data,
-    });
+    await prisma.$executeRawUnsafe(
+      `INSERT INTO "ProductRevenueForecastLine" (
+         "id", "companyId", "year", "customerId", "customerName", "customerGroup", "customerPartNumber",
+         "itemSku", "team", "csr", "productionType", "statusFlag", "annualBaseQty", "forecastQty", "actualQty",
+         "sortOrder", "createdAt", "updatedAt"
+       ) VALUES ${sqlValues(chunk.length, columns)}
+       ON CONFLICT ("companyId", "year", "customerId", "itemSku", "customerPartNumber") DO UPDATE SET
+         "customerName" = EXCLUDED."customerName",
+         "customerGroup" = EXCLUDED."customerGroup",
+         "team" = EXCLUDED."team",
+         "csr" = EXCLUDED."csr",
+         "productionType" = EXCLUDED."productionType",
+         "statusFlag" = EXCLUDED."statusFlag",
+         "annualBaseQty" = EXCLUDED."annualBaseQty",
+         "forecastQty" = EXCLUDED."forecastQty",
+         "actualQty" = EXCLUDED."actualQty",
+         "sortOrder" = EXCLUDED."sortOrder",
+         "updatedAt" = EXCLUDED."updatedAt"`,
+      ...params
+    );
   }
 }

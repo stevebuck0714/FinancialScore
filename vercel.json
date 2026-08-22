@@ -2,6 +2,14 @@
   "buildCommand": "npm run build",
   "installCommand": "npm install --include=dev",
   "functions": {
+    "app/api/operational-data/product-forecast/import/route.ts": {
+      "memory": 1024,
+      "maxDuration": 60
+    },
+    "app/api/operational-data/product-revenue/import/route.ts": {
+      "memory": 1024,
+      "maxDuration": 60
+    },
     "app/api/infor-m3/operational-transform-raw/route.ts": {
       "memory": 3008,
       "maxDuration": 300

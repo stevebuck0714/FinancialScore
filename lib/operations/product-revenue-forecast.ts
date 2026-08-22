@@ -238,6 +238,35 @@ export function pctVsPlan(actualYtd: number, forecastYtd: number): number | null
   return actualYtd / forecastYtd;
 }
 
+export function workbookImportErrorMessage(error: unknown, fallback = 'Failed to import workbook'): string {
+  if (typeof error === 'string' && error.trim()) return error;
+  if (error && typeof error === 'object') {
+    const message = String((error as { message?: unknown }).message || '').trim();
+    if (message) return message;
+  }
+  const text = String(error ?? '').trim();
+  return text && text !== '[object Object]' ? `${fallback}: ${text}` : fallback;
+}
+
+export function readProductOperationsWorkbook(
+  data: ArrayBuffer | Uint8Array,
+  _mode: 'forecast' | 'all' = 'all'
+): XLSX.WorkBook {
+  const bytes = data instanceof ArrayBuffer ? new Uint8Array(data) : new Uint8Array(data);
+  return XLSX.read(bytes, { type: 'array', cellDates: true });
+}
+
+export async function parseForecastWorkbookFile(
+  file: File,
+  fallbackYear: number
+): Promise<ParsedProductRevenueForecastWorkbook> {
+  if (!file || file.size <= 0) {
+    throw new Error('The selected file is empty.');
+  }
+  const workbook = readProductOperationsWorkbook(await file.arrayBuffer(), 'forecast');
+  return parseProductRevenueForecastWorkbook(workbook, fallbackYear);
+}
+
 function findForecastSheetName(workbook: XLSX.WorkBook): string {
   const names = workbook.SheetNames || [];
   const exact = names.find((name) => name.trim().toLowerCase() === 'forecasts current year');

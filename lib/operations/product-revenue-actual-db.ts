@@ -109,6 +109,19 @@ function newId(): string {
   return `prv_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
 }
 
+function sqlValues(rowCount: number, columns: Array<{ jsonb?: boolean }>): string {
+  const rows: string[] = [];
+  let index = 1;
+  for (let row = 0; row < rowCount; row += 1) {
+    const cells = columns.map((column) => {
+      const token = `$${index++}`;
+      return column.jsonb ? `${token}::jsonb` : token;
+    });
+    rows.push(`(${cells.join(', ')})`);
+  }
+  return rows.join(', ');
+}
+
 type RevenueLineRow = {
   id: string;
   customerId: string;
@@ -228,16 +241,42 @@ export async function upsertRevenueLines(params: {
     }
   }
 
+  const unique = new Map<string, (typeof lines)[number]>();
   for (const line of lines) {
     if (!line.itemSku) continue;
-    const id = line.id && !line.id.startsWith('tmp-') ? line.id : newId();
+    unique.set(`${line.customerId}||${line.itemSku}||${line.customerPartNumber}`, line);
+  }
+  const rows = Array.from(unique.values());
+  const columns = [{}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, { jsonb: true }, {}, {}, {}];
+
+  for (let offset = 0; offset < rows.length; offset += 80) {
+    const chunk = rows.slice(offset, offset + 80);
+    const params: unknown[] = [];
+    for (const line of chunk) {
+      params.push(
+        line.id && !line.id.startsWith('tmp-') ? line.id : newId(),
+        companyId,
+        year,
+        line.customerId,
+        line.customerName,
+        line.customerGroup,
+        line.customerPartNumber,
+        line.itemSku,
+        line.team,
+        line.csr,
+        line.productionType,
+        line.statusFlag,
+        JSON.stringify(line.actualRevenue),
+        line.sortOrder,
+        now,
+        now
+      );
+    }
     await prisma.$executeRawUnsafe(
       `INSERT INTO "ProductRevenueLine" (
          "id", "companyId", "year", "customerId", "customerName", "customerGroup", "customerPartNumber",
          "itemSku", "team", "csr", "productionType", "statusFlag", "actualRevenue", "sortOrder", "createdAt", "updatedAt"
-       ) VALUES (
-         $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13::jsonb, $14, $15, $15
-       )
+       ) VALUES ${sqlValues(chunk.length, columns)}
        ON CONFLICT ("companyId", "year", "customerId", "itemSku", "customerPartNumber") DO UPDATE SET
          "customerName" = EXCLUDED."customerName",
          "customerGroup" = EXCLUDED."customerGroup",
@@ -248,21 +287,7 @@ export async function upsertRevenueLines(params: {
          "actualRevenue" = EXCLUDED."actualRevenue",
          "sortOrder" = EXCLUDED."sortOrder",
          "updatedAt" = EXCLUDED."updatedAt"`,
-      id,
-      companyId,
-      year,
-      line.customerId,
-      line.customerName,
-      line.customerGroup,
-      line.customerPartNumber,
-      line.itemSku,
-      line.team,
-      line.csr,
-      line.productionType,
-      line.statusFlag,
-      JSON.stringify(line.actualRevenue),
-      line.sortOrder,
-      now
+      ...params
     );
   }
 }
@@ -274,30 +299,129 @@ export async function upsertRevenuePrices(params: {
 }) {
   const { companyId, year, prices } = params;
   const now = new Date();
+  const unique = new Map<string, ProductRevenuePriceInput>();
   for (const price of prices) {
     const itemSku = asText(price.itemSku);
     const customerGroup = asText(price.customerGroup);
     if (!itemSku) continue;
+    unique.set(`${customerGroup}||${itemSku}`, {
+      ...price,
+      customerGroup,
+      itemSku,
+    });
+  }
+  const rows = Array.from(unique.values());
+  const columns = [{}, {}, {}, {}, {}, {}, {}, {}, {}];
+
+  for (let offset = 0; offset < rows.length; offset += 80) {
+    const chunk = rows.slice(offset, offset + 80);
+    const params: unknown[] = [];
+    for (const price of chunk) {
+      params.push(
+        newId(),
+        companyId,
+        year,
+        price.customerGroup,
+        price.itemSku,
+        price.contractPrice,
+        price.sgpPrice,
+        now,
+        now
+      );
+    }
     await prisma.$executeRawUnsafe(
       `INSERT INTO "ProductRevenuePrice" (
          "id", "companyId", "year", "customerGroup", "itemSku", "contractPrice", "sgpPrice", "createdAt", "updatedAt"
-       ) VALUES (
-         $1, $2, $3, $4, $5, $6, $7, $8, $8
-       )
+       ) VALUES ${sqlValues(chunk.length, columns)}
        ON CONFLICT ("companyId", "year", "customerGroup", "itemSku") DO UPDATE SET
          "contractPrice" = COALESCE(EXCLUDED."contractPrice", "ProductRevenuePrice"."contractPrice"),
          "sgpPrice" = COALESCE(EXCLUDED."sgpPrice", "ProductRevenuePrice"."sgpPrice"),
          "updatedAt" = EXCLUDED."updatedAt"`,
-      newId(),
-      companyId,
-      year,
-      customerGroup,
-      itemSku,
-      price.contractPrice,
-      price.sgpPrice,
-      now
+      ...params
     );
   }
+}
+
+const MAX_IMPORT_ROWS = 20000;
+
+function asImportedIsoDay(value: unknown): string | null {
+  const text = String(value ?? '').trim().slice(0, 10);
+  return /^\d{4}-\d{2}-\d{2}$/.test(text) ? text : null;
+}
+
+function asImportedYear(value: unknown, fallback: number): number {
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed) || parsed < 2000 || parsed > 2100) return fallback;
+  return parsed;
+}
+
+function asImportedNumber(value: unknown): number | null {
+  if (value == null || value === '') return null;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+export function workbookFromImportPayload(raw: unknown, fallbackYear: number): ParsedProductRevenueWorkbook {
+  const parsed = raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : {};
+  const rowsIn = Array.isArray(parsed.rows) ? parsed.rows : [];
+  const pricesIn = Array.isArray(parsed.prices) ? parsed.prices : [];
+  const forecastRaw =
+    parsed.forecast && typeof parsed.forecast === 'object'
+      ? (parsed.forecast as Record<string, unknown>)
+      : null;
+  const forecastRowsIn = Array.isArray(forecastRaw?.rows) ? forecastRaw.rows : [];
+  if (rowsIn.length > MAX_IMPORT_ROWS || forecastRowsIn.length > MAX_IMPORT_ROWS || pricesIn.length > MAX_IMPORT_ROWS) {
+    throw new Error('Workbook has too many rows to import.');
+  }
+  if (!rowsIn.length && !forecastRowsIn.length) {
+    throw new Error('No revenue or forecast rows found in the workbook.');
+  }
+
+  const dataThru = asImportedIsoDay(parsed.dataThru) || asImportedIsoDay(forecastRaw?.dataThru);
+  const year = asImportedYear(parsed.year, fallbackYear);
+  const forecastYear = asImportedYear(forecastRaw?.year, year);
+  const forecastDataThru = asImportedIsoDay(forecastRaw?.dataThru) || dataThru;
+
+  return {
+    sheetName: asText(parsed.sheetName) || 'Revenue Current Year',
+    year,
+    dataThru,
+    rows: rowsIn.map((row, index) => {
+      const item = row && typeof row === 'object' ? (row as Partial<ProductRevenueLineInput>) : {};
+      return normalizeRevenueLineInput(
+        item,
+        { customerId: asText(item.customerId), customerName: asText(item.customerName) },
+        index
+      );
+    }),
+    prices: pricesIn
+      .map((row) => {
+        const item = row && typeof row === 'object' ? (row as Record<string, unknown>) : {};
+        return {
+          customerGroup: asText(item.customerGroup),
+          itemSku: asText(item.itemSku),
+          contractPrice: asImportedNumber(item.contractPrice),
+          sgpPrice: asImportedNumber(item.sgpPrice),
+        };
+      })
+      .filter((row) => row.itemSku),
+    shippingDays: [],
+    forecast: forecastRowsIn.length
+      ? {
+          sheetName: asText(forecastRaw?.sheetName) || 'Forecasts Current Year',
+          year: forecastYear,
+          dataThru: forecastDataThru,
+          rows: forecastRowsIn.map((row, index) => {
+            const item = row && typeof row === 'object' ? (row as Record<string, unknown>) : {};
+            return normalizeForecastLineInput(
+              item,
+              { customerId: asText(item.customerId), customerName: asText(item.customerName) },
+              index
+            );
+          }),
+        }
+      : null,
+  };
 }
 
 export async function persistParsedRevenueWorkbook(params: {

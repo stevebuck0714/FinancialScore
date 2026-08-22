@@ -11,8 +11,10 @@ import {
   closedMonths,
   emptyMonthQtyMap,
   monthQty,
+  parseForecastWorkbookFile,
   pctVsPlan,
   remainingForecastQty,
+  workbookImportErrorMessage,
   type ForecastMonth,
   type MonthQtyMap,
   type ProductRevenueForecastLineInput,
@@ -358,32 +360,57 @@ export default function ProductRevenueForecastReport({
   };
 
   const handleImport = async (file: File) => {
-    if (!selectedCompanyId) return;
+    if (!selectedCompanyId) {
+      setError('Select a company before importing.');
+      return;
+    }
     if (dirty && !window.confirm('Import will merge workbook rows and may overwrite matching part/customer lines. Continue?')) {
       return;
     }
     setImporting(true);
     setError(null);
-    setNotice(null);
+    setNotice('Reading workbook…');
     try {
-      const form = new FormData();
-      form.set('companyId', selectedCompanyId);
-      form.set('year', String(year));
-      form.set('file', file);
+      const forecast = await parseForecastWorkbookFile(file, year);
+      setNotice(`Saving ${forecast.rows.length.toLocaleString()} forecast rows…`);
       const response = await fetch('/api/operational-data/product-forecast/import', {
         method: 'POST',
-        body: form,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          companyId: selectedCompanyId,
+          year: forecast.year || year,
+          parsed: {
+            year: forecast.year,
+            dataThru: forecast.dataThru,
+            rows: [],
+            prices: [],
+            forecast,
+          },
+        }),
       });
       const payload = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(payload.error || 'Failed to import workbook');
+      if (!response.ok) {
+        throw new Error(
+          payload.error || payload.message || `Failed to import workbook (${response.status})`
+        );
+      }
       const importedYear = Number(payload.year) || year;
       setYear(importedYear);
       if (payload.dataThru) setDataThru(String(payload.dataThru).slice(0, 10));
       setDirty(false);
       await loadCustomers(importedYear);
       if (selectedCustomer) await loadLines(selectedCustomer, importedYear);
-    } catch (err: any) {
-      setError(err?.message || 'Failed to import workbook');
+      const forecastCount = Number(payload.forecastRowCount || payload.rowCount || 0);
+      const priceCount = Number(payload.priceCount || 0);
+      setNotice(
+        priceCount > 0
+          ? `Imported ${forecastCount} forecast rows and ${priceCount} prices.`
+          : `Imported ${forecastCount} forecast rows.`
+      );
+    } catch (err: unknown) {
+      console.error('Monthly Forecast import failed', err);
+      setNotice(null);
+      setError(workbookImportErrorMessage(err, 'Failed to import workbook'));
     } finally {
       setImporting(false);
       if (fileInputRef.current) fileInputRef.current.value = '';

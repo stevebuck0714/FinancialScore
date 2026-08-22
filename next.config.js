@@ -11,6 +11,11 @@ const nextConfig = {
     // your project has TypeScript errors.
     ignoreBuildErrors: true,
   },
+    experimental: {
+      serverActions: {
+        bodySizeLimit: '10mb',
+      },
+    },
 }
 
 module.exports = nextConfig
