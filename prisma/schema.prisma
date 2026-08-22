@@ -1752,6 +1752,87 @@ model CustomerOrderLineSnapshot {
   @@unique([companyId, frequency, snapshotDate, orderId, lineId, customerName])
 }
 
+model ProductRevenueForecastSettings {
+  companyId String
+  year      Int
+  dataThru  DateTime?
+  updatedAt DateTime @updatedAt
+
+  @@id([companyId, year])
+}
+
+model ProductRevenueForecastLine {
+  id                 String   @id @default(cuid())
+  companyId          String
+  year               Int
+  customerId         String
+  customerName       String
+  customerGroup      String?
+  customerPartNumber String   @default("")
+  itemSku            String
+  team               String?
+  csr                String?
+  productionType     String?
+  statusFlag         String?
+  annualBaseQty      Float?
+  forecastQty        Json     @default("{}")
+  actualQty          Json     @default("{}")
+  sortOrder          Int      @default(0)
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  @@unique([companyId, year, customerId, itemSku, customerPartNumber])
+  @@index([companyId, year, customerId])
+  @@index([companyId, year, customerName])
+}
+
+model ProductRevenueSettings {
+  companyId    String
+  year         Int
+  dataThru     DateTime?
+  shippingDays Json     @default("[]")
+  updatedAt    DateTime @updatedAt
+
+  @@id([companyId, year])
+}
+
+model ProductRevenueLine {
+  id                 String   @id @default(cuid())
+  companyId          String
+  year               Int
+  customerId         String
+  customerName       String
+  customerGroup      String?
+  customerPartNumber String   @default("")
+  itemSku            String
+  team               String?
+  csr                String?
+  productionType     String?
+  statusFlag         String?
+  actualRevenue      Json     @default("{}")
+  sortOrder          Int      @default(0)
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  @@unique([companyId, year, customerId, itemSku, customerPartNumber])
+  @@index([companyId, year, customerId])
+}
+
+model ProductRevenuePrice {
+  id            String   @id @default(cuid())
+  companyId     String
+  year          Int
+  customerGroup String   @default("")
+  itemSku       String
+  contractPrice Float?
+  sgpPrice      Float?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@unique([companyId, year, customerGroup, itemSku])
+  @@index([companyId, year])
+}
+
 model SalesInvoiceHeaderSnapshot {
   id               String   @id @default(cuid())
   companyId        String

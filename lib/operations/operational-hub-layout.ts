@@ -248,6 +248,7 @@ export function getOperationalHubModuleLabel(moduleKey: string, sectorCategory?:
   if (moduleKey === 'dashboard') return 'Overview';
   if (moduleKey === 'forecast') return 'Forecast';
   if (normalizeSector(sectorCategory) === '42' && moduleKey === 'products_skus') return 'Products';
+  if (normalizeSector(sectorCategory) === '42' && moduleKey === 'vendors') return 'Vendors';
   return getModuleLabel(moduleKey) || moduleKey.replace(/_/g, ' ');
 }
 

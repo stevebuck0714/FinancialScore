@@ -66,6 +66,7 @@ const MODULE_DEFINITIONS: ModuleDefinition[] = [
   { key: 'payors_customers', label: 'Payors / Customers', dataType: 'customers' },
   { key: 'products', label: 'Products', dataType: 'products' },
   { key: 'products_skus', label: 'Products / SKUs', dataType: 'products' },
+  { key: 'vendors', label: 'Vendors', dataType: 'products' },
   { key: 'products_assortment', label: 'Products / Assortment', dataType: 'products' },
   { key: 'offerings', label: 'Offerings', dataType: 'products' },
   { key: 'service_catalog', label: 'Service Catalog', dataType: 'products' },

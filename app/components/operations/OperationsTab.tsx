@@ -26,6 +26,10 @@ import {
 import OpsDashboard from './OpsDashboard';
 import FinancialForecastTab from '../FinancialForecastTab';
 import WorkingCapitalForecastTab from './WorkingCapitalForecastTab';
+import ProductRevenueForecastReport from './ProductRevenueForecastReport';
+import ProductForecastRollupReport from './ProductForecastRollupReport';
+import ProductMonthlyRevenueReport from './ProductMonthlyRevenueReport';
+import ProductRevenueRollupReport from './ProductRevenueRollupReport';
 import ResidentialRevenueForecast from './real-estate-forecast/ResidentialRevenueForecast';
 import LoansTab from './LoansTab';
 import CapTableView from '../cap-table/CapTableView';
@@ -197,7 +201,7 @@ type WipLineItemSortKey =
   | 'wipValue'
   | 'contractValue'
   | 'invoicedValue';
-type ProductReportView = 'productMarginAnalysis' | 'wholesaleRawData' | 'vendorPricing' | 'performance' | 'retailForecast' | 'merchandiseProfitability';
+type ProductReportView = 'productMarginAnalysis' | 'wholesaleRawData' | 'vendorPricing' | 'revenueForecast' | 'forecastRollup' | 'monthlyRevenue' | 'revenueRollup' | 'performance' | 'retailForecast' | 'merchandiseProfitability';
 type WholesaleProductsReportMode = 'margin' | 'raw' | 'vendor';
 type WholesaleRawCustomerOption = {
   key: string;
@@ -965,7 +969,10 @@ export default function OperationsTab({
   const [wholesaleRawLinesError, setWholesaleRawLinesError] = useState<string | null>(null);
   const [wholesaleRawWindowStart, setWholesaleRawWindowStart] = useState('');
   const [wholesaleRawWindowEnd, setWholesaleRawWindowEnd] = useState('');
+  const [wholesaleRawNextOlderStart, setWholesaleRawNextOlderStart] = useState('');
+  const [wholesaleRawNextOlderEnd, setWholesaleRawNextOlderEnd] = useState('');
   const [wholesaleRawHasMoreOlder, setWholesaleRawHasMoreOlder] = useState(false);
+  const [wholesaleRawHistoryFloor, setWholesaleRawHistoryFloor] = useState('2018-01-01');
   const [wholesaleRawTruncated, setWholesaleRawTruncated] = useState(false);
   const [wholesaleRawSortKey, setWholesaleRawSortKey] = useState<WholesaleRawSortKey>('isoDate');
   const [wholesaleRawSortDir, setWholesaleRawSortDir] = useState<'asc' | 'desc'>('desc');
@@ -1117,12 +1124,20 @@ export default function OperationsTab({
   const isCustomersTab = ['customers', 'sales'].includes(String(mapModuleToDataType(activeTab) || '')) || activeTab === 'customers';
   const isWholesaleProductsTab =
     String(industrySectorCategory || '').trim() === '42' &&
-    (mapModuleToDataType(activeTab) === 'products' || activeTab === 'products');
+    (mapModuleToDataType(activeTab) === 'products' || activeTab === 'products') &&
+    resolveModuleKey(activeTab) !== 'vendors';
+  const isWholesaleVendorsTab =
+    String(industrySectorCategory || '').trim() === '42' &&
+    resolveModuleKey(activeTab) === 'vendors';
   const usesWholesaleDedicatedProductView =
-    isWholesaleProductsTab &&
+    (isWholesaleProductsTab &&
     (productReportView === 'productMarginAnalysis' ||
       productReportView === 'wholesaleRawData' ||
-      productReportView === 'vendorPricing');
+      productReportView === 'revenueForecast' ||
+      productReportView === 'forecastRollup' ||
+      productReportView === 'monthlyRevenue' ||
+      productReportView === 'revenueRollup')) ||
+    isWholesaleVendorsTab;
   const shouldApplyOperationalUserAccess =
     String(currentUser?.role || '').toLowerCase() === 'user' &&
     String(currentUser?.userType || '').toLowerCase() === 'company' &&
@@ -1237,7 +1252,15 @@ export default function OperationsTab({
     .map((moduleKey) => resolveModuleKey(moduleKey))
     .filter((moduleKey) => moduleKey && !['dashboard', 'forecast'].includes(moduleKey));
   const moduleSource: 'layout-config' | 'sector-default' = layoutModules.length > 0 ? 'layout-config' : 'sector-default';
-  const resolvedModules = moduleSource === 'layout-config' ? layoutModules : sectorModules;
+  const resolvedModulesBase = moduleSource === 'layout-config' ? layoutModules : sectorModules;
+  const resolvedModules =
+    String(industrySectorCategory || '').trim() === '42' && !resolvedModulesBase.includes('vendors')
+      ? (() => {
+          const productsIdx = resolvedModulesBase.findIndex((module) => module === 'products_skus' || module === 'products');
+          if (productsIdx < 0) return [...resolvedModulesBase, 'vendors'];
+          return [...resolvedModulesBase.slice(0, productsIdx + 1), 'vendors', ...resolvedModulesBase.slice(productsIdx + 1)];
+        })()
+      : resolvedModulesBase;
   const enabledDashboardModules = resolvedModules.filter((module) => isTabModuleEnabled(module));
   const isWholesaleTradeSector = String(industrySectorCategory || '').trim() === '42';
   const isOverviewCashConversionEnabled = isSectionEnabled('overviewStdCashConversionAnalysis');
@@ -1268,6 +1291,9 @@ export default function OperationsTab({
   const getOperationalTabLabel = (moduleKey: string): string => {
     if (isWholesaleTradeSector && moduleKey === 'products_skus') {
       return 'Products';
+    }
+    if (isWholesaleTradeSector && moduleKey === 'vendors') {
+      return 'Vendors';
     }
     return getModuleLabel(moduleKey) || moduleKey.replace(/_/g, ' ');
   };
@@ -1902,8 +1928,8 @@ export default function OperationsTab({
   };
 
   const resolveWholesaleProductsReportMode = (): WholesaleProductsReportMode => {
+    if (resolveModuleKey(activeTab) === 'vendors') return 'vendor';
     if (mapModuleToDataType(activeTab) === 'products') {
-      if (productReportView === 'vendorPricing') return 'vendor';
       if (productReportView === 'wholesaleRawData') return 'raw';
       return 'margin';
     }
@@ -1981,6 +2007,13 @@ export default function OperationsTab({
     String(industrySectorCategory || '').trim() === '42' &&
     mapModuleToDataType(activeTab) === 'products' &&
     productReportView === 'wholesaleRawData';
+  const isWholesaleRevenueForecastViewActive =
+    String(industrySectorCategory || '').trim() === '42' &&
+    mapModuleToDataType(activeTab) === 'products' &&
+    (productReportView === 'revenueForecast' ||
+      productReportView === 'forecastRollup' ||
+      productReportView === 'monthlyRevenue' ||
+      productReportView === 'revenueRollup');
 
   const selectedWholesaleRawCustomer =
     wholesaleRawCustomers.find((customer) => customer.key === wholesaleRawCustomerFilter) || null;
@@ -1990,8 +2023,24 @@ export default function OperationsTab({
     setWholesaleRawLinesError(null);
     setWholesaleRawWindowStart('');
     setWholesaleRawWindowEnd('');
+    setWholesaleRawNextOlderStart('');
+    setWholesaleRawNextOlderEnd('');
     setWholesaleRawHasMoreOlder(false);
     setWholesaleRawTruncated(false);
+  };
+
+  const applyWholesaleRawWindowPayload = (payload: any, options?: { mergeTruncated?: boolean }) => {
+    setWholesaleRawWindowStart(String(payload?.window?.startDate || ''));
+    if (payload?.window?.endDate) {
+      setWholesaleRawWindowEnd((current) => current || String(payload.window.endDate));
+    }
+    const nextStart = String(payload?.nextOlderWindow?.startDate || '');
+    const nextEnd = String(payload?.nextOlderWindow?.endDate || '');
+    setWholesaleRawNextOlderStart(nextStart);
+    setWholesaleRawNextOlderEnd(nextEnd);
+    setWholesaleRawHasMoreOlder(payload?.hasMoreOlder === true && Boolean(nextStart && nextEnd));
+    if (payload?.historyFloor) setWholesaleRawHistoryFloor(String(payload.historyFloor));
+    setWholesaleRawTruncated(options?.mergeTruncated ? Boolean(wholesaleRawTruncated || payload?.truncated) : payload?.truncated === true);
   };
 
   const fetchWholesaleRawCustomers = async () => {
@@ -2041,10 +2090,7 @@ export default function OperationsTab({
     try {
       const payload = await fetchWholesaleRawLines({ window: 'recent' });
       setWholesaleRawCustomerLines(Array.isArray(payload?.records) ? payload.records : []);
-      setWholesaleRawWindowStart(String(payload?.window?.startDate || ''));
-      setWholesaleRawWindowEnd(String(payload?.window?.endDate || ''));
-      setWholesaleRawHasMoreOlder(payload?.hasMoreOlder === true);
-      setWholesaleRawTruncated(payload?.truncated === true);
+      applyWholesaleRawWindowPayload(payload);
     } catch (error: any) {
       resetWholesaleRawLines();
       setWholesaleRawLinesError(error?.message || 'Failed to load customer order lines');
@@ -2076,10 +2122,7 @@ export default function OperationsTab({
         }
         return Array.from(byLine.values());
       });
-      setWholesaleRawWindowStart(String(payload?.window?.startDate || wholesaleRawWindowStart));
-      if (!wholesaleRawWindowEnd) setWholesaleRawWindowEnd(String(payload?.window?.endDate || ''));
-      setWholesaleRawHasMoreOlder(payload?.hasMoreOlder === true);
-      setWholesaleRawTruncated(Boolean(wholesaleRawTruncated || payload?.truncated));
+      applyWholesaleRawWindowPayload(payload, { mergeTruncated: true });
     } catch (error: any) {
       setWholesaleRawLinesError(error?.message || 'Failed to load older order lines');
     } finally {
@@ -2255,7 +2298,8 @@ export default function OperationsTab({
     (
       activeWholesaleModuleDataType === 'customers' ||
       (activeWholesaleModuleDataType === 'products' &&
-        (productReportView === 'productMarginAnalysis' || productReportView === 'vendorPricing')) ||
+        productReportView === 'productMarginAnalysis') ||
+      resolveModuleKey(activeTab) === 'vendors' ||
       ((activeTab === 'overview' || activeTab === 'dashboard') && activeOverviewSubTab === 'execution-velocity')
     );
 
@@ -2460,7 +2504,11 @@ export default function OperationsTab({
         String(industrySectorCategory || '').trim() === '42' &&
         (productReportView === 'productMarginAnalysis' ||
           productReportView === 'wholesaleRawData' ||
-          productReportView === 'vendorPricing')
+          productReportView === 'revenueForecast' ||
+          productReportView === 'forecastRollup' ||
+          productReportView === 'monthlyRevenue' ||
+          productReportView === 'revenueRollup' ||
+          resolveModuleKey(tab) === 'vendors')
       ) {
         setLoading(false);
         setError(null);
@@ -3178,7 +3226,8 @@ export default function OperationsTab({
       activeDataType === 'hiring' ||
       activeTab === 'working_capital_forecast' ||
       activeTab === 'working-capital-forecast' ||
-      isWholesaleRawViewActive
+      isWholesaleRawViewActive ||
+      isWholesaleRevenueForecastViewActive
     ) {
       return null;
     }
@@ -8028,6 +8077,10 @@ export default function OperationsTab({
     const isProductMarginAnalysisEnabled = isWholesaleProductSector && isSectionEnabled('productsProductMarginAnalysis');
     const isWholesaleRawDataEnabled = isWholesaleProductSector && isSectionEnabled('productsWholesaleRawData');
     const isVendorPricingEnabled = isWholesaleProductSector && isSectionEnabled('productsVendorPricing');
+    const isRevenueForecastEnabled = isWholesaleProductSector && isSectionEnabled('productsRevenueForecast');
+    const isForecastRollupEnabled = isWholesaleProductSector && isSectionEnabled('productsForecastRollup');
+    const isMonthlyRevenueEnabled = isWholesaleProductSector && isSectionEnabled('productsMonthlyRevenue');
+    const isRevenueRollupEnabled = isWholesaleProductSector && isSectionEnabled('productsRevenueRollup');
     const isProductPerformanceEnabled = isSectionEnabled('productsPerformance');
     const isRetailForecastingEnabled = isSectionEnabled('productsRetailForecasting');
     const isMerchandiseProfitabilityEnabled = isSectionEnabled('productsMerchandiseProfitability');
@@ -8035,6 +8088,10 @@ export default function OperationsTab({
       isProductPerformanceEnabled ||
       isRetailForecastingEnabled ||
       isMerchandiseProfitabilityEnabled ||
+      isRevenueForecastEnabled ||
+      isForecastRollupEnabled ||
+      isMonthlyRevenueEnabled ||
+      isRevenueRollupEnabled ||
       isSectionEnabled('productsPriceCostComparison') ||
       isSectionEnabled('productsPareto') ||
       isSectionEnabled('productsScatter') ||
@@ -8051,8 +8108,14 @@ export default function OperationsTab({
         ? 'productMarginAnalysis'
         : isWholesaleRawDataEnabled
         ? 'wholesaleRawData'
-        : isVendorPricingEnabled
-        ? 'vendorPricing'
+        : isRevenueForecastEnabled
+        ? 'revenueForecast'
+        : isForecastRollupEnabled
+        ? 'forecastRollup'
+        : isMonthlyRevenueEnabled
+        ? 'monthlyRevenue'
+        : isRevenueRollupEnabled
+        ? 'revenueRollup'
         : isMerchandiseProfitabilityEnabled
         ? 'merchandiseProfitability'
         : isRetailForecastingEnabled
@@ -8063,7 +8126,15 @@ export default function OperationsTab({
         ? fallbackProductReportView
         : productReportView === 'wholesaleRawData' && !isWholesaleRawDataEnabled
         ? fallbackProductReportView
-        : productReportView === 'vendorPricing' && !isVendorPricingEnabled
+        : productReportView === 'vendorPricing'
+        ? fallbackProductReportView
+        : productReportView === 'revenueForecast' && !isRevenueForecastEnabled
+        ? fallbackProductReportView
+        : productReportView === 'forecastRollup' && !isForecastRollupEnabled
+        ? fallbackProductReportView
+        : productReportView === 'monthlyRevenue' && !isMonthlyRevenueEnabled
+        ? fallbackProductReportView
+        : productReportView === 'revenueRollup' && !isRevenueRollupEnabled
         ? fallbackProductReportView
         : productReportView === 'performance' && !isProductPerformanceEnabled
         ? fallbackProductReportView
@@ -8075,7 +8146,11 @@ export default function OperationsTab({
     const shouldRenderProductPerformance = effectiveProductReportView === 'performance' && isProductPerformanceEnabled;
     const shouldRenderProductMargin = effectiveProductReportView === 'productMarginAnalysis' && isProductMarginAnalysisEnabled;
     const shouldRenderWholesaleRaw = effectiveProductReportView === 'wholesaleRawData' && isWholesaleRawDataEnabled;
-    const shouldRenderVendorPricing = effectiveProductReportView === 'vendorPricing' && isVendorPricingEnabled;
+    const shouldRenderVendorPricing = isWholesaleVendorsTab && isVendorPricingEnabled;
+    const shouldRenderRevenueForecast = effectiveProductReportView === 'revenueForecast' && isRevenueForecastEnabled;
+    const shouldRenderForecastRollup = effectiveProductReportView === 'forecastRollup' && isForecastRollupEnabled;
+    const shouldRenderMonthlyRevenue = effectiveProductReportView === 'monthlyRevenue' && isMonthlyRevenueEnabled;
+    const shouldRenderRevenueRollup = effectiveProductReportView === 'revenueRollup' && isRevenueRollupEnabled;
     const shouldRenderRetailForecast = effectiveProductReportView === 'retailForecast' && isRetailForecastingEnabled;
     const shouldRenderMerchandiseProfitability =
       effectiveProductReportView === 'merchandiseProfitability' && isMerchandiseProfitabilityEnabled;
@@ -9434,7 +9509,7 @@ export default function OperationsTab({
         {label}{retailForecastTableSortKey === key ? (retailForecastTableSortDir === 'asc' ? ' ↑' : ' ↓') : ' ↕'}
       </th>
     );
-    const productViewSwitcher = isProductMarginAnalysisEnabled || isWholesaleRawDataEnabled || isVendorPricingEnabled || isProductPerformanceEnabled || isRetailForecastingEnabled || isMerchandiseProfitabilityEnabled ? (
+    const productViewSwitcher = isProductMarginAnalysisEnabled || isWholesaleRawDataEnabled || isVendorPricingEnabled || isRevenueForecastEnabled || isForecastRollupEnabled || isMonthlyRevenueEnabled || isRevenueRollupEnabled || isProductPerformanceEnabled || isRetailForecastingEnabled || isMerchandiseProfitabilityEnabled ? (
       <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '16px' }}>
         {isProductMarginAnalysisEnabled && (
           <button
@@ -9472,22 +9547,76 @@ export default function OperationsTab({
             Raw Data
           </button>
         )}
-        {isVendorPricingEnabled && (
+        {isRevenueForecastEnabled && (
           <button
             type="button"
-            onClick={() => setProductReportView('vendorPricing')}
+            onClick={() => setProductReportView('revenueForecast')}
             style={{
               border: '1px solid #cbd5e1',
               borderRadius: '999px',
               padding: '8px 12px',
-              background: effectiveProductReportView === 'vendorPricing' ? '#e0e7ff' : '#ffffff',
-              color: effectiveProductReportView === 'vendorPricing' ? '#3730a3' : '#334155',
+              background: effectiveProductReportView === 'revenueForecast' ? '#e0e7ff' : '#ffffff',
+              color: effectiveProductReportView === 'revenueForecast' ? '#3730a3' : '#334155',
               fontWeight: 700,
               cursor: 'pointer',
               fontSize: '12px',
             }}
           >
-            Vendor Pricing
+            Monthly Forecast
+          </button>
+        )}
+        {isForecastRollupEnabled && (
+          <button
+            type="button"
+            onClick={() => setProductReportView('forecastRollup')}
+            style={{
+              border: '1px solid #cbd5e1',
+              borderRadius: '999px',
+              padding: '8px 12px',
+              background: effectiveProductReportView === 'forecastRollup' ? '#e0e7ff' : '#ffffff',
+              color: effectiveProductReportView === 'forecastRollup' ? '#3730a3' : '#334155',
+              fontWeight: 700,
+              cursor: 'pointer',
+              fontSize: '12px',
+            }}
+          >
+            Forecast Rollup
+          </button>
+        )}
+        {isMonthlyRevenueEnabled && (
+          <button
+            type="button"
+            onClick={() => setProductReportView('monthlyRevenue')}
+            style={{
+              border: '1px solid #cbd5e1',
+              borderRadius: '999px',
+              padding: '8px 12px',
+              background: effectiveProductReportView === 'monthlyRevenue' ? '#e0e7ff' : '#ffffff',
+              color: effectiveProductReportView === 'monthlyRevenue' ? '#3730a3' : '#334155',
+              fontWeight: 700,
+              cursor: 'pointer',
+              fontSize: '12px',
+            }}
+          >
+            Monthly Revenue
+          </button>
+        )}
+        {isRevenueRollupEnabled && (
+          <button
+            type="button"
+            onClick={() => setProductReportView('revenueRollup')}
+            style={{
+              border: '1px solid #cbd5e1',
+              borderRadius: '999px',
+              padding: '8px 12px',
+              background: effectiveProductReportView === 'revenueRollup' ? '#e0e7ff' : '#ffffff',
+              color: effectiveProductReportView === 'revenueRollup' ? '#3730a3' : '#334155',
+              fontWeight: 700,
+              cursor: 'pointer',
+              fontSize: '12px',
+            }}
+          >
+            Revenue Rollup
           </button>
         )}
         {isProductPerformanceEnabled && (
@@ -9662,9 +9791,12 @@ export default function OperationsTab({
         <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '18px', marginBottom: '20px' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px', marginBottom: '14px', flexWrap: 'wrap' }}>
             <div>
-              <h3 style={{ margin: 0, fontSize: '18px', color: '#0f172a' }}>Product Margin Analysis</h3>
+              <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap' }}>
+                <h3 style={{ margin: 0, fontSize: '18px', color: '#0f172a' }}>Product Margin Analysis</h3>
+                {renderChartInfoLink('productsProductMarginAnalysis')}
+              </div>
               <div style={{ marginTop: '4px', fontSize: '12px', color: '#64748b', lineHeight: 1.4 }}>
-                Customer-level margin table with expandable item detail. Current tariff, duties, customer P/N, and operating expense fields display when those source fields are present.
+                Current open-order margin by customer and item. Not full sales history.
               </div>
               {productMarginLatestDate && (
                 <div style={{ marginTop: '4px', fontSize: '11px', color: '#64748b' }}>
@@ -9919,7 +10051,7 @@ export default function OperationsTab({
             <div>
               <h3 style={{ margin: 0, fontSize: '18px', color: '#0f172a' }}>Raw Data</h3>
               <div style={{ marginTop: '4px', fontSize: '12px', color: '#64748b', lineHeight: 1.4 }}>
-                Select a customer first. The last 12 months of order dates load automatically. Older history is requested in 2-year windows by order date. The table shows the newest {wholesaleRawVisibleRowLimit.toLocaleString()} matching rows.
+                Select a customer first. The last 12 months of order dates load automatically. Use Load older to step back in 2-year windows until {formatRawDate(wholesaleRawHistoryFloor)}. The table shows the newest {wholesaleRawVisibleRowLimit.toLocaleString()} matching rows.
               </div>
             </div>
             <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
@@ -9950,7 +10082,13 @@ export default function OperationsTab({
                   fontWeight: 700,
                 }}
               >
-                {wholesaleRawLinesLoading ? 'Loading...' : 'Load older (2 years)'}
+                {wholesaleRawLinesLoading
+                  ? 'Loading...'
+                  : wholesaleRawHasMoreOlder && wholesaleRawNextOlderStart && wholesaleRawNextOlderEnd
+                  ? `Load older (${formatWindowDate(wholesaleRawNextOlderStart)} – ${formatWindowDate(wholesaleRawNextOlderEnd)})`
+                  : wholesaleRawWindowStart && wholesaleRawWindowStart <= wholesaleRawHistoryFloor
+                  ? `Loaded through ${formatWindowDate(wholesaleRawHistoryFloor)}`
+                  : 'Load older (2 years)'}
               </button>
             </div>
           </div>
@@ -10853,6 +10991,113 @@ export default function OperationsTab({
           },
         ],
       },
+      productsProductMarginAnalysis: {
+        title: 'What Product Margin Analysis shows',
+        sections: [
+          {
+            body:
+              'This is a current open-order price and cost sheet by customer, not a full sales history and not every product that customer has ever bought.',
+          },
+          {
+            heading: 'What each row is',
+            body: [
+              'One row per customer + APR item + customer part number.',
+              'Values come from the latest open-order snapshot in the Products From / To range (the date shown as Latest snapshot).',
+              'Quantity is the open-order qty on that snapshot day, not lifetime units sold.',
+            ],
+          },
+          {
+            heading: 'What is included',
+            body: [
+              'Open customer order lines from the Infor / CSI sync.',
+              'Items still on the open-order book as of that latest snapshot.',
+              'Tariff, duties, customer P/N, and operating expense only when those fields are on the source line or vendor overlay.',
+            ],
+          },
+          {
+            heading: 'What is not included',
+            body: [
+              'Closed or filled orders.',
+              'Credits, returns, and negative qty lines.',
+              'Historical orders that are no longer open.',
+              'The Raw Data 12-month / 2-year history view. That is a different page.',
+            ],
+          },
+          {
+            heading: 'New orders and new customer part numbers',
+            body: [
+              'If a new open order comes in for an old item with a new customer P/N, it shows as a new row after Infor sync writes that snapshot and you click Refresh Margin Data.',
+              'The old filled part number does not come back.',
+              'The date picker tops out at yesterday, so an order entered today may not appear until that snapshot is inside the selected range.',
+              'Opening the page again is not enough. Use Refresh Margin Data because this report is cached.',
+            ],
+          },
+        ],
+      },
+      productsRevenueForecast: {
+        title: 'What Monthly Forecast shows',
+        sections: [
+          {
+            body:
+              'This is the monthly unit forecast vs actual by APR P/N and customer.',
+          },
+          {
+            heading: 'How to use it',
+            body: [
+              'Select a customer. The page only edits that customer. Fill Group, TEAM, and CSR on each row, then Planned/MTO and monthly quantities, and save.',
+              'Use Month to switch which period is shown. Each month has Forecasted, Forecast - ADJUSTED, YTD, and % YTD vs Forecasted. ADJUSTED and % are calculated: after Data thru, ADJUSTED follows YTD actual; before that it follows the typed forecast.',
+            ],
+          },
+        ],
+      },
+      productsForecastRollup: {
+        title: 'What Forecast Rollup shows',
+        sections: [
+          {
+            body:
+              'This is the quarterly and annual rollup of Monthly Forecast, by APR P/N and customer.',
+          },
+          {
+            heading: 'How to use it',
+            body: [
+              'Select a customer. Quarter and annual columns are calculated from Monthly Forecast. This page is view-only.',
+              'Each quarter shows Forecasted, Forecasted - ADJ, YTD, and % YTD vs Forecasted. After the four quarters, SGP ESTIMATED, FORECASTED, FORECAST - ADJUSTED, YTD, and % YTD vs Forecasted come from the monthly plan.',
+            ],
+          },
+        ],
+      },
+      productsMonthlyRevenue: {
+        title: 'What Monthly Revenue shows',
+        sections: [
+          {
+            body:
+              'This is monthly estimated $ vs actual YTD $ by APR P/N. Leave Customer blank to see company totals for the selected year and month.',
+          },
+          {
+            heading: 'How it is calculated',
+            body: [
+              'Estimated $ is Monthly Forecast units × the Jan-1 contract price for that Customer Group and APR P/N.',
+              'YTD $ is the typed actual. % Revenue Shipped is YTD ÷ Estimated. Difference is YTD minus Estimated. % Days Shipped comes from the Shipping Days calendar through Data thru.',
+            ],
+          },
+        ],
+      },
+      productsRevenueRollup: {
+        title: 'What Revenue Rollup shows',
+        sections: [
+          {
+            body:
+              'This is the quarterly and annual rollup of Monthly Revenue. Leave Customer blank for company totals.',
+          },
+          {
+            heading: 'How to use it',
+            body: [
+              'This page is view-only. Each quarter shows Estimated, YTD, and % YTD vs Estimated. Annual columns are SGP ESTIMATED, ESTIMATED, YTD, and % YTD vs Estimated.',
+              'SGP ESTIMATED is SGP qty × SGP price. ESTIMATED is the sum of monthly estimated $ from forecast units × contract price.',
+            ],
+          },
+        ],
+      },
     };
 
     // Renders the small "What is this?" link in the upper-right of each chart
@@ -10966,6 +11211,21 @@ export default function OperationsTab({
       ) : null
     );
 
+    if (isWholesaleVendorsTab) {
+      return (
+        <div style={{ padding: '8px 32px 32px' }}>
+          <h2 style={{ fontSize: '24px', fontWeight: '700', color: '#1e293b', marginBottom: '16px' }}>
+            Vendors
+          </h2>
+          {isVendorPricingEnabled ? (
+            renderVendorPricingReport()
+          ) : (
+            <div style={{ color: '#64748b', fontSize: 13 }}>Vendor Pricing is not enabled for this company.</div>
+          )}
+        </div>
+      );
+    }
+
     if (effectiveProductReportView === 'productMarginAnalysis' && isProductMarginAnalysisEnabled) {
       return (
         <div style={{ padding: '8px 32px 32px' }}>
@@ -10992,14 +11252,65 @@ export default function OperationsTab({
       );
     }
 
-    if (effectiveProductReportView === 'vendorPricing' && isVendorPricingEnabled) {
+    if (shouldRenderRevenueForecast) {
       return (
-        <div style={{ padding: '8px 32px 32px' }}>
+        <div style={{ padding: '8px 12px 16px' }}>
           <h2 style={{ fontSize: '24px', fontWeight: '700', color: '#1e293b', marginBottom: '16px' }}>
             {productPageTitle}
           </h2>
           {productViewSwitcher}
-          {renderVendorPricingReport()}
+          <ProductRevenueForecastReport
+            selectedCompanyId={selectedCompanyId}
+            onOpenInfo={() => setProductChartInfoKey('productsRevenueForecast')}
+          />
+          {renderProductChartInfoModal()}
+        </div>
+      );
+    }
+
+    if (shouldRenderForecastRollup) {
+      return (
+        <div style={{ padding: '8px 12px 16px' }}>
+          <h2 style={{ fontSize: '24px', fontWeight: '700', color: '#1e293b', marginBottom: '16px' }}>
+            {productPageTitle}
+          </h2>
+          {productViewSwitcher}
+          <ProductForecastRollupReport
+            selectedCompanyId={selectedCompanyId}
+            onOpenInfo={() => setProductChartInfoKey('productsForecastRollup')}
+          />
+          {renderProductChartInfoModal()}
+        </div>
+      );
+    }
+
+    if (shouldRenderMonthlyRevenue) {
+      return (
+        <div style={{ padding: '8px 12px 16px' }}>
+          <h2 style={{ fontSize: '24px', fontWeight: '700', color: '#1e293b', marginBottom: '16px' }}>
+            {productPageTitle}
+          </h2>
+          {productViewSwitcher}
+          <ProductMonthlyRevenueReport
+            selectedCompanyId={selectedCompanyId}
+            onOpenInfo={() => setProductChartInfoKey('productsMonthlyRevenue')}
+          />
+          {renderProductChartInfoModal()}
+        </div>
+      );
+    }
+
+    if (shouldRenderRevenueRollup) {
+      return (
+        <div style={{ padding: '8px 12px 16px' }}>
+          <h2 style={{ fontSize: '24px', fontWeight: '700', color: '#1e293b', marginBottom: '16px' }}>
+            {productPageTitle}
+          </h2>
+          {productViewSwitcher}
+          <ProductRevenueRollupReport
+            selectedCompanyId={selectedCompanyId}
+            onOpenInfo={() => setProductChartInfoKey('productsRevenueRollup')}
+          />
           {renderProductChartInfoModal()}
         </div>
       );
@@ -26913,8 +27224,8 @@ Strategies to Improve the CCC
 
   return (
     <div style={{ 
-      maxWidth: '1600px', 
-      margin: '0 auto', 
+      maxWidth: isWholesaleRevenueForecastViewActive ? '100%' : '1600px', 
+      margin: isWholesaleRevenueForecastViewActive ? '0' : '0 auto', 
       minHeight: '100vh',
       background: '#f8fafc'
     }}>

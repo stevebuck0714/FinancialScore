@@ -83,7 +83,10 @@ const getAffiliateAddOnSummary = (code: any) => {
 const OPERATIONAL_HUB_SECTION_OPTIONS: Array<{ key: string; label: string; group: string }> = [
   { key: 'productsProductMarginAnalysis', label: 'Product Margin Analysis', group: 'Products' },
   { key: 'productsWholesaleRawData', label: 'Raw Data', group: 'Products' },
-  { key: 'productsVendorPricing', label: 'Vendor Pricing', group: 'Products' },
+  { key: 'productsRevenueForecast', label: 'Monthly Forecast', group: 'Products' },
+  { key: 'productsForecastRollup', label: 'Forecast Rollup', group: 'Products' },
+  { key: 'productsMonthlyRevenue', label: 'Monthly Revenue', group: 'Products' },
+  { key: 'productsRevenueRollup', label: 'Revenue Rollup', group: 'Products' },
   { key: 'productsPerformance', label: 'Performance', group: 'Products' },
   { key: 'productsRetailForecasting', label: 'Retail Forecasting / Monthly Inventory Report', group: 'Products' },
   { key: 'productsMerchandiseProfitability', label: 'Merchandise Profitability', group: 'Products' },
@@ -96,6 +99,7 @@ const OPERATIONAL_HUB_SECTION_OPTIONS: Array<{ key: string; label: string; group
   { key: 'productsLossPrevention', label: 'Loss Prevention', group: 'Products' },
   { key: 'productsBottomLossMakers', label: 'Bottom Products (Loss Makers)', group: 'Products' },
   { key: 'productsFreightOtherTracker', label: 'Freight/Other Tracker', group: 'Products' },
+  { key: 'productsVendorPricing', label: 'Vendor Pricing', group: 'Vendors' },
   { key: 'inventoryValueTrend', label: 'Value Trend', group: 'Inventory' },
   { key: 'inventoryMovement', label: 'Inventory Movement', group: 'Inventory' },
   { key: 'inventoryRetailTurns', label: 'Retail Turns / Sell-Through', group: 'Inventory' },
@@ -1472,6 +1476,9 @@ export default function SiteAdminDashboard(props: any) {
         }));
       }
       const companySectorCategory = String(company?.industrySectorCategory || '').trim();
+      if (companySectorCategory === '42' && moduleKey === 'vendors') {
+        return [{ key: 'productsVendorPricing', label: 'Vendor Pricing', group: option.label }];
+      }
       const defaultReports = getOperationalHubDefaultReportsForModule(moduleKey, companySectorCategory);
       if (defaultReports.length > 0 && ['23', '32', '53', '62'].includes(companySectorCategory)) {
         return defaultReports.map((item) => ({
@@ -1484,7 +1491,8 @@ export default function SiteAdminDashboard(props: any) {
       if (!sourceGroup) return [];
       return OPERATIONAL_HUB_SECTION_OPTIONS
         .filter((item) => item.group === sourceGroup)
-        .filter((item) => !['productsProductMarginAnalysis', 'productsWholesaleRawData', 'productsVendorPricing'].includes(item.key) || companySectorCategory === '42')
+        .filter((item) => !['productsProductMarginAnalysis', 'productsWholesaleRawData', 'productsRevenueForecast', 'productsForecastRollup', 'productsMonthlyRevenue', 'productsRevenueRollup'].includes(item.key) || companySectorCategory === '42')
+        .filter((item) => item.key !== 'productsVendorPricing')
         .filter((item) => companySectorCategory !== '42' || moduleKey !== 'orders_sales' || !WHOLESALE_ORDERS_SALES_EXCLUDED_REPORT_KEYS.has(item.key))
         .filter((item) => companySectorCategory !== '42' || moduleKey !== 'customers' || !WHOLESALE_CUSTOMERS_EXCLUDED_REPORT_KEYS.has(item.key))
         .filter((item) => companySectorCategory !== '42' || moduleKey !== 'inventory' || !WHOLESALE_INVENTORY_EXCLUDED_REPORT_KEYS.has(item.key))
