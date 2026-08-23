@@ -10152,7 +10152,20 @@ export default function SiteAdminDashboard(props: any) {
                                 <h5
                                   onClick={async () => {
                                       const goAdminForCompany = (companyRecord: any) => {
-                                        setSelectedCompanyId(companyRecord?.id || businessCompany.id);
+                                        const record = companyRecord || businessCompany;
+                                        if (typeof setCompanies === 'function' && record?.id) {
+                                          setCompanies((prev: any) => {
+                                            const list = Array.isArray(prev) ? prev : [];
+                                            const index = list.findIndex((company: any) => company?.id === record.id);
+                                            if (index >= 0) {
+                                              const next = [...list];
+                                              next[index] = { ...list[index], ...record };
+                                              return next;
+                                            }
+                                            return [...list, record];
+                                          });
+                                        }
+                                        setSelectedCompanyId(record?.id || businessCompany.id);
                                         setCurrentView('admin');
                                         setSiteAdminViewingAs((prev: any) => prev || currentUser);
                                       };

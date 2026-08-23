@@ -2,6 +2,37 @@
 
 import React from 'react';
 import { addMonthsClamped, billingIntervalMonths } from '@/lib/billing/dateMath';
+import { formatEstDateLabel } from '@/lib/time/eastern';
+
+const COMMERCIAL_PAID_STATUSES = new Set(['paid', 'external_paid', 'waived', 'no_payment_required']);
+const ADMIN_BILLING_METHODS = new Set(['quickbooks_invoice', 'manual_external', 'no_platform_payment']);
+const BILLING_METHOD_LABELS: Record<string, string> = {
+  usaepay: 'USAePay Gateway',
+  quickbooks_invoice: 'QuickBooks Invoice',
+  manual_external: 'Manual / External',
+  no_platform_payment: 'No Platform Payment',
+};
+const PAYMENT_STATUS_LABELS: Record<string, string> = {
+  not_billed: 'Not Billed',
+  invoiced: 'Invoiced',
+  paid: 'Paid',
+  overdue: 'Overdue',
+  waived: 'Waived',
+  no_payment_required: 'No Payment Required',
+  external_paid: 'Paid',
+};
+
+function commercialDateOnly(raw: unknown): string {
+  if (!raw) return '';
+  const match = String(raw).trim().match(/^(\d{4}-\d{2}-\d{2})/);
+  return match ? match[1] : '';
+}
+
+function commercialDateLabel(raw: unknown): string {
+  const ymd = commercialDateOnly(raw);
+  if (ymd) return formatEstDateLabel(ymd);
+  return formatEstDateLabel(raw as string) || '';
+}
 
 interface Subscription {
   status: string;
@@ -67,6 +98,54 @@ export default function PaymentsTab({
   const quarterlyPrice = subscriptionQuarterlyPrice;
   const annualPrice = subscriptionAnnualPrice;
   const setupFee = subscriptionSetupFee;
+  const billingMethod = String(selectedCompany?.commercialBillingMethod || 'usaepay').toLowerCase();
+  const paymentStatus = String(selectedCompany?.commercialPaymentStatus || '').toLowerCase();
+  const isCommerciallySettled = COMMERCIAL_PAID_STATUSES.has(paymentStatus);
+  const hidePlanPicker = isCommerciallySettled || ADMIN_BILLING_METHODS.has(billingMethod);
+  const paymentDateLabel = commercialDateLabel(selectedCompany?.commercialPaymentDate);
+  const invoiceDateLabel = commercialDateLabel(selectedCompany?.commercialInvoiceDate);
+  const nextDueDateLabel = commercialDateLabel(selectedCompany?.commercialNextDueDate);
+  const statusLabel = PAYMENT_STATUS_LABELS[paymentStatus] || (isCommerciallySettled ? 'Paid' : paymentStatus || 'Unknown');
+  const billingMethodLabel = BILLING_METHOD_LABELS[billingMethod] || billingMethod;
+  const commercialNotes = String(selectedCompany?.commercialTermsNotes || '').trim();
+
+  if (hidePlanPicker) {
+    return (
+      <>
+        <h2 style={{ fontSize: '24px', fontWeight: '700', color: '#1e293b', marginBottom: '20px' }}>Payments & Subscription</h2>
+        <div style={{ background: 'white', borderRadius: '12px', padding: '28px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', maxWidth: '640px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', gap: '12px' }}>
+            <h3 style={{ fontSize: '18px', fontWeight: '600', color: '#1e293b', margin: 0 }}>Subscription Status</h3>
+            <span style={{
+              padding: '6px 14px',
+              borderRadius: '999px',
+              fontSize: '13px',
+              fontWeight: '700',
+              letterSpacing: '0.04em',
+              textTransform: 'uppercase',
+              background: isCommerciallySettled ? '#d1fae5' : paymentStatus === 'overdue' ? '#fee2e2' : '#e2e8f0',
+              color: isCommerciallySettled ? '#065f46' : paymentStatus === 'overdue' ? '#991b1b' : '#334155',
+            }}>
+              {statusLabel}
+            </span>
+          </div>
+          {paymentDateLabel ? (
+            <p style={{ fontSize: '16px', color: '#1e293b', margin: '0 0 16px' }}>
+              Paid {paymentDateLabel}
+            </p>
+          ) : isCommerciallySettled ? (
+            <p style={{ fontSize: '16px', color: '#1e293b', margin: '0 0 16px' }}>Paid</p>
+          ) : null}
+          <div style={{ display: 'grid', gap: '10px', fontSize: '14px', color: '#334155' }}>
+            <div><span style={{ color: '#64748b' }}>Billing method: </span>{billingMethodLabel}</div>
+            {invoiceDateLabel ? <div><span style={{ color: '#64748b' }}>Invoice date: </span>{invoiceDateLabel}</div> : null}
+            {nextDueDateLabel ? <div><span style={{ color: '#64748b' }}>Next due: </span>{nextDueDateLabel}</div> : null}
+            {commercialNotes ? <div><span style={{ color: '#64748b' }}>Notes: </span>{commercialNotes}</div> : null}
+          </div>
+        </div>
+      </>
+    );
+  }
 
   return (
     <>
@@ -147,25 +226,20 @@ export default function PaymentsTab({
                     border: selectedSubscriptionPlan === 'annual' ? '3px solid #667eea' : '2px solid #10b981', 
                     borderRadius: '8px', 
                     padding: '14px', 
-                    background: selectedSubscriptionPlan === 'annual' ? '#f0f9ff' : '#f0fdf4',
-                    position: 'relative',
+                    background: selectedSubscriptionPlan === 'annual' ? '#f0f9ff' : '#fafafa',
                     cursor: 'pointer',
                     transition: 'all 0.2s',
                     boxShadow: selectedSubscriptionPlan === 'annual' ? '0 4px 12px rgba(102, 126, 234, 0.2)' : 'none'
                   }}
                 >
-                  <div style={{ position: 'absolute', top: '6px', right: '6px', background: '#10b981', color: 'white', padding: '2px 6px', borderRadius: '4px', fontSize: '9px', fontWeight: '600' }}>
-                    BEST VALUE
-                  </div>
                   <div style={{ fontSize: '13px', fontWeight: '600', color: '#64748b', marginBottom: '4px' }}>
                     {selectedSubscriptionPlan === 'annual' && <span style={{ color: '#667eea', marginRight: '4px' }}>✓</span>}
                     Annual
                   </div>
-                  <div style={{ fontSize: '24px', fontWeight: '700', color: '#059669' }}>
+                  <div style={{ fontSize: '24px', fontWeight: '700', color: '#667eea' }}>
                     ${annualPrice.toFixed(2)}
                     <span style={{ fontSize: '13px', color: '#64748b', fontWeight: '500' }}>/yr</span>
                   </div>
-                  <div style={{ fontSize: '11px', color: '#059669', marginTop: '4px', fontWeight: '500' }}>Save 15% annually</div>
                 </div>
               </div>
             )}

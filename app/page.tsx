@@ -3348,38 +3348,44 @@ function FinancialScorePage() {
     currentUser?.consultantId,
   ]);
 
-  // Check if payment is required for the current company
-  // Payment is required if ANY of the 3 subscription prices are > $0
-  // Payment is NOT required only if ALL 3 prices are exactly $0
+  // Checkout is only for unpaid USAePay onboarding. List prices alone do not
+  // mean the company still owes payment — Site Admin preview and already-billed
+  // customers must keep full access.
   const isPaymentRequired = useCallback(() => {
     if (!selectedCompanyId || !currentUser) return false;
-
-    // If companies is not an array, assume payment is not required (avoid errors)
+    if (hasSiteAdminOverride) return false;
     if (!Array.isArray(companies)) return false;
 
     const selectedCompany = companies.find(c => c.id === selectedCompanyId);
-    if (!selectedCompany) {
-      console.log('?? No company found - allowing access temporarily');
-      return false; // Don't block if company not loaded yet
-    }
+    if (!selectedCompany) return false;
 
     const commercialBillingMethod = String((selectedCompany as any).commercialBillingMethod || 'usaepay').toLowerCase();
     const isAdminManagedBilling =
       commercialBillingMethod === 'quickbooks_invoice' ||
       commercialBillingMethod === 'manual_external' ||
       commercialBillingMethod === 'no_platform_payment';
-    if (isAdminManagedBilling) {
-      console.log('?? Admin-managed billing method - no client payment block', { commercialBillingMethod });
+    if (isAdminManagedBilling) return false;
+
+    const commercialPaymentStatus = String((selectedCompany as any).commercialPaymentStatus || '').toLowerCase();
+    if (['paid', 'invoiced', 'waived', 'no_payment_required', 'external_paid'].includes(commercialPaymentStatus)) {
       return false;
     }
 
-    // Check dedicated pricing fields
+    if ((selectedCompany as any).lastBillingDate || (selectedCompany as any).nextBillingDate) {
+      return false;
+    }
+
+    const liveSubscription = (selectedCompany as any).subscription || activeSubscription;
+    const liveStatus = String(liveSubscription?.status || '').toLowerCase();
+    if (liveSubscription && liveStatus && !['pending', 'cancelled', 'canceled'].includes(liveStatus)) {
+      return false;
+    }
+
     let monthly = selectedCompany.subscriptionMonthlyPrice;
     let quarterly = selectedCompany.subscriptionQuarterlyPrice;
     let annual = selectedCompany.subscriptionAnnualPrice;
     let setupFee = (selectedCompany as any).subscriptionSetupFee;
 
-    // Fall back to userDefinedAllocations if dedicated fields are null/undefined
     if ((monthly === null || monthly === undefined) &&
         selectedCompany.userDefinedAllocations?.subscriptionPricing) {
       monthly = selectedCompany.userDefinedAllocations.subscriptionPricing.monthly;
@@ -3387,41 +3393,28 @@ function FinancialScorePage() {
       annual = selectedCompany.userDefinedAllocations.subscriptionPricing.annual;
     }
 
-    // Check userDefinedAllocations for explicit free pricing flag
     const userDefinedPricing = (selectedCompany as any).userDefinedAllocations?.subscriptionPricing;
     const isExplicitlyFree = userDefinedPricing?.isFree === true;
 
-    // If pricing is null/undefined and no userDefinedAllocations, treat as "needs default pricing" = payment required
-    // Only treat as free if:
-    // 1. All prices are explicitly $0, OR
-    // 2. userDefinedAllocations has isFree: true (from affiliate code)
     if (monthly === null && quarterly === null && annual === null && !userDefinedPricing) {
-      console.log('?? Pricing is null and no userDefinedAllocations - payment required (will use defaults)', { monthly, quarterly, annual });
-      return true; // Payment required - will use default pricing
+      return true;
     }
 
-    // Check if explicitly free (all prices are exactly $0 OR isFree flag is true)
     const effectiveSetupFee = setupFee ?? subscriptionSetupFee ?? 0;
     if (isExplicitlyFree || (monthly === 0 && quarterly === 0 && annual === 0 && effectiveSetupFee === 0)) {
-      console.log('?? Company has $0 pricing - no payment required', { monthly, quarterly, annual, setupFee: effectiveSetupFee, isExplicitlyFree });
       return false;
     }
 
-    // If ANY price is > $0, payment is required
     if ((monthly ?? 0) > 0 || (quarterly ?? 0) > 0 || (annual ?? 0) > 0 || effectiveSetupFee > 0) {
-      console.log('?? Payment required - non-zero pricing detected', { monthly, quarterly, annual, setupFee: effectiveSetupFee });
       return true;
     }
 
-    // If we have pricing data but it's not explicitly $0, payment required
     if (monthly !== null || quarterly !== null || annual !== null) {
-      console.log('?? Payment required - has pricing data that is not free', { monthly, quarterly, annual });
       return true;
     }
 
-    // Default: no payment required (shouldn't reach here, but safe fallback)
     return false;
-  }, [selectedCompanyId, currentUser, companies, subscriptionSetupFee]);
+  }, [selectedCompanyId, currentUser, companies, subscriptionSetupFee, hasSiteAdminOverride, activeSubscription]);
 
   // State - Team Assessment
   const [assessmentResponses, setAssessmentResponses] = useState<AssessmentResponses>({});
@@ -4273,11 +4266,17 @@ function FinancialScorePage() {
     const isPaymentsActive =
       (adminDashboardTab === 'company-management' && companyManagementSubTab === 'payments') ||
       adminDashboardTab === 'payments'; // Back-compat if any legacy state sets it
-    if (isPaymentsActive && consultantId && selectedCompanyId) {
+    if (isPaymentsActive && selectedCompanyId) {
       const refreshCompanyData = async () => {
         try {
-          const fetchedCompanies = await companiesApi.getAll(consultantId);
-          safeSetCompanies(fetchedCompanies);
+          if (consultantId) {
+            const fetchedCompanies = await companiesApi.getAll(consultantId);
+            safeSetCompanies(fetchedCompanies);
+          }
+          const response = await fetch(`/api/companies?companyId=${encodeURIComponent(selectedCompanyId)}`);
+          const data = await response.json();
+          const company = Array.isArray(data?.companies) ? data.companies[0] : null;
+          if (company) mergeSetCompanies([company]);
         } catch (error) {
           console.error('Error refreshing company data:', error);
         }
@@ -4548,7 +4547,6 @@ function FinancialScorePage() {
       const allowedCompanySubTabs = new Set([
         'details',
         'profile',
-        'payments',
         'documentation',
         'team-assessment',
         'dataroom',
