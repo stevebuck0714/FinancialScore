@@ -1829,6 +1829,42 @@ model ProductRevenueForecastLine {
   @@index([companyId, year, customerName])
 }
 
+model VendorMonthlyForecastSettings {
+  companyId String
+  year      Int
+  dataThru  DateTime?
+  updatedAt DateTime @updatedAt
+
+  @@id([companyId, year])
+}
+
+model VendorMonthlyForecastLine {
+  id                 String   @id @default(cuid())
+  companyId          String
+  year               Int
+  vendorId           String   @default("")
+  vendorName         String   @default("")
+  customerId         String
+  customerName       String
+  customerGroup      String?
+  customerPartNumber String   @default("")
+  itemSku            String
+  team               String?
+  csr                String?
+  productionType     String?
+  statusFlag         String?
+  annualBaseQty      Float?
+  forecastQty        Json     @default("{}")
+  actualQty          Json     @default("{}")
+  sortOrder          Int      @default(0)
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  @@unique([companyId, year, vendorId, customerId, itemSku, customerPartNumber], map: "VendorMonthlyForecastLine_vendor_item_key")
+  @@index([companyId, year, vendorId])
+  @@index([companyId, year, vendorName])
+}
+
 model ProductRevenueSettings {
   companyId    String
   year         Int

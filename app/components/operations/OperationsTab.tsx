@@ -31,6 +31,8 @@ import ProductForecastRollupReport from './ProductForecastRollupReport';
 import ProductMonthlyRevenueReport from './ProductMonthlyRevenueReport';
 import ProductRevenueRollupReport from './ProductRevenueRollupReport';
 import ProductGoalUpdateReport from './ProductGoalUpdateReport';
+import VendorMonthlyForecastReport from './VendorMonthlyForecastReport';
+import VendorForecastRollupReport from './VendorForecastRollupReport';
 import ResidentialRevenueForecast from './real-estate-forecast/ResidentialRevenueForecast';
 import LoansTab from './LoansTab';
 import CapTableView from '../cap-table/CapTableView';
@@ -200,6 +202,7 @@ type WipLineItemSortKey =
   | 'contractValue'
   | 'invoicedValue';
 type ProductReportView = 'productMarginAnalysis' | 'wholesaleRawData' | 'vendorPricing' | 'revenueForecast' | 'forecastRollup' | 'monthlyRevenue' | 'revenueRollup' | 'goalUpdate' | 'performance' | 'retailForecast' | 'merchandiseProfitability';
+type VendorReportView = 'vendorPricing' | 'monthlyForecast' | 'forecastRollup';
 type WholesaleProductsReportMode = 'margin' | 'raw' | 'vendor';
 type WholesaleRawCustomerOption = {
   key: string;
@@ -985,6 +988,7 @@ export default function OperationsTab({
   const [productScopeMode, setProductScopeMode] = useState<'total' | 'product'>('product');
   const [selectedScopeSku, setSelectedScopeSku] = useState('');
   const [productReportView, setProductReportView] = useState<ProductReportView>('productMarginAnalysis');
+  const [vendorReportView, setVendorReportView] = useState<VendorReportView>('vendorPricing');
   const [productMarginCustomerFilter, setProductMarginCustomerFilter] = useState('all');
   const [expandedProductMarginCustomers, setExpandedProductMarginCustomers] = useState<Record<string, boolean>>({});
   const [productMarginSortKey, setProductMarginSortKey] = useState<ProductMarginSortKey>('customerName');
@@ -8174,6 +8178,8 @@ export default function OperationsTab({
     const isProductMarginAnalysisEnabled = isWholesaleProductSector && isSectionEnabled('productsProductMarginAnalysis');
     const isWholesaleRawDataEnabled = isWholesaleProductSector && isSectionEnabled('productsWholesaleRawData');
     const isVendorPricingEnabled = isWholesaleProductSector && isSectionEnabled('productsVendorPricing');
+    const isVendorMonthlyForecastEnabled = isWholesaleProductSector && isSectionEnabled('vendorsMonthlyForecast');
+    const isVendorForecastRollupEnabled = isWholesaleProductSector && isSectionEnabled('vendorsForecastRollup');
     const isRevenueForecastEnabled = isWholesaleProductSector && isSectionEnabled('productsRevenueForecast');
     const isForecastRollupEnabled = isWholesaleProductSector && isSectionEnabled('productsForecastRollup');
     const isMonthlyRevenueEnabled = isWholesaleProductSector && isSectionEnabled('productsMonthlyRevenue');
@@ -8250,6 +8256,20 @@ export default function OperationsTab({
     const shouldRenderProductMargin = effectiveProductReportView === 'productMarginAnalysis' && isProductMarginAnalysisEnabled;
     const shouldRenderWholesaleRaw = effectiveProductReportView === 'wholesaleRawData' && isWholesaleRawDataEnabled;
     const shouldRenderVendorPricing = isWholesaleVendorsTab && isVendorPricingEnabled;
+    const fallbackVendorReportView: VendorReportView =
+      isVendorPricingEnabled
+        ? 'vendorPricing'
+        : isVendorMonthlyForecastEnabled
+        ? 'monthlyForecast'
+        : 'forecastRollup';
+    const effectiveVendorReportView =
+      vendorReportView === 'vendorPricing' && !isVendorPricingEnabled
+        ? fallbackVendorReportView
+        : vendorReportView === 'monthlyForecast' && !isVendorMonthlyForecastEnabled
+        ? fallbackVendorReportView
+        : vendorReportView === 'forecastRollup' && !isVendorForecastRollupEnabled
+        ? fallbackVendorReportView
+        : vendorReportView;
     const shouldRenderRevenueForecast = effectiveProductReportView === 'revenueForecast' && isRevenueForecastEnabled;
     const shouldRenderForecastRollup = effectiveProductReportView === 'forecastRollup' && isForecastRollupEnabled;
     const shouldRenderMonthlyRevenue = effectiveProductReportView === 'monthlyRevenue' && isMonthlyRevenueEnabled;
@@ -11386,6 +11406,40 @@ export default function OperationsTab({
           },
         ],
       },
+      vendorsMonthlyForecast: {
+        title: 'What vendor Monthly Forecast shows',
+        sections: [
+          {
+            body:
+              'This is the monthly SGP estimated units vs YTD actual by APR P/N and vendor, from the Forecasts 2026 SGP sheet.',
+          },
+          {
+            heading: 'What is typed vs calculated',
+            body: [
+              'Typed (or imported from the workbook): annual SGP estimated (column J) and monthly Estimated for Jan–Dec (N, Q, T, Z, AC, AF, AL, AO, AR, AX, BA, BD).',
+              'YTD actuals come from operations data. % YTD vs Estimated is YTD ÷ Estimated for that month.',
+              'Identity (APR P/N, customer, group, Planned/MTO) is imported from the item master / workbook. Quarter and annual totals belong on Forecast Rollup.',
+            ],
+          },
+        ],
+      },
+      vendorsForecastRollup: {
+        title: 'What vendor Forecast Rollup shows',
+        sections: [
+          {
+            body:
+              'This is the quarterly and annual rollup of vendor Monthly Forecast, by APR P/N and vendor.',
+          },
+          {
+            heading: 'How it is calculated',
+            body: [
+              'This page is view-only. Each quarter shows Estimated, Estimated - ADJ, YTD, and % YTD vs Estimated.',
+              'Estimated - ADJ uses YTD actual for closed months (through Data thru) and the typed estimated quantity for open months.',
+              'Annual SGP ESTIMATED is column J. ESTIMATED is the sum of the 12 monthly estimated quantities.',
+            ],
+          },
+        ],
+      },
       productsMonthlyRevenue: {
         title: 'What Monthly Revenue shows',
         sections: [
@@ -11548,15 +11602,60 @@ export default function OperationsTab({
     );
 
     if (isWholesaleVendorsTab) {
+      const vendorSwitcherButton = (view: VendorReportView, enabled: boolean, label: string) =>
+        enabled ? (
+          <button
+            type="button"
+            onClick={() => setVendorReportView(view)}
+            style={{
+              border: '1px solid #cbd5e1',
+              borderRadius: '999px',
+              padding: '8px 12px',
+              background: effectiveVendorReportView === view ? '#e0e7ff' : '#ffffff',
+              color: effectiveVendorReportView === view ? '#3730a3' : '#334155',
+              fontWeight: 700,
+              cursor: 'pointer',
+              fontSize: '12px',
+            }}
+          >
+            {label}
+          </button>
+        ) : null;
+      const vendorViewSwitcher =
+        isVendorPricingEnabled || isVendorMonthlyForecastEnabled || isVendorForecastRollupEnabled ? (
+          <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '16px' }}>
+            {vendorSwitcherButton('vendorPricing', isVendorPricingEnabled, 'Vendor Pricing')}
+            {vendorSwitcherButton('monthlyForecast', isVendorMonthlyForecastEnabled, 'Monthly Forecast')}
+            {vendorSwitcherButton('forecastRollup', isVendorForecastRollupEnabled, 'Forecast Rollup')}
+          </div>
+        ) : null;
+      const vendorInfoPadding = effectiveVendorReportView === 'vendorPricing' ? '8px 32px 32px' : '8px 12px 16px';
       return (
-        <div style={{ padding: '8px 32px 32px' }}>
+        <div style={{ padding: vendorInfoPadding }}>
           <h2 style={{ fontSize: '24px', fontWeight: '700', color: '#1e293b', marginBottom: '16px' }}>
             Vendors
           </h2>
-          {isVendorPricingEnabled ? (
+          {vendorViewSwitcher}
+          {effectiveVendorReportView === 'monthlyForecast' && isVendorMonthlyForecastEnabled ? (
+            <>
+              <VendorMonthlyForecastReport
+                selectedCompanyId={selectedCompanyId}
+                onOpenInfo={() => setProductChartInfoKey('vendorsMonthlyForecast')}
+              />
+              {renderProductChartInfoModal()}
+            </>
+          ) : effectiveVendorReportView === 'forecastRollup' && isVendorForecastRollupEnabled ? (
+            <>
+              <VendorForecastRollupReport
+                selectedCompanyId={selectedCompanyId}
+                onOpenInfo={() => setProductChartInfoKey('vendorsForecastRollup')}
+              />
+              {renderProductChartInfoModal()}
+            </>
+          ) : isVendorPricingEnabled ? (
             renderVendorPricingReport()
           ) : (
-            <div style={{ color: '#64748b', fontSize: 13 }}>Vendor Pricing is not enabled for this company.</div>
+            <div style={{ color: '#64748b', fontSize: 13 }}>No vendor reports are enabled for this company.</div>
           )}
         </div>
       );
