@@ -645,9 +645,10 @@ function csiLineCustomerMatchSql(customerId: string): Prisma.Sql {
 async function latestIndexedCsiDay(companyId: string, programs: string[]): Promise<{ start: Date; end: Date } | null> {
   const rows = await prisma.$queryRaw<Array<{ maxDate: Date | null }>>(Prisma.sql`
     SELECT MAX("businessDate") AS "maxDate"
-    FROM "InforRawRecord"
+    FROM "InforRawBatch"
     WHERE "companyId" = ${companyId}
       AND "miProgram" IN (${Prisma.join(programs.map((program) => Prisma.sql`${program}`))})
+      AND "status" = 'success'
   `);
   const maxDate = rows[0]?.maxDate;
   if (!maxDate) return null;
@@ -710,9 +711,7 @@ export async function loadProductRawCustomers(companyId: string): Promise<Array<
   // Same CSI day the open-order grid uses: SLCoitems CustNum on the latest complete pull.
   // Do not scan all SLCos history — that is what 504'd this dropdown.
   try {
-    const csiDay =
-      (await latestIndexedCsiDay(companyId, ['SLCoitems', 'SLCOITEMS'])) ||
-      (await resolveLatestCsiCoitemsDay(companyId));
+    const csiDay = await latestIndexedCsiDay(companyId, ['SLCoitems', 'SLCOITEMS']);
     if (csiDay) {
       const lineCustomers = await prisma.$queryRaw<Array<{ customerId: string | null }>>(Prisma.sql`
         SELECT DISTINCT NULLIF(TRIM(COALESCE(r.payload->>'CustNum', r.payload->>'CUSTNUM', r.payload->>'CustNo', '')), '') AS "customerId"
@@ -779,7 +778,7 @@ export async function loadProductRawCustomers(companyId: string): Promise<Array<
 export async function companyHasCsiCoitems(companyId: string): Promise<boolean> {
   const rows = await prisma.$queryRaw<Array<{ n: number }>>(Prisma.sql`
     SELECT 1 AS n
-    FROM "InforRawRecord"
+    FROM "InforRawBatch"
     WHERE "companyId" = ${companyId}
       AND "miProgram" IN ('SLCoitems', 'SLCOITEMS')
     LIMIT 1

@@ -12,7 +12,6 @@ import {
   isTrulyFilledSql,
   isTrulyOpenSql,
   loadCsiFilledLines,
-  loadCsiOpenLines,
   loadProductRawCustomers,
   resolveOpenBookWindow,
   type OpenBookWindow,
@@ -494,16 +493,13 @@ async function loadOpenLines(params: {
   customerId: string;
   customerName: string;
 }): Promise<{ rows: any[]; openAsOf: Date | null }> {
-  if (await companyHasCsiCoitems(params.companyId)) {
-    try {
-      const csi = await loadCsiOpenLines(params);
-      if (csi.rows.length > 0) return csi;
-    } catch (error) {
-      console.error('[product-raw] CSI open lines failed', error);
-    }
-  }
-
-  const openBook = await resolveCustomerOpenBook(params);
+  // Open lines live in CustomerOrderLineSnapshot from the CSI pull transform.
+  // Do not scan InforRawRecord on this request: SLCoitems unique _ItemId
+  // skipDuplicates leaves an incomplete raw table, and MAX(businessDate)
+  // there times out on Atlantic's multi-million-row ingest.
+  const openBook =
+    (await resolveOpenBookWindow(params.companyId)) ||
+    (await resolveCustomerOpenBook(params));
   if (!openBook) return { rows: [], openAsOf: null };
   const matchSql = customerMatchSql(params.customerId, params.customerName, 's');
   try {

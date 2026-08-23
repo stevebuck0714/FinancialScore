@@ -2033,6 +2033,8 @@ function shouldPersistGlobalRawSourceRecordId(miProgram: string | null | undefin
     // Sales stayed at the old SLLedgers total after a "successful" pull).
     'SLLEDGERS',
     'SLGLTRANS',
+    'SLCOITEMS',
+    'SLCOS',
   ].includes(programId);
 }
 
