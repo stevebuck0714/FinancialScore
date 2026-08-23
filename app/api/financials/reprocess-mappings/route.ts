@@ -15,6 +15,7 @@ import {
 } from '@/lib/financial/qbd-bakers-bs-pins';
 import { warmDailyExecutiveBriefingCache } from '@/lib/pulse/exec-briefing-warmup';
 import { warmDailyIndustryBriefCache } from '@/lib/industry-brief/warmup';
+import { formatEstDate } from '@/lib/time/eastern';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 300;
@@ -1703,7 +1704,7 @@ export async function buildQuickBooksDesktopMappedMonthlyPayload(companyId: stri
     for (const dateKey of dailySnapshots.keys()) {
       if (dateKey > throughDate) throughDate = dateKey;
     }
-    const today = new Date().toISOString().slice(0, 10);
+    const today = formatEstDate();
     if (today > throughDate) throughDate = today;
     const anchored = buildBakersAnchoredDailyBalances(glMovementsByDate, throughDate);
     for (const [dateKey, balances] of anchored.entries()) {

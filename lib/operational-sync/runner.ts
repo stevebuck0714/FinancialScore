@@ -7,6 +7,7 @@ import { normalizeInforSystem } from '@/lib/infor-m3/system';
 import { syncQuickBooksDesktopOperationalPayload, type QbDesktopOperationalPayload } from '@/lib/quickbooks-desktop/operational-sync';
 import { loadQuickBooksDesktopBackfillPayloads } from '@/lib/quickbooks-desktop/backfill-payloads';
 import type { AccountingConnection, AccountingPlatform } from '@prisma/client';
+import { addEstCalendarDays, previousEstCalendarDate, utcMidnightForEstDate } from '@/lib/time/eastern';
 import { syncPluginErpConnection } from '@/lib/operational-sync/plugin-erp-adapters';
 
 export type SyncFrequency = 'daily' | 'weekly' | 'monthly';
@@ -53,14 +54,6 @@ function parsePositiveInt(value: unknown): number | null {
   return null;
 }
 
-function startOfUtcDay(date: Date): Date {
-  return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
-}
-
-function endOfUtcDay(date: Date): Date {
-  return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate(), 23, 59, 59, 999));
-}
-
 function defaultAutoSyncWindowDays(frequency: SyncFrequency): number {
   if (frequency === 'weekly') return 7;
   if (frequency === 'monthly') return 31;
@@ -77,18 +70,14 @@ function buildBoundedAutoSyncWindow(
   frequency: SyncFrequency,
   metadata: unknown
 ): InforSyncWindow {
-  // Nightly automation should use a deterministic bounded window, not an unbounded pull.
-  // Allow per-company override to support wider overlap (ex: 3-day or 7-day pulls).
-  // Use the prior fully-complete UTC day as the end bound.
-  const priorDay = new Date(Date.now() - 24 * 60 * 60 * 1000);
-  const endDate = endOfUtcDay(priorDay);
-  const startDate = startOfUtcDay(endDate);
+  // Nightly automation uses the prior completed EST calendar day as the end bound.
+  const endYmd = previousEstCalendarDate();
   const configuredDays = readConfiguredAutoSyncWindowDays(metadata);
   const windowDays = configuredDays ?? defaultAutoSyncWindowDays(frequency);
   const inclusiveBackstep = Math.max(0, windowDays - 1);
-  if (inclusiveBackstep > 0) {
-    startDate.setUTCDate(startDate.getUTCDate() - inclusiveBackstep);
-  }
+  const startYmd = addEstCalendarDays(endYmd, -inclusiveBackstep);
+  const startDate = utcMidnightForEstDate(startYmd);
+  const endDate = new Date(utcMidnightForEstDate(addEstCalendarDays(endYmd, 1)).getTime() - 1);
 
   return { startDate, endDate, mode: 'manual' };
 }

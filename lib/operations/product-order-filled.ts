@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { Prisma } from '@prisma/client';
 import prisma from '@/lib/prisma';
+import { storedDayBoundsUtc, sqlStoredDayEnd, sqlStoredDayStart } from '@/lib/time/eastern';
 
 export type FilledOrderLineInput = {
   companyId: string;
@@ -118,12 +119,6 @@ export async function ensureCustomerOrderLineFilledTables(): Promise<void> {
   await ensureTablesOnce;
 }
 
-function addUtcDays(value: Date, days: number): Date {
-  const next = new Date(value.getTime());
-  next.setUTCDate(next.getUTCDate() + days);
-  return next;
-}
-
 function snapshotDayRangeSql(alias: string, start: Date, end: Date): Prisma.Sql {
   const col = Prisma.raw(`"${alias}"."snapshotDate"`);
   return Prisma.sql`${col} >= ${start} AND ${col} < ${end}`;
@@ -182,7 +177,7 @@ function sameCustomerSql(leftAlias: string, rightAlias: string): Prisma.Sql {
 export async function resolveOpenBookWindow(companyId: string): Promise<OpenBookWindow | null> {
   const rows = await prisma.$queryRaw<Array<{ start: Date; end: Date; n: number }>>(Prisma.sql`
     WITH day_counts AS (
-      SELECT DATE_TRUNC('day', "snapshotDate") AS day_start, COUNT(*)::int AS n
+      SELECT ${Prisma.raw(sqlStoredDayStart('"snapshotDate"'))} AS day_start, COUNT(*)::int AS n
       FROM "CustomerOrderLineSnapshot"
       WHERE "companyId" = ${companyId}
         AND "frequency" = 'daily'
@@ -201,7 +196,7 @@ export async function resolveOpenBookWindow(companyId: string): Promise<OpenBook
       SELECT day_start, n, MAX(n) OVER () AS max_n
       FROM recent
     )
-    SELECT day_start AS start, (day_start + INTERVAL '1 day') AS end, n
+    SELECT day_start AS start, ${Prisma.raw(sqlStoredDayEnd('day_start'))} AS end, n
     FROM ranked
     WHERE n >= GREATEST((max_n * 0.5)::int, 1)
     ORDER BY day_start DESC
@@ -374,7 +369,7 @@ async function captureDisappearedFromPriorDay(
   todayEnd: Date
 ): Promise<number> {
   const priorRows = await prisma.$queryRaw<Array<{ start: Date }>>(Prisma.sql`
-    SELECT DATE_TRUNC('day', MAX("snapshotDate")) AS start
+    SELECT ${Prisma.raw(sqlStoredDayStart('MAX("snapshotDate")'))} AS start
     FROM "CustomerOrderLineSnapshot"
     WHERE "companyId" = ${companyId}
       AND "frequency" = 'daily'
@@ -382,7 +377,7 @@ async function captureDisappearedFromPriorDay(
   `);
   const priorStart = priorRows[0]?.start;
   if (!priorStart) return 0;
-  const priorEnd = addUtcDays(priorStart, 1);
+  const priorEnd = storedDayBoundsUtc(priorStart).end;
   const priorCount = await snapshotRowCount(companyId, priorStart, priorEnd);
   const todayCount = await snapshotRowCount(companyId, todayStart, todayEnd);
   if (priorCount <= 0 || todayCount < Math.max(1, Math.floor(priorCount * 0.5))) {
@@ -652,8 +647,8 @@ async function latestIndexedCsiDay(companyId: string, programs: string[]): Promi
   `);
   const maxDate = rows[0]?.maxDate;
   if (!maxDate) return null;
-  const start = new Date(Date.UTC(maxDate.getUTCFullYear(), maxDate.getUTCMonth(), maxDate.getUTCDate()));
-  return { start, end: addUtcDays(start, 1) };
+  const bounds = storedDayBoundsUtc(maxDate);
+  return { start: bounds.start, end: bounds.end };
 }
 
 export async function loadProductRawCustomers(companyId: string): Promise<Array<{ customerId: string; customerName: string }>> {
@@ -700,44 +695,12 @@ export async function loadProductRawCustomers(companyId: string): Promise<Array<
       `);
       const maxDate = latestSnapshot[0]?.maxDate;
       if (maxDate) {
-        const start = new Date(Date.UTC(maxDate.getUTCFullYear(), maxDate.getUTCMonth(), maxDate.getUTCDate()));
-        await loadSnapshotDay(start, addUtcDays(start, 1));
+        const bounds = storedDayBoundsUtc(maxDate);
+        await loadSnapshotDay(bounds.start, bounds.end);
       }
     }
   } catch (error) {
     console.warn('[product-raw] snapshot customers failed', error);
-  }
-
-  // Same CSI day the open-order grid uses: SLCoitems CustNum on the latest complete pull.
-  // Do not scan all SLCos history — that is what 504'd this dropdown.
-  try {
-    const csiDay = await latestIndexedCsiDay(companyId, ['SLCoitems', 'SLCOITEMS']);
-    if (csiDay) {
-      const lineCustomers = await prisma.$queryRaw<Array<{ customerId: string | null }>>(Prisma.sql`
-        SELECT DISTINCT NULLIF(TRIM(COALESCE(r.payload->>'CustNum', r.payload->>'CUSTNUM', r.payload->>'CustNo', '')), '') AS "customerId"
-        FROM "InforRawRecord" r
-        WHERE r."companyId" = ${companyId}
-          AND r."miProgram" IN ('SLCoitems', 'SLCOITEMS')
-          AND r."businessDate" >= ${csiDay.start}
-          AND r."businessDate" < ${csiDay.end}
-          AND NULLIF(TRIM(COALESCE(r.payload->>'CustNum', r.payload->>'CUSTNUM', r.payload->>'CustNo', '')), '') IS NOT NULL
-      `);
-      for (const row of lineCustomers) add(row.customerId, row.customerId);
-
-      const headerCustomers = await prisma.$queryRaw<Array<{ customerId: string | null; customerName: string | null }>>(Prisma.sql`
-        SELECT DISTINCT
-          ${csiHeaderCustomerIdExpr('h')} AS "customerId",
-          ${csiHeaderCustomerNameExpr('h')} AS "customerName"
-        FROM "InforRawRecord" h
-        WHERE h."companyId" = ${companyId}
-          AND h."miProgram" IN ('SLCos', 'SLCohdrs', 'SLCOS', 'SLCOHDRS')
-          AND h."businessDate" >= ${csiDay.start}
-          AND h."businessDate" < ${csiDay.end}
-      `);
-      for (const row of headerCustomers) add(row.customerId, row.customerName);
-    }
-  } catch (error) {
-    console.warn('[product-raw] CSI customers failed', error);
   }
 
   try {
@@ -789,7 +752,7 @@ export async function companyHasCsiCoitems(companyId: string): Promise<boolean> 
 export async function resolveLatestCsiCoitemsDay(companyId: string): Promise<OpenBookWindow | null> {
   const rows = await prisma.$queryRaw<Array<{ start: Date; end: Date }>>(Prisma.sql`
     WITH day_counts AS (
-      SELECT DATE_TRUNC('day', COALESCE(r."businessDate", r."fetchedAt")) AS day_start, COUNT(*)::int AS n
+      SELECT ${Prisma.raw(sqlStoredDayStart('COALESCE(r."businessDate", r."fetchedAt")'))} AS day_start, COUNT(*)::int AS n
       FROM "InforRawRecord" r
       WHERE r."companyId" = ${companyId}
         AND UPPER(COALESCE(r."miProgram", '')) = 'SLCOITEMS'
@@ -805,7 +768,7 @@ export async function resolveLatestCsiCoitemsDay(companyId: string): Promise<Ope
       WHERE latest.max_day IS NOT NULL
         AND d.day_start >= latest.max_day - INTERVAL '21 days'
     )
-    SELECT day_start AS start, (day_start + INTERVAL '1 day') AS end
+    SELECT day_start AS start, ${Prisma.raw(sqlStoredDayEnd('day_start'))} AS end
     FROM ranked
     WHERE n >= GREATEST((max_n * 0.5)::int, 1)
     ORDER BY day_start DESC
@@ -1192,10 +1155,7 @@ export async function captureFilledOrderLines(params: {
   const companyId = String(params.companyId || '').trim();
   if (!companyId) return { closed: 0, disappeared: 0, backfilled: false };
 
-  const todayStart = new Date(
-    Date.UTC(params.snapshotDate.getUTCFullYear(), params.snapshotDate.getUTCMonth(), params.snapshotDate.getUTCDate())
-  );
-  const todayEnd = addUtcDays(todayStart, 1);
+  const { start: todayStart, end: todayEnd } = storedDayBoundsUtc(params.snapshotDate);
 
   await ensureCustomerOrderLineFilledTables();
 

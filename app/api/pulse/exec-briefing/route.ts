@@ -17,6 +17,7 @@ import {
 } from '@/lib/pulse/daily-briefing-readiness';
 import { resolveCompanyIndustrySectorCategory } from '@/lib/industry-sector-resolver';
 import { formatMoney as formatMoneyShared } from '@/lib/format/currency';
+import { formatEstDate } from '@/lib/time/eastern';
 import {
   DEFAULT_BASE_CURRENCY,
   resolveDisplayCurrency,
@@ -120,7 +121,7 @@ function priorSnapshotDateKey(
 }
 
 function todayCacheKey(companyId: string): string {
-  return `${companyId}:${new Date().toISOString().slice(0, 10)}`;
+  return `${companyId}:${formatEstDate()}`;
 }
 
 function normalizeBriefingPeriod(value: string | null): BriefingPeriod {
@@ -1130,7 +1131,7 @@ export async function GET(request: NextRequest) {
     const monthlyStartDate = new Date();
     monthlyStartDate.setMonth(monthlyStartDate.getMonth() - MONTHLY_BRIEFING_LOOKBACK_MONTHS);
     const baseCacheKey = todayCacheKey(companyId);
-    const cacheDate = baseCacheKey.split(':').pop() || new Date().toISOString().slice(0, 10);
+    const cacheDate = baseCacheKey.split(':').pop() || formatEstDate();
     const company = await prisma.company.findUnique({
       where: { id: companyId },
       select: {

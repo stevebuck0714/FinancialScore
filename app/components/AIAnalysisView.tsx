@@ -1,5 +1,5 @@
 'use client';
-import { formatEstDateTime } from '@/lib/time/eastern';
+import { formatEstDate, formatEstDateTime } from '@/lib/time/eastern';
 
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import {
@@ -426,7 +426,7 @@ export default function AIAnalysisView(props: {
       .replace(/^-+|-+$/g, '')
       .toLowerCase();
     a.href = url;
-    a.download = `ask-corelytics-thread-${safeCompany || 'company'}-${new Date().toISOString().slice(0, 10)}.docx`;
+    a.download = `ask-corelytics-thread-${safeCompany || 'company'}-${formatEstDate()}.docx`;
     document.body.appendChild(a);
     a.click();
     a.remove();

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { warmDailyExecutiveBriefingCache } from '@/lib/pulse/exec-briefing-warmup';
-import { previousEstCalendarDate } from '@/lib/time/eastern';
+import { addEstCalendarDays, formatEstDate, previousEstCalendarDate } from '@/lib/time/eastern';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -31,12 +31,8 @@ function yesterdayEstIso(): string {
 }
 
 function productsStartIsoFromEndDate(endDateIso: string): string {
-  const end = /^\d{4}-\d{2}-\d{2}$/.test(endDateIso)
-    ? new Date(`${endDateIso}T00:00:00.000Z`)
-    : new Date();
-  const start = new Date(end);
-  start.setUTCDate(start.getUTCDate() - PRODUCTS_PERFORMANCE_LOOKBACK_DAYS);
-  return start.toISOString().slice(0, 10);
+  const end = /^\d{4}-\d{2}-\d{2}$/.test(endDateIso) ? endDateIso : yesterdayEstIso();
+  return addEstCalendarDays(end, -PRODUCTS_PERFORMANCE_LOOKBACK_DAYS);
 }
 
 async function latestDailyProductsEndIsoUtc(prisma: any, companyId: string): Promise<string> {
@@ -47,7 +43,7 @@ async function latestDailyProductsEndIsoUtc(prisma: any, companyId: string): Pro
     select: { snapshotDate: true },
   }).catch(() => null);
   const snapshotDate = latest?.snapshotDate instanceof Date
-    ? latest.snapshotDate.toISOString().slice(0, 10)
+    ? formatEstDate(latest.snapshotDate)
     : '';
   return snapshotDate && snapshotDate <= fallback ? snapshotDate : fallback;
 }

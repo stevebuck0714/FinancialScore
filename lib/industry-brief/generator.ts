@@ -1,5 +1,6 @@
 import { normalizeIndustrySectorCategory } from '@/lib/performance-analytics/industry-sector-category';
 import type { DailyIndustryBrief } from '@/lib/industry-brief/types';
+import { formatEstDate } from '@/lib/time/eastern';
 
 type CompanyInput = {
   id: string;
@@ -87,7 +88,7 @@ function resolveIndustry(company: CompanyInput): { industry: string; segment: st
 
 export function buildDailyIndustryBriefShell(context: BriefContext): DailyIndustryBrief {
   const now = context.today || new Date();
-  const briefDate = now.toISOString().slice(0, 10);
+  const briefDate = formatEstDate(now);
   const profile = resolveIndustry(context.company);
   const location = locationLabel(context.company);
 

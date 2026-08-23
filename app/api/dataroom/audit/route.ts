@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import { requireAuth, validateCompanyAccess } from '@/lib/tenant-security';
 import { resolveDataRoomCapabilities } from '@/lib/dataroom/access';
+import { formatEstDate } from '@/lib/time/eastern';
 
 function asObject(value: unknown): Record<string, any> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
@@ -142,7 +143,7 @@ export async function GET(request: NextRequest) {
           .join(','),
       );
       const csv = [header.join(','), ...rows].join('\n');
-      const filename = `dataroom-audit-${companyId}-${new Date().toISOString().slice(0, 10)}.csv`;
+      const filename = `dataroom-audit-${companyId}-${formatEstDate()}.csv`;
       return new NextResponse(csv, {
         status: 200,
         headers: {

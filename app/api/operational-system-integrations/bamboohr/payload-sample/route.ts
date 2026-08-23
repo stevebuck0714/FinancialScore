@@ -12,6 +12,7 @@ import {
   sanitizeBambooHrSettings,
   summarizeBambooHrJson,
 } from '@/lib/bamboohr';
+import { formatEstDate } from '@/lib/time/eastern';
 
 export const dynamic = 'force-dynamic';
 
@@ -361,7 +362,7 @@ export async function POST(request: NextRequest) {
     const fields = await fetchBambooHrJson(settings, 'meta/fields').catch((error) => ({ error }));
     const tables = await fetchBambooHrJson(settings, 'meta/tables').catch((error) => ({ error }));
     const timeOffTypes = await fetchBambooHrJson(settings, 'meta/time_off/types').catch((error) => ({ error }));
-    const today = new Date().toISOString().slice(0, 10);
+    const today = formatEstDate();
     const start = settings.initialSyncStartDate || new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10);
     const timeOffRequests = await fetchBambooHrJson(settings, 'time_off/requests', { start, end: today }).catch((error) => ({ error }));
     const hiringJobs = await fetchBambooHrJson(settings, 'applicant_tracking/jobs').catch((error) => ({ error }));

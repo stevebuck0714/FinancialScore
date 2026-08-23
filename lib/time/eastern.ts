@@ -135,3 +135,141 @@ export function formatPullTimeLabel(hhmm: string): string {
   return `${value} ${APP_TIME_ZONE_LABEL}`;
 }
 
+/**
+ * Offset of `timeZone` from UTC at `instant`, in ms.
+ * Example: 2:00 AM America/New_York in August (EDT) => UTC-4 => -4h.
+ */
+function timezoneOffsetMs(instant: Date, timeZone: string = APP_TIME_ZONE): number {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone,
+    hourCycle: 'h23',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+  }).formatToParts(instant);
+  const num = (type: string) => Number(parts.find((part) => part.type === type)?.value);
+  const hour = num('hour');
+  const asUtc = Date.UTC(
+    num('year'),
+    num('month') - 1,
+    num('day'),
+    Number.isFinite(hour) ? hour % 24 : 0,
+    num('minute'),
+    num('second'),
+  );
+  return asUtc - instant.getTime();
+}
+
+/**
+ * UTC instant when that EST calendar date begins (00:00 America/New_York).
+ * August (EDT) = UTC-4, so 2026-08-23 starts at 2026-08-23T04:00:00.000Z.
+ * January (EST) = UTC-5, so 2026-01-15 starts at 2026-01-15T05:00:00.000Z.
+ */
+export function estMidnightUtc(estDate: string): Date {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(estDate.trim());
+  if (!match) throw new Error(`Invalid EST date: ${estDate}`);
+  const utcGuess = Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3]));
+  let instant = new Date(utcGuess);
+  instant = new Date(utcGuess - timezoneOffsetMs(instant));
+  instant = new Date(utcGuess - timezoneOffsetMs(instant));
+  return instant;
+}
+
+export function nextEstMidnightUtc(estDate: string): Date {
+  return estMidnightUtc(addEstCalendarDays(estDate, 1));
+}
+
+/** Inclusive start / exclusive end of the EST calendar day that contains `instant`. */
+export function estDayBoundsUtc(instant: Date): { start: Date; end: Date; ymd: string } {
+  const ymd = formatEstDate(instant);
+  return { start: estMidnightUtc(ymd), end: nextEstMidnightUtc(ymd), ymd };
+}
+
+/** Postgres: timestamptz column -> start of that EST calendar day as timestamptz. */
+export function sqlEstDayStart(columnSql: string): string {
+  return `((DATE_TRUNC('day', ${columnSql} AT TIME ZONE '${APP_TIME_ZONE}')) AT TIME ZONE '${APP_TIME_ZONE}')`;
+}
+
+/** Postgres: timestamptz column -> start of the next EST calendar day as timestamptz. */
+export function sqlEstDayEnd(columnSql: string): string {
+  return `((DATE_TRUNC('day', ${columnSql} AT TIME ZONE '${APP_TIME_ZONE}') + INTERVAL '1 day') AT TIME ZONE '${APP_TIME_ZONE}')`;
+}
+
+export function isUtcMidnightInstant(instant: Date): boolean {
+  return (
+    instant.getUTCHours() === 0 &&
+    instant.getUTCMinutes() === 0 &&
+    instant.getUTCSeconds() === 0 &&
+    instant.getUTCMilliseconds() === 0
+  );
+}
+
+/**
+ * Day window for a stored timestamp.
+ * UTC-midnight values are date-only calendar stamps (do not EST-shift).
+ * Real instants use the EST calendar day.
+ */
+export function storedDayBoundsUtc(instant: Date): { start: Date; end: Date; ymd: string } {
+  if (isUtcMidnightInstant(instant)) {
+    const ymd = `${instant.getUTCFullYear()}-${String(instant.getUTCMonth() + 1).padStart(2, '0')}-${String(instant.getUTCDate()).padStart(2, '0')}`;
+    const start = new Date(Date.UTC(instant.getUTCFullYear(), instant.getUTCMonth(), instant.getUTCDate()));
+    const end = new Date(Date.UTC(instant.getUTCFullYear(), instant.getUTCMonth(), instant.getUTCDate() + 1));
+    return { start, end, ymd };
+  }
+  return estDayBoundsUtc(instant);
+}
+
+/** UTC midnight sentinel for the EST calendar date containing `instant`. */
+export function estCalendarDateUtc(instant: Date = new Date()): Date {
+  if (isUtcMidnightInstant(instant)) {
+    return new Date(Date.UTC(instant.getUTCFullYear(), instant.getUTCMonth(), instant.getUTCDate()));
+  }
+  return utcMidnightForEstDate(formatEstDate(instant));
+}
+
+export function estMonthKey(now: Date = new Date()): string {
+  return formatEstDate(now).slice(0, 7);
+}
+
+export function estYear(now: Date = new Date()): number {
+  return Number(formatEstDate(now).slice(0, 4));
+}
+
+export function estMonthIndex(now: Date = new Date()): number {
+  return Number(formatEstDate(now).slice(5, 7)) - 1;
+}
+
+export function previousEstMonthKey(now: Date = new Date()): string {
+  return addEstCalendarMonths(formatEstDate(now), -1).slice(0, 7);
+}
+
+/** Postgres: date-only timestamptz (UTC midnight) -> that UTC calendar day. */
+export function sqlUtcDayStart(columnSql: string): string {
+  return `((DATE_TRUNC('day', ${columnSql} AT TIME ZONE 'UTC')) AT TIME ZONE 'UTC')`;
+}
+
+export function sqlUtcDayEnd(columnSql: string): string {
+  return `((DATE_TRUNC('day', ${columnSql} AT TIME ZONE 'UTC') + INTERVAL '1 day') AT TIME ZONE 'UTC')`;
+}
+
+/**
+ * Postgres day-start for mixed storage: UTC midnight stays that calendar date;
+ * any other instant uses the EST calendar day. Avoids session-TZ DATE_TRUNC.
+ */
+export function sqlStoredDayStart(columnSql: string): string {
+  return `(CASE
+    WHEN EXTRACT(HOUR FROM (${columnSql} AT TIME ZONE 'UTC')) = 0
+     AND EXTRACT(MINUTE FROM (${columnSql} AT TIME ZONE 'UTC')) = 0
+     AND EXTRACT(SECOND FROM (${columnSql} AT TIME ZONE 'UTC')) < 1
+    THEN ${sqlUtcDayStart(columnSql)}
+    ELSE ${sqlEstDayStart(columnSql)}
+  END)`;
+}
+
+export function sqlStoredDayEnd(columnSql: string): string {
+  return `(${sqlStoredDayStart(columnSql)} + INTERVAL '1 day')`;
+}
+

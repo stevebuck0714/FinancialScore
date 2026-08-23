@@ -1,4 +1,5 @@
 import { Resend } from 'resend';
+import { formatEstDateTime } from '@/lib/time/eastern';
 
 // Lazy initialize Resend client to avoid errors when API key is not set
 let resend: Resend | null = null;
@@ -412,10 +413,7 @@ function getConsultantRegistrationHTML({
                           <strong style="color: #475569; font-size: 14px;">Registration Time:</strong>
                         </td>
                         <td style="padding: 8px 0; text-align: right;">
-                          <span style="color: #1e293b; font-size: 14px;">${new Date().toLocaleString('en-US', { 
-                            dateStyle: 'medium', 
-                            timeStyle: 'short' 
-                          })}</span>
+                          <span style="color: #1e293b; font-size: 14px;">${formatEstDateTime(new Date())}</span>
                         </td>
                       </tr>
                     </table>
@@ -558,10 +556,7 @@ function getBusinessRegistrationHTML({
                           <strong style="color: #475569; font-size: 14px;">Registration Time:</strong>
                         </td>
                         <td style="padding: 8px 0; text-align: right;">
-                          <span style="color: #1e293b; font-size: 14px;">${new Date().toLocaleString('en-US', { 
-                            dateStyle: 'medium', 
-                            timeStyle: 'short' 
-                          })}</span>
+                          <span style="color: #1e293b; font-size: 14px;">${formatEstDateTime(new Date())}</span>
                         </td>
                       </tr>
                     </table>
@@ -729,10 +724,7 @@ function getTrustedDeviceNotificationHTML({
                           <strong style="color: #475569; font-size: 14px;">Time:</strong>
                         </td>
                         <td style="padding: 8px 0; text-align: right;">
-                          <span style="color: #1e293b; font-size: 14px;">${timestamp.toLocaleString('en-US', {
-                            dateStyle: 'medium',
-                            timeStyle: 'short'
-                          })}</span>
+                          <span style="color: #1e293b; font-size: 14px;">${formatEstDateTime(timestamp)}</span>
                         </td>
                       </tr>
                     </table>
@@ -1026,7 +1018,7 @@ export async function sendCompanyUserInviteEmail({
   const safeInviteLink = escapeHtml(inviteLink);
   const safeRole = userType === 'ASSESSMENT' ? 'Team Assessment User' : 'Company User';
   const safeExpires = escapeHtml(
-    new Date(expiresAt).toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'short' }),
+    formatEstDateTime(expiresAt),
   );
 
   try {

@@ -16,7 +16,7 @@
  */
 
 import React from 'react';
-import { formatEstDateTime } from '@/lib/time/eastern';
+import { formatEstDate, formatEstDateTime } from '@/lib/time/eastern';
 import { getAccountingSystemModule } from '@/lib/accounting-systems/registry';
 import {
   DEFAULT_SHARED_SYNC_SCHEDULE,
@@ -176,7 +176,7 @@ export default function AccountingSystemPanel({ companyId, system }: Props) {
   const [actionBusy, setActionBusy] = React.useState<null | 'connect' | 'disconnect' | 'sync' | 'backfill'>(null);
   const [showBackfill, setShowBackfill] = React.useState(false);
   const [backfillStart, setBackfillStart] = React.useState<string>('');
-  const [backfillEnd, setBackfillEnd] = React.useState<string>(() => new Date().toISOString().slice(0, 10));
+  const [backfillEnd, setBackfillEnd] = React.useState<string>(() => formatEstDate());
   const [helpOpen, setHelpOpen] = React.useState<null | 'sync' | 'backfill'>(null);
   const [lastSyncedByObject, setLastSyncedByObject] = React.useState<Record<string, string>>({});
 

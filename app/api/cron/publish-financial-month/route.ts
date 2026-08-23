@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
+import { previousEstMonthKey } from '@/lib/time/eastern';
 import { publishMonthFromDailySnapshots } from '@/lib/financial/publish-month-service';
 import { supportsPublishFromDailySnapshots } from '@/lib/financial/pipeline-strategy';
 
@@ -7,9 +8,7 @@ import { supportsPublishFromDailySnapshots } from '@/lib/financial/pipeline-stra
 // but using local-TZ accessors made it ambiguous when invoked from a script
 // on a developer laptop. See lib/date-utils.ts for the broader rule.
 function previousMonthString(now = new Date()): string {
-  const year = now.getUTCMonth() === 0 ? now.getUTCFullYear() - 1 : now.getUTCFullYear();
-  const month = now.getUTCMonth() === 0 ? 12 : now.getUTCMonth();
-  return `${year}-${String(month).padStart(2, '0')}`;
+  return previousEstMonthKey(now);
 }
 
 function isAuthorized(request: NextRequest): boolean {

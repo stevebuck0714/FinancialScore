@@ -16,6 +16,7 @@ import {
   resolveOpenBookWindow,
   type OpenBookWindow,
 } from '@/lib/operations/product-order-filled';
+import { previousEstCalendarDate, sqlStoredDayStart, storedDayBoundsUtc, utcMidnightForEstDate } from '@/lib/time/eastern';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
@@ -28,6 +29,12 @@ const HISTORY_FLOOR = '2018-01-01';
 
 function utcDay(value: Date): Date {
   return new Date(Date.UTC(value.getUTCFullYear(), value.getUTCMonth(), value.getUTCDate()));
+}
+
+function addUtcDays(value: Date, days: number): Date {
+  const next = utcDay(value);
+  next.setUTCDate(next.getUTCDate() + days);
+  return next;
 }
 
 function addUtcMonths(value: Date, months: number): Date {
@@ -44,11 +51,6 @@ function parseIsoDay(value: string): Date | null {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return null;
   const parsed = new Date(`${value}T00:00:00.000Z`);
   return Number.isNaN(parsed.getTime()) ? null : parsed;
-}
-
-function yesterdayUtc(): Date {
-  const now = new Date();
-  return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - 1));
 }
 
 function historyFloorUtc(): Date {
@@ -302,7 +304,7 @@ async function resolveCustomerOpenBook(params: {
   const matchSql = customerMatchSql(params.customerId, params.customerName, 's');
   const rows = await prisma.$queryRaw<Array<{ start: Date; end: Date }>>(Prisma.sql`
     WITH customer_days AS (
-      SELECT DATE_TRUNC('day', s."snapshotDate") AS day_start, COUNT(*)::int AS n
+      SELECT ${Prisma.raw(sqlStoredDayStart('s."snapshotDate"'))} AS day_start, COUNT(*)::int AS n
       FROM "CustomerOrderLineSnapshot" s
       WHERE s."companyId" = ${params.companyId}
         AND s."frequency" = 'daily'
@@ -493,50 +495,57 @@ async function loadOpenLines(params: {
   customerId: string;
   customerName: string;
 }): Promise<{ rows: any[]; openAsOf: Date | null }> {
-  // Open lines live in CustomerOrderLineSnapshot from the CSI pull transform.
-  // Do not scan InforRawRecord on this request: SLCoitems unique _ItemId
-  // skipDuplicates leaves an incomplete raw table, and MAX(businessDate)
-  // there times out on Atlantic's multi-million-row ingest.
-  const openBook =
-    (await resolveOpenBookWindow(params.companyId)) ||
-    (await resolveCustomerOpenBook(params));
-  if (!openBook) return { rows: [], openAsOf: null };
-  const matchSql = customerMatchSql(params.customerId, params.customerName, 's');
-  try {
-    const rows = await prisma.$queryRaw<any[]>(Prisma.sql`
-    SELECT DISTINCT ON (s."orderId", s."lineId")
-      s."snapshotDate",
-      s."customerId",
-      s."customerName",
-      s."orderId",
-      s."lineId",
-      s."orderDate",
-      s."itemId",
-      s."itemName",
-      s."sku",
-      s."customerPn",
-      s."lineStat",
-      s."qtyOrdered",
-      s."qtyShipped",
-      s."qtyInvoiced",
-      s."unitPrice",
-      s."contractValue",
-      s."invoicedAmount",
-      s."remainingAmount",
-      s."sourceTransaction"
+  const customerFilter = params.customerId
+    ? Prisma.sql`s."customerId" = ${params.customerId}`
+    : params.customerName
+      ? Prisma.sql`s."customerName" = ${params.customerName}`
+      : Prisma.sql`FALSE`;
+
+  const maxRows = await prisma.$queryRaw<Array<{ maxDate: Date | null }>>(Prisma.sql`
+    SELECT MAX(s."snapshotDate") AS "maxDate"
     FROM "CustomerOrderLineSnapshot" s
     WHERE s."companyId" = ${params.companyId}
       AND s."frequency" = 'daily'
-      AND s."snapshotDate" >= ${openBook.start}
-      AND s."snapshotDate" < ${openBook.end}
-      AND ${matchSql}
-      AND ${isTrulyOpenSql('s')}
-    ORDER BY s."orderId", s."lineId", s."snapshotDate" DESC
+      AND ${customerFilter}
   `);
-    return {
-      rows: rows.filter((row) => isCsiOpenLine(row.lineStat, Number(row.qtyOrdered || 0), row.qtyShipped)),
-      openAsOf: openBook.start,
-    };
+  const maxDate = maxRows[0]?.maxDate;
+  if (!maxDate) return { rows: [], openAsOf: null };
+
+  const { start, end } = storedDayBoundsUtc(maxDate);
+
+  try {
+    const rows = await prisma.$queryRaw<any[]>(Prisma.sql`
+      SELECT DISTINCT ON (s."orderId", s."lineId")
+        s."snapshotDate",
+        s."customerId",
+        s."customerName",
+        s."orderId",
+        s."lineId",
+        s."orderDate",
+        s."itemId",
+        s."itemName",
+        s."sku",
+        s."customerPn",
+        s."lineStat",
+        s."qtyOrdered",
+        s."qtyShipped",
+        s."qtyInvoiced",
+        s."unitPrice",
+        s."contractValue",
+        s."invoicedAmount",
+        s."remainingAmount",
+        s."sourceTransaction"
+      FROM "CustomerOrderLineSnapshot" s
+      WHERE s."companyId" = ${params.companyId}
+        AND s."frequency" = 'daily'
+        AND s."snapshotDate" >= ${start}
+        AND s."snapshotDate" < ${end}
+        AND ${customerFilter}
+        AND GREATEST(COALESCE(s."qtyOrdered", 0) - COALESCE(s."qtyShipped", 0), 0) > 0.0001
+        AND UPPER(COALESCE(s."lineStat", '')) NOT IN ('C', 'F')
+      ORDER BY s."orderId", s."lineId", s."snapshotDate" DESC
+    `);
+    return { rows, openAsOf: start };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     if (!/qtyShipped|customerPn|lineStat/i.test(message)) throw error;
@@ -561,16 +570,13 @@ async function loadOpenLines(params: {
       FROM "CustomerOrderLineSnapshot" s
       WHERE s."companyId" = ${params.companyId}
         AND s."frequency" = 'daily'
-        AND s."snapshotDate" >= ${openBook.start}
-        AND s."snapshotDate" < ${openBook.end}
-        AND ${matchSql}
-      AND COALESCE(s."qtyOrdered", 0) > 0
+        AND s."snapshotDate" >= ${start}
+        AND s."snapshotDate" < ${end}
+        AND ${customerFilter}
+        AND COALESCE(s."qtyOrdered", 0) > 0
       ORDER BY s."orderId", s."lineId", s."snapshotDate" DESC
     `);
-    return {
-      rows: rows.filter((row) => isCsiOpenLine(row.lineStat, Number(row.qtyOrdered || 0), row.qtyShipped)),
-      openAsOf: openBook.start,
-    };
+    return { rows, openAsOf: start };
   }
 }
 
@@ -677,8 +683,6 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    await ensureCustomerOrderLineFilledTables();
-
     const customerId = String(request.nextUrl.searchParams.get('customerId') || '').trim();
     const customerName = String(request.nextUrl.searchParams.get('customerName') || '').trim();
     if (!customerId && !customerName) {
@@ -689,16 +693,13 @@ export async function GET(request: NextRequest) {
     const wantsFilled = view === 'filled' || (view !== 'open' && windowKind === 'older');
 
     if (!wantsFilled) {
-      const identityByItem = await loadCustomerLineIdentity({ companyId, customerId, customerName });
       const { rows: openRows, openAsOf } = await loadOpenLines({
         companyId,
         customerId,
         customerName,
       });
       return NextResponse.json({
-        openRecords: openRows
-          .map((row) => mapOrderLineRecord(row, 'open'))
-          .map((row) => applyLineIdentity(row, identityByItem)),
+        openRecords: openRows.map((row) => mapOrderLineRecord(row, 'open')),
         filledRecords: [],
         openAsOf: openAsOf ? isoDay(openAsOf) : null,
         window: null,
@@ -709,10 +710,12 @@ export async function GET(request: NextRequest) {
       });
     }
 
+    await ensureCustomerOrderLineFilledTables();
+
     await ensureFilledHistory(companyId);
     const openBook = await resolveOpenBookWindow(companyId);
     const beforeParam = String(request.nextUrl.searchParams.get('before') || '').trim();
-    const recentEnd = yesterdayUtc();
+    const recentEnd = utcMidnightForEstDate(previousEstCalendarDate());
     const recentStart = addUtcMonths(recentEnd, -RECENT_MONTHS);
     let startDate = recentStart;
     let endDate = recentEnd;

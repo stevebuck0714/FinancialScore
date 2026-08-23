@@ -6,6 +6,7 @@ import {
   fetchBambooHrJson,
   sanitizeBambooHrSettings,
 } from '@/lib/bamboohr';
+import { formatEstDate } from '@/lib/time/eastern';
 import {
   getOperationalSystemConnection,
   saveOperationalSystemConnection,
@@ -267,7 +268,7 @@ function round2(value: number): number {
 }
 
 function todayIso(): string {
-  return new Date().toISOString().slice(0, 10);
+  return formatEstDate();
 }
 
 function readEmployees(json: unknown): EmployeeRow[] {

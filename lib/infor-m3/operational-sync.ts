@@ -7,6 +7,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import { computeDailyPnlMovementsFromGL } from '@/lib/financial/daily-bs-from-gl';
 import { syncErpDailyFinancialsFromGL } from '@/lib/financial/sync-erp-daily-financials';
 import { captureFilledOrderLines, ensureCustomerOrderLineFilledTables, type FilledOrderLineInput } from '@/lib/operations/product-order-filled';
+import { estCalendarDateUtc } from '@/lib/time/eastern';
 
 type InforProgramRow = {
   module: string;
@@ -3419,7 +3420,7 @@ async function dedupeGLTransactionFactsForDateRange(companyId: string, startDate
         ROW_NUMBER() OVER (
           PARTITION BY
             "companyId",
-            DATE_TRUNC('day', "transDate"),
+            DATE_TRUNC('day', "transDate" AT TIME ZONE 'UTC'),
             "accountId",
             COALESCE("transNum", ''),
             COALESCE("ref", ''),
@@ -3428,7 +3429,7 @@ async function dedupeGLTransactionFactsForDateRange(companyId: string, startDate
             CASE WHEN "sourceProgram" = 'SLLedgers' THEN 0 ELSE 1 END,
             CASE WHEN "sourceTransaction" = 'CSI_LOAD' THEN 0 ELSE 1 END,
             CASE WHEN "controlYear" IS NOT NULL AND "controlPeriod" IS NOT NULL THEN 0 ELSE 1 END,
-            CASE WHEN "transDate" = DATE_TRUNC('day', "transDate") THEN 0 ELSE 1 END,
+            CASE WHEN "transDate" = (DATE_TRUNC('day', "transDate" AT TIME ZONE 'UTC') AT TIME ZONE 'UTC') THEN 0 ELSE 1 END,
             "createdAt" ASC,
             "id" ASC
         ) AS rn
@@ -8726,8 +8727,8 @@ export async function syncInforM3OperationalData(
   // For explicit/manual windows, anchor snapshot day to the requested window
   // end date so a 4/7-4/7 run is stamped as 4/7 (not "today").
   const explicitWindowSnapshotDate =
-    syncWindow && syncWindow.mode !== 'daily_overlap' ? startOfUtcDay(new Date(syncWindow.endDate)) : null;
-  const snapshotDate = startOfUtcDay(
+    syncWindow && syncWindow.mode !== 'daily_overlap' ? estCalendarDateUtc(new Date(syncWindow.endDate)) : null;
+  const snapshotDate = estCalendarDateUtc(
     options?.snapshotDateOverride
       ? new Date(options.snapshotDateOverride)
       : explicitWindowSnapshotDate || new Date()

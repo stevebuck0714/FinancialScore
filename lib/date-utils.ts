@@ -22,6 +22,8 @@
  * that.
  */
 
+import { estMonthIndex, estMonthKey, estYear } from '@/lib/time/eastern';
+
 const MONTH_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 const MONTH_LONG = [
   'January', 'February', 'March', 'April', 'May', 'June',
@@ -186,20 +188,20 @@ export function isSameMonthUtc(a: MonthInput, b: MonthInput): boolean {
   return ka !== null && ka === kb;
 }
 
-/** UTC year-month for "now" (used by YTD / current-quarter pickers). */
-export function currentYearUtc(): number {
-  return new Date().getUTCFullYear();
+/** EST year-month for "now" (used by YTD / current-quarter pickers). */
+export function currentYearUtc(now: Date = new Date()): number {
+  return estYear(now);
 }
-export function currentMonthIndexUtc(): number {
-  return new Date().getUTCMonth();
+export function currentMonthIndexUtc(now: Date = new Date()): number {
+  return estMonthIndex(now);
 }
-export function currentQuarterUtc(): number {
-  return Math.floor(new Date().getUTCMonth() / 3) + 1;
+export function currentQuarterUtc(now: Date = new Date()): number {
+  return Math.floor(estMonthIndex(now) / 3) + 1;
 }
 
-/** Stable "YYYY-MM" for the current UTC calendar month. */
+/** Stable "YYYY-MM" for the current EST calendar month. */
 export function currentMonthKeyUtc(now: Date = new Date()): string {
-  return `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, '0')}`;
+  return estMonthKey(now);
 }
 
 /**

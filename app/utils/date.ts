@@ -8,7 +8,7 @@ import {
 const DATE_ONLY_RE = /^(\d{4})-(\d{2})-(\d{2})$/;
 
 export { APP_TIME_ZONE, APP_TIME_ZONE_LABEL, formatEstDate };
-export { addEstCalendarDays, addEstCalendarMonths, previousEstCalendarDate } from '@/lib/time/eastern';
+export { addEstCalendarDays, addEstCalendarMonths, previousEstCalendarDate, estDayBoundsUtc, estMidnightUtc } from '@/lib/time/eastern';
 
 export function parseDateSafeUtc(raw: string | Date | null | undefined): Date | null {
   if (!raw) return null;
@@ -34,7 +34,17 @@ export function formatDateSafeUtc(
 ): string {
   const parsed = parseDateSafeUtc(raw);
   if (!parsed) return 'N/A';
-  return parsed.toLocaleDateString('en-US', { ...options, timeZone: 'UTC' });
+  const asString = typeof raw === 'string' ? raw.trim() : '';
+  const isDateOnly =
+    DATE_ONLY_RE.test(asString) ||
+    (parsed.getUTCHours() === 0 &&
+      parsed.getUTCMinutes() === 0 &&
+      parsed.getUTCSeconds() === 0 &&
+      parsed.getUTCMilliseconds() === 0);
+  return parsed.toLocaleDateString('en-US', {
+    ...options,
+    timeZone: isDateOnly ? 'UTC' : APP_TIME_ZONE,
+  });
 }
 
 export function formatDateInputLabel(raw: string | Date | null | undefined): string {
