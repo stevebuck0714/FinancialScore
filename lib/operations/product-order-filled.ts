@@ -626,6 +626,19 @@ function csiCustomerMatchSql(customerId: string, customerName: string): Prisma.S
   return Prisma.sql`FALSE`;
 }
 
+async function latestIndexedCsiDay(companyId: string, programs: string[]): Promise<{ start: Date; end: Date } | null> {
+  const rows = await prisma.$queryRaw<Array<{ maxDate: Date | null }>>(Prisma.sql`
+    SELECT MAX("businessDate") AS "maxDate"
+    FROM "InforRawRecord"
+    WHERE "companyId" = ${companyId}
+      AND "miProgram" IN (${Prisma.join(programs.map((program) => Prisma.sql`${program}`))})
+  `);
+  const maxDate = rows[0]?.maxDate;
+  if (!maxDate) return null;
+  const start = new Date(Date.UTC(maxDate.getUTCFullYear(), maxDate.getUTCMonth(), maxDate.getUTCDate()));
+  return { start, end: addUtcDays(start, 1) };
+}
+
 export async function loadProductRawCustomers(companyId: string): Promise<Array<{ customerId: string; customerName: string }>> {
   const byKey = new Map<string, { customerId: string; customerName: string }>();
   const add = (id: unknown, name: unknown) => {
@@ -633,38 +646,69 @@ export async function loadProductRawCustomers(companyId: string): Promise<Array<
     const customerName = String(name || '').trim();
     if (!customerId && !customerName) return;
     const key = customerId || customerName.toUpperCase();
-    if (byKey.has(key)) return;
+    const current = byKey.get(key);
+    if (current) {
+      if (!current.customerName && customerName) current.customerName = customerName;
+      if (!current.customerId && customerId) current.customerId = customerId;
+      return;
+    }
     byKey.set(key, { customerId, customerName: customerName || customerId });
+  };
+
+  const loadSnapshotDay = async (start: Date, end: Date) => {
+    const snapshotCustomers = await prisma.$queryRaw<Array<{ customerId: string | null; customerName: string | null }>>(Prisma.sql`
+      SELECT DISTINCT s."customerId", s."customerName"
+      FROM "CustomerOrderLineSnapshot" s
+      WHERE s."companyId" = ${companyId}
+        AND s."frequency" = 'daily'
+        AND s."snapshotDate" >= ${start}
+        AND s."snapshotDate" < ${end}
+        AND (
+          TRIM(COALESCE(s."customerName", '')) <> ''
+          OR TRIM(COALESCE(s."customerId", '')) <> ''
+        )
+    `);
+    for (const row of snapshotCustomers) add(row.customerId, row.customerName);
   };
 
   try {
     const openBook = await resolveOpenBookWindow(companyId);
-    if (openBook) {
-      const snapshotCustomers = await prisma.$queryRaw<Array<{ customerId: string | null; customerName: string | null }>>(Prisma.sql`
-        SELECT DISTINCT s."customerId", s."customerName"
-        FROM "CustomerOrderLineSnapshot" s
-        WHERE s."companyId" = ${companyId}
-          AND s."frequency" = 'daily'
-          AND s."snapshotDate" >= ${openBook.start}
-          AND s."snapshotDate" < ${openBook.end}
-          AND TRIM(COALESCE(s."customerName", '')) <> ''
+    if (openBook) await loadSnapshotDay(openBook.start, openBook.end);
+    if (byKey.size === 0) {
+      const latestSnapshot = await prisma.$queryRaw<Array<{ maxDate: Date | null }>>(Prisma.sql`
+        SELECT MAX("snapshotDate") AS "maxDate"
+        FROM "CustomerOrderLineSnapshot"
+        WHERE "companyId" = ${companyId}
+          AND "frequency" = 'daily'
       `);
-      for (const row of snapshotCustomers) add(row.customerId, row.customerName);
+      const maxDate = latestSnapshot[0]?.maxDate;
+      if (maxDate) {
+        const start = new Date(Date.UTC(maxDate.getUTCFullYear(), maxDate.getUTCMonth(), maxDate.getUTCDate()));
+        await loadSnapshotDay(start, addUtcDays(start, 1));
+      }
     }
   } catch (error) {
     console.warn('[product-raw] snapshot customers failed', error);
   }
 
+  // Same CSI day the open-order grid uses: SLCoitems CustNum on the latest complete pull.
+  // Do not scan all SLCos history — that is what 504'd this dropdown.
   try {
-    const headerDayRows = await prisma.$queryRaw<Array<{ start: Date | null }>>(Prisma.sql`
-      SELECT DATE_TRUNC('day', MAX(COALESCE("businessDate", "fetchedAt"))) AS start
-      FROM "InforRawRecord"
-      WHERE "companyId" = ${companyId}
-        AND "miProgram" IN ('SLCos', 'SLCohdrs', 'SLCOS', 'SLCOHDRS')
-    `);
-    const headerStart = headerDayRows[0]?.start;
-    if (headerStart) {
-      const headerEnd = addUtcDays(headerStart, 1);
+    const csiDay =
+      (await latestIndexedCsiDay(companyId, ['SLCoitems', 'SLCOITEMS'])) ||
+      (await resolveLatestCsiCoitemsDay(companyId));
+    if (csiDay) {
+      const lineCustomers = await prisma.$queryRaw<Array<{ customerId: string | null }>>(Prisma.sql`
+        SELECT DISTINCT NULLIF(TRIM(COALESCE(r.payload->>'CustNum', r.payload->>'CUSTNUM', r.payload->>'CustNo', '')), '') AS "customerId"
+        FROM "InforRawRecord" r
+        WHERE r."companyId" = ${companyId}
+          AND r."miProgram" IN ('SLCoitems', 'SLCOITEMS')
+          AND r."businessDate" >= ${csiDay.start}
+          AND r."businessDate" < ${csiDay.end}
+          AND NULLIF(TRIM(COALESCE(r.payload->>'CustNum', r.payload->>'CUSTNUM', r.payload->>'CustNo', '')), '') IS NOT NULL
+      `);
+      for (const row of lineCustomers) add(row.customerId, row.customerId);
+
       const headerCustomers = await prisma.$queryRaw<Array<{ customerId: string | null; customerName: string | null }>>(Prisma.sql`
         SELECT DISTINCT
           ${csiHeaderCustomerIdExpr('h')} AS "customerId",
@@ -672,13 +716,13 @@ export async function loadProductRawCustomers(companyId: string): Promise<Array<
         FROM "InforRawRecord" h
         WHERE h."companyId" = ${companyId}
           AND h."miProgram" IN ('SLCos', 'SLCohdrs', 'SLCOS', 'SLCOHDRS')
-          AND COALESCE(h."businessDate", h."fetchedAt") >= ${headerStart}
-          AND COALESCE(h."businessDate", h."fetchedAt") < ${headerEnd}
+          AND h."businessDate" >= ${csiDay.start}
+          AND h."businessDate" < ${csiDay.end}
       `);
       for (const row of headerCustomers) add(row.customerId, row.customerName);
     }
   } catch (error) {
-    console.warn('[product-raw] CSI header customers failed', error);
+    console.warn('[product-raw] CSI customers failed', error);
   }
 
   try {
@@ -686,7 +730,10 @@ export async function loadProductRawCustomers(companyId: string): Promise<Array<
       SELECT "customerId", MAX("customerName") AS "customerName"
       FROM "CustomerOrderLineFilled"
       WHERE "companyId" = ${companyId}
-        AND TRIM(COALESCE("customerName", '')) <> ''
+        AND (
+          TRIM(COALESCE("customerName", '')) <> ''
+          OR TRIM(COALESCE("customerId", '')) <> ''
+        )
       GROUP BY 1
       LIMIT 2000
     `);

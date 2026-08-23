@@ -10199,14 +10199,6 @@ export default function OperationsTab({
         },
       ];
 
-      if (wholesaleRawLinesError && !selectedWholesaleRawCustomer) {
-        return (
-          <div style={{ background: 'white', border: '1px solid #fecaca', borderRadius: '12px', padding: '24px', color: '#991b1b' }}>
-            {wholesaleRawLinesError}
-          </div>
-        );
-      }
-
       const formatWindowDate = (isoDate: string) => (isoDate ? formatRawDate(isoDate) : 'N/A');
       const emptyMessage = !selectedWholesaleRawCustomer
         ? 'Select a customer to load open order lines.'
