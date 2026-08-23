@@ -11411,7 +11411,14 @@ export default function OperationsTab({
         sections: [
           {
             body:
-              'This is the monthly SGP estimated units vs YTD actual by APR P/N and vendor, from the Forecasts 2026 SGP sheet.',
+              'Monthly SGP estimated units vs YTD actual, by APR P/N and vendor. Import the Revenue Forecasts workbook, then pick a vendor.',
+          },
+          {
+            heading: 'How to load it',
+            body: [
+              'Use Import workbook with the file that contains SGP Forecasts Current (also named Forecasts 2026 SGP). The annual GMPA worksheet does not have those monthly columns.',
+              'After import, choose a vendor. Estimated months can be typed or imported. YTD and percents come from operations data.',
+            ],
           },
           {
             heading: 'What is typed vs calculated',

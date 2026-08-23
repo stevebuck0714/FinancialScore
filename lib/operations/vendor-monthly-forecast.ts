@@ -147,7 +147,16 @@ export function findVendorSgpForecastSheetName(workbook: XLSX.WorkBook): string 
     return true;
   });
   if (fuzzy) return fuzzy.name;
-  throw new Error('Workbook is missing the Forecasts 2026 SGP sheet (also named SGP Forecasts Current).');
+  const listed = names.slice(0, 12).map((name) => `"${name}"`).join(', ') || 'none';
+  const annualOnly = names.some((name) => /annual/i.test(name));
+  if (annualOnly) {
+    throw new Error(
+      `This workbook is annual-only (${listed}). Import the Revenue Forecasts workbook that contains SGP Forecasts Current (also named Forecasts 2026 SGP).`
+    );
+  }
+  throw new Error(
+    `Workbook is missing the Forecasts 2026 SGP sheet (also named SGP Forecasts Current). Sheets found: ${listed}.`
+  );
 }
 
 function findDataThru(matrix: MatrixCell[][]): string | null {
@@ -270,6 +279,31 @@ export function parseVendorMonthlyForecastWorkbook(
   }
 
   return { sheetName, year, dataThru, rows };
+}
+
+export function parsedVendorForecastFromPayload(
+  raw: unknown,
+  fallbackYear: number
+): ParsedVendorMonthlyForecastWorkbook {
+  const body = raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : {};
+  const rows = Array.isArray(body.rows) ? (body.rows as VendorMonthlyForecastLineInput[]) : [];
+  if (!rows.length) {
+    throw new Error('No monthly forecast rows found. Use the Forecasts 2026 SGP sheet with APR P/N in column A.');
+  }
+  const dataThru = asDateIso(body.dataThru);
+  const yearFromPayload = Number(body.year);
+  const yearFromSheet = dataThru ? Number(dataThru.slice(0, 4)) : NaN;
+  const year = Number.isInteger(yearFromPayload) && yearFromPayload >= 2000 && yearFromPayload <= 2100
+    ? yearFromPayload
+    : Number.isInteger(yearFromSheet) && yearFromSheet >= fallbackYear
+      ? yearFromSheet
+      : fallbackYear;
+  return {
+    sheetName: asString(body.sheetName) || 'Forecasts 2026 SGP',
+    year,
+    dataThru,
+    rows,
+  };
 }
 
 export function vendorOptionKey(vendorId: string, vendorName: string): string {

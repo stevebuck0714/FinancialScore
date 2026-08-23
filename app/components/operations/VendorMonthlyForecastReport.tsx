@@ -10,11 +10,13 @@ import {
   monthQty,
   pctVsPlan,
   remainingForecastQty,
+  readProductOperationsWorkbook,
   workbookImportErrorMessage,
   type ForecastMonth,
   type MonthQtyMap,
 } from '@/lib/operations/product-revenue-forecast';
 import {
+  parseVendorMonthlyForecastWorkbook,
   type VendorMonthlyForecastLineInput,
 } from '@/lib/operations/vendor-monthly-forecast';
 
@@ -169,8 +171,8 @@ export default function VendorMonthlyForecastReport({
   const previousMonth = (selectedMonth === 1 ? 12 : selectedMonth - 1) as ForecastMonth;
   const previousMonthName = FORECAST_MONTH_FULL_LABELS[previousMonth];
 
-  const loadVendors = useCallback(async (nextYear = year) => {
-    if (!selectedCompanyId) return;
+  const loadVendors = useCallback(async (nextYear = year): Promise<VendorOption[]> => {
+    if (!selectedCompanyId) return [];
     const seq = ++vendorsRequestSeq.current;
     setLoadingVendors(true);
     setError(null);
@@ -179,13 +181,16 @@ export default function VendorMonthlyForecastReport({
         `/api/operational-data/vendor-forecast?companyId=${encodeURIComponent(selectedCompanyId)}&year=${nextYear}`
       );
       const payload = await response.json().catch(() => ({}));
-      if (seq !== vendorsRequestSeq.current) return;
+      if (seq !== vendorsRequestSeq.current) return [];
       if (!response.ok) throw new Error(payload.error || 'Failed to load vendors');
-      setVendors(payload.vendors || []);
+      const nextVendors = Array.isArray(payload.vendors) ? payload.vendors : [];
+      setVendors(nextVendors);
       if (payload.dataThru) setDataThru(String(payload.dataThru).slice(0, 10));
+      return nextVendors;
     } catch (err: any) {
-      if (seq !== vendorsRequestSeq.current) return;
+      if (seq !== vendorsRequestSeq.current) return [];
       setError(err?.message || 'Failed to load vendors');
+      return [];
     } finally {
       if (seq === vendorsRequestSeq.current) setLoadingVendors(false);
     }
@@ -325,23 +330,39 @@ export default function VendorMonthlyForecastReport({
     setError(null);
     setNotice('Reading workbook…');
     try {
-      const form = new FormData();
-      form.append('companyId', selectedCompanyId);
-      form.append('year', String(year));
-      form.append('file', file);
+      const workbook = readProductOperationsWorkbook(await file.arrayBuffer());
+      const parsed = parseVendorMonthlyForecastWorkbook(workbook, year);
+      setNotice(`Saving ${parsed.rows.length.toLocaleString()} monthly forecast rows…`);
       const response = await fetch('/api/operational-data/vendor-forecast/import', {
         method: 'POST',
-        body: form,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          companyId: selectedCompanyId,
+          year: parsed.year || year,
+          parsed,
+        }),
       });
       const payload = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(payload.error || 'Failed to import workbook');
+      if (!response.ok) {
+        throw new Error(
+          payload.error || payload.message || `Failed to import workbook (${response.status})`
+        );
+      }
       const importedYear = Number(payload.year) || year;
-      setYear(importedYear);
+      if (importedYear !== year) setYear(importedYear);
       if (payload.dataThru) setDataThru(String(payload.dataThru).slice(0, 10));
       setDirty(false);
-      setNotice(`Imported ${Number(payload.rowCount || 0).toLocaleString()} monthly forecast rows.`);
-      await loadVendors(importedYear);
-      if (selectedVendor) await loadLines(selectedVendor, importedYear);
+      const vendorCount = Number(payload.vendorCount || 0);
+      setNotice(
+        `Imported ${Number(payload.rowCount || 0).toLocaleString()} monthly forecast rows` +
+          (vendorCount ? ` across ${vendorCount.toLocaleString()} vendors.` : '.')
+      );
+      const nextVendors = await loadVendors(importedYear);
+      const preferred = nextVendors.find((vendor) => vendor.key === vendorKey) || nextVendors[0] || null;
+      if (preferred) {
+        setVendorKey(preferred.key);
+        await loadLines(preferred, importedYear);
+      }
     } catch (err: unknown) {
       console.error('Vendor monthly forecast import failed', err);
       setNotice(null);
@@ -594,7 +615,7 @@ export default function VendorMonthlyForecastReport({
 
       {!selectedVendor ? (
         <div style={{ padding: '24px 0', color: '#64748b', fontSize: 13 }}>
-          Select a vendor, or import the Forecasts 2026 SGP sheet to load estimated quantities.
+          Select a vendor, or import the Revenue Forecasts workbook (sheet SGP Forecasts Current / Forecasts 2026 SGP) to load estimated quantities. The annual GMPA workbook will not import here.
         </div>
       ) : loadingLines ? (
         <div style={{ padding: '24px 0', color: '#64748b', fontSize: 13 }}>Loading forecast rows…</div>

@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import {
   parseVendorMonthlyForecastWorkbook,
+  parsedVendorForecastFromPayload,
+  UNASSIGNED_VENDOR_ID,
+  type ParsedVendorMonthlyForecastWorkbook,
 } from '@/lib/operations/vendor-monthly-forecast';
 import { readProductOperationsWorkbook } from '@/lib/operations/product-revenue-forecast';
 import {
@@ -12,7 +15,6 @@ import {
   normalizeVendorForecastLineInput,
   upsertVendorForecastLines,
 } from '@/lib/operations/vendor-monthly-forecast-db';
-import { UNASSIGNED_VENDOR_ID } from '@/lib/operations/vendor-monthly-forecast';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
@@ -29,31 +31,50 @@ function errorMessage(error: unknown, fallback: string): string {
 }
 
 function isUploadBlob(value: FormDataEntryValue | null): value is Blob {
-  return typeof Blob !== 'undefined' && value instanceof Blob && typeof value.arrayBuffer === 'function';
+  return !!value && typeof value === 'object' && typeof (value as Blob).arrayBuffer === 'function';
+}
+
+async function parsedFromRequest(
+  request: NextRequest
+): Promise<{ companyId: string; fallbackYear: number; parsed: ParsedVendorMonthlyForecastWorkbook }> {
+  const contentType = request.headers.get('content-type') || '';
+  if (contentType.includes('application/json')) {
+    const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
+    const fallbackYear = asForecastYear(body.year);
+    return {
+      companyId: String(body.companyId || '').trim(),
+      fallbackYear,
+      parsed: parsedVendorForecastFromPayload(body.parsed ?? body, fallbackYear),
+    };
+  }
+
+  const form = await request.formData();
+  const companyId = String(form.get('companyId') || '').trim();
+  const file = form.get('file');
+  if (!isUploadBlob(file)) {
+    throw new Error('Upload an Excel workbook (.xlsx).');
+  }
+  if (file.size > MAX_UPLOAD_BYTES) {
+    throw new Error('Workbook is larger than 20 MB.');
+  }
+  const fallbackYear = asForecastYear(form.get('year'));
+  const workbook = readProductOperationsWorkbook(await file.arrayBuffer());
+  return {
+    companyId,
+    fallbackYear,
+    parsed: parseVendorMonthlyForecastWorkbook(workbook, fallbackYear),
+  };
 }
 
 export async function POST(request: NextRequest) {
   try {
-    const form = await request.formData();
-    const companyId = String(form.get('companyId') || '').trim();
+    const { companyId, fallbackYear, parsed } = await parsedFromRequest(request);
     if (!companyId) {
       return NextResponse.json({ error: 'Company ID is required' }, { status: 400 });
     }
 
     const denied = await assertVendorsForecastAccess(companyId);
     if (denied) return denied;
-
-    const file = form.get('file');
-    if (!isUploadBlob(file)) {
-      return NextResponse.json({ error: 'Upload an Excel workbook (.xlsx).' }, { status: 400 });
-    }
-    if (file.size > MAX_UPLOAD_BYTES) {
-      return NextResponse.json({ error: 'Workbook is larger than 20 MB.' }, { status: 400 });
-    }
-
-    const fallbackYear = asForecastYear(form.get('year'));
-    const workbook = readProductOperationsWorkbook(await file.arrayBuffer());
-    const parsed = parseVendorMonthlyForecastWorkbook(workbook, fallbackYear);
 
     await ensureVendorMonthlyForecastTables();
     const vendorsByItem = await loadPrimaryVendorByItem(companyId);
@@ -101,7 +122,14 @@ export async function POST(request: NextRequest) {
   } catch (error: unknown) {
     console.error('vendor-forecast import failed', error);
     const message = errorMessage(error, 'Failed to import vendor monthly forecast workbook');
-    const status = message.includes('Company ID') || message.includes('Upload') || message.includes('missing') ? 400 : 500;
+    const status =
+      message.includes('Company ID') ||
+      message.includes('Upload') ||
+      message.includes('missing') ||
+      message.includes('annual-only') ||
+      message.includes('No monthly forecast')
+        ? 400
+        : 500;
     return NextResponse.json({ error: message }, { status });
   }
 }
