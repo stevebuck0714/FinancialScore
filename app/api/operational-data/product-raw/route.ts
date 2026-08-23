@@ -8,10 +8,9 @@ import {
   ensureCustomerOrderLineFilledTables,
   isTrulyOpenSql,
   loadProductRawCustomers,
-  resolveOpenBookWindow,
   type OpenBookWindow,
 } from '@/lib/operations/product-order-filled';
-import { previousEstCalendarDate, sqlStoredDayStart, storedDayBoundsUtc, utcMidnightForEstDate } from '@/lib/time/eastern';
+import { previousEstCalendarDate, storedDayBoundsUtc, utcMidnightForEstDate } from '@/lib/time/eastern';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
@@ -78,20 +77,6 @@ function customerMatchSql(customerId: string, customerName: string, alias?: stri
   if (idMatch) return idMatch;
   if (nameMatch) return nameMatch;
   return Prisma.sql`FALSE`;
-}
-
-function sameCustomerSql(leftAlias: string, rightAlias: string): Prisma.Sql {
-  const leftId = Prisma.raw(`"${leftAlias}"."customerId"`);
-  const rightId = Prisma.raw(`"${rightAlias}"."customerId"`);
-  const leftName = Prisma.raw(`"${leftAlias}"."customerName"`);
-  const rightName = Prisma.raw(`"${rightAlias}"."customerName"`);
-  return Prisma.sql`(
-    (
-      NULLIF(TRIM(COALESCE(${leftId}, '')), '') IS NOT NULL
-      AND NULLIF(TRIM(COALESCE(${leftId}, '')), '') = NULLIF(TRIM(COALESCE(${rightId}, '')), '')
-    )
-    OR ${leftName} = ${rightName}
-  )`;
 }
 
 function mapOrderLineRecord(row: any, status: 'open' | 'filled') {
@@ -291,41 +276,30 @@ async function assertProductsAccess(companyId: string): Promise<NextResponse | n
   return null;
 }
 
+function customerExactSql(customerId: string, customerName: string, alias: string): Prisma.Sql {
+  const idCol = Prisma.raw(`"${alias}"."customerId"`);
+  const nameCol = Prisma.raw(`"${alias}"."customerName"`);
+  if (customerId) return Prisma.sql`${idCol} = ${customerId}`;
+  if (customerName) return Prisma.sql`${nameCol} = ${customerName}`;
+  return Prisma.sql`FALSE`;
+}
+
 async function resolveCustomerOpenBook(params: {
   companyId: string;
   customerId: string;
   customerName: string;
 }): Promise<OpenBookWindow | null> {
-  const matchSql = customerMatchSql(params.customerId, params.customerName, 's');
-  const rows = await prisma.$queryRaw<Array<{ start: Date; end: Date }>>(Prisma.sql`
-    WITH customer_days AS (
-      SELECT ${Prisma.raw(sqlStoredDayStart('s."snapshotDate"'))} AS day_start, COUNT(*)::int AS n
-      FROM "CustomerOrderLineSnapshot" s
-      WHERE s."companyId" = ${params.companyId}
-        AND s."frequency" = 'daily'
-        AND ${matchSql}
-      GROUP BY 1
-    ),
-    latest AS (
-      SELECT MAX(day_start) AS max_day FROM customer_days
-    ),
-    ranked AS (
-      SELECT d.day_start, d.n, MAX(d.n) OVER () AS max_n
-      FROM customer_days d
-      CROSS JOIN latest
-      WHERE latest.max_day IS NOT NULL
-        AND d.day_start >= latest.max_day - INTERVAL '21 days'
-    )
-    SELECT day_start AS start, (day_start + INTERVAL '1 day') AS end
-    FROM ranked
-    WHERE n >= GREATEST((max_n * 0.5)::int, 1)
-    ORDER BY day_start DESC
-    LIMIT 1
+  const customerFilter = customerExactSql(params.customerId, params.customerName, 's');
+  const maxRows = await prisma.$queryRaw<Array<{ maxDate: Date | null }>>(Prisma.sql`
+    SELECT MAX(s."snapshotDate") AS "maxDate"
+    FROM "CustomerOrderLineSnapshot" s
+    WHERE s."companyId" = ${params.companyId}
+      AND s."frequency" = 'daily'
+      AND ${customerFilter}
   `);
-  const start = rows[0]?.start;
-  const end = rows[0]?.end;
-  if (!start || !end) return null;
-  return { start, end };
+  const maxDate = maxRows[0]?.maxDate;
+  if (!maxDate) return null;
+  return storedDayBoundsUtc(maxDate);
 }
 
 function payloadNumber(payload: Record<string, unknown> | null | undefined, keys: string[]): number | null {
@@ -575,22 +549,48 @@ async function loadOpenLines(params: {
   }
 }
 
-function stillOpenOnBookSql(alias: string, companyId: string, openBook: OpenBookWindow | null): Prisma.Sql {
-  if (!openBook) return Prisma.empty;
-  return Prisma.sql`
-    AND NOT EXISTS (
-      SELECT 1
-      FROM "CustomerOrderLineSnapshot" o
-      WHERE o."companyId" = ${companyId}
-        AND o."frequency" = 'daily'
-        AND o."snapshotDate" >= ${openBook.start}
-        AND o."snapshotDate" < ${openBook.end}
-        AND o."orderId" = ${Prisma.raw(`"${alias}"."orderId"`)}
-        AND o."lineId" = ${Prisma.raw(`"${alias}"."lineId"`)}
-        AND ${sameCustomerSql(alias, 'o')}
-        AND ${isTrulyOpenSql('o')}
-    )
-  `;
+function openKeysCte(
+  companyId: string,
+  customerId: string,
+  customerName: string,
+  openBook: OpenBookWindow | null,
+  withOpenFilters: boolean
+): Prisma.Sql {
+  if (!openBook) {
+    return Prisma.sql`open_keys AS (
+      SELECT NULL::text AS "orderId", NULL::text AS "lineId" WHERE FALSE
+    )`;
+  }
+  const match = customerExactSql(customerId, customerName, 'o');
+  const openFilters = withOpenFilters ? Prisma.sql`AND ${isTrulyOpenSql('o')}` : Prisma.empty;
+  return Prisma.sql`open_keys AS (
+    SELECT DISTINCT o."orderId", o."lineId"
+    FROM "CustomerOrderLineSnapshot" o
+    WHERE o."companyId" = ${companyId}
+      AND o."frequency" = 'daily'
+      AND o."snapshotDate" >= ${openBook.start}
+      AND o."snapshotDate" < ${openBook.end}
+      AND ${match}
+      ${openFilters}
+  )`;
+}
+
+async function queryFilledSql(query: Prisma.Sql): Promise<any[]> {
+  try {
+    return await prisma.$transaction(
+      async (tx) => {
+        await tx.$executeRaw`SELECT set_config('statement_timeout', '20000', true)`;
+        return tx.$queryRaw<any[]>(query);
+      },
+      { maxWait: 5000, timeout: 25000 }
+    );
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (/statement timeout|canceling statement|Transaction API error|timed out/i.test(message)) {
+      throw new Error('Filled order query timed out. Try again, or load a smaller date window.');
+    }
+    throw error;
+  }
 }
 
 async function loadFilledFromTable(params: {
@@ -599,11 +599,11 @@ async function loadFilledFromTable(params: {
   customerName: string;
   openBook: OpenBookWindow | null;
   startDate: Date;
-  endDate: Date;
+  endExclusive: Date;
 }): Promise<any[]> {
-  const matchSql = customerMatchSql(params.customerId, params.customerName, 'f');
-  const openExclude = stillOpenOnBookSql('f', params.companyId, params.openBook);
-  const query = (extraCols: Prisma.Sql) => Prisma.sql`
+  const matchSql = customerExactSql(params.customerId, params.customerName, 'f');
+  const query = (extraCols: Prisma.Sql, withOpenFilters: boolean) => Prisma.sql`
+    WITH ${openKeysCte(params.companyId, params.customerId, params.customerName, params.openBook, withOpenFilters)}
     SELECT *
     FROM (
       SELECT
@@ -627,21 +627,22 @@ async function loadFilledFromTable(params: {
       FROM "CustomerOrderLineFilled" f
       WHERE f."companyId" = ${params.companyId}
         AND ${matchSql}
-        AND COALESCE(f."filledAsOf", f."orderDate") >= ${params.startDate}
-        AND COALESCE(f."filledAsOf", f."orderDate") <= ${params.endDate}
-        ${openExclude}
+        AND f."filledAsOf" >= ${params.startDate}
+        AND f."filledAsOf" < ${params.endExclusive}
+        AND NOT EXISTS (
+          SELECT 1 FROM open_keys k
+          WHERE k."orderId" = f."orderId" AND k."lineId" = f."lineId"
+        )
       ORDER BY COALESCE(f."orderDate", f."filledAsOf") DESC, f."orderId" DESC, f."lineId" DESC
       LIMIT ${MAX_UNIQUE_LINES + 1}
     ) filled_lines
   `;
   try {
-    return await prisma.$queryRaw<any[]>(
-      query(Prisma.sql`f."customerPn", f."qtyShipped", f."lineStat",`)
-    );
+    return await queryFilledSql(query(Prisma.sql`f."customerPn", f."qtyShipped", f."lineStat",`, true));
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     if (!/qtyShipped|customerPn|lineStat/i.test(message)) throw error;
-    return prisma.$queryRaw<any[]>(query(Prisma.empty));
+    return queryFilledSql(query(Prisma.empty, false));
   }
 }
 
@@ -651,11 +652,11 @@ async function loadFilledFromSnapshots(params: {
   customerName: string;
   openBook: OpenBookWindow | null;
   startDate: Date;
-  endDate: Date;
+  endExclusive: Date;
 }): Promise<any[]> {
-  const matchSql = customerMatchSql(params.customerId, params.customerName, 's');
-  const openExclude = stillOpenOnBookSql('s', params.companyId, params.openBook);
-  const query = (extraCols: Prisma.Sql) => Prisma.sql`
+  const matchSql = customerExactSql(params.customerId, params.customerName, 's');
+  const query = (extraCols: Prisma.Sql, withOpenFilters: boolean) => Prisma.sql`
+    WITH ${openKeysCte(params.companyId, params.customerId, params.customerName, params.openBook, withOpenFilters)}
     SELECT *
     FROM (
       SELECT DISTINCT ON (s."orderId", s."lineId")
@@ -680,22 +681,23 @@ async function loadFilledFromSnapshots(params: {
       WHERE s."companyId" = ${params.companyId}
         AND s."frequency" = 'daily'
         AND ${matchSql}
-        AND COALESCE(s."orderDate", s."snapshotDate") >= ${params.startDate}
-        AND COALESCE(s."orderDate", s."snapshotDate") <= ${params.endDate}
-        ${openExclude}
+        AND s."snapshotDate" >= ${params.startDate}
+        AND s."snapshotDate" < ${params.endExclusive}
+        AND NOT EXISTS (
+          SELECT 1 FROM open_keys k
+          WHERE k."orderId" = s."orderId" AND k."lineId" = s."lineId"
+        )
       ORDER BY s."orderId", s."lineId", s."snapshotDate" DESC
     ) last_seen
     ORDER BY COALESCE(last_seen."orderDate", last_seen."filledAsOf") DESC, last_seen."orderId" DESC, last_seen."lineId" DESC
     LIMIT ${MAX_UNIQUE_LINES + 1}
   `;
   try {
-    return await prisma.$queryRaw<any[]>(
-      query(Prisma.sql`s."customerPn", s."qtyShipped", s."lineStat",`)
-    );
+    return await queryFilledSql(query(Prisma.sql`s."customerPn", s."qtyShipped", s."lineStat",`, true));
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     if (!/qtyShipped|customerPn|lineStat/i.test(message)) throw error;
-    return prisma.$queryRaw<any[]>(query(Prisma.empty));
+    return queryFilledSql(query(Prisma.empty, false));
   }
 }
 
@@ -705,7 +707,7 @@ async function loadFilledLines(params: {
   customerName: string;
   openBook: OpenBookWindow | null;
   startDate: Date;
-  endDate: Date;
+  endExclusive: Date;
 }) {
   try {
     const fromTable = await loadFilledFromTable(params);
@@ -773,7 +775,7 @@ export async function GET(request: NextRequest) {
 
     await ensureCustomerOrderLineFilledTables();
 
-    const openBook = await resolveOpenBookWindow(companyId);
+    const openBook = await resolveCustomerOpenBook({ companyId, customerId, customerName });
     const beforeParam = String(request.nextUrl.searchParams.get('before') || '').trim();
     const recentEnd = utcMidnightForEstDate(previousEstCalendarDate());
     const recentStart = addUtcMonths(recentEnd, -RECENT_MONTHS);
@@ -800,16 +802,19 @@ export async function GET(request: NextRequest) {
       kind = 'older';
     }
 
+    const endExclusive = addUtcDays(utcDay(endDate), 1);
     const nextOlderWindow = olderWindowBefore(startDate);
-    const identityByItem = await loadCustomerLineIdentity({ companyId, customerId, customerName });
-    const filledRows = await loadFilledLines({
-      companyId,
-      customerId,
-      customerName,
-      openBook,
-      startDate,
-      endDate,
-    });
+    const [identityByItem, filledRows] = await Promise.all([
+      loadCustomerLineIdentity({ companyId, customerId, customerName }),
+      loadFilledLines({
+        companyId,
+        customerId,
+        customerName,
+        openBook,
+        startDate,
+        endExclusive,
+      }),
+    ]);
     const truncated = filledRows.length > MAX_UNIQUE_LINES;
     const limitedFilled = truncated ? filledRows.slice(0, MAX_UNIQUE_LINES) : filledRows;
 

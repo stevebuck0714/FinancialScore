@@ -2121,14 +2121,31 @@ export default function OperationsTab({
         params.set('before', options.before);
       }
     }
-    const response = await fetch(`/api/operational-data/product-raw?${params}`, {
-      cache: 'no-store',
-    });
-    const payload = await response.json().catch(() => ({}));
-    if (!response.ok) {
-      throw new Error(payload?.error || 'Failed to load customer order lines');
+    const controller = new AbortController();
+    const timeoutMs = options.view === 'filled' ? 45000 : 60000;
+    const timeoutId = window.setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      const response = await fetch(`/api/operational-data/product-raw?${params}`, {
+        cache: 'no-store',
+        signal: controller.signal,
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(payload?.error || 'Failed to load customer order lines');
+      }
+      return payload;
+    } catch (error: any) {
+      if (error?.name === 'AbortError') {
+        throw new Error(
+          options.view === 'filled'
+            ? 'Filled orders took too long to load. Try again.'
+            : 'Customer order lines took too long to load.'
+        );
+      }
+      throw error;
+    } finally {
+      window.clearTimeout(timeoutId);
     }
-    return payload;
   };
 
   const loadWholesaleRawRecentWindow = async () => {
@@ -2169,6 +2186,7 @@ export default function OperationsTab({
   const loadWholesaleRawFilledWindow = async () => {
     if (!selectedWholesaleRawCustomer || wholesaleRawFilledLoading) return;
     setWholesaleRawFilledLoading(true);
+    setWholesaleRawFilledRequested(true);
     setWholesaleRawFilledError(null);
     setWholesaleRawFilledSortKey('isoDate');
     setWholesaleRawFilledSortDir('desc');
