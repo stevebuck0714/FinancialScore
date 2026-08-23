@@ -637,32 +637,7 @@ export async function loadProductRawCustomers(companyId: string): Promise<Array<
     byKey.set(key, { customerId, customerName: customerName || customerId });
   };
 
-  const headerDayRows = await prisma.$queryRaw<Array<{ start: Date | null }>>(Prisma.sql`
-    SELECT DATE_TRUNC('day', MAX(COALESCE("businessDate", "fetchedAt"))) AS start
-    FROM "InforRawRecord"
-    WHERE "companyId" = ${companyId}
-      AND UPPER(COALESCE("miProgram", '')) IN ('SLCOS', 'SLCOHDRS')
-  `);
-  const headerStart = headerDayRows[0]?.start;
-  if (headerStart) {
-    const headerEnd = addUtcDays(headerStart, 1);
-    const headerCustomerId = csiHeaderCustomerIdExpr('h');
-    const headerCustomerName = csiHeaderCustomerNameExpr('h');
-    const headerCustomers = await prisma.$queryRaw<Array<{ customerId: string | null; customerName: string | null }>>(Prisma.sql`
-      SELECT DISTINCT
-        ${headerCustomerId} AS "customerId",
-        ${headerCustomerName} AS "customerName"
-      FROM "InforRawRecord" h
-      WHERE h."companyId" = ${companyId}
-        AND UPPER(COALESCE(h."miProgram", '')) IN ('SLCOS', 'SLCOHDRS')
-        AND COALESCE(h."businessDate", h."fetchedAt") >= ${headerStart}
-        AND COALESCE(h."businessDate", h."fetchedAt") < ${headerEnd}
-        AND COALESCE(${headerCustomerName}, ${headerCustomerId}) IS NOT NULL
-    `);
-    for (const row of headerCustomers) add(row.customerId, row.customerName);
-  }
-
-  if (byKey.size === 0) {
+  try {
     const openBook = await resolveOpenBookWindow(companyId);
     if (openBook) {
       const snapshotCustomers = await prisma.$queryRaw<Array<{ customerId: string | null; customerName: string | null }>>(Prisma.sql`
@@ -676,6 +651,34 @@ export async function loadProductRawCustomers(companyId: string): Promise<Array<
       `);
       for (const row of snapshotCustomers) add(row.customerId, row.customerName);
     }
+  } catch (error) {
+    console.warn('[product-raw] snapshot customers failed', error);
+  }
+
+  try {
+    const headerDayRows = await prisma.$queryRaw<Array<{ start: Date | null }>>(Prisma.sql`
+      SELECT DATE_TRUNC('day', MAX(COALESCE("businessDate", "fetchedAt"))) AS start
+      FROM "InforRawRecord"
+      WHERE "companyId" = ${companyId}
+        AND "miProgram" IN ('SLCos', 'SLCohdrs', 'SLCOS', 'SLCOHDRS')
+    `);
+    const headerStart = headerDayRows[0]?.start;
+    if (headerStart) {
+      const headerEnd = addUtcDays(headerStart, 1);
+      const headerCustomers = await prisma.$queryRaw<Array<{ customerId: string | null; customerName: string | null }>>(Prisma.sql`
+        SELECT DISTINCT
+          ${csiHeaderCustomerIdExpr('h')} AS "customerId",
+          ${csiHeaderCustomerNameExpr('h')} AS "customerName"
+        FROM "InforRawRecord" h
+        WHERE h."companyId" = ${companyId}
+          AND h."miProgram" IN ('SLCos', 'SLCohdrs', 'SLCOS', 'SLCOHDRS')
+          AND COALESCE(h."businessDate", h."fetchedAt") >= ${headerStart}
+          AND COALESCE(h."businessDate", h."fetchedAt") < ${headerEnd}
+      `);
+      for (const row of headerCustomers) add(row.customerId, row.customerName);
+    }
+  } catch (error) {
+    console.warn('[product-raw] CSI header customers failed', error);
   }
 
   try {
@@ -688,8 +691,21 @@ export async function loadProductRawCustomers(companyId: string): Promise<Array<
       LIMIT 2000
     `);
     for (const row of filledCustomers) add(row.customerId, row.customerName);
-  } catch {
-    // Filled table may not exist yet.
+  } catch (error) {
+    console.warn('[product-raw] filled customers failed', error);
+  }
+
+  try {
+    const forecastCustomers = await prisma.$queryRaw<Array<{ customerId: string | null; customerName: string | null }>>(Prisma.sql`
+      SELECT DISTINCT "customerId", "customerName"
+      FROM "ProductRevenueForecastLine"
+      WHERE "companyId" = ${companyId}
+        AND TRIM(COALESCE("customerName", "customerId", '')) <> ''
+      LIMIT 2000
+    `);
+    for (const row of forecastCustomers) add(row.customerId, row.customerName);
+  } catch (error) {
+    console.warn('[product-raw] forecast customers failed', error);
   }
 
   return Array.from(byKey.values()).sort((left, right) =>
