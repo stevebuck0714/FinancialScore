@@ -416,37 +416,124 @@ async function hydrateQtyShippedFromOpenDay(params: {
   }
 }
 
+function applyShippedMap(rows: any[], shippedByLine: Map<string, number>): Array<{ orderId: string; lineId: string; qtyShipped: number }> {
+  const persist: Array<{ orderId: string; lineId: string; qtyShipped: number }> = [];
+  for (const row of rows) {
+    if (row?.qtyShipped != null && row?.qtyShipped !== '') continue;
+    const shipped = shippedByLine.get(normalizeOrderLineKey(row.orderId, row.lineId));
+    if (shipped == null) continue;
+    row.qtyShipped = shipped;
+    persist.push({
+      orderId: String(row.orderId || ''),
+      lineId: String(row.lineId || ''),
+      qtyShipped: shipped,
+    });
+  }
+  return persist;
+}
+
+async function persistFilledQtyShipped(companyId: string, persist: Array<{ orderId: string; lineId: string; qtyShipped: number }>) {
+  for (let i = 0; i < persist.length; i += 200) {
+    const chunk = persist.slice(i, i + 200);
+    const values = chunk.map((row) => Prisma.sql`(${row.orderId}, ${row.lineId}, ${Number(row.qtyShipped)})`);
+    await prisma.$executeRaw(Prisma.sql`
+      WITH src("orderId","lineId","qtyShipped") AS (VALUES ${Prisma.join(values)})
+      UPDATE "CustomerOrderLineFilled" f
+      SET "qtyShipped" = src."qtyShipped"
+      FROM src
+      WHERE f."companyId" = ${companyId}
+        AND f."orderId" = src."orderId"
+        AND f."lineId" = src."lineId"
+        AND f."qtyShipped" IS NULL
+    `);
+  }
+}
+
 async function hydrateFilledQtyShippedFromSnapshots(params: {
   companyId: string;
+  customerId: string;
   rows: any[];
 }): Promise<void> {
   const missing = params.rows.filter((row) => row?.qtyShipped == null || row?.qtyShipped === '');
   if (missing.length === 0) return;
   const orderIds = Array.from(new Set(missing.map((row) => String(row?.orderId || '').trim()).filter(Boolean)));
   if (orderIds.length === 0) return;
+  const orderFilter = Prisma.join(orderIds.map((id) => Prisma.sql`${id}`));
   try {
-    const snapshotRows = await prisma.$queryRaw<Array<{ orderId: string; lineId: string; qtyShipped: number }>>(Prisma.sql`
+    const snapshotRows = await prisma.$queryRaw<Array<{ orderId: string; lineId: string; qtyShipped: number | null; day: Date | null }>>(Prisma.sql`
       SELECT DISTINCT ON (s."orderId", s."lineId")
         s."orderId",
         s."lineId",
-        s."qtyShipped"
+        s."qtyShipped",
+        DATE_TRUNC('day', s."snapshotDate") AS day
       FROM "CustomerOrderLineSnapshot" s
       WHERE s."companyId" = ${params.companyId}
         AND s."frequency" = 'daily'
-        AND s."orderId" IN (${Prisma.join(orderIds.map((id) => Prisma.sql`${id}`))})
-        AND s."qtyShipped" IS NOT NULL
+        AND s."orderId" IN (${orderFilter})
       ORDER BY s."orderId", s."lineId", s."snapshotDate" DESC
     `);
-    const shippedByLine = new Map(
-      snapshotRows.map((row) => [normalizeOrderLineKey(row.orderId, row.lineId), Number(row.qtyShipped)])
-    );
-    for (const row of params.rows) {
-      if (row?.qtyShipped != null && row?.qtyShipped !== '') continue;
-      const shipped = shippedByLine.get(normalizeOrderLineKey(row.orderId, row.lineId));
-      if (shipped != null) row.qtyShipped = shipped;
+    const shippedByLine = new Map<string, number>();
+    const lastDayByLine = new Map<string, Date>();
+    for (const row of snapshotRows) {
+      const key = normalizeOrderLineKey(row.orderId, row.lineId);
+      if (row.qtyShipped != null && Number.isFinite(Number(row.qtyShipped))) {
+        shippedByLine.set(key, Number(row.qtyShipped));
+      }
+      if (row.day) lastDayByLine.set(key, utcDay(new Date(row.day)));
     }
+    let persist = applyShippedMap(params.rows, shippedByLine);
+    if (persist.length) await persistFilledQtyShipped(params.companyId, persist);
+
+    const stillMissing = params.rows.filter((row) => row?.qtyShipped == null || row?.qtyShipped === '');
+    if (stillMissing.length === 0) return;
+
+    const dayCounts = new Map<number, number>();
+    for (const row of stillMissing) {
+      const key = normalizeOrderLineKey(row.orderId, row.lineId);
+      const fillDate = row.filledAsOf || row.orderDate || row.snapshotDate;
+      const day = lastDayByLine.get(key) || (fillDate ? utcDay(new Date(fillDate)) : null);
+      if (!day || Number.isNaN(day.getTime())) continue;
+      const stamp = day.getTime();
+      dayCounts.set(stamp, (dayCounts.get(stamp) || 0) + 1);
+    }
+    const days = Array.from(dayCounts.entries())
+      .sort((left, right) => right[1] - left[1] || right[0] - left[0])
+      .slice(0, 32)
+      .map((entry) => new Date(entry[0]));
+    if (days.length === 0) return;
+
+    const wanted = new Set(stillMissing.map((row) => normalizeOrderLineKey(row.orderId, row.lineId)));
+    const rawShipped = new Map<string, number>();
+    for (let i = 0; i < days.length && rawShipped.size < wanted.size; i += 8) {
+      const dayChunk = days.slice(i, i + 8);
+      const rawRows = await prisma.$queryRaw<Array<{ orderId: string | null; line: string | null; release: string | null; qtyShipped: number | null }>>(Prisma.sql`
+        SELECT
+          TRIM(COALESCE(payload->>'CoNum', payload->>'coNum', '')) AS "orderId",
+          TRIM(COALESCE(payload->>'CoLine', payload->>'coLine', '1')) AS line,
+          TRIM(COALESCE(payload->>'CoRelease', payload->>'coRelease', '0')) AS release,
+          CASE
+            WHEN COALESCE(payload->>'QtyShipped', payload->>'qtyShipped', '') ~ '^-?[0-9]+(\\.[0-9]+)?$'
+            THEN COALESCE(payload->>'QtyShipped', payload->>'qtyShipped')::double precision
+            ELSE NULL
+          END AS "qtyShipped"
+        FROM "InforRawRecord"
+        WHERE "companyId" = ${params.companyId}
+          AND UPPER(COALESCE("miProgram", '')) = 'SLCOITEMS'
+          AND "businessDate" IN (${Prisma.join(dayChunk.map((day) => Prisma.sql`${day}`))})
+          AND TRIM(COALESCE(payload->>'CoNum', payload->>'coNum', '')) IN (${orderFilter})
+          AND COALESCE(payload->>'QtyShipped', payload->>'qtyShipped', '') <> ''
+      `);
+      for (const row of rawRows) {
+        if (row.qtyShipped == null || !Number.isFinite(Number(row.qtyShipped))) continue;
+        const key = normalizeOrderLineKey(row.orderId, `${row.line || '1'}-${row.release || '0'}`);
+        if (!wanted.has(key) || rawShipped.has(key)) continue;
+        rawShipped.set(key, Number(row.qtyShipped));
+      }
+    }
+    persist = applyShippedMap(params.rows, rawShipped);
+    if (persist.length) await persistFilledQtyShipped(params.companyId, persist);
   } catch (error) {
-    console.error('[product-raw] filled qty shipped snapshot hydrate failed', error);
+    console.error('[product-raw] filled qty shipped hydrate failed', error);
   }
 }
 
@@ -716,7 +803,7 @@ export async function GET(request: NextRequest) {
     });
     const truncated = filledRows.length > MAX_UNIQUE_LINES;
     const limitedFilled = truncated ? filledRows.slice(0, MAX_UNIQUE_LINES) : filledRows;
-    await hydrateFilledQtyShippedFromSnapshots({ companyId, rows: limitedFilled });
+    await hydrateFilledQtyShippedFromSnapshots({ companyId, customerId, rows: limitedFilled });
 
     return NextResponse.json({
       openRecords: [],
