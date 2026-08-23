@@ -199,115 +199,6 @@ async function loadCustomerLineIdentity(params: {
   return byItem;
 }
 
-function normalizeOrderLineKey(orderId: unknown, lineId: unknown): string {
-  const normalizeToken = (value: unknown): string => {
-    const raw = String(value ?? '').trim();
-    if (!raw) return '0';
-    const num = Number(raw);
-    if (Number.isFinite(num)) return String(num);
-    return raw.toUpperCase();
-  };
-  const order = normalizeToken(orderId);
-  const rawLine = String(lineId || '').trim();
-  const [linePart, releasePart] = rawLine.split('-');
-  return `${order}|${normalizeToken(linePart)}-${normalizeToken(releasePart)}`;
-}
-
-async function loadQtyShippedFromRaw(params: {
-  companyId: string;
-  customerId: string;
-  orderIds: string[];
-}): Promise<Map<string, number>> {
-  const shippedByLine = new Map<string, number>();
-  const orderIds = params.orderIds.map((id) => String(id || '').trim()).filter(Boolean);
-  if (orderIds.length === 0) return shippedByLine;
-  try {
-    const orderFilter = Prisma.join(orderIds.map((id) => Prisma.sql`${id}`));
-    const customerFilter = params.customerId
-      ? Prisma.sql`AND (
-          NULLIF(TRIM(COALESCE(payload->>'CustNum', '')), '') = ${params.customerId}
-          OR NULLIF(TRIM(COALESCE(payload->>'CoCustNum', '')), '') = ${params.customerId}
-        )`
-      : Prisma.empty;
-    const rows = await prisma.$queryRaw<Array<{ orderId: string | null; line: string | null; release: string | null; qtyShipped: number | null }>>(Prisma.sql`
-      SELECT
-        TRIM(COALESCE(payload->>'CoNum', payload->>'coNum', '')) AS "orderId",
-        TRIM(COALESCE(payload->>'CoLine', payload->>'coLine', '1')) AS line,
-        TRIM(COALESCE(payload->>'CoRelease', payload->>'coRelease', '0')) AS release,
-        CASE
-          WHEN COALESCE(payload->>'QtyShipped', payload->>'qtyShipped', '') ~ '^-?[0-9]+(\\.[0-9]+)?$'
-          THEN COALESCE(payload->>'QtyShipped', payload->>'qtyShipped')::double precision
-          ELSE NULL
-        END AS "qtyShipped"
-      FROM "InforRawRecord"
-      WHERE "companyId" = ${params.companyId}
-        AND UPPER(COALESCE("miProgram", '')) = 'SLCOITEMS'
-        AND TRIM(COALESCE(payload->>'CoNum', payload->>'coNum', '')) IN (${orderFilter})
-        ${customerFilter}
-        AND COALESCE(payload->>'QtyShipped', payload->>'qtyShipped', '') <> ''
-      LIMIT 50000
-    `);
-    for (const row of rows) {
-      if (row.qtyShipped == null || !Number.isFinite(Number(row.qtyShipped))) continue;
-      const key = normalizeOrderLineKey(row.orderId, `${row.line || '1'}-${row.release || '0'}`);
-      const next = Number(row.qtyShipped);
-      const current = shippedByLine.get(key);
-      if (current == null || next > current) shippedByLine.set(key, next);
-    }
-    if (shippedByLine.size === 0 && params.customerId) {
-      const retry = await prisma.$queryRaw<Array<{ orderId: string | null; line: string | null; release: string | null; qtyShipped: number | null }>>(Prisma.sql`
-        SELECT
-          TRIM(COALESCE(payload->>'CoNum', payload->>'coNum', '')) AS "orderId",
-          TRIM(COALESCE(payload->>'CoLine', payload->>'coLine', '1')) AS line,
-          TRIM(COALESCE(payload->>'CoRelease', payload->>'coRelease', '0')) AS release,
-          CASE
-            WHEN COALESCE(payload->>'QtyShipped', payload->>'qtyShipped', '') ~ '^-?[0-9]+(\\.[0-9]+)?$'
-            THEN COALESCE(payload->>'QtyShipped', payload->>'qtyShipped')::double precision
-            ELSE NULL
-          END AS "qtyShipped"
-        FROM "InforRawRecord"
-        WHERE "companyId" = ${params.companyId}
-          AND UPPER(COALESCE("miProgram", '')) = 'SLCOITEMS'
-          AND TRIM(COALESCE(payload->>'CoNum', payload->>'coNum', '')) IN (${orderFilter})
-          AND COALESCE(payload->>'QtyShipped', payload->>'qtyShipped', '') <> ''
-        LIMIT 50000
-      `);
-      for (const row of retry) {
-        if (row.qtyShipped == null || !Number.isFinite(Number(row.qtyShipped))) continue;
-        const key = normalizeOrderLineKey(row.orderId, `${row.line || '1'}-${row.release || '0'}`);
-        const next = Number(row.qtyShipped);
-        const current = shippedByLine.get(key);
-        if (current == null || next > current) shippedByLine.set(key, next);
-      }
-    }
-  } catch (error) {
-    console.error('[product-raw] qty shipped hydrate failed', error);
-  }
-  return shippedByLine;
-}
-
-async function hydrateQtyShipped(params: {
-  companyId: string;
-  customerId: string;
-  rows: any[];
-}): Promise<any[]> {
-  const missing = params.rows.filter((row) => row?.qtyShipped == null || row?.qtyShipped === '');
-  if (missing.length === 0) return params.rows;
-  const orderIds = Array.from(new Set(missing.map((row) => String(row?.orderId || '').trim()).filter(Boolean)));
-  const shippedByLine = await loadQtyShippedFromRaw({
-    companyId: params.companyId,
-    customerId: params.customerId,
-    orderIds,
-  });
-  if (shippedByLine.size === 0) return params.rows;
-  for (const row of params.rows) {
-    if (row?.qtyShipped != null && row?.qtyShipped !== '') continue;
-    const shipped = shippedByLine.get(normalizeOrderLineKey(row?.orderId, row?.lineId));
-    if (shipped != null) row.qtyShipped = shipped;
-  }
-  return params.rows;
-}
-
 function applyLineIdentity(row: any, identityByItem: Map<string, LineIdentity>) {
   const identity =
     identityByItem.get(itemIdentityKey(row.sku)) ||
@@ -432,6 +323,133 @@ async function resolveCustomerOpenBook(params: {
   return { start, end };
 }
 
+function payloadNumber(payload: Record<string, unknown> | null | undefined, keys: string[]): number | null {
+  if (!payload) return null;
+  for (const key of keys) {
+    const raw = payload[key];
+    if (raw == null || raw === '') continue;
+    const n = Number(raw);
+    if (Number.isFinite(n)) return n;
+  }
+  return null;
+}
+
+function normalizeOrderLineKey(orderId: unknown, lineId: unknown): string {
+  const token = (value: unknown): string => {
+    const raw = String(value ?? '').trim();
+    if (!raw) return '0';
+    const num = Number(raw);
+    return Number.isFinite(num) ? String(num) : raw.toUpperCase();
+  };
+  const [linePart, releasePart] = String(lineId || '').split('-');
+  return `${token(orderId)}|${token(linePart)}-${token(releasePart)}`;
+}
+
+async function hydrateQtyShippedFromOpenDay(params: {
+  companyId: string;
+  openBook: OpenBookWindow;
+  rows: any[];
+}): Promise<void> {
+  const missing = params.rows.filter((row) => row?.qtyShipped == null || row?.qtyShipped === '');
+  if (missing.length === 0) return;
+  try {
+    const rawRows = await (prisma as any).inforRawRecord.findMany({
+      where: {
+        companyId: params.companyId,
+        businessDate: { gte: params.openBook.start, lt: params.openBook.end },
+        miProgram: { in: ['SLCOITEMS', 'SLCoitems'] },
+      },
+      select: { payload: true },
+      take: 40000,
+    });
+    if (rawRows.length === 0) return;
+    const wanted = new Set(missing.map((row) => normalizeOrderLineKey(row.orderId, row.lineId)));
+    const shippedByLine = new Map<string, number>();
+    for (const raw of rawRows) {
+      const payload =
+        raw.payload && typeof raw.payload === 'object' && !Array.isArray(raw.payload)
+          ? (raw.payload as Record<string, unknown>)
+          : null;
+      if (!payload) continue;
+      const orderId = payload.CoNum ?? payload.coNum ?? payload.CONUM;
+      const line = payload.CoLine ?? payload.coLine ?? payload.COLINE ?? '1';
+      const release = payload.CoRelease ?? payload.coRelease ?? payload.CORELEASE ?? '0';
+      const key = normalizeOrderLineKey(orderId, `${line}-${release}`);
+      if (!wanted.has(key) || shippedByLine.has(key)) continue;
+      const shipped = payloadNumber(payload, ['QtyShipped', 'qtyShipped']);
+      if (shipped == null) continue;
+      shippedByLine.set(key, shipped);
+    }
+    if (shippedByLine.size === 0) return;
+    const persist: Array<{ orderId: string; lineId: string; qtyShipped: number }> = [];
+    for (const row of params.rows) {
+      if (row?.qtyShipped != null && row?.qtyShipped !== '') continue;
+      const shipped = shippedByLine.get(normalizeOrderLineKey(row.orderId, row.lineId));
+      if (shipped == null) continue;
+      row.qtyShipped = shipped;
+      persist.push({
+        orderId: String(row.orderId || ''),
+        lineId: String(row.lineId || ''),
+        qtyShipped: shipped,
+      });
+    }
+    for (let i = 0; i < persist.length; i += 200) {
+      const chunk = persist.slice(i, i + 200);
+      const values = chunk.map(
+        (row) => Prisma.sql`(${row.orderId}, ${row.lineId}, ${Number(row.qtyShipped)})`
+      );
+      await prisma.$executeRaw(Prisma.sql`
+        WITH src("orderId","lineId","qtyShipped") AS (VALUES ${Prisma.join(values)})
+        UPDATE "CustomerOrderLineSnapshot" s
+        SET "qtyShipped" = src."qtyShipped"
+        FROM src
+        WHERE s."companyId" = ${params.companyId}
+          AND s."frequency" = 'daily'
+          AND s."snapshotDate" >= ${params.openBook.start}
+          AND s."snapshotDate" < ${params.openBook.end}
+          AND s."orderId" = src."orderId"
+          AND s."lineId" = src."lineId"
+      `);
+    }
+  } catch (error) {
+    console.error('[product-raw] qty shipped day hydrate failed', error);
+  }
+}
+
+async function hydrateFilledQtyShippedFromSnapshots(params: {
+  companyId: string;
+  rows: any[];
+}): Promise<void> {
+  const missing = params.rows.filter((row) => row?.qtyShipped == null || row?.qtyShipped === '');
+  if (missing.length === 0) return;
+  const orderIds = Array.from(new Set(missing.map((row) => String(row?.orderId || '').trim()).filter(Boolean)));
+  if (orderIds.length === 0) return;
+  try {
+    const snapshotRows = await prisma.$queryRaw<Array<{ orderId: string; lineId: string; qtyShipped: number }>>(Prisma.sql`
+      SELECT DISTINCT ON (s."orderId", s."lineId")
+        s."orderId",
+        s."lineId",
+        s."qtyShipped"
+      FROM "CustomerOrderLineSnapshot" s
+      WHERE s."companyId" = ${params.companyId}
+        AND s."frequency" = 'daily'
+        AND s."orderId" IN (${Prisma.join(orderIds.map((id) => Prisma.sql`${id}`))})
+        AND s."qtyShipped" IS NOT NULL
+      ORDER BY s."orderId", s."lineId", s."snapshotDate" DESC
+    `);
+    const shippedByLine = new Map(
+      snapshotRows.map((row) => [normalizeOrderLineKey(row.orderId, row.lineId), Number(row.qtyShipped)])
+    );
+    for (const row of params.rows) {
+      if (row?.qtyShipped != null && row?.qtyShipped !== '') continue;
+      const shipped = shippedByLine.get(normalizeOrderLineKey(row.orderId, row.lineId));
+      if (shipped != null) row.qtyShipped = shipped;
+    }
+  } catch (error) {
+    console.error('[product-raw] filled qty shipped snapshot hydrate failed', error);
+  }
+}
+
 async function loadOpenLines(params: {
   companyId: string;
   customerId: string;
@@ -477,6 +495,7 @@ async function loadOpenLines(params: {
       )
     ORDER BY s."orderId", s."lineId", s."snapshotDate" DESC
   `);
+    await hydrateQtyShippedFromOpenDay({ companyId: params.companyId, openBook, rows });
     return { rows, openAsOf: openBook.start };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
@@ -515,6 +534,7 @@ async function loadOpenLines(params: {
         )
       ORDER BY s."orderId", s."lineId", s."snapshotDate" DESC
     `);
+    await hydrateQtyShippedFromOpenDay({ companyId: params.companyId, openBook, rows });
     return { rows, openAsOf: openBook.start };
   }
 }
@@ -642,9 +662,8 @@ export async function GET(request: NextRequest) {
         customerId,
         customerName,
       });
-      const hydratedOpen = await hydrateQtyShipped({ companyId, customerId, rows: openRows });
       return NextResponse.json({
-        openRecords: hydratedOpen
+        openRecords: openRows
           .map((row) => mapOrderLineRecord(row, 'open'))
           .map((row) => applyLineIdentity(row, identityByItem)),
         filledRecords: [],
@@ -697,11 +716,11 @@ export async function GET(request: NextRequest) {
     });
     const truncated = filledRows.length > MAX_UNIQUE_LINES;
     const limitedFilled = truncated ? filledRows.slice(0, MAX_UNIQUE_LINES) : filledRows;
-    const hydratedFilled = await hydrateQtyShipped({ companyId, customerId, rows: limitedFilled });
+    await hydrateFilledQtyShippedFromSnapshots({ companyId, rows: limitedFilled });
 
     return NextResponse.json({
       openRecords: [],
-      filledRecords: hydratedFilled
+      filledRecords: limitedFilled
         .map((row) => mapOrderLineRecord(row, 'filled'))
         .map((row) => applyLineIdentity(row, identityByItem)),
       window: {

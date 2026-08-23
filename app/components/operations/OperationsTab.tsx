@@ -2135,13 +2135,13 @@ export default function OperationsTab({
     if (!selectedWholesaleRawCustomer || wholesaleRawFilledLoading) return;
     setWholesaleRawFilledLoading(true);
     setWholesaleRawFilledError(null);
-    setWholesaleRawFilledRequested(true);
     setWholesaleRawFilledSortKey('isoDate');
     setWholesaleRawFilledSortDir('desc');
     try {
       const payload = await fetchWholesaleRawLines({ view: 'filled', window: 'recent' });
       setWholesaleRawFilledLines(Array.isArray(payload?.filledRecords) ? payload.filledRecords : []);
       applyWholesaleRawWindowPayload(payload, { resetWindow: true });
+      setWholesaleRawFilledRequested(true);
     } catch (error: any) {
       setWholesaleRawFilledLines([]);
       setWholesaleRawFilledError(error?.message || 'Failed to load filled order lines');
@@ -10303,16 +10303,16 @@ export default function OperationsTab({
                 <button
                   type="button"
                   onClick={() => { void loadWholesaleRawFilledWindow(); }}
-                  disabled={!selectedWholesaleRawCustomer || wholesaleRawFilledLoading}
+                  disabled={!selectedWholesaleRawCustomer || wholesaleRawFilledLoading || wholesaleRawLinesLoading}
                   title="Load the last 2 years of filled orders"
                   style={{
                     border: '1px solid #cbd5e1',
                     borderRadius: '8px',
                     padding: '8px 10px',
                     fontSize: '12px',
-                    background: !selectedWholesaleRawCustomer || wholesaleRawFilledLoading ? '#f8fafc' : '#fff',
+                    background: !selectedWholesaleRawCustomer || wholesaleRawFilledLoading || wholesaleRawLinesLoading ? '#f8fafc' : '#fff',
                     color: '#334155',
-                    cursor: !selectedWholesaleRawCustomer || wholesaleRawFilledLoading ? 'not-allowed' : 'pointer',
+                    cursor: !selectedWholesaleRawCustomer || wholesaleRawFilledLoading || wholesaleRawLinesLoading ? 'not-allowed' : 'pointer',
                     fontWeight: 700,
                   }}
                 >
