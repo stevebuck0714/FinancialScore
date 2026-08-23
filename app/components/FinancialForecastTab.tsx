@@ -2,6 +2,7 @@
 'use client';
 
 import React, { useEffect, useMemo, useState } from 'react';
+import { formatEstDateTime } from '@/lib/time/eastern';
 import { getFieldDisplayName } from '@/lib/constants/field-display-names';
 import { getSectorSchema, getTargetFieldOptions } from '@/lib/constants/sector-target-fields';
 import { useCompanyMoneyFormatter } from '@/app/hooks/useCompanyMoneyFormatter';
@@ -2036,7 +2037,7 @@ export default function FinancialForecastTab({
                 {isLoadingInputs
                   ? 'Loading saved inputs...'
                   : lastSavedAt
-                    ? `Last saved ${new Date(lastSavedAt).toLocaleString()}`
+                    ? `Last saved ${formatEstDateTime(lastSavedAt)}`
                     : 'Not saved yet'}
               </div>
               <button
@@ -2793,7 +2794,7 @@ export default function FinancialForecastTab({
                 ))}
               </div>
               <div style={{ fontSize: '12px', color: '#64748b' }}>
-                {lastBudgetArchiveAt ? `Last budget archive ${new Date(lastBudgetArchiveAt).toLocaleString()}` : 'No budget archive yet'}
+                {lastBudgetArchiveAt ? `Last budget archive ${formatEstDateTime(lastBudgetArchiveAt)}` : 'No budget archive yet'}
               </div>
               <button
                 onClick={handleArchiveBudget}

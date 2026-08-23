@@ -2,6 +2,7 @@
 'use client';
 
 import React, { useState, useMemo, useEffect, useCallback, ChangeEvent, useRef } from 'react';
+import { formatEstDateTime } from '@/lib/time/eastern';
 import dynamic from 'next/dynamic';
 import * as XLSX from 'xlsx';
 import { upload } from '@vercel/blob/client';
@@ -3163,7 +3164,7 @@ function FinancialScorePage() {
       : null;
     const companyLabel = String((currentCompany as any)?.companyName || (currentCompany as any)?.name || '').trim() || 'Account Review';
     const monthLabel = latestAccountReviewMonthLabel ? ` — ${latestAccountReviewMonthLabel}` : '';
-    const generatedAt = new Date().toLocaleString();
+    const generatedAt = formatEstDateTime(new Date());
     const printWindow = window.open('', '_blank', 'width=1100,height=800');
     if (!printWindow) {
       alert('Popup blocked. Please allow popups for this site to print the Account Review.');
@@ -15543,7 +15544,7 @@ function FinancialScorePage() {
                     {bakersCogsSource.workbookUpload ? (
                       <div style={{ fontSize: '12px', color: '#475569', lineHeight: 1.6 }}>
                         <div><strong>File:</strong> {bakersCogsSource.workbookUpload.originalFileName || 'Bakers COGS workbook'}</div>
-                        <div><strong>Uploaded:</strong> {bakersCogsSource.workbookUpload.uploadedAt ? new Date(bakersCogsSource.workbookUpload.uploadedAt).toLocaleString() : 'Unknown'}</div>
+                        <div><strong>Uploaded:</strong> {bakersCogsSource.workbookUpload.uploadedAt ? formatEstDateTime(bakersCogsSource.workbookUpload.uploadedAt) : 'Unknown'}</div>
                         <div><strong>Sheets found:</strong> {Array.isArray(bakersCogsSource.workbookUpload.sheetNames) ? bakersCogsSource.workbookUpload.sheetNames.join(', ') : 'Unknown'}</div>
                         {bakersCogsSource.workbookUpload.blobUrl ? (
                           <div>
@@ -15562,7 +15563,7 @@ function FinancialScorePage() {
                     {bakersCogsSource.parsedWorkbook && (
                       <div style={{ marginTop: '12px', padding: '10px', background: 'white', border: '1px solid #e2e8f0', borderRadius: '8px', fontSize: '12px', color: '#334155' }}>
                         <div style={{ fontWeight: '700', color: '#1e293b', marginBottom: '6px' }}>Parsed COGS summary</div>
-                        <div><strong>Parsed:</strong> {bakersCogsSource.parsedWorkbook.parsedAt ? new Date(bakersCogsSource.parsedWorkbook.parsedAt).toLocaleString() : 'Unknown'}</div>
+                        <div><strong>Parsed:</strong> {bakersCogsSource.parsedWorkbook.parsedAt ? formatEstDateTime(bakersCogsSource.parsedWorkbook.parsedAt) : 'Unknown'}</div>
                         <div><strong>Products parsed:</strong> {bakersCogsSource.parsedWorkbook.productCount ?? 0}</div>
                         <div><strong>Rows saved:</strong> {bakersCogsSource.parsedWorkbook.rowCount ?? 0}</div>
                         {Array.isArray(bakersCogsSource.parsedWorkbook.formulaDateKeys) && bakersCogsSource.parsedWorkbook.formulaDateKeys.length > 0 ? (
@@ -15658,7 +15659,7 @@ function FinancialScorePage() {
                     {aprSgpGmpaSource.workbookUpload ? (
                       <div style={{ fontSize: '12px', color: '#475569', lineHeight: 1.6 }}>
                         <div><strong>File:</strong> {aprSgpGmpaSource.workbookUpload.originalFileName || 'APR SGP GMPA workbook'}</div>
-                        <div><strong>Uploaded:</strong> {aprSgpGmpaSource.workbookUpload.uploadedAt ? new Date(aprSgpGmpaSource.workbookUpload.uploadedAt).toLocaleString() : 'Unknown'}</div>
+                        <div><strong>Uploaded:</strong> {aprSgpGmpaSource.workbookUpload.uploadedAt ? formatEstDateTime(aprSgpGmpaSource.workbookUpload.uploadedAt) : 'Unknown'}</div>
                         <div><strong>Data date:</strong> {aprSgpGmpaSource.workbookUpload.sourceDateIso ? new Date(aprSgpGmpaSource.workbookUpload.sourceDateIso).toLocaleDateString() : 'Unknown'}</div>
                         <div><strong>Sheets found:</strong> {Array.isArray(aprSgpGmpaSource.workbookUpload.sheetNames) ? aprSgpGmpaSource.workbookUpload.sheetNames.join(', ') : 'Unknown'}</div>
                         {aprSgpGmpaSource.workbookUpload.blobUrl ? (
@@ -15678,7 +15679,7 @@ function FinancialScorePage() {
                     {aprSgpGmpaSource.parsedWorkbook && (
                       <div style={{ marginTop: '12px', padding: '10px', background: 'white', border: '1px solid #e2e8f0', borderRadius: '8px', fontSize: '12px', color: '#334155' }}>
                         <div style={{ fontWeight: '700', color: '#1e293b', marginBottom: '6px' }}>Parsed forecast summary</div>
-                        <div><strong>Parsed:</strong> {aprSgpGmpaSource.parsedWorkbook.parsedAt ? new Date(aprSgpGmpaSource.parsedWorkbook.parsedAt).toLocaleString() : 'Unknown'}</div>
+                        <div><strong>Parsed:</strong> {aprSgpGmpaSource.parsedWorkbook.parsedAt ? formatEstDateTime(aprSgpGmpaSource.parsedWorkbook.parsedAt) : 'Unknown'}</div>
                         <div><strong>Data date:</strong> {aprSgpGmpaSource.parsedWorkbook.sourceDateIso ? new Date(aprSgpGmpaSource.parsedWorkbook.sourceDateIso).toLocaleDateString() : 'Unknown'}</div>
                         <div><strong>Rows parsed:</strong> {aprSgpGmpaSource.parsedWorkbook.rowCount ?? 0}</div>
                         <div><strong>Customers parsed:</strong> {aprSgpGmpaSource.parsedWorkbook.customerCount ?? 0}</div>
@@ -15857,7 +15858,7 @@ function FinancialScorePage() {
                     </div>
                     <div style={{ fontSize: '12px', color: '#475569' }}>
                       {bambooSource.lastSyncAt
-                        ? `Last sync: ${new Date(bambooSource.lastSyncAt).toLocaleString()}`
+                        ? `Last sync: ${formatEstDateTime(bambooSource.lastSyncAt)}`
                         : 'No BambooHR sync has run yet.'}
                     </div>
                     {bambooSource.errorMessage ? (
@@ -15933,7 +15934,7 @@ function FinancialScorePage() {
                     {cogentRateCardSource.workbookUpload ? (
                       <div style={{ fontSize: '12px', color: '#475569', lineHeight: 1.6 }}>
                         <div><strong>File:</strong> {cogentRateCardSource.workbookUpload.originalFileName || 'Cogent Rate Card workbook'}</div>
-                        <div><strong>Uploaded:</strong> {cogentRateCardSource.workbookUpload.uploadedAt ? new Date(cogentRateCardSource.workbookUpload.uploadedAt).toLocaleString() : 'Unknown'}</div>
+                        <div><strong>Uploaded:</strong> {cogentRateCardSource.workbookUpload.uploadedAt ? formatEstDateTime(cogentRateCardSource.workbookUpload.uploadedAt) : 'Unknown'}</div>
                         <div><strong>Sheets found:</strong> {Array.isArray(cogentRateCardSource.workbookUpload.sheetNames) ? cogentRateCardSource.workbookUpload.sheetNames.join(', ') : 'Unknown'}</div>
                         {cogentRateCardSource.workbookUpload.blobUrl ? (
                           <div>
@@ -15952,7 +15953,7 @@ function FinancialScorePage() {
                     {cogentRateCardSource.parsedWorkbook && (
                       <div style={{ marginTop: '12px', padding: '10px', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px', fontSize: '12px', color: '#334155' }}>
                         <div style={{ fontWeight: '700', color: '#1e293b', marginBottom: '6px' }}>Active rate card summary</div>
-                        <div><strong>Parsed:</strong> {cogentRateCardSource.parsedWorkbook.parsedAt ? new Date(cogentRateCardSource.parsedWorkbook.parsedAt).toLocaleString() : 'Unknown'}</div>
+                        <div><strong>Parsed:</strong> {cogentRateCardSource.parsedWorkbook.parsedAt ? formatEstDateTime(cogentRateCardSource.parsedWorkbook.parsedAt) : 'Unknown'}</div>
                         <div><strong>Client:</strong> {cogentRateCardSource.parsedWorkbook.clientName || 'Unknown'}</div>
                         <div><strong>Years:</strong> {Array.isArray(cogentRateCardSource.parsedWorkbook.years) ? cogentRateCardSource.parsedWorkbook.years.join(', ') : 'Unknown'}</div>
                         <div><strong>Markets:</strong> {Array.isArray(cogentRateCardSource.parsedWorkbook.markets) ? cogentRateCardSource.parsedWorkbook.markets.join(', ') : 'Unknown'}</div>
@@ -16034,7 +16035,7 @@ function FinancialScorePage() {
                     {platosSource.workbookUpload ? (
                       <div style={{ fontSize: '12px', color: '#475569', lineHeight: 1.6 }}>
                         <div><strong>File:</strong> {platosSource.workbookUpload.originalFileName || 'Workbook upload'}</div>
-                        <div><strong>Uploaded:</strong> {platosSource.workbookUpload.uploadedAt ? new Date(platosSource.workbookUpload.uploadedAt).toLocaleString() : 'Unknown'}</div>
+                        <div><strong>Uploaded:</strong> {platosSource.workbookUpload.uploadedAt ? formatEstDateTime(platosSource.workbookUpload.uploadedAt) : 'Unknown'}</div>
                         <div><strong>Sheets found:</strong> {Array.isArray(platosSource.workbookUpload.sheetNames) ? platosSource.workbookUpload.sheetNames.join(', ') : 'Unknown'}</div>
                         {platosSource.workbookUpload.blobUrl ? (
                           <div>
@@ -16053,7 +16054,7 @@ function FinancialScorePage() {
                     {platosSource.parsedWorkbook && (
                       <div style={{ marginTop: '12px', padding: '10px', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px', fontSize: '12px', color: '#334155' }}>
                         <div style={{ fontWeight: '700', color: '#1e293b', marginBottom: '6px' }}>Parsed workbook summary</div>
-                        <div><strong>Parsed:</strong> {platosSource.parsedWorkbook.parsedAt ? new Date(platosSource.parsedWorkbook.parsedAt).toLocaleString() : 'Unknown'}</div>
+                        <div><strong>Parsed:</strong> {platosSource.parsedWorkbook.parsedAt ? formatEstDateTime(platosSource.parsedWorkbook.parsedAt) : 'Unknown'}</div>
                         <div><strong>Month key:</strong> {platosSource.parsedWorkbook.monthKey || 'Unknown'}</div>
                         <div><strong>Workbook period:</strong> {platosSource.parsedWorkbook.workbookPeriod || 'Unknown'}</div>
                         <div><strong>Store:</strong> {String(platosSource.parsedWorkbook.storeInfo?.['Store Number'] || 'Unknown')} {platosSource.parsedWorkbook.storeInfo?.['City/State'] ? `- ${String(platosSource.parsedWorkbook.storeInfo?.['City/State'])}` : ''}</div>
@@ -16145,7 +16146,7 @@ function FinancialScorePage() {
                     {platosInventorySource.workbookUpload ? (
                       <div style={{ fontSize: '12px', color: '#475569', lineHeight: 1.6 }}>
                         <div><strong>File:</strong> {platosInventorySource.workbookUpload.originalFileName || 'Monthly Inventory Report workbook'}</div>
-                        <div><strong>Uploaded:</strong> {platosInventorySource.workbookUpload.uploadedAt ? new Date(platosInventorySource.workbookUpload.uploadedAt).toLocaleString() : 'Unknown'}</div>
+                        <div><strong>Uploaded:</strong> {platosInventorySource.workbookUpload.uploadedAt ? formatEstDateTime(platosInventorySource.workbookUpload.uploadedAt) : 'Unknown'}</div>
                         <div><strong>Sheets found:</strong> {Array.isArray(platosInventorySource.workbookUpload.sheetNames) ? platosInventorySource.workbookUpload.sheetNames.join(', ') : 'Unknown'}</div>
                         {platosInventorySource.workbookUpload.blobUrl ? (
                           <div>
@@ -16164,7 +16165,7 @@ function FinancialScorePage() {
                     {platosInventorySource.parsedWorkbook && (
                       <div style={{ marginTop: '12px', padding: '10px', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px', fontSize: '12px', color: '#334155' }}>
                         <div style={{ fontWeight: '700', color: '#1e293b', marginBottom: '6px' }}>Parsed inventory summary</div>
-                        <div><strong>Parsed:</strong> {platosInventorySource.parsedWorkbook.parsedAt ? new Date(platosInventorySource.parsedWorkbook.parsedAt).toLocaleString() : 'Unknown'}</div>
+                        <div><strong>Parsed:</strong> {platosInventorySource.parsedWorkbook.parsedAt ? formatEstDateTime(platosInventorySource.parsedWorkbook.parsedAt) : 'Unknown'}</div>
                         <div><strong>Months parsed:</strong> {platosInventorySource.parsedWorkbook.monthCount ?? 0}</div>
                         <div><strong>Subcategories parsed:</strong> {platosInventorySource.parsedWorkbook.subcategoryCount ?? 0}</div>
                         <div><strong>Rows parsed:</strong> {platosInventorySource.parsedWorkbook.rowCount ?? 0}</div>
@@ -18247,7 +18248,7 @@ function FinancialScorePage() {
                       <span><strong>Unmapped:</strong> {mappingSourceSummary?.unmapped ?? 0}</span>
                       <span><strong>Ignored:</strong> {mappingSourceSummary?.ignored ?? 0}</span>
                       {mappingSourceSummary?.lastSeedAt && (
-                        <span><strong>Last Seed:</strong> {new Date(mappingSourceSummary.lastSeedAt).toLocaleString()}</span>
+                        <span><strong>Last Seed:</strong> {formatEstDateTime(mappingSourceSummary.lastSeedAt)}</span>
                       )}
                     </div>
 
@@ -18788,7 +18789,7 @@ function FinancialScorePage() {
                                   const summary = `Failed to reprocess${params.targetMonth ? ` ${params.targetMonth}` : ''}${params.status ? ` (status ${params.status})` : ''}. ${String(params.error || 'Unknown error')}`;
                                   setLastReprocessError({
                                     summary,
-                                    createdAt: new Date().toLocaleString(),
+                                    createdAt: formatEstDateTime(new Date()),
                                     details: JSON.stringify({
                                       summary,
                                       companyId: selectedCompanyId,
@@ -21343,7 +21344,7 @@ function FinancialScorePage() {
                       </div>
                       {businessContextLastUpdatedAt && (
                         <div style={{ fontSize: '12px', color: '#64748b', whiteSpace: 'nowrap' }}>
-                          Last saved: {new Date(businessContextLastUpdatedAt).toLocaleString()}
+                          Last saved: {formatEstDateTime(businessContextLastUpdatedAt)}
                         </div>
                       )}
                     </div>
@@ -26624,7 +26625,7 @@ function FinancialScorePage() {
               {companyName && <div style={{ fontSize: '32px', fontWeight: '700', color: '#1e293b' }}>{companyName}</div>}
             </div>
             <p style={{ fontSize: '14px', color: '#64748b', marginBottom: '12px' }}>
-              QuickBooks Data - Synced: {qbRawData.syncDate ? new Date(qbRawData.syncDate).toLocaleString() : 'Unknown'}
+              QuickBooks Data - Synced: {qbRawData.syncDate ? formatEstDateTime(qbRawData.syncDate) : 'Unknown'}
             </p>
 
             {/* Tab Navigation */}

@@ -7,10 +7,11 @@ import { shouldWarmDailyExecutiveBriefingForAccountingSystem, warmDailyExecutive
 import { warmDailyIndustryBriefCache } from '@/lib/industry-brief/warmup';
 import { autoQueueDueQuickBooksDesktopFinancialJobs } from '@/lib/quickbooks-desktop/auto-queue';
 import { isQuickBooksDesktopFamily } from '@/lib/quickbooks-desktop/family';
+import { APP_TIME_ZONE } from '@/lib/time/eastern';
 
 export const maxDuration = 300;
 
-const OPERATIONAL_SYNC_TIME_ZONE = 'America/New_York';
+const OPERATIONAL_SYNC_TIME_ZONE = APP_TIME_ZONE;
 const DUE_LOOKBACK_HOURS = 36;
 
 function asRecord(value: unknown): Record<string, unknown> {

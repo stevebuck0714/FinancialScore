@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
+import { APP_TIME_ZONE } from '@/lib/time/eastern';
 
 interface User {
   name: string | null;
@@ -72,6 +73,7 @@ export default function Header({
   useEffect(() => {
     setCurrentDate(
       new Intl.DateTimeFormat('en-US', {
+        timeZone: APP_TIME_ZONE,
         weekday: 'long',
         month: 'long',
         day: 'numeric',

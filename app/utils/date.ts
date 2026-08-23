@@ -1,4 +1,14 @@
+import {
+  APP_TIME_ZONE,
+  APP_TIME_ZONE_LABEL,
+  formatEstDate,
+  formatEstDateTime as formatEstDateTimeCore,
+} from '@/lib/time/eastern';
+
 const DATE_ONLY_RE = /^(\d{4})-(\d{2})-(\d{2})$/;
+
+export { APP_TIME_ZONE, APP_TIME_ZONE_LABEL, formatEstDate };
+export { addEstCalendarDays, addEstCalendarMonths, previousEstCalendarDate } from '@/lib/time/eastern';
 
 export function parseDateSafeUtc(raw: string | Date | null | undefined): Date | null {
   if (!raw) return null;
@@ -31,7 +41,14 @@ export function formatDateInputLabel(raw: string | Date | null | undefined): str
   return formatDateSafeUtc(raw, { year: 'numeric', month: '2-digit', day: '2-digit' });
 }
 
+/** YYYY-MM-DD for an instant in Eastern Time (app timezone for every company). */
 export function toLocalInputDate(date: Date): string {
-  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+  return formatEstDate(date);
 }
 
+export function formatEstDateTime(
+  raw: string | Date | null | undefined,
+  options: Intl.DateTimeFormatOptions = {},
+): string {
+  return formatEstDateTimeCore(raw, options) || 'N/A';
+}

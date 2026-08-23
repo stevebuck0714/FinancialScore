@@ -1,4 +1,5 @@
 'use client';
+import { formatEstDateTime } from '@/lib/time/eastern';
 
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { upload } from '@vercel/blob/client';
@@ -256,7 +257,7 @@ export default function DocumentsTab(props: { selectedCompanyId: string }) {
                               {d.originalFileName}
                             </div>
                             <div style={{ marginTop: '2px', fontSize: '12px', color: '#64748b', display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
-                              <span>{new Date(d.createdAt).toLocaleString()}</span>
+                              <span>{formatEstDateTime(d.createdAt)}</span>
                               {d.sizeBytes ? <span>{formatBytes(d.sizeBytes)}</span> : null}
                             </div>
                             {d.extractionStatus === 'FAILED' && d.extractionError ? (

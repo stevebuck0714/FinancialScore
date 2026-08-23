@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
+import { formatEstDateTime } from '@/lib/time/eastern';
 
 interface TrustedDevice {
   id: string;
@@ -105,17 +106,7 @@ export default function TrustedDevicesPanel({ userId }: TrustedDevicesPanelProps
     }
   };
 
-  const formatDate = (dateString: string) => {
-    const date = new Date(dateString);
-    return date.toLocaleString('en-US', {
-      month: 'short',
-      day: 'numeric',
-      year: 'numeric',
-      hour: 'numeric',
-      minute: '2-digit',
-      hour12: true
-    });
-  };
+  const formatDate = (dateString: string) => formatEstDateTime(dateString) || 'N/A';
 
   const getDaysRemaining = (expiresAt: string) => {
     const now = new Date();

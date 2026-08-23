@@ -1,0 +1,27 @@
+---
+description: All app times and auto-pull clocks are Eastern (EST)
+alwaysApply: true
+---
+
+# Eastern Time is the app timezone
+
+Every company and every page uses **Eastern Time**. The IANA zone is `America/New_York`. The user-facing label is **EST** (including during EDT).
+
+## Required
+
+- Auto-pull / sync times are Eastern wall clocks (`HH:mm` in `America/New_York`), never the browser's local zone and never UTC.
+- "Today", "yesterday", date pickers, and cache-day keys use `formatEstDate` / `previousEstCalendarDate` from `lib/time/eastern.ts`.
+- Displayed timestamps (last sync, uploaded at, generated at) use `formatEstDateTime`.
+- Import `APP_TIME_ZONE` instead of hardcoding `America/New_York`.
+- UI copy says **EST**, not "Local" and not `America/New_York`.
+
+## Do not
+
+- Use `toLocaleString()` / `toLocaleDateString()` without `timeZone: APP_TIME_ZONE` for instants.
+- Use the browser's `getFullYear()` / `getDate()` for business "today".
+- Shift stored date-only `YYYY-MM-DD` values through Eastern (those are calendar dates; format them without converting the day).
+- Rewrite UTC instants in the database. Convert at display and schedule edges.
+
+## Vercel crons
+
+Cron expressions are UTC. Convert the intended EST clock time before editing `vercel.json`.

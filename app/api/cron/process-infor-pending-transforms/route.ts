@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { warmDailyExecutiveBriefingCache } from '@/lib/pulse/exec-briefing-warmup';
+import { previousEstCalendarDate } from '@/lib/time/eastern';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -25,10 +26,8 @@ async function hasPendingInforTransformsForCompany(prisma: any, companyId: strin
   return rows.length > 0;
 }
 
-function yesterdayIsoUtc(): string {
-  const now = new Date();
-  const yesterday = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - 1));
-  return yesterday.toISOString().slice(0, 10);
+function yesterdayEstIso(): string {
+  return previousEstCalendarDate();
 }
 
 function productsStartIsoFromEndDate(endDateIso: string): string {
@@ -41,7 +40,7 @@ function productsStartIsoFromEndDate(endDateIso: string): string {
 }
 
 async function latestDailyProductsEndIsoUtc(prisma: any, companyId: string): Promise<string> {
-  const fallback = yesterdayIsoUtc();
+  const fallback = yesterdayEstIso();
   const latest = await prisma.productSalesSnapshot.findFirst({
     where: { companyId, frequency: 'daily' },
     orderBy: { snapshotDate: 'desc' },

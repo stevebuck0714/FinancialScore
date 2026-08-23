@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
+import { previousEstCalendarDate } from '@/lib/time/eastern';
 import {
   getRunStateFromMetadata,
   withRunStateMetadata,
@@ -28,10 +29,8 @@ function resolveRawTransformDaysPerTick(): number {
   return Math.min(50, Math.max(1, Math.floor(raw)));
 }
 
-function yesterdayIsoUtc(): string {
-  const now = new Date();
-  const yesterday = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - 1));
-  return yesterday.toISOString().slice(0, 10);
+function yesterdayEstIso(): string {
+  return previousEstCalendarDate();
 }
 
 function productsStartIsoFromEndDate(endDateIso: string): string {
@@ -44,7 +43,7 @@ function productsStartIsoFromEndDate(endDateIso: string): string {
 }
 
 async function latestDailyProductsEndIsoUtc(companyId: string): Promise<string> {
-  const fallback = yesterdayIsoUtc();
+  const fallback = yesterdayEstIso();
   const latest = await prisma.productSalesSnapshot.findFirst({
     where: { companyId, frequency: 'daily' },
     orderBy: { snapshotDate: 'desc' },

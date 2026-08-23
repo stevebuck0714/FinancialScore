@@ -2,6 +2,7 @@
 
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import type { DailyIndustryBrief, GrowthOpportunity, IndustryBriefImpact, IndustryBriefStatus, IndustryOutlookItem } from '@/lib/industry-brief/types';
+import { formatEstDateTime } from '@/lib/time/eastern';
 
 type Props = {
   companyId: string;
@@ -73,9 +74,7 @@ function urgencyLabel(value: GrowthOpportunity['urgency']): string {
 
 function formatDateTime(value?: string): string {
   if (!value) return '';
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return value;
-  return date.toLocaleString();
+  return formatEstDateTime(value) || value;
 }
 
 function formatMonthLabel(value: string): string {

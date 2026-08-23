@@ -1,4 +1,5 @@
 'use client';
+import { formatEstDateTime } from '@/lib/time/eastern';
 
 import React, { useState, useEffect } from 'react';
 
@@ -135,7 +136,7 @@ export default function MFAEnrollmentModal({ userId, userEmail, onComplete, onCa
   };
 
   const downloadBackupCodes = () => {
-    const text = `Corelytics MFA Backup Codes\nAccount: ${userEmail}\nGenerated: ${new Date().toLocaleString()}\n\n${backupCodes.join('\n')}\n\n⚠️ IMPORTANT:\n- Store these codes in a safe place\n- Each code can only be used once\n- Use these if you lose access to your authenticator app\n- Keep them secure - anyone with these codes can access your account`;
+    const text = `Corelytics MFA Backup Codes\nAccount: ${userEmail}\nGenerated: ${formatEstDateTime(new Date())}\n\n${backupCodes.join('\n')}\n\n⚠️ IMPORTANT:\n- Store these codes in a safe place\n- Each code can only be used once\n- Use these if you lose access to your authenticator app\n- Keep them secure - anyone with these codes can access your account`;
     const blob = new Blob([text], { type: 'text/plain' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -172,7 +173,7 @@ export default function MFAEnrollmentModal({ userId, userEmail, onComplete, onCa
             <h1>🔐 Corelytics MFA Backup Codes</h1>
             <div class="meta">
               <strong>Account:</strong> ${userEmail}<br>
-              <strong>Generated:</strong> ${new Date().toLocaleString()}
+              <strong>Generated:</strong> ${formatEstDateTime(new Date())}
             </div>
             <div class="warning">
               <h2>⚠️ IMPORTANT - Keep These Safe!</h2>

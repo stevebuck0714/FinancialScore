@@ -2,6 +2,7 @@
 'use client';
 
 import React from 'react';
+import { formatEstDateTime } from '@/lib/time/eastern';
 import { US_STATES } from '@/app/constants';
 import { INDUSTRY_SECTORS } from '@/data/industrySectors';
 import { formatPhoneNumber } from '@/app/utils/phone';
@@ -1303,7 +1304,7 @@ export default function SiteAdminDashboard(props: any) {
             {company.forceOperationalMockData
               ? 'Demo mode is ON. Mock data is being served.'
               : company.hasRealOperationalData
-                ? `Real data mode is ON${company.realDataActivatedAt ? ` (activated ${new Date(company.realDataActivatedAt).toLocaleString()})` : ''}.`
+                ? `Real data mode is ON${company.realDataActivatedAt ? ` (activated ${formatEstDateTime(company.realDataActivatedAt)})` : ''}.`
                 : 'Demo mode is active until real operational data is detected.'}
           </div>
         </div>
@@ -4471,9 +4472,9 @@ export default function SiteAdminDashboard(props: any) {
                 Current queued/running work is shown below. Previous completed pull details are separated so they do not look like the active sync.
               </div>
             ) : lastRunCompletedAt ? (
-              <div>Last completed: {new Date(lastRunCompletedAt).toLocaleString()}{lastRunRange ? ` for ${lastRunRange.startDate || '—'} to ${lastRunRange.endDate || '—'}` : ''}</div>
+              <div>Last completed: {formatEstDateTime(lastRunCompletedAt)}{lastRunRange ? ` for ${lastRunRange.startDate || '—'} to ${lastRunRange.endDate || '—'}` : ''}</div>
             ) : syncStatus.lastSyncAt ? (
-              <div>Last sync: {new Date(syncStatus.lastSyncAt).toLocaleString()}</div>
+              <div>Last sync: {formatEstDateTime(syncStatus.lastSyncAt)}</div>
             ) : (
               <div>No QuickBooks Desktop Web Connector run has completed yet.</div>
             )}
@@ -4532,7 +4533,7 @@ export default function SiteAdminDashboard(props: any) {
               <div style={{ marginTop: '8px', paddingTop: '8px', borderTop: `1px solid ${statusBorder}`, color: '#64748b' }}>
                 <div style={{ fontWeight: 700 }}>Previous completed pull</div>
                 <div>
-                  Completed: {new Date(lastRunCompletedAt).toLocaleString()}
+                  Completed: {formatEstDateTime(lastRunCompletedAt)}
                   {lastRunRange ? ` for ${lastRunRange.startDate || '—'} to ${lastRunRange.endDate || '—'}` : ''}
                 </div>
                 {recordCounts ? (
@@ -4750,7 +4751,7 @@ export default function SiteAdminDashboard(props: any) {
       await loadOperationalSources(companyId);
       const summary = data?.summary && typeof data.summary === 'object' ? data.summary : {};
       alert(
-        `BambooHR workforce sync completed.\n\nEmployees sampled: ${data?.employeesSampled ?? summary?.employeesSampled ?? '—'}\nGenerated: ${data?.generatedAt ? new Date(data.generatedAt).toLocaleString() : 'now'}`
+        `BambooHR workforce sync completed.\n\nEmployees sampled: ${data?.employeesSampled ?? summary?.employeesSampled ?? '—'}\nGenerated: ${data?.generatedAt ? formatEstDateTime(data.generatedAt) : 'now'}`
       );
     } catch (error: any) {
       alert(`BambooHR workforce sync failed:\n\n${error?.message || 'Unknown error'}`);
@@ -4997,9 +4998,9 @@ export default function SiteAdminDashboard(props: any) {
         </div>
         <div style={{ fontSize: '12px', color: statusTheme.fg }}>
           {syncStatus.lastWebConnectorSyncAt
-            ? `Last Web Connector sync: ${new Date(syncStatus.lastWebConnectorSyncAt).toLocaleString()}`
+            ? `Last Web Connector sync: ${formatEstDateTime(syncStatus.lastWebConnectorSyncAt)}`
             : syncStatus.lastSyncAt
-              ? `Last sync: ${new Date(syncStatus.lastSyncAt).toLocaleString()}`
+              ? `Last sync: ${formatEstDateTime(syncStatus.lastSyncAt)}`
               : 'Saved settings are not connected until Connect succeeds.'}
         </div>
         {syncStatus.errorMessage ? (
@@ -5145,7 +5146,7 @@ export default function SiteAdminDashboard(props: any) {
         <div style={{ marginBottom: '8px', padding: '8px', background: statusTheme.bg, border: `1px solid ${statusTheme.border}`, borderRadius: '6px' }}>
           <div style={{ fontSize: '12px', fontWeight: '600', color: statusTheme.fg }}>{statusTheme.label}</div>
           <div style={{ fontSize: '12px', color: statusTheme.fg }}>
-            {lastSyncAt ? `Last sync: ${new Date(lastSyncAt).toLocaleString()}` : `No ${detail.label} sync has been run for this company yet.`}
+            {lastSyncAt ? `Last sync: ${formatEstDateTime(lastSyncAt)}` : `No ${detail.label} sync has been run for this company yet.`}
           </div>
           {errorMessage ? <div style={{ fontSize: '12px', color: statusTheme.fg, marginTop: '4px' }}>{errorMessage}</div> : null}
         </div>
@@ -5177,7 +5178,7 @@ export default function SiteAdminDashboard(props: any) {
             </select>
           </label>
           <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#334155' }}>
-            <span style={{ fontWeight: 600 }}>Sync Time (Local)</span>
+            <span style={{ fontWeight: 600 }}>Sync Time (EST)</span>
             <select disabled value="08:00" style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: '#f1f5f9', color: '#64748b' }}>
               <option value="08:00">08:00</option>
             </select>
@@ -5333,7 +5334,7 @@ export default function SiteAdminDashboard(props: any) {
                   <div>
                     <div style={{ fontWeight: 700, color: '#1e293b' }}>{source.label}</div>
                     <div style={{ color: '#64748b', marginTop: '2px' }}>
-                      {source.lastSyncAt ? `Last sync: ${new Date(source.lastSyncAt).toLocaleString()}` : 'No sync has run yet'}
+                      {source.lastSyncAt ? `Last sync: ${formatEstDateTime(source.lastSyncAt)}` : 'No sync has run yet'}
                     </div>
                     {!scheduleEnabled ? <div style={{ color: '#64748b', marginTop: '2px' }}>Manual upload source. Scheduling is handled by user imports.</div> : null}
                     {source.errorMessage ? <div style={{ color: '#b91c1c', marginTop: '2px' }}>{source.errorMessage}</div> : null}
@@ -5496,7 +5497,7 @@ export default function SiteAdminDashboard(props: any) {
             ) : null}
           </div>
           <div style={{ fontSize: '12px', color: statusTheme.fg }}>
-            {lastSyncAt ? `Last sync: ${new Date(lastSyncAt).toLocaleString()}` : 'No BambooHR sync has been run for this company yet.'}
+            {lastSyncAt ? `Last sync: ${formatEstDateTime(lastSyncAt)}` : 'No BambooHR sync has been run for this company yet.'}
           </div>
           {errorMessage ? (
             <div style={{ fontSize: '12px', color: statusTheme.fg, marginTop: '4px' }}>
@@ -5587,7 +5588,7 @@ export default function SiteAdminDashboard(props: any) {
             </select>
           </label>
           <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#334155' }}>
-            <span style={{ fontWeight: 600 }}>Sync Time (Local)</span>
+            <span style={{ fontWeight: 600 }}>Sync Time (EST)</span>
             <select
               value={getBambooHrSettings(companyId).syncTime}
               onChange={(e) => setBambooHrSetting(companyId, 'syncTime', e.target.value)}
@@ -5742,7 +5743,7 @@ export default function SiteAdminDashboard(props: any) {
         <div style={{ marginBottom: '8px', padding: '8px', background: statusTheme.bg, border: `1px solid ${statusTheme.border}`, borderRadius: '6px' }}>
           <div style={{ fontSize: '12px', fontWeight: '600', color: statusTheme.fg }}>{statusTheme.label}</div>
           <div style={{ fontSize: '12px', color: statusTheme.fg }}>
-            {lastSyncAt ? `Last workbook load: ${new Date(lastSyncAt).toLocaleString()}` : 'No MONTHLY STORE VISIT REPORT workbook has been loaded for this company yet.'}
+            {lastSyncAt ? `Last workbook load: ${formatEstDateTime(lastSyncAt)}` : 'No MONTHLY STORE VISIT REPORT workbook has been loaded for this company yet.'}
           </div>
           {errorMessage ? <div style={{ fontSize: '12px', color: statusTheme.fg, marginTop: '4px' }}>{errorMessage}</div> : null}
         </div>
@@ -5789,7 +5790,7 @@ export default function SiteAdminDashboard(props: any) {
             </select>
           </label>
           <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#334155' }}>
-            <span style={{ fontWeight: 600 }}>Sync Time (Local)</span>
+            <span style={{ fontWeight: 600 }}>Sync Time (EST)</span>
             <select
               value={getPlatosClosetSettings(companyId).syncTime}
               onChange={(e) => setPlatosClosetSetting(companyId, 'syncTime', e.target.value)}
@@ -7337,7 +7338,7 @@ export default function SiteAdminDashboard(props: any) {
                                                       {company.forceOperationalMockData
                                                         ? 'Demo mode is ON. Mock data is being served.'
                                                         : company.hasRealOperationalData
-                                                          ? `Real data mode is ON${company.realDataActivatedAt ? ` (activated ${new Date(company.realDataActivatedAt).toLocaleString()})` : ''}.`
+                                                          ? `Real data mode is ON${company.realDataActivatedAt ? ` (activated ${formatEstDateTime(company.realDataActivatedAt)})` : ''}.`
                                                           : 'Demo mode is active until real operational data is detected.'}
                                                     </div>
                                                     <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
@@ -7784,7 +7785,7 @@ export default function SiteAdminDashboard(props: any) {
                                                     {company.forceOperationalMockData
                                                       ? 'Demo mode is ON. Mock data is being served.'
                                                       : company.hasRealOperationalData
-                                                        ? `Real data mode is ON${company.realDataActivatedAt ? ` (activated ${new Date(company.realDataActivatedAt).toLocaleString()})` : ''}.`
+                                                        ? `Real data mode is ON${company.realDataActivatedAt ? ` (activated ${formatEstDateTime(company.realDataActivatedAt)})` : ''}.`
                                                         : 'Demo mode is active until real operational data is detected.'}
                                                   </div>
                                                   <div style={{ display: 'flex', gap: '6px', flexWrap: 'nowrap' }}>
@@ -7839,7 +7840,7 @@ export default function SiteAdminDashboard(props: any) {
                                                       {inforConnected && inforStatus === 'ACTIVE' ? 'Connected' : inforStatus === 'ERROR' ? 'Error' : inforStatus === 'EXPIRED' ? 'Token Expired' : 'Not Connected'}
                                                     </div>
                                                     <div style={{ fontSize: '12px', color: '#475569' }}>
-                                                      {inforError || (inforLastSync ? `Last synced: ${new Date(inforLastSync).toLocaleString()}` : 'Enter credentials and connect')}
+                                                      {inforError || (inforLastSync ? `Last synced: ${formatEstDateTime(inforLastSync)}` : 'Enter credentials and connect')}
                                                     </div>
                                                   </div>
 
@@ -7901,7 +7902,7 @@ export default function SiteAdminDashboard(props: any) {
                                                       </select>
                                                     </label>
                                                     <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#334155', gridColumn: '2' }}>
-                                                      <span style={{ fontWeight: 600 }}>Auto Pull Time (America/New_York)</span>
+                                                      <span style={{ fontWeight: 600 }}>Auto Pull Time (EST)</span>
                                                       <select
                                                         value={getCompanyOperationalSettings(company.id).pullTime}
                                                         onChange={(e) =>
@@ -8028,7 +8029,7 @@ export default function SiteAdminDashboard(props: any) {
                                                       </select>
                                                     </label>
                                                     <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#334155' }}>
-                                                      <span style={{ fontWeight: 600 }}>Sync Time (Local)</span>
+                                                      <span style={{ fontWeight: 600 }}>Sync Time (EST)</span>
                                                       <select
                                                         value={getQboSettings(company.id).syncTime}
                                                         onChange={(e) => setQboSetting(company.id, 'syncTime', e.target.value)}
@@ -8238,7 +8239,7 @@ export default function SiteAdminDashboard(props: any) {
                                                       </select>
                                                     </label>
                                                     <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#334155' }}>
-                                                      <span style={{ fontWeight: 600 }}>Sync Time (Local)</span>
+                                                      <span style={{ fontWeight: 600 }}>Sync Time (EST)</span>
                                                       <select
                                                         value={getQbDesktopSettings(company.id).syncTime}
                                                         onChange={(e) => setQbDesktopSetting(company.id, 'syncTime', e.target.value)}
@@ -8310,7 +8311,7 @@ export default function SiteAdminDashboard(props: any) {
                                                       </select>
                                                     </label>
                                                     <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#334155' }}>
-                                                      <span style={{ fontWeight: 600 }}>Sync Time (Local)</span>
+                                                      <span style={{ fontWeight: 600 }}>Sync Time (EST)</span>
                                                       <select
                                                         value={getDynamicsSettings(company.id).syncTime}
                                                         onChange={(e) => setDynamicsSetting(company.id, 'syncTime', e.target.value)}
@@ -8395,7 +8396,7 @@ export default function SiteAdminDashboard(props: any) {
                                                       </select>
                                                     </label>
                                                     <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#334155' }}>
-                                                      <span style={{ fontWeight: 600 }}>Sync Time (Local)</span>
+                                                      <span style={{ fontWeight: 600 }}>Sync Time (EST)</span>
                                                       <select
                                                         value={getAcumaticaSettings(company.id).syncTime}
                                                         onChange={(e) => setAcumaticaSetting(company.id, 'syncTime', e.target.value)}
@@ -8478,7 +8479,7 @@ export default function SiteAdminDashboard(props: any) {
                                                       </select>
                                                     </label>
                                                     <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#334155' }}>
-                                                      <span style={{ fontWeight: 600 }}>Sync Time (Local)</span>
+                                                      <span style={{ fontWeight: 600 }}>Sync Time (EST)</span>
                                                       <select
                                                         value={getSageIntacctSettings(company.id).syncTime}
                                                         onChange={(e) => setSageIntacctSetting(company.id, 'syncTime', e.target.value)}
@@ -8571,7 +8572,7 @@ export default function SiteAdminDashboard(props: any) {
                                                       </select>
                                                     </label>
                                                     <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#334155' }}>
-                                                      <span style={{ fontWeight: 600 }}>Sync Time (Local)</span>
+                                                      <span style={{ fontWeight: 600 }}>Sync Time (EST)</span>
                                                       <select
                                                         value={getOdooSettings(company.id).syncTime}
                                                         onChange={(e) => setOdooSetting(company.id, 'syncTime', e.target.value)}
@@ -10669,7 +10670,7 @@ export default function SiteAdminDashboard(props: any) {
                                               {businessCompany.forceOperationalMockData
                                                 ? 'Demo mode is ON. Mock data is being served.'
                                                 : businessCompany.hasRealOperationalData
-                                                  ? `Real data mode is ON${businessCompany.realDataActivatedAt ? ` (activated ${new Date(businessCompany.realDataActivatedAt).toLocaleString()})` : ''}.`
+                                                  ? `Real data mode is ON${businessCompany.realDataActivatedAt ? ` (activated ${formatEstDateTime(businessCompany.realDataActivatedAt)})` : ''}.`
                                                   : 'Demo mode is active until real operational data is detected.'}
                                             </div>
                                             <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
@@ -11038,7 +11039,7 @@ export default function SiteAdminDashboard(props: any) {
                                           {businessCompany.forceOperationalMockData
                                             ? 'Demo mode is ON. Mock data is being served.'
                                             : businessCompany.hasRealOperationalData
-                                              ? `Real data mode is ON${businessCompany.realDataActivatedAt ? ` (activated ${new Date(businessCompany.realDataActivatedAt).toLocaleString()})` : ''}.`
+                                              ? `Real data mode is ON${businessCompany.realDataActivatedAt ? ` (activated ${formatEstDateTime(businessCompany.realDataActivatedAt)})` : ''}.`
                                               : 'Demo mode is active until real operational data is detected.'}
                                         </div>
                                         <div style={{ display: 'flex', gap: '6px', flexWrap: 'nowrap' }}>
@@ -11090,7 +11091,7 @@ export default function SiteAdminDashboard(props: any) {
                                         {inforConnected && inforStatus === 'ACTIVE' ? 'Connected' : inforStatus === 'ERROR' ? 'Error' : inforStatus === 'EXPIRED' ? 'Token Expired' : 'Not Connected'}
                                       </div>
                                       <div style={{ fontSize: '12px', color: '#475569' }}>
-                                        {inforError || (inforLastSync ? `Last synced: ${new Date(inforLastSync).toLocaleString()}` : 'Enter credentials and connect')}
+                                        {inforError || (inforLastSync ? `Last synced: ${formatEstDateTime(inforLastSync)}` : 'Enter credentials and connect')}
                                       </div>
                                     </div>
 
@@ -11152,7 +11153,7 @@ export default function SiteAdminDashboard(props: any) {
                                         </select>
                                       </label>
                                       <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#334155', gridColumn: '2' }}>
-                                        <span style={{ fontWeight: 600 }}>Auto Pull Time (America/New_York)</span>
+                                        <span style={{ fontWeight: 600 }}>Auto Pull Time (EST)</span>
                                         <select
                                           value={operationalSettings.pullTime}
                                           onChange={(e) =>
@@ -11432,7 +11433,7 @@ export default function SiteAdminDashboard(props: any) {
                                           </select>
                                         </label>
                                         <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#334155' }}>
-                                          <span style={{ fontWeight: 600 }}>Sync Time (Local)</span>
+                                          <span style={{ fontWeight: 600 }}>Sync Time (EST)</span>
                                           <select
                                             value={getQboSettings(businessCompany.id).syncTime}
                                             onChange={(e) => setQboSetting(businessCompany.id, 'syncTime', e.target.value)}
@@ -11819,7 +11820,7 @@ export default function SiteAdminDashboard(props: any) {
                                           </select>
                                         </label>
                                         <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#334155' }}>
-                                          <span style={{ fontWeight: 600 }}>Sync Time (Local)</span>
+                                          <span style={{ fontWeight: 600 }}>Sync Time (EST)</span>
                                           <select
                                             value={qbDesktopSettings.syncTime}
                                             onChange={(e) => setQbDesktopSetting(businessCompany.id, 'syncTime', e.target.value)}
@@ -11994,7 +11995,7 @@ export default function SiteAdminDashboard(props: any) {
                                           </select>
                                         </label>
                                         <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#334155' }}>
-                                          <span style={{ fontWeight: 600 }}>Sync Time (Local)</span>
+                                          <span style={{ fontWeight: 600 }}>Sync Time (EST)</span>
                                           <select
                                             value={dynamicsSettings.syncTime}
                                             onChange={(e) => setDynamicsSetting(businessCompany.id, 'syncTime', e.target.value)}
@@ -12174,7 +12175,7 @@ export default function SiteAdminDashboard(props: any) {
                                           </select>
                                         </label>
                                         <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#334155' }}>
-                                          <span style={{ fontWeight: 600 }}>Sync Time (Local)</span>
+                                          <span style={{ fontWeight: 600 }}>Sync Time (EST)</span>
                                           <select
                                             value={acumaticaSettings.syncTime}
                                             onChange={(e) => setAcumaticaSetting(businessCompany.id, 'syncTime', e.target.value)}
@@ -12352,7 +12353,7 @@ export default function SiteAdminDashboard(props: any) {
                                           </select>
                                         </label>
                                         <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#334155' }}>
-                                          <span style={{ fontWeight: 600 }}>Sync Time (Local)</span>
+                                          <span style={{ fontWeight: 600 }}>Sync Time (EST)</span>
                                           <select
                                             value={sageIntacctSettings.syncTime}
                                             onChange={(e) => setSageIntacctSetting(businessCompany.id, 'syncTime', e.target.value)}
@@ -12537,7 +12538,7 @@ export default function SiteAdminDashboard(props: any) {
                                           </select>
                                         </label>
                                         <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#334155' }}>
-                                          <span style={{ fontWeight: 600 }}>Sync Time (Local)</span>
+                                          <span style={{ fontWeight: 600 }}>Sync Time (EST)</span>
                                           <select
                                             value={odooSettings.syncTime}
                                             onChange={(e) => setOdooSetting(businessCompany.id, 'syncTime', e.target.value)}

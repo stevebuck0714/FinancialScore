@@ -14,6 +14,7 @@ import {
   type PulsePolicyValues,
 } from '@/lib/company-pulse/policy';
 import { toLocalInputDate } from '@/app/utils/date';
+import { formatEstDateLabel, formatEstDateTime } from '@/lib/time/eastern';
 import IndustryBriefPanel from '@/app/components/industry-brief/IndustryBriefPanel';
 import { useCompanyMoneyFormatter } from '@/app/hooks/useCompanyMoneyFormatter';
 
@@ -276,16 +277,12 @@ function formatPolicyNumber(
 
 function formatDateTime(value?: string | null): string {
   if (!value) return 'n/a';
-  const t = new Date(value);
-  if (!Number.isFinite(t.getTime())) return 'n/a';
-  return t.toLocaleString();
+  return formatEstDateTime(value) || 'n/a';
 }
 
 function formatReportDate(value?: string | null): string {
   if (!value) return 'unknown date';
-  const t = new Date(value);
-  if (!Number.isFinite(t.getTime())) return 'unknown date';
-  return t.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
+  return formatEstDateLabel(value) || 'unknown date';
 }
 
 function formatAsOfDate(value?: string | null): string {

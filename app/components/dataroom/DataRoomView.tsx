@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { upload } from '@vercel/blob/client';
+import { formatEstDateTime } from '@/lib/time/eastern';
 
 interface DataRoomViewProps {
   selectedCompanyId: string;
@@ -114,16 +115,7 @@ function formatBytes(n: number | null) {
 
 function formatDateTime(value: string | null | undefined) {
   if (!value) return null;
-  const dt = new Date(value);
-  if (Number.isNaN(dt.getTime())) return null;
-  return dt.toLocaleString(undefined, {
-    year: 'numeric',
-    month: 'numeric',
-    day: 'numeric',
-    hour: 'numeric',
-    minute: '2-digit',
-    second: '2-digit',
-  });
+  return formatEstDateTime(value, { second: '2-digit' }) || null;
 }
 
 function isSpreadsheetFileName(fileName: string): boolean {

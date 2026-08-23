@@ -16,6 +16,7 @@
  */
 
 import React from 'react';
+import { formatEstDateTime } from '@/lib/time/eastern';
 import { getAccountingSystemModule } from '@/lib/accounting-systems/registry';
 import {
   DEFAULT_SHARED_SYNC_SCHEDULE,
@@ -453,7 +454,7 @@ export default function AccountingSystemPanel({ companyId, system }: Props) {
         </div>
 
         <div style={fieldGroupStyle}>
-          <label style={compactLabelStyle}>Time (24h)</label>
+          <label style={compactLabelStyle}>Time (EST)</label>
           <input
             type="time"
             value={schedule.syncTime}
@@ -658,7 +659,7 @@ export default function AccountingSystemPanel({ companyId, system }: Props) {
             </span>
             {lastSyncAt && (
               <span style={{ fontSize: '11px', color: '#64748b' }}>
-                Last sync: {new Date(lastSyncAt).toLocaleString()}
+                Last sync: {formatEstDateTime(lastSyncAt)}
               </span>
             )}
             <button

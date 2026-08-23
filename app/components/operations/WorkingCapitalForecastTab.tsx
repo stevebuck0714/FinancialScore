@@ -1,4 +1,5 @@
 'use client';
+import { formatEstDateTime } from '@/lib/time/eastern';
 
 import React, { useEffect, useMemo, useState } from 'react';
 import { useCompanyMoneyFormatter } from '@/app/hooks/useCompanyMoneyFormatter';
@@ -1521,7 +1522,7 @@ export default function WorkingCapitalForecastTab({ selectedCompanyId, basisMode
             </div>
             {lastSavedAt && (
               <div style={{ marginTop: '6px', fontSize: '12px', color: '#64748b' }}>
-                Last saved: {new Date(lastSavedAt).toLocaleString()}
+                Last saved: {formatEstDateTime(lastSavedAt)}
               </div>
             )}
             {saveMessage && (

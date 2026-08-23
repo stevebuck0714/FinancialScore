@@ -4,7 +4,9 @@ import { sendSyncFailureNotification } from '@/lib/email';
 import { notifyAdminsOfSyncFailure } from '@/lib/sync-alerts';
 import { isQuickBooksDesktopFamily } from '@/lib/quickbooks-desktop/family';
 
-const WATCHDOG_TIME_ZONE = 'America/New_York';
+import { APP_TIME_ZONE, APP_TIME_ZONE_LABEL, formatEstDateTime } from '@/lib/time/eastern';
+
+const WATCHDOG_TIME_ZONE = APP_TIME_ZONE;
 const DEFAULT_GRACE_MINUTES = 15;
 const DEFAULT_DEDUPE_HOURS = 12;
 
@@ -383,7 +385,7 @@ async function evaluateAccountingConnection(
   const errorDetails =
     reason === 'error_state'
       ? errorMessage || `Connection status is ${status || 'unknown'}.`
-      : `Expected run: ${formatIso(expectedAt)} (${pullTime} ${WATCHDOG_TIME_ZONE}, ${frequency}). Last successful load: ${formatIso(lastSuccessAt)}. ${describeGraceWindow(graceMinutes)}`;
+      : `Expected run: ${formatEstDateTime(expectedAt) || formatIso(expectedAt)} (${pullTime} ${APP_TIME_ZONE_LABEL}, ${frequency}). Last successful load: ${formatEstDateTime(lastSuccessAt) || formatIso(lastSuccessAt)}. ${describeGraceWindow(graceMinutes)}`;
 
   const result = await notifyAdminsOfSyncFailure({
     companyId: row.companyId,
@@ -441,7 +443,7 @@ async function evaluateOperationalConnection(
   const errorDetails =
     reason === 'error_state'
       ? errorMessage || `Connection status is ${status || 'unknown'}.`
-      : `Expected run: ${formatIso(expectedAt)} (${pullTime} ${WATCHDOG_TIME_ZONE}, ${frequency}). Last successful load: ${formatIso(lastSuccessAt)}. ${describeGraceWindow(graceMinutes)}`;
+      : `Expected run: ${formatEstDateTime(expectedAt) || formatIso(expectedAt)} (${pullTime} ${APP_TIME_ZONE_LABEL}, ${frequency}). Last successful load: ${formatEstDateTime(lastSuccessAt) || formatIso(lastSuccessAt)}. ${describeGraceWindow(graceMinutes)}`;
   const alertKey = `${row.companyId}|${sourceKey}|${reason}|${errorSummary.toLowerCase()}`;
   const result = await notifyOperationalSystemAlert({
     row,

@@ -53,7 +53,7 @@ import {
   hasRetailSubcategoryHistoryFacts,
 } from '@/lib/operational/retail-subcategory-history';
 import { buildAprSgpItemCustomerPartKeys, buildAprSgpMatchKeys, readAprSgpGmpaWorkbook } from '@/lib/operational/apr-sgp-gmpa';
-import { hashCacheParts, readDerivedApiCache, writeDerivedApiCache } from '@/lib/derived-api-cache';
+import { hashCacheParts, readDerivedApiCache, readLatestDerivedApiCache, writeDerivedApiCache } from '@/lib/derived-api-cache';
 import { privateCacheHeaders } from '@/lib/http-cache';
 import { resolveCompanyIndustrySectorCategory } from '@/lib/industry-sector-resolver';
 import { isOperationalDataTypeAllowed } from '@/lib/operations/operational-dashboard-access';
@@ -216,7 +216,13 @@ async function safeOperationalVersionPart(label: string, sql: string, ...params:
   }
 }
 
-async function buildOperationalDataVersion(companyId: string, type: string | null, startDate: Date, endDate: Date): Promise<string> {
+async function buildOperationalDataVersion(
+  companyId: string,
+  type: string | null,
+  startDate: Date,
+  endDate: Date,
+  options?: { skipVolatileInforRawProducts?: boolean }
+): Promise<string> {
   const includeAll = type === 'summary';
   const parts = await Promise.all([
     (includeAll || type === 'customers')
@@ -288,7 +294,7 @@ async function buildOperationalDataVersion(companyId: string, type: string | nul
           endDate
         )
       : Promise.resolve({ label: 'CustomerOrderLineSnapshot', skipped: true }),
-    (includeAll || type === 'products')
+    (includeAll || type === 'products') && !options?.skipVolatileInforRawProducts
       ? safeOperationalVersionPart(
           'InforRawRecordProducts',
           `SELECT COUNT(*)::text AS count, MAX("createdAt") AS "maxCreatedAt", MAX("fetchedAt") AS "maxFetchedAt", MAX("businessDate") AS "maxBusinessDate"
@@ -3375,7 +3381,9 @@ export async function GET(request: NextRequest) {
               cacheType === 'products' && usesSourceSystemProductSnapshots ? 'products-source-system-bakers-raw-child-id-apr-cpn-v4' : null,
               cacheType === 'sales' && usesSourceSystemProductSnapshots ? 'sales-source-system-product-name-outlier-v1' : null,
             ]),
-            dataVersion: await buildOperationalDataVersion(companyId, cacheType, startDate, endDate),
+            dataVersion: await buildOperationalDataVersion(companyId, cacheType, startDate, endDate, {
+              skipVolatileInforRawProducts: isWholesaleProductsReportRequest,
+            }),
           }
         : null;
 
@@ -3417,6 +3425,18 @@ export async function GET(request: NextRequest) {
         return NextResponse.json(presentedCached, {
           headers: privateCacheHeaders(operationalCacheTtlSeconds, 300),
         });
+      }
+      if (isWholesaleProductsReportRequest) {
+        const stalePayload = await readLatestDerivedApiCache<any>({
+          namespace: operationalCache.namespace,
+          cacheKey: operationalCache.cacheKey,
+        });
+        if (stalePayload) {
+          const presentedStale = await presentOperationalPayload(stalePayload);
+          return NextResponse.json(presentedStale, {
+            headers: privateCacheHeaders(operationalCacheTtlSeconds, 300),
+          });
+        }
       }
     }
 

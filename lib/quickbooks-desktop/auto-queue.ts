@@ -1,8 +1,9 @@
 import { randomUUID } from 'crypto';
 import prisma from '@/lib/prisma';
 import { isQuickBooksDesktopFamily } from '@/lib/quickbooks-desktop/family';
+import { APP_TIME_ZONE } from '@/lib/time/eastern';
 
-const QBD_AUTO_QUEUE_TIME_ZONE = 'America/New_York';
+const QBD_AUTO_QUEUE_TIME_ZONE = APP_TIME_ZONE;
 const QBD_AUTO_QUEUE_DUE_LOOKBACK_HOURS = 4;
 
 const QBD_AGING_SNAPSHOT_REQUESTS = new Set([

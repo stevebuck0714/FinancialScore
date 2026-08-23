@@ -41,7 +41,7 @@ import { getOperationalHubDefaultModuleKeys, getOperationalHubDefaultReportsForM
 import { isOperationalModuleAllowed } from '@/lib/operations/operational-dashboard-access';
 import { buildWeeklyProductMarginModel } from '@/lib/operations/product-margin-weekly';
 import { getFieldDisplayName } from '@/lib/constants/field-display-names';
-import { formatDateInputLabel, formatDateSafeUtc, parseDateSafeUtc, toLocalInputDate } from '@/app/utils/date';
+import { addEstCalendarDays, addEstCalendarMonths, formatDateInputLabel, formatDateSafeUtc, parseDateSafeUtc, previousEstCalendarDate, toLocalInputDate } from '@/app/utils/date';
 import { formatMoney, formatMoneyCompact } from '@/lib/format/currency';
 import { localeForCurrency } from '@/lib/constants/currencies';
 import PageCurrencyBadge from '../PageCurrencyBadge';
@@ -575,6 +575,43 @@ const operationalDataInflightStore = new Map<string, Promise<any>>();
 const wholesaleProductsReportCacheStore = new Map<string, { fetchedAt: number; data: any }>();
 const wholesaleProductsReportInflightStore = new Map<string, Promise<any>>();
 const productTransformCacheStore = new Map<string, { deps: any[]; value: any }>();
+const WHOLESALE_PRODUCTS_REPORT_SESSION_CACHE_PREFIX = 'wholesale-products-report-cache:';
+
+function readWholesaleProductsReportSessionCache(key: string): { fetchedAt: number; data: any } | null {
+  if (typeof window === 'undefined') return null;
+  try {
+    const raw = window.sessionStorage.getItem(`${WHOLESALE_PRODUCTS_REPORT_SESSION_CACHE_PREFIX}${key}`);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== 'object' || parsed.data == null) return null;
+    const fetchedAt = Number(parsed.fetchedAt);
+    if (!Number.isFinite(fetchedAt)) return null;
+    return { fetchedAt, data: parsed.data };
+  } catch {
+    return null;
+  }
+}
+
+function writeWholesaleProductsReportSessionCache(key: string, entry: { fetchedAt: number; data: any }) {
+  if (typeof window === 'undefined') return;
+  try {
+    window.sessionStorage.setItem(
+      `${WHOLESALE_PRODUCTS_REPORT_SESSION_CACHE_PREFIX}${key}`,
+      JSON.stringify(entry)
+    );
+  } catch {
+    // Payload may exceed sessionStorage quota; memory cache still applies.
+  }
+}
+
+function deleteWholesaleProductsReportSessionCache(key: string) {
+  if (typeof window === 'undefined') return;
+  try {
+    window.sessionStorage.removeItem(`${WHOLESALE_PRODUCTS_REPORT_SESSION_CACHE_PREFIX}${key}`);
+  } catch {
+    // Ignore storage access failures.
+  }
+}
 
 type InvestigatePlaybook = {
   title: string;
@@ -1200,21 +1237,11 @@ export default function OperationsTab({
   
   // Date range and frequency filters
   const [frequency, setFrequency] = useState<'daily' | 'weekly' | 'monthly'>('daily');
-  const yesterdayLocal = (() => {
-    const d = new Date();
-    d.setDate(d.getDate() - 1);
-    return d;
-  })();
+  const yesterdayEst = previousEstCalendarDate();
   const todayLocalInputDate = toLocalInputDate(new Date());
-  const maxSelectableEndDate = toLocalInputDate(yesterdayLocal);
-  const [startDate, setStartDate] = useState<string>(() => {
-    const date = new Date(yesterdayLocal);
-    date.setDate(date.getDate() - 90);
-    return toLocalInputDate(date);
-  });
-  const [endDate, setEndDate] = useState<string>(() => {
-    return maxSelectableEndDate;
-  });
+  const maxSelectableEndDate = yesterdayEst;
+  const [startDate, setStartDate] = useState<string>(() => addEstCalendarDays(yesterdayEst, -90));
+  const [endDate, setEndDate] = useState<string>(() => yesterdayEst);
   // Operational sources such as BambooHR can update daily even when the
   // company's financial source (for example QBO) only updates monthly.
   // Keep the picker available through yesterday instead of capping it at the
@@ -1547,13 +1574,11 @@ export default function OperationsTab({
     let cancelled = false;
 
     const defaultRange = (endDateKey = effectiveMaxSelectableEndDate) => {
-      const end = parseDateValue(endDateKey) || yesterdayLocal;
-      const start = new Date(end);
-      start.setDate(start.getDate() - 90);
+      const end = /^\d{4}-\d{2}-\d{2}$/.test(String(endDateKey || '')) ? String(endDateKey) : yesterdayEst;
       return {
         frequency: 'daily' as 'daily' | 'weekly' | 'monthly',
-        startDate: toLocalInputDate(start),
-        endDate: toLocalInputDate(end),
+        startDate: addEstCalendarDays(end, -90),
+        endDate: end,
       };
     };
 
@@ -1957,17 +1982,23 @@ export default function OperationsTab({
 
   const getCachedWholesaleProductsReportData = (reportMode: WholesaleProductsReportMode) => {
     const key = buildWholesaleProductsReportCacheKey(reportMode);
-    const cached = wholesaleProductsReportCacheRef.current.get(key);
+    const memoryCached = wholesaleProductsReportCacheRef.current.get(key);
+    const cached = memoryCached || readWholesaleProductsReportSessionCache(key);
     if (!cached) return null;
     if (Date.now() - cached.fetchedAt > WHOLESALE_PRODUCTS_REPORT_CACHE_TTL_MS) {
       wholesaleProductsReportCacheRef.current.delete(key);
+      deleteWholesaleProductsReportSessionCache(key);
       return null;
     }
+    if (!memoryCached) wholesaleProductsReportCacheRef.current.set(key, cached);
     return cached.data ?? null;
   };
 
   const setCachedWholesaleProductsReportData = (reportMode: WholesaleProductsReportMode, data: any) => {
-    wholesaleProductsReportCacheRef.current.set(buildWholesaleProductsReportCacheKey(reportMode), { fetchedAt: Date.now(), data });
+    const key = buildWholesaleProductsReportCacheKey(reportMode);
+    const entry = { fetchedAt: Date.now(), data };
+    wholesaleProductsReportCacheRef.current.set(key, entry);
+    writeWholesaleProductsReportSessionCache(key, entry);
   };
 
   const fetchWholesaleProductsReportData = async (options?: { forceRefresh?: boolean; reportMode?: WholesaleProductsReportMode }) => {
@@ -1981,6 +2012,7 @@ export default function OperationsTab({
     } else {
       wholesaleProductsReportCacheRef.current.delete(key);
       wholesaleProductsReportInflightRef.current.delete(key);
+      deleteWholesaleProductsReportSessionCache(key);
     }
     const params = new URLSearchParams({
       companyId: selectedCompanyId,
@@ -1994,7 +2026,7 @@ export default function OperationsTab({
       ...(options?.forceRefresh ? { refreshWholesaleProducts: '1' } : {}),
     });
     const request = fetch(`/api/operational-data?${params}`, {
-      cache: 'no-store',
+      cache: options?.forceRefresh ? 'no-store' : 'default',
     }).then(async (response) => {
       if (!response.ok) {
         throw new Error('Failed to load wholesale product report data');
@@ -3418,11 +3450,9 @@ export default function OperationsTab({
             <>
               <button
                 onClick={() => {
-                  const end = parseDateValue(effectiveMaxSelectableEndDate) || yesterdayLocal;
-                  const start = new Date(end);
-                  start.setDate(start.getDate() - 30);
-                  setStartDate(toLocalInputDate(start));
-                  setEndDate(toLocalInputDate(end));
+                  const end = effectiveMaxSelectableEndDate;
+                  setStartDate(addEstCalendarDays(end, -30));
+                  setEndDate(end);
                 }}
                 style={{
                   padding: '6px 12px',
@@ -3439,11 +3469,9 @@ export default function OperationsTab({
               </button>
               <button
                 onClick={() => {
-                  const end = parseDateValue(effectiveMaxSelectableEndDate) || yesterdayLocal;
-                  const start = new Date(end);
-                  start.setDate(start.getDate() - 90);
-                  setStartDate(toLocalInputDate(start));
-                  setEndDate(toLocalInputDate(end));
+                  const end = effectiveMaxSelectableEndDate;
+                  setStartDate(addEstCalendarDays(end, -90));
+                  setEndDate(end);
                 }}
                 style={{
                   padding: '6px 12px',
@@ -3464,11 +3492,9 @@ export default function OperationsTab({
             <>
               <button
                 onClick={() => {
-                  const end = parseDateValue(effectiveMaxSelectableEndDate) || yesterdayLocal;
-                  const start = new Date(end);
-                  start.setDate(start.getDate() - (8 * 7)); // 8 weeks
-                  setStartDate(toLocalInputDate(start));
-                  setEndDate(toLocalInputDate(end));
+                  const end = effectiveMaxSelectableEndDate;
+                  setStartDate(addEstCalendarDays(end, -(8 * 7)));
+                  setEndDate(end);
                 }}
                 style={{
                   padding: '6px 12px',
@@ -3485,11 +3511,9 @@ export default function OperationsTab({
               </button>
               <button
                 onClick={() => {
-                  const end = parseDateValue(effectiveMaxSelectableEndDate) || yesterdayLocal;
-                  const start = new Date(end);
-                  start.setDate(start.getDate() - (16 * 7)); // 16 weeks
-                  setStartDate(toLocalInputDate(start));
-                  setEndDate(toLocalInputDate(end));
+                  const end = effectiveMaxSelectableEndDate;
+                  setStartDate(addEstCalendarDays(end, -(16 * 7)));
+                  setEndDate(end);
                 }}
                 style={{
                   padding: '6px 12px',
@@ -3510,11 +3534,9 @@ export default function OperationsTab({
             <>
               <button
                 onClick={() => {
-                  const end = parseDateValue(effectiveMaxSelectableEndDate) || yesterdayLocal;
-                  const start = new Date(end);
-                  start.setMonth(start.getMonth() - 6);
-                  setStartDate(toLocalInputDate(start));
-                  setEndDate(toLocalInputDate(end));
+                  const end = effectiveMaxSelectableEndDate;
+                  setStartDate(addEstCalendarMonths(end, -6));
+                  setEndDate(end);
                 }}
                 style={{
                   padding: '6px 12px',
@@ -3531,11 +3553,9 @@ export default function OperationsTab({
               </button>
               <button
                 onClick={() => {
-                  const end = parseDateValue(effectiveMaxSelectableEndDate) || yesterdayLocal;
-                  const start = new Date(end);
-                  start.setMonth(start.getMonth() - 12);
-                  setStartDate(toLocalInputDate(start));
-                  setEndDate(toLocalInputDate(end));
+                  const end = effectiveMaxSelectableEndDate;
+                  setStartDate(addEstCalendarMonths(end, -12));
+                  setEndDate(end);
                 }}
                 style={{
                   padding: '6px 12px',

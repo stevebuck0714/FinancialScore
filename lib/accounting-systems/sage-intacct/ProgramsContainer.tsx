@@ -1,4 +1,5 @@
 'use client';
+import { formatEstDateTime } from '@/lib/time/eastern';
 
 /**
  * Sage Intacct Programs editor.
@@ -195,7 +196,7 @@ export default function SageIntacctProgramsContainer({
                       whiteSpace: 'nowrap',
                     }}
                   >
-                    <span title={lastSynced ? new Date(lastSynced).toLocaleString() : 'Never synced'}>
+                    <span title={lastSynced ? formatEstDateTime(lastSynced) : 'Never synced'}>
                       {relativeTime(lastSynced)}
                     </span>
                   </td>

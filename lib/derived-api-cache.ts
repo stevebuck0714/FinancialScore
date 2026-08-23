@@ -68,6 +68,24 @@ export async function readDerivedApiCache<T>(params: {
   return rows[0]?.payload || null;
 }
 
+export async function readLatestDerivedApiCache<T>(params: {
+  namespace: string;
+  cacheKey: string;
+}): Promise<T | null> {
+  await ensureDerivedApiCacheTable();
+  const rows = await prisma.$queryRawUnsafe<Array<CacheRow<T>>>(
+    `SELECT "payload"
+     FROM "DerivedApiCache"
+     WHERE "namespace" = $1
+       AND "cacheKey" = $2
+       AND "expiresAt" > CURRENT_TIMESTAMP
+     LIMIT 1`,
+    params.namespace,
+    params.cacheKey
+  );
+  return rows[0]?.payload || null;
+}
+
 export async function writeDerivedApiCache(params: {
   namespace: string;
   cacheKey: string;

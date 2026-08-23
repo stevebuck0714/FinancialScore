@@ -666,8 +666,6 @@ export async function GET(request: NextRequest) {
     const denied = await assertProductsAccess(companyId);
     if (denied) return denied;
 
-    await ensureCustomerOrderLineFilledTables();
-
     const view = String(request.nextUrl.searchParams.get('view') || 'lines').trim().toLowerCase();
     if (view === 'customers') {
       const customers = (await loadProductRawCustomers(companyId)).slice(0, MAX_CUSTOMERS);
@@ -685,6 +683,8 @@ export async function GET(request: NextRequest) {
         }),
       });
     }
+
+    await ensureCustomerOrderLineFilledTables();
 
     const customerId = String(request.nextUrl.searchParams.get('customerId') || '').trim();
     const customerName = String(request.nextUrl.searchParams.get('customerName') || '').trim();

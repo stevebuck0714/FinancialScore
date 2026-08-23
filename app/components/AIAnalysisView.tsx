@@ -1,4 +1,5 @@
 'use client';
+import { formatEstDateTime } from '@/lib/time/eastern';
 
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import {
@@ -339,7 +340,7 @@ export default function AIAnalysisView(props: {
         text: `Thread ID: ${askThreadId}`,
       }),
       new Paragraph({
-        text: `Exported: ${new Date().toLocaleString()}`,
+        text: `Exported: ${formatEstDateTime(new Date())}`,
       }),
       new Paragraph({ text: '' }),
     ];
@@ -348,7 +349,7 @@ export default function AIAnalysisView(props: {
       const turn = askThreadTurns[i];
       turnParagraphs.push(
         new Paragraph({
-          text: `Turn ${i + 1} - ${new Date(turn.askedAt).toLocaleString()}`,
+          text: `Turn ${i + 1} - ${formatEstDateTime(turn.askedAt)}`,
           heading: HeadingLevel.HEADING_2,
         }),
         new Paragraph({
@@ -1038,7 +1039,7 @@ export default function AIAnalysisView(props: {
                 <div style={{ marginTop: '16px', display: 'grid', gap: '14px' }}>
                   {askThreadTurns.map((turn, turnIdx) => (
                     <div key={turn.id} style={{ display: 'grid', gap: '10px' }}>
-                      <Section title={`Turn ${turnIdx + 1} · ${new Date(turn.askedAt).toLocaleString()}`}>
+                      <Section title={`Turn ${turnIdx + 1} · ${formatEstDateTime(turn.askedAt)}`}>
                         <div style={{ whiteSpace: 'pre-wrap', lineHeight: '1.65', color: '#0f172a' }}>
                           <strong>Question:</strong> {turn.question}
                         </div>
@@ -1542,7 +1543,7 @@ export default function AIAnalysisView(props: {
                 <div style={{ marginTop: '16px', display: 'grid', gap: '14px' }}>
                   {webResearchTurns.map((turn, turnIdx) => (
                     <div key={turn.id} style={{ display: 'grid', gap: '10px' }}>
-                      <Section title={`Research turn ${turnIdx + 1} · ${new Date(turn.askedAt).toLocaleString()}`}>
+                      <Section title={`Research turn ${turnIdx + 1} · ${formatEstDateTime(turn.askedAt)}`}>
                         <div style={{ whiteSpace: 'pre-wrap', lineHeight: '1.65', color: '#0f172a' }}>
                           <strong>Question:</strong> {turn.question}
                         </div>
@@ -1796,7 +1797,7 @@ function DocumentPicker(props: {
                                 {d.originalFileName}
                               </div>
                               <div style={{ marginTop: '2px', fontSize: '12px', color: '#64748b' }}>
-                                {d.createdAt ? new Date(d.createdAt).toLocaleString() : ''}
+                                {d.createdAt ? formatEstDateTime(d.createdAt) : ''}
                               </div>
                             </div>
                             <div style={{ padding: '4px 8px', borderRadius: '999px', border: `1px solid ${b.border}`, background: b.bg, color: b.fg, fontSize: '12px', fontWeight: 900, flexShrink: 0 }}>

@@ -1,4 +1,5 @@
 'use client';
+import { formatEstDateTime } from '@/lib/time/eastern';
 
 import React from 'react';
 import type { ProgramsContainerProps } from '../types';
@@ -212,7 +213,7 @@ export default function VistaCloudProgramsContainer({
                     whiteSpace: 'nowrap',
                   }}
                 >
-                  <span title={lastSynced ? new Date(lastSynced).toLocaleString() : 'Never synced'}>
+                  <span title={lastSynced ? formatEstDateTime(lastSynced) : 'Never synced'}>
                     {relativeTime(lastSynced)}
                   </span>
                 </td>

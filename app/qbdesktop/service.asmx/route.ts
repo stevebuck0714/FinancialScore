@@ -10,6 +10,7 @@ import {
   buildQuickBooksDesktopOperationalPayload,
 } from '@/lib/quickbooks-desktop/backfill-payloads';
 import { enqueueQuickBooksDesktopPostSyncJob } from '@/lib/quickbooks-desktop/post-sync-jobs';
+import { APP_TIME_ZONE } from '@/lib/time/eastern';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -362,7 +363,7 @@ function addYearsToDateKey(dateKey: string, years: number): string {
 }
 
 function getLatestAvailableQuickBooksDate(now = new Date()): string {
-  const easternTimeZone = 'America/New_York';
+  const easternTimeZone = APP_TIME_ZONE;
   const easternDate = formatDateInTimeZone(now, easternTimeZone);
   const easternHour = getHourInTimeZone(now, easternTimeZone);
   // QuickBooks daily data is expected after 2:00 AM Eastern the following day.
@@ -769,7 +770,7 @@ function getRunDateRange(metadata: QbDesktopMetadata): QbwcDateRange {
       ? new Date(metadata.quickbooksDesktopLastWebConnectorSyncAt)
       : null;
   const lastSyncDate = lastSyncAt && !Number.isNaN(lastSyncAt.getTime())
-    ? formatDateInTimeZone(lastSyncAt, 'America/New_York')
+    ? formatDateInTimeZone(lastSyncAt, APP_TIME_ZONE)
     : null;
   const computedIncrementalStart = lastSyncDate
     ? addDaysToDateKey(lastSyncDate, -2)

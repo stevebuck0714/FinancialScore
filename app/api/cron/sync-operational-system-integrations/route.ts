@@ -2,11 +2,12 @@ import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import { buildAndSaveBambooHrWorkforceReportSnapshot } from '@/lib/operations/bamboohr-workforce-reports';
 import { sendSyncFailureNotification } from '@/lib/email';
+import { APP_TIME_ZONE } from '@/lib/time/eastern';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 300;
 
-const OPERATIONAL_SYNC_TIME_ZONE = 'America/New_York';
+const OPERATIONAL_SYNC_TIME_ZONE = APP_TIME_ZONE;
 const DUE_LOOKBACK_HOURS = 36;
 
 type OperationalConnectionRow = {

@@ -20,7 +20,7 @@ import type { ComponentType } from 'react';
  */
 export type SharedSyncSchedule = {
   syncFrequency: 'daily' | 'weekly' | 'monthly' | '';
-  syncTime: string;             // HH:MM (24h)
+  syncTime: string;             // HH:MM Eastern Time (EST)
   initialSyncStartDate: string; // YYYY-MM-DD
   incrementalSync: 'YES' | 'NO' | '';
 };
