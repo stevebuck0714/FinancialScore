@@ -155,25 +155,6 @@ function qtyValue(map: MonthQtyMap, month: ForecastMonth): number {
   return monthQty(map, month);
 }
 
-function newLine(customer: CustomerOption, sortOrder: number): ForecastLine {
-  return {
-    id: `tmp-${Date.now()}-${sortOrder}`,
-    customerId: customer.customerId,
-    customerName: customer.customerName,
-    customerGroup: '',
-    customerPartNumber: '',
-    itemSku: '',
-    team: '',
-    csr: '',
-    productionType: '',
-    statusFlag: '',
-    annualBaseQty: null,
-    forecastQty: emptyMonthQtyMap(),
-    actualQty: emptyMonthQtyMap(),
-    sortOrder,
-  };
-}
-
 export default function ProductRevenueForecastReport({
   selectedCompanyId,
   onOpenInfo,
@@ -192,6 +173,7 @@ export default function ProductRevenueForecastReport({
   const [notice, setNotice] = useState<string | null>(null);
   const [selectedMonth, setSelectedMonth] = useState<ForecastMonth>(currentMonth());
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const customersRequestSeq = useRef(0);
 
   const selectedCustomer = useMemo(
     () => customers.find((customer) => customer.key === customerKey) || null,
@@ -219,29 +201,42 @@ export default function ProductRevenueForecastReport({
     return Array.from(byKey.values()).sort((a, b) => a.label.localeCompare(b.label));
   }, []);
 
+  const loadCsiCustomers = useCallback(async (seq: number) => {
+    if (!selectedCompanyId) return;
+    try {
+      const csiRes = await fetch(
+        `/api/operational-data/product-raw?companyId=${encodeURIComponent(selectedCompanyId)}&view=customers`
+      );
+      const csiJson = await csiRes.json().catch(() => ({}));
+      if (seq !== customersRequestSeq.current || !csiRes.ok) return;
+      setCustomers((prev) => mergeCustomers(csiJson.customers || [], prev));
+    } catch {
+      // CSI names are optional; forecast customers are enough to use the page.
+    }
+  }, [mergeCustomers, selectedCompanyId]);
+
   const loadCustomers = useCallback(async (nextYear = year) => {
     if (!selectedCompanyId) return;
+    const seq = ++customersRequestSeq.current;
     setLoadingCustomers(true);
     setError(null);
     try {
-      const [csiRes, forecastRes] = await Promise.all([
-        fetch(`/api/operational-data/product-raw?companyId=${encodeURIComponent(selectedCompanyId)}&view=customers`),
-        fetch(`/api/operational-data/product-forecast?companyId=${encodeURIComponent(selectedCompanyId)}&year=${nextYear}`),
-      ]);
-      const csiJson = await csiRes.json().catch(() => ({}));
+      const forecastRes = await fetch(
+        `/api/operational-data/product-forecast?companyId=${encodeURIComponent(selectedCompanyId)}&year=${nextYear}`
+      );
       const forecastJson = await forecastRes.json().catch(() => ({}));
-      if (!csiRes.ok && !forecastRes.ok) {
-        throw new Error(forecastJson.error || csiJson.error || 'Failed to load customers');
-      }
-      const merged = mergeCustomers(csiJson.customers || [], forecastJson.customers || []);
-      setCustomers(merged);
+      if (seq !== customersRequestSeq.current) return;
+      if (!forecastRes.ok) throw new Error(forecastJson.error || 'Failed to load customers');
+      setCustomers(mergeCustomers([], forecastJson.customers || []));
       if (forecastJson.dataThru) setDataThru(String(forecastJson.dataThru).slice(0, 10));
+      void loadCsiCustomers(seq);
     } catch (err: any) {
+      if (seq !== customersRequestSeq.current) return;
       setError(err?.message || 'Failed to load customers');
     } finally {
-      setLoadingCustomers(false);
+      if (seq === customersRequestSeq.current) setLoadingCustomers(false);
     }
-  }, [mergeCustomers, selectedCompanyId, year]);
+  }, [loadCsiCustomers, mergeCustomers, selectedCompanyId, year]);
 
   const loadLines = useCallback(async (customer: CustomerOption, nextYear = year, options?: { keepDirty?: boolean }) => {
     if (!selectedCompanyId || !customer) return;
@@ -352,8 +347,13 @@ export default function ProductRevenueForecastReport({
       setLines(Array.isArray(payload.lines) ? payload.lines : lines);
       if (payload.dataThru) setDataThru(String(payload.dataThru).slice(0, 10));
       setDirty(false);
-      setNotice(`Saved ${Array.isArray(payload.lines) ? payload.lines.length : lines.length} rows for ${selectedCustomer.label}.`);
-      void loadCustomers(year);
+      const savedCount = Array.isArray(payload.lines) ? payload.lines.length : lines.length;
+      setNotice(`Saved ${savedCount} rows for ${selectedCustomer.label}.`);
+      setCustomers((prev) =>
+        prev.map((customer) =>
+          customer.key === selectedCustomer.key ? { ...customer, lineCount: savedCount } : customer
+        )
+      );
     } catch (err: any) {
       setError(err?.message || 'Failed to save monthly forecast');
     } finally {
@@ -404,8 +404,6 @@ export default function ProductRevenueForecastReport({
       setYear(importedYear);
       if (payload.dataThru) setDataThru(String(payload.dataThru).slice(0, 10));
       setDirty(false);
-      await loadCustomers(importedYear);
-      if (selectedCustomer) await loadLines(selectedCustomer, importedYear);
       const forecastCount = Number(payload.forecastRowCount || payload.rowCount || 0);
       const priceCount = Number(payload.priceCount || 0);
       setNotice(
@@ -413,6 +411,8 @@ export default function ProductRevenueForecastReport({
           ? `Imported ${forecastCount} forecast rows and ${priceCount} prices.`
           : `Imported ${forecastCount} forecast rows.`
       );
+      await loadCustomers(importedYear);
+      if (selectedCustomer) await loadLines(selectedCustomer, importedYear);
     } catch (err: unknown) {
       console.error('Monthly Forecast import failed', err);
       setNotice(null);
@@ -526,9 +526,12 @@ export default function ProductRevenueForecastReport({
           <select
             value={customerKey}
             onChange={(event) => handleCustomerChange(event.target.value)}
+            disabled={loadingCustomers && customers.length === 0}
             style={{ ...inputStyle, minWidth: 280 }}
           >
-            <option value="">Select a customer</option>
+            <option value="">
+              {loadingCustomers && customers.length === 0 ? 'Loading customers…' : 'Select a customer'}
+            </option>
             {customers.map((customer) => (
               <option key={customer.key} value={customer.key}>
                 {customer.label}{customer.lineCount ? ` (${customer.lineCount})` : ''}
@@ -610,27 +613,6 @@ export default function ProductRevenueForecastReport({
         </label>
         <button
           type="button"
-          disabled={!selectedCustomer}
-          onClick={() => {
-            if (!selectedCustomer) return;
-            setLines((prev) => [...prev, newLine(selectedCustomer, prev.length)]);
-            markDirty();
-          }}
-          style={{
-            border: '1px solid #cbd5e1',
-            borderRadius: 8,
-            padding: '8px 12px',
-            background: selectedCustomer ? '#ffffff' : '#f8fafc',
-            color: '#334155',
-            fontWeight: 700,
-            cursor: selectedCustomer ? 'pointer' : 'not-allowed',
-            fontSize: 12,
-          }}
-        >
-          Add row
-        </button>
-        <button
-          type="button"
           onClick={() => fileInputRef.current?.click()}
           disabled={importing}
           style={{
@@ -675,13 +657,15 @@ export default function ProductRevenueForecastReport({
         </button>
       </div>
 
-      {loadingCustomers && <div style={{ color: '#64748b', fontSize: 13, marginBottom: 8 }}>Loading customers…</div>}
+      {loadingCustomers && customers.length === 0 && (
+        <div style={{ color: '#64748b', fontSize: 13, marginBottom: 8 }}>Loading customers…</div>
+      )}
       {error && <div style={{ color: '#b91c1c', fontSize: 13, marginBottom: 8 }}>{error}</div>}
       {notice && <div style={{ color: '#166534', fontSize: 13, marginBottom: 8 }}>{notice}</div>}
 
       {!selectedCustomer ? (
         <div style={{ padding: '24px 0', color: '#64748b', fontSize: 13 }}>
-          Select a customer first. You can then add rows, type Group / TEAM / CSR on each row, enter
+          Select a customer first. You can then type Group / TEAM / CSR on each row, enter
           Planned or MTO and monthly quantities, and save. Import the workbook once to load all customers.
         </div>
       ) : loadingLines ? (
@@ -899,7 +883,7 @@ export default function ProductRevenueForecastReport({
                 {lines.length === 0 && (
                   <tr>
                     <td colSpan={15} style={{ padding: 16, color: '#64748b' }}>
-                      No forecast rows for this customer yet. Add a row or import the workbook, then save.
+                      No forecast rows for this customer yet. Import the workbook to load customers and parts, then save.
                     </td>
                   </tr>
                 )}

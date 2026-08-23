@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   FORECAST_MONTH_LABELS,
   FORECAST_QUARTERS,
@@ -156,6 +156,7 @@ export default function ProductForecastRollupReport({
   const [loadingCustomers, setLoadingCustomers] = useState(false);
   const [loadingLines, setLoadingLines] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const customersRequestSeq = useRef(0);
 
   const selectedCustomer = useMemo(
     () => customers.find((customer) => customer.key === customerKey) || null,
@@ -180,29 +181,42 @@ export default function ProductForecastRollupReport({
     return Array.from(byKey.values()).sort((a, b) => a.label.localeCompare(b.label));
   }, []);
 
+  const loadCsiCustomers = useCallback(async (seq: number) => {
+    if (!selectedCompanyId) return;
+    try {
+      const csiRes = await fetch(
+        `/api/operational-data/product-raw?companyId=${encodeURIComponent(selectedCompanyId)}&view=customers`
+      );
+      const csiJson = await csiRes.json().catch(() => ({}));
+      if (seq !== customersRequestSeq.current || !csiRes.ok) return;
+      setCustomers((prev) => mergeCustomers(csiJson.customers || [], prev));
+    } catch {
+      // CSI names are optional; forecast customers are enough to use the page.
+    }
+  }, [mergeCustomers, selectedCompanyId]);
+
   const loadCustomers = useCallback(async (nextYear = year) => {
     if (!selectedCompanyId) return;
+    const seq = ++customersRequestSeq.current;
     setLoadingCustomers(true);
     setError(null);
     try {
-      const [csiRes, forecastRes] = await Promise.all([
-        fetch(`/api/operational-data/product-raw?companyId=${encodeURIComponent(selectedCompanyId)}&view=customers`),
-        fetch(`/api/operational-data/product-forecast?companyId=${encodeURIComponent(selectedCompanyId)}&year=${nextYear}`),
-      ]);
-      const csiJson = await csiRes.json().catch(() => ({}));
+      const forecastRes = await fetch(
+        `/api/operational-data/product-forecast?companyId=${encodeURIComponent(selectedCompanyId)}&year=${nextYear}`
+      );
       const forecastJson = await forecastRes.json().catch(() => ({}));
-      if (!csiRes.ok && !forecastRes.ok) {
-        throw new Error(forecastJson.error || csiJson.error || 'Failed to load customers');
-      }
-      const merged = mergeCustomers(csiJson.customers || [], forecastJson.customers || []);
-      setCustomers(merged);
+      if (seq !== customersRequestSeq.current) return;
+      if (!forecastRes.ok) throw new Error(forecastJson.error || 'Failed to load customers');
+      setCustomers(mergeCustomers([], forecastJson.customers || []));
       if (forecastJson.dataThru) setDataThru(String(forecastJson.dataThru).slice(0, 10));
+      void loadCsiCustomers(seq);
     } catch (err: any) {
+      if (seq !== customersRequestSeq.current) return;
       setError(err?.message || 'Failed to load customers');
     } finally {
-      setLoadingCustomers(false);
+      if (seq === customersRequestSeq.current) setLoadingCustomers(false);
     }
-  }, [mergeCustomers, selectedCompanyId, year]);
+  }, [loadCsiCustomers, mergeCustomers, selectedCompanyId, year]);
 
   const loadLines = useCallback(async (customer: CustomerOption, nextYear = year) => {
     if (!selectedCompanyId || !customer) return;
@@ -370,9 +384,12 @@ export default function ProductForecastRollupReport({
           <select
             value={customerKey}
             onChange={(event) => setCustomerKey(event.target.value)}
+            disabled={loadingCustomers && customers.length === 0}
             style={{ ...inputStyle, minWidth: 280 }}
           >
-            <option value="">Select a customer</option>
+            <option value="">
+              {loadingCustomers && customers.length === 0 ? 'Loading customers…' : 'Select a customer'}
+            </option>
             {customers.map((customer) => (
               <option key={customer.key} value={customer.key}>
                 {customer.label}{customer.lineCount ? ` (${customer.lineCount})` : ''}
@@ -400,7 +417,9 @@ export default function ProductForecastRollupReport({
         </div>
       </div>
 
-      {loadingCustomers && <div style={{ color: '#64748b', fontSize: 13, marginBottom: 8 }}>Loading customers…</div>}
+      {loadingCustomers && customers.length === 0 && (
+        <div style={{ color: '#64748b', fontSize: 13, marginBottom: 8 }}>Loading customers…</div>
+      )}
       {error && <div style={{ color: '#b91c1c', fontSize: 13, marginBottom: 8 }}>{error}</div>}
 
       {!selectedCustomer ? (
@@ -566,7 +585,7 @@ export default function ProductForecastRollupReport({
                 {lines.length === 0 && (
                   <tr>
                     <td colSpan={24} style={{ padding: 16, color: '#64748b' }}>
-                      No forecast rows for this customer yet. Add rows or import the workbook on Monthly Forecast, then return here.
+                      No forecast rows for this customer yet. Import the workbook on Monthly Forecast, then return here.
                     </td>
                   </tr>
                 )}

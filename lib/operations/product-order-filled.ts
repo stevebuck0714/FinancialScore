@@ -626,6 +626,77 @@ function csiCustomerMatchSql(customerId: string, customerName: string): Prisma.S
   return Prisma.sql`FALSE`;
 }
 
+export async function loadProductRawCustomers(companyId: string): Promise<Array<{ customerId: string; customerName: string }>> {
+  const byKey = new Map<string, { customerId: string; customerName: string }>();
+  const add = (id: unknown, name: unknown) => {
+    const customerId = String(id || '').trim();
+    const customerName = String(name || '').trim();
+    if (!customerId && !customerName) return;
+    const key = customerId || customerName.toUpperCase();
+    if (byKey.has(key)) return;
+    byKey.set(key, { customerId, customerName: customerName || customerId });
+  };
+
+  const headerDayRows = await prisma.$queryRaw<Array<{ start: Date | null }>>(Prisma.sql`
+    SELECT DATE_TRUNC('day', MAX(COALESCE("businessDate", "fetchedAt"))) AS start
+    FROM "InforRawRecord"
+    WHERE "companyId" = ${companyId}
+      AND UPPER(COALESCE("miProgram", '')) IN ('SLCOS', 'SLCOHDRS')
+  `);
+  const headerStart = headerDayRows[0]?.start;
+  if (headerStart) {
+    const headerEnd = addUtcDays(headerStart, 1);
+    const headerCustomerId = csiHeaderCustomerIdExpr('h');
+    const headerCustomerName = csiHeaderCustomerNameExpr('h');
+    const headerCustomers = await prisma.$queryRaw<Array<{ customerId: string | null; customerName: string | null }>>(Prisma.sql`
+      SELECT DISTINCT
+        ${headerCustomerId} AS "customerId",
+        ${headerCustomerName} AS "customerName"
+      FROM "InforRawRecord" h
+      WHERE h."companyId" = ${companyId}
+        AND UPPER(COALESCE(h."miProgram", '')) IN ('SLCOS', 'SLCOHDRS')
+        AND COALESCE(h."businessDate", h."fetchedAt") >= ${headerStart}
+        AND COALESCE(h."businessDate", h."fetchedAt") < ${headerEnd}
+        AND COALESCE(${headerCustomerName}, ${headerCustomerId}) IS NOT NULL
+    `);
+    for (const row of headerCustomers) add(row.customerId, row.customerName);
+  }
+
+  if (byKey.size === 0) {
+    const openBook = await resolveOpenBookWindow(companyId);
+    if (openBook) {
+      const snapshotCustomers = await prisma.$queryRaw<Array<{ customerId: string | null; customerName: string | null }>>(Prisma.sql`
+        SELECT DISTINCT s."customerId", s."customerName"
+        FROM "CustomerOrderLineSnapshot" s
+        WHERE s."companyId" = ${companyId}
+          AND s."frequency" = 'daily'
+          AND s."snapshotDate" >= ${openBook.start}
+          AND s."snapshotDate" < ${openBook.end}
+          AND TRIM(COALESCE(s."customerName", '')) <> ''
+      `);
+      for (const row of snapshotCustomers) add(row.customerId, row.customerName);
+    }
+  }
+
+  try {
+    const filledCustomers = await prisma.$queryRaw<Array<{ customerId: string | null; customerName: string | null }>>(Prisma.sql`
+      SELECT "customerId", MAX("customerName") AS "customerName"
+      FROM "CustomerOrderLineFilled"
+      WHERE "companyId" = ${companyId}
+        AND TRIM(COALESCE("customerName", '')) <> ''
+      GROUP BY 1
+      LIMIT 2000
+    `);
+    for (const row of filledCustomers) add(row.customerId, row.customerName);
+  } catch {
+    // Filled table may not exist yet.
+  }
+
+  return Array.from(byKey.values()).sort((left, right) =>
+    left.customerName.localeCompare(right.customerName, undefined, { sensitivity: 'base' })
+  );
+}
+
 export async function companyHasCsiCoitems(companyId: string): Promise<boolean> {
   const rows = await prisma.$queryRaw<Array<{ n: number }>>(Prisma.sql`
     SELECT 1 AS n

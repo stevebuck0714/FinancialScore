@@ -13,6 +13,7 @@ import {
   isTrulyOpenSql,
   loadCsiFilledLines,
   loadCsiOpenLines,
+  loadProductRawCustomers,
   resolveOpenBookWindow,
   type OpenBookWindow,
 } from '@/lib/operations/product-order-filled';
@@ -25,11 +26,6 @@ const OLDER_MONTHS = 24;
 const MAX_UNIQUE_LINES = 8000;
 const MAX_CUSTOMERS = 2000;
 const HISTORY_FLOOR = '2018-01-01';
-
-type ProductRawCustomer = {
-  customerId: string;
-  customerName: string;
-};
 
 function utcDay(value: Date): Date {
   return new Date(Date.UTC(value.getUTCFullYear(), value.getUTCMonth(), value.getUTCDate()));
@@ -674,26 +670,7 @@ export async function GET(request: NextRequest) {
 
     const view = String(request.nextUrl.searchParams.get('view') || 'lines').trim().toLowerCase();
     if (view === 'customers') {
-      const customers = await prisma.$queryRaw<ProductRawCustomer[]>(Prisma.sql`
-        SELECT
-          NULLIF(TRIM(COALESCE("customerId", '')), '') AS "customerId",
-          MAX("customerName") AS "customerName"
-        FROM (
-          SELECT "customerId", "customerName"
-          FROM "CustomerOrderLineSnapshot"
-          WHERE "companyId" = ${companyId}
-            AND "frequency" = 'daily'
-            AND TRIM(COALESCE("customerName", '')) <> ''
-          UNION ALL
-          SELECT "customerId", "customerName"
-          FROM "CustomerOrderLineFilled"
-          WHERE "companyId" = ${companyId}
-            AND TRIM(COALESCE("customerName", '')) <> ''
-        ) customers
-        GROUP BY 1
-        ORDER BY MAX("customerName") ASC
-        LIMIT ${MAX_CUSTOMERS}
-      `);
+      const customers = (await loadProductRawCustomers(companyId)).slice(0, MAX_CUSTOMERS);
 
       return NextResponse.json({
         customers: customers.map((row) => {

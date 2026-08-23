@@ -10179,9 +10179,6 @@ export default function OperationsTab({
         },
       ];
 
-      if (wholesaleRawCustomersLoading && wholesaleRawCustomers.length === 0) {
-        return <div style={{ padding: '40px', textAlign: 'center', color: '#64748b' }}>Loading customers...</div>;
-      }
       if (wholesaleRawLinesError && !selectedWholesaleRawCustomer) {
         return (
           <div style={{ background: 'white', border: '1px solid #fecaca', borderRadius: '12px', padding: '24px', color: '#991b1b' }}>
@@ -10227,9 +10224,14 @@ export default function OperationsTab({
             <select
               value={wholesaleRawCustomerFilter}
               onChange={(event) => setWholesaleRawCustomerFilter(event.target.value)}
+              disabled={wholesaleRawCustomersLoading && wholesaleRawCustomers.length === 0}
               style={{ border: '1px solid #cbd5e1', borderRadius: '8px', padding: '8px 10px', fontSize: '12px', minWidth: '260px', background: 'white' }}
             >
-              <option value="">Select a customer</option>
+              <option value="">
+                {wholesaleRawCustomersLoading && wholesaleRawCustomers.length === 0
+                  ? 'Loading customers…'
+                  : 'Select a customer'}
+              </option>
               {wholesaleRawCustomers.map((customer) => (
                 <option key={customer.key} value={customer.key}>
                   {customer.label}{customer.customerId ? ` (${customer.customerId})` : ''}
