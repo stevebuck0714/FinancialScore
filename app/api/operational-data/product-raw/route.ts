@@ -148,6 +148,7 @@ async function loadCustomerLineIdentity(params: {
   companyId: string;
   customerId: string;
   customerName: string;
+  includeRawCsi?: boolean;
 }): Promise<Map<string, LineIdentity>> {
   const byItem = new Map<string, LineIdentity>();
   const matchRevenue = customerMatchSql(params.customerId, params.customerName);
@@ -178,7 +179,7 @@ async function loadCustomerLineIdentity(params: {
     // Forecast table is optional for Raw Data.
   }
 
-  if (params.customerId) {
+  if (params.includeRawCsi && params.customerId) {
     try {
       const rawRows = await prisma.$queryRaw<Array<{ item: string | null; custitem: string | null }>>(Prisma.sql`
         SELECT payload->>'Item' AS item, payload->>'CustItem' AS custitem
@@ -187,7 +188,7 @@ async function loadCustomerLineIdentity(params: {
           AND UPPER(COALESCE("miProgram", '')) = 'SLCUSTOMERITEMS'
           AND payload->>'CustNum' = ${params.customerId}
           AND NULLIF(TRIM(COALESCE(payload->>'CustItem', '')), '') IS NOT NULL
-        LIMIT 20000
+        LIMIT 5000
       `);
       for (const row of rawRows) mergeLineIdentity(byItem, row.item, row.custitem, null);
     } catch {
@@ -285,13 +286,53 @@ async function assertProductsAccess(companyId: string): Promise<NextResponse | n
   return null;
 }
 
+async function resolveCustomerOpenBook(params: {
+  companyId: string;
+  customerId: string;
+  customerName: string;
+}): Promise<OpenBookWindow | null> {
+  const matchSql = customerMatchSql(params.customerId, params.customerName, 's');
+  const rows = await prisma.$queryRaw<Array<{ start: Date; end: Date }>>(Prisma.sql`
+    WITH customer_days AS (
+      SELECT DATE_TRUNC('day', s."snapshotDate") AS day_start, COUNT(*)::int AS n
+      FROM "CustomerOrderLineSnapshot" s
+      WHERE s."companyId" = ${params.companyId}
+        AND s."frequency" = 'daily'
+        AND ${matchSql}
+      GROUP BY 1
+    ),
+    latest AS (
+      SELECT MAX(day_start) AS max_day FROM customer_days
+    ),
+    ranked AS (
+      SELECT d.day_start, d.n, MAX(d.n) OVER () AS max_n
+      FROM customer_days d
+      CROSS JOIN latest
+      WHERE latest.max_day IS NOT NULL
+        AND d.day_start >= latest.max_day - INTERVAL '21 days'
+    )
+    SELECT day_start AS start, (day_start + INTERVAL '1 day') AS end
+    FROM ranked
+    WHERE n >= GREATEST((max_n * 0.5)::int, 1)
+    ORDER BY day_start DESC
+    LIMIT 1
+  `);
+  const start = rows[0]?.start;
+  const end = rows[0]?.end;
+  if (!start || !end) return null;
+  return { start, end };
+}
+
 async function loadOpenLines(params: {
   companyId: string;
   customerId: string;
   customerName: string;
-}) {
+}): Promise<{ rows: any[]; openAsOf: Date | null }> {
+  const openBook = await resolveCustomerOpenBook(params);
+  if (!openBook) return { rows: [], openAsOf: null };
   const matchSql = customerMatchSql(params.customerId, params.customerName, 's');
-  return prisma.$queryRaw<any[]>(Prisma.sql`
+  try {
+    const rows = await prisma.$queryRaw<any[]>(Prisma.sql`
     SELECT DISTINCT ON (s."orderId", s."lineId")
       s."snapshotDate",
       s."customerId",
@@ -314,6 +355,8 @@ async function loadOpenLines(params: {
     FROM "CustomerOrderLineSnapshot" s
     WHERE s."companyId" = ${params.companyId}
       AND s."frequency" = 'daily'
+      AND s."snapshotDate" >= ${openBook.start}
+      AND s."snapshotDate" < ${openBook.end}
       AND ${matchSql}
       AND NOT EXISTS (
         SELECT 1
@@ -325,6 +368,46 @@ async function loadOpenLines(params: {
       )
     ORDER BY s."orderId", s."lineId", s."snapshotDate" DESC
   `);
+    return { rows, openAsOf: openBook.start };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (!/qtyShipped|customerPn/i.test(message)) throw error;
+    const rows = await prisma.$queryRaw<any[]>(Prisma.sql`
+      SELECT DISTINCT ON (s."orderId", s."lineId")
+        s."snapshotDate",
+        s."customerId",
+        s."customerName",
+        s."orderId",
+        s."lineId",
+        s."orderDate",
+        s."itemId",
+        s."itemName",
+        s."sku",
+        s."qtyOrdered",
+        s."qtyInvoiced",
+        s."unitPrice",
+        s."contractValue",
+        s."invoicedAmount",
+        s."remainingAmount",
+        s."sourceTransaction"
+      FROM "CustomerOrderLineSnapshot" s
+      WHERE s."companyId" = ${params.companyId}
+        AND s."frequency" = 'daily'
+        AND s."snapshotDate" >= ${openBook.start}
+        AND s."snapshotDate" < ${openBook.end}
+        AND ${matchSql}
+        AND NOT EXISTS (
+          SELECT 1
+          FROM "CustomerOrderLineFilled" f
+          WHERE f."companyId" = ${params.companyId}
+            AND f."orderId" = s."orderId"
+            AND f."lineId" = s."lineId"
+            AND ${sameCustomerSql('f', 's')}
+        )
+      ORDER BY s."orderId", s."lineId", s."snapshotDate" DESC
+    `);
+    return { rows, openAsOf: openBook.start };
+  }
 }
 
 async function loadFilledLines(params: {
@@ -440,10 +523,32 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Select a customer before loading raw order lines.' }, { status: 400 });
     }
 
+    const windowKind = String(request.nextUrl.searchParams.get('window') || 'recent').trim().toLowerCase();
+    const wantsFilled = view === 'filled' || (view !== 'open' && windowKind === 'older');
+
+    if (!wantsFilled) {
+      const identityByItem = await loadCustomerLineIdentity({ companyId, customerId, customerName });
+      const { rows: openRows, openAsOf } = await loadOpenLines({
+        companyId,
+        customerId,
+        customerName,
+      });
+      return NextResponse.json({
+        openRecords: openRows
+          .map((row) => mapOrderLineRecord(row, 'open'))
+          .map((row) => applyLineIdentity(row, identityByItem)),
+        filledRecords: [],
+        openAsOf: openAsOf ? isoDay(openAsOf) : null,
+        window: null,
+        nextOlderWindow: null,
+        historyFloor: HISTORY_FLOOR,
+        truncated: false,
+        hasMoreOlder: false,
+      });
+    }
+
     await ensureFilledHistory(companyId);
     const openBook = await resolveOpenBookWindow(companyId);
-
-    const windowKind = String(request.nextUrl.searchParams.get('window') || 'recent').trim().toLowerCase();
     const beforeParam = String(request.nextUrl.searchParams.get('before') || '').trim();
     const recentEnd = yesterdayUtc();
     const recentStart = addUtcMonths(recentEnd, -RECENT_MONTHS);
@@ -483,7 +588,8 @@ export async function GET(request: NextRequest) {
     const truncated = filledRows.length > MAX_UNIQUE_LINES;
     const limitedFilled = truncated ? filledRows.slice(0, MAX_UNIQUE_LINES) : filledRows;
 
-    const filledPayload = {
+    return NextResponse.json({
+      openRecords: [],
       filledRecords: limitedFilled
         .map((row) => mapOrderLineRecord(row, 'filled'))
         .map((row) => applyLineIdentity(row, identityByItem)),
@@ -498,29 +604,10 @@ export async function GET(request: NextRequest) {
       historyFloor: HISTORY_FLOOR,
       truncated,
       hasMoreOlder: Boolean(nextOlderWindow),
-    };
-
-    if (kind === 'older') {
-      return NextResponse.json({
-        openRecords: [],
-        ...filledPayload,
-      });
-    }
-
-    const openRows = await loadOpenLines({
-      companyId,
-      customerId,
-      customerName,
-    });
-
-    return NextResponse.json({
-      openRecords: openRows
-        .map((row) => mapOrderLineRecord(row, 'open'))
-        .map((row) => applyLineIdentity(row, identityByItem)),
-      ...filledPayload,
     });
   } catch (error) {
     console.error('[product-raw] failed', error);
-    return NextResponse.json({ error: 'Failed to load product raw data' }, { status: 500 });
+    const message = error instanceof Error ? error.message.split('\n')[0].slice(0, 280) : 'Failed to load product raw data';
+    return NextResponse.json({ error: message || 'Failed to load product raw data' }, { status: 500 });
   }
 }

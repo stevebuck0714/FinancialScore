@@ -964,7 +964,11 @@ export default function OperationsTab({
   const [wholesaleRawCustomerLines, setWholesaleRawCustomerLines] = useState<any[]>([]);
   const [wholesaleRawFilledLines, setWholesaleRawFilledLines] = useState<any[]>([]);
   const [wholesaleRawLinesLoading, setWholesaleRawLinesLoading] = useState(false);
+  const [wholesaleRawFilledLoading, setWholesaleRawFilledLoading] = useState(false);
   const [wholesaleRawLinesError, setWholesaleRawLinesError] = useState<string | null>(null);
+  const [wholesaleRawFilledError, setWholesaleRawFilledError] = useState<string | null>(null);
+  const [wholesaleRawFilledRequested, setWholesaleRawFilledRequested] = useState(false);
+  const [wholesaleRawOpenAsOf, setWholesaleRawOpenAsOf] = useState('');
   const [wholesaleRawWindowStart, setWholesaleRawWindowStart] = useState('');
   const [wholesaleRawWindowEnd, setWholesaleRawWindowEnd] = useState('');
   const [wholesaleRawNextOlderStart, setWholesaleRawNextOlderStart] = useState('');
@@ -2024,6 +2028,9 @@ export default function OperationsTab({
     setWholesaleRawCustomerLines([]);
     setWholesaleRawFilledLines([]);
     setWholesaleRawLinesError(null);
+    setWholesaleRawFilledError(null);
+    setWholesaleRawFilledRequested(false);
+    setWholesaleRawOpenAsOf('');
     setWholesaleRawWindowStart('');
     setWholesaleRawWindowEnd('');
     setWholesaleRawNextOlderStart('');
@@ -2061,19 +2068,25 @@ export default function OperationsTab({
     return Array.isArray(payload?.customers) ? payload.customers : [];
   };
 
-  const fetchWholesaleRawLines = async (options: { window: 'recent' | 'older'; before?: string }) => {
+  const fetchWholesaleRawLines = async (options: {
+    view: 'open' | 'filled';
+    window?: 'recent' | 'older';
+    before?: string;
+  }) => {
     if (!selectedWholesaleRawCustomer) {
       throw new Error('Select a customer before loading raw order lines.');
     }
     const params = new URLSearchParams({
       companyId: selectedCompanyId,
-      view: 'lines',
-      window: options.window,
+      view: options.view,
       customerId: selectedWholesaleRawCustomer.customerId,
       customerName: selectedWholesaleRawCustomer.customerName,
     });
-    if (options.window === 'older' && options.before) {
-      params.set('before', options.before);
+    if (options.view === 'filled') {
+      params.set('window', options.window || 'recent');
+      if (options.window === 'older' && options.before) {
+        params.set('before', options.before);
+      }
     }
     const response = await fetch(`/api/operational-data/product-raw?${params}`, { cache: 'no-store' });
     const payload = await response.json().catch(() => ({}));
@@ -2090,18 +2103,26 @@ export default function OperationsTab({
     }
     setWholesaleRawLinesLoading(true);
     setWholesaleRawLinesError(null);
+    setWholesaleRawFilledError(null);
+    setWholesaleRawFilledRequested(false);
+    setWholesaleRawFilledLines([]);
     setWholesaleRawSortKey('isoDate');
     setWholesaleRawSortDir('desc');
     try {
-      const payload = await fetchWholesaleRawLines({ window: 'recent' });
+      const payload = await fetchWholesaleRawLines({ view: 'open' });
       const openRecords = Array.isArray(payload?.openRecords)
         ? payload.openRecords
         : Array.isArray(payload?.records)
         ? payload.records
         : [];
       setWholesaleRawCustomerLines(openRecords);
-      setWholesaleRawFilledLines(Array.isArray(payload?.filledRecords) ? payload.filledRecords : []);
-      applyWholesaleRawWindowPayload(payload, { resetWindow: true });
+      setWholesaleRawOpenAsOf(String(payload?.openAsOf || ''));
+      setWholesaleRawWindowStart('');
+      setWholesaleRawWindowEnd('');
+      setWholesaleRawNextOlderStart('');
+      setWholesaleRawNextOlderEnd('');
+      setWholesaleRawHasMoreOlder(false);
+      setWholesaleRawTruncated(false);
     } catch (error: any) {
       resetWholesaleRawLines();
       setWholesaleRawLinesError(error?.message || 'Failed to load customer order lines');
@@ -2110,12 +2131,31 @@ export default function OperationsTab({
     }
   };
 
-  const loadWholesaleRawOlderWindow = async () => {
-    if (!selectedWholesaleRawCustomer || !wholesaleRawWindowStart || wholesaleRawLinesLoading) return;
-    setWholesaleRawLinesLoading(true);
-    setWholesaleRawLinesError(null);
+  const loadWholesaleRawFilledWindow = async () => {
+    if (!selectedWholesaleRawCustomer || wholesaleRawFilledLoading) return;
+    setWholesaleRawFilledLoading(true);
+    setWholesaleRawFilledError(null);
+    setWholesaleRawFilledRequested(true);
+    setWholesaleRawFilledSortKey('isoDate');
+    setWholesaleRawFilledSortDir('desc');
     try {
-      const payload = await fetchWholesaleRawLines({ window: 'older', before: wholesaleRawWindowStart });
+      const payload = await fetchWholesaleRawLines({ view: 'filled', window: 'recent' });
+      setWholesaleRawFilledLines(Array.isArray(payload?.filledRecords) ? payload.filledRecords : []);
+      applyWholesaleRawWindowPayload(payload, { resetWindow: true });
+    } catch (error: any) {
+      setWholesaleRawFilledLines([]);
+      setWholesaleRawFilledError(error?.message || 'Failed to load filled order lines');
+    } finally {
+      setWholesaleRawFilledLoading(false);
+    }
+  };
+
+  const loadWholesaleRawOlderWindow = async () => {
+    if (!selectedWholesaleRawCustomer || !wholesaleRawWindowStart || wholesaleRawFilledLoading) return;
+    setWholesaleRawFilledLoading(true);
+    setWholesaleRawFilledError(null);
+    try {
+      const payload = await fetchWholesaleRawLines({ view: 'filled', window: 'older', before: wholesaleRawWindowStart });
       const incoming = Array.isArray(payload?.filledRecords)
         ? payload.filledRecords
         : Array.isArray(payload?.records)
@@ -2139,9 +2179,9 @@ export default function OperationsTab({
       });
       applyWholesaleRawWindowPayload(payload, { mergeTruncated: true });
     } catch (error: any) {
-      setWholesaleRawLinesError(error?.message || 'Failed to load older order lines');
+      setWholesaleRawFilledError(error?.message || 'Failed to load older order lines');
     } finally {
-      setWholesaleRawLinesLoading(false);
+      setWholesaleRawFilledLoading(false);
     }
   };
 
@@ -10178,7 +10218,8 @@ export default function OperationsTab({
               {selectedWholesaleRawCustomer ? ` · ${selectedWholesaleRawCustomer.label}` : ''}
             </h4>
             <div style={{ fontSize: 12, color: '#475569' }}>
-              {wholesaleRawVisibleRows.length.toLocaleString()} shown · all CSI snapshots
+              {wholesaleRawVisibleRows.length.toLocaleString()} shown
+              {wholesaleRawOpenAsOf ? ` · as of ${formatRawDate(wholesaleRawOpenAsOf)}` : ''}
             </div>
           </div>
           <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', marginBottom: '12px', fontSize: '12px', color: '#475569' }}>
@@ -10258,108 +10299,139 @@ export default function OperationsTab({
           <div style={{ marginTop: 28, paddingTop: 18, borderTop: '1px solid #e2e8f0' }}>
             <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', marginBottom: 8 }}>
               <h4 style={{ margin: 0, fontSize: 14, fontWeight: 800, color: '#334155' }}>Filled orders</h4>
-              <button
-                type="button"
-                onClick={() => { void loadWholesaleRawOlderWindow(); }}
-                disabled={!selectedWholesaleRawCustomer || !wholesaleRawHasMoreOlder || wholesaleRawLinesLoading || !wholesaleRawWindowStart}
-                title={
-                  !wholesaleRawHasMoreOlder
-                    ? `History loaded through ${wholesaleRawHistoryFloor}`
-                    : 'Load the previous 2-year window of filled orders'
-                }
-                style={{
-                  border: '1px solid #cbd5e1',
-                  borderRadius: '8px',
-                  padding: '8px 10px',
-                  fontSize: '12px',
-                  background: !selectedWholesaleRawCustomer || !wholesaleRawHasMoreOlder || wholesaleRawLinesLoading ? '#f8fafc' : '#fff',
-                  color: '#334155',
-                  cursor: !selectedWholesaleRawCustomer || !wholesaleRawHasMoreOlder || wholesaleRawLinesLoading ? 'not-allowed' : 'pointer',
-                  fontWeight: 700,
-                }}
-              >
-                Load older (2 years)
-              </button>
+              {!wholesaleRawFilledRequested ? (
+                <button
+                  type="button"
+                  onClick={() => { void loadWholesaleRawFilledWindow(); }}
+                  disabled={!selectedWholesaleRawCustomer || wholesaleRawFilledLoading}
+                  title="Load the last 2 years of filled orders"
+                  style={{
+                    border: '1px solid #cbd5e1',
+                    borderRadius: '8px',
+                    padding: '8px 10px',
+                    fontSize: '12px',
+                    background: !selectedWholesaleRawCustomer || wholesaleRawFilledLoading ? '#f8fafc' : '#fff',
+                    color: '#334155',
+                    cursor: !selectedWholesaleRawCustomer || wholesaleRawFilledLoading ? 'not-allowed' : 'pointer',
+                    fontWeight: 700,
+                  }}
+                >
+                  {wholesaleRawFilledLoading ? 'Loading filled...' : 'Load filled (2 years)'}
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => { void loadWholesaleRawOlderWindow(); }}
+                  disabled={!selectedWholesaleRawCustomer || !wholesaleRawHasMoreOlder || wholesaleRawFilledLoading || !wholesaleRawWindowStart}
+                  title={
+                    !wholesaleRawHasMoreOlder
+                      ? `History loaded through ${wholesaleRawHistoryFloor}`
+                      : 'Load the previous 2-year window of filled orders'
+                  }
+                  style={{
+                    border: '1px solid #cbd5e1',
+                    borderRadius: '8px',
+                    padding: '8px 10px',
+                    fontSize: '12px',
+                    background: !selectedWholesaleRawCustomer || !wholesaleRawHasMoreOlder || wholesaleRawFilledLoading ? '#f8fafc' : '#fff',
+                    color: '#334155',
+                    cursor: !selectedWholesaleRawCustomer || !wholesaleRawHasMoreOlder || wholesaleRawFilledLoading ? 'not-allowed' : 'pointer',
+                    fontWeight: 700,
+                  }}
+                >
+                  {wholesaleRawFilledLoading ? 'Loading filled...' : 'Load older (2 years)'}
+                </button>
+              )}
             </div>
             <div style={{ fontSize: 12, color: '#64748b', lineHeight: 1.45, marginBottom: 10 }}>
-              Lines that left the open book. Last 2 years load first. Load older walks filled history in 2-year windows back to {formatWindowDate(wholesaleRawHistoryFloor)}.
+              Lines that left the open book. Filled stays closed until you load it. Last 2 years load first. Load older walks filled history in 2-year windows back to {formatWindowDate(wholesaleRawHistoryFloor)}.
             </div>
-            <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', marginBottom: '12px', fontSize: '12px', color: '#475569' }}>
-              <span><strong>Filled lines loaded:</strong> {wholesaleRawFilledBaseRows.length.toLocaleString()}</span>
-              {wholesaleRawWindowStart && wholesaleRawWindowEnd && (
-                <span><strong>Loaded window:</strong> {formatWindowDate(wholesaleRawWindowStart)} – {formatWindowDate(wholesaleRawWindowEnd)}</span>
-              )}
-              {wholesaleRawFilledOldestDate && <span><strong>Oldest order date:</strong> {formatRawDate(wholesaleRawFilledOldestDate)}</span>}
-              {wholesaleRawFilledLatestDate && <span><strong>Latest order date:</strong> {formatRawDate(wholesaleRawFilledLatestDate)}</span>}
-            </div>
-            {wholesaleRawTruncated && (
-              <div style={{ marginBottom: '12px', padding: '10px', borderRadius: '8px', background: '#fff7ed', border: '1px solid #fed7aa', color: '#9a3412', fontSize: '12px' }}>
-                This window has more than 8,000 filled order lines. The table shows a capped set.
+            {!wholesaleRawFilledRequested ? (
+              <div style={{ padding: '14px', fontSize: '13px', color: '#64748b' }}>
+                {!selectedWholesaleRawCustomer
+                  ? 'Select a customer, then click Load filled to open this table.'
+                  : 'Filled order lines are not loaded until you click Load filled.'}
               </div>
-            )}
-            {wholesaleRawFilledBaseRows.length > wholesaleRawVisibleRowLimit && (
-              <div style={{ marginBottom: '12px', padding: '10px', borderRadius: '8px', background: '#fff7ed', border: '1px solid #fed7aa', color: '#9a3412', fontSize: '12px' }}>
-                Showing the newest {wholesaleRawVisibleRowLimit.toLocaleString()} of {wholesaleRawFilledBaseRows.length.toLocaleString()} filled rows. Click a column header to sort.
-              </div>
-            )}
-            <div style={{ overflowX: 'auto', maxHeight: '620px', overflowY: 'auto' }}>
-              <table style={{ width: '100%', minWidth: '1080px', borderCollapse: 'collapse' }}>
-                <thead>
-                  <tr style={{ borderBottom: '1px solid #e2e8f0', background: '#f8fafc', position: 'sticky', top: 0, zIndex: 1 }}>
-                    <th style={{ padding: '8px', fontSize: '12px', color: '#334155', textAlign: 'left', whiteSpace: 'nowrap' }}>Status</th>
-                    {rawColumns.map((column) => (
-                      <th
-                        key={`filled-${column.key}`}
-                        onClick={() => handleWholesaleRawFilledSort(column.key)}
-                        style={{
-                          padding: '8px',
-                          fontSize: '12px',
-                          color: '#334155',
-                          textAlign: column.align || 'left',
-                          whiteSpace: 'nowrap',
-                          cursor: 'pointer',
-                          userSelect: 'none',
-                        }}
-                      >
-                        {column.label}{wholesaleRawFilledSortLabel(column.key)}
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {wholesaleRawFilledVisibleRows.map((row) => (
-                    <tr key={row.key} style={{ borderBottom: '1px solid #f1f5f9' }}>
-                      <td style={{ padding: '8px', fontSize: '12px', whiteSpace: 'nowrap' }}>{statusChip('Filled')}</td>
-                      {rawColumns.map((column) => (
-                        <td
-                          key={column.key}
-                          style={{
-                            padding: '8px',
-                            fontSize: '12px',
-                            color: '#334155',
-                            textAlign: column.align || 'left',
-                            whiteSpace: 'nowrap',
-                          }}
-                        >
-                          {column.render(row)}
-                        </td>
-                      ))}
-                    </tr>
-                  ))}
-                  {wholesaleRawFilledVisibleRows.length === 0 && (
-                    <tr>
-                      <td colSpan={rawColumns.length + 1} style={{ padding: '14px', fontSize: '13px', color: '#64748b' }}>
-                        {!selectedWholesaleRawCustomer
-                          ? 'Select a customer to see filled orders under Open.'
-                          : wholesaleRawLinesLoading
-                          ? 'Loading filled order lines...'
-                          : 'No filled order lines are stored for this customer in the loaded window.'}
-                      </td>
-                    </tr>
+            ) : (
+              <>
+                <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', marginBottom: '12px', fontSize: '12px', color: '#475569' }}>
+                  <span><strong>Filled lines loaded:</strong> {wholesaleRawFilledBaseRows.length.toLocaleString()}</span>
+                  {wholesaleRawWindowStart && wholesaleRawWindowEnd && (
+                    <span><strong>Loaded window:</strong> {formatWindowDate(wholesaleRawWindowStart)} – {formatWindowDate(wholesaleRawWindowEnd)}</span>
                   )}
-                </tbody>
-              </table>
-            </div>
+                  {wholesaleRawFilledOldestDate && <span><strong>Oldest order date:</strong> {formatRawDate(wholesaleRawFilledOldestDate)}</span>}
+                  {wholesaleRawFilledLatestDate && <span><strong>Latest order date:</strong> {formatRawDate(wholesaleRawFilledLatestDate)}</span>}
+                </div>
+                {wholesaleRawTruncated && (
+                  <div style={{ marginBottom: '12px', padding: '10px', borderRadius: '8px', background: '#fff7ed', border: '1px solid #fed7aa', color: '#9a3412', fontSize: '12px' }}>
+                    This window has more than 8,000 filled order lines. The table shows a capped set.
+                  </div>
+                )}
+                {wholesaleRawFilledBaseRows.length > wholesaleRawVisibleRowLimit && (
+                  <div style={{ marginBottom: '12px', padding: '10px', borderRadius: '8px', background: '#fff7ed', border: '1px solid #fed7aa', color: '#9a3412', fontSize: '12px' }}>
+                    Showing the newest {wholesaleRawVisibleRowLimit.toLocaleString()} of {wholesaleRawFilledBaseRows.length.toLocaleString()} filled rows. Click a column header to sort.
+                  </div>
+                )}
+                <div style={{ overflowX: 'auto', maxHeight: '620px', overflowY: 'auto' }}>
+                  <table style={{ width: '100%', minWidth: '1080px', borderCollapse: 'collapse' }}>
+                    <thead>
+                      <tr style={{ borderBottom: '1px solid #e2e8f0', background: '#f8fafc', position: 'sticky', top: 0, zIndex: 1 }}>
+                        <th style={{ padding: '8px', fontSize: '12px', color: '#334155', textAlign: 'left', whiteSpace: 'nowrap' }}>Status</th>
+                        {rawColumns.map((column) => (
+                          <th
+                            key={`filled-${column.key}`}
+                            onClick={() => handleWholesaleRawFilledSort(column.key)}
+                            style={{
+                              padding: '8px',
+                              fontSize: '12px',
+                              color: '#334155',
+                              textAlign: column.align || 'left',
+                              whiteSpace: 'nowrap',
+                              cursor: 'pointer',
+                              userSelect: 'none',
+                            }}
+                          >
+                            {column.label}{wholesaleRawFilledSortLabel(column.key)}
+                          </th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {wholesaleRawFilledVisibleRows.map((row) => (
+                        <tr key={row.key} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                          <td style={{ padding: '8px', fontSize: '12px', whiteSpace: 'nowrap' }}>{statusChip('Filled')}</td>
+                          {rawColumns.map((column) => (
+                            <td
+                              key={column.key}
+                              style={{
+                                padding: '8px',
+                                fontSize: '12px',
+                                color: '#334155',
+                                textAlign: column.align || 'left',
+                                whiteSpace: 'nowrap',
+                              }}
+                            >
+                              {column.render(row)}
+                            </td>
+                          ))}
+                        </tr>
+                      ))}
+                      {wholesaleRawFilledVisibleRows.length === 0 && (
+                        <tr>
+                          <td colSpan={rawColumns.length + 1} style={{ padding: '14px', fontSize: '13px', color: '#64748b' }}>
+                            {wholesaleRawFilledLoading
+                              ? 'Loading filled order lines...'
+                              : wholesaleRawFilledError
+                              ? wholesaleRawFilledError
+                              : 'No filled order lines are stored for this customer in the loaded window.'}
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </>
+            )}
           </div>
         </div>
       );
