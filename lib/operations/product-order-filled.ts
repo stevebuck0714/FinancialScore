@@ -135,11 +135,25 @@ export function remainingShipQtySql(alias: string): Prisma.Sql {
   return Prisma.sql`GREATEST(COALESCE(${ordered}, 0) - COALESCE(${shipped}, 0), 0)`;
 }
 
+export function remainingToShip(qtyOrdered: number, qtyShipped?: number | null): number {
+  return Math.max(Number(qtyOrdered || 0) - Number(qtyShipped || 0), 0);
+}
+
+export function isCsiOpenLine(stat: string | null | undefined, qtyOrdered: number, qtyShipped?: number | null): boolean {
+  const status = String(stat || '').trim().toUpperCase();
+  return remainingToShip(qtyOrdered, qtyShipped) > 0.0001 && status !== 'F' && status !== 'C';
+}
+
+export function isCsiFilledLine(stat: string | null | undefined, qtyOrdered: number, qtyShipped?: number | null): boolean {
+  const status = String(stat || '').trim().toUpperCase();
+  return status === 'F' || status === 'C' || remainingToShip(qtyOrdered, qtyShipped) <= 0.0001;
+}
+
 export function isTrulyOpenSql(alias: string): Prisma.Sql {
   const stat = Prisma.raw(`"${alias}"."lineStat"`);
   return Prisma.sql`(
     ${remainingShipQtySql(alias)} > 0.0001
-    AND UPPER(COALESCE(${stat}, '')) NOT IN ('C', 'F', 'I')
+    AND UPPER(COALESCE(${stat}, '')) NOT IN ('C', 'F')
   )`;
 }
 
@@ -147,7 +161,7 @@ export function isTrulyFilledSql(alias: string): Prisma.Sql {
   const stat = Prisma.raw(`"${alias}"."lineStat"`);
   return Prisma.sql`(
     ${remainingShipQtySql(alias)} <= 0.0001
-    OR UPPER(COALESCE(${stat}, '')) IN ('C', 'F', 'I')
+    OR UPPER(COALESCE(${stat}, '')) IN ('C', 'F')
   )`;
 }
 
@@ -254,7 +268,18 @@ async function insertFilledLines(lines: FilledOrderLineInput[]): Promise<number>
         "sourcePlatform", "sourceProgram", "sourceTransaction", "cono", "divi", "createdAt"
       )
       VALUES ${Prisma.join(values)}
-      ON CONFLICT ("companyId", "orderId", "lineId", "customerName") DO NOTHING
+      ON CONFLICT ("companyId", "orderId", "lineId", "customerName") DO UPDATE SET
+        "lineStat" = COALESCE(EXCLUDED."lineStat", "CustomerOrderLineFilled"."lineStat"),
+        "qtyShipped" = COALESCE(EXCLUDED."qtyShipped", "CustomerOrderLineFilled"."qtyShipped"),
+        "customerPn" = COALESCE(EXCLUDED."customerPn", "CustomerOrderLineFilled"."customerPn"),
+        "customerId" = COALESCE(EXCLUDED."customerId", "CustomerOrderLineFilled"."customerId"),
+        "qtyOrdered" = EXCLUDED."qtyOrdered",
+        "qtyInvoiced" = EXCLUDED."qtyInvoiced",
+        "unitPrice" = EXCLUDED."unitPrice",
+        "contractValue" = EXCLUDED."contractValue",
+        "invoicedAmount" = EXCLUDED."invoicedAmount",
+        "remainingAmount" = EXCLUDED."remainingAmount",
+        "filledAsOf" = GREATEST("CustomerOrderLineFilled"."filledAsOf", EXCLUDED."filledAsOf")
     `);
     inserted += Number(result || 0);
   }
@@ -540,37 +565,462 @@ async function isBackfillComplete(companyId: string): Promise<boolean> {
   return rows.length > 0;
 }
 
+function csiNumericSql(payloadAlias: string, key: string): Prisma.Sql {
+  const expr = Prisma.raw(`COALESCE(${payloadAlias}.payload->>'${key}', '')`);
+  return Prisma.sql`(CASE WHEN ${expr} ~ '^-?[0-9]+(\\.[0-9]+)?$' THEN ${expr}::double precision ELSE 0 END)`;
+}
+
+function csiOrderIdExpr(alias: string): Prisma.Sql {
+  return Prisma.raw(
+    `COALESCE(NULLIF(REGEXP_REPLACE(TRIM(COALESCE(${alias}.payload->>'CoNum', ${alias}.payload->>'CONUM', ${alias}.payload->>'coNum', '')), '^0+', ''), ''), '0')`
+  );
+}
+
+function csiLineIdExpr(alias: string): Prisma.Sql {
+  return Prisma.raw(
+    `TRIM(COALESCE(${alias}.payload->>'CoLine', ${alias}.payload->>'COLINE', '1')) || '-' || TRIM(COALESCE(${alias}.payload->>'CoRelease', ${alias}.payload->>'CORELEASE', '0'))`
+  );
+}
+
+function csiStatExpr(alias: string): Prisma.Sql {
+  return Prisma.raw(
+    `UPPER(TRIM(COALESCE(${alias}.payload->>'Stat', ${alias}.payload->>'STAT', ${alias}.payload->>'stat', '')))`
+  );
+}
+
+function csiOrderDateExpr(alias: string): Prisma.Sql {
+  return Prisma.raw(`CASE
+    WHEN COALESCE(${alias}.payload->>'OrderDate', '') ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}' THEN LEFT(${alias}.payload->>'OrderDate', 10)::timestamp
+    WHEN COALESCE(${alias}.payload->>'OrderDate', '') ~ '^[0-9]{8}' THEN to_date(LEFT(${alias}.payload->>'OrderDate', 8), 'YYYYMMDD')::timestamp
+    ELSE NULL
+  END`);
+}
+
+function csiHeaderCustomerIdExpr(alias: string): Prisma.Sql {
+  return Prisma.raw(
+    `NULLIF(TRIM(COALESCE(${alias}.payload->>'CustNum', ${alias}.payload->>'CUSTNUM', ${alias}.payload->>'CustNo', '')), '')`
+  );
+}
+
+function csiHeaderCustomerNameExpr(alias: string): Prisma.Sql {
+  return Prisma.raw(`COALESCE(
+    NULLIF(TRIM(SPLIT_PART(COALESCE(${alias}.payload->>'DerCustNoName', ''), ' - ', 2)), ''),
+    NULLIF(TRIM(COALESCE(${alias}.payload->>'CustName', ${alias}.payload->>'CadName', ${alias}.payload->>'DerCustName', '')), ''),
+    NULLIF(TRIM(COALESCE(${alias}.payload->>'DerCustNoName', '')), '')
+  )`);
+}
+
+function csiCustomerMatchSql(customerId: string, customerName: string): Prisma.Sql {
+  const parts: Prisma.Sql[] = [];
+  if (customerId) {
+    parts.push(Prisma.sql`(
+      NULLIF(TRIM(COALESCE(lines."lineCustomerId", '')), '') = ${customerId}
+      OR NULLIF(TRIM(COALESCE(hdr."customerId", '')), '') = ${customerId}
+    )`);
+  }
+  if (customerName) {
+    parts.push(Prisma.sql`hdr."customerName" = ${customerName}`);
+  }
+  if (parts.length === 2) return Prisma.sql`(${parts[0]} OR ${parts[1]})`;
+  if (parts.length === 1) return parts[0];
+  return Prisma.sql`FALSE`;
+}
+
+export async function companyHasCsiCoitems(companyId: string): Promise<boolean> {
+  const rows = await prisma.$queryRaw<Array<{ n: number }>>(Prisma.sql`
+    SELECT 1 AS n
+    FROM "InforRawRecord"
+    WHERE "companyId" = ${companyId}
+      AND UPPER(COALESCE("miProgram", '')) = 'SLCOITEMS'
+    LIMIT 1
+  `);
+  return rows.length > 0;
+}
+
+export async function resolveLatestCsiCoitemsDay(companyId: string): Promise<OpenBookWindow | null> {
+  const rows = await prisma.$queryRaw<Array<{ start: Date; end: Date }>>(Prisma.sql`
+    WITH day_counts AS (
+      SELECT DATE_TRUNC('day', COALESCE(r."businessDate", r."fetchedAt")) AS day_start, COUNT(*)::int AS n
+      FROM "InforRawRecord" r
+      WHERE r."companyId" = ${companyId}
+        AND UPPER(COALESCE(r."miProgram", '')) = 'SLCOITEMS'
+      GROUP BY 1
+    ),
+    latest AS (
+      SELECT MAX(day_start) AS max_day FROM day_counts
+    ),
+    ranked AS (
+      SELECT d.day_start, d.n, MAX(d.n) OVER () AS max_n
+      FROM day_counts d
+      CROSS JOIN latest
+      WHERE latest.max_day IS NOT NULL
+        AND d.day_start >= latest.max_day - INTERVAL '21 days'
+    )
+    SELECT day_start AS start, (day_start + INTERVAL '1 day') AS end
+    FROM ranked
+    WHERE n >= GREATEST((max_n * 0.5)::int, 1)
+    ORDER BY day_start DESC
+    LIMIT 1
+  `);
+  const start = rows[0]?.start;
+  const end = rows[0]?.end;
+  if (!start || !end) return null;
+  return { start, end };
+}
+
+export async function loadCsiOpenLines(params: {
+  companyId: string;
+  customerId: string;
+  customerName: string;
+}): Promise<{ rows: any[]; openAsOf: Date | null }> {
+  const csiDay = await resolveLatestCsiCoitemsDay(params.companyId);
+  if (!csiDay) return { rows: [], openAsOf: null };
+
+  const qtyOrdered = csiNumericSql('r', 'QtyOrdered');
+  const qtyShipped = csiNumericSql('r', 'QtyShipped');
+  const qtyInvoiced = csiNumericSql('r', 'QtyInvoiced');
+  const unitPrice = csiNumericSql('r', 'Price');
+  const orderId = csiOrderIdExpr('r');
+  const lineId = csiLineIdExpr('r');
+  const stat = csiStatExpr('r');
+  const orderDate = csiOrderDateExpr('r');
+  const headerOrderId = csiOrderIdExpr('h');
+  const headerCustomerId = csiHeaderCustomerIdExpr('h');
+  const headerCustomerName = csiHeaderCustomerNameExpr('h');
+  const customerMatch = csiCustomerMatchSql(params.customerId, params.customerName);
+
+  const rows = await prisma.$queryRaw<any[]>(Prisma.sql`
+    WITH headers AS (
+      SELECT DISTINCT ON (${headerOrderId})
+        ${headerOrderId} AS "orderId",
+        ${headerCustomerId} AS "customerId",
+        ${headerCustomerName} AS "customerName"
+      FROM "InforRawRecord" h
+      WHERE h."companyId" = ${params.companyId}
+        AND UPPER(COALESCE(h."miProgram", '')) IN ('SLCOS', 'SLCOHDRS')
+      ORDER BY ${headerOrderId}, COALESCE(h."businessDate", h."fetchedAt") DESC
+    ),
+    lines AS (
+      SELECT DISTINCT ON (${orderId}, ${lineId})
+        COALESCE(r."businessDate", r."fetchedAt") AS "snapshotDate",
+        ${orderId} AS "orderId",
+        ${lineId} AS "lineId",
+        ${orderDate} AS "orderDate",
+        NULLIF(TRIM(COALESCE(r.payload->>'Item', '')), '') AS "itemId",
+        NULLIF(TRIM(COALESCE(r.payload->>'Description', r.payload->>'ItemDescription', '')), '') AS "itemName",
+        NULLIF(TRIM(COALESCE(r.payload->>'Item', '')), '') AS "sku",
+        NULLIF(TRIM(COALESCE(r.payload->>'CustItem', '')), '') AS "customerPn",
+        ${stat} AS "lineStat",
+        ${qtyOrdered} AS "qtyOrdered",
+        ${qtyShipped} AS "qtyShipped",
+        ${qtyInvoiced} AS "qtyInvoiced",
+        ${unitPrice} AS "unitPrice",
+        NULLIF(TRIM(COALESCE(r.payload->>'CustNum', '')), '') AS "lineCustomerId"
+      FROM "InforRawRecord" r
+      WHERE r."companyId" = ${params.companyId}
+        AND UPPER(COALESCE(r."miProgram", '')) = 'SLCOITEMS'
+        AND COALESCE(r."businessDate", r."fetchedAt") >= ${csiDay.start}
+        AND COALESCE(r."businessDate", r."fetchedAt") < ${csiDay.end}
+        AND TRIM(COALESCE(r.payload->>'CoNum', r.payload->>'CONUM', '')) <> ''
+      ORDER BY ${orderId}, ${lineId}, COALESCE(r."businessDate", r."fetchedAt") DESC
+    )
+    SELECT
+      lines."snapshotDate",
+      COALESCE(NULLIF(TRIM(COALESCE(lines."lineCustomerId", '')), ''), hdr."customerId") AS "customerId",
+      hdr."customerName" AS "customerName",
+      lines."orderId",
+      lines."lineId",
+      lines."orderDate",
+      lines."itemId",
+      lines."itemName",
+      lines."sku",
+      lines."customerPn",
+      lines."lineStat",
+      lines."qtyOrdered",
+      lines."qtyShipped",
+      lines."qtyInvoiced",
+      lines."unitPrice",
+      lines."qtyOrdered" * lines."unitPrice" AS "contractValue",
+      lines."qtyInvoiced" * lines."unitPrice" AS "invoicedAmount",
+      GREATEST(lines."qtyOrdered" - lines."qtyShipped", 0) * lines."unitPrice" AS "remainingAmount",
+      NULL AS "sourceTransaction"
+    FROM lines
+    LEFT JOIN headers hdr ON hdr."orderId" = lines."orderId"
+    WHERE ${customerMatch}
+      AND GREATEST(COALESCE(lines."qtyOrdered", 0) - COALESCE(lines."qtyShipped", 0), 0) > 0.0001
+      AND COALESCE(lines."lineStat", '') NOT IN ('C', 'F')
+    ORDER BY lines."orderId", lines."lineId"
+  `);
+
+  return { rows, openAsOf: csiDay.start };
+}
+
+export async function loadCsiFilledLines(params: {
+  companyId: string;
+  customerId: string;
+  customerName: string;
+  startDate: Date;
+  endDate: Date;
+  limit: number;
+}): Promise<any[]> {
+  const headerOrderId = csiOrderIdExpr('h');
+  const headerCustomerId = csiHeaderCustomerIdExpr('h');
+  const headerCustomerName = csiHeaderCustomerNameExpr('h');
+  const headerCustomerFilter = (() => {
+    const parts: Prisma.Sql[] = [];
+    if (params.customerId) {
+      parts.push(Prisma.sql`NULLIF(TRIM(COALESCE(${headerCustomerId}, '')), '') = ${params.customerId}`);
+    }
+    if (params.customerName) {
+      parts.push(Prisma.sql`${headerCustomerName} = ${params.customerName}`);
+    }
+    if (parts.length === 2) return Prisma.sql`(${parts[0]} OR ${parts[1]})`;
+    if (parts.length === 1) return parts[0];
+    return Prisma.sql`FALSE`;
+  })();
+
+  const headerRows = await prisma.$queryRaw<Array<{ orderId: string; customerId: string | null; customerName: string | null }>>(Prisma.sql`
+    SELECT DISTINCT ON (${headerOrderId})
+      ${headerOrderId} AS "orderId",
+      ${headerCustomerId} AS "customerId",
+      ${headerCustomerName} AS "customerName"
+    FROM "InforRawRecord" h
+    WHERE h."companyId" = ${params.companyId}
+      AND UPPER(COALESCE(h."miProgram", '')) IN ('SLCOS', 'SLCOHDRS')
+      AND ${headerCustomerFilter}
+    ORDER BY ${headerOrderId}, COALESCE(h."businessDate", h."fetchedAt") DESC
+  `);
+  if (headerRows.length === 0) return [];
+
+  const orderIds = [...new Set(headerRows.map((row) => String(row.orderId || '').trim()).filter(Boolean))].slice(0, 8000);
+  if (orderIds.length === 0) return [];
+  const orderIdList = Prisma.join(orderIds.map((id) => Prisma.sql`${id}`));
+  const headerByOrder = new Map(headerRows.map((row) => [String(row.orderId), row]));
+
+  const qtyOrdered = csiNumericSql('r', 'QtyOrdered');
+  const qtyShipped = csiNumericSql('r', 'QtyShipped');
+  const qtyInvoiced = csiNumericSql('r', 'QtyInvoiced');
+  const unitPrice = csiNumericSql('r', 'Price');
+  const orderId = csiOrderIdExpr('r');
+  const lineId = csiLineIdExpr('r');
+  const stat = csiStatExpr('r');
+  const orderDate = csiOrderDateExpr('r');
+
+  const lines = await prisma.$queryRaw<any[]>(Prisma.sql`
+    SELECT DISTINCT ON (${orderId}, ${lineId})
+      COALESCE(r."businessDate", r."fetchedAt") AS "filledAsOf",
+      ${orderId} AS "orderId",
+      ${lineId} AS "lineId",
+      ${orderDate} AS "orderDate",
+      NULLIF(TRIM(COALESCE(r.payload->>'Item', '')), '') AS "itemId",
+      NULLIF(TRIM(COALESCE(r.payload->>'Description', r.payload->>'ItemDescription', '')), '') AS "itemName",
+      NULLIF(TRIM(COALESCE(r.payload->>'Item', '')), '') AS "sku",
+      NULLIF(TRIM(COALESCE(r.payload->>'CustItem', '')), '') AS "customerPn",
+      ${stat} AS "lineStat",
+      ${qtyOrdered} AS "qtyOrdered",
+      ${qtyShipped} AS "qtyShipped",
+      ${qtyInvoiced} AS "qtyInvoiced",
+      ${unitPrice} AS "unitPrice",
+      NULLIF(TRIM(COALESCE(r.payload->>'CustNum', '')), '') AS "lineCustomerId"
+    FROM "InforRawRecord" r
+    WHERE r."companyId" = ${params.companyId}
+      AND UPPER(COALESCE(r."miProgram", '')) = 'SLCOITEMS'
+      AND ${orderId} IN (${orderIdList})
+    ORDER BY ${orderId}, ${lineId}, COALESCE(r."businessDate", r."fetchedAt") DESC
+  `);
+
+  return lines
+    .filter((row) => isCsiFilledLine(row.lineStat, Number(row.qtyOrdered || 0), row.qtyShipped))
+    .filter((row) => {
+      const when = row.orderDate || row.filledAsOf;
+      if (!when) return false;
+      const ts = new Date(when).getTime();
+      return ts >= params.startDate.getTime() && ts <= params.endDate.getTime();
+    })
+    .map((row) => {
+      const header = headerByOrder.get(String(row.orderId));
+      const qtyOrderedValue = Number(row.qtyOrdered || 0);
+      const qtyShippedValue = Number(row.qtyShipped || 0);
+      const unitPriceValue = Number(row.unitPrice || 0);
+      return {
+        ...row,
+        customerId: row.lineCustomerId || header?.customerId || null,
+        customerName: header?.customerName || params.customerName,
+        contractValue: qtyOrderedValue * unitPriceValue,
+        invoicedAmount: Number(row.qtyInvoiced || 0) * unitPriceValue,
+        remainingAmount: remainingToShip(qtyOrderedValue, qtyShippedValue) * unitPriceValue,
+        sourceTransaction: null,
+      };
+    })
+    .sort((left, right) => {
+      const leftDate = String(left.orderDate || left.filledAsOf || '');
+      const rightDate = String(right.orderDate || right.filledAsOf || '');
+      return rightDate.localeCompare(leftDate) || String(right.orderId).localeCompare(String(left.orderId));
+    })
+    .slice(0, params.limit);
+}
+
+async function backfillFilledFromCsiRaw(companyId: string): Promise<number> {
+  await prisma.$executeRaw(Prisma.sql`
+    CREATE TABLE IF NOT EXISTS "CustomerOrderLineFilledCsiBackfill" (
+      "companyId" TEXT NOT NULL,
+      "completedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      CONSTRAINT "CustomerOrderLineFilledCsiBackfill_pkey" PRIMARY KEY ("companyId")
+    )
+  `);
+  const existingCsi = await prisma.$queryRaw<Array<{ n: number }>>(Prisma.sql`
+    SELECT 1 AS n
+    FROM "CustomerOrderLineFilled"
+    WHERE "companyId" = ${companyId}
+      AND UPPER(COALESCE("lineStat", '')) IN ('C', 'F')
+    LIMIT 1
+  `);
+  if (existingCsi.length > 0) return 0;
+
+  const qtyOrdered = csiNumericSql('r', 'QtyOrdered');
+  const qtyShipped = csiNumericSql('r', 'QtyShipped');
+  const qtyInvoiced = csiNumericSql('r', 'QtyInvoiced');
+  const unitPrice = csiNumericSql('r', 'Price');
+  const inserted = await prisma.$executeRaw(Prisma.sql`
+    INSERT INTO "CustomerOrderLineFilled" (
+      "id", "companyId", "customerId", "customerName", "orderId", "lineId",
+      "orderDate", "filledAsOf", "itemId", "itemName", "sku", "customerPn", "lineStat",
+      "qtyOrdered", "qtyShipped", "qtyInvoiced", "unitPrice", "contractValue",
+      "invoicedAmount", "remainingAmount", "unbilledAccrual",
+      "sourcePlatform", "sourceProgram", "sourceTransaction", "cono", "divi", "createdAt"
+    )
+    SELECT
+      gen_random_uuid()::text,
+      ${companyId},
+      src."customerId",
+      src."customerName",
+      src."orderId",
+      src."lineId",
+      src."orderDate",
+      src."filledAsOf",
+      src."itemId",
+      src."itemName",
+      src."sku",
+      src."customerPn",
+      src."lineStat",
+      src."qtyOrdered",
+      src."qtyShipped",
+      src."qtyInvoiced",
+      src."unitPrice",
+      src."contractValue",
+      src."invoicedAmount",
+      src."remainingAmount",
+      0,
+      'INFOR_M3',
+      'SLCoitems',
+      NULL,
+      NULL,
+      NULL,
+      NOW()
+    FROM (
+      SELECT DISTINCT ON (line."orderId", line."lineId", COALESCE(snap."customerName", header."customerName"))
+        COALESCE(NULLIF(TRIM(COALESCE(snap."customerId", '')), ''), header."customerId") AS "customerId",
+        COALESCE(NULLIF(TRIM(COALESCE(snap."customerName", '')), ''), header."customerName") AS "customerName",
+        line."orderId",
+        line."lineId",
+        line."orderDate",
+        line."filledAsOf",
+        line."itemId",
+        line."itemName",
+        line."sku",
+        line."customerPn",
+        line."lineStat",
+        line."qtyOrdered",
+        line."qtyShipped",
+        line."qtyInvoiced",
+        line."unitPrice",
+        line."qtyOrdered" * line."unitPrice" AS "contractValue",
+        line."qtyInvoiced" * line."unitPrice" AS "invoicedAmount",
+        GREATEST(line."qtyOrdered" - line."qtyShipped", 0) * line."unitPrice" AS "remainingAmount"
+      FROM (
+        SELECT DISTINCT ON (
+          COALESCE(NULLIF(REGEXP_REPLACE(TRIM(COALESCE(r.payload->>'CoNum', r.payload->>'CONUM', '')), '^0+', ''), ''), '0'),
+          TRIM(COALESCE(r.payload->>'CoLine', '1')) || '-' || TRIM(COALESCE(r.payload->>'CoRelease', '0'))
+        )
+          COALESCE(NULLIF(REGEXP_REPLACE(TRIM(COALESCE(r.payload->>'CoNum', r.payload->>'CONUM', '')), '^0+', ''), ''), '0') AS "orderId",
+          TRIM(COALESCE(r.payload->>'CoLine', '1')) || '-' || TRIM(COALESCE(r.payload->>'CoRelease', '0')) AS "lineId",
+          CASE
+            WHEN COALESCE(r.payload->>'OrderDate', '') ~ '^[0-9]{4}-'
+            THEN (r.payload->>'OrderDate')::timestamp
+            ELSE NULL
+          END AS "orderDate",
+          COALESCE(r."businessDate", r."fetchedAt") AS "filledAsOf",
+          NULLIF(TRIM(COALESCE(r.payload->>'Item', '')), '') AS "itemId",
+          NULLIF(TRIM(COALESCE(r.payload->>'Description', r.payload->>'ItemDescription', '')), '') AS "itemName",
+          NULLIF(TRIM(COALESCE(r.payload->>'Item', '')), '') AS "sku",
+          NULLIF(TRIM(COALESCE(r.payload->>'CustItem', '')), '') AS "customerPn",
+          UPPER(TRIM(COALESCE(r.payload->>'Stat', ''))) AS "lineStat",
+          ${qtyOrdered} AS "qtyOrdered",
+          ${qtyShipped} AS "qtyShipped",
+          ${qtyInvoiced} AS "qtyInvoiced",
+          ${unitPrice} AS "unitPrice"
+        FROM "InforRawRecord" r
+        WHERE r."companyId" = ${companyId}
+          AND UPPER(COALESCE(r."miProgram", '')) = 'SLCOITEMS'
+          AND TRIM(COALESCE(r.payload->>'CoNum', r.payload->>'CONUM', '')) <> ''
+          AND (
+            UPPER(TRIM(COALESCE(r.payload->>'Stat', ''))) IN ('C', 'F')
+            OR (
+              ${qtyOrdered} > 0
+              AND GREATEST(${qtyOrdered} - ${qtyShipped}, 0) <= 0.0001
+            )
+          )
+        ORDER BY
+          COALESCE(NULLIF(REGEXP_REPLACE(TRIM(COALESCE(r.payload->>'CoNum', r.payload->>'CONUM', '')), '^0+', ''), ''), '0'),
+          TRIM(COALESCE(r.payload->>'CoLine', '1')) || '-' || TRIM(COALESCE(r.payload->>'CoRelease', '0')),
+          COALESCE(r."businessDate", r."fetchedAt") DESC
+      ) line
+      LEFT JOIN LATERAL (
+        SELECT s."customerId", s."customerName"
+        FROM "CustomerOrderLineSnapshot" s
+        WHERE s."companyId" = ${companyId}
+          AND COALESCE(NULLIF(REGEXP_REPLACE(TRIM(s."orderId"), '^0+', ''), ''), '0') = line."orderId"
+        ORDER BY s."snapshotDate" DESC
+        LIMIT 1
+      ) snap ON true
+      LEFT JOIN LATERAL (
+        SELECT
+          NULLIF(TRIM(COALESCE(h.payload->>'CustNum', h.payload->>'CUSTNUM', '')), '') AS "customerId",
+          COALESCE(
+            NULLIF(TRIM(SPLIT_PART(COALESCE(h.payload->>'DerCustNoName', ''), ' - ', 2)), ''),
+            NULLIF(TRIM(COALESCE(h.payload->>'CustName', h.payload->>'CadName', '')), '')
+          ) AS "customerName"
+        FROM "InforRawRecord" h
+        WHERE h."companyId" = ${companyId}
+          AND UPPER(COALESCE(h."miProgram", '')) IN ('SLCOS', 'SLCOHDRS')
+          AND COALESCE(NULLIF(REGEXP_REPLACE(TRIM(COALESCE(h.payload->>'CoNum', h.payload->>'CONUM', '')), '^0+', ''), ''), '0') = line."orderId"
+        ORDER BY COALESCE(h."businessDate", h."fetchedAt") DESC
+        LIMIT 1
+      ) header ON true
+      WHERE COALESCE(NULLIF(TRIM(COALESCE(snap."customerName", '')), ''), header."customerName") IS NOT NULL
+      ORDER BY line."orderId", line."lineId", COALESCE(snap."customerName", header."customerName"), line."filledAsOf" DESC
+    ) src
+    ON CONFLICT ("companyId", "orderId", "lineId", "customerName") DO UPDATE SET
+      "lineStat" = COALESCE(EXCLUDED."lineStat", "CustomerOrderLineFilled"."lineStat"),
+      "qtyShipped" = COALESCE(EXCLUDED."qtyShipped", "CustomerOrderLineFilled"."qtyShipped"),
+      "customerPn" = COALESCE(EXCLUDED."customerPn", "CustomerOrderLineFilled"."customerPn"),
+      "customerId" = COALESCE(EXCLUDED."customerId", "CustomerOrderLineFilled"."customerId"),
+      "qtyOrdered" = EXCLUDED."qtyOrdered",
+      "filledAsOf" = GREATEST("CustomerOrderLineFilled"."filledAsOf", EXCLUDED."filledAsOf")
+  `);
+
+  return Number(inserted || 0);
+}
+
 export async function ensureFilledHistory(companyId: string): Promise<OpenBookWindow | null> {
   await ensureCustomerOrderLineFilledTables();
-  const openBook = await resolveOpenBookWindow(companyId);
-  if (!openBook) return null;
-
-  await removeReopenedLines(companyId, openBook);
-  await restoreDroppedCustomerFills(companyId, openBook);
-
-  if (await isBackfillComplete(companyId)) {
-    await removeReopenedLines(companyId, openBook);
-    await restoreDroppedCustomerFills(companyId, openBook);
-    return openBook;
-  }
-
-  const lockKey = `filled-backfill|${companyId}`;
-  const locks = await prisma.$queryRaw<Array<{ locked: boolean }>>(Prisma.sql`
-    SELECT pg_try_advisory_lock(hashtext(${lockKey})) AS locked
-  `);
-  if (!locks[0]?.locked) return openBook;
-
   try {
-    if (!(await isBackfillComplete(companyId))) {
-      await backfillFromSnapshots(companyId, openBook);
-      await markBackfillComplete(companyId);
-    }
-    await removeReopenedLines(companyId, openBook);
-    await restoreDroppedCustomerFills(companyId, openBook);
-  } finally {
-    await prisma.$executeRaw(Prisma.sql`SELECT pg_advisory_unlock(hashtext(${lockKey}))`);
+    await backfillFilledFromCsiRaw(companyId);
+  } catch (error) {
+    console.error('[filled] CSI backfill failed', error);
   }
-
+  const openBook = await resolveOpenBookWindow(companyId);
+  if (openBook) await removeReopenedLines(companyId, openBook);
   return openBook;
 }
 
@@ -593,22 +1043,8 @@ export async function captureFilledOrderLines(params: {
     (params.closedLines || []).filter((row) => row.orderId && row.lineId && row.customerName)
   );
 
-  const todayCount = await snapshotRowCount(companyId, todayStart, todayEnd);
-  let disappeared = 0;
-  if (todayCount > 0) {
-    disappeared = Number((await captureDisappearedFromPriorDay(companyId, todayStart, todayEnd)) || 0);
-  }
-
   const openBook = (await resolveOpenBookWindow(companyId)) || { start: todayStart, end: todayEnd };
   await removeReopenedLines(companyId, openBook);
 
-  let backfilled = false;
-  if (!(await isBackfillComplete(companyId)) && todayCount > 0) {
-    await backfillFromSnapshots(companyId, openBook);
-    await markBackfillComplete(companyId);
-    await removeReopenedLines(companyId, openBook);
-    backfilled = true;
-  }
-
-  return { closed, disappeared, backfilled };
+  return { closed, disappeared: 0, backfilled: false };
 }

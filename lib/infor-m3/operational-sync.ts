@@ -5031,8 +5031,8 @@ async function saveCustomerOrderLines(
   }> = [];
   const closedRows: FilledOrderLineInput[] = [];
 
-  // SyteLine / M3: C=Closed, F=Filled; I often used when invoicing is complete.
-  const CLOSED_ORDER_LINE_STATUSES = new Set(['C', 'F', 'I']);
+  // CSI SLCoitems.Stat: F=Filled, C=Complete/closed. Remaining qty 0 is also filled.
+  const CLOSED_ORDER_LINE_STATUSES = new Set(['C', 'F']);
   for (let idx = 0; idx < records.length; idx += 1) {
     const record = records[idx];
       const lineStat = String(pickString(record, ['Stat', 'STAT', 'stat', 'Status', 'status']) || '').trim().toUpperCase();
@@ -5255,10 +5255,9 @@ async function saveCustomerOrderLines(
   // NOTE: avoid per-row updateMany loops here. On large SLCoitems pulls this causes
   // long-running chunks and apparent sync stalls. New rows are inserted with orderDate
   // via createMany below; null-date historical backfill should be handled separately.
-  const dataToPersist = (supportsOrderDateColumn
+  const dataToPersist = supportsOrderDateColumn
     ? finalRows
-    : finalRows.map(({ orderDate: _orderDate, ...rest }) => rest)
-  ).map(({ customerPn: _customerPn, lineStat: _lineStat, ...rest }) => rest);
+    : finalRows.map(({ orderDate: _orderDate, ...rest }) => rest);
   if (incrementalNoFullPulls && finalRows.length > 0) {
     const deleteChunkSize = 250;
     for (let i = 0; i < finalRows.length; i += deleteChunkSize) {

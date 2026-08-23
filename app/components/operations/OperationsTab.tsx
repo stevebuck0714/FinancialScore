@@ -10371,7 +10371,7 @@ export default function OperationsTab({
               )}
             </div>
             <div style={{ fontSize: 12, color: '#64748b', lineHeight: 1.45, marginBottom: 10 }}>
-              Lines that left the open book. Filled stays closed until you load it. Last 2 years load first. Load older walks filled history in 2-year windows back to {formatWindowDate(wholesaleRawHistoryFloor)}.
+              CSI lines with Stat F or C, or remaining qty 0. Filled stays closed until you load it. Last 2 years load first. Load older walks filled history in 2-year windows back to {formatWindowDate(wholesaleRawHistoryFloor)}.
             </div>
             {!wholesaleRawFilledRequested ? (
               <div style={{ padding: '14px', fontSize: '13px', color: '#64748b' }}>

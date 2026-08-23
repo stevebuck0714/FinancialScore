@@ -4,7 +4,18 @@ import prisma from '@/lib/prisma';
 import { auditForbiddenAccess } from '@/lib/audit-logger';
 import { requireAuth, validateCompanyAccess } from '@/lib/tenant-security';
 import { isOperationalDataTypeAllowed } from '@/lib/operations/operational-dashboard-access';
-import { ensureCustomerOrderLineFilledTables, ensureFilledHistory, isTrulyFilledSql, isTrulyOpenSql, resolveOpenBookWindow, type OpenBookWindow } from '@/lib/operations/product-order-filled';
+import {
+  companyHasCsiCoitems,
+  ensureCustomerOrderLineFilledTables,
+  ensureFilledHistory,
+  isCsiOpenLine,
+  isTrulyFilledSql,
+  isTrulyOpenSql,
+  loadCsiFilledLines,
+  loadCsiOpenLines,
+  resolveOpenBookWindow,
+  type OpenBookWindow,
+} from '@/lib/operations/product-order-filled';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
@@ -347,13 +358,12 @@ function normalizeOrderLineKey(orderId: unknown, lineId: unknown): string {
   return `${token(orderId)}|${token(linePart)}-${token(releasePart)}`;
 }
 
-async function hydrateQtyShippedFromOpenDay(params: {
+async function hydrateOpenDayFromCsi(params: {
   companyId: string;
   openBook: OpenBookWindow;
   rows: any[];
 }): Promise<void> {
-  const missing = params.rows.filter((row) => row?.qtyShipped == null || row?.qtyShipped === '');
-  if (missing.length === 0) return;
+  if (params.rows.length === 0) return;
   try {
     const rawRows = await (prisma as any).inforRawRecord.findMany({
       where: {
@@ -365,8 +375,8 @@ async function hydrateQtyShippedFromOpenDay(params: {
       take: 40000,
     });
     if (rawRows.length === 0) return;
-    const wanted = new Set(missing.map((row) => normalizeOrderLineKey(row.orderId, row.lineId)));
-    const shippedByLine = new Map<string, number>();
+    const wanted = new Set(params.rows.map((row) => normalizeOrderLineKey(row.orderId, row.lineId)));
+    const csiByLine = new Map<string, { shipped: number | null; stat: string | null }>();
     for (const raw of rawRows) {
       const payload =
         raw.payload && typeof raw.payload === 'object' && !Array.isArray(raw.payload)
@@ -377,33 +387,39 @@ async function hydrateQtyShippedFromOpenDay(params: {
       const line = payload.CoLine ?? payload.coLine ?? payload.COLINE ?? '1';
       const release = payload.CoRelease ?? payload.coRelease ?? payload.CORELEASE ?? '0';
       const key = normalizeOrderLineKey(orderId, `${line}-${release}`);
-      if (!wanted.has(key) || shippedByLine.has(key)) continue;
+      if (!wanted.has(key) || csiByLine.has(key)) continue;
       const shipped = payloadNumber(payload, ['QtyShipped', 'qtyShipped']);
-      if (shipped == null) continue;
-      shippedByLine.set(key, shipped);
+      const stat = String(payload.Stat ?? payload.STAT ?? payload.stat ?? '').trim().toUpperCase() || null;
+      csiByLine.set(key, { shipped, stat });
     }
-    if (shippedByLine.size === 0) return;
-    const persist: Array<{ orderId: string; lineId: string; qtyShipped: number }> = [];
+    if (csiByLine.size === 0) return;
+    const persist: Array<{ orderId: string; lineId: string; qtyShipped: number | null; lineStat: string | null }> = [];
     for (const row of params.rows) {
-      if (row?.qtyShipped != null && row?.qtyShipped !== '') continue;
-      const shipped = shippedByLine.get(normalizeOrderLineKey(row.orderId, row.lineId));
-      if (shipped == null) continue;
-      row.qtyShipped = shipped;
+      const csi = csiByLine.get(normalizeOrderLineKey(row.orderId, row.lineId));
+      if (!csi) continue;
+      if (row?.qtyShipped == null || row?.qtyShipped === '') {
+        if (csi.shipped != null) row.qtyShipped = csi.shipped;
+      }
+      if (!row.lineStat && csi.stat) row.lineStat = csi.stat;
       persist.push({
         orderId: String(row.orderId || ''),
         lineId: String(row.lineId || ''),
-        qtyShipped: shipped,
+        qtyShipped: csi.shipped,
+        lineStat: csi.stat,
       });
     }
     for (let i = 0; i < persist.length; i += 200) {
       const chunk = persist.slice(i, i + 200);
       const values = chunk.map(
-        (row) => Prisma.sql`(${row.orderId}, ${row.lineId}, ${Number(row.qtyShipped)})`
+        (row) =>
+          Prisma.sql`(${row.orderId}, ${row.lineId}, ${row.qtyShipped}, ${row.lineStat})`
       );
       await prisma.$executeRaw(Prisma.sql`
-        WITH src("orderId","lineId","qtyShipped") AS (VALUES ${Prisma.join(values)})
+        WITH src("orderId","lineId","qtyShipped","lineStat") AS (VALUES ${Prisma.join(values)})
         UPDATE "CustomerOrderLineSnapshot" s
-        SET "qtyShipped" = src."qtyShipped"
+        SET
+          "qtyShipped" = COALESCE(src."qtyShipped", s."qtyShipped"),
+          "lineStat" = COALESCE(NULLIF(TRIM(COALESCE(src."lineStat", '')), ''), s."lineStat")
         FROM src
         WHERE s."companyId" = ${params.companyId}
           AND s."frequency" = 'daily'
@@ -414,7 +430,66 @@ async function hydrateQtyShippedFromOpenDay(params: {
       `);
     }
   } catch (error) {
-    console.error('[product-raw] qty shipped day hydrate failed', error);
+    console.error('[product-raw] CSI open-day hydrate failed', error);
+  }
+}
+
+async function stampOpenBookFromCsi(companyId: string, openBook: OpenBookWindow): Promise<void> {
+  try {
+    const rawRows = await (prisma as any).inforRawRecord.findMany({
+      where: {
+        companyId,
+        businessDate: { gte: openBook.start, lt: openBook.end },
+        miProgram: { in: ['SLCOITEMS', 'SLCoitems'] },
+      },
+      select: { payload: true },
+      take: 40000,
+    });
+    if (rawRows.length === 0) return;
+    const persist: Array<{ orderId: string; lineId: string; qtyShipped: number | null; lineStat: string | null }> = [];
+    const seen = new Set<string>();
+    for (const raw of rawRows) {
+      const payload =
+        raw.payload && typeof raw.payload === 'object' && !Array.isArray(raw.payload)
+          ? (raw.payload as Record<string, unknown>)
+          : null;
+      if (!payload) continue;
+      const orderId = String(payload.CoNum ?? payload.coNum ?? payload.CONUM ?? '').trim().replace(/^0+/, '') || '0';
+      const line = String(payload.CoLine ?? payload.coLine ?? payload.COLINE ?? '1').trim();
+      const release = String(payload.CoRelease ?? payload.coRelease ?? payload.CORELEASE ?? '0').trim();
+      const lineId = `${line}-${release}`;
+      const key = `${orderId}|${lineId}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      persist.push({
+        orderId,
+        lineId,
+        qtyShipped: payloadNumber(payload, ['QtyShipped', 'qtyShipped']),
+        lineStat: String(payload.Stat ?? payload.STAT ?? payload.stat ?? '').trim().toUpperCase() || null,
+      });
+    }
+    for (let i = 0; i < persist.length; i += 200) {
+      const chunk = persist.slice(i, i + 200);
+      const values = chunk.map(
+        (row) => Prisma.sql`(${row.orderId}, ${row.lineId}, ${row.qtyShipped}, ${row.lineStat})`
+      );
+      await prisma.$executeRaw(Prisma.sql`
+        WITH src("orderId","lineId","qtyShipped","lineStat") AS (VALUES ${Prisma.join(values)})
+        UPDATE "CustomerOrderLineSnapshot" s
+        SET
+          "qtyShipped" = COALESCE(src."qtyShipped", s."qtyShipped"),
+          "lineStat" = COALESCE(NULLIF(TRIM(COALESCE(src."lineStat", '')), ''), s."lineStat")
+        FROM src
+        WHERE s."companyId" = ${companyId}
+          AND s."frequency" = 'daily'
+          AND s."snapshotDate" >= ${openBook.start}
+          AND s."snapshotDate" < ${openBook.end}
+          AND COALESCE(NULLIF(REGEXP_REPLACE(TRIM(s."orderId"), '^0+', ''), ''), '0') = src."orderId"
+          AND s."lineId" = src."lineId"
+      `);
+    }
+  } catch (error) {
+    console.error('[product-raw] CSI open-book stamp failed', error);
   }
 }
 
@@ -423,8 +498,18 @@ async function loadOpenLines(params: {
   customerId: string;
   customerName: string;
 }): Promise<{ rows: any[]; openAsOf: Date | null }> {
+  if (await companyHasCsiCoitems(params.companyId)) {
+    try {
+      const csi = await loadCsiOpenLines(params);
+      if (csi.openAsOf) return csi;
+    } catch (error) {
+      console.error('[product-raw] CSI open lines failed', error);
+    }
+  }
+
   const openBook = await resolveCustomerOpenBook(params);
   if (!openBook) return { rows: [], openAsOf: null };
+  await stampOpenBookFromCsi(params.companyId, openBook);
   const matchSql = customerMatchSql(params.customerId, params.customerName, 's');
   try {
     const rows = await prisma.$queryRaw<any[]>(Prisma.sql`
@@ -439,6 +524,7 @@ async function loadOpenLines(params: {
       s."itemName",
       s."sku",
       s."customerPn",
+      s."lineStat",
       s."qtyOrdered",
       s."qtyShipped",
       s."qtyInvoiced",
@@ -456,8 +542,11 @@ async function loadOpenLines(params: {
       AND ${isTrulyOpenSql('s')}
     ORDER BY s."orderId", s."lineId", s."snapshotDate" DESC
   `);
-    await hydrateQtyShippedFromOpenDay({ companyId: params.companyId, openBook, rows });
-    return { rows, openAsOf: openBook.start };
+    await hydrateOpenDayFromCsi({ companyId: params.companyId, openBook, rows });
+    return {
+      rows: rows.filter((row) => isCsiOpenLine(row.lineStat, Number(row.qtyOrdered || 0), row.qtyShipped)),
+      openAsOf: openBook.start,
+    };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     if (!/qtyShipped|customerPn|lineStat/i.test(message)) throw error;
@@ -488,8 +577,11 @@ async function loadOpenLines(params: {
       AND COALESCE(s."qtyOrdered", 0) > 0
       ORDER BY s."orderId", s."lineId", s."snapshotDate" DESC
     `);
-    await hydrateQtyShippedFromOpenDay({ companyId: params.companyId, openBook, rows });
-    return { rows, openAsOf: openBook.start };
+    await hydrateOpenDayFromCsi({ companyId: params.companyId, openBook, rows });
+    return {
+      rows: rows.filter((row) => isCsiOpenLine(row.lineStat, Number(row.qtyOrdered || 0), row.qtyShipped)),
+      openAsOf: openBook.start,
+    };
   }
 }
 
@@ -501,6 +593,21 @@ async function loadFilledLines(params: {
   startDate: Date;
   endDate: Date;
 }) {
+  if (await companyHasCsiCoitems(params.companyId)) {
+    try {
+      return await loadCsiFilledLines({
+        companyId: params.companyId,
+        customerId: params.customerId,
+        customerName: params.customerName,
+        startDate: params.startDate,
+        endDate: params.endDate,
+        limit: MAX_UNIQUE_LINES + 1,
+      });
+    } catch (error) {
+      console.error('[product-raw] CSI filled lines failed', error);
+    }
+  }
+
   const matchSql = customerMatchSql(params.customerId, params.customerName, 'f');
   const openExclude = params.openBook
     ? Prisma.sql`
