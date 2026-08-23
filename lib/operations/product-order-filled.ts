@@ -1137,13 +1137,15 @@ async function backfillFilledFromCsiRaw(companyId: string): Promise<number> {
 
 export async function ensureFilledHistory(companyId: string): Promise<OpenBookWindow | null> {
   await ensureCustomerOrderLineFilledTables();
-  try {
-    await backfillFilledFromCsiRaw(companyId);
-  } catch (error) {
-    console.error('[filled] CSI backfill failed', error);
-  }
   const openBook = await resolveOpenBookWindow(companyId);
-  if (openBook) await removeReopenedLines(companyId, openBook);
+  if (openBook) {
+    try {
+      await backfillFromSnapshots(companyId, openBook);
+    } catch (error) {
+      console.error('[filled] snapshot backfill failed', error);
+    }
+    await removeReopenedLines(companyId, openBook);
+  }
   return openBook;
 }
 

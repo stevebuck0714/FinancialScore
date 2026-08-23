@@ -5,13 +5,8 @@ import { auditForbiddenAccess } from '@/lib/audit-logger';
 import { requireAuth, validateCompanyAccess } from '@/lib/tenant-security';
 import { isOperationalDataTypeAllowed } from '@/lib/operations/operational-dashboard-access';
 import {
-  companyHasCsiCoitems,
   ensureCustomerOrderLineFilledTables,
-  ensureFilledHistory,
-  isCsiOpenLine,
-  isTrulyFilledSql,
   isTrulyOpenSql,
-  loadCsiFilledLines,
   loadProductRawCustomers,
   resolveOpenBookWindow,
   type OpenBookWindow,
@@ -580,47 +575,35 @@ async function loadOpenLines(params: {
   }
 }
 
-async function loadFilledLines(params: {
+function stillOpenOnBookSql(alias: string, companyId: string, openBook: OpenBookWindow | null): Prisma.Sql {
+  if (!openBook) return Prisma.empty;
+  return Prisma.sql`
+    AND NOT EXISTS (
+      SELECT 1
+      FROM "CustomerOrderLineSnapshot" o
+      WHERE o."companyId" = ${companyId}
+        AND o."frequency" = 'daily'
+        AND o."snapshotDate" >= ${openBook.start}
+        AND o."snapshotDate" < ${openBook.end}
+        AND o."orderId" = ${Prisma.raw(`"${alias}"."orderId"`)}
+        AND o."lineId" = ${Prisma.raw(`"${alias}"."lineId"`)}
+        AND ${sameCustomerSql(alias, 'o')}
+        AND ${isTrulyOpenSql('o')}
+    )
+  `;
+}
+
+async function loadFilledFromTable(params: {
   companyId: string;
   customerId: string;
   customerName: string;
   openBook: OpenBookWindow | null;
   startDate: Date;
   endDate: Date;
-}) {
-  if (await companyHasCsiCoitems(params.companyId)) {
-    try {
-      return await loadCsiFilledLines({
-        companyId: params.companyId,
-        customerId: params.customerId,
-        customerName: params.customerName,
-        startDate: params.startDate,
-        endDate: params.endDate,
-        limit: MAX_UNIQUE_LINES + 1,
-      });
-    } catch (error) {
-      console.error('[product-raw] CSI filled lines failed', error);
-    }
-  }
-
+}): Promise<any[]> {
   const matchSql = customerMatchSql(params.customerId, params.customerName, 'f');
-  const openExclude = params.openBook
-    ? Prisma.sql`
-        AND NOT EXISTS (
-          SELECT 1
-          FROM "CustomerOrderLineSnapshot" s
-          WHERE s."companyId" = ${params.companyId}
-            AND s."frequency" = 'daily'
-            AND s."snapshotDate" >= ${params.openBook.start}
-            AND s."snapshotDate" < ${params.openBook.end}
-            AND s."orderId" = f."orderId"
-            AND s."lineId" = f."lineId"
-            AND ${sameCustomerSql('f', 's')}
-            AND ${isTrulyOpenSql('s')}
-        )
-      `
-    : Prisma.empty;
-  return prisma.$queryRaw<any[]>(Prisma.sql`
+  const openExclude = stillOpenOnBookSql('f', params.companyId, params.openBook);
+  const query = (extraCols: Prisma.Sql) => Prisma.sql`
     SELECT *
     FROM (
       SELECT
@@ -633,9 +616,8 @@ async function loadFilledLines(params: {
         f."itemId",
         f."itemName",
         f."sku",
-        f."customerPn",
+        ${extraCols}
         f."qtyOrdered",
-        f."qtyShipped",
         f."qtyInvoiced",
         f."unitPrice",
         f."contractValue",
@@ -647,12 +629,91 @@ async function loadFilledLines(params: {
         AND ${matchSql}
         AND COALESCE(f."filledAsOf", f."orderDate") >= ${params.startDate}
         AND COALESCE(f."filledAsOf", f."orderDate") <= ${params.endDate}
-        AND ${isTrulyFilledSql('f')}
         ${openExclude}
       ORDER BY COALESCE(f."orderDate", f."filledAsOf") DESC, f."orderId" DESC, f."lineId" DESC
       LIMIT ${MAX_UNIQUE_LINES + 1}
     ) filled_lines
-  `);
+  `;
+  try {
+    return await prisma.$queryRaw<any[]>(
+      query(Prisma.sql`f."customerPn", f."qtyShipped", f."lineStat",`)
+    );
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (!/qtyShipped|customerPn|lineStat/i.test(message)) throw error;
+    return prisma.$queryRaw<any[]>(query(Prisma.empty));
+  }
+}
+
+async function loadFilledFromSnapshots(params: {
+  companyId: string;
+  customerId: string;
+  customerName: string;
+  openBook: OpenBookWindow | null;
+  startDate: Date;
+  endDate: Date;
+}): Promise<any[]> {
+  const matchSql = customerMatchSql(params.customerId, params.customerName, 's');
+  const openExclude = stillOpenOnBookSql('s', params.companyId, params.openBook);
+  const query = (extraCols: Prisma.Sql) => Prisma.sql`
+    SELECT *
+    FROM (
+      SELECT DISTINCT ON (s."orderId", s."lineId")
+        s."snapshotDate" AS "filledAsOf",
+        s."customerId",
+        s."customerName",
+        s."orderId",
+        s."lineId",
+        s."orderDate",
+        s."itemId",
+        s."itemName",
+        s."sku",
+        ${extraCols}
+        s."qtyOrdered",
+        s."qtyInvoiced",
+        s."unitPrice",
+        s."contractValue",
+        s."invoicedAmount",
+        s."remainingAmount",
+        s."sourceTransaction"
+      FROM "CustomerOrderLineSnapshot" s
+      WHERE s."companyId" = ${params.companyId}
+        AND s."frequency" = 'daily'
+        AND ${matchSql}
+        AND COALESCE(s."orderDate", s."snapshotDate") >= ${params.startDate}
+        AND COALESCE(s."orderDate", s."snapshotDate") <= ${params.endDate}
+        ${openExclude}
+      ORDER BY s."orderId", s."lineId", s."snapshotDate" DESC
+    ) last_seen
+    ORDER BY COALESCE(last_seen."orderDate", last_seen."filledAsOf") DESC, last_seen."orderId" DESC, last_seen."lineId" DESC
+    LIMIT ${MAX_UNIQUE_LINES + 1}
+  `;
+  try {
+    return await prisma.$queryRaw<any[]>(
+      query(Prisma.sql`s."customerPn", s."qtyShipped", s."lineStat",`)
+    );
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (!/qtyShipped|customerPn|lineStat/i.test(message)) throw error;
+    return prisma.$queryRaw<any[]>(query(Prisma.empty));
+  }
+}
+
+async function loadFilledLines(params: {
+  companyId: string;
+  customerId: string;
+  customerName: string;
+  openBook: OpenBookWindow | null;
+  startDate: Date;
+  endDate: Date;
+}) {
+  try {
+    const fromTable = await loadFilledFromTable(params);
+    if (fromTable.length > 0) return fromTable;
+  } catch (error) {
+    console.error('[product-raw] filled table query failed', error);
+  }
+  return loadFilledFromSnapshots(params);
 }
 
 export async function GET(request: NextRequest) {
@@ -712,7 +773,6 @@ export async function GET(request: NextRequest) {
 
     await ensureCustomerOrderLineFilledTables();
 
-    await ensureFilledHistory(companyId);
     const openBook = await resolveOpenBookWindow(companyId);
     const beforeParam = String(request.nextUrl.searchParams.get('before') || '').trim();
     const recentEnd = utcMidnightForEstDate(previousEstCalendarDate());
