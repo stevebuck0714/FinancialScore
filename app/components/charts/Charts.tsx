@@ -194,19 +194,8 @@ export function LineChart({ title, data, valueKey, color, yMax, showTable, compa
   if (visibleData.length === 0) return null;
 
   const values = visibleData.map(d => d.value as number);
-  const sorted = [...values].sort((a, b) => a - b);
-  const q1 = sorted[Math.floor(sorted.length * 0.25)];
-  const q3 = sorted[Math.floor(sorted.length * 0.75)];
-  const iqr = q3 - q1;
-  const lowerBound = q1 - 3 * iqr;
-  const upperBound = q3 + 3 * iqr;
-  
-  const filteredValues = values.filter(v => v >= lowerBound && v <= upperBound);
-  const clippedRatio = values.length > 0 ? 1 - (filteredValues.length / values.length) : 0;
-  const useFilteredRange = filteredValues.length > 0 && clippedRatio <= 0.2;
-  const rangeValues = useFilteredRange ? filteredValues : values;
-  const minValue = Math.min(...rangeValues);
-  const maxValue = Math.max(...rangeValues);
+  const minValue = Math.min(...values);
+  const maxValue = Math.max(...values);
 
   let domainMin = minValue;
   let domainMax = maxValue;
@@ -235,6 +224,13 @@ export function LineChart({ title, data, valueKey, color, yMax, showTable, compa
     yMinCalc = scaled.yMin;
     yMaxCalc = scaled.yMax;
     yStep = scaled.step;
+  }
+  if (Number.isFinite(domainMax) && yMaxCalc < domainMax) {
+    yMaxCalc = Math.ceil(domainMax / (yStep || 1)) * (yStep || 1);
+  }
+  if (Number.isFinite(domainMin) && yMinCalc > domainMin) {
+    yMinCalc = Math.floor(domainMin / (yStep || 1)) * (yStep || 1);
+    if (domainMin >= 0 && yMinCalc < 0) yMinCalc = 0;
   }
   let range = yMaxCalc - yMinCalc;
 
