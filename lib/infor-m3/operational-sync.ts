@@ -5014,6 +5014,7 @@ async function saveCustomerOrderLines(
     itemName: string | null;
     sku: string | null;
     customerPn: string | null;
+    lineStat: string | null;
     qtyOrdered: number;
     qtyShipped: number;
     qtyInvoiced: number;
@@ -5141,6 +5142,7 @@ async function saveCustomerOrderLines(
         itemName,
         sku,
         customerPn,
+        lineStat: lineStat || null,
         qtyOrdered,
         qtyShipped: Math.max(qtyShipped, 0),
         qtyInvoiced: Math.max(qtyInvoiced, 0),
@@ -5161,7 +5163,7 @@ async function saveCustomerOrderLines(
         Number(row.invoicedAmount) > 0 ||
         Number(row.remainingAmount) > 0 ||
         Number(row.unbilledAccrual) > 0;
-      if (!hasAmounts && !(isClosedLine && Number(row.qtyOrdered || 0) > 0)) {
+      if (!hasAmounts && !(isClosedLine && Number(row.qtyOrdered || 0) > 0) && !(Number(row.qtyOrdered || 0) > 0 && Math.max(Number(row.qtyOrdered || 0) - Math.max(Number(row.qtyShipped || 0), 0), 0) <= 1e-6)) {
         skip('no_financial_amounts');
         continue;
       }
@@ -5170,7 +5172,9 @@ async function saveCustomerOrderLines(
         skip('missing_identity');
         continue;
       }
-      if (isClosedLine) {
+      const remainingShipQty = Math.max(Number(row.qtyOrdered || 0) - Math.max(Number(row.qtyShipped || 0), 0), 0);
+      const isFilledByQty = Number(row.qtyOrdered || 0) > 0 && remainingShipQty <= 1e-6;
+      if (isClosedLine || isFilledByQty) {
         skip('closed_or_filled');
         closedRows.push({
           companyId: row.companyId,
@@ -5184,6 +5188,7 @@ async function saveCustomerOrderLines(
           itemName: row.itemName,
           sku: row.sku,
           customerPn: row.customerPn,
+          lineStat,
           qtyOrdered: row.qtyOrdered,
           qtyShipped: row.qtyShipped,
           qtyInvoiced: row.qtyInvoiced,
@@ -5242,6 +5247,7 @@ async function saveCustomerOrderLines(
     if (!acc.itemName && row.itemName) acc.itemName = row.itemName;
     if (!acc.sku && row.sku) acc.sku = row.sku;
     if (!acc.customerPn && row.customerPn) acc.customerPn = row.customerPn;
+    if (!acc.lineStat && row.lineStat) acc.lineStat = row.lineStat;
   }
   const finalRows = Array.from(deduped.values());
   debug.rowsAfterDedupe = finalRows.length;
@@ -5252,7 +5258,7 @@ async function saveCustomerOrderLines(
   const dataToPersist = (supportsOrderDateColumn
     ? finalRows
     : finalRows.map(({ orderDate: _orderDate, ...rest }) => rest)
-  ).map(({ customerPn: _customerPn, qtyShipped: _qtyShipped, ...rest }) => rest);
+  ).map(({ customerPn: _customerPn, lineStat: _lineStat, ...rest }) => rest);
   if (incrementalNoFullPulls && finalRows.length > 0) {
     const deleteChunkSize = 250;
     for (let i = 0; i < finalRows.length; i += deleteChunkSize) {
@@ -5277,14 +5283,15 @@ async function saveCustomerOrderLines(
   for (let i = 0; i < identityRows.length; i += 250) {
     const chunk = identityRows.slice(i, i + 250);
     const values = chunk.map((row) =>
-      Prisma.sql`(${row.orderId}, ${row.lineId}, ${row.customerName}, ${row.customerPn}, ${Number(row.qtyShipped || 0)})`
+      Prisma.sql`(${row.orderId}, ${row.lineId}, ${row.customerName}, ${row.customerPn}, ${Number(row.qtyShipped || 0)}, ${row.lineStat || null})`
     );
     await prisma.$executeRaw(Prisma.sql`
-      WITH src("orderId","lineId","customerName","customerPn","qtyShipped") AS (VALUES ${Prisma.join(values)})
+      WITH src("orderId","lineId","customerName","customerPn","qtyShipped","lineStat") AS (VALUES ${Prisma.join(values)})
       UPDATE "CustomerOrderLineSnapshot" s
       SET
         "customerPn" = COALESCE(NULLIF(TRIM(COALESCE(src."customerPn", '')), ''), s."customerPn"),
-        "qtyShipped" = src."qtyShipped"
+        "qtyShipped" = src."qtyShipped",
+        "lineStat" = COALESCE(NULLIF(TRIM(COALESCE(src."lineStat", '')), ''), s."lineStat")
       FROM src
       WHERE s."companyId" = ${companyId}
         AND s."frequency" = ${frequency}

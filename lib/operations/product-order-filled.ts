@@ -14,6 +14,7 @@ export type FilledOrderLineInput = {
   itemName: string | null;
   sku: string | null;
   customerPn?: string | null;
+  lineStat?: string | null;
   qtyOrdered: number;
   qtyShipped?: number | null;
   qtyInvoiced: number;
@@ -103,6 +104,12 @@ export async function ensureCustomerOrderLineFilledTables(): Promise<void> {
       await prisma.$executeRawUnsafe(`
         ALTER TABLE "CustomerOrderLineSnapshot" ADD COLUMN IF NOT EXISTS "qtyShipped" DOUBLE PRECISION
       `);
+      await prisma.$executeRawUnsafe(`
+        ALTER TABLE "CustomerOrderLineFilled" ADD COLUMN IF NOT EXISTS "lineStat" TEXT
+      `);
+      await prisma.$executeRawUnsafe(`
+        ALTER TABLE "CustomerOrderLineSnapshot" ADD COLUMN IF NOT EXISTS "lineStat" TEXT
+      `);
     })().catch((error) => {
       ensureTablesOnce = null;
       throw error;
@@ -120,6 +127,28 @@ function addUtcDays(value: Date, days: number): Date {
 function snapshotDayRangeSql(alias: string, start: Date, end: Date): Prisma.Sql {
   const col = Prisma.raw(`"${alias}"."snapshotDate"`);
   return Prisma.sql`${col} >= ${start} AND ${col} < ${end}`;
+}
+
+export function remainingShipQtySql(alias: string): Prisma.Sql {
+  const ordered = Prisma.raw(`"${alias}"."qtyOrdered"`);
+  const shipped = Prisma.raw(`"${alias}"."qtyShipped"`);
+  return Prisma.sql`GREATEST(COALESCE(${ordered}, 0) - COALESCE(${shipped}, 0), 0)`;
+}
+
+export function isTrulyOpenSql(alias: string): Prisma.Sql {
+  const stat = Prisma.raw(`"${alias}"."lineStat"`);
+  return Prisma.sql`(
+    ${remainingShipQtySql(alias)} > 0.0001
+    AND UPPER(COALESCE(${stat}, '')) NOT IN ('C', 'F', 'I')
+  )`;
+}
+
+export function isTrulyFilledSql(alias: string): Prisma.Sql {
+  const stat = Prisma.raw(`"${alias}"."lineStat"`);
+  return Prisma.sql`(
+    ${remainingShipQtySql(alias)} <= 0.0001
+    OR UPPER(COALESCE(${stat}, '')) IN ('C', 'F', 'I')
+  )`;
 }
 
 function sameCustomerSql(leftAlias: string, rightAlias: string): Prisma.Sql {
@@ -200,6 +229,7 @@ async function insertFilledLines(lines: FilledOrderLineInput[]): Promise<number>
       ${row.itemName},
       ${row.sku},
       ${row.customerPn || null},
+      ${row.lineStat ? String(row.lineStat).trim().toUpperCase() : null},
       ${Number(row.qtyOrdered || 0)},
       ${row.qtyShipped == null ? null : Number(row.qtyShipped)},
       ${Number(row.qtyInvoiced || 0)},
@@ -218,7 +248,7 @@ async function insertFilledLines(lines: FilledOrderLineInput[]): Promise<number>
     const result = await prisma.$executeRaw(Prisma.sql`
       INSERT INTO "CustomerOrderLineFilled" (
         "id", "companyId", "customerId", "customerName", "orderId", "lineId",
-        "orderDate", "filledAsOf", "itemId", "itemName", "sku", "customerPn",
+        "orderDate", "filledAsOf", "itemId", "itemName", "sku", "customerPn", "lineStat",
         "qtyOrdered", "qtyShipped", "qtyInvoiced", "unitPrice", "contractValue",
         "invoicedAmount", "remainingAmount", "unbilledAccrual",
         "sourcePlatform", "sourceProgram", "sourceTransaction", "cono", "divi", "createdAt"
@@ -306,6 +336,7 @@ async function backfillFromSnapshots(companyId: string, openBook: OpenBookWindow
             AND o."lineId" = s."lineId"
             AND ${sameCustomerSql('s', 'o')}
         )
+        AND ${isTrulyFilledSql('s')}
       ORDER BY s."orderId", s."lineId", s."customerName", s."snapshotDate" DESC
     ) last
     ON CONFLICT ("companyId", "orderId", "lineId", "customerName") DO NOTHING
@@ -381,6 +412,7 @@ async function captureDisappearedFromPriorDay(
           AND t."orderId" = s."orderId"
           AND t."lineId" = s."lineId"
       )
+      AND ${isTrulyFilledSql('s')}
     ON CONFLICT ("companyId", "orderId", "lineId", "customerName") DO NOTHING
   `);
 }
@@ -396,6 +428,7 @@ async function removeReopenedLines(companyId: string, openBook: OpenBookWindow):
       AND f."orderId" = s."orderId"
       AND f."lineId" = s."lineId"
       AND ${sameCustomerSql('f', 's')}
+      AND ${isTrulyOpenSql('s')}
   `);
 }
 

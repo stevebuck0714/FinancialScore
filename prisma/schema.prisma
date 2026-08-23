@@ -1729,6 +1729,7 @@ model CustomerOrderLineSnapshot {
   itemName         String?
   sku              String?
   customerPn       String?
+  lineStat         String?
   qtyOrdered       Float
   qtyShipped       Float?
   qtyInvoiced      Float
@@ -1767,6 +1768,7 @@ model CustomerOrderLineFilled {
   itemName          String?
   sku               String?
   customerPn        String?
+  lineStat          String?
   qtyOrdered        Float
   qtyShipped        Float?
   qtyInvoiced       Float

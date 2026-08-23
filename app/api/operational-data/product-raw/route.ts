@@ -4,7 +4,7 @@ import prisma from '@/lib/prisma';
 import { auditForbiddenAccess } from '@/lib/audit-logger';
 import { requireAuth, validateCompanyAccess } from '@/lib/tenant-security';
 import { isOperationalDataTypeAllowed } from '@/lib/operations/operational-dashboard-access';
-import { ensureCustomerOrderLineFilledTables, ensureFilledHistory, resolveOpenBookWindow, type OpenBookWindow } from '@/lib/operations/product-order-filled';
+import { ensureCustomerOrderLineFilledTables, ensureFilledHistory, isTrulyFilledSql, isTrulyOpenSql, resolveOpenBookWindow, type OpenBookWindow } from '@/lib/operations/product-order-filled';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
@@ -118,6 +118,8 @@ function mapOrderLineRecord(row: any, status: 'open' | 'filled') {
     qtyShipped: row.qtyShipped == null || row.qtyShipped === '' ? null : Number(row.qtyShipped),
     qtyInvoiced: Number(row.qtyInvoiced || 0),
     unitPrice: Number(row.unitPrice || 0),
+    remainingQty: Math.max(Number(row.qtyOrdered || 0) - Math.max(Number(row.qtyShipped || 0), 0), 0),
+    openRevenue: Math.max(Number(row.qtyOrdered || 0) - Math.max(Number(row.qtyShipped || 0), 0), 0) * Number(row.unitPrice || 0),
     revenue: Number(row.invoicedAmount || row.contractValue || 0),
     contractValue: Number(row.contractValue || 0),
     invoicedAmount: Number(row.invoicedAmount || 0),
@@ -451,21 +453,14 @@ async function loadOpenLines(params: {
       AND s."snapshotDate" >= ${openBook.start}
       AND s."snapshotDate" < ${openBook.end}
       AND ${matchSql}
-      AND NOT EXISTS (
-        SELECT 1
-        FROM "CustomerOrderLineFilled" f
-        WHERE f."companyId" = ${params.companyId}
-          AND f."orderId" = s."orderId"
-          AND f."lineId" = s."lineId"
-          AND ${sameCustomerSql('f', 's')}
-      )
+      AND ${isTrulyOpenSql('s')}
     ORDER BY s."orderId", s."lineId", s."snapshotDate" DESC
   `);
     await hydrateQtyShippedFromOpenDay({ companyId: params.companyId, openBook, rows });
     return { rows, openAsOf: openBook.start };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    if (!/qtyShipped|customerPn/i.test(message)) throw error;
+    if (!/qtyShipped|customerPn|lineStat/i.test(message)) throw error;
     const rows = await prisma.$queryRaw<any[]>(Prisma.sql`
       SELECT DISTINCT ON (s."orderId", s."lineId")
         s."snapshotDate",
@@ -490,14 +485,7 @@ async function loadOpenLines(params: {
         AND s."snapshotDate" >= ${openBook.start}
         AND s."snapshotDate" < ${openBook.end}
         AND ${matchSql}
-        AND NOT EXISTS (
-          SELECT 1
-          FROM "CustomerOrderLineFilled" f
-          WHERE f."companyId" = ${params.companyId}
-            AND f."orderId" = s."orderId"
-            AND f."lineId" = s."lineId"
-            AND ${sameCustomerSql('f', 's')}
-        )
+      AND COALESCE(s."qtyOrdered", 0) > 0
       ORDER BY s."orderId", s."lineId", s."snapshotDate" DESC
     `);
     await hydrateQtyShippedFromOpenDay({ companyId: params.companyId, openBook, rows });
@@ -526,6 +514,7 @@ async function loadFilledLines(params: {
             AND s."orderId" = f."orderId"
             AND s."lineId" = f."lineId"
             AND ${sameCustomerSql('f', 's')}
+            AND ${isTrulyOpenSql('s')}
         )
       `
     : Prisma.empty;
@@ -556,6 +545,7 @@ async function loadFilledLines(params: {
         AND ${matchSql}
         AND COALESCE(f."filledAsOf", f."orderDate") >= ${params.startDate}
         AND COALESCE(f."filledAsOf", f."orderDate") <= ${params.endDate}
+        AND ${isTrulyFilledSql('f')}
         ${openExclude}
       ORDER BY COALESCE(f."orderDate", f."filledAsOf") DESC, f."orderId" DESC, f."lineId" DESC
       LIMIT ${MAX_UNIQUE_LINES + 1}

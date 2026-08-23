@@ -149,6 +149,7 @@ type WholesaleRawSortKey =
   | 'unitPrice'
   | 'customerGroup'
   | 'customerPartNumber'
+  | 'openRevenue'
   | 'revenue';
 type VendorPricingSortKey =
   | 'item'
@@ -9234,6 +9235,7 @@ export default function OperationsTab({
           const isoDate = parsedDate ? parsedDate.toISOString().slice(0, 10) : '';
           const qty = Number(row?.qtyOrdered ?? row?.qty ?? row?.quantity ?? 0);
           const qtyShipped = row?.qtyShipped == null || row?.qtyShipped === '' ? null : Number(row.qtyShipped);
+          const shippedQty = qtyShipped == null || !Number.isFinite(qtyShipped) ? 0 : qtyShipped;
           const revenue = Number(row?.revenue ?? row?.invoicedAmount ?? row?.contractValue ?? 0);
           const unitPrice =
             Number(row?.unitPrice ?? row?.price ?? 0) ||
@@ -9252,6 +9254,7 @@ export default function OperationsTab({
             qtyShipped,
             unitPrice,
             customerGroup,
+            openRevenue: (qty - shippedQty) * unitPrice,
             revenue: Number.isFinite(revenue) && revenue !== 0 ? revenue : Math.abs(qty * unitPrice),
           };
         })
@@ -9277,6 +9280,7 @@ export default function OperationsTab({
       'qty',
       'qtyShipped',
       'unitPrice',
+      'openRevenue',
       'revenue',
     ]);
     const sortedWholesaleRawRows = [...wholesaleRawFilteredRows].sort((a, b) => {
@@ -10139,18 +10143,40 @@ export default function OperationsTab({
         align?: 'left' | 'right';
         width?: string;
         maxWidth?: string;
+        wrap?: boolean;
         render: (row: any) => React.ReactNode;
       }> = [
         { key: 'item', label: 'Item', render: (row) => row.item || 'N/A' },
         { key: 'order', label: 'Order', render: (row) => row.order || 'N/A' },
         { key: 'customerId', label: 'Customer ID', render: (row) => row.customerId || 'N/A' },
+        { key: 'customerGroup', label: 'Customer Group', width: '108px', maxWidth: '126px', render: (row) => row.customerGroup || 'N/A' },
+        { key: 'customerPartNumber', label: 'Customer P/N', width: '104px', maxWidth: '124px', render: (row) => row.customerPartNumber || 'N/A' },
         { key: 'isoDate', label: 'Date', width: '84px', maxWidth: '92px', render: (row) => formatRawDate(row.isoDate) },
         { key: 'qty', label: 'Qty ordered', align: 'right', width: '72px', maxWidth: '86px', render: (row) => formatRawQty(row.qty) },
         { key: 'qtyShipped', label: 'Qty shipped', align: 'right', width: '76px', maxWidth: '90px', render: (row) => (row.qtyShipped == null || !Number.isFinite(Number(row.qtyShipped)) ? '' : formatRawQty(row.qtyShipped)) },
         { key: 'unitPrice', label: 'Unit Price', align: 'right', render: (row) => formatCurrencyWithCents(row.unitPrice) },
-        { key: 'customerGroup', label: 'Customer Group', width: '108px', maxWidth: '126px', render: (row) => row.customerGroup || 'N/A' },
-        { key: 'customerPartNumber', label: 'Customer P/N', width: '104px', maxWidth: '124px', render: (row) => row.customerPartNumber || 'N/A' },
         { key: 'revenue', label: 'Revenue', align: 'right', render: (row) => formatCurrencyWithCents(row.revenue) },
+      ];
+      const openRawColumns: typeof rawColumns = [
+        ...rawColumns.filter((column) => column.key !== 'revenue'),
+        {
+          key: 'openRevenue',
+          label: 'Open Revenue',
+          align: 'right',
+          wrap: true,
+          width: '88px',
+          maxWidth: '96px',
+          render: (row) => formatCurrencyWithCents(row.openRevenue),
+        },
+        {
+          key: 'revenue',
+          label: 'Total Revenue',
+          align: 'right',
+          wrap: true,
+          width: '88px',
+          maxWidth: '96px',
+          render: (row) => formatCurrencyWithCents(row.revenue),
+        },
       ];
 
       if (wholesaleRawCustomersLoading && wholesaleRawCustomers.length === 0) {
@@ -10195,7 +10221,7 @@ export default function OperationsTab({
             <div>
               <h3 style={{ margin: 0, fontSize: '18px', color: '#0f172a' }}>Raw Data</h3>
               <div style={{ marginTop: '4px', fontSize: '12px', color: '#64748b', lineHeight: 1.4 }}>
-                Open orders are every unfilled CSI line for the selected customer, any order date. Filled orders are lines that left that book.
+                Open orders are CSI lines still open on the latest complete CSI day with remaining qty &gt; 0. Open Revenue is remaining qty × unit price. Filled orders are CSI closed/filled or remaining qty 0.
               </div>
             </div>
             <select
@@ -10234,11 +10260,11 @@ export default function OperationsTab({
           )}
 
           <div style={{ overflowX: 'auto', maxHeight: '620px', overflowY: 'auto' }}>
-            <table style={{ width: '100%', minWidth: '1080px', borderCollapse: 'collapse' }}>
+            <table style={{ width: '100%', minWidth: '1180px', borderCollapse: 'collapse' }}>
               <thead>
                 <tr style={{ borderBottom: '1px solid #e2e8f0', background: '#eff6ff', position: 'sticky', top: 0, zIndex: 1 }}>
                   <th style={{ padding: '8px', fontSize: '12px', color: '#1e40af', textAlign: 'left', whiteSpace: 'nowrap' }}>Status</th>
-                  {rawColumns.map((column) => (
+                  {openRawColumns.map((column) => (
                     <th
                       key={column.key}
                       onClick={() => handleWholesaleRawSort(column.key)}
@@ -10247,11 +10273,12 @@ export default function OperationsTab({
                         fontSize: '12px',
                         color: '#1e40af',
                         textAlign: column.align || 'left',
-                        whiteSpace: 'nowrap',
+                        whiteSpace: column.wrap ? 'normal' : 'nowrap',
+                        lineHeight: column.wrap ? 1.15 : undefined,
                         width: column.width,
                         maxWidth: column.maxWidth,
-                        overflow: column.maxWidth ? 'hidden' : undefined,
-                        textOverflow: column.maxWidth ? 'ellipsis' : undefined,
+                        overflow: column.maxWidth && !column.wrap ? 'hidden' : undefined,
+                        textOverflow: column.maxWidth && !column.wrap ? 'ellipsis' : undefined,
                         cursor: 'pointer',
                         userSelect: 'none',
                       }}
@@ -10265,7 +10292,7 @@ export default function OperationsTab({
                 {wholesaleRawVisibleRows.map((row) => (
                   <tr key={row.key} style={{ borderBottom: '1px solid #f1f5f9' }}>
                     <td style={{ padding: '8px', fontSize: '12px', whiteSpace: 'nowrap' }}>{statusChip('Open')}</td>
-                    {rawColumns.map((column) => (
+                    {openRawColumns.map((column) => (
                       <td
                         key={column.key}
                         style={{
@@ -10287,7 +10314,7 @@ export default function OperationsTab({
                 ))}
                 {wholesaleRawVisibleRows.length === 0 && (
                   <tr>
-                    <td colSpan={rawColumns.length + 1} style={{ padding: '14px', fontSize: '13px', color: '#64748b' }}>
+                    <td colSpan={openRawColumns.length + 1} style={{ padding: '14px', fontSize: '13px', color: '#64748b' }}>
                       {emptyMessage}
                     </td>
                   </tr>
