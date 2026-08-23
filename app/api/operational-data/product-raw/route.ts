@@ -497,7 +497,7 @@ async function loadOpenLines(params: {
   if (await companyHasCsiCoitems(params.companyId)) {
     try {
       const csi = await loadCsiOpenLines(params);
-      if (csi.openAsOf) return csi;
+      if (csi.rows.length > 0) return csi;
     } catch (error) {
       console.error('[product-raw] CSI open lines failed', error);
     }
@@ -505,7 +505,6 @@ async function loadOpenLines(params: {
 
   const openBook = await resolveCustomerOpenBook(params);
   if (!openBook) return { rows: [], openAsOf: null };
-  await stampOpenBookFromCsi(params.companyId, openBook);
   const matchSql = customerMatchSql(params.customerId, params.customerName, 's');
   try {
     const rows = await prisma.$queryRaw<any[]>(Prisma.sql`
@@ -538,7 +537,6 @@ async function loadOpenLines(params: {
       AND ${isTrulyOpenSql('s')}
     ORDER BY s."orderId", s."lineId", s."snapshotDate" DESC
   `);
-    await hydrateOpenDayFromCsi({ companyId: params.companyId, openBook, rows });
     return {
       rows: rows.filter((row) => isCsiOpenLine(row.lineStat, Number(row.qtyOrdered || 0), row.qtyShipped)),
       openAsOf: openBook.start,
@@ -573,7 +571,6 @@ async function loadOpenLines(params: {
       AND COALESCE(s."qtyOrdered", 0) > 0
       ORDER BY s."orderId", s."lineId", s."snapshotDate" DESC
     `);
-    await hydrateOpenDayFromCsi({ companyId: params.companyId, openBook, rows });
     return {
       rows: rows.filter((row) => isCsiOpenLine(row.lineStat, Number(row.qtyOrdered || 0), row.qtyShipped)),
       openAsOf: openBook.start,

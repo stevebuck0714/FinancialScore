@@ -2121,7 +2121,10 @@ export default function OperationsTab({
         params.set('before', options.before);
       }
     }
-    const response = await fetch(`/api/operational-data/product-raw?${params}`, { cache: 'no-store' });
+    const response = await fetch(`/api/operational-data/product-raw?${params}`, {
+      cache: 'no-store',
+      signal: AbortSignal.timeout(45000),
+    });
     const payload = await response.json().catch(() => ({}));
     if (!response.ok) {
       throw new Error(payload?.error || 'Failed to load customer order lines');
@@ -2158,7 +2161,12 @@ export default function OperationsTab({
       setWholesaleRawTruncated(false);
     } catch (error: any) {
       resetWholesaleRawLines();
-      setWholesaleRawLinesError(error?.message || 'Failed to load customer order lines');
+      const timedOut = error?.name === 'TimeoutError' || error?.name === 'AbortError';
+      setWholesaleRawLinesError(
+        timedOut
+          ? 'Timed out loading open order lines. Retry.'
+          : error?.message || 'Failed to load customer order lines'
+      );
     } finally {
       setWholesaleRawLinesLoading(false);
     }
