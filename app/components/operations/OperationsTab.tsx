@@ -30,6 +30,7 @@ import ProductRevenueForecastReport from './ProductRevenueForecastReport';
 import ProductForecastRollupReport from './ProductForecastRollupReport';
 import ProductMonthlyRevenueReport from './ProductMonthlyRevenueReport';
 import ProductRevenueRollupReport from './ProductRevenueRollupReport';
+import ProductGoalUpdateReport from './ProductGoalUpdateReport';
 import ResidentialRevenueForecast from './real-estate-forecast/ResidentialRevenueForecast';
 import LoansTab from './LoansTab';
 import CapTableView from '../cap-table/CapTableView';
@@ -201,7 +202,7 @@ type WipLineItemSortKey =
   | 'wipValue'
   | 'contractValue'
   | 'invoicedValue';
-type ProductReportView = 'productMarginAnalysis' | 'wholesaleRawData' | 'vendorPricing' | 'revenueForecast' | 'forecastRollup' | 'monthlyRevenue' | 'revenueRollup' | 'performance' | 'retailForecast' | 'merchandiseProfitability';
+type ProductReportView = 'productMarginAnalysis' | 'wholesaleRawData' | 'vendorPricing' | 'revenueForecast' | 'forecastRollup' | 'monthlyRevenue' | 'revenueRollup' | 'goalUpdate' | 'performance' | 'retailForecast' | 'merchandiseProfitability';
 type WholesaleProductsReportMode = 'margin' | 'raw' | 'vendor';
 type WholesaleRawCustomerOption = {
   key: string;
@@ -1136,7 +1137,8 @@ export default function OperationsTab({
       productReportView === 'revenueForecast' ||
       productReportView === 'forecastRollup' ||
       productReportView === 'monthlyRevenue' ||
-      productReportView === 'revenueRollup')) ||
+      productReportView === 'revenueRollup' ||
+      productReportView === 'goalUpdate')) ||
     isWholesaleVendorsTab;
   const shouldApplyOperationalUserAccess =
     String(currentUser?.role || '').toLowerCase() === 'user' &&
@@ -2013,7 +2015,8 @@ export default function OperationsTab({
     (productReportView === 'revenueForecast' ||
       productReportView === 'forecastRollup' ||
       productReportView === 'monthlyRevenue' ||
-      productReportView === 'revenueRollup');
+      productReportView === 'revenueRollup' ||
+      productReportView === 'goalUpdate');
 
   const selectedWholesaleRawCustomer =
     wholesaleRawCustomers.find((customer) => customer.key === wholesaleRawCustomerFilter) || null;
@@ -2508,6 +2511,7 @@ export default function OperationsTab({
           productReportView === 'forecastRollup' ||
           productReportView === 'monthlyRevenue' ||
           productReportView === 'revenueRollup' ||
+          productReportView === 'goalUpdate' ||
           resolveModuleKey(tab) === 'vendors')
       ) {
         setLoading(false);
@@ -8081,6 +8085,7 @@ export default function OperationsTab({
     const isForecastRollupEnabled = isWholesaleProductSector && isSectionEnabled('productsForecastRollup');
     const isMonthlyRevenueEnabled = isWholesaleProductSector && isSectionEnabled('productsMonthlyRevenue');
     const isRevenueRollupEnabled = isWholesaleProductSector && isSectionEnabled('productsRevenueRollup');
+    const isGoalUpdateEnabled = isWholesaleProductSector && isSectionEnabled('productsGoalUpdate');
     const isProductPerformanceEnabled = isSectionEnabled('productsPerformance');
     const isRetailForecastingEnabled = isSectionEnabled('productsRetailForecasting');
     const isMerchandiseProfitabilityEnabled = isSectionEnabled('productsMerchandiseProfitability');
@@ -8092,6 +8097,7 @@ export default function OperationsTab({
       isForecastRollupEnabled ||
       isMonthlyRevenueEnabled ||
       isRevenueRollupEnabled ||
+      isGoalUpdateEnabled ||
       isSectionEnabled('productsPriceCostComparison') ||
       isSectionEnabled('productsPareto') ||
       isSectionEnabled('productsScatter') ||
@@ -8116,6 +8122,8 @@ export default function OperationsTab({
         ? 'monthlyRevenue'
         : isRevenueRollupEnabled
         ? 'revenueRollup'
+        : isGoalUpdateEnabled
+        ? 'goalUpdate'
         : isMerchandiseProfitabilityEnabled
         ? 'merchandiseProfitability'
         : isRetailForecastingEnabled
@@ -8136,6 +8144,8 @@ export default function OperationsTab({
         ? fallbackProductReportView
         : productReportView === 'revenueRollup' && !isRevenueRollupEnabled
         ? fallbackProductReportView
+        : productReportView === 'goalUpdate' && !isGoalUpdateEnabled
+        ? fallbackProductReportView
         : productReportView === 'performance' && !isProductPerformanceEnabled
         ? fallbackProductReportView
         : productReportView === 'merchandiseProfitability' && !isMerchandiseProfitabilityEnabled
@@ -8151,6 +8161,7 @@ export default function OperationsTab({
     const shouldRenderForecastRollup = effectiveProductReportView === 'forecastRollup' && isForecastRollupEnabled;
     const shouldRenderMonthlyRevenue = effectiveProductReportView === 'monthlyRevenue' && isMonthlyRevenueEnabled;
     const shouldRenderRevenueRollup = effectiveProductReportView === 'revenueRollup' && isRevenueRollupEnabled;
+    const shouldRenderGoalUpdate = effectiveProductReportView === 'goalUpdate' && isGoalUpdateEnabled;
     const shouldRenderRetailForecast = effectiveProductReportView === 'retailForecast' && isRetailForecastingEnabled;
     const shouldRenderMerchandiseProfitability =
       effectiveProductReportView === 'merchandiseProfitability' && isMerchandiseProfitabilityEnabled;
@@ -9509,7 +9520,7 @@ export default function OperationsTab({
         {label}{retailForecastTableSortKey === key ? (retailForecastTableSortDir === 'asc' ? ' ↑' : ' ↓') : ' ↕'}
       </th>
     );
-    const productViewSwitcher = isProductMarginAnalysisEnabled || isWholesaleRawDataEnabled || isVendorPricingEnabled || isRevenueForecastEnabled || isForecastRollupEnabled || isMonthlyRevenueEnabled || isRevenueRollupEnabled || isProductPerformanceEnabled || isRetailForecastingEnabled || isMerchandiseProfitabilityEnabled ? (
+    const productViewSwitcher = isProductMarginAnalysisEnabled || isWholesaleRawDataEnabled || isVendorPricingEnabled || isRevenueForecastEnabled || isForecastRollupEnabled || isMonthlyRevenueEnabled || isRevenueRollupEnabled || isGoalUpdateEnabled || isProductPerformanceEnabled || isRetailForecastingEnabled || isMerchandiseProfitabilityEnabled ? (
       <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '16px' }}>
         {isProductMarginAnalysisEnabled && (
           <button
@@ -9617,6 +9628,24 @@ export default function OperationsTab({
             }}
           >
             Revenue Rollup
+          </button>
+        )}
+        {isGoalUpdateEnabled && (
+          <button
+            type="button"
+            onClick={() => setProductReportView('goalUpdate')}
+            style={{
+              border: '1px solid #cbd5e1',
+              borderRadius: '999px',
+              padding: '8px 12px',
+              background: effectiveProductReportView === 'goalUpdate' ? '#e0e7ff' : '#ffffff',
+              color: effectiveProductReportView === 'goalUpdate' ? '#3730a3' : '#334155',
+              fontWeight: 700,
+              cursor: 'pointer',
+              fontSize: '12px',
+            }}
+          >
+            Goal Update
           </button>
         )}
         {isProductPerformanceEnabled && (
@@ -11098,6 +11127,22 @@ export default function OperationsTab({
           },
         ],
       },
+      productsGoalUpdate: {
+        title: 'What Goal Update shows',
+        sections: [
+          {
+            body:
+              'This is the company-level SGP Goal Update table plus Pyramid MTD / QTD / YTD versus current forecasts and SGP.',
+          },
+          {
+            heading: 'How to use it',
+            body: [
+              'The page is view-only and has no customer picker. Import the same revenue forecast workbook used on Monthly Revenue.',
+              'Goal Update has Forecasted, Baseline, Growth, and Stretch rows for YTD and QTD. Pyramid shows Revenue in dollars and Issues in units. Baseline, Growth, and Stretch stay blank until those goals are imported.',
+            ],
+          },
+        ],
+      },
     };
 
     // Renders the small "What is this?" link in the upper-right of each chart
@@ -11310,6 +11355,22 @@ export default function OperationsTab({
           <ProductRevenueRollupReport
             selectedCompanyId={selectedCompanyId}
             onOpenInfo={() => setProductChartInfoKey('productsRevenueRollup')}
+          />
+          {renderProductChartInfoModal()}
+        </div>
+      );
+    }
+
+    if (shouldRenderGoalUpdate) {
+      return (
+        <div style={{ padding: '8px 12px 16px' }}>
+          <h2 style={{ fontSize: '24px', fontWeight: '700', color: '#1e293b', marginBottom: '16px' }}>
+            {productPageTitle}
+          </h2>
+          {productViewSwitcher}
+          <ProductGoalUpdateReport
+            selectedCompanyId={selectedCompanyId}
+            onOpenInfo={() => setProductChartInfoKey('productsGoalUpdate')}
           />
           {renderProductChartInfoModal()}
         </div>

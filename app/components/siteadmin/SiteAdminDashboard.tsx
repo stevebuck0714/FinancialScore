@@ -87,6 +87,7 @@ const OPERATIONAL_HUB_SECTION_OPTIONS: Array<{ key: string; label: string; group
   { key: 'productsForecastRollup', label: 'Forecast Rollup', group: 'Products' },
   { key: 'productsMonthlyRevenue', label: 'Monthly Revenue', group: 'Products' },
   { key: 'productsRevenueRollup', label: 'Revenue Rollup', group: 'Products' },
+  { key: 'productsGoalUpdate', label: 'Goal Update', group: 'Products' },
   { key: 'productsPerformance', label: 'Performance', group: 'Products' },
   { key: 'productsRetailForecasting', label: 'Retail Forecasting / Monthly Inventory Report', group: 'Products' },
   { key: 'productsMerchandiseProfitability', label: 'Merchandise Profitability', group: 'Products' },
@@ -1491,7 +1492,7 @@ export default function SiteAdminDashboard(props: any) {
       if (!sourceGroup) return [];
       return OPERATIONAL_HUB_SECTION_OPTIONS
         .filter((item) => item.group === sourceGroup)
-        .filter((item) => !['productsProductMarginAnalysis', 'productsWholesaleRawData', 'productsRevenueForecast', 'productsForecastRollup', 'productsMonthlyRevenue', 'productsRevenueRollup'].includes(item.key) || companySectorCategory === '42')
+        .filter((item) => !['productsProductMarginAnalysis', 'productsWholesaleRawData', 'productsRevenueForecast', 'productsForecastRollup', 'productsMonthlyRevenue', 'productsRevenueRollup', 'productsGoalUpdate'].includes(item.key) || companySectorCategory === '42')
         .filter((item) => item.key !== 'productsVendorPricing')
         .filter((item) => companySectorCategory !== '42' || moduleKey !== 'orders_sales' || !WHOLESALE_ORDERS_SALES_EXCLUDED_REPORT_KEYS.has(item.key))
         .filter((item) => companySectorCategory !== '42' || moduleKey !== 'customers' || !WHOLESALE_CUSTOMERS_EXCLUDED_REPORT_KEYS.has(item.key))

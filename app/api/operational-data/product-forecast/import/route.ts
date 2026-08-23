@@ -4,6 +4,7 @@ import {
   readProductOperationsWorkbook,
 } from '@/lib/operations/product-revenue-forecast';
 import { parseProductRevenueWorkbook } from '@/lib/operations/product-revenue-actual';
+import { parseGoalDashboardFromWorkbook } from '@/lib/operations/product-goal-update';
 import {
   assertProductsForecastAccess,
   ensureProductRevenueForecastTables,
@@ -62,6 +63,7 @@ async function persistFromRequest(request: NextRequest) {
   } catch (error) {
     if (!canFallbackToForecastOnly(error)) throw error;
     const forecast = parseProductRevenueForecastWorkbook(workbook, fallbackYear);
+    const goals = parseGoalDashboardFromWorkbook(workbook);
     return {
       companyId,
       parsed: {
@@ -72,6 +74,8 @@ async function persistFromRequest(request: NextRequest) {
         prices: [],
         shippingDays: [],
         forecast,
+        goalUpdate: goals.goalUpdate,
+        pyramid: goals.pyramid,
       },
     };
   }

@@ -1833,6 +1833,17 @@ model ProductRevenuePrice {
   @@index([companyId, year])
 }
 
+model ProductGoalUpdate {
+  companyId  String
+  year       Int
+  dataThru   DateTime?
+  goalUpdate Json     @default("{}")
+  pyramid    Json     @default("{}")
+  updatedAt  DateTime @updatedAt
+
+  @@id([companyId, year])
+}
+
 model SalesInvoiceHeaderSnapshot {
   id               String   @id @default(cuid())
   companyId        String

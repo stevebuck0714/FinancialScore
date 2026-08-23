@@ -27,6 +27,13 @@ import {
   type ParsedProductRevenueWorkbook,
 } from '@/lib/operations/product-revenue-actual';
 import { buildShippingCalendar } from '@/lib/operations/product-shipping-days';
+import {
+  hasGoalDashboardData,
+  normalizeGoalUpdateSnapshot,
+  normalizePyramidSnapshot,
+  type GoalUpdateSnapshot,
+  type PyramidSnapshot,
+} from '@/lib/operations/product-goal-update';
 
 export { assertProductsForecastAccess, asForecastYear, asOptionalIsoDay };
 
@@ -91,6 +98,17 @@ export async function ensureProductRevenueTables(): Promise<void> {
       await prisma.$executeRawUnsafe(`
         CREATE UNIQUE INDEX IF NOT EXISTS "ProductRevenuePrice_company_year_group_item_key"
           ON "ProductRevenuePrice"("companyId", "year", "customerGroup", "itemSku")
+      `);
+      await prisma.$executeRawUnsafe(`
+        CREATE TABLE IF NOT EXISTS "ProductGoalUpdate" (
+          "companyId" TEXT NOT NULL,
+          "year" INTEGER NOT NULL,
+          "dataThru" TIMESTAMP(3),
+          "goalUpdate" JSONB NOT NULL DEFAULT '{}',
+          "pyramid" JSONB NOT NULL DEFAULT '{}',
+          "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          CONSTRAINT "ProductGoalUpdate_pkey" PRIMARY KEY ("companyId", "year")
+        )
       `);
       await ensureProductRevenueForecastTables();
     })().catch((error) => {
@@ -370,11 +388,13 @@ export function workbookFromImportPayload(raw: unknown, fallbackYear: number): P
       ? (parsed.forecast as Record<string, unknown>)
       : null;
   const forecastRowsIn = Array.isArray(forecastRaw?.rows) ? forecastRaw.rows : [];
+  const goalUpdate = normalizeGoalUpdateSnapshot(parsed.goalUpdate);
+  const pyramid = normalizePyramidSnapshot(parsed.pyramid);
   if (rowsIn.length > MAX_IMPORT_ROWS || forecastRowsIn.length > MAX_IMPORT_ROWS || pricesIn.length > MAX_IMPORT_ROWS) {
     throw new Error('Workbook has too many rows to import.');
   }
-  if (!rowsIn.length && !forecastRowsIn.length) {
-    throw new Error('No revenue or forecast rows found in the workbook.');
+  if (!rowsIn.length && !forecastRowsIn.length && !hasGoalDashboardData(goalUpdate, pyramid)) {
+    throw new Error('No revenue, forecast, or Goal Update data found in the workbook.');
   }
 
   const dataThru = asImportedIsoDay(parsed.dataThru) || asImportedIsoDay(forecastRaw?.dataThru);
@@ -421,6 +441,66 @@ export function workbookFromImportPayload(raw: unknown, fallbackYear: number): P
           }),
         }
       : null,
+    goalUpdate,
+    pyramid,
+  };
+}
+
+type ProductGoalUpdateRow = {
+  dataThru: Date | null;
+  goalUpdate: unknown;
+  pyramid: unknown;
+};
+
+export async function upsertProductGoalUpdate(params: {
+  companyId: string;
+  year: number;
+  dataThru: Date | null;
+  goalUpdate: GoalUpdateSnapshot | null;
+  pyramid: PyramidSnapshot | null;
+}) {
+  if (!hasGoalDashboardData(params.goalUpdate, params.pyramid)) return;
+  await prisma.$executeRawUnsafe(
+    `INSERT INTO "ProductGoalUpdate" ("companyId", "year", "dataThru", "goalUpdate", "pyramid", "updatedAt")
+     VALUES ($1, $2, $3, $4::jsonb, $5::jsonb, $6)
+     ON CONFLICT ("companyId", "year") DO UPDATE SET
+       "dataThru" = EXCLUDED."dataThru",
+       "goalUpdate" = EXCLUDED."goalUpdate",
+       "pyramid" = EXCLUDED."pyramid",
+       "updatedAt" = EXCLUDED."updatedAt"`,
+    params.companyId,
+    params.year,
+    params.dataThru,
+    JSON.stringify(params.goalUpdate || {}),
+    JSON.stringify(params.pyramid || {}),
+    new Date()
+  );
+}
+
+export async function loadProductGoalUpdate(params: {
+  companyId: string;
+  year: number;
+}): Promise<{
+  year: number;
+  dataThru: string | null;
+  goalUpdate: GoalUpdateSnapshot | null;
+  pyramid: PyramidSnapshot | null;
+}> {
+  const rows = await prisma.$queryRawUnsafe<ProductGoalUpdateRow[]>(
+    `SELECT "dataThru", "goalUpdate", "pyramid"
+     FROM "ProductGoalUpdate"
+     WHERE "companyId" = $1 AND "year" = $2
+     LIMIT 1`,
+    params.companyId,
+    params.year
+  );
+  const row = rows[0];
+  const dataThru = row?.dataThru ? new Date(row.dataThru).toISOString().slice(0, 10) : null;
+  return {
+    year: params.year,
+    dataThru: Number.isNaN(Date.parse(dataThru || '')) ? null : dataThru,
+    goalUpdate: normalizeGoalUpdateSnapshot(row?.goalUpdate),
+    pyramid: normalizePyramidSnapshot(row?.pyramid),
   };
 }
 
@@ -465,6 +545,16 @@ export async function persistParsedRevenueWorkbook(params: {
     dataThru,
   });
 
+  const goalUpdate = normalizeGoalUpdateSnapshot(parsed.goalUpdate);
+  const pyramid = normalizePyramidSnapshot(parsed.pyramid);
+  await upsertProductGoalUpdate({
+    companyId,
+    year: parsed.year,
+    dataThru,
+    goalUpdate,
+    pyramid,
+  });
+
   return {
     year: parsed.year,
     dataThru: parsed.dataThru,
@@ -473,6 +563,8 @@ export async function persistParsedRevenueWorkbook(params: {
     customerCount: new Set(lines.map((line) => `${line.customerId}||${line.customerName}`)).size,
     priceCount: parsed.prices.length,
     forecastRowCount: parsed.forecast?.rows.length || 0,
+    hasGoalUpdate: Boolean(goalUpdate),
+    hasPyramid: Boolean(pyramid),
   };
 }
 

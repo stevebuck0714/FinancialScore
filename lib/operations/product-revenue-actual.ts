@@ -15,6 +15,11 @@ import {
   type ParsedProductRevenueForecastWorkbook,
 } from '@/lib/operations/product-revenue-forecast';
 import { type ShippingDay } from '@/lib/operations/product-shipping-days';
+import {
+  parseGoalDashboardFromWorkbook,
+  type GoalUpdateSnapshot,
+  type PyramidSnapshot,
+} from '@/lib/operations/product-goal-update';
 
 export type { ShippingDay };
 
@@ -48,6 +53,8 @@ export type ParsedProductRevenueWorkbook = {
   prices: ProductRevenuePriceInput[];
   shippingDays: ShippingDay[];
   forecast: ParsedProductRevenueForecastWorkbook | null;
+  goalUpdate?: GoalUpdateSnapshot | null;
+  pyramid?: PyramidSnapshot | null;
 };
 
 export type JoinedRevenueLine = ProductRevenueLineInput & {
@@ -365,6 +372,8 @@ export function compactParsedRevenueWorkbook(parsed: ParsedProductRevenueWorkboo
           rows: parsed.forecast.rows,
         }
       : null,
+    goalUpdate: parsed.goalUpdate || null,
+    pyramid: parsed.pyramid || null,
   };
 }
 
@@ -379,6 +388,7 @@ export async function parseProductOperationsFile(
   } catch (error) {
     if (!options?.allowForecastOnly) throw error;
     const forecast = parseProductRevenueForecastWorkbook(workbook, fallbackYear);
+    const goals = parseGoalDashboardFromWorkbook(workbook);
     return {
       sheetName: forecast.sheetName,
       year: forecast.year,
@@ -387,6 +397,8 @@ export async function parseProductOperationsFile(
       prices: [],
       shippingDays: [],
       forecast,
+      goalUpdate: goals.goalUpdate,
+      pyramid: goals.pyramid,
     };
   }
 }
@@ -419,6 +431,7 @@ export function parseProductRevenueWorkbook(
   } catch {
     forecast = null;
   }
+  const goals = parseGoalDashboardFromWorkbook(workbook);
 
   return {
     sheetName,
@@ -428,6 +441,8 @@ export function parseProductRevenueWorkbook(
     prices: mergePrices(parseContractPrices(workbook, year), parseSgpPrices(workbook)),
     shippingDays: parseShippingDays(workbook),
     forecast,
+    goalUpdate: goals.goalUpdate,
+    pyramid: goals.pyramid,
   };
 }
 

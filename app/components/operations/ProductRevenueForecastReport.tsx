@@ -11,14 +11,16 @@ import {
   closedMonths,
   emptyMonthQtyMap,
   monthQty,
-  parseForecastWorkbookFile,
+  parseProductRevenueForecastWorkbook,
   pctVsPlan,
+  readProductOperationsWorkbook,
   remainingForecastQty,
   workbookImportErrorMessage,
   type ForecastMonth,
   type MonthQtyMap,
   type ProductRevenueForecastLineInput,
 } from '@/lib/operations/product-revenue-forecast';
+import { parseGoalDashboardFromWorkbook } from '@/lib/operations/product-goal-update';
 
 type CustomerOption = {
   customerId: string;
@@ -371,7 +373,9 @@ export default function ProductRevenueForecastReport({
     setError(null);
     setNotice('Reading workbook…');
     try {
-      const forecast = await parseForecastWorkbookFile(file, year);
+      const workbook = readProductOperationsWorkbook(await file.arrayBuffer(), 'all');
+      const forecast = parseProductRevenueForecastWorkbook(workbook, year);
+      const goals = parseGoalDashboardFromWorkbook(workbook);
       setNotice(`Saving ${forecast.rows.length.toLocaleString()} forecast rows…`);
       const response = await fetch('/api/operational-data/product-forecast/import', {
         method: 'POST',
@@ -385,6 +389,8 @@ export default function ProductRevenueForecastReport({
             rows: [],
             prices: [],
             forecast,
+            goalUpdate: goals.goalUpdate,
+            pyramid: goals.pyramid,
           },
         }),
       });
