@@ -1,14 +1,17 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { type VendorMonthlyForecastLineInput } from '@/lib/operations/vendor-monthly-forecast';
+import { isSgpAsOfDate, type VendorMonthlyForecastLineInput } from '@/lib/operations/vendor-monthly-forecast';
 import {
   asForecastYear,
   asOptionalIsoDay,
   assertVendorsForecastAccess,
   ensureVendorMonthlyForecastTables,
+  loadOperationsForecastYtd,
   loadVendorForecastLines,
   loadVendorForecastSettings,
   loadVendorForecastVendors,
   normalizeVendorForecastLineInput,
+  overlayVendorForecastActuals,
+  resolveVendorDataThru,
   serializeVendorForecastLine,
   upsertVendorForecastLines,
 } from '@/lib/operations/vendor-monthly-forecast-db';
@@ -38,6 +41,8 @@ export async function GET(request: NextRequest) {
 
     const settings = await loadVendorForecastSettings(companyId, year);
     const vendors = await loadVendorForecastVendors(companyId, year);
+    const operations = await loadOperationsForecastYtd(companyId, year);
+    const dataThru = resolveVendorDataThru(settings?.dataThru, operations.dataThru);
 
     const vendorPayload = vendors.map((row) => ({
       vendorId: row.vendorId,
@@ -50,7 +55,7 @@ export async function GET(request: NextRequest) {
     if (!vendorId && !vendorName) {
       return NextResponse.json({
         year,
-        dataThru: settings?.dataThru ? settings.dataThru.toISOString().slice(0, 10) : null,
+        dataThru,
         vendors: vendorPayload,
         lines: [],
       });
@@ -65,9 +70,9 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({
       year,
-      dataThru: settings?.dataThru ? settings.dataThru.toISOString().slice(0, 10) : null,
+      dataThru,
       vendors: vendorPayload,
-      lines: lines.map(serializeVendorForecastLine),
+      lines: lines.map((line) => overlayVendorForecastActuals(serializeVendorForecastLine(line), operations.actuals)),
     });
   } catch (error: any) {
     return NextResponse.json(
@@ -105,10 +110,15 @@ export async function PUT(request: NextRequest) {
       return NextResponse.json({ error: 'Every row needs an APR P/N before saving.' }, { status: 400 });
     }
 
+    const requestedThru = asOptionalIsoDay(body.dataThru);
+    const persistThru = requestedThru && isSgpAsOfDate(requestedThru.toISOString().slice(0, 10))
+      ? undefined
+      : requestedThru;
+
     await upsertVendorForecastLines({
       companyId,
       year,
-      dataThru: asOptionalIsoDay(body.dataThru),
+      dataThru: persistThru,
       replaceVendor: { vendorId, vendorName },
       lines,
     });
@@ -120,12 +130,13 @@ export async function PUT(request: NextRequest) {
       vendorName: vendorName || undefined,
     });
     const settings = await loadVendorForecastSettings(companyId, year);
+    const operations = await loadOperationsForecastYtd(companyId, year);
 
     return NextResponse.json({
       ok: true,
       year,
-      dataThru: settings?.dataThru ? settings.dataThru.toISOString().slice(0, 10) : null,
-      lines: saved.map(serializeVendorForecastLine),
+      dataThru: resolveVendorDataThru(settings?.dataThru, operations.dataThru),
+      lines: saved.map((line) => overlayVendorForecastActuals(serializeVendorForecastLine(line), operations.actuals)),
     });
   } catch (error: any) {
     return NextResponse.json(

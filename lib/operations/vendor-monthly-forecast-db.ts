@@ -4,10 +4,13 @@ import prisma from '@/lib/prisma';
 import { auditForbiddenAccess } from '@/lib/audit-logger';
 import { requireAuth, validateCompanyAccess } from '@/lib/tenant-security';
 import { isOperationalModuleAllowed } from '@/lib/operations/operational-dashboard-access';
-import { normalizeMonthQtyMap } from '@/lib/operations/product-revenue-forecast';
+import { normalizeMonthQtyMap, type MonthQtyMap } from '@/lib/operations/product-revenue-forecast';
+import { formatEstDate } from '@/lib/time/eastern';
 import {
   UNASSIGNED_VENDOR_ID,
   UNASSIGNED_VENDOR_NAME,
+  forecastActualsKey,
+  isSgpAsOfDate,
   type VendorMonthlyForecastLineInput,
 } from '@/lib/operations/vendor-monthly-forecast';
 
@@ -145,6 +148,69 @@ export function asForecastYear(value: unknown, fallback = new Date().getUTCFullY
   const parsed = Number(value);
   if (!Number.isInteger(parsed) || parsed < 2000 || parsed > 2100) return fallback;
   return parsed;
+}
+
+function toIsoDay(value: unknown): string | null {
+  if (!value) return null;
+  if (value instanceof Date && !Number.isNaN(value.getTime())) {
+    return value.toISOString().slice(0, 10);
+  }
+  const text = String(value).slice(0, 10);
+  return /^\d{4}-\d{2}-\d{2}$/.test(text) ? text : null;
+}
+
+export function resolveVendorDataThru(
+  stored: Date | string | null | undefined,
+  operationsDataThru: string | null
+): string | null {
+  if (operationsDataThru && !isSgpAsOfDate(operationsDataThru)) return operationsDataThru;
+  const storedIso = toIsoDay(stored);
+  if (storedIso && !isSgpAsOfDate(storedIso)) return storedIso;
+  if (operationsDataThru) return operationsDataThru;
+  return formatEstDate();
+}
+
+export async function loadOperationsForecastYtd(companyId: string, year: number): Promise<{
+  dataThru: string | null;
+  actuals: Map<string, MonthQtyMap>;
+}> {
+  const actuals = new Map<string, MonthQtyMap>();
+  try {
+    const settings = await prisma.$queryRawUnsafe<Array<{ dataThru: Date | null }>>(
+      `SELECT "dataThru" FROM "ProductRevenueForecastSettings" WHERE "companyId" = $1 AND "year" = $2 LIMIT 1`,
+      companyId,
+      year
+    );
+    const rows = await prisma.$queryRawUnsafe<Array<{
+      customerId: string;
+      itemSku: string;
+      customerPartNumber: string;
+      actualQty: Prisma.JsonValue;
+    }>>(
+      `SELECT "customerId", "itemSku", "customerPartNumber", "actualQty"
+         FROM "ProductRevenueForecastLine"
+        WHERE "companyId" = $1 AND "year" = $2`,
+      companyId,
+      year
+    );
+    for (const row of rows) {
+      actuals.set(
+        forecastActualsKey(row.customerId, row.itemSku, row.customerPartNumber),
+        normalizeMonthQtyMap(row.actualQty)
+      );
+    }
+    return { dataThru: toIsoDay(settings[0]?.dataThru), actuals };
+  } catch {
+    return { dataThru: null, actuals };
+  }
+}
+
+export function overlayVendorForecastActuals<T extends { customerId: string; itemSku: string; customerPartNumber: string; actualQty: MonthQtyMap }>(
+  line: T,
+  actuals: Map<string, MonthQtyMap>
+): T {
+  const match = actuals.get(forecastActualsKey(line.customerId, line.itemSku, line.customerPartNumber));
+  return match ? { ...line, actualQty: match } : line;
 }
 
 export function asOptionalIsoDay(value: unknown): Date | null {

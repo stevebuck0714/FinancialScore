@@ -11639,9 +11639,6 @@ export default function OperationsTab({
       const vendorInfoPadding = effectiveVendorReportView === 'vendorPricing' ? '8px 32px 32px' : '8px 12px 16px';
       return (
         <div style={{ padding: vendorInfoPadding }}>
-          <h2 style={{ fontSize: '24px', fontWeight: '700', color: '#1e293b', marginBottom: '16px' }}>
-            Vendors
-          </h2>
           {vendorViewSwitcher}
           {effectiveVendorReportView === 'monthlyForecast' && isVendorMonthlyForecastEnabled ? (
             <>

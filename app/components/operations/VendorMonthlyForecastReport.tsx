@@ -47,8 +47,10 @@ const inputStyle: React.CSSProperties = {
   background: '#ffffff',
 };
 
+type IdentitySortKey = 'itemSku' | 'customerName' | 'customerPartNumber' | 'customerGroup';
+
 const IDENTITY_COLUMNS: Array<{
-  key: 'itemSku' | 'customerName' | 'customerPartNumber' | 'customerGroup';
+  key: IdentitySortKey;
   label: string;
   widthCh: number;
 }> = [
@@ -141,6 +143,10 @@ function qtyValue(map: MonthQtyMap, month: ForecastMonth): number {
   return monthQty(map, month);
 }
 
+function compareIdentity(a: string, b: string): number {
+  return String(a || '').localeCompare(String(b || ''), undefined, { numeric: true, sensitivity: 'base' });
+}
+
 export default function VendorMonthlyForecastReport({
   selectedCompanyId,
   onOpenInfo,
@@ -158,6 +164,8 @@ export default function VendorMonthlyForecastReport({
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [selectedMonth, setSelectedMonth] = useState<ForecastMonth>(currentMonth());
+  const [sortKey, setSortKey] = useState<IdentitySortKey>('itemSku');
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const vendorsRequestSeq = useRef(0);
 
@@ -385,6 +393,33 @@ export default function VendorMonthlyForecastReport({
       { remaining: 0, monthEstimated: 0, monthYtd: 0, sgpEstimated: 0 }
     );
   }, [dataThru, lines, selectedMonth]);
+
+  const sortedLines = useMemo(() => {
+    const next = [...lines];
+    const direction = sortDir === 'asc' ? 1 : -1;
+    next.sort((a, b) => {
+      const primary = compareIdentity(a[sortKey] || '', b[sortKey] || '');
+      if (primary !== 0) return primary * direction;
+      return (
+        compareIdentity(a.itemSku, b.itemSku) ||
+        compareIdentity(a.customerName, b.customerName) ||
+        compareIdentity(a.customerPartNumber, b.customerPartNumber)
+      );
+    });
+    return next;
+  }, [lines, sortDir, sortKey]);
+
+  const handleIdentitySort = (key: IdentitySortKey) => {
+    if (sortKey === key) {
+      setSortDir((prev) => (prev === 'asc' ? 'desc' : 'asc'));
+      return;
+    }
+    setSortKey(key);
+    setSortDir('asc');
+  };
+
+  const identitySortLabel = (key: IdentitySortKey) =>
+    sortKey === key ? (sortDir === 'asc' ? ' ▲' : ' ▼') : ' ↕';
 
   const monthHeaderStyle: React.CSSProperties = {
     textAlign: 'right',
@@ -672,17 +707,21 @@ export default function VendorMonthlyForecastReport({
                   {IDENTITY_COLUMNS.map((column, index) => (
                     <th
                       key={column.key}
-                      title={column.label}
+                      title={`Sort by ${column.label}`}
                       align="left"
+                      onClick={() => handleIdentitySort(column.key)}
+                      aria-sort={sortKey === column.key ? (sortDir === 'asc' ? 'ascending' : 'descending') : 'none'}
                       style={{
                         ...stickyIdentityStyle(index, true),
                         textAlign: 'left',
                         paddingTop: 8,
                         paddingBottom: 8,
                         color: '#334155',
+                        cursor: 'pointer',
+                        userSelect: 'none',
                       }}
                     >
-                      {column.label}
+                      {column.label}{identitySortLabel(column.key)}
                     </th>
                   ))}
                   <th
@@ -710,7 +749,7 @@ export default function VendorMonthlyForecastReport({
                 </tr>
               </thead>
               <tbody>
-                {lines.map((line) => (
+                {sortedLines.map((line) => (
                   <tr key={line.id} style={{ borderTop: '1px solid #e2e8f0' }}>
                     {IDENTITY_COLUMNS.map((column, index) => (
                       <td

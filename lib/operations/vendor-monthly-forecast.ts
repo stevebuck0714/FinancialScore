@@ -2,6 +2,7 @@ import * as XLSX from 'xlsx';
 import {
   FORECAST_MONTHS,
   emptyMonthQtyMap,
+  parseProductRevenueForecastWorkbook,
   type ForecastMonth,
   type MonthQtyMap,
   type ProductRevenueForecastLineInput,
@@ -69,6 +70,14 @@ function asNumber(value: unknown): number | null {
   if (!text) return null;
   const parsed = Number(text);
   return Number.isFinite(parsed) ? parsed : null;
+}
+
+export function isSgpAsOfDate(iso: string | null | undefined): boolean {
+  return /^\d{4}-01-01$/.test(String(iso || '').slice(0, 10));
+}
+
+export function forecastActualsKey(customerId: string, itemSku: string, customerPartNumber: string): string {
+  return `${String(customerId || '').trim().toUpperCase()}||${String(itemSku || '').trim().toUpperCase()}||${String(customerPartNumber || '').trim().toUpperCase()}`;
 }
 
 function asDateIso(value: unknown): string | null {
@@ -233,9 +242,26 @@ export function parseVendorMonthlyForecastWorkbook(
   const matrix = sheetToMatrix(sheet);
   if (!matrix.length) throw new Error(`Sheet "${sheetName}" is empty`);
 
-  const dataThru = findDataThru(matrix);
-  const yearFromSheet = dataThru ? Number(dataThru.slice(0, 4)) : NaN;
-  const year = Number.isInteger(yearFromSheet) && yearFromSheet >= fallbackYear ? yearFromSheet : fallbackYear;
+  const operationsActuals = new Map<string, MonthQtyMap>();
+  let operationsDataThru: string | null = null;
+  try {
+    const product = parseProductRevenueForecastWorkbook(workbook, fallbackYear);
+    if (product.dataThru && !isSgpAsOfDate(product.dataThru)) {
+      operationsDataThru = product.dataThru;
+    }
+    for (const productRow of product.rows) {
+      operationsActuals.set(
+        forecastActualsKey(productRow.customerId, productRow.itemSku, productRow.customerPartNumber),
+        productRow.actualQty
+      );
+    }
+  } catch {
+    // SGP-only workbooks still import estimated quantities.
+  }
+
+  const sgpDataThru = findDataThru(matrix);
+  const dataThru = operationsDataThru || (!isSgpAsOfDate(sgpDataThru) ? sgpDataThru : null);
+  const year = fallbackYear;
   const vendorLookup = buildVendorLookup(workbook);
   const rows: VendorMonthlyForecastLineInput[] = [];
 
@@ -248,11 +274,14 @@ export function parseVendorMonthlyForecastWorkbook(
     if (isHeaderSku(itemSku)) continue;
 
     const forecastQty = emptyMonthQtyMap();
-    const actualQty = emptyMonthQtyMap();
+    const sheetActualQty = emptyMonthQtyMap();
     for (const month of FORECAST_MONTHS) {
       forecastQty[String(month)] = asNumber(cell(row, SGP_ESTIMATED_COLS[month])) ?? 0;
-      actualQty[String(month)] = asNumber(cell(row, SGP_ACTUAL_COLS[month])) ?? 0;
+      sheetActualQty[String(month)] = asNumber(cell(row, SGP_ACTUAL_COLS[month])) ?? 0;
     }
+    const actualQty =
+      operationsActuals.get(forecastActualsKey(customerId || customerName, itemSku, asString(cell(row, 'E')))) ||
+      sheetActualQty;
 
     const vendor = vendorLookup.get(vendorKey(itemSku, customerId, customerName));
     rows.push({
@@ -290,7 +319,8 @@ export function parsedVendorForecastFromPayload(
   if (!rows.length) {
     throw new Error('No monthly forecast rows found. Use the Forecasts 2026 SGP sheet with APR P/N in column A.');
   }
-  const dataThru = asDateIso(body.dataThru);
+  const dataThruRaw = asDateIso(body.dataThru);
+  const dataThru = isSgpAsOfDate(dataThruRaw) ? null : dataThruRaw;
   const yearFromPayload = Number(body.year);
   const yearFromSheet = dataThru ? Number(dataThru.slice(0, 4)) : NaN;
   const year = Number.isInteger(yearFromPayload) && yearFromPayload >= 2000 && yearFromPayload <= 2100

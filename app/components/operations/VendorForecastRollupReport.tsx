@@ -43,8 +43,10 @@ const inputStyle: React.CSSProperties = {
   background: '#ffffff',
 };
 
+type IdentitySortKey = 'itemSku' | 'customerName' | 'customerPartNumber';
+
 const IDENTITY_COLUMNS: Array<{
-  key: 'itemSku' | 'customerName' | 'customerPartNumber';
+  key: IdentitySortKey;
   label: string;
   widthCh: number;
 }> = [
@@ -140,6 +142,10 @@ function fmtPct(value: number | null): string {
   return `${(value * 100).toFixed(1)}%`;
 }
 
+function compareIdentity(a: string, b: string): number {
+  return String(a || '').localeCompare(String(b || ''), undefined, { numeric: true, sensitivity: 'base' });
+}
+
 function quarterLabel(quarter: ForecastQuarter): string {
   return `${quarter}Q`;
 }
@@ -156,6 +162,8 @@ export default function VendorForecastRollupReport({
   const [loadingVendors, setLoadingVendors] = useState(false);
   const [loadingLines, setLoadingLines] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [sortKey, setSortKey] = useState<IdentitySortKey>('itemSku');
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
   const vendorsRequestSeq = useRef(0);
 
   const selectedVendor = useMemo(
@@ -254,6 +262,33 @@ export default function VendorForecastRollupReport({
       }
     );
   }, [dataThru, lines]);
+
+  const sortedLines = useMemo(() => {
+    const next = [...lines];
+    const direction = sortDir === 'asc' ? 1 : -1;
+    next.sort((a, b) => {
+      const primary = compareIdentity(a[sortKey] || '', b[sortKey] || '');
+      if (primary !== 0) return primary * direction;
+      return (
+        compareIdentity(a.itemSku, b.itemSku) ||
+        compareIdentity(a.customerName, b.customerName) ||
+        compareIdentity(a.customerPartNumber, b.customerPartNumber)
+      );
+    });
+    return next;
+  }, [lines, sortDir, sortKey]);
+
+  const handleIdentitySort = (key: IdentitySortKey) => {
+    if (sortKey === key) {
+      setSortDir((prev) => (prev === 'asc' ? 'desc' : 'asc'));
+      return;
+    }
+    setSortKey(key);
+    setSortDir('asc');
+  };
+
+  const identitySortLabel = (key: IdentitySortKey) =>
+    sortKey === key ? (sortDir === 'asc' ? ' ▲' : ' ▼') : ' ↕';
 
   const quarterGroupHeaderStyle = (quarter: ForecastQuarter): React.CSSProperties => {
     const shade = QUARTER_SHADES[quarter];
@@ -451,8 +486,10 @@ export default function VendorForecastRollupReport({
                     <th
                       key={column.key}
                       rowSpan={2}
-                      title={column.label}
+                      title={`Sort by ${column.label}`}
                       align="left"
+                      onClick={() => handleIdentitySort(column.key)}
+                      aria-sort={sortKey === column.key ? (sortDir === 'asc' ? 'ascending' : 'descending') : 'none'}
                       style={{
                         ...stickyIdentityStyle(index, true),
                         textAlign: 'left',
@@ -460,9 +497,11 @@ export default function VendorForecastRollupReport({
                         paddingBottom: 8,
                         color: '#334155',
                         verticalAlign: 'bottom',
+                        cursor: 'pointer',
+                        userSelect: 'none',
                       }}
                     >
-                      {column.label}
+                      {column.label}{identitySortLabel(column.key)}
                     </th>
                   ))}
                   {FORECAST_QUARTERS.map((quarter) => (
@@ -508,7 +547,7 @@ export default function VendorForecastRollupReport({
                 </tr>
               </thead>
               <tbody>
-                {lines.map((line) => {
+                {sortedLines.map((line) => {
                   const annualForecast = monthQtyTotal(line.forecastQty);
                   const annualAdjusted = annualAdjustedQty(line.forecastQty, line.actualQty, dataThru || null);
                   const ytdActual = ytdActualQty(line.actualQty, dataThru || null);
