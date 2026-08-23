@@ -1752,6 +1752,43 @@ model CustomerOrderLineSnapshot {
   @@unique([companyId, frequency, snapshotDate, orderId, lineId, customerName])
 }
 
+model CustomerOrderLineFilled {
+  id                String   @id @default(cuid())
+  companyId         String
+  customerId        String?
+  customerName      String
+  orderId           String
+  lineId            String
+  orderDate         DateTime?
+  filledAsOf        DateTime
+  itemId            String?
+  itemName          String?
+  sku               String?
+  qtyOrdered        Float
+  qtyInvoiced       Float
+  unitPrice         Float
+  contractValue     Float
+  invoicedAmount    Float
+  remainingAmount   Float
+  unbilledAccrual   Float    @default(0)
+  sourcePlatform    String?  @default("INFOR_M3")
+  sourceProgram     String?
+  sourceTransaction String?
+  cono              String?
+  divi              String?
+  createdAt         DateTime @default(now())
+
+  @@unique([companyId, orderId, lineId, customerName])
+  @@index([companyId, customerId, orderDate])
+  @@index([companyId, filledAsOf])
+  @@index([companyId, orderDate])
+}
+
+model CustomerOrderLineFilledBackfill {
+  companyId   String   @id
+  completedAt DateTime @default(now())
+}
+
 model ProductRevenueForecastSettings {
   companyId String
   year      Int

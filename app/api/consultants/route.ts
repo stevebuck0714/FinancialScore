@@ -48,6 +48,8 @@ const COMPANY_SCOPED_TABLE_DELETE_ORDER = [
   'CustomerContractStatus',
   'CustomerCashFlow',
   'CustomerOrderLineSnapshot',
+  'CustomerOrderLineFilled',
+  'CustomerOrderLineFilledBackfill',
   'SalesInvoiceHeaderSnapshot',
   'APOpenBillSnapshot',
   'APPaymentFact',

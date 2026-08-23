@@ -6,6 +6,7 @@ import { normalizeInforSystem } from '@/lib/infor-m3/system';
 import { createHash, randomUUID } from 'node:crypto';
 import { computeDailyPnlMovementsFromGL } from '@/lib/financial/daily-bs-from-gl';
 import { syncErpDailyFinancialsFromGL } from '@/lib/financial/sync-erp-daily-financials';
+import { captureFilledOrderLines, type FilledOrderLineInput } from '@/lib/operations/product-order-filled';
 
 type InforProgramRow = {
   module: string;
@@ -5024,16 +5025,14 @@ async function saveCustomerOrderLines(
     cono: string | null;
     divi: string | null;
   }> = [];
+  const closedRows: FilledOrderLineInput[] = [];
 
   // SyteLine / M3: C=Closed, F=Filled; I often used when invoicing is complete.
   const CLOSED_ORDER_LINE_STATUSES = new Set(['C', 'F', 'I']);
   for (let idx = 0; idx < records.length; idx += 1) {
     const record = records[idx];
       const lineStat = String(pickString(record, ['Stat', 'STAT', 'stat', 'Status', 'status']) || '').trim().toUpperCase();
-      if (CLOSED_ORDER_LINE_STATUSES.has(lineStat)) {
-        skip('closed_or_filled');
-        continue;
-      }
+      const isClosedLine = CLOSED_ORDER_LINE_STATUSES.has(lineStat);
       const customerComposite = pickString(record, ['DerCustNoName', 'customerComposite', 'CustNumName']);
       const orderIdRaw =
         pickString(record, ['CoNum', 'CONUM', 'coNum', 'orderNo', 'orderNumber', 'OrderNum', 'contractId', 'projectId']) || `ORDER-${idx + 1}`;
@@ -5155,7 +5154,7 @@ async function saveCustomerOrderLines(
         Number(row.invoicedAmount) > 0 ||
         Number(row.remainingAmount) > 0 ||
         Number(row.unbilledAccrual) > 0;
-      if (!hasAmounts) {
+      if (!hasAmounts && !(isClosedLine && Number(row.qtyOrdered || 0) > 0)) {
         skip('no_financial_amounts');
         continue;
       }
@@ -5164,12 +5163,55 @@ async function saveCustomerOrderLines(
         skip('missing_identity');
         continue;
       }
+      if (isClosedLine) {
+        skip('closed_or_filled');
+        closedRows.push({
+          companyId: row.companyId,
+          customerId: row.customerId,
+          customerName: row.customerName,
+          orderId: row.orderId,
+          lineId: row.lineId,
+          orderDate: row.orderDate,
+          filledAsOf: snapshotDate,
+          itemId: row.itemId,
+          itemName: row.itemName,
+          sku: row.sku,
+          qtyOrdered: row.qtyOrdered,
+          qtyInvoiced: row.qtyInvoiced,
+          unitPrice: row.unitPrice,
+          contractValue: row.contractValue,
+          invoicedAmount: row.invoicedAmount,
+          remainingAmount: row.remainingAmount,
+          unbilledAccrual: row.unbilledAccrual,
+          sourcePlatform: row.sourcePlatform,
+          sourceProgram: row.sourceProgram,
+          sourceTransaction: row.sourceTransaction,
+          cono: row.cono,
+          divi: row.divi,
+        });
+        continue;
+      }
       parsedRows.push(row);
   }
   const rows = parsedRows;
   debug.rowsAfterValidation = rows.length;
 
-  if (!rows.length) return { persisted: 0, debug };
+  const captureFilled = async () => {
+    try {
+      await captureFilledOrderLines({
+        companyId,
+        snapshotDate,
+        closedLines: closedRows,
+      });
+    } catch (error) {
+      console.error('[customer-order-filled] capture failed', error);
+    }
+  };
+
+  if (!rows.length) {
+    await captureFilled();
+    return { persisted: 0, debug };
+  }
   const deduped = new Map<string, (typeof rows)[number]>();
   for (const row of rows) {
     const key = `${row.companyId}|${row.frequency}|${row.snapshotDate.toISOString()}|${row.orderId}|${row.lineId}|${row.customerName}`;
@@ -5219,6 +5261,7 @@ async function saveCustomerOrderLines(
   }
   const batch = await delegate.createMany({ data: dataToPersist, skipDuplicates: true });
   debug.rowsPersisted = Number(batch?.count || 0);
+  await captureFilled();
   return { persisted: debug.rowsPersisted || finalRows.length, debug };
 }
 

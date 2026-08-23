@@ -962,10 +962,12 @@ export default function OperationsTab({
   const [wholesaleRawCustomers, setWholesaleRawCustomers] = useState<WholesaleRawCustomerOption[]>([]);
   const [wholesaleRawCustomersLoading, setWholesaleRawCustomersLoading] = useState(false);
   const [wholesaleRawCustomerLines, setWholesaleRawCustomerLines] = useState<any[]>([]);
+  const [wholesaleRawFilledLines, setWholesaleRawFilledLines] = useState<any[]>([]);
   const [wholesaleRawLinesLoading, setWholesaleRawLinesLoading] = useState(false);
   const [wholesaleRawLinesError, setWholesaleRawLinesError] = useState<string | null>(null);
   const [wholesaleRawWindowStart, setWholesaleRawWindowStart] = useState('');
   const [wholesaleRawWindowEnd, setWholesaleRawWindowEnd] = useState('');
+  const [wholesaleRawOpenSnapshotDate, setWholesaleRawOpenSnapshotDate] = useState('');
   const [wholesaleRawNextOlderStart, setWholesaleRawNextOlderStart] = useState('');
   const [wholesaleRawNextOlderEnd, setWholesaleRawNextOlderEnd] = useState('');
   const [wholesaleRawHasMoreOlder, setWholesaleRawHasMoreOlder] = useState(false);
@@ -973,6 +975,8 @@ export default function OperationsTab({
   const [wholesaleRawTruncated, setWholesaleRawTruncated] = useState(false);
   const [wholesaleRawSortKey, setWholesaleRawSortKey] = useState<WholesaleRawSortKey>('isoDate');
   const [wholesaleRawSortDir, setWholesaleRawSortDir] = useState<'asc' | 'desc'>('desc');
+  const [wholesaleRawFilledSortKey, setWholesaleRawFilledSortKey] = useState<WholesaleRawSortKey>('isoDate');
+  const [wholesaleRawFilledSortDir, setWholesaleRawFilledSortDir] = useState<'asc' | 'desc'>('desc');
   const [vendorPricingVendorFilter, setVendorPricingVendorFilter] = useState('all');
   const [vendorPricingSearchTerm, setVendorPricingSearchTerm] = useState('');
   const [vendorPricingSortKey, setVendorPricingSortKey] = useState<VendorPricingSortKey>('item');
@@ -2019,20 +2023,25 @@ export default function OperationsTab({
 
   const resetWholesaleRawLines = () => {
     setWholesaleRawCustomerLines([]);
+    setWholesaleRawFilledLines([]);
     setWholesaleRawLinesError(null);
     setWholesaleRawWindowStart('');
     setWholesaleRawWindowEnd('');
+    setWholesaleRawOpenSnapshotDate('');
     setWholesaleRawNextOlderStart('');
     setWholesaleRawNextOlderEnd('');
     setWholesaleRawHasMoreOlder(false);
     setWholesaleRawTruncated(false);
   };
 
-  const applyWholesaleRawWindowPayload = (payload: any, options?: { mergeTruncated?: boolean }) => {
+  const applyWholesaleRawWindowPayload = (payload: any, options?: { mergeTruncated?: boolean; resetWindow?: boolean }) => {
     setWholesaleRawWindowStart(String(payload?.window?.startDate || ''));
-    if (payload?.window?.endDate) {
+    if (options?.resetWindow) {
+      setWholesaleRawWindowEnd(String(payload?.window?.endDate || ''));
+    } else if (payload?.window?.endDate) {
       setWholesaleRawWindowEnd((current) => current || String(payload.window.endDate));
     }
+    if (payload?.openSnapshotDate) setWholesaleRawOpenSnapshotDate(String(payload.openSnapshotDate));
     const nextStart = String(payload?.nextOlderWindow?.startDate || '');
     const nextEnd = String(payload?.nextOlderWindow?.endDate || '');
     setWholesaleRawNextOlderStart(nextStart);
@@ -2088,8 +2097,14 @@ export default function OperationsTab({
     setWholesaleRawSortDir('desc');
     try {
       const payload = await fetchWholesaleRawLines({ window: 'recent' });
-      setWholesaleRawCustomerLines(Array.isArray(payload?.records) ? payload.records : []);
-      applyWholesaleRawWindowPayload(payload);
+      const openRecords = Array.isArray(payload?.openRecords)
+        ? payload.openRecords
+        : Array.isArray(payload?.records)
+        ? payload.records
+        : [];
+      setWholesaleRawCustomerLines(openRecords);
+      setWholesaleRawFilledLines(Array.isArray(payload?.filledRecords) ? payload.filledRecords : []);
+      applyWholesaleRawWindowPayload(payload, { resetWindow: true });
     } catch (error: any) {
       resetWholesaleRawLines();
       setWholesaleRawLinesError(error?.message || 'Failed to load customer order lines');
@@ -2104,19 +2119,23 @@ export default function OperationsTab({
     setWholesaleRawLinesError(null);
     try {
       const payload = await fetchWholesaleRawLines({ window: 'older', before: wholesaleRawWindowStart });
-      const incoming = Array.isArray(payload?.records) ? payload.records : [];
-      setWholesaleRawCustomerLines((current) => {
+      const incoming = Array.isArray(payload?.filledRecords)
+        ? payload.filledRecords
+        : Array.isArray(payload?.records)
+        ? payload.records
+        : [];
+      setWholesaleRawFilledLines((current) => {
         const byLine = new Map<string, any>();
         for (const row of [...incoming, ...current]) {
-          const key = `${String(row?.orderId || '')}|${String(row?.lineId || '')}`;
+          const key = `${String(row?.orderId || '')}|${String(row?.lineId || '')}|${String(row?.customerName || '')}`;
           if (!key.replace(/\|/g, '')) continue;
           const existing = byLine.get(key);
           if (!existing) {
             byLine.set(key, row);
             continue;
           }
-          const existingDate = String(existing?.snapshotDate || existing?.date || '');
-          const nextDate = String(row?.snapshotDate || row?.date || '');
+          const existingDate = String(existing?.filledAsOf || existing?.snapshotDate || existing?.date || '');
+          const nextDate = String(row?.filledAsOf || row?.snapshotDate || row?.date || '');
           if (nextDate > existingDate) byLine.set(key, row);
         }
         return Array.from(byLine.values());
@@ -9208,10 +9227,7 @@ export default function OperationsTab({
     const wholesaleRawOldestDate = wholesaleRawBaseRows
       .map((row) => row.isoDate)
       .sort((a, b) => a.localeCompare(b))[0] || '';
-    const wholesaleRawFilteredRows = wholesaleRawBaseRows.filter((row) => {
-      if (!wholesaleRawWindowStart || !wholesaleRawWindowEnd) return true;
-      return row.isoDate >= wholesaleRawWindowStart && row.isoDate <= wholesaleRawWindowEnd;
-    });
+    const wholesaleRawFilteredRows = wholesaleRawBaseRows;
     const wholesaleRawTextSortKeys = new Set<WholesaleRawSortKey>([
       'item',
       'order',
@@ -9255,6 +9271,74 @@ export default function OperationsTab({
       wholesaleRawSortKey === key ? (wholesaleRawSortDir === 'asc' ? ' ▲' : ' ▼') : ' ↕';
     const wholesaleRawVisibleRowLimit = 500;
     const wholesaleRawVisibleRows = sortedWholesaleRawRows.slice(0, wholesaleRawVisibleRowLimit);
+    const wholesaleRawFilledBaseRows = getCachedProductTransform(
+      'products-wholesale-raw-filled-rows',
+      [shouldRenderWholesaleRaw, wholesaleRawFilledLines],
+      () => (shouldRenderWholesaleRaw ? (wholesaleRawFilledLines as any[]) : [])
+        .filter((row) => !row?.isPlaceholderRow)
+        .map((row, index) => {
+          const parsedDate = parseCoverageUtcDay(String(row?.orderDate || row?.date || row?.filledAsOf || row?.snapshotDate || ''));
+          const isoDate = parsedDate ? parsedDate.toISOString().slice(0, 10) : '';
+          const year = parsedDate ? String(parsedDate.getUTCFullYear()) : '';
+          const qty = Number(row?.qty ?? row?.quantity ?? row?.qtyOrdered ?? row?.quantitySold ?? row?.qtyInvoiced ?? 0);
+          const revenue = Number(row?.revenue ?? row?.invoicedAmount ?? row?.contractValue ?? 0);
+          const unitPrice =
+            Number(row?.unitPrice ?? row?.price ?? 0) ||
+            (qty !== 0 && Number.isFinite(revenue) ? Math.abs(revenue / qty) : 0);
+          const customerId = String(row?.customerId || row?.customerNumber || row?.custNum || '').trim();
+          const customerGroup = String(row?.customerGroup || '').trim();
+          const customerPartNumber = String(row?.customerPartNumber || row?.aprSgpCustomerPartNumber || row?.customerPn || row?.customerPN || row?.customerItem || row?.customerSku || row?.custItem || row?.CustItem || '').trim();
+          return {
+            key: `filled-${index}-${isoDate}-${String(row?.sku || row?.itemId || row?.itemName || '')}-${String(row?.orderId || '')}-${String(row?.lineId || '')}`,
+            item: String(row?.sku || row?.itemId || row?.itemName || 'N/A').trim() || 'N/A',
+            order: String(row?.orderId || row?.orderNo || row?.coNum || row?.sourceTransaction || '').trim(),
+            customerId,
+            customerPartNumber,
+            isoDate,
+            qty,
+            unitPrice,
+            year,
+            customerGroup,
+            revenue: Number.isFinite(revenue) && revenue !== 0 ? revenue : Math.abs(qty * unitPrice),
+          };
+        })
+        .filter((row) => row.isoDate)
+    );
+    const sortedWholesaleRawFilledRows = [...wholesaleRawFilledBaseRows].sort((a, b) => {
+      const direction = wholesaleRawFilledSortDir === 'asc' ? 1 : -1;
+      const left = a?.[wholesaleRawFilledSortKey];
+      const right = b?.[wholesaleRawFilledSortKey];
+      if (wholesaleRawNumericSortKeys.has(wholesaleRawFilledSortKey)) {
+        const leftMissing = left == null || !Number.isFinite(Number(left));
+        const rightMissing = right == null || !Number.isFinite(Number(right));
+        if (leftMissing && rightMissing) return 0;
+        if (leftMissing) return 1;
+        if (rightMissing) return -1;
+        return (Number(left) - Number(right)) * direction;
+      }
+      if (wholesaleRawTextSortKeys.has(wholesaleRawFilledSortKey)) {
+        return String(left || '').localeCompare(String(right || ''), undefined, { sensitivity: 'base', numeric: true }) * direction;
+      }
+      return 0;
+    });
+    const handleWholesaleRawFilledSort = (key: WholesaleRawSortKey) => {
+      if (wholesaleRawFilledSortKey === key) {
+        setWholesaleRawFilledSortDir((prev) => (prev === 'asc' ? 'desc' : 'asc'));
+        return;
+      }
+      setWholesaleRawFilledSortKey(key);
+      setWholesaleRawFilledSortDir(wholesaleRawNumericSortKeys.has(key) || key === 'isoDate' ? 'desc' : 'asc');
+    };
+    const wholesaleRawFilledSortLabel = (key: WholesaleRawSortKey) =>
+      wholesaleRawFilledSortKey === key ? (wholesaleRawFilledSortDir === 'asc' ? ' ▲' : ' ▼') : ' ↕';
+    const wholesaleRawFilledVisibleRows = sortedWholesaleRawFilledRows.slice(0, wholesaleRawVisibleRowLimit);
+    const wholesaleRawFilledLatestDate = wholesaleRawFilledBaseRows
+      .map((row) => row.isoDate)
+      .sort((a, b) => a.localeCompare(b))
+      .slice(-1)[0] || '';
+    const wholesaleRawFilledOldestDate = wholesaleRawFilledBaseRows
+      .map((row) => row.isoDate)
+      .sort((a, b) => a.localeCompare(b))[0] || '';
     const effectiveRetailForecastKey =
       selectedRetailForecastSubcategory && retailForecastOptions.some((row) => row.key === selectedRetailForecastSubcategory)
         ? selectedRetailForecastSubcategory
@@ -10074,7 +10158,7 @@ export default function OperationsTab({
             <div>
               <h3 style={{ margin: 0, fontSize: '18px', color: '#0f172a' }}>Raw Data</h3>
               <div style={{ marginTop: '4px', fontSize: '12px', color: '#64748b', lineHeight: 1.4 }}>
-                Open orders for the selected customer from the live CSI order book. Filled orders will list under Open once history capture is in place.
+                Open orders are the live CSI book for the selected customer. Filled orders are lines that left that book.
               </div>
             </div>
             <select
@@ -10098,7 +10182,7 @@ export default function OperationsTab({
             </h4>
             <div style={{ fontSize: 12, color: '#475569' }}>
               {wholesaleRawVisibleRows.length.toLocaleString()} shown
-              {wholesaleRawWindowEnd ? ` · as of ${formatWindowDate(wholesaleRawWindowEnd)}` : ''}
+              {wholesaleRawOpenSnapshotDate ? ` · as of ${formatWindowDate(wholesaleRawOpenSnapshotDate)}` : ''}
             </div>
           </div>
           <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', marginBottom: '12px', fontSize: '12px', color: '#475569' }}>
@@ -10106,11 +10190,6 @@ export default function OperationsTab({
             {wholesaleRawOldestDate && <span><strong>Oldest order date:</strong> {formatRawDate(wholesaleRawOldestDate)}</span>}
             {wholesaleRawLatestDate && <span><strong>Latest order date:</strong> {formatRawDate(wholesaleRawLatestDate)}</span>}
           </div>
-          {wholesaleRawTruncated && (
-            <div style={{ marginBottom: '12px', padding: '10px', borderRadius: '8px', background: '#fff7ed', border: '1px solid #fed7aa', color: '#9a3412', fontSize: '12px' }}>
-              This customer has more than 8,000 unique open order lines. The table shows a capped set.
-            </div>
-          )}
           {wholesaleRawFilteredRows.length > wholesaleRawVisibleRowLimit && (
             <div style={{ marginBottom: '12px', padding: '10px', borderRadius: '8px', background: '#fff7ed', border: '1px solid #fed7aa', color: '#9a3412', fontSize: '12px' }}>
               Showing the newest {wholesaleRawVisibleRowLimit.toLocaleString()} of {wholesaleRawFilteredRows.length.toLocaleString()} open rows. Click a column header to sort.
@@ -10186,16 +10265,20 @@ export default function OperationsTab({
               <button
                 type="button"
                 onClick={() => { void loadWholesaleRawOlderWindow(); }}
-                disabled
-                title="Filled history is not captured yet. Load older will walk filled rows after that is in place."
+                disabled={!selectedWholesaleRawCustomer || !wholesaleRawHasMoreOlder || wholesaleRawLinesLoading || !wholesaleRawWindowStart}
+                title={
+                  !wholesaleRawHasMoreOlder
+                    ? `History loaded through ${wholesaleRawHistoryFloor}`
+                    : 'Load the previous 2-year window of filled orders'
+                }
                 style={{
                   border: '1px solid #cbd5e1',
                   borderRadius: '8px',
                   padding: '8px 10px',
                   fontSize: '12px',
-                  background: '#f8fafc',
+                  background: !selectedWholesaleRawCustomer || !wholesaleRawHasMoreOlder || wholesaleRawLinesLoading ? '#f8fafc' : '#fff',
                   color: '#334155',
-                  cursor: 'not-allowed',
+                  cursor: !selectedWholesaleRawCustomer || !wholesaleRawHasMoreOlder || wholesaleRawLinesLoading ? 'not-allowed' : 'pointer',
                   fontWeight: 700,
                 }}
               >
@@ -10203,37 +10286,81 @@ export default function OperationsTab({
               </button>
             </div>
             <div style={{ fontSize: 12, color: '#64748b', lineHeight: 1.45, marginBottom: 10 }}>
-              Lines that have left the open book will list here. CSI is not archiving fills yet, so this section is empty.
+              Lines that left the open book. Last 12 months load first. Load older walks filled history in 2-year windows back to {formatWindowDate(wholesaleRawHistoryFloor)}.
             </div>
-            <div style={{ overflowX: 'auto' }}>
+            <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', marginBottom: '12px', fontSize: '12px', color: '#475569' }}>
+              <span><strong>Filled lines loaded:</strong> {wholesaleRawFilledBaseRows.length.toLocaleString()}</span>
+              {wholesaleRawWindowStart && wholesaleRawWindowEnd && (
+                <span><strong>Loaded window:</strong> {formatWindowDate(wholesaleRawWindowStart)} – {formatWindowDate(wholesaleRawWindowEnd)}</span>
+              )}
+              {wholesaleRawFilledOldestDate && <span><strong>Oldest order date:</strong> {formatRawDate(wholesaleRawFilledOldestDate)}</span>}
+              {wholesaleRawFilledLatestDate && <span><strong>Latest order date:</strong> {formatRawDate(wholesaleRawFilledLatestDate)}</span>}
+            </div>
+            {wholesaleRawTruncated && (
+              <div style={{ marginBottom: '12px', padding: '10px', borderRadius: '8px', background: '#fff7ed', border: '1px solid #fed7aa', color: '#9a3412', fontSize: '12px' }}>
+                This window has more than 8,000 filled order lines. The table shows a capped set.
+              </div>
+            )}
+            {wholesaleRawFilledBaseRows.length > wholesaleRawVisibleRowLimit && (
+              <div style={{ marginBottom: '12px', padding: '10px', borderRadius: '8px', background: '#fff7ed', border: '1px solid #fed7aa', color: '#9a3412', fontSize: '12px' }}>
+                Showing the newest {wholesaleRawVisibleRowLimit.toLocaleString()} of {wholesaleRawFilledBaseRows.length.toLocaleString()} filled rows. Click a column header to sort.
+              </div>
+            )}
+            <div style={{ overflowX: 'auto', maxHeight: '620px', overflowY: 'auto' }}>
               <table style={{ width: '100%', minWidth: '1080px', borderCollapse: 'collapse' }}>
                 <thead>
-                  <tr style={{ borderBottom: '1px solid #e2e8f0', background: '#f8fafc' }}>
+                  <tr style={{ borderBottom: '1px solid #e2e8f0', background: '#f8fafc', position: 'sticky', top: 0, zIndex: 1 }}>
                     <th style={{ padding: '8px', fontSize: '12px', color: '#334155', textAlign: 'left', whiteSpace: 'nowrap' }}>Status</th>
                     {rawColumns.map((column) => (
                       <th
                         key={`filled-${column.key}`}
+                        onClick={() => handleWholesaleRawFilledSort(column.key)}
                         style={{
                           padding: '8px',
                           fontSize: '12px',
                           color: '#334155',
                           textAlign: column.align || 'left',
                           whiteSpace: 'nowrap',
+                          cursor: 'pointer',
+                          userSelect: 'none',
                         }}
                       >
-                        {column.label}
+                        {column.label}{wholesaleRawFilledSortLabel(column.key)}
                       </th>
                     ))}
                   </tr>
                 </thead>
                 <tbody>
-                  <tr>
-                    <td colSpan={rawColumns.length + 1} style={{ padding: '14px', fontSize: '13px', color: '#64748b' }}>
-                      {selectedWholesaleRawCustomer
-                        ? 'No filled order lines are stored for this customer yet.'
-                        : 'Select a customer to see filled orders under Open.'}
-                    </td>
-                  </tr>
+                  {wholesaleRawFilledVisibleRows.map((row) => (
+                    <tr key={row.key} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                      <td style={{ padding: '8px', fontSize: '12px', whiteSpace: 'nowrap' }}>{statusChip('Filled')}</td>
+                      {rawColumns.map((column) => (
+                        <td
+                          key={column.key}
+                          style={{
+                            padding: '8px',
+                            fontSize: '12px',
+                            color: '#334155',
+                            textAlign: column.align || 'left',
+                            whiteSpace: 'nowrap',
+                          }}
+                        >
+                          {column.render(row)}
+                        </td>
+                      ))}
+                    </tr>
+                  ))}
+                  {wholesaleRawFilledVisibleRows.length === 0 && (
+                    <tr>
+                      <td colSpan={rawColumns.length + 1} style={{ padding: '14px', fontSize: '13px', color: '#64748b' }}>
+                        {!selectedWholesaleRawCustomer
+                          ? 'Select a customer to see filled orders under Open.'
+                          : wholesaleRawLinesLoading
+                          ? 'Loading filled order lines...'
+                          : 'No filled order lines are stored for this customer in the loaded window.'}
+                      </td>
+                    </tr>
+                  )}
                 </tbody>
               </table>
             </div>
