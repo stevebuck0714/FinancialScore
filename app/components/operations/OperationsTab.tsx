@@ -145,8 +145,8 @@ type WholesaleRawSortKey =
   | 'customerId'
   | 'isoDate'
   | 'qty'
+  | 'qtyShipped'
   | 'unitPrice'
-  | 'year'
   | 'customerGroup'
   | 'customerPartNumber'
   | 'revenue';
@@ -967,7 +967,6 @@ export default function OperationsTab({
   const [wholesaleRawLinesError, setWholesaleRawLinesError] = useState<string | null>(null);
   const [wholesaleRawWindowStart, setWholesaleRawWindowStart] = useState('');
   const [wholesaleRawWindowEnd, setWholesaleRawWindowEnd] = useState('');
-  const [wholesaleRawOpenSnapshotDate, setWholesaleRawOpenSnapshotDate] = useState('');
   const [wholesaleRawNextOlderStart, setWholesaleRawNextOlderStart] = useState('');
   const [wholesaleRawNextOlderEnd, setWholesaleRawNextOlderEnd] = useState('');
   const [wholesaleRawHasMoreOlder, setWholesaleRawHasMoreOlder] = useState(false);
@@ -2027,7 +2026,6 @@ export default function OperationsTab({
     setWholesaleRawLinesError(null);
     setWholesaleRawWindowStart('');
     setWholesaleRawWindowEnd('');
-    setWholesaleRawOpenSnapshotDate('');
     setWholesaleRawNextOlderStart('');
     setWholesaleRawNextOlderEnd('');
     setWholesaleRawHasMoreOlder(false);
@@ -2041,7 +2039,6 @@ export default function OperationsTab({
     } else if (payload?.window?.endDate) {
       setWholesaleRawWindowEnd((current) => current || String(payload.window.endDate));
     }
-    if (payload?.openSnapshotDate) setWholesaleRawOpenSnapshotDate(String(payload.openSnapshotDate));
     const nextStart = String(payload?.nextOlderWindow?.startDate || '');
     const nextEnd = String(payload?.nextOlderWindow?.endDate || '');
     setWholesaleRawNextOlderStart(nextStart);
@@ -9195,8 +9192,8 @@ export default function OperationsTab({
         .map((row, index) => {
           const parsedDate = parseCoverageUtcDay(String(row?.orderDate || row?.date || row?.snapshotDate || ''));
           const isoDate = parsedDate ? parsedDate.toISOString().slice(0, 10) : '';
-          const year = parsedDate ? String(parsedDate.getUTCFullYear()) : '';
-          const qty = Number(row?.qty ?? row?.quantity ?? row?.quantitySold ?? row?.qtyInvoiced ?? 0);
+          const qty = Number(row?.qtyOrdered ?? row?.qty ?? row?.quantity ?? 0);
+          const qtyShipped = row?.qtyShipped == null || row?.qtyShipped === '' ? null : Number(row.qtyShipped);
           const revenue = Number(row?.revenue ?? row?.invoicedAmount ?? row?.contractValue ?? 0);
           const unitPrice =
             Number(row?.unitPrice ?? row?.price ?? 0) ||
@@ -9212,8 +9209,8 @@ export default function OperationsTab({
             customerPartNumber,
             isoDate,
             qty,
+            qtyShipped,
             unitPrice,
-            year,
             customerGroup,
             revenue: Number.isFinite(revenue) && revenue !== 0 ? revenue : Math.abs(qty * unitPrice),
           };
@@ -9233,12 +9230,12 @@ export default function OperationsTab({
       'order',
       'customerId',
       'isoDate',
-      'year',
       'customerGroup',
       'customerPartNumber',
     ]);
     const wholesaleRawNumericSortKeys = new Set<WholesaleRawSortKey>([
       'qty',
+      'qtyShipped',
       'unitPrice',
       'revenue',
     ]);
@@ -9279,8 +9276,8 @@ export default function OperationsTab({
         .map((row, index) => {
           const parsedDate = parseCoverageUtcDay(String(row?.orderDate || row?.date || row?.filledAsOf || row?.snapshotDate || ''));
           const isoDate = parsedDate ? parsedDate.toISOString().slice(0, 10) : '';
-          const year = parsedDate ? String(parsedDate.getUTCFullYear()) : '';
-          const qty = Number(row?.qty ?? row?.quantity ?? row?.qtyOrdered ?? row?.quantitySold ?? row?.qtyInvoiced ?? 0);
+          const qty = Number(row?.qtyOrdered ?? row?.qty ?? row?.quantity ?? 0);
+          const qtyShipped = row?.qtyShipped == null || row?.qtyShipped === '' ? null : Number(row.qtyShipped);
           const revenue = Number(row?.revenue ?? row?.invoicedAmount ?? row?.contractValue ?? 0);
           const unitPrice =
             Number(row?.unitPrice ?? row?.price ?? 0) ||
@@ -9296,8 +9293,8 @@ export default function OperationsTab({
             customerPartNumber,
             isoDate,
             qty,
+            qtyShipped,
             unitPrice,
-            year,
             customerGroup,
             revenue: Number.isFinite(revenue) && revenue !== 0 ? revenue : Math.abs(qty * unitPrice),
           };
@@ -10108,9 +10105,9 @@ export default function OperationsTab({
         { key: 'order', label: 'Order', render: (row) => row.order || 'N/A' },
         { key: 'customerId', label: 'Customer ID', render: (row) => row.customerId || 'N/A' },
         { key: 'isoDate', label: 'Date', width: '84px', maxWidth: '92px', render: (row) => formatRawDate(row.isoDate) },
-        { key: 'qty', label: 'Qty', align: 'right', width: '58px', maxWidth: '66px', render: (row) => formatRawQty(row.qty) },
+        { key: 'qty', label: 'Qty ordered', align: 'right', width: '72px', maxWidth: '86px', render: (row) => formatRawQty(row.qty) },
+        { key: 'qtyShipped', label: 'Qty shipped', align: 'right', width: '76px', maxWidth: '90px', render: (row) => (row.qtyShipped == null || !Number.isFinite(Number(row.qtyShipped)) ? '' : formatRawQty(row.qtyShipped)) },
         { key: 'unitPrice', label: 'Unit Price', align: 'right', render: (row) => formatCurrencyWithCents(row.unitPrice) },
-        { key: 'year', label: 'YEAR', align: 'right', width: '54px', maxWidth: '62px', render: (row) => row.year || 'N/A' },
         { key: 'customerGroup', label: 'Customer Group', width: '108px', maxWidth: '126px', render: (row) => row.customerGroup || 'N/A' },
         { key: 'customerPartNumber', label: 'Customer P/N', width: '104px', maxWidth: '124px', render: (row) => row.customerPartNumber || 'N/A' },
         { key: 'revenue', label: 'Revenue', align: 'right', render: (row) => formatCurrencyWithCents(row.revenue) },
@@ -10181,8 +10178,7 @@ export default function OperationsTab({
               {selectedWholesaleRawCustomer ? ` · ${selectedWholesaleRawCustomer.label}` : ''}
             </h4>
             <div style={{ fontSize: 12, color: '#475569' }}>
-              {wholesaleRawVisibleRows.length.toLocaleString()} shown
-              {wholesaleRawOpenSnapshotDate ? ` · as of ${formatWindowDate(wholesaleRawOpenSnapshotDate)}` : ''}
+              {wholesaleRawVisibleRows.length.toLocaleString()} shown · all CSI snapshots
             </div>
           </div>
           <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', marginBottom: '12px', fontSize: '12px', color: '#475569' }}>

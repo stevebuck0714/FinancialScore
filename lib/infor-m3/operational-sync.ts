@@ -6,7 +6,7 @@ import { normalizeInforSystem } from '@/lib/infor-m3/system';
 import { createHash, randomUUID } from 'node:crypto';
 import { computeDailyPnlMovementsFromGL } from '@/lib/financial/daily-bs-from-gl';
 import { syncErpDailyFinancialsFromGL } from '@/lib/financial/sync-erp-daily-financials';
-import { captureFilledOrderLines, type FilledOrderLineInput } from '@/lib/operations/product-order-filled';
+import { captureFilledOrderLines, ensureCustomerOrderLineFilledTables, type FilledOrderLineInput } from '@/lib/operations/product-order-filled';
 
 type InforProgramRow = {
   module: string;
@@ -4985,6 +4985,7 @@ async function saveCustomerOrderLines(
     return { persisted: 0, debug };
   }
 
+  await ensureCustomerOrderLineFilledTables();
   const supportsOrderDateColumn = await customerOrderLineSupportsOrderDateColumn();
   const incrementalNoFullPulls = context.incrementalNoFullPulls === true;
   if (context.resetSnapshot) {
@@ -5012,7 +5013,9 @@ async function saveCustomerOrderLines(
     itemId: string | null;
     itemName: string | null;
     sku: string | null;
+    customerPn: string | null;
     qtyOrdered: number;
+    qtyShipped: number;
     qtyInvoiced: number;
     unitPrice: number;
     contractValue: number;
@@ -5074,6 +5077,8 @@ async function saveCustomerOrderLines(
       const itemId = pickString(record, ['itemId', 'ITNO', 'Item', 'itemCode', 'sku']) || null;
       const itemName = pickString(record, ['itemName', 'ITDS', 'Description', 'name']) || null;
       const sku = pickString(record, ['sku', 'itemCode', 'ITNO', 'Item']) || null;
+      const customerPn =
+        pickString(record, ['CustItem', 'custItem', 'CUSTITEM', 'customerPn', 'customerPartNumber', 'CustomerItem']) || null;
       const qtyOrdered = pickNumber(record, ['QtyOrdered', 'qtyOrdered', 'orderedQty', 'QtyOrder', 'OrderQty', 'qty', 'QTY']);
       const qtyInvoiced = pickNumber(record, ['QtyInvoiced', 'qtyInvoiced', 'invoicedQty']);
       const qtyShipped = pickNumber(record, ['QtyShipped', 'qtyShipped', 'shippedQty']);
@@ -5135,7 +5140,9 @@ async function saveCustomerOrderLines(
         itemId,
         itemName,
         sku,
+        customerPn,
         qtyOrdered,
+        qtyShipped: Math.max(qtyShipped, 0),
         qtyInvoiced: Math.max(qtyInvoiced, 0),
         unitPrice,
         contractValue: Math.max(contractValue, 0),
@@ -5176,7 +5183,9 @@ async function saveCustomerOrderLines(
           itemId: row.itemId,
           itemName: row.itemName,
           sku: row.sku,
+          customerPn: row.customerPn,
           qtyOrdered: row.qtyOrdered,
+          qtyShipped: row.qtyShipped,
           qtyInvoiced: row.qtyInvoiced,
           unitPrice: row.unitPrice,
           contractValue: row.contractValue,
@@ -5221,6 +5230,7 @@ async function saveCustomerOrderLines(
     }
     const acc = deduped.get(key)!;
     acc.qtyOrdered = Number(acc.qtyOrdered || 0) + Number(row.qtyOrdered || 0);
+    acc.qtyShipped = Number(acc.qtyShipped || 0) + Number(row.qtyShipped || 0);
     acc.qtyInvoiced = Number(acc.qtyInvoiced || 0) + Number(row.qtyInvoiced || 0);
     acc.contractValue = Number(acc.contractValue || 0) + Number(row.contractValue || 0);
     acc.invoicedAmount = Number(acc.invoicedAmount || 0) + Number(row.invoicedAmount || 0);
@@ -5231,6 +5241,7 @@ async function saveCustomerOrderLines(
     if (!acc.itemId && row.itemId) acc.itemId = row.itemId;
     if (!acc.itemName && row.itemName) acc.itemName = row.itemName;
     if (!acc.sku && row.sku) acc.sku = row.sku;
+    if (!acc.customerPn && row.customerPn) acc.customerPn = row.customerPn;
   }
   const finalRows = Array.from(deduped.values());
   debug.rowsAfterDedupe = finalRows.length;
@@ -5238,9 +5249,10 @@ async function saveCustomerOrderLines(
   // NOTE: avoid per-row updateMany loops here. On large SLCoitems pulls this causes
   // long-running chunks and apparent sync stalls. New rows are inserted with orderDate
   // via createMany below; null-date historical backfill should be handled separately.
-  const dataToPersist = supportsOrderDateColumn
+  const dataToPersist = (supportsOrderDateColumn
     ? finalRows
-    : finalRows.map(({ orderDate: _orderDate, ...rest }) => rest);
+    : finalRows.map(({ orderDate: _orderDate, ...rest }) => rest)
+  ).map(({ customerPn: _customerPn, qtyShipped: _qtyShipped, ...rest }) => rest);
   if (incrementalNoFullPulls && finalRows.length > 0) {
     const deleteChunkSize = 250;
     for (let i = 0; i < finalRows.length; i += deleteChunkSize) {
@@ -5261,6 +5273,27 @@ async function saveCustomerOrderLines(
   }
   const batch = await delegate.createMany({ data: dataToPersist, skipDuplicates: true });
   debug.rowsPersisted = Number(batch?.count || 0);
+  const identityRows = finalRows.filter((row) => row.orderId && row.lineId && row.customerName);
+  for (let i = 0; i < identityRows.length; i += 250) {
+    const chunk = identityRows.slice(i, i + 250);
+    const values = chunk.map((row) =>
+      Prisma.sql`(${row.orderId}, ${row.lineId}, ${row.customerName}, ${row.customerPn}, ${Number(row.qtyShipped || 0)})`
+    );
+    await prisma.$executeRaw(Prisma.sql`
+      WITH src("orderId","lineId","customerName","customerPn","qtyShipped") AS (VALUES ${Prisma.join(values)})
+      UPDATE "CustomerOrderLineSnapshot" s
+      SET
+        "customerPn" = COALESCE(NULLIF(TRIM(COALESCE(src."customerPn", '')), ''), s."customerPn"),
+        "qtyShipped" = src."qtyShipped"
+      FROM src
+      WHERE s."companyId" = ${companyId}
+        AND s."frequency" = ${frequency}
+        AND s."snapshotDate" = ${snapshotDate}
+        AND s."orderId" = src."orderId"
+        AND s."lineId" = src."lineId"
+        AND s."customerName" = src."customerName"
+    `);
+  }
   await captureFilled();
   return { persisted: debug.rowsPersisted || finalRows.length, debug };
 }

@@ -67,13 +67,33 @@ function olderWindowBefore(before: Date): { startDate: Date; endDate: Date } | n
 function customerMatchSql(customerId: string, customerName: string, alias?: string): Prisma.Sql {
   const customerIdCol = alias ? Prisma.raw(`"${alias}"."customerId"`) : Prisma.raw('"customerId"');
   const customerNameCol = alias ? Prisma.raw(`"${alias}"."customerName"`) : Prisma.raw('"customerName"');
-  if (customerId) {
-    return Prisma.sql`NULLIF(TRIM(COALESCE(${customerIdCol}, '')), '') = ${customerId}`;
-  }
-  return Prisma.sql`${customerNameCol} = ${customerName}`;
+  const idMatch = customerId
+    ? Prisma.sql`NULLIF(TRIM(COALESCE(${customerIdCol}, '')), '') = ${customerId}`
+    : null;
+  const nameMatch = customerName ? Prisma.sql`${customerNameCol} = ${customerName}` : null;
+  if (idMatch && nameMatch) return Prisma.sql`(${idMatch} OR ${nameMatch})`;
+  if (idMatch) return idMatch;
+  if (nameMatch) return nameMatch;
+  return Prisma.sql`FALSE`;
+}
+
+function sameCustomerSql(leftAlias: string, rightAlias: string): Prisma.Sql {
+  const leftId = Prisma.raw(`"${leftAlias}"."customerId"`);
+  const rightId = Prisma.raw(`"${rightAlias}"."customerId"`);
+  const leftName = Prisma.raw(`"${leftAlias}"."customerName"`);
+  const rightName = Prisma.raw(`"${rightAlias}"."customerName"`);
+  return Prisma.sql`(
+    (
+      NULLIF(TRIM(COALESCE(${leftId}, '')), '') IS NOT NULL
+      AND NULLIF(TRIM(COALESCE(${leftId}, '')), '') = NULLIF(TRIM(COALESCE(${rightId}, '')), '')
+    )
+    OR ${leftName} = ${rightName}
+  )`;
 }
 
 function mapOrderLineRecord(row: any, status: 'open' | 'filled') {
+  const customerPn = String(row.customerPn || row.customerPartNumber || row.custItem || row.CustItem || '').trim();
+  const customerGroup = String(row.customerGroup || '').trim();
   return {
     source: 'customer-order-line',
     status,
@@ -84,6 +104,10 @@ function mapOrderLineRecord(row: any, status: 'open' | 'filled') {
     customerId: row.customerId || null,
     customerName: row.customerName || null,
     customer: row.customerName || null,
+    customerGroup: customerGroup || null,
+    customerPn: customerPn || null,
+    customerPartNumber: customerPn || null,
+    custItem: customerPn || null,
     orderId: row.orderId || null,
     lineId: row.lineId || null,
     itemId: row.itemId || row.sku || row.itemName || null,
@@ -91,6 +115,7 @@ function mapOrderLineRecord(row: any, status: 'open' | 'filled') {
     itemName: row.itemName || row.itemId || row.sku || null,
     quantitySold: Number(row.qtyInvoiced || row.qtyOrdered || 0),
     qtyOrdered: Number(row.qtyOrdered || 0),
+    qtyShipped: row.qtyShipped == null || row.qtyShipped === '' ? null : Number(row.qtyShipped),
     qtyInvoiced: Number(row.qtyInvoiced || 0),
     unitPrice: Number(row.unitPrice || 0),
     revenue: Number(row.invoicedAmount || row.contractValue || 0),
@@ -100,6 +125,93 @@ function mapOrderLineRecord(row: any, status: 'open' | 'filled') {
     sourceTransaction: row.sourceTransaction || null,
     transaction: row.sourceTransaction || null,
   };
+}
+
+type LineIdentity = { customerPn: string; customerGroup: string };
+
+function itemIdentityKey(value: unknown): string {
+  return String(value || '').trim().toUpperCase();
+}
+
+function mergeLineIdentity(map: Map<string, LineIdentity>, item: unknown, customerPn?: unknown, customerGroup?: unknown) {
+  const key = itemIdentityKey(item);
+  if (!key) return;
+  const current = map.get(key) || { customerPn: '', customerGroup: '' };
+  const pn = String(customerPn || '').trim();
+  const group = String(customerGroup || '').trim();
+  if (!current.customerPn && pn) current.customerPn = pn;
+  if (!current.customerGroup && group) current.customerGroup = group;
+  map.set(key, current);
+}
+
+async function loadCustomerLineIdentity(params: {
+  companyId: string;
+  customerId: string;
+  customerName: string;
+}): Promise<Map<string, LineIdentity>> {
+  const byItem = new Map<string, LineIdentity>();
+  const matchRevenue = customerMatchSql(params.customerId, params.customerName);
+
+  try {
+    const revenueRows = await prisma.$queryRaw<Array<{ itemSku: string; customerPartNumber: string | null; customerGroup: string | null }>>(Prisma.sql`
+      SELECT "itemSku", MAX("customerPartNumber") AS "customerPartNumber", MAX("customerGroup") AS "customerGroup"
+      FROM "ProductRevenueLine"
+      WHERE "companyId" = ${params.companyId}
+        AND ${matchRevenue}
+      GROUP BY 1
+    `);
+    for (const row of revenueRows) mergeLineIdentity(byItem, row.itemSku, row.customerPartNumber, row.customerGroup);
+  } catch {
+    // Table may not exist yet in some environments.
+  }
+
+  try {
+    const forecastRows = await prisma.$queryRaw<Array<{ itemSku: string; customerPartNumber: string | null; customerGroup: string | null }>>(Prisma.sql`
+      SELECT "itemSku", MAX("customerPartNumber") AS "customerPartNumber", MAX("customerGroup") AS "customerGroup"
+      FROM "ProductRevenueForecastLine"
+      WHERE "companyId" = ${params.companyId}
+        AND ${matchRevenue}
+      GROUP BY 1
+    `);
+    for (const row of forecastRows) mergeLineIdentity(byItem, row.itemSku, row.customerPartNumber, row.customerGroup);
+  } catch {
+    // Forecast table is optional for Raw Data.
+  }
+
+  if (params.customerId) {
+    try {
+      const rawRows = await prisma.$queryRaw<Array<{ item: string | null; custitem: string | null }>>(Prisma.sql`
+        SELECT payload->>'Item' AS item, payload->>'CustItem' AS custitem
+        FROM "InforRawRecord"
+        WHERE "companyId" = ${params.companyId}
+          AND UPPER(COALESCE("miProgram", '')) = 'SLCUSTOMERITEMS'
+          AND payload->>'CustNum' = ${params.customerId}
+          AND NULLIF(TRIM(COALESCE(payload->>'CustItem', '')), '') IS NOT NULL
+        LIMIT 20000
+      `);
+      for (const row of rawRows) mergeLineIdentity(byItem, row.item, row.custitem, null);
+    } catch {
+      // Raw CSI lookup is best-effort for historical snapshots.
+    }
+  }
+
+  return byItem;
+}
+
+function applyLineIdentity(row: any, identityByItem: Map<string, LineIdentity>) {
+  const identity =
+    identityByItem.get(itemIdentityKey(row.sku)) ||
+    identityByItem.get(itemIdentityKey(row.itemId)) ||
+    identityByItem.get(itemIdentityKey(row.itemName));
+  if (!row.customerPn && identity?.customerPn) {
+    row.customerPn = identity.customerPn;
+    row.customerPartNumber = identity.customerPn;
+    row.custItem = identity.customerPn;
+  }
+  if (!row.customerGroup && identity?.customerGroup) {
+    row.customerGroup = identity.customerGroup;
+  }
+  return row;
 }
 
 async function assertProductsAccess(companyId: string): Promise<NextResponse | null> {
@@ -177,35 +289,41 @@ async function loadOpenLines(params: {
   companyId: string;
   customerId: string;
   customerName: string;
-  openBook: OpenBookWindow | null;
 }) {
-  if (!params.openBook) return [];
-  const matchSql = customerMatchSql(params.customerId, params.customerName);
+  const matchSql = customerMatchSql(params.customerId, params.customerName, 's');
   return prisma.$queryRaw<any[]>(Prisma.sql`
-    SELECT DISTINCT ON ("orderId", "lineId")
-      "snapshotDate",
-      "customerId",
-      "customerName",
-      "orderId",
-      "lineId",
-      "orderDate",
-      "itemId",
-      "itemName",
-      "sku",
-      "qtyOrdered",
-      "qtyInvoiced",
-      "unitPrice",
-      "contractValue",
-      "invoicedAmount",
-      "remainingAmount",
-      "sourceTransaction"
-    FROM "CustomerOrderLineSnapshot"
-    WHERE "companyId" = ${params.companyId}
-      AND "frequency" = 'daily'
-      AND "snapshotDate" >= ${params.openBook.start}
-      AND "snapshotDate" < ${params.openBook.end}
+    SELECT DISTINCT ON (s."orderId", s."lineId")
+      s."snapshotDate",
+      s."customerId",
+      s."customerName",
+      s."orderId",
+      s."lineId",
+      s."orderDate",
+      s."itemId",
+      s."itemName",
+      s."sku",
+      s."customerPn",
+      s."qtyOrdered",
+      s."qtyShipped",
+      s."qtyInvoiced",
+      s."unitPrice",
+      s."contractValue",
+      s."invoicedAmount",
+      s."remainingAmount",
+      s."sourceTransaction"
+    FROM "CustomerOrderLineSnapshot" s
+    WHERE s."companyId" = ${params.companyId}
+      AND s."frequency" = 'daily'
       AND ${matchSql}
-    ORDER BY "orderId", "lineId", "snapshotDate" DESC
+      AND NOT EXISTS (
+        SELECT 1
+        FROM "CustomerOrderLineFilled" f
+        WHERE f."companyId" = ${params.companyId}
+          AND f."orderId" = s."orderId"
+          AND f."lineId" = s."lineId"
+          AND ${sameCustomerSql('f', 's')}
+      )
+    ORDER BY s."orderId", s."lineId", s."snapshotDate" DESC
   `);
 }
 
@@ -229,6 +347,7 @@ async function loadFilledLines(params: {
             AND s."snapshotDate" < ${params.openBook.end}
             AND s."orderId" = f."orderId"
             AND s."lineId" = f."lineId"
+            AND ${sameCustomerSql('f', 's')}
         )
       `
     : Prisma.empty;
@@ -245,7 +364,9 @@ async function loadFilledLines(params: {
         f."itemId",
         f."itemName",
         f."sku",
+        f."customerPn",
         f."qtyOrdered",
+        f."qtyShipped",
         f."qtyInvoiced",
         f."unitPrice",
         f."contractValue",
@@ -350,6 +471,7 @@ export async function GET(request: NextRequest) {
     }
 
     const nextOlderWindow = olderWindowBefore(startDate);
+    const identityByItem = await loadCustomerLineIdentity({ companyId, customerId, customerName });
     const filledRows = await loadFilledLines({
       companyId,
       customerId,
@@ -362,7 +484,9 @@ export async function GET(request: NextRequest) {
     const limitedFilled = truncated ? filledRows.slice(0, MAX_UNIQUE_LINES) : filledRows;
 
     const filledPayload = {
-      filledRecords: limitedFilled.map((row) => mapOrderLineRecord(row, 'filled')),
+      filledRecords: limitedFilled
+        .map((row) => mapOrderLineRecord(row, 'filled'))
+        .map((row) => applyLineIdentity(row, identityByItem)),
       window: {
         kind,
         startDate: isoDay(startDate),
@@ -374,7 +498,6 @@ export async function GET(request: NextRequest) {
       historyFloor: HISTORY_FLOOR,
       truncated,
       hasMoreOlder: Boolean(nextOlderWindow),
-      openSnapshotDate: openBook ? isoDay(openBook.start) : null,
     };
 
     if (kind === 'older') {
@@ -388,11 +511,12 @@ export async function GET(request: NextRequest) {
       companyId,
       customerId,
       customerName,
-      openBook,
     });
 
     return NextResponse.json({
-      openRecords: openRows.map((row) => mapOrderLineRecord(row, 'open')),
+      openRecords: openRows
+        .map((row) => mapOrderLineRecord(row, 'open'))
+        .map((row) => applyLineIdentity(row, identityByItem)),
       ...filledPayload,
     });
   } catch (error) {

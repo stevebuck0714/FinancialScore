@@ -13,7 +13,9 @@ export type FilledOrderLineInput = {
   itemId: string | null;
   itemName: string | null;
   sku: string | null;
+  customerPn?: string | null;
   qtyOrdered: number;
+  qtyShipped?: number | null;
   qtyInvoiced: number;
   unitPrice: number;
   contractValue: number;
@@ -89,6 +91,18 @@ export async function ensureCustomerOrderLineFilledTables(): Promise<void> {
           CONSTRAINT "CustomerOrderLineFilledBackfill_pkey" PRIMARY KEY ("companyId")
         )
       `);
+      await prisma.$executeRawUnsafe(`
+        ALTER TABLE "CustomerOrderLineFilled" ADD COLUMN IF NOT EXISTS "customerPn" TEXT
+      `);
+      await prisma.$executeRawUnsafe(`
+        ALTER TABLE "CustomerOrderLineSnapshot" ADD COLUMN IF NOT EXISTS "customerPn" TEXT
+      `);
+      await prisma.$executeRawUnsafe(`
+        ALTER TABLE "CustomerOrderLineFilled" ADD COLUMN IF NOT EXISTS "qtyShipped" DOUBLE PRECISION
+      `);
+      await prisma.$executeRawUnsafe(`
+        ALTER TABLE "CustomerOrderLineSnapshot" ADD COLUMN IF NOT EXISTS "qtyShipped" DOUBLE PRECISION
+      `);
     })().catch((error) => {
       ensureTablesOnce = null;
       throw error;
@@ -106,6 +120,20 @@ function addUtcDays(value: Date, days: number): Date {
 function snapshotDayRangeSql(alias: string, start: Date, end: Date): Prisma.Sql {
   const col = Prisma.raw(`"${alias}"."snapshotDate"`);
   return Prisma.sql`${col} >= ${start} AND ${col} < ${end}`;
+}
+
+function sameCustomerSql(leftAlias: string, rightAlias: string): Prisma.Sql {
+  const leftId = Prisma.raw(`"${leftAlias}"."customerId"`);
+  const rightId = Prisma.raw(`"${rightAlias}"."customerId"`);
+  const leftName = Prisma.raw(`"${leftAlias}"."customerName"`);
+  const rightName = Prisma.raw(`"${rightAlias}"."customerName"`);
+  return Prisma.sql`(
+    (
+      NULLIF(TRIM(COALESCE(${leftId}, '')), '') IS NOT NULL
+      AND NULLIF(TRIM(COALESCE(${leftId}, '')), '') = NULLIF(TRIM(COALESCE(${rightId}, '')), '')
+    )
+    OR ${leftName} = ${rightName}
+  )`;
 }
 
 export async function resolveOpenBookWindow(companyId: string): Promise<OpenBookWindow | null> {
@@ -171,7 +199,9 @@ async function insertFilledLines(lines: FilledOrderLineInput[]): Promise<number>
       ${row.itemId},
       ${row.itemName},
       ${row.sku},
+      ${row.customerPn || null},
       ${Number(row.qtyOrdered || 0)},
+      ${row.qtyShipped == null ? null : Number(row.qtyShipped)},
       ${Number(row.qtyInvoiced || 0)},
       ${Number(row.unitPrice || 0)},
       ${Number(row.contractValue || 0)},
@@ -188,8 +218,8 @@ async function insertFilledLines(lines: FilledOrderLineInput[]): Promise<number>
     const result = await prisma.$executeRaw(Prisma.sql`
       INSERT INTO "CustomerOrderLineFilled" (
         "id", "companyId", "customerId", "customerName", "orderId", "lineId",
-        "orderDate", "filledAsOf", "itemId", "itemName", "sku",
-        "qtyOrdered", "qtyInvoiced", "unitPrice", "contractValue",
+        "orderDate", "filledAsOf", "itemId", "itemName", "sku", "customerPn",
+        "qtyOrdered", "qtyShipped", "qtyInvoiced", "unitPrice", "contractValue",
         "invoicedAmount", "remainingAmount", "unbilledAccrual",
         "sourcePlatform", "sourceProgram", "sourceTransaction", "cono", "divi", "createdAt"
       )
@@ -205,8 +235,8 @@ async function backfillFromSnapshots(companyId: string, openBook: OpenBookWindow
   return prisma.$executeRaw(Prisma.sql`
     INSERT INTO "CustomerOrderLineFilled" (
       "id", "companyId", "customerId", "customerName", "orderId", "lineId",
-      "orderDate", "filledAsOf", "itemId", "itemName", "sku",
-      "qtyOrdered", "qtyInvoiced", "unitPrice", "contractValue",
+      "orderDate", "filledAsOf", "itemId", "itemName", "sku", "customerPn",
+      "qtyOrdered", "qtyShipped", "qtyInvoiced", "unitPrice", "contractValue",
       "invoicedAmount", "remainingAmount", "unbilledAccrual",
       "sourcePlatform", "sourceProgram", "sourceTransaction", "cono", "divi", "createdAt"
     )
@@ -222,7 +252,9 @@ async function backfillFromSnapshots(companyId: string, openBook: OpenBookWindow
       last."itemId",
       last."itemName",
       last."sku",
+      last."customerPn",
       last."qtyOrdered",
+      last."qtyShipped",
       last."qtyInvoiced",
       last."unitPrice",
       last."contractValue",
@@ -247,7 +279,9 @@ async function backfillFromSnapshots(companyId: string, openBook: OpenBookWindow
         s."itemId",
         s."itemName",
         s."sku",
+        s."customerPn",
         s."qtyOrdered",
+        s."qtyShipped",
         s."qtyInvoiced",
         s."unitPrice",
         s."contractValue",
@@ -270,6 +304,7 @@ async function backfillFromSnapshots(companyId: string, openBook: OpenBookWindow
             AND ${snapshotDayRangeSql('o', openBook.start, openBook.end)}
             AND o."orderId" = s."orderId"
             AND o."lineId" = s."lineId"
+            AND ${sameCustomerSql('s', 'o')}
         )
       ORDER BY s."orderId", s."lineId", s."customerName", s."snapshotDate" DESC
     ) last
@@ -301,8 +336,8 @@ async function captureDisappearedFromPriorDay(
   return prisma.$executeRaw(Prisma.sql`
     INSERT INTO "CustomerOrderLineFilled" (
       "id", "companyId", "customerId", "customerName", "orderId", "lineId",
-      "orderDate", "filledAsOf", "itemId", "itemName", "sku",
-      "qtyOrdered", "qtyInvoiced", "unitPrice", "contractValue",
+      "orderDate", "filledAsOf", "itemId", "itemName", "sku", "customerPn",
+      "qtyOrdered", "qtyShipped", "qtyInvoiced", "unitPrice", "contractValue",
       "invoicedAmount", "remainingAmount", "unbilledAccrual",
       "sourcePlatform", "sourceProgram", "sourceTransaction", "cono", "divi", "createdAt"
     )
@@ -318,7 +353,9 @@ async function captureDisappearedFromPriorDay(
       s."itemId",
       s."itemName",
       s."sku",
+      s."customerPn",
       s."qtyOrdered",
+      s."qtyShipped",
       s."qtyInvoiced",
       s."unitPrice",
       s."contractValue",
@@ -358,6 +395,97 @@ async function removeReopenedLines(companyId: string, openBook: OpenBookWindow):
       AND ${snapshotDayRangeSql('s', openBook.start, openBook.end)}
       AND f."orderId" = s."orderId"
       AND f."lineId" = s."lineId"
+      AND ${sameCustomerSql('f', 's')}
+  `);
+}
+
+const REPAIR_FILLED_ORDER_IDS = ['43400', '43401', '43402'] as const;
+const REPAIR_FILLED_CUSTOMER_ID = '1011301';
+
+async function restoreDroppedCustomerFills(companyId: string, openBook: OpenBookWindow): Promise<number> {
+  const orderIds = [...REPAIR_FILLED_ORDER_IDS];
+  return prisma.$executeRaw(Prisma.sql`
+    INSERT INTO "CustomerOrderLineFilled" (
+      "id", "companyId", "customerId", "customerName", "orderId", "lineId",
+      "orderDate", "filledAsOf", "itemId", "itemName", "sku", "customerPn",
+      "qtyOrdered", "qtyShipped", "qtyInvoiced", "unitPrice", "contractValue",
+      "invoicedAmount", "remainingAmount", "unbilledAccrual",
+      "sourcePlatform", "sourceProgram", "sourceTransaction", "cono", "divi", "createdAt"
+    )
+    SELECT
+      gen_random_uuid()::text,
+      last."companyId",
+      last."customerId",
+      last."customerName",
+      last."orderId",
+      last."lineId",
+      last."orderDate",
+      last."snapshotDate",
+      last."itemId",
+      last."itemName",
+      last."sku",
+      last."customerPn",
+      last."qtyOrdered",
+      last."qtyShipped",
+      last."qtyInvoiced",
+      last."unitPrice",
+      last."contractValue",
+      last."invoicedAmount",
+      last."remainingAmount",
+      last."unbilledAccrual",
+      last."sourcePlatform",
+      last."sourceProgram",
+      last."sourceTransaction",
+      last."cono",
+      last."divi",
+      NOW()
+    FROM (
+      SELECT DISTINCT ON (s."orderId", s."lineId", s."customerName")
+        s."companyId",
+        s."customerId",
+        s."customerName",
+        s."orderId",
+        s."lineId",
+        s."orderDate",
+        s."snapshotDate",
+        s."itemId",
+        s."itemName",
+        s."sku",
+        s."customerPn",
+        s."qtyOrdered",
+        s."qtyShipped",
+        s."qtyInvoiced",
+        s."unitPrice",
+        s."contractValue",
+        s."invoicedAmount",
+        s."remainingAmount",
+        s."unbilledAccrual",
+        s."sourcePlatform",
+        s."sourceProgram",
+        s."sourceTransaction",
+        s."cono",
+        s."divi"
+      FROM "CustomerOrderLineSnapshot" s
+      WHERE s."companyId" = ${companyId}
+        AND s."frequency" = 'daily'
+        AND s."orderId" IN (${Prisma.join(orderIds)})
+        AND (
+          NULLIF(TRIM(COALESCE(s."customerId", '')), '') = ${REPAIR_FILLED_CUSTOMER_ID}
+          OR s."customerName" ILIKE 'ADP Advanced Dist Prod%'
+        )
+        AND NOT EXISTS (
+          SELECT 1
+          FROM "CustomerOrderLineSnapshot" o
+          WHERE o."companyId" = ${companyId}
+            AND o."frequency" = 'daily'
+            AND ${snapshotDayRangeSql('o', openBook.start, openBook.end)}
+            AND o."orderId" = s."orderId"
+            AND o."lineId" = s."lineId"
+            AND ${sameCustomerSql('s', 'o')}
+        )
+      ORDER BY s."orderId", s."lineId", s."customerName", s."snapshotDate" DESC
+    ) last
+    ON CONFLICT ("companyId", "orderId", "lineId", "customerName") DO NOTHING
   `);
 }
 
@@ -385,9 +513,11 @@ export async function ensureFilledHistory(companyId: string): Promise<OpenBookWi
   if (!openBook) return null;
 
   await removeReopenedLines(companyId, openBook);
+  await restoreDroppedCustomerFills(companyId, openBook);
 
   if (await isBackfillComplete(companyId)) {
     await removeReopenedLines(companyId, openBook);
+    await restoreDroppedCustomerFills(companyId, openBook);
     return openBook;
   }
 
@@ -403,6 +533,7 @@ export async function ensureFilledHistory(companyId: string): Promise<OpenBookWi
       await markBackfillComplete(companyId);
     }
     await removeReopenedLines(companyId, openBook);
+    await restoreDroppedCustomerFills(companyId, openBook);
   } finally {
     await prisma.$executeRaw(Prisma.sql`SELECT pg_advisory_unlock(hashtext(${lockKey}))`);
   }

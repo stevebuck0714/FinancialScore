@@ -1728,7 +1728,9 @@ model CustomerOrderLineSnapshot {
   itemId           String?
   itemName         String?
   sku              String?
+  customerPn       String?
   qtyOrdered       Float
+  qtyShipped       Float?
   qtyInvoiced      Float
   unitPrice        Float
   contractValue    Float
@@ -1764,7 +1766,9 @@ model CustomerOrderLineFilled {
   itemId            String?
   itemName          String?
   sku               String?
+  customerPn        String?
   qtyOrdered        Float
+  qtyShipped        Float?
   qtyInvoiced       Float
   unitPrice         Float
   contractValue     Float
