@@ -610,12 +610,23 @@ function csiHeaderCustomerNameExpr(alias: string): Prisma.Sql {
   )`);
 }
 
+function csiNormalizedCustNumSql(alias: string): Prisma.Sql {
+  return Prisma.raw(
+    `COALESCE(NULLIF(REGEXP_REPLACE(TRIM(COALESCE(${alias}.payload->>'CustNum', ${alias}.payload->>'CUSTNUM', ${alias}.payload->>'CustNo', '')), '^0+', ''), ''), '')`
+  );
+}
+
+function stripLeadingZeros(value: string): string {
+  return String(value || '').trim().replace(/^0+/, '') || String(value || '').trim();
+}
+
 function csiCustomerMatchSql(customerId: string, customerName: string): Prisma.Sql {
   const parts: Prisma.Sql[] = [];
-  if (customerId) {
+  const strippedId = stripLeadingZeros(customerId);
+  if (strippedId) {
     parts.push(Prisma.sql`(
-      NULLIF(TRIM(COALESCE(lines."lineCustomerId", '')), '') = ${customerId}
-      OR NULLIF(TRIM(COALESCE(hdr."customerId", '')), '') = ${customerId}
+      COALESCE(NULLIF(REGEXP_REPLACE(TRIM(COALESCE(lines."lineCustomerId", '')), '^0+', ''), ''), '') = ${strippedId}
+      OR COALESCE(NULLIF(REGEXP_REPLACE(TRIM(COALESCE(hdr."customerId", '')), '^0+', ''), ''), '') = ${strippedId}
     )`);
   }
   if (customerName) {
@@ -807,7 +818,9 @@ export async function loadCsiOpenLines(params: {
   customerId: string;
   customerName: string;
 }): Promise<{ rows: any[]; openAsOf: Date | null }> {
-  const csiDay = await resolveLatestCsiCoitemsDay(params.companyId);
+  const csiDay =
+    (await latestIndexedCsiDay(params.companyId, ['SLCoitems', 'SLCOITEMS'])) ||
+    (await resolveLatestCsiCoitemsDay(params.companyId));
   if (!csiDay) return { rows: [], openAsOf: null };
 
   const qtyOrdered = csiNumericSql('r', 'QtyOrdered');
@@ -821,20 +834,24 @@ export async function loadCsiOpenLines(params: {
   const headerOrderId = csiOrderIdExpr('h');
   const headerCustomerId = csiHeaderCustomerIdExpr('h');
   const headerCustomerName = csiHeaderCustomerNameExpr('h');
+  const lineCustNum = csiNormalizedCustNumSql('r');
+  const headerCustNum = csiNormalizedCustNumSql('h');
+  const strippedId = stripLeadingZeros(params.customerId);
   const customerMatch = csiCustomerMatchSql(params.customerId, params.customerName);
+  const headerLookbackStart = addUtcDays(csiDay.start, -14);
+  const lineCustomerFilter = strippedId
+    ? Prisma.sql`${lineCustNum} = ${strippedId}`
+    : Prisma.sql`TRUE`;
+  const headerCustomerFilter = strippedId
+    ? params.customerName
+      ? Prisma.sql`(${headerCustNum} = ${strippedId} OR ${headerCustomerName} = ${params.customerName})`
+      : Prisma.sql`${headerCustNum} = ${strippedId}`
+    : params.customerName
+      ? Prisma.sql`${headerCustomerName} = ${params.customerName}`
+      : Prisma.sql`TRUE`;
 
   const rows = await prisma.$queryRaw<any[]>(Prisma.sql`
-    WITH headers AS (
-      SELECT DISTINCT ON (${headerOrderId})
-        ${headerOrderId} AS "orderId",
-        ${headerCustomerId} AS "customerId",
-        ${headerCustomerName} AS "customerName"
-      FROM "InforRawRecord" h
-      WHERE h."companyId" = ${params.companyId}
-        AND UPPER(COALESCE(h."miProgram", '')) IN ('SLCOS', 'SLCOHDRS')
-      ORDER BY ${headerOrderId}, COALESCE(h."businessDate", h."fetchedAt") DESC
-    ),
-    lines AS (
+    WITH lines AS (
       SELECT DISTINCT ON (${orderId}, ${lineId})
         COALESCE(r."businessDate", r."fetchedAt") AS "snapshotDate",
         ${orderId} AS "orderId",
@@ -849,19 +866,33 @@ export async function loadCsiOpenLines(params: {
         ${qtyShipped} AS "qtyShipped",
         ${qtyInvoiced} AS "qtyInvoiced",
         ${unitPrice} AS "unitPrice",
-        NULLIF(TRIM(COALESCE(r.payload->>'CustNum', '')), '') AS "lineCustomerId"
+        NULLIF(TRIM(COALESCE(r.payload->>'CustNum', r.payload->>'CUSTNUM', r.payload->>'CustNo', '')), '') AS "lineCustomerId"
       FROM "InforRawRecord" r
       WHERE r."companyId" = ${params.companyId}
-        AND UPPER(COALESCE(r."miProgram", '')) = 'SLCOITEMS'
-        AND COALESCE(r."businessDate", r."fetchedAt") >= ${csiDay.start}
-        AND COALESCE(r."businessDate", r."fetchedAt") < ${csiDay.end}
+        AND r."miProgram" IN ('SLCoitems', 'SLCOITEMS')
+        AND r."businessDate" >= ${csiDay.start}
+        AND r."businessDate" < ${csiDay.end}
         AND TRIM(COALESCE(r.payload->>'CoNum', r.payload->>'CONUM', '')) <> ''
+        AND ${lineCustomerFilter}
       ORDER BY ${orderId}, ${lineId}, COALESCE(r."businessDate", r."fetchedAt") DESC
+    ),
+    headers AS (
+      SELECT DISTINCT ON (${headerOrderId})
+        ${headerOrderId} AS "orderId",
+        ${headerCustomerId} AS "customerId",
+        ${headerCustomerName} AS "customerName"
+      FROM "InforRawRecord" h
+      WHERE h."companyId" = ${params.companyId}
+        AND h."miProgram" IN ('SLCos', 'SLCohdrs', 'SLCOS', 'SLCOHDRS')
+        AND h."businessDate" >= ${headerLookbackStart}
+        AND h."businessDate" < ${csiDay.end}
+        AND ${headerCustomerFilter}
+      ORDER BY ${headerOrderId}, COALESCE(h."businessDate", h."fetchedAt") DESC
     )
     SELECT
       lines."snapshotDate",
       COALESCE(NULLIF(TRIM(COALESCE(lines."lineCustomerId", '')), ''), hdr."customerId") AS "customerId",
-      hdr."customerName" AS "customerName",
+      COALESCE(hdr."customerName", ${params.customerName || null}) AS "customerName",
       lines."orderId",
       lines."lineId",
       lines."orderDate",
