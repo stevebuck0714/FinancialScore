@@ -4,12 +4,12 @@ import prisma from '@/lib/prisma';
 import { auditForbiddenAccess } from '@/lib/audit-logger';
 import { requireAuth, validateCompanyAccess } from '@/lib/tenant-security';
 import { isOperationalDataTypeAllowed } from '@/lib/operations/operational-dashboard-access';
-import { ensureCustomerOrderLineFilledTables, ensureFilledHistory } from '@/lib/operations/product-order-filled';
+import { ensureCustomerOrderLineFilledTables, ensureFilledHistory, resolveOpenBookWindow, type OpenBookWindow } from '@/lib/operations/product-order-filled';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
 
-const RECENT_MONTHS = 12;
+const RECENT_MONTHS = 24;
 const OLDER_MONTHS = 24;
 const MAX_UNIQUE_LINES = 8000;
 const MAX_CUSTOMERS = 2000;
@@ -173,23 +173,13 @@ async function assertProductsAccess(companyId: string): Promise<NextResponse | n
   return null;
 }
 
-async function latestOpenSnapshotDate(companyId: string): Promise<Date | null> {
-  const rows = await prisma.$queryRaw<Array<{ snapshotDate: Date }>>(Prisma.sql`
-    SELECT MAX("snapshotDate") AS "snapshotDate"
-    FROM "CustomerOrderLineSnapshot"
-    WHERE "companyId" = ${companyId}
-      AND "frequency" = 'daily'
-  `);
-  return rows[0]?.snapshotDate ? utcDay(rows[0].snapshotDate) : null;
-}
-
 async function loadOpenLines(params: {
   companyId: string;
   customerId: string;
   customerName: string;
-  latestDate: Date | null;
+  openBook: OpenBookWindow | null;
 }) {
-  if (!params.latestDate) return [];
+  if (!params.openBook) return [];
   const matchSql = customerMatchSql(params.customerId, params.customerName);
   return prisma.$queryRaw<any[]>(Prisma.sql`
     SELECT DISTINCT ON ("orderId", "lineId")
@@ -212,7 +202,8 @@ async function loadOpenLines(params: {
     FROM "CustomerOrderLineSnapshot"
     WHERE "companyId" = ${params.companyId}
       AND "frequency" = 'daily'
-      AND "snapshotDate" = ${params.latestDate}
+      AND "snapshotDate" >= ${params.openBook.start}
+      AND "snapshotDate" < ${params.openBook.end}
       AND ${matchSql}
     ORDER BY "orderId", "lineId", "snapshotDate" DESC
   `);
@@ -222,22 +213,22 @@ async function loadFilledLines(params: {
   companyId: string;
   customerId: string;
   customerName: string;
-  latestDate: Date | null;
+  openBook: OpenBookWindow | null;
   startDate: Date;
   endDate: Date;
 }) {
   const matchSql = customerMatchSql(params.customerId, params.customerName, 'f');
-  const openExclude = params.latestDate
+  const openExclude = params.openBook
     ? Prisma.sql`
         AND NOT EXISTS (
           SELECT 1
           FROM "CustomerOrderLineSnapshot" s
           WHERE s."companyId" = ${params.companyId}
             AND s."frequency" = 'daily'
-            AND s."snapshotDate" = ${params.latestDate}
+            AND s."snapshotDate" >= ${params.openBook.start}
+            AND s."snapshotDate" < ${params.openBook.end}
             AND s."orderId" = f."orderId"
             AND s."lineId" = f."lineId"
-            AND s."customerName" = f."customerName"
         )
       `
     : Prisma.empty;
@@ -264,10 +255,8 @@ async function loadFilledLines(params: {
       FROM "CustomerOrderLineFilled" f
       WHERE f."companyId" = ${params.companyId}
         AND ${matchSql}
-        AND (
-          (f."orderDate" IS NOT NULL AND f."orderDate" >= ${params.startDate} AND f."orderDate" <= ${params.endDate})
-          OR (f."orderDate" IS NULL AND f."filledAsOf" >= ${params.startDate} AND f."filledAsOf" <= ${params.endDate})
-        )
+        AND COALESCE(f."filledAsOf", f."orderDate") >= ${params.startDate}
+        AND COALESCE(f."filledAsOf", f."orderDate") <= ${params.endDate}
         ${openExclude}
       ORDER BY COALESCE(f."orderDate", f."filledAsOf") DESC, f."orderId" DESC, f."lineId" DESC
       LIMIT ${MAX_UNIQUE_LINES + 1}
@@ -331,6 +320,7 @@ export async function GET(request: NextRequest) {
     }
 
     await ensureFilledHistory(companyId);
+    const openBook = await resolveOpenBookWindow(companyId);
 
     const windowKind = String(request.nextUrl.searchParams.get('window') || 'recent').trim().toLowerCase();
     const beforeParam = String(request.nextUrl.searchParams.get('before') || '').trim();
@@ -360,12 +350,11 @@ export async function GET(request: NextRequest) {
     }
 
     const nextOlderWindow = olderWindowBefore(startDate);
-    const latestDate = await latestOpenSnapshotDate(companyId);
     const filledRows = await loadFilledLines({
       companyId,
       customerId,
       customerName,
-      latestDate,
+      openBook,
       startDate,
       endDate,
     });
@@ -385,7 +374,7 @@ export async function GET(request: NextRequest) {
       historyFloor: HISTORY_FLOOR,
       truncated,
       hasMoreOlder: Boolean(nextOlderWindow),
-      openSnapshotDate: latestDate ? isoDay(latestDate) : null,
+      openSnapshotDate: openBook ? isoDay(openBook.start) : null,
     };
 
     if (kind === 'older') {
@@ -399,7 +388,7 @@ export async function GET(request: NextRequest) {
       companyId,
       customerId,
       customerName,
-      latestDate,
+      openBook,
     });
 
     return NextResponse.json({

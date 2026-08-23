@@ -10158,7 +10158,7 @@ export default function OperationsTab({
             <div>
               <h3 style={{ margin: 0, fontSize: '18px', color: '#0f172a' }}>Raw Data</h3>
               <div style={{ marginTop: '4px', fontSize: '12px', color: '#64748b', lineHeight: 1.4 }}>
-                Open orders are the live CSI book for the selected customer. Filled orders are lines that left that book.
+                Open orders are every unfilled CSI line for the selected customer, any order date. Filled orders are lines that left that book.
               </div>
             </div>
             <select
@@ -10286,7 +10286,7 @@ export default function OperationsTab({
               </button>
             </div>
             <div style={{ fontSize: 12, color: '#64748b', lineHeight: 1.45, marginBottom: 10 }}>
-              Lines that left the open book. Last 12 months load first. Load older walks filled history in 2-year windows back to {formatWindowDate(wholesaleRawHistoryFloor)}.
+              Lines that left the open book. Last 2 years load first. Load older walks filled history in 2-year windows back to {formatWindowDate(wholesaleRawHistoryFloor)}.
             </div>
             <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', marginBottom: '12px', fontSize: '12px', color: '#475569' }}>
               <span><strong>Filled lines loaded:</strong> {wholesaleRawFilledBaseRows.length.toLocaleString()}</span>

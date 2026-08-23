@@ -27,6 +27,11 @@ export type FilledOrderLineInput = {
   divi: string | null;
 };
 
+export type OpenBookWindow = {
+  start: Date;
+  end: Date;
+};
+
 let ensureTablesOnce: Promise<void> | null = null;
 
 export async function ensureCustomerOrderLineFilledTables(): Promise<void> {
@@ -92,27 +97,59 @@ export async function ensureCustomerOrderLineFilledTables(): Promise<void> {
   await ensureTablesOnce;
 }
 
-function utcDay(value: Date): Date {
-  return new Date(Date.UTC(value.getUTCFullYear(), value.getUTCMonth(), value.getUTCDate()));
+function addUtcDays(value: Date, days: number): Date {
+  const next = new Date(value.getTime());
+  next.setUTCDate(next.getUTCDate() + days);
+  return next;
 }
 
-async function latestOpenSnapshotDate(companyId: string): Promise<Date | null> {
-  const rows = await prisma.$queryRaw<Array<{ snapshotDate: Date }>>(Prisma.sql`
-    SELECT MAX("snapshotDate") AS "snapshotDate"
-    FROM "CustomerOrderLineSnapshot"
-    WHERE "companyId" = ${companyId}
-      AND "frequency" = 'daily'
+function snapshotDayRangeSql(alias: string, start: Date, end: Date): Prisma.Sql {
+  const col = Prisma.raw(`"${alias}"."snapshotDate"`);
+  return Prisma.sql`${col} >= ${start} AND ${col} < ${end}`;
+}
+
+export async function resolveOpenBookWindow(companyId: string): Promise<OpenBookWindow | null> {
+  const rows = await prisma.$queryRaw<Array<{ start: Date; end: Date; n: number }>>(Prisma.sql`
+    WITH day_counts AS (
+      SELECT DATE_TRUNC('day', "snapshotDate") AS day_start, COUNT(*)::int AS n
+      FROM "CustomerOrderLineSnapshot"
+      WHERE "companyId" = ${companyId}
+        AND "frequency" = 'daily'
+      GROUP BY 1
+    ),
+    latest AS (
+      SELECT MAX(day_start) AS max_day FROM day_counts
+    ),
+    recent AS (
+      SELECT d.day_start, d.n
+      FROM day_counts d
+      CROSS JOIN latest
+      WHERE d.day_start >= latest.max_day - INTERVAL '21 days'
+    ),
+    ranked AS (
+      SELECT day_start, n, MAX(n) OVER () AS max_n
+      FROM recent
+    )
+    SELECT day_start AS start, (day_start + INTERVAL '1 day') AS end, n
+    FROM ranked
+    WHERE n >= GREATEST((max_n * 0.5)::int, 1)
+    ORDER BY day_start DESC
+    LIMIT 1
   `);
-  return rows[0]?.snapshotDate ? utcDay(rows[0].snapshotDate) : null;
+  const start = rows[0]?.start;
+  const end = rows[0]?.end;
+  if (!start || !end) return null;
+  return { start, end };
 }
 
-async function snapshotRowCount(companyId: string, snapshotDate: Date): Promise<number> {
+async function snapshotRowCount(companyId: string, start: Date, end: Date): Promise<number> {
   const rows = await prisma.$queryRaw<Array<{ n: bigint | number }>>(Prisma.sql`
     SELECT COUNT(*)::int AS n
     FROM "CustomerOrderLineSnapshot"
     WHERE "companyId" = ${companyId}
       AND "frequency" = 'daily'
-      AND "snapshotDate" = ${snapshotDate}
+      AND "snapshotDate" >= ${start}
+      AND "snapshotDate" < ${end}
   `);
   return Number(rows[0]?.n || 0);
 }
@@ -164,7 +201,7 @@ async function insertFilledLines(lines: FilledOrderLineInput[]): Promise<number>
   return inserted;
 }
 
-async function backfillFromSnapshots(companyId: string, latestDate: Date): Promise<number> {
+async function backfillFromSnapshots(companyId: string, openBook: OpenBookWindow): Promise<number> {
   return prisma.$executeRaw(Prisma.sql`
     INSERT INTO "CustomerOrderLineFilled" (
       "id", "companyId", "customerId", "customerName", "orderId", "lineId",
@@ -230,10 +267,9 @@ async function backfillFromSnapshots(companyId: string, latestDate: Date): Promi
           FROM "CustomerOrderLineSnapshot" o
           WHERE o."companyId" = ${companyId}
             AND o."frequency" = 'daily'
-            AND o."snapshotDate" = ${latestDate}
+            AND ${snapshotDayRangeSql('o', openBook.start, openBook.end)}
             AND o."orderId" = s."orderId"
             AND o."lineId" = s."lineId"
-            AND o."customerName" = s."customerName"
         )
       ORDER BY s."orderId", s."lineId", s."customerName", s."snapshotDate" DESC
     ) last
@@ -241,16 +277,26 @@ async function backfillFromSnapshots(companyId: string, latestDate: Date): Promi
   `);
 }
 
-async function captureDisappearedFromPriorDay(companyId: string, snapshotDate: Date): Promise<number> {
-  const priorRows = await prisma.$queryRaw<Array<{ snapshotDate: Date }>>(Prisma.sql`
-    SELECT MAX("snapshotDate") AS "snapshotDate"
+async function captureDisappearedFromPriorDay(
+  companyId: string,
+  todayStart: Date,
+  todayEnd: Date
+): Promise<number> {
+  const priorRows = await prisma.$queryRaw<Array<{ start: Date }>>(Prisma.sql`
+    SELECT DATE_TRUNC('day', MAX("snapshotDate")) AS start
     FROM "CustomerOrderLineSnapshot"
     WHERE "companyId" = ${companyId}
       AND "frequency" = 'daily'
-      AND "snapshotDate" < ${snapshotDate}
+      AND "snapshotDate" < ${todayStart}
   `);
-  const priorDate = priorRows[0]?.snapshotDate ? utcDay(priorRows[0].snapshotDate) : null;
-  if (!priorDate) return 0;
+  const priorStart = priorRows[0]?.start;
+  if (!priorStart) return 0;
+  const priorEnd = addUtcDays(priorStart, 1);
+  const priorCount = await snapshotRowCount(companyId, priorStart, priorEnd);
+  const todayCount = await snapshotRowCount(companyId, todayStart, todayEnd);
+  if (priorCount <= 0 || todayCount < Math.max(1, Math.floor(priorCount * 0.5))) {
+    return 0;
+  }
 
   return prisma.$executeRaw(Prisma.sql`
     INSERT INTO "CustomerOrderLineFilled" (
@@ -288,32 +334,30 @@ async function captureDisappearedFromPriorDay(companyId: string, snapshotDate: D
     FROM "CustomerOrderLineSnapshot" s
     WHERE s."companyId" = ${companyId}
       AND s."frequency" = 'daily'
-      AND s."snapshotDate" = ${priorDate}
+      AND ${snapshotDayRangeSql('s', priorStart, priorEnd)}
       AND NOT EXISTS (
         SELECT 1
         FROM "CustomerOrderLineSnapshot" t
         WHERE t."companyId" = ${companyId}
           AND t."frequency" = 'daily'
-          AND t."snapshotDate" = ${snapshotDate}
+          AND ${snapshotDayRangeSql('t', todayStart, todayEnd)}
           AND t."orderId" = s."orderId"
           AND t."lineId" = s."lineId"
-          AND t."customerName" = s."customerName"
       )
     ON CONFLICT ("companyId", "orderId", "lineId", "customerName") DO NOTHING
   `);
 }
 
-async function removeReopenedLines(companyId: string, snapshotDate: Date): Promise<number> {
+async function removeReopenedLines(companyId: string, openBook: OpenBookWindow): Promise<number> {
   return prisma.$executeRaw(Prisma.sql`
     DELETE FROM "CustomerOrderLineFilled" f
     USING "CustomerOrderLineSnapshot" s
     WHERE f."companyId" = ${companyId}
       AND s."companyId" = ${companyId}
       AND s."frequency" = 'daily'
-      AND s."snapshotDate" = ${snapshotDate}
+      AND ${snapshotDayRangeSql('s', openBook.start, openBook.end)}
       AND f."orderId" = s."orderId"
       AND f."lineId" = s."lineId"
-      AND f."customerName" = s."customerName"
   `);
 }
 
@@ -335,27 +379,35 @@ async function isBackfillComplete(companyId: string): Promise<boolean> {
   return rows.length > 0;
 }
 
-export async function ensureFilledHistory(companyId: string): Promise<void> {
+export async function ensureFilledHistory(companyId: string): Promise<OpenBookWindow | null> {
   await ensureCustomerOrderLineFilledTables();
-  if (await isBackfillComplete(companyId)) return;
+  const openBook = await resolveOpenBookWindow(companyId);
+  if (!openBook) return null;
 
-  const latestDate = await latestOpenSnapshotDate(companyId);
-  if (!latestDate) return;
-  if ((await snapshotRowCount(companyId, latestDate)) <= 0) return;
+  await removeReopenedLines(companyId, openBook);
+
+  if (await isBackfillComplete(companyId)) {
+    await removeReopenedLines(companyId, openBook);
+    return openBook;
+  }
 
   const lockKey = `filled-backfill|${companyId}`;
   const locks = await prisma.$queryRaw<Array<{ locked: boolean }>>(Prisma.sql`
     SELECT pg_try_advisory_lock(hashtext(${lockKey})) AS locked
   `);
-  if (!locks[0]?.locked) return;
+  if (!locks[0]?.locked) return openBook;
 
   try {
-    if (await isBackfillComplete(companyId)) return;
-    await backfillFromSnapshots(companyId, latestDate);
-    await markBackfillComplete(companyId);
+    if (!(await isBackfillComplete(companyId))) {
+      await backfillFromSnapshots(companyId, openBook);
+      await markBackfillComplete(companyId);
+    }
+    await removeReopenedLines(companyId, openBook);
   } finally {
     await prisma.$executeRaw(Prisma.sql`SELECT pg_advisory_unlock(hashtext(${lockKey}))`);
   }
+
+  return openBook;
 }
 
 export async function captureFilledOrderLines(params: {
@@ -364,8 +416,12 @@ export async function captureFilledOrderLines(params: {
   closedLines?: FilledOrderLineInput[];
 }): Promise<{ closed: number; disappeared: number; backfilled: boolean }> {
   const companyId = String(params.companyId || '').trim();
-  const snapshotDate = utcDay(params.snapshotDate);
   if (!companyId) return { closed: 0, disappeared: 0, backfilled: false };
+
+  const todayStart = new Date(
+    Date.UTC(params.snapshotDate.getUTCFullYear(), params.snapshotDate.getUTCMonth(), params.snapshotDate.getUTCDate())
+  );
+  const todayEnd = addUtcDays(todayStart, 1);
 
   await ensureCustomerOrderLineFilledTables();
 
@@ -373,17 +429,20 @@ export async function captureFilledOrderLines(params: {
     (params.closedLines || []).filter((row) => row.orderId && row.lineId && row.customerName)
   );
 
-  const todayCount = await snapshotRowCount(companyId, snapshotDate);
+  const todayCount = await snapshotRowCount(companyId, todayStart, todayEnd);
   let disappeared = 0;
   if (todayCount > 0) {
-    disappeared = Number((await captureDisappearedFromPriorDay(companyId, snapshotDate)) || 0);
-    await removeReopenedLines(companyId, snapshotDate);
+    disappeared = Number((await captureDisappearedFromPriorDay(companyId, todayStart, todayEnd)) || 0);
   }
+
+  const openBook = (await resolveOpenBookWindow(companyId)) || { start: todayStart, end: todayEnd };
+  await removeReopenedLines(companyId, openBook);
 
   let backfilled = false;
   if (!(await isBackfillComplete(companyId)) && todayCount > 0) {
-    await backfillFromSnapshots(companyId, snapshotDate);
+    await backfillFromSnapshots(companyId, openBook);
     await markBackfillComplete(companyId);
+    await removeReopenedLines(companyId, openBook);
     backfilled = true;
   }
 
