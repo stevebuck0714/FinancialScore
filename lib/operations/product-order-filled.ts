@@ -684,20 +684,16 @@ export async function loadProductRawCustomers(companyId: string): Promise<Array<
   };
 
   try {
-    const openBook = await resolveOpenBookWindow(companyId);
-    if (openBook) await loadSnapshotDay(openBook.start, openBook.end);
-    if (byKey.size === 0) {
-      const latestSnapshot = await prisma.$queryRaw<Array<{ maxDate: Date | null }>>(Prisma.sql`
-        SELECT MAX("snapshotDate") AS "maxDate"
-        FROM "CustomerOrderLineSnapshot"
-        WHERE "companyId" = ${companyId}
-          AND "frequency" = 'daily'
-      `);
-      const maxDate = latestSnapshot[0]?.maxDate;
-      if (maxDate) {
-        const bounds = storedDayBoundsUtc(maxDate);
-        await loadSnapshotDay(bounds.start, bounds.end);
-      }
+    const latestSnapshot = await prisma.$queryRaw<Array<{ maxDate: Date | null }>>(Prisma.sql`
+      SELECT MAX("snapshotDate") AS "maxDate"
+      FROM "CustomerOrderLineSnapshot"
+      WHERE "companyId" = ${companyId}
+        AND "frequency" = 'daily'
+    `);
+    const maxDate = latestSnapshot[0]?.maxDate;
+    if (maxDate) {
+      const bounds = storedDayBoundsUtc(maxDate);
+      await loadSnapshotDay(bounds.start, bounds.end);
     }
   } catch (error) {
     console.warn('[product-raw] snapshot customers failed', error);

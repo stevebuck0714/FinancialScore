@@ -10,10 +10,6 @@ import {
   loadProductRawCustomers,
   type OpenBookWindow,
 } from '@/lib/operations/product-order-filled';
-import {
-  normalizeAprSgpMatchToken,
-  readAprSgpGmpaWorkbook,
-} from '@/lib/operational/apr-sgp-gmpa';
 import { previousEstCalendarDate, storedDayBoundsUtc, utcMidnightForEstDate } from '@/lib/time/eastern';
 
 export const dynamic = 'force-dynamic';
@@ -127,13 +123,6 @@ function itemIdentityKey(value: unknown): string {
   return String(value || '').trim().toUpperCase();
 }
 
-function customerIdIdentityKey(value: unknown): string {
-  const raw = normalizeAprSgpMatchToken(value);
-  if (!raw) return '';
-  const stripped = raw.replace(/^0+/, '');
-  return stripped || '0';
-}
-
 function mergeLineIdentity(map: Map<string, LineIdentity>, item: unknown, customerPn?: unknown, customerGroup?: unknown) {
   const key = itemIdentityKey(item);
   if (!key) return;
@@ -149,7 +138,6 @@ async function loadCustomerLineIdentity(params: {
   companyId: string;
   customerId: string;
   customerName: string;
-  includeRawCsi?: boolean;
 }): Promise<Map<string, LineIdentity>> {
   const byItem = new Map<string, LineIdentity>();
   const matchRevenue = customerMatchSql(params.customerId, params.customerName);
@@ -178,38 +166,6 @@ async function loadCustomerLineIdentity(params: {
     for (const row of forecastRows) mergeLineIdentity(byItem, row.itemSku, row.customerPartNumber, row.customerGroup);
   } catch {
     // Forecast table is optional for Raw Data.
-  }
-
-  try {
-    const workbook = await readAprSgpGmpaWorkbook(params.companyId);
-    const wantedId = customerIdIdentityKey(params.customerId);
-    const wantedName = normalizeAprSgpMatchToken(params.customerName);
-    for (const row of workbook?.rows || []) {
-      const rowId = customerIdIdentityKey(row.customerId);
-      const rowName = normalizeAprSgpMatchToken(row.customerName);
-      const sameCustomer = (wantedId && rowId && rowId === wantedId) || (wantedName && rowName && rowName === wantedName);
-      if (!sameCustomer) continue;
-      mergeLineIdentity(byItem, row.itemId, row.customerPartNumber, row.customerGroup);
-    }
-  } catch {
-    // SGP workbook is optional identity for Raw Data.
-  }
-
-  if (params.includeRawCsi && params.customerId) {
-    try {
-      const rawRows = await prisma.$queryRaw<Array<{ item: string | null; custitem: string | null }>>(Prisma.sql`
-        SELECT payload->>'Item' AS item, payload->>'CustItem' AS custitem
-        FROM "InforRawRecord"
-        WHERE "companyId" = ${params.companyId}
-          AND UPPER(COALESCE("miProgram", '')) = 'SLCUSTOMERITEMS'
-          AND payload->>'CustNum' = ${params.customerId}
-          AND NULLIF(TRIM(COALESCE(payload->>'CustItem', '')), '') IS NOT NULL
-        LIMIT 5000
-      `);
-      for (const row of rawRows) mergeLineIdentity(byItem, row.item, row.custitem, null);
-    } catch {
-      // Raw CSI lookup is best-effort for historical snapshots.
-    }
   }
 
   return byItem;
@@ -792,7 +748,6 @@ export async function GET(request: NextRequest) {
           companyId,
           customerId,
           customerName,
-          includeRawCsi: true,
         }),
       ]);
       return NextResponse.json({
@@ -841,7 +796,7 @@ export async function GET(request: NextRequest) {
     const endExclusive = addUtcDays(utcDay(endDate), 1);
     const nextOlderWindow = olderWindowBefore(startDate);
     const [identityByItem, filledRows] = await Promise.all([
-      loadCustomerLineIdentity({ companyId, customerId, customerName, includeRawCsi: true }),
+      loadCustomerLineIdentity({ companyId, customerId, customerName }),
       loadFilledLines({
         companyId,
         customerId,

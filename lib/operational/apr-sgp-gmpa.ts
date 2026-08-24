@@ -358,8 +358,6 @@ export function parseAprSgpGmpaWorkbook(workbook: XLSX.WorkBook): ParsedAprSgpGm
   };
 }
 
-const blobParseTried = new Set<string>();
-
 export async function readAprSgpGmpaWorkbook(companyId: string): Promise<ParsedAprSgpGmpaWorkbook | null> {
   const { getOperationalSystemConnection } = await import('@/lib/operational/operational-system-connections');
   const connection = await getOperationalSystemConnection(companyId, 'SPREADSHEET_UPLOAD', APR_SGP_GMPA_SOURCE_CODE);
@@ -377,10 +375,9 @@ export async function readAprSgpGmpaWorkbook(companyId: string): Promise<ParsedA
     ? (metadata.aprSgpGmpaWorkbookUpload as { blobUrl?: string })
     : null;
   const blobUrl = String(upload?.blobUrl || '').trim();
-  if (blobUrl && !blobParseTried.has(companyId)) {
-    blobParseTried.add(companyId);
+  if (blobUrl && (!storedRows.length || !storedHasHts)) {
     try {
-      const response = await fetch(blobUrl);
+      const response = await fetch(blobUrl, { signal: AbortSignal.timeout(8000) });
       if (response.ok) {
         const workbook = XLSX.read(Buffer.from(await response.arrayBuffer()), { type: 'buffer', cellDates: true });
         return parseAprSgpGmpaWorkbook(workbook);

@@ -254,30 +254,33 @@ export default function ProductRevenueRollupReport({
     setLoading(true);
     setError(null);
     try {
-      const [csiRes, revenueRes] = await Promise.all([
-        fetch(`/api/operational-data/product-raw?companyId=${encodeURIComponent(selectedCompanyId)}&view=customers`),
-        fetch((() => {
-          const params = new URLSearchParams({
-            companyId: selectedCompanyId,
-            year: String(nextYear),
-          });
-          if (customer) {
-            params.set('customerId', customer.customerId);
-            params.set('customerName', customer.customerName);
-          }
-          return `/api/operational-data/product-revenue?${params.toString()}`;
-        })()),
-      ]);
-      const csiJson = await csiRes.json().catch(() => ({}));
+      const params = new URLSearchParams({
+        companyId: selectedCompanyId,
+        year: String(nextYear),
+      });
+      if (customer) {
+        params.set('customerId', customer.customerId);
+        params.set('customerName', customer.customerName);
+      }
+      const revenueRes = await fetch(`/api/operational-data/product-revenue?${params.toString()}`);
       const revenueJson = await revenueRes.json().catch(() => ({}));
       if (!revenueRes.ok) throw new Error(revenueJson.error || 'Failed to load revenue rollup');
-      setCustomers(mergeCustomers(csiJson.customers || [], revenueJson.customers || []));
+      setCustomers((prev) => mergeCustomers(customer ? prev : [], revenueJson.customers || []));
       if (revenueJson.dataThru) setDataThru(String(revenueJson.dataThru).slice(0, 10));
       if (revenueJson.totals) setTotals(revenueJson.totals);
       if (typeof revenueJson.companyLineCount === 'number') setCompanyLineCount(revenueJson.companyLineCount);
       if (typeof revenueJson.priceCount === 'number') setPriceCount(revenueJson.priceCount);
       if (Array.isArray(revenueJson.shippingDays)) setShippingDays(revenueJson.shippingDays);
       setLines(Array.isArray(revenueJson.lines) ? revenueJson.lines : []);
+      void fetch(`/api/operational-data/product-raw?companyId=${encodeURIComponent(selectedCompanyId)}&view=customers`)
+        .then(async (csiRes) => {
+          const csiJson = await csiRes.json().catch(() => ({}));
+          if (!csiRes.ok) return;
+          setCustomers((prev) => mergeCustomers(prev, csiJson.customers || []));
+        })
+        .catch(() => {
+          // CSI names are optional; revenue customers are enough to use the page.
+        });
     } catch (err: any) {
       setError(err?.message || 'Failed to load revenue rollup');
       setLines([]);

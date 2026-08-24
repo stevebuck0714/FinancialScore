@@ -59,6 +59,7 @@ import { resolveCompanyIndustrySectorCategory } from '@/lib/industry-sector-reso
 import { isOperationalDataTypeAllowed } from '@/lib/operations/operational-dashboard-access';
 
 export const dynamic = 'force-dynamic';
+export const maxDuration = 60;
 
 const OPERATIONAL_DATA_CACHE_TTL_SECONDS = 120;
 const OPERATIONAL_HEAVY_DATA_CACHE_TTL_SECONDS = 30 * 60;

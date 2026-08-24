@@ -299,26 +299,28 @@ export default function ProductMonthlyRevenueReport({
     setLoading(true);
     setError(null);
     try {
-      const [csiRes, revenueRes] = await Promise.all([
-        fetch(`/api/operational-data/product-raw?companyId=${encodeURIComponent(selectedCompanyId)}&view=customers`),
-        fetch((() => {
-          const params = new URLSearchParams({
-            companyId: selectedCompanyId,
-            year: String(nextYear),
-          });
-          if (customer) {
-            params.set('customerId', customer.customerId);
-            params.set('customerName', customer.customerName);
-          }
-          return `/api/operational-data/product-revenue?${params.toString()}`;
-        })()),
-      ]);
-      const csiJson = await csiRes.json().catch(() => ({}));
+      const params = new URLSearchParams({
+        companyId: selectedCompanyId,
+        year: String(nextYear),
+      });
+      if (customer) {
+        params.set('customerId', customer.customerId);
+        params.set('customerName', customer.customerName);
+      }
+      const revenueRes = await fetch(`/api/operational-data/product-revenue?${params.toString()}`);
       const revenueJson = await revenueRes.json().catch(() => ({}));
       if (!revenueRes.ok) throw new Error(revenueJson.error || 'Failed to load monthly revenue');
-      const merged = mergeCustomers(csiJson.customers || [], revenueJson.customers || []);
-      setCustomers(merged);
+      setCustomers((prev) => mergeCustomers(customer ? prev : [], revenueJson.customers || []));
       applyPayload(revenueJson);
+      void fetch(`/api/operational-data/product-raw?companyId=${encodeURIComponent(selectedCompanyId)}&view=customers`)
+        .then(async (csiRes) => {
+          const csiJson = await csiRes.json().catch(() => ({}));
+          if (!csiRes.ok) return;
+          setCustomers((prev) => mergeCustomers(prev, csiJson.customers || []));
+        })
+        .catch(() => {
+          // CSI names are optional; revenue customers are enough to use the page.
+        });
     } catch (err: any) {
       setError(err?.message || 'Failed to load monthly revenue');
       setLines([]);

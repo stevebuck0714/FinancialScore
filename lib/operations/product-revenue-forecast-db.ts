@@ -504,32 +504,34 @@ async function queryCsiShippedDeltas(params: {
         qty: number | null;
         asOf: Date | null;
       }>>(Prisma.sql`
-        WITH daily AS (
-          SELECT DISTINCT ON (s."orderId", s."lineId", date_trunc('day', s."snapshotDate"))
+        WITH month_end AS (
+          SELECT DISTINCT ON (s."orderId", s."lineId", date_trunc('month', s."snapshotDate"))
             s."orderId",
             s."lineId",
             NULLIF(TRIM(COALESCE(s."customerId", '')), '') AS "customerId",
             NULLIF(TRIM(COALESCE(s."sku", s."itemId", '')), '') AS "itemSku",
             NULLIF(TRIM(COALESCE(s."customerPn", '')), '') AS "customerPn",
-            date_trunc('day', s."snapshotDate") AS day,
-            ${params.qtySql} AS qty
+            date_trunc('month', s."snapshotDate") AS month_start,
+            ${params.qtySql} AS qty,
+            s."snapshotDate" AS as_of
           FROM "CustomerOrderLineSnapshot" s
           WHERE s."companyId" = ${params.companyId}
             AND s."frequency" = 'daily'
             AND s."snapshotDate" >= ${lookbackStart}
             AND s."snapshotDate" < ${nextYear}
             AND ${customerMatch}
-          ORDER BY s."orderId", s."lineId", date_trunc('day', s."snapshotDate"), s."snapshotDate" DESC
+          ORDER BY s."orderId", s."lineId", date_trunc('month', s."snapshotDate"), s."snapshotDate" DESC
         ),
         deltas AS (
           SELECT
             "customerId",
             "itemSku",
             "customerPn",
-            day,
-            EXTRACT(MONTH FROM day)::int AS month,
-            GREATEST(qty - LAG(qty, 1, qty) OVER (PARTITION BY "orderId", "lineId" ORDER BY day), 0) AS delta
-          FROM daily
+            month_start,
+            EXTRACT(MONTH FROM month_start)::int AS month,
+            GREATEST(qty - LAG(qty, 1, qty) OVER (PARTITION BY "orderId", "lineId" ORDER BY month_start), 0) AS delta,
+            as_of
+          FROM month_end
         )
         SELECT
           "customerId",
@@ -537,10 +539,10 @@ async function queryCsiShippedDeltas(params: {
           "customerPn",
           month,
           SUM(delta)::double precision AS qty,
-          MAX(day) AS "asOf"
+          MAX(as_of) AS "asOf"
         FROM deltas
-        WHERE day >= ${yearStart}
-          AND day < ${nextYear}
+        WHERE month_start >= ${yearStart}
+          AND month_start < ${nextYear}
           AND month BETWEEN 1 AND 12
         GROUP BY 1, 2, 3, 4
       `);

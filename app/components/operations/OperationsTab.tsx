@@ -1888,8 +1888,6 @@ export default function OperationsTab({
   }, [selectedCompanyId, industrySectorCategory, frequency, startDate, endDate]);
 
   const loadSummary = async () => {
-    setLoading(true);
-    setError(null);
     try {
       const params = new URLSearchParams({
         companyId: selectedCompanyId,
@@ -1904,9 +1902,7 @@ export default function OperationsTab({
         setLatestOperationalEndDate(latestImportDate);
       }
     } catch (err: any) {
-      setError(err.message);
-    } finally {
-      setLoading(false);
+      console.warn('Failed to load operational summary:', err?.message || err);
     }
   };
 
@@ -2032,8 +2028,11 @@ export default function OperationsTab({
       reportMode,
       ...(options?.forceRefresh ? { refreshWholesaleProducts: '1' } : {}),
     });
+    const controller = new AbortController();
+    const timeoutId = window.setTimeout(() => controller.abort(), 90000);
     const request = fetch(`/api/operational-data?${params}`, {
       cache: options?.forceRefresh ? 'no-store' : 'default',
+      signal: controller.signal,
     }).then(async (response) => {
       if (!response.ok) {
         throw new Error('Failed to load wholesale product report data');
@@ -2041,7 +2040,13 @@ export default function OperationsTab({
       const payload = await response.json();
       setCachedWholesaleProductsReportData(reportMode, payload);
       return payload;
+    }).catch((error: any) => {
+      if (error?.name === 'AbortError') {
+        throw new Error('Wholesale product report took too long to load. Try again.');
+      }
+      throw error;
     }).finally(() => {
+      window.clearTimeout(timeoutId);
       wholesaleProductsReportInflightRef.current.delete(key);
     });
     wholesaleProductsReportInflightRef.current.set(key, request);

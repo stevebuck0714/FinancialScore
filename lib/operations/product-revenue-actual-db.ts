@@ -630,7 +630,31 @@ export async function loadRevenueDataset(params: {
   customerName?: string;
 }) {
   const { companyId, year, customerId, customerName } = params;
-  const [settingsRows, forecastSettings, forecastRaw, revenueRows, priceRows, shipped] = await Promise.all([
+  const scopedCustomerId = String(customerId || '').trim();
+  const scopedCustomerName = String(customerName || '').trim();
+  const revenueLineSql = scopedCustomerId
+    ? `SELECT "id", "customerId", "customerName", "customerGroup", "customerPartNumber", "itemSku",
+              "team", "csr", "productionType", "statusFlag", "actualRevenue", "sortOrder"
+       FROM "ProductRevenueLine"
+       WHERE "companyId" = $1 AND "year" = $2 AND "customerId" = $3
+       ORDER BY "sortOrder" ASC, "itemSku" ASC`
+    : scopedCustomerName
+      ? `SELECT "id", "customerId", "customerName", "customerGroup", "customerPartNumber", "itemSku",
+                "team", "csr", "productionType", "statusFlag", "actualRevenue", "sortOrder"
+         FROM "ProductRevenueLine"
+         WHERE "companyId" = $1 AND "year" = $2 AND "customerName" = $3
+         ORDER BY "sortOrder" ASC, "itemSku" ASC`
+      : `SELECT "id", "customerId", "customerName", "customerGroup", "customerPartNumber", "itemSku",
+                "team", "csr", "productionType", "statusFlag", "actualRevenue", "sortOrder"
+         FROM "ProductRevenueLine"
+         WHERE "companyId" = $1 AND "year" = $2
+         ORDER BY "sortOrder" ASC, "itemSku" ASC`;
+  const revenueLineParams = scopedCustomerId
+    ? [companyId, year, scopedCustomerId]
+    : scopedCustomerName
+      ? [companyId, year, scopedCustomerName]
+      : [companyId, year];
+  const [settingsRows, forecastSettings, forecastRaw, revenueRows, priceRows, shipped, forecastCustomers] = await Promise.all([
     prisma.$queryRawUnsafe<RevenueSettingsRow[]>(
       `SELECT "dataThru", "shippingDays" FROM "ProductRevenueSettings" WHERE "companyId" = $1 AND "year" = $2 LIMIT 1`,
       companyId,
@@ -639,16 +663,13 @@ export async function loadRevenueDataset(params: {
     prisma.productRevenueForecastSettings.findUnique({
       where: { companyId_year: { companyId, year } },
     }),
-    loadProductForecastLines({ companyId, year }),
-    prisma.$queryRawUnsafe<RevenueLineRow[]>(
-      `SELECT "id", "customerId", "customerName", "customerGroup", "customerPartNumber", "itemSku",
-              "team", "csr", "productionType", "statusFlag", "actualRevenue", "sortOrder"
-       FROM "ProductRevenueLine"
-       WHERE "companyId" = $1 AND "year" = $2
-       ORDER BY "sortOrder" ASC, "itemSku" ASC`,
+    loadProductForecastLines({
       companyId,
-      year
-    ),
+      year,
+      customerId: scopedCustomerId || undefined,
+      customerName: scopedCustomerName || undefined,
+    }),
+    prisma.$queryRawUnsafe<RevenueLineRow[]>(revenueLineSql, ...revenueLineParams),
     prisma.$queryRawUnsafe<RevenuePriceRow[]>(
       `SELECT "customerGroup", "itemSku", "contractPrice", "sgpPrice"
        FROM "ProductRevenuePrice"
@@ -656,7 +677,18 @@ export async function loadRevenueDataset(params: {
       companyId,
       year
     ),
-    loadCsiMonthlyShippedActuals({ companyId, year }),
+    loadCsiMonthlyShippedActuals({
+      companyId,
+      year,
+      customerId: scopedCustomerId || undefined,
+      customerName: scopedCustomerName || undefined,
+    }),
+    prisma.productRevenueForecastLine.groupBy({
+      by: ['customerId', 'customerName'],
+      where: { companyId, year },
+      _count: { _all: true },
+      orderBy: { customerName: 'asc' },
+    }).catch(() => []),
   ]);
   const settings = settingsRows[0] || null;
   const forecastRows = withCsiShippedActuals(forecastRaw.map(serializeForecastLine), shipped);
@@ -736,22 +768,31 @@ export async function loadRevenueDataset(params: {
       ? allLines.filter((line) => line.customerName === customerName)
       : allLines;
 
-  const customers = Array.from(
-    allLines.reduce((acc, line) => {
-      const key = `${line.customerId}||${line.customerName}`;
-      const prior = acc.get(key);
-      acc.set(key, {
-        customerId: line.customerId,
-        customerName: line.customerName,
-        key,
-        label: line.customerName || line.customerId || 'Unknown customer',
-        lineCount: (prior?.lineCount || 0) + 1,
-      });
-      return acc;
-    }, new Map<string, { customerId: string; customerName: string; key: string; label: string; lineCount: number }>())
-  )
-    .map(([, value]) => value)
-    .sort((a, b) => a.label.localeCompare(b.label));
+  const customersMap = new Map<string, { customerId: string; customerName: string; key: string; label: string; lineCount: number }>();
+  for (const row of forecastCustomers) {
+    const customerId = String(row.customerId || '');
+    const customerName = String(row.customerName || '');
+    const key = `${customerId}||${customerName}`;
+    customersMap.set(key, {
+      customerId,
+      customerName,
+      key,
+      label: customerName || customerId || 'Unknown customer',
+      lineCount: Number(row._count._all || 0),
+    });
+  }
+  for (const line of allLines) {
+    const key = `${line.customerId}||${line.customerName}`;
+    if (customersMap.has(key)) continue;
+    customersMap.set(key, {
+      customerId: line.customerId,
+      customerName: line.customerName,
+      key,
+      label: line.customerName || line.customerId || 'Unknown customer',
+      lineCount: 1,
+    });
+  }
+  const customers = Array.from(customersMap.values()).sort((a, b) => a.label.localeCompare(b.label));
 
   const includeLines = Boolean(customerId || customerName);
   const dataThru = settings?.dataThru
@@ -765,7 +806,9 @@ export async function loadRevenueDataset(params: {
     shippingDays: buildShippingCalendar(year),
     priceCount: priceRows.length,
     customers,
-    companyLineCount: allLines.length,
+    companyLineCount: includeLines
+      ? forecastCustomers.reduce((sum, row) => sum + Number(row._count._all || 0), 0)
+      : allLines.length,
     totals: summarizeRevenueLines(includeLines ? scoped : allLines, dataThru),
     lines: includeLines ? scoped.map((line) => serializeJoinedRevenueLine(line, dataThru)) : [],
   };
