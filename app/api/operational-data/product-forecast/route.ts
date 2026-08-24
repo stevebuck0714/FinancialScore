@@ -8,9 +8,11 @@ import {
   asOptionalIsoDay,
   assertProductsForecastAccess,
   ensureProductRevenueForecastTables,
+  loadCsiMonthlyShippedActuals,
   normalizeForecastLineInput,
   serializeForecastLine,
   upsertForecastLines,
+  withCsiShippedActuals,
 } from '@/lib/operations/product-revenue-forecast-db';
 
 export const dynamic = 'force-dynamic';
@@ -72,12 +74,18 @@ export async function GET(request: NextRequest) {
       },
       orderBy: [{ sortOrder: 'asc' }, { itemSku: 'asc' }],
     });
+    const shipped = await loadCsiMonthlyShippedActuals({
+      companyId,
+      year,
+      customerId,
+      customerName,
+    });
 
     return NextResponse.json({
       year,
       dataThru: settings?.dataThru ? settings.dataThru.toISOString().slice(0, 10) : null,
       customers: customerPayload,
-      lines: lines.map(serializeForecastLine),
+      lines: withCsiShippedActuals(lines.map(serializeForecastLine), shipped),
     });
   } catch (error: any) {
     return NextResponse.json(
@@ -135,11 +143,18 @@ export async function PUT(request: NextRequest) {
       where: { companyId_year: { companyId, year } },
     });
 
+    const shipped = await loadCsiMonthlyShippedActuals({
+      companyId,
+      year,
+      customerId,
+      customerName,
+    });
+
     return NextResponse.json({
       ok: true,
       year,
       dataThru: settings?.dataThru ? settings.dataThru.toISOString().slice(0, 10) : null,
-      lines: saved.map(serializeForecastLine),
+      lines: withCsiShippedActuals(saved.map(serializeForecastLine), shipped),
     });
   } catch (error: any) {
     return NextResponse.json(

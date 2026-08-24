@@ -183,6 +183,54 @@ export function monthQty(map: MonthQtyMap, month: ForecastMonth): number {
   return Number(map[String(month)]) || 0;
 }
 
+export function normalizeForecastCustomerId(value: unknown): string {
+  const raw = String(value ?? '').trim().toUpperCase();
+  if (/^\d+$/.test(raw)) return raw.replace(/^0+/, '') || '0';
+  return raw;
+}
+
+export function forecastActualsExactKey(customerId: string, itemSku: string, customerPartNumber: string): string {
+  return `${normalizeForecastCustomerId(customerId)}||${String(itemSku || '').trim().toUpperCase()}||${String(customerPartNumber || '').trim().toUpperCase()}`;
+}
+
+export function forecastActualsItemKey(customerId: string, itemSku: string): string {
+  return `${normalizeForecastCustomerId(customerId)}||${String(itemSku || '').trim().toUpperCase()}`;
+}
+
+export type CsiShippedActuals = {
+  ok: boolean;
+  asOf: string | null;
+  byExact: Map<string, MonthQtyMap>;
+  byItem: Map<string, MonthQtyMap>;
+};
+
+export function emptyCsiShippedActuals(ok = false): CsiShippedActuals {
+  return { ok, asOf: null, byExact: new Map(), byItem: new Map() };
+}
+
+export function overlayShippedActuals<T extends {
+  customerId: string;
+  itemSku: string;
+  customerPartNumber: string;
+  actualQty: MonthQtyMap;
+}>(lines: T[], actuals: CsiShippedActuals): T[] {
+  if (!actuals.ok) return lines;
+  const itemCounts = new Map<string, number>();
+  for (const line of lines) {
+    const key = forecastActualsItemKey(line.customerId, line.itemSku);
+    itemCounts.set(key, (itemCounts.get(key) || 0) + 1);
+  }
+  return lines.map((line) => {
+    const exact = actuals.byExact.get(
+      forecastActualsExactKey(line.customerId, line.itemSku, line.customerPartNumber)
+    );
+    const itemKey = forecastActualsItemKey(line.customerId, line.itemSku);
+    const byItem = itemCounts.get(itemKey) === 1 ? actuals.byItem.get(itemKey) : undefined;
+    const match = exact || byItem;
+    return { ...line, actualQty: match ? match : emptyMonthQtyMap() };
+  });
+}
+
 export function adjustedMonthQty(
   forecastQty: MonthQtyMap,
   actualQty: MonthQtyMap,

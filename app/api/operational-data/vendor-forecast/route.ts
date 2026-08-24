@@ -1,16 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { isSgpAsOfDate, type VendorMonthlyForecastLineInput } from '@/lib/operations/vendor-monthly-forecast';
 import {
+  loadCsiMonthlyShippedActuals,
+  withCsiShippedActuals,
+} from '@/lib/operations/product-revenue-forecast-db';
+import {
   asForecastYear,
   asOptionalIsoDay,
   assertVendorsForecastAccess,
   ensureVendorMonthlyForecastTables,
-  loadOperationsForecastYtd,
   loadVendorForecastLines,
   loadVendorForecastSettings,
   loadVendorForecastVendors,
   normalizeVendorForecastLineInput,
-  overlayVendorForecastActuals,
   resolveVendorDataThru,
   serializeVendorForecastLine,
   upsertVendorForecastLines,
@@ -41,8 +43,8 @@ export async function GET(request: NextRequest) {
 
     const settings = await loadVendorForecastSettings(companyId, year);
     const vendors = await loadVendorForecastVendors(companyId, year);
-    const operations = await loadOperationsForecastYtd(companyId, year);
-    const dataThru = resolveVendorDataThru(settings?.dataThru, operations.dataThru);
+    const shipped = await loadCsiMonthlyShippedActuals({ companyId, year });
+    const dataThru = resolveVendorDataThru(settings?.dataThru, shipped.asOf);
 
     const vendorPayload = vendors.map((row) => ({
       vendorId: row.vendorId,
@@ -72,7 +74,7 @@ export async function GET(request: NextRequest) {
       year,
       dataThru,
       vendors: vendorPayload,
-      lines: lines.map((line) => overlayVendorForecastActuals(serializeVendorForecastLine(line), operations.actuals)),
+      lines: withCsiShippedActuals(lines.map(serializeVendorForecastLine), shipped),
     });
   } catch (error: any) {
     return NextResponse.json(
@@ -130,13 +132,13 @@ export async function PUT(request: NextRequest) {
       vendorName: vendorName || undefined,
     });
     const settings = await loadVendorForecastSettings(companyId, year);
-    const operations = await loadOperationsForecastYtd(companyId, year);
+    const shipped = await loadCsiMonthlyShippedActuals({ companyId, year });
 
     return NextResponse.json({
       ok: true,
       year,
-      dataThru: resolveVendorDataThru(settings?.dataThru, operations.dataThru),
-      lines: saved.map((line) => overlayVendorForecastActuals(serializeVendorForecastLine(line), operations.actuals)),
+      dataThru: resolveVendorDataThru(settings?.dataThru, shipped.asOf),
+      lines: withCsiShippedActuals(saved.map(serializeVendorForecastLine), shipped),
     });
   } catch (error: any) {
     return NextResponse.json(

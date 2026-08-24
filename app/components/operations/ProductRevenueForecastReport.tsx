@@ -676,8 +676,9 @@ export default function ProductRevenueForecastReport({
             <span><strong>Rows:</strong> {lines.length.toLocaleString()}</span>
             <span><strong>Forecasted {monthName}:</strong> {fmtQty(totals.monthForecast)}</span>
             <span><strong>{monthName} forecast - adjusted:</strong> {fmtQty(totals.monthAdjusted)}</span>
-            <span><strong>{monthName} YTD:</strong> {fmtQty(totals.monthYtd)}</span>
+            <span><strong>{monthName} Actual:</strong> {fmtQty(totals.monthYtd)}</span>
             <span><strong>% {monthName} YTD vs forecasted:</strong> {fmtPct(pctVsPlan(totals.monthYtd, totals.monthForecast))}</span>
+            <span><strong>% {monthName} Actual vs Adj. Forecast:</strong> {fmtPct(pctVsPlan(totals.monthYtd, totals.monthAdjusted))}</span>
             <span><strong>Remaining-year forecast:</strong> {fmtQty(totals.remaining)}</span>
             {closed.length ? (
               <span><strong>Closed through:</strong> {FORECAST_MONTH_LABELS[closed[closed.length - 1]]}</span>
@@ -712,7 +713,7 @@ export default function ProductRevenueForecastReport({
                 {selectedCustomer.label}
               </div>
             </div>
-            <table style={{ borderCollapse: 'separate', borderSpacing: 0, width: '100%', minWidth: IDENTITY_COLUMNS_WIDTH_PX + 820, fontSize: 12, tableLayout: 'fixed' }}>
+            <table style={{ borderCollapse: 'separate', borderSpacing: 0, width: '100%', minWidth: IDENTITY_COLUMNS_WIDTH_PX + 1020, fontSize: 12, tableLayout: 'fixed' }}>
               <colgroup>
                 {IDENTITY_COLUMNS.map((column) => (
                   <col key={column.key} style={{ width: columnWidth(column.widthCh) }} />
@@ -767,12 +768,14 @@ export default function ProductRevenueForecastReport({
                   ))}
                   <th style={{ ...priorHeaderStyle, borderLeft: '1px solid #e2e8f0' }}>{`Forecasted ${previousMonthName}`}</th>
                   <th style={priorHeaderStyle}>{`${previousMonthName} Forecast - ADJUSTED`}</th>
-                  <th style={priorHeaderStyle}>{`${previousMonthName} YTD`}</th>
-                  <th style={priorHeaderStyle}>{`% ${previousMonthName} YTD vs Forecasted`}</th>
+                  <th style={priorHeaderStyle}>{`${previousMonthName} Actual`}</th>
+                  <th style={priorHeaderStyle}>{`% ${previousMonthName} Actual vs. Forecasted`}</th>
+                  <th style={priorHeaderStyle}>{`% ${previousMonthName} Actual vs Adj. Forecast`}</th>
                   <th style={{ ...monthHeaderStyle, borderLeft: '2px solid #c7d2fe' }}>{`Forecasted ${monthName}`}</th>
                   <th style={monthHeaderStyle}>{`${monthName} Forecast - ADJUSTED`}</th>
-                  <th style={monthHeaderStyle}>{`${monthName} YTD`}</th>
-                  <th style={monthHeaderStyle}>{`% ${monthName} YTD vs Forecasted`}</th>
+                  <th style={monthHeaderStyle}>{`${monthName} Actual`}</th>
+                  <th style={monthHeaderStyle}>{`% ${monthName} Actual vs. Forecasted`}</th>
+                  <th style={monthHeaderStyle}>{`% ${monthName} Actual vs Adj. Forecast`}</th>
                 </tr>
               </thead>
               <tbody>
@@ -850,6 +853,12 @@ export default function ProductRevenueForecastReport({
                           qtyValue(line.forecastQty, previousMonth)
                         ))}
                       </td>
+                      <td style={priorCellStyle}>
+                        {fmtPct(pctVsPlan(
+                          qtyValue(line.actualQty, previousMonth),
+                          adjustedMonthQty(line.forecastQty, line.actualQty, previousMonth, dataThru || null)
+                        ))}
+                      </td>
                       <td style={{ ...monthInputCellStyle, borderLeft: '2px solid #c7d2fe' }}>
                         <input
                           type="number"
@@ -862,14 +871,8 @@ export default function ProductRevenueForecastReport({
                       <td style={monthCellStyle}>
                         {fmtQty(adjustedMonthQty(line.forecastQty, line.actualQty, selectedMonth, dataThru || null))}
                       </td>
-                      <td style={monthInputCellStyle}>
-                        <input
-                          type="number"
-                          value={qtyValue(line.actualQty, selectedMonth)}
-                          onChange={(event) => updateMonthQty(line.id, 'actualQty', selectedMonth, event.target.value)}
-                          style={monthQtyInputStyle}
-                          aria-label={`${monthName} YTD`}
-                        />
+                      <td style={monthCellStyle}>
+                        {fmtQty(qtyValue(line.actualQty, selectedMonth))}
                       </td>
                       <td style={monthCellStyle}>
                         {fmtPct(pctVsPlan(
@@ -877,12 +880,18 @@ export default function ProductRevenueForecastReport({
                           qtyValue(line.forecastQty, selectedMonth)
                         ))}
                       </td>
+                      <td style={monthCellStyle}>
+                        {fmtPct(pctVsPlan(
+                          qtyValue(line.actualQty, selectedMonth),
+                          adjustedMonthQty(line.forecastQty, line.actualQty, selectedMonth, dataThru || null)
+                        ))}
+                      </td>
                     </tr>
                   );
                 })}
                 {lines.length === 0 && (
                   <tr>
-                    <td colSpan={15} style={{ padding: 16, color: '#64748b' }}>
+                    <td colSpan={17} style={{ padding: 16, color: '#64748b' }}>
                       No forecast rows for this customer yet. Import the workbook to load customers and parts, then save.
                     </td>
                   </tr>

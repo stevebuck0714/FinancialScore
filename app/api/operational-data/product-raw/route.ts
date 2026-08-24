@@ -10,6 +10,10 @@ import {
   loadProductRawCustomers,
   type OpenBookWindow,
 } from '@/lib/operations/product-order-filled';
+import {
+  normalizeAprSgpMatchToken,
+  readAprSgpGmpaWorkbook,
+} from '@/lib/operational/apr-sgp-gmpa';
 import { previousEstCalendarDate, storedDayBoundsUtc, utcMidnightForEstDate } from '@/lib/time/eastern';
 
 export const dynamic = 'force-dynamic';
@@ -123,6 +127,13 @@ function itemIdentityKey(value: unknown): string {
   return String(value || '').trim().toUpperCase();
 }
 
+function customerIdIdentityKey(value: unknown): string {
+  const raw = normalizeAprSgpMatchToken(value);
+  if (!raw) return '';
+  const stripped = raw.replace(/^0+/, '');
+  return stripped || '0';
+}
+
 function mergeLineIdentity(map: Map<string, LineIdentity>, item: unknown, customerPn?: unknown, customerGroup?: unknown) {
   const key = itemIdentityKey(item);
   if (!key) return;
@@ -167,6 +178,21 @@ async function loadCustomerLineIdentity(params: {
     for (const row of forecastRows) mergeLineIdentity(byItem, row.itemSku, row.customerPartNumber, row.customerGroup);
   } catch {
     // Forecast table is optional for Raw Data.
+  }
+
+  try {
+    const workbook = await readAprSgpGmpaWorkbook(params.companyId);
+    const wantedId = customerIdIdentityKey(params.customerId);
+    const wantedName = normalizeAprSgpMatchToken(params.customerName);
+    for (const row of workbook?.rows || []) {
+      const rowId = customerIdIdentityKey(row.customerId);
+      const rowName = normalizeAprSgpMatchToken(row.customerName);
+      const sameCustomer = (wantedId && rowId && rowId === wantedId) || (wantedName && rowName && rowName === wantedName);
+      if (!sameCustomer) continue;
+      mergeLineIdentity(byItem, row.itemId, row.customerPartNumber, row.customerGroup);
+    }
+  } catch {
+    // SGP workbook is optional identity for Raw Data.
   }
 
   if (params.includeRawCsi && params.customerId) {
@@ -756,13 +782,23 @@ export async function GET(request: NextRequest) {
     const wantsFilled = view === 'filled' || (view !== 'open' && windowKind === 'older');
 
     if (!wantsFilled) {
-      const { rows: openRows, openAsOf } = await loadOpenLines({
-        companyId,
-        customerId,
-        customerName,
-      });
+      const [{ rows: openRows, openAsOf }, identityByItem] = await Promise.all([
+        loadOpenLines({
+          companyId,
+          customerId,
+          customerName,
+        }),
+        loadCustomerLineIdentity({
+          companyId,
+          customerId,
+          customerName,
+          includeRawCsi: true,
+        }),
+      ]);
       return NextResponse.json({
-        openRecords: openRows.map((row) => mapOrderLineRecord(row, 'open')),
+        openRecords: openRows
+          .map((row) => mapOrderLineRecord(row, 'open'))
+          .map((row) => applyLineIdentity(row, identityByItem)),
         filledRecords: [],
         openAsOf: openAsOf ? isoDay(openAsOf) : null,
         window: null,
@@ -805,7 +841,7 @@ export async function GET(request: NextRequest) {
     const endExclusive = addUtcDays(utcDay(endDate), 1);
     const nextOlderWindow = olderWindowBefore(startDate);
     const [identityByItem, filledRows] = await Promise.all([
-      loadCustomerLineIdentity({ companyId, customerId, customerName }),
+      loadCustomerLineIdentity({ companyId, customerId, customerName, includeRawCsi: true }),
       loadFilledLines({
         companyId,
         customerId,

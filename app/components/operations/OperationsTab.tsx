@@ -11429,7 +11429,7 @@ export default function OperationsTab({
             heading: 'How to use it',
             body: [
               'Select a customer. The page only edits that customer. Fill Group, TEAM, and CSR on each row, then Planned/MTO and monthly quantities, and save.',
-              'Use Month to switch which period is shown. Each month has Forecasted, Forecast - ADJUSTED, YTD, and % YTD vs Forecasted. ADJUSTED and % are calculated: after Data thru, ADJUSTED follows YTD actual; before that it follows the typed forecast.',
+              'Use Month to switch which period is shown. Each month has Forecasted, Forecast - ADJUSTED, Actual (CSI shipped quantity for that month), % Actual vs. Forecasted, and % Actual vs Adj. Forecast. After Data thru, ADJUSTED follows Actual; before that it follows the typed forecast.',
             ],
           },
         ],

@@ -5,7 +5,13 @@ import { auditForbiddenAccess } from '@/lib/audit-logger';
 import { requireAuth, validateCompanyAccess } from '@/lib/tenant-security';
 import { isOperationalDataTypeAllowed } from '@/lib/operations/operational-dashboard-access';
 import {
+  emptyMonthQtyMap,
+  forecastActualsExactKey,
+  forecastActualsItemKey,
+  overlayShippedActuals,
   normalizeMonthQtyMap,
+  type CsiShippedActuals,
+  type MonthQtyMap,
   type ProductRevenueForecastLineInput,
 } from '@/lib/operations/product-revenue-forecast';
 
@@ -340,4 +346,147 @@ export async function upsertForecastLines(params: {
       ...params
     );
   }
+}
+
+function snapshotCustomerMatchSql(customerId: string, customerName: string): Prisma.Sql {
+  const id = customerId.trim();
+  const name = customerName.trim();
+  const idMatch = id
+    ? Prisma.sql`NULLIF(TRIM(COALESCE(s."customerId", '')), '') = ${id}`
+    : null;
+  const nameMatch = name ? Prisma.sql`s."customerName" = ${name}` : null;
+  if (idMatch && nameMatch) return Prisma.sql`(${idMatch} OR ${nameMatch})`;
+  if (idMatch) return idMatch;
+  if (nameMatch) return nameMatch;
+  return Prisma.sql`TRUE`;
+}
+
+function addShippedQty(map: Map<string, MonthQtyMap>, key: string, month: number, qty: number) {
+  if (!key || month < 1 || month > 12 || !Number.isFinite(qty) || qty === 0) return;
+  const current = map.get(key) || emptyMonthQtyMap();
+  current[String(month)] = (Number(current[String(month)]) || 0) + qty;
+  map.set(key, current);
+}
+
+async function queryCsiShippedDeltas(params: {
+  companyId: string;
+  year: number;
+  customerId?: string;
+  customerName?: string;
+  qtySql: Prisma.Sql;
+}): Promise<Array<{
+  customerId: string | null;
+  itemSku: string | null;
+  customerPn: string | null;
+  month: number | null;
+  qty: number | null;
+  asOf: Date | null;
+}>> {
+  const lookbackStart = new Date(Date.UTC(params.year - 1, 11, 1));
+  const yearStart = new Date(Date.UTC(params.year, 0, 1));
+  const nextYear = new Date(Date.UTC(params.year + 1, 0, 1));
+  const customerMatch = snapshotCustomerMatchSql(params.customerId || '', params.customerName || '');
+  return prisma.$transaction(
+    async (tx) => {
+      await tx.$executeRaw`SELECT set_config('statement_timeout', '20000', true)`;
+      return tx.$queryRaw<Array<{
+        customerId: string | null;
+        itemSku: string | null;
+        customerPn: string | null;
+        month: number | null;
+        qty: number | null;
+        asOf: Date | null;
+      }>>(Prisma.sql`
+        WITH daily AS (
+          SELECT DISTINCT ON (s."orderId", s."lineId", date_trunc('day', s."snapshotDate"))
+            s."orderId",
+            s."lineId",
+            NULLIF(TRIM(COALESCE(s."customerId", '')), '') AS "customerId",
+            NULLIF(TRIM(COALESCE(s."sku", s."itemId", '')), '') AS "itemSku",
+            NULLIF(TRIM(COALESCE(s."customerPn", '')), '') AS "customerPn",
+            date_trunc('day', s."snapshotDate") AS day,
+            ${params.qtySql} AS qty
+          FROM "CustomerOrderLineSnapshot" s
+          WHERE s."companyId" = ${params.companyId}
+            AND s."frequency" = 'daily'
+            AND s."snapshotDate" >= ${lookbackStart}
+            AND s."snapshotDate" < ${nextYear}
+            AND ${customerMatch}
+          ORDER BY s."orderId", s."lineId", date_trunc('day', s."snapshotDate"), s."snapshotDate" DESC
+        ),
+        deltas AS (
+          SELECT
+            "customerId",
+            "itemSku",
+            "customerPn",
+            day,
+            EXTRACT(MONTH FROM day)::int AS month,
+            GREATEST(qty - LAG(qty, 1, qty) OVER (PARTITION BY "orderId", "lineId" ORDER BY day), 0) AS delta
+          FROM daily
+        )
+        SELECT
+          "customerId",
+          "itemSku",
+          "customerPn",
+          month,
+          SUM(delta)::double precision AS qty,
+          MAX(day) AS "asOf"
+        FROM deltas
+        WHERE day >= ${yearStart}
+          AND day < ${nextYear}
+          AND month BETWEEN 1 AND 12
+        GROUP BY 1, 2, 3, 4
+      `);
+    },
+    { maxWait: 5000, timeout: 25000 }
+  );
+}
+
+export async function loadCsiMonthlyShippedActuals(params: {
+  companyId: string;
+  year: number;
+  customerId?: string;
+  customerName?: string;
+}): Promise<CsiShippedActuals> {
+  const queries = [
+    Prisma.sql`COALESCE(s."qtyShipped", 0)`,
+    Prisma.sql`COALESCE(s."qtyInvoiced", 0)`,
+  ];
+  for (const qtySql of queries) {
+    try {
+      const rows = await queryCsiShippedDeltas({ ...params, qtySql });
+      const byExact = new Map<string, MonthQtyMap>();
+      const byItem = new Map<string, MonthQtyMap>();
+      let asOf: string | null = null;
+      for (const row of rows) {
+        const month = Number(row.month || 0);
+        const qty = Number(row.qty || 0);
+        const customerId = String(row.customerId || '');
+        const itemSku = String(row.itemSku || '');
+        const customerPn = String(row.customerPn || '');
+        addShippedQty(byExact, forecastActualsExactKey(customerId, itemSku, customerPn), month, qty);
+        addShippedQty(byItem, forecastActualsItemKey(customerId, itemSku), month, qty);
+        if (row.asOf) {
+          const iso = new Date(row.asOf).toISOString().slice(0, 10);
+          if (!asOf || iso > asOf) asOf = iso;
+        }
+      }
+      return { ok: true, asOf, byExact, byItem };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (/qtyShipped/i.test(message)) continue;
+      console.error('[product-forecast] CSI shipped actuals failed', error);
+      return { ok: false, asOf: null, byExact: new Map(), byItem: new Map() };
+    }
+  }
+  return { ok: false, asOf: null, byExact: new Map(), byItem: new Map() };
+}
+
+export function withCsiShippedActuals<T extends {
+  customerId: string;
+  itemSku: string;
+  customerPartNumber: string;
+  actualQty: MonthQtyMap;
+}>(lines: T[], actuals: CsiShippedActuals): T[] {
+  return overlayShippedActuals(lines, actuals);
 }
