@@ -71,7 +71,7 @@ const CUSTOMER_WIP_SOURCE_VERSION = 'customer-backlog-source-v4';
 const HIRING_SOURCE_VERSION = 'bamboohr-hiring-full-pagination-v2';
 const CUSTOMER_BACKLOG_MIN_ORDER_DATE = '2023-06-01';
 const WHOLESALE_PRODUCTS_REPORT_CACHE_TTL_SECONDS = 30 * 24 * 60 * 60;
-const WHOLESALE_PRODUCTS_REPORT_SOURCE_VERSION = 'wholesale-products-report-90-day-v2-vendor-pricing';
+const WHOLESALE_PRODUCTS_REPORT_SOURCE_VERSION = 'wholesale-products-report-90-day-v3-hts-duty';
 type WholesaleProductsReportMode = 'all' | 'margin' | 'raw' | 'vendor';
 const GENE_SOLUTIONS_COMPANY_ID = 'cmrc86g8l0001qhbkgcq6wrf9';
 const GENE_SOLUTIONS_MOCK_FINANCIAL_SOURCE = 'GENE_SOLUTIONS_MOCK';
@@ -315,6 +315,24 @@ async function buildOperationalDataVersion(
           companyId
         )
       : Promise.resolve({ label: 'OperationalSystemConnectionProducts', skipped: true }),
+    (includeAll || type === 'products')
+      ? safeOperationalVersionPart(
+          'CompanyItemDutyApplication',
+          `SELECT COUNT(*)::text AS count, MAX("updatedAt") AS "maxUpdatedAt", SUM("dutyAmount")::text AS "dutyChecksum", SUM("tariffAmount")::text AS "tariffChecksum"
+           FROM "CompanyItemDutyApplication"
+           WHERE "companyId" = $1`,
+          companyId
+        )
+      : Promise.resolve({ label: 'CompanyItemDutyApplication', skipped: true }),
+    (includeAll || type === 'products')
+      ? safeOperationalVersionPart(
+          'CompanyItemDuty',
+          `SELECT COUNT(*)::text AS count, MAX("updatedAt") AS "maxUpdatedAt", MAX("lastRateFetchedAt") AS "maxLastRateFetchedAt"
+           FROM "CompanyItemDuty"
+           WHERE "companyId" = $1`,
+          companyId
+        )
+      : Promise.resolve({ label: 'CompanyItemDuty', skipped: true }),
     (includeAll || type === 'inventory')
       ? safeOperationalVersionPart(
           'InventorySnapshot',
@@ -3366,7 +3384,7 @@ export async function GET(request: NextRequest) {
               statementRollup,
               productsLimitIsAll ? 'all' : boundedLimit,
               'qbd-current-year-net-income-v1',
-              shouldUseMockData ? 'mock-operational-data-v4' : 'real-operational-data-v1',
+              shouldUseMockData ? 'mock-operational-data-v4' : 'real-operational-data-v2-hts-duty',
               // Bust stale ap-aging payloads that were cached while the
               // payment-gap guard / DerAmtBal preference was missing.
               cacheType === 'ap-aging' || cacheType === 'ap' ? 'ap-true-open-balance-v1' : null,
@@ -8954,7 +8972,15 @@ export async function GET(request: NextRequest) {
                 };
               })
             : wholesaleOrderLinesWithCanonicalParts;
-        const canonicalWholesaleOrderLines = canonicalizeWholesaleCustomerParts(wholesaleOrderLinesWithAprSgp as any[]);
+        let canonicalWholesaleOrderLines = canonicalizeWholesaleCustomerParts(wholesaleOrderLinesWithAprSgp as any[]);
+        try {
+          const { createHtsDutyApplicator } = await import('@/lib/hts/apply-duty-cogs');
+          const applicator = await createHtsDutyApplicator(companyId);
+          data = applicator.attach(Array.isArray(data) ? data : []);
+          canonicalWholesaleOrderLines = applicator.attach(canonicalWholesaleOrderLines);
+        } catch (error) {
+          console.warn('HTS duty attach skipped:', error);
+        }
 
         if (shouldUseMockData) {
           return NextResponse.json(

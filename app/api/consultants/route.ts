@@ -56,6 +56,8 @@ const COMPANY_SCOPED_TABLE_DELETE_ORDER = [
   'APAgingSnapshot',
   'VendorSnapshot',
   'ProductSalesSnapshot',
+  'CompanyItemDutyApplication',
+  'CompanyItemDuty',
   'InventorySnapshot',
   'CashSnapshot',
   'DailyFinancialSnapshot',

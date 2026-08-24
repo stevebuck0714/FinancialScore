@@ -33,6 +33,10 @@ export type AprSgpGmpaRow = {
   projectedNetProfit: number | null;
   projectedNetProfitPct: number | null;
   projectedGrossMarginPct: number | null;
+  htsCode: string | null;
+  countryOfOrigin: string | null;
+  tradeProgram: string | null;
+  qtyUnit: string | null;
 };
 
 export type ParsedAprSgpGmpaWorkbook = {
@@ -138,16 +142,117 @@ export function buildAprSgpItemCustomerPartKeys(row: {
   return item && customerPartNumber ? [`ITEM:${item}|CUSTOMER_PART:${customerPartNumber}`] : [];
 }
 
+function formatHtsNumber(value: unknown): string | null {
+  const digits = String(value ?? '').replace(/[^\d]/g, '');
+  if (digits.length < 4 || digits.length > 10) return String(value ?? '').trim() || null;
+  if (digits.length <= 4) return digits;
+  if (digits.length <= 6) return `${digits.slice(0, 4)}.${digits.slice(4)}`;
+  if (digits.length <= 8) return `${digits.slice(0, 4)}.${digits.slice(4, 6)}.${digits.slice(6)}`;
+  return `${digits.slice(0, 4)}.${digits.slice(4, 6)}.${digits.slice(6, 8)}.${digits.slice(8)}`;
+}
+
+function itemKey(value: unknown): string {
+  return asString(value).toUpperCase().replace(/\s+/g, ' ');
+}
+
+function pickDutyTariffSheetName(workbook: XLSX.WorkBook): string | null {
+  const names = workbook.SheetNames;
+  return (
+    names.find((name) => /updated duty\s*&\s*tariffs/i.test(name)) ||
+    names.find((name) => /current duty\s*&\s*tariffs/i.test(name)) ||
+    names.find((name) => /sgp duty\s*&\s*tariffs/i.test(name)) ||
+    names.find((name) => /duty\s*&\s*tariffs/i.test(name)) ||
+    null
+  );
+}
+
+function parseDutyTariffItems(workbook: XLSX.WorkBook): Map<string, { itemId: string; htsCode: string | null; countryOfOrigin: string | null; vendorName: string | null }> {
+  const byItem = new Map<string, { itemId: string; htsCode: string | null; countryOfOrigin: string | null; vendorName: string | null }>();
+  const sheetName = pickDutyTariffSheetName(workbook);
+  if (!sheetName) return byItem;
+  const matrix = XLSX.utils.sheet_to_json<MatrixCell[]>(workbook.Sheets[sheetName], { header: 1, raw: true, blankrows: false });
+  const headerIndex = matrix.findIndex((row) => {
+    const vendor = normalizeHeader(row?.[0]);
+    const item = normalizeHeader(row?.[5]);
+    return vendor === 'vendor #' && item === 'item';
+  });
+  if (headerIndex < 0) return byItem;
+  const columnMap = buildColumnMap(matrix[headerIndex] || []);
+  const indexes = {
+    vendorName: col(columnMap, 'Vendor Name', 'Vendor'),
+    countryOfOrigin: col(columnMap, 'COO', 'Country of Origin', 'Origin'),
+    itemId: col(columnMap, 'Item'),
+    htsCode: col(columnMap, '(D1) HTS Number', 'HTS Number', 'HTS-10', 'HTS Code', 'HTS'),
+  };
+  for (let rowIndex = headerIndex + 1; rowIndex < matrix.length; rowIndex += 1) {
+    const row = matrix[rowIndex] || [];
+    const itemId = readString(row, indexes.itemId);
+    if (!itemId) continue;
+    const key = itemKey(itemId);
+    const existing = byItem.get(key);
+    const htsCode = formatHtsNumber(readString(row, indexes.htsCode));
+    const countryOfOrigin = readString(row, indexes.countryOfOrigin) || null;
+    const vendorName = readString(row, indexes.vendorName) || null;
+    if (!existing) {
+      byItem.set(key, { itemId, htsCode, countryOfOrigin, vendorName });
+      continue;
+    }
+    existing.htsCode = existing.htsCode || htsCode;
+    existing.countryOfOrigin = existing.countryOfOrigin || countryOfOrigin;
+    existing.vendorName = existing.vendorName || vendorName;
+  }
+  return byItem;
+}
+
+function emptyDutySeedRow(itemId: string, customerName: string, htsCode: string | null, countryOfOrigin: string | null): AprSgpGmpaRow {
+  return {
+    itemId,
+    customerId: null,
+    customerName,
+    customerGroup: null,
+    customerPartNumber: null,
+    sgpPrice: null,
+    sgpMaterialCost: null,
+    sgpTariffPerPiece: null,
+    sgpDutiesPerPiece: null,
+    sgpFreightPerPiece: null,
+    sgpCostOfSales: null,
+    sgpOperatingExpensesPerPiece: null,
+    sgpFullyLoadedCost: null,
+    sgpNetProfit: null,
+    sgpNetProfitPct: null,
+    sgpGrossMarginPct: null,
+    currentPrice: null,
+    updatedMaterialCost: null,
+    projectedTariffPerPiece: null,
+    projectedDutiesPerPiece: null,
+    projectedFreightPerPiece: null,
+    projectedCostOfSales: null,
+    projectedOperatingExpensesPerPiece: null,
+    projectedFullyLoadedCost: null,
+    projectedNetProfit: null,
+    projectedNetProfitPct: null,
+    projectedGrossMarginPct: null,
+    htsCode,
+    countryOfOrigin,
+    tradeProgram: null,
+    qtyUnit: null,
+  };
+}
+
 export function parseAprSgpGmpaWorkbook(workbook: XLSX.WorkBook): ParsedAprSgpGmpaWorkbook {
-  const sheetName = workbook.SheetNames.find((name) => /annual by customer/i.test(name)) || workbook.SheetNames[0];
+  const sheetName =
+    workbook.SheetNames.find((name) => /annual by customer\s*#/i.test(name)) ||
+    workbook.SheetNames.find((name) => /annual by customer/i.test(name)) ||
+    workbook.SheetNames[0];
   if (!sheetName) throw new Error(`${APR_SGP_GMPA_LABEL} has no worksheets.`);
   const sheet = workbook.Sheets[sheetName];
   const matrix = XLSX.utils.sheet_to_json<MatrixCell[]>(sheet, { header: 1, raw: true, blankrows: false });
-  const sourceDate = asDate(matrix[1]?.[1]);
-  if (!sourceDate) throw new Error(`${APR_SGP_GMPA_LABEL} is missing a valid date in B2.`);
+  const sourceDate = asDate(matrix[1]?.[1]) || asDate(matrix[0]?.[3]) || asDate(matrix[1]?.[0]) || new Date();
 
   const headerIndex = findHeaderIndex(matrix);
-  if (headerIndex < 0) throw new Error(`${APR_SGP_GMPA_LABEL} is missing the Item / Customer ID / Customer header row.`);
+  const rows: AprSgpGmpaRow[] = [];
+  if (headerIndex >= 0) {
   const columnMap = buildColumnMap(matrix[headerIndex] || []);
 
   const indexes = {
@@ -178,9 +283,12 @@ export function parseAprSgpGmpaWorkbook(workbook: XLSX.WorkBook): ParsedAprSgpGm
     projectedNetProfit: col(columnMap, 'Projected Net Profit'),
     projectedNetProfitPct: col(columnMap, 'Projected Net Profit %'),
     projectedGrossMarginPct: col(columnMap, 'Projected Gross Margin %'),
+    htsCode: col(columnMap, '(D1) HTS Number', 'HTS', 'HTS-10', 'HTS Code', 'HTS Number'),
+    countryOfOrigin: col(columnMap, 'Updated Vendor COO', 'SGP Vendor COO', 'Country of Origin', 'Origin', 'COO'),
+    tradeProgram: col(columnMap, 'Trade Program', 'USMCA', 'Program'),
+    qtyUnit: col(columnMap, 'Qty Unit', 'UM', 'UOM', 'Unit'),
   };
 
-  const rows: AprSgpGmpaRow[] = [];
   for (let rowIndex = headerIndex + 1; rowIndex < matrix.length; rowIndex += 1) {
     const row = matrix[rowIndex] || [];
     const itemId = readString(row, indexes.itemId);
@@ -214,7 +322,26 @@ export function parseAprSgpGmpaWorkbook(workbook: XLSX.WorkBook): ParsedAprSgpGm
       projectedNetProfit: readNumber(row, indexes.projectedNetProfit),
       projectedNetProfitPct: readNumber(row, indexes.projectedNetProfitPct),
       projectedGrossMarginPct: readNumber(row, indexes.projectedGrossMarginPct),
+      htsCode: formatHtsNumber(readString(row, indexes.htsCode)),
+      countryOfOrigin: readString(row, indexes.countryOfOrigin) || null,
+      tradeProgram: readString(row, indexes.tradeProgram) || null,
+      qtyUnit: readString(row, indexes.qtyUnit) || null,
     });
+  }
+  }
+
+  const dutyByItem = parseDutyTariffItems(workbook);
+  const seenItems = new Set(rows.map((row) => itemKey(row.itemId)));
+  for (const row of rows) {
+    const duty = dutyByItem.get(itemKey(row.itemId));
+    if (!duty) continue;
+    row.htsCode = row.htsCode || duty.htsCode;
+    row.countryOfOrigin = duty.countryOfOrigin || row.countryOfOrigin;
+  }
+  for (const duty of dutyByItem.values()) {
+    if (seenItems.has(itemKey(duty.itemId))) continue;
+    rows.push(emptyDutySeedRow(duty.itemId, duty.vendorName || 'Duty & Tariffs', duty.htsCode, duty.countryOfOrigin));
+    seenItems.add(itemKey(duty.itemId));
   }
 
   if (!rows.length) throw new Error(`${APR_SGP_GMPA_LABEL} did not contain any customer/item rows.`);
@@ -231,6 +358,8 @@ export function parseAprSgpGmpaWorkbook(workbook: XLSX.WorkBook): ParsedAprSgpGm
   };
 }
 
+const blobParseTried = new Set<string>();
+
 export async function readAprSgpGmpaWorkbook(companyId: string): Promise<ParsedAprSgpGmpaWorkbook | null> {
   const { getOperationalSystemConnection } = await import('@/lib/operational/operational-system-connections');
   const connection = await getOperationalSystemConnection(companyId, 'SPREADSHEET_UPLOAD', APR_SGP_GMPA_SOURCE_CODE);
@@ -238,8 +367,29 @@ export async function readAprSgpGmpaWorkbook(companyId: string): Promise<ParsedA
     ? connection.connectionMetadata
     : {};
   const parsed = metadata.aprSgpGmpaParsedWorkbook;
-  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return null;
-  const rows = Array.isArray((parsed as any).rows) ? (parsed as any).rows : [];
-  if (!rows.length) return null;
-  return parsed as ParsedAprSgpGmpaWorkbook;
+  const stored =
+    parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? (parsed as ParsedAprSgpGmpaWorkbook) : null;
+  const storedRows = Array.isArray(stored?.rows) ? stored.rows : [];
+  const storedHasHts = storedRows.some((row) => String(row?.htsCode || '').trim());
+  if (storedRows.length && storedHasHts) return stored;
+
+  const upload = metadata.aprSgpGmpaWorkbookUpload && typeof metadata.aprSgpGmpaWorkbookUpload === 'object'
+    ? (metadata.aprSgpGmpaWorkbookUpload as { blobUrl?: string })
+    : null;
+  const blobUrl = String(upload?.blobUrl || '').trim();
+  if (blobUrl && !blobParseTried.has(companyId)) {
+    blobParseTried.add(companyId);
+    try {
+      const response = await fetch(blobUrl);
+      if (response.ok) {
+        const workbook = XLSX.read(Buffer.from(await response.arrayBuffer()), { type: 'buffer', cellDates: true });
+        return parseAprSgpGmpaWorkbook(workbook);
+      }
+    } catch (error) {
+      console.warn('SGP workbook blob re-parse failed:', error);
+    }
+  }
+
+  if (storedRows.length) return stored;
+  return null;
 }

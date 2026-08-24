@@ -135,6 +135,8 @@ model Company {
   platosClosetWorkbookSnapshots PlatosClosetWorkbookSnapshot[]
   platosClosetMonthlyFacts   PlatosClosetMonthlyFact[]
   bakersCogsFacts            BakersCogsFact[]
+  companyItemDuties          CompanyItemDuty[]
+  companyItemDutyApplications CompanyItemDutyApplication[]
   apiSyncLogs                ApiSyncLog[]
   inforRawBatches            InforRawBatch[]
   inforRawRecords            InforRawRecord[]
@@ -1921,6 +1923,92 @@ model ProductGoalUpdate {
   updatedAt  DateTime @updatedAt
 
   @@id([companyId, year])
+}
+
+model CompanyItemDuty {
+  id                        String    @id @default(cuid())
+  companyId                 String
+  itemSku                   String
+  itemDescription           String?
+  htsCode                   String?
+  countryOfOrigin           String?
+  tradeProgram              String?   @default("none")
+  qtyUnit                   String?   @default("piece")
+  tariffHtsCode             String?
+  enteredValuePerPiece      Float?
+  enteredValueSource        String?
+  spreadsheetDutyPerPiece   Float?
+  spreadsheetTariffPerPiece Float?
+  dutyPerPiece              Float?
+  tariffPerPiece            Float?
+  dutyRatePct               Float?
+  specialRatePct            Float?
+  section301RatePct         Float?
+  section232RatePct         Float?
+  ieepaRatePct              Float?
+  additionalRatePct         Float?
+  tariffRatePct             Float?
+  rateSource                String    @default("spreadsheet")
+  identitySource            String    @default("spreadsheet")
+  htsInputSource            String?
+  lastSpreadsheetSeedAt     DateTime?
+  lastRateFetchedAt         DateTime?
+  lastRateAsOfDate          DateTime?
+  lastRateReleaseName       String?
+  userEditedAt              DateTime?
+  createdAt                 DateTime  @default(now())
+  updatedAt                 DateTime  @updatedAt
+  company                   Company   @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@unique([companyId, itemSku])
+  @@index([companyId, htsCode])
+  @@index([companyId, identitySource])
+}
+
+model CompanyItemDutyApplication {
+  id                   String   @id @default(cuid())
+  companyId            String
+  itemSku              String
+  eventDate            DateTime
+  quantity             Float    @default(0)
+  enteredValuePerPiece Float?
+  dutyRatePct          Float?
+  tariffRatePct        Float?
+  dutyAmount           Float    @default(0)
+  tariffAmount         Float    @default(0)
+  quoteAsOfDate        DateTime?
+  rateSource           String   @default("hts")
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+  company              Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@unique([companyId, itemSku, eventDate])
+  @@index([companyId, eventDate])
+}
+
+model HtsRateQuote {
+  id                   String   @id @default(cuid())
+  htsCode              String
+  originCountry        String   @default("")
+  tradeProgram         String   @default("none")
+  asOfDate             DateTime
+  releaseName          String?
+  dutyRatePct          Float?
+  specialRatePct       Float?
+  section301RatePct    Float?
+  section232RatePct    Float?
+  ieepaRatePct         Float?
+  additionalRatePct    Float?
+  tariffRatePct        Float?
+  dutyRateText         String?
+  specialRateText      String?
+  additionalDutiesText String?
+  unit1                String?
+  fetchedAt            DateTime @default(now())
+  createdAt            DateTime @default(now())
+
+  @@unique([htsCode, originCountry, tradeProgram, asOfDate])
+  @@index([asOfDate])
 }
 
 model SalesInvoiceHeaderSnapshot {

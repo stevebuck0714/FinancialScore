@@ -321,6 +321,7 @@ const TOP_LINE_BUCKETS_BY_SECTOR: Record<string, Bucket[]> = {
     { key: 'inventory', label: 'Inventory' },
     { key: 'sales', label: 'Sales' },
     { key: 'products', label: 'Products' },
+    { key: 'vendors', label: 'Vendors' },
     { key: 'customers', label: 'Customers' },
   ],
   '42': [

@@ -156,6 +156,8 @@ const SECTOR_SCHEMA_BY_CODE: Record<string, SectorSchema> = {
     ],
     cogs: [
       'Raw Materials & Components',
+      'Duties',
+      'Tariffs',
       'Direct Production Labor',
       'Manufacturing Overhead',
       'Production Equipment Depreciation',
@@ -175,6 +177,7 @@ const SECTOR_SCHEMA_BY_CODE: Record<string, SectorSchema> = {
     ],
     cogs: [
       'Product Cost',
+      'Duties',
       'Inbound Logistics',
       'Inventory Adjustments',
       'Tariffs',

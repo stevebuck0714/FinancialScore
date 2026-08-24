@@ -46,7 +46,7 @@ const collectPrefixedValues = (
 };
 
 async function buildMasterDataVersion(companyId: string, scope: 'published' | 'all'): Promise<string> {
-  const [financialRows, monthlyRows, publishRows] = await Promise.all([
+  const [financialRows, monthlyRows, publishRows, htsDutyRows] = await Promise.all([
     prisma.$queryRawUnsafe<Array<Record<string, unknown>>>(
       `SELECT COUNT(*)::text AS count, MAX("updatedAt") AS "maxUpdatedAt", MAX("createdAt") AS "maxCreatedAt"
        FROM "FinancialRecord"
@@ -80,8 +80,14 @@ async function buildMasterDataVersion(companyId: string, scope: 'published' | 'a
           MASTER_DATA_REPORT_MIN_DATE_UTC
         ).catch((error: any) => [{ unavailable: true, error: String(error?.message || error).slice(0, 120) }])
       : Promise.resolve([{ skipped: true }]),
+    prisma.$queryRawUnsafe<Array<Record<string, unknown>>>(
+      `SELECT COUNT(*)::text AS count, MAX("updatedAt") AS "maxUpdatedAt", SUM("dutyAmount")::text AS "dutyChecksum", SUM("tariffAmount")::text AS "tariffChecksum"
+       FROM "CompanyItemDutyApplication"
+       WHERE "companyId" = $1`,
+      companyId
+    ).catch((error: any) => [{ unavailable: true, error: String(error?.message || error).slice(0, 120) }]),
   ]);
-  return hashCacheParts([financialRows, monthlyRows, publishRows]);
+  return hashCacheParts([financialRows, monthlyRows, publishRows, htsDutyRows]);
 }
 
 // GET - Load Master data for a company from database
@@ -117,6 +123,7 @@ export async function GET(request: NextRequest) {
         scope,
         MASTER_DATA_REPORT_MIN_DATE,
         'closed-reporting-month-v1',
+        'hts-duty-cogs-v1',
         scope === 'published' ? currentMonthKeyUtc() : 'all',
       ]),
       dataVersion: await buildMasterDataVersion(companyId, scope),
@@ -218,6 +225,9 @@ export async function GET(request: NextRequest) {
         })
       : sourceRows;
 
+    const { loadMonthlyHtsDutyCogs, overlayHtsDutyCogs } = await import('@/lib/hts/apply-duty-cogs');
+    const htsCogsByMonth = await loadMonthlyHtsDutyCogs(companyId).catch(() => new Map());
+
     // Format monthly data to match expected structure
     const monthlyData = reportingRows.map((month: any) => {
       const cash = month.cash || 0;
@@ -238,9 +248,14 @@ export async function GET(request: NextRequest) {
       const revenueBreakdown = month.revenueBreakdown && typeof month.revenueBreakdown === 'object'
         ? month.revenueBreakdown
         : {};
-      const cogsBreakdown = month.cogsBreakdown && typeof month.cogsBreakdown === 'object'
+      const sourceCogsBreakdown = month.cogsBreakdown && typeof month.cogsBreakdown === 'object'
         ? month.cogsBreakdown
         : {};
+      const monthDate = month.monthDate ? new Date(month.monthDate) : null;
+      const monthKey =
+        monthDate && !Number.isNaN(monthDate.getTime())
+          ? `${monthDate.getUTCFullYear()}-${String(monthDate.getUTCMonth() + 1).padStart(2, '0')}`
+          : '';
       const expenseBreakdown = month.expenseBreakdown && typeof month.expenseBreakdown === 'object'
         ? month.expenseBreakdown
         : {};
@@ -268,7 +283,11 @@ export async function GET(request: NextRequest) {
       ) || nonOperatingExpenseFromBreakdown;
 
       const revenueFields = collectPrefixedValues(month, revenueBreakdown as Record<string, unknown>, 'rev_');
-      const cogsFields = collectPrefixedValues(month, cogsBreakdown as Record<string, unknown>, 'cogs_');
+      const cogsBreakdown = overlayHtsDutyCogs(
+        collectPrefixedValues(month, sourceCogsBreakdown as Record<string, unknown>, 'cogs_'),
+        monthKey ? htsCogsByMonth.get(monthKey) : null
+      );
+      const cogsFields = collectPrefixedValues({}, cogsBreakdown, 'cogs_');
       const hasSectorRevenue = Object.keys(revenueFields).length > 0;
       const hasSectorCogs = Object.keys(cogsFields).length > 0;
       const sectorRevenueTotal = Object.values(revenueFields).reduce((sum, value) => sum + toNumber(value), 0);

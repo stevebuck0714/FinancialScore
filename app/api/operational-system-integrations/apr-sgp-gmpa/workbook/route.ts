@@ -7,6 +7,7 @@ import {
   APR_SGP_GMPA_SOURCE_CODE,
   parseAprSgpGmpaWorkbook,
 } from '@/lib/operational/apr-sgp-gmpa';
+import { refreshCompanyItemDuties } from '@/lib/hts/item-duty-overlay';
 
 export const dynamic = 'force-dynamic';
 
@@ -105,6 +106,11 @@ export async function POST(request: NextRequest) {
       errorMessage: null,
     });
 
+    const dutySeed = await refreshCompanyItemDuties(companyId).catch((error) => {
+      console.error('SGP duties overlay seed failed:', error);
+      return { spreadsheetItems: 0, discovered: 0 };
+    });
+
     return NextResponse.json({
       ok: true,
       companyId,
@@ -115,6 +121,7 @@ export async function POST(request: NextRequest) {
       rowCount: parsed.rowCount,
       customerCount: parsed.customerCount,
       itemCount: parsed.itemCount,
+      dutyItemsSeeded: dutySeed.spreadsheetItems,
     });
   } catch (error: any) {
     return NextResponse.json(

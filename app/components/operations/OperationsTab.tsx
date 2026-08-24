@@ -31,6 +31,7 @@ import ProductForecastRollupReport from './ProductForecastRollupReport';
 import ProductMonthlyRevenueReport from './ProductMonthlyRevenueReport';
 import ProductRevenueRollupReport from './ProductRevenueRollupReport';
 import ProductGoalUpdateReport from './ProductGoalUpdateReport';
+import DutiesTariffsReport from './DutiesTariffsReport';
 import VendorMonthlyForecastReport from './VendorMonthlyForecastReport';
 import VendorForecastRollupReport from './VendorForecastRollupReport';
 import ResidentialRevenueForecast from './real-estate-forecast/ResidentialRevenueForecast';
@@ -202,7 +203,7 @@ type WipLineItemSortKey =
   | 'contractValue'
   | 'invoicedValue';
 type ProductReportView = 'productMarginAnalysis' | 'wholesaleRawData' | 'vendorPricing' | 'revenueForecast' | 'forecastRollup' | 'monthlyRevenue' | 'revenueRollup' | 'goalUpdate' | 'performance' | 'retailForecast' | 'merchandiseProfitability';
-type VendorReportView = 'vendorPricing' | 'monthlyForecast' | 'forecastRollup';
+type VendorReportView = 'vendorPricing' | 'monthlyForecast' | 'forecastRollup' | 'dutiesTariffs';
 type WholesaleProductsReportMode = 'margin' | 'raw' | 'vendor';
 type WholesaleRawCustomerOption = {
   key: string;
@@ -1168,13 +1169,14 @@ export default function OperationsTab({
     setExpandedProductMarginCustomers((prev) => ({ ...prev, [key]: !prev[key] }));
   };
   const isCustomersTab = ['customers', 'sales'].includes(String(mapModuleToDataType(activeTab) || '')) || activeTab === 'customers';
+  const isVendorsTab = resolveModuleKey(activeTab) === 'vendors';
   const isWholesaleProductsTab =
     String(industrySectorCategory || '').trim() === '42' &&
     (mapModuleToDataType(activeTab) === 'products' || activeTab === 'products') &&
-    resolveModuleKey(activeTab) !== 'vendors';
+    !isVendorsTab;
   const isWholesaleVendorsTab =
     String(industrySectorCategory || '').trim() === '42' &&
-    resolveModuleKey(activeTab) === 'vendors';
+    isVendorsTab;
   const usesWholesaleDedicatedProductView =
     (isWholesaleProductsTab &&
     (productReportView === 'productMarginAnalysis' ||
@@ -1184,7 +1186,8 @@ export default function OperationsTab({
       productReportView === 'monthlyRevenue' ||
       productReportView === 'revenueRollup' ||
       productReportView === 'goalUpdate')) ||
-    isWholesaleVendorsTab;
+    isVendorsTab;
+  const usesDutiesTariffsDedicatedView = isVendorsTab;
   const shouldApplyOperationalUserAccess =
     String(currentUser?.role || '').toLowerCase() === 'user' &&
     String(currentUser?.userType || '').toLowerCase() === 'company' &&
@@ -1291,7 +1294,7 @@ export default function OperationsTab({
   const moduleSource: 'layout-config' | 'sector-default' = layoutModules.length > 0 ? 'layout-config' : 'sector-default';
   const resolvedModulesBase = moduleSource === 'layout-config' ? layoutModules : sectorModules;
   const resolvedModules =
-    String(industrySectorCategory || '').trim() === '42' && !resolvedModulesBase.includes('vendors')
+    ['32', '42'].includes(String(industrySectorCategory || '').trim()) && !resolvedModulesBase.includes('vendors')
       ? (() => {
           const productsIdx = resolvedModulesBase.findIndex((module) => module === 'products_skus' || module === 'products');
           if (productsIdx < 0) return [...resolvedModulesBase, 'vendors'];
@@ -1329,7 +1332,7 @@ export default function OperationsTab({
     if (isWholesaleTradeSector && moduleKey === 'products_skus') {
       return 'Products';
     }
-    if (isWholesaleTradeSector && moduleKey === 'vendors') {
+    if (moduleKey === 'vendors') {
       return 'Vendors';
     }
     return getModuleLabel(moduleKey) || moduleKey.replace(/_/g, ' ');
@@ -8168,7 +8171,7 @@ export default function OperationsTab({
 
   // Product Sales Tab  
   const renderProducts = () => {
-    if (!usesWholesaleDedicatedProductView && (loading || !productData)) {
+    if (!usesWholesaleDedicatedProductView && !usesDutiesTariffsDedicatedView && (loading || !productData)) {
       return <div data-print-ready="loading" style={{ padding: '40px', textAlign: 'center', color: '#64748b' }}>Loading product data...</div>;
     }
 
@@ -8186,6 +8189,7 @@ export default function OperationsTab({
     const isRevenueRollupEnabled = isWholesaleProductSector && isSectionEnabled('productsRevenueRollup');
     const isGoalUpdateEnabled = isWholesaleProductSector && isSectionEnabled('productsGoalUpdate');
     const isProductPerformanceEnabled = isSectionEnabled('productsPerformance');
+    const isDutiesTariffsEnabled = isSectionEnabled('vendorsDutiesTariffs') || isSectionEnabled('productsDutiesTariffs');
     const isRetailForecastingEnabled = isSectionEnabled('productsRetailForecasting');
     const isMerchandiseProfitabilityEnabled = isSectionEnabled('productsMerchandiseProfitability');
     const hasAnyProductsReportEnabled =
@@ -8259,11 +8263,15 @@ export default function OperationsTab({
     const fallbackVendorReportView: VendorReportView =
       isVendorPricingEnabled
         ? 'vendorPricing'
+        : isDutiesTariffsEnabled
+        ? 'dutiesTariffs'
         : isVendorMonthlyForecastEnabled
         ? 'monthlyForecast'
         : 'forecastRollup';
     const effectiveVendorReportView =
       vendorReportView === 'vendorPricing' && !isVendorPricingEnabled
+        ? fallbackVendorReportView
+        : vendorReportView === 'dutiesTariffs' && !isDutiesTariffsEnabled
         ? fallbackVendorReportView
         : vendorReportView === 'monthlyForecast' && !isVendorMonthlyForecastEnabled
         ? fallbackVendorReportView
@@ -9896,7 +9904,9 @@ export default function OperationsTab({
         </select>
       </div>
     ) : null;
-    const productPageTitle = isHealthcareServicesProceduresPage ? 'Services / Procedures Performance' : 'Product Sales Performance';
+    const productPageTitle = isHealthcareServicesProceduresPage
+      ? 'Services / Procedures Performance'
+      : 'Product Sales Performance';
     const renderProductMarginAnalysisReport = () => {
       const formatMarginNumber = (value: number | null | undefined) =>
         value == null || !Number.isFinite(Number(value))
@@ -11374,6 +11384,40 @@ export default function OperationsTab({
           },
         ],
       },
+      productsDutiesTariffs: {
+        title: 'What Duties & Tariffs shows',
+        sections: [
+          {
+            body:
+              'This is the vendor item overlay for import duties and tariffs. Vendor name comes from the primary item-vendor ranking. HTS-10 and country of origin seed from the SGP Duty & Tariffs sheet ((D1) HTS Number and COO). Value $ is the customs entered value per unit, seeded from SGP material cost; duty and tariff dollars will be this value times the % rates. Duty % is HTS Column 1 general. Separate tariff % columns cover special/USMCA, Section 301, Section 232, IEEPA, and other additional duties. Refresh rates looks up the USITC schedule for the selected entry date, keeps a dated quote history, then applies the quote in effect on each sales date to product landed cost and P&L Duties / Tariffs (reclass from materials / product cost so total COGS does not change).'
+          },
+          {
+            heading: 'How to use it',
+            body: [
+              'Open Vendors, then Duties & Tariffs. Upload the full SGP GMPA workbook (the file that includes Current / Updated Duty & Tariffs), not the annual-only extract. HTS and origin fill from that sheet. New SKUs without a spreadsheet HTS stay blank until you fill them.',
+              'New SKUs from sales, inventory, or CSI that are not on the Duty & Tariffs sheet appear blank until you fill HTS and origin.',
+              'Refresh rates fills Duty % from the live USITC Column 1 rate for the selected customs entry date (As of). Save HTS-10 first; Needs HTS input only shows blank rows, so switch to All items to see rates. Section 301 is joined from the China 8-digit USTR lists to the matching Chapter 99 heading (it is not printed on the 10-digit statistical line). IEEPA / reciprocal extras are origin-based Chapter 99 headings, for example Taiwan 9903.02.60. Terminated or suspended compiler-note provisions are skipped. Each fetch is stored by HTS, origin, program, and date. Refresh also applies those dated quotes to sales dates for Product Margin Analysis and P&L Duties / Tariffs.',
+            ],
+          },
+        ],
+      },
+      vendorsDutiesTariffs: {
+        title: 'What Duties & Tariffs shows',
+        sections: [
+          {
+            body:
+              'This is the vendor item overlay for import duties and tariffs. Vendor name comes from the primary item-vendor ranking. HTS-10 and country of origin seed from the SGP Duty & Tariffs sheet ((D1) HTS Number and COO). Value $ is the customs entered value per unit, seeded from SGP material cost; duty and tariff dollars will be this value times the % rates. Duty % is HTS Column 1 general. Separate tariff % columns cover special/USMCA, Section 301, Section 232, IEEPA, and other additional duties. Refresh rates looks up the USITC schedule for the selected entry date, keeps a dated quote history, then applies the quote in effect on each sales date to product landed cost and P&L Duties / Tariffs (reclass from materials / product cost so total COGS does not change).'
+          },
+          {
+            heading: 'How to use it',
+            body: [
+              'Open Vendors, then Duties & Tariffs. Upload the full SGP GMPA workbook (the file that includes Current / Updated Duty & Tariffs), not the annual-only extract. HTS and origin fill from that sheet. New SKUs without a spreadsheet HTS stay blank until you fill them.',
+              'New SKUs from sales, inventory, or CSI that are not on the Duty & Tariffs sheet appear blank until you fill HTS and origin.',
+              'Refresh rates fills Duty % from the live USITC Column 1 rate for the selected customs entry date (As of). Save HTS-10 first; Needs HTS input only shows blank rows, so switch to All items to see rates. Section 301 is joined from the China 8-digit USTR lists to the matching Chapter 99 heading (it is not printed on the 10-digit statistical line). IEEPA / reciprocal extras are origin-based Chapter 99 headings, for example Taiwan 9903.02.60. Terminated or suspended compiler-note provisions are skipped. Each fetch is stored by HTS, origin, program, and date. Refresh also applies those dated quotes to sales dates for Product Margin Analysis and P&L Duties / Tariffs.',
+            ],
+          },
+        ],
+      },
       productsRevenueForecast: {
         title: 'What Monthly Forecast shows',
         sections: [
@@ -11608,7 +11652,7 @@ export default function OperationsTab({
       ) : null
     );
 
-    if (isWholesaleVendorsTab) {
+    if (isVendorsTab) {
       const vendorSwitcherButton = (view: VendorReportView, enabled: boolean, label: string) =>
         enabled ? (
           <button
@@ -11629,9 +11673,10 @@ export default function OperationsTab({
           </button>
         ) : null;
       const vendorViewSwitcher =
-        isVendorPricingEnabled || isVendorMonthlyForecastEnabled || isVendorForecastRollupEnabled ? (
+        isVendorPricingEnabled || isDutiesTariffsEnabled || isVendorMonthlyForecastEnabled || isVendorForecastRollupEnabled ? (
           <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '16px' }}>
             {vendorSwitcherButton('vendorPricing', isVendorPricingEnabled, 'Vendor Pricing')}
+            {vendorSwitcherButton('dutiesTariffs', isDutiesTariffsEnabled, 'Duties & Tariffs')}
             {vendorSwitcherButton('monthlyForecast', isVendorMonthlyForecastEnabled, 'Monthly Forecast')}
             {vendorSwitcherButton('forecastRollup', isVendorForecastRollupEnabled, 'Forecast Rollup')}
           </div>
@@ -11640,7 +11685,18 @@ export default function OperationsTab({
       return (
         <div style={{ padding: vendorInfoPadding }}>
           {vendorViewSwitcher}
-          {effectiveVendorReportView === 'monthlyForecast' && isVendorMonthlyForecastEnabled ? (
+          {effectiveVendorReportView === 'dutiesTariffs' && isDutiesTariffsEnabled ? (
+            <>
+              <h2 style={{ fontSize: '24px', fontWeight: '700', color: '#1e293b', marginBottom: '16px' }}>
+                Duties & Tariffs
+              </h2>
+              <DutiesTariffsReport
+                selectedCompanyId={selectedCompanyId}
+                onOpenInfo={() => setProductChartInfoKey('vendorsDutiesTariffs')}
+              />
+              {renderProductChartInfoModal()}
+            </>
+          ) : effectiveVendorReportView === 'monthlyForecast' && isVendorMonthlyForecastEnabled ? (
             <>
               <VendorMonthlyForecastReport
                 selectedCompanyId={selectedCompanyId}

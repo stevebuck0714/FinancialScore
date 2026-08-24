@@ -100,6 +100,9 @@ const SECTOR_32_REPORTS_BY_MODULE: Record<string, OperationalHubReportDefinition
     { key: 'customersRetentionProxy', label: 'Revenue Retention Proxy', group: 'Customers' },
     { key: 'customersAtRiskQueue', label: 'At-Risk Accounts Queue', group: 'Customers' },
   ],
+  vendors: [
+    { key: 'vendorsDutiesTariffs', label: 'Duties & Tariffs', group: 'Vendors' },
+  ],
 };
 
 const SECTOR_62_REPORTS_BY_MODULE: Record<string, OperationalHubReportDefinition[]> = {
@@ -240,15 +243,25 @@ function normalizeSector(sectorCategory?: string | null): string {
 }
 
 export function getOperationalHubDefaultModuleKeys(sectorCategory?: string | null): string[] {
+  const sector = normalizeSector(sectorCategory);
   const sectorModules = getTopLineBucketsForSector(sectorCategory).map((bucket) => String(bucket.key || '').trim()).filter(Boolean);
-  return Array.from(new Set(['dashboard', 'forecast', ...sectorModules, 'cash', 'daily_financials', 'loans', 'cap_table']));
+  const withVendors =
+    ['32', '42'].includes(sector) && !sectorModules.includes('vendors')
+      ? (() => {
+          const productsIdx = sectorModules.findIndex((module) => module === 'products_skus' || module === 'products');
+          if (productsIdx < 0) return [...sectorModules, 'vendors'];
+          return [...sectorModules.slice(0, productsIdx + 1), 'vendors', ...sectorModules.slice(productsIdx + 1)];
+        })()
+      : sectorModules;
+  return Array.from(new Set(['dashboard', 'forecast', ...withVendors, 'cash', 'daily_financials', 'loans', 'cap_table']));
 }
 
 export function getOperationalHubModuleLabel(moduleKey: string, sectorCategory?: string | null): string {
   if (moduleKey === 'dashboard') return 'Overview';
   if (moduleKey === 'forecast') return 'Forecast';
-  if (normalizeSector(sectorCategory) === '42' && moduleKey === 'products_skus') return 'Products';
-  if (normalizeSector(sectorCategory) === '42' && moduleKey === 'vendors') return 'Vendors';
+  const sector = normalizeSector(sectorCategory);
+  if ((sector === '32' || sector === '42') && moduleKey === 'products_skus') return 'Products';
+  if ((sector === '32' || sector === '42') && moduleKey === 'vendors') return 'Vendors';
   return getModuleLabel(moduleKey) || moduleKey.replace(/_/g, ' ');
 }
 
@@ -268,6 +281,18 @@ export function getOperationalHubDefaultReportsForModule(
   }
   if (sector === '53' && SECTOR_53_REPORTS_BY_MODULE[moduleKey]) {
     return SECTOR_53_REPORTS_BY_MODULE[moduleKey];
+  }
+  if (moduleKey === 'vendors') {
+    return [
+      ...(sector === '42' ? [{ key: 'productsVendorPricing', label: 'Vendor Pricing', group: 'Vendors' }] : []),
+      { key: 'vendorsDutiesTariffs', label: 'Duties & Tariffs', group: 'Vendors' },
+      ...(sector === '42'
+        ? [
+            { key: 'vendorsMonthlyForecast', label: 'Monthly Forecast', group: 'Vendors' },
+            { key: 'vendorsForecastRollup', label: 'Forecast Rollup', group: 'Vendors' },
+          ]
+        : []),
+    ];
   }
   const dataType = mapModuleToDataType(moduleKey);
   const group = dataType ? DATA_TYPE_GROUP[dataType] : null;

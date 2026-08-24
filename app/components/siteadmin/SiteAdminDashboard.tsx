@@ -102,6 +102,7 @@ const OPERATIONAL_HUB_SECTION_OPTIONS: Array<{ key: string; label: string; group
   { key: 'productsBottomLossMakers', label: 'Bottom Products (Loss Makers)', group: 'Products' },
   { key: 'productsFreightOtherTracker', label: 'Freight/Other Tracker', group: 'Products' },
   { key: 'productsVendorPricing', label: 'Vendor Pricing', group: 'Vendors' },
+  { key: 'vendorsDutiesTariffs', label: 'Duties & Tariffs', group: 'Vendors' },
   { key: 'vendorsMonthlyForecast', label: 'Monthly Forecast', group: 'Vendors' },
   { key: 'vendorsForecastRollup', label: 'Forecast Rollup', group: 'Vendors' },
   { key: 'inventoryValueTrend', label: 'Value Trend', group: 'Inventory' },
@@ -1483,6 +1484,7 @@ export default function SiteAdminDashboard(props: any) {
       if (companySectorCategory === '42' && moduleKey === 'vendors') {
         return [
           { key: 'productsVendorPricing', label: 'Vendor Pricing', group: option.label },
+          { key: 'vendorsDutiesTariffs', label: 'Duties & Tariffs', group: option.label },
           { key: 'vendorsMonthlyForecast', label: 'Monthly Forecast', group: option.label },
           { key: 'vendorsForecastRollup', label: 'Forecast Rollup', group: option.label },
         ];
@@ -1500,7 +1502,7 @@ export default function SiteAdminDashboard(props: any) {
       return OPERATIONAL_HUB_SECTION_OPTIONS
         .filter((item) => item.group === sourceGroup)
         .filter((item) => !['productsProductMarginAnalysis', 'productsWholesaleRawData', 'productsRevenueForecast', 'productsForecastRollup', 'productsMonthlyRevenue', 'productsRevenueRollup', 'productsGoalUpdate'].includes(item.key) || companySectorCategory === '42')
-        .filter((item) => !['productsVendorPricing', 'vendorsMonthlyForecast', 'vendorsForecastRollup'].includes(item.key))
+        .filter((item) => !['productsVendorPricing', 'vendorsDutiesTariffs', 'vendorsMonthlyForecast', 'vendorsForecastRollup'].includes(item.key))
         .filter((item) => companySectorCategory !== '42' || moduleKey !== 'orders_sales' || !WHOLESALE_ORDERS_SALES_EXCLUDED_REPORT_KEYS.has(item.key))
         .filter((item) => companySectorCategory !== '42' || moduleKey !== 'customers' || !WHOLESALE_CUSTOMERS_EXCLUDED_REPORT_KEYS.has(item.key))
         .filter((item) => companySectorCategory !== '42' || moduleKey !== 'inventory' || !WHOLESALE_INVENTORY_EXCLUDED_REPORT_KEYS.has(item.key))

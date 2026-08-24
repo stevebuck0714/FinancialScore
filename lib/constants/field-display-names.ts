@@ -35,6 +35,8 @@ export const FIELD_DISPLAY_NAMES: Record<string, string> = {
   cogsCommissions: 'Commissions',
   cogsOther: 'Other',
   cogsTotal: 'Total COGS',
+  cogs_duties: 'Duties',
+  cogs_tariffs: 'Tariffs',
   
   // Calculated fields
   grossProfit: 'GROSS PROFIT',

@@ -15610,7 +15610,7 @@ function FinancialScorePage() {
                     </div>
 
                     <div style={{ marginBottom: '10px', padding: '10px', background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: '8px', fontSize: '12px', color: '#1d4ed8' }}>
-                      Expected workbook: <strong>2026 SGP GMPA Forecast Worksheet</strong>. The workbook should include the Annual by Customer sheet with Item, Customer ID, Customer, Customer P/N, tariff, duties, freight, and operating expense columns. Cell B2 is used as the data date.
+                      Expected workbook: <strong>2026 SGP GMPA Forecast Worksheet</strong>. Use the full file that includes <strong>Current Duty &amp; Tariffs</strong> / <strong>Updated Duty &amp; Tariffs</strong> (HTS-10 and COO) plus the Annual by Customer sheet (Item, Customer, tariff, duties, freight). The annual-only extract does not contain HTS codes. Cell B2 is used as the data date.
                     </div>
 
                     <input
