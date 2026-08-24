@@ -132,6 +132,14 @@ export function validateDatabaseConnection(): DatabaseInfo {
   };
 }
 
+export function isProductionSite(): boolean {
+  try {
+    return validateDatabaseConnection().isProduction;
+  } catch {
+    return false;
+  }
+}
+
 /**
  * Throws an error if the database connection is not allowed
  * Call this before any database operation

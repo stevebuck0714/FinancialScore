@@ -1,5 +1,6 @@
 import { Resend } from 'resend';
 import { formatEstDateTime } from '@/lib/time/eastern';
+import { isProductionSite } from '@/lib/db-security';
 
 // Lazy initialize Resend client to avoid errors when API key is not set
 let resend: Resend | null = null;
@@ -852,6 +853,11 @@ export async function sendSyncFailureNotification({
   errorDetails,
   actionUrl,
 }: SyncFailureNotificationProps) {
+  if (!isProductionSite()) {
+    console.log('Skipping sync failure email: alerts are production-only.');
+    return { success: false, reason: 'Sync failure alerts are production-only' };
+  }
+
   const client = getResendClient();
   if (!client) {
     console.warn('⚠️ RESEND_API_KEY not configured - skipping sync failure notification email');
@@ -1328,6 +1334,11 @@ export async function sendMorningSmokeReport(params: {
   }>;
   summary: { passed: number; failed: number; warned: number };
 }) {
+  if (!isProductionSite()) {
+    console.log('Skipping morning smoke report email: alerts are production-only.');
+    return { success: false, reason: 'Morning smoke report emails are production-only' };
+  }
+
   const client = getResendClient();
   if (!client) {
     console.warn('⚠️ RESEND_API_KEY not configured - skipping morning smoke report email');

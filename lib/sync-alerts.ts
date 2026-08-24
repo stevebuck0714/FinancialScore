@@ -1,5 +1,6 @@
 import prisma from '@/lib/prisma';
 import type { AccountingPlatform, Prisma } from '@prisma/client';
+import { isProductionSite } from '@/lib/db-security';
 import { sendSyncFailureNotification } from '@/lib/email';
 
 const DEFAULT_SYNC_ALERT_RECIPIENT = 'support@corelytics.com';
@@ -33,6 +34,10 @@ export async function notifyAdminsOfSyncFailure(params: NotifySyncFailureParams)
   deduped: boolean;
   reason?: string;
 }> {
+  if (!isProductionSite()) {
+    return { notified: false, deduped: false, reason: 'Sync failure alerts are production-only' };
+  }
+
   try {
     const dedupeHours = Number.isFinite(params.dedupeHours) ? Number(params.dedupeHours) : 12;
     const cutoff = new Date(Date.now() - dedupeHours * 60 * 60 * 1000);
