@@ -298,6 +298,7 @@ export function parseVendorMonthlyForecastWorkbook(
       statusFlag: normalizeStatusFlag(cell(row, 'I')),
       annualBaseQty: asNumber(cell(row, 'J')),
       forecastQty,
+      adjustedQty: { ...forecastQty },
       actualQty,
       sortOrder: rows.length,
     });

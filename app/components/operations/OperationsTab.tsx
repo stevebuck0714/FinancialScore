@@ -11397,6 +11397,7 @@ export default function OperationsTab({
               'Open Vendors, then Duties & Tariffs. Upload the full SGP GMPA workbook (the file that includes Current / Updated Duty & Tariffs), not the annual-only extract. HTS and origin fill from that sheet. New SKUs without a spreadsheet HTS stay blank until you fill them.',
               'New SKUs from sales, inventory, or CSI that are not on the Duty & Tariffs sheet appear blank until you fill HTS and origin.',
               'Refresh rates fills Duty % from the live USITC Column 1 rate for the selected customs entry date (As of). Save HTS-10 first; Needs HTS input only shows blank rows, so switch to All items to see rates. Section 301 is joined from the China 8-digit USTR lists to the matching Chapter 99 heading (it is not printed on the 10-digit statistical line). IEEPA / reciprocal extras are origin-based Chapter 99 headings, for example Taiwan 9903.02.60. Terminated or suspended compiler-note provisions are skipped. Each fetch is stored by HTS, origin, program, and date. Refresh also applies those dated quotes to sales dates for Product Margin Analysis and P&L Duties / Tariffs.',
+              'Monthly Tariff Summary is a popup. It shows Duty $ plus a dollar breakout of Special, Section 301, Section 232, IEEPA, and Other, with Total Tariff $ (301 + 232 + IEEPA + Other). The vendor picker scopes that popup to the selected vendor.',
             ],
           },
         ],
@@ -11414,6 +11415,7 @@ export default function OperationsTab({
               'Open Vendors, then Duties & Tariffs. Upload the full SGP GMPA workbook (the file that includes Current / Updated Duty & Tariffs), not the annual-only extract. HTS and origin fill from that sheet. New SKUs without a spreadsheet HTS stay blank until you fill them.',
               'New SKUs from sales, inventory, or CSI that are not on the Duty & Tariffs sheet appear blank until you fill HTS and origin.',
               'Refresh rates fills Duty % from the live USITC Column 1 rate for the selected customs entry date (As of). Save HTS-10 first; Needs HTS input only shows blank rows, so switch to All items to see rates. Section 301 is joined from the China 8-digit USTR lists to the matching Chapter 99 heading (it is not printed on the 10-digit statistical line). IEEPA / reciprocal extras are origin-based Chapter 99 headings, for example Taiwan 9903.02.60. Terminated or suspended compiler-note provisions are skipped. Each fetch is stored by HTS, origin, program, and date. Refresh also applies those dated quotes to sales dates for Product Margin Analysis and P&L Duties / Tariffs.',
+              'Monthly Tariff Summary is a popup. It shows Duty $ plus a dollar breakout of Special, Section 301, Section 232, IEEPA, and Other, with Total Tariff $ (301 + 232 + IEEPA + Other). The vendor picker scopes that popup to the selected vendor.',
             ],
           },
         ],
@@ -11429,7 +11431,7 @@ export default function OperationsTab({
             heading: 'How to use it',
             body: [
               'Select a customer. The page only edits that customer. Fill Group, TEAM, and CSR on each row, then Planned/MTO and monthly quantities, and save.',
-              'Use Month to switch which period is shown. Each month has Forecasted, Forecast - ADJUSTED, Actual (CSI shipped quantity for that month), % Actual vs. Forecasted, and % Actual vs Adj. Forecast. After Data thru, ADJUSTED follows Actual; before that it follows the typed forecast.',
+              'Use Month to switch which period is shown. The summary has two rows: YTD DATA through that month and the selected month. Forecasted and Forecast - ADJUSTED can be typed for the current month and later months. Selecting a prior month (for example July or June) shows those quantities as read-only, including the gray prior-month columns. After Data thru, ADJUSTED follows Actual; before that it follows the typed Forecast - ADJUSTED value. Actual is CSI shipped quantity.',
             ],
           },
         ],
@@ -11445,7 +11447,7 @@ export default function OperationsTab({
             heading: 'How to use it',
             body: [
               'Select a customer. Quarter and annual columns are calculated from Monthly Forecast. This page is view-only.',
-              'Each quarter shows Forecasted, Forecasted - ADJ, YTD, and % YTD vs Forecasted. After the four quarters, SGP ESTIMATED, FORECASTED, FORECAST - ADJUSTED, YTD, and % YTD vs Forecasted come from the monthly plan.',
+              'Each quarter shows Forecasted, Forecasted - ADJ, YTD, and % YTD vs Forecasted. After the four quarters, SGP ESTIMATED, FORECASTED, FORECAST - ADJUSTED, YTD, % YTD vs Forecasted, and Remaining-year forecast come from the monthly plan.',
             ],
           },
         ],
@@ -11496,13 +11498,13 @@ export default function OperationsTab({
         sections: [
           {
             body:
-              'This is monthly estimated $ vs actual YTD $ by APR P/N. Leave Customer blank to see company totals for the selected year and month.',
+              'This is monthly forecasted $ vs actual booked $ by APR P/N. Leave Customer blank to see company totals for the selected year and month.',
           },
           {
             heading: 'How it is calculated',
             body: [
-              'Estimated $ is Monthly Forecast units × the Jan-1 contract price for that Customer Group and APR P/N.',
-              'YTD $ is the typed actual. % Revenue Shipped is YTD ÷ Estimated. Difference is YTD minus Estimated. % Days Shipped comes from the Shipping Days calendar through Data thru.',
+              'Forecasted $ is Monthly Forecast units × the Jan-1 contract price for that Customer Group and APR P/N. Forecast - ADJ $ uses Forecast - ADJUSTED units from Monthly Forecast, then the same contract price.',
+              'Actual $ is booked revenue for that month. % Actual vs Forecasted is Actual ÷ Forecasted. % Actual vs Forecast - Adj is Actual ÷ Forecast - ADJ. Difference is Actual minus that plan. % Days Shipped comes from the Shipping Days calendar through Data thru. Annual YTD $ is the sum of those monthly actuals, compared to annual Forecasted and Forecast - ADJ from the same monthly dollars.',
             ],
           },
         ],
@@ -11512,13 +11514,13 @@ export default function OperationsTab({
         sections: [
           {
             body:
-              'This is the quarterly and annual rollup of Monthly Revenue. Leave Customer blank for company totals.',
+              'This is the quarterly and annual rollup of Monthly Revenue, using the same Forecasted and Forecast - ADJ dollars as the month view. Leave Customer blank for company totals.',
           },
           {
-            heading: 'How to use it',
+            heading: 'How it is calculated',
             body: [
-              'This page is view-only. Each quarter shows Estimated, YTD, and % YTD vs Estimated. Annual columns are SGP ESTIMATED, ESTIMATED, YTD, and % YTD vs Estimated.',
-              'SGP ESTIMATED is SGP qty × SGP price. ESTIMATED is the sum of monthly estimated $ from forecast units × contract price.',
+              'Forecasted $ is monthly forecast units × Jan-1 contract price, summed. Forecast - ADJ $ uses Forecast - ADJUSTED units from Monthly Forecast (CSI shipped qty for closed months, typed adj for open months), then the same contract price.',
+              'YTD is booked actual $. % YTD vs Forecasted is YTD ÷ Forecasted. % YTD vs Forecast - Adj is YTD ÷ Forecast - ADJ. After the spreadsheet is proofed, these values come from saved rows, typed edits, and CSI — not from re-importing the workbook.',
             ],
           },
         ],

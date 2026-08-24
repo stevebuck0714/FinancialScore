@@ -7,6 +7,11 @@ import type { CompanyItemDutyRow } from '@/lib/hts/item-duty-overlay';
 type MonthlyCogsRow = {
   monthKey: string;
   dutyAmount: number;
+  specialAmount: number;
+  section301Amount: number;
+  section232Amount: number;
+  ieepaAmount: number;
+  additionalAmount: number;
   tariffAmount: number;
   quantity: number;
   skuCount: number;
@@ -158,6 +163,9 @@ export default function DutiesTariffsReport({ selectedCompanyId, onOpenInfo }: D
   const [asOfDate, setAsOfDate] = useState(formatEstDate);
   const [refreshing, setRefreshing] = useState(false);
   const [monthlyCogs, setMonthlyCogs] = useState<MonthlyCogsRow[]>([]);
+  const [summaryOpen, setSummaryOpen] = useState(false);
+  const [summaryLoading, setSummaryLoading] = useState(false);
+  const [summaryError, setSummaryError] = useState<string | null>(null);
 
   const load = useCallback(async (nextFilter: 'all' | 'needs_hts') => {
     if (!selectedCompanyId) return;
@@ -174,7 +182,6 @@ export default function DutiesTariffsReport({ selectedCompanyId, onOpenInfo }: D
       setItems(Array.isArray(payload.items) ? payload.items : []);
       setSpreadsheetItems(Number(payload.spreadsheetItems || 0));
       setMissingHtsCount(Number(payload.missingHtsCount || 0));
-      setMonthlyCogs(Array.isArray(payload.monthlyCogs) ? (payload.monthlyCogs as MonthlyCogsRow[]) : []);
       setDirty(false);
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : 'Failed to load duties overlay');
@@ -257,6 +264,77 @@ export default function DutiesTariffsReport({ selectedCompanyId, onOpenInfo }: D
     [items, vendorFilter]
   );
 
+  const loadMonthlySummary = useCallback(async () => {
+    if (!selectedCompanyId) return;
+    setSummaryLoading(true);
+    setSummaryError(null);
+    try {
+      const vendorPayload =
+        vendorFilter === ALL_VENDORS_KEY
+          ? {}
+          : vendorFilter === UNASSIGNED_VENDOR_KEY
+            ? { unassigned: true }
+            : vendorFilter.startsWith('id:')
+              ? { vendorId: vendorFilter.slice(3) }
+              : { vendorName: vendorFilter.slice(5) };
+      const response = await fetch('/api/operational-data/duties-tariffs/monthly', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          companyId: selectedCompanyId,
+          ...vendorPayload,
+        }),
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || payload?.ok === false) {
+        throw new Error(payload?.error || 'Failed to load monthly tariff summary');
+      }
+      setMonthlyCogs(Array.isArray(payload.monthlyCogs) ? (payload.monthlyCogs as MonthlyCogsRow[]) : []);
+    } catch (loadError) {
+      setSummaryError(loadError instanceof Error ? loadError.message : 'Failed to load monthly tariff summary');
+      setMonthlyCogs([]);
+    } finally {
+      setSummaryLoading(false);
+    }
+  }, [selectedCompanyId, vendorFilter]);
+
+  useEffect(() => {
+    if (!summaryOpen) return;
+    void loadMonthlySummary();
+  }, [summaryOpen, loadMonthlySummary]);
+
+  const summaryScopeLabel =
+    vendorFilter === ALL_VENDORS_KEY
+      ? 'All vendors'
+      : vendorOptions.find((vendor) => vendor.key === vendorFilter)?.label || 'Selected vendor';
+
+  const summaryTotals = useMemo(
+    () =>
+      monthlyCogs.reduce(
+        (acc, row) => ({
+          dutyAmount: acc.dutyAmount + Number(row.dutyAmount || 0),
+          specialAmount: acc.specialAmount + Number(row.specialAmount || 0),
+          section301Amount: acc.section301Amount + Number(row.section301Amount || 0),
+          section232Amount: acc.section232Amount + Number(row.section232Amount || 0),
+          ieepaAmount: acc.ieepaAmount + Number(row.ieepaAmount || 0),
+          additionalAmount: acc.additionalAmount + Number(row.additionalAmount || 0),
+          tariffAmount: acc.tariffAmount + Number(row.tariffAmount || 0),
+          skuCount: acc.skuCount + Number(row.skuCount || 0),
+        }),
+        {
+          dutyAmount: 0,
+          specialAmount: 0,
+          section301Amount: 0,
+          section232Amount: 0,
+          ieepaAmount: 0,
+          additionalAmount: 0,
+          tariffAmount: 0,
+          skuCount: 0,
+        }
+      ),
+    [monthlyCogs]
+  );
+
   const sortedItems = useMemo(
     () => [...visibleItems].sort((left, right) => compareDutyRows(left, right, sortKey, sortDir)),
     [visibleItems, sortKey, sortDir]
@@ -308,9 +386,6 @@ export default function DutiesTariffsReport({ selectedCompanyId, onOpenInfo }: D
         setMissingHtsCount(nextItems.filter((row) => row.needsHtsInput).length);
       } else {
         setItems(filter === 'needs_hts' ? nextItems.filter((row) => row.needsHtsInput) : nextItems);
-      }
-      if (Array.isArray(payload.monthlyCogs)) {
-        setMonthlyCogs(payload.monthlyCogs as MonthlyCogsRow[]);
       }
       const releaseLabel = payload.releaseTitle || payload.releaseName || 'USITC HTS';
       const appliedDuty = Number(payload.applied?.dutyAmount || 0);
@@ -445,6 +520,14 @@ export default function DutiesTariffsReport({ selectedCompanyId, onOpenInfo }: D
           >
             {refreshing ? 'Refreshing…' : 'Refresh rates'}
           </button>
+          <button
+            type="button"
+            onClick={() => setSummaryOpen(true)}
+            disabled={loading || saving || refreshing}
+            style={{ ...inputStyle, width: 'auto', cursor: loading || saving || refreshing ? 'not-allowed' : 'pointer', fontWeight: 700 }}
+          >
+            Monthly Tariff Summary
+          </button>
         </div>
       </div>
 
@@ -458,35 +541,6 @@ export default function DutiesTariffsReport({ selectedCompanyId, onOpenInfo }: D
           {notice}
         </div>
       ) : null}
-
-      {monthlyCogs.length > 0 ? (
-        <div style={{ overflowX: 'auto', border: '1px solid #e2e8f0', borderRadius: 12, background: '#ffffff', marginBottom: 12 }}>
-          <table style={{ minWidth: 520, borderCollapse: 'collapse', fontSize: 12 }}>
-            <thead>
-              <tr style={{ background: '#f8fafc' }}>
-                <th style={{ textAlign: 'left', padding: '8px 10px', borderBottom: '1px solid #e2e8f0', color: '#334155' }}>Applied month</th>
-                <th style={{ textAlign: 'right', padding: '8px 10px', borderBottom: '1px solid #e2e8f0', color: '#334155' }}>Duty $</th>
-                <th style={{ textAlign: 'right', padding: '8px 10px', borderBottom: '1px solid #e2e8f0', color: '#334155' }}>Tariff $</th>
-                <th style={{ textAlign: 'right', padding: '8px 10px', borderBottom: '1px solid #e2e8f0', color: '#334155' }}>SKUs</th>
-              </tr>
-            </thead>
-            <tbody>
-              {monthlyCogs.slice(-12).map((row) => (
-                <tr key={row.monthKey}>
-                  <td style={{ padding: '6px 10px', borderBottom: '1px solid #f1f5f9', fontWeight: 700 }}>{monthLabel(row.monthKey)}</td>
-                  <td style={{ padding: '6px 10px', borderBottom: '1px solid #f1f5f9', textAlign: 'right' }}>{usdText(row.dutyAmount)}</td>
-                  <td style={{ padding: '6px 10px', borderBottom: '1px solid #f1f5f9', textAlign: 'right' }}>{usdText(row.tariffAmount)}</td>
-                  <td style={{ padding: '6px 10px', borderBottom: '1px solid #f1f5f9', textAlign: 'right' }}>{Number(row.skuCount || 0).toLocaleString('en-US')}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      ) : (
-        <div style={{ marginBottom: 12, padding: '8px 10px', borderRadius: 8, background: '#f8fafc', color: '#475569', fontSize: 12 }}>
-          No monthly duty/tariff dollars yet. Refresh rates after items have Value $; sales dates then pick up the latest stored quote.
-        </div>
-      )}
 
       <div style={{ overflowX: 'auto', border: '1px solid #e2e8f0', borderRadius: 12, background: '#ffffff' }}>
         <table style={{ minWidth: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
@@ -620,6 +674,113 @@ export default function DutiesTariffsReport({ selectedCompanyId, onOpenInfo }: D
           </tbody>
         </table>
       </div>
+      {summaryOpen ? (
+        <div
+          onClick={() => setSummaryOpen(false)}
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(15, 23, 42, 0.35)',
+            zIndex: 60,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: 20,
+          }}
+        >
+          <div
+            onClick={(event) => event.stopPropagation()}
+            style={{
+              width: 'min(1100px, 100%)',
+              maxHeight: '80vh',
+              overflow: 'auto',
+              background: '#fff',
+              border: '1px solid #e2e8f0',
+              borderRadius: 12,
+              padding: 20,
+              boxShadow: '0 12px 32px rgba(15,23,42,0.18)',
+            }}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, marginBottom: 8 }}>
+              <div>
+                <h3 style={{ margin: 0, fontSize: 18, color: '#0f172a' }}>Monthly Tariff Summary</h3>
+                <div style={{ marginTop: 4, fontSize: 12, color: '#64748b' }}>
+                  {summaryScopeLabel}. Duty $ is Column 1 general. Total Tariff $ is 301 + 232 + IEEPA + Other.
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSummaryOpen(false)}
+                style={{
+                  border: '1px solid #cbd5e1',
+                  borderRadius: 8,
+                  padding: '6px 10px',
+                  background: '#fff',
+                  cursor: 'pointer',
+                  fontWeight: 700,
+                }}
+              >
+                Close
+              </button>
+            </div>
+            {summaryLoading ? (
+              <div style={{ padding: '16px 0', color: '#64748b', fontSize: 13 }}>Loading monthly dollars…</div>
+            ) : summaryError ? (
+              <div style={{ padding: '12px 0', color: '#991b1b', fontSize: 13 }}>{summaryError}</div>
+            ) : monthlyCogs.length === 0 ? (
+              <div style={{ padding: '12px 0', color: '#475569', fontSize: 13 }}>
+                No monthly duty/tariff dollars yet. Refresh rates after items have Value $; sales dates then pick up the stored quote.
+              </div>
+            ) : (
+              <div style={{ overflowX: 'auto' }}>
+                <table style={{ width: '100%', minWidth: 920, borderCollapse: 'collapse', fontSize: 12 }}>
+                  <thead>
+                    <tr style={{ background: '#f8fafc' }}>
+                      <th style={{ textAlign: 'left', padding: '8px 10px', borderBottom: '1px solid #e2e8f0', color: '#334155' }}>Applied month</th>
+                      <th style={{ textAlign: 'right', padding: '8px 10px', borderBottom: '1px solid #e2e8f0', color: '#334155' }}>Duty $</th>
+                      <th style={{ textAlign: 'right', padding: '8px 10px', borderBottom: '1px solid #e2e8f0', color: '#334155' }}>Special $</th>
+                      <th style={{ textAlign: 'right', padding: '8px 10px', borderBottom: '1px solid #e2e8f0', color: '#334155' }}>301 $</th>
+                      <th style={{ textAlign: 'right', padding: '8px 10px', borderBottom: '1px solid #e2e8f0', color: '#334155' }}>232 $</th>
+                      <th style={{ textAlign: 'right', padding: '8px 10px', borderBottom: '1px solid #e2e8f0', color: '#334155' }}>IEEPA $</th>
+                      <th style={{ textAlign: 'right', padding: '8px 10px', borderBottom: '1px solid #e2e8f0', color: '#334155' }}>Other $</th>
+                      <th style={{ textAlign: 'right', padding: '8px 10px', borderBottom: '1px solid #e2e8f0', color: '#334155', fontWeight: 800 }}>Total Tariff $</th>
+                      <th style={{ textAlign: 'right', padding: '8px 10px', borderBottom: '1px solid #e2e8f0', color: '#334155' }}>SKUs</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {monthlyCogs.map((row) => (
+                      <tr key={row.monthKey}>
+                        <td style={{ padding: '6px 10px', borderBottom: '1px solid #f1f5f9', fontWeight: 700 }}>{monthLabel(row.monthKey)}</td>
+                        <td style={{ padding: '6px 10px', borderBottom: '1px solid #f1f5f9', textAlign: 'right', whiteSpace: 'nowrap' }}>{usdText(row.dutyAmount)}</td>
+                        <td style={{ padding: '6px 10px', borderBottom: '1px solid #f1f5f9', textAlign: 'right', whiteSpace: 'nowrap' }}>{usdText(row.specialAmount)}</td>
+                        <td style={{ padding: '6px 10px', borderBottom: '1px solid #f1f5f9', textAlign: 'right', whiteSpace: 'nowrap' }}>{usdText(row.section301Amount)}</td>
+                        <td style={{ padding: '6px 10px', borderBottom: '1px solid #f1f5f9', textAlign: 'right', whiteSpace: 'nowrap' }}>{usdText(row.section232Amount)}</td>
+                        <td style={{ padding: '6px 10px', borderBottom: '1px solid #f1f5f9', textAlign: 'right', whiteSpace: 'nowrap' }}>{usdText(row.ieepaAmount)}</td>
+                        <td style={{ padding: '6px 10px', borderBottom: '1px solid #f1f5f9', textAlign: 'right', whiteSpace: 'nowrap' }}>{usdText(row.additionalAmount)}</td>
+                        <td style={{ padding: '6px 10px', borderBottom: '1px solid #f1f5f9', textAlign: 'right', whiteSpace: 'nowrap', fontWeight: 700 }}>{usdText(row.tariffAmount)}</td>
+                        <td style={{ padding: '6px 10px', borderBottom: '1px solid #f1f5f9', textAlign: 'right' }}>{Number(row.skuCount || 0).toLocaleString('en-US')}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                  <tfoot>
+                    <tr style={{ background: '#f8fafc' }}>
+                      <td style={{ padding: '8px 10px', borderTop: '1px solid #e2e8f0', fontWeight: 800 }}>Total</td>
+                      <td style={{ padding: '8px 10px', borderTop: '1px solid #e2e8f0', textAlign: 'right', fontWeight: 800, whiteSpace: 'nowrap' }}>{usdText(summaryTotals.dutyAmount)}</td>
+                      <td style={{ padding: '8px 10px', borderTop: '1px solid #e2e8f0', textAlign: 'right', fontWeight: 800, whiteSpace: 'nowrap' }}>{usdText(summaryTotals.specialAmount)}</td>
+                      <td style={{ padding: '8px 10px', borderTop: '1px solid #e2e8f0', textAlign: 'right', fontWeight: 800, whiteSpace: 'nowrap' }}>{usdText(summaryTotals.section301Amount)}</td>
+                      <td style={{ padding: '8px 10px', borderTop: '1px solid #e2e8f0', textAlign: 'right', fontWeight: 800, whiteSpace: 'nowrap' }}>{usdText(summaryTotals.section232Amount)}</td>
+                      <td style={{ padding: '8px 10px', borderTop: '1px solid #e2e8f0', textAlign: 'right', fontWeight: 800, whiteSpace: 'nowrap' }}>{usdText(summaryTotals.ieepaAmount)}</td>
+                      <td style={{ padding: '8px 10px', borderTop: '1px solid #e2e8f0', textAlign: 'right', fontWeight: 800, whiteSpace: 'nowrap' }}>{usdText(summaryTotals.additionalAmount)}</td>
+                      <td style={{ padding: '8px 10px', borderTop: '1px solid #e2e8f0', textAlign: 'right', fontWeight: 800, whiteSpace: 'nowrap' }}>{usdText(summaryTotals.tariffAmount)}</td>
+                      <td style={{ padding: '8px 10px', borderTop: '1px solid #e2e8f0', textAlign: 'right', fontWeight: 800 }}>{monthlyCogs.length.toLocaleString('en-US')} mo</td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+            )}
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

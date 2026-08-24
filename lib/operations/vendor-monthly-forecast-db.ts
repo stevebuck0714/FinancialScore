@@ -4,7 +4,7 @@ import prisma from '@/lib/prisma';
 import { auditForbiddenAccess } from '@/lib/audit-logger';
 import { requireAuth, validateCompanyAccess } from '@/lib/tenant-security';
 import { isOperationalModuleAllowed } from '@/lib/operations/operational-dashboard-access';
-import { normalizeMonthQtyMap, type MonthQtyMap } from '@/lib/operations/product-revenue-forecast';
+import { normalizeAdjustedQtyMap, normalizeMonthQtyMap, type MonthQtyMap } from '@/lib/operations/product-revenue-forecast';
 import { formatEstDate } from '@/lib/time/eastern';
 import {
   UNASSIGNED_VENDOR_ID,
@@ -329,6 +329,7 @@ export function serializeVendorForecastLine(row: {
     statusFlag: row.statusFlag || '',
     annualBaseQty: row.annualBaseQty == null ? null : Number(row.annualBaseQty),
     forecastQty: normalizeMonthQtyMap(row.forecastQty),
+    adjustedQty: normalizeAdjustedQtyMap(undefined, normalizeMonthQtyMap(row.forecastQty)),
     actualQty: normalizeMonthQtyMap(row.actualQty),
     sortOrder: row.sortOrder,
   };
@@ -357,6 +358,7 @@ export function normalizeVendorForecastLineInput(
     statusFlag: asText(raw.statusFlag) || null,
     annualBaseQty: asNullableNumber(raw.annualBaseQty),
     forecastQty: normalizeMonthQtyMap(raw.forecastQty),
+    adjustedQty: normalizeAdjustedQtyMap(raw.adjustedQty, normalizeMonthQtyMap(raw.forecastQty)),
     actualQty: normalizeMonthQtyMap(raw.actualQty),
     sortOrder,
   };

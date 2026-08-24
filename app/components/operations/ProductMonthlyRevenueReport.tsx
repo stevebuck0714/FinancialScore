@@ -45,6 +45,7 @@ type RevenueLine = {
   statusFlag: string;
   actualRevenue: MonthQtyMap;
   estimated: MonthQtyMap;
+  estimatedAdjusted: MonthQtyMap;
   forecastQty: MonthQtyMap;
   contractPrice: number | null;
   sgpPrice: number | null;
@@ -76,12 +77,13 @@ const IDENTITY_COLUMNS: Array<{
   label: string;
   widthCh: number;
   compact?: boolean;
+  sortable?: boolean;
 }> = [
-  { key: 'itemSku', label: 'APR P/N', widthCh: 12 },
-  { key: 'customerPartNumber', label: 'Customer P/N', widthCh: 12 },
-  { key: 'customerGroup', label: 'Group', widthCh: 15 },
-  { key: 'team', label: 'TEAM', widthCh: 8, compact: true },
-  { key: 'csr', label: 'CSR', widthCh: 4, compact: true },
+  { key: 'itemSku', label: 'APR P/N', widthCh: 12, sortable: true },
+  { key: 'customerPartNumber', label: 'Customer P/N', widthCh: 12, sortable: true },
+  { key: 'customerGroup', label: 'Group', widthCh: 8 },
+  { key: 'team', label: 'TEAM', widthCh: 5, compact: true },
+  { key: 'csr', label: 'CSR', widthCh: 3, compact: true },
 ];
 
 const CHAR_PX = 8;
@@ -89,6 +91,10 @@ const IDENTITY_CELL_PAD_X = 6;
 const IDENTITY_CELL_EXTRA_PX = 28;
 const MONTH_COL_HEADER_BG = '#e0e7ff';
 const MONTH_COL_CELL_BG = '#eef2ff';
+const MONTH_METRIC_COL_PX = 68;
+const MONTH_METRIC_COL_COUNT = 10;
+const PLANNED_COL_CH = 6;
+const STATUS_COL_CH = 5;
 
 function columnWidthPx(widthCh: number): number {
   return widthCh * CHAR_PX + IDENTITY_CELL_EXTRA_PX;
@@ -103,6 +109,11 @@ const IDENTITY_COLUMNS_WIDTH_PX = IDENTITY_COLUMNS.reduce(
   (sum, column) => sum + columnWidthPx(column.widthCh),
   0
 );
+const TABLE_MIN_WIDTH_PX =
+  IDENTITY_COLUMNS_WIDTH_PX +
+  columnWidthPx(PLANNED_COL_CH) +
+  columnWidthPx(STATUS_COL_CH) +
+  MONTH_METRIC_COL_COUNT * MONTH_METRIC_COL_PX;
 
 function columnWidth(widthCh: number): string {
   return `${columnWidthPx(widthCh)}px`;
@@ -133,10 +144,10 @@ function stickyIdentityStyle(index: number, header: boolean): React.CSSPropertie
 
 const qtyInputStyle: React.CSSProperties = {
   ...inputStyle,
-  width: 88,
-  minWidth: 88,
+  width: '100%',
+  minWidth: 0,
   textAlign: 'right',
-  padding: '5px 4px',
+  padding: '5px 2px',
 };
 
 function currentYear(): number {
@@ -154,6 +165,10 @@ function yearOptions(): number[] {
   return Array.from({ length: end - start + 1 }, (_, index) => start + index);
 }
 
+function comparePn(a: string, b: string): number {
+  return String(a || '').localeCompare(String(b || ''), undefined, { numeric: true, sensitivity: 'base' });
+}
+
 function fmtMoney(value: number): string {
   if (!Number.isFinite(value)) return '—';
   return Math.round(value).toLocaleString('en-US', {
@@ -162,6 +177,10 @@ function fmtMoney(value: number): string {
     minimumFractionDigits: 0,
     maximumFractionDigits: 0,
   });
+}
+
+function qtyValue(map: MonthQtyMap | undefined, month: ForecastMonth): number {
+  return monthQty(map || {}, month);
 }
 
 function fmtPct(value: number | null): string {
@@ -174,12 +193,13 @@ function emptyTotals(): RevenueTotals {
     lineCount: 0,
     sgpEstimated: 0,
     annualEstimated: 0,
+    annualAdjusted: 0,
     annualYtd: 0,
     months: FORECAST_MONTHS.reduce((acc, month) => {
-      acc[month] = { estimated: 0, ytd: 0 };
+      acc[month] = { estimated: 0, adjusted: 0, ytd: 0 };
       return acc;
     }, {} as RevenueTotals['months']),
-    quarters: { 1: { estimated: 0, ytd: 0 }, 2: { estimated: 0, ytd: 0 }, 3: { estimated: 0, ytd: 0 }, 4: { estimated: 0, ytd: 0 } },
+    quarters: { 1: { estimated: 0, adjusted: 0, ytd: 0 }, 2: { estimated: 0, adjusted: 0, ytd: 0 }, 3: { estimated: 0, adjusted: 0, ytd: 0 }, 4: { estimated: 0, adjusted: 0, ytd: 0 } },
   };
 }
 
@@ -212,6 +232,8 @@ export default function ProductMonthlyRevenueReport({
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [selectedMonth, setSelectedMonth] = useState<ForecastMonth>(currentMonth());
+  const [sortKey, setSortKey] = useState<'itemSku' | 'customerPartNumber'>('itemSku');
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const selectedCustomer = useMemo(
@@ -224,6 +246,24 @@ export default function ProductMonthlyRevenueReport({
   const previousMonth = (selectedMonth === 1 ? 12 : selectedMonth - 1) as ForecastMonth;
   const previousMonthName = FORECAST_MONTH_FULL_LABELS[previousMonth];
   const updated = workbookUpdatedDate(dataThru || null);
+
+  const sortedLines = useMemo(() => {
+    const next = [...lines];
+    next.sort((a, b) => {
+      const cmp = comparePn(a[sortKey], b[sortKey]);
+      return sortDir === 'asc' ? cmp : -cmp;
+    });
+    return next;
+  }, [lines, sortDir, sortKey]);
+
+  const toggleSort = (key: 'itemSku' | 'customerPartNumber') => {
+    if (sortKey === key) {
+      setSortDir((dir) => (dir === 'asc' ? 'desc' : 'asc'));
+      return;
+    }
+    setSortKey(key);
+    setSortDir('asc');
+  };
 
   const mergeCustomers = useCallback((csi: CustomerOption[], revenue: CustomerOption[]) => {
     const byKey = new Map<string, CustomerOption>();
@@ -404,35 +444,46 @@ export default function ProductMonthlyRevenueReport({
     }
   };
 
-  const monthTotals = totals.months[selectedMonth] || { estimated: 0, ytd: 0 };
-  const priorTotals = totals.months[previousMonth] || { estimated: 0, ytd: 0 };
+  const monthTotals = totals.months[selectedMonth] || { estimated: 0, adjusted: 0, ytd: 0 };
+  const priorTotals = totals.months[previousMonth] || { estimated: 0, adjusted: 0, ytd: 0 };
   const scopeLabel = selectedCustomer ? selectedCustomer.label : 'Company';
   const skuCount = selectedCustomer ? totals.lineCount : companyLineCount || totals.lineCount;
 
   const monthHeaderStyle: React.CSSProperties = {
     textAlign: 'right',
-    padding: '8px 6px',
+    padding: '8px 2px',
     color: '#3730a3',
     background: MONTH_COL_HEADER_BG,
     whiteSpace: 'normal',
-    lineHeight: 1.25,
-    minWidth: 96,
+    lineHeight: 1.15,
+    width: MONTH_METRIC_COL_PX,
+    minWidth: MONTH_METRIC_COL_PX,
+    maxWidth: MONTH_METRIC_COL_PX,
+    boxSizing: 'border-box',
     fontSize: 11,
     fontWeight: 700,
     verticalAlign: 'bottom',
   };
   const monthCellStyle: React.CSSProperties = {
-    padding: 6,
+    padding: '6px 2px',
     textAlign: 'right',
     whiteSpace: 'nowrap',
     borderTop: '1px solid #c7d2fe',
     background: MONTH_COL_CELL_BG,
     color: '#312e81',
+    width: MONTH_METRIC_COL_PX,
+    minWidth: MONTH_METRIC_COL_PX,
+    maxWidth: MONTH_METRIC_COL_PX,
+    boxSizing: 'border-box',
   };
   const monthInputCellStyle: React.CSSProperties = {
-    padding: 4,
+    padding: 2,
     borderTop: '1px solid #c7d2fe',
     background: MONTH_COL_CELL_BG,
+    width: MONTH_METRIC_COL_PX,
+    minWidth: MONTH_METRIC_COL_PX,
+    maxWidth: MONTH_METRIC_COL_PX,
+    boxSizing: 'border-box',
   };
   const monthQtyInputStyle: React.CSSProperties = {
     ...qtyInputStyle,
@@ -441,23 +492,30 @@ export default function ProductMonthlyRevenueReport({
   };
   const priorHeaderStyle: React.CSSProperties = {
     textAlign: 'right',
-    padding: '8px 6px',
+    padding: '8px 2px',
     color: '#475569',
     background: '#f8fafc',
     whiteSpace: 'normal',
-    lineHeight: 1.25,
-    minWidth: 96,
+    lineHeight: 1.15,
+    width: MONTH_METRIC_COL_PX,
+    minWidth: MONTH_METRIC_COL_PX,
+    maxWidth: MONTH_METRIC_COL_PX,
+    boxSizing: 'border-box',
     fontSize: 11,
     fontWeight: 700,
     verticalAlign: 'bottom',
   };
   const priorCellStyle: React.CSSProperties = {
-    padding: 6,
+    padding: '6px 2px',
     textAlign: 'right',
     whiteSpace: 'nowrap',
     borderTop: '1px solid #e2e8f0',
     background: '#ffffff',
     color: '#475569',
+    width: MONTH_METRIC_COL_PX,
+    minWidth: MONTH_METRIC_COL_PX,
+    maxWidth: MONTH_METRIC_COL_PX,
+    boxSizing: 'border-box',
   };
 
   const shiftMonth = (delta: number) => {
@@ -490,7 +548,7 @@ export default function ProductMonthlyRevenueReport({
         ) : null}
       </div>
       <p style={{ margin: '0 0 16px', color: '#475569', fontSize: 13, lineHeight: 1.5, whiteSpace: 'nowrap' }}>
-        Monthly estimated $ vs actual by APR P/N. Estimated is Monthly Forecast units × Jan-1 contract price. Leave Customer blank for company totals.
+        Monthly forecasted $ vs actual booked $ by APR P/N. Forecasted is Monthly Forecast units × Jan-1 contract price. Leave Customer blank for company totals.
       </p>
 
       <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'end', marginBottom: 12 }}>
@@ -632,7 +690,7 @@ export default function ProductMonthlyRevenueReport({
       {notice && <div style={{ color: '#166534', fontSize: 13, marginBottom: 8 }}>{notice}</div>}
       {!loading && skuCount > 0 && priceCount === 0 && (
         <div style={{ color: '#b45309', fontSize: 13, marginBottom: 8 }}>
-          Part rows loaded from Monthly Forecast, but estimated $ needs the Jan-1 price list and YTD $ needs Revenue Current Year. Import the same workbook on this page.
+          Part rows loaded from Monthly Forecast, but forecasted $ needs the Jan-1 price list and Actual $ needs Revenue Current Year. Import the same workbook on this page.
         </div>
       )}
 
@@ -652,21 +710,24 @@ export default function ProductMonthlyRevenueReport({
           <Metric label="Data thru" value={dataThru || '—'} />
           {closed.length ? <Metric label="Closed through" value={FORECAST_MONTH_FULL_LABELS[closed[closed.length - 1]]} /> : null}
         </div>
-        <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', fontSize: 13, color: '#0f172a', marginBottom: 8 }}>
-          <Metric label={`SGP EST. $ ${year}`} value={fmtMoney(totals.sgpEstimated)} />
-          <Metric label={`EST. $ ${year}`} value={fmtMoney(totals.annualEstimated)} />
+        <div style={{ display: 'flex', alignItems: 'baseline', gap: 16, flexWrap: 'wrap', fontSize: 13, color: '#0f172a', marginBottom: 8 }}>
+          <div style={{ fontSize: 11, fontWeight: 800, color: '#92400e', letterSpacing: 0.4 }}>ANNUAL</div>
+          <Metric label={`Forecasted $ ${year}`} value={fmtMoney(totals.annualEstimated)} />
+          <Metric label={`Forecast - Adj $ ${year}`} value={fmtMoney(totals.annualAdjusted)} />
           <Metric label={`YTD $ ${year}`} value={fmtMoney(totals.annualYtd)} />
-          <Metric label="% YTD vs Estimated" value={fmtPct(pctRevenueShipped(totals.annualYtd, totals.annualEstimated))} />
-          <Metric label="Difference" value={fmtMoney(revenueDifference(totals.annualYtd, totals.annualEstimated))} />
+          <Metric label="% YTD vs Forecasted" value={fmtPct(pctRevenueShipped(totals.annualYtd, totals.annualEstimated))} />
+          <Metric label="% YTD vs Forecast - Adj" value={fmtPct(pctRevenueShipped(totals.annualYtd, totals.annualAdjusted))} />
           <Metric label="% Days Shipped" value={fmtPct(pctDaysShippedYear(shippingDays, year, dataThru || null))} />
         </div>
         <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap', fontSize: 13, color: '#334155' }}>
           <div>
             <div style={{ fontSize: 11, fontWeight: 700, color: '#64748b', marginBottom: 4 }}>{previousMonthName}</div>
             <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
-              <Metric label="Estimated" value={fmtMoney(priorTotals.estimated)} />
-              <Metric label="YTD" value={fmtMoney(priorTotals.ytd)} />
-              <Metric label="% Revenue Shipped" value={fmtPct(pctRevenueShipped(priorTotals.ytd, priorTotals.estimated))} />
+              <Metric label="Forecasted" value={fmtMoney(priorTotals.estimated)} />
+              <Metric label="Forecast - Adj" value={fmtMoney(priorTotals.adjusted)} />
+              <Metric label="Actual" value={fmtMoney(priorTotals.ytd)} />
+              <Metric label="% Actual vs Forecasted" value={fmtPct(pctRevenueShipped(priorTotals.ytd, priorTotals.estimated))} />
+              <Metric label="% Actual vs Forecast - Adj" value={fmtPct(pctRevenueShipped(priorTotals.ytd, priorTotals.adjusted))} />
               <Metric label="Difference" value={fmtMoney(revenueDifference(priorTotals.ytd, priorTotals.estimated))} />
               <Metric label="% Days Shipped" value={fmtPct(pctDaysShippedMonth(shippingDays, year, previousMonth, dataThru || null))} />
             </div>
@@ -674,9 +735,11 @@ export default function ProductMonthlyRevenueReport({
           <div>
             <div style={{ fontSize: 11, fontWeight: 700, color: '#3730a3', marginBottom: 4 }}>{monthName}</div>
             <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', color: '#312e81' }}>
-              <Metric label="Estimated" value={fmtMoney(monthTotals.estimated)} />
-              <Metric label="YTD" value={fmtMoney(monthTotals.ytd)} />
-              <Metric label="% Revenue Shipped" value={fmtPct(pctRevenueShipped(monthTotals.ytd, monthTotals.estimated))} />
+              <Metric label="Forecasted" value={fmtMoney(monthTotals.estimated)} />
+              <Metric label="Forecast - Adj" value={fmtMoney(monthTotals.adjusted)} />
+              <Metric label="Actual" value={fmtMoney(monthTotals.ytd)} />
+              <Metric label="% Actual vs Forecasted" value={fmtPct(pctRevenueShipped(monthTotals.ytd, monthTotals.estimated))} />
+              <Metric label="% Actual vs Forecast - Adj" value={fmtPct(pctRevenueShipped(monthTotals.ytd, monthTotals.adjusted))} />
               <Metric label="Difference" value={fmtMoney(revenueDifference(monthTotals.ytd, monthTotals.estimated))} />
               <Metric label="% Days Shipped" value={fmtPct(pctDaysShippedMonth(shippingDays, year, selectedMonth, dataThru || null))} />
             </div>
@@ -686,7 +749,7 @@ export default function ProductMonthlyRevenueReport({
 
       {!selectedCustomer ? (
         <div style={{ padding: '8px 0 24px', color: '#64748b', fontSize: 13 }}>
-          Company totals above cover every SKU for these dates. Select a customer to enter monthly YTD $ by part.
+          Company totals above cover every SKU for these dates. Select a customer to enter monthly Actual $ by part.
         </div>
       ) : loading ? (
         <div style={{ padding: '24px 0', color: '#64748b', fontSize: 13 }}>Loading revenue rows…</div>
@@ -720,10 +783,15 @@ export default function ProductMonthlyRevenueReport({
               {selectedCustomer.label}
             </div>
           </div>
-          <table style={{ borderCollapse: 'separate', borderSpacing: 0, width: '100%', minWidth: IDENTITY_COLUMNS_WIDTH_PX + 720, fontSize: 12, tableLayout: 'fixed' }}>
+          <table style={{ borderCollapse: 'separate', borderSpacing: 0, width: TABLE_MIN_WIDTH_PX, minWidth: TABLE_MIN_WIDTH_PX, fontSize: 12, tableLayout: 'fixed' }}>
             <colgroup>
               {IDENTITY_COLUMNS.map((column) => (
                 <col key={column.key} style={{ width: columnWidth(column.widthCh) }} />
+              ))}
+              <col style={{ width: columnWidth(PLANNED_COL_CH) }} />
+              <col style={{ width: columnWidth(STATUS_COL_CH) }} />
+              {Array.from({ length: MONTH_METRIC_COL_COUNT }, (_, index) => (
+                <col key={`metric-${index}`} style={{ width: MONTH_METRIC_COL_PX }} />
               ))}
             </colgroup>
             <thead>
@@ -731,35 +799,43 @@ export default function ProductMonthlyRevenueReport({
                 {IDENTITY_COLUMNS.map((column, index) => (
                   <th
                     key={column.key}
-                    title={column.label}
+                    title={column.sortable ? `Sort by ${column.label}` : column.label}
                     align="left"
+                    onClick={column.sortable ? () => toggleSort(column.key as 'itemSku' | 'customerPartNumber') : undefined}
                     style={{
                       ...stickyIdentityStyle(index, true),
                       textAlign: 'left',
                       paddingTop: 8,
                       paddingBottom: 8,
                       color: '#334155',
+                      cursor: column.sortable ? 'pointer' : undefined,
+                      userSelect: column.sortable ? 'none' : undefined,
                     }}
                   >
                     {column.label}
+                    {column.sortable && sortKey === column.key ? (sortDir === 'asc' ? ' ▲' : ' ▼') : ''}
                   </th>
                 ))}
-                <th style={{ textAlign: 'right', padding: '8px 4px', color: '#334155', background: '#f8fafc', fontSize: 11, fontWeight: 700, verticalAlign: 'bottom' }}>
+                <th style={{ textAlign: 'right', padding: '8px 2px', color: '#334155', background: '#f8fafc', fontSize: 11, fontWeight: 700, verticalAlign: 'bottom', width: columnWidth(6), minWidth: columnWidth(6), maxWidth: columnWidth(6), boxSizing: 'border-box', whiteSpace: 'normal', lineHeight: 1.2 }}>
                   Planned<br />MTO
                 </th>
-                <th style={{ textAlign: 'right', padding: '8px 4px', color: '#334155', background: '#f8fafc', fontSize: 11, fontWeight: 700, verticalAlign: 'bottom', width: columnWidth(6) }}>
-                  LOST<br />or<br />OBS or<br />NEW
+                <th style={{ textAlign: 'right', padding: '8px 2px', color: '#334155', background: '#f8fafc', fontSize: 11, fontWeight: 700, verticalAlign: 'bottom', width: columnWidth(5), minWidth: columnWidth(5), maxWidth: columnWidth(5), boxSizing: 'border-box', whiteSpace: 'normal', lineHeight: 1.2 }}>
+                  LOST / OBS<br />NEW
                 </th>
-                <th style={{ ...priorHeaderStyle, borderLeft: '1px solid #e2e8f0' }}>{`Estimated ${previousMonthName}`}</th>
-                <th style={priorHeaderStyle}>{`${previousMonthName} YTD`}</th>
-                <th style={priorHeaderStyle}>{`% ${previousMonthName} YTD vs Estimated`}</th>
-                <th style={{ ...monthHeaderStyle, borderLeft: '2px solid #c7d2fe' }}>{`Estimated ${monthName}`}</th>
-                <th style={monthHeaderStyle}>{`${monthName} YTD`}</th>
-                <th style={monthHeaderStyle}>{`% ${monthName} YTD vs Estimated`}</th>
+                <th style={{ ...priorHeaderStyle, borderLeft: '1px solid #e2e8f0' }}>Forecasted<br />{previousMonthName}<br />&nbsp;</th>
+                <th style={priorHeaderStyle}>{previousMonthName}<br />Forecast -<br />ADJ</th>
+                <th style={priorHeaderStyle}>{previousMonthName}<br />Actual<br />&nbsp;</th>
+                <th style={priorHeaderStyle}>% {previousMonthName} Actual<br />vs<br />Forecasted</th>
+                <th style={priorHeaderStyle}>% {previousMonthName} Actual<br />vs Forecast -<br />Adj</th>
+                <th style={{ ...monthHeaderStyle, borderLeft: '2px solid #c7d2fe' }}>Forecasted<br />{monthName}<br />&nbsp;</th>
+                <th style={monthHeaderStyle}>{monthName}<br />Forecast -<br />ADJ</th>
+                <th style={monthHeaderStyle}>{monthName}<br />Actual<br />&nbsp;</th>
+                <th style={monthHeaderStyle}>% {monthName} Actual<br />vs<br />Forecasted</th>
+                <th style={monthHeaderStyle}>% {monthName} Actual<br />vs Forecast -<br />Adj</th>
               </tr>
             </thead>
             <tbody>
-              {lines.map((line) => (
+              {sortedLines.map((line) => (
                 <tr key={line.id} style={{ borderTop: '1px solid #e2e8f0' }}>
                   {IDENTITY_COLUMNS.map((column, index) => (
                     <td
@@ -775,18 +851,21 @@ export default function ProductMonthlyRevenueReport({
                       {line[column.key] || '—'}
                     </td>
                   ))}
-                  <td style={{ padding: 6, borderTop: '1px solid #e2e8f0' }}>
+                  <td style={{ padding: 4, borderTop: '1px solid #e2e8f0', width: columnWidth(6), minWidth: columnWidth(6), maxWidth: columnWidth(6), boxSizing: 'border-box' }}>
                     {PRODUCTION_TYPE_OPTIONS.includes(line.productionType as any) || line.productionType
                       ? line.productionType || '—'
                       : '—'}
                   </td>
-                  <td style={{ padding: 6, borderTop: '1px solid #e2e8f0', textAlign: 'right' }}>
+                  <td style={{ padding: 4, borderTop: '1px solid #e2e8f0', textAlign: 'right', width: columnWidth(5), minWidth: columnWidth(5), maxWidth: columnWidth(5), boxSizing: 'border-box' }}>
                     {STATUS_FLAG_OPTIONS.includes(line.statusFlag as any) || line.statusFlag
                       ? line.statusFlag || '—'
                       : '—'}
                   </td>
                   <td style={{ ...priorCellStyle, borderLeft: '1px solid #e2e8f0' }}>
                     {fmtMoney(monthQty(line.estimated, previousMonth))}
+                  </td>
+                  <td style={priorCellStyle}>
+                    {fmtMoney(qtyValue(line.estimatedAdjusted, previousMonth))}
                   </td>
                   <td style={priorCellStyle}>{fmtMoney(monthQty(line.actualRevenue, previousMonth))}</td>
                   <td style={priorCellStyle}>
@@ -795,8 +874,17 @@ export default function ProductMonthlyRevenueReport({
                       monthQty(line.estimated, previousMonth)
                     ))}
                   </td>
+                  <td style={priorCellStyle}>
+                    {fmtPct(pctRevenueShipped(
+                      monthQty(line.actualRevenue, previousMonth),
+                      qtyValue(line.estimatedAdjusted, previousMonth)
+                    ))}
+                  </td>
                   <td style={{ ...monthCellStyle, borderLeft: '2px solid #c7d2fe' }}>
                     {fmtMoney(monthQty(line.estimated, selectedMonth))}
+                  </td>
+                  <td style={monthCellStyle}>
+                    {fmtMoney(qtyValue(line.estimatedAdjusted, selectedMonth))}
                   </td>
                   <td style={monthInputCellStyle}>
                     <input
@@ -805,7 +893,7 @@ export default function ProductMonthlyRevenueReport({
                       value={Math.round(monthQty(line.actualRevenue, selectedMonth)) || 0}
                       onChange={(event) => updateMonthRevenue(line.id, selectedMonth, event.target.value)}
                       style={monthQtyInputStyle}
-                      aria-label={`${monthName} YTD`}
+                      aria-label={`${monthName} Actual`}
                     />
                   </td>
                   <td style={monthCellStyle}>
@@ -814,11 +902,17 @@ export default function ProductMonthlyRevenueReport({
                       monthQty(line.estimated, selectedMonth)
                     ))}
                   </td>
+                  <td style={monthCellStyle}>
+                    {fmtPct(pctRevenueShipped(
+                      monthQty(line.actualRevenue, selectedMonth),
+                      qtyValue(line.estimatedAdjusted, selectedMonth)
+                    ))}
+                  </td>
                 </tr>
               ))}
               {lines.length === 0 && (
                 <tr>
-                  <td colSpan={11} style={{ padding: 16, color: '#64748b' }}>
+                  <td colSpan={17} style={{ padding: 16, color: '#64748b' }}>
                     No revenue rows for this customer yet. Import the workbook, or add the part on Monthly Forecast first.
                   </td>
                 </tr>

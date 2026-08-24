@@ -3,14 +3,14 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   FORECAST_MONTH_FULL_LABELS,
-  FORECAST_MONTH_LABELS,
   FORECAST_MONTHS,
   PRODUCTION_TYPE_OPTIONS,
   STATUS_FLAG_OPTIONS,
   adjustedMonthQty,
-  closedMonths,
   emptyMonthQtyMap,
+  forecastMonthIsEditable,
   monthQty,
+  monthQtyTotal,
   parseProductRevenueForecastWorkbook,
   pctVsPlan,
   readProductOperationsWorkbook,
@@ -21,6 +21,7 @@ import {
   type ProductRevenueForecastLineInput,
 } from '@/lib/operations/product-revenue-forecast';
 import { parseGoalDashboardFromWorkbook } from '@/lib/operations/product-goal-update';
+import { estMonthIndex, estYear } from '@/lib/time/eastern';
 
 type CustomerOption = {
   customerId: string;
@@ -54,12 +55,13 @@ const IDENTITY_COLUMNS: Array<{
   label: string;
   widthCh: number;
   compact?: boolean;
+  sortable?: boolean;
 }> = [
-  { key: 'itemSku', label: 'APR P/N', widthCh: 12 },
-  { key: 'customerPartNumber', label: 'Customer P/N', widthCh: 12 },
-  { key: 'customerGroup', label: 'Group', widthCh: 15 },
-  { key: 'team', label: 'TEAM', widthCh: 8, compact: true },
-  { key: 'csr', label: 'CSR', widthCh: 4, compact: true },
+  { key: 'itemSku', label: 'APR P/N', widthCh: 12, sortable: true },
+  { key: 'customerPartNumber', label: 'Customer P/N', widthCh: 12, sortable: true },
+  { key: 'customerGroup', label: 'Group', widthCh: 8 },
+  { key: 'team', label: 'TEAM', widthCh: 5, compact: true },
+  { key: 'csr', label: 'CSR', widthCh: 3, compact: true },
 ];
 
 const CHAR_PX = 8;
@@ -67,6 +69,10 @@ const IDENTITY_CELL_PAD_X = 6;
 const IDENTITY_CELL_EXTRA_PX = 28;
 const MONTH_COL_HEADER_BG = '#e0e7ff';
 const MONTH_COL_CELL_BG = '#eef2ff';
+const MONTH_METRIC_COL_PX = 68;
+const MONTH_METRIC_COL_COUNT = 10;
+const PLANNED_COL_CH = 6;
+const STATUS_COL_CH = 5;
 
 function columnWidthPx(widthCh: number): number {
   return widthCh * CHAR_PX + IDENTITY_CELL_EXTRA_PX;
@@ -81,6 +87,11 @@ const IDENTITY_COLUMNS_WIDTH_PX = IDENTITY_COLUMNS.reduce(
   (sum, column) => sum + columnWidthPx(column.widthCh),
   0
 );
+const TABLE_MIN_WIDTH_PX =
+  IDENTITY_COLUMNS_WIDTH_PX +
+  columnWidthPx(PLANNED_COL_CH) +
+  columnWidthPx(STATUS_COL_CH) +
+  MONTH_METRIC_COL_COUNT * MONTH_METRIC_COL_PX;
 
 function columnWidth(widthCh: number): string {
   return `${columnWidthPx(widthCh)}px`;
@@ -120,18 +131,18 @@ const identityInputStyle: React.CSSProperties = {
 
 const qtyInputStyle: React.CSSProperties = {
   ...inputStyle,
-  width: 68,
-  minWidth: 68,
+  width: '100%',
+  minWidth: 0,
   textAlign: 'right',
-  padding: '5px 4px',
+  padding: '5px 2px',
 };
 
 function currentYear(): number {
-  return new Date().getFullYear();
+  return estYear();
 }
 
 function currentMonth(): ForecastMonth {
-  return (new Date().getMonth() + 1) as ForecastMonth;
+  return (estMonthIndex() + 1) as ForecastMonth;
 }
 
 function yearOptions(): number[] {
@@ -144,6 +155,10 @@ function yearOptions(): number[] {
 function fmtQty(value: number): string {
   if (!Number.isFinite(value)) return '—';
   return value.toLocaleString('en-US', { maximumFractionDigits: 1 });
+}
+
+function comparePn(a: string, b: string): number {
+  return String(a || '').localeCompare(String(b || ''), undefined, { numeric: true, sensitivity: 'base' });
 }
 
 function fmtPct(value: number | null): string {
@@ -172,6 +187,8 @@ export default function ProductRevenueForecastReport({
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [selectedMonth, setSelectedMonth] = useState<ForecastMonth>(currentMonth());
+  const [sortKey, setSortKey] = useState<'itemSku' | 'customerPartNumber'>('itemSku');
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const customersRequestSeq = useRef(0);
 
@@ -180,10 +197,28 @@ export default function ProductRevenueForecastReport({
     [customers, customerKey]
   );
 
-  const closed = useMemo(() => closedMonths(dataThru || null), [dataThru]);
   const monthName = FORECAST_MONTH_FULL_LABELS[selectedMonth];
   const previousMonth = (selectedMonth === 1 ? 12 : selectedMonth - 1) as ForecastMonth;
   const previousMonthName = FORECAST_MONTH_FULL_LABELS[previousMonth];
+  const canEditSelectedMonth = forecastMonthIsEditable(year, selectedMonth);
+
+  const sortedLines = useMemo(() => {
+    const next = [...lines];
+    next.sort((a, b) => {
+      const cmp = comparePn(a[sortKey], b[sortKey]);
+      return sortDir === 'asc' ? cmp : -cmp;
+    });
+    return next;
+  }, [lines, sortDir, sortKey]);
+
+  const toggleSort = (key: 'itemSku' | 'customerPartNumber') => {
+    if (sortKey === key) {
+      setSortDir((dir) => (dir === 'asc' ? 'desc' : 'asc'));
+      return;
+    }
+    setSortKey(key);
+    setSortDir('asc');
+  };
 
   const mergeCustomers = useCallback((csi: CustomerOption[], forecast: CustomerOption[]) => {
     const byKey = new Map<string, CustomerOption>();
@@ -295,13 +330,23 @@ export default function ProductRevenueForecastReport({
     markDirty();
   };
 
-  const updateMonthQty = (id: string, field: 'forecastQty' | 'actualQty', month: ForecastMonth, raw: string) => {
+  const updateMonthQty = (
+    id: string,
+    field: 'forecastQty' | 'adjustedQty',
+    month: ForecastMonth,
+    raw: string
+  ) => {
+    if (!forecastMonthIsEditable(year, month)) return;
     const parsed = raw === '' ? 0 : Number(raw);
     const value = Number.isFinite(parsed) ? parsed : 0;
     setLines((prev) =>
       prev.map((line) => {
         if (line.id !== id) return line;
-        return { ...line, [field]: { ...line[field], [String(month)]: value } };
+        const current =
+          field === 'adjustedQty'
+            ? line.adjustedQty || line.forecastQty || emptyMonthQtyMap()
+            : line.forecastQty || emptyMonthQtyMap();
+        return { ...line, [field]: { ...current, [String(month)]: value } };
       })
     );
     markDirty();
@@ -424,42 +469,69 @@ export default function ProductRevenueForecastReport({
   };
 
   const totals = useMemo(() => {
+    const ytdMonths = FORECAST_MONTHS.filter((month) => month <= selectedMonth);
+    const thru = dataThru || null;
     return lines.reduce(
       (acc, line) => {
-        acc.remaining += remainingForecastQty(line.forecastQty, dataThru || null);
+        acc.remaining += remainingForecastQty(line.forecastQty, thru);
         acc.monthForecast += qtyValue(line.forecastQty, selectedMonth);
-        acc.monthAdjusted += adjustedMonthQty(line.forecastQty, line.actualQty, selectedMonth, dataThru || null);
-        acc.monthYtd += qtyValue(line.actualQty, selectedMonth);
+        acc.monthAdjusted += adjustedMonthQty(line.forecastQty, line.actualQty, selectedMonth, thru, line.adjustedQty);
+        acc.monthActual += qtyValue(line.actualQty, selectedMonth);
+        acc.ytdForecast += monthQtyTotal(line.forecastQty, ytdMonths);
+        acc.ytdAdjusted += ytdMonths.reduce(
+          (sum, month) => sum + adjustedMonthQty(line.forecastQty, line.actualQty, month, thru, line.adjustedQty),
+          0
+        );
+        acc.ytdActual += monthQtyTotal(line.actualQty, ytdMonths);
         return acc;
       },
-      { remaining: 0, monthForecast: 0, monthAdjusted: 0, monthYtd: 0 }
+      {
+        remaining: 0,
+        monthForecast: 0,
+        monthAdjusted: 0,
+        monthActual: 0,
+        ytdForecast: 0,
+        ytdAdjusted: 0,
+        ytdActual: 0,
+      }
     );
   }, [dataThru, lines, selectedMonth]);
 
   const monthHeaderStyle: React.CSSProperties = {
     textAlign: 'right',
-    padding: '8px 6px',
+    padding: '8px 2px',
     color: '#3730a3',
     background: MONTH_COL_HEADER_BG,
     whiteSpace: 'normal',
-    lineHeight: 1.25,
-    minWidth: 96,
+    lineHeight: 1.15,
+    width: MONTH_METRIC_COL_PX,
+    minWidth: MONTH_METRIC_COL_PX,
+    maxWidth: MONTH_METRIC_COL_PX,
+    boxSizing: 'border-box',
     fontSize: 11,
     fontWeight: 700,
     verticalAlign: 'bottom',
   };
   const monthCellStyle: React.CSSProperties = {
-    padding: 6,
+    padding: '6px 2px',
     textAlign: 'right',
     whiteSpace: 'nowrap',
     borderTop: '1px solid #c7d2fe',
     background: MONTH_COL_CELL_BG,
     color: '#312e81',
+    width: MONTH_METRIC_COL_PX,
+    minWidth: MONTH_METRIC_COL_PX,
+    maxWidth: MONTH_METRIC_COL_PX,
+    boxSizing: 'border-box',
   };
   const monthInputCellStyle: React.CSSProperties = {
-    padding: 4,
+    padding: 2,
     borderTop: '1px solid #c7d2fe',
     background: MONTH_COL_CELL_BG,
+    width: MONTH_METRIC_COL_PX,
+    minWidth: MONTH_METRIC_COL_PX,
+    maxWidth: MONTH_METRIC_COL_PX,
+    boxSizing: 'border-box',
   };
   const monthQtyInputStyle: React.CSSProperties = {
     ...qtyInputStyle,
@@ -468,23 +540,30 @@ export default function ProductRevenueForecastReport({
   };
   const priorHeaderStyle: React.CSSProperties = {
     textAlign: 'right',
-    padding: '8px 6px',
+    padding: '8px 2px',
     color: '#475569',
     background: '#f8fafc',
     whiteSpace: 'normal',
-    lineHeight: 1.25,
-    minWidth: 96,
+    lineHeight: 1.15,
+    width: MONTH_METRIC_COL_PX,
+    minWidth: MONTH_METRIC_COL_PX,
+    maxWidth: MONTH_METRIC_COL_PX,
+    boxSizing: 'border-box',
     fontSize: 11,
     fontWeight: 700,
     verticalAlign: 'bottom',
   };
   const priorCellStyle: React.CSSProperties = {
-    padding: 6,
+    padding: '6px 2px',
     textAlign: 'right',
     whiteSpace: 'nowrap',
     borderTop: '1px solid #e2e8f0',
     background: '#ffffff',
     color: '#475569',
+    width: MONTH_METRIC_COL_PX,
+    minWidth: MONTH_METRIC_COL_PX,
+    maxWidth: MONTH_METRIC_COL_PX,
+    boxSizing: 'border-box',
   };
 
   const shiftMonth = (delta: number) => {
@@ -672,17 +751,45 @@ export default function ProductRevenueForecastReport({
         <div style={{ padding: '24px 0', color: '#64748b', fontSize: 13 }}>Loading forecast rows…</div>
       ) : (
         <>
-          <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', fontSize: 13, color: '#334155', marginBottom: 10 }}>
-            <span><strong>Rows:</strong> {lines.length.toLocaleString()}</span>
-            <span><strong>Forecasted {monthName}:</strong> {fmtQty(totals.monthForecast)}</span>
-            <span><strong>{monthName} forecast - adjusted:</strong> {fmtQty(totals.monthAdjusted)}</span>
-            <span><strong>{monthName} Actual:</strong> {fmtQty(totals.monthYtd)}</span>
-            <span><strong>% {monthName} YTD vs forecasted:</strong> {fmtPct(pctVsPlan(totals.monthYtd, totals.monthForecast))}</span>
-            <span><strong>% {monthName} Actual vs Adj. Forecast:</strong> {fmtPct(pctVsPlan(totals.monthYtd, totals.monthAdjusted))}</span>
-            <span><strong>Remaining-year forecast:</strong> {fmtQty(totals.remaining)}</span>
-            {closed.length ? (
-              <span><strong>Closed through:</strong> {FORECAST_MONTH_LABELS[closed[closed.length - 1]]}</span>
-            ) : null}
+          <div
+            style={{
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 6,
+              fontSize: 13,
+              color: '#334155',
+              marginBottom: 10,
+            }}
+          >
+            <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', alignItems: 'baseline' }}>
+              <span style={{ fontWeight: 800, color: '#0f172a' }}>{monthName} YTD DATA</span>
+              <span><strong>Forecasted YTD:</strong> {fmtQty(totals.ytdForecast)}</span>
+              <span><strong>Forecast - Adjusted YTD:</strong> {fmtQty(totals.ytdAdjusted)}</span>
+              <span><strong>Actual YTD:</strong> {fmtQty(totals.ytdActual)}</span>
+              <span>
+                <strong>Actual YTD vs. Forecasted YTD:</strong>{' '}
+                {fmtPct(pctVsPlan(totals.ytdActual, totals.ytdForecast))}
+              </span>
+              <span>
+                <strong>Actual YTD vs Forecast - Adjusted YTD:</strong>{' '}
+                {fmtPct(pctVsPlan(totals.ytdActual, totals.ytdAdjusted))}
+              </span>
+            </div>
+            <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', alignItems: 'baseline' }}>
+              <span style={{ fontWeight: 800, color: '#0f172a' }}>{monthName}</span>
+              <span><strong>Forecasted {monthName}:</strong> {fmtQty(totals.monthForecast)}</span>
+              <span><strong>{monthName} Forecast - ADJUSTED:</strong> {fmtQty(totals.monthAdjusted)}</span>
+              <span><strong>{monthName} Actual:</strong> {fmtQty(totals.monthActual)}</span>
+              <span>
+                <strong>% {monthName} Actual vs. Forecasted:</strong>{' '}
+                {fmtPct(pctVsPlan(totals.monthActual, totals.monthForecast))}
+              </span>
+              <span>
+                <strong>% {monthName} Actual vs Adj. Forecast:</strong>{' '}
+                {fmtPct(pctVsPlan(totals.monthActual, totals.monthAdjusted))}
+              </span>
+              <span><strong>Remaining-year forecast:</strong> {fmtQty(totals.remaining)}</span>
+            </div>
           </div>
           <div style={{ overflowX: 'auto', border: '1px solid #e2e8f0', borderRadius: 10, background: '#ffffff' }}>
             <div
@@ -713,10 +820,15 @@ export default function ProductRevenueForecastReport({
                 {selectedCustomer.label}
               </div>
             </div>
-            <table style={{ borderCollapse: 'separate', borderSpacing: 0, width: '100%', minWidth: IDENTITY_COLUMNS_WIDTH_PX + 1020, fontSize: 12, tableLayout: 'fixed' }}>
+            <table style={{ borderCollapse: 'separate', borderSpacing: 0, width: TABLE_MIN_WIDTH_PX, minWidth: TABLE_MIN_WIDTH_PX, fontSize: 12, tableLayout: 'fixed' }}>
               <colgroup>
                 {IDENTITY_COLUMNS.map((column) => (
                   <col key={column.key} style={{ width: columnWidth(column.widthCh) }} />
+                ))}
+                <col style={{ width: columnWidth(PLANNED_COL_CH) }} />
+                <col style={{ width: columnWidth(STATUS_COL_CH) }} />
+                {Array.from({ length: MONTH_METRIC_COL_COUNT }, (_, index) => (
+                  <col key={`metric-${index}`} style={{ width: MONTH_METRIC_COL_PX }} />
                 ))}
               </colgroup>
               <thead>
@@ -724,25 +836,29 @@ export default function ProductRevenueForecastReport({
                   {IDENTITY_COLUMNS.map((column, index) => (
                     <th
                       key={column.key}
-                      title={column.label}
+                      title={column.sortable ? `Sort by ${column.label}` : column.label}
                       align="left"
+                      onClick={column.sortable ? () => toggleSort(column.key as 'itemSku' | 'customerPartNumber') : undefined}
                       style={{
                         ...stickyIdentityStyle(index, true),
                         textAlign: 'left',
                         paddingTop: 8,
                         paddingBottom: 8,
                         color: '#334155',
+                        cursor: column.sortable ? 'pointer' : undefined,
+                        userSelect: column.sortable ? 'none' : undefined,
                       }}
                     >
                       {column.label}
+                      {column.sortable && sortKey === column.key ? (sortDir === 'asc' ? ' ▲' : ' ▼') : ''}
                     </th>
                   ))}
                   {[
-                    { key: 'planned', label: <>Planned<br />MTO</> },
+                    { key: 'planned', label: <>Planned<br />MTO</>, widthCh: 6 },
                     {
                       key: 'status',
-                      label: <>LOST<br />or<br />OBS or<br />NEW</>,
-                      widthCh: 6,
+                      label: <>LOST / OBS<br />NEW</>,
+                      widthCh: 5,
                     },
                   ].map((column) => (
                     <th
@@ -766,20 +882,20 @@ export default function ProductRevenueForecastReport({
                       {column.label}
                     </th>
                   ))}
-                  <th style={{ ...priorHeaderStyle, borderLeft: '1px solid #e2e8f0' }}>{`Forecasted ${previousMonthName}`}</th>
-                  <th style={priorHeaderStyle}>{`${previousMonthName} Forecast - ADJUSTED`}</th>
-                  <th style={priorHeaderStyle}>{`${previousMonthName} Actual`}</th>
-                  <th style={priorHeaderStyle}>{`% ${previousMonthName} Actual vs. Forecasted`}</th>
-                  <th style={priorHeaderStyle}>{`% ${previousMonthName} Actual vs Adj. Forecast`}</th>
-                  <th style={{ ...monthHeaderStyle, borderLeft: '2px solid #c7d2fe' }}>{`Forecasted ${monthName}`}</th>
-                  <th style={monthHeaderStyle}>{`${monthName} Forecast - ADJUSTED`}</th>
-                  <th style={monthHeaderStyle}>{`${monthName} Actual`}</th>
-                  <th style={monthHeaderStyle}>{`% ${monthName} Actual vs. Forecasted`}</th>
-                  <th style={monthHeaderStyle}>{`% ${monthName} Actual vs Adj. Forecast`}</th>
+                  <th style={{ ...priorHeaderStyle, borderLeft: '1px solid #e2e8f0' }}>Forecasted<br />{previousMonthName}<br />&nbsp;</th>
+                  <th style={priorHeaderStyle}>{previousMonthName}<br />Forecast -<br />ADJUSTED</th>
+                  <th style={priorHeaderStyle}>{previousMonthName}<br />Actual<br />&nbsp;</th>
+                  <th style={priorHeaderStyle}>% {previousMonthName} Actual<br />vs<br />Forecasted</th>
+                  <th style={priorHeaderStyle}>% {previousMonthName} Actual<br />vs Adj.<br />Forecast</th>
+                  <th style={{ ...monthHeaderStyle, borderLeft: '2px solid #c7d2fe' }}>Forecasted<br />{monthName}<br />&nbsp;</th>
+                  <th style={monthHeaderStyle}>{monthName}<br />Forecast -<br />ADJUSTED</th>
+                  <th style={monthHeaderStyle}>{monthName}<br />Actual<br />&nbsp;</th>
+                  <th style={monthHeaderStyle}>% {monthName} Actual<br />vs<br />Forecasted</th>
+                  <th style={monthHeaderStyle}>% {monthName} Actual<br />vs Adj.<br />Forecast</th>
                 </tr>
               </thead>
               <tbody>
-                {lines.map((line) => {
+                {sortedLines.map((line) => {
                   return (
                     <tr key={line.id} style={{ borderTop: '1px solid #e2e8f0' }}>
                       {IDENTITY_COLUMNS.map((column, index) => (
@@ -804,11 +920,20 @@ export default function ProductRevenueForecastReport({
                           />
                         </td>
                       ))}
-                      <td style={{ padding: 6, borderTop: '1px solid #e2e8f0' }}>
+                      <td
+                        style={{
+                          padding: 4,
+                          borderTop: '1px solid #e2e8f0',
+                          width: columnWidth(6),
+                          minWidth: columnWidth(6),
+                          maxWidth: columnWidth(6),
+                          boxSizing: 'border-box',
+                        }}
+                      >
                         <select
                           value={line.productionType}
                           onChange={(event) => updateLine(line.id, { productionType: event.target.value })}
-                          style={inputStyle}
+                          style={{ ...inputStyle, padding: '5px 2px' }}
                         >
                           <option value="" />
                           {PRODUCTION_TYPE_OPTIONS.map((option) => (
@@ -820,9 +945,9 @@ export default function ProductRevenueForecastReport({
                         style={{
                           padding: 4,
                           borderTop: '1px solid #e2e8f0',
-                          width: columnWidth(6),
-                          minWidth: columnWidth(6),
-                          maxWidth: columnWidth(6),
+                          width: columnWidth(5),
+                          minWidth: columnWidth(5),
+                          maxWidth: columnWidth(5),
                           boxSizing: 'border-box',
                           textAlign: 'right',
                         }}
@@ -842,7 +967,7 @@ export default function ProductRevenueForecastReport({
                         {fmtQty(qtyValue(line.forecastQty, previousMonth))}
                       </td>
                       <td style={priorCellStyle}>
-                        {fmtQty(adjustedMonthQty(line.forecastQty, line.actualQty, previousMonth, dataThru || null))}
+                        {fmtQty(adjustedMonthQty(line.forecastQty, line.actualQty, previousMonth, dataThru || null, line.adjustedQty))}
                       </td>
                       <td style={priorCellStyle}>
                         {fmtQty(qtyValue(line.actualQty, previousMonth))}
@@ -856,21 +981,39 @@ export default function ProductRevenueForecastReport({
                       <td style={priorCellStyle}>
                         {fmtPct(pctVsPlan(
                           qtyValue(line.actualQty, previousMonth),
-                          adjustedMonthQty(line.forecastQty, line.actualQty, previousMonth, dataThru || null)
+                          adjustedMonthQty(line.forecastQty, line.actualQty, previousMonth, dataThru || null, line.adjustedQty)
                         ))}
                       </td>
-                      <td style={{ ...monthInputCellStyle, borderLeft: '2px solid #c7d2fe' }}>
-                        <input
-                          type="number"
-                          value={qtyValue(line.forecastQty, selectedMonth)}
-                          onChange={(event) => updateMonthQty(line.id, 'forecastQty', selectedMonth, event.target.value)}
-                          style={monthQtyInputStyle}
-                          aria-label={`Forecasted ${monthName}`}
-                        />
-                      </td>
-                      <td style={monthCellStyle}>
-                        {fmtQty(adjustedMonthQty(line.forecastQty, line.actualQty, selectedMonth, dataThru || null))}
-                      </td>
+                      {canEditSelectedMonth ? (
+                        <td style={{ ...monthInputCellStyle, borderLeft: '2px solid #c7d2fe' }}>
+                          <input
+                            type="number"
+                            value={qtyValue(line.forecastQty, selectedMonth)}
+                            onChange={(event) => updateMonthQty(line.id, 'forecastQty', selectedMonth, event.target.value)}
+                            style={monthQtyInputStyle}
+                            aria-label={`Forecasted ${monthName}`}
+                          />
+                        </td>
+                      ) : (
+                        <td style={{ ...monthCellStyle, borderLeft: '2px solid #c7d2fe' }}>
+                          {fmtQty(qtyValue(line.forecastQty, selectedMonth))}
+                        </td>
+                      )}
+                      {canEditSelectedMonth ? (
+                        <td style={monthInputCellStyle}>
+                          <input
+                            type="number"
+                            value={qtyValue(line.adjustedQty || line.forecastQty, selectedMonth)}
+                            onChange={(event) => updateMonthQty(line.id, 'adjustedQty', selectedMonth, event.target.value)}
+                            style={monthQtyInputStyle}
+                            aria-label={`${monthName} Forecast - ADJUSTED`}
+                          />
+                        </td>
+                      ) : (
+                        <td style={monthCellStyle}>
+                          {fmtQty(adjustedMonthQty(line.forecastQty, line.actualQty, selectedMonth, dataThru || null, line.adjustedQty))}
+                        </td>
+                      )}
                       <td style={monthCellStyle}>
                         {fmtQty(qtyValue(line.actualQty, selectedMonth))}
                       </td>
@@ -883,7 +1026,7 @@ export default function ProductRevenueForecastReport({
                       <td style={monthCellStyle}>
                         {fmtPct(pctVsPlan(
                           qtyValue(line.actualQty, selectedMonth),
-                          adjustedMonthQty(line.forecastQty, line.actualQty, selectedMonth, dataThru || null)
+                          adjustedMonthQty(line.forecastQty, line.actualQty, selectedMonth, dataThru || null, line.adjustedQty)
                         ))}
                       </td>
                     </tr>

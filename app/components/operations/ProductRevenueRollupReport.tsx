@@ -13,6 +13,7 @@ import {
   pctDaysShippedYear,
   pctRevenueShipped,
   quarterActualRevenue,
+  quarterAdjustedEstimatedDollars,
   quarterEstimatedDollars,
   revenueDifference,
   workbookUpdatedDate,
@@ -36,11 +37,14 @@ type RevenueLine = {
   customerPartNumber: string;
   itemSku: string;
   actualRevenue: MonthQtyMap;
+  actualQty: MonthQtyMap;
+  adjustedQty: MonthQtyMap;
   estimated: MonthQtyMap;
   forecastQty: MonthQtyMap;
   contractPrice: number | null;
   sgpEstimated: number;
   annualEstimated: number;
+  annualAdjusted: number;
   annualYtd: number;
 };
 
@@ -91,7 +95,26 @@ const QUARTER_SHADES: Record<ForecastQuarter, {
   4: { headerBg: '#fecdd3', cellBg: '#fff1f2', border: '#fb7185', headerColor: '#9f1239', cellColor: '#881337' },
 };
 
-const QUARTER_METRIC_HEADERS = ['Estimated', 'YTD', '% YTD vs Estimated'] as const;
+const QUARTER_METRIC_HEADERS = [
+  'Forecasted',
+  'Forecast - ADJ',
+  'YTD',
+  '% YTD vs Forecasted',
+  '% YTD vs Forecast - Adj',
+] as const;
+const QUARTER_SUMMARY_METRICS = [
+  'Forecasted',
+  'Forecast-ADJ',
+  'YTD',
+  '% vs Fcst',
+  '% vs Adj',
+  'Diff',
+  'Days',
+] as const;
+
+function quarterSummaryColWidth(label: (typeof QUARTER_SUMMARY_METRICS)[number]): string {
+  return label === '% vs Fcst' || label === '% vs Adj' || label === 'Days' ? '2.47%' : '4.4%';
+}
 
 function columnWidthPx(widthCh: number): number {
   return widthCh * CHAR_PX + IDENTITY_CELL_EXTRA_PX;
@@ -167,14 +190,15 @@ function emptyTotals(): RevenueTotals {
     lineCount: 0,
     sgpEstimated: 0,
     annualEstimated: 0,
+    annualAdjusted: 0,
     annualYtd: 0,
     months: {
-      1: { estimated: 0, ytd: 0 }, 2: { estimated: 0, ytd: 0 }, 3: { estimated: 0, ytd: 0 },
-      4: { estimated: 0, ytd: 0 }, 5: { estimated: 0, ytd: 0 }, 6: { estimated: 0, ytd: 0 },
-      7: { estimated: 0, ytd: 0 }, 8: { estimated: 0, ytd: 0 }, 9: { estimated: 0, ytd: 0 },
-      10: { estimated: 0, ytd: 0 }, 11: { estimated: 0, ytd: 0 }, 12: { estimated: 0, ytd: 0 },
+      1: { estimated: 0, adjusted: 0, ytd: 0 }, 2: { estimated: 0, adjusted: 0, ytd: 0 }, 3: { estimated: 0, adjusted: 0, ytd: 0 },
+      4: { estimated: 0, adjusted: 0, ytd: 0 }, 5: { estimated: 0, adjusted: 0, ytd: 0 }, 6: { estimated: 0, adjusted: 0, ytd: 0 },
+      7: { estimated: 0, adjusted: 0, ytd: 0 }, 8: { estimated: 0, adjusted: 0, ytd: 0 }, 9: { estimated: 0, adjusted: 0, ytd: 0 },
+      10: { estimated: 0, adjusted: 0, ytd: 0 }, 11: { estimated: 0, adjusted: 0, ytd: 0 }, 12: { estimated: 0, adjusted: 0, ytd: 0 },
     },
-    quarters: { 1: { estimated: 0, ytd: 0 }, 2: { estimated: 0, ytd: 0 }, 3: { estimated: 0, ytd: 0 }, 4: { estimated: 0, ytd: 0 } },
+    quarters: { 1: { estimated: 0, adjusted: 0, ytd: 0 }, 2: { estimated: 0, adjusted: 0, ytd: 0 }, 3: { estimated: 0, adjusted: 0, ytd: 0 }, 4: { estimated: 0, adjusted: 0, ytd: 0 } },
   };
 }
 
@@ -299,7 +323,7 @@ export default function ProductRevenueRollupReport({
       background: shade.headerBg,
       whiteSpace: 'normal',
       lineHeight: 1.25,
-      minWidth: 88,
+      minWidth: 72,
       fontSize: 11,
       fontWeight: 700,
       verticalAlign: 'bottom',
@@ -325,7 +349,7 @@ export default function ProductRevenueRollupReport({
     background: ANNUAL_COL_HEADER_BG,
     whiteSpace: 'normal',
     lineHeight: 1.25,
-    minWidth: 88,
+    minWidth: 72,
     fontSize: 11,
     fontWeight: 700,
     verticalAlign: 'bottom',
@@ -364,7 +388,7 @@ export default function ProductRevenueRollupReport({
         ) : null}
       </div>
       <p style={{ margin: '0 0 16px', color: '#475569', fontSize: 13, lineHeight: 1.5, whiteSpace: 'nowrap' }}>
-        Quarterly and annual revenue $ from Monthly Revenue. Estimated is forecast units × contract price. Leave Customer blank for company totals.
+        Quarterly and annual revenue $ from the same Monthly Forecasted and Forecast - ADJ dollars. YTD is booked actual $. Leave Customer blank for company totals.
       </p>
 
       <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'end', marginBottom: 12 }}>
@@ -407,7 +431,7 @@ export default function ProductRevenueRollupReport({
       {error && <div style={{ color: '#b91c1c', fontSize: 13, marginBottom: 8 }}>{error}</div>}
       {!loading && skuCount > 0 && priceCount === 0 && (
         <div style={{ color: '#b45309', fontSize: 13, marginBottom: 8 }}>
-          Estimated $ is $0 because prices are not loaded yet. Import the workbook on Monthly Revenue.
+          Forecasted $ is $0 because Jan-1 contract prices are not in the saved price list yet.
         </div>
       )}
 
@@ -428,31 +452,97 @@ export default function ProductRevenueRollupReport({
           {closed.length ? <Metric label="Closed through" value={FORECAST_MONTH_LABELS[closed[closed.length - 1]]} /> : null}
           <Metric label="% Days Shipped" value={fmtPct(pctDaysShippedYear(shippingDays, year, dataThru || null))} />
         </div>
-        <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', fontSize: 13, color: '#0f172a', marginBottom: 8 }}>
-          <Metric label="SGP ESTIMATED" value={fmtMoney(totals.sgpEstimated)} />
-          <Metric label="ESTIMATED" value={fmtMoney(totals.annualEstimated)} />
+        <div style={{ display: 'flex', alignItems: 'baseline', gap: 16, flexWrap: 'wrap', fontSize: 13, color: '#0f172a', marginBottom: 8 }}>
+          <div style={{ fontSize: 11, fontWeight: 800, color: '#92400e', letterSpacing: 0.4 }}>ANNUAL</div>
+          <Metric label="Forecasted" value={fmtMoney(totals.annualEstimated)} />
+          <Metric label="Forecast - ADJ" value={fmtMoney(totals.annualAdjusted)} />
           <Metric label="YTD" value={fmtMoney(totals.annualYtd)} />
-          <Metric label="% YTD vs Estimated" value={fmtPct(pctRevenueShipped(totals.annualYtd, totals.annualEstimated))} />
-          <Metric label="Difference" value={fmtMoney(revenueDifference(totals.annualYtd, totals.annualEstimated))} />
+          <Metric label="% YTD vs Forecasted" value={fmtPct(pctRevenueShipped(totals.annualYtd, totals.annualEstimated))} />
+          <Metric label="% YTD vs Forecast - Adj" value={fmtPct(pctRevenueShipped(totals.annualYtd, totals.annualAdjusted))} />
         </div>
-        <div style={{ display: 'flex', gap: 18, flexWrap: 'wrap', fontSize: 12, color: '#334155' }}>
-          {FORECAST_QUARTERS.map((quarter) => {
-            const q = totals.quarters[quarter] || { estimated: 0, ytd: 0 };
-            return (
-              <div key={quarter}>
-                <div style={{ fontSize: 11, fontWeight: 700, color: QUARTER_SHADES[quarter].headerColor, marginBottom: 4 }}>
-                  {quarterLabel(quarter)}
-                </div>
-                <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-                  <Metric label="Estimated" value={fmtMoney(q.estimated)} />
-                  <Metric label="YTD" value={fmtMoney(q.ytd)} />
-                  <Metric label="%" value={fmtPct(pctRevenueShipped(q.ytd, q.estimated))} />
-                  <Metric label="Diff" value={fmtMoney(revenueDifference(q.ytd, q.estimated))} />
-                  <Metric label="Days" value={fmtPct(pctDaysShippedQuarter(shippingDays, year, quarter, dataThru || null))} />
-                </div>
-              </div>
-            );
-          })}
+        <div style={{ overflowX: 'auto' }}>
+          <table
+            style={{
+              borderCollapse: 'separate',
+              borderSpacing: 0,
+              width: '100%',
+              tableLayout: 'fixed',
+              fontSize: 12,
+            }}
+          >
+            <colgroup>
+              {FORECAST_QUARTERS.flatMap((quarter) =>
+                QUARTER_SUMMARY_METRICS.map((label) => (
+                  <col
+                    key={`${quarter}-${label}`}
+                    style={{ width: quarterSummaryColWidth(label) }}
+                  />
+                ))
+              )}
+            </colgroup>
+            <thead>
+              <tr>
+                {FORECAST_QUARTERS.map((quarter) => (
+                  <th key={quarter} colSpan={QUARTER_SUMMARY_METRICS.length} style={quarterGroupHeaderStyle(quarter)}>
+                    {quarterLabel(quarter)}
+                  </th>
+                ))}
+              </tr>
+              <tr>
+                {FORECAST_QUARTERS.map((quarter) => (
+                  <React.Fragment key={quarter}>
+                    {QUARTER_SUMMARY_METRICS.map((label, index) => (
+                      <th
+                        key={label}
+                        style={{
+                          ...quarterMetricHeaderStyle(quarter, index === 0),
+                          minWidth: 0,
+                          padding: '4px 6px',
+                          fontSize: 10,
+                          textAlign: 'right',
+                          whiteSpace: 'nowrap',
+                        }}
+                      >
+                        {label}
+                      </th>
+                    ))}
+                  </React.Fragment>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                {FORECAST_QUARTERS.map((quarter) => {
+                  const q = totals.quarters[quarter] || { estimated: 0, adjusted: 0, ytd: 0 };
+                  const values = [
+                    fmtMoney(q.estimated),
+                    fmtMoney(q.adjusted),
+                    fmtMoney(q.ytd),
+                    fmtPct(pctRevenueShipped(q.ytd, q.estimated)),
+                    fmtPct(pctRevenueShipped(q.ytd, q.adjusted)),
+                    fmtMoney(revenueDifference(q.ytd, q.estimated)),
+                    fmtPct(pctDaysShippedQuarter(shippingDays, year, quarter, dataThru || null)),
+                  ];
+                  return (
+                    <React.Fragment key={quarter}>
+                      {values.map((value, index) => (
+                        <td
+                          key={QUARTER_SUMMARY_METRICS[index]}
+                          style={{
+                            ...quarterCellStyle(quarter, index === 0),
+                            padding: '6px',
+                            fontVariantNumeric: 'tabular-nums',
+                          }}
+                        >
+                          {value}
+                        </td>
+                      ))}
+                    </React.Fragment>
+                  );
+                })}
+              </tr>
+            </tbody>
+          </table>
         </div>
       </div>
 
@@ -519,12 +609,12 @@ export default function ProductRevenueRollupReport({
                   </th>
                 ))}
                 {FORECAST_QUARTERS.map((quarter) => (
-                  <th key={quarter} colSpan={3} style={quarterGroupHeaderStyle(quarter)}>
+                  <th key={quarter} colSpan={5} style={quarterGroupHeaderStyle(quarter)}>
                     {quarterLabel(quarter)}
                   </th>
                 ))}
                 <th
-                  colSpan={4}
+                  colSpan={5}
                   style={{
                     textAlign: 'center',
                     padding: '6px 6px',
@@ -552,11 +642,12 @@ export default function ProductRevenueRollupReport({
                   </React.Fragment>
                 ))}
                 <th style={{ ...annualHeaderStyle, borderLeft: `2px solid ${ANNUAL_COL_BORDER}` }}>
-                  SGP ESTIMATED
+                  FORECASTED
                 </th>
-                <th style={annualHeaderStyle}>ESTIMATED</th>
+                <th style={annualHeaderStyle}>FORECAST -<br />ADJ</th>
                 <th style={annualHeaderStyle}>YTD</th>
-                <th style={annualHeaderStyle}>% YTD vs<br />Estimated</th>
+                <th style={annualHeaderStyle}>% YTD vs<br />Forecasted</th>
+                <th style={annualHeaderStyle}>% YTD vs<br />Forecast - Adj</th>
               </tr>
             </thead>
             <tbody>
@@ -578,27 +669,38 @@ export default function ProductRevenueRollupReport({
                   ))}
                   {FORECAST_QUARTERS.map((quarter) => {
                     const estimated = quarterEstimatedDollars(line.forecastQty, line.contractPrice, quarter);
+                    const adjusted = quarterAdjustedEstimatedDollars(
+                      line.forecastQty,
+                      line.actualQty || {},
+                      dataThru || null,
+                      line.contractPrice,
+                      quarter,
+                      line.adjustedQty || {}
+                    );
                     const ytd = quarterActualRevenue(line.actualRevenue, quarter);
                     return (
                       <React.Fragment key={quarter}>
                         <td style={quarterCellStyle(quarter, true)}>{fmtMoney(estimated)}</td>
+                        <td style={quarterCellStyle(quarter, false)}>{fmtMoney(adjusted)}</td>
                         <td style={quarterCellStyle(quarter, false)}>{fmtMoney(ytd)}</td>
                         <td style={quarterCellStyle(quarter, false)}>{fmtPct(pctRevenueShipped(ytd, estimated))}</td>
+                        <td style={quarterCellStyle(quarter, false)}>{fmtPct(pctRevenueShipped(ytd, adjusted))}</td>
                       </React.Fragment>
                     );
                   })}
                   <td style={{ ...annualCellStyle, borderLeft: `2px solid ${ANNUAL_COL_BORDER}` }}>
-                    {fmtMoney(line.sgpEstimated)}
+                    {fmtMoney(line.annualEstimated)}
                   </td>
-                  <td style={annualCellStyle}>{fmtMoney(line.annualEstimated)}</td>
+                  <td style={annualCellStyle}>{fmtMoney(line.annualAdjusted)}</td>
                   <td style={annualCellStyle}>{fmtMoney(line.annualYtd)}</td>
                   <td style={annualCellStyle}>{fmtPct(pctRevenueShipped(line.annualYtd, line.annualEstimated))}</td>
+                  <td style={annualCellStyle}>{fmtPct(pctRevenueShipped(line.annualYtd, line.annualAdjusted))}</td>
                 </tr>
               ))}
               {lines.length === 0 && (
                 <tr>
-                  <td colSpan={19} style={{ padding: 16, color: '#64748b' }}>
-                    No revenue rows for this customer yet. Import the workbook on Monthly Revenue, then return here.
+                  <td colSpan={28} style={{ padding: 16, color: '#64748b' }}>
+                    No revenue rows for this customer yet. Save Monthly Forecast and Monthly Revenue for this customer, then return here.
                   </td>
                 </tr>
               )}

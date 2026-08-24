@@ -1821,6 +1821,7 @@ model ProductRevenueForecastLine {
   statusFlag         String?
   annualBaseQty      Float?
   forecastQty        Json     @default("{}")
+  adjustedQty        Json     @default("{}")
   actualQty          Json     @default("{}")
   sortOrder          Int      @default(0)
   createdAt          DateTime @default(now())
@@ -1976,6 +1977,11 @@ model CompanyItemDutyApplication {
   tariffRatePct        Float?
   dutyAmount           Float    @default(0)
   tariffAmount         Float    @default(0)
+  specialAmount        Float    @default(0)
+  section301Amount     Float    @default(0)
+  section232Amount     Float    @default(0)
+  ieepaAmount          Float    @default(0)
+  additionalAmount     Float    @default(0)
   quoteAsOfDate        DateTime?
   rateSource           String   @default("hts")
   createdAt            DateTime @default(now())

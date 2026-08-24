@@ -2,15 +2,14 @@
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  FORECAST_MONTH_LABELS,
   FORECAST_QUARTERS,
   annualAdjustedQty,
-  closedMonths,
   monthQtyTotal,
   pctVsPlan,
   quarterAdjustedQty,
   quarterActualQty,
   quarterForecastQty,
+  remainingForecastQty,
   ytdActualQty,
   type ForecastQuarter,
   type ProductRevenueForecastLineInput,
@@ -163,8 +162,6 @@ export default function ProductForecastRollupReport({
     [customers, customerKey]
   );
 
-  const closed = useMemo(() => closedMonths(dataThru || null), [dataThru]);
-
   const mergeCustomers = useCallback((csi: CustomerOption[], forecast: CustomerOption[]) => {
     const byKey = new Map<string, CustomerOption>();
     [...csi, ...forecast].forEach((customer) => {
@@ -265,11 +262,12 @@ export default function ProductForecastRollupReport({
       (acc, line) => {
         acc.sgpEstimated += Number(line.annualBaseQty) || 0;
         acc.annualForecast += monthQtyTotal(line.forecastQty);
-        acc.annualAdjusted += annualAdjustedQty(line.forecastQty, line.actualQty, dataThru || null);
+        acc.annualAdjusted += annualAdjustedQty(line.forecastQty, line.actualQty, dataThru || null, line.adjustedQty);
         acc.ytdActual += ytdActualQty(line.actualQty, dataThru || null);
+        acc.remaining += remainingForecastQty(line.forecastQty, dataThru || null);
         FORECAST_QUARTERS.forEach((quarter) => {
           acc.quarterForecast[quarter] += quarterForecastQty(line.forecastQty, quarter);
-          acc.quarterAdjusted[quarter] += quarterAdjustedQty(line.forecastQty, line.actualQty, dataThru || null, quarter);
+          acc.quarterAdjusted[quarter] += quarterAdjustedQty(line.forecastQty, line.actualQty, dataThru || null, quarter, line.adjustedQty);
           acc.quarterYtd[quarter] += quarterActualQty(line.actualQty, quarter);
         });
         return acc;
@@ -279,6 +277,7 @@ export default function ProductForecastRollupReport({
         annualForecast: 0,
         annualAdjusted: 0,
         ytdActual: 0,
+        remaining: 0,
         quarterForecast: { 1: 0, 2: 0, 3: 0, 4: 0 } as Record<ForecastQuarter, number>,
         quarterAdjusted: { 1: 0, 2: 0, 3: 0, 4: 0 } as Record<ForecastQuarter, number>,
         quarterYtd: { 1: 0, 2: 0, 3: 0, 4: 0 } as Record<ForecastQuarter, number>,
@@ -437,9 +436,7 @@ export default function ProductForecastRollupReport({
             <span><strong>Forecast - adjusted:</strong> {fmtQty(totals.annualAdjusted)}</span>
             <span><strong>YTD {year}:</strong> {fmtQty(totals.ytdActual)}</span>
             <span><strong>% YTD vs forecasted:</strong> {fmtPct(pctVsPlan(totals.ytdActual, totals.annualForecast))}</span>
-            {closed.length ? (
-              <span><strong>Closed through:</strong> {FORECAST_MONTH_LABELS[closed[closed.length - 1]]}</span>
-            ) : null}
+            <span><strong>Remaining-year forecast:</strong> {fmtQty(totals.remaining)}</span>
           </div>
           <div style={{ overflowX: 'auto', border: '1px solid #e2e8f0', borderRadius: 10, background: '#ffffff' }}>
             <div
@@ -541,7 +538,7 @@ export default function ProductForecastRollupReport({
               <tbody>
                 {lines.map((line) => {
                   const annualForecast = monthQtyTotal(line.forecastQty);
-                  const annualAdjusted = annualAdjustedQty(line.forecastQty, line.actualQty, dataThru || null);
+                  const annualAdjusted = annualAdjustedQty(line.forecastQty, line.actualQty, dataThru || null, line.adjustedQty);
                   const ytdActual = ytdActualQty(line.actualQty, dataThru || null);
                   return (
                     <tr key={line.id} style={{ borderTop: '1px solid #e2e8f0' }}>
@@ -561,7 +558,7 @@ export default function ProductForecastRollupReport({
                       ))}
                       {FORECAST_QUARTERS.map((quarter) => {
                         const forecasted = quarterForecastQty(line.forecastQty, quarter);
-                        const adjusted = quarterAdjustedQty(line.forecastQty, line.actualQty, dataThru || null, quarter);
+                        const adjusted = quarterAdjustedQty(line.forecastQty, line.actualQty, dataThru || null, quarter, line.adjustedQty);
                         const ytd = quarterActualQty(line.actualQty, quarter);
                         return (
                           <React.Fragment key={quarter}>

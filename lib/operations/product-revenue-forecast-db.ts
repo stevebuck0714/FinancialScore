@@ -8,7 +8,11 @@ import {
   emptyMonthQtyMap,
   forecastActualsExactKey,
   forecastActualsItemKey,
+  forecastMonthIsEditable,
+  FORECAST_MONTHS,
+  monthQty,
   overlayShippedActuals,
+  normalizeAdjustedQtyMap,
   normalizeMonthQtyMap,
   type CsiShippedActuals,
   type MonthQtyMap,
@@ -45,6 +49,7 @@ export async function ensureProductRevenueForecastTables(): Promise<void> {
           "statusFlag" TEXT,
           "annualBaseQty" DOUBLE PRECISION,
           "forecastQty" JSONB NOT NULL DEFAULT '{}',
+          "adjustedQty" JSONB NOT NULL DEFAULT '{}',
           "actualQty" JSONB NOT NULL DEFAULT '{}',
           "sortOrder" INTEGER NOT NULL DEFAULT 0,
           "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -63,6 +68,10 @@ export async function ensureProductRevenueForecastTables(): Promise<void> {
       await prisma.$executeRawUnsafe(`
         CREATE INDEX IF NOT EXISTS "ProductRevenueForecastLine_companyId_year_customerName_idx"
           ON "ProductRevenueForecastLine"("companyId", "year", "customerName")
+      `);
+      await prisma.$executeRawUnsafe(`
+        ALTER TABLE "ProductRevenueForecastLine"
+        ADD COLUMN IF NOT EXISTS "adjustedQty" JSONB NOT NULL DEFAULT '{}'::jsonb
       `);
     })().catch((error) => {
       ensureTablesOnce = null;
@@ -183,6 +192,17 @@ function sqlValues(rowCount: number, columns: Array<{ jsonb?: boolean }>): strin
   return rows.join(', ');
 }
 
+function mergeLockedMonthQty(incoming: MonthQtyMap, existing: unknown, year: number): MonthQtyMap {
+  const prior = normalizeMonthQtyMap(existing);
+  const next = emptyMonthQtyMap();
+  for (const month of FORECAST_MONTHS) {
+    next[String(month)] = forecastMonthIsEditable(year, month)
+      ? monthQty(incoming, month)
+      : monthQty(prior, month);
+  }
+  return next;
+}
+
 export function serializeForecastLine(row: {
   id: string;
   customerId: string;
@@ -196,9 +216,11 @@ export function serializeForecastLine(row: {
   statusFlag: string | null;
   annualBaseQty: number | null;
   forecastQty: Prisma.JsonValue;
+  adjustedQty?: Prisma.JsonValue | null;
   actualQty: Prisma.JsonValue;
   sortOrder: number;
 }) {
+  const forecastQty = normalizeMonthQtyMap(row.forecastQty);
   return {
     id: row.id,
     customerId: row.customerId,
@@ -211,7 +233,8 @@ export function serializeForecastLine(row: {
     productionType: row.productionType || '',
     statusFlag: row.statusFlag || '',
     annualBaseQty: row.annualBaseQty,
-    forecastQty: normalizeMonthQtyMap(row.forecastQty),
+    forecastQty,
+    adjustedQty: normalizeAdjustedQtyMap(row.adjustedQty, forecastQty),
     actualQty: normalizeMonthQtyMap(row.actualQty),
     sortOrder: row.sortOrder,
   };
@@ -225,6 +248,7 @@ export function normalizeForecastLineInput(
   const itemSku = asText(raw.itemSku);
   const customerId = asText(raw.customerId) || fallbackCustomer.customerId;
   const customerName = asText(raw.customerName) || fallbackCustomer.customerName;
+  const forecastQty = normalizeMonthQtyMap(raw.forecastQty);
   return {
     id: asText(raw.id),
     customerId,
@@ -237,7 +261,8 @@ export function normalizeForecastLineInput(
     productionType: asText(raw.productionType) || null,
     statusFlag: asText(raw.statusFlag) || null,
     annualBaseQty: asNullableNumber(raw.annualBaseQty),
-    forecastQty: normalizeMonthQtyMap(raw.forecastQty),
+    forecastQty,
+    adjustedQty: normalizeAdjustedQtyMap(raw.adjustedQty, forecastQty),
     actualQty: normalizeMonthQtyMap(raw.actualQty),
     sortOrder,
   };
@@ -248,9 +273,10 @@ export async function upsertForecastLines(params: {
   year: number;
   dataThru?: Date | null;
   replaceCustomer?: { customerId: string; customerName: string } | null;
+  preserveLockedMonthQtys?: boolean;
   lines: ReturnType<typeof normalizeForecastLineInput>[];
 }) {
-  const { companyId, year, dataThru, replaceCustomer, lines } = params;
+  const { companyId, year, dataThru, replaceCustomer, preserveLockedMonthQtys, lines } = params;
   const now = new Date();
 
   await prisma.productRevenueForecastSettings.upsert({
@@ -258,6 +284,33 @@ export async function upsertForecastLines(params: {
     create: { companyId, year, dataThru: dataThru ?? null, updatedAt: now },
     update: dataThru === undefined ? { updatedAt: now } : { dataThru: dataThru ?? null, updatedAt: now },
   });
+
+  const existingByKey = new Map<string, { forecastQty: Prisma.JsonValue; adjustedQty: Prisma.JsonValue | null }>();
+  if (preserveLockedMonthQtys && replaceCustomer) {
+    const existingRows = await prisma.$queryRaw<Array<{
+      customerId: string;
+      itemSku: string;
+      customerPartNumber: string;
+      forecastQty: Prisma.JsonValue;
+      adjustedQty: Prisma.JsonValue | null;
+    }>>`
+      SELECT "customerId", "itemSku", "customerPartNumber", "forecastQty", "adjustedQty"
+      FROM "ProductRevenueForecastLine"
+      WHERE "companyId" = ${companyId}
+        AND "year" = ${year}
+        AND ${
+          replaceCustomer.customerId
+            ? Prisma.sql`"customerId" = ${replaceCustomer.customerId}`
+            : Prisma.sql`"customerName" = ${replaceCustomer.customerName}`
+        }
+    `;
+    for (const row of existingRows) {
+      existingByKey.set(
+        `${row.customerId}||${row.itemSku}||${row.customerPartNumber}`,
+        { forecastQty: row.forecastQty, adjustedQty: row.adjustedQty }
+      );
+    }
+  }
 
   if (replaceCustomer) {
     const keepIds = lines.map((line) => line.id).filter((id) => id && !id.startsWith('tmp-'));
@@ -276,7 +329,18 @@ export async function upsertForecastLines(params: {
   const unique = new Map<string, (typeof lines)[number]>();
   for (const line of lines) {
     if (!line.itemSku) continue;
-    unique.set(`${line.customerId}||${line.itemSku}||${line.customerPartNumber}`, line);
+    const key = `${line.customerId}||${line.itemSku}||${line.customerPartNumber}`;
+    const existing = existingByKey.get(key);
+    unique.set(
+      key,
+      existing && preserveLockedMonthQtys
+        ? {
+            ...line,
+            forecastQty: mergeLockedMonthQty(line.forecastQty, existing.forecastQty, year),
+            adjustedQty: mergeLockedMonthQty(line.adjustedQty, existing.adjustedQty, year),
+          }
+        : line
+    );
   }
   const rows = Array.from(unique.values());
   const columns = [
@@ -293,6 +357,7 @@ export async function upsertForecastLines(params: {
     {},
     {},
     {},
+    { jsonb: true },
     { jsonb: true },
     { jsonb: true },
     {},
@@ -320,6 +385,7 @@ export async function upsertForecastLines(params: {
         line.annualBaseQty,
         JSON.stringify(line.forecastQty),
         JSON.stringify(line.actualQty),
+        JSON.stringify(line.adjustedQty),
         line.sortOrder,
         now,
         now
@@ -329,7 +395,7 @@ export async function upsertForecastLines(params: {
       `INSERT INTO "ProductRevenueForecastLine" (
          "id", "companyId", "year", "customerId", "customerName", "customerGroup", "customerPartNumber",
          "itemSku", "team", "csr", "productionType", "statusFlag", "annualBaseQty", "forecastQty", "actualQty",
-         "sortOrder", "createdAt", "updatedAt"
+         "adjustedQty", "sortOrder", "createdAt", "updatedAt"
        ) VALUES ${sqlValues(chunk.length, columns)}
        ON CONFLICT ("companyId", "year", "customerId", "itemSku", "customerPartNumber") DO UPDATE SET
          "customerName" = EXCLUDED."customerName",
@@ -341,11 +407,52 @@ export async function upsertForecastLines(params: {
          "annualBaseQty" = EXCLUDED."annualBaseQty",
          "forecastQty" = EXCLUDED."forecastQty",
          "actualQty" = EXCLUDED."actualQty",
+         "adjustedQty" = EXCLUDED."adjustedQty",
          "sortOrder" = EXCLUDED."sortOrder",
          "updatedAt" = EXCLUDED."updatedAt"`,
       ...params
     );
   }
+}
+
+export async function loadProductForecastLines(params: {
+  companyId: string;
+  year: number;
+  customerId?: string;
+  customerName?: string;
+}) {
+  const { companyId, year, customerId, customerName } = params;
+  const customerFilter = customerId
+    ? Prisma.sql`"customerId" = ${customerId}`
+    : customerName
+      ? Prisma.sql`"customerName" = ${customerName}`
+      : Prisma.sql`TRUE`;
+  return prisma.$queryRaw<Array<{
+    id: string;
+    customerId: string;
+    customerName: string;
+    customerGroup: string | null;
+    customerPartNumber: string;
+    itemSku: string;
+    team: string | null;
+    csr: string | null;
+    productionType: string | null;
+    statusFlag: string | null;
+    annualBaseQty: number | null;
+    forecastQty: Prisma.JsonValue;
+    adjustedQty: Prisma.JsonValue | null;
+    actualQty: Prisma.JsonValue;
+    sortOrder: number;
+  }>>`
+    SELECT "id", "customerId", "customerName", "customerGroup", "customerPartNumber",
+           "itemSku", "team", "csr", "productionType", "statusFlag", "annualBaseQty",
+           "forecastQty", "adjustedQty", "actualQty", "sortOrder"
+    FROM "ProductRevenueForecastLine"
+    WHERE "companyId" = ${companyId}
+      AND "year" = ${year}
+      AND ${customerFilter}
+    ORDER BY "sortOrder" ASC, "itemSku" ASC
+  `;
 }
 
 function snapshotCustomerMatchSql(customerId: string, customerName: string): Prisma.Sql {

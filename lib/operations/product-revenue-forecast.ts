@@ -1,4 +1,5 @@
 import * as XLSX from 'xlsx';
+import { estMonthIndex, estYear } from '@/lib/time/eastern';
 
 export const FORECAST_MONTHS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12] as const;
 export type ForecastMonth = (typeof FORECAST_MONTHS)[number];
@@ -50,6 +51,7 @@ export type ProductRevenueForecastLineInput = {
   statusFlag: string;
   annualBaseQty: number | null;
   forecastQty: MonthQtyMap;
+  adjustedQty: MonthQtyMap;
   actualQty: MonthQtyMap;
   sortOrder: number;
 };
@@ -179,6 +181,25 @@ export function monthIsClosed(month: ForecastMonth, dataThru: string | Date | nu
   return through > 0 && month <= through;
 }
 
+export function forecastMonthIsEditable(year: number, month: ForecastMonth, now: Date = new Date()): boolean {
+  const currentYear = estYear(now);
+  const currentMonth = (estMonthIndex(now) + 1) as ForecastMonth;
+  if (year > currentYear) return true;
+  if (year < currentYear) return false;
+  return month >= currentMonth;
+}
+
+function monthQtySourceIsEmpty(value: unknown): boolean {
+  if (value == null) return true;
+  if (typeof value !== 'object' || Array.isArray(value)) return true;
+  return Object.keys(value as Record<string, unknown>).length === 0;
+}
+
+export function normalizeAdjustedQtyMap(value: unknown, forecastQty: MonthQtyMap): MonthQtyMap {
+  if (monthQtySourceIsEmpty(value)) return { ...forecastQty };
+  return normalizeMonthQtyMap(value);
+}
+
 export function monthQty(map: MonthQtyMap, month: ForecastMonth): number {
   return Number(map[String(month)]) || 0;
 }
@@ -235,18 +256,22 @@ export function adjustedMonthQty(
   forecastQty: MonthQtyMap,
   actualQty: MonthQtyMap,
   month: ForecastMonth,
-  dataThru: string | Date | null | undefined
+  dataThru: string | Date | null | undefined,
+  adjustedQty?: MonthQtyMap | null
 ): number {
-  return monthIsClosed(month, dataThru) ? monthQty(actualQty, month) : monthQty(forecastQty, month);
+  if (monthIsClosed(month, dataThru)) return monthQty(actualQty, month);
+  if (adjustedQty) return monthQty(adjustedQty, month);
+  return monthQty(forecastQty, month);
 }
 
 export function annualAdjustedQty(
   forecastQty: MonthQtyMap,
   actualQty: MonthQtyMap,
-  dataThru: string | Date | null | undefined
+  dataThru: string | Date | null | undefined,
+  adjustedQty?: MonthQtyMap | null
 ): number {
   return FORECAST_MONTHS.reduce(
-    (sum, month) => sum + adjustedMonthQty(forecastQty, actualQty, month, dataThru),
+    (sum, month) => sum + adjustedMonthQty(forecastQty, actualQty, month, dataThru, adjustedQty),
     0
   );
 }
@@ -273,10 +298,11 @@ export function quarterAdjustedQty(
   forecastQty: MonthQtyMap,
   actualQty: MonthQtyMap,
   dataThru: string | Date | null | undefined,
-  quarter: ForecastQuarter
+  quarter: ForecastQuarter,
+  adjustedQty?: MonthQtyMap | null
 ): number {
   return QUARTER_MONTHS[quarter].reduce(
-    (sum, month) => sum + adjustedMonthQty(forecastQty, actualQty, month, dataThru),
+    (sum, month) => sum + adjustedMonthQty(forecastQty, actualQty, month, dataThru, adjustedQty),
     0
   );
 }
@@ -439,6 +465,7 @@ export function parseProductRevenueForecastWorkbook(
       statusFlag: normalizeStatusFlag(cell(row, 'I')),
       annualBaseQty: asNumber(cell(row, 'J')),
       forecastQty,
+      adjustedQty: { ...forecastQty },
       actualQty,
       sortOrder: rows.length,
     });

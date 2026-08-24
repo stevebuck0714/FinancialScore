@@ -3,9 +3,11 @@ import {
   FORECAST_MONTHS,
   FORECAST_QUARTERS,
   QUARTER_MONTHS,
+  adjustedMonthQty,
   emptyMonthQtyMap,
   monthQty,
   monthQtyTotal,
+  normalizeAdjustedQtyMap,
   normalizeMonthQtyMap,
   parseProductRevenueForecastWorkbook,
   readProductOperationsWorkbook,
@@ -61,6 +63,8 @@ export type JoinedRevenueLine = ProductRevenueLineInput & {
   id: string;
   annualBaseQty: number | null;
   forecastQty: MonthQtyMap;
+  actualQty: MonthQtyMap;
+  adjustedQty: MonthQtyMap;
   contractPrice: number | null;
   sgpPrice: number | null;
 };
@@ -464,6 +468,40 @@ export function estimatedMonths(forecastQty: MonthQtyMap, contractPrice: number 
   return next;
 }
 
+export function adjustedEstimatedMonthDollars(
+  forecastQty: MonthQtyMap,
+  actualQty: MonthQtyMap,
+  month: ForecastMonth,
+  dataThru: string | Date | null | undefined,
+  contractPrice: number | null | undefined,
+  adjustedQty?: MonthQtyMap | null
+): number {
+  const price = Number(contractPrice);
+  if (!Number.isFinite(price)) return 0;
+  return adjustedMonthQty(forecastQty, actualQty, month, dataThru, adjustedQty) * price;
+}
+
+export function adjustedEstimatedMonths(
+  forecastQty: MonthQtyMap,
+  actualQty: MonthQtyMap,
+  dataThru: string | Date | null | undefined,
+  contractPrice: number | null | undefined,
+  adjustedQty?: MonthQtyMap | null
+): MonthQtyMap {
+  const next = emptyMonthQtyMap();
+  for (const month of FORECAST_MONTHS) {
+    next[String(month)] = adjustedEstimatedMonthDollars(
+      forecastQty,
+      actualQty,
+      month,
+      dataThru,
+      contractPrice,
+      adjustedQty
+    );
+  }
+  return next;
+}
+
 export function sgpEstimatedDollars(
   annualBaseQty: number | null | undefined,
   sgpPrice: number | null | undefined
@@ -478,12 +516,36 @@ export function annualEstimatedDollars(forecastQty: MonthQtyMap, contractPrice: 
   return monthQtyTotal(estimatedMonths(forecastQty, contractPrice));
 }
 
+export function annualAdjustedEstimatedDollars(
+  forecastQty: MonthQtyMap,
+  actualQty: MonthQtyMap,
+  dataThru: string | Date | null | undefined,
+  contractPrice: number | null | undefined,
+  adjustedQty?: MonthQtyMap | null
+): number {
+  return monthQtyTotal(adjustedEstimatedMonths(forecastQty, actualQty, dataThru, contractPrice, adjustedQty));
+}
+
 export function quarterEstimatedDollars(
   forecastQty: MonthQtyMap,
   contractPrice: number | null | undefined,
   quarter: ForecastQuarter
 ): number {
   return monthQtyTotal(estimatedMonths(forecastQty, contractPrice), QUARTER_MONTHS[quarter]);
+}
+
+export function quarterAdjustedEstimatedDollars(
+  forecastQty: MonthQtyMap,
+  actualQty: MonthQtyMap,
+  dataThru: string | Date | null | undefined,
+  contractPrice: number | null | undefined,
+  quarter: ForecastQuarter,
+  adjustedQty?: MonthQtyMap | null
+): number {
+  return monthQtyTotal(
+    adjustedEstimatedMonths(forecastQty, actualQty, dataThru, contractPrice, adjustedQty),
+    QUARTER_MONTHS[quarter]
+  );
 }
 
 export function quarterActualRevenue(actualRevenue: MonthQtyMap, quarter: ForecastQuarter): number {
@@ -597,6 +659,7 @@ export function workbookUpdatedDate(dataThru: string | Date | null | undefined):
 
 export type RevenueMonthTotals = {
   estimated: number;
+  adjusted: number;
   ytd: number;
 };
 
@@ -604,6 +667,7 @@ export type RevenueTotals = {
   lineCount: number;
   sgpEstimated: number;
   annualEstimated: number;
+  annualAdjusted: number;
   annualYtd: number;
   months: Record<ForecastMonth, RevenueMonthTotals>;
   quarters: Record<ForecastQuarter, RevenueMonthTotals>;
@@ -612,14 +676,14 @@ export type RevenueTotals = {
 export function emptyRevenueTotals(): RevenueTotals {
   const months = FORECAST_MONTHS.reduce(
     (acc, month) => {
-      acc[month] = { estimated: 0, ytd: 0 };
+      acc[month] = { estimated: 0, adjusted: 0, ytd: 0 };
       return acc;
     },
     {} as Record<ForecastMonth, RevenueMonthTotals>
   );
   const quarters = FORECAST_QUARTERS.reduce(
     (acc, quarter) => {
-      acc[quarter] = { estimated: 0, ytd: 0 };
+      acc[quarter] = { estimated: 0, adjusted: 0, ytd: 0 };
       return acc;
     },
     {} as Record<ForecastQuarter, RevenueMonthTotals>
@@ -628,6 +692,7 @@ export function emptyRevenueTotals(): RevenueTotals {
     lineCount: 0,
     sgpEstimated: 0,
     annualEstimated: 0,
+    annualAdjusted: 0,
     annualYtd: 0,
     months,
     quarters,
@@ -638,23 +703,38 @@ export function summarizeRevenueLines(
   lines: Array<{
     annualBaseQty?: number | null;
     forecastQty: MonthQtyMap;
+    actualQty?: MonthQtyMap;
+    adjustedQty?: MonthQtyMap;
     actualRevenue: MonthQtyMap;
     contractPrice: number | null;
     sgpPrice: number | null;
-  }>
+  }>,
+  dataThru?: string | Date | null
 ): RevenueTotals {
   return lines.reduce((acc, line) => {
     acc.lineCount += 1;
     acc.sgpEstimated += sgpEstimatedDollars(line.annualBaseQty, line.sgpPrice);
     const estimated = estimatedMonths(line.forecastQty, line.contractPrice);
+    const actualQty = line.actualQty || emptyMonthQtyMap();
+    const adjustedQty = normalizeAdjustedQtyMap(line.adjustedQty, line.forecastQty);
+    const adjusted = adjustedEstimatedMonths(
+      line.forecastQty,
+      actualQty,
+      dataThru,
+      line.contractPrice,
+      adjustedQty
+    );
     acc.annualEstimated += monthQtyTotal(estimated);
+    acc.annualAdjusted += monthQtyTotal(adjusted);
     acc.annualYtd += annualActualRevenue(line.actualRevenue);
     for (const month of FORECAST_MONTHS) {
       acc.months[month].estimated += monthQty(estimated, month);
+      acc.months[month].adjusted += monthQty(adjusted, month);
       acc.months[month].ytd += monthQty(line.actualRevenue, month);
     }
     for (const quarter of FORECAST_QUARTERS) {
       acc.quarters[quarter].estimated += monthQtyTotal(estimated, QUARTER_MONTHS[quarter]);
+      acc.quarters[quarter].adjusted += monthQtyTotal(adjusted, QUARTER_MONTHS[quarter]);
       acc.quarters[quarter].ytd += quarterActualRevenue(line.actualRevenue, quarter);
     }
     return acc;

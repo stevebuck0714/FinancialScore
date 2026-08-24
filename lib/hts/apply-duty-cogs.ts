@@ -21,6 +21,11 @@ const COGS_DONOR_KEYS = [
 export type MonthlyHtsDutyCogs = {
   monthKey: string;
   dutyAmount: number;
+  specialAmount: number;
+  section301Amount: number;
+  section232Amount: number;
+  ieepaAmount: number;
+  additionalAmount: number;
   tariffAmount: number;
   quantity: number;
   skuCount: number;
@@ -36,8 +41,18 @@ export type RebuildDutyApplicationsResult = {
 export type HtsDutyLineAmounts = {
   dutyRatePct: number | null;
   tariffRatePct: number | null;
+  specialRatePct: number | null;
+  section301RatePct: number | null;
+  section232RatePct: number | null;
+  ieepaRatePct: number | null;
+  additionalRatePct: number | null;
   dutyPerPiece: number | null;
   tariffPerPiece: number | null;
+  specialPerPiece: number | null;
+  section301PerPiece: number | null;
+  section232PerPiece: number | null;
+  ieepaPerPiece: number | null;
+  additionalPerPiece: number | null;
   quoteAsOfDate: string | null;
   rateSource: 'hts' | 'overlay' | null;
 };
@@ -50,6 +65,10 @@ type OverlayRateRow = {
   enteredValuePerPiece: number | null;
   dutyRatePct: number | null;
   specialRatePct: number | null;
+  section301RatePct: number | null;
+  section232RatePct: number | null;
+  ieepaRatePct: number | null;
+  additionalRatePct: number | null;
   tariffRatePct: number | null;
   lastRateAsOfDate: Date | string | null;
 };
@@ -77,6 +96,11 @@ export async function ensureCompanyItemDutyApplicationTable(): Promise<void> {
           "tariffRatePct" DOUBLE PRECISION,
           "dutyAmount" DOUBLE PRECISION NOT NULL DEFAULT 0,
           "tariffAmount" DOUBLE PRECISION NOT NULL DEFAULT 0,
+          "specialAmount" DOUBLE PRECISION NOT NULL DEFAULT 0,
+          "section301Amount" DOUBLE PRECISION NOT NULL DEFAULT 0,
+          "section232Amount" DOUBLE PRECISION NOT NULL DEFAULT 0,
+          "ieepaAmount" DOUBLE PRECISION NOT NULL DEFAULT 0,
+          "additionalAmount" DOUBLE PRECISION NOT NULL DEFAULT 0,
           "quoteAsOfDate" TIMESTAMP(3),
           "rateSource" TEXT NOT NULL DEFAULT 'hts',
           "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -92,6 +116,11 @@ export async function ensureCompanyItemDutyApplicationTable(): Promise<void> {
         CREATE INDEX IF NOT EXISTS "CompanyItemDutyApplication_companyId_eventDate_idx"
           ON "CompanyItemDutyApplication"("companyId", "eventDate")
       `);
+      await prisma.$executeRawUnsafe(`ALTER TABLE "CompanyItemDutyApplication" ADD COLUMN IF NOT EXISTS "specialAmount" DOUBLE PRECISION NOT NULL DEFAULT 0`);
+      await prisma.$executeRawUnsafe(`ALTER TABLE "CompanyItemDutyApplication" ADD COLUMN IF NOT EXISTS "section301Amount" DOUBLE PRECISION NOT NULL DEFAULT 0`);
+      await prisma.$executeRawUnsafe(`ALTER TABLE "CompanyItemDutyApplication" ADD COLUMN IF NOT EXISTS "section232Amount" DOUBLE PRECISION NOT NULL DEFAULT 0`);
+      await prisma.$executeRawUnsafe(`ALTER TABLE "CompanyItemDutyApplication" ADD COLUMN IF NOT EXISTS "ieepaAmount" DOUBLE PRECISION NOT NULL DEFAULT 0`);
+      await prisma.$executeRawUnsafe(`ALTER TABLE "CompanyItemDutyApplication" ADD COLUMN IF NOT EXISTS "additionalAmount" DOUBLE PRECISION NOT NULL DEFAULT 0`);
     })().catch((error) => {
       ensureOnce = null;
       throw error;
@@ -143,27 +172,65 @@ export function dutyRatePctForProgram(
   return asFiniteNumber(pct);
 }
 
+function perPieceFromPct(enteredValuePerPiece: number | null, ratePct: number | null): number | null {
+  if (enteredValuePerPiece == null || ratePct == null) return null;
+  return money((enteredValuePerPiece * ratePct) / 100);
+}
+
+function amountFromPerPiece(perPiece: number | null, quantity: number): number {
+  return perPiece == null ? 0 : money(perPiece * quantity);
+}
+
 function amountsFromRates(params: {
   enteredValuePerPiece: number | null;
   dutyRatePct: number | null;
+  specialRatePct: number | null;
+  section301RatePct: number | null;
+  section232RatePct: number | null;
+  ieepaRatePct: number | null;
+  additionalRatePct: number | null;
   tariffRatePct: number | null;
   quoteAsOfDate: string | null;
   rateSource: 'hts' | 'overlay';
 }): HtsDutyLineAmounts | null {
-  const dutyPerPiece =
-    params.enteredValuePerPiece == null || params.dutyRatePct == null
-      ? null
-      : money((params.enteredValuePerPiece * params.dutyRatePct) / 100);
-  const tariffPerPiece =
-    params.enteredValuePerPiece == null || params.tariffRatePct == null
-      ? null
-      : money((params.enteredValuePerPiece * params.tariffRatePct) / 100);
-  if (dutyPerPiece == null && tariffPerPiece == null) return null;
+  const dutyPerPiece = perPieceFromPct(params.enteredValuePerPiece, params.dutyRatePct);
+  const specialPerPiece = perPieceFromPct(params.enteredValuePerPiece, params.specialRatePct);
+  const section301PerPiece = perPieceFromPct(params.enteredValuePerPiece, params.section301RatePct);
+  const section232PerPiece = perPieceFromPct(params.enteredValuePerPiece, params.section232RatePct);
+  const ieepaPerPiece = perPieceFromPct(params.enteredValuePerPiece, params.ieepaRatePct);
+  let additionalPerPiece = perPieceFromPct(params.enteredValuePerPiece, params.additionalRatePct);
+  const tariffFromParts = [section301PerPiece, section232PerPiece, ieepaPerPiece, additionalPerPiece].filter(
+    (value): value is number => value != null
+  );
+  let tariffPerPiece =
+    tariffFromParts.length > 0
+      ? money(tariffFromParts.reduce((sum, value) => sum + value, 0))
+      : perPieceFromPct(params.enteredValuePerPiece, params.tariffRatePct);
+  if (tariffFromParts.length === 0 && tariffPerPiece != null && additionalPerPiece == null) {
+    additionalPerPiece = tariffPerPiece;
+  }
+  if (
+    dutyPerPiece == null &&
+    tariffPerPiece == null &&
+    specialPerPiece == null
+  ) {
+    return null;
+  }
   return {
     dutyRatePct: params.dutyRatePct,
     tariffRatePct: params.tariffRatePct,
+    specialRatePct: params.specialRatePct,
+    section301RatePct: params.section301RatePct,
+    section232RatePct: params.section232RatePct,
+    ieepaRatePct: params.ieepaRatePct,
+    additionalRatePct: params.additionalRatePct,
     dutyPerPiece,
     tariffPerPiece,
+    specialPerPiece,
+    section301PerPiece,
+    section232PerPiece,
+    ieepaPerPiece,
+    additionalPerPiece,
     quoteAsOfDate: params.quoteAsOfDate,
     rateSource: params.rateSource,
   };
@@ -188,6 +255,11 @@ function amountsForOverlay(
       return amountsFromRates({
         enteredValuePerPiece,
         dutyRatePct: dutyRatePctForProgram(quote, tradeProgram),
+        specialRatePct: asFiniteNumber(quote.specialRatePct),
+        section301RatePct: asFiniteNumber(quote.section301RatePct),
+        section232RatePct: asFiniteNumber(quote.section232RatePct),
+        ieepaRatePct: asFiniteNumber(quote.ieepaRatePct),
+        additionalRatePct: asFiniteNumber(quote.additionalRatePct),
         tariffRatePct: asFiniteNumber(quote.tariffRatePct),
         quoteAsOfDate: quote.asOfDate,
         rateSource: 'hts',
@@ -199,6 +271,11 @@ function amountsForOverlay(
     return amountsFromRates({
       enteredValuePerPiece,
       dutyRatePct: dutyRatePctForProgram(overlay, tradeProgram),
+      specialRatePct: asFiniteNumber(overlay.specialRatePct),
+      section301RatePct: asFiniteNumber(overlay.section301RatePct),
+      section232RatePct: asFiniteNumber(overlay.section232RatePct),
+      ieepaRatePct: asFiniteNumber(overlay.ieepaRatePct),
+      additionalRatePct: asFiniteNumber(overlay.additionalRatePct),
       tariffRatePct: asFiniteNumber(overlay.tariffRatePct),
       quoteAsOfDate: lastRateAsOfDate,
       rateSource: 'overlay',
@@ -211,13 +288,15 @@ async function loadOverlayRows(companyId: string): Promise<OverlayRateRow[]> {
   return prisma.$queryRaw<OverlayRateRow[]>`
     SELECT
       "itemSku", "htsCode", "countryOfOrigin", "tradeProgram", "enteredValuePerPiece",
-      "dutyRatePct", "specialRatePct", "tariffRatePct", "lastRateAsOfDate"
+      "dutyRatePct", "specialRatePct", "section301RatePct", "section232RatePct", "ieepaRatePct",
+      "additionalRatePct", "tariffRatePct", "lastRateAsOfDate"
     FROM "CompanyItemDuty"
     WHERE "companyId" = ${companyId}
       AND (
         COALESCE(NULLIF("htsCode", ''), '') <> ''
         OR "dutyRatePct" IS NOT NULL
         OR "specialRatePct" IS NOT NULL
+        OR "section301RatePct" IS NOT NULL
         OR "tariffRatePct" IS NOT NULL
       )
   `;
@@ -360,6 +439,11 @@ export async function rebuildCompanyItemDutyApplications(
     tariffRatePct: number | null;
     dutyAmount: number;
     tariffAmount: number;
+    specialAmount: number;
+    section301Amount: number;
+    section232Amount: number;
+    ieepaAmount: number;
+    additionalAmount: number;
     quoteAsOfDate: Date | null;
     rateSource: string;
   };
@@ -375,9 +459,14 @@ export async function rebuildCompanyItemDutyApplications(
     const amounts = amountsForOverlay(overlay, quotesByIdentity, eventYmd);
     if (!amounts) continue;
     const quantity = asFiniteNumber(sale.qty) || 0;
-    const dutyAmount = amounts.dutyPerPiece == null ? 0 : money(amounts.dutyPerPiece * quantity);
-    const tariffAmount = amounts.tariffPerPiece == null ? 0 : money(amounts.tariffPerPiece * quantity);
-    if (dutyAmount === 0 && tariffAmount === 0) continue;
+    const dutyAmount = amountFromPerPiece(amounts.dutyPerPiece, quantity);
+    const specialAmount = amountFromPerPiece(amounts.specialPerPiece, quantity);
+    const section301Amount = amountFromPerPiece(amounts.section301PerPiece, quantity);
+    const section232Amount = amountFromPerPiece(amounts.section232PerPiece, quantity);
+    const ieepaAmount = amountFromPerPiece(amounts.ieepaPerPiece, quantity);
+    const additionalAmount = amountFromPerPiece(amounts.additionalPerPiece, quantity);
+    const tariffAmount = amountFromPerPiece(amounts.tariffPerPiece, quantity);
+    if (dutyAmount === 0 && tariffAmount === 0 && specialAmount === 0) continue;
     dutyTotal += dutyAmount;
     tariffTotal += tariffAmount;
     applications.push({
@@ -389,6 +478,11 @@ export async function rebuildCompanyItemDutyApplications(
       tariffRatePct: amounts.tariffRatePct,
       dutyAmount,
       tariffAmount,
+      specialAmount,
+      section301Amount,
+      section232Amount,
+      ieepaAmount,
+      additionalAmount,
       quoteAsOfDate: amounts.quoteAsOfDate ? utcMidnightForEstDate(amounts.quoteAsOfDate) : null,
       rateSource: amounts.rateSource || 'hts',
     });
@@ -410,6 +504,11 @@ export async function rebuildCompanyItemDutyApplications(
         ${row.tariffRatePct},
         ${row.dutyAmount},
         ${row.tariffAmount},
+        ${row.specialAmount},
+        ${row.section301Amount},
+        ${row.section232Amount},
+        ${row.ieepaAmount},
+        ${row.additionalAmount},
         ${row.quoteAsOfDate},
         ${row.rateSource},
         NOW(),
@@ -419,8 +518,9 @@ export async function rebuildCompanyItemDutyApplications(
     await prisma.$executeRaw`
       INSERT INTO "CompanyItemDutyApplication" (
         "id", "companyId", "itemSku", "eventDate", "quantity", "enteredValuePerPiece",
-        "dutyRatePct", "tariffRatePct", "dutyAmount", "tariffAmount", "quoteAsOfDate",
-        "rateSource", "createdAt", "updatedAt"
+        "dutyRatePct", "tariffRatePct", "dutyAmount", "tariffAmount",
+        "specialAmount", "section301Amount", "section232Amount", "ieepaAmount", "additionalAmount",
+        "quoteAsOfDate", "rateSource", "createdAt", "updatedAt"
       )
       VALUES ${Prisma.join(values)}
     `;
@@ -434,12 +534,26 @@ export async function rebuildCompanyItemDutyApplications(
   };
 }
 
-export async function loadMonthlyHtsDutyCogs(companyId: string): Promise<Map<string, MonthlyHtsDutyCogs>> {
+export async function loadMonthlyHtsDutyCogs(
+  companyId: string,
+  options?: { itemSkus?: string[] }
+): Promise<Map<string, MonthlyHtsDutyCogs>> {
   await ensureCompanyItemDutyApplicationTable();
+  const skuFilter = uniqueItemSkus(options?.itemSkus);
+  if (options?.itemSkus && skuFilter.length === 0) return new Map();
+  const skuClause =
+    skuFilter.length > 0
+      ? Prisma.sql`AND "itemSku" IN (${Prisma.join(skuFilter.map((sku) => Prisma.sql`${sku}`))})`
+      : Prisma.empty;
   const rows = await prisma.$queryRaw<
     Array<{
       monthKey: string;
       dutyAmount: number | string | null;
+      specialAmount: number | string | null;
+      section301Amount: number | string | null;
+      section232Amount: number | string | null;
+      ieepaAmount: number | string | null;
+      additionalAmount: number | string | null;
       tariffAmount: number | string | null;
       quantity: number | string | null;
       skuCount: number | string | null;
@@ -448,11 +562,17 @@ export async function loadMonthlyHtsDutyCogs(companyId: string): Promise<Map<str
     SELECT
       to_char("eventDate" AT TIME ZONE 'UTC', 'YYYY-MM') AS "monthKey",
       SUM("dutyAmount") AS "dutyAmount",
+      SUM(COALESCE("specialAmount", 0)) AS "specialAmount",
+      SUM(COALESCE("section301Amount", 0)) AS "section301Amount",
+      SUM(COALESCE("section232Amount", 0)) AS "section232Amount",
+      SUM(COALESCE("ieepaAmount", 0)) AS "ieepaAmount",
+      SUM(COALESCE("additionalAmount", 0)) AS "additionalAmount",
       SUM("tariffAmount") AS "tariffAmount",
       SUM("quantity") AS quantity,
       COUNT(DISTINCT "itemSku") AS "skuCount"
     FROM "CompanyItemDutyApplication"
     WHERE "companyId" = ${companyId}
+      ${skuClause}
     GROUP BY 1
     ORDER BY 1 ASC
   `;
@@ -460,15 +580,46 @@ export async function loadMonthlyHtsDutyCogs(companyId: string): Promise<Map<str
   for (const row of rows) {
     const monthKey = String(row.monthKey || '').slice(0, 7);
     if (!/^\d{4}-\d{2}$/.test(monthKey)) continue;
+    const section301Amount = Number(row.section301Amount || 0);
+    const section232Amount = Number(row.section232Amount || 0);
+    const ieepaAmount = Number(row.ieepaAmount || 0);
+    const additionalAmount = Number(row.additionalAmount || 0);
+    const tariffAmount = Number(row.tariffAmount || 0);
     byMonth.set(monthKey, {
       monthKey,
       dutyAmount: Number(row.dutyAmount || 0),
-      tariffAmount: Number(row.tariffAmount || 0),
+      specialAmount: Number(row.specialAmount || 0),
+      section301Amount,
+      section232Amount,
+      ieepaAmount,
+      additionalAmount: additionalAmount === 0 && tariffAmount !== 0 && section301Amount + section232Amount + ieepaAmount === 0
+        ? tariffAmount
+        : additionalAmount,
+      tariffAmount,
       quantity: Number(row.quantity || 0),
       skuCount: Number(row.skuCount || 0),
     });
   }
   return byMonth;
+}
+
+function uniqueItemSkus(itemSkus?: string[]): string[] {
+  return [...new Set((itemSkus || []).map((sku) => String(sku || '').trim()).filter(Boolean))];
+}
+
+export async function rebuildProgramAmountsIfLumped(companyId: string): Promise<boolean> {
+  await ensureCompanyItemDutyApplicationTable();
+  const rows = await prisma.$queryRaw<Array<{ lumped: number | string | null }>>`
+    SELECT COUNT(*)::int AS lumped
+    FROM "CompanyItemDutyApplication"
+    WHERE "companyId" = ${companyId}
+      AND ABS("tariffAmount") > 0.005
+      AND COALESCE("section301Amount", 0) + COALESCE("section232Amount", 0)
+        + COALESCE("ieepaAmount", 0) + COALESCE("additionalAmount", 0) = 0
+  `;
+  if (Number(rows[0]?.lumped || 0) <= 0) return false;
+  await rebuildCompanyItemDutyApplications(companyId);
+  return true;
 }
 
 function hasGlAmount(breakdown: Record<string, unknown>, key: string): boolean {

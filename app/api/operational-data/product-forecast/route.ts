@@ -9,6 +9,7 @@ import {
   assertProductsForecastAccess,
   ensureProductRevenueForecastTables,
   loadCsiMonthlyShippedActuals,
+  loadProductForecastLines,
   normalizeForecastLineInput,
   serializeForecastLine,
   upsertForecastLines,
@@ -66,13 +67,11 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    const lines = await prisma.productRevenueForecastLine.findMany({
-      where: {
-        companyId,
-        year,
-        ...(customerId ? { customerId } : { customerName }),
-      },
-      orderBy: [{ sortOrder: 'asc' }, { itemSku: 'asc' }],
+    const lines = await loadProductForecastLines({
+      companyId,
+      year,
+      customerId,
+      customerName,
     });
     const shipped = await loadCsiMonthlyShippedActuals({
       companyId,
@@ -128,16 +127,15 @@ export async function PUT(request: NextRequest) {
       year,
       dataThru: asOptionalIsoDay(body.dataThru),
       replaceCustomer: { customerId, customerName },
+      preserveLockedMonthQtys: true,
       lines,
     });
 
-    const saved = await prisma.productRevenueForecastLine.findMany({
-      where: {
-        companyId,
-        year,
-        ...(customerId ? { customerId } : { customerName }),
-      },
-      orderBy: [{ sortOrder: 'asc' }, { itemSku: 'asc' }],
+    const saved = await loadProductForecastLines({
+      companyId,
+      year,
+      customerId,
+      customerName,
     });
     const settings = await prisma.productRevenueForecastSettings.findUnique({
       where: { companyId_year: { companyId, year } },
