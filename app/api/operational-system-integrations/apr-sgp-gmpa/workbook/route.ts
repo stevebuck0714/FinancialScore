@@ -118,16 +118,16 @@ export async function POST(request: NextRequest) {
       errorMessage: null,
     });
 
-    const dutySeed = await refreshCompanyItemDuties(companyId).catch((error) => {
-      console.error('SGP duties overlay seed failed:', error);
-      return { spreadsheetItems: 0, discovered: 0 };
-    });
     const freightSeed = freightParsed
       ? await seedCompanyItemFreightFromRows(companyId, freightParsed.rows, freightParsed.assumptions).catch((error) => {
           console.error('SGP freight overlay seed failed:', error);
           return { itemCount: 0, seeded: 0 };
         })
       : { itemCount: 0, seeded: 0 };
+    const dutySeed = await refreshCompanyItemDuties(companyId).catch((error) => {
+      console.error('SGP duties overlay seed failed:', error);
+      return { spreadsheetItems: 0, discovered: 0 };
+    });
 
     return NextResponse.json({
       ok: true,

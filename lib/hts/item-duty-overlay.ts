@@ -1,7 +1,12 @@
 import { randomUUID } from 'node:crypto';
 import { Prisma } from '@prisma/client';
 import prisma from '@/lib/prisma';
-import { readAprSgpGmpaWorkbook, type AprSgpGmpaRow } from '@/lib/operational/apr-sgp-gmpa';
+import {
+  loadSpreadsheetDutyIdentities,
+  normalizeOriginCode,
+  readAprSgpGmpaWorkbook,
+  type AprSgpGmpaRow,
+} from '@/lib/operational/apr-sgp-gmpa';
 
 export const TRADE_PROGRAMS = ['none', 'usmca', 'other'] as const;
 export const QTY_UNITS = ['piece', 'kg', 'lb', 'other'] as const;
@@ -281,7 +286,7 @@ function aggregateSgpRows(rows: AprSgpGmpaRow[]): SeedItem[] {
       itemSku,
       itemDescription: null,
       htsCode: normalizeHtsCode(row.htsCode),
-      countryOfOrigin: String(row.countryOfOrigin || '').trim() || null,
+      countryOfOrigin: normalizeOriginCode(row.countryOfOrigin),
       tradeProgram: asTradeProgram(row.tradeProgram),
       qtyUnit: asQtyUnit(row.qtyUnit),
       enteredValuePerPiece: firstNonNullNumber(row.updatedMaterialCost, row.sgpMaterialCost),
@@ -350,8 +355,14 @@ async function upsertSeedItems(companyId: string, items: SeedItem[], mode: 'spre
         ON CONFLICT ("companyId", "itemSku")
         DO UPDATE SET
           "itemDescription" = COALESCE("CompanyItemDuty"."itemDescription", EXCLUDED."itemDescription"),
-          "htsCode" = COALESCE("CompanyItemDuty"."htsCode", EXCLUDED."htsCode"),
-          "countryOfOrigin" = COALESCE("CompanyItemDuty"."countryOfOrigin", EXCLUDED."countryOfOrigin"),
+          "htsCode" = CASE
+            WHEN COALESCE("CompanyItemDuty"."htsInputSource", '') = 'user' THEN "CompanyItemDuty"."htsCode"
+            ELSE COALESCE(NULLIF("CompanyItemDuty"."htsCode", ''), EXCLUDED."htsCode")
+          END,
+          "countryOfOrigin" = CASE
+            WHEN COALESCE("CompanyItemDuty"."htsInputSource", '') = 'user' THEN "CompanyItemDuty"."countryOfOrigin"
+            ELSE COALESCE(NULLIF("CompanyItemDuty"."countryOfOrigin", ''), EXCLUDED."countryOfOrigin")
+          END,
           "tradeProgram" = CASE
             WHEN COALESCE("CompanyItemDuty"."htsInputSource", '') = 'user' THEN "CompanyItemDuty"."tradeProgram"
             WHEN EXCLUDED."tradeProgram" IS NOT NULL AND EXCLUDED."tradeProgram" <> 'none' THEN EXCLUDED."tradeProgram"
@@ -406,7 +417,61 @@ export async function seedCompanyItemDutiesFromParsedRows(
 
 export async function seedCompanyItemDutiesFromSgp(companyId: string): Promise<{ itemCount: number; seeded: number }> {
   const workbook = await readAprSgpGmpaWorkbook(companyId);
-  return seedCompanyItemDutiesFromParsedRows(companyId, workbook?.rows || []);
+  const fromWorkbook = await seedCompanyItemDutiesFromParsedRows(companyId, workbook?.rows || []);
+  const fromFreight = await overlayDutyHtsFromSpreadsheetSources(companyId);
+  return { itemCount: Math.max(fromWorkbook.itemCount, fromFreight), seeded: fromWorkbook.seeded + fromFreight };
+}
+
+async function overlayDutyHtsFromSpreadsheetSources(companyId: string): Promise<number> {
+  const [identities, freightRows, dutySkus] = await Promise.all([
+    loadSpreadsheetDutyIdentities(companyId).catch(() => []),
+    prisma.$queryRaw<Array<{ itemSku: string | null; htsCode: string | null; countryOfOrigin: string | null }>>`
+      SELECT "itemSku", "htsCode", "countryOfOrigin"
+      FROM "CompanyItemFreight"
+      WHERE "companyId" = ${companyId}
+        AND COALESCE(NULLIF("htsCode", ''), '') <> ''
+    `.catch(() => []),
+    prisma.$queryRaw<Array<{ itemSku: string }>>`
+      SELECT "itemSku" FROM "CompanyItemDuty" WHERE "companyId" = ${companyId}
+    `.catch(() => []),
+  ]);
+  const skuByUpper = new Map(
+    (dutySkus || []).map((row) => [normalizeItemSku(row.itemSku).toUpperCase(), normalizeItemSku(row.itemSku)])
+  );
+  const bySku = new Map<string, SeedItem>();
+  const add = (itemSkuRaw: unknown, htsCodeRaw: unknown, originRaw: unknown, vendorName?: unknown) => {
+    const normalizedSku = normalizeItemSku(itemSkuRaw);
+    if (!normalizedSku) return;
+    const itemSku = skuByUpper.get(normalizedSku.toUpperCase()) || normalizedSku;
+    const htsCode = normalizeHtsCode(htsCodeRaw);
+    const countryOfOrigin = normalizeOriginCode(originRaw);
+    if (!htsCode && !countryOfOrigin) return;
+    const existing = bySku.get(itemSku.toUpperCase());
+    if (!existing) {
+      bySku.set(itemSku.toUpperCase(), {
+        itemSku,
+        itemDescription: null,
+        htsCode,
+        countryOfOrigin,
+        tradeProgram: 'none',
+        qtyUnit: 'piece',
+        enteredValuePerPiece: null,
+        dutyPerPiece: null,
+        tariffPerPiece: null,
+        identitySource: 'spreadsheet',
+        htsInputSource: htsCode ? 'spreadsheet' : null,
+      });
+      return;
+    }
+    existing.htsCode = existing.htsCode || htsCode;
+    existing.countryOfOrigin = existing.countryOfOrigin || countryOfOrigin;
+    existing.htsInputSource = existing.htsInputSource || (htsCode ? 'spreadsheet' : null);
+  };
+  for (const row of identities) add(row.itemSku, row.htsCode, row.countryOfOrigin, row.vendorName);
+  for (const row of freightRows || []) add(row.itemSku, row.htsCode, row.countryOfOrigin);
+  const items = Array.from(bySku.values());
+  if (!items.length) return 0;
+  return upsertSeedItems(companyId, items, 'spreadsheet');
 }
 
 async function loadIdentitySkus(companyId: string): Promise<SeedItem[]> {
@@ -512,6 +577,7 @@ export async function refreshCompanyItemDuties(companyId: string): Promise<{
   await ensureCompanyItemDutyTable();
   const seeded = await seedCompanyItemDutiesFromSgp(companyId);
   const identities = await syncCompanyItemDutyIdentities(companyId);
+  await overlayDutyHtsFromSpreadsheetSources(companyId).catch(() => 0);
   return { spreadsheetItems: seeded.itemCount, discovered: identities.discovered };
 }
 

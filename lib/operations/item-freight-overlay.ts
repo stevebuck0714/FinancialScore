@@ -6,9 +6,11 @@ import {
   calcItemFreight,
   deriveShipmentType,
   parseSgpFreightWorkbook,
+  pickFreightSheetNameFromList,
   DEFAULT_SGP_FREIGHT_ASSUMPTIONS,
   normalizeSgpFreightAssumptions,
   type ParsedSgpFreightRow,
+  type ParsedSgpFreightWorkbook,
   type SgpFreightAssumptions,
 } from '@/lib/operational/apr-sgp-freight';
 import { normalizeHtsCode, normalizeItemSku } from '@/lib/hts/item-duty-overlay';
@@ -590,6 +592,56 @@ export async function seedCompanyItemFreightFromRows(
   return { itemCount: rows.length, seeded };
 }
 
+async function persistFreightParse(companyId: string, parsed: ParsedSgpFreightWorkbook): Promise<void> {
+  const { getOperationalSystemConnection, saveOperationalSystemConnection } = await import(
+    '@/lib/operational/operational-system-connections'
+  );
+  const connection = await getOperationalSystemConnection(companyId, 'SPREADSHEET_UPLOAD', APR_SGP_GMPA_SOURCE_CODE);
+  if (!connection) return;
+  await saveOperationalSystemConnection({
+    companyId,
+    provider: 'SPREADSHEET_UPLOAD',
+    sourceCode: APR_SGP_GMPA_SOURCE_CODE,
+    status: connection.status,
+    authType: connection.authType,
+    accessToken: connection.accessToken,
+    refreshToken: connection.refreshToken,
+    tokenExpiresAt: connection.tokenExpiresAt,
+    baseUrl: connection.baseUrl,
+    lastSyncAt: connection.lastSyncAt,
+    autoSync: connection.autoSync,
+    syncFrequency: connection.syncFrequency,
+    connectionMetadata: {
+      ...asRecord(connection.connectionMetadata),
+      aprSgpFreightParsed: {
+        sheetName: parsed.sheetName,
+        rowCount: parsed.rowCount,
+        rows: parsed.rows,
+        assumptions: parsed.assumptions,
+        parsedAt: new Date().toISOString(),
+      },
+    },
+    errorMessage: connection.errorMessage,
+  });
+}
+
+async function parseFreightSheetFromBlob(blobUrl: string, knownSheetNames?: string[]): Promise<ParsedSgpFreightWorkbook | null> {
+  const response = await fetch(blobUrl, { signal: AbortSignal.timeout(60000) });
+  if (!response.ok) return null;
+  const buffer = Buffer.from(await response.arrayBuffer());
+  const namedSheet = pickFreightSheetNameFromList(knownSheetNames || []);
+  const workbook = namedSheet
+    ? XLSX.read(buffer, { type: 'buffer', cellDates: true, sheets: [namedSheet] })
+    : (() => {
+        const preview = XLSX.read(buffer, { type: 'buffer', bookSheets: true });
+        const sheetName = pickFreightSheetNameFromList(preview.SheetNames || []);
+        if (!sheetName) return null;
+        return XLSX.read(buffer, { type: 'buffer', cellDates: true, sheets: [sheetName] });
+      })();
+  if (!workbook) return null;
+  return parseSgpFreightWorkbook(workbook);
+}
+
 async function loadStoredFreightParse(companyId: string): Promise<{ rows: ParsedSgpFreightRow[]; assumptions: SgpFreightAssumptions }> {
   const { getOperationalSystemConnection } = await import('@/lib/operational/operational-system-connections');
   const connection = await getOperationalSystemConnection(companyId, 'SPREADSHEET_UPLOAD', APR_SGP_GMPA_SOURCE_CODE);
@@ -599,8 +651,16 @@ async function loadStoredFreightParse(companyId: string): Promise<{ rows: Parsed
   const storedAssumptions = stored.assumptions
     ? normalizeSgpFreightAssumptions(stored.assumptions)
     : DEFAULT_SGP_FREIGHT_ASSUMPTIONS;
+  if (storedRows.length) {
+    return { rows: storedRows, assumptions: storedAssumptions };
+  }
 
   const upload = asRecord(metadata.aprSgpGmpaWorkbookUpload);
+  const parsedWorkbook = asRecord(metadata.aprSgpGmpaParsedWorkbook);
+  const knownSheetNames = [
+    ...(Array.isArray(upload.sheetNames) ? upload.sheetNames.map((name) => String(name)) : []),
+    ...(Array.isArray(parsedWorkbook.sheetNames) ? parsedWorkbook.sheetNames.map((name) => String(name)) : []),
+  ];
   const blobCandidates = [
     String(upload.blobUrl || '').trim(),
     ...((await prisma.companyDocument.findMany({
@@ -615,11 +675,11 @@ async function loadStoredFreightParse(companyId: string): Promise<{ rows: Parsed
 
   for (const blobUrl of blobCandidates) {
     try {
-      const response = await fetch(blobUrl, { signal: AbortSignal.timeout(120000) });
-      if (!response.ok) continue;
-      const workbook = XLSX.read(Buffer.from(await response.arrayBuffer()), { type: 'buffer', cellDates: true });
-      const parsed = parseSgpFreightWorkbook(workbook);
+      const parsed = await parseFreightSheetFromBlob(blobUrl, knownSheetNames);
       if (parsed?.rows.length) {
+        await persistFreightParse(companyId, parsed).catch((error) => {
+          console.warn('SGP Freight parse persist failed:', error);
+        });
         return { rows: parsed.rows, assumptions: parsed.assumptions };
       }
     } catch (error) {

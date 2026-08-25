@@ -234,8 +234,12 @@ export function deriveShipmentType(explicit: string | null | undefined, countryO
   return 'OVERSEAS';
 }
 
-function pickFreightSheetName(workbook: XLSX.WorkBook): string | null {
-  const names = workbook.SheetNames || [];
+function pickFreightSheetName(workbook: { SheetNames?: string[] } | null | undefined): string | null {
+  const names = workbook?.SheetNames || [];
+  return pickFreightSheetNameFromList(names);
+}
+
+export function pickFreightSheetNameFromList(names: string[]): string | null {
   return (
     names.find((name) => /sgp\s*freight/i.test(name)) ||
     names.find((name) => /^current freight$/i.test(name)) ||
@@ -282,7 +286,9 @@ function rowLooksLikeFreightHeader(headers: string[]): boolean {
     headers.includes('order multiple') ||
     headers.includes('unit weight') ||
     headers.includes('quantity ordered') ||
-    headers.some((header) => header.includes('estimated freight'));
+    headers.some((header) => header.includes('estimated freight')) ||
+    headers.some((header) => header.includes('% of container') || header.includes('percent of container')) ||
+    headers.some((header) => header.includes('hts code') || header === 'hts');
   return hasItem && hasFreightShape;
 }
 

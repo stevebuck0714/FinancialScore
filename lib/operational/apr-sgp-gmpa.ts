@@ -155,6 +155,43 @@ function itemKey(value: unknown): string {
   return asString(value).toUpperCase().replace(/\s+/g, ' ');
 }
 
+const ORIGIN_NAME_TO_CODE: Record<string, string> = {
+  CHINA: 'CN',
+  CHN: 'CN',
+  PRC: 'CN',
+  "PEOPLE'S REPUBLIC OF CHINA": 'CN',
+  'SOUTH KOREA': 'KR',
+  KOREA: 'KR',
+  'REPUBLIC OF KOREA': 'KR',
+  'UNITED STATES': 'US',
+  USA: 'US',
+  'UNITED STATES OF AMERICA': 'US',
+  TAIWAN: 'TW',
+  'HONG KONG': 'HK',
+  VIETNAM: 'VN',
+  MEXICO: 'MX',
+  CANADA: 'CA',
+  JAPAN: 'JP',
+  INDIA: 'IN',
+  GERMANY: 'DE',
+  INDONESIA: 'ID',
+};
+
+export function normalizeOriginCode(value: unknown): string | null {
+  const raw = asString(value);
+  if (!raw) return null;
+  const upper = raw.toUpperCase().replace(/\s+/g, ' ');
+  if (upper.length === 2) return upper;
+  return ORIGIN_NAME_TO_CODE[upper] || raw;
+}
+
+export type SpreadsheetDutyIdentity = {
+  itemSku: string;
+  htsCode: string | null;
+  countryOfOrigin: string | null;
+  vendorName: string | null;
+};
+
 function pickDutyTariffSheetName(workbook: XLSX.WorkBook): string | null {
   const names = workbook.SheetNames;
   return (
@@ -166,42 +203,168 @@ function pickDutyTariffSheetName(workbook: XLSX.WorkBook): string | null {
   );
 }
 
-function parseDutyTariffItems(workbook: XLSX.WorkBook): Map<string, { itemId: string; htsCode: string | null; countryOfOrigin: string | null; vendorName: string | null }> {
-  const byItem = new Map<string, { itemId: string; htsCode: string | null; countryOfOrigin: string | null; vendorName: string | null }>();
-  const sheetName = pickDutyTariffSheetName(workbook);
-  if (!sheetName) return byItem;
-  const matrix = XLSX.utils.sheet_to_json<MatrixCell[]>(workbook.Sheets[sheetName], { header: 1, raw: true, blankrows: false });
-  const headerIndex = matrix.findIndex((row) => {
+function mergeDutyHeaderRow(matrix: MatrixCell[][], headerIndex: number): MatrixCell[] {
+  const base = [...(matrix[headerIndex] || [])];
+  const extra = matrix[headerIndex + 1] || [];
+  extra.forEach((cell, index) => {
+    const bottom = asString(cell);
+    if (!bottom) return;
+    const top = asString(base[index]);
+    const bottomKey = normalizeHeader(bottom);
+    if (!top) {
+      base[index] = cell;
+      return;
+    }
+    if (bottomKey.includes('hts') || bottomKey === 'coo' || bottomKey === 'item' || bottomKey.includes('origin')) {
+      if (!normalizeHeader(top).includes(bottomKey)) base[index] = `${top} ${bottom}`;
+    }
+  });
+  return base;
+}
+
+function rowLooksLikeDutyHeader(headers: string[]): boolean {
+  const hasItem = headers.some((header) => header === 'item' || header === 'apr p/n' || header === 'apr pn');
+  const hasHts = headers.some((header) => header.includes('hts'));
+  return hasItem && hasHts;
+}
+
+function findDutyHeaderIndex(matrix: MatrixCell[][]): number {
+  const positional = matrix.findIndex((row) => {
     const vendor = normalizeHeader(row?.[0]);
     const item = normalizeHeader(row?.[5]);
     return vendor === 'vendor #' && item === 'item';
   });
-  if (headerIndex < 0) return byItem;
-  const columnMap = buildColumnMap(matrix[headerIndex] || []);
+  if (positional >= 0) return positional;
+  for (let index = 0; index < Math.min(matrix.length, 40); index += 1) {
+    const merged = mergeDutyHeaderRow(matrix, index).map((cell) => normalizeHeader(cell));
+    if (rowLooksLikeDutyHeader(merged)) return index;
+  }
+  return -1;
+}
+
+function rememberDutyIdentity(
+  byItem: Map<string, SpreadsheetDutyIdentity>,
+  itemId: string,
+  htsCode: string | null,
+  countryOfOrigin: string | null,
+  vendorName: string | null
+) {
+  const key = itemKey(itemId);
+  if (!key) return;
+  const existing = byItem.get(key);
+  if (!existing) {
+    byItem.set(key, {
+      itemSku: itemId,
+      htsCode,
+      countryOfOrigin: normalizeOriginCode(countryOfOrigin),
+      vendorName,
+    });
+    return;
+  }
+  existing.htsCode = existing.htsCode || htsCode;
+  existing.countryOfOrigin = existing.countryOfOrigin || normalizeOriginCode(countryOfOrigin);
+  existing.vendorName = existing.vendorName || vendorName;
+}
+
+export function parseAprSgpDutyTariffItems(workbook: XLSX.WorkBook): SpreadsheetDutyIdentity[] {
+  const byItem = new Map<string, SpreadsheetDutyIdentity>();
+  const sheetName = pickDutyTariffSheetName(workbook);
+  if (!sheetName || !workbook.Sheets[sheetName]) return [];
+  const matrix = XLSX.utils.sheet_to_json<MatrixCell[]>(workbook.Sheets[sheetName], { header: 1, raw: true, blankrows: false });
+  const headerIndex = findDutyHeaderIndex(matrix);
+  if (headerIndex < 0) return [];
+  const columnMap = buildColumnMap(mergeDutyHeaderRow(matrix, headerIndex));
   const indexes = {
     vendorName: col(columnMap, 'Vendor Name', 'Vendor'),
-    countryOfOrigin: col(columnMap, 'COO', 'Country of Origin', 'Origin'),
-    itemId: col(columnMap, 'Item'),
-    htsCode: col(columnMap, '(D1) HTS Number', 'HTS Number', 'HTS-10', 'HTS Code', 'HTS'),
+    countryOfOrigin: col(columnMap, 'COO', 'Country of Origin', 'Origin', 'Current Vendor COO'),
+    itemId: col(columnMap, 'Item', 'APR P/N', 'APR PN'),
+    htsCode: col(columnMap, '(D1) HTS Number', 'D1 HTS Number', 'HTS Number', 'HTS-10', 'HTS Code', 'HTS'),
   };
+  if (indexes.itemId < 0 || indexes.htsCode < 0) return [];
   for (let rowIndex = headerIndex + 1; rowIndex < matrix.length; rowIndex += 1) {
     const row = matrix[rowIndex] || [];
     const itemId = readString(row, indexes.itemId);
     if (!itemId) continue;
-    const key = itemKey(itemId);
-    const existing = byItem.get(key);
-    const htsCode = formatHtsNumber(readString(row, indexes.htsCode));
-    const countryOfOrigin = readString(row, indexes.countryOfOrigin) || null;
-    const vendorName = readString(row, indexes.vendorName) || null;
-    if (!existing) {
-      byItem.set(key, { itemId, htsCode, countryOfOrigin, vendorName });
-      continue;
-    }
-    existing.htsCode = existing.htsCode || htsCode;
-    existing.countryOfOrigin = existing.countryOfOrigin || countryOfOrigin;
-    existing.vendorName = existing.vendorName || vendorName;
+    rememberDutyIdentity(
+      byItem,
+      itemId,
+      formatHtsNumber(readString(row, indexes.htsCode)),
+      readString(row, indexes.countryOfOrigin) || null,
+      readString(row, indexes.vendorName) || null
+    );
+  }
+  return Array.from(byItem.values());
+}
+
+function parseDutyTariffItems(workbook: XLSX.WorkBook): Map<string, SpreadsheetDutyIdentity> {
+  const byItem = new Map<string, SpreadsheetDutyIdentity>();
+  for (const item of parseAprSgpDutyTariffItems(workbook)) {
+    byItem.set(itemKey(item.itemSku), item);
   }
   return byItem;
+}
+
+export function compactDutyHtsFromRows(rows: Array<{ itemId?: unknown; itemSku?: unknown; htsCode?: unknown; countryOfOrigin?: unknown; customerName?: unknown; vendorName?: unknown }>): SpreadsheetDutyIdentity[] {
+  const byItem = new Map<string, SpreadsheetDutyIdentity>();
+  for (const row of rows) {
+    const itemId = asString(row.itemSku || row.itemId);
+    if (!itemId) continue;
+    rememberDutyIdentity(
+      byItem,
+      itemId,
+      formatHtsNumber(row.htsCode),
+      asString(row.countryOfOrigin) || null,
+      asString(row.vendorName || row.customerName) || null
+    );
+  }
+  return Array.from(byItem.values()).filter((item) => item.htsCode || item.countryOfOrigin);
+}
+
+function applyDutyIdentities(rows: AprSgpGmpaRow[], identities: SpreadsheetDutyIdentity[]): AprSgpGmpaRow[] {
+  if (!identities.length) return rows;
+  const byKey = new Map(identities.map((item) => [itemKey(item.itemSku), item]));
+  const next = rows.map((row) => {
+    const hit = byKey.get(itemKey(row.itemId));
+    if (!hit) return row;
+    return {
+      ...row,
+      htsCode: row.htsCode || hit.htsCode,
+      countryOfOrigin: hit.countryOfOrigin || row.countryOfOrigin,
+    };
+  });
+  const seen = new Set(next.map((row) => itemKey(row.itemId)));
+  for (const hit of identities) {
+    if (seen.has(itemKey(hit.itemSku))) continue;
+    if (!hit.htsCode && !hit.countryOfOrigin) continue;
+    next.push(emptyDutySeedRow(hit.itemSku, hit.vendorName || 'Duty & Tariffs', hit.htsCode, hit.countryOfOrigin));
+    seen.add(itemKey(hit.itemSku));
+  }
+  return next;
+}
+
+function identitiesFromMetadata(metadata: Record<string, unknown>): SpreadsheetDutyIdentity[] {
+  const compact = Array.isArray(metadata.aprSgpDutyHtsByItem) ? metadata.aprSgpDutyHtsByItem : [];
+  const freight = metadata.aprSgpFreightParsed && typeof metadata.aprSgpFreightParsed === 'object' && !Array.isArray(metadata.aprSgpFreightParsed)
+    ? metadata.aprSgpFreightParsed as { rows?: Array<Record<string, unknown>> }
+    : null;
+  return compactDutyHtsFromRows([
+    ...compact,
+    ...(Array.isArray(freight?.rows) ? freight.rows.map((row) => ({
+      itemSku: row.itemSku || row.aprPn,
+      htsCode: row.htsCode,
+      countryOfOrigin: row.countryOfOrigin || row.vendorCoo,
+      vendorName: row.vendorName,
+    })) : []),
+  ]);
+}
+
+export async function loadSpreadsheetDutyIdentities(companyId: string): Promise<SpreadsheetDutyIdentity[]> {
+  const { getOperationalSystemConnection } = await import('@/lib/operational/operational-system-connections');
+  const connection = await getOperationalSystemConnection(companyId, 'SPREADSHEET_UPLOAD', APR_SGP_GMPA_SOURCE_CODE);
+  const metadata = connection?.connectionMetadata && typeof connection.connectionMetadata === 'object' && !Array.isArray(connection.connectionMetadata)
+    ? connection.connectionMetadata
+    : {};
+  return identitiesFromMetadata(metadata);
 }
 
 function emptyDutySeedRow(itemId: string, customerName: string, htsCode: string | null, countryOfOrigin: string | null): AprSgpGmpaRow {
@@ -336,12 +499,12 @@ export function parseAprSgpGmpaWorkbook(workbook: XLSX.WorkBook): ParsedAprSgpGm
     const duty = dutyByItem.get(itemKey(row.itemId));
     if (!duty) continue;
     row.htsCode = row.htsCode || duty.htsCode;
-    row.countryOfOrigin = duty.countryOfOrigin || row.countryOfOrigin;
+    row.countryOfOrigin = duty.countryOfOrigin || normalizeOriginCode(row.countryOfOrigin);
   }
   for (const duty of dutyByItem.values()) {
-    if (seenItems.has(itemKey(duty.itemId))) continue;
-    rows.push(emptyDutySeedRow(duty.itemId, duty.vendorName || 'Duty & Tariffs', duty.htsCode, duty.countryOfOrigin));
-    seenItems.add(itemKey(duty.itemId));
+    if (seenItems.has(itemKey(duty.itemSku))) continue;
+    rows.push(emptyDutySeedRow(duty.itemSku, duty.vendorName || 'Duty & Tariffs', duty.htsCode, duty.countryOfOrigin));
+    seenItems.add(itemKey(duty.itemSku));
   }
 
   if (!rows.length) throw new Error(`${APR_SGP_GMPA_LABEL} did not contain any customer/item rows.`);
@@ -368,25 +531,25 @@ export async function readAprSgpGmpaWorkbook(companyId: string): Promise<ParsedA
   const stored =
     parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? (parsed as ParsedAprSgpGmpaWorkbook) : null;
   const storedRows = Array.isArray(stored?.rows) ? stored.rows : [];
-  const storedHasHts = storedRows.some((row) => String(row?.htsCode || '').trim());
-  if (storedRows.length && storedHasHts) return stored;
-
-  const upload = metadata.aprSgpGmpaWorkbookUpload && typeof metadata.aprSgpGmpaWorkbookUpload === 'object'
-    ? (metadata.aprSgpGmpaWorkbookUpload as { blobUrl?: string })
-    : null;
-  const blobUrl = String(upload?.blobUrl || '').trim();
-  if (blobUrl && (!storedRows.length || !storedHasHts)) {
-    try {
-      const response = await fetch(blobUrl, { signal: AbortSignal.timeout(8000) });
-      if (response.ok) {
-        const workbook = XLSX.read(Buffer.from(await response.arrayBuffer()), { type: 'buffer', cellDates: true });
-        return parseAprSgpGmpaWorkbook(workbook);
-      }
-    } catch (error) {
-      console.warn('SGP workbook blob re-parse failed:', error);
-    }
+  const mergedRows = applyDutyIdentities(storedRows, identitiesFromMetadata(metadata));
+  if (!mergedRows.length) return storedRows.length ? stored : null;
+  if (!stored) {
+    return {
+      sourceName: APR_SGP_GMPA_LABEL,
+      parsedAt: new Date().toISOString(),
+      sheetNames: [],
+      sheetName: 'Duty & Tariffs',
+      sourceDateIso: new Date().toISOString(),
+      rowCount: mergedRows.length,
+      customerCount: new Set(mergedRows.map((row) => row.customerId || row.customerName)).size,
+      itemCount: new Set(mergedRows.map((row) => row.itemId)).size,
+      rows: mergedRows,
+    };
   }
-
-  if (storedRows.length) return stored;
-  return null;
+  return {
+    ...stored,
+    rows: mergedRows,
+    rowCount: mergedRows.length,
+    itemCount: new Set(mergedRows.map((row) => row.itemId)).size,
+  };
 }

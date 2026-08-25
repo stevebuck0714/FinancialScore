@@ -6,6 +6,7 @@ import {
   ensureCompanyItemFreightTable,
   getCompanyItemFreightSettings,
   listCompanyItemFreight,
+  seedCompanyItemFreightFromSgp,
   updateCompanyItemFreight,
   updateCompanyItemFreightSettings,
   type CompanyItemFreightPatch,
@@ -67,10 +68,12 @@ export async function GET(request: NextRequest) {
     if (denied) return denied;
 
     await ensureCompanyItemFreightTable();
-    const [items, assumptions] = await Promise.all([
-      listCompanyItemFreight(companyId),
-      getCompanyItemFreightSettings(companyId),
-    ]);
+    let items = await listCompanyItemFreight(companyId);
+    if (!items.length) {
+      await seedCompanyItemFreightFromSgp(companyId);
+      items = await listCompanyItemFreight(companyId);
+    }
+    const assumptions = await getCompanyItemFreightSettings(companyId);
     return NextResponse.json({
       ok: true,
       companyId,
