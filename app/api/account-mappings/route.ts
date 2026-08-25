@@ -515,9 +515,9 @@ export async function GET(request: NextRequest) {
       }
       return undefined;
     };
-    const accountingSourceMappings = snapshot.length > 0
-      ? mappings.filter((m: any) => findSourceMatch(m))
-      : mappings;
+    // Always return saved mappings. Filtering to the last COA snapshot hid
+    // accounts that posted to GL after the last chart pull (Atlantic 76600).
+    const accountingSourceMappings = mappings;
 
     const sectorCategory = resolveCompanyIndustrySectorCategory(company);
     const allowedTargetFields = getAllowedTargetFieldSet(sectorCategory);
@@ -572,7 +572,7 @@ export async function GET(request: NextRequest) {
         !effectiveTargetField || effectiveTargetField === "unmapped";
       let sourceStatus: "mapped" | "new" | "changed" | "inactive" = isUnmapped ? "new" : "mapped";
       if (snapshot.length > 0 && !sourceMatch) {
-        sourceStatus = "inactive";
+        sourceStatus = isUnmapped ? "new" : "inactive";
       } else if (sourceMatch) {
         const nameChanged = normalize(sourceMatch.accountName) !== normalize(m.accountName);
         const classChanged =

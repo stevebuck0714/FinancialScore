@@ -8,6 +8,7 @@ import { computeDailyPnlMovementsFromGL } from '@/lib/financial/daily-bs-from-gl
 import { syncErpDailyFinancialsFromGL } from '@/lib/financial/sync-erp-daily-financials';
 import { captureFilledOrderLines, ensureCustomerOrderLineFilledTables, type FilledOrderLineInput } from '@/lib/operations/product-order-filled';
 import { estCalendarDateUtc } from '@/lib/time/eastern';
+import { ensureUnmappedInforAccountMappings } from '@/lib/infor-m3/account-mapping-seed';
 
 type InforProgramRow = {
   module: string;
@@ -2270,6 +2271,20 @@ const parseGlAccountMasterEntry = (record: Record<string, unknown>): GlAccountMa
     accountCategory,
   };
 };
+
+async function seedUnmappedAccountsFromGlSources(
+  companyId: string,
+  glAccountMasterById: Map<string, GlAccountMasterEntry>
+): Promise<void> {
+  const discovered = Array.from(glAccountMasterById.values())
+    .filter((row) => String(row.accountId || '').trim())
+    .map((row) => ({
+      accountId: row.accountId,
+      accountName: row.accountName,
+      classification: row.accountType,
+    }));
+  await ensureUnmappedInforAccountMappings(companyId, discovered);
+}
 
 function looksLikeLedgerPayloadInsteadOfProgram(
   record: Record<string, unknown>,
@@ -10432,6 +10447,13 @@ export async function syncInforM3OperationalData(
   if (!options?.skipPrune && !continuation && !rawIngestOnly) {
     await pruneCompanyOperationalData(companyId);
   }
+  try {
+    await seedUnmappedAccountsFromGlSources(companyId, glAccountMasterById);
+  } catch (seedError) {
+    const message =
+      seedError instanceof Error ? seedError.message : 'Failed to seed unmapped GL accounts into Data Mapping';
+    errors.push(`account-mapping-seed: ${message}`);
+  }
   const syncTypeBreakdown = Array.from(syncTypeStats.entries())
     .map(([syncType, stats]) => {
       const avgDurationMs = stats.requestCount > 0 ? Math.round(stats.durationMs / stats.requestCount) : 0;
@@ -11020,6 +11042,14 @@ export async function transformInforM3RawRun(options: {
       });
       errors.push(`${snapshotDate.toISOString().slice(0, 10)}: ${message}`);
     }
+  }
+
+  try {
+    await ensureUnmappedInforAccountMappings(companyId);
+  } catch (seedError) {
+    const message =
+      seedError instanceof Error ? seedError.message : 'Failed to seed unmapped GL accounts into Data Mapping';
+    errors.push(`account-mapping-seed: ${message}`);
   }
 
   return {

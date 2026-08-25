@@ -1,4 +1,5 @@
 import prisma from '@/lib/prisma';
+import { Prisma } from '@prisma/client';
 
 type SourceAccount = {
   accountId: string;
@@ -428,4 +429,213 @@ export async function seedInforAccountMappings(companyId: string, payload: unkno
       classification: a.classification,
     })),
   };
+}
+
+export type DiscoveredInforAccount = {
+  accountId: string;
+  accountName?: string | null;
+  classification?: string | null;
+};
+
+export function classifyInforGlAccountType(raw: string | null | undefined): string | null {
+  const value = String(raw || '').trim();
+  if (!value) return null;
+  const upper = value.toUpperCase();
+  if (upper === 'A' || /asset/i.test(value)) return 'Asset';
+  if (upper === 'L' || /liab/i.test(value)) return 'Liability';
+  if (upper === 'E' || /expens/i.test(value)) return 'Expense';
+  if (upper === 'R' || upper === 'I' || /revenue|income|sales/i.test(value)) return 'Income';
+  if (upper === 'Q' || /equity|capital/i.test(value)) return 'Equity';
+  return inferClassification(value);
+}
+
+export function mergeAccountSnapshotRows(
+  existing: Array<{
+    accountId: string;
+    accountName: string;
+    accountCode?: string | null;
+    classification?: string | null;
+  }>,
+  incoming: Array<{
+    accountId: string;
+    accountName: string;
+    accountCode?: string | null;
+    classification?: string | null;
+  }>,
+): Array<{
+  accountId: string;
+  accountName: string;
+  accountCode: string | null;
+  classification: string | null;
+}> {
+  const byId = new Map<
+    string,
+    {
+      accountId: string;
+      accountName: string;
+      accountCode: string | null;
+      classification: string | null;
+    }
+  >();
+  for (const row of existing) {
+    const key = normalizeIdentityToken(row.accountId);
+    if (!key) continue;
+    byId.set(key, {
+      accountId: String(row.accountId || '').trim(),
+      accountName: String(row.accountName || '').trim(),
+      accountCode: row.accountCode ? String(row.accountCode).trim() : null,
+      classification: row.classification ? String(row.classification).trim() : null,
+    });
+  }
+  for (const row of incoming) {
+    const key = normalizeIdentityToken(row.accountId);
+    if (!key || byId.has(key)) continue;
+    const accountName = String(row.accountName || '').trim();
+    if (!accountName) continue;
+    byId.set(key, {
+      accountId: String(row.accountId || '').trim(),
+      accountName,
+      accountCode: row.accountCode ? String(row.accountCode).trim() : null,
+      classification: row.classification ? String(row.classification).trim() : null,
+    });
+  }
+  return Array.from(byId.values());
+}
+
+/**
+ * Create unmapped AccountMapping rows for CSI/M3 accounts that already posted
+ * to GL (or arrived on the chart master) but were never seeded by a COA pull.
+ * Data Mapping only listed the last COA snapshot, so new accounts were
+ * ingested, skipped by P&L rebuilds, and never shown in the mapping table.
+ */
+export async function ensureUnmappedInforAccountMappings(
+  companyId: string,
+  discovered: DiscoveredInforAccount[] = [],
+): Promise<{ created: number; createdAccountIds: string[] }> {
+  const trimmedCompanyId = String(companyId || '').trim();
+  if (!trimmedCompanyId) return { created: 0, createdAccountIds: [] };
+
+  const existing = await prisma.accountMapping.findMany({
+    where: { companyId: trimmedCompanyId },
+    select: { accountId: true },
+  });
+  const existingIds = new Set(
+    existing.map((row) => normalizeIdentityToken(row.accountId)).filter(Boolean),
+  );
+
+  const missingFromGl = await prisma.$queryRaw<
+    Array<{ accountId: string; accountName: string | null }>
+  >`
+    SELECT
+      g."accountId",
+      MAX(NULLIF(BTRIM(COALESCE(g."accountName", '')), '')) AS "accountName"
+    FROM "GLTransactionFact" g
+    WHERE g."companyId" = ${trimmedCompanyId}
+      AND NULLIF(BTRIM(g."accountId"), '') IS NOT NULL
+      AND NOT EXISTS (
+        SELECT 1
+        FROM "AccountMapping" am
+        WHERE am."companyId" = g."companyId"
+          AND am."accountId" = g."accountId"
+      )
+    GROUP BY g."accountId"
+  `;
+
+  const pending = new Map<string, DiscoveredInforAccount>();
+  for (const row of [...discovered, ...missingFromGl]) {
+    const accountId = String(row.accountId || '').trim();
+    const key = normalizeIdentityToken(accountId);
+    if (!key || existingIds.has(key) || pending.has(key)) continue;
+    pending.set(key, {
+      accountId,
+      accountName: String(row.accountName || '').trim() || `Account ${accountId}`,
+      classification: 'classification' in row ? classifyInforGlAccountType(row.classification) : null,
+    });
+  }
+
+  const rowsToCreate = Array.from(pending.values()).map((row) => ({
+    companyId: trimmedCompanyId,
+    accountName: String(row.accountName || `Account ${row.accountId}`).trim(),
+    accountId: row.accountId,
+    accountCode: null as string | null,
+    accountClassification: row.classification || null,
+    targetField: 'unmapped',
+    allocationMethod: 'manual',
+    confidence: 'low',
+  }));
+
+  if (rowsToCreate.length > 0) {
+    await prisma.accountMapping.createMany({
+      data: rowsToCreate,
+      skipDuplicates: true,
+    });
+    await mergeNewAccountsIntoCoaSnapshot(
+      trimmedCompanyId,
+      rowsToCreate.map((row) => ({
+        accountId: row.accountId,
+        accountName: row.accountName,
+        accountCode: row.accountCode,
+        classification: row.accountClassification,
+      })),
+    );
+  }
+
+  return {
+    created: rowsToCreate.length,
+    createdAccountIds: rowsToCreate.map((row) => row.accountId),
+  };
+}
+
+async function mergeNewAccountsIntoCoaSnapshot(
+  companyId: string,
+  incoming: Array<{
+    accountId: string;
+    accountName: string;
+    accountCode: string | null;
+    classification: string | null;
+  }>,
+): Promise<void> {
+  if (incoming.length === 0) return;
+  const connection = await prisma.accountingConnection.findUnique({
+    where: {
+      companyId_platform: {
+        companyId,
+        platform: 'INFOR_M3',
+      },
+    },
+    select: { connectionMetadata: true },
+  });
+  if (!connection) return;
+  const metadata =
+    connection.connectionMetadata && typeof connection.connectionMetadata === 'object'
+      ? ({ ...(connection.connectionMetadata as Record<string, unknown>) } as Record<string, unknown>)
+      : {};
+  const snapshotKeys = ['inforCsiAccountSeedSnapshot', 'inforM3AccountSeedSnapshot'] as const;
+  let changed = false;
+  for (const key of snapshotKeys) {
+    const current = Array.isArray(metadata[key])
+      ? (metadata[key] as Array<{
+          accountId: string;
+          accountName: string;
+          accountCode?: string | null;
+          classification?: string | null;
+        }>)
+      : [];
+    if (current.length === 0 && key === 'inforM3AccountSeedSnapshot') continue;
+    const merged = mergeAccountSnapshotRows(current, incoming);
+    if (merged.length !== current.length) {
+      metadata[key] = merged;
+      changed = true;
+    }
+  }
+  if (!changed) return;
+  await prisma.accountingConnection.update({
+    where: {
+      companyId_platform: {
+        companyId,
+        platform: 'INFOR_M3',
+      },
+    },
+    data: { connectionMetadata: metadata as Prisma.InputJsonValue },
+  });
 }
