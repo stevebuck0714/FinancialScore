@@ -10,7 +10,7 @@ import {
 } from '@/lib/operational/apr-sgp-gmpa';
 import { parseSgpFreightWorkbook } from '@/lib/operational/apr-sgp-freight';
 import { refreshCompanyItemDuties } from '@/lib/hts/item-duty-overlay';
-import { seedCompanyItemFreightFromRows } from '@/lib/operations/item-freight-overlay';
+import { seedCompanyItemFreightFromSgp } from '@/lib/operations/item-freight-overlay';
 
 export const dynamic = 'force-dynamic';
 
@@ -121,12 +121,10 @@ export async function POST(request: NextRequest) {
       errorMessage: null,
     });
 
-    const freightSeed = freightParsed
-      ? await seedCompanyItemFreightFromRows(companyId, freightParsed.rows, freightParsed.assumptions).catch((error) => {
-          console.error('SGP freight overlay seed failed:', error);
-          return { itemCount: 0, seeded: 0 };
-        })
-      : { itemCount: 0, seeded: 0 };
+    const freightSeed = await seedCompanyItemFreightFromSgp(companyId).catch((error) => {
+      console.error('SGP freight overlay seed failed:', error);
+      return { itemCount: 0, seeded: 0 };
+    });
     const dutySeed = await refreshCompanyItemDuties(companyId).catch((error) => {
       console.error('SGP duties overlay seed failed:', error);
       return { spreadsheetItems: 0, discovered: 0 };

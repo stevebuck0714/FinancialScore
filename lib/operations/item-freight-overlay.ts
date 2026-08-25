@@ -16,7 +16,10 @@ import {
 import { normalizeHtsCode, normalizeItemSku } from '@/lib/hts/item-duty-overlay';
 import { loadPrimaryVendorByItem } from '@/lib/operations/vendor-monthly-forecast-db';
 import { APR_SGP_GMPA_SOURCE_CODE } from '@/lib/operational/apr-sgp-gmpa';
+import { APR_SGP_FREIGHT_FALLBACK } from '@/lib/operational/apr-sgp-freight-fallback';
 import * as XLSX from 'xlsx';
+
+const ATLANTIC_PRECISION_COMPANY_ID = 'cmmcp278j0002kz0439rlixdj';
 
 export type CompanyItemFreightRow = {
   id: string;
@@ -360,47 +363,50 @@ async function upsertFreightRows(companyId: string, rows: ParsedSgpFreightRow[],
     const chunk = rows.slice(index, index + chunkSize);
     const values = chunk.map((row) => {
       const itemSku = normalizeItemSku(row.itemSku);
-      const cbm = row.cbm ?? calcCbmFromInches(row.heightIn, row.widthIn, row.lengthIn);
+      const heightIn = row.heightIn ?? null;
+      const widthIn = row.widthIn ?? null;
+      const lengthIn = row.lengthIn ?? null;
+      const cbm = row.cbm ?? calcCbmFromInches(heightIn, widthIn, lengthIn);
       return Prisma.sql`(
         ${randomUUID()},
         ${companyId},
         ${itemSku},
-        ${row.itemDescription},
-        ${row.revision},
-        ${row.quantityOrdered},
-        ${row.orderMultiple},
-        ${row.heightIn},
-        ${row.widthIn},
-        ${row.orderMinimum},
-        ${row.lengthIn},
+        ${row.itemDescription ?? null},
+        ${row.revision ?? null},
+        ${row.quantityOrdered ?? null},
+        ${row.orderMultiple ?? null},
+        ${heightIn},
+        ${widthIn},
+        ${row.orderMinimum ?? null},
+        ${lengthIn},
         ${cbm},
         FALSE,
-        ${row.unitWeight},
-        ${row.unitCost},
-        ${row.currentUnitCost},
+        ${row.unitWeight ?? null},
+        ${row.unitCost ?? null},
+        ${row.currentUnitCost ?? null},
         ${cbm},
-        ${row.estimatedFreightCurrent},
-        ${row.estimatedFreightFuture},
-        ${row.vendorId},
-        ${row.vendorName},
-        ${row.vendorCoo},
-        ${row.shipmentType},
+        ${row.estimatedFreightCurrent ?? null},
+        ${row.estimatedFreightFuture ?? null},
+        ${row.vendorId ?? null},
+        ${row.vendorName ?? null},
+        ${row.vendorCoo ?? null},
+        ${row.shipmentType ?? null},
         ${normalizeHtsCode(row.htsCode)},
-        ${row.countryOfOrigin},
-        ${row.qtyOnHand},
-        ${row.productCode},
-        ${row.costType},
-        ${row.costMethod},
-        ${row.plannerCode},
-        ${row.ratePerDay},
-        ${row.leadTime},
-        ${row.materialStatus},
-        ${row.reason},
-        ${row.lastChange},
-        ${row.sheetUser},
-        ${row.nonNettableStock},
-        ${row.safetyStock},
-        ${row.allocatedQty},
+        ${row.countryOfOrigin ?? null},
+        ${row.qtyOnHand ?? null},
+        ${row.productCode ?? null},
+        ${row.costType ?? null},
+        ${row.costMethod ?? null},
+        ${row.plannerCode ?? null},
+        ${row.ratePerDay ?? null},
+        ${row.leadTime ?? null},
+        ${row.materialStatus ?? null},
+        ${row.reason ?? null},
+        ${row.lastChange ?? null},
+        ${row.sheetUser ?? null},
+        ${row.nonNettableStock ?? null},
+        ${row.safetyStock ?? null},
+        ${row.allocatedQty ?? null},
         ${mode},
         ${mode === 'spreadsheet' ? new Date() : null},
         NOW(),
@@ -424,41 +430,41 @@ async function upsertFreightRows(companyId: string, rows: ParsedSgpFreightRow[],
         VALUES ${Prisma.join(values)}
         ON CONFLICT ("companyId", "itemSku")
         DO UPDATE SET
-          "itemDescription" = COALESCE("CompanyItemFreight"."itemDescription", EXCLUDED."itemDescription"),
-          "revision" = COALESCE("CompanyItemFreight"."revision", EXCLUDED."revision"),
-          "quantityOrdered" = COALESCE("CompanyItemFreight"."quantityOrdered", EXCLUDED."quantityOrdered"),
-          "orderMultiple" = COALESCE("CompanyItemFreight"."orderMultiple", EXCLUDED."orderMultiple"),
-          "heightIn" = COALESCE("CompanyItemFreight"."heightIn", EXCLUDED."heightIn"),
-          "widthIn" = COALESCE("CompanyItemFreight"."widthIn", EXCLUDED."widthIn"),
-          "orderMinimum" = COALESCE("CompanyItemFreight"."orderMinimum", EXCLUDED."orderMinimum"),
-          "lengthIn" = COALESCE("CompanyItemFreight"."lengthIn", EXCLUDED."lengthIn"),
-          "cbm" = COALESCE("CompanyItemFreight"."cbm", EXCLUDED."cbm"),
-          "unitWeight" = COALESCE("CompanyItemFreight"."unitWeight", EXCLUDED."unitWeight"),
-          "unitCost" = COALESCE("CompanyItemFreight"."unitCost", EXCLUDED."unitCost"),
-          "currentUnitCost" = COALESCE("CompanyItemFreight"."currentUnitCost", EXCLUDED."currentUnitCost"),
-          "spreadsheetCbm" = COALESCE("CompanyItemFreight"."spreadsheetCbm", EXCLUDED."spreadsheetCbm"),
-          "spreadsheetFreightCurrent" = COALESCE("CompanyItemFreight"."spreadsheetFreightCurrent", EXCLUDED."spreadsheetFreightCurrent"),
-          "spreadsheetFreightFuture" = COALESCE("CompanyItemFreight"."spreadsheetFreightFuture", EXCLUDED."spreadsheetFreightFuture"),
-          "spreadsheetVendorId" = COALESCE("CompanyItemFreight"."spreadsheetVendorId", EXCLUDED."spreadsheetVendorId"),
-          "spreadsheetVendorName" = COALESCE("CompanyItemFreight"."spreadsheetVendorName", EXCLUDED."spreadsheetVendorName"),
-          "spreadsheetVendorCoo" = COALESCE("CompanyItemFreight"."spreadsheetVendorCoo", EXCLUDED."spreadsheetVendorCoo"),
-          "shipmentType" = COALESCE("CompanyItemFreight"."shipmentType", EXCLUDED."shipmentType"),
-          "htsCode" = COALESCE("CompanyItemFreight"."htsCode", EXCLUDED."htsCode"),
-          "countryOfOrigin" = COALESCE("CompanyItemFreight"."countryOfOrigin", EXCLUDED."countryOfOrigin"),
-          "spreadsheetQtyOnHand" = COALESCE("CompanyItemFreight"."spreadsheetQtyOnHand", EXCLUDED."spreadsheetQtyOnHand"),
-          "productCode" = COALESCE("CompanyItemFreight"."productCode", EXCLUDED."productCode"),
-          "costType" = COALESCE("CompanyItemFreight"."costType", EXCLUDED."costType"),
-          "costMethod" = COALESCE("CompanyItemFreight"."costMethod", EXCLUDED."costMethod"),
-          "plannerCode" = COALESCE("CompanyItemFreight"."plannerCode", EXCLUDED."plannerCode"),
-          "ratePerDay" = COALESCE("CompanyItemFreight"."ratePerDay", EXCLUDED."ratePerDay"),
-          "leadTime" = COALESCE("CompanyItemFreight"."leadTime", EXCLUDED."leadTime"),
-          "materialStatus" = COALESCE("CompanyItemFreight"."materialStatus", EXCLUDED."materialStatus"),
-          "reason" = COALESCE("CompanyItemFreight"."reason", EXCLUDED."reason"),
-          "lastChange" = COALESCE("CompanyItemFreight"."lastChange", EXCLUDED."lastChange"),
-          "sheetUser" = COALESCE("CompanyItemFreight"."sheetUser", EXCLUDED."sheetUser"),
-          "nonNettableStock" = COALESCE("CompanyItemFreight"."nonNettableStock", EXCLUDED."nonNettableStock"),
-          "safetyStock" = COALESCE("CompanyItemFreight"."safetyStock", EXCLUDED."safetyStock"),
-          "allocatedQty" = COALESCE("CompanyItemFreight"."allocatedQty", EXCLUDED."allocatedQty"),
+          "itemDescription" = CASE WHEN "CompanyItemFreight"."userEditedAt" IS NULL THEN COALESCE(EXCLUDED."itemDescription", "CompanyItemFreight"."itemDescription") ELSE "CompanyItemFreight"."itemDescription" END,
+          "revision" = CASE WHEN "CompanyItemFreight"."userEditedAt" IS NULL THEN COALESCE(EXCLUDED."revision", "CompanyItemFreight"."revision") ELSE "CompanyItemFreight"."revision" END,
+          "quantityOrdered" = CASE WHEN "CompanyItemFreight"."userEditedAt" IS NULL THEN COALESCE(EXCLUDED."quantityOrdered", "CompanyItemFreight"."quantityOrdered") ELSE "CompanyItemFreight"."quantityOrdered" END,
+          "orderMultiple" = CASE WHEN "CompanyItemFreight"."userEditedAt" IS NULL THEN COALESCE(EXCLUDED."orderMultiple", "CompanyItemFreight"."orderMultiple") ELSE "CompanyItemFreight"."orderMultiple" END,
+          "heightIn" = CASE WHEN "CompanyItemFreight"."userEditedAt" IS NULL THEN COALESCE(EXCLUDED."heightIn", "CompanyItemFreight"."heightIn") ELSE "CompanyItemFreight"."heightIn" END,
+          "widthIn" = CASE WHEN "CompanyItemFreight"."userEditedAt" IS NULL THEN COALESCE(EXCLUDED."widthIn", "CompanyItemFreight"."widthIn") ELSE "CompanyItemFreight"."widthIn" END,
+          "orderMinimum" = CASE WHEN "CompanyItemFreight"."userEditedAt" IS NULL THEN COALESCE(EXCLUDED."orderMinimum", "CompanyItemFreight"."orderMinimum") ELSE "CompanyItemFreight"."orderMinimum" END,
+          "lengthIn" = CASE WHEN "CompanyItemFreight"."userEditedAt" IS NULL THEN COALESCE(EXCLUDED."lengthIn", "CompanyItemFreight"."lengthIn") ELSE "CompanyItemFreight"."lengthIn" END,
+          "cbm" = CASE WHEN "CompanyItemFreight"."userEditedAt" IS NULL THEN COALESCE(EXCLUDED."cbm", "CompanyItemFreight"."cbm") ELSE "CompanyItemFreight"."cbm" END,
+          "unitWeight" = CASE WHEN "CompanyItemFreight"."userEditedAt" IS NULL THEN COALESCE(EXCLUDED."unitWeight", "CompanyItemFreight"."unitWeight") ELSE "CompanyItemFreight"."unitWeight" END,
+          "unitCost" = CASE WHEN "CompanyItemFreight"."userEditedAt" IS NULL THEN COALESCE(EXCLUDED."unitCost", "CompanyItemFreight"."unitCost") ELSE "CompanyItemFreight"."unitCost" END,
+          "currentUnitCost" = CASE WHEN "CompanyItemFreight"."userEditedAt" IS NULL THEN COALESCE(EXCLUDED."currentUnitCost", "CompanyItemFreight"."currentUnitCost") ELSE "CompanyItemFreight"."currentUnitCost" END,
+          "spreadsheetCbm" = COALESCE(EXCLUDED."spreadsheetCbm", "CompanyItemFreight"."spreadsheetCbm"),
+          "spreadsheetFreightCurrent" = COALESCE(EXCLUDED."spreadsheetFreightCurrent", "CompanyItemFreight"."spreadsheetFreightCurrent"),
+          "spreadsheetFreightFuture" = COALESCE(EXCLUDED."spreadsheetFreightFuture", "CompanyItemFreight"."spreadsheetFreightFuture"),
+          "spreadsheetVendorId" = COALESCE(EXCLUDED."spreadsheetVendorId", "CompanyItemFreight"."spreadsheetVendorId"),
+          "spreadsheetVendorName" = COALESCE(EXCLUDED."spreadsheetVendorName", "CompanyItemFreight"."spreadsheetVendorName"),
+          "spreadsheetVendorCoo" = COALESCE(EXCLUDED."spreadsheetVendorCoo", "CompanyItemFreight"."spreadsheetVendorCoo"),
+          "shipmentType" = CASE WHEN "CompanyItemFreight"."userEditedAt" IS NULL THEN COALESCE(EXCLUDED."shipmentType", "CompanyItemFreight"."shipmentType") ELSE "CompanyItemFreight"."shipmentType" END,
+          "htsCode" = CASE WHEN "CompanyItemFreight"."userEditedAt" IS NULL THEN COALESCE(EXCLUDED."htsCode", "CompanyItemFreight"."htsCode") ELSE "CompanyItemFreight"."htsCode" END,
+          "countryOfOrigin" = CASE WHEN "CompanyItemFreight"."userEditedAt" IS NULL THEN COALESCE(EXCLUDED."countryOfOrigin", "CompanyItemFreight"."countryOfOrigin") ELSE "CompanyItemFreight"."countryOfOrigin" END,
+          "spreadsheetQtyOnHand" = COALESCE(EXCLUDED."spreadsheetQtyOnHand", "CompanyItemFreight"."spreadsheetQtyOnHand"),
+          "productCode" = CASE WHEN "CompanyItemFreight"."userEditedAt" IS NULL THEN COALESCE(EXCLUDED."productCode", "CompanyItemFreight"."productCode") ELSE "CompanyItemFreight"."productCode" END,
+          "costType" = CASE WHEN "CompanyItemFreight"."userEditedAt" IS NULL THEN COALESCE(EXCLUDED."costType", "CompanyItemFreight"."costType") ELSE "CompanyItemFreight"."costType" END,
+          "costMethod" = CASE WHEN "CompanyItemFreight"."userEditedAt" IS NULL THEN COALESCE(EXCLUDED."costMethod", "CompanyItemFreight"."costMethod") ELSE "CompanyItemFreight"."costMethod" END,
+          "plannerCode" = CASE WHEN "CompanyItemFreight"."userEditedAt" IS NULL THEN COALESCE(EXCLUDED."plannerCode", "CompanyItemFreight"."plannerCode") ELSE "CompanyItemFreight"."plannerCode" END,
+          "ratePerDay" = CASE WHEN "CompanyItemFreight"."userEditedAt" IS NULL THEN COALESCE(EXCLUDED."ratePerDay", "CompanyItemFreight"."ratePerDay") ELSE "CompanyItemFreight"."ratePerDay" END,
+          "leadTime" = CASE WHEN "CompanyItemFreight"."userEditedAt" IS NULL THEN COALESCE(EXCLUDED."leadTime", "CompanyItemFreight"."leadTime") ELSE "CompanyItemFreight"."leadTime" END,
+          "materialStatus" = CASE WHEN "CompanyItemFreight"."userEditedAt" IS NULL THEN COALESCE(EXCLUDED."materialStatus", "CompanyItemFreight"."materialStatus") ELSE "CompanyItemFreight"."materialStatus" END,
+          "reason" = CASE WHEN "CompanyItemFreight"."userEditedAt" IS NULL THEN COALESCE(EXCLUDED."reason", "CompanyItemFreight"."reason") ELSE "CompanyItemFreight"."reason" END,
+          "lastChange" = CASE WHEN "CompanyItemFreight"."userEditedAt" IS NULL THEN COALESCE(EXCLUDED."lastChange", "CompanyItemFreight"."lastChange") ELSE "CompanyItemFreight"."lastChange" END,
+          "sheetUser" = CASE WHEN "CompanyItemFreight"."userEditedAt" IS NULL THEN COALESCE(EXCLUDED."sheetUser", "CompanyItemFreight"."sheetUser") ELSE "CompanyItemFreight"."sheetUser" END,
+          "nonNettableStock" = CASE WHEN "CompanyItemFreight"."userEditedAt" IS NULL THEN COALESCE(EXCLUDED."nonNettableStock", "CompanyItemFreight"."nonNettableStock") ELSE "CompanyItemFreight"."nonNettableStock" END,
+          "safetyStock" = CASE WHEN "CompanyItemFreight"."userEditedAt" IS NULL THEN COALESCE(EXCLUDED."safetyStock", "CompanyItemFreight"."safetyStock") ELSE "CompanyItemFreight"."safetyStock" END,
+          "allocatedQty" = CASE WHEN "CompanyItemFreight"."userEditedAt" IS NULL THEN COALESCE(EXCLUDED."allocatedQty", "CompanyItemFreight"."allocatedQty") ELSE "CompanyItemFreight"."allocatedQty" END,
           "identitySource" = 'spreadsheet',
           "lastSpreadsheetSeedAt" = NOW(),
           "updatedAt" = NOW()
@@ -592,6 +598,18 @@ export async function seedCompanyItemFreightFromRows(
   return { itemCount: rows.length, seeded };
 }
 
+function freightRowHasFacts(row: ParsedSgpFreightRow): boolean {
+  return Boolean(
+    row.vendorId ||
+      row.vendorName ||
+      row.heightIn ||
+      row.widthIn ||
+      row.lengthIn ||
+      (row.cbm != null && Number(row.cbm) > 0) ||
+      (row.orderMultiple != null && Number(row.orderMultiple) > 0)
+  );
+}
+
 async function persistFreightParse(companyId: string, parsed: ParsedSgpFreightWorkbook): Promise<void> {
   const { getOperationalSystemConnection, saveOperationalSystemConnection } = await import(
     '@/lib/operational/operational-system-connections'
@@ -626,20 +644,76 @@ async function persistFreightParse(companyId: string, parsed: ParsedSgpFreightWo
 }
 
 async function parseFreightSheetFromBlob(blobUrl: string, knownSheetNames?: string[]): Promise<ParsedSgpFreightWorkbook | null> {
-  const response = await fetch(blobUrl, { signal: AbortSignal.timeout(60000) });
+  const response = await fetch(blobUrl, { signal: AbortSignal.timeout(120000) });
   if (!response.ok) return null;
   const buffer = Buffer.from(await response.arrayBuffer());
-  const namedSheet = pickFreightSheetNameFromList(knownSheetNames || []);
-  const workbook = namedSheet
-    ? XLSX.read(buffer, { type: 'buffer', cellDates: true, sheets: [namedSheet] })
-    : (() => {
-        const preview = XLSX.read(buffer, { type: 'buffer', bookSheets: true });
-        const sheetName = pickFreightSheetNameFromList(preview.SheetNames || []);
-        if (!sheetName) return null;
-        return XLSX.read(buffer, { type: 'buffer', cellDates: true, sheets: [sheetName] });
-      })();
-  if (!workbook) return null;
+  const preview = XLSX.read(buffer, { type: 'buffer', bookSheets: true });
+  const sheetName =
+    pickFreightSheetNameFromList(preview.SheetNames || []) ||
+    pickFreightSheetNameFromList(knownSheetNames || []);
+  if (!sheetName) return null;
+  const workbook = XLSX.read(buffer, { type: 'buffer', cellDates: true, sheets: [sheetName] });
   return parseSgpFreightWorkbook(workbook);
+}
+
+async function loadFreightParseFromBlob(
+  companyId: string,
+  metadata: Record<string, unknown>
+): Promise<ParsedSgpFreightWorkbook | null> {
+  const upload = asRecord(metadata.aprSgpGmpaWorkbookUpload);
+  const parsedWorkbook = asRecord(metadata.aprSgpGmpaParsedWorkbook);
+  const knownSheetNames = [
+    ...(Array.isArray(upload.sheetNames) ? upload.sheetNames.map((name) => String(name)) : []),
+    ...(Array.isArray(parsedWorkbook.sheetNames) ? parsedWorkbook.sheetNames.map((name) => String(name)) : []),
+  ];
+  const docs = (await prisma.companyDocument
+    .findMany({
+      where: { companyId },
+      select: { blobUrl: true, originalFileName: true, sizeBytes: true },
+      orderBy: { createdAt: 'desc' },
+      take: 50,
+    })
+    .catch(() => [])) as Array<{ blobUrl: string | null; originalFileName: string | null; sizeBytes: number | null }>;
+  const candidates = [
+    {
+      url: String(upload.blobUrl || '').trim(),
+      size: typeof upload.sizeBytes === 'number' ? Number(upload.sizeBytes) : 0,
+      name: String(upload.originalFileName || ''),
+    },
+    ...docs.map((doc) => ({
+      url: String(doc.blobUrl || '').trim(),
+      size: typeof doc.sizeBytes === 'number' ? Number(doc.sizeBytes) : 0,
+      name: String(doc.originalFileName || ''),
+    })),
+  ].filter((candidate) => candidate.url);
+  const seen = new Set<string>();
+  const unique = candidates.filter((candidate) => {
+    if (seen.has(candidate.url)) return false;
+    seen.add(candidate.url);
+    return true;
+  });
+  unique.sort((left, right) => {
+    const leftFreight = /freight|gmpa|sgp|forecast/i.test(left.name) ? 1 : 0;
+    const rightFreight = /freight|gmpa|sgp|forecast/i.test(right.name) ? 1 : 0;
+    if (leftFreight !== rightFreight) return rightFreight - leftFreight;
+    return right.size - left.size;
+  });
+
+  let attempts = 0;
+  for (const candidate of unique) {
+    if (candidate.size > 0 && candidate.size < 400000 && unique.some((other) => other.size >= 1000000)) {
+      continue;
+    }
+    if (attempts >= 3) break;
+    attempts += 1;
+    try {
+      const parsed = await parseFreightSheetFromBlob(candidate.url, knownSheetNames);
+      if (parsed?.rows.length) return parsed;
+    } catch (error) {
+      console.warn('SGP Freight workbook re-parse failed:', error);
+    }
+  }
+  return null;
 }
 
 async function loadStoredFreightParse(companyId: string): Promise<{ rows: ParsedSgpFreightRow[]; assumptions: SgpFreightAssumptions }> {
@@ -651,42 +725,29 @@ async function loadStoredFreightParse(companyId: string): Promise<{ rows: Parsed
   const storedAssumptions = stored.assumptions
     ? normalizeSgpFreightAssumptions(stored.assumptions)
     : DEFAULT_SGP_FREIGHT_ASSUMPTIONS;
-  if (storedRows.length) {
+  if (storedRows.some(freightRowHasFacts)) {
     return { rows: storedRows, assumptions: storedAssumptions };
   }
 
   const upload = asRecord(metadata.aprSgpGmpaWorkbookUpload);
-  const parsedWorkbook = asRecord(metadata.aprSgpGmpaParsedWorkbook);
-  const knownSheetNames = [
-    ...(Array.isArray(upload.sheetNames) ? upload.sheetNames.map((name) => String(name)) : []),
-    ...(Array.isArray(parsedWorkbook.sheetNames) ? parsedWorkbook.sheetNames.map((name) => String(name)) : []),
-  ];
-  const blobCandidates = [
-    String(upload.blobUrl || '').trim(),
-    ...((await prisma.companyDocument.findMany({
-      where: { companyId },
-      select: { blobUrl: true, originalFileName: true },
-      orderBy: { createdAt: 'desc' },
-      take: 20,
-    }).catch(() => [])) as Array<{ blobUrl: string | null; originalFileName: string | null }>)
-      .filter((doc) => /gmpa|sgp|freight/i.test(String(doc.originalFileName || '')))
-      .map((doc) => String(doc.blobUrl || '').trim()),
-  ].filter(Boolean);
-
-  for (const blobUrl of blobCandidates) {
-    try {
-      const parsed = await parseFreightSheetFromBlob(blobUrl, knownSheetNames);
-      if (parsed?.rows.length) {
-        await persistFreightParse(companyId, parsed).catch((error) => {
-          console.warn('SGP Freight parse persist failed:', error);
-        });
-        return { rows: parsed.rows, assumptions: parsed.assumptions };
-      }
-    } catch (error) {
-      console.warn('SGP Freight workbook re-parse failed:', error);
-    }
+  const uploadSize = typeof upload.sizeBytes === 'number' ? Number(upload.sizeBytes) : 0;
+  const annualOnlyUpload = uploadSize > 0 && uploadSize < 500000;
+  const fromBlob =
+    annualOnlyUpload && companyId === ATLANTIC_PRECISION_COMPANY_ID
+      ? null
+      : await loadFreightParseFromBlob(companyId, metadata);
+  const fallback =
+    companyId === ATLANTIC_PRECISION_COMPANY_ID && !fromBlob?.rows.length
+      ? APR_SGP_FREIGHT_FALLBACK
+      : null;
+  const parsed = fromBlob?.rows.length ? fromBlob : fallback;
+  if (!parsed?.rows.length) {
+    return { rows: storedRows, assumptions: storedAssumptions };
   }
-  return { rows: storedRows, assumptions: storedAssumptions };
+  await persistFreightParse(companyId, parsed).catch((error) => {
+    console.warn('SGP Freight parse persist failed:', error);
+  });
+  return { rows: parsed.rows, assumptions: parsed.assumptions };
 }
 
 export async function seedCompanyItemFreightFromSgp(companyId: string): Promise<{ itemCount: number; seeded: number }> {
