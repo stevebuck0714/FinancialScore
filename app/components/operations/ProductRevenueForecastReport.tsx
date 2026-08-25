@@ -6,7 +6,7 @@ import {
   FORECAST_MONTHS,
   PRODUCTION_TYPE_OPTIONS,
   STATUS_FLAG_OPTIONS,
-  adjustedMonthQty,
+  typedAdjustedMonthQty,
   emptyMonthQtyMap,
   forecastMonthIsEditable,
   monthQty,
@@ -475,11 +475,11 @@ export default function ProductRevenueForecastReport({
       (acc, line) => {
         acc.remaining += remainingForecastQty(line.forecastQty, thru);
         acc.monthForecast += qtyValue(line.forecastQty, selectedMonth);
-        acc.monthAdjusted += adjustedMonthQty(line.forecastQty, line.actualQty, selectedMonth, thru, line.adjustedQty);
+        acc.monthAdjusted += typedAdjustedMonthQty(line.forecastQty, selectedMonth, line.adjustedQty);
         acc.monthActual += qtyValue(line.actualQty, selectedMonth);
         acc.ytdForecast += monthQtyTotal(line.forecastQty, ytdMonths);
         acc.ytdAdjusted += ytdMonths.reduce(
-          (sum, month) => sum + adjustedMonthQty(line.forecastQty, line.actualQty, month, thru, line.adjustedQty),
+          (sum, month) => sum + typedAdjustedMonthQty(line.forecastQty, month, line.adjustedQty),
           0
         );
         acc.ytdActual += monthQtyTotal(line.actualQty, ytdMonths);
@@ -967,7 +967,7 @@ export default function ProductRevenueForecastReport({
                         {fmtQty(qtyValue(line.forecastQty, previousMonth))}
                       </td>
                       <td style={priorCellStyle}>
-                        {fmtQty(adjustedMonthQty(line.forecastQty, line.actualQty, previousMonth, dataThru || null, line.adjustedQty))}
+                        {fmtQty(typedAdjustedMonthQty(line.forecastQty, previousMonth, line.adjustedQty))}
                       </td>
                       <td style={priorCellStyle}>
                         {fmtQty(qtyValue(line.actualQty, previousMonth))}
@@ -981,7 +981,7 @@ export default function ProductRevenueForecastReport({
                       <td style={priorCellStyle}>
                         {fmtPct(pctVsPlan(
                           qtyValue(line.actualQty, previousMonth),
-                          adjustedMonthQty(line.forecastQty, line.actualQty, previousMonth, dataThru || null, line.adjustedQty)
+                          typedAdjustedMonthQty(line.forecastQty, previousMonth, line.adjustedQty)
                         ))}
                       </td>
                       {canEditSelectedMonth ? (
@@ -1011,7 +1011,7 @@ export default function ProductRevenueForecastReport({
                         </td>
                       ) : (
                         <td style={monthCellStyle}>
-                          {fmtQty(adjustedMonthQty(line.forecastQty, line.actualQty, selectedMonth, dataThru || null, line.adjustedQty))}
+                          {fmtQty(typedAdjustedMonthQty(line.forecastQty, selectedMonth, line.adjustedQty))}
                         </td>
                       )}
                       <td style={monthCellStyle}>
@@ -1026,7 +1026,7 @@ export default function ProductRevenueForecastReport({
                       <td style={monthCellStyle}>
                         {fmtPct(pctVsPlan(
                           qtyValue(line.actualQty, selectedMonth),
-                          adjustedMonthQty(line.forecastQty, line.actualQty, selectedMonth, dataThru || null, line.adjustedQty)
+                          typedAdjustedMonthQty(line.forecastQty, selectedMonth, line.adjustedQty)
                         ))}
                       </td>
                     </tr>

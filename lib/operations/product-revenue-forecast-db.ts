@@ -458,10 +458,19 @@ export async function loadProductForecastLines(params: {
 function snapshotCustomerMatchSql(customerId: string, customerName: string): Prisma.Sql {
   const id = customerId.trim();
   const name = customerName.trim();
-  const idMatch = id
-    ? Prisma.sql`NULLIF(TRIM(COALESCE(s."customerId", '')), '') = ${id}`
+  const stripped = id.replace(/^0+/, '') || id;
+  const variants = new Set<string>();
+  if (id) variants.add(id);
+  if (stripped) variants.add(stripped);
+  if (stripped && /^\d+$/.test(stripped)) {
+    for (const width of [6, 7, 8, 9, 10]) {
+      if (stripped.length <= width) variants.add(stripped.padStart(width, '0'));
+    }
+  }
+  const idMatch = variants.size
+    ? Prisma.sql`NULLIF(TRIM(COALESCE(s."customerId", '')), '') IN (${Prisma.join([...variants].map((value) => Prisma.sql`${value}`))})`
     : null;
-  const nameMatch = name ? Prisma.sql`s."customerName" = ${name}` : null;
+  const nameMatch = name ? Prisma.sql`UPPER(TRIM(s."customerName")) = UPPER(${name})` : null;
   if (idMatch && nameMatch) return Prisma.sql`(${idMatch} OR ${nameMatch})`;
   if (idMatch) return idMatch;
   if (nameMatch) return nameMatch;
@@ -484,6 +493,7 @@ async function queryCsiShippedDeltas(params: {
 }): Promise<Array<{
   customerId: string | null;
   itemSku: string | null;
+  itemId: string | null;
   customerPn: string | null;
   month: number | null;
   qty: number | null;
@@ -499,6 +509,7 @@ async function queryCsiShippedDeltas(params: {
       return tx.$queryRaw<Array<{
         customerId: string | null;
         itemSku: string | null;
+        itemId: string | null;
         customerPn: string | null;
         month: number | null;
         qty: number | null;
@@ -509,7 +520,8 @@ async function queryCsiShippedDeltas(params: {
             s."orderId",
             s."lineId",
             NULLIF(TRIM(COALESCE(s."customerId", '')), '') AS "customerId",
-            NULLIF(TRIM(COALESCE(s."sku", s."itemId", '')), '') AS "itemSku",
+            NULLIF(TRIM(COALESCE(s."sku", '')), '') AS "itemSku",
+            NULLIF(TRIM(COALESCE(s."itemId", s."itemName", '')), '') AS "itemId",
             NULLIF(TRIM(COALESCE(s."customerPn", '')), '') AS "customerPn",
             date_trunc('month', s."snapshotDate") AS month_start,
             ${params.qtySql} AS qty,
@@ -526,6 +538,7 @@ async function queryCsiShippedDeltas(params: {
           SELECT
             "customerId",
             "itemSku",
+            "itemId",
             "customerPn",
             month_start,
             EXTRACT(MONTH FROM month_start)::int AS month,
@@ -536,6 +549,7 @@ async function queryCsiShippedDeltas(params: {
         SELECT
           "customerId",
           "itemSku",
+          "itemId",
           "customerPn",
           month,
           SUM(delta)::double precision AS qty,
@@ -544,7 +558,7 @@ async function queryCsiShippedDeltas(params: {
         WHERE month_start >= ${yearStart}
           AND month_start < ${nextYear}
           AND month BETWEEN 1 AND 12
-        GROUP BY 1, 2, 3, 4
+        GROUP BY 1, 2, 3, 4, 5
       `);
     },
     { maxWait: 5000, timeout: 25000 }
@@ -572,9 +586,14 @@ export async function loadCsiMonthlyShippedActuals(params: {
         const qty = Number(row.qty || 0);
         const customerId = String(row.customerId || '');
         const itemSku = String(row.itemSku || '');
+        const itemId = String(row.itemId || '');
         const customerPn = String(row.customerPn || '');
         addShippedQty(byExact, forecastActualsExactKey(customerId, itemSku, customerPn), month, qty);
         addShippedQty(byItem, forecastActualsItemKey(customerId, itemSku), month, qty);
+        if (itemId && itemId.toUpperCase() !== itemSku.toUpperCase()) {
+          addShippedQty(byExact, forecastActualsExactKey(customerId, itemId, customerPn), month, qty);
+          addShippedQty(byItem, forecastActualsItemKey(customerId, itemId), month, qty);
+        }
         if (row.asOf) {
           const iso = new Date(row.asOf).toISOString().slice(0, 10);
           if (!asOf || iso > asOf) asOf = iso;

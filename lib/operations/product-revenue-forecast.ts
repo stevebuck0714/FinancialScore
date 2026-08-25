@@ -235,7 +235,7 @@ export function overlayShippedActuals<T extends {
   customerPartNumber: string;
   actualQty: MonthQtyMap;
 }>(lines: T[], actuals: CsiShippedActuals): T[] {
-  if (!actuals.ok) return lines;
+  if (!actuals.ok || (actuals.byExact.size === 0 && actuals.byItem.size === 0)) return lines;
   const itemCounts = new Map<string, number>();
   for (const line of lines) {
     const key = forecastActualsItemKey(line.customerId, line.itemSku);
@@ -248,8 +248,23 @@ export function overlayShippedActuals<T extends {
     const itemKey = forecastActualsItemKey(line.customerId, line.itemSku);
     const byItem = itemCounts.get(itemKey) === 1 ? actuals.byItem.get(itemKey) : undefined;
     const match = exact || byItem;
-    return { ...line, actualQty: match ? match : emptyMonthQtyMap() };
+    if (!match) return line;
+    const next = { ...line.actualQty };
+    for (const month of FORECAST_MONTHS) {
+      const key = String(month);
+      const shipped = Number(match[key]);
+      if (Number.isFinite(shipped) && shipped > 0) next[key] = shipped;
+    }
+    return { ...line, actualQty: next };
   });
+}
+
+export function typedAdjustedMonthQty(
+  forecastQty: MonthQtyMap,
+  month: ForecastMonth,
+  adjustedQty?: MonthQtyMap | null
+): number {
+  return monthQty(normalizeAdjustedQtyMap(adjustedQty, forecastQty), month);
 }
 
 export function adjustedMonthQty(
