@@ -7,7 +7,9 @@ import {
   APR_SGP_GMPA_SOURCE_CODE,
   parseAprSgpGmpaWorkbook,
 } from '@/lib/operational/apr-sgp-gmpa';
+import { parseSgpFreightWorkbook } from '@/lib/operational/apr-sgp-freight';
 import { refreshCompanyItemDuties } from '@/lib/hts/item-duty-overlay';
+import { seedCompanyItemFreightFromRows } from '@/lib/operations/item-freight-overlay';
 
 export const dynamic = 'force-dynamic';
 
@@ -55,6 +57,7 @@ export async function POST(request: NextRequest) {
     const arrayBuffer = await response.arrayBuffer();
     const workbook = XLSX.read(Buffer.from(arrayBuffer), { type: 'buffer', cellDates: true });
     const parsed = parseAprSgpGmpaWorkbook(workbook);
+    const freightParsed = parseSgpFreightWorkbook(workbook);
 
     const metadata = asRecord(connection?.connectionMetadata);
     const uploadedAt = new Date().toISOString();
@@ -93,6 +96,15 @@ export async function POST(request: NextRequest) {
           ...parsed,
           parsedAt: uploadedAt,
         },
+        aprSgpFreightParsed: freightParsed
+          ? {
+              sheetName: freightParsed.sheetName,
+              rowCount: freightParsed.rowCount,
+              rows: freightParsed.rows,
+              assumptions: freightParsed.assumptions,
+              parsedAt: uploadedAt,
+            }
+          : metadata.aprSgpFreightParsed || null,
         aprSgpGmpaVersions: [
           {
             ...activeUpload,
@@ -110,6 +122,12 @@ export async function POST(request: NextRequest) {
       console.error('SGP duties overlay seed failed:', error);
       return { spreadsheetItems: 0, discovered: 0 };
     });
+    const freightSeed = freightParsed
+      ? await seedCompanyItemFreightFromRows(companyId, freightParsed.rows, freightParsed.assumptions).catch((error) => {
+          console.error('SGP freight overlay seed failed:', error);
+          return { itemCount: 0, seeded: 0 };
+        })
+      : { itemCount: 0, seeded: 0 };
 
     return NextResponse.json({
       ok: true,
@@ -122,6 +140,7 @@ export async function POST(request: NextRequest) {
       customerCount: parsed.customerCount,
       itemCount: parsed.itemCount,
       dutyItemsSeeded: dutySeed.spreadsheetItems,
+      freightItemsSeeded: freightSeed.itemCount,
     });
   } catch (error: any) {
     return NextResponse.json(

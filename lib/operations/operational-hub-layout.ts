@@ -102,6 +102,7 @@ const SECTOR_32_REPORTS_BY_MODULE: Record<string, OperationalHubReportDefinition
   ],
   vendors: [
     { key: 'vendorsDutiesTariffs', label: 'Duties & Tariffs', group: 'Vendors' },
+    { key: 'vendorsSgpFreight', label: 'SGP Freight', group: 'Vendors' },
   ],
 };
 
@@ -286,6 +287,7 @@ export function getOperationalHubDefaultReportsForModule(
     return [
       ...(sector === '42' ? [{ key: 'productsVendorPricing', label: 'Vendor Pricing', group: 'Vendors' }] : []),
       { key: 'vendorsDutiesTariffs', label: 'Duties & Tariffs', group: 'Vendors' },
+      { key: 'vendorsSgpFreight', label: 'SGP Freight', group: 'Vendors' },
       ...(sector === '42'
         ? [
             { key: 'vendorsMonthlyForecast', label: 'Monthly Forecast', group: 'Vendors' },

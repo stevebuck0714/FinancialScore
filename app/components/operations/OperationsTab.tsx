@@ -32,6 +32,7 @@ import ProductMonthlyRevenueReport from './ProductMonthlyRevenueReport';
 import ProductRevenueRollupReport from './ProductRevenueRollupReport';
 import ProductGoalUpdateReport from './ProductGoalUpdateReport';
 import DutiesTariffsReport from './DutiesTariffsReport';
+import SgpFreightReport from './SgpFreightReport';
 import VendorMonthlyForecastReport from './VendorMonthlyForecastReport';
 import VendorForecastRollupReport from './VendorForecastRollupReport';
 import ResidentialRevenueForecast from './real-estate-forecast/ResidentialRevenueForecast';
@@ -203,7 +204,7 @@ type WipLineItemSortKey =
   | 'contractValue'
   | 'invoicedValue';
 type ProductReportView = 'productMarginAnalysis' | 'wholesaleRawData' | 'vendorPricing' | 'revenueForecast' | 'forecastRollup' | 'monthlyRevenue' | 'revenueRollup' | 'goalUpdate' | 'performance' | 'retailForecast' | 'merchandiseProfitability';
-type VendorReportView = 'vendorPricing' | 'monthlyForecast' | 'forecastRollup' | 'dutiesTariffs';
+type VendorReportView = 'vendorPricing' | 'monthlyForecast' | 'forecastRollup' | 'dutiesTariffs' | 'sgpFreight';
 type WholesaleProductsReportMode = 'margin' | 'raw' | 'vendor';
 type WholesaleRawCustomerOption = {
   key: string;
@@ -3353,7 +3354,8 @@ export default function OperationsTab({
       activeTab === 'working_capital_forecast' ||
       activeTab === 'working-capital-forecast' ||
       isWholesaleRawViewActive ||
-      isWholesaleRevenueForecastViewActive
+      isWholesaleRevenueForecastViewActive ||
+      isVendorsTab
     ) {
       return null;
     }
@@ -8200,6 +8202,7 @@ export default function OperationsTab({
     const isGoalUpdateEnabled = isWholesaleProductSector && isSectionEnabled('productsGoalUpdate');
     const isProductPerformanceEnabled = isSectionEnabled('productsPerformance');
     const isDutiesTariffsEnabled = isSectionEnabled('vendorsDutiesTariffs') || isSectionEnabled('productsDutiesTariffs');
+    const isSgpFreightEnabled = isSectionEnabled('vendorsSgpFreight');
     const isRetailForecastingEnabled = isSectionEnabled('productsRetailForecasting');
     const isMerchandiseProfitabilityEnabled = isSectionEnabled('productsMerchandiseProfitability');
     const hasAnyProductsReportEnabled =
@@ -8275,6 +8278,8 @@ export default function OperationsTab({
         ? 'vendorPricing'
         : isDutiesTariffsEnabled
         ? 'dutiesTariffs'
+        : isSgpFreightEnabled
+        ? 'sgpFreight'
         : isVendorMonthlyForecastEnabled
         ? 'monthlyForecast'
         : 'forecastRollup';
@@ -8282,6 +8287,8 @@ export default function OperationsTab({
       vendorReportView === 'vendorPricing' && !isVendorPricingEnabled
         ? fallbackVendorReportView
         : vendorReportView === 'dutiesTariffs' && !isDutiesTariffsEnabled
+        ? fallbackVendorReportView
+        : vendorReportView === 'sgpFreight' && !isSgpFreightEnabled
         ? fallbackVendorReportView
         : vendorReportView === 'monthlyForecast' && !isVendorMonthlyForecastEnabled
         ? fallbackVendorReportView
@@ -11430,6 +11437,25 @@ export default function OperationsTab({
           },
         ],
       },
+      vendorsSgpFreight: {
+        title: 'What SGP Freight shows',
+        sections: [
+          {
+            body:
+              'This is the vendor item overlay for the SGP Freight sheet. Quantity ordered, order multiple, dimensions, order minimum, CBM, unit weight, and unit costs seed once from that tab, then stay user-entered. Re-uploading fills blank new SKUs only and does not overwrite saved values.',
+          },
+          {
+            heading: 'How it is calculated',
+            body: [
+              'CBM defaults from Height × Width × Length (inches) ÷ 61,023.744. Typing CBM locks that value until you change a dimension.',
+              '% of container matches the sheet: CBM ÷ order multiple ÷ CBMs. If order multiple is missing or zero, % and overseas freight stay blank.',
+              'Overseas current freight is Average Shipment Cost × % of container. Overseas future freight is Estimated Freight Cost × % of container.',
+              'Non-overseas freight current is unit cost × Estimated Domestic Rate (CURRENT). Future uses that rate increased by Estimated Increase (8.00% × 1.05 = 8.40% with the sheet defaults).',
+              'Vendor, shipment type, HTS, and origin come from the SGP Freight sheet. Qty on hand can refresh from inventory/CSI.',
+            ],
+          },
+        ],
+      },
       productsRevenueForecast: {
         title: 'What Monthly Forecast shows',
         sections: [
@@ -11685,10 +11711,11 @@ export default function OperationsTab({
           </button>
         ) : null;
       const vendorViewSwitcher =
-        isVendorPricingEnabled || isDutiesTariffsEnabled || isVendorMonthlyForecastEnabled || isVendorForecastRollupEnabled ? (
+        isVendorPricingEnabled || isDutiesTariffsEnabled || isSgpFreightEnabled || isVendorMonthlyForecastEnabled || isVendorForecastRollupEnabled ? (
           <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '16px' }}>
             {vendorSwitcherButton('vendorPricing', isVendorPricingEnabled, 'Vendor Pricing')}
             {vendorSwitcherButton('dutiesTariffs', isDutiesTariffsEnabled, 'Duties & Tariffs')}
+            {vendorSwitcherButton('sgpFreight', isSgpFreightEnabled, 'SGP Freight')}
             {vendorSwitcherButton('monthlyForecast', isVendorMonthlyForecastEnabled, 'Monthly Forecast')}
             {vendorSwitcherButton('forecastRollup', isVendorForecastRollupEnabled, 'Forecast Rollup')}
           </div>
@@ -11705,6 +11732,17 @@ export default function OperationsTab({
               <DutiesTariffsReport
                 selectedCompanyId={selectedCompanyId}
                 onOpenInfo={() => setProductChartInfoKey('vendorsDutiesTariffs')}
+              />
+              {renderProductChartInfoModal()}
+            </>
+          ) : effectiveVendorReportView === 'sgpFreight' && isSgpFreightEnabled ? (
+            <>
+              <h2 style={{ fontSize: '24px', fontWeight: '700', color: '#1e293b', marginBottom: '16px' }}>
+                SGP Freight
+              </h2>
+              <SgpFreightReport
+                selectedCompanyId={selectedCompanyId}
+                onOpenInfo={() => setProductChartInfoKey('vendorsSgpFreight')}
               />
               {renderProductChartInfoModal()}
             </>
