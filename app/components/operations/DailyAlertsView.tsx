@@ -3036,6 +3036,40 @@ export default function DailyAlertsView({ companyId, companyName, onNavigate }: 
               </div>
             )}
 
+            {briefingPeriod === 'quarterly' && (
+              <div
+                style={{
+                  marginTop: '12px',
+                  border: '1px solid #bfdbfe',
+                  borderRadius: '10px',
+                  background: '#eff6ff',
+                  padding: '10px 12px',
+                  fontSize: '13px',
+                  color: '#1e3a8a',
+                  lineHeight: 1.45,
+                }}
+              >
+                Quarterly income compares trailing 3 completed months to the last completed calendar quarter. When those months are the same quarter, it compares that quarter to the prior quarter.
+              </div>
+            )}
+
+            {briefingPeriod === 'annual' && (
+              <div
+                style={{
+                  marginTop: '12px',
+                  border: '1px solid #bfdbfe',
+                  borderRadius: '10px',
+                  background: '#eff6ff',
+                  padding: '10px 12px',
+                  fontSize: '13px',
+                  color: '#1e3a8a',
+                  lineHeight: 1.45,
+                }}
+              >
+                Annual income compares trailing 12 completed months to the last completed calendar year. When those months are the same year, it compares that year to the prior year.
+              </div>
+            )}
+
             {execBriefingError && (
               <div style={{ marginTop: '16px', border: '1px solid #fecaca', borderRadius: '10px', background: '#fff7f7', padding: '10px', fontSize: '13px', color: '#991b1b' }}>
                 {execBriefingError}

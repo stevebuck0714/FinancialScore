@@ -60,7 +60,7 @@ const MONTHLY_FINANCIAL_ROW_CAP = 60;
 const DAILY_FINANCIAL_ROW_CAP = 100;
 const CORE_SNAPSHOT_ROW_CAP = 150;
 const DETAIL_SNAPSHOT_ROW_CAP = 300;
-const EXEC_BRIEFING_LOGIC_VERSION = 'exec-briefing-v11-weekly';
+const EXEC_BRIEFING_LOGIC_VERSION = 'exec-briefing-v16-trailing-12-months';
 const PRIVATE_DAILY_CACHE_HEADERS = {
   'Cache-Control': 'private, max-age=300, stale-while-revalidate=1800',
 };
@@ -406,6 +406,71 @@ function groupCompleteMonthsByQuarter(rows: any[]): any[][] {
     });
 }
 
+function monthSetKey(rows: any[]): string {
+  return sortByDate(rows)
+    .map((row) => {
+      const date = row?.monthDate instanceof Date ? row.monthDate : row?.monthDate ? new Date(row.monthDate) : null;
+      if (!date || Number.isNaN(date.getTime())) return '';
+      return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}`;
+    })
+    .filter(Boolean)
+    .join(',');
+}
+
+function quarterlyIncomeWindows(completeMonthlyFinancials: any[]) {
+  const trailingThree = sortByDate(completeMonthlyFinancials).slice(-3);
+  const quarters = groupCompleteMonthsByQuarter(completeMonthlyFinancials);
+  const lastQuarter = quarters.slice(-1).flat();
+  const priorQuarter = quarters.slice(-2, -1).flat();
+  const trailingIsLastQuarter =
+    trailingThree.length === 3 && lastQuarter.length === 3 && monthSetKey(trailingThree) === monthSetKey(lastQuarter);
+
+  if (trailingThree.length === 3 && lastQuarter.length === 3 && !trailingIsLastQuarter) {
+    return {
+      primaryCurrent: trailingThree,
+      primaryPrior: lastQuarter,
+      trailingIsLastQuarter: false,
+      lastQuarter,
+      priorQuarter,
+    };
+  }
+
+  return {
+    primaryCurrent: lastQuarter.length === 3 ? lastQuarter : trailingThree,
+    primaryPrior: lastQuarter.length === 3 ? priorQuarter : sortByDate(completeMonthlyFinancials).slice(-6, -3),
+    trailingIsLastQuarter: true,
+    lastQuarter,
+    priorQuarter,
+  };
+}
+
+function annualIncomeWindows(completeMonthlyFinancials: any[]) {
+  const trailingTwelve = sortByDate(completeMonthlyFinancials).slice(-12);
+  const years = groupCompleteMonthsByYear(completeMonthlyFinancials);
+  const lastYear = years.slice(-1).flat();
+  const priorYear = years.slice(-2, -1).flat();
+  const trailingIsLastYear =
+    trailingTwelve.length === 12 && lastYear.length === 12 && monthSetKey(trailingTwelve) === monthSetKey(lastYear);
+
+  if (trailingTwelve.length === 12 && lastYear.length === 12 && !trailingIsLastYear) {
+    return {
+      primaryCurrent: trailingTwelve,
+      primaryPrior: lastYear,
+      trailingIsLastYear: false,
+      lastYear,
+      priorYear,
+    };
+  }
+
+  return {
+    primaryCurrent: lastYear.length === 12 ? lastYear : trailingTwelve,
+    primaryPrior: lastYear.length === 12 ? priorYear : sortByDate(completeMonthlyFinancials).slice(-24, -12),
+    trailingIsLastYear: true,
+    lastYear,
+    priorYear,
+  };
+}
+
 function groupCompleteMonthsByYear(rows: any[]): any[][] {
   const groups = new Map<string, any[]>();
   for (const row of rows) {
@@ -492,31 +557,69 @@ function buildFinancialComparisonsForPeriod(params: {
   }
 
   if (period === 'quarterly') {
-    const quarters = groupCompleteMonthsByQuarter(completeMonthlyFinancials);
-    return [
+    const windows = quarterlyIncomeWindows(completeMonthlyFinancials);
+    const comparisons = [
       buildFinancialComparison({
-        key: 'latest_completed_quarter_vs_prior_quarter',
-        label: 'Latest completed quarter vs prior completed quarter',
+        key: windows.trailingIsLastQuarter
+          ? 'latest_completed_quarter_vs_prior_quarter'
+          : 'trailing_3_months_vs_last_quarter',
+        label: windows.trailingIsLastQuarter
+          ? 'Last completed quarter vs prior quarter'
+          : 'Trailing 3 months vs last quarter',
         cadence: 'quarterly',
-        currentRows: quarters.slice(-1).flat(),
-        priorRows: quarters.slice(-2, -1).flat(),
-        note: 'Use completed quarters only.',
+        currentRows: windows.primaryCurrent,
+        priorRows: windows.primaryPrior,
+        note: windows.trailingIsLastQuarter
+          ? 'Trailing 3 completed months are the last completed calendar quarter. Compare that quarter to the prior calendar quarter.'
+          : 'Current is the trailing 3 completed months. Prior is the last completed calendar quarter (Jan–Mar / Apr–Jun / Jul–Sep / Oct–Dec). These windows can overlap; name both periods and do not call this calendar quarter-over-quarter.',
       }),
-    ].filter((comparison) => comparison.comparable);
+    ];
+    if (!windows.trailingIsLastQuarter && windows.lastQuarter.length === 3 && windows.priorQuarter.length === 3) {
+      comparisons.push(
+        buildFinancialComparison({
+          key: 'latest_completed_quarter_vs_prior_quarter',
+          label: 'Last completed quarter vs prior quarter',
+          cadence: 'quarterly',
+          currentRows: windows.lastQuarter,
+          priorRows: windows.priorQuarter,
+          note: 'Calendar quarters only. Use for quarter-over-quarter commentary, separate from trailing 3 months.',
+        })
+      );
+    }
+    return comparisons.filter((comparison) => comparison.comparable);
   }
 
   if (period === 'annual') {
-    const years = groupCompleteMonthsByYear(completeMonthlyFinancials);
-    return [
+    const windows = annualIncomeWindows(completeMonthlyFinancials);
+    const comparisons = [
       buildFinancialComparison({
-        key: 'latest_completed_year_vs_prior_year',
-        label: 'Latest completed year vs prior completed year',
+        key: windows.trailingIsLastYear
+          ? 'latest_completed_year_vs_prior_year'
+          : 'trailing_12_months_vs_last_year',
+        label: windows.trailingIsLastYear
+          ? 'Last completed year vs prior year'
+          : 'Trailing 12 months vs last year',
         cadence: 'annual',
-        currentRows: years.slice(-1).flat(),
-        priorRows: years.slice(-2, -1).flat(),
-        note: 'Use completed years only.',
+        currentRows: windows.primaryCurrent,
+        priorRows: windows.primaryPrior,
+        note: windows.trailingIsLastYear
+          ? 'Trailing 12 completed months are the last completed calendar year. Compare that year to the prior calendar year.'
+          : 'Current is the trailing 12 completed months. Prior is the last completed calendar year (January–December). These windows can overlap; name both periods and do not call this calendar year-over-year.',
       }),
-    ].filter((comparison) => comparison.comparable);
+    ];
+    if (!windows.trailingIsLastYear && windows.lastYear.length === 12 && windows.priorYear.length === 12) {
+      comparisons.push(
+        buildFinancialComparison({
+          key: 'latest_completed_year_vs_prior_year',
+          label: 'Last completed year vs prior year',
+          cadence: 'annual',
+          currentRows: windows.lastYear,
+          priorRows: windows.priorYear,
+          note: 'Calendar years only. Use for year-over-year commentary, separate from trailing 12 months.',
+        })
+      );
+    }
+    return comparisons.filter((comparison) => comparison.comparable);
   }
 
   return [
@@ -531,7 +634,188 @@ function buildFinancialComparisonsForPeriod(params: {
   ].filter((comparison) => comparison.comparable);
 }
 
-function buildPeriodSets(rows: Array<{ snapshotDate: Date }>): { recentDates: Set<string>; priorDates: Set<string> } {
+function utcMonthStart(date: Date): Date {
+  return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), 1));
+}
+
+function utcMonthEnd(date: Date): Date {
+  return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth() + 1, 0, 23, 59, 59, 999));
+}
+
+function rangeFromMonthRows(rows: Array<{ monthDate?: Date }>): { start: Date; end: Date } | null {
+  const dates = rows
+    .map((row) => (row?.monthDate instanceof Date ? row.monthDate : row?.monthDate ? new Date(row.monthDate) : null))
+    .filter((date): date is Date => Boolean(date) && !Number.isNaN(date.getTime()))
+    .sort((left, right) => left.getTime() - right.getTime());
+  if (!dates.length) return null;
+  return { start: utcMonthStart(dates[0]), end: utcMonthEnd(dates[dates.length - 1]) };
+}
+
+function salesWindowFromCompleteMonths(
+  period: BriefingPeriod,
+  completeMonthlyFinancials: any[]
+): { current: { start: Date; end: Date } | null; prior: { start: Date; end: Date } | null } {
+  if (period === 'quarterly') {
+    const windows = quarterlyIncomeWindows(completeMonthlyFinancials);
+    return {
+      current: rangeFromMonthRows(windows.primaryCurrent),
+      prior: rangeFromMonthRows(windows.primaryPrior),
+    };
+  }
+  if (period === 'annual') {
+    const windows = annualIncomeWindows(completeMonthlyFinancials);
+    return {
+      current: rangeFromMonthRows(windows.primaryCurrent),
+      prior: rangeFromMonthRows(windows.primaryPrior),
+    };
+  }
+  if (period === 'monthly') {
+    return {
+      current: rangeFromMonthRows(completeMonthlyFinancials.slice(-1)),
+      prior: rangeFromMonthRows(completeMonthlyFinancials.slice(-2, -1)),
+    };
+  }
+  return { current: null, prior: null };
+}
+
+function utcMonthCount(start: Date, end: Date): number {
+  return (end.getUTCFullYear() - start.getUTCFullYear()) * 12 + (end.getUTCMonth() - start.getUTCMonth()) + 1;
+}
+
+function salesRowsFromGroupBy(
+  current: Array<{ name: string; revenue: number; cogs: number; qty?: number }>,
+  prior: Array<{ name: string; revenue: number; cogs: number; qty?: number }>
+) {
+  const byName = new Map<string, any>();
+  const add = (name: string, revenue: number, cogs: number, qty: number, bucket: 'recent' | 'prior') => {
+    const key = String(name || '').trim();
+    if (!key) return;
+    const currentRow = byName.get(key) || {
+      name: key,
+      recentRevenue: 0,
+      priorRevenue: 0,
+      recentCogs: 0,
+      priorCogs: 0,
+      recentQty: 0,
+      priorQty: 0,
+    };
+    if (bucket === 'recent') {
+      currentRow.recentRevenue += revenue;
+      currentRow.recentCogs += cogs;
+      currentRow.recentQty += qty;
+    } else {
+      currentRow.priorRevenue += revenue;
+      currentRow.priorCogs += cogs;
+      currentRow.priorQty += qty;
+    }
+    byName.set(key, currentRow);
+  };
+  for (const row of current) add(row.name, row.revenue, row.cogs, asNumber(row.qty), 'recent');
+  for (const row of prior) add(row.name, row.revenue, row.cogs, asNumber(row.qty), 'prior');
+  return Array.from(byName.values()).map((entry) => {
+    const recentGrossProfit = entry.recentRevenue - entry.recentCogs;
+    const priorGrossProfit = entry.priorRevenue - entry.priorCogs;
+    const recentMarginPct = pct(recentGrossProfit, entry.recentRevenue);
+    const priorMarginPct = pct(priorGrossProfit, entry.priorRevenue);
+    const recentAvgPrice = pct(entry.recentRevenue, entry.recentQty);
+    const priorAvgPrice = pct(entry.priorRevenue, entry.priorQty);
+    const recentUnitCost = pct(entry.recentCogs, entry.recentQty);
+    const priorUnitCost = pct(entry.priorCogs, entry.priorQty);
+    return {
+      ...entry,
+      recentGrossProfit,
+      priorGrossProfit,
+      grossProfitDelta: recentGrossProfit - priorGrossProfit,
+      grossProfitDeltaPct: pct(recentGrossProfit - priorGrossProfit, priorGrossProfit),
+      recentMarginPct,
+      priorMarginPct,
+      marginPctDelta: recentMarginPct != null && priorMarginPct != null ? recentMarginPct - priorMarginPct : null,
+      revenueDelta: entry.recentRevenue - entry.priorRevenue,
+      revenueDeltaPct: pct(entry.recentRevenue - entry.priorRevenue, entry.priorRevenue),
+      avgPriceDeltaPct: recentAvgPrice != null && priorAvgPrice != null ? pct(recentAvgPrice - priorAvgPrice, priorAvgPrice) : null,
+      unitCostDeltaPct: recentUnitCost != null && priorUnitCost != null ? pct(recentUnitCost - priorUnitCost, priorUnitCost) : null,
+    };
+  });
+}
+
+async function preferredSnapshotFrequency(
+  table: 'customerSalesSnapshot' | 'productSalesSnapshot',
+  companyId: string,
+  start: Date,
+  end: Date
+): Promise<string | null> {
+  const delegate = (prisma as any)[table];
+  if (!delegate?.groupBy) return null;
+  const monthKey = (value: unknown) => {
+    const date = value instanceof Date ? value : value ? new Date(String(value)) : null;
+    if (!date || Number.isNaN(date.getTime())) return '';
+    return `${date.getUTCFullYear()}-${date.getUTCMonth()}`;
+  };
+  const monthlyDates = await delegate.groupBy({
+    by: ['snapshotDate'],
+    where: { companyId, frequency: 'monthly', snapshotDate: { gte: start, lte: end } },
+  });
+  const monthlyMonths = new Set((monthlyDates || []).map((row: any) => monthKey(row?.snapshotDate)).filter(Boolean));
+  const neededMonths = utcMonthCount(start, end);
+  if (neededMonths > 0 && monthlyMonths.size >= neededMonths) return 'monthly';
+  const daily = await delegate.count({
+    where: { companyId, frequency: 'daily', snapshotDate: { gte: start, lte: end } },
+  });
+  if (daily > 0) return 'daily';
+  const weekly = await delegate.count({
+    where: { companyId, frequency: 'weekly', snapshotDate: { gte: start, lte: end } },
+  });
+  if (weekly > 0) return 'weekly';
+  if (monthlyMonths.size > 0) return 'monthly';
+  return null;
+}
+
+async function loadSalesGroupByPeriod(params: {
+  table: 'customerSalesSnapshot' | 'productSalesSnapshot';
+  nameField: 'customerName' | 'itemName';
+  companyId: string;
+  currentRange: { start: Date; end: Date };
+  priorRange: { start: Date; end: Date } | null;
+}): Promise<ReturnType<typeof salesRowsFromGroupBy>> {
+  const delegate = (prisma as any)[params.table];
+  if (!delegate?.groupBy) return [];
+  const frequency = await preferredSnapshotFrequency(
+    params.table,
+    params.companyId,
+    params.priorRange?.start || params.currentRange.start,
+    params.currentRange.end
+  );
+  const whereBase: Record<string, unknown> = { companyId: params.companyId };
+  if (frequency) whereBase.frequency = frequency;
+  const sumFields =
+    params.nameField === 'itemName'
+      ? { revenue: true, cogs: true, quantitySold: true }
+      : { revenue: true, cogs: true };
+  const [current, prior] = await Promise.all([
+    delegate.groupBy({
+      by: [params.nameField],
+      where: { ...whereBase, snapshotDate: { gte: params.currentRange.start, lte: params.currentRange.end } },
+      _sum: sumFields,
+    }),
+    params.priorRange
+      ? delegate.groupBy({
+          by: [params.nameField],
+          where: { ...whereBase, snapshotDate: { gte: params.priorRange.start, lte: params.priorRange.end } },
+          _sum: sumFields,
+        })
+      : Promise.resolve([]),
+  ]);
+  const asNamed = (rows: any[]) =>
+    (rows || []).map((row) => ({
+      name: String(row?.[params.nameField] || '').trim(),
+      revenue: asNumber(row?._sum?.revenue),
+      cogs: asNumber(row?._sum?.cogs),
+      qty: asNumber(row?._sum?.quantitySold),
+    }));
+  return salesRowsFromGroupBy(asNamed(current), asNamed(prior));
+}
+
+function buildPeriodSets(rows: any[]) {
   const dates = Array.from(new Set(rows.map((row) => dateKey(row.snapshotDate)).filter(Boolean))).sort();
   if (dates.length <= 1) return { recentDates: new Set(dates), priorDates: new Set() };
   const windowSize = Math.max(1, Math.min(6, Math.floor(dates.length / 2)));
@@ -792,8 +1076,10 @@ function buildMockExecBriefingResponse(facts: any, sourceNotes: string[], period
   }
   if (customers.topCustomers?.length) {
     const topCustomer = customers.topCustomers[0];
+    const share = topCustomer.booksRevenueShare ?? topCustomer.revenueShare;
+    const shareLabel = customers.alignedToBooksWindow ? 'books revenue' : 'identified customer sales';
     operatingBullets.push(
-      `${topCustomer.name} is the largest recent customer exposure at ${formatMoney(topCustomer.recentRevenue)} of revenue (${formatPercent(topCustomer.revenueShare)} of the customer snapshot).`
+      `${topCustomer.name} is the largest recent customer exposure at ${formatMoney(topCustomer.recentRevenue)} (${formatPercent(share)} of ${shareLabel}).`
     );
   }
   if (products.topMarginWatch?.length) {
@@ -1251,7 +1537,11 @@ export async function GET(request: NextRequest) {
         })
       : [];
 
-    const dfsMonthly = await loadMonthlyFromDfs(companyId, startDate, endDate);
+    const usePublishedMonthlyBooks = period === 'monthly' || period === 'quarterly' || period === 'annual' || isQuickBooksCompany;
+    const loadRollingSalesSnapshots = period === 'daily' || period === 'weekly';
+    const dfsMonthly = usePublishedMonthlyBooks
+      ? null
+      : await loadMonthlyFromDfs(companyId, monthlyStartDate, endDate);
     const latestFinancialRecord = dfsMonthly
       ? null
       : await prisma.financialRecord.findFirst({ where: { companyId }, select: { id: true }, orderBy: { createdAt: 'desc' } });
@@ -1295,10 +1585,10 @@ export async function GET(request: NextRequest) {
       prisma.cashSnapshot.findMany({ where: { companyId, snapshotDate: { gte: startDate, lte: endDate } }, orderBy: { snapshotDate: 'asc' }, take: CORE_SNAPSHOT_ROW_CAP }),
       prisma.aRAgingSnapshot.findMany({ where: { companyId, snapshotDate: { gte: startDate, lte: endDate } }, orderBy: { snapshotDate: 'asc' }, take: CORE_SNAPSHOT_ROW_CAP }),
       prisma.aPAgingSnapshot.findMany({ where: { companyId, snapshotDate: { gte: startDate, lte: endDate } }, orderBy: { snapshotDate: 'asc' }, take: CORE_SNAPSHOT_ROW_CAP }),
-      moduleProfile.genericSnapshots.customers
+      loadRollingSalesSnapshots && moduleProfile.genericSnapshots.customers
         ? prisma.customerSalesSnapshot.findMany({ where: { companyId, snapshotDate: { gte: startDate, lte: endDate } }, orderBy: { snapshotDate: 'asc' }, take: DETAIL_SNAPSHOT_ROW_CAP })
         : Promise.resolve([]),
-      moduleProfile.genericSnapshots.products
+      loadRollingSalesSnapshots && moduleProfile.genericSnapshots.products
         ? prisma.productSalesSnapshot.findMany({ where: { companyId, snapshotDate: { gte: startDate, lte: endDate } }, orderBy: { snapshotDate: 'asc' }, take: DETAIL_SNAPSHOT_ROW_CAP })
         : Promise.resolve([]),
       moduleProfile.genericSnapshots.inventory
@@ -1396,14 +1686,52 @@ export async function GET(request: NextRequest) {
       ? null
       : latestAPAgingRaw;
 
-    const productAgg = aggregateSales(productSnapshotsForPeriod, 'itemName').sort((a, b) => b.recentRevenue - a.recentRevenue);
-    const customerAgg = aggregateSales(customerSnapshotsForPeriod, 'customerName').sort((a, b) => b.recentRevenue - a.recentRevenue);
+    const salesWindow =
+      period === 'monthly' || period === 'quarterly' || period === 'annual'
+        ? salesWindowFromCompleteMonths(period, completeMonthlyFinancials)
+        : { current: null, prior: null };
+    const useBooksSalesWindows = Boolean(salesWindow.current);
+    let productAgg: any[] = [];
+    let customerAgg: any[] = [];
+    if (useBooksSalesWindows) {
+      const [groupedProducts, groupedCustomers] = await Promise.all([
+        moduleProfile.genericSnapshots.products
+          ? loadSalesGroupByPeriod({
+              table: 'productSalesSnapshot',
+              nameField: 'itemName',
+              companyId,
+              currentRange: salesWindow.current!,
+              priorRange: salesWindow.prior,
+            })
+          : Promise.resolve([]),
+        moduleProfile.genericSnapshots.customers
+          ? loadSalesGroupByPeriod({
+              table: 'customerSalesSnapshot',
+              nameField: 'customerName',
+              companyId,
+              currentRange: salesWindow.current!,
+              priorRange: salesWindow.prior,
+            })
+          : Promise.resolve([]),
+      ]);
+      productAgg = groupedProducts.sort((a, b) => b.recentRevenue - a.recentRevenue);
+      customerAgg = groupedCustomers.sort((a, b) => b.recentRevenue - a.recentRevenue);
+    } else {
+      productAgg = aggregateSales(productSnapshotsForPeriod, 'itemName').sort((a, b) => b.recentRevenue - a.recentRevenue);
+      customerAgg = aggregateSales(customerSnapshotsForPeriod, 'customerName').sort((a, b) => b.recentRevenue - a.recentRevenue);
+    }
     const totalRecentCustomerRevenue = customerAgg.reduce((sum, row) => sum + row.recentRevenue, 0);
     const topCustomers = customerAgg
       .filter((row) => row.recentRevenue > MATERIAL_AMOUNT || Math.abs(row.recentGrossProfit) > MATERIAL_AMOUNT)
       .slice(0, 5)
-      .map((row) => ({ ...row, revenueShare: pct(row.recentRevenue, totalRecentCustomerRevenue) }));
-    const top3Share = pct(topCustomers.slice(0, 3).reduce((sum, row) => sum + row.recentRevenue, 0), totalRecentCustomerRevenue);
+      .map((row) => ({
+        ...row,
+        revenueShare: pct(row.recentRevenue, totalRecentCustomerRevenue),
+        booksRevenueShare: pct(row.recentRevenue, recentRevenue),
+      }));
+    const top3Revenue = topCustomers.slice(0, 3).reduce((sum, row) => sum + row.recentRevenue, 0);
+    const top3Share = pct(top3Revenue, totalRecentCustomerRevenue);
+    const top3ShareOfBooks = pct(top3Revenue, recentRevenue);
     const topMarginWatch = productAgg
       .filter((row) => row.recentRevenue > MATERIAL_AMOUNT)
       .slice(0, 15)
@@ -1564,7 +1892,18 @@ export async function GET(request: NextRequest) {
         inventoryDataAvailable: moduleProfile.genericSnapshots.inventory && inventorySnapshots.length > 0,
       },
       covenants: { activeLoans: (loans as any[]).length, watchlist: covenantWatchlist },
-      customers: includeOperatingDetailInBriefing && moduleProfile.genericSnapshots.customers ? { totalRecentRevenue: totalRecentCustomerRevenue, top3Share, topCustomers } : null,
+      customers: includeOperatingDetailInBriefing && moduleProfile.genericSnapshots.customers
+        ? {
+            currentPeriod: primaryFinancialComparison?.currentPeriod || null,
+            priorPeriod: primaryFinancialComparison?.priorPeriod || null,
+            alignedToBooksWindow: useBooksSalesWindows,
+            booksRevenue: recentRevenue,
+            totalRecentRevenue: totalRecentCustomerRevenue,
+            top3Share,
+            top3ShareOfBooks,
+            topCustomers,
+          }
+        : null,
       products: includeOperatingDetailInBriefing && moduleProfile.genericSnapshots.products ? { topMarginWatch } : null,
       dailyOperations,
       constructionOperations,
@@ -1588,8 +1927,8 @@ export async function GET(request: NextRequest) {
         cashDataAvailable: cashSnapshots.length > 0,
         arAgingAvailable: arSnapshots.length > 0,
         apAgingAvailable: apSnapshots.length > 0,
-        customerSalesAvailable: includeOperatingDetailInBriefing && moduleProfile.genericSnapshots.customers && customerSnapshotsForPeriod.length > 0,
-        productServiceSalesAvailable: includeOperatingDetailInBriefing && moduleProfile.genericSnapshots.products && productSnapshotsForPeriod.length > 0,
+        customerSalesAvailable: includeOperatingDetailInBriefing && moduleProfile.genericSnapshots.customers && customerAgg.length > 0,
+        productServiceSalesAvailable: includeOperatingDetailInBriefing && moduleProfile.genericSnapshots.products && productAgg.length > 0,
         dailyOperationsAvailable: Boolean(dailyOperations),
         dailyOperationsNotableCount: dailyOperations?.notableExceptions?.length || 0,
         inventoryDataAvailable: moduleProfile.genericSnapshots.inventory && inventorySnapshots.length > 0,
@@ -1616,10 +1955,10 @@ export async function GET(request: NextRequest) {
       sourceNote('Accounts receivable aging data', arSnapshots.length),
       sourceNote('Accounts payable aging data', apSnapshots.length),
       includeOperatingDetailInBriefing && moduleProfile.genericSnapshots.customers
-        ? sourceNote('Customer sales data', customerSnapshotsForPeriod.length)
+        ? sourceNote('Customer sales data', useBooksSalesWindows ? customerAgg.length : customerSnapshotsForPeriod.length)
         : '',
       includeOperatingDetailInBriefing && moduleProfile.genericSnapshots.products
-        ? sourceNote('Product/service sales data', productSnapshotsForPeriod.length)
+        ? sourceNote('Product/service sales data', useBooksSalesWindows ? productAgg.length : productSnapshotsForPeriod.length)
         : '',
       dailyOperations ? sourceNote('Same-day operational sales data', dailyOperations.notableExceptions.length || 1) : '',
       moduleProfile.genericSnapshots.inventory ? sourceNote('Inventory data', inventorySnapshots.length) : '',
@@ -1699,7 +2038,7 @@ Only compare like-for-like periods. Do not compare days to weeks, weeks to month
       effectiveDailyMode === 'ops-only'
         ? `IMPORTANT: facts.briefing.dailyMode is ops-only. Books/accounting are monthly (QuickBooks or equivalent). Do NOT invent day-over-day P&L, revenue, gross profit, EBITDA, or MTD financial statement movement. facts.financials.comparisons is empty by design. Lead with facts.dailyOperations (same-day sales/customer/SKU/volume), Pulse alerts, and liquidity/AR/AP only when those daily feeds are present. You may mention the latest closed month from books as static context only—never as a day-over-day financial trend.`
         : `For the Daily tab, discuss material latest-day vs prior-day movement and current month-to-date vs the same elapsed days last month when available; never fall back to month-over-month analysis in the Daily tab. For Daily comparisons, state the actual dates from currentPeriod and priorPeriod; do not say "yesterday", "today", or "latest day" as a substitute for dates.`
-    } In the Daily tab, use facts.dailyOperations only for operational commentary, and only when notableExceptions are present or a listed top product/customer/volume move is material for that same asOfDate vs priorDate. Allowed Daily ops topics: top revenue product/SKU for the day, largest customer/order for the day, and day volume (sales closed / units sold / contracts) with day-over-day deltas when provided. Do not use multi-day customer concentration, multi-day product margin watchlists, or benchmarks in the Daily tab. For the Weekly tab, use only the latest completed Monday–Sunday week versus the prior completed week from facts.financials.comparisons; never fall back to day-over-day or month-over-month analysis, and do not use a partial current week. For Monthly, Quarterly, and Annual tabs, use completed periods only and the broader customers/products/benchmarks facts when present. State the window used when a financial or daily-ops movement is material. If no comparable window supports an issue, do not draw a trend conclusion.
+    } In the Daily tab, use facts.dailyOperations only for operational commentary, and only when notableExceptions are present or a listed top product/customer/volume move is material for that same asOfDate vs priorDate. Allowed Daily ops topics: top revenue product/SKU for the day, largest customer/order for the day, and day volume (sales closed / units sold / contracts) with day-over-day deltas when provided. Do not use multi-day customer concentration, multi-day product margin watchlists, or benchmarks in the Daily tab. For the Weekly tab, use only the latest completed Monday–Sunday week versus the prior completed week from facts.financials.comparisons; never fall back to day-over-day or month-over-month analysis, and do not use a partial current week. For the Quarterly tab, lead with trailing 3 completed months versus the last completed calendar quarter from facts.financials.comparisons (key trailing_3_months_vs_last_quarter when present). Name both windows; do not say only "this quarter." Those windows can overlap, so do not call that movement calendar quarter-over-quarter. Use latest_completed_quarter_vs_prior_quarter only for explicit calendar QoQ commentary. If trailing 3 months are themselves the last completed calendar quarter, only the quarter-vs-prior-quarter comparison will be present. For the Annual tab, lead with trailing 12 completed months versus the last completed calendar year from facts.financials.comparisons (key trailing_12_months_vs_last_year when present). Name both windows; do not say only "this year." Those windows can overlap, so do not call that movement calendar year-over-year. Use latest_completed_year_vs_prior_year only for explicit calendar YoY commentary. If trailing 12 months are themselves the last completed calendar year, only the year-vs-prior-year comparison will be present. For the Monthly tab, use completed periods only. Customer and product dollars, deltas versus prior, and concentration MUST come from facts.customers / facts.products for the SAME currentPeriod/priorPeriod as facts.financials.comparisons. When stating a customer's share of total revenue, use booksRevenueShare and top3ShareOfBooks (customer dollars divided by financials.recentRevenue). Do not call revenueShare "share of total revenue"—that is only the mix of identified customer-sales rows. Never mix a P&L total from one window with customer dollars from another window. State the window used when a financial or daily-ops movement is material. If no comparable window supports an issue, do not draw a trend conclusion.
 
 When revenue and margin rate move in different directions, explicitly state the end result to gross profit dollars only if the movement is material or decision-useful. Example: if revenue is declining but gross margin rate is improving, say whether gross profit dollars increased or decreased and by how much; if both are normal/immaterial, omit the topic entirely.
 
