@@ -5,6 +5,7 @@ import {
   loadSpreadsheetDutyIdentities,
   normalizeOriginCode,
   readAprSgpGmpaWorkbook,
+  skuLookupKeys,
   type AprSgpGmpaRow,
 } from '@/lib/operational/apr-sgp-gmpa';
 
@@ -417,57 +418,80 @@ export async function seedCompanyItemDutiesFromParsedRows(
 
 export async function seedCompanyItemDutiesFromSgp(companyId: string): Promise<{ itemCount: number; seeded: number }> {
   const workbook = await readAprSgpGmpaWorkbook(companyId);
-  const fromWorkbook = await seedCompanyItemDutiesFromParsedRows(companyId, workbook?.rows || []);
-  const fromFreight = await overlayDutyHtsFromSpreadsheetSources(companyId);
-  return { itemCount: Math.max(fromWorkbook.itemCount, fromFreight), seeded: fromWorkbook.seeded + fromFreight };
+  return seedCompanyItemDutiesFromParsedRows(companyId, workbook?.rows || []);
 }
 
 async function overlayDutyHtsFromSpreadsheetSources(companyId: string): Promise<number> {
   const [identities, freightRows, dutySkus] = await Promise.all([
-    loadSpreadsheetDutyIdentities(companyId).catch(() => []),
+    loadSpreadsheetDutyIdentities(companyId).catch((error) => {
+      console.warn('Duty spreadsheet identity load failed:', error);
+      return [];
+    }),
     prisma.$queryRaw<Array<{ itemSku: string | null; htsCode: string | null; countryOfOrigin: string | null }>>`
       SELECT "itemSku", "htsCode", "countryOfOrigin"
       FROM "CompanyItemFreight"
       WHERE "companyId" = ${companyId}
-        AND COALESCE(NULLIF("htsCode", ''), '') <> ''
+        AND (
+          COALESCE(NULLIF("htsCode", ''), '') <> ''
+          OR COALESCE(NULLIF("countryOfOrigin", ''), '') <> ''
+        )
     `.catch(() => []),
     prisma.$queryRaw<Array<{ itemSku: string }>>`
       SELECT "itemSku" FROM "CompanyItemDuty" WHERE "companyId" = ${companyId}
     `.catch(() => []),
   ]);
-  const skuByUpper = new Map(
+  const canonicalSkuByUpper = new Map(
     (dutySkus || []).map((row) => [normalizeItemSku(row.itemSku).toUpperCase(), normalizeItemSku(row.itemSku)])
   );
-  const bySku = new Map<string, SeedItem>();
-  const add = (itemSkuRaw: unknown, htsCodeRaw: unknown, originRaw: unknown, vendorName?: unknown) => {
+  const dutySkusByLookupKey = new Map<string, string[]>();
+  for (const row of dutySkus || []) {
+    const itemSku = canonicalSkuByUpper.get(normalizeItemSku(row.itemSku).toUpperCase()) || normalizeItemSku(row.itemSku);
+    if (!itemSku) continue;
+    for (const key of skuLookupKeys(itemSku)) {
+      const list = dutySkusByLookupKey.get(key) || [];
+      if (!list.includes(itemSku)) list.push(itemSku);
+      dutySkusByLookupKey.set(key, list);
+    }
+  }
+  const matchingDutySkus = (itemSkuRaw: unknown): string[] => {
     const normalizedSku = normalizeItemSku(itemSkuRaw);
-    if (!normalizedSku) return;
-    const itemSku = skuByUpper.get(normalizedSku.toUpperCase()) || normalizedSku;
+    if (!normalizedSku) return [];
+    for (const key of skuLookupKeys(normalizedSku)) {
+      const hits = dutySkusByLookupKey.get(key);
+      if (hits?.length) return hits;
+    }
+    const exact = canonicalSkuByUpper.get(normalizedSku.toUpperCase());
+    return exact ? [exact] : [normalizedSku];
+  };
+  const bySku = new Map<string, SeedItem>();
+  const add = (itemSkuRaw: unknown, htsCodeRaw: unknown, originRaw: unknown) => {
     const htsCode = normalizeHtsCode(htsCodeRaw);
     const countryOfOrigin = normalizeOriginCode(originRaw);
     if (!htsCode && !countryOfOrigin) return;
-    const existing = bySku.get(itemSku.toUpperCase());
-    if (!existing) {
-      bySku.set(itemSku.toUpperCase(), {
-        itemSku,
-        itemDescription: null,
-        htsCode,
-        countryOfOrigin,
-        tradeProgram: 'none',
-        qtyUnit: 'piece',
-        enteredValuePerPiece: null,
-        dutyPerPiece: null,
-        tariffPerPiece: null,
-        identitySource: 'spreadsheet',
-        htsInputSource: htsCode ? 'spreadsheet' : null,
-      });
-      return;
+    for (const itemSku of matchingDutySkus(itemSkuRaw)) {
+      const existing = bySku.get(itemSku.toUpperCase());
+      if (!existing) {
+        bySku.set(itemSku.toUpperCase(), {
+          itemSku,
+          itemDescription: null,
+          htsCode,
+          countryOfOrigin,
+          tradeProgram: 'none',
+          qtyUnit: 'piece',
+          enteredValuePerPiece: null,
+          dutyPerPiece: null,
+          tariffPerPiece: null,
+          identitySource: 'spreadsheet',
+          htsInputSource: htsCode ? 'spreadsheet' : null,
+        });
+        continue;
+      }
+      existing.htsCode = existing.htsCode || htsCode;
+      existing.countryOfOrigin = existing.countryOfOrigin || countryOfOrigin;
+      existing.htsInputSource = existing.htsInputSource || (htsCode ? 'spreadsheet' : null);
     }
-    existing.htsCode = existing.htsCode || htsCode;
-    existing.countryOfOrigin = existing.countryOfOrigin || countryOfOrigin;
-    existing.htsInputSource = existing.htsInputSource || (htsCode ? 'spreadsheet' : null);
   };
-  for (const row of identities) add(row.itemSku, row.htsCode, row.countryOfOrigin, row.vendorName);
+  for (const row of identities) add(row.itemSku, row.htsCode, row.countryOfOrigin);
   for (const row of freightRows || []) add(row.itemSku, row.htsCode, row.countryOfOrigin);
   const items = Array.from(bySku.values());
   if (!items.length) return 0;
@@ -575,10 +599,17 @@ export async function refreshCompanyItemDuties(companyId: string): Promise<{
   discovered: number;
 }> {
   await ensureCompanyItemDutyTable();
+  await loadSpreadsheetDutyIdentities(companyId).catch((error) => {
+    console.warn('Duty spreadsheet identity preload failed:', error);
+    return [];
+  });
   const seeded = await seedCompanyItemDutiesFromSgp(companyId);
   const identities = await syncCompanyItemDutyIdentities(companyId);
-  await overlayDutyHtsFromSpreadsheetSources(companyId).catch(() => 0);
-  return { spreadsheetItems: seeded.itemCount, discovered: identities.discovered };
+  const overlaid = await overlayDutyHtsFromSpreadsheetSources(companyId).catch((error) => {
+    console.warn('Duty spreadsheet HTS overlay failed:', error);
+    return 0;
+  });
+  return { spreadsheetItems: Math.max(seeded.itemCount, overlaid), discovered: identities.discovered };
 }
 
 export async function updateCompanyItemDuties(

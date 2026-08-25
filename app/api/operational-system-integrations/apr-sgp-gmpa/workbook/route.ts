@@ -5,6 +5,7 @@ import { getOperationalSystemConnection, saveOperationalSystemConnection } from 
 import {
   APR_SGP_GMPA_LABEL,
   APR_SGP_GMPA_SOURCE_CODE,
+  parseAprSgpDutyTariffItems,
   parseAprSgpGmpaWorkbook,
 } from '@/lib/operational/apr-sgp-gmpa';
 import { parseSgpFreightWorkbook } from '@/lib/operational/apr-sgp-freight';
@@ -58,6 +59,7 @@ export async function POST(request: NextRequest) {
     const workbook = XLSX.read(Buffer.from(arrayBuffer), { type: 'buffer', cellDates: true });
     const parsed = parseAprSgpGmpaWorkbook(workbook);
     const freightParsed = parseSgpFreightWorkbook(workbook);
+    const dutyIdentities = parseAprSgpDutyTariffItems(workbook);
 
     const metadata = asRecord(connection?.connectionMetadata);
     const uploadedAt = new Date().toISOString();
@@ -96,6 +98,7 @@ export async function POST(request: NextRequest) {
           ...parsed,
           parsedAt: uploadedAt,
         },
+        aprSgpDutyHtsByItem: dutyIdentities,
         aprSgpFreightParsed: freightParsed
           ? {
               sheetName: freightParsed.sheetName,

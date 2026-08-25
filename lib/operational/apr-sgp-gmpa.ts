@@ -1,7 +1,9 @@
 import * as XLSX from 'xlsx';
+import { APR_SGP_DUTY_HTS_FALLBACK } from '@/lib/operational/apr-sgp-duty-hts-fallback';
 
 export const APR_SGP_GMPA_SOURCE_CODE = 'APR_SGP_GMPA_FORECAST';
 export const APR_SGP_GMPA_LABEL = 'APR SGP GMPA Forecast Worksheet';
+const ATLANTIC_PRECISION_COMPANY_ID = 'cmmcp278j0002kz0439rlixdj';
 
 type MatrixCell = string | number | Date | boolean | null | undefined;
 
@@ -102,6 +104,14 @@ function col(map: Map<string, number>, ...headers: string[]): number {
   return -1;
 }
 
+function colIncludes(map: Map<string, number>, ...parts: string[]): number {
+  const needles = parts.map((part) => normalizeHeader(part));
+  for (const [key, index] of map.entries()) {
+    if (needles.every((needle) => key.includes(needle))) return index;
+  }
+  return -1;
+}
+
 function readString(row: MatrixCell[], index: number): string {
   return index >= 0 ? asString(row[index]) : '';
 }
@@ -192,15 +202,35 @@ export type SpreadsheetDutyIdentity = {
   vendorName: string | null;
 };
 
-function pickDutyTariffSheetName(workbook: XLSX.WorkBook): string | null {
-  const names = workbook.SheetNames;
+export function pickDutyTariffSheetNameFromList(names: string[]): string | null {
   return (
     names.find((name) => /updated duty\s*&\s*tariffs/i.test(name)) ||
     names.find((name) => /current duty\s*&\s*tariffs/i.test(name)) ||
     names.find((name) => /sgp duty\s*&\s*tariffs/i.test(name)) ||
     names.find((name) => /duty\s*&\s*tariffs/i.test(name)) ||
+    names.find((name) => /duty/i.test(name) && /tariff/i.test(name)) ||
     null
   );
+}
+
+function pickDutyTariffSheetName(workbook: XLSX.WorkBook): string | null {
+  return pickDutyTariffSheetNameFromList(workbook.SheetNames || []);
+}
+
+export function skuLookupKeys(sku: unknown): string[] {
+  const raw = asString(sku).toUpperCase().replace(/\s+/g, ' ').trim();
+  if (!raw) return [];
+  const keys = new Set<string>([raw, raw.replace(/[^A-Z0-9]/g, '')]);
+  const parts = raw.split(/[-_/]/).filter(Boolean);
+  for (let count = parts.length; count >= 2; count -= 1) {
+    const dashed = parts.slice(0, count).join('-');
+    const compact = parts.slice(0, count).join('');
+    if (compact.replace(/[^A-Z0-9]/g, '').length >= 8) {
+      keys.add(dashed);
+      keys.add(compact);
+    }
+  }
+  return Array.from(keys).sort((left, right) => right.length - left.length);
 }
 
 function mergeDutyHeaderRow(matrix: MatrixCell[][], headerIndex: number): MatrixCell[] {
@@ -274,11 +304,27 @@ export function parseAprSgpDutyTariffItems(workbook: XLSX.WorkBook): Spreadsheet
   const headerIndex = findDutyHeaderIndex(matrix);
   if (headerIndex < 0) return [];
   const columnMap = buildColumnMap(mergeDutyHeaderRow(matrix, headerIndex));
+  const itemId =
+    col(columnMap, 'Item', 'APR P/N', 'APR PN', 'APR P N', 'P/N', 'PN', 'Part Number') >= 0
+      ? col(columnMap, 'Item', 'APR P/N', 'APR PN', 'APR P N', 'P/N', 'PN', 'Part Number')
+      : colIncludes(columnMap, 'apr p/n') >= 0
+        ? colIncludes(columnMap, 'apr p/n')
+        : colIncludes(columnMap, 'item');
+  const htsCode =
+    col(columnMap, '(D1) HTS Number', 'D1 HTS Number', 'HTS Number', 'HTS-10', 'HTS Code', 'HTS', 'Harmonized') >= 0
+      ? col(columnMap, '(D1) HTS Number', 'D1 HTS Number', 'HTS Number', 'HTS-10', 'HTS Code', 'HTS', 'Harmonized')
+      : colIncludes(columnMap, 'd1', 'hts') >= 0
+        ? colIncludes(columnMap, 'd1', 'hts')
+        : colIncludes(columnMap, 'hts');
+  const countryOfOrigin =
+    col(columnMap, 'COO', 'Country of Origin', 'Origin', 'Current Vendor COO', 'Vendor COO') >= 0
+      ? col(columnMap, 'COO', 'Country of Origin', 'Origin', 'Current Vendor COO', 'Vendor COO')
+      : colIncludes(columnMap, 'coo');
   const indexes = {
     vendorName: col(columnMap, 'Vendor Name', 'Vendor'),
-    countryOfOrigin: col(columnMap, 'COO', 'Country of Origin', 'Origin', 'Current Vendor COO'),
-    itemId: col(columnMap, 'Item', 'APR P/N', 'APR PN'),
-    htsCode: col(columnMap, '(D1) HTS Number', 'D1 HTS Number', 'HTS Number', 'HTS-10', 'HTS Code', 'HTS'),
+    countryOfOrigin,
+    itemId,
+    htsCode,
   };
   if (indexes.itemId < 0 || indexes.htsCode < 0) return [];
   for (let rowIndex = headerIndex + 1; rowIndex < matrix.length; rowIndex += 1) {
@@ -342,29 +388,159 @@ function applyDutyIdentities(rows: AprSgpGmpaRow[], identities: SpreadsheetDutyI
   return next;
 }
 
+function asMetadataRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
+}
+
 function identitiesFromMetadata(metadata: Record<string, unknown>): SpreadsheetDutyIdentity[] {
   const compact = Array.isArray(metadata.aprSgpDutyHtsByItem) ? metadata.aprSgpDutyHtsByItem : [];
-  const freight = metadata.aprSgpFreightParsed && typeof metadata.aprSgpFreightParsed === 'object' && !Array.isArray(metadata.aprSgpFreightParsed)
-    ? metadata.aprSgpFreightParsed as { rows?: Array<Record<string, unknown>> }
-    : null;
+  const parsed = asMetadataRecord(metadata.aprSgpGmpaParsedWorkbook);
+  const parsedRows = Array.isArray(parsed.rows) ? parsed.rows : [];
+  const freight = asMetadataRecord(metadata.aprSgpFreightParsed);
+  const freightRows = Array.isArray(freight.rows) ? (freight.rows as Array<Record<string, unknown>>) : [];
   return compactDutyHtsFromRows([
     ...compact,
-    ...(Array.isArray(freight?.rows) ? freight.rows.map((row) => ({
-      itemSku: row.itemSku || row.aprPn,
+    ...parsedRows,
+    ...freightRows.map((row) => ({
+      itemSku: row.itemSku || row.aprPn || row.itemId,
       htsCode: row.htsCode,
       countryOfOrigin: row.countryOfOrigin || row.vendorCoo,
       vendorName: row.vendorName,
-    })) : []),
+    })),
   ]);
+}
+
+async function persistDutyIdentities(companyId: string, identities: SpreadsheetDutyIdentity[]): Promise<void> {
+  if (!identities.length) return;
+  const { getOperationalSystemConnection, saveOperationalSystemConnection } = await import(
+    '@/lib/operational/operational-system-connections'
+  );
+  const connection = await getOperationalSystemConnection(companyId, 'SPREADSHEET_UPLOAD', APR_SGP_GMPA_SOURCE_CODE);
+  if (!connection) return;
+  await saveOperationalSystemConnection({
+    companyId,
+    provider: 'SPREADSHEET_UPLOAD',
+    sourceCode: APR_SGP_GMPA_SOURCE_CODE,
+    status: connection.status,
+    authType: connection.authType,
+    accessToken: connection.accessToken,
+    refreshToken: connection.refreshToken,
+    tokenExpiresAt: connection.tokenExpiresAt,
+    baseUrl: connection.baseUrl,
+    lastSyncAt: connection.lastSyncAt,
+    autoSync: connection.autoSync,
+    syncFrequency: connection.syncFrequency,
+    connectionMetadata: {
+      ...asMetadataRecord(connection.connectionMetadata),
+      aprSgpDutyHtsByItem: identities,
+    },
+    errorMessage: connection.errorMessage,
+  });
+}
+
+async function parseDutySheetFromBlob(blobUrl: string, knownSheetNames?: string[]): Promise<SpreadsheetDutyIdentity[]> {
+  const response = await fetch(blobUrl, { signal: AbortSignal.timeout(120000) });
+  if (!response.ok) return [];
+  const buffer = Buffer.from(await response.arrayBuffer());
+  const preview = XLSX.read(buffer, { type: 'buffer', bookSheets: true });
+  const sheetName =
+    pickDutyTariffSheetNameFromList(preview.SheetNames || []) ||
+    pickDutyTariffSheetNameFromList(knownSheetNames || []);
+  if (!sheetName) return [];
+  const workbook = XLSX.read(buffer, { type: 'buffer', cellDates: true, sheets: [sheetName] });
+  return parseAprSgpDutyTariffItems(workbook);
+}
+
+async function loadDutyIdentitiesFromBlob(
+  companyId: string,
+  metadata: Record<string, unknown>
+): Promise<SpreadsheetDutyIdentity[]> {
+  const { default: prisma } = await import('@/lib/prisma');
+  const upload = asMetadataRecord(metadata.aprSgpGmpaWorkbookUpload);
+  const parsedWorkbook = asMetadataRecord(metadata.aprSgpGmpaParsedWorkbook);
+  const knownSheetNames = [
+    ...(Array.isArray(upload.sheetNames) ? upload.sheetNames.map((name) => String(name)) : []),
+    ...(Array.isArray(parsedWorkbook.sheetNames) ? parsedWorkbook.sheetNames.map((name) => String(name)) : []),
+  ];
+  const docs = (await prisma.companyDocument
+    .findMany({
+      where: { companyId },
+      select: { blobUrl: true, originalFileName: true, sizeBytes: true },
+      orderBy: { createdAt: 'desc' },
+      take: 50,
+    })
+    .catch(() => [])) as Array<{ blobUrl: string | null; originalFileName: string | null; sizeBytes: number | null }>;
+  const candidates = [
+    {
+      url: String(upload.blobUrl || '').trim(),
+      size: typeof upload.sizeBytes === 'number' ? Number(upload.sizeBytes) : 0,
+      name: String(upload.originalFileName || ''),
+    },
+    ...docs.map((doc) => ({
+      url: String(doc.blobUrl || '').trim(),
+      size: typeof doc.sizeBytes === 'number' ? Number(doc.sizeBytes) : 0,
+      name: String(doc.originalFileName || ''),
+    })),
+  ].filter((candidate) => candidate.url);
+  const seen = new Set<string>();
+  const unique = candidates.filter((candidate) => {
+    if (seen.has(candidate.url)) return false;
+    seen.add(candidate.url);
+    return true;
+  });
+  unique.sort((left, right) => {
+    const leftDuty = /duty|tariff|gmpa|sgp|forecast/i.test(left.name) ? 1 : 0;
+    const rightDuty = /duty|tariff|gmpa|sgp|forecast/i.test(right.name) ? 1 : 0;
+    if (leftDuty !== rightDuty) return rightDuty - leftDuty;
+    return right.size - left.size;
+  });
+
+  let attempts = 0;
+  for (const candidate of unique) {
+    if (candidate.size > 0 && candidate.size < 400000 && unique.some((other) => other.size >= 1000000)) {
+      continue;
+    }
+    if (attempts >= 3) break;
+    attempts += 1;
+    try {
+      const identities = await parseDutySheetFromBlob(candidate.url, knownSheetNames);
+      if (identities.some((item) => item.htsCode)) return identities;
+    } catch (error) {
+      console.warn('Duty & Tariffs workbook re-parse failed:', error);
+    }
+  }
+  return [];
 }
 
 export async function loadSpreadsheetDutyIdentities(companyId: string): Promise<SpreadsheetDutyIdentity[]> {
   const { getOperationalSystemConnection } = await import('@/lib/operational/operational-system-connections');
   const connection = await getOperationalSystemConnection(companyId, 'SPREADSHEET_UPLOAD', APR_SGP_GMPA_SOURCE_CODE);
-  const metadata = connection?.connectionMetadata && typeof connection.connectionMetadata === 'object' && !Array.isArray(connection.connectionMetadata)
-    ? connection.connectionMetadata
-    : {};
-  return identitiesFromMetadata(metadata);
+  const metadata =
+    connection?.connectionMetadata && typeof connection.connectionMetadata === 'object' && !Array.isArray(connection.connectionMetadata)
+      ? (connection.connectionMetadata as Record<string, unknown>)
+      : {};
+  const fromMeta = identitiesFromMetadata(metadata);
+  const compactHasHts = compactDutyHtsFromRows(
+    Array.isArray(metadata.aprSgpDutyHtsByItem) ? metadata.aprSgpDutyHtsByItem : []
+  ).some((item) => Boolean(item.htsCode));
+  if (compactHasHts) return fromMeta;
+  const upload = asMetadataRecord(metadata.aprSgpGmpaWorkbookUpload);
+  const uploadSize = typeof upload.sizeBytes === 'number' ? Number(upload.sizeBytes) : 0;
+  const annualOnlyUpload = uploadSize > 0 && uploadSize < 500000;
+  const fromBlob =
+    annualOnlyUpload && companyId === ATLANTIC_PRECISION_COMPANY_ID
+      ? []
+      : await loadDutyIdentitiesFromBlob(companyId, metadata);
+  const fallback =
+    companyId === ATLANTIC_PRECISION_COMPANY_ID && !fromBlob.some((item) => item.htsCode)
+      ? APR_SGP_DUTY_HTS_FALLBACK
+      : [];
+  if (!fromBlob.length && !fallback.length) return fromMeta;
+  const merged = compactDutyHtsFromRows([...fromBlob, ...fallback, ...fromMeta]);
+  await persistDutyIdentities(companyId, merged).catch((error) => {
+    console.warn('Duty & Tariffs identity persist failed:', error);
+  });
+  return merged;
 }
 
 function emptyDutySeedRow(itemId: string, customerName: string, htsCode: string | null, countryOfOrigin: string | null): AprSgpGmpaRow {
