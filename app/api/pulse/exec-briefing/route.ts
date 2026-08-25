@@ -60,7 +60,7 @@ const MONTHLY_FINANCIAL_ROW_CAP = 60;
 const DAILY_FINANCIAL_ROW_CAP = 100;
 const CORE_SNAPSHOT_ROW_CAP = 150;
 const DETAIL_SNAPSHOT_ROW_CAP = 300;
-const EXEC_BRIEFING_LOGIC_VERSION = 'exec-briefing-v16-trailing-12-months';
+const EXEC_BRIEFING_LOGIC_VERSION = 'exec-briefing-v17-month-collapsed-customers';
 const PRIVATE_DAILY_CACHE_HEADERS = {
   'Cache-Control': 'private, max-age=300, stale-while-revalidate=1800',
 };
@@ -678,8 +678,21 @@ function salesWindowFromCompleteMonths(
   return { current: null, prior: null };
 }
 
-function utcMonthCount(start: Date, end: Date): number {
-  return (end.getUTCFullYear() - start.getUTCFullYear()) * 12 + (end.getUTCMonth() - start.getUTCMonth()) + 1;
+function monthsInUtcRange(start: Date, end: Date): Array<{ start: Date; end: Date }> {
+  const months: Array<{ start: Date; end: Date }> = [];
+  let cursor = utcMonthStart(start);
+  const last = utcMonthStart(end);
+  while (cursor.getTime() <= last.getTime()) {
+    months.push({ start: utcMonthStart(cursor), end: utcMonthEnd(cursor) });
+    cursor = new Date(Date.UTC(cursor.getUTCFullYear(), cursor.getUTCMonth() + 1, 1));
+  }
+  return months;
+}
+
+function snapshotMonthKey(value: unknown): string {
+  const date = value instanceof Date ? value : value ? new Date(String(value)) : null;
+  if (!date || Number.isNaN(date.getTime())) return '';
+  return `${date.getUTCFullYear()}-${date.getUTCMonth()}`;
 }
 
 function salesRowsFromGroupBy(
@@ -738,36 +751,120 @@ function salesRowsFromGroupBy(
   });
 }
 
-async function preferredSnapshotFrequency(
-  table: 'customerSalesSnapshot' | 'productSalesSnapshot',
-  companyId: string,
+async function latestSnapshotDatesByMonth(
+  delegate: any,
+  whereBase: Record<string, unknown>,
   start: Date,
-  end: Date
-): Promise<string | null> {
-  const delegate = (prisma as any)[table];
-  if (!delegate?.groupBy) return null;
-  const monthKey = (value: unknown) => {
-    const date = value instanceof Date ? value : value ? new Date(String(value)) : null;
-    if (!date || Number.isNaN(date.getTime())) return '';
-    return `${date.getUTCFullYear()}-${date.getUTCMonth()}`;
-  };
-  const monthlyDates = await delegate.groupBy({
+  end: Date,
+  frequency: string
+): Promise<Date[]> {
+  if (!delegate?.groupBy) return [];
+  const rows = await delegate.groupBy({
     by: ['snapshotDate'],
-    where: { companyId, frequency: 'monthly', snapshotDate: { gte: start, lte: end } },
+    where: { ...whereBase, frequency, snapshotDate: { gte: start, lte: end } },
   });
-  const monthlyMonths = new Set((monthlyDates || []).map((row: any) => monthKey(row?.snapshotDate)).filter(Boolean));
-  const neededMonths = utcMonthCount(start, end);
-  if (neededMonths > 0 && monthlyMonths.size >= neededMonths) return 'monthly';
-  const daily = await delegate.count({
-    where: { companyId, frequency: 'daily', snapshotDate: { gte: start, lte: end } },
+  const latestByMonth = new Map<string, Date>();
+  for (const row of rows || []) {
+    const date = row?.snapshotDate instanceof Date ? row.snapshotDate : row?.snapshotDate ? new Date(row.snapshotDate) : null;
+    if (!date || Number.isNaN(date.getTime())) continue;
+    const key = snapshotMonthKey(date);
+    if (!key) continue;
+    const previous = latestByMonth.get(key);
+    if (!previous || date.getTime() > previous.getTime()) latestByMonth.set(key, date);
+  }
+  return Array.from(latestByMonth.values());
+}
+
+async function loadDailyMonthSales(
+  delegate: any,
+  whereBase: Record<string, unknown>,
+  nameField: 'customerName' | 'itemName',
+  sumFields: Record<string, boolean>,
+  month: { start: Date; end: Date }
+) {
+  const dateRows = await delegate.groupBy({
+    by: ['snapshotDate'],
+    where: { ...whereBase, frequency: 'daily', snapshotDate: { gte: month.start, lte: month.end } },
   });
-  if (daily > 0) return 'daily';
-  const weekly = await delegate.count({
-    where: { companyId, frequency: 'weekly', snapshotDate: { gte: start, lte: end } },
-  });
-  if (weekly > 0) return 'weekly';
-  if (monthlyMonths.size > 0) return 'monthly';
-  return null;
+  const dates = (dateRows || [])
+    .map((row: any) => (row?.snapshotDate instanceof Date ? row.snapshotDate : row?.snapshotDate ? new Date(row.snapshotDate) : null))
+    .filter((date: Date | null): date is Date => Boolean(date) && !Number.isNaN(date.getTime()))
+    .sort((left: Date, right: Date) => left.getTime() - right.getTime());
+  if (!dates.length) return [];
+  const lastDate = dates[dates.length - 1];
+  const [summed, lastDay] = await Promise.all([
+    delegate.groupBy({
+      by: [nameField],
+      where: { ...whereBase, frequency: 'daily', snapshotDate: { gte: month.start, lte: month.end } },
+      _sum: sumFields,
+    }),
+    delegate.groupBy({
+      by: [nameField],
+      where: { ...whereBase, frequency: 'daily', snapshotDate: lastDate },
+      _sum: sumFields,
+    }),
+  ]);
+  const namedSum = (rows: any[]) => (rows || []).reduce((total, row) => total + asNumber(row?._sum?.revenue), 0);
+  if (dates.length > 2 && namedSum(lastDay) > 0 && namedSum(summed) > namedSum(lastDay) * 3) {
+    return lastDay;
+  }
+  return summed;
+}
+
+async function loadNamedSalesForRange(params: {
+  delegate: any;
+  nameField: 'customerName' | 'itemName';
+  companyId: string;
+  range: { start: Date; end: Date };
+}): Promise<Array<{ name: string; revenue: number; cogs: number; qty: number }>> {
+  const { delegate, nameField, companyId, range } = params;
+  if (!delegate?.groupBy) return [];
+  const whereBase = { companyId };
+  const sumFields =
+    nameField === 'itemName'
+      ? { revenue: true, cogs: true, quantitySold: true }
+      : { revenue: true, cogs: true };
+  const asNamed = (rows: any[]) =>
+    (rows || [])
+      .map((row) => ({
+        name: String(row?.[nameField] || '').trim(),
+        revenue: asNumber(row?._sum?.revenue),
+        cogs: asNumber(row?._sum?.cogs),
+        qty: asNumber(row?._sum?.quantitySold),
+      }))
+      .filter((row) => row.name);
+  const mergeNamed = (groups: Array<Array<{ name: string; revenue: number; cogs: number; qty: number }>>) => {
+    const byName = new Map<string, { name: string; revenue: number; cogs: number; qty: number }>();
+    for (const rows of groups) {
+      for (const row of rows) {
+        const current = byName.get(row.name) || { name: row.name, revenue: 0, cogs: 0, qty: 0 };
+        current.revenue += row.revenue;
+        current.cogs += row.cogs;
+        current.qty += row.qty;
+        byName.set(row.name, current);
+      }
+    }
+    return Array.from(byName.values());
+  };
+
+  const monthWindows = monthsInUtcRange(range.start, range.end);
+  const monthlyDates = await latestSnapshotDatesByMonth(delegate, whereBase, range.start, range.end, 'monthly');
+  const monthlyMonthKeys = new Set(monthlyDates.map((date) => snapshotMonthKey(date)).filter(Boolean));
+  const dailyMonths = monthWindows.filter((month) => !monthlyMonthKeys.has(snapshotMonthKey(month.start)));
+
+  const monthlyRows = monthlyDates.length
+    ? await delegate.groupBy({
+        by: [nameField],
+        where: { ...whereBase, frequency: 'monthly', snapshotDate: { in: monthlyDates } },
+        _sum: sumFields,
+      })
+    : [];
+
+  const dailyRowSets = await Promise.all(
+    dailyMonths.map((month) => loadDailyMonthSales(delegate, whereBase, nameField, sumFields, month))
+  );
+
+  return mergeNamed([asNamed(monthlyRows), ...dailyRowSets.map(asNamed)]);
 }
 
 async function loadSalesGroupByPeriod(params: {
@@ -779,40 +876,23 @@ async function loadSalesGroupByPeriod(params: {
 }): Promise<ReturnType<typeof salesRowsFromGroupBy>> {
   const delegate = (prisma as any)[params.table];
   if (!delegate?.groupBy) return [];
-  const frequency = await preferredSnapshotFrequency(
-    params.table,
-    params.companyId,
-    params.priorRange?.start || params.currentRange.start,
-    params.currentRange.end
-  );
-  const whereBase: Record<string, unknown> = { companyId: params.companyId };
-  if (frequency) whereBase.frequency = frequency;
-  const sumFields =
-    params.nameField === 'itemName'
-      ? { revenue: true, cogs: true, quantitySold: true }
-      : { revenue: true, cogs: true };
   const [current, prior] = await Promise.all([
-    delegate.groupBy({
-      by: [params.nameField],
-      where: { ...whereBase, snapshotDate: { gte: params.currentRange.start, lte: params.currentRange.end } },
-      _sum: sumFields,
+    loadNamedSalesForRange({
+      delegate,
+      nameField: params.nameField,
+      companyId: params.companyId,
+      range: params.currentRange,
     }),
     params.priorRange
-      ? delegate.groupBy({
-          by: [params.nameField],
-          where: { ...whereBase, snapshotDate: { gte: params.priorRange.start, lte: params.priorRange.end } },
-          _sum: sumFields,
+      ? loadNamedSalesForRange({
+          delegate,
+          nameField: params.nameField,
+          companyId: params.companyId,
+          range: params.priorRange,
         })
       : Promise.resolve([]),
   ]);
-  const asNamed = (rows: any[]) =>
-    (rows || []).map((row) => ({
-      name: String(row?.[params.nameField] || '').trim(),
-      revenue: asNumber(row?._sum?.revenue),
-      cogs: asNumber(row?._sum?.cogs),
-      qty: asNumber(row?._sum?.quantitySold),
-    }));
-  return salesRowsFromGroupBy(asNamed(current), asNamed(prior));
+  return salesRowsFromGroupBy(current, prior);
 }
 
 function buildPeriodSets(rows: any[]) {
@@ -1720,6 +1800,11 @@ export async function GET(request: NextRequest) {
       productAgg = aggregateSales(productSnapshotsForPeriod, 'itemName').sort((a, b) => b.recentRevenue - a.recentRevenue);
       customerAgg = aggregateSales(customerSnapshotsForPeriod, 'customerName').sort((a, b) => b.recentRevenue - a.recentRevenue);
     }
+    if (useBooksSalesWindows && recentRevenue > MATERIAL_AMOUNT) {
+      const maxCustomerOrProductRevenue = recentRevenue * 1.05;
+      productAgg = productAgg.filter((row) => row.recentRevenue <= maxCustomerOrProductRevenue);
+      customerAgg = customerAgg.filter((row) => row.recentRevenue <= maxCustomerOrProductRevenue);
+    }
     const totalRecentCustomerRevenue = customerAgg.reduce((sum, row) => sum + row.recentRevenue, 0);
     const topCustomers = customerAgg
       .filter((row) => row.recentRevenue > MATERIAL_AMOUNT || Math.abs(row.recentGrossProfit) > MATERIAL_AMOUNT)
@@ -2038,7 +2123,7 @@ Only compare like-for-like periods. Do not compare days to weeks, weeks to month
       effectiveDailyMode === 'ops-only'
         ? `IMPORTANT: facts.briefing.dailyMode is ops-only. Books/accounting are monthly (QuickBooks or equivalent). Do NOT invent day-over-day P&L, revenue, gross profit, EBITDA, or MTD financial statement movement. facts.financials.comparisons is empty by design. Lead with facts.dailyOperations (same-day sales/customer/SKU/volume), Pulse alerts, and liquidity/AR/AP only when those daily feeds are present. You may mention the latest closed month from books as static context only—never as a day-over-day financial trend.`
         : `For the Daily tab, discuss material latest-day vs prior-day movement and current month-to-date vs the same elapsed days last month when available; never fall back to month-over-month analysis in the Daily tab. For Daily comparisons, state the actual dates from currentPeriod and priorPeriod; do not say "yesterday", "today", or "latest day" as a substitute for dates.`
-    } In the Daily tab, use facts.dailyOperations only for operational commentary, and only when notableExceptions are present or a listed top product/customer/volume move is material for that same asOfDate vs priorDate. Allowed Daily ops topics: top revenue product/SKU for the day, largest customer/order for the day, and day volume (sales closed / units sold / contracts) with day-over-day deltas when provided. Do not use multi-day customer concentration, multi-day product margin watchlists, or benchmarks in the Daily tab. For the Weekly tab, use only the latest completed Monday–Sunday week versus the prior completed week from facts.financials.comparisons; never fall back to day-over-day or month-over-month analysis, and do not use a partial current week. For the Quarterly tab, lead with trailing 3 completed months versus the last completed calendar quarter from facts.financials.comparisons (key trailing_3_months_vs_last_quarter when present). Name both windows; do not say only "this quarter." Those windows can overlap, so do not call that movement calendar quarter-over-quarter. Use latest_completed_quarter_vs_prior_quarter only for explicit calendar QoQ commentary. If trailing 3 months are themselves the last completed calendar quarter, only the quarter-vs-prior-quarter comparison will be present. For the Annual tab, lead with trailing 12 completed months versus the last completed calendar year from facts.financials.comparisons (key trailing_12_months_vs_last_year when present). Name both windows; do not say only "this year." Those windows can overlap, so do not call that movement calendar year-over-year. Use latest_completed_year_vs_prior_year only for explicit calendar YoY commentary. If trailing 12 months are themselves the last completed calendar year, only the year-vs-prior-year comparison will be present. For the Monthly tab, use completed periods only. Customer and product dollars, deltas versus prior, and concentration MUST come from facts.customers / facts.products for the SAME currentPeriod/priorPeriod as facts.financials.comparisons. When stating a customer's share of total revenue, use booksRevenueShare and top3ShareOfBooks (customer dollars divided by financials.recentRevenue). Do not call revenueShare "share of total revenue"—that is only the mix of identified customer-sales rows. Never mix a P&L total from one window with customer dollars from another window. State the window used when a financial or daily-ops movement is material. If no comparable window supports an issue, do not draw a trend conclusion.
+    } In the Daily tab, use facts.dailyOperations only for operational commentary, and only when notableExceptions are present or a listed top product/customer/volume move is material for that same asOfDate vs priorDate. Allowed Daily ops topics: top revenue product/SKU for the day, largest customer/order for the day, and day volume (sales closed / units sold / contracts) with day-over-day deltas when provided. Do not use multi-day customer concentration, multi-day product margin watchlists, or benchmarks in the Daily tab. For the Weekly tab, use only the latest completed Monday–Sunday week versus the prior completed week from facts.financials.comparisons; never fall back to day-over-day or month-over-month analysis, and do not use a partial current week. For the Quarterly tab, lead with trailing 3 completed months versus the last completed calendar quarter from facts.financials.comparisons (key trailing_3_months_vs_last_quarter when present). Name both windows; do not say only "this quarter." Those windows can overlap, so do not call that movement calendar quarter-over-quarter. Use latest_completed_quarter_vs_prior_quarter only for explicit calendar QoQ commentary. If trailing 3 months are themselves the last completed calendar quarter, only the quarter-vs-prior-quarter comparison will be present. For the Annual tab, lead with trailing 12 completed months versus the last completed calendar year from facts.financials.comparisons (key trailing_12_months_vs_last_year when present). Name both windows; do not say only "this year." Those windows can overlap, so do not call that movement calendar year-over-year. Use latest_completed_year_vs_prior_year only for explicit calendar YoY commentary. If trailing 12 months are themselves the last completed calendar year, only the year-vs-prior-year comparison will be present. For the Monthly tab, use completed periods only. Customer and product dollars, deltas versus prior, and concentration MUST come from facts.customers / facts.products for the SAME currentPeriod/priorPeriod as facts.financials.comparisons. When stating a customer's share of total revenue, use booksRevenueShare and top3ShareOfBooks (customer dollars divided by financials.recentRevenue). Customer and product recentRevenue values are month-collapsed books-window totals, not a sum of every daily snapshot. If currentPeriod and priorPeriod overlap, revenueDelta is the unique months (usually the newest month minus the month that dropped out)—do not describe it as trailing-period growth versus a non-overlapping prior trailing period. Do not call revenueShare "share of total revenue"—that is only the mix of identified customer-sales rows. Never mix a P&L total from one window with customer dollars from another window. If a customer dollar amount is larger than financials.recentRevenue, omit that customer dollar movement; it is not usable. State the window used when a financial or daily-ops movement is material. If no comparable window supports an issue, do not draw a trend conclusion.
 
 When revenue and margin rate move in different directions, explicitly state the end result to gross profit dollars only if the movement is material or decision-useful. Example: if revenue is declining but gross margin rate is improving, say whether gross profit dollars increased or decreased and by how much; if both are normal/immaterial, omit the topic entirely.
 
