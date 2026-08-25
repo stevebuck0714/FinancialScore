@@ -2065,6 +2065,11 @@ export default function OperationsTab({
       productReportView === 'monthlyRevenue' ||
       productReportView === 'revenueRollup' ||
       productReportView === 'goalUpdate');
+  const isThirteenWeekCashForecastViewActive =
+    (activeTab === 'forecast' && activeAccrualBasisForecastTab === 'cash-forecast') ||
+    activeTab === 'working_capital_forecast' ||
+    activeTab === 'working-capital-forecast';
+  const isFullWidthOpsViewActive = isWholesaleRevenueForecastViewActive || isThirteenWeekCashForecastViewActive;
 
   const selectedWholesaleRawCustomer =
     wholesaleRawCustomers.find((customer) => customer.key === wholesaleRawCustomerFilter) || null;
@@ -16240,7 +16245,7 @@ Strategies to Improve the CCC
 
   const renderForecast = () => {
     return (
-      <div style={{ padding: '8px 32px 32px' }}>
+      <div style={{ padding: activeAccrualBasisForecastTab === 'cash-forecast' ? '8px 12px 24px' : '8px 32px 32px' }}>
         <div className="ops-print-hide" style={{ display: 'flex', gap: '8px', marginBottom: '20px', borderBottom: '2px solid #e2e8f0' }}>
           {isRealEstateSector && (
             <button
@@ -27742,8 +27747,8 @@ Strategies to Improve the CCC
 
   return (
     <div style={{ 
-      maxWidth: isWholesaleRevenueForecastViewActive ? '100%' : '1600px', 
-      margin: isWholesaleRevenueForecastViewActive ? '0' : '0 auto', 
+      maxWidth: isFullWidthOpsViewActive ? '100%' : '1600px', 
+      margin: isFullWidthOpsViewActive ? '0' : '0 auto', 
       minHeight: '100vh',
       background: '#f8fafc'
     }}>

@@ -33,6 +33,7 @@ type ForecastInputs = {
 type WeeklyDriver = {
   sales: number;
   opex: number;
+  opexAdj: number;
   grossMarginPct: number;
 };
 
@@ -79,6 +80,7 @@ type ForecastRow = {
   apPayments: number;
   opex: number;
   cashOpex: number;
+  opexAdj: number;
   locInterest: number;
   locDraw: number;
   locRepay: number;
@@ -140,6 +142,7 @@ const DEFAULT_INPUTS: ForecastInputs = {
 const DEFAULT_WEEKLY_DRIVER: WeeklyDriver = {
   sales: 50000,
   opex: 18000,
+  opexAdj: 0,
   grossMarginPct: 35,
 };
 const EMPTY_INPUTS: ForecastInputs = {
@@ -170,6 +173,7 @@ const EMPTY_INPUTS: ForecastInputs = {
 const EMPTY_WEEKLY_DRIVER: WeeklyDriver = {
   sales: 0,
   opex: 0,
+  opexAdj: 0,
   grossMarginPct: 35,
 };
 const DEFAULT_SCHEDULED_EXPENSE_RULES: ScheduledExpenseRule[] = [
@@ -259,6 +263,19 @@ const parseCurrencyInput = (rawValue: string): number => {
   const parsed = Number(normalized);
   return Number.isFinite(parsed) ? Math.round(parsed) : 0;
 };
+const parseSignedCurrencyInput = (rawValue: string): number => {
+  const compact = String(rawValue || '').replace(/[^0-9-]/g, '');
+  if (!compact || compact === '-') return 0;
+  const negative = compact.startsWith('-');
+  const digits = compact.replace(/-/g, '');
+  if (!digits) return 0;
+  const parsed = Number(digits);
+  return Number.isFinite(parsed) ? Math.round(negative ? -parsed : parsed) : 0;
+};
+const isSignedCurrencyDraft = (rawValue: string): boolean => {
+  const trimmed = String(rawValue || '').trim();
+  return trimmed === '' || trimmed === '-' || trimmed === '-$';
+};
 
 const inputStyle: React.CSSProperties = {
   width: '70%',
@@ -312,6 +329,7 @@ const toRoundedTurns = (value: unknown, fallback = 8): number => {
 const normalizeWeeklyDriver = (raw: any, fallback: WeeklyDriver): WeeklyDriver => ({
   sales: Math.max(0, toRoundedCurrency(raw?.sales, fallback.sales)),
   opex: Math.max(0, toRoundedCurrency(raw?.opex, fallback.opex)),
+  opexAdj: toRoundedCurrency(raw?.opexAdj, fallback.opexAdj),
   grossMarginPct: clampNumber(toRoundedPercent(raw?.grossMarginPct, fallback.grossMarginPct), 1, 99),
 });
 const normalizeWeeklyDriverList = (raw: any, fallback: WeeklyDriver): WeeklyDriver[] => {
@@ -676,6 +694,7 @@ export default function WorkingCapitalForecastTab({ selectedCompanyId, basisMode
   const [weeklyDrivers, setWeeklyDrivers] = useState<WeeklyDriver[]>(
     Array.from({ length: FORECAST_WEEKS }, () => ({ ...EMPTY_WEEKLY_DRIVER }))
   );
+  const [opexAdjDraftByWeek, setOpexAdjDraftByWeek] = useState<Record<number, string>>({});
   const [forecastMonthRefs, setForecastMonthRefs] = useState<MonthlyBaseRef[]>([]);
   const [weekMonthLabels, setWeekMonthLabels] = useState<string[]>(Array.from({ length: FORECAST_WEEKS }, () => ''));
   const [startingBalances, setStartingBalances] = useState<StartingBalances>(DEFAULT_STARTING_BALANCES);
@@ -995,6 +1014,7 @@ export default function WorkingCapitalForecastTab({ selectedCompanyId, basisMode
           const resolvedAverages: WeeklyDriver = {
             sales: Math.max(0, Math.round(avgWeeklySales)),
             opex: Math.max(0, Math.round(avgWeeklyOpex)),
+            opexAdj: 0,
             grossMarginPct: Math.max(1, Math.min(99, Math.round(avgWeeklyGrossMargin * 100) / 100)),
           };
           let monthRefsBase: MonthlyBaseRef[] = [];
@@ -1081,13 +1101,15 @@ export default function WorkingCapitalForecastTab({ selectedCompanyId, basisMode
             setInputs(resolvedInputs);
             setHistoricalAverages(mergedAverages);
             setWeeklyDrivers(mergedWeekly);
+            setOpexAdjDraftByWeek({});
             setStartingBalances(resolvedStartingBalances);
             setLastSavedAt(savedSettings.updatedAt ? String(savedSettings.updatedAt) : null);
           } else {
             setInputs(seedInputs);
             setHistoricalAverages(seedAverages);
-            const defaults = Array.from({ length: FORECAST_WEEKS }, () => ({ ...seedAverages }));
+            const defaults = Array.from({ length: FORECAST_WEEKS }, () => ({ ...seedAverages, opexAdj: 0 }));
             setWeeklyDrivers(defaults);
+            setOpexAdjDraftByWeek({});
             setStartingBalances(derivedStartingBalances);
             setLastSavedAt(null);
           }
@@ -1317,7 +1339,8 @@ export default function WorkingCapitalForecastTab({ selectedCompanyId, basisMode
       const receipts = Math.max(0, safeNumber(scheduledArReceipts + cashSalesReceipts, 0));
 
       const locInterest = safeNumber(loc * (Math.max(0, inputs.locAprPct) / 100) / 52, 0);
-      const baseEndingCash = safeNumber(beginningCash + receipts - apPayments - cashOpex - locInterest, beginningCash);
+      const opexAdj = safeNumber(weeklyDrivers[i]?.opexAdj, 0);
+      const baseEndingCash = safeNumber(beginningCash + receipts - apPayments - cashOpex - opexAdj - locInterest, beginningCash);
       const unleveredEndingCash = baseEndingCash;
 
       let locDraw = 0;
@@ -1361,6 +1384,7 @@ export default function WorkingCapitalForecastTab({ selectedCompanyId, basisMode
         apPayments,
         opex,
         cashOpex,
+        opexAdj,
         locInterest,
         locDraw,
         locRepay,
@@ -1449,6 +1473,25 @@ export default function WorkingCapitalForecastTab({ selectedCompanyId, basisMode
       prev.map((week, idx) => (idx === weekIdx ? { ...week, grossMarginPct: next } : week))
     );
   };
+  const updateWeeklyOpexAdj = (weekIdx: number, value: string) => {
+    if (isSignedCurrencyDraft(value)) {
+      setOpexAdjDraftByWeek((prev) => ({ ...prev, [weekIdx]: value }));
+      setWeeklyDrivers((prev) =>
+        prev.map((week, idx) => (idx === weekIdx ? { ...week, opexAdj: 0 } : week))
+      );
+      return;
+    }
+    setOpexAdjDraftByWeek((prev) => {
+      if (!(weekIdx in prev)) return prev;
+      const next = { ...prev };
+      delete next[weekIdx];
+      return next;
+    });
+    const parsed = parseSignedCurrencyInput(value);
+    setWeeklyDrivers((prev) =>
+      prev.map((week, idx) => (idx === weekIdx ? { ...week, opexAdj: parsed } : week))
+    );
+  };
   const saveSettings = async () => {
     setIsSaving(true);
     setSaveMessage(null);
@@ -1484,6 +1527,7 @@ export default function WorkingCapitalForecastTab({ selectedCompanyId, basisMode
     'Receipts',
     'AP Payments',
     'Cash Opex',
+    'Opex Adj',
     'LOC Interest',
     'LOC Draw',
     'LOC Repay',
@@ -1506,7 +1550,7 @@ export default function WorkingCapitalForecastTab({ selectedCompanyId, basisMode
   }, []);
 
   return (
-    <div style={{ padding: '18px 24px 24px' }}>
+    <div style={{ padding: '12px 8px 24px' }}>
       <div style={{ ...cardStyle, marginBottom: '14px', borderColor: '#cbd5e1', background: '#f8fafc' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', alignItems: 'center' }}>
           <div>
@@ -1905,7 +1949,7 @@ export default function WorkingCapitalForecastTab({ selectedCompanyId, basisMode
           </div>
         </div>
         <div style={{ overflowX: 'auto' }}>
-          <table style={{ width: '100%', minWidth: '1400px', borderCollapse: 'collapse' }}>
+          <table style={{ width: '100%', minWidth: '1520px', borderCollapse: 'collapse' }}>
             <thead style={{ background: '#f8fafc' }}>
               <tr>
                 {forecastHeaders.map((header) => (
@@ -1914,9 +1958,18 @@ export default function WorkingCapitalForecastTab({ selectedCompanyId, basisMode
                     style={{
                       textAlign: header === 'Week' ? 'left' : 'right',
                       borderBottom: '1px solid #e2e8f0',
-                      padding: '8px',
+                      padding: header === 'Opex Adj' ? '8px 4px' : '8px',
                       color: '#334155',
                       fontSize: '12px',
+                      ...(header === 'Opex Adj'
+                        ? {
+                            width: '12ch',
+                            minWidth: '12ch',
+                            maxWidth: '12ch',
+                            whiteSpace: 'nowrap' as const,
+                            boxSizing: 'content-box' as const,
+                          }
+                        : {}),
                     }}
                   >
                     {header === 'Ending Cash (Post LOC)' ? (
@@ -1945,6 +1998,34 @@ export default function WorkingCapitalForecastTab({ selectedCompanyId, basisMode
                   <td style={{ padding: '8px', textAlign: 'right', borderBottom: '1px solid #f1f5f9', fontSize: '12px' }}>{formatCurrency(row.receipts)}</td>
                   <td style={{ padding: '8px', textAlign: 'right', borderBottom: '1px solid #f1f5f9', fontSize: '12px' }}>{formatCurrency(row.apPayments)}</td>
                   <td style={{ padding: '8px', textAlign: 'right', borderBottom: '1px solid #f1f5f9', fontSize: '12px' }}>{formatCurrency(row.cashOpex)}</td>
+                  <td style={{ padding: '4px', textAlign: 'right', borderBottom: '1px solid #f1f5f9', width: '12ch', minWidth: '12ch', maxWidth: '12ch', boxSizing: 'content-box' }}>
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      size={12}
+                      maxLength={12}
+                      value={opexAdjDraftByWeek[row.week - 1] ?? formatCurrencyInput(row.opexAdj)}
+                      onChange={(e) => updateWeeklyOpexAdj(row.week - 1, e.target.value)}
+                      onBlur={() =>
+                        setOpexAdjDraftByWeek((prev) => {
+                          if (!((row.week - 1) in prev)) return prev;
+                          const next = { ...prev };
+                          delete next[row.week - 1];
+                          return next;
+                        })
+                      }
+                      aria-label={`Opex Adj week ${row.week}`}
+                      style={{
+                        ...compactTableInputStyle,
+                        width: '12ch',
+                        minWidth: '12ch',
+                        maxWidth: '12ch',
+                        boxSizing: 'content-box',
+                        textAlign: 'right',
+                        color: row.opexAdj < 0 ? '#166534' : row.opexAdj > 0 ? '#b45309' : '#111827',
+                      }}
+                    />
+                  </td>
                   <td style={{ padding: '8px', textAlign: 'right', borderBottom: '1px solid #f1f5f9', fontSize: '12px' }}>{formatCurrency(row.locInterest)}</td>
                   <td style={{ padding: '8px', textAlign: 'right', borderBottom: '1px solid #f1f5f9', fontSize: '12px', color: row.locDraw > 0 ? '#7c3aed' : '#64748b' }}>{formatCurrency(row.locDraw)}</td>
                   <td style={{ padding: '8px', textAlign: 'right', borderBottom: '1px solid #f1f5f9', fontSize: '12px', color: row.locRepay > 0 ? '#0284c7' : '#64748b' }}>{formatCurrency(row.locRepay)}</td>
