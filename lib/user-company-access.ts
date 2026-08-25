@@ -8,7 +8,9 @@ export type AccessibleCompany = {
   operationalDashboardAccess: unknown;
 };
 
-function getUserCompanyAccessDelegate():
+type CompanyAccessDb = typeof prisma;
+
+function getUserCompanyAccessDelegate(db: CompanyAccessDb = prisma):
   | {
       findMany: (...args: any[]) => Promise<any[]>;
       upsert: (...args: any[]) => Promise<any>;
@@ -16,7 +18,7 @@ function getUserCompanyAccessDelegate():
       create: (...args: any[]) => Promise<any>;
     }
   | null {
-  const delegate = (prisma as any).userCompanyAccess;
+  const delegate = (db as any).userCompanyAccess;
   if (!delegate) return null;
   if (
     typeof delegate.findMany !== 'function' ||
@@ -215,10 +217,20 @@ export async function grantUserCompanyAccess(params: {
   companyRole?: string;
   sidebarAccess?: unknown;
   operationalDashboardAccess?: unknown;
+  db?: CompanyAccessDb;
 }): Promise<{ created: boolean }> {
-  const userCompanyAccess = getUserCompanyAccessDelegate();
+  const db = params.db ?? prisma;
+  const userCompanyAccess = getUserCompanyAccessDelegate(db);
   if (!userCompanyAccess) {
     return { created: false };
+  }
+
+  const user = await db.user.findUnique({
+    where: { id: params.userId },
+    select: { id: true },
+  });
+  if (!user) {
+    throw new Error('Cannot grant company access because the user does not exist');
   }
 
   const existing = await userCompanyAccess.findUnique({

@@ -121,6 +121,7 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    const passwordHash = existingUser ? null : await hashPassword(password);
     const result = await prisma.$transaction(async (tx) => {
       let userId = existingUser?.id || '';
       if (!existingUser) {
@@ -128,7 +129,7 @@ export async function POST(request: NextRequest) {
           data: {
             email: invite.email.toLowerCase(),
             name,
-            passwordHash: await hashPassword(password),
+            passwordHash: passwordHash as string,
             role: 'USER',
             userType: invite.userType,
             companyId: company.id,
@@ -144,6 +145,7 @@ export async function POST(request: NextRequest) {
         userId,
         companyId: company.id,
         companyRole: invite.userType === 'COMPANY' ? 'user' : undefined,
+        db: tx as typeof prisma,
       });
 
       const invites = getCompanyInvites(company.userDefinedAllocations);
@@ -175,7 +177,12 @@ export async function POST(request: NextRequest) {
         : 'Invite accepted. Sign in with your new credentials.',
     });
   } catch (error: any) {
-    return NextResponse.json({ error: error?.message || 'Failed to accept invite' }, { status: 500 });
+    console.error('Accept invite failed:', error);
+    const raw = String(error?.message || '');
+    const message = /Foreign key constraint|prisma\.userCompanyAccess/i.test(raw)
+      ? 'Failed to accept invite. Please try again.'
+      : raw || 'Failed to accept invite';
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }
 
