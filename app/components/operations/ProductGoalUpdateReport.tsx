@@ -7,17 +7,27 @@ import {
 } from '@/lib/operations/product-revenue-actual';
 import { workbookImportErrorMessage } from '@/lib/operations/product-revenue-forecast';
 import {
+  emptyMonthlyRevenueGoals,
   fmtGoalDays,
   fmtGoalDollars,
   fmtGoalPct,
   fmtGoalUnits,
+  hasGoalUpdateRows,
+  hasMonthlyRevenueGoals,
+  MONTH_GOAL_LABELS,
+  monthNumberFromLabel,
+  quarterMonths,
+  sumMonthlyGoal,
   type GoalScenarioRow,
   type GoalUpdateSnapshot,
+  type MonthlyRevenueGoalKey,
+  type MonthlyRevenueGoalMonth,
   type PyramidBlock,
   type PyramidMetric,
   type PyramidPeriod,
   type PyramidSnapshot,
 } from '@/lib/operations/product-goal-update';
+import { estYear } from '@/lib/time/eastern';
 
 type ProductGoalUpdateReportProps = {
   selectedCompanyId: string;
@@ -39,9 +49,34 @@ const inputStyle: React.CSSProperties = {
 const HEADER_BG = '#e0e7ff';
 const CELL_BG = '#eef2ff';
 const PERIODS = ['MTD', 'QTD', 'YTD'] as const;
+const MONTHLY_GOAL_MONTH_COL_PX = 72;
+const MONTHLY_GOAL_COL_PX = 92;
+const MONTHLY_GOAL_TABLE_PX = MONTHLY_GOAL_MONTH_COL_PX + MONTHLY_GOAL_COL_PX * 3;
+
+const SGP_2026_MONTHLY_REVENUE_GOALS: MonthlyRevenueGoalMonth[] = [
+  { month: 1, baseline: 1264262, growth: 1264262, stretch: 1264262 },
+  { month: 2, baseline: 1188736, growth: 1188736, stretch: 1188736 },
+  { month: 3, baseline: 1436587, growth: 1436587, stretch: 1436587 },
+  { month: 4, baseline: 1346628, growth: 1346737, stretch: 1346737 },
+  { month: 5, baseline: 1375045, growth: 1375154, stretch: 1375154 },
+  { month: 6, baseline: 1561592, growth: 1561702, stretch: 1561702 },
+  { month: 7, baseline: 1395542, growth: 1593778, stretch: 2010971 },
+  { month: 8, baseline: 1308441, growth: 1506677, stretch: 1923870 },
+  { month: 9, baseline: 1285379, growth: 1483615, stretch: 1902729 },
+  { month: 10, baseline: 1313817, growth: 1511715, stretch: 1928012 },
+  { month: 11, baseline: 1046650, growth: 1244548, stretch: 1660845 },
+  { month: 12, baseline: 988592, growth: 1186489, stretch: 1607395 },
+];
+
+function resolveMonthlyGoals(raw: unknown, nextYear: number): MonthlyRevenueGoalMonth[] {
+  const incoming = Array.isArray(raw) ? (raw as MonthlyRevenueGoalMonth[]) : [];
+  if (hasMonthlyRevenueGoals(incoming)) return incoming.map((row) => ({ ...row }));
+  if (nextYear === 2026) return SGP_2026_MONTHLY_REVENUE_GOALS.map((row) => ({ ...row }));
+  return emptyMonthlyRevenueGoals();
+}
 
 function currentYear(): number {
-  return new Date().getFullYear();
+  return estYear();
 }
 
 function yearOptions(): number[] {
@@ -82,6 +117,54 @@ function metricValue(metric: PyramidMetric, key: keyof PyramidMetric, kind: 'dol
   return fmtGoalDollars(value);
 }
 
+function moneyInputText(value: number | null | undefined): string {
+  if (value == null || !Number.isFinite(Number(value))) return '';
+  return Math.round(Number(value)).toLocaleString('en-US');
+}
+
+function parseMoneyInput(value: string): number | null {
+  const text = value.replace(/[$,\s]/g, '').trim();
+  if (!text) return null;
+  const parsed = Number(text);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function GoalMoneyInput({
+  value,
+  disabled,
+  onCommit,
+}: {
+  value: number | null;
+  disabled?: boolean;
+  onCommit: (next: number | null) => void;
+}) {
+  const [text, setText] = useState(moneyInputText(value));
+  useEffect(() => {
+    setText(moneyInputText(value));
+  }, [value]);
+  return (
+    <input
+      value={text}
+      disabled={disabled}
+      inputMode="decimal"
+      onChange={(event) => setText(event.target.value)}
+      onBlur={() => {
+        const parsed = parseMoneyInput(text);
+        setText(moneyInputText(parsed));
+        onCommit(parsed);
+      }}
+      style={{
+        ...inputStyle,
+        textAlign: 'right',
+        padding: '3px 4px',
+        fontSize: 11,
+        borderRadius: 4,
+        background: disabled ? '#f8fafc' : '#ffffff',
+      }}
+    />
+  );
+}
+
 export default function ProductGoalUpdateReport({
   selectedCompanyId,
   onOpenInfo,
@@ -90,11 +173,16 @@ export default function ProductGoalUpdateReport({
   const [dataThru, setDataThru] = useState('');
   const [goalUpdate, setGoalUpdate] = useState<GoalUpdateSnapshot | null>(null);
   const [pyramid, setPyramid] = useState<PyramidSnapshot | null>(null);
+  const [monthlyGoals, setMonthlyGoals] = useState<MonthlyRevenueGoalMonth[]>(emptyMonthlyRevenueGoals);
+  const [goalsDirty, setGoalsDirty] = useState(false);
+  const [savingGoals, setSavingGoals] = useState(false);
+  const [saveStatus, setSaveStatus] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [importing, setImporting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const monthlyGoalsRef = useRef<MonthlyRevenueGoalMonth[]>(monthlyGoals);
 
   const loadSnapshot = useCallback(async (nextYear = year) => {
     if (!selectedCompanyId) return;
@@ -110,11 +198,21 @@ export default function ProductGoalUpdateReport({
       if (!response.ok) throw new Error(payload.error || 'Failed to load Goal Update');
       setGoalUpdate(payload.goalUpdate || null);
       setPyramid(payload.pyramid || null);
+      const nextMonths = resolveMonthlyGoals(
+        payload.monthlyRevenueGoals || payload.goalUpdate?.monthlyRevenueGoals,
+        nextYear
+      );
+      monthlyGoalsRef.current = nextMonths;
+      setMonthlyGoals(nextMonths);
+      setGoalsDirty(!hasMonthlyRevenueGoals(payload.monthlyRevenueGoals || payload.goalUpdate?.monthlyRevenueGoals));
       setDataThru(payload.dataThru ? String(payload.dataThru).slice(0, 10) : '');
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Failed to load Goal Update');
       setGoalUpdate(null);
       setPyramid(null);
+      monthlyGoalsRef.current = emptyMonthlyRevenueGoals();
+      setMonthlyGoals(monthlyGoalsRef.current);
+      setGoalsDirty(false);
     } finally {
       setLoading(false);
     }
@@ -123,6 +221,9 @@ export default function ProductGoalUpdateReport({
   useEffect(() => {
     setGoalUpdate(null);
     setPyramid(null);
+    monthlyGoalsRef.current = emptyMonthlyRevenueGoals();
+    setMonthlyGoals(monthlyGoalsRef.current);
+    setGoalsDirty(false);
     setNotice(null);
   }, [selectedCompanyId]);
 
@@ -172,6 +273,63 @@ export default function ProductGoalUpdateReport({
     }
   };
 
+  const saveMonthlyGoals = async () => {
+    if (!selectedCompanyId) {
+      setError('Select a company before saving.');
+      setSaveStatus(null);
+      return;
+    }
+    if (typeof document !== 'undefined' && document.activeElement instanceof HTMLInputElement) {
+      document.activeElement.blur();
+    }
+    const monthsToSave = monthlyGoalsRef.current;
+    setSavingGoals(true);
+    setError(null);
+    setSaveStatus('Saving…');
+    try {
+      const response = await fetch('/api/operational-data/product-goals', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          companyId: selectedCompanyId,
+          year,
+          months: monthsToSave,
+        }),
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(payload.error || 'Failed to save revenue goals');
+      setGoalUpdate(payload.goalUpdate || null);
+      setPyramid(payload.pyramid || null);
+      monthlyGoalsRef.current = Array.isArray(payload.monthlyRevenueGoals) && payload.monthlyRevenueGoals.length
+        ? payload.monthlyRevenueGoals
+        : monthsToSave;
+      setMonthlyGoals(monthlyGoalsRef.current);
+      setNotice('Saved Baseline, Growth, and Stretch monthly revenue goals.');
+      setSaveStatus('Saved');
+      setGoalsDirty(false);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Failed to save revenue goals';
+      setNotice(null);
+      setError(message);
+      setSaveStatus(message);
+    } finally {
+      setSavingGoals(false);
+    }
+  };
+
+  const commitMonthlyGoal = (month: number, key: MonthlyRevenueGoalKey, value: number | null) => {
+    const current = monthlyGoals.find((row) => row.month === month)?.[key] ?? null;
+    if (current === value) return;
+    const nextMonths = emptyMonthlyRevenueGoals().map((row) => {
+      const existing = monthlyGoals.find((item) => item.month === row.month) || row;
+      if (existing.month !== month) return existing;
+      return { ...existing, [key]: value };
+    });
+    monthlyGoalsRef.current = nextMonths;
+    setMonthlyGoals(nextMonths);
+    setGoalsDirty(true);
+  };
+
   const thStyle: React.CSSProperties = {
     textAlign: 'right',
     padding: '8px 8px',
@@ -199,8 +357,19 @@ export default function ProductGoalUpdateReport({
     color: '#1e293b',
     background: '#f8fafc',
   };
+  const monthlyGoalCell: React.CSSProperties = {
+    ...tdStyle,
+    padding: '3px 4px',
+    fontSize: 11,
+    background: '#ffffff',
+  };
+  const monthlyGoalLabel: React.CSSProperties = {
+    ...labelCell,
+    padding: '3px 6px',
+    fontSize: 11,
+  };
 
-  const empty = !loading && !goalUpdate && !pyramid;
+  const empty = !loading && !hasGoalUpdateRows(goalUpdate) && !pyramid;
 
   return (
     <div>
@@ -227,7 +396,7 @@ export default function ProductGoalUpdateReport({
         ) : null}
       </div>
       <p style={{ margin: '0 0 16px', color: '#475569', fontSize: 13, lineHeight: 1.5 }}>
-        Company-level SGP Goal Update and Pyramid MTD / QTD / YTD versus current forecasts and SGP. Baseline, Growth, and Stretch stay blank until those goals are in the workbook.
+        Company-level SGP Goal Update and Pyramid MTD / QTD / YTD versus current forecasts and SGP. Monthly Baseline, Growth, and Stretch goals are at the bottom of the page.
       </p>
 
       <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'end', marginBottom: 12 }}>
@@ -287,11 +456,11 @@ export default function ProductGoalUpdateReport({
       ) : null}
       {empty ? (
         <div style={{ padding: '8px 0 24px', color: '#64748b', fontSize: 13 }}>
-          Import the revenue forecast workbook to load Goal Update and Pyramid.
+          Import the revenue forecast workbook to load Goal Update and Pyramid. You can still enter monthly revenue goals at the bottom of the page.
         </div>
       ) : null}
 
-      {goalUpdate ? (
+      {goalUpdate && hasGoalUpdateRows(goalUpdate) ? (
         <section style={{ marginBottom: 28 }}>
           <h4 style={{ margin: '0 0 10px', fontSize: 15, fontWeight: 700, color: '#1e293b' }}>SGP Goal Update</h4>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 12 }}>
@@ -336,7 +505,7 @@ export default function ProductGoalUpdateReport({
       ) : null}
 
       {pyramid ? (
-        <section>
+        <section style={{ marginBottom: 28 }}>
           <h4 style={{ margin: '0 0 10px', fontSize: 15, fontWeight: 700, color: '#1e293b' }}>
             Pyramid{pyramid.monthLabel ? ` · ${pyramid.monthLabel}` : ''}
           </h4>
@@ -353,6 +522,167 @@ export default function ProductGoalUpdateReport({
             {pyramid.issues ? (
               <PyramidCard block={pyramid.issues} title="Issues" unit="units" />
             ) : null}
+          </div>
+        </section>
+      ) : null}
+
+      {!loading ? (
+        <section>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8, flexWrap: 'wrap' }}>
+            <h4 style={{ margin: 0, fontSize: 15, fontWeight: 700, color: '#1e293b' }}>
+              Monthly revenue goals
+            </h4>
+            <button
+              type="button"
+              onClick={() => void saveMonthlyGoals()}
+              disabled={savingGoals || importing || !selectedCompanyId}
+              style={{
+                border: '1px solid #4338ca',
+                borderRadius: 8,
+                padding: '6px 12px',
+                background: savingGoals ? '#c7d2fe' : '#4f46e5',
+                color: '#ffffff',
+                fontWeight: 700,
+                cursor: savingGoals || importing || !selectedCompanyId ? 'wait' : 'pointer',
+                fontSize: 12,
+              }}
+            >
+              {savingGoals ? 'Saving…' : 'Save'}
+            </button>
+            {saveStatus ? (
+              <span style={{ fontSize: 12, color: saveStatus === 'Saved' || saveStatus === 'Saving…' ? '#166534' : '#b91c1c' }}>
+                {saveStatus}
+              </span>
+            ) : goalsDirty ? (
+              <span style={{ fontSize: 12, color: '#b45309' }}>Unsaved changes</span>
+            ) : null}
+          </div>
+          <p style={{ margin: '0 0 8px', color: '#475569', fontSize: 12, lineHeight: 1.45, maxWidth: 520 }}>
+            Type Baseline, Growth, and Stretch for each month. Quarter and year totals calculate from the months.
+          </p>
+          <div style={{ border: '1px solid #c7d2fe', borderRadius: 10, background: '#ffffff', width: 'fit-content' }}>
+            <table
+              style={{
+                borderCollapse: 'separate',
+                borderSpacing: 0,
+                tableLayout: 'fixed',
+                width: MONTHLY_GOAL_TABLE_PX,
+                fontSize: 11,
+              }}
+            >
+              <colgroup>
+                <col style={{ width: MONTHLY_GOAL_MONTH_COL_PX }} />
+                <col style={{ width: MONTHLY_GOAL_COL_PX }} />
+                <col style={{ width: MONTHLY_GOAL_COL_PX }} />
+                <col style={{ width: MONTHLY_GOAL_COL_PX }} />
+              </colgroup>
+              <thead>
+                <tr>
+                  <th style={{ ...thStyle, textAlign: 'left', width: MONTHLY_GOAL_MONTH_COL_PX, padding: '6px 6px', fontSize: 10 }}>
+                    Month
+                  </th>
+                  <th style={{ ...thStyle, width: MONTHLY_GOAL_COL_PX, padding: '6px 4px', fontSize: 10, lineHeight: 1.2 }}>
+                    Baseline<br />Goal
+                  </th>
+                  <th style={{ ...thStyle, width: MONTHLY_GOAL_COL_PX, padding: '6px 4px', fontSize: 10, lineHeight: 1.2 }}>
+                    Growth<br />Goal
+                  </th>
+                  <th style={{ ...thStyle, width: MONTHLY_GOAL_COL_PX, padding: '6px 4px', fontSize: 10, lineHeight: 1.2 }}>
+                    Stretch<br />Goal
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {([1, 2, 3] as const).map((month) => (
+                  <MonthlyGoalRow
+                    key={month}
+                    month={month}
+                    highlight={monthNumberFromLabel(pyramid?.monthLabel) === month}
+                    values={monthlyGoals[month - 1]}
+                    disabled={importing}
+                    tdStyle={monthlyGoalCell}
+                    labelCell={monthlyGoalLabel}
+                    onCommit={commitMonthlyGoal}
+                  />
+                ))}
+                <MonthlyTotalRow
+                  label="Q1"
+                  tdStyle={monthlyGoalCell}
+                  labelCell={monthlyGoalLabel}
+                  baseline={sumMonthlyGoal(monthlyGoals, quarterMonths(1), 'baseline')}
+                  growth={sumMonthlyGoal(monthlyGoals, quarterMonths(1), 'growth')}
+                  stretch={sumMonthlyGoal(monthlyGoals, quarterMonths(1), 'stretch')}
+                />
+                {([4, 5, 6] as const).map((month) => (
+                  <MonthlyGoalRow
+                    key={month}
+                    month={month}
+                    highlight={monthNumberFromLabel(pyramid?.monthLabel) === month}
+                    values={monthlyGoals[month - 1]}
+                    disabled={importing}
+                    tdStyle={monthlyGoalCell}
+                    labelCell={monthlyGoalLabel}
+                    onCommit={commitMonthlyGoal}
+                  />
+                ))}
+                <MonthlyTotalRow
+                  label="Q2"
+                  tdStyle={monthlyGoalCell}
+                  labelCell={monthlyGoalLabel}
+                  baseline={sumMonthlyGoal(monthlyGoals, quarterMonths(2), 'baseline')}
+                  growth={sumMonthlyGoal(monthlyGoals, quarterMonths(2), 'growth')}
+                  stretch={sumMonthlyGoal(monthlyGoals, quarterMonths(2), 'stretch')}
+                />
+                {([7, 8, 9] as const).map((month) => (
+                  <MonthlyGoalRow
+                    key={month}
+                    month={month}
+                    highlight={monthNumberFromLabel(pyramid?.monthLabel) === month}
+                    values={monthlyGoals[month - 1]}
+                    disabled={importing}
+                    tdStyle={monthlyGoalCell}
+                    labelCell={monthlyGoalLabel}
+                    onCommit={commitMonthlyGoal}
+                  />
+                ))}
+                <MonthlyTotalRow
+                  label="Q3"
+                  tdStyle={monthlyGoalCell}
+                  labelCell={monthlyGoalLabel}
+                  baseline={sumMonthlyGoal(monthlyGoals, quarterMonths(3), 'baseline')}
+                  growth={sumMonthlyGoal(monthlyGoals, quarterMonths(3), 'growth')}
+                  stretch={sumMonthlyGoal(monthlyGoals, quarterMonths(3), 'stretch')}
+                />
+                {([10, 11, 12] as const).map((month) => (
+                  <MonthlyGoalRow
+                    key={month}
+                    month={month}
+                    highlight={monthNumberFromLabel(pyramid?.monthLabel) === month}
+                    values={monthlyGoals[month - 1]}
+                    disabled={importing}
+                    tdStyle={monthlyGoalCell}
+                    labelCell={monthlyGoalLabel}
+                    onCommit={commitMonthlyGoal}
+                  />
+                ))}
+                <MonthlyTotalRow
+                  label="Q4"
+                  tdStyle={monthlyGoalCell}
+                  labelCell={monthlyGoalLabel}
+                  baseline={sumMonthlyGoal(monthlyGoals, quarterMonths(4), 'baseline')}
+                  growth={sumMonthlyGoal(monthlyGoals, quarterMonths(4), 'growth')}
+                  stretch={sumMonthlyGoal(monthlyGoals, quarterMonths(4), 'stretch')}
+                />
+                <MonthlyTotalRow
+                  label="Year"
+                  tdStyle={monthlyGoalCell}
+                  labelCell={monthlyGoalLabel}
+                  baseline={sumMonthlyGoal(monthlyGoals, [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12], 'baseline')}
+                  growth={sumMonthlyGoal(monthlyGoals, [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12], 'growth')}
+                  stretch={sumMonthlyGoal(monthlyGoals, [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12], 'stretch')}
+                />
+              </tbody>
+            </table>
           </div>
         </section>
       ) : null}
@@ -471,5 +801,66 @@ function PyramidCard({
         );
       })}
     </div>
+  );
+}
+
+function MonthlyGoalRow({
+  month,
+  highlight,
+  values,
+  disabled,
+  tdStyle,
+  labelCell,
+  onCommit,
+}: {
+  month: number;
+  highlight: boolean;
+  values: MonthlyRevenueGoalMonth | undefined;
+  disabled: boolean;
+  tdStyle: React.CSSProperties;
+  labelCell: React.CSSProperties;
+  onCommit: (month: number, key: MonthlyRevenueGoalKey, value: number | null) => void;
+}) {
+  const highlightStyle = highlight ? { background: '#e0e7ff' } : undefined;
+  return (
+    <tr>
+      <td style={{ ...labelCell, ...highlightStyle }}>{MONTH_GOAL_LABELS[month - 1]}</td>
+      {(['baseline', 'growth', 'stretch'] as const).map((key) => (
+        <td key={key} style={{ ...tdStyle, background: '#ffffff', ...highlightStyle }}>
+          <GoalMoneyInput
+            value={values?.[key] ?? null}
+            disabled={disabled}
+            onCommit={(next) => onCommit(month, key, next)}
+          />
+        </td>
+      ))}
+    </tr>
+  );
+}
+
+function MonthlyTotalRow({
+  label,
+  baseline,
+  growth,
+  stretch,
+  tdStyle,
+  labelCell,
+}: {
+  label: string;
+  baseline: number | null;
+  growth: number | null;
+  stretch: number | null;
+  tdStyle: React.CSSProperties;
+  labelCell: React.CSSProperties;
+}) {
+  const totalLabel: React.CSSProperties = { ...labelCell, background: '#eef2ff', fontWeight: 800 };
+  const totalCell: React.CSSProperties = { ...tdStyle, background: '#eef2ff', fontWeight: 800 };
+  return (
+    <tr>
+      <td style={totalLabel}>{label}</td>
+      <td style={totalCell}>{fmtGoalDollars(baseline)}</td>
+      <td style={totalCell}>{fmtGoalDollars(growth)}</td>
+      <td style={totalCell}>{fmtGoalDollars(stretch)}</td>
+    </tr>
   );
 }

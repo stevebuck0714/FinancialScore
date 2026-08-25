@@ -34,10 +34,15 @@ import {
 } from '@/lib/operations/product-revenue-actual';
 import { buildShippingCalendar } from '@/lib/operations/product-shipping-days';
 import {
+  applyMonthlyRevenueGoals,
+  emptyGoalUpdateSnapshot,
   hasGoalDashboardData,
+  mergeGoalUpdateSnapshots,
   normalizeGoalUpdateSnapshot,
+  normalizeMonthlyRevenueGoals,
   normalizePyramidSnapshot,
   type GoalUpdateSnapshot,
+  type MonthlyRevenueGoalMonth,
   type PyramidSnapshot,
 } from '@/lib/operations/product-goal-update';
 
@@ -464,26 +469,34 @@ export async function upsertProductGoalUpdate(params: {
   dataThru: Date | null;
   goalUpdate: GoalUpdateSnapshot | null;
   pyramid: PyramidSnapshot | null;
+  preserveDataThru?: boolean;
 }) {
   if (!hasGoalDashboardData(params.goalUpdate, params.pyramid)) return;
   await prisma.$executeRawUnsafe(
     `INSERT INTO "ProductGoalUpdate" ("companyId", "year", "dataThru", "goalUpdate", "pyramid", "updatedAt")
      VALUES ($1, $2, $3, $4::jsonb, $5::jsonb, $6)
      ON CONFLICT ("companyId", "year") DO UPDATE SET
-       "dataThru" = EXCLUDED."dataThru",
+       "dataThru" = CASE
+         WHEN $7::boolean THEN COALESCE(EXCLUDED."dataThru", "ProductGoalUpdate"."dataThru")
+         ELSE EXCLUDED."dataThru"
+       END,
        "goalUpdate" = EXCLUDED."goalUpdate",
-       "pyramid" = EXCLUDED."pyramid",
+       "pyramid" = CASE
+         WHEN $7::boolean AND EXCLUDED."pyramid" = '{}'::jsonb THEN "ProductGoalUpdate"."pyramid"
+         ELSE EXCLUDED."pyramid"
+       END,
        "updatedAt" = EXCLUDED."updatedAt"`,
     params.companyId,
     params.year,
     params.dataThru,
     JSON.stringify(params.goalUpdate || {}),
     JSON.stringify(params.pyramid || {}),
-    new Date()
+    new Date(),
+    Boolean(params.preserveDataThru)
   );
 }
 
-export async function loadProductGoalUpdate(params: {
+export async function loadProductGoalUpdateRaw(params: {
   companyId: string;
   year: number;
 }): Promise<{
@@ -508,6 +521,62 @@ export async function loadProductGoalUpdate(params: {
     goalUpdate: normalizeGoalUpdateSnapshot(row?.goalUpdate),
     pyramid: normalizePyramidSnapshot(row?.pyramid),
   };
+}
+
+export async function loadProductGoalUpdate(params: {
+  companyId: string;
+  year: number;
+}): Promise<{
+  year: number;
+  dataThru: string | null;
+  goalUpdate: GoalUpdateSnapshot | null;
+  pyramid: PyramidSnapshot | null;
+  monthlyRevenueGoals: MonthlyRevenueGoalMonth[];
+}> {
+  const raw = await loadProductGoalUpdateRaw(params);
+  const applied = applyMonthlyRevenueGoals({
+    goalUpdate: raw.goalUpdate,
+    pyramid: raw.pyramid,
+    year: params.year,
+    dataThru: raw.dataThru,
+  });
+  return {
+    year: raw.year,
+    dataThru: raw.dataThru,
+    goalUpdate: applied.goalUpdate,
+    pyramid: applied.pyramid,
+    monthlyRevenueGoals: applied.goalUpdate?.monthlyRevenueGoals || emptyGoalUpdateSnapshot(params.year).monthlyRevenueGoals,
+  };
+}
+
+export async function saveProductMonthlyRevenueGoals(params: {
+  companyId: string;
+  year: number;
+  months: unknown;
+}): Promise<{
+  year: number;
+  dataThru: string | null;
+  goalUpdate: GoalUpdateSnapshot | null;
+  pyramid: PyramidSnapshot | null;
+  monthlyRevenueGoals: MonthlyRevenueGoalMonth[];
+}> {
+  const existing = await loadProductGoalUpdateRaw(params);
+  const monthlyRevenueGoals = normalizeMonthlyRevenueGoals(params.months);
+  const base = existing.goalUpdate || emptyGoalUpdateSnapshot(params.year);
+  const goalUpdate: GoalUpdateSnapshot = {
+    ...base,
+    year: base.year || params.year,
+    monthlyRevenueGoals,
+  };
+  await upsertProductGoalUpdate({
+    companyId: params.companyId,
+    year: params.year,
+    dataThru: existing.dataThru ? new Date(`${existing.dataThru}T00:00:00.000Z`) : null,
+    goalUpdate,
+    pyramid: existing.pyramid,
+    preserveDataThru: true,
+  });
+  return loadProductGoalUpdate(params);
 }
 
 export async function persistParsedRevenueWorkbook(params: {
@@ -551,15 +620,21 @@ export async function persistParsedRevenueWorkbook(params: {
     dataThru,
   });
 
-  const goalUpdate = normalizeGoalUpdateSnapshot(parsed.goalUpdate);
-  const pyramid = normalizePyramidSnapshot(parsed.pyramid);
-  await upsertProductGoalUpdate({
-    companyId,
-    year: parsed.year,
-    dataThru,
-    goalUpdate,
-    pyramid,
-  });
+  const incomingGoalUpdate = normalizeGoalUpdateSnapshot(parsed.goalUpdate);
+  const incomingPyramid = normalizePyramidSnapshot(parsed.pyramid);
+  const existingGoals = await loadProductGoalUpdateRaw({ companyId, year: parsed.year });
+  const goalUpdate = mergeGoalUpdateSnapshots(incomingGoalUpdate, existingGoals.goalUpdate);
+  const pyramid = incomingPyramid || existingGoals.pyramid;
+  if (goalUpdate || pyramid) {
+    await upsertProductGoalUpdate({
+      companyId,
+      year: parsed.year,
+      dataThru,
+      goalUpdate,
+      pyramid,
+      preserveDataThru: !dataThru,
+    });
+  }
 
   return {
     year: parsed.year,

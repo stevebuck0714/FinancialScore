@@ -11571,8 +11571,8 @@ export default function OperationsTab({
           {
             heading: 'How to use it',
             body: [
-              'The page is view-only and has no customer picker. Import the same revenue forecast workbook used on Monthly Revenue.',
-              'Goal Update has Forecasted, Baseline, Growth, and Stretch rows for YTD and QTD. Pyramid shows Revenue in dollars and Issues in units. Baseline, Growth, and Stretch stay blank until those goals are imported.',
+              'The page has no customer picker. Import the same revenue forecast workbook used on Monthly Revenue, then type monthly Baseline, Growth, and Stretch revenue goals on this page.',
+              'Goal Update has Forecasted, Baseline, Growth, and Stretch rows for YTD and QTD. Pyramid shows Revenue in dollars and Issues in units. Monthly goals drive Pyramid Baseline / Growth / Stretch: MTD uses that month, QTD uses the quarter total, and YTD uses the year total.',
             ],
           },
         ],

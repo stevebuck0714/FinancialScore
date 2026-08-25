@@ -1,4 +1,5 @@
 import * as XLSX from 'xlsx';
+import { estMonthIndex, estYear } from '@/lib/time/eastern';
 
 export const GOAL_SCENARIOS = ['FORECASTED', 'BASELINE', 'GROWTH', 'STRETCH'] as const;
 export type GoalScenario = (typeof GOAL_SCENARIOS)[number];
@@ -16,12 +17,22 @@ export type GoalScenarioRow = {
   pctQtdVsGoal: number | null;
 };
 
+export type MonthlyRevenueGoalKey = 'baseline' | 'growth' | 'stretch';
+
+export type MonthlyRevenueGoalMonth = {
+  month: number;
+  baseline: number | null;
+  growth: number | null;
+  stretch: number | null;
+};
+
 export type GoalUpdateSnapshot = {
   year: number | null;
   quarter: number | null;
   shippingDaysRemainingYtd: number | null;
   shippingDaysRemainingQtd: number | null;
   rows: GoalScenarioRow[];
+  monthlyRevenueGoals: MonthlyRevenueGoalMonth[];
 };
 
 export type PyramidMetric = {
@@ -82,6 +93,21 @@ const MONTH_NAMES = [
   'NOVEMBER',
   'DECEMBER',
 ];
+
+export const MONTH_GOAL_LABELS = [
+  'January',
+  'February',
+  'March',
+  'April',
+  'May',
+  'June',
+  'July',
+  'August',
+  'September',
+  'October',
+  'November',
+  'December',
+] as const;
 
 function asString(value: unknown): string {
   if (value instanceof Date && !Number.isNaN(value.getTime())) {
@@ -157,6 +183,42 @@ function emptyGoalRow(scenario: GoalScenario): GoalScenarioRow {
     goalVsActualQtd: null,
     pctQtdVsGoal: null,
   };
+}
+
+export function emptyMonthlyRevenueGoals(): MonthlyRevenueGoalMonth[] {
+  return Array.from({ length: 12 }, (_, index) => ({
+    month: index + 1,
+    baseline: null,
+    growth: null,
+    stretch: null,
+  }));
+}
+
+export function emptyGoalUpdateSnapshot(year: number | null = null): GoalUpdateSnapshot {
+  return {
+    year,
+    quarter: null,
+    shippingDaysRemainingYtd: null,
+    shippingDaysRemainingQtd: null,
+    rows: GOAL_SCENARIOS.map((scenario) => emptyGoalRow(scenario)),
+    monthlyRevenueGoals: emptyMonthlyRevenueGoals(),
+  };
+}
+
+export function hasMonthlyRevenueGoals(months: MonthlyRevenueGoalMonth[] | null | undefined): boolean {
+  return (months || []).some((row) => row.baseline != null || row.growth != null || row.stretch != null);
+}
+
+export function hasGoalUpdateRows(snapshot: GoalUpdateSnapshot | null | undefined): boolean {
+  return Boolean(
+    snapshot?.rows?.some(
+      (row) =>
+        row.annualGoal != null ||
+        row.ytdActual != null ||
+        row.quarterGoal != null ||
+        row.quarterYtd != null
+    )
+  );
 }
 
 function isGoalScenario(value: unknown): value is GoalScenario {
@@ -245,6 +307,7 @@ export function parseGoalUpdateSheet(workbook: XLSX.WorkBook): GoalUpdateSnapsho
     shippingDaysRemainingYtd,
     shippingDaysRemainingQtd,
     rows,
+    monthlyRevenueGoals: emptyMonthlyRevenueGoals(),
   };
 }
 
@@ -433,6 +496,27 @@ function asNullableNumber(value: unknown): number | null {
   return parsed == null || !Number.isFinite(parsed) ? null : parsed;
 }
 
+export function normalizeMonthlyRevenueGoals(raw: unknown): MonthlyRevenueGoalMonth[] {
+  const months = emptyMonthlyRevenueGoals();
+  const incoming = Array.isArray(raw)
+    ? raw
+    : raw && typeof raw === 'object' && Array.isArray((raw as { months?: unknown }).months)
+      ? (raw as { months: unknown[] }).months
+      : [];
+  incoming.forEach((row) => {
+    const item = row && typeof row === 'object' ? (row as Record<string, unknown>) : {};
+    const month = asInteger(item.month);
+    if (month == null || month < 1 || month > 12) return;
+    months[month - 1] = {
+      month,
+      baseline: asNullableNumber(item.baseline),
+      growth: asNullableNumber(item.growth),
+      stretch: asNullableNumber(item.stretch),
+    };
+  });
+  return months;
+}
+
 function normalizeScenarioRow(raw: unknown, fallback: GoalScenario): GoalScenarioRow {
   const row = raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : {};
   const scenario = isGoalScenario(row.scenario) ? (asString(row.scenario).toUpperCase() as GoalScenario) : fallback;
@@ -459,16 +543,20 @@ export function normalizeGoalUpdateSnapshot(raw: unknown): GoalUpdateSnapshot | 
     byScenario.set(parsed.scenario, parsed);
   });
   const rows = GOAL_SCENARIOS.map((scenario) => byScenario.get(scenario) || emptyGoalRow(scenario));
+  const monthlyRevenueGoals = normalizeMonthlyRevenueGoals(value.monthlyRevenueGoals);
   const hasValues = rows.some(
     (row) => row.annualGoal != null || row.ytdActual != null || row.quarterGoal != null || row.quarterYtd != null
   );
-  if (!hasValues && value.year == null && value.quarter == null) return null;
+  if (!hasValues && value.year == null && value.quarter == null && !hasMonthlyRevenueGoals(monthlyRevenueGoals)) {
+    return null;
+  }
   return {
     year: asInteger(value.year),
     quarter: asInteger(value.quarter),
     shippingDaysRemainingYtd: asInteger(value.shippingDaysRemainingYtd),
     shippingDaysRemainingQtd: asInteger(value.shippingDaysRemainingQtd),
     rows,
+    monthlyRevenueGoals,
   };
 }
 
@@ -540,7 +628,199 @@ export function hasGoalDashboardData(
   goalUpdate: GoalUpdateSnapshot | null | undefined,
   pyramid: PyramidSnapshot | null | undefined
 ): boolean {
-  return Boolean(goalUpdate || pyramid);
+  return Boolean(
+    pyramid ||
+    hasGoalUpdateRows(goalUpdate) ||
+    hasMonthlyRevenueGoals(goalUpdate?.monthlyRevenueGoals)
+  );
+}
+
+export function monthNumberFromLabel(value: unknown): number | null {
+  const text = asString(value).toUpperCase();
+  if (!text) return null;
+  const index = MONTH_NAMES.findIndex((name) => text === name || text.startsWith(name.slice(0, 3)));
+  return index >= 0 ? index + 1 : null;
+}
+
+export function quarterMonths(quarter: number): number[] {
+  if (quarter < 1 || quarter > 4) return [];
+  const start = (quarter - 1) * 3 + 1;
+  return [start, start + 1, start + 2];
+}
+
+export function sumMonthlyGoal(
+  months: MonthlyRevenueGoalMonth[],
+  monthNumbers: number[],
+  key: MonthlyRevenueGoalKey
+): number | null {
+  let total = 0;
+  let any = false;
+  for (const month of monthNumbers) {
+    const value = months[month - 1]?.[key];
+    if (value == null || !Number.isFinite(value)) continue;
+    total += value;
+    any = true;
+  }
+  return any ? total : null;
+}
+
+export function resolveGoalMonthNumber(params: {
+  monthLabel?: string | null;
+  dataThru?: string | null;
+  year: number;
+}): number | null {
+  const fromLabel = monthNumberFromLabel(params.monthLabel);
+  if (fromLabel) return fromLabel;
+  const thru = String(params.dataThru || '').slice(0, 10);
+  const match = /^(\d{4})-(\d{2})/.exec(thru);
+  if (match) {
+    const thruYear = Number(match[1]);
+    const thruMonth = Number(match[2]);
+    if (thruYear === params.year && thruMonth >= 1 && thruMonth <= 12) return thruMonth;
+  }
+  if (estYear() === params.year) return estMonthIndex() + 1;
+  return null;
+}
+
+function vsPlan(actual: number | null, goal: number | null): number | null {
+  if (actual == null || goal == null) return null;
+  return actual - goal;
+}
+
+function pctPlan(actual: number | null, goal: number | null): number | null {
+  if (actual == null || goal == null || goal === 0) return null;
+  return actual / goal;
+}
+
+function overlayPyramidMetric(metric: PyramidMetric, goals: Record<MonthlyRevenueGoalKey, number | null>, useMonthly: boolean): PyramidMetric {
+  if (!useMonthly) return metric;
+  return {
+    ...metric,
+    baselineGoal: goals.baseline,
+    growthGoal: goals.growth,
+    stretchGoal: goals.stretch,
+    vsBaseline: vsPlan(metric.actual, goals.baseline),
+    vsGrowth: vsPlan(metric.actual, goals.growth),
+    vsStretch: vsPlan(metric.actual, goals.stretch),
+    pctBaseline: pctPlan(metric.actual, goals.baseline),
+    pctGrowth: pctPlan(metric.actual, goals.growth),
+    pctStretch: pctPlan(metric.actual, goals.stretch),
+  };
+}
+
+function overlayPyramidPeriod(
+  period: PyramidPeriod | null,
+  goals: Record<MonthlyRevenueGoalKey, number | null>,
+  useMonthly: boolean
+): PyramidPeriod | null {
+  if (!period) return null;
+  return { ...period, values: overlayPyramidMetric(period.values, goals, useMonthly) };
+}
+
+function overlayPyramidBlock(
+  block: PyramidBlock | null,
+  months: MonthlyRevenueGoalMonth[],
+  monthNumber: number | null,
+  useMonthly: boolean
+): PyramidBlock | null {
+  if (!block || block.kind !== 'revenue') return block;
+  const quarter = monthNumber ? Math.ceil(monthNumber / 3) : null;
+  const monthGoals: Record<MonthlyRevenueGoalKey, number | null> = {
+    baseline: monthNumber ? months[monthNumber - 1]?.baseline ?? null : null,
+    growth: monthNumber ? months[monthNumber - 1]?.growth ?? null : null,
+    stretch: monthNumber ? months[monthNumber - 1]?.stretch ?? null : null,
+  };
+  const quarterGoals: Record<MonthlyRevenueGoalKey, number | null> = {
+    baseline: quarter ? sumMonthlyGoal(months, quarterMonths(quarter), 'baseline') : null,
+    growth: quarter ? sumMonthlyGoal(months, quarterMonths(quarter), 'growth') : null,
+    stretch: quarter ? sumMonthlyGoal(months, quarterMonths(quarter), 'stretch') : null,
+  };
+  const annualGoals: Record<MonthlyRevenueGoalKey, number | null> = {
+    baseline: sumMonthlyGoal(months, [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12], 'baseline'),
+    growth: sumMonthlyGoal(months, [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12], 'growth'),
+    stretch: sumMonthlyGoal(months, [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12], 'stretch'),
+  };
+  return {
+    ...block,
+    mtd: overlayPyramidPeriod(block.mtd, monthGoals, useMonthly),
+    qtd: overlayPyramidPeriod(block.qtd, quarterGoals, useMonthly),
+    ytd: overlayPyramidPeriod(block.ytd, annualGoals, useMonthly),
+  };
+}
+
+function overlayGoalRow(row: GoalScenarioRow, annual: number | null, quarter: number | null, useMonthly: boolean): GoalScenarioRow {
+  if (!useMonthly || row.scenario === 'FORECASTED') return row;
+  const annualGoal = annual;
+  const quarterGoal = quarter;
+  return {
+    ...row,
+    annualGoal,
+    quarterGoal,
+    goalVsActualYtd: vsPlan(row.ytdActual, annualGoal),
+    pctYtdVsGoal: pctPlan(row.ytdActual, annualGoal),
+    goalVsActualQtd: vsPlan(row.quarterYtd, quarterGoal),
+    pctQtdVsGoal: pctPlan(row.quarterYtd, quarterGoal),
+  };
+}
+
+export function mergeGoalUpdateSnapshots(
+  incoming: GoalUpdateSnapshot | null,
+  existing: GoalUpdateSnapshot | null
+): GoalUpdateSnapshot | null {
+  const monthly = hasMonthlyRevenueGoals(existing?.monthlyRevenueGoals)
+    ? existing?.monthlyRevenueGoals || emptyMonthlyRevenueGoals()
+    : incoming?.monthlyRevenueGoals || existing?.monthlyRevenueGoals || emptyMonthlyRevenueGoals();
+  if (incoming) return { ...incoming, monthlyRevenueGoals: monthly };
+  if (existing) return { ...existing, monthlyRevenueGoals: monthly };
+  if (!hasMonthlyRevenueGoals(monthly)) return null;
+  return { ...emptyGoalUpdateSnapshot(), monthlyRevenueGoals: monthly };
+}
+
+export function applyMonthlyRevenueGoals(params: {
+  goalUpdate: GoalUpdateSnapshot | null;
+  pyramid: PyramidSnapshot | null;
+  year: number;
+  dataThru?: string | null;
+}): { goalUpdate: GoalUpdateSnapshot | null; pyramid: PyramidSnapshot | null } {
+  const months = params.goalUpdate?.monthlyRevenueGoals || emptyMonthlyRevenueGoals();
+  const useMonthly = hasMonthlyRevenueGoals(months);
+  const monthNumber = resolveGoalMonthNumber({
+    monthLabel: params.pyramid?.monthLabel || params.pyramid?.revenue?.monthLabel || null,
+    dataThru: params.dataThru || null,
+    year: params.year,
+  });
+  const quarter = monthNumber ? Math.ceil(monthNumber / 3) : params.goalUpdate?.quarter || null;
+  const pyramid = params.pyramid
+    ? {
+        ...params.pyramid,
+        revenue: overlayPyramidBlock(params.pyramid.revenue, months, monthNumber, useMonthly),
+        issues: params.pyramid.issues,
+      }
+    : null;
+
+  if (!params.goalUpdate && !useMonthly) {
+    return { goalUpdate: null, pyramid };
+  }
+
+  const base = params.goalUpdate || emptyGoalUpdateSnapshot(params.year);
+  const goalUpdate: GoalUpdateSnapshot = {
+    ...base,
+    year: base.year || params.year,
+    quarter: base.quarter || quarter,
+    monthlyRevenueGoals: months,
+    rows: base.rows.map((row) => {
+      if (row.scenario === 'FORECASTED') return row;
+      const key: MonthlyRevenueGoalKey =
+        row.scenario === 'BASELINE' ? 'baseline' : row.scenario === 'GROWTH' ? 'growth' : 'stretch';
+      return overlayGoalRow(
+        row,
+        sumMonthlyGoal(months, [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12], key),
+        quarter ? sumMonthlyGoal(months, quarterMonths(quarter), key) : null,
+        useMonthly
+      );
+    }),
+  };
+  return { goalUpdate, pyramid };
 }
 
 export function fmtGoalDollars(value: number | null | undefined): string {

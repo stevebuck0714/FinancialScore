@@ -112,9 +112,23 @@ const QUARTER_SUMMARY_METRICS = [
   'Days',
 ] as const;
 
-function quarterSummaryColWidth(label: (typeof QUARTER_SUMMARY_METRICS)[number]): string {
-  return label === '% vs Fcst' || label === '% vs Adj' || label === 'Days' ? '2.47%' : '4.4%';
+function isQuarterSummaryPct(label: (typeof QUARTER_SUMMARY_METRICS)[number]): boolean {
+  return label === '% vs Fcst' || label === '% vs Adj' || label === 'Days';
 }
+
+function quarterSummaryHeaderLabel(label: (typeof QUARTER_SUMMARY_METRICS)[number]): React.ReactNode {
+  if (label === 'Forecast-ADJ') return <>Forecast-<br />ADJ</>;
+  if (label === '% vs Fcst') return <>% vs<br />Fcst</>;
+  if (label === '% vs Adj') return <>% vs<br />Adj</>;
+  return label;
+}
+
+function quarterSummaryColWidthPx(label: (typeof QUARTER_SUMMARY_METRICS)[number]): number {
+  return isQuarterSummaryPct(label) ? 58 : 86;
+}
+
+const QUARTER_SUMMARY_TABLE_MIN_WIDTH_PX =
+  QUARTER_SUMMARY_METRICS.reduce((sum, label) => sum + quarterSummaryColWidthPx(label), 0) * FORECAST_QUARTERS.length;
 
 function columnWidthPx(widthCh: number): number {
   return widthCh * CHAR_PX + IDENTITY_CELL_EXTRA_PX;
@@ -321,12 +335,12 @@ export default function ProductRevenueRollupReport({
     const shade = QUARTER_SHADES[quarter];
     return {
       textAlign: 'right',
-      padding: '8px 6px',
+      padding: '8px 10px',
       color: shade.headerColor,
       background: shade.headerBg,
       whiteSpace: 'normal',
       lineHeight: 1.25,
-      minWidth: 72,
+      minWidth: 69,
       fontSize: 11,
       fontWeight: 700,
       verticalAlign: 'bottom',
@@ -336,7 +350,7 @@ export default function ProductRevenueRollupReport({
   const quarterCellStyle = (quarter: ForecastQuarter, first: boolean): React.CSSProperties => {
     const shade = QUARTER_SHADES[quarter];
     return {
-      padding: 6,
+      padding: '8px 10px',
       textAlign: 'right',
       whiteSpace: 'nowrap',
       borderTop: `1px solid ${shade.border}`,
@@ -347,18 +361,18 @@ export default function ProductRevenueRollupReport({
   };
   const annualHeaderStyle: React.CSSProperties = {
     textAlign: 'right',
-    padding: '8px 6px',
+    padding: '8px 10px',
     color: '#92400e',
     background: ANNUAL_COL_HEADER_BG,
     whiteSpace: 'normal',
     lineHeight: 1.25,
-    minWidth: 72,
+    minWidth: 69,
     fontSize: 11,
     fontWeight: 700,
     verticalAlign: 'bottom',
   };
   const annualCellStyle: React.CSSProperties = {
-    padding: 6,
+    padding: '8px 10px',
     textAlign: 'right',
     whiteSpace: 'nowrap',
     borderTop: `1px solid ${ANNUAL_COL_BORDER}`,
@@ -468,7 +482,8 @@ export default function ProductRevenueRollupReport({
             style={{
               borderCollapse: 'separate',
               borderSpacing: 0,
-              width: '100%',
+              width: QUARTER_SUMMARY_TABLE_MIN_WIDTH_PX,
+              minWidth: QUARTER_SUMMARY_TABLE_MIN_WIDTH_PX,
               tableLayout: 'fixed',
               fontSize: 12,
             }}
@@ -478,7 +493,7 @@ export default function ProductRevenueRollupReport({
                 QUARTER_SUMMARY_METRICS.map((label) => (
                   <col
                     key={`${quarter}-${label}`}
-                    style={{ width: quarterSummaryColWidth(label) }}
+                    style={{ width: quarterSummaryColWidthPx(label), minWidth: quarterSummaryColWidthPx(label) }}
                   />
                 ))
               )}
@@ -499,14 +514,21 @@ export default function ProductRevenueRollupReport({
                         key={label}
                         style={{
                           ...quarterMetricHeaderStyle(quarter, index === 0),
-                          minWidth: 0,
-                          padding: '4px 6px',
+                          width: quarterSummaryColWidthPx(label),
+                          minWidth: quarterSummaryColWidthPx(label),
+                          maxWidth: quarterSummaryColWidthPx(label),
+                          height: 36,
+                          padding: '8px 4px',
                           fontSize: 10,
                           textAlign: 'right',
-                          whiteSpace: 'nowrap',
+                          whiteSpace: 'normal',
+                          lineHeight: 1.15,
+                          overflow: 'visible',
+                          verticalAlign: 'bottom',
                         }}
+                        title={label}
                       >
-                        {label}
+                        {quarterSummaryHeaderLabel(label)}
                       </th>
                     ))}
                   </React.Fragment>
@@ -533,8 +555,13 @@ export default function ProductRevenueRollupReport({
                           key={QUARTER_SUMMARY_METRICS[index]}
                           style={{
                             ...quarterCellStyle(quarter, index === 0),
-                            padding: '6px',
+                            width: quarterSummaryColWidthPx(QUARTER_SUMMARY_METRICS[index]),
+                            minWidth: quarterSummaryColWidthPx(QUARTER_SUMMARY_METRICS[index]),
+                            maxWidth: quarterSummaryColWidthPx(QUARTER_SUMMARY_METRICS[index]),
+                            padding: '8px 10px',
                             fontVariantNumeric: 'tabular-nums',
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
                           }}
                         >
                           {value}
@@ -585,7 +612,7 @@ export default function ProductRevenueRollupReport({
               {selectedCustomer.label}
             </div>
           </div>
-          <table style={{ borderCollapse: 'separate', borderSpacing: 0, width: '100%', minWidth: IDENTITY_COLUMNS_WIDTH_PX + 1480, fontSize: 12, tableLayout: 'fixed' }}>
+          <table style={{ borderCollapse: 'separate', borderSpacing: 0, width: '100%', minWidth: IDENTITY_COLUMNS_WIDTH_PX + 1706, fontSize: 12, tableLayout: 'fixed' }}>
             <colgroup>
               {IDENTITY_COLUMNS.map((column) => (
                 <col key={column.key} style={{ width: columnWidth(column.widthCh) }} />
