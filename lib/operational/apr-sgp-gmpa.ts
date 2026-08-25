@@ -57,6 +57,16 @@ function asString(value: unknown): string {
   return String(value ?? '').trim();
 }
 
+function asDutyCode(value: unknown): string | null {
+  const text = asString(value).toUpperCase();
+  return text || null;
+}
+
+function asDutyDescription(value: unknown): string | null {
+  const text = asString(value).replace(/\s+/g, ' ');
+  return text || null;
+}
+
 function normalizeHeader(value: unknown): string {
   return asString(value).toLowerCase().replace(/\s+/g, ' ').replace(/[$()]/g, '').trim();
 }
@@ -200,6 +210,8 @@ export type SpreadsheetDutyIdentity = {
   htsCode: string | null;
   countryOfOrigin: string | null;
   vendorName: string | null;
+  dutyCode: string | null;
+  dutyDescription: string | null;
 };
 
 export function pickDutyTariffSheetNameFromList(names: string[]): string | null {
@@ -277,10 +289,14 @@ function rememberDutyIdentity(
   itemId: string,
   htsCode: string | null,
   countryOfOrigin: string | null,
-  vendorName: string | null
+  vendorName: string | null,
+  dutyCode?: string | null,
+  dutyDescription?: string | null
 ) {
   const key = itemKey(itemId);
   if (!key) return;
+  const nextCode = asDutyCode(dutyCode);
+  const nextDescription = asDutyDescription(dutyDescription);
   const existing = byItem.get(key);
   if (!existing) {
     byItem.set(key, {
@@ -288,12 +304,16 @@ function rememberDutyIdentity(
       htsCode,
       countryOfOrigin: normalizeOriginCode(countryOfOrigin),
       vendorName,
+      dutyCode: nextCode,
+      dutyDescription: nextDescription,
     });
     return;
   }
   existing.htsCode = existing.htsCode || htsCode;
   existing.countryOfOrigin = existing.countryOfOrigin || normalizeOriginCode(countryOfOrigin);
   existing.vendorName = existing.vendorName || vendorName;
+  existing.dutyCode = existing.dutyCode || nextCode;
+  existing.dutyDescription = existing.dutyDescription || nextDescription;
 }
 
 export function parseAprSgpDutyTariffItems(workbook: XLSX.WorkBook): SpreadsheetDutyIdentity[] {
@@ -325,6 +345,8 @@ export function parseAprSgpDutyTariffItems(workbook: XLSX.WorkBook): Spreadsheet
     countryOfOrigin,
     itemId,
     htsCode,
+    dutyCode: col(columnMap, '(D1) Code', 'D1 Code', 'Duty Code'),
+    dutyDescription: col(columnMap, 'Description'),
   };
   if (indexes.itemId < 0 || indexes.htsCode < 0) return [];
   for (let rowIndex = headerIndex + 1; rowIndex < matrix.length; rowIndex += 1) {
@@ -336,7 +358,9 @@ export function parseAprSgpDutyTariffItems(workbook: XLSX.WorkBook): Spreadsheet
       itemId,
       formatHtsNumber(readString(row, indexes.htsCode)),
       readString(row, indexes.countryOfOrigin) || null,
-      readString(row, indexes.vendorName) || null
+      readString(row, indexes.vendorName) || null,
+      readString(row, indexes.dutyCode) || null,
+      readString(row, indexes.dutyDescription) || null
     );
   }
   return Array.from(byItem.values());
@@ -350,7 +374,16 @@ function parseDutyTariffItems(workbook: XLSX.WorkBook): Map<string, SpreadsheetD
   return byItem;
 }
 
-export function compactDutyHtsFromRows(rows: Array<{ itemId?: unknown; itemSku?: unknown; htsCode?: unknown; countryOfOrigin?: unknown; customerName?: unknown; vendorName?: unknown }>): SpreadsheetDutyIdentity[] {
+export function compactDutyHtsFromRows(rows: Array<{
+  itemId?: unknown;
+  itemSku?: unknown;
+  htsCode?: unknown;
+  countryOfOrigin?: unknown;
+  customerName?: unknown;
+  vendorName?: unknown;
+  dutyCode?: unknown;
+  dutyDescription?: unknown;
+}>): SpreadsheetDutyIdentity[] {
   const byItem = new Map<string, SpreadsheetDutyIdentity>();
   for (const row of rows) {
     const itemId = asString(row.itemSku || row.itemId);
@@ -360,10 +393,12 @@ export function compactDutyHtsFromRows(rows: Array<{ itemId?: unknown; itemSku?:
       itemId,
       formatHtsNumber(row.htsCode),
       asString(row.countryOfOrigin) || null,
-      asString(row.vendorName || row.customerName) || null
+      asString(row.vendorName || row.customerName) || null,
+      asString(row.dutyCode) || null,
+      asString(row.dutyDescription) || null
     );
   }
-  return Array.from(byItem.values()).filter((item) => item.htsCode || item.countryOfOrigin);
+  return Array.from(byItem.values()).filter((item) => item.htsCode || item.countryOfOrigin || item.dutyCode);
 }
 
 function applyDutyIdentities(rows: AprSgpGmpaRow[], identities: SpreadsheetDutyIdentity[]): AprSgpGmpaRow[] {
@@ -520,10 +555,12 @@ export async function loadSpreadsheetDutyIdentities(companyId: string): Promise<
       ? (connection.connectionMetadata as Record<string, unknown>)
       : {};
   const fromMeta = identitiesFromMetadata(metadata);
-  const compactHasHts = compactDutyHtsFromRows(
+  const compactRows = compactDutyHtsFromRows(
     Array.isArray(metadata.aprSgpDutyHtsByItem) ? metadata.aprSgpDutyHtsByItem : []
-  ).some((item) => Boolean(item.htsCode));
-  if (compactHasHts) return fromMeta;
+  );
+  const compactHasHts = compactRows.some((item) => Boolean(item.htsCode));
+  const compactHasDutyCode = compactRows.some((item) => Boolean(item.dutyCode));
+  if (compactHasHts && compactHasDutyCode) return fromMeta;
   const upload = asMetadataRecord(metadata.aprSgpGmpaWorkbookUpload);
   const uploadSize = typeof upload.sizeBytes === 'number' ? Number(upload.sizeBytes) : 0;
   const annualOnlyUpload = uploadSize > 0 && uploadSize < 500000;
@@ -532,7 +569,7 @@ export async function loadSpreadsheetDutyIdentities(companyId: string): Promise<
       ? []
       : await loadDutyIdentitiesFromBlob(companyId, metadata);
   const fallback =
-    companyId === ATLANTIC_PRECISION_COMPANY_ID && !fromBlob.some((item) => item.htsCode)
+    companyId === ATLANTIC_PRECISION_COMPANY_ID && !fromBlob.some((item) => item.dutyCode)
       ? APR_SGP_DUTY_HTS_FALLBACK
       : [];
   if (!fromBlob.length && !fallback.length) return fromMeta;

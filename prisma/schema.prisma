@@ -1936,6 +1936,8 @@ model CompanyItemDuty {
   tradeProgram              String?   @default("none")
   qtyUnit                   String?   @default("piece")
   tariffHtsCode             String?
+  dutyCode                  String?
+  dutyDescription           String?
   enteredValuePerPiece      Float?
   enteredValueSource        String?
   spreadsheetDutyPerPiece   Float?

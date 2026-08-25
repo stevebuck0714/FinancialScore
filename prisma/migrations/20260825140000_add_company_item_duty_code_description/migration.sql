@@ -1,0 +1,2 @@
+ALTER TABLE "CompanyItemDuty" ADD COLUMN IF NOT EXISTS "dutyCode" TEXT;
+ALTER TABLE "CompanyItemDuty" ADD COLUMN IF NOT EXISTS "dutyDescription" TEXT;

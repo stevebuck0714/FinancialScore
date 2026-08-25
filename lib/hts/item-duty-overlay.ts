@@ -29,6 +29,8 @@ export type CompanyItemDutyRow = {
   tradeProgram: TradeProgram;
   qtyUnit: QtyUnit;
   tariffHtsCode: string | null;
+  dutyCode: string | null;
+  dutyDescription: string | null;
   enteredValuePerPiece: number | null;
   enteredValueSource: string | null;
   spreadsheetDutyPerPiece: number | null;
@@ -77,6 +79,8 @@ type DutyDbRow = {
   tradeProgram: string | null;
   qtyUnit: string | null;
   tariffHtsCode: string | null;
+  dutyCode: string | null;
+  dutyDescription: string | null;
   enteredValuePerPiece: number | null;
   enteredValueSource: string | null;
   spreadsheetDutyPerPiece: number | null;
@@ -166,6 +170,8 @@ export async function ensureCompanyItemDutyTable(): Promise<void> {
   await prisma.$executeRawUnsafe(`ALTER TABLE "CompanyItemDuty" ADD COLUMN IF NOT EXISTS "lastRateAsOfDate" TIMESTAMP(3)`);
   await prisma.$executeRawUnsafe(`ALTER TABLE "CompanyItemDuty" ADD COLUMN IF NOT EXISTS "lastRateReleaseName" TEXT`);
   await prisma.$executeRawUnsafe(`ALTER TABLE "CompanyItemDuty" ADD COLUMN IF NOT EXISTS "tariffHtsCode" TEXT`);
+  await prisma.$executeRawUnsafe(`ALTER TABLE "CompanyItemDuty" ADD COLUMN IF NOT EXISTS "dutyCode" TEXT`);
+  await prisma.$executeRawUnsafe(`ALTER TABLE "CompanyItemDuty" ADD COLUMN IF NOT EXISTS "dutyDescription" TEXT`);
 }
 
 export function normalizeItemSku(value: unknown): string {
@@ -228,6 +234,8 @@ export function serializeCompanyItemDuty(row: DutyDbRow): CompanyItemDutyRow {
     tradeProgram: asTradeProgram(row.tradeProgram),
     qtyUnit: asQtyUnit(row.qtyUnit),
     tariffHtsCode: String(row.tariffHtsCode || '').trim() || null,
+    dutyCode: String(row.dutyCode || '').trim() || null,
+    dutyDescription: String(row.dutyDescription || '').trim() || null,
     enteredValuePerPiece: asNullableNumber(row.enteredValuePerPiece),
     enteredValueSource: row.enteredValueSource,
     spreadsheetDutyPerPiece: asNullableNumber(row.spreadsheetDutyPerPiece),
@@ -262,6 +270,8 @@ type SeedItem = {
   itemDescription: string | null;
   htsCode: string | null;
   countryOfOrigin: string | null;
+  dutyCode: string | null;
+  dutyDescription: string | null;
   tradeProgram: TradeProgram;
   qtyUnit: QtyUnit;
   enteredValuePerPiece: number | null;
@@ -288,6 +298,8 @@ function aggregateSgpRows(rows: AprSgpGmpaRow[]): SeedItem[] {
       itemDescription: null,
       htsCode: normalizeHtsCode(row.htsCode),
       countryOfOrigin: normalizeOriginCode(row.countryOfOrigin),
+      dutyCode: null,
+      dutyDescription: null,
       tradeProgram: asTradeProgram(row.tradeProgram),
       qtyUnit: asQtyUnit(row.qtyUnit),
       enteredValuePerPiece: firstNonNullNumber(row.updatedMaterialCost, row.sgpMaterialCost),
@@ -329,6 +341,8 @@ async function upsertSeedItems(companyId: string, items: SeedItem[], mode: 'spre
       ${item.itemDescription},
       ${item.htsCode},
       ${item.countryOfOrigin},
+      ${item.dutyCode},
+      ${item.dutyDescription},
       ${item.tradeProgram},
       ${item.qtyUnit},
       ${item.enteredValuePerPiece},
@@ -347,7 +361,8 @@ async function upsertSeedItems(companyId: string, items: SeedItem[], mode: 'spre
     if (mode === 'spreadsheet') {
       await prisma.$executeRaw`
         INSERT INTO "CompanyItemDuty" (
-          "id", "companyId", "itemSku", "itemDescription", "htsCode", "countryOfOrigin", "tradeProgram", "qtyUnit",
+          "id", "companyId", "itemSku", "itemDescription", "htsCode", "countryOfOrigin", "dutyCode", "dutyDescription",
+          "tradeProgram", "qtyUnit",
           "enteredValuePerPiece", "enteredValueSource", "spreadsheetDutyPerPiece", "spreadsheetTariffPerPiece",
           "dutyPerPiece", "tariffPerPiece", "rateSource", "identitySource", "htsInputSource",
           "lastSpreadsheetSeedAt", "createdAt", "updatedAt"
@@ -364,6 +379,8 @@ async function upsertSeedItems(companyId: string, items: SeedItem[], mode: 'spre
             WHEN COALESCE("CompanyItemDuty"."htsInputSource", '') = 'user' THEN "CompanyItemDuty"."countryOfOrigin"
             ELSE COALESCE(NULLIF("CompanyItemDuty"."countryOfOrigin", ''), EXCLUDED."countryOfOrigin")
           END,
+          "dutyCode" = COALESCE(NULLIF(EXCLUDED."dutyCode", ''), "CompanyItemDuty"."dutyCode"),
+          "dutyDescription" = COALESCE(NULLIF(EXCLUDED."dutyDescription", ''), "CompanyItemDuty"."dutyDescription"),
           "tradeProgram" = CASE
             WHEN COALESCE("CompanyItemDuty"."htsInputSource", '') = 'user' THEN "CompanyItemDuty"."tradeProgram"
             WHEN EXCLUDED."tradeProgram" IS NOT NULL AND EXCLUDED."tradeProgram" <> 'none' THEN EXCLUDED."tradeProgram"
@@ -393,7 +410,8 @@ async function upsertSeedItems(companyId: string, items: SeedItem[], mode: 'spre
     } else {
       await prisma.$executeRaw`
         INSERT INTO "CompanyItemDuty" (
-          "id", "companyId", "itemSku", "itemDescription", "htsCode", "countryOfOrigin", "tradeProgram", "qtyUnit",
+          "id", "companyId", "itemSku", "itemDescription", "htsCode", "countryOfOrigin", "dutyCode", "dutyDescription",
+          "tradeProgram", "qtyUnit",
           "enteredValuePerPiece", "enteredValueSource", "spreadsheetDutyPerPiece", "spreadsheetTariffPerPiece",
           "dutyPerPiece", "tariffPerPiece", "rateSource", "identitySource", "htsInputSource",
           "lastSpreadsheetSeedAt", "createdAt", "updatedAt"
@@ -464,10 +482,18 @@ async function overlayDutyHtsFromSpreadsheetSources(companyId: string): Promise<
     return exact ? [exact] : [normalizedSku];
   };
   const bySku = new Map<string, SeedItem>();
-  const add = (itemSkuRaw: unknown, htsCodeRaw: unknown, originRaw: unknown) => {
+  const add = (
+    itemSkuRaw: unknown,
+    htsCodeRaw: unknown,
+    originRaw: unknown,
+    dutyCodeRaw?: unknown,
+    dutyDescriptionRaw?: unknown
+  ) => {
     const htsCode = normalizeHtsCode(htsCodeRaw);
     const countryOfOrigin = normalizeOriginCode(originRaw);
-    if (!htsCode && !countryOfOrigin) return;
+    const dutyCode = String(dutyCodeRaw || '').trim().toUpperCase() || null;
+    const dutyDescription = String(dutyDescriptionRaw || '').trim() || null;
+    if (!htsCode && !countryOfOrigin && !dutyCode && !dutyDescription) return;
     for (const itemSku of matchingDutySkus(itemSkuRaw)) {
       const existing = bySku.get(itemSku.toUpperCase());
       if (!existing) {
@@ -476,6 +502,8 @@ async function overlayDutyHtsFromSpreadsheetSources(companyId: string): Promise<
           itemDescription: null,
           htsCode,
           countryOfOrigin,
+          dutyCode,
+          dutyDescription,
           tradeProgram: 'none',
           qtyUnit: 'piece',
           enteredValuePerPiece: null,
@@ -488,10 +516,12 @@ async function overlayDutyHtsFromSpreadsheetSources(companyId: string): Promise<
       }
       existing.htsCode = existing.htsCode || htsCode;
       existing.countryOfOrigin = existing.countryOfOrigin || countryOfOrigin;
+      existing.dutyCode = existing.dutyCode || dutyCode;
+      existing.dutyDescription = existing.dutyDescription || dutyDescription;
       existing.htsInputSource = existing.htsInputSource || (htsCode ? 'spreadsheet' : null);
     }
   };
-  for (const row of identities) add(row.itemSku, row.htsCode, row.countryOfOrigin);
+  for (const row of identities) add(row.itemSku, row.htsCode, row.countryOfOrigin, row.dutyCode, row.dutyDescription);
   for (const row of freightRows || []) add(row.itemSku, row.htsCode, row.countryOfOrigin);
   const items = Array.from(bySku.values());
   if (!items.length) return 0;
@@ -544,6 +574,8 @@ async function loadIdentitySkus(companyId: string): Promise<SeedItem[]> {
         itemDescription: description && description.toLowerCase() !== 'unknown item' ? description : null,
         htsCode: null,
         countryOfOrigin: null,
+        dutyCode: null,
+        dutyDescription: null,
         tradeProgram: 'none',
         qtyUnit: 'piece',
         enteredValuePerPiece: null,
@@ -580,7 +612,7 @@ export async function listCompanyItemDuties(
   const rows = await prisma.$queryRaw<DutyDbRow[]>`
     SELECT
       "id", "companyId", "itemSku", "itemDescription", "htsCode", "countryOfOrigin", "tradeProgram", "qtyUnit",
-      "tariffHtsCode", "enteredValuePerPiece", "enteredValueSource", "spreadsheetDutyPerPiece", "spreadsheetTariffPerPiece",
+      "tariffHtsCode", "dutyCode", "dutyDescription", "enteredValuePerPiece", "enteredValueSource", "spreadsheetDutyPerPiece", "spreadsheetTariffPerPiece",
       "dutyPerPiece", "tariffPerPiece", "dutyRatePct", "specialRatePct", "section301RatePct",
       "section232RatePct", "ieepaRatePct", "additionalRatePct", "tariffRatePct", "rateSource", "identitySource",
       "htsInputSource", "lastSpreadsheetSeedAt", "lastRateFetchedAt", "lastRateAsOfDate", "lastRateReleaseName", "userEditedAt", "updatedAt"
@@ -670,7 +702,7 @@ export async function updateCompanyItemDuties(
   const rows = await prisma.$queryRaw<DutyDbRow[]>`
     SELECT
       "id", "companyId", "itemSku", "itemDescription", "htsCode", "countryOfOrigin", "tradeProgram", "qtyUnit",
-      "tariffHtsCode", "enteredValuePerPiece", "enteredValueSource", "spreadsheetDutyPerPiece", "spreadsheetTariffPerPiece",
+      "tariffHtsCode", "dutyCode", "dutyDescription", "enteredValuePerPiece", "enteredValueSource", "spreadsheetDutyPerPiece", "spreadsheetTariffPerPiece",
       "dutyPerPiece", "tariffPerPiece", "dutyRatePct", "specialRatePct", "section301RatePct",
       "section232RatePct", "ieepaRatePct", "additionalRatePct", "tariffRatePct", "rateSource", "identitySource",
       "htsInputSource", "lastSpreadsheetSeedAt", "lastRateFetchedAt", "lastRateAsOfDate", "lastRateReleaseName", "userEditedAt", "updatedAt"

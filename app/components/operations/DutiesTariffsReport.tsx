@@ -70,13 +70,13 @@ const PROGRAM_LABELS: Record<string, string> = { none: 'None', usmca: 'USMCA', o
 const UNIT_LABELS: Record<string, string> = { piece: 'Piece', kg: 'kg', lb: 'lb', other: 'Other' };
 
 type DutySortKey =
-  | 'vendorName'
   | 'itemSku'
   | 'htsCode'
   | 'countryOfOrigin'
   | 'tradeProgram'
   | 'qtyUnit'
-  | 'tariffHtsCode'
+  | 'dutyCode'
+  | 'dutyDescription'
   | 'enteredValuePerPiece'
   | 'dutyRatePct'
   | 'specialRatePct'
@@ -87,13 +87,13 @@ type DutySortKey =
   | 'updatedAt';
 
 const SORT_COLUMNS: Array<{ key: DutySortKey; label: string; align?: 'left' | 'right'; title?: string; width?: number }> = [
-  { key: 'vendorName', label: 'Vendor', width: 144 },
   { key: 'itemSku', label: 'Item' },
   { key: 'htsCode', label: 'HTS-10' },
   { key: 'countryOfOrigin', label: 'Origin' },
   { key: 'tradeProgram', label: 'Program' },
   { key: 'qtyUnit', label: 'Unit' },
-  { key: 'tariffHtsCode', label: 'Item tariff code', width: 145, title: 'Chapter 99 additional tariff heading (9903) applied to this item. Filled by Refresh rates.' },
+  { key: 'dutyCode', label: 'Code', width: 88, title: '(D1) Code from the SGP Duty & Tariffs sheet.' },
+  { key: 'dutyDescription', label: 'Description', width: 220, title: 'Description from the SGP Duty & Tariffs sheet.' },
   { key: 'enteredValuePerPiece', label: 'Value $', align: 'right', title: 'Customs entered value per unit. Seeded from SGP material cost. Duty and tariff dollars = this value × the % rates.' },
   { key: 'dutyRatePct', label: 'Duty %', align: 'right' },
   { key: 'specialRatePct', label: 'Special %', align: 'right' },
@@ -105,13 +105,13 @@ const SORT_COLUMNS: Array<{ key: DutySortKey; label: string; align?: 'left' | 'r
 ];
 
 function sortValue(row: CompanyItemDutyRow, key: DutySortKey): string | number {
-  if (key === 'vendorName') return String(row.vendorName || '').trim().toLowerCase();
   if (key === 'itemSku') return String(row.itemSku || '').trim().toLowerCase();
   if (key === 'htsCode') return String(row.htsCode || '').trim().toLowerCase();
   if (key === 'countryOfOrigin') return String(row.countryOfOrigin || '').trim().toLowerCase();
   if (key === 'tradeProgram') return PROGRAM_LABELS[row.tradeProgram] || row.tradeProgram || '';
   if (key === 'qtyUnit') return UNIT_LABELS[row.qtyUnit] || row.qtyUnit || '';
-  if (key === 'tariffHtsCode') return String(row.tariffHtsCode || '').trim().toLowerCase();
+  if (key === 'dutyCode') return String(row.dutyCode || '').trim().toLowerCase();
+  if (key === 'dutyDescription') return String(row.dutyDescription || '').trim().toLowerCase();
   if (key === 'updatedAt') return row.userEditedAt || row.lastSpreadsheetSeedAt || row.updatedAt || '';
   const numeric = row[key];
   return numeric == null || !Number.isFinite(Number(numeric)) ? Number.NEGATIVE_INFINITY : Number(numeric);
@@ -157,7 +157,7 @@ export default function DutiesTariffsReport({ selectedCompanyId, onOpenInfo }: D
   const [notice, setNotice] = useState<string | null>(null);
   const [spreadsheetItems, setSpreadsheetItems] = useState(0);
   const [missingHtsCount, setMissingHtsCount] = useState(0);
-  const [sortKey, setSortKey] = useState<DutySortKey>('vendorName');
+  const [sortKey, setSortKey] = useState<DutySortKey>('itemSku');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
   const [vendorFilter, setVendorFilter] = useState(ALL_VENDORS_KEY);
   const [asOfDate, setAsOfDate] = useState(formatEstDate);
@@ -242,15 +242,21 @@ export default function DutiesTariffsReport({ selectedCompanyId, onOpenInfo }: D
   }, [items]);
 
   const vendorOptions = useMemo(() => {
-    const byKey = new Map<string, { key: string; label: string; count: number }>();
+    const byKey = new Map<string, { key: string; label: string; vendorId: string; count: number }>();
     for (const row of items) {
       const key = rowVendorKey(row);
       const existing = byKey.get(key);
       if (existing) {
         existing.count += 1;
+        if (!existing.vendorId) existing.vendorId = String(row.vendorId || '').trim();
         continue;
       }
-      byKey.set(key, { key, label: rowVendorLabel(row), count: 1 });
+      byKey.set(key, {
+        key,
+        label: rowVendorLabel(row),
+        vendorId: String(row.vendorId || '').trim(),
+        count: 1,
+      });
     }
     return Array.from(byKey.values()).sort((left, right) => {
       if (left.key === UNASSIGNED_VENDOR_KEY) return 1;
@@ -258,6 +264,10 @@ export default function DutiesTariffsReport({ selectedCompanyId, onOpenInfo }: D
       return left.label.localeCompare(right.label, undefined, { numeric: true, sensitivity: 'base' });
     });
   }, [items]);
+
+  const selectedVendor = vendorFilter === ALL_VENDORS_KEY
+    ? null
+    : vendorOptions.find((vendor) => vendor.key === vendorFilter) || null;
 
   const visibleItems = useMemo(
     () => (vendorFilter === ALL_VENDORS_KEY ? items : items.filter((row) => rowVendorKey(row) === vendorFilter)),
@@ -542,7 +552,30 @@ export default function DutiesTariffsReport({ selectedCompanyId, onOpenInfo }: D
         </div>
       ) : null}
 
-      <div style={{ overflowX: 'auto', border: '1px solid #e2e8f0', borderRadius: 12, background: '#ffffff' }}>
+      <div style={{ overflow: 'hidden', border: '1px solid #e2e8f0', borderRadius: 12, background: '#ffffff' }}>
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'baseline',
+            justifyContent: 'space-between',
+            gap: 16,
+            flexWrap: 'wrap',
+            padding: '10px 14px',
+            borderBottom: '1px solid #e2e8f0',
+            background: '#f8fafc',
+          }}
+        >
+          <div style={{ fontSize: 15, fontWeight: 800, color: '#0f172a' }}>
+            {selectedVendor ? selectedVendor.label : 'All vendors'}
+          </div>
+          {selectedVendor ? (
+            <div style={{ fontSize: 13, color: '#334155' }}>
+              <span style={{ fontWeight: 700, color: '#64748b', marginRight: 8 }}>Vendor ID</span>
+              <span style={{ fontWeight: 800 }}>{selectedVendor.vendorId || '—'}</span>
+            </div>
+          ) : null}
+        </div>
+        <div style={{ overflowX: 'auto' }}>
         <table style={{ minWidth: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
           <thead>
             <tr style={{ background: '#f8fafc' }}>
@@ -585,12 +618,6 @@ export default function DutiesTariffsReport({ selectedCompanyId, onOpenInfo }: D
             ) : null}
             {sortedItems.map((row) => (
               <tr key={row.id} style={{ background: row.needsHtsInput ? '#fffbeb' : '#ffffff' }}>
-                <td
-                  title={row.vendorName || undefined}
-                  style={{ padding: '6px 10px', borderBottom: '1px solid #f1f5f9', whiteSpace: 'nowrap', width: 144, minWidth: 144, maxWidth: 144, overflow: 'hidden', textOverflow: 'ellipsis' }}
-                >
-                  {row.vendorName || '—'}
-                </td>
                 <td style={{ padding: '6px 10px', borderBottom: '1px solid #f1f5f9', fontWeight: 700, whiteSpace: 'nowrap' }}>
                   {row.itemSku}
                 </td>
@@ -636,10 +663,16 @@ export default function DutiesTariffsReport({ selectedCompanyId, onOpenInfo }: D
                   </select>
                 </td>
                 <td
-                  title={row.tariffHtsCode || undefined}
-                  style={{ padding: '6px 8px', borderBottom: '1px solid #f1f5f9', width: 145, minWidth: 145, maxWidth: 180, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}
+                  title={row.dutyCode || undefined}
+                  style={{ padding: '6px 8px', borderBottom: '1px solid #f1f5f9', width: 88, minWidth: 88, maxWidth: 110, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', fontWeight: 700 }}
                 >
-                  {row.tariffHtsCode || '—'}
+                  {row.dutyCode || '—'}
+                </td>
+                <td
+                  title={row.dutyDescription || undefined}
+                  style={{ padding: '6px 8px', borderBottom: '1px solid #f1f5f9', width: 220, minWidth: 180, maxWidth: 280, overflow: 'hidden', textOverflow: 'ellipsis' }}
+                >
+                  {row.dutyDescription || '—'}
                 </td>
                 <td style={{ padding: '6px 8px', borderBottom: '1px solid #f1f5f9' }}>
                   <input
@@ -673,6 +706,7 @@ export default function DutiesTariffsReport({ selectedCompanyId, onOpenInfo }: D
             ))}
           </tbody>
         </table>
+        </div>
       </div>
       {summaryOpen ? (
         <div
