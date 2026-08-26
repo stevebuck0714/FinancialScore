@@ -1,3 +1,4 @@
+import { isProductionSite } from '@/lib/db-security';
 import { sendSiteUptimeAlert } from '@/lib/email';
 
 export type SiteUptimeCheck = {
@@ -9,6 +10,7 @@ export type SiteUptimeCheck = {
 
 export type SiteUptimeReport = {
   ok: boolean;
+  skipped?: boolean;
   ranAt: string;
   durationMs: number;
   baseUrl: string;
@@ -20,6 +22,7 @@ export type SiteUptimeReport = {
 };
 
 const ALERT_RECIPIENT = 'support@corelytics.com';
+const PRODUCTION_UPTIME_BASE_URL = 'https://dashboard.corelytics.com';
 
 function appBaseUrl(fallbackOrigin?: string): string {
   return (
@@ -28,6 +31,19 @@ function appBaseUrl(fallbackOrigin?: string): string {
     fallbackOrigin ||
     ''
   ).replace(/\/+$/, '');
+}
+
+function hostFromUrl(url: string): string {
+  return String(url || '')
+    .trim()
+    .toLowerCase()
+    .replace(/^https?:\/\//, '')
+    .replace(/\/.*$/, '');
+}
+
+function isNonProductionUptimeHost(url: string): boolean {
+  const host = hostFromUrl(url);
+  return host.includes('staging') || host.endsWith('.vercel.app') || host.includes('localhost');
 }
 
 async function fetchCheck(
@@ -83,8 +99,24 @@ export async function runSiteUptime(options?: {
 }): Promise<SiteUptimeReport> {
   const startedAt = Date.now();
   const ranAt = new Date().toISOString();
-  const baseUrl = appBaseUrl(options?.baseUrl);
+  const configuredUrl = appBaseUrl(options?.baseUrl);
   const sendEmail = options?.sendEmail !== false;
+
+  // Staging Vercel projects also have VERCEL_ENV=production. Do not probe or
+  // email unless this is the customer production site.
+  if (!isProductionSite() || isNonProductionUptimeHost(configuredUrl)) {
+    return {
+      ok: true,
+      skipped: true,
+      ranAt,
+      durationMs: Date.now() - startedAt,
+      baseUrl: configuredUrl,
+      checks: [],
+      email: { sent: false, reason: 'Site uptime checks dashboard.corelytics.com only' },
+    };
+  }
+
+  const baseUrl = PRODUCTION_UPTIME_BASE_URL;
 
   const checks = [
     await fetchCheck(baseUrl, '/api/public/up', {

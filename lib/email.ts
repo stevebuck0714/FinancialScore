@@ -1431,8 +1431,7 @@ export async function sendSiteUptimeAlert(params: {
     detail: string;
   }>;
 }) {
-  const vercelProduction = process.env.VERCEL === '1' && process.env.VERCEL_ENV === 'production';
-  if (!isProductionSite() && !vercelProduction) {
+  if (!isProductionSite()) {
     console.log('Skipping site uptime alert email: not a production runtime.');
     return { success: false, reason: 'Site uptime alerts are production-runtime only' };
   }

@@ -20,8 +20,6 @@ jobs:
         include:
           - name: production
             url: https://dashboard.corelytics.com
-          - name: staging
-            url: https://financial-score.vercel.app
     steps:
       - name: Check out
         uses: actions/checkout@v4
