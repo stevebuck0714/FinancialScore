@@ -91,6 +91,9 @@ const operationalTemplates: Record<string, Omit<ReportFieldCatalogItem, 'moduleK
     { field: 'op.payroll-bureau-ops.revenue', label: 'Client Annual Billing', source: 'operational', format: 'currency', recordSet: 'clients', valueKey: 'revenue' },
     { field: 'op.payroll-bureau-ops.profit', label: 'Client Profit', source: 'operational', format: 'currency', recordSet: 'clients', valueKey: 'profit' },
     { field: 'op.payroll-bureau-ops.marginPct', label: 'Client Margin %', source: 'operational', format: 'percent', recordSet: 'clients', valueKey: 'marginPct' },
+    { field: 'op.payroll-bureau-ops.netRevenue', label: 'Cost-to-Serve Net Revenue', source: 'operational', format: 'currency', recordSet: 'costToServe.ytd.rows', valueKey: 'netRevenue' },
+    { field: 'op.payroll-bureau-ops.costToServe', label: 'Cost to Serve', source: 'operational', format: 'currency', recordSet: 'costToServe.ytd.rows', valueKey: 'costToServe' },
+    { field: 'op.payroll-bureau-ops.contribution', label: 'Client Contribution', source: 'operational', format: 'currency', recordSet: 'costToServe.ytd.rows', valueKey: 'contribution' },
   ],
   'labor-scheduling': [
     { field: 'op.labor.headcount', label: 'Headcount', source: 'operational', format: 'number', recordSet: 'headcountByRole', valueKey: 'headcount' },

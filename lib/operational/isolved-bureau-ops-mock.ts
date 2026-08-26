@@ -3,6 +3,17 @@ import {
   getIsolvedClientBook,
   type IsolvedClientRecord,
 } from '@/lib/operational/isolved-people-cloud-mock';
+import type { PayrollBureauAccountingInputs } from '@/lib/operational/payroll-bureau-accounting-overlay';
+import {
+  buildCostToServeReport,
+  normalizeClientMatchKey,
+  payrollsPerYear,
+  scaleAmount,
+  scaleCount,
+  unmappedAccountingRevenue,
+  type CostToServeOperatingClient,
+  type CostToServeRevenueInput,
+} from '@/lib/operational/payroll-bureau-cost-to-serve';
 
 export const PAYROLL_BUREAU_OPS_SOURCE = 'CORELYTICS_PAYROLL_BUREAU';
 
@@ -93,9 +104,65 @@ function annualBilling(client: IsolvedClientRecord): number {
   return round2(pepmForClient(client) * client.currentCount * 12 + accountFee * 12);
 }
 
-function annualCostToServe(client: IsolvedClientRecord): number {
-  const costPepm = 42 + weightedPayrollUnits(client) * 18 + (client.offCycleFrequent ? 8 : 0);
-  return round2(costPepm * client.currentCount * 12);
+function annualOperatingCounts(client: IsolvedClientRecord) {
+  const payrolls = payrollsPerYear(client.payFrequency);
+  const offCycleRuns = client.offCycleFrequent ? 8 : 2;
+  const adjustments = (client.offCycleFrequent ? 12 : 4) + Math.max(0, client.stateCount - 1) * 3;
+  const liveChecks = Math.round(client.currentCount * (1 - client.depositDirectShare) * payrolls);
+  const directDeposits = Math.round(client.currentCount * client.depositDirectShare * payrolls);
+  return { payrolls, offCycleRuns, adjustments, liveChecks, directDeposits };
+}
+
+function operatingClientForPeriod(
+  client: IsolvedClientRecord,
+  period: 'month' | 'ytd' | 'annual',
+  monthIndex: number
+): CostToServeOperatingClient {
+  const annual = annualOperatingCounts(client);
+  return {
+    clientName: client.name,
+    ein: client.ein,
+    accountManager: client.accountManager,
+    processor: client.processor,
+    clientType: client.division,
+    sizeBand: client.sizeBand,
+    employeeCount: client.currentCount,
+    payFrequency: client.payFrequency,
+    stateCount: client.stateCount,
+    locationCount: client.locations.length,
+    payrolls: scaleCount(annual.payrolls, period, monthIndex),
+    offCycleRuns: scaleCount(annual.offCycleRuns, period, monthIndex),
+    adjustments: scaleCount(annual.adjustments, period, monthIndex),
+    liveChecks: scaleCount(annual.liveChecks, period, monthIndex),
+    directDeposits: scaleCount(annual.directDeposits, period, monthIndex),
+    jobCosting: client.jobCosting,
+    union: client.union,
+  };
+}
+
+function revenueMapFromAccounting(
+  accounting?: { entries(): IterableIterator<[string, CostToServeRevenueInput]> } | null
+): Map<string, CostToServeRevenueInput> | undefined {
+  if (!accounting) return undefined;
+  const map = new Map<string, CostToServeRevenueInput>();
+  for (const [key, value] of accounting.entries()) {
+    map.set(key, value);
+  }
+  return map.size > 0 ? map : undefined;
+}
+
+function estimatedGrossMap(
+  clients: IsolvedClientRecord[],
+  period: 'month' | 'ytd' | 'annual',
+  monthIndex: number
+): Map<string, number> {
+  const map = new Map<string, number>();
+  for (const client of clients) {
+    const amount = scaleAmount(annualBilling(client), period, monthIndex);
+    map.set(normalizeClientMatchKey(client.name), amount);
+    map.set(client.name, amount);
+  }
+  return map;
 }
 
 function periodGross(client: IsolvedClientRecord): number {
@@ -564,16 +631,50 @@ function segmentForClient(client: IsolvedClientRecord, annualRevenue: number, ma
   return 'Low-value / high-complexity';
 }
 
-export function buildIsolvedBureauOpsPayload(companyId: string) {
+export function buildIsolvedBureauOpsPayload(
+  companyId: string,
+  accounting?: PayrollBureauAccountingInputs | null
+) {
   const clients = getIsolvedClientBook(companyId).filter((client) => client.status === 'Active');
   const rng = makeRng(`isolved-bureau-ops:${companyId}`);
   const asOfDate = formatEstDate();
   const latestCheckDate = previousEstBusinessDate(asOfDate);
+  const monthIndex = Math.min(12, Math.max(1, Number(asOfDate.slice(5, 7)) || 1));
+  const clientNames = clients.map((client) => client.name);
+  const monthCts = buildCostToServeReport({
+    period: 'month',
+    monthIndex,
+    clients: clients.map((client) => operatingClientForPeriod(client, 'month', monthIndex)),
+    revenueByClientName: revenueMapFromAccounting(accounting?.monthByName),
+    estimatedGrossByClientName: estimatedGrossMap(clients, 'month', monthIndex),
+    pools: accounting?.monthPools,
+    unmappedQbdRevenue: unmappedAccountingRevenue(accounting?.monthByName, clientNames),
+  });
+  const ytdCts = buildCostToServeReport({
+    period: 'ytd',
+    monthIndex,
+    clients: clients.map((client) => operatingClientForPeriod(client, 'ytd', monthIndex)),
+    revenueByClientName: revenueMapFromAccounting(accounting?.ytdByName),
+    estimatedGrossByClientName: estimatedGrossMap(clients, 'ytd', monthIndex),
+    pools: accounting?.ytdPools,
+    unmappedQbdRevenue: unmappedAccountingRevenue(accounting?.ytdByName, clientNames),
+  });
+  const annualCts = buildCostToServeReport({
+    period: 'annual',
+    monthIndex,
+    clients: clients.map((client) => operatingClientForPeriod(client, 'annual', monthIndex)),
+    revenueByClientName: revenueMapFromAccounting(accounting?.annualByName),
+    estimatedGrossByClientName: estimatedGrossMap(clients, 'annual', monthIndex),
+    pools: accounting?.annualPools,
+    unmappedQbdRevenue: unmappedAccountingRevenue(accounting?.annualByName, clientNames),
+  });
+  const annualByName = new Map(annualCts.rows.map((row) => [row.clientName, row]));
   const economics = clients.map((client) => {
-    const revenue = annualBilling(client);
-    const cost = annualCostToServe(client);
-    const profit = round2(revenue - cost);
-    const marginPct = pct(profit, revenue);
+    const cts = annualByName.get(client.name);
+    const revenue = cts?.netRevenue ?? annualBilling(client);
+    const cost = cts?.costToServe ?? 0;
+    const profit = cts?.contribution ?? round2(revenue - cost);
+    const marginPct = cts?.marginPct ?? pct(profit, revenue);
     const health = healthScore(client, rng);
     return {
       clientName: client.name,
@@ -584,15 +685,15 @@ export function buildIsolvedBureauOpsPayload(companyId: string) {
       sizeBand: client.sizeBand,
       employeeCount: client.currentCount,
       payFrequency: client.payFrequency,
-      payrollRunsPerYear: client.payFrequency === 'Weekly' ? 52 : client.payFrequency === 'Semimonthly' ? 24 : 26,
+      payrollRunsPerYear: payrollsPerYear(client.payFrequency),
       weightedUnits: weightedPayrollUnits(client),
       pepm: pepmForClient(client),
       revenue,
       costToServe: cost,
       profit,
       marginPct,
-      revenuePerPayroll: round2(revenue / (client.payFrequency === 'Weekly' ? 52 : client.payFrequency === 'Semimonthly' ? 24 : 26)),
-      revenuePerEmployee: round2(revenue / Math.max(1, client.currentCount)),
+      revenuePerPayroll: cts?.revenuePerPayroll ?? round2(revenue / payrollsPerYear(client.payFrequency)),
+      revenuePerEmployee: cts?.revenuePerEmployee ?? round2(revenue / Math.max(1, client.currentCount)),
       healthScore: health.score,
       healthBand: health.band,
       segment: segmentForClient(client, revenue, marginPct),
@@ -794,7 +895,9 @@ export function buildIsolvedBureauOpsPayload(companyId: string) {
       generatedAt: new Date().toISOString(),
       asOfDate,
       latestCheckDate,
-      note: 'Corelytics payroll-bureau management layer over isolved. CTR staff (~40–50) process 200+ employer clients. Account managers own the client relationship; processors run payroll. Drill to isolved for transaction detail.',
+      note: accounting?.hasCustomerSales
+        ? 'Phase 1 Cost to Serve uses isolved volume plus QBD/QBE customer billings where names match. Processor time and tickets are still allocated. Drill to isolved for payroll detail.'
+        : 'Phase 1 Cost to Serve uses isolved volume and estimated client billings until QBD/QBE customer invoices are mapped. CTR processors run payroll; account managers own the relationship.',
     },
     today: {
       summary: {
@@ -825,6 +928,16 @@ export function buildIsolvedBureauOpsPayload(companyId: string) {
     clients: economics,
     billingsByType: rollup('clientType'),
     billingsBySize: rollup('sizeBand'),
+    costToServe: {
+      phase: 1,
+      asOfDate,
+      monthLabel: monthLabel(asOfDate.slice(0, 7)),
+      revenueSource: accounting?.hasCustomerSales ? 'qbd' : 'estimated',
+      poolSource: monthCts.pools.source,
+      month: monthCts,
+      ytd: ytdCts,
+      annual: annualCts,
+    },
     summary: {
       activeClients: clients.length,
       activeEmployees: clients.reduce((sum, client) => sum + client.currentCount, 0),

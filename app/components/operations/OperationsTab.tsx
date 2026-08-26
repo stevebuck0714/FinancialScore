@@ -1211,7 +1211,7 @@ export default function OperationsTab({
     if (mapModuleToDataType(normalized) === 'cap-table' && value === undefined) return false;
     return value === undefined ? true : value !== false;
   };
-  const renderOperationalClientSelector = () => {
+  const renderOperationalClientSelector = (align: 'left' | 'right' = 'right') => {
     const isolvedClientNames = Array.from(new Set([
       ...(Array.isArray(payrollData?.clientCensus) ? payrollData.clientCensus.map((row: any) => String(row?.clientName || '').trim()) : []),
       ...(Array.isArray(payrollBureauOpsData?.clients) ? payrollBureauOpsData.clients.map((row: any) => String(row?.clientName || '').trim()) : []),
@@ -1225,7 +1225,7 @@ export default function OperationsTab({
         : [{ value: 'Eli Lilly', label: 'Eli Lilly' }]),
     ];
     return (
-      <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: '8px' }}>
+      <div style={{ display: 'flex', justifyContent: align === 'left' ? 'flex-start' : 'flex-end', alignItems: 'center', gap: '8px' }}>
         <label style={{ fontSize: '12px', fontWeight: 700, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
           Client
         </label>
@@ -27476,6 +27476,8 @@ Strategies to Improve the CCC
           moduleKey={moduleKey}
           data={payrollBureauOpsData}
           isSectionEnabled={isSectionEnabled}
+          clientFilter={selectedOperationalClient}
+          clientSelector={moduleKey === 'client_economics' ? renderOperationalClientSelector('left') : null}
         />
       );
     }

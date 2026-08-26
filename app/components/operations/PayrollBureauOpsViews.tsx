@@ -37,12 +37,24 @@ type BureauOpsPayload = {
   clients?: any[];
   billingsByType?: any[];
   billingsBySize?: any[];
+  costToServe?: {
+    phase?: number;
+    asOfDate?: string;
+    monthLabel?: string;
+    revenueSource?: string;
+    poolSource?: string;
+    month?: any;
+    ytd?: any;
+    annual?: any;
+  };
 };
 
 type Props = {
   moduleKey: string;
   data: BureauOpsPayload | null;
   isSectionEnabled: (sectionKey: string) => boolean;
+  clientFilter?: string;
+  clientSelector?: React.ReactNode;
 };
 
 type SortDir = 'asc' | 'desc';
@@ -195,7 +207,97 @@ function SortableTable<T>({
   );
 }
 
-export default function PayrollBureauOpsViews({ moduleKey, data, isSectionEnabled }: Props) {
+const COST_TO_SERVE_FIELD_DEFINITIONS: Array<{ label: string; definition: string }> = [
+  { label: 'Client', definition: 'Employer client from isolved. This is the company whose payroll CTR processes, not a QBD customer name.' },
+  { label: 'Processor', definition: 'CTR payroll processor assigned to the client, if isolved maintains that assignment.' },
+  { label: 'Payrolls', definition: 'Number of regular payroll runs in the selected period. Weekly clients have more runs than biweekly or semimonthly clients.' },
+  { label: 'EE Paid', definition: 'Employees paid in the period. This is an isolved volume driver, not CTR’s own headcount.' },
+  { label: 'Off-cycle', definition: 'Off-cycle payrolls in the period. These usually cost more to process than scheduled runs.' },
+  { label: 'States', definition: 'Number of states or tax jurisdictions. Multi-state clients add tax, filing, and correction complexity.' },
+  { label: 'Adj', definition: 'Payrolls requiring adjustments, including voids, reversals, and reopened payrolls.' },
+  { label: 'Units', definition: 'Weighted workload units used to allocate payroll-department labor. Units rise with payrolls, employees, off-cycles, states, adjustments, and live checks.' },
+  { label: 'Gross billed', definition: 'Invoiced client revenue for the period from QBD/QBE invoices and sales receipts. If QBD is not mapped, this is estimated from isolved volume and fee rates.' },
+  { label: 'Credits', definition: 'Credit memos, discounts, invoice adjustments, and refunds. Phase 1 shows the dollar amount; credit reasons require standardized QBD credit items.' },
+  { label: 'Net revenue', definition: 'Gross billed minus credits. Profitability uses invoiced revenue, not cash received.' },
+  { label: 'Direct', definition: 'Costs tagged to this client in QBD/QBE, such as courier, check stock, tax amendments, or contractors. Zero means those costs are not coded to the customer and must be allocated.' },
+  { label: 'Allocated', definition: 'Shared operating costs spread to the client using isolved drivers: isolved fees by employees, ACH by direct deposits, checks by live checks, processor labor by units, support by employees, and overhead by revenue.' },
+  { label: 'Cost to serve', definition: 'Direct costs plus allocated shared costs. Implementation labor is excluded and reported on the Implementation Cost vs Fee table.' },
+  { label: 'Contribution', definition: 'Net revenue minus cost to serve. This is the client’s estimated contribution margin in dollars.' },
+  { label: 'Margin', definition: 'Contribution divided by net revenue. Values under 18% are highlighted as reprice or restructure candidates.' },
+  { label: 'Data quality', definition: 'Whether revenue came from QBD or an estimate, whether any direct costs are tagged, and that processor time and support tickets are not yet captured.' },
+];
+
+function FieldDefinitionsModal({
+  title,
+  fields,
+  onClose,
+}: {
+  title: string;
+  fields: Array<{ label: string; definition: string }>;
+  onClose: () => void;
+}) {
+  return (
+    <div
+      onClick={onClose}
+      style={{
+        position: 'fixed',
+        inset: 0,
+        background: 'rgba(15, 23, 42, 0.55)',
+        zIndex: 1200,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: '24px',
+      }}
+    >
+      <div
+        onClick={(event) => event.stopPropagation()}
+        style={{
+          width: 'min(760px, 100%)',
+          maxHeight: '85vh',
+          overflowY: 'auto',
+          background: '#fff',
+          borderRadius: '12px',
+          border: '1px solid #e2e8f0',
+          boxShadow: '0 20px 40px rgba(2, 6, 23, 0.25)',
+          padding: '20px',
+        }}
+      >
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', marginBottom: '16px' }}>
+          <div style={{ fontSize: '18px', fontWeight: 800, color: '#0f172a' }}>{title}</div>
+          <button
+            type="button"
+            onClick={onClose}
+            style={{
+              border: '1px solid #cbd5e1',
+              background: '#fff',
+              color: '#334155',
+              borderRadius: '8px',
+              padding: '6px 10px',
+              fontSize: '12px',
+              fontWeight: 700,
+              cursor: 'pointer',
+            }}
+          >
+            Close
+          </button>
+        </div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+          {fields.map((field) => (
+            <div key={field.label} style={{ borderBottom: '1px solid #f1f5f9', paddingBottom: '10px' }}>
+              <div style={{ fontSize: '13px', fontWeight: 700, color: '#0f172a', marginBottom: '4px' }}>{field.label}</div>
+              <div style={{ fontSize: '13px', color: '#475569', lineHeight: 1.55 }}>{field.definition}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export default function PayrollBureauOpsViews({ moduleKey, data, isSectionEnabled, clientFilter, clientSelector }: Props) {
+  const [ctsPeriod, setCtsPeriod] = useState<'month' | 'ytd'>('ytd');
+  const [showCtsFieldHelp, setShowCtsFieldHelp] = useState(false);
   if (!data) {
     return <div style={{ padding: '40px', color: '#64748b', fontSize: '14px' }}>Loading payroll bureau operations…</div>;
   }
@@ -208,9 +310,38 @@ export default function PayrollBureauOpsViews({ moduleKey, data, isSectionEnable
   const processorToday = Array.isArray(today.processorWorkload) ? today.processorWorkload : [];
   const processors = Array.isArray(data.processors) ? data.processors : [];
   const accountManagers = Array.isArray(data.accountManagers) ? data.accountManagers : [];
-  const clients = Array.isArray(data.clients) ? data.clients : [];
+  const selectedClient = String(clientFilter || '__ALL__').trim() || '__ALL__';
+  const allClients = Array.isArray(data.clients) ? data.clients : [];
+  const clients = selectedClient === '__ALL__'
+    ? allClients
+    : allClients.filter((row) => String(row.clientName || '').trim() === selectedClient);
   const byType = Array.isArray(data.billingsByType) ? data.billingsByType : [];
   const bySize = Array.isArray(data.billingsBySize) ? data.billingsBySize : [];
+  const ctsBundle = ctsPeriod === 'month' ? data.costToServe?.month : data.costToServe?.ytd;
+  const allCtsRows = Array.isArray(ctsBundle?.rows) ? ctsBundle.rows : [];
+  const ctsRows = selectedClient === '__ALL__'
+    ? allCtsRows
+    : allCtsRows.filter((row: any) => String(row.clientName || '').trim() === selectedClient);
+  const allImplRows = Array.isArray(ctsBundle?.implementation) ? ctsBundle.implementation : [];
+  const implRows = selectedClient === '__ALL__'
+    ? allImplRows
+    : allImplRows.filter((row: any) => String(row.clientName || '').trim() === selectedClient);
+  const ctsSummary = ctsRows.length === allCtsRows.length
+    ? (ctsBundle?.summary || {})
+    : {
+        clients: ctsRows.length,
+        employees: ctsRows.reduce((sum: number, row: any) => sum + Number(row.employeeCount || 0), 0),
+        netRevenue: ctsRows.reduce((sum: number, row: any) => sum + Number(row.netRevenue || 0), 0),
+        costToServe: ctsRows.reduce((sum: number, row: any) => sum + Number(row.costToServe || 0), 0),
+        contribution: ctsRows.reduce((sum: number, row: any) => sum + Number(row.contribution || 0), 0),
+        avgMarginPct: 0,
+        mappedQbdClients: ctsRows.filter((row: any) => row.mappedToQbd).length,
+        unmappedQbdRevenue: 0,
+      };
+  if (ctsRows.length !== allCtsRows.length && Number(ctsSummary.netRevenue) > 0) {
+    ctsSummary.avgMarginPct = (Number(ctsSummary.contribution) / Number(ctsSummary.netRevenue)) * 100;
+  }
+  const ctsNotes = Array.isArray(ctsBundle?.notes) ? ctsBundle.notes : [];
   const performance = data.performance || {};
   const clientQuality = Array.isArray(data.clientQuality) ? data.clientQuality : [];
   const forecast = data.workloadForecast || {};
@@ -263,6 +394,7 @@ export default function PayrollBureauOpsViews({ moduleKey, data, isSectionEnable
 
   return (
     <div style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+      {clientSelector}
       {note ? <div style={{ fontSize: '12px', color: '#64748b' }}>{note}</div> : null}
 
       {moduleKey === 'todays_operations' && (
@@ -696,6 +828,198 @@ export default function PayrollBureauOpsViews({ moduleKey, data, isSectionEnable
 
       {moduleKey === 'client_economics' && (
         <>
+          {(isSectionEnabled('bureauCostToServe') || isSectionEnabled('bureauCostToServeStack') || isSectionEnabled('bureauImplementationCost')) && (
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '10px' }}>
+              <div style={{ fontSize: '12px', color: '#64748b' }}>
+                Phase 1 estimate for {data.costToServe?.monthLabel || 'the current period'}. Implementation is excluded from monthly cost-to-serve.
+              </div>
+              <div style={{ display: 'flex', gap: '8px' }}>
+                {(['ytd', 'month'] as const).map((period) => (
+                  <button
+                    key={period}
+                    type="button"
+                    onClick={() => setCtsPeriod(period)}
+                    style={{
+                      padding: '6px 10px',
+                      borderRadius: '8px',
+                      border: ctsPeriod === period ? '1px solid #1d4ed8' : '1px solid #cbd5e1',
+                      background: ctsPeriod === period ? '#eff6ff' : '#fff',
+                      color: '#0f172a',
+                      fontSize: '12px',
+                      fontWeight: 700,
+                      cursor: 'pointer',
+                    }}
+                  >
+                    {period === 'ytd' ? 'Year to date' : 'Current month'}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+          {isSectionEnabled('bureauCostToServe') && (
+            <div style={cardStyle}>
+              <div style={cardTitleStyle}>Cost to Serve</div>
+              <KpiGrid
+                items={[
+                  { label: 'Net Revenue', value: money(ctsSummary.netRevenue), color: '#0f766e' },
+                  { label: 'Cost to Serve', value: money(ctsSummary.costToServe), color: '#b45309' },
+                  { label: 'Contribution', value: money(ctsSummary.contribution), color: Number(ctsSummary.contribution) >= 0 ? '#15803d' : '#b91c1c' },
+                  { label: 'Avg Margin', value: pct(ctsSummary.avgMarginPct) },
+                  { label: 'QBD-Mapped Clients', value: `${num(ctsSummary.mappedQbdClients)} / ${num(ctsSummary.clients || ctsRows.length)}` },
+                  { label: 'Unmapped QBD Revenue', value: money(ctsSummary.unmappedQbdRevenue) },
+                ]}
+              />
+              <div style={{ display: 'flex', justifyContent: 'flex-end', margin: '10px 0 8px' }}>
+                <button
+                  type="button"
+                  onClick={() => setShowCtsFieldHelp(true)}
+                  style={{
+                    border: 'none',
+                    background: 'none',
+                    padding: 0,
+                    color: '#1d4ed8',
+                    fontSize: '12px',
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                    textDecoration: 'underline',
+                  }}
+                >
+                  Column definitions
+                </button>
+              </div>
+              <SortableTable
+                maxHeight="460px"
+                defaultSort={{ key: 'costToServe', dir: 'desc' }}
+                headers={[
+                  { label: 'Client', sortKey: 'clientName' },
+                  { label: 'Processor', sortKey: 'processor' },
+                  { label: 'Payrolls', sortKey: 'payrolls', align: 'right' },
+                  { label: 'EE Paid', sortKey: 'employeeCount', align: 'right' },
+                  { label: 'Off-cycle', sortKey: 'offCycleRuns', align: 'right' },
+                  { label: 'States', sortKey: 'stateCount', align: 'right' },
+                  { label: 'Adj', sortKey: 'adjustments', align: 'right' },
+                  { label: 'Units', sortKey: 'weightedUnits', align: 'right' },
+                  { label: 'Gross billed', sortKey: 'grossBilled', align: 'right' },
+                  { label: 'Credits', sortKey: 'credits', align: 'right' },
+                  { label: 'Net revenue', sortKey: 'netRevenue', align: 'right' },
+                  { label: 'Direct', sortKey: 'directCosts', align: 'right' },
+                  { label: 'Allocated', sortKey: 'allocatedTotal', align: 'right' },
+                  { label: 'Cost to serve', sortKey: 'costToServe', align: 'right' },
+                  { label: 'Contribution', sortKey: 'contribution', align: 'right' },
+                  { label: 'Margin', sortKey: 'marginPct', align: 'right' },
+                  { label: 'Data quality', sortKey: 'dataQuality' },
+                ]}
+                empty={ctsRows.length === 0}
+                rows={ctsRows}
+                renderRow={(row: any) => (
+                  <tr key={`cts-${row.ein || row.clientName}`}>
+                    <td style={{ ...tdStyle, fontWeight: 600 }}>{row.clientName}</td>
+                    <td style={tdStyle}>{row.processor}</td>
+                    <td style={{ ...tdStyle, textAlign: 'right' }}>{Number(row.payrolls || 0).toFixed(1)}</td>
+                    <td style={{ ...tdStyle, textAlign: 'right' }}>{num(row.employeeCount)}</td>
+                    <td style={{ ...tdStyle, textAlign: 'right' }}>{Number(row.offCycleRuns || 0).toFixed(1)}</td>
+                    <td style={{ ...tdStyle, textAlign: 'right' }}>{num(row.stateCount)}</td>
+                    <td style={{ ...tdStyle, textAlign: 'right' }}>{Number(row.adjustments || 0).toFixed(1)}</td>
+                    <td style={{ ...tdStyle, textAlign: 'right' }}>{Number(row.weightedUnits || 0).toFixed(2)}</td>
+                    <td style={{ ...tdStyle, textAlign: 'right' }}>{money(row.grossBilled)}</td>
+                    <td style={{ ...tdStyle, textAlign: 'right' }}>{money(row.credits)}</td>
+                    <td style={{ ...tdStyle, textAlign: 'right' }}>{money(row.netRevenue)}</td>
+                    <td style={{ ...tdStyle, textAlign: 'right' }}>{money(row.directCosts)}</td>
+                    <td style={{ ...tdStyle, textAlign: 'right' }}>{money(row.allocatedTotal)}</td>
+                    <td style={{ ...tdStyle, textAlign: 'right' }}>{money(row.costToServe)}</td>
+                    <td style={{ ...tdStyle, textAlign: 'right', color: Number(row.contribution) < 0 ? '#b91c1c' : '#0f172a' }}>{money(row.contribution)}</td>
+                    <td style={{ ...tdStyle, textAlign: 'right', color: Number(row.marginPct) < 18 ? '#b91c1c' : '#0f172a' }}>{pct(row.marginPct)}</td>
+                    <td style={{ ...tdStyle, fontSize: '12px', color: '#475569' }}>{row.dataQuality}</td>
+                  </tr>
+                )}
+              />
+              {ctsNotes.length > 0 && (
+                <div style={{ marginTop: '12px', fontSize: '12px', color: '#64748b', lineHeight: 1.5 }}>
+                  {ctsNotes.map((note: string) => <div key={note}>{note}</div>)}
+                </div>
+              )}
+              {showCtsFieldHelp && (
+                <FieldDefinitionsModal
+                  title="Cost to Serve column definitions"
+                  fields={COST_TO_SERVE_FIELD_DEFINITIONS}
+                  onClose={() => setShowCtsFieldHelp(false)}
+                />
+              )}
+            </div>
+          )}
+          {isSectionEnabled('bureauCostToServeStack') && (
+            <div style={cardStyle}>
+              <div style={cardTitleStyle}>Cost-to-Serve Stack</div>
+              <SortableTable
+                maxHeight="420px"
+                defaultSort={{ key: 'costToServe', dir: 'desc' }}
+                headers={[
+                  { label: 'Client', sortKey: 'clientName' },
+                  { label: 'Direct', sortKey: 'directCosts', align: 'right' },
+                  { label: 'isolved', sortKey: 'allocatedIsolved', align: 'right' },
+                  { label: 'ACH', sortKey: 'allocatedAch', align: 'right' },
+                  { label: 'Checks', sortKey: 'allocatedChecks', align: 'right' },
+                  { label: 'Processor', sortKey: 'allocatedProcessor', align: 'right' },
+                  { label: 'Support', sortKey: 'allocatedSupport', align: 'right' },
+                  { label: 'Overhead', sortKey: 'allocatedOverhead', align: 'right' },
+                  { label: 'Cost to serve', sortKey: 'costToServe', align: 'right' },
+                ]}
+                empty={ctsRows.length === 0}
+                rows={ctsRows}
+                renderRow={(row: any) => (
+                  <tr key={`stack-${row.ein || row.clientName}`}>
+                    <td style={{ ...tdStyle, fontWeight: 600 }}>{row.clientName}</td>
+                    <td style={{ ...tdStyle, textAlign: 'right' }}>{money(row.directCosts)}</td>
+                    <td style={{ ...tdStyle, textAlign: 'right' }}>{money(row.allocatedIsolved)}</td>
+                    <td style={{ ...tdStyle, textAlign: 'right' }}>{money(row.allocatedAch)}</td>
+                    <td style={{ ...tdStyle, textAlign: 'right' }}>{money(row.allocatedChecks)}</td>
+                    <td style={{ ...tdStyle, textAlign: 'right' }}>{money(row.allocatedProcessor)}</td>
+                    <td style={{ ...tdStyle, textAlign: 'right' }}>{money(row.allocatedSupport)}</td>
+                    <td style={{ ...tdStyle, textAlign: 'right' }}>{money(row.allocatedOverhead)}</td>
+                    <td style={{ ...tdStyle, textAlign: 'right', fontWeight: 700 }}>{money(row.costToServe)}</td>
+                  </tr>
+                )}
+              />
+            </div>
+          )}
+          {isSectionEnabled('bureauImplementationCost') && (
+            <div style={cardStyle}>
+              <div style={cardTitleStyle}>Implementation Cost vs Fee</div>
+              <div style={{ fontSize: '12px', color: '#64748b', marginBottom: '12px' }}>
+                Estimated setup cost is reported separately from recurring monthly cost-to-serve. Payback uses current-period contribution.
+              </div>
+              <SortableTable
+                maxHeight="360px"
+                defaultSort={{ key: 'implementationCost', dir: 'desc' }}
+                headers={[
+                  { label: 'Client', sortKey: 'clientName' },
+                  { label: 'Size', sortKey: 'sizeBand', sortValue: (row: any) => sizeRank(row.sizeBand) },
+                  { label: 'Employees', sortKey: 'employeeCount', align: 'right' },
+                  { label: 'Est. hours', sortKey: 'estimatedHours', align: 'right' },
+                  { label: 'Labor cost', sortKey: 'laborCost', align: 'right' },
+                  { label: 'Third-party', sortKey: 'thirdPartyCost', align: 'right' },
+                  { label: 'Impl. cost', sortKey: 'implementationCost', align: 'right' },
+                  { label: 'Impl. fee', sortKey: 'implementationFee', align: 'right' },
+                  { label: 'Payback months', sortKey: 'paybackMonths', align: 'right' },
+                ]}
+                empty={implRows.length === 0}
+                rows={implRows}
+                renderRow={(row: any) => (
+                  <tr key={`impl-${row.clientName}`}>
+                    <td style={{ ...tdStyle, fontWeight: 600 }}>{row.clientName}</td>
+                    <td style={tdStyle}>{row.sizeBand}</td>
+                    <td style={{ ...tdStyle, textAlign: 'right' }}>{num(row.employeeCount)}</td>
+                    <td style={{ ...tdStyle, textAlign: 'right' }}>{Number(row.estimatedHours || 0).toFixed(1)}</td>
+                    <td style={{ ...tdStyle, textAlign: 'right' }}>{money(row.laborCost)}</td>
+                    <td style={{ ...tdStyle, textAlign: 'right' }}>{money(row.thirdPartyCost)}</td>
+                    <td style={{ ...tdStyle, textAlign: 'right' }}>{money(row.implementationCost)}</td>
+                    <td style={{ ...tdStyle, textAlign: 'right' }}>{money(row.implementationFee)}</td>
+                    <td style={{ ...tdStyle, textAlign: 'right' }}>{row.paybackMonths == null ? 'n/a' : Number(row.paybackMonths).toFixed(1)}</td>
+                  </tr>
+                )}
+              />
+            </div>
+          )}
           {isSectionEnabled('bureauBillingsByCustomer') && (
             <div style={cardStyle}>
               <div style={cardTitleStyle}>Billings by Customer</div>

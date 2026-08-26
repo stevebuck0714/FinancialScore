@@ -277,6 +277,9 @@ const SECTOR_54_REPORTS_BY_MODULE: Record<string, OperationalHubReportDefinition
     { key: 'bureauProcessorNextWeek', label: 'Processor Load — Next Two Weeks', group: 'Processor Capacity' },
   ],
   client_economics: [
+    { key: 'bureauCostToServe', label: 'Cost to Serve', group: 'Client Economics' },
+    { key: 'bureauCostToServeStack', label: 'Cost-to-Serve Stack', group: 'Client Economics' },
+    { key: 'bureauImplementationCost', label: 'Implementation Cost vs Fee', group: 'Client Economics' },
     { key: 'bureauBillingsByCustomer', label: 'Billings by Customer', group: 'Client Economics' },
     { key: 'bureauBillingsByType', label: 'Billings by Customer Type', group: 'Client Economics' },
     { key: 'bureauBillingsBySize', label: 'Billings by Customer Size', group: 'Client Economics' },

@@ -41,6 +41,7 @@ import {
   shouldServeIsolvedMockReports,
 } from '@/lib/operational/isolved-people-cloud-mock';
 import { buildIsolvedBureauOpsPayload } from '@/lib/operational/isolved-bureau-ops-mock';
+import { loadPayrollBureauAccountingInputs } from '@/lib/operational/payroll-bureau-accounting-overlay';
 import { getInforM3CredentialsWithOptionalEnvFallback } from '@/lib/infor-m3/credentials';
 import { callInforIonApi } from '@/lib/infor-m3/client';
 import { getApBalanceSheetAnchorConfig } from '@/lib/financial/ap-balance-sheet-anchor';
@@ -10540,10 +10541,12 @@ export async function GET(request: NextRequest) {
 
       case 'payroll-bureau-ops': {
         if (await isolvedMockEnabled()) {
-          return NextResponse.json(buildIsolvedBureauOpsPayload(companyId));
+          const accounting = await loadPayrollBureauAccountingInputs(companyId).catch(() => null);
+          return NextResponse.json(buildIsolvedBureauOpsPayload(companyId, accounting));
         }
         if (!shouldUseMockData) return mockDataDisabledResponse('Payroll Bureau Operations');
-        return NextResponse.json(buildIsolvedBureauOpsPayload(companyId));
+        const accounting = await loadPayrollBureauAccountingInputs(companyId).catch(() => null);
+        return NextResponse.json(buildIsolvedBureauOpsPayload(companyId, accounting));
       }
 
       case 'customers-sites': {
