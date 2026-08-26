@@ -1,5 +1,3 @@
-import { getOperationalSystemConnection } from '@/lib/operational/operational-system-connections';
-
 export const ISOLVED_PEOPLE_CLOUD_SOURCE_CODE = 'ISOLVED_PEOPLE_CLOUD';
 export const ISOLVED_PEOPLE_CLOUD_LABEL = 'isolved People Cloud';
 export const ISOLVED_OPERATIONAL_PROVIDER = 'ISOLVED';
@@ -36,15 +34,6 @@ export const DEFAULT_ISOLVED_PEOPLE_CLOUD_DATA_DOMAINS: IsolvedPeopleCloudDataDo
   { dataDomain: 'ACA / Compliance', sourceObject: 'ACA eligibility, coverage months, 1094/1095 data, and compliance status', enabled: false },
   { dataDomain: 'Talent / Applicants', sourceObject: 'Applicant tracking, requisitions, and recruiting pipeline where licensed', enabled: false },
 ];
-
-export async function hasIsolvedPeopleCloudConnection(companyId: string): Promise<boolean> {
-  const connection = await getOperationalSystemConnection(
-    companyId,
-    ISOLVED_OPERATIONAL_PROVIDER,
-    ISOLVED_PEOPLE_CLOUD_SOURCE_CODE
-  );
-  return Boolean(connection);
-}
 
 export function buildIsolvedPayrollEmptyPayload() {
   return {

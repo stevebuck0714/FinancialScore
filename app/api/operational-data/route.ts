@@ -33,7 +33,8 @@ import { BAMBOOHR_SOURCE_CODE } from '@/lib/bamboohr';
 import { getOperationalSystemConnection } from '@/lib/operational/operational-system-connections';
 import {
   buildIsolvedPayrollEmptyPayload,
-  hasIsolvedPeopleCloudConnection,
+  ISOLVED_OPERATIONAL_PROVIDER,
+  ISOLVED_PEOPLE_CLOUD_SOURCE_CODE,
 } from '@/lib/operational/isolved-people-cloud';
 import {
   buildIsolvedPayrollMockPayload,
@@ -3499,7 +3500,13 @@ export async function GET(request: NextRequest) {
     );
     const isolvedMockEnabled = async () =>
       shouldServeIsolvedMockReports({
-        isolvedConnected: await hasIsolvedPeopleCloudConnection(companyId),
+        isolvedConnected: Boolean(
+          await getOperationalSystemConnection(
+            companyId,
+            ISOLVED_OPERATIONAL_PROVIDER,
+            ISOLVED_PEOPLE_CLOUD_SOURCE_CODE
+          )
+        ),
         forceOperationalMockData: shouldUseMockData,
         sectorCategory,
       });
