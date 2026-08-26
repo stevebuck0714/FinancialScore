@@ -1,0 +1,62 @@
+name: Prod site uptime
+
+on:
+  schedule:
+    - cron: '7 * * * *'
+  workflow_dispatch:
+
+concurrency:
+  group: prod-uptime-${{ github.event_name }}
+  cancel-in-progress: true
+
+jobs:
+  probe:
+    name: ${{ matrix.name }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: production
+            url: https://dashboard.corelytics.com
+          - name: staging
+            url: https://financial-score.vercel.app
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+
+      - name: Public /up
+        run: |
+          set -euo pipefail
+          curl -fsS --max-time 25 "${{ matrix.url }}/api/public/up" -o /tmp/up.json
+          node -e "const fs=require('fs'); const j=JSON.parse(fs.readFileSync('/tmp/up.json','utf8')); if(!j.ok) { console.error(j); process.exit(1); } console.log(j);"
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Cache Playwright browsers
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-chromium-${{ runner.os }}-v1
+
+      - name: Install Playwright
+        run: |
+          npm install --no-save playwright
+          npx playwright install --with-deps chromium
+
+      - name: Login page is visible
+        env:
+          PROD_UPTIME_URL: ${{ matrix.url }}
+        run: node scripts/prod-uptime-check.mjs
+
+      - name: Upload failure screenshot
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: uptime-failure-${{ matrix.name }}
+          path: uptime-failure.png
+          if-no-files-found: ignore
