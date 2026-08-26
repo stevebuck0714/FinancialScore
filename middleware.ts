@@ -252,6 +252,7 @@ export async function middleware(request: NextRequest) {
   const publicRoutes = [
     '/api/auth/', // All NextAuth routes including callbacks, sessions, etc.
     '/api/check-db',
+    '/api/public/',
     '/api/webhooks', // Webhooks have their own authentication
     '/api/cron', // Vercel Cron endpoints authenticate via headers/secret
   ]
