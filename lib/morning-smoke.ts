@@ -175,6 +175,12 @@ export async function runMorningSmoke(options?: {
   );
 
   checks.push(
+    await timedCheck('public-up', 'Public uptime probe', () =>
+      httpCheck(baseUrl, '/api/public/up', { expectStatuses: [200], timeoutMs: 20000 }),
+    ),
+  );
+
+  checks.push(
     await timedCheck('exec-briefing-route', 'Exec briefing route registered', () =>
       httpCheck(baseUrl, '/api/pulse/exec-briefing', { expectStatuses: [401, 403], timeoutMs: 20000 }),
     ),
