@@ -32,3 +32,10 @@ export function getAcceptedMfaAppScopes(request: NextRequest): string[] {
   const aliases = parseScopeList(process.env.MFA_APP_SCOPE_ALIASES);
   return Array.from(new Set([canonicalScope, ...aliases]));
 }
+
+const CUSTOMER_PRODUCTION_MFA_HOSTS = new Set(['dashboard.corelytics.com']);
+
+/** MFA is required only on the live customer site, not staging/dev Vercel production aliases. */
+export function isCustomerProductionMfaHost(request: NextRequest): boolean {
+  return CUSTOMER_PRODUCTION_MFA_HOSTS.has(normalizeHost(request.nextUrl.hostname));
+}

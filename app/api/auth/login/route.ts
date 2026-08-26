@@ -1,9 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
+
+export const runtime = 'nodejs';
 import { verifyPassword } from '@/lib/auth';
 import { auditLoginSuccess, auditLoginFailed, auditMFAOperation } from '@/lib/audit-logger';
 import { getTrustDurationDays, validateTrustedDevice } from '@/lib/trusted-device';
-import { getMfaAppScope } from '@/lib/mfa-app-scope';
+import { getMfaAppScope, isCustomerProductionMfaHost } from '@/lib/mfa-app-scope';
 import { clearMfaDeviceCookie, getMfaDeviceCookieName, getMfaDeviceCookieOptions } from '@/lib/mfa-device-cookie';
 import { ensureLegacyCompanyAccess, listAccessibleCompaniesForUser } from '@/lib/user-company-access';
 import { isDemoCompany, isDemoExpired, shouldBypassMfaForDemo } from '@/lib/demo-access';
@@ -80,12 +82,11 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // MFA policy:
-    // - Production runtime should require MFA.
-    // - Dev/staging should allow disabling MFA for simple access/testing.
-    const isVercelProd = process.env.VERCEL === '1' && process.env.VERCEL_ENV === 'production';
+    // MFA is required only on the live customer host. Vercel still sets
+    // VERCEL_ENV=production on the financial-score staging project, which
+    // must not force authenticator enrollment.
     const requireMfa =
-      isVercelProd &&
+      isCustomerProductionMfaHost(request) &&
       process.env.DISABLE_MFA !== 'true' &&
       process.env.DISABLE_MFA_DEV !== 'true' &&
       !shouldBypassMfaForDemo(user.company);
