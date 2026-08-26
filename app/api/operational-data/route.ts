@@ -29,7 +29,17 @@ import {
   getBambooHrUnitEconomicsPayload,
   readBambooHrWorkforceReportSnapshot,
 } from '@/lib/operations/bamboohr-workforce-reports';
-import { readCogentRateCard } from '@/lib/operational/cogent-rate-card';
+import { BAMBOOHR_SOURCE_CODE } from '@/lib/bamboohr';
+import { getOperationalSystemConnection } from '@/lib/operational/operational-system-connections';
+import {
+  buildIsolvedPayrollEmptyPayload,
+  hasIsolvedPeopleCloudConnection,
+} from '@/lib/operational/isolved-people-cloud';
+import {
+  buildIsolvedPayrollMockPayload,
+  shouldServeIsolvedMockReports,
+} from '@/lib/operational/isolved-people-cloud-mock';
+import { buildIsolvedBureauOpsPayload } from '@/lib/operational/isolved-bureau-ops-mock';
 import { getInforM3CredentialsWithOptionalEnvFallback } from '@/lib/infor-m3/credentials';
 import { callInforIonApi } from '@/lib/infor-m3/client';
 import { getApBalanceSheetAnchorConfig } from '@/lib/financial/ap-balance-sheet-anchor';
@@ -87,6 +97,7 @@ const OPERATIONAL_CACHEABLE_TYPES = new Set([
   'daily-financials',
   'labor-scheduling',
   'hiring',
+  'payroll',
   'revenue-billables',
   'unit-economics',
   'summary',
@@ -3053,7 +3064,7 @@ function aggregateApSeriesByFrequency(
  * 
  * Query parameters:
  * - companyId: string (required)
- * - type: 'customers' | 'customers-sites' | 'ar-aging' | 'ap-aging' | 'products' | 'labor-scheduling' | 'inventory' | 'cash' | 'ap' | 'daily-financials' | 'cash-flow-map' | 'revenue-billables' | 'unit-economics'
+ * - type: 'customers' | 'customers-sites' | 'ar-aging' | 'ap-aging' | 'products' | 'labor-scheduling' | 'hiring' | 'payroll' | 'inventory' | 'cash' | 'ap' | 'daily-financials' | 'cash-flow-map' | 'revenue-billables' | 'unit-economics'
  * - startDate: ISO date string (optional) - defaults to 90 days ago
  * - endDate: ISO date string (optional) - defaults to today
  * - frequency: 'daily' | 'weekly' | 'monthly' (optional) - defaults to 'monthly'
@@ -3486,6 +3497,12 @@ export async function GET(request: NextRequest) {
       },
       { status: 409 }
     );
+    const isolvedMockEnabled = async () =>
+      shouldServeIsolvedMockReports({
+        isolvedConnected: await hasIsolvedPeopleCloudConnection(companyId),
+        forceOperationalMockData: shouldUseMockData,
+        sectorCategory,
+      });
 
     const genericMockTypes = new Set(['customers', 'ar-aging', 'ap-aging', 'products', 'inventory', 'cash', 'ap']);
     if (shouldUseMockData && genericMockTypes.has(String(type || ''))) {
@@ -10505,6 +10522,21 @@ export async function GET(request: NextRequest) {
 
       case 'hiring': {
         return cacheOperationalPayload(await getBambooHrHiringPayload(companyId, { startDate, endDate }));
+      }
+
+      case 'payroll': {
+        if (await isolvedMockEnabled()) {
+          return NextResponse.json(buildIsolvedPayrollMockPayload(companyId));
+        }
+        return NextResponse.json(buildIsolvedPayrollEmptyPayload());
+      }
+
+      case 'payroll-bureau-ops': {
+        if (await isolvedMockEnabled()) {
+          return NextResponse.json(buildIsolvedBureauOpsPayload(companyId));
+        }
+        if (!shouldUseMockData) return mockDataDisabledResponse('Payroll Bureau Operations');
+        return NextResponse.json(buildIsolvedBureauOpsPayload(companyId));
       }
 
       case 'customers-sites': {

@@ -1309,6 +1309,7 @@ enum AccountingPlatform {
 enum OperationalSystemProvider {
   BAMBOOHR
   SPREADSHEET_UPLOAD
+  ISOLVED
 }
 
 enum ConnectionStatus {

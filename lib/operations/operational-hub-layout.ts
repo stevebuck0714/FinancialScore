@@ -13,6 +13,26 @@ export type OperationalHubCategoryDefinition = {
   reports: OperationalHubReportDefinition[];
 };
 
+export const ISOLVED_HUB_REPORT_NAME_SUFFIX = 'isolved';
+const ISOLVED_HUB_REPORT_MODULES = new Set(['payroll']);
+
+export function isIsolvedHubReportModule(moduleKey: string): boolean {
+  return ISOLVED_HUB_REPORT_MODULES.has(String(moduleKey || '').trim());
+}
+
+export function withIsolvedHubReportName(label: string): string {
+  const trimmed = String(label || '').trim();
+  if (!trimmed) return trimmed;
+  if (new RegExp(`\\s${ISOLVED_HUB_REPORT_NAME_SUFFIX}$`, 'i').test(trimmed)) return trimmed;
+  return `${trimmed} ${ISOLVED_HUB_REPORT_NAME_SUFFIX}`;
+}
+
+export function withoutIsolvedHubReportName(label: string): string {
+  const trimmed = String(label || '').trim();
+  if (!trimmed) return trimmed;
+  return trimmed.replace(new RegExp(`\\s${ISOLVED_HUB_REPORT_NAME_SUFFIX}$`, 'i'), '').trim();
+}
+
 const REPORTS_BY_DATA_GROUP: Record<string, OperationalHubReportDefinition[]> = {
   Customers: [
     { key: 'customersTop10MonthlyTrend', label: 'Top 10 Customers Monthly Trend', group: 'Customers' },
@@ -239,6 +259,66 @@ const SECTOR_53_REPORTS_BY_MODULE: Record<string, OperationalHubReportDefinition
   ],
 };
 
+const SECTOR_54_REPORTS_BY_MODULE: Record<string, OperationalHubReportDefinition[]> = {
+  todays_operations: [
+    { key: 'bureauTodayKpis', label: "Today's Operations", group: "Today's Operations" },
+    { key: 'bureauNeedsAttention', label: 'Needs Attention Today', group: "Today's Operations" },
+    { key: 'bureauTodayRuns', label: 'Payrolls Due Today', group: "Today's Operations" },
+    { key: 'bureauProcessorWorkloadToday', label: 'Processor Workload Today', group: "Today's Operations" },
+  ],
+  payroll_performance: [
+    { key: 'bureauPerfScorecard', label: 'Payroll Performance Scorecard', group: 'Payroll Performance' },
+    { key: 'bureauPerfDelaySources', label: 'Delay Sources', group: 'Payroll Performance' },
+    { key: 'bureauClientQualityRanking', label: 'Client Service-Quality Ranking', group: 'Payroll Performance' },
+  ],
+  processor_capacity: [
+    { key: 'bureauProcessorCapacity', label: 'Processor Capacity', group: 'Processor Capacity' },
+    { key: 'bureauWorkloadForecast', label: 'Next Two Weeks Workload Forecast', group: 'Processor Capacity' },
+    { key: 'bureauProcessorNextWeek', label: 'Processor Load — Next Two Weeks', group: 'Processor Capacity' },
+  ],
+  client_economics: [
+    { key: 'bureauBillingsByCustomer', label: 'Billings by Customer', group: 'Client Economics' },
+    { key: 'bureauBillingsByType', label: 'Billings by Customer Type', group: 'Client Economics' },
+    { key: 'bureauBillingsBySize', label: 'Billings by Customer Size', group: 'Client Economics' },
+    { key: 'bureauProfitByCustomer', label: 'Profitability by Customer', group: 'Client Economics' },
+    { key: 'bureauClientHealth', label: 'Client Health', group: 'Client Economics' },
+    { key: 'bureauAccountManagers', label: 'Account Managers', group: 'Client Economics' },
+  ],
+  payroll: [
+    { key: 'payrollClientCensus', label: 'Client / Company Census', group: 'Payroll' },
+    { key: 'payrollRunScorecard', label: 'Payroll Run Scorecard', group: 'Payroll' },
+    { key: 'payrollGrossToNet', label: 'Gross-to-Net Summary', group: 'Payroll' },
+    { key: 'payrollEarningsByCode', label: 'Earnings by Code', group: 'Payroll' },
+    { key: 'payrollDeductionsByCode', label: 'Deductions by Code', group: 'Payroll' },
+    { key: 'payrollTaxWithholdings', label: 'Tax Withholdings', group: 'Payroll' },
+    { key: 'payrollDirectDepositMix', label: 'Direct Deposit Mix', group: 'Payroll' },
+    { key: 'payrollPayGroupCalendar', label: 'Pay Groups / Calendar', group: 'Payroll' },
+    { key: 'payrollGlExportJournal', label: 'GL Export / Payroll Journal', group: 'Payroll' },
+    { key: 'payrollOnTimeProcessing', label: 'On-Time Processing', group: 'Payroll' },
+    { key: 'payrollBenefitsEnrollments', label: 'Benefits Enrollments', group: 'Payroll' },
+  ],
+  time_utilization: [
+    { key: 'lsWorkforceSummary', label: 'Workforce Summary', group: 'Workforce / Time' },
+    { key: 'lsCompensationByRole', label: 'Compensation by Role', group: 'Workforce / Time' },
+    { key: 'lsEmployeeCompensationRoster', label: 'Employee Compensation Roster', group: 'Workforce / Time' },
+    { key: 'lsHeadcountByRole', label: 'Headcount by Role', group: 'Workforce / Time' },
+    { key: 'lsHeadcountByDepartment', label: 'Headcount by Department', group: 'Workforce / Time' },
+    { key: 'lsLocationPayTypeMix', label: 'Location / Pay Type Mix', group: 'Workforce / Time' },
+    { key: 'lsUtilizationPct', label: 'Utilization % (billable vs paid hours)', group: 'Workforce / Time' },
+    { key: 'lsOvertimeAnalysis', label: 'Overtime Analysis', group: 'Workforce / Time' },
+    { key: 'lsPtoBalances', label: 'PTO / Leave Balances', group: 'Workforce / Time' },
+  ],
+  hiring: [
+    { key: 'hiringOpenJobs', label: 'Open Jobs', group: 'Hiring' },
+    { key: 'hiringApplicantPipeline', label: 'Applicant Pipeline', group: 'Hiring' },
+    { key: 'hiringFunnelByRole', label: 'Funnel by Role', group: 'Hiring' },
+    { key: 'hiringTimeToFillByJob', label: 'Time to Fill by Hire', group: 'Hiring' },
+    { key: 'hiringApplicantsByJob', label: 'Applicants by Job', group: 'Hiring' },
+    { key: 'hiringPostingPerformance', label: 'Posting Performance', group: 'Hiring' },
+    { key: 'hiringOnboardingPipeline', label: 'Onboarding / New Hires', group: 'Hiring' },
+  ],
+};
+
 function normalizeSector(sectorCategory?: string | null): string {
   return String(sectorCategory || '').trim();
 }
@@ -263,6 +343,12 @@ export function getOperationalHubModuleLabel(moduleKey: string, sectorCategory?:
   const sector = normalizeSector(sectorCategory);
   if ((sector === '32' || sector === '42') && moduleKey === 'products_skus') return 'Products';
   if ((sector === '32' || sector === '42') && moduleKey === 'vendors') return 'Vendors';
+  if (sector === '54' && moduleKey === 'todays_operations') return "Today's Operations";
+  if (sector === '54' && moduleKey === 'payroll_performance') return 'Payroll Performance';
+  if (sector === '54' && moduleKey === 'processor_capacity') return 'Processor Capacity';
+  if (sector === '54' && moduleKey === 'client_economics') return 'Client Economics';
+  if (sector === '54' && moduleKey === 'time_utilization') return 'Workforce / Time';
+  if (sector === '54' && moduleKey === 'hiring') return 'Hiring / Onboarding';
   return getModuleLabel(moduleKey) || moduleKey.replace(/_/g, ' ');
 }
 
@@ -282,6 +368,12 @@ export function getOperationalHubDefaultReportsForModule(
   }
   if (sector === '53' && SECTOR_53_REPORTS_BY_MODULE[moduleKey]) {
     return SECTOR_53_REPORTS_BY_MODULE[moduleKey];
+  }
+  if (sector === '54' && SECTOR_54_REPORTS_BY_MODULE[moduleKey]) {
+    return SECTOR_54_REPORTS_BY_MODULE[moduleKey].map((report) => ({
+      ...report,
+      label: isIsolvedHubReportModule(moduleKey) ? withIsolvedHubReportName(report.label) : report.label,
+    }));
   }
   if (moduleKey === 'vendors') {
     return [

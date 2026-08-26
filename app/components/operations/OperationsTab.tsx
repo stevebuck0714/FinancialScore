@@ -37,6 +37,8 @@ import VendorMonthlyForecastReport from './VendorMonthlyForecastReport';
 import VendorForecastRollupReport from './VendorForecastRollupReport';
 import ResidentialRevenueForecast from './real-estate-forecast/ResidentialRevenueForecast';
 import LoansTab from './LoansTab';
+import PayrollBureauOpsViews from './PayrollBureauOpsViews';
+import PayrollBureauExecutiveScorecard from './PayrollBureauExecutiveScorecard';
 import CapTableView from '../cap-table/CapTableView';
 import { getSdeSectorBenchmarks } from '@/lib/sde-sector-benchmarks';
 import { getSectorMockProfile } from '@/lib/operations/sector-mock-data';
@@ -842,6 +844,8 @@ export default function OperationsTab({
   const [expandedInventoryAssetJobs, setExpandedInventoryAssetJobs] = useState<Record<string, boolean>>({});
   const [inventoryEquipmentSearch, setInventoryEquipmentSearch] = useState<string>('');
   const [laborSchedulingData, setLaborSchedulingData] = useState<any>(null);
+  const [payrollData, setPayrollData] = useState<any>(null);
+  const [payrollBureauOpsData, setPayrollBureauOpsData] = useState<any>(null);
   const [selectedLaborCompensationRoleLocation, setSelectedLaborCompensationRoleLocation] = useState<string>('__ALL__');
   const [selectedLaborRosterDivision, setSelectedLaborRosterDivision] = useState<string>('');
   const [selectedLaborRosterDepartment, setSelectedLaborRosterDepartment] = useState<string>('');
@@ -1208,9 +1212,17 @@ export default function OperationsTab({
     return value === undefined ? true : value !== false;
   };
   const renderOperationalClientSelector = () => {
+    const isolvedClientNames = Array.from(new Set([
+      ...(Array.isArray(payrollData?.clientCensus) ? payrollData.clientCensus.map((row: any) => String(row?.clientName || '').trim()) : []),
+      ...(Array.isArray(payrollBureauOpsData?.clients) ? payrollBureauOpsData.clients.map((row: any) => String(row?.clientName || '').trim()) : []),
+      ...(Array.isArray(hiringData?.jobs) ? hiringData.jobs.map((row: any) => String(row?.clientName || '').trim()) : []),
+      ...(Array.isArray(laborSchedulingData?.employeeCompensationRoster) ? laborSchedulingData.employeeCompensationRoster.map((row: any) => String(row?.clientName || '').trim()) : []),
+    ])).filter(Boolean).sort((a, b) => a.localeCompare(b));
     const clientOptions = [
       { value: '__ALL__', label: 'Total All Clients' },
-      { value: 'Eli Lilly', label: 'Eli Lilly' },
+      ...(isolvedClientNames.length > 0
+        ? isolvedClientNames.map((name) => ({ value: name, label: name }))
+        : [{ value: 'Eli Lilly', label: 'Eli Lilly' }]),
     ];
     return (
       <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: '8px' }}>
@@ -1304,6 +1316,7 @@ export default function OperationsTab({
       : resolvedModulesBase;
   const enabledDashboardModules = resolvedModules.filter((module) => isTabModuleEnabled(module));
   const isWholesaleTradeSector = String(industrySectorCategory || '').trim() === '42';
+  const isPayrollBureauSector = String(industrySectorCategory || '').trim() === '54';
   const isOverviewCashConversionEnabled = isSectionEnabled('overviewStdCashConversionAnalysis');
   const isOverviewEbitdaPerformanceEnabled = isSectionEnabled('overviewStdEbitdaPerformance');
   const isOverviewCustomerConcentrationEnabled = isSectionEnabled('overviewStdCustomerConcentrationExposure');
@@ -1311,6 +1324,7 @@ export default function OperationsTab({
   const isHealthcareEnterpriseReportsEnabled = isSectionEnabled('overviewHealthcareEnterpriseReports');
   const isHealthcareRegionReportsEnabled = isSectionEnabled('overviewHealthcareRegionReports');
   const isHealthcareServiceReportsEnabled = isSectionEnabled('overviewHealthcareServiceReports');
+  const isBureauExecutiveScorecardEnabled = isPayrollBureauSector && isSectionEnabled('overviewBureauExecutiveScorecard');
   const isCashConversionAnalysisEnabled = isSectionEnabled('cashConversionAnalysis');
   const availableModuleTabs = Array.from(
     new Set([
@@ -2344,6 +2358,12 @@ export default function OperationsTab({
       case 'labor-scheduling':
         setLaborSchedulingData(data);
         break;
+      case 'payroll':
+        setPayrollData(data);
+        break;
+      case 'payroll-bureau-ops':
+        setPayrollBureauOpsData(data);
+        break;
       case 'hiring':
         setHiringData(data);
         break;
@@ -2658,6 +2678,23 @@ export default function OperationsTab({
       setLoading(false);
     }
   };
+
+  useEffect(() => {
+    if (!isBureauExecutiveScorecardEnabled) return;
+    if (activeTab !== 'overview' && activeTab !== 'dashboard') return;
+    const cached = getCachedOperationalData('payroll-bureau-ops');
+    const hasScorecard = Boolean(cached?.monthlyScorecard?.kpis?.length);
+    void fetchOperationalTypeWithCache('payroll-bureau-ops', {
+      preferCache: hasScorecard,
+      forceRefresh: !hasScorecard,
+    })
+      .then((data) => {
+        if (data) applyOperationalTypeData('payroll-bureau-ops', data);
+      })
+      .catch(() => {
+        /* Overview scorecard is best-effort until the bureau payload loads. */
+      });
+  }, [activeTab, selectedCompanyId, industrySectorCategory, isBureauExecutiveScorecardEnabled]);
 
   const refreshCustomerConcentrationExposure = async () => {
     setCustomerConcentrationRefreshing(true);
@@ -3351,6 +3388,8 @@ export default function OperationsTab({
       activeTab === 'forecast' ||
       activeTab === 'loans' ||
       activeDataType === 'hiring' ||
+      activeDataType === 'payroll' ||
+      activeDataType === 'payroll-bureau-ops' ||
       activeTab === 'working_capital_forecast' ||
       activeTab === 'working-capital-forecast' ||
       isWholesaleRawViewActive ||
@@ -21625,6 +21664,284 @@ Strategies to Improve the CCC
     );
   };
 
+  const renderPayroll = () => {
+    if (!payrollData) {
+      return <div style={{ padding: '40px', color: '#64748b', fontSize: '14px' }}>Loading Payroll…</div>;
+    }
+
+    const summary = payrollData.summary || {};
+    const sourceNote = String(payrollData?.meta?.note || summary.note || '');
+    const clientCensus: any[] = Array.isArray(payrollData.clientCensus) ? payrollData.clientCensus : [];
+    const payrollRuns: any[] = Array.isArray(payrollData.payrollRuns) ? payrollData.payrollRuns : [];
+    const grossToNet: any[] = Array.isArray(payrollData.grossToNet) ? payrollData.grossToNet : [];
+    const earningsByCode: any[] = Array.isArray(payrollData.earningsByCode) ? payrollData.earningsByCode : [];
+    const deductionsByCode: any[] = Array.isArray(payrollData.deductionsByCode) ? payrollData.deductionsByCode : [];
+    const taxWithholdings: any[] = Array.isArray(payrollData.taxWithholdings) ? payrollData.taxWithholdings : [];
+    const directDepositMix: any[] = Array.isArray(payrollData.directDepositMix) ? payrollData.directDepositMix : [];
+    const payGroups: any[] = Array.isArray(payrollData.payGroups) ? payrollData.payGroups : [];
+    const glExportJournal: any[] = Array.isArray(payrollData.glExportJournal) ? payrollData.glExportJournal : [];
+    const benefitsEnrollments: any[] = Array.isArray(payrollData.benefitsEnrollments) ? payrollData.benefitsEnrollments : [];
+    const cardStyle: React.CSSProperties = { background: '#fff', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '20px', minWidth: 0 };
+    const cardTitleStyle: React.CSSProperties = { margin: '0 0 12px 0', fontSize: '13px', fontWeight: 700, color: '#0f172a', textTransform: 'uppercase', letterSpacing: '0.04em' };
+    const thStyle: React.CSSProperties = { textAlign: 'left', padding: '8px 10px', fontSize: '11px', fontWeight: 700, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.04em', borderBottom: '1px solid #e2e8f0', background: '#f8fafc' };
+    const tdStyle: React.CSSProperties = { padding: '8px 10px', fontSize: '13px', color: '#0f172a', borderBottom: '1px solid #f1f5f9' };
+    const emptyRow = (colSpan: number) => (
+      <tr><td colSpan={colSpan} style={{ ...tdStyle, color: '#64748b' }}>No isolved payroll data yet.</td></tr>
+    );
+    const renderTable = (headers: Array<{ label: string; align?: 'left' | 'right' }>, rows: React.ReactNode) => (
+      <div style={{ overflowX: 'auto', maxHeight: '340px', overflowY: 'auto' }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+          <thead>
+            <tr>
+              {headers.map((header) => (
+                <th key={header.label} style={{ ...thStyle, textAlign: header.align || 'left' }}>{header.label}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>{rows}</tbody>
+        </table>
+      </div>
+    );
+
+    const visibleCensus = clientCensus.filter((row) => matchesSelectedOperationalClient(row.clientName));
+
+    return (
+      <div style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+        {renderOperationalClientSelector()}
+        {isSectionEnabled('payrollRunScorecard') && (
+          <div style={cardStyle}>
+            <div style={{ ...cardTitleStyle, marginBottom: '14px' }}>Payroll Run Scorecard</div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, minmax(0, 1fr))', gap: '12px' }}>
+              {[
+                { label: 'Clients', value: Number(summary.clientCount || 0).toLocaleString('en-US'), color: '#1d4ed8' },
+                { label: 'Employees Paid', value: Number(summary.employeeCount || 0).toLocaleString('en-US'), color: '#7c3aed' },
+                { label: 'Gross Pay', value: formatCurrency(Number(summary.grossPay || 0)), color: '#0f766e' },
+                { label: 'Net Pay', value: formatCurrency(Number(summary.netPay || 0)), color: '#0f172a' },
+                { label: 'On-Time Processing', value: `${Number(summary.onTimeProcessingPct || 0).toFixed(1)}%`, color: '#b45309' },
+              ].map((kpi) => (
+                <div key={kpi.label} style={{ padding: '12px', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px' }}>
+                  <div style={{ fontSize: '11px', color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: '4px' }}>{kpi.label}</div>
+                  <div style={{ fontSize: '18px', fontWeight: 700, color: kpi.color }}>{kpi.value}</div>
+                </div>
+              ))}
+            </div>
+            {sourceNote ? <div style={{ marginTop: '10px', fontSize: '12px', color: '#64748b' }}>{sourceNote}</div> : null}
+          </div>
+        )}
+        {isSectionEnabled('payrollOnTimeProcessing') && !isSectionEnabled('payrollRunScorecard') && sourceNote ? (
+          <div style={{ ...cardStyle, fontSize: '13px', color: '#64748b' }}>{sourceNote}</div>
+        ) : null}
+
+        {isSectionEnabled('payrollClientCensus') && (
+          <div style={cardStyle}>
+            <div style={cardTitleStyle}>Client / Company Census</div>
+            {renderTable(
+              [
+                { label: 'Client' },
+                { label: 'Account Manager' },
+                { label: 'Processor' },
+                { label: 'Type' },
+                { label: 'Size' },
+                { label: 'EIN' },
+                { label: 'Employees', align: 'right' },
+                { label: 'Status' },
+              ],
+              clientCensus.length === 0
+                ? emptyRow(8)
+                : visibleCensus.length === 0
+                ? emptyRow(8)
+                : visibleCensus.map((row) => (
+                    <tr key={row.id || row.clientName}>
+                      <td style={{ ...tdStyle, fontWeight: 600 }}>{row.clientName || '—'}</td>
+                      <td style={tdStyle}>{row.accountManager || '—'}</td>
+                      <td style={tdStyle}>{row.processor || '—'}</td>
+                      <td style={tdStyle}>{row.clientType || '—'}</td>
+                      <td style={tdStyle}>{row.sizeBand || '—'}</td>
+                      <td style={tdStyle}>{row.ein || '—'}</td>
+                      <td style={{ ...tdStyle, textAlign: 'right' }}>{Number(row.employeeCount || 0).toLocaleString('en-US')}</td>
+                      <td style={tdStyle}>{row.status || '—'}</td>
+                    </tr>
+                  ))
+            )}
+          </div>
+        )}
+
+        {isSectionEnabled('payrollPayGroupCalendar') && (
+          <div style={cardStyle}>
+            <div style={cardTitleStyle}>Pay Groups / Calendar</div>
+            {renderTable(
+              [{ label: 'Pay Group' }, { label: 'Frequency' }, { label: 'Next Check Date' }, { label: 'Employees', align: 'right' }],
+              payGroups.length === 0
+                ? emptyRow(4)
+                : payGroups.map((row) => (
+                    <tr key={row.id || row.payGroup}>
+                      <td style={{ ...tdStyle, fontWeight: 600 }}>{row.payGroup || '—'}</td>
+                      <td style={tdStyle}>{row.frequency || '—'}</td>
+                      <td style={tdStyle}>{row.nextCheckDate || '—'}</td>
+                      <td style={{ ...tdStyle, textAlign: 'right' }}>{Number(row.employeeCount || 0).toLocaleString('en-US')}</td>
+                    </tr>
+                  ))
+            )}
+          </div>
+        )}
+
+        {isSectionEnabled('payrollGrossToNet') && (
+          <div style={cardStyle}>
+            <div style={cardTitleStyle}>Gross-to-Net Summary</div>
+            {renderTable(
+              [{ label: 'Period' }, { label: 'Gross', align: 'right' }, { label: 'Taxes', align: 'right' }, { label: 'Deductions', align: 'right' }, { label: 'Net', align: 'right' }],
+              grossToNet.length === 0
+                ? emptyRow(5)
+                : grossToNet.map((row) => (
+                    <tr key={row.period || row.id}>
+                      <td style={{ ...tdStyle, fontWeight: 600 }}>{row.period || '—'}</td>
+                      <td style={{ ...tdStyle, textAlign: 'right' }}>{formatCurrency(Number(row.grossPay || 0))}</td>
+                      <td style={{ ...tdStyle, textAlign: 'right' }}>{formatCurrency(Number(row.taxWithheld || 0))}</td>
+                      <td style={{ ...tdStyle, textAlign: 'right' }}>{formatCurrency(Number(row.deductions || 0))}</td>
+                      <td style={{ ...tdStyle, textAlign: 'right', fontWeight: 700 }}>{formatCurrency(Number(row.netPay || 0))}</td>
+                    </tr>
+                  ))
+            )}
+          </div>
+        )}
+
+        {(isSectionEnabled('payrollEarningsByCode') || isSectionEnabled('payrollDeductionsByCode')) && (
+          <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)', gap: '16px' }}>
+            {isSectionEnabled('payrollEarningsByCode') && (
+              <div style={cardStyle}>
+                <div style={cardTitleStyle}>Earnings by Code</div>
+                {renderTable(
+                  [{ label: 'Code' }, { label: 'Hours', align: 'right' }, { label: 'Amount', align: 'right' }],
+                  earningsByCode.length === 0
+                    ? emptyRow(3)
+                    : earningsByCode.map((row) => (
+                        <tr key={row.code}>
+                          <td style={{ ...tdStyle, fontWeight: 600 }}>{row.code || '—'}</td>
+                          <td style={{ ...tdStyle, textAlign: 'right' }}>{Number(row.hours || 0).toLocaleString('en-US')}</td>
+                          <td style={{ ...tdStyle, textAlign: 'right' }}>{formatCurrency(Number(row.amount || 0))}</td>
+                        </tr>
+                      ))
+                )}
+              </div>
+            )}
+            {isSectionEnabled('payrollDeductionsByCode') && (
+              <div style={cardStyle}>
+                <div style={cardTitleStyle}>Deductions by Code</div>
+                {renderTable(
+                  [{ label: 'Code' }, { label: 'Employees', align: 'right' }, { label: 'Amount', align: 'right' }],
+                  deductionsByCode.length === 0
+                    ? emptyRow(3)
+                    : deductionsByCode.map((row) => (
+                        <tr key={row.code}>
+                          <td style={{ ...tdStyle, fontWeight: 600 }}>{row.code || '—'}</td>
+                          <td style={{ ...tdStyle, textAlign: 'right' }}>{Number(row.employeeCount || 0).toLocaleString('en-US')}</td>
+                          <td style={{ ...tdStyle, textAlign: 'right' }}>{formatCurrency(Number(row.amount || 0))}</td>
+                        </tr>
+                      ))
+                )}
+              </div>
+            )}
+          </div>
+        )}
+
+        {(isSectionEnabled('payrollTaxWithholdings') || isSectionEnabled('payrollDirectDepositMix')) && (
+          <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)', gap: '16px' }}>
+            {isSectionEnabled('payrollTaxWithholdings') && (
+              <div style={cardStyle}>
+                <div style={cardTitleStyle}>Tax Withholdings</div>
+                {renderTable(
+                  [{ label: 'Tax' }, { label: 'Taxable Wages', align: 'right' }, { label: 'Withheld', align: 'right' }],
+                  taxWithholdings.length === 0
+                    ? emptyRow(3)
+                    : taxWithholdings.map((row) => (
+                        <tr key={row.taxCode || row.label}>
+                          <td style={{ ...tdStyle, fontWeight: 600 }}>{row.label || row.taxCode || '—'}</td>
+                          <td style={{ ...tdStyle, textAlign: 'right' }}>{formatCurrency(Number(row.taxableWages || 0))}</td>
+                          <td style={{ ...tdStyle, textAlign: 'right' }}>{formatCurrency(Number(row.withheld || 0))}</td>
+                        </tr>
+                      ))
+                )}
+              </div>
+            )}
+            {isSectionEnabled('payrollDirectDepositMix') && (
+              <div style={cardStyle}>
+                <div style={cardTitleStyle}>Direct Deposit Mix</div>
+                {renderTable(
+                  [{ label: 'Method' }, { label: 'Employees', align: 'right' }, { label: 'Share', align: 'right' }],
+                  directDepositMix.length === 0
+                    ? emptyRow(3)
+                    : directDepositMix.map((row) => (
+                        <tr key={row.method}>
+                          <td style={{ ...tdStyle, fontWeight: 600 }}>{row.method || '—'}</td>
+                          <td style={{ ...tdStyle, textAlign: 'right' }}>{Number(row.employeeCount || 0).toLocaleString('en-US')}</td>
+                          <td style={{ ...tdStyle, textAlign: 'right' }}>{Number(row.pct || 0).toFixed(1)}%</td>
+                        </tr>
+                      ))
+                )}
+              </div>
+            )}
+          </div>
+        )}
+
+        {isSectionEnabled('payrollGlExportJournal') && (
+          <div style={cardStyle}>
+            <div style={cardTitleStyle}>GL Export / Payroll Journal</div>
+            {renderTable(
+              [{ label: 'Account' }, { label: 'Description' }, { label: 'Debit', align: 'right' }, { label: 'Credit', align: 'right' }],
+              glExportJournal.length === 0
+                ? emptyRow(4)
+                : glExportJournal.map((row, index) => (
+                    <tr key={row.id || `${row.account}-${index}`}>
+                      <td style={{ ...tdStyle, fontWeight: 600 }}>{row.account || '—'}</td>
+                      <td style={tdStyle}>{row.description || '—'}</td>
+                      <td style={{ ...tdStyle, textAlign: 'right' }}>{formatCurrency(Number(row.debit || 0))}</td>
+                      <td style={{ ...tdStyle, textAlign: 'right' }}>{formatCurrency(Number(row.credit || 0))}</td>
+                    </tr>
+                  ))
+            )}
+          </div>
+        )}
+
+        {isSectionEnabled('payrollBenefitsEnrollments') && (
+          <div style={cardStyle}>
+            <div style={cardTitleStyle}>Benefits Enrollments</div>
+            {renderTable(
+              [{ label: 'Plan' }, { label: 'Coverage' }, { label: 'Employees', align: 'right' }, { label: 'Employee Cost', align: 'right' }],
+              benefitsEnrollments.length === 0
+                ? emptyRow(4)
+                : benefitsEnrollments.map((row) => (
+                    <tr key={row.plan || row.id}>
+                      <td style={{ ...tdStyle, fontWeight: 600 }}>{row.plan || '—'}</td>
+                      <td style={tdStyle}>{row.coverage || '—'}</td>
+                      <td style={{ ...tdStyle, textAlign: 'right' }}>{Number(row.employeeCount || 0).toLocaleString('en-US')}</td>
+                      <td style={{ ...tdStyle, textAlign: 'right' }}>{formatCurrency(Number(row.employeeCost || 0))}</td>
+                    </tr>
+                  ))
+            )}
+          </div>
+        )}
+
+        {isSectionEnabled('payrollRunScorecard') ? null : payrollRuns.length > 0 ? (
+          <div style={cardStyle}>
+            <div style={cardTitleStyle}>Payroll Runs</div>
+            {renderTable(
+              [{ label: 'Run' }, { label: 'Pay Period' }, { label: 'Check Date' }, { label: 'Status' }, { label: 'Gross', align: 'right' }],
+              payrollRuns.map((row) => (
+                <tr key={row.id || row.runName}>
+                  <td style={{ ...tdStyle, fontWeight: 600 }}>{row.runName || '—'}</td>
+                  <td style={tdStyle}>{row.payPeriod || '—'}</td>
+                  <td style={tdStyle}>{row.checkDate || '—'}</td>
+                  <td style={tdStyle}>{row.status || '—'}</td>
+                  <td style={{ ...tdStyle, textAlign: 'right' }}>{formatCurrency(Number(row.grossPay || 0))}</td>
+                </tr>
+              ))
+            )}
+          </div>
+        ) : null}
+      </div>
+    );
+  };
+
   const renderLaborScheduling = () => {
     if (!laborSchedulingData) {
       return <div style={{ padding: '40px', color: '#64748b', fontSize: '14px' }}>Loading Labor &amp; Scheduling…</div>;
@@ -21643,14 +21960,17 @@ Strategies to Improve the CCC
     const tdStyle: React.CSSProperties = { padding: '8px 10px', fontSize: '13px', color: '#0f172a', borderBottom: '1px solid #f1f5f9' };
     const chartLabelStyle = { fontSize: '12px', fill: '#64748b' };
     const isBambooHrWorkforce = laborSchedulingData?.meta?.source === 'BAMBOOHR_WORKFORCE';
+    const isIsolvedWorkforce = laborSchedulingData?.meta?.source === 'ISOLVED_PEOPLE_CLOUD';
+    const isWorkforceCensus = isBambooHrWorkforce || isIsolvedWorkforce;
 
-    if (isBambooHrWorkforce) {
+    if (isWorkforceCensus) {
       const headcountByRole: any[] = Array.isArray(laborSchedulingData.headcountByRole) ? laborSchedulingData.headcountByRole : [];
       const headcountByDepartment: any[] = Array.isArray(laborSchedulingData.headcountByDepartment) ? laborSchedulingData.headcountByDepartment : [];
       const headcountByLocation: any[] = Array.isArray(laborSchedulingData.headcountByLocation) ? laborSchedulingData.headcountByLocation : [];
       const payTypeMix: any[] = Array.isArray(laborSchedulingData.payTypeMix) ? laborSchedulingData.payTypeMix : [];
       const billRateLevelCoverage: any[] = Array.isArray(laborSchedulingData.billRateLevelCoverage) ? laborSchedulingData.billRateLevelCoverage : [];
       const missingBillRateLevel: any[] = Array.isArray(laborSchedulingData.missingBillRateLevel) ? laborSchedulingData.missingBillRateLevel : [];
+      const ptoBalances: any[] = Array.isArray(laborSchedulingData.ptoBalances) ? laborSchedulingData.ptoBalances : [];
       const billableHeadcount = Number(
         summary.billableHeadcount ??
         billRateLevelCoverage.find((row) => row?.label === 'Has Bill Rate Level')?.count ??
@@ -21917,6 +22237,73 @@ Strategies to Improve the CCC
               </div>
             </div>}
           </div>
+          {(isSectionEnabled('lsUtilizationPct') || isSectionEnabled('lsOvertimeAnalysis')) && (
+            <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)', gap: '16px' }}>
+              {isSectionEnabled('lsUtilizationPct') && (
+                <div style={cardStyle}>
+                  <div style={cardTitleStyle}>Utilization % (billable vs paid hours)</div>
+                  <div style={{ overflowX: 'auto', maxHeight: '340px', overflowY: 'auto' }}>
+                    <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                      <thead><tr><th style={thStyle}>Role</th><th style={{ ...thStyle, textAlign: 'right' }}>Billable Hours</th><th style={{ ...thStyle, textAlign: 'right' }}>Paid Hours</th><th style={{ ...thStyle, textAlign: 'right' }}>Utilization</th></tr></thead>
+                      <tbody>
+                        {utilizationByRole.length === 0 ? (
+                          <tr><td colSpan={4} style={{ ...tdStyle, color: '#64748b' }}>No utilization data yet.</td></tr>
+                        ) : utilizationByRole.map((row) => (
+                          <tr key={row.role}>
+                            <td style={{ ...tdStyle, fontWeight: 600 }}>{row.role}</td>
+                            <td style={{ ...tdStyle, textAlign: 'right' }}>{Number(row.billableHours || 0).toLocaleString('en-US')}</td>
+                            <td style={{ ...tdStyle, textAlign: 'right' }}>{Number(row.paidHours || 0).toLocaleString('en-US')}</td>
+                            <td style={{ ...tdStyle, textAlign: 'right' }}>{Number(row.utilizationPct || 0).toFixed(1)}%</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+              {isSectionEnabled('lsOvertimeAnalysis') && (
+                <div style={cardStyle}>
+                  <div style={cardTitleStyle}>Overtime Analysis</div>
+                  {overtimeAnalysis.length === 0 ? (
+                    <div style={{ fontSize: '13px', color: '#64748b' }}>No overtime data yet.</div>
+                  ) : (
+                    <ResponsiveContainer width="100%" height={320}>
+                      <BarChart data={overtimeAnalysis.slice(0, 10)} margin={{ top: 8, right: 8, left: 8, bottom: 40 }}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                        <XAxis dataKey="employeeName" angle={-20} textAnchor="end" height={70} tick={chartLabelStyle} interval={0} />
+                        <YAxis tick={chartLabelStyle} />
+                        <Tooltip formatter={(value: any) => [Number(value || 0).toLocaleString('en-US'), 'Overtime Hours']} />
+                        <Bar dataKey="overtimeHours" fill="#dc2626" radius={0} />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+          {isSectionEnabled('lsPtoBalances') && (
+            <div style={cardStyle}>
+              <div style={cardTitleStyle}>PTO / Leave Balances</div>
+              <div style={{ overflowX: 'auto', maxHeight: '340px', overflowY: 'auto' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                  <thead><tr><th style={thStyle}>Employee</th><th style={thStyle}>Leave Type</th><th style={{ ...thStyle, textAlign: 'right' }}>Balance</th><th style={{ ...thStyle, textAlign: 'right' }}>Accrued</th><th style={{ ...thStyle, textAlign: 'right' }}>Used</th></tr></thead>
+                  <tbody>
+                    {ptoBalances.length === 0 ? (
+                      <tr><td colSpan={5} style={{ ...tdStyle, color: '#64748b' }}>No PTO balances yet.</td></tr>
+                    ) : ptoBalances.map((row, index) => (
+                      <tr key={row.id || `${row.employeeName || 'employee'}-${index}`}>
+                        <td style={{ ...tdStyle, fontWeight: 600 }}>{row.employeeName || '—'}</td>
+                        <td style={tdStyle}>{row.leaveType || '—'}</td>
+                        <td style={{ ...tdStyle, textAlign: 'right' }}>{Number(row.balanceHours || 0).toLocaleString('en-US')}</td>
+                        <td style={{ ...tdStyle, textAlign: 'right' }}>{Number(row.accruedHours || 0).toLocaleString('en-US')}</td>
+                        <td style={{ ...tdStyle, textAlign: 'right' }}>{Number(row.usedHours || 0).toLocaleString('en-US')}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
         </div>
       );
     }
@@ -22808,6 +23195,38 @@ Strategies to Improve the CCC
                 <Bar dataKey="totalApplicantsCount" fill="#b45309" radius={0} />
               </BarChart>
             </ResponsiveContainer>
+          </div>
+        )}
+
+        {isSectionEnabled('hiringOnboardingPipeline') && (
+          <div style={cardStyle}>
+            <div style={cardTitleStyle}>Onboarding / New Hires</div>
+            <div style={{ overflowX: 'auto', maxHeight: '340px', overflowY: 'auto' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                <thead>
+                  <tr>
+                    <th style={thStyle}>Employee</th>
+                    <th style={thStyle}>Job</th>
+                    <th style={thStyle}>Start Date</th>
+                    <th style={thStyle}>Status</th>
+                    <th style={thStyle}>I-9 / Tasks</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {(Array.isArray(hiringData.onboardingPipeline) ? hiringData.onboardingPipeline : []).length === 0 ? (
+                    <tr><td colSpan={5} style={{ ...tdStyle, color: '#64748b' }}>No onboarding records yet.</td></tr>
+                  ) : (hiringData.onboardingPipeline || []).map((row: any, index: number) => (
+                    <tr key={row.id || `${row.employeeName || 'hire'}-${index}`}>
+                      <td style={{ ...tdStyle, fontWeight: 600 }}>{row.employeeName || '—'}</td>
+                      <td style={tdStyle}>{row.jobTitle || '—'}</td>
+                      <td style={tdStyle}>{formatHiringDate(row.startDate)}</td>
+                      <td style={tdStyle}>{row.status || '—'}</td>
+                      <td style={tdStyle}>{row.taskStatus || '—'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </div>
         )}
       </div>
@@ -27049,6 +27468,17 @@ Strategies to Improve the CCC
     if (dataType === 'ap-aging') return withPrintReady('ap-aging', renderAPaging());
     if (dataType === 'products') return withPrintReady('products', renderProducts());
     if (dataType === 'labor-scheduling') return renderLaborScheduling();
+    if (dataType === 'payroll') return withPrintReady('payroll', renderPayroll());
+    if (dataType === 'payroll-bureau-ops') {
+      return withPrintReady(
+        'payroll-bureau-ops',
+        <PayrollBureauOpsViews
+          moduleKey={moduleKey}
+          data={payrollBureauOpsData}
+          isSectionEnabled={isSectionEnabled}
+        />
+      );
+    }
     if (dataType === 'hiring') return renderHiring();
     if (dataType === 'inventory') return withPrintReady('inventory', renderInventory());
     if (dataType === 'cash') return renderCash();
@@ -27692,6 +28122,22 @@ Strategies to Improve the CCC
         locale={companyCurrency.locale}
       />
     );
+
+    if (isBureauExecutiveScorecardEnabled) {
+      const scorecard = <PayrollBureauExecutiveScorecard data={payrollBureauOpsData} />;
+      if (initialPrintSectionKey === 'overviewBureauExecutiveScorecard') {
+        return scorecard;
+      }
+      if (initialPrintSectionKey) {
+        return dashboard;
+      }
+      return (
+        <div>
+          {scorecard}
+          {dashboard}
+        </div>
+      );
+    }
 
     const overviewReports = [
       ...(isOverviewCashConversionEnabled ? [{ key: 'cash-conversion-analysis' as const, label: 'Cash Conversion Analysis' }] : []),

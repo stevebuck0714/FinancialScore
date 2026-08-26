@@ -29,6 +29,7 @@ import {
   buildProjectPortfolioMock,
 } from '@/lib/operations/construction-mock-data';
 import { getBambooHrHiringPayload } from '@/lib/operations/bamboohr-workforce-reports';
+import { buildIsolvedBureauOpsPayload } from '@/lib/operational/isolved-bureau-ops-mock';
 import { ensurePlatosClosetMonthlyFacts } from '@/lib/operational/platos-closet-monthly-facts';
 import { presentCompanyJson } from '@/lib/currency/api-response';
 
@@ -112,6 +113,7 @@ function getOperationalPayload(companyId: string, sectorCategory: string | null,
   if (dataType === 'construction-ar') return buildConstructionArMock(companyId);
   if (dataType === 'construction-ap') return buildConstructionApMock(companyId);
   if (dataType === 'hilti-inventory') return buildHiltiInventoryMock(companyId);
+  if (dataType === 'payroll-bureau-ops') return buildIsolvedBureauOpsPayload(companyId);
   if (dataType === 'hiring') {
     throw new Error('Hiring custom report preview requires live BambooHR data; mock fallback is disabled.');
   }

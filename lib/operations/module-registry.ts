@@ -7,6 +7,7 @@ export type OpsDataType =
   | 'products'
   | 'labor-scheduling'
   | 'hiring'
+  | 'payroll'
   | 'inventory'
   | 'cash'
   | 'loans'
@@ -23,7 +24,8 @@ export type OpsDataType =
   | 'billing-cash'
   | 'construction-ar'
   | 'construction-ap'
-  | 'hilti-inventory';
+  | 'hilti-inventory'
+  | 'payroll-bureau-ops';
 
 type ModuleDefinition = {
   key: string;
@@ -84,9 +86,14 @@ const MODULE_DEFINITIONS: ModuleDefinition[] = [
   { key: 'originations_new_business', label: 'Originations / New Business', dataType: 'products' },
   { key: 'risk_losses', label: 'Risk / Losses', dataType: 'products' },
   { key: 'maintenance_work_orders', label: 'Maintenance / Work Orders', dataType: 'products' },
-  { key: 'time_utilization', label: 'Time & Utilization', dataType: 'products' },
+  { key: 'time_utilization', label: 'Workforce / Time', dataType: 'labor-scheduling' },
   { key: 'labor_scheduling', label: 'Labor & Scheduling', dataType: 'labor-scheduling' },
   { key: 'hiring', label: 'Hiring', dataType: 'hiring' },
+  { key: 'payroll', label: 'Payroll', dataType: 'payroll' },
+  { key: 'todays_operations', label: "Today's Operations", dataType: 'payroll-bureau-ops' },
+  { key: 'payroll_performance', label: 'Payroll Performance', dataType: 'payroll-bureau-ops' },
+  { key: 'processor_capacity', label: 'Processor Capacity', dataType: 'payroll-bureau-ops' },
+  { key: 'client_economics', label: 'Client Economics', dataType: 'payroll-bureau-ops' },
   { key: 'assets_routes', label: 'Assets & Routes', dataType: 'products' },
   { key: 'staffing', label: 'Staffing', dataType: 'products' },
   { key: 'staffing_providers', label: 'Staffing / Providers', dataType: 'products' },

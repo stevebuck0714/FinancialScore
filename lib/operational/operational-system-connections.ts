@@ -50,6 +50,11 @@ function getDelegate():
   return delegate && typeof delegate === 'object' ? delegate : null;
 }
 
+function isUnknownProviderEnumError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return message.includes('not found in enum') && message.includes('OperationalSystemProvider');
+}
+
 function asRecord(value: unknown): Record<string, unknown> | null {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
   return value as Record<string, unknown>;
@@ -85,11 +90,15 @@ export function isQuickBooksAccountingSystem(value: unknown): boolean {
 export async function listOperationalSystemConnections(companyId: string): Promise<OperationalSystemConnectionRecord[]> {
   const delegate = getDelegate();
   if (delegate) {
-    const rows = await delegate.findMany({
-      where: { companyId },
-      orderBy: { createdAt: 'asc' },
-    });
-    return rows.map(normalizeRow);
+    try {
+      const rows = await delegate.findMany({
+        where: { companyId },
+        orderBy: { createdAt: 'asc' },
+      });
+      return rows.map(normalizeRow);
+    } catch (error) {
+      if (!isUnknownProviderEnumError(error)) throw error;
+    }
   }
 
   const rows = await prisma.$queryRaw<any[]>(Prisma.sql`
@@ -126,16 +135,20 @@ export async function getOperationalSystemConnection(
 ): Promise<OperationalSystemConnectionRecord | null> {
   const delegate = getDelegate();
   if (delegate) {
-    const row = await delegate.findUnique({
-      where: {
-        companyId_provider_sourceCode: {
-          companyId,
-          provider,
-          sourceCode,
+    try {
+      const row = await delegate.findUnique({
+        where: {
+          companyId_provider_sourceCode: {
+            companyId,
+            provider,
+            sourceCode,
+          },
         },
-      },
-    });
-    return row ? normalizeRow(row) : null;
+      });
+      return row ? normalizeRow(row) : null;
+    } catch (error) {
+      if (!isUnknownProviderEnumError(error)) throw error;
+    }
   }
 
   const rows = await prisma.$queryRaw<any[]>(Prisma.sql`
@@ -198,23 +211,27 @@ export async function saveOperationalSystemConnection(input: SaveConnectionInput
   };
 
   if (delegate) {
-    await delegate.upsert({
-      where: {
-        companyId_provider_sourceCode: {
+    try {
+      await delegate.upsert({
+        where: {
+          companyId_provider_sourceCode: {
+            companyId: input.companyId,
+            provider: input.provider,
+            sourceCode: input.sourceCode,
+          },
+        },
+        update: updatePayload,
+        create: {
           companyId: input.companyId,
           provider: input.provider,
           sourceCode: input.sourceCode,
+          ...createPayload,
         },
-      },
-      update: updatePayload,
-      create: {
-        companyId: input.companyId,
-        provider: input.provider,
-        sourceCode: input.sourceCode,
-        ...createPayload,
-      },
-    });
-    return;
+      });
+      return;
+    } catch (error) {
+      if (!isUnknownProviderEnumError(error)) throw error;
+    }
   }
 
   await prisma.$executeRaw(Prisma.sql`
@@ -280,14 +297,18 @@ export async function deleteOperationalSystemConnection(
 ): Promise<void> {
   const delegate = getDelegate();
   if (delegate) {
-    await delegate.deleteMany({
-      where: {
-        companyId,
-        provider,
-        sourceCode,
-      },
-    });
-    return;
+    try {
+      await delegate.deleteMany({
+        where: {
+          companyId,
+          provider,
+          sourceCode,
+        },
+      });
+      return;
+    } catch (error) {
+      if (!isUnknownProviderEnumError(error)) throw error;
+    }
   }
 
   await prisma.$executeRaw(Prisma.sql`

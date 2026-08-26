@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import { requireAuth, requireSiteAdmin } from '@/lib/tenant-security';
 import { INDUSTRY_SECTORS } from '@/lib/constants/company-options';
-import { getDefaultSectorLayoutConfig, isLegacyOpsDefaultConfig } from '@/lib/operations/sector-layout-defaults';
+import { getDefaultSectorLayoutConfig, isLegacyOpsDefaultConfig, mergeIsolvedSector54LayoutModules } from '@/lib/operations/sector-layout-defaults';
 
 export const dynamic = 'force-dynamic';
 
@@ -40,7 +40,22 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    return NextResponse.json({ config });
+    const storedConfig = config.config as { version?: number; layoutId?: string; modules?: string[] };
+    const mergedConfig =
+      sectorCategory === '54'
+        ? mergeIsolvedSector54LayoutModules({
+            version: Number(storedConfig?.version || 2),
+            layoutId: String(storedConfig?.layoutId || `sector-${sectorCategory}`),
+            modules: Array.isArray(storedConfig?.modules) ? storedConfig.modules : [],
+          })
+        : storedConfig;
+
+    return NextResponse.json({
+      config: {
+        ...config,
+        config: mergedConfig,
+      },
+    });
   }
 
   await requireSiteAdmin();

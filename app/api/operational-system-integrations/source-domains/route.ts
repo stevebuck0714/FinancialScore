@@ -7,6 +7,7 @@ import {
 import { DEFAULT_RAMQUEST_TITLE_DATA_DOMAINS, RAMQUEST_TITLE_SOURCE_CODE } from '@/lib/operational/ramquest-title';
 import { DEFAULT_RSMEANS_PM_DATA_DOMAINS, RSMEANS_PM_SOURCE_CODE } from '@/lib/operational/rsmeans-pm';
 import { DEFAULT_BUILDOUT_CRE_DATA_DOMAINS, BUILDOUT_CRE_SOURCE_CODE } from '@/lib/operational/buildout-cre';
+import { DEFAULT_ISOLVED_PEOPLE_CLOUD_DATA_DOMAINS, ISOLVED_PEOPLE_CLOUD_SOURCE_CODE } from '@/lib/operational/isolved-people-cloud';
 
 export const dynamic = 'force-dynamic';
 
@@ -23,6 +24,7 @@ const SOURCE_PROVIDERS: Record<string, string> = {
   [RAMQUEST_TITLE_SOURCE_CODE]: 'SPREADSHEET_UPLOAD',
   [RSMEANS_PM_SOURCE_CODE]: 'SPREADSHEET_UPLOAD',
   [BUILDOUT_CRE_SOURCE_CODE]: 'SPREADSHEET_UPLOAD',
+  [ISOLVED_PEOPLE_CLOUD_SOURCE_CODE]: 'ISOLVED',
 };
 
 const DEFAULT_DATA_DOMAINS: Record<string, EditableDataDomain[]> = {
@@ -76,6 +78,7 @@ const DEFAULT_DATA_DOMAINS: Record<string, EditableDataDomain[]> = {
   [RAMQUEST_TITLE_SOURCE_CODE]: DEFAULT_RAMQUEST_TITLE_DATA_DOMAINS,
   [RSMEANS_PM_SOURCE_CODE]: DEFAULT_RSMEANS_PM_DATA_DOMAINS,
   [BUILDOUT_CRE_SOURCE_CODE]: DEFAULT_BUILDOUT_CRE_DATA_DOMAINS,
+  [ISOLVED_PEOPLE_CLOUD_SOURCE_CODE]: DEFAULT_ISOLVED_PEOPLE_CLOUD_DATA_DOMAINS,
 };
 
 function normalizeSourceCode(value: unknown) {

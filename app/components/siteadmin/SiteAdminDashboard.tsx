@@ -13,6 +13,9 @@ import {
   getOperationalHubDefaultModuleKeys,
   getOperationalHubDefaultReportsForModule,
   getOperationalHubModuleLabel,
+  isIsolvedHubReportModule,
+  withIsolvedHubReportName,
+  withoutIsolvedHubReportName,
 } from '@/lib/operations/operational-hub-layout';
 import AccountingSystemPanel from '@/app/components/accounting-systems/AccountingSystemPanel';
 import { isPluginAccountingSystem } from '@/lib/accounting-systems/registry';
@@ -21,6 +24,7 @@ import { companiesApi, consultantsApi, ApiError } from '@/lib/api-client';
 import { DEFAULT_RAMQUEST_TITLE_DATA_DOMAINS, RAMQUEST_TITLE_LABEL, RAMQUEST_TITLE_SOURCE_CODE } from '@/lib/operational/ramquest-title';
 import { DEFAULT_RSMEANS_PM_DATA_DOMAINS, RSMEANS_PM_LABEL, RSMEANS_PM_SOURCE_CODE } from '@/lib/operational/rsmeans-pm';
 import { DEFAULT_BUILDOUT_CRE_DATA_DOMAINS, BUILDOUT_CRE_LABEL, BUILDOUT_CRE_SOURCE_CODE } from '@/lib/operational/buildout-cre';
+import { DEFAULT_ISOLVED_PEOPLE_CLOUD_DATA_DOMAINS, ISOLVED_PEOPLE_CLOUD_LABEL, ISOLVED_PEOPLE_CLOUD_SOURCE_CODE } from '@/lib/operational/isolved-people-cloud';
 
 const AFFILIATE_ADD_ON_OPTIONS = [
   { key: 'dataRoom', label: 'Data Room' },
@@ -175,12 +179,41 @@ const OPERATIONAL_HUB_SECTION_OPTIONS: Array<{ key: string; label: string; group
   { key: 'lsHeadcountByDepartment', label: 'Headcount by Department', group: 'Labor & Scheduling' },
   { key: 'lsLocationPayTypeMix', label: 'Location / Pay Type Mix', group: 'Labor & Scheduling' },
   { key: 'lsBillRateLevelCoverage', label: 'Bill Rate Level Coverage', group: 'Labor & Scheduling' },
+  { key: 'lsPtoBalances', label: 'PTO / Leave Balances', group: 'Labor & Scheduling' },
   { key: 'hiringOpenJobs', label: 'Open Jobs', group: 'Hiring' },
   { key: 'hiringApplicantPipeline', label: 'Applicant Pipeline', group: 'Hiring' },
   { key: 'hiringFunnelByRole', label: 'Funnel by Role', group: 'Hiring' },
   { key: 'hiringTimeToFillByJob', label: 'Time to Fill by Hire', group: 'Hiring' },
   { key: 'hiringApplicantsByJob', label: 'Applicants by Job', group: 'Hiring' },
   { key: 'hiringPostingPerformance', label: 'Posting Performance', group: 'Hiring' },
+  { key: 'hiringOnboardingPipeline', label: 'Onboarding / New Hires', group: 'Hiring' },
+  { key: 'payrollClientCensus', label: 'Client / Company Census', group: 'Payroll' },
+  { key: 'payrollRunScorecard', label: 'Payroll Run Scorecard', group: 'Payroll' },
+  { key: 'payrollGrossToNet', label: 'Gross-to-Net Summary', group: 'Payroll' },
+  { key: 'payrollEarningsByCode', label: 'Earnings by Code', group: 'Payroll' },
+  { key: 'payrollDeductionsByCode', label: 'Deductions by Code', group: 'Payroll' },
+  { key: 'payrollTaxWithholdings', label: 'Tax Withholdings', group: 'Payroll' },
+  { key: 'payrollDirectDepositMix', label: 'Direct Deposit Mix', group: 'Payroll' },
+  { key: 'payrollPayGroupCalendar', label: 'Pay Groups / Calendar', group: 'Payroll' },
+  { key: 'payrollGlExportJournal', label: 'GL Export / Payroll Journal', group: 'Payroll' },
+  { key: 'payrollOnTimeProcessing', label: 'On-Time Processing', group: 'Payroll' },
+  { key: 'payrollBenefitsEnrollments', label: 'Benefits Enrollments', group: 'Payroll' },
+  { key: 'bureauTodayKpis', label: "Today's Operations", group: "Today's Operations" },
+  { key: 'bureauNeedsAttention', label: 'Needs Attention Today', group: "Today's Operations" },
+  { key: 'bureauTodayRuns', label: 'Payrolls Due Today', group: "Today's Operations" },
+  { key: 'bureauProcessorWorkloadToday', label: 'Processor Workload Today', group: "Today's Operations" },
+  { key: 'bureauPerfScorecard', label: 'Payroll Performance Scorecard', group: 'Payroll Performance' },
+  { key: 'bureauPerfDelaySources', label: 'Delay Sources', group: 'Payroll Performance' },
+  { key: 'bureauClientQualityRanking', label: 'Client Service-Quality Ranking', group: 'Payroll Performance' },
+  { key: 'bureauProcessorCapacity', label: 'Processor Capacity', group: 'Processor Capacity' },
+  { key: 'bureauWorkloadForecast', label: 'Next Two Weeks Workload Forecast', group: 'Processor Capacity' },
+  { key: 'bureauProcessorNextWeek', label: 'Processor Load — Next Two Weeks', group: 'Processor Capacity' },
+  { key: 'bureauBillingsByCustomer', label: 'Billings by Customer', group: 'Client Economics' },
+  { key: 'bureauBillingsByType', label: 'Billings by Customer Type', group: 'Client Economics' },
+  { key: 'bureauBillingsBySize', label: 'Billings by Customer Size', group: 'Client Economics' },
+  { key: 'bureauProfitByCustomer', label: 'Profitability by Customer', group: 'Client Economics' },
+  { key: 'bureauClientHealth', label: 'Client Health', group: 'Client Economics' },
+  { key: 'bureauAccountManagers', label: 'Account Managers', group: 'Client Economics' },
   { key: 'csRevenueByClient', label: 'Revenue by Client', group: 'Customers / Sites' },
   { key: 'csClientProfitability', label: 'Client Profitability', group: 'Customers / Sites' },
   { key: 'csRevenueConcentration', label: 'Revenue Concentration (Top 5 / Top 10)', group: 'Customers / Sites' },
@@ -280,6 +313,8 @@ const OPERATIONAL_HUB_SECTIONS_BY_DATATYPE_GROUP: Record<string, string> = {
   products: 'Products',
   'labor-scheduling': 'Labor & Scheduling',
   hiring: 'Hiring',
+  payroll: 'Payroll',
+  'payroll-bureau-ops': "Today's Operations",
   inventory: 'Inventory',
   cash: 'Cash',
   loans: 'Loans',
@@ -324,6 +359,10 @@ const HEALTHCARE_OVERVIEW_REPORT_OPTIONS: Array<{ key: string; label: string; gr
   { key: 'overviewHealthcareEnterpriseReports', label: 'Enterprise Reports', group: 'Overview' },
   { key: 'overviewHealthcareRegionReports', label: 'Region Reports', group: 'Overview' },
   { key: 'overviewHealthcareServiceReports', label: 'Service Reports', group: 'Overview' },
+];
+
+const PAYROLL_BUREAU_OVERVIEW_REPORT_OPTIONS: Array<{ key: string; label: string; group: string }> = [
+  { key: 'overviewBureauExecutiveScorecard', label: withIsolvedHubReportName('Executive Operational Scorecard'), group: 'Overview' },
 ];
 
 type OperationalHubCustomReport = {
@@ -1390,7 +1429,8 @@ export default function SiteAdminDashboard(props: any) {
         const createdAt = String(entry?.createdAt || new Date().toISOString());
         const createdByCompanyId = String(entry?.createdByCompanyId || company?.id || '');
         if (!id || !label || !tabKey || !dataType) return null;
-        return { id, label, tabKey, dataType, scope, createdAt, createdByCompanyId } as OperationalHubCustomReport;
+        const displayLabel = isIsolvedHubReportModule(tabKey) ? label : withoutIsolvedHubReportName(label);
+        return { id, label: displayLabel, tabKey, dataType, scope, createdAt, createdByCompanyId } as OperationalHubCustomReport;
       })
       .filter(Boolean) as OperationalHubCustomReport[];
   };
@@ -1469,6 +1509,8 @@ export default function SiteAdminDashboard(props: any) {
             ? REAL_ESTATE_OVERVIEW_REPORT_OPTIONS
             : companySectorCategory === '62'
             ? HEALTHCARE_OVERVIEW_REPORT_OPTIONS
+            : companySectorCategory === '54'
+            ? [...PAYROLL_BUREAU_OVERVIEW_REPORT_OPTIONS, ...OVERVIEW_STANDARD_REPORT_OPTIONS]
             : OVERVIEW_STANDARD_REPORT_OPTIONS;
         return overviewOptions.map((item) => ({
           ...item,
@@ -1492,7 +1534,7 @@ export default function SiteAdminDashboard(props: any) {
         ];
       }
       const defaultReports = getOperationalHubDefaultReportsForModule(moduleKey, companySectorCategory);
-      if (defaultReports.length > 0 && ['23', '32', '53', '62'].includes(companySectorCategory)) {
+      if (defaultReports.length > 0 && ['23', '32', '53', '54', '62'].includes(companySectorCategory)) {
         return defaultReports.map((item) => ({
           ...item,
           group: option.label,
@@ -1643,8 +1685,12 @@ export default function SiteAdminDashboard(props: any) {
 
   const createOperationalHubCustomReport = async (company: any) => {
     const draft = getNewOperationalHubReportDraft(company);
-    const label = draft.label.trim();
     const tabKey = String(draft.tabKey || '').trim();
+    const companySectorCategory = String(company?.industrySectorCategory || '').trim();
+    const isIsolvedReport =
+      isIsolvedHubReportModule(tabKey) &&
+      (companySectorCategory === '54' || isOperationalSourceSelected(company?.id, ISOLVED_PEOPLE_CLOUD_SOURCE_CODE));
+    const label = isIsolvedReport ? withIsolvedHubReportName(draft.label.trim()) : draft.label.trim();
     if (!label) {
       alert('Enter a report name.');
       return;
@@ -3907,6 +3953,9 @@ export default function SiteAdminDashboard(props: any) {
       if (selected.some((source: any) => String(source?.sourceCode || '') === BUILDOUT_CRE_SOURCE_CODE)) {
         loadOperationalSourceDataDomains(companyId, BUILDOUT_CRE_SOURCE_CODE);
       }
+      if (selected.some((source: any) => String(source?.sourceCode || '') === ISOLVED_PEOPLE_CLOUD_SOURCE_CODE)) {
+        loadOperationalSourceDataDomains(companyId, ISOLVED_PEOPLE_CLOUD_SOURCE_CODE);
+      }
     } catch (error) {
       console.error('Failed to load operational sources:', error);
     }
@@ -5110,6 +5159,12 @@ export default function SiteAdminDashboard(props: any) {
       credentialFields: ['API Base URL', 'Account / Tenant ID', 'Client ID', 'Client Secret', 'API Key', 'OAuth Redirect URI', 'Webhook Secret'],
       domains: DEFAULT_BUILDOUT_CRE_DATA_DOMAINS,
     },
+    [ISOLVED_PEOPLE_CLOUD_SOURCE_CODE]: {
+      label: ISOLVED_PEOPLE_CLOUD_LABEL,
+      description: 'Cloud HCM REST API for HR, payroll, time, benefits, and workforce data. Use beside QuickBooks Desktop for census, pay runs, time, and GL payroll export.',
+      credentialFields: ['API Base URL', 'Client Code', 'Client ID', 'Client Secret', 'OAuth Token URL', 'Company / Legal ID', 'Webhook Secret'],
+      domains: DEFAULT_ISOLVED_PEOPLE_CLOUD_DATA_DOMAINS,
+    },
   };
 
   const getConstructionOperationalSourceDetail = (sourceCode: string) =>
@@ -5123,6 +5178,7 @@ export default function SiteAdminDashboard(props: any) {
     if (normalizedSourceCode === RAMQUEST_TITLE_SOURCE_CODE) return 16 + offset;
     if (normalizedSourceCode === RSMEANS_PM_SOURCE_CODE) return 18 + offset;
     if (normalizedSourceCode === BUILDOUT_CRE_SOURCE_CODE) return 20 + offset;
+    if (normalizedSourceCode === ISOLVED_PEOPLE_CLOUD_SOURCE_CODE) return 6 + offset;
     return 22 + offset;
   };
 
@@ -9058,6 +9114,8 @@ export default function SiteAdminDashboard(props: any) {
                                             {isOperationalSourceSelected(company.id, RSMEANS_PM_SOURCE_CODE) && renderConstructionOperationalDataDomainsCard(company.id, RSMEANS_PM_SOURCE_CODE)}
                                             {isOperationalSourceSelected(company.id, BUILDOUT_CRE_SOURCE_CODE) && renderConstructionOperationalIntegrationCard(company.id, company.name, BUILDOUT_CRE_SOURCE_CODE)}
                                             {isOperationalSourceSelected(company.id, BUILDOUT_CRE_SOURCE_CODE) && renderConstructionOperationalDataDomainsCard(company.id, BUILDOUT_CRE_SOURCE_CODE)}
+                                            {isOperationalSourceSelected(company.id, ISOLVED_PEOPLE_CLOUD_SOURCE_CODE) && renderConstructionOperationalIntegrationCard(company.id, company.name, ISOLVED_PEOPLE_CLOUD_SOURCE_CODE)}
+                                            {isOperationalSourceSelected(company.id, ISOLVED_PEOPLE_CLOUD_SOURCE_CODE) && renderConstructionOperationalDataDomainsCard(company.id, ISOLVED_PEOPLE_CLOUD_SOURCE_CODE)}
                                             <div style={{ gridColumn: '1 / -1', order: 3, display: 'none' }}>
                                               {renderOperationalHubCustomizationCard(company)}
                                             </div>
@@ -12680,6 +12738,8 @@ export default function SiteAdminDashboard(props: any) {
                                   {isOperationalSourceSelected(businessCompany.id, RSMEANS_PM_SOURCE_CODE) && renderConstructionOperationalDataDomainsCard(businessCompany.id, RSMEANS_PM_SOURCE_CODE)}
                                   {isOperationalSourceSelected(businessCompany.id, BUILDOUT_CRE_SOURCE_CODE) && renderConstructionOperationalIntegrationCard(businessCompany.id, businessCompany.name, BUILDOUT_CRE_SOURCE_CODE)}
                                   {isOperationalSourceSelected(businessCompany.id, BUILDOUT_CRE_SOURCE_CODE) && renderConstructionOperationalDataDomainsCard(businessCompany.id, BUILDOUT_CRE_SOURCE_CODE)}
+                                  {isOperationalSourceSelected(businessCompany.id, ISOLVED_PEOPLE_CLOUD_SOURCE_CODE) && renderConstructionOperationalIntegrationCard(businessCompany.id, businessCompany.name, ISOLVED_PEOPLE_CLOUD_SOURCE_CODE)}
+                                  {isOperationalSourceSelected(businessCompany.id, ISOLVED_PEOPLE_CLOUD_SOURCE_CODE) && renderConstructionOperationalDataDomainsCard(businessCompany.id, ISOLVED_PEOPLE_CLOUD_SOURCE_CODE)}
                                 </div>
 
                                 <div

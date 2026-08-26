@@ -13,12 +13,13 @@ import { APR_SGP_GMPA_LABEL, APR_SGP_GMPA_SOURCE_CODE } from '@/lib/operational/
 import { RAMQUEST_TITLE_LABEL, RAMQUEST_TITLE_SOURCE_CODE } from '@/lib/operational/ramquest-title';
 import { RSMEANS_PM_LABEL, RSMEANS_PM_SOURCE_CODE } from '@/lib/operational/rsmeans-pm';
 import { BUILDOUT_CRE_LABEL, BUILDOUT_CRE_SOURCE_CODE } from '@/lib/operational/buildout-cre';
+import { DEFAULT_ISOLVED_PEOPLE_CLOUD_DATA_DOMAINS, ISOLVED_PEOPLE_CLOUD_LABEL, ISOLVED_PEOPLE_CLOUD_SOURCE_CODE } from '@/lib/operational/isolved-people-cloud';
 import { resolveCompanyIndustrySectorCategory } from '@/lib/industry-sector-resolver';
 
 export const dynamic = 'force-dynamic';
 
 type SourceDefinition = {
-  provider: 'BAMBOOHR' | 'SPREADSHEET_UPLOAD';
+  provider: 'BAMBOOHR' | 'SPREADSHEET_UPLOAD' | 'ISOLVED';
   sourceCode: string;
   label: string;
   sectorCategories: string[];
@@ -35,6 +36,7 @@ const SOURCE_DEFINITIONS: SourceDefinition[] = [
   { provider: 'SPREADSHEET_UPLOAD', sourceCode: RSMEANS_PM_SOURCE_CODE, label: RSMEANS_PM_LABEL, sectorCategories: ['53'] },
   { provider: 'SPREADSHEET_UPLOAD', sourceCode: BUILDOUT_CRE_SOURCE_CODE, label: BUILDOUT_CRE_LABEL, sectorCategories: ['53'] },
   { provider: 'SPREADSHEET_UPLOAD', sourceCode: 'APPLIED_EPIC_INSURANCE_SERVICES', label: 'Applied Epic - Insurance Services', sectorCategories: ['53'] },
+  { provider: 'ISOLVED', sourceCode: ISOLVED_PEOPLE_CLOUD_SOURCE_CODE, label: ISOLVED_PEOPLE_CLOUD_LABEL, sectorCategories: ['54'] },
   { provider: 'BAMBOOHR', sourceCode: 'BAMBOOHR_STANDARD', label: 'BambooHR', sectorCategories: ['56'] },
   { provider: 'SPREADSHEET_UPLOAD', sourceCode: COGENT_RATE_CARD_SOURCE_CODE, label: COGENT_RATE_CARD_LABEL, sectorCategories: ['56'] },
   { provider: 'SPREADSHEET_UPLOAD', sourceCode: 'PLATOS_CLOSET_STORE_VISIT', label: 'MONTHLY STORE VISIT REPORT', sectorCategories: ['45'] },
@@ -67,7 +69,7 @@ function normalizePullTime(value: unknown): string {
 }
 
 function isApiScheduledSource(source: SourceDefinition | null): boolean {
-  return source?.provider === 'BAMBOOHR';
+  return source?.provider === 'BAMBOOHR' || source?.provider === 'ISOLVED';
 }
 
 async function getValidatedCompany(companyId: string) {
@@ -143,6 +145,8 @@ export async function POST(request: NextRequest) {
     }
 
     const existing = await getOperationalSystemConnection(companyId, source.provider, source.sourceCode);
+    const existingMetadata = asRecord(existing?.connectionMetadata);
+    const existingAllDomains = asRecord(existingMetadata.operationalSourceDataDomains);
 
     await saveOperationalSystemConnection({
       companyId,
@@ -158,12 +162,22 @@ export async function POST(request: NextRequest) {
       autoSync: isApiScheduledSource(source) ? (existing?.autoSync ?? true) : false,
       syncFrequency: isApiScheduledSource(source) ? (existing?.syncFrequency || 'daily') : 'manual',
       connectionMetadata: {
-        ...(existing?.connectionMetadata || {}),
+        ...existingMetadata,
         sourceLabel: source.label,
         ...(isApiScheduledSource(source)
-          ? { operationalPullTime: asRecord(existing?.connectionMetadata).operationalPullTime || '08:00' }
+          ? { operationalPullTime: existingMetadata.operationalPullTime || '08:00' }
           : {}),
-        sourceCreatedAt: (existing?.connectionMetadata || {}).sourceCreatedAt || new Date().toISOString(),
+        ...(source.sourceCode === ISOLVED_PEOPLE_CLOUD_SOURCE_CODE
+          ? {
+              operationalSourceDataDomains: {
+                ...existingAllDomains,
+                [source.sourceCode]: Array.isArray(existingAllDomains[source.sourceCode])
+                  ? existingAllDomains[source.sourceCode]
+                  : DEFAULT_ISOLVED_PEOPLE_CLOUD_DATA_DOMAINS,
+              },
+            }
+          : {}),
+        sourceCreatedAt: existingMetadata.sourceCreatedAt || new Date().toISOString(),
       },
       errorMessage: existing?.errorMessage || null,
     });

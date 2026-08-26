@@ -81,6 +81,22 @@ const operationalTemplates: Record<string, Omit<ReportFieldCatalogItem, 'moduleK
     { field: 'op.hiring.newApplicants', label: 'New Applicants', source: 'operational', format: 'number', recordSet: 'jobs', valueKey: 'newApplicantsCount' },
     { field: 'op.hiring.applications', label: 'Applications', source: 'operational', format: 'number', recordSet: 'applications', valueKey: 'applicationCount', categoryKey: 'status' },
   ],
+  payroll: [
+    { field: 'op.payroll.grossPay', label: 'Gross Pay', source: 'operational', format: 'currency', recordSet: 'payrollRuns', valueKey: 'grossPay' },
+    { field: 'op.payroll.netPay', label: 'Net Pay', source: 'operational', format: 'currency', recordSet: 'payrollRuns', valueKey: 'netPay' },
+    { field: 'op.payroll.taxWithheld', label: 'Tax Withheld', source: 'operational', format: 'currency', recordSet: 'payrollRuns', valueKey: 'taxWithheld' },
+    { field: 'op.payroll.employeeCount', label: 'Employees Paid', source: 'operational', format: 'number', recordSet: 'payrollRuns', valueKey: 'employeeCount' },
+  ],
+  'payroll-bureau-ops': [
+    { field: 'op.payroll-bureau-ops.revenue', label: 'Client Annual Billing', source: 'operational', format: 'currency', recordSet: 'clients', valueKey: 'revenue' },
+    { field: 'op.payroll-bureau-ops.profit', label: 'Client Profit', source: 'operational', format: 'currency', recordSet: 'clients', valueKey: 'profit' },
+    { field: 'op.payroll-bureau-ops.marginPct', label: 'Client Margin %', source: 'operational', format: 'percent', recordSet: 'clients', valueKey: 'marginPct' },
+  ],
+  'labor-scheduling': [
+    { field: 'op.labor.headcount', label: 'Headcount', source: 'operational', format: 'number', recordSet: 'headcountByRole', valueKey: 'headcount' },
+    { field: 'op.labor.utilizationPct', label: 'Utilization %', source: 'operational', format: 'percent', recordSet: 'utilizationByRole', valueKey: 'utilizationPct' },
+    { field: 'op.labor.overtimeHours', label: 'Overtime Hours', source: 'operational', format: 'number', recordSet: 'overtimeAnalysis', valueKey: 'overtimeHours' },
+  ],
   'project-portfolio': [
     { field: 'op.project-portfolio.marginPct', label: 'Project Margin %', source: 'operational', format: 'percent', recordSet: 'jobs', valueKey: 'marginPct' },
     { field: 'op.project-portfolio.projectedProfit', label: 'Projected Profit', source: 'operational', format: 'currency', recordSet: 'jobs', valueKey: 'projectedProfit' },

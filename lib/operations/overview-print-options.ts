@@ -1,3 +1,5 @@
+import { withIsolvedHubReportName } from '@/lib/operations/operational-hub-layout';
+
 export type OverviewPrintOption = {
   key: string;
   label: string;
@@ -149,6 +151,15 @@ export function getOverviewPrintOptions(
       label: 'Executive Report',
       kind: 'dashboard-section',
       sectionKey: 'realEstateExecutiveReport',
+    });
+  }
+
+  if (sector === '54' && isSectionEnabled(sections, 'overviewBureauExecutiveScorecard')) {
+    dashboardSections.unshift({
+      key: 'overviewBureauExecutiveScorecard',
+      label: withIsolvedHubReportName('Executive Operational Scorecard'),
+      kind: 'dashboard-section',
+      sectionKey: 'overviewBureauExecutiveScorecard',
     });
   }
 

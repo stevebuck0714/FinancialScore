@@ -8,6 +8,7 @@ import { APR_SGP_GMPA_LABEL, APR_SGP_GMPA_SOURCE_CODE } from '@/lib/operational/
 import { RAMQUEST_TITLE_LABEL, RAMQUEST_TITLE_SOURCE_CODE } from '@/lib/operational/ramquest-title';
 import { RSMEANS_PM_LABEL, RSMEANS_PM_SOURCE_CODE } from '@/lib/operational/rsmeans-pm';
 import { BUILDOUT_CRE_LABEL, BUILDOUT_CRE_SOURCE_CODE } from '@/lib/operational/buildout-cre';
+import { ISOLVED_PEOPLE_CLOUD_LABEL, ISOLVED_PEOPLE_CLOUD_SOURCE_CODE } from '@/lib/operational/isolved-people-cloud';
 
 export const dynamic = 'force-dynamic';
 
@@ -25,6 +26,7 @@ const SOURCE_LABELS: Record<string, string> = {
   [RAMQUEST_TITLE_SOURCE_CODE]: RAMQUEST_TITLE_LABEL,
   [RSMEANS_PM_SOURCE_CODE]: RSMEANS_PM_LABEL,
   [BUILDOUT_CRE_SOURCE_CODE]: BUILDOUT_CRE_LABEL,
+  [ISOLVED_PEOPLE_CLOUD_SOURCE_CODE]: ISOLVED_PEOPLE_CLOUD_LABEL,
 };
 
 const ATLANTIC_PRECISION_COMPANY_ID = 'cmmcp278j0002kz0439rlixdj';
