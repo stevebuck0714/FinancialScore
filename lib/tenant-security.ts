@@ -58,7 +58,7 @@ function membershipCompanyIds(rows: unknown[]): string[] {
 
 /**
  * Get the current authenticated user's context from request headers
- * Headers are set by middleware.ts after validating JWT token
+ * Headers are set by proxy.ts after validating JWT token
  */
 export async function getUserContext(): Promise<UserContext | null> {
   if (DEV_AUTH_BYPASS_ENABLED) {
@@ -71,7 +71,7 @@ export async function getUserContext(): Promise<UserContext | null> {
     }
   }
 
-  const headersList = headers()
+  const headersList = await headers()
   
   const userIdHeader = headersList.get('x-user-id')
   const emailHeader = headersList.get('x-user-email')

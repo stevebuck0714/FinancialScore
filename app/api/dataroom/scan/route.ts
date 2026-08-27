@@ -165,7 +165,7 @@ export async function POST(request: NextRequest) {
     const updatedUDA = appendDataRoomAuditEvents(
       upsertDataRoomState(company.userDefinedAllocations, { documentIndex: nextIndex }),
       [
-        buildDataRoomAuditEvent({
+        await buildDataRoomAuditEvent({
           action: 'scan_completed',
           companyId,
           userId: context.userId,

@@ -1,12 +1,14 @@
 'use client';
 
+import { use } from 'react';
+
 import Link from 'next/link';
 
 type PdfViewPageProps = {
-  searchParams: {
+  searchParams: Promise<{
     src?: string;
     name?: string;
-  };
+  }>;
 };
 
 function isSafePdfUrl(url: string): boolean {
@@ -18,7 +20,8 @@ function isSafePdfUrl(url: string): boolean {
   }
 }
 
-export default function PdfViewPage({ searchParams }: PdfViewPageProps) {
+export default function PdfViewPage(props: PdfViewPageProps) {
+  const searchParams = use(props.searchParams);
   const src = String(searchParams?.src || '').trim();
   const name = String(searchParams?.name || 'Document.pdf').trim();
   const valid = isSafePdfUrl(src);

@@ -89,7 +89,7 @@ export async function auditLog(entry: AuditLogEntry): Promise<void> {
     const context = await getUserContext()
     
     // Get request metadata
-    const headersList = headers()
+    const headersList = await headers()
     const ipAddress = headersList.get('x-forwarded-for')?.split(',')[0] || 
                       headersList.get('x-real-ip') || 
                       'unknown'

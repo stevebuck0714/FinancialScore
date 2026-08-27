@@ -2,10 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 
 // GET - Get single payable with detail
-export async function GET(
-  request: NextRequest,
-  { params }: { params: { id: string } }
-) {
+export async function GET(request: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   try {
     const payable = await prisma.consultantPayable.findUnique({
       where: { id: params.id },
@@ -103,10 +101,8 @@ export async function GET(
 }
 
 // PUT - Update payable (mark as paid, etc.)
-export async function PUT(
-  request: NextRequest,
-  { params }: { params: { id: string } }
-) {
+export async function PUT(request: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   try {
     const body = await request.json();
     const { status, paidDate, paymentMethod, paymentReference, notes } = body;
@@ -163,10 +159,8 @@ export async function PUT(
 }
 
 // DELETE - Delete payable
-export async function DELETE(
-  request: NextRequest,
-  { params }: { params: { id: string } }
-) {
+export async function DELETE(request: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   try {
     await prisma.consultantPayable.delete({
       where: { id: params.id }

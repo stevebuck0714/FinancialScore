@@ -61,7 +61,7 @@ export async function GET(_req: NextRequest, ctx: { params: Promise<{ id: string
     const caps = applyDocumentPolicyOverrides(baseCaps, entry);
     if (!caps.download) {
       const nextUDA = appendDataRoomAuditEvents(company?.userDefinedAllocations, [
-        buildDataRoomAuditEvent({
+        await buildDataRoomAuditEvent({
           action: 'document_open_blocked',
           companyId: doc.companyId,
           userId: context.userId,
@@ -81,7 +81,7 @@ export async function GET(_req: NextRequest, ctx: { params: Promise<{ id: string
     const scanStatus = String(entry?.scanStatus || '');
     if (scanStatus !== 'clean') {
       const nextUDA = appendDataRoomAuditEvents(company?.userDefinedAllocations, [
-        buildDataRoomAuditEvent({
+        await buildDataRoomAuditEvent({
           action: 'document_open_blocked',
           companyId: doc.companyId,
           userId: context.userId,
@@ -146,7 +146,7 @@ export async function GET(_req: NextRequest, ctx: { params: Promise<{ id: string
           },
         },
         [
-          buildDataRoomAuditEvent({
+          await buildDataRoomAuditEvent({
             action: 'document_opened',
             companyId: doc.companyId,
             userId: context.userId,

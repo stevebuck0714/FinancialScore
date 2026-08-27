@@ -131,7 +131,7 @@ export async function PATCH(request: NextRequest) {
         },
       },
       [
-        buildDataRoomAuditEvent({
+        await buildDataRoomAuditEvent({
           action: 'permissions_updated',
           companyId,
           userId: context.userId,

@@ -71,6 +71,7 @@ export default function LoginView(props: LoginViewProps) {
     handleLogin,
     handleRegisterConsultant
   } = props;
+  const autofillNonce = React.useId();
 
   return (
     <div style={{ minHeight: '100vh', background: '#e8edf3', padding: '48px 20px' }}>
@@ -102,7 +103,7 @@ export default function LoginView(props: LoginViewProps) {
             
             <input 
               type="text" 
-              name={`reset_email_${Date.now()}`}
+              name={`reset_email_${autofillNonce}`}
               placeholder="Email Address" 
               value={resetEmail} 
               onChange={(e) => { setResetEmail(e.target.value); setLoginError(''); }} 
@@ -165,7 +166,7 @@ export default function LoginView(props: LoginViewProps) {
             <h2 style={{ fontSize: '20px', fontWeight: '600', color: '#1e293b', marginBottom: '12px' }}>Register as Consultant</h2>
             <input 
               type="text" 
-              name={`fullname_${Date.now()}`}
+              name={`fullname_${autofillNonce}`}
               placeholder="Full Name *" 
               value={loginName} 
               onChange={(e) => setLoginName(e.target.value)} 
@@ -175,7 +176,7 @@ export default function LoginView(props: LoginViewProps) {
             />
             <input 
               type="text" 
-              name={`email_${Date.now()}`}
+              name={`email_${autofillNonce}`}
               placeholder="Email *" 
               value={loginEmail} 
               onChange={(e) => setLoginEmail(e.target.value)} 
@@ -185,7 +186,7 @@ export default function LoginView(props: LoginViewProps) {
             />
             <input 
               type="tel" 
-              name={`phone_${Date.now()}`}
+              name={`phone_${autofillNonce}`}
               placeholder="(555) 777-1212" 
               value={loginPhone} 
               onChange={(e) => setLoginPhone(formatPhoneNumber(e.target.value))} 
@@ -195,7 +196,7 @@ export default function LoginView(props: LoginViewProps) {
             />
             <input 
               type="text" 
-              name={`company_name_${Date.now()}`}
+              name={`company_name_${autofillNonce}`}
               placeholder="Company Name *" 
               value={loginCompanyName} 
               onChange={(e) => setLoginCompanyName(e.target.value)} 
@@ -209,7 +210,7 @@ export default function LoginView(props: LoginViewProps) {
               <label style={{ display: 'block', fontSize: '13px', fontWeight: '600', color: '#475569', marginBottom: '8px' }}>Company Address</label>
               <input 
                 type="text" 
-                name={`company_address1_${Date.now()}`}
+                name={`company_address1_${autofillNonce}`}
                 placeholder="Address Line 1 *" 
                 value={loginCompanyAddress1} 
                 onChange={(e) => setLoginCompanyAddress1(e.target.value)} 
@@ -219,7 +220,7 @@ export default function LoginView(props: LoginViewProps) {
               />
               <input 
                 type="text" 
-                name={`company_address2_${Date.now()}`}
+                name={`company_address2_${autofillNonce}`}
                 placeholder="Address Line 2 (Optional)" 
                 value={loginCompanyAddress2} 
                 onChange={(e) => setLoginCompanyAddress2(e.target.value)} 
@@ -229,7 +230,7 @@ export default function LoginView(props: LoginViewProps) {
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '8px' }}>
                 <input 
                   type="text" 
-                  name={`company_city_${Date.now()}`}
+                  name={`company_city_${autofillNonce}`}
                   placeholder="City *" 
                   value={loginCompanyCity} 
                   onChange={(e) => setLoginCompanyCity(e.target.value)} 
@@ -238,7 +239,7 @@ export default function LoginView(props: LoginViewProps) {
                   style={{ width: '100%', padding: '12px 16px', borderRadius: '0', border: '1px solid #cbd5e1', fontSize: '14px' }} 
                 />
                 <select 
-                  name={`company_state_${Date.now()}`}
+                  name={`company_state_${autofillNonce}`}
                   value={loginCompanyState} 
                   onChange={(e) => setLoginCompanyState(e.target.value)} 
                   required
@@ -250,7 +251,7 @@ export default function LoginView(props: LoginViewProps) {
                 </select>
                 <input 
                   type="text" 
-                  name={`company_zip_${Date.now()}`}
+                  name={`company_zip_${autofillNonce}`}
                   placeholder="ZIP Code *" 
                   value={loginCompanyZip} 
                   onChange={(e) => setLoginCompanyZip(e.target.value)} 
@@ -264,7 +265,7 @@ export default function LoginView(props: LoginViewProps) {
             
             <input 
               type="url" 
-              name={`company_website_${Date.now()}`}
+              name={`company_website_${autofillNonce}`}
               placeholder="Company Website (Optional)" 
               value={loginCompanyWebsite} 
               onChange={(e) => setLoginCompanyWebsite(e.target.value)} 
@@ -276,7 +277,7 @@ export default function LoginView(props: LoginViewProps) {
             <div style={{ position: 'relative', marginBottom: '4px' }}>
               <input 
                 type={showPassword ? "text" : "password"} 
-                name={`password_${Date.now()}`}
+                name={`password_${autofillNonce}`}
                 placeholder="Password *" 
                 value={loginPassword} 
                 onChange={(e) => setLoginPassword(e.target.value)} 
@@ -307,7 +308,7 @@ export default function LoginView(props: LoginViewProps) {
             <h2 style={{ fontSize: '20px', fontWeight: '600', color: '#1e293b', marginBottom: '12px' }}>Sign In</h2>
             <input
               type="text"
-              name={`email_${Date.now()}`}
+              name={`email_${autofillNonce}`}
               placeholder="Email"
               value={loginEmail}
               onChange={(e) => { setLoginEmail(e.target.value); setLoginError(''); }}
@@ -319,7 +320,7 @@ export default function LoginView(props: LoginViewProps) {
             <div style={{ position: 'relative', marginBottom: '12px' }}>
               <input
                 type={showPassword ? "text" : "password"}
-                name={`password_${Date.now()}`}
+                name={`password_${autofillNonce}`}
                 placeholder="Password"
                 value={loginPassword}
                 onChange={(e) => { setLoginPassword(e.target.value); setLoginError(''); }}

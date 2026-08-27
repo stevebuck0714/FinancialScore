@@ -6,8 +6,8 @@ export const dynamic = 'force-dynamic';
  * Diagnostic endpoint for the /api/admin/* CRON_SECRET header bypass.
  *
  * Lives under /api/webhooks/* so the existing public-route allowlist in
- * middleware.ts lets it through without any session check (we want to
- * observe the server-side env + headers without the middleware being able
+ * proxy.ts lets it through without any session check (we want to
+ * observe the server-side env + headers without the proxy being able
  * to interfere). Returns LENGTHS only — never echoes the secret.
  *
  * Call exactly the way you'd call /api/admin/rebuild-cash-snapshots:

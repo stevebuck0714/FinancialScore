@@ -2,13 +2,14 @@ import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 
 interface RouteParams {
-  params: {
+  params: Promise<{
     id: string;
-  };
+  }>;
 }
 
 // GET individual loan
-export async function GET(request: NextRequest, { params }: RouteParams) {
+export async function GET(request: NextRequest, props: RouteParams) {
+  const params = await props.params;
   try {
     const { id } = params;
 
@@ -46,7 +47,8 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
 }
 
 // PUT update loan
-export async function PUT(request: NextRequest, { params }: RouteParams) {
+export async function PUT(request: NextRequest, props: RouteParams) {
+  const params = await props.params;
   try {
     const { id } = params;
     const body = await request.json();
@@ -133,7 +135,8 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
 }
 
 // DELETE loan
-export async function DELETE(request: NextRequest, { params }: RouteParams) {
+export async function DELETE(request: NextRequest, props: RouteParams) {
+  const params = await props.params;
   try {
     const { id } = params;
     const { searchParams } = new URL(request.url);

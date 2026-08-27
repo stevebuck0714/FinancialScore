@@ -1,12 +1,14 @@
 'use client';
 
+import { use } from 'react';
+
 import Link from 'next/link';
 
 type OfficeViewPageProps = {
-  searchParams: {
+  searchParams: Promise<{
     src?: string;
     name?: string;
-  };
+  }>;
 };
 
 function isSafeOfficeUrl(url: string): boolean {
@@ -27,7 +29,8 @@ function isSafeOfficeUrl(url: string): boolean {
   }
 }
 
-export default function OfficeViewPage({ searchParams }: OfficeViewPageProps) {
+export default function OfficeViewPage(props: OfficeViewPageProps) {
+  const searchParams = use(props.searchParams);
   const src = String(searchParams?.src || '').trim();
   const name = String(searchParams?.name || 'Document').trim();
   const valid = isSafeOfficeUrl(src);

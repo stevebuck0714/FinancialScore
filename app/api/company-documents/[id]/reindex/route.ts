@@ -5,10 +5,10 @@ import { indexCompanyDocument } from '@/lib/company-documents/index-document';
 
 export const dynamic = 'force-dynamic';
 
-export async function POST(_req: Request, context: { params: { id: string } }) {
+export async function POST(_req: Request, context: { params: Promise<{ id: string }> }) {
   try {
     await requireAuth();
-    const id = String(context?.params?.id || '').trim();
+    const id = String((await context?.params)?.id || '').trim();
     if (!id) return NextResponse.json({ error: 'id is required' }, { status: 400 });
 
     const doc = await prisma.companyDocument.findUnique({

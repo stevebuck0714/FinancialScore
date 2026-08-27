@@ -15,7 +15,8 @@ function normalizeStatus(raw: unknown): PulseAlertStatus | null {
   return null;
 }
 
-export async function PATCH(request: NextRequest, { params }: { params: { id: string } }) {
+export async function PATCH(request: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   if (!PULSE_ALERTS_API_ENABLED) {
     return NextResponse.json(PULSE_ALERTS_DISABLED_RESPONSE, { status: 410 });
   }

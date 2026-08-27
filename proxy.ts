@@ -144,7 +144,7 @@ function clearSessionCookies(response: NextResponse) {
   })
 }
 
-export async function middleware(request: NextRequest) {
+export async function proxy(request: NextRequest) {
   const pathname = request.nextUrl.pathname
   const cronSecret = String(process.env.CRON_SECRET || '').trim()
   const workerSecret = String(request.headers.get('x-infor-sync-worker-secret') || '').trim()
@@ -290,7 +290,7 @@ export async function middleware(request: NextRequest) {
     }
 
     const url = request.nextUrl.clone()
-    url.pathname = '/'
+    url.pathname = '/login'
     url.searchParams.set('sessionExpired', '1')
     const response = NextResponse.redirect(url)
     clearSessionCookies(response)
@@ -398,11 +398,33 @@ export async function middleware(request: NextRequest) {
     tokenDemoExpired &&
     !pathname.startsWith('/api') &&
     pathname !== '/' &&
+    pathname !== '/login' &&
     pathname !== '/register-business'
   ) {
     const url = request.nextUrl.clone()
-    url.pathname = '/'
+    url.pathname = '/login'
     url.searchParams.set('demoExpired', '1')
+    return NextResponse.redirect(url)
+  }
+
+  if (!DISABLE_AUTH_SIGNIN && !pathname.startsWith('/api') && !token) {
+    if (pathname === '/') {
+      const url = request.nextUrl.clone()
+      if (url.searchParams.get('mode') === 'register') {
+        url.pathname = '/register-business'
+        url.searchParams.delete('mode')
+        return NextResponse.redirect(url)
+      }
+      url.pathname = '/login'
+      return NextResponse.redirect(url)
+    }
+  }
+
+  if (!DISABLE_AUTH_SIGNIN && token && pathname === '/login') {
+    const url = request.nextUrl.clone()
+    url.pathname = '/'
+    url.searchParams.delete('sessionExpired')
+    url.searchParams.delete('demoExpired')
     return NextResponse.redirect(url)
   }
 

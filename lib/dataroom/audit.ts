@@ -30,8 +30,8 @@ export type DataRoomAuditEvent = {
   details?: Record<string, any>;
 };
 
-export function buildDataRoomAuditEvent(input: Omit<DataRoomAuditEvent, 'id' | 'at' | 'ipAddress' | 'userAgent'>): DataRoomAuditEvent {
-  const h = headers();
+export async function buildDataRoomAuditEvent(input: Omit<DataRoomAuditEvent, 'id' | 'at' | 'ipAddress' | 'userAgent'>): Promise<DataRoomAuditEvent> {
+  const h = await headers();
   const ipAddress =
     h.get('x-forwarded-for')?.split(',')[0]?.trim() ||
     h.get('x-real-ip') ||

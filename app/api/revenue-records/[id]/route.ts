@@ -2,10 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 
 // GET - Get single revenue record
-export async function GET(
-  request: NextRequest,
-  { params }: { params: { id: string } }
-) {
+export async function GET(request: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   try {
     const record = await prisma.revenueRecord.findUnique({
       where: { id: params.id },
@@ -49,10 +47,8 @@ export async function GET(
 }
 
 // PUT - Update revenue record
-export async function PUT(
-  request: NextRequest,
-  { params }: { params: { id: string } }
-) {
+export async function PUT(request: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   try {
     const body = await request.json();
     const { paymentStatus, notes } = body;
@@ -110,10 +106,8 @@ export async function PUT(
 }
 
 // DELETE - Delete revenue record
-export async function DELETE(
-  request: NextRequest,
-  { params }: { params: { id: string } }
-) {
+export async function DELETE(request: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   try {
     const record = await prisma.revenueRecord.findUnique({
       where: { id: params.id }

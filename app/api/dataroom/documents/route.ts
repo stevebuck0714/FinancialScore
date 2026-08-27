@@ -154,7 +154,7 @@ export async function POST(request: NextRequest) {
     const updatedUDA = appendDataRoomAuditEvents(
       upsertDataRoomState(company.userDefinedAllocations, { documentIndex: filtered }),
       [
-        buildDataRoomAuditEvent({
+        await buildDataRoomAuditEvent({
           action: 'document_assigned',
           companyId,
           userId: context.userId,
@@ -234,7 +234,7 @@ export async function PATCH(request: NextRequest) {
     const updatedUDA = appendDataRoomAuditEvents(
       upsertDataRoomState(company.userDefinedAllocations, { documentIndex: nextIndex }),
       [
-        buildDataRoomAuditEvent({
+        await buildDataRoomAuditEvent({
           action: 'document_moved',
           companyId,
           userId: context.userId,
@@ -309,7 +309,7 @@ export async function DELETE(request: NextRequest) {
     const updatedUDA = appendDataRoomAuditEvents(
       upsertDataRoomState(company.userDefinedAllocations, { documentIndex: nextIndex }),
       [
-        buildDataRoomAuditEvent({
+        await buildDataRoomAuditEvent({
           action: 'document_removed',
           companyId,
           userId: context.userId,

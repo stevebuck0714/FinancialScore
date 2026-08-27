@@ -5,10 +5,8 @@ import { revokeTrustedDevice } from '@/lib/trusted-device';
  * DELETE /api/auth/trusted-devices/:deviceId
  * Revoke a specific trusted device
  */
-export async function DELETE(
-  request: NextRequest,
-  { params }: { params: { deviceId: string } }
-) {
+export async function DELETE(request: NextRequest, props: { params: Promise<{ deviceId: string }> }) {
+  const params = await props.params;
   try {
     const userId = request.headers.get('x-user-id');
     const { deviceId } = params;
