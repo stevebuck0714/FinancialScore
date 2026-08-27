@@ -1631,16 +1631,7 @@ export default function SiteAdminDashboard(props: any) {
       }
       const companySectorCategory = String(company?.industrySectorCategory || '').trim();
       if (companySectorCategory === '42' && moduleKey === 'vendors') {
-        const vendorReports = [
-          { key: 'productsVendorPricing', label: 'Vendor Pricing', group: option.label },
-          { key: 'vendorsMonthlyForecast', label: 'Monthly Forecast', group: option.label },
-          { key: 'vendorsForecastRollup', label: 'Forecast Rollup', group: option.label },
-        ];
-        const seen = new Set(vendorReports.map((item) => item.key));
-        return [
-          ...vendorReports,
-          ...getAssignedCatalogReportOptions(company, moduleKey, option.label).filter((item) => !seen.has(item.key)),
-        ];
+        return getAssignedCatalogReportOptions(company, moduleKey, option.label);
       }
       const defaultReports = getOperationalHubDefaultReportsForModule(moduleKey, companySectorCategory);
       if (hasExplicitSectorModuleReports(companySectorCategory, moduleKey)) {

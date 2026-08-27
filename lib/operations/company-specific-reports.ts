@@ -83,6 +83,27 @@ export const COMPANY_REPORT_CATALOG: CompanyReportTemplate[] = [
     sectorCategories: ['42'],
   },
   {
+    key: 'productsVendorPricing',
+    label: 'Vendor Pricing',
+    tabKey: 'vendors',
+    group: 'Vendors',
+    sectorCategories: ['42'],
+  },
+  {
+    key: 'vendorsMonthlyForecast',
+    label: 'Monthly Forecast',
+    tabKey: 'vendors',
+    group: 'Vendors',
+    sectorCategories: ['42'],
+  },
+  {
+    key: 'vendorsForecastRollup',
+    label: 'Forecast Rollup',
+    tabKey: 'vendors',
+    group: 'Vendors',
+    sectorCategories: ['42'],
+  },
+  {
     key: 'vendorsDutiesTariffs',
     label: 'Duties & Tariffs',
     tabKey: 'vendors',
@@ -98,8 +119,16 @@ export const COMPANY_REPORT_CATALOG: CompanyReportTemplate[] = [
   },
 ];
 
-export const ATLANTIC_ONLY_VENDOR_REPORTS = COMPANY_REPORT_CATALOG.filter(
-  (report) => report.key === 'vendorsDutiesTariffs' || report.key === 'vendorsSgpFreight'
+const ATLANTIC_ONLY_VENDOR_REPORT_KEYS = new Set([
+  'productsVendorPricing',
+  'vendorsMonthlyForecast',
+  'vendorsForecastRollup',
+  'vendorsDutiesTariffs',
+  'vendorsSgpFreight',
+]);
+
+export const ATLANTIC_ONLY_VENDOR_REPORTS = COMPANY_REPORT_CATALOG.filter((report) =>
+  ATLANTIC_ONLY_VENDOR_REPORT_KEYS.has(report.key)
 );
 
 const COMPANY_REPORT_KEY_SET = new Set(COMPANY_REPORT_CATALOG.map((report) => report.key));
@@ -150,6 +179,14 @@ export function getCompanyReportCatalogForSector(sectorCategory?: string | null)
   const sector = String(sectorCategory || '').trim();
   if (!sector) return [];
   return COMPANY_REPORT_CATALOG.filter((report) => report.sectorCategories.includes(sector));
+}
+
+function catalogVisibleForCompany(
+  report: CompanyReportTemplate,
+  args: { companyId?: string | null; companyName?: string | null }
+): boolean {
+  if (!ATLANTIC_ONLY_VENDOR_REPORT_KEYS.has(report.key)) return true;
+  return isAtlanticPrecisionCompany(args.companyId, args.companyName);
 }
 
 function grandfatherAssignedReportKeys(args: {
@@ -208,6 +245,7 @@ export function getAssignedCompanyCatalogReports(args: {
   const assigned = resolveAssignedCompanyReportKeys(args);
   const tabKey = String(args.tabKey || '').trim();
   return getCompanyReportCatalogForSector(args.sectorCategory).filter((report) => {
+    if (!catalogVisibleForCompany(report, args)) return false;
     if (!assigned.has(report.key)) return false;
     if (tabKey && !catalogTabMatches(report.tabKey, tabKey)) return false;
     return true;
@@ -225,6 +263,7 @@ export function getUnassignedCompanyCatalogReports(args: {
   const assigned = resolveAssignedCompanyReportKeys(args);
   const tabKey = String(args.tabKey || '').trim();
   return getCompanyReportCatalogForSector(args.sectorCategory).filter((report) => {
+    if (!catalogVisibleForCompany(report, args)) return false;
     if (assigned.has(report.key)) return false;
     if (tabKey && !catalogTabMatches(report.tabKey, tabKey)) return false;
     return true;

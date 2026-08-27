@@ -402,15 +402,7 @@ export function getOperationalHubDefaultReportsForModule(
     }));
   }
   if (moduleKey === 'vendors') {
-    return [
-      ...(sector === '42' ? [{ key: 'productsVendorPricing', label: 'Vendor Pricing', group: 'Vendors' }] : []),
-      ...(sector === '42'
-        ? [
-            { key: 'vendorsMonthlyForecast', label: 'Monthly Forecast', group: 'Vendors' },
-            { key: 'vendorsForecastRollup', label: 'Forecast Rollup', group: 'Vendors' },
-          ]
-        : []),
-    ];
+    return [];
   }
   const dataType = mapModuleToDataType(moduleKey);
   const group = dataType ? DATA_TYPE_GROUP[dataType] : null;
