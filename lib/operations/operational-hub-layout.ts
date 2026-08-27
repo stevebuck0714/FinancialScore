@@ -100,6 +100,15 @@ const SECTOR_23_REPORTS_BY_MODULE: Record<string, OperationalHubReportDefinition
   ],
 };
 
+const STANDARD_VENDOR_REPORTS: OperationalHubReportDefinition[] = [
+  { key: 'vendorsCatalogPurchaseHistory', label: 'Vendor catalog & purchase history', group: 'Vendors' },
+  { key: 'vendorsItemVolumePricing6mo', label: '6-month item volume and pricing', group: 'Vendors' },
+  { key: 'vendorsPaymentHistoryByMonth', label: 'Payment history by month', group: 'Vendors' },
+  { key: 'vendorsConcentration', label: 'Vendor concentration', group: 'Vendors' },
+  { key: 'vendorsPriceChangeTracker', label: 'Price-change tracker', group: 'Vendors' },
+  { key: 'vendorsSpendByItemCategory', label: 'Spend by item category', group: 'Vendors' },
+];
+
 const SECTOR_32_REPORTS_BY_MODULE: Record<string, OperationalHubReportDefinition[]> = {
   inventory: [
     { key: 'customersWipByCustomer', label: 'WIP / Open Production', group: 'Inventory' },
@@ -125,14 +134,11 @@ const SECTOR_32_REPORTS_BY_MODULE: Record<string, OperationalHubReportDefinition
     { key: 'customersRetentionProxy', label: 'Revenue Retention Proxy', group: 'Customers' },
     { key: 'customersAtRiskQueue', label: 'At-Risk Accounts Queue', group: 'Customers' },
   ],
-  vendors: [
-    { key: 'vendorsCatalogPurchaseHistory', label: 'Vendor catalog & purchase history', group: 'Vendors' },
-    { key: 'vendorsItemVolumePricing6mo', label: '6-month item volume and pricing', group: 'Vendors' },
-    { key: 'vendorsPaymentHistoryByMonth', label: 'Payment history by month', group: 'Vendors' },
-    { key: 'vendorsConcentration', label: 'Vendor concentration', group: 'Vendors' },
-    { key: 'vendorsPriceChangeTracker', label: 'Price-change tracker', group: 'Vendors' },
-    { key: 'vendorsSpendByItemCategory', label: 'Spend by item category', group: 'Vendors' },
-  ],
+  vendors: STANDARD_VENDOR_REPORTS,
+};
+
+const SECTOR_42_REPORTS_BY_MODULE: Record<string, OperationalHubReportDefinition[]> = {
+  vendors: STANDARD_VENDOR_REPORTS,
 };
 
 const SECTOR_62_REPORTS_BY_MODULE: Record<string, OperationalHubReportDefinition[]> = {
@@ -367,6 +373,7 @@ export function getOperationalHubModuleLabel(moduleKey: string, sectorCategory?:
 function sectorModuleReportMap(sector: string): Record<string, OperationalHubReportDefinition[]> | null {
   if (sector === '23') return SECTOR_23_REPORTS_BY_MODULE;
   if (sector === '32') return SECTOR_32_REPORTS_BY_MODULE;
+  if (sector === '42') return SECTOR_42_REPORTS_BY_MODULE;
   if (sector === '62') return SECTOR_62_REPORTS_BY_MODULE;
   if (sector === '53') return SECTOR_53_REPORTS_BY_MODULE;
   if (sector === '54') return SECTOR_54_REPORTS_BY_MODULE;
@@ -388,6 +395,9 @@ export function getOperationalHubDefaultReportsForModule(
   }
   if (sector === '32' && SECTOR_32_REPORTS_BY_MODULE[moduleKey]) {
     return SECTOR_32_REPORTS_BY_MODULE[moduleKey];
+  }
+  if (sector === '42' && SECTOR_42_REPORTS_BY_MODULE[moduleKey]) {
+    return SECTOR_42_REPORTS_BY_MODULE[moduleKey];
   }
   if (sector === '62' && SECTOR_62_REPORTS_BY_MODULE[moduleKey]) {
     return SECTOR_62_REPORTS_BY_MODULE[moduleKey];

@@ -18,6 +18,11 @@ export const REAL_ESTATE_DIVERSIFIED_COMPANY_IDS = new Set([
   'cmqb6e66i0003qhzgu451he2b',
 ]);
 
+export const COGENT_SCIENTIFIC_COMPANY_IDS = new Set([
+  // Production Cogent Scientific
+  'cmowy17lw0000ig04fz6rq4zv',
+]);
+
 export const COMPANY_REPORT_CATALOG: CompanyReportTemplate[] = [
   {
     key: 'realEstateExecutiveReport',
@@ -117,6 +122,181 @@ export const COMPANY_REPORT_CATALOG: CompanyReportTemplate[] = [
     group: 'Vendors',
     sectorCategories: ['42'],
   },
+  {
+    key: 'hiringOpenJobs',
+    label: 'Open Jobs',
+    tabKey: 'hiring',
+    group: 'Hiring',
+    sectorCategories: ['56'],
+  },
+  {
+    key: 'hiringApplicantPipeline',
+    label: 'Applicant Pipeline',
+    tabKey: 'hiring',
+    group: 'Hiring',
+    sectorCategories: ['56'],
+  },
+  {
+    key: 'hiringFunnelByRole',
+    label: 'Funnel by Role',
+    tabKey: 'hiring',
+    group: 'Hiring',
+    sectorCategories: ['56'],
+  },
+  {
+    key: 'hiringTimeToFillByJob',
+    label: 'Time to Fill by Hire',
+    tabKey: 'hiring',
+    group: 'Hiring',
+    sectorCategories: ['56'],
+  },
+  {
+    key: 'hiringApplicantsByJob',
+    label: 'Applicants by Job',
+    tabKey: 'hiring',
+    group: 'Hiring',
+    sectorCategories: ['56'],
+  },
+  {
+    key: 'hiringPostingPerformance',
+    label: 'Posting Performance',
+    tabKey: 'hiring',
+    group: 'Hiring',
+    sectorCategories: ['56'],
+  },
+  {
+    key: 'hiringOnboardingPipeline',
+    label: 'Onboarding / New Hires',
+    tabKey: 'hiring',
+    group: 'Hiring',
+    sectorCategories: ['56'],
+  },
+  {
+    key: 'lsWorkforceSummary',
+    label: 'Workforce Summary',
+    tabKey: 'labor_scheduling',
+    group: 'Labor & Scheduling',
+    sectorCategories: ['56'],
+  },
+  {
+    key: 'lsCompensationByRole',
+    label: 'Compensation by Role',
+    tabKey: 'labor_scheduling',
+    group: 'Labor & Scheduling',
+    sectorCategories: ['56'],
+  },
+  {
+    key: 'lsEmployeeCompensationRoster',
+    label: 'Employee Compensation Roster',
+    tabKey: 'labor_scheduling',
+    group: 'Labor & Scheduling',
+    sectorCategories: ['56'],
+  },
+  {
+    key: 'lsHeadcountByRole',
+    label: 'Headcount by Role',
+    tabKey: 'labor_scheduling',
+    group: 'Labor & Scheduling',
+    sectorCategories: ['56'],
+  },
+  {
+    key: 'lsHeadcountByDepartment',
+    label: 'Headcount by Department',
+    tabKey: 'labor_scheduling',
+    group: 'Labor & Scheduling',
+    sectorCategories: ['56'],
+  },
+  {
+    key: 'lsLocationPayTypeMix',
+    label: 'Location / Pay Type Mix',
+    tabKey: 'labor_scheduling',
+    group: 'Labor & Scheduling',
+    sectorCategories: ['56'],
+  },
+  {
+    key: 'lsBillRateLevelCoverage',
+    label: 'Bill Rate Level Coverage',
+    tabKey: 'labor_scheduling',
+    group: 'Labor & Scheduling',
+    sectorCategories: ['56'],
+  },
+  {
+    key: 'lsPtoBalances',
+    label: 'PTO / Leave Balances',
+    tabKey: 'labor_scheduling',
+    group: 'Labor & Scheduling',
+    sectorCategories: ['56'],
+  },
+  {
+    key: 'rbBillRateLevelSummary',
+    label: 'Bill Rate Level Summary',
+    tabKey: 'revenue_billables',
+    group: 'Revenue & Billables',
+    sectorCategories: ['56'],
+  },
+  {
+    key: 'rbEmployeesByBillRateLevel',
+    label: 'Employees by Bill Rate Level',
+    tabKey: 'revenue_billables',
+    group: 'Revenue & Billables',
+    sectorCategories: ['56'],
+  },
+  {
+    key: 'rbEmployeesByMarketBillRateLevel',
+    label: 'Employees by Market + Bill Rate Level',
+    tabKey: 'revenue_billables',
+    group: 'Revenue & Billables',
+    sectorCategories: ['56'],
+  },
+  {
+    key: 'rbEstimatedBillableEconomics',
+    label: 'Estimated Billable Economics by Employee',
+    tabKey: 'revenue_billables',
+    group: 'Revenue & Billables',
+    sectorCategories: ['56'],
+  },
+  {
+    key: 'rbUnavailableRateInputs',
+    label: 'Missing Rate Card / Hours Inputs',
+    tabKey: 'revenue_billables',
+    group: 'Revenue & Billables',
+    sectorCategories: ['56'],
+  },
+  {
+    key: 'ueUnitEconomicsInputs',
+    label: 'Unit Economics Inputs',
+    tabKey: 'unit_economics',
+    group: 'Unit Economics',
+    sectorCategories: ['56'],
+  },
+  {
+    key: 'ueCostByBillRateLevel',
+    label: 'Pay by Bill Rate Level',
+    tabKey: 'unit_economics',
+    group: 'Unit Economics',
+    sectorCategories: ['56'],
+  },
+  {
+    key: 'ueCostByRole',
+    label: 'Total Pay by Role',
+    tabKey: 'unit_economics',
+    group: 'Unit Economics',
+    sectorCategories: ['56'],
+  },
+  {
+    key: 'ueCostByLocation',
+    label: 'Pay by Location',
+    tabKey: 'unit_economics',
+    group: 'Unit Economics',
+    sectorCategories: ['56'],
+  },
+  {
+    key: 'ueMissingBillRateLevel',
+    label: 'Missing Bill Rate Level / Next Inputs',
+    tabKey: 'unit_economics',
+    group: 'Unit Economics',
+    sectorCategories: ['56'],
+  },
 ];
 
 const ATLANTIC_ONLY_VENDOR_REPORT_KEYS = new Set([
@@ -127,8 +307,68 @@ const ATLANTIC_ONLY_VENDOR_REPORT_KEYS = new Set([
   'vendorsSgpFreight',
 ]);
 
+const COGENT_ONLY_HIRING_REPORT_KEYS = new Set([
+  'hiringOpenJobs',
+  'hiringApplicantPipeline',
+  'hiringFunnelByRole',
+  'hiringTimeToFillByJob',
+  'hiringApplicantsByJob',
+  'hiringPostingPerformance',
+  'hiringOnboardingPipeline',
+]);
+
+const COGENT_ONLY_LABOR_REPORT_KEYS = new Set([
+  'lsWorkforceSummary',
+  'lsCompensationByRole',
+  'lsEmployeeCompensationRoster',
+  'lsHeadcountByRole',
+  'lsHeadcountByDepartment',
+  'lsLocationPayTypeMix',
+  'lsBillRateLevelCoverage',
+  'lsPtoBalances',
+]);
+
+const COGENT_ONLY_REVENUE_REPORT_KEYS = new Set([
+  'rbBillRateLevelSummary',
+  'rbEmployeesByBillRateLevel',
+  'rbEmployeesByMarketBillRateLevel',
+  'rbEstimatedBillableEconomics',
+  'rbUnavailableRateInputs',
+]);
+
+const COGENT_ONLY_UNIT_ECONOMICS_REPORT_KEYS = new Set([
+  'ueUnitEconomicsInputs',
+  'ueCostByBillRateLevel',
+  'ueCostByRole',
+  'ueCostByLocation',
+  'ueMissingBillRateLevel',
+]);
+
+const COGENT_ONLY_REPORT_KEYS = new Set([
+  ...COGENT_ONLY_HIRING_REPORT_KEYS,
+  ...COGENT_ONLY_LABOR_REPORT_KEYS,
+  ...COGENT_ONLY_REVENUE_REPORT_KEYS,
+  ...COGENT_ONLY_UNIT_ECONOMICS_REPORT_KEYS,
+]);
+
 export const ATLANTIC_ONLY_VENDOR_REPORTS = COMPANY_REPORT_CATALOG.filter((report) =>
   ATLANTIC_ONLY_VENDOR_REPORT_KEYS.has(report.key)
+);
+
+export const COGENT_ONLY_HIRING_REPORTS = COMPANY_REPORT_CATALOG.filter((report) =>
+  COGENT_ONLY_HIRING_REPORT_KEYS.has(report.key)
+);
+
+export const COGENT_ONLY_LABOR_REPORTS = COMPANY_REPORT_CATALOG.filter((report) =>
+  COGENT_ONLY_LABOR_REPORT_KEYS.has(report.key)
+);
+
+export const COGENT_ONLY_REVENUE_REPORTS = COMPANY_REPORT_CATALOG.filter((report) =>
+  COGENT_ONLY_REVENUE_REPORT_KEYS.has(report.key)
+);
+
+export const COGENT_ONLY_REPORTS = COMPANY_REPORT_CATALOG.filter((report) =>
+  COGENT_ONLY_REPORT_KEYS.has(report.key)
 );
 
 const COMPANY_REPORT_KEY_SET = new Set(COMPANY_REPORT_CATALOG.map((report) => report.key));
@@ -149,6 +389,15 @@ export function isRealEstateDiversifiedCompany(
   if (REAL_ESTATE_DIVERSIFIED_COMPANY_IDS.has(String(companyId || '').trim())) return true;
   const name = String(companyName || '').trim().toLowerCase();
   return name.includes('real estate diversified');
+}
+
+export function isCogentScientificCompany(
+  companyId?: string | null,
+  companyName?: string | null
+): boolean {
+  if (COGENT_SCIENTIFIC_COMPANY_IDS.has(String(companyId || '').trim())) return true;
+  const name = String(companyName || '').trim().toLowerCase();
+  return name.includes('cogent');
 }
 
 export function isCompanySpecificReportKey(reportKey: string): boolean {
@@ -185,8 +434,13 @@ function catalogVisibleForCompany(
   report: CompanyReportTemplate,
   args: { companyId?: string | null; companyName?: string | null }
 ): boolean {
-  if (!ATLANTIC_ONLY_VENDOR_REPORT_KEYS.has(report.key)) return true;
-  return isAtlanticPrecisionCompany(args.companyId, args.companyName);
+  if (ATLANTIC_ONLY_VENDOR_REPORT_KEYS.has(report.key)) {
+    return isAtlanticPrecisionCompany(args.companyId, args.companyName);
+  }
+  if (COGENT_ONLY_REPORT_KEYS.has(report.key)) {
+    return isCogentScientificCompany(args.companyId, args.companyName);
+  }
+  return true;
 }
 
 function grandfatherAssignedReportKeys(args: {
@@ -201,6 +455,9 @@ function grandfatherAssignedReportKeys(args: {
     COMPANY_REPORT_CATALOG.forEach((report) => {
       if (report.sectorCategories.includes('42')) keys.push(report.key);
     });
+  }
+  if (isCogentScientificCompany(args.companyId, args.companyName)) {
+    COGENT_ONLY_REPORTS.forEach((report) => keys.push(report.key));
   }
   return keys;
 }

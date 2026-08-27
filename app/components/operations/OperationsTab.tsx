@@ -11773,92 +11773,90 @@ export default function OperationsTab({
       ) : null
     );
 
-    if (isVendorsTab && isManufacturingSector) {
-      const manufacturingVendorReports = getOperationalHubDefaultReportsForModule('vendors', '32').filter((report) =>
-        isSectionEnabled(report.key)
+    if (isVendorsTab) {
+      const standardVendorReports = getOperationalHubDefaultReportsForModule(
+        'vendors',
+        String(industrySectorCategory || '').trim()
+      ).filter((report) => isSectionEnabled(report.key));
+      const customVendorReports = [
+        { key: 'productsVendorPricing', view: 'vendorPricing' as VendorReportView, label: 'Vendor Pricing', enabled: isWholesaleProductSector && isVendorPricingEnabled },
+        { key: 'vendorsDutiesTariffs', view: 'dutiesTariffs' as VendorReportView, label: 'Duties & Tariffs', enabled: isWholesaleProductSector && isDutiesTariffsEnabled },
+        { key: 'vendorsSgpFreight', view: 'sgpFreight' as VendorReportView, label: 'SGP Freight', enabled: isWholesaleProductSector && isSgpFreightEnabled },
+        { key: 'vendorsMonthlyForecast', view: 'monthlyForecast' as VendorReportView, label: 'Monthly Forecast', enabled: isWholesaleProductSector && isVendorMonthlyForecastEnabled },
+        { key: 'vendorsForecastRollup', view: 'forecastRollup' as VendorReportView, label: 'Forecast Rollup', enabled: isWholesaleProductSector && isVendorForecastRollupEnabled },
+      ].filter((report) => report.enabled);
+      const selectedStandardReport = standardVendorReports.find((report) => report.key === manufacturingVendorReportKey) || null;
+      const selectedCustomReport = customVendorReports.find((report) => report.view === vendorReportView) || null;
+      const activeStandardReport = selectedStandardReport
+        || (customVendorReports.length === 0 ? standardVendorReports[0] || null : null);
+      const activeCustomReport = selectedStandardReport
+        ? null
+        : selectedCustomReport || customVendorReports[0] || null;
+      const vendorSwitcherButton = (args: {
+        key: string;
+        label: string;
+        selected: boolean;
+        onClick: () => void;
+      }) => (
+        <button
+          key={args.key}
+          type="button"
+          onClick={args.onClick}
+          style={{
+            border: '1px solid #cbd5e1',
+            borderRadius: '999px',
+            padding: '8px 12px',
+            background: args.selected ? '#e0e7ff' : '#ffffff',
+            color: args.selected ? '#3730a3' : '#334155',
+            fontWeight: 700,
+            cursor: 'pointer',
+            fontSize: '12px',
+          }}
+        >
+          {args.label}
+        </button>
       );
-      const effectiveManufacturingVendorKey = manufacturingVendorReports.some((report) => report.key === manufacturingVendorReportKey)
-        ? manufacturingVendorReportKey
-        : manufacturingVendorReports[0]?.key || '';
-      const activeManufacturingVendorReport =
-        manufacturingVendorReports.find((report) => report.key === effectiveManufacturingVendorKey) || null;
-      if (manufacturingVendorReports.length === 0) {
+      if (standardVendorReports.length === 0 && customVendorReports.length === 0) {
         return (
           <div style={{ padding: '32px 24px', color: '#64748b', fontSize: 13 }}>
             No vendor reports are enabled for this company.
           </div>
         );
       }
-      return (
-        <div style={{ padding: '8px 24px 32px' }}>
-          <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '16px' }}>
-            {manufacturingVendorReports.map((report) => (
-              <button
-                key={report.key}
-                type="button"
-                onClick={() => setManufacturingVendorReportKey(report.key)}
-                style={{
-                  border: '1px solid #cbd5e1',
-                  borderRadius: '999px',
-                  padding: '8px 12px',
-                  background: effectiveManufacturingVendorKey === report.key ? '#e0e7ff' : '#ffffff',
-                  color: effectiveManufacturingVendorKey === report.key ? '#3730a3' : '#334155',
-                  fontWeight: 700,
-                  cursor: 'pointer',
-                  fontSize: '12px',
-                }}
-              >
-                {report.label}
-              </button>
-            ))}
-          </div>
-          <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '24px' }}>
-            <h2 style={{ fontSize: '24px', fontWeight: 700, color: '#1e293b', margin: '0 0 8px' }}>
-              {activeManufacturingVendorReport?.label}
-            </h2>
-            <p style={{ fontSize: '13px', color: '#64748b', margin: 0 }}>
-              This manufacturing vendor report is enabled for this company. Chart and table data will be wired next.
-            </p>
-          </div>
-        </div>
-      );
-    }
-
-    if (isVendorsTab) {
-      const vendorSwitcherButton = (view: VendorReportView, enabled: boolean, label: string) =>
-        enabled ? (
-          <button
-            type="button"
-            onClick={() => setVendorReportView(view)}
-            style={{
-              border: '1px solid #cbd5e1',
-              borderRadius: '999px',
-              padding: '8px 12px',
-              background: effectiveVendorReportView === view ? '#e0e7ff' : '#ffffff',
-              color: effectiveVendorReportView === view ? '#3730a3' : '#334155',
-              fontWeight: 700,
-              cursor: 'pointer',
-              fontSize: '12px',
-            }}
-          >
-            {label}
-          </button>
-        ) : null;
-      const vendorViewSwitcher =
-        isVendorPricingEnabled || isDutiesTariffsEnabled || isSgpFreightEnabled || isVendorMonthlyForecastEnabled || isVendorForecastRollupEnabled ? (
-          <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '16px' }}>
-            {vendorSwitcherButton('vendorPricing', isVendorPricingEnabled, 'Vendor Pricing')}
-            {vendorSwitcherButton('dutiesTariffs', isDutiesTariffsEnabled, 'Duties & Tariffs')}
-            {vendorSwitcherButton('sgpFreight', isSgpFreightEnabled, 'SGP Freight')}
-            {vendorSwitcherButton('monthlyForecast', isVendorMonthlyForecastEnabled, 'Monthly Forecast')}
-            {vendorSwitcherButton('forecastRollup', isVendorForecastRollupEnabled, 'Forecast Rollup')}
-          </div>
-        ) : null;
-      const vendorInfoPadding = effectiveVendorReportView === 'vendorPricing' ? '8px 32px 32px' : '8px 12px 16px';
+      const vendorInfoPadding = activeCustomReport?.view === 'vendorPricing' ? '8px 32px 32px' : '8px 12px 16px';
       return (
         <div style={{ padding: vendorInfoPadding }}>
-          {vendorViewSwitcher}
-          {effectiveVendorReportView === 'dutiesTariffs' && isDutiesTariffsEnabled ? (
+          <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '16px' }}>
+            {standardVendorReports.map((report) =>
+              vendorSwitcherButton({
+                key: report.key,
+                label: report.label,
+                selected: activeStandardReport?.key === report.key,
+                onClick: () => setManufacturingVendorReportKey(report.key),
+              })
+            )}
+            {customVendorReports.map((report) =>
+              vendorSwitcherButton({
+                key: report.key,
+                label: report.label,
+                selected: !activeStandardReport && activeCustomReport?.view === report.view,
+                onClick: () => {
+                  setManufacturingVendorReportKey('');
+                  setVendorReportView(report.view);
+                },
+              })
+            )}
+          </div>
+          {activeStandardReport ? (
+            <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '24px' }}>
+              <h2 style={{ fontSize: '24px', fontWeight: 700, color: '#1e293b', margin: '0 0 8px' }}>
+                {activeStandardReport.label}
+              </h2>
+              <p style={{ fontSize: '13px', color: '#64748b', margin: 0 }}>
+                This vendor report is enabled for this company. Chart and table data can be wired when mock data is added.
+              </p>
+            </div>
+          ) : activeCustomReport?.view === 'dutiesTariffs' ? (
             <>
               <h2 style={{ fontSize: '24px', fontWeight: '700', color: '#1e293b', marginBottom: '16px' }}>
                 Duties & Tariffs
@@ -11869,7 +11867,7 @@ export default function OperationsTab({
               />
               {renderProductChartInfoModal()}
             </>
-          ) : effectiveVendorReportView === 'sgpFreight' && isSgpFreightEnabled ? (
+          ) : activeCustomReport?.view === 'sgpFreight' ? (
             <>
               <h2 style={{ fontSize: '24px', fontWeight: '700', color: '#1e293b', marginBottom: '16px' }}>
                 SGP Freight
@@ -11880,7 +11878,7 @@ export default function OperationsTab({
               />
               {renderProductChartInfoModal()}
             </>
-          ) : effectiveVendorReportView === 'monthlyForecast' && isVendorMonthlyForecastEnabled ? (
+          ) : activeCustomReport?.view === 'monthlyForecast' ? (
             <>
               <VendorMonthlyForecastReport
                 selectedCompanyId={selectedCompanyId}
@@ -11888,7 +11886,7 @@ export default function OperationsTab({
               />
               {renderProductChartInfoModal()}
             </>
-          ) : effectiveVendorReportView === 'forecastRollup' && isVendorForecastRollupEnabled ? (
+          ) : activeCustomReport?.view === 'forecastRollup' ? (
             <>
               <VendorForecastRollupReport
                 selectedCompanyId={selectedCompanyId}
@@ -11896,7 +11894,7 @@ export default function OperationsTab({
               />
               {renderProductChartInfoModal()}
             </>
-          ) : isVendorPricingEnabled ? (
+          ) : activeCustomReport?.view === 'vendorPricing' ? (
             renderVendorPricingReport()
           ) : (
             <div style={{ color: '#64748b', fontSize: 13 }}>No vendor reports are enabled for this company.</div>

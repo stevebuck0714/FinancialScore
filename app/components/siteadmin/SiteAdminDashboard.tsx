@@ -1630,9 +1630,6 @@ export default function SiteAdminDashboard(props: any) {
         }));
       }
       const companySectorCategory = String(company?.industrySectorCategory || '').trim();
-      if (companySectorCategory === '42' && moduleKey === 'vendors') {
-        return getAssignedCatalogReportOptions(company, moduleKey, option.label);
-      }
       const defaultReports = getOperationalHubDefaultReportsForModule(moduleKey, companySectorCategory);
       if (hasExplicitSectorModuleReports(companySectorCategory, moduleKey)) {
         const assignedExtras = getAssignedCatalogReportOptions(company, moduleKey, option.label);
@@ -1663,7 +1660,7 @@ export default function SiteAdminDashboard(props: any) {
       const mapped = OPERATIONAL_HUB_SECTION_OPTIONS
         .filter((item) => item.group === sourceGroup)
         .filter((item) => !isCompanySpecificReportForSector(item.key, companySectorCategory))
-        .filter((item) => !['productsVendorPricing', 'vendorsDutiesTariffs', 'vendorsSgpFreight', 'vendorsMonthlyForecast', 'vendorsForecastRollup'].includes(item.key))
+        .filter((item) => !['productsVendorPricing', 'vendorsDutiesTariffs', 'vendorsSgpFreight', 'vendorsMonthlyForecast', 'vendorsForecastRollup', 'hiringOpenJobs', 'hiringApplicantPipeline', 'hiringFunnelByRole', 'hiringTimeToFillByJob', 'hiringApplicantsByJob', 'hiringPostingPerformance', 'hiringOnboardingPipeline', 'lsWorkforceSummary', 'lsCompensationByRole', 'lsEmployeeCompensationRoster', 'lsHeadcountByRole', 'lsHeadcountByDepartment', 'lsLocationPayTypeMix', 'lsBillRateLevelCoverage', 'lsPtoBalances'].includes(item.key))
         .filter((item) => companySectorCategory !== '42' || moduleKey !== 'orders_sales' || !WHOLESALE_ORDERS_SALES_EXCLUDED_REPORT_KEYS.has(item.key))
         .filter((item) => companySectorCategory !== '42' || moduleKey !== 'customers' || !WHOLESALE_CUSTOMERS_EXCLUDED_REPORT_KEYS.has(item.key))
         .filter((item) => companySectorCategory !== '42' || moduleKey !== 'inventory' || !WHOLESALE_INVENTORY_EXCLUDED_REPORT_KEYS.has(item.key))
@@ -2084,10 +2081,15 @@ export default function SiteAdminDashboard(props: any) {
           (option) => option.group === selectedTabLabel && !option.key.startsWith('tab:')
         )
       : [];
+    const selectedCompanySector = String(company?.industrySectorCategory || '').trim();
     const standardReportOptions = tabReportOptions.filter(
-      (option) => !option.key.startsWith('customReport:') && !getCompanyReportTemplate(option.key)
+      (option) =>
+        !option.key.startsWith('customReport:') &&
+        !isCompanySpecificReportForSector(option.key, selectedCompanySector)
     );
-    const assignedCatalogOptions = tabReportOptions.filter((option) => Boolean(getCompanyReportTemplate(option.key)));
+    const assignedCatalogOptions = tabReportOptions.filter((option) =>
+      isCompanySpecificReportForSector(option.key, selectedCompanySector)
+    );
     const ownedCustomOptions = tabReportOptions.filter((option) => option.key.startsWith('customReport:'));
     const unassignedCatalogReports = getUnassignedCompanyCatalogReports({
       ...getCompanyCatalogLookupArgs(company),
