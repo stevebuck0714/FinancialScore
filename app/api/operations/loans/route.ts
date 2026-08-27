@@ -3,12 +3,13 @@ import prisma from '@/lib/prisma';
 import { auditForbiddenAccess } from '@/lib/audit-logger';
 import { requireAuth, validateCompanyAccess } from '@/lib/tenant-security';
 import { isLocByMappingAndName } from '@/lib/loans/classify-loc';
-import { resolveBakersLocTarget } from '@/lib/financial/qbd-bakers-bs-pins';
+import { isBakersCompany, resolveBakersLocTarget } from '@/lib/financial/qbd-bakers-bs-pins';
+import { applyBakersBsLoanBalances, loadBakersDebtGlNetByAccount } from '@/lib/loans/bakers-bs-loan-balances';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 120;
 
-const LOAN_ACTIVITY_CACHE_VERSION = 33;
+const LOAN_ACTIVITY_CACHE_VERSION = 34;
 const STALE_LOAN_ACTIVITY_MONTHS = 13;
 
 type LoanTermInput = {
@@ -1411,7 +1412,7 @@ async function loadLoanActivity(companyId: string) {
     }
   }
 
-  return principalRows.map((row) => {
+  let instruments = principalRows.map((row) => {
     const accountId = String(row.accountId || '').trim();
     const rawInforActivity = rawInforActivityByAccount.get(accountId) || null;
     const rawInforInterest = rawInforInterestByAccount.get(accountId) || [];
@@ -1512,6 +1513,22 @@ async function loadLoanActivity(companyId: string) {
       recentActivity,
     };
   });
+
+  if (isBakersCompany(companyId)) {
+    const glNets = await loadBakersDebtGlNetByAccount({
+      companyId,
+      mappings: Array.from(accountMetadata.entries()).map(([accountId, meta]) => ({
+        accountId,
+        accountName: meta.accountName,
+        targetField: meta.targetField,
+      })),
+      throughDate: dateKeyUtc(reportAsOfDate),
+      priorThroughDate: dateKeyUtc(priorAsOfDate),
+    });
+    instruments = applyBakersBsLoanBalances(instruments, glNets, reportAsOfDate);
+  }
+
+  return instruments;
 }
 
 async function buildLoanActivityPayload(companyId: string) {

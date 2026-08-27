@@ -20,6 +20,33 @@ export const BAKERS_CURRENT_RENAMED_LOANS = {
   huntingtonBankTermLoan: 236_326.91,
 };
 
+/** YE 2025 PDF Long Term Liabilities, keyed by current QBD ListID. */
+export const BAKERS_YE2025_LTD_ACCOUNT_PINS: Record<string, number> = {
+  '800000C4-1453216646': 3_585_579.5, // N/P - Huntington Bank → Huntington Bank Mortgage
+  '800000FB-1591802281': 338_156.65, // SBA EIDL Loan
+  '800000F2-1542639519': 268_864.0, // Honeycomb N/P (PDF single line; QBD later split)
+};
+
+/** YE 2025 PDF LOC lines that reclass into ltd on 1/1/2026. */
+export const BAKERS_YE2025_LOC_ACCOUNT_PINS: Record<string, number> = {
+  '80000122-1750288253': 263_419.95, // Idea Financial LOC
+  '80000091-1401407413': 252_741.89, // LOC Huntington Bank
+  '8000011D-1728336412': 38_640.11, // Sampson LOC
+};
+
+export const BAKERS_HONEYCOMB_LOAN_ACCOUNT_IDS = [
+  '800000F2-1542639519', // Honeycomb N/P #2
+  '80000128-1783345522', // Honeycomb N/P #4
+  '80000129-1783354217', // Honeycomb N/P #3
+] as const;
+
+export const BAKERS_HONEYCOMB_PRIMARY_ACCOUNT_ID = '800000F2-1542639519';
+
+export function bakersLoanOpeningLtd(accountId: string): number {
+  const id = String(accountId || '').trim();
+  return Number(BAKERS_YE2025_LTD_ACCOUNT_PINS[id] || 0) + Number(BAKERS_YE2025_LOC_ACCOUNT_PINS[id] || 0);
+}
+
 const BAKERS_RECLASS_NAME_PATTERNS = [
   /^idea financial (loan|loc)\b/i,
   /^huntington bank\s+term loan\b/i,

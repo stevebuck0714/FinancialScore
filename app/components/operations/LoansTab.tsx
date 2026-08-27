@@ -231,7 +231,7 @@ function hasLoanInstrumentBalance(instrument: LoanInstrument): boolean {
 
 function getLoanCurrentBalance(instrument: LoanInstrument): number | null {
   const derivedCurrentBalance = toFiniteNumber(instrument.derivedCurrentBalance);
-  if (derivedCurrentBalance !== null) return Math.abs(derivedCurrentBalance);
+  if (derivedCurrentBalance !== null) return derivedCurrentBalance;
   if (isLocInstrument(instrument) && toFiniteNumber(instrument.terms?.originalBalance) !== null) return 0;
   return null;
 }
@@ -284,7 +284,7 @@ export default function LoansTab({ selectedCompanyId, companyName, currentUser =
     const currentBalance =
       selectedInstrument.derivedCurrentBalance == null
         ? null
-        : Math.abs(Number(selectedInstrument.derivedCurrentBalance || 0));
+        : Number(selectedInstrument.derivedCurrentBalance || 0);
     let runningBalance = currentBalance;
     const activityByDate = selectedInstrument.recentActivity.reduce<Array<{ dateKey: string; rows: LoanInstrument['recentActivity'] }>>((groups, row, index) => {
       const dateKey = row.transDate ? new Date(row.transDate).toISOString().slice(0, 10) : `no-date-${index}`;
