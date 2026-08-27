@@ -1161,6 +1161,116 @@ function buildPayload(
   };
 }
 
+function workforceSnapshotHasEconomics(snapshot: BambooHrWorkforceReportSnapshot): boolean {
+  return Boolean(snapshot?.revenueBillables?.summary && snapshot?.unitEconomics?.summary);
+}
+
+function employeesFromWorkforceRoster(snapshot: BambooHrWorkforceReportSnapshot): CurrentEmployee[] {
+  const roster = Array.isArray(snapshot.dimensions?.employeeCompensationRoster)
+    ? snapshot.dimensions.employeeCompensationRoster
+    : Array.isArray(snapshot.unitEconomics?.employeeCompensationRoster)
+      ? snapshot.unitEconomics.employeeCompensationRoster
+      : [];
+  return roster
+    .map((row) => {
+      const annualCost = row.annualCost == null ? null : Number(row.annualCost);
+      const hourlyCost = annualCost == null ? null : round2(annualCost / ESTIMATED_ANNUAL_BILLABLE_HOURS);
+      return {
+        id: String(row.employeeId || ''),
+        name: String(row.employeeName || row.employeeId || ''),
+        role: String(row.role || 'Unassigned'),
+        clientName: String(row.clientName || ''),
+        department: String(row.department || ''),
+        division: String(row.division || ''),
+        location: String(row.location || ''),
+        employmentStatus: String(row.employmentStatus || ''),
+        employeeTaxType: '',
+        billRateLevel: String(row.billRateLevel || 'Missing bill rate level'),
+        payType: String(row.payType || ''),
+        paidPer: String(row.paidPer || ''),
+        paySchedule: '',
+        exempt: '',
+        hourlyCost,
+        annualCost: Number.isFinite(Number(annualCost)) ? Number(annualCost) : null,
+        overtimeRatePresent: false,
+      } as CurrentEmployee;
+    })
+    .filter((employee) => employee.id);
+}
+
+function rematchWorkforceSnapshotFromRoster(
+  snapshot: BambooHrWorkforceReportSnapshot,
+  rateCard: ParsedCogentRateCard | null
+): BambooHrWorkforceReportSnapshot {
+  const employees = employeesFromWorkforceRoster(snapshot);
+  if (employees.length === 0) {
+    const generatedAt = snapshot.generatedAt || new Date().toISOString();
+    return buildPayload(snapshot.companyId, [], generatedAt, rateCard);
+  }
+  return buildPayload(snapshot.companyId, employees, snapshot.generatedAt || new Date().toISOString(), rateCard);
+}
+
+async function persistWorkforceSnapshot(
+  companyId: string,
+  snapshot: BambooHrWorkforceReportSnapshot
+): Promise<void> {
+  const { metadata, connection } = await readBambooHrSettings(companyId);
+  await saveOperationalSystemConnection({
+    companyId,
+    provider: 'BAMBOOHR',
+    sourceCode: BAMBOOHR_SOURCE_CODE,
+    authType: connection.authType || 'API_KEY',
+    status: connection.status || 'ACTIVE',
+    accessToken: connection.accessToken,
+    baseUrl: connection.baseUrl,
+    lastSyncAt: connection.lastSyncAt,
+    autoSync: connection.autoSync,
+    syncFrequency: connection.syncFrequency || 'daily',
+    connectionMetadata: {
+      ...metadata,
+      [SNAPSHOT_METADATA_KEY]: snapshot,
+    },
+    errorMessage: connection.errorMessage,
+  });
+}
+
+export async function refreshBambooHrWorkforceSnapshotRates(
+  companyId: string
+): Promise<BambooHrWorkforceReportSnapshot | null> {
+  const snapshot = await readBambooHrWorkforceReportSnapshot(companyId);
+  if (!snapshot) return null;
+
+  const rateCard = await readCogentRateCard(companyId).catch(() => null);
+  const matchedEmployees = Array.isArray(snapshot.revenueBillables?.estimatedBillableEconomicsByEmployee)
+    ? snapshot.revenueBillables.estimatedBillableEconomicsByEmployee.length
+    : 0;
+  const snapshotGeneratedAt = Date.parse(String(snapshot.generatedAt || ''));
+  const rateCardParsedAt = Date.parse(String(rateCard?.parsedAt || ''));
+  const rateCardIsNewer =
+    Boolean(rateCard?.rows?.length) &&
+    Number.isFinite(rateCardParsedAt) &&
+    (!Number.isFinite(snapshotGeneratedAt) || rateCardParsedAt > snapshotGeneratedAt);
+  const rateMatcherIsStale = Number(snapshot.rateMatchVersion || 0) < BAMBOOHR_WORKFORCE_RATE_MATCH_VERSION;
+  const economicsMissing = !workforceSnapshotHasEconomics(snapshot);
+
+  if (!rateCardIsNewer && !rateMatcherIsStale && !economicsMissing && (matchedEmployees > 0 || !rateCard?.rows?.length)) {
+    return snapshot;
+  }
+
+  const rematched = rematchWorkforceSnapshotFromRoster(snapshot, rateCard);
+  const rematchedCount = rematched.revenueBillables.estimatedBillableEconomicsByEmployee.length;
+  const shouldPersist =
+    rematched.rateMatchVersion !== snapshot.rateMatchVersion ||
+    economicsMissing ||
+    rematchedCount !== matchedEmployees;
+  if (shouldPersist) {
+    await persistWorkforceSnapshot(companyId, rematched).catch((error) => {
+      console.warn('Failed to persist rematched BambooHR workforce snapshot', error);
+    });
+  }
+  return rematched;
+}
+
 export async function buildAndSaveBambooHrWorkforceReportSnapshot(companyId: string): Promise<BambooHrWorkforceReportSnapshot> {
   const { settings, metadata, connection } = await readBambooHrSettings(companyId);
   const directory = await fetchBambooHrJson(settings, 'employees/directory');
@@ -1226,44 +1336,85 @@ export function getBambooHrLaborSchedulingPayload(snapshot: BambooHrWorkforceRep
 }
 
 export function getBambooHrRevenueBillablesPayload(snapshot: BambooHrWorkforceReportSnapshot) {
-  const summary = snapshot.revenueBillables.summary;
+  const revenueBillables = snapshot.revenueBillables;
+  const summary = revenueBillables?.summary || {
+    asOfDate: String(snapshot.generatedAt || '').slice(0, 10),
+    employeeCount: Number(snapshot.employeesSampled || 0),
+    billableEmployeeCount: 0,
+    billRateLevelCoveragePct: 0,
+    distinctBillRateLevels: 0,
+    numericBillRatesAvailable: false,
+    avgBillRate: null,
+    avgPayRate: null,
+    overallBillToPayRate: null,
+    billableHoursAvailable: false,
+    note: 'Workforce economics are not available on this snapshot yet.',
+  };
+  const estimatedRows = Array.isArray(revenueBillables?.estimatedBillableEconomicsByEmployee)
+    ? revenueBillables.estimatedBillableEconomicsByEmployee
+    : [];
   const normalizedSummary = {
     ...summary,
     overallBillToPayRate:
       summary.avgBillRate != null && summary.avgBillRate > 0 && summary.avgPayRate != null
         ? round2(summary.avgPayRate / summary.avgBillRate)
-        : null,
+        : summary.overallBillToPayRate ?? null,
   };
-  const estimatedBillableEconomicsByEmployee = snapshot.revenueBillables.estimatedBillableEconomicsByEmployee.map((row) => ({
+  const estimatedBillableEconomicsByEmployee = estimatedRows.map((row) => ({
     ...row,
     billToPayRatio:
       row.payRate != null && row.rateCardBillRate > 0
         ? round2(row.payRate / row.rateCardBillRate)
-        : null,
+        : row.billToPayRatio ?? null,
   }));
 
   return {
     meta: { source: snapshot.source, generatedAt: snapshot.generatedAt, note: normalizedSummary.note },
     summary: normalizedSummary,
-    billRateLevelByRole: snapshot.revenueBillables.billRateLevelByRole,
-    billRateLevelRows: snapshot.revenueBillables.billRateLevelRows,
-    billRateLevelByMarketRows: snapshot.revenueBillables.billRateLevelByMarketRows,
+    billRateLevelByRole: Array.isArray(revenueBillables?.billRateLevelByRole) ? revenueBillables.billRateLevelByRole : [],
+    billRateLevelRows: Array.isArray(revenueBillables?.billRateLevelRows) ? revenueBillables.billRateLevelRows : [],
+    billRateLevelByMarketRows: Array.isArray(revenueBillables?.billRateLevelByMarketRows)
+      ? revenueBillables.billRateLevelByMarketRows
+      : [],
     estimatedBillableEconomicsByEmployee,
-    unavailableReports: snapshot.revenueBillables.unavailableReports,
-    records: snapshot.revenueBillables.billRateLevelRows,
+    unavailableReports: Array.isArray(revenueBillables?.unavailableReports) ? revenueBillables.unavailableReports : [],
+    records: Array.isArray(revenueBillables?.billRateLevelRows) ? revenueBillables.billRateLevelRows : [],
   };
 }
 
 export function getBambooHrUnitEconomicsPayload(snapshot: BambooHrWorkforceReportSnapshot) {
+  const unitEconomics = snapshot.unitEconomics;
+  const summary = unitEconomics?.summary || {
+    asOfDate: String(snapshot.generatedAt || '').slice(0, 10),
+    avgHourlyCost: snapshot.summary?.avgHourlyCost ?? null,
+    avgAnnualCost: snapshot.summary?.avgAnnualCost ?? null,
+    avgMonthlyCost: snapshot.summary?.avgMonthlyCost ?? null,
+    totalAnnualCost: snapshot.summary?.totalAnnualCost ?? null,
+    employeesWithPayRate: snapshot.summary?.employeesWithPayRate ?? 0,
+    billRateLevelCoveragePct: snapshot.summary?.billRateLevelCoveragePct ?? 0,
+    note: 'Workforce economics are not available on this snapshot yet.',
+  };
   return {
-    meta: { source: snapshot.source, generatedAt: snapshot.generatedAt, note: snapshot.unitEconomics.summary.note },
-    summary: snapshot.unitEconomics.summary,
-    payCostByBillRateLevel: snapshot.unitEconomics.payCostByBillRateLevel,
-    payCostByRole: snapshot.unitEconomics.payCostByRole,
-    payCostByLocation: snapshot.unitEconomics.payCostByLocation,
-    employeeCompensationRoster: snapshot.unitEconomics.employeeCompensationRoster,
-    missingBillRateLevel: snapshot.unitEconomics.missingBillRateLevel,
-    unavailableReports: snapshot.unitEconomics.unavailableReports,
-    records: snapshot.unitEconomics.payCostByBillRateLevel,
+    meta: { source: snapshot.source, generatedAt: snapshot.generatedAt, note: summary.note },
+    summary,
+    payCostByBillRateLevel: Array.isArray(unitEconomics?.payCostByBillRateLevel)
+      ? unitEconomics.payCostByBillRateLevel
+      : snapshot.dimensions?.headcountByBillRateLevel || [],
+    payCostByRole: Array.isArray(unitEconomics?.payCostByRole)
+      ? unitEconomics.payCostByRole
+      : snapshot.dimensions?.headcountByRole || [],
+    payCostByLocation: Array.isArray(unitEconomics?.payCostByLocation)
+      ? unitEconomics.payCostByLocation
+      : snapshot.dimensions?.headcountByLocation || [],
+    employeeCompensationRoster: Array.isArray(unitEconomics?.employeeCompensationRoster)
+      ? unitEconomics.employeeCompensationRoster
+      : snapshot.dimensions?.employeeCompensationRoster || [],
+    missingBillRateLevel: Array.isArray(unitEconomics?.missingBillRateLevel)
+      ? unitEconomics.missingBillRateLevel
+      : snapshot.dimensions?.missingBillRateLevel || [],
+    unavailableReports: Array.isArray(unitEconomics?.unavailableReports) ? unitEconomics.unavailableReports : [],
+    records: Array.isArray(unitEconomics?.payCostByBillRateLevel)
+      ? unitEconomics.payCostByBillRateLevel
+      : snapshot.dimensions?.headcountByBillRateLevel || [],
   };
 }

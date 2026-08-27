@@ -1268,6 +1268,7 @@ export default function OperationsTab({
   // latest financial import date.
   const effectiveMaxSelectableEndDate = maxSelectableEndDate;
   const hasHydratedDateRangeRef = useRef(false);
+  const [dateRangeReady, setDateRangeReady] = useState(false);
   const dateRangeSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const hasHydratedEbitdaEmployeeInputsRef = useRef(false);
   const ebitdaEmployeeInputsSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -1507,11 +1508,11 @@ export default function OperationsTab({
   }, [selectedJccJobId]);
 
   useEffect(() => {
-    if (!hasHydratedDateRangeRef.current) return;
+    if (!dateRangeReady && !hasHydratedDateRangeRef.current) return;
     if (activeTab !== 'overview' && activeTab !== 'dashboard' && mapModuleToDataType(activeTab)) {
       loadTabData(activeTab);
     }
-  }, [activeTab, selectedCompanyId, industrySectorCategory, frequency, startDate, endDate, dailyFinancialStatementRollup, productReportView]);
+  }, [dateRangeReady, activeTab, selectedCompanyId, industrySectorCategory, frequency, startDate, endDate, dailyFinancialStatementRollup, productReportView]);
 
   useEffect(() => {
     if (activeOverviewSubTab !== 'customer-concentration-exposure') return;
@@ -1591,6 +1592,9 @@ export default function OperationsTab({
   useEffect(() => {
     if (!selectedCompanyId) return;
     hasHydratedDateRangeRef.current = false;
+    setDateRangeReady(false);
+    setRevenueBillablesData(null);
+    setUnitEconomicsData(null);
     hasHydratedEbitdaEmployeeInputsRef.current = false;
     hasHydratedResidentialRateTrendsRef.current = false;
     let cancelled = false;
@@ -1655,6 +1659,7 @@ export default function OperationsTab({
       setStartDate(range.startDate);
       setEndDate(range.endDate);
       hasHydratedDateRangeRef.current = true;
+      setDateRangeReady(true);
     };
 
     const loadDashboardPreferences = async () => {
@@ -1936,6 +1941,8 @@ export default function OperationsTab({
       ? 90000
       : apiType === 'customers' || apiType === 'products'
       ? 45000
+      : apiType === 'revenue-billables' || apiType === 'unit-economics'
+      ? 60000
       : 25000;
     const requestFrequency = frequency;
     const requestStartDate = startDate;
@@ -23414,8 +23421,8 @@ Strategies to Improve the CCC
   const renderRevenueBillables = () => {
     if (!revenueBillablesData) {
       return (
-        <div style={{ padding: '40px', color: '#64748b', fontSize: '14px' }}>
-          Loading Revenue &amp; Billables…
+        <div style={{ padding: '40px', color: error ? '#b91c1c' : '#64748b', fontSize: '14px' }}>
+          {error || 'Loading Revenue & Billables…'}
         </div>
       );
     }
@@ -23824,8 +23831,8 @@ Strategies to Improve the CCC
   const renderUnitEconomics = () => {
     if (!unitEconomicsData) {
       return (
-        <div style={{ padding: '40px', color: '#64748b', fontSize: '14px' }}>
-          Loading Unit Economics…
+        <div style={{ padding: '40px', color: error ? '#b91c1c' : '#64748b', fontSize: '14px' }}>
+          {error || 'Loading Unit Economics…'}
         </div>
       );
     }
@@ -28261,7 +28268,12 @@ Strategies to Improve the CCC
         {availableTabs.map((tab) => (
           <button
             key={tab}
-            onClick={() => setActiveTab(tab as any)}
+            onClick={() => {
+              setActiveTab(tab as any);
+              if (mapModuleToDataType(tab)) {
+                void loadTabData(tab);
+              }
+            }}
             onMouseEnter={() => prefetchTabData(tab)}
             style={{
               background: activeTab === tab ? '#eff6ff' : 'transparent',

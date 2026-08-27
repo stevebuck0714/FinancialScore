@@ -21,13 +21,12 @@ import {
   buildCustomersSitesMock,
 } from '@/lib/operations/staffing-mock-data';
 import {
-  BAMBOOHR_WORKFORCE_RATE_MATCH_VERSION,
-  buildAndSaveBambooHrWorkforceReportSnapshot,
   getBambooHrHiringPayload,
   getBambooHrLaborSchedulingPayload,
   getBambooHrRevenueBillablesPayload,
   getBambooHrUnitEconomicsPayload,
   readBambooHrWorkforceReportSnapshot,
+  refreshBambooHrWorkforceSnapshotRates,
 } from '@/lib/operations/bamboohr-workforce-reports';
 import { BAMBOOHR_SOURCE_CODE } from '@/lib/bamboohr';
 import { getOperationalSystemConnection } from '@/lib/operational/operational-system-connections';
@@ -545,25 +544,7 @@ function parseDateParamBoundary(value: string | null, boundary: 'start' | 'end',
 }
 
 async function getFreshBambooHrWorkforceSnapshot(companyId: string) {
-  const snapshot = await readBambooHrWorkforceReportSnapshot(companyId);
-  const rateCard = await readCogentRateCard(companyId).catch(() => null);
-  if (!snapshot || !rateCard?.rows?.length) return snapshot;
-
-  const snapshotGeneratedAt = Date.parse(String(snapshot.generatedAt || ''));
-  const rateCardParsedAt = Date.parse(String(rateCard.parsedAt || ''));
-  const matchedEmployees = Array.isArray(snapshot.revenueBillables?.estimatedBillableEconomicsByEmployee)
-    ? snapshot.revenueBillables.estimatedBillableEconomicsByEmployee.length
-    : 0;
-  const snapshotRateMatchVersion = Number((snapshot as { rateMatchVersion?: unknown }).rateMatchVersion || 0);
-  const rateCardIsNewer =
-    Number.isFinite(rateCardParsedAt) &&
-    (!Number.isFinite(snapshotGeneratedAt) || rateCardParsedAt > snapshotGeneratedAt);
-  const rateMatcherIsStale = snapshotRateMatchVersion < BAMBOOHR_WORKFORCE_RATE_MATCH_VERSION;
-
-  if (rateCardIsNewer || rateMatcherIsStale || matchedEmployees === 0) {
-    return buildAndSaveBambooHrWorkforceReportSnapshot(companyId);
-  }
-  return snapshot;
+  return refreshBambooHrWorkforceSnapshotRates(companyId);
 }
 
 function dateKeyUtc(date: Date): string {
