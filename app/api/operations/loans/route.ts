@@ -2,11 +2,13 @@ import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import { auditForbiddenAccess } from '@/lib/audit-logger';
 import { requireAuth, validateCompanyAccess } from '@/lib/tenant-security';
+import { isLocByMappingAndName } from '@/lib/loans/classify-loc';
+import { resolveBakersLocTarget } from '@/lib/financial/qbd-bakers-bs-pins';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 120;
 
-const LOAN_ACTIVITY_CACHE_VERSION = 29;
+const LOAN_ACTIVITY_CACHE_VERSION = 31;
 const STALE_LOAN_ACTIVITY_MONTHS = 13;
 
 type LoanTermInput = {
@@ -193,24 +195,32 @@ async function loadLatestLoanSourceUpdatedAt(companyId: string): Promise<Date | 
 async function loadLoanAccountMetadata(companyId: string, accountIds: string[]): Promise<Map<string, {
   targetField: string | null;
   accountClassification: string | null;
+  accountName: string | null;
 }>> {
   const ids = Array.from(new Set(accountIds.map((id) => String(id || '').trim()).filter(Boolean)));
-  const metadata = new Map<string, { targetField: string | null; accountClassification: string | null }>();
+  const metadata = new Map<string, {
+    targetField: string | null;
+    accountClassification: string | null;
+    accountName: string | null;
+  }>();
   if (!ids.length) return metadata;
 
   const rows = await prisma.$queryRawUnsafe<Array<{
     accountId: string | null;
     targetField: string | null;
     accountClassification: string | null;
+    accountName: string | null;
   }>>(
     `
       SELECT
         TRIM("accountId") AS "accountId",
         NULLIF(TRIM(COALESCE("targetField", '')), '') AS "targetField",
-        NULLIF(TRIM(COALESCE("accountClassification", '')), '') AS "accountClassification"
+        NULLIF(TRIM(COALESCE("accountClassification", '')), '') AS "accountClassification",
+        NULLIF(TRIM(COALESCE("accountName", '')), '') AS "accountName"
       FROM "AccountMapping"
       WHERE "companyId" = $1
         AND TRIM("accountId") = ANY($2::text[])
+      ORDER BY "updatedAt" DESC
     `,
     companyId,
     ids
@@ -222,6 +232,7 @@ async function loadLoanAccountMetadata(companyId: string, accountIds: string[]):
     metadata.set(accountId, {
       targetField: row.targetField || null,
       accountClassification: row.accountClassification || null,
+      accountName: row.accountName || null,
     });
   }
 
@@ -361,10 +372,33 @@ function shouldHideInactiveLoanFromReport(instrument: any) {
 }
 
 function isLocLoanAccount(accountId: unknown, accountName: unknown, targetField: unknown): boolean {
-  const normalizedTarget = String(targetField || '').trim().toLowerCase();
-  if (normalizedTarget === 'loc') return true;
-  const haystack = `${accountId || ''} ${accountName || ''}`.toLowerCase();
-  return /\bloc\b|line of credit/.test(haystack);
+  return isLocByMappingAndName({
+    targetField: targetField == null ? null : String(targetField),
+    accountId: accountId == null ? null : String(accountId),
+    displayName: accountName == null ? null : String(accountName),
+  });
+}
+
+function dateKeyUtc(value: Date): string {
+  return value.toISOString().slice(0, 10);
+}
+
+function effectiveLoanTargetField(opts: {
+  companyId: string;
+  asOfDate: Date;
+  accountId: string;
+  accountName?: string | null;
+  mappedTarget?: string | null;
+}): string {
+  return String(
+    resolveBakersLocTarget({
+      companyId: opts.companyId,
+      dateKey: dateKeyUtc(opts.asOfDate),
+      accountId: opts.accountId,
+      accountName: opts.accountName,
+      mappedTarget: String(opts.mappedTarget || '').trim().toLowerCase(),
+    }) || ''
+  ).toLowerCase();
 }
 
 function sumActivityForMonth(activity: any[], month: string) {
@@ -1109,6 +1143,25 @@ async function loadLoanActivity(companyId: string) {
     priorAsOfDate
   );
 
+  const liveAccountName = (row: { accountId?: string | null; accountName?: string | null }) => {
+    const accountId = String(row.accountId || '').trim();
+    return String(accountMetadata.get(accountId)?.accountName || row.accountName || '').trim();
+  };
+  const effectiveTargetByAccount = new Map<string, string>();
+  principalRows.forEach((row) => {
+    const accountId = String(row.accountId || '').trim();
+    effectiveTargetByAccount.set(
+      accountId,
+      effectiveLoanTargetField({
+        companyId,
+        asOfDate: reportAsOfDate,
+        accountId,
+        accountName: liveAccountName(row),
+        mappedTarget: accountMetadata.get(accountId)?.targetField,
+      })
+    );
+  });
+
   const monthlyRows = mappedDebtAccountIds.length
     ? await prisma.$queryRawUnsafe<any[]>(
     `
@@ -1217,8 +1270,8 @@ async function loadLoanActivity(companyId: string) {
     const glTxCount = Number(row.transactionCount || 0);
     const rawLast = rawInforActivity?.lastDate ? new Date(rawInforActivity.lastDate).getTime() : 0;
     const glLast = row.lastDate ? new Date(row.lastDate).getTime() : 0;
-    const targetField = (accountMetadata.get(accountId)?.targetField || '').toLowerCase();
-    const isLocAccount = isLocLoanAccount(accountId, row.accountName, targetField);
+    const targetField = effectiveTargetByAccount.get(accountId) || '';
+    const isLocAccount = isLocLoanAccount(accountId, liveAccountName(row), targetField);
     const useRawActivity =
       rawInforActivity &&
       rawTxCount > glTxCount &&
@@ -1233,13 +1286,12 @@ async function loadLoanActivity(companyId: string) {
   const locAccountIds = principalRows
     .filter((row) => {
       const accountId = String(row.accountId || '').trim();
-      const metadata = accountMetadata.get(accountId);
-      return isLocLoanAccount(accountId, row.accountName, metadata?.targetField);
+      return isLocLoanAccount(accountId, liveAccountName(row), effectiveTargetByAccount.get(accountId));
     })
     .map((row) => String(row.accountId || '').trim());
   const ltdAccountIds = principalRows
     .map((row) => String(row.accountId || '').trim())
-    .filter((accountId) => (accountMetadata.get(accountId)?.targetField || '').toLowerCase() === 'ltd');
+    .filter((accountId) => (effectiveTargetByAccount.get(accountId) || '') === 'ltd');
   const useMonthlyDebtSnapshot =
     Math.abs(Number(latestDailySnapshot?.loc || 0)) === 0 &&
     Math.abs(Number(latestDailySnapshot?.ltd || 0)) === 0 &&
@@ -1303,7 +1355,8 @@ async function loadLoanActivity(companyId: string) {
     const rawInforActivity = rawInforActivityByAccount.get(accountId) || null;
     const rawInforInterest = rawInforInterestByAccount.get(accountId) || [];
     const qbdInterest = qbdInterestByAccount.get(accountId) || [];
-    const name = String(row.accountName || row.accountId || 'Loan');
+    const liveMappingName = String(accountMetadata.get(accountId)?.accountName || '').trim();
+    const name = liveMappingName || String(row.accountName || row.accountId || 'Loan');
     const tokens = compactTokens(`${row.accountId || ''} ${name}`);
     const linkedInterest = interestRows.filter((interest) => {
       const interestAccountId = String(interest.accountId || '').trim();
@@ -1319,7 +1372,7 @@ async function loadLoanActivity(companyId: string) {
     const glTxCount = Number(row.transactionCount || 0);
     const rawLast = rawInforActivity?.lastDate ? new Date(rawInforActivity.lastDate).getTime() : 0;
     const glLast = row.lastDate ? new Date(row.lastDate).getTime() : 0;
-    const targetField = (accountMetadata.get(accountId)?.targetField || '').toLowerCase();
+    const targetField = effectiveTargetByAccount.get(accountId) || '';
     const isLocAccount = isLocLoanAccount(accountId, name, targetField);
     let useRawActivity =
       rawInforActivity &&

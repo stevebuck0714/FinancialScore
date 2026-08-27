@@ -4,6 +4,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import CovenantsTab from '@/app/covenants/components/CovenantsTab';
 import type { MonthlyDataRow, User } from '@/app/types';
 import { useCompanyMoneyFormatter } from '@/app/hooks/useCompanyMoneyFormatter';
+import { isLocByMappingAndName } from '@/lib/loans/classify-loc';
 
 type LoanTerms = {
   instrumentKey: string;
@@ -203,15 +204,20 @@ function isClosedInstrument(instrument: { terms?: { closed?: boolean | string | 
 }
 
 function isLocInstrument(instrument: LoanInstrument): boolean {
-  const haystack = [
-    instrument.targetField,
-    instrument.displayName,
-    instrument.accountId,
-    instrument.terms?.displayName,
-    instrument.terms?.loanType,
-    instrument.terms?.lender,
-  ].join(' ').toLowerCase();
-  return instrument.targetField === 'loc' || /\bloc\b|line of credit/.test(haystack);
+  return isLocByMappingAndName({
+    targetField: instrument.targetField,
+    accountId: instrument.accountId,
+    displayName: instrument.displayName || instrument.terms?.displayName,
+    loanType: instrument.terms?.loanType,
+    lender: instrument.terms?.lender,
+  });
+}
+
+function instrumentTypeLabel(instrument: LoanInstrument): string {
+  const target = String(instrument.targetField || '').trim().toLowerCase();
+  if (target === 'ltd') return 'Long-term debt';
+  if (target === 'loc') return 'Line of Credit';
+  return instrument.terms?.loanType || 'Loan type not set';
 }
 
 function hasLoanInstrumentBalance(instrument: LoanInstrument): boolean {
@@ -314,8 +320,7 @@ export default function LoansTab({ selectedCompanyId, companyName, currentUser =
   const liquidityData = useMemo(() => {
     const locInstruments = instruments.filter((instrument) => {
       if (isClosedInstrument(instrument)) return false;
-      const text = `${instrument.targetField || ''} ${instrument.displayName || ''} ${instrument.accountId || ''}`.toLowerCase();
-      return instrument.targetField === 'loc' || text.includes('loc') || text.includes('line of credit');
+      return isLocInstrument(instrument);
     });
     const primaryLoc = locInstruments[0] || null;
     const creditLimit = locInstruments.reduce((sum, instrument) => {
@@ -628,9 +633,9 @@ export default function LoansTab({ selectedCompanyId, companyName, currentUser =
         style={{ cursor: 'pointer', background: selected ? '#eff6ff' : 'white' }}
       >
         <td style={{ ...tdStyle, fontWeight: 800 }}>
-          {instrument.terms?.displayName || instrument.displayName}
+          {instrument.displayName || instrument.terms?.displayName}
           <div style={{ marginTop: '2px', fontSize: '11px', color: '#64748b', fontWeight: 500 }}>
-            {instrument.terms?.loanType || 'Loan type not set'}
+            {instrumentTypeLabel(instrument)}
             {instrument.terms?.lender ? ` | ${instrument.terms.lender}` : ''}
             {isClosedInstrument(instrument) ? ' | Closed' : instrument.instrumentStatus === 'inactive' ? ' | Undrawn / paid down' : ''}
           </div>

@@ -6,6 +6,7 @@ import { CheckCircle, AlertTriangle, XCircle, TrendingUp, Settings, Target, Buil
 import type { MonthlyDataRow, User } from '../../types';
 import LoansManagement from './LoansManagement';
 import { useCompanyMoneyFormatter } from '@/app/hooks/useCompanyMoneyFormatter';
+import { isLocByMappingAndName } from '@/lib/loans/classify-loc';
 
 interface Loan {
   id: string;
@@ -566,17 +567,13 @@ export default function CovenantsTab({
   };
 
   const isLocInstrument = (instrument: any): boolean => {
-    const haystack = [
-      instrument?.targetField,
-      instrument?.displayName,
-      instrument?.accountId,
-      instrument?.terms?.displayName,
-      instrument?.terms?.loanType,
-      instrument?.terms?.lender,
-    ]
-      .join(' ')
-      .toLowerCase();
-    return String(instrument?.targetField || '').toLowerCase() === 'loc' || /\bloc\b|line of credit|revolver/.test(haystack);
+    return isLocByMappingAndName({
+      targetField: instrument?.targetField,
+      accountId: instrument?.accountId,
+      displayName: instrument?.terms?.displayName || instrument?.displayName,
+      loanType: instrument?.terms?.loanType,
+      lender: instrument?.terms?.lender,
+    });
   };
 
   /**
@@ -601,7 +598,10 @@ export default function CovenantsTab({
   };
 
   const mapInstrumentLoanType = (instrument: any): string => {
-    const raw = `${instrument?.terms?.loanType || ''} ${instrument?.targetField || ''} ${getInstrumentDisplayName(instrument)}`.toUpperCase();
+    const target = String(instrument?.targetField || '').trim().toLowerCase();
+    if (target === 'ltd') return 'TERM';
+    if (target === 'loc') return 'LINE_OF_CREDIT';
+    const raw = `${instrument?.terms?.loanType || ''} ${getInstrumentDisplayName(instrument)}`.toUpperCase();
     if (raw.includes('LOC') || raw.includes('LINE OF CREDIT') || raw.includes('REVOLVER')) return 'LINE_OF_CREDIT';
     if (raw.includes('MORTGAGE')) return 'MORTGAGE';
     if (raw.includes('BRIDGE')) return 'BRIDGE';
