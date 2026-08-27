@@ -15,6 +15,8 @@ import {
   ReferenceLine
 } from 'recharts';
 import { getModuleLabel, mapModuleToDataType, type OpsDataType } from '@/lib/operations/module-registry';
+import { GENERIC_OVERVIEW_WIDGET_REPORT_KEYS, sectorHidesGenericOverviewWidgets } from '@/lib/operations/overview-print-options';
+import { isCompanySpecificReportForSector } from '@/lib/operations/company-specific-reports';
 import { formatDateSafeUtc, parseDateSafeUtc, toLocalInputDate } from '@/app/utils/date';
 import { formatMoney, formatMoneyCompact } from '@/lib/format/currency';
 import { resolveDisplayCurrency, localeForCurrency } from '@/lib/constants/currencies';
@@ -26,6 +28,7 @@ interface OpsDashboardProps {
   activeModules?: string[];
   moduleTitlesByType?: Partial<Record<OpsDataType, string>>;
   operationalHubSections?: Record<string, any>;
+  assignedCompanyReportKeys?: string[];
   /** When set (print package), only render this Overview section/widget. */
   printSectionKey?: string | null;
   baseCurrency?: string | null;
@@ -45,6 +48,7 @@ export default function OpsDashboard({
   activeModules,
   moduleTitlesByType,
   operationalHubSections,
+  assignedCompanyReportKeys = [],
   printSectionKey = null,
   baseCurrency,
   reportingCurrency,
@@ -637,6 +641,18 @@ export default function OpsDashboard({
   };
 
   const isOverviewReportEnabled = (sectionKey: string): boolean => {
+    if (
+      sectorHidesGenericOverviewWidgets(industrySectorCategory) &&
+      GENERIC_OVERVIEW_WIDGET_REPORT_KEYS.has(sectionKey)
+    ) {
+      return false;
+    }
+    if (
+      isCompanySpecificReportForSector(sectionKey, industrySectorCategory) &&
+      !assignedCompanyReportKeys.includes(sectionKey)
+    ) {
+      return false;
+    }
     const value = operationalHubSections?.[sectionKey];
     const enabled = value === undefined ? true : value !== false;
     if (!enabled) return false;

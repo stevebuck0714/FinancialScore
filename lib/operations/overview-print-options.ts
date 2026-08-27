@@ -1,4 +1,5 @@
 import { withIsolvedHubReportName } from '@/lib/operations/operational-hub-layout';
+import { isAssignedCompanyReportEnabled } from '@/lib/operations/company-specific-reports';
 
 export type OverviewPrintOption = {
   key: string;
@@ -7,6 +8,22 @@ export type OverviewPrintOption = {
   overviewSubTab?: string;
   sectionKey?: string;
 };
+
+export const GENERIC_OVERVIEW_WIDGET_REPORT_KEYS = new Set([
+  'overviewStdArAging',
+  'overviewStdApAging',
+  'overviewStdCashTrend',
+  'overviewStdInventory',
+  'overviewStdRevenue',
+  'overviewStdEbitda',
+]);
+
+export function sectorHidesGenericOverviewWidgets(sectorCategory?: string | null): boolean {
+  return ['32', '42', '53', '54'].includes(String(sectorCategory || '').trim());
+}
+
+/** @deprecated Use GENERIC_OVERVIEW_WIDGET_REPORT_KEYS */
+export const WHOLESALE_OVERVIEW_EXCLUDED_REPORT_KEYS = GENERIC_OVERVIEW_WIDGET_REPORT_KEYS;
 
 const isSectionEnabled = (
   sections: Record<string, any> | null | undefined,
@@ -20,9 +37,16 @@ const isSectionEnabled = (
  * Overview print targets for the selected company.
  * Mirrors OperationsTab Overview page construction (sector + hub section flags).
  */
+export type OverviewPrintCompanyContext = {
+  companyId?: string | null;
+  companyName?: string | null;
+  hubConfig?: unknown;
+};
+
 export function getOverviewPrintOptions(
   industrySectorCategory: string | null | undefined,
-  operationalHubSections: Record<string, any> | null | undefined
+  operationalHubSections: Record<string, any> | null | undefined,
+  company?: OverviewPrintCompanyContext
 ): OverviewPrintOption[] {
   const sector = String(industrySectorCategory || '').trim();
   const sections = operationalHubSections || {};
@@ -91,11 +115,12 @@ export function getOverviewPrintOptions(
           }]
         : []),
     ];
-    if (wholesalePages.length > 0) return wholesalePages;
+    return wholesalePages;
   }
 
+  const includeGenericOverviewWidgets = !sectorHidesGenericOverviewWidgets(sector);
   const dashboardSections: OverviewPrintOption[] = [
-    ...(isSectionEnabled(sections, 'overviewStdRevenue')
+    ...(includeGenericOverviewWidgets && isSectionEnabled(sections, 'overviewStdRevenue')
       ? [{
           key: 'overviewStdRevenue',
           label: 'Revenue',
@@ -103,7 +128,7 @@ export function getOverviewPrintOptions(
           sectionKey: 'overviewStdRevenue',
         }]
       : []),
-    ...(isSectionEnabled(sections, 'overviewStdArAging')
+    ...(includeGenericOverviewWidgets && isSectionEnabled(sections, 'overviewStdArAging')
       ? [{
           key: 'overviewStdArAging',
           label: 'AR Aging',
@@ -111,7 +136,7 @@ export function getOverviewPrintOptions(
           sectionKey: 'overviewStdArAging',
         }]
       : []),
-    ...(isSectionEnabled(sections, 'overviewStdApAging')
+    ...(includeGenericOverviewWidgets && isSectionEnabled(sections, 'overviewStdApAging')
       ? [{
           key: 'overviewStdApAging',
           label: 'AP Aging',
@@ -119,7 +144,7 @@ export function getOverviewPrintOptions(
           sectionKey: 'overviewStdApAging',
         }]
       : []),
-    ...(isSectionEnabled(sections, 'overviewStdCashTrend')
+    ...(includeGenericOverviewWidgets && isSectionEnabled(sections, 'overviewStdCashTrend')
       ? [{
           key: 'overviewStdCashTrend',
           label: 'Cash Trend',
@@ -127,7 +152,7 @@ export function getOverviewPrintOptions(
           sectionKey: 'overviewStdCashTrend',
         }]
       : []),
-    ...(isSectionEnabled(sections, 'overviewStdInventory')
+    ...(includeGenericOverviewWidgets && isSectionEnabled(sections, 'overviewStdInventory')
       ? [{
           key: 'overviewStdInventory',
           label: 'Inventory',
@@ -135,7 +160,7 @@ export function getOverviewPrintOptions(
           sectionKey: 'overviewStdInventory',
         }]
       : []),
-    ...(isSectionEnabled(sections, 'overviewStdEbitda')
+    ...(includeGenericOverviewWidgets && isSectionEnabled(sections, 'overviewStdEbitda')
       ? [{
           key: 'overviewStdEbitda',
           label: 'EBITDA',
@@ -145,21 +170,34 @@ export function getOverviewPrintOptions(
       : []),
   ];
 
-  if (sector === '53' && isSectionEnabled(sections, 'realEstateExecutiveReport')) {
+  if (sector === '54') {
+    const bureauScorecard =
+      isSectionEnabled(sections, 'overviewBureauExecutiveScorecard')
+        ? [{
+            key: 'overviewBureauExecutiveScorecard',
+            label: withIsolvedHubReportName('Executive Operational Scorecard'),
+            kind: 'dashboard-section' as const,
+            sectionKey: 'overviewBureauExecutiveScorecard',
+          }]
+        : [];
+    return bureauScorecard;
+  }
+
+  if (
+    sector === '53' &&
+    isAssignedCompanyReportEnabled({
+      reportKey: 'realEstateExecutiveReport',
+      companyId: company?.companyId,
+      companyName: company?.companyName,
+      hubConfig: company?.hubConfig,
+      sections,
+    })
+  ) {
     dashboardSections.unshift({
       key: 'realEstateExecutiveReport',
       label: 'Executive Report',
       kind: 'dashboard-section',
       sectionKey: 'realEstateExecutiveReport',
-    });
-  }
-
-  if (sector === '54' && isSectionEnabled(sections, 'overviewBureauExecutiveScorecard')) {
-    dashboardSections.unshift({
-      key: 'overviewBureauExecutiveScorecard',
-      label: withIsolvedHubReportName('Executive Operational Scorecard'),
-      kind: 'dashboard-section',
-      sectionKey: 'overviewBureauExecutiveScorecard',
     });
   }
 

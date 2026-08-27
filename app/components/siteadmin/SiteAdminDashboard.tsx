@@ -16,7 +16,29 @@ import {
   isIsolvedHubReportModule,
   withIsolvedHubReportName,
   withoutIsolvedHubReportName,
+  RETAIL_ONLY_PRODUCT_REPORT_KEYS,
+  hasExplicitSectorModuleReports,
 } from '@/lib/operations/operational-hub-layout';
+import {
+  getAssignedCompanyCatalogReports,
+  getCompanyReportTemplate,
+  getUnassignedCompanyCatalogReports,
+  isCompanySpecificReportForSector,
+} from '@/lib/operations/company-specific-reports';
+import {
+  getHubTabSource,
+  mergeOperationalHubConfig,
+  parseOperationalHubCustomReports,
+  parseOperationalHubCustomTabs,
+  uniqueCompanyTabKey,
+  type HubTabSource,
+  type OperationalHubCustomReport,
+  type OperationalHubCustomTab,
+} from '@/lib/operations/operational-hub-overlay';
+import { collectSectorHubCatalog } from '@/lib/operations/sector-hub-catalog';
+import OperationalHubCustomizationCard from '@/app/components/siteadmin/OperationalHubCustomizationCard';
+import { getSectorMasterTabLabel, getSectorMasterTabKeys } from '@/lib/operations/sector-master-tabs';
+import { GENERIC_OVERVIEW_WIDGET_REPORT_KEYS, sectorHidesGenericOverviewWidgets } from '@/lib/operations/overview-print-options';
 import AccountingSystemPanel from '@/app/components/accounting-systems/AccountingSystemPanel';
 import { isPluginAccountingSystem } from '@/lib/accounting-systems/registry';
 import { getQuickBooksDesktopFamilyLabel, isQuickBooksDesktopFamily } from '@/lib/quickbooks-desktop/family';
@@ -354,10 +376,6 @@ const OVERVIEW_STANDARD_REPORT_OPTIONS: Array<{ key: string; label: string; grou
   { key: 'overviewStdEbitda', label: 'EBITDA', group: 'Overview' },
 ];
 
-const REAL_ESTATE_OVERVIEW_REPORT_OPTIONS: Array<{ key: string; label: string; group: string }> = [
-  { key: 'realEstateExecutiveReport', label: 'Executive Report', group: 'Overview' },
-];
-
 const HEALTHCARE_OVERVIEW_REPORT_OPTIONS: Array<{ key: string; label: string; group: string }> = [
   { key: 'overviewHealthcareEnterpriseReports', label: 'Enterprise Reports', group: 'Overview' },
   { key: 'overviewHealthcareRegionReports', label: 'Region Reports', group: 'Overview' },
@@ -368,14 +386,10 @@ const PAYROLL_BUREAU_OVERVIEW_REPORT_OPTIONS: Array<{ key: string; label: string
   { key: 'overviewBureauExecutiveScorecard', label: withIsolvedHubReportName('Executive Operational Scorecard'), group: 'Overview' },
 ];
 
-type OperationalHubCustomReport = {
-  id: string;
-  label: string;
-  tabKey: string;
-  dataType: string;
-  scope: 'company' | 'global';
-  createdAt: string;
-  createdByCompanyId: string;
+const HUB_TAB_SOURCE_LABEL: Record<HubTabSource, string> = {
+  master: 'Sector master',
+  current: 'Currently included',
+  company: 'This company',
 };
 
 export default function SiteAdminDashboard(props: any) {
@@ -547,9 +561,16 @@ export default function SiteAdminDashboard(props: any) {
   const [savingOperationalHubConfigCompanyId, setSavingOperationalHubConfigCompanyId] = React.useState<string | null>(null);
   const [editingOperationalHubConfigByCompany, setEditingOperationalHubConfigByCompany] = React.useState<Record<string, Record<string, boolean>>>({});
   const [addingOperationalHubReportCompanyId, setAddingOperationalHubReportCompanyId] = React.useState<string | null>(null);
+  const [addingOperationalHubTabCompanyId, setAddingOperationalHubTabCompanyId] = React.useState<string | null>(null);
   const [newOperationalHubReportByCompany, setNewOperationalHubReportByCompany] = React.useState<
-    Record<string, { label: string; tabKey: string; scope: 'company' | 'global' }>
+    Record<string, { label: string; tabKey: string }>
   >({});
+  const [newOperationalHubTabByCompany, setNewOperationalHubTabByCompany] = React.useState<Record<string, string>>({});
+  const [newCompanyCatalogReportByCompany, setNewCompanyCatalogReportByCompany] = React.useState<Record<string, string>>({});
+  const [newCompanyCatalogTabByCompany, setNewCompanyCatalogTabByCompany] = React.useState<Record<string, string>>({});
+  const [selectedHubTabByCompany, setSelectedHubTabByCompany] = React.useState<Record<string, string>>({});
+  const [addingCompanyCatalogReportCompanyId, setAddingCompanyCatalogReportCompanyId] = React.useState<string | null>(null);
+  const [adoptingSectorHubItemCompanyId, setAdoptingSectorHubItemCompanyId] = React.useState<string | null>(null);
   const [savingDataRoomCompanyId, setSavingDataRoomCompanyId] = React.useState<string | null>(null);
   const [savingCustomReportsCompanyId, setSavingCustomReportsCompanyId] = React.useState<string | null>(null);
   const [editingDataRoomPricingByCompany, setEditingDataRoomPricingByCompany] = React.useState<
@@ -1420,32 +1441,104 @@ export default function SiteAdminDashboard(props: any) {
   };
 
   const getOperationalHubCustomReports = (company: any): OperationalHubCustomReport[] => {
-    const operationalHub = getOperationalHubSettings(company);
-    const customReports = Array.isArray(operationalHub?.customReports) ? operationalHub.customReports : [];
-    return customReports
-      .map((entry: any) => {
-        const id = String(entry?.id || '').trim();
-        const label = String(entry?.label || '').trim();
-        const tabKey = String(entry?.tabKey || '').trim();
-        const dataType = String(entry?.dataType || '').trim();
-        const scope = entry?.scope === 'global' ? 'global' : 'company';
-        const createdAt = String(entry?.createdAt || new Date().toISOString());
-        const createdByCompanyId = String(entry?.createdByCompanyId || company?.id || '');
-        if (!id || !label || !tabKey || !dataType) return null;
-        const displayLabel = isIsolvedHubReportModule(tabKey) ? label : withoutIsolvedHubReportName(label);
-        return { id, label: displayLabel, tabKey, dataType, scope, createdAt, createdByCompanyId } as OperationalHubCustomReport;
-      })
-      .filter(Boolean) as OperationalHubCustomReport[];
+    return parseOperationalHubCustomReports(getOperationalHubSettings(company)).map((report) => ({
+      ...report,
+      label: isIsolvedHubReportModule(report.tabKey) ? report.label : withoutIsolvedHubReportName(report.label),
+    }));
   };
 
-  const getOperationalHubTabCategoryOptions = (company: any): Array<{ key: string; label: string; group: string }> => {
-    const companySectorCategory = String(company?.industrySectorCategory || '').trim();
-    const moduleSet = getOperationalHubDefaultModuleKeys(companySectorCategory);
-    return moduleSet.map((moduleKey) => ({
-      key: `tab:${moduleKey}`,
-      label: getOperationalHubModuleLabel(moduleKey, companySectorCategory),
-      group: 'Tab Categories',
+  const getOperationalHubCustomTabs = (company: any): OperationalHubCustomTab[] =>
+    parseOperationalHubCustomTabs(getOperationalHubSettings(company));
+
+  const getSectorHubCatalogForCompany = (company: any) =>
+    collectSectorHubCatalog(
+      (Array.isArray(companies) ? companies : []).map((entry: any) => ({
+        companyId: String(entry?.id || ''),
+        companyName: String(entry?.name || ''),
+        sectorCategory: String(entry?.industrySectorCategory || '').trim(),
+        customTabs: parseOperationalHubCustomTabs(
+          entry?.userDefinedAllocations?.operationalHub &&
+            typeof entry.userDefinedAllocations.operationalHub === 'object' &&
+            !Array.isArray(entry.userDefinedAllocations.operationalHub)
+            ? entry.userDefinedAllocations.operationalHub
+            : {}
+        ),
+      })),
+      {
+        sectorCategory: String(company?.industrySectorCategory || '').trim(),
+        excludeCompanyId: String(company?.id || ''),
+      }
+    );
+
+  const selectOperationalHubTab = (company: any, moduleKey: string) => {
+    const tabKey = String(moduleKey || '').trim();
+    if (!tabKey) return;
+    setSelectedHubTabByCompany((prev) => ({ ...prev, [company.id]: tabKey }));
+    setNewCompanyCatalogTabByCompany((prev) => ({ ...prev, [company.id]: tabKey }));
+    setNewCompanyCatalogReportByCompany((prev) => ({ ...prev, [company.id]: '' }));
+    setNewOperationalHubReportDraft(company.id, { tabKey });
+  };
+
+  const getCompanyCatalogLookupArgs = (company: any) => ({
+    companyId: company?.id,
+    companyName: company?.name,
+    sectorCategory: String(company?.industrySectorCategory || '').trim(),
+    hubConfig: getOperationalHubSettings(company),
+    sections: getOperationalHubConfig(company),
+  });
+
+  const getAssignedCatalogReportOptions = (company: any, moduleKey: string, groupLabel: string) =>
+    getAssignedCompanyCatalogReports({
+      ...getCompanyCatalogLookupArgs(company),
+      tabKey: moduleKey,
+    }).map((report) => ({
+      key: report.key,
+      label: report.label,
+      group: groupLabel,
     }));
+
+  const getOperationalHubTabCategoryOptions = (
+    company: any
+  ): Array<{ key: string; label: string; group: string; source: HubTabSource; moduleKey: string }> => {
+    const companySectorCategory = String(company?.industrySectorCategory || '').trim();
+    const customTabs = getOperationalHubCustomTabs(company);
+    const customTabKeys = customTabs.map((tab) => tab.key);
+    const liveKeys = getOperationalHubDefaultModuleKeys(companySectorCategory);
+    const masterKeys = getSectorMasterTabKeys(companySectorCategory);
+    const extraKeys = liveKeys.filter((key) => !masterKeys.includes(key) && !customTabKeys.includes(key));
+    const orderedKeys = [
+      ...masterKeys,
+      ...extraKeys,
+      ...customTabs.map((tab) => tab.key).filter((key) => !liveKeys.includes(key) && !masterKeys.includes(key)),
+    ];
+    const seen = new Set<string>();
+    return orderedKeys
+      .filter((moduleKey) => {
+        if (!moduleKey || seen.has(moduleKey)) return false;
+        seen.add(moduleKey);
+        return true;
+      })
+      .map((moduleKey) => {
+        const source = getHubTabSource({
+          sectorCategory: companySectorCategory,
+          moduleKey,
+          customTabKeys,
+        });
+        const customTab = customTabs.find((tab) => tab.key === moduleKey);
+        const label =
+          customTab?.label ||
+          (source === 'master'
+            ? getSectorMasterTabLabel(companySectorCategory, moduleKey)
+            : null) ||
+          getOperationalHubModuleLabel(moduleKey, companySectorCategory);
+        return {
+          key: `tab:${moduleKey}`,
+          moduleKey,
+          label,
+          group: 'Tab Categories',
+          source,
+        };
+      });
   };
 
   const getOperationalHubReportTabOptions = (company: any): Array<{ key: string; label: string; group: string }> =>
@@ -1509,16 +1602,26 @@ export default function SiteAdminDashboard(props: any) {
         const companySectorCategory = String(company?.industrySectorCategory || '').trim();
         const overviewOptions =
           companySectorCategory === '53'
-            ? REAL_ESTATE_OVERVIEW_REPORT_OPTIONS
+            ? []
             : companySectorCategory === '62'
             ? HEALTHCARE_OVERVIEW_REPORT_OPTIONS
             : companySectorCategory === '54'
-            ? [...PAYROLL_BUREAU_OVERVIEW_REPORT_OPTIONS, ...OVERVIEW_STANDARD_REPORT_OPTIONS]
+            ? [
+                ...PAYROLL_BUREAU_OVERVIEW_REPORT_OPTIONS,
+                ...OVERVIEW_STANDARD_REPORT_OPTIONS.filter((item) => !GENERIC_OVERVIEW_WIDGET_REPORT_KEYS.has(item.key)),
+              ]
+            : sectorHidesGenericOverviewWidgets(companySectorCategory)
+            ? OVERVIEW_STANDARD_REPORT_OPTIONS.filter((item) => !GENERIC_OVERVIEW_WIDGET_REPORT_KEYS.has(item.key))
             : OVERVIEW_STANDARD_REPORT_OPTIONS;
-        return overviewOptions.map((item) => ({
-          ...item,
-          group: option.label,
-        }));
+        const assignedOverview = getAssignedCatalogReportOptions(company, moduleKey, option.label);
+        const seen = new Set(overviewOptions.map((item) => item.key));
+        return [
+          ...overviewOptions.map((item) => ({
+            ...item,
+            group: option.label,
+          })),
+          ...assignedOverview.filter((item) => !seen.has(item.key)),
+        ];
       }
       if (moduleKey === 'forecast') {
         return FORECAST_STANDARD_REPORT_OPTIONS.map((item) => ({
@@ -1528,35 +1631,58 @@ export default function SiteAdminDashboard(props: any) {
       }
       const companySectorCategory = String(company?.industrySectorCategory || '').trim();
       if (companySectorCategory === '42' && moduleKey === 'vendors') {
-        return [
+        const vendorReports = [
           { key: 'productsVendorPricing', label: 'Vendor Pricing', group: option.label },
-          { key: 'vendorsDutiesTariffs', label: 'Duties & Tariffs', group: option.label },
-          { key: 'vendorsSgpFreight', label: 'SGP Freight', group: option.label },
           { key: 'vendorsMonthlyForecast', label: 'Monthly Forecast', group: option.label },
           { key: 'vendorsForecastRollup', label: 'Forecast Rollup', group: option.label },
         ];
+        const seen = new Set(vendorReports.map((item) => item.key));
+        return [
+          ...vendorReports,
+          ...getAssignedCatalogReportOptions(company, moduleKey, option.label).filter((item) => !seen.has(item.key)),
+        ];
       }
       const defaultReports = getOperationalHubDefaultReportsForModule(moduleKey, companySectorCategory);
+      if (hasExplicitSectorModuleReports(companySectorCategory, moduleKey)) {
+        const assignedExtras = getAssignedCatalogReportOptions(company, moduleKey, option.label);
+        const seen = new Set(defaultReports.map((item) => item.key));
+        return [
+          ...defaultReports.map((item) => ({
+            ...item,
+            group: option.label,
+          })),
+          ...assignedExtras.filter((item) => !seen.has(item.key)),
+        ];
+      }
       if (defaultReports.length > 0 && ['23', '32', '53', '54', '62'].includes(companySectorCategory)) {
-        return defaultReports.map((item) => ({
+        const mapped = defaultReports.map((item) => ({
           ...item,
           group: option.label,
         }));
+        const seen = new Set(mapped.map((item) => item.key));
+        return [
+          ...mapped,
+          ...getAssignedCatalogReportOptions(company, moduleKey, option.label).filter((item) => !seen.has(item.key)),
+        ];
       }
       const dataType = mapModuleToDataType(moduleKey);
       const sourceGroup = dataType ? OPERATIONAL_HUB_SECTIONS_BY_DATATYPE_GROUP[dataType] : null;
-      if (!sourceGroup) return [];
-      return OPERATIONAL_HUB_SECTION_OPTIONS
+      const assignedExtras = getAssignedCatalogReportOptions(company, moduleKey, option.label);
+      if (!sourceGroup) return assignedExtras;
+      const mapped = OPERATIONAL_HUB_SECTION_OPTIONS
         .filter((item) => item.group === sourceGroup)
-        .filter((item) => !['productsProductMarginAnalysis', 'productsWholesaleRawData', 'productsRevenueForecast', 'productsForecastRollup', 'productsMonthlyRevenue', 'productsRevenueRollup', 'productsGoalUpdate'].includes(item.key) || companySectorCategory === '42')
+        .filter((item) => !isCompanySpecificReportForSector(item.key, companySectorCategory))
         .filter((item) => !['productsVendorPricing', 'vendorsDutiesTariffs', 'vendorsSgpFreight', 'vendorsMonthlyForecast', 'vendorsForecastRollup'].includes(item.key))
         .filter((item) => companySectorCategory !== '42' || moduleKey !== 'orders_sales' || !WHOLESALE_ORDERS_SALES_EXCLUDED_REPORT_KEYS.has(item.key))
         .filter((item) => companySectorCategory !== '42' || moduleKey !== 'customers' || !WHOLESALE_CUSTOMERS_EXCLUDED_REPORT_KEYS.has(item.key))
         .filter((item) => companySectorCategory !== '42' || moduleKey !== 'inventory' || !WHOLESALE_INVENTORY_EXCLUDED_REPORT_KEYS.has(item.key))
+        .filter((item) => companySectorCategory === '45' || !RETAIL_ONLY_PRODUCT_REPORT_KEYS.has(item.key))
         .map((item) => ({
           ...item,
           group: option.label,
         }));
+      const seen = new Set(mapped.map((item) => item.key));
+      return [...mapped, ...assignedExtras.filter((item) => !seen.has(item.key))];
     });
     const customReportOptionsBySelectedTab = selectedTabOptions.flatMap((option) => {
       const moduleKey = option.key.startsWith('tab:') ? option.key.slice(4) : option.key;
@@ -1616,11 +1742,10 @@ export default function SiteAdminDashboard(props: any) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           id: companyId,
-          operationalHubConfig: {
-            ...existingOperationalHub,
+          operationalHubConfig: mergeOperationalHubConfig(existingOperationalHub, {
             sections: mergedSections,
             updatedAt: new Date().toISOString(),
-          },
+          }),
         }),
       });
       const data = await response.json();
@@ -1649,19 +1774,19 @@ export default function SiteAdminDashboard(props: any) {
     }
   };
 
-  const getNewOperationalHubReportDraft = (company: any): { label: string; tabKey: string; scope: 'company' | 'global' } => {
+  const getNewOperationalHubReportDraft = (company: any): { label: string; tabKey: string } => {
     const existing = newOperationalHubReportByCompany[company?.id];
     if (existing) return existing;
     const firstTabKey = getOperationalHubReportTabOptions(company)[0]?.key?.replace(/^tab:/, '') || '';
-    return { label: '', tabKey: firstTabKey, scope: 'company' };
+    return { label: '', tabKey: firstTabKey };
   };
 
   const setNewOperationalHubReportDraft = (
     companyId: string,
-    patch: Partial<{ label: string; tabKey: string; scope: 'company' | 'global' }>
+    patch: Partial<{ label: string; tabKey: string }>
   ) => {
     setNewOperationalHubReportByCompany((prev) => {
-      const current = prev[companyId] || { label: '', tabKey: '', scope: 'company' as const };
+      const current = prev[companyId] || { label: '', tabKey: '' };
       return {
         ...prev,
         [companyId]: {
@@ -1677,18 +1802,18 @@ export default function SiteAdminDashboard(props: any) {
     report: OperationalHubCustomReport
   ): Record<string, any> => {
     const currentConfig = getOperationalHubSettings(company);
-    const existingReports = getOperationalHubCustomReports(company);
-    const nextReports = [...existingReports, report];
-    return {
-      ...currentConfig,
-      customReports: nextReports,
+    return mergeOperationalHubConfig(currentConfig, {
+      customReports: [...getOperationalHubCustomReports(company), report],
+      sections: {
+        [`customReport:${report.id}`]: true,
+      },
       updatedAt: new Date().toISOString(),
-    };
+    });
   };
 
   const createOperationalHubCustomReport = async (company: any) => {
     const draft = getNewOperationalHubReportDraft(company);
-    const tabKey = String(draft.tabKey || '').trim();
+    const tabKey = String(selectedHubTabByCompany[company?.id] || draft.tabKey || '').trim();
     const companySectorCategory = String(company?.industrySectorCategory || '').trim();
     const isIsolvedReport =
       isIsolvedHubReportModule(tabKey) &&
@@ -1705,54 +1830,45 @@ export default function SiteAdminDashboard(props: any) {
     const dataType =
       mapModuleToDataType(tabKey) ||
       (tabKey === 'commercial_property_types' ? 'commercial-property-types' : '') ||
-      (tabKey === 'dashboard' ? 'dashboard' : tabKey === 'forecast' ? 'forecast' : '');
-    if (!dataType) {
-      alert('Selected tab category is not mapped to a report family yet.');
-      return;
-    }
+      (tabKey === 'dashboard' ? 'dashboard' : tabKey === 'forecast' ? 'forecast' : '') ||
+      'company-custom';
     const report: OperationalHubCustomReport = {
       id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
       label,
       tabKey,
       dataType,
-      scope: draft.scope,
+      scope: 'company',
       createdAt: new Date().toISOString(),
       createdByCompanyId: String(company?.id || ''),
     };
 
     setAddingOperationalHubReportCompanyId(company.id);
     try {
-      const targetCompanies =
-        draft.scope === 'global'
-          ? (Array.isArray(companies) ? companies : [])
-          : [company];
-      for (const target of targetCompanies) {
-        const nextOperationalHubConfig = upsertOperationalHubCustomReport(target, report);
-        const response = await fetch('/api/companies', {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            id: target.id,
-            operationalHubConfig: nextOperationalHubConfig,
-          }),
-        });
-        const data = await response.json();
-        if (!response.ok) {
-          throw new Error(data?.error || `Failed to add report for ${target?.name || 'company'}`);
-        }
-        setCompanies((prev: any[]) =>
-          Array.isArray(prev)
-            ? prev.map((entry: any) =>
-                entry.id === target.id
-                  ? {
-                      ...entry,
-                      ...data?.company,
-                    }
-                  : entry
-              )
-            : prev
-        );
+      const nextOperationalHubConfig = upsertOperationalHubCustomReport(company, report);
+      const response = await fetch('/api/companies', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: company.id,
+          operationalHubConfig: nextOperationalHubConfig,
+        }),
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data?.error || `Failed to add report for ${company?.name || 'company'}`);
       }
+      setCompanies((prev: any[]) =>
+        Array.isArray(prev)
+          ? prev.map((entry: any) =>
+              entry.id === company.id
+                ? {
+                    ...entry,
+                    ...data?.company,
+                  }
+                : entry
+            )
+          : prev
+      );
 
       setNewOperationalHubReportByCompany((prev) => {
         const next = { ...prev };
@@ -1762,7 +1878,8 @@ export default function SiteAdminDashboard(props: any) {
         };
         return next;
       });
-      alert(draft.scope === 'global' ? 'Report added for all companies.' : 'Report added for this company.');
+      setOperationalHubSection(company, `customReport:${report.id}`, true);
+      alert('Report added for this company.');
     } catch (error: any) {
       alert(error?.message || 'Failed to add custom report');
     } finally {
@@ -1770,153 +1887,262 @@ export default function SiteAdminDashboard(props: any) {
     }
   };
 
+  const assignCompanyCatalogReport = async (company: any, reportKeyOverride?: string) => {
+    const lookup = getCompanyCatalogLookupArgs(company);
+    const selectedTabKey = String(
+      newCompanyCatalogTabByCompany[company?.id] || selectedHubTabByCompany[company?.id] || ''
+    ).trim();
+    const unassigned = getUnassignedCompanyCatalogReports({
+      ...lookup,
+      tabKey: selectedTabKey || undefined,
+    });
+    const reportKey = String(
+      reportKeyOverride || newCompanyCatalogReportByCompany[company?.id] || unassigned[0]?.key || ''
+    ).trim();
+    const template = getCompanyReportTemplate(reportKey);
+    if (!template) {
+      alert('Select a company report to add.');
+      return;
+    }
+    if (!unassigned.some((report) => report.key === template.key)) {
+      alert(`${template.label} is already on this company.`);
+      return;
+    }
+    setAddingCompanyCatalogReportCompanyId(company.id);
+    try {
+      const nextOperationalHubConfig = mergeOperationalHubConfig(getOperationalHubSettings(company), {
+        assignedCompanyReports: [template.key],
+        sections: {
+          [template.key]: true,
+          [`tab:${template.tabKey}`]: true,
+        },
+        updatedAt: new Date().toISOString(),
+      });
+      const response = await fetch('/api/companies', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: company.id,
+          operationalHubConfig: nextOperationalHubConfig,
+        }),
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data?.error || `Failed to add ${template.label} for ${company?.name || 'company'}`);
+      }
+      setCompanies((prev: any[]) =>
+        Array.isArray(prev)
+          ? prev.map((entry: any) =>
+              entry.id === company.id
+                ? {
+                    ...entry,
+                    ...data?.company,
+                  }
+                : entry
+            )
+          : prev
+      );
+      setNewCompanyCatalogReportByCompany((prev) => ({ ...prev, [company.id]: '' }));
+      setNewCompanyCatalogTabByCompany((prev) => ({ ...prev, [company.id]: selectedTabKey }));
+      setOperationalHubSection(company, template.key, true);
+      alert(`${template.label} added for this company.`);
+    } catch (error: any) {
+      alert(error?.message || 'Failed to add company report');
+    } finally {
+      setAddingCompanyCatalogReportCompanyId(null);
+    }
+  };
+
+  const createOperationalHubCustomTab = async (company: any) => {
+    const label = String(newOperationalHubTabByCompany[company?.id] || '').trim();
+    if (!label) {
+      alert('Enter a tab name.');
+      return;
+    }
+    const reservedKeys = [
+      ...getOperationalHubTabCategoryOptions(company).map((option) => option.moduleKey),
+      ...getOperationalHubCustomTabs(company).map((tab) => tab.key),
+    ];
+    const key = uniqueCompanyTabKey(label, reservedKeys);
+    const tab: OperationalHubCustomTab = {
+      id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      key,
+      label,
+      createdAt: new Date().toISOString(),
+      createdByCompanyId: String(company?.id || ''),
+    };
+    setAddingOperationalHubTabCompanyId(company.id);
+    try {
+      const nextOperationalHubConfig = mergeOperationalHubConfig(getOperationalHubSettings(company), {
+        customTabs: [...getOperationalHubCustomTabs(company), tab],
+        sections: {
+          [`tab:${key}`]: true,
+        },
+        updatedAt: new Date().toISOString(),
+      });
+      const response = await fetch('/api/companies', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: company.id,
+          operationalHubConfig: nextOperationalHubConfig,
+        }),
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data?.error || `Failed to add tab for ${company?.name || 'company'}`);
+      }
+      setCompanies((prev: any[]) =>
+        Array.isArray(prev)
+          ? prev.map((entry: any) =>
+              entry.id === company.id
+                ? {
+                    ...entry,
+                    ...data?.company,
+                  }
+                : entry
+            )
+          : prev
+      );
+      setNewOperationalHubTabByCompany((prev) => ({ ...prev, [company.id]: '' }));
+      setOperationalHubSection(company, `tab:${key}`, true);
+      selectOperationalHubTab({ ...company }, key);
+      alert('Tab added for this company.');
+    } catch (error: any) {
+      alert(error?.message || 'Failed to add company tab');
+    } finally {
+      setAddingOperationalHubTabCompanyId(null);
+    }
+  };
+
+  const adoptSectorCustomTab = async (company: any, tab: OperationalHubCustomTab) => {
+    if (getOperationalHubCustomTabs(company).some((existing) => existing.key === tab.key)) {
+      setOperationalHubSection(company, `tab:${tab.key}`, true);
+      selectOperationalHubTab(company, tab.key);
+      return;
+    }
+    setAdoptingSectorHubItemCompanyId(company.id);
+    try {
+      const nextOperationalHubConfig = mergeOperationalHubConfig(getOperationalHubSettings(company), {
+        customTabs: [...getOperationalHubCustomTabs(company), tab],
+        sections: {
+          [`tab:${tab.key}`]: true,
+        },
+        updatedAt: new Date().toISOString(),
+      });
+      const response = await fetch('/api/companies', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: company.id,
+          operationalHubConfig: nextOperationalHubConfig,
+        }),
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data?.error || `Failed to add ${tab.label} for ${company?.name || 'company'}`);
+      }
+      setCompanies((prev: any[]) =>
+        Array.isArray(prev)
+          ? prev.map((entry: any) =>
+              entry.id === company.id
+                ? {
+                    ...entry,
+                    ...data?.company,
+                  }
+                : entry
+            )
+          : prev
+      );
+      setOperationalHubSection(company, `tab:${tab.key}`, true);
+      selectOperationalHubTab(company, tab.key);
+      alert(`${tab.label} added for this company.`);
+    } catch (error: any) {
+      alert(error?.message || 'Failed to add sector tab');
+    } finally {
+      setAdoptingSectorHubItemCompanyId(null);
+    }
+  };
+
   const renderOperationalHubCustomizationCard = (company: any) => {
     const draft = getOperationalHubDraft(company);
-    const options = getOperationalHubSectionOptionsForCompany(company, draft);
     const newReportDraft = getNewOperationalHubReportDraft(company);
-    const tabOptions = getOperationalHubReportTabOptions(company);
-    const selectedTabGroups = getSelectedTabCategoryCardGroups(company, draft);
-    const groups = Array.from(new Set(['Tab Categories', ...selectedTabGroups, ...options.map((option) => option.group)]));
+    const tabCategoryOptions = getOperationalHubTabCategoryOptions(company);
+    const masterTabOptions = tabCategoryOptions.filter((option) => option.source === 'master');
+    const currentTabOptions = tabCategoryOptions.filter((option) => option.source === 'current');
+    const companyTabOptions = tabCategoryOptions.filter((option) => option.source === 'company');
+    const companyTabKeys = new Set(tabCategoryOptions.map((option) => option.moduleKey));
+    const availableSectorTabs = getSectorHubCatalogForCompany(company).tabs.filter((tab) => !companyTabKeys.has(tab.key));
+    const selectedModuleKey =
+      selectedHubTabByCompany[company.id] ||
+      tabCategoryOptions.find((option) => draft[option.key] !== false)?.moduleKey ||
+      tabCategoryOptions[0]?.moduleKey ||
+      availableSectorTabs[0]?.key ||
+      'dashboard';
+    const selectedTabOption = tabCategoryOptions.find((option) => option.moduleKey === selectedModuleKey);
+    const selectedSectorTab = availableSectorTabs.find((tab) => tab.key === selectedModuleKey);
+    const selectedTabLabel =
+      selectedTabOption?.label ||
+      selectedSectorTab?.label ||
+      getOperationalHubModuleLabel(selectedModuleKey, String(company?.industrySectorCategory || '').trim());
+    const selectedTabOnCompany = Boolean(selectedTabOption);
+    const selectedTabSource = selectedTabOption?.source || 'sector';
+    const reportDraft = { ...draft, [`tab:${selectedModuleKey}`]: true };
+    const tabReportOptions = selectedTabOnCompany
+      ? getOperationalHubSectionOptionsForCompany(company, reportDraft).filter(
+          (option) => option.group === selectedTabLabel && !option.key.startsWith('tab:')
+        )
+      : [];
+    const standardReportOptions = tabReportOptions.filter(
+      (option) => !option.key.startsWith('customReport:') && !getCompanyReportTemplate(option.key)
+    );
+    const assignedCatalogOptions = tabReportOptions.filter((option) => Boolean(getCompanyReportTemplate(option.key)));
+    const ownedCustomOptions = tabReportOptions.filter((option) => option.key.startsWith('customReport:'));
+    const unassignedCatalogReports = getUnassignedCompanyCatalogReports({
+      ...getCompanyCatalogLookupArgs(company),
+      tabKey: selectedModuleKey,
+    });
+    const busy =
+      savingOperationalHubConfigCompanyId === company.id ||
+      addingOperationalHubReportCompanyId === company.id ||
+      addingOperationalHubTabCompanyId === company.id ||
+      addingCompanyCatalogReportCompanyId === company.id ||
+      adoptingSectorHubItemCompanyId === company.id;
+
     return (
-      <div style={{ padding: '8px', borderRadius: '6px', border: '1px solid #cbd5e1', background: '#f8fafc', marginBottom: '10px' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', marginBottom: '8px', flexWrap: 'wrap' }}>
-          <div>
-            <div style={{ fontSize: '12px', fontWeight: '700', color: '#334155' }}>Operational Hub Customization</div>
-            <div style={{ fontSize: '11px', color: '#64748b' }}>
-              Company-level section overrides (takes precedence over sector defaults).
-            </div>
-            <div style={{ marginTop: '8px', display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
-              <input
-                type="text"
-                value={newReportDraft.label}
-                onChange={(event) => setNewOperationalHubReportDraft(company.id, { label: event.target.value })}
-                placeholder="New report name"
-                style={{ fontSize: '12px', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '6px 8px', minWidth: '180px', background: 'white' }}
-              />
-              <select
-                value={newReportDraft.tabKey}
-                onChange={(event) => setNewOperationalHubReportDraft(company.id, { tabKey: event.target.value })}
-                style={{ fontSize: '12px', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '6px 8px', background: 'white' }}
-              >
-                {tabOptions.map((option) => (
-                  <option key={`${company.id}-new-report-${option.key}`} value={option.key.replace(/^tab:/, '')}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
-              <select
-                value={newReportDraft.scope}
-                onChange={(event) => setNewOperationalHubReportDraft(company.id, { scope: event.target.value === 'global' ? 'global' : 'company' })}
-                style={{ fontSize: '12px', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '6px 8px', background: 'white' }}
-              >
-                <option value="company">Company only</option>
-                <option value="global">All companies (global)</option>
-              </select>
-              <button
-                onClick={() => createOperationalHubCustomReport(company)}
-                disabled={addingOperationalHubReportCompanyId === company.id}
-                style={{
-                  padding: '6px 10px',
-                  border: '1px solid #0f766e',
-                  borderRadius: '6px',
-                  background: '#0f766e',
-                  color: 'white',
-                  fontSize: '12px',
-                  fontWeight: 600,
-                  cursor: addingOperationalHubReportCompanyId === company.id ? 'not-allowed' : 'pointer',
-                }}
-              >
-                Add Report
-              </button>
-            </div>
-          </div>
-          <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
-            <button
-              onClick={() => resetOperationalHubConfig(company.id)}
-              disabled={savingOperationalHubConfigCompanyId === company.id}
-              style={{
-                padding: '6px 10px',
-                border: '1px solid #cbd5e1',
-                borderRadius: '6px',
-                background: 'white',
-                color: '#334155',
-                fontSize: '12px',
-                fontWeight: 600,
-                cursor: savingOperationalHubConfigCompanyId === company.id ? 'not-allowed' : 'pointer',
-              }}
-            >
-              Reset
-            </button>
-            <button
-              onClick={() => saveOperationalHubConfig(company.id, draft)}
-              disabled={savingOperationalHubConfigCompanyId === company.id}
-              style={{
-                padding: '6px 10px',
-                border: '1px solid #1d4ed8',
-                borderRadius: '6px',
-                background: '#1d4ed8',
-                color: 'white',
-                fontSize: '12px',
-                fontWeight: 600,
-                cursor: savingOperationalHubConfigCompanyId === company.id ? 'not-allowed' : 'pointer',
-              }}
-            >
-              Save
-            </button>
-          </div>
-        </div>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, minmax(200px, 1fr))', gap: '8px' }}>
-          {groups.map((group) => (
-            <div
-              key={`${company.id}-${group}`}
-              style={{
-                background: group === 'Tab Categories' ? '#eff6ff' : 'white',
-                border: group === 'Tab Categories' ? '1px solid #bfdbfe' : '1px solid #e2e8f0',
-                borderRadius: '6px',
-                padding: '8px',
-              }}
-            >
-              <div style={{ fontSize: '12px', fontWeight: 700, color: '#0f172a', marginBottom: '6px' }}>
-                {group === 'Tab Categories' ? (
-                  <div style={{ display: 'grid', gap: '4px' }}>
-                    <span>TAB CATEGORIES</span>
-                    <span style={{ fontSize: '11px', fontWeight: 700, color: '#1e3a8a', textTransform: 'uppercase' }}>
-                      SECTOR: {getSectorNameForCompany(company)}
-                    </span>
-                    <span style={{ fontSize: '11px', fontWeight: 700, color: '#1e3a8a', textTransform: 'uppercase' }}>
-                      INDUSTRY: {getIndustryNameForCompany(company)}
-                    </span>
-                  </div>
-                ) : (
-                  group
-                )}
-              </div>
-              <div style={{ display: 'grid', gap: '6px' }}>
-                {(() => {
-                  const groupOptions = options.filter((option) => option.group === group);
-                  if (groupOptions.length === 0) {
-                    return (
-                      <div style={{ fontSize: '11px', color: '#94a3b8' }}>
-                        No section-level toggles available for this tab yet.
-                      </div>
-                    );
-                  }
-                  return groupOptions.map((option) => (
-                    <label key={`${company.id}-${option.key}`} style={{ display: 'flex', gap: '6px', alignItems: 'center', fontSize: '12px', color: '#334155' }}>
-                      <input
-                        type="checkbox"
-                        checked={Boolean(draft[option.key])}
-                        onChange={(event) => setOperationalHubSection(company, option.key, event.target.checked)}
-                      />
-                      <span>{option.label}</span>
-                    </label>
-                  ));
-                })()}
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
+      <OperationalHubCustomizationCard
+        companyId={company.id}
+        sectorName={getSectorNameForCompany(company)}
+        industryName={getIndustryNameForCompany(company)}
+        draft={draft}
+        selectedModuleKey={selectedModuleKey}
+        selectedTabLabel={selectedTabLabel}
+        selectedTabSource={selectedTabSource}
+        selectedTabOnCompany={selectedTabOnCompany}
+        masterTabOptions={masterTabOptions}
+        currentTabOptions={currentTabOptions}
+        companyTabOptions={companyTabOptions}
+        availableSectorTabs={availableSectorTabs}
+        selectedSectorTab={selectedSectorTab}
+        standardReportOptions={standardReportOptions}
+        assignedCatalogOptions={assignedCatalogOptions}
+        ownedCustomOptions={ownedCustomOptions}
+        unassignedCatalogReports={unassignedCatalogReports}
+        newTabName={newOperationalHubTabByCompany[company.id] || ''}
+        newReportName={newReportDraft.label}
+        busy={busy}
+        saving={savingOperationalHubConfigCompanyId === company.id}
+        onSelectTab={(moduleKey) => selectOperationalHubTab(company, moduleKey)}
+        onToggleSection={(key, enabled) => setOperationalHubSection(company, key, enabled)}
+        onNewTabName={(value) => setNewOperationalHubTabByCompany((prev) => ({ ...prev, [company.id]: value }))}
+        onAddTab={() => createOperationalHubCustomTab(company)}
+        onAddSectorTab={(tab) => adoptSectorCustomTab(company, tab)}
+        onAddCatalogReport={(key) => assignCompanyCatalogReport(company, key)}
+        onNewReportName={(value) => setNewOperationalHubReportDraft(company.id, { label: value, tabKey: selectedModuleKey })}
+        onAddReport={() => createOperationalHubCustomReport(company)}
+        onReset={() => resetOperationalHubConfig(company.id)}
+        onSave={() => saveOperationalHubConfig(company.id, draft)}
+      />
     );
   };
 

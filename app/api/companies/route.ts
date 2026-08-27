@@ -8,6 +8,7 @@ import { DATAROOM_DEFAULT_FOLDERS } from "@/lib/dataroom/constants";
 import { privateCacheHeaders } from "@/lib/http-cache";
 import { resolveCompanyIndustrySectorCategory } from "@/lib/industry-sector-resolver";
 import { buildCompanyAddOnAllocations } from "@/lib/affiliate-add-ons";
+import { mergeOperationalHubConfig } from "@/lib/operations/operational-hub-overlay";
 
 async function hasCompanyColumn(columnName: string): Promise<boolean> {
   // Guard against generated Prisma client drift:
@@ -1618,7 +1619,7 @@ export async function PATCH(request: NextRequest) {
           ? (existingCompany.userDefinedAllocations as Record<string, any>)
           : {};
 
-      const nextOperationalHubConfig =
+      const incomingOperationalHubConfig =
         updateFields.operationalHubConfig &&
         typeof updateFields.operationalHubConfig === 'object' &&
         !Array.isArray(updateFields.operationalHubConfig)
@@ -1626,10 +1627,8 @@ export async function PATCH(request: NextRequest) {
           : null;
 
       const nextUDA = { ...currentUDA };
-      if (nextOperationalHubConfig) {
-        nextUDA.operationalHub = nextOperationalHubConfig;
-      } else {
-        delete nextUDA.operationalHub;
+      if (incomingOperationalHubConfig) {
+        nextUDA.operationalHub = mergeOperationalHubConfig(currentUDA.operationalHub, incomingOperationalHubConfig);
       }
 
       updateData.userDefinedAllocations = nextUDA;

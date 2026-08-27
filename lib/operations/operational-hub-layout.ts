@@ -70,6 +70,11 @@ const DATA_TYPE_GROUP: Record<string, string> = {
   products: 'Products',
 };
 
+export const RETAIL_ONLY_PRODUCT_REPORT_KEYS = new Set([
+  'productsRetailForecasting',
+  'productsMerchandiseProfitability',
+]);
+
 const SECTOR_23_REPORTS_BY_MODULE: Record<string, OperationalHubReportDefinition[]> = {
   construction_inventory: [
     { key: 'constructionInventoryKpis', label: 'Inventory KPI Cards', group: 'Inventory' },
@@ -121,8 +126,12 @@ const SECTOR_32_REPORTS_BY_MODULE: Record<string, OperationalHubReportDefinition
     { key: 'customersAtRiskQueue', label: 'At-Risk Accounts Queue', group: 'Customers' },
   ],
   vendors: [
-    { key: 'vendorsDutiesTariffs', label: 'Duties & Tariffs', group: 'Vendors' },
-    { key: 'vendorsSgpFreight', label: 'SGP Freight', group: 'Vendors' },
+    { key: 'vendorsCatalogPurchaseHistory', label: 'Vendor catalog & purchase history', group: 'Vendors' },
+    { key: 'vendorsItemVolumePricing6mo', label: '6-month item volume and pricing', group: 'Vendors' },
+    { key: 'vendorsPaymentHistoryByMonth', label: 'Payment history by month', group: 'Vendors' },
+    { key: 'vendorsConcentration', label: 'Vendor concentration', group: 'Vendors' },
+    { key: 'vendorsPriceChangeTracker', label: 'Price-change tracker', group: 'Vendors' },
+    { key: 'vendorsSpendByItemCategory', label: 'Spend by item category', group: 'Vendors' },
   ],
 };
 
@@ -355,6 +364,20 @@ export function getOperationalHubModuleLabel(moduleKey: string, sectorCategory?:
   return getModuleLabel(moduleKey) || moduleKey.replace(/_/g, ' ');
 }
 
+function sectorModuleReportMap(sector: string): Record<string, OperationalHubReportDefinition[]> | null {
+  if (sector === '23') return SECTOR_23_REPORTS_BY_MODULE;
+  if (sector === '32') return SECTOR_32_REPORTS_BY_MODULE;
+  if (sector === '62') return SECTOR_62_REPORTS_BY_MODULE;
+  if (sector === '53') return SECTOR_53_REPORTS_BY_MODULE;
+  if (sector === '54') return SECTOR_54_REPORTS_BY_MODULE;
+  return null;
+}
+
+export function hasExplicitSectorModuleReports(sectorCategory: string | null | undefined, moduleKey: string): boolean {
+  const map = sectorModuleReportMap(normalizeSector(sectorCategory));
+  return Boolean(map && Object.prototype.hasOwnProperty.call(map, String(moduleKey || '').trim()));
+}
+
 export function getOperationalHubDefaultReportsForModule(
   moduleKey: string,
   sectorCategory?: string | null
@@ -381,8 +404,6 @@ export function getOperationalHubDefaultReportsForModule(
   if (moduleKey === 'vendors') {
     return [
       ...(sector === '42' ? [{ key: 'productsVendorPricing', label: 'Vendor Pricing', group: 'Vendors' }] : []),
-      { key: 'vendorsDutiesTariffs', label: 'Duties & Tariffs', group: 'Vendors' },
-      { key: 'vendorsSgpFreight', label: 'SGP Freight', group: 'Vendors' },
       ...(sector === '42'
         ? [
             { key: 'vendorsMonthlyForecast', label: 'Monthly Forecast', group: 'Vendors' },
@@ -393,7 +414,9 @@ export function getOperationalHubDefaultReportsForModule(
   }
   const dataType = mapModuleToDataType(moduleKey);
   const group = dataType ? DATA_TYPE_GROUP[dataType] : null;
-  return group ? REPORTS_BY_DATA_GROUP[group] || [] : [];
+  const reports = group ? REPORTS_BY_DATA_GROUP[group] || [] : [];
+  if (sector === '45') return reports;
+  return reports.filter((report) => !RETAIL_ONLY_PRODUCT_REPORT_KEYS.has(report.key));
 }
 
 export function getOperationalHubDefaultCategories(sectorCategory?: string | null): OperationalHubCategoryDefinition[] {

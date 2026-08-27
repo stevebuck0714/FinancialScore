@@ -44,6 +44,11 @@ import { getSdeSectorBenchmarks } from '@/lib/sde-sector-benchmarks';
 import { getSectorMockProfile } from '@/lib/operations/sector-mock-data';
 import { getModuleLabel, isLoansDefaultEnabledForCompany, mapModuleToDataType, resolveModuleKey, type OpsDataType } from '@/lib/operations/module-registry';
 import { getOperationalHubDefaultModuleKeys, getOperationalHubDefaultReportsForModule } from '@/lib/operations/operational-hub-layout';
+import { parseOperationalHubCustomReports, parseOperationalHubCustomTabs } from '@/lib/operations/operational-hub-overlay';
+import {
+  isCompanySpecificReportForSector,
+  resolveAssignedCompanyReportKeys,
+} from '@/lib/operations/company-specific-reports';
 import { isOperationalModuleAllowed } from '@/lib/operations/operational-dashboard-access';
 import { buildWeeklyProductMarginModel } from '@/lib/operations/product-margin-weekly';
 import { getFieldDisplayName } from '@/lib/constants/field-display-names';
@@ -995,6 +1000,7 @@ export default function OperationsTab({
   const [selectedScopeSku, setSelectedScopeSku] = useState('');
   const [productReportView, setProductReportView] = useState<ProductReportView>('productMarginAnalysis');
   const [vendorReportView, setVendorReportView] = useState<VendorReportView>('vendorPricing');
+  const [manufacturingVendorReportKey, setManufacturingVendorReportKey] = useState('');
   const [productMarginCustomerFilter, setProductMarginCustomerFilter] = useState('all');
   const [expandedProductMarginCustomers, setExpandedProductMarginCustomers] = useState<Record<string, boolean>>({});
   const [productMarginSortKey, setProductMarginSortKey] = useState<ProductMarginSortKey>('customerName');
@@ -1142,6 +1148,19 @@ export default function OperationsTab({
     !Array.isArray(companyOperationalHubConfig.sections)
       ? (companyOperationalHubConfig.sections as Record<string, any>)
       : {};
+  const companyCustomTabs = parseOperationalHubCustomTabs(companyOperationalHubConfig);
+  const companyCustomReports = parseOperationalHubCustomReports(companyOperationalHubConfig);
+  const assignedCompanyReportKeys = Array.from(
+    resolveAssignedCompanyReportKeys({
+      companyId: selectedCompanyId,
+      companyName,
+      hubConfig: companyOperationalHubConfig,
+      sections: operationalHubSections,
+    })
+  );
+  const assignedCompanyReportKeySet = new Set(assignedCompanyReportKeys);
+  const companyCustomTabKeys = companyCustomTabs.map((tab) => tab.key);
+  const companyCustomTabLabelByKey = Object.fromEntries(companyCustomTabs.map((tab) => [tab.key, tab.label]));
   const isSectionAllowedForActiveModule = (sectionKey: string): boolean => {
     const sector = String(industrySectorCategory || '').trim();
     const moduleKey = resolveModuleKey(String(activeTab || '').trim());
@@ -1158,6 +1177,12 @@ export default function OperationsTab({
     if (
       String(industrySectorCategory || '').trim() === '42' &&
       WHOLESALE_INVENTORY_EXCLUDED_SECTION_KEYS.has(sectionKey)
+    ) {
+      return false;
+    }
+    if (
+      isCompanySpecificReportForSector(sectionKey, industrySectorCategory) &&
+      !assignedCompanyReportKeySet.has(sectionKey)
     ) {
       return false;
     }
@@ -1307,7 +1332,7 @@ export default function OperationsTab({
     .filter((moduleKey) => moduleKey && !['dashboard', 'forecast'].includes(moduleKey));
   const moduleSource: 'layout-config' | 'sector-default' = layoutModules.length > 0 ? 'layout-config' : 'sector-default';
   const resolvedModulesBase = moduleSource === 'layout-config' ? layoutModules : sectorModules;
-  const resolvedModules =
+  const resolvedModulesWithVendors =
     ['32', '42'].includes(String(industrySectorCategory || '').trim()) && !resolvedModulesBase.includes('vendors')
       ? (() => {
           const productsIdx = resolvedModulesBase.findIndex((module) => module === 'products_skus' || module === 'products');
@@ -1315,8 +1340,15 @@ export default function OperationsTab({
           return [...resolvedModulesBase.slice(0, productsIdx + 1), 'vendors', ...resolvedModulesBase.slice(productsIdx + 1)];
         })()
       : resolvedModulesBase;
+  const resolvedModules = Array.from(
+    new Set([
+      ...resolvedModulesWithVendors,
+      ...companyCustomTabKeys.map((key) => resolveModuleKey(key)).filter(Boolean),
+    ])
+  );
   const enabledDashboardModules = resolvedModules.filter((module) => isTabModuleEnabled(module));
   const isWholesaleTradeSector = String(industrySectorCategory || '').trim() === '42';
+  const isManufacturingSector = String(industrySectorCategory || '').trim() === '32';
   const isPayrollBureauSector = String(industrySectorCategory || '').trim() === '54';
   const isOverviewCashConversionEnabled = isSectionEnabled('overviewStdCashConversionAnalysis');
   const isOverviewEbitdaPerformanceEnabled = isSectionEnabled('overviewStdEbitdaPerformance');
@@ -1345,6 +1377,9 @@ export default function OperationsTab({
       ];
   const safeAvailableTabs = Array.isArray(availableTabs) ? availableTabs : [];
   const getOperationalTabLabel = (moduleKey: string): string => {
+    if (companyCustomTabLabelByKey[moduleKey]) {
+      return companyCustomTabLabelByKey[moduleKey];
+    }
     if (isWholesaleTradeSector && moduleKey === 'products_skus') {
       return 'Products';
     }
@@ -1595,6 +1630,7 @@ export default function OperationsTab({
     setDateRangeReady(false);
     setRevenueBillablesData(null);
     setUnitEconomicsData(null);
+    setCustomersSitesData(null);
     hasHydratedEbitdaEmployeeInputsRef.current = false;
     hasHydratedResidentialRateTrendsRef.current = false;
     let cancelled = false;
@@ -8247,10 +8283,11 @@ export default function OperationsTab({
     const isRevenueRollupEnabled = isWholesaleProductSector && isSectionEnabled('productsRevenueRollup');
     const isGoalUpdateEnabled = isWholesaleProductSector && isSectionEnabled('productsGoalUpdate');
     const isProductPerformanceEnabled = isSectionEnabled('productsPerformance');
-    const isDutiesTariffsEnabled = isSectionEnabled('vendorsDutiesTariffs') || isSectionEnabled('productsDutiesTariffs');
+    const isDutiesTariffsEnabled =
+      isSectionEnabled('vendorsDutiesTariffs') || isSectionEnabled('productsDutiesTariffs');
     const isSgpFreightEnabled = isSectionEnabled('vendorsSgpFreight');
-    const isRetailForecastingEnabled = isSectionEnabled('productsRetailForecasting');
-    const isMerchandiseProfitabilityEnabled = isSectionEnabled('productsMerchandiseProfitability');
+    const isRetailForecastingEnabled = isRetailProductSector && isSectionEnabled('productsRetailForecasting');
+    const isMerchandiseProfitabilityEnabled = isRetailProductSector && isSectionEnabled('productsMerchandiseProfitability');
     const hasAnyProductsReportEnabled =
       isProductPerformanceEnabled ||
       isRetailForecastingEnabled ||
@@ -11736,6 +11773,57 @@ export default function OperationsTab({
       ) : null
     );
 
+    if (isVendorsTab && isManufacturingSector) {
+      const manufacturingVendorReports = getOperationalHubDefaultReportsForModule('vendors', '32').filter((report) =>
+        isSectionEnabled(report.key)
+      );
+      const effectiveManufacturingVendorKey = manufacturingVendorReports.some((report) => report.key === manufacturingVendorReportKey)
+        ? manufacturingVendorReportKey
+        : manufacturingVendorReports[0]?.key || '';
+      const activeManufacturingVendorReport =
+        manufacturingVendorReports.find((report) => report.key === effectiveManufacturingVendorKey) || null;
+      if (manufacturingVendorReports.length === 0) {
+        return (
+          <div style={{ padding: '32px 24px', color: '#64748b', fontSize: 13 }}>
+            No vendor reports are enabled for this company.
+          </div>
+        );
+      }
+      return (
+        <div style={{ padding: '8px 24px 32px' }}>
+          <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '16px' }}>
+            {manufacturingVendorReports.map((report) => (
+              <button
+                key={report.key}
+                type="button"
+                onClick={() => setManufacturingVendorReportKey(report.key)}
+                style={{
+                  border: '1px solid #cbd5e1',
+                  borderRadius: '999px',
+                  padding: '8px 12px',
+                  background: effectiveManufacturingVendorKey === report.key ? '#e0e7ff' : '#ffffff',
+                  color: effectiveManufacturingVendorKey === report.key ? '#3730a3' : '#334155',
+                  fontWeight: 700,
+                  cursor: 'pointer',
+                  fontSize: '12px',
+                }}
+              >
+                {report.label}
+              </button>
+            ))}
+          </div>
+          <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '24px' }}>
+            <h2 style={{ fontSize: '24px', fontWeight: 700, color: '#1e293b', margin: '0 0 8px' }}>
+              {activeManufacturingVendorReport?.label}
+            </h2>
+            <p style={{ fontSize: '13px', color: '#64748b', margin: 0 }}>
+              This manufacturing vendor report is enabled for this company. Chart and table data will be wired next.
+            </p>
+          </div>
+        </div>
+      );
+    }
+
     if (isVendorsTab) {
       const vendorSwitcherButton = (view: VendorReportView, enabled: boolean, label: string) =>
         enabled ? (
@@ -11958,7 +12046,7 @@ export default function OperationsTab({
           {productViewSwitcher}
           {healthcareProceduresRegionSelector}
           <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '24px', color: '#64748b' }}>
-            No Products / SKUs sections are enabled for this company.
+            No Products sections are enabled for this company.
           </div>
         </div>
       );
@@ -23242,7 +23330,11 @@ Strategies to Improve the CCC
 
   const renderCustomersSites = () => {
     if (!customersSitesData) {
-      return <div style={{ padding: '40px', color: '#64748b', fontSize: '14px' }}>Loading Customers / Sites…</div>;
+      return (
+        <div style={{ padding: '40px', color: error ? '#b91c1c' : '#64748b', fontSize: '14px' }}>
+          {error || 'Loading Customers / Sites…'}
+        </div>
+      );
     }
 
     const summary = customersSitesData.summary || {};
@@ -27510,6 +27602,42 @@ Strategies to Improve the CCC
     if (dataType === 'construction-ar') return renderConstructionAr();
     if (dataType === 'construction-ap') return renderConstructionAp();
     if (dataType === 'hilti-inventory') return renderHiltiInventory();
+    if (companyCustomTabKeys.includes(moduleKey) || companyCustomTabKeys.includes(resolveModuleKey(moduleKey))) {
+      const reports = companyCustomReports.filter((report) => report.tabKey === moduleKey || report.tabKey === resolveModuleKey(moduleKey));
+      const enabledReports = reports.filter((report) => isSectionEnabled(`customReport:${report.id}`));
+      return (
+        <div style={{ padding: '32px 24px' }}>
+          <div style={{ fontSize: '18px', fontWeight: 700, color: '#0f172a', marginBottom: '8px' }}>
+            {getOperationalTabLabel(moduleKey)}
+          </div>
+          <div style={{ fontSize: '13px', color: '#64748b', marginBottom: '16px' }}>
+            Company-only tab. Reports listed here are configuration entries until their charts are implemented.
+          </div>
+          {enabledReports.length === 0 ? (
+            <div style={{ fontSize: '13px', color: '#94a3b8' }}>No company reports on this tab yet.</div>
+          ) : (
+            <div style={{ display: 'grid', gap: '8px' }}>
+              {enabledReports.map((report) => (
+                <div
+                  key={report.id}
+                  style={{
+                    background: 'white',
+                    border: '1px solid #e2e8f0',
+                    borderRadius: '8px',
+                    padding: '12px 14px',
+                    fontSize: '13px',
+                    color: '#334155',
+                    fontWeight: 600,
+                  }}
+                >
+                  {report.label}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      );
+    }
     return (
       <div style={{ padding: '32px', color: '#64748b' }}>
         No renderer is configured for module <strong>{moduleKey}</strong>.
@@ -28125,6 +28253,7 @@ Strategies to Improve the CCC
         activeModules={enabledDashboardModules}
         moduleTitlesByType={moduleTitlesByType}
         operationalHubSections={operationalHubSections}
+        assignedCompanyReportKeys={assignedCompanyReportKeys}
         printSectionKey={initialPrintSectionKey || null}
         baseCurrency={companyCurrency.baseCurrency}
         reportingCurrency={companyCurrency.reportingCurrency}
