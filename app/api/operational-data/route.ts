@@ -30,6 +30,8 @@ import {
 } from '@/lib/operations/bamboohr-workforce-reports';
 import { BAMBOOHR_SOURCE_CODE } from '@/lib/bamboohr';
 import { getOperationalSystemConnection } from '@/lib/operational/operational-system-connections';
+import { readCogentRateCard } from '@/lib/operational/cogent-rate-card';
+import { buildCustomersSitesFromSales, emptyCustomersSitesPayload } from '@/lib/operations/customers-sites-reports';
 import {
   buildIsolvedPayrollEmptyPayload,
   ISOLVED_OPERATIONAL_PROVIDER,
@@ -10531,9 +10533,38 @@ export async function GET(request: NextRequest) {
       }
 
       case 'customers-sites': {
-        if (!shouldUseMockData) return mockDataDisabledResponse('Customers / Sites');
-        const payload = buildCustomersSitesMock(companyId);
-        return NextResponse.json(payload);
+        if (shouldUseMockData) {
+          return NextResponse.json(buildCustomersSitesMock(companyId));
+        }
+        const requestedFrequency = frequency === 'weekly' || frequency === 'monthly' ? frequency : 'daily';
+        const salesRows = await prisma.customerSalesSnapshot.findMany({
+          where: {
+            companyId,
+            frequency: requestedFrequency,
+          },
+          select: {
+            customerName: true,
+            snapshotDate: true,
+            revenue: true,
+            cogs: true,
+            grossMargin: true,
+            invoiceCount: true,
+          },
+          orderBy: { snapshotDate: 'asc' },
+          take: 50000,
+        });
+        if (salesRows.length === 0) {
+          return NextResponse.json(emptyCustomersSitesPayload(endDate));
+        }
+        const rateCard = await readCogentRateCard(companyId).catch(() => null);
+        return NextResponse.json(
+          buildCustomersSitesFromSales({
+            salesRows,
+            rangeStart: startDate,
+            rangeEnd: endDate,
+            rateCard,
+          })
+        );
       }
 
       case 'construction-ar': {
