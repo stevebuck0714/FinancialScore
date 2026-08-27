@@ -1,6 +1,6 @@
 {
   "buildCommand": "npm run build",
-  "installCommand": "npm install --include=dev",
+  "installCommand": "npm install --include=dev --legacy-peer-deps",
   "functions": {
     "app/api/operational-data/product-forecast/import/route.ts": {
       "memory": 1024,
