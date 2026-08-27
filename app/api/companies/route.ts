@@ -1603,6 +1603,44 @@ export async function PATCH(request: NextRequest) {
       };
     }
 
+    // Financial Score settings (stored in userDefinedAllocations.financialScore)
+    const hasFinancialScoreSettingsUpdate = updateFields.financialScoreEnabledByAdmin !== undefined;
+    if (hasFinancialScoreSettingsUpdate) {
+      if (context.role !== 'SITEADMIN') {
+        return NextResponse.json(
+          { error: "Only site admins can update Corelytics Score settings" },
+          { status: 403 },
+        );
+      }
+
+      const currentUDA =
+        updateData.userDefinedAllocations &&
+        typeof updateData.userDefinedAllocations === 'object' &&
+        !Array.isArray(updateData.userDefinedAllocations)
+          ? (updateData.userDefinedAllocations as Record<string, any>)
+          : (
+              existingCompany?.userDefinedAllocations &&
+              typeof existingCompany.userDefinedAllocations === 'object' &&
+              !Array.isArray(existingCompany.userDefinedAllocations)
+                ? (existingCompany.userDefinedAllocations as Record<string, any>)
+                : {}
+            );
+      const currentFinancialScore =
+        currentUDA.financialScore &&
+        typeof currentUDA.financialScore === 'object' &&
+        !Array.isArray(currentUDA.financialScore)
+          ? (currentUDA.financialScore as Record<string, any>)
+          : {};
+
+      updateData.userDefinedAllocations = {
+        ...currentUDA,
+        financialScore: {
+          ...currentFinancialScore,
+          enabledByAdmin: Boolean(updateFields.financialScoreEnabledByAdmin),
+        },
+      };
+    }
+
     const hasOperationalHubConfigUpdate = updateFields.operationalHubConfig !== undefined;
     if (hasOperationalHubConfigUpdate) {
       if (context.role !== 'SITEADMIN') {

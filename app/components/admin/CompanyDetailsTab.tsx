@@ -46,12 +46,13 @@ interface AssessmentRecord {
   companyId: string;
 }
 
-const ACCESSIBLE_SECTIONS: { id: string; label: string }[] = [
+export const ACCESSIBLE_SECTIONS: { id: string; label: string }[] = [
   { id: "ask-corelytics", label: "Ask Corelytics" },
   { id: "business-pulse", label: "Daily Alerts" },
   { id: "operational-dashboard", label: "Operational Dashboard" },
   { id: "company-dashboard", label: "Company Dashboard" },
   { id: "financial-reports", label: "Financial Reporting" },
+  { id: "financial-score", label: "Corelytics Score" },
   { id: "standard-reports", label: "Standard Reports" },
   { id: "valuation", label: "Valuation" },
   { id: "valuation-reports", label: "Valuation Report (CIM)" },
@@ -62,7 +63,7 @@ const ACCESSIBLE_SECTIONS: { id: string; label: string }[] = [
   { id: "custom-reports", label: "Custom Reports" },
 ];
 
-const DEFAULT_ALLOWED_SECTIONS = ACCESSIBLE_SECTIONS.map((s) => s.id);
+export const DEFAULT_ALLOWED_SECTIONS = ACCESSIBLE_SECTIONS.map((s) => s.id);
 
 const DATAROOM_CAPABILITIES: Array<{
   id: "view" | "download" | "upload" | "share" | "manage";

@@ -37,6 +37,7 @@ import {
 } from '@/lib/operations/operational-hub-overlay';
 import { collectSectorHubCatalog } from '@/lib/operations/sector-hub-catalog';
 import OperationalHubCustomizationCard from '@/app/components/siteadmin/OperationalHubCustomizationCard';
+import { DEFAULT_ALLOWED_SECTIONS } from '@/app/components/admin/CompanyDetailsTab';
 import { getSectorMasterTabLabel, getSectorMasterTabKeys } from '@/lib/operations/sector-master-tabs';
 import { GENERIC_OVERVIEW_WIDGET_REPORT_KEYS, sectorHidesGenericOverviewWidgets } from '@/lib/operations/overview-print-options';
 import AccountingSystemPanel from '@/app/components/accounting-systems/AccountingSystemPanel';
@@ -573,6 +574,7 @@ export default function SiteAdminDashboard(props: any) {
   const [adoptingSectorHubItemCompanyId, setAdoptingSectorHubItemCompanyId] = React.useState<string | null>(null);
   const [savingDataRoomCompanyId, setSavingDataRoomCompanyId] = React.useState<string | null>(null);
   const [savingCustomReportsCompanyId, setSavingCustomReportsCompanyId] = React.useState<string | null>(null);
+  const [savingFinancialScoreCompanyId, setSavingFinancialScoreCompanyId] = React.useState<string | null>(null);
   const [editingDataRoomPricingByCompany, setEditingDataRoomPricingByCompany] = React.useState<
     Record<string, { monthly: number; quarterly: number; annual: number }>
   >({});
@@ -2321,6 +2323,57 @@ export default function SiteAdminDashboard(props: any) {
       alert(error?.message || 'Failed to update Custom Reports setting');
     } finally {
       setSavingCustomReportsCompanyId(null);
+    }
+  };
+
+  const getFinancialScoreEnabledByAdmin = (company: any) => {
+    const uda =
+      company?.userDefinedAllocations &&
+      typeof company.userDefinedAllocations === 'object' &&
+      !Array.isArray(company.userDefinedAllocations)
+        ? company.userDefinedAllocations
+        : {};
+    const financialScore =
+      uda?.financialScore &&
+      typeof uda.financialScore === 'object' &&
+      !Array.isArray(uda.financialScore)
+        ? uda.financialScore
+        : {};
+    return financialScore.enabledByAdmin === true;
+  };
+
+  const saveFinancialScoreEnabledByAdmin = async (companyId: string, enabled: boolean) => {
+    setSavingFinancialScoreCompanyId(companyId);
+    try {
+      const response = await fetch('/api/companies', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: companyId,
+          financialScoreEnabledByAdmin: enabled,
+        }),
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data?.error || 'Failed to update Corelytics Score setting');
+      }
+
+      setCompanies((prev: any[]) =>
+        Array.isArray(prev)
+          ? prev.map((c: any) => (c.id === companyId ? { ...c, ...(data?.company || {}) } : c))
+          : prev
+      );
+      setStandaloneBusinesses((prev: any[]) =>
+        Array.isArray(prev)
+          ? prev.map((c: any) => (c.id === companyId ? { ...c, ...(data?.company || {}) } : c))
+          : prev
+      );
+
+      alert(enabled ? 'Corelytics Score enabled for this company.' : 'Corelytics Score disabled for this company.');
+    } catch (error: any) {
+      alert(error?.message || 'Failed to update Corelytics Score setting');
+    } finally {
+      setSavingFinancialScoreCompanyId(null);
     }
   };
 
@@ -9370,7 +9423,7 @@ export default function SiteAdminDashboard(props: any) {
                                               border: '1px solid #cbd5e1',
                                             }}
                                           >
-                                            <div style={{ display: 'grid', gridTemplateColumns: 'minmax(340px, 1.8fr) repeat(4, minmax(180px, 1fr))', gap: '10px' }}>
+                                            <div style={{ display: 'grid', gridTemplateColumns: 'minmax(340px, 1.8fr) repeat(5, minmax(180px, 1fr))', gap: '10px' }}>
                                             {/* Subscription Pricing */}
                                             <div style={{ padding: '4px 10px 10px 10px', background: 'white', borderRadius: '6px', border: '1px solid #cbd5e1' }}>
                                               <h6 style={{ fontSize: '14px', fontWeight: '700', color: '#475569', marginBottom: '8px' }}>Subscription Pricing</h6>
@@ -9795,6 +9848,28 @@ export default function SiteAdminDashboard(props: any) {
                                                 }}
                                               >
                                                 {getCustomReportsEnabledByAdmin(company) ? 'Disable Custom Reports' : 'Enable Custom Reports'}
+                                              </button>
+                                            </div>
+                                            <div style={{ padding: '4px 10px 10px 10px', background: '#f0fdf4', borderRadius: '6px', border: '1px solid #86efac' }}>
+                                              <h6 style={{ fontSize: '14px', fontWeight: '700', color: '#166534', marginBottom: '8px' }}>Corelytics Score</h6>
+                                              <div style={{ fontSize: '11px', color: '#475569', marginBottom: '8px' }}>
+                                                Status: {getFinancialScoreEnabledByAdmin(company) ? 'Enabled' : 'Disabled'}
+                                              </div>
+                                              <button
+                                                onClick={() => saveFinancialScoreEnabledByAdmin(company.id, !getFinancialScoreEnabledByAdmin(company))}
+                                                disabled={savingFinancialScoreCompanyId === company.id}
+                                                style={{
+                                                  padding: '6px 12px',
+                                                  background: getFinancialScoreEnabledByAdmin(company) ? '#dc2626' : '#2563eb',
+                                                  color: 'white',
+                                                  border: 'none',
+                                                  borderRadius: '4px',
+                                                  fontSize: '12px',
+                                                  fontWeight: '700',
+                                                  cursor: savingFinancialScoreCompanyId === company.id ? 'not-allowed' : 'pointer',
+                                                }}
+                                              >
+                                                {getFinancialScoreEnabledByAdmin(company) ? 'Disable Corelytics Score' : 'Enable Corelytics Score'}
                                               </button>
                                             </div>
                                             <div style={{ padding: '4px 10px 10px 10px', background: '#f5f3ff', borderRadius: '6px', border: '1px solid #ddd6fe' }}>
@@ -12990,7 +13065,7 @@ export default function SiteAdminDashboard(props: any) {
                                     border: '1px solid #cbd5e1',
                                   }}
                                 >
-                                <div style={{ display: 'grid', gridTemplateColumns: 'minmax(340px, 1.8fr) repeat(4, minmax(180px, 1fr))', gap: '10px' }}>
+                                <div style={{ display: 'grid', gridTemplateColumns: 'minmax(340px, 1.8fr) repeat(5, minmax(180px, 1fr))', gap: '10px' }}>
                                   {/* Subscription Pricing */}
                                   <div style={{ padding: '4px 12px 12px 12px', background: '#fef3c7', borderRadius: '6px' }}>
                                     <h4 style={{ fontSize: '14px', fontWeight: '600', color: '#475569', marginBottom: '8px' }}>Subscription Pricing</h4>
@@ -13415,6 +13490,28 @@ export default function SiteAdminDashboard(props: any) {
                                       }}
                                     >
                                       {getCustomReportsEnabledByAdmin(businessCompany) ? 'Disable Custom Reports' : 'Enable Custom Reports'}
+                                    </button>
+                                  </div>
+                                  <div style={{ padding: '4px 12px 12px 12px', background: '#f0fdf4', borderRadius: '6px', border: '1px solid #86efac' }}>
+                                    <h4 style={{ fontSize: '14px', fontWeight: '600', color: '#166534', marginBottom: '8px' }}>Corelytics Score</h4>
+                                    <div style={{ fontSize: '11px', color: '#475569', marginBottom: '8px' }}>
+                                      Status: {getFinancialScoreEnabledByAdmin(businessCompany) ? 'Enabled' : 'Disabled'}
+                                    </div>
+                                    <button
+                                      onClick={() => saveFinancialScoreEnabledByAdmin(businessCompany.id, !getFinancialScoreEnabledByAdmin(businessCompany))}
+                                      disabled={savingFinancialScoreCompanyId === businessCompany.id}
+                                      style={{
+                                        padding: '6px 12px',
+                                        background: getFinancialScoreEnabledByAdmin(businessCompany) ? '#dc2626' : '#2563eb',
+                                        color: 'white',
+                                        border: 'none',
+                                        borderRadius: '4px',
+                                        fontSize: '12px',
+                                        fontWeight: '600',
+                                        cursor: savingFinancialScoreCompanyId === businessCompany.id ? 'not-allowed' : 'pointer',
+                                      }}
+                                    >
+                                      {getFinancialScoreEnabledByAdmin(businessCompany) ? 'Disable Corelytics Score' : 'Enable Corelytics Score'}
                                     </button>
                                   </div>
                                   <div style={{ padding: '4px 12px 12px 12px', background: '#f5f3ff', borderRadius: '6px', border: '1px solid #ddd6fe' }}>

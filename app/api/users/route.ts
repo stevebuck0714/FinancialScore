@@ -21,6 +21,7 @@ const DEFAULT_ALLOWED_SECTIONS = [
   'operational-dashboard',
   'company-dashboard',
   'financial-reports',
+  'financial-score',
   'standard-reports',
   'financial-statements',
   'valuation-reports',
