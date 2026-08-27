@@ -8,7 +8,7 @@ import { resolveBakersLocTarget } from '@/lib/financial/qbd-bakers-bs-pins';
 export const dynamic = 'force-dynamic';
 export const maxDuration = 120;
 
-const LOAN_ACTIVITY_CACHE_VERSION = 31;
+const LOAN_ACTIVITY_CACHE_VERSION = 33;
 const STALE_LOAN_ACTIVITY_MONTHS = 13;
 
 type LoanTermInput = {
@@ -369,6 +369,63 @@ function shouldHideInactiveLoanFromReport(instrument: any) {
   if (String(instrument?.targetField || '').toLowerCase() === 'ltd') return isStale;
   if (derivedCurrentBalance !== null && Math.abs(derivedCurrentBalance) > 0.005) return false;
   return isStale;
+}
+
+function isInterestActivityRow(row: any): boolean {
+  const accountText = `${row?.accountId || ''} ${row?.accountName || ''} ${row?.description || ''} ${row?.ref || ''}`.toLowerCase();
+  return (
+    ['39140', '76050', '76350', '83010'].includes(String(row?.accountId || '').trim()) ||
+    /interest/.test(accountText)
+  );
+}
+
+function isPrincipalOrInterestPaymentRow(row: any): boolean {
+  const amount = Number(row?.signedAmount || 0);
+  if (Math.abs(amount) <= 0.005) return false;
+  if (isInterestActivityRow(row)) return true;
+  return amount > 0.005;
+}
+
+function lastPrincipalOrInterestPaymentDate(rows: any[]): Date | null {
+  return maxValidDate(rows.filter(isPrincipalOrInterestPaymentRow).map((row) => row?.transDate));
+}
+
+async function loadLastPrincipalPaymentDates(
+  companyId: string,
+  accountIds: string[]
+): Promise<Map<string, Date>> {
+  const ids = Array.from(new Set(accountIds.map((id) => String(id || '').trim()).filter(Boolean)));
+  const dates = new Map<string, Date>();
+  if (!ids.length) return dates;
+
+  const rows = await prisma.$queryRawUnsafe<Array<{ accountId: string | null; lastPaymentDate: Date | null }>>(
+    `
+      SELECT
+        TRIM("accountId") AS "accountId",
+        MAX("transDate") AS "lastPaymentDate"
+      FROM "GLTransactionFact"
+      WHERE "companyId" = $1
+        AND TRIM("accountId") = ANY($2::text[])
+        AND COALESCE("signedAmount", 0) > 0.005
+        AND NOT (
+          COALESCE("accountName", '') ~* 'interest income|interest expense|accrued interest'
+          OR TRIM("accountId") IN ('76050', '76350', '83010', '39140')
+        )
+        AND NOT (COALESCE("accountName", '') ~* $3)
+      GROUP BY TRIM("accountId")
+    `,
+    companyId,
+    ids,
+    NON_DEBT_LOAN_ACCOUNT_PATTERN
+  );
+
+  for (const row of rows) {
+    const accountId = String(row.accountId || '').trim();
+    const parsed = row.lastPaymentDate ? new Date(row.lastPaymentDate) : null;
+    if (!accountId || !parsed || Number.isNaN(parsed.getTime())) continue;
+    dates.set(accountId, parsed);
+  }
+  return dates;
 }
 
 function isLocLoanAccount(accountId: unknown, accountName: unknown, targetField: unknown): boolean {
@@ -1142,6 +1199,10 @@ async function loadLoanActivity(companyId: string) {
     reportAsOfDate,
     priorAsOfDate
   );
+  const lastPrincipalPaymentByAccount = await loadLastPrincipalPaymentDates(
+    companyId,
+    principalRows.map((row) => row.accountId)
+  );
 
   const liveAccountName = (row: { accountId?: string | null; accountName?: string | null }) => {
     const accountId = String(row.accountId || '').trim();
@@ -1417,6 +1478,13 @@ async function loadLoanActivity(companyId: string) {
       ? derivedCurrentBalance - priorMonthBalance
       : null;
     const currentMonthInterestPaid = sumActivityForMonth(allInterestActivity, currentMonth);
+    const lastPaymentDate = maxValidDate([
+      lastPrincipalPaymentByAccount.get(accountId) || null,
+      lastPrincipalOrInterestPaymentDate(allInterestActivity),
+      lastPrincipalOrInterestPaymentDate(
+        useRawActivity ? rawInforActivity?.recentActivity || [] : detailByInstrument[String(row.instrumentKey)] || []
+      ),
+    ]);
 
     return {
       instrumentKey: String(row.instrumentKey),
@@ -1426,7 +1494,7 @@ async function loadLoanActivity(companyId: string) {
       source: useRawActivity ? 'ApiSyncLog:INFOR_M3' : 'GLTransactionFact',
       transactionCount: useRawActivity ? Number(rawInforActivity.transactionCount || 0) : Number(row.transactionCount || 0),
       firstDate: useRawActivity ? rawInforActivity.firstDate : row.firstDate,
-      lastDate: (useRawActivity ? rawInforActivity.lastDate : row.lastDate) || derivedCurrentBalanceAsOf,
+      lastDate: lastPaymentDate,
       activityTotal: principalActivityTotal,
       debits: Number(row.debits || 0),
       credits: Number(row.credits || 0),

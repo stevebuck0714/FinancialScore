@@ -767,7 +767,7 @@ export default function LoansTab({ selectedCompanyId, companyName, currentUser =
                     <th style={{ ...thStyle, textAlign: 'right' }}>Principal Change</th>
                     <th style={{ ...thStyle, textAlign: 'right' }}>Interest Paid (Month)</th>
                     <th style={{ ...thStyle, textAlign: 'right' }}>Current Balance</th>
-                    <th style={thStyle}>Last Transaction</th>
+                    <th style={thStyle}>Last Payment</th>
                     <th style={thStyle}>Maturity Date</th>
                   </tr>
                 </thead>
