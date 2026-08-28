@@ -226,23 +226,23 @@ export default function ProductGroupReports({ selectedCompanyId, enabledViews }:
   const copy: Record<GroupReportView, { title: string; body: string }> = {
     marginAnalysis: {
       title: 'Group Margin Analysis',
-      body: 'SGP vs projected economics rolled up to Customer Group from Infor CSI, saved product forecast/price tables, Duties & Tariffs, and Freight. Per-piece fields are volume-weighted. Annual dollars sum from Products. Leave Group blank for every group.',
+      body: 'SGP vs projected economics from Infor CSI, saved product forecast/price tables, Duties & Tariffs, and Freight. Each group total is followed by every SKU in that group. Per-piece fields on the total are volume-weighted.',
     },
     monthlyForecast: {
       title: 'Monthly Forecast',
-      body: 'Monthly forecast units by Customer Group. Forecast - ADJ uses shipped qty for closed months. Leave Group blank for every group.',
+      body: 'Monthly forecast units by Customer Group, with every SKU listed under the group total. Forecast - ADJ uses shipped qty for closed months.',
     },
     forecastRollup: {
       title: 'Forecast Rollup',
-      body: 'Quarterly and annual unit rollup of Monthly Forecast by Customer Group.',
+      body: 'Quarterly and annual unit rollup of Monthly Forecast. Each group total is followed by every SKU in that group.',
     },
     monthlyRevenue: {
       title: 'Monthly Revenue',
-      body: 'Monthly forecasted $ vs booked $ by Customer Group. Forecasted is group forecast units × Jan-1 contract price.',
+      body: 'Monthly forecasted $ vs booked $ by Customer Group, with every SKU listed under the group total. Forecasted is forecast units × Jan-1 contract price.',
     },
     revenueRollup: {
       title: 'Revenue Rollup',
-      body: 'Quarterly and annual revenue $ by Customer Group, using the same Forecasted and Forecast - ADJ dollars as Monthly Revenue.',
+      body: 'Quarterly and annual revenue $ by Customer Group, with every SKU listed under the group total.',
     },
   };
 
@@ -333,21 +333,45 @@ export default function ProductGroupReports({ selectedCompanyId, enabledViews }:
       ) : null}
 
       {!loading && rows.length && view === 'marginAnalysis' ? (
-        <MarginTables rows={rows} year={year} th={th} td={td} sticky={sticky} />
+        <MarginTables rows={flattenGroupRows(rows)} year={year} th={th} td={td} sticky={sticky} />
       ) : null}
       {!loading && rows.length && view === 'monthlyForecast' ? (
-        <MonthlyForecastTable rows={rows} month={month} th={th} td={td} sticky={sticky} />
+        <MonthlyForecastTable rows={flattenGroupRows(rows)} month={month} th={th} td={td} sticky={sticky} />
       ) : null}
       {!loading && rows.length && view === 'forecastRollup' ? (
-        <ForecastRollupTable rows={rows} year={year} th={th} td={td} sticky={sticky} quarterHeader={quarterHeader} quarterMetric={quarterMetric} quarterCell={quarterCell} />
+        <ForecastRollupTable rows={flattenGroupRows(rows)} year={year} th={th} td={td} sticky={sticky} quarterHeader={quarterHeader} quarterMetric={quarterMetric} quarterCell={quarterCell} />
       ) : null}
       {!loading && rows.length && view === 'monthlyRevenue' ? (
-        <MonthlyRevenueTable rows={rows} month={month} shippingDays={shippingDays} year={year} dataThru={dataThru} th={th} td={td} sticky={sticky} />
+        <MonthlyRevenueTable rows={flattenGroupRows(rows)} month={month} shippingDays={shippingDays} year={year} dataThru={dataThru} th={th} td={td} sticky={sticky} />
       ) : null}
       {!loading && rows.length && view === 'revenueRollup' ? (
-        <RevenueRollupTable rows={rows} year={year} shippingDays={shippingDays} dataThru={dataThru} th={th} td={td} sticky={sticky} quarterHeader={quarterHeader} quarterMetric={quarterMetric} quarterCell={quarterCell} />
+        <RevenueRollupTable groups={rows} rows={flattenGroupRows(rows)} year={year} shippingDays={shippingDays} dataThru={dataThru} th={th} td={td} sticky={sticky} quarterHeader={quarterHeader} quarterMetric={quarterMetric} quarterCell={quarterCell} />
       ) : null}
     </div>
+  );
+}
+
+function flattenGroupRows(groups: ProductGroupRow[]): ProductGroupRow[] {
+  return groups.flatMap((group) => [group, ...(group.lines || [])]);
+}
+
+function IdentityHeaders({
+  th,
+  extra,
+  rowSpan,
+}: {
+  th: React.CSSProperties;
+  extra?: React.CSSProperties;
+  rowSpan?: number;
+}) {
+  const style = { ...th, textAlign: 'left' as const, ...extra };
+  return (
+    <>
+      <th style={style} rowSpan={rowSpan}>Group</th>
+      <th style={style} rowSpan={rowSpan}>Item</th>
+      <th style={style} rowSpan={rowSpan}>Customer PN</th>
+      <th style={style} rowSpan={rowSpan}>SKUs</th>
+    </>
   );
 }
 
@@ -360,10 +384,22 @@ function IdentityCells({
   sticky: React.CSSProperties;
   td: React.CSSProperties;
 }) {
+  const isSku = row.kind === 'sku';
+  const cell: React.CSSProperties = {
+    ...td,
+    textAlign: 'left',
+    fontWeight: isSku ? 500 : 800,
+    color: isSku ? '#334155' : '#0f172a',
+    background: isSku ? '#f8fafc' : sticky.background || '#ffffff',
+  };
   return (
     <>
-      <td style={{ ...td, ...sticky }}>{row.customerGroup}</td>
-      <td style={{ ...td, textAlign: 'left' }}>{row.skuCount.toLocaleString()}</td>
+      <td style={{ ...cell, ...sticky, background: cell.background, fontWeight: isSku ? 500 : 800 }}>
+        {isSku ? '' : row.customerGroup}
+      </td>
+      <td style={{ ...cell, paddingLeft: isSku ? 20 : 8 }}>{isSku ? row.itemSku || '—' : 'Total'}</td>
+      <td style={cell}>{isSku ? row.customerPartNumber || '—' : ''}</td>
+      <td style={cell}>{isSku ? '' : row.skuCount.toLocaleString()}</td>
     </>
   );
 }
@@ -389,8 +425,7 @@ function MarginTables({
         <table style={{ borderCollapse: 'separate', borderSpacing: 0, fontSize: 12 }}>
           <thead>
             <tr>
-              <th style={{ ...th, textAlign: 'left' }}>Group</th>
-              <th style={{ ...th, textAlign: 'left' }}>SKUs</th>
+              <IdentityHeaders th={th} />
               <th style={th}>SGP Price</th>
               <th style={th}>SGP Material</th>
               <th style={th}>SGP Tariff/pc</th>
@@ -413,7 +448,7 @@ function MarginTables({
           </thead>
           <tbody>
             {rows.map((row) => (
-              <tr key={row.key}>
+              <tr key={row.key} style={{ background: row.kind === 'sku' ? '#f8fafc' : undefined }}>
                 <IdentityCells row={row} sticky={sticky} td={td} />
                 <td style={td}>{fmtUnit(row.sgpPrice)}</td>
                 <td style={td}>{fmtUnit(row.sgpMaterial)}</td>
@@ -442,8 +477,7 @@ function MarginTables({
         <table style={{ borderCollapse: 'separate', borderSpacing: 0, fontSize: 12 }}>
           <thead>
             <tr>
-              <th style={{ ...th, textAlign: 'left', background: ANNUAL_COL_HEADER_BG }} rowSpan={2}>Group</th>
-              <th style={{ ...th, textAlign: 'left', background: ANNUAL_COL_HEADER_BG }} rowSpan={2}>SKUs</th>
+              <IdentityHeaders th={th} extra={{ background: ANNUAL_COL_HEADER_BG }} rowSpan={2} />
               <th colSpan={6} style={{ ...th, textAlign: 'center', background: ANNUAL_COL_HEADER_BG, color: '#92400e', borderLeft: `2px solid ${ANNUAL_COL_BORDER}` }}>
                 SGP {year}
               </th>
@@ -465,7 +499,7 @@ function MarginTables({
               const sgpCost = sgpCos(row);
               const projCost = projCos(row);
               return (
-                <tr key={row.key}>
+                <tr key={row.key} style={{ background: row.kind === 'sku' ? '#f8fafc' : undefined }}>
                   <IdentityCells row={row} sticky={{ ...sticky, background: ANNUAL_COL_CELL_BG }} td={{ ...td, background: ANNUAL_COL_CELL_BG }} />
                   <td style={{ ...td, background: ANNUAL_COL_CELL_BG }}>{fmtQty(row.sgpUsage)}</td>
                   <td style={{ ...td, background: ANNUAL_COL_CELL_BG }}>{fmtMoney(row.sgpRevenue)}</td>
@@ -507,8 +541,7 @@ function MonthlyForecastTable({
       <table style={{ borderCollapse: 'separate', borderSpacing: 0, fontSize: 12 }}>
         <thead>
           <tr>
-            <th style={{ ...th, textAlign: 'left' }}>Group</th>
-            <th style={{ ...th, textAlign: 'left' }}>SKUs</th>
+            <IdentityHeaders th={th} />
             <th style={th}>Planned</th>
             <th style={th}>MTO</th>
             <th style={th}>Forecasted</th>
@@ -524,7 +557,7 @@ function MonthlyForecastTable({
             const adjusted = monthQty(row.adjustedQty, month);
             const actual = monthQty(row.actualQty, month);
             return (
-              <tr key={row.key}>
+              <tr key={row.key} style={{ background: row.kind === 'sku' ? '#f8fafc' : undefined }}>
                 <IdentityCells row={row} sticky={sticky} td={td} />
                 <td style={td}>{row.plannedCount}</td>
                 <td style={td}>{row.mtoCount}</td>
@@ -566,8 +599,7 @@ function ForecastRollupTable({
       <table style={{ borderCollapse: 'separate', borderSpacing: 0, fontSize: 12 }}>
         <thead>
           <tr>
-            <th style={{ ...th, textAlign: 'left' }} rowSpan={2}>Group</th>
-            <th style={{ ...th, textAlign: 'left' }} rowSpan={2}>SKUs</th>
+            <IdentityHeaders th={th} rowSpan={2} />
             {FORECAST_QUARTERS.map((quarter) => (
               <th key={quarter} colSpan={4} style={quarterHeader(quarter)}>{quarter}Q</th>
             ))}
@@ -593,7 +625,7 @@ function ForecastRollupTable({
         </thead>
         <tbody>
           {rows.map((row) => (
-            <tr key={row.key}>
+            <tr key={row.key} style={{ background: row.kind === 'sku' ? '#f8fafc' : undefined }}>
               <IdentityCells row={row} sticky={sticky} td={td} />
               {FORECAST_QUARTERS.map((quarter) => {
                 const q = row.quarters[quarter];
@@ -643,8 +675,7 @@ function MonthlyRevenueTable({
       <table style={{ borderCollapse: 'separate', borderSpacing: 0, fontSize: 12 }}>
         <thead>
           <tr>
-            <th style={{ ...th, textAlign: 'left' }}>Group</th>
-            <th style={{ ...th, textAlign: 'left' }}>SKUs</th>
+            <IdentityHeaders th={th} />
             <th style={th}>Forecasted $</th>
             <th style={th}>Forecast - ADJ $</th>
             <th style={th}>Actual $</th>
@@ -660,7 +691,7 @@ function MonthlyRevenueTable({
             const adjusted = monthQty(row.estimatedAdjusted, month);
             const actual = monthQty(row.actualRevenue, month);
             return (
-              <tr key={row.key}>
+              <tr key={row.key} style={{ background: row.kind === 'sku' ? '#f8fafc' : undefined }}>
                 <IdentityCells row={row} sticky={sticky} td={td} />
                 <td style={td}>{fmtMoney(estimated)}</td>
                 <td style={td}>{fmtMoney(adjusted)}</td>
@@ -679,6 +710,7 @@ function MonthlyRevenueTable({
 }
 
 function RevenueRollupTable({
+  groups,
   rows,
   year,
   shippingDays,
@@ -690,6 +722,7 @@ function RevenueRollupTable({
   quarterMetric,
   quarterCell,
 }: {
+  groups: ProductGroupRow[];
   rows: ProductGroupRow[];
   year: number;
   shippingDays: ProductGroupDataset['shippingDays'];
@@ -701,9 +734,9 @@ function RevenueRollupTable({
   quarterMetric: (quarter: ForecastQuarter, first: boolean) => React.CSSProperties;
   quarterCell: (quarter: ForecastQuarter, first: boolean) => React.CSSProperties;
 }) {
-  const annualEstimated = rows.reduce((sum, row) => sum + row.projectedRevenue, 0);
-  const annualAdjusted = rows.reduce((sum, row) => sum + row.projectedRevenueAdj, 0);
-  const annualYtd = rows.reduce((sum, row) => sum + row.ytdRevenue, 0);
+  const annualEstimated = groups.reduce((sum, row) => sum + row.projectedRevenue, 0);
+  const annualAdjusted = groups.reduce((sum, row) => sum + row.projectedRevenueAdj, 0);
+  const annualYtd = groups.reduce((sum, row) => sum + row.ytdRevenue, 0);
   return (
     <div>
       <div style={{ border: '1px solid #e2e8f0', borderRadius: 10, background: '#ffffff', padding: '12px 14px', marginBottom: 12 }}>
@@ -720,8 +753,7 @@ function RevenueRollupTable({
         <table style={{ borderCollapse: 'separate', borderSpacing: 0, fontSize: 12 }}>
           <thead>
             <tr>
-              <th style={{ ...th, textAlign: 'left' }} rowSpan={2}>Group</th>
-              <th style={{ ...th, textAlign: 'left' }} rowSpan={2}>SKUs</th>
+              <IdentityHeaders th={th} rowSpan={2} />
               {FORECAST_QUARTERS.map((quarter) => (
                 <th key={quarter} colSpan={5} style={quarterHeader(quarter)}>{quarter}Q</th>
               ))}
@@ -748,7 +780,7 @@ function RevenueRollupTable({
           </thead>
           <tbody>
             {rows.map((row) => (
-              <tr key={row.key}>
+              <tr key={row.key} style={{ background: row.kind === 'sku' ? '#f8fafc' : undefined }}>
                 <IdentityCells row={row} sticky={sticky} td={td} />
                 {FORECAST_QUARTERS.map((quarter) => {
                   const q = row.quarters[quarter];

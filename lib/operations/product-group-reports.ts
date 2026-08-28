@@ -41,6 +41,8 @@ export type {
 
 type SerializedRevenueLine = {
   customerGroup?: string | null;
+  customerName?: string | null;
+  customerPartNumber?: string | null;
   itemSku?: string | null;
   productionType?: string | null;
   annualBaseQty?: number | null;
@@ -145,6 +147,7 @@ function emptyAccumulator(group: string) {
     estimated: emptyMonthQtyMap(),
     estimatedAdjusted: emptyMonthQtyMap(),
     actualRevenue: emptyMonthQtyMap(),
+    lines: [] as ProductGroupRow[],
     quarters: {
       1: emptyQuarter(),
       2: emptyQuarter(),
@@ -152,6 +155,21 @@ function emptyAccumulator(group: string) {
       4: emptyQuarter(),
     } as Record<ForecastQuarter, ReturnType<typeof emptyQuarter>>,
   };
+}
+
+function cloneMap(map: MonthQtyMap): MonthQtyMap {
+  const next = emptyMonthQtyMap();
+  addMaps(next, map);
+  return next;
+}
+
+function cloneQuarters(quarters: Record<ForecastQuarter, ReturnType<typeof emptyQuarter>>) {
+  return {
+    1: { ...quarters[1] },
+    2: { ...quarters[2] },
+    3: { ...quarters[3] },
+    4: { ...quarters[4] },
+  } as Record<ForecastQuarter, ReturnType<typeof emptyQuarter>>;
 }
 
 function indexBySku<T extends { itemSku: string }>(rows: T[]): Map<string, T> {
@@ -285,13 +303,110 @@ export async function loadProductGroupDataset(params: {
       );
       bucket.quarters[quarter].ytd += quarterActualRevenue(actualRevenue, quarter);
     }
+
+    const skuAdjusted = emptyMonthQtyMap();
+    const skuEstimated = emptyMonthQtyMap();
+    const skuEstimatedAdjusted = emptyMonthQtyMap();
+    const skuQuarters = {
+      1: emptyQuarter(),
+      2: emptyQuarter(),
+      3: emptyQuarter(),
+      4: emptyQuarter(),
+    } as Record<ForecastQuarter, ReturnType<typeof emptyQuarter>>;
+    for (const month of FORECAST_MONTHS) {
+      skuAdjusted[String(month)] = adjustedMonthQty(forecastQty, actualQty, month, dataThru, adjustedQty);
+      skuEstimated[String(month)] = estimatedMonthDollars(forecastQty, raw.contractPrice, month);
+      skuEstimatedAdjusted[String(month)] = adjustedEstimatedMonthDollars(
+        forecastQty,
+        actualQty,
+        month,
+        dataThru,
+        raw.contractPrice,
+        adjustedQty
+      );
+    }
+    for (const quarter of FORECAST_QUARTERS) {
+      skuQuarters[quarter].forecastQty = quarterForecastQty(forecastQty, quarter);
+      skuQuarters[quarter].adjustedQty = quarterAdjustedQty(forecastQty, actualQty, dataThru, quarter, adjustedQty);
+      skuQuarters[quarter].ytdQty = quarterActualQty(actualQty, quarter);
+      skuQuarters[quarter].estimated = quarterEstimatedDollars(forecastQty, raw.contractPrice, quarter);
+      skuQuarters[quarter].adjusted = quarterAdjustedEstimatedDollars(
+        forecastQty,
+        actualQty,
+        dataThru,
+        raw.contractPrice,
+        quarter,
+        adjustedQty
+      );
+      skuQuarters[quarter].ytd = quarterActualRevenue(actualRevenue, quarter);
+    }
+    const itemSku = String(raw.itemSku || '').trim();
+    const customerPartNumber = String(raw.customerPartNumber || '').trim();
+    bucket.lines.push({
+      key: `${group}||${itemSku}||${customerPartNumber}||${bucket.lines.length}`,
+      kind: 'sku',
+      customerGroup: group,
+      itemSku,
+      customerPartNumber,
+      customerName: String(raw.customerName || '').trim(),
+      productionType: production,
+      skuCount: 1,
+      lines: [],
+      plannedCount: production === 'PLANNED' ? 1 : 0,
+      mtoCount: production === 'MTO' ? 1 : 0,
+      sgpUsage,
+      sgpRevenue: Number(raw.sgpEstimated) || 0,
+      projectedUsage: monthQtyTotal(forecastQty),
+      projectedUsageAdj: annualAdjustedQty(forecastQty, actualQty, dataThru, adjustedQty),
+      projectedRevenue: Number(raw.annualEstimated) || 0,
+      projectedRevenueAdj: Number(raw.annualAdjusted) || 0,
+      ytdRevenue: Number(raw.annualYtd) || annualActualRevenue(actualRevenue),
+      ytdQty: monthQtyTotal(actualQty),
+      sgpPrice,
+      contractPrice: firstFinite(raw.contractPrice),
+      sgpMaterial,
+      sgpTariff: tariff,
+      sgpDuty: dutyPerPiece,
+      sgpFreight,
+      sgpCostOfSales,
+      sgpOpex: null,
+      sgpFullyLoaded: sgpCostOfSales,
+      sgpNetProfit: sgpPrice != null && sgpCostOfSales != null ? sgpPrice - sgpCostOfSales : null,
+      projectedPrice,
+      projectedMaterial,
+      projectedTariff: tariff,
+      projectedDuty: dutyPerPiece,
+      projectedFreight,
+      projectedCostOfSales,
+      projectedOpex: null,
+      projectedFullyLoaded: projectedCostOfSales,
+      projectedNetProfit: projectedPrice != null && projectedCostOfSales != null ? projectedPrice - projectedCostOfSales : null,
+      proposedPrice: null,
+      proposedNetProfit: null,
+      forecastQty: cloneMap(forecastQty),
+      actualQty: cloneMap(actualQty),
+      adjustedQty: skuAdjusted,
+      estimated: skuEstimated,
+      estimatedAdjusted: skuEstimatedAdjusted,
+      actualRevenue: cloneMap(actualRevenue),
+      quarters: skuQuarters,
+    });
   }
 
   const rows = Array.from(buckets.values())
     .map((bucket): ProductGroupRow => ({
       key: bucket.customerGroup,
+      kind: 'group',
       customerGroup: bucket.customerGroup,
+      itemSku: '',
+      customerPartNumber: '',
+      customerName: '',
+      productionType: '',
       skuCount: bucket.skuCount,
+      lines: bucket.lines.slice().sort((a, b) =>
+        a.itemSku.localeCompare(b.itemSku, undefined, { sensitivity: 'base' })
+        || a.customerPartNumber.localeCompare(b.customerPartNumber, undefined, { sensitivity: 'base' })
+      ),
       plannedCount: bucket.plannedCount,
       mtoCount: bucket.mtoCount,
       sgpUsage: bucket.sgpUsage,
@@ -329,7 +444,7 @@ export async function loadProductGroupDataset(params: {
       estimated: bucket.estimated,
       estimatedAdjusted: bucket.estimatedAdjusted,
       actualRevenue: bucket.actualRevenue,
-      quarters: bucket.quarters,
+      quarters: cloneQuarters(bucket.quarters),
     }))
     .sort((a, b) => a.customerGroup.localeCompare(b.customerGroup, undefined, { sensitivity: 'base' }));
 

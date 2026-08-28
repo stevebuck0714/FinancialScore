@@ -15,8 +15,14 @@ export type ProductGroupMonthDollars = {
 
 export type ProductGroupRow = {
   key: string;
+  kind: 'group' | 'sku';
   customerGroup: string;
+  itemSku: string;
+  customerPartNumber: string;
+  customerName: string;
+  productionType: string;
   skuCount: number;
+  lines: ProductGroupRow[];
   plannedCount: number;
   mtoCount: number;
   sgpUsage: number;
