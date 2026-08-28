@@ -871,6 +871,8 @@ export default function OperationsTab({
   const [selectedOperationalClient, setSelectedOperationalClient] = useState<string>('__ALL__');
   const [expandedUnitBillRateLevels, setExpandedUnitBillRateLevels] = useState<Record<string, boolean>>({});
   const [expandedUnitLocations, setExpandedUnitLocations] = useState<Record<string, boolean>>({});
+  const [lossRateHistoryExpanded, setLossRateHistoryExpanded] = useState(false);
+  const [oneYearRetentionHistoryExpanded, setOneYearRetentionHistoryExpanded] = useState(false);
   // Construction AR (M5b) — view + filter state
   const [constructionArData, setConstructionArData] = useState<any>(null);
   const [caArView, setCaArView] = useState<'customer' | 'project' | 'invoice'>('customer');
@@ -1953,10 +1955,6 @@ export default function OperationsTab({
       if (!response.ok) throw new Error('Failed to load operational data');
       const data = await response.json();
       setSummary(data.summary);
-      const latestImportDate = String(data?.summary?.latestImportDate || '').slice(0, 10);
-      if (/^\d{4}-\d{2}-\d{2}$/.test(latestImportDate) && latestImportDate <= maxSelectableEndDate) {
-        setLatestOperationalEndDate(latestImportDate);
-      }
     } catch (err: any) {
       console.warn('Failed to load operational summary:', err?.message || err);
     }
@@ -22137,49 +22135,82 @@ Strategies to Improve the CCC
       const workforceMetricAvailability = workforceMetrics.availability || {};
       const employeeLifecycle: any[] = Array.isArray(workforceMetrics.employeeLifecycle) ? workforceMetrics.employeeLifecycle : [];
       const workforceDateMs = (value: any) => {
-        const match = String(value || '').match(/^(\d{4})-(\d{2})-(\d{2})/);
+        const date = String(value || '').trim();
+        if (!date || /^0{4}-0{2}-0{2}$/.test(date)) return Number.NaN;
+        const match = date.match(/^(\d{4})-(\d{2})-(\d{2})/);
         return match ? Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3])) : Number.NaN;
       };
       const workforceMetricsAsOfMs = workforceDateMs(endDate) || workforceDateMs(laborSchedulingData?.meta?.generatedAt);
-      const calculateLossRate = (days: number) => {
-        if (!Number.isFinite(workforceMetricsAsOfMs)) return null;
-        const startMs = workforceMetricsAsOfMs - days * 86400000;
+      const calculateLossRate = (days: number, asOfMs = workforceMetricsAsOfMs) => {
+        if (!Number.isFinite(asOfMs)) return null;
+        const startMs = asOfMs - days * 86400000;
+        const headcountAt = (dateMs: number) =>
+          employeeLifecycle.filter((row) => {
+            const hireMs = workforceDateMs(row.hireDate);
+            const terminationMs = workforceDateMs(row.terminationDate);
+            return Number.isFinite(hireMs) && hireMs <= dateMs &&
+              (!Number.isFinite(terminationMs) || terminationMs > dateMs);
+          }).length;
         const terminated = employeeLifecycle.filter((row) => {
           const terminationMs = workforceDateMs(row.terminationDate);
-          return Number.isFinite(terminationMs) && terminationMs > startMs && terminationMs <= workforceMetricsAsOfMs &&
+          return Number.isFinite(terminationMs) && terminationMs > startMs && terminationMs <= asOfMs &&
             String(row.terminationReason || '').trim().toLowerCase() !== 'hired by client';
         }).length;
-        const activeAtEnd = employeeLifecycle.filter((row) => !Number.isFinite(workforceDateMs(row.terminationDate))).length;
-        const activeAtStart = employeeLifecycle.filter((row) => {
+        const activeAtStart = headcountAt(startMs);
+        const activeAtEnd = headcountAt(asOfMs);
+        const averageHeadcount = (activeAtStart + activeAtEnd) / 2;
+        return averageHeadcount
+          ? { ratePct: (terminated / averageHeadcount) * 100, terminated, averageHeadcount }
+          : null;
+      };
+      const calculateOneYearRetention = (asOfMs = workforceMetricsAsOfMs) => {
+        if (!Number.isFinite(asOfMs)) return null;
+        const oneYearAgoMs = asOfMs - 365 * 86400000;
+        const activeOverOneYear = employeeLifecycle.filter((row) => {
           const hireMs = workforceDateMs(row.hireDate);
           const terminationMs = workforceDateMs(row.terminationDate);
-          return Number.isFinite(hireMs) && hireMs <= startMs && (!Number.isFinite(terminationMs) || terminationMs > startMs);
+          return Number.isFinite(hireMs) && hireMs <= oneYearAgoMs &&
+            (!Number.isFinite(terminationMs) || terminationMs > asOfMs);
         }).length;
-        const averageHeadcount = (activeAtStart + activeAtEnd) / 2;
-        return averageHeadcount ? (terminated / averageHeadcount) * 100 : null;
-      };
-      const calculateOneYearRetention = () => {
-        if (!Number.isFinite(workforceMetricsAsOfMs)) return null;
-        const oneYearAgoMs = workforceMetricsAsOfMs - 365 * 86400000;
-        const activeOverOneYear = employeeLifecycle.filter((row) => !Number.isFinite(workforceDateMs(row.terminationDate)) && workforceDateMs(row.hireDate) <= oneYearAgoMs).length;
         const terminatedLastYear = employeeLifecycle.filter((row) => {
           const terminationMs = workforceDateMs(row.terminationDate);
-          return Number.isFinite(terminationMs) && terminationMs > oneYearAgoMs && terminationMs <= workforceMetricsAsOfMs;
+          return Number.isFinite(terminationMs) && terminationMs > oneYearAgoMs && terminationMs <= asOfMs;
         });
         const earlyTerminations = terminatedLastYear.filter((row) => workforceDateMs(row.terminationDate) - workforceDateMs(row.hireDate) < 365 * 86400000 && String(row.terminationReason || '').trim().toLowerCase() !== 'hired by client').length;
         const denominator = activeOverOneYear + terminatedLastYear.length;
-        return denominator ? { ratePct: ((denominator - earlyTerminations) / denominator) * 100, denominator } : null;
+        const numerator = denominator - earlyTerminations;
+        return denominator ? { ratePct: (numerator / denominator) * 100, denominator, numerator, earlyTerminations } : null;
       };
       const lossRateForSelectedDate = calculateLossRate(90);
       const lossRateT12ForSelectedDate = calculateLossRate(365);
       const oneYearRetentionForSelectedDate = calculateOneYearRetention();
+      const monthlyWorkforceAsOfDates = Number.isFinite(workforceMetricsAsOfMs)
+        ? Array.from({ length: 12 }, (_, index) => {
+            const selected = new Date(workforceMetricsAsOfMs);
+            const targetMonth = selected.getUTCMonth() - (11 - index);
+            const firstOfTargetMonth = new Date(Date.UTC(selected.getUTCFullYear(), targetMonth, 1));
+            const daysInTargetMonth = new Date(Date.UTC(firstOfTargetMonth.getUTCFullYear(), firstOfTargetMonth.getUTCMonth() + 1, 0)).getUTCDate();
+            return Date.UTC(firstOfTargetMonth.getUTCFullYear(), firstOfTargetMonth.getUTCMonth(), Math.min(selected.getUTCDate(), daysInTargetMonth));
+          })
+        : [];
+      const formatWorkforceAsOfDate = (dateMs: number) =>
+        new Date(dateMs).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' });
+      const monthlyLossRateRows = monthlyWorkforceAsOfDates.map((asOfMs) => ({
+        asOfMs,
+        ...calculateLossRate(90, asOfMs),
+        trailing12Month: calculateLossRate(365, asOfMs),
+      }));
+      const monthlyOneYearRetentionRows = monthlyWorkforceAsOfDates.map((asOfMs) => ({
+        asOfMs,
+        ...calculateOneYearRetention(asOfMs),
+      }));
+      const visibleMonthlyLossRateRows = lossRateHistoryExpanded
+        ? [...monthlyLossRateRows].reverse()
+        : monthlyLossRateRows.slice(-1);
+      const visibleMonthlyOneYearRetentionRows = oneYearRetentionHistoryExpanded
+        ? [...monthlyOneYearRetentionRows].reverse()
+        : monthlyOneYearRetentionRows.slice(-1);
       const workforceMetricReports = [
-        {
-          key: 'lsBenefitsParticipation',
-          title: 'Benefits Participation',
-          detail: 'Medical, HSA, and 401(k) participation and employer-match rates.',
-          readiness: 'Waiting for BambooHR permission to read benefit enrollment and contribution values.',
-        },
         {
           key: 'lsLossRate',
           title: 'Employee Loss Rate',
@@ -22191,6 +22222,12 @@ Strategies to Improve the CCC
           title: 'One-Year Retention Rate',
           detail: 'Active employees with more than one year of tenure, adjusted for recent terminations.',
           readiness: 'Waiting for complete terminated-employee history to calculate the specified denominator.',
+        },
+        {
+          key: 'lsBenefitsParticipation',
+          title: 'Benefits Participation',
+          detail: 'Medical, HSA, and 401(k) participation and employer-match rates.',
+          readiness: 'Waiting for BambooHR permission to read benefit enrollment and contribution values.',
         },
         {
           key: 'lsEmployeeEnps',
@@ -22246,14 +22283,90 @@ Strategies to Improve the CCC
                           </div>
                         ) : null}
                       </>
-                    ) : report.key === 'lsLossRate' && workforceMetricAvailability.lossRate?.available ? (
-                      <div style={{ fontSize: '12px', lineHeight: 1.6, color: '#166534', fontWeight: 600 }}>
-                        90-day: {lossRateForSelectedDate == null ? '—' : `${lossRateForSelectedDate.toFixed(1)}%`} · Trailing 12-month: {lossRateT12ForSelectedDate == null ? '—' : `${lossRateT12ForSelectedDate.toFixed(1)}%`}
-                      </div>
-                    ) : report.key === 'lsOneYearRetention' && workforceMetricAvailability.oneYearRetention?.available ? (
-                      <div style={{ fontSize: '12px', lineHeight: 1.6, color: '#166534', fontWeight: 600 }}>
-                        Retention: {oneYearRetentionForSelectedDate == null ? '—' : `${oneYearRetentionForSelectedDate.ratePct.toFixed(1)}%`} · Eligible population: {Number(oneYearRetentionForSelectedDate?.denominator || 0).toLocaleString('en-US')}
-                      </div>
+                    ) : report.key === 'lsLossRate' ? (
+                      <>
+                        <div style={{ fontSize: '12px', lineHeight: 1.6, color: '#166534', fontWeight: 600 }}>
+                          {workforceMetricAvailability.lossRate?.available
+                            ? <>90-day: {lossRateForSelectedDate == null ? '—' : `${lossRateForSelectedDate.ratePct.toFixed(1)}%`} · Trailing 12-month: {lossRateT12ForSelectedDate == null ? '—' : `${lossRateT12ForSelectedDate.ratePct.toFixed(1)}%`}</>
+                            : 'Pending BambooHR lifecycle data'}
+                        </div>
+                        <div style={{ marginTop: '10px', overflowX: 'auto' }}>
+                          <button
+                            type="button"
+                            onClick={() => setLossRateHistoryExpanded((expanded) => !expanded)}
+                            style={{ border: 'none', background: 'transparent', padding: '0 0 6px', color: '#2563eb', cursor: 'pointer', fontSize: '11px', fontWeight: 700 }}
+                          >
+                            {lossRateHistoryExpanded ? '− Hide prior months' : '+ Show prior 11 months'}
+                          </button>
+                          <table style={{ width: '100%', minWidth: '600px', borderCollapse: 'collapse', fontSize: '11px' }}>
+                            <caption style={{ textAlign: 'left', paddingBottom: '6px', color: '#475569', fontWeight: 600 }}>Monthly loss rate history — current month first; each row recalculates from its as-of date</caption>
+                            <thead>
+                              <tr>
+                                <th style={thStyle}>As of date</th>
+                                <th style={{ ...thStyle, textAlign: 'right' }}>90-day rate</th>
+                                <th style={{ ...thStyle, textAlign: 'right' }}>90-day terms</th>
+                                <th style={{ ...thStyle, textAlign: 'right' }}>90-day avg. headcount</th>
+                                <th style={{ ...thStyle, textAlign: 'right' }}>Trailing-12-month rate</th>
+                                <th style={{ ...thStyle, textAlign: 'right' }}>Trailing-12-month terms</th>
+                                <th style={{ ...thStyle, textAlign: 'right' }}>Trailing-12-month avg. headcount</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {visibleMonthlyLossRateRows.map((row) => (
+                                <tr key={row.asOfMs}>
+                                  <td style={tdStyle}>{formatWorkforceAsOfDate(row.asOfMs)}</td>
+                                  <td style={{ ...tdStyle, textAlign: 'right' }}>{row.ratePct == null ? '—' : `${row.ratePct.toFixed(1)}%`}</td>
+                                  <td style={{ ...tdStyle, textAlign: 'right' }}>{row.terminated == null ? '—' : row.terminated.toLocaleString('en-US')}</td>
+                                  <td style={{ ...tdStyle, textAlign: 'right' }}>{row.averageHeadcount == null ? '—' : row.averageHeadcount.toFixed(1)}</td>
+                                  <td style={{ ...tdStyle, textAlign: 'right' }}>{row.trailing12Month?.ratePct == null ? '—' : `${row.trailing12Month.ratePct.toFixed(1)}%`}</td>
+                                  <td style={{ ...tdStyle, textAlign: 'right' }}>{row.trailing12Month?.terminated == null ? '—' : row.trailing12Month.terminated.toLocaleString('en-US')}</td>
+                                  <td style={{ ...tdStyle, textAlign: 'right' }}>{row.trailing12Month?.averageHeadcount == null ? '—' : row.trailing12Month.averageHeadcount.toFixed(1)}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </>
+                    ) : report.key === 'lsOneYearRetention' ? (
+                      <>
+                        <div style={{ fontSize: '12px', lineHeight: 1.6, color: '#166534', fontWeight: 600 }}>
+                          {workforceMetricAvailability.oneYearRetention?.available
+                            ? <>Retention: {oneYearRetentionForSelectedDate == null ? '—' : `${oneYearRetentionForSelectedDate.ratePct.toFixed(1)}%`} · Eligible population: {Number(oneYearRetentionForSelectedDate?.denominator || 0).toLocaleString('en-US')}</>
+                            : 'Pending BambooHR lifecycle data'}
+                        </div>
+                        <div style={{ marginTop: '10px', overflowX: 'auto' }}>
+                          <button
+                            type="button"
+                            onClick={() => setOneYearRetentionHistoryExpanded((expanded) => !expanded)}
+                            style={{ border: 'none', background: 'transparent', padding: '0 0 6px', color: '#2563eb', cursor: 'pointer', fontSize: '11px', fontWeight: 700 }}
+                          >
+                            {oneYearRetentionHistoryExpanded ? '− Hide prior months' : '+ Show prior 11 months'}
+                          </button>
+                          <table style={{ width: '100%', minWidth: '480px', borderCollapse: 'collapse', fontSize: '11px' }}>
+                            <caption style={{ textAlign: 'left', paddingBottom: '6px', color: '#475569', fontWeight: 600 }}>Monthly one-year retention history — current month first; each row recalculates from its as-of date</caption>
+                            <thead>
+                              <tr>
+                                <th style={thStyle}>As of date</th>
+                                <th style={{ ...thStyle, textAlign: 'right' }}>Retention rate</th>
+                                <th style={{ ...thStyle, textAlign: 'right' }}>Eligible population</th>
+                                <th style={{ ...thStyle, textAlign: 'right' }}>Retained</th>
+                                <th style={{ ...thStyle, textAlign: 'right' }}>Early terminations</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {visibleMonthlyOneYearRetentionRows.map((row) => (
+                                <tr key={row.asOfMs}>
+                                  <td style={tdStyle}>{formatWorkforceAsOfDate(row.asOfMs)}</td>
+                                  <td style={{ ...tdStyle, textAlign: 'right' }}>{row.ratePct == null ? '—' : `${row.ratePct.toFixed(1)}%`}</td>
+                                  <td style={{ ...tdStyle, textAlign: 'right' }}>{row.denominator == null ? '—' : row.denominator.toLocaleString('en-US')}</td>
+                                  <td style={{ ...tdStyle, textAlign: 'right' }}>{row.numerator == null ? '—' : row.numerator.toLocaleString('en-US')}</td>
+                                  <td style={{ ...tdStyle, textAlign: 'right' }}>{row.earlyTerminations == null ? '—' : row.earlyTerminations.toLocaleString('en-US')}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </>
                     ) : (
                       <>
                         <div style={{ fontSize: '12px', lineHeight: 1.45, color: '#92400e', fontWeight: 600 }}>Data source access required</div>

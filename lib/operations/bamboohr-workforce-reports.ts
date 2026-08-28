@@ -479,13 +479,24 @@ function isHiredByClient(row: TableRow): boolean {
   return asString(row['4314']).toLowerCase() === 'hired by client';
 }
 
+function normalizedTerminationDate(value: unknown): string {
+  const date = asString(value).trim();
+  return /^0{4}-0{2}-0{2}$/.test(date) ? '' : date;
+}
+
 function isTerminated(row: TableRow): boolean {
-  return Boolean(asString(row.terminationDate)) || /terminated/i.test(asString(row.status));
+  return Boolean(normalizedTerminationDate(row.terminationDate)) || /terminated/i.test(asString(row.status));
 }
 
 function isDateOnOrBefore(value: string, cutoff: Date): boolean {
   const date = new Date(value);
   return Number.isFinite(date.getTime()) && date.getTime() <= cutoff.getTime();
+}
+
+function isActiveOn(row: TableRow, date: Date): boolean {
+  const hireDate = asString(row.hireDate);
+  const terminationDate = normalizedTerminationDate(row.terminationDate);
+  return isDateOnOrBefore(hireDate, date) && (!terminationDate || !isDateOnOrBefore(terminationDate, date));
 }
 
 function buildWorkforceMetrics(benefitRows: TableRow[] | null, asOfDate = new Date()): WorkforceMetrics {
@@ -513,7 +524,7 @@ function buildWorkforceMetrics(benefitRows: TableRow[] | null, asOfDate = new Da
       employeeId: asString(row.id),
       status: asString(row.status),
       hireDate: asString(row.hireDate) || null,
-      terminationDate: asString(row.terminationDate) || null,
+      terminationDate: normalizedTerminationDate(row.terminationDate) || null,
       terminationReason: asString(row['4314']) || null,
     }))
     .filter((row) => row.employeeId);
@@ -538,18 +549,14 @@ function buildWorkforceMetrics(benefitRows: TableRow[] | null, asOfDate = new Da
       const terminationDate = asString(row.terminationDate);
       return isTerminated(row) && isDateOnOrBefore(terminationDate, asOfEst) && !isDateOnOrBefore(terminationDate, start) && !isHiredByClient(row);
     });
-    const activeAtEnd = benefitRows.filter((row) => !isTerminated(row)).length;
-    const activeAtStart = benefitRows.filter((row) => {
-      const hireDate = asString(row.hireDate);
-      const terminationDate = asString(row.terminationDate);
-      return isDateOnOrBefore(hireDate, start) && (!terminationDate || !isDateOnOrBefore(terminationDate, start));
-    }).length;
+    const activeAtEnd = benefitRows.filter((row) => isActiveOn(row, asOfEst)).length;
+    const activeAtStart = benefitRows.filter((row) => isActiveOn(row, start)).length;
     const averageHeadcount = (activeAtStart + activeAtEnd) / 2;
     return averageHeadcount > 0 ? pct(terminated.length, averageHeadcount) : null;
   };
   const oneYearAgo = new Date(asOfEst);
   oneYearAgo.setDate(oneYearAgo.getDate() - 365);
-  const activeOverOneYear = benefitRows.filter((row) => !isTerminated(row) && isDateOnOrBefore(asString(row.hireDate), oneYearAgo));
+  const activeOverOneYear = benefitRows.filter((row) => isActiveOn(row, asOfEst) && isDateOnOrBefore(asString(row.hireDate), oneYearAgo));
   const terminatedLastYear = benefitRows.filter((row) => isTerminated(row) && isDateOnOrBefore(asString(row.terminationDate), asOfEst) && !isDateOnOrBefore(asString(row.terminationDate), oneYearAgo));
   const earlyTerminations = terminatedLastYear.filter((row) => {
     const hireDate = new Date(asString(row.hireDate));
