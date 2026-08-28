@@ -2,6 +2,10 @@
 
 import { useState } from 'react';
 import dynamic from 'next/dynamic';
+import {
+  FINANCIAL_SCORE_GLOSSARY,
+  FINANCIAL_SCORE_TERMS,
+} from '@/app/constants/financial-score-descriptions';
 
 // Dynamic imports for charts
 const LineChart = dynamic(() => import('./charts/Charts').then(mod => mod.LineChart), { ssr: false });
@@ -74,6 +78,80 @@ export default function FinancialScoreView({
   alrGrowth
 }: FinancialScoreViewProps) {
   const [showScoreGuide, setShowScoreGuide] = useState(false);
+  const [openTermKey, setOpenTermKey] = useState<string | null>(null);
+  const openTerm = openTermKey ? FINANCIAL_SCORE_TERMS[openTermKey] : null;
+
+  const termPopup = openTerm ? (
+    <div
+      className="no-print"
+      onClick={() => setOpenTermKey(null)}
+      style={{
+        position: 'fixed',
+        inset: 0,
+        background: 'rgba(15, 23, 42, 0.45)',
+        zIndex: 9999,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: '20px',
+      }}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          background: 'white',
+          borderRadius: '12px',
+          padding: '24px 28px',
+          maxWidth: '560px',
+          width: '100%',
+          boxShadow: '0 20px 60px rgba(0,0,0,0.28)',
+        }}
+      >
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '16px', marginBottom: '12px' }}>
+          <div>
+            {openTerm.acronym ? (
+              <div style={{ fontSize: '12px', fontWeight: 700, color: '#1F70C1', letterSpacing: '0.04em', marginBottom: '4px' }}>
+                {openTerm.acronym}
+              </div>
+            ) : null}
+            <h2 style={{ fontSize: '18px', fontWeight: 700, color: '#1e293b', margin: 0 }}>
+              {openTerm.fullName}
+            </h2>
+          </div>
+          <button
+            type="button"
+            onClick={() => setOpenTermKey(null)}
+            aria-label="Close"
+            style={{
+              background: 'none',
+              border: 'none',
+              fontSize: '24px',
+              lineHeight: 1,
+              cursor: 'pointer',
+              color: '#94a3b8',
+              padding: 0,
+            }}
+          >
+            ×
+          </button>
+        </div>
+        <p style={{ fontSize: '14px', lineHeight: 1.7, color: '#334155', margin: 0 }}>
+          {openTerm.definition}
+        </p>
+      </div>
+    </div>
+  ) : null;
+
+  const glossaryList = (
+    <div style={{ display: 'grid', gap: '10px' }}>
+      {FINANCIAL_SCORE_GLOSSARY.map((item) => (
+        <div key={item.term}>
+          <div style={{ fontWeight: 700, color: '#1e293b', marginBottom: '2px' }}>{item.term}</div>
+          <div>{item.definition}</div>
+        </div>
+      ))}
+    </div>
+  );
 
   const scoreGuideLink = (
     <button
@@ -179,19 +257,55 @@ export default function FinancialScoreView({
           <p style={{ margin: '0 0 8px 0', fontWeight: 700, color: '#1e293b' }}>
             The overall score is based on the following major elements of financial performance:
           </p>
-          <ul style={{ margin: 0, paddingLeft: '20px' }}>
+          <ul style={{ margin: '0 0 16px 0', paddingLeft: '20px' }}>
             <li>Long-term and short-term trends in revenue growth and expense growth</li>
             <li>Trends in asset and liability growth</li>
           </ul>
+          <p style={{ margin: '0 0 8px 0', fontWeight: 700, color: '#1e293b' }}>
+            Score term definitions:
+          </p>
+          {glossaryList}
         </div>
       </div>
     </div>
   ) : null;
 
+  const termLabel = (termKey: string, label: string) => {
+    const term = FINANCIAL_SCORE_TERMS[termKey];
+    return (
+      <span
+        role="button"
+        tabIndex={0}
+        onClick={() => setOpenTermKey(termKey)}
+        onKeyDown={(event) => {
+          if (event.key === 'Enter' || event.key === ' ') {
+            event.preventDefault();
+            setOpenTermKey(termKey);
+          }
+        }}
+        title={term ? `${term.fullName}. ${term.definition}` : label}
+        style={{
+          cursor: 'help',
+          textDecoration: 'underline',
+          textDecorationStyle: 'dotted',
+          textUnderlineOffset: '2px',
+        }}
+      >
+        {label}
+      </span>
+    );
+  };
+
+  const chartDescription = (termKey: string) => ({
+    showDescriptionButton: true as const,
+    onDescriptionClick: () => setOpenTermKey(termKey),
+  });
+
   if (!monthly || monthly.length === 0 || !trendData || trendData.length === 0) {
     return (
       <div style={{ maxWidth: '1400px', margin: '0 auto', padding: '32px' }}>
         {scoreGuideModal}
+        {termPopup}
         <div style={{ background: 'white', borderRadius: '12px', padding: '48px', textAlign: 'center', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
           <h2 style={{ fontSize: '24px', fontWeight: '600', color: '#64748b', marginBottom: '16px' }}>
             No Financial Data Available
@@ -313,6 +427,7 @@ export default function FinancialScoreView({
       `}</style>
       
       {scoreGuideModal}
+      {termPopup}
       <div className="fs-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px', gap: '16px' }}>
         <div style={{ display: 'flex', alignItems: 'baseline', gap: '12px', flexWrap: 'wrap' }}>
           <h1 style={{ fontSize: '22px', fontWeight: '700', color: '#1e293b', margin: 0 }}>Corelytics Financial Score Trends</h1>
@@ -344,32 +459,32 @@ export default function FinancialScoreView({
           
           <div className="fs-score-cards" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: '8px', marginBottom: '8px' }}>
             <div style={{ background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)', borderRadius: '6px', padding: '8px 10px', color: 'white' }}>
-              <div style={{ fontSize: '11px', fontWeight: '600', marginBottom: '2px', opacity: 0.9 }}>Corelytics Financial Score</div>
+              <div style={{ fontSize: '11px', fontWeight: '600', marginBottom: '2px', opacity: 0.9 }}>{termLabel('Corelytics Financial Score', 'Corelytics Financial Score')}</div>
               <div style={{ fontSize: '22px', fontWeight: '700', lineHeight: 1.15 }}>{finalScore.toFixed(2)}</div>
             </div>
             <div style={{ background: '#f0fdf4', borderRadius: '6px', padding: '8px 10px', border: '1px solid #86efac' }}>
-              <div style={{ fontSize: '11px', fontWeight: '600', color: '#166534', marginBottom: '2px' }}>Profitability Score</div>
+              <div style={{ fontSize: '11px', fontWeight: '600', color: '#166534', marginBottom: '2px' }}>{termLabel('Profitability Score', 'Profitability Score')}</div>
               <div style={{ fontSize: '22px', fontWeight: '700', color: '#10b981', lineHeight: 1.15 }}>{profitabilityScore.toFixed(2)}</div>
             </div>
             <div style={{ background: '#ede9fe', borderRadius: '6px', padding: '8px 10px', border: '1px solid #c4b5fd' }}>
-              <div style={{ fontSize: '11px', fontWeight: '600', color: '#5b21b6', marginBottom: '2px' }}>Asset Development Score</div>
+              <div style={{ fontSize: '11px', fontWeight: '600', color: '#5b21b6', marginBottom: '2px' }}>{termLabel('Asset Development Score', 'ADS — Asset Development Score')}</div>
               <div style={{ fontSize: '22px', fontWeight: '700', color: '#8b5cf6', lineHeight: 1.15 }}>{assetDevScore.toFixed(2)}</div>
             </div>
           </div>
 
           <div className="fs-detail-cards" style={{ display: 'grid', gridTemplateColumns: 'repeat(5, minmax(0, 1fr))', gap: '8px' }}>
             <div style={{ background: '#f8fafc', borderRadius: '6px', padding: '6px 8px', border: '1px solid #e2e8f0' }}>
-              <div style={{ fontSize: '10px', fontWeight: '600', color: '#64748b' }}>Base RGS (24mo)</div>
+              <div style={{ fontSize: '10px', fontWeight: '600', color: '#64748b' }}>{termLabel('Base RGS (24mo)', 'Base RGS — Revenue Growth Score (24 mo)')}</div>
               <div style={{ fontSize: '16px', fontWeight: '700', color: '#1e293b', lineHeight: 1.2 }}>{baseRGS.toFixed(0)}</div>
               <div style={{ fontSize: '10px', color: '#64748b' }}>Growth: {growth_24mo.toFixed(1)}%</div>
             </div>
             <div style={{ background: '#f8fafc', borderRadius: '6px', padding: '6px 8px', border: '1px solid #e2e8f0' }}>
-              <div style={{ fontSize: '10px', fontWeight: '600', color: '#64748b' }}>Adjusted RGS (6mo)</div>
+              <div style={{ fontSize: '10px', fontWeight: '600', color: '#64748b' }}>{termLabel('Adjusted RGS (6mo)', 'Adjusted RGS — 6-month adjustment')}</div>
               <div style={{ fontSize: '16px', fontWeight: '700', color: '#1e293b', lineHeight: 1.2 }}>{adjustedRGS.toFixed(1)}</div>
               <div style={{ fontSize: '10px', color: '#64748b' }}>Growth: {growth_6mo.toFixed(1)}%</div>
             </div>
             <div style={{ background: '#f8fafc', borderRadius: '6px', padding: '6px 8px', border: '1px solid #e2e8f0' }}>
-              <div style={{ fontSize: '10px', fontWeight: '600', color: '#64748b' }}>Expense Adjustment</div>
+              <div style={{ fontSize: '10px', fontWeight: '600', color: '#64748b' }}>{termLabel('Expense Adjustment', 'Expense Adjustment')}</div>
               <div style={{ fontSize: '16px', fontWeight: '700', color: expenseAdjustment >= 0 ? '#10b981' : '#ef4444', lineHeight: 1.2 }}>
                 {expenseAdjustment >= 0 ? '+' : ''}{expenseAdjustment}
               </div>
@@ -378,11 +493,11 @@ export default function FinancialScoreView({
               </div>
             </div>
             <div style={{ background: '#f8fafc', borderRadius: '6px', padding: '6px 8px', border: '1px solid #e2e8f0' }}>
-              <div style={{ fontSize: '10px', fontWeight: '600', color: '#64748b' }}>ALR-1 (Current)</div>
+              <div style={{ fontSize: '10px', fontWeight: '600', color: '#64748b' }}>{termLabel('ALR-1 (Current)', 'ALR — Asset-Liability Ratio')}</div>
               <div style={{ fontSize: '16px', fontWeight: '700', color: '#1e293b', lineHeight: 1.2 }}>{typeof alr1 === 'number' ? alr1.toFixed(2) : alr1}</div>
             </div>
             <div style={{ background: '#f8fafc', borderRadius: '6px', padding: '6px 8px', border: '1px solid #e2e8f0' }}>
-              <div style={{ fontSize: '10px', fontWeight: '600', color: '#64748b' }}>ALR Growth %</div>
+              <div style={{ fontSize: '10px', fontWeight: '600', color: '#64748b' }}>{termLabel('ALR Growth %', 'ALR Growth %')}</div>
               <div style={{ fontSize: '16px', fontWeight: '700', color: alrGrowth >= 0 ? '#10b981' : '#ef4444', lineHeight: 1.2 }}>
                 {alrGrowth >= 0 ? '+' : ''}{alrGrowth.toFixed(1)}%
               </div>
@@ -390,12 +505,24 @@ export default function FinancialScoreView({
           </div>
         </div>
       )}
+
+      <div className="no-print" style={{ background: 'white', borderRadius: '8px', padding: '12px 14px', marginBottom: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
+        <h2 style={{ fontSize: '13px', fontWeight: '700', color: '#64748b', margin: '0 0 10px 0', textTransform: 'uppercase', letterSpacing: '0.4px' }}>Score term definitions</h2>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '10px 20px', fontSize: '12px', lineHeight: 1.55, color: '#334155' }}>
+          {FINANCIAL_SCORE_GLOSSARY.map((item) => (
+            <div key={item.term}>
+              <div style={{ fontWeight: 700, color: '#1e293b', marginBottom: '2px' }}>{item.term}</div>
+              <div>{item.definition}</div>
+            </div>
+          ))}
+        </div>
+      </div>
       
       <div className="fs-charts-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '24px' }}>
-        <LineChart title="Financial Score Trend" data={trendData} valueKey="financialScore" color="#667eea" compact />
-        <LineChart title="Profitability Score Trend" data={trendData} valueKey="profitabilityScore" color="#10b981" compact />
-        <LineChart title="Revenue Growth Score (RGS)" data={trendData} valueKey="rgs" color="#f59e0b" compact />
-        <LineChart title="RGS with 6-Month Adjustment" data={trendData} valueKey="rgsAdj" color="#3b82f6" compact />
+        <LineChart title="Financial Score Trend" data={trendData} valueKey="financialScore" color="#667eea" compact {...chartDescription('Financial Score Trend')} />
+        <LineChart title="Profitability Score Trend" data={trendData} valueKey="profitabilityScore" color="#10b981" compact {...chartDescription('Profitability Score Trend')} />
+        <LineChart title="Revenue Growth Score (RGS)" data={trendData} valueKey="rgs" color="#f59e0b" compact {...chartDescription('Revenue Growth Score (RGS)')} />
+        <LineChart title="RGS with 6-Month Adjustment" data={trendData} valueKey="rgsAdj" color="#3b82f6" compact {...chartDescription('RGS with 6-Month Adjustment')} />
         
         {/* Page 2 Header - only visible in print */}
         <div className="page-2-header" style={{ display: 'none', gridColumn: '1 / -1', paddingBottom: '72px' }}>
@@ -405,10 +532,10 @@ export default function FinancialScoreView({
           </div>
         </div>
         
-        <LineChart title="Expense Adjustment" data={trendData} valueKey="expenseAdj" color="#8b5cf6" compact />
-        <LineChart title="Asset Development Score (ADS)" data={trendData} valueKey="adsScore" color="#ec4899" compact />
-        <LineChart title="ALR-1 (Asset-Liability Ratio)" data={trendData} valueKey="alr1" color="#14b8a6" compact />
-        <LineChart title="ALR Growth %" data={trendData} valueKey="alrGrowth" color="#f97316" compact />
+        <LineChart title="Expense Adjustment" data={trendData} valueKey="expenseAdj" color="#8b5cf6" compact {...chartDescription('Expense Adjustment')} />
+        <LineChart title="Asset Development Score (ADS)" data={trendData} valueKey="adsScore" color="#ec4899" compact {...chartDescription('Asset Development Score (ADS)')} />
+        <LineChart title="ALR-1 (Asset-Liability Ratio)" data={trendData} valueKey="alr1" color="#14b8a6" compact {...chartDescription('ALR-1 (Asset-Liability Ratio)')} />
+        <LineChart title="ALR Growth %" data={trendData} valueKey="alrGrowth" color="#f97316" compact {...chartDescription('ALR Growth %')} />
       </div>
     </div>
   );
