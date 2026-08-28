@@ -4,7 +4,10 @@ import {
   assertProductsForecastAccess,
   ensureProductRevenueTables,
   loadProductGoalUpdate,
+  loadProductMonthlyGoalsByYear,
+  parseForecastYears,
   saveProductMonthlyRevenueGoals,
+  saveProductMonthlyRevenueGoalsByYear,
 } from '@/lib/operations/product-revenue-actual-db';
 import { workbookUpdatedDate } from '@/lib/operations/product-revenue-actual';
 
@@ -24,10 +27,15 @@ export async function GET(request: NextRequest) {
     await ensureProductRevenueTables();
 
     const year = asForecastYear(request.nextUrl.searchParams.get('year'));
+    const extraYears = parseForecastYears(request.nextUrl.searchParams.get('years'));
     const snapshot = await loadProductGoalUpdate({ companyId, year });
+    const monthlyGoalsByYear = extraYears.length
+      ? await loadProductMonthlyGoalsByYear({ companyId, years: extraYears })
+      : undefined;
 
     return NextResponse.json({
       ...snapshot,
+      ...(monthlyGoalsByYear ? { monthlyGoalsByYear } : {}),
       workbookUpdated: workbookUpdatedDate(snapshot.dataThru),
     });
   } catch (error: unknown) {
@@ -55,9 +63,26 @@ export async function PATCH(request: NextRequest) {
     await ensureProductRevenueTables();
 
     const year = asForecastYear(body.year ?? request.nextUrl.searchParams.get('year'));
+    const yearsBody = body.years && typeof body.years === 'object' && !Array.isArray(body.years)
+      ? (body.years as Record<string, unknown>)
+      : null;
+    if (yearsBody) {
+      const monthlyGoalsByYear = await saveProductMonthlyRevenueGoalsByYear({
+        companyId,
+        years: yearsBody,
+      });
+      const snapshot = await loadProductGoalUpdate({ companyId, year });
+      return NextResponse.json({
+        ok: true,
+        ...snapshot,
+        monthlyGoalsByYear,
+        workbookUpdated: workbookUpdatedDate(snapshot.dataThru),
+      });
+    }
+
     const months = Array.isArray(body.months) ? body.months : body.monthlyRevenueGoals;
     if (!Array.isArray(months)) {
-      return NextResponse.json({ error: 'months are required' }, { status: 400 });
+      return NextResponse.json({ error: 'months or years are required' }, { status: 400 });
     }
 
     const snapshot = await saveProductMonthlyRevenueGoals({ companyId, year, months });

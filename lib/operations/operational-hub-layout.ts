@@ -360,6 +360,7 @@ export function getOperationalHubModuleLabel(moduleKey: string, sectorCategory?:
   if (moduleKey === 'forecast') return 'Forecast';
   const sector = normalizeSector(sectorCategory);
   if ((sector === '32' || sector === '42') && moduleKey === 'products_skus') return 'Products';
+  if ((sector === '32' || sector === '42') && moduleKey === 'groups') return 'Group';
   if ((sector === '32' || sector === '42') && moduleKey === 'vendors') return 'Vendors';
   if (sector === '54' && moduleKey === 'todays_operations') return "Today's Operations";
   if (sector === '54' && moduleKey === 'payroll_performance') return 'Payroll Performance';

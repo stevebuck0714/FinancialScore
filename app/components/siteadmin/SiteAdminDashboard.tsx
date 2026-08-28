@@ -23,6 +23,7 @@ import {
   getAssignedCompanyCatalogReports,
   getCompanyReportTemplate,
   getUnassignedCompanyCatalogReports,
+  isAtlanticPrecisionCompany,
   isCompanySpecificReportForSector,
 } from '@/lib/operations/company-specific-reports';
 import {
@@ -117,6 +118,11 @@ const OPERATIONAL_HUB_SECTION_OPTIONS: Array<{ key: string; label: string; group
   { key: 'productsRevenueRollup', label: 'Revenue Rollup', group: 'Products' },
   { key: 'productsGoalUpdate', label: 'Goal Update', group: 'Products' },
   { key: 'productsPerformance', label: 'Performance', group: 'Products' },
+  { key: 'groupsMarginAnalysis', label: 'Group Margin Analysis', group: 'Group' },
+  { key: 'groupsMonthlyForecast', label: 'Monthly Forecast', group: 'Group' },
+  { key: 'groupsForecastRollup', label: 'Forecast Rollup', group: 'Group' },
+  { key: 'groupsMonthlyRevenue', label: 'Monthly Revenue', group: 'Group' },
+  { key: 'groupsRevenueRollup', label: 'Revenue Rollup', group: 'Group' },
   { key: 'productsRetailForecasting', label: 'Retail Forecasting / Monthly Inventory Report', group: 'Products' },
   { key: 'productsMerchandiseProfitability', label: 'Merchandise Profitability', group: 'Products' },
   { key: 'productsPriceCostComparison', label: 'Weekly Price-Cost Comparison', group: 'Products' },
@@ -1509,7 +1515,13 @@ export default function SiteAdminDashboard(props: any) {
     const companySectorCategory = String(company?.industrySectorCategory || '').trim();
     const customTabs = getOperationalHubCustomTabs(company);
     const customTabKeys = customTabs.map((tab) => tab.key);
-    const liveKeys = getOperationalHubDefaultModuleKeys(companySectorCategory);
+    const liveKeys = (() => {
+      const keys = getOperationalHubDefaultModuleKeys(companySectorCategory);
+      if (!isAtlanticPrecisionCompany(company?.id, company?.name) || keys.includes('groups')) return keys;
+      const productsIdx = keys.findIndex((module) => module === 'products_skus' || module === 'products');
+      if (productsIdx < 0) return [...keys, 'groups'];
+      return [...keys.slice(0, productsIdx + 1), 'groups', ...keys.slice(productsIdx + 1)];
+    })();
     const masterKeys = getSectorMasterTabKeys(companySectorCategory);
     const extraKeys = liveKeys.filter((key) => !masterKeys.includes(key) && !customTabKeys.includes(key));
     const orderedKeys = [
@@ -1659,6 +1671,14 @@ export default function SiteAdminDashboard(props: any) {
           ...getAssignedCatalogReportOptions(company, moduleKey, option.label).filter((item) => !seen.has(item.key)),
         ];
       }
+      if (moduleKey === 'groups') {
+        const mapped = OPERATIONAL_HUB_SECTION_OPTIONS
+          .filter((item) => item.group === 'Group')
+          .map((item) => ({ ...item, group: option.label }));
+        const assigned = getAssignedCatalogReportOptions(company, moduleKey, option.label);
+        const seen = new Set(mapped.map((item) => item.key));
+        return [...mapped, ...assigned.filter((item) => !seen.has(item.key))];
+      }
       const dataType = mapModuleToDataType(moduleKey);
       const sourceGroup = dataType ? OPERATIONAL_HUB_SECTIONS_BY_DATATYPE_GROUP[dataType] : null;
       const assignedExtras = getAssignedCatalogReportOptions(company, moduleKey, option.label);
@@ -1666,7 +1686,7 @@ export default function SiteAdminDashboard(props: any) {
       const mapped = OPERATIONAL_HUB_SECTION_OPTIONS
         .filter((item) => item.group === sourceGroup)
         .filter((item) => !isCompanySpecificReportForSector(item.key, companySectorCategory))
-        .filter((item) => !['productsVendorPricing', 'vendorsDutiesTariffs', 'vendorsSgpFreight', 'vendorsMonthlyForecast', 'vendorsForecastRollup', 'hiringOpenJobs', 'hiringApplicantPipeline', 'hiringFunnelByRole', 'hiringTimeToFillByJob', 'hiringApplicantsByJob', 'hiringPostingPerformance', 'hiringOnboardingPipeline', 'lsWorkforceSummary', 'lsCompensationByRole', 'lsEmployeeCompensationRoster', 'lsHeadcountByRole', 'lsHeadcountByDepartment', 'lsLocationPayTypeMix', 'lsBillRateLevelCoverage', 'lsPtoBalances'].includes(item.key))
+        .filter((item) => !['productsVendorPricing', 'vendorsDutiesTariffs', 'vendorsSgpFreight', 'vendorsMonthlyForecast', 'vendorsForecastRollup', 'groupsMarginAnalysis', 'groupsMonthlyForecast', 'groupsForecastRollup', 'groupsMonthlyRevenue', 'groupsRevenueRollup', 'hiringOpenJobs', 'hiringApplicantPipeline', 'hiringFunnelByRole', 'hiringTimeToFillByJob', 'hiringApplicantsByJob', 'hiringPostingPerformance', 'hiringOnboardingPipeline', 'lsWorkforceSummary', 'lsCompensationByRole', 'lsEmployeeCompensationRoster', 'lsHeadcountByRole', 'lsHeadcountByDepartment', 'lsLocationPayTypeMix', 'lsBillRateLevelCoverage', 'lsPtoBalances'].includes(item.key))
         .filter((item) => companySectorCategory !== '42' || moduleKey !== 'orders_sales' || !WHOLESALE_ORDERS_SALES_EXCLUDED_REPORT_KEYS.has(item.key))
         .filter((item) => companySectorCategory !== '42' || moduleKey !== 'customers' || !WHOLESALE_CUSTOMERS_EXCLUDED_REPORT_KEYS.has(item.key))
         .filter((item) => companySectorCategory !== '42' || moduleKey !== 'inventory' || !WHOLESALE_INVENTORY_EXCLUDED_REPORT_KEYS.has(item.key))

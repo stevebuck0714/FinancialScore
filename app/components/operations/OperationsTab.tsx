@@ -46,9 +46,11 @@ import { getModuleLabel, isLoansDefaultEnabledForCompany, mapModuleToDataType, r
 import { getOperationalHubDefaultModuleKeys, getOperationalHubDefaultReportsForModule } from '@/lib/operations/operational-hub-layout';
 import { parseOperationalHubCustomReports, parseOperationalHubCustomTabs } from '@/lib/operations/operational-hub-overlay';
 import {
+  isAtlanticPrecisionCompany,
   isCompanySpecificReportForSector,
   resolveAssignedCompanyReportKeys,
 } from '@/lib/operations/company-specific-reports';
+import ProductGroupReports from './ProductGroupReports';
 import { isOperationalModuleAllowed } from '@/lib/operations/operational-dashboard-access';
 import { buildWeeklyProductMarginModel } from '@/lib/operations/product-margin-weekly';
 import { getFieldDisplayName } from '@/lib/constants/field-display-names';
@@ -1202,10 +1204,12 @@ export default function OperationsTab({
   };
   const isCustomersTab = ['customers', 'sales'].includes(String(mapModuleToDataType(activeTab) || '')) || activeTab === 'customers';
   const isVendorsTab = resolveModuleKey(activeTab) === 'vendors';
+  const isGroupsTab = resolveModuleKey(activeTab) === 'groups';
   const isWholesaleProductsTab =
     String(industrySectorCategory || '').trim() === '42' &&
     (mapModuleToDataType(activeTab) === 'products' || activeTab === 'products') &&
-    !isVendorsTab;
+    !isVendorsTab &&
+    !isGroupsTab;
   const isWholesaleVendorsTab =
     String(industrySectorCategory || '').trim() === '42' &&
     isVendorsTab;
@@ -1218,7 +1222,8 @@ export default function OperationsTab({
       productReportView === 'monthlyRevenue' ||
       productReportView === 'revenueRollup' ||
       productReportView === 'goalUpdate')) ||
-    isVendorsTab;
+    isVendorsTab ||
+    isGroupsTab;
   const usesDutiesTariffsDedicatedView = isVendorsTab;
   const shouldApplyOperationalUserAccess =
     String(currentUser?.role || '').toLowerCase() === 'user' &&
@@ -1342,12 +1347,21 @@ export default function OperationsTab({
           return [...resolvedModulesBase.slice(0, productsIdx + 1), 'vendors', ...resolvedModulesBase.slice(productsIdx + 1)];
         })()
       : resolvedModulesBase;
+  const isAtlanticCompany = isAtlanticPrecisionCompany(selectedCompanyId, companyName);
+  const resolvedModulesWithGroups =
+    isAtlanticCompany && !resolvedModulesWithVendors.includes('groups')
+      ? (() => {
+          const productsIdx = resolvedModulesWithVendors.findIndex((module) => module === 'products_skus' || module === 'products');
+          if (productsIdx < 0) return [...resolvedModulesWithVendors, 'groups'];
+          return [...resolvedModulesWithVendors.slice(0, productsIdx + 1), 'groups', ...resolvedModulesWithVendors.slice(productsIdx + 1)];
+        })()
+      : resolvedModulesWithVendors;
   const resolvedModules = Array.from(
     new Set([
-      ...resolvedModulesWithVendors,
+      ...resolvedModulesWithGroups,
       ...companyCustomTabKeys.map((key) => resolveModuleKey(key)).filter(Boolean),
     ])
-  );
+  ).filter((module) => module !== 'groups' || isAtlanticCompany);
   const enabledDashboardModules = resolvedModules.filter((module) => isTabModuleEnabled(module));
   const isWholesaleTradeSector = String(industrySectorCategory || '').trim() === '42';
   const isManufacturingSector = String(industrySectorCategory || '').trim() === '32';
@@ -1387,6 +1401,9 @@ export default function OperationsTab({
     }
     if (moduleKey === 'vendors') {
       return 'Vendors';
+    }
+    if (moduleKey === 'groups') {
+      return 'Group';
     }
     return getModuleLabel(moduleKey) || moduleKey.replace(/_/g, ' ');
   };
@@ -2485,7 +2502,8 @@ export default function OperationsTab({
     (
       activeWholesaleModuleDataType === 'customers' ||
       (activeWholesaleModuleDataType === 'products' &&
-        productReportView === 'productMarginAnalysis') ||
+        productReportView === 'productMarginAnalysis' &&
+        resolveModuleKey(activeTab) !== 'groups') ||
       resolveModuleKey(activeTab) === 'vendors' ||
       ((activeTab === 'overview' || activeTab === 'dashboard') && activeOverviewSubTab === 'execution-velocity')
     );
@@ -2696,7 +2714,8 @@ export default function OperationsTab({
           productReportView === 'monthlyRevenue' ||
           productReportView === 'revenueRollup' ||
           productReportView === 'goalUpdate' ||
-          resolveModuleKey(tab) === 'vendors')
+          resolveModuleKey(tab) === 'vendors' ||
+          resolveModuleKey(tab) === 'groups')
       ) {
         setLoading(false);
         setError(null);
@@ -8263,6 +8282,22 @@ export default function OperationsTab({
 
   // Product Sales Tab  
   const renderProducts = () => {
+    if (isGroupsTab) {
+      return (
+        <div style={{ padding: '8px 32px 32px' }}>
+          <ProductGroupReports
+            selectedCompanyId={selectedCompanyId}
+            enabledViews={{
+              marginAnalysis: isSectionEnabled('groupsMarginAnalysis'),
+              monthlyForecast: isSectionEnabled('groupsMonthlyForecast'),
+              forecastRollup: isSectionEnabled('groupsForecastRollup'),
+              monthlyRevenue: isSectionEnabled('groupsMonthlyRevenue'),
+              revenueRollup: isSectionEnabled('groupsRevenueRollup'),
+            }}
+          />
+        </div>
+      );
+    }
     if (!usesWholesaleDedicatedProductView && !usesDutiesTariffsDedicatedView && (loading || !productData)) {
       return <div data-print-ready="loading" style={{ padding: '40px', textAlign: 'center', color: '#64748b' }}>Loading product data...</div>;
     }
@@ -11652,7 +11687,7 @@ export default function OperationsTab({
           {
             heading: 'How to use it',
             body: [
-              'The page has no customer picker. Import the same revenue forecast workbook used on Monthly Revenue, then type monthly Baseline, Growth, and Stretch revenue goals on this page.',
+              'The page has no customer picker. Import the same revenue forecast workbook used on Monthly Revenue, then type monthly Baseline, Growth, and Stretch revenue goals for 2026–2030 on this page.',
               'Goal Update has Forecasted, Baseline, Growth, and Stretch rows for YTD and QTD. Pyramid shows Revenue in dollars and Issues in units. Monthly goals drive Pyramid Baseline / Growth / Stretch: MTD uses that month, QTD uses the quarter total, and YTD uses the year total.',
             ],
           },

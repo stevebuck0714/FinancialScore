@@ -470,8 +470,9 @@ export async function upsertProductGoalUpdate(params: {
   goalUpdate: GoalUpdateSnapshot | null;
   pyramid: PyramidSnapshot | null;
   preserveDataThru?: boolean;
+  force?: boolean;
 }) {
-  if (!hasGoalDashboardData(params.goalUpdate, params.pyramid)) return;
+  if (!params.force && !hasGoalDashboardData(params.goalUpdate, params.pyramid)) return;
   await prisma.$executeRawUnsafe(
     `INSERT INTO "ProductGoalUpdate" ("companyId", "year", "dataThru", "goalUpdate", "pyramid", "updatedAt")
      VALUES ($1, $2, $3, $4::jsonb, $5::jsonb, $6)
@@ -575,8 +576,49 @@ export async function saveProductMonthlyRevenueGoals(params: {
     goalUpdate,
     pyramid: existing.pyramid,
     preserveDataThru: true,
+    force: true,
   });
   return loadProductGoalUpdate(params);
+}
+
+export function parseForecastYears(value: unknown): number[] {
+  const texts = Array.isArray(value)
+    ? value
+    : String(value ?? '')
+        .split(',')
+        .map((part) => part.trim())
+        .filter(Boolean);
+  const years = texts
+    .map((item) => Number(item))
+    .filter((year) => Number.isInteger(year) && year >= 2000 && year <= 2100);
+  return [...new Set(years)].sort((a, b) => a - b);
+}
+
+export async function loadProductMonthlyGoalsByYear(params: {
+  companyId: string;
+  years: number[];
+}): Promise<Record<number, MonthlyRevenueGoalMonth[]>> {
+  const snapshots = await Promise.all(
+    params.years.map((year) => loadProductGoalUpdate({ companyId: params.companyId, year }))
+  );
+  return Object.fromEntries(snapshots.map((snapshot) => [snapshot.year, snapshot.monthlyRevenueGoals]));
+}
+
+export async function saveProductMonthlyRevenueGoalsByYear(params: {
+  companyId: string;
+  years: Record<string, unknown>;
+}): Promise<Record<number, MonthlyRevenueGoalMonth[]>> {
+  const yearNumbers = parseForecastYears(Object.keys(params.years));
+  const snapshots = await Promise.all(
+    yearNumbers.map((year) =>
+      saveProductMonthlyRevenueGoals({
+        companyId: params.companyId,
+        year,
+        months: params.years[String(year)],
+      })
+    )
+  );
+  return Object.fromEntries(snapshots.map((snapshot) => [snapshot.year, snapshot.monthlyRevenueGoals]));
 }
 
 export async function persistParsedRevenueWorkbook(params: {
@@ -703,6 +745,7 @@ export async function loadRevenueDataset(params: {
   year: number;
   customerId?: string;
   customerName?: string;
+  includeAllLines?: boolean;
 }) {
   const { companyId, year, customerId, customerName } = params;
   const scopedCustomerId = String(customerId || '').trim();
@@ -869,7 +912,7 @@ export async function loadRevenueDataset(params: {
   }
   const customers = Array.from(customersMap.values()).sort((a, b) => a.label.localeCompare(b.label));
 
-  const includeLines = Boolean(customerId || customerName);
+  const includeLines = Boolean(customerId || customerName || params.includeAllLines);
   const dataThru = settings?.dataThru
     ? new Date(settings.dataThru).toISOString().slice(0, 10)
     : forecastSettings?.dataThru

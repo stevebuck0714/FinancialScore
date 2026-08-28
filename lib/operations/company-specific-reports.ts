@@ -88,6 +88,41 @@ export const COMPANY_REPORT_CATALOG: CompanyReportTemplate[] = [
     sectorCategories: ['42'],
   },
   {
+    key: 'groupsMarginAnalysis',
+    label: 'Group Margin Analysis',
+    tabKey: 'groups',
+    group: 'Group',
+    sectorCategories: ['42'],
+  },
+  {
+    key: 'groupsMonthlyForecast',
+    label: 'Monthly Forecast',
+    tabKey: 'groups',
+    group: 'Group',
+    sectorCategories: ['42'],
+  },
+  {
+    key: 'groupsForecastRollup',
+    label: 'Forecast Rollup',
+    tabKey: 'groups',
+    group: 'Group',
+    sectorCategories: ['42'],
+  },
+  {
+    key: 'groupsMonthlyRevenue',
+    label: 'Monthly Revenue',
+    tabKey: 'groups',
+    group: 'Group',
+    sectorCategories: ['42'],
+  },
+  {
+    key: 'groupsRevenueRollup',
+    label: 'Revenue Rollup',
+    tabKey: 'groups',
+    group: 'Group',
+    sectorCategories: ['42'],
+  },
+  {
     key: 'productsVendorPricing',
     label: 'Vendor Pricing',
     tabKey: 'vendors',
@@ -327,6 +362,14 @@ export const COMPANY_REPORT_CATALOG: CompanyReportTemplate[] = [
   },
 ];
 
+const ATLANTIC_ONLY_GROUP_REPORT_KEYS = new Set([
+  'groupsMarginAnalysis',
+  'groupsMonthlyForecast',
+  'groupsForecastRollup',
+  'groupsMonthlyRevenue',
+  'groupsRevenueRollup',
+]);
+
 const ATLANTIC_ONLY_VENDOR_REPORT_KEYS = new Set([
   'productsVendorPricing',
   'vendorsMonthlyForecast',
@@ -466,7 +509,7 @@ function catalogVisibleForCompany(
   report: CompanyReportTemplate,
   args: { companyId?: string | null; companyName?: string | null }
 ): boolean {
-  if (ATLANTIC_ONLY_VENDOR_REPORT_KEYS.has(report.key)) {
+  if (ATLANTIC_ONLY_VENDOR_REPORT_KEYS.has(report.key) || ATLANTIC_ONLY_GROUP_REPORT_KEYS.has(report.key)) {
     return isAtlanticPrecisionCompany(args.companyId, args.companyName);
   }
   if (COGENT_ONLY_REPORT_KEYS.has(report.key)) {
@@ -520,7 +563,8 @@ export function resolveAssignedCompanyReportKeys(args: {
 function catalogTabMatches(reportTabKey: string, moduleKey: string): boolean {
   if (reportTabKey === moduleKey) return true;
   const productTabs = new Set(['products', 'products_skus']);
-  return productTabs.has(reportTabKey) && productTabs.has(moduleKey);
+  if (productTabs.has(reportTabKey) && productTabs.has(moduleKey)) return true;
+  return reportTabKey === 'groups' && moduleKey === 'groups';
 }
 
 export function getAssignedCompanyCatalogReports(args: {
