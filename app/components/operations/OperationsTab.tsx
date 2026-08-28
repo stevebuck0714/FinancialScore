@@ -23892,7 +23892,7 @@ Strategies to Improve the CCC
                             <td style={tdStyle}>{row.billRateLevel || row.normalizedBillRateLevel || 'Unassigned'}</td>
                             <td style={{ ...tdStyle, textAlign: 'right' }}>{row.payRate == null ? '—' : formatUnitCost(Number(row.payRate))}</td>
                             <td style={{ ...tdStyle, textAlign: 'right', fontWeight: 700 }}>{formatUnitCost(Number(row.rateCardBillRate || 0))}</td>
-                            <td style={{ ...tdStyle, textAlign: 'right', fontWeight: 700 }}>{row.billToPayRatio == null ? '—' : `${Number(row.billToPayRatio).toFixed(2)}x`}</td>
+                            <td style={{ ...tdStyle, textAlign: 'right', fontWeight: 700 }}>{row.billToPayRatio == null ? '—' : `${(Number(row.billToPayRatio) * 100).toFixed(1)}%`}</td>
                             <td style={{ ...tdStyle, textAlign: 'right' }}>{formatCurrency(Number(row.estimatedAnnualBillings || 0))}</td>
                             <td style={{ ...tdStyle, textAlign: 'right' }}>{row.estimatedAnnualPay == null ? '—' : formatCurrency(Number(row.estimatedAnnualPay))}</td>
                             <td style={{ ...tdStyle, textAlign: 'right', fontWeight: 700, color: Number(row.estimatedAnnualSpread || 0) >= 0 ? '#166534' : '#991b1b' }}>
