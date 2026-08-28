@@ -257,7 +257,7 @@ const OPERATIONAL_HUB_SECTION_OPTIONS: Array<{ key: string; label: string; group
   { key: 'rbAverageBillRateByRole', label: 'Average Bill Rate by Role', group: 'Revenue & Billables' },
   { key: 'rbRevenuePerEmployee', label: 'Revenue per Employee', group: 'Revenue & Billables' },
   { key: 'rbBillRateLevelSummary', label: 'Bill Rate Level Summary', group: 'Revenue & Billables' },
-  { key: 'ueCostByBillRateLevel', label: 'Pay by Bill Rate Level', group: 'Revenue & Billables' },
+  { key: 'ueCostByBillRateLevel', label: 'PAY TO BILL RATE LEVEL', group: 'Revenue & Billables' },
   { key: 'rbEmployeesByBillRateLevel', label: 'Employees by Bill Rate Level', group: 'Revenue & Billables' },
   { key: 'rbEmployeesByMarketBillRateLevel', label: 'Employees by Market + Bill Rate Level', group: 'Revenue & Billables' },
   { key: 'rbEstimatedBillableEconomics', label: 'Estimated Billable Economics by Employee', group: 'Revenue & Billables' },

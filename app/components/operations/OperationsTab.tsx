@@ -23914,7 +23914,7 @@ Strategies to Improve the CCC
 
           {isSectionEnabled('ueCostByBillRateLevel') && (
             <div style={{ ...cardStyle, order: 3 }}>
-              <div style={cardTitleStyle}>Pay by Bill Rate Level</div>
+              <div style={cardTitleStyle}>PAY TO BILL RATE LEVEL</div>
               <div style={{ overflowX: 'auto', maxHeight: '420px', overflowY: 'auto' }}>
                 <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                   <thead>
@@ -23923,7 +23923,7 @@ Strategies to Improve the CCC
                       <th style={{ ...thStyle, textAlign: 'right' }}>Headcount</th>
                       <th style={{ ...thStyle, textAlign: 'right' }}>Avg Pay Rate</th>
                       <th style={{ ...thStyle, textAlign: 'right' }}>Avg Bill Rate</th>
-                      <th style={{ ...thStyle, textAlign: 'right' }}>Avg Pay-to-Bill</th>
+                      <th style={{ ...thStyle, textAlign: 'right' }}>Avg Pay to Bill</th>
                       <th style={{ ...thStyle, textAlign: 'right' }}>Avg Annual Billings</th>
                       <th style={{ ...thStyle, textAlign: 'right' }}>Avg Annual Pay</th>
                       <th style={{ ...thStyle, textAlign: 'right' }}>Avg Estimated Spread</th>
@@ -23951,7 +23951,7 @@ Strategies to Improve the CCC
                             <td style={{ ...tdStyle, textAlign: 'right' }}>{Number(row.headcount || 0).toLocaleString('en-US')}</td>
                             <td style={{ ...tdStyle, textAlign: 'right' }}>{row.avgPayRate == null ? '—' : formatUnitCost(row.avgPayRate)}</td>
                             <td style={{ ...tdStyle, textAlign: 'right' }}>{row.avgBillRate == null ? '—' : formatUnitCost(row.avgBillRate)}</td>
-                            <td style={{ ...tdStyle, textAlign: 'right' }}>{row.avgPayToBill == null ? '—' : `${row.avgPayToBill.toFixed(2)}x`}</td>
+                            <td style={{ ...tdStyle, textAlign: 'right' }}>{row.avgPayToBill == null ? '—' : `${(row.avgPayToBill * 100).toFixed(1)}%`}</td>
                             <td style={{ ...tdStyle, textAlign: 'right' }}>{row.avgAnnualBillings == null ? '—' : formatCurrency(row.avgAnnualBillings)}</td>
                             <td style={{ ...tdStyle, textAlign: 'right' }}>{row.avgAnnualCost == null ? '—' : formatCurrency(row.avgAnnualCost)}</td>
                             <td style={{ ...tdStyle, textAlign: 'right', fontWeight: 700, color: row.avgEstimatedSpread == null || row.avgEstimatedSpread >= 0 ? '#166534' : '#991b1b' }}>
@@ -23968,7 +23968,7 @@ Strategies to Improve the CCC
                                       <th style={thStyle}>Role</th>
                                       <th style={{ ...thStyle, textAlign: 'right' }}>Pay Rate</th>
                                       <th style={{ ...thStyle, textAlign: 'right' }}>Bill Rate</th>
-                                      <th style={{ ...thStyle, textAlign: 'right' }}>Pay-to-Bill</th>
+                                      <th style={{ ...thStyle, textAlign: 'right' }}>Pay to Bill</th>
                                       <th style={{ ...thStyle, textAlign: 'right' }}>Est. Annual Billings</th>
                                       <th style={{ ...thStyle, textAlign: 'right' }}>Annual Pay</th>
                                       <th style={{ ...thStyle, textAlign: 'right' }}>Est. Spread</th>
@@ -23981,7 +23981,7 @@ Strategies to Improve the CCC
                                         <td style={tdStyle}>{employee.role || 'Unassigned'}</td>
                                         <td style={{ ...tdStyle, textAlign: 'right' }}>{employee.payRate == null ? '—' : formatUnitCost(employee.payRate)}</td>
                                         <td style={{ ...tdStyle, textAlign: 'right' }}>{formatUnitCost(Number(employee.rateCardBillRate || 0))}</td>
-                                        <td style={{ ...tdStyle, textAlign: 'right' }}>{employee.billToPayRatio == null ? '—' : `${Number(employee.billToPayRatio).toFixed(2)}x`}</td>
+                                        <td style={{ ...tdStyle, textAlign: 'right' }}>{employee.billToPayRatio == null ? '—' : `${(Number(employee.billToPayRatio) * 100).toFixed(1)}%`}</td>
                                         <td style={{ ...tdStyle, textAlign: 'right' }}>{formatCurrency(Number(employee.estimatedAnnualBillings || 0))}</td>
                                         <td style={{ ...tdStyle, textAlign: 'right' }}>{employee.estimatedAnnualPay == null ? '—' : formatCurrency(employee.estimatedAnnualPay)}</td>
                                         <td style={{ ...tdStyle, textAlign: 'right', color: employee.estimatedAnnualSpread == null || Number(employee.estimatedAnnualSpread) >= 0 ? '#166534' : '#991b1b' }}>{employee.estimatedAnnualSpread == null ? '—' : formatCurrency(employee.estimatedAnnualSpread)}</td>

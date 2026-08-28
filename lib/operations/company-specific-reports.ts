@@ -264,7 +264,7 @@ export const COMPANY_REPORT_CATALOG: CompanyReportTemplate[] = [
   },
   {
     key: 'ueCostByBillRateLevel',
-    label: 'Pay by Bill Rate Level',
+    label: 'PAY TO BILL RATE LEVEL',
     tabKey: 'revenue_billables',
     group: 'Revenue & Billables',
     sectorCategories: ['56'],
