@@ -1377,6 +1377,12 @@ export function getBambooHrRevenueBillablesPayload(snapshot: BambooHrWorkforceRe
       ? revenueBillables.billRateLevelByMarketRows
       : [],
     estimatedBillableEconomicsByEmployee,
+    payCostByBillRateLevel: Array.isArray(snapshot.unitEconomics?.payCostByBillRateLevel)
+      ? snapshot.unitEconomics.payCostByBillRateLevel
+      : snapshot.dimensions?.headcountByBillRateLevel || [],
+    employeeCompensationRoster: Array.isArray(snapshot.unitEconomics?.employeeCompensationRoster)
+      ? snapshot.unitEconomics.employeeCompensationRoster
+      : snapshot.dimensions?.employeeCompensationRoster || [],
     unavailableReports: Array.isArray(revenueBillables?.unavailableReports) ? revenueBillables.unavailableReports : [],
     records: Array.isArray(revenueBillables?.billRateLevelRows) ? revenueBillables.billRateLevelRows : [],
   };

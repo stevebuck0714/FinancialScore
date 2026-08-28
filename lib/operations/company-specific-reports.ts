@@ -235,6 +235,13 @@ export const COMPANY_REPORT_CATALOG: CompanyReportTemplate[] = [
     sectorCategories: ['56'],
   },
   {
+    key: 'ueCostByBillRateLevel',
+    label: 'Pay by Bill Rate Level',
+    tabKey: 'revenue_billables',
+    group: 'Revenue & Billables',
+    sectorCategories: ['56'],
+  },
+  {
     key: 'rbEmployeesByBillRateLevel',
     label: 'Employees by Bill Rate Level',
     tabKey: 'revenue_billables',
@@ -265,13 +272,6 @@ export const COMPANY_REPORT_CATALOG: CompanyReportTemplate[] = [
   {
     key: 'ueUnitEconomicsInputs',
     label: 'Unit Economics Inputs',
-    tabKey: 'unit_economics',
-    group: 'Unit Economics',
-    sectorCategories: ['56'],
-  },
-  {
-    key: 'ueCostByBillRateLevel',
-    label: 'Pay by Bill Rate Level',
     tabKey: 'unit_economics',
     group: 'Unit Economics',
     sectorCategories: ['56'],
@@ -334,11 +334,11 @@ const COGENT_ONLY_REVENUE_REPORT_KEYS = new Set([
   'rbEmployeesByMarketBillRateLevel',
   'rbEstimatedBillableEconomics',
   'rbUnavailableRateInputs',
+  'ueCostByBillRateLevel',
 ]);
 
 const COGENT_ONLY_UNIT_ECONOMICS_REPORT_KEYS = new Set([
   'ueUnitEconomicsInputs',
-  'ueCostByBillRateLevel',
   'ueCostByRole',
   'ueCostByLocation',
   'ueMissingBillRateLevel',

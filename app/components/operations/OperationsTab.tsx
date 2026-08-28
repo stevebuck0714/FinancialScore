@@ -23565,6 +23565,39 @@ Strategies to Improve the CCC
       const estimatedBillableEconomicsRows: any[] = Array.isArray(revenueBillablesData.estimatedBillableEconomicsByEmployee)
         ? revenueBillablesData.estimatedBillableEconomicsByEmployee
         : [];
+      const payCostByBillRateLevel: any[] = Array.isArray(revenueBillablesData.payCostByBillRateLevel)
+        ? revenueBillablesData.payCostByBillRateLevel
+        : [];
+      const billRateEconomicsByLevel = new Map<string, any[]>();
+      estimatedBillableEconomicsRows.forEach((employee) => {
+        const level = String(employee.billRateLevel || employee.normalizedBillRateLevel || 'Unassigned');
+        const employees = billRateEconomicsByLevel.get(level) || [];
+        employees.push(employee);
+        billRateEconomicsByLevel.set(level, employees);
+      });
+      const employeesForBillRateLevel = (level: string) =>
+        [...(billRateEconomicsByLevel.get(String(level || '')) || [])]
+          .sort((a, b) => String(a.employeeName || '').localeCompare(String(b.employeeName || ''), undefined, { sensitivity: 'base' }));
+      const averageMetric = (employees: any[], key: string) => {
+        const values = employees
+          .map((employee) => Number(employee[key]))
+          .filter((value) => Number.isFinite(value));
+        return values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : null;
+      };
+      const payByBillRateLevelRows = payCostByBillRateLevel.map((row) => {
+        const level = String(row.key || 'Unassigned');
+        const employees = employeesForBillRateLevel(level);
+        return {
+          ...row,
+          level,
+          employees,
+          avgPayRate: averageMetric(employees, 'payRate'),
+          avgBillRate: averageMetric(employees, 'rateCardBillRate'),
+          avgPayToBill: averageMetric(employees, 'billToPayRatio'),
+          avgAnnualBillings: averageMetric(employees, 'estimatedAnnualBillings'),
+          avgEstimatedSpread: averageMetric(employees, 'estimatedAnnualSpread'),
+        };
+      });
       const unavailableReports: string[] = Array.isArray(revenueBillablesData.unavailableReports) ? revenueBillablesData.unavailableReports : [];
       const sourceNote = String(revenueBillablesData?.meta?.note || summary.note || '');
       const estimatedBillableNumericSortKeys = new Set(['payRate', 'rateCardBillRate', 'billToPayRatio', 'estimatedAnnualBillings', 'estimatedAnnualPay', 'estimatedAnnualSpread']);
@@ -23574,6 +23607,9 @@ Strategies to Improve the CCC
           return Number.isFinite(value) ? value : Number.NEGATIVE_INFINITY;
         }
         if (estimatedBillableSortKey === 'billRateLevel') return String(row.billRateLevel || row.normalizedBillRateLevel || '').toLowerCase();
+        if (estimatedBillableSortKey === 'market') return String(row.market || row.location || '').toLowerCase();
+        if (estimatedBillableSortKey === 'role') return String(row.role || '').toLowerCase();
+        if (estimatedBillableSortKey === 'employeeName') return String(row.employeeName || '').toLowerCase();
         return String(row[estimatedBillableSortKey] || '').toLowerCase();
       };
       const sortedEstimatedBillableEconomicsRows = [...estimatedBillableEconomicsRows].sort((a, b) => {
@@ -23585,39 +23621,39 @@ Strategies to Improve the CCC
         if (comparison !== 0) return comparison * (estimatedBillableSortDir === 'asc' ? 1 : -1);
         return String(a.employeeName || '').localeCompare(String(b.employeeName || ''));
       });
+      const handleEstimatedBillableSort = (key: typeof estimatedBillableSortKey) => {
+        if (estimatedBillableSortKey === key) {
+          setEstimatedBillableSortDir((current) => (current === 'asc' ? 'desc' : 'asc'));
+          return;
+        }
+        setEstimatedBillableSortKey(key);
+        setEstimatedBillableSortDir(estimatedBillableNumericSortKeys.has(key) ? 'desc' : 'asc');
+      };
       const renderEstimatedBillableSortHeader = (
         key: typeof estimatedBillableSortKey,
         label: string,
         align: 'left' | 'right' = 'left'
       ) => {
         const active = estimatedBillableSortKey === key;
+        const indicator = active
+          ? (estimatedBillableSortDir === 'asc' ? ' ▲' : ' ▼')
+          : ' ↕';
         return (
-          <th style={{ ...thStyle, textAlign: align }}>
-            <button
-              type="button"
-              onClick={() => {
-                if (active) {
-                  setEstimatedBillableSortDir((current) => (current === 'asc' ? 'desc' : 'asc'));
-                } else {
-                  setEstimatedBillableSortKey(key);
-                  setEstimatedBillableSortDir(estimatedBillableNumericSortKeys.has(key) ? 'desc' : 'asc');
-                }
-              }}
-              style={{
-                border: 0,
-                background: 'transparent',
-                padding: 0,
-                color: 'inherit',
-                font: 'inherit',
-                fontWeight: 700,
-                cursor: 'pointer',
-                textTransform: 'inherit',
-                letterSpacing: 'inherit',
-                textAlign: align,
-              }}
-            >
-              {label}{active ? (estimatedBillableSortDir === 'asc' ? ' ^' : ' v') : ''}
-            </button>
+          <th
+            onClick={() => handleEstimatedBillableSort(key)}
+            title={`Sort by ${label}`}
+            style={{
+              ...thStyle,
+              textAlign: align,
+              cursor: 'pointer',
+              userSelect: 'none',
+              whiteSpace: 'nowrap',
+              position: 'sticky',
+              top: 0,
+              zIndex: 1,
+            }}
+          >
+            {label}{indicator}
           </th>
         );
       };
@@ -23765,6 +23801,95 @@ Strategies to Improve the CCC
                   Upload and sync an active Cogent Rate Card to match employees to market bill rates.
                 </div>
               )}
+            </div>
+          )}
+
+          {isSectionEnabled('ueCostByBillRateLevel') && (
+            <div style={cardStyle}>
+              <div style={cardTitleStyle}>Cost by Bill Rate Level</div>
+              <div style={{ overflowX: 'auto', maxHeight: '420px', overflowY: 'auto' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                  <thead>
+                    <tr>
+                      <th style={thStyle}>Bill Rate Level</th>
+                      <th style={{ ...thStyle, textAlign: 'right' }}>Headcount</th>
+                      <th style={{ ...thStyle, textAlign: 'right' }}>Avg Pay Rate</th>
+                      <th style={{ ...thStyle, textAlign: 'right' }}>Avg Bill Rate</th>
+                      <th style={{ ...thStyle, textAlign: 'right' }}>Avg Pay-to-Bill</th>
+                      <th style={{ ...thStyle, textAlign: 'right' }}>Avg Annual Billings</th>
+                      <th style={{ ...thStyle, textAlign: 'right' }}>Avg Annual Pay</th>
+                      <th style={{ ...thStyle, textAlign: 'right' }}>Avg Estimated Spread</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {payByBillRateLevelRows.slice(0, 18).map((row) => {
+                      const levelKey = row.level;
+                      const isExpanded = Boolean(expandedUnitBillRateLevels[levelKey]);
+                      const employees = row.employees;
+                      return (
+                        <React.Fragment key={levelKey}>
+                          <tr>
+                            <td style={{ ...tdStyle, fontWeight: 600 }}>
+                              <button
+                                type="button"
+                                onClick={() => setExpandedUnitBillRateLevels((prev) => ({ ...prev, [levelKey]: !prev[levelKey] }))}
+                                style={{ border: 'none', background: 'transparent', padding: 0, marginRight: '8px', color: '#2563eb', cursor: 'pointer', fontWeight: 700 }}
+                                aria-label={`${isExpanded ? 'Collapse' : 'Expand'} ${levelKey}`}
+                              >
+                                {isExpanded ? '-' : '+'}
+                              </button>
+                              {levelKey}
+                            </td>
+                            <td style={{ ...tdStyle, textAlign: 'right' }}>{Number(row.headcount || 0).toLocaleString('en-US')}</td>
+                            <td style={{ ...tdStyle, textAlign: 'right' }}>{row.avgPayRate == null ? '—' : formatUnitCost(row.avgPayRate)}</td>
+                            <td style={{ ...tdStyle, textAlign: 'right' }}>{row.avgBillRate == null ? '—' : formatUnitCost(row.avgBillRate)}</td>
+                            <td style={{ ...tdStyle, textAlign: 'right' }}>{row.avgPayToBill == null ? '—' : `${row.avgPayToBill.toFixed(2)}x`}</td>
+                            <td style={{ ...tdStyle, textAlign: 'right' }}>{row.avgAnnualBillings == null ? '—' : formatCurrency(row.avgAnnualBillings)}</td>
+                            <td style={{ ...tdStyle, textAlign: 'right' }}>{row.avgAnnualCost == null ? '—' : formatCurrency(row.avgAnnualCost)}</td>
+                            <td style={{ ...tdStyle, textAlign: 'right', fontWeight: 700, color: row.avgEstimatedSpread == null || row.avgEstimatedSpread >= 0 ? '#166534' : '#991b1b' }}>
+                              {row.avgEstimatedSpread == null ? '—' : formatCurrency(row.avgEstimatedSpread)}
+                            </td>
+                          </tr>
+                          {isExpanded && (
+                            <tr>
+                              <td colSpan={8} style={{ ...tdStyle, padding: '0 10px 12px 34px', background: '#f8fafc' }}>
+                                <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                                  <thead>
+                                    <tr>
+                                      <th style={thStyle}>Employee</th>
+                                      <th style={thStyle}>Role</th>
+                                      <th style={{ ...thStyle, textAlign: 'right' }}>Pay Rate</th>
+                                      <th style={{ ...thStyle, textAlign: 'right' }}>Bill Rate</th>
+                                      <th style={{ ...thStyle, textAlign: 'right' }}>Pay-to-Bill</th>
+                                      <th style={{ ...thStyle, textAlign: 'right' }}>Est. Annual Billings</th>
+                                      <th style={{ ...thStyle, textAlign: 'right' }}>Annual Pay</th>
+                                      <th style={{ ...thStyle, textAlign: 'right' }}>Est. Spread</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody>
+                                    {employees.map((employee) => (
+                                      <tr key={`${levelKey}-${employee.employeeId}`}>
+                                        <td style={{ ...tdStyle, fontWeight: 600 }}>{employee.employeeName || employee.employeeId}</td>
+                                        <td style={tdStyle}>{employee.role || 'Unassigned'}</td>
+                                        <td style={{ ...tdStyle, textAlign: 'right' }}>{employee.payRate == null ? '—' : formatUnitCost(employee.payRate)}</td>
+                                        <td style={{ ...tdStyle, textAlign: 'right' }}>{formatUnitCost(Number(employee.rateCardBillRate || 0))}</td>
+                                        <td style={{ ...tdStyle, textAlign: 'right' }}>{employee.billToPayRatio == null ? '—' : `${Number(employee.billToPayRatio).toFixed(2)}x`}</td>
+                                        <td style={{ ...tdStyle, textAlign: 'right' }}>{formatCurrency(Number(employee.estimatedAnnualBillings || 0))}</td>
+                                        <td style={{ ...tdStyle, textAlign: 'right' }}>{employee.estimatedAnnualPay == null ? '—' : formatCurrency(employee.estimatedAnnualPay)}</td>
+                                        <td style={{ ...tdStyle, textAlign: 'right', color: employee.estimatedAnnualSpread == null || Number(employee.estimatedAnnualSpread) >= 0 ? '#166534' : '#991b1b' }}>{employee.estimatedAnnualSpread == null ? '—' : formatCurrency(employee.estimatedAnnualSpread)}</td>
+                                      </tr>
+                                    ))}
+                                  </tbody>
+                                </table>
+                              </td>
+                            </tr>
+                          )}
+                        </React.Fragment>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
             </div>
           )}
 
@@ -23974,17 +24099,12 @@ Strategies to Improve the CCC
     const isBambooHrWorkforce = unitEconomicsData?.meta?.source === 'BAMBOOHR_WORKFORCE';
 
     if (isBambooHrWorkforce) {
-      const payCostByBillRateLevel: any[] = Array.isArray(unitEconomicsData.payCostByBillRateLevel) ? unitEconomicsData.payCostByBillRateLevel : [];
       const payCostByRole: any[] = Array.isArray(unitEconomicsData.payCostByRole) ? unitEconomicsData.payCostByRole : [];
       const payCostByLocation: any[] = Array.isArray(unitEconomicsData.payCostByLocation) ? unitEconomicsData.payCostByLocation : [];
       const employeeCompensationRoster: any[] = Array.isArray(unitEconomicsData.employeeCompensationRoster) ? unitEconomicsData.employeeCompensationRoster : [];
       const missingBillRateLevel: any[] = Array.isArray(unitEconomicsData.missingBillRateLevel) ? unitEconomicsData.missingBillRateLevel : [];
       const unavailableReports: string[] = Array.isArray(unitEconomicsData.unavailableReports) ? unitEconomicsData.unavailableReports : [];
       const sourceNote = String(unitEconomicsData?.meta?.note || summary.note || '');
-      const employeesForBillRateLevel = (level: string) =>
-        employeeCompensationRoster
-          .filter((employee) => String(employee.billRateLevel || '') === String(level || ''))
-          .sort((a, b) => String(a.role || '').localeCompare(String(b.role || '')) || String(a.employeeName || '').localeCompare(String(b.employeeName || '')));
       const employeesForLocation = (location: string) =>
         employeeCompensationRoster
           .filter((employee) => String(employee.location || '') === String(location || ''))
@@ -24013,59 +24133,6 @@ Strategies to Improve the CCC
           )}
 
           <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)', gap: '16px' }}>
-            {isSectionEnabled('ueCostByBillRateLevel') && <div style={{ ...cardStyle, gridColumn: '1 / -1' }}>
-              <div style={cardTitleStyle}>Cost by Bill Rate Level</div>
-              <div style={{ overflowX: 'auto', maxHeight: '420px', overflowY: 'auto' }}>
-                <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                  <thead><tr><th style={thStyle}>Bill Rate Level</th><th style={{ ...thStyle, textAlign: 'right' }}>Headcount</th><th style={{ ...thStyle, textAlign: 'right' }}>Total Annual Pay</th><th style={{ ...thStyle, textAlign: 'right' }}>Avg Annual Pay</th><th style={{ ...thStyle, textAlign: 'right' }}>Avg Monthly Pay</th></tr></thead>
-                  <tbody>{payCostByBillRateLevel.slice(0, 18).map((row) => {
-                    const levelKey = String(row.key || 'Unassigned');
-                    const isExpanded = Boolean(expandedUnitBillRateLevels[levelKey]);
-                    const employees = employeesForBillRateLevel(levelKey);
-                    return (
-                      <React.Fragment key={levelKey}>
-                        <tr>
-                          <td style={{ ...tdStyle, fontWeight: 600 }}>
-                            <button
-                              type="button"
-                              onClick={() => setExpandedUnitBillRateLevels((prev) => ({ ...prev, [levelKey]: !prev[levelKey] }))}
-                              style={{ border: 'none', background: 'transparent', padding: 0, marginRight: '8px', color: '#2563eb', cursor: 'pointer', fontWeight: 700 }}
-                              aria-label={`${isExpanded ? 'Collapse' : 'Expand'} ${levelKey}`}
-                            >
-                              {isExpanded ? '-' : '+'}
-                            </button>
-                            {levelKey}
-                          </td>
-                          <td style={{ ...tdStyle, textAlign: 'right' }}>{Number(row.headcount || 0).toLocaleString('en-US')}</td>
-                          <td style={{ ...tdStyle, textAlign: 'right', fontWeight: 700 }}>{row.totalAnnualCost == null ? '—' : formatCurrency(row.totalAnnualCost)}</td>
-                          <td style={{ ...tdStyle, textAlign: 'right' }}>{row.avgAnnualCost == null ? '—' : formatCurrency(row.avgAnnualCost)}</td>
-                          <td style={{ ...tdStyle, textAlign: 'right' }}>{row.avgMonthlyCost == null ? '—' : formatCurrency(row.avgMonthlyCost)}</td>
-                        </tr>
-                        {isExpanded && (
-                          <tr>
-                            <td colSpan={5} style={{ ...tdStyle, padding: '0 10px 12px 34px', background: '#f8fafc' }}>
-                              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                                <thead><tr><th style={thStyle}>Role</th><th style={thStyle}>Employee</th><th style={thStyle}>Department</th><th style={thStyle}>Location</th><th style={{ ...thStyle, textAlign: 'right' }}>Annual Pay</th><th style={{ ...thStyle, textAlign: 'right' }}>Monthly Pay</th></tr></thead>
-                                <tbody>{employees.map((employee) => (
-                                  <tr key={`${levelKey}-${employee.employeeId}`}>
-                                    <td style={tdStyle}>{employee.role}</td>
-                                    <td style={{ ...tdStyle, fontWeight: 600 }}>{employee.employeeName || employee.employeeId}</td>
-                                    <td style={tdStyle}>{employee.department}</td>
-                                    <td style={tdStyle}>{employee.location}</td>
-                                    <td style={{ ...tdStyle, textAlign: 'right' }}>{employee.annualCost == null ? '—' : formatCurrency(employee.annualCost)}</td>
-                                    <td style={{ ...tdStyle, textAlign: 'right' }}>{employee.monthlyCost == null ? '—' : formatCurrency(employee.monthlyCost)}</td>
-                                  </tr>
-                                ))}</tbody>
-                              </table>
-                            </td>
-                          </tr>
-                        )}
-                      </React.Fragment>
-                    );
-                  })}</tbody>
-                </table>
-              </div>
-            </div>}
             {isSectionEnabled('ueCostByRole') && <div style={cardStyle}>
               <div style={cardTitleStyle}>Total Pay by Role</div>
               <ResponsiveContainer width="100%" height={360}>
