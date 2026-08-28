@@ -24,6 +24,15 @@ export interface DatabaseInfo {
   developmentProjects: string[];
 }
 
+function readEnv(name: string): string {
+  // Bracket access so Next.js webpack cannot inline this as `undefined`.
+  return String(process.env[name] || '').trim();
+}
+
+function isBrowserRuntime(): boolean {
+  return typeof window !== 'undefined';
+}
+
 function getProjectList(envValue: string | undefined, fallback: string[]): string[] {
   const raw = ((envValue && envValue.trim()) || fallback.join(',')).split(',');
   return raw.map((value) => value.trim()).filter(Boolean);
@@ -69,11 +78,11 @@ function isAllowedProductionRuntime(): boolean {
  * This should be called before any database operations
  */
 export function validateDatabaseConnection(): DatabaseInfo {
-  const databaseUrl = process.env.DATABASE_URL || '';
+  const databaseUrl = readEnv('DATABASE_URL');
 
-  const productionProjects = getProjectList(process.env.PRODUCTION_DB_PROJECTS, ['orange-poetry', 'aged-snow']);
-  const stagingProjects = getProjectList(process.env.STAGING_DB_PROJECTS, ['cold-frost']);
-  const developmentProjects = getProjectList(process.env.DEV_DB_PROJECTS, ['cool-dream']);
+  const productionProjects = getProjectList(readEnv('PRODUCTION_DB_PROJECTS') || undefined, ['orange-poetry', 'aged-snow']);
+  const stagingProjects = getProjectList(readEnv('STAGING_DB_PROJECTS') || undefined, ['cold-frost']);
+  const developmentProjects = getProjectList(readEnv('DEV_DB_PROJECTS') || undefined, ['cool-dream']);
 
   const productionMatch = findProject(databaseUrl, productionProjects);
   const stagingMatch = findProject(databaseUrl, stagingProjects);
@@ -117,6 +126,12 @@ export function validateDatabaseConnection(): DatabaseInfo {
     databaseName = host;
     label = `NEON (${host})`;
     isAllowed = true;
+  } else if (!databaseUrl) {
+    databaseName = 'missing';
+    label = 'MISSING_DATABASE_URL';
+    // An empty URL is not a production-isolation event. The browser never has
+    // DATABASE_URL, and Next can evaluate this module before env is available.
+    isAllowed = true;
   }
 
   return {
@@ -145,6 +160,10 @@ export function isProductionSite(): boolean {
  * Call this before any database operation
  */
 export function enforceDatabaseSecurity(): void {
+  if (isBrowserRuntime()) {
+    return;
+  }
+
   // Skip security check during Next.js build phase
   // During build, Next.js executes code to collect page data, but we don't want
   // to block the build process. The security check will run at runtime.
@@ -155,8 +174,8 @@ export function enforceDatabaseSecurity(): void {
   ) {
     // During build, only block production database connections
     // Staging database is allowed during build
-    const databaseUrl = process.env.DATABASE_URL || '';
-    const productionProjects = getProjectList(process.env.PRODUCTION_DB_PROJECTS, ['orange-poetry', 'aged-snow']);
+    const databaseUrl = readEnv('DATABASE_URL');
+    const productionProjects = getProjectList(readEnv('PRODUCTION_DB_PROJECTS') || undefined, ['orange-poetry', 'aged-snow']);
     if (findProject(databaseUrl, productionProjects) && !isAllowedProductionRuntime()) {
       const error = new Error(
         `🚨 SECURITY VIOLATION: Production database detected during build in non-production environment!\n` +
@@ -180,7 +199,7 @@ export function enforceDatabaseSecurity(): void {
     const error = new Error(
       `🚨 SECURITY VIOLATION: Database connection not allowed!\n` +
         `   Database: ${dbInfo.label}\n` +
-        `   Database host: ${getDatabaseHost(process.env.DATABASE_URL || '')}\n` +
+        `   Database host: ${getDatabaseHost(readEnv('DATABASE_URL'))}\n` +
         `   NODE_ENV: ${process.env.NODE_ENV}\n` +
         `   VERCEL_ENV: ${process.env.VERCEL_ENV}\n` +
         `   VERCEL: ${process.env.VERCEL}\n` +
@@ -195,7 +214,7 @@ export function enforceDatabaseSecurity(): void {
         `   Local/dev/preview must NEVER connect to production databases.`,
     );
     console.error(error.message);
-    console.error('🚨 DATABASE_URL host:', getDatabaseHost(process.env.DATABASE_URL || ''));
+    console.error('🚨 DATABASE_URL host:', getDatabaseHost(readEnv('DATABASE_URL')));
     throw error;
   }
 
@@ -207,7 +226,7 @@ export function enforceDatabaseSecurity(): void {
         `   Aborting to prevent data corruption.`,
     );
     console.error(error.message);
-    console.error('🚨 DATABASE_URL host:', getDatabaseHost(process.env.DATABASE_URL || ''));
+    console.error('🚨 DATABASE_URL host:', getDatabaseHost(readEnv('DATABASE_URL')));
     throw error;
   }
 

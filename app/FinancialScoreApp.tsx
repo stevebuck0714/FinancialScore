@@ -1886,6 +1886,7 @@ function FinancialScorePage() {
   // Company user access control (non-admin company users only).
   const COMPANY_USER_SECTIONS = [
     'ask-corelytics',
+    'financial-score',
     'business-pulse',
     'operational-dashboard',
     'company-dashboard',
@@ -1900,7 +1901,6 @@ function FinancialScorePage() {
     'dataroom',
     'digital-presence',
     'custom-reports',
-    'financial-score',
   ] as const;
   const isCompanyUser = currentUser?.role === 'user' && currentUser?.userType === 'company';
   const isCompanyAdmin = isCompanyUser && (currentUser as any)?.companyRole === 'admin';
@@ -14428,6 +14428,34 @@ function FinancialScorePage() {
               </h3>
             </div>
 
+            {hasCompanySectionAccess('financial-score') && isFinancialScoreEnabledByAdmin && (
+              <div style={{ marginBottom: '16px' }}>
+                <h3
+                  onClick={() => handleNavigation('fs-score')}
+                  style={{
+                    fontSize: '14px',
+                    fontWeight: '700',
+                    color: CORELYTICS_SCORE_TABS.some((tab) => tab.id === currentView) ? '#1F70C1' : '#334155',
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.5px',
+                    padding: '1px 32px',
+                    margin: '0',
+                    cursor: 'pointer',
+                    transition: 'color 0.2s',
+                    whiteSpace: 'nowrap',
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.color = '#1F70C1';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.color = CORELYTICS_SCORE_TABS.some((tab) => tab.id === currentView) ? '#1F70C1' : '#334155';
+                  }}
+                >
+                  {CORELYTICS_SCORE_TABS.some((tab) => tab.id === currentView) && '› '}CORELYTICS SCORE
+                </h3>
+              </div>
+            )}
+
             {/* Expert Analysis */}
             <div style={{ marginBottom: '16px' }}>
               <h3
@@ -14514,32 +14542,6 @@ function FinancialScorePage() {
                   }}
                 >
                   DIGITAL PRESENCE ↗
-                </h3>
-              )}
-
-              {hasCompanySectionAccess('financial-score') && isFinancialScoreEnabledByAdmin && (
-                <h3
-                  onClick={() => handleNavigation('fs-score')}
-                  style={{
-                    fontSize: '14px',
-                    fontWeight: '700',
-                    color: CORELYTICS_SCORE_TABS.some((tab) => tab.id === currentView) ? '#1F70C1' : '#334155',
-                    textTransform: 'uppercase',
-                    letterSpacing: '0.5px',
-                    padding: '1px 32px',
-                    margin: '16px 0 0 0',
-                    cursor: 'pointer',
-                    transition: 'color 0.2s',
-                    whiteSpace: 'nowrap',
-                  }}
-                  onMouseEnter={(e) => {
-                    e.currentTarget.style.color = '#1F70C1';
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.color = CORELYTICS_SCORE_TABS.some((tab) => tab.id === currentView) ? '#1F70C1' : '#334155';
-                  }}
-                >
-                  {CORELYTICS_SCORE_TABS.some((tab) => tab.id === currentView) && '› '}CORELYTICS SCORE
                 </h3>
               )}
 

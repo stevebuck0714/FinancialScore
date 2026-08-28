@@ -4,6 +4,7 @@ import prisma from '@/lib/prisma';
 import { ensureLegacyCompanyAccess, listAccessibleCompaniesForUser } from '@/lib/user-company-access';
 import { isDemoCompany, isDemoExpired } from '@/lib/demo-access';
 
+export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 const DEV_DEFAULT_COMPANY_NAME = 'test atlantic precision CSI';
 

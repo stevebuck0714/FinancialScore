@@ -330,7 +330,7 @@ const TOP_LINE_BUCKETS_BY_SECTOR: Record<string, Bucket[]> = {
     { key: 'ap', label: 'AP' },
     { key: 'inventory', label: 'Inventory (on-hand, aging, turns)' },
     { key: 'orders_sales', label: 'Orders / Sales (order-to-ship, fill rate)' },
-    { key: 'products_skus', label: 'Products / SKUs (pricing, margin, assortment)' },
+    { key: 'products_skus', label: 'Products' },
     { key: 'vendors', label: 'Vendors' },
     { key: 'customers', label: 'Customers (accounts, terms, buying patterns)' },
   ],
