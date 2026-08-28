@@ -7,18 +7,19 @@ import {
   FORECAST_QUARTERS,
   closedMonths,
   monthQty,
+  pctVsPlan,
   type ForecastMonth,
   type ForecastQuarter,
 } from '@/lib/operations/product-revenue-forecast';
 import {
-  pctDaysShippedQuarter,
   pctDaysShippedYear,
   pctRevenueShipped,
-  pctVsPlan,
   revenueDifference,
+} from '@/lib/operations/product-revenue-actual';
+import {
   type ProductGroupDataset,
   type ProductGroupRow,
-} from '@/lib/operations/product-group-reports';
+} from '@/lib/operations/product-group-types';
 
 export type GroupReportView =
   | 'marginAnalysis'
