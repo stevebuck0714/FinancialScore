@@ -205,6 +205,51 @@ export async function fetchBambooHrJson(
   }
 }
 
+export async function postBambooHrJson(
+  settings: BambooHrSettings,
+  endpoint: string,
+  body: Record<string, unknown>,
+  query?: Record<string, string>
+): Promise<{ status: number; json: unknown }> {
+  assertBambooHrSettingsReady(settings);
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 20000);
+
+  try {
+    const response = await fetch(bambooHrUrl(settings, endpoint, query), {
+      method: 'POST',
+      headers: {
+        Accept: 'application/json',
+        'Content-Type': 'application/json',
+        Authorization: getBambooHrAuthHeader(settings.apiKey),
+      },
+      body: JSON.stringify(body),
+      signal: controller.signal,
+    });
+    const text = await response.text();
+    let json: unknown = null;
+    if (text) {
+      try {
+        json = JSON.parse(text);
+      } catch {
+        json = { raw: text };
+      }
+    }
+    if (!response.ok) {
+      const preview = previewText(text);
+      throw new Error(`BambooHR API returned HTTP ${response.status}${preview ? `: ${preview}` : ''}`);
+    }
+    return { status: response.status, json };
+  } catch (error) {
+    if (error instanceof Error && error.name === 'AbortError') {
+      throw new Error('BambooHR API request timed out.');
+    }
+    throw error;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
 function countBambooHrRecords(json: unknown): number {
   if (Array.isArray(json)) return json.length;
   if (!json || typeof json !== 'object') return 0;

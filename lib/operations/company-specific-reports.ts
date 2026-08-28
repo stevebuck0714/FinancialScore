@@ -228,6 +228,34 @@ export const COMPANY_REPORT_CATALOG: CompanyReportTemplate[] = [
     sectorCategories: ['56'],
   },
   {
+    key: 'lsBenefitsParticipation',
+    label: 'Benefits Participation',
+    tabKey: 'labor_scheduling',
+    group: 'Labor & Scheduling',
+    sectorCategories: ['56'],
+  },
+  {
+    key: 'lsLossRate',
+    label: 'Employee Loss Rate',
+    tabKey: 'labor_scheduling',
+    group: 'Labor & Scheduling',
+    sectorCategories: ['56'],
+  },
+  {
+    key: 'lsOneYearRetention',
+    label: 'One-Year Retention Rate',
+    tabKey: 'labor_scheduling',
+    group: 'Labor & Scheduling',
+    sectorCategories: ['56'],
+  },
+  {
+    key: 'lsEmployeeEnps',
+    label: 'Employee eNPS',
+    tabKey: 'labor_scheduling',
+    group: 'Labor & Scheduling',
+    sectorCategories: ['56'],
+  },
+  {
     key: 'rbBillRateLevelSummary',
     label: 'Bill Rate Level Summary',
     tabKey: 'revenue_billables',
@@ -326,6 +354,10 @@ const COGENT_ONLY_LABOR_REPORT_KEYS = new Set([
   'lsLocationPayTypeMix',
   'lsBillRateLevelCoverage',
   'lsPtoBalances',
+  'lsBenefitsParticipation',
+  'lsLossRate',
+  'lsOneYearRetention',
+  'lsEmployeeEnps',
 ]);
 
 const COGENT_ONLY_REVENUE_REPORT_KEYS = new Set([

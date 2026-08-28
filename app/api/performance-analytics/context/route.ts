@@ -41,6 +41,13 @@ type OpsCoverageSummary = {
   frequency: string | null;
 };
 
+type OpsCoverageGroup = {
+  frequency: string;
+  _count: { _all: number };
+  _min: { snapshotDate: Date | null };
+  _max: { snapshotDate: Date | null };
+};
+
 /**
  * Ops modules (esp. Infor CSI tenants like Atlantic Precision) write mostly
  * daily snapshots. Data Coverage previously filtered frequency=monthly only,
@@ -49,30 +56,10 @@ type OpsCoverageSummary = {
  */
 async function summarizeOpsCoverage(
   label: string,
-  groupBy: (args: any) => Promise<
-    Array<{
-      frequency: string;
-      _count: { _all: number };
-      _min: { snapshotDate: Date | null };
-      _max: { snapshotDate: Date | null };
-    }>
-  >,
-  companyId: string,
-  startDate: Date,
-  endDate: Date
+  loadGroups: () => Promise<OpsCoverageGroup[]>
 ): Promise<OpsCoverageSummary> {
   try {
-    const groups = await groupBy({
-      by: ['frequency'],
-      where: {
-        companyId,
-        frequency: { in: ['daily', 'weekly', 'monthly'] },
-        snapshotDate: { gte: startDate, lte: endDate },
-      },
-      _count: { _all: true },
-      _min: { snapshotDate: true },
-      _max: { snapshotDate: true },
-    });
+    const groups = await loadGroups();
     if (!groups.length) return { count: 0, start: null, end: null, frequency: null };
 
     const preferredOrder = ['daily', 'weekly', 'monthly'];
@@ -321,30 +308,30 @@ export async function GET(request: NextRequest) {
           take: limit,
         })
       ),
-      summarizeOpsCoverage('cash', (args) => prisma.cashSnapshot.groupBy(args as any), companyId, startDate, endDate),
-      summarizeOpsCoverage('ar', (args) => prisma.aRAgingSnapshot.groupBy(args as any), companyId, startDate, endDate),
-      summarizeOpsCoverage('ap', (args) => prisma.aPAgingSnapshot.groupBy(args as any), companyId, startDate, endDate),
-      summarizeOpsCoverage(
-        'customers',
-        (args) => prisma.customerSalesSnapshot.groupBy(args as any),
-        companyId,
-        startDate,
-        endDate
-      ),
-      summarizeOpsCoverage(
-        'products',
-        (args) => prisma.productSalesSnapshot.groupBy(args as any),
-        companyId,
-        startDate,
-        endDate
-      ),
-      summarizeOpsCoverage(
-        'inventory',
-        (args) => prisma.inventorySnapshot.groupBy(args as any),
-        companyId,
-        startDate,
-        endDate
-      ),
+      summarizeOpsCoverage('cash', async () => {
+        const groups = await prisma.cashSnapshot.groupBy({ by: ['frequency'], where: { companyId, frequency: { in: ['daily', 'weekly', 'monthly'] }, snapshotDate: { gte: startDate, lte: endDate } }, _count: { _all: true }, _min: { snapshotDate: true }, _max: { snapshotDate: true } });
+        return groups as OpsCoverageGroup[];
+      }),
+      summarizeOpsCoverage('ar', async () => {
+        const groups = await prisma.aRAgingSnapshot.groupBy({ by: ['frequency'], where: { companyId, frequency: { in: ['daily', 'weekly', 'monthly'] }, snapshotDate: { gte: startDate, lte: endDate } }, _count: { _all: true }, _min: { snapshotDate: true }, _max: { snapshotDate: true } });
+        return groups as OpsCoverageGroup[];
+      }),
+      summarizeOpsCoverage('ap', async () => {
+        const groups = await prisma.aPAgingSnapshot.groupBy({ by: ['frequency'], where: { companyId, frequency: { in: ['daily', 'weekly', 'monthly'] }, snapshotDate: { gte: startDate, lte: endDate } }, _count: { _all: true }, _min: { snapshotDate: true }, _max: { snapshotDate: true } });
+        return groups as OpsCoverageGroup[];
+      }),
+      summarizeOpsCoverage('customers', async () => {
+        const groups = await prisma.customerSalesSnapshot.groupBy({ by: ['frequency'], where: { companyId, frequency: { in: ['daily', 'weekly', 'monthly'] }, snapshotDate: { gte: startDate, lte: endDate } }, _count: { _all: true }, _min: { snapshotDate: true }, _max: { snapshotDate: true } });
+        return groups as OpsCoverageGroup[];
+      }),
+      summarizeOpsCoverage('products', async () => {
+        const groups = await prisma.productSalesSnapshot.groupBy({ by: ['frequency'], where: { companyId, frequency: { in: ['daily', 'weekly', 'monthly'] }, snapshotDate: { gte: startDate, lte: endDate } }, _count: { _all: true }, _min: { snapshotDate: true }, _max: { snapshotDate: true } });
+        return groups as OpsCoverageGroup[];
+      }),
+      summarizeOpsCoverage('inventory', async () => {
+        const groups = await prisma.inventorySnapshot.groupBy({ by: ['frequency'], where: { companyId, frequency: { in: ['daily', 'weekly', 'monthly'] }, snapshotDate: { gte: startDate, lte: endDate } }, _count: { _all: true }, _min: { snapshotDate: true }, _max: { snapshotDate: true } });
+        return groups as OpsCoverageGroup[];
+      }),
     ]);
 
     const [expenseGoals, operationalGoals] = await Promise.all([

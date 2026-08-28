@@ -882,7 +882,7 @@ export async function loadRevenueDataset(params: {
     priceCount: priceRows.length,
     customers,
     companyLineCount: includeLines
-      ? forecastCustomers.reduce((sum, row) => sum + Number(row._count._all || 0), 0)
+      ? forecastCustomers.map((row) => Number(row._count._all || 0)).reduce((sum, count) => sum + count, 0)
       : allLines.length,
     totals: summarizeRevenueLines(includeLines ? scoped : allLines, dataThru),
     lines: includeLines ? scoped.map((line) => serializeJoinedRevenueLine(line, dataThru)) : [],

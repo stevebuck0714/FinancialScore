@@ -1401,7 +1401,7 @@ function qbdDedupeTransactionRecords(records: Record<string, unknown>[], fallbac
   return Array.from(byKey.values());
 }
 
-export async function buildQuickBooksDesktopMappedMonthlyPayload(companyId: string, basePayload: Record<string, unknown>) {
+async function buildQuickBooksDesktopMappedMonthlyPayload(companyId: string, basePayload: Record<string, unknown>) {
   const mappings = await prisma.accountMapping.findMany({
     where: { companyId },
     select: { accountId: true, accountName: true, accountCode: true, targetField: true },

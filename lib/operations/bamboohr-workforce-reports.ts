@@ -4,6 +4,7 @@ import {
   assertBambooHrSettingsReady,
   defaultBambooHrSettings,
   fetchBambooHrJson,
+  postBambooHrJson,
   sanitizeBambooHrSettings,
 } from '@/lib/bamboohr';
 import { formatEstDate } from '@/lib/time/eastern';
@@ -158,6 +159,37 @@ type EmployeeCompensationRow = {
   billRateLevel: string;
 };
 
+type WorkforceMetricAvailability = {
+  available: boolean;
+  reason: string | null;
+};
+
+type WorkforceMetrics = {
+  benefitsParticipation: {
+    medicalParticipationPct: number | null;
+    hsaParticipationPct: number | null;
+    hsaMatchPct: number | null;
+    retirement401kParticipationPct: number | null;
+    retirement401kMatchPct: number | null;
+    medicalCoverage: Array<{ label: string; count: number; pct: number }>;
+  } | null;
+  lossRate: { trailing90DayPct: number | null; trailing12MonthPct: number | null } | null;
+  oneYearRetention: { ratePct: number | null; denominator: number; numerator: number } | null;
+  employeeLifecycle: Array<{
+    employeeId: string;
+    status: string;
+    hireDate: string | null;
+    terminationDate: string | null;
+    terminationReason: string | null;
+  }>;
+  availability: {
+    benefits: WorkforceMetricAvailability;
+    lossRate: WorkforceMetricAvailability;
+    oneYearRetention: WorkforceMetricAvailability;
+    enps: WorkforceMetricAvailability;
+  };
+};
+
 export type BambooHrWorkforceReportSnapshot = {
   source: 'BAMBOOHR_WORKFORCE';
   generatedAt: string;
@@ -231,6 +263,7 @@ export type BambooHrWorkforceReportSnapshot = {
     missingBillRateLevel: Array<{ employeeId: string; role: string; department: string; location: string }>;
     unavailableReports: string[];
   };
+  workforceMetrics: WorkforceMetrics;
 };
 
 const SNAPSHOT_METADATA_KEY = 'bambooHrWorkforceReportSnapshot';
@@ -238,6 +271,12 @@ export const BAMBOOHR_WORKFORCE_RATE_MATCH_VERSION = 4;
 const MAX_CONCURRENCY = 8;
 const CURRENT_BAMBOOHR_CLIENT_NAME = 'Eli Lilly';
 const ESTIMATED_ANNUAL_BILLABLE_HOURS = 1920;
+const BAMBOOHR_BENEFIT_FIELDS = {
+  medical: ['5030', '5030.2', '5030.3', '5030.4', '5033', '5033.2', '5033.3', '5033.4'],
+  hsa: ['4416', '4416.2', '4416.3', '4416.4', '4460', '4460.2', '4460.3', '4460.4'],
+  retirement401k: ['4413', '4413.3', '4413.4', '4414', '4414.3', '4414.4'],
+} as const;
+const BAMBOOHR_WORKFORCE_LIFECYCLE_FIELDS = ['id', 'status', 'hireDate', 'terminationDate', '4314', '4313'] as const;
 
 function asRecord(value: unknown): Record<string, unknown> {
   return value && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
@@ -414,6 +453,132 @@ function average(values: Array<number | null>): number | null {
 
 function finiteNumbers(values: Array<number | null>): number[] {
   return values.filter((value): value is number => typeof value === 'number' && Number.isFinite(value));
+}
+
+function hasBenefitValue(row: TableRow, fields: readonly string[]): boolean {
+  return fields.some((field) => {
+    const value = row[field];
+    if (value === null || value === undefined) return false;
+    const normalized = String(value).trim().toLowerCase();
+    return Boolean(normalized && !['0', 'false', 'none', 'no', 'not enrolled'].includes(normalized));
+  });
+}
+
+async function fetchBambooHrBenefitReport(settings: BambooHrSettings): Promise<TableRow[]> {
+  const fields = [...BAMBOOHR_WORKFORCE_LIFECYCLE_FIELDS, ...BAMBOOHR_BENEFIT_FIELDS.medical, ...BAMBOOHR_BENEFIT_FIELDS.hsa, ...BAMBOOHR_BENEFIT_FIELDS.retirement401k];
+  const response = await postBambooHrJson(
+    settings,
+    'reports/custom',
+    { title: 'Corelytics Workforce Benefits', fields },
+    { format: 'JSON' }
+  );
+  return readCollection(response.json, ['employees']);
+}
+
+function isHiredByClient(row: TableRow): boolean {
+  return asString(row['4314']).toLowerCase() === 'hired by client';
+}
+
+function isTerminated(row: TableRow): boolean {
+  return Boolean(asString(row.terminationDate)) || /terminated/i.test(asString(row.status));
+}
+
+function isDateOnOrBefore(value: string, cutoff: Date): boolean {
+  const date = new Date(value);
+  return Number.isFinite(date.getTime()) && date.getTime() <= cutoff.getTime();
+}
+
+function buildWorkforceMetrics(benefitRows: TableRow[] | null, asOfDate = new Date()): WorkforceMetrics {
+  const asOfEst = new Date(`${formatEstDate(asOfDate)}T12:00:00`);
+  const unavailable = (reason: string): WorkforceMetricAvailability => ({ available: false, reason });
+  const blocked = {
+    lossRate: unavailable('Terminated employee history and the “Hired by Client” reason mapping are not available.'),
+    oneYearRetention: unavailable('Complete terminated employee history is required.'),
+    enps: unavailable('No eNPS source is exposed by the connected BambooHR API.'),
+  };
+  if (!benefitRows) {
+    return {
+      benefitsParticipation: null,
+      lossRate: null,
+      oneYearRetention: null,
+      employeeLifecycle: [],
+      availability: { benefits: unavailable('BambooHR did not authorize the benefits custom report.'), ...blocked },
+    };
+  }
+  const total = benefitRows.length;
+  const benefitFieldIds = [...BAMBOOHR_BENEFIT_FIELDS.medical, ...BAMBOOHR_BENEFIT_FIELDS.hsa, ...BAMBOOHR_BENEFIT_FIELDS.retirement401k];
+  const benefitsAvailable = benefitRows.some((row) => hasBenefitValue(row, benefitFieldIds));
+  const employeeLifecycle = benefitRows
+    .map((row) => ({
+      employeeId: asString(row.id),
+      status: asString(row.status),
+      hireDate: asString(row.hireDate) || null,
+      terminationDate: asString(row.terminationDate) || null,
+      terminationReason: asString(row['4314']) || null,
+    }))
+    .filter((row) => row.employeeId);
+  const medicalRows = benefitRows.filter((row) => hasBenefitValue(row, BAMBOOHR_BENEFIT_FIELDS.medical));
+  const hsaRows = benefitRows.filter((row) => hasBenefitValue(row, BAMBOOHR_BENEFIT_FIELDS.hsa));
+  const retirementRows = benefitRows.filter((row) => hasBenefitValue(row, BAMBOOHR_BENEFIT_FIELDS.retirement401k));
+  const hsaEmployeePays = benefitRows.filter((row) => hasBenefitValue(row, ['4416.3', '4460.3']));
+  const hsaCompanyPays = benefitRows.filter((row) => hasBenefitValue(row, ['4416.4', '4460.4']));
+  const retirementEmployeePays = benefitRows.filter((row) => hasBenefitValue(row, ['4413.3', '4414.3']));
+  const retirementCompanyPays = benefitRows.filter((row) => hasBenefitValue(row, ['4413.4', '4414.4']));
+  const coverage = new Map<string, number>();
+  for (const row of medicalRows) {
+    for (const field of ['5030.2', '5033.2']) {
+      const label = asString(row[field]);
+      if (label) coverage.set(label, (coverage.get(label) || 0) + 1);
+    }
+  }
+  const rateForDays = (days: number) => {
+    const start = new Date(asOfEst);
+    start.setDate(start.getDate() - days);
+    const terminated = benefitRows.filter((row) => {
+      const terminationDate = asString(row.terminationDate);
+      return isTerminated(row) && isDateOnOrBefore(terminationDate, asOfEst) && !isDateOnOrBefore(terminationDate, start) && !isHiredByClient(row);
+    });
+    const activeAtEnd = benefitRows.filter((row) => !isTerminated(row)).length;
+    const activeAtStart = benefitRows.filter((row) => {
+      const hireDate = asString(row.hireDate);
+      const terminationDate = asString(row.terminationDate);
+      return isDateOnOrBefore(hireDate, start) && (!terminationDate || !isDateOnOrBefore(terminationDate, start));
+    }).length;
+    const averageHeadcount = (activeAtStart + activeAtEnd) / 2;
+    return averageHeadcount > 0 ? pct(terminated.length, averageHeadcount) : null;
+  };
+  const oneYearAgo = new Date(asOfEst);
+  oneYearAgo.setDate(oneYearAgo.getDate() - 365);
+  const activeOverOneYear = benefitRows.filter((row) => !isTerminated(row) && isDateOnOrBefore(asString(row.hireDate), oneYearAgo));
+  const terminatedLastYear = benefitRows.filter((row) => isTerminated(row) && isDateOnOrBefore(asString(row.terminationDate), asOfEst) && !isDateOnOrBefore(asString(row.terminationDate), oneYearAgo));
+  const earlyTerminations = terminatedLastYear.filter((row) => {
+    const hireDate = new Date(asString(row.hireDate));
+    const terminationDate = new Date(asString(row.terminationDate));
+    return Number.isFinite(hireDate.getTime()) && Number.isFinite(terminationDate.getTime()) &&
+      terminationDate.getTime() - hireDate.getTime() < 365 * 86400000 && !isHiredByClient(row);
+  });
+  const denominator = activeOverOneYear.length + terminatedLastYear.length;
+  return {
+    benefitsParticipation: benefitsAvailable ? {
+      medicalParticipationPct: pct(medicalRows.length, total),
+      hsaParticipationPct: pct(hsaRows.length, total),
+      hsaMatchPct: pct(hsaCompanyPays.length, hsaEmployeePays.length),
+      retirement401kParticipationPct: pct(retirementRows.length, total),
+      retirement401kMatchPct: pct(retirementCompanyPays.length, retirementEmployeePays.length),
+      medicalCoverage: Array.from(coverage, ([label, count]) => ({ label, count, pct: pct(count, medicalRows.length) })),
+    } : null,
+    lossRate: { trailing90DayPct: rateForDays(90), trailing12MonthPct: rateForDays(365) },
+    oneYearRetention: { ratePct: denominator ? pct(denominator - earlyTerminations.length, denominator) : null, denominator, numerator: denominator - earlyTerminations.length },
+    employeeLifecycle,
+    availability: {
+      benefits: benefitsAvailable
+        ? { available: true, reason: null }
+        : unavailable('BambooHR returned employee lifecycle data but no benefit enrollment values for the configured plan fields.'),
+      lossRate: { available: true, reason: null },
+      oneYearRetention: { available: true, reason: null },
+      enps: blocked.enps,
+    },
+  };
 }
 
 function groupEmployees(employees: CurrentEmployee[], keyGetter: (employee: CurrentEmployee) => string): GroupRow[] {
@@ -1043,7 +1208,8 @@ function buildPayload(
   companyId: string,
   employees: CurrentEmployee[],
   generatedAt: string,
-  rateCard: ParsedCogentRateCard | null = null
+  rateCard: ParsedCogentRateCard | null = null,
+  workforceMetrics: WorkforceMetrics = buildWorkforceMetrics(null)
 ): BambooHrWorkforceReportSnapshot {
   const coveredBillRateLevels = employees.filter((employee) => employee.billRateLevel !== 'Missing bill rate level').length;
   const employeesWithPayRate = employees.filter((employee) => employee.hourlyCost != null || employee.annualCost != null).length;
@@ -1158,6 +1324,7 @@ function buildPayload(
             'Contribution margin requires customer billed compensation rates or recognized assignment revenue.',
           ],
     },
+    workforceMetrics,
   };
 }
 
@@ -1207,7 +1374,7 @@ function rematchWorkforceSnapshotFromRoster(
     const generatedAt = snapshot.generatedAt || new Date().toISOString();
     return buildPayload(snapshot.companyId, [], generatedAt, rateCard);
   }
-  return buildPayload(snapshot.companyId, employees, snapshot.generatedAt || new Date().toISOString(), rateCard);
+  return buildPayload(snapshot.companyId, employees, snapshot.generatedAt || new Date().toISOString(), rateCard, snapshot.workforceMetrics || buildWorkforceMetrics(null));
 }
 
 async function persistWorkforceSnapshot(
@@ -1289,7 +1456,8 @@ export async function buildAndSaveBambooHrWorkforceReportSnapshot(companyId: str
 
   const generatedAt = new Date().toISOString();
   const rateCard = await readCogentRateCard(companyId).catch(() => null);
-  const snapshot = buildPayload(companyId, currentEmployees, generatedAt, rateCard);
+  const benefitRows = await fetchBambooHrBenefitReport(settings).catch(() => null);
+  const snapshot = buildPayload(companyId, currentEmployees, generatedAt, rateCard, buildWorkforceMetrics(benefitRows));
   await saveOperationalSystemConnection({
     companyId,
     provider: 'BAMBOOHR',
@@ -1331,6 +1499,7 @@ export function getBambooHrLaborSchedulingPayload(snapshot: BambooHrWorkforceRep
     billRateLevelCoverage: snapshot.dimensions.billRateLevelCoverage,
     missingBillRateLevel: snapshot.dimensions.missingBillRateLevel,
     employeeCompensationRoster: snapshot.dimensions.employeeCompensationRoster,
+    workforceMetrics: snapshot.workforceMetrics,
     records: snapshot.dimensions.headcountByRole,
   };
 }

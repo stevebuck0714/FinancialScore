@@ -10254,7 +10254,11 @@ export async function syncInforM3OperationalData(
                       skipDuplicates: true,
                     })
                 );
-                persistedRawCount += Number(written?.count || 0);
+                const writtenCount =
+                  written && typeof written === 'object' && 'count' in written
+                    ? Number((written as { count?: unknown }).count || 0)
+                    : 0;
+                persistedRawCount += writtenCount;
               }
               if (persistedRawCount === 0) {
                 const existingChildCount = await (prisma as any).inforRawRecord.count({

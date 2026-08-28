@@ -914,8 +914,12 @@ export const EbitdaHelperBar: React.FC = () => {
 // adjustment buckets (or unassign).
 // -----------------------------------------------------------------------------
 
-const CATEGORY_ORDER: AccountCategory[] = ['Revenue', 'Expense'];
-const ACCOUNTS_RAIL_ALLOWED_CATEGORIES = new Set<AccountCategory>(['Revenue', 'Expense']);
+const CATEGORY_ORDER = ['Revenue', 'Expense'] as const;
+type AccountRailCategory = (typeof CATEGORY_ORDER)[number];
+
+function isAccountRailCategory(category: AccountCategory): category is AccountRailCategory {
+  return category === 'Revenue' || category === 'Expense';
+}
 
 const BUCKET_CHIP_LABELS: Record<SdeBucket, string> = {
   OWNER_COMP: 'Owner Comp',
@@ -934,17 +938,16 @@ const BUCKET_CHIP_COLORS: Record<SdeBucket, { bg: string; fg: string }> = {
 export const EbitdaAccountList: React.FC = () => {
   const ctx = useEbitdaCtx();
   const [search, setSearch] = useState('');
-  const [collapsed, setCollapsed] = useState<Record<AccountCategory, boolean>>({
+  const [collapsed, setCollapsed] = useState<Record<AccountRailCategory, boolean>>({
     Revenue: false,
     Expense: false,
-    Other: true,
   });
   const [pickerForRow, setPickerForRow] = useState<string | null>(null);
 
   const accounts = ctx.api?.allAccounts ?? [];
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
-    const base = accounts.filter((a) => ACCOUNTS_RAIL_ALLOWED_CATEGORIES.has((a.category || 'Other') as AccountCategory));
+    const base = accounts.filter((a) => isAccountRailCategory((a.category || 'Other') as AccountCategory));
     if (!q) return base;
     return base.filter(
       (a) =>
@@ -956,21 +959,20 @@ export const EbitdaAccountList: React.FC = () => {
   }, [accounts, search]);
 
   const grouped = useMemo(() => {
-    const map = new Map<AccountCategory, AccountListEntry[]>();
+    const map = new Map<AccountRailCategory, AccountListEntry[]>();
     for (const c of CATEGORY_ORDER) map.set(c, []);
     for (const a of filtered) {
       const cat = (a.category || 'Other') as AccountCategory;
-      if (!ACCOUNTS_RAIL_ALLOWED_CATEGORIES.has(cat)) continue;
+      if (!isAccountRailCategory(cat)) continue;
       map.get(cat)!.push(a);
     }
     return map;
   }, [filtered]);
 
   const totals = useMemo(() => {
-    const out: Record<AccountCategory, { count: number; total: number }> = {
+    const out: Record<AccountRailCategory, { count: number; total: number }> = {
       Revenue: { count: 0, total: 0 },
       Expense: { count: 0, total: 0 },
-      Other: { count: 0, total: 0 },
     };
     for (const [cat, list] of grouped.entries()) {
       out[cat] = {
@@ -981,7 +983,7 @@ export const EbitdaAccountList: React.FC = () => {
     return out;
   }, [grouped]);
 
-  const toggleCategory = (c: AccountCategory) => setCollapsed((prev) => ({ ...prev, [c]: !prev[c] }));
+  const toggleCategory = (c: AccountRailCategory) => setCollapsed((prev) => ({ ...prev, [c]: !prev[c] }));
 
   return (
     <div

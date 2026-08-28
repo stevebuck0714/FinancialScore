@@ -22133,6 +22133,72 @@ Strategies to Improve the CCC
             .sort((a, b) => String(a.role || '').localeCompare(String(b.role || '')) || String(a.employeeName || '').localeCompare(String(b.employeeName || '')))
         : [];
       const sourceNote = String(laborSchedulingData?.meta?.note || summary.note || '');
+      const workforceMetrics = laborSchedulingData.workforceMetrics || {};
+      const workforceMetricAvailability = workforceMetrics.availability || {};
+      const employeeLifecycle: any[] = Array.isArray(workforceMetrics.employeeLifecycle) ? workforceMetrics.employeeLifecycle : [];
+      const workforceDateMs = (value: any) => {
+        const match = String(value || '').match(/^(\d{4})-(\d{2})-(\d{2})/);
+        return match ? Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3])) : Number.NaN;
+      };
+      const workforceMetricsAsOfMs = workforceDateMs(endDate) || workforceDateMs(laborSchedulingData?.meta?.generatedAt);
+      const calculateLossRate = (days: number) => {
+        if (!Number.isFinite(workforceMetricsAsOfMs)) return null;
+        const startMs = workforceMetricsAsOfMs - days * 86400000;
+        const terminated = employeeLifecycle.filter((row) => {
+          const terminationMs = workforceDateMs(row.terminationDate);
+          return Number.isFinite(terminationMs) && terminationMs > startMs && terminationMs <= workforceMetricsAsOfMs &&
+            String(row.terminationReason || '').trim().toLowerCase() !== 'hired by client';
+        }).length;
+        const activeAtEnd = employeeLifecycle.filter((row) => !Number.isFinite(workforceDateMs(row.terminationDate))).length;
+        const activeAtStart = employeeLifecycle.filter((row) => {
+          const hireMs = workforceDateMs(row.hireDate);
+          const terminationMs = workforceDateMs(row.terminationDate);
+          return Number.isFinite(hireMs) && hireMs <= startMs && (!Number.isFinite(terminationMs) || terminationMs > startMs);
+        }).length;
+        const averageHeadcount = (activeAtStart + activeAtEnd) / 2;
+        return averageHeadcount ? (terminated / averageHeadcount) * 100 : null;
+      };
+      const calculateOneYearRetention = () => {
+        if (!Number.isFinite(workforceMetricsAsOfMs)) return null;
+        const oneYearAgoMs = workforceMetricsAsOfMs - 365 * 86400000;
+        const activeOverOneYear = employeeLifecycle.filter((row) => !Number.isFinite(workforceDateMs(row.terminationDate)) && workforceDateMs(row.hireDate) <= oneYearAgoMs).length;
+        const terminatedLastYear = employeeLifecycle.filter((row) => {
+          const terminationMs = workforceDateMs(row.terminationDate);
+          return Number.isFinite(terminationMs) && terminationMs > oneYearAgoMs && terminationMs <= workforceMetricsAsOfMs;
+        });
+        const earlyTerminations = terminatedLastYear.filter((row) => workforceDateMs(row.terminationDate) - workforceDateMs(row.hireDate) < 365 * 86400000 && String(row.terminationReason || '').trim().toLowerCase() !== 'hired by client').length;
+        const denominator = activeOverOneYear + terminatedLastYear.length;
+        return denominator ? { ratePct: ((denominator - earlyTerminations) / denominator) * 100, denominator } : null;
+      };
+      const lossRateForSelectedDate = calculateLossRate(90);
+      const lossRateT12ForSelectedDate = calculateLossRate(365);
+      const oneYearRetentionForSelectedDate = calculateOneYearRetention();
+      const workforceMetricReports = [
+        {
+          key: 'lsBenefitsParticipation',
+          title: 'Benefits Participation',
+          detail: 'Medical, HSA, and 401(k) participation and employer-match rates.',
+          readiness: 'Waiting for BambooHR permission to read benefit enrollment and contribution values.',
+        },
+        {
+          key: 'lsLossRate',
+          title: 'Employee Loss Rate',
+          detail: '90-day and trailing-12-month terminations, excluding employees hired by a client.',
+          readiness: 'Waiting for terminated-employee access and the “Hired by Client” termination-reason mapping.',
+        },
+        {
+          key: 'lsOneYearRetention',
+          title: 'One-Year Retention Rate',
+          detail: 'Active employees with more than one year of tenure, adjusted for recent terminations.',
+          readiness: 'Waiting for complete terminated-employee history to calculate the specified denominator.',
+        },
+        {
+          key: 'lsEmployeeEnps',
+          title: 'Employee eNPS',
+          detail: 'Dated eNPS trend and current score.',
+          readiness: 'No eNPS field is exposed by the connected BambooHR API. A survey export or engagement-system connection is required.',
+        },
+      ];
 
       return (
         <div style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
@@ -22155,6 +22221,48 @@ Strategies to Improve the CCC
                 ))}
               </div>
               {sourceNote ? <div style={{ marginTop: '10px', fontSize: '12px', color: '#64748b' }}>{sourceNote}</div> : null}
+            </div>
+          )}
+
+          {workforceMetricReports.some((report) => isSectionEnabled(report.key)) && (
+            <div style={cardStyle}>
+              <div style={{ ...cardTitleStyle, marginBottom: '6px' }}>Workforce Metrics</div>
+              <div style={{ fontSize: '12px', color: '#64748b', marginBottom: '14px' }}>
+                These reports are configured for Cogent but will not calculate until the required source data is available.
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '12px' }}>
+                {workforceMetricReports.filter((report) => isSectionEnabled(report.key)).map((report) => (
+                  <div key={report.key} style={{ padding: '14px', border: '1px solid #fde68a', borderRadius: '8px', background: '#fffbeb' }}>
+                    <div style={{ fontSize: '13px', fontWeight: 700, color: '#0f172a', marginBottom: '5px' }}>{report.title}</div>
+                    <div style={{ fontSize: '12px', lineHeight: 1.45, color: '#475569', marginBottom: '10px' }}>{report.detail}</div>
+                    {report.key === 'lsBenefitsParticipation' && workforceMetricAvailability.benefits?.available ? (
+                      <>
+                        <div style={{ fontSize: '12px', lineHeight: 1.6, color: '#166534', fontWeight: 600 }}>
+                          Medical: {Number(workforceMetrics.benefitsParticipation?.medicalParticipationPct || 0).toFixed(1)}% · HSA: {Number(workforceMetrics.benefitsParticipation?.hsaParticipationPct || 0).toFixed(1)}% (match {Number(workforceMetrics.benefitsParticipation?.hsaMatchPct || 0).toFixed(1)}%) · 401(k): {Number(workforceMetrics.benefitsParticipation?.retirement401kParticipationPct || 0).toFixed(1)}% (match {Number(workforceMetrics.benefitsParticipation?.retirement401kMatchPct || 0).toFixed(1)}%)
+                        </div>
+                        {Array.isArray(workforceMetrics.benefitsParticipation?.medicalCoverage) && workforceMetrics.benefitsParticipation.medicalCoverage.length > 0 ? (
+                          <div style={{ marginTop: '8px', fontSize: '12px', color: '#475569' }}>
+                            Medical coverage: {workforceMetrics.benefitsParticipation.medicalCoverage.map((row: any) => `${row.label}: ${row.count} (${Number(row.pct || 0).toFixed(1)}%)`).join(' · ')}
+                          </div>
+                        ) : null}
+                      </>
+                    ) : report.key === 'lsLossRate' && workforceMetricAvailability.lossRate?.available ? (
+                      <div style={{ fontSize: '12px', lineHeight: 1.6, color: '#166534', fontWeight: 600 }}>
+                        90-day: {lossRateForSelectedDate == null ? '—' : `${lossRateForSelectedDate.toFixed(1)}%`} · Trailing 12-month: {lossRateT12ForSelectedDate == null ? '—' : `${lossRateT12ForSelectedDate.toFixed(1)}%`}
+                      </div>
+                    ) : report.key === 'lsOneYearRetention' && workforceMetricAvailability.oneYearRetention?.available ? (
+                      <div style={{ fontSize: '12px', lineHeight: 1.6, color: '#166534', fontWeight: 600 }}>
+                        Retention: {oneYearRetentionForSelectedDate == null ? '—' : `${oneYearRetentionForSelectedDate.ratePct.toFixed(1)}%`} · Eligible population: {Number(oneYearRetentionForSelectedDate?.denominator || 0).toLocaleString('en-US')}
+                      </div>
+                    ) : (
+                      <>
+                        <div style={{ fontSize: '12px', lineHeight: 1.45, color: '#92400e', fontWeight: 600 }}>Data source access required</div>
+                        <div style={{ fontSize: '12px', lineHeight: 1.45, color: '#92400e', marginTop: '3px' }}>{workforceMetricAvailability[report.key === 'lsLossRate' ? 'lossRate' : report.key === 'lsOneYearRetention' ? 'oneYearRetention' : report.key === 'lsEmployeeEnps' ? 'enps' : 'benefits']?.reason || report.readiness}</div>
+                      </>
+                    )}
+                  </div>
+                ))}
+              </div>
             </div>
           )}
 
@@ -23676,7 +23784,7 @@ Strategies to Improve the CCC
       return (
         <div style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
           {isSectionEnabled('rbBillRateLevelSummary') && (
-            <div style={{ ...cardStyle, paddingBottom: '16px' }}>
+            <div style={{ ...cardStyle, paddingBottom: '16px', order: 1 }}>
               <div style={{ ...cardTitleStyle, marginBottom: '14px' }}>Bill Rate Level Coverage</div>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, minmax(0, 1fr))', gap: '12px' }}>
                 {[
@@ -23696,7 +23804,7 @@ Strategies to Improve the CCC
             </div>
           )}
 
-          <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 3fr) minmax(0, 2fr)', gap: '16px' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 3fr) minmax(0, 2fr)', gap: '16px', order: 3 }}>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
               {isSectionEnabled('rbEmployeesByBillRateLevel') && <div style={cardStyle}>
                 <div style={cardTitleStyle}>Employees by Bill Rate Level</div>
@@ -23744,7 +23852,7 @@ Strategies to Improve the CCC
           </div>
 
           {isSectionEnabled('rbEstimatedBillableEconomics') && (
-            <div style={cardStyle}>
+            <div style={{ ...cardStyle, order: 4 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', alignItems: 'flex-start', marginBottom: '12px' }}>
                 <div>
                   <div style={cardTitleStyle}>Estimated Billable Economics by Employee</div>
@@ -23805,8 +23913,8 @@ Strategies to Improve the CCC
           )}
 
           {isSectionEnabled('ueCostByBillRateLevel') && (
-            <div style={cardStyle}>
-              <div style={cardTitleStyle}>Cost by Bill Rate Level</div>
+            <div style={{ ...cardStyle, order: 2 }}>
+              <div style={cardTitleStyle}>Pay by Bill Rate Level</div>
               <div style={{ overflowX: 'auto', maxHeight: '420px', overflowY: 'auto' }}>
                 <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                   <thead>

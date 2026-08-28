@@ -142,7 +142,9 @@ export function normalizeMonthQtyMap(value: unknown): MonthQtyMap {
 
 export function monthQtyTotal(map: MonthQtyMap, months?: ForecastMonth[]): number {
   const keys = months?.length ? months : FORECAST_MONTHS;
-  return keys.reduce((sum, month) => sum + (Number(map[String(month)]) || 0), 0);
+  let total = 0;
+  for (const month of keys) total += Number(map[String(month)]) || 0;
+  return total;
 }
 
 export function closedThroughMonth(dataThru: string | Date | null | undefined): number {

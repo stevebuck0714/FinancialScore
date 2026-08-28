@@ -133,7 +133,7 @@ export function buildCustomersSitesFromSales(args: {
         profit: round2(row.periodProfit),
         marginPct,
         avgBillRate: rates.avg,
-        retentionStatus: 'Retained',
+        retentionStatus: 'Retained' as const,
         lifetimeValueProxy: round2(row.lifetimeRevenue),
         revenueDeltaPct,
         floorRate: rates.min,

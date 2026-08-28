@@ -29,8 +29,8 @@ function errorMessage(error: unknown, fallback: string): string {
   return fallback;
 }
 
-function isUploadBlob(value: FormDataEntryValue | null): value is Blob {
-  return typeof Blob !== 'undefined' && value instanceof Blob && typeof value.arrayBuffer === 'function';
+function isUploadBlob(value: FormDataEntryValue | null): value is File {
+  return typeof File !== 'undefined' && value instanceof File && typeof value.arrayBuffer === 'function';
 }
 
 function canFallbackToForecastOnly(error: unknown): boolean {
