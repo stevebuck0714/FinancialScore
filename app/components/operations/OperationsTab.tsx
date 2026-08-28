@@ -23804,7 +23804,7 @@ Strategies to Improve the CCC
             </div>
           )}
 
-          <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 3fr) minmax(0, 2fr)', gap: '16px', order: 3 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 3fr) minmax(0, 2fr)', gap: '16px', order: 2 }}>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
               {isSectionEnabled('rbEmployeesByBillRateLevel') && <div style={cardStyle}>
                 <div style={cardTitleStyle}>Employees by Bill Rate Level</div>
@@ -23913,7 +23913,7 @@ Strategies to Improve the CCC
           )}
 
           {isSectionEnabled('ueCostByBillRateLevel') && (
-            <div style={{ ...cardStyle, order: 2 }}>
+            <div style={{ ...cardStyle, order: 3 }}>
               <div style={cardTitleStyle}>Pay by Bill Rate Level</div>
               <div style={{ overflowX: 'auto', maxHeight: '420px', overflowY: 'auto' }}>
                 <table style={{ width: '100%', borderCollapse: 'collapse' }}>
