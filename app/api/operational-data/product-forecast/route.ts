@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import {
+  summarizeForecastQtyMonths,
   type ProductRevenueForecastLineInput,
 } from '@/lib/operations/product-revenue-forecast';
 import {
@@ -52,11 +53,21 @@ export async function GET(request: NextRequest) {
     );
 
     if (!customerId && !customerName) {
+      const includeTotals = String(request.nextUrl.searchParams.get('includeTotals') || '') === '1';
+      let totals = null;
+      if (includeTotals) {
+        const companyLines = await loadProductForecastLinesWithCatalog({ companyId, year });
+        const shipped = await loadCsiMonthlyShippedActuals({ companyId, year });
+        totals = summarizeForecastQtyMonths(
+          withCsiShippedActuals(companyLines.map(serializeForecastLine), shipped)
+        );
+      }
       return NextResponse.json({
         year,
         catalogSourceYear,
         dataThru: settings?.dataThru ? settings.dataThru.toISOString().slice(0, 10) : null,
         customers: customerPayload,
+        totals,
         lines: [],
       });
     }

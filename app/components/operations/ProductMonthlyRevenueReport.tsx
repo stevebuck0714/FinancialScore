@@ -23,6 +23,9 @@ import {
   type ShippingDay,
 } from '@/lib/operations/product-revenue-actual';
 import { workbookImportErrorMessage } from '@/lib/operations/product-revenue-forecast';
+import ProductMonthlyTrendChartModal, {
+  buildProductMonthlyTrendRows,
+} from './ProductMonthlyTrendChartModal';
 
 type CustomerOption = {
   customerId: string;
@@ -235,6 +238,7 @@ export default function ProductMonthlyRevenueReport({
   const [selectedMonth, setSelectedMonth] = useState<ForecastMonth>(currentMonth());
   const [sortKey, setSortKey] = useState<'itemSku' | 'customerPartNumber'>('itemSku');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
+  const [chartOpen, setChartOpen] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const selectedCustomer = useMemo(
@@ -452,6 +456,29 @@ export default function ProductMonthlyRevenueReport({
   const priorTotals = totals.months[previousMonth] || { estimated: 0, adjusted: 0, ytd: 0 };
   const scopeLabel = selectedCustomer ? selectedCustomer.label : 'Company';
   const skuCount = selectedCustomer ? totals.lineCount : companyLineCount || totals.lineCount;
+  const trendRows = useMemo(() => {
+    if (selectedCustomer && lines.length > 0) {
+      const months = FORECAST_MONTHS.reduce((acc, month) => {
+        acc[month] = {
+          forecast: lines.reduce((sum, line) => sum + qtyValue(line.estimated, month), 0),
+          adjusted: lines.reduce((sum, line) => sum + qtyValue(line.estimatedAdjusted, month), 0),
+          actual: lines.reduce((sum, line) => sum + qtyValue(line.actualRevenue, month), 0),
+        };
+        return acc;
+      }, {} as Record<number, { forecast: number; adjusted: number; actual: number }>);
+      return buildProductMonthlyTrendRows(months);
+    }
+    const months = FORECAST_MONTHS.reduce((acc, month) => {
+      const bucket = totals.months[month] || { estimated: 0, adjusted: 0, ytd: 0 };
+      acc[month] = {
+        forecast: Number(bucket.estimated || 0),
+        adjusted: Number(bucket.adjusted || 0),
+        actual: Number(bucket.ytd || 0),
+      };
+      return acc;
+    }, {} as Record<number, { forecast: number; adjusted: number; actual: number }>);
+    return buildProductMonthlyTrendRows(months);
+  }, [lines, selectedCustomer, totals]);
 
   const monthHeaderStyle: React.CSSProperties = {
     textAlign: 'right',
@@ -550,6 +577,23 @@ export default function ProductMonthlyRevenueReport({
             What is this?
           </button>
         ) : null}
+        <button
+          type="button"
+          onClick={() => setChartOpen(true)}
+          style={{
+            background: 'transparent',
+            border: 'none',
+            padding: '0 2px',
+            color: '#2563eb',
+            fontSize: 12,
+            fontWeight: 600,
+            cursor: 'pointer',
+            textDecoration: 'underline',
+            textUnderlineOffset: 2,
+          }}
+        >
+          Monthly trend
+        </button>
       </div>
       <p style={{ margin: '0 0 16px', color: '#475569', fontSize: 13, lineHeight: 1.5, whiteSpace: 'nowrap' }}>
         Monthly forecasted $ vs actual booked $ by APR P/N. Forecasted is Monthly Forecast units × Jan-1 contract price. Leave Customer blank for company totals.
@@ -930,6 +974,15 @@ export default function ProductMonthlyRevenueReport({
           </table>
         </div>
       )}
+      <ProductMonthlyTrendChartModal
+        open={chartOpen}
+        onClose={() => setChartOpen(false)}
+        title={`Monthly Revenue trend · ${year}`}
+        subtitle={`${selectedCustomer ? selectedCustomer.label : 'All customers'}. Dollars by month: Forecast, Forecast - ADJ, and Actual.`}
+        unit="money"
+        rows={trendRows}
+        loading={loading && !selectedCustomer}
+      />
     </div>
   );
 }

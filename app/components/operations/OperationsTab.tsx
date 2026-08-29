@@ -11682,6 +11682,7 @@ export default function OperationsTab({
             body: [
               'Select a customer. The page only edits that customer. Fill Group, TEAM, and CSR on each row, then Planned/MTO and monthly quantities, and save.',
               'Use Month to switch which period is shown. The summary has two rows: YTD DATA through that month and the selected month. Forecasted and Forecast - ADJUSTED can be typed for the current month and later months. Selecting a prior month (for example July or June) shows those quantities as read-only, including the gray prior-month columns. After Data thru, ADJUSTED follows Actual; before that it follows the typed Forecast - ADJUSTED value. Actual is CSI shipped quantity.',
+              'Monthly trend opens a chart of Jan–Dec Forecast, Forecast - ADJ, and Actual units. Leave Customer blank for all customers, or pick a customer to scope the chart.',
             ],
           },
         ],
@@ -11748,7 +11749,7 @@ export default function OperationsTab({
         sections: [
           {
             body:
-              'This is monthly forecasted $ vs actual booked $ by APR P/N. Leave Customer blank to see company totals for the selected year and month.',
+              'This is monthly forecasted $ vs actual booked $ by APR P/N. Leave Customer blank to see company totals for the selected year and month. Monthly trend charts Jan–Dec Forecast, Forecast - ADJ, and Actual dollars for all customers or the selected customer.',
           },
           {
             heading: 'How it is calculated',

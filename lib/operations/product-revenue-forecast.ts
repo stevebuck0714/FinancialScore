@@ -269,6 +269,34 @@ export function typedAdjustedMonthQty(
   return monthQty(normalizeAdjustedQtyMap(adjustedQty, forecastQty), month);
 }
 
+export type ForecastMonthQtyTotals = Record<ForecastMonth, { forecast: number; adjusted: number; actual: number }>;
+
+export function emptyForecastMonthQtyTotals(): ForecastMonthQtyTotals {
+  return FORECAST_MONTHS.reduce((acc, month) => {
+    acc[month] = { forecast: 0, adjusted: 0, actual: 0 };
+    return acc;
+  }, {} as ForecastMonthQtyTotals);
+}
+
+export function summarizeForecastQtyMonths(
+  lines: Array<{
+    forecastQty?: MonthQtyMap | null;
+    adjustedQty?: MonthQtyMap | null;
+    actualQty?: MonthQtyMap | null;
+  }>
+): ForecastMonthQtyTotals {
+  return lines.reduce((acc, line) => {
+    const forecastQty = line.forecastQty || emptyMonthQtyMap();
+    const actualQty = line.actualQty || emptyMonthQtyMap();
+    for (const month of FORECAST_MONTHS) {
+      acc[month].forecast += monthQty(forecastQty, month);
+      acc[month].adjusted += typedAdjustedMonthQty(forecastQty, month, line.adjustedQty);
+      acc[month].actual += monthQty(actualQty, month);
+    }
+    return acc;
+  }, emptyForecastMonthQtyTotals());
+}
+
 export function adjustedMonthQty(
   forecastQty: MonthQtyMap,
   actualQty: MonthQtyMap,

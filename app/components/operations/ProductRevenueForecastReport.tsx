@@ -15,11 +15,16 @@ import {
   pctVsPlan,
   readProductOperationsWorkbook,
   remainingForecastQty,
+  summarizeForecastQtyMonths,
   workbookImportErrorMessage,
   type ForecastMonth,
+  type ForecastMonthQtyTotals,
   type MonthQtyMap,
   type ProductRevenueForecastLineInput,
 } from '@/lib/operations/product-revenue-forecast';
+import ProductMonthlyTrendChartModal, {
+  buildProductMonthlyTrendRows,
+} from './ProductMonthlyTrendChartModal';
 import { parseGoalDashboardFromWorkbook } from '@/lib/operations/product-goal-update';
 import { estMonthIndex, estYear } from '@/lib/time/eastern';
 
@@ -190,6 +195,9 @@ export default function ProductRevenueForecastReport({
   const [selectedMonth, setSelectedMonth] = useState<ForecastMonth>(currentMonth());
   const [sortKey, setSortKey] = useState<'itemSku' | 'customerPartNumber'>('itemSku');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
+  const [chartOpen, setChartOpen] = useState(false);
+  const [companyMonthTotals, setCompanyMonthTotals] = useState<ForecastMonthQtyTotals | null>(null);
+  const [loadingCompanyTotals, setLoadingCompanyTotals] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const customersRequestSeq = useRef(0);
 
@@ -265,6 +273,7 @@ export default function ProductRevenueForecastReport({
       if (!forecastRes.ok) throw new Error(forecastJson.error || 'Failed to load customers');
       setCustomers(mergeCustomers([], forecastJson.customers || []));
       setCatalogSourceYear(Number(forecastJson.catalogSourceYear) || null);
+      setCompanyMonthTotals(null);
       if (forecastJson.dataThru) setDataThru(String(forecastJson.dataThru).slice(0, 10));
       void loadCsiCustomers(seq);
     } catch (err: any) {
@@ -321,6 +330,38 @@ export default function ProductRevenueForecastReport({
     }
     void loadLines(selectedCustomer);
   }, [selectedCustomer?.key, loadLines]);
+
+  const loadCompanyMonthTotals = useCallback(async () => {
+    if (!selectedCompanyId) return;
+    setLoadingCompanyTotals(true);
+    try {
+      const params = new URLSearchParams({
+        companyId: selectedCompanyId,
+        year: String(year),
+        includeTotals: '1',
+      });
+      const response = await fetch(`/api/operational-data/product-forecast?${params.toString()}`);
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(payload.error || 'Failed to load company trend');
+      setCompanyMonthTotals(payload.totals || summarizeForecastQtyMonths([]));
+    } catch {
+      setCompanyMonthTotals(summarizeForecastQtyMonths([]));
+    } finally {
+      setLoadingCompanyTotals(false);
+    }
+  }, [selectedCompanyId, year]);
+
+  const openMonthlyTrend = () => {
+    setChartOpen(true);
+    if (!selectedCustomer && !companyMonthTotals && !loadingCompanyTotals) {
+      void loadCompanyMonthTotals();
+    }
+  };
+
+  useEffect(() => {
+    if (!chartOpen || selectedCustomer || companyMonthTotals || loadingCompanyTotals) return;
+    void loadCompanyMonthTotals();
+  }, [chartOpen, companyMonthTotals, loadCompanyMonthTotals, loadingCompanyTotals, selectedCustomer]);
 
   const markDirty = () => {
     setDirty(true);
@@ -396,6 +437,7 @@ export default function ProductRevenueForecastReport({
       setDirty(false);
       const savedCount = Array.isArray(payload.lines) ? payload.lines.length : lines.length;
       setNotice(`Saved ${savedCount} rows for ${selectedCustomer.label}.`);
+      setCompanyMonthTotals(null);
       setCustomers((prev) =>
         prev.map((customer) =>
           customer.key === selectedCustomer.key ? { ...customer, lineCount: savedCount } : customer
@@ -499,6 +541,15 @@ export default function ProductRevenueForecastReport({
     );
   }, [dataThru, lines, selectedMonth]);
 
+  const trendRows = useMemo(
+    () =>
+      buildProductMonthlyTrendRows(
+        selectedCustomer ? summarizeForecastQtyMonths(lines) : companyMonthTotals || summarizeForecastQtyMonths([])
+      ),
+    [companyMonthTotals, lines, selectedCustomer]
+  );
+  const trendScopeLabel = selectedCustomer ? selectedCustomer.label : 'All customers';
+
   const monthHeaderStyle: React.CSSProperties = {
     textAlign: 'right',
     padding: '8px 2px',
@@ -596,6 +647,23 @@ export default function ProductRevenueForecastReport({
             What is this?
           </button>
         ) : null}
+        <button
+          type="button"
+          onClick={openMonthlyTrend}
+          style={{
+            background: 'transparent',
+            border: 'none',
+            padding: '0 2px',
+            color: '#2563eb',
+            fontSize: 12,
+            fontWeight: 600,
+            cursor: 'pointer',
+            textDecoration: 'underline',
+            textUnderlineOffset: 2,
+          }}
+        >
+          Monthly trend
+        </button>
       </div>
       <p style={{ margin: '0 0 16px', color: '#475569', fontSize: 13, lineHeight: 1.5, whiteSpace: 'nowrap' }}>
         Monthly unit forecast vs actual by APR P/N and customer. Select a customer, fill Group / TEAM / CSR on each row, enter Planned or MTO and monthly quantities, then save this page.
@@ -1051,6 +1119,15 @@ export default function ProductRevenueForecastReport({
           </div>
         </>
       )}
+      <ProductMonthlyTrendChartModal
+        open={chartOpen}
+        onClose={() => setChartOpen(false)}
+        title={`Monthly Forecast trend · ${year}`}
+        subtitle={`${trendScopeLabel}. Units by month: Forecast, Forecast - ADJ, and Actual.`}
+        unit="qty"
+        rows={trendRows}
+        loading={!selectedCustomer && (loadingCompanyTotals || !companyMonthTotals)}
+      />
     </div>
   );
 }
