@@ -6,6 +6,12 @@ import { formatEstDateTime } from '@/lib/time/eastern';
 import { getFieldDisplayName } from '@/lib/constants/field-display-names';
 import { getSectorSchema, getTargetFieldOptions } from '@/lib/constants/sector-target-fields';
 import { useCompanyMoneyFormatter } from '@/app/hooks/useCompanyMoneyFormatter';
+import { isAtlanticPrecisionCompany } from '@/lib/operations/company-specific-reports';
+import {
+  CONTRACT_PROGRAM_REVENUE_FIELD,
+  lastProductAdjMonthKey,
+  lockedProductAdjSalesAmount,
+} from '@/lib/operations/product-sales-forecast-feed';
 
 interface FinancialForecastTabProps {
   selectedCompanyId: string;
@@ -193,6 +199,9 @@ export default function FinancialForecastTab({
   const [incomeStatementViewMode, setIncomeStatementViewMode] = useState<'monthly' | 'quarterly' | 'yearly'>('monthly');
   const [graphGranularity, setGraphGranularity] = useState<'monthly' | 'quarterly'>('monthly');
   const [masterMonthlyData, setMasterMonthlyData] = useState<any[]>([]);
+  const [productAdjSalesByMonth, setProductAdjSalesByMonth] = useState<Record<string, number>>({});
+  const [hasProductSalesFeed, setHasProductSalesFeed] = useState(false);
+  const isAtlanticCompany = isAtlanticPrecisionCompany(selectedCompanyId, companyName);
   const monthly = useMemo(
     () => (masterMonthlyData.length > 0
       ? masterMonthlyData
@@ -226,6 +235,48 @@ export default function FinancialForecastTab({
       isCancelled = true;
     };
   }, [selectedCompanyId]);
+
+  React.useEffect(() => {
+    let isCancelled = false;
+    const loadProductSalesFeed = async () => {
+      if (!selectedCompanyId || !isAtlanticCompany) {
+        if (!isCancelled) {
+          setProductAdjSalesByMonth({});
+          setHasProductSalesFeed(false);
+        }
+        return;
+      }
+      try {
+        const response = await fetch(
+          `/api/financial-forecast/product-sales-feed?companyId=${encodeURIComponent(selectedCompanyId)}`,
+          { cache: 'no-store' },
+        );
+        const data = await response.json();
+        if (!response.ok || isCancelled) return;
+        const months = data?.months && typeof data.months === 'object' ? data.months : {};
+        const nextMonths: Record<string, number> = {};
+        Object.entries(months).forEach(([key, raw]) => {
+          const value = Number(raw);
+          nextMonths[String(key)] = Number.isFinite(value) ? Math.max(0, value) : 0;
+        });
+        setProductAdjSalesByMonth(nextMonths);
+        setHasProductSalesFeed(Boolean(data?.hasProductForecast));
+      } catch {
+        if (!isCancelled) {
+          setProductAdjSalesByMonth({});
+          setHasProductSalesFeed(false);
+        }
+      }
+    };
+    loadProductSalesFeed();
+    return () => {
+      isCancelled = true;
+    };
+  }, [selectedCompanyId, isAtlanticCompany]);
+  const lastProductAdjMonth = useMemo(
+    () => lastProductAdjMonthKey(productAdjSalesByMonth),
+    [productAdjSalesByMonth],
+  );
   const sectorFieldOptions = useMemo(
     () => getTargetFieldOptions(industrySectorCategory || undefined),
     [industrySectorCategory],
@@ -833,6 +884,22 @@ export default function FinancialForecastTab({
     const amountInputSeries = Array.isArray(accrualRevenueAmountByRow[rowKey]) ? accrualRevenueAmountByRow[rowKey] : [];
     let carry = Number(latestActualMonth?.revenueDetails?.[rowKey]) || 0;
     for (let i = 0; i < monthlyForecastCount; i += 1) {
+      const period = monthlyForecastPeriods[i];
+      const productLockedAmount = period
+        ? lockedProductAdjSalesAmount({
+            fieldKey: rowKey,
+            year: Number(period.year),
+            monthKey: String(period.key),
+            hasProductForecast: hasProductSalesFeed,
+            months: productAdjSalesByMonth,
+            lastAdjMonth: lastProductAdjMonth,
+          })
+        : null;
+      if (productLockedAmount != null) {
+        amounts.push(productLockedAmount);
+        carry = productLockedAmount;
+        continue;
+      }
       const enteredAmount = Number(amountInputSeries[i]);
       if (Number.isFinite(enteredAmount) && enteredAmount >= 0) {
         const inputVal = Math.max(0, enteredAmount);
@@ -1012,6 +1079,19 @@ export default function FinancialForecastTab({
     return forecastPeriods.map((q, idx) => {
       const revenueDetails: Record<string, number> = {};
       revenueRowKeys.forEach((k) => {
+        const productLockedAmount = lockedProductAdjSalesAmount({
+          fieldKey: k,
+          year: Number(q.year),
+          monthKey: String(q.key),
+          hasProductForecast: hasProductSalesFeed,
+          months: productAdjSalesByMonth,
+          lastAdjMonth: lastProductAdjMonth,
+        });
+        if (productLockedAmount != null) {
+          revenueCarry[k] = productLockedAmount;
+          revenueDetails[k] = productLockedAmount;
+          return;
+        }
         const monthlyAmountInputs = Array.isArray(accrualRevenueAmountByRow[k]) ? accrualRevenueAmountByRow[k] : [];
         const enteredMonthlyAmount = Number(monthlyAmountInputs[idx]);
         if (basisMode === 'accrual' && idx < monthlyForecastCount && Number.isFinite(enteredMonthlyAmount) && enteredMonthlyAmount >= 0) {
@@ -1080,7 +1160,7 @@ export default function FinancialForecastTab({
         netIncome,
       };
     });
-  }, [forecastPeriods, latestActualMonth, revenueRowKeys, revenueGrowthByRow, monthlyForecastCount, cogsRowKeys, cogsGrowthByRow, opexPctByRow, basisMode, accrualRevenueAmountByRow, opexAmountByRow, useQuarterlyActualColumns, canUseAccrualOpexAmountInput]);
+  }, [forecastPeriods, latestActualMonth, revenueRowKeys, revenueGrowthByRow, monthlyForecastCount, cogsRowKeys, cogsGrowthByRow, opexPctByRow, basisMode, accrualRevenueAmountByRow, opexAmountByRow, useQuarterlyActualColumns, canUseAccrualOpexAmountInput, hasProductSalesFeed, productAdjSalesByMonth, lastProductAdjMonth]);
 
   useEffect(() => {
     if (!selectedCompanyId) return;
@@ -2030,6 +2110,11 @@ export default function FinancialForecastTab({
 
       {activeTab === 'inputs' && (
         <div className="ff-print-section" style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '20px' }}>
+          {isAtlanticCompany && hasProductSalesFeed && lastProductAdjMonth && (
+            <div style={{ marginBottom: '12px', padding: '8px 12px', background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: '8px', color: '#1e3a8a', fontSize: '12px', fontWeight: 600 }}>
+              {`Contract Program Revenue uses Products Forecast - ADJ $ through ${lastProductAdjMonth}. Later months use % Growth. Edit those dollars on the Products pages.`}
+            </div>
+          )}
           <div className="ff-print-controls" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
             <h3 style={{ margin: 0, color: '#0f172a' }}>Forecast Inputs</h3>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -2130,7 +2215,18 @@ export default function FinancialForecastTab({
                     ))}
                     {monthlyForecastPeriods.map((q, idx) => (
                       <td key={`${rowKey}-f-${q.key}`} style={{ padding: '6px 8px', textAlign: 'right', borderBottom: '1px solid #f1f5f9', whiteSpace: 'nowrap' }}>
-                        {canUseAccrualSalesAmountInput ? (
+                        {lockedProductAdjSalesAmount({
+                          fieldKey: rowKey,
+                          year: Number(q.year),
+                          monthKey: String(q.key),
+                          hasProductForecast: hasProductSalesFeed,
+                          months: productAdjSalesByMonth,
+                          lastAdjMonth: lastProductAdjMonth,
+                        }) != null ? (
+                          <span title="From Products Forecast - ADJ. Edit on the Products pages." style={{ color: '#1e3a8a', fontWeight: 700 }}>
+                            {formatCurrency(Number(productAdjSalesByMonth[q.key]) || 0)}
+                          </span>
+                        ) : canUseAccrualSalesAmountInput ? (
                           <>
                             $
                             <input
@@ -2766,6 +2862,11 @@ export default function FinancialForecastTab({
 
       {activeTab === 'income-statement' && (
         <div className="ff-print-section" style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '20px' }}>
+          {isAtlanticCompany && hasProductSalesFeed && lastProductAdjMonth && (
+            <div style={{ marginBottom: '12px', padding: '8px 12px', background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: '8px', color: '#1e3a8a', fontSize: '12px', fontWeight: 600 }}>
+              {`Contract Program Revenue uses Products Forecast - ADJ $ through ${lastProductAdjMonth}. Later months use % Growth.`}
+            </div>
+          )}
           <div className="ff-print-controls" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
             <h3 style={{ margin: 0, color: '#0f172a' }}>Income Statement</h3>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
