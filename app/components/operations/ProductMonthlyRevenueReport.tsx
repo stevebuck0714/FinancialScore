@@ -466,7 +466,7 @@ export default function ProductMonthlyRevenueReport({
         };
         return acc;
       }, {} as Record<number, { forecast: number; adjusted: number; actual: number }>);
-      return buildProductMonthlyTrendRows(months);
+      return buildProductMonthlyTrendRows(months, year);
     }
     const months = FORECAST_MONTHS.reduce((acc, month) => {
       const bucket = totals.months[month] || { estimated: 0, adjusted: 0, ytd: 0 };
@@ -477,8 +477,8 @@ export default function ProductMonthlyRevenueReport({
       };
       return acc;
     }, {} as Record<number, { forecast: number; adjusted: number; actual: number }>);
-    return buildProductMonthlyTrendRows(months);
-  }, [lines, selectedCustomer, totals]);
+    return buildProductMonthlyTrendRows(months, year);
+  }, [lines, selectedCustomer, totals, year]);
 
   const monthHeaderStyle: React.CSSProperties = {
     textAlign: 'right',

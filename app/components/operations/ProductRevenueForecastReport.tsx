@@ -544,9 +544,10 @@ export default function ProductRevenueForecastReport({
   const trendRows = useMemo(
     () =>
       buildProductMonthlyTrendRows(
-        selectedCustomer ? summarizeForecastQtyMonths(lines) : companyMonthTotals || summarizeForecastQtyMonths([])
+        selectedCustomer ? summarizeForecastQtyMonths(lines) : companyMonthTotals || summarizeForecastQtyMonths([]),
+        year
       ),
-    [companyMonthTotals, lines, selectedCustomer]
+    [companyMonthTotals, lines, selectedCustomer, year]
   );
   const trendScopeLabel = selectedCustomer ? selectedCustomer.label : 'All customers';
 

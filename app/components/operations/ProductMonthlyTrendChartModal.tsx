@@ -16,13 +16,21 @@ import {
   FORECAST_MONTHS,
   type ForecastMonth,
 } from '@/lib/operations/product-revenue-forecast';
+import { estMonthIndex, estYear } from '@/lib/time/eastern';
 
 export type ProductMonthlyTrendPoint = {
   month: string;
   forecast: number;
   forecastAdj: number;
-  actual: number;
+  actual: number | null;
 };
+
+function lastCompletedCalendarMonth(year: number): number {
+  const currentYear = estYear();
+  if (year < currentYear) return 12;
+  if (year > currentYear) return 0;
+  return estMonthIndex();
+}
 
 type ProductMonthlyTrendChartModalProps = {
   open: boolean;
@@ -35,20 +43,23 @@ type ProductMonthlyTrendChartModalProps = {
 };
 
 export function buildProductMonthlyTrendRows(
-  months: Record<number, { forecast?: number; adjusted?: number; actual?: number }>
+  months: Record<number, { forecast?: number; adjusted?: number; actual?: number }>,
+  year: number
 ): ProductMonthlyTrendPoint[] {
+  const lastActualMonth = lastCompletedCalendarMonth(year);
   return FORECAST_MONTHS.map((month: ForecastMonth) => {
     const bucket = months[month] || {};
     return {
       month: FORECAST_MONTH_LABELS[month],
       forecast: Number(bucket.forecast || 0),
       forecastAdj: Number(bucket.adjusted || 0),
-      actual: Number(bucket.actual || 0),
+      actual: month <= lastActualMonth ? Number(bucket.actual || 0) : null,
     };
   });
 }
 
-function formatValue(value: number, unit: 'qty' | 'money'): string {
+function formatValue(value: number | null | undefined, unit: 'qty' | 'money'): string {
+  if (value == null || !Number.isFinite(Number(value))) return '—';
   const numeric = Number(value || 0);
   if (unit === 'money') {
     return Math.round(numeric).toLocaleString('en-US', {
@@ -136,13 +147,16 @@ export default function ProductMonthlyTrendChartModal({
                 tickFormatter={(value) => formatValue(Number(value || 0), unit)}
               />
               <Tooltip
-                formatter={(value: any, name: any) => [formatValue(Number(value || 0), unit), String(name)]}
+                formatter={(value: any, name: any) => {
+                  if (value == null || !Number.isFinite(Number(value))) return null;
+                  return [formatValue(Number(value), unit), String(name)];
+                }}
                 contentStyle={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: 8 }}
               />
               <Legend />
               <Line type="monotone" dataKey="forecast" name="Forecast" stroke="#2563eb" strokeWidth={2.5} dot={{ r: 3 }} />
               <Line type="monotone" dataKey="forecastAdj" name="Forecast - ADJ" stroke="#7c3aed" strokeWidth={2.5} dot={{ r: 3 }} />
-              <Line type="monotone" dataKey="actual" name="Actual" stroke="#16a34a" strokeWidth={2.5} dot={{ r: 3 }} />
+              <Line type="monotone" dataKey="actual" name="Actual" stroke="#16a34a" strokeWidth={2.5} dot={{ r: 3 }} connectNulls={false} />
             </LineChart>
           </ResponsiveContainer>
         )}
