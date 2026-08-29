@@ -53,6 +53,13 @@ import {
 import ProductGroupReports from './ProductGroupReports';
 import { isOperationalModuleAllowed } from '@/lib/operations/operational-dashboard-access';
 import { buildWeeklyProductMarginModel } from '@/lib/operations/product-margin-weekly';
+import {
+  DEFAULT_SGP_OPERATING_EXPENSE_PCT,
+  lookupProductMarginOverlay,
+  normalizeOperatingExpensePct,
+  sgpOperatingExpenseDollars,
+  type ProductMarginItemOverlay,
+} from '@/lib/operations/product-margin-calc';
 import { getFieldDisplayName } from '@/lib/constants/field-display-names';
 import { addEstCalendarDays, addEstCalendarMonths, formatDateInputLabel, formatDateSafeUtc, parseDateSafeUtc, previousEstCalendarDate, toLocalInputDate } from '@/app/utils/date';
 import { formatMoney, formatMoneyCompact } from '@/lib/format/currency';
@@ -1011,6 +1018,11 @@ export default function OperationsTab({
   const [productMarginSortDir, setProductMarginSortDir] = useState<'asc' | 'desc'>('asc');
   const [productMarginNoteModal, setProductMarginNoteModal] = useState<{ title: string; note: string } | null>(null);
   const [productMarginNoteLoadingKey, setProductMarginNoteLoadingKey] = useState<string | null>(null);
+  const [productMarginOpexPct, setProductMarginOpexPct] = useState(DEFAULT_SGP_OPERATING_EXPENSE_PCT);
+  const [productMarginOpexPctDraft, setProductMarginOpexPctDraft] = useState(String(DEFAULT_SGP_OPERATING_EXPENSE_PCT));
+  const [productMarginOpexSaving, setProductMarginOpexSaving] = useState(false);
+  const [productMarginOpexError, setProductMarginOpexError] = useState<string | null>(null);
+  const [productMarginItemOverlays, setProductMarginItemOverlays] = useState<Record<string, ProductMarginItemOverlay>>({});
   const [realEstateTableSort, setRealEstateTableSort] = useState<Record<string, { key: string; dir: 'asc' | 'desc' }>>({});
   const [expandedAgentProductivityTiers, setExpandedAgentProductivityTiers] = useState<Record<string, boolean>>({});
   const [isResidentialOfficeAttachmentTableExpanded, setIsResidentialOfficeAttachmentTableExpanded] = useState(true);
@@ -2583,6 +2595,66 @@ export default function OperationsTab({
       cancelled = true;
     };
   }, [shouldLoadWholesaleProductsReport, industrySectorCategory, startDate, endDate, activeTab, productReportView]);
+
+  useEffect(() => {
+    if (!selectedCompanyId || industrySectorCategory !== '42' || productReportView !== 'productMarginAnalysis') return;
+    let cancelled = false;
+    void fetch(`/api/operational-data/product-margin-settings?companyId=${encodeURIComponent(selectedCompanyId)}`)
+      .then(async (response) => {
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(payload?.error || 'Failed to load operating expense %');
+        return payload;
+      })
+      .then((payload) => {
+        if (cancelled) return;
+        const nextPct = normalizeOperatingExpensePct(payload?.operatingExpensePct) ?? DEFAULT_SGP_OPERATING_EXPENSE_PCT;
+        setProductMarginOpexPct(nextPct);
+        setProductMarginOpexPctDraft(String(nextPct));
+        setProductMarginItemOverlays(
+          payload?.itemOverlays && typeof payload.itemOverlays === 'object' ? payload.itemOverlays : {}
+        );
+        setProductMarginOpexError(null);
+      })
+      .catch((error: any) => {
+        if (!cancelled) setProductMarginOpexError(error?.message || 'Failed to load operating expense %');
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedCompanyId, industrySectorCategory, productReportView]);
+
+  const saveProductMarginOpexPct = async (rawValue: string) => {
+    const nextPct = normalizeOperatingExpensePct(rawValue);
+    if (nextPct == null) {
+      setProductMarginOpexError('Enter a valid Operating Expenses % (0 or greater).');
+      setProductMarginOpexPctDraft(String(productMarginOpexPct));
+      return;
+    }
+    setProductMarginOpexPct(nextPct);
+    setProductMarginOpexPctDraft(String(nextPct));
+    if (!selectedCompanyId) return;
+    setProductMarginOpexSaving(true);
+    setProductMarginOpexError(null);
+    try {
+      const response = await fetch('/api/operational-data/product-margin-settings', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ companyId: selectedCompanyId, operatingExpensePct: nextPct }),
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(payload?.error || 'Failed to save operating expense %');
+      const savedPct = normalizeOperatingExpensePct(payload?.operatingExpensePct) ?? nextPct;
+      setProductMarginOpexPct(savedPct);
+      setProductMarginOpexPctDraft(String(savedPct));
+      if (payload?.itemOverlays && typeof payload.itemOverlays === 'object' && Object.keys(payload.itemOverlays).length > 0) {
+        setProductMarginItemOverlays(payload.itemOverlays);
+      }
+    } catch (error: any) {
+      setProductMarginOpexError(error?.message || 'Failed to save operating expense %');
+    } finally {
+      setProductMarginOpexSaving(false);
+    }
+  };
 
   useEffect(() => {
     setWholesaleRawCustomerFilter('');
@@ -8420,7 +8492,7 @@ export default function OperationsTab({
     const shouldRenderMerchandiseProfitability =
       effectiveProductReportView === 'merchandiseProfitability' && isMerchandiseProfitabilityEnabled;
     const shouldBuildRetailForecasts = shouldRenderRetailForecast || shouldRenderMerchandiseProfitability;
-    const shouldBuildVendorPricingData = shouldRenderVendorPricing || shouldRenderProductMargin;
+    const shouldBuildVendorPricingData = shouldRenderVendorPricing;
     const platosMetrics = summary?.platosMetrics || null;
     const usePlatosMonthlyFallback =
       summary?.source === 'platos-closet-monthly-facts' && frequency === 'monthly';
@@ -9142,7 +9214,7 @@ export default function OperationsTab({
           .sort((a, b) => a.localeCompare(b))
           .slice(-1)[0] || ''
       : '';
-    const productMarginRows = getCachedProductTransform('products-margin-rows', [shouldRenderProductMargin, wholesaleProductRecords, vendorPricingByItem], () => {
+    const productMarginRows = getCachedProductTransform('products-margin-rows', [shouldRenderProductMargin, wholesaleProductRecords, productMarginOpexPct, productMarginItemOverlays], () => {
       if (!shouldRenderProductMargin) return [];
       const latestRowsByItem = new Map<string, { latestMs: number; rows: any[] }>();
       for (const row of wholesaleProductRecords as any[]) {
@@ -9165,10 +9237,6 @@ export default function OperationsTab({
       }
       const rows = Array.from(latestRowsByItem.values()).flatMap((entry) => entry.rows);
       const buckets = new Map<string, any>();
-      const addPerPieceValue = (total: number, perPiece: unknown, qty: number) => {
-        const numeric = Number(perPiece || 0);
-        return Number.isFinite(numeric) && numeric !== 0 ? total + numeric * Math.max(1, qty) : total;
-      };
       for (const row of rows) {
         const qty = Math.max(0, Number(row?.quantitySold || row?.qtySold || 0));
         const aprPartNumber = String(row?.sku || row?.itemId || row?.itemName || 'N/A').trim() || 'N/A';
@@ -9191,11 +9259,7 @@ export default function OperationsTab({
           item,
           quantity: 0,
           revenue: 0,
-          materialCost: 0,
-          tariff: 0,
-          duties: 0,
-          freight: 0,
-          operatingExpenses: 0,
+          unitPrice: 0,
           purchaseOrderIds: new Set<string>(),
         };
         if (!bucket.partNote && partNote) bucket.partNote = partNote;
@@ -9203,47 +9267,35 @@ export default function OperationsTab({
         if (purchaseOrderId) bucket.purchaseOrderIds.add(purchaseOrderId);
         bucket.quantity += qty;
         bucket.revenue += Number(row?.revenue || row?.currentPriceTotal || 0);
-        const explicitMaterialCost = Number(row?.cogs || row?.materialCost || row?.currentCostOfMaterial || 0);
-        const rowDate = parseCoverageUtcDay(String(row?.snapshotDate || row?.date || row?.orderDate || ''));
-        const vendorCost = getVendorMaterialCostForItem(aprPartNumber, rowDate ? rowDate.getTime() : 0);
-        bucket.materialCost += explicitMaterialCost > 0 ? explicitMaterialCost : Number(vendorCost?.materialCost || 0) * Math.max(1, qty);
-        bucket.tariff += Number(row?.tariffTotal || row?.tariffAllocated || 0);
-        bucket.tariff = addPerPieceValue(bucket.tariff, row?.currentImpactOfTariffPerPiece ?? row?.tariffPerPiece, qty);
-        bucket.duties += Number(row?.dutiesTotal || row?.dutyTotal || row?.dutiesAllocated || 0);
-        bucket.duties = addPerPieceValue(bucket.duties, row?.currentImpactOfDutiesPerPiece ?? row?.dutiesPerPiece ?? row?.dutyPerPiece, qty);
-        if (!Number(row?.dutiesTotal || row?.dutyTotal || row?.dutiesAllocated || row?.currentImpactOfDutiesPerPiece || row?.dutiesPerPiece || row?.dutyPerPiece || 0)) {
-          bucket.duties = addPerPieceValue(bucket.duties, vendorCost?.dutyPerPiece, qty);
-        }
-        bucket.freight += Number(row?.freightAllocated || row?.freightTotal || 0);
-        bucket.freight = addPerPieceValue(bucket.freight, row?.costOfFreightPerPiece ?? row?.freightPerPiece, qty);
-        if (!Number(row?.freightAllocated || row?.freightTotal || row?.costOfFreightPerPiece || row?.freightPerPiece || 0)) {
-          bucket.freight = addPerPieceValue(bucket.freight, vendorCost?.freightPerPiece, qty);
-        }
-        bucket.operatingExpenses += Number(row?.operatingExpensesAllocated || row?.operatingExpensesTotal || 0);
-        bucket.operatingExpenses = addPerPieceValue(bucket.operatingExpenses, row?.currentOperatingExpenses ?? row?.operatingExpensesPerPiece, qty);
+        const linePrice = Number(row?.unitPrice || row?.price || 0);
+        if (Number.isFinite(linePrice) && linePrice > 0) bucket.unitPrice = linePrice;
         buckets.set(key, bucket);
       }
       const toPerPiece = (total: number, qty: number) => (qty > 0 ? total / qty : null);
       return Array.from(buckets.values())
         .map((row) => {
-          const currentPrice = toPerPiece(row.revenue, row.quantity);
-          const materialCost = toPerPiece(row.materialCost, row.quantity);
-          const tariffPerPiece = toPerPiece(row.tariff, row.quantity);
-          const dutiesPerPiece = toPerPiece(row.duties, row.quantity);
-          const freightPerPiece = toPerPiece(row.freight, row.quantity);
-          const operatingExpensesPerPiece = toPerPiece(row.operatingExpenses, row.quantity);
+          const overlay = lookupProductMarginOverlay(productMarginItemOverlays, row.aprPartNumber);
+          const currentPrice =
+            Number(row.unitPrice || 0) > 0 ? Number(row.unitPrice) : toPerPiece(row.revenue, row.quantity);
+          const materialCost = overlay?.materialCost ?? overlay?.unitCost ?? overlay?.currentUnitCost ?? null;
+          const tariffPerPiece = overlay?.tariffPerPiece ?? null;
+          const dutiesPerPiece = overlay?.dutyPerPiece ?? null;
+          const freightPerPiece = overlay?.freightPerPiece ?? null;
+          const operatingExpensesPerPiece = sgpOperatingExpenseDollars(materialCost, productMarginOpexPct);
           const currentCostOfSales =
             (materialCost || 0) + (tariffPerPiece || 0) + (dutiesPerPiece || 0) + (freightPerPiece || 0);
           const fullyLoadedCost = currentCostOfSales + (operatingExpensesPerPiece || 0);
           const netProfit = currentPrice == null ? null : currentPrice - fullyLoadedCost;
           const grossMargin = currentPrice == null ? null : currentPrice - currentCostOfSales;
+          const qty = Math.max(0, Number(row.quantity || 0));
           return {
             ...row,
-            materialCostTotal: row.materialCost,
-            tariffTotal: row.tariff,
-            dutiesTotal: row.duties,
-            freightTotal: row.freight,
-            operatingExpensesTotal: row.operatingExpenses,
+            materialCostTotal: materialCost == null ? 0 : materialCost * qty,
+            tariffTotal: tariffPerPiece == null ? 0 : tariffPerPiece * qty,
+            dutiesTotal: dutiesPerPiece == null ? 0 : dutiesPerPiece * qty,
+            freightTotal: freightPerPiece == null ? 0 : freightPerPiece * qty,
+            operatingExpensesTotal:
+              operatingExpensesPerPiece == null ? 0 : operatingExpensesPerPiece * qty,
             currentPrice,
             materialCost,
             tariffPerPiece,
@@ -9303,7 +9355,7 @@ export default function OperationsTab({
           const tariffPerPiece = toPerPiece(group.tariff, group.quantity);
           const dutiesPerPiece = toPerPiece(group.duties, group.quantity);
           const freightPerPiece = toPerPiece(group.freight, group.quantity);
-          const operatingExpensesPerPiece = toPerPiece(group.operatingExpenses, group.quantity);
+          const operatingExpensesPerPiece = sgpOperatingExpenseDollars(materialCost, productMarginOpexPct);
           const currentCostOfSales =
             (materialCost || 0) + (tariffPerPiece || 0) + (dutiesPerPiece || 0) + (freightPerPiece || 0);
           const fullyLoadedCost = currentCostOfSales + (operatingExpensesPerPiece || 0);
@@ -10135,12 +10187,54 @@ export default function OperationsTab({
                 {renderChartInfoLink('productsProductMarginAnalysis')}
               </div>
               <div style={{ marginTop: '4px', fontSize: '12px', color: '#64748b', lineHeight: 1.4 }}>
-                Current open-order margin by customer and item. Not full sales history.
+                Price from Infor open orders. Material, tariff, duties, and freight from the Freight and Duties pages.
               </div>
               {productMarginLatestDate && (
                 <div style={{ marginTop: '4px', fontSize: '11px', color: '#64748b' }}>
                   Latest snapshot: {formatCoverageDate(productMarginLatestDate)}
                 </div>
+              )}
+              <div style={{ marginTop: '10px', display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                <label htmlFor="product-margin-opex-pct" style={{ fontSize: '12px', fontWeight: 700, color: '#334155' }}>
+                  Operating Expenses %
+                </label>
+                <input
+                  id="product-margin-opex-pct"
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={productMarginOpexPctDraft}
+                  onChange={(event) => {
+                    const next = event.target.value;
+                    setProductMarginOpexPctDraft(next);
+                    const parsed = normalizeOperatingExpensePct(next);
+                    if (parsed != null) setProductMarginOpexPct(parsed);
+                  }}
+                  onBlur={() => void saveProductMarginOpexPct(productMarginOpexPctDraft)}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter') {
+                      event.currentTarget.blur();
+                    }
+                  }}
+                  style={{
+                    width: '88px',
+                    border: '1px solid #cbd5e1',
+                    borderRadius: '8px',
+                    padding: '6px 8px',
+                    fontSize: '12px',
+                    fontWeight: 700,
+                    color: '#0f172a',
+                    textAlign: 'right',
+                    background: '#fff',
+                  }}
+                />
+                <span style={{ fontSize: '11px', color: '#64748b' }}>
+                  SGP Operating Expenses $ = SGP Cost of Material × this rate
+                  {productMarginOpexSaving ? ' · Saving…' : ''}
+                </span>
+              </div>
+              {productMarginOpexError && (
+                <div style={{ marginTop: '4px', fontSize: '11px', color: '#b91c1c' }}>{productMarginOpexError}</div>
               )}
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
@@ -11494,7 +11588,11 @@ export default function OperationsTab({
             body: [
               'Open customer order lines from the Infor / CSI sync.',
               'Items still on the open-order book as of that latest snapshot.',
-              'Tariff, duties, customer P/N, and operating expense only when those fields are on the source line or vendor overlay.',
+              'SGP Price from Infor CSI customer-order Price (latest open order for that customer + item).',
+              'SGP Cost of Material from the Freight page Unit Cost / Current Unit Cost (Infor item master).',
+              'SGP Impact of Tariff / Duties from the Duties & Tariffs page.',
+              'SGP Cost of Freight from the Freight page estimated freight per piece.',
+              'SGP Operating Expenses $ = SGP Cost of Material × the Operating Expenses % entered above the table (company default 25.51%).',
             ],
           },
           {

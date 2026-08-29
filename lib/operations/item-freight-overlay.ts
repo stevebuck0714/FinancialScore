@@ -992,3 +992,43 @@ export async function updateCompanyItemFreight(
 
   return listCompanyItemFreight(companyId);
 }
+
+export async function listCompanyItemMaterialCosts(companyId: string): Promise<Record<string, number>> {
+  await ensureCompanyItemFreightTable();
+  const rows = await prisma.$queryRaw<Array<{
+    itemSku: string;
+    unitCost: number | null;
+    currentUnitCost: number | null;
+    userEditedAt: Date | null;
+  }>>`
+    SELECT "itemSku", "unitCost", "currentUnitCost", "userEditedAt"
+    FROM "CompanyItemFreight"
+    WHERE "companyId" = ${companyId}
+  `.catch(() => []);
+  const csiByItem = await loadCsiItemFacts(companyId).catch(() => new Map<string, CsiItemFacts>());
+  const result: Record<string, number> = {};
+  const takeCost = (...values: Array<number | null | undefined>) => {
+    const cost = firstNumber(...values);
+    return cost != null && cost > 0 ? cost : null;
+  };
+  for (const row of rows) {
+    const key = normalizeItemSku(row.itemSku).toUpperCase();
+    if (!key) continue;
+    const userOwned = Boolean(row.userEditedAt);
+    const csi = csiByItem.get(key);
+    const unitCost = userOwned
+      ? asNullableNumber(row.unitCost)
+      : firstNumber(asNullableNumber(row.unitCost), csi?.unitCost);
+    const currentUnitCost = userOwned
+      ? asNullableNumber(row.currentUnitCost)
+      : firstNumber(asNullableNumber(row.currentUnitCost), csi?.currentUnitCost);
+    const cost = takeCost(currentUnitCost, unitCost);
+    if (cost != null) result[key] = cost;
+  }
+  for (const [key, csi] of csiByItem.entries()) {
+    if (result[key]) continue;
+    const cost = takeCost(csi.currentUnitCost, csi.unitCost);
+    if (cost != null) result[key] = cost;
+  }
+  return result;
+}
