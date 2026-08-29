@@ -9,12 +9,15 @@ import {
   assertProductsForecastAccess,
   ensureProductRevenueForecastTables,
   loadCsiMonthlyShippedActuals,
-  loadProductForecastLines,
   normalizeForecastLineInput,
   serializeForecastLine,
   upsertForecastLines,
   withCsiShippedActuals,
 } from '@/lib/operations/product-revenue-forecast-db';
+import {
+  listProductForecastCustomersWithCatalog,
+  loadProductForecastLinesWithCatalog,
+} from '@/lib/operations/product-catalog-carryforward';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
@@ -43,31 +46,22 @@ export async function GET(request: NextRequest) {
       where: { companyId_year: { companyId, year } },
     });
 
-    const customers = await prisma.productRevenueForecastLine.groupBy({
-      by: ['customerId', 'customerName'],
-      where: { companyId, year },
-      _count: { _all: true },
-      orderBy: { customerName: 'asc' },
-    });
-
-    const customerPayload = customers.map((row) => ({
-      customerId: row.customerId,
-      customerName: row.customerName,
-      key: `${row.customerId}||${row.customerName}`,
-      label: row.customerName || row.customerId || 'Unknown customer',
-      lineCount: row._count._all,
-    }));
+    const { customers: customerPayload, catalogSourceYear } = await listProductForecastCustomersWithCatalog(
+      companyId,
+      year
+    );
 
     if (!customerId && !customerName) {
       return NextResponse.json({
         year,
+        catalogSourceYear,
         dataThru: settings?.dataThru ? settings.dataThru.toISOString().slice(0, 10) : null,
         customers: customerPayload,
         lines: [],
       });
     }
 
-    const lines = await loadProductForecastLines({
+    const lines = await loadProductForecastLinesWithCatalog({
       companyId,
       year,
       customerId,
@@ -82,6 +76,7 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({
       year,
+      catalogSourceYear,
       dataThru: settings?.dataThru ? settings.dataThru.toISOString().slice(0, 10) : null,
       customers: customerPayload,
       lines: withCsiShippedActuals(lines.map(serializeForecastLine), shipped),

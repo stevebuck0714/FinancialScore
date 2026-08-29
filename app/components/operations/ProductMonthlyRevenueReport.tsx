@@ -217,6 +217,7 @@ export default function ProductMonthlyRevenueReport({
   onOpenInfo,
 }: ProductMonthlyRevenueReportProps) {
   const [year, setYear] = useState(currentYear());
+  const [catalogSourceYear, setCatalogSourceYear] = useState<number | null>(null);
   const [dataThru, setDataThru] = useState('');
   const [customerKey, setCustomerKey] = useState('');
   const [customers, setCustomers] = useState<CustomerOption[]>([]);
@@ -311,6 +312,7 @@ export default function ProductMonthlyRevenueReport({
       const revenueJson = await revenueRes.json().catch(() => ({}));
       if (!revenueRes.ok) throw new Error(revenueJson.error || 'Failed to load monthly revenue');
       setCustomers((prev) => mergeCustomers(customer ? prev : [], revenueJson.customers || []));
+      setCatalogSourceYear(Number(revenueJson.catalogSourceYear) || null);
       applyPayload(revenueJson);
       void fetch(`/api/operational-data/product-raw?companyId=${encodeURIComponent(selectedCompanyId)}&view=customers`)
         .then(async (csiRes) => {
@@ -688,6 +690,11 @@ export default function ProductMonthlyRevenueReport({
       </div>
 
       {loading && <div style={{ color: '#64748b', fontSize: 13, marginBottom: 8 }}>Loading monthly revenue…</div>}
+      {catalogSourceYear && catalogSourceYear !== year && (
+        <div style={{ color: '#1e3a8a', fontSize: 13, marginBottom: 8 }}>
+          {`Showing ${catalogSourceYear} items for ${year}. Monthly quantities start blank so you can enter this year’s projections.`}
+        </div>
+      )}
       {error && <div style={{ color: '#b91c1c', fontSize: 13, marginBottom: 8 }}>{error}</div>}
       {notice && <div style={{ color: '#166534', fontSize: 13, marginBottom: 8 }}>{notice}</div>}
       {!loading && skuCount > 0 && priceCount === 0 && (

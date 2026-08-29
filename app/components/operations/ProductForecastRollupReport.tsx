@@ -148,6 +148,7 @@ export default function ProductForecastRollupReport({
   onOpenInfo,
 }: ProductForecastRollupReportProps) {
   const [year, setYear] = useState(currentYear());
+  const [catalogSourceYear, setCatalogSourceYear] = useState<number | null>(null);
   const [dataThru, setDataThru] = useState('');
   const [customerKey, setCustomerKey] = useState('');
   const [customers, setCustomers] = useState<CustomerOption[]>([]);
@@ -205,6 +206,7 @@ export default function ProductForecastRollupReport({
       if (seq !== customersRequestSeq.current) return;
       if (!forecastRes.ok) throw new Error(forecastJson.error || 'Failed to load customers');
       setCustomers(mergeCustomers([], forecastJson.customers || []));
+      setCatalogSourceYear(Number(forecastJson.catalogSourceYear) || null);
       if (forecastJson.dataThru) setDataThru(String(forecastJson.dataThru).slice(0, 10));
       void loadCsiCustomers(seq);
     } catch (err: any) {
@@ -418,6 +420,11 @@ export default function ProductForecastRollupReport({
 
       {loadingCustomers && customers.length === 0 && (
         <div style={{ color: '#64748b', fontSize: 13, marginBottom: 8 }}>Loading customers…</div>
+      )}
+      {catalogSourceYear && catalogSourceYear !== year && (
+        <div style={{ color: '#1e3a8a', fontSize: 13, marginBottom: 8 }}>
+          {`Showing ${catalogSourceYear} items for ${year}. Monthly quantities start blank so you can enter this year’s projections.`}
+        </div>
       )}
       {error && <div style={{ color: '#b91c1c', fontSize: 13, marginBottom: 8 }}>{error}</div>}
 

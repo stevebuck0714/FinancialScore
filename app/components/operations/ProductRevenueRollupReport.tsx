@@ -229,6 +229,7 @@ export default function ProductRevenueRollupReport({
   onOpenInfo,
 }: ProductRevenueRollupReportProps) {
   const [year, setYear] = useState(currentYear());
+  const [catalogSourceYear, setCatalogSourceYear] = useState<number | null>(null);
   const [dataThru, setDataThru] = useState('');
   const [customerKey, setCustomerKey] = useState('');
   const [customers, setCustomers] = useState<CustomerOption[]>([]);
@@ -280,6 +281,7 @@ export default function ProductRevenueRollupReport({
       const revenueJson = await revenueRes.json().catch(() => ({}));
       if (!revenueRes.ok) throw new Error(revenueJson.error || 'Failed to load revenue rollup');
       setCustomers((prev) => mergeCustomers(customer ? prev : [], revenueJson.customers || []));
+      setCatalogSourceYear(Number(revenueJson.catalogSourceYear) || null);
       if (revenueJson.dataThru) setDataThru(String(revenueJson.dataThru).slice(0, 10));
       if (revenueJson.totals) setTotals(revenueJson.totals);
       if (typeof revenueJson.companyLineCount === 'number') setCompanyLineCount(revenueJson.companyLineCount);
@@ -445,6 +447,11 @@ export default function ProductRevenueRollupReport({
       </div>
 
       {loading && <div style={{ color: '#64748b', fontSize: 13, marginBottom: 8 }}>Loading revenue rollup…</div>}
+      {catalogSourceYear && catalogSourceYear !== year && (
+        <div style={{ color: '#1e3a8a', fontSize: 13, marginBottom: 8 }}>
+          {`Showing ${catalogSourceYear} items for ${year}. Monthly quantities start blank so you can enter this year’s projections.`}
+        </div>
+      )}
       {error && <div style={{ color: '#b91c1c', fontSize: 13, marginBottom: 8 }}>{error}</div>}
       {!loading && skuCount > 0 && priceCount === 0 && (
         <div style={{ color: '#b45309', fontSize: 13, marginBottom: 8 }}>

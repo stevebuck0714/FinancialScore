@@ -9,12 +9,16 @@ import {
   asOptionalIsoDay,
   ensureProductRevenueForecastTables,
   loadCsiMonthlyShippedActuals,
-  loadProductForecastLines,
   normalizeForecastLineInput,
   serializeForecastLine,
   upsertForecastLines,
   withCsiShippedActuals,
 } from '@/lib/operations/product-revenue-forecast-db';
+import {
+  latestProductCatalogSourceYear,
+  listProductForecastCustomersWithCatalog,
+  loadProductForecastLinesWithCatalog,
+} from '@/lib/operations/product-catalog-carryforward';
 import {
   adjustedEstimatedMonths,
   annualActualRevenue,
@@ -772,7 +776,8 @@ export async function loadRevenueDataset(params: {
     : scopedCustomerName
       ? [companyId, year, scopedCustomerName]
       : [companyId, year];
-  const [settingsRows, forecastSettings, forecastRaw, revenueRows, priceRows, shipped, forecastCustomers] = await Promise.all([
+  const catalogSourceYear = await latestProductCatalogSourceYear(companyId, year);
+  const [settingsRows, forecastSettings, forecastRaw, revenueRows, priceRows, sourcePriceRows, shipped, catalogCustomers] = await Promise.all([
     prisma.$queryRawUnsafe<RevenueSettingsRow[]>(
       `SELECT "dataThru", "shippingDays" FROM "ProductRevenueSettings" WHERE "companyId" = $1 AND "year" = $2 LIMIT 1`,
       companyId,
@@ -781,7 +786,7 @@ export async function loadRevenueDataset(params: {
     prisma.productRevenueForecastSettings.findUnique({
       where: { companyId_year: { companyId, year } },
     }),
-    loadProductForecastLines({
+    loadProductForecastLinesWithCatalog({
       companyId,
       year,
       customerId: scopedCustomerId || undefined,
@@ -795,27 +800,41 @@ export async function loadRevenueDataset(params: {
       companyId,
       year
     ),
+    catalogSourceYear
+      ? prisma.$queryRawUnsafe<RevenuePriceRow[]>(
+          `SELECT "customerGroup", "itemSku", "contractPrice", "sgpPrice"
+           FROM "ProductRevenuePrice"
+           WHERE "companyId" = $1 AND "year" = $2`,
+          companyId,
+          catalogSourceYear
+        )
+      : Promise.resolve([] as RevenuePriceRow[]),
     loadCsiMonthlyShippedActuals({
       companyId,
       year,
       customerId: scopedCustomerId || undefined,
       customerName: scopedCustomerName || undefined,
     }),
-    prisma.productRevenueForecastLine.groupBy({
-      by: ['customerId', 'customerName'],
-      where: { companyId, year },
-      _count: { _all: true },
-      orderBy: { customerName: 'asc' },
-    }).catch(() => []),
+    listProductForecastCustomersWithCatalog(companyId, year),
   ]);
   const settings = settingsRows[0] || null;
   const forecastRows = withCsiShippedActuals(forecastRaw.map(serializeForecastLine), shipped);
 
   const priceMap = new Map<string, { contractPrice: number | null; sgpPrice: number | null }>();
-  for (const row of priceRows) {
-    priceMap.set(priceKey(row.customerGroup, row.itemSku), {
+  for (const row of [...sourcePriceRows, ...priceRows]) {
+    const key = priceKey(row.customerGroup, row.itemSku);
+    const next = {
       contractPrice: row.contractPrice == null ? null : Number(row.contractPrice),
       sgpPrice: row.sgpPrice == null ? null : Number(row.sgpPrice),
+    };
+    const prior = priceMap.get(key);
+    if (!prior) {
+      priceMap.set(key, next);
+      continue;
+    }
+    priceMap.set(key, {
+      contractPrice: next.contractPrice ?? prior.contractPrice,
+      sgpPrice: next.sgpPrice ?? prior.sgpPrice,
     });
   }
 
@@ -887,17 +906,8 @@ export async function loadRevenueDataset(params: {
       : allLines;
 
   const customersMap = new Map<string, { customerId: string; customerName: string; key: string; label: string; lineCount: number }>();
-  for (const row of forecastCustomers) {
-    const customerId = String(row.customerId || '');
-    const customerName = String(row.customerName || '');
-    const key = `${customerId}||${customerName}`;
-    customersMap.set(key, {
-      customerId,
-      customerName,
-      key,
-      label: customerName || customerId || 'Unknown customer',
-      lineCount: Number(row._count._all || 0),
-    });
+  for (const row of catalogCustomers.customers) {
+    customersMap.set(row.key, row);
   }
   for (const line of allLines) {
     const key = `${line.customerId}||${line.customerName}`;
@@ -920,12 +930,13 @@ export async function loadRevenueDataset(params: {
       : null;
   return {
     year,
+    catalogSourceYear,
     dataThru,
     shippingDays: buildShippingCalendar(year),
-    priceCount: priceRows.length,
+    priceCount: priceMap.size,
     customers,
     companyLineCount: includeLines
-      ? forecastCustomers.map((row) => Number(row._count._all || 0)).reduce((sum, count) => sum + count, 0)
+      ? catalogCustomers.customers.reduce((sum, row) => sum + Number(row.lineCount || 0), 0)
       : allLines.length,
     totals: summarizeRevenueLines(includeLines ? scoped : allLines, dataThru),
     lines: includeLines ? scoped.map((line) => serializeJoinedRevenueLine(line, dataThru)) : [],
