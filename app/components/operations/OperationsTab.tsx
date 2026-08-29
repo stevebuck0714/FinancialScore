@@ -16620,14 +16620,17 @@ Strategies to Improve the CCC
           <ResidentialRevenueForecast companyId={selectedCompanyId} />
         )}
 
-        {activeAccrualBasisForecastTab === 'income-statement-forecast' && (
-          <FinancialForecastTab
-            selectedCompanyId={selectedCompanyId}
-            companyName={companyName}
-            industrySectorCategory={industrySectorCategory || null}
-            displayMode="no-graphs"
-            basisMode="accrual"
-          />
+        {(activeAccrualBasisForecastTab === 'income-statement-forecast' ||
+          activeAccrualBasisForecastTab === 'cash-forecast') && (
+          <div style={{ display: activeAccrualBasisForecastTab === 'income-statement-forecast' ? undefined : 'none' }}>
+            <FinancialForecastTab
+              selectedCompanyId={selectedCompanyId}
+              companyName={companyName}
+              industrySectorCategory={industrySectorCategory || null}
+              displayMode="no-graphs"
+              basisMode="accrual"
+            />
+          </div>
         )}
 
         {activeAccrualBasisForecastTab === 'cash-forecast' && (

@@ -1,7 +1,7 @@
 'use client';
 import { formatEstDateTime } from '@/lib/time/eastern';
 
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useCompanyMoneyFormatter } from '@/app/hooks/useCompanyMoneyFormatter';
 
 type ForecastInputs = {
@@ -183,6 +183,12 @@ const DEFAULT_SCHEDULED_EXPENSE_RULES: ScheduledExpenseRule[] = [
   { key: 'other-opex', label: 'Other Operating Expenses', monthlyAmount: 28000, timing: 'weekly', weekday: 1, dayOfMonth: 1 },
 ];
 const FORECAST_WEEKS = 13;
+const FINANCIAL_FORECAST_MONTHLY_BASE_EVENT = 'corelytics-financial-forecast-monthly-base';
+
+type MonthRevenueSeries = {
+  monthRefs: MonthlyBaseRef[];
+  monthTotals: number[];
+};
 const DEFAULT_STARTING_BALANCES: StartingBalances = { cash: 0, ar: 0, ap: 0, inventory: 0, loc: 0 };
 const DEFAULT_FLOW_PROFILE: HistoricalFlowProfile = { arRunoffRate: 0.12, apRunoffRate: 0.12, inventoryToSalesRatio: 0.3 };
 const DEFAULT_AGING_BUCKETS: AgingBuckets = { current: 0, bucket30to60: 0, bucket60to90: 0, bucket90plus: 0 };
@@ -431,6 +437,39 @@ const allocateMonthlyAmountsToWeeks = (
     weekly[idx] = Math.max(0, Math.round(total));
   }
   return weekly;
+};
+const parseMonthRevenueSeries = (raw: unknown): MonthRevenueSeries | null => {
+  if (!raw || typeof raw !== 'object') return null;
+  const obj = raw as { monthRefs?: unknown; monthTotals?: unknown };
+  const refsRaw = Array.isArray(obj.monthRefs) ? obj.monthRefs : [];
+  const totalsRaw = Array.isArray(obj.monthTotals) ? obj.monthTotals : [];
+  const monthRefs: MonthlyBaseRef[] = [];
+  const monthTotals: number[] = [];
+  const count = Math.min(refsRaw.length, totalsRaw.length);
+  for (let i = 0; i < count; i += 1) {
+    const item = refsRaw[i] && typeof refsRaw[i] === 'object' ? (refsRaw[i] as { year?: unknown; month?: unknown }) : {};
+    const year = Number(item.year);
+    const month = Number(item.month);
+    const total = Number(totalsRaw[i]);
+    if (!Number.isFinite(year) || !Number.isFinite(month)) continue;
+    monthRefs.push({ year, month });
+    monthTotals.push(Number.isFinite(total) && total > 0 ? total : 0);
+  }
+  if (monthRefs.length === 0 || !monthTotals.some((value) => value > 0)) return null;
+  return { monthRefs, monthTotals };
+};
+const forecastWeekStarts = (): Date[] =>
+  Array.from({ length: FORECAST_WEEKS }, (_, idx) => addDays(getWeekendAnchorDate(new Date()), idx * 7));
+const allocateForecastSalesByWeek = (series: MonthRevenueSeries | null): number[] => {
+  if (!series) return Array.from({ length: FORECAST_WEEKS }, () => 0);
+  return allocateMonthlyAmountsToWeeks(series.monthTotals, series.monthRefs, forecastWeekStarts(), 'calendar');
+};
+const applyAllocatedSalesToDrivers = (drivers: WeeklyDriver[], allocatedSales: number[]): WeeklyDriver[] => {
+  if (!allocatedSales.some((value) => value > 0)) return drivers;
+  return drivers.map((driver, idx) => ({
+    ...driver,
+    sales: allocatedSales[idx] ?? driver.sales,
+  }));
 };
 const buildWeekMonthLabels = (monthRefs: MonthlyBaseRef[]): string[] => {
   const refs = normalizeMonthRefs(monthRefs, 3);
@@ -696,6 +735,8 @@ export default function WorkingCapitalForecastTab({ selectedCompanyId, basisMode
   );
   const [opexAdjDraftByWeek, setOpexAdjDraftByWeek] = useState<Record<number, string>>({});
   const [forecastMonthRefs, setForecastMonthRefs] = useState<MonthlyBaseRef[]>([]);
+  const [forecastMonthTotals, setForecastMonthTotals] = useState<number[]>([]);
+  const liveMonthSeriesRef = useRef<MonthRevenueSeries | null>(null);
   const [weekMonthLabels, setWeekMonthLabels] = useState<string[]>(Array.from({ length: FORECAST_WEEKS }, () => ''));
   const [startingBalances, setStartingBalances] = useState<StartingBalances>(DEFAULT_STARTING_BALANCES);
   const [locBalanceFromImportedData, setLocBalanceFromImportedData] = useState<boolean>(false);
@@ -1017,7 +1058,7 @@ export default function WorkingCapitalForecastTab({ selectedCompanyId, basisMode
             opexAdj: 0,
             grossMarginPct: Math.max(1, Math.min(99, Math.round(avgWeeklyGrossMargin * 100) / 100)),
           };
-          let monthRefsBase: MonthlyBaseRef[] = [];
+          let monthSeries: MonthRevenueSeries | null = null;
           try {
             const scopedBaseKey = `financialForecastRevenueMonthlyBase_${basisMode}_${selectedCompanyId}`;
             const legacyCashBaseKey = `financialForecastRevenueMonthlyBase_${selectedCompanyId}`;
@@ -1025,15 +1066,22 @@ export default function WorkingCapitalForecastTab({ selectedCompanyId, basisMode
               localStorage.getItem(scopedBaseKey) ||
               (basisMode === 'cash' ? localStorage.getItem(legacyCashBaseKey) : null);
             const parsedBase = rawBase ? JSON.parse(rawBase) : null;
-            monthRefsBase = Array.isArray(parsedBase?.monthRefs)
-              ? parsedBase.monthRefs.map((row: any) => ({
-                  year: Number(row?.year),
-                  month: Number(row?.month),
-                }))
-              : [];
+            monthSeries = parseMonthRevenueSeries(parsedBase);
           } catch {
-            monthRefsBase = [];
+            monthSeries = null;
           }
+          if (!monthSeries) {
+            monthSeries = parseMonthRevenueSeries(
+              financialForecastPayload?.settings?.revenueGrowthByRow &&
+                typeof financialForecastPayload.settings.revenueGrowthByRow === 'object'
+                ? (financialForecastPayload.settings.revenueGrowthByRow as { __monthRevenueSeries?: unknown }).__monthRevenueSeries
+                : null,
+            );
+          }
+          if (!monthSeries) monthSeries = liveMonthSeriesRef.current;
+          if (monthSeries) liveMonthSeriesRef.current = monthSeries;
+          const monthRefsBase = monthSeries?.monthRefs || [];
+          const allocatedForecastSales = allocateForecastSalesByWeek(monthSeries);
           const hasAccrualForecastInputs =
             Object.values(loadedOpexAmountByRow).some((values) => Array.isArray(values) && hasAnyPositiveValue(values));
           const hasImportedStartingBalances = hasAnyPositiveValue(Object.values(derivedStartingBalances));
@@ -1053,6 +1101,7 @@ export default function WorkingCapitalForecastTab({ selectedCompanyId, basisMode
           const seedAverages = hasForecastSourceData ? resolvedAverages : EMPTY_WEEKLY_DRIVER;
           setHistoricalSalesByWeek(recentHistoricalSales);
           setForecastMonthRefs(monthRefsBase);
+          setForecastMonthTotals(monthSeries?.monthTotals || []);
           setWeekMonthLabels(buildWeekMonthLabels(monthRefsBase));
 
           if (savedSettings) {
@@ -1092,12 +1141,15 @@ export default function WorkingCapitalForecastTab({ selectedCompanyId, basisMode
             const mergedAverages = normalizeWeeklyDriver(savedSettings.historicalAverages, seedAverages);
             const historicalWeeklySales = Math.max(0, Number(mergedAverages.sales || seedAverages.sales || 0));
             const historicalWeeklyOpex = Math.max(0, Number(mergedAverages.opex || seedAverages.opex || 0));
-            const mergedWeekly = normalizeWeeklyDriverList(savedSettings.weeklyDrivers, mergedAverages)
-              .map((driver) => ({
-                ...driver,
-                sales: driver.sales > historicalWeeklySales * 0.25 || historicalWeeklySales <= 0 ? driver.sales : historicalWeeklySales,
-                opex: driver.opex > 0 || historicalWeeklyOpex <= 0 ? driver.opex : historicalWeeklyOpex,
-              }));
+            const mergedWeekly = applyAllocatedSalesToDrivers(
+              normalizeWeeklyDriverList(savedSettings.weeklyDrivers, mergedAverages)
+                .map((driver) => ({
+                  ...driver,
+                  sales: driver.sales > historicalWeeklySales * 0.25 || historicalWeeklySales <= 0 ? driver.sales : historicalWeeklySales,
+                  opex: driver.opex > 0 || historicalWeeklyOpex <= 0 ? driver.opex : historicalWeeklyOpex,
+                })),
+              allocatedForecastSales,
+            );
             setInputs(resolvedInputs);
             setHistoricalAverages(mergedAverages);
             setWeeklyDrivers(mergedWeekly);
@@ -1107,7 +1159,10 @@ export default function WorkingCapitalForecastTab({ selectedCompanyId, basisMode
           } else {
             setInputs(seedInputs);
             setHistoricalAverages(seedAverages);
-            const defaults = Array.from({ length: FORECAST_WEEKS }, () => ({ ...seedAverages, opexAdj: 0 }));
+            const defaults = applyAllocatedSalesToDrivers(
+              Array.from({ length: FORECAST_WEEKS }, () => ({ ...seedAverages, opexAdj: 0 })),
+              allocatedForecastSales,
+            );
             setWeeklyDrivers(defaults);
             setOpexAdjDraftByWeek({});
             setStartingBalances(derivedStartingBalances);
@@ -1132,6 +1187,7 @@ export default function WorkingCapitalForecastTab({ selectedCompanyId, basisMode
           setStartingArBuckets(DEFAULT_AGING_BUCKETS);
           setStartingApBuckets(DEFAULT_AGING_BUCKETS);
           setForecastMonthRefs([]);
+          setForecastMonthTotals([]);
           setWeekMonthLabels(Array.from({ length: FORECAST_WEEKS }, () => ''));
         }
       } finally {
@@ -1144,6 +1200,27 @@ export default function WorkingCapitalForecastTab({ selectedCompanyId, basisMode
     loadStartingBalances();
     return () => {
       cancelled = true;
+    };
+  }, [selectedCompanyId, basisMode]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const onMonthlyBase = (event: Event) => {
+      const detail = (event as CustomEvent).detail;
+      if (!detail || String(detail.companyId || '') !== selectedCompanyId) return;
+      if (detail.basisMode && String(detail.basisMode) !== basisMode) return;
+      const series = parseMonthRevenueSeries(detail);
+      if (!series) return;
+      liveMonthSeriesRef.current = series;
+      const allocatedSales = allocateForecastSalesByWeek(series);
+      setForecastMonthRefs(series.monthRefs);
+      setForecastMonthTotals(series.monthTotals);
+      setWeekMonthLabels(buildWeekMonthLabels(series.monthRefs));
+      setWeeklyDrivers((prev) => applyAllocatedSalesToDrivers(prev, allocatedSales));
+    };
+    window.addEventListener(FINANCIAL_FORECAST_MONTHLY_BASE_EVENT, onMonthlyBase as EventListener);
+    return () => {
+      window.removeEventListener(FINANCIAL_FORECAST_MONTHLY_BASE_EVENT, onMonthlyBase as EventListener);
     };
   }, [selectedCompanyId, basisMode]);
 
@@ -1243,7 +1320,14 @@ export default function WorkingCapitalForecastTab({ selectedCompanyId, basisMode
       { remaining: Math.max(0, apBuckets.bucket90plus), ageWeeks: 12 },
     ];
 
-    const salesByWeek: number[] = Array.from({ length: weeks }, (_, idx) => Math.max(0, weeklyDrivers[idx]?.sales || 0));
+    const allocatedForecastSales = allocateForecastSalesByWeek(
+      parseMonthRevenueSeries({ monthRefs: forecastMonthRefs, monthTotals: forecastMonthTotals }),
+    );
+    const salesByWeek: number[] = Array.from({ length: weeks }, (_, idx) =>
+      allocatedForecastSales.some((value) => value > 0)
+        ? Math.max(0, allocatedForecastSales[idx] || 0)
+        : Math.max(0, weeklyDrivers[idx]?.sales || 0),
+    );
     const opexByWeek: number[] = Array.from({ length: weeks }, (_, idx) => Math.max(0, weeklyDrivers[idx]?.opex || 0));
     const opexPaidInFullByWeek = Array.from({ length: weeks }, () => 0);
     const opexViaApByWeek = Array.from({ length: weeks }, () => 0);
@@ -1406,7 +1490,7 @@ export default function WorkingCapitalForecastTab({ selectedCompanyId, basisMode
     }
 
     return result;
-  }, [inputs, startingBalances, startingArBuckets, startingApBuckets, weeklyDrivers, flowProfile, basisMode, historicalSalesByWeek, accrualOpexAmountByRow, accrualOpexPctByRow, accrualOpexPaymentTreatmentByKey, forecastMonthRefs]);
+  }, [inputs, startingBalances, startingArBuckets, startingApBuckets, weeklyDrivers, flowProfile, basisMode, historicalSalesByWeek, accrualOpexAmountByRow, accrualOpexPctByRow, accrualOpexPaymentTreatmentByKey, forecastMonthRefs, forecastMonthTotals]);
 
   const totals = useMemo(() => {
     const minCash = rows.reduce((acc, row) => Math.min(acc, row.endingCash), Number.POSITIVE_INFINITY);
@@ -1564,6 +1648,11 @@ export default function WorkingCapitalForecastTab({ selectedCompanyId, basisMode
             <div style={{ color: '#334155', fontSize: '13px' }}>
               Starting balances are sourced from last imported operational data. AR/AP days and inventory turns are auto-seeded from recent history and remain editable.
             </div>
+            {forecastMonthTotals.some((value) => value > 0) && (
+              <div style={{ marginTop: '6px', fontSize: '12px', color: '#1e3a8a' }}>
+                Weekly sales and receipts use Income Statement monthly sales, spread across each week by calendar days. Opening AR still collects from the current books.
+              </div>
+            )}
             {lastSavedAt && (
               <div style={{ marginTop: '6px', fontSize: '12px', color: '#64748b' }}>
                 Last saved: {formatEstDateTime(lastSavedAt)}
@@ -1939,7 +2028,14 @@ export default function WorkingCapitalForecastTab({ selectedCompanyId, basisMode
       {!isInputsOnly && (
       <div style={cardStyle}>
         <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '10px' }}>
-          <div style={{ fontSize: '15px', fontWeight: 700, color: '#0f172a' }}>{`${FORECAST_WEEKS}-Week Forecast`}</div>
+          <div>
+            <div style={{ fontSize: '15px', fontWeight: 700, color: '#0f172a' }}>{`${FORECAST_WEEKS}-Week Forecast`}</div>
+            {forecastMonthTotals.some((value) => value > 0) && (
+              <div style={{ marginTop: '4px', fontSize: '12px', color: '#475569' }}>
+                Receipts = collections on opening AR + this week’s allocated forecast sales (cash slice plus credit collections).
+              </div>
+            )}
+          </div>
           <div style={{ fontSize: '12px', color: '#64748b' }}>
             Week 13 Cash: <strong style={{ color: '#0f172a' }}>{formatCurrency(totals.week13Cash)}</strong>
             {' | '}

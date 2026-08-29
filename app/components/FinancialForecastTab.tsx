@@ -76,6 +76,37 @@ const STACKED_BAR_COLORS = [
   '#64748b', '#0f766e', '#a16207',
 ];
 const FORECAST_MONTH_COUNT = 60;
+const FINANCIAL_FORECAST_MONTHLY_BASE_EVENT = 'corelytics-financial-forecast-monthly-base';
+
+function buildFinancialForecastMonthlyBase(forecastRows: Array<{
+  kind?: string;
+  key?: string;
+  label?: string;
+  year?: number;
+  month?: number;
+  totalRevenue?: number;
+  totalOpex?: number;
+  grossProfit?: number;
+  operatingIncome?: number;
+}>) {
+  const monthlyRows = forecastRows.filter((row) => row?.kind === 'month');
+  return {
+    monthRefs: monthlyRows.map((row) => ({
+      key: row.key,
+      label: row.label,
+      year: Number(row.year),
+      month: Number(row.month),
+    })),
+    monthTotals: monthlyRows.map((row) => Math.max(0, Number(row.totalRevenue) || 0)),
+    opexMonthTotals: monthlyRows.map((row) => Math.max(0, Number(row.totalOpex) || 0)),
+    grossMarginMonthPcts: monthlyRows.map((row) => {
+      const revenue = Number(row.totalRevenue) || 0;
+      if (revenue <= 0) return 0;
+      return ((Number(row.grossProfit) || 0) / revenue) * 100;
+    }),
+    operatingIncomeMonthTotals: monthlyRows.map((row) => Number(row.operatingIncome) || 0),
+  };
+}
 
 function parseMonthDate(row: any): Date | null {
   const dateLike = row?.date ?? row?.monthDate;
@@ -1009,6 +1040,7 @@ export default function FinancialForecastTab({
           revenueGrowthByRow: {
             ...revenueGrowthByRow,
             __amountByRow: accrualRevenueAmountByRow,
+            __monthRevenueSeries: buildFinancialForecastMonthlyBase(forecastRows),
           },
           cogsPctByRow: cogsGrowthByRow,
           opexPctByRow: {
@@ -1164,49 +1196,24 @@ export default function FinancialForecastTab({
 
   useEffect(() => {
     if (!selectedCompanyId) return;
-    const firstThreeMonthlyRevenueTotals = forecastRows
-      .filter((row) => row.kind === 'month')
-      .slice(0, 3)
-      .map((row) => Number(row.totalRevenue) || 0);
-    const firstThreeMonthlyRows = forecastRows
-      .filter((row) => row.kind === 'month')
-      .slice(0, 3);
-    if (firstThreeMonthlyRevenueTotals.length < 3) return;
+    const monthlyBase = buildFinancialForecastMonthlyBase(forecastRows);
+    if (monthlyBase.monthTotals.length === 0) return;
+    const payload = {
+      companyId: selectedCompanyId,
+      basisMode,
+      updatedAt: new Date().toISOString(),
+      ...monthlyBase,
+    };
     try {
       localStorage.setItem(
         `financialForecastRevenueMonthlyBase_${basisMode}_${selectedCompanyId}`,
-        JSON.stringify({
-          companyId: selectedCompanyId,
-          basisMode,
-          updatedAt: new Date().toISOString(),
-          monthRefs: firstThreeMonthlyRows.map((row) => ({
-            key: row.key,
-            label: row.label,
-            year: Number(row.year),
-            month: Number(row.month),
-          })),
-          monthTotals: firstThreeMonthlyRevenueTotals,
-          opexMonthTotals: forecastRows
-            .filter((row) => row.kind === 'month')
-            .slice(0, 3)
-            .map((row) => Number(row.totalOpex) || 0),
-          grossMarginMonthPcts: forecastRows
-            .filter((row) => row.kind === 'month')
-            .slice(0, 3)
-            .map((row) => {
-              const revenue = Number(row.totalRevenue) || 0;
-              if (revenue <= 0) return 0;
-              const grossProfit = Number(row.grossProfit) || 0;
-              return (grossProfit / revenue) * 100;
-            }),
-          operatingIncomeMonthTotals: forecastRows
-            .filter((row) => row.kind === 'month')
-            .slice(0, 3)
-            .map((row) => Number(row.operatingIncome) || 0),
-        }),
+        JSON.stringify(payload),
       );
     } catch {
       // Ignore localStorage errors in restricted browser modes.
+    }
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent(FINANCIAL_FORECAST_MONTHLY_BASE_EVENT, { detail: payload }));
     }
   }, [selectedCompanyId, forecastRows, basisMode]);
 
