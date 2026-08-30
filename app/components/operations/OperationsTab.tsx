@@ -51,6 +51,7 @@ import {
   resolveAssignedCompanyReportKeys,
 } from '@/lib/operations/company-specific-reports';
 import ProductGroupReports from './ProductGroupReports';
+import InforNewIdentitiesAlert from './InforNewIdentitiesAlert';
 import { isOperationalModuleAllowed } from '@/lib/operations/operational-dashboard-access';
 import { buildWeeklyProductMarginModel } from '@/lib/operations/product-margin-weekly';
 import {
@@ -9881,6 +9882,7 @@ export default function OperationsTab({
       </th>
     );
     const productViewSwitcher = isProductMarginAnalysisEnabled || isWholesaleRawDataEnabled || isVendorPricingEnabled || isRevenueForecastEnabled || isForecastRollupEnabled || isMonthlyRevenueEnabled || isRevenueRollupEnabled || isGoalUpdateEnabled || isProductPerformanceEnabled || isRetailForecastingEnabled || isMerchandiseProfitabilityEnabled ? (
+      <>
       <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '16px' }}>
         {isProductMarginAnalysisEnabled && (
           <button
@@ -10063,6 +10065,14 @@ export default function OperationsTab({
           </button>
         )}
       </div>
+      {isWholesaleProductSector ? (
+        <InforNewIdentitiesAlert
+          companyId={selectedCompanyId}
+          surface="products"
+          onOpenForecast={() => setProductReportView('revenueForecast')}
+        />
+      ) : null}
+      </>
     ) : null;
     const healthcareProceduresRegionSelector = isHealthcareServicesProceduresPage ? (
       <div className="ops-print-hide" style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: '10px', marginBottom: '16px' }}>
@@ -11979,6 +11989,24 @@ export default function OperationsTab({
               })
             )}
           </div>
+          {isWholesaleProductSector ? (
+            <InforNewIdentitiesAlert
+              companyId={selectedCompanyId}
+              surface="vendors"
+              onOpenDuties={() => {
+                setManufacturingVendorReportKey('');
+                setVendorReportView('dutiesTariffs');
+              }}
+              onOpenFreight={() => {
+                setManufacturingVendorReportKey('');
+                setVendorReportView('sgpFreight');
+              }}
+              onOpenForecast={() => {
+                setManufacturingVendorReportKey('');
+                setVendorReportView('monthlyForecast');
+              }}
+            />
+          ) : null}
           {activeStandardReport ? (
             <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '24px' }}>
               <h2 style={{ fontSize: '24px', fontWeight: 700, color: '#1e293b', margin: '0 0 8px' }}>
