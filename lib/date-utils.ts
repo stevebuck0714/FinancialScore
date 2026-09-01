@@ -22,7 +22,14 @@
  * that.
  */
 
-import { estMonthIndex, estMonthKey, estYear } from '@/lib/time/eastern';
+import {
+  addEstCalendarDays,
+  addEstCalendarMonths,
+  estMonthIndex,
+  estMonthKey,
+  estYear,
+  formatEstDate,
+} from '@/lib/time/eastern';
 
 const MONTH_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 const MONTH_LONG = [
@@ -224,19 +231,43 @@ export function reportingMonthKeyUtc(value: MonthInput): string | null {
   return monthKey(value);
 }
 
-/** True while the month is still the in-progress UTC calendar month. */
+/** Last EST calendar day (`YYYY-MM-DD`) of a `YYYY-MM` reporting month. */
+export function reportingMonthEndDate(monthKeyValue: string): string | null {
+  const key = String(monthKeyValue || '').trim();
+  if (!/^\d{4}-\d{2}$/.test(key)) return null;
+  return addEstCalendarDays(addEstCalendarMonths(`${key}-01`, 1), -1);
+}
+
+/** True while the month is still the in-progress EST calendar month. */
 export function isOpenReportingMonth(value: MonthInput, now: Date = new Date()): boolean {
   const key = reportingMonthKeyUtc(value);
   return key !== null && key === currentMonthKeyUtc(now);
 }
 
 /**
- * Month-end reports (KPIs, Ratios, Trends, published master data) wait until
- * the first of the following UTC month. August becomes eligible on September 1.
+ * Calendar-only close: the month is no longer the current EST month.
+ * Do not use this as the Data Review / books-close gate. A mid-month stub
+ * can exist before August 31 books are imported.
  */
 export function isClosedReportingMonth(value: MonthInput, now: Date = new Date()): boolean {
   const key = reportingMonthKeyUtc(value);
   return key !== null && key !== currentMonthKeyUtc(now);
+}
+
+/**
+ * True when month-end books were imported on or after that month's last EST day.
+ * Publishing August on August 19 with MTD numbers is not an August 31 import.
+ */
+export function isImportedClosedReportingMonth(
+  value: MonthInput,
+  importedAt: MonthInput,
+): boolean {
+  const key = reportingMonthKeyUtc(value);
+  const imported = toDate(importedAt);
+  if (!key || !imported) return false;
+  const monthEnd = reportingMonthEndDate(key);
+  if (!monthEnd) return false;
+  return formatEstDate(imported) >= monthEnd;
 }
 
 export function filterClosedReportingMonths<T>(
@@ -246,4 +277,25 @@ export function filterClosedReportingMonths<T>(
 ): T[] {
   if (!Array.isArray(rows) || rows.length === 0) return [];
   return rows.filter((row) => isClosedReportingMonth(getMonthValue(row), now));
+}
+
+/**
+ * Closed books months only. If a publish/import timestamp exists, the month
+ * stays hidden until that import is on or after the EST month-end date.
+ * Months with no publish row keep the EST calendar-close fallback.
+ */
+export function filterImportedClosedReportingMonths<T>(
+  rows: T[],
+  getMonthValue: (row: T) => MonthInput,
+  importedAtByMonth: Map<string, MonthInput> | null | undefined,
+  now: Date = new Date(),
+): T[] {
+  if (!Array.isArray(rows) || rows.length === 0) return [];
+  return rows.filter((row) => {
+    const key = reportingMonthKeyUtc(getMonthValue(row));
+    if (!key) return false;
+    const importedAt = importedAtByMonth?.get(key);
+    if (importedAt) return isImportedClosedReportingMonth(key, importedAt);
+    return isClosedReportingMonth(key, now);
+  });
 }

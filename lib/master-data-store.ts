@@ -360,8 +360,8 @@ export const masterDataStore = MasterDataStore.getInstance();
 //   'published' (default) - month-end financial reports. Only completed,
 //                           published months are returned. Use for every
 //                           Reports / Valuation / MDA / KPI surface.
-//   'all'                 - includes the in-progress current month. Use only
-//                           for Operations and Data Review.
+//   'all'                 - Data Review only. Hides in-progress MTD months
+//                           until month-end books are imported.
 export function useMasterData(
   companyId: string | null,
   scope: 'published' | 'all' = 'published',

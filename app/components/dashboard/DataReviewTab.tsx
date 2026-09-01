@@ -7,6 +7,7 @@ import { useAllMasterData } from "@/lib/master-data-store";
 import { getFieldDisplayName } from "@/lib/constants/field-display-names";
 import { getTargetFieldOptions } from "@/lib/constants/sector-target-fields";
 import { useCompanyMoneyFormatter } from "@/app/hooks/useCompanyMoneyFormatter";
+import { currentMonthKeyUtc } from "@/lib/date-utils";
 
 interface DataReviewTabProps {
   selectedCompanyId: string;
@@ -19,8 +20,8 @@ export default function DataReviewTab({ selectedCompanyId, companyName, accountM
   const money = useCompanyMoneyFormatter(selectedCompanyId);
   const fmtMoney = (value: number) => money.fmt(Number(value || 0), 0);
   const fmtSigned = (value: number) => money.fmtSigned(Number(value || 0), 0);
-  // Data Review is an import QA surface, so it must show all saved/processed
-  // months immediately instead of waiting for the month-publish gate.
+  // Data Review shows imported closed months. In-progress MTD months stay
+  // hidden until that month's end books are imported.
   const { monthlyData, loading: masterDataLoading, error: masterDataError } = useAllMasterData(selectedCompanyId);
 
   const getMonthKey = (monthValue: unknown): string | null => {
@@ -51,8 +52,7 @@ export default function DataReviewTab({ selectedCompanyId, companyName, accountM
       const bKey = getMonthKey(b?.month ?? b?.date);
       return monthKeyToSortValue(aKey) - monthKeyToSortValue(bKey);
     });
-    const now = new Date();
-    const currentMonthKey = `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, "0")}`;
+    const currentMonthKey = currentMonthKeyUtc();
     const closedMonthRows = rows.filter((row: any) => {
       const key = getMonthKey(row?.month ?? row?.date);
       return !key || key !== currentMonthKey;

@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import { privateCacheHeaders } from '@/lib/http-cache';
 import { hashCacheParts, readDerivedApiCache, writeDerivedApiCache } from '@/lib/derived-api-cache';
-import { currentMonthKeyUtc } from '@/lib/date-utils';
+import { currentMonthKeyUtc, filterImportedClosedReportingMonths, monthKey } from '@/lib/date-utils';
 import { readRequestedCurrency, withCurrencyPresentation } from '@/lib/currency/api-response';
 import {
   qbdCurrentYearNetIncomeFromBalanceSheet,
@@ -97,9 +97,9 @@ async function buildMasterDataVersion(companyId: string, scope: 'published' | 'a
 //   scope      (optional) - 'published' (default) | 'all'
 //                           'published' returns only months whose
 //                           FinancialMonthPublish.status is PUBLISHED or LOCKED.
-//                           'all' returns every month present in the latest
-//                           FinancialRecord (including the in-progress month).
-//                           Use 'all' only for Operations / Data Review.
+//                           'all' is Data Review only. It hides in-progress
+//                           MTD months until that month's end books are imported.
+//                           Published reports are unchanged.
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
@@ -122,7 +122,7 @@ export async function GET(request: NextRequest) {
         companyId,
         scope,
         MASTER_DATA_REPORT_MIN_DATE,
-        'closed-reporting-month-v1',
+        scope === 'all' ? 'imported-month-end-data-review-v1' : 'closed-reporting-month-v1',
         'hts-duty-cogs-v1',
         scope === 'published' ? currentMonthKeyUtc() : 'all',
       ]),
@@ -191,21 +191,30 @@ export async function GET(request: NextRequest) {
     // We compare on UTC start-of-month so MonthlyFinancial.monthDate matches
     // FinancialMonthPublish.monthStart regardless of timezone storage quirks.
     let publishedKeys: Set<string> | null = null;
-    if (scope === 'published') {
+    const importedAtByMonth = new Map<string, Date>();
+    if (scope === 'published' || scope === 'all') {
       const publishedRows = await prisma.financialMonthPublish.findMany({
         where: {
           companyId,
           status: { in: ['PUBLISHED', 'LOCKED'] },
           monthStart: { gte: MASTER_DATA_REPORT_MIN_DATE_UTC },
         },
-        select: { monthStart: true },
+        select: { monthStart: true, publishedAt: true },
       });
-      publishedKeys = new Set(
-        publishedRows.map((r) => {
-          const d = r.monthStart;
-          return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
-        })
-      );
+      if (scope === 'published') {
+        publishedKeys = new Set(
+          publishedRows.map((r) => {
+            const d = r.monthStart;
+            return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
+          })
+        );
+      }
+      if (scope === 'all') {
+        for (const row of publishedRows) {
+          const key = monthKey(row.monthStart);
+          if (key && row.publishedAt) importedAtByMonth.set(key, row.publishedAt);
+        }
+      }
     }
 
     const sourceRows = (publishedKeys
@@ -223,7 +232,11 @@ export async function GET(request: NextRequest) {
           const key = `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
           return key !== currentMonthKeyUtc();
         })
-      : sourceRows;
+      : filterImportedClosedReportingMonths(
+          sourceRows,
+          (row: any) => row?.monthDate,
+          importedAtByMonth,
+        );
 
     const { loadMonthlyHtsDutyCogs, overlayHtsDutyCogs } = await import('@/lib/hts/apply-duty-cogs');
     const htsCogsByMonth = await loadMonthlyHtsDutyCogs(companyId).catch(() => new Map());
