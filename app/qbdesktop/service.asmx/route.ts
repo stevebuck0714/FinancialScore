@@ -180,6 +180,7 @@ const QBD_INCLUDE_TRANSACTION_LINE_ITEMS = true;
 const QBD_BACKFILL_JOBS_PER_SESSION = 6;
 const QBD_SHORT_WINDOW_BACKFILL_JOBS_PER_SESSION = 25;
 const QBD_SHORT_WINDOW_MAX_DAYS = 7;
+const QBD_BALANCE_SHEET_BACKFILL_JOBS_PER_SESSION = 50;
 const QBD_AGING_SNAPSHOT_JOBS_PER_SESSION = 25;
 const QBD_DETAIL_TRANSACTION_PAGE_SIZE = 25;
 const QBD_DETAIL_BACKFILL_JOBS_PER_SESSION = 6;
@@ -855,6 +856,12 @@ function dateRangeDayCount(dateRange?: QbwcDateRange): number | null {
 
 function getStandardBackfillJobsPerSession(pendingJobs: QbdBackfillJob[]): number {
   const standardJobs = pendingJobs.filter((job) => job.processingMode !== 'aging_snapshot');
+  if (
+    standardJobs.length > 0 &&
+    standardJobs.every((job) => job.requestName === 'BalanceSheetStandardReportQuery')
+  ) {
+    return QBD_BALANCE_SHEET_BACKFILL_JOBS_PER_SESSION;
+  }
   // If the leftover set fits in one WC session, drain it. Site Admin cannot start
   // Web Connector; the next client-machine check-in has to finish the queue.
   if (standardJobs.length > 0 && standardJobs.length <= QBD_SHORT_WINDOW_BACKFILL_JOBS_PER_SESSION) {
