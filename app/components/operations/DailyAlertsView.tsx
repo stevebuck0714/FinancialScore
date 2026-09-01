@@ -3049,7 +3049,7 @@ export default function DailyAlertsView({ companyId, companyName, onNavigate }: 
                   lineHeight: 1.45,
                 }}
               >
-                Quarterly income compares trailing 3 months to prior trailing 3 months.
+                Quarterly income is for the trailing 3 months ended on the last completed month, compared with the previous 3 months.
               </div>
             )}
 
@@ -3066,7 +3066,7 @@ export default function DailyAlertsView({ companyId, companyName, onNavigate }: 
                   lineHeight: 1.45,
                 }}
               >
-                Annual income compares trailing 12 months to prior trailing 12 months.
+                Annual income is for the trailing 12 months ended on the last completed month, compared with the previous 12 months.
               </div>
             )}
 
