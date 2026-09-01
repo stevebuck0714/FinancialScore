@@ -24,6 +24,10 @@ const QBD_AGING_SNAPSHOT_REQUESTS = new Set([
   'APAgingSummaryReportQuery',
 ]);
 
+const QBD_BALANCE_SHEET_SNAPSHOT_REQUESTS = new Set([
+  'BalanceSheetStandardReportQuery',
+]);
+
 function parseDate(value: unknown): string {
   if (typeof value !== 'string') return '';
   const trimmed = value.trim();
@@ -268,6 +272,7 @@ export async function POST(request: NextRequest) {
     const agingSnapshotDateRanges = agingSnapshotGranularity === 'monthEnd'
       ? buildMonthEndDateRanges(startDate, endDate)
       : buildBusinessDayDateRanges(startDate, endDate);
+    const balanceSheetSnapshotDateRanges = buildBusinessDayDateRanges(startDate, endDate);
     if (dateRanges.length === 0) {
       return NextResponse.json(
         { ok: false, error: 'No valid date windows were generated for the QuickBooks Desktop pull.' },
@@ -280,12 +285,30 @@ export async function POST(request: NextRequest) {
       dateRange: typeof queuedDateRange;
       windowIndex: number;
     }> = hasProfileRequestNames
-      ? [
-          ...staticRequests.map((requestName) => ({
+      ? (() => {
+          const balanceSheetSnapshotRequests = staticRequests.filter((requestName) =>
+            QBD_BALANCE_SHEET_SNAPSHOT_REQUESTS.has(requestName),
+          );
+          const otherStaticRequests = staticRequests.filter((requestName) =>
+            !QBD_BALANCE_SHEET_SNAPSHOT_REQUESTS.has(requestName),
+          );
+          return [
+          ...otherStaticRequests.map((requestName) => ({
             requestName,
             dateRange: queuedDateRange,
             windowIndex: 0,
           })),
+          ...balanceSheetSnapshotDateRanges.flatMap((range) =>
+            balanceSheetSnapshotRequests.map((requestName) => ({
+              requestName,
+              dateRange: {
+                ...queuedDateRange,
+                startDate: range.startDate,
+                endDate: range.endDate,
+              },
+              windowIndex: range.windowIndex,
+            })),
+          ),
           ...dateRanges.flatMap((range) =>
             monthlyRequests.map((requestName) => ({
               requestName,
@@ -309,18 +332,40 @@ export async function POST(request: NextRequest) {
               windowIndex: range.windowIndex,
             })),
           ),
-        ]
-      : dateRanges.flatMap((range) =>
-        enabledRequests.map((requestName) => ({
-        requestName,
-        dateRange: {
-          ...queuedDateRange,
-          startDate: range.startDate,
-          endDate: range.endDate,
-        },
-        windowIndex: range.windowIndex,
-      })),
-    );
+          ];
+        })()
+      : (() => {
+          const balanceSheetSnapshotRequests = enabledRequests.filter((requestName) =>
+            QBD_BALANCE_SHEET_SNAPSHOT_REQUESTS.has(requestName),
+          );
+          const otherRequests = enabledRequests.filter((requestName) =>
+            !QBD_BALANCE_SHEET_SNAPSHOT_REQUESTS.has(requestName),
+          );
+          return [
+            ...dateRanges.flatMap((range) =>
+              otherRequests.map((requestName) => ({
+                requestName,
+                dateRange: {
+                  ...queuedDateRange,
+                  startDate: range.startDate,
+                  endDate: range.endDate,
+                },
+                windowIndex: range.windowIndex,
+              })),
+            ),
+            ...balanceSheetSnapshotDateRanges.flatMap((range) =>
+              balanceSheetSnapshotRequests.map((requestName) => ({
+                requestName,
+                dateRange: {
+                  ...queuedDateRange,
+                  startDate: range.startDate,
+                  endDate: range.endDate,
+                },
+                windowIndex: range.windowIndex,
+              })),
+            ),
+          ];
+        })();
     const backfillJobs = Object.fromEntries(
       jobSpecs.map((job, index) => {
         const id = `${batchId}:${String(index + 1).padStart(3, '0')}:${String(job.windowIndex).padStart(3, '0')}:${job.requestName}`;

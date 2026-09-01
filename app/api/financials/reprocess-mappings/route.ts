@@ -1047,6 +1047,44 @@ async function loadQbdPageRecords(companyId: string, requestName: string, detail
   return rows.flatMap((row) => (Array.isArray(row.payload) ? row.payload.map(qbdAsRecord) : []));
 }
 
+type QbdBalanceSheetReportSnapshot = {
+  reportDate: string;
+  rows: Record<string, unknown>[];
+};
+
+// A QBD Balance Sheet is an as-of snapshot, not a transaction stream. Preserve
+// the newest complete report for each report date so mappings use actual QBD
+// balances rather than a general-ledger reconstruction.
+async function loadQbdBalanceSheetReportSnapshots(companyId: string): Promise<QbdBalanceSheetReportSnapshot[]> {
+  const pages = await prisma.$queryRaw<Array<{ payload: unknown; createdAt: Date; jobId: string }>>`
+    SELECT "payload", "createdAt", "jobId"
+    FROM "QuickBooksDesktopBackfillPage"
+    WHERE "companyId" = ${companyId}
+      AND "requestName" = 'BalanceSheetStandardReportQuery'
+    ORDER BY "createdAt" ASC, "jobId" ASC, "pageNumber" ASC
+  `;
+  const rowsByJob = new Map<string, { createdAt: Date; rows: Record<string, unknown>[] }>();
+  for (const page of pages) {
+    const job = rowsByJob.get(page.jobId) || { createdAt: page.createdAt, rows: [] };
+    job.rows.push(...(Array.isArray(page.payload) ? page.payload.map(qbdAsRecord) : []));
+    if (page.createdAt > job.createdAt) job.createdAt = page.createdAt;
+    rowsByJob.set(page.jobId, job);
+  }
+
+  const byReportDate = new Map<string, { createdAt: Date; snapshot: QbdBalanceSheetReportSnapshot }>();
+  for (const { createdAt, rows } of rowsByJob.values()) {
+    const reportDate = qbdBalanceSheetReportDateKey(rows);
+    if (!reportDate) continue;
+    const existing = byReportDate.get(reportDate);
+    if (!existing || createdAt >= existing.createdAt) {
+      byReportDate.set(reportDate, { createdAt, snapshot: { reportDate, rows } });
+    }
+  }
+  return Array.from(byReportDate.values())
+    .map(({ snapshot }) => snapshot)
+    .sort((a, b) => a.reportDate.localeCompare(b.reportDate));
+}
+
 async function loadQbdPageRecordsForBatch(params: {
   companyId: string;
   requestName: string;
@@ -1732,6 +1770,38 @@ async function buildQuickBooksDesktopMappedMonthlyPayload(companyId: string, bas
     }
   }
 
+  // Direct QBD Balance Sheet reports are authoritative for their as-of dates.
+  // Legacy anchor/GL paths can provide a temporary fallback, but must never
+  // replace imported QBD account balances.
+  const directBalanceSheetReports = await loadQbdBalanceSheetReportSnapshots(companyId);
+  const latestDirectBalanceSheetByMonth = new Map<string, QbdMappedMonthlyRow>();
+  for (const report of directBalanceSheetReports) {
+    const dailyRow = getDailySnapshot(report.reportDate);
+    for (const field of QBD_BALANCE_SHEET_TARGET_FIELDS) {
+      dailyRow[field] = 0;
+    }
+    for (const reportRow of report.rows) {
+      const rowType = qbdString(reportRow.rowType).toLowerCase();
+      const rowKind = qbdString(reportRow.rowKind);
+      if (rowType && rowType !== 'account') continue;
+      if (!rowType && rowKind !== 'DataRow') continue;
+      qbdApplyBalance(
+        dailyRow,
+        getTarget({ name: qbdReportAccountName(reportRow) }),
+        qbdReportAmount(reportRow),
+      );
+    }
+    recomputeQbdBalanceSheetTotals(dailyRow);
+    const monthKey = report.reportDate.slice(0, 7);
+    const existing = latestDirectBalanceSheetByMonth.get(monthKey);
+    if (!existing || String(existing.snapshotDate) < report.reportDate) {
+      latestDirectBalanceSheetByMonth.set(monthKey, dailyRow);
+    }
+  }
+  for (const [monthKey, row] of latestDirectBalanceSheetByMonth) {
+    copyQbdBalanceSheetFields(row, getMonth(monthKey));
+  }
+
   const sortedMonthKeys = Array.from(months.keys()).sort();
   const latestMonth = sortedMonthKeys[sortedMonthKeys.length - 1] || null;
   const sortedDailyKeys = Array.from(dailySnapshots.keys()).sort();
@@ -2230,6 +2300,27 @@ async function rebuildQuickBooksDesktopDailyBalanceSheetMonth(companyId: string,
       }
       dailySnapshots.set(dateKey, row);
     }
+  }
+
+  // An imported QBD Balance Sheet is the source of truth for its report date.
+  // Do not let the Bakers GL reconstruction replace that direct snapshot.
+  const directBalanceSheetReports = await loadQbdBalanceSheetReportSnapshots(companyId);
+  for (const report of directBalanceSheetReports) {
+    if (report.reportDate.slice(0, 7) !== monthKey) continue;
+    const row = createQbdMappedDailySnapshot(report.reportDate);
+    for (const reportRow of report.rows) {
+      const rowType = qbdString(reportRow.rowType).toLowerCase();
+      const rowKind = qbdString(reportRow.rowKind);
+      if (rowType && rowType !== 'account') continue;
+      if (!rowType && rowKind !== 'DataRow') continue;
+      qbdApplyBalance(
+        row,
+        getTarget({ name: qbdReportAccountName(reportRow) }),
+        qbdReportAmount(reportRow),
+      );
+    }
+    recomputeQbdBalanceSheetTotals(row);
+    dailySnapshots.set(report.reportDate, row);
   }
 
   const persistResult = await persistQuickBooksDesktopDailyFinancialSnapshots(
