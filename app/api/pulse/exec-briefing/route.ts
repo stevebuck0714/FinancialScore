@@ -17,7 +17,7 @@ import {
 } from '@/lib/pulse/daily-briefing-readiness';
 import { resolveCompanyIndustrySectorCategory } from '@/lib/industry-sector-resolver';
 import { formatMoney as formatMoneyShared } from '@/lib/format/currency';
-import { formatEstDate } from '@/lib/time/eastern';
+import { formatEstDate, utcMidnightForEstDate } from '@/lib/time/eastern';
 import {
   DEFAULT_BASE_CURRENCY,
   resolveDisplayCurrency,
@@ -60,7 +60,7 @@ const MONTHLY_FINANCIAL_ROW_CAP = 60;
 const DAILY_FINANCIAL_ROW_CAP = 100;
 const CORE_SNAPSHOT_ROW_CAP = 150;
 const DETAIL_SNAPSHOT_ROW_CAP = 300;
-const EXEC_BRIEFING_LOGIC_VERSION = 'exec-briefing-v21-trailing-ended-wording';
+const EXEC_BRIEFING_LOGIC_VERSION = 'exec-briefing-v22-est-complete-months';
 const PRIVATE_DAILY_CACHE_HEADERS = {
   'Cache-Control': 'private, max-age=300, stale-while-revalidate=1800',
 };
@@ -154,8 +154,8 @@ function last<T>(rows: T[]): T | null {
 }
 
 function currentMonthStart(): Date {
-  const now = new Date();
-  return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
+  const estToday = formatEstDate();
+  return utcMidnightForEstDate(`${estToday.slice(0, 7)}-01`);
 }
 
 function isCompleteMonthlyPeriod(row: { monthDate?: Date }): boolean {
@@ -480,13 +480,13 @@ function buildFinancialComparison(params: {
 
 function trailingWindowNote(period: BriefingPeriod): string | null {
   if (period === 'quarterly') {
-    return 'Write income-statement movement like: For the trailing 3 months ended July 31, 2026, revenue increased $72,357 (5.2%) from the previous 3 months. Use the same pattern for customer revenue, margin, and EBITDA. Do not list both date ranges.';
+    return 'Write: For the trailing 3 months ended [currentPeriod end date], [metric] [increased/decreased] [actual dollars] ([actual %]) from the previous 3 months. Use currentPeriod exactly. Do not use today or an unimported month. Use the same pattern for customer revenue, margin, and EBITDA.';
   }
   if (period === 'annual') {
-    return 'Write income-statement movement like: For the trailing 12 months ended July 31, 2026, revenue increased $1,240,000 (9.1%) from the previous 12 months. Use the same pattern for customer revenue, margin, and EBITDA. Do not list both date ranges.';
+    return 'Write: For the trailing 12 months ended [currentPeriod end date], [metric] [increased/decreased] [actual dollars] ([actual %]) from the previous 12 months. Use currentPeriod exactly. Do not use today or an unimported month. Use the same pattern for customer revenue, margin, and EBITDA.';
   }
   if (period === 'monthly') {
-    return 'Write income-statement movement like: In July 2026, revenue increased $22,100 (4.1%) from June 2026. Do not say trailing. Use the same pattern for customer revenue, margin, and EBITDA.';
+    return 'Write: In [currentPeriod month], [metric] [increased/decreased] [actual dollars] ([actual %]) from [priorPeriod month]. Do not say trailing. Use the same pattern for customer revenue, margin, and EBITDA.';
   }
   return null;
 }
@@ -1716,11 +1716,17 @@ export async function GET(request: NextRequest) {
           ]) || dailyCapability.latestDailyOpsDate || ''
         : '';
     const weeklyAsOfDate = weeklyPair ? weeklyPair.current.end.toISOString().slice(0, 10) : '';
+    const lastCompleteMonthDates = monthDatesFromRows(completeMonthlyFinancials);
+    const lastCompleteMonthEndKey = lastCompleteMonthDates.length
+      ? utcMonthEnd(lastCompleteMonthDates[lastCompleteMonthDates.length - 1]).toISOString().slice(0, 10)
+      : '';
     const asOfDate =
       (period === 'weekly'
-        ? weeklyAsOfDate || latestDateKey(latestDailyFinancial?.snapshotDate, latestFinancial?.monthDate) || cacheDate
+        ? weeklyAsOfDate || lastCompleteMonthEndKey || cacheDate
         : period === 'daily' && effectiveDailyMode === 'ops-only'
-        ? opsAsOfDate || latestDateKey(latestFinancial?.monthDate) || cacheDate
+        ? opsAsOfDate || lastCompleteMonthEndKey || cacheDate
+        : period === 'monthly' || period === 'quarterly' || period === 'annual'
+        ? lastCompleteMonthEndKey || cacheDate
         : latestDateKey(latestDailyFinancial?.snapshotDate, latestFinancial?.monthDate) || cacheDate) || cacheDate;
 
     const recentRevenue = asNumber(primaryFinancialComparison?.current?.revenue);
@@ -2110,7 +2116,7 @@ Only compare like-for-like periods. Do not compare days to weeks, weeks to month
       effectiveDailyMode === 'ops-only'
         ? `IMPORTANT: facts.briefing.dailyMode is ops-only. Books/accounting are monthly (QuickBooks or equivalent). Do NOT invent day-over-day P&L, revenue, gross profit, EBITDA, or MTD financial statement movement. facts.financials.comparisons is empty by design. Lead with facts.dailyOperations (same-day sales/customer/SKU/volume), Pulse alerts, and liquidity/AR/AP only when those daily feeds are present. You may mention the latest closed month from books as static context only—never as a day-over-day financial trend.`
         : `For the Daily tab, discuss material latest-day vs prior-day movement and current month-to-date vs the same elapsed days last month when available; never fall back to month-over-month analysis in the Daily tab. For Daily comparisons, state the actual dates from currentPeriod and priorPeriod; do not say "yesterday", "today", or "latest day" as a substitute for dates.`
-    } In the Daily tab, use facts.dailyOperations only for operational commentary, and only when notableExceptions are present or a listed top product/customer/volume move is material for that same asOfDate vs priorDate. Allowed Daily ops topics: top revenue product/SKU for the day, largest customer/order for the day, and day volume (sales closed / units sold / contracts) with day-over-day deltas when provided. Do not use multi-day customer concentration, multi-day product margin watchlists, or benchmarks in the Daily tab. For the Weekly tab, use only the latest completed Monday–Sunday week versus the prior completed week from facts.financials.comparisons; never fall back to day-over-day or month-over-month analysis, and do not use a partial current week. For the Quarterly tab, write income-statement movement like: For the trailing 3 months ended July 31, 2026, revenue increased $72,357 (5.2%) from the previous 3 months. Use currentPeriod as that trailing window and priorPeriod as "the previous 3 months." Use the same sentence pattern for customer revenue, margin, and EBITDA. Do not list both date ranges or say only "this quarter." For the Annual tab, write income-statement movement like: For the trailing 12 months ended July 31, 2026, revenue increased $1,240,000 (9.1%) from the previous 12 months. Use currentPeriod as that trailing window and priorPeriod as "the previous 12 months." Use the same sentence pattern for customer revenue, margin, and EBITDA. Do not list both date ranges or say only "this year." For the Monthly tab, write income-statement movement like: In July 2026, revenue increased $22,100 (4.1%) from June 2026. Do not say trailing. Use the same pattern for customer revenue, margin, and EBITDA. Use completed months only. Customer and product dollars, deltas versus prior, and concentration MUST come from facts.customers / facts.products for the SAME currentPeriod/priorPeriod as facts.financials.comparisons. When stating a customer's share of total revenue, use booksRevenueShare and top3ShareOfBooks (customer dollars divided by financials.recentRevenue). Customer and product recentRevenue values are month-collapsed books-window totals, not a sum of every daily snapshot. For Quarterly, say "the trailing 3 months ended [last day] ... from the previous 3 months." For Annual, say "the trailing 12 months ended [last day] ... from the previous 12 months." For Monthly, say "In [Month Year] ... from [prior Month Year]" and do not say trailing. If a Daily or Weekly window overlaps, revenueDelta is only the unique days. Do not call revenueShare "share of total revenue"—that is only the mix of identified customer-sales rows. Never mix a P&L total from one window with customer dollars from another window. If a customer dollar amount is larger than financials.recentRevenue, omit that customer dollar movement; it is not usable. State the window used when a financial or daily-ops movement is material. If no comparable window supports an issue, do not draw a trend conclusion.
+    } In the Daily tab, use facts.dailyOperations only for operational commentary, and only when notableExceptions are present or a listed top product/customer/volume move is material for that same asOfDate vs priorDate. Allowed Daily ops topics: top revenue product/SKU for the day, largest customer/order for the day, and day volume (sales closed / units sold / contracts) with day-over-day deltas when provided. Do not use multi-day customer concentration, multi-day product margin watchlists, or benchmarks in the Daily tab. For the Weekly tab, use only the latest completed Monday–Sunday week versus the prior completed week from facts.financials.comparisons; never fall back to day-over-day or month-over-month analysis, and do not use a partial current week. For the Quarterly tab, write: For the trailing 3 months ended [the end date in currentPeriod], [metric] [increased/decreased] [actual dollars and % from facts] from the previous 3 months. Use currentPeriod exactly. Never use today's date or a month that is not in currentPeriod. Use the same sentence pattern for customer revenue, margin, and EBITDA. Do not list both date ranges or say only "this quarter." For the Annual tab, write: For the trailing 12 months ended [the end date in currentPeriod], [metric] [increased/decreased] [actual dollars and % from facts] from the previous 12 months. Use currentPeriod exactly. Never use today's date or a month that is not in currentPeriod. Use the same sentence pattern for customer revenue, margin, and EBITDA. Do not list both date ranges or say only "this year." For the Monthly tab, write: In [currentPeriod], [metric] [increased/decreased] [actual dollars and % from facts] from [priorPeriod]. Do not say trailing. Never use today's date or an unimported month. Use the same pattern for customer revenue, margin, and EBITDA. Use completed months only. Customer and product dollars, deltas versus prior, and concentration MUST come from facts.customers / facts.products for the SAME currentPeriod/priorPeriod as facts.financials.comparisons. When stating a customer's share of total revenue, use booksRevenueShare and top3ShareOfBooks (customer dollars divided by financials.recentRevenue). Customer and product recentRevenue values are month-collapsed books-window totals, not a sum of every daily snapshot. For Quarterly, say "the trailing 3 months ended [last day] ... from the previous 3 months." For Annual, say "the trailing 12 months ended [last day] ... from the previous 12 months." For Monthly, say "In [Month Year] ... from [prior Month Year]" and do not say trailing. If a Daily or Weekly window overlaps, revenueDelta is only the unique days. Do not call revenueShare "share of total revenue"—that is only the mix of identified customer-sales rows. Never mix a P&L total from one window with customer dollars from another window. If a customer dollar amount is larger than financials.recentRevenue, omit that customer dollar movement; it is not usable. State the window used when a financial or daily-ops movement is material. If no comparable window supports an issue, do not draw a trend conclusion.
 
 When revenue and margin rate move in different directions, explicitly state the end result to gross profit dollars only if the movement is material or decision-useful. Example: if revenue is declining but gross margin rate is improving, say whether gross profit dollars increased or decreased and by how much; if both are normal/immaterial, omit the topic entirely.
 
