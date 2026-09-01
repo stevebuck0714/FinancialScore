@@ -60,7 +60,7 @@ const MONTHLY_FINANCIAL_ROW_CAP = 60;
 const DAILY_FINANCIAL_ROW_CAP = 100;
 const CORE_SNAPSHOT_ROW_CAP = 150;
 const DETAIL_SNAPSHOT_ROW_CAP = 300;
-const EXEC_BRIEFING_LOGIC_VERSION = 'exec-briefing-v17-month-collapsed-customers';
+const EXEC_BRIEFING_LOGIC_VERSION = 'exec-briefing-v20-trailing-window-notes';
 const PRIVATE_DAILY_CACHE_HEADERS = {
   'Cache-Control': 'private, max-age=300, stale-while-revalidate=1800',
 };
@@ -163,7 +163,47 @@ function isCompleteMonthlyPeriod(row: { monthDate?: Date }): boolean {
   return row.monthDate.getTime() < currentMonthStart().getTime();
 }
 
+const UTC_MONTH_NAMES = [
+  'January',
+  'February',
+  'March',
+  'April',
+  'May',
+  'June',
+  'July',
+  'August',
+  'September',
+  'October',
+  'November',
+  'December',
+];
+
+function formatUtcMonthDay(date: Date): string {
+  return `${UTC_MONTH_NAMES[date.getUTCMonth()]} ${date.getUTCDate()}`;
+}
+
+function formatInclusiveUtcRangeLabel(start: Date, end: Date): string {
+  const startKey = start.toISOString().slice(0, 10);
+  const endKey = end.toISOString().slice(0, 10);
+  if (startKey === endKey) {
+    return `${formatUtcMonthDay(start)}, ${start.getUTCFullYear()}`;
+  }
+  if (start.getUTCFullYear() === end.getUTCFullYear()) {
+    return `${formatUtcMonthDay(start)} to ${formatUtcMonthDay(end)}, ${end.getUTCFullYear()}`;
+  }
+  return `${formatUtcMonthDay(start)}, ${start.getUTCFullYear()} to ${formatUtcMonthDay(end)}, ${end.getUTCFullYear()}`;
+}
+
 function periodLabel(rows: Array<{ monthDate?: Date; snapshotDate?: Date }>): string | null {
+  const monthDates = rows
+    .map((row) => (row.monthDate instanceof Date ? row.monthDate : row.monthDate ? new Date(row.monthDate) : null))
+    .filter((date): date is Date => Boolean(date) && !Number.isNaN(date.getTime()));
+  const usesOnlyMonthDates =
+    monthDates.length > 0 && rows.every((row) => row.monthDate || !row.snapshotDate);
+  if (usesOnlyMonthDates) {
+    monthDates.sort((a, b) => a.getTime() - b.getTime());
+    return formatInclusiveUtcRangeLabel(utcMonthStart(monthDates[0]), utcMonthEnd(monthDates[monthDates.length - 1]));
+  }
   const dates = rows
     .map((row) => row.monthDate || row.snapshotDate)
     .filter((date): date is Date => Boolean(date))
@@ -385,110 +425,30 @@ function buildFinancialComparison(params: {
   };
 }
 
-function groupCompleteMonthsByQuarter(rows: any[]): any[][] {
-  const groups = new Map<string, any[]>();
-  for (const row of rows) {
-    const monthDate = row?.monthDate instanceof Date ? row.monthDate : new Date(row?.monthDate || '');
-    if (Number.isNaN(monthDate.getTime())) continue;
-    const quarter = Math.floor(monthDate.getUTCMonth() / 3) + 1;
-    const key = `${monthDate.getUTCFullYear()}-Q${quarter}`;
-    const group = groups.get(key) || [];
-    group.push(row);
-    groups.set(key, group);
+function trailingWindowNote(period: BriefingPeriod): string | null {
+  if (period === 'quarterly') {
+    return 'Compare trailing 3 months to prior trailing 3 months. Name both currentPeriod and priorPeriod.';
   }
-  return Array.from(groups.values())
-    .map((group) => sortByDate(group))
-    .filter((group) => group.length === 3)
-    .sort((a, b) => {
-      const ad = a[0]?.monthDate?.getTime?.() || 0;
-      const bd = b[0]?.monthDate?.getTime?.() || 0;
-      return ad - bd;
-    });
-}
-
-function monthSetKey(rows: any[]): string {
-  return sortByDate(rows)
-    .map((row) => {
-      const date = row?.monthDate instanceof Date ? row.monthDate : row?.monthDate ? new Date(row.monthDate) : null;
-      if (!date || Number.isNaN(date.getTime())) return '';
-      return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}`;
-    })
-    .filter(Boolean)
-    .join(',');
+  if (period === 'annual') {
+    return 'Compare trailing 12 months to prior trailing 12 months. Name both currentPeriod and priorPeriod.';
+  }
+  return null;
 }
 
 function quarterlyIncomeWindows(completeMonthlyFinancials: any[]) {
-  const trailingThree = sortByDate(completeMonthlyFinancials).slice(-3);
-  const quarters = groupCompleteMonthsByQuarter(completeMonthlyFinancials);
-  const lastQuarter = quarters.slice(-1).flat();
-  const priorQuarter = quarters.slice(-2, -1).flat();
-  const trailingIsLastQuarter =
-    trailingThree.length === 3 && lastQuarter.length === 3 && monthSetKey(trailingThree) === monthSetKey(lastQuarter);
-
-  if (trailingThree.length === 3 && lastQuarter.length === 3 && !trailingIsLastQuarter) {
-    return {
-      primaryCurrent: trailingThree,
-      primaryPrior: lastQuarter,
-      trailingIsLastQuarter: false,
-      lastQuarter,
-      priorQuarter,
-    };
-  }
-
+  const sorted = sortByDate(completeMonthlyFinancials);
   return {
-    primaryCurrent: lastQuarter.length === 3 ? lastQuarter : trailingThree,
-    primaryPrior: lastQuarter.length === 3 ? priorQuarter : sortByDate(completeMonthlyFinancials).slice(-6, -3),
-    trailingIsLastQuarter: true,
-    lastQuarter,
-    priorQuarter,
+    primaryCurrent: sorted.slice(-3),
+    primaryPrior: sorted.slice(-6, -3),
   };
 }
 
 function annualIncomeWindows(completeMonthlyFinancials: any[]) {
-  const trailingTwelve = sortByDate(completeMonthlyFinancials).slice(-12);
-  const years = groupCompleteMonthsByYear(completeMonthlyFinancials);
-  const lastYear = years.slice(-1).flat();
-  const priorYear = years.slice(-2, -1).flat();
-  const trailingIsLastYear =
-    trailingTwelve.length === 12 && lastYear.length === 12 && monthSetKey(trailingTwelve) === monthSetKey(lastYear);
-
-  if (trailingTwelve.length === 12 && lastYear.length === 12 && !trailingIsLastYear) {
-    return {
-      primaryCurrent: trailingTwelve,
-      primaryPrior: lastYear,
-      trailingIsLastYear: false,
-      lastYear,
-      priorYear,
-    };
-  }
-
+  const sorted = sortByDate(completeMonthlyFinancials);
   return {
-    primaryCurrent: lastYear.length === 12 ? lastYear : trailingTwelve,
-    primaryPrior: lastYear.length === 12 ? priorYear : sortByDate(completeMonthlyFinancials).slice(-24, -12),
-    trailingIsLastYear: true,
-    lastYear,
-    priorYear,
+    primaryCurrent: sorted.slice(-12),
+    primaryPrior: sorted.slice(-24, -12),
   };
-}
-
-function groupCompleteMonthsByYear(rows: any[]): any[][] {
-  const groups = new Map<string, any[]>();
-  for (const row of rows) {
-    const monthDate = row?.monthDate instanceof Date ? row.monthDate : new Date(row?.monthDate || '');
-    if (Number.isNaN(monthDate.getTime())) continue;
-    const key = String(monthDate.getUTCFullYear());
-    const group = groups.get(key) || [];
-    group.push(row);
-    groups.set(key, group);
-  }
-  return Array.from(groups.values())
-    .map((group) => sortByDate(group))
-    .filter((group) => group.length === 12)
-    .sort((a, b) => {
-      const ad = a[0]?.monthDate?.getTime?.() || 0;
-      const bd = b[0]?.monthDate?.getTime?.() || 0;
-      return ad - bd;
-    });
 }
 
 function buildFinancialComparisonsForPeriod(params: {
@@ -558,68 +518,30 @@ function buildFinancialComparisonsForPeriod(params: {
 
   if (period === 'quarterly') {
     const windows = quarterlyIncomeWindows(completeMonthlyFinancials);
-    const comparisons = [
+    return [
       buildFinancialComparison({
-        key: windows.trailingIsLastQuarter
-          ? 'latest_completed_quarter_vs_prior_quarter'
-          : 'trailing_3_months_vs_last_quarter',
-        label: windows.trailingIsLastQuarter
-          ? 'Last completed quarter vs prior quarter'
-          : 'Trailing 3 months vs last quarter',
+        key: 'trailing_3_months_vs_prior_trailing_3_months',
+        label: 'Trailing 3 months vs prior trailing 3 months',
         cadence: 'quarterly',
         currentRows: windows.primaryCurrent,
         priorRows: windows.primaryPrior,
-        note: windows.trailingIsLastQuarter
-          ? 'Trailing 3 completed months are the last completed calendar quarter. Compare that quarter to the prior calendar quarter.'
-          : 'Current is the trailing 3 completed months. Prior is the last completed calendar quarter (Jan–Mar / Apr–Jun / Jul–Sep / Oct–Dec). These windows can overlap; name both periods and do not call this calendar quarter-over-quarter.',
+        note: trailingWindowNote('quarterly'),
       }),
-    ];
-    if (!windows.trailingIsLastQuarter && windows.lastQuarter.length === 3 && windows.priorQuarter.length === 3) {
-      comparisons.push(
-        buildFinancialComparison({
-          key: 'latest_completed_quarter_vs_prior_quarter',
-          label: 'Last completed quarter vs prior quarter',
-          cadence: 'quarterly',
-          currentRows: windows.lastQuarter,
-          priorRows: windows.priorQuarter,
-          note: 'Calendar quarters only. Use for quarter-over-quarter commentary, separate from trailing 3 months.',
-        })
-      );
-    }
-    return comparisons.filter((comparison) => comparison.comparable);
+    ].filter((comparison) => comparison.comparable);
   }
 
   if (period === 'annual') {
     const windows = annualIncomeWindows(completeMonthlyFinancials);
-    const comparisons = [
+    return [
       buildFinancialComparison({
-        key: windows.trailingIsLastYear
-          ? 'latest_completed_year_vs_prior_year'
-          : 'trailing_12_months_vs_last_year',
-        label: windows.trailingIsLastYear
-          ? 'Last completed year vs prior year'
-          : 'Trailing 12 months vs last year',
+        key: 'trailing_12_months_vs_prior_trailing_12_months',
+        label: 'Trailing 12 months vs prior trailing 12 months',
         cadence: 'annual',
         currentRows: windows.primaryCurrent,
         priorRows: windows.primaryPrior,
-        note: windows.trailingIsLastYear
-          ? 'Trailing 12 completed months are the last completed calendar year. Compare that year to the prior calendar year.'
-          : 'Current is the trailing 12 completed months. Prior is the last completed calendar year (January–December). These windows can overlap; name both periods and do not call this calendar year-over-year.',
+        note: trailingWindowNote('annual'),
       }),
-    ];
-    if (!windows.trailingIsLastYear && windows.lastYear.length === 12 && windows.priorYear.length === 12) {
-      comparisons.push(
-        buildFinancialComparison({
-          key: 'latest_completed_year_vs_prior_year',
-          label: 'Last completed year vs prior year',
-          cadence: 'annual',
-          currentRows: windows.lastYear,
-          priorRows: windows.priorYear,
-          note: 'Calendar years only. Use for year-over-year commentary, separate from trailing 12 months.',
-        })
-      );
-    }
-    return comparisons.filter((comparison) => comparison.comparable);
+    ].filter((comparison) => comparison.comparable);
   }
 
   return [
@@ -1933,6 +1855,7 @@ export async function GET(request: NextRequest) {
         monthsLoaded: monthlyFinancials.length,
         completeMonthsLoaded: completeMonthlyFinancials.length,
         comparisons: financialComparisons,
+        windowNote: trailingWindowNote(period),
         revenueTrend: primaryFinancialComparison ? (recentRevenue >= priorRevenue ? 'increasing' : 'declining') : null,
         recentRevenue,
         priorRevenue,
@@ -1981,6 +1904,7 @@ export async function GET(request: NextRequest) {
         ? {
             currentPeriod: primaryFinancialComparison?.currentPeriod || null,
             priorPeriod: primaryFinancialComparison?.priorPeriod || null,
+            windowNote: trailingWindowNote(period),
             alignedToBooksWindow: useBooksSalesWindows,
             booksRevenue: recentRevenue,
             totalRecentRevenue: totalRecentCustomerRevenue,
@@ -1989,7 +1913,14 @@ export async function GET(request: NextRequest) {
             topCustomers,
           }
         : null,
-      products: includeOperatingDetailInBriefing && moduleProfile.genericSnapshots.products ? { topMarginWatch } : null,
+      products: includeOperatingDetailInBriefing && moduleProfile.genericSnapshots.products
+        ? {
+            currentPeriod: primaryFinancialComparison?.currentPeriod || null,
+            priorPeriod: primaryFinancialComparison?.priorPeriod || null,
+            windowNote: trailingWindowNote(period),
+            topMarginWatch,
+          }
+        : null,
       dailyOperations,
       constructionOperations,
       benchmarks: {
@@ -2123,7 +2054,7 @@ Only compare like-for-like periods. Do not compare days to weeks, weeks to month
       effectiveDailyMode === 'ops-only'
         ? `IMPORTANT: facts.briefing.dailyMode is ops-only. Books/accounting are monthly (QuickBooks or equivalent). Do NOT invent day-over-day P&L, revenue, gross profit, EBITDA, or MTD financial statement movement. facts.financials.comparisons is empty by design. Lead with facts.dailyOperations (same-day sales/customer/SKU/volume), Pulse alerts, and liquidity/AR/AP only when those daily feeds are present. You may mention the latest closed month from books as static context only—never as a day-over-day financial trend.`
         : `For the Daily tab, discuss material latest-day vs prior-day movement and current month-to-date vs the same elapsed days last month when available; never fall back to month-over-month analysis in the Daily tab. For Daily comparisons, state the actual dates from currentPeriod and priorPeriod; do not say "yesterday", "today", or "latest day" as a substitute for dates.`
-    } In the Daily tab, use facts.dailyOperations only for operational commentary, and only when notableExceptions are present or a listed top product/customer/volume move is material for that same asOfDate vs priorDate. Allowed Daily ops topics: top revenue product/SKU for the day, largest customer/order for the day, and day volume (sales closed / units sold / contracts) with day-over-day deltas when provided. Do not use multi-day customer concentration, multi-day product margin watchlists, or benchmarks in the Daily tab. For the Weekly tab, use only the latest completed Monday–Sunday week versus the prior completed week from facts.financials.comparisons; never fall back to day-over-day or month-over-month analysis, and do not use a partial current week. For the Quarterly tab, lead with trailing 3 completed months versus the last completed calendar quarter from facts.financials.comparisons (key trailing_3_months_vs_last_quarter when present). Name both windows; do not say only "this quarter." Those windows can overlap, so do not call that movement calendar quarter-over-quarter. Use latest_completed_quarter_vs_prior_quarter only for explicit calendar QoQ commentary. If trailing 3 months are themselves the last completed calendar quarter, only the quarter-vs-prior-quarter comparison will be present. For the Annual tab, lead with trailing 12 completed months versus the last completed calendar year from facts.financials.comparisons (key trailing_12_months_vs_last_year when present). Name both windows; do not say only "this year." Those windows can overlap, so do not call that movement calendar year-over-year. Use latest_completed_year_vs_prior_year only for explicit calendar YoY commentary. If trailing 12 months are themselves the last completed calendar year, only the year-vs-prior-year comparison will be present. For the Monthly tab, use completed periods only. Customer and product dollars, deltas versus prior, and concentration MUST come from facts.customers / facts.products for the SAME currentPeriod/priorPeriod as facts.financials.comparisons. When stating a customer's share of total revenue, use booksRevenueShare and top3ShareOfBooks (customer dollars divided by financials.recentRevenue). Customer and product recentRevenue values are month-collapsed books-window totals, not a sum of every daily snapshot. If currentPeriod and priorPeriod overlap, revenueDelta is the unique months (usually the newest month minus the month that dropped out)—do not describe it as trailing-period growth versus a non-overlapping prior trailing period. Do not call revenueShare "share of total revenue"—that is only the mix of identified customer-sales rows. Never mix a P&L total from one window with customer dollars from another window. If a customer dollar amount is larger than financials.recentRevenue, omit that customer dollar movement; it is not usable. State the window used when a financial or daily-ops movement is material. If no comparable window supports an issue, do not draw a trend conclusion.
+    } In the Daily tab, use facts.dailyOperations only for operational commentary, and only when notableExceptions are present or a listed top product/customer/volume move is material for that same asOfDate vs priorDate. Allowed Daily ops topics: top revenue product/SKU for the day, largest customer/order for the day, and day volume (sales closed / units sold / contracts) with day-over-day deltas when provided. Do not use multi-day customer concentration, multi-day product margin watchlists, or benchmarks in the Daily tab. For the Weekly tab, use only the latest completed Monday–Sunday week versus the prior completed week from facts.financials.comparisons; never fall back to day-over-day or month-over-month analysis, and do not use a partial current week. For the Quarterly tab, lead with trailing 3 months to prior trailing 3 months from facts.financials.comparisons (key trailing_3_months_vs_prior_trailing_3_months). Use the comparison note and facts.financials.windowNote. Name both inclusive windows from currentPeriod and priorPeriod (first day of the first month through last day of the last month). Do not say only "this quarter" or "prior quarter." The two windows do not overlap. For the Annual tab, lead with trailing 12 months to prior trailing 12 months from facts.financials.comparisons (key trailing_12_months_vs_prior_trailing_12_months). Use the comparison note and facts.financials.windowNote. Name both inclusive windows from currentPeriod and priorPeriod (first day of the first month through last day of the last month). Do not say only "this year" or "last year." The two windows do not overlap. For the Monthly tab, use completed periods only. Customer and product dollars, deltas versus prior, and concentration MUST come from facts.customers / facts.products for the SAME currentPeriod/priorPeriod as facts.financials.comparisons. When stating a customer's share of total revenue, use booksRevenueShare and top3ShareOfBooks (customer dollars divided by financials.recentRevenue). Customer and product recentRevenue values are month-collapsed books-window totals, not a sum of every daily snapshot. For Quarterly, describe movement as trailing 3 months to prior trailing 3 months. For Annual, describe movement as trailing 12 months to prior trailing 12 months. Those windows do not overlap. If a Daily or Weekly window overlaps, revenueDelta is only the unique days. Do not call revenueShare "share of total revenue"—that is only the mix of identified customer-sales rows. Never mix a P&L total from one window with customer dollars from another window. If a customer dollar amount is larger than financials.recentRevenue, omit that customer dollar movement; it is not usable. State the window used when a financial or daily-ops movement is material. If no comparable window supports an issue, do not draw a trend conclusion.
 
 When revenue and margin rate move in different directions, explicitly state the end result to gross profit dollars only if the movement is material or decision-useful. Example: if revenue is declining but gross margin rate is improving, say whether gross profit dollars increased or decreased and by how much; if both are normal/immaterial, omit the topic entirely.
 

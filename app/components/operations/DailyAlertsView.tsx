@@ -3049,7 +3049,7 @@ export default function DailyAlertsView({ companyId, companyName, onNavigate }: 
                   lineHeight: 1.45,
                 }}
               >
-                Quarterly income compares trailing 3 completed months to the last completed calendar quarter. When those months are the same quarter, it compares that quarter to the prior quarter.
+                Quarterly income compares trailing 3 months to prior trailing 3 months.
               </div>
             )}
 
@@ -3066,7 +3066,7 @@ export default function DailyAlertsView({ companyId, companyName, onNavigate }: 
                   lineHeight: 1.45,
                 }}
               >
-                Annual income compares trailing 12 completed months to the last completed calendar year. When those months are the same year, it compares that year to the prior year.
+                Annual income compares trailing 12 months to prior trailing 12 months.
               </div>
             )}
 
