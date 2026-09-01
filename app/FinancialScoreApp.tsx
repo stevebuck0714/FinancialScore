@@ -7791,6 +7791,29 @@ function FinancialScorePage() {
     }
   };
 
+  // Web Connector completes outside the browser session. Poll while this
+  // company is open so the post-sync month publish reloads every report
+  // without requiring the user to change pages or reload manually.
+  useEffect(() => {
+    const company = Array.isArray(companies) ? companies.find((item) => item.id === selectedCompanyId) : null;
+    const accountingSystem = String(company?.accountingSystem || '').toUpperCase();
+    if (!selectedCompanyId || !['QUICKBOOKS_DESKTOP', 'QUICKBOOKS_ENTERPRISE'].includes(accountingSystem)) {
+      return;
+    }
+
+    const refreshStatus = () => {
+      if (document.visibilityState === 'visible') {
+        void checkQBStatus(selectedCompanyId);
+      }
+    };
+    const interval = window.setInterval(refreshStatus, 120_000);
+    window.addEventListener('focus', refreshStatus);
+    return () => {
+      window.clearInterval(interval);
+      window.removeEventListener('focus', refreshStatus);
+    };
+  }, [selectedCompanyId, companies]);
+
   const loadCompanyOperationalSources = async (companyId: string) => {
     if (!companyId) return;
     setLoadingOperationalSources(true);

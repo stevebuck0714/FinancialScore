@@ -375,6 +375,23 @@ export function useMasterData(
   const [monthlyData, setMonthlyData] = React.useState<MasterDataMonthly[] | null>(null);
   const [loading, setLoading] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
+  const [refreshToken, setRefreshToken] = React.useState(0);
+
+  // A month can close while a report is open. Refresh focused report surfaces
+  // so they pick up the post-sync month publish without requiring a reload.
+  React.useEffect(() => {
+    const refreshWhenVisible = () => {
+      if (typeof document === 'undefined' || document.visibilityState === 'visible') {
+        setRefreshToken((token) => token + 1);
+      }
+    };
+    const interval = window.setInterval(refreshWhenVisible, 120_000);
+    window.addEventListener('focus', refreshWhenVisible);
+    return () => {
+      window.clearInterval(interval);
+      window.removeEventListener('focus', refreshWhenVisible);
+    };
+  }, []);
 
   React.useEffect(() => {
     if (!companyId) {
@@ -405,7 +422,7 @@ export function useMasterData(
     };
 
     loadData();
-  }, [companyId, scope]);
+  }, [companyId, scope, refreshToken]);
 
   return {
     data,

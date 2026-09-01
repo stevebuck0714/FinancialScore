@@ -2,7 +2,11 @@ import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import { ingestFinancialPayload } from '@/lib/financial-ingestion';
 import { MONTHLY_FINANCIAL_NUMERIC_FIELDS } from '@/lib/financial-canonical';
-import { publishMonthsFromMonthlyFinancialDirect } from '@/lib/financial/publish-month-service';
+import {
+  publishMonthFromDailySnapshots,
+  publishMonthsFromMonthlyFinancialDirect,
+} from '@/lib/financial/publish-month-service';
+import { currentMonthKeyUtc } from '@/lib/date-utils';
 import { syncErpDailyFinancialsFromGL } from '@/lib/financial/sync-erp-daily-financials';
 import { buildCsiMonthlyDataFromGlResponses } from '@/lib/infor-m3/csi-monthly-financial-builder';
 import { isQuickBooksDesktopFamily } from '@/lib/quickbooks-desktop/family';
@@ -2928,16 +2932,37 @@ export async function POST(request: NextRequest) {
           endDate: dailyPnlResult.endDate,
           balanceSheet: dailyPnlResult.balanceSheet,
         };
+        // The Web Connector's first sync after midnight supplies the prior
+        // month's final daily P&L. Republish that closed month from those
+        // rebuilt daily rows so the earlier month-start cron cannot leave an
+        // MTD monthly record visible in reports.
+        const qbdPublishResult = targetMonth !== currentMonthKeyUtc()
+          ? await publishMonthFromDailySnapshots({
+              companyId: String(companyId),
+              month: targetMonth,
+            })
+          : null;
         const qbdBalanceSheetAnchor = null;
         qbdDiagnostics.dailyFinancialSnapshots = qbdDailyFinancialSnapshots;
         qbdDiagnostics.balanceSheetAnchor = qbdBalanceSheetAnchor;
         qbdDiagnostics.qbdDailyPnlMonthRebuild = dailyPnlResult;
+        if (qbdPublishResult) {
+          qbdDiagnostics.publishedMasterData = {
+            success: qbdPublishResult.success,
+            publishedMonths: qbdPublishResult.publishedMonths.length,
+            skippedMonths: qbdPublishResult.skippedMonths.length,
+            error: qbdPublishResult.error || null,
+          };
+        }
         return NextResponse.json({
-          success: true,
-          ok: true,
-          message: `QuickBooks Desktop daily financials rebuilt for ${targetMonth}.`,
+          success: qbdPublishResult?.success ?? true,
+          ok: qbdPublishResult?.success ?? true,
+          message: qbdPublishResult?.success === false
+            ? `QuickBooks Desktop daily financials rebuilt for ${targetMonth}, but month-close publish failed.`
+            : `QuickBooks Desktop daily financials rebuilt for ${targetMonth}.`,
           diagnostics: qbdDiagnostics,
           qbdDailyFinancialSnapshots,
+          qbdPublishResult,
           qbdBalanceSheetAnchor,
         });
       }
