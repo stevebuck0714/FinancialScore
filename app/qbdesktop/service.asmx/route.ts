@@ -9,7 +9,9 @@ import {
   buildQuickBooksDesktopFinancialPayload,
   buildQuickBooksDesktopOperationalPayload,
 } from '@/lib/quickbooks-desktop/backfill-payloads';
+import { scheduleQuickBooksDesktopInvoiceDetailTransform } from '@/lib/quickbooks-desktop/detail-transform';
 import { enqueueQuickBooksDesktopPostSyncJob } from '@/lib/quickbooks-desktop/post-sync-jobs';
+import { isClosedReportingMonth } from '@/lib/date-utils';
 import { APP_TIME_ZONE } from '@/lib/time/eastern';
 
 export const dynamic = 'force-dynamic';
@@ -377,6 +379,33 @@ function parseDateString(value: unknown): string {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) return '';
   const date = new Date(`${trimmed}T00:00:00.000Z`);
   return Number.isNaN(date.getTime()) ? '' : trimmed;
+}
+
+function monthKeysInclusive(startDate: string, endDate: string): string[] {
+  const start = parseDateString(startDate)?.slice(0, 7);
+  const end = parseDateString(endDate)?.slice(0, 7);
+  if (!start || !end || start > end) return [];
+  const months: string[] = [];
+  const cursor = new Date(`${start}-01T00:00:00.000Z`);
+  const last = new Date(`${end}-01T00:00:00.000Z`);
+  while (cursor <= last) {
+    months.push(`${cursor.getUTCFullYear()}-${String(cursor.getUTCMonth() + 1).padStart(2, '0')}`);
+    cursor.setUTCMonth(cursor.getUTCMonth() + 1);
+  }
+  return months;
+}
+
+function closedInvoiceMonthsFromSession(session: QbwcSession): string[] {
+  const records = session.responses.InvoiceQuery?.records || [];
+  const months = new Set<string>();
+  for (const invoice of records) {
+    const txnDate = typeof invoice.TxnDate === 'string' ? invoice.TxnDate.slice(0, 10) : '';
+    const month = txnDate.slice(0, 7);
+    if (/^\d{4}-\d{2}$/.test(month) && isClosedReportingMonth(`${month}-01`)) {
+      months.add(month);
+    }
+  }
+  return [...months].sort();
 }
 
 function addDays(date: Date, days: number): Date {
@@ -1411,6 +1440,14 @@ async function completeDetailBackfillJob(
         startDate: dateRange.startDate,
         endDate: dateRange.endDate,
       });
+      const months = monthKeysInclusive(dateRange.startDate, dateRange.endDate);
+      if (months.length > 0) {
+        scheduleQuickBooksDesktopInvoiceDetailTransform(companyId, {
+          months,
+          includeNonDetailInvoicePages: true,
+          frequencies: ['monthly'],
+        });
+      }
     }
   }
 }
@@ -1516,6 +1553,14 @@ async function finalizeSession(connection: NonNullable<Awaited<ReturnType<typeof
       startDate: session.dateRange.startDate,
       endDate: session.dateRange.endDate,
     });
+    const closedInvoiceMonths = closedInvoiceMonthsFromSession(session);
+    if (closedInvoiceMonths.length > 0) {
+      scheduleQuickBooksDesktopInvoiceDetailTransform(companyId, {
+        months: closedInvoiceMonths,
+        includeNonDetailInvoicePages: true,
+        frequencies: ['monthly'],
+      });
+    }
     postSyncReprocess = {
       queued: true,
       jobId: postSyncJob.id,

@@ -2,6 +2,13 @@ import prisma from '@/lib/prisma';
 
 type DetailPageRow = {
   payload: unknown;
+  createdAt?: Date;
+};
+
+export type QbdDetailTransformOptions = {
+  months?: string[];
+  includeNonDetailInvoicePages?: boolean;
+  frequencies?: Array<'daily' | 'monthly'>;
 };
 
 type ItemMaster = {
@@ -234,15 +241,65 @@ function resolveItemMaster(itemsByKey: Map<string, ItemMaster>, itemId: string, 
   return itemsByKey.get(itemId) || itemsByKey.get(itemName) || itemsByKey.get(getSku(itemName) || '') || null;
 }
 
-async function loadInvoiceDetailPages(companyId: string): Promise<DetailPageRow[]> {
+async function loadInvoiceDetailPages(
+  companyId: string,
+  includeNonDetailInvoicePages = false,
+): Promise<DetailPageRow[]> {
+  if (includeNonDetailInvoicePages) {
+    return prisma.$queryRaw<DetailPageRow[]>`
+      SELECT "payload", "createdAt"
+      FROM "QuickBooksDesktopBackfillPage"
+      WHERE "companyId" = ${companyId}
+        AND "requestName" = 'InvoiceQuery'
+      ORDER BY "createdAt" ASC, "jobId", "pageNumber" ASC
+    `;
+  }
   return prisma.$queryRaw<DetailPageRow[]>`
-    SELECT "payload"
+    SELECT "payload", "createdAt"
     FROM "QuickBooksDesktopBackfillPage"
     WHERE "companyId" = ${companyId}
       AND "requestName" = 'InvoiceQuery'
       AND "jobId" LIKE '%:detail:%'
     ORDER BY "jobId", "pageNumber" ASC
   `;
+}
+
+function extractInvoiceRecords(payload: unknown): Array<Record<string, unknown>> {
+  if (Array.isArray(payload)) return payload.map(asRecord);
+  const nested = asArray(asRecord(payload).InvoiceRet);
+  return nested.length ? nested : [];
+}
+
+function invoiceIdentity(invoice: Record<string, unknown>): string {
+  return asString(invoice.TxnID) || asString(invoice.RefNumber);
+}
+
+function uniqueInvoices(rows: DetailPageRow[]): Array<Record<string, unknown>> {
+  const byId = new Map<string, { invoice: Record<string, unknown>; lines: number; createdAt: number }>();
+  for (const row of rows) {
+    const createdAt = row.createdAt instanceof Date ? row.createdAt.getTime() : 0;
+    for (const invoice of extractInvoiceRecords(row.payload)) {
+      const id = invoiceIdentity(invoice);
+      if (!id) continue;
+      const lines = asArray(invoice.InvoiceLineRet).length;
+      const current = byId.get(id);
+      if (!current || lines > current.lines || (lines === current.lines && createdAt >= current.createdAt)) {
+        byId.set(id, { invoice, lines, createdAt });
+      }
+    }
+  }
+  return Array.from(byId.values()).map((row) => row.invoice);
+}
+
+function normalizeMonthKeys(months: string[] | undefined): Set<string> | null {
+  if (!months?.length) return null;
+  const keys = months
+    .map((month) => {
+      const raw = String(month || '').trim();
+      return /^\d{4}-\d{2}$/.test(raw) ? raw : '';
+    })
+    .filter(Boolean);
+  return keys.length ? new Set(keys) : null;
 }
 
 async function loadItemPages(companyId: string): Promise<DetailPageRow[]> {
@@ -255,11 +312,21 @@ async function loadItemPages(companyId: string): Promise<DetailPageRow[]> {
   `;
 }
 
-export async function transformQuickBooksDesktopInvoiceDetail(companyId: string): Promise<QbdDetailTransformResult> {
+export async function transformQuickBooksDesktopInvoiceDetail(
+  companyId: string,
+  options: QbdDetailTransformOptions = {},
+): Promise<QbdDetailTransformResult> {
   const errors: string[] = [];
-  const [rows, itemRows] = await Promise.all([loadInvoiceDetailPages(companyId), loadItemPages(companyId)]);
+  const monthFilter = normalizeMonthKeys(options.months);
+  const writeDaily = !options.frequencies || options.frequencies.includes('daily');
+  const writeMonthly = !options.frequencies || options.frequencies.includes('monthly');
+  const [rows, itemRows] = await Promise.all([
+    loadInvoiceDetailPages(companyId, Boolean(options.includeNonDetailInvoicePages)),
+    loadItemPages(companyId),
+  ]);
   const itemRecords = itemRows.flatMap((row) => (Array.isArray(row.payload) ? row.payload.map(asRecord) : []));
   const itemsByKey = buildItemMaster(itemRecords);
+  const invoices = uniqueInvoices(rows);
   const productDailyByKey = new Map<string, ProductAggregate>();
   const productMonthlyByKey = new Map<string, ProductAggregate>();
   const customerDailyByKey = new Map<string, CustomerAggregate>();
@@ -322,15 +389,14 @@ export async function transformQuickBooksDesktopInvoiceDetail(companyId: string)
     target.set(key, current);
   };
 
-  for (const row of rows) {
-    const invoices = Array.isArray(row.payload) ? row.payload.map(asRecord) : [];
-    for (const invoice of invoices) {
+  for (const invoice of invoices) {
       invoiceRecordsRead += 1;
       const dailyDate = startOfUtcDay(invoice.TxnDate);
       const monthlyDate = startOfUtcMonth(invoice.TxnDate);
       if (!dailyDate || !monthlyDate) continue;
-      days.set(dayKey(dailyDate), dailyDate);
-      months.set(monthKey(monthlyDate), monthlyDate);
+      if (monthFilter && !monthFilter.has(monthKey(monthlyDate))) continue;
+      if (writeDaily) days.set(dayKey(dailyDate), dailyDate);
+      if (writeMonthly) months.set(monthKey(monthlyDate), monthlyDate);
       const customer = getRef(invoice, 'CustomerRef');
       const customerName = customer.name || asString(invoice.FullName) || 'Unknown Customer';
       const invoiceId = asString(invoice.TxnID) || asString(invoice.RefNumber);
@@ -356,25 +422,31 @@ export async function transformQuickBooksDesktopInvoiceDetail(companyId: string)
         if (amount === 0 && quantity === 0) continue;
 
         invoiceLinesRead += 1;
-        addProduct(productDailyByKey, 'daily', dailyDate, item.id, itemName, sku, quantity, amount, avgCost);
-        addProduct(productMonthlyByKey, 'monthly', monthlyDate, item.id, itemName, sku, quantity, amount, avgCost);
+        if (writeDaily) {
+          addProduct(productDailyByKey, 'daily', dailyDate, item.id, itemName, sku, quantity, amount, avgCost);
+        }
+        if (writeMonthly) {
+          addProduct(productMonthlyByKey, 'monthly', monthlyDate, item.id, itemName, sku, quantity, amount, avgCost);
+        }
         invoiceRevenue += amount;
       }
       if (invoiceRevenue !== 0) {
-        addCustomerRevenue(customerDailyByKey, 'daily', dailyDate, customer.id, customerName, invoiceId, invoiceRevenue);
-        addCustomerRevenue(customerMonthlyByKey, 'monthly', monthlyDate, customer.id, customerName, invoiceId, invoiceRevenue);
+        if (writeDaily) {
+          addCustomerRevenue(customerDailyByKey, 'daily', dailyDate, customer.id, customerName, invoiceId, invoiceRevenue);
+        }
+        if (writeMonthly) {
+          addCustomerRevenue(customerMonthlyByKey, 'monthly', monthlyDate, customer.id, customerName, invoiceId, invoiceRevenue);
+        }
       }
-    }
   }
 
-  const monthDates = Array.from(months.values());
   const dayDates = Array.from(days.values());
-  if (dayDates.length === 0) {
-    errors.push('No invoice detail dates were found in saved QBD detail pages.');
+  const monthlyDates = Array.from(months.values());
+  if ((writeDaily && dayDates.length === 0) || (writeMonthly && monthlyDates.length === 0 && !writeDaily)) {
+    errors.push('No invoice detail dates were found in saved QBD invoice pages.');
   }
 
-  const dailyRange = getDateRange(dayDates);
-  const monthlyRange = getDateRange(monthDates);
+  const dailyRange = writeDaily ? getDateRange(dayDates) : null;
 
   if (dailyRange) {
     await prisma.productSalesSnapshot.deleteMany({
@@ -392,21 +464,26 @@ export async function transformQuickBooksDesktopInvoiceDetail(companyId: string)
       },
     });
   }
-  if (monthlyRange) {
-    await prisma.productSalesSnapshot.deleteMany({
-      where: {
-        companyId,
-        frequency: 'monthly',
-        snapshotDate: monthlyRange,
-      },
-    });
-    await prisma.customerSalesSnapshot.deleteMany({
-      where: {
-        companyId,
-        frequency: 'monthly',
-        snapshotDate: monthlyRange,
-      },
-    });
+  if (writeMonthly && monthlyDates.length > 0) {
+    const monthlyWhere = monthFilter
+      ? { in: monthlyDates }
+      : getDateRange(monthlyDates);
+    if (monthlyWhere) {
+      await prisma.productSalesSnapshot.deleteMany({
+        where: {
+          companyId,
+          frequency: 'monthly',
+          snapshotDate: monthlyWhere,
+        },
+      });
+      await prisma.customerSalesSnapshot.deleteMany({
+        where: {
+          companyId,
+          frequency: 'monthly',
+          snapshotDate: monthlyWhere,
+        },
+      });
+    }
   }
 
   const productData = [...productDailyByKey.values(), ...productMonthlyByKey.values()]
@@ -470,6 +547,8 @@ export async function transformQuickBooksDesktopInvoiceDetail(companyId: string)
         monthlyProductRowsCreated: productMonthlyByKey.size,
         monthlyCustomerRowsCreated: customerMonthlyByKey.size,
         monthsProcessed: Array.from(months.keys()).sort(),
+        includeNonDetailInvoicePages: Boolean(options.includeNonDetailInvoicePages),
+        frequencies: options.frequencies || ['daily', 'monthly'],
       },
     },
   });
@@ -487,4 +566,19 @@ export async function transformQuickBooksDesktopInvoiceDetail(companyId: string)
     monthsProcessed: Array.from(months.keys()).sort(),
     errors,
   };
+}
+
+export function scheduleQuickBooksDesktopInvoiceDetailTransform(
+  companyId: string,
+  options: QbdDetailTransformOptions = {},
+): void {
+  setTimeout(() => {
+    transformQuickBooksDesktopInvoiceDetail(companyId, options).catch((error) => {
+      console.warn('QBD invoice detail transform failed:', {
+        companyId,
+        months: options.months || [],
+        error: String(error?.message || error).slice(0, 500),
+      });
+    });
+  }, 0);
 }

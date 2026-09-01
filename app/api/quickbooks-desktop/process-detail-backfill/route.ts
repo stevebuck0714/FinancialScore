@@ -26,7 +26,10 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const result = await transformQuickBooksDesktopInvoiceDetail(companyId);
+    const result = await transformQuickBooksDesktopInvoiceDetail(companyId, {
+      includeNonDetailInvoicePages: true,
+      frequencies: ['monthly'],
+    });
 
     return NextResponse.json({
       ok: result.success,
