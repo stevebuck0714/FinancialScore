@@ -297,7 +297,7 @@ type InforOperationalSyncStatus = {
   companyId: string;
   syncRunId: string;
   state: 'running' | 'done' | 'failed';
-  runMode: 'daily_overlap' | 'backfill' | 'manual' | 'business_day_backfill' | null;
+  runMode: 'daily_overlap' | 'backfill' | 'manual' | 'business_day_backfill' | 'ar_history_rebuild' | null;
   chunkCount: number;
   recordsCreated: number;
   warningCount: number;
@@ -3765,7 +3765,7 @@ function FinancialScorePage() {
   const [inforError, setInforError] = useState<string | null>(null);
   const [inforBusy, setInforBusy] = useState(false);
   const [inforBusyAction, setInforBusyAction] = useState<
-    'connect' | 'save_credentials' | 'test_token' | 'probe' | 'disconnect' | 'operational_sync' | 'operational_sync_reset' | null
+    'connect' | 'save_credentials' | 'test_token' | 'probe' | 'disconnect' | 'operational_sync' | 'operational_sync_reset' | 'ar_history_rebuild' | null
   >(null);
   const [inforBusyStartedAt, setInforBusyStartedAt] = useState<number | null>(null);
   const [inforCredentials, setInforCredentials] = useState({
@@ -9185,6 +9185,49 @@ function FinancialScorePage() {
           : prev
       );
       alert(`Infor M3 operational sync failed:\n\n${message}`);
+    } finally {
+      setInforBusy(false);
+      setInforBusyAction(null);
+      setInforBusyStartedAt(null);
+    }
+  };
+
+  const queueAtlanticArHistoryRebuild = async (companyId: string, site: string) => {
+    setInforBusyAction('ar_history_rebuild');
+    setInforBusy(true);
+    setInforBusyStartedAt(Date.now());
+    setInforError(null);
+    try {
+      const response = await fetch('/api/infor-m3/rebuild-ar-history', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ companyId, site, confirm: true }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok || !data?.ok) {
+        throw new Error(data?.details || data?.error || 'Failed to queue Atlantic AR history rebuild.');
+      }
+      const syncRunId = String(data?.run?.runId || '').trim();
+      if (!syncRunId) throw new Error('AR rebuild queue did not return a run ID.');
+      setInforOperationalSyncStatus({
+        companyId,
+        syncRunId,
+        state: 'running',
+        runMode: 'ar_history_rebuild',
+        chunkCount: 0,
+        recordsCreated: 0,
+        warningCount: 0,
+        lastChunkAt: new Date().toISOString(),
+        lastStatusText: 'queued',
+        message: String(data?.message || 'Atlantic AR rebuild queued.'),
+        lastError: null,
+        recentlyActive: true,
+      });
+      alert('Atlantic AR rebuild queued. It will stage history before replacing Atlantic AR facts.');
+    } catch (error: any) {
+      const message = error?.message || 'Failed to queue Atlantic AR history rebuild.';
+      setInforError(message);
+      alert(message);
     } finally {
       setInforBusy(false);
       setInforBusyAction(null);
@@ -14977,6 +15020,7 @@ function FinancialScorePage() {
               probeInforM3={probeInforM3}
               disconnectInforM3={disconnectInforM3}
               runInforM3OperationalSync={runInforM3OperationalSync}
+              queueAtlanticArHistoryRebuild={queueAtlanticArHistoryRebuild}
               resetInforM3OperationalSyncState={resetInforM3OperationalSyncState}
               runPlatformOperationalSync={runPlatformOperationalSync}
               newSiteAdminFirstName={newSiteAdminFirstName}

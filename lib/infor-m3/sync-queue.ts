@@ -35,6 +35,7 @@ const DEFAULT_TASK_FETCH_TIMEOUT_MS = 240_000;
 const DEFAULT_TASK_EXECUTION_TIMEOUT_MS = 270_000;
 const PENDING_TRANSFORM_REPLAY_MODE = 'pending_transform_replay';
 const FINANCIAL_MAPPING_REBUILD_MODE = 'financial_mapping_rebuild';
+const AR_HISTORY_REBUILD_MODE = 'ar_history_rebuild';
 const FINANCIAL_MAPPING_REBUILD_CHUNK_SIZE = 30;
 
 type QueueRunRecord = {
@@ -470,6 +471,131 @@ export async function enqueueFinancialMappingRebuildRun(input: {
   });
 
   return { runId, status, taskCount: dateChunks.length };
+}
+
+export async function enqueueArHistoryRebuildRun(input: {
+  companyId: string;
+  site: string;
+  workerBaseUrl?: string;
+}): Promise<{ runId: string; status: string }> {
+  const companyId = String(input.companyId || '').trim();
+  const site = String(input.site || '').trim();
+  if (!companyId || !site) throw new Error('Atlantic AR rebuild requires companyId and CSI site.');
+
+  const activeRun = await db().inforSyncRun.findFirst({
+    where: {
+      companyId,
+      platform: 'INFOR_M3',
+      status: { in: ['queued', 'running'] },
+    },
+    select: { id: true },
+  });
+  const now = new Date();
+  const runId = randomUUID();
+  const status = activeRun ? 'queued' : 'running';
+  await db().$transaction(async (tx) => {
+    await tx.inforSyncRun.create({
+      data: {
+        id: runId,
+        companyId,
+        platform: 'INFOR_M3',
+        status,
+        frequency: 'daily',
+        site,
+        mode: AR_HISTORY_REBUILD_MODE,
+        startDate: new Date('2023-01-01T00:00:00.000Z'),
+        endDate: now,
+        message:
+          status === 'queued'
+            ? 'Atlantic AR history rebuild queued behind active Infor sync.'
+            : 'Atlantic AR history rebuild staging SLARTRANS data.',
+      },
+    });
+    await tx.inforSyncTask.create({
+      data: {
+        runId,
+        companyId,
+        status: 'pending',
+        maxAttempts: DEFAULT_MAX_ATTEMPTS,
+        payload: {
+          mode: AR_HISTORY_REBUILD_MODE,
+          site,
+          startDate: '2023-01-01T00:00:00.000Z',
+          endDate: now.toISOString(),
+          arOnlyBackfill: true,
+          fullArFactHistory: true,
+          forceIngestOnly: true,
+          allowRawIngestOnly: true,
+          deferDailySnapshotHydration: true,
+          workerBaseUrl: normalizeWorkerBaseUrl(input.workerBaseUrl),
+        },
+      },
+    });
+  });
+  return { runId, status };
+}
+
+async function finalizeArHistoryRebuild(companyId: string, syncRunId: string) {
+  const sourceRecordCount = await db().inforRawRecord.count({
+    where: {
+      companyId,
+      platform: { in: ['INFOR_M3', 'INFOR_CSI'] },
+      syncRunId,
+      miProgram: 'SLARTRANS',
+    },
+  });
+  if (sourceRecordCount === 0) {
+    throw new Error('No SLARTRANS records were staged; existing AR facts were not replaced.');
+  }
+
+  await db().$transaction([
+    db().aRTransactionFact.deleteMany({ where: { companyId } }),
+    db().aRPaymentFact.deleteMany({ where: { companyId } }),
+  ]);
+  const transformResult = await transformInforM3RawRun({
+    companyId,
+    syncRunId,
+    frequency: 'daily',
+    batchSize: 5000,
+  });
+  if (!transformResult.success) {
+    throw new Error(`AR fact transform failed: ${transformResult.errors.join('; ')}`);
+  }
+
+  const books = await db().dailyFinancialSnapshot.findFirst({
+    where: { companyId, frequency: 'daily' },
+    select: { snapshotDate: true, ar: true },
+    orderBy: { snapshotDate: 'desc' },
+  });
+  const asOfDate = books?.snapshotDate.toISOString().slice(0, 10) ?? new Date().toISOString().slice(0, 10);
+  const rows = await db().$queryRawUnsafe<Array<{ open_ar: number }>>(
+    `WITH invoices AS (
+       SELECT "coNum" AS co_num, "customerId" AS customer_id, "invoiceNum" AS invoice_no
+       FROM "ARTransactionFact"
+       WHERE "companyId" = $1 AND "arAcct" = '11100' AND "transType" = 'I' AND "eventDate" <= $2::date
+       GROUP BY "coNum", "customerId", "invoiceNum"
+     ), balances AS (
+       SELECT GREATEST(COALESCE(SUM(e."normalizedAmount"), 0), 0) AS open_amount
+       FROM invoices i LEFT JOIN "ARTransactionFact" e
+         ON e."companyId" = $1 AND e."eventDate" <= $2::date
+        AND COALESCE(e."applyToInvNum", e."invoiceNum") = i.invoice_no
+        AND e."coNum" IS NOT DISTINCT FROM i.co_num
+        AND e."customerId" IS NOT DISTINCT FROM i.customer_id
+       GROUP BY i.co_num, i.customer_id, i.invoice_no
+     ) SELECT COALESCE(SUM(open_amount), 0)::double precision AS open_ar FROM balances`,
+    companyId,
+    asOfDate,
+  );
+  const booksAr = Number(books?.ar || 0);
+  const reconstructedOpenAr = Number(rows[0]?.open_ar || 0);
+  return {
+    sourceRecordCount,
+    transformResult,
+    booksArAsOf: books?.snapshotDate.toISOString().slice(0, 10) ?? null,
+    booksAr,
+    reconstructedOpenAr,
+    difference: booksAr - reconstructedOpenAr,
+  };
 }
 
 export async function hasPendingFinancialMappingRebuildRuns(): Promise<boolean> {
@@ -1670,6 +1796,15 @@ async function processTask(
 
     if (Number(runUpdated?.count || 0) === 1 && hasMore && cursor) {
       const nextPayload = buildTaskPayload(task.run, {
+        ...(String(task.run.mode || '') === AR_HISTORY_REBUILD_MODE
+          ? {
+              arOnlyBackfill: true,
+              fullArFactHistory: true,
+              forceIngestOnly: true,
+              allowRawIngestOnly: true,
+              deferDailySnapshotHydration: true,
+            }
+          : {}),
         ...cursor,
         glNoForwardProgressCount: nextNoProgressCount,
         glLastObservedMaxBusinessDate: glMaxAfter ? glMaxAfter.toISOString() : (glMaxBefore ? glMaxBefore.toISOString() : null),
@@ -1710,6 +1845,34 @@ async function processTask(
 
   if (!processed) {
     return { runId: task.runId, taskId: task.id, status: 'aborted', details: 'Task lease was already released.' };
+  }
+
+  if (runCompletedInThisTask && String(task.run.mode || '') === AR_HISTORY_REBUILD_MODE) {
+    try {
+      const reconciliation = await finalizeArHistoryRebuild(task.companyId, task.runId);
+      const now = new Date();
+      await db().$transaction([
+        db().inforSyncTask.update({
+          where: { id: task.id },
+          data: { lastResponse: reconciliation, updatedAt: now },
+        }),
+        db().inforSyncRun.update({
+          where: { id: task.runId },
+          data: {
+            message:
+              `Atlantic AR rebuild complete. Books AR ${reconciliation.booksAr.toFixed(2)}; ` +
+              `reconstructed AR ${reconciliation.reconstructedOpenAr.toFixed(2)}; ` +
+              `difference ${reconciliation.difference.toFixed(2)}.`,
+            updatedAt: now,
+          },
+        }),
+      ]);
+      return { runId: task.runId, taskId: task.id, status: 'success' };
+    } catch (error) {
+      const details = errorToMessage(error, 'Atlantic AR history rebuild failed');
+      await markRunPostProcessingFailure(task, 'Atlantic AR history rebuild', details);
+      return { runId: task.runId, taskId: task.id, status: 'failed', details };
+    }
   }
 
   const shouldHydrateDeferredSnapshot =

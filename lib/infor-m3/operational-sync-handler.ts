@@ -268,6 +268,7 @@ export async function runOperationalSyncRequest(
   body: OperationalSyncRequestBody,
   companyId: string
 ): Promise<OperationalSyncResponse> {
+  const isArHistoryRebuild = String(body.mode || '').trim().toLowerCase() === 'ar_history_rebuild';
   const rawIngestOnlyMode =
     String(process.env.INFOR_RAW_INGEST_ENABLED || '').trim().toLowerCase() === 'true' &&
     String(process.env.INFOR_RAW_INGEST_ONLY || '').trim().toLowerCase() === 'true';
@@ -312,6 +313,7 @@ export async function runOperationalSyncRequest(
       explicitStart.getTime() < explicitEnd.getTime() &&
       mode !== 'business_day_backfill' &&
       mode !== 'backfill' &&
+      !isArHistoryRebuild &&
       !carryingContinuation
     ) {
       const spanMs = explicitEnd.getTime() - explicitStart.getTime();
@@ -471,6 +473,8 @@ export async function runOperationalSyncRequest(
         bookmark: effectiveBookmark,
         syncRunId: effectiveSyncRunId,
         salesOnly,
+        arOnlyBackfill: isArHistoryRebuild,
+        fullArFactHistory: isArHistoryRebuild,
       }
     );
 
@@ -600,6 +604,8 @@ export async function runOperationalSyncRequest(
     bookmark: effectiveBookmark,
     syncRunId: effectiveSyncRunId,
     salesOnly,
+    arOnlyBackfill: isArHistoryRebuild,
+    fullArFactHistory: isArHistoryRebuild,
   });
   let hasMore = result.hasMore;
   let cursor: SyncCursor | null = result.hasMore

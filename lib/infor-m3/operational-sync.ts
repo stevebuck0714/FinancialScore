@@ -8868,7 +8868,9 @@ export async function syncInforM3OperationalData(
     return isDailyBackfillWindow;
   })();
   const isArBackfillFastPath =
-    isDailyBackfillWindow && arOnlyBackfill;
+    frequency === 'daily' &&
+    arOnlyBackfill &&
+    Boolean(syncWindow);
   const filteredProgramRows = isArBackfillFastPath
     ? baseProgramRows.filter((row) => classifyModule(row.module) === 'ar')
     : baseProgramRows;
