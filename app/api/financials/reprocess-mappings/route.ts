@@ -978,6 +978,16 @@ function qbdCopyPnl(source: QbdMappedMonthlyRow, target: QbdMappedMonthlyRow) {
   }
 }
 
+function qbdHasDetailedCogsBreakdown(row: QbdMappedMonthlyRow): boolean {
+  return Object.entries(row.cogsBreakdown || {}).some(
+    ([key, value]) => key.startsWith('cogs_') && Number(value || 0) !== 0,
+  );
+}
+
+function qbdAmountsMatch(left: number, right: number): boolean {
+  return Math.abs(left - right) < 0.01;
+}
+
 function qbdApplyBalance(row: QbdMappedMonthlyRow, targetField: string, balance: number) {
   if (!QBD_BALANCE_SHEET_TARGET_FIELDS.has(targetField) || balance === 0) return;
   row[targetField] = Number(row[targetField] || 0) + balance;
@@ -1311,22 +1321,12 @@ async function loadQbdMonthGlBatchCoverage(companyId: string, monthKey: string):
       lastSeen: Date | null;
     }>
   >`
-    WITH recent_batches AS (
-      SELECT "batchId", MAX("createdAt") AS "lastSeen"
-      FROM "QuickBooksDesktopBackfillPage"
-      WHERE "companyId" = ${companyId}
-        AND "requestName" = 'GeneralDetailReportQuery'
-      GROUP BY "batchId"
-      ORDER BY "lastSeen" DESC
-      LIMIT 25
-    ),
-    batch_rows AS (
+    WITH batch_rows AS (
       SELECT
         p."batchId" AS "batchId",
         col->>'value' AS "txnDate",
         p."createdAt" AS "createdAt"
       FROM "QuickBooksDesktopBackfillPage" p
-      JOIN recent_batches rb ON rb."batchId" = p."batchId"
       CROSS JOIN LATERAL jsonb_array_elements(p."payload"::jsonb) AS row
       CROSS JOIN LATERAL jsonb_array_elements(row->'colData') AS col
       WHERE p."companyId" = ${companyId}
@@ -1635,6 +1635,52 @@ async function buildQuickBooksDesktopMappedMonthlyPayload(companyId: string, bas
     qbdCopyPnl(glRow, getDailySnapshot(dateKey));
   }
 
+  // Historical QBD ranges are often stored across many backfill batches. The
+  // baseline build above is sufficient for scalar totals, but it may not
+  // include the batch that contains an older month's mapped COGS detail.
+  // Rebuild only incomplete monthly COGS breakdowns from the best complete GL
+  // batch for that exact month. Preserve the existing scalar total unless the
+  // reconstructed categories reconcile to it.
+  let repairedHistoricalCogsMonths = 0;
+  let unreconciledHistoricalCogsMonths = 0;
+  for (const [monthKey, monthRow] of months.entries()) {
+    const existingCogsTotal = Number(monthRow.cogsTotal || 0);
+    if (existingCogsTotal === 0 || qbdHasDetailedCogsBreakdown(monthRow)) continue;
+
+    const { rows: monthGlRows } = await loadQbdBestGlRowsForMonth(companyId, monthKey);
+    if (!monthGlRows.length) continue;
+
+    const rebuiltPnl = createQbdMappedMonth(monthKey);
+    for (const glRow of monthGlRows) {
+      const accountName = qbdString(glRow.accountName || glRow.rowValue);
+      let accountId = '';
+      for (const key of qbdAccountLookupKeys(accountName)) {
+        const matchedId = accountIdByName.get(key);
+        if (matchedId) {
+          accountId = matchedId;
+          break;
+        }
+      }
+      const mappedTarget = getTarget({ id: accountId, name: accountName });
+      if (!qbdIsIncomeStatementExpenseTarget(mappedTarget)) continue;
+      const rawAmount = qbdNumber(qbdReportColValueByTitle(glRow, ['Amount'], ['8']));
+      const amount = qbdGeneralLedgerPnlAmount(mappedTarget, rawAmount);
+      qbdAddMappedAmount(rebuiltPnl, mappedTarget, amount);
+    }
+
+    if (!qbdHasDetailedCogsBreakdown(rebuiltPnl)) continue;
+    if (!qbdAmountsMatch(rebuiltPnl.cogsTotal, existingCogsTotal)) {
+      unreconciledHistoricalCogsMonths += 1;
+      continue;
+    }
+
+    monthRow.cogsBreakdown = rebuiltPnl.cogsBreakdown;
+    for (const field of QBD_COGS_TARGET_FIELDS) {
+      monthRow[field] = Number(rebuiltPnl[field] || 0);
+    }
+    repairedHistoricalCogsMonths += 1;
+  }
+
   const qbdBalanceSheetAccountAnchors: Array<{
     anchorDate: string;
     accountId: string;
@@ -1854,6 +1900,8 @@ async function buildQuickBooksDesktopMappedMonthlyPayload(companyId: string, bas
         generalLedgerReportRows: generalLedgerReportRows.length,
         generalLedgerPnlMonths: glPnlByMonth.size,
         generalLedgerPnlDays: glPnlByDate.size,
+        repairedHistoricalCogsMonths,
+        unreconciledHistoricalCogsMonths,
         generalLedgerMovementDays: glMovementsByDate.size,
         dailyBalanceSheetStartDate: earliestGlDate,
       },
