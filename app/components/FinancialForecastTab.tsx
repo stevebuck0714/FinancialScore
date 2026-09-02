@@ -2,7 +2,7 @@
 'use client';
 
 import React, { useEffect, useMemo, useState } from 'react';
-import { formatEstDateTime } from '@/lib/time/eastern';
+import { formatEstDate, formatEstDateTime } from '@/lib/time/eastern';
 import { getFieldDisplayName } from '@/lib/constants/field-display-names';
 import { getSectorSchema, getTargetFieldOptions } from '@/lib/constants/sector-target-fields';
 import { useCompanyMoneyFormatter } from '@/app/hooks/useCompanyMoneyFormatter';
@@ -2086,6 +2086,21 @@ export default function FinancialForecastTab({
             break-inside: avoid-page;
             page-break-inside: avoid;
           }
+          .ff-yearly-income-print-title {
+            display: block !important;
+            margin: 0 0 18px;
+            color: #0f172a;
+          }
+          .ff-yearly-income-print-title__company {
+            font-size: 20px;
+            font-weight: 800;
+            line-height: 1.25;
+          }
+          .ff-yearly-income-print-title__detail {
+            margin-top: 3px;
+            font-size: 12px;
+            line-height: 1.35;
+          }
         }
       `}</style>
       <div style={{ marginBottom: compactTabStackSpacing ? '0px' : '6px' }} />
@@ -2927,6 +2942,13 @@ export default function FinancialForecastTab({
               </button>
             </div>
           </div>
+          {isYearlyIncomeStatementView && (
+            <div className="ff-yearly-income-print-title" style={{ display: 'none' }}>
+              <div className="ff-yearly-income-print-title__company">{companyName}</div>
+              <div className="ff-yearly-income-print-title__detail">5 Year Annual Projections</div>
+              <div className="ff-yearly-income-print-title__detail">Date Created: {formatEstDate(new Date())}</div>
+            </div>
+          )}
           <div className="ff-print-table-wrap" style={{ overflowX: 'auto' }}>
             <table
               className="forecast-grid forecast-income-table ff-print-table"
