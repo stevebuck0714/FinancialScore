@@ -3382,6 +3382,9 @@ export async function GET(request: NextRequest) {
               productsLimitIsAll ? 'all' : boundedLimit,
               'qbd-current-year-net-income-v1',
               shouldUseMockData ? 'mock-operational-data-v4' : 'real-operational-data-v2-hts-duty',
+              cacheType === 'ar-aging' || cacheType === 'ar'
+                ? 'qbd-authoritative-aging-snapshots-v2'
+                : null,
               // Bust stale ap-aging payloads that were cached while the
               // payment-gap guard / DerAmtBal preference was missing.
               cacheType === 'ap-aging' || cacheType === 'ap' ? 'ap-true-open-balance-v1' : null,
@@ -5645,8 +5648,6 @@ export async function GET(request: NextRequest) {
         if (isQuickBooksCompany && !isQuickBooksDesktopCompany && frequency !== 'monthly') {
           arFrequencyForQuery = 'monthly';
         }
-        // Open AR is derived strictly from invoice-level open rows.
-        // Do not fall back to pre-aggregated AR aging snapshots here.
         data = [];
 
         let unpaidByCustomer: Array<{
@@ -5740,7 +5741,113 @@ export async function GET(request: NextRequest) {
           dsoWeightedDaysDenominator: 0,
         };
         let arAsOfReferenceDate = endDate;
-        const preferOpenInvoiceSnapshotTrend = true;
+        const useQbdAgingSnapshots = isQuickBooksDesktopCompany;
+        if (useQbdAgingSnapshots) {
+          const snapshots = await prisma.aRAgingSnapshot.findMany({
+            where: {
+              companyId,
+              frequency: arFrequencyForQuery,
+              snapshotDate: { gte: startDate, lte: endDate },
+            },
+            select: {
+              snapshotDate: true,
+              totalAR: true,
+              current: true,
+              days1to30: true,
+              days31to60: true,
+              days61to90: true,
+              days90plus: true,
+            },
+            orderBy: { snapshotDate: 'desc' },
+            take: Math.max(limit, 365),
+          });
+          data = snapshots.map((snapshot) => {
+            const totalAR = Number(snapshot.totalAR || 0);
+            const current = Number(snapshot.current || 0);
+            const days1to30 = Number(snapshot.days1to30 || 0);
+            const days31to60 = Number(snapshot.days31to60 || 0);
+            const days61to90 = Number(snapshot.days61to90 || 0);
+            const days90plus = Number(snapshot.days90plus || 0);
+            return {
+              snapshotDate: snapshot.snapshotDate,
+              totalAR,
+              current,
+              days1to30,
+              days31to60,
+              days61to90,
+              days90plus,
+              currentPct: totalAR > 0 ? (current / totalAR) * 100 : 0,
+              days1to30Pct: totalAR > 0 ? (days1to30 / totalAR) * 100 : 0,
+              days31to60Pct: totalAR > 0 ? (days31to60 / totalAR) * 100 : 0,
+              days61to90Pct: totalAR > 0 ? (days61to90 / totalAR) * 100 : 0,
+              days90plusPct: totalAR > 0 ? (days90plus / totalAR) * 100 : 0,
+              over30Pct: totalAR > 0 ? ((days31to60 + days61to90 + days90plus) / totalAR) * 100 : 0,
+              over90Pct: totalAR > 0 ? (days90plus / totalAR) * 100 : 0,
+            };
+          });
+          const balanceSheetSnapshots = await prisma.dailyFinancialSnapshot.findMany({
+            where: {
+              companyId,
+              snapshotDate: { gte: startDate, lte: endDate },
+            },
+            select: { snapshotDate: true, ar: true },
+          });
+          const balanceSheetArByDate = new Map(
+            balanceSheetSnapshots.map((snapshot) => [
+              dateKeyUtc(new Date(snapshot.snapshotDate)),
+              Number(snapshot.ar || 0),
+            ]),
+          );
+          // The QBD Aging Summary report supplies the bucket mix, but its
+          // Accounts Receivable total can differ from the QBD Balance Sheet
+          // for the same as-of date (timing and report-account differences).
+          // The Balance Sheet is the financial-statement authority, so scale
+          // the aging mix to its mapped AR balance every day.
+          data = data.map((row: any) => {
+            const balanceSheetAr = balanceSheetArByDate.get(dateKeyUtc(new Date(row.snapshotDate)));
+            const reportTotal = Number(row.totalAR || 0);
+            if (balanceSheetAr === undefined || reportTotal <= 0) return row;
+            const scale = balanceSheetAr / reportTotal;
+            const days1to30 = Number(row.days1to30 || 0) * scale;
+            const days31to60 = Number(row.days31to60 || 0) * scale;
+            const days61to90 = Number(row.days61to90 || 0) * scale;
+            const days90plus = Number(row.days90plus || 0) * scale;
+            const current = balanceSheetAr - days1to30 - days31to60 - days61to90 - days90plus;
+            return {
+              ...row,
+              totalAR: balanceSheetAr,
+              current,
+              days1to30,
+              days31to60,
+              days61to90,
+              days90plus,
+              currentPct: balanceSheetAr > 0 ? (current / balanceSheetAr) * 100 : 0,
+              days1to30Pct: balanceSheetAr > 0 ? (days1to30 / balanceSheetAr) * 100 : 0,
+              days31to60Pct: balanceSheetAr > 0 ? (days31to60 / balanceSheetAr) * 100 : 0,
+              days61to90Pct: balanceSheetAr > 0 ? (days61to90 / balanceSheetAr) * 100 : 0,
+              days90plusPct: balanceSheetAr > 0 ? (days90plus / balanceSheetAr) * 100 : 0,
+              over30Pct: balanceSheetAr > 0
+                ? ((days31to60 + days61to90 + days90plus) / balanceSheetAr) * 100
+                : 0,
+              over90Pct: balanceSheetAr > 0 ? (days90plus / balanceSheetAr) * 100 : 0,
+            };
+          });
+          const latest = data[0] as any;
+          if (latest) {
+            arAsOfReferenceDate = new Date(latest.snapshotDate);
+            latestOpenTotals = {
+              totalAR: Number(latest.totalAR || 0),
+              current: Number(latest.current || 0),
+              days1to30: Number(latest.days1to30 || 0),
+              days31to60: Number(latest.days31to60 || 0),
+              days61to90: Number(latest.days61to90 || 0),
+              days90plus: Number(latest.days90plus || 0),
+              dsoWeightedDaysNumerator: 0,
+              dsoWeightedDaysDenominator: 0,
+            };
+          }
+        }
+        const preferOpenInvoiceSnapshotTrend = !useQbdAgingSnapshots;
         // Hoisted out of the snapshot-trend bare block so the latestOpenTotals
         // override below (around derivedTotals/summaryTotals) can see them.
         let arGlAnchorApplied = false;
@@ -5763,7 +5870,7 @@ export async function GET(request: NextRequest) {
           over30Pct: number;
           over90Pct: number;
         }> = [];
-        if (!preferOpenInvoiceSnapshotTrend) {
+        if (!preferOpenInvoiceSnapshotTrend && !useQbdAgingSnapshots) {
           arInvoiceTrendRows = await prisma.$queryRaw<
             Array<{
               snapshotDate: Date;
@@ -6048,7 +6155,7 @@ export async function GET(request: NextRequest) {
           }
         }
 
-        {
+        if (preferOpenInvoiceSnapshotTrend) {
           const latestOpenSnapshot = await prisma.aROpenInvoiceSnapshot.findFirst({
           where: {
             companyId,
