@@ -8728,6 +8728,10 @@ export async function syncInforM3OperationalData(
     }
   };
   const syncRunId = String(options?.syncRunId || '').trim() || randomUUID();
+  // Queue continuation payloads are not a reliable source of rebuild intent:
+  // verify it once from the persisted run before deciding whether globally
+  // deduplicated raw AR rows may be reused.
+  let persistedArHistoryRebuildRun: boolean | null = null;
   const fanoutMaxPagesRaw = Number(process.env.SYNC_FANOUT_MAX_PAGES_PER_REQUEST || 60);
   const fanoutMaxPagesPerRequest =
     Number.isFinite(fanoutMaxPagesRaw) && fanoutMaxPagesRaw > 0
@@ -10300,13 +10304,23 @@ export async function syncInforM3OperationalData(
                   // persisted source program, not the request-path resolver:
                   // CSI preserves mixed casing such as "SLArtrans".
                   const sourceProgramId = String(row.miProgram || '').trim().toUpperCase();
-                  if (options?.fullArFactHistory === true && sourceProgramId === 'SLARTRANS') {
+                  if (persistedArHistoryRebuildRun === null) {
+                    const rebuildRun = await prisma.inforSyncRun.findFirst({
+                      where: { id: syncRunId, companyId, mode: 'ar_history_rebuild' },
+                      select: { id: true },
+                    });
+                    persistedArHistoryRebuildRun = Boolean(rebuildRun);
+                  }
+                  if (
+                    sourceProgramId === 'SLARTRANS' &&
+                    (options?.fullArFactHistory === true || persistedArHistoryRebuildRun)
+                  ) {
                     console.log(
                       `AR history rebuild reusing existing canonical SLARTRANS raw rows for ${syncRunId}.`
                     );
                   } else {
                     throw new Error(
-                      `Raw ingest saved 0/${eligibleRecords.length} ${row.miProgram || 'unknown'} rows for ${snapshotDate.toISOString().slice(0, 10)} (syncRunId=${syncRunId}). CSI returned rows but persist skipped them.`
+                      `Raw ingest saved 0/${eligibleRecords.length} ${row.miProgram || 'unknown'} rows for this request (syncRunId=${syncRunId}). CSI returned rows but persist skipped them.`
                     );
                   }
                 }
