@@ -56,6 +56,17 @@ function getFinancialMonthPublishDelegate(): FinancialMonthPublishDelegate | nul
   return delegate as unknown as FinancialMonthPublishDelegate;
 }
 
+function breakdownMatchesTotal(value: unknown, total: number): boolean {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const amounts = Object.values(value as Record<string, unknown>);
+  if (!amounts.length) return false;
+  const breakdownTotal = amounts.reduce(
+    (sum, amount) => sum + safeNumber(amount),
+    0,
+  );
+  return Math.abs(breakdownTotal - total) < 0.01;
+}
+
 export async function publishMonthFromDailySnapshots(
   params: PublishMonthParams,
 ): Promise<{
@@ -279,18 +290,6 @@ export async function publishMonthFromDailySnapshots(
       };
     }
 
-    const monthRecordData = {
-      companyId,
-      monthDate: targetMonthStart,
-      ...pnlTotals,
-      // A month rebuilt from scalar daily snapshots cannot retain a
-      // pre-existing category breakdown. Keeping it causes master-data to
-      // prefer stale category values over the refreshed P&L totals.
-      revenueBreakdown: hasGlPnl ? glPnl!.revenueBreakdown : {},
-      cogsBreakdown: hasGlPnl ? glPnl!.cogsBreakdown : {},
-      expenseBreakdown: hasGlPnl ? glPnl!.expenseBreakdown : {},
-      ...balanceValues,
-    };
     const incomeStatementPolicy = hasGlPnl
       ? "gl_transaction_fact_mapped_month"
       : "sum_daily_activity";
@@ -332,8 +331,47 @@ export async function publishMonthFromDailySnapshots(
         financialRecordId: financialRecord.id,
         monthDate: targetMonthStart,
       },
-      select: { id: true },
+      select: {
+        id: true,
+        revenue: true,
+        cogsTotal: true,
+        expense: true,
+        revenueBreakdown: true,
+        cogsBreakdown: true,
+        expenseBreakdown: true,
+      },
     });
+    // QBD's daily snapshot table holds scalars, while its mapped breakdowns
+    // are saved on this monthly row by the QBD daily rebuild. Preserve only a
+    // matching breakdown; an old partial breakdown is still rejected.
+    const preserveMappedBreakdowns = !hasGlPnl && Boolean(existingMonthRow);
+    const revenueBreakdown = hasGlPnl
+      ? glPnl!.revenueBreakdown
+      : preserveMappedBreakdowns &&
+          breakdownMatchesTotal(existingMonthRow!.revenueBreakdown, pnlTotals.revenue)
+        ? existingMonthRow!.revenueBreakdown
+        : {};
+    const cogsBreakdown = hasGlPnl
+      ? glPnl!.cogsBreakdown
+      : preserveMappedBreakdowns &&
+          breakdownMatchesTotal(existingMonthRow!.cogsBreakdown, pnlTotals.cogsTotal)
+        ? existingMonthRow!.cogsBreakdown
+        : {};
+    const expenseBreakdown = hasGlPnl
+      ? glPnl!.expenseBreakdown
+      : preserveMappedBreakdowns &&
+          breakdownMatchesTotal(existingMonthRow!.expenseBreakdown, pnlTotals.expense)
+        ? existingMonthRow!.expenseBreakdown
+        : {};
+    const monthRecordData = {
+      companyId,
+      monthDate: targetMonthStart,
+      ...pnlTotals,
+      revenueBreakdown,
+      cogsBreakdown,
+      expenseBreakdown,
+      ...balanceValues,
+    };
 
     if (existingMonthRow) {
       await prisma.monthlyFinancial.update({

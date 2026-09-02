@@ -1999,6 +1999,7 @@ async function rebuildQuickBooksDesktopDailyPnlMonth(companyId: string, monthKey
 
   const { rows: glRows, merge: glMerge } = await loadQbdBestGlRowsForMonth(companyId, monthKey);
   const dailySnapshots = new Map<string, QbdMappedMonthlyRow>();
+  const monthlyPnl = createQbdMappedMonth(monthKey);
   const getDailySnapshot = (dateKey: string) => {
     const row = dailySnapshots.get(dateKey) || createQbdMappedDailySnapshot(dateKey);
     dailySnapshots.set(dateKey, row);
@@ -2035,7 +2036,40 @@ async function rebuildQuickBooksDesktopDailyPnlMonth(companyId: string, monthKey
       continue;
     }
     qbdAddMappedAmount(getDailySnapshot(dateKey), target, amount);
+    qbdAddMappedAmount(monthlyPnl, target, amount);
     pnlRowsUsed += 1;
+  }
+
+  // DailyFinancialSnapshot stores only scalar P&L values. Persist the mapped
+  // QBD category breakdowns on the companion monthly row before it is
+  // republished from the daily totals.
+  const latestFinancialRecord = await prisma.financialRecord.findFirst({
+    where: { companyId },
+    orderBy: { createdAt: 'desc' },
+    select: { id: true },
+  });
+  if (latestFinancialRecord) {
+    const existingMonth = await prisma.monthlyFinancial.findFirst({
+      where: {
+        companyId,
+        financialRecordId: latestFinancialRecord.id,
+        monthDate: new Date(`${monthKey}-01T00:00:00.000Z`),
+      },
+      select: { id: true },
+    });
+    if (existingMonth) {
+      await prisma.monthlyFinancial.update({
+        where: { id: existingMonth.id },
+        data: {
+          revenue: monthlyPnl.revenue,
+          cogsTotal: monthlyPnl.cogsTotal,
+          expense: monthlyPnl.expense,
+          revenueBreakdown: monthlyPnl.revenueBreakdown,
+          cogsBreakdown: monthlyPnl.cogsBreakdown,
+          expenseBreakdown: monthlyPnl.expenseBreakdown,
+        },
+      });
+    }
   }
 
   const qbdDailyFinancialSnapshots = Array.from(dailySnapshots.values()).sort((a, b) => String(a.snapshotDate).localeCompare(String(b.snapshotDate)));
@@ -2068,6 +2102,11 @@ async function rebuildQuickBooksDesktopDailyPnlMonth(companyId: string, monthKey
     ...result,
     balanceSheet: balanceSheetResult,
     totals,
+    breakdowns: {
+      revenue: monthlyPnl.revenueBreakdown,
+      cogs: monthlyPnl.cogsBreakdown,
+      expense: monthlyPnl.expenseBreakdown,
+    },
   };
 }
 
