@@ -17,7 +17,7 @@ import {
 } from '@/lib/pulse/daily-briefing-readiness';
 import { resolveCompanyIndustrySectorCategory } from '@/lib/industry-sector-resolver';
 import { formatMoney as formatMoneyShared } from '@/lib/format/currency';
-import { formatEstDate, utcMidnightForEstDate } from '@/lib/time/eastern';
+import { formatEstDate, previousEstCalendarDate, utcMidnightForEstDate } from '@/lib/time/eastern';
 import {
   DEFAULT_BASE_CURRENCY,
   resolveDisplayCurrency,
@@ -60,7 +60,7 @@ const MONTHLY_FINANCIAL_ROW_CAP = 60;
 const DAILY_FINANCIAL_ROW_CAP = 100;
 const CORE_SNAPSHOT_ROW_CAP = 150;
 const DETAIL_SNAPSHOT_ROW_CAP = 300;
-const EXEC_BRIEFING_LOGIC_VERSION = 'exec-briefing-v27-qbd-completed-daily-cutoff';
+const EXEC_BRIEFING_LOGIC_VERSION = 'exec-briefing-v30-qbd-prior-est-day-cutoff';
 const PRIVATE_DAILY_CACHE_HEADERS = {
   'Cache-Control': 'private, max-age=300, stale-while-revalidate=1800',
 };
@@ -1693,10 +1693,15 @@ export async function GET(request: NextRequest) {
     const monthlyWhere: any = { companyId, monthDate: { gte: monthlyStartDate, lte: endDate } };
     if (latestFinancialRecord?.id) monthlyWhere.financialRecordId = latestFinancialRecord.id;
 
-    const dailyFinancialEndDate =
-      completedQbdDailyThroughDate && completedQbdDailyThroughDate < endDate
-        ? completedQbdDailyThroughDate
-        : endDate;
+    // QBD is loaded overnight. Daily Briefing therefore reports through the
+    // prior Eastern calendar date, never the in-progress current date. A
+    // completed rebuild can only narrow that cutoff further.
+    const priorEstDay = utcMidnightForEstDate(previousEstCalendarDate(endDate));
+    const dailyFinancialEndDate = isQuickBooksDesktopCompany
+      ? [endDate, priorEstDay, completedQbdDailyThroughDate]
+          .filter((date): date is Date => Boolean(date))
+          .reduce((earliest, date) => (date < earliest ? date : earliest), endDate)
+      : endDate;
     const [
       monthlyFinancialsRaw,
       dailyFinancials,
@@ -1793,9 +1798,19 @@ export async function GET(request: NextRequest) {
             completeMonthlyFinancials,
           });
     const primaryFinancialComparison = financialComparisons[0] || null;
-    const latestCashSnapshot = last(sortByDate(cashSnapshots));
-    const latestArSnapshot = last(sortByDate(arSnapshots));
-    const latestApSnapshot = last(sortByDate(apSnapshots));
+    const completedDailySnapshotDate = latestDailyFinancial?.snapshotDate
+      ? new Date(latestDailyFinancial.snapshotDate)
+      : null;
+    const snapshotsThroughCompletedDailyFinancial = (rows: any[]) =>
+      isQuickBooksDesktopCompany && completedDailySnapshotDate && !Number.isNaN(completedDailySnapshotDate.getTime())
+        ? rows.filter((row) => {
+            const snapshot = row?.snapshotDate ? new Date(row.snapshotDate) : null;
+            return Boolean(snapshot && !Number.isNaN(snapshot.getTime()) && snapshot <= completedDailySnapshotDate);
+          })
+        : rows;
+    const latestCashSnapshot = last(sortByDate(snapshotsThroughCompletedDailyFinancial(cashSnapshots)));
+    const latestArSnapshot = last(sortByDate(snapshotsThroughCompletedDailyFinancial(arSnapshots)));
+    const latestApSnapshot = last(sortByDate(snapshotsThroughCompletedDailyFinancial(apSnapshots)));
     const opsAsOfDate =
       period === 'daily'
         ? latestSnapshotDateKey([
@@ -2110,8 +2125,8 @@ export async function GET(request: NextRequest) {
     };
 
     sourceNotes = [
-      completedQbdDailyThroughDate
-        ? `QuickBooks Desktop daily financials through ${completedQbdDailyThroughDate.toISOString().slice(0, 10)} after completed rebuild`
+      isQuickBooksDesktopCompany
+        ? 'QuickBooks Desktop Daily Briefing reports through the prior EST calendar day.'
         : '',
       effectiveDailyMode === 'ops-only'
         ? 'Daily mode: operations (books remain monthly from QuickBooks / accounting master)'
