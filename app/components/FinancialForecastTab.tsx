@@ -215,10 +215,8 @@ export default function FinancialForecastTab({
   const formatCurrency = (value: number) => money.fmt(Number(value || 0), 0);
   const toplineLabel = basisMode === 'accrual' ? 'Sales' : 'Revenue';
   const isAccrualWeeklyMode = false;
-  const [accrualSalesInputMode] = useState<'growth' | 'amount'>('growth');
-  const [accrualOpexInputMode, setAccrualOpexInputMode] = useState<'percent' | 'amount'>(
-    basisMode === 'accrual' ? 'amount' : 'percent'
-  );
+  const [accrualSalesInputMode, setAccrualSalesInputMode] = useState<'growth' | 'amount'>('growth');
+  const [accrualOpexInputMode, setAccrualOpexInputMode] = useState<'percent' | 'amount'>('percent');
   const [activeTab, setActiveTab] = useState<ForecastTab>(displayMode === 'graphs-only' ? 'graphs' : 'inputs');
   const [annualExpanded, setAnnualExpanded] = useState(true);
   const [isSavingInputs, setIsSavingInputs] = useState(false);
@@ -647,12 +645,7 @@ export default function FinancialForecastTab({
             return acc;
           }, { ...DEFAULT_OPEX_PAYMENT_TREATMENT_BY_KEY }),
         );
-        if (basisMode === 'accrual') {
-          const storedMode = settings?.opexPctByRow?.__inputMode;
-          if (storedMode === 'amount' || storedMode === 'percent') {
-            setAccrualOpexInputMode(storedMode);
-          }
-        }
+        setAccrualOpexInputMode('percent');
         setLastSavedAt(settings?.updatedAt ? String(settings.updatedAt) : null);
         setIsInputsDirty(false);
       } catch {
@@ -672,12 +665,8 @@ export default function FinancialForecastTab({
   }, [selectedCompanyId, basisMode]);
 
   React.useEffect(() => {
-    if (basisMode !== 'accrual') {
-      setAccrualSalesInputMode('growth');
-      setAccrualOpexInputMode('percent');
-    } else {
-      setAccrualOpexInputMode(useQuarterlyActualColumns ? 'percent' : 'amount');
-    }
+    setAccrualSalesInputMode('growth');
+    setAccrualOpexInputMode('percent');
   }, [basisMode, useQuarterlyActualColumns]);
 
   React.useEffect(() => {
