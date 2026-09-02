@@ -6613,15 +6613,18 @@ export default function OperationsTab({
       }
       // Standard 5-bucket AR aging: Current (not yet due) and 1-30 (just past
       // due) are tracked separately per spec.
+      const agingAllocationAvailable = record?.agingAllocationAvailable !== false;
       return {
         periodKey: toIsoDay(period.anchor),
         month: formatArTrendDate(period.anchor),
-        'Current': record ? Number(record.current || 0) : null,
-        'Open AR 1-30': record ? Number(record.days1to30 || 0) : null,
-        'Open AR 31-60': record ? Number(record.days31to60 || 0) : null,
-        'Open AR 61-90': record ? Number(record.days61to90 || 0) : null,
-        'Open AR 90+': record ? Number(record.days90plus || 0) : null,
-        'Unreconciled AR': record ? Number(record.unreconciledAR || 0) : null,
+        'Books AR (aging unavailable)':
+          record && !agingAllocationAvailable ? Number(record.totalAR || 0) : null,
+        'Current': record && agingAllocationAvailable ? Number(record.current || 0) : null,
+        'Open AR 1-30': record && agingAllocationAvailable ? Number(record.days1to30 || 0) : null,
+        'Open AR 31-60': record && agingAllocationAvailable ? Number(record.days31to60 || 0) : null,
+        'Open AR 61-90': record && agingAllocationAvailable ? Number(record.days61to90 || 0) : null,
+        'Open AR 90+': record && agingAllocationAvailable ? Number(record.days90plus || 0) : null,
+        agingAllocationAvailable,
         total: record ? Number(record.totalAR || 0) : 0,
         dso: record ? Number(record.dso) : null,
         hasData: Boolean(record),
@@ -6800,7 +6803,8 @@ export default function OperationsTab({
             As of: {arAsOfLabel} | Coverage: {arCoverageLabel}
           </div>
           <div style={{ marginTop: '-4px', marginBottom: '12px', fontSize: '11px', color: '#64748b' }}>
-            Unreconciled AR is Books AR not represented by the ledger-derived aging detail.
+            Aging buckets are shown only when invoice detail reconciles to Books AR. Other dates show the
+            Daily Financials total without a fabricated aging allocation.
           </div>
           <ResponsiveContainer width="100%" height={350}>
             <BarChart data={chartData}>
@@ -6818,12 +6822,12 @@ export default function OperationsTab({
                 contentStyle={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '8px' }}
               />
               <Legend />
+              <Bar dataKey="Books AR (aging unavailable)" fill="#64748b" />
               <Bar dataKey="Current" stackId="a" fill={AR_TREND_COLORS[0]} />
               <Bar dataKey="Open AR 1-30" stackId="a" fill={AR_TREND_COLORS[1]} />
               <Bar dataKey="Open AR 31-60" stackId="a" fill={AR_TREND_COLORS[2]} />
               <Bar dataKey="Open AR 61-90" stackId="a" fill={AR_TREND_COLORS[3]} />
               <Bar dataKey="Open AR 90+" stackId="a" fill={AR_TREND_COLORS[4]} />
-              <Bar dataKey="Unreconciled AR" stackId="a" fill="#94a3b8" />
             </BarChart>
           </ResponsiveContainer>
         </div>

@@ -6725,6 +6725,9 @@ export async function GET(request: NextRequest) {
               return {
                 ...row,
                 totalAR: booksAr,
+                // Do not present an aging allocation as factual when its
+                // invoice detail cannot account for the Books AR balance.
+                agingAllocationAvailable: Math.abs(reconciliationDifference) <= 1,
                 currentPct: booksAr > 0 ? (Number(row.current || 0) / booksAr) * 100 : 0,
                 days1to30Pct: booksAr > 0 ? (Number(row.days1to30 || 0) / booksAr) * 100 : 0,
                 days31to60Pct: booksAr > 0 ? (Number(row.days31to60 || 0) / booksAr) * 100 : 0,

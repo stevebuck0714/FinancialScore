@@ -4726,29 +4726,49 @@ async function saveAROpenInvoices(
   return movementRows.length || 0;
 }
 
+function getArSourceItemId(record: Record<string, unknown>): string {
+  const sourceId = pickString(record, [
+    '_ItemId',
+    'ItemId',
+    'itemId',
+    'RowPointer',
+    'rowPointer',
+    '_RowPointer',
+  ]);
+  if (sourceId) return sourceId;
+
+  // SLArtrans normally supplies _ItemId/RowPointer. Retain a deterministic
+  // fallback for older extracts that omit it, rather than treating each replay
+  // as a new payment. Include all available source-identifying fields.
+  const fingerprint = [
+    pickString(record, ['CoNum', 'coNum']),
+    pickString(record, ['CustNum', 'custNum']),
+    pickString(record, ['Type', 'type']),
+    pickString(record, ['InvNum', 'invNum']),
+    pickString(record, ['InvSeq', 'invSeq']),
+    pickString(record, ['ApplyToInvNum', 'applyToInvNum']),
+    pickString(record, ['RecordDate', 'recordDate']),
+    pickString(record, ['InvDate', 'invDate']),
+    pickString(record, ['CheckNum', 'checkNum', 'Ref', 'reference']),
+    String(pickNumber(record, ['Amount', 'amount', 'DomAmount', 'ACAM', 'PYAM'])),
+  ].join('|');
+  return `derived:${createHash('sha256').update(fingerprint).digest('hex')}`;
+}
+
 async function saveARPayments(
   companyId: string,
   records: Record<string, unknown>[],
   context: { miProgram: string; transaction: string; cono?: string; divi?: string }
 ): Promise<number> {
-  const isPaymentLikeRecord = (record: Record<string, unknown>): boolean => {
-    const typeToken = normalizeToken(record['Type']);
-    if (typeToken === 'p' || typeToken === 'pay' || typeToken === 'pmt' || typeToken === 'cash') return true;
-    const drCrToken = normalizeToken(record['DrCr']);
-    if (drCrToken === 'c' || drCrToken === 'cr' || drCrToken === 'credit') return true;
-    const ref = (pickString(record, ['Ref', 'reference']) || '').trim().toUpperCase();
-    if (ref.startsWith('ARP')) return true;
-    const invoiceRef = (pickString(record, ['DerApplyToInvNum', 'ApplyToInvNum']) || '').trim();
-    const amount = pickNumber(record, ['DerPaymentCheckAmount', 'paidAmountHome', 'paidAmount', 'amount', 'ACAM', 'PYAM', 'Amount']);
-    if (invoiceRef && amount !== 0) return true;
-    const description = (pickString(record, ['Description', 'description']) || '').trim().toLowerCase();
-    if (description.includes('payment')) return true;
-    return false;
-  };
+  // SLArtrans Type=P is a cash payment. Credits are AR reductions, not cash
+  // collections, so DrCr, reference text, and applied-credit records must not
+  // be inferred as payments.
+  const isPaymentRecord = (record: Record<string, unknown>): boolean =>
+    String(pickString(record, ['Type', 'type']) || '').trim().toUpperCase() === 'P';
 
   const rows = records
-    .map((record, idx) => {
-      if (!isPaymentLikeRecord(record)) return null;
+    .map((record) => {
+      if (!isPaymentRecord(record)) return null;
       const paymentDate = parseMaybeDate(
         pickString(record, [
           'paymentDate',
@@ -4764,6 +4784,7 @@ async function saveARPayments(
       if (!paymentDate) return null;
       const customerId = pickString(record, CUSTOMER_ID_KEYS);
       const customerName = pickCustomerDisplayName(record) || (customerId ? `Customer ${customerId}` : 'Unknown Customer');
+      const sourceItemId = getArSourceItemId(record);
       const paidAmountHomeRaw = pickNumber(record, [
         'DerPaymentCheckAmount',
         'paidAmountHome',
@@ -4791,6 +4812,7 @@ async function saveARPayments(
         sourceTransaction: context.transaction,
         cono: context.cono || null,
         divi: context.divi || null,
+        sourceItemId,
       };
     })
     .filter((row): row is NonNullable<typeof row> => !!row && Number.isFinite(row.paidAmountHome));
@@ -4798,35 +4820,12 @@ async function saveARPayments(
   if (!rows.length) return 0;
   const deduped = new Map<string, (typeof rows)[number]>();
   for (const row of rows) {
-    const key = [
-      row.companyId,
-      row.paymentDate.toISOString(),
-      String(row.customerId || ''),
-      String(row.customerName || ''),
-      String(row.invoiceNo || ''),
-      String(row.paidAmountHome || 0),
-      String(row.sourceProgram || ''),
-      String(row.sourceTransaction || ''),
-    ].join('|');
+    const key = `${row.companyId}|${row.sourceItemId}`;
     if (!deduped.has(key)) deduped.set(key, row);
   }
   const finalRows = Array.from(deduped.values());
-  const sortedDates = finalRows.map((r) => r.paymentDate.getTime()).sort((a, b) => a - b);
-  const minDate = new Date(sortedDates[0]);
-  const maxDate = new Date(sortedDates[sortedDates.length - 1]);
   await retryOnDeadlock('aRPaymentFact.refresh', () =>
-    prisma.$transaction(async (tx) => {
-      await tx.aRPaymentFact.deleteMany({
-        where: {
-          companyId,
-          sourcePlatform: 'INFOR_M3',
-          sourceProgram: context.miProgram,
-          sourceTransaction: context.transaction,
-          paymentDate: { gte: minDate, lte: maxDate },
-        },
-      });
-      await tx.aRPaymentFact.createMany({ data: finalRows });
-    }, { maxWait: 10000, timeout: 120000 })
+    prisma.aRPaymentFact.createMany({ data: finalRows, skipDuplicates: true })
   );
   return finalRows.length;
 }
@@ -7505,13 +7504,17 @@ async function saveARTransactionFacts(
     const tt = String(pickString(record, ['Type', 'type']) || '').trim().toUpperCase();
     if (!['I', 'P', 'C', 'D'].includes(tt)) continue;
 
-    const invoiceNum = pickString(record, ['InvNum', 'invNum']);
+    const originalInvoiceNum = pickString(record, ['InvNum', 'invNum']);
+    const applyToInvNum = pickString(record, ['ApplyToInvNum', 'applyToInvNum']);
+    // Payments, credits, and debits must reduce/increase the invoice they
+    // apply to—not their own transaction reference.
+    const invoiceNum = tt === 'I' ? originalInvoiceNum : applyToInvNum || originalInvoiceNum;
     if (!invoiceNum) continue;
 
     const invSeq = pickString(record, ['InvSeq', 'invSeq']) || '0';
     const coNum = pickString(record, ['CoNum', 'coNum']);
     const customerId = pickString(record, ['CustNum', 'custNum']);
-    const sourceItemId = pickString(record, ['_ItemId', 'ItemId', 'itemId']);
+    const sourceItemId = getArSourceItemId(record);
     const dedupKey = `${coNum || ''}|${customerId || ''}|${invoiceNum}|${invSeq}|${tt}|${sourceItemId || ''}`;
     if (seen.has(dedupKey)) continue;
     seen.add(dedupKey);
@@ -7542,7 +7545,7 @@ async function saveARTransactionFacts(
       invoiceNum,
       invSeq,
       coNum: coNum || null,
-      applyToInvNum: pickString(record, ['ApplyToInvNum', 'applyToInvNum']) || null,
+      applyToInvNum: applyToInvNum || null,
       transType: tt,
       invoiceDate: invDateRaw ? startOfUtcDay(invDateRaw) : null,
       dueDate: dueDateRaw ? startOfUtcDay(dueDateRaw) : null,

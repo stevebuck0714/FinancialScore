@@ -1510,8 +1510,10 @@ model ARPaymentFact {
   sourceTransaction  String?
   cono               String?
   divi               String?
+  sourceItemId       String?
   createdAt          DateTime @default(now())
 
+  @@unique([companyId, sourceItemId])
   @@index([companyId, paymentDate(sort: Desc)])
   @@index([companyId, customerId, paymentDate(sort: Desc)])
   @@index([companyId, customerName, paymentDate(sort: Desc)])
