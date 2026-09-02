@@ -2975,6 +2975,74 @@ async function buildDailyArSeriesByAgingRule(
   return out;
 }
 
+async function buildOpenArInvoicesFromFacts(
+  prismaClient: any,
+  companyId: string,
+  arAcct: string,
+  asOfDate: Date,
+): Promise<Array<{
+  customerId: string | null;
+  customerName: string;
+  invoiceNo: string;
+  invoiceDate: Date | null;
+  dueDate: Date | null;
+  amountDueHome: number;
+}>> {
+  const asOfKey = dateKeyUtc(startOfUtcDay(asOfDate));
+  const rows: Array<{
+    customer_id: string | null;
+    customer_name: string | null;
+    invoice_no: string;
+    invoice_date: Date | null;
+    due_date: Date | null;
+    amount_due_home: number;
+  }> = await prismaClient.$queryRawUnsafe(
+    `WITH invoices AS (
+       SELECT "coNum" AS co_num, "customerId" AS customer_id, "invoiceNum" AS invoice_no,
+              MAX(NULLIF(TRIM("customerName"), '')) AS customer_name,
+              MIN(COALESCE("invoiceDate", "eventDate")) AS invoice_date,
+              MAX("dueDate") AS due_date
+       FROM "ARTransactionFact"
+       WHERE "companyId" = $1
+         AND "arAcct" = $2
+         AND "transType" = 'I'
+         AND "eventDate" <= $3::date
+       GROUP BY "coNum", "customerId", "invoiceNum"
+     ),
+     events AS (
+       SELECT "coNum" AS co_num, "customerId" AS customer_id,
+              COALESCE("applyToInvNum", "invoiceNum") AS invoice_no,
+              "normalizedAmount"
+       FROM "ARTransactionFact"
+       WHERE "companyId" = $1
+         AND "arAcct" = $2
+         AND "eventDate" <= $3::date
+     )
+     SELECT i.customer_id, i.customer_name, i.invoice_no, i.invoice_date, i.due_date,
+            GREATEST(COALESCE(SUM(e."normalizedAmount"), 0), 0)::double precision AS amount_due_home
+     FROM invoices i
+     LEFT JOIN events e
+       ON e.invoice_no = i.invoice_no
+      AND e.co_num IS NOT DISTINCT FROM i.co_num
+      AND e.customer_id IS NOT DISTINCT FROM i.customer_id
+     GROUP BY i.co_num, i.customer_id, i.customer_name, i.invoice_no, i.invoice_date, i.due_date
+     HAVING GREATEST(COALESCE(SUM(e."normalizedAmount"), 0), 0) > 0.005
+     ORDER BY amount_due_home DESC`,
+    companyId,
+    arAcct,
+    asOfKey,
+  );
+
+  return rows.map((row) => ({
+    customerId: row.customer_id ? String(row.customer_id) : null,
+    customerName: String(row.customer_name || '').trim() || 'Unknown Customer',
+    invoiceNo: String(row.invoice_no || '').trim(),
+    invoiceDate: row.invoice_date ? new Date(row.invoice_date) : null,
+    dueDate: row.due_date ? new Date(row.due_date) : null,
+    amountDueHome: Number(row.amount_due_home || 0),
+  }));
+}
+
 function startOfUtcWeek(date: Date): Date {
   const dayStart = startOfUtcDay(date);
   const day = dayStart.getUTCDay(); // 0=Sun, 1=Mon, ...
@@ -6014,6 +6082,9 @@ export async function GET(request: NextRequest) {
         // override below (around derivedTotals/summaryTotals) can see them.
         let arGlAnchorApplied = false;
         let arGlAnchorLatestTotal = 0;
+        let arDetailFromFacts = false;
+        let arDetailInvoiceCount = 0;
+        let arDetailMissingAgingDateCount = 0;
 
         let arInvoiceTrendRows: Array<{
           snapshotDate: Date;
@@ -6327,7 +6398,7 @@ export async function GET(request: NextRequest) {
           select: { snapshotDate: true },
           orderBy: [{ snapshotDate: 'desc' }],
         });
-          const latestOpenSnapshotDate = latestOpenSnapshot?.snapshotDate
+          let latestOpenSnapshotDate = latestOpenSnapshot?.snapshotDate
           ? startOfUtcDay(new Date(latestOpenSnapshot.snapshotDate))
           : null;
           if (latestOpenSnapshotDate) {
@@ -6376,7 +6447,7 @@ export async function GET(request: NextRequest) {
         // Strict mixed-sign/day-shape gates were dropping legitimate historical AR days.
           const latestSnapshotLooksAnomalous = latestOpenPositiveRows === 0;
 
-          const openRowsInvoiceLike = (latestOpenRows as any[]).filter((row: any) => {
+          let openRowsInvoiceLike = (latestOpenRows as any[]).filter((row: any) => {
           if (latestSnapshotLooksAnomalous) return false;
           const amountDue = Number(row.amountDueHome || 0);
           if (!Number.isFinite(amountDue) || amountDue <= 0) return false;
@@ -6626,6 +6697,81 @@ export async function GET(request: NextRequest) {
             }
           }
 
+          if (isInforGlCompany && data.length > 0) {
+            const booksArSnapshots = await prisma.dailyFinancialSnapshot.findMany({
+              where: {
+                companyId,
+                frequency: 'daily',
+                snapshotDate: { gte: startDate, lte: endDate },
+              },
+              select: { snapshotDate: true, ar: true },
+            });
+            const booksArByDay = new Map(
+              booksArSnapshots.map((snapshot) => [
+                dateKeyUtc(new Date(snapshot.snapshotDate)),
+                Number(snapshot.ar || 0),
+              ]),
+            );
+            data = data.map((row: any) => {
+              const booksAr = booksArByDay.get(dateKeyUtc(new Date(row.snapshotDate)));
+              if (booksAr === undefined) return row;
+              const detailAr =
+                Number(row.current || 0) +
+                Number(row.days1to30 || 0) +
+                Number(row.days31to60 || 0) +
+                Number(row.days61to90 || 0) +
+                Number(row.days90plus || 0);
+              const reconciliationDifference = booksAr - detailAr;
+              return {
+                ...row,
+                totalAR: booksAr,
+                currentPct: booksAr > 0 ? (Number(row.current || 0) / booksAr) * 100 : 0,
+                days1to30Pct: booksAr > 0 ? (Number(row.days1to30 || 0) / booksAr) * 100 : 0,
+                days31to60Pct: booksAr > 0 ? (Number(row.days31to60 || 0) / booksAr) * 100 : 0,
+                days61to90Pct: booksAr > 0 ? (Number(row.days61to90 || 0) / booksAr) * 100 : 0,
+                days90plusPct: booksAr > 0 ? (Number(row.days90plus || 0) / booksAr) * 100 : 0,
+                unreconciledAR: Math.max(reconciliationDifference, 0),
+                reconciliationDifference,
+              };
+            });
+          }
+
+          // CSI snapshots retain only a short collection window. Reconstruct
+          // current invoice-level AR from the transaction ledger as of the
+          // requested end date so all detail panels use the same subledger.
+          const arAnchorCfgForDetail = getArBalanceSheetAnchorConfig(companyId);
+          if (isInforGlCompany && arAnchorCfgForDetail) {
+            const factOpenInvoices = await buildOpenArInvoicesFromFacts(
+              prisma,
+              companyId,
+              arAnchorCfgForDetail.accounts[0].accountId,
+              endDate,
+            );
+            if (factOpenInvoices.length > 0) {
+              arDetailFromFacts = true;
+              latestOpenSnapshotDate = startOfUtcDay(endDate);
+              openRowsInvoiceLike = factOpenInvoices.map((row) => ({
+                ...row,
+                status: 'OPEN',
+                amountHome: row.amountDueHome,
+                amountCurrency: row.amountDueHome,
+                currencyCode: 'USD',
+                sourcePlatform: 'INFOR_CSI',
+                sourceProgram: 'SLArtrans',
+              }));
+            }
+          }
+
+          arDetailInvoiceCount = openRowsInvoiceLike.length;
+          arDetailMissingAgingDateCount = openRowsInvoiceLike.filter((row: any) => {
+            const dueDate = row.dueDate ? new Date(row.dueDate) : null;
+            const invoiceDate = row.invoiceDate ? new Date(row.invoiceDate) : null;
+            return (
+              (!dueDate || Number.isNaN(dueDate.getTime())) &&
+              (!invoiceDate || Number.isNaN(invoiceDate.getTime()))
+            );
+          }).length;
+
           if (openRowsInvoiceLike.length > 0) {
           const openRowsEligible = openRowsInvoiceLike;
           for (const row of openRowsEligible as any[]) {
@@ -6770,7 +6916,7 @@ export async function GET(request: NextRequest) {
             if (dt >= monthStart && dt <= endDate) acc[customerKey].currentMonth += amount;
             if (dt >= lastMonthStart && dt < monthStart) acc[customerKey].lastMonth += amount;
             if (dt >= trailing12Start && dt <= endDate) acc[customerKey].last12Months += amount;
-            if (dt <= endDate) acc[customerKey].cashCollectedToDate += amount;
+            if (dt >= startDate && dt <= endDate) acc[customerKey].cashCollectedToDate += amount;
             if (
               !acc[customerKey].lastPaymentDate ||
               dt.getTime() > new Date(acc[customerKey].lastPaymentDate).getTime()
@@ -6802,27 +6948,34 @@ export async function GET(request: NextRequest) {
           const asOfReference = arAsOfReferenceDate;
           const asOfStart = startOfUtcDay(asOfReference);
           const asOfEnd = new Date(asOfStart.getTime() + 24 * 60 * 60 * 1000 - 1);
-          let contractRows = await contractStatusDelegate.findMany({
+          const latestContractSnapshot = await contractStatusDelegate.findFirst({
             where: {
               companyId,
-              asOfDate: {
-                gte: asOfStart,
-                lte: asOfEnd,
-              },
+              asOfDate: { lte: asOfEnd },
             },
-            orderBy: [{ contractValue: 'desc' }],
-            take: 5000,
+            orderBy: [{ asOfDate: 'desc' }],
+            select: { asOfDate: true },
           });
-          if (!contractRows.length) {
-            contractRows = await contractStatusDelegate.findMany({
+          const contractSnapshotStart = latestContractSnapshot?.asOfDate
+            ? startOfUtcDay(new Date(latestContractSnapshot.asOfDate))
+            : null;
+          const contractSnapshotEnd = contractSnapshotStart
+            ? new Date(contractSnapshotStart.getTime() + 24 * 60 * 60 * 1000 - 1)
+            : null;
+          const contractRows =
+            contractSnapshotStart && contractSnapshotEnd
+              ? await contractStatusDelegate.findMany({
               where: {
                 companyId,
-                asOfDate: { lte: asOfEnd },
+                asOfDate: {
+                  gte: contractSnapshotStart,
+                  lte: contractSnapshotEnd,
+                },
               },
-              orderBy: [{ asOfDate: 'desc' }],
-              take: 5000,
-            });
-          }
+                  orderBy: [{ contractValue: 'desc' }],
+                  take: 100000,
+                })
+              : [];
           for (const row of contractRows as any[]) {
             const customerId = row.customerId ? String(row.customerId) : '-';
             const name = normalizeCustomerName(row.customerName, customerId);
@@ -6999,7 +7152,10 @@ export async function GET(request: NextRequest) {
             orderContractByCustomerName.get(row.customerName) ||
             orderContractByNormalizedName.get(normalizeText(row.customerName));
           const paid = paidByCustomerId.get(String(row.customerId || '').trim()) || paidByCustomerName.get(row.customerName);
-          const cashCollected = Number(contract?.cashCollectedToDate ?? paid?.cashCollectedToDate ?? 0);
+          // The AR view is a selected-window report. Use its payment facts,
+          // not cumulative contract cash, so collection metrics do not mix
+          // different time horizons.
+          const cashCollected = Number(paid?.cashCollectedToDate ?? 0);
           const invoicedRevenue = Number(orderContract?.invoicedRevenue ?? contract?.invoicedRevenue ?? row.totalDue + cashCollected);
           const contractValueTotal = Number(
             orderContract?.contractValueTotal ??
@@ -7140,7 +7296,7 @@ export async function GET(request: NextRequest) {
         // also override the latest-snapshot totals so the summary cards line
         // up with the trend chart. Bucket dollars are rescaled proportionally
         // (snapshot data carries the relative aging mix).
-        if (arGlAnchorApplied && arGlAnchorLatestTotal > 0) {
+        if (!arDetailFromFacts && arGlAnchorApplied && arGlAnchorLatestTotal > 0) {
           const oldLatestTotal = Number(latestOpenTotals.totalAR || 0);
           if (oldLatestTotal > 0) {
             const scale = arGlAnchorLatestTotal / oldLatestTotal;
@@ -7202,6 +7358,28 @@ export async function GET(request: NextRequest) {
                 dsoWeightedDaysNumerator: 0,
                 dsoWeightedDaysDenominator: 0,
               };
+        // Daily Financials is the books authority for the headline AR balance.
+        // Keep the independently reconstructed operational-detail amount in
+        // the response so the next reconciliation step can identify, rather
+        // than conceal, any difference.
+        const requestedAsOfStart = startOfUtcDay(endDate);
+        const requestedAsOfEnd = endOfUtcDay(endDate);
+        const booksArSnapshot = await prisma.dailyFinancialSnapshot.findFirst({
+          where: {
+            companyId,
+            frequency: 'daily',
+            snapshotDate: { gte: requestedAsOfStart, lte: requestedAsOfEnd },
+          },
+          select: { snapshotDate: true, ar: true },
+          orderBy: { snapshotDate: 'desc' },
+        });
+        const detailAr = Number(summaryTotals.totalAR || 0);
+        const booksAr = booksArSnapshot ? Number(booksArSnapshot.ar || 0) : null;
+        const AR_RECONCILIATION_TOLERANCE = 1;
+        const reconciliationDifference = booksAr === null ? null : booksAr - detailAr;
+        const isArDetailReconciled =
+          reconciliationDifference !== null &&
+          Math.abs(reconciliationDifference) <= AR_RECONCILIATION_TOLERANCE;
         const totalARForPct = Number(summaryTotals.totalAR || 0);
         // Standard bucket naming:
         // current<=0, days1to30=1-30, days31to60=31-60, days61to90=61-90, days90plus=>90
@@ -7310,8 +7488,24 @@ export async function GET(request: NextRequest) {
         return cacheOperationalPayload({
           records: dataWithDso,
           summary: {
-            totalAR: Number(summaryTotals.totalAR || 0),
-            totalOpenAR: Number(summaryTotals.totalAR || 0),
+            totalAR: booksAr ?? detailAr,
+            totalOpenAR: booksAr ?? detailAr,
+            booksAr,
+            booksArAsOfDate: booksArSnapshot?.snapshotDate.toISOString().slice(0, 10) ?? null,
+            detailAr,
+            reconciliationDifference,
+            arDetailStatus:
+              booksAr === null
+                ? 'books_unavailable'
+                : isArDetailReconciled
+                  ? 'reconciled'
+                  : 'unreconciled',
+            arDetailDiagnostics: {
+              source: arDetailFromFacts ? 'ARTransactionFact' : 'AROpenInvoiceSnapshot',
+              invoiceCount: arDetailInvoiceCount,
+              invoicesWithoutAgingDate: arDetailMissingAgingDateCount,
+              reconciliationTolerance: AR_RECONCILIATION_TOLERANCE,
+            },
             contractAR: Number(sourceClassTotals.contractAR || 0),
             nonContractAR: Number(sourceClassTotals.nonContractAR || 0),
             unknownSourceAR: Number(sourceClassTotals.unknownSourceAR || 0),

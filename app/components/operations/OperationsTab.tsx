@@ -6318,6 +6318,20 @@ export default function OperationsTab({
     const arOver90Pct = Number(summary?.over90Pct ?? 0);
     const arDso = Number(summary?.dso ?? 0);
     const arWeightedAgeDays = Number(summary?.weightedArAgeDays ?? 0);
+    const booksAr = typeof summary?.booksAr === 'number' ? summary.booksAr : null;
+    const detailAr = Number(summary?.detailAr ?? 0);
+    const arReconciliationDifference =
+      typeof summary?.reconciliationDifference === 'number' ? summary.reconciliationDifference : null;
+    const arDetailStatus = summary?.arDetailStatus;
+    const arDetailDiagnostics = summary?.arDetailDiagnostics;
+    const arDetailInvoiceCount = Number(arDetailDiagnostics?.invoiceCount ?? 0);
+    const arDetailMissingAgingDateCount = Number(arDetailDiagnostics?.invoicesWithoutAgingDate ?? 0);
+    const arDetailLabel =
+      arDetailStatus === 'reconciled'
+        ? 'Ledger detail reconciled to Books AR'
+        : arDetailStatus === 'books_unavailable'
+          ? 'Ledger detail; Books AR unavailable for this date'
+          : 'Ledger detail; not reconciled to Books AR';
     const latestRecord = records[0];
     const arCustomers = (summary?.breakdown || summary?.unpaidByCustomer || []).map((row: any) => ({
       customerId: row.customerId || row.customerNumber || '-',
@@ -6607,7 +6621,9 @@ export default function OperationsTab({
         'Open AR 31-60': record ? Number(record.days31to60 || 0) : null,
         'Open AR 61-90': record ? Number(record.days61to90 || 0) : null,
         'Open AR 90+': record ? Number(record.days90plus || 0) : null,
+        'Unreconciled AR': record ? Number(record.unreconciledAR || 0) : null,
         total: record ? Number(record.totalAR || 0) : 0,
+        dso: record ? Number(record.dso) : null,
         hasData: Boolean(record),
         isForwardFilled,
       };
@@ -6634,7 +6650,7 @@ export default function OperationsTab({
           : 0;
       return {
         period: row.month,
-        dso: dsoProxy,
+        dso: Number.isFinite(Number(row.dso)) ? Number(row.dso) : dsoProxy,
         // Standard "over X days past due": 1-30 counts as past due in this metric.
         over30Pct: total > 0 ? ((d31to60 + d61to90 + d90) / total) * 100 : 0,
         over90Pct: total > 0 ? (d90 / total) * 100 : 0,
@@ -6697,6 +6713,11 @@ export default function OperationsTab({
               <div style={{ fontSize: '28px', fontWeight: '700', color: '#1e293b' }}>
                 {formatCurrency((summary.totalOpenAR ?? summary.totalAR) || 0)}
               </div>
+              {booksAr !== null && (
+                <div style={{ fontSize: '11px', color: '#64748b', marginTop: '4px' }}>
+                  Daily Financials{arDetailStatus === 'reconciled' ? ' • Detail reconciled' : ''}
+                </div>
+              )}
             </div>
             <div style={{ background: 'white', padding: '16px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
               <div style={{ fontSize: '13px', color: '#64748b', marginBottom: '8px' }}>Current %</div>
@@ -6745,6 +6766,29 @@ export default function OperationsTab({
             </div>
           </div>
         )}
+        {booksAr !== null && arReconciliationDifference !== null && Math.abs(arReconciliationDifference) > 1 && (
+          <div
+            style={{
+              marginTop: '-12px',
+              marginBottom: '24px',
+              padding: '10px 12px',
+              borderRadius: '8px',
+              border: '1px solid #f59e0b',
+              background: '#fffbeb',
+              color: '#92400e',
+              fontSize: '13px',
+            }}
+          >
+            Books AR is {formatCurrency(booksAr)}. Operational invoice detail currently totals {formatCurrency(detailAr)}
+            {' '}({formatCurrency(Math.abs(arReconciliationDifference))} {arReconciliationDifference > 0 ? 'unreconciled' : 'above books AR'}).
+            {' '}The detail is not a complete AR subledger until this difference is resolved.
+            {' '}The ledger source contains {arDetailInvoiceCount.toLocaleString()} open invoices
+            {arDetailMissingAgingDateCount > 0
+              ? `, including ${arDetailMissingAgingDateCount.toLocaleString()} without an aging date`
+              : ''}.
+            {' '}The unreconciled amount is not assigned to a customer or aging bucket because no matching invoice record exists.
+          </div>
+        )}
 
         {/* AR Aging Trend Chart */}
         {isSectionEnabled('arAgingTrend') && (
@@ -6754,6 +6798,9 @@ export default function OperationsTab({
           </h3>
           <div style={{ marginTop: '-10px', marginBottom: '12px', fontSize: '11px', color: '#64748b' }}>
             As of: {arAsOfLabel} | Coverage: {arCoverageLabel}
+          </div>
+          <div style={{ marginTop: '-4px', marginBottom: '12px', fontSize: '11px', color: '#64748b' }}>
+            Unreconciled AR is Books AR not represented by the ledger-derived aging detail.
           </div>
           <ResponsiveContainer width="100%" height={350}>
             <BarChart data={chartData}>
@@ -6776,6 +6823,7 @@ export default function OperationsTab({
               <Bar dataKey="Open AR 31-60" stackId="a" fill={AR_TREND_COLORS[2]} />
               <Bar dataKey="Open AR 61-90" stackId="a" fill={AR_TREND_COLORS[3]} />
               <Bar dataKey="Open AR 90+" stackId="a" fill={AR_TREND_COLORS[4]} />
+              <Bar dataKey="Unreconciled AR" stackId="a" fill="#94a3b8" />
             </BarChart>
           </ResponsiveContainer>
         </div>
@@ -6787,6 +6835,9 @@ export default function OperationsTab({
           <h3 style={{ fontSize: '18px', fontWeight: '700', color: '#1e293b', marginBottom: '20px' }}>
             Unpaid Invoices Amount by Customer (Top 10)
           </h3>
+          <div style={{ marginTop: '-14px', marginBottom: '12px', fontSize: '11px', color: '#64748b' }}>
+            {arDetailLabel}: {formatCurrency(detailAr)}
+          </div>
           {unpaidByCustomer.length === 0 ? (
             <div style={{ height: '240px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#64748b' }}>
               No unpaid invoice detail available for this period.
@@ -6863,7 +6914,7 @@ export default function OperationsTab({
                       <th style={{ textAlign: 'right', padding: '6px 10px', fontSize: '13px', fontWeight: '700', color: 'white' }}>Remaining to Invoice</th>
                       <th style={{ textAlign: 'right', padding: '6px 10px', fontSize: '13px', fontWeight: '700', color: 'white' }}>Invoiced</th>
                       <th style={{ textAlign: 'right', padding: '6px 10px', fontSize: '13px', fontWeight: '700', color: 'white' }}>Open AR</th>
-                      <th style={{ textAlign: 'right', padding: '6px 10px', fontSize: '13px', fontWeight: '700', color: 'white' }}>Cash Collected</th>
+                      <th style={{ textAlign: 'right', padding: '6px 10px', fontSize: '13px', fontWeight: '700', color: 'white' }}>Cash Collected (Period)</th>
                       <th style={{ textAlign: 'left', padding: '6px 10px', fontSize: '13px', fontWeight: '700', color: 'white' }}>Last Payment</th>
                       <th style={{ textAlign: 'right', padding: '6px 10px', fontSize: '13px', fontWeight: '700', color: 'white' }}>Total Billed</th>
                       <th style={{ textAlign: 'right', padding: '6px 10px', fontSize: '13px', fontWeight: '700', color: 'white' }}>Total Exposure</th>
@@ -6957,6 +7008,9 @@ export default function OperationsTab({
             <h3 style={{ fontSize: '18px', fontWeight: '700', color: '#1e293b', marginBottom: '8px' }}>
               Unpaid Invoices
             </h3>
+            <div style={{ marginBottom: '8px', fontSize: '11px', color: '#64748b' }}>
+              {arDetailLabel}: {formatCurrency(detailAr)}
+            </div>
             {invoices.length > 0 ? (
               <div style={{ overflowX: 'auto' }}>
                 <table style={{ width: '100%', borderCollapse: 'collapse' }}>
@@ -7050,6 +7104,9 @@ export default function OperationsTab({
             <h3 style={{ fontSize: '18px', fontWeight: '700', color: '#1e293b', marginBottom: '8px' }}>
               AR Aging by Customer
             </h3>
+            <div style={{ marginBottom: '8px', fontSize: '11px', color: '#64748b' }}>
+              {arDetailLabel}: {formatCurrency(detailAr)}
+            </div>
           {arAgingRows.length > 0 ? (
             <div style={{ overflowX: 'auto' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse' }}>
@@ -7239,6 +7296,9 @@ export default function OperationsTab({
             <h3 style={{ fontSize: '18px', fontWeight: '700', color: '#1e293b', margin: 0 }}>
               Customer Invoices
             </h3>
+            <span style={{ fontSize: '11px', color: '#64748b' }}>
+              {arDetailLabel}: {formatCurrency(detailAr)}
+            </span>
             <select
               value={selectedInvoiceCustomer}
               onChange={(event) => {
@@ -7368,7 +7428,7 @@ export default function OperationsTab({
           {isSectionEnabled('arCollectionsTrend') && (
             <div style={{ background: 'white', padding: '24px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
             <h3 style={{ fontSize: '18px', fontWeight: '700', color: '#1e293b', marginBottom: '8px' }}>
-              Collections Trend / DSO Proxy
+              Collections Trend / DSO
             </h3>
             <div style={{ marginBottom: '12px', fontSize: '11px', color: '#64748b' }}>
               As of: {arAsOfLabel} | Coverage: {arCoverageLabel}

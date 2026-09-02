@@ -55,6 +55,8 @@ type SyncOptions = {
   ingestOnly?: boolean;
   businessDayFanout?: boolean;
   arOnlyBackfill?: boolean;
+  /** Explicit opt-in for a one-time AR fact-history backfill. */
+  fullArFactHistory?: boolean;
   skipDailySnapshotHydration?: boolean;
   deferDailySnapshotHydration?: boolean;
   programOffset?: number;
@@ -847,11 +849,18 @@ function buildSlArtransWindowFilter(window?: SyncWindow, site?: string): string 
   return `(${clauses.join(' and ')})`;
 }
 
-function buildSlArtransAsOfFilter(window?: SyncWindow, site?: string): string | null {
+function buildSlArtransAsOfFilter(
+  window?: SyncWindow,
+  site?: string,
+  includeFullArFactHistory = false
+): string | null {
   if (!window) return null;
-  const collectibleStartDate = new Date(
-    startOfUtcDay(window.endDate).getTime() - AR_EOD_COLLECTIBLE_LOOKBACK_DAYS * 24 * 60 * 60 * 1000
-  );
+  const collectibleStartDate = includeFullArFactHistory
+    ? new Date(Date.UTC(2023, 0, 1))
+    : new Date(
+        startOfUtcDay(window.endDate).getTime() -
+          AR_EOD_COLLECTIBLE_LOOKBACK_DAYS * 24 * 60 * 60 * 1000
+      );
   const collectibleStart = formatCsiCompactDateLiteral(collectibleStartDate);
   const end = formatCsiCompactDateLiteral(window.endDate);
   const clauses = [`(RecordDate <= '${end}')`, `(InvDate >= '${collectibleStart}')`];
@@ -1259,7 +1268,7 @@ function applyCsiSourceWindowAndSort(
   row: InforProgramRow,
   moduleType: ReturnType<typeof classifyModule>,
   window?: SyncWindow,
-  options?: { noFullPulls?: boolean }
+  options?: { noFullPulls?: boolean; includeFullArFactHistory?: boolean }
 ): { endpointPath: string; applied: boolean; allowRetryWithoutSourceWindow: boolean } {
   if (!/\/IDORequestService\/ido\/load\//i.test(endpointPath)) {
     return { endpointPath, applied: false, allowRetryWithoutSourceWindow: true };
@@ -1351,11 +1360,20 @@ function applyCsiSourceWindowAndSort(
       });
       if (filter) params.set('filter', filter);
     } else if (window && window.mode !== 'daily_overlap') {
-      const asOfFilter = buildSlArtransAsOfFilter(window, row.site);
+      const asOfFilter = buildSlArtransAsOfFilter(
+        window,
+        row.site,
+        options?.includeFullArFactHistory === true
+      );
       if (asOfFilter) params.set('filter', asOfFilter);
     }
     params.set('recordCap', '1000');
-    if (!params.get('orderby') && !params.get('orderBy')) params.set('orderby', 'RecordDate desc, InvDate desc');
+    if (!params.get('orderby') && !params.get('orderBy')) {
+      params.set(
+        'orderby',
+        options?.includeFullArFactHistory === true ? 'RowPointer asc' : 'RecordDate desc, InvDate desc'
+      );
+    }
     const next = params.toString();
     return { endpointPath: next ? `${path}?${next}` : path, applied: true, allowRetryWithoutSourceWindow: false };
   }
@@ -9035,6 +9053,8 @@ export async function syncInforM3OperationalData(
       const syncType = `operational_${moduleType}_${req.transaction}`;
       const isSlCoitemsProgram = moduleType === 'sales' && programId === 'SLCOITEMS';
       const isSlArtransProgram = moduleType === 'ar' && programId === 'SLARTRANS';
+      const isFullArFactHistoryBackfill =
+        isSlArtransProgram && options?.fullArFactHistory === true;
       const isGlAcctPeriodBalancesProgram = moduleType === 'gl' && programId === 'GLACCTPERIODBALANCES';
       const isHistoricalDailySliceRequest = frequency === 'daily' && Boolean(options?.snapshotDateOverride);
       const isFanoutHistoricalDailySlice = isHistoricalDailySliceRequest && options?.businessDayFanout === true;
@@ -9051,12 +9071,13 @@ export async function syncInforM3OperationalData(
             ? fanoutGlPeriodMaxPagesPerRequest
             : isFanoutHistoricalDailySlice
               ? fanoutMaxPagesPerRequest
-          : isSlArtransProgram && isHistoricalDailySliceRequest
+          : isSlArtransProgram && isHistoricalDailySliceRequest && !isFullArFactHistoryBackfill
             ? 2
             : MAX_CSI_PAGES_PER_REQUEST;
       const maxPagesPerRequest = Math.max(1, Math.floor(baseMaxPagesPerRequest * adaptivePageScale));
       const sourceWindowPathResult = applyCsiSourceWindowAndSort(req.endpointPath, row, moduleType, syncWindow, {
         noFullPulls,
+        includeFullArFactHistory: isFullArFactHistoryBackfill,
       });
       if (debugSync) {
         console.log(
@@ -10756,6 +10777,10 @@ export async function transformInforM3RawRun(options: {
           recordsCreated += await saveARAging(companyId, snapshotDate, frequency, arOpenSource);
         }
         if (arTrans.length > 0) {
+          // Keep the AR event ledger populated during raw replay, matching
+          // the direct-sync path and AP replay behavior. The fact table's
+          // unique key plus skipDuplicates makes repeated replays idempotent.
+          recordsCreated += await saveARTransactionFacts(companyId, arTrans);
           recordsCreated += await saveARPayments(companyId, arTrans, {
             miProgram: 'SLARTRANS',
             transaction: 'RAW_REPLAY',
