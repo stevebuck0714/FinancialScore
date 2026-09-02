@@ -60,7 +60,7 @@ const MONTHLY_FINANCIAL_ROW_CAP = 60;
 const DAILY_FINANCIAL_ROW_CAP = 100;
 const CORE_SNAPSHOT_ROW_CAP = 150;
 const DETAIL_SNAPSHOT_ROW_CAP = 300;
-const EXEC_BRIEFING_LOGIC_VERSION = 'exec-briefing-v28-qbd-income-source-cutoff';
+const EXEC_BRIEFING_LOGIC_VERSION = 'exec-briefing-v27-qbd-completed-daily-cutoff';
 const PRIVATE_DAILY_CACHE_HEADERS = {
   'Cache-Control': 'private, max-age=300, stale-while-revalidate=1800',
 };
@@ -393,20 +393,6 @@ const EXEC_BRIEFING_EXPENSE_FIELDS = new Set([
   'otherexpense',
 ]);
 
-function isMappedIncomeStatementTarget(targetField: unknown): boolean {
-  const rawTarget = String(targetField || '').trim();
-  const targetWithoutMovementPrefix = rawTarget.replace(/^balance_movement:/i, '').trim();
-  const normalizedTarget = targetWithoutMovementPrefix.replace(/[^A-Za-z0-9]/g, '').toLowerCase();
-  const lowerTarget = targetWithoutMovementPrefix.toLowerCase();
-  return (
-    normalizedTarget === 'revenue' ||
-    lowerTarget.startsWith('rev_') ||
-    normalizedTarget === 'cogstotal' ||
-    lowerTarget.startsWith('cogs_') ||
-    EXEC_BRIEFING_EXPENSE_FIELDS.has(normalizedTarget)
-  );
-}
-
 function applyMappedIncomeTotalsToDailyRows(rows: any[], mappedLines: any[]): any[] {
   if (!Array.isArray(rows) || !rows.length || !Array.isArray(mappedLines) || !mappedLines.length) return rows;
   const totalsByDate = new Map<string, { revenue: number; cogsTotal: number; expense: number; lineCount: number }>();
@@ -414,12 +400,12 @@ function applyMappedIncomeTotalsToDailyRows(rows: any[], mappedLines: any[]): an
     const snapshot = line?.snapshotDate ? new Date(line.snapshotDate) : null;
     if (!snapshot || Number.isNaN(snapshot.getTime())) continue;
     const dateKey = snapshot.toISOString().slice(0, 10);
-    const amount = asNumber(line?.amount);
-    const bucket = totalsByDate.get(dateKey) || { revenue: 0, cogsTotal: 0, expense: 0, lineCount: 0 };
     const rawTarget = String(line?.targetField || '').trim();
     const targetWithoutMovementPrefix = rawTarget.replace(/^balance_movement:/i, '').trim();
     const normalizedTarget = targetWithoutMovementPrefix.replace(/[^A-Za-z0-9]/g, '').toLowerCase();
     const lowerTarget = targetWithoutMovementPrefix.toLowerCase();
+    const amount = asNumber(line?.amount);
+    const bucket = totalsByDate.get(dateKey) || { revenue: 0, cogsTotal: 0, expense: 0, lineCount: 0 };
     if (normalizedTarget === 'revenue' || lowerTarget.startsWith('rev_')) {
       bucket.revenue += amount;
       bucket.lineCount += 1;
@@ -443,22 +429,6 @@ function applyMappedIncomeTotalsToDailyRows(rows: any[], mappedLines: any[]): an
       cogsTotal: totals.cogsTotal,
       expense: totals.expense,
     };
-  });
-}
-
-function qbdDailyRowsWithMappedIncome(rows: any[], mappedLines: any[]): any[] {
-  const sourceBackedDates = new Set(
-    mappedLines
-      .filter((line) => isMappedIncomeStatementTarget(line?.targetField))
-      .map((line) => {
-        const snapshot = line?.snapshotDate ? new Date(line.snapshotDate) : null;
-        return snapshot && !Number.isNaN(snapshot.getTime()) ? snapshot.toISOString().slice(0, 10) : '';
-      })
-      .filter(Boolean),
-  );
-  return rows.filter((row) => {
-    const snapshot = row?.snapshotDate ? new Date(row.snapshotDate) : null;
-    return Boolean(snapshot && !Number.isNaN(snapshot.getTime()) && sourceBackedDates.has(snapshot.toISOString().slice(0, 10)));
   });
 }
 
@@ -1795,16 +1765,7 @@ export async function GET(request: NextRequest) {
     const monthlyFinancials = sortByDate(dfsMonthly ? dfsMonthly.rows : monthlyFinancialsRaw);
     const completeMonthlyFinancials = monthlyFinancials.filter(isCompleteMonthlyPeriod);
     const latestFinancial = last(completeMonthlyFinancials) || last(monthlyFinancials);
-    // QBD may create a Balance Sheet snapshot before the corresponding
-    // General Ledger/P&L data is available. Such a row is not a completed
-    // income-statement day and must never become a zero-revenue comparison.
-    const dailyFinancialRowsForBriefing = isQuickBooksDesktopCompany
-      ? qbdDailyRowsWithMappedIncome(dailyFinancials, dailyFinancialMappedLines)
-      : dailyFinancials;
-    const dailyFinancialsWithMappedIncome = applyMappedIncomeTotalsToDailyRows(
-      dailyFinancialRowsForBriefing,
-      dailyFinancialMappedLines,
-    );
+    const dailyFinancialsWithMappedIncome = applyMappedIncomeTotalsToDailyRows(dailyFinancials, dailyFinancialMappedLines);
     const sortedDailyFinancials = sortByDate(dailyFinancialsWithMappedIncome.filter((row: any) => !isWeekendZeroIncomeActivityRow(row)));
     const latestDailyFinancial = last(sortedDailyFinancials);
     const weeklyPair = period === 'weekly' ? completedIsoWeekPairUtc() : null;
@@ -2149,8 +2110,8 @@ export async function GET(request: NextRequest) {
     };
 
     sourceNotes = [
-      isQuickBooksDesktopCompany
-        ? 'QuickBooks Desktop daily comparisons include only dates with mapped income-statement source data.'
+      completedQbdDailyThroughDate
+        ? `QuickBooks Desktop daily financials through ${completedQbdDailyThroughDate.toISOString().slice(0, 10)} after completed rebuild`
         : '',
       effectiveDailyMode === 'ops-only'
         ? 'Daily mode: operations (books remain monthly from QuickBooks / accounting master)'
