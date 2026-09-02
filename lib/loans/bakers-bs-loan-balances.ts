@@ -12,6 +12,7 @@ import {
 const HONEYCOMB_IDS = new Set<string>(BAKERS_HONEYCOMB_LOAN_ACCOUNT_IDS);
 
 export const BAKERS_LOAN_BALANCE_SOURCE = '5GB year-end PDF + 2026 GL';
+export const BAKERS_QBD_LOAN_BALANCE_SOURCE = 'QuickBooks Desktop Balance Sheet';
 
 type MappingRef = {
   accountId?: string | null;
@@ -41,6 +42,13 @@ function lookupKeys(value: unknown): string[] {
     add(leadingCode[1]);
     add(leadingCode[2]);
   }
+  const parenCode = raw.match(/^(.+?)\s+\(([0-9][0-9.\-]*)\)\s*$/);
+  if (parenCode) {
+    add(parenCode[1]);
+    add(parenCode[2]);
+  }
+  const colonParts = raw.split(':').map((part) => part.trim()).filter(Boolean);
+  if (colonParts.length > 1) add(colonParts[colonParts.length - 1]);
   return [...keys];
 }
 
@@ -88,6 +96,86 @@ function isoDate(value: Date | string | null | undefined): string | null {
   if (typeof value === 'string') return dateKey(value);
   if (Number.isNaN(value.getTime())) return null;
   return value.toISOString().slice(0, 10);
+}
+
+function reportDateKey(rows: Record<string, unknown>[]): string | null {
+  for (const row of rows) {
+    const match = /^As of\s+(.+)$/i.exec(String(row.reportSubtitle || '').trim());
+    if (match) return dateKey(match[1]);
+  }
+  return null;
+}
+
+function reportAccountName(row: Record<string, unknown>): string {
+  if (typeof row.accountName === 'string' && row.accountName.trim()) return row.accountName.trim();
+  if (typeof row.rowValue === 'string' && row.rowValue.trim()) return row.rowValue.trim();
+  const cols = Array.isArray(row.colData) ? row.colData.map(asRecord) : [];
+  return String(cols.find((col) => ['1', '0'].includes(String(col.colID || '')))?.value || '').trim();
+}
+
+function reportAmount(row: Record<string, unknown>): number {
+  const cols = Array.isArray(row.colData) ? row.colData.map(asRecord) : [];
+  const amount = cols.find((col) => /^(amount|balance|total)$/i.test(String(col.colTitle || '').trim()))
+    || cols.find((col) => String(col.colID || '') === '2') || cols.at(-1);
+  return qbdNumber(amount?.value);
+}
+
+export async function loadBakersQbdBalanceSheetDebtByAccount(opts: {
+  companyId: string;
+  mappings: MappingRef[];
+  currentAsOfDate: Date;
+  priorAsOfDate: Date;
+}): Promise<Map<string, { currentBalance: number; priorBalance: number; currentReportDate: string }>> {
+  const out = new Map<string, { currentBalance: number; priorBalance: number; currentReportDate: string }>();
+  if (!isBakersCompany(opts.companyId)) return out;
+  const pages = await prisma.$queryRaw<Array<{ payload: unknown; createdAt: Date; jobId: string }>>`
+    SELECT "payload", "createdAt", "jobId"
+    FROM "QuickBooksDesktopBackfillPage"
+    WHERE "companyId" = ${opts.companyId}
+      AND "requestName" = 'BalanceSheetStandardReportQuery'
+    ORDER BY "createdAt" ASC, "jobId" ASC, "pageNumber" ASC
+  `;
+  const reports = new Map<string, Record<string, unknown>[]>();
+  const byJob = new Map<string, Record<string, unknown>[]>();
+  for (const page of pages) {
+    const rows = byJob.get(page.jobId) || [];
+    rows.push(...(Array.isArray(page.payload) ? page.payload.map(asRecord) : []));
+    byJob.set(page.jobId, rows);
+  }
+  for (const rows of byJob.values()) {
+    const date = reportDateKey(rows);
+    if (date) reports.set(date, rows);
+  }
+  const selectReport = (asOf: Date) => Array.from(reports.entries())
+    .filter(([date]) => date <= (isoDate(asOf) || ''))
+    .sort(([a], [b]) => a.localeCompare(b)).at(-1) || null;
+  const currentReport = selectReport(opts.currentAsOfDate);
+  const priorReport = selectReport(opts.priorAsOfDate);
+  if (!currentReport) return out;
+
+  const byMappingKey = mappingLookup(opts.mappings);
+  const parse = (report: [string, Record<string, unknown>[]] | null) => {
+    const balances = new Map<string, number>();
+    if (!report) return balances;
+    for (const row of report[1]) {
+      const rowType = String(row.rowType || row.rowKind || '').toLowerCase();
+      if (rowType && rowType !== 'account' && rowType !== 'datarow') continue;
+      const mapping = lookupKeys(reportAccountName(row)).map((key) => byMappingKey.get(key)).find(Boolean);
+      if (mapping && ['loc', 'ltd'].includes(mapping.target)) balances.set(mapping.id, Math.abs(reportAmount(row)));
+    }
+    return balances;
+  };
+  const current = parse(currentReport);
+  const prior = parse(priorReport);
+  for (const mapping of opts.mappings) {
+    const id = String(mapping.accountId || '').trim();
+    const currentBalance = current.get(id) || 0;
+    const priorBalance = prior.get(id) || 0;
+    if (id && (Math.abs(currentBalance) > 0.005 || Math.abs(priorBalance) > 0.005)) {
+      out.set(id, { currentBalance: roundMoney(currentBalance), priorBalance: roundMoney(priorBalance), currentReportDate: currentReport[0] });
+    }
+  }
+  return out;
 }
 
 export function bakersLoanRemaining(accountId: string, glNetThroughDate: number): number {
@@ -294,5 +382,57 @@ export function applyBakersBsLoanBalances<T extends {
       const prior = Number(instrument.priorMonthBalance || 0);
       return Math.abs(current) > 0.005 || Math.abs(prior) > 0.005;
     })
+    .sort((a, b) => Number(b.derivedCurrentBalance || 0) - Number(a.derivedCurrentBalance || 0));
+}
+
+export function applyBakersQbdBalanceSheetLoanBalances<T extends {
+  accountId?: string | null;
+  displayName?: string | null;
+  derivedCurrentBalance?: number | null;
+  derivedCurrentBalanceSource?: string | null;
+  derivedCurrentBalanceAsOf?: Date | string | null;
+  priorMonthBalance?: number | null;
+  principalChange?: number | null;
+  currentMonthInterestPaid?: number | null;
+  instrumentStatus?: string | null;
+  statusReason?: string | null;
+}>(
+  instruments: T[],
+  balances: Map<string, { currentBalance: number; priorBalance: number; currentReportDate: string }>
+): T[] {
+  const applied = instruments.flatMap((instrument) => {
+    const balance = balances.get(String(instrument.accountId || '').trim());
+    if (!balance) return [];
+    return [{
+      ...instrument,
+      derivedCurrentBalance: balance.currentBalance,
+      derivedCurrentBalanceSource: BAKERS_QBD_LOAN_BALANCE_SOURCE,
+      derivedCurrentBalanceAsOf: balance.currentReportDate,
+      priorMonthBalance: balance.priorBalance,
+      principalChange: roundMoney(balance.currentBalance - balance.priorBalance),
+      instrumentStatus: 'active',
+      statusReason: 'Balance is sourced from the mapped QuickBooks Desktop Balance Sheet account.',
+    }];
+  });
+  const honeycombMembers = applied.filter((instrument) => HONEYCOMB_IDS.has(String(instrument.accountId || '').trim()));
+  if (honeycombMembers.length <= 1) {
+    return applied.sort((a, b) => Number(b.derivedCurrentBalance || 0) - Number(a.derivedCurrentBalance || 0));
+  }
+  const primaryId = honeycombMembers.some((instrument) => String(instrument.accountId || '').trim() === BAKERS_HONEYCOMB_PRIMARY_ACCOUNT_ID)
+    ? BAKERS_HONEYCOMB_PRIMARY_ACCOUNT_ID
+    : String(honeycombMembers[0].accountId || '').trim();
+  const current = roundMoney(honeycombMembers.reduce((sum, instrument) => sum + Number(instrument.derivedCurrentBalance || 0), 0));
+  const prior = roundMoney(honeycombMembers.reduce((sum, instrument) => sum + Number(instrument.priorMonthBalance || 0), 0));
+  const interest = roundMoney(honeycombMembers.reduce((sum, instrument) => sum + Number(instrument.currentMonthInterestPaid || 0), 0));
+  return applied
+    .filter((instrument) => !HONEYCOMB_IDS.has(String(instrument.accountId || '').trim()) || String(instrument.accountId || '').trim() === primaryId)
+    .map((instrument) => String(instrument.accountId || '').trim() === primaryId ? {
+      ...instrument,
+      displayName: 'Honeycomb N/P',
+      derivedCurrentBalance: current,
+      priorMonthBalance: prior,
+      principalChange: roundMoney(current - prior),
+      currentMonthInterestPaid: interest,
+    } : instrument)
     .sort((a, b) => Number(b.derivedCurrentBalance || 0) - Number(a.derivedCurrentBalance || 0));
 }

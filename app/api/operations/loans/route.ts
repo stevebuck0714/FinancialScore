@@ -4,12 +4,17 @@ import { auditForbiddenAccess } from '@/lib/audit-logger';
 import { requireAuth, validateCompanyAccess } from '@/lib/tenant-security';
 import { isLocByMappingAndName } from '@/lib/loans/classify-loc';
 import { isBakersCompany, resolveBakersLocTarget } from '@/lib/financial/qbd-bakers-bs-pins';
-import { applyBakersBsLoanBalances, loadBakersDebtGlNetByAccount } from '@/lib/loans/bakers-bs-loan-balances';
+import {
+  applyBakersBsLoanBalances,
+  applyBakersQbdBalanceSheetLoanBalances,
+  loadBakersDebtGlNetByAccount,
+  loadBakersQbdBalanceSheetDebtByAccount,
+} from '@/lib/loans/bakers-bs-loan-balances';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 120;
 
-const LOAN_ACTIVITY_CACHE_VERSION = 34;
+const LOAN_ACTIVITY_CACHE_VERSION = 35;
 const STALE_LOAN_ACTIVITY_MONTHS = 13;
 
 type LoanTermInput = {
@@ -166,6 +171,13 @@ async function loadLatestLoanSourceUpdatedAt(companyId: string): Promise<Date | 
         SELECT MAX("updatedAt") AS "sourceUpdatedAt"
         FROM "BalanceSheetAccountAnchor"
         WHERE "companyId" = $1
+
+        UNION ALL
+
+        SELECT MAX("createdAt") AS "sourceUpdatedAt"
+        FROM "QuickBooksDesktopBackfillPage"
+        WHERE "companyId" = $1
+          AND "requestName" = 'BalanceSheetStandardReportQuery'
 
         UNION ALL
 
@@ -1119,11 +1131,16 @@ async function loadLoanActivity(companyId: string) {
             AND COALESCE("accountName", '') ~* $2
           )
         )
-        AND NOT (
-          COALESCE("accountName", '') ~* 'interest income|interest expense|accrued interest|interest payable'
-          OR TRIM("accountId") IN ('39140', '76050', '76350', '83010')
+        AND (
+          COALESCE("targetField", '') IN ('loc', 'ltd')
+          OR (
+            NOT (
+              COALESCE("accountName", '') ~* 'interest income|interest expense|accrued interest|interest payable'
+              OR TRIM("accountId") IN ('39140', '76050', '76350', '83010')
+            )
+            AND NOT (COALESCE("accountName", '') ~* $3)
+          )
         )
-        AND NOT (COALESCE("accountName", '') ~* $3)
       ORDER BY TRIM("accountId"), "accountName"
     `,
     companyId,
@@ -1515,17 +1532,28 @@ async function loadLoanActivity(companyId: string) {
   });
 
   if (isBakersCompany(companyId)) {
-    const glNets = await loadBakersDebtGlNetByAccount({
+    const mappings = Array.from(accountMetadata.entries()).map(([accountId, meta]) => ({
+      accountId,
+      accountName: meta.accountName,
+      targetField: meta.targetField,
+    }));
+    const qbdBalances = await loadBakersQbdBalanceSheetDebtByAccount({
       companyId,
-      mappings: Array.from(accountMetadata.entries()).map(([accountId, meta]) => ({
-        accountId,
-        accountName: meta.accountName,
-        targetField: meta.targetField,
-      })),
-      throughDate: dateKeyUtc(reportAsOfDate),
-      priorThroughDate: dateKeyUtc(priorAsOfDate),
+      mappings,
+      currentAsOfDate: reportAsOfDate,
+      priorAsOfDate,
     });
-    instruments = applyBakersBsLoanBalances(instruments, glNets, reportAsOfDate);
+    if (qbdBalances.size > 0) {
+      instruments = applyBakersQbdBalanceSheetLoanBalances(instruments, qbdBalances);
+    } else {
+      const glNets = await loadBakersDebtGlNetByAccount({
+        companyId,
+        mappings,
+        throughDate: dateKeyUtc(reportAsOfDate),
+        priorThroughDate: dateKeyUtc(priorAsOfDate),
+      });
+      instruments = applyBakersBsLoanBalances(instruments, glNets, reportAsOfDate);
+    }
   }
 
   return instruments;
