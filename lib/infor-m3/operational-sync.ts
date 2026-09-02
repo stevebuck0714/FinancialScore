@@ -8858,8 +8858,18 @@ export async function syncInforM3OperationalData(
     inforSystem === 'INFOR_CSI'
       ? applyCsiFinancialIdoContract(baseProgramRowsRaw, csiFinancialIdoContract)
       : baseProgramRowsRaw;
+  if (persistedArHistoryRebuildRun === null) {
+    const rebuildRun = await prisma.inforSyncRun.findFirst({
+      where: { id: syncRunId, companyId, mode: 'ar_history_rebuild' },
+      select: { id: true },
+    });
+    persistedArHistoryRebuildRun = Boolean(rebuildRun);
+  }
+  const isArHistoryRebuild =
+    options?.fullArFactHistory === true || persistedArHistoryRebuildRun;
   const isDailyBackfillWindow = frequency === 'daily' && syncWindow?.mode === 'backfill';
   const arOnlyBackfill = (() => {
+    if (isArHistoryRebuild) return true;
     if (typeof options?.arOnlyBackfill === 'boolean') return options.arOnlyBackfill;
     if (typeof process.env.SYNC_AR_BACKFILL_AR_ONLY === 'string') return process.env.SYNC_AR_BACKFILL_AR_ONLY === '1';
     return isDailyBackfillWindow;
@@ -8877,7 +8887,7 @@ export async function syncInforM3OperationalData(
     Boolean(syncWindow);
   const filteredProgramRows = isArBackfillFastPath
     ? baseProgramRows.filter((row) =>
-        options?.fullArFactHistory === true
+        isArHistoryRebuild
           ? resolveCsiProgramId(row, row.endpointPath) === 'SLARTRANS'
           : classifyModule(row.module) === 'ar'
       )
