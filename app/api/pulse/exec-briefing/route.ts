@@ -60,7 +60,7 @@ const MONTHLY_FINANCIAL_ROW_CAP = 60;
 const DAILY_FINANCIAL_ROW_CAP = 100;
 const CORE_SNAPSHOT_ROW_CAP = 150;
 const DETAIL_SNAPSHOT_ROW_CAP = 300;
-const EXEC_BRIEFING_LOGIC_VERSION = 'exec-briefing-v26-july-monthly-invoice-rebuild';
+const EXEC_BRIEFING_LOGIC_VERSION = 'exec-briefing-v27-qbd-completed-daily-cutoff';
 const PRIVATE_DAILY_CACHE_HEADERS = {
   'Cache-Control': 'private, max-age=300, stale-while-revalidate=1800',
 };
@@ -276,6 +276,25 @@ function latestDateKey(...values: unknown[]): string | null {
     .filter((date): date is Date => Boolean(date))
     .sort((a, b) => b.getTime() - a.getTime());
   return dates[0]?.toISOString().slice(0, 10) || null;
+}
+
+async function loadCompletedQbdDailyThroughDate(companyId: string): Promise<Date | null> {
+  try {
+    const rows = await prisma.$queryRawUnsafe<Array<{ endDate: Date | string | null }>>(
+      `SELECT MAX("endDate") AS "endDate"
+       FROM "QuickBooksDesktopPostSyncJob"
+       WHERE "companyId" = $1
+         AND "status" = 'completed'`,
+      companyId,
+    );
+    const value = rows[0]?.endDate;
+    if (!value) return null;
+    const date = value instanceof Date ? value : new Date(`${String(value).slice(0, 10)}T00:00:00.000Z`);
+    return Number.isNaN(date.getTime()) ? null : startOfUtcDay(date);
+  } catch {
+    // Older installations may not have created the post-sync queue table yet.
+    return null;
+  }
 }
 
 function addUtcDays(date: Date, days: number): Date {
@@ -1562,6 +1581,12 @@ export async function GET(request: NextRequest) {
     const isQuickBooksCompany = ['QUICKBOOKS', 'QUICKBOOKS_DESKTOP', 'QUICKBOOKS_ENTERPRISE', 'QUICKBOOKS_ONLINE', 'QBO'].includes(
       String(company?.accountingSystem || '').trim().toUpperCase()
     );
+    const isQuickBooksDesktopCompany = ['QUICKBOOKS_DESKTOP', 'QUICKBOOKS_ENTERPRISE'].includes(
+      String(company?.accountingSystem || '').trim().toUpperCase()
+    );
+    const completedQbdDailyThroughDate = isQuickBooksDesktopCompany
+      ? await loadCompletedQbdDailyThroughDate(companyId)
+      : null;
     const dailyCapability = await resolveDailyBriefingCapability(companyId, {
       accountingSystem: company?.accountingSystem,
     });
@@ -1668,6 +1693,10 @@ export async function GET(request: NextRequest) {
     const monthlyWhere: any = { companyId, monthDate: { gte: monthlyStartDate, lte: endDate } };
     if (latestFinancialRecord?.id) monthlyWhere.financialRecordId = latestFinancialRecord.id;
 
+    const dailyFinancialEndDate =
+      completedQbdDailyThroughDate && completedQbdDailyThroughDate < endDate
+        ? completedQbdDailyThroughDate
+        : endDate;
     const [
       monthlyFinancialsRaw,
       dailyFinancials,
@@ -1685,13 +1714,13 @@ export async function GET(request: NextRequest) {
       pulseAlerts,
     ] = await Promise.all([
       dfsMonthly ? Promise.resolve([]) : prisma.monthlyFinancial.findMany({ where: monthlyWhere, orderBy: { monthDate: 'asc' }, take: MONTHLY_FINANCIAL_ROW_CAP }),
-      prisma.dailyFinancialSnapshot.findMany({ where: { companyId, frequency: 'daily', snapshotDate: { gte: startDate, lte: endDate } }, orderBy: { snapshotDate: 'asc' }, take: DAILY_FINANCIAL_ROW_CAP }),
+      prisma.dailyFinancialSnapshot.findMany({ where: { companyId, frequency: 'daily', snapshotDate: { gte: startDate, lte: dailyFinancialEndDate } }, orderBy: { snapshotDate: 'asc' }, take: DAILY_FINANCIAL_ROW_CAP }),
       (prisma as any).dailyFinancialMappedLine?.findMany
         ? (prisma as any).dailyFinancialMappedLine.findMany({
             where: {
               companyId,
               frequency: 'daily',
-              snapshotDate: { gte: startDate, lte: endDate },
+              snapshotDate: { gte: startDate, lte: dailyFinancialEndDate },
             },
             select: {
               snapshotDate: true,
@@ -2081,6 +2110,9 @@ export async function GET(request: NextRequest) {
     };
 
     sourceNotes = [
+      completedQbdDailyThroughDate
+        ? `QuickBooks Desktop daily financials through ${completedQbdDailyThroughDate.toISOString().slice(0, 10)} after completed rebuild`
+        : '',
       effectiveDailyMode === 'ops-only'
         ? 'Daily mode: operations (books remain monthly from QuickBooks / accounting master)'
         : '',
