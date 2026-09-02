@@ -11094,6 +11094,26 @@ export default function SiteAdminDashboard(props: any) {
                                               >
                                                 {inforBusy && inforBusyAction === 'operational_sync_reset' ? 'Resetting...' : 'Reset Sync State'}
                                               </button>
+                                              {isAtlanticPrecisionCompany(businessCompany.id, businessCompany.name) && (
+                                                <button
+                                                  onClick={() => {
+                                                    const site = requireCompanyCsiSite(businessCompany.id);
+                                                    if (!site) return;
+                                                    if (!confirm(
+                                                      'Queue the Atlantic AR history rebuild? It will stage SLARTRANS history first, then replace only Atlantic AR transaction and payment facts.'
+                                                    )) {
+                                                      return;
+                                                    }
+                                                    queueAtlanticArHistoryRebuild?.(businessCompany.id, site);
+                                                  }}
+                                                  disabled={inforBusy}
+                                                  style={{ gridColumn: '1 / -1', justifySelf: 'start', padding: '8px 12px', background: '#b45309', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: inforBusy ? 'not-allowed' : 'pointer' }}
+                                                >
+                                                  {inforBusy && inforBusyAction === 'ar_history_rebuild'
+                                                    ? 'Queueing AR Rebuild...'
+                                                    : 'Rebuild Atlantic AR History'}
+                                                </button>
+                                              )}
                                             </div>
                                           </div>
                                           <div style={{ border: '1px solid #e2e8f0', borderRadius: '6px', padding: '10px', background: 'white', gridColumn: '4', gridRow: '1' }}>
