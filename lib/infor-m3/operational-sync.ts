@@ -10296,15 +10296,18 @@ export async function syncInforM3OperationalData(
                 });
                 if (Number(existingChildCount || 0) === 0) {
                   // AR history rebuilds intentionally reuse globally deduplicated
-                  // SLARTRANS raw rows staged by earlier attempts/runs.
-                  if (options?.fullArFactHistory === true && programId === 'SLARTRANS') {
+                  // SLARTRANS raw rows staged by earlier attempts/runs. Use the
+                  // persisted source program, not the request-path resolver:
+                  // CSI preserves mixed casing such as "SLArtrans".
+                  const sourceProgramId = String(row.miProgram || '').trim().toUpperCase();
+                  if (options?.fullArFactHistory === true && sourceProgramId === 'SLARTRANS') {
                     console.log(
                       `AR history rebuild reusing existing canonical SLARTRANS raw rows for ${syncRunId}.`
                     );
                   } else {
-                  throw new Error(
-                    `Raw ingest saved 0/${eligibleRecords.length} ${row.miProgram || 'unknown'} rows for ${snapshotDate.toISOString().slice(0, 10)} (syncRunId=${syncRunId}). CSI returned rows but persist skipped them.`
-                  );
+                    throw new Error(
+                      `Raw ingest saved 0/${eligibleRecords.length} ${row.miProgram || 'unknown'} rows for ${snapshotDate.toISOString().slice(0, 10)} (syncRunId=${syncRunId}). CSI returned rows but persist skipped them.`
+                    );
                   }
                 }
               }
