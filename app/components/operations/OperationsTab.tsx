@@ -6690,7 +6690,7 @@ export default function OperationsTab({
         </h2>
 
         {/* KPI Cards */}
-        {summary && (
+        {isSectionEnabled('arSummaryCards') && summary && (
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: '12px', marginBottom: '24px' }}>
             <div style={{ background: 'white', padding: '16px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
               <div style={{ fontSize: '13px', color: '#64748b', marginBottom: '8px' }}>Total Open AR</div>
@@ -6747,6 +6747,7 @@ export default function OperationsTab({
         )}
 
         {/* AR Aging Trend Chart */}
+        {isSectionEnabled('arAgingTrend') && (
         <div style={{ background: 'white', padding: '24px', borderRadius: '12px', border: '1px solid #e2e8f0', marginBottom: '24px' }}>
           <h3 style={{ fontSize: '18px', fontWeight: '600', color: '#1e293b', marginBottom: '20px' }}>
             Open AR Aging Trend
@@ -6778,8 +6779,10 @@ export default function OperationsTab({
             </BarChart>
           </ResponsiveContainer>
         </div>
+        )}
 
         {/* Unpaid Invoices by Customer (Top 10) */}
+        {isSectionEnabled('arUnpaidByCustomer') && (
         <div style={{ background: 'white', padding: '24px', borderRadius: '12px', border: '1px solid #e2e8f0', marginBottom: '24px' }}>
           <h3 style={{ fontSize: '18px', fontWeight: '700', color: '#1e293b', marginBottom: '20px' }}>
             Unpaid Invoices Amount by Customer (Top 10)
@@ -6840,9 +6843,11 @@ export default function OperationsTab({
             </div>
           )}
         </div>
+        )}
 
         <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '24px' }}>
           {/* Customer Contract and Cash Flow Summary */}
+          {isSectionEnabled('arContractCashFlowSummary') && (
           <div style={{ background: 'white', padding: '8px 24px 24px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
             <h3 style={{ fontSize: '18px', fontWeight: '700', color: '#1e293b', marginBottom: '8px' }}>
               Customer Contract and Cash Flow Summary
@@ -6930,13 +6935,24 @@ export default function OperationsTab({
               </div>
             )}
           </div>
+          )}
         </div>
 
         {/* Unpaid Invoices + AR Aging by Customer side-by-side. AR Aging
             gets 60% of the width because it has more columns (5 buckets +
             Open AR + Cust ID); Unpaid Invoices gets 40% (4 columns). */}
-        <div style={{ display: 'grid', gridTemplateColumns: '4fr 6fr', gap: '24px', marginTop: '24px' }}>
+        {(isSectionEnabled('arUnpaidInvoices') || isSectionEnabled('arAgingByCustomerTable')) && (
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateColumns:
+              isSectionEnabled('arUnpaidInvoices') && isSectionEnabled('arAgingByCustomerTable') ? '4fr 6fr' : '1fr',
+            gap: '24px',
+            marginTop: '24px',
+          }}
+        >
           {/* Unpaid Invoices Summary */}
+          {isSectionEnabled('arUnpaidInvoices') && (
           <div style={{ background: 'white', padding: '8px 24px 24px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
             <h3 style={{ fontSize: '18px', fontWeight: '700', color: '#1e293b', marginBottom: '8px' }}>
               Unpaid Invoices
@@ -7026,8 +7042,10 @@ export default function OperationsTab({
               </div>
             )}
           </div>
+          )}
 
           {/* AR Aging by Customer (per-customer summary, complements the per-invoice table above) */}
+          {isSectionEnabled('arAgingByCustomerTable') && (
           <div style={{ background: 'white', padding: '8px 24px 24px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
             <h3 style={{ fontSize: '18px', fontWeight: '700', color: '#1e293b', marginBottom: '8px' }}>
               AR Aging by Customer
@@ -7107,10 +7125,24 @@ export default function OperationsTab({
             </div>
           )}
           </div>
+          )}
         </div>
+        )}
 
-        <div style={{ display: 'grid', gridTemplateColumns: '11fr 9fr', gap: '24px', marginTop: '24px' }}>
+        {(isSectionEnabled('arPaidInvoicesByCustomer') || isSectionEnabled('arPaidInvoicesLast12Months')) && (
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateColumns:
+              isSectionEnabled('arPaidInvoicesByCustomer') && isSectionEnabled('arPaidInvoicesLast12Months')
+                ? '11fr 9fr'
+                : '1fr',
+            gap: '24px',
+            marginTop: '24px',
+          }}
+        >
           {/* Paid Invoices by Customer */}
+          {isSectionEnabled('arPaidInvoicesByCustomer') && (
           <div style={{ background: 'white', padding: '8px 24px 24px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
             <h3 style={{ fontSize: '18px', fontWeight: '700', color: '#1e293b', marginBottom: '8px' }}>
               Paid Invoices by Customer
@@ -7150,8 +7182,10 @@ export default function OperationsTab({
               </div>
             )}
           </div>
+          )}
 
           {/* Last 12 Month Paid Invoices Amount */}
+          {isSectionEnabled('arPaidInvoicesLast12Months') && (
           <div style={{ background: 'white', padding: '8px 24px 24px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
             <h3 style={{ fontSize: '18px', fontWeight: '700', color: '#1e293b', marginBottom: '8px' }}>
               Last 12 Month Paid Invoices Amount
@@ -7195,8 +7229,11 @@ export default function OperationsTab({
               </div>
             )}
           </div>
+          )}
         </div>
+        )}
 
+        {isSectionEnabled('arCustomerInvoices') && (
         <div style={{ background: 'white', padding: '8px 24px 24px', borderRadius: '12px', border: '1px solid #e2e8f0', marginTop: '24px' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', marginBottom: '8px' }}>
             <h3 style={{ fontSize: '18px', fontWeight: '700', color: '#1e293b', margin: 0 }}>
@@ -7317,6 +7354,7 @@ export default function OperationsTab({
             </div>
           </div>
         </div>
+        )}
 
         {(isSectionEnabled('arCollectionsTrend') || isSectionEnabled('arCollectionsRiskQueue')) && (
           <div

@@ -3383,7 +3383,7 @@ export async function GET(request: NextRequest) {
               'qbd-current-year-net-income-v1',
               shouldUseMockData ? 'mock-operational-data-v4' : 'real-operational-data-v2-hts-duty',
               cacheType === 'ar-aging' || cacheType === 'ar'
-                ? 'qbd-authoritative-aging-snapshots-v3'
+                ? 'qbd-authoritative-aging-snapshots-v4'
                 : null,
               // Bust stale ap-aging payloads that were cached while the
               // payment-gap guard / DerAmtBal preference was missing.
@@ -5862,27 +5862,32 @@ export async function GET(request: NextRequest) {
             const reportRows = qbdReportPages.flatMap((page) =>
               Array.isArray(page.payload) ? page.payload as Array<Record<string, unknown>> : [],
             );
-            const amountAt = (row: Record<string, unknown>, colId: string) => {
+            // QBD report rows use positional columns.  The parser does not
+            // preserve a stable `colID`, so resolving by colID silently turns
+            // every customer bucket into zero even though the report contains
+            // the amounts. Columns are label, Current, 1-30, 31-60, 61-90,
+            // 90+, and Total.
+            const amountAt = (row: Record<string, unknown>, index: number) => {
               const col = Array.isArray(row.colData)
-                ? row.colData.find((value: any) => String(value?.colID || '') === colId) as Record<string, unknown> | undefined
+                ? row.colData[index] as Record<string, unknown> | undefined
                 : undefined;
               const parsed = Number(String(col?.value || '').replace(/,/g, '').replace(/\(([^)]+)\)/, '-$1'));
               return Number.isFinite(parsed) ? parsed : 0;
             };
             const reportTotal = reportRows
               .filter((row) => String(row.rowKind || '') === 'TotalRow')
-              .map((row) => amountAt(row, '7'))
+              .map((row) => amountAt(row, 6))
               .at(-1) || 0;
             const clientScale = reportTotal > 0 ? Number(latest.totalAR || 0) / reportTotal : 1;
             unpaidByCustomer = reportRows
               .filter((row) => String(row.rowKind || '') === 'DataRow' && String(row.rowValue || row.accountName || '').trim())
               .map((row) => {
                 const customerName = String(row.rowValue || row.accountName || '').trim();
-                const current = amountAt(row, '2') * clientScale;
-                const days1to30 = amountAt(row, '3') * clientScale;
-                const days31to60 = amountAt(row, '4') * clientScale;
-                const days61to90 = amountAt(row, '5') * clientScale;
-                const days90plus = amountAt(row, '6') * clientScale;
+                const current = amountAt(row, 1) * clientScale;
+                const days1to30 = amountAt(row, 2) * clientScale;
+                const days31to60 = amountAt(row, 3) * clientScale;
+                const days61to90 = amountAt(row, 4) * clientScale;
+                const days90plus = amountAt(row, 5) * clientScale;
                 return {
                   customerId: `qbd:${customerName}`,
                   customerName,
@@ -5896,6 +5901,112 @@ export async function GET(request: NextRequest) {
               })
               .filter((row) => row.totalDue > 0)
               .sort((a, b) => b.totalDue - a.totalDue);
+          }
+
+          // The aggregate QBD aging report is authoritative for the chart and
+          // customer aging buckets. Its companion open-invoice snapshot is the
+          // authoritative available source for invoice-level panels. Read it
+          // here without using it to rebuild the aging trend.
+          const latestOpenSnapshot = await prisma.aROpenInvoiceSnapshot.findFirst({
+            where: {
+              companyId,
+              frequency: arFrequencyForQuery,
+              snapshotDate: { lte: endDate },
+            },
+            select: { snapshotDate: true },
+            orderBy: [{ snapshotDate: 'desc' }],
+          });
+          if (latestOpenSnapshot?.snapshotDate) {
+            const latestOpenRows = await prisma.aROpenInvoiceSnapshot.findMany({
+              where: {
+                companyId,
+                frequency: arFrequencyForQuery,
+                snapshotDate: latestOpenSnapshot.snapshotDate,
+              },
+              select: {
+                customerId: true,
+                customerName: true,
+                invoiceNo: true,
+                status: true,
+                invoiceDate: true,
+                dueDate: true,
+                sourcePlatform: true,
+                sourceProgram: true,
+                amountDueHome: true,
+                amountHome: true,
+                amountCurrency: true,
+                currencyCode: true,
+              },
+              orderBy: [{ amountDueHome: 'desc' }],
+              take: 100000,
+            });
+            const openInvoiceRows = (latestOpenRows as any[]).filter((row: any) => {
+              const amountDue = Number(row.amountDueHome || 0);
+              return (
+                Number.isFinite(amountDue) &&
+                amountDue > 0 &&
+                !isClosedArStatus(row.status) &&
+                isInvoiceLikeArOpenRow(row)
+              );
+            });
+            if (openInvoiceRows.length > 0) {
+              const openInvoiceCustomerAging = openInvoiceRows.reduce((acc: Record<string, any>, row: any) => {
+                const customerId = row.customerId ? String(row.customerId) : null;
+                const customerName = normalizeCustomerName(row.customerName, customerId);
+                const customerKey = buildCustomerGroupKey(customerId, customerName);
+                if (!acc[customerKey]) {
+                  acc[customerKey] = {
+                    customerId: customerId || '-',
+                    customerName,
+                    current: 0,
+                    days1to30: 0,
+                    days31to60: 0,
+                    days61to90: 0,
+                    days90plus: 0,
+                    totalDue: 0,
+                  };
+                }
+                const buckets = deriveArBucketsFromRow(row, latestOpenSnapshot.snapshotDate);
+                acc[customerKey].current += buckets.current;
+                acc[customerKey].days1to30 += buckets.days1to30;
+                acc[customerKey].days31to60 += buckets.days31to60;
+                acc[customerKey].days61to90 += buckets.days61to90;
+                acc[customerKey].days90plus += buckets.days90plus;
+                acc[customerKey].totalDue += buckets.totalAR;
+                return acc;
+              }, {});
+              // Prefer report-sourced customer buckets when present. Snapshot
+              // rows are a fallback for a report that lacks customer rows.
+              if (unpaidByCustomer.length === 0) {
+                unpaidByCustomer = Object.values(openInvoiceCustomerAging)
+                  .filter((row: any) => row.totalDue > 0)
+                  .sort((a: any, b: any) => b.totalDue - a.totalDue) as typeof unpaidByCustomer;
+              }
+              unpaidInvoices = openInvoiceRows.slice(0, 250).map((row: any) => ({
+                customerName: normalizeCustomerName(row.customerName, row.customerId),
+                customerNumber: row.customerId || '-',
+                invoiceDate: row.invoiceDate ? new Date(row.invoiceDate).toISOString().slice(0, 10) : null,
+                dueDate: row.dueDate ? new Date(row.dueDate).toISOString().slice(0, 10) : null,
+                amountDue: Number(row.amountDueHome || 0),
+              }));
+              customerInvoices = openInvoiceRows.slice(0, 500).map((row: any) => ({
+                customerId: row.customerId ? String(row.customerId) : null,
+                customerName: normalizeCustomerName(row.customerName, row.customerId),
+                invoiceNo: row.invoiceNo || '-',
+                date: row.invoiceDate ? new Date(row.invoiceDate).toISOString().slice(0, 10) : null,
+                dueDate: row.dueDate ? new Date(row.dueDate).toISOString().slice(0, 10) : null,
+                currency: row.currencyCode || 'USD',
+                amountCurrency: Number(row.amountCurrency || row.amountHome || row.amountDueHome || 0),
+                amountHome: Number(row.amountHome || row.amountDueHome || 0),
+                amountDueHome: Number(row.amountDueHome || 0),
+                sourceClass: 'UNKNOWN',
+              }));
+              invoiceClassificationRows = openInvoiceRows.map((row: any) => ({
+                invoiceNo: String(row.invoiceNo || ''),
+                customerId: row.customerId ? String(row.customerId) : null,
+                amountDueHome: Number(row.amountDueHome || 0),
+              }));
+            }
           }
         }
         const preferOpenInvoiceSnapshotTrend = !useQbdAgingSnapshots;
