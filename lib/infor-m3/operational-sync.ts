@@ -8872,7 +8872,11 @@ export async function syncInforM3OperationalData(
     arOnlyBackfill &&
     Boolean(syncWindow);
   const filteredProgramRows = isArBackfillFastPath
-    ? baseProgramRows.filter((row) => classifyModule(row.module) === 'ar')
+    ? baseProgramRows.filter((row) =>
+        options?.fullArFactHistory === true
+          ? resolveCsiProgramId(row, row.endpointPath) === 'SLARTRANS'
+          : classifyModule(row.module) === 'ar'
+      )
     : baseProgramRows;
   const salesOnly = options?.salesOnly === true;
   const SALES_ONLY_PROGRAM_IDS = new Set(['SLCOHDRS', 'SLCOS', 'SLCOITEMS']);
