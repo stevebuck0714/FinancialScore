@@ -1833,7 +1833,16 @@ export default function WorkingCapitalForecastTab({ selectedCompanyId, basisMode
               </div>
             )}
             <div style={{ border: '1px solid #e2e8f0', borderRadius: '8px', padding: '8px', gridColumn: isAccrualFullCashForecast ? '1 / 2' : undefined, gridRow: isAccrualFullCashForecast ? '1' : undefined }}>
-              <div style={{ fontSize: '12px', fontWeight: 700, color: '#0f172a', marginBottom: '6px' }}>AR Inputs</div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '5px', fontSize: '12px', fontWeight: 700, color: '#0f172a', marginBottom: '6px' }}>
+                AR Inputs
+                <span
+                  aria-label="AR input help"
+                  title="For each AR aging bucket, enter the percentage of its current balance you expect to collect over the next four weeks. The weekly weights then spread those expected collections across Weeks 1–4; keep them totaling 100%."
+                  style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: '14px', height: '14px', border: '1px solid #64748b', borderRadius: '50%', color: '#475569', fontSize: '10px', fontWeight: 700, cursor: 'help' }}
+                >
+                  i
+                </span>
+              </div>
               <div style={{ fontSize: '11px', color: '#334155', fontWeight: 600, marginBottom: '4px' }}>AR Aging Buckets (% collected next 4 weeks)</div>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '6px', marginBottom: '6px' }}>
                 <div>
@@ -1879,7 +1888,16 @@ export default function WorkingCapitalForecastTab({ selectedCompanyId, basisMode
             </div>
 
             <div style={{ border: '1px solid #e2e8f0', borderRadius: '8px', padding: '8px', gridColumn: isAccrualFullCashForecast ? '2 / 3' : undefined, gridRow: isAccrualFullCashForecast ? '1' : undefined }}>
-              <div style={{ fontSize: '12px', fontWeight: 700, color: '#0f172a', marginBottom: '6px' }}>AP Inputs</div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '5px', fontSize: '12px', fontWeight: 700, color: '#0f172a', marginBottom: '6px' }}>
+                AP Inputs
+                <span
+                  aria-label="AP input help"
+                  title="For each AP aging bucket, enter the percentage of its current balance you expect to pay over the next four weeks. The weekly weights then spread those expected payments across Weeks 1–4; keep them totaling 100%."
+                  style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: '14px', height: '14px', border: '1px solid #64748b', borderRadius: '50%', color: '#475569', fontSize: '10px', fontWeight: 700, cursor: 'help' }}
+                >
+                  i
+                </span>
+              </div>
               <div style={{ fontSize: '11px', color: '#334155', fontWeight: 600, marginBottom: '4px' }}>AP Aging Buckets (% paid next 4 weeks)</div>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '6px', marginBottom: '6px' }}>
                 <div>
