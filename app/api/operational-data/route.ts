@@ -3383,7 +3383,7 @@ export async function GET(request: NextRequest) {
               'qbd-current-year-net-income-v1',
               shouldUseMockData ? 'mock-operational-data-v4' : 'real-operational-data-v2-hts-duty',
               cacheType === 'ar-aging' || cacheType === 'ar'
-                ? 'qbd-authoritative-aging-snapshots-v2'
+                ? 'qbd-authoritative-aging-snapshots-v3'
                 : null,
               // Bust stale ap-aging payloads that were cached while the
               // payment-gap guard / DerAmtBal preference was missing.
@@ -5845,6 +5845,57 @@ export async function GET(request: NextRequest) {
               dsoWeightedDaysNumerator: 0,
               dsoWeightedDaysDenominator: 0,
             };
+            const latestDate = new Date(latest.snapshotDate);
+            const qbdReportDateLabel = [
+              'January', 'February', 'March', 'April', 'May', 'June',
+              'July', 'August', 'September', 'October', 'November', 'December',
+            ][latestDate.getUTCMonth()] + ` ${latestDate.getUTCDate()}, ${latestDate.getUTCFullYear()}`;
+            const qbdReportPages = await prisma.$queryRaw<Array<{ payload: unknown }>>`
+              SELECT "payload"
+              FROM "QuickBooksDesktopBackfillPage"
+              WHERE "companyId" = ${companyId}
+                AND "requestName" = 'ARAgingSummaryReportQuery'
+                AND "payload"::text LIKE ${`%As of ${qbdReportDateLabel}%`}
+              ORDER BY "createdAt" DESC, "pageNumber" ASC
+              LIMIT 1
+            `;
+            const reportRows = qbdReportPages.flatMap((page) =>
+              Array.isArray(page.payload) ? page.payload as Array<Record<string, unknown>> : [],
+            );
+            const amountAt = (row: Record<string, unknown>, colId: string) => {
+              const col = Array.isArray(row.colData)
+                ? row.colData.find((value: any) => String(value?.colID || '') === colId) as Record<string, unknown> | undefined
+                : undefined;
+              const parsed = Number(String(col?.value || '').replace(/,/g, '').replace(/\(([^)]+)\)/, '-$1'));
+              return Number.isFinite(parsed) ? parsed : 0;
+            };
+            const reportTotal = reportRows
+              .filter((row) => String(row.rowKind || '') === 'TotalRow')
+              .map((row) => amountAt(row, '7'))
+              .at(-1) || 0;
+            const clientScale = reportTotal > 0 ? Number(latest.totalAR || 0) / reportTotal : 1;
+            unpaidByCustomer = reportRows
+              .filter((row) => String(row.rowKind || '') === 'DataRow' && String(row.rowValue || row.accountName || '').trim())
+              .map((row) => {
+                const customerName = String(row.rowValue || row.accountName || '').trim();
+                const current = amountAt(row, '2') * clientScale;
+                const days1to30 = amountAt(row, '3') * clientScale;
+                const days31to60 = amountAt(row, '4') * clientScale;
+                const days61to90 = amountAt(row, '5') * clientScale;
+                const days90plus = amountAt(row, '6') * clientScale;
+                return {
+                  customerId: `qbd:${customerName}`,
+                  customerName,
+                  current,
+                  days1to30,
+                  days31to60,
+                  days61to90,
+                  days90plus,
+                  totalDue: current + days1to30 + days31to60 + days61to90 + days90plus,
+                };
+              })
+              .filter((row) => row.totalDue > 0)
+              .sort((a, b) => b.totalDue - a.totalDue);
           }
         }
         const preferOpenInvoiceSnapshotTrend = !useQbdAgingSnapshots;
