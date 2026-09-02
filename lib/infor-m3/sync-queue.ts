@@ -540,8 +540,7 @@ async function finalizeArHistoryRebuild(companyId: string, syncRunId: string) {
     where: {
       companyId,
       platform: { in: ['INFOR_M3', 'INFOR_CSI'] },
-      syncRunId,
-      miProgram: 'SLARTRANS',
+      miProgram: { equals: 'SLARTRANS', mode: 'insensitive' },
     },
   });
   if (sourceRecordCount === 0) {
@@ -557,6 +556,7 @@ async function finalizeArHistoryRebuild(companyId: string, syncRunId: string) {
     syncRunId,
     frequency: 'daily',
     batchSize: 5000,
+    reuseCanonicalSlArtrans: true,
   });
   if (!transformResult.success) {
     throw new Error(`AR fact transform failed: ${transformResult.errors.join('; ')}`);

@@ -10295,9 +10295,17 @@ export async function syncInforM3OperationalData(
                   where: { batchId },
                 });
                 if (Number(existingChildCount || 0) === 0) {
+                  // AR history rebuilds intentionally reuse globally deduplicated
+                  // SLARTRANS raw rows staged by earlier attempts/runs.
+                  if (options?.fullArFactHistory === true && programId === 'SLARTRANS') {
+                    console.log(
+                      `AR history rebuild reusing existing canonical SLARTRANS raw rows for ${syncRunId}.`
+                    );
+                  } else {
                   throw new Error(
                     `Raw ingest saved 0/${eligibleRecords.length} ${row.miProgram || 'unknown'} rows for ${snapshotDate.toISOString().slice(0, 10)} (syncRunId=${syncRunId}). CSI returned rows but persist skipped them.`
                   );
+                  }
                 }
               }
             }
@@ -10599,10 +10607,13 @@ export async function transformInforM3RawRun(options: {
   businessDateIso?: string;
   maxBusinessDates?: number;
   batchSize?: number;
+  /** Rebuild from global, deduplicated SLARTRANS raw records across prior runs. */
+  reuseCanonicalSlArtrans?: boolean;
 }): Promise<InforRawTransformResult> {
   const companyId = String(options.companyId || '').trim();
   const syncRunId = String(options.syncRunId || '').trim();
   const frequency = options.frequency || 'daily';
+  const reuseCanonicalSlArtrans = options.reuseCanonicalSlArtrans === true;
   const errors: string[] = [];
   if (!companyId) return { success: false, daysProcessed: 0, rawRecordsRead: 0, recordsCreated: 0, errors: ['Missing companyId'] };
   if (!syncRunId) return { success: false, daysProcessed: 0, rawRecordsRead: 0, recordsCreated: 0, errors: ['Missing syncRunId'] };
@@ -10634,7 +10645,9 @@ export async function transformInforM3RawRun(options: {
       FROM "InforRawBatch" b
       WHERE b."companyId" = ${companyId}
         AND b.platform = 'INFOR_M3'
-        AND b."syncRunId" = ${syncRunId}
+        ${reuseCanonicalSlArtrans
+          ? Prisma.sql`AND UPPER(COALESCE(b."miProgram", '')) = 'SLARTRANS'`
+          : Prisma.sql`AND b."syncRunId" = ${syncRunId}`}
         ${businessDateFilter ? Prisma.sql`AND b."businessDate" = ${new Date(`${businessDateFilter}T00:00:00.000Z`)}` : Prisma.sql``}
 
       UNION
@@ -10643,7 +10656,9 @@ export async function transformInforM3RawRun(options: {
       FROM "InforRawRecord" r
       WHERE r."companyId" = ${companyId}
         AND r.platform = 'INFOR_M3'
-        AND r."syncRunId" = ${syncRunId}
+        ${reuseCanonicalSlArtrans
+          ? Prisma.sql`AND UPPER(COALESCE(r."miProgram", '')) = 'SLARTRANS'`
+          : Prisma.sql`AND r."syncRunId" = ${syncRunId}`}
         ${businessDateFilter ? Prisma.sql`AND r."businessDate" = ${new Date(`${businessDateFilter}T00:00:00.000Z`)}` : Prisma.sql``}
     ) q
     WHERE q."businessDate" IS NOT NULL
@@ -10676,7 +10691,9 @@ export async function transformInforM3RawRun(options: {
         where: {
           companyId,
           platform: { in: ['INFOR_M3', 'INFOR_CSI'] },
-          syncRunId,
+          ...(reuseCanonicalSlArtrans
+            ? { miProgram: { equals: 'SLARTRANS', mode: 'insensitive' } }
+            : { syncRunId }),
           businessDate: snapshotDate,
         },
         select: {
@@ -10696,6 +10713,7 @@ export async function transformInforM3RawRun(options: {
         if (!payload) continue;
         const moduleName = String(row.module || '').trim();
         const miProgram = String(row.miProgram || '').trim().toUpperCase();
+        if (reuseCanonicalSlArtrans && miProgram !== 'SLARTRANS') continue;
         const transaction = String(row.transaction || 'CSI_LOAD').trim() || 'CSI_LOAD';
         const moduleType = classifyModuleFromProgramId(miProgram) ?? classifyModule(moduleName);
         const key = `${moduleType}||${miProgram}||${transaction}`;
