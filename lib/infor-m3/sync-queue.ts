@@ -571,18 +571,17 @@ async function finalizeArHistoryRebuild(companyId: string, syncRunId: string) {
   const asOfDate = books?.snapshotDate.toISOString().slice(0, 10) ?? new Date().toISOString().slice(0, 10);
   const rows = await db().$queryRawUnsafe<Array<{ open_ar: number }>>(
     `WITH invoices AS (
-       SELECT "coNum" AS co_num, "customerId" AS customer_id, "invoiceNum" AS invoice_no
+       SELECT "customerId" AS customer_id, "invoiceNum" AS invoice_no
        FROM "ARTransactionFact"
        WHERE "companyId" = $1 AND "arAcct" = '11100' AND "transType" = 'I' AND "eventDate" <= $2::date
-       GROUP BY "coNum", "customerId", "invoiceNum"
+       GROUP BY "customerId", "invoiceNum"
      ), balances AS (
        SELECT GREATEST(COALESCE(SUM(e."normalizedAmount"), 0), 0) AS open_amount
        FROM invoices i LEFT JOIN "ARTransactionFact" e
          ON e."companyId" = $1 AND e."eventDate" <= $2::date
         AND COALESCE(e."applyToInvNum", e."invoiceNum") = i.invoice_no
-        AND e."coNum" IS NOT DISTINCT FROM i.co_num
         AND e."customerId" IS NOT DISTINCT FROM i.customer_id
-       GROUP BY i.co_num, i.customer_id, i.invoice_no
+       GROUP BY i.customer_id, i.invoice_no
      ) SELECT COALESCE(SUM(open_amount), 0)::double precision AS open_ar FROM balances`,
     companyId,
     asOfDate,

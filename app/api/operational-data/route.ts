@@ -2891,24 +2891,22 @@ async function buildDailyArSeriesByAgingRule(
     `WITH date_series AS (
        SELECT generate_series($3::date, $4::date, '1 day'::interval)::date AS d
      ),
-     -- Composite key (coNum, customerId, invoiceNum) prevents cross-customer
-     -- bleed when CSI reuses an InvNum across companies/customers.
-     -- IS NOT DISTINCT FROM on coNum/customerId so NULL == NULL.
+     -- CSI changes CoNum on RMA/credit rows and leaves it blank on some
+     -- payments. Customer + invoice is the stable AR lifecycle identity.
      invoice_creates AS (
-       SELECT "coNum" AS co_num, "customerId" AS cust_num,
-              "invoiceNum" AS inv_num,
+       SELECT "customerId" AS cust_num, "invoiceNum" AS inv_num,
               MIN("eventDate")::date AS created_at
        FROM "ARTransactionFact"
        WHERE "companyId" = $1 AND "arAcct" = $2 AND "transType" = 'I'
          AND "eventDate" >= ($3::date - INTERVAL '${aging} days')
          AND "eventDate" <= $4::date
-       GROUP BY "coNum", "customerId", "invoiceNum"
+       GROUP BY "customerId", "invoiceNum"
      ),
      events AS (
        -- Invoices match themselves on invoiceNum; P/C/D match the invoice
-       -- they apply to via COALESCE(applyToInvNum, invoiceNum). Both must
-       -- also match coNum + customerId to avoid cross-customer over-matching.
-       SELECT "coNum" AS co_num, "customerId" AS cust_num,
+       -- they apply to via COALESCE(applyToInvNum, invoiceNum). Do not use
+       -- CoNum: it is a transaction/document identifier for reductions.
+       SELECT "customerId" AS cust_num,
               COALESCE("applyToInvNum", "invoiceNum") AS inv_num,
               "eventDate"::date AS dt,
               "normalizedAmount"
@@ -2918,7 +2916,7 @@ async function buildDailyArSeriesByAgingRule(
          AND "eventDate" <= $4::date
      ),
      daily AS (
-       SELECT ds.d AS snapshot_date, ic.co_num, ic.cust_num, ic.inv_num,
+       SELECT ds.d AS snapshot_date, ic.cust_num, ic.inv_num,
               SUM(e."normalizedAmount") AS open_per_invoice
        FROM date_series ds
        JOIN invoice_creates ic
@@ -2926,10 +2924,9 @@ async function buildDailyArSeriesByAgingRule(
         AND ic.created_at <= ds.d
        LEFT JOIN events e
          ON e.inv_num = ic.inv_num
-        AND e.co_num   IS NOT DISTINCT FROM ic.co_num
         AND e.cust_num IS NOT DISTINCT FROM ic.cust_num
         AND e.dt <= ds.d
-       GROUP BY ds.d, ic.co_num, ic.cust_num, ic.inv_num
+       GROUP BY ds.d, ic.cust_num, ic.inv_num
      )
      SELECT snapshot_date,
             COALESCE(SUM(GREATEST(open_per_invoice, 0)), 0) AS open_ar
@@ -2998,7 +2995,7 @@ async function buildOpenArInvoicesFromFacts(
     amount_due_home: number;
   }> = await prismaClient.$queryRawUnsafe(
     `WITH invoices AS (
-       SELECT "coNum" AS co_num, "customerId" AS customer_id, "invoiceNum" AS invoice_no,
+       SELECT "customerId" AS customer_id, "invoiceNum" AS invoice_no,
               MAX(NULLIF(TRIM("customerName"), '')) AS customer_name,
               MIN(COALESCE("invoiceDate", "eventDate")) AS invoice_date,
               MAX("dueDate") AS due_date
@@ -3007,10 +3004,10 @@ async function buildOpenArInvoicesFromFacts(
          AND "arAcct" = $2
          AND "transType" = 'I'
          AND "eventDate" <= $3::date
-       GROUP BY "coNum", "customerId", "invoiceNum"
+       GROUP BY "customerId", "invoiceNum"
      ),
      events AS (
-       SELECT "coNum" AS co_num, "customerId" AS customer_id,
+       SELECT "customerId" AS customer_id,
               COALESCE("applyToInvNum", "invoiceNum") AS invoice_no,
               "normalizedAmount"
        FROM "ARTransactionFact"
@@ -3023,9 +3020,8 @@ async function buildOpenArInvoicesFromFacts(
      FROM invoices i
      LEFT JOIN events e
        ON e.invoice_no = i.invoice_no
-      AND e.co_num IS NOT DISTINCT FROM i.co_num
       AND e.customer_id IS NOT DISTINCT FROM i.customer_id
-     GROUP BY i.co_num, i.customer_id, i.customer_name, i.invoice_no, i.invoice_date, i.due_date
+     GROUP BY i.customer_id, i.customer_name, i.invoice_no, i.invoice_date, i.due_date
      HAVING GREATEST(COALESCE(SUM(e."normalizedAmount"), 0), 0) > 0.005
      ORDER BY amount_due_home DESC`,
     companyId,
