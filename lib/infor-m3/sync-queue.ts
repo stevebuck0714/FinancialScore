@@ -1847,19 +1847,13 @@ async function processTask(
     return { runId: task.runId, taskId: task.id, status: 'aborted', details: 'Task lease was already released.' };
   }
 
-  // The terminal task has already persisted the run's status by this point.
-  // Use that durable state for the one-shot AR finalization instead of relying
-  // solely on the in-memory transition flag. Otherwise an already-completed
-  // terminal task can leave raw SLArtrans staged while reporting the rebuild
-  // as done and never replacing ARTransactionFact.
-  const terminalArHistoryRebuild = await db().inforSyncRun.findFirst({
-    where: {
-      id: task.runId,
-      mode: AR_HISTORY_REBUILD_MODE,
-      status: 'done',
-    },
-    select: { id: true },
-  });
+  // `hasMore=false` on a task whose persisted cursor carries the rebuild mode
+  // is the terminal signal. Do not depend on re-reading the run after its
+  // transition: the in-process worker can observe stale run state there and
+  // incorrectly write the generic completion without rebuilding AR facts.
+  const terminalArHistoryRebuild =
+    !hasMore &&
+    String(taskPayload.mode || '').trim().toLowerCase() === AR_HISTORY_REBUILD_MODE;
   if (terminalArHistoryRebuild) {
     try {
       const reconciliation = await finalizeArHistoryRebuild(task.companyId, task.runId);
