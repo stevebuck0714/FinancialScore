@@ -6765,9 +6765,11 @@ export async function GET(request: NextRequest) {
                 totalAR: booksAr,
                 // Do not present an aging allocation as factual when its
                 // invoice detail cannot account for the Books AR balance.
-                agingAllocationAvailable:
-                  Math.abs(reconciliationDifference) <= AR_EXACT_MATCH_EPSILON ||
-                  arGlOnlyAdjustmentIsDisclosable(booksAr, reconciliationDifference),
+                // The per-day buckets above are rescaled from the open-invoice
+                // snapshot, so a large rescale turns a stale distribution into
+                // a fabricated one. Only publish buckets when the snapshot
+                // already accounts for Books AR on its own.
+                agingAllocationAvailable: Math.abs(reconciliationDifference) <= AR_EXACT_MATCH_EPSILON,
                 currentPct: booksAr > 0 ? (Number(row.current || 0) / booksAr) * 100 : 0,
                 days1to30Pct: booksAr > 0 ? (Number(row.days1to30 || 0) / booksAr) * 100 : 0,
                 days31to60Pct: booksAr > 0 ? (Number(row.days31to60 || 0) / booksAr) * 100 : 0,
