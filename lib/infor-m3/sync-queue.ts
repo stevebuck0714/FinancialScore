@@ -1847,13 +1847,13 @@ async function processTask(
     return { runId: task.runId, taskId: task.id, status: 'aborted', details: 'Task lease was already released.' };
   }
 
-  // `hasMore=false` on a task whose persisted cursor carries the rebuild mode
-  // is the terminal signal. Do not depend on re-reading the run after its
-  // transition: the in-process worker can observe stale run state there and
-  // incorrectly write the generic completion without rebuilding AR facts.
+  // The transaction's successful running -> done transition is the durable
+  // terminal signal. `hasMore` is an upstream-response hint and can disagree
+  // with the queue when its final task drains, which would skip the one-shot
+  // AR fact rebuild while reporting generic completion.
   const terminalArHistoryRebuild =
-    !hasMore &&
-    String(taskPayload.mode || '').trim().toLowerCase() === AR_HISTORY_REBUILD_MODE;
+    runCompletedInThisTask &&
+    String(task.run.mode || '').trim().toLowerCase() === AR_HISTORY_REBUILD_MODE;
   if (terminalArHistoryRebuild) {
     try {
       const reconciliation = await finalizeArHistoryRebuild(task.companyId, task.runId);
