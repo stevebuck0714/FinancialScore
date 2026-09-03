@@ -2972,6 +2972,23 @@ async function buildDailyArSeriesByAgingRule(
   return out;
 }
 
+/** Rounding noise only. A real residual is disclosed, never absorbed here. */
+const AR_EXACT_MATCH_EPSILON = 1;
+
+/**
+ * Books AR is anchored to a trusted balance sheet and rolled forward on GL
+ * activity, while the detail replays the invoice subledger, so the two never
+ * tie exactly. The residual is disclosed as its own reconciling line. Past
+ * this share of Books AR it is a broken subledger rather than a reconciling
+ * item and stays surfaced as a warning.
+ */
+const AR_GL_ONLY_ADJUSTMENT_LIMIT_PCT = 0.05;
+
+function arGlOnlyAdjustmentIsDisclosable(booksAr: number, difference: number): boolean {
+  if (!Number.isFinite(difference) || !Number.isFinite(booksAr)) return false;
+  return Math.abs(difference) <= Math.abs(booksAr) * AR_GL_ONLY_ADJUSTMENT_LIMIT_PCT;
+}
+
 async function buildOpenArInvoicesFromFacts(
   prismaClient: any,
   companyId: string,
@@ -3015,14 +3032,39 @@ async function buildOpenArInvoicesFromFacts(
          AND "arAcct" = $2
          AND "eventDate" <= $3::date
      )
-     SELECT i.customer_id, i.customer_name, i.invoice_no, i.invoice_date, i.due_date,
-            GREATEST(COALESCE(SUM(e."normalizedAmount"), 0), 0)::double precision AS amount_due_home
-     FROM invoices i
-     LEFT JOIN events e
-       ON e.invoice_no = i.invoice_no
-      AND e.customer_id IS NOT DISTINCT FROM i.customer_id
-     GROUP BY i.customer_id, i.customer_name, i.invoice_no, i.invoice_date, i.due_date
-     HAVING GREATEST(COALESCE(SUM(e."normalizedAmount"), 0), 0) > 0.005
+     netted AS (
+       SELECT i.customer_id, i.customer_name, i.invoice_no, i.invoice_date, i.due_date,
+              COALESCE(SUM(e."normalizedAmount"), 0) AS net
+       FROM invoices i
+       LEFT JOIN events e
+         ON e.invoice_no = i.invoice_no
+        AND e.customer_id IS NOT DISTINCT FROM i.customer_id
+       GROUP BY i.customer_id, i.customer_name, i.invoice_no, i.invoice_date, i.due_date
+     ),
+     -- CSI attaches some reductions to the wrong invoice within the right
+     -- customer, so a per-invoice floor would clamp the over-reduced invoice
+     -- to zero while its sibling stays fully open, overstating company AR.
+     -- Pool each customer's credit balance and consume it oldest-first.
+     credit_pool AS (
+       SELECT customer_id, -SUM(LEAST(net, 0)) AS credit
+       FROM netted
+       GROUP BY customer_id
+     ),
+     open_invoices AS (
+       SELECT n.*,
+              SUM(n.net) OVER (
+                PARTITION BY n.customer_id
+                ORDER BY n.invoice_date NULLS FIRST, n.invoice_no
+                ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
+              ) AS running_net
+       FROM netted n
+       WHERE n.net > 0.005
+     )
+     SELECT o.customer_id, o.customer_name, o.invoice_no, o.invoice_date, o.due_date,
+            GREATEST(LEAST(o.net, o.running_net - COALESCE(c.credit, 0)), 0)::double precision AS amount_due_home
+     FROM open_invoices o
+     LEFT JOIN credit_pool c ON c.customer_id IS NOT DISTINCT FROM o.customer_id
+     WHERE GREATEST(LEAST(o.net, o.running_net - COALESCE(c.credit, 0)), 0) > 0.005
      ORDER BY amount_due_home DESC`,
     companyId,
     arAcct,
@@ -6723,7 +6765,9 @@ export async function GET(request: NextRequest) {
                 totalAR: booksAr,
                 // Do not present an aging allocation as factual when its
                 // invoice detail cannot account for the Books AR balance.
-                agingAllocationAvailable: Math.abs(reconciliationDifference) <= 1,
+                agingAllocationAvailable:
+                  Math.abs(reconciliationDifference) <= AR_EXACT_MATCH_EPSILON ||
+                  arGlOnlyAdjustmentIsDisclosable(booksAr, reconciliationDifference),
                 currentPct: booksAr > 0 ? (Number(row.current || 0) / booksAr) * 100 : 0,
                 days1to30Pct: booksAr > 0 ? (Number(row.days1to30 || 0) / booksAr) * 100 : 0,
                 days31to60Pct: booksAr > 0 ? (Number(row.days31to60 || 0) / booksAr) * 100 : 0,
@@ -7386,11 +7430,19 @@ export async function GET(request: NextRequest) {
         });
         const detailAr = Number(summaryTotals.totalAR || 0);
         const booksAr = booksArSnapshot ? Number(booksArSnapshot.ar || 0) : null;
-        const AR_RECONCILIATION_TOLERANCE = 1;
+        const AR_RECONCILIATION_TOLERANCE = AR_EXACT_MATCH_EPSILON;
         const reconciliationDifference = booksAr === null ? null : booksAr - detailAr;
         const isArDetailReconciled =
           reconciliationDifference !== null &&
           Math.abs(reconciliationDifference) <= AR_RECONCILIATION_TOLERANCE;
+        const glOnlyAdjustment =
+          booksAr === null || reconciliationDifference === null
+            ? null
+            : isArDetailReconciled
+              ? 0
+              : arGlOnlyAdjustmentIsDisclosable(booksAr, reconciliationDifference)
+                ? reconciliationDifference
+                : null;
         const totalARForPct = Number(summaryTotals.totalAR || 0);
         // Standard bucket naming:
         // current<=0, days1to30=1-30, days31to60=31-60, days61to90=61-90, days90plus=>90
@@ -7505,12 +7557,15 @@ export async function GET(request: NextRequest) {
             booksArAsOfDate: booksArSnapshot?.snapshotDate.toISOString().slice(0, 10) ?? null,
             detailAr,
             reconciliationDifference,
+            glOnlyAdjustment,
             arDetailStatus:
               booksAr === null
                 ? 'books_unavailable'
                 : isArDetailReconciled
                   ? 'reconciled'
-                  : 'unreconciled',
+                  : glOnlyAdjustment !== null
+                    ? 'reconciled_with_adjustment'
+                    : 'unreconciled',
             arDetailDiagnostics: {
               source: arDetailFromFacts ? 'ARTransactionFact' : 'AROpenInvoiceSnapshot',
               invoiceCount: arDetailInvoiceCount,

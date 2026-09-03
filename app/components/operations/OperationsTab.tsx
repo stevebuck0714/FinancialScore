@@ -6322,6 +6322,8 @@ export default function OperationsTab({
     const detailAr = Number(summary?.detailAr ?? 0);
     const arReconciliationDifference =
       typeof summary?.reconciliationDifference === 'number' ? summary.reconciliationDifference : null;
+    const arGlOnlyAdjustment =
+      typeof summary?.glOnlyAdjustment === 'number' ? summary.glOnlyAdjustment : null;
     const arDetailStatus = summary?.arDetailStatus;
     const arDetailDiagnostics = summary?.arDetailDiagnostics;
     const arDetailInvoiceCount = Number(arDetailDiagnostics?.invoiceCount ?? 0);
@@ -6329,9 +6331,11 @@ export default function OperationsTab({
     const arDetailLabel =
       arDetailStatus === 'reconciled'
         ? 'Ledger detail reconciled to Books AR'
-        : arDetailStatus === 'books_unavailable'
-          ? 'Ledger detail; Books AR unavailable for this date'
-          : 'Ledger detail; not reconciled to Books AR';
+        : arDetailStatus === 'reconciled_with_adjustment'
+          ? 'Ledger detail reconciled to Books AR with a GL-only adjustment'
+          : arDetailStatus === 'books_unavailable'
+            ? 'Ledger detail; Books AR unavailable for this date'
+            : 'Ledger detail; not reconciled to Books AR';
     const latestRecord = records[0];
     const arCustomers = (summary?.breakdown || summary?.unpaidByCustomer || []).map((row: any) => ({
       customerId: row.customerId || row.customerNumber || '-',
@@ -6769,7 +6773,31 @@ export default function OperationsTab({
             </div>
           </div>
         )}
-        {booksAr !== null && arReconciliationDifference !== null && Math.abs(arReconciliationDifference) > 1 && (
+        {booksAr !== null && arGlOnlyAdjustment !== null && arGlOnlyAdjustment !== 0 && (
+          <div
+            style={{
+              marginTop: '-12px',
+              marginBottom: '24px',
+              padding: '10px 12px',
+              borderRadius: '8px',
+              border: '1px solid #cbd5e1',
+              background: '#f8fafc',
+              color: '#334155',
+              fontSize: '13px',
+            }}
+          >
+            Books AR is {formatCurrency(booksAr)}. Invoice detail totals {formatCurrency(detailAr)}, plus a
+            {' '}GL-only adjustment of {formatCurrency(arGlOnlyAdjustment)} that ties the detail to Books AR.
+            {' '}That adjustment is activity posted directly to the AR control account with no invoice behind it.
+            {' '}Books AR is anchored to the trusted balance sheet and rolled forward on GL activity, while the
+            {' '}detail replays the invoice subledger, so a residual between them is expected.
+            {' '}The ledger source contains {arDetailInvoiceCount.toLocaleString()} open invoices
+            {arDetailMissingAgingDateCount > 0
+              ? `, including ${arDetailMissingAgingDateCount.toLocaleString()} without an aging date`
+              : ''}.
+          </div>
+        )}
+        {booksAr !== null && arReconciliationDifference !== null && arDetailStatus === 'unreconciled' && (
           <div
             style={{
               marginTop: '-12px',
@@ -6803,8 +6831,9 @@ export default function OperationsTab({
             As of: {arAsOfLabel} | Coverage: {arCoverageLabel}
           </div>
           <div style={{ marginTop: '-4px', marginBottom: '12px', fontSize: '11px', color: '#64748b' }}>
-            Aging buckets are shown only when invoice detail reconciles to Books AR. Other dates show the
-            Daily Financials total without a fabricated aging allocation.
+            Aging buckets are shown only when invoice detail reconciles to Books AR, either exactly or with a
+            disclosed GL-only adjustment. Other dates show the Daily Financials total without a fabricated
+            aging allocation.
           </div>
           <ResponsiveContainer width="100%" height={350}>
             <BarChart data={chartData}>
