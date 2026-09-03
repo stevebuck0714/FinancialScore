@@ -3031,7 +3031,7 @@ async function buildOpenArInvoicesFromFacts(
        WHERE "companyId" = $1
          AND "arAcct" = $2
          AND "eventDate" <= $3::date
-     )
+     ),
      netted AS (
        SELECT i.customer_id, i.customer_name, i.invoice_no, i.invoice_date, i.due_date,
               COALESCE(SUM(e."normalizedAmount"), 0) AS net
