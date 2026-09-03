@@ -7521,6 +7521,21 @@ async function saveARTransactionFacts(
 
     const amountRaw = pickNumber(record, ['Amount', 'amount']);
     if (!Number.isFinite(amountRaw) || amountRaw === 0) continue;
+    // CSI's AR control-account posting includes invoice charges beyond the
+    // line amount. SLArtrans keeps those charges separately, so using Amount
+    // alone understates open AR by tax/freight/miscellaneous charges. Payment
+    // Amount is already the applied cash amount and must not add invoice
+    // charge fields to it.
+    const additionalArCharges =
+      tt === 'P'
+        ? 0
+        : [
+            pickNumber(record, ['SalesTax', 'salesTax']),
+            pickNumber(record, ['SalesTax2', 'salesTax2']),
+            pickNumber(record, ['Freight', 'freight']),
+            pickNumber(record, ['MiscCharges', 'miscCharges']),
+          ].reduce((total, value) => total + Math.abs(Number.isFinite(value) ? value : 0), 0);
+    const grossArAmount = Math.abs(amountRaw) + additionalArCharges;
 
     const invDateRaw = parseMaybeDate(pickString(record, ['InvDate', 'invDate']));
     const recordDateRaw = parseMaybeDate(pickString(record, ['RecordDate', 'recordDate']));
@@ -7529,7 +7544,7 @@ async function saveARTransactionFacts(
     if (!resolvedDate || resolvedDate.getTime() < Date.UTC(2023, 0, 1)) continue;
 
     const sign = (tt === 'P' || tt === 'C') ? -1 : 1;
-    const normalized = sign * Math.abs(amountRaw);
+    const normalized = sign * grossArAmount;
 
     rows.push({
       companyId,
@@ -7549,7 +7564,7 @@ async function saveARTransactionFacts(
       transType: tt,
       invoiceDate: invDateRaw ? startOfUtcDay(invDateRaw) : null,
       dueDate: dueDateRaw ? startOfUtcDay(dueDateRaw) : null,
-      amount: amountRaw,
+      amount: grossArAmount,
       normalizedAmount: normalized,
       currencyCode: pickString(record, ['CurrCode', 'currCode']) || null,
       payType: pickString(record, ['PayType', 'payType']) || null,
