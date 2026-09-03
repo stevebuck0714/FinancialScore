@@ -1165,7 +1165,11 @@ export default function OperationsTab({
     !Array.isArray(companyOperationalHubConfig.sections)
       ? (companyOperationalHubConfig.sections as Record<string, any>)
       : {};
-  const companyCustomTabs = parseOperationalHubCustomTabs(companyOperationalHubConfig);
+  const isAtlanticCompany = isAtlanticPrecisionCompany(selectedCompanyId, companyName);
+  const companyCustomTabs = parseOperationalHubCustomTabs(companyOperationalHubConfig).filter((tab) => {
+    if (!isAtlanticCompany) return true;
+    return !['group', 'cap table'].includes(tab.label.trim().toLowerCase());
+  });
   const companyCustomReports = parseOperationalHubCustomReports(companyOperationalHubConfig);
   const assignedCompanyReportKeys = Array.from(
     resolveAssignedCompanyReportKeys({
@@ -1360,7 +1364,6 @@ export default function OperationsTab({
           return [...resolvedModulesBase.slice(0, productsIdx + 1), 'vendors', ...resolvedModulesBase.slice(productsIdx + 1)];
         })()
       : resolvedModulesBase;
-  const isAtlanticCompany = isAtlanticPrecisionCompany(selectedCompanyId, companyName);
   const resolvedModulesWithGroups =
     isAtlanticCompany && !resolvedModulesWithVendors.includes('groups')
       ? (() => {

@@ -1523,7 +1523,11 @@ export default function SiteAdminDashboard(props: any) {
     company: any
   ): Array<{ key: string; label: string; group: string; source: HubTabSource; moduleKey: string }> => {
     const companySectorCategory = String(company?.industrySectorCategory || '').trim();
-    const customTabs = getOperationalHubCustomTabs(company);
+    const isAtlanticCompany = isAtlanticPrecisionCompany(company?.id, company?.name);
+    const customTabs = getOperationalHubCustomTabs(company).filter((tab) => {
+      if (!isAtlanticCompany) return true;
+      return !['group', 'cap table'].includes(tab.label.trim().toLowerCase());
+    });
     const customTabKeys = customTabs.map((tab) => tab.key);
     const liveKeys = (() => {
       const keys = getOperationalHubDefaultModuleKeys(companySectorCategory);

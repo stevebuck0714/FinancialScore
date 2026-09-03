@@ -64,6 +64,11 @@ export function isOperationalModuleAllowed(rawAccess: unknown, moduleKey: string
 
   const normalizedModuleKey = resolveModuleKey(moduleKey);
   if (!normalizedModuleKey) return true;
+  // Group is an Atlantic reporting view of product data, not a separately
+  // configurable access-right. It follows the existing Products permission.
+  if (normalizedModuleKey === 'groups') {
+    return access.includes('groups') || access.includes('products_skus') || access.includes('products');
+  }
   return access.includes(normalizedModuleKey);
 }
 
