@@ -448,7 +448,7 @@ export async function proxy(request: NextRequest) {
     "img-src 'self' data: https:",
     "font-src 'self' data:",
     "connect-src 'self' https:",
-    "frame-src 'self' https://docs.google.com https://view.officeapps.live.com",
+    "frame-src 'self' https://docs.google.com https://view.officeapps.live.com https://*.public.blob.vercel-storage.com",
     "frame-ancestors 'none'",
   ].join('; ')
   response.headers.set('Content-Security-Policy', csp)
