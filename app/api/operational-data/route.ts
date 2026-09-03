@@ -6735,29 +6735,41 @@ export async function GET(request: NextRequest) {
             });
           }
 
-          // CSI snapshots retain only a short collection window. Reconstruct
-          // current invoice-level AR from the transaction ledger as of the
-          // requested end date so all detail panels use the same subledger.
+          // CSI snapshots retain only a short collection window. Use the
+          // transaction ledger only while it has reached the requested period;
+          // otherwise the CSI open-item snapshot is the only current detail.
           const arAnchorCfgForDetail = getArBalanceSheetAnchorConfig(companyId);
           if (isInforGlCompany && arAnchorCfgForDetail) {
-            const factOpenInvoices = await buildOpenArInvoicesFromFacts(
-              prisma,
-              companyId,
-              arAnchorCfgForDetail.accounts[0].accountId,
-              endDate,
-            );
-            if (factOpenInvoices.length > 0) {
-              arDetailFromFacts = true;
-              latestOpenSnapshotDate = startOfUtcDay(endDate);
-              openRowsInvoiceLike = factOpenInvoices.map((row) => ({
-                ...row,
-                status: 'OPEN',
-                amountHome: row.amountDueHome,
-                amountCurrency: row.amountDueHome,
-                currencyCode: 'USD',
-                sourcePlatform: 'INFOR_CSI',
-                sourceProgram: 'SLArtrans',
-              }));
+            const factFreshnessFloor = startOfUtcDay(new Date(endDate.getTime() - 2 * 24 * 60 * 60 * 1000));
+            const latestFact = await prisma.aRTransactionFact.findFirst({
+              where: {
+                companyId,
+                arAcct: arAnchorCfgForDetail.accounts[0].accountId,
+              },
+              orderBy: [{ recordDate: 'desc' }, { eventDate: 'desc' }],
+              select: { recordDate: true, eventDate: true },
+            });
+            const latestFactDate = latestFact?.recordDate || latestFact?.eventDate || null;
+            if (latestFactDate && latestFactDate >= factFreshnessFloor) {
+              const factOpenInvoices = await buildOpenArInvoicesFromFacts(
+                prisma,
+                companyId,
+                arAnchorCfgForDetail.accounts[0].accountId,
+                endDate,
+              );
+              if (factOpenInvoices.length > 0) {
+                arDetailFromFacts = true;
+                latestOpenSnapshotDate = startOfUtcDay(endDate);
+                openRowsInvoiceLike = factOpenInvoices.map((row) => ({
+                  ...row,
+                  status: 'OPEN',
+                  amountHome: row.amountDueHome,
+                  amountCurrency: row.amountDueHome,
+                  currencyCode: 'USD',
+                  sourcePlatform: 'INFOR_CSI',
+                  sourceProgram: 'SLArtrans',
+                }));
+              }
             }
           }
 

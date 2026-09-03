@@ -536,31 +536,18 @@ export async function enqueueArHistoryRebuildRun(input: {
 }
 
 async function finalizeArHistoryRebuild(companyId: string, syncRunId: string) {
-  const sourceRecordCount = await db().inforRawRecord.count({
+  const stagedRawRecordCount = await db().inforRawRecord.count({
     where: {
       companyId,
       platform: { in: ['INFOR_M3', 'INFOR_CSI'] },
       miProgram: { equals: 'SLARTRANS', mode: 'insensitive' },
     },
   });
-  if (sourceRecordCount === 0) {
-    throw new Error('No SLARTRANS records were staged; existing AR facts were not replaced.');
-  }
-
-  await db().$transaction([
-    db().aRTransactionFact.deleteMany({ where: { companyId } }),
-    db().aRPaymentFact.deleteMany({ where: { companyId } }),
-  ]);
-  const transformResult = await transformInforM3RawRun({
-    companyId,
-    syncRunId,
-    frequency: 'daily',
-    batchSize: 5000,
-    reuseCanonicalSlArtrans: true,
-    arFactsOnly: true,
+  const directFactCount = await db().aRTransactionFact.count({
+    where: { companyId },
   });
-  if (!transformResult.success) {
-    throw new Error(`AR fact transform failed: ${transformResult.errors.join('; ')}`);
+  if (directFactCount === 0) {
+    throw new Error('No AR transaction facts were written; existing facts were not replaced.');
   }
 
   const books = await db().dailyFinancialSnapshot.findFirst({
@@ -589,8 +576,8 @@ async function finalizeArHistoryRebuild(companyId: string, syncRunId: string) {
   const booksAr = Number(books?.ar || 0);
   const reconstructedOpenAr = Number(rows[0]?.open_ar || 0);
   return {
-    sourceRecordCount,
-    transformResult,
+    stagedRawRecordCount,
+    directFactCount,
     booksArAsOf: books?.snapshotDate.toISOString().slice(0, 10) ?? null,
     booksAr,
     reconstructedOpenAr,

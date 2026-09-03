@@ -8902,7 +8902,10 @@ export async function syncInforM3OperationalData(
   const filteredProgramRows = isArBackfillFastPath
     ? baseProgramRows.filter((row) =>
         isArHistoryRebuild
-          ? resolveCsiProgramId(row, row.endpointPath) === 'SLARTRANS'
+          // CSI needs both its transaction history and its current open-item
+          // population. Restricting rebuilds to SLArtrans leaves the current
+          // detail stale whenever that transaction feed trails the books.
+          ? ['SLARTRANS', 'SLCUSTDRFTS'].includes(resolveCsiProgramId(row, row.endpointPath))
           : classifyModule(row.module) === 'ar'
       )
     : baseProgramRows;
