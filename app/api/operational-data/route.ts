@@ -2881,13 +2881,26 @@ async function buildDailyArSeriesByAgingRule(
     arBalance: number;
     accountId: string | null;
     accountNumber: string | null;
+    current: number;
+    days1to30: number;
+    days31to60: number;
+    days61to90: number;
+    days90plus: number;
   }>
 > {
   const startKey = dateKeyUtc(startOfUtcDay(rangeStart));
   const endKey = dateKeyUtc(startOfUtcDay(rangeEnd));
   const aging = Number.isFinite(agingDays) && agingDays > 0 ? Math.floor(agingDays) : 180;
 
-  const rows: Array<{ snapshot_date: Date; open_ar: any }> = await prismaClient.$queryRawUnsafe(
+  const rows: Array<{
+    snapshot_date: Date;
+    open_ar: any;
+    current_amt: any;
+    d_1_30: any;
+    d_31_60: any;
+    d_61_90: any;
+    d_90_plus: any;
+  }> = await prismaClient.$queryRawUnsafe(
     `WITH date_series AS (
        SELECT generate_series($3::date, $4::date, '1 day'::interval)::date AS d
      ),
@@ -2895,7 +2908,9 @@ async function buildDailyArSeriesByAgingRule(
      -- payments. Customer + invoice is the stable AR lifecycle identity.
      invoice_creates AS (
        SELECT "customerId" AS cust_num, "invoiceNum" AS inv_num,
-              MIN("eventDate")::date AS created_at
+              MIN("eventDate")::date AS created_at,
+              MIN(COALESCE("invoiceDate", "eventDate"))::date AS invoiced_at,
+              MAX("dueDate")::date AS due_at
        FROM "ARTransactionFact"
        WHERE "companyId" = $1 AND "arAcct" = $2 AND "transType" = 'I'
          AND "eventDate" >= ($3::date - INTERVAL '${aging} days')
@@ -2917,6 +2932,7 @@ async function buildDailyArSeriesByAgingRule(
      ),
      daily AS (
        SELECT ds.d AS snapshot_date, ic.cust_num, ic.inv_num,
+              ic.created_at, ic.invoiced_at, ic.due_at,
               SUM(e."normalizedAmount") AS open_per_invoice
        FROM date_series ds
        JOIN invoice_creates ic
@@ -2926,20 +2942,77 @@ async function buildDailyArSeriesByAgingRule(
          ON e.inv_num = ic.inv_num
         AND e.cust_num IS NOT DISTINCT FROM ic.cust_num
         AND e.dt <= ds.d
-       GROUP BY ds.d, ic.cust_num, ic.inv_num
+       GROUP BY ds.d, ic.cust_num, ic.inv_num, ic.created_at, ic.invoiced_at, ic.due_at
+     ),
+     -- Mirror the invoice-detail read: pool each customer's credit balance for
+     -- the day and consume it oldest-first, so a reduction attached to the
+     -- wrong invoice cannot leave its sibling standing at full value.
+     credit_pool AS (
+       SELECT snapshot_date, cust_num, -SUM(LEAST(open_per_invoice, 0)) AS credit
+       FROM daily
+       GROUP BY snapshot_date, cust_num
+     ),
+     open_invoices AS (
+       SELECT dl.*,
+              SUM(dl.open_per_invoice) OVER (
+                PARTITION BY dl.snapshot_date, dl.cust_num
+                ORDER BY dl.created_at NULLS FIRST, dl.inv_num
+                ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
+              ) AS running_net
+       FROM daily dl
+       WHERE dl.open_per_invoice > 0.005
+     ),
+     -- Same anchor cascade as deriveArBucketsFromRow: due date, then invoice
+     -- date, and an unknown anchor ages into 90+.
+     aged AS (
+       SELECT o.snapshot_date,
+              GREATEST(LEAST(o.open_per_invoice, o.running_net - COALESCE(c.credit, 0)), 0) AS open_amt,
+              (o.snapshot_date - COALESCE(o.due_at, o.invoiced_at)) AS age_days
+       FROM open_invoices o
+       LEFT JOIN credit_pool c
+         ON c.snapshot_date = o.snapshot_date
+        AND c.cust_num IS NOT DISTINCT FROM o.cust_num
      )
      SELECT snapshot_date,
-            COALESCE(SUM(GREATEST(open_per_invoice, 0)), 0) AS open_ar
-     FROM daily
+            COALESCE(SUM(open_amt), 0) AS open_ar,
+            COALESCE(SUM(open_amt) FILTER (WHERE age_days < 0), 0) AS current_amt,
+            COALESCE(SUM(open_amt) FILTER (WHERE age_days >= 0 AND age_days <= 30), 0) AS d_1_30,
+            COALESCE(SUM(open_amt) FILTER (WHERE age_days > 30 AND age_days <= 60), 0) AS d_31_60,
+            COALESCE(SUM(open_amt) FILTER (WHERE age_days > 60 AND age_days <= 90), 0) AS d_61_90,
+            COALESCE(SUM(open_amt) FILTER (WHERE age_days IS NULL OR age_days > 90), 0) AS d_90_plus
+     FROM aged
      GROUP BY snapshot_date
      ORDER BY snapshot_date`,
     companyId, arAcct, startKey, endKey
   );
 
-  const balanceByKey = new Map<string, number>();
+  type DailyArBuckets = {
+    arBalance: number;
+    current: number;
+    days1to30: number;
+    days31to60: number;
+    days61to90: number;
+    days90plus: number;
+  };
+  const emptyBuckets: DailyArBuckets = {
+    arBalance: 0,
+    current: 0,
+    days1to30: 0,
+    days31to60: 0,
+    days61to90: 0,
+    days90plus: 0,
+  };
+  const bucketsByKey = new Map<string, DailyArBuckets>();
   for (const r of rows) {
     const k = dateKeyUtc(new Date(r.snapshot_date));
-    balanceByKey.set(k, Number(r.open_ar || 0));
+    bucketsByKey.set(k, {
+      arBalance: Number(r.open_ar || 0),
+      current: Number(r.current_amt || 0),
+      days1to30: Number(r.d_1_30 || 0),
+      days31to60: Number(r.d_31_60 || 0),
+      days61to90: Number(r.d_61_90 || 0),
+      days90plus: Number(r.d_90_plus || 0),
+    });
   }
 
   const out: Array<{
@@ -2948,25 +3021,35 @@ async function buildDailyArSeriesByAgingRule(
     arBalance: number;
     accountId: string | null;
     accountNumber: string | null;
+    current: number;
+    days1to30: number;
+    days31to60: number;
+    days61to90: number;
+    days90plus: number;
   }> = [];
   const DAY_MS = 24 * 60 * 60 * 1000;
   const start = startOfUtcDay(rangeStart);
   const end = startOfUtcDay(rangeEnd);
-  let lastBalance = 0;
+  let last: DailyArBuckets = emptyBuckets;
   for (
     let cursor = new Date(start);
     cursor.getTime() <= end.getTime();
     cursor = new Date(cursor.getTime() + DAY_MS)
   ) {
     const k = dateKeyUtc(cursor);
-    const bal = balanceByKey.has(k) ? balanceByKey.get(k)! : lastBalance;
-    lastBalance = bal;
+    const buckets = bucketsByKey.get(k) || last;
+    last = buckets;
     out.push({
       snapshotDate: parseIsoDayKey(k),
       accountName,
-      arBalance: bal,
+      arBalance: buckets.arBalance,
       accountId: arAcct,
       accountNumber: accountNumber || arAcct,
+      current: buckets.current,
+      days1to30: buckets.days1to30,
+      days31to60: buckets.days31to60,
+      days61to90: buckets.days61to90,
+      days90plus: buckets.days90plus,
     });
   }
   return out;
@@ -6685,50 +6768,46 @@ export async function GET(request: NextRequest) {
               arAnchorCfgForTrend.agingDays
             );
             if (dailyAr.length > 0) {
-              const arTotalByDay = new Map<string, number>();
+              const arMetricsByDay = new Map<string, (typeof dailyAr)[number]>();
               for (const row of dailyAr) {
                 const k = dateKeyUtc(new Date(row.snapshotDate));
-                arTotalByDay.set(k, Number(row.arBalance || 0));
+                arMetricsByDay.set(k, row);
               }
-              if (arTotalByDay.size > 0) {
+              if (arMetricsByDay.size > 0) {
                 arGlAnchorApplied = true;
                 // Capture latest helper-derived total for later latestOpenTotals override.
-                const sortedKeys = Array.from(arTotalByDay.keys()).sort();
+                const sortedKeys = Array.from(arMetricsByDay.keys()).sort();
                 const latestKey = sortedKeys.length > 0 ? sortedKeys[sortedKeys.length - 1] : '';
-                arGlAnchorLatestTotal = Number(arTotalByDay.get(latestKey) || 0);
+                arGlAnchorLatestTotal = Number(arMetricsByDay.get(latestKey)?.arBalance || 0);
                 data = data
                   .map((row: any) => {
                     const key = dateKeyUtc(new Date(row.snapshotDate));
-                    const fact = arTotalByDay.get(key);
-                    if (fact === undefined) return row;
-                    const oldTotal = Number(row.totalAR || 0);
-                    if (oldTotal <= 0 || fact <= 0) {
-                      return {
-                        ...row,
-                        totalAR: fact,
-                        current: fact,
-                        days1to30: 0,
-                        days31to60: 0,
-                        days61to90: 0,
-                        days90plus: 0,
-                        currentPct: 100,
-                        days1to30Pct: 0,
-                        days31to60Pct: 0,
-                        days61to90Pct: 0,
-                        days90plusPct: 0,
-                        over30Pct: 0,
-                        over90Pct: 0,
-                      };
-                    }
-                    const scale = fact / oldTotal;
+                    const metrics = arMetricsByDay.get(key);
+                    if (!metrics) return row;
+                    // Buckets are aged per invoice off the same ledger that
+                    // produces the total, so they are never rescaled from the
+                    // open-invoice snapshot's distribution.
+                    const total = Number(metrics.arBalance || 0);
+                    const pct = (part: number) => (total > 0 ? (part / total) * 100 : 0);
+                    const over30 =
+                      Number(metrics.days31to60 || 0) +
+                      Number(metrics.days61to90 || 0) +
+                      Number(metrics.days90plus || 0);
                     return {
                       ...row,
-                      totalAR: fact,
-                      current: Number(row.current || 0) * scale,
-                      days1to30: Number(row.days1to30 || 0) * scale,
-                      days31to60: Number(row.days31to60 || 0) * scale,
-                      days61to90: Number(row.days61to90 || 0) * scale,
-                      days90plus: Number(row.days90plus || 0) * scale,
+                      totalAR: total,
+                      current: Number(metrics.current || 0),
+                      days1to30: Number(metrics.days1to30 || 0),
+                      days31to60: Number(metrics.days31to60 || 0),
+                      days61to90: Number(metrics.days61to90 || 0),
+                      days90plus: Number(metrics.days90plus || 0),
+                      currentPct: pct(Number(metrics.current || 0)),
+                      days1to30Pct: pct(Number(metrics.days1to30 || 0)),
+                      days31to60Pct: pct(Number(metrics.days31to60 || 0)),
+                      days61to90Pct: pct(Number(metrics.days61to90 || 0)),
+                      days90plusPct: pct(Number(metrics.days90plus || 0)),
+                      over30Pct: pct(over30),
+                      over90Pct: pct(Number(metrics.days90plus || 0)),
                     };
                   });
               }
@@ -6765,11 +6844,9 @@ export async function GET(request: NextRequest) {
                 totalAR: booksAr,
                 // Do not present an aging allocation as factual when its
                 // invoice detail cannot account for the Books AR balance.
-                // The per-day buckets above are rescaled from the open-invoice
-                // snapshot, so a large rescale turns a stale distribution into
-                // a fabricated one. Only publish buckets when the snapshot
-                // already accounts for Books AR on its own.
-                agingAllocationAvailable: Math.abs(reconciliationDifference) <= AR_EXACT_MATCH_EPSILON,
+                agingAllocationAvailable:
+                  Math.abs(reconciliationDifference) <= AR_EXACT_MATCH_EPSILON ||
+                  arGlOnlyAdjustmentIsDisclosable(booksAr, reconciliationDifference),
                 currentPct: booksAr > 0 ? (Number(row.current || 0) / booksAr) * 100 : 0,
                 days1to30Pct: booksAr > 0 ? (Number(row.days1to30 || 0) / booksAr) * 100 : 0,
                 days31to60Pct: booksAr > 0 ? (Number(row.days31to60 || 0) / booksAr) * 100 : 0,

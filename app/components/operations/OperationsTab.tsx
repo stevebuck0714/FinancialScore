@@ -6831,8 +6831,9 @@ export default function OperationsTab({
             As of: {arAsOfLabel} | Coverage: {arCoverageLabel}
           </div>
           <div style={{ marginTop: '-4px', marginBottom: '12px', fontSize: '11px', color: '#64748b' }}>
-            Aging buckets are shown only when invoice detail reconciles to Books AR. Other dates show the
-            Daily Financials total without a fabricated aging allocation.
+            Buckets are aged per invoice from the AR ledger, never rescaled from a stale distribution. They are
+            shown only when that detail reconciles to Books AR, either exactly or with a disclosed GL-only
+            adjustment. Other dates show the Daily Financials total without a fabricated aging allocation.
           </div>
           <ResponsiveContainer width="100%" height={350}>
             <BarChart data={chartData}>
