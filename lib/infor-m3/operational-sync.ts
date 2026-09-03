@@ -10636,11 +10636,14 @@ export async function transformInforM3RawRun(options: {
   batchSize?: number;
   /** Rebuild from global, deduplicated SLARTRANS raw records across prior runs. */
   reuseCanonicalSlArtrans?: boolean;
+  /** Rebuild AR facts without rewriting point-in-time invoice snapshots. */
+  arFactsOnly?: boolean;
 }): Promise<InforRawTransformResult> {
   const companyId = String(options.companyId || '').trim();
   const syncRunId = String(options.syncRunId || '').trim();
   const frequency = options.frequency || 'daily';
   const reuseCanonicalSlArtrans = options.reuseCanonicalSlArtrans === true;
+  const arFactsOnly = options.arFactsOnly === true || reuseCanonicalSlArtrans;
   const errors: string[] = [];
   if (!companyId) return { success: false, daysProcessed: 0, rawRecordsRead: 0, recordsCreated: 0, errors: ['Missing companyId'] };
   if (!syncRunId) return { success: false, daysProcessed: 0, rawRecordsRead: 0, recordsCreated: 0, errors: ['Missing syncRunId'] };
@@ -10822,7 +10825,7 @@ export async function transformInforM3RawRun(options: {
         .flatMap((item) => item.records);
       const arOpenSource = arCustDrfts.length > 0 ? arCustDrfts : arTrans;
       try {
-        if (arOpenSource.length > 0) {
+        if (!arFactsOnly && arOpenSource.length > 0) {
           recordsCreated += await saveAROpenInvoices(companyId, snapshotDate, frequency, arOpenSource, {
             miProgram: arCustDrfts.length > 0 ? 'SLCUSTDRFTS' : 'SLARTRANS',
             transaction: 'RAW_REPLAY',
@@ -10839,7 +10842,9 @@ export async function transformInforM3RawRun(options: {
             miProgram: 'SLARTRANS',
             transaction: 'RAW_REPLAY',
           });
-          await upsertArContractSupportTables(companyId, snapshotDate, frequency);
+          if (!arFactsOnly) {
+            await upsertArContractSupportTables(companyId, snapshotDate, frequency);
+          }
         }
         if (arOpenSource.length > 0 || arTrans.length > 0) {
           completedSourceKeys.add('ar');

@@ -30,7 +30,7 @@ import {
 } from '@/lib/infor-m3/operational-sync';
 
 type Frequency = 'daily' | 'weekly' | 'monthly';
-type SyncMode = 'daily_overlap' | 'backfill' | 'manual' | 'business_day_backfill';
+type SyncMode = 'daily_overlap' | 'backfill' | 'manual' | 'business_day_backfill' | 'ar_history_rebuild';
 type SyncWindow = { startDate: Date; endDate: Date; mode: SyncMode } | null;
 type SyncCursor = {
   mode: SyncMode;
@@ -171,6 +171,7 @@ function buildSyncWindow(body: Record<string, unknown>, frequency: Frequency): S
 
 function normalizeMode(value: unknown): SyncMode {
   const mode = typeof value === 'string' ? value.trim().toLowerCase() : '';
+  if (mode === 'ar_history_rebuild') return 'ar_history_rebuild';
   if (mode === 'backfill') return 'backfill';
   if (mode === 'manual') return 'manual';
   if (mode === 'business_day_backfill') return 'business_day_backfill';
@@ -269,6 +270,19 @@ export async function runOperationalSyncRequest(
   companyId: string
 ): Promise<OperationalSyncResponse> {
   const isArHistoryRebuild = String(body.mode || '').trim().toLowerCase() === 'ar_history_rebuild';
+  const runIntent =
+    body.runIntent && typeof body.runIntent === 'object' && !Array.isArray(body.runIntent)
+      ? (body.runIntent as Record<string, unknown>)
+      : null;
+  const intendedMode = String(runIntent?.mode || '').trim().toLowerCase();
+  if (intendedMode === 'ar_history_rebuild' && !isArHistoryRebuild) {
+    return {
+      status: 409,
+      body: {
+        error: 'AR history rebuild mode was lost between queue tasks; task was stopped before a normal sync could run.',
+      },
+    };
+  }
   const rawIngestOnlyMode =
     String(process.env.INFOR_RAW_INGEST_ENABLED || '').trim().toLowerCase() === 'true' &&
     String(process.env.INFOR_RAW_INGEST_ONLY || '').trim().toLowerCase() === 'true';

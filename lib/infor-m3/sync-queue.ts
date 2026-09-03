@@ -557,6 +557,7 @@ async function finalizeArHistoryRebuild(companyId: string, syncRunId: string) {
     frequency: 'daily',
     batchSize: 5000,
     reuseCanonicalSlArtrans: true,
+    arFactsOnly: true,
   });
   if (!transformResult.success) {
     throw new Error(`AR fact transform failed: ${transformResult.errors.join('; ')}`);
