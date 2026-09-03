@@ -9864,7 +9864,10 @@ export async function syncInforM3OperationalData(
                   const skipOpenForProgram = preferCustDrftsForOpen || skipCustDrftsOpenForHistoricalSlice;
                   const openRowsCreated = skipOpenForProgram
                     ? 0
-                    : noFullPulls && isSlCustDrftsProgram
+                    // SLCustDrfts returns CSI's current open-item balances.
+                    // It must never be interpreted as a transaction-movement
+                    // feed, including controlled AR history rebuilds.
+                    : isSlCustDrftsProgram
                       ? await saveAROpenInvoicesNoFullPullsFromCustDrfts({
                           companyId,
                           snapshotDate,
