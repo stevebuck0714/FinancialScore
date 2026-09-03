@@ -7521,20 +7521,19 @@ async function saveARTransactionFacts(
 
     const amountRaw = pickNumber(record, ['Amount', 'amount']);
     if (!Number.isFinite(amountRaw) || amountRaw === 0) continue;
-    // CSI's AR control-account posting includes invoice charges beyond the
-    // line amount. SLArtrans keeps those charges separately, so using Amount
-    // alone understates open AR by tax/freight/miscellaneous charges. Payment
-    // Amount is already the applied cash amount and must not add invoice
-    // charge fields to it.
+    // CSI's invoice posting includes charges beyond the line amount.
+    // SLArtrans repeats invoice tax fields on payment/credit/debit rows, whose
+    // Amount already represents the posted adjustment. Only invoice rows may
+    // therefore be grossed up with the separate charge fields.
     const additionalArCharges =
-      tt === 'P'
-        ? 0
-        : [
+      tt === 'I'
+        ? [
             pickNumber(record, ['SalesTax', 'salesTax']),
             pickNumber(record, ['SalesTax2', 'salesTax2']),
             pickNumber(record, ['Freight', 'freight']),
             pickNumber(record, ['MiscCharges', 'miscCharges']),
-          ].reduce((total, value) => total + Math.abs(Number.isFinite(value) ? value : 0), 0);
+          ].reduce((total, value) => total + Math.abs(Number.isFinite(value) ? value : 0), 0)
+        : 0;
     const grossArAmount = Math.abs(amountRaw) + additionalArCharges;
 
     const invDateRaw = parseMaybeDate(pickString(record, ['InvDate', 'invDate']));
