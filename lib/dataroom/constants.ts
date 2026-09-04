@@ -45,5 +45,6 @@ export const DATAROOM_DEFAULT_FOLDERS: DataRoomFolder[] = [
   { id: 'human-resources', key: 'human_resources', name: 'Human Resources', order: 10 },
   { id: 'tax', key: 'tax', name: 'Tax', order: 11 },
   { id: 'misc-strategic', key: 'misc_strategic', name: 'Miscellaneous / Strategic', order: 12 },
+  { id: 'loans-leases', key: 'loans_leases', name: 'Loans & Leases', order: 13 },
 ];
 

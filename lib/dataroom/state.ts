@@ -5,10 +5,22 @@ function asObject(value: unknown): Record<string, any> {
   return value as Record<string, any>;
 }
 
+function getFolders(value: unknown, initializeWhenEmpty = false) {
+  const folders = Array.isArray(value) ? value : [];
+  if (folders.length === 0) {
+    return initializeWhenEmpty ? [...DATAROOM_DEFAULT_FOLDERS] : [];
+  }
+  const existingIds = new Set(folders.map((folder) => String(folder?.id)));
+  return [
+    ...folders,
+    ...DATAROOM_DEFAULT_FOLDERS.filter((folder) => !existingIds.has(folder.id)),
+  ];
+}
+
 export function getDataRoomState(userDefinedAllocations: unknown) {
   const root = asObject(userDefinedAllocations);
   const dataRoom = asObject(root.dataRoom);
-  const folders = Array.isArray(dataRoom.folders) ? dataRoom.folders : [];
+  const folders = getFolders(dataRoom.folders);
   const documentIndex = Array.isArray(dataRoom.documentIndex) ? dataRoom.documentIndex : [];
   const subscription = asObject(dataRoom.subscription);
   return {
@@ -30,10 +42,7 @@ export function upsertDataRoomState(
     ...root,
     dataRoom: {
       ...dataRoom,
-      folders:
-        Array.isArray(dataRoom.folders) && dataRoom.folders.length > 0
-          ? dataRoom.folders
-          : DATAROOM_DEFAULT_FOLDERS,
+      folders: getFolders(dataRoom.folders, true),
       documentIndex: Array.isArray(dataRoom.documentIndex) ? dataRoom.documentIndex : [],
       ...patch,
     },
