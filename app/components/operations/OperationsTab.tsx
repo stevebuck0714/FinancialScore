@@ -6316,8 +6316,15 @@ export default function OperationsTab({
     }
 
     const { records, summary } = arData;
+    const arCurrent = Number(summary?.current ?? 0);
+    const arDays1to30 = Number(summary?.days1to30 ?? 0);
+    const arDays31to60 = Number(summary?.days31to60 ?? 0);
+    const arDays61to90 = Number(summary?.days61to90 ?? 0);
+    const arDays90plus = Number(summary?.days90plus ?? 0);
     const arCurrentPct = Number(summary?.currentPct ?? 0);
-    const arOver30Pct = Number(summary?.over30Pct ?? 0);
+    const arDays1to30Pct = Number(summary?.days1to30Pct ?? 0);
+    const arDays31to60Pct = Number(summary?.days31to60Pct ?? 0);
+    const arDays61to90Pct = Number(summary?.days61to90Pct ?? 0);
     const arOver90Pct = Number(summary?.over90Pct ?? 0);
     const arDso = Number(summary?.dso ?? 0);
     const arWeightedAgeDays = Number(summary?.weightedArAgeDays ?? 0);
@@ -6717,34 +6724,60 @@ export default function OperationsTab({
 
         {/* KPI Cards */}
         {isSectionEnabled('arSummaryCards') && summary && (
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: '12px', marginBottom: '24px' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '12px', marginBottom: '24px' }}>
             <div style={{ background: 'white', padding: '16px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
               <div style={{ fontSize: '13px', color: '#64748b', marginBottom: '8px' }}>Total Open AR</div>
               <div style={{ fontSize: '28px', fontWeight: '700', color: '#1e293b' }}>
-                {formatCurrency((summary.totalOpenAR ?? summary.totalAR) || 0)}
+                {formatCurrency(summary.detailAr ?? summary.totalOpenAR ?? summary.totalAR ?? 0)}
               </div>
               {booksAr !== null && (
                 <div style={{ fontSize: '11px', color: '#64748b', marginTop: '4px' }}>
-                  Daily Financials{arDetailStatus === 'reconciled' ? ' • Detail reconciled' : ''}
+                  AR aging detail
                 </div>
               )}
             </div>
             <div style={{ background: 'white', padding: '16px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
-              <div style={{ fontSize: '13px', color: '#64748b', marginBottom: '8px' }}>Current %</div>
-              <div style={{ fontSize: '28px', fontWeight: '700', color: '#16a34a', display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <div style={{ fontSize: '13px', color: '#64748b', marginBottom: '8px' }}>Current</div>
+              <div style={{ fontSize: '28px', fontWeight: '700', color: '#16a34a' }}>
+                {formatCurrency(arCurrent)}
+              </div>
+              <div style={{ fontSize: '13px', color: '#64748b', marginTop: '4px' }}>
                 {arCurrentPct.toFixed(1)}%
-                {arCurrentPct >= 70 ? <ArrowUp size={20} /> : <ArrowDown size={20} color="#ef4444" />}
               </div>
             </div>
             <div style={{ background: 'white', padding: '16px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
-              <div style={{ fontSize: '13px', color: '#64748b', marginBottom: '8px' }}>Over 30 Days</div>
+              <div style={{ fontSize: '13px', color: '#64748b', marginBottom: '8px' }}>1–30 Days</div>
               <div style={{ fontSize: '28px', fontWeight: '700', color: '#f59e0b' }}>
-                {arOver30Pct.toFixed(1)}%
+                {formatCurrency(arDays1to30)}
+              </div>
+              <div style={{ fontSize: '13px', color: '#64748b', marginTop: '4px' }}>
+                {arDays1to30Pct.toFixed(1)}%
+              </div>
+            </div>
+            <div style={{ background: 'white', padding: '16px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+              <div style={{ fontSize: '13px', color: '#64748b', marginBottom: '8px' }}>31–60 Days</div>
+              <div style={{ fontSize: '28px', fontWeight: '700', color: '#f59e0b' }}>
+                {formatCurrency(arDays31to60)}
+              </div>
+              <div style={{ fontSize: '13px', color: '#64748b', marginTop: '4px' }}>
+                {arDays31to60Pct.toFixed(1)}%
+              </div>
+            </div>
+            <div style={{ background: 'white', padding: '16px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+              <div style={{ fontSize: '13px', color: '#64748b', marginBottom: '8px' }}>61–90 Days</div>
+              <div style={{ fontSize: '28px', fontWeight: '700', color: '#f59e0b' }}>
+                {formatCurrency(arDays61to90)}
+              </div>
+              <div style={{ fontSize: '13px', color: '#64748b', marginTop: '4px' }}>
+                {arDays61to90Pct.toFixed(1)}%
               </div>
             </div>
             <div style={{ background: 'white', padding: '16px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
               <div style={{ fontSize: '13px', color: '#64748b', marginBottom: '8px' }}>Over 90 Days</div>
               <div style={{ fontSize: '28px', fontWeight: '700', color: arOver90Pct > 5 ? '#ef4444' : '#64748b' }}>
+                {formatCurrency(arDays90plus)}
+              </div>
+              <div style={{ fontSize: '13px', color: '#64748b', marginTop: '4px' }}>
                 {arOver90Pct.toFixed(1)}%
               </div>
             </div>

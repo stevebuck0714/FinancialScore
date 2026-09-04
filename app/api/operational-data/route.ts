@@ -7529,6 +7529,12 @@ export async function GET(request: NextRequest) {
           summaryTotals.days31to60 + summaryTotals.days61to90 + summaryTotals.days90plus
         );
         const currentPct = totalARForPct > 0 ? (Number(summaryTotals.current) / totalARForPct) * 100 : 0;
+        const days1to30Pct =
+          totalARForPct > 0 ? (Number(summaryTotals.days1to30) / totalARForPct) * 100 : 0;
+        const days31to60Pct =
+          totalARForPct > 0 ? (Number(summaryTotals.days31to60) / totalARForPct) * 100 : 0;
+        const days61to90Pct =
+          totalARForPct > 0 ? (Number(summaryTotals.days61to90) / totalARForPct) * 100 : 0;
         const over30Pct = totalARForPct > 0 ? (over30Amount / totalARForPct) * 100 : 0;
         const over90Pct =
           totalARForPct > 0
@@ -7654,7 +7660,15 @@ export async function GET(request: NextRequest) {
             contractAR: Number(sourceClassTotals.contractAR || 0),
             nonContractAR: Number(sourceClassTotals.nonContractAR || 0),
             unknownSourceAR: Number(sourceClassTotals.unknownSourceAR || 0),
+            current: Number(summaryTotals.current || 0),
+            days1to30: Number(summaryTotals.days1to30 || 0),
+            days31to60: Number(summaryTotals.days31to60 || 0),
+            days61to90: Number(summaryTotals.days61to90 || 0),
+            days90plus: Number(summaryTotals.days90plus || 0),
             currentPct: Number(currentPct),
+            days1to30Pct: Number(days1to30Pct),
+            days31to60Pct: Number(days31to60Pct),
+            days61to90Pct: Number(days61to90Pct),
             over30Pct: Number(over30Pct),
             over90Pct: Number(over90Pct),
             dso: Number(summaryDso || 0),
