@@ -6078,7 +6078,10 @@ export async function GET(request: NextRequest) {
                 const days61to90 = amountAt(row, 4) * clientScale;
                 const days90plus = amountAt(row, 5) * clientScale;
                 return {
-                  customerId: `qbd:${customerName}`,
+                  // QBD Aging Summary provides a customer name but no customer
+                  // identifier. Do not expose a synthetic implementation key as
+                  // though it were a real customer ID.
+                  customerId: '-',
                   customerName,
                   current,
                   days1to30,
