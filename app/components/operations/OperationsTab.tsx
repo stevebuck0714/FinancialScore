@@ -7721,6 +7721,17 @@ export default function OperationsTab({
     const apOver90Pct = typeof summary?.over90Pct === 'number' ? summary.over90Pct : null;
     const apDpo = typeof summary?.dpo === 'number' ? summary.dpo : null;
     const apPctLabel = (value: number | null) => (value === null ? 'N/A' : `${value.toFixed(1)}%`);
+    // When open-bill detail is unavailable the aging can still be reconstructed
+    // from voucher/payment events, but only through the last day payments are
+    // known for. Disclose that lag rather than implying the buckets are current.
+    const apLedgerAsOfDate =
+      typeof summary?.apLedgerAsOfDate === 'string' ? summary.apLedgerAsOfDate : null;
+    const apLedgerLagDays = Number(summary?.apLedgerLagDays ?? 0);
+    const booksApAtLedgerAsOf =
+      typeof summary?.booksApAtLedgerAsOf === 'number' ? summary.booksApAtLedgerAsOf : null;
+    const apLedgerAsOfLabel = apLedgerAsOfDate
+      ? formatUtcDayLabel(parseInputUtcDay(apLedgerAsOfDate))
+      : 'an earlier date';
     const latestRecord = records[0];
     const apVendors = (summary?.breakdown || summary?.unpaidByVendor || []).map((row: any) => {
       // Standard 5-bucket scheme: Current (not yet due) and 1-30 (just past due)
@@ -7973,6 +7984,32 @@ export default function OperationsTab({
             {' '}age. Aging percentages, DPO, and the vendor and unpaid-bill tables are shown as
             {' '}unavailable rather than assigned to a bucket, because no source record supports an
             {' '}allocation. Paid-bill history below is unaffected and reflects actual payments.
+          </div>
+        )}
+
+        {apAgingAllocationAvailable && apLedgerLagDays > 0 && (
+          <div
+            style={{
+              marginTop: '-12px',
+              marginBottom: '24px',
+              padding: '10px 12px',
+              borderRadius: '8px',
+              border: '1px solid #f59e0b',
+              background: '#fffbeb',
+              color: '#92400e',
+              fontSize: '13px',
+            }}
+          >
+            The AP payment feed is {apLedgerLagDays} {apLedgerLagDays === 1 ? 'day' : 'days'} behind the
+            {' '}general ledger. Voucher detail is complete only through {apLedgerAsOfLabel}, so the aging
+            {' '}buckets and DPO above describe that day&apos;s position.
+            {booksApAtLedgerAsOf !== null && (
+              <>
+                {' '}Measured on the same date, the reconstruction ties to Books AP of
+                {' '}{formatCurrency(booksApAtLedgerAsOf)}, so the voucher ledger itself is intact.
+              </>
+            )}
+            {' '}Later dates show the books total without an aging allocation.
           </div>
         )}
 

@@ -8252,6 +8252,11 @@ export async function GET(request: NextRequest) {
         }
 
         let apGlAnchorApplied = false;
+        // Surfaced on the summary so the UI can disclose how far behind the
+        // AP event ledger is rather than reporting a false reconciliation break.
+        let apLedgerAsOfKey: string | null = null;
+        let apLedgerLagDays: number | null = null;
+        let booksApAtLedgerAsOf: number | null = null;
         const apAnchorCfgForTrend = getApBalanceSheetAnchorConfig(companyId);
         if (isInforGlCompany && apAnchorCfgForTrend) {
           // Prefer books-validated open bills. If CSI remaining balances are
@@ -8317,6 +8322,53 @@ export async function GET(request: NextRequest) {
               .sort((a, b) => b.snapshotDate.getTime() - a.snapshotDate.getTime())
               .slice(0, limit);
           };
+
+          // CSI does not return remaining balances (DerAmtBal) for every tenant,
+          // so open-bill detail can be permanently unavailable. The Type=V/P
+          // event ledger can still reconstruct aging, but only up to the last
+          // day payments are known for: comparing a ledger that stops on the
+          // 3rd against a books balance from the 4th makes a same-day paydown
+          // look like a reconciliation break. Validate at the ledger's own
+          // as-of date instead, the way AR does.
+          const apAnchorAccountForTrend = apAnchorCfgForTrend.accounts[0];
+          let agingRuleRows: Awaited<ReturnType<typeof buildDailyApSeriesByAgingRule>> = [];
+          const agingRuleByDay = new Map<string, (typeof agingRuleRows)[number]>();
+          let agingRuleValidated = false;
+          if (!openValidated && dfsByDay.size > 0 && apAnchorAccountForTrend?.accountId) {
+            const ledger = await isApPaymentEventLedgerStale(
+              prisma,
+              companyId,
+              apAnchorAccountForTrend.accountId
+            );
+            // Payments, not vouchers, bound how far the reconstruction can be
+            // trusted: an unpaid voucher looks open until its payment lands.
+            apLedgerAsOfKey = ledger.maxPaymentDate;
+            if (apLedgerAsOfKey && dfsByDay.has(apLedgerAsOfKey)) {
+              booksApAtLedgerAsOf = Number(dfsByDay.get(apLedgerAsOfKey) || 0);
+              agingRuleRows = await buildDailyApSeriesByAgingRule(
+                prisma,
+                companyId,
+                apAnchorAccountForTrend.accountId,
+                apAnchorAccountForTrend.accountName || 'Accounts Payable',
+                apAnchorAccountForTrend.accountNumber || apAnchorAccountForTrend.accountId,
+                startDate,
+                endDate
+              );
+              for (const row of agingRuleRows) {
+                agingRuleByDay.set(dateKeyUtc(startOfUtcDay(new Date(row.snapshotDate))), row);
+              }
+              const atLedger = agingRuleByDay.get(apLedgerAsOfKey);
+              agingRuleValidated =
+                atLedger != null &&
+                apOpenBillsMatchBooksTotal(Number(atLedger.apBalance || 0), booksApAtLedgerAsOf);
+              if (latestDfsKey) {
+                apLedgerLagDays = Math.floor(
+                  (parseIsoDayKey(latestDfsKey).getTime() - parseIsoDayKey(apLedgerAsOfKey).getTime()) /
+                    86400000
+                );
+              }
+            }
+          }
 
           if (openValidated) {
             console.warn('[ap-aging] using books-validated open bills', {
@@ -8392,6 +8444,77 @@ export async function GET(request: NextRequest) {
               : apMetrics;
             apGlAnchorApplied = true;
             // Keep unpaidByVendor / unpaidBills from APOpenBillSnapshot loaded above.
+          } else if (agingRuleValidated) {
+            console.warn('[ap-aging] using event-ledger aging rule validated at ledger as-of date', {
+              companyId,
+              apLedgerAsOfKey,
+              apLedgerLagDays,
+              booksApAtLedgerAsOf,
+              reconstructedAtLedgerAsOf: agingRuleByDay.get(apLedgerAsOfKey!)?.apBalance ?? null,
+            });
+            const byDay = new Map<string, ApDayRec>();
+            for (const [dayKey, booksAp] of dfsByDay.entries()) {
+              const reconstructed = dayKey <= apLedgerAsOfKey! ? agingRuleByDay.get(dayKey) : undefined;
+              if (reconstructed) {
+                byDay.set(dayKey, {
+                  snapshotDate: parseIsoDayKey(dayKey),
+                  totalAP: Number(reconstructed.apBalance || 0),
+                  current: Number(reconstructed.current || 0),
+                  days1to30: Number(reconstructed.days1to30 || 0),
+                  days31to60: Number(reconstructed.days31to60 || 0),
+                  days61to90: Number(reconstructed.days61to90 || 0),
+                  days90plus: Number(reconstructed.days90plus || 0),
+                  agingAllocationAvailable: true,
+                });
+              } else {
+                // Past the ledger's as-of date the books total is the only
+                // known figure; the age distribution behind it is not yet in.
+                byDay.set(dayKey, {
+                  snapshotDate: parseIsoDayKey(dayKey),
+                  totalAP: booksAp,
+                  current: 0,
+                  days1to30: 0,
+                  days31to60: 0,
+                  days61to90: 0,
+                  days90plus: 0,
+                  agingAllocationAvailable: false,
+                });
+              }
+            }
+            data = collapseToFrequency(byDay).map((rec) => {
+              const dayKey = dateKeyUtc(startOfUtcDay(rec.snapshotDate));
+              const reconstructed = agingRuleByDay.get(dayKey);
+              return {
+                snapshotDate: rec.snapshotDate,
+                frequency: apFrequencyForQuery,
+                totalAP: rec.totalAP,
+                current: rec.current,
+                days1to30: rec.days1to30,
+                days31to60: rec.days31to60,
+                days61to90: rec.days61to90,
+                days90plus: rec.days90plus,
+                agingAllocationAvailable: rec.agingAllocationAvailable,
+                over30Pct: !rec.agingAllocationAvailable ? null : Number(reconstructed?.over30Pct || 0),
+                over90Pct: !rec.agingAllocationAvailable ? null : Number(reconstructed?.over90Pct || 0),
+                dpo: !rec.agingAllocationAvailable ? null : Number(reconstructed?.dpo || 0),
+              };
+            }) as any;
+            latestAP = data[0];
+            apMetrics = latestAP
+              ? ({
+                  totalAP: Number(latestAP.totalAP || 0),
+                  currentPct:
+                    (latestAP as any).agingAllocationAvailable === false
+                      ? null
+                      : Number(latestAP.totalAP || 0) > 0
+                        ? (Number(latestAP.current || 0) / Number(latestAP.totalAP || 0)) * 100
+                        : 0,
+                  over30Pct: (latestAP as any).over30Pct,
+                  over90Pct: (latestAP as any).over90Pct,
+                  dpo: (latestAP as any).dpo,
+                } as any)
+              : apMetrics;
+            apGlAnchorApplied = true;
           } else if (dfsByDay.size > 0) {
             console.warn('[ap-aging] open bills not books-validated; using DFS.ap (skip aging-rule)', {
               companyId,
@@ -8501,6 +8624,9 @@ export async function GET(request: NextRequest) {
             ? {
                 ...effectiveApMetrics,
                 agingAllocationAvailable: apAgingAllocationAvailable,
+                apLedgerAsOfDate: apLedgerAsOfKey,
+                apLedgerLagDays,
+                booksApAtLedgerAsOf,
                 breakdown: unpaidByVendor,
                 unpaidByVendor,
                 unpaidBills,
