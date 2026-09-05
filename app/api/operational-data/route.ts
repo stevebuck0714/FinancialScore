@@ -6209,6 +6209,10 @@ export async function GET(request: NextRequest) {
         let arDetailFromFacts = false;
         let arDetailInvoiceCount = 0;
         let arDetailMissingAgingDateCount = 0;
+        // Financial date of the newest AR event the ledger actually carries.
+        // The detail replay is only valid through this day, so reconciling it
+        // against a later Books AR compares two different as-of dates.
+        let arLedgerAsOfDate: Date | null = null;
 
         let arInvoiceTrendRows: Array<{
           snapshotDate: Date;
@@ -6885,6 +6889,17 @@ export async function GET(request: NextRequest) {
               );
               if (factOpenInvoices.length > 0) {
                 arDetailFromFacts = true;
+                const ledgerAsOf = await prisma.aRTransactionFact.aggregate({
+                  where: {
+                    companyId,
+                    arAcct: arAnchorCfgForDetail.accounts[0].accountId,
+                    eventDate: { lte: endOfUtcDay(endDate) },
+                  },
+                  _max: { eventDate: true },
+                });
+                arLedgerAsOfDate = ledgerAsOf._max.eventDate
+                  ? startOfUtcDay(new Date(ledgerAsOf._max.eventDate))
+                  : null;
                 latestOpenSnapshotDate = startOfUtcDay(endDate);
                 openRowsInvoiceLike = factOpenInvoices.map((row) => ({
                   ...row,
@@ -7512,17 +7527,45 @@ export async function GET(request: NextRequest) {
         });
         const detailAr = Number(summaryTotals.totalAR || 0);
         const booksAr = booksArSnapshot ? Number(booksArSnapshot.ar || 0) : null;
+        // The invoice replay only extends through the newest AR event the
+        // ledger carries. When that feed lags the GL, Books AR keeps moving
+        // while the detail stands still, so reconciling the two at the
+        // requested date reports a late feed as a broken subledger. Compare
+        // the detail against Books AR for the day the detail actually covers.
+        const arLedgerLagDays =
+          arLedgerAsOfDate && arLedgerAsOfDate.getTime() < requestedAsOfStart.getTime()
+            ? Math.round(
+                (requestedAsOfStart.getTime() - arLedgerAsOfDate.getTime()) / (24 * 60 * 60 * 1000)
+              )
+            : 0;
+        const booksArAtLedgerSnapshot =
+          arLedgerLagDays > 0 && arLedgerAsOfDate
+            ? await prisma.dailyFinancialSnapshot.findFirst({
+                where: {
+                  companyId,
+                  frequency: 'daily',
+                  snapshotDate: { gte: arLedgerAsOfDate, lte: endOfUtcDay(arLedgerAsOfDate) },
+                },
+                select: { snapshotDate: true, ar: true },
+                orderBy: { snapshotDate: 'desc' },
+              })
+            : null;
+        const booksArAtLedgerAsOf = booksArAtLedgerSnapshot
+          ? Number(booksArAtLedgerSnapshot.ar || 0)
+          : null;
+        const reconciliationBooksAr = booksArAtLedgerAsOf ?? booksAr;
         const AR_RECONCILIATION_TOLERANCE = AR_EXACT_MATCH_EPSILON;
-        const reconciliationDifference = booksAr === null ? null : booksAr - detailAr;
+        const reconciliationDifference =
+          reconciliationBooksAr === null ? null : reconciliationBooksAr - detailAr;
         const isArDetailReconciled =
           reconciliationDifference !== null &&
           Math.abs(reconciliationDifference) <= AR_RECONCILIATION_TOLERANCE;
         const glOnlyAdjustment =
-          booksAr === null || reconciliationDifference === null
+          reconciliationBooksAr === null || reconciliationDifference === null
             ? null
             : isArDetailReconciled
               ? 0
-              : arGlOnlyAdjustmentIsDisclosable(booksAr, reconciliationDifference)
+              : arGlOnlyAdjustmentIsDisclosable(reconciliationBooksAr, reconciliationDifference)
                 ? reconciliationDifference
                 : null;
         const totalARForPct = Number(summaryTotals.totalAR || 0);
@@ -7646,19 +7689,26 @@ export async function GET(request: NextRequest) {
             detailAr,
             reconciliationDifference,
             glOnlyAdjustment,
+            arLedgerAsOfDate: arLedgerAsOfDate?.toISOString().slice(0, 10) ?? null,
+            arLedgerLagDays,
+            booksArAtLedgerAsOf,
             arDetailStatus:
               booksAr === null
                 ? 'books_unavailable'
-                : isArDetailReconciled
-                  ? 'reconciled'
-                  : glOnlyAdjustment !== null
-                    ? 'reconciled_with_adjustment'
-                    : 'unreconciled',
+                : arLedgerLagDays > 0 && (isArDetailReconciled || glOnlyAdjustment !== null)
+                  ? 'detail_stale'
+                  : isArDetailReconciled
+                    ? 'reconciled'
+                    : glOnlyAdjustment !== null
+                      ? 'reconciled_with_adjustment'
+                      : 'unreconciled',
             arDetailDiagnostics: {
               source: arDetailFromFacts ? 'ARTransactionFact' : 'AROpenInvoiceSnapshot',
               invoiceCount: arDetailInvoiceCount,
               invoicesWithoutAgingDate: arDetailMissingAgingDateCount,
               reconciliationTolerance: AR_RECONCILIATION_TOLERANCE,
+              ledgerAsOfDate: arLedgerAsOfDate?.toISOString().slice(0, 10) ?? null,
+              ledgerLagDays: arLedgerLagDays,
             },
             contractAR: Number(sourceClassTotals.contractAR || 0),
             nonContractAR: Number(sourceClassTotals.nonContractAR || 0),

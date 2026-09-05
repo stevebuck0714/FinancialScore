@@ -6341,14 +6341,11 @@ export default function OperationsTab({
     const arDetailDiagnostics = summary?.arDetailDiagnostics;
     const arDetailInvoiceCount = Number(arDetailDiagnostics?.invoiceCount ?? 0);
     const arDetailMissingAgingDateCount = Number(arDetailDiagnostics?.invoicesWithoutAgingDate ?? 0);
-    const arDetailLabel =
-      arDetailStatus === 'reconciled'
-        ? 'Ledger detail reconciled to Books AR'
-        : arDetailStatus === 'reconciled_with_adjustment'
-          ? 'Ledger detail reconciled to Books AR with a GL-only adjustment'
-          : arDetailStatus === 'books_unavailable'
-            ? 'Ledger detail; Books AR unavailable for this date'
-            : 'Ledger detail; not reconciled to Books AR';
+    const arLedgerAsOfDate =
+      typeof summary?.arLedgerAsOfDate === 'string' ? summary.arLedgerAsOfDate : null;
+    const arLedgerLagDays = Number(summary?.arLedgerLagDays ?? 0);
+    const booksArAtLedgerAsOf =
+      typeof summary?.booksArAtLedgerAsOf === 'number' ? summary.booksArAtLedgerAsOf : null;
     const latestRecord = records[0];
     const arCustomers = (summary?.breakdown || summary?.unpaidByCustomer || []).map((row: any) => ({
       customerId: row.customerId || row.customerNumber || '-',
@@ -6466,6 +6463,19 @@ export default function OperationsTab({
     const arAsOfLabel = arCoverageEnd
       ? formatUtcDayLabel(arCoverageEnd)
       : 'N/A';
+    const arLedgerAsOfLabel = arLedgerAsOfDate
+      ? formatUtcDayLabel(parseInputUtcDay(arLedgerAsOfDate))
+      : 'an earlier date';
+    const arDetailLabel =
+      arDetailStatus === 'reconciled'
+        ? 'Ledger detail reconciled to Books AR'
+        : arDetailStatus === 'reconciled_with_adjustment'
+          ? 'Ledger detail reconciled to Books AR with a GL-only adjustment'
+          : arDetailStatus === 'detail_stale'
+            ? `Ledger detail through ${arLedgerAsOfLabel} (AR feed behind books)`
+            : arDetailStatus === 'books_unavailable'
+              ? 'Ledger detail; Books AR unavailable for this date'
+              : 'Ledger detail; not reconciled to Books AR';
     const paidByCustomerMap = new Map(paidByCustomerAll.map((row: any) => [row.customerName, row]));
     const contractAndCashFlowRows = arCustomers
       .map((row: any) => {
@@ -6812,7 +6822,36 @@ export default function OperationsTab({
             </div>
           </div>
         )}
-        {booksAr !== null && arGlOnlyAdjustment !== null && arGlOnlyAdjustment !== 0 && (
+        {booksAr !== null && arDetailStatus === 'detail_stale' && (
+          <div
+            style={{
+              marginTop: '-12px',
+              marginBottom: '24px',
+              padding: '10px 12px',
+              borderRadius: '8px',
+              border: '1px solid #f59e0b',
+              background: '#fffbeb',
+              color: '#92400e',
+              fontSize: '13px',
+            }}
+          >
+            The AR ledger feed is {arLedgerLagDays} {arLedgerLagDays === 1 ? 'day' : 'days'} behind the
+            {' '}general ledger. Invoice detail is complete only through {arLedgerAsOfLabel}, so the
+            {' '}{formatCurrency(detailAr)} shown above is that day&apos;s position, while Books AR for
+            {' '}{arAsOfLabel} is {formatCurrency(booksAr)}.
+            {booksArAtLedgerAsOf !== null && (
+              <>
+                {' '}Measured on the same date, detail ties to Books AR of
+                {' '}{formatCurrency(booksArAtLedgerAsOf)} within
+                {' '}{formatCurrency(Math.abs(booksArAtLedgerAsOf - detailAr))}, so the subledger itself
+                {' '}is intact.
+              </>
+            )}
+            {' '}Aging buckets stay held back until the feed catches up rather than being restated
+            {' '}against a newer books balance.
+          </div>
+        )}
+        {booksAr !== null && arDetailStatus === 'reconciled_with_adjustment' && arGlOnlyAdjustment !== null && arGlOnlyAdjustment !== 0 && (
           <div
             style={{
               marginTop: '-12px',
