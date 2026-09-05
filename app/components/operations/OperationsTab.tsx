@@ -880,6 +880,7 @@ export default function OperationsTab({
   const [unitEconomicsData, setUnitEconomicsData] = useState<any>(null);
   const [selectedOperationalClient, setSelectedOperationalClient] = useState<string>('__ALL__');
   const [expandedUnitBillRateLevels, setExpandedUnitBillRateLevels] = useState<Record<string, boolean>>({});
+  const [expandedUnitBillRateLevelMarkets, setExpandedUnitBillRateLevelMarkets] = useState<Record<string, boolean>>({});
   const [expandedUnitLocations, setExpandedUnitLocations] = useState<Record<string, boolean>>({});
   const [lossRateHistoryExpanded, setLossRateHistoryExpanded] = useState(false);
   const [oneYearRetentionHistoryExpanded, setOneYearRetentionHistoryExpanded] = useState(false);
@@ -24121,6 +24122,29 @@ Strategies to Improve the CCC
       const payCostByBillRateLevel: any[] = Array.isArray(revenueBillablesData.payCostByBillRateLevel)
         ? revenueBillablesData.payCostByBillRateLevel
         : [];
+      const billRateLevelOrder = ['senior', 'expert', 'experienced', 'skilled', 'lab tech'];
+      const marketOrder = ['IN', 'CA', 'CO', 'SD', 'SF', 'NY', 'MA'];
+      const displayMarket = (value: unknown) => {
+        const market = String(value || 'Unassigned');
+        if (market === 'CA - SD') return 'SD';
+        if (market === 'CA - SF') return 'SF';
+        return market;
+      };
+      const rankInOrder = (value: unknown, order: string[]) => {
+        const normalized = String(value || '').toLowerCase();
+        const index = order.findIndex((item) => normalized === item || normalized.includes(item));
+        return index === -1 ? order.length : index;
+      };
+      const compareBillRateLevels = (a: string, b: string) => {
+        const rankDifference = rankInOrder(a, billRateLevelOrder) - rankInOrder(b, billRateLevelOrder);
+        return rankDifference || a.localeCompare(b, undefined, { sensitivity: 'base', numeric: true });
+      };
+      const compareMarkets = (a: string, b: string) => {
+        const aDisplay = displayMarket(a);
+        const bDisplay = displayMarket(b);
+        const rankDifference = rankInOrder(aDisplay, marketOrder) - rankInOrder(bDisplay, marketOrder);
+        return rankDifference || aDisplay.localeCompare(bDisplay, undefined, { sensitivity: 'base', numeric: true });
+      };
       const billRateEconomicsByLevel = new Map<string, any[]>();
       estimatedBillableEconomicsRows.forEach((employee) => {
         const level = String(employee.billRateLevel || employee.normalizedBillRateLevel || 'Unassigned');
@@ -24137,6 +24161,14 @@ Strategies to Improve the CCC
           .filter((value) => Number.isFinite(value));
         return values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : null;
       };
+      const buildPayToBillMetrics = (employees: any[]) => ({
+        avgPayRate: averageMetric(employees, 'payRate'),
+        avgBillRate: averageMetric(employees, 'rateCardBillRate'),
+        avgPayToBill: averageMetric(employees, 'billToPayRatio'),
+        avgAnnualBillings: averageMetric(employees, 'estimatedAnnualBillings'),
+        avgAnnualPay: averageMetric(employees, 'estimatedAnnualPay'),
+        avgEstimatedSpread: averageMetric(employees, 'estimatedAnnualSpread'),
+      });
       const payByBillRateLevelRows = payCostByBillRateLevel.map((row) => {
         const level = String(row.key || 'Unassigned');
         const employees = employeesForBillRateLevel(level);
@@ -24144,13 +24176,27 @@ Strategies to Improve the CCC
           ...row,
           level,
           employees,
-          avgPayRate: averageMetric(employees, 'payRate'),
-          avgBillRate: averageMetric(employees, 'rateCardBillRate'),
-          avgPayToBill: averageMetric(employees, 'billToPayRatio'),
-          avgAnnualBillings: averageMetric(employees, 'estimatedAnnualBillings'),
-          avgEstimatedSpread: averageMetric(employees, 'estimatedAnnualSpread'),
+          markets: Array.from(
+            employees.reduce((markets, employee) => {
+              const market = String(employee.market || employee.location || 'Unassigned');
+              const marketEmployees = markets.get(market) || [];
+              marketEmployees.push(employee);
+              markets.set(market, marketEmployees);
+              return markets;
+            }, new Map<string, any[]>()).entries()
+          )
+            .map(([market, marketEmployees]) => ({
+              market,
+              displayMarket: displayMarket(market),
+              employees: [...marketEmployees].sort((a, b) =>
+                String(a.employeeName || '').localeCompare(String(b.employeeName || ''), undefined, { sensitivity: 'base' })
+              ),
+              ...buildPayToBillMetrics(marketEmployees),
+            }))
+            .sort((a, b) => compareMarkets(a.market, b.market)),
+          ...buildPayToBillMetrics(employees),
         };
-      });
+      }).sort((a, b) => compareBillRateLevels(a.level, b.level));
       const unavailableReports: string[] = Array.isArray(revenueBillablesData.unavailableReports) ? revenueBillablesData.unavailableReports : [];
       const sourceNote = String(revenueBillablesData?.meta?.note || summary.note || '');
       const estimatedBillableNumericSortKeys = new Set(['payRate', 'rateCardBillRate', 'billToPayRatio', 'estimatedAnnualBillings', 'estimatedAnnualPay', 'estimatedAnnualSpread']);
@@ -24409,8 +24455,8 @@ Strategies to Improve the CCC
                                 <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                                   <thead>
                                     <tr>
-                                      <th style={thStyle}>Employee</th>
-                                      <th style={thStyle}>Role</th>
+                                      <th style={thStyle}>Location / Employee</th>
+                                      <th style={{ ...thStyle, textAlign: 'right' }}>Headcount</th>
                                       <th style={{ ...thStyle, textAlign: 'right' }}>Pay Rate</th>
                                       <th style={{ ...thStyle, textAlign: 'right' }}>Bill Rate</th>
                                       <th style={{ ...thStyle, textAlign: 'right' }}>Pay to Bill</th>
@@ -24420,18 +24466,48 @@ Strategies to Improve the CCC
                                     </tr>
                                   </thead>
                                   <tbody>
-                                    {employees.map((employee) => (
-                                      <tr key={`${levelKey}-${employee.employeeId}`}>
-                                        <td style={{ ...tdStyle, fontWeight: 600 }}>{employee.employeeName || employee.employeeId}</td>
-                                        <td style={tdStyle}>{employee.role || 'Unassigned'}</td>
-                                        <td style={{ ...tdStyle, textAlign: 'right' }}>{employee.payRate == null ? '—' : formatUnitCost(employee.payRate)}</td>
-                                        <td style={{ ...tdStyle, textAlign: 'right' }}>{formatUnitCost(Number(employee.rateCardBillRate || 0))}</td>
-                                        <td style={{ ...tdStyle, textAlign: 'right' }}>{employee.billToPayRatio == null ? '—' : `${(Number(employee.billToPayRatio) * 100).toFixed(1)}%`}</td>
-                                        <td style={{ ...tdStyle, textAlign: 'right' }}>{formatCurrency(Number(employee.estimatedAnnualBillings || 0))}</td>
-                                        <td style={{ ...tdStyle, textAlign: 'right' }}>{employee.estimatedAnnualPay == null ? '—' : formatCurrency(employee.estimatedAnnualPay)}</td>
-                                        <td style={{ ...tdStyle, textAlign: 'right', color: employee.estimatedAnnualSpread == null || Number(employee.estimatedAnnualSpread) >= 0 ? '#166534' : '#991b1b' }}>{employee.estimatedAnnualSpread == null ? '—' : formatCurrency(employee.estimatedAnnualSpread)}</td>
-                                      </tr>
-                                    ))}
+                                    {row.markets.map((marketRow: any) => {
+                                      const marketKey = `${levelKey}::${marketRow.market}`;
+                                      const isMarketExpanded = Boolean(expandedUnitBillRateLevelMarkets[marketKey]);
+                                      return (
+                                        <React.Fragment key={marketKey}>
+                                          <tr style={{ background: '#eef2ff' }}>
+                                            <td style={{ ...tdStyle, paddingLeft: '20px', fontWeight: 700 }}>
+                                              <button
+                                                type="button"
+                                                onClick={() => setExpandedUnitBillRateLevelMarkets((prev) => ({ ...prev, [marketKey]: !prev[marketKey] }))}
+                                                style={{ border: 'none', background: 'transparent', padding: 0, marginRight: '8px', color: '#2563eb', cursor: 'pointer', fontWeight: 700 }}
+                                                aria-label={`${isMarketExpanded ? 'Collapse' : 'Expand'} ${marketRow.displayMarket} employees`}
+                                              >
+                                                {isMarketExpanded ? '-' : '+'}
+                                              </button>
+                                              {marketRow.displayMarket}
+                                            </td>
+                                            <td style={{ ...tdStyle, textAlign: 'right', fontWeight: 700 }}>{marketRow.employees.length.toLocaleString('en-US')}</td>
+                                            <td style={{ ...tdStyle, textAlign: 'right' }}>{marketRow.avgPayRate == null ? '—' : formatUnitCost(marketRow.avgPayRate)}</td>
+                                            <td style={{ ...tdStyle, textAlign: 'right' }}>{marketRow.avgBillRate == null ? '—' : formatUnitCost(marketRow.avgBillRate)}</td>
+                                            <td style={{ ...tdStyle, textAlign: 'right' }}>{marketRow.avgPayToBill == null ? '—' : `${(marketRow.avgPayToBill * 100).toFixed(1)}%`}</td>
+                                            <td style={{ ...tdStyle, textAlign: 'right' }}>{marketRow.avgAnnualBillings == null ? '—' : formatCurrency(marketRow.avgAnnualBillings)}</td>
+                                            <td style={{ ...tdStyle, textAlign: 'right' }}>{marketRow.avgAnnualPay == null ? '—' : formatCurrency(marketRow.avgAnnualPay)}</td>
+                                            <td style={{ ...tdStyle, textAlign: 'right', fontWeight: 700, color: marketRow.avgEstimatedSpread == null || marketRow.avgEstimatedSpread >= 0 ? '#166534' : '#991b1b' }}>
+                                              {marketRow.avgEstimatedSpread == null ? '—' : formatCurrency(marketRow.avgEstimatedSpread)}
+                                            </td>
+                                          </tr>
+                                          {isMarketExpanded && marketRow.employees.map((employee: any) => (
+                                            <tr key={`${marketKey}-${employee.employeeId}`}>
+                                              <td style={{ ...tdStyle, paddingLeft: '48px', fontWeight: 600 }}>{employee.employeeName || employee.employeeId}</td>
+                                              <td style={{ ...tdStyle, textAlign: 'right' }}>—</td>
+                                              <td style={{ ...tdStyle, textAlign: 'right' }}>{employee.payRate == null ? '—' : formatUnitCost(employee.payRate)}</td>
+                                              <td style={{ ...tdStyle, textAlign: 'right' }}>{formatUnitCost(Number(employee.rateCardBillRate || 0))}</td>
+                                              <td style={{ ...tdStyle, textAlign: 'right' }}>{employee.billToPayRatio == null ? '—' : `${(Number(employee.billToPayRatio) * 100).toFixed(1)}%`}</td>
+                                              <td style={{ ...tdStyle, textAlign: 'right' }}>{formatCurrency(Number(employee.estimatedAnnualBillings || 0))}</td>
+                                              <td style={{ ...tdStyle, textAlign: 'right' }}>{employee.estimatedAnnualPay == null ? '—' : formatCurrency(employee.estimatedAnnualPay)}</td>
+                                              <td style={{ ...tdStyle, textAlign: 'right', color: employee.estimatedAnnualSpread == null || Number(employee.estimatedAnnualSpread) >= 0 ? '#166534' : '#991b1b' }}>{employee.estimatedAnnualSpread == null ? '—' : formatCurrency(employee.estimatedAnnualSpread)}</td>
+                                            </tr>
+                                          ))}
+                                        </React.Fragment>
+                                      );
+                                    })}
                                   </tbody>
                                 </table>
                               </td>
