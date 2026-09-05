@@ -22589,7 +22589,7 @@ Strategies to Improve the CCC
         {
           key: 'lsEmployeeEnps',
           title: 'Plan and Coverage Selection',
-          detail: 'Medical enrollment by selected coverage tier.',
+          detail: 'Medical, HSA, and 401(k) enrollment by selected plan or coverage tier.',
           readiness: 'Waiting for BambooHR benefit enrollment data.',
         },
       ];
@@ -22678,74 +22678,6 @@ Strategies to Improve the CCC
                                     ))}</tbody>
                                   </table>
                                 </div>
-                                {benefitEnrollmentGroups.length > 0 && (
-                                  <div style={{ overflowX: 'auto' }}>
-                                    <table style={{ width: '100%', minWidth: '560px', borderCollapse: 'collapse', fontSize: '11px' }}>
-                                      <caption style={{ textAlign: 'left', paddingBottom: '6px', color: '#475569', fontWeight: 600 }}>Plan and coverage enrollment — expand a group to view employees</caption>
-                                      <thead><tr>
-                                        <th style={thStyle}>Benefit</th>
-                                        <th style={thStyle}>Plan / coverage</th>
-                                        <th style={{ ...thStyle, textAlign: 'right' }}>Employees</th>
-                                        <th style={{ ...thStyle, textAlign: 'right' }}>% of enrolled</th>
-                                      </tr></thead>
-                                      <tbody>{benefitEnrollmentGroups.map((group) => {
-                                        const isExpanded = Boolean(expandedBenefitPlanGroups[group.key]);
-                                        const enrolledCount = Number(
-                                          (benefitsDetail.categories || []).find((row: any) => row.label === group.benefit)?.enrolledCount || 0
-                                        );
-                                        return (
-                                          <React.Fragment key={group.key}>
-                                            <tr>
-                                              <td style={{ ...tdStyle, fontWeight: 600 }}>{group.benefit}</td>
-                                              <td style={tdStyle}>
-                                                <button
-                                                  type="button"
-                                                  onClick={() => setExpandedBenefitPlanGroups((previous) => ({ ...previous, [group.key]: !previous[group.key] }))}
-                                                  style={{ border: 'none', background: 'transparent', padding: 0, marginRight: '7px', color: '#2563eb', cursor: 'pointer', fontWeight: 700 }}
-                                                  aria-label={`${isExpanded ? 'Collapse' : 'Expand'} ${group.benefit} ${group.plan}`}
-                                                >
-                                                  {isExpanded ? '−' : '+'}
-                                                </button>
-                                                {group.plan}
-                                              </td>
-                                              <td style={{ ...tdStyle, textAlign: 'right' }}>{group.employees.length.toLocaleString('en-US')}</td>
-                                              <td style={{ ...tdStyle, textAlign: 'right' }}>{enrolledCount ? `${((group.employees.length / enrolledCount) * 100).toFixed(1)}%` : '—'}</td>
-                                            </tr>
-                                            {isExpanded && (
-                                              <tr>
-                                                <td colSpan={4} style={{ ...tdStyle, padding: '0 8px 10px 26px', background: '#f8fafc' }}>
-                                                  <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                                                    <thead><tr>
-                                                      <th style={thStyle}>Employee</th>
-                                                      <th style={thStyle}>Location</th>
-                                                      <th style={thStyle}>Department</th>
-                                                      <th style={thStyle}>Bill rate level</th>
-                                                      <th style={{ ...thStyle, textAlign: 'right' }}>Employee contribution</th>
-                                                      <th style={{ ...thStyle, textAlign: 'right' }}>Employer contribution</th>
-                                                    </tr></thead>
-                                                    <tbody>{group.employees.map((employee: any) => (
-                                                      <tr key={`${group.key}-${employee.employeeId}`}>
-                                                        <td style={{ ...tdStyle, fontWeight: 600 }}>{employee.employeeName || employee.employeeId}</td>
-                                                        <td style={tdStyle}>{employee.location || '—'}</td>
-                                                        <td style={tdStyle}>{employee.department || '—'}</td>
-                                                        <td style={tdStyle}>{employee.billRateLevel || '—'}</td>
-                                                        <td style={{ ...tdStyle, textAlign: 'right' }}>{employee.employeeContribution == null ? '—' : formatCurrency(Number(employee.employeeContribution))}</td>
-                                                        <td style={{ ...tdStyle, textAlign: 'right' }}>{employee.companyContribution == null ? '—' : formatCurrency(Number(employee.companyContribution))}</td>
-                                                      </tr>
-                                                    ))}</tbody>
-                                                  </table>
-                                                </td>
-                                              </tr>
-                                            )}
-                                          </React.Fragment>
-                                        );
-                                      })}</tbody>
-                                    </table>
-                                  </div>
-                                )}
-                                <div style={{ fontSize: '11px', lineHeight: 1.45, color: '#64748b' }}>
-                                  Contribution totals are reported values from BambooHR and are not annualized. “Employer contributors” indicates employees with a recorded employer contribution; it is not a dollar-for-dollar match rate.
-                                </div>
                               </div>
                             )}
                           </>
@@ -22754,6 +22686,7 @@ Strategies to Improve the CCC
                     ) : report.key === 'lsEmployeeEnps' && workforceMetricAvailability.benefits?.available ? (
                       <div style={{ marginTop: '10px', overflowX: 'auto' }}>
                         <table style={{ width: '100%', minWidth: '420px', borderCollapse: 'collapse', fontSize: '11px' }}>
+                          <caption style={{ textAlign: 'left', paddingBottom: '6px', color: '#475569', fontWeight: 600 }}>Expand a group to view employees</caption>
                           <thead>
                             <tr>
                               <th style={thStyle}>Benefit</th>
@@ -22763,16 +22696,68 @@ Strategies to Improve the CCC
                             </tr>
                           </thead>
                           <tbody>
-                            {(workforceMetrics.benefitsParticipation?.medicalCoverage || []).map((row: any) => (
-                              <tr key={row.label}>
-                                <td style={{ ...tdStyle, fontWeight: 600 }}>Medical</td>
-                                <td style={tdStyle}>{row.label}</td>
-                                <td style={{ ...tdStyle, textAlign: 'right' }}>{Number(row.count || 0).toLocaleString('en-US')}</td>
-                                <td style={{ ...tdStyle, textAlign: 'right' }}>{Number(row.pct || 0).toFixed(1)}%</td>
-                              </tr>
-                            ))}
+                            {benefitEnrollmentGroups.length > 0
+                              ? benefitEnrollmentGroups.map((group) => {
+                                  const isExpanded = Boolean(expandedBenefitPlanGroups[group.key]);
+                                  const enrolledCount = Number(
+                                    (benefitsDetail?.categories || []).find((row: any) => row.label === group.benefit)?.enrolledCount || 0
+                                  );
+                                  return (
+                                    <React.Fragment key={group.key}>
+                                      <tr>
+                                        <td style={{ ...tdStyle, fontWeight: 600 }}>{group.benefit}</td>
+                                        <td style={tdStyle}>
+                                          <button
+                                            type="button"
+                                            onClick={() => setExpandedBenefitPlanGroups((previous) => ({ ...previous, [group.key]: !previous[group.key] }))}
+                                            style={{ border: 'none', background: 'transparent', padding: 0, marginRight: '7px', color: '#2563eb', cursor: 'pointer', fontWeight: 700 }}
+                                            aria-label={`${isExpanded ? 'Collapse' : 'Expand'} employees enrolled in ${group.benefit} ${group.plan}`}
+                                          >
+                                            {isExpanded ? '−' : '+'}
+                                          </button>
+                                          {group.plan}
+                                        </td>
+                                        <td style={{ ...tdStyle, textAlign: 'right' }}>{group.employees.length.toLocaleString('en-US')}</td>
+                                        <td style={{ ...tdStyle, textAlign: 'right' }}>{enrolledCount ? `${((group.employees.length / enrolledCount) * 100).toFixed(1)}%` : '—'}</td>
+                                      </tr>
+                                      {isExpanded && (
+                                        <tr>
+                                          <td colSpan={4} style={{ ...tdStyle, padding: '0 8px 10px 26px', background: '#f8fafc' }}>
+                                            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                                              <thead><tr>
+                                                <th style={thStyle}>Employee</th>
+                                                <th style={thStyle}>Location</th>
+                                                <th style={thStyle}>Department</th>
+                                                <th style={thStyle}>Bill rate level</th>
+                                              </tr></thead>
+                                              <tbody>{group.employees.map((employee: any) => (
+                                                <tr key={`${group.key}-${employee.employeeId}`}>
+                                                  <td style={{ ...tdStyle, fontWeight: 600 }}>{employee.employeeName || employee.employeeId}</td>
+                                                  <td style={tdStyle}>{employee.location || '—'}</td>
+                                                  <td style={tdStyle}>{employee.department || '—'}</td>
+                                                  <td style={tdStyle}>{employee.billRateLevel || '—'}</td>
+                                                </tr>
+                                              ))}</tbody>
+                                            </table>
+                                          </td>
+                                        </tr>
+                                      )}
+                                    </React.Fragment>
+                                  );
+                                })
+                              : (workforceMetrics.benefitsParticipation?.medicalCoverage || []).map((row: any) => (
+                                  <tr key={row.label}>
+                                    <td style={{ ...tdStyle, fontWeight: 600 }}>Medical</td>
+                                    <td style={tdStyle}>{row.label}</td>
+                                    <td style={{ ...tdStyle, textAlign: 'right' }}>{Number(row.count || 0).toLocaleString('en-US')}</td>
+                                    <td style={{ ...tdStyle, textAlign: 'right' }}>{Number(row.pct || 0).toFixed(1)}%</td>
+                                  </tr>
+                                ))}
                           </tbody>
                         </table>
+                        <div style={{ marginTop: '8px', fontSize: '11px', lineHeight: 1.45, color: '#64748b' }}>
+                          Contribution totals are reported values from BambooHR and are not annualized. “Employer contributors” indicates employees with a recorded employer contribution; it is not a dollar-for-dollar match rate.
+                        </div>
                       </div>
                     ) : report.key === 'lsLossRate' ? (
                       <>
