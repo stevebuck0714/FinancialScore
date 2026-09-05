@@ -2061,6 +2061,16 @@ function shouldPersistGlobalRawSourceRecordId(miProgram: string | null | undefin
     'SLGLTRANS',
     'SLCOITEMS',
     'SLCOS',
+    // AP transaction/payment IDOs behave the same way: a payment application
+    // keeps its _ItemId across re-syncs, so the partial unique index skips it
+    // and the run stores 0 children. Atlantic's payment feed reported healthy
+    // pulls (28,914 rows fetched) while persisting nothing, leaving vouchers
+    // permanently unpaid and the aging-rule reconstruction at ~2x books.
+    'SLAPTRX',
+    'SLAPTRXP',
+    'SLAPTRXPS',
+    'SLAPTRXS',
+    'SLAPPMTS',
   ].includes(programId);
 }
 
