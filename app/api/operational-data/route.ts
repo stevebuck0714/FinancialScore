@@ -8500,18 +8500,26 @@ export async function GET(request: NextRequest) {
               };
             }) as any;
             latestAP = data[0];
+            // Total AP stays on the newest books balance, but the distribution
+            // has to come from the newest day that actually has one. `data` is
+            // newest-first, so data[0] is the post-ledger day whose aging is not
+            // in yet — reading percentages off it would report N/A even though
+            // the chart is showing real buckets a day earlier.
+            const latestAllocatedAp = (data as any[]).find(
+              (rec) => rec?.agingAllocationAvailable !== false
+            );
             apMetrics = latestAP
               ? ({
                   totalAP: Number(latestAP.totalAP || 0),
                   currentPct:
-                    (latestAP as any).agingAllocationAvailable === false
-                      ? null
-                      : Number(latestAP.totalAP || 0) > 0
-                        ? (Number(latestAP.current || 0) / Number(latestAP.totalAP || 0)) * 100
-                        : 0,
-                  over30Pct: (latestAP as any).over30Pct,
-                  over90Pct: (latestAP as any).over90Pct,
-                  dpo: (latestAP as any).dpo,
+                    latestAllocatedAp && Number(latestAllocatedAp.totalAP || 0) > 0
+                      ? (Number(latestAllocatedAp.current || 0) /
+                          Number(latestAllocatedAp.totalAP || 0)) *
+                        100
+                      : null,
+                  over30Pct: latestAllocatedAp ? latestAllocatedAp.over30Pct : null,
+                  over90Pct: latestAllocatedAp ? latestAllocatedAp.over90Pct : null,
+                  dpo: latestAllocatedAp ? latestAllocatedAp.dpo : null,
                 } as any)
               : apMetrics;
             apGlAnchorApplied = true;
@@ -8615,8 +8623,14 @@ export async function GET(request: NextRequest) {
             }
           : apMetrics;
 
+        // True when any day in the window carries an aging allocation. Keying
+        // this to the newest row alone reported "no detail to age" whenever the
+        // last day was still awaiting its payments, contradicting a chart that
+        // was already rendering buckets for every prior day.
         const apAgingAllocationAvailable =
-          data.length > 0 ? (data[0] as any)?.agingAllocationAvailable !== false : true;
+          data.length > 0
+            ? (data as any[]).some((rec) => rec?.agingAllocationAvailable !== false)
+            : true;
 
         return cacheOperationalPayload({
           records: data,
