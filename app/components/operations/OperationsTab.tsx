@@ -7712,10 +7712,15 @@ export default function OperationsTab({
     }
 
     const { records, summary } = apData;
-    const apCurrentPct = Number(summary?.currentPct ?? 0);
-    const apOver30Pct = Number(summary?.over30Pct ?? 0);
-    const apOver90Pct = Number(summary?.over90Pct ?? 0);
-    const apDpo = Number(summary?.dpo ?? 0);
+    // The API returns null percentages when Total AP comes from the books
+    // balance with no open-bill detail behind it. Rendering those as 0 would
+    // claim there is no past-due exposure rather than that none is known.
+    const apAgingAllocationAvailable = summary?.agingAllocationAvailable !== false;
+    const apCurrentPct = typeof summary?.currentPct === 'number' ? summary.currentPct : null;
+    const apOver30Pct = typeof summary?.over30Pct === 'number' ? summary.over30Pct : null;
+    const apOver90Pct = typeof summary?.over90Pct === 'number' ? summary.over90Pct : null;
+    const apDpo = typeof summary?.dpo === 'number' ? summary.dpo : null;
+    const apPctLabel = (value: number | null) => (value === null ? 'N/A' : `${value.toFixed(1)}%`);
     const latestRecord = records[0];
     const apVendors = (summary?.breakdown || summary?.unpaidByVendor || []).map((row: any) => {
       // Standard 5-bucket scheme: Current (not yet due) and 1-30 (just past due)
@@ -7817,21 +7822,24 @@ export default function OperationsTab({
       })
       .sort((a: any, b: any) => a.businessDay.getTime() - b.businessDay.getTime());
     const chartData = recordsForWindow.map((record: any) => {
+      const agingKnown = record?.agingAllocationAvailable !== false;
       const current = Number(record.current || 0);
       const d1 = Number(record.days1to30 || 0);
       const d2 = Number(record.days31to60 || 0);
       const d3 = Number(record.days61to90 || 0);
       const d4 = Number(record.days90plus || 0);
-      // Day total is always the sum of the five age buckets (authoritative).
-      const bucketTotal = current + d1 + d2 + d3 + d4;
+      // Day total is always the sum of the five age buckets (authoritative),
+      // except on days carrying only a books total with no aged detail.
+      const bucketTotal = agingKnown ? current + d1 + d2 + d3 + d4 : Number(record.totalAP || 0);
       return {
         month: formatDate(record.businessDay.toISOString()),
+        'Books AP (aging unavailable)': agingKnown ? null : Number(record.totalAP || 0),
         // Standard 5-bucket scheme: Current = not yet due (age < 0).
-        Current: current,
-        '1-30 Days': d1,
-        '31-60 Days': d2,
-        '61-90 Days': d3,
-        '90+ Days': d4,
+        Current: agingKnown ? current : null,
+        '1-30 Days': agingKnown ? d1 : null,
+        '31-60 Days': agingKnown ? d2 : null,
+        '61-90 Days': agingKnown ? d3 : null,
+        '90+ Days': agingKnown ? d4 : null,
         total: bucketTotal,
       };
     });
@@ -7848,9 +7856,11 @@ export default function OperationsTab({
     const paymentCadenceTrend = [...recordsForWindow]
       .map((record: any) => ({
         period: formatDate(record.businessDay.toISOString()),
-        dpo: Number(record.dpo || 0),
-        over30Pct: Number(record.over30Pct || 0),
-        over90Pct: Number(record.over90Pct || 0),
+        // Null on days with no aged detail, so the line breaks instead of
+        // dropping to zero and implying a measured absence of past-due debt.
+        dpo: record?.agingAllocationAvailable === false ? null : Number(record.dpo || 0),
+        over30Pct: record?.agingAllocationAvailable === false ? null : Number(record.over30Pct || 0),
+        over90Pct: record?.agingAllocationAvailable === false ? null : Number(record.over90Pct || 0),
       }));
     const apPastDueRiskQueue = apVendors
       .map((row) => {
@@ -7920,28 +7930,49 @@ export default function OperationsTab({
             </div>
             <div style={{ background: 'white', padding: '16px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
               <div style={{ fontSize: '13px', color: '#64748b', marginBottom: '8px' }}>Current %</div>
-              <div style={{ fontSize: '28px', fontWeight: '700', color: '#16a34a' }}>
-                {apCurrentPct.toFixed(1)}%
+              <div style={{ fontSize: '28px', fontWeight: '700', color: apCurrentPct === null ? '#94a3b8' : '#16a34a' }}>
+                {apPctLabel(apCurrentPct)}
               </div>
             </div>
             <div style={{ background: 'white', padding: '16px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
               <div style={{ fontSize: '13px', color: '#64748b', marginBottom: '8px' }}>Over 30 Days</div>
-              <div style={{ fontSize: '28px', fontWeight: '700', color: '#f59e0b' }}>
-                {apOver30Pct.toFixed(1)}%
+              <div style={{ fontSize: '28px', fontWeight: '700', color: apOver30Pct === null ? '#94a3b8' : '#f59e0b' }}>
+                {apPctLabel(apOver30Pct)}
               </div>
             </div>
             <div style={{ background: 'white', padding: '16px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
               <div style={{ fontSize: '13px', color: '#64748b', marginBottom: '8px' }}>Over 90 Days</div>
-              <div style={{ fontSize: '28px', fontWeight: '700', color: apOver90Pct > 5 ? '#ef4444' : '#64748b' }}>
-                {apOver90Pct.toFixed(1)}%
+              <div style={{ fontSize: '28px', fontWeight: '700', color: apOver90Pct === null ? '#94a3b8' : apOver90Pct > 5 ? '#ef4444' : '#64748b' }}>
+                {apPctLabel(apOver90Pct)}
               </div>
             </div>
             <div style={{ background: 'white', padding: '16px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
               <div style={{ fontSize: '13px', color: '#64748b', marginBottom: '8px' }}>DPO (Days)</div>
-              <div style={{ fontSize: '28px', fontWeight: '700', color: '#2563eb' }}>
-                {apDpo.toFixed(0)}
+              <div style={{ fontSize: '28px', fontWeight: '700', color: apDpo === null ? '#94a3b8' : '#2563eb' }}>
+                {apDpo === null ? 'N/A' : apDpo.toFixed(0)}
               </div>
             </div>
+          </div>
+        )}
+
+        {!apAgingAllocationAvailable && (
+          <div
+            style={{
+              marginTop: '-12px',
+              marginBottom: '24px',
+              padding: '10px 12px',
+              borderRadius: '8px',
+              border: '1px solid #f59e0b',
+              background: '#fffbeb',
+              color: '#92400e',
+              fontSize: '13px',
+            }}
+          >
+            Total AP is the general ledger balance. The accounting system is not returning remaining
+            {' '}open balances on its AP records for this company, so there is no bill-level detail to
+            {' '}age. Aging percentages, DPO, and the vendor and unpaid-bill tables are shown as
+            {' '}unavailable rather than assigned to a bucket, because no source record supports an
+            {' '}allocation. Paid-bill history below is unaffected and reflects actual payments.
           </div>
         )}
 
@@ -7983,6 +8014,7 @@ export default function OperationsTab({
                 }}
               />
               <Legend />
+              <Bar dataKey="Books AP (aging unavailable)" fill="#64748b" />
               <Bar dataKey="Current" stackId="a" fill={AR_TREND_COLORS[0]} />
               <Bar dataKey="1-30 Days" stackId="a" fill={AR_TREND_COLORS[1]} />
               <Bar dataKey="31-60 Days" stackId="a" fill={AR_TREND_COLORS[2]} />

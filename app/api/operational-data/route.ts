@@ -7801,30 +7801,41 @@ export async function GET(request: NextRequest) {
                 snapshotDate: row.snapshotDate,
                 frequency,
                 totalAP: row.ap,
-                current: row.ap,
+                current: 0,
                 days1to30: 0,
                 days31to60: 0,
                 days61to90: 0,
                 days90plus: 0,
+                agingAllocationAvailable: false,
               })) as any;
           }
         }
 
         // Calculate aging trends (may be replaced when GL TB anchor is applied below).
         let latestAP = data[0];
+        const latestApAgingKnown = latestAP ? latestAP.agingAllocationAvailable !== false : true;
         let apMetrics = latestAP
-          ? {
+          ? ({
               totalAP: latestAP.totalAP,
-              currentPct: latestAP.totalAP > 0 ? (latestAP.current / latestAP.totalAP) * 100 : 0,
-              over30Pct:
-                latestAP.totalAP > 0
+              currentPct: !latestApAgingKnown
+                ? null
+                : latestAP.totalAP > 0
+                  ? (latestAP.current / latestAP.totalAP) * 100
+                  : 0,
+              over30Pct: !latestApAgingKnown
+                ? null
+                : latestAP.totalAP > 0
                   ? ((latestAP.days31to60 + latestAP.days61to90 + latestAP.days90plus) /
                       latestAP.totalAP) *
                     100
                   : 0,
-              over90Pct: latestAP.totalAP > 0 ? (latestAP.days90plus / latestAP.totalAP) * 100 : 0,
-              dpo: calculateDPO(data), // Days Payable Outstanding estimate
-            }
+              over90Pct: !latestApAgingKnown
+                ? null
+                : latestAP.totalAP > 0
+                  ? (latestAP.days90plus / latestAP.totalAP) * 100
+                  : 0,
+              dpo: !latestApAgingKnown ? null : calculateDPO(data), // Days Payable Outstanding estimate
+            } as any)
           : null;
 
         let unpaidByVendor: Array<{
@@ -8286,6 +8297,10 @@ export async function GET(request: NextRequest) {
             days31to60: number;
             days61to90: number;
             days90plus: number;
+            // False when the day's total comes from books with no open-bill
+            // detail behind it. Such a day has no known age distribution, so
+            // the buckets must not be presented as an allocation.
+            agingAllocationAvailable: boolean;
           };
 
           const collapseToFrequency = (byDay: Map<string, ApDayRec>): ApDayRec[] => {
@@ -8322,17 +8337,21 @@ export async function GET(request: NextRequest) {
                   days31to60: open.days31to60,
                   days61to90: open.days61to90,
                   days90plus: open.days90plus,
+                  agingAllocationAvailable: true,
                 });
               } else {
-                // Gap day: books total only (no invented aging buckets).
+                // Gap day: books total only. Leaving Current at the books
+                // balance would assert that every dollar is not yet due, which
+                // no open-bill row supports.
                 byDay.set(dayKey, {
                   snapshotDate: parseIsoDayKey(dayKey),
                   totalAP: booksAp,
-                  current: booksAp,
+                  current: 0,
                   days1to30: 0,
                   days31to60: 0,
                   days61to90: 0,
                   days90plus: 0,
+                  agingAllocationAvailable: false,
                 });
               }
             }
@@ -8345,11 +8364,17 @@ export async function GET(request: NextRequest) {
               days31to60: rec.days31to60,
               days61to90: rec.days61to90,
               days90plus: rec.days90plus,
-              over30Pct:
-                rec.totalAP > 0
+              agingAllocationAvailable: rec.agingAllocationAvailable,
+              over30Pct: !rec.agingAllocationAvailable
+                ? null
+                : rec.totalAP > 0
                   ? ((rec.days31to60 + rec.days61to90 + rec.days90plus) / rec.totalAP) * 100
                   : 0,
-              over90Pct: rec.totalAP > 0 ? (rec.days90plus / rec.totalAP) * 100 : 0,
+              over90Pct: !rec.agingAllocationAvailable
+                ? null
+                : rec.totalAP > 0
+                  ? (rec.days90plus / rec.totalAP) * 100
+                  : 0,
               dpo: 0,
             })) as any;
             latestAP = data[0];
@@ -8379,35 +8404,40 @@ export async function GET(request: NextRequest) {
               byDay.set(dayKey, {
                 snapshotDate: parseIsoDayKey(dayKey),
                 totalAP: booksAp,
-                current: booksAp,
+                current: 0,
                 days1to30: 0,
                 days31to60: 0,
                 days61to90: 0,
                 days90plus: 0,
+                agingAllocationAvailable: false,
               });
             }
             data = collapseToFrequency(byDay).map((rec) => ({
               snapshotDate: rec.snapshotDate,
               frequency: apFrequencyForQuery,
               totalAP: rec.totalAP,
-              current: rec.current,
+              current: 0,
               days1to30: 0,
               days31to60: 0,
               days61to90: 0,
               days90plus: 0,
-              over30Pct: 0,
-              over90Pct: 0,
-              dpo: 0,
+              agingAllocationAvailable: false,
+              over30Pct: null,
+              over90Pct: null,
+              dpo: null,
             })) as any;
             latestAP = data[0];
+            // Books supplies the total only. Reporting 100% current, no
+            // past-due exposure, and a zero DPO would state as fact a
+            // position no open-bill row supports.
             apMetrics = latestAP
-              ? {
+              ? ({
                   totalAP: Number(latestAP.totalAP || 0),
-                  currentPct: 100,
-                  over30Pct: 0,
-                  over90Pct: 0,
-                  dpo: 0,
-                }
+                  currentPct: null,
+                  over30Pct: null,
+                  over90Pct: null,
+                  dpo: null,
+                } as any)
               : apMetrics;
             // Incomplete open-bill / aging-rule lists would mislead vs books total.
             unpaidByVendor = [];
@@ -8462,11 +8492,15 @@ export async function GET(request: NextRequest) {
             }
           : apMetrics;
 
+        const apAgingAllocationAvailable =
+          data.length > 0 ? (data[0] as any)?.agingAllocationAvailable !== false : true;
+
         return cacheOperationalPayload({
           records: data,
           summary: effectiveApMetrics
             ? {
                 ...effectiveApMetrics,
+                agingAllocationAvailable: apAgingAllocationAvailable,
                 breakdown: unpaidByVendor,
                 unpaidByVendor,
                 unpaidBills,
