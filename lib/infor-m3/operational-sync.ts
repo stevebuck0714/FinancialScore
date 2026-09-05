@@ -887,12 +887,12 @@ function buildSlAptrxAsOfFilter(window?: SyncWindow, site?: string): string | nu
   );
   const collectibleStart = formatCsiCompactDateLiteral(collectibleStartDate);
   const end = formatCsiCompactDateLiteral(window.endDate);
+  // Do not inject a Site predicate here, for the same reason as SLVCHHDRS: the
+  // IDO does not expose Site, so CSI rejects the entire filter with
+  // IllegalFilterException and the pull returns nothing. Site is already
+  // scoped by the request header. The daily incremental path for this IDO
+  // omits Site too; only this as-of branch carried it.
   const clauses = [`(RecordDate <= '${end}')`, `(RecordDate >= '${collectibleStart}')`];
-  const siteValue = String(site || '').trim();
-  if (siteValue) {
-    const safeSite = siteValue.replace(/'/g, "''");
-    clauses.unshift(`Site='${safeSite}'`);
-  }
   return `(${clauses.join(' and ')})`;
 }
 
@@ -7379,7 +7379,13 @@ async function saveAPTransactionFacts(
       'PYAM',
     ]);
     const isPaymentLike = transType === 'p' || transType === 'a';
+    // A CSI payment row repeats the voucher's face value on InvAmt and carries
+    // the amount actually applied on AmtPaid. Preferring InvAmt booked every
+    // installment at full invoice value, so a voucher settled in two payments
+    // was credited twice over — the source of the ~2x payment overstatement
+    // that disqualified the aging-rule reconstruction.
     const invAmt = (() => {
+      if (transType === 'p' && Number.isFinite(paidAmtRaw) && paidAmtRaw !== 0) return paidAmtRaw;
       if (Number.isFinite(invAmtRaw) && invAmtRaw !== 0) return invAmtRaw;
       if (isPaymentLike && Number.isFinite(paidAmtRaw) && paidAmtRaw !== 0) return paidAmtRaw;
       return 0;
