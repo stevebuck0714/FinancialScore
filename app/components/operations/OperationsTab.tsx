@@ -882,6 +882,7 @@ export default function OperationsTab({
   const [expandedUnitBillRateLevels, setExpandedUnitBillRateLevels] = useState<Record<string, boolean>>({});
   const [expandedUnitBillRateLevelMarkets, setExpandedUnitBillRateLevelMarkets] = useState<Record<string, boolean>>({});
   const [expandedUnitLocations, setExpandedUnitLocations] = useState<Record<string, boolean>>({});
+  const [benefitsDetailExpanded, setBenefitsDetailExpanded] = useState(false);
   const [lossRateHistoryExpanded, setLossRateHistoryExpanded] = useState(false);
   const [oneYearRetentionHistoryExpanded, setOneYearRetentionHistoryExpanded] = useState(false);
   // Construction AR (M5b) — view + filter state
@@ -22466,6 +22467,7 @@ Strategies to Improve the CCC
       const sourceNote = String(laborSchedulingData?.meta?.note || summary.note || '');
       const workforceMetrics = laborSchedulingData.workforceMetrics || {};
       const workforceMetricAvailability = workforceMetrics.availability || {};
+      const benefitsDetail = workforceMetrics.benefitsParticipation?.detail || null;
       const employeeLifecycle: any[] = Array.isArray(workforceMetrics.employeeLifecycle) ? workforceMetrics.employeeLifecycle : [];
       const workforceDateMs = (value: any) => {
         const date = String(value || '').trim();
@@ -22614,6 +22616,73 @@ Strategies to Improve the CCC
                           <div style={{ marginTop: '8px', fontSize: '12px', color: '#475569' }}>
                             Medical coverage: {workforceMetrics.benefitsParticipation.medicalCoverage.map((row: any) => `${row.label}: ${row.count} (${Number(row.pct || 0).toFixed(1)}%)`).join(' · ')}
                           </div>
+                        ) : null}
+                        {benefitsDetail ? (
+                          <>
+                            <button
+                              type="button"
+                              onClick={() => setBenefitsDetailExpanded((expanded) => !expanded)}
+                              style={{ border: 'none', background: 'transparent', padding: '10px 0 0', color: '#2563eb', cursor: 'pointer', fontSize: '11px', fontWeight: 700 }}
+                            >
+                              {benefitsDetailExpanded ? '− Hide benefits detail' : '+ View benefits detail'}
+                            </button>
+                            {benefitsDetailExpanded && (
+                              <div style={{ marginTop: '10px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                                <div style={{ fontSize: '11px', color: '#64748b' }}>
+                                  Active employees: {Number(benefitsDetail.activeEmployeeCount || 0).toLocaleString('en-US')} · As of {benefitsDetail.asOfDate || 'current sync'}
+                                </div>
+                                <div style={{ overflowX: 'auto' }}>
+                                  <table style={{ width: '100%', minWidth: '680px', borderCollapse: 'collapse', fontSize: '11px' }}>
+                                    <caption style={{ textAlign: 'left', paddingBottom: '6px', color: '#475569', fontWeight: 600 }}>Participation and reported contributions</caption>
+                                    <thead><tr>
+                                      <th style={thStyle}>Benefit</th>
+                                      <th style={{ ...thStyle, textAlign: 'right' }}>Enrolled</th>
+                                      <th style={{ ...thStyle, textAlign: 'right' }}>Participation</th>
+                                      <th style={{ ...thStyle, textAlign: 'right' }}>Employee contributors</th>
+                                      <th style={{ ...thStyle, textAlign: 'right' }}>Employer contributors</th>
+                                      <th style={{ ...thStyle, textAlign: 'right' }}>Reported employee contribution</th>
+                                      <th style={{ ...thStyle, textAlign: 'right' }}>Reported employer contribution</th>
+                                    </tr></thead>
+                                    <tbody>{(benefitsDetail.categories || []).map((row: any) => (
+                                      <tr key={row.key}>
+                                        <td style={{ ...tdStyle, fontWeight: 700 }}>{row.label}</td>
+                                        <td style={{ ...tdStyle, textAlign: 'right' }}>{Number(row.enrolledCount || 0).toLocaleString('en-US')}</td>
+                                        <td style={{ ...tdStyle, textAlign: 'right' }}>{Number(row.participationPct || 0).toFixed(1)}%</td>
+                                        <td style={{ ...tdStyle, textAlign: 'right' }}>{Number(row.employeesWithEmployeeContribution || 0).toLocaleString('en-US')}</td>
+                                        <td style={{ ...tdStyle, textAlign: 'right' }}>{Number(row.employeesWithCompanyContribution || 0).toLocaleString('en-US')}</td>
+                                        <td style={{ ...tdStyle, textAlign: 'right' }}>{row.totalEmployeeContribution == null ? '—' : formatCurrency(Number(row.totalEmployeeContribution))}</td>
+                                        <td style={{ ...tdStyle, textAlign: 'right' }}>{row.totalCompanyContribution == null ? '—' : formatCurrency(Number(row.totalCompanyContribution))}</td>
+                                      </tr>
+                                    ))}</tbody>
+                                  </table>
+                                </div>
+                                {(benefitsDetail.plans || []).length > 0 && (
+                                  <div style={{ overflowX: 'auto' }}>
+                                    <table style={{ width: '100%', minWidth: '440px', borderCollapse: 'collapse', fontSize: '11px' }}>
+                                      <caption style={{ textAlign: 'left', paddingBottom: '6px', color: '#475569', fontWeight: 600 }}>Plan and coverage selection</caption>
+                                      <thead><tr>
+                                        <th style={thStyle}>Benefit</th>
+                                        <th style={thStyle}>Plan / coverage</th>
+                                        <th style={{ ...thStyle, textAlign: 'right' }}>Employees</th>
+                                        <th style={{ ...thStyle, textAlign: 'right' }}>% of enrolled</th>
+                                      </tr></thead>
+                                      <tbody>{benefitsDetail.plans.map((row: any) => (
+                                        <tr key={`${row.category}-${row.plan}`}>
+                                          <td style={{ ...tdStyle, fontWeight: 600 }}>{row.category}</td>
+                                          <td style={tdStyle}>{row.plan}</td>
+                                          <td style={{ ...tdStyle, textAlign: 'right' }}>{Number(row.enrolledCount || 0).toLocaleString('en-US')}</td>
+                                          <td style={{ ...tdStyle, textAlign: 'right' }}>{Number(row.pctOfCategory || 0).toFixed(1)}%</td>
+                                        </tr>
+                                      ))}</tbody>
+                                    </table>
+                                  </div>
+                                )}
+                                <div style={{ fontSize: '11px', lineHeight: 1.45, color: '#64748b' }}>
+                                  Contribution totals are reported values from BambooHR and are not annualized. “Employer contributors” indicates employees with a recorded employer contribution; it is not a dollar-for-dollar match rate.
+                                </div>
+                              </div>
+                            )}
+                          </>
                         ) : null}
                       </>
                     ) : report.key === 'lsLossRate' ? (
@@ -24124,6 +24193,16 @@ Strategies to Improve the CCC
         : [];
       const billRateLevelOrder = ['senior', 'expert', 'experienced', 'skilled', 'lab tech'];
       const marketOrder = ['IN', 'CA', 'CO', 'SD', 'SF', 'NY', 'MA'];
+      const displayBillRateLevel = (value: unknown) => {
+        const level = String(value || 'Unassigned');
+        const normalized = level.toLowerCase();
+        if (normalized.includes('senior')) return 'Senior';
+        if (normalized.includes('expert')) return 'Expert';
+        if (normalized.includes('experienced')) return 'Experienced';
+        if (normalized.includes('skilled')) return 'Skilled';
+        if (normalized.includes('lab tech')) return 'Lab Tech';
+        return level;
+      };
       const displayMarket = (value: unknown) => {
         const market = String(value || 'Unassigned');
         if (market === 'CA - SD') return 'SD';
@@ -24147,7 +24226,7 @@ Strategies to Improve the CCC
       };
       const billRateEconomicsByLevel = new Map<string, any[]>();
       estimatedBillableEconomicsRows.forEach((employee) => {
-        const level = String(employee.billRateLevel || employee.normalizedBillRateLevel || 'Unassigned');
+        const level = displayBillRateLevel(employee.billRateLevel || employee.normalizedBillRateLevel);
         const employees = billRateEconomicsByLevel.get(level) || [];
         employees.push(employee);
         billRateEconomicsByLevel.set(level, employees);
@@ -24169,12 +24248,27 @@ Strategies to Improve the CCC
         avgAnnualPay: averageMetric(employees, 'estimatedAnnualPay'),
         avgEstimatedSpread: averageMetric(employees, 'estimatedAnnualSpread'),
       });
-      const payByBillRateLevelRows = payCostByBillRateLevel.map((row) => {
-        const level = String(row.key || 'Unassigned');
+      const payByBillRateLevelRows = Array.from(
+        payCostByBillRateLevel.reduce((levels, row) => {
+          const level = displayBillRateLevel(row.key);
+          const group = levels.get(level) || { level, headcount: 0, annualCostTotal: 0, annualCostHeadcount: 0 };
+          const headcount = Number(row.headcount || 0);
+          const avgAnnualCost = Number(row.avgAnnualCost);
+          group.headcount += headcount;
+          if (Number.isFinite(avgAnnualCost)) {
+            group.annualCostTotal += avgAnnualCost * headcount;
+            group.annualCostHeadcount += headcount;
+          }
+          levels.set(level, group);
+          return levels;
+        }, new Map<string, { level: string; headcount: number; annualCostTotal: number; annualCostHeadcount: number }>()).values()
+      ).map((group) => {
+        const level = group.level;
         const employees = employeesForBillRateLevel(level);
         return {
-          ...row,
           level,
+          headcount: group.headcount,
+          avgAnnualCost: group.annualCostHeadcount ? group.annualCostTotal / group.annualCostHeadcount : null,
           employees,
           markets: Array.from(
             employees.reduce((markets, employee) => {

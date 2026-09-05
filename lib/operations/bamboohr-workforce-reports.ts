@@ -172,6 +172,21 @@ type WorkforceMetrics = {
     retirement401kParticipationPct: number | null;
     retirement401kMatchPct: number | null;
     medicalCoverage: Array<{ label: string; count: number; pct: number }>;
+    detail: {
+      activeEmployeeCount: number;
+      asOfDate: string;
+      categories: Array<{
+        key: 'medical' | 'hsa' | 'retirement401k';
+        label: string;
+        enrolledCount: number;
+        participationPct: number;
+        employeesWithEmployeeContribution: number;
+        employeesWithCompanyContribution: number;
+        totalEmployeeContribution: number | null;
+        totalCompanyContribution: number | null;
+      }>;
+      plans: Array<{ category: string; plan: string; enrolledCount: number; pctOfCategory: number }>;
+    };
   } | null;
   lossRate: { trailing90DayPct: number | null; trailing12MonthPct: number | null } | null;
   oneYearRetention: { ratePct: number | null; denominator: number; numerator: number } | null;
@@ -541,6 +556,73 @@ function buildWorkforceMetrics(benefitRows: TableRow[] | null, asOfDate = new Da
   const hsaCompanyPays = activeBenefitRows.filter((row) => hasBenefitValue(row, ['4416.4', '4460.4']));
   const retirementEmployeePays = activeBenefitRows.filter((row) => hasBenefitValue(row, ['4413.3', '4414.3', '4539.3', '4540.3']));
   const retirementCompanyPays = activeBenefitRows.filter((row) => hasBenefitValue(row, ['4413.4', '4414.4', '4539.4', '4540.4']));
+  const benefitCategories = [
+    {
+      key: 'medical' as const,
+      label: 'Medical',
+      fields: BAMBOOHR_BENEFIT_FIELDS.medical,
+      planFields: ['5030.2', '5033.2'],
+      employeeContributionFields: ['5030.3', '5033.3'],
+      companyContributionFields: ['5030.4', '5033.4'],
+    },
+    {
+      key: 'hsa' as const,
+      label: 'HSA',
+      fields: BAMBOOHR_BENEFIT_FIELDS.hsa,
+      planFields: ['4416.2', '4460.2'],
+      employeeContributionFields: ['4416.3', '4460.3'],
+      companyContributionFields: ['4416.4', '4460.4'],
+    },
+    {
+      key: 'retirement401k' as const,
+      label: '401(k)',
+      fields: BAMBOOHR_BENEFIT_FIELDS.retirement401k,
+      planFields: ['4413.2', '4414.2', '4539.2', '4540.2'],
+      employeeContributionFields: ['4413.3', '4414.3', '4539.3', '4540.3'],
+      companyContributionFields: ['4413.4', '4414.4', '4539.4', '4540.4'],
+    },
+  ];
+  const sumContributions = (row: TableRow, fields: string[]) =>
+    fields.reduce((sum, field) => sum + (asNumber(row[field]) || 0), 0);
+  const contributionPresent = (row: TableRow, fields: string[]) =>
+    fields.some((field) => asNumber(row[field]) != null);
+  const benefitDetailCategories = benefitCategories.map((category) => {
+    const enrolledRows = activeBenefitRows.filter((row) => hasBenefitValue(row, category.fields));
+    const employeeContributionRows = enrolledRows.filter((row) => contributionPresent(row, category.employeeContributionFields));
+    const companyContributionRows = enrolledRows.filter((row) => contributionPresent(row, category.companyContributionFields));
+    const totalEmployeeContribution = employeeContributionRows.length
+      ? round2(employeeContributionRows.reduce((sum, row) => sum + sumContributions(row, category.employeeContributionFields), 0))
+      : null;
+    const totalCompanyContribution = companyContributionRows.length
+      ? round2(companyContributionRows.reduce((sum, row) => sum + sumContributions(row, category.companyContributionFields), 0))
+      : null;
+    return {
+      key: category.key,
+      label: category.label,
+      enrolledCount: enrolledRows.length,
+      participationPct: pct(enrolledRows.length, total),
+      employeesWithEmployeeContribution: employeeContributionRows.length,
+      employeesWithCompanyContribution: companyContributionRows.length,
+      totalEmployeeContribution,
+      totalCompanyContribution,
+    };
+  });
+  const benefitDetailPlans = benefitCategories.flatMap((category) => {
+    const enrolledCount = benefitDetailCategories.find((row) => row.key === category.key)?.enrolledCount || 0;
+    const plans = new Map<string, number>();
+    for (const row of activeBenefitRows) {
+      for (const field of category.planFields) {
+        const plan = asString(row[field]);
+        if (plan) plans.set(plan, (plans.get(plan) || 0) + 1);
+      }
+    }
+    return Array.from(plans, ([plan, count]) => ({
+      category: category.label,
+      plan,
+      enrolledCount: count,
+      pctOfCategory: pct(count, enrolledCount),
+    }));
+  });
   const coverage = new Map<string, number>();
   for (const row of medicalRows) {
     for (const field of ['5030.2', '5033.2']) {
@@ -579,6 +661,12 @@ function buildWorkforceMetrics(benefitRows: TableRow[] | null, asOfDate = new Da
       retirement401kParticipationPct: pct(retirementRows.length, total),
       retirement401kMatchPct: pct(retirementCompanyPays.length, retirementEmployeePays.length),
       medicalCoverage: Array.from(coverage, ([label, count]) => ({ label, count, pct: pct(count, medicalRows.length) })),
+      detail: {
+        activeEmployeeCount: total,
+        asOfDate: formatEstDate(asOfDate),
+        categories: benefitDetailCategories,
+        plans: benefitDetailPlans,
+      },
     } : null,
     lossRate: { trailing90DayPct: rateForDays(90), trailing12MonthPct: rateForDays(365) },
     oneYearRetention: { ratePct: denominator ? pct(denominator - earlyTerminations.length, denominator) : null, denominator, numerator: denominator - earlyTerminations.length },
