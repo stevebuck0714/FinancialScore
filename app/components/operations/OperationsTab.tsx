@@ -883,6 +883,7 @@ export default function OperationsTab({
   const [expandedUnitBillRateLevelMarkets, setExpandedUnitBillRateLevelMarkets] = useState<Record<string, boolean>>({});
   const [expandedUnitLocations, setExpandedUnitLocations] = useState<Record<string, boolean>>({});
   const [benefitsDetailExpanded, setBenefitsDetailExpanded] = useState(false);
+  const [expandedBenefitPlanGroups, setExpandedBenefitPlanGroups] = useState<Record<string, boolean>>({});
   const [lossRateHistoryExpanded, setLossRateHistoryExpanded] = useState(false);
   const [oneYearRetentionHistoryExpanded, setOneYearRetentionHistoryExpanded] = useState(false);
   // Construction AR (M5b) — view + filter state
@@ -22468,6 +22469,27 @@ Strategies to Improve the CCC
       const workforceMetrics = laborSchedulingData.workforceMetrics || {};
       const workforceMetricAvailability = workforceMetrics.availability || {};
       const benefitsDetail = workforceMetrics.benefitsParticipation?.detail || null;
+      const benefitEnrollmentGroups = Array.from(
+        ((Array.isArray(benefitsDetail?.enrollments) ? benefitsDetail.enrollments : []) as any[]).reduce((groups, enrollment) => {
+          const benefit = String(enrollment.benefit || 'Other');
+          const plan = String(enrollment.plan || 'Enrolled (plan not specified)');
+          const key = `${benefit}::${plan}`;
+          const employees = groups.get(key) || { key, benefit, plan, employees: [] };
+          employees.employees.push(enrollment);
+          groups.set(key, employees);
+          return groups;
+        }, new Map<string, { key: string; benefit: string; plan: string; employees: any[] }>()).values()
+      )
+        .map((group) => ({
+          ...group,
+          employees: [...group.employees].sort((a, b) =>
+            String(a.employeeName || '').localeCompare(String(b.employeeName || ''), undefined, { sensitivity: 'base' })
+          ),
+        }))
+        .sort((a, b) =>
+          a.benefit.localeCompare(b.benefit, undefined, { sensitivity: 'base' }) ||
+          a.plan.localeCompare(b.plan, undefined, { sensitivity: 'base' })
+        );
       const employeeLifecycle: any[] = Array.isArray(workforceMetrics.employeeLifecycle) ? workforceMetrics.employeeLifecycle : [];
       const workforceDateMs = (value: any) => {
         const date = String(value || '').trim();
@@ -22566,9 +22588,9 @@ Strategies to Improve the CCC
         },
         {
           key: 'lsEmployeeEnps',
-          title: 'Employee eNPS',
-          detail: 'Dated eNPS trend and current score.',
-          readiness: 'No eNPS field is exposed by the connected BambooHR API. A survey export or engagement-system connection is required.',
+          title: 'Plan and Coverage Selection',
+          detail: 'Medical enrollment by selected coverage tier.',
+          readiness: 'Waiting for BambooHR benefit enrollment data.',
         },
       ];
 
@@ -22656,24 +22678,68 @@ Strategies to Improve the CCC
                                     ))}</tbody>
                                   </table>
                                 </div>
-                                {(benefitsDetail.plans || []).length > 0 && (
+                                {benefitEnrollmentGroups.length > 0 && (
                                   <div style={{ overflowX: 'auto' }}>
-                                    <table style={{ width: '100%', minWidth: '440px', borderCollapse: 'collapse', fontSize: '11px' }}>
-                                      <caption style={{ textAlign: 'left', paddingBottom: '6px', color: '#475569', fontWeight: 600 }}>Plan and coverage selection</caption>
+                                    <table style={{ width: '100%', minWidth: '560px', borderCollapse: 'collapse', fontSize: '11px' }}>
+                                      <caption style={{ textAlign: 'left', paddingBottom: '6px', color: '#475569', fontWeight: 600 }}>Plan and coverage enrollment — expand a group to view employees</caption>
                                       <thead><tr>
                                         <th style={thStyle}>Benefit</th>
                                         <th style={thStyle}>Plan / coverage</th>
                                         <th style={{ ...thStyle, textAlign: 'right' }}>Employees</th>
                                         <th style={{ ...thStyle, textAlign: 'right' }}>% of enrolled</th>
                                       </tr></thead>
-                                      <tbody>{benefitsDetail.plans.map((row: any) => (
-                                        <tr key={`${row.category}-${row.plan}`}>
-                                          <td style={{ ...tdStyle, fontWeight: 600 }}>{row.category}</td>
-                                          <td style={tdStyle}>{row.plan}</td>
-                                          <td style={{ ...tdStyle, textAlign: 'right' }}>{Number(row.enrolledCount || 0).toLocaleString('en-US')}</td>
-                                          <td style={{ ...tdStyle, textAlign: 'right' }}>{Number(row.pctOfCategory || 0).toFixed(1)}%</td>
-                                        </tr>
-                                      ))}</tbody>
+                                      <tbody>{benefitEnrollmentGroups.map((group) => {
+                                        const isExpanded = Boolean(expandedBenefitPlanGroups[group.key]);
+                                        const enrolledCount = Number(
+                                          (benefitsDetail.categories || []).find((row: any) => row.label === group.benefit)?.enrolledCount || 0
+                                        );
+                                        return (
+                                          <React.Fragment key={group.key}>
+                                            <tr>
+                                              <td style={{ ...tdStyle, fontWeight: 600 }}>{group.benefit}</td>
+                                              <td style={tdStyle}>
+                                                <button
+                                                  type="button"
+                                                  onClick={() => setExpandedBenefitPlanGroups((previous) => ({ ...previous, [group.key]: !previous[group.key] }))}
+                                                  style={{ border: 'none', background: 'transparent', padding: 0, marginRight: '7px', color: '#2563eb', cursor: 'pointer', fontWeight: 700 }}
+                                                  aria-label={`${isExpanded ? 'Collapse' : 'Expand'} ${group.benefit} ${group.plan}`}
+                                                >
+                                                  {isExpanded ? '−' : '+'}
+                                                </button>
+                                                {group.plan}
+                                              </td>
+                                              <td style={{ ...tdStyle, textAlign: 'right' }}>{group.employees.length.toLocaleString('en-US')}</td>
+                                              <td style={{ ...tdStyle, textAlign: 'right' }}>{enrolledCount ? `${((group.employees.length / enrolledCount) * 100).toFixed(1)}%` : '—'}</td>
+                                            </tr>
+                                            {isExpanded && (
+                                              <tr>
+                                                <td colSpan={4} style={{ ...tdStyle, padding: '0 8px 10px 26px', background: '#f8fafc' }}>
+                                                  <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                                                    <thead><tr>
+                                                      <th style={thStyle}>Employee</th>
+                                                      <th style={thStyle}>Location</th>
+                                                      <th style={thStyle}>Department</th>
+                                                      <th style={thStyle}>Bill rate level</th>
+                                                      <th style={{ ...thStyle, textAlign: 'right' }}>Employee contribution</th>
+                                                      <th style={{ ...thStyle, textAlign: 'right' }}>Employer contribution</th>
+                                                    </tr></thead>
+                                                    <tbody>{group.employees.map((employee: any) => (
+                                                      <tr key={`${group.key}-${employee.employeeId}`}>
+                                                        <td style={{ ...tdStyle, fontWeight: 600 }}>{employee.employeeName || employee.employeeId}</td>
+                                                        <td style={tdStyle}>{employee.location || '—'}</td>
+                                                        <td style={tdStyle}>{employee.department || '—'}</td>
+                                                        <td style={tdStyle}>{employee.billRateLevel || '—'}</td>
+                                                        <td style={{ ...tdStyle, textAlign: 'right' }}>{employee.employeeContribution == null ? '—' : formatCurrency(Number(employee.employeeContribution))}</td>
+                                                        <td style={{ ...tdStyle, textAlign: 'right' }}>{employee.companyContribution == null ? '—' : formatCurrency(Number(employee.companyContribution))}</td>
+                                                      </tr>
+                                                    ))}</tbody>
+                                                  </table>
+                                                </td>
+                                              </tr>
+                                            )}
+                                          </React.Fragment>
+                                        );
+                                      })}</tbody>
                                     </table>
                                   </div>
                                 )}
@@ -22685,6 +22751,29 @@ Strategies to Improve the CCC
                           </>
                         ) : null}
                       </>
+                    ) : report.key === 'lsEmployeeEnps' && workforceMetricAvailability.benefits?.available ? (
+                      <div style={{ marginTop: '10px', overflowX: 'auto' }}>
+                        <table style={{ width: '100%', minWidth: '420px', borderCollapse: 'collapse', fontSize: '11px' }}>
+                          <thead>
+                            <tr>
+                              <th style={thStyle}>Benefit</th>
+                              <th style={thStyle}>Plan / coverage</th>
+                              <th style={{ ...thStyle, textAlign: 'right' }}>Employees</th>
+                              <th style={{ ...thStyle, textAlign: 'right' }}>% of enrolled</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {(workforceMetrics.benefitsParticipation?.medicalCoverage || []).map((row: any) => (
+                              <tr key={row.label}>
+                                <td style={{ ...tdStyle, fontWeight: 600 }}>Medical</td>
+                                <td style={tdStyle}>{row.label}</td>
+                                <td style={{ ...tdStyle, textAlign: 'right' }}>{Number(row.count || 0).toLocaleString('en-US')}</td>
+                                <td style={{ ...tdStyle, textAlign: 'right' }}>{Number(row.pct || 0).toFixed(1)}%</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
                     ) : report.key === 'lsLossRate' ? (
                       <>
                         <div style={{ fontSize: '12px', lineHeight: 1.6, color: '#166534', fontWeight: 600 }}>
@@ -22772,7 +22861,7 @@ Strategies to Improve the CCC
                     ) : (
                       <>
                         <div style={{ fontSize: '12px', lineHeight: 1.45, color: '#92400e', fontWeight: 600 }}>Data source access required</div>
-                        <div style={{ fontSize: '12px', lineHeight: 1.45, color: '#92400e', marginTop: '3px' }}>{workforceMetricAvailability[report.key === 'lsLossRate' ? 'lossRate' : report.key === 'lsOneYearRetention' ? 'oneYearRetention' : report.key === 'lsEmployeeEnps' ? 'enps' : 'benefits']?.reason || report.readiness}</div>
+                        <div style={{ fontSize: '12px', lineHeight: 1.45, color: '#92400e', marginTop: '3px' }}>{workforceMetricAvailability[report.key === 'lsLossRate' ? 'lossRate' : report.key === 'lsOneYearRetention' ? 'oneYearRetention' : 'benefits']?.reason || report.readiness}</div>
                       </>
                     )}
                   </div>

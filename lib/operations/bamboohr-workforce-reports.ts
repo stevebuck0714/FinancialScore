@@ -186,6 +186,17 @@ type WorkforceMetrics = {
         totalCompanyContribution: number | null;
       }>;
       plans: Array<{ category: string; plan: string; enrolledCount: number; pctOfCategory: number }>;
+      enrollments: Array<{
+        benefit: string;
+        plan: string;
+        employeeId: string;
+        employeeName: string;
+        location: string;
+        department: string;
+        billRateLevel: string;
+        employeeContribution: number | null;
+        companyContribution: number | null;
+      }>;
     };
   } | null;
   lossRate: { trailing90DayPct: number | null; trailing12MonthPct: number | null } | null;
@@ -519,7 +530,11 @@ function isActiveOn(row: TableRow, date: Date): boolean {
   return isDateOnOrBefore(hireDate, date) && (!terminationDate || !isDateOnOrBefore(terminationDate, date));
 }
 
-function buildWorkforceMetrics(benefitRows: TableRow[] | null, asOfDate = new Date()): WorkforceMetrics {
+function buildWorkforceMetrics(
+  benefitRows: TableRow[] | null,
+  asOfDate = new Date(),
+  currentEmployees: CurrentEmployee[] = []
+): WorkforceMetrics {
   const asOfEst = new Date(`${formatEstDate(asOfDate)}T12:00:00`);
   const unavailable = (reason: string): WorkforceMetricAvailability => ({ available: false, reason });
   const blocked = {
@@ -623,6 +638,35 @@ function buildWorkforceMetrics(benefitRows: TableRow[] | null, asOfDate = new Da
       pctOfCategory: pct(count, enrolledCount),
     }));
   });
+  const employeesById = new Map(currentEmployees.map((employee) => [employee.id, employee]));
+  const benefitDetailEnrollments = benefitCategories.flatMap((category) =>
+    activeBenefitRows.flatMap((row) => {
+      if (!hasBenefitValue(row, category.fields)) return [];
+      const employee = employeesById.get(asString(row.id));
+      if (!employee) return [];
+      const plans = category.planFields
+        .map((field) => asString(row[field]))
+        .filter(Boolean);
+      const planLabels = plans.length ? Array.from(new Set(plans)) : ['Enrolled (plan not specified)'];
+      const employeeContribution = contributionPresent(row, category.employeeContributionFields)
+        ? round2(sumContributions(row, category.employeeContributionFields))
+        : null;
+      const companyContribution = contributionPresent(row, category.companyContributionFields)
+        ? round2(sumContributions(row, category.companyContributionFields))
+        : null;
+      return planLabels.map((plan) => ({
+        benefit: category.label,
+        plan,
+        employeeId: employee.id,
+        employeeName: employee.name,
+        location: employee.location,
+        department: employee.department,
+        billRateLevel: employee.billRateLevel,
+        employeeContribution,
+        companyContribution,
+      }));
+    })
+  );
   const coverage = new Map<string, number>();
   for (const row of medicalRows) {
     for (const field of ['5030.2', '5033.2']) {
@@ -666,6 +710,7 @@ function buildWorkforceMetrics(benefitRows: TableRow[] | null, asOfDate = new Da
         asOfDate: formatEstDate(asOfDate),
         categories: benefitDetailCategories,
         plans: benefitDetailPlans,
+        enrollments: benefitDetailEnrollments,
       },
     } : null,
     lossRate: { trailing90DayPct: rateForDays(90), trailing12MonthPct: rateForDays(365) },
@@ -1558,7 +1603,13 @@ export async function buildAndSaveBambooHrWorkforceReportSnapshot(companyId: str
   const generatedAt = new Date().toISOString();
   const rateCard = await readCogentRateCard(companyId).catch(() => null);
   const benefitRows = await fetchBambooHrBenefitReport(settings).catch(() => null);
-  const snapshot = buildPayload(companyId, currentEmployees, generatedAt, rateCard, buildWorkforceMetrics(benefitRows));
+  const snapshot = buildPayload(
+    companyId,
+    currentEmployees,
+    generatedAt,
+    rateCard,
+    buildWorkforceMetrics(benefitRows, new Date(generatedAt), currentEmployees)
+  );
   await saveOperationalSystemConnection({
     companyId,
     provider: 'BAMBOOHR',
