@@ -57,6 +57,12 @@ type SyncOptions = {
   arOnlyBackfill?: boolean;
   /** Explicit opt-in for a one-time AR fact-history backfill. */
   fullArFactHistory?: boolean;
+  /**
+   * Restrict the run to AP programs. Explicit opt-in only: unlike
+   * arOnlyBackfill this never defaults on, so a normal daily backfill is
+   * unaffected. Takes precedence over arOnlyBackfill when both resolve true.
+   */
+  apOnlyBackfill?: boolean;
   skipDailySnapshotHydration?: boolean;
   deferDailySnapshotHydration?: boolean;
   programOffset?: number;
@@ -8905,7 +8911,24 @@ export async function syncInforM3OperationalData(
     frequency === 'daily' &&
     arOnlyBackfill &&
     Boolean(syncWindow);
-  const filteredProgramRows = isArBackfillFastPath
+  // Voucher headers carry terms and the AP account; the transaction IDO carries
+  // payments and open balances; vendors supply the terms fallback used to derive
+  // due dates when a voucher has none.
+  const AP_REBUILD_PROGRAM_IDS = [
+    'SLAPTRXPS',
+    'SLAPTRX',
+    'SLAPTRXP',
+    'SLAPTRXS',
+    'SLAPPMTS',
+    'SLVCHHDRS',
+    'SLVENDORS',
+  ];
+  const isApBackfillFastPath = options?.apOnlyBackfill === true && Boolean(syncWindow);
+  const filteredProgramRows = isApBackfillFastPath
+    ? baseProgramRows.filter((row) =>
+        AP_REBUILD_PROGRAM_IDS.includes(resolveCsiProgramId(row, row.endpointPath))
+      )
+    : isArBackfillFastPath
     ? baseProgramRows.filter((row) =>
         isArHistoryRebuild
           // CSI needs both its transaction history and its current open-item
