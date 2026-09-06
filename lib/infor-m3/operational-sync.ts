@@ -762,6 +762,30 @@ function formatCsiCompactDateLiteral(date: Date): string {
   return `${year}${month}${day}`;
 }
 
+/**
+ * Exclusive upper bound for CSI date filters, i.e. the day after `date`.
+ *
+ * CSI date columns carry a time component ('20260903 16:40:32.357'), so
+ * comparing one to a date-only literal treats that literal as midnight and
+ * `<= end` silently drops every row stamped during the end day. Windows end on
+ * the day being synced, so this discarded the newest business day on every run:
+ * Atlantic's 2 AM Sep 5 sync ended Sep 4, filtered `RecordDate <= '20260904'`,
+ * and returned nothing past Sep 3 16:40 — the AP check run was in CSI the whole
+ * time. Re-syncing could never recover it because each backfill chunk applied
+ * the same bound. Always pair this with `<` rather than `<=`.
+ */
+function nextUtcDay(date: Date): Date {
+  return new Date(startOfUtcDay(date).getTime() + 86400000);
+}
+
+function formatCsiCompactDateLiteralExclusiveEnd(date: Date): string {
+  return formatCsiCompactDateLiteral(nextUtcDay(date));
+}
+
+function formatCsiDateLiteralExclusiveEnd(date: Date): string {
+  return formatCsiDateLiteral(nextUtcDay(date));
+}
+
 function formatCsiDateTimeLiteral(date: Date): string {
   const year = date.getUTCFullYear();
   const month = String(date.getUTCMonth() + 1).padStart(2, '0');
@@ -776,8 +800,8 @@ function formatCsiDateTimeLiteral(date: Date): string {
 function buildSlInvHdrsWindowFilter(window?: SyncWindow): string | null {
   if (!window) return null;
   const start = formatCsiDateLiteral(window.startDate);
-  const end = formatCsiDateLiteral(window.endDate);
-  return `(InvDate >= '${start}' and InvDate <= '${end}')`;
+  const endExclusive = formatCsiDateLiteralExclusiveEnd(window.endDate);
+  return `(InvDate >= '${start}' and InvDate < '${endExclusive}')`;
 }
 
 function buildSlLedgersPeriodFilter(window?: SyncWindow, site?: string): string | null {
@@ -845,8 +869,8 @@ function buildGlAcctPeriodBalancesWindowFilter(window?: SyncWindow, site?: strin
 function buildSlArtransWindowFilter(window?: SyncWindow, site?: string): string | null {
   if (!window) return null;
   const start = formatCsiDateLiteral(window.startDate);
-  const end = formatCsiDateLiteral(window.endDate);
-  const clauses = [`(InvDate >= '${start}' and InvDate <= '${end}')`];
+  const endExclusive = formatCsiDateLiteralExclusiveEnd(window.endDate);
+  const clauses = [`(InvDate >= '${start}' and InvDate < '${endExclusive}')`];
   const siteValue = String(site || '').trim();
   if (siteValue) {
     const safeSite = siteValue.replace(/'/g, "''");
@@ -868,15 +892,15 @@ function buildSlArtransAsOfFilter(
           AR_EOD_COLLECTIBLE_LOOKBACK_DAYS * 24 * 60 * 60 * 1000
       );
   const collectibleStart = formatCsiCompactDateLiteral(collectibleStartDate);
-  const end = formatCsiCompactDateLiteral(window.endDate);
-  const clauses = [`(RecordDate <= '${end}')`, `(InvDate >= '${collectibleStart}')`];
+  const endExclusive = formatCsiCompactDateLiteralExclusiveEnd(window.endDate);
+  const clauses = [`(RecordDate < '${endExclusive}')`, `(InvDate >= '${collectibleStart}')`];
   return `(${clauses.join(' and ')})`;
 }
 
 function buildSlCustDrftsAsOfFilter(window?: SyncWindow, site?: string): string | null {
   if (!window) return null;
-  const end = formatCsiCompactDateLiteral(window.endDate);
-  const clauses = [`(InvDate <= '${end}')`];
+  const endExclusive = formatCsiCompactDateLiteralExclusiveEnd(window.endDate);
+  const clauses = [`(InvDate < '${endExclusive}')`];
   return `(${clauses.join(' and ')})`;
 }
 
@@ -892,13 +916,13 @@ function buildSlAptrxAsOfFilter(window?: SyncWindow, site?: string): string | nu
     )
   );
   const collectibleStart = formatCsiCompactDateLiteral(collectibleStartDate);
-  const end = formatCsiCompactDateLiteral(window.endDate);
+  const endExclusive = formatCsiCompactDateLiteralExclusiveEnd(window.endDate);
   // Do not inject a Site predicate here, for the same reason as SLVCHHDRS: the
   // IDO does not expose Site, so CSI rejects the entire filter with
   // IllegalFilterException and the pull returns nothing. Site is already
   // scoped by the request header. The daily incremental path for this IDO
   // omits Site too; only this as-of branch carried it.
-  const clauses = [`(RecordDate <= '${end}')`, `(RecordDate >= '${collectibleStart}')`];
+  const clauses = [`(RecordDate < '${endExclusive}')`, `(RecordDate >= '${collectibleStart}')`];
   return `(${clauses.join(' and ')})`;
 }
 
@@ -911,8 +935,8 @@ function buildCsiRecordDateWindowFilter(params: {
   if (!params.window) return null;
   const field = String(params.field || 'RecordDate').trim() || 'RecordDate';
   const start = formatCsiCompactDateLiteral(params.window.startDate);
-  const end = formatCsiCompactDateLiteral(params.window.endDate);
-  const clauses = [`(${field} >= '${start}' and ${field} <= '${end}')`];
+  const endExclusive = formatCsiCompactDateLiteralExclusiveEnd(params.window.endDate);
+  const clauses = [`(${field} >= '${start}' and ${field} < '${endExclusive}')`];
   if (params.includeSitePredicate) {
     const siteValue = String(params.site || '').trim();
     if (siteValue) {
@@ -948,10 +972,10 @@ function buildSlVchHdrsAsOfFilter(window?: SyncWindow, site?: string): string | 
   // SLVCHHDRS in this CSI tenant accepts compact numeric date literals for RecordDate
   // more reliably than hyphenated dates during filtered backfills.
   const historyStart = formatCsiCompactDateLiteral(AP_MIN_BILL_DATE);
-  const end = formatCsiCompactDateLiteral(window.endDate);
+  const endExclusive = formatCsiCompactDateLiteralExclusiveEnd(window.endDate);
   // Do not inject Site predicates here. This tenant succeeds with the site header,
   // but can reject or ignore explicit Site clauses on SLVCHHDRS filters.
-  const clauses = [`(RecordDate >= '${historyStart}')`, `(RecordDate <= '${end}')`];
+  const clauses = [`(RecordDate >= '${historyStart}')`, `(RecordDate < '${endExclusive}')`];
   return `(${clauses.join(' and ')})`;
 }
 
